@@ -1,0 +1,198 @@
+package llm
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+	"unicode"
+)
+
+// providerListTimeout caps how long a /v1/models
+// fetch may take. The endpoint is small (a few KB
+// of JSON) so 10s is generous; we use the same
+// value for probes to keep the constants tidy.
+const providerListTimeout = 10 * time.Second
+
+// ListProviderModels returns the model ids exposed
+// by a provider's /v1/models endpoint. The result
+// is what the provider advertises; the caller
+// feeds each id into HeuristicCapabilities to get
+// capability flags.
+//
+// baseURL is the API root (e.g.
+// https://api.openai.com/v1). A trailing slash is
+// tolerated. An empty baseURL is an error. A
+// non-2xx response is an error (we do not return
+// partial data — silently dropping a real failure
+// would corrupt the catalog). A 2xx with empty
+// data is OK and returns an empty slice.
+//
+// If apiKey is non-empty, it is sent as a Bearer
+// token. Some local servers (llama.cpp, LM Studio)
+// ignore the header; some reject missing auth.
+// Callers can pass an empty key for the unauth
+// case.
+func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("llm: ListProviderModels: baseURL is empty")
+	}
+	base := strings.TrimRight(baseURL, "/")
+	u := base + "/models"
+	if !strings.HasSuffix(base, "/v1") {
+		u = base + "/v1/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModels: %w", err)
+	}
+	if key := CleanAPIKey(apiKey); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: providerListTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModels: %w", err)
+	}
+	defer resp.Body.Close()
+	// Cap the body at 4 MB. Real /v1/models
+	// responses are a few KB; 4 MB covers the
+	// wildest local llama.cpp catalogs.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModels: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("llm: ListProviderModels: status %d: %s", resp.StatusCode, body)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModels: parse: %w", err)
+	}
+	out := make([]string, 0, len(payload.Data))
+	for _, m := range payload.Data {
+		if m.ID != "" {
+			out = append(out, m.ID)
+		}
+	}
+	return out, nil
+}
+
+// CleanAPIKey makes a pasted API key safe for HTTP headers.
+// It removes surrounding whitespace and any control characters
+// commonly introduced by terminal paste (CR/LF/TAB/NUL). API
+// tokens should not contain whitespace, so this also removes
+// accidental spaces copied before/after line wraps.
+func CleanAPIKey(s string) string {
+	s = strings.TrimSpace(s)
+	for {
+		before := s
+		if len(s) >= 4 && strings.HasPrefix(s, `\"`) && strings.HasSuffix(s, `\"`) {
+			s = strings.TrimSpace(s[2 : len(s)-2])
+		}
+		if len(s) >= 2 {
+			first := s[0]
+			last := s[len(s)-1]
+			if (first == '"' && last == '"') || (first == '\'' && last == '\'') || (first == '`' && last == '`') {
+				s = strings.TrimSpace(s[1 : len(s)-1])
+			}
+		}
+		if strings.HasPrefix(strings.ToLower(s), "bearer ") {
+			s = strings.TrimSpace(s[len("bearer "):])
+		}
+		if s == before {
+			break
+		}
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// visionMarkers and reasoningMarkers and
+// nonToolMarkers are the substring lists used by
+// HeuristicCapabilities. The lists are kept
+// package-private to make it easy to extend them
+// as new naming conventions appear.
+var (
+	visionMarkers    = []string{"vision"}
+	reasoningMarkers = []string{
+		"o1", "o3", "o4",
+		"reasoning", "thinking",
+		"r1", "qwq", "deepseek-r1",
+	}
+	nonToolMarkers = []string{
+		"embed", "dall-e", "tts", "whisper",
+	}
+)
+
+// HeuristicCapabilities inspects a model id and
+// infers capability flags from well-known naming
+// conventions. It is the fallback used after
+// /v1/models returns an id we have not seen
+// before — we do not probe every model on every
+// run, so a cheap name-based guess beats a network
+// round-trip.
+//
+// The rules (case-insensitive substring match):
+//
+//   - "vision" anywhere → Vision=true.
+//   - any reasoning marker (o1/o3/o4, reasoning,
+//     thinking, r1, qwq, deepseek-r1) → Reasoning
+//     =true.
+//   - any non-tool marker (embed, dall-e, tts,
+//     whisper) → ToolUse=false. ToolUse defaults
+//     to true so unknown models retain function
+//     calling; we only turn it off when the id
+//     clearly says "not a chat model".
+//
+// Stream is always set to true (every modern
+// OpenAI-compat model streams). The Provider
+// field is left empty — main.go sets it from the
+// calling config because the heuristic cannot
+// tell "anthropic" from "openrouter" from the id
+// alone.
+//
+// The Source is SourceProvider because this
+// function is always called as a consequence of
+// a ListProviderModels hit.
+func HeuristicCapabilities(id string) ModelInfo {
+	m := ModelInfo{
+		ID:      id,
+		ToolUse: true,
+		Stream:  true,
+		Source:  SourceProvider,
+	}
+	lower := strings.ToLower(id)
+	if containsAny(lower, visionMarkers) {
+		m.Vision = true
+	}
+	if containsAny(lower, reasoningMarkers) {
+		m.Reasoning = true
+	}
+	if containsAny(lower, nonToolMarkers) {
+		m.ToolUse = false
+	}
+	return m
+}
+
+func containsAny(haystack string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(haystack, n) {
+			return true
+		}
+	}
+	return false
+}
