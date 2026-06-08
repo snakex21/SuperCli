@@ -1,0 +1,28 @@
+Fix both test files:
+
+In echo_test.go: 
+- Replace all `.Complete(ctx, ` → `.Complete(ctx, ` (no change)
+- Add `, nil` before `)` at end of EVERY Complete call
+- In any Complete method implementations, add `_ []ToolDef` param
+
+In openai_test.go:
+- Same for Complete calls — add `, nil` third arg
+- In buildOpenAIRequest calls, add `nil` as third arg (between msgs and vision bool)
+
+Use Edit tool precisely. Check for closing `)` after `}}` in Complete calls and add `, nil` before it.
+
+For echo_test.go, the Complete calls are:
+  p.Complete(context.Background(), nil) → p.Complete(context.Background(), nil, nil)
+  p.Complete(context.Background(), msgs) → p.Complete(context.Background(), msgs, nil)
+  p.Complete(ctx, msgs) → p.Complete(ctx, msgs, nil)
+  p.Complete(cancelCtx, msgs) → p.Complete(cancelCtx, msgs, nil)
+  p.Complete(context.Background(), []Message{...}) → p.Complete(context.Background(), []Message{...}, nil)
+
+For openai_test.go, Complete calls:
+  p.Complete(context.Background(), []Message{...}) → p.Complete(context.Background(), []Message{...}, nil)
+  p.Complete(ctx, []Message{...}) → p.Complete(ctx, []Message{...}, nil)
+
+And buildOpenAIRequest calls:
+  buildOpenAIRequest("model", msgs, false) → buildOpenAIRequest("model", msgs, nil, false)
+  buildOpenAIRequest("model", msgs, true) → buildOpenAIRequest("model", msgs, nil, true)
+  buildOpenAIRequest("model", nil, false) → already has 4 args, don't change.

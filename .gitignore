@@ -1,0 +1,50 @@
+# Build outputs
+supercli
+supercli.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+coverage.out
+
+# Runtime state / databases — never publish these
+.supercli/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+sessions.db*
+memory.db*
+
+# Logs and crash dumps
+logs/
+*.log
+crash.log
+
+# Local memory/pattern state
+/memory/
+**/.darwin/
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak

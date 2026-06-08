@@ -1,0 +1,175 @@
+[
+  {
+    "id": "gpt-4o",
+    "provider": "openai",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": false,
+    "context_length": 128000,
+    "input_cost": 2.5,
+    "output_cost": 10.0,
+    "notes": "OpenAI flagship multimodal model"
+  },
+  {
+    "id": "gpt-4o-mini",
+    "provider": "openai",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": false,
+    "context_length": 128000,
+    "input_cost": 0.15,
+    "output_cost": 0.6
+  },
+  {
+    "id": "gpt-4-turbo",
+    "provider": "openai",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 128000
+  },
+  {
+    "id": "gpt-4",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 8192
+  },
+  {
+    "id": "gpt-3.5-turbo",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 16385
+  },
+  {
+    "id": "o1",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
+    "context_length": 200000
+  },
+  {
+    "id": "o1-mini",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
+    "context_length": 128000
+  },
+  {
+    "id": "o1-preview",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
+    "context_length": 128000
+  },
+  {
+    "id": "o3-mini",
+    "provider": "openai",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
+    "context_length": 200000
+  },
+  {
+    "id": "claude-3-5-sonnet-latest",
+    "provider": "anthropic",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 200000
+  },
+  {
+    "id": "claude-3-5-haiku-latest",
+    "provider": "anthropic",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 200000
+  },
+  {
+    "id": "claude-3-opus-latest",
+    "provider": "anthropic",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 200000
+  },
+  {
+    "id": "claude-3-sonnet-20240229",
+    "provider": "anthropic",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 200000
+  },
+  {
+    "id": "llama-3.1-70b",
+    "provider": "meta",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 128000
+  },
+  {
+    "id": "llama-3.1-8b",
+    "provider": "meta",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 128000
+  },
+  {
+    "id": "qwen-2.5-72b",
+    "provider": "alibaba",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 128000
+  },
+  {
+    "id": "deepseek-r1",
+    "provider": "deepseek",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
+    "context_length": 64000,
+    "notes": "DeepSeek reasoning model"
+  },
+  {
+    "id": "gemini-2.0-flash",
+    "provider": "google",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 1000000
+  },
+  {
+    "id": "gemini-1.5-pro",
+    "provider": "google",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 2000000
+  },
+  {
+    "id": "mistral-large-latest",
+    "provider": "mistral",
+    "vision": false,
+    "tool_use": true,
+    "stream": true,
+    "context_length": 128000
+  }
+]
