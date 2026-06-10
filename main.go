@@ -58,6 +58,7 @@ import (
 	"supercli/internal/shellescape"
 	"supercli/internal/stats"
 	"supercli/internal/storage"
+	"supercli/internal/tier"
 	"supercli/internal/tools"
 	"supercli/internal/tui"
 	"supercli/internal/ultrawork"
@@ -67,10 +68,10 @@ const version = "0.6.0"
 
 // supercliSystemPromptBase is the layered system prompt
 // shared by the main loop and any F6 Darwin children. It
-// defaults to core + coding profile; main() rebuilds it once
-// config (profile) and the model's cost tier are known —
-// cheap/small models get the core only (see internal/prompt).
-var supercliSystemPromptBase = prompt.Build("", false)
+// defaults to core + extended guidance; main() rebuilds it
+// once the model's tier is known — small-tier models get the
+// core only (see internal/prompt and internal/tier).
+var supercliSystemPromptBase = prompt.Build(false)
 
 // buildSystemPrompt returns the base prompt plus the
 // current ISO date stamp and, if a goal service is
@@ -301,14 +302,19 @@ func main() {
 		fatal("init provider", err)
 	}
 
-	// Layered system prompt: core + profile from config.toml
-	// (`profile = "office" | "coding" | "auto"`). Cheap/small
-	// models get the core only to cut per-request overhead.
-	weakModel := false
+	// Model tier (internal/tier): config glob overrides >
+	// price > parsed parameter count / marker words > small.
+	// Small-tier models get the core prompt only (and, below,
+	// a trimmed always-on tool set) to cut per-request
+	// overhead.
+	tierRules := tierRulesFromToml(tomlCfg)
+	var tierIn, tierOut float64
 	if info, ok := caps.Get(cfg.Model); ok {
-		weakModel = prompt.WeakTier(info.InputCost, info.OutputCost)
+		tierIn, tierOut = info.InputCost, info.OutputCost
 	}
-	supercliSystemPromptBase = prompt.Build(tomlCfg.Profile, weakModel)
+	modelTier := tier.Classify(cfg.Model, tierIn, tierOut, tierRules)
+	smallTier := modelTier == tier.Small && !tomlCfg.SmallFullTools
+	supercliSystemPromptBase = prompt.Build(modelTier == tier.Small)
 
 	registry := tools.NewRegistry()
 	registry.MustRegister(tools.NewReadImage(home, 0).Spec())
@@ -419,13 +425,30 @@ func main() {
 		defer audit.Close()
 	}
 
-	registry.MarkAlwaysOn("read_image")
-	registry.MarkAlwaysOn("ask_user")
-	registry.MarkAlwaysOn("tool_search")
-	registry.MarkAlwaysOn("apply_skill")
-	registry.MarkAlwaysOn("darwin")
-	registry.MarkAlwaysOn("goal")
-	registry.MarkAlwaysOn("ctx_execute")
+	// Tier-aware always-on tools. Small-tier models get a
+	// trimmed core set (file read/edit, office editing,
+	// goal/memory, tool_search) so their tiny context isn't
+	// burned on tool schemas; everything else stays reachable
+	// via tool_search. `small_full_tools = true` in
+	// config.toml restores the full set.
+	if smallTier {
+		for _, name := range []string{
+			"read_lines", "read_context", "edit_line",
+			"insert_after", "delete_lines",
+			"file_ops", "edit_docx", "edit_xlsx",
+			"goal", "tool_search",
+		} {
+			registry.MarkAlwaysOn(name)
+		}
+	} else {
+		registry.MarkAlwaysOn("read_image")
+		registry.MarkAlwaysOn("ask_user")
+		registry.MarkAlwaysOn("tool_search")
+		registry.MarkAlwaysOn("apply_skill")
+		registry.MarkAlwaysOn("darwin")
+		registry.MarkAlwaysOn("goal")
+		registry.MarkAlwaysOn("ctx_execute")
+	}
 
 	// F10: ctx_execute is the context-mode sandbox.
 	// The model uses it instead of file_read for
@@ -544,7 +567,7 @@ func main() {
 	// from the F16 CapabilityRegistry's
 	// SuggestCheapestForTask("plan") — never
 	// hardcoded in Go (D1 decision).
-	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, caps, cfg)
+	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, caps, cfg, tierRules)
 	var draftSink agent.DraftOverrideSink
 	if draftProvider != nil {
 		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(home, ".supercli", "reflect"))
@@ -1066,6 +1089,45 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 
 func boolPtr(b bool) *bool { return &b }
 
+// tierRulesFromToml converts config.toml [[model_tiers]]
+// entries into tier.Rule values.
+func tierRulesFromToml(t config.TomlConfig) []tier.Rule {
+	if len(t.ModelTiers) == 0 {
+		return nil
+	}
+	out := make([]tier.Rule, 0, len(t.ModelTiers))
+	for _, r := range t.ModelTiers {
+		out = append(out, tier.Rule{Pattern: r.Pattern, Tier: r.Tier})
+	}
+	return out
+}
+
+// pickSmallestSmallTierModel scans the capability registry for
+// the model with the smallest parsed (active) parameter count
+// that classifies as small-tier. Used as the second priority
+// for draft-model selection (after an explicit --draft-model /
+// config, before the price-based fallback).
+func pickSmallestSmallTierModel(caps *llm.CapabilityRegistry, exclude string, rules []tier.Rule) (string, bool) {
+	best := ""
+	bestParams := 0.0
+	for _, m := range caps.All() {
+		if m.ID == exclude {
+			continue
+		}
+		params, ok := tier.ParseParams(m.ID)
+		if !ok {
+			continue
+		}
+		if tier.Classify(m.ID, m.InputCost, m.OutputCost, rules) != tier.Small {
+			continue
+		}
+		if best == "" || params < bestParams {
+			best, bestParams = m.ID, params
+		}
+	}
+	return best, best != ""
+}
+
 // compactNum formats large numbers as "1.2k" etc.
 func compactNum(n int) string {
 	switch {
@@ -1104,7 +1166,7 @@ func initAppLog(dataDir string) *os.File {
 //
 // Returns (nil, nil) when F11 is off or no candidate
 // exists — silent fallback per D1.
-func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config) (*draft.Policy, llm.Provider) {
+func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config, tierRules []tier.Rule) (*draft.Policy, llm.Provider) {
 	mode, err := draft.ParseMode(modeFlag)
 	if err != nil {
 		log.Printf("F11: bad --draft-mode %q, defaulting to off: %v", modeFlag, err)
@@ -1118,7 +1180,13 @@ func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *l
 	if modelFlag != "" {
 		draftModel = modelFlag
 	} else if caps != nil {
-		if picked, ok := caps.SuggestCheapestForTask("plan", verifierName); ok {
+		// Priority: smallest parsed-param model that
+		// classifies small-tier (internal/tier), then the
+		// price-based cheapest-for-task fallback.
+		if picked, ok := pickSmallestSmallTierModel(caps, verifierName, tierRules); ok {
+			draftModel = picked
+			log.Printf("F11: auto-picked smallest small-tier draft model %q (verifier=%q)", draftModel, verifierName)
+		} else if picked, ok := caps.SuggestCheapestForTask("plan", verifierName); ok {
 			draftModel = picked
 			log.Printf("F11: auto-picked draft model %q (verifier=%q)", draftModel, verifierName)
 		}

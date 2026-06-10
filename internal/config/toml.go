@@ -63,10 +63,20 @@ type TomlConfig struct {
 	// the built-in default; negative disables reflection.
 	ReflectEvery int `toml:"reflect_every"`
 
-	// Profile selects the system prompt profile layer:
-	// "office", "coding", or "auto" (empty = auto). See
-	// internal/prompt.
-	Profile string `toml:"profile"`
+	// ModelTiers are user overrides for the model tier
+	// cascade (internal/tier): case-insensitive glob on the
+	// model name; first match wins. None ship by default.
+	ModelTiers []ModelTierConf `toml:"model_tiers"`
+
+	// SmallFullTools restores the full always-on tool set
+	// for small-tier models (escape hatch; default false =
+	// small models get the trimmed core tool set).
+	SmallFullTools bool `toml:"small_full_tools"`
+
+	// ContextWindow overrides the model's context window
+	// (tokens) for auto-compaction. 0 = resolve from
+	// provider metadata / learned limits / default.
+	ContextWindow int `toml:"context_window"`
 
 	// Debug logging.
 	Debug bool `toml:"debug"`
@@ -79,6 +89,13 @@ type ProviderConf struct {
 	BaseURL string `toml:"base_url"`
 	APIKey  string `toml:"api_key"`
 	Model   string `toml:"model"`
+}
+
+// ModelTierConf is a [[model_tiers]] entry: a glob pattern on
+// the model name plus the tier ("small" or "big") it forces.
+type ModelTierConf struct {
+	Pattern string `toml:"pattern"`
+	Tier    string `toml:"tier"`
 }
 
 // ModelPriceConf allows manual price overrides.
@@ -191,8 +208,16 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.ReflectEvery != 0 {
 		dst.ReflectEvery = src.ReflectEvery
 	}
-	if src.Profile != "" {
-		dst.Profile = src.Profile
+	// Model tier rules: project overrides global entirely
+	// (same semantics as Providers).
+	if len(src.ModelTiers) > 0 {
+		dst.ModelTiers = src.ModelTiers
+	}
+	if src.SmallFullTools {
+		dst.SmallFullTools = true
+	}
+	if src.ContextWindow > 0 {
+		dst.ContextWindow = src.ContextWindow
 	}
 	// Providers list: project overrides global entirely.
 	if len(src.Providers) > 0 {

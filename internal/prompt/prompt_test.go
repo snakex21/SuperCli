@@ -6,7 +6,7 @@ import (
 )
 
 // Core must stay lightweight: every request pays for it and
-// weak models receive ONLY it. ~300 tokens at ~4 chars/token.
+// small models receive ONLY it. ~300 tokens at ~4 chars/token.
 func TestCoreStaysSmall(t *testing.T) {
 	const charBudget = 1200
 	if len(Core) > charBudget {
@@ -14,51 +14,28 @@ func TestCoreStaysSmall(t *testing.T) {
 	}
 }
 
-func TestNormalize(t *testing.T) {
-	cases := map[string]string{
-		"":        "coding",
-		"auto":    "coding",
-		"AUTO":    "coding",
-		"office":  "office",
-		" Office": "office",
-		"coding":  "coding",
-		"bogus":   "coding",
-	}
-	for in, want := range cases {
-		if got := Normalize(in); got != want {
-			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestBuildLayers(t *testing.T) {
-	office := Build("office", false)
-	if !strings.HasPrefix(office, Core) {
-		t.Error("office prompt must start with Core")
+	if got := Build(true); got != Core {
+		t.Errorf("small tier must get Core only, got %d chars", len(got))
 	}
-	if !strings.Contains(office, "not technical") {
-		t.Error("office prompt missing office profile")
+	big := Build(false)
+	if !strings.HasPrefix(big, Core) {
+		t.Error("big prompt must start with Core")
 	}
-
-	coding := Build("coding", false)
-	if !strings.Contains(coding, "file_path:line") {
-		t.Error("coding prompt missing coding profile")
+	if !strings.Contains(big, "file_path:line") {
+		t.Error("big prompt missing extended guidance")
 	}
-
-	// Weak model: core only, regardless of profile.
-	if got := Build("office", true); got != Core {
-		t.Errorf("weak model must get Core only, got %d chars", len(got))
+	// No profile concept anywhere.
+	if strings.Contains(strings.ToLower(big), "profile") {
+		t.Error("prompt must not mention profiles")
 	}
 }
 
-func TestWeakTier(t *testing.T) {
-	if WeakTier(0, 0) {
-		t.Error("unknown cost must not be weak")
+func TestCoreKeepsOfficeHints(t *testing.T) {
+	if !strings.Contains(Core, "backup") {
+		t.Error("Core must state backups are automatic")
 	}
-	if !WeakTier(0.1, 0.4) {
-		t.Error("cheap model should be weak tier")
-	}
-	if WeakTier(3, 15) {
-		t.Error("frontier model must not be weak tier")
+	if !strings.Contains(Core, "state which file changed") {
+		t.Error("Core must require stating what file changed")
 	}
 }
