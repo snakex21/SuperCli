@@ -2,6 +2,8 @@ package tui
 
 import (
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // role identifies who produced a chat message. The role
@@ -107,9 +109,9 @@ func (c *chat) render(p Palette) string {
 func (c *chat) renderMsg(m msg, p Palette) string {
 	switch m.role {
 	case roleUser:
-		return renderRoleBlock(p.UserLabel.Render("You"), p.User.Render(m.text))
+		return renderRoleBlock(p.UserLabel.Render("You"), p.User.Render(m.text), p.UserGutter)
 	case roleAssistant:
-		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed))
+		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed), p.AssistGutter)
 	case roleSystem:
 		// System messages already carry ANSI styling from
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
@@ -121,7 +123,10 @@ func (c *chat) renderMsg(m msg, p Palette) string {
 	}
 }
 
-func renderRoleBlock(label, body string) string {
+// renderRoleBlock renders a labeled message with a colored
+// left-border gutter ("▌") instead of a heavy box — the gutter
+// color identifies the speaker at a glance.
+func renderRoleBlock(label, body string, gutter lipgloss.Style) string {
 	body = strings.TrimRight(body, "\n")
 	if body == "" {
 		return label
@@ -134,7 +139,7 @@ func renderRoleBlock(label, body string) string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString("  ")
+		b.WriteString(gutter.Render("▌") + " ")
 		b.WriteString(line)
 	}
 	return b.String()
@@ -149,7 +154,7 @@ func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 		b.WriteByte('\n')
 	}
 	if c.current != "" {
-		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(c.current, p, c.thinkingCollapsed)))
+		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(c.current, p, c.thinkingCollapsed), p.AssistGutter))
 		b.WriteString(" ")
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')

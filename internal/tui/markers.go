@@ -89,13 +89,14 @@ func (m Marker) Error(err error) string {
 	return m.p.Error.Render(text)
 }
 
-// ToolCall renders: ⚙ tool_name(args)
+// ToolCall renders a compact tool chip: ▸ tool_name  args
+// (collapsible — Shift+E expands the matching result block).
 func (m Marker) ToolCall(name, args string) string {
 	// Truncate args for readability.
 	if len(args) > 80 {
 		args = args[:77] + "..."
 	}
-	prefix := m.p.ToolName.Render("⏺ " + name)
+	prefix := m.p.ToolName.Render("▸ " + name)
 	return prefix + m.p.Dim.Render("  "+args)
 }
 
@@ -123,7 +124,7 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 		lines = lines[:maxLines]
 	}
 	var b strings.Builder
-	b.WriteString(m.p.ToolOutput.Render("  ⎿ " + toolName))
+	b.WriteString(m.p.ToolOutput.Render("  ⎿ ") + m.p.ToolName.Render(toolName) + m.p.Dim.Render(" · done"))
 	for _, line := range lines {
 		b.WriteByte('\n')
 		b.WriteString(m.p.ToolOutput.Render("    " + line))
@@ -145,7 +146,7 @@ func (m Marker) ToolResultErr(toolName, errMsg string) string {
 
 // Running renders the "running..." indicator shown during slash commands.
 func (m Marker) Running() string {
-	return m.p.Dim.Render("⏺ running · Ctrl+C to abort")
+	return m.p.Dim.Render("▸ running · Ctrl+C to abort")
 }
 
 // NoAgent renders the no-agent error.
