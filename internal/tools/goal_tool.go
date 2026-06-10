@@ -67,13 +67,26 @@ func (g *GoalTool) SetDecompose(p goal.Provider, model string) {
 func (g *GoalTool) Spec() Tool {
 	return Tool{
 		Name: "goal",
-		Description: "Track a long-term objective. The active goal and its open tasks are automatically injected into every turn. Use this tool to: inspect the current goal (show), list all goals (list), list the active goal's tasks (tasks), add a new task to a goal (add_task), mark a task done or skipped (complete_task / skip_task), append a timestamped note (add_note), close the goal as done (mark_done), abandon it (abandon), or ask the model to break the title into 3-7 tasks (decompose). Returns Markdown for the model to surface to the user.",
+		Description: "Track a long-term objective and its task list. The active goal and its open tasks are injected into every turn, so keeping them accurate gives the user real visibility into your progress.\n\n" +
+			"## When to use this tool\n" +
+			"- Multi-step work (3+ distinct steps) or work spanning multiple turns/sessions\n" +
+			"- The user gives several tasks at once, or asks you to plan or track work\n" +
+			"- You discover new required work mid-task: add_task it immediately so it is not lost\n\n" +
+			"## When NOT to use this tool\n" +
+			"- Single, trivial, or purely conversational requests — just do them\n" +
+			"- Durable facts or preferences (use the remember tool instead)\n\n" +
+			"## Task management rules\n" +
+			"- Mark a task in_progress (start_task) BEFORE you begin working on it, not after\n" +
+			"- Keep exactly ONE task in_progress at a time; finish or skip it before starting the next\n" +
+			"- Mark tasks complete (complete_task) IMMEDIATELY when done — do not batch completions\n" +
+			"- Never complete a task while tests fail or the work is partial; keep it in_progress and add_note what is blocking\n\n" +
+			"Actions: show, list, tasks, add_task, start_task, complete_task, skip_task, add_note, mark_done (close the goal), abandon, decompose (break the goal title into 3-7 tasks). Returns Markdown to surface to the user.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"action": {
 					"type": "string",
-					"enum": ["show", "list", "tasks", "add_task", "complete_task",
+					"enum": ["show", "list", "tasks", "add_task", "start_task", "complete_task",
 					         "skip_task", "add_note", "mark_done", "abandon", "decompose"],
 					"description": "What to do."
 				},
@@ -107,7 +120,7 @@ func (p goalParams) Validate() error {
 			return fmt.Errorf("goal: add_task requires title")
 		}
 		return nil
-	case "complete_task", "skip_task":
+	case "start_task", "complete_task", "skip_task":
 		if p.TaskSeq <= 0 {
 			return fmt.Errorf("goal: %s requires task_seq", p.Action)
 		}
@@ -155,6 +168,8 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return g.execTasks(ctx, p.GoalID)
 	case "add_task":
 		return g.execAddTask(ctx, p.GoalID, p.Title)
+	case "start_task":
+		return g.execSetTaskStatus(ctx, p.GoalID, p.TaskSeq, goal.TaskInProgress)
 	case "complete_task":
 		return g.execSetTaskStatus(ctx, p.GoalID, p.TaskSeq, goal.TaskDone)
 	case "skip_task":
