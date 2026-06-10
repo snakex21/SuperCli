@@ -145,6 +145,7 @@ func main() {
 	draftModelFlag := flag.String("draft-model", "", "F11 draft model id (default: auto-pick cheapest from F16 registry)")
 	configFlag := flag.String("config", "", "path to config.toml override")
 	batchFlag := flag.String("batch", "", "F33: run prompt without TUI, output to stdout and exit")
+	resumeFlag := flag.Bool("resume", false, "resume the most recent session on startup")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -702,6 +703,41 @@ func main() {
 			return "nothing to clear", nil
 		}
 		return fmt.Sprintf("cleared: hid %d message(s) from context (scrollback kept)", hidden), nil
+	}
+
+	// Wave 4: /resume — list recent sessions or load one back
+	// into the live loop. The continuation is recorded under
+	// the NEW session id (sessWriter keeps writing here); the
+	// original session stays intact and searchable.
+	mergedCommands["resume"] = func(ctx context.Context, args string) (string, error) {
+		if sessStore == nil {
+			return "resume: session store unavailable", nil
+		}
+		args = strings.TrimSpace(args)
+		if args == "" {
+			return listResumableSessions(ctx, sessStore, sessionID)
+		}
+		out, err := resumeSession(ctx, loop, sessStore, windowFor, args)
+		if err != nil {
+			return fmt.Sprintf("resume: %v", err), nil
+		}
+		return out, nil
+	}
+	// --resume: load the most recent prior session at startup.
+	if *resumeFlag && sessStore != nil {
+		if recent, err := sessStore.ListRecent(context.Background(), 2); err == nil {
+			for _, r := range recent {
+				if r.ID == sessionID {
+					continue
+				}
+				if msg, err := resumeSession(context.Background(), loop, sessStore, windowFor, r.ID); err == nil {
+					log.Printf("--resume: %s", msg)
+				} else {
+					log.Printf("--resume failed: %v", err)
+				}
+				break
+			}
+		}
 	}
 
 	// F12: cross-model consultation. Build the
@@ -1999,6 +2035,7 @@ Flags:
   --max-credits-per-day N         cap total tokens per UTC day (0 = no cap)
   --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default critical)
   --draft-model ID                F11 draft model id (default: auto-pick cheapest from F16 registry)
+  --resume                        resume the most recent session on startup (also: /resume in the TUI)
   --version                       print version and exit
   -h, --help                      show this help
 

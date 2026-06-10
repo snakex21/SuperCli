@@ -1565,7 +1565,11 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 	}
 	// F26.6: /resume lists or resumes previous sessions.
-	if cmd.Name == "resume" {
+	// When main.go wires a real resume handler (wave 4: loads
+	// the session into the agent loop, summarizing oversized
+	// history), it takes precedence; this builtin is the
+	// transcript-only fallback.
+	if cmd.Name == "resume" && m.commands["resume"] == nil {
 		store := m.sessionStore
 		dm := m.marker
 		chat := m.chat
