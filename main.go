@@ -268,6 +268,34 @@ func main() {
 		log.Printf("config: %+v", cfg.Sanitized())
 	}
 
+	// Wave 4: first-run onboarding. When nothing at all is
+	// configured (no providers in config.toml, no env/flag
+	// provider — the resolved provider fell back to echo
+	// without the user asking for it), walk the user through
+	// a minimal setup, persist config.toml, and continue into
+	// chat with the chosen provider.
+	if !*echoFlag && cfg.IsEcho() &&
+		len(tomlCfg.Providers) == 0 && tomlCfg.Provider == "" && tomlCfg.DefaultProvider == "" {
+		if res := tui.RunOnboarding(); !res.Skipped {
+			globalTomlPath, _ := config.FindTomlPaths(home, cwd)
+			saved := tomlCfg
+			saved.Providers = []config.ProviderConf{{
+				Name:    res.Name,
+				Type:    res.Type,
+				BaseURL: res.BaseURL,
+				APIKey:  res.APIKey,
+			}}
+			saved.DefaultProvider = res.Name
+			if err := config.SaveToml(globalTomlPath, saved); err != nil {
+				log.Printf("onboarding: save config.toml: %v", err)
+			}
+			tomlCfg = saved
+			cfg.Provider = res.Type
+			cfg.BaseURL = res.BaseURL
+			cfg.APIKey = res.APIKey
+		}
+	}
+
 	// F16: build the capability registry from
 	// seed + catalog + probe cache. A load
 	// failure is logged and we fall back to an
