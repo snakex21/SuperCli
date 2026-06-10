@@ -343,6 +343,16 @@ func main() {
 	// cells joined by " | ").
 	registry.MustRegister(tools.NewReadXlsx(home, 0).Spec())
 
+	// Wave-2 office editing: edit_docx / edit_xlsx
+	// rewrite a single zip entry byte-for-byte safe
+	// (temp file + atomic swap + .bak backup), pure
+	// stdlib. file_ops is the safe file manager for
+	// office users: no overwrite, no hard delete
+	// (trash folder instead), sandboxed paths.
+	registry.MustRegister(tools.NewEditDocx(home).Spec())
+	registry.MustRegister(tools.NewEditXlsx(home).Spec())
+	registry.MustRegister(tools.NewFileOps(home).Spec())
+
 	// F20: read_pdf is opt-in (not always-on).
 	// The model discovers it via tool_search
 	// when needed. The implementation uses

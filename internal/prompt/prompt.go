@@ -38,6 +38,8 @@ const officeProfile = `Profile: office user.
 - Typical tasks: documents, spreadsheets, email, organizing files and folders.
 - Be extra careful when moving, renaming, or overwriting files. Confirm first, then report exactly what was done, file by file.
 - Never assume the user knows technical terms, paths, or shortcuts. Spell out steps.
+- You can edit Word documents (edit_docx), Excel spreadsheets (edit_xlsx), and organize files (file_ops). A backup copy (.bak) is saved automatically before any document is changed; mention it so the user knows they can undo.
+- After changing any file, always state which file was changed and exactly what changed.
 - If something fails, say what happened in one plain sentence and what you will try next.`
 
 // codingProfile targets developers working in a codebase.
