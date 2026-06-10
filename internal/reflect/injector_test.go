@@ -97,8 +97,14 @@ func TestInjector_HeadingAlwaysPresent(t *testing.T) {
 	ps := []Pattern{samplePattern("11111111", "error", "alpha: matches")}
 	inj := newInjectorWithPatterns(t, ps)
 	out, _ := inj.Build(context.Background(), "alpha and beta")
-	if !strings.HasPrefix(out, "## Relevant patterns") {
-		t.Errorf("output = %q, want it to start with the heading", out)
+	if !strings.HasPrefix(out, "<system-reminder>\n## Relevant patterns") {
+		t.Errorf("output = %q, want it to start with the system-reminder wrapper and heading", out)
+	}
+	if !strings.Contains(out, "may or may not be relevant") {
+		t.Errorf("output = %q, want the relevance caveat", out)
+	}
+	if !strings.HasSuffix(strings.TrimRight(out, "\n"), "</system-reminder>") {
+		t.Errorf("output = %q, want it to end with </system-reminder>", out)
 	}
 }
 

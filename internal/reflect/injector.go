@@ -114,11 +114,14 @@ func relevanceScore(p Pattern, sysTokens []string) float64 {
 }
 
 // renderSection produces a markdown block with a
-// heading and bullet list. Tries to stay compact —
-// F5.d contributes to every system message, so we
-// don't want to bloat it.
+// heading and bullet list, wrapped in a
+// <system-reminder> envelope so the model treats it
+// as background context rather than an instruction.
+// Tries to stay compact — F5.d contributes to every
+// system message, so we don't want to bloat it.
 func renderSection(items []scoredPattern) string {
 	var b strings.Builder
+	b.WriteString("<system-reminder>\n")
 	b.WriteString("## Relevant patterns learned from past sessions\n")
 	for _, it := range items {
 		b.WriteString("- ")
@@ -135,5 +138,8 @@ func renderSection(items []scoredPattern) string {
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString("This context may or may not be relevant to the current task. " +
+		"Only act on it if it is highly relevant; otherwise ignore it.\n")
+	b.WriteString("</system-reminder>\n")
 	return b.String()
 }

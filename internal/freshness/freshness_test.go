@@ -221,3 +221,17 @@ func containsSubstr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestPromptSection_ContainsDateAndStalenessNote(t *testing.T) {
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	out := PromptSection(now)
+	if !containsSubstr(out, "current_date: 2026-06-10") {
+		t.Errorf("PromptSection missing date: %s", out)
+	}
+	if !containsSubstr(out, "training data may be stale") {
+		t.Errorf("PromptSection missing staleness note: %s", out)
+	}
+	if !containsSubstr(out, "verify via tools") {
+		t.Errorf("PromptSection missing verify-with-tools instruction: %s", out)
+	}
+}
