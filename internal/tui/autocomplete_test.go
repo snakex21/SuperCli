@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -564,10 +563,7 @@ func TestAutocomplete_ArrowsWorkThroughHandleKey(t *testing.T) {
 
 func newTestModel(t *testing.T) Model {
 	t.Helper()
-	ti := textinput.New()
-	ti.Placeholder = "ask, or type /help"
-	ti.Prompt = "❯ "
-	ti.CharLimit = 4096
+	ti := newInputArea()
 	ti.Focus()
 
 	p := DefaultPalette()

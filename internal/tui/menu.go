@@ -244,7 +244,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+v":
 		if text, err := clipboard.ReadAll(); err == nil && text != "" {
-			m.menu.form[m.menu.formAt] += normalizePastedText(text)
+			m.menu.form[m.menu.formAt] += normalizePastedLine(text)
 		}
 		return m, nil
 	}
@@ -252,7 +252,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(msg.Runes) > 0 {
 		text := string(msg.Runes)
 		if msg.Paste {
-			text = normalizePastedText(text)
+			text = normalizePastedLine(text)
 		}
 		m.menu.form[m.menu.formAt] += text
 		return m, nil
