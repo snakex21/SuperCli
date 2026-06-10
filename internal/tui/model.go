@@ -1139,6 +1139,12 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLine(line)
 		m.appendLineToTranscript(fmt.Sprintf("[draft: %s → %s, saved %d tokens]", e.DraftModel, e.VerifierModel, e.Savings))
 		return m, m.waitForNextEvent()
+	case agent.AutoCompactEvent:
+		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens)]",
+			e.Removed, e.Reason, e.Estimated, e.Window)
+		m.appendLine(line)
+		m.appendLineToTranscript(line)
+		return m, m.waitForNextEvent()
 	case agent.MessagesHiddenEvent:
 		line := m.marker.ContextHid(e.Count, e.Reason)
 		m.appendLine(line)

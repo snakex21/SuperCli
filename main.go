@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -585,6 +586,54 @@ func main() {
 	}
 	reflector := &reflect.ModelReflector{Provider: provider}
 
+	// Wave 4: context-window resolution + auto-compact wiring.
+	// Cascade: config context_window > provider /v1/models
+	// metadata (fetched in the background, parsed defensively)
+	// > learned limit (persisted from past context-length
+	// errors) > 16384 default (applied inside the loop).
+	learned := loadLearnedLimits(home)
+	var provWinMu sync.Mutex
+	provWindows := map[string]int{}
+	if cfg.BaseURL != "" {
+		go func() {
+			defer recoverAndLog(home)()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			m, err := llm.ListProviderModelContexts(ctx, cfg.BaseURL, cfg.APIKey)
+			if err != nil || len(m) == 0 {
+				return
+			}
+			provWinMu.Lock()
+			provWindows = m
+			provWinMu.Unlock()
+		}()
+	}
+	windowFor := func(model string) int {
+		if tomlCfg.ContextWindow > 0 {
+			return tomlCfg.ContextWindow
+		}
+		provWinMu.Lock()
+		w := provWindows[model]
+		provWinMu.Unlock()
+		if w > 0 {
+			return w
+		}
+		if info, ok := caps.Get(model); ok && info.ContextLength > 0 {
+			return info.ContextLength
+		}
+		if v := learned.Get(model); v > 0 {
+			return v
+		}
+		return 0 // loop falls back to its 16384 default
+	}
+	autoSummarizer := func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
+		summary, err := summarizeForCompaction(ctx, p, msgs)
+		if err != nil {
+			return "", err
+		}
+		return wrapCompactSummary(summary), nil
+	}
+
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        provider,
@@ -606,6 +655,9 @@ func main() {
 		DraftProvider:     draftProvider,
 		DraftOverrideSink: draftSink,
 		Stats:             draftStats,
+		WindowFor:         windowFor,
+		Summarizer:        autoSummarizer,
+		LearnLimit:        learned.Learn,
 	})
 	if err != nil {
 		fatal("init agent", err)

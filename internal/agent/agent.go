@@ -178,6 +178,20 @@ type DraftOverride struct {
 	UserPrompt    string
 }
 
+// AutoCompactEvent reports that the loop compacted the
+// conversation automatically — either because the visible
+// token estimate crossed 80% of the model's context window
+// ("auto") or because the provider returned a context-length
+// error ("context-limit").
+type AutoCompactEvent struct {
+	Removed   int    // messages removed/hidden
+	Window    int    // resolved context window (tokens)
+	Estimated int    // visible token estimate before compaction
+	Reason    string // "auto" | "context-limit"
+}
+
+func (AutoCompactEvent) event() {}
+
 // ErrorEvent is the terminal event of a failed run.
 type ErrorEvent struct {
 	Err error

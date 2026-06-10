@@ -52,6 +52,15 @@ type Loop struct {
 	creditTracker CreditTracker
 	modelID     string
 
+	// Auto-compact wiring (wave 4). windowFor resolves the
+	// model's context window (config > provider metadata >
+	// learned > default); summarizer produces the /compact
+	// summary; learnLimit persists a limit discovered from a
+	// provider context-length error.
+	windowFor  func(model string) int
+	summarizer Summarizer
+	learnLimit func(model string, limit int)
+
 	// F9 ultrawork wiring. When non-nil, the loop:
 	//   - detects the "ultrawork"/"ulw" keyword in the user
 	//     prompt and (if the gates pass) flips ultraworkMode
@@ -212,6 +221,25 @@ type LoopConfig struct {
 	// nil = overrides are dropped.
 	DraftOverrideSink DraftOverrideSink
 
+	// WindowFor, when non-nil, resolves the context window
+	// (tokens) for a model id. <=0 means unknown (the loop
+	// falls back to a 16384 default). The callback owns the
+	// resolution cascade: config context_window > provider
+	// /v1/models metadata > learned limit > default.
+	WindowFor func(model string) int
+
+	// Summarizer, when non-nil, enables automatic context
+	// compaction: before each provider call, if the visible
+	// token estimate exceeds 80% of the window, the
+	// conversation is summarized and replaced (same
+	// machinery as /compact).
+	Summarizer Summarizer
+
+	// LearnLimit, when non-nil, is called with the limit
+	// extracted from a provider context-length error so it
+	// can be persisted per model.
+	LearnLimit func(model string, limit int)
+
 	// Stats, when non-nil, receives per-step metrics
 	// (token counts, draft savings). F2.g's Memory
 	// impl is the in-memory default; the persistent
@@ -262,6 +290,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		patternInjector: cfg.PatternInjector,
 		creditTracker:   cfg.CreditTracker,
 		modelID:         cfg.Provider.Name(),
+		windowFor:       cfg.WindowFor,
+		summarizer:      cfg.Summarizer,
+		learnLimit:      cfg.LearnLimit,
 		Messages:        msgs,
 	}
 
@@ -423,6 +454,11 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 			l.invokeDraft(ctx, step, out)
 		}
 
+		// Wave 4: auto-compact before the provider call when
+		// the visible token estimate crosses 80% of the
+		// model's context window.
+		l.maybeAutoCompact(ctx, out, "")
+
 		// Build tool definitions from visible tools.
 		var toolDefs []llm.ToolDef
 		for _, t := range l.registry.Visible() {
@@ -433,13 +469,13 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 			})
 		}
 
-		stream, err := l.provider.Complete(ctx, l.VisibleMessages(), toolDefs)
-		if err != nil {
-			out <- ErrorEvent{Err: fmt.Errorf("agent: provider.Complete: %w", err)}
-			return
+		text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
+		if err != nil && l.handleContextOverflow(ctx, err, out) {
+			// Wave 4: provider rejected the context size.
+			// The learned limit was persisted and the
+			// conversation compacted; retry once.
+			text, toolCalls, usage, err = l.completeOnce(ctx, toolDefs, out)
 		}
-
-		text, toolCalls, usage, err := l.consume(ctx, stream, out)
 		if err != nil {
 			out <- ErrorEvent{Err: err}
 			return
@@ -588,6 +624,17 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 		}
 	}
 	out <- ErrorEvent{Err: fmt.Errorf("agent: max steps (%d) reached", l.maxSteps)}
+}
+
+// completeOnce performs one provider Complete call and
+// consumes the stream. Split out so the run loop can retry
+// once after a context-overflow compaction.
+func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
+	stream, err := l.provider.Complete(ctx, l.VisibleMessages(), toolDefs)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
+	}
+	return l.consume(ctx, stream, out)
 }
 
 // persist calls the writer if one is configured. Errors are

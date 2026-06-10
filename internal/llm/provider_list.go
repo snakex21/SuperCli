@@ -85,6 +85,72 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 	return out, nil
 }
 
+// ListProviderModelContexts fetches /v1/models and returns a
+// model-id → context-window map for entries that advertise one.
+// Different servers use different field names (OpenRouter:
+// context_length, LM Studio: max_context_length, others:
+// context_window); all are parsed defensively — anything
+// missing or malformed is simply skipped. Models without
+// metadata are absent from the map.
+func ListProviderModelContexts(ctx context.Context, baseURL, apiKey string) (map[string]int, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: baseURL is empty")
+	}
+	base := strings.TrimRight(baseURL, "/")
+	u := base + "/models"
+	if !strings.HasSuffix(base, "/v1") {
+		u = base + "/v1/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: %w", err)
+	}
+	if key := CleanAPIKey(apiKey); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: providerListTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Data []struct {
+			ID               string          `json:"id"`
+			ContextLength    json.RawMessage `json:"context_length"`
+			MaxContextLength json.RawMessage `json:"max_context_length"`
+			ContextWindow    json.RawMessage `json:"context_window"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("llm: ListProviderModelContexts: parse: %w", err)
+	}
+	out := make(map[string]int)
+	for _, m := range payload.Data {
+		if m.ID == "" {
+			continue
+		}
+		for _, raw := range []json.RawMessage{m.ContextLength, m.MaxContextLength, m.ContextWindow} {
+			if len(raw) == 0 {
+				continue
+			}
+			var n float64 // tolerate numbers serialized as floats
+			if err := json.Unmarshal(raw, &n); err == nil && n > 0 {
+				out[m.ID] = int(n)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // CleanAPIKey makes a pasted API key safe for HTTP headers.
 // It removes surrounding whitespace and any control characters
 // commonly introduced by terminal paste (CR/LF/TAB/NUL). API
