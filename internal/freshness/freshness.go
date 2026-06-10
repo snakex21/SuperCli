@@ -20,6 +20,22 @@ const (
 	PatternPenalty     = 0.3 // confidence multiplier for stale patterns
 )
 
+// PromptSection returns the freshness block injected into the
+// system prompt: the current date plus an explicit warning that
+// the model's training data may be stale. The agent loop puts
+// this in front of the model on every run so it verifies
+// current-state facts with tools instead of reconstructing them
+// from memory.
+func PromptSection(now time.Time) string {
+	return "current_date: " + now.UTC().Format("2006-01-02") + "\n\n" +
+		"Your training data may be stale. Library versions, model IDs, API shapes, " +
+		"prices, and ecosystem facts may have changed since training. When current " +
+		"state matters, verify via tools (web search, reading go.mod / package " +
+		"manifests, running version commands) instead of reconstructing from memory. " +
+		"Unfamiliar names, versions, or models released after your training cutoff " +
+		"are expected and are not errors."
+}
+
 // CatalogEntry is a minimal read-only view of a model
 // capability record. The freshness checker only needs
 // LastVerified; everything else is opaque.
