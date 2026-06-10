@@ -13,6 +13,21 @@ func (l *Loop) Provider() llm.Provider {
 	return l.provider
 }
 
+// LoadConversation replaces the conversation body with msgs,
+// keeping the leading system messages (base prompt, pattern
+// injection) intact. Used by /resume to load a prior session
+// into the live loop. The loaded messages are NOT re-persisted
+// (they already live in the session store under their original
+// session id). Hidden flags are reset.
+func (l *Loop) LoadConversation(msgs []llm.Message) {
+	keep := 0
+	for keep < len(l.Messages) && l.Messages[keep].Role == llm.RoleSystem {
+		keep++
+	}
+	l.Messages = append(l.Messages[:keep], msgs...)
+	l.resetHidden()
+}
+
 // CompactWithSummary replaces every non-system message with a
 // single system message containing summary. Leading system
 // messages (the base prompt, the F5.d pattern injection) are

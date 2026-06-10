@@ -225,6 +225,53 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 	return nil
 }
 
+// RecentSession is a /resume listing entry. It is derived from
+// the messages table directly (GROUP BY session_id) so sessions
+// written by the F13 writer — which never created a sessions
+// row — still show up.
+type RecentSession struct {
+	ID           string
+	StartedAt    time.Time
+	FirstUserMsg string
+	MessageCount int
+}
+
+// ListRecent returns up to limit sessions that have at least
+// one message, most recent first, with the first user message
+// as a snippet source.
+func (s *Store) ListRecent(ctx context.Context, limit int) ([]RecentSession, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.session_id,
+		       MIN(m.created_at) AS started,
+		       COUNT(*) AS n,
+		       IFNULL((SELECT content FROM messages
+		               WHERE session_id = m.session_id AND role = 'user'
+		                 AND content IS NOT NULL AND content <> ''
+		               ORDER BY seq LIMIT 1), '')
+		FROM messages m
+		GROUP BY m.session_id
+		ORDER BY started DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("session.Store.ListRecent: %w", err)
+	}
+	defer rows.Close()
+	var out []RecentSession
+	for rows.Next() {
+		var r RecentSession
+		var startedNanos int64
+		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg); err != nil {
+			return nil, fmt.Errorf("session.Store.ListRecent: scan: %w", err)
+		}
+		r.StartedAt = time.Unix(0, startedNanos).UTC()
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ReadMessages returns all messages for a session, in seq order.
 func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, error) {
 	rows, err := s.db.Query(
