@@ -51,6 +51,22 @@ func (c *chat) addSystem(text string) {
 	c.msgs = append(c.msgs, msg{role: roleSystem, text: text})
 }
 
+// lastAssistant returns the most recent completed assistant
+// message ("" when none). The streaming current text counts
+// once it is non-empty, so Ctrl+Y mid-stream copies what is
+// visible.
+func (c *chat) lastAssistant() string {
+	if c.current != "" {
+		return c.current
+	}
+	for i := len(c.msgs) - 1; i >= 0; i-- {
+		if c.msgs[i].role == roleAssistant {
+			return c.msgs[i].text
+		}
+	}
+	return ""
+}
+
 // addAssistant appends a completed assistant message.
 func (c *chat) addAssistant(text string) {
 	c.msgs = append(c.msgs, msg{role: roleAssistant, text: text})

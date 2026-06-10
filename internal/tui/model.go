@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,7 +69,7 @@ type Model struct {
 
 	// Widgets
 	viewport viewport.Model
-	input    textinput.Model
+	input    textarea.Model
 	spinner  spinner.Model
 
 	// State
@@ -280,10 +281,7 @@ type ModelSwapFunc func(modelID, provider string) (llm.Provider, error)
 
 // New builds the root model.
 func New(opts Options) Model {
-	ti := textinput.New()
-	ti.Placeholder = "Message SuperCli, or type /help"
-	ti.Prompt = "❯ "
-	ti.CharLimit = 4096
+	ti := newInputArea()
 	ti.Focus()
 
 	sp := spinner.New()
@@ -297,9 +295,13 @@ func New(opts Options) Model {
 		p = NoColorPalette()
 	}
 	mkr := NewMarker(p)
-	ti.PromptStyle = p.InputPrompt
-	ti.TextStyle = p.InputText
-	ti.PlaceholderStyle = p.InputHint
+	ti.FocusedStyle.Prompt = p.InputPrompt
+	ti.FocusedStyle.Text = p.InputText
+	ti.FocusedStyle.Placeholder = p.InputHint
+	ti.FocusedStyle.CursorLine = p.InputText
+	ti.BlurredStyle.Prompt = p.InputPrompt
+	ti.BlurredStyle.Text = p.InputText
+	ti.BlurredStyle.Placeholder = p.InputHint
 
 	vp.SetContent(welcome(opts, p))
 
@@ -333,10 +335,52 @@ func New(opts Options) Model {
 	}
 }
 
+// maxInputLines caps how tall the multi-line input box
+// grows; beyond this the textarea scrolls internally.
+const maxInputLines = 5
+
+// newInputArea builds the multi-line input widget with the
+// project's conventions: no line numbers, 1-line tall until
+// the content grows, Enter reserved for "send" (newline is
+// Alt+Enter / Ctrl+J — Shift+Enter is indistinguishable
+// from Enter on Windows terminals).
+func newInputArea() textarea.Model {
+	ti := textarea.New()
+	ti.Placeholder = "Message SuperCli, or type /help"
+	ti.Prompt = "❯ "
+	ti.CharLimit = 0
+	ti.ShowLineNumbers = false
+	ti.MaxHeight = maxInputLines
+	ti.SetHeight(1)
+	// Enter is intercepted by handleKey to send the message;
+	// rebind newline insertion to Alt+Enter / Ctrl+J.
+	ti.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("alt+enter", "ctrl+j"),
+		key.WithHelp("alt+enter", "insert newline"),
+	)
+	return ti
+}
+
+// syncInputHeight grows/shrinks the input box with its
+// content, clamped to [1, maxInputLines].
+func (m *Model) syncInputHeight() {
+	h := m.input.LineCount()
+	if h < 1 {
+		h = 1
+	}
+	if h > maxInputLines {
+		h = maxInputLines
+	}
+	if m.input.Height() != h {
+		m.input.SetHeight(h)
+	}
+	m.viewport.Height = m.viewportHeight()
+}
+
 // Init satisfies tea.Model. The spinner ticks while the agent
 // is running; the text input cursor blinks.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick, textinput.Blink}
+	cmds := []tea.Cmd{m.spinner.Tick, textarea.Blink}
 	// Start the external-sink pump (F12 ConsultEvent).
 	if m.extCh != nil {
 		cmds = append(cmds, waitForExternalEvent(m.extCh))
@@ -398,6 +442,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Width = msg.Width
 		m.viewport.Height = m.viewportHeight()
 		m.chat.width = msg.Width
+		m.input.SetWidth(msg.Width)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -472,6 +517,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventCh = nil
 		m.refreshTranscript()
 		m.input.Reset()
+		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
 
@@ -488,6 +534,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshTranscript()
 		m.input.Reset()
+		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
 
@@ -516,6 +563,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshTranscript()
 		m.input.Reset()
+		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
 
@@ -608,9 +656,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAutocompleteKey(msg)
 	}
 
-	// F25: scroll keys are handled next.
-	if HandleScroll(&m.viewport, msg, m.scroll) {
-		return m, nil
+	// F25: scroll keys are handled next. When the input box
+	// holds multiple lines, arrows/home/end move the cursor
+	// inside the textarea instead of scrolling the chat.
+	if !(m.input.LineCount() > 1 && isInputNavKey(msg.String())) {
+		if HandleScroll(&m.viewport, msg, m.scroll) {
+			return m, nil
+		}
 	}
 
 	switch msg.String() {
@@ -633,6 +685,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		text := strings.TrimSpace(m.input.Value())
 		m.input.Reset()
+		m.syncInputHeight()
 		if text == "" {
 			return m, nil
 		}
@@ -687,25 +740,57 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return runStartMsg{ch: ch} }
 	case "ctrl+v":
 		if text, err := clipboard.ReadAll(); err == nil && text != "" {
-			m.input.SetValue(m.input.Value() + normalizePastedText(text))
-			m.input.CursorEnd()
+			// Multi-line pastes keep their newlines (code,
+			// logs, ...). Control chars are still stripped.
+			m.input.InsertString(normalizePastedText(text))
+			m.syncInputHeight()
 			m.updateAutocompleteState()
 		}
 		return m, nil
+	case "ctrl+y":
+		// Copy the last assistant response to the clipboard.
+		last := m.chat.lastAssistant()
+		if last == "" {
+			m.statusOverride = "nothing to copy"
+		} else if err := clipboard.WriteAll(last); err != nil {
+			m.statusOverride = fmt.Sprintf("copy failed: %v", err)
+		} else {
+			m.statusOverride = "copied last response"
+		}
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return statusOverrideClearMsg{}
+		})
 	}
 
-	// Pass other keys to the textinput.
+	// Pass other keys to the textarea. Alt+Enter / Ctrl+J
+	// insert a newline (textarea's rebound InsertNewline);
+	// plain Enter never reaches here (handled above).
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.syncInputHeight()
 
-	// After textinput update, check if autocomplete should activate.
+	// After input update, check if autocomplete should activate.
 	m.updateAutocompleteState()
 
 	return m, cmd
 }
 
+// isInputNavKey reports whether the key is one the multi-line
+// input needs for in-box cursor movement.
+func isInputNavKey(s string) bool {
+	switch s {
+	case "up", "down", "home", "end":
+		return true
+	}
+	return false
+}
+
 func shouldIgnoreAltKey(msg tea.KeyMsg) bool {
 	if !msg.Alt || msg.Paste {
+		return false
+	}
+	// Alt+Enter inserts a newline in the multi-line input.
+	if msg.Type == tea.KeyEnter {
 		return false
 	}
 	if len(msg.Runes) == 0 {
@@ -719,22 +804,33 @@ func shouldIgnoreAltKey(msg tea.KeyMsg) bool {
 	return true
 }
 
+// normalizePastedText prepares clipboard text for the
+// multi-line chat input: newlines are PRESERVED (pasted
+// code keeps its formatting), line endings are normalized
+// to \n, and control characters are stripped. The Windows
+// clipboard is UTF-16 and a bad conversion can leak NUL
+// bytes into the pasted text; persisting those corrupts
+// config.toml fields such as provider API keys.
 func normalizePastedText(text string) string {
 	text = strings.TrimRight(text, "\r\n")
-	text = strings.ReplaceAll(text, "\r\n", " ")
-	text = strings.ReplaceAll(text, "\r", " ")
-	text = strings.ReplaceAll(text, "\n", " ")
-	// Drop remaining control characters (NUL, ESC, ...). The
-	// Windows clipboard is UTF-16 and a bad conversion can leak
-	// NUL bytes into the pasted text; persisting those corrupts
-	// config.toml fields such as provider API keys.
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	// Drop remaining control characters (NUL, ESC, ...) but
+	// keep tabs and newlines.
 	text = strings.Map(func(r rune) rune {
-		if r != '\t' && (r < 0x20 || r == 0x7f) {
+		if r != '\t' && r != '\n' && (r < 0x20 || r == 0x7f) {
 			return -1
 		}
 		return r
 	}, text)
 	return text
+}
+
+// normalizePastedLine is the single-line variant used by
+// form fields (menu inputs): like normalizePastedText, but
+// newlines collapse to single spaces.
+func normalizePastedLine(text string) string {
+	return strings.ReplaceAll(normalizePastedText(text), "\n", " ")
 }
 
 // handleAutocompleteKey handles keys while the autocomplete popup is visible.
@@ -1196,10 +1292,10 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
-	hints := []string{"Enter send", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
+	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = "Enter send · /help · Esc clear · Ctrl+C interrupt · Shift+E expand"
+		line = "Enter send · Alt+Enter newline · Ctrl+Y copy · /help · Esc clear · Ctrl+C interrupt"
 	}
 	return m.palette.InputHint.Render(line)
 }
@@ -1221,6 +1317,10 @@ func (m Model) viewportHeight() int {
 	}
 	// Header + separator + input + key-hints + at least one status line.
 	reserved := 6
+	// Multi-line input box: account for the extra rows.
+	if ih := m.input.Height(); ih > 1 {
+		reserved += ih - 1
+	}
 	reserved += m.autocompleteHeight()
 	if m.busy {
 		reserved++

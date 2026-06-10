@@ -121,7 +121,9 @@ func FormatHelp(entries []SlashEntry) string {
 			fmt.Fprintf(&b, "  /%-14s %s\n", e.Name, e.Desc)
 		}
 	}
-	b.WriteString("\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q")
+	b.WriteString("\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n")
+	b.WriteString("      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n")
+	b.WriteString("      Shift+T toggle thinking · Shift+E expand tool output")
 	return b.String()
 }
 
