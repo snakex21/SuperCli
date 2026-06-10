@@ -168,7 +168,11 @@ func renderDarwinResult(r Result) string {
 	} else {
 		fmt.Fprintf(&b, "- merged: no\n")
 	}
-	fmt.Fprintf(&b, "- **total tokens:** %d\n\n", r.TotalUsage.Total)
+	fmt.Fprintf(&b, "- **total tokens:** %d\n", r.TotalUsage.Total)
+	if r.Note != "" {
+		fmt.Fprintf(&b, "- **note:** %s\n", r.Note)
+	}
+	b.WriteString("\n")
 	if len(r.Candidates) > 0 {
 		fmt.Fprintf(&b, "### Candidates\n\n")
 		for i, c := range r.Candidates {
@@ -185,6 +189,9 @@ func renderDarwinResult(r Result) string {
 	}
 	if r.Winner != nil && r.Winner.Err == nil {
 		fmt.Fprintf(&b, "\n### Winning answer\n\n%s\n", r.Winner.Text)
+		if r.Winner.Diff != "" {
+			fmt.Fprintf(&b, "\n### Winning diff\n\n```diff\n%s\n```\n", truncate(r.Winner.Diff, 4000))
+		}
 	}
 	return b.String()
 }

@@ -123,6 +123,37 @@ func (m *WorktreeManager) Create(ctx context.Context) (branch, path string, err 
 	return branch, abs, nil
 }
 
+// CommitAndDiff stages everything in the worktree
+// belonging to branch, captures the staged diff
+// (against HEAD), and commits it so the branch is
+// mergeable. Returns the diff text ("" when the
+// agent made no changes — in that case nothing is
+// committed). Unknown branch is an error.
+func (m *WorktreeManager) CommitAndDiff(ctx context.Context, branch string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	abs, ok := m.open[branch]
+	if !ok || abs == "" {
+		return "", fmt.Errorf("darwin: commit: unknown branch %q", branch)
+	}
+	if out, err := runGitCtx(ctx, abs, "add", "-A"); err != nil {
+		return "", fmt.Errorf("darwin: stage worktree: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	diffOut, err := runGitCtx(ctx, abs, "diff", "--cached")
+	if err != nil {
+		return "", fmt.Errorf("darwin: diff worktree: %v: %s", err, strings.TrimSpace(string(diffOut)))
+	}
+	diff := string(diffOut)
+	if strings.TrimSpace(diff) == "" {
+		return "", nil
+	}
+	msg := fmt.Sprintf("darwin: candidate work on %s", branch)
+	if out, err := runGitCtx(ctx, abs, "commit", "-m", msg); err != nil {
+		return diff, fmt.Errorf("darwin: commit worktree: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return diff, nil
+}
+
 // Cleanup removes a single worktree by branch name.
 // Idempotent: calling on an unknown branch is a
 // no-op. Uses `git worktree remove --force` and

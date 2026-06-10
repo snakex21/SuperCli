@@ -444,7 +444,13 @@ func main() {
 	registry.MustRegister(goalTool.Spec())
 
 	darwinTool := darwin.NewDarwinTool(provider, registry, home, buildSystemPrompt(goalSvc))
-	darwinTool.SetLoopFactory(darwin.AgentLoopAdapter(registry))
+	// Each Darwin child gets its own file-tool registry
+	// rooted at its git worktree, so its edits land on
+	// its branch (and can be diffed, judged, and merged)
+	// instead of in the parent's cwd.
+	darwinTool.SetLoopFactory(darwin.AgentLoopAdapter(registry, func(root string) (*tools.Registry, error) {
+		return buildChildToolRegistry(root), nil
+	}))
 	registry.MustRegister(darwinTool.Spec())
 
 	memStore, memErr := memory.OpenStore(home)
@@ -984,6 +990,38 @@ func runBatch(prompt, home, providerFlag, keyFlag, baseFlag, modelFlag string, e
 			os.Exit(1)
 		}
 	}
+}
+
+// buildChildToolRegistry builds a small self-contained
+// tool registry rooted at root for Darwin child agents.
+// Every file/code tool resolves paths inside root (the
+// child's git worktree), giving real per-candidate
+// isolation. Children deliberately do NOT get the
+// darwin tool (no recursion), ask_user (no TUI
+// channel), goal/memory (shared state), or tool_search
+// (no FTS index) — so everything registered here is
+// marked always-on.
+func buildChildToolRegistry(root string) *tools.Registry {
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.NewReadImage(root, 0).Spec())
+	reg.MustRegister(tools.NewSearchCode(root).Spec())
+	reg.MustRegister(tools.NewReadZip(root, 0).Spec())
+	reg.MustRegister(tools.NewReadDocx(root, 0).Spec())
+	reg.MustRegister(tools.NewReadXlsx(root, 0).Spec())
+	reg.MustRegister(tools.NewReadPdf(root, 0).Spec())
+	reg.MustRegister(tools.NewEditDocx(root).Spec())
+	reg.MustRegister(tools.NewEditXlsx(root).Spec())
+	reg.MustRegister(tools.NewFileOps(root).Spec())
+	reg.MustRegister(tools.NewReadLines(root).Spec())
+	reg.MustRegister(tools.NewReadContext(root).Spec())
+	reg.MustRegister(tools.NewEditLine(root).Spec())
+	reg.MustRegister(tools.NewInsertAfter(root).Spec())
+	reg.MustRegister(tools.NewDeleteLines(root).Spec())
+	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(root), root).Spec())
+	for _, name := range reg.Names() {
+		reg.MarkAlwaysOn(name)
+	}
+	return reg
 }
 
 func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
