@@ -132,40 +132,57 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 		}
 
-		// HTTP request.
+		// HTTP request with bounded retry: 429 and 5xx
+		// responses are retried up to maxAttempts total with
+		// exponential backoff (0.5s, 1s). Other statuses and
+		// transport errors fail immediately.
 		url := p.cfg.BaseURL + "/chat/completions"
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
-		if err != nil {
-			select {
-			case out <- Delta{Err: fmt.Errorf("build request: %w", err)}:
-			case <-ctx.Done():
+		const maxAttempts = 3
+		var resp *http.Response
+		for attempt := 1; ; attempt++ {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
+			if err != nil {
+				select {
+				case out <- Delta{Err: fmt.Errorf("build request: %w", err)}:
+				case <-ctx.Done():
+				}
+				return
 			}
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if key := CleanAPIKey(p.cfg.APIKey); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		req.Header.Set("Accept", "text/event-stream")
+			req.Header.Set("Content-Type", "application/json")
+			if key := CleanAPIKey(p.cfg.APIKey); key != "" {
+				req.Header.Set("Authorization", "Bearer "+key)
+			}
+			req.Header.Set("Accept", "text/event-stream")
 
-		resp, err := p.http.Do(req)
-		if err != nil {
-			select {
-			case out <- Delta{Err: fmt.Errorf("http: %w", err)}:
-			case <-ctx.Done():
+			resp, err = p.http.Do(req)
+			if err != nil {
+				select {
+				case out <- Delta{Err: fmt.Errorf("http: %w", err)}:
+				case <-ctx.Done():
+				}
+				return
 			}
-			return
+			if resp.StatusCode/100 == 2 {
+				break
+			}
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+			resp.Body.Close()
+			retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
+			if !retryable || attempt >= maxAttempts {
+				select {
+				case out <- Delta{Err: fmt.Errorf("http %d: %s", resp.StatusCode, string(body))}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			backoff := 500 * time.Millisecond << (attempt - 1)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return
+			}
 		}
 		defer resp.Body.Close()
-
-		if resp.StatusCode/100 != 2 {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-			select {
-			case out <- Delta{Err: fmt.Errorf("http %d: %s", resp.StatusCode, string(body))}:
-			case <-ctx.Done():
-			}
-			return
-		}
 
 		// Stream parse. We intentionally parse line-by-line like
 		// agent-go instead of waiting for a blank-line terminated SSE

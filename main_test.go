@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"supercli/internal/config"
+	"supercli/internal/darwin"
 	"supercli/internal/goal"
 	"supercli/internal/llm"
 	"supercli/internal/storage"
@@ -24,7 +25,8 @@ func (testProvider) Complete(ctx context.Context, msgs []llm.Message, _ []llm.To
 }
 
 func TestDarwinSlashEmptyPromptReturnsUsage(t *testing.T) {
-	cmds := darwinCommands(testProvider{}, tools.NewRegistry(), t.TempDir(), nil)
+	dt := darwin.NewDarwinTool(testProvider{}, tools.NewRegistry(), t.TempDir(), "test prompt")
+	cmds := darwinCommands(dt)
 	h, ok := cmds["darwin"]
 	if !ok || h == nil {
 		t.Fatal("darwin command not registered")

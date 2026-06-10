@@ -58,6 +58,16 @@ type TomlConfig struct {
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
 
+	// ReflectEvery controls the F5.a mid-run reflection
+	// checkpoint interval (every N agent steps). 0 = use
+	// the built-in default; negative disables reflection.
+	ReflectEvery int `toml:"reflect_every"`
+
+	// Profile selects the system prompt profile layer:
+	// "office", "coding", or "auto" (empty = auto). See
+	// internal/prompt.
+	Profile string `toml:"profile"`
+
 	// Debug logging.
 	Debug bool `toml:"debug"`
 }
@@ -177,6 +187,12 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.MaxSteps > 0 {
 		dst.MaxSteps = src.MaxSteps
+	}
+	if src.ReflectEvery != 0 {
+		dst.ReflectEvery = src.ReflectEvery
+	}
+	if src.Profile != "" {
+		dst.Profile = src.Profile
 	}
 	// Providers list: project overrides global entirely.
 	if len(src.Providers) > 0 {

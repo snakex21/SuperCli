@@ -51,6 +51,7 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/memory"
 	"supercli/internal/pricing"
+	"supercli/internal/prompt"
 	"supercli/internal/providers"
 	"supercli/internal/reflect"
 	"supercli/internal/session"
@@ -64,9 +65,12 @@ import (
 
 const version = "0.6.0"
 
-// supercliSystemPrompt is the system prompt shared by
-// the main loop and any F6 Darwin children.
-const supercliSystemPromptBase = "You are SuperCli, a portable AI coding assistant. Be concise. Use tools when needed. For finding the right tool, call `tool_search`.\n\nAlways respond in the same language the user writes in. If user writes in Polish, respond in Polish. If English, respond in English.\n\nWhen you need to run a command or read a file, ALWAYS use the available tools (bash, read_file, glob, grep). NEVER write code blocks as a substitute for tool calls."
+// supercliSystemPromptBase is the layered system prompt
+// shared by the main loop and any F6 Darwin children. It
+// defaults to core + coding profile; main() rebuilds it once
+// config (profile) and the model's cost tier are known —
+// cheap/small models get the core only (see internal/prompt).
+var supercliSystemPromptBase = prompt.Build("", false)
 
 // buildSystemPrompt returns the base prompt plus the
 // current ISO date stamp and, if a goal service is
@@ -76,8 +80,7 @@ const supercliSystemPromptBase = "You are SuperCli, a portable AI coding assista
 // F8: goal injection lives here so the main agent and
 // any Darwin children see the same active goal.
 func buildSystemPrompt(svc *goal.Service) string {
-	date := time.Now().UTC().Format("2006-01-02")
-	base := supercliSystemPromptBase + "\n\ncurrent_date: " + date + "\n" + platformHint()
+	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
 	if svc == nil {
 		return base
 	}
@@ -298,6 +301,15 @@ func main() {
 		fatal("init provider", err)
 	}
 
+	// Layered system prompt: core + profile from config.toml
+	// (`profile = "office" | "coding" | "auto"`). Cheap/small
+	// models get the core only to cut per-request overhead.
+	weakModel := false
+	if info, ok := caps.Get(cfg.Model); ok {
+		weakModel = prompt.WeakTier(info.InputCost, info.OutputCost)
+	}
+	supercliSystemPromptBase = prompt.Build(tomlCfg.Profile, weakModel)
+
 	registry := tools.NewRegistry()
 	registry.MustRegister(tools.NewReadImage(home, 0).Spec())
 
@@ -433,6 +445,17 @@ func main() {
 		defer memStore.Close()
 	}
 
+	// Persistent memory tools: always-on so the model can
+	// save and recall facts across sessions (the system
+	// prompt's Memory section tells it when). Skipped when
+	// the store failed to open.
+	if memStore != nil {
+		registry.MustRegister(tools.NewRemember(memStore).Spec())
+		registry.MustRegister(tools.NewRecall(memStore).Spec())
+		registry.MarkAlwaysOn("remember")
+		registry.MarkAlwaysOn("recall")
+	}
+
 	var injector *reflect.Injector
 	if memStore != nil {
 		patStore, _ := reflect.NewStore(memStore)
@@ -512,6 +535,17 @@ func main() {
 	}
 	draftStats := stats.NewMemory()
 
+	// F5.a: mid-run reflection checkpoint. Every
+	// reflectEvery steps the loop asks the model for a
+	// 2-3 sentence self-review and injects it as a
+	// system message. Default 8; config.toml
+	// reflect_every overrides (negative disables).
+	reflectEvery := 8
+	if tomlCfg.ReflectEvery != 0 {
+		reflectEvery = tomlCfg.ReflectEvery
+	}
+	reflector := &reflect.ModelReflector{Provider: provider}
+
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        provider,
@@ -519,6 +553,8 @@ func main() {
 		System:          buildSystemPrompt(goalSvc),
 		MaxSteps:        10,
 		ErrorLog:        errorLog,
+		Reflector:       reflector,
+		ReflectEvery:    reflectEvery,
 		PatternInjector: injector,
 		CreditTracker:   tracker,
 		Writer:          sessWriter,
@@ -568,7 +604,7 @@ func main() {
 	// "new session" because the TUI scrollback, the
 	// FTS5 search index, and the on-disk session.db
 	// all stay intact.
-	mergedCommands := mergedSlashCommands(provider, registry, home, goalSvc)
+	mergedCommands := mergedSlashCommands(darwinTool, goalSvc)
 	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
 		hidden := loop.HideLastUserTurns(2)
 		if hidden == 0 {
@@ -654,13 +690,29 @@ func main() {
 		return suffix, nil
 	}
 
-	// F25a: /compact — compress context to save tokens.
+	// F25a: /compact — real context compaction. The active
+	// model summarizes the conversation (9-section prompt),
+	// then every non-system message is replaced by a single
+	// system message containing the summary plus a resume
+	// wrapper. The dropped messages stay in the F13 session
+	// store and remain searchable via search_history.
 	mergedCommands["compact"] = func(ctx context.Context, args string) (string, error) {
-		hidden := loop.HideLastUserTurns(2)
-		if hidden == 0 {
+		msgs := loop.AllMessages()
+		nonSystem := 0
+		for _, m := range msgs {
+			if m.Role != llm.RoleSystem {
+				nonSystem++
+			}
+		}
+		if nonSystem == 0 {
 			return "compact: nothing to compact (already minimal)", nil
 		}
-		return fmt.Sprintf("compact: hid %d message(s) from context", hidden), nil
+		summary, err := summarizeForCompaction(ctx, loop.Provider(), msgs)
+		if err != nil {
+			return fmt.Sprintf("compact: summarization failed: %v (context unchanged)", err), nil
+		}
+		removed := loop.CompactWithSummary(wrapCompactSummary(summary))
+		return fmt.Sprintf("compact: replaced %d message(s) with a %d-char summary", removed, len(summary)), nil
 	}
 
 	// F25a: /status — show credits and session info.
@@ -1132,10 +1184,10 @@ func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry
 // darwinCommands returns the slash-command table for the
 // TUI. Currently registers `/darwin` which invokes the
 // DarwinTool synchronously and returns the rendered
-// result. F8+ will add `/goal`, `/ultrawork`.
-func darwinCommands(provider llm.Provider, registry *tools.Registry, home string, svc *goal.Service) map[string]tui.SlashHandler {
-	dt := darwin.NewDarwinTool(provider, registry, home, buildSystemPrompt(svc))
-	dt.SetLoopFactory(darwin.AgentLoopAdapter(registry))
+// result. dt is the same DarwinTool instance registered
+// in the tool registry, so the slash command and the
+// model-invoked tool share state.
+func darwinCommands(dt *darwin.DarwinTool) map[string]tui.SlashHandler {
 	return map[string]tui.SlashHandler{
 		"darwin": func(ctx context.Context, args string) (string, error) {
 			prompt, poolSize := parseDarwinArgs(args, 3)
@@ -1378,8 +1430,8 @@ func runGoalTasks(svc *goal.Service, args string) (string, error) {
 // mergedSlashCommands returns darwin + goal commands.
 // Goal gets priority on key collision (defensive; they
 // don't currently share keys).
-func mergedSlashCommands(provider llm.Provider, registry *tools.Registry, home string, svc *goal.Service) map[string]tui.SlashHandler {
-	out := darwinCommands(provider, registry, home, svc)
+func mergedSlashCommands(dt *darwin.DarwinTool, svc *goal.Service) map[string]tui.SlashHandler {
+	out := darwinCommands(dt)
 	for k, v := range goalCommands(svc) {
 		out[k] = v
 	}
