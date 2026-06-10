@@ -148,6 +148,8 @@ func HelpContent() string {
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
 		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
 		{Name: "providers", Desc: "manage providers and model prices", Args: "[add|remove|price|toggle] [args]"},
+		{Name: "login", Desc: "sign in with ChatGPT (Codex OAuth)"},
+		{Name: "logout", Desc: "remove saved ChatGPT credentials"},
 		{Name: "quit", Desc: "exit SuperCli explicitly"},
 	})
 }

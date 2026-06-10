@@ -38,6 +38,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/agent"
+	"supercli/internal/codexauth"
 	"supercli/internal/config"
 	"supercli/internal/consult"
 	"supercli/internal/credits"
@@ -66,6 +67,20 @@ import (
 )
 
 const version = "0.6.0"
+
+// codexAuthMgr handles ChatGPT-subscription (Codex) OAuth tokens.
+// Set once at startup from the [codex_auth] config section;
+// buildProvider and the /login and /logout commands use it.
+var codexAuthMgr *codexauth.Manager
+
+// initCodexAuth builds the codex auth manager from config.
+func initCodexAuth(home string, t config.TomlConfig) {
+	codexAuthMgr = codexauth.NewManager(home, codexauth.Options{
+		ClientID:   t.CodexAuth.ClientID,
+		Issuer:     t.CodexAuth.Issuer,
+		BackendURL: t.CodexAuth.BackendURL,
+	})
+}
 
 // supercliSystemPromptBase is the layered system prompt
 // shared by the main loop and any F6 Darwin children. It
@@ -169,6 +184,7 @@ func main() {
 	}
 	// Apply TOML as defaults (env/flags still win later).
 	config.TomlConfigToEnv(tomlCfg)
+	initCodexAuth(home, tomlCfg)
 
 	dataDir, err := storage.EnsureDataDir(home)
 	if err != nil {
@@ -919,6 +935,61 @@ func main() {
 		return b.String(), nil
 	}
 
+	// F30: create provider manager, load persisted
+	// hidden-models state, and reload the providers list
+	// from config.toml so model filtering works immediately.
+	// (Created before /login so it can register the codex
+	// provider entry.)
+	provMgr := providers.NewManager(home)
+	provMgr.Reload()
+	provMgr.LoadHiddenState()
+
+	// ChatGPT-subscription auth: /login runs the OAuth+PKCE
+	// browser flow and registers a "codex" provider entry;
+	// /logout clears the saved tokens.
+	mergedCommands["login"] = func(ctx context.Context, args string) (string, error) {
+		if codexAuthMgr == nil {
+			initCodexAuth(home, tomlCfg)
+		}
+		var status strings.Builder
+		res, err := codexAuthMgr.Login(ctx, &status)
+		if err != nil {
+			out := strings.TrimSpace(status.String())
+			if out != "" {
+				return out + "\n" + fmt.Sprintf("login failed: %v", err), nil
+			}
+			return fmt.Sprintf("login failed: %v", err), nil
+		}
+		// Register a "codex" provider entry so /model and the
+		// provider menus can route through the ChatGPT backend.
+		if provMgr != nil {
+			if err := provMgr.Add("codex", config.ProviderCodex,
+				codexAuthMgr.Options().BackendURL, "", "gpt-5-codex"); err != nil &&
+				!strings.Contains(err.Error(), "already exists") {
+				log.Printf("login: register codex provider: %v", err)
+			}
+			provMgr.Reload()
+		}
+		// Register the Codex model family in the capability
+		// registry so /model gpt-5-codex resolves immediately
+		// (the ChatGPT backend has no /v1/models to probe).
+		caps.RegisterAll(codexSeedModels())
+		plan := res.PlanType
+		if plan == "" {
+			plan = "unknown plan"
+		}
+		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5-codex) — requests now route through the ChatGPT backend.", plan), nil
+	}
+	mergedCommands["logout"] = func(ctx context.Context, args string) (string, error) {
+		if codexAuthMgr == nil || !codexAuthMgr.LoggedIn() {
+			return "not logged in (no ChatGPT credentials saved)", nil
+		}
+		if err := codexAuthMgr.Logout(); err != nil {
+			return "", fmt.Errorf("logout: %w", err)
+		}
+		return "logged out — ChatGPT credentials removed from .supercli/auth.json", nil
+	}
+
 	// F25a: /sandbox — show sandbox status.
 	mergedCommands["sandbox"] = func(ctx context.Context, args string) (string, error) {
 		return fmt.Sprintf("sandbox: active\nhome: %s\ndata: %s", home, dataDir), nil
@@ -995,13 +1066,6 @@ func main() {
 	// [council: ...] marker in the transcript.
 	extCh := make(chan agent.Event, 16)
 	loop.SetExternalSink(extCh)
-
-	// F30: create provider manager, load persisted
-	// hidden-models state, and reload the providers list
-	// from config.toml so model filtering works immediately.
-	provMgr := providers.NewManager(home)
-	provMgr.Reload()
-	provMgr.LoadHiddenState()
 
 	// Scan all configured providers for models in the
 	// background so they're ready when the user opens
@@ -1194,6 +1258,22 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 		}
 		return p, nil
 	}
+	if cfg.Provider == config.ProviderCodex {
+		// ChatGPT-subscription auth: requests route to the
+		// ChatGPT backend Responses API with the OAuth bearer
+		// token from .supercli/auth.json instead of an API key.
+		mgr := codexAuthMgr
+		if mgr == nil {
+			mgr = codexauth.NewManager(home, codexauth.Options{})
+		}
+		return llm.NewCodex(llm.CodexConfig{
+			BackendURL:   mgr.Options().BackendURL,
+			Model:        cfg.Model,
+			Tokens:       mgr,
+			Timeout:      cfg.Timeout,
+			Capabilities: caps,
+		})
+	}
 	return llm.NewOpenAI(llm.OpenAIConfig{
 		BaseURL:      cfg.BaseURL,
 		APIKey:       cfg.APIKey,
@@ -1204,6 +1284,22 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// codexSeedModels lists the ChatGPT-backend (Codex) models made
+// available after /login. The backend has no public model-list
+// endpoint, so these mirror the models the Codex CLI offers.
+func codexSeedModels() []llm.ModelInfo {
+	mk := func(id string) llm.ModelInfo {
+		return llm.ModelInfo{
+			ID: id, Provider: "codex",
+			Vision: true, ToolUse: true, Stream: true, Reasoning: true,
+			ContextLength: 272000,
+			Notes:         "ChatGPT subscription (Codex login)",
+			Source:        llm.SourceCatalog,
+		}
+	}
+	return []llm.ModelInfo{mk("gpt-5-codex"), mk("gpt-5"), mk("gpt-5-codex-mini")}
+}
 
 // tierRulesFromToml converts config.toml [[model_tiers]]
 // entries into tier.Rule values.

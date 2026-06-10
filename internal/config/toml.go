@@ -80,6 +80,25 @@ type TomlConfig struct {
 
 	// Debug logging.
 	Debug bool `toml:"debug"`
+
+	// CodexAuth configures ChatGPT-subscription ("Codex")
+	// OAuth login. All fields optional; compiled-in defaults
+	// match the OpenAI Codex CLI reference values.
+	CodexAuth CodexAuthConf `toml:"codex_auth"`
+}
+
+// CodexAuthConf is the [codex_auth] section of config.toml.
+// Empty fields fall back to the compiled-in defaults
+// (codexauth.DefaultClientID / DefaultIssuer / DefaultBackendURL).
+type CodexAuthConf struct {
+	// ClientID is the OAuth public client id.
+	ClientID string `toml:"client_id"`
+	// Issuer hosts /oauth/authorize and /oauth/token
+	// (default https://auth.openai.com).
+	Issuer string `toml:"issuer"`
+	// BackendURL is the ChatGPT backend Codex API root
+	// (default https://chatgpt.com/backend-api/codex).
+	BackendURL string `toml:"backend_url"`
 }
 
 // ProviderConf is a named provider entry in config.toml.
@@ -226,6 +245,16 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	// Model prices: append (user may add more).
 	if len(src.ModelPrices) > 0 {
 		dst.ModelPrices = src.ModelPrices
+	}
+	// Codex auth: field-wise override.
+	if src.CodexAuth.ClientID != "" {
+		dst.CodexAuth.ClientID = src.CodexAuth.ClientID
+	}
+	if src.CodexAuth.Issuer != "" {
+		dst.CodexAuth.Issuer = src.CodexAuth.Issuer
+	}
+	if src.CodexAuth.BackendURL != "" {
+		dst.CodexAuth.BackendURL = src.CodexAuth.BackendURL
 	}
 }
 
