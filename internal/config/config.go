@@ -33,6 +33,7 @@ const (
 	ProviderOpenAI   = "openai"
 	ProviderEcho     = "echo"     // explicit echo; usually inferred from empty API key
 	ProviderOpencode = "opencode" // F15: opencode headless gateway (Ollama/OpenRouter/Groq)
+	ProviderCodex    = "codex"    // ChatGPT-subscription auth (OAuth, Responses API backend)
 )
 
 // Config is the resolved runtime configuration. All fields are
@@ -151,9 +152,16 @@ func (c *Config) Normalize() error {
 		if c.Model == "" || c.Model == "gpt-4o-mini" {
 			c.Model = "opencode/default"
 		}
+	case ProviderCodex:
+		// ChatGPT-subscription auth: no API key needed; the
+		// bearer token comes from .supercli/auth.json. Default
+		// to the Codex flagship model.
+		if c.Model == "" {
+			c.Model = "gpt-5-codex"
+		}
 	default:
-		return fmt.Errorf("config: unknown provider %q (want %q, %q, or %q)",
-			c.Provider, ProviderOpenAI, ProviderEcho, ProviderOpencode)
+		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, or %q)",
+			c.Provider, ProviderOpenAI, ProviderEcho, ProviderOpencode, ProviderCodex)
 	}
 	return nil
 }
