@@ -24,6 +24,9 @@ logs/
 *.log
 crash.log
 
+# Pricing cache (F28)
+pricing_cache.json
+
 # Local memory/pattern state
 /memory/
 **/.darwin/

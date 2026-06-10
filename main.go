@@ -30,7 +30,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -105,16 +104,19 @@ func platformHint() string {
 
 func main() {
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
-	// If the program crashes silently, check .supercli/logs/crash.log
+	// If the program crashes silently, check .supercli/logs/crash.log.
+	// `home` is captured by the closure: until --home is resolved we
+	// fall back to the cwd; afterwards the crash log lands in the
+	// resolved home, same as every other crash path (crash.go).
+	var home string
 	defer func() {
 		if r := recover(); r != nil {
-			os.MkdirAll(".supercli/logs", 0755)
-			f, _ := os.OpenFile(".supercli/logs/crash.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-			if f != nil {
-				fmt.Fprintf(f, "[%s] PANIC: %v\n%s\n", time.Now().Format("2006-01-02 15:04:05"), r, string(debug.Stack()))
-				f.Close()
+			h := home
+			if h == "" {
+				h = "."
 			}
-			fmt.Fprintf(os.Stderr, "\nFATAL: %v\nCheck .supercli/logs/crash.log for stack trace.\n", r)
+			logCrash(h, r)
+			fmt.Fprintf(os.Stderr, "\nFATAL: %v\nCheck %s for stack trace.\n", r, crashLogPath(h))
 			os.Exit(1)
 		}
 	}()
@@ -146,10 +148,11 @@ func main() {
 		return
 	}
 
-	home, err := storage.ResolveHome(*homeFlag)
+	resolvedHome, err := storage.ResolveHome(*homeFlag)
 	if err != nil {
 		fatal("resolve home", err)
 	}
+	home = resolvedHome
 
 	// F29: resolve config.toml hierarchy.
 	// global < project < --config < env < flags.

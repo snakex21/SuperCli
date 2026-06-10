@@ -94,10 +94,32 @@ func LoadToml(path string) (TomlConfig, error) {
 	return cfg, nil
 }
 
+// sanitizeAPIKey strips control characters (NUL, CR, LF, ...)
+// and surrounding whitespace from an API key. Keys corrupted by
+// terminal paste artifacts (e.g. UTF-16 clipboard NUL padding)
+// must never be persisted: a NUL-prefixed key is silently invalid
+// for HTTP Authorization headers and survives every config
+// round-trip (SaveActiveConfig, SetPrice, hidden-models saves).
+func sanitizeAPIKey(s string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(s) {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // SaveToml writes a TomlConfig to path, creating directories.
+// Provider API keys are sanitized so paste artifacts (NULs,
+// CR/LF) can never be persisted to disk.
 func SaveToml(path string, cfg TomlConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
+	}
+	for i := range cfg.Providers {
+		cfg.Providers[i].APIKey = sanitizeAPIKey(cfg.Providers[i].APIKey)
 	}
 	f, err := os.Create(path)
 	if err != nil {
