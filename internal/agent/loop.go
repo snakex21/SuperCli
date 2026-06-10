@@ -946,9 +946,14 @@ func (l *Loop) invokeDraft(ctx context.Context, step int, _ chan<- Event) {
 	if l.draftBridge == nil {
 		return
 	}
-	// Build the user-prompt extract for the draft
-	// call. We use the most-recent user message.
-	prompt := l.lastUserPrompt()
+	// Build the draft input: the most-recent user
+	// message PLUS a trimmed slice of recent
+	// conversation (last few messages, tool outputs
+	// truncated hard) so the draft model is actually
+	// informed about what already happened, while
+	// keeping token cost low — cheap drafts are the
+	// whole point of F11.
+	prompt := l.draftPrompt()
 	if prompt == "" {
 		return
 	}
@@ -980,6 +985,98 @@ func (l *Loop) lastUserPrompt() string {
 		}
 	}
 	return ""
+}
+
+// Draft-context trimming bounds. The draft model gets the
+// last draftContextMessages messages of conversation; tool
+// results are truncated to draftToolOutputCap characters and
+// other messages to draftMessageCap. Cheap and informed beats
+// cheap and blind.
+const (
+	draftContextMessages = 6
+	draftToolOutputCap   = 300
+	draftMessageCap      = 600
+)
+
+// draftPrompt builds the input for the draft model: a trimmed
+// view of the recent conversation followed by the current user
+// request. Returns "" when there is no user message at all
+// (nothing to plan for).
+func (l *Loop) draftPrompt() string {
+	userPrompt := l.lastUserPrompt()
+	if userPrompt == "" {
+		return ""
+	}
+	// Collect the last N messages (excluding system
+	// messages — draft plans and reflections would only
+	// add noise) in chronological order.
+	var recent []string
+	count := 0
+	for i := len(l.Messages) - 1; i >= 0 && count < draftContextMessages; i-- {
+		m := l.Messages[i]
+		if m.Role == llm.RoleSystem {
+			continue
+		}
+		text := messageDraftText(m)
+		if text == "" {
+			continue
+		}
+		limit := draftMessageCap
+		label := string(m.Role)
+		if m.Role == llm.RoleTool {
+			limit = draftToolOutputCap
+			label = "tool result"
+		}
+		if len(text) > limit {
+			text = text[:limit] + " ...[truncated]"
+		}
+		recent = append([]string{label + ": " + text}, recent...)
+		count++
+	}
+	if len(recent) <= 1 {
+		// Nothing beyond the user prompt itself: keep
+		// the old cheap behavior.
+		return userPrompt
+	}
+	var sb strings.Builder
+	sb.WriteString("Recent conversation (oldest first, tool outputs truncated):\n")
+	for _, r := range recent {
+		sb.WriteString(r)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\nCurrent request: ")
+	sb.WriteString(userPrompt)
+	return sb.String()
+}
+
+// messageDraftText extracts a plain-text rendering of a
+// message for the draft context: Content, text parts, and
+// tool-call names (so the draft sees WHICH tools ran even
+// when the assistant message had no prose).
+func messageDraftText(m llm.Message) string {
+	var sb strings.Builder
+	if m.Content != "" {
+		sb.WriteString(m.Content)
+	}
+	for _, p := range m.Parts {
+		if p.Type == llm.PartTypeText && p.Text != "" {
+			if sb.Len() > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(p.Text)
+		}
+	}
+	if len(m.ToolCalls) > 0 {
+		var names []string
+		for _, tc := range m.ToolCalls {
+			names = append(names, tc.Name)
+		}
+		if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString("[called tools: " + strings.Join(names, ", ") + "]")
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // recordDraftUsage charges the draft call's token
