@@ -54,6 +54,12 @@ type Candidate struct {
 	WorktreePath string
 	// Text is the final assistant message.
 	Text string
+	// Diff is the git diff of the changes the agent
+	// made in its worktree (empty if worktrees were
+	// disabled or the agent changed nothing). May be
+	// truncated for the judge but is stored in full
+	// here.
+	Diff string
 	// Usage is the total token usage for this agent.
 	Usage llm.Usage
 	// Steps is how many loop iterations the agent
@@ -89,6 +95,11 @@ type Result struct {
 	MergeBranch string
 	// TotalUsage sums token usage across candidates.
 	TotalUsage llm.Usage
+	// Note carries a human-readable caveat about the
+	// run, e.g. that worktree isolation was requested
+	// but unavailable because the home dir is not a
+	// git repository. Empty when nothing noteworthy.
+	Note string
 }
 
 // Event is the union of orchestrator events emitted

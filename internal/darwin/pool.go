@@ -43,6 +43,9 @@ type LoopEvent interface{ isLoopEvent() }
 // LoopDoneEvent.
 type LoopMessageEvent struct {
 	Text string
+	// Agent is the 0-based spawn index of the agent
+	// that emitted this event. Stamped by SpawnPool.
+	Agent int
 }
 
 func (LoopMessageEvent) isLoopEvent() {}
@@ -53,6 +56,11 @@ func (LoopMessageEvent) isLoopEvent() {}
 type LoopDoneEvent struct {
 	Text  string
 	Usage llm.Usage
+	// Agent is the 0-based spawn index of the agent
+	// that emitted this event. Stamped by SpawnPool
+	// so the orchestrator can map a completion-order
+	// event back to its worktree/branch.
+	Agent int
 }
 
 func (LoopDoneEvent) isLoopEvent() {}
@@ -62,6 +70,9 @@ func (LoopDoneEvent) isLoopEvent() {}
 // continues (unless the budget is exhausted).
 type LoopErrorEvent struct {
 	Err error
+	// Agent is the 0-based spawn index of the agent
+	// that emitted this event. Stamped by SpawnPool.
+	Agent int
 }
 
 func (LoopErrorEvent) isLoopEvent() {}
@@ -98,6 +109,11 @@ type PoolConfig struct {
 	// Home is the worktree base (or the user's
 	// cwd if worktrees are disabled). Required.
 	Home string
+	// Homes is an optional per-agent home override:
+	// agent i works in Homes[i] (typically its git
+	// worktree path). Missing/empty entries fall
+	// back to Home.
+	Homes []string
 	// Factory is the Loop factory. Required.
 	Factory LoopFactory
 	// PoolSize is how many agents to spawn. Will
@@ -166,26 +182,31 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 	var wg sync.WaitGroup
 	wg.Add(size)
 	for i := 0; i < size; i++ {
+		i := i
 		go func() {
 			defer wg.Done()
+			home := cfg.Home
+			if i < len(cfg.Homes) && cfg.Homes[i] != "" {
+				home = cfg.Homes[i]
+			}
 			loopCfg := LoopConfig{
 				Provider: cfg.Provider,
 				System:   cfg.System,
-				Home:     cfg.Home,
+				Home:     home,
 				Prompt:   "", // set per-Run by the caller
 			}
 			loop, err := cfg.Factory(loopCfg)
 			if err != nil {
-				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err})
+				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
 				return
 			}
 			ch, err := loop.Run(poolCtx, "")
 			if err != nil {
-				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err})
+				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
 				return
 			}
 			for ev := range ch {
-				emitOrSkip(poolCtx, out, ev)
+				emitOrSkip(poolCtx, out, stampAgent(ev, i))
 			}
 		}()
 	}
@@ -195,6 +216,25 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 		cancel()
 	}()
 	return out, nil
+}
+
+// stampAgent rewrites a LoopEvent so its Agent field
+// carries the spawn index of the goroutine that
+// produced it. Loops themselves don't know their
+// index; the pool does.
+func stampAgent(ev LoopEvent, i int) LoopEvent {
+	switch e := ev.(type) {
+	case LoopMessageEvent:
+		e.Agent = i
+		return e
+	case LoopDoneEvent:
+		e.Agent = i
+		return e
+	case LoopErrorEvent:
+		e.Agent = i
+		return e
+	}
+	return ev
 }
 
 // emitOrSkip sends ev on ch unless the ctx is done

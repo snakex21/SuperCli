@@ -29,17 +29,29 @@ import (
 //     children do not surface tool noise in the
 //     pool event stream
 //
-// Note on worktree isolation: the parent's
-// registry is shared with the child, so tools
-// that depend on a BaseDir (e.g. read_image) will
-// see the parent's home, not the worktree path.
-// F6+1 can build a per-worktree registry if
-// true per-child file isolation is needed.
-func AgentLoopAdapter(registry *tools.Registry) LoopFactory {
+// Worktree isolation: when buildRegistry is non-nil
+// and the LoopConfig carries a Home (the agent's git
+// worktree path, or the user's cwd when worktrees are
+// disabled), each child gets its OWN tool registry
+// rooted at that path — file tools (read/edit/
+// file_ops/...) resolve inside the worktree, so the
+// candidate's changes land on its branch and can be
+// diffed/judged/merged. When buildRegistry is nil
+// (or fails), the child falls back to the shared
+// parent registry — the pre-isolation behavior.
+type RegistryBuilder func(root string) (*tools.Registry, error)
+
+func AgentLoopAdapter(registry *tools.Registry, buildRegistry RegistryBuilder) LoopFactory {
 	return func(cfg LoopConfig) (Loop, error) {
+		reg := registry
+		if buildRegistry != nil && cfg.Home != "" {
+			if r, err := buildRegistry(cfg.Home); err == nil && r != nil {
+				reg = r
+			}
+		}
 		loop, err := agent.NewLoop(agent.LoopConfig{
 			Provider:        cfg.Provider,
-			Registry:        registry,
+			Registry:        reg,
 			System:          cfg.System,
 			MaxSteps:        10,
 			PatternInjector: nil, // F5 patterns are NOT inherited in F6

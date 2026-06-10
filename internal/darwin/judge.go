@@ -70,6 +70,12 @@ func (h *HeuristicJudge) Judge(_ context.Context, _ string, cands []Candidate) (
 		// matching "text"/"respect". "lint"/"fmt"/
 		// "vet" use substring because "linter"
 		// implies linting and that's a feature.
+		// Real changes beat prose: a non-empty
+		// worktree diff is the strongest local
+		// signal that the agent did the work.
+		if c.Diff != "" {
+			s += 0.2
+		}
 		if hasWord(lc, "test") || hasWord(lc, "spec") {
 			s += 0.15
 		}
@@ -216,7 +222,7 @@ func (j *LLMJudge) Judge(ctx context.Context, prompt string, cands []Candidate) 
 	if max <= 0 {
 		max = 300
 	}
-	sys := "You are a strict judge evaluating parallel code-writing agents. Pick the best candidate. Reply ONLY with JSON: {\"winner\": <1-based index>, \"score\": <0..1>, \"reason\": <one short sentence>}. No prose, no markdown."
+	sys := "You are a strict judge evaluating parallel code-writing agents. Pick the best candidate. Some candidates include a git diff of the actual changes they made in their isolated worktree; weigh the diff over the prose — a candidate whose diff really implements the task beats one that only describes a solution. Reply ONLY with JSON: {\"winner\": <1-based index>, \"score\": <0..1>, \"reason\": <one short sentence>}. No prose, no markdown."
 	user := renderJudgePrompt(prompt, cands)
 	// Call the provider.
 	stream, err := j.Provider.Complete(ctx, []llm.Message{{
@@ -263,6 +269,16 @@ func renderJudgePrompt(prompt string, cands []Candidate) string {
 		}
 		b.WriteString(t)
 		b.WriteString("\n")
+		if c.Diff != "" {
+			d := c.Diff
+			const maxDiff = 8000
+			if len(d) > maxDiff {
+				d = d[:maxDiff] + "\n...[diff truncated]"
+			}
+			b.WriteString("Diff of changes made by this candidate:\n```diff\n")
+			b.WriteString(d)
+			b.WriteString("\n```\n")
+		}
 	}
 	b.WriteString("\nReply with JSON: {\"winner\": <1-based int>, \"score\": <0..1>, \"reason\": <one short sentence>}")
 	return b.String()

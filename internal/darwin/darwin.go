@@ -119,21 +119,42 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 	// fresh worktree path; otherwise pass the
 	// home dir.
 	var branches []string
-	if d.cfg.UseWorktree && d.cfg.Worktree != nil && d.cfg.Worktree.HasGit() {
-		for i := 0; i < poolCfg.PoolSize; i++ {
-			branch, path, err := d.cfg.Worktree.Create(ctx)
-			if err != nil {
-				d.failRun(out, fmt.Errorf("darwin: worktree create: %w", err))
-				if d.cfg.Worktree != nil {
-					d.cfg.Worktree.CleanupAll(context.Background())
-				}
-				return
+	var paths []string
+	note := ""
+	if d.cfg.UseWorktree && d.cfg.Worktree != nil {
+		if d.cfg.Worktree.HasGit() {
+			n := poolCfg.PoolSize
+			if n <= 0 {
+				n = 3
 			}
-			branches = append(branches, branch)
-			_ = path // path is tracked inside the WorktreeManager
+			if n > maxPoolSize {
+				n = maxPoolSize
+			}
+			for i := 0; i < n; i++ {
+				branch, path, err := d.cfg.Worktree.Create(ctx)
+				if err != nil {
+					d.failRun(out, fmt.Errorf("darwin: worktree create: %w", err))
+					if d.cfg.Worktree != nil {
+						d.cfg.Worktree.CleanupAll(context.Background())
+					}
+					return
+				}
+				branches = append(branches, branch)
+				paths = append(paths, path)
+			}
+			// Each agent works inside its own worktree;
+			// the LoopFactory roots the child's file
+			// tools at this path.
+			poolCfg.Homes = paths
+			// Clean up at the end (deferred).
+			defer d.cfg.Worktree.CleanupAll(context.Background())
+		} else {
+			// Graceful degradation: worktree isolation was
+			// requested but the home dir is not a git repo.
+			// Fall back to the shared-cwd, text-only mode
+			// and say so in the result.
+			note = "worktree isolation unavailable: not a git repository; agents shared the working directory and were judged on text only"
 		}
-		// Clean up at the end (deferred).
-		defer d.cfg.Worktree.CleanupAll(context.Background())
 	}
 	// Phase 2: stream events into candidates.
 	stream, err := SpawnPool(ctx, poolCfg)
@@ -153,7 +174,7 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 			_ = e
 		case LoopDoneEvent:
 			cands = append(cands, Candidate{
-				Index: len(cands),
+				Index: e.Agent,
 				Text:  e.Text,
 				Usage: e.Usage,
 			})
@@ -164,7 +185,7 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 			d.emit(out, CandidateDoneEvent{Candidate: cands[len(cands)-1]})
 		case LoopErrorEvent:
 			cands = append(cands, Candidate{
-				Index: len(cands),
+				Index: e.Agent,
 				Err:   e.Err,
 			})
 			d.emit(out, CandidateDoneEvent{Candidate: cands[len(cands)-1]})
@@ -173,22 +194,37 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 			break
 		}
 	}
-	// Attach branches to candidates (best-effort: if
-	// branches were created, they map 1:1 to spawn
-	// order).
-	if len(branches) == len(cands) {
-		for i := range cands {
-			cands[i].Branch = branches[i]
-			cands[i].AgentID = fmtAgentID(i)
+	// Attach branches/worktrees to candidates by the
+	// agent spawn index stamped on each event (events
+	// arrive in completion order, not spawn order).
+	for i := range cands {
+		idx := cands[i].Index
+		cands[i].AgentID = fmtAgentID(idx)
+		if idx >= 0 && idx < len(branches) {
+			cands[i].Branch = branches[idx]
 		}
-	} else {
-		for i := range cands {
-			cands[i].AgentID = fmtAgentID(i)
+		if idx >= 0 && idx < len(paths) {
+			cands[i].WorktreePath = paths[idx]
 		}
 	}
 	if budgetExceeded {
 		d.failRun(out, fmt.Errorf("darwin: budget exceeded: %d > %d", totalUsage.Total, d.cfg.BudgetTokens))
 		return
+	}
+	// Phase 2.5: commit each candidate's worktree and
+	// collect its diff so the judge can score real
+	// changes, not just prose. A commit failure is
+	// recorded on the candidate but does not abort
+	// the run.
+	for i := range cands {
+		if cands[i].Branch == "" || cands[i].Err != nil || d.cfg.Worktree == nil {
+			continue
+		}
+		diff, dErr := d.cfg.Worktree.CommitAndDiff(ctx, cands[i].Branch)
+		cands[i].Diff = diff
+		if dErr != nil && cands[i].Err == nil {
+			cands[i].Err = dErr
+		}
 	}
 	// Phase 3: judge.
 	verdict, err := d.cfg.Judge.Judge(ctx, prompt, cands)
@@ -234,6 +270,7 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 		Merged:      merged,
 		MergeBranch: mergeBranch,
 		TotalUsage:  totalUsage,
+		Note:        note,
 	}
 	if verdict.WinnerIndex >= 0 && verdict.WinnerIndex < len(cands) {
 		w := cands[verdict.WinnerIndex]
