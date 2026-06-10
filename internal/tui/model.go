@@ -51,6 +51,11 @@ const (
 type Model struct {
 	home    string
 	dataDir string
+
+	// version and tierName feed the slim header bar
+	// ("✻ SuperCli 0.6.0 · model · tier").
+	version  string
+	tierName string
 	agent   agent.Agent
 	llm     llm.Provider
 
@@ -262,6 +267,11 @@ type Options struct {
 	GoalService *goal.Service
 	// ToolRegistry feeds /doctor diagnostics.
 	ToolRegistry *tools.Registry
+	// Version is shown in the header bar (e.g. "0.6.0").
+	Version string
+	// Tier is the active model tier shown in the header
+	// (e.g. "big", "small"). Optional.
+	Tier string
 }
 
 // ModelSwapper is implemented by agent.Loop for /model hot-swap.
@@ -285,7 +295,7 @@ func New(opts Options) Model {
 	ti.Focus()
 
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	sp.Spinner = spinner.Points
 
 	vp := viewport.New(80, 20)
 
@@ -295,6 +305,7 @@ func New(opts Options) Model {
 		p = NoColorPalette()
 	}
 	mkr := NewMarker(p)
+	sp.Style = p.Header // accent-colored spinner animation
 	ti.FocusedStyle.Prompt = p.InputPrompt
 	ti.FocusedStyle.Text = p.InputText
 	ti.FocusedStyle.Placeholder = p.InputHint
@@ -308,6 +319,8 @@ func New(opts Options) Model {
 	return Model{
 		home:          opts.Home,
 		dataDir:       opts.DataDir,
+		version:       opts.Version,
+		tierName:      opts.Tier,
 		agent:         opts.Agent,
 		llm:           opts.LLM,
 		commands:      opts.Commands,
@@ -1260,6 +1273,9 @@ func (m Model) View() string {
 	return b.String()
 }
 
+// renderHeader draws the slim top bar:
+//
+//	✻ SuperCli 0.6.0 · <model> · <tier>                    <mode>
 func (m Model) renderHeader() string {
 	width := m.width
 	if width <= 0 {
@@ -1275,18 +1291,39 @@ func (m Model) renderHeader() string {
 	if m.llm != nil {
 		model = m.llm.Name()
 	}
-	left := m.palette.Header.Render("✻ SuperCli")
-	mid := m.palette.HeaderDim.Render("  " + model)
+	name := "✻ SuperCli"
+	if m.version != "" {
+		name += " " + m.version
+	}
+	sep := m.palette.StatusSep.Render(" · ")
+	left := m.palette.Header.Render(name) + sep + m.palette.HeaderDim.Render(model)
+	if m.tierName != "" {
+		left += sep + m.palette.HeaderDim.Render(m.tierName)
+	}
 	right := m.palette.HeaderMode.Render(mode)
-	gap := width - lipgloss.Width(left) - lipgloss.Width(mid) - lipgloss.Width(right)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	line := left + mid + strings.Repeat(" ", gap) + right
+	line := left + strings.Repeat(" ", gap) + right
 	if lipgloss.Width(line) > width {
 		return truncateVisible(line, width)
 	}
 	return line
+}
+
+// renderInputBox wraps the textarea in a rounded border that
+// uses the accent color while focused and a faint border when
+// blurred. Visual only — keybindings are unchanged.
+func (m Model) renderInputBox() string {
+	style := m.palette.InputBorderBlurred
+	if m.input.Focused() {
+		style = m.palette.InputBorderFocused
+	}
+	if m.width > 4 {
+		style = style.Width(m.width - 2)
+	}
+	return style.Render(m.input.View())
 }
 
 func (m Model) rule() string {
@@ -1321,8 +1358,9 @@ func (m Model) viewportHeight() int {
 	if m.height <= 0 {
 		return 20
 	}
-	// Header + separator + input + key-hints + at least one status line.
-	reserved := 6
+	// Header + separator + input (+2 border rows) + key-hints
+	// + at least one status line.
+	reserved := 8
 	// Multi-line input box: account for the extra rows.
 	if ih := m.input.Height(); ih > 1 {
 		reserved += ih - 1

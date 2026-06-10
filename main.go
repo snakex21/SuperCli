@@ -1076,6 +1076,8 @@ func main() {
 	model := tui.New(tui.Options{
 		Home:         home,
 		DataDir:      dataDir,
+		Version:      version,
+		Tier:         string(modelTier),
 		Agent:        loop,
 		LLM:          provider,
 		Commands:     mergedCommands,

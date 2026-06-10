@@ -147,28 +147,31 @@ func (m onboardModel) choose() (tea.Model, tea.Cmd) {
 }
 
 func (m onboardModel) View() string {
+	p := DefaultPalette()
 	var b strings.Builder
-	b.WriteString("Welcome to SuperCli — first-run setup\n")
-	b.WriteString("No provider is configured yet. Pick one (saved to .supercli/config.toml):\n\n")
+	b.WriteString(p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(" — first-run setup") + "\n")
+	b.WriteString(p.PanelMuted.Render("No provider is configured yet. Pick one (saved to .supercli/config.toml):") + "\n\n")
 	switch m.step {
 	case onboardMenu:
 		for i, c := range onboardChoices {
-			marker := "  "
 			if i == m.cursor {
-				marker = "> "
+				fmt.Fprintf(&b, "%s\n", p.Header.Render(fmt.Sprintf("❯ %d. %s", i+1, c)))
+			} else {
+				fmt.Fprintf(&b, "%s\n", p.Dim.Render(fmt.Sprintf("  %d. %s", i+1, c)))
 			}
-			fmt.Fprintf(&b, "%s%d. %s\n", marker, i+1, c)
 		}
-		b.WriteString("\nup/down + Enter (or 1-3) · Esc to skip\n")
+		b.WriteString("\n" + p.InputHint.Render("up/down + Enter (or 1-3) · Esc to skip") + "\n")
 	case onboardURL:
-		fmt.Fprintf(&b, "Base URL of the OpenAI-compatible server:\n> %s_\n", m.input)
-		b.WriteString("\nEnter to confirm · Esc to go back\n")
+		b.WriteString("Base URL of the OpenAI-compatible server:\n")
+		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render("❯"), m.input)
+		b.WriteString("\n" + p.InputHint.Render("Enter to confirm · Esc to go back") + "\n")
 	case onboardKey:
 		masked := strings.Repeat("*", len([]rune(m.input)))
-		fmt.Fprintf(&b, "API key (Enter to skip if the server needs none):\n> %s_\n", masked)
-		b.WriteString("\nEnter to confirm · Esc to go back\n")
+		b.WriteString("API key (Enter to skip if the server needs none):\n")
+		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render("❯"), masked)
+		b.WriteString("\n" + p.InputHint.Render("Enter to confirm · Esc to go back") + "\n")
 	case onboardDone:
-		b.WriteString("Saved. Starting chat...\n")
+		b.WriteString(p.Success.Render("Saved. Starting chat...") + "\n")
 	}
 	return b.String()
 }
