@@ -150,15 +150,48 @@ type Model struct {
 	// Transcript holds the raw text for backward-compatible
 	// test assertions. Do NOT use strings.Builder here:
 	// Bubble Tea models are copied by value, and Builder panics
-	// after a non-zero copy. transcriptBuffer is copy-safe.
+	// after a non-zero copy. transcriptBuffer is copy-safe: it
+	// holds a pointer to its backing slice, so every copy of the
+	// model shares the same buffer and appends are amortized O(1)
+	// (the old string-concatenation version was O(n²)).
 	transcript transcriptBuffer
 }
 
-type transcriptBuffer struct{ text string }
+// transcriptBuffer is a copy-safe, append-only text buffer.
+// The backing []byte lives behind a pointer: copying the
+// struct (and hence the Bubble Tea model) copies only the
+// pointer, so all copies append to the same buffer and no
+// copy can observe a stale slice header. The zero value is
+// ready to use; the backing slice is allocated lazily on
+// first write.
+type transcriptBuffer struct{ buf *[]byte }
 
-func (t *transcriptBuffer) WriteString(s string) { t.text += s }
-func (t *transcriptBuffer) WriteByte(b byte)     { t.text += string([]byte{b}) }
-func (t transcriptBuffer) String() string        { return t.text }
+func (t *transcriptBuffer) ensure() {
+	if t.buf == nil {
+		t.buf = new([]byte)
+	}
+}
+
+// WriteString appends s. It implements io.StringWriter.
+func (t *transcriptBuffer) WriteString(s string) (int, error) {
+	t.ensure()
+	*t.buf = append(*t.buf, s...)
+	return len(s), nil
+}
+
+// WriteByte appends b. It implements io.ByteWriter.
+func (t *transcriptBuffer) WriteByte(b byte) error {
+	t.ensure()
+	*t.buf = append(*t.buf, b)
+	return nil
+}
+
+func (t transcriptBuffer) String() string {
+	if t.buf == nil {
+		return ""
+	}
+	return string(*t.buf)
+}
 
 // SlashHandler is the signature for a TUI slash command
 // (e.g. `/darwin 3 fix bug`). The handler runs in a
@@ -691,6 +724,16 @@ func normalizePastedText(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", " ")
 	text = strings.ReplaceAll(text, "\r", " ")
 	text = strings.ReplaceAll(text, "\n", " ")
+	// Drop remaining control characters (NUL, ESC, ...). The
+	// Windows clipboard is UTF-16 and a bad conversion can leak
+	// NUL bytes into the pasted text; persisting those corrupts
+	// config.toml fields such as provider API keys.
+	text = strings.Map(func(r rune) rune {
+		if r != '\t' && (r < 0x20 || r == 0x7f) {
+			return -1
+		}
+		return r
+	}, text)
 	return text
 }
 
