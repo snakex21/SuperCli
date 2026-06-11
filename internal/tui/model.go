@@ -1556,7 +1556,10 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	if cmd.Name == "providers" && cmd.Args == "" {
 		return m.openProvidersMenu()
 	}
-	if cmd.Name == "goal" {
+	// Bare /goal opens the interactive task menu; with args it
+	// falls through to the text handler (set/list/show/tasks/done),
+	// which was previously unreachable dead code.
+	if cmd.Name == "goal" && cmd.Args == "" {
 		return m.openGoalMenu()
 	}
 	// F26.3: /plan toggles plan mode (TUI-level, not agent-level).

@@ -906,6 +906,10 @@ func main() {
 
 	// F25a: /help — list all registered slash commands.
 	mergedCommands["help"] = func(ctx context.Context, args string) (string, error) {
+		// Short grouped list by default; /help all shows everything.
+		if strings.TrimSpace(strings.ToLower(args)) == "all" {
+			return tui.HelpContentAll(), nil
+		}
 		return tui.HelpContent(), nil
 	}
 
@@ -971,32 +975,9 @@ func main() {
 		return b.String(), nil
 	}
 
-	// F25a: /models — list available models.
-	mergedCommands["models"] = func(ctx context.Context, args string) (string, error) {
-		models := caps.All()
-		if len(models) == 0 {
-			return "models: no models registered (run --list-models --refresh to populate)", nil
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "%d model(s) registered:\n", len(models))
-		for _, m := range models {
-			flags := ""
-			if m.Vision {
-				flags += "V"
-			}
-			if m.ToolUse {
-				flags += "T"
-			}
-			if m.Stream {
-				flags += "S"
-			}
-			if flags != "" {
-				flags = " [" + flags + "]"
-			}
-			fmt.Fprintf(&b, "  %s%s\n", m.ID, flags)
-		}
-		return b.String(), nil
-	}
+	// Wave 1 cleanup: the old text-only /models handler was dead
+	// code — the TUI rewrites /models to /model before handlers
+	// run, so the interactive picker always won. Removed.
 
 	// F30: create provider manager, load persisted
 	// hidden-models state, and reload the providers list
