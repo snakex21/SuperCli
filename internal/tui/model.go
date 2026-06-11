@@ -119,6 +119,11 @@ type Model struct {
 	doctorReport  *doctor.Report
 	menu          interactiveMenu
 	autocomp      autocomplete // autocomplete popup state
+	// providerStatuses caches async connectivity probe results for
+	// the /providers menu (key: provider name). The menu renders
+	// instantly with "checking..." and statuses pop in as the
+	// background pings finish.
+	providerStatuses map[string]providerStatus
 
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
@@ -542,6 +547,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case askRequestMsg:
 		return m.beginAsk(msg.req)
+
+	case providerStatusMsg:
+		if m.providerStatuses == nil {
+			m.providerStatuses = make(map[string]providerStatus)
+		}
+		m.providerStatuses[msg.name] = providerStatus{checked: true, online: msg.online, err: msg.err}
+		return m, nil
+
+	case providerSavedMsg:
+		if msg.err != nil {
+			m.appendLine(m.marker.Error(fmt.Errorf("provider %s: %w", msg.name, msg.err)))
+		} else {
+			m.appendLine(m.palette.InputHint.Render("provider " + msg.name + ": " + msg.body))
+		}
+		m.refreshTranscript()
+		return m, nil
+
+	case providerScanDoneMsg:
+		return m, nil
 
 	case doctorReportMsg:
 		m.mode = modeDoctor

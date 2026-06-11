@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"supercli/internal/config"
 	"supercli/internal/goal"
 	"supercli/internal/llm"
 	"supercli/internal/providers"
@@ -51,6 +53,33 @@ func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// providerStatus is the cached result of one async connectivity
+// probe for the /providers menu.
+type providerStatus struct {
+	checked bool // false = probe still running
+	online  bool
+	err     string
+}
+
+// providerStatusMsg delivers one provider's async probe result.
+type providerStatusMsg struct {
+	name   string
+	online bool
+	err    string
+}
+
+// providerSavedMsg delivers the async result of saving a provider
+// from the form (scan + test request).
+type providerSavedMsg struct {
+	name string
+	body string
+	err  error
+}
+
+// providerScanDoneMsg signals that a background model scan
+// finished; the menu re-renders with the registry contents.
+type providerScanDoneMsg struct{}
+
 func (m Model) openProvidersMenu() (tea.Model, tea.Cmd) {
 	if m.providerMgr != nil {
 		m.providerMgr.Reload()
@@ -58,7 +87,44 @@ func (m Model) openProvidersMenu() (tea.Model, tea.Cmd) {
 	m.mode = modeMenu
 	m.menu = interactiveMenu{kind: menuProviders}
 	m.input.Blur()
-	return m, nil
+	// Render instantly; probe connectivity in the background.
+	return m, m.probeProvidersCmd()
+}
+
+// probeProvidersCmd resets the status cache to "checking" and
+// returns a batch of tea.Cmds, one ping per configured provider.
+// Bubbletea principle: View never blocks; slow IO runs in Cmds
+// and the results pop in as they arrive.
+func (m *Model) probeProvidersCmd() tea.Cmd {
+	if m.providerMgr == nil {
+		return nil
+	}
+	confs := m.providerMgr.Configured()
+	m.providerStatuses = make(map[string]providerStatus, len(confs))
+	cmds := make([]tea.Cmd, 0, len(confs))
+	for _, p := range confs {
+		p := p
+		// Echo and ChatGPT-OAuth (codex) providers have no
+		// pingable /v1/models endpoint; mark them online.
+		if p.Type == "echo" || p.Type == "codex" {
+			m.providerStatuses[p.Name] = providerStatus{checked: true, online: true}
+			continue
+		}
+		m.providerStatuses[p.Name] = providerStatus{} // checking...
+		cmds = append(cmds, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err := providers.Ping(ctx, p)
+			if err != nil {
+				return providerStatusMsg{name: p.Name, online: false, err: err.Error()}
+			}
+			return providerStatusMsg{name: p.Name, online: true}
+		})
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) openGoalMenu() (tea.Model, tea.Cmd) {
@@ -169,18 +235,24 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		if m.menu.kind == menuProviders && m.providerMgr != nil {
 			m.providerMgr.Reload()
+			return m, m.probeProvidersCmd()
 		}
 		return m, nil
 	case "m":
 		if m.menu.kind == menuProviders {
-			providers := m.providerRows()
-			if len(providers) > 0 {
-				idx := minInt(m.menu.cursor, len(providers)-1)
-				// Scan this provider's models before showing them.
-				if m.providerMgr != nil && m.caps != nil {
-					m.providerMgr.ScanModels(m.caps)
+			rows := m.providerRows()
+			if len(rows) > 0 {
+				idx := minInt(m.menu.cursor, len(rows)-1)
+				name := rows[idx].Name
+				m.menu = interactiveMenu{kind: menuProviderModels, provider: name}
+				// Scan this provider's models in the background so
+				// the menu opens instantly.
+				if mgr, caps := m.providerMgr, m.caps; mgr != nil && caps != nil {
+					return m, func() tea.Msg {
+						mgr.ScanProvider(name, caps)
+						return providerScanDoneMsg{}
+					}
 				}
-				m.menu = interactiveMenu{kind: menuProviderModels, provider: providers[idx].Name}
 			}
 		}
 		return m, nil
@@ -324,20 +396,44 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 				savedName = f[0]
 			}
 			m.providerMgr.Reload()
-			if savedName != "" && m.caps != nil {
-				res := m.providerMgr.ScanProvider(savedName, m.caps)
-				if res.Err != nil {
-					m.appendLine(m.marker.Error(fmt.Errorf("provider %s scan failed: %w", savedName, res.Err)))
-				} else if len(res.Models) == 0 {
-					m.appendLine(m.palette.InputHint.Render("provider " + savedName + ": key OK, but /v1/models returned 0 models"))
-				} else {
-					m.appendLine(m.palette.InputHint.Render(fmt.Sprintf("provider %s: key OK, found %d model(s)", savedName, len(res.Models))))
-				}
-				m.refreshTranscript()
-			}
 		}
 		m.menu = interactiveMenu{kind: menuProviders}
-		return m, nil
+		if savedName == "" || m.caps == nil {
+			return m, m.probeProvidersCmd()
+		}
+		// Scan the provider's models and run a tiny test request
+		// ("Say OK") in the background, then report the outcome.
+		mgr, caps := m.providerMgr, m.caps
+		verifyCmd := func() tea.Msg {
+			res := mgr.ScanProvider(savedName, caps)
+			if res.Err != nil {
+				return providerSavedMsg{name: savedName, err: res.Err}
+			}
+			if len(res.Models) == 0 {
+				return providerSavedMsg{name: savedName, body: "endpoint reachable, but it returned 0 models — load/pull a model first"}
+			}
+			// Test request against the first model.
+			var conf *config.ProviderConf
+			for _, p := range mgr.Configured() {
+				if p.Name == savedName {
+					p := p
+					conf = &p
+					break
+				}
+			}
+			if conf == nil {
+				return providerSavedMsg{name: savedName, body: fmt.Sprintf("found %d model(s)", len(res.Models))}
+			}
+			model := conf.Model
+			if model == "" {
+				model = res.Models[0]
+			}
+			if err := providers.VerifyConnection(context.Background(), conf.BaseURL, conf.APIKey, model); err != nil {
+				return providerSavedMsg{name: savedName, err: err}
+			}
+			return providerSavedMsg{name: savedName, body: fmt.Sprintf("✓ connected — %d model(s), test request OK (%s)", len(res.Models), model)}
+		}
+		return m, tea.Batch(m.probeProvidersCmd(), verifyCmd)
 	case menuProviderPredefined:
 		pres := providers.PredefinedProviders()
 		if len(pres) == 0 {
@@ -431,6 +527,9 @@ func (m Model) renderProvidersMenu() string {
 	active := m.activeProviderName()
 	var b strings.Builder
 	b.WriteString(m.palette.PanelTitle.Render("Providers") + "\n\n")
+	header := fmt.Sprintf("    %-14s %-8s %-24s %-12s %s", "name", "type", "model", "status", "endpoint")
+	b.WriteString(m.palette.InputHint.Render(header) + "\n")
+	b.WriteString(m.palette.Dim.Render("    ────────────── ──────── ──────────────────────── ──────────── ────────────") + "\n")
 	for i, p := range rows {
 		prefix := "  "
 		if i == m.menu.cursor {
@@ -440,17 +539,64 @@ func (m Model) renderProvidersMenu() string {
 		if p.Name == active {
 			check = "✓"
 		}
-		status := "○ disconnected"
-		if p.Connected {
-			status = "● connected"
+		model := p.Model
+		if model == "" {
+			model = "-"
 		}
-		b.WriteString(fmt.Sprintf("%s[%s] %-14s %-8s %-16s %s\n", prefix, check, p.Name, p.Type, status, p.BaseURL))
+		if len(model) > 24 {
+			model = model[:21] + "..."
+		}
+		typ := displayProviderType(p.Type)
+		statusText, statusStyled := m.providerStatusCell(p.Name)
+		// Pad with the unstyled width, then swap in the styled text
+		// so ANSI codes don't break column alignment.
+		line := fmt.Sprintf("%-14s %-8s %-24s %-12s", p.Name, typ, model, statusText)
+		line = strings.Replace(line, statusText, statusStyled, 1) + " " + m.palette.Dim.Render(p.BaseURL)
+		full := prefix + check + " " + line
+		if i == m.menu.cursor {
+			full = prefix + m.palette.HeaderMode.Render(check+" "+fmt.Sprintf("%-14s %-8s %-24s %-12s", p.Name, typ, model, statusText)) + " " + m.palette.Dim.Render(p.BaseURL)
+		}
+		b.WriteString(full + "\n")
+		if st, ok := m.providerStatuses[p.Name]; ok && st.checked && !st.online && st.err != "" {
+			errLine := st.err
+			if len(errLine) > 70 {
+				errLine = errLine[:70] + "..."
+			}
+			b.WriteString(m.palette.Error.Render("        "+errLine) + "\n")
+		}
 	}
 	if len(rows) == 0 {
-		b.WriteString("  no providers configured\n")
+		b.WriteString("  no providers configured — press A to add one\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("[A]dd [E]dit [D]elete [R]efresh [M]odels [ESC]back"))
+	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels · ✓ = active · ESC back"))
 	return b.String()
+}
+
+// displayProviderType maps internal provider types to what the
+// user should see: "codex" is just OpenAI with ChatGPT auth.
+func displayProviderType(t string) string {
+	if t == "codex" {
+		return "openai"
+	}
+	return t
+}
+
+// providerStatusCell returns the plain text and the styled text
+// for the status column.
+func (m Model) providerStatusCell(name string) (plain, styled string) {
+	st, ok := m.providerStatuses[name]
+	switch {
+	case !ok || !st.checked:
+		plain = "⋯ checking"
+		styled = m.palette.InputHint.Render(plain)
+	case st.online:
+		plain = "● online"
+		styled = m.palette.Success.Render(plain)
+	default:
+		plain = "○ offline"
+		styled = m.palette.Error.Render(plain)
+	}
+	return plain, styled
 }
 
 // activeProviderName returns the name of the provider that owns
@@ -634,11 +780,15 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	return rows
 }
 
+// providerRows returns the configured providers WITHOUT network
+// probes — this runs in the render path on every keypress, so it
+// must stay cheap. Live status comes from m.providerStatuses
+// (filled by async pings).
 func (m Model) providerRows() []providers.ProviderInfo {
-	if m.providerMgr == nil || m.caps == nil {
+	if m.providerMgr == nil {
 		return nil
 	}
-	return m.providerMgr.List(m.caps)
+	return m.providerMgr.ListConfigured(m.caps)
 }
 
 // configuredProviderNames returns the names of all providers
