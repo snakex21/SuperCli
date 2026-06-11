@@ -661,6 +661,24 @@ type toolResult struct {
 // invoke runs a single tool call, emits the matching events, and
 // returns the messages to append to history.
 func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) toolResult {
+	// Wave 1 hardening for small models: validate the tool name
+	// (with a did-you-mean suggestion) and repair truncated or
+	// unbalanced JSON arguments before execution. An unrepairable
+	// call is bounced back to the model with the correct format so
+	// it can retry (up to maxToolFormatRetries consecutive times).
+	if errMsg := HardenToolCall(&tc, l.registry.Names(), l.recentBadCallStreak()); errMsg != "" {
+		out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
+		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", errMsg)}
+		return toolResult{
+			followUps: []llm.Message{{
+				Role:       llm.RoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Name,
+				Content:    errMsg,
+			}},
+		}
+	}
+
 	raw := json.RawMessage(tc.Arguments)
 	res, err := l.registry.Execute(ctx, tc.Name, raw)
 
