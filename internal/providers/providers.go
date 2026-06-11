@@ -403,6 +403,32 @@ func (m *Manager) Reload() {
 	m.providers = tc.Providers
 }
 
+// Configured returns a copy of the configured provider entries
+// (no probing, no IO beyond the already-loaded state).
+func (m *Manager) Configured() []config.ProviderConf {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]config.ProviderConf, len(m.providers))
+	copy(out, m.providers)
+	return out
+}
+
+// Ping checks one provider conf's /v1/models endpoint with a
+// short timeout. Exported for /doctor and async menu probing.
+func Ping(ctx context.Context, p config.ProviderConf) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := probeProvider(p)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Names returns the names of all configured providers
 // without probing connectivity. Safe for frequent calls.
 func (m *Manager) Names() []string {

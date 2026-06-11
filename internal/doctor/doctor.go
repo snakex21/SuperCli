@@ -68,6 +68,8 @@ func Run(ctx context.Context, env Env) Report {
 		commandCheck("git", true),
 		commandCheck("rg", false),
 	}
+	checks = append(checks, localServerChecks(ctx)...)
+	checks = append(checks, providerPingChecks(ctx, env.ProviderMgr)...)
 	return Report{GeneratedAt: time.Now(), Version: env.Version, Checks: checks}
 }
 
@@ -199,6 +201,66 @@ func commandCheck(name string, required bool) Check {
 		return Check{Name: name + " command", Status: Warn, Detail: "not found in PATH", Remediation: "install " + name + " or add it to PATH"}
 	}
 	return Check{Name: name + " command", Status: Skip, Detail: "optional · not found"}
+}
+
+// localServerChecks probes the well-known local LLM servers
+// (Ollama, LM Studio). A missing server is informational, not a
+// failure — most users run at most one of them.
+func localServerChecks(ctx context.Context) []Check {
+	found := providers.DetectLocalServers(ctx)
+	byName := make(map[string]providers.LocalServer, len(found))
+	for _, s := range found {
+		byName[s.Name] = s
+	}
+	mk := func(name, label, hint string) Check {
+		if s, ok := byName[name]; ok {
+			return Check{Name: label, Status: OK, Detail: fmt.Sprintf("reachable · %d model(s) · %s", len(s.Models), s.BaseURL)}
+		}
+		return Check{Name: label, Status: Skip, Detail: "not running", Remediation: hint}
+	}
+	return []Check{
+		mk("ollama", "ollama server", "start it with `ollama serve` (then `ollama pull <model>`)"),
+		mk("lmstudio", "lmstudio server", "open LM Studio and enable the local server (Developer tab)"),
+	}
+}
+
+// providerPingChecks pings every configured provider's models
+// endpoint and reports whether an API key is set where one is
+// likely required (https endpoints).
+func providerPingChecks(ctx context.Context, mgr *providers.Manager) []Check {
+	if mgr == nil {
+		return nil
+	}
+	confs := mgr.Configured()
+	out := make([]Check, 0, len(confs))
+	for _, p := range confs {
+		name := "provider " + p.Name
+		if strings.EqualFold(p.Type, "echo") {
+			out = append(out, Check{Name: name, Status: Skip, Detail: "echo provider (offline)"})
+			continue
+		}
+		if strings.EqualFold(p.Type, "codex") {
+			out = append(out, Check{Name: name, Status: OK, Detail: "ChatGPT-subscription auth (token in .supercli/auth.json)"})
+			continue
+		}
+		keyNote := ""
+		if p.APIKey == "" && strings.HasPrefix(strings.ToLower(p.BaseURL), "https://") {
+			keyNote = " · no API key set"
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := providers.Ping(pingCtx, p)
+		cancel()
+		if err != nil {
+			rem := "check the base URL and that the server/key works (try /providers)"
+			if keyNote != "" {
+				rem = "set an API key for this provider (/providers, [E]dit)"
+			}
+			out = append(out, Check{Name: name, Status: Fail, Detail: p.BaseURL + " · " + err.Error() + keyNote, Remediation: rem})
+			continue
+		}
+		out = append(out, Check{Name: name, Status: OK, Detail: p.BaseURL + " · reachable" + keyNote})
+	}
+	return out
 }
 
 func isWritable(dir string) bool {

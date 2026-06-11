@@ -543,6 +543,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case askRequestMsg:
 		return m.beginAsk(msg.req)
 
+	case doctorReportMsg:
+		m.mode = modeDoctor
+		m.doctorReport = msg.report
+		return m, nil
+
 	case slashResultMsg:
 		m.busy = false
 		m.cancel.Disarm()
@@ -1794,7 +1799,10 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 	}
 	if cmd.Name == "doctor" {
-		rep := doctor.Run(context.Background(), doctor.Env{
+		// The report now pings local servers and configured
+		// providers (network IO) — run it as a background
+		// tea.Cmd so the UI never freezes.
+		env := doctor.Env{
 			Version:     "0.6.0",
 			Home:        m.home,
 			DataDir:     m.dataDir,
@@ -1803,10 +1811,13 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			Sessions:    m.sessionStore,
 			ProviderMgr: m.providerMgr,
 			Caps:        m.caps,
-		})
-		m.mode = modeDoctor
-		m.doctorReport = &rep
-		return m, nil
+		}
+		m.appendLine(m.marker.Running())
+		m.refreshTranscript()
+		return m, func() tea.Msg {
+			rep := doctor.Run(context.Background(), env)
+			return doctorReportMsg{report: &rep}
+		}
 	}
 	if cmd.Name == "cost" {
 		rec := m.statsRecorder
@@ -1863,6 +1874,11 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 // shellResultMsg is delivered when a !command finishes.
 type shellResultMsg struct {
 	res *shellescape.Result
+}
+
+// doctorReportMsg delivers an asynchronously computed /doctor report.
+type doctorReportMsg struct {
+	report *doctor.Report
 }
 
 // modelSwapRequestMsg is emitted by /model to request a provider swap.
