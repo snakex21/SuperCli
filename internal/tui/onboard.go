@@ -331,7 +331,7 @@ func (m onboardModel) chooseAuth() (tea.Model, tea.Cmd) {
 		// flow after the wizard exits.
 		m.result.AuthMethod = AuthChatGPT
 		m.result.Type = "codex"
-		m.result.Model = "gpt-5-codex"
+		m.result.Model = "gpt-5.5"
 		m.step = onboardDone
 		return m, tea.Quit
 	}

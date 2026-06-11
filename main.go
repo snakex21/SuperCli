@@ -1008,21 +1008,21 @@ func main() {
 		// provider menus can route through the ChatGPT backend.
 		if provMgr != nil {
 			if err := provMgr.Add("codex", config.ProviderCodex,
-				codexAuthMgr.Options().BackendURL, "", "gpt-5-codex"); err != nil &&
+				codexAuthMgr.Options().BackendURL, "", "gpt-5.5"); err != nil &&
 				!strings.Contains(err.Error(), "already exists") {
 				log.Printf("login: register codex provider: %v", err)
 			}
 			provMgr.Reload()
 		}
 		// Register the Codex model family in the capability
-		// registry so /model gpt-5-codex resolves immediately
+		// registry so /model gpt-5.5 resolves immediately
 		// (the ChatGPT backend has no /v1/models to probe).
 		caps.RegisterAll(codexSeedModels())
 		plan := res.PlanType
 		if plan == "" {
 			plan = "unknown plan"
 		}
-		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5-codex) — requests now route through the ChatGPT backend.", plan), nil
+		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5.5) — requests now route through the ChatGPT backend.", plan), nil
 	}
 	mergedCommands["logout"] = func(ctx context.Context, args string) (string, error) {
 		if codexAuthMgr == nil || !codexAuthMgr.LoggedIn() {
@@ -1365,8 +1365,13 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 func boolPtr(b bool) *bool { return &b }
 
 // codexSeedModels lists the ChatGPT-backend (Codex) models made
-// available after /login. The backend has no public model-list
-// endpoint, so these mirror the models the Codex CLI offers.
+// available after /login. The ChatGPT backend has no public
+// model-list endpoint (the Codex CLI itself ships a static list),
+// so these mirror the models Codex offers as of June 2026:
+// gpt-5.5 is the current default, gpt-5.4-mini the cheap/fast
+// option, gpt-5.3-codex-spark the low-latency preview. The old
+// gpt-5 / gpt-5-codex / gpt-5-mini family is retired and must not
+// be seeded — picking it produces a "model not found" error.
 func codexSeedModels() []llm.ModelInfo {
 	mk := func(id string) llm.ModelInfo {
 		return llm.ModelInfo{
@@ -1377,7 +1382,7 @@ func codexSeedModels() []llm.ModelInfo {
 			Source:        llm.SourceCatalog,
 		}
 	}
-	return []llm.ModelInfo{mk("gpt-5-codex"), mk("gpt-5"), mk("gpt-5-codex-mini")}
+	return []llm.ModelInfo{mk("gpt-5.5"), mk("gpt-5.4-mini"), mk("gpt-5.3-codex-spark")}
 }
 
 // tierRulesFromToml converts config.toml [[model_tiers]]
