@@ -44,6 +44,7 @@ type ProviderInfo struct {
 	Name      string
 	Type      string
 	BaseURL   string
+	Model     string // default model configured for this provider
 	Connected bool
 	Error     string
 	Models    []llm.ModelInfo
@@ -83,6 +84,35 @@ func (m *Manager) List(caps *llm.CapabilityRegistry) []ProviderInfo {
 		for _, mi := range caps.All() {
 			if mi.Provider == p.Name && isDiscoveredProviderModel(mi) {
 				pi.Models = append(pi.Models, mi)
+			}
+		}
+		out = append(out, pi)
+	}
+	return out
+}
+
+// ListConfigured returns all configured providers WITHOUT
+// probing connectivity — cheap enough to call from a TUI render
+// path. Connected is always false; callers overlay live status
+// from their own async probes. Models come from the capability
+// registry filtered by provider name.
+func (m *Manager) ListConfigured(caps *llm.CapabilityRegistry) []ProviderInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []ProviderInfo
+	for _, p := range m.providers {
+		pi := ProviderInfo{
+			Name:    p.Name,
+			Type:    p.Type,
+			BaseURL: p.BaseURL,
+			Model:   p.Model,
+		}
+		if caps != nil {
+			for _, mi := range caps.All() {
+				if mi.Provider == p.Name && isDiscoveredProviderModel(mi) {
+					pi.Models = append(pi.Models, mi)
+				}
 			}
 		}
 		out = append(out, pi)

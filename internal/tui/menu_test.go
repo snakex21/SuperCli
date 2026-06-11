@@ -345,15 +345,23 @@ func TestProviderFormTerminalPasteAppendsText(t *testing.T) {
 	}
 }
 
-func TestProviderFormSaveScansProviderImmediately(t *testing.T) {
+func TestProviderFormSaveScansProviderInBackground(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/models":
+			if r.Header.Get("Authorization") != "Bearer test-key" {
+				t.Errorf("auth = %q, want Bearer test-key", r.Header.Get("Authorization"))
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "deepseek-chat"}}})
+		case "/v1/chat/completions":
+			// The post-save verification test request ("Say OK").
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "OK"}}},
+			})
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-key" {
-			t.Fatalf("auth = %q, want Bearer test-key", r.Header.Get("Authorization"))
-		}
-		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "deepseek-chat"}}})
 	}))
 	defer srv.Close()
 
@@ -367,10 +375,38 @@ func TestProviderFormSaveScansProviderImmediately(t *testing.T) {
 		formAt: 3,
 	}
 
-	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := out.(Model)
 	if mm.menu.kind != menuProviders {
 		t.Fatalf("menu kind = %v, want providers", mm.menu.kind)
+	}
+	if cmd == nil {
+		t.Fatal("expected a background scan/verify command")
+	}
+	// Drain the (possibly batched) commands so the scan runs.
+	var sawSaved bool
+	var drain func(c tea.Cmd)
+	drain = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				drain(sub)
+			}
+			return
+		}
+		if saved, ok := msg.(providerSavedMsg); ok {
+			sawSaved = true
+			if saved.err != nil {
+				t.Fatalf("save/verify failed: %v", saved.err)
+			}
+		}
+	}
+	drain(cmd)
+	if !sawSaved {
+		t.Fatal("no providerSavedMsg emitted")
 	}
 	mi, ok := caps.Get("deepseek-chat")
 	if !ok {
