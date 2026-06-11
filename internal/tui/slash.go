@@ -121,37 +121,72 @@ func FormatHelp(entries []SlashEntry) string {
 			fmt.Fprintf(&b, "  /%-14s %s\n", e.Name, e.Desc)
 		}
 	}
-	b.WriteString("\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n")
-	b.WriteString("      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n")
-	b.WriteString("      Shift+T toggle thinking · Shift+E expand tool output")
+	b.WriteString(helpKeys())
 	return b.String()
 }
 
-// HelpContent returns the hardcoded help text.
+// helpEssentials are the commands shown with descriptions in the
+// short /help view, grouped by topic. Everything else is listed
+// name-only on the "more" line; /help all shows full details.
+var helpEssentials = []struct {
+	group string
+	names []string
+}{
+	{"models & providers", []string{"model", "models", "providers", "login"}},
+	{"session", []string{"clear", "compact", "resume", "export", "cost", "status"}},
+	{"agents", []string{"plan", "goal", "darwin", "council"}},
+	{"system", []string{"doctor", "help", "quit"}},
+}
+
+// HelpContent returns the short, grouped help: the most important
+// commands with descriptions, the rest as a compact list, and the
+// key bindings. Use HelpContentAll for the full per-command list.
 func HelpContent() string {
-	return FormatHelp([]SlashEntry{
-		{Name: "help", Desc: "show this help message"},
-		{Name: "goal", Desc: "manage active goal", Args: "<set|list|show|tasks|done> [args]"},
-		{Name: "darwin", Desc: "run N parallel agents, pick best", Args: "[N] <prompt>"},
-		{Name: "council", Desc: "sample N cheap models, judge picks winner", Args: "[N] <prompt>"},
-		{Name: "clear", Desc: "hide recent messages from model context"},
-		{Name: "reflect", Desc: "show learned patterns from reflection"},
-		{Name: "compact", Desc: "compress context to save tokens"},
-		{Name: "status", Desc: "show credits and session info"},
-		{Name: "models", Desc: "alias for /model (open model picker)"},
-		{Name: "sandbox", Desc: "show sandbox status"},
-		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
-		{Name: "diff", Desc: "show file changes from current session"},
-		{Name: "model", Desc: "show or swap active model", Args: "[model_id]"},
-		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
-		{Name: "export", Desc: "export session to Markdown file", Args: "[filename.md]"},
-		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
-		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
-		{Name: "providers", Desc: "manage providers and model prices", Args: "[add|remove|price|toggle] [args]"},
-		{Name: "login", Desc: "sign in with ChatGPT (Codex OAuth)"},
-		{Name: "logout", Desc: "remove saved ChatGPT credentials"},
-		{Name: "quit", Desc: "exit SuperCli explicitly"},
-	})
+	byName := make(map[string]SlashEntry)
+	for _, e := range HelpContentEntries() {
+		byName[e.Name] = e
+	}
+	shown := make(map[string]struct{})
+	var b strings.Builder
+	b.WriteString("Commands:\n")
+	for _, g := range helpEssentials {
+		b.WriteString("\n " + g.group + "\n")
+		for _, name := range g.names {
+			e, ok := byName[name]
+			if !ok {
+				e = SlashEntry{Name: name}
+			}
+			shown[name] = struct{}{}
+			if e.Args != "" {
+				fmt.Fprintf(&b, "  /%-12s %s  (%s)\n", e.Name, e.Desc, e.Args)
+			} else {
+				fmt.Fprintf(&b, "  /%-12s %s\n", e.Name, e.Desc)
+			}
+		}
+	}
+	var rest []string
+	for _, e := range HelpContentEntries() {
+		if _, ok := shown[e.Name]; !ok {
+			rest = append(rest, "/"+e.Name)
+		}
+	}
+	if len(rest) > 0 {
+		b.WriteString("\n more: " + strings.Join(rest, " ") + "\n")
+	}
+	b.WriteString(" type /help all for every command with its description\n")
+	b.WriteString(helpKeys())
+	return b.String()
+}
+
+// HelpContentAll returns the full per-command help list.
+func HelpContentAll() string {
+	return FormatHelp(HelpContentEntries())
+}
+
+func helpKeys() string {
+	return "\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n" +
+		"      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n" +
+		"      Shift+T toggle thinking · Shift+E expand tool output"
 }
 
 // formatSlashResult formats a command result for the transcript.

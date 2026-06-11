@@ -82,6 +82,8 @@ func commandCategory(name string) string {
 		return "agent"
 	case "diff", "undo", "export", "resume", "clear":
 		return "session"
+	case "login", "logout":
+		return "account"
 	default:
 		return "command"
 	}
@@ -110,7 +112,9 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
 		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
 		{Name: "doctor", Desc: "diagnose SuperCli runtime and configuration"},
-		{Name: "quit", Desc: "exit SuperCli explicitly"},
+		{Name: "login", Desc: "sign in to OpenAI with your ChatGPT account"},
+		{Name: "logout", Desc: "remove saved ChatGPT credentials"},
+		{Name: "quit", Desc: "exit SuperCli (alias: /exit)"},
 	}
 }
 
