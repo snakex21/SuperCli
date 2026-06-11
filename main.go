@@ -88,6 +88,7 @@ func initCodexAuth(home string, t config.TomlConfig) {
 // once the model's tier is known — small-tier models get the
 // core only (see internal/prompt and internal/tier).
 var supercliSystemPromptBase = prompt.Build(false)
+var supercliCoordinatorMode bool
 
 // buildSystemPrompt returns the base prompt plus the
 // current ISO date stamp and, if a goal service is
@@ -98,6 +99,9 @@ var supercliSystemPromptBase = prompt.Build(false)
 // any Darwin children see the same active goal.
 func buildSystemPrompt(svc *goal.Service) string {
 	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
+	if supercliCoordinatorMode {
+		base += agent.CoordinatorPrompt()
+	}
 	if svc == nil {
 		return base
 	}
@@ -119,6 +123,24 @@ func platformHint() string {
 		return "OS: macOS. Use standard Unix commands."
 	default:
 		return "OS: Linux. Use standard Unix commands."
+	}
+}
+
+func envTruthy(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on", "y":
+		return true
+	default:
+		return false
+	}
+}
+
+func envFalsey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "0", "false", "no", "off", "n":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -161,8 +183,17 @@ func main() {
 	configFlag := flag.String("config", "", "path to config.toml override")
 	batchFlag := flag.String("batch", "", "F33: run prompt without TUI, output to stdout and exit")
 	resumeFlag := flag.Bool("resume", false, "resume the most recent session on startup")
+	coordinatorFlag := flag.Bool("coordinator", false, "run main loop as a lightweight coordinator that delegates code work to isolated task workers (default on)")
+	noCoordinatorFlag := flag.Bool("no-coordinator", false, "disable default coordinator mode and expose the normal tool set directly to the main loop")
 	flag.Usage = usage
 	flag.Parse()
+	supercliCoordinatorMode = true
+	if *noCoordinatorFlag || envFalsey("SUPERCLI_COORDINATOR") {
+		supercliCoordinatorMode = false
+	}
+	if *coordinatorFlag || envTruthy("SUPERCLI_COORDINATOR") {
+		supercliCoordinatorMode = true
+	}
 
 	if *showVersion {
 		fmt.Println("supercli", version)
@@ -477,7 +508,11 @@ func main() {
 	// burned on tool schemas; everything else stays reachable
 	// via tool_search. `small_full_tools = true` in
 	// config.toml restores the full set.
-	if smallTier {
+	if supercliCoordinatorMode {
+		registry.MarkAlwaysOn("ask_user")
+		registry.MarkAlwaysOn("tool_search")
+		registry.MarkAlwaysOn("goal")
+	} else if smallTier {
 		for _, name := range []string{
 			"read_lines", "read_context", "edit_line",
 			"insert_after", "delete_lines",
@@ -703,6 +738,7 @@ func main() {
 		WindowFor:         windowFor,
 		Summarizer:        autoSummarizer,
 		LearnLimit:        learned.Learn,
+		EnableNavigator:   true,
 	})
 	if err != nil {
 		fatal("init agent", err)
@@ -724,6 +760,12 @@ func main() {
 		fatal("init agent tool", err)
 	}
 	registry.MustRegister(at.Spec())
+	sendMessageTool := agent.NewSendMessageTool(at.Workers)
+	registry.MustRegister(sendMessageTool.Spec())
+	if supercliCoordinatorMode {
+		registry.MarkAlwaysOn("task")
+		registry.MarkAlwaysOn("send_message")
+	}
 
 	// F14: opt-in tool. The model calls hide_messages
 	// when it wants to drop old messages from its own
@@ -1012,6 +1054,39 @@ func main() {
 	registry.MustRegister(tools.NewEditLine(home).Spec())
 	registry.MustRegister(tools.NewInsertAfter(home).Spec())
 	registry.MustRegister(tools.NewDeleteLines(home).Spec())
+
+	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
+	// web_search (DuckDuckGo by default — no key; Brave/Tavily
+	// when [web_search] in config.toml or BRAVE_API_KEY /
+	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
+	// MarkAlwaysOn); the model discovers them via tool_search.
+	registry.MustRegister(tools.NewWebFetch().Spec())
+	wsEngine := tomlCfg.WebSearch.Engine
+	wsKey := tomlCfg.WebSearch.APIKey
+	if wsKey == "" {
+		switch strings.ToLower(wsEngine) {
+		case "brave":
+			wsKey = os.Getenv("BRAVE_API_KEY")
+		case "tavily":
+			wsKey = os.Getenv("TAVILY_API_KEY")
+		}
+	}
+	registry.MustRegister(tools.NewWebSearch(wsEngine, wsKey).Spec())
+
+	// outlook_mail: Windows-only COM automation of desktop
+	// Outlook (read folders/messages, search, create DRAFTS —
+	// never sends/deletes/moves). Opt-in via tool_search; on
+	// non-Windows it returns an explanatory error.
+	registry.MustRegister(tools.NewOutlookMail().Spec())
+
+	// Re-index for tool_search: many tools (ctx_execute, goal,
+	// memory, task, consult, file-line tools, web tools, ...)
+	// are registered AFTER the first RebuildIndex call above, so
+	// without this second pass they were invisible to tool_search
+	// and effectively unreachable for small-tier models.
+	if err := toolSearcher.RebuildIndex(); err != nil {
+		log.Printf("tool_search reindex: %v", err)
+	}
 
 	// F7 + F8 status bar. The goal line is rendered
 	// above the credits line when both are present.

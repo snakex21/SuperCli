@@ -56,8 +56,8 @@ type Model struct {
 	// ("✻ SuperCli 0.6.0 · model · tier").
 	version  string
 	tierName string
-	agent   agent.Agent
-	llm     llm.Provider
+	agent    agent.Agent
+	llm      llm.Provider
 
 	// commands is a map of slash command name -> handler.
 	// Set via New and used by handleKey to dispatch
@@ -152,6 +152,12 @@ type Model struct {
 	// toolExpanded: when true, tool results are shown in
 	// full (max 50 lines). Toggled with 'E' key.
 	toolExpanded bool
+
+	// tipShown guards the "use Ctrl+C or /quit to exit" hint so
+	// it is printed at most once per session (it used to be
+	// appended on every empty-input Esc/Enter, spamming the
+	// transcript).
+	tipShown bool
 
 	// Transcript holds the raw text for backward-compatible
 	// test assertions. Do NOT use strings.Builder here:
@@ -623,13 +629,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // - If idle: quit the program. Single-letter keys like q do not quit.
 func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
 	if m.busy {
-		// Cancel the active run.
+		// Cancel the active run. (This used to append the
+		// "running" marker, which read as if the run was
+		// still in progress after cancelling.)
 		m.cancel.Cancel()
 		m.busy = false
 		m.cancel.Disarm()
-		m.appendLine(m.marker.Running())
+		m.statusOverride = "cancelled"
+		m.appendLine(m.palette.InputHint.Render("[Ctrl+C] run cancelled"))
 		m.refreshTranscript()
-		return m, nil
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return statusOverrideClearMsg{}
+		})
 	}
 	if m.mode == modeAsking {
 		if m.pendingAsk != nil {
@@ -684,8 +695,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			return m, nil
 		}
-		m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
-		m.refreshTranscript()
+		// Empty input + Esc is a no-op. The exit tip is shown
+		// only once, and only when the user types a bare
+		// quit-like word (see the "enter" case below).
 		return m, nil
 	case "T":
 		m.chat.toggleThinking()
@@ -705,6 +717,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if isQuitCommand(text) {
 			m.quitting = true
 			return m, tea.Quit
+		}
+		// Bare "q"/"quit"/"exit" (no slash): show the exit tip
+		// once, then treat further occurrences as regular input.
+		if low := strings.ToLower(text); (low == "q" || low == "quit" || low == "exit") && !m.tipShown {
+			m.tipShown = true
+			m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
+			m.refreshTranscript()
+			return m, nil
 		}
 		// Slash command? Dispatch to the registered handler.
 		if cmd := ParseSlashCommand(text); cmd != nil {
@@ -1171,6 +1191,11 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLine(m.marker.Council(e.CandidateCount, e.WinnerProvider, e.Reason))
 		m.appendLine(m.marker.CouncilQuestion(e.Question))
 		return m, m.waitForNextEvent()
+	case agent.WorkerNotificationEvent:
+		line := fmt.Sprintf("[worker %s: %s] %s", e.TaskID, e.Status, e.Summary)
+		m.appendLine(line)
+		m.appendLineToTranscript(line)
+		return m, m.waitForNextEvent()
 	}
 	return m, m.waitForNextEvent()
 }
@@ -1491,10 +1516,15 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	// /models is an alias for /model: no-arg opens the picker,
+	// with an arg it swaps directly. One implementation, two names.
 	if cmd.Name == "models" {
-		return m.openModelsMenu()
+		cmd.Name = "model"
 	}
-	if cmd.Name == "providers" {
+	// /providers without args opens the interactive menu; with
+	// args it falls through to the text subcommand handler below
+	// (add/remove/price/toggle), which used to be dead code.
+	if cmd.Name == "providers" && cmd.Args == "" {
 		return m.openProvidersMenu()
 	}
 	if cmd.Name == "goal" {

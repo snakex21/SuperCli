@@ -85,6 +85,19 @@ type TomlConfig struct {
 	// OAuth login. All fields optional; compiled-in defaults
 	// match the OpenAI Codex CLI reference values.
 	CodexAuth CodexAuthConf `toml:"codex_auth"`
+
+	// WebSearch configures the web_search tool. Optional;
+	// the default engine (duckduckgo) needs no API key.
+	WebSearch WebSearchConf `toml:"web_search"`
+}
+
+// WebSearchConf is the [web_search] section of config.toml.
+// Engine: "duckduckgo" (default, no key), "brave", or "tavily".
+// APIKey is required for brave/tavily; env vars BRAVE_API_KEY /
+// TAVILY_API_KEY are used as fallbacks by main.go.
+type WebSearchConf struct {
+	Engine string `toml:"engine"`
+	APIKey string `toml:"api_key"`
 }
 
 // CodexAuthConf is the [codex_auth] section of config.toml.
@@ -256,6 +269,13 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.CodexAuth.BackendURL != "" {
 		dst.CodexAuth.BackendURL = src.CodexAuth.BackendURL
 	}
+	// Web search: field-wise override.
+	if src.WebSearch.Engine != "" {
+		dst.WebSearch.Engine = src.WebSearch.Engine
+	}
+	if src.WebSearch.APIKey != "" {
+		dst.WebSearch.APIKey = src.WebSearch.APIKey
+	}
 }
 
 // ResolveConfig builds the final config by merging layers.
@@ -334,6 +354,10 @@ func EnvOverrideConfig(c *Config) {
 		c.Provider = v
 	}
 	if v := os.Getenv("SUPERCLI_LLM_API_KEY"); v != "" {
+		c.APIKey = v
+	} else if v := os.Getenv("OPENAI_API_KEY"); v != "" && c.APIKey == "" {
+		// Standard OpenAI env var as a fallback when nothing
+		// else configured a key (config.toml providers win).
 		c.APIKey = v
 	}
 	if v := os.Getenv("SUPERCLI_LLM_BASE_URL"); v != "" {

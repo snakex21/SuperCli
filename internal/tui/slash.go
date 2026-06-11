@@ -138,7 +138,7 @@ func HelpContent() string {
 		{Name: "reflect", Desc: "show learned patterns from reflection"},
 		{Name: "compact", Desc: "compress context to save tokens"},
 		{Name: "status", Desc: "show credits and session info"},
-		{Name: "models", Desc: "list available models"},
+		{Name: "models", Desc: "alias for /model (open model picker)"},
 		{Name: "sandbox", Desc: "show sandbox status"},
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
 		{Name: "diff", Desc: "show file changes from current session"},

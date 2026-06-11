@@ -74,8 +74,11 @@ type FlagOverrides struct {
 // Load reads env vars then applies flag overrides on top.
 func Load(flags FlagOverrides) (Config, error) {
 	c := Config{
-		Provider:    getEnv("SUPERCLI_LLM_PROVIDER", ""),
-		APIKey:      getEnv("SUPERCLI_LLM_API_KEY", ""),
+		Provider: getEnv("SUPERCLI_LLM_PROVIDER", ""),
+		// SUPERCLI_LLM_API_KEY wins; OPENAI_API_KEY is the
+		// standard fallback so plain OpenAI API-key usage works
+		// out of the box (codex OAuth remains a separate provider).
+		APIKey:      getEnv("SUPERCLI_LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
 		BaseURL:     getEnv("SUPERCLI_LLM_BASE_URL", "https://api.openai.com/v1"),
 		Model:       getEnv("SUPERCLI_LLM_MODEL", ""),
 		Temperature: getEnvFloat("SUPERCLI_LLM_TEMPERATURE", 0.7),
