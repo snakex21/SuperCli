@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"supercli/internal/draft"
 	"supercli/internal/llm"
@@ -39,18 +40,18 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
-	provider    llm.Provider
-	registry    *tools.Registry
-	caps        *llm.CapabilityRegistry
-	system      string
-	maxSteps    int
-	writer      SessionWriter
-	errorLog    ErrorLogger
-	reflector   Reflector
-	reflectEvery int
+	provider        llm.Provider
+	registry        *tools.Registry
+	caps            *llm.CapabilityRegistry
+	system          string
+	maxSteps        int
+	writer          SessionWriter
+	errorLog        ErrorLogger
+	reflector       Reflector
+	reflectEvery    int
 	patternInjector PatternInjector
-	creditTracker CreditTracker
-	modelID     string
+	creditTracker   CreditTracker
+	modelID         string
 
 	// Auto-compact wiring (wave 4). windowFor resolves the
 	// model's context window (config > provider metadata >
@@ -91,10 +92,10 @@ type Loop struct {
 	// Last draft plan we injected, kept so we can
 	// compare to the verifier's first text response
 	// to compute savings / detect overrides.
-	lastDraftText  string
-	lastDraftTokens int
+	lastDraftText     string
+	lastDraftTokens   int
 	draftOverrideSink DraftOverrideSink
-	stats           stats.Recorder
+	stats             stats.Recorder
 
 	// F14 selective context deletion. The hidden
 	// shadow slice has the same length as Messages;
@@ -112,6 +113,12 @@ type Loop struct {
 	// SetExternalSink; never closed by the loop.
 	// Emit is non-blocking.
 	extOut chan<- Event
+
+	// routeMap selects a cheap per-run provider view. Chat-only mode removes
+	// tool schemas and the full coordinator prompt for simple conversation.
+	routeMap RouteMap
+	route    RouteMode
+	navigate bool
 
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
@@ -165,6 +172,10 @@ type LoopConfig struct {
 	// for resuming a session. The session writer, if any, is
 	// NOT called for these.
 	InitialMessages []llm.Message
+	// EnableNavigator turns on the cheap pre-request model router that chooses
+	// chat/advisor/coordinator. Main SuperCli enables it; child workers and most
+	// tests leave it off to avoid extra provider calls.
+	EnableNavigator bool
 	// Writer, when non-nil, is invoked once per message the loop
 	// appends to Messages. Use session.Store from F2.c.
 	Writer SessionWriter
@@ -294,6 +305,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		summarizer:      cfg.Summarizer,
 		learnLimit:      cfg.LearnLimit,
 		Messages:        msgs,
+		routeMap:        DefaultRouteMap(),
+		route:           RouteCoordinator,
+		navigate:        cfg.EnableNavigator,
 	}
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
@@ -407,11 +421,11 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	}
 	l.Messages = append(l.Messages, userMsg)
 	l.persist(ctx, userMsg)
-	go l.run(ctx, out)
+	go l.run(ctx, prompt, out)
 	return out, nil
 }
 
-func (l *Loop) run(ctx context.Context, out chan<- Event) {
+func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
 	defer func() {
 		if r := recover(); r != nil {
@@ -423,6 +437,14 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 			}
 		}
 	}()
+	// A1: the navigator is a full LLM call. It runs here, inside the
+	// background goroutine, so Run() returns immediately and the TUI
+	// never blocks on Enter waiting for the route decision.
+	if l.navigate {
+		l.route = l.navigateRoute(ctx, prompt)
+	} else {
+		l.route = RouteCoordinator
+	}
 	totalUsage := Usage{}
 	// F11: reset the policy's per-Run "drafted" set
 	// at the start of every Run so a ModeBalanced
@@ -459,14 +481,17 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 		// model's context window.
 		l.maybeAutoCompact(ctx, out, "")
 
-		// Build tool definitions from visible tools.
+		// Build tool definitions from visible tools. Chat-only route deliberately
+		// sends no tools; this is the actual token-saving part of the router.
 		var toolDefs []llm.ToolDef
-		for _, t := range l.registry.Visible() {
-			toolDefs = append(toolDefs, llm.ToolDef{
-				Name:        t.Name,
-				Description: t.Description,
-				Schema:      t.Schema,
-			})
+		if l.route == RouteCoordinator {
+			for _, t := range l.registry.Visible() {
+				toolDefs = append(toolDefs, llm.ToolDef{
+					Name:        t.Name,
+					Description: t.Description,
+					Schema:      t.Schema,
+				})
+			}
 		}
 
 		text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
@@ -587,19 +612,8 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 			return
 		}
 
-		// Execute tool calls in order. Image-bearing results
-		// are appended as a follow-up user message because
-		// OpenAI tool messages are text-only.
-		for _, tc := range toolCalls {
-			ev := l.invoke(ctx, tc, out)
-			for _, m := range ev.followUps {
-				l.Messages = append(l.Messages, m)
-				l.persist(ctx, m)
-			}
-			if ev.fatal {
-				out <- ErrorEvent{Err: ev.err}
-				return
-			}
+		if !l.invokeToolCalls(ctx, toolCalls, out) {
+			return
 		}
 
 		// F5.a: reflection checkpoint. After every step,
@@ -626,15 +640,192 @@ func (l *Loop) run(ctx context.Context, out chan<- Event) {
 	out <- ErrorEvent{Err: fmt.Errorf("agent: max steps (%d) reached", l.maxSteps)}
 }
 
+// invokeToolCalls runs the model's tool-call batch and appends the matching
+// tool-result messages to history. Most tools are executed sequentially to
+// avoid surprising write conflicts. A batch made only of the coordinator's
+// `task` calls is safe and useful to run concurrently: each task owns an
+// isolated child loop/context, and parallel research workers are the main
+// reason the coordinator mode exists.
+func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) bool {
+	if len(toolCalls) > 1 && allTaskCalls(toolCalls) {
+		return l.invokeTaskCallsParallel(ctx, toolCalls, out)
+	}
+
+	for _, tc := range toolCalls {
+		ev := l.invoke(ctx, tc, out)
+		for _, m := range ev.followUps {
+			l.Messages = append(l.Messages, m)
+			l.persist(ctx, m)
+		}
+		if ev.fatal {
+			out <- ErrorEvent{Err: ev.err}
+			return false
+		}
+	}
+	return true
+}
+
+func allTaskCalls(toolCalls []llm.ToolCall) bool {
+	for _, tc := range toolCalls {
+		if tc.Name != "task" {
+			return false
+		}
+	}
+	return len(toolCalls) > 0
+}
+
+func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) bool {
+	type item struct {
+		idx int
+		res toolResult
+	}
+	results := make([]toolResult, len(toolCalls))
+	ch := make(chan item, len(toolCalls))
+	var wg sync.WaitGroup
+
+	for i, tc := range toolCalls {
+		i, tc := i, tc
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ch <- item{idx: i, res: l.invoke(ctx, tc, out)}
+		}()
+	}
+
+	wg.Wait()
+	close(ch)
+	for it := range ch {
+		results[it.idx] = it.res
+	}
+
+	// Append tool results in the same order as the assistant's tool calls so
+	// provider APIs that expect call/result pairing stay deterministic.
+	for _, ev := range results {
+		for _, m := range ev.followUps {
+			l.Messages = append(l.Messages, m)
+			l.persist(ctx, m)
+		}
+		if ev.fatal {
+			out <- ErrorEvent{Err: ev.err}
+			return false
+		}
+	}
+	return true
+}
+
 // completeOnce performs one provider Complete call and
 // consumes the stream. Split out so the run loop can retry
 // once after a context-overflow compaction.
 func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
-	stream, err := l.provider.Complete(ctx, l.VisibleMessages(), toolDefs)
+	stream, err := l.provider.Complete(ctx, l.providerMessages(), toolDefs)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
 	}
 	return l.consume(ctx, stream, out)
+}
+
+func (l *Loop) providerMessages() []llm.Message {
+	if l.route == RouteCoordinator {
+		return l.VisibleMessages()
+	}
+	visible := l.VisibleMessages()
+	system := chatOnlySystemPrompt
+	if l.route == RouteAdvisor || l.route == RouteClarify {
+		system = advisorSystemPrompt
+	}
+	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
+	// Keep a tiny conversational tail only. Skip system/tool messages and task
+	// notifications so background agent work does not leak into smalltalk.
+	tail := make([]llm.Message, 0, 8)
+	for i := len(visible) - 1; i >= 0 && len(tail) < 8; i-- {
+		m := visible[i]
+		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
+			continue
+		}
+		if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
+			continue
+		}
+		tail = append(tail, m)
+	}
+	for i := len(tail) - 1; i >= 0; i-- {
+		out = append(out, tail[i])
+	}
+	return out
+}
+
+func (l *Loop) navigateRoute(ctx context.Context, prompt string) RouteMode {
+	fallback := l.routeMap.Classify(prompt)
+	msgs := l.navigatorMessages(prompt)
+	stream, err := l.provider.Complete(ctx, msgs, nil)
+	if err != nil {
+		return fallback
+	}
+	var text strings.Builder
+	for d := range stream {
+		if d.Err != nil {
+			return fallback
+		}
+		text.WriteString(d.Content)
+	}
+	mode, ok := parseNavigatorMode(text.String())
+	if !ok {
+		return fallback
+	}
+	return mode
+}
+
+func (l *Loop) navigatorMessages(prompt string) []llm.Message {
+	visible := l.VisibleMessages()
+	out := []llm.Message{{Role: llm.RoleSystem, Content: navigatorSystemPrompt}}
+	tail := make([]llm.Message, 0, 4)
+	for i := len(visible) - 1; i >= 0 && len(tail) < 4; i-- {
+		m := visible[i]
+		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
+			continue
+		}
+		if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
+			continue
+		}
+		m.Content = truncateForNavigator(m.Content)
+		for i := range m.Parts {
+			m.Parts[i].Text = truncateForNavigator(m.Parts[i].Text)
+		}
+		tail = append(tail, m)
+	}
+	for i := len(tail) - 1; i >= 0; i-- {
+		out = append(out, tail[i])
+	}
+	out = append(out, llm.Message{Role: llm.RoleUser, Content: prompt})
+	return out
+}
+
+func truncateForNavigator(s string) string {
+	const max = 500
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
+}
+
+func parseNavigatorMode(s string) (RouteMode, bool) {
+	s = strings.ToLower(s)
+	// Strip common thinking wrappers if the model exposes reasoning text.
+	if idx := strings.LastIndex(s, "{"); idx >= 0 {
+		s = s[idx:]
+	}
+	switch {
+	case strings.Contains(s, `"mode":"chat"`) || strings.Contains(s, `"mode": "chat"`):
+		return RouteChatOnly, true
+	case strings.Contains(s, `"mode":"advisor"`) || strings.Contains(s, `"mode": "advisor"`):
+		return RouteAdvisor, true
+	case strings.Contains(s, `"mode":"coordinator"`) || strings.Contains(s, `"mode": "coordinator"`):
+		return RouteCoordinator, true
+	case strings.Contains(s, `"mode":"clarify"`) || strings.Contains(s, `"mode": "clarify"`):
+		return RouteClarify, true
+	default:
+		return "", false
+	}
 }
 
 // persist calls the writer if one is configured. Errors are
@@ -1267,6 +1458,18 @@ func (l *Loop) Emit(ev Event) bool {
 	default:
 		return false
 	}
+}
+
+// InjectUserMessage appends an out-of-band user-role message to the loop. It is
+// used by background workers to deliver task notifications to the coordinator's
+// future context without requiring the user to paste them manually.
+func (l *Loop) InjectUserMessage(ctx context.Context, content string) {
+	if l == nil || strings.TrimSpace(content) == "" {
+		return
+	}
+	msg := llm.Message{Role: llm.RoleUser, Content: content}
+	l.Messages = append(l.Messages, msg)
+	l.persist(ctx, msg)
 }
 
 // CurrentModel returns the name of the active provider.

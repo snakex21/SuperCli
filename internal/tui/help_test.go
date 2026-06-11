@@ -27,7 +27,7 @@ func TestHelpContent_AllCoreCommands(t *testing.T) {
 	h := HelpContent()
 	cmds := []string{
 		"/help", "/goal", "/darwin", "/council", "/clear",
-		"/reflect", "/compact", "/status", "/models", "/sandbox",
+		"/reflect", "/compact", "/status", "/sandbox",
 		"/plan", "/diff", "/model", "/resume", "/export", "/cost", "/undo", "/providers", "/quit",
 	}
 	for _, c := range cmds {

@@ -319,7 +319,7 @@ func TestInteractiveModelsMenu_FilterAndSelect(t *testing.T) {
 		}},
 		ModelSwapFn: func(modelID, provider string) (llm.Provider, error) { return stubLLM{n: modelID}, nil },
 	})
-	m.input.SetValue("/models")
+	m.input.SetValue("/model")
 	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := out.(Model)
 	if cmd != nil {
