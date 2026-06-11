@@ -187,7 +187,7 @@ func TestBuildSlashItems_WithCommands(t *testing.T) {
 			t.Fatalf("expected value to end with space, got %q", it.Value)
 		}
 	}
-	for _, name := range []string{"/models", "/providers", "/goal", "/plan", "/export", "/quit", "/help"} {
+	for _, name := range []string{"/model", "/providers", "/goal", "/plan", "/export", "/quit", "/help"} {
 		if !labels[name] {
 			t.Fatalf("expected %q in autocomplete items", name)
 		}
@@ -352,7 +352,6 @@ func TestAutocomplete_FilterSlash(t *testing.T) {
 	m.commands = map[string]SlashHandler{
 		"help":   func(_ context.Context, _ string) (string, error) { return "", nil },
 		"goal":   func(_ context.Context, _ string) (string, error) { return "", nil },
-		"models": func(_ context.Context, _ string) (string, error) { return "", nil },
 		"model":  func(_ context.Context, _ string) (string, error) { return "", nil },
 		"quit":   func(_ context.Context, _ string) (string, error) { return "", nil },
 	}
@@ -364,8 +363,8 @@ func TestAutocomplete_FilterSlash(t *testing.T) {
 		t.Fatalf("expected slash autocomplete, got kind=%d", m.autocomp.kind)
 	}
 	filtered := filterItems(m.autocomp.items, m.autocomp.query)
-	if len(filtered) != 2 {
-		t.Fatalf("expected 2 filtered items (/models, /model), got %d", len(filtered))
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 filtered item (/model), got %d", len(filtered))
 	}
 }
 

@@ -76,7 +76,7 @@ func commandCategory(name string) string {
 	switch name {
 	case "help", "status", "cost", "doctor", "sandbox":
 		return "system"
-	case "model", "models", "providers":
+	case "model", "providers":
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact":
 		return "agent"
@@ -101,7 +101,6 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "reflect", Desc: "show learned patterns from reflection"},
 		{Name: "compact", Desc: "compress context to save tokens"},
 		{Name: "status", Desc: "show credits and session info"},
-		{Name: "models", Desc: "interactive model picker"},
 		{Name: "providers", Desc: "manage providers"},
 		{Name: "sandbox", Desc: "show sandbox status"},
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},

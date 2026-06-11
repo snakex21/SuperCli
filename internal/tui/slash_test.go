@@ -190,7 +190,7 @@ func TestFormatHelp_KeysSection(t *testing.T) {
 func TestHelpContent_AllCommands(t *testing.T) {
 	h := HelpContent()
 	cmds := []string{"/help", "/goal", "/darwin", "/council", "/clear",
-		"/reflect", "/compact", "/status", "/models", "/sandbox"}
+		"/reflect", "/compact", "/status", "/model", "/sandbox"}
 	for _, c := range cmds {
 		if !strings.Contains(h, c) {
 			t.Errorf("HelpContent missing %s", c)

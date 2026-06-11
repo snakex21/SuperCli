@@ -1570,11 +1570,6 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
-	// /models is an alias for /model: no-arg opens the picker,
-	// with an arg it swaps directly. One implementation, two names.
-	if cmd.Name == "models" {
-		cmd.Name = "model"
-	}
 	// /providers without args opens the interactive menu; with
 	// args it falls through to the text subcommand handler below
 	// (add/remove/price/toggle), which used to be dead code.
