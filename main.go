@@ -324,6 +324,17 @@ func main() {
 	if !*echoFlag && cfg.IsEcho() &&
 		len(tomlCfg.Providers) == 0 && tomlCfg.Provider == "" && tomlCfg.DefaultProvider == "" {
 		if res := tui.RunOnboarding(); !res.Skipped {
+			// "Sign in with ChatGPT" needs the OAuth browser flow,
+			// which the wizard cannot run itself. Do it here, on
+			// the plain console, before the TUI starts.
+			if res.AuthMethod == tui.AuthChatGPT {
+				initCodexAuth(home, tomlCfg)
+				if _, err := codexAuthMgr.Login(context.Background(), os.Stdout); err != nil {
+					fmt.Fprintf(os.Stderr, "ChatGPT login failed: %v\nFalling back to setup-free start — run /login inside SuperCli to retry.\n", err)
+				} else {
+					res.BaseURL = codexAuthMgr.Options().BackendURL
+				}
+			}
 			globalTomlPath, _ := config.FindTomlPaths(home, cwd)
 			saved := tomlCfg
 			saved.Providers = []config.ProviderConf{{
@@ -331,8 +342,12 @@ func main() {
 				Type:    res.Type,
 				BaseURL: res.BaseURL,
 				APIKey:  res.APIKey,
+				Model:   res.Model,
 			}}
 			saved.DefaultProvider = res.Name
+			if res.Model != "" {
+				saved.DefaultModel = res.Model
+			}
 			if err := config.SaveToml(globalTomlPath, saved); err != nil {
 				log.Printf("onboarding: save config.toml: %v", err)
 			}
@@ -340,6 +355,12 @@ func main() {
 			cfg.Provider = res.Type
 			cfg.BaseURL = res.BaseURL
 			cfg.APIKey = res.APIKey
+			if res.Model != "" {
+				cfg.Model = res.Model
+			}
+			if err := cfg.Normalize(); err != nil {
+				log.Printf("onboarding: normalize config: %v", err)
+			}
 		}
 	}
 
