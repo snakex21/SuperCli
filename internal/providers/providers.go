@@ -404,7 +404,7 @@ type PredefinedProvider struct {
 // The last entry is always "custom" for manual configuration.
 func PredefinedProviders() []PredefinedProvider {
 	return []PredefinedProvider{
-		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "GPT-4o, o1, o3, DALL·E"},
+		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "ChatGPT account or API key"},
 		{Name: "anthropic", Type: "openai", BaseURL: "https://api.anthropic.com/v1", Desc: "Claude 4, Claude 3.5"},
 		{Name: "google", Type: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Desc: "Gemini 2.5, Gemini 2.0"},
 		{Name: "groq", Type: "openai", BaseURL: "https://api.groq.com/openai/v1", Desc: "Fast inference (Llama, Mixtral)"},
