@@ -25,6 +25,7 @@ const (
 	menuProviderModels
 	menuProviderForm
 	menuProviderPredefined
+	menuOpenAIAuth
 	menuGoal
 )
 
@@ -351,6 +352,8 @@ func (m *Model) clampMenuCursor() {
 		return
 	case menuProviderPredefined:
 		max = len(providers.PredefinedProviders()) - 1
+	case menuOpenAIAuth:
+		max = 1
 	case menuGoal:
 		max = len(m.goalTaskRows()) - 1
 	}
@@ -440,11 +443,32 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		p := pres[minInt(m.menu.cursor, len(pres)-1)]
+		// OpenAI is one provider with two auth methods: ChatGPT
+		// account (OAuth) or API key. Ask which one to use.
+		if p.Name == "openai" {
+			m.menu = interactiveMenu{kind: menuOpenAIAuth}
+			return m, nil
+		}
 		m.menu = interactiveMenu{
 			kind:     menuProviderForm,
 			form:     []string{p.Name, p.Type, p.BaseURL, ""},
 			formAt:   0,
 			editName: "",
+		}
+		return m, nil
+	case menuOpenAIAuth:
+		if m.menu.cursor == 0 {
+			// Sign in with ChatGPT: run the existing OAuth flow
+			// (/login). It registers the provider entry itself.
+			next, _ := m.closeMenu()
+			mm := next.(Model)
+			return mm.dispatchSlashCommand(SlashCommand{Name: "login"})
+		}
+		// API key: prefill the regular provider form.
+		m.menu = interactiveMenu{
+			kind:   menuProviderForm,
+			form:   []string{"openai", "openai", "https://api.openai.com/v1", ""},
+			formAt: 3,
 		}
 		return m, nil
 	}
@@ -481,6 +505,8 @@ func (m Model) renderMenuView() string {
 		return m.renderProviderForm()
 	case menuProviderPredefined:
 		return m.renderPredefinedMenu()
+	case menuOpenAIAuth:
+		return m.renderOpenAIAuthMenu()
 	case menuGoal:
 		return m.renderGoalMenu()
 	default:
@@ -546,15 +572,15 @@ func (m Model) renderProvidersMenu() string {
 		if len(model) > 24 {
 			model = model[:21] + "..."
 		}
-		typ := displayProviderType(p.Type)
+		name, typ := displayProvider(p.Name, p.Type)
 		statusText, statusStyled := m.providerStatusCell(p.Name)
 		// Pad with the unstyled width, then swap in the styled text
 		// so ANSI codes don't break column alignment.
-		line := fmt.Sprintf("%-14s %-8s %-24s %-12s", p.Name, typ, model, statusText)
+		line := fmt.Sprintf("%-14s %-8s %-24s %-12s", name, typ, model, statusText)
 		line = strings.Replace(line, statusText, statusStyled, 1) + " " + m.palette.Dim.Render(p.BaseURL)
 		full := prefix + check + " " + line
 		if i == m.menu.cursor {
-			full = prefix + m.palette.HeaderMode.Render(check+" "+fmt.Sprintf("%-14s %-8s %-24s %-12s", p.Name, typ, model, statusText)) + " " + m.palette.Dim.Render(p.BaseURL)
+			full = prefix + m.palette.HeaderMode.Render(check+" "+fmt.Sprintf("%-14s %-8s %-24s %-12s", name, typ, model, statusText)) + " " + m.palette.Dim.Render(p.BaseURL)
 		}
 		b.WriteString(full + "\n")
 		if st, ok := m.providerStatuses[p.Name]; ok && st.checked && !st.online && st.err != "" {
@@ -572,13 +598,14 @@ func (m Model) renderProvidersMenu() string {
 	return b.String()
 }
 
-// displayProviderType maps internal provider types to what the
-// user should see: "codex" is just OpenAI with ChatGPT auth.
-func displayProviderType(t string) string {
-	if t == "codex" {
-		return "openai"
+// displayProvider maps internal provider entries to what the user
+// should see: the legacy "codex" entry is just OpenAI signed in
+// with a ChatGPT account.
+func displayProvider(name, typ string) (string, string) {
+	if typ == "codex" {
+		return "openai", "chatgpt"
 	}
-	return t
+	return name, typ
 }
 
 // providerStatusCell returns the plain text and the styled text
@@ -679,6 +706,28 @@ func (m Model) renderPredefinedMenu() string {
 	}
 	if len(pres) == 0 {
 		b.WriteString("  no predefined providers\n")
+	}
+	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ select · Enter pick · ESC back"))
+	return b.String()
+}
+
+func (m Model) renderOpenAIAuthMenu() string {
+	var b strings.Builder
+	b.WriteString(m.palette.PanelTitle.Render("OpenAI — choose how to sign in") + "\n\n")
+	opts := []string{
+		"Sign in with your ChatGPT account (uses your subscription limits)",
+		"API key (pay-as-you-go platform.openai.com key)",
+	}
+	for i, o := range opts {
+		prefix := "  "
+		line := o
+		if i == m.menu.cursor {
+			prefix = "❯ "
+			line = m.palette.HeaderMode.Render(line)
+		} else {
+			line = m.palette.Dim.Render(line)
+		}
+		b.WriteString(prefix + line + "\n")
 	}
 	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ select · Enter pick · ESC back"))
 	return b.String()
