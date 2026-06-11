@@ -415,6 +415,13 @@ func (m Model) Init() tea.Cmd {
 // Messages exchanged between Update and the agent goroutine.
 type runStartMsg struct {
 	ch <-chan agent.Event
+	// err is set when agent.Run failed before producing a
+	// channel; the run never started.
+	err error
+	// mentionCount/mentionTokens describe @file mentions that
+	// were resolved in the background before the run started.
+	mentionCount  int
+	mentionTokens int
 }
 
 type runEventMsg struct {
@@ -519,6 +526,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case runStartMsg:
+		if msg.err != nil {
+			// agent.Run failed before the run started.
+			m.cancel.Disarm()
+			m.busy = false
+			m.appendLine(fmt.Sprintf("(error: %v)", msg.err))
+			m.refreshTranscript()
+			return m, nil
+		}
+		if msg.mentionCount > 0 && msg.mentionTokens > 0 {
+			m.appendLine(m.marker.Mention(msg.mentionCount, msg.mentionTokens))
+			m.refreshTranscript()
+		}
 		m.busy = true
 		m.current = ""
 		m.responseLen = 0
@@ -767,39 +786,45 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.appendLine(m.marker.NoAgent())
 			return m, nil
 		}
-		// F26.1: @file mentions — parse @path references,
-		// read files, and prepend content to the prompt.
-		prompt := text
-		remaining, mentionPaths := mentions.Parse(text)
-		if len(mentionPaths) > 0 {
-			ments := mentions.Resolve(m.home, mentionPaths, 0)
-			prompt = mentions.FormatBlock(ments, remaining)
-			tokens := mentions.TotalTokens(ments)
-			if tokens > 0 {
-				m.appendLine(m.marker.Mention(len(mentionPaths), tokens))
-				m.refreshTranscript()
-			}
-		}
+		// Echo the prompt and start the spinner IMMEDIATELY.
+		// All potentially blocking work — @mention file reads
+		// and agent.Run (which synchronously persists the user
+		// message to the SQLite history before returning) —
+		// happens inside the tea.Cmd goroutine below, so a slow
+		// disk never freezes the input box on Enter.
+		//
 		// F25: create a cancellable context for Ctrl+C support.
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancel.Arm(cancelRun, cancel)
-		// F26.3: if plan mode is active, wrap the prompt.
-		runPrompt := prompt
-		if m.planMode {
-			runPrompt = planmode.WrapPrompt(prompt)
-		}
-		ch, err := m.agent.Run(ctx, runPrompt)
-		if err != nil {
-			cancel()
-			m.cancel.Disarm()
-			m.appendLine(fmt.Sprintf("(error: %v)", err))
-			return m, nil
-		}
 		m.chat.addUser("> " + text)
 		m.appendLineToTranscript("> " + text)
 		m.busy = true
 		m.current = ""
-		return m, func() tea.Msg { return runStartMsg{ch: ch} }
+		home, planMode, ag := m.home, m.planMode, m.agent
+		return m, func() tea.Msg {
+			// F26.1: @file mentions — parse @path references,
+			// read files, and prepend content to the prompt.
+			prompt := text
+			remaining, mentionPaths := mentions.Parse(text)
+			var mentionCount, mentionTokens int
+			if len(mentionPaths) > 0 {
+				ments := mentions.Resolve(home, mentionPaths, 0)
+				prompt = mentions.FormatBlock(ments, remaining)
+				mentionCount = len(mentionPaths)
+				mentionTokens = mentions.TotalTokens(ments)
+			}
+			// F26.3: if plan mode is active, wrap the prompt.
+			runPrompt := prompt
+			if planMode {
+				runPrompt = planmode.WrapPrompt(prompt)
+			}
+			ch, err := ag.Run(ctx, runPrompt)
+			if err != nil {
+				cancel()
+				return runStartMsg{err: err}
+			}
+			return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens}
+		}
 	case "ctrl+v":
 		if text, err := clipboard.ReadAll(); err == nil && text != "" {
 			// Multi-line pastes keep their newlines (code,
