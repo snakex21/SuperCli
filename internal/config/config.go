@@ -160,7 +160,7 @@ func (c *Config) Normalize() error {
 		// bearer token comes from .supercli/auth.json. Default
 		// to the Codex flagship model.
 		if c.Model == "" {
-			c.Model = "gpt-5-codex"
+			c.Model = "gpt-5.5"
 		}
 	default:
 		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, or %q)",

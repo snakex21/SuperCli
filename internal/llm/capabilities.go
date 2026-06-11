@@ -360,6 +360,22 @@ func NewCapabilityRegistryFromSources(home string, db *sql.DB) (*CapabilityRegis
 			return nil, fmt.Errorf("llm: load probe cache: %w", err)
 		}
 		for id, pr := range cache {
+			// A4 fix: MERGE the probe result into any existing
+			// entry instead of replacing it. The old code
+			// registered a fresh ModelInfo with an empty
+			// Provider field, which wiped the provider set by
+			// the seed/catalog entry — and the /model picker
+			// filters rows by configured provider name, so the
+			// model silently vanished from the list. A probe
+			// must never make a model disappear.
+			if existing, ok := r.Get(id); ok {
+				existing.Reasoning = pr.Reasoning
+				existing.Vision = existing.Vision || pr.Vision
+				existing.Source = SourceProbe
+				existing.LastVerified = pr.ProbedAt
+				r.Register(existing)
+				continue
+			}
 			r.Register(ModelInfo{
 				ID:           id,
 				Reasoning:    pr.Reasoning,

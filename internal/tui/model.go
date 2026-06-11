@@ -1218,8 +1218,20 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return runEndMsg{} }
 	case agent.ErrorEvent:
 		m.flushCurrent()
-		m.chat.addSystem(m.marker.Error(e.Err))
-		m.appendLineToTranscript(fmt.Sprintf("(error: %v)", e.Err))
+		err := e.Err
+		// A4: a retired/unknown model returns a raw provider
+		// error. Surface it as an actionable message instead —
+		// and never touch the model registry, so the /model
+		// picker keeps working after the failure.
+		if isModelUnavailableErr(err) {
+			name := "current model"
+			if m.llm != nil {
+				name = m.llm.Name()
+			}
+			err = fmt.Errorf("model %q is unavailable on this provider — pick another with /model (%v)", name, e.Err)
+		}
+		m.chat.addSystem(m.marker.Error(err))
+		m.appendLineToTranscript(fmt.Sprintf("(error: %v)", err))
 		return m, func() tea.Msg { return runEndMsg{} }
 	case agent.DraftUsedEvent:
 		line := m.marker.Draft(e.DraftModel, e.VerifierModel, e.Savings, e.Decision)

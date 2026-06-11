@@ -71,7 +71,7 @@ func TestNormalizeCodexProvider(t *testing.T) {
 	if err := c.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	if c.Model != "gpt-5-codex" {
-		t.Errorf("default codex model = %q, want gpt-5-codex", c.Model)
+	if c.Model != "gpt-5.5" {
+		t.Errorf("default codex model = %q, want gpt-5.5", c.Model)
 	}
 }

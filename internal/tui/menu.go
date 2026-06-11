@@ -770,7 +770,7 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	if m.providerMgr != nil {
 		configured := m.configuredProviderNames()
 		if len(configured) > 0 {
-			filtered := rows[:0]
+			filtered := make([]llm.ModelInfo, 0, len(rows))
 			for _, r := range rows {
 				// Once providers are configured, do not display embedded
 				// seed models as if they were available from that API key.
@@ -782,6 +782,18 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 					if r.Provider == name {
 						filtered = append(filtered, r)
 						break
+					}
+				}
+			}
+			// A4 guard: if the provider-name filter would leave
+			// the picker EMPTY (registry entries lost their
+			// Provider field, or the startup scan failed), fall
+			// back to all non-seed rows. An imperfect list beats
+			// a blank menu that looks like data loss.
+			if len(filtered) == 0 {
+				for _, r := range rows {
+					if r.Source != llm.SourceSeed {
+						filtered = append(filtered, r)
 					}
 				}
 			}

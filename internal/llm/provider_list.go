@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
@@ -16,6 +17,25 @@ import (
 // of JSON) so 10s is generous; we use the same
 // value for probes to keep the constants tidy.
 const providerListTimeout = 10 * time.Second
+
+// providerListCacheTTL is how long a successful /v1/models
+// response is reused before re-fetching. One hour: long enough
+// that menu opens and rescans are free, short enough that a
+// provider enabling/retiring models surfaces the same day.
+const providerListCacheTTL = time.Hour
+
+// providerListCache memoizes successful ListProviderModels calls
+// keyed by baseURL. Errors are never cached. Guarded by its own
+// mutex; the map is tiny (one entry per configured provider).
+var providerListCache = struct {
+	mu sync.Mutex
+	m  map[string]providerListEntry
+}{m: make(map[string]providerListEntry)}
+
+type providerListEntry struct {
+	ids     []string
+	fetched time.Time
+}
 
 // ListProviderModels returns the model ids exposed
 // by a provider's /v1/models endpoint. The result
@@ -40,6 +60,13 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 	if baseURL == "" {
 		return nil, fmt.Errorf("llm: ListProviderModels: baseURL is empty")
 	}
+	providerListCache.mu.Lock()
+	if e, ok := providerListCache.m[baseURL]; ok && time.Since(e.fetched) < providerListCacheTTL {
+		ids := append([]string(nil), e.ids...)
+		providerListCache.mu.Unlock()
+		return ids, nil
+	}
+	providerListCache.mu.Unlock()
 	base := strings.TrimRight(baseURL, "/")
 	u := base + "/models"
 	if !strings.HasSuffix(base, "/v1") {
@@ -82,6 +109,9 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 			out = append(out, m.ID)
 		}
 	}
+	providerListCache.mu.Lock()
+	providerListCache.m[baseURL] = providerListEntry{ids: append([]string(nil), out...), fetched: time.Now()}
+	providerListCache.mu.Unlock()
 	return out, nil
 }
 
