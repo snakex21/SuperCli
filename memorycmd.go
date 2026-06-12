@@ -174,6 +174,20 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop) {
 		return
 	}
 	msgs := loop.AllMessages()
+	// Exit-latency rule: only spend an LLM call when the session
+	// actually had user content. An empty session (user opened the
+	// TUI, looked around, quit) must exit instantly.
+	hadUserTurn := false
+	for _, m := range msgs {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Content) != "" {
+			hadUserTurn = true
+			break
+		}
+	}
+	if !hadUserTurn {
+		saver.Finalize(context.Background(), "", nil) // still bumps the card
+		return
+	}
 	if len(msgs) > 40 {
 		msgs = msgs[len(msgs)-40:]
 	}
@@ -182,7 +196,11 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop) {
 	if len(transcript) > maxChars {
 		transcript = transcript[len(transcript)-maxChars:]
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// Hard cap: the summary call may not hold the exit hostage.
+	// 3s is enough for a short completion; on timeout we simply
+	// skip the auto-save (the session log/db are already saved).
+	fmt.Fprintln(os.Stderr, "saving memory...")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	saver.Finalize(ctx, transcript, func(ctx context.Context, prompt string) (string, error) {
 		ch, err := provider.Complete(ctx, []llm.Message{

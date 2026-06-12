@@ -162,6 +162,7 @@ func envFalsey(key string) bool {
 }
 
 func main() {
+	startupT := time.Now()
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
 	// If the program crashes silently, check .supercli/logs/crash.log.
 	// `home` is captured by the closure: until --home is resolved we
@@ -658,16 +659,22 @@ func main() {
 				ErrorsPath:  filepath.Join(logsDir, "tool_errors.log"),
 				MaxPatterns: 5,
 			}
-			patterns, extErr := ext.Extract(context.Background())
-			if extErr != nil {
-				log.Printf("F5 extract: %v", extErr)
-			} else if len(patterns) > 0 {
-				if saveErr := patStore.SaveAll(context.Background(), patterns); saveErr != nil {
-					log.Printf("F5 save: %v", saveErr)
-				} else {
-					log.Printf("F5: stored %d patterns", len(patterns))
+			// Pattern extraction parses the whole tool_errors.log;
+			// run it off the startup path (the injector reads the
+			// store lazily, so late-stored patterns still apply).
+			go func() {
+				defer recoverAndLog(home)()
+				patterns, extErr := ext.Extract(context.Background())
+				if extErr != nil {
+					log.Printf("F5 extract: %v", extErr)
+				} else if len(patterns) > 0 {
+					if saveErr := patStore.SaveAll(context.Background(), patterns); saveErr != nil {
+						log.Printf("F5 save: %v", saveErr)
+					} else {
+						log.Printf("F5: stored %d patterns", len(patterns))
+					}
 				}
-			}
+			}()
 			injector = &reflect.Injector{Store: patStore}
 		}
 	}
@@ -687,13 +694,24 @@ func main() {
 	}
 	defer tracker.Close()
 
-	// F28: fetch external prices (pricepertoken.com, OpenRouter)
-	// and push fetched rates into the credits package so
-	// CostFor/StatusBar use live prices. Non-fatal: if all
-	// sources fail, the hardcoded fallback rates in
-	// credits/cost.go still work. Cache is saved to disk.
-	fetcher := pricing.NewFetcher(home)
-	fetcher.FetchAndUpdate(caps.All())
+	// F28: external prices (pricepertoken.com, OpenRouter) push
+	// fetched rates into the credits package so CostFor/StatusBar
+	// use live prices. Non-fatal: if all sources fail, the
+	// hardcoded fallback rates in credits/cost.go still work.
+	//
+	// Startup-latency rule: NEVER hit the network on the startup
+	// path. Apply the 24h disk cache synchronously (pure file
+	// read); only when it's missing/stale, fetch in the
+	// background — rates pop in a second or two after the TUI is
+	// already interactive.
+	if !pricing.ApplyCachedRates(home) {
+		fetcher := pricing.NewFetcher(home)
+		capsSnapshot := caps.All()
+		go func() {
+			defer recoverAndLog(home)()
+			fetcher.FetchAndUpdate(capsSnapshot)
+		}()
+	}
 
 	// F13: open the session store. Messages get persisted
 	// as the loop emits them, and a FTS5 index on
@@ -1269,6 +1287,11 @@ func main() {
 		GoalService:        goalSvc,
 		ToolRegistry:       registry,
 	})
+
+	// Startup-latency tripwire: everything above must be local
+	// IO only. If this ever creeps past a few hundred ms, check
+	// the log for what got added to the hot path.
+	log.Printf("startup: TUI ready in %s", time.Since(startupT).Round(time.Millisecond))
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
 

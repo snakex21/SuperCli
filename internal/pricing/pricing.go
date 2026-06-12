@@ -140,6 +140,22 @@ func (f *Fetcher) FetchAll() []PriceEntry {
 	return all
 }
 
+// ApplyCachedRates loads the on-disk price cache and, when it is
+// still fresh (24h TTL), pushes the cached rates into the credits
+// package without any network IO. Returns true when fresh cached
+// rates were applied — the caller can then skip the network fetch
+// entirely. Keeping the fetch off the hot path matters:
+// FetchAndUpdate scrapes two external HTTP sources and used to
+// run synchronously during startup.
+func ApplyCachedRates(home string) bool {
+	entries := LoadCache(home)
+	if len(entries) == 0 {
+		return false
+	}
+	pushRatesToCredits(entries)
+	return true
+}
+
 // FetchAndUpdate fetches prices, saves cache, and merges into
 // the existing catalog. Manual (SourceUser) entries are never
 // overwritten. Also pushes fetched rates into the credits
