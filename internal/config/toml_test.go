@@ -371,3 +371,49 @@ func TestSaveToml_CreatesDir(t *testing.T) {
 		t.Error("file should exist")
 	}
 }
+
+func TestLoadToml_McpServers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[mcp.servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+[mcp.servers.context7.env]
+CONTEXT7_API_KEY = "secret"
+
+[mcp.servers.echo]
+command = "echo-server"
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadToml(path)
+	if err != nil {
+		t.Fatalf("LoadToml: %v", err)
+	}
+	c7, ok := cfg.Mcp.Servers["context7"]
+	if !ok {
+		t.Fatalf("context7 missing: %+v", cfg.Mcp)
+	}
+	if c7.Command != "npx" || len(c7.Args) != 2 || c7.Env["CONTEXT7_API_KEY"] != "secret" {
+		t.Errorf("context7 = %+v", c7)
+	}
+	if cfg.Mcp.Servers["echo"].Command != "echo-server" {
+		t.Errorf("echo = %+v", cfg.Mcp.Servers["echo"])
+	}
+
+	// Merge: project entry overrides same-name global entry, keeps others.
+	global := cfg
+	project := TomlConfig{Mcp: McpConf{Servers: map[string]McpServerConf{
+		"echo": {Command: "other"},
+	}}}
+	mergeToml(&global, project)
+	if global.Mcp.Servers["echo"].Command != "other" {
+		t.Errorf("merge override failed: %+v", global.Mcp.Servers["echo"])
+	}
+	if _, ok := global.Mcp.Servers["context7"]; !ok {
+		t.Error("merge dropped context7")
+	}
+}

@@ -99,6 +99,32 @@ type TomlConfig struct {
 	// Empty = fall back to the auto-assembled
 	// cheapest-N council.
 	Council CouncilConf `toml:"council"`
+
+	// Mcp configures external MCP servers. Each
+	// [mcp.servers.<name>] section spawns a stdio MCP server
+	// whose tools are registered as mcp_<name>_<tool>
+	// (discoverable via tool_search, not always-on).
+	Mcp McpConf `toml:"mcp"`
+}
+
+// McpConf is the [mcp] section of config.toml.
+type McpConf struct {
+	Servers map[string]McpServerConf `toml:"servers"`
+}
+
+// McpServerConf is one [mcp.servers.<name>] entry.
+//
+// Example:
+//
+//	[mcp.servers.context7]
+//	command = "npx"
+//	args = ["-y", "@upstash/context7-mcp"]
+//	[mcp.servers.context7.env]
+//	CONTEXT7_API_KEY = "..."
+type McpServerConf struct {
+	Command string            `toml:"command"`
+	Args    []string          `toml:"args"`
+	Env     map[string]string `toml:"env"`
 }
 
 // CouncilConf is the [council] section of config.toml.
@@ -302,6 +328,16 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.WebSearch.APIKey != "" {
 		dst.WebSearch.APIKey = src.WebSearch.APIKey
+	}
+	// MCP servers: merged per name; a project entry overrides
+	// the global entry with the same name.
+	if len(src.Mcp.Servers) > 0 {
+		if dst.Mcp.Servers == nil {
+			dst.Mcp.Servers = make(map[string]McpServerConf, len(src.Mcp.Servers))
+		}
+		for name, s := range src.Mcp.Servers {
+			dst.Mcp.Servers[name] = s
+		}
 	}
 }
 
