@@ -74,11 +74,11 @@ func buildSlashItems(_ map[string]SlashHandler) []autocompleteItem {
 
 func commandCategory(name string) string {
 	switch name {
-	case "help", "status", "cost", "doctor", "sandbox":
+	case "help", "status", "cost", "doctor", "sandbox", "context", "mcp":
 		return "system"
 	case "model", "providers", "reasoning":
 		return "model"
-	case "goal", "plan", "darwin", "council", "reflect", "compact":
+	case "goal", "plan", "darwin", "council", "reflect", "compact", "workers":
 		return "agent"
 	case "diff", "undo", "export", "resume", "clear", "memory":
 		return "session"
@@ -101,6 +101,9 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "reflect", Desc: "show learned patterns from reflection"},
 		{Name: "compact", Desc: "compress context to save tokens"},
 		{Name: "status", Desc: "show credits and session info"},
+		{Name: "workers", Desc: "list coordinator workers / stop one", Args: "[stop <id>]"},
+		{Name: "context", Desc: "show context/token usage breakdown"},
+		{Name: "mcp", Desc: "list MCP servers, restart one", Args: "[restart <name>]"},
 		{Name: "memory", Desc: "inspect persistent memory", Args: "[search <query> | forget <id>]"},
 		{Name: "providers", Desc: "manage providers"},
 		{Name: "sandbox", Desc: "show sandbox status"},

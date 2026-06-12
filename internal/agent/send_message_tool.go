@@ -79,8 +79,16 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		w.LastError = "worker loop is nil"
 		return "", fmt.Errorf("worker %s: loop is nil", w.ID)
 	}
-	events, err := w.Loop.Run(ctx, prompt)
+	// Make this run stoppable: task_stop / "/workers stop <id>" cancel
+	// the context mid-run. clearCancel tells us whether a failure was an
+	// explicit stop (status "stopped") or a real error.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w.setCancel(cancel)
+
+	events, err := w.Loop.Run(runCtx, prompt)
 	if err != nil {
+		w.clearCancel()
 		w.Status = "failed"
 		w.LastError = err.Error()
 		return "", err
@@ -91,14 +99,24 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
+		case DoneEvent:
+			w.TokensIn += e.Usage.Input
+			w.TokensOut += e.Usage.Output
 		case ErrorEvent:
-			w.Status = "failed"
+			stopped := w.clearCancel()
 			w.UpdatedAt = time.Now()
 			w.LastResult = text.String()
+			if stopped {
+				w.Status = "stopped"
+				w.LastError = "stopped by request"
+				return text.String(), fmt.Errorf("worker %s stopped by request", w.ID)
+			}
+			w.Status = "failed"
 			w.LastError = e.Err.Error()
 			return text.String(), e.Err
 		}
 	}
+	w.clearCancel()
 	w.Status = "done"
 	w.UpdatedAt = time.Now()
 	w.LastResult = text.String()
