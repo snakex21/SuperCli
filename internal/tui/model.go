@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/agent"
+	"supercli/internal/config"
 	"supercli/internal/cost"
 	"supercli/internal/doctor"
 	"supercli/internal/export"
@@ -849,6 +850,33 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateAutocompleteState()
 		}
 		return m, nil
+	case "ctrl+r":
+		// Cycle reasoning effort: off → minimal → low → medium
+		// → high → (xhigh on codex-max) → off. Same persistence
+		// path as /reasoning (global config.toml).
+		modelName := "no-model"
+		if m.llm != nil {
+			modelName = m.llm.Name()
+		}
+		if m.llm == nil || !llm.SupportsReasoningEffort(modelName) {
+			m.statusOverride = fmt.Sprintf("model %s does not support reasoning effort", modelName)
+		} else {
+			next := llm.NextReasoningEffort(llm.ReasoningEffort(),
+				llm.SupportsXHighReasoningEffort(modelName))
+			if err := llm.SetReasoningEffort(next); err != nil {
+				m.statusOverride = fmt.Sprintf("reasoning: %v", err)
+			} else {
+				m.persistReasoningEffort(next)
+				if next == "" {
+					m.statusOverride = "reasoning: off (provider default)"
+				} else {
+					m.statusOverride = "reasoning: " + next
+				}
+			}
+		}
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return statusOverrideClearMsg{}
+		})
 	case "ctrl+y":
 		// Copy the last assistant response to the clipboard.
 		last := m.chat.lastAssistant()
@@ -875,6 +903,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.updateAutocompleteState()
 
 	return m, cmd
+}
+
+// persistReasoningEffort writes the level to the GLOBAL
+// config.toml — the same file the /reasoning slash command
+// writes — so Ctrl+R changes survive a restart. Best-effort:
+// the in-process level is already set even if the save fails.
+func (m *Model) persistReasoningEffort(level string) {
+	cwd, _ := os.Getwd()
+	globalPath, _ := config.FindTomlPaths(m.home, cwd)
+	if tc, err := config.LoadToml(globalPath); err == nil {
+		tc.ReasoningEffort = level
+		if err := config.SaveToml(globalPath, tc); err != nil {
+			m.statusOverride = fmt.Sprintf("reasoning: save config.toml: %v", err)
+		}
+	}
 }
 
 // isInputNavKey reports whether the key is one the multi-line
@@ -1396,6 +1439,15 @@ func (m Model) renderHeader() string {
 	model := "no-model"
 	if m.llm != nil {
 		model = m.llm.Name()
+		// Show the active reasoning-effort level next to the
+		// model name, but only when the model actually supports
+		// the parameter and a level is set ("" = provider
+		// default → show nothing). Read at render time, so it
+		// refreshes immediately after /reasoning, Ctrl+R, or a
+		// model switch.
+		if eff := llm.ReasoningEffort(); eff != "" && llm.SupportsReasoningEffort(model) {
+			model += " (" + eff + ")"
+		}
 	}
 	name := "✻ SuperCli"
 	if m.version != "" {
@@ -1441,7 +1493,7 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
-	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
+	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R reasoning", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
 		line = "Enter send · Alt+Enter newline · Ctrl+Y copy · /help · Esc clear · Ctrl+C interrupt"
