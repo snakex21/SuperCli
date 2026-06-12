@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"supercli/internal/draft"
 	"supercli/internal/llm"
@@ -495,8 +496,10 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// model's context window.
 		l.maybeAutoCompact(ctx, out, "")
 
-		// Build tool definitions from visible tools. Chat-only route deliberately
-		// sends no tools; this is the actual token-saving part of the router.
+		// Build tool definitions from visible tools. Non-coordinator routes
+		// get only the minimal chatRouteTools set (tool_search + recall) so
+		// the model can pull in more when needed; the full tool list is the
+		// actual token cost the router avoids.
 		var toolDefs []llm.ToolDef
 		if l.route == RouteCoordinator {
 			for _, t := range l.registry.Visible() {
@@ -505,6 +508,16 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 					Description: t.Description,
 					Schema:      t.Schema,
 				})
+			}
+		} else {
+			for _, name := range chatRouteTools {
+				if t, ok := l.registry.Get(name); ok {
+					toolDefs = append(toolDefs, llm.ToolDef{
+						Name:        t.Name,
+						Description: t.Description,
+						Schema:      t.Schema,
+					})
+				}
 			}
 		}
 
@@ -745,7 +758,13 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 
 func (l *Loop) providerMessages() []llm.Message {
 	if l.route == RouteCoordinator {
-		return l.VisibleMessages()
+		// Per-request freshness stamp: appended at the END so the stable
+		// prompt prefix stays cacheable by the provider.
+		visible := l.VisibleMessages()
+		out := make([]llm.Message, 0, len(visible)+1)
+		out = append(out, visible...)
+		out = append(out, llm.Message{Role: llm.RoleSystem, Content: timeSection(time.Now())})
+		return out
 	}
 	visible := l.VisibleMessages()
 	system := chatOnlySystemPrompt
@@ -758,11 +777,28 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.briefing != "" {
 		system += "\n\n" + l.briefing
 	}
+	system += "\n\n" + timeSection(time.Now())
 	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
-	// Keep a tiny conversational tail only. Skip system/tool messages and task
-	// notifications so background agent work does not leak into smalltalk.
+
+	// The current turn (everything from the last user message on) is sent
+	// verbatim so tool_call/tool_result pairing stays intact when the model
+	// uses tool_search or recall on this route.
+	lastUser := -1
+	for i := len(visible) - 1; i >= 0; i-- {
+		if visible[i].Role == llm.RoleUser && !strings.Contains(visible[i].Content, "<task-notification>") {
+			lastUser = i
+			break
+		}
+	}
+	// Keep a tiny conversational tail before the current turn. Skip
+	// system/tool messages and task notifications so background agent
+	// work does not leak into smalltalk.
+	end := len(visible)
+	if lastUser >= 0 {
+		end = lastUser
+	}
 	tail := make([]llm.Message, 0, 8)
-	for i := len(visible) - 1; i >= 0 && len(tail) < 8; i-- {
+	for i := end - 1; i >= 0 && len(tail) < 8; i-- {
 		m := visible[i]
 		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
 			continue
@@ -774,6 +810,14 @@ func (l *Loop) providerMessages() []llm.Message {
 	}
 	for i := len(tail) - 1; i >= 0; i-- {
 		out = append(out, tail[i])
+	}
+	if lastUser >= 0 {
+		for _, m := range visible[lastUser:] {
+			if m.Role == llm.RoleSystem {
+				continue
+			}
+			out = append(out, m)
+		}
 	}
 	return out
 }

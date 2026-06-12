@@ -136,8 +136,11 @@ func TestLoop_ChatOnlyRouteSendsShortPromptAndNoTools(t *testing.T) {
 	if len(p.messages) == 0 || p.messages[0].Role != llm.RoleSystem {
 		t.Fatalf("messages = %+v", p.messages)
 	}
-	if p.messages[0].Content != chatOnlySystemPrompt {
-		t.Fatalf("system prompt = %q, want chat-only prompt", p.messages[0].Content)
+	if !strings.HasPrefix(p.messages[0].Content, chatOnlySystemPrompt) {
+		t.Fatalf("system prompt = %q, want chat-only prompt prefix", p.messages[0].Content)
+	}
+	if !strings.Contains(p.messages[0].Content, "Current local date/time:") {
+		t.Fatalf("system prompt missing per-request time stamp: %q", p.messages[0].Content)
 	}
 	for _, m := range p.messages {
 		if strings.Contains(m.Content, "FULL COORDINATOR") {
@@ -169,8 +172,8 @@ func TestLoop_NavigatorCanChooseAdvisorWithoutTools(t *testing.T) {
 	if p.toolCount != 0 {
 		t.Fatalf("toolCount=%d, want 0", p.toolCount)
 	}
-	if len(p.messages) == 0 || p.messages[0].Content != advisorSystemPrompt {
-		t.Fatalf("final messages = %+v, want advisor prompt", p.messages)
+	if len(p.messages) == 0 || !strings.HasPrefix(p.messages[0].Content, advisorSystemPrompt) {
+		t.Fatalf("final messages = %+v, want advisor prompt prefix", p.messages)
 	}
 }
 
