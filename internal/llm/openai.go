@@ -170,7 +170,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
 			if !retryable || attempt >= maxAttempts {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s", resp.StatusCode, string(body))}:
+				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body))}:
 				case <-ctx.Done():
 				}
 				return

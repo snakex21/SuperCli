@@ -4,7 +4,8 @@
 // (chat completions: "reasoning_effort"; Responses API:
 // "reasoning": {"effort": ...}). Supported values are
 // model-dependent: none, minimal, low, medium, high, xhigh
-// (xhigh only on the codex-max family; "none" from gpt-5.1 on).
+// (xhigh on gpt-5.5 and the codex families; "none" from gpt-5.1
+// on).
 //
 // The active level is process-global (one active chat model at a
 // time) and is set by the /reasoning slash command or the
@@ -57,13 +58,44 @@ func isValidReasoningEffort(level string) bool {
 }
 
 // SupportsXHighReasoningEffort reports whether the model accepts
-// the "xhigh" effort level (codex-max family only).
+// the "xhigh" effort level. Per OpenAI docs (June 2026): gpt-5.5
+// supports none/low/medium/high/xhigh, and xhigh is available
+// across the codex variants (gpt-5.x-codex, codex-max, codex-mini
+// etc.). Older gpt-5.x base models cap at high. If a model in
+// this allowlist still rejects xhigh, the backend's 400 is shown
+// with a readable hint (see ReasoningEffortErrorHint) and chat
+// state is unaffected.
 func SupportsXHighReasoningEffort(model string) bool {
 	m := strings.ToLower(model)
 	if i := strings.LastIndexByte(m, '/'); i >= 0 {
 		m = m[i+1:]
 	}
-	return strings.Contains(m, "codex-max")
+	return strings.Contains(m, "codex") || strings.HasPrefix(m, "gpt-5.5")
+}
+
+// ReasoningEffortErrorHint returns a human-readable suffix for an
+// HTTP 400 body that looks like a reasoning-effort validation
+// failure (the model rejected the configured level). Empty string
+// when the error is unrelated to reasoning effort.
+func ReasoningEffortErrorHint(body string) string {
+	eff := ReasoningEffort()
+	if eff == "" {
+		return ""
+	}
+	b := strings.ToLower(body)
+	if !strings.Contains(b, "reasoning") && !strings.Contains(b, "effort") {
+		return ""
+	}
+	return fmt.Sprintf(" — model nie wspiera reasoning effort %q; ustaw niższy poziom przez /reasoning", eff)
+}
+
+// badRequestEffortHint applies ReasoningEffortErrorHint only to
+// HTTP 400 responses (validation errors).
+func badRequestEffortHint(status int, body []byte) string {
+	if status != 400 {
+		return ""
+	}
+	return ReasoningEffortErrorHint(string(body))
 }
 
 // NextReasoningEffort returns the level that follows current in

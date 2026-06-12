@@ -53,6 +53,23 @@ Gotowe gdy: `/darwin "zadanie"` pokazuje N diffów + werdykt sędziego i pozwala
 Zakres: prompt cache / stabilizacja requestów (PLAN.md), scratchpad workerów, eksport sesji, ewentualnie cookbook-light: rekomendacja modelu pod VRAM (inspiracja: odysseus "Cookbook" oparty o llmfit).
 Gotowe gdy: powtórne requesty trafiają w cache providera, a /doctor potrafi zaproponować model pasujący do sprzętu.
 
+## TODO: wydajność i kluczowe ficzery
+
+### Wydajność
+1. **Prompt cache / keep-alive** — stabilny prefiks promptu pod cache providera; dla Ollamy ustawiać `keep_alive`, żeby model nie był wyładowywany z VRAM między requestami.
+2. **Krótszy system prompt + mniej tooli dla tieru small** — mniejszy kontekst = szybsze TTFT i mniej błędów tool-calli na małych modelach.
+3. **Streaming wszędzie** — zweryfikować, czy navigator i podsumowania (compact, raporty workerów) streamują zamiast czekać na pełną odpowiedź.
+4. **Równoległe niezależne tool-calle** — wykonywać współbieżnie calle bez zależności między sobą.
+5. **Indeksy SQLite + okresowa konsolidacja pamięci** — indeksy na memory.db/sessions.db, cykliczne odchudzanie starych wpisów.
+
+### Kluczowe ficzery
+1. **/workers i /context** — widoczność koordynatora: panel statusów workerów i rozkład tokenów.
+2. **Darwin — decyzje produktowe + UI** — rozstrzygnąć: N prób tego samego promptu vs różne modele, auto-merge vs ręczne zatwierdzanie; dopiero potem UI.
+3. **Checkpointy plików + /undo** — migawka przed każdą edycją agenta, cofanie jednym poleceniem.
+4. **Rekomendacja modelu pod VRAM** — przy wyborze modelu z Ollamy podpowiadać, co zmieści się w pamięci karty.
+5. **Konsolidacja pamięci** — streszczanie starych wpisów memory zamiast nieograniczonego wzrostu.
+6. **Opcjonalny autocommit po zadaniu agenta** — flaga/ustawienie: commit zmian po udanym tasku.
+
 ## Inspiracje z konkurencyjnych CLI (gdzie szukać)
 
 **opencode** (`opencode-dev/packages/opencode/src`):

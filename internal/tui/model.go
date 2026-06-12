@@ -852,7 +852,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+r":
 		// Cycle reasoning effort: off → minimal → low → medium
-		// → high → (xhigh on codex-max) → off. Same persistence
+		// → high → (xhigh on gpt-5.5/codex) → off. Same persistence
 		// path as /reasoning (global config.toml).
 		modelName := "no-model"
 		if m.llm != nil {

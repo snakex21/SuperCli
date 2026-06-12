@@ -129,10 +129,49 @@ func TestNextReasoningEffortCycle(t *testing.T) {
 }
 
 func TestSupportsXHighReasoningEffort(t *testing.T) {
-	if !SupportsXHighReasoningEffort("openai/gpt-5.1-codex-max") {
-		t.Error("codex-max should support xhigh")
+	yes := []string{
+		"openai/gpt-5.1-codex-max",
+		"gpt-5.5",
+		"openai/gpt-5.5",
+		"gpt-5.5-codex",
+		"gpt-5.3-codex",
+		"codex-mini-latest",
 	}
-	if SupportsXHighReasoningEffort("gpt-5.5") {
-		t.Error("gpt-5.5 should not support xhigh")
+	no := []string{"gpt-5", "gpt-5.1", "gpt-4o", "o3-mini", "qwen2.5-7b"}
+	for _, m := range yes {
+		if !SupportsXHighReasoningEffort(m) {
+			t.Errorf("SupportsXHighReasoningEffort(%q) = false, want true", m)
+		}
+	}
+	for _, m := range no {
+		if SupportsXHighReasoningEffort(m) {
+			t.Errorf("SupportsXHighReasoningEffort(%q) = true, want false", m)
+		}
+	}
+}
+
+func TestReasoningEffortErrorHint(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort("") })
+
+	// No effort set → no hint.
+	_ = SetReasoningEffort("")
+	if got := ReasoningEffortErrorHint(`{"error":"unsupported reasoning effort"}`); got != "" {
+		t.Errorf("hint with no effort set: %q", got)
+	}
+
+	_ = SetReasoningEffort("xhigh")
+	if got := ReasoningEffortErrorHint(`{"error":{"message":"Invalid value for reasoning_effort"}}`); !strings.Contains(got, "xhigh") || !strings.Contains(got, "/reasoning") {
+		t.Errorf("hint = %q, want mention of xhigh and /reasoning", got)
+	}
+	// Unrelated 400 body → no hint.
+	if got := ReasoningEffortErrorHint(`{"error":"context length exceeded"}`); got != "" {
+		t.Errorf("hint for unrelated error: %q", got)
+	}
+	// Only 400s get the hint.
+	if got := badRequestEffortHint(500, []byte("reasoning effort oops")); got != "" {
+		t.Errorf("hint for 500: %q", got)
+	}
+	if got := badRequestEffortHint(400, []byte("reasoning effort oops")); got == "" {
+		t.Error("400 effort error: want hint")
 	}
 }
