@@ -1493,10 +1493,10 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
-	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R reasoning", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
+	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R change reasoning", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = "Enter send · Alt+Enter newline · Ctrl+Y copy · /help · Esc clear · Ctrl+C interrupt"
+		line = "Enter send · Alt+Enter newline · Ctrl+R reasoning · /help · Esc clear · Ctrl+C interrupt"
 	}
 	return m.palette.InputHint.Render(line)
 }

@@ -186,7 +186,7 @@ func HelpContentAll() string {
 func helpKeys() string {
 	return "\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n" +
 		"      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n" +
-		"      Ctrl+R cycle reasoning effort (off→minimal→low→medium→high→xhigh)\n" +
+		"      Ctrl+R change model reasoning effort (off→minimal→low→medium→high→xhigh)\n" +
 		"      Shift+T toggle thinking · Shift+E expand tool output"
 }
 
