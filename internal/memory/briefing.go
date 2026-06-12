@@ -14,6 +14,13 @@ const (
 	ScopePreference = "preference"
 	ScopeDecision   = "decision"
 	ScopeTaskLog    = "task-log"
+	// ScopeRawLog holds emergency dumps of the un-summarized
+	// transcript tail written when the console window is closed
+	// (CTRL_CLOSE_EVENT) — no time for an LLM call there. They
+	// are summarized into task-log entries at the next startup
+	// (AutoSaver.SummarizePendingRaw) and shown raw in the
+	// briefing until then.
+	ScopeRawLog = "raw-log"
 )
 
 // BuildBriefing renders the session-start briefing injected into
@@ -45,6 +52,12 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 	}
 
 	write("[memory_briefing]\n")
+	write("Remembered context from previous sessions. When the user asks about " +
+		"themselves (their name, what they like, their preferences), answer " +
+		"from the facts below (or the recall tool) — do not claim you have no memory.\n")
+	// Everything up to here is boilerplate: a briefing that gains
+	// no actual content below must collapse to "".
+	boilerplate := b.String()
 
 	// 1. Global user preferences.
 	if global != nil {
@@ -89,6 +102,18 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 		}
 	}
 
+	// 3b. Raw tail of an abruptly-terminated session (window
+	// closed before the summarizer ran). Shown verbatim so facts
+	// from that session are available immediately; a background
+	// job turns it into a normal task-log entry shortly after
+	// startup (see AutoSaver.SummarizePendingRaw).
+	if project != nil {
+		if raws, err := project.Recent(ScopeRawLog, 1); err == nil && len(raws) > 0 {
+			write("Tail of the previous session (not yet summarized):\n")
+			write(truncate(strings.TrimSpace(raws[0].Content), 600) + "\n")
+		}
+	}
+
 	// 4. Other projects, one line each.
 	if global != nil {
 		if cards, err := global.ListProjectCards(6); err == nil {
@@ -114,7 +139,7 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 	}
 
 	out := b.String()
-	if strings.TrimSpace(out) == "[memory_briefing]" {
+	if out == boilerplate {
 		return ""
 	}
 	return strings.TrimRight(out, "\n") + "\n[/memory_briefing]"

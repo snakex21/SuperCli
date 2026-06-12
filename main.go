@@ -1453,6 +1453,29 @@ func main() {
 		return loop.Provider()
 	}
 
+	// Emergency dump when the console window is closed via the X:
+	// CTRL_CLOSE_EVENT gives ~5s — too risky for an LLM call, so
+	// the uncovered transcript tail is stored raw (no-op off
+	// Windows) and summarized at the next startup (below).
+	installCloseHandler(func() {
+		defer recoverAndLog(home)()
+		dumpRawMemoryTail(memAutoSaver, loop, memProg)
+	})
+
+	// Summarize raw-log entries left behind by a previous abrupt
+	// shutdown into normal task-log entries (+ USER: facts), in
+	// the background — startup stays network-free.
+	go func() {
+		defer recoverAndLog(home)()
+		p := summaryProviderFor()
+		if !usableSummaryProvider(p) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		memAutoSaver.SummarizePendingRaw(ctx, providerSummarizer(p))
+	}()
+
 	model := tui.New(tui.Options{
 		Home:         home,
 		DataDir:      dataDir,
