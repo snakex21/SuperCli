@@ -55,6 +55,11 @@ type TomlConfig struct {
 	// but still visible in the per-provider model list.
 	HiddenModels []string `toml:"hidden_models"`
 
+	// ReasoningEffort is the default reasoning-effort level for
+	// OpenAI-family reasoning models (none|minimal|low|medium|
+	// high|xhigh). Empty = provider default. Set via /reasoning.
+	ReasoningEffort string `toml:"reasoning_effort"`
+
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
 
@@ -233,6 +238,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	// In practice: project config can set no_color = true.
 	if src.NoColor {
 		dst.NoColor = true
+	}
+	if src.ReasoningEffort != "" {
+		dst.ReasoningEffort = src.ReasoningEffort
 	}
 	if src.MaxSteps > 0 {
 		dst.MaxSteps = src.MaxSteps

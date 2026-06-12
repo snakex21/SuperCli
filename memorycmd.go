@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/agent"
@@ -159,50 +160,33 @@ func memoryForget(project, global *memory.Store, id string) string {
 	return fmt.Sprintf("memory forget: no entry with id %q", id)
 }
 
-// finalizeMemorySession is the end-of-session auto-save: when the
-// model did not call remember at all, it asks the active provider
-// for a 2-4 line summary of the conversation tail and stores it
-// as a task-log entry, then refreshes the project's global card.
-func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop) {
-	if saver == nil || loop == nil {
-		return
-	}
-	provider := loop.Provider()
-	if provider == nil || strings.Contains(strings.ToLower(provider.Name()), "echo") {
-		// echo would store its own prompt as a "summary"
-		saver.Finalize(context.Background(), "", nil) // still bumps the card
-		return
-	}
-	msgs := loop.AllMessages()
-	// Exit-latency rule: only spend an LLM call when the session
-	// actually had user content. An empty session (user opened the
-	// TUI, looked around, quit) must exit instantly.
-	hadUserTurn := false
-	for _, m := range msgs {
-		if m.Role == llm.RoleUser && strings.TrimSpace(m.Content) != "" {
-			hadUserTurn = true
-			break
+// memProgress tracks how much of the conversation the incremental
+// background saver has already summarized into task-log entries.
+// The mutex also serializes the background saver against the
+// end-of-session finalizer so no fragment is summarized twice.
+type memProgress struct {
+	mu      sync.Mutex
+	covered int // number of loop messages already summarized
+}
+
+// lockWithin acquires the mutex, giving up after d (so the exit
+// path never waits long behind an in-flight background save).
+func (p *memProgress) lockWithin(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for {
+		if p.mu.TryLock() {
+			return true
 		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	if !hadUserTurn {
-		saver.Finalize(context.Background(), "", nil) // still bumps the card
-		return
-	}
-	if len(msgs) > 40 {
-		msgs = msgs[len(msgs)-40:]
-	}
-	transcript := renderCompactTranscript(msgs)
-	const maxChars = 24000
-	if len(transcript) > maxChars {
-		transcript = transcript[len(transcript)-maxChars:]
-	}
-	// Hard cap: the summary call may not hold the exit hostage.
-	// 3s is enough for a short completion; on timeout we simply
-	// skip the auto-save (the session log/db are already saved).
-	fmt.Fprintln(os.Stderr, "saving memory...")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	saver.Finalize(ctx, transcript, func(ctx context.Context, prompt string) (string, error) {
+}
+
+// providerSummarizer adapts an llm.Provider to memory.SummarizeFunc.
+func providerSummarizer(provider llm.Provider) memory.SummarizeFunc {
+	return func(ctx context.Context, prompt string) (string, error) {
 		ch, err := provider.Complete(ctx, []llm.Message{
 			{Role: llm.RoleUser, Content: prompt},
 		}, nil)
@@ -217,5 +201,120 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop) {
 			out.WriteString(d.Content)
 		}
 		return out.String(), nil
-	})
+	}
+}
+
+// usableSummaryProvider reports whether p can produce a real
+// summary (echo would store its own prompt as a "summary").
+func usableSummaryProvider(p llm.Provider) bool {
+	return p != nil && !strings.Contains(strings.ToLower(p.Name()), "echo")
+}
+
+// hasUserTurn reports whether msgs contain a non-empty user message.
+func hasUserTurn(msgs []llm.Message) bool {
+	for _, m := range msgs {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Content) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// compactFragment renders msgs as a transcript capped at maxChars
+// and at most 40 messages (the most recent ones win).
+func compactFragment(msgs []llm.Message) string {
+	if len(msgs) > 40 {
+		msgs = msgs[len(msgs)-40:]
+	}
+	transcript := renderCompactTranscript(msgs)
+	const maxChars = 24000
+	if len(transcript) > maxChars {
+		transcript = transcript[len(transcript)-maxChars:]
+	}
+	return transcript
+}
+
+// incrementalMemorySave runs in the background after each finished
+// agent turn: it summarizes ONLY the not-yet-covered slice of the
+// conversation into a task-log entry, so the exit path usually has
+// nothing left to do and the program quits instantly. summarizer
+// should be the small/cheap tier provider when one is configured.
+func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress, summarizer llm.Provider) {
+	if saver == nil || loop == nil || prog == nil {
+		return
+	}
+	prog.mu.Lock()
+	defer prog.mu.Unlock()
+	msgs := loop.AllMessages()
+	if saver.Remembered() {
+		// The model saves its own notes; nothing synthetic needed.
+		prog.covered = len(msgs)
+		return
+	}
+	if len(msgs) <= prog.covered {
+		return
+	}
+	fragment := msgs[prog.covered:]
+	if !hasUserTurn(fragment) {
+		return
+	}
+	transcript := compactFragment(fragment)
+	if len(transcript) < 200 {
+		return // too little new content — leave it for the next turn / exit
+	}
+	if !usableSummaryProvider(summarizer) {
+		return
+	}
+	snapshot := len(msgs)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if saver.StoreSummary(ctx, transcript, providerSummarizer(summarizer)) {
+		prog.covered = snapshot
+	}
+}
+
+// finalizeMemorySession is the end-of-session auto-save. With the
+// incremental saver running after every turn, the usual case here
+// is "everything already covered" → instant exit (card bump only).
+// Any uncovered tail is summarized with a short prompt under a
+// hard 3s cap so the exit is never held hostage.
+func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress, summarizer llm.Provider) {
+	if saver == nil || loop == nil {
+		return
+	}
+	bumpOnly := func() { saver.Finalize(context.Background(), "", nil) }
+	if !usableSummaryProvider(summarizer) {
+		bumpOnly()
+		return
+	}
+	if prog == nil {
+		prog = &memProgress{}
+	}
+	// If a background save is mid-flight it is already covering
+	// the tail; don't double-summarize and don't block the exit.
+	if !prog.lockWithin(3 * time.Second) {
+		bumpOnly()
+		return
+	}
+	defer prog.mu.Unlock()
+	msgs := loop.AllMessages()
+	uncovered := msgs
+	if prog.covered > 0 && prog.covered <= len(msgs) {
+		uncovered = msgs[prog.covered:]
+	}
+	// Exit-latency rule: only spend an LLM call when the uncovered
+	// tail actually has user content. An empty session (user opened
+	// the TUI, looked around, quit) must exit instantly.
+	if !hasUserTurn(uncovered) {
+		bumpOnly()
+		return
+	}
+	transcript := compactFragment(uncovered)
+	// Hard cap: the summary call may not hold the exit hostage.
+	// 3s is enough for a short completion; on timeout we simply
+	// skip the auto-save (the session log/db are already saved).
+	fmt.Fprintln(os.Stderr, "saving memory...")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	saver.Finalize(ctx, transcript, providerSummarizer(summarizer))
 }
