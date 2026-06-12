@@ -56,6 +56,34 @@ func isValidReasoningEffort(level string) bool {
 	return false
 }
 
+// SupportsXHighReasoningEffort reports whether the model accepts
+// the "xhigh" effort level (codex-max family only).
+func SupportsXHighReasoningEffort(model string) bool {
+	m := strings.ToLower(model)
+	if i := strings.LastIndexByte(m, '/'); i >= 0 {
+		m = m[i+1:]
+	}
+	return strings.Contains(m, "codex-max")
+}
+
+// NextReasoningEffort returns the level that follows current in
+// the Ctrl+R cycle: off → minimal → low → medium → high →
+// (xhigh if allowed) → off. "" means off/provider default.
+// Levels outside the cycle (e.g. "none" set via /reasoning)
+// restart the cycle at off.
+func NextReasoningEffort(current string, xhigh bool) string {
+	order := []string{"", "minimal", "low", "medium", "high"}
+	if xhigh {
+		order = append(order, "xhigh")
+	}
+	for i, l := range order {
+		if l == current {
+			return order[(i+1)%len(order)]
+		}
+	}
+	return ""
+}
+
 // SupportsReasoningEffort reports whether the model is known to
 // accept the reasoning-effort parameter. Conservative allowlist
 // by family: OpenAI o-series (o1/o3/o4...) and the gpt-5 family

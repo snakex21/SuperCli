@@ -104,3 +104,35 @@ func TestBuildCodexRequest_ReasoningEffort(t *testing.T) {
 		t.Error(`effort "none" must not be sent to the codex backend`)
 	}
 }
+
+func TestNextReasoningEffortCycle(t *testing.T) {
+	// Without xhigh.
+	want := []string{"minimal", "low", "medium", "high", ""}
+	cur := ""
+	for i, w := range want {
+		cur = NextReasoningEffort(cur, false)
+		if cur != w {
+			t.Fatalf("step %d: got %q, want %q", i, cur, w)
+		}
+	}
+	// With xhigh.
+	if got := NextReasoningEffort("high", true); got != "xhigh" {
+		t.Errorf("high+xhigh -> %q, want xhigh", got)
+	}
+	if got := NextReasoningEffort("xhigh", true); got != "" {
+		t.Errorf("xhigh -> %q, want off", got)
+	}
+	// Out-of-cycle level restarts at off.
+	if got := NextReasoningEffort("none", false); got != "" {
+		t.Errorf("none -> %q, want off", got)
+	}
+}
+
+func TestSupportsXHighReasoningEffort(t *testing.T) {
+	if !SupportsXHighReasoningEffort("openai/gpt-5.1-codex-max") {
+		t.Error("codex-max should support xhigh")
+	}
+	if SupportsXHighReasoningEffort("gpt-5.5") {
+		t.Error("gpt-5.5 should not support xhigh")
+	}
+}
