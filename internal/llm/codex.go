@@ -176,7 +176,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 			}
 			continue
 		}
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody))
 	}
 }
 
