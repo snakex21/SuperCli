@@ -370,7 +370,7 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 			Type:        "function",
 			Name:        t.Name,
 			Description: t.Description,
-			Parameters:  json.RawMessage(t.Schema),
+			Parameters:  normalizeToolSchema(t.Schema),
 		})
 	}
 	var instructions []string
