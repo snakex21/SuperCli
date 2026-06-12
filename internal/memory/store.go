@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -21,6 +22,12 @@ import (
 type Store struct {
 	db   *sql.DB
 	root string
+
+	// Optional embedding backend for hybrid search (hybrid.go).
+	// Guarded by embedMu because detection runs in a background
+	// goroutine at startup.
+	embedMu  sync.RWMutex
+	embedder Embedder
 }
 
 // OpenStore opens (or creates) a persistent memory store inside
@@ -180,7 +187,12 @@ func (s *Store) Put(e Entry) error {
 	); err != nil {
 		return fmt.Errorf("insert fts: %w", err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Best-effort vector indexing (hybrid.go) — never fails Put.
+	s.afterPut(e)
+	return nil
 }
 
 // Delete removes the entry from both the markdown file and the
@@ -202,6 +214,7 @@ func (s *Store) Delete(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("memory.Store.Delete(%s): fts: %w", id, err)
 	}
+	s.afterDelete(id)
 	return nil
 }
 

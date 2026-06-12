@@ -90,6 +90,19 @@ func initCodexAuth(home string, t config.TomlConfig) {
 var supercliSystemPromptBase = prompt.Build(false)
 var supercliCoordinatorMode bool
 
+// memoryBriefing is the code-built session-start briefing (user
+// preferences, project card, recent session summaries, other
+// projects). Set once in main() before the loop is created.
+var memoryBriefing string
+
+// memoryAutoSaveInstruction backs the B4 contract: the model is
+// told to save a task-log entry after each finished task; the
+// AutoSaver in code covers sessions where it forgets.
+const memoryAutoSaveInstruction = "Memory: after completing a task, call remember with " +
+	"type=task-log summarizing WHAT you did, WHY, and which files you touched. " +
+	"Save user preferences with type=preference (scope=global). Use recall at the " +
+	"start of non-trivial tasks to check prior context."
+
 // buildSystemPrompt returns the base prompt plus the
 // current ISO date stamp and, if a goal service is
 // passed and has an active goal, the [current_goal]
@@ -102,6 +115,10 @@ func buildSystemPrompt(svc *goal.Service) string {
 	if supercliCoordinatorMode {
 		base += agent.CoordinatorPrompt()
 	}
+	if memoryBriefing != "" {
+		base += "\n\n" + memoryBriefing
+	}
+	base += "\n\n" + memoryAutoSaveInstruction
 	if svc == nil {
 		return base
 	}
@@ -552,6 +569,61 @@ func main() {
 		registry.MarkAlwaysOn("ctx_execute")
 	}
 
+	// Wave 2 memory: two SQLite stores. The GLOBAL store lives in
+	// the user's ~/.supercli/memory.db (user preferences + one
+	// "card" per known project); the PROJECT store lives in
+	// ~/.supercli/projects/<name>-<hash>/memory.db (facts,
+	// decisions, session log). ~/.supercli/projects.json maps
+	// project paths to their directories. All failures are
+	// non-fatal: memory never blocks startup.
+	memoryHome := globalMemoryHome(home)
+	globalMemStore, gMemErr := memory.OpenStore(memoryHome)
+	if gMemErr != nil {
+		log.Printf("global memory store: %v (global memory disabled)", gMemErr)
+		globalMemStore = nil
+	} else {
+		defer globalMemStore.Close()
+	}
+	memStore, memErr := memory.OpenProjectStore(memoryHome, home)
+	if memErr != nil {
+		log.Printf("project memory store: %v (F5 disabled)", memErr)
+		memStore = nil
+	} else {
+		defer memStore.Close()
+	}
+	// Embedding backend detection pings local servers, so it runs
+	// in the background; until it lands, searches are FTS5-only.
+	go func() {
+		defer recoverAndLog(home)()
+		if e := memory.DetectEmbedder(cfg.APIKey); e != nil {
+			globalMemStore.SetEmbedder(e)
+			memStore.SetEmbedder(e)
+		}
+	}()
+	// Refresh this project's card (bumps last-session) and build
+	// the session-start briefing injected into the system prompt.
+	memory.RefreshCard(globalMemStore, home, "", "active")
+	briefCap := 700
+	if smallTier {
+		briefCap = 300
+	}
+	memoryBriefing = memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
+	memAutoSaver := &memory.AutoSaver{Project: memStore, Global: globalMemStore, ProjectPath: home}
+
+	// Persistent memory tools: always-on so the model can save
+	// and recall facts across sessions. remember routes entries
+	// to the project or global store via its `scope` argument;
+	// recall searches both hybridly (FTS5 + vectors when an
+	// embedder was detected).
+	if memStore != nil || globalMemStore != nil {
+		rememberTool := tools.NewRememberDual(storeOrNil(memStore), storeOrNil(globalMemStore))
+		rememberTool.OnSave = memAutoSaver.NoteRemember
+		registry.MustRegister(rememberTool.Spec())
+		registry.MustRegister(tools.NewRecallDual(storeOrNil(memStore), storeOrNil(globalMemStore)).Spec())
+		registry.MarkAlwaysOn("remember")
+		registry.MarkAlwaysOn("recall")
+	}
+
 	// F10: ctx_execute is the context-mode sandbox.
 	// The model uses it instead of file_read for
 	// large files: writes a small script, gets
@@ -577,25 +649,6 @@ func main() {
 		return buildChildToolRegistry(root), nil
 	}))
 	registry.MustRegister(darwinTool.Spec())
-
-	memStore, memErr := memory.OpenStore(home)
-	if memErr != nil {
-		log.Printf("memory store: %v (F5 disabled)", memErr)
-		memStore = nil
-	} else {
-		defer memStore.Close()
-	}
-
-	// Persistent memory tools: always-on so the model can
-	// save and recall facts across sessions (the system
-	// prompt's Memory section tells it when). Skipped when
-	// the store failed to open.
-	if memStore != nil {
-		registry.MustRegister(tools.NewRemember(memStore).Spec())
-		registry.MustRegister(tools.NewRecall(memStore).Spec())
-		registry.MarkAlwaysOn("remember")
-		registry.MarkAlwaysOn("recall")
-	}
 
 	var injector *reflect.Injector
 	if memStore != nil {
@@ -975,6 +1028,14 @@ func main() {
 		return b.String(), nil
 	}
 
+	// Wave 2 B6: /memory — inspect persistent memory. No args:
+	// overview (recent entries, DB sizes, embedding status).
+	// `/memory search <q>` runs a hybrid search over both stores;
+	// `/memory forget <id>` deletes an entry wherever it lives.
+	mergedCommands["memory"] = func(ctx context.Context, args string) (string, error) {
+		return memoryCommand(ctx, memStore, globalMemStore, args)
+	}
+
 	// Wave 1 cleanup: the old text-only /models handler was dead
 	// code — the TUI rewrites /models to /model before handlers
 	// run, so the interactive picker always won. Removed.
@@ -1210,6 +1271,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
 		os.Exit(1)
 	}
+	// B4 code guarantee: if the model never called remember this
+	// session, generate a one-call summary and store it as a
+	// task-log entry (plus refresh the project card). Runs BEFORE
+	// the shutdown timer so the call is not cut off at 200ms.
+	finalizeMemorySession(memAutoSaver, loop)
 	startPostTUIShutdownTimer(home, 200*time.Millisecond)
 	close(askCh)
 	<-pumpDone

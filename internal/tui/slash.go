@@ -133,7 +133,7 @@ var helpEssentials = []struct {
 	names []string
 }{
 	{"models & providers", []string{"model", "providers", "login"}},
-	{"session", []string{"clear", "compact", "resume", "export", "cost", "status"}},
+	{"session", []string{"clear", "compact", "resume", "export", "cost", "status", "memory"}},
 	{"agents", []string{"plan", "goal", "darwin", "council"}},
 	{"system", []string{"doctor", "help", "quit"}},
 }
