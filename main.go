@@ -865,9 +865,12 @@ func main() {
 	registry.MustRegister(at.Spec())
 	sendMessageTool := agent.NewSendMessageTool(at.Workers)
 	registry.MustRegister(sendMessageTool.Spec())
+	taskStopTool := agent.NewTaskStopTool(at.Workers)
+	registry.MustRegister(taskStopTool.Spec())
 	if supercliCoordinatorMode {
 		registry.MarkAlwaysOn("task")
 		registry.MarkAlwaysOn("send_message")
+		registry.MarkAlwaysOn("task_stop")
 	}
 
 	// F14: opt-in tool. The model calls hide_messages
@@ -886,6 +889,27 @@ func main() {
 	// FTS5 search index, and the on-disk session.db
 	// all stay intact.
 	mergedCommands := mergedSlashCommands(darwinTool, goalSvc)
+
+	// Fala 3: /workers — coordinator visibility. Lists workers from the
+	// task registry; "/workers stop <id>" cancels a running one.
+	mergedCommands["workers"] = func(ctx context.Context, args string) (string, error) {
+		fields := strings.Fields(args)
+		if len(fields) >= 1 && strings.EqualFold(fields[0], "stop") {
+			if len(fields) < 2 {
+				return "usage: /workers stop <id>   (id like worker-1; see /workers)", nil
+			}
+			id := fields[1]
+			if !strings.HasPrefix(id, "worker-") {
+				id = "worker-" + id
+			}
+			if err := at.Workers.Stop(id); err != nil {
+				return fmt.Sprintf("workers: %v", err), nil
+			}
+			return fmt.Sprintf("workers: stop requested for %s", id), nil
+		}
+		return formatWorkers(at.Workers), nil
+	}
+
 	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
 		hidden := loop.HideLastUserTurns(2)
 		if hidden == 0 {
