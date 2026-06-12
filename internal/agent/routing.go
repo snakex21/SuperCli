@@ -1,6 +1,26 @@
 package agent
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// chatRouteTools is the minimal tool set sent on the chat/advisor
+// routes: just enough for the model to pull in more (tool_search can
+// activate web_search etc.) and to remember the user (recall). The
+// full tool list is deliberately NOT loaded outside the coordinator
+// route — that is the token-saving point of the router.
+var chatRouteTools = []string{"tool_search", "recall"}
+
+// timeSection returns the per-request freshness stamp injected into
+// the system prompt of every route. Rebuilt on each provider call so
+// the model always knows the current date, time, and timezone, plus
+// an explicit nudge to verify currency of advice. Costs a few tokens.
+func timeSection(now time.Time) string {
+	return fmt.Sprintf("Current local date/time: %s. It is %d — verify that libraries, APIs, and patterns you recommend are still current before advising.",
+		now.Format("Monday, 2006-01-02 15:04 MST (UTC-07:00)"), now.Year())
+}
 
 // RouteMode is the pre-request context mode selected by the routing map.
 type RouteMode string
@@ -79,6 +99,6 @@ Modes:
 
 Do not use keyword matching blindly. Read the recent context and infer intent. Prefer coordinator when project-specific evidence is needed. Prefer advisor when general reasoning is enough.`
 
-const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. No tools are available in this mode. If the user asks for project/file/code/terminal/document work, say you need agent mode and ask them to repeat or clarify the task.`
+const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. You have only two tools: recall (look up remembered user facts) and tool_search (find and activate extra tools like web_search when genuinely needed, e.g. to check a current fact). Do not use tools for plain conversation. If the user asks for project/file/code/terminal/document work, say you need agent mode and ask them to repeat or clarify the task.`
 
-const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
+const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. You have only two tools: recall (remembered user facts) and tool_search (activate extra tools like web_search to verify current versions or facts). If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
