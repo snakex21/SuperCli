@@ -96,7 +96,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "help", Desc: "show this help message"},
 		{Name: "goal", Desc: "manage active goal", Args: "<set|list|show|tasks|done> [args]"},
 		{Name: "darwin", Desc: "run N parallel agents, pick best", Args: "[N] <prompt>"},
-		{Name: "council", Desc: "sample N cheap models, judge picks winner", Args: "[N] <prompt>"},
+		{Name: "council", Desc: "ask hand-picked models in parallel (no args = pick roster)", Args: "[<prompt>]"},
 		{Name: "clear", Desc: "hide recent messages from model context"},
 		{Name: "reflect", Desc: "show learned patterns from reflection"},
 		{Name: "compact", Desc: "compress context to save tokens"},
