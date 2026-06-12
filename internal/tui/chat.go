@@ -69,6 +69,20 @@ func (c *chat) lastAssistant() string {
 	return ""
 }
 
+// removeLastSystem removes the most recent system message whose
+// text equals the given string. Used to clear the transient
+// "running · Ctrl+C to abort" marker once a slash command's
+// result arrives, so finished commands don't read as still busy.
+func (c *chat) removeLastSystem(text string) bool {
+	for i := len(c.msgs) - 1; i >= 0; i-- {
+		if c.msgs[i].role == roleSystem && c.msgs[i].text == text {
+			c.msgs = append(c.msgs[:i], c.msgs[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // addAssistant appends a completed assistant message.
 func (c *chat) addAssistant(text string) {
 	c.msgs = append(c.msgs, msg{role: roleAssistant, text: text})

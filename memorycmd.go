@@ -44,14 +44,14 @@ func storeOrNil(s *memory.Store) tools.MemoryKeeper {
 //	/memory             — overview (recent entries, DB sizes, embeddings)
 //	/memory search <q>  — hybrid search across project + global stores
 //	/memory forget <id> — delete an entry from whichever store has it
-func memoryCommand(ctx context.Context, project, global *memory.Store, args string) (string, error) {
+func memoryCommand(ctx context.Context, project, global *memory.Store, briefing, args string) (string, error) {
 	if project == nil && global == nil {
 		return "memory: no store available (open failed at startup — see logs)", nil
 	}
 	args = strings.TrimSpace(args)
 	switch {
 	case args == "":
-		return memoryOverview(project, global), nil
+		return memoryOverview(project, global, briefing), nil
 	case strings.HasPrefix(args, "search "):
 		q := strings.TrimSpace(strings.TrimPrefix(args, "search "))
 		if q == "" {
@@ -69,9 +69,14 @@ func memoryCommand(ctx context.Context, project, global *memory.Store, args stri
 	}
 }
 
-func memoryOverview(project, global *memory.Store) string {
+func memoryOverview(project, global *memory.Store, briefing string) string {
 	var b strings.Builder
 	b.WriteString("Persistent memory\n")
+	if briefing != "" {
+		fmt.Fprintf(&b, "briefing: %d tokens, injected: yes\n", memory.EstimateTokens(briefing))
+	} else {
+		b.WriteString("briefing: 0 tokens, injected: no (nothing to inject yet)\n")
+	}
 	writeStore := func(label string, s *memory.Store) {
 		if s == nil {
 			fmt.Fprintf(&b, "\n%s: unavailable\n", label)
