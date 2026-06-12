@@ -1050,6 +1050,20 @@ func main() {
 	provMgr.Reload()
 	provMgr.LoadHiddenState()
 
+	// ChatGPT-OAuth (codex) providers have no /v1/models endpoint,
+	// so the background ScanModels alone could never discover their
+	// models in past releases. Register the static Codex catalog for
+	// every configured codex-type entry NOW, under the entry's own
+	// name — otherwise the /model picker stays empty after a restart
+	// (the catalog used to be registered only inside the /login
+	// handler, and only under the hardcoded "codex" name, while the
+	// onboarding wizard saves the entry as name "openai").
+	for _, p := range provMgr.Configured() {
+		if p.Type == config.ProviderCodex {
+			llm.RegisterCodexCatalog(caps, p.Name)
+		}
+	}
+
 	// ChatGPT-subscription auth: /login runs the OAuth+PKCE
 	// browser flow and registers a "codex" provider entry;
 	// /logout clears the saved tokens.
@@ -1079,7 +1093,7 @@ func main() {
 		// Register the Codex model family in the capability
 		// registry so /model gpt-5.5 resolves immediately
 		// (the ChatGPT backend has no /v1/models to probe).
-		caps.RegisterAll(codexSeedModels())
+		llm.RegisterCodexCatalog(caps, "codex")
 		plan := res.PlanType
 		if plan == "" {
 			plan = "unknown plan"
@@ -1430,27 +1444,6 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 }
 
 func boolPtr(b bool) *bool { return &b }
-
-// codexSeedModels lists the ChatGPT-backend (Codex) models made
-// available after /login. The ChatGPT backend has no public
-// model-list endpoint (the Codex CLI itself ships a static list),
-// so these mirror the models Codex offers as of June 2026:
-// gpt-5.5 is the current default, gpt-5.4-mini the cheap/fast
-// option, gpt-5.3-codex-spark the low-latency preview. The old
-// gpt-5 / gpt-5-codex / gpt-5-mini family is retired and must not
-// be seeded — picking it produces a "model not found" error.
-func codexSeedModels() []llm.ModelInfo {
-	mk := func(id string) llm.ModelInfo {
-		return llm.ModelInfo{
-			ID: id, Provider: "codex",
-			Vision: true, ToolUse: true, Stream: true, Reasoning: true,
-			ContextLength: 272000,
-			Notes:         "ChatGPT subscription (Codex login)",
-			Source:        llm.SourceCatalog,
-		}
-	}
-	return []llm.ModelInfo{mk("gpt-5.5"), mk("gpt-5.4-mini"), mk("gpt-5.3-codex-spark")}
-}
 
 // tierRulesFromToml converts config.toml [[model_tiers]]
 // entries into tier.Rule values.
