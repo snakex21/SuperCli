@@ -258,10 +258,11 @@ func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 	if !hasUserTurn(fragment) {
 		return
 	}
+	// No minimum-size threshold: a single short user message
+	// ("cześć, lubię komputery") is exactly the kind of content
+	// that must survive the session. hasUserTurn above is the
+	// only gate — it skips empty/command-only turns.
 	transcript := compactFragment(fragment)
-	if len(transcript) < 200 {
-		return // too little new content — leave it for the next turn / exit
-	}
 	if !usableSummaryProvider(summarizer) {
 		return
 	}
@@ -271,6 +272,38 @@ func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 	if saver.StoreSummary(ctx, transcript, providerSummarizer(summarizer)) {
 		prog.covered = snapshot
 	}
+}
+
+// dumpRawMemoryTail is the emergency path for abrupt termination
+// (console window closed → CTRL_CLOSE_EVENT, ~5s budget): it
+// writes the not-yet-summarized transcript tail VERBATIM to the
+// project store — no LLM call — as a raw-log entry that the next
+// startup summarizes (AutoSaver.SummarizePendingRaw) and the next
+// briefing shows raw until then.
+func dumpRawMemoryTail(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress) {
+	if saver == nil || loop == nil {
+		return
+	}
+	if prog != nil {
+		// An in-flight incremental save is already covering the
+		// tail; give it a moment, then dump whatever is left.
+		if !prog.lockWithin(2 * time.Second) {
+			return
+		}
+		defer prog.mu.Unlock()
+	}
+	msgs := loop.AllMessages()
+	uncovered := msgs
+	if prog != nil && prog.covered > 0 && prog.covered <= len(msgs) {
+		uncovered = msgs[prog.covered:]
+	}
+	if !hasUserTurn(uncovered) {
+		return
+	}
+	if saver.Remembered() {
+		return // the model saved its own notes this session
+	}
+	saver.StoreRawTail(compactFragment(uncovered))
 }
 
 // finalizeMemorySession is the end-of-session auto-save. With the

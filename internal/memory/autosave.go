@@ -37,6 +37,24 @@ func (a *AutoSaver) Remembered() bool {
 	return a != nil && a.rememberCalls.Load() > 0
 }
 
+// summaryPrompt is the auto-save summarization instruction. The
+// USER-facts part is deliberately phrased as an unconditional,
+// separate task: short personal declarations ("lubię komputery",
+// "mam na imię Maks") must be extracted EVEN when the session
+// contains no coding work and the summary itself is NOTHING.
+const summaryPrompt = "Summarize this session in 2-4 short lines: WHAT was done, " +
+	"WHY, and which files were touched. Plain text, no markdown, no preamble. " +
+	"If no meaningful work happened, the summary is exactly: NOTHING.\n" +
+	"SEPARATELY AND ALWAYS — even when the summary is NOTHING — scan the " +
+	"user's messages for durable personal facts or preferences: their name, " +
+	"what they like or dislike, preferred language, communication style, " +
+	"standing preferences. Short casual declarations count (\"I like " +
+	"computers\", \"my name is Anna\", in any language). Append one line per " +
+	"fact, each starting with exactly \"USER: \" (example: USER: The user's " +
+	"name is Anna. / USER: The user likes computers.). Write the facts in " +
+	"English. Only durable facts about the user — no session details. " +
+	"If there are no such facts, append no USER: lines."
+
 // SummarizeFunc produces a short summary for the given prompt with
 // a single LLM call. Wire it to the active provider.
 type SummarizeFunc func(ctx context.Context, prompt string) (string, error)
@@ -76,14 +94,7 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 	if transcript == "" || summarize == nil || a.Project == nil {
 		return true
 	}
-	prompt := "Summarize this coding session in 2-4 short lines: WHAT was done, " +
-		"WHY, and which files were touched. Plain text, no markdown, no preamble. " +
-		"If nothing meaningful happened, reply exactly: NOTHING.\n" +
-		"Additionally, if the conversation reveals DURABLE facts or preferences " +
-		"about the user (their name, preferred language, communication style, " +
-		"standing preferences), append one line per fact, each starting with " +
-		"exactly \"USER: \" (example: USER: The user's name is Anna.). " +
-		"Only durable facts about the user — no session details.\n\n" + transcript
+	prompt := summaryPrompt + "\n\n" + transcript
 	summary, err := summarize(ctx, prompt)
 	if err != nil {
 		return false
@@ -111,6 +122,51 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 	}
 	RefreshCard(a.Global, a.ProjectPath, first, "active")
 	return true
+}
+
+// StoreRawTail stores the un-summarized transcript tail verbatim
+// as a raw-log entry. It makes NO LLM call — it is the emergency
+// path for abrupt termination (console window closed via the X,
+// CTRL_CLOSE_EVENT gives ~5s). The entry is summarized into a
+// normal task-log entry at the next startup.
+func (a *AutoSaver) StoreRawTail(transcript string) {
+	if a == nil || a.Project == nil {
+		return
+	}
+	transcript = strings.TrimSpace(StripReasoning(transcript))
+	if transcript == "" {
+		return
+	}
+	const maxRaw = 8000
+	if len(transcript) > maxRaw {
+		transcript = transcript[len(transcript)-maxRaw:]
+	}
+	_ = a.Project.Put(Entry{
+		ID:      fmt.Sprintf("raw-%x", time.Now().UnixNano()),
+		Scope:   ScopeRawLog,
+		Content: transcript,
+		Source:  SourceAgent,
+	})
+}
+
+// SummarizePendingRaw summarizes raw-log entries left behind by an
+// abrupt shutdown into normal task-log entries (extracting USER:
+// facts on the way) and deletes the raw entries. Call it in the
+// background at startup — it makes one LLM call per pending entry.
+func (a *AutoSaver) SummarizePendingRaw(ctx context.Context, summarize SummarizeFunc) {
+	if a == nil || a.Project == nil || summarize == nil {
+		return
+	}
+	entries, err := a.Project.Recent(ScopeRawLog, 10)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !a.StoreSummary(ctx, e.Content, summarize) {
+			continue // summarize failed — keep the raw entry for next time
+		}
+		_ = a.Project.Delete(e.ID)
+	}
 }
 
 // splitUserFacts separates trailing "USER: ..." lines from the
