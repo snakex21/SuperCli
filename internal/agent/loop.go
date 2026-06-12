@@ -54,6 +54,12 @@ type Loop struct {
 	creditTracker   CreditTracker
 	modelID         string
 
+	// sessUsage accumulates provider-reported token usage across
+	// every Run of this loop (the whole TUI session). Guarded by
+	// sessUsageMu because /context reads it from the TUI goroutine.
+	sessUsage   Usage
+	sessUsageMu sync.Mutex
+
 	// Auto-compact wiring (wave 4). windowFor resolves the
 	// model's context window (config > provider metadata >
 	// learned > default); summarizer produces the /compact
@@ -517,6 +523,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			totalUsage.Input += usage.Input
 			totalUsage.Output += usage.Output
 			totalUsage.Total += usage.Total
+			l.sessUsageMu.Lock()
+			l.sessUsage.Input += usage.Input
+			l.sessUsage.Output += usage.Output
+			l.sessUsage.Total += usage.Total
+			l.sessUsageMu.Unlock()
 			// Report per-turn usage to the writer (if any).
 			if l.writer != nil {
 				_ = l.writer.UpdateUsage(usage.Input, usage.Output)
