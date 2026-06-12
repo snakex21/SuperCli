@@ -557,6 +557,13 @@ func (m *Manager) ScanProvider(name string, caps *llm.CapabilityRegistry) ScanRe
 
 func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanResult {
 	res := ScanResult{Provider: p.Name}
+	if caps != nil && p.Type == config.ProviderCodex {
+		// ChatGPT-OAuth (codex) backend has no /v1/models
+		// endpoint — register the static Codex catalog under
+		// this provider entry's name instead of probing.
+		res.Models = llm.RegisterCodexCatalog(caps, p.Name)
+		return res
+	}
 	if p.BaseURL == "" {
 		res.Err = fmt.Errorf("provider %q has no base URL", p.Name)
 		return res
