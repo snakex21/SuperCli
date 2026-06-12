@@ -910,6 +910,13 @@ func main() {
 		return formatWorkers(at.Workers), nil
 	}
 
+	// Fala 3: /context — where the input tokens go (system prompt,
+	// tool schemas, tool results, messages) plus the top 5 heaviest
+	// items, so the user can see what is bloating the context.
+	mergedCommands["context"] = func(ctx context.Context, args string) (string, error) {
+		return agent.FormatContextReport(loop.ContextReport()), nil
+	}
+
 	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
 		hidden := loop.HideLastUserTurns(2)
 		if hidden == 0 {
