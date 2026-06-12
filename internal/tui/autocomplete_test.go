@@ -363,8 +363,16 @@ func TestAutocomplete_FilterSlash(t *testing.T) {
 		t.Fatalf("expected slash autocomplete, got kind=%d", m.autocomp.kind)
 	}
 	filtered := filterItems(m.autocomp.items, m.autocomp.query)
-	if len(filtered) != 1 {
-		t.Fatalf("expected 1 filtered item (/model), got %d", len(filtered))
+	// "/mo" matches /model (prefix) and /memory (fuzzy m..o).
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered items (/model, /memory), got %d", len(filtered))
+	}
+	labels := map[string]bool{}
+	for _, f := range filtered {
+		labels[f.Label] = true
+	}
+	if !labels["/model"] || !labels["/memory"] {
+		t.Fatalf("expected /model and /memory, got %v", labels)
 	}
 }
 

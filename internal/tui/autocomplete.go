@@ -80,7 +80,7 @@ func commandCategory(name string) string {
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact":
 		return "agent"
-	case "diff", "undo", "export", "resume", "clear":
+	case "diff", "undo", "export", "resume", "clear", "memory":
 		return "session"
 	case "login", "logout":
 		return "account"
@@ -101,6 +101,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "reflect", Desc: "show learned patterns from reflection"},
 		{Name: "compact", Desc: "compress context to save tokens"},
 		{Name: "status", Desc: "show credits and session info"},
+		{Name: "memory", Desc: "inspect persistent memory", Args: "[search <query> | forget <id>]"},
 		{Name: "providers", Desc: "manage providers"},
 		{Name: "sandbox", Desc: "show sandbox status"},
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
