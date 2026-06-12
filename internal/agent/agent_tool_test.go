@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -147,7 +148,7 @@ func TestAgentTool_Execute_PassesArgs(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("res.Err: %v", res.Err)
 	}
-	if res.Text != "found it" {
+	if !strings.Contains(res.Text, "<task-id>worker-1</task-id>") || !strings.Contains(res.Text, "<result>found it</result>") {
 		t.Errorf("Text = %q", res.Text)
 	}
 	if calls.Load() != 1 {
@@ -274,9 +275,112 @@ func TestAgentTool_Concurrent(t *testing.T) {
 		t.Errorf("factory calls = %d, want %d", calls.Load(), n)
 	}
 	for i, r := range results {
-		if r != "done" {
+		if !strings.Contains(r, "<task-id>worker-") || !strings.Contains(r, "<result>done</result>") {
 			t.Errorf("results[%d] = %q", i, r)
 		}
+	}
+}
+
+type userCountingProvider struct{ name string }
+
+func (p *userCountingProvider) Name() string         { return p.name }
+func (p *userCountingProvider) SupportsVision() bool { return true }
+func (p *userCountingProvider) Complete(ctx context.Context, msgs []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	users := 0
+	for _, m := range msgs {
+		if m.Role == llm.RoleUser {
+			users++
+		}
+	}
+	ch := make(chan llm.Delta, 2)
+	go func() {
+		defer close(ch)
+		ch <- llm.Delta{Content: fmt.Sprintf("users=%d", users)}
+		ch <- llm.Delta{FinishReason: "stop", Usage: &llm.Usage{Input: 1, Output: 1, Total: 2}}
+	}()
+	return ch, nil
+}
+
+func TestAgentTool_SendMessageContinuesWorkerContext(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	reg.MustRegister(SubAgent{Name: "explore", Description: "search"})
+	provider := &userCountingProvider{name: "counter"}
+	var factoryCalls atomic.Int32
+	factory := func(cfg LoopConfig) (*Loop, error) {
+		factoryCalls.Add(1)
+		return NewLoop(LoopConfig{
+			Provider:        provider,
+			Registry:        cfg.Registry,
+			System:          cfg.System,
+			MaxSteps:        cfg.MaxSteps,
+			InitialMessages: cfg.InitialMessages,
+		})
+	}
+	at, _ := NewAgentTool(reg, nil, newTestBaseRegistry(), provider, nil, factory)
+	first, _ := at.execute(context.Background(), json.RawMessage(`{"agent":"explore","prompt":"first"}`))
+	if !strings.Contains(first.Text, "<task-id>worker-1</task-id>") || !strings.Contains(first.Text, "users=1") {
+		t.Fatalf("first result = %q", first.Text)
+	}
+	send := NewSendMessageTool(at.Workers)
+	second, _ := send.execute(context.Background(), json.RawMessage(`{"to":"worker-1","message":"second"}`))
+	if second.Err != nil {
+		t.Fatalf("send_message err: %v", second.Err)
+	}
+	if !strings.Contains(second.Text, "<task-id>worker-1</task-id>") || !strings.Contains(second.Text, "users=2") {
+		t.Fatalf("second result = %q", second.Text)
+	}
+	if factoryCalls.Load() != 1 {
+		t.Fatalf("factory calls = %d, want 1", factoryCalls.Load())
+	}
+}
+
+func TestAgentTool_AsyncInjectsNotificationIntoParent(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	reg.MustRegister(SubAgent{Name: "explore", Description: "search"})
+	provider := &stubReplyProvider{name: "child", reply: "async done", delay: 20 * time.Millisecond}
+	base := newTestBaseRegistry()
+	parent, err := NewLoop(LoopConfig{Provider: provider, Registry: base, System: "parent"})
+	if err != nil {
+		t.Fatalf("parent loop: %v", err)
+	}
+	ext := make(chan Event, 4)
+	parent.SetExternalSink(ext)
+	factory := func(cfg LoopConfig) (*Loop, error) {
+		return NewLoop(LoopConfig{
+			Provider:        provider,
+			Registry:        cfg.Registry,
+			System:          cfg.System,
+			MaxSteps:        cfg.MaxSteps,
+			InitialMessages: cfg.InitialMessages,
+		})
+	}
+	at, _ := NewAgentTool(reg, parent, base, provider, nil, factory)
+	at.TimeoutPerStep = 200 * time.Millisecond
+	res, _ := at.execute(context.Background(), json.RawMessage(`{"agent":"explore","prompt":"background","async":true}`))
+	if res.Err != nil {
+		t.Fatalf("task async err: %v", res.Err)
+	}
+	if !strings.Contains(res.Text, "<status>running</status>") || !strings.Contains(res.Text, "worker-1") {
+		t.Fatalf("initial async response = %q", res.Text)
+	}
+
+	select {
+	case ev := <-ext:
+		n, ok := ev.(WorkerNotificationEvent)
+		if !ok {
+			t.Fatalf("event = %T, want WorkerNotificationEvent", ev)
+		}
+		if n.TaskID != "worker-1" || n.Status != "done" || !strings.Contains(n.Text, "async done") {
+			t.Fatalf("notification = %+v", n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for worker notification")
+	}
+
+	msgs := parent.AllMessages()
+	last := msgs[len(msgs)-1]
+	if last.Role != llm.RoleUser || !strings.Contains(last.Content, "<task-id>worker-1</task-id>") || !strings.Contains(last.Content, "async done") {
+		t.Fatalf("last parent message = %+v", last)
 	}
 }
 

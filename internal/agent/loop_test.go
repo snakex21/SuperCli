@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,6 +65,113 @@ func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, _ []llm
 		}
 	}()
 	return ch, nil
+}
+
+type captureProvider struct {
+	name      string
+	messages  []llm.Message
+	toolCount int
+}
+
+func (p *captureProvider) Name() string         { return p.name }
+func (p *captureProvider) SupportsVision() bool { return true }
+func (p *captureProvider) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
+	p.messages = append([]llm.Message(nil), msgs...)
+	p.toolCount = len(tools)
+	ch := make(chan llm.Delta, 2)
+	go func() {
+		defer close(ch)
+		ch <- llm.Delta{Content: "hej"}
+		ch <- llm.Delta{FinishReason: "stop", Usage: &llm.Usage{Input: 1, Output: 1, Total: 2}}
+	}()
+	return ch, nil
+}
+
+type navigatorProvider struct {
+	name      string
+	calls     int
+	messages  []llm.Message
+	toolCount int
+}
+
+func (p *navigatorProvider) Name() string         { return p.name }
+func (p *navigatorProvider) SupportsVision() bool { return true }
+func (p *navigatorProvider) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
+	p.calls++
+	p.messages = append([]llm.Message(nil), msgs...)
+	p.toolCount = len(tools)
+	content := "advisor answer"
+	if p.calls == 1 {
+		content = `{"mode":"advisor","reason":"general conceptual advice"}`
+	}
+	ch := make(chan llm.Delta, 2)
+	go func() {
+		defer close(ch)
+		ch <- llm.Delta{Content: content}
+		ch <- llm.Delta{FinishReason: "stop", Usage: &llm.Usage{Input: 1, Output: 1, Total: 2}}
+	}()
+	return ch, nil
+}
+
+func TestLoop_ChatOnlyRouteSendsShortPromptAndNoTools(t *testing.T) {
+	p := &captureProvider{name: "capture"}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name:        "expensive_tool",
+		Description: "large schema",
+		Schema:      `{"type":"object","properties":{"x":{"type":"string"}}}`,
+		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "x"}, nil
+		},
+	})
+	reg.MarkAlwaysOn("expensive_tool")
+	l := makeLoop(t, p, reg, "FULL COORDINATOR PROMPT THAT SHOULD NOT BE SENT")
+	l.navigate = true
+	ch, _ := l.Run(context.Background(), "cześć")
+	drainEvents(t, ch)
+
+	if p.toolCount != 0 {
+		t.Fatalf("toolCount=%d, want 0", p.toolCount)
+	}
+	if len(p.messages) == 0 || p.messages[0].Role != llm.RoleSystem {
+		t.Fatalf("messages = %+v", p.messages)
+	}
+	if p.messages[0].Content != chatOnlySystemPrompt {
+		t.Fatalf("system prompt = %q, want chat-only prompt", p.messages[0].Content)
+	}
+	for _, m := range p.messages {
+		if strings.Contains(m.Content, "FULL COORDINATOR") {
+			t.Fatalf("full prompt leaked into chat-only messages: %+v", p.messages)
+		}
+	}
+}
+
+func TestLoop_NavigatorCanChooseAdvisorWithoutTools(t *testing.T) {
+	p := &navigatorProvider{name: "navigator"}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name:        "expensive_tool",
+		Description: "large schema",
+		Schema:      `{"type":"object"}`,
+		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "x"}, nil
+		},
+	})
+	reg.MarkAlwaysOn("expensive_tool")
+	l := makeLoop(t, p, reg, "FULL COORDINATOR PROMPT")
+	l.navigate = true
+	ch, _ := l.Run(context.Background(), "co lepsze?")
+	drainEvents(t, ch)
+
+	if p.calls != 2 {
+		t.Fatalf("provider calls = %d, want navigator + answer", p.calls)
+	}
+	if p.toolCount != 0 {
+		t.Fatalf("toolCount=%d, want 0", p.toolCount)
+	}
+	if len(p.messages) == 0 || p.messages[0].Content != advisorSystemPrompt {
+		t.Fatalf("final messages = %+v, want advisor prompt", p.messages)
+	}
 }
 
 func echoProvider(name string) *stubProvider {
@@ -209,11 +317,11 @@ func TestLoop_ToolCallAndContinue(t *testing.T) {
 	events := drainEvents(t, ch)
 
 	var (
-		msgs       []MessageEvent
-		calls      []ToolCallEvent
-		results    []ToolResultEvent
-		done       *DoneEvent
-		errEv      *ErrorEvent
+		msgs    []MessageEvent
+		calls   []ToolCallEvent
+		results []ToolResultEvent
+		done    *DoneEvent
+		errEv   *ErrorEvent
 	)
 	for _, e := range events {
 		switch v := e.(type) {
@@ -285,6 +393,65 @@ func TestLoop_UnknownTool_ProducesErrorMessage(t *testing.T) {
 	}
 	if !sawErrResult {
 		t.Fatal("expected ToolResultEvent with Err")
+	}
+}
+
+func TestLoop_TaskToolCallsRunInParallel(t *testing.T) {
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "task_1", Name: "task", Arguments: `{"agent":"explore","prompt":"a"}`}},
+				{ToolCall: &llm.ToolCall{ID: "task_2", Name: "task", Arguments: `{"agent":"explore","prompt":"b"}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "done"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	reg := tools.NewRegistry()
+	var calls atomic.Int32
+	reg.MustRegister(tools.Tool{
+		Name:        "task",
+		Description: "spawn worker",
+		Schema:      `{"type":"object"}`,
+		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+			calls.Add(1)
+			select {
+			case <-time.After(120 * time.Millisecond):
+				return tools.Result{Text: "worker done"}, nil
+			case <-ctx.Done():
+				return tools.Result{Err: ctx.Err()}, nil
+			}
+		},
+	})
+
+	l := makeLoop(t, p, reg, "")
+	start := time.Now()
+	ch, _ := l.Run(context.Background(), "launch workers")
+	events := drainEvents(t, ch)
+	elapsed := time.Since(start)
+
+	if calls.Load() != 2 {
+		t.Fatalf("task calls = %d, want 2", calls.Load())
+	}
+	if elapsed >= 220*time.Millisecond {
+		t.Fatalf("task calls appear sequential, elapsed=%s", elapsed)
+	}
+	var results int
+	for _, e := range events {
+		if tr, ok := e.(ToolResultEvent); ok && tr.Output == "worker done" {
+			results++
+		}
+	}
+	if results != 2 {
+		t.Fatalf("tool results = %d, want 2", results)
+	}
+	if len(l.Messages) < 4 || l.Messages[2].ToolCallID != "task_1" || l.Messages[3].ToolCallID != "task_2" {
+		t.Fatalf("tool result messages not appended in call order: %+v", l.Messages)
 	}
 }
 

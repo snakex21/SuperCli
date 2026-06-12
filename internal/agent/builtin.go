@@ -32,9 +32,10 @@ func BuiltinSubAgents() []SubAgent {
 		"severity."
 
 	codeSystem := "You are the SuperCli code sub-agent. Your job is to " +
-		"implement the requested change end-to-end. Use read_image, " +
-		"search_code, and any other tool the parent loop has. Be precise; " +
-		"small diffs over clever ones."
+		"implement the requested change end-to-end in your isolated context. " +
+		"Read only the files you need, make targeted edits, run relevant " +
+		"verification, and return a concise summary with files changed. " +
+		"Do not spawn other sub-agents."
 
 	return []SubAgent{
 		{
@@ -59,10 +60,15 @@ func BuiltinSubAgents() []SubAgent {
 			MaxSteps:     8,
 		},
 		{
-			Name:         "code",
-			Description:  "implement a code change end-to-end",
-			System:       codeSystem,
-			// inherit all tools
+			Name:        "code",
+			Description: "implement a code change end-to-end",
+			System:      codeSystem,
+			AllowedTools: allowedTools(
+				"search_code", "read_image", "read_lines", "read_context",
+				"edit_line", "insert_after", "delete_lines",
+				"file_ops", "read_docx", "read_xlsx", "read_pdf",
+				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute",
+			),
 			MaxSteps: 12,
 		},
 	}

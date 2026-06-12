@@ -26,9 +26,10 @@ type AgentTool struct {
 	Registry     *SubAgentRegistry
 	ParentLoop   *Loop // optional; used for context sharing and parent system prompt
 	BaseRegistry *tools.Registry
-	Provider     llm.Provider  // passed to every child loop
+	Provider     llm.Provider // passed to every child loop
 	Caps         *llm.CapabilityRegistry
 	NewLoop      LoopFactory
+	Workers      *WorkerRegistry
 	// TimeoutPerStep is the budget for one model step in the
 	// child loop. The total child timeout is MaxSteps * this.
 	// Zero means 30s per step (matches the design's "5 min for
@@ -58,6 +59,7 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 		Provider:       provider,
 		Caps:           caps,
 		NewLoop:        factory,
+		Workers:        NewWorkerRegistry(),
 		TimeoutPerStep: 30 * time.Second,
 	}, nil
 }
@@ -75,12 +77,14 @@ func (a *AgentTool) Spec() tools.Tool {
 			"Use this when the parent loop would benefit from delegating " +
 			"(e.g. exploration, planning, code review). The sub-agent has " +
 			"its own system prompt, restricted tool set, and isolated " +
-			"context. Returns the sub-agent's final answer as text.",
+			"context. Returns a task-notification with a worker id; use " +
+			"send_message to continue the same worker when its context helps.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
 				"agent":         {"type": "string", "enum": %s, "description": "which sub-agent kind to spawn"},
 				"prompt":        {"type": "string", "description": "task for the sub-agent"},
+				"async":         {"type": "boolean", "default": false, "description": "if true, run in background and return immediately; completion is delivered as a task-notification"},
 				"share_context": {"type": "boolean", "default": false, "description": "include parent messages as initial context"}
 			},
 			"required": ["agent", "prompt"]
@@ -93,6 +97,7 @@ func (a *AgentTool) Spec() tools.Tool {
 type agentArgs struct {
 	Agent        string `json:"agent"`
 	Prompt       string `json:"prompt"`
+	Async        bool   `json:"async"`
 	ShareContext bool   `json:"share_context"`
 }
 
@@ -167,29 +172,56 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: child loop: %w", err)}, nil
 	}
+	workers := a.Workers
+	if workers == nil {
+		workers = NewWorkerRegistry()
+		a.Workers = workers
+	}
+	w := workers.Add(ar.Agent, ar.Prompt, loop)
+	if ar.Async {
+		a.startBackgroundWorker(w, ar.Prompt, maxSteps)
+		return tools.Result{Text: fmt.Sprintf(`<task-notification>
+<task-id>%s</task-id>
+<agent>%s</agent>
+<status>running</status>
+<summary>%s running in background</summary>
+</task-notification>`, w.ID, w.Agent, w.Agent)}, nil
+	}
 
-	events, err := loop.Run(childCtx, ar.Prompt)
+	text, err := runWorkerLoop(childCtx, w, ar.Prompt)
 	if err != nil {
-		return tools.Result{Err: fmt.Errorf("task: child Run: %w", err)}, nil
+		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
 	}
+	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
+}
 
-	// Drain the event stream and accumulate the final text.
-	var text strings.Builder
-	for ev := range events {
-		switch e := ev.(type) {
-		case MessageEvent:
-			text.WriteString(e.Text)
-		case ErrorEvent:
-			return tools.Result{
-				Text: text.String(),
-				Err:  e.Err,
-			}, nil
-		}
+func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int) {
+	if w == nil {
+		return
 	}
-	// The child loop's last message is the assistant reply;
-	// we already streamed its content into `text` so the
-	// parent sees the same thing.
-	return tools.Result{Text: text.String()}, nil
+	timeout := a.TimeoutPerStep * time.Duration(maxSteps)
+	if timeout <= 0 {
+		timeout = 30 * time.Second * time.Duration(maxSteps)
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		text, err := runWorkerLoop(ctx, w, prompt)
+		if err != nil && text == "" {
+			text = err.Error()
+		}
+		notification := renderWorkerNotification(w, text)
+		if a.ParentLoop != nil {
+			a.ParentLoop.InjectUserMessage(context.Background(), notification)
+			a.ParentLoop.Emit(WorkerNotificationEvent{
+				TaskID:  w.ID,
+				Agent:   w.Agent,
+				Status:  w.Status,
+				Summary: workerSummary(w),
+				Text:    notification,
+			})
+		}
+	}()
 }
 
 // restrictedRegistry returns a fresh registry containing only
@@ -208,6 +240,7 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 				continue
 			}
 			_ = out.Register(t)
+			out.MarkAlwaysOn(t.Name)
 		}
 		return out
 	}
@@ -220,6 +253,7 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 			continue
 		}
 		_ = out.Register(t)
+		out.MarkAlwaysOn(t.Name)
 	}
 	return out
 }

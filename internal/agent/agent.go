@@ -151,6 +151,19 @@ type ConsultEvent struct {
 
 func (ConsultEvent) event() {}
 
+// WorkerNotificationEvent is emitted when a background task worker finishes.
+// The same XML payload is also injected into the parent loop's message history
+// so the coordinator can see it on a later turn.
+type WorkerNotificationEvent struct {
+	TaskID  string
+	Agent   string
+	Status  string
+	Summary string
+	Text    string
+}
+
+func (WorkerNotificationEvent) event() {}
+
 // DraftOverrideSink is the F11 contract for recording
 // "the verifier overrode the draft" instances so the
 // F5 reflector can later learn when drafts help and

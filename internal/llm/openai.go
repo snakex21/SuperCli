@@ -367,7 +367,7 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 			Function: openaiToolFunction{
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  json.RawMessage(t.Schema),
+				Parameters:  normalizeToolSchema(t.Schema),
 			},
 		})
 	}
