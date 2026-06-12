@@ -95,3 +95,27 @@ Gotowe gdy: powtórne requesty trafiają w cache providera, a /doctor potrafi za
 **agent-go** (`agent-go-main`):
 - Dokumenty projektowe PROMPT_CACHING_*.md — gotowa analiza pod Falę 6 (prompt cache).
 - Prosty REPL + todo-tracking jako referencja minimalizmu.
+
+## Backlog pomysłów (2026-06-13)
+
+**Już mamy (dopracować):**
+- Delegacja do subagentów z czystym kontekstem = coordinator/workers (brakuje `/workers`, `/context` — fala 3).
+- Parallel sampling + judge = darwin (dopracować UX i decyzje produktowe).
+- Pamięć między sesjami = system memory z fali 2.
+- Pattern learning = globalne preferencje (dodać: aktywne proponowanie domyślnych ustawień na bazie wzorców usera).
+- Draft model = zalążek (draft-provider do podsumowań; docelowo: mały model pisze, duży weryfikuje, bridge przez wspólny JSON schema).
+
+**Szybkie winy:**
+- Data + instrukcja "sprawdź aktualność bibliotek/wzorców przed użyciem, jest 2026" w system promptcie.
+- Instrukcja researchu alternatyw przed wyborem biblioteki (web_search).
+- Tryb portable jako OPCJA (`--portable` lub plik-marker: wszystko w `./supercli-data/` zamiast `~/.supercli`; domyślnie bez zmian, bo pamięć globalna międzyprojektowa wymaga stałej lokalizacji).
+
+**Większe:**
+- Selektywne czyszczenie kontekstu (UI pokazuje pełny transkript, model dostaje tylko potrzebne — context editing).
+- Semantic search po kodzie zamiast całych plików (rozszerzenie istniejących embeddingów pamięci; inspiracja: semble — MCP server do code search, wymagałby klienta MCP).
+- Stress-testing jako opt-in (`/test hard`: edge case'y, dane testowe, Playwright do wizualnej weryfikacji UI).
+- Powrót MCP klienta (context7 — live docs bibliotek, semble) jako świadoma decyzja.
+- Pełny fire-and-forget dekompozycji zadań (coordinator ma to robić bez dopytywania usera).
+
+**Odrzucone:**
+- Scraping darmowych chatbotów przez przeglądarkę (ToS, kruchość) — zamiast tego tani/lokalny model.
