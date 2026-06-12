@@ -917,6 +917,20 @@ func main() {
 		return agent.FormatContextReport(loop.ContextReport()), nil
 	}
 
+	// MCP client: spawn configured [mcp.servers.*] stdio servers in the
+	// background, register their tools (deferred, tool_search-only),
+	// and expose status/restart via /mcp.
+	reindexTools := func() {
+		if err := toolSearcher.RebuildIndex(); err != nil {
+			log.Printf("mcp: tool index rebuild: %v", err)
+		}
+	}
+	mcpManager := initMcp(tomlCfg, registry, reindexTools)
+	if mcpManager != nil {
+		defer mcpManager.StopAll()
+	}
+	mergedCommands["mcp"] = mcpCommand(mcpManager, registry, reindexTools)
+
 	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
 		hidden := loop.HideLastUserTurns(2)
 		if hidden == 0 {
