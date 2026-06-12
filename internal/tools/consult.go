@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"supercli/internal/consult"
+	"supercli/internal/llm"
 )
 
 // Consult is the F12 opt-in tool. The model calls
@@ -51,6 +53,15 @@ type Consult struct {
 	// it to emit a ConsultEvent for the TUI.
 	// nil = no callback.
 	OnResult func(consult.Result)
+
+	// BuildProvider builds a provider for an explicit
+	// model spec ("providerName/modelID" or a bare
+	// model id). It powers the optional "models"
+	// parameter, letting the agent consult SPECIFIC
+	// configured models (local or online) instead of
+	// the auto-picked cheapest pool. nil disables
+	// the parameter.
+	BuildProvider func(spec string) (llm.Provider, error)
 }
 
 // NewConsult returns a Consult bound to c.
@@ -66,12 +77,14 @@ func (c *Consult) Spec() Tool {
 			"Use this when a problem is ambiguous or has many defensible answers and you want a second opinion from independent voices. " +
 			"Each sample is a one-shot answer (no tools, no memory) so this is cheap. The judge is the model you're already running, so no extra spend. " +
 			"The model only sees the winner's response + a one-line judge reason; the full transcript is in the chat scrollback. " +
-			"n defaults to 3 and is clamped to the configured sample pool. n=1 is allowed and skips the judge.",
+			"n defaults to 3 and is clamped to the configured sample pool. n=1 is allowed and skips the judge. " +
+			"To consult SPECIFIC configured models instead of the auto-picked pool, pass `models` with explicit entries like \"providerName/modelID\" (or a bare model id); failures of individual models are reported per model without aborting the rest.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"question": {"type": "string", "description": "The question to ask all samples (required)"},
-				"n":        {"type": "integer", "description": "Number of parallel samples (default 3, min 1)"}
+				"n":        {"type": "integer", "description": "Number of parallel samples (default 3, min 1); ignored when models is given"},
+				"models":   {"type": "array", "items": {"type": "string"}, "description": "Explicit models to consult, each \"providerName/modelID\" or a bare model id. Overrides the auto-picked pool."}
 			},
 			"required": ["question"]
 		}`,
@@ -80,8 +93,9 @@ func (c *Consult) Spec() Tool {
 }
 
 type consultArgs struct {
-	Question string `json:"question"`
-	N        int    `json:"n,omitempty"`
+	Question string   `json:"question"`
+	N        int      `json:"n,omitempty"`
+	Models   []string `json:"models,omitempty"`
 }
 
 func (c *Consult) run(ctx context.Context, args json.RawMessage) (Result, error) {
@@ -95,6 +109,9 @@ func (c *Consult) run(ctx context.Context, args json.RawMessage) (Result, error)
 	a.Question = strings.TrimSpace(a.Question)
 	if a.Question == "" {
 		return Result{Err: fmt.Errorf("consult: question is empty")}, nil
+	}
+	if len(a.Models) > 0 {
+		return c.runSelected(ctx, a)
 	}
 	n := a.N
 	if n <= 0 {
@@ -133,5 +150,63 @@ func (c *Consult) run(ctx context.Context, args json.RawMessage) (Result, error)
 		fmt.Fprintf(&b, "Judge: %s\n", res.Verdict.Reason)
 	}
 	fmt.Fprintf(&b, "\n[consult: %d candidate(s), %d total tokens]", len(res.Candidates), res.TotalTokens)
+	return Result{Text: b.String()}, nil
+}
+
+// runSelected handles the explicit `models` parameter:
+// build a provider per spec, fan out over exactly those,
+// and report per-model status. Single-model failures
+// (build or call) never abort the rest.
+func (c *Consult) runSelected(ctx context.Context, a consultArgs) (Result, error) {
+	if c.BuildProvider == nil {
+		return Result{Text: "consult: explicit model selection is not wired; call without `models`"}, nil
+	}
+	var provs []llm.Provider
+	var specs []string
+	var buildErrs []string
+	for _, s := range a.Models {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		p, err := c.BuildProvider(s)
+		if err != nil {
+			buildErrs = append(buildErrs, fmt.Sprintf("model %s: error: %v", s, err))
+			continue
+		}
+		provs = append(provs, p)
+		specs = append(specs, s)
+	}
+	if len(provs) == 0 {
+		return Result{Err: fmt.Errorf("consult: no usable models in %v: %s", a.Models, strings.Join(buildErrs, "; "))}, nil
+	}
+	res, err := c.Council.ConsultSelected(ctx, a.Question, provs)
+	if err != nil {
+		return Result{Err: fmt.Errorf("consult: %w", err)}, nil
+	}
+	if c.OnResult != nil {
+		c.OnResult(res)
+	}
+	var b strings.Builder
+	if res.AllFailed {
+		b.WriteString("consult: every selected model failed\n")
+	} else if w := res.Verdict.WinnerIndex; w >= 0 && w < len(res.Candidates) {
+		fmt.Fprintf(&b, "Winner (%s):\n%s\n\n", specs[w], res.Candidates[w].Response)
+		if res.Verdict.Reason != "" {
+			fmt.Fprintf(&b, "Judge: %s\n", res.Verdict.Reason)
+		}
+	}
+	b.WriteString("\nPer-model status:\n")
+	for i, cd := range res.Candidates {
+		if cd.Err != nil {
+			fmt.Fprintf(&b, "- model %s: error: %v\n", specs[i], cd.Err)
+		} else {
+			fmt.Fprintf(&b, "- model %s: ok (%s, %d tok)\n", specs[i], cd.Elapsed.Round(time.Millisecond), cd.Total)
+		}
+	}
+	for _, e := range buildErrs {
+		b.WriteString("- " + e + "\n")
+	}
+	fmt.Fprintf(&b, "[consult: %d model(s), %d total tokens]", len(res.Candidates), res.TotalTokens)
 	return Result{Text: b.String()}, nil
 }

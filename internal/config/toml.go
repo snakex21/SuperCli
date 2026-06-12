@@ -94,6 +94,20 @@ type TomlConfig struct {
 	// WebSearch configures the web_search tool. Optional;
 	// the default engine (duckduckgo) needs no API key.
 	WebSearch WebSearchConf `toml:"web_search"`
+
+	// Council configures the /council roster (F12).
+	// Empty = fall back to the auto-assembled
+	// cheapest-N council.
+	Council CouncilConf `toml:"council"`
+}
+
+// CouncilConf is the [council] section of config.toml.
+// Models is the saved roster for /council: entries are
+// "providerName/modelID" (preferred) or bare model IDs.
+// The /council picker overwrites this with the user's
+// last selection, so it doubles as the persisted default.
+type CouncilConf struct {
+	Models []string `toml:"models"`
 }
 
 // WebSearchConf is the [web_search] section of config.toml.
@@ -276,6 +290,11 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.CodexAuth.BackendURL != "" {
 		dst.CodexAuth.BackendURL = src.CodexAuth.BackendURL
+	}
+	// Council roster: project overrides global entirely
+	// (same semantics as Providers).
+	if len(src.Council.Models) > 0 {
+		dst.Council.Models = src.Council.Models
 	}
 	// Web search: field-wise override.
 	if src.WebSearch.Engine != "" {

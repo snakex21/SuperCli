@@ -929,62 +929,11 @@ func main() {
 		}
 	}
 
-	// F12: cross-model consultation. Build the
-	// council once, share it between the opt-in
-	// `consult` tool and the `/council` slash
-	// command. The OnResult callback emits a
-	// ConsultEvent for the TUI transcript marker.
-	council := buildConsultCouncil(3, provider, caps, cfg)
-	if council != nil {
-		consultTool := tools.NewConsult(council)
-		consultTool.OnResult = func(r consult.Result) {
-			winner := -1
-			prov := ""
-			if !r.AllFailed && r.Verdict.WinnerIndex >= 0 &&
-				r.Verdict.WinnerIndex < len(r.Candidates) {
-				winner = r.Verdict.WinnerIndex
-				prov = r.Candidates[winner].Provider
-			}
-			loop.Emit(agent.ConsultEvent{
-				Question:       r.Question,
-				CandidateCount: len(r.Candidates),
-				WinnerIndex:    winner,
-				WinnerProvider: prov,
-				Reason:         r.Verdict.Reason,
-				AllFailed:      r.AllFailed,
-				TotalTokens:    r.TotalTokens,
-			})
-		}
-		registry.MustRegister(consultTool.Spec())
-	}
-	mergedCommands["council"] = func(ctx context.Context, args string) (string, error) {
-		if council == nil {
-			return "council: not wired (no models available)", nil
-		}
-		q := strings.TrimSpace(args)
-		if q == "" {
-			return "usage: /council [N] <prompt>  (N defaults to 3)", nil
-		}
-		n := 3
-		// Parse optional leading N.
-		if fields := strings.Fields(q); len(fields) > 1 {
-			if v, err := strconv.Atoi(fields[0]); err == nil && v > 0 {
-				n = v
-				q = strings.TrimSpace(strings.TrimPrefix(q, fields[0]))
-			}
-		}
-		res, err := council.Consult(ctx, consult.Request{Question: q, N: n})
-		if err != nil {
-			return fmt.Sprintf("council: %v", err), nil
-		}
-		if res.AllFailed {
-			return "council: all samples failed", nil
-		}
-		w := res.Candidates[res.Verdict.WinnerIndex]
-		return fmt.Sprintf("winner (#%d, %s):\n%s\n\njudge: %s\n[%d candidate(s), %d tokens]",
-			res.Verdict.WinnerIndex+1, w.Provider, w.Response, res.Verdict.Reason,
-			len(res.Candidates), res.TotalTokens), nil
-	}
+	// F12: the cross-model consultation block (consult tool +
+	// /council slash command) is registered further down, after
+	// the provider manager exists — the user-picked council
+	// roster needs config.toml provider entries to build
+	// per-model providers.
 
 	// F25a: /help — list all registered slash commands.
 	mergedCommands["help"] = func(ctx context.Context, args string) (string, error) {
@@ -1133,6 +1082,198 @@ func main() {
 		if p.Type == config.ProviderCodex {
 			llm.RegisterCodexCatalog(caps, p.Name)
 		}
+	}
+
+	// F12: cross-model consultation. Built here (after the
+	// provider manager) so the user-picked council roster can
+	// resolve "providerName/modelID" specs against config.toml
+	// provider entries (local + online endpoints alike).
+	//
+	// buildCouncilMember builds a one-shot provider for a
+	// roster spec. The spec is "providerName/modelID" when the
+	// prefix matches a configured provider (model ids may
+	// themselves contain "/" or ":", e.g. openrouter/ollama);
+	// otherwise the whole spec is treated as a bare model id
+	// served by the active transport.
+	buildCouncilMember := func(spec string) (llm.Provider, error) {
+		provName, model := "", spec
+		if i := strings.Index(spec, "/"); i > 0 {
+			prefix := spec[:i]
+			for _, pc := range provMgr.Configured() {
+				if pc.Name == prefix {
+					provName, model = prefix, spec[i+1:]
+					break
+				}
+			}
+		}
+		if provName == "" {
+			provName = caps.Provider(model)
+		}
+		mCfg := cfg
+		mCfg.Model = model
+		for _, pc := range provMgr.Configured() {
+			if pc.Name == provName {
+				mCfg.Provider = pc.Type
+				mCfg.BaseURL = pc.BaseURL
+				mCfg.APIKey = pc.APIKey
+				break
+			}
+		}
+		return buildProvider(mCfg, home, caps)
+	}
+
+	// The auto council (cheapest-N pool) stays as the fallback
+	// for the consult tool and for /council when the user never
+	// picked a roster.
+	council := buildConsultCouncil(3, provider, caps, cfg)
+	if council == nil {
+		// No cheap pool available — keep a judge-only council
+		// so explicit model selection (tool `models` param and
+		// the /council roster) still works.
+		council = &consult.Council{Judge: provider}
+	}
+	consultTool := tools.NewConsult(council)
+	consultTool.BuildProvider = buildCouncilMember
+	consultTool.OnResult = func(r consult.Result) {
+		winner := r.Verdict.WinnerIndex
+		prov := ""
+		if !r.AllFailed && winner >= 0 && winner < len(r.Candidates) {
+			prov = r.Candidates[winner].Provider
+		} else {
+			winner = -1
+		}
+		loop.Emit(agent.ConsultEvent{
+			Question:       r.Question,
+			CandidateCount: len(r.Candidates),
+			WinnerIndex:    winner,
+			WinnerProvider: prov,
+			Reason:         r.Verdict.Reason,
+			AllFailed:      r.AllFailed,
+			TotalTokens:    r.TotalTokens,
+		})
+	}
+	registry.MustRegister(consultTool.Spec())
+
+	// /council — manual brainstorming across hand-picked models.
+	//
+	//	/council               → multi-select roster picker
+	//	                         (space toggles, enter confirms;
+	//	                          selection persists in config.toml
+	//	                          under [council] models)
+	//	/council <question>    → ask the saved roster in parallel
+	//	/council N <question>  → legacy: auto cheapest-N pool
+	//	                         (used only when no roster is saved)
+	mergedCommands["council"] = func(ctx context.Context, args string) (string, error) {
+		q := strings.TrimSpace(args)
+		if q == "" {
+			// Interactive roster picker via the ask_user UI.
+			opts := councilPickerOptions(provMgr, caps)
+			if len(opts) == 0 {
+				return "council: no models available — add providers via /providers first", nil
+			}
+			respond := make(chan tools.AskAnswer, 1)
+			req := tools.AskRequest{
+				ID:          "council-pick",
+				Question:    "Pick council members (space toggles, enter confirms)",
+				Header:      "council",
+				Options:     opts,
+				MultiSelect: true,
+				Respond:     respond,
+			}
+			select {
+			case askCh <- req:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+			select {
+			case ans := <-respond:
+				if ans.Cancelled || len(ans.Selected) == 0 {
+					return "council: selection cancelled", nil
+				}
+				if err := provMgr.SaveCouncilModels(ans.Selected); err != nil {
+					log.Printf("council: save roster failed: %v", err)
+				}
+				return fmt.Sprintf("council roster saved: %s\nask away: /council <question>",
+					strings.Join(ans.Selected, ", ")), nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		// Roster: last picker selection (global config.toml) or
+		// the merged [council] models section (project override).
+		roster := provMgr.LoadCouncilModels()
+		if len(roster) == 0 {
+			roster = tomlCfg.Council.Models
+		}
+		// Legacy optional leading N (only meaningful for the
+		// auto-pool fallback path).
+		n := 3
+		if fields := strings.Fields(q); len(fields) > 1 {
+			if v, err := strconv.Atoi(fields[0]); err == nil && v > 0 {
+				n = v
+				q = strings.TrimSpace(strings.TrimPrefix(q, fields[0]))
+			}
+		}
+		if len(roster) == 0 {
+			// Fallback: auto cheapest-N council with judge pick.
+			if len(council.Samples) == 0 {
+				return "council: no roster picked yet — run /council (no args) to choose models", nil
+			}
+			res, err := council.Consult(ctx, consult.Request{Question: q, N: n})
+			if err != nil {
+				return fmt.Sprintf("council: %v", err), nil
+			}
+			if res.AllFailed {
+				return "council: all samples failed", nil
+			}
+			w := res.Candidates[res.Verdict.WinnerIndex]
+			return fmt.Sprintf("winner (#%d, %s):\n%s\n\njudge: %s\n[%d candidate(s), %d tokens]",
+				res.Verdict.WinnerIndex+1, w.Provider, w.Response, res.Verdict.Reason,
+				len(res.Candidates), res.TotalTokens), nil
+		}
+		// Hand-picked roster: build each member; a single bad
+		// model never aborts the rest.
+		var provs []llm.Provider
+		var specs []string
+		var buildErrs []string
+		for _, s := range roster {
+			p, err := buildCouncilMember(s)
+			if err != nil {
+				buildErrs = append(buildErrs, fmt.Sprintf("model %s: error: %v", s, err))
+				continue
+			}
+			provs = append(provs, p)
+			specs = append(specs, s)
+		}
+		if len(provs) == 0 {
+			return "council: no usable models in roster: " + strings.Join(buildErrs, "; "), nil
+		}
+		cc := &consult.Council{Samples: provs, Judge: loop.Provider()}
+		res, err := cc.ConsultSelected(ctx, q, provs)
+		if err != nil {
+			return fmt.Sprintf("council: %v", err), nil
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "council × %d — %s\n", len(provs), q)
+		for i, cd := range res.Candidates {
+			if cd.Err != nil {
+				fmt.Fprintf(&b, "\n━━ %s · error ━━\nmodel %s: error: %v\n", specs[i], specs[i], cd.Err)
+				continue
+			}
+			fmt.Fprintf(&b, "\n━━ %s · %s · in %d / out %d tok ━━\n%s\n",
+				specs[i], cd.Elapsed.Round(time.Millisecond), cd.In, cd.Out,
+				strings.TrimSpace(cd.Response))
+		}
+		for _, e := range buildErrs {
+			b.WriteString("\n" + e + "\n")
+		}
+		if w := res.Verdict.WinnerIndex; w >= 0 && w < len(specs) {
+			fmt.Fprintf(&b, "\njudge (%s): winner=%s · %s\n", loop.Provider().Name(), specs[w], res.Verdict.Reason)
+		} else if res.Verdict.Reason != "" {
+			fmt.Fprintf(&b, "\njudge: %s\n", res.Verdict.Reason)
+		}
+		fmt.Fprintf(&b, "[%d model(s), %d total tokens]", len(res.Candidates), res.TotalTokens)
+		return b.String(), nil
 	}
 
 	// ChatGPT-subscription auth: /login runs the OAuth+PKCE
@@ -1680,6 +1821,46 @@ func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *l
 		}
 	}
 	return policy, prov
+}
+
+// councilPickerOptions builds the option list for the
+// /council roster picker. Preferred source: models the
+// provider scanner discovered per configured provider
+// (labels "providerName/modelID" — buildable directly).
+// Fallback when nothing has been scanned yet: every
+// visible model id from the capability registry (bare
+// ids; the active transport serves them). Hidden models
+// are skipped; the list is capped to keep the picker
+// usable.
+func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegistry) []tools.AskOption {
+	const maxOpts = 40
+	var opts []tools.AskOption
+	seen := make(map[string]struct{})
+	for _, pi := range provMgr.ListConfigured(caps) {
+		for _, mi := range pi.Models {
+			if provMgr.IsHidden(mi.ID) {
+				continue
+			}
+			label := pi.Name + "/" + mi.ID
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			opts = append(opts, tools.AskOption{Label: label, Description: pi.BaseURL})
+		}
+	}
+	if len(opts) == 0 && caps != nil {
+		for _, mi := range caps.All() {
+			if provMgr.IsHidden(mi.ID) {
+				continue
+			}
+			opts = append(opts, tools.AskOption{Label: mi.ID, Description: mi.Provider})
+		}
+	}
+	if len(opts) > maxOpts {
+		opts = opts[:maxOpts]
+	}
+	return opts
 }
 
 // buildConsultCouncil assembles the F12 cross-model

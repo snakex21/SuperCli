@@ -500,6 +500,34 @@ func (m *Manager) SaveActiveConfig(modelID, providerName string) error {
 	return config.SaveToml(m.tomlPath, tc)
 }
 
+// SaveCouncilModels persists the user's last /council
+// roster to the [council] section of config.toml so it
+// becomes the default for subsequent /council runs.
+func (m *Manager) SaveCouncilModels(models []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	tc, err := config.LoadToml(m.tomlPath)
+	if err != nil {
+		tc = config.TomlConfig{}
+	}
+	tc.Council.Models = models
+	return config.SaveToml(m.tomlPath, tc)
+}
+
+// LoadCouncilModels reads the saved /council roster from
+// config.toml. Nil when not set.
+func (m *Manager) LoadCouncilModels() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tc, err := config.LoadToml(m.tomlPath)
+	if err != nil {
+		return nil
+	}
+	return tc.Council.Models
+}
+
 // LoadActiveModel reads the last selected model from config.toml.
 // Returns empty string if not set.
 func (m *Manager) LoadActiveModel() string {

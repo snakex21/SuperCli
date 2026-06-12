@@ -57,7 +57,10 @@ type Candidate struct {
 	In       int64
 	Out      int64
 	Total    int64
-	Err      error
+	// Elapsed is the wall-clock duration of this
+	// sample's call (set even on error).
+	Elapsed time.Duration
+	Err     error
 }
 
 // Verdict is the judge's pick. WinnerIndex is
@@ -238,6 +241,92 @@ func (c *Council) Consult(ctx context.Context, req Request) (Result, error) {
 	}, nil
 }
 
+// ConsultSelected runs the council over an explicit,
+// caller-picked provider set (the user's hand-chosen
+// roster — local + online models mixed freely).
+//
+// It differs from Consult in one key way: the
+// returned Result.Candidates contains EVERY
+// participant in call order, INCLUDING failures
+// (Err != nil), so the caller can render
+// "model X: error ..." next to the successful
+// answers instead of silently dropping it.
+//
+// Verdict.WinnerIndex indexes into that full slice.
+// It is -1 when no verdict is available (all failed,
+// or the judge errored / is nil). A single success
+// wins by default without consulting the judge.
+func (c *Council) ConsultSelected(ctx context.Context, question string, providers []llm.Provider) (Result, error) {
+	if question == "" {
+		return Result{}, fmt.Errorf("consult: empty question")
+	}
+	if len(providers) == 0 {
+		return Result{}, fmt.Errorf("consult: no providers selected")
+	}
+	if c.Logger != nil {
+		c.Logger("consult: selected roster of %d model(s)", len(providers))
+	}
+	cands := c.fanOut(ctx, question, providers)
+	good := make([]Candidate, 0, len(cands))
+	goodIdx := make([]int, 0, len(cands)) // map good-slice pos -> full-slice pos
+	var total int64
+	for i := range cands {
+		cands[i].Index = i + 1 // 1-based, full roster order
+		if cands[i].Err == nil {
+			good = append(good, cands[i])
+			goodIdx = append(goodIdx, i)
+			total += cands[i].In + cands[i].Out
+		}
+	}
+	res := Result{
+		Question:    question,
+		Candidates:  cands,
+		Verdict:     Verdict{WinnerIndex: -1},
+		TotalTokens: total,
+	}
+	if len(good) == 0 {
+		res.AllFailed = true
+		return res, nil
+	}
+	if len(good) == 1 {
+		res.Verdict = Verdict{
+			WinnerIndex: goodIdx[0],
+			Reason:      "only one candidate succeeded",
+		}
+		return res, nil
+	}
+	if c.Judge == nil {
+		res.Verdict.Reason = "no judge configured"
+		return res, nil
+	}
+	capN := c.PerCandidateCap
+	if capN <= 0 {
+		capN = 4000
+	}
+	maxTok := c.MaxTokens
+	if maxTok <= 0 {
+		maxTok = 300
+	}
+	verdict, err := c.judge(ctx, question, good, capN, maxTok)
+	if err != nil {
+		if c.Logger != nil {
+			c.Logger("consult: judge failed: %v", err)
+		}
+		res.Verdict.Reason = fmt.Sprintf("judge failed: %v", err)
+		return res, nil
+	}
+	// Map the judge's 0-based index into the good
+	// slice back onto the full roster slice.
+	if verdict.WinnerIndex >= 0 && verdict.WinnerIndex < len(goodIdx) {
+		verdict.WinnerIndex = goodIdx[verdict.WinnerIndex]
+	} else {
+		verdict.WinnerIndex = -1
+	}
+	res.Verdict = verdict
+	res.TotalTokens = total + verdict.JudgeIn + verdict.JudgeOut
+	return res, nil
+}
+
 // fanOut runs all sample providers concurrently
 // and returns one Candidate per call, preserving
 // order. Each Candidate's Index is 0-based at
@@ -263,6 +352,12 @@ func (c *Council) fanOut(ctx context.Context, q string, ps []llm.Provider) []Can
 // interface is streaming; we collect deltas into
 // a buffer and capture the final Usage.
 func (c *Council) callOne(ctx context.Context, p llm.Provider, q string) Candidate {
+	now := time.Now
+	if c.NowFn != nil {
+		now = c.NowFn
+	}
+	start := now()
+	elapsed := func() time.Duration { return now().Sub(start) }
 	if p == nil {
 		return Candidate{Provider: "<nil>", Err: fmt.Errorf("nil provider")}
 	}
@@ -272,13 +367,13 @@ func (c *Council) callOne(ctx context.Context, p llm.Provider, q string) Candida
 		Content: q,
 	}}, nil) // no tools for consultation
 	if err != nil {
-		return Candidate{Provider: name, Err: fmt.Errorf("provider init: %w", err)}
+		return Candidate{Provider: name, Elapsed: elapsed(), Err: fmt.Errorf("provider init: %w", err)}
 	}
 	var buf []byte
 	var usage *llm.Usage
 	for d := range stream {
 		if d.Err != nil {
-			return Candidate{Provider: name, Err: fmt.Errorf("stream: %w", d.Err)}
+			return Candidate{Provider: name, Elapsed: elapsed(), Err: fmt.Errorf("stream: %w", d.Err)}
 		}
 		if d.Content != "" {
 			buf = append(buf, d.Content...)
@@ -302,6 +397,7 @@ func (c *Council) callOne(ctx context.Context, p llm.Provider, q string) Candida
 		In:       in,
 		Out:      out,
 		Total:    tot,
+		Elapsed:  elapsed(),
 	}
 }
 

@@ -133,7 +133,7 @@ Type `/` in the TUI to open the command palette.
 | `/help` | Show command help. |
 | `/goal <set\|list\|show\|tasks\|done>` | Manage the active goal and tasks. |
 | `/darwin [N] <prompt>` | Run parallel agents and pick the best result. |
-| `/council [N] <prompt>` | Sample multiple models and let a judge pick the winner. |
+| `/council [<prompt>]` | No args: pick a roster of models (multi-select, saved in `[council]` of config.toml). With a prompt: ask the saved roster in parallel and show each answer plus a judge verdict. |
 | `/clear` | Hide recent messages from the model context, keeping scrollback. |
 | `/reflect` | Show learned patterns from reflection memory. |
 | `/compact [instructions]` | Compress/hide context to save tokens. |
