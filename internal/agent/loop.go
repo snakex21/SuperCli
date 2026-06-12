@@ -44,6 +44,7 @@ type Loop struct {
 	registry        *tools.Registry
 	caps            *llm.CapabilityRegistry
 	system          string
+	briefing        string
 	maxSteps        int
 	writer          SessionWriter
 	errorLog        ErrorLogger
@@ -165,6 +166,12 @@ type LoopConfig struct {
 	// System is the system prompt prepended on every run. Empty
 	// is fine.
 	System string
+	// Briefing is the code-built memory briefing (user preferences,
+	// project card, recent sessions). The coordinator route already
+	// sees it inside System; chat/advisor routes replace System with
+	// a minimal prompt, so the loop re-appends Briefing there — the
+	// model must know durable user facts even in smalltalk.
+	Briefing string
 	// MaxSteps caps the number of model calls in a single Run.
 	// Zero means default (10). Negative means no cap (dangerous).
 	MaxSteps int
@@ -293,6 +300,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		registry:        cfg.Registry,
 		caps:            cfg.Caps,
 		system:          cfg.System,
+		briefing:        cfg.Briefing,
 		maxSteps:        cfg.MaxSteps,
 		writer:          cfg.Writer,
 		errorLog:        cfg.ErrorLog,
@@ -732,6 +740,12 @@ func (l *Loop) providerMessages() []llm.Message {
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt
+	}
+	// Memory briefing must survive the route switch: the chat-only
+	// prompt replaces the full system prompt, but durable user
+	// facts (name, language, preferences) still apply to smalltalk.
+	if l.briefing != "" {
+		system += "\n\n" + l.briefing
 	}
 	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	// Keep a tiny conversational tail only. Skip system/tool messages and task

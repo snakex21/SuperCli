@@ -220,7 +220,13 @@ func TestUpdate_AllCoreSlashCommandsAreSimulated(t *testing.T) {
 			if mm.quitting {
 				t.Fatalf("/%s unexpectedly quit after enter", name)
 			}
-			if !mm.busy {
+			if localSlashCommands[name] {
+				// Local commands must NOT flip the TUI into the
+				// busy/running state (no spinner, no abort hint).
+				if mm.busy {
+					t.Fatalf("/%s is local and must not set busy", name)
+				}
+			} else if !mm.busy {
 				t.Fatalf("/%s should set busy while handler runs", name)
 			}
 			if cmd == nil {

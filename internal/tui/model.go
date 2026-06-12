@@ -587,6 +587,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case doctorReportMsg:
+		m.chat.removeLastSystem(m.marker.Running())
 		m.mode = modeDoctor
 		m.doctorReport = msg.report
 		return m, nil
@@ -594,6 +595,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case slashResultMsg:
 		m.busy = false
 		m.cancel.Disarm()
+		m.chat.removeLastSystem(m.marker.Running())
 		if msg.Err != nil {
 			m.appendLine(fmt.Sprintf("_(error: %v)_", msg.Err))
 		} else {
@@ -608,6 +610,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shellResultMsg:
 		m.busy = false
 		m.cancel.Disarm()
+		m.chat.removeLastSystem(m.marker.Running())
 		r := msg.res
 		if r.Error != "" {
 			m.appendLine(m.marker.Error(fmt.Errorf("%s", r.Error)))
@@ -1918,6 +1921,18 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	handler = SafeWrap(cmd.Name, handler)
 	m.chat.addUser("> /" + cmd.Name + " " + cmd.Args)
 	m.appendLineToTranscript("> /" + cmd.Name + " " + cmd.Args)
+	if localSlashCommands[cmd.Name] {
+		// Fast local commands (no LLM/network work) must not flip
+		// the TUI into the busy/running state: no "running ·
+		// Ctrl+C to abort" marker, no working spinner. The handler
+		// still runs as a tea.Cmd so a slow disk never freezes the
+		// UI; slashResultMsg renders the result.
+		m.refreshTranscript()
+		return m, func() tea.Msg {
+			out, err := handler(context.Background(), cmd.Args)
+			return slashResultMsg{Body: out, Err: err}
+		}
+	}
 	m.appendLine(m.marker.Running())
 	m.refreshTranscript()
 	m.busy = true
@@ -1928,6 +1943,21 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		out, err := handler(ctx, cmd.Args)
 		return slashResultMsg{Body: out, Err: err}
 	}
+}
+
+// localSlashCommands lists commands that do pure in-process work
+// (DB reads, formatting) and therefore never show the running
+// marker or the busy spinner. Anything that calls the model or
+// the network (/council, /compact, /darwin, /login, ...) keeps
+// the busy state so Ctrl+C cancellation works.
+var localSlashCommands = map[string]bool{
+	"help":    true,
+	"memory":  true,
+	"status":  true,
+	"sandbox": true,
+	"clear":   true,
+	"reflect": true,
+	"resume":  true,
 }
 
 // shellResultMsg is delivered when a !command finishes.

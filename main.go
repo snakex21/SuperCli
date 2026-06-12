@@ -793,6 +793,7 @@ func main() {
 		Provider:        provider,
 		Registry:        registry,
 		System:          buildSystemPrompt(goalSvc),
+		Briefing:        memoryBriefing,
 		MaxSteps:        10,
 		ErrorLog:        errorLog,
 		Reflector:       reflector,
@@ -1033,7 +1034,7 @@ func main() {
 	// `/memory search <q>` runs a hybrid search over both stores;
 	// `/memory forget <id>` deletes an entry wherever it lives.
 	mergedCommands["memory"] = func(ctx context.Context, args string) (string, error) {
-		return memoryCommand(ctx, memStore, globalMemStore, args)
+		return memoryCommand(ctx, memStore, globalMemStore, memoryBriefing, args)
 	}
 
 	// Wave 1 cleanup: the old text-only /models handler was dead
