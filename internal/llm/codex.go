@@ -321,6 +321,16 @@ type codexRequest struct {
 	Store             bool            `json:"store"`
 	Stream            bool            `json:"stream"`
 	Include           []string        `json:"include"`
+	// Reasoning carries the effort level the same way the Codex
+	// CLI does ({"effort": "...", "summary": "auto"}). Omitted
+	// when no effort is configured.
+	Reasoning *codexReasoning `json:"reasoning,omitempty"`
+}
+
+// codexReasoning is the Responses API reasoning config.
+type codexReasoning struct {
+	Effort  string `json:"effort,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 type codexItem struct {
@@ -364,6 +374,11 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 		Store:      false,
 		Stream:     true,
 		Include:    []string{},
+	}
+	// The ChatGPT backend rejects "none"; the Codex CLI never
+	// sends it either — skip the field in that case.
+	if e := ReasoningEffort(); e != "" && e != "none" && SupportsReasoningEffort(model) {
+		req.Reasoning = &codexReasoning{Effort: e, Summary: "auto"}
 	}
 	for _, t := range tools {
 		req.Tools = append(req.Tools, codexToolDecl{

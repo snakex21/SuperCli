@@ -125,6 +125,10 @@ type Model struct {
 	// background pings finish.
 	providerStatuses map[string]providerStatus
 
+	// onRunEnd is invoked (in a goroutine) after each agent run
+	// finishes. See Options.OnRunEnd.
+	onRunEnd func()
+
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
 	// a few seconds. Cleared by statusOverrideClearMsg.
@@ -278,6 +282,10 @@ type Options struct {
 	GoalService *goal.Service
 	// ToolRegistry feeds /doctor diagnostics.
 	ToolRegistry *tools.Registry
+	// OnRunEnd, if non-nil, is called in a goroutine after each
+	// agent run finishes (runEndMsg). main.go uses it for the
+	// incremental memory saver so exits are instant.
+	OnRunEnd func()
 	// Version is shown in the header bar (e.g. "0.6.0").
 	Version string
 	// Tier is the active model tier shown in the header
@@ -356,6 +364,7 @@ func New(opts Options) Model {
 		caps:          opts.CapabilityRegistry,
 		goalSvc:       opts.GoalService,
 		toolRegistry:  opts.ToolRegistry,
+		onRunEnd:      opts.OnRunEnd,
 	}
 }
 
@@ -558,6 +567,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel.Disarm()
 		m.eventCh = nil
+		if m.onRunEnd != nil {
+			go m.onRunEnd()
+		}
 		m.refreshTranscript()
 		m.input.Reset()
 		m.syncInputHeight()

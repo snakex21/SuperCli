@@ -321,6 +321,10 @@ type openaiRequest struct {
 	Messages []openaiReqMsg   `json:"messages"`
 	Stream   bool             `json:"stream"`
 	Tools    []openaiToolDecl `json:"tools,omitempty"`
+	// ReasoningEffort is only set for models known to support
+	// it (see SupportsReasoningEffort); other models never see
+	// the field, so non-OpenAI endpoints cannot reject it.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type openaiReqMsg struct {
@@ -361,6 +365,9 @@ type openaiToolFunction struct {
 
 func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
 	req := openaiRequest{Model: model, Stream: true}
+	if e := ReasoningEffort(); e != "" && SupportsReasoningEffort(model) {
+		req.ReasoningEffort = e
+	}
 	for _, t := range tools {
 		req.Tools = append(req.Tools, openaiToolDecl{
 			Type: "function",

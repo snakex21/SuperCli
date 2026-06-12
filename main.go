@@ -316,6 +316,13 @@ func main() {
 	if tomlErr == nil {
 		config.ApplyTomlToConfig(&cfg, tomlCfg)
 	}
+	// Reasoning effort (OpenAI reasoning models): restore the
+	// persisted level; /reasoning changes it at runtime.
+	if tomlCfg.ReasoningEffort != "" {
+		if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {
+			log.Printf("config: reasoning_effort: %v (ignored)", err)
+		}
+	}
 	// Apply draft/credit overrides from TOML if not set by flags.
 	if *draftModeFlag == "critical" && tomlCfg.DraftMode != "" {
 		*draftModeFlag = tomlCfg.DraftMode
@@ -610,6 +617,9 @@ func main() {
 	}
 	memoryBriefing = memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
 	memAutoSaver := &memory.AutoSaver{Project: memStore, Global: globalMemStore, ProjectPath: home}
+	// memProg tracks how much of the conversation the incremental
+	// background saver already summarized (see incrementalMemorySave).
+	memProg := &memProgress{}
 
 	// Persistent memory tools: always-on so the model can save
 	// and recall facts across sessions. remember routes entries
@@ -1047,6 +1057,49 @@ func main() {
 		return b.String(), nil
 	}
 
+	// /reasoning — show or set the reasoning-effort level for
+	// OpenAI-family reasoning models. Persisted to the global
+	// config.toml; sent only to models that support the parameter.
+	mergedCommands["reasoning"] = func(ctx context.Context, args string) (string, error) {
+		args = strings.ToLower(strings.TrimSpace(args))
+		modelName := loop.Provider().Name()
+		if args == "" {
+			cur := llm.ReasoningEffort()
+			if cur == "" {
+				cur = "(not set — provider default)"
+			}
+			note := ""
+			if !llm.SupportsReasoningEffort(modelName) {
+				note = fmt.Sprintf("\nnote: current model %q does not support reasoning effort; the parameter is not sent", modelName)
+			}
+			return fmt.Sprintf("reasoning effort: %s\nusage: /reasoning <%s|off>%s",
+				cur, strings.Join(llm.ReasoningEffortLevels, "|"), note), nil
+		}
+		if args == "off" || args == "default" {
+			args = ""
+		}
+		if err := llm.SetReasoningEffort(args); err != nil {
+			return fmt.Sprintf("reasoning: %v", err), nil
+		}
+		// Persist to the GLOBAL config.toml (same file the
+		// onboarding wizard and provider manager write).
+		globalPath, _ := config.FindTomlPaths(home, cwd)
+		if tc, err := config.LoadToml(globalPath); err == nil {
+			tc.ReasoningEffort = args
+			if err := config.SaveToml(globalPath, tc); err != nil {
+				log.Printf("reasoning: save config.toml: %v", err)
+			}
+		}
+		if args == "" {
+			return "reasoning effort cleared (provider default)", nil
+		}
+		out := fmt.Sprintf("reasoning effort set to %s", args)
+		if !llm.SupportsReasoningEffort(modelName) {
+			out += fmt.Sprintf("\nnote: current model %q does not support it; the parameter will apply when you switch to an OpenAI reasoning model", modelName)
+		}
+		return out, nil
+	}
+
 	// Wave 2 B6: /memory — inspect persistent memory. No args:
 	// overview (recent entries, DB sizes, embedding status).
 	// `/memory search <q>` runs a hybrid search over both stores;
@@ -1216,6 +1269,11 @@ func main() {
 		if cred != "" {
 			bottom = append(bottom, cred)
 		}
+		// Reasoning effort badge, next to the model name, only
+		// when set and applicable to the active model.
+		if e := llm.ReasoningEffort(); e != "" && llm.SupportsReasoningEffort(loop.Provider().Name()) {
+			bottom = append(bottom, "effort: "+e)
+		}
 		if tokens != "" {
 			tokStr := tokens
 			if costStr != "" {
@@ -1244,6 +1302,16 @@ func main() {
 	// immediately, models appear as they're discovered.
 	go provMgr.ScanModels(caps)
 
+	// Memory summarizer: prefer the small/cheap draft provider
+	// (tier system) when one is configured; otherwise the active
+	// main provider. Resolved per call so /model swaps apply.
+	summaryProviderFor := func() llm.Provider {
+		if draftProvider != nil && !strings.Contains(strings.ToLower(draftProvider.Name()), "echo") {
+			return draftProvider
+		}
+		return loop.Provider()
+	}
+
 	model := tui.New(tui.Options{
 		Home:         home,
 		DataDir:      dataDir,
@@ -1253,6 +1321,13 @@ func main() {
 		LLM:          provider,
 		Commands:     mergedCommands,
 		StatusFn:     statusFn,
+		// Incremental memory: after every finished agent turn,
+		// summarize just the new fragment in the background so
+		// the exit path usually has nothing left to do.
+		OnRunEnd: func() {
+			defer recoverAndLog(home)()
+			incrementalMemorySave(memAutoSaver, loop, memProg, summaryProviderFor())
+		},
 		ExtCh:        extCh,
 		ShellRunner:  shellescape.NewRunner(home),
 		Tracker:      fileops.NewTracker(200),
@@ -1313,7 +1388,7 @@ func main() {
 	// session, generate a one-call summary and store it as a
 	// task-log entry (plus refresh the project card). Runs BEFORE
 	// the shutdown timer so the call is not cut off at 200ms.
-	finalizeMemorySession(memAutoSaver, loop)
+	finalizeMemorySession(memAutoSaver, loop, memProg, summaryProviderFor())
 	startPostTUIShutdownTimer(home, 200*time.Millisecond)
 	close(askCh)
 	<-pumpDone

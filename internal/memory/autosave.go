@@ -31,6 +31,12 @@ func (a *AutoSaver) NoteRemember() {
 	a.rememberCalls.Add(1)
 }
 
+// Remembered reports whether the model called remember at least
+// once this session (synthetic summaries are skipped then).
+func (a *AutoSaver) Remembered() bool {
+	return a != nil && a.rememberCalls.Load() > 0
+}
+
 // SummarizeFunc produces a short summary for the given prompt with
 // a single LLM call. Wire it to the active provider.
 type SummarizeFunc func(ctx context.Context, prompt string) (string, error)
@@ -49,12 +55,26 @@ func (a *AutoSaver) Finalize(ctx context.Context, transcript string, summarize S
 	if a.rememberCalls.Load() > 0 {
 		return // the model saved its own notes this session
 	}
+	a.StoreSummary(ctx, transcript, summarize)
+}
+
+// StoreSummary summarizes one transcript fragment with a single
+// LLM call and stores the result as a task-log entry. It is the
+// shared engine behind Finalize (session end) and the incremental
+// background saver (after each agent turn). Returns true when the
+// fragment is "consumed" — stored, judged NOTHING, or empty — and
+// false when the summarize call failed (caller may retry with the
+// same fragment later).
+func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summarize SummarizeFunc) bool {
+	if a == nil {
+		return true
+	}
 	// Never feed (or store) raw model reasoning: providers wrap
 	// reasoning streams in <thinking>...</thinking> and those
 	// blocks must not leak into summaries or saved entries.
 	transcript = strings.TrimSpace(StripReasoning(transcript))
 	if transcript == "" || summarize == nil || a.Project == nil {
-		return
+		return true
 	}
 	prompt := "Summarize this coding session in 2-4 short lines: WHAT was done, " +
 		"WHY, and which files were touched. Plain text, no markdown, no preamble. " +
@@ -66,16 +86,16 @@ func (a *AutoSaver) Finalize(ctx context.Context, transcript string, summarize S
 		"Only durable facts about the user — no session details.\n\n" + transcript
 	summary, err := summarize(ctx, prompt)
 	if err != nil {
-		return
+		return false
 	}
 	summary = strings.TrimSpace(StripReasoning(summary))
 	if summary == "" || len(summary) > 8000 {
-		return
+		return true
 	}
 	summary, userFacts := splitUserFacts(summary)
 	a.saveUserFacts(userFacts)
 	if summary == "" || strings.EqualFold(summary, "NOTHING") || len(summary) > 4000 {
-		return
+		return true
 	}
 	now := time.Now()
 	_ = a.Project.Put(Entry{
@@ -90,6 +110,7 @@ func (a *AutoSaver) Finalize(ctx context.Context, transcript string, summarize S
 		first = first[:i]
 	}
 	RefreshCard(a.Global, a.ProjectPath, first, "active")
+	return true
 }
 
 // splitUserFacts separates trailing "USER: ..." lines from the

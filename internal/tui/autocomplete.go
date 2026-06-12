@@ -76,7 +76,7 @@ func commandCategory(name string) string {
 	switch name {
 	case "help", "status", "cost", "doctor", "sandbox":
 		return "system"
-	case "model", "providers":
+	case "model", "providers", "reasoning":
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact":
 		return "agent"
@@ -107,6 +107,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
 		{Name: "diff", Desc: "show file changes from current session"},
 		{Name: "model", Desc: "show or swap active model", Args: "[model_id]"},
+		{Name: "reasoning", Desc: "show or set reasoning effort (OpenAI reasoning models)", Args: "[none|minimal|low|medium|high|xhigh|off]"},
 		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
 		{Name: "export", Desc: "export session to Markdown file", Args: "[filename.md]"},
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
