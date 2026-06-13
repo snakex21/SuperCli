@@ -161,8 +161,8 @@ func TestSaveToml_RoundTrip(t *testing.T) {
 }
 
 func TestFindTomlPaths(t *testing.T) {
-	global, project := FindTomlPaths("/home/user", "/home/user/project")
-	wantGlobal := filepath.Join("/home/user", ".supercli", "config.toml")
+	global, project := FindTomlPaths("/data/supercli-data", "/home/user/project")
+	wantGlobal := filepath.Join("/data/supercli-data", "config.toml")
 	wantProject := filepath.Join("/home/user", "project", ".supercli", "config.toml")
 	if global != wantGlobal {
 		t.Errorf("global = %q, want %q", global, wantGlobal)
@@ -173,9 +173,11 @@ func TestFindTomlPaths(t *testing.T) {
 }
 
 func TestFindTomlPaths_SameDir(t *testing.T) {
-	global, project := FindTomlPaths("/home/user", "/home/user")
+	// When the project config would resolve to the same file as the
+	// global one (data dir = <cwd>/.supercli), project must be empty.
+	global, project := FindTomlPaths("/home/user/.supercli", "/home/user")
 	if project != "" {
-		t.Errorf("project should be empty when cwd == home, got %q", project)
+		t.Errorf("project should be empty when paths coincide, got %q", project)
 	}
 	_ = global
 }
@@ -245,10 +247,10 @@ func TestMergeToml_NoColorProjectSetsTrue(t *testing.T) {
 }
 
 func TestResolveConfig_ThreeLayers(t *testing.T) {
-	home := t.TempDir()
+	home := filepath.Join(t.TempDir(), "supercli-data")
 	cwd := filepath.Join(home, "project")
 	os.MkdirAll(filepath.Join(cwd, ".supercli"), 0o755)
-	os.MkdirAll(filepath.Join(home, ".supercli"), 0o755)
+	os.MkdirAll(home, 0o755)
 
 	// Global config.
 	globalToml := `
@@ -256,7 +258,7 @@ default_model = "gpt-4o-mini"
 draft_mode = "off"
 no_color = true
 `
-	os.WriteFile(filepath.Join(home, ".supercli", "config.toml"), []byte(globalToml), 0o644)
+	os.WriteFile(filepath.Join(home, "config.toml"), []byte(globalToml), 0o644)
 
 	// Project config overrides default_model.
 	projectToml := `

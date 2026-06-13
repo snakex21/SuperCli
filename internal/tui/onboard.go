@@ -370,7 +370,7 @@ func (m onboardModel) View() string {
 	case onboardDetect:
 		b.WriteString(p.PanelMuted.Render("Looking for local LLM servers (Ollama, LM Studio)...") + "\n")
 	case onboardMenu:
-		b.WriteString(p.PanelMuted.Render("No provider is configured yet. Pick one (saved to .supercli/config.toml):") + "\n")
+		b.WriteString(p.PanelMuted.Render("No provider is configured yet. Pick one (saved to config.toml in the data dir):") + "\n")
 		if m.errMsg != "" {
 			b.WriteString(p.Error.Render("✗ "+m.errMsg) + "\n")
 		}

@@ -62,9 +62,11 @@ type AuthFile struct {
 	LastRefresh time.Time  `json:"last_refresh,omitempty"`
 }
 
-// AuthFilePath returns <home>/.supercli/auth.json.
-func AuthFilePath(home string) string {
-	return filepath.Join(home, ".supercli", "auth.json")
+// AuthFilePath returns <dataDir>/auth.json, where dataDir is the
+// resolved SuperCli data directory (portable default: supercli-data
+// next to the executable).
+func AuthFilePath(dataDir string) string {
+	return filepath.Join(dataDir, "auth.json")
 }
 
 // Load reads auth.json. A missing file returns (nil, nil).

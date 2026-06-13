@@ -175,7 +175,7 @@ func providerConfigCheck(mgr *providers.Manager, caps *llm.CapabilityRegistry) C
 		models = len(caps.All())
 	}
 	if len(names) == 0 {
-		return Check{Name: "provider config", Status: Warn, Detail: fmt.Sprintf("no configured providers · %d known model(s)", models), Remediation: "use /providers add or edit .supercli/config.toml"}
+		return Check{Name: "provider config", Status: Warn, Detail: fmt.Sprintf("no configured providers · %d known model(s)", models), Remediation: "use /providers add or edit config.toml in supercli-data"}
 	}
 	return Check{Name: "provider config", Status: OK, Detail: fmt.Sprintf("%d provider(s) · %d known model(s)", len(names), models)}
 }
@@ -240,7 +240,7 @@ func providerPingChecks(ctx context.Context, mgr *providers.Manager) []Check {
 			continue
 		}
 		if strings.EqualFold(p.Type, "codex") {
-			out = append(out, Check{Name: name, Status: OK, Detail: "ChatGPT-subscription auth (token in .supercli/auth.json)"})
+			out = append(out, Check{Name: name, Status: OK, Detail: "ChatGPT-subscription auth (token in auth.json in supercli-data)"})
 			continue
 		}
 		keyNote := ""

@@ -10,8 +10,8 @@ import (
 )
 
 func TestCatalogPath(t *testing.T) {
-	got := CatalogPath(`C:\home\user`)
-	want := filepath.Join(`C:\home\user`, ".supercli", "models.json")
+	got := CatalogPath(`C:\tools\supercli-data`)
+	want := filepath.Join(`C:\tools\supercli-data`, "models.json")
 	if got != want {
 		t.Errorf("CatalogPath = %q, want %q", got, want)
 	}

@@ -86,6 +86,70 @@ func EnsureDataDir(home string) (string, error) {
 	return dir, nil
 }
 
+// PortableDataDirName is the name of the data directory that sits
+// NEXT TO THE EXECUTABLE in the default (portable) mode. SuperCli is
+// always portable: every piece of CLI state (config.toml, databases,
+// memory, sessions, auth tokens, caches, logs) lives in this single
+// directory beside the binary — never in the user profile.
+const PortableDataDirName = "supercli-data"
+
+// PortableDataRoot returns <dir-of-executable>/supercli-data.
+// Symlinks on the executable path are resolved so a symlinked binary
+// still finds its real data directory. When os.Executable fails the
+// current working directory is the fallback base.
+func PortableDataRoot() string {
+	base := ""
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil && resolved != "" {
+			exe = resolved
+		}
+		base = filepath.Dir(exe)
+	}
+	if base == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			base = cwd
+		} else {
+			base = "."
+		}
+	}
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+	return filepath.Join(base, PortableDataDirName)
+}
+
+// ResolveDataRoot is the SINGLE source of truth for where SuperCli
+// writes its data. Priority:
+//
+//  1. --home flag       → <flag>/.supercli   (explicit override)
+//  2. $SUPERCLI_HOME    → <env>/.supercli    (explicit override)
+//  3. default (portable) → <exe dir>/supercli-data
+//
+// portable reports whether the default exe-relative location was
+// chosen (i.e. no explicit override) — callers use it to gate the
+// one-time ~/.supercli migration.
+func ResolveDataRoot(flagValue string) (root string, portable bool, err error) {
+	if flagValue != "" || os.Getenv(HomeEnv) != "" {
+		home, herr := ResolveHome(flagValue)
+		if herr != nil {
+			return "", false, herr
+		}
+		return DataDir(home), false, nil
+	}
+	return PortableDataRoot(), true, nil
+}
+
+// EnsureDir creates dir (and parents) if missing.
+func EnsureDir(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("EnsureDir: empty path")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create data dir %q: %w", dir, err)
+	}
+	return nil
+}
+
 // HomeExists reports whether the given home directory exists on disk.
 // Used by startup code to decide whether to print a "first run" banner.
 func HomeExists(home string) (bool, error) {

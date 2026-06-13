@@ -53,7 +53,7 @@ func TestDiscoverer_PriorityOrder(t *testing.T) {
 	user := t.TempDir()
 	// Same name in both project and user — project wins.
 	mkSkillDir(t, filepath.Join(project, "skills"), "shared", "---\ndescription: from project\n---\nproject content")
-	mkSkillDir(t, filepath.Join(user, ".supercli", "skills"), "shared", "---\ndescription: from user\n---\nuser content")
+	mkSkillDir(t, filepath.Join(user, "skills"), "shared", "---\ndescription: from user\n---\nuser content")
 	d := NewDiscoverer(project, user)
 	skills, err := d.Discover()
 	if err != nil {

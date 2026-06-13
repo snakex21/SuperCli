@@ -29,11 +29,11 @@ type Manager struct {
 }
 
 // NewManager creates a Manager that reads providers from
-// the global config.toml at <home>/.supercli/config.toml.
-func NewManager(home string) *Manager {
-	global, _ := config.FindTomlPaths(home, ".")
+// the global config.toml at <dataDir>/config.toml.
+func NewManager(dataDir string) *Manager {
+	global, _ := config.FindTomlPaths(dataDir, ".")
 	return &Manager{
-		home:     home,
+		home:     dataDir,
 		tomlPath: global,
 		hidden:   make(map[string]struct{}),
 	}

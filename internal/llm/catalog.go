@@ -8,18 +8,19 @@ import (
 )
 
 // catalogFileName is the on-disk name of the user
-// catalog. Living under <home>/.supercli/, the
+// catalog. Living in the SuperCli data directory
+// (portable: supercli-data next to the binary), the
 // file is plain UTF-8 JSON, editable by hand, and
 // re-loaded on every SuperCli start.
 const catalogFileName = "models.json"
 
 // CatalogPath returns the on-disk path of the user
-// catalog: <home>/.supercli/models.json.
-func CatalogPath(home string) string {
-	return filepath.Join(home, ".supercli", catalogFileName)
+// catalog: <dataDir>/models.json.
+func CatalogPath(dataDir string) string {
+	return filepath.Join(dataDir, catalogFileName)
 }
 
-// LoadCatalog reads <home>/.supercli/models.json.
+// LoadCatalog reads <dataDir>/models.json.
 //
 // A missing file is NOT an error: the user has not
 // created a catalog yet, so we return an empty

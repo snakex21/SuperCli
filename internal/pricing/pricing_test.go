@@ -178,7 +178,7 @@ func TestLoadCache_Missing(t *testing.T) {
 
 func TestLoadCache_Stale(t *testing.T) {
 	home := t.TempDir()
-	cachePath := filepath.Join(home, ".supercli", CacheFileName)
+	cachePath := CachePath(home)
 	os.MkdirAll(filepath.Dir(cachePath), 0o755)
 	// Write a stale cache (25 hours old).
 	cache := Cache{
@@ -195,7 +195,7 @@ func TestLoadCache_Stale(t *testing.T) {
 
 func TestSaveCache_CreatesDir(t *testing.T) {
 	home := t.TempDir()
-	// Don't create .supercli dir — SaveCache should create it.
+	// Missing parent dirs — SaveCache should create them.
 	entries := []PriceEntry{{ModelID: "test"}}
 	if err := SaveCache(home, entries); err != nil {
 		t.Fatal(err)
