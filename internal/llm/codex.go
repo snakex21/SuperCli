@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -53,6 +55,181 @@ type CodexProvider struct {
 	cfg  CodexConfig
 	http *http.Client
 	caps *CapabilityRegistry
+
+	// rl holds the most recent rate-limit snapshot parsed from the
+	// HTTP response headers of /responses. The ChatGPT backend
+	// returns usage percentages on every 200, so this is refreshed
+	// on each stream without an extra request. Guarded by rlMu
+	// because doWithAuth runs on the streaming goroutine while the
+	// TUI reads it from the render goroutine.
+	rlMu sync.Mutex
+	rl   CodexRateLimits
+}
+
+// CodexRateLimits is a snapshot of the ChatGPT-subscription usage
+// limits, parsed from the X-Codex-* headers the backend attaches to
+// every /responses 200. Percentages are 0..100. OK is false when no
+// usable headers were present (e.g. a non-Codex provider), in which
+// case the HUD shows nothing.
+type CodexRateLimits struct {
+	// Primary is the short rolling window (typically 5h / 300 min).
+	PrimaryUsedPct    int
+	PrimaryWindowMin  int
+	PrimaryResetAt    int64 // unix epoch seconds, 0 if unknown
+	PrimaryResetAfter int64 // seconds until reset, 0 if unknown
+	// Secondary is the long window (typically weekly / 10080 min).
+	SecondaryUsedPct    int
+	SecondaryWindowMin  int
+	SecondaryResetAt    int64
+	SecondaryResetAfter int64
+	// OK reports whether at least one usage percentage was present.
+	OK bool
+}
+
+// RateLimits returns the latest rate-limit snapshot. The bool is
+// false until the first 200 carrying X-Codex-* headers arrives.
+func (p *CodexProvider) RateLimits() (CodexRateLimits, bool) {
+	p.rlMu.Lock()
+	defer p.rlMu.Unlock()
+	return p.rl, p.rl.OK
+}
+
+// setRateLimits stores a freshly parsed snapshot when it is usable.
+// A non-OK parse (no headers) is ignored so a stray non-Codex
+// response can't wipe a previously good snapshot.
+func (p *CodexProvider) setRateLimits(rl CodexRateLimits) {
+	if !rl.OK {
+		return
+	}
+	p.rlMu.Lock()
+	p.rl = rl
+	p.rlMu.Unlock()
+}
+
+// parseCodexRateLimits extracts the rate-limit snapshot from the
+// X-Codex-* response headers. used-percent is parsed tolerantly
+// (int or float, e.g. "1" or "1.5"); empty/garbage values are
+// skipped rather than failing. OK is set when at least one of the
+// two used-percent headers was present and parseable.
+func parseCodexRateLimits(h http.Header) CodexRateLimits {
+	var rl CodexRateLimits
+	if pct, ok := parsePercent(h.Get("X-Codex-Primary-Used-Percent")); ok {
+		rl.PrimaryUsedPct = pct
+		rl.OK = true
+	}
+	rl.PrimaryWindowMin = parseIntHeader(h.Get("X-Codex-Primary-Window-Minutes"))
+	rl.PrimaryResetAt = parseInt64Header(h.Get("X-Codex-Primary-Reset-At"))
+	rl.PrimaryResetAfter = parseInt64Header(h.Get("X-Codex-Primary-Reset-After-Seconds"))
+
+	if pct, ok := parsePercent(h.Get("X-Codex-Secondary-Used-Percent")); ok {
+		rl.SecondaryUsedPct = pct
+		rl.OK = true
+	}
+	rl.SecondaryWindowMin = parseIntHeader(h.Get("X-Codex-Secondary-Window-Minutes"))
+	rl.SecondaryResetAt = parseInt64Header(h.Get("X-Codex-Secondary-Reset-At"))
+	rl.SecondaryResetAfter = parseInt64Header(h.Get("X-Codex-Secondary-Reset-After-Seconds"))
+	return rl
+}
+
+// parsePercent parses a used-percent header. Accepts ints ("11") and
+// floats ("11.4", rounded down) and clamps to 0..100. Returns ok=false
+// for empty or unparseable input.
+func parsePercent(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	if i, err := strconv.Atoi(s); err == nil {
+		return clampPct(i), true
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return clampPct(int(f)), true
+	}
+	return 0, false
+}
+
+func clampPct(p int) int {
+	if p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
+}
+
+func parseIntHeader(s string) int {
+	if i, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+		return i
+	}
+	return 0
+}
+
+func parseInt64Header(s string) int64 {
+	if i, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+		return i
+	}
+	return 0
+}
+
+// FormatHUD renders the compact status-bar tile, e.g. "5h 1% · 7d 11%".
+// When a reset-time for the shorter window is known it is appended to
+// the primary segment, e.g. "5h 1% (4h32m) · 7d 11%". Returns "" when
+// the snapshot is empty (OK=false) so callers can skip the tile.
+func (rl CodexRateLimits) FormatHUD() string {
+	if !rl.OK {
+		return ""
+	}
+	primary := fmt.Sprintf("%s %d%%", windowLabel(rl.PrimaryWindowMin, "5h"), rl.PrimaryUsedPct)
+	if d := rl.primaryResetDuration(); d > 0 {
+		primary += " (" + shortDuration(d) + ")"
+	}
+	secondary := fmt.Sprintf("%s %d%%", windowLabel(rl.SecondaryWindowMin, "7d"), rl.SecondaryUsedPct)
+	return primary + " · " + secondary
+}
+
+// primaryResetDuration returns the time until the primary window
+// resets, preferring reset-after-seconds and falling back to
+// reset-at minus now. 0 when neither is usable.
+func (rl CodexRateLimits) primaryResetDuration() time.Duration {
+	if rl.PrimaryResetAfter > 0 {
+		return time.Duration(rl.PrimaryResetAfter) * time.Second
+	}
+	if rl.PrimaryResetAt > 0 {
+		if d := time.Until(time.Unix(rl.PrimaryResetAt, 0)); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+// windowLabel turns a window length in minutes into a short label
+// ("5h", "7d"). Falls back to the provided default when the minutes
+// are unknown or don't match a tidy hour/day count.
+func windowLabel(minutes int, fallback string) string {
+	switch {
+	case minutes <= 0:
+		return fallback
+	case minutes%(60*24) == 0:
+		return fmt.Sprintf("%dd", minutes/(60*24))
+	case minutes%60 == 0:
+		return fmt.Sprintf("%dh", minutes/60)
+	default:
+		return fmt.Sprintf("%dm", minutes)
+	}
+}
+
+// shortDuration renders a duration compactly: "4h32m", "12m", "45s".
+func shortDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 // NewCodex builds a CodexProvider.
@@ -164,6 +341,11 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 			return nil, fmt.Errorf("http: %w", err)
 		}
 		if resp.StatusCode/100 == 2 {
+			// The ChatGPT backend stamps usage limits on the headers
+			// of every 200 — refresh the HUD snapshot here (no extra
+			// request). A non-Codex/empty header set yields OK=false
+			// and is ignored by setRateLimits.
+			p.setRateLimits(parseCodexRateLimits(resp.Header))
 			return resp, nil
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
