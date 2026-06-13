@@ -1483,6 +1483,18 @@ func main() {
 			}
 			bottom = append(bottom, "tok: "+tokStr)
 		}
+		// Codex subscription usage (5h rolling + weekly), pulled from
+		// the active provider's last /responses headers. Rendered only
+		// when the active provider is Codex AND a snapshot has arrived.
+		if rp, ok := loop.Provider().(interface {
+			RateLimits() (llm.CodexRateLimits, bool)
+		}); ok {
+			if rl, ok := rp.RateLimits(); ok {
+				if hud := rl.FormatHUD(); hud != "" {
+					bottom = append(bottom, "limit: "+hud)
+				}
+			}
+		}
 		if len(bottom) > 0 {
 			lines = append(lines, strings.Join(bottom, " │ "))
 		}
