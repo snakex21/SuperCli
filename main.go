@@ -1768,6 +1768,9 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 			Tokens:       mgr,
 			Timeout:      cfg.Timeout,
 			Capabilities: caps,
+			// Persist/restore the last usage snapshot here so the HUD
+			// `limit:` tile shows immediately at startup (no extra request).
+			DataDir: dataDir,
 		})
 	}
 	return llm.NewOpenAI(llm.OpenAIConfig{

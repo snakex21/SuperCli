@@ -47,6 +47,14 @@ type CodexConfig struct {
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
 	Capabilities *CapabilityRegistry
+	// DataDir is the resolved SuperCli data directory. When set, the
+	// last rate-limit snapshot is persisted there (codex_ratelimits.json)
+	// and reloaded at startup so the HUD `limit:` tile shows the most
+	// recently known usage immediately — before the first /responses
+	// call — without ever issuing an extra network request. Empty
+	// disables persistence (the tile then appears only after the
+	// first response, as before).
+	DataDir string
 }
 
 // CodexProvider is the Provider implementation backed by a
@@ -94,16 +102,24 @@ func (p *CodexProvider) RateLimits() (CodexRateLimits, bool) {
 	return p.rl, p.rl.OK
 }
 
-// setRateLimits stores a freshly parsed snapshot when it is usable.
-// A non-OK parse (no headers) is ignored so a stray non-Codex
-// response can't wipe a previously good snapshot.
-func (p *CodexProvider) setRateLimits(rl CodexRateLimits) {
+// setRateLimits stores a freshly parsed snapshot when it is usable
+// and persists it to disk (best-effort) so the next process start can
+// render the HUD tile immediately. A non-OK parse (no headers) is
+// ignored so a stray non-Codex response can't wipe a previously good
+// snapshot. accountID scopes the persisted snapshot so one account's
+// usage is never shown under another.
+//
+// Persistence is best-effort and deliberately off the hot path: a
+// failed write is silently ignored (it only delays the tile by one
+// response and never affects the live stream).
+func (p *CodexProvider) setRateLimits(accountID string, rl CodexRateLimits) {
 	if !rl.OK {
 		return
 	}
 	p.rlMu.Lock()
 	p.rl = rl
 	p.rlMu.Unlock()
+	_ = saveCodexRateLimits(p.cfg.DataDir, accountID, rl)
 }
 
 // parseCodexRateLimits extracts the rate-limit snapshot from the
@@ -176,27 +192,87 @@ func parseInt64Header(s string) int64 {
 // When a reset-time for the shorter window is known it is appended to
 // the primary segment, e.g. "5h 1% (4h32m) · 7d 11%". Returns "" when
 // the snapshot is empty (OK=false) so callers can skip the tile.
+//
+// FormatHUD is a thin wrapper over formatHUDAt(time.Now()); the latter
+// is the testable seam that takes the clock explicitly.
 func (rl CodexRateLimits) FormatHUD() string {
+	return rl.formatHUDAt(time.Now())
+}
+
+// formatHUDAt renders the tile as of now. It is reset-aware: a snapshot
+// reloaded from disk may describe a window that has already rolled over
+// (now >= ResetAt), in which case the stored used-percent is stale and
+// the window is effectively back to ~0%. Each window is evaluated
+// independently — the primary may have reset while the secondary has
+// not, or vice versa — without ever issuing a network request.
+//
+// A reset window is shown with a tilde ("~0%") because the value is
+// inferred, not yet confirmed by a real response. Its time annotation,
+// when computable, counts down to the NEXT reset (ResetAt + window) so
+// it never displays a past/negative duration.
+func (rl CodexRateLimits) formatHUDAt(now time.Time) string {
 	if !rl.OK {
 		return ""
 	}
-	primary := fmt.Sprintf("%s %d%%", windowLabel(rl.PrimaryWindowMin, "5h"), rl.PrimaryUsedPct)
-	if d := rl.primaryResetDuration(); d > 0 {
+	primaryPct, primaryReset := effectiveUsedPct(rl.PrimaryUsedPct, rl.PrimaryResetAt, now)
+	primary := fmt.Sprintf("%s %s", windowLabel(rl.PrimaryWindowMin, "5h"), formatPct(primaryPct, primaryReset))
+	if d := rl.primaryResetDuration(now, primaryReset); d > 0 {
 		primary += " (" + shortDuration(d) + ")"
 	}
-	secondary := fmt.Sprintf("%s %d%%", windowLabel(rl.SecondaryWindowMin, "7d"), rl.SecondaryUsedPct)
+	secondaryPct, secondaryReset := effectiveUsedPct(rl.SecondaryUsedPct, rl.SecondaryResetAt, now)
+	secondary := fmt.Sprintf("%s %s", windowLabel(rl.SecondaryWindowMin, "7d"), formatPct(secondaryPct, secondaryReset))
 	return primary + " · " + secondary
 }
 
+// effectiveUsedPct computes the used-percent to display for a single
+// window as of now. When the window's reset time is known and has
+// already passed (resetAt > 0 && now >= resetAt), the window has rolled
+// over: the stored percent is stale, so it returns (0, true). Otherwise
+// it returns the stored percent unchanged with reset=false. A zero/
+// unknown resetAt never triggers a reset (behavior unchanged).
+func effectiveUsedPct(usedPct int, resetAt int64, now time.Time) (pct int, reset bool) {
+	if resetAt > 0 && now.Unix() >= resetAt {
+		return 0, true
+	}
+	return usedPct, false
+}
+
+// formatPct renders a window's used-percent, prefixing a tilde when the
+// value is inferred from a rolled-over window (e.g. "~0%") rather than
+// observed.
+func formatPct(pct int, inferred bool) string {
+	if inferred {
+		return fmt.Sprintf("~%d%%", pct)
+	}
+	return fmt.Sprintf("%d%%", pct)
+}
+
 // primaryResetDuration returns the time until the primary window
-// resets, preferring reset-after-seconds and falling back to
-// reset-at minus now. 0 when neither is usable.
-func (rl CodexRateLimits) primaryResetDuration() time.Duration {
+// resets, as of now.
+//
+//   - When the window has NOT reset (reset=false), it prefers
+//     reset-after-seconds and falls back to reset-at minus now — the
+//     original behavior.
+//   - When the window HAS reset (reset=true), the stored reset-after /
+//     reset-at are in the past; instead it counts down to the NEXT
+//     reset, approximated as ResetAt + window. If the window length is
+//     unknown (or the result is still not in the future) it returns 0
+//     so no stale/negative annotation is shown.
+func (rl CodexRateLimits) primaryResetDuration(now time.Time, reset bool) time.Duration {
+	if reset {
+		if rl.PrimaryResetAt > 0 && rl.PrimaryWindowMin > 0 {
+			next := time.Unix(rl.PrimaryResetAt+int64(rl.PrimaryWindowMin)*60, 0)
+			if d := next.Sub(now); d > 0 {
+				return d
+			}
+		}
+		return 0
+	}
 	if rl.PrimaryResetAfter > 0 {
 		return time.Duration(rl.PrimaryResetAfter) * time.Second
 	}
 	if rl.PrimaryResetAt > 0 {
-		if d := time.Until(time.Unix(rl.PrimaryResetAt, 0)); d > 0 {
+		if d := time.Unix(rl.PrimaryResetAt, 0).Sub(now); d > 0 {
 			return d
 		}
 	}
@@ -254,7 +330,17 @@ func NewCodex(cfg CodexConfig) (*CodexProvider, error) {
 	if caps == nil {
 		caps = NewCapabilityRegistry()
 	}
-	return &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps}, nil
+	p := &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps}
+	// Seed the snapshot from disk so the HUD `limit:` tile renders the
+	// last known usage immediately, before any /responses call. This
+	// reads a local file only — it never performs a network request.
+	// The account id is not known yet (resolving it could trigger a
+	// token refresh / network call), so we load unscoped; the first
+	// real response re-scopes and overwrites with fresh numbers.
+	if rl, ok := loadCodexRateLimits(cfg.DataDir, ""); ok {
+		p.rl = rl
+	}
+	return p, nil
 }
 
 // Name implements Provider.
@@ -345,7 +431,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 			// of every 200 — refresh the HUD snapshot here (no extra
 			// request). A non-Codex/empty header set yields OK=false
 			// and is ignored by setRateLimits.
-			p.setRateLimits(parseCodexRateLimits(resp.Header))
+			p.setRateLimits(accountID, parseCodexRateLimits(resp.Header))
 			return resp, nil
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
