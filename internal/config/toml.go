@@ -5,7 +5,7 @@
 //
 //	CLI flags > env vars > project config > global config
 //
-// Global config:  <home>/.supercli/config.toml
+// Global config:  <data dir>/config.toml (portable: supercli-data next to the binary)
 // Project config: <cwd>/.supercli/config.toml
 // CLI override:   --config <path>
 package config
@@ -236,10 +236,17 @@ func SaveToml(path string, cfg TomlConfig) error {
 }
 
 // FindTomlPaths returns the global and project config.toml paths.
-func FindTomlPaths(home, cwd string) (global, project string) {
-	global = filepath.Join(home, ".supercli", "config.toml")
-	if cwd != "" && filepath.Clean(cwd) != filepath.Clean(home) {
-		project = filepath.Join(cwd, ".supercli", "config.toml")
+// dataDir is the resolved SuperCli data directory (portable default:
+// supercli-data next to the executable); the global config lives
+// directly inside it. The project config stays a per-workspace
+// override at <cwd>/.supercli/config.toml.
+func FindTomlPaths(dataDir, cwd string) (global, project string) {
+	global = filepath.Join(dataDir, "config.toml")
+	if cwd != "" {
+		p := filepath.Join(cwd, ".supercli", "config.toml")
+		if filepath.Clean(p) != filepath.Clean(global) {
+			project = p
+		}
 	}
 	return
 }
@@ -344,9 +351,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 // ResolveConfig builds the final config by merging layers.
 // Hierarchy: global TOML < project TOML < env vars < flags.
 // Returns the merged TomlConfig.
-func ResolveConfig(home, cwd, configPath string) (TomlConfig, error) {
+func ResolveConfig(dataDir, cwd, configPath string) (TomlConfig, error) {
 	// Layer 1: global config.
-	globalPath, projectPath := FindTomlPaths(home, cwd)
+	globalPath, projectPath := FindTomlPaths(dataDir, cwd)
 	global, err := LoadToml(globalPath)
 	if err != nil {
 		return TomlConfig{}, err

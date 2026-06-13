@@ -19,10 +19,12 @@ runtime stacks, and IDE-like weight. SuperCli is built around the opposite
 constraints:
 
 - **Single binary** — `go build` produces one `supercli.exe` / `supercli`.
-- **Portable by default** — state lives in `<home>/.supercli/`; by default
-  `<home>` is the current working directory.
-- **Project-local state** — no `%APPDATA%`, `~/.config`, or user home writes
-  unless explicitly configured.
+- **Always portable** — all data lives in a single `supercli-data/`
+  directory next to the executable. Copy the folder, take your config,
+  memory, sessions and credentials with you.
+- **No user-profile writes** — nothing goes to `%APPDATA%`, `~/.config`,
+  or `~/.supercli` (legacy `~/.supercli` data is migrated automatically
+  on first start; the original is kept with a `MOVED.txt` marker).
 - **Pure Go runtime** — no Node/Python/Docker dependency for normal operation.
 - **Provider-flexible** — OpenAI-compatible providers, opencode gateway, echo
   mode, and configurable provider lists.
@@ -158,7 +160,7 @@ Type `/` in the TUI to open the command palette.
 - Resume support via `/resume`.
 - Markdown export via `/export`.
 - Searchable history through `search_history`.
-- Per-project `.supercli/` data directory.
+- Single portable `supercli-data/` directory next to the binary.
 - WAL mode for SQLite where used.
 
 ### Context and memory
@@ -175,7 +177,7 @@ Type `/` in the TUI to open the command palette.
 - OpenAI-compatible API client.
 - opencode gateway provider.
 - Echo provider.
-- Provider list in `.supercli/config.toml`.
+- Provider list in `supercli-data/config.toml`.
 - Model registry with capability metadata:
   - vision,
   - tool use,
@@ -218,12 +220,17 @@ Type `/` in the TUI to open the command palette.
 
 ### Sandbox and portability
 
-- Home resolution is explicit and deterministic.
-- Writes are scoped to `<home>/.supercli/`.
-- Data directory writeability is checked on startup.
+- Data resolution is explicit and deterministic.
+- All CLI state (config, databases, memory, sessions, OAuth tokens,
+  caches, logs) is written to `supercli-data/` next to the executable.
+- Data directory writeability is checked on startup; a read-only exe
+  location (e.g. Program Files) produces a clear error with instructions
+  instead of a crash.
 - Shell escape runner is scoped to the configured home.
-- File operations use project-relative/home-scoped paths.
-- Crash logs are written under `.supercli/logs/`.
+- File operations use project-relative/home-scoped paths; per-project
+  workspace artifacts (project `config.toml` override, trash, snapshots)
+  stay under `<project>/.supercli/`.
+- Crash logs are written under `supercli-data/logs/`.
 
 ### Non-interactive modes
 
@@ -237,19 +244,21 @@ Type `/` in the TUI to open the command palette.
 
 ## Configuration
 
-### Home resolution
+### Data directory resolution (portable)
 
-| Priority | Source | Example |
+| Priority | Source | Data directory |
 | --- | --- | --- |
-| 1 | `--home` flag | `supercli --home /tmp/sandbox` |
-| 2 | `$SUPERCLI_HOME` | `SUPERCLI_HOME=/tmp/sandbox supercli` |
-| 3 | current directory | `cd /tmp/sandbox && supercli` |
+| 1 | `--home` flag | `<flag>/.supercli/` |
+| 2 | `$SUPERCLI_HOME` | `<env>/.supercli/` |
+| 3 | default (portable) | `supercli-data/` next to the executable |
 
-The resolved path is made absolute. Runtime state is stored under:
+The resolved path is made absolute and symlinks on the executable path
+are resolved. On first start, existing data in the legacy `~/.supercli`
+location is copied into `supercli-data/` automatically; the original is
+left in place with a `MOVED.txt` marker so nothing is ever lost.
 
-```text
-<home>/.supercli/
-```
+The project working directory (cwd) is still used for project-scoped
+artifacts: a `.supercli/config.toml` override, trash, and snapshots.
 
 ### Environment variables
 
@@ -291,7 +300,7 @@ SUPERCLI_DEBUG
 
 ### TOML config
 
-SuperCli reads config from `.supercli/config.toml` layers. Supported fields include:
+SuperCli reads config from `supercli-data/config.toml` (global) and `<project>/.supercli/config.toml` (override) layers. Supported fields include:
 
 ```toml
 default_model = "gpt-4o-mini"

@@ -24,10 +24,10 @@ type Manager struct {
 	http *http.Client
 }
 
-// NewManager builds a Manager for <home>/.supercli/auth.json.
-func NewManager(home string, opts Options) *Manager {
+// NewManager builds a Manager for <dataDir>/auth.json.
+func NewManager(dataDir string, opts Options) *Manager {
 	return &Manager{
-		path: AuthFilePath(home),
+		path: AuthFilePath(dataDir),
 		opts: opts.WithDefaults(),
 		http: &http.Client{Timeout: 30 * time.Second},
 	}

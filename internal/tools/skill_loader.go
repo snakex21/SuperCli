@@ -41,19 +41,27 @@ type Discoverer struct {
 // NewDiscoverer builds a Discoverer with the standard source
 // order. Callers may append additional sources; priority is
 // bumped above the builtin baseline.
-func NewDiscoverer(projectDir, userHome string) *Discoverer {
-	return &Discoverer{
-		Sources: []Source{
-			// Project-level: highest priority.
-			{Dir: filepath.Join(projectDir, "skills"), Priority: 100},
-			{Dir: filepath.Join(projectDir, ".supercli", "skills"), Priority: 95},
-			// User-level: cross-project.
-			{Dir: filepath.Join(userHome, ".claude", "skills"), Priority: 50},
-			{Dir: filepath.Join(userHome, ".supercli", "skills"), Priority: 45},
-			// Builtin: lowest priority.
-			{Dir: filepath.Join(userHome, ".supercli", "skills", "builtin"), Priority: 10},
-		},
+// dataDir is the resolved SuperCli data directory (portable:
+// supercli-data next to the executable) holding the cross-project
+// skills. ~/.claude/skills is still scanned read-only for
+// interoperability with Claude Code skills.
+func NewDiscoverer(projectDir, dataDir string) *Discoverer {
+	sources := []Source{
+		// Project-level: highest priority.
+		{Dir: filepath.Join(projectDir, "skills"), Priority: 100},
+		{Dir: filepath.Join(projectDir, ".supercli", "skills"), Priority: 95},
 	}
+	// Read-only interop: Claude Code user skills, if present.
+	if uh, err := os.UserHomeDir(); err == nil && uh != "" {
+		sources = append(sources, Source{Dir: filepath.Join(uh, ".claude", "skills"), Priority: 50})
+	}
+	sources = append(sources,
+		// User-level (cross-project), inside the portable data dir.
+		Source{Dir: filepath.Join(dataDir, "skills"), Priority: 45},
+		// Builtin: lowest priority.
+		Source{Dir: filepath.Join(dataDir, "skills", "builtin"), Priority: 10},
+	)
+	return &Discoverer{Sources: sources}
 }
 
 // Discover walks all sources and returns the merged skill set,

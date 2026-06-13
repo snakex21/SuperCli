@@ -12,7 +12,7 @@ help:
 	@echo "  make vet     - go vet"
 	@echo "  make fmt     - gofmt -w ."
 	@echo "  make tidy    - go mod tidy"
-	@echo "  make clean   - remove binary, .supercli data, test cache"
+	@echo "  make clean   - remove binary, .supercli/supercli-data data, test cache"
 	@echo "  make all     - fmt + vet + test + build"
 
 build:
@@ -35,7 +35,7 @@ tidy:
 
 clean:
 	rm -f $(BINARY)
-	rm -rf .supercli
+	rm -rf .supercli supercli-data
 	$(GO) clean -testcache
 
 all: fmt vet test build

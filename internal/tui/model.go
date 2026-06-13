@@ -911,7 +911,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // the in-process level is already set even if the save fails.
 func (m *Model) persistReasoningEffort(level string) {
 	cwd, _ := os.Getwd()
-	globalPath, _ := config.FindTomlPaths(m.home, cwd)
+	globalPath, _ := config.FindTomlPaths(m.dataDir, cwd)
 	if tc, err := config.LoadToml(globalPath); err == nil {
 		tc.ReasoningEffort = level
 		if err := config.SaveToml(globalPath, tc); err != nil {

@@ -11,6 +11,7 @@ coverage.out
 
 # Runtime state / databases — never publish these
 .supercli/
+supercli-data/
 *.db
 *.db-shm
 *.db-wal

@@ -71,9 +71,10 @@ func NewFetcher(home string) *Fetcher {
 	}
 }
 
-// CachePath returns the cache file path.
-func CachePath(home string) string {
-	return filepath.Join(home, ".supercli", CacheFileName)
+// CachePath returns the cache file path inside the resolved data
+// directory (portable default: supercli-data next to the executable).
+func CachePath(dataDir string) string {
+	return filepath.Join(dataDir, CacheFileName)
 }
 
 // LoadCache reads the cache from disk. Returns nil if missing

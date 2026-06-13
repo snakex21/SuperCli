@@ -74,8 +74,8 @@ const version = "0.6.0"
 var codexAuthMgr *codexauth.Manager
 
 // initCodexAuth builds the codex auth manager from config.
-func initCodexAuth(home string, t config.TomlConfig) {
-	codexAuthMgr = codexauth.NewManager(home, codexauth.Options{
+func initCodexAuth(dataDir string, t config.TomlConfig) {
+	codexAuthMgr = codexauth.NewManager(dataDir, codexauth.Options{
 		ClientID:   t.CodexAuth.ClientID,
 		Issuer:     t.CodexAuth.Issuer,
 		BackendURL: t.CodexAuth.BackendURL,
@@ -164,19 +164,17 @@ func envFalsey(key string) bool {
 func main() {
 	startupT := time.Now()
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
-	// If the program crashes silently, check .supercli/logs/crash.log.
-	// `home` is captured by the closure: until --home is resolved we
-	// fall back to the cwd; afterwards the crash log lands in the
-	// resolved home, same as every other crash path (crash.go).
+	// If the program crashes silently, check supercli-data/logs/crash.log
+	// next to the executable. `dataDir` is captured by the closure:
+	// until the data root is resolved we fall back to the portable
+	// default; afterwards the crash log lands in the resolved data
+	// dir, same as every other crash path (crash.go).
 	var home string
+	dataDir := storage.PortableDataRoot()
 	defer func() {
 		if r := recover(); r != nil {
-			h := home
-			if h == "" {
-				h = "."
-			}
-			logCrash(h, r)
-			fmt.Fprintf(os.Stderr, "\nFATAL: %v\nCheck %s for stack trace.\n", r, crashLogPath(h))
+			logCrash(dataDir, r)
+			fmt.Fprintf(os.Stderr, "\nFATAL: %v\nCheck %s for stack trace.\n", r, crashLogPath(dataDir))
 			os.Exit(1)
 		}
 	}()
@@ -224,32 +222,50 @@ func main() {
 	}
 	home = resolvedHome
 
+	// SuperCli is ALWAYS portable: the single data directory holds
+	// every piece of CLI state and lives next to the executable
+	// (supercli-data/), unless --home/$SUPERCLI_HOME explicitly
+	// override it.
+	resolvedData, portable, err := storage.ResolveDataRoot(*homeFlag)
+	if err != nil {
+		fatal("resolve data dir", err)
+	}
+	dataDir = resolvedData
+
+	// One-time migration from the legacy ~/.supercli location.
+	if portable {
+		if msg, merr := migrateLegacyData(dataDir); merr != nil {
+			log.Printf("legacy data migration failed: %v (continuing with a fresh %s)", merr, dataDir)
+		} else if msg != "" {
+			fmt.Fprintln(os.Stderr, msg)
+		}
+	}
+
+	if err := storage.EnsureDir(dataDir); err != nil {
+		fatalUnwritableDataDir(dataDir, portable, err)
+	}
+	// Verify write permissions — the exe may sit in a read-only
+	// location (e.g. Program Files, network drives).
+	if err := checkDirWritable(dataDir); err != nil {
+		fatalUnwritableDataDir(dataDir, portable, err)
+	}
+
 	// F29: resolve config.toml hierarchy.
 	// global < project < --config < env < flags.
 	cwd, _ := os.Getwd()
-	tomlCfg, tomlErr := config.ResolveConfig(home, cwd, *configFlag)
+	tomlCfg, tomlErr := config.ResolveConfig(dataDir, cwd, *configFlag)
 	if tomlErr != nil {
 		log.Printf("config.toml: %v (using defaults)", tomlErr)
 	}
 	// Apply TOML as defaults (env/flags still win later).
 	config.TomlConfigToEnv(tomlCfg)
-	initCodexAuth(home, tomlCfg)
-
-	dataDir, err := storage.EnsureDataDir(home)
-	if err != nil {
-		fatal("prepare data dir", err)
-	}
-	// Verify write permissions — some Windows setups have
-	// read-only home directories (e.g. network drives).
-	if err := checkDirWritable(dataDir); err != nil {
-		fatal("data dir not writable", err)
-	}
+	initCodexAuth(dataDir, tomlCfg)
 	appLog := initAppLog(dataDir)
 	if appLog != nil {
 		defer appLog.Close()
 	}
 
-	db, err := storage.Open(home)
+	db, err := storage.OpenAt(dataDir)
 	if err != nil {
 		fatal("open database", err)
 	}
@@ -276,7 +292,7 @@ func main() {
 		// F18: build staleness report from
 		// discovered skills (no provider needed).
 		checker := freshness.NewChecker()
-		skills := discoverSkillsForDoctor(home)
+		skills := discoverSkillsForDoctor(home, dataDir)
 		report := checker.RunReport(nil, skills, nil)
 		runDoctor(home, dataDir, creditStorage, &report)
 		return
@@ -292,7 +308,7 @@ func main() {
 
 	// --batch short-circuits: run prompt without TUI.
 	if *batchFlag != "" {
-		runBatch(*batchFlag, home, *providerFlag, *keyFlag, *baseFlag, *modelFlag, *echoFlag, *debugFlag, *draftModeFlag, *draftModelFlag)
+		runBatch(*batchFlag, home, dataDir, *providerFlag, *keyFlag, *baseFlag, *modelFlag, *echoFlag, *debugFlag, *draftModeFlag, *draftModelFlag)
 		return
 	}
 
@@ -353,14 +369,14 @@ func main() {
 			// which the wizard cannot run itself. Do it here, on
 			// the plain console, before the TUI starts.
 			if res.AuthMethod == tui.AuthChatGPT {
-				initCodexAuth(home, tomlCfg)
+				initCodexAuth(dataDir, tomlCfg)
 				if _, err := codexAuthMgr.Login(context.Background(), os.Stdout); err != nil {
 					fmt.Fprintf(os.Stderr, "ChatGPT login failed: %v\nFalling back to setup-free start — run /login inside SuperCli to retry.\n", err)
 				} else {
 					res.BaseURL = codexAuthMgr.Options().BackendURL
 				}
 			}
-			globalTomlPath, _ := config.FindTomlPaths(home, cwd)
+			globalTomlPath, _ := config.FindTomlPaths(dataDir, cwd)
 			saved := tomlCfg
 			saved.Providers = []config.ProviderConf{{
 				Name:    res.Name,
@@ -395,7 +411,7 @@ func main() {
 	// empty registry — never a hardcoded table
 	// (the F16 cardinal rule: the registry is
 	// the only place we look up capabilities).
-	caps, err := llm.NewCapabilityRegistryFromSources(home, db)
+	caps, err := llm.NewCapabilityRegistryFromSources(dataDir, db)
 	if err != nil {
 		log.Printf("capability registry: %v (using empty)", err)
 		caps = llm.NewCapabilityRegistry()
@@ -420,7 +436,7 @@ func main() {
 		return
 	}
 
-	provider, err := buildProvider(cfg, home, caps)
+	provider, err := buildProvider(cfg, dataDir, caps)
 	if err != nil {
 		fatal("init provider", err)
 	}
@@ -510,11 +526,11 @@ func main() {
 	toolSearcher := tools.NewToolSearcher(registry, ftsIndex)
 	registry.MustRegister(toolSearcher.Spec())
 
-	discoverer := tools.NewDiscoverer(home, home)
+	discoverer := tools.NewDiscoverer(home, dataDir)
 	skillApplier := tools.NewSkillApplier(discoverer)
 	registry.MustRegister(skillApplier.Spec())
 
-	userLoader := tools.NewUserToolLoader(home, home)
+	userLoader := tools.NewUserToolLoader(home, dataDir)
 	userTools, userErrs := userLoader.Load()
 	for _, e := range userErrs {
 		log.Printf("user tool load: %v", e)
@@ -540,7 +556,7 @@ func main() {
 	// F7: open the audit log. A failure here is
 	// non-fatal; we just skip audit (status bar will
 	// show "audit: off").
-	audit, auditErr := credits.NewAudit(home)
+	audit, auditErr := credits.NewAudit(dataDir)
 	if auditErr != nil {
 		log.Printf("audit log: %v", auditErr)
 		audit = nil
@@ -578,13 +594,13 @@ func main() {
 	}
 
 	// Wave 2 memory: two SQLite stores. The GLOBAL store lives in
-	// the user's ~/.supercli/memory.db (user preferences + one
-	// "card" per known project); the PROJECT store lives in
-	// ~/.supercli/projects/<name>-<hash>/memory.db (facts,
-	// decisions, session log). ~/.supercli/projects.json maps
+	// <data dir>/memory.db (user preferences + one "card" per known
+	// project); the PROJECT store lives in
+	// <data dir>/projects/<name>-<hash>/memory.db (facts,
+	// decisions, session log). <data dir>/projects.json maps
 	// project paths to their directories. All failures are
 	// non-fatal: memory never blocks startup.
-	memoryHome := globalMemoryHome(home)
+	memoryHome := dataDir
 	globalMemStore, gMemErr := memory.OpenStore(memoryHome)
 	if gMemErr != nil {
 		log.Printf("global memory store: %v (global memory disabled)", gMemErr)
@@ -602,7 +618,7 @@ func main() {
 	// Embedding backend detection pings local servers, so it runs
 	// in the background; until it lands, searches are FTS5-only.
 	go func() {
-		defer recoverAndLog(home)()
+		defer recoverAndLog(dataDir)()
 		if e := memory.DetectEmbedder(cfg.APIKey); e != nil {
 			globalMemStore.SetEmbedder(e)
 			memStore.SetEmbedder(e)
@@ -673,7 +689,7 @@ func main() {
 			// run it off the startup path (the injector reads the
 			// store lazily, so late-stored patterns still apply).
 			go func() {
-				defer recoverAndLog(home)()
+				defer recoverAndLog(dataDir)()
 				patterns, extErr := ext.Extract(context.Background())
 				if extErr != nil {
 					log.Printf("F5 extract: %v", extErr)
@@ -714,11 +730,11 @@ func main() {
 	// read); only when it's missing/stale, fetch in the
 	// background — rates pop in a second or two after the TUI is
 	// already interactive.
-	if !pricing.ApplyCachedRates(home) {
-		fetcher := pricing.NewFetcher(home)
+	if !pricing.ApplyCachedRates(dataDir) {
+		fetcher := pricing.NewFetcher(dataDir)
 		capsSnapshot := caps.All()
 		go func() {
-			defer recoverAndLog(home)()
+			defer recoverAndLog(dataDir)()
 			fetcher.FetchAndUpdate(capsSnapshot)
 		}()
 	}
@@ -728,7 +744,7 @@ func main() {
 	// messages.content keeps the search_history tool fast.
 	// A failure here is non-fatal: search_history is
 	// disabled, but the loop still runs in-memory.
-	sessStore, sessErr := session.OpenStore(home)
+	sessStore, sessErr := session.OpenStore(dataDir)
 	if sessErr != nil {
 		log.Printf("session store: %v (search_history disabled)", sessErr)
 		sessStore = nil
@@ -753,7 +769,7 @@ func main() {
 	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, caps, cfg, tierRules)
 	var draftSink agent.DraftOverrideSink
 	if draftProvider != nil {
-		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(home, ".supercli", "reflect"))
+		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
 	}
 	draftStats := stats.NewMemory()
 
@@ -773,12 +789,12 @@ func main() {
 	// metadata (fetched in the background, parsed defensively)
 	// > learned limit (persisted from past context-length
 	// errors) > 16384 default (applied inside the loop).
-	learned := loadLearnedLimits(home)
+	learned := loadLearnedLimits(dataDir)
 	var provWinMu sync.Mutex
 	provWindows := map[string]int{}
 	if cfg.BaseURL != "" {
 		go func() {
-			defer recoverAndLog(home)()
+			defer recoverAndLog(dataDir)()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			m, err := llm.ListProviderModelContexts(ctx, cfg.BaseURL, cfg.APIKey)
@@ -1077,7 +1093,7 @@ func main() {
 		}
 		// Persist to the GLOBAL config.toml (same file the
 		// onboarding wizard and provider manager write).
-		globalPath, _ := config.FindTomlPaths(home, cwd)
+		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
 		if tc, err := config.LoadToml(globalPath); err == nil {
 			tc.ReasoningEffort = args
 			if err := config.SaveToml(globalPath, tc); err != nil {
@@ -1111,7 +1127,7 @@ func main() {
 	// from config.toml so model filtering works immediately.
 	// (Created before /login so it can register the codex
 	// provider entry.)
-	provMgr := providers.NewManager(home)
+	provMgr := providers.NewManager(dataDir)
 	provMgr.Reload()
 	provMgr.LoadHiddenState()
 
@@ -1164,7 +1180,7 @@ func main() {
 				break
 			}
 		}
-		return buildProvider(mCfg, home, caps)
+		return buildProvider(mCfg, dataDir, caps)
 	}
 
 	// The auto council (cheapest-N pool) stays as the fallback
@@ -1326,7 +1342,7 @@ func main() {
 	// /logout clears the saved tokens.
 	mergedCommands["login"] = func(ctx context.Context, args string) (string, error) {
 		if codexAuthMgr == nil {
-			initCodexAuth(home, tomlCfg)
+			initCodexAuth(dataDir, tomlCfg)
 		}
 		var status strings.Builder
 		res, err := codexAuthMgr.Login(ctx, &status)
@@ -1364,7 +1380,7 @@ func main() {
 		if err := codexAuthMgr.Logout(); err != nil {
 			return "", fmt.Errorf("logout: %w", err)
 		}
-		return "logged out — ChatGPT credentials removed from .supercli/auth.json", nil
+		return "logged out — ChatGPT credentials removed from auth.json in the data dir", nil
 	}
 
 	// F25a: /sandbox — show sandbox status.
@@ -1503,7 +1519,7 @@ func main() {
 	// the uncovered transcript tail is stored raw (no-op off
 	// Windows) and summarized at the next startup (below).
 	installCloseHandler(func() {
-		defer recoverAndLog(home)()
+		defer recoverAndLog(dataDir)()
 		dumpRawMemoryTail(memAutoSaver, loop, memProg)
 	})
 
@@ -1511,7 +1527,7 @@ func main() {
 	// shutdown into normal task-log entries (+ USER: facts), in
 	// the background — startup stays network-free.
 	go func() {
-		defer recoverAndLog(home)()
+		defer recoverAndLog(dataDir)()
 		p := summaryProviderFor()
 		if !usableSummaryProvider(p) {
 			return
@@ -1534,7 +1550,7 @@ func main() {
 		// summarize just the new fragment in the background so
 		// the exit path usually has nothing left to do.
 		OnRunEnd: func() {
-			defer recoverAndLog(home)()
+			defer recoverAndLog(dataDir)()
 			incrementalMemorySave(memAutoSaver, loop, memProg, summaryProviderFor())
 		},
 		ExtCh:        extCh,
@@ -1549,7 +1565,7 @@ func main() {
 			swapCfg := cfg
 			swapCfg.Model = modelID
 			if providerName != "" {
-				globalPath, _ := config.FindTomlPaths(home, ".")
+				globalPath, _ := config.FindTomlPaths(dataDir, ".")
 				tc, err := config.LoadToml(globalPath)
 				if err == nil {
 					for _, pc := range tc.Providers {
@@ -1562,7 +1578,7 @@ func main() {
 					}
 				}
 			}
-			return buildProvider(swapCfg, home, caps)
+			return buildProvider(swapCfg, dataDir, caps)
 		},
 		SessionStore:       sessStore,
 		StatsRecorder:      draftStats,
@@ -1581,7 +1597,7 @@ func main() {
 
 	pumpDone := make(chan struct{})
 	go func() {
-		defer recoverAndLog(home)()
+		defer recoverAndLog(dataDir)()
 		defer close(pumpDone)
 		for req := range askCh {
 			program.Send(tui.AskRequestMsgFrom(req))
@@ -1589,7 +1605,7 @@ func main() {
 	}()
 
 	if _, err := program.Run(); err != nil {
-		logCrash(home, fmt.Errorf("tui error: %w", err))
+		logCrash(dataDir, fmt.Errorf("tui error: %w", err))
 		fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
 		os.Exit(1)
 	}
@@ -1598,14 +1614,15 @@ func main() {
 	// task-log entry (plus refresh the project card). Runs BEFORE
 	// the shutdown timer so the call is not cut off at 200ms.
 	finalizeMemorySession(memAutoSaver, loop, memProg, summaryProviderFor())
-	startPostTUIShutdownTimer(home, 200*time.Millisecond)
+	startPostTUIShutdownTimer(dataDir, 200*time.Millisecond)
 	close(askCh)
 	<-pumpDone
 }
 
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
-func runBatch(prompt, home, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string) {
+func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string) {
+	_ = home // project root; data lives in dataDir
 	// Echo shortcut.
 	if echoFlag {
 		keyFlag = ""
@@ -1623,12 +1640,12 @@ func runBatch(prompt, home, providerFlag, keyFlag, baseFlag, modelFlag string, e
 		fatal("load config", err)
 	}
 
-	caps, err := llm.NewCapabilityRegistryFromSources(home, nil)
+	caps, err := llm.NewCapabilityRegistryFromSources(dataDir, nil)
 	if err != nil {
 		fatal("load capabilities", err)
 	}
 
-	p, err := buildProvider(cfg, home, caps)
+	p, err := buildProvider(cfg, dataDir, caps)
 	if err != nil {
 		fatal("build provider", err)
 	}
@@ -1694,7 +1711,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	return reg
 }
 
-func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
+func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
 	if cfg.IsEcho() {
 		return llm.NewEcho(cfg.Model)
 	}
@@ -1728,10 +1745,10 @@ func buildProvider(cfg config.Config, home string, caps *llm.CapabilityRegistry)
 	if cfg.Provider == config.ProviderCodex {
 		// ChatGPT-subscription auth: requests route to the
 		// ChatGPT backend Responses API with the OAuth bearer
-		// token from .supercli/auth.json instead of an API key.
+		// token from <data dir>/auth.json instead of an API key.
 		mgr := codexAuthMgr
 		if mgr == nil {
-			mgr = codexauth.NewManager(home, codexauth.Options{})
+			mgr = codexauth.NewManager(dataDir, codexauth.Options{})
 		}
 		return llm.NewCodex(llm.CodexConfig{
 			BackendURL:   mgr.Options().BackendURL,
@@ -2486,6 +2503,26 @@ func fatal(what string, err error) {
 	log.Fatalf("%s: %v", what, err)
 }
 
+// fatalUnwritableDataDir prints a clear, actionable error when the
+// data directory next to the executable cannot be created or
+// written (e.g. the exe sits in Program Files), then exits.
+func fatalUnwritableDataDir(dir string, portable bool, err error) {
+	fmt.Fprintf(os.Stderr, "ERROR: cannot write to data directory:\n  %s\n  (%v)\n\n", dir, err)
+	if portable {
+		fmt.Fprintln(os.Stderr, "SuperCli is portable: it stores all of its data in a supercli-data")
+		fmt.Fprintln(os.Stderr, "folder next to supercli.exe. The folder the executable is in appears")
+		fmt.Fprintln(os.Stderr, "to be read-only (e.g. Program Files or a network share).")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Fix one of:")
+		fmt.Fprintln(os.Stderr, "  - move supercli.exe to a writable folder (e.g. C:\\Tools\\supercli\\)")
+		fmt.Fprintln(os.Stderr, "  - or set SUPERCLI_HOME / --home to a writable directory")
+	} else {
+		fmt.Fprintln(os.Stderr, "The directory configured via --home / SUPERCLI_HOME is not writable.")
+		fmt.Fprintln(os.Stderr, "Point it at a writable location.")
+	}
+	os.Exit(1)
+}
+
 // checkDirWritable verifies the directory exists and is
 // writable by creating and removing a temp file.
 func checkDirWritable(dir string) error {
@@ -2502,12 +2539,12 @@ func checkDirWritable(dir string) error {
 // pre-run watchdog did. SQLite WAL and OS file handles remain safe if
 // this fires: committed transactions are durable and the OS closes
 // handles on process exit.
-func startPostTUIShutdownTimer(home string, d time.Duration) {
+func startPostTUIShutdownTimer(dataDir string, d time.Duration) {
 	if d <= 0 {
 		return
 	}
 	go func() {
-		defer recoverAndLog(home)()
+		defer recoverAndLog(dataDir)()
 		t := time.NewTimer(d)
 		defer t.Stop()
 		<-t.C
@@ -2519,8 +2556,8 @@ func startPostTUIShutdownTimer(home string, d time.Duration) {
 // SKILL.md files and returns freshness.SkillEntry values
 // with file mtimes. Used by --doctor to report stale
 // skills without requiring a running provider.
-func discoverSkillsForDoctor(home string) []freshness.SkillEntry {
-	d := tools.NewDiscoverer(home, home)
+func discoverSkillsForDoctor(home, dataDir string) []freshness.SkillEntry {
+	d := tools.NewDiscoverer(home, dataDir)
 	skills, err := d.Discover()
 	if err != nil {
 		return nil
@@ -2659,7 +2696,8 @@ Env vars:
   SUPERCLI_LLM_MODEL, SUPERCLI_LLM_TEMPERATURE, SUPERCLI_LLM_STREAM,
   SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME
 
-Data is stored under <home>/.supercli/ (default: <cwd>/.supercli/).
+Data is stored in a single portable supercli-data/ directory next to
+the executable (override with --home or SUPERCLI_HOME).
 Nothing is written to %%APPDATA%% or the user home without consent.
 `, version)
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // learnedLimits is a tiny JSON-backed model→tokens map stored
-// at <home>/.supercli/context_limits.json. Safe for concurrent
+// at <dataDir>/context_limits.json. Safe for concurrent
 // use.
 type learnedLimits struct {
 	mu     sync.Mutex
@@ -20,9 +20,9 @@ type learnedLimits struct {
 	limits map[string]int
 }
 
-func loadLearnedLimits(home string) *learnedLimits {
+func loadLearnedLimits(dataDir string) *learnedLimits {
 	l := &learnedLimits{
-		path:   filepath.Join(home, ".supercli", "context_limits.json"),
+		path:   filepath.Join(dataDir, "context_limits.json"),
 		limits: map[string]int{},
 	}
 	data, err := os.ReadFile(l.path)

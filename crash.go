@@ -8,15 +8,16 @@ import (
 	"time"
 )
 
-// crashLogPath returns the path to the crash log file.
-func crashLogPath(home string) string {
-	return filepath.Join(home, ".supercli", "logs", "crash.log")
+// crashLogPath returns the path to the crash log file inside the
+// resolved data directory (portable: supercli-data next to the exe).
+func crashLogPath(dataDir string) string {
+	return filepath.Join(dataDir, "logs", "crash.log")
 }
 
 // logCrash writes a panic stack trace to the crash log.
 // Safe to call from a defer recover() block.
-func logCrash(home string, r any) {
-	path := crashLogPath(home)
+func logCrash(dataDir string, r any) {
+	path := crashLogPath(dataDir)
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -35,12 +36,12 @@ func logCrash(home string, r any) {
 
 // recoverAndLog is a defer helper for goroutines. Usage:
 //
-//	defer recoverAndLog(home)()
-func recoverAndLog(home string) func() {
+//	defer recoverAndLog(dataDir)()
+func recoverAndLog(dataDir string) func() {
 	return func() {
 		if r := recover(); r != nil {
-			logCrash(home, r)
-			fmt.Fprintf(os.Stderr, "CRASH: %v (logged to %s)\n", r, crashLogPath(home))
+			logCrash(dataDir, r)
+			fmt.Fprintf(os.Stderr, "CRASH: %v (logged to %s)\n", r, crashLogPath(dataDir))
 		}
 	}
 }

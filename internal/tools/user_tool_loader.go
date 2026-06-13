@@ -56,11 +56,13 @@ type UserToolLoader struct {
 // NewUserToolLoader creates a loader over the standard
 // project + user directories. Missing directories are
 // skipped silently on Load.
-func NewUserToolLoader(projectDir, userHome string) *UserToolLoader {
+// dataDir is the resolved SuperCli data directory (portable:
+// supercli-data next to the executable).
+func NewUserToolLoader(projectDir, dataDir string) *UserToolLoader {
 	return &UserToolLoader{
 		Dirs: []string{
 			filepath.Join(projectDir, "tools"),
-			filepath.Join(userHome, ".supercli", "tools"),
+			filepath.Join(dataDir, "tools"),
 		},
 	}
 }

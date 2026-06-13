@@ -18,7 +18,17 @@ func Open(home string) (*sql.DB, error) {
 	if home == "" {
 		return nil, fmt.Errorf("storage.Open: home is empty")
 	}
-	dir := DataDir(home)
+	return OpenAt(DataDir(home))
+}
+
+// OpenAt creates (or opens) the SQLite database directly inside the
+// given data directory (no .supercli nesting). This is the entry
+// point for the portable layout where the data dir already IS the
+// resolved root (e.g. <exe dir>/supercli-data).
+func OpenAt(dir string) (*sql.DB, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("storage.OpenAt: dir is empty")
+	}
 	if err := ensureDir(dir); err != nil {
 		return nil, err
 	}
