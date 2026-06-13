@@ -2022,6 +2022,8 @@ var localSlashCommands = map[string]bool{
 	"clear":   true,
 	"reflect": true,
 	"resume":  true,
+	"workers": true,
+	"context": true,
 }
 
 // shellResultMsg is delivered when a !command finishes.
