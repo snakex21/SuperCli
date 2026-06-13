@@ -17,19 +17,6 @@ import (
 	"supercli/internal/tools"
 )
 
-// globalMemoryHome returns the user-global ~/.supercli directory
-// (created if missing). When the OS home cannot be resolved, the
-// per-project home is the fallback so memory still works.
-func globalMemoryHome(fallback string) string {
-	if uh, err := os.UserHomeDir(); err == nil && uh != "" {
-		dir := filepath.Join(uh, ".supercli")
-		if err := os.MkdirAll(dir, 0o755); err == nil {
-			return dir
-		}
-	}
-	return fallback
-}
-
 // storeOrNil converts a possibly-nil *memory.Store into a clean
 // nil interface so `keeper == nil` checks in the tools work
 // (a typed nil pointer inside a non-nil interface would not).
@@ -220,6 +207,24 @@ func hasUserTurn(msgs []llm.Message) bool {
 	return false
 }
 
+// rawUserTexts returns the plain-text content of every user message
+// in msgs (multimodal parts flattened via TextOnly). It feeds the
+// deterministic user-fact extractor, which must see the user's exact
+// words — never the assistant's.
+func rawUserTexts(msgs []llm.Message) []string {
+	var out []string
+	for _, m := range msgs {
+		if m.Role != llm.RoleUser {
+			continue
+		}
+		text := strings.TrimSpace(m.TextOnly().Content)
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
 // compactFragment renders msgs as a transcript capped at maxChars
 // and at most 40 messages (the most recent ones win).
 func compactFragment(msgs []llm.Message) string {
@@ -246,6 +251,14 @@ func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 	prog.mu.Lock()
 	defer prog.mu.Unlock()
 	msgs := loop.AllMessages()
+	// Deterministic safety net: persist simple personal declarations
+	// from the user's raw words BEFORE any LLM gating, so they survive
+	// even when the model "remembered" something else or the small
+	// summarizer returns NOTHING. Pure string matching, dedup'd in the
+	// store, cheap enough to run on every turn.
+	if len(msgs) > prog.covered {
+		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.covered:]))
+	}
 	if saver.Remembered() {
 		// The model saves its own notes; nothing synthetic needed.
 		prog.covered = len(msgs)
@@ -335,6 +348,11 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 	if prog.covered > 0 && prog.covered <= len(msgs) {
 		uncovered = msgs[prog.covered:]
 	}
+	// Deterministic safety net on the exit path too: a final short
+	// declaration ("nazywam się Maks") must persist even if it was
+	// never covered by an incremental save. No LLM call, runs under
+	// the 3s cap.
+	saver.SaveDeterministicUserFacts(rawUserTexts(uncovered))
 	// Exit-latency rule: only spend an LLM call when the uncovered
 	// tail actually has user content. An empty session (user opened
 	// the TUI, looked around, quit) must exit instantly.
