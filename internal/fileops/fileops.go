@@ -26,6 +26,11 @@ const (
 	// DiffContext is the number of context lines shown
 	// before/after a mutation in the diff output.
 	DiffContext = 3
+
+	// AnchorSearchRadius is the ±N window EditLineAnchored
+	// scans for the expected content when the hinted line
+	// does not match verbatim (tolerates line drift).
+	AnchorSearchRadius = 10
 )
 
 // readLines reads all lines from path. Returns the lines
@@ -159,6 +164,93 @@ func EditLine(path string, line int, newContent string) (string, error) {
 		return "", fmt.Errorf("fileops.EditLine: write: %w", err)
 	}
 	return buildDiff(lines, line-1, old, newContent), nil
+}
+
+// EditLineAnchored replaces a line whose content is proven by
+// expectedOld, using line as a GPS hint rather than a blind
+// target. The hinted line wins if it matches expectedOld
+// verbatim; otherwise the function scans ±AnchorSearchRadius
+// for the content. This neutralises the two failure modes of
+// line-only editing at once:
+//
+//   - drift: when imports/edits above shift the target, the
+//     content match still finds it within the window;
+//   - ambiguity: when the same content repeats, the hint line
+//     disambiguates which occurrence to touch.
+//
+// It fails LOUDLY instead of corrupting the file:
+//
+//   - no occurrence of expectedOld within the window → error,
+//     nothing written;
+//   - 2+ occurrences within the window and none on the hinted
+//     line → error asking for more context, nothing written.
+//
+// Returns the same ±DiffContext diff as EditLine on success.
+func EditLineAnchored(path string, line int, expectedOld, newContent string) (string, error) {
+	if line < 1 {
+		return "", fmt.Errorf("fileops.EditLineAnchored: line=%d must be >= 1", line)
+	}
+	if expectedOld == "" {
+		return "", fmt.Errorf("fileops.EditLineAnchored: expectedOld must be non-empty (anchor needs proof content)")
+	}
+	lines, err := readLines(path)
+	if err != nil {
+		return "", fmt.Errorf("fileops.EditLineAnchored: %w", err)
+	}
+	total := len(lines)
+	if total == 0 {
+		return "", fmt.Errorf("fileops.EditLineAnchored: file is empty, cannot anchor %q", expectedOld)
+	}
+
+	// Fast path: the hint is exact. Trust it even if the same
+	// content repeats elsewhere — the model pointed here.
+	if line <= total && lines[line-1] == expectedOld {
+		return applyAnchoredEdit(path, lines, line-1, expectedOld, newContent)
+	}
+
+	// Drift path: scan ±AnchorSearchRadius around the hint for
+	// a verbatim match. Clamp the window to the file bounds.
+	from := line - AnchorSearchRadius
+	if from < 1 {
+		from = 1
+	}
+	to := line + AnchorSearchRadius
+	if to > total {
+		to = total
+	}
+	matches := make([]int, 0, 2) // 0-based indices
+	for i := from - 1; i < to; i++ {
+		if lines[i] == expectedOld {
+			matches = append(matches, i)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf(
+			"fileops.EditLineAnchored: expected content not found within %d lines of line %d; nothing changed (expected %q)",
+			AnchorSearchRadius, line, expectedOld)
+	case 1:
+		return applyAnchoredEdit(path, lines, matches[0], expectedOld, newContent)
+	default:
+		nums := make([]int, len(matches))
+		for i, idx := range matches {
+			nums[i] = idx + 1
+		}
+		return "", fmt.Errorf(
+			"fileops.EditLineAnchored: content is ambiguous near line %d (matches lines %v); provide more context; nothing changed",
+			line, nums)
+	}
+}
+
+// applyAnchoredEdit writes the replacement at the resolved
+// 0-based index and returns the verification diff. Shared by
+// the exact-hint and drift paths of EditLineAnchored.
+func applyAnchoredEdit(path string, lines []string, at int, oldContent, newContent string) (string, error) {
+	lines[at] = newContent
+	if err := writeLines(path, lines); err != nil {
+		return "", fmt.Errorf("fileops.EditLineAnchored: write: %w", err)
+	}
+	return buildDiff(lines, at, oldContent, newContent), nil
 }
 
 // InsertAfter inserts newContent as a new line after line
