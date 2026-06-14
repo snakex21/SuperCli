@@ -105,6 +105,16 @@ var (
 // and modelRates alike — it is the highest-priority source,
 // intended to be injected from per-endpoint config. Guarded by
 // fetchedMu (same lock as fetchedRates; they are read together).
+//
+// NOT YET WIRED (task #2, commit 8e9bfe6): the mechanism here is
+// correct and tested, but nothing in production calls
+// SetProviderRates yet. To finish end-to-end three pieces are
+// missing: (1) a price field on config.ProviderConf to source the
+// rates; (2) loading those into SetProviderRates at startup;
+// (3) threading the proxy/provider NAME (not the model id, which
+// Provider.Name() currently returns) into the CostFor call sites.
+// Until then RateForProvider falls back to RateFor and per-proxy
+// pricing is a latent capability, not an active fix.
 var providerRates map[string]Rate // nil = no overrides
 
 // SetFetchedRates replaces the fetched-price cache. rates
