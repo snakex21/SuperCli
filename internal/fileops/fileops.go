@@ -12,6 +12,7 @@ package fileops
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -187,29 +188,42 @@ func EditLine(path string, line int, newContent string) (string, error) {
 //
 // Returns the same ±DiffContext diff as EditLine on success.
 func EditLineAnchored(path string, line int, expectedOld, newContent string) (string, error) {
-	if line < 1 {
-		return "", fmt.Errorf("fileops.EditLineAnchored: line=%d must be >= 1", line)
-	}
-	if expectedOld == "" {
-		return "", fmt.Errorf("fileops.EditLineAnchored: expectedOld must be non-empty (anchor needs proof content)")
-	}
 	lines, err := readLines(path)
 	if err != nil {
 		return "", fmt.Errorf("fileops.EditLineAnchored: %w", err)
 	}
+	at, err := resolveAnchor(lines, line, expectedOld)
+	if err != nil {
+		return "", fmt.Errorf("fileops.EditLineAnchored: %w; nothing changed", err)
+	}
+	return applyAnchoredEdit(path, lines, at, expectedOld, newContent)
+}
+
+// resolveAnchor resolves a content anchor to a concrete 0-based
+// index in lines, applying the same policy as EditLineAnchored:
+// trust an exact hint, else scan ±AnchorSearchRadius for a
+// verbatim match, failing loudly on no-match or ambiguity. It
+// does NOT mutate or write — callers use it to validate edits
+// before touching the file. The returned error is descriptive
+// and safe to surface to the model.
+func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
+	if line < 1 {
+		return 0, fmt.Errorf("line=%d must be >= 1", line)
+	}
+	if expectedOld == "" {
+		return 0, fmt.Errorf("expectedOld must be non-empty (anchor needs proof content)")
+	}
 	total := len(lines)
 	if total == 0 {
-		return "", fmt.Errorf("fileops.EditLineAnchored: file is empty, cannot anchor %q", expectedOld)
+		return 0, fmt.Errorf("file is empty, cannot anchor %q", expectedOld)
 	}
-
 	// Fast path: the hint is exact. Trust it even if the same
 	// content repeats elsewhere — the model pointed here.
 	if line <= total && lines[line-1] == expectedOld {
-		return applyAnchoredEdit(path, lines, line-1, expectedOld, newContent)
+		return line - 1, nil
 	}
-
-	// Drift path: scan ±AnchorSearchRadius around the hint for
-	// a verbatim match. Clamp the window to the file bounds.
+	// Drift path: scan ±AnchorSearchRadius around the hint for a
+	// verbatim match. Clamp the window to the file bounds.
 	from := line - AnchorSearchRadius
 	if from < 1 {
 		from = 1
@@ -226,20 +240,104 @@ func EditLineAnchored(path string, line int, expectedOld, newContent string) (st
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf(
-			"fileops.EditLineAnchored: expected content not found within %d lines of line %d; nothing changed (expected %q)",
+		return 0, fmt.Errorf(
+			"expected content not found within %d lines of line %d (expected %q)",
 			AnchorSearchRadius, line, expectedOld)
 	case 1:
-		return applyAnchoredEdit(path, lines, matches[0], expectedOld, newContent)
+		return matches[0], nil
 	default:
 		nums := make([]int, len(matches))
 		for i, idx := range matches {
 			nums[i] = idx + 1
 		}
-		return "", fmt.Errorf(
-			"fileops.EditLineAnchored: content is ambiguous near line %d (matches lines %v); provide more context; nothing changed",
+		return 0, fmt.Errorf(
+			"content is ambiguous near line %d (matches lines %v); provide more context",
 			line, nums)
 	}
+}
+
+// AnchoredEdit is one content-anchored replacement: replace the
+// line proven by ExpectedOld (located via Line as a hint) with
+// NewContent. Used by EditLinesAnchored for batch edits.
+type AnchoredEdit struct {
+	Line        int
+	ExpectedOld string
+	NewContent  string
+}
+
+// EditLinesAnchored applies several content-anchored edits to a
+// file in ONE call, atomically and bottom-to-top.
+//
+// Per ROADMAP item #4: edits are applied from the highest line
+// number down so an earlier edit never shifts the line numbers of
+// a later one. Every anchor is resolved and validated against the
+// CURRENT file BEFORE anything is written, so a single bad anchor
+// fails the whole call and leaves the file untouched (all-or-
+// nothing) — never a half-applied, drifted edit.
+//
+// Validation rules (same policy as EditLineAnchored):
+//   - each edit must supply non-empty ExpectedOld;
+//   - each anchor must match verbatim on its hinted line or
+//     within ±AnchorSearchRadius, else the call fails;
+//   - two edits resolving to the SAME line fail (conflicting).
+//
+// Returns one concatenated ±DiffContext diff per applied edit,
+// in top-to-bottom order for readability.
+func EditLinesAnchored(path string, edits []AnchoredEdit) (string, error) {
+	if len(edits) == 0 {
+		return "", fmt.Errorf("fileops.EditLinesAnchored: no edits supplied")
+	}
+	lines, err := readLines(path)
+	if err != nil {
+		return "", fmt.Errorf("fileops.EditLinesAnchored: %w", err)
+	}
+
+	// Phase 1: resolve & validate ALL anchors against the
+	// unmodified file. Nothing is written if any fails.
+	type resolved struct {
+		at         int // 0-based index
+		oldContent string
+		newContent string
+	}
+	out := make([]resolved, 0, len(edits))
+	seen := make(map[int]int, len(edits)) // at -> edit ordinal
+	for i, e := range edits {
+		at, err := resolveAnchor(lines, e.Line, e.ExpectedOld)
+		if err != nil {
+			return "", fmt.Errorf("fileops.EditLinesAnchored: edit %d (line %d): %w; nothing changed", i+1, e.Line, err)
+		}
+		if prev, dup := seen[at]; dup {
+			return "", fmt.Errorf(
+				"fileops.EditLinesAnchored: edits %d and %d both target line %d; nothing changed",
+				prev+1, i+1, at+1)
+		}
+		seen[at] = i
+		out = append(out, resolved{at: at, oldContent: e.ExpectedOld, newContent: e.NewContent})
+	}
+
+	// Phase 2: apply bottom-to-top so indices stay valid. Since
+	// every edit replaces exactly one line (no insert/delete),
+	// indices do not actually shift here, but we honour the
+	// ROADMAP ordering so this stays correct if range edits are
+	// added later.
+	sort.Slice(out, func(a, b int) bool { return out[a].at > out[b].at })
+	for _, r := range out {
+		lines[r.at] = r.newContent
+	}
+	if err := writeLines(path, lines); err != nil {
+		return "", fmt.Errorf("fileops.EditLinesAnchored: write: %w", err)
+	}
+
+	// Build one diff per edit, top-to-bottom for human reading.
+	sort.Slice(out, func(a, b int) bool { return out[a].at < out[b].at })
+	var b strings.Builder
+	for i, r := range out {
+		if i > 0 {
+			b.WriteString("---\n")
+		}
+		b.WriteString(buildDiff(lines, r.at, r.oldContent, r.newContent))
+	}
+	return b.String(), nil
 }
 
 // applyAnchoredEdit writes the replacement at the resolved
