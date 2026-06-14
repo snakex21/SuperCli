@@ -604,7 +604,7 @@ func main() {
 			"read_lines", "read_context", "edit_line", "edit_lines",
 			"insert_after", "delete_lines", "write_file", "make_dir",
 			"move", "copy", "trash",
-			"list_dir", "edit_docx", "edit_xlsx",
+			"list_dir",
 			"goal", "tool_search",
 		} {
 			registry.MarkAlwaysOn(name)
