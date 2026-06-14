@@ -133,3 +133,22 @@ func TestListAccounts_RoundTripWithSave(t *testing.T) {
 		t.Errorf("work account tokens wrong: %+v", work)
 	}
 }
+
+func TestNewManagerFor_IndependentPaths(t *testing.T) {
+	dir := t.TempDir()
+	def := NewManager(dir, Options{})
+	work := NewManagerFor(dir, "work", Options{})
+
+	if def.Path() == work.Path() {
+		t.Fatal("default and work managers must have distinct paths")
+	}
+	if def.Path() != AuthFilePath(dir) {
+		t.Errorf("default path = %q, want classic auth.json", def.Path())
+	}
+	if def.Label() != DefaultAccount {
+		t.Errorf("default label = %q, want %q", def.Label(), DefaultAccount)
+	}
+	if work.Label() != "work" {
+		t.Errorf("work label = %q, want work", work.Label())
+	}
+}
