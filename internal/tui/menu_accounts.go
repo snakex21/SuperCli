@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/codexauth"
@@ -103,52 +104,88 @@ func (m Model) menuAccountsKey(key string) (tea.Model, tea.Cmd, bool) {
 	return model, cmd, true
 }
 
-// renderAccountsMenu draws the accounts list with the add action.
+// renderAccountsMenu draws the accounts list inside a bordered
+// panel: live accounts with a green check, the add-action row in
+// accent, and a round-robin status footer.
 func (m Model) renderAccountsMenu() string {
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("ChatGPT accounts") + "\n\n")
 	rows := m.accountRows()
+	nAccts := len(rows) - 1 // minus the add row
+
+	var body strings.Builder
+	title := m.palette.PanelTitle.Render("ChatGPT accounts")
+	body.WriteString(title + "\n")
+	body.WriteString(m.palette.Dim.Render("sign in to one or more ChatGPT accounts") + "\n\n")
+
 	for i, r := range rows {
-		prefix := "  "
-		if i == m.menu.cursor {
-			prefix = "❯ "
+		selected := i == m.menu.cursor
+		cursor := "  "
+		if selected {
+			cursor = m.palette.HeaderMode.Render("❯ ")
 		}
+
 		var line string
 		if r.isAdd {
-			line = "+ add account"
+			label := "+  add account"
+			if selected {
+				line = m.palette.HeaderMode.Render(label)
+			} else {
+				line = m.palette.Marker.Render(label)
+			}
 		} else {
-			line = "✓ " + r.label
+			check := m.palette.Success.Render("✓")
+			name := r.label
+			if selected {
+				name = m.palette.HeaderMode.Render(name)
+			} else {
+				name = m.palette.Bold.Render(name)
+			}
+			line = fmt.Sprintf("%s  %s", check, name)
 		}
-		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(line)
-		} else {
-			line = m.palette.Dim.Render(line)
-		}
-		b.WriteString(prefix + line + "\n")
+		body.WriteString(cursor + line + "\n")
 	}
-	n := len(rows) - 1 // minus the add row
-	if n >= 2 {
-		b.WriteString("\n" + m.palette.Dim.Render(fmt.Sprintf("%d accounts — requests round-robin across them", n)))
-	} else if n == 1 {
-		b.WriteString("\n" + m.palette.Dim.Render("add a second account to enable round-robin"))
+
+	// Round-robin status footer.
+	body.WriteString("\n")
+	switch {
+	case nAccts >= 2:
+		body.WriteString(m.palette.Success.Render(fmt.Sprintf("● %d accounts — requests round-robin across them", nAccts)))
+	case nAccts == 1:
+		body.WriteString(m.palette.Dim.Render("add a second account to spread load (round-robin)"))
+	default:
+		body.WriteString(m.palette.Dim.Render("no accounts yet — add one to sign in"))
 	}
-	b.WriteString("\n\n" + m.palette.InputHint.Render("↑↓ select · Enter add · d log out · ESC back"))
-	return b.String()
+
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorFaint).
+		Padding(0, 2).
+		Render(body.String())
+
+	hint := m.palette.InputHint.Render("↑↓ select · Enter add · d log out · ESC back")
+	return panel + "\n" + hint
 }
 
 // renderAccountLabelMenu draws the single-field prompt for naming a
-// new account before login.
+// new account before login, in a bordered panel.
 func (m Model) renderAccountLabelMenu() string {
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Name the new account") + "\n\n")
 	label := ""
 	if len(m.menu.form) > 0 {
 		label = m.menu.form[0]
 	}
-	b.WriteString("  label: " + m.palette.HeaderMode.Render(label+"▌") + "\n")
-	b.WriteString("\n" + m.palette.Dim.Render("e.g. praca, prywatne — saved as auth-<label>.json"))
-	b.WriteString("\n\n" + m.palette.InputHint.Render("type · Enter sign in · ESC cancel"))
-	return b.String()
+	var body strings.Builder
+	body.WriteString(m.palette.PanelTitle.Render("Name the new account") + "\n\n")
+	field := m.palette.HeaderMode.Render(" " + label + "▌ ")
+	body.WriteString("label  " + field + "\n\n")
+	body.WriteString(m.palette.Dim.Render("e.g. praca, prywatne — saved as auth-<label>.json"))
+
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorAccent).
+		Padding(0, 2).
+		Render(body.String())
+
+	hint := m.palette.InputHint.Render("type · Enter sign in · ESC cancel")
+	return panel + "\n" + hint
 }
 
 // accountLabelKey handles typing/Enter/backspace in the label
