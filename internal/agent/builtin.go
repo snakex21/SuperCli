@@ -66,7 +66,7 @@ func BuiltinSubAgents() []SubAgent {
 			AllowedTools: allowedTools(
 				"search_code", "read_image", "read_lines", "read_context",
 				"edit_line", "edit_lines", "insert_after", "delete_lines",
-				"read_docx", "read_xlsx", "read_pdf",
+				"write_file", "read_docx", "read_xlsx", "read_pdf",
 				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute",
 			),
 			MaxSteps: 12,
