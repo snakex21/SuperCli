@@ -90,6 +90,45 @@ func (m *Manager) Refresh(ctx context.Context) (string, error) {
 // Logout removes auth.json.
 func (m *Manager) Logout() error { return Clear(m.path) }
 
+// AccountInfo is a read-only snapshot of who is logged in, mined from
+// the stored JWTs. All fields are best-effort: a field is empty when
+// the claim is absent. LoggedIn is false when no usable token is on
+// disk, in which case the other fields are zero.
+type AccountInfo struct {
+	LoggedIn    bool
+	AccountID   string
+	PlanType    string
+	LastRefresh time.Time
+}
+
+// Account returns a display snapshot of the current login by reading
+// auth.json and decoding its tokens. It never refreshes or hits the
+// network. A missing/empty auth.json yields AccountInfo{LoggedIn:false}.
+func (m *Manager) Account() (AccountInfo, error) {
+	af, err := Load(m.path)
+	if err != nil {
+		return AccountInfo{}, err
+	}
+	if af == nil || af.Tokens == nil || af.Tokens.AccessToken == "" {
+		return AccountInfo{}, nil
+	}
+	info := AccountInfo{
+		LoggedIn:    true,
+		AccountID:   af.Tokens.AccountID,
+		LastRefresh: af.LastRefresh,
+	}
+	if info.AccountID == "" {
+		info.AccountID = ParseAccountID(af.Tokens.IDToken)
+	}
+	// Plan type lives in the access token claims; fall back to the id
+	// token if the access token doesn't carry it.
+	info.PlanType = ParsePlanType(af.Tokens.AccessToken)
+	if info.PlanType == "" {
+		info.PlanType = ParsePlanType(af.Tokens.IDToken)
+	}
+	return info, nil
+}
+
 // refreshLocked exchanges the refresh token at <issuer>/oauth/token
 // using the JSON refresh request shape the Codex CLI uses
 // ({client_id, grant_type:"refresh_token", refresh_token, scope}).

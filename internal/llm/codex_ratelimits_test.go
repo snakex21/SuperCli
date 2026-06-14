@@ -384,6 +384,32 @@ func TestCodexRateLimitsSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+// TestClearCodexRateLimits confirms the snapshot file is removed and
+// that clearing a missing file (or empty dataDir) is not an error.
+func TestClearCodexRateLimits(t *testing.T) {
+	dir := t.TempDir()
+	if err := saveCodexRateLimits(dir, "acc", CodexRateLimits{PrimaryUsedPct: 5, OK: true}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if _, ok := loadCodexRateLimits(dir, "acc"); !ok {
+		t.Fatal("precondition: snapshot should load")
+	}
+	if err := ClearCodexRateLimits(dir); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if _, ok := loadCodexRateLimits(dir, "acc"); ok {
+		t.Error("expected snapshot to be gone after clear")
+	}
+	// Clearing again (now missing) is a no-op.
+	if err := ClearCodexRateLimits(dir); err != nil {
+		t.Errorf("clearing missing snapshot should be nil, got %v", err)
+	}
+	// Empty dataDir is a no-op.
+	if err := ClearCodexRateLimits(""); err != nil {
+		t.Errorf("empty dataDir should be nil, got %v", err)
+	}
+}
+
 // TestCodexRateLimitsSaveSkipsNonOK confirms a non-OK snapshot is not
 // written (nothing useful to persist) and no file is created.
 func TestCodexRateLimitsSaveSkipsNonOK(t *testing.T) {

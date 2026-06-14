@@ -82,6 +82,21 @@ func saveCodexRateLimits(dataDir, accountID string, rl CodexRateLimits) error {
 	return os.Rename(tmpName, path)
 }
 
+// ClearCodexRateLimits deletes the persisted usage snapshot. It is
+// called on /logout so a fresh login does not show the previous
+// account's limits in the HUD before the first response arrives.
+// A missing file (or an empty dataDir) is not an error.
+func ClearCodexRateLimits(dataDir string) error {
+	path := codexRateLimitsPath(dataDir)
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // loadCodexRateLimits reads the persisted snapshot. It returns
 // ok=false (no error) when the file is missing, unreadable, contains
 // corrupt JSON, holds a non-OK snapshot, or belongs to a different
