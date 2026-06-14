@@ -504,6 +504,7 @@ func main() {
 	registry.MustRegister(tools.NewEditDocx(home).Spec())
 	registry.MustRegister(tools.NewEditXlsx(home).Spec())
 	registry.MustRegister(tools.NewFileOps(home).Spec())
+	registry.MustRegister(tools.NewListDir(home).Spec())
 
 	// F20: read_pdf is opt-in (not always-on).
 	// The model discovers it via tool_search
@@ -585,7 +586,7 @@ func main() {
 		for _, name := range []string{
 			"read_lines", "read_context", "edit_line", "edit_lines",
 			"insert_after", "delete_lines",
-			"file_ops", "edit_docx", "edit_xlsx",
+			"file_ops", "list_dir", "edit_docx", "edit_xlsx",
 			"goal", "tool_search",
 		} {
 			registry.MarkAlwaysOn(name)
@@ -1828,6 +1829,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewEditDocx(root).Spec())
 	reg.MustRegister(tools.NewEditXlsx(root).Spec())
 	reg.MustRegister(tools.NewFileOps(root).Spec())
+	reg.MustRegister(tools.NewListDir(root).Spec())
 	reg.MustRegister(tools.NewReadLines(root).Spec())
 	reg.MustRegister(tools.NewReadContext(root).Spec())
 	reg.MustRegister(tools.NewEditLine(root).Spec())
