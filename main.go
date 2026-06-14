@@ -194,8 +194,8 @@ func main() {
 	debugFlag := flag.Bool("debug", false, "verbose logging")
 	maxSession := flag.Int64("max-credits-per-session", 0, "cap total tokens (in+out) per session (0 = no cap)")
 	maxDay := flag.Int64("max-credits-per-day", 0, "cap total tokens (in+out) per UTC day (0 = no cap)")
-	draftModeFlag := flag.String("draft-mode", "critical", "F11 draft mode: off|always|balanced|critical (default critical)")
-	draftModelFlag := flag.String("draft-model", "", "F11 draft model id (default: auto-pick cheapest from F16 registry)")
+	draftModeFlag := flag.String("draft-mode", "off", "F11 draft mode: off|always|balanced|critical (default off; opt-in, requires --draft-model)")
+	draftModelFlag := flag.String("draft-model", "", "F11 draft model id (required to enable F11; no auto-pick)")
 	configFlag := flag.String("config", "", "path to config.toml override")
 	batchFlag := flag.String("batch", "", "F33: run prompt without TUI, output to stdout and exit")
 	resumeFlag := flag.Bool("resume", false, "resume the most recent session on startup")
@@ -340,7 +340,7 @@ func main() {
 		}
 	}
 	// Apply draft/credit overrides from TOML if not set by flags.
-	if *draftModeFlag == "critical" && tomlCfg.DraftMode != "" {
+	if *draftModeFlag == "off" && tomlCfg.DraftMode != "" {
 		*draftModeFlag = tomlCfg.DraftMode
 	}
 	if *draftModelFlag == "" && tomlCfg.DraftModel != "" {
@@ -2010,16 +2010,19 @@ func initAppLog(dataDir string) *os.File {
 // buildDraftWiring assembles the F11 draft policy +
 // provider. The provider is a SECOND llm.OpenAI
 // instance (or llm.Echo when the verifier is echo)
-// configured with a different Model id. The model is
-// chosen in this priority order:
+// configured with a different Model id.
 //
-//  1. --draft-model flag (verbatim, if set)
-//  2. F16 CapabilityRegistry.SuggestCheapestForTask
-//     (the cheapest tool-using model that isn't the
-//     verifier itself)
+// F11 is OPT-IN. It engages only when BOTH:
+//   - a draft mode other than "off" is set, AND
+//   - a draft model is EXPLICITLY configured via
+//     --draft-model (or config.toml draft_model).
 //
-// Returns (nil, nil) when F11 is off or no candidate
-// exists — silent fallback per D1.
+// There is deliberately no auto-pick: an unset draft
+// model means no speculative decoding. This avoids
+// silently engaging a draft model the user never chose.
+//
+// Returns (nil, nil) when F11 is off or no draft model
+// was configured — silent fallback per D1.
 func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config, tierRules []tier.Rule) (*draft.Policy, llm.Provider) {
 	mode, err := draft.ParseMode(modeFlag)
 	if err != nil {
@@ -2030,25 +2033,17 @@ func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *l
 		return nil, nil
 	}
 	verifierName := verifier.Name()
-	var draftModel string
-	if modelFlag != "" {
-		draftModel = modelFlag
-	} else if caps != nil {
-		// Priority: smallest parsed-param model that
-		// classifies small-tier (internal/tier), then the
-		// price-based cheapest-for-task fallback.
-		if picked, ok := pickSmallestSmallTierModel(caps, verifierName, tierRules); ok {
-			draftModel = picked
-			log.Printf("F11: auto-picked smallest small-tier draft model %q (verifier=%q)", draftModel, verifierName)
-		} else if picked, ok := caps.SuggestCheapestForTask("plan", verifierName); ok {
-			draftModel = picked
-			log.Printf("F11: auto-picked draft model %q (verifier=%q)", draftModel, verifierName)
-		}
-	}
-	if draftModel == "" {
-		log.Printf("F11: no draft model available (verifier=%q); F11 disabled silently", verifierName)
+	// F11 is OPT-IN: it engages only when the user has
+	// EXPLICITLY configured a draft model (via --draft-model
+	// or config.toml draft_model). We deliberately do NOT
+	// auto-pick a draft model from the F16 registry — an
+	// unset draft model means "no speculative decoding",
+	// even if a mode was supplied.
+	if modelFlag == "" {
+		log.Printf("F11: no draft model configured (--draft-model unset); F11 disabled (opt-in)")
 		return nil, nil
 	}
+	draftModel := modelFlag
 	if draftModel == verifierName {
 		log.Printf("F11: draft model %q == verifier; F11 disabled silently (per D1 rule)", draftModel)
 		return nil, nil
@@ -2859,8 +2854,8 @@ Flags:
   --model-info ID                 print details for a single model and exit
   --max-credits-per-session N     cap total tokens per session (0 = no cap)
   --max-credits-per-day N         cap total tokens per UTC day (0 = no cap)
-  --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default critical)
-  --draft-model ID                F11 draft model id (default: auto-pick cheapest from F16 registry)
+  --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default off; opt-in)
+  --draft-model ID                F11 draft model id (required to enable F11; no auto-pick)
   --resume                        resume the most recent session on startup (also: /resume in the TUI)
   --version                       print version and exit
   -h, --help                      show this help

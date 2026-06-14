@@ -291,8 +291,8 @@ SUPERCLI_DEBUG
 --model-info ID
 --max-credits-per-session N
 --max-credits-per-day N
---draft-mode off|always|balanced|critical
---draft-model ID
+--draft-mode off|always|balanced|critical   # default off; opt-in
+--draft-model ID                            # required to enable F11 (no auto-pick)
 --config PATH
 --batch PROMPT
 --version
@@ -305,8 +305,8 @@ SuperCli reads config from `supercli-data/config.toml` (global) and `<project>/.
 ```toml
 default_model = "gpt-4o-mini"
 default_provider = "local"
-draft_mode = "critical"
-draft_model = ""
+draft_mode = "off"   # opt-in; F11 stays off unless draft_model is also set
+draft_model = ""     # set a model id to enable F11 speculative drafting
 max_credits_per_session = 0
 max_credits_per_day = 0
 no_color = false
