@@ -865,6 +865,12 @@ func main() {
 		Summarizer:        autoSummarizer,
 		LearnLimit:        learned.Learn,
 		EnableNavigator:   true,
+		// Thin tool protocol: small-tier models get the compact
+		// catalog + full schemas only for the core; they suffer most
+		// from schema bulk in the prefill. Big models keep native
+		// JSON tool calling with full schemas. Mirrors the same
+		// smallTier gate that already trims their always-on set.
+		ThinTools: smallTier,
 	})
 	if err != nil {
 		fatal("init agent", err)
