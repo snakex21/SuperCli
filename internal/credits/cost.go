@@ -97,12 +97,40 @@ var (
 	fetchedRates map[string]Rate // nil = not fetched
 )
 
+// providerRates holds per-proxy / per-endpoint price overrides.
+// The same model id can cost differently when reached through a
+// proxy with its own price list, so these are keyed by the
+// "provider/model" pair (both lowercased). When a request's
+// provider has an entry for the model, it wins over fetchedRates
+// and modelRates alike — it is the highest-priority source,
+// intended to be injected from per-endpoint config. Guarded by
+// fetchedMu (same lock as fetchedRates; they are read together).
+var providerRates map[string]Rate // nil = no overrides
+
 // SetFetchedRates replaces the fetched-price cache. rates
 // maps lowercased model ID → Rate (per-1M converted to per-1k).
 func SetFetchedRates(rates map[string]Rate) {
 	fetchedMu.Lock()
 	defer fetchedMu.Unlock()
 	fetchedRates = rates
+}
+
+// SetProviderRates replaces the per-provider price overrides.
+// Keys are "provider/model" pairs; callers may pass mixed-case
+// keys — they are normalised to lowercase here so lookups match
+// regardless of how the config spelled them. Pass nil to clear.
+func SetProviderRates(rates map[string]Rate) {
+	fetchedMu.Lock()
+	defer fetchedMu.Unlock()
+	if rates == nil {
+		providerRates = nil
+		return
+	}
+	norm := make(map[string]Rate, len(rates))
+	for k, v := range rates {
+		norm[strings.ToLower(strings.TrimSpace(k))] = v
+	}
+	providerRates = norm
 }
 
 // GetFetchedRates returns a copy of the current fetched rates.
@@ -170,6 +198,36 @@ func stripDateSuffix(modelID string) string {
 //
 // Pass the empty string to get the default rate.
 func RateFor(modelID string) (Rate, string) {
+	return RateForProvider("", modelID)
+}
+
+// RateForProvider is RateFor with a known provider/endpoint. When
+// the provider has a per-endpoint override for the model (set via
+// SetProviderRates), that rate wins over the fetched and hardcoded
+// tables — so the same model reached through a proxy with its own
+// price list is costed correctly. provider may be empty, in which
+// case this behaves exactly like RateFor.
+//
+// Note: the provider override is matched on the FULL model id as
+// configured (e.g. "myproxy/gpt-4o"), before the provider prefix
+// and date suffix are stripped for the fallback tables — so a
+// proxy can price a specific alias without colliding with the
+// canonical model.
+func RateForProvider(provider, modelID string) (Rate, string) {
+	// Per-endpoint override: highest priority, before any stripping
+	// so the configured "provider/model" key matches verbatim.
+	if provider != "" && modelID != "" {
+		pkey := strings.ToLower(strings.TrimSpace(provider)) + "/" +
+			strings.ToLower(strings.TrimSpace(modelID))
+		fetchedMu.RLock()
+		if providerRates != nil {
+			if r, ok := providerRates[pkey]; ok {
+				fetchedMu.RUnlock()
+				return r, pkey + " (endpoint)"
+			}
+		}
+		fetchedMu.RUnlock()
+	}
 	if modelID == "" {
 		return modelRates["default"], "default"
 	}
@@ -200,10 +258,17 @@ func RateFor(modelID string) (Rate, string) {
 // display; underlying float is preserved if you need
 // more precision.
 func CostFor(modelID string, inputTokens, outputTokens int64) float64 {
+	return CostForProvider("", modelID, inputTokens, outputTokens)
+}
+
+// CostForProvider is CostFor with a known provider/endpoint, so a
+// per-proxy price override (SetProviderRates) is applied. provider
+// may be empty, in which case it behaves exactly like CostFor.
+func CostForProvider(provider, modelID string, inputTokens, outputTokens int64) float64 {
 	if inputTokens <= 0 && outputTokens <= 0 {
 		return 0
 	}
-	rate, _ := RateFor(modelID)
+	rate, _ := RateForProvider(provider, modelID)
 	in := float64(inputTokens) / 1000.0 * rate.InputPer1k
 	out := float64(outputTokens) / 1000.0 * rate.OutputPer1k
 	return roundUSD(in + out)

@@ -198,6 +198,60 @@ func TestGetFetchedRates_ReturnsCopy(t *testing.T) {
 	}
 }
 
+// Per-endpoint override wins over fetched and hardcoded rates.
+func TestRateForProvider_EndpointOverride(t *testing.T) {
+	defer SetProviderRates(nil)
+	defer SetFetchedRates(nil)
+
+	// Hardcoded gpt-4o = 2.50/10.00; fetched = 1.25/5.00.
+	SetFetchedRates(map[string]Rate{
+		"gpt-4o": {InputPer1k: 1.25, OutputPer1k: 5.00},
+	})
+	// Proxy "myproxy" prices gpt-4o cheaper still. Mixed-case key
+	// must still match a lowercased lookup.
+	SetProviderRates(map[string]Rate{
+		"MyProxy/gpt-4o": {InputPer1k: 0.50, OutputPer1k: 1.00},
+	})
+
+	r, key := RateForProvider("myproxy", "gpt-4o")
+	if r.InputPer1k != 0.50 || r.OutputPer1k != 1.00 {
+		t.Errorf("endpoint override not applied: %+v", r)
+	}
+	if key != "myproxy/gpt-4o (endpoint)" {
+		t.Errorf("key = %q, want 'myproxy/gpt-4o (endpoint)'", key)
+	}
+
+	// Cost uses the override.
+	if got := CostForProvider("myproxy", "gpt-4o", 1000, 1000); got != 1.50 {
+		t.Errorf("CostForProvider with override = %v, want 1.50", got)
+	}
+
+	// A different provider falls through to the fetched rate.
+	r, _ = RateForProvider("openai", "gpt-4o")
+	if r.InputPer1k != 1.25 {
+		t.Errorf("other provider should use fetched rate, got %v", r.InputPer1k)
+	}
+
+	// No provider behaves like plain RateFor (fetched rate).
+	r, _ = RateFor("gpt-4o")
+	if r.InputPer1k != 1.25 {
+		t.Errorf("RateFor should still use fetched rate, got %v", r.InputPer1k)
+	}
+}
+
+// Provider override for an unconfigured model falls through cleanly.
+func TestRateForProvider_NoOverrideFallsThrough(t *testing.T) {
+	defer SetProviderRates(nil)
+	SetProviderRates(map[string]Rate{
+		"myproxy/gpt-4o": {InputPer1k: 0.50, OutputPer1k: 1.00},
+	})
+	// Same proxy, different model -> hardcoded gpt-4o-mini rate.
+	r, key := RateForProvider("myproxy", "gpt-4o-mini")
+	if r.InputPer1k != 0.15 || key != "gpt-4o-mini" {
+		t.Errorf("expected hardcoded gpt-4o-mini, got %+v key=%q", r, key)
+	}
+}
+
 // F28: GetFetchedRates returns nil when no fetched rates.
 func TestGetFetchedRates_NilWhenEmpty(t *testing.T) {
 	defer SetFetchedRates(nil) // cleanup
