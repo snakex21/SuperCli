@@ -18,20 +18,34 @@ const refreshInterval = 28 * 24 * time.Hour
 // Manager loads, refreshes, and persists auth.json. It is safe
 // for concurrent use and implements llm.CodexTokenSource.
 type Manager struct {
-	mu   sync.Mutex
-	path string
-	opts Options
-	http *http.Client
+	mu    sync.Mutex
+	path  string
+	label string
+	opts  Options
+	http  *http.Client
 }
 
-// NewManager builds a Manager for <dataDir>/auth.json.
+// NewManager builds a Manager for the default account
+// (<dataDir>/auth.json). Unchanged behaviour for single-account.
 func NewManager(dataDir string, opts Options) *Manager {
+	return NewManagerFor(dataDir, DefaultAccount, opts)
+}
+
+// NewManagerFor builds a Manager for a named account. The default
+// label uses the classic auth.json; any other label uses
+// <dataDir>/auth-<label>.json. Each account gets an independent
+// Manager with its own load/refresh/save against its own file.
+func NewManagerFor(dataDir, label string, opts Options) *Manager {
 	return &Manager{
-		path: AuthFilePath(dataDir),
-		opts: opts.WithDefaults(),
-		http: &http.Client{Timeout: 30 * time.Second},
+		path:  AuthFilePathFor(dataDir, label),
+		label: sanitizeLabel(label),
+		opts:  opts.WithDefaults(),
+		http:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
+
+// Label returns the account label this Manager serves.
+func (m *Manager) Label() string { return m.label }
 
 // SetHTTPClient overrides the HTTP client (tests).
 func (m *Manager) SetHTTPClient(c *http.Client) { m.http = c }
