@@ -686,27 +686,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modelSwapRequestMsg:
-		// F26.5: Perform the actual provider swap.
-		if m.modelSwapFn != nil && m.modelSwapper != nil {
-			newProv, err := m.modelSwapFn(msg.ModelID, msg.Provider)
-			if err != nil {
-				m.appendLine(m.marker.Error(fmt.Errorf("model swap failed: %w", err)))
-			} else {
-				m.modelSwapper.SetModel(newProv)
-				m.llm = newProv // update header display
-				m.appendLine(m.marker.ModelInfo(fmt.Sprintf("swapped to %s", newProv.Name())))
-				// Persist active model + provider for next startup.
-				if m.providerMgr != nil {
-					_ = m.providerMgr.SaveActiveConfig(msg.ModelID, msg.Provider)
-				}
-			}
-		} else {
-			m.appendLine(m.marker.ModelInfo(fmt.Sprintf("requested swap to %s", msg.ModelID)))
-		}
+		// F26.5: Perform the actual provider swap. Kept for the
+		// /model <name> path (which dispatches this message) and for
+		// back-compat; the interactive picker now calls applyModelSwap
+		// directly at confirm so apply+save+refresh happen synchronously
+		// the instant the user presses Enter (see menuEnter).
+		m.applyModelSwap(msg.ModelID, msg.Provider)
 		m.refreshTranscript()
 		return m, nil
 	}
 	return m, nil
+}
+
+// applyModelSwap performs the model swap and ALL of its side effects
+// synchronously and immediately: it rebuilds the provider (via the
+// injected modelSwapFn, which also kicks the async Codex usage
+// refresh), installs it on the agent loop, updates the header, and
+// persists the selection to config.toml so the choice survives even if
+// the user closes the CLI right away without sending a message.
+//
+// It is a no-op-with-notice when swapping is not wired. Callers must
+// invoke it only on an actual confirmation — never on picker cancel
+// (Esc) — so cancelling never rebuilds the provider or writes config.
+func (m *Model) applyModelSwap(modelID, provider string) {
+	if m.modelSwapFn == nil || m.modelSwapper == nil {
+		m.appendLine(m.marker.ModelInfo(fmt.Sprintf("requested swap to %s", modelID)))
+		return
+	}
+	// modelSwapFn rebuilds the provider AND (for Codex providers)
+	// fires kickCodexUsageRefresh in the background, so the HUD
+	// limit tile refreshes on its own right after the swap — no
+	// message send required.
+	newProv, err := m.modelSwapFn(modelID, provider)
+	if err != nil {
+		m.appendLine(m.marker.Error(fmt.Errorf("model swap failed: %w", err)))
+		return
+	}
+	m.modelSwapper.SetModel(newProv)
+	m.llm = newProv // update header display
+	m.appendLine(m.marker.ModelInfo(fmt.Sprintf("swapped to %s", newProv.Name())))
+	// Persist active model + provider for next startup. Done here
+	// (at confirm time) rather than lazily at the next send, so
+	// closing the CLI immediately after picking keeps the choice.
+	if m.providerMgr != nil {
+		_ = m.providerMgr.SaveActiveConfig(modelID, provider)
+	}
 }
 
 // handleCtrlC implements the F25 cancel behavior:
