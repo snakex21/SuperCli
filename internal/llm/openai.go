@@ -201,6 +201,19 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			if chunk.Usage != nil {
 				lastUsage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens}
+				// Servers that honour stream_options.include_usage
+				// (LM Studio, vLLM, OpenAI) send the usage in a FINAL
+				// chunk whose choices array is EMPTY. The per-choice
+				// emit below would miss it, so surface it here as a
+				// standalone usage delta. Without this, streamed runs
+				// always report 0 tokens.
+				if len(chunk.Choices) == 0 {
+					select {
+					case out <- Delta{Usage: lastUsage}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
 			}
 			for _, choice := range chunk.Choices {
 				if choice.Delta.Role != "" {
@@ -320,11 +333,23 @@ type openaiRequest struct {
 	Model    string           `json:"model"`
 	Messages []openaiReqMsg   `json:"messages"`
 	Stream   bool             `json:"stream"`
-	Tools    []openaiToolDecl `json:"tools,omitempty"`
+	// StreamOptions asks the server to emit a final usage chunk in
+	// streaming mode. Required by the OpenAI spec (and LM Studio,
+	// vLLM, etc.) to get prompt/completion token counts back when
+	// stream=true — without it usage is silently empty. Pointer +
+	// omitempty so it is dropped entirely for non-streaming calls,
+	// which some endpoints reject if the field is present.
+	StreamOptions *openaiStreamOptions `json:"stream_options,omitempty"`
+	Tools         []openaiToolDecl     `json:"tools,omitempty"`
 	// ReasoningEffort is only set for models known to support
 	// it (see SupportsReasoningEffort); other models never see
 	// the field, so non-OpenAI endpoints cannot reject it.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// openaiStreamOptions carries the include_usage flag.
+type openaiStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type openaiReqMsg struct {
@@ -364,7 +389,11 @@ type openaiToolFunction struct {
 }
 
 func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
-	req := openaiRequest{Model: model, Stream: true}
+	req := openaiRequest{
+		Model:         model,
+		Stream:        true,
+		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
+	}
 	if e := ReasoningEffort(); e != "" && SupportsReasoningEffort(model) {
 		req.ReasoningEffort = e
 	}

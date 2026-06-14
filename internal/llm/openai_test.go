@@ -471,6 +471,54 @@ func TestOpenAI_StreamUsage(t *testing.T) {
 	}
 }
 
+// TestOpenAI_StreamUsageInSeparateEmptyChoicesChunk covers the
+// real shape LM Studio / vLLM / OpenAI emit when
+// stream_options.include_usage is set: the usage arrives in a
+// FINAL chunk whose choices array is EMPTY. A regression here
+// makes every streamed run report 0 tokens.
+func TestOpenAI_StreamUsageInSeparateEmptyChoicesChunk(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		// Separate trailing usage-only chunk, no choices.
+		`{"choices":[],"usage":{"prompt_tokens":409,"completion_tokens":61,"total_tokens":470}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o-mini"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage from the empty-choices trailing chunk")
+	}
+	if usage.Input != 409 || usage.Output != 61 || usage.Total != 470 {
+		t.Fatalf("usage = %+v, want 409/61/470", usage)
+	}
+}
+
+// TestOpenAI_RequestIncludesStreamOptions verifies the request
+// asks for usage in streaming mode; without it servers stay silent.
+func TestOpenAI_RequestIncludesStreamOptions(t *testing.T) {
+	body, err := buildOpenAIRequest("gpt-4o-mini", []Message{{Role: RoleUser, Content: "hi"}}, nil, false)
+	if err != nil {
+		t.Fatalf("buildOpenAIRequest: %v", err)
+	}
+	if !strings.Contains(string(body), `"stream_options"`) {
+		t.Errorf("request missing stream_options: %s", body)
+	}
+	if !strings.Contains(string(body), `"include_usage":true`) {
+		t.Errorf("request missing include_usage: %s", body)
+	}
+}
+
 func TestOpenAI_StreamMultimodalRequest(t *testing.T) {
 	srv, captured := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		sseResponse(w,

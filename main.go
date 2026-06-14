@@ -1847,6 +1847,12 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		switch e := ev.(type) {
 		case agent.MessageEvent:
 			fmt.Println(e.Text)
+		case agent.DoneEvent:
+			// Real provider-reported token usage for this run
+			// (exact, not an estimate). Printed to stderr so it
+			// never pollutes the assistant output on stdout.
+			fmt.Fprintf(os.Stderr, "[tokens] in=%d out=%d total=%d\n",
+				e.Usage.Input, e.Usage.Output, e.Usage.Total)
 		case agent.ErrorEvent:
 			fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
 			os.Exit(1)
