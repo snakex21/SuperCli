@@ -222,6 +222,110 @@ func TestToolSearcher_Execute_LimitClamped(t *testing.T) {
 	}
 }
 
+// TestToolSearcher_Execute_LexicalFallback verifies that a
+// reasonable multi-word phrase the FTS index misses (implicit
+// AND) still surfaces the right tool via lexical fallback, and
+// that the result carries a non-empty signature so the model can
+// call it immediately.
+func TestToolSearcher_Execute_LexicalFallback(t *testing.T) {
+	reg := NewRegistry()
+	reg.MustRegister(Tool{
+		Name:        "list_dir",
+		Description: "List the entries of a directory. Leave path empty to list the current working directory.",
+		Schema:      `{"type":"object","properties":{"path":{"type":"string"}}}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	reg.MustRegister(Tool{
+		Name:        "read_lines",
+		Description: "Read a range of lines from a text file on disk.",
+		Schema:      `{"type":"object","properties":{"path":{"type":"string"},"start":{"type":"integer"}},"required":["path"]}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	idx, _ := NewInMemoryIndex()
+	defer idx.Close()
+	ts := NewToolSearcher(reg, idx)
+	_ = ts.RebuildIndex()
+
+	// This phrase trips FTS5 implicit-AND (no single tool's text
+	// has every word) but lexical overlap should still find
+	// list_dir via "list" + "directory".
+	res, err := ts.execute(context.Background(), json.RawMessage(`{"query":"list files in a directory folder"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resErr=%v", err, res.Err)
+	}
+	var resp struct {
+		Matches []struct {
+			Name      string `json:"name"`
+			Signature string `json:"signature"`
+			Schema    string `json:"schema"`
+		} `json:"matches"`
+		Hint string `json:"hint"`
+	}
+	if err := json.Unmarshal([]byte(res.Text), &resp); err != nil {
+		t.Fatalf("unmarshal: %v\ntext=%s", err, res.Text)
+	}
+	var found bool
+	for _, m := range resp.Matches {
+		if m.Name == "list_dir" {
+			found = true
+			if m.Signature == "" {
+				t.Errorf("list_dir match has empty signature")
+			}
+			if m.Schema == "" {
+				t.Errorf("list_dir match has empty schema")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("list_dir not found via lexical fallback; matches=%+v", resp.Matches)
+	}
+	if !reg.IsVisible("list_dir") {
+		t.Errorf("list_dir not activated after fallback match")
+	}
+	if !strings.Contains(resp.Hint, "callable") {
+		t.Errorf("hint should confirm callable tools, got %q", resp.Hint)
+	}
+}
+
+// TestToolSearcher_Execute_NoMatchHonestHint verifies that a
+// query matching nothing returns an empty match list AND an
+// honest hint that does NOT claim a tool can now be called.
+func TestToolSearcher_Execute_NoMatchHonestHint(t *testing.T) {
+	reg := NewRegistry()
+	reg.MustRegister(Tool{
+		Name:        "list_dir",
+		Description: "List the entries of a directory.",
+		Schema:      `{"type":"object"}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	idx, _ := NewInMemoryIndex()
+	defer idx.Close()
+	ts := NewToolSearcher(reg, idx)
+	_ = ts.RebuildIndex()
+
+	res, err := ts.execute(context.Background(), json.RawMessage(`{"query":"zzqqxx nonexistent gibberish"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resErr=%v", err, res.Err)
+	}
+	var resp struct {
+		Matches []json.RawMessage `json:"matches"`
+		Hint    string            `json:"hint"`
+	}
+	if err := json.Unmarshal([]byte(res.Text), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Matches) != 0 {
+		t.Errorf("expected no matches, got %d", len(resp.Matches))
+	}
+	if strings.Contains(strings.ToLower(resp.Hint), "now call") ||
+		strings.Contains(strings.ToLower(resp.Hint), "schema above") {
+		t.Errorf("no-match hint must not claim a callable schema, got %q", resp.Hint)
+	}
+	if !strings.Contains(strings.ToLower(resp.Hint), "no tool matched") {
+		t.Errorf("no-match hint should plainly say no tool matched, got %q", resp.Hint)
+	}
+}
+
 func TestToolSearcher_Server(t *testing.T) {
 	cases := []struct {
 		name, want string
