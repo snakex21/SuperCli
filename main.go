@@ -440,6 +440,11 @@ func main() {
 	if err != nil {
 		fatal("init provider", err)
 	}
+	// If we started on a Codex model, refresh the usage snapshot in the
+	// background so the HUD `limit:` tile shows current numbers right
+	// away (not just the last on-disk snapshot). Async + silent — never
+	// blocks startup.
+	kickCodexUsageRefresh(provider)
 
 	// Model tier (internal/tier): config glob overrides >
 	// price > parsed parameter count / marker words > small.
@@ -1110,6 +1115,35 @@ func main() {
 		return out, nil
 	}
 
+	// /usage — force a fresh fetch of the ChatGPT-subscription usage
+	// limits (5h rolling + weekly window) from the dedicated usage
+	// endpoint and print them. This is NOT a completion: it hits the
+	// usage endpoint directly and does not consume the quota. When the
+	// active provider is not Codex (or has no auth) it prints a clear
+	// message instead of an error.
+	mergedCommands["usage"] = func(ctx context.Context, args string) (string, error) {
+		f, ok := loop.Provider().(codexUsageFetcher)
+		if !ok {
+			return "the active model is not a ChatGPT-subscription (Codex) model — usage limits are only available there.\nRun /login and /model gpt-5.5 to switch.", nil
+		}
+		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		rl, err := f.FetchUsage(fctx)
+		if err != nil {
+			// Fall back to whatever snapshot is already known (from disk
+			// or the last response) so the command is still useful offline.
+			if rp, ok := loop.Provider().(interface {
+				RateLimits() (llm.CodexRateLimits, bool)
+			}); ok {
+				if cached, ok := rp.RateLimits(); ok {
+					return "could not refresh (showing last known):\n" + cached.FormatDetail(), nil
+				}
+			}
+			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
+		}
+		return "Codex usage (just refreshed):\n" + rl.FormatDetail(), nil
+	}
+
 	// Wave 2 B6: /memory — inspect persistent memory. No args:
 	// overview (recent entries, DB sizes, embedding status).
 	// `/memory search <q>` runs a hybrid search over both stores;
@@ -1590,7 +1624,14 @@ func main() {
 					}
 				}
 			}
-			return buildProvider(swapCfg, dataDir, caps)
+			np, err := buildProvider(swapCfg, dataDir, caps)
+			if err == nil {
+				// Just switched models — if the new provider is Codex,
+				// refresh its usage snapshot in the background so the HUD
+				// reflects the newly selected model's limits promptly.
+				kickCodexUsageRefresh(np)
+			}
+			return np, err
 		},
 		SessionStore:       sessStore,
 		StatsRecorder:      draftStats,
@@ -1783,6 +1824,38 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// codexUsageFetcher is satisfied by *llm.CodexProvider. It lets the
+// startup / model-swap hooks refresh the Codex rate-limit snapshot
+// without importing the concrete type or caring whether the active
+// provider is actually Codex.
+type codexUsageFetcher interface {
+	FetchUsage(ctx context.Context) (llm.CodexRateLimits, error)
+}
+
+// kickCodexUsageRefresh refreshes the Codex usage snapshot in the
+// background when prov is a Codex provider. It is fire-and-forget and
+// deliberately silent: a failure (offline, 401, non-Codex provider)
+// leaves the last on-disk snapshot in place and never blocks the
+// caller or surfaces an error to the user. The HUD reads the snapshot
+// pull-style, so a successful refresh shows up on the next render.
+//
+// This is NOT a completion — it hits the dedicated usage endpoint and
+// does not consume the quota the way /responses does.
+func kickCodexUsageRefresh(prov llm.Provider) {
+	f, ok := prov.(codexUsageFetcher)
+	if !ok {
+		return
+	}
+	go func() {
+		defer func() { _ = recover() }()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if _, err := f.FetchUsage(ctx); err != nil {
+			log.Printf("codex usage refresh: %v", err)
+		}
+	}()
+}
 
 // tierRulesFromToml converts config.toml [[model_tiers]]
 // entries into tier.Rule values.

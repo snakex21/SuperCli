@@ -76,7 +76,7 @@ func commandCategory(name string) string {
 	switch name {
 	case "help", "status", "cost", "doctor", "sandbox", "context", "mcp":
 		return "system"
-	case "model", "providers", "reasoning":
+	case "model", "providers", "reasoning", "usage":
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact", "workers":
 		return "agent"
@@ -114,6 +114,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
 		{Name: "export", Desc: "export session to Markdown file", Args: "[filename.md]"},
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
+		{Name: "usage", Desc: "refresh and show ChatGPT-subscription usage limits (Codex)"},
 		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
 		{Name: "doctor", Desc: "diagnose SuperCli runtime and configuration"},
 		{Name: "login", Desc: "sign in to OpenAI with your ChatGPT account"},
