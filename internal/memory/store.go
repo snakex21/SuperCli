@@ -281,7 +281,7 @@ func (s *Store) RecentBudgeted(scope string, tokenCap int) (string, error) {
 	if tokenCap <= 0 {
 		return "", nil
 	}
-	entries, err := s.Recent(scope, 50)
+	entries, err := s.recentByCreated(scope, 50)
 	if err != nil {
 		return "", err
 	}
@@ -302,6 +302,27 @@ func (s *Store) RecentBudgeted(scope string, tokenCap int) (string, error) {
 		tokens += t
 	}
 	return b.String(), nil
+}
+
+// recentByCreated returns the newest entries in scope ordered by
+// CREATION time (created_at DESC, id as a stable tie-break). Unlike
+// List/Recent — which order by updated_at first — this is immune to
+// the millisecond race where three quick Puts get slightly different
+// updated_at values and reorder unpredictably. RecentBudgeted needs
+// "newest authored", and a deterministic order, so it uses this.
+func (s *Store) recentByCreated(scope string, limit int) ([]Entry, error) {
+	var rows *sql.Rows
+	var err error
+	if scope == "" {
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY created_at DESC, id`)
+	} else {
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY created_at DESC, id`, scope)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanAll(rows, limit)
 }
 
 // ByTag returns up to k entries that include the given tag.
