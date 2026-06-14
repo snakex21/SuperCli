@@ -86,14 +86,26 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	if err != nil {
 		return Result{Err: fmt.Errorf("tool_search: index: %w", err)}, nil
 	}
+	// FTS5 uses an implicit AND across query tokens, so a
+	// reasonable phrase like "list files in directory" can
+	// return nothing if no single tool's text contains every
+	// word. When the index comes up empty (or is unavailable),
+	// fall back to a lexical token-overlap match so a sane query
+	// still surfaces the relevant tool(s).
+	if len(hits) == 0 {
+		hits = s.lexicalFallback(a.Query, limit)
+	}
 	// Build the response: array of {name, server, score,
-	// schema}. Activate each match in the registry so the
-	// model can call it in the same turn.
+	// signature, schema}. Activate each match in the registry so
+	// the model can call it in the same turn. The signature is a
+	// compact one-line call form (cheap for small models); the
+	// schema is the exact JSON contract.
 	type match struct {
-		Name   string  `json:"name"`
-		Server string  `json:"server"`
-		Score  float64 `json:"score"`
-		Schema string  `json:"schema"`
+		Name      string  `json:"name"`
+		Server    string  `json:"server"`
+		Score     float64 `json:"score"`
+		Signature string  `json:"signature"`
+		Schema    string  `json:"schema"`
 	}
 	resp := struct {
 		Query   string  `json:"query"`
@@ -101,7 +113,6 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		Hint    string  `json:"hint"`
 	}{
 		Query: a.Query,
-		Hint:  "You can now call any matched tool by name. The schema above shows the exact arguments.",
 	}
 	for _, h := range hits {
 		tool, ok := s.Registry.Get(h.Name)
@@ -110,17 +121,109 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		}
 		s.Registry.Activate(h.Name)
 		resp.Matches = append(resp.Matches, match{
-			Name:   h.Name,
-			Server: h.Server,
-			Score:  h.Score,
-			Schema: tool.Schema,
+			Name:      h.Name,
+			Server:    h.Server,
+			Score:     h.Score,
+			Signature: toolSignature(tool.Name, tool.Schema),
+			Schema:    tool.Schema,
 		})
+	}
+	// Truthful hint: only promise a callable schema when we
+	// actually returned one. On no match, say so plainly and
+	// point the model at the catalog instead of implying it can
+	// now call something.
+	if len(resp.Matches) > 0 {
+		resp.Hint = "These tools are now callable by name. Each match includes its signature and full JSON schema (the exact arguments)."
+	} else {
+		resp.Hint = "No tool matched this query. Try different keywords, or use the tools already listed in the catalog."
 	}
 	out, err := json.Marshal(resp)
 	if err != nil {
 		return Result{Err: fmt.Errorf("tool_search: marshal: %w", err)}, nil
 	}
 	return Result{Text: string(out)}, nil
+}
+
+// lexicalFallback ranks registered tools by simple token
+// overlap between the query and each tool's name + description.
+// It is deliberately dumb and dependency-free so the peek works
+// even when the FTS index returns nothing (implicit-AND misses)
+// or is otherwise unavailable. Returns up to limit hits sorted
+// by descending overlap; tools with zero overlap are excluded.
+func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
+	if s.Registry == nil {
+		return nil
+	}
+	qTokens := lexTokens(query)
+	if len(qTokens) == 0 {
+		return nil
+	}
+	type scored struct {
+		name   string
+		server string
+		score  int
+	}
+	var ranked []scored
+	for _, name := range s.Registry.Names() {
+		t, ok := s.Registry.Get(name)
+		if !ok {
+			continue
+		}
+		haystack := make(map[string]struct{})
+		for _, w := range lexTokens(t.Name + " " + t.Description) {
+			haystack[w] = struct{}{}
+		}
+		overlap := 0
+		for _, q := range qTokens {
+			if _, ok := haystack[q]; ok {
+				overlap++
+			}
+		}
+		if overlap > 0 {
+			ranked = append(ranked, scored{name: name, server: classifyServer(name), score: overlap})
+		}
+	}
+	// Sort by descending overlap, then name for determinism.
+	for i := 1; i < len(ranked); i++ {
+		for j := i; j > 0 && (ranked[j].score > ranked[j-1].score ||
+			(ranked[j].score == ranked[j-1].score && ranked[j].name < ranked[j-1].name)); j-- {
+			ranked[j], ranked[j-1] = ranked[j-1], ranked[j]
+		}
+	}
+	if limit > 0 && len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	out := make([]SearchResult, 0, len(ranked))
+	for _, r := range ranked {
+		// Normalize overlap count to a 0..1 score so the shape
+		// matches FTS hits. Cap denominator at len(qTokens).
+		out = append(out, SearchResult{
+			Name:   r.name,
+			Server: r.server,
+			Score:  float64(r.score) / float64(len(qTokens)),
+		})
+	}
+	return out
+}
+
+// lexTokens lowercases s and splits it into word tokens of 3+
+// chars, dropping a few common stopwords that add no signal to
+// a tool query. Used only by the lexical fallback.
+func lexTokens(s string) []string {
+	var out []string
+	for _, f := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	}) {
+		if len(f) < 3 {
+			continue
+		}
+		switch f {
+		case "the", "and", "for", "with", "into", "from", "use", "all":
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // RebuildIndex re-indexes every tool in the registry. Call
