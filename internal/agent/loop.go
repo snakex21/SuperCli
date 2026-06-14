@@ -1195,6 +1195,23 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 				continue
 			}
 
+			// Sentinel tool call (thin protocol B3): detect «...»
+			// blocks. Same streaming contract as the XML fallback —
+			// checked after XML so the historical path is untouched.
+			stcs, sbefore := extractSentinelToolCalls(text)
+			if len(stcs) > 0 {
+				if sbefore != "" {
+					select {
+					case out <- MessageEvent{Text: sbefore}:
+					case <-ctx.Done():
+						return text, toolCalls, usage, ctx.Err()
+					}
+				}
+				toolCalls = append(toolCalls, stcs...)
+				text = sbefore
+				continue
+			}
+
 			select {
 			case out <- MessageEvent{Text: d.Content}:
 			case <-ctx.Done():
