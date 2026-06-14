@@ -478,6 +478,48 @@ func TestUpdate_PrintableCharGoesToInput(t *testing.T) {
 	}
 }
 
+// TestStatusRefreshMsg_RerendersFooter covers the Codex `limit:` HUD
+// bug: the footer status line is pull-based (statusFn is read inside
+// View), so a snapshot that arrives from a background goroutine does
+// not appear until something forces a re-render. A statusRefreshMsg
+// must trigger that re-render without mutating any model state and
+// without scheduling further work.
+func TestStatusRefreshMsg_RerendersFooter(t *testing.T) {
+	// limitVisible flips from false->true to simulate the async Codex
+	// usage snapshot landing after a model swap.
+	limitVisible := false
+	m := New(Options{
+		Home: "/x",
+		StatusFn: func() string {
+			if limitVisible {
+				return "limit: 5h 42% │ wk 10%"
+			}
+			return ""
+		},
+	})
+	out, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = out.(Model)
+
+	if strings.Contains(m.View(), "limit:") {
+		t.Fatal("limit tile should be absent before the snapshot arrives")
+	}
+
+	// Snapshot arrives in the background; nothing has redrawn yet.
+	limitVisible = true
+
+	out, cmd := m.Update(StatusRefreshMsgValue())
+	mm := out.(Model)
+	if cmd != nil {
+		t.Fatal("statusRefreshMsg must not schedule a follow-up command")
+	}
+	if mm.busy || mm.quitting {
+		t.Fatal("statusRefreshMsg must not mutate run state")
+	}
+	if !strings.Contains(mm.View(), "limit: 5h 42%") {
+		t.Fatalf("limit tile should appear after redraw, view=%q", mm.View())
+	}
+}
+
 func TestUpdate_WindowSizeResizesViewport(t *testing.T) {
 	m := New(Options{Home: "/x"})
 	out, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
