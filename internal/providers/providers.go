@@ -19,10 +19,18 @@ import (
 // Manager reads/writes the providers list from config.toml
 // and maintains in-memory model visibility state.
 type Manager struct {
-	mu        sync.RWMutex
-	home      string
-	tomlPath  string // full path to config.toml
-	providers []config.ProviderConf
+	mu       sync.RWMutex
+	home     string
+	tomlPath string // full path to the GLOBAL config.toml
+	// activePath is where the runtime model selection
+	// (default_model / default_provider) is persisted. It
+	// defaults to the global config, but main.go points it at
+	// the project config (<cwd>/.supercli/config.toml) when one
+	// is in effect — otherwise a /model swap saved to the global
+	// config would be silently shadowed at startup by a project
+	// config that resolution merges with higher priority.
+	activePath string
+	providers  []config.ProviderConf
 	// hidden tracks models whose visibility is toggled off.
 	// Key: model ID. Value: true = hidden.
 	hidden map[string]struct{}
@@ -33,10 +41,26 @@ type Manager struct {
 func NewManager(dataDir string) *Manager {
 	global, _ := config.FindTomlPaths(dataDir, ".")
 	return &Manager{
-		home:     dataDir,
-		tomlPath: global,
-		hidden:   make(map[string]struct{}),
+		home:       dataDir,
+		tomlPath:   global,
+		activePath: global,
+		hidden:     make(map[string]struct{}),
 	}
+}
+
+// SetActiveConfigPath sets the config.toml that the runtime model
+// selection (default_model / default_provider) is persisted to and
+// read from. main.go points this at the highest-priority config in
+// effect (the project config when present, otherwise the global
+// config) so a /model swap survives a restart. An empty path is
+// ignored, keeping the default (global) path.
+func (m *Manager) SetActiveConfigPath(path string) {
+	if path == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activePath = path
 }
 
 // ProviderInfo is the public view of a provider for display.
@@ -481,7 +505,29 @@ func (m *Manager) SaveActiveConfig(modelID, providerName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	tc, err := config.LoadToml(m.tomlPath)
+	// Persist the selection to the active (highest-priority) config
+	// so it wins at the next startup. When that differs from the
+	// global config (a project config is in effect), also mirror
+	// default_model/default_provider into the global config so both
+	// layers agree regardless of which one resolution ends up
+	// reading first. Without this mirror a project config would
+	// shadow the global save and the choice would be lost on restart.
+	if err := m.writeActiveConfig(m.activePath, modelID, providerName); err != nil {
+		return err
+	}
+	if m.activePath != m.tomlPath {
+		if err := m.writeActiveConfig(m.tomlPath, modelID, providerName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeActiveConfig sets default_model/default_provider (and keeps the
+// matching provider entry's model field in sync) in the config.toml at
+// path, preserving every other field. Must be called with m.mu held.
+func (m *Manager) writeActiveConfig(path, modelID, providerName string) error {
+	tc, err := config.LoadToml(path)
 	if err != nil {
 		tc = config.TomlConfig{}
 	}
@@ -497,7 +543,7 @@ func (m *Manager) SaveActiveConfig(modelID, providerName string) error {
 		}
 	}
 
-	return config.SaveToml(m.tomlPath, tc)
+	return config.SaveToml(path, tc)
 }
 
 // SaveCouncilModels persists the user's last /council
@@ -528,13 +574,14 @@ func (m *Manager) LoadCouncilModels() []string {
 	return tc.Council.Models
 }
 
-// LoadActiveModel reads the last selected model from config.toml.
+// LoadActiveModel reads the last selected model from the active
+// config.toml (the same layer SaveActiveConfig persists to).
 // Returns empty string if not set.
 func (m *Manager) LoadActiveModel() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	tc, err := config.LoadToml(m.tomlPath)
+	tc, err := config.LoadToml(m.activePath)
 	if err != nil {
 		return ""
 	}

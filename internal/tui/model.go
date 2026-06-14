@@ -474,6 +474,22 @@ func AskRequestMsgFrom(req tools.AskRequest) tea.Msg {
 	return askRequestMsg{req: req}
 }
 
+// statusRefreshMsg forces Bubble Tea to call View() again so the
+// footer status line (statusFn) re-renders. It carries no state:
+// the status line is pull-based, so a bare re-render is enough to
+// surface data that arrived from a background goroutine (e.g. the
+// Codex usage snapshot fetched asynchronously after a model swap).
+type statusRefreshMsg struct{}
+
+// StatusRefreshMsg is the public form of statusRefreshMsg, sent by
+// main.go via program.Send when a background update (such as the
+// Codex rate-limit fetch) should appear in the HUD without the user
+// pressing a key.
+type StatusRefreshMsg = statusRefreshMsg
+
+// StatusRefreshMsgValue constructs the redraw message for program.Send.
+func StatusRefreshMsgValue() tea.Msg { return statusRefreshMsg{} }
+
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -652,6 +668,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusOverrideClearMsg:
 		m.statusOverride = ""
+		return m, nil
+
+	case statusRefreshMsg:
+		// Background data (e.g. an async Codex usage snapshot)
+		// arrived. Returning triggers a View() re-render so the
+		// pull-based footer picks it up without a keystroke.
 		return m, nil
 
 	case streamFlushMsg:

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -210,6 +212,61 @@ func TestSaveActiveConfigPreservesProviders(t *testing.T) {
 	}
 	if tc.DefaultProvider != "p1" {
 		t.Fatalf("default_provider = %q, want %q", tc.DefaultProvider, "p1")
+	}
+}
+
+// TestSaveActiveConfig_ProjectPathSurvivesStartup is a regression
+// test for the "selected model not remembered between sessions" bug.
+// The Manager persists the runtime /model selection to the GLOBAL
+// config, but startup resolution merges a project config
+// (<cwd>/.supercli/config.toml) with HIGHER priority. Without
+// SetActiveConfigPath, the project config silently shadows the saved
+// selection and the model swap is forgotten on the next launch.
+func TestSaveActiveConfig_ProjectPathSurvivesStartup(t *testing.T) {
+	dataDir := t.TempDir()
+	cwd := t.TempDir()
+
+	// A project config pins a different model.
+	projDir := filepath.Join(cwd, ".supercli")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, "config.toml"),
+		[]byte("default_model = \"deepseek-v4-flash\"\ndefault_provider = \"deepseek\"\n"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(dataDir)
+	// main.go wiring: persist the active selection to the
+	// highest-priority config in effect (the project config).
+	if _, projectPath := config.FindTomlPaths(dataDir, cwd); projectPath != "" {
+		m.SetActiveConfigPath(projectPath)
+	}
+	if err := m.SaveActiveConfig("gpt-5.5", "codex"); err != nil {
+		t.Fatalf("SaveActiveConfig: %v", err)
+	}
+
+	// Startup resolution: global < project. The saved model must win.
+	tc, err := config.ResolveConfig(dataDir, cwd, "")
+	if err != nil {
+		t.Fatalf("ResolveConfig: %v", err)
+	}
+	if tc.DefaultModel != "gpt-5.5" {
+		t.Fatalf("after restart resolution default_model = %q, want gpt-5.5", tc.DefaultModel)
+	}
+	if tc.DefaultProvider != "codex" {
+		t.Fatalf("after restart resolution default_provider = %q, want codex", tc.DefaultProvider)
+	}
+
+	// The global config must also reflect the choice (mirror), so a
+	// later launch without the project config still remembers it.
+	gtc, err := config.LoadToml(filepath.Join(dataDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("LoadToml global: %v", err)
+	}
+	if gtc.DefaultModel != "gpt-5.5" {
+		t.Fatalf("global default_model = %q, want gpt-5.5 (mirror)", gtc.DefaultModel)
 	}
 }
 

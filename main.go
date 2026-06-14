@@ -443,8 +443,10 @@ func main() {
 	// If we started on a Codex model, refresh the usage snapshot in the
 	// background so the HUD `limit:` tile shows current numbers right
 	// away (not just the last on-disk snapshot). Async + silent — never
-	// blocks startup.
-	kickCodexUsageRefresh(provider)
+	// blocks startup. No redraw notifier here: the TUI program does not
+	// exist yet, and the on-disk snapshot already renders on the first
+	// frame; the swap path below wires the redraw that the bug needs.
+	kickCodexUsageRefresh(provider, nil)
 
 	// Model tier (internal/tier): config glob overrides >
 	// price > parsed parameter count / marker words > small.
@@ -1162,6 +1164,19 @@ func main() {
 	// (Created before /login so it can register the codex
 	// provider entry.)
 	provMgr := providers.NewManager(dataDir)
+	// Persist the runtime /model selection to the highest-priority
+	// config that startup resolution actually reads. When a project
+	// config (<cwd>/.supercli/config.toml) is in effect it overrides
+	// the global config at startup, so saving the selection only to
+	// the global config would let the project config silently shadow
+	// it — the model swap would be forgotten on the next launch.
+	if gp, pp := config.FindTomlPaths(dataDir, cwd); pp != "" {
+		if _, statErr := os.Stat(pp); statErr == nil {
+			provMgr.SetActiveConfigPath(pp)
+		} else {
+			provMgr.SetActiveConfigPath(gp)
+		}
+	}
 	provMgr.Reload()
 	provMgr.LoadHiddenState()
 
@@ -1583,6 +1598,20 @@ func main() {
 		memAutoSaver.SummarizePendingRaw(ctx, providerSummarizer(p))
 	}()
 
+	// redrawStatus forces a TUI re-render so the pull-based footer
+	// (Codex `limit:` tile etc.) reflects data that arrived from a
+	// background goroutine. It is created here but only does anything
+	// once the bubbletea program exists (program is assigned below);
+	// the nil guard makes the pre-program startup refresh a no-op,
+	// which is fine because the on-disk snapshot already renders on
+	// the first frame.
+	var program *tea.Program
+	redrawStatus := func() {
+		if program != nil {
+			program.Send(tui.StatusRefreshMsgValue())
+		}
+	}
+
 	model := tui.New(tui.Options{
 		Home:         home,
 		DataDir:      dataDir,
@@ -1629,7 +1658,10 @@ func main() {
 				// Just switched models — if the new provider is Codex,
 				// refresh its usage snapshot in the background so the HUD
 				// reflects the newly selected model's limits promptly.
-				kickCodexUsageRefresh(np)
+				// redrawStatus forces the footer to re-render once the
+				// fetch lands, so the `limit:` tile appears on its own
+				// without the user pressing a key.
+				kickCodexUsageRefresh(np, redrawStatus)
 			}
 			return np, err
 		},
@@ -1646,7 +1678,7 @@ func main() {
 	// the log for what got added to the hot path.
 	log.Printf("startup: TUI ready in %s", time.Since(startupT).Round(time.Millisecond))
 
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	program = tea.NewProgram(model, tea.WithAltScreen())
 
 	pumpDone := make(chan struct{})
 	go func() {
@@ -1842,7 +1874,12 @@ type codexUsageFetcher interface {
 //
 // This is NOT a completion — it hits the dedicated usage endpoint and
 // does not consume the quota the way /responses does.
-func kickCodexUsageRefresh(prov llm.Provider) {
+//
+// notify, when non-nil, is invoked after a SUCCESSFUL fetch so the
+// caller can force a TUI redraw — the HUD `limit:` tile is pulled
+// from the snapshot at render time, so without a redraw a swap onto a
+// Codex model would not show fresh limits until the next keystroke.
+func kickCodexUsageRefresh(prov llm.Provider, notify func()) {
 	f, ok := prov.(codexUsageFetcher)
 	if !ok {
 		return
@@ -1853,6 +1890,10 @@ func kickCodexUsageRefresh(prov llm.Provider) {
 		defer cancel()
 		if _, err := f.FetchUsage(ctx); err != nil {
 			log.Printf("codex usage refresh: %v", err)
+			return
+		}
+		if notify != nil {
+			notify()
 		}
 	}()
 }
