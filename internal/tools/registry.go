@@ -220,6 +220,24 @@ func (r *Registry) VisibleNames() []string {
 	return out
 }
 
+// ActiveNames returns the names of tools that were explicitly
+// activated (via Activate / tool_search), in insertion order.
+// Unlike VisibleNames it EXCLUDES always-on tools — it answers
+// "what did the model pull in on demand?", which the thin tool
+// protocol needs to distinguish an activated tail tool (gets a
+// full schema) from a dormant one (advertised in the catalog).
+func (r *Registry) ActiveNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.visible))
+	for _, n := range r.order {
+		if _, ok := r.visible[n]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // IsVisible reports whether a tool is currently visible.
 func (r *Registry) IsVisible(name string) bool {
 	r.mu.RLock()

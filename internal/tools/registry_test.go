@@ -147,3 +147,45 @@ func TestRegistry_Execute_Unknown(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnknownTool", err)
 	}
 }
+
+func TestRegistry_ActiveNames_ExcludesAlwaysOn(t *testing.T) {
+	r := NewRegistry()
+	r.MustRegister(okTool("core"))
+	r.MustRegister(okTool("tail_a"))
+	r.MustRegister(okTool("tail_b"))
+	r.MarkAlwaysOn("core")
+
+	// Nothing activated yet: always-on must NOT appear.
+	if got := r.ActiveNames(); len(got) != 0 {
+		t.Fatalf("ActiveNames before activate = %v, want empty", got)
+	}
+
+	// Activating a tail tool (what tool_search does) must show it.
+	r.Activate("tail_b")
+	got := r.ActiveNames()
+	if len(got) != 1 || got[0] != "tail_b" {
+		t.Fatalf("ActiveNames = %v, want [tail_b]", got)
+	}
+	// always-on tool is visible but not "active".
+	if !r.IsVisible("core") {
+		t.Error("core should be visible (always-on)")
+	}
+	for _, n := range got {
+		if n == "core" {
+			t.Error("ActiveNames leaked always-on tool 'core'")
+		}
+	}
+}
+
+func TestRegistry_ActiveNames_InsertionOrder(t *testing.T) {
+	r := NewRegistry()
+	for _, n := range []string{"a", "b", "c"} {
+		r.MustRegister(okTool(n))
+	}
+	r.Activate("c", "a")
+	got := r.ActiveNames()
+	// order follows registration (a before c), not activation order.
+	if len(got) != 2 || got[0] != "a" || got[1] != "c" {
+		t.Fatalf("ActiveNames = %v, want [a c] (insertion order)", got)
+	}
+}
