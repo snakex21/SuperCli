@@ -583,7 +583,7 @@ func main() {
 		registry.MarkAlwaysOn("goal")
 	} else if smallTier {
 		for _, name := range []string{
-			"read_lines", "read_context", "edit_line",
+			"read_lines", "read_context", "edit_line", "edit_lines",
 			"insert_after", "delete_lines",
 			"file_ops", "edit_docx", "edit_xlsx",
 			"goal", "tool_search",
@@ -1495,6 +1495,7 @@ func main() {
 	registry.MustRegister(tools.NewReadLines(home).Spec())
 	registry.MustRegister(tools.NewReadContext(home).Spec())
 	registry.MustRegister(tools.NewEditLine(home).Spec())
+	registry.MustRegister(tools.NewEditLines(home).Spec())
 	registry.MustRegister(tools.NewInsertAfter(home).Spec())
 	registry.MustRegister(tools.NewDeleteLines(home).Spec())
 
@@ -1830,6 +1831,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewReadLines(root).Spec())
 	reg.MustRegister(tools.NewReadContext(root).Spec())
 	reg.MustRegister(tools.NewEditLine(root).Spec())
+	reg.MustRegister(tools.NewEditLines(root).Spec())
 	reg.MustRegister(tools.NewInsertAfter(root).Spec())
 	reg.MustRegister(tools.NewDeleteLines(root).Spec())
 	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(root), root).Spec())
