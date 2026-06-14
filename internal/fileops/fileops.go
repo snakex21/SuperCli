@@ -11,6 +11,8 @@ package fileops
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -567,4 +569,86 @@ func Move(src, dst string) (finalDst string, err error) {
 		return "", fmt.Errorf("fileops.Move: %w", err)
 	}
 	return dst, nil
+}
+
+// Copy copies src to dst (file or folder; folders are copied
+// recursively, like `cp -r`). Same non-destructive contract as
+// Move: if dst is an existing folder, src is copied INTO it; it
+// NEVER overwrites an existing destination. Symlinks are skipped
+// so a link target cannot smuggle data outside the tree.
+//
+// Returns the final destination path used. Pure: the tool enforces
+// the sandbox on both src and dst.
+func Copy(src, dst string) (finalDst string, err error) {
+	if src == "" || dst == "" {
+		return "", fmt.Errorf("fileops.Copy: src and dst are required")
+	}
+	srcInfo, err := os.Lstat(src)
+	if err != nil {
+		return "", fmt.Errorf("fileops.Copy: source: %w", err)
+	}
+	if info, err := os.Lstat(dst); err == nil {
+		if info.IsDir() && dst != src {
+			dst = filepath.Join(dst, filepath.Base(src))
+		}
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return "", fmt.Errorf("fileops.Copy: destination %q already exists; refusing to overwrite", dst)
+	}
+	if srcInfo.IsDir() {
+		if err := copyTree(src, dst); err != nil {
+			return "", fmt.Errorf("fileops.Copy: %w", err)
+		}
+	} else {
+		if err := copyFileContents(src, dst); err != nil {
+			return "", fmt.Errorf("fileops.Copy: %w", err)
+		}
+	}
+	return dst, nil
+}
+
+// copyTree copies a directory tree from src to dst. dst must not
+// exist. Symlinks are skipped.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		return copyFileContents(p, target)
+	})
+}
+
+// copyFileContents copies a single file's bytes from src to dst,
+// creating dst's parent directory if needed.
+func copyFileContents(src, dst string) error {
+	if parent := filepath.Dir(dst); parent != "" {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return err
+		}
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
