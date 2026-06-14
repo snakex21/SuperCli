@@ -66,6 +66,46 @@ func TestParseAccountIDAndPlan(t *testing.T) {
 	}
 }
 
+func TestManagerAccount(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir, Options{})
+
+	// Not logged in -> LoggedIn false, no error.
+	info, err := mgr.Account()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.LoggedIn {
+		t.Fatal("Account() reported logged in with no auth.json")
+	}
+
+	// Write an auth.json whose JWT carries account id + plan.
+	jwt := fakeJWT(t, "acc-xyz")
+	af := &AuthFile{
+		Tokens: &TokenData{
+			IDToken:     jwt,
+			AccessToken: jwt,
+		},
+		LastRefresh: time.Now().UTC().Truncate(time.Second),
+	}
+	if err := Save(mgr.Path(), af); err != nil {
+		t.Fatal(err)
+	}
+	info, err = mgr.Account()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.LoggedIn {
+		t.Fatal("Account() should report logged in")
+	}
+	if info.AccountID != "acc-xyz" {
+		t.Fatalf("AccountID = %q, want acc-xyz", info.AccountID)
+	}
+	if info.PlanType != "plus" {
+		t.Fatalf("PlanType = %q, want plus", info.PlanType)
+	}
+}
+
 func TestAuthFileRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := AuthFilePath(dir)

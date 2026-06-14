@@ -1429,7 +1429,44 @@ func main() {
 		if err := codexAuthMgr.Logout(); err != nil {
 			return "", fmt.Errorf("logout: %w", err)
 		}
-		return "logged out — ChatGPT credentials removed from auth.json in the data dir", nil
+		// Drop the saved usage snapshot too, so the HUD does not keep
+		// showing the logged-out account's rate limits.
+		if err := llm.ClearCodexRateLimits(dataDir); err != nil {
+			log.Printf("logout: clear usage snapshot: %v", err)
+		}
+		return "logged out — ChatGPT credentials and saved usage limits removed from the data dir", nil
+	}
+
+	// /account — show the current ChatGPT-subscription login (account
+	// id + plan) without hitting the network. Read-only counterpart to
+	// /login and /logout.
+	mergedCommands["account"] = func(ctx context.Context, args string) (string, error) {
+		if codexAuthMgr == nil {
+			initCodexAuth(dataDir, tomlCfg)
+		}
+		info, err := codexAuthMgr.Account()
+		if err != nil {
+			return "", fmt.Errorf("account: %w", err)
+		}
+		if !info.LoggedIn {
+			return "not logged in — run /login to sign in with ChatGPT.", nil
+		}
+		plan := info.PlanType
+		if plan == "" {
+			plan = "unknown"
+		}
+		acct := info.AccountID
+		if acct == "" {
+			acct = "(unknown)"
+		}
+		var b strings.Builder
+		b.WriteString("ChatGPT account\n")
+		b.WriteString(fmt.Sprintf("  plan:    %s\n", plan))
+		b.WriteString(fmt.Sprintf("  account: %s", acct))
+		if !info.LastRefresh.IsZero() {
+			b.WriteString(fmt.Sprintf("\n  refreshed: %s", info.LastRefresh.Format("2006-01-02 15:04")))
+		}
+		return b.String(), nil
 	}
 
 	// F25a: /sandbox — show sandbox status.
