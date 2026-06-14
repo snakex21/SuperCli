@@ -890,6 +890,7 @@ func main() {
 		// JSON tool calling with full schemas. Mirrors the same
 		// smallTier gate that already trims their always-on set.
 		ThinTools: smallTier,
+		BaseDir:   home,
 	})
 	if err != nil {
 		fatal("init agent", err)
@@ -1805,11 +1806,32 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 
 	// Build the agent loop.
 	reg := tools.NewRegistry()
+	// Register the thin file tools so batch mode can actually
+	// exercise them (CI / live tool tests). tool_search makes the
+	// rest reachable; these are the create/edit/move/copy/trash
+	// family plus reads, all rooted at home and always-on.
+	for _, sp := range []tools.Tool{
+		tools.NewReadLines(home).Spec(),
+		tools.NewReadContext(home).Spec(),
+		tools.NewListDir(home).Spec(),
+		tools.NewEditLine(home).Spec(),
+		tools.NewInsertAfter(home).Spec(),
+		tools.NewDeleteLines(home).Spec(),
+		tools.NewWriteFile(home).Spec(),
+		tools.NewMakeDir(home).Spec(),
+		tools.NewMove(home).Spec(),
+		tools.NewCopy(home).Spec(),
+		tools.NewTrash(home).Spec(),
+	} {
+		reg.MustRegister(sp)
+		reg.MarkAlwaysOn(sp.Name)
+	}
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider: p,
 		Registry: reg,
 		Caps:     caps,
 		MaxSteps: 25,
+		BaseDir:  home,
 	})
 	if err != nil {
 		fatal("agent loop", err)
