@@ -62,3 +62,91 @@ func TestContextReport_Breakdown(t *testing.T) {
 		}
 	}
 }
+
+// thinReportLoop is like thinLoop but registers tools with
+// realistically-sized JSON schemas (the long tail is where thin mode
+// pays off — see the production /context measurement). The dormant
+// tail carries large schemas the thin protocol drops in favour of a
+// one-line catalog entry each.
+func thinReportLoop(t *testing.T) *Loop {
+	t.Helper()
+	reg := tools.NewRegistry()
+	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+		return tools.Result{Text: "x"}, nil
+	}
+	// A schema roughly the size of a real multi-arg tool (~400 chars).
+	bigSchema := `{"type":"object","properties":{` +
+		`"path":{"type":"string","description":"absolute path to the target file"},` +
+		`"query":{"type":"string","description":"natural-language search query for the operation"},` +
+		`"limit":{"type":"integer","description":"maximum number of results to return"}},` +
+		`"required":["path"]}`
+	for _, name := range []string{"tool_search", "edit_line", "read_context", "read_lines", "ctx_execute", "recall", "darwin", "web_search", "read_pdf"} {
+		reg.MustRegister(tools.Tool{
+			Name:        name,
+			Description: "performs " + name + " operations on behalf of the user; see schema for arguments",
+			Schema:      bigSchema,
+			Fn:          noop,
+		})
+		reg.MarkAlwaysOn(name)
+	}
+	l, err := NewLoop(LoopConfig{
+		Provider:  &stubProvider{name: "stub"},
+		Registry:  reg,
+		System:    "base",
+		ThinTools: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	l.route = RouteCoordinator
+	return l
+}
+
+// TestContextReport_ThinMode_AccountsCatalogNotSchemas: under the
+// thin tool protocol /context must charge only the schema-carrying
+// core tools plus the compact catalog — NOT the full schema of every
+// visible tool. Otherwise the report hides the very saving thin mode
+// buys. This compares the same registry in thin vs JSON mode.
+func TestContextReport_ThinMode_AccountsCatalogNotSchemas(t *testing.T) {
+	// Use realistically-sized schemas: the thin protocol trades a
+	// fixed per-turn preamble (the sentinel call-format instruction)
+	// for dropped schemas, so it only nets a saving once the dropped
+	// tail schemas outweigh that fixed cost — which is the real-world
+	// case (production schemas are hundreds of chars each).
+	thin := thinReportLoop(t)
+	rThin := thin.ContextReport()
+
+	if !rThin.Thin {
+		t.Fatal("report.Thin should be true under ThinTools on coordinator route")
+	}
+	if rThin.CatalogTokens == 0 {
+		t.Error("CatalogTokens should be > 0 (dormant tail advertised in catalog)")
+	}
+	// Only the core carries a full schema; the tail does not.
+	if rThin.ToolCount != len(thinCoreTools) {
+		t.Errorf("thin ToolCount = %d, want %d (core only)", rThin.ToolCount, len(thinCoreTools))
+	}
+
+	// JSON baseline: same registry, thin off => every visible tool's
+	// full schema is counted and there is no catalog.
+	json := thinReportLoop(t)
+	json.thinTools = false
+	rJSON := json.ContextReport()
+	if rJSON.Thin {
+		t.Error("report.Thin should be false when ThinTools is off")
+	}
+	if rJSON.CatalogTokens != 0 {
+		t.Errorf("JSON mode CatalogTokens = %d, want 0", rJSON.CatalogTokens)
+	}
+
+	thinTotal := rThin.ToolSchemaTokens + rThin.CatalogTokens
+	jsonTotal := rJSON.ToolSchemaTokens
+	if thinTotal >= jsonTotal {
+		t.Errorf("thin tool cost (%d) must be < JSON tool cost (%d)", thinTotal, jsonTotal)
+	}
+
+	out := FormatContextReport(rThin)
+	if !strings.Contains(out, "tool catalog (thin)") {
+		t.Errorf("thin report must show the catalog line:\n%s", out)
+	}
+}

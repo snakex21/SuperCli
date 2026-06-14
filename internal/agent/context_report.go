@@ -31,9 +31,17 @@ type ContextReport struct {
 	AssistantTokens  int
 	ToolResultTokens int // RoleTool messages (tool outputs)
 
-	// Tool schemas sent with every coordinator-route request.
-	ToolCount        int
-	ToolSchemaTokens int
+	// Tool exposure sent with every coordinator-route request.
+	// In JSON mode every visible tool carries a full schema, counted
+	// in ToolSchemaTokens. In thin mode (Thin == true) only the
+	// schema-carrying core/activated tools count toward
+	// ToolSchemaTokens; the dormant tail is advertised in a compact
+	// catalog whose cost is CatalogTokens instead — that split is
+	// where the per-turn saving shows up.
+	ToolCount        int // tools carrying a full schema this turn
+	ToolSchemaTokens int // chars/4 cost of those schemas
+	Thin             bool // thin tool protocol active on this route
+	CatalogTokens    int // chars/4 cost of the catalog + call-format preamble (thin only)
 
 	// Provider-reported cumulative usage for this session.
 	UsageIn  int
@@ -89,11 +97,38 @@ func (l *Loop) ContextReport() ContextReport {
 		items = append(items, ContextItem{Label: label, Tokens: t})
 	}
 
-	for _, t := range l.registry.Visible() {
-		r.ToolCount++
-		st := (len(t.Name) + len(t.Description) + len(t.Schema)) / 4
-		r.ToolSchemaTokens += st
-		items = append(items, ContextItem{Label: "tool schema: " + t.Name, Tokens: st})
+	// Tool exposure. In JSON mode every visible tool carries a full
+	// schema. In thin mode the dormant tail is replaced by a compact
+	// catalog, so we must count only the schema-carrying tools here
+	// and add the catalog (+ call-format preamble) cost separately —
+	// otherwise /context would hide the very saving thin mode buys.
+	if l.thinTools && l.route == RouteCoordinator {
+		r.Thin = true
+		schema, tail := l.thinPartition()
+		for _, t := range schema {
+			r.ToolCount++
+			st := (len(t.Name) + len(t.Description) + len(t.Schema)) / 4
+			r.ToolSchemaTokens += st
+			items = append(items, ContextItem{Label: "tool schema: " + t.Name, Tokens: st})
+		}
+		// The thin preamble (sentinel call-format instruction + the
+		// dormant-tail catalog) is injected as a system message every
+		// turn; charge its full chars/4 cost so the report reflects
+		// what actually goes on the wire, not just the catalog body.
+		r.CatalogTokens = len(l.thinToolsPreamble()) / 4
+		if r.CatalogTokens > 0 {
+			items = append(items, ContextItem{
+				Label:  fmt.Sprintf("tool catalog (%d tail tools)", len(tail)),
+				Tokens: r.CatalogTokens,
+			})
+		}
+	} else {
+		for _, t := range l.registry.Visible() {
+			r.ToolCount++
+			st := (len(t.Name) + len(t.Description) + len(t.Schema)) / 4
+			r.ToolSchemaTokens += st
+			items = append(items, ContextItem{Label: "tool schema: " + t.Name, Tokens: st})
+		}
 	}
 
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Tokens > items[j].Tokens })
@@ -133,13 +168,19 @@ func FormatContextReport(r ContextReport) string {
 		}
 		return fmt.Sprintf(" (%.1f%% of %d window)", float64(t)/float64(r.Window)*100, r.Window)
 	}
+	total := r.EstimatedTokens + r.ToolSchemaTokens + r.CatalogTokens
 	fmt.Fprintf(&b, "  messages: %d visible, %d hidden\n", r.Visible, r.Hidden)
-	fmt.Fprintf(&b, "  estimated context: ~%d tok%s\n", r.EstimatedTokens+r.ToolSchemaTokens, pct(r.EstimatedTokens+r.ToolSchemaTokens))
+	fmt.Fprintf(&b, "  estimated context: ~%d tok%s\n", total, pct(total))
 	fmt.Fprintf(&b, "    system prompt + briefing: ~%d tok\n", r.SystemTokens)
 	fmt.Fprintf(&b, "    user messages:            ~%d tok\n", r.UserTokens)
 	fmt.Fprintf(&b, "    assistant messages:       ~%d tok\n", r.AssistantTokens)
 	fmt.Fprintf(&b, "    tool results:             ~%d tok\n", r.ToolResultTokens)
-	fmt.Fprintf(&b, "    tool schemas (%d tools):  ~%d tok\n", r.ToolCount, r.ToolSchemaTokens)
+	if r.Thin {
+		fmt.Fprintf(&b, "    tool schemas (%d core):   ~%d tok\n", r.ToolCount, r.ToolSchemaTokens)
+		fmt.Fprintf(&b, "    tool catalog (thin):      ~%d tok\n", r.CatalogTokens)
+	} else {
+		fmt.Fprintf(&b, "    tool schemas (%d tools):  ~%d tok\n", r.ToolCount, r.ToolSchemaTokens)
+	}
 	fmt.Fprintf(&b, "  provider-reported usage: %d in / %d out tok\n", r.UsageIn, r.UsageOut)
 	if len(r.Top) > 0 {
 		b.WriteString("  top items:\n")

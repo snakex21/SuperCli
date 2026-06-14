@@ -393,6 +393,16 @@ func (l *Loop) Name() string { return "supercli-loop" }
 // full schemas while keeping each hint a readable sentence.
 const defaultThinHintMax = 80
 
+// thinHintMaxOrDefault resolves the per-hint rune cap, falling back
+// to defaultThinHintMax when unset. Shared by the catalog renderer
+// and the /context accounting so both size the catalog identically.
+func (l *Loop) thinHintMaxOrDefault() int {
+	if l.thinHintMax <= 0 {
+		return defaultThinHintMax
+	}
+	return l.thinHintMax
+}
+
 // buildToolDefs assembles the tool definitions sent to the
 // provider for the current route. The coordinator route exposes
 // every visible tool with its full JSON Schema; chat/advisor
@@ -408,11 +418,8 @@ const defaultThinHintMax = 80
 func (l *Loop) buildToolDefs() []llm.ToolDef {
 	var toolDefs []llm.ToolDef
 	if l.route == RouteCoordinator {
-		for _, t := range l.registry.Visible() {
-			if l.thinTools && !isThinCore(t.Name) && !l.isActivated(t.Name) {
-				// dormant tail tool: advertised in the catalog, not here.
-				continue
-			}
+		schema, _ := l.thinPartition()
+		for _, t := range schema {
 			toolDefs = append(toolDefs, llm.ToolDef{
 				Name:        t.Name,
 				Description: t.Description,
@@ -444,6 +451,28 @@ func (l *Loop) isActivated(name string) bool {
 	return false
 }
 
+// thinPartition splits the coordinator's visible tools into the set
+// that carries a full JSON Schema this turn (schema) and the dormant
+// tail that is advertised in the compact catalog instead (tail).
+//
+// When thin tools are off it is the identity split: every visible
+// tool goes to schema and tail is empty, so callers preserve the
+// historical behaviour. A tool is schema-carrying when it is in the
+// thin core OR was already activated via tool_search; otherwise it
+// is dormant tail. This is the single source of truth for the
+// core/tail decision — buildToolDefs, thinToolsPreamble, and the
+// /context accounting all derive from it so they cannot drift.
+func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
+	for _, t := range l.registry.Visible() {
+		if l.thinTools && !isThinCore(t.Name) && !l.isActivated(t.Name) {
+			tail = append(tail, t)
+			continue
+		}
+		schema = append(schema, t)
+	}
+	return schema, tail
+}
+
 // thinToolsPreamble builds the request-time system block for the
 // thin tool protocol: the sentinel call-format instruction (so the
 // model knows to write «name\nkey: value» instead of JSON) plus,
@@ -460,19 +489,9 @@ func (l *Loop) thinToolsPreamble() string {
 	}
 	out := prompt.ThinToolProtocol
 
-	var tail []tools.Tool
-	for _, t := range l.registry.Visible() {
-		if isThinCore(t.Name) || l.isActivated(t.Name) {
-			continue
-		}
-		tail = append(tail, t)
-	}
+	_, tail := l.thinPartition()
 	if len(tail) > 0 {
-		hintMax := l.thinHintMax
-		if hintMax <= 0 {
-			hintMax = defaultThinHintMax
-		}
-		if body := tools.RenderCatalog(tail, hintMax); body != "" {
+		if body := tools.RenderCatalog(tail, l.thinHintMaxOrDefault()); body != "" {
 			out += "\n\nAdditional tools available on demand (call tool_search " +
 				"with a natural-language query to load any of these — it returns " +
 				"the full schema so you can call it the same turn):\n" + body
