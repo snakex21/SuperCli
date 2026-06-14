@@ -50,6 +50,52 @@ func TestExtractXMLToolCalls_Simple(t *testing.T) {
 	}
 }
 
+// Some Hermes/Qwen models pack the whole argument object into a single
+// <parameter=arguments>{...}</parameter> blob instead of one parameter
+// per field. The blob must be used directly as the call arguments, not
+// nested under an "arguments" key (which no tool expects).
+func TestExtractXMLToolCalls_ArgumentsBlob(t *testing.T) {
+	text := `<tool_call><function=tool_search><parameter=arguments>{"query":"find files","limit":5}</parameter></function></tool_call>`
+	tcs, _ := extractXMLToolCalls(text)
+	if len(tcs) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(tcs))
+	}
+	if tcs[0].Name != "tool_search" {
+		t.Errorf("Name = %q, want tool_search", tcs[0].Name)
+	}
+	if tcs[0].Arguments != `{"query":"find files","limit":5}` {
+		t.Errorf("Arguments = %s, want the flattened blob", tcs[0].Arguments)
+	}
+	if strings.Contains(tcs[0].Arguments, `"arguments"`) {
+		t.Errorf("blob must not be nested under an arguments key: %s", tcs[0].Arguments)
+	}
+}
+
+func TestExtractXMLToolCalls_ArgsBlobAlias(t *testing.T) {
+	text := `<tool_call><function=task><parameter=args>{"agent":"coder","prompt":"go"}</parameter></function></tool_call>`
+	tcs, _ := extractXMLToolCalls(text)
+	if len(tcs) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(tcs))
+	}
+	if tcs[0].Arguments != `{"agent":"coder","prompt":"go"}` {
+		t.Errorf("Arguments = %s, want flattened blob", tcs[0].Arguments)
+	}
+}
+
+// A literal parameter genuinely named "arguments" whose value is NOT a
+// JSON object must keep the per-field path (wrapped as a string), not
+// be mistaken for a blob.
+func TestExtractXMLToolCalls_ArgumentsNotObjectKeepsPerField(t *testing.T) {
+	text := `<tool_call><function=t><parameter=arguments>hello</parameter></function></tool_call>`
+	tcs, _ := extractXMLToolCalls(text)
+	if len(tcs) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(tcs))
+	}
+	if tcs[0].Arguments != `{"arguments":"hello"}` {
+		t.Errorf("Arguments = %s, want per-field wrapping", tcs[0].Arguments)
+	}
+}
+
 func TestExtractXMLToolCalls_NoTags(t *testing.T) {
 	text := "plain text without any XML"
 	tcs, before := extractXMLToolCalls(text)
