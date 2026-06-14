@@ -377,9 +377,15 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			m.appendLine(m.marker.ModelInfo("selected " + selected.ID + " (model swap not wired)"))
 			return m.closeMenu()
 		}
-		m.mode = modeNormal
-		m.input.Focus()
-		return m, func() tea.Msg { return modelSwapRequestMsg{ModelID: selected.ID, Provider: selected.Provider} }
+		// Apply the swap RIGHT NOW (synchronously) on confirm:
+		// rebuild the provider, persist the choice to config, and
+		// kick the Codex usage refresh — all before this returns.
+		// Closing the CLI immediately after picking therefore keeps
+		// the model, and the HUD limit refreshes without a send.
+		// (Previously this only emitted an async modelSwapRequestMsg.)
+		m.applyModelSwap(selected.ID, selected.Provider)
+		m.refreshTranscript()
+		return m.closeMenu()
 	case menuProviders:
 		return m, nil
 	case menuProviderForm:

@@ -339,13 +339,16 @@ func TestInteractiveModelsMenu_FilterAndSelect(t *testing.T) {
 	if !strings.Contains(mm.renderMenuView(), "claude-sonnet") {
 		t.Fatalf("filtered view missing sonnet: %q", mm.renderMenuView())
 	}
-	out, cmd = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm = out.(Model)
-	if cmd == nil {
-		t.Fatal("selecting model should emit swap request")
+	// Confirming the picker applies the swap synchronously (rebuild
+	// provider + SetModel) right away — it no longer defers the work
+	// to an async modelSwapRequestMsg that only runs later.
+	if mm.mode != modeNormal {
+		t.Fatalf("picker should close on confirm, mode=%v", mm.mode)
 	}
-	if msg := cmd(); msg.(modelSwapRequestMsg).ModelID != "claude-sonnet" {
-		t.Fatalf("wrong model selected: %#v", msg)
+	if swapper.current != "claude-sonnet" {
+		t.Fatalf("model not swapped on confirm: current=%q, want claude-sonnet", swapper.current)
 	}
 }
 
