@@ -18,6 +18,14 @@ type Check struct {
 	Tool   string
 	Args   json.RawMessage
 	Result Result
+	// BaseDir is the directory relative paths in Args resolve
+	// against (the tool's home). When set, file_write/read
+	// verification stats BaseDir/path instead of CWD/path —
+	// without it, a relative path like "demo/x.txt" is checked
+	// against the process CWD and falsely reported missing,
+	// which makes the model loop trying to "fix" a file that is
+	// actually fine. Empty preserves the old CWD-relative behaviour.
+	BaseDir string
 }
 
 // VerifyVerdict reports the verification outcome. When OK is
@@ -100,6 +108,7 @@ func verifyFileWrite(c Check) VerifyVerdict {
 		// No path in args; we cannot verify, so pass.
 		return VerifyVerdict{OK: true}
 	}
+	path = resolveForVerify(c.BaseDir, path)
 	info, err := os.Stat(path)
 	if err != nil {
 		return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file does not exist: %s", path)}
@@ -168,6 +177,17 @@ func verifyRead(c Check) VerifyVerdict {
 		return VerifyVerdict{OK: false, Reason: "verification failed: read returned empty content"}
 	}
 	return VerifyVerdict{OK: true}
+}
+
+// resolveForVerify resolves a path from tool args against base
+// (the tool's home) so verification stats the same file the tool
+// actually wrote/read. Absolute paths are returned unchanged; an
+// empty base preserves the legacy CWD-relative behaviour.
+func resolveForVerify(base, path string) string {
+	if base == "" || path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(base, path)
 }
 
 // extractPath pulls the path from common arg names.

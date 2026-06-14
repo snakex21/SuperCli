@@ -44,6 +44,45 @@ func TestVerify_FileWrite_MissingFile_Fails(t *testing.T) {
 	}
 }
 
+// TestVerify_FileWrite_RelativePath_ResolvesAgainstBaseDir guards
+// the live-test fix: a tool writes "sub/x.txt" relative to its
+// home, so the verifier must stat BaseDir/sub/x.txt — not
+// CWD/sub/x.txt, which would falsely report the file missing and
+// make the model loop trying to "fix" a file that is actually fine.
+func TestVerify_FileWrite_RelativePath_ResolvesAgainstBaseDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "x.txt"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Relative path in args + BaseDir set → must pass.
+	c := Check{
+		Family:  "file_write",
+		Tool:    "write_file",
+		Args:    mkArgs(t, map[string]any{"path": "sub/x.txt"}),
+		Result:  Result{Text: "ok"},
+		BaseDir: dir,
+	}
+	if v := (DefaultVerifier{}).Verify(c); !v.OK {
+		t.Errorf("relative path with BaseDir should pass, got fail: %q", v.Reason)
+	}
+
+	// Same relative path WITHOUT BaseDir → resolves against CWD,
+	// where it does not exist → fails (documents the old behaviour
+	// and why BaseDir is needed).
+	cNoBase := Check{
+		Family: "file_write",
+		Tool:   "write_file",
+		Args:   mkArgs(t, map[string]any{"path": "sub/x.txt"}),
+		Result: Result{Text: "ok"},
+	}
+	if v := (DefaultVerifier{}).Verify(cNoBase); v.OK {
+		t.Error("relative path without BaseDir unexpectedly passed (CWD happened to contain it?)")
+	}
+}
+
 func TestVerify_FileWrite_EmptyFile_Fails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.txt")

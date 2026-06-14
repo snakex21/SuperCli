@@ -50,6 +50,7 @@ type Loop struct {
 	maxSteps        int
 	thinTools       bool
 	thinHintMax     int
+	baseDir         string
 	writer          SessionWriter
 	errorLog        ErrorLogger
 	reflector       Reflector
@@ -204,6 +205,11 @@ type LoopConfig struct {
 	// ThinHintMax caps each catalog hint length in runes. Zero falls
 	// back to defaultThinHintMax. Only consulted when ThinTools is on.
 	ThinHintMax int
+	// BaseDir is the project home that relative tool paths resolve
+	// against. Passed to the verifier so file checks stat the actual
+	// written file (home/path) rather than CWD/path. Empty keeps the
+	// legacy CWD-relative verification.
+	BaseDir string
 	// Writer, when non-nil, is invoked once per message the loop
 	// appends to Messages. Use session.Store from F2.c.
 	Writer SessionWriter
@@ -325,6 +331,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		maxSteps:        cfg.MaxSteps,
 		thinTools:       cfg.ThinTools,
 		thinHintMax:     cfg.ThinHintMax,
+		baseDir:         cfg.BaseDir,
 		writer:          cfg.Writer,
 		errorLog:        cfg.ErrorLog,
 		reflector:       cfg.Reflector,
@@ -1070,9 +1077,10 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		tool, ok := l.registry.Get(tc.Name)
 		if ok {
 			res = tools.ApplyVerification(tools.Check{
-				Tool:   tc.Name,
-				Args:   raw,
-				Result: res,
+				Tool:    tc.Name,
+				Args:    raw,
+				Result:  res,
+				BaseDir: l.baseDir,
 			}, tool.Verify)
 		}
 	}
