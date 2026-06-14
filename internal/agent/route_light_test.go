@@ -56,6 +56,85 @@ func TestLoop_CoordinatorRouteAppendsTimeStamp(t *testing.T) {
 	}
 }
 
+// TestLoop_BuildToolDefs_CoordinatorExposesAllVisibleWithSchema: the
+// coordinator route must return every visible tool, preserving the
+// full JSON Schema (the historical behaviour B2a extracted verbatim).
+func TestLoop_BuildToolDefs_CoordinatorExposesAllVisibleWithSchema(t *testing.T) {
+	reg := tools.NewRegistry()
+	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+		return tools.Result{Text: "x"}, nil
+	}
+	for _, name := range []string{"tool_search", "recall", "edit_line", "darwin"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: "d " + name, Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
+		reg.MarkAlwaysOn(name)
+	}
+	l := makeLoop(t, &stubProvider{name: "stub"}, reg, "base")
+	l.route = RouteCoordinator
+
+	defs := l.buildToolDefs()
+	if len(defs) != 4 {
+		t.Fatalf("coordinator defs = %d, want 4 (all visible)", len(defs))
+	}
+	for _, d := range defs {
+		if !strings.Contains(d.Schema, "properties") {
+			t.Errorf("tool %q lost its full schema: %q", d.Name, d.Schema)
+		}
+		if d.Description == "" {
+			t.Errorf("tool %q lost its description", d.Name)
+		}
+	}
+}
+
+// TestLoop_BuildToolDefs_ChatRouteMinimalSet: chat/advisor routes must
+// return only the chatRouteTools that are registered (tool_search +
+// recall), never the full visible set.
+func TestLoop_BuildToolDefs_ChatRouteMinimalSet(t *testing.T) {
+	reg := tools.NewRegistry()
+	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+		return tools.Result{Text: "x"}, nil
+	}
+	for _, name := range []string{"tool_search", "recall", "edit_line", "darwin"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: "d " + name, Schema: `{"type":"object"}`, Fn: noop})
+		reg.MarkAlwaysOn(name)
+	}
+	l := makeLoop(t, &stubProvider{name: "stub"}, reg, "base")
+	l.route = RouteChatOnly
+
+	defs := l.buildToolDefs()
+	if len(defs) != 2 {
+		t.Fatalf("chat defs = %d, want 2 (tool_search + recall)", len(defs))
+	}
+	got := map[string]bool{}
+	for _, d := range defs {
+		got[d.Name] = true
+	}
+	if !got["tool_search"] || !got["recall"] {
+		t.Errorf("chat route missing core tools: %v", got)
+	}
+	if got["edit_line"] || got["darwin"] {
+		t.Errorf("chat route leaked tail tools: %v", got)
+	}
+}
+
+// TestLoop_BuildToolDefs_ChatRouteSkipsUnregistered: chatRouteTools
+// names that are not registered must be silently skipped, not panic.
+func TestLoop_BuildToolDefs_ChatRouteSkipsUnregistered(t *testing.T) {
+	reg := tools.NewRegistry()
+	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+		return tools.Result{Text: "x"}, nil
+	}
+	// Register only tool_search; recall is absent.
+	reg.MustRegister(tools.Tool{Name: "tool_search", Description: "d", Schema: `{"type":"object"}`, Fn: noop})
+	reg.MarkAlwaysOn("tool_search")
+	l := makeLoop(t, &stubProvider{name: "stub"}, reg, "base")
+	l.route = RouteAdvisor
+
+	defs := l.buildToolDefs()
+	if len(defs) != 1 || defs[0].Name != "tool_search" {
+		t.Fatalf("defs = %+v, want only tool_search", defs)
+	}
+}
+
 // TestLoop_ChatRouteKeepsCurrentTurnToolPairs: tool calls made during
 // the current chat-route turn must survive providerMessages so the
 // provider sees valid call/result pairing.

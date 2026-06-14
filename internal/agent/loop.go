@@ -372,6 +372,41 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 // Name implements Agent.
 func (l *Loop) Name() string { return "supercli-loop" }
 
+// buildToolDefs assembles the tool definitions sent to the
+// provider for the current route. The coordinator route exposes
+// every visible tool with its full JSON Schema; chat/advisor
+// routes get only the minimal chatRouteTools set (tool_search +
+// recall), letting the model pull in more on demand — that
+// trimmed set is the per-turn token cost the router avoids.
+//
+// This is the single seam where the thin tool protocol (B2b) will
+// split the coordinator set into a small full-schema core plus a
+// compact catalog for the tail; today it preserves the historical
+// behaviour exactly (every visible tool, full schema).
+func (l *Loop) buildToolDefs() []llm.ToolDef {
+	var toolDefs []llm.ToolDef
+	if l.route == RouteCoordinator {
+		for _, t := range l.registry.Visible() {
+			toolDefs = append(toolDefs, llm.ToolDef{
+				Name:        t.Name,
+				Description: t.Description,
+				Schema:      t.Schema,
+			})
+		}
+		return toolDefs
+	}
+	for _, name := range chatRouteTools {
+		if t, ok := l.registry.Get(name); ok {
+			toolDefs = append(toolDefs, llm.ToolDef{
+				Name:        t.Name,
+				Description: t.Description,
+				Schema:      t.Schema,
+			})
+		}
+	}
+	return toolDefs
+}
+
 // Run implements Agent. It appends the prompt as a user message,
 // then iterates provider calls + tool executions until the model
 // emits a non-tool finish reason, an error occurs, or MaxSteps is
@@ -500,26 +535,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// get only the minimal chatRouteTools set (tool_search + recall) so
 		// the model can pull in more when needed; the full tool list is the
 		// actual token cost the router avoids.
-		var toolDefs []llm.ToolDef
-		if l.route == RouteCoordinator {
-			for _, t := range l.registry.Visible() {
-				toolDefs = append(toolDefs, llm.ToolDef{
-					Name:        t.Name,
-					Description: t.Description,
-					Schema:      t.Schema,
-				})
-			}
-		} else {
-			for _, name := range chatRouteTools {
-				if t, ok := l.registry.Get(name); ok {
-					toolDefs = append(toolDefs, llm.ToolDef{
-						Name:        t.Name,
-						Description: t.Description,
-						Schema:      t.Schema,
-					})
-				}
-			}
-		}
+		toolDefs := l.buildToolDefs()
 
 		text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
 		if err != nil && l.handleContextOverflow(ctx, err, out) {
