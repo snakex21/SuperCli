@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -67,6 +69,76 @@ type AuthFile struct {
 // next to the executable).
 func AuthFilePath(dataDir string) string {
 	return filepath.Join(dataDir, "auth.json")
+}
+
+// DefaultAccount is the label of the primary account, stored in the
+// classic auth.json so existing single-account logins are untouched.
+const DefaultAccount = "default"
+
+// sanitizeLabel keeps an account label safe as a filename fragment:
+// lowercased, only [a-z0-9_-], so a label can never escape dataDir
+// or collide with the path separator. Empty/invalid → DefaultAccount.
+func sanitizeLabel(label string) string {
+	label = strings.ToLower(strings.TrimSpace(label))
+	if label == "" || label == DefaultAccount {
+		return DefaultAccount
+	}
+	var b strings.Builder
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return DefaultAccount
+	}
+	return out
+}
+
+// AuthFilePathFor returns the auth file path for a named account.
+// The default account maps to the classic <dataDir>/auth.json (so
+// single-account setups are byte-for-byte unchanged); any other
+// label maps to <dataDir>/auth-<label>.json.
+func AuthFilePathFor(dataDir, label string) string {
+	l := sanitizeLabel(label)
+	if l == DefaultAccount {
+		return AuthFilePath(dataDir)
+	}
+	return filepath.Join(dataDir, "auth-"+l+".json")
+}
+
+// ListAccounts returns the labels of all accounts that have an auth
+// file on disk in dataDir, in sorted order. The classic auth.json is
+// reported as DefaultAccount. Used by the router to build its pool
+// and by /accounts to show the user what is logged in.
+func ListAccounts(dataDir string) ([]string, error) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("codexauth: list accounts: %w", err)
+	}
+	var labels []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == "auth.json" {
+			labels = append(labels, DefaultAccount)
+			continue
+		}
+		if strings.HasPrefix(name, "auth-") && strings.HasSuffix(name, ".json") {
+			label := strings.TrimSuffix(strings.TrimPrefix(name, "auth-"), ".json")
+			if label != "" {
+				labels = append(labels, label)
+			}
+		}
+	}
+	sort.Strings(labels)
+	return labels, nil
 }
 
 // Load reads auth.json. A missing file returns (nil, nil).
