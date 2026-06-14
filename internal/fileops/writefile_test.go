@@ -96,3 +96,47 @@ func TestWriteFile_EmptyPathErrors(t *testing.T) {
 		t.Fatal("want error for empty path")
 	}
 }
+
+func TestMakeDir_CreatesNested(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "a", "b", "c")
+	created, err := MakeDir(target)
+	if err != nil {
+		t.Fatalf("MakeDir: %v", err)
+	}
+	if !created {
+		t.Error("created = false, want true for a new dir")
+	}
+	info, err := os.Stat(target)
+	if err != nil || !info.IsDir() {
+		t.Errorf("nested dir not created: %v", err)
+	}
+}
+
+func TestMakeDir_IdempotentOnExisting(t *testing.T) {
+	dir := t.TempDir()
+	created, err := MakeDir(dir) // already exists
+	if err != nil {
+		t.Fatalf("MakeDir on existing: %v", err)
+	}
+	if created {
+		t.Error("created = true, want false for an existing dir")
+	}
+}
+
+func TestMakeDir_FailsOnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "afile")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MakeDir(file); err == nil {
+		t.Fatal("want error when path is an existing file")
+	}
+}
+
+func TestMakeDir_EmptyPathErrors(t *testing.T) {
+	if _, err := MakeDir(""); err == nil {
+		t.Fatal("want error for empty path")
+	}
+}

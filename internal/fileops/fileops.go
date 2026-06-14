@@ -505,3 +505,26 @@ func WriteFile(path, content string) (WriteResult, error) {
 	}
 	return WriteResult{Created: !existed, Bytes: len(content)}, nil
 }
+
+// MakeDir creates the directory at path, including any missing
+// parents (like `mkdir -p`). It returns created=false when the
+// directory already existed (idempotent, no error), and an error
+// only when the path exists as a FILE or the mkdir fails.
+//
+// Like WriteFile, the package stays pure: the sandbox boundary is
+// enforced by the calling tool via sandbox.ResolveSafe.
+func MakeDir(path string) (created bool, err error) {
+	if path == "" {
+		return false, fmt.Errorf("fileops.MakeDir: empty path")
+	}
+	if info, statErr := os.Stat(path); statErr == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf("fileops.MakeDir: %q exists and is a file, not a folder", path)
+		}
+		return false, nil // already a dir: idempotent success
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return false, fmt.Errorf("fileops.MakeDir: %w", err)
+	}
+	return true, nil
+}
