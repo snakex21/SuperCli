@@ -603,7 +603,7 @@ func main() {
 		for _, name := range []string{
 			"read_lines", "read_context", "edit_line", "edit_lines",
 			"insert_after", "delete_lines", "write_file", "make_dir",
-			"move", "copy",
+			"move", "copy", "trash",
 			"list_dir", "edit_docx", "edit_xlsx",
 			"goal", "tool_search",
 		} {
@@ -1521,6 +1521,7 @@ func main() {
 	registry.MustRegister(tools.NewMakeDir(home).Spec())
 	registry.MustRegister(tools.NewMove(home).Spec())
 	registry.MustRegister(tools.NewCopy(home).Spec())
+	registry.MustRegister(tools.NewTrash(home).Spec())
 
 	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
 	// web_search (DuckDuckGo by default — no key; Brave/Tavily
@@ -1861,6 +1862,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewMakeDir(root).Spec())
 	reg.MustRegister(tools.NewMove(root).Spec())
 	reg.MustRegister(tools.NewCopy(root).Spec())
+	reg.MustRegister(tools.NewTrash(root).Spec())
 	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(root), root).Spec())
 	for _, name := range reg.Names() {
 		reg.MarkAlwaysOn(name)

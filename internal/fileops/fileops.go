@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -651,4 +652,37 @@ func copyFileContents(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// Trash moves src into trashDir under a timestamped name, instead
+// of deleting it — so removal is always recoverable (the user can
+// move it back out). Name collisions within the same second are
+// disambiguated with a counter suffix. now is injected so the
+// timestamp is testable (no hidden clock dependency).
+//
+// Returns the path the item was moved to. Pure: the tool resolves
+// src against the sandbox and supplies trashDir under home.
+func Trash(src, trashDir string, now time.Time) (dst string, err error) {
+	if src == "" {
+		return "", fmt.Errorf("fileops.Trash: empty path")
+	}
+	if _, err := os.Lstat(src); err != nil {
+		return "", fmt.Errorf("fileops.Trash: source: %w", err)
+	}
+	if err := os.MkdirAll(trashDir, 0o755); err != nil {
+		return "", fmt.Errorf("fileops.Trash: prepare trash folder: %w", err)
+	}
+	stamp := now.Format("20060102-150405")
+	base := filepath.Base(src)
+	dst = filepath.Join(trashDir, stamp+"_"+base)
+	for i := 1; ; i++ {
+		if _, err := os.Lstat(dst); err != nil {
+			break
+		}
+		dst = filepath.Join(trashDir, fmt.Sprintf("%s-%d_%s", stamp, i, base))
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return "", fmt.Errorf("fileops.Trash: %w", err)
+	}
+	return dst, nil
 }
