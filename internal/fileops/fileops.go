@@ -528,3 +528,43 @@ func MakeDir(path string) (created bool, err error) {
 	}
 	return true, nil
 }
+
+// Move renames/moves src to dst (works for files and folders, like
+// `mv` / `git mv`). It is non-destructive by contract:
+//
+//   - if dst is an existing FOLDER, src is moved INTO it keeping its
+//     base name (the familiar `mv file dir/` behaviour);
+//   - it NEVER overwrites: if the final destination already exists,
+//     it returns an error instead of clobbering — the caller should
+//     ask the user how to proceed.
+//
+// Returns the final destination path actually used (after the
+// move-into-folder adjustment) so the caller can report it.
+// Pure: the sandbox is enforced by the tool on BOTH src and dst.
+func Move(src, dst string) (finalDst string, err error) {
+	if src == "" || dst == "" {
+		return "", fmt.Errorf("fileops.Move: src and dst are required")
+	}
+	if _, err := os.Lstat(src); err != nil {
+		return "", fmt.Errorf("fileops.Move: source: %w", err)
+	}
+	// move-INTO-folder convenience.
+	if info, err := os.Lstat(dst); err == nil {
+		if info.IsDir() && dst != src {
+			dst = filepath.Join(dst, filepath.Base(src))
+		}
+	}
+	// no-overwrite rule (re-check after the adjustment).
+	if _, err := os.Lstat(dst); err == nil {
+		return "", fmt.Errorf("fileops.Move: destination %q already exists; refusing to overwrite", dst)
+	}
+	if parent := filepath.Dir(dst); parent != "" {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return "", fmt.Errorf("fileops.Move: mkdir parent: %w", err)
+		}
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return "", fmt.Errorf("fileops.Move: %w", err)
+	}
+	return dst, nil
+}
