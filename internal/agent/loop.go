@@ -47,6 +47,8 @@ type Loop struct {
 	system          string
 	briefing        string
 	maxSteps        int
+	thinTools       bool
+	thinHintMax     int
 	writer          SessionWriter
 	errorLog        ErrorLogger
 	reflector       Reflector
@@ -190,6 +192,17 @@ type LoopConfig struct {
 	// chat/advisor/coordinator. Main SuperCli enables it; child workers and most
 	// tests leave it off to avoid extra provider calls.
 	EnableNavigator bool
+	// ThinTools enables the thin tool protocol on the coordinator
+	// route: only thinCoreTools carry a full JSON Schema each turn;
+	// the rest are advertised in a compact name+hint catalog and
+	// pulled in on demand via tool_search. Default false preserves
+	// the historical behaviour (every visible tool, full schema).
+	// Intended for small/local models where schema bulk dominates
+	// the prefill cost.
+	ThinTools bool
+	// ThinHintMax caps each catalog hint length in runes. Zero falls
+	// back to defaultThinHintMax. Only consulted when ThinTools is on.
+	ThinHintMax int
 	// Writer, when non-nil, is invoked once per message the loop
 	// appends to Messages. Use session.Store from F2.c.
 	Writer SessionWriter
@@ -309,6 +322,8 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		system:          cfg.System,
 		briefing:        cfg.Briefing,
 		maxSteps:        cfg.MaxSteps,
+		thinTools:       cfg.ThinTools,
+		thinHintMax:     cfg.ThinHintMax,
 		writer:          cfg.Writer,
 		errorLog:        cfg.ErrorLog,
 		reflector:       cfg.Reflector,
@@ -372,6 +387,11 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 // Name implements Agent.
 func (l *Loop) Name() string { return "supercli-loop" }
 
+// defaultThinHintMax caps catalog hints when ThinHintMax is 0. 80
+// runes proved a good balance in measurement: ~84% token saving vs
+// full schemas while keeping each hint a readable sentence.
+const defaultThinHintMax = 80
+
 // buildToolDefs assembles the tool definitions sent to the
 // provider for the current route. The coordinator route exposes
 // every visible tool with its full JSON Schema; chat/advisor
@@ -379,14 +399,19 @@ func (l *Loop) Name() string { return "supercli-loop" }
 // recall), letting the model pull in more on demand — that
 // trimmed set is the per-turn token cost the router avoids.
 //
-// This is the single seam where the thin tool protocol (B2b) will
-// split the coordinator set into a small full-schema core plus a
-// compact catalog for the tail; today it preserves the historical
-// behaviour exactly (every visible tool, full schema).
+// When thinTools is enabled, the coordinator set is trimmed to the
+// full-schema core (thinCoreTools) plus any tool the model already
+// pulled in via tool_search; the dormant tail is omitted here and
+// advertised in the catalog (see toolCatalog). This is the thin
+// tool protocol's token win.
 func (l *Loop) buildToolDefs() []llm.ToolDef {
 	var toolDefs []llm.ToolDef
 	if l.route == RouteCoordinator {
 		for _, t := range l.registry.Visible() {
+			if l.thinTools && !isThinCore(t.Name) && !l.isActivated(t.Name) {
+				// dormant tail tool: advertised in the catalog, not here.
+				continue
+			}
 			toolDefs = append(toolDefs, llm.ToolDef{
 				Name:        t.Name,
 				Description: t.Description,
@@ -405,6 +430,50 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 		}
 	}
 	return toolDefs
+}
+
+// isActivated reports whether name was explicitly pulled in via
+// tool_search this session (so it should carry a full schema).
+func (l *Loop) isActivated(name string) bool {
+	for _, n := range l.registry.ActiveNames() {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// toolCatalog renders the compact name+hint advertisement for the
+// dormant tail: visible tools that are neither in the full-schema
+// core nor already activated. Returns "" when thin tools are off,
+// off-route, or the tail is empty — callers then inject nothing.
+// The model uses tool_search to pull any of these in (which
+// activates it and returns its full schema in the same turn).
+func (l *Loop) toolCatalog() string {
+	if !l.thinTools || l.route != RouteCoordinator {
+		return ""
+	}
+	var tail []tools.Tool
+	for _, t := range l.registry.Visible() {
+		if isThinCore(t.Name) || l.isActivated(t.Name) {
+			continue
+		}
+		tail = append(tail, t)
+	}
+	if len(tail) == 0 {
+		return ""
+	}
+	hintMax := l.thinHintMax
+	if hintMax <= 0 {
+		hintMax = defaultThinHintMax
+	}
+	body := tools.RenderCatalog(tail, hintMax)
+	if body == "" {
+		return ""
+	}
+	return "Additional tools available on demand (call tool_search with a " +
+		"natural-language query to load any of these — it returns the full " +
+		"schema so you can call it the same turn):\n" + body
 }
 
 // Run implements Agent. It appends the prompt as a user message,
@@ -777,8 +846,14 @@ func (l *Loop) providerMessages() []llm.Message {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
 		visible := l.VisibleMessages()
-		out := make([]llm.Message, 0, len(visible)+1)
+		out := make([]llm.Message, 0, len(visible)+2)
 		out = append(out, visible...)
+		// Thin tool protocol: advertise the dormant tail as a compact
+		// catalog just before the freshness stamp. Empty when thin tools
+		// are off or the tail is empty, so nothing is injected then.
+		if cat := l.toolCatalog(); cat != "" {
+			out = append(out, llm.Message{Role: llm.RoleSystem, Content: cat})
+		}
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: timeSection(time.Now())})
 		return out
 	}

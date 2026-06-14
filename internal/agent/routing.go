@@ -13,6 +13,32 @@ import (
 // route — that is the token-saving point of the router.
 var chatRouteTools = []string{"tool_search", "recall"}
 
+// thinCoreTools is the small, always-full-schema core for the thin
+// tool protocol (B2b). On the coordinator route, when thin tools are
+// enabled, ONLY these tools carry their full JSON Schema every turn;
+// every other tool is advertised by name+hint in a compact catalog
+// and pulled in on demand via tool_search (which activates it and
+// returns its full schema in the same turn). tool_search itself MUST
+// be here — it is the gateway to the rest.
+var thinCoreTools = []string{
+	"tool_search",
+	"edit_line",
+	"read_context",
+	"read_lines",
+	"ctx_execute",
+	"recall",
+}
+
+// isThinCore reports whether name is in the thin-core set.
+func isThinCore(name string) bool {
+	for _, n := range thinCoreTools {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // timeSection returns the per-request freshness stamp injected into
 // the system prompt of every route. Rebuilt on each provider call so
 // the model always knows the current date, time, and timezone, plus
