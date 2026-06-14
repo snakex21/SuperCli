@@ -1,8 +1,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"supercli/internal/llm"
+	"supercli/internal/tools"
 )
 
 // decodeArgs unmarshals a tool call's Arguments and fails on bad JSON.
@@ -164,5 +168,66 @@ func TestSentinel_IDPrefixed(t *testing.T) {
 	tcs, _ := extractSentinelToolCalls("«get_time»")
 	if tcs[0].ID != "sentinel_get_time" {
 		t.Errorf("ID = %q, want sentinel_get_time", tcs[0].ID)
+	}
+}
+
+// --- integration: wired into consume() ---
+
+// TestSentinel_ConsumeExtractsCall feeds a streamed message that
+// ends in a sentinel block through consume() and asserts the call
+// is extracted and the leading prose is emitted as a MessageEvent.
+func TestSentinel_ConsumeExtractsCall(t *testing.T) {
+	l := makeLoop(t, &stubProvider{name: "stub"}, tools.NewRegistry(), "base")
+
+	ch := make(chan llm.Delta, 4)
+	ch <- llm.Delta{Content: "I'll read it.\n"}
+	ch <- llm.Delta{Content: "«read_lines\nfile: a.go\nfrom: 1\nto: 10»"}
+	ch <- llm.Delta{FinishReason: "stop", Usage: &llm.Usage{Total: 3}}
+	close(ch)
+
+	out := make(chan Event, 16)
+	_, toolCalls, _, err := l.consume(context.Background(), ch, out)
+	close(out)
+	if err != nil {
+		t.Fatalf("consume: %v", err)
+	}
+	if len(toolCalls) != 1 || toolCalls[0].Name != "read_lines" {
+		t.Fatalf("toolCalls = %+v, want one read_lines", toolCalls)
+	}
+	m := decodeArgs(t, toolCalls[0].Arguments)
+	if m["file"] != "a.go" || m["from"] != "1" || m["to"] != "10" {
+		t.Errorf("args = %v", m)
+	}
+	// The prose before the block must have been emitted.
+	var sawProse bool
+	for ev := range out {
+		if me, ok := ev.(MessageEvent); ok && me.Text == "I'll read it.\n" {
+			sawProse = true
+		}
+	}
+	if !sawProse {
+		t.Error("leading prose was not emitted as a MessageEvent")
+	}
+}
+
+// TestSentinel_ConsumePlainTextUntouched ensures a normal streamed
+// answer with no sentinel produces no tool calls.
+func TestSentinel_ConsumePlainTextUntouched(t *testing.T) {
+	l := makeLoop(t, &stubProvider{name: "stub"}, tools.NewRegistry(), "base")
+	ch := make(chan llm.Delta, 2)
+	ch <- llm.Delta{Content: "just a normal answer"}
+	ch <- llm.Delta{FinishReason: "stop"}
+	close(ch)
+	out := make(chan Event, 8)
+	text, toolCalls, _, err := l.consume(context.Background(), ch, out)
+	close(out)
+	if err != nil {
+		t.Fatalf("consume: %v", err)
+	}
+	if len(toolCalls) != 0 {
+		t.Errorf("want no tool calls, got %+v", toolCalls)
+	}
+	if text != "just a normal answer" {
+		t.Errorf("text = %q", text)
 	}
 }
