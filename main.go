@@ -1933,20 +1933,14 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 		// ChatGPT-subscription auth: requests route to the
 		// ChatGPT backend Responses API with the OAuth bearer
 		// token from <data dir>/auth.json instead of an API key.
-		mgr := codexAuthMgr
-		if mgr == nil {
-			mgr = codexauth.NewManager(dataDir, codexauth.Options{})
-		}
-		return llm.NewCodex(llm.CodexConfig{
-			BackendURL:   mgr.Options().BackendURL,
-			Model:        cfg.Model,
-			Tokens:       mgr,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
-			// Persist/restore the last usage snapshot here so the HUD
-			// `limit:` tile shows immediately at startup (no extra request).
-			DataDir: dataDir,
-		})
+		//
+		// Multi-account: when more than one account is logged in
+		// (auth.json + auth-<label>.json), build one CodexProvider
+		// per account and wrap them in a round-robin RouterProvider
+		// so calls spread across accounts with failover. A single
+		// account returns a plain CodexProvider — zero overhead and
+		// byte-for-byte the old behaviour.
+		return buildCodexPool(cfg, dataDir, caps)
 	}
 	return llm.NewOpenAI(llm.OpenAIConfig{
 		BaseURL:      cfg.BaseURL,
@@ -1954,6 +1948,67 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 		Model:        cfg.Model,
 		Timeout:      cfg.Timeout,
 		Capabilities: caps,
+	})
+}
+
+// buildCodexPool builds a Codex provider for every logged-in
+// account and, when there is more than one, wraps them in a
+// round-robin RouterProvider. Order is stable (ListAccounts sorts),
+// default account first is not guaranteed — round-robin treats them
+// equally, which is the point of spreading load across accounts.
+func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
+	labels, err := codexauth.ListAccounts(dataDir)
+	if err != nil {
+		labels = nil // fall through to the default-account path
+	}
+
+	// Count accounts that actually have usable tokens. Only a
+	// genuine multi-account setup (>=2) takes the router path; a
+	// single account uses the original global-manager path
+	// unchanged (preserving its usage snapshot / HUD behaviour).
+	var loggedIn []string
+	for _, label := range labels {
+		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+		if mgr.LoggedIn() {
+			loggedIn = append(loggedIn, label)
+		}
+	}
+
+	if len(loggedIn) > 1 {
+		var pool []llm.Provider
+		for _, label := range loggedIn {
+			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+			p, err := llm.NewCodex(llm.CodexConfig{
+				BackendURL:   mgr.Options().BackendURL,
+				Model:        cfg.Model,
+				Tokens:       mgr,
+				Timeout:      cfg.Timeout,
+				Capabilities: caps,
+				DataDir:      dataDir,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("buildCodexPool %q: %w", label, err)
+			}
+			pool = append(pool, p)
+		}
+		log.Printf("codex: round-robin across %d accounts", len(pool))
+		return llm.NewRouter(pool...)
+	}
+
+	// Single (or zero) account: preserve the exact original path,
+	// including the global codexAuthMgr the /login command already
+	// populated (carries the usage snapshot for the HUD).
+	mgr := codexAuthMgr
+	if mgr == nil {
+		mgr = codexauth.NewManager(dataDir, codexauth.Options{})
+	}
+	return llm.NewCodex(llm.CodexConfig{
+		BackendURL:   mgr.Options().BackendURL,
+		Model:        cfg.Model,
+		Tokens:       mgr,
+		Timeout:      cfg.Timeout,
+		Capabilities: caps,
+		DataDir:      dataDir,
 	})
 }
 
