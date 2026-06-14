@@ -18,6 +18,15 @@ func runListDir(t *testing.T, tool *ListDirTool, args string) Result {
 	return res
 }
 
+// mustWrite writes content to path or fails the test. Local helper
+// (previously lived in the removed file_ops_test.go).
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("mustWrite %s: %v", path, err)
+	}
+}
+
 func TestListDir_FileAndSubdir(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "a.txt"), "hello")

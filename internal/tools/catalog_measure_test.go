@@ -29,7 +29,6 @@ func smallTierAlwaysOnSpecs() []Tool {
 		NewEditLines(base).Spec(),
 		NewInsertAfter(base).Spec(),
 		NewDeleteLines(base).Spec(),
-		NewFileOps(base).Spec(),
 		NewEditDocx(base).Spec(),
 		NewEditXlsx(base).Spec(),
 	}
