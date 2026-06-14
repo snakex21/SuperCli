@@ -26,6 +26,8 @@ const (
 	menuProviderForm
 	menuProviderPredefined
 	menuOpenAIAuth
+	menuAccounts
+	menuAccountLabel
 	menuGoal
 )
 
@@ -149,6 +151,14 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	}
 
+	// Account label prompt: typing/enter/backspace go to its own
+	// handler so characters build the label instead of navigating.
+	if m.menu.kind == menuAccountLabel {
+		if mm, cmd, handled := m.accountLabelKey(msg.String()); handled {
+			return mm, cmd
+		}
+	}
+
 	key := msg.String()
 	lowerKey := strings.ToLower(key)
 	switch lowerKey {
@@ -224,6 +234,12 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "d":
+		// Accounts menu: 'd' logs out the selected account.
+		if m.menu.kind == menuAccounts {
+			if mm, cmd, handled := m.menuAccountsKey(key); handled {
+				return mm, cmd
+			}
+		}
 		if m.menu.kind == menuProviders && m.providerMgr != nil {
 			rows := m.providerRows()
 			if len(rows) > 0 {
@@ -354,6 +370,8 @@ func (m *Model) clampMenuCursor() {
 		max = len(providers.PredefinedProviders()) - 1
 	case menuOpenAIAuth:
 		max = 1
+	case menuAccounts:
+		max = len(m.accountRows()) - 1
 	case menuGoal:
 		max = len(m.goalTaskRows()) - 1
 	}
@@ -464,11 +482,12 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	case menuOpenAIAuth:
 		if m.menu.cursor == 0 {
-			// Sign in with ChatGPT: run the existing OAuth flow
-			// (/login). It registers the provider entry itself.
-			next, _ := m.closeMenu()
-			mm := next.(Model)
-			return mm.dispatchSlashCommand(SlashCommand{Name: "login"})
+			// Sign in with ChatGPT: open the accounts screen, which
+			// lists logged-in accounts and lets the user add/remove
+			// them (round-robin pool). First-time users see an empty
+			// list with a single "add account" action.
+			m.menu = interactiveMenu{kind: menuAccounts}
+			return m, nil
 		}
 		// API key: prefill the regular provider form.
 		m.menu = interactiveMenu{
@@ -477,6 +496,8 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			formAt: 3,
 		}
 		return m, nil
+	case menuAccounts:
+		return m.accountsMenuEnter()
 	}
 	return m, nil
 }
@@ -513,6 +534,10 @@ func (m Model) renderMenuView() string {
 		return m.renderPredefinedMenu()
 	case menuOpenAIAuth:
 		return m.renderOpenAIAuthMenu()
+	case menuAccounts:
+		return m.renderAccountsMenu()
+	case menuAccountLabel:
+		return m.renderAccountLabelMenu()
 	case menuGoal:
 		return m.renderGoalMenu()
 	default:
