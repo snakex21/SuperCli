@@ -255,6 +255,14 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.probeProvidersCmd()
 		}
 		return m, nil
+	case "c":
+		// Shortcut from the providers list straight to the ChatGPT
+		// accounts screen (add/remove accounts, round-robin pool).
+		if m.menu.kind == menuProviders {
+			m.menu = interactiveMenu{kind: menuAccounts}
+			return m, nil
+		}
+		return m, nil
 	case "m":
 		if m.menu.kind == menuProviders {
 			rows := m.providerRows()
@@ -625,7 +633,7 @@ func (m Model) renderProvidersMenu() string {
 	if len(rows) == 0 {
 		b.WriteString("  no providers configured — press A to add one\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels · ✓ = active · ESC back"))
+	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels [C]hatGPT accounts · ✓ = active · ESC back"))
 	return b.String()
 }
 
