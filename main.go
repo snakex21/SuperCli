@@ -95,6 +95,13 @@ var supercliCoordinatorMode bool
 // projects). Set once in main() before the loop is created.
 var memoryBriefing string
 
+// workingDirNote states the ACTUAL sandbox root (the BaseDir the
+// file tools enforce) so the model uses the right path on its
+// first file call. Derived in main() from the same resolved home
+// the tools get — never hardcoded — and injected last so it wins
+// over any conflicting project path a memory fact might mention.
+var workingDirNote string
+
 // memoryAutoSaveInstruction backs the B4 contract: the model is
 // told to save a task-log entry after each finished task; the
 // AutoSaver in code covers sessions where it forgets.
@@ -117,6 +124,11 @@ func buildSystemPrompt(svc *goal.Service) string {
 	}
 	if memoryBriefing != "" {
 		base += "\n\n" + memoryBriefing
+	}
+	// Inject AFTER the briefing so the real sandbox root wins over
+	// any conflicting project path a memory fact may carry.
+	if workingDirNote != "" {
+		base += "\n\n" + workingDirNote
 	}
 	base += "\n\n" + memoryAutoSaveInstruction
 	if svc == nil {
@@ -221,6 +233,12 @@ func main() {
 		fatal("resolve home", err)
 	}
 	home = resolvedHome
+	// State the real sandbox root (the BaseDir file tools enforce) so
+	// the model's first file/list call uses the correct path. This is
+	// the authoritative working directory; if a memory fact mentions a
+	// different project path, file operations must stay inside this one.
+	workingDirNote = "Working directory (file sandbox root): " + home +
+		"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
 
 	// SuperCli is ALWAYS portable: the single data directory holds
 	// every piece of CLI state and lives next to the executable
