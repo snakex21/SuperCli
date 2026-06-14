@@ -45,3 +45,26 @@ func Build(small bool) string {
 	}
 	return Core + "\n\n" + Extended
 }
+
+// ThinToolProtocol explains the sentinel tool-call syntax used by
+// the thin tool protocol (B3/B4). It is injected at request time
+// ONLY when thin tools are active (small-tier models), never baked
+// into Core — so it does not count against the Core budget and big
+// models keep native JSON tool calling untouched.
+//
+// The format is deliberately JSON-free to save tokens and to avoid
+// the truncated-JSON failures small models produce. One field per
+// line, value runs to end of line:
+//
+//	«tool_name»                  (no arguments)
+//	«tool_name
+//	key: value
+//	other_key: value»
+const ThinToolProtocol = `Calling tools — use this exact format, not JSON:
+« then the tool name on its own line, then one "key: value" per line, then ». Example:
+«edit_line
+file: main.go
+line: 42
+expected_old: return nil
+new_content: return err»
+For a tool with no arguments write «tool_name» on one line. Do not wrap arguments in JSON or braces. One tool call at a time.`
