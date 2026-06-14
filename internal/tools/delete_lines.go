@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"supercli/internal/fileops"
+	"supercli/internal/sandbox"
 )
 
 // DeleteLines is the F24 tool for removing a range of lines.
@@ -52,7 +52,10 @@ func (t *DeleteLines) execute(ctx context.Context, args json.RawMessage) (Result
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("delete_lines: bad args: %w", err)}, nil
 	}
-	full := t.resolvePath(a.File)
+	full, err := t.resolvePath(a.File)
+	if err != nil {
+		return Result{Err: fmt.Errorf("delete_lines: %w", err)}, nil
+	}
 	diff, err := fileops.DeleteLines(full, a.From, a.To)
 	if err != nil {
 		return Result{Err: fmt.Errorf("delete_lines: %w", err)}, nil
@@ -60,9 +63,8 @@ func (t *DeleteLines) execute(ctx context.Context, args json.RawMessage) (Result
 	return Result{Text: fmt.Sprintf("Deleted lines %d-%d in %s:\n%s", a.From, a.To, a.File, diff)}, nil
 }
 
-func (t *DeleteLines) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(t.BaseDir, path)
+// resolvePath resolves file against BaseDir through the sandbox so
+// the model cannot delete lines outside the project home. Mirrors write_file.
+func (t *DeleteLines) resolvePath(path string) (string, error) {
+	return sandbox.ResolveSafe(t.BaseDir, path)
 }

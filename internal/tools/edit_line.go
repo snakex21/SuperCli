@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"supercli/internal/fileops"
+	"supercli/internal/sandbox"
 )
 
 // EditLine is the F24 tool for replacing exactly one line.
@@ -70,7 +70,10 @@ func (t *EditLine) execute(ctx context.Context, args json.RawMessage) (Result, e
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("edit_line: bad args: %w", err)}, nil
 	}
-	full := t.resolvePath(a.File)
+	full, err := t.resolvePath(a.File)
+	if err != nil {
+		return Result{Err: fmt.Errorf("edit_line: %w", err)}, nil
+	}
 	// Anchored path when the model supplied proof content.
 	if a.ExpectedOld != "" {
 		diff, err := fileops.EditLineAnchored(full, a.Line, a.ExpectedOld, a.NewContent)
@@ -86,9 +89,9 @@ func (t *EditLine) execute(ctx context.Context, args json.RawMessage) (Result, e
 	return Result{Text: fmt.Sprintf("Edited line %d in %s:\n%s", a.Line, a.File, diff)}, nil
 }
 
-func (t *EditLine) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(t.BaseDir, path)
+// resolvePath resolves file against BaseDir through the sandbox so
+// the model cannot edit outside the project home — absolute paths
+// and .. traversal that escape are rejected. Mirrors write_file.
+func (t *EditLine) resolvePath(path string) (string, error) {
+	return sandbox.ResolveSafe(t.BaseDir, path)
 }
