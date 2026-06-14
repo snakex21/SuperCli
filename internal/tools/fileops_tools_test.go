@@ -181,6 +181,58 @@ func TestEditLineTool_Spec(t *testing.T) {
 	}
 }
 
+func TestEditLineTool_Anchored_DriftCorrected(t *testing.T) {
+	// Content "bbb" is at line 2; the model hints line 4.
+	// The anchored path must find it by content and edit it.
+	_, dir := tmpToolFile(t, "aaa\nbbb\nccc\nddd\n")
+	tool := NewEditLine(dir)
+	args, _ := json.Marshal(editLineArgs{
+		File: "test.txt", Line: 4, NewContent: "BBB", ExpectedOld: "bbb",
+	})
+	r, err := tool.execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if r.Err != nil {
+		t.Fatalf("unexpected tool error: %v", r.Err)
+	}
+	if !strings.Contains(r.Text, "anchored") {
+		t.Errorf("text should mark anchored edit: %s", r.Text)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "test.txt"))
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if lines[1] != "BBB" {
+		t.Errorf("line 2 = %q, want BBB", lines[1])
+	}
+	if lines[2] != "ccc" {
+		t.Errorf("line 3 mutated: %q", lines[2])
+	}
+}
+
+func TestEditLineTool_Anchored_MismatchFailsLoud(t *testing.T) {
+	// expected_old does not exist → must fail, file untouched.
+	_, dir := tmpToolFile(t, "aaa\nbbb\nccc\n")
+	tool := NewEditLine(dir)
+	args, _ := json.Marshal(editLineArgs{
+		File: "test.txt", Line: 2, NewContent: "X", ExpectedOld: "not-here",
+	})
+	r, _ := tool.execute(context.Background(), args)
+	if r.Err == nil {
+		t.Fatal("expected error for content mismatch")
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "test.txt"))
+	if !strings.Contains(string(data), "bbb") || strings.Contains(string(data), "X") {
+		t.Errorf("file mutated on anchored mismatch: %q", string(data))
+	}
+}
+
+func TestEditLineTool_Anchored_SchemaMentionsExpectedOld(t *testing.T) {
+	spec := NewEditLine(".").Spec()
+	if !strings.Contains(spec.Schema, "expected_old") {
+		t.Errorf("schema missing expected_old: %s", spec.Schema)
+	}
+}
+
 // ========== insert_after ==========
 
 func TestInsertAfterTool_Basic(t *testing.T) {
