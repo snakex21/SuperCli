@@ -1,4 +1,4 @@
-package agent
+﻿package agent
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func TestLoop_ChatRouteSendsMinimalToolSet(t *testing.T) {
 	}
 	l := makeLoop(t, p, reg, "FULL COORDINATOR PROMPT")
 	l.navigate = true
-	ch, _ := l.Run(context.Background(), "cześć")
+	ch, _ := l.Run(context.Background(), "hej")
 	drainEvents(t, ch)
 
 	if p.toolCount != 2 {
@@ -45,7 +45,7 @@ func TestLoop_CoordinatorRouteAppendsTimeStamp(t *testing.T) {
 		t.Fatalf("NewLoop: %v", err)
 	}
 	l.route = RouteCoordinator
-	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrób coś"})
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrob cos"})
 	msgs := l.providerMessages()
 	last := msgs[len(msgs)-1]
 	if last.Role != llm.RoleSystem || !strings.Contains(last.Content, "Current local date/time:") {
@@ -147,8 +147,8 @@ func TestLoop_ChatRouteKeepsCurrentTurnToolPairs(t *testing.T) {
 	l.route = RouteChatOnly
 	l.Messages = append(l.Messages,
 		llm.Message{Role: llm.RoleUser, Content: "stare pytanie"},
-		llm.Message{Role: llm.RoleAssistant, Content: "stara odpowiedź"},
-		llm.Message{Role: llm.RoleUser, Content: "co słychać w go 1.25?"},
+		llm.Message{Role: llm.RoleAssistant, Content: "stara odpowiedz"},
+		llm.Message{Role: llm.RoleUser, Content: "co slychac w go 1.25?"},
 		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "tool_search", Arguments: `{"query":"web"}`}}},
 		llm.Message{Role: llm.RoleTool, ToolCallID: "c1", Name: "tool_search", Content: "found web_search"},
 	)
@@ -215,19 +215,28 @@ func TestThinTools_OnlyCoreGetsFullSchema(t *testing.T) {
 }
 
 // TestThinTools_TailAdvertisedInCatalog: dormant tail tools must
-// appear in the injected catalog system message.
+// appear in the injected catalog section of the thin preamble.
 func TestThinTools_TailAdvertisedInCatalog(t *testing.T) {
 	l := thinLoop(t)
-	cat := l.toolCatalog()
+	pre := l.thinToolsPreamble()
 	for _, tail := range []string{"darwin", "web_search", "read_pdf"} {
-		if !strings.Contains(cat, tail) {
-			t.Errorf("tail tool %q missing from catalog:\n%s", tail, cat)
+		if !strings.Contains(pre, tail) {
+			t.Errorf("tail tool %q missing from preamble:\n%s", tail, pre)
 		}
 	}
-	// Core tools must NOT be re-advertised in the catalog.
-	for _, core := range []string{"edit_line", "ctx_execute"} {
-		if strings.Contains(cat, core) {
-			t.Errorf("core tool %q should not appear in catalog", core)
+	// Isolate the catalog section (after its header). The format
+	// instruction above it legitimately names a core tool as an
+	// example, so we only assert against the catalog body.
+	const hdr = "Additional tools available"
+	idx := strings.Index(pre, hdr)
+	if idx < 0 {
+		t.Fatalf("catalog header missing from preamble:\n%s", pre)
+	}
+	catalog := pre[idx:]
+	// Core tools must NOT be re-advertised in the catalog body.
+	for _, core := range []string{"ctx_execute", "read_lines", "read_context"} {
+		if strings.Contains(catalog, core) {
+			t.Errorf("core tool %q should not appear in catalog body", core)
 		}
 	}
 }
@@ -250,7 +259,7 @@ func TestThinTools_ActivatedTailGetsSchemaLeavesCatalog(t *testing.T) {
 	if got["darwin"] {
 		t.Error("still-dormant darwin must stay out of toolDefs")
 	}
-	cat := l.toolCatalog()
+	cat := l.thinToolsPreamble()
 	if strings.Contains(cat, "web_search") {
 		t.Error("activated web_search should no longer be in the catalog")
 	}
@@ -270,7 +279,7 @@ func TestThinTools_DisabledPreservesHistoricalBehaviour(t *testing.T) {
 	if len(defs) != 9 {
 		t.Errorf("thin-off coordinator defs = %d, want 9 (all visible)", len(defs))
 	}
-	if cat := l.toolCatalog(); cat != "" {
+	if cat := l.thinToolsPreamble(); cat != "" {
 		t.Errorf("thin-off must inject no catalog, got:\n%s", cat)
 	}
 }
@@ -280,15 +289,48 @@ func TestThinTools_DisabledPreservesHistoricalBehaviour(t *testing.T) {
 // cacheable prefix is preserved).
 func TestThinTools_CatalogInjectedBeforeTimestamp(t *testing.T) {
 	l := thinLoop(t)
-	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrób coś"})
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrob cos"})
 	msgs := l.providerMessages()
 	last := msgs[len(msgs)-1]
 	if !strings.Contains(last.Content, "Current local date/time:") {
 		t.Fatalf("last message must be the time stamp, got: %q", last.Content)
 	}
-	// the message before last should be the catalog.
+	// the message before last should be the thin preamble (instruction + catalog).
 	prev := msgs[len(msgs)-2]
 	if !strings.Contains(prev.Content, "Additional tools available") {
 		t.Errorf("catalog should sit just before the time stamp, got: %q", prev.Content)
+	}
+}
+
+// TestThinTools_PreambleTeachesSentinelFormat: under thin tools the
+// preamble MUST instruct the model to call tools with the « » format,
+// otherwise the wired parser waits on syntax the model never emits.
+func TestThinTools_PreambleTeachesSentinelFormat(t *testing.T) {
+	l := thinLoop(t)
+	pre := l.thinToolsPreamble()
+	if !strings.Contains(pre, "\u00AB") || !strings.Contains(pre, "\u00BB") {
+		t.Errorf("preamble must show the « » sentinels, got:\n%s", pre)
+	}
+	if !strings.Contains(pre, "not JSON") {
+		t.Errorf("preamble must tell the model not to use JSON, got:\n%s", pre)
+	}
+}
+
+// TestThinTools_PreambleInstructionWithoutTail: even when the tail is
+// empty (everything activated), the call-format instruction must
+// still be present — it governs how the core tools are called.
+func TestThinTools_PreambleInstructionWithoutTail(t *testing.T) {
+	l := thinLoop(t)
+	// Activate every non-core tool so the tail is empty.
+	l.registry.Activate("darwin", "web_search", "read_pdf")
+	pre := l.thinToolsPreamble()
+	if pre == "" {
+		t.Fatal("preamble must not be empty: format instruction still applies")
+	}
+	if !strings.Contains(pre, "\u00AB") {
+		t.Errorf("format instruction missing when tail empty:\n%s", pre)
+	}
+	if strings.Contains(pre, "Additional tools available") {
+		t.Errorf("no catalog should appear when tail is empty:\n%s", pre)
 	}
 }

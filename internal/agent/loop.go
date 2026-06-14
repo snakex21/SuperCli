@@ -11,6 +11,7 @@ import (
 
 	"supercli/internal/draft"
 	"supercli/internal/llm"
+	"supercli/internal/prompt"
 	"supercli/internal/stats"
 	"supercli/internal/tools"
 	"supercli/internal/ultrawork"
@@ -443,16 +444,22 @@ func (l *Loop) isActivated(name string) bool {
 	return false
 }
 
-// toolCatalog renders the compact name+hint advertisement for the
-// dormant tail: visible tools that are neither in the full-schema
-// core nor already activated. Returns "" when thin tools are off,
-// off-route, or the tail is empty — callers then inject nothing.
-// The model uses tool_search to pull any of these in (which
-// activates it and returns its full schema in the same turn).
-func (l *Loop) toolCatalog() string {
+// thinToolsPreamble builds the request-time system block for the
+// thin tool protocol: the sentinel call-format instruction (so the
+// model knows to write «name\nkey: value» instead of JSON) plus,
+// when the dormant tail is non-empty, a compact name+hint catalog
+// of tools reachable via tool_search. Returns "" when thin tools
+// are off or off the coordinator route, so callers inject nothing.
+//
+// The instruction is always present under thin tools (it governs
+// how even the core tools are called); the catalog is appended
+// only when there is a tail to advertise.
+func (l *Loop) thinToolsPreamble() string {
 	if !l.thinTools || l.route != RouteCoordinator {
 		return ""
 	}
+	out := prompt.ThinToolProtocol
+
 	var tail []tools.Tool
 	for _, t := range l.registry.Visible() {
 		if isThinCore(t.Name) || l.isActivated(t.Name) {
@@ -460,20 +467,18 @@ func (l *Loop) toolCatalog() string {
 		}
 		tail = append(tail, t)
 	}
-	if len(tail) == 0 {
-		return ""
+	if len(tail) > 0 {
+		hintMax := l.thinHintMax
+		if hintMax <= 0 {
+			hintMax = defaultThinHintMax
+		}
+		if body := tools.RenderCatalog(tail, hintMax); body != "" {
+			out += "\n\nAdditional tools available on demand (call tool_search " +
+				"with a natural-language query to load any of these — it returns " +
+				"the full schema so you can call it the same turn):\n" + body
+		}
 	}
-	hintMax := l.thinHintMax
-	if hintMax <= 0 {
-		hintMax = defaultThinHintMax
-	}
-	body := tools.RenderCatalog(tail, hintMax)
-	if body == "" {
-		return ""
-	}
-	return "Additional tools available on demand (call tool_search with a " +
-		"natural-language query to load any of these — it returns the full " +
-		"schema so you can call it the same turn):\n" + body
+	return out
 }
 
 // Run implements Agent. It appends the prompt as a user message,
@@ -848,11 +853,12 @@ func (l *Loop) providerMessages() []llm.Message {
 		visible := l.VisibleMessages()
 		out := make([]llm.Message, 0, len(visible)+2)
 		out = append(out, visible...)
-		// Thin tool protocol: advertise the dormant tail as a compact
-		// catalog just before the freshness stamp. Empty when thin tools
-		// are off or the tail is empty, so nothing is injected then.
-		if cat := l.toolCatalog(); cat != "" {
-			out = append(out, llm.Message{Role: llm.RoleSystem, Content: cat})
+		// Thin tool protocol: inject the sentinel call-format
+		// instruction (and the dormant-tail catalog when non-empty)
+		// just before the freshness stamp. Empty when thin tools are
+		// off, so nothing is injected then.
+		if pre := l.thinToolsPreamble(); pre != "" {
+			out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
 		}
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: timeSection(time.Now())})
 		return out
