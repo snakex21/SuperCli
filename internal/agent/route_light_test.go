@@ -166,3 +166,129 @@ func TestLoop_ChatRouteKeepsCurrentTurnToolPairs(t *testing.T) {
 		t.Fatalf("tool pairing lost: call=%v result=%v msgs=%+v", sawCall, sawResult, msgs)
 	}
 }
+
+// thinLoop builds a coordinator loop with thin tools on and a
+// registry of core + tail tools, all always-on (as in production).
+func thinLoop(t *testing.T) *Loop {
+	t.Helper()
+	reg := tools.NewRegistry()
+	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+		return tools.Result{Text: "x"}, nil
+	}
+	// core + tail, all always-on.
+	for _, name := range []string{"tool_search", "edit_line", "read_context", "read_lines", "ctx_execute", "recall", "darwin", "web_search", "read_pdf"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: "does " + name + " things for the user", Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
+		reg.MarkAlwaysOn(name)
+	}
+	l, err := NewLoop(LoopConfig{
+		Provider:  &stubProvider{name: "stub"},
+		Registry:  reg,
+		System:    "base",
+		ThinTools: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	l.route = RouteCoordinator
+	return l
+}
+
+// TestThinTools_OnlyCoreGetsFullSchema: with thin tools on, the
+// dormant tail must NOT appear in toolDefs; only the core does.
+func TestThinTools_OnlyCoreGetsFullSchema(t *testing.T) {
+	l := thinLoop(t)
+	defs := l.buildToolDefs()
+	got := map[string]bool{}
+	for _, d := range defs {
+		got[d.Name] = true
+	}
+	for _, core := range thinCoreTools {
+		if !got[core] {
+			t.Errorf("core tool %q missing from toolDefs", core)
+		}
+	}
+	for _, tail := range []string{"darwin", "web_search", "read_pdf"} {
+		if got[tail] {
+			t.Errorf("dormant tail tool %q leaked into toolDefs (should be catalog-only)", tail)
+		}
+	}
+}
+
+// TestThinTools_TailAdvertisedInCatalog: dormant tail tools must
+// appear in the injected catalog system message.
+func TestThinTools_TailAdvertisedInCatalog(t *testing.T) {
+	l := thinLoop(t)
+	cat := l.toolCatalog()
+	for _, tail := range []string{"darwin", "web_search", "read_pdf"} {
+		if !strings.Contains(cat, tail) {
+			t.Errorf("tail tool %q missing from catalog:\n%s", tail, cat)
+		}
+	}
+	// Core tools must NOT be re-advertised in the catalog.
+	for _, core := range []string{"edit_line", "ctx_execute"} {
+		if strings.Contains(cat, core) {
+			t.Errorf("core tool %q should not appear in catalog", core)
+		}
+	}
+}
+
+// TestThinTools_ActivatedTailGetsSchemaLeavesCatalog: once the model
+// pulls a tail tool in via tool_search (Activate), it must move from
+// the catalog into toolDefs with a full schema.
+func TestThinTools_ActivatedTailGetsSchemaLeavesCatalog(t *testing.T) {
+	l := thinLoop(t)
+	l.registry.Activate("web_search")
+
+	defs := l.buildToolDefs()
+	got := map[string]bool{}
+	for _, d := range defs {
+		got[d.Name] = true
+	}
+	if !got["web_search"] {
+		t.Error("activated tail tool web_search must be in toolDefs with full schema")
+	}
+	if got["darwin"] {
+		t.Error("still-dormant darwin must stay out of toolDefs")
+	}
+	cat := l.toolCatalog()
+	if strings.Contains(cat, "web_search") {
+		t.Error("activated web_search should no longer be in the catalog")
+	}
+	if !strings.Contains(cat, "darwin") {
+		t.Error("dormant darwin should still be in the catalog")
+	}
+}
+
+// TestThinTools_DisabledPreservesHistoricalBehaviour: with thin
+// tools OFF, every visible tool gets a full schema and no catalog
+// is injected.
+func TestThinTools_DisabledPreservesHistoricalBehaviour(t *testing.T) {
+	l := thinLoop(t)
+	l.thinTools = false
+
+	defs := l.buildToolDefs()
+	if len(defs) != 9 {
+		t.Errorf("thin-off coordinator defs = %d, want 9 (all visible)", len(defs))
+	}
+	if cat := l.toolCatalog(); cat != "" {
+		t.Errorf("thin-off must inject no catalog, got:\n%s", cat)
+	}
+}
+
+// TestThinTools_CatalogInjectedBeforeTimestamp: the catalog must be
+// a system message and the freshness stamp must remain last (so the
+// cacheable prefix is preserved).
+func TestThinTools_CatalogInjectedBeforeTimestamp(t *testing.T) {
+	l := thinLoop(t)
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrób coś"})
+	msgs := l.providerMessages()
+	last := msgs[len(msgs)-1]
+	if !strings.Contains(last.Content, "Current local date/time:") {
+		t.Fatalf("last message must be the time stamp, got: %q", last.Content)
+	}
+	// the message before last should be the catalog.
+	prev := msgs[len(msgs)-2]
+	if !strings.Contains(prev.Content, "Additional tools available") {
+		t.Errorf("catalog should sit just before the time stamp, got: %q", prev.Content)
+	}
+}
