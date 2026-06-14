@@ -1313,7 +1313,13 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 	}
 
 	// Build JSON args from <parameter=KEY>VALUE</parameter> pairs.
+	// We collect names and values separately so we can also recognise
+	// the single-blob variant some Hermes/Qwen models emit:
+	// <parameter=arguments>{...json...}</parameter>, where the whole
+	// argument object is packed into one "arguments" parameter rather
+	// than one parameter per field.
 	var pairs []string
+	var names, values []string
 	rem := funcBlock
 	for {
 		pi := strings.Index(rem, "<parameter=")
@@ -1339,12 +1345,16 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 				break
 			}
 			pairs = append(pairs, fmt.Sprintf(`"%s":""`, paramName))
+			names = append(names, paramName)
+			values = append(values, "")
 			rem = rem[ci+2:]
 			continue
 		}
 		value := strings.TrimSpace(rem[:ci])
 		rem = rem[ci+len(closeTag):]
 
+		names = append(names, paramName)
+		values = append(values, value)
 		// Try to parse value as JSON; if it's not valid JSON,
 		// treat it as a string.
 		pairs = append(pairs, fmt.Sprintf(`"%s":%s`, paramName, jsonString(value)))
@@ -1352,6 +1362,22 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 
 	if len(pairs) == 0 {
 		return nil
+	}
+
+	// Blob variant: exactly one parameter named "arguments" (or "args")
+	// whose value is a JSON object. Use that object directly as the
+	// arguments instead of nesting it under "arguments", which no tool
+	// expects. Falls through to the per-field path on any mismatch.
+	if len(names) == 1 && (names[0] == "arguments" || names[0] == "args") {
+		if blob := strings.TrimSpace(values[0]); len(blob) > 1 &&
+			blob[0] == '{' && blob[len(blob)-1] == '}' &&
+			json.Valid([]byte(blob)) {
+			return []llm.ToolCall{{
+				ID:        "xml_" + name,
+				Name:      name,
+				Arguments: blob,
+			}}
+		}
 	}
 
 	args := "{" + strings.Join(pairs, ",") + "}"
