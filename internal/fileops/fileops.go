@@ -12,6 +12,7 @@ package fileops
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -466,4 +467,41 @@ func buildDeleteDiff(lines []string, from, to int) string {
 		}
 	}
 	return b.String()
+}
+
+// WriteResult reports the outcome of WriteFile so the tool layer
+// can tell the model (and the user) exactly what happened.
+type WriteResult struct {
+	// Created is true when the file did not exist before and was
+	// newly created; false when an existing file was overwritten.
+	Created bool
+	// Bytes is the number of content bytes written.
+	Bytes int
+}
+
+// WriteFile writes content to path, creating any missing parent
+// directories. It reports whether the file was newly created or an
+// existing one overwritten, plus the byte count — enough for the
+// caller to state the change without re-reading the file.
+//
+// The package stays pure: WriteFile does NOT enforce the sandbox.
+// Callers (the write_file tool) resolve the path with
+// sandbox.ResolveSafe BEFORE calling this, exactly as ctx_execute
+// does — keeping the safety boundary in one place (the tool).
+func WriteFile(path, content string) (WriteResult, error) {
+	if path == "" {
+		return WriteResult{}, fmt.Errorf("fileops.WriteFile: empty path")
+	}
+	_, statErr := os.Stat(path)
+	existed := statErr == nil
+
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return WriteResult{}, fmt.Errorf("fileops.WriteFile: mkdir %s: %w", dir, err)
+		}
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return WriteResult{}, fmt.Errorf("fileops.WriteFile: %w", err)
+	}
+	return WriteResult{Created: !existed, Bytes: len(content)}, nil
 }
