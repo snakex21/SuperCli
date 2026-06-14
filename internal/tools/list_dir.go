@@ -40,10 +40,10 @@ func NewListDir(baseDir string) *ListDirTool {
 func (t *ListDirTool) Spec() Tool {
 	return Tool{
 		Name: "list_dir",
-		Description: "List the files and subfolders directly inside a folder (like 'ls' or 'dir'). " +
-			"Use this to answer \"what's in this folder?\". Folders are marked with a trailing '/'; " +
-			"files show their size in bytes. Leave 'path' empty to list the current working directory. " +
-			"Lists one level only (not recursive). Path must stay inside the working directory.",
+		Description: "List a directory / see what files are in a folder (the 'ls'/'dir' for SuperCli). " +
+			"First choice for \"what's in this folder?\" — do NOT use file_ops for listing. " +
+			"Folders end with '/'; files show size in bytes. Empty 'path' lists the working directory. " +
+			"One level only (not recursive). Path must stay inside the working directory.",
 		Schema: `{
   "type": "object",
   "properties": {
