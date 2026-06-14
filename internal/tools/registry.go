@@ -261,6 +261,12 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	if !ok {
 		return Result{Err: fmt.Errorf("%w: %q", ErrUnknownTool, name)}, ErrUnknownTool
 	}
+	// Lenient arg coercion for small/local models that stringify
+	// scalars ({"limit":"5"} -> {"limit":5}). Schema-driven and
+	// conservative: only fields the tool's schema types as
+	// int/number/bool are touched, and only when the string is a
+	// valid literal. See coerce_args.go.
+	args = CoerceArgs(t.Schema, args)
 	return t.Fn(ctx, args)
 }
 
