@@ -45,6 +45,13 @@ var modelRates = map[string]Rate{
 	"o4-mini":           {InputPer1k: 1.10, OutputPer1k: 4.40},
 	"chatgpt-4o-latest": {InputPer1k: 5.00, OutputPer1k: 15.00},
 
+	// OpenAI GPT-5 family (Codex backend, June 2026):
+	// gpt-5.5 is the flagship, gpt-5.4-mini the cheap/fast
+	// option, gpt-5.3-codex-spark the low-latency preview.
+	"gpt-5.5":             {InputPer1k: 1.25, OutputPer1k: 10.00},
+	"gpt-5.4-mini":        {InputPer1k: 0.25, OutputPer1k: 2.00},
+	"gpt-5.3-codex-spark": {InputPer1k: 0.50, OutputPer1k: 4.00},
+
 	// Anthropic
 	"claude-3-5-haiku-latest":  {InputPer1k: 0.80, OutputPer1k: 4.00},
 	"claude-3-5-sonnet-latest": {InputPer1k: 3.00, OutputPer1k: 15.00},
