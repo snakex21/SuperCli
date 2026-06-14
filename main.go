@@ -1419,8 +1419,20 @@ func main() {
 		if codexAuthMgr == nil {
 			initCodexAuth(dataDir, tomlCfg)
 		}
+		// Multi-account: "/login <label>" signs a SECOND (named)
+		// account into auth-<label>.json. Bare "/login" uses the
+		// default account exactly as before.
+		label := strings.TrimSpace(args)
+		mgr := codexAuthMgr
+		if label != "" {
+			mgr = codexauth.NewManagerFor(dataDir, label, codexauth.Options{
+				ClientID:   tomlCfg.CodexAuth.ClientID,
+				Issuer:     tomlCfg.CodexAuth.Issuer,
+				BackendURL: tomlCfg.CodexAuth.BackendURL,
+			})
+		}
 		var status strings.Builder
-		res, err := codexAuthMgr.Login(ctx, &status)
+		res, err := mgr.Login(ctx, &status)
 		if err != nil {
 			out := strings.TrimSpace(status.String())
 			if out != "" {
@@ -1432,7 +1444,7 @@ func main() {
 		// provider menus can route through the ChatGPT backend.
 		if provMgr != nil {
 			if err := provMgr.Add("codex", config.ProviderCodex,
-				codexAuthMgr.Options().BackendURL, "", "gpt-5.5"); err != nil &&
+				mgr.Options().BackendURL, "", "gpt-5.5"); err != nil &&
 				!strings.Contains(err.Error(), "already exists") {
 				log.Printf("login: register codex provider: %v", err)
 			}
@@ -1449,6 +1461,20 @@ func main() {
 		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5.5) — requests now route through the ChatGPT backend.", plan), nil
 	}
 	mergedCommands["logout"] = func(ctx context.Context, args string) (string, error) {
+		// Multi-account: "/logout <label>" removes that named
+		// account's auth-<label>.json. Bare "/logout" removes the
+		// default account (and its usage snapshot) as before.
+		label := strings.TrimSpace(args)
+		if label != "" {
+			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+			if !mgr.LoggedIn() {
+				return fmt.Sprintf("account %s is not logged in", strconv.Quote(label)), nil
+			}
+			if err := mgr.Logout(); err != nil {
+				return "", fmt.Errorf("logout %s: %w", label, err)
+			}
+			return fmt.Sprintf("logged out account %s (credentials removed)", strconv.Quote(label)), nil
+		}
 		if codexAuthMgr == nil || !codexAuthMgr.LoggedIn() {
 			return "not logged in (no ChatGPT credentials saved)", nil
 		}
@@ -1461,6 +1487,36 @@ func main() {
 			log.Printf("logout: clear usage snapshot: %v", err)
 		}
 		return "logged out — ChatGPT credentials and saved usage limits removed from the data dir", nil
+	}
+
+	// /accounts lists all logged-in ChatGPT accounts (default +
+	// any named ones). With 2+, requests round-robin across them.
+	mergedCommands["accounts"] = func(ctx context.Context, args string) (string, error) {
+		labels, err := codexauth.ListAccounts(dataDir)
+		if err != nil {
+			return "", fmt.Errorf("accounts: %w", err)
+		}
+		var loggedIn []string
+		for _, label := range labels {
+			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+			if mgr.LoggedIn() {
+				loggedIn = append(loggedIn, label)
+			}
+		}
+		if len(loggedIn) == 0 {
+			return "no ChatGPT accounts logged in. Use /login (or /login <label>) to add one.", nil
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "ChatGPT accounts (%d):\n", len(loggedIn))
+		for _, label := range loggedIn {
+			fmt.Fprintf(&b, "  - %s\n", label)
+		}
+		if len(loggedIn) > 1 {
+			b.WriteString("requests round-robin across these accounts.")
+		} else {
+			b.WriteString("add another with /login <label> to enable round-robin.")
+		}
+		return strings.TrimRight(b.String(), "\n"), nil
 	}
 
 	// /account — show the current ChatGPT-subscription login (account
