@@ -21,8 +21,10 @@ func TestRenderCatalog_SortedOneLinePerTool(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("want 3 lines, got %d: %q", len(lines), got)
 	}
-	// Sorted by name: alpha, mid, zebra.
-	if !strings.HasPrefix(lines[0], "alpha — First tool.") {
+	// Sorted by name: alpha, mid, zebra. Each line now leads with the
+	// compact call signature (alpha has one optional string prop "x";
+	// mid/zebra have no usable props so fall back to the bare name).
+	if !strings.HasPrefix(lines[0], "alpha(x) — First tool.") {
 		t.Errorf("line 0 = %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[1], "mid — Middle tool with padding.") {
@@ -112,6 +114,81 @@ func TestFirstLine_EmptyAndWhitespace(t *testing.T) {
 	}
 	if got := firstLine("  hello  \nworld"); got != "hello" {
 		t.Errorf("got %q, want hello", got)
+	}
+}
+
+// --- toolSignature ---
+
+func TestToolSignature_RequiredFirstAndTypedOptional(t *testing.T) {
+	// Mirrors the real tool_search schema: required "query" (string),
+	// optional "limit" (integer, default 10). Want: leading bare
+	// required arg, then optional carrying :int and =default.
+	schema := `{
+		"type":"object",
+		"properties":{
+			"query":{"type":"string"},
+			"limit":{"type":"integer","default":10}
+		},
+		"required":["query"]
+	}`
+	if got := toolSignature("tool_search", schema); got != "tool_search(query, limit:int=10)" {
+		t.Errorf("got %q, want %q", got, "tool_search(query, limit:int=10)")
+	}
+}
+
+func TestToolSignature_MultipleRequiredNoTypeTagForStrings(t *testing.T) {
+	// task(agent, prompt): both required strings -> bare names, no
+	// :type tag (string is the unmarked default).
+	schema := `{
+		"type":"object",
+		"properties":{
+			"agent":{"type":"string"},
+			"prompt":{"type":"string"}
+		},
+		"required":["agent","prompt"]
+	}`
+	if got := toolSignature("task", schema); got != "task(agent, prompt)" {
+		t.Errorf("got %q, want %q", got, "task(agent, prompt)")
+	}
+}
+
+func TestToolSignature_PreservesPropertyOrder(t *testing.T) {
+	// Declaration order (b, a, c) must be preserved, not sorted.
+	schema := `{"type":"object","properties":{
+		"b":{"type":"string"},
+		"a":{"type":"string"},
+		"c":{"type":"string"}
+	}}`
+	if got := toolSignature("t", schema); got != "t(b, a, c)" {
+		t.Errorf("got %q, want %q (order must be preserved)", got, "t(b, a, c)")
+	}
+}
+
+func TestToolSignature_BoolAndNumberTags(t *testing.T) {
+	schema := `{"type":"object","properties":{
+		"async":{"type":"boolean","default":false},
+		"ratio":{"type":"number"}
+	}}`
+	if got := toolSignature("t", schema); got != "t(async:bool=false, ratio:num)" {
+		t.Errorf("got %q, want %q", got, "t(async:bool=false, ratio:num)")
+	}
+}
+
+func TestToolSignature_FallbackToBareName(t *testing.T) {
+	cases := []string{"", "{}", `{"type":"object"}`, "not json", `{"type":"object","properties":{}}`}
+	for _, schema := range cases {
+		if got := toolSignature("bare", schema); got != "bare" {
+			t.Errorf("schema %q: got %q, want bare name", schema, got)
+		}
+	}
+}
+
+func TestToolSignature_StringDefaultUnquoted(t *testing.T) {
+	schema := `{"type":"object","properties":{
+		"mode":{"type":"string","default":"fast"}
+	}}`
+	if got := toolSignature("t", schema); got != "t(mode=fast)" {
+		t.Errorf("got %q, want %q", got, "t(mode=fast)")
 	}
 }
 
