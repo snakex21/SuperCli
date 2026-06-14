@@ -256,9 +256,9 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "c":
-		// Shortcut from the providers list straight to the ChatGPT
-		// accounts screen (add/remove accounts, round-robin pool).
-		if m.menu.kind == menuProviders {
+		// Shortcut to the ChatGPT accounts screen — only on an
+		// OpenAI/ChatGPT row (contextual, like [M]/[E]).
+		if m.menu.kind == menuProviders && m.cursorOnOpenAIRow() {
 			m.menu = interactiveMenu{kind: menuAccounts}
 			return m, nil
 		}
@@ -633,7 +633,12 @@ func (m Model) renderProvidersMenu() string {
 	if len(rows) == 0 {
 		b.WriteString("  no providers configured — press A to add one\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels [C]hatGPT accounts · ✓ = active · ESC back"))
+	hint := "↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels"
+	if m.cursorOnOpenAIRow() {
+		hint += " [C]hatGPT accounts"
+	}
+	hint += " · ✓ = active · ESC back"
+	b.WriteString("\n" + m.palette.InputHint.Render(hint))
 	return b.String()
 }
 
@@ -645,6 +650,23 @@ func displayProvider(name, typ string) (string, string) {
 		return "openai", "chatgpt"
 	}
 	return name, typ
+}
+
+// cursorOnOpenAIRow reports whether the providers-menu cursor is on
+// an OpenAI / ChatGPT row — the only rows for which the ChatGPT
+// accounts screen is relevant. Used to show the [C] hint and gate
+// the 'c' shortcut contextually (like [M]/[E] act on the selected
+// row), instead of advertising accounts on Ollama/LM Studio/etc.
+func (m Model) cursorOnOpenAIRow() bool {
+	if m.menu.kind != menuProviders {
+		return false
+	}
+	rows := m.providerRows()
+	if len(rows) == 0 {
+		return false
+	}
+	p := rows[minInt(m.menu.cursor, len(rows)-1)]
+	return p.Type == "openai" || p.Type == "codex"
 }
 
 // providerStatusCell returns the plain text and the styled text
