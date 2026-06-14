@@ -1749,6 +1749,15 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 				Messages:  msgs,
 			}
 			content := export.RenderMarkdown(opts)
+			// /export clip → copy to clipboard instead of a file, so
+			// the user can paste the transcript straight out of the
+			// alt-screen TUI (where mouse-selection does not work).
+			if a := strings.TrimSpace(args); a == "clip" || a == "clipboard" {
+				if err := clipboard.WriteAll(content); err != nil {
+					return slashResultMsg{Err: fmt.Errorf("export clipboard: %w", err)}
+				}
+				return slashResultMsg{Body: dm.ModelInfo(fmt.Sprintf("copied %d messages to clipboard", len(msgs)))}
+			}
 			filename := export.DefaultFilename(opts)
 			if args != "" {
 				filename = strings.TrimSpace(args)

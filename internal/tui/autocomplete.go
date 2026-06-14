@@ -112,7 +112,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "model", Desc: "show or swap active model", Args: "[model_id]"},
 		{Name: "reasoning", Desc: "show or set reasoning effort (OpenAI reasoning models)", Args: "[none|minimal|low|medium|high|xhigh|off]"},
 		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
-		{Name: "export", Desc: "export session to Markdown file", Args: "[filename.md]"},
+		{Name: "export", Desc: "export session to Markdown (arg 'clip' copies to clipboard)", Args: "[filename.md|clip]"},
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
 		{Name: "usage", Desc: "refresh and show ChatGPT-subscription usage limits (Codex)"},
 		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
