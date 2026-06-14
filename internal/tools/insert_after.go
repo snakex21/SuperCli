@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"supercli/internal/fileops"
+	"supercli/internal/sandbox"
 )
 
 // InsertAfter is the F24 tool for inserting a new line
@@ -53,7 +53,10 @@ func (t *InsertAfter) execute(ctx context.Context, args json.RawMessage) (Result
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("insert_after: bad args: %w", err)}, nil
 	}
-	full := t.resolvePath(a.File)
+	full, err := t.resolvePath(a.File)
+	if err != nil {
+		return Result{Err: fmt.Errorf("insert_after: %w", err)}, nil
+	}
 	diff, err := fileops.InsertAfter(full, a.Line, a.Content)
 	if err != nil {
 		return Result{Err: fmt.Errorf("insert_after: %w", err)}, nil
@@ -61,9 +64,8 @@ func (t *InsertAfter) execute(ctx context.Context, args json.RawMessage) (Result
 	return Result{Text: fmt.Sprintf("Inserted after line %d in %s:\n%s", a.Line, a.File, diff)}, nil
 }
 
-func (t *InsertAfter) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(t.BaseDir, path)
+// resolvePath resolves file against BaseDir through the sandbox so
+// the model cannot insert outside the project home. Mirrors write_file.
+func (t *InsertAfter) resolvePath(path string) (string, error) {
+	return sandbox.ResolveSafe(t.BaseDir, path)
 }

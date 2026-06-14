@@ -366,3 +366,56 @@ func TestF24_Tools_VerifyFamilies(t *testing.T) {
 		})
 	}
 }
+
+// TestEditTools_SandboxEscape verifies the F-thin security fix:
+// edit_line, insert_after and delete_lines must reject paths that
+// escape the project home (absolute paths and .. traversal), just
+// like write_file/move/copy/trash. Before the fix their resolvePath
+// accepted any absolute path, letting the model edit outside home.
+func TestEditTools_SandboxEscape(t *testing.T) {
+	dir := t.TempDir()
+	// A real file OUTSIDE home that must never be touched.
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		run  func(rel string) Result
+	}{
+		{"edit_line", func(p string) Result {
+			args, _ := json.Marshal(editLineArgs{File: p, Line: 1, NewContent: "HACKED"})
+			r, _ := NewEditLine(dir).execute(context.Background(), args)
+			return r
+		}},
+		{"insert_after", func(p string) Result {
+			args, _ := json.Marshal(insertAfterArgs{File: p, Line: 1, Content: "HACKED"})
+			r, _ := NewInsertAfter(dir).execute(context.Background(), args)
+			return r
+		}},
+		{"delete_lines", func(p string) Result {
+			args, _ := json.Marshal(deleteLinesArgs{File: p, From: 1, To: 1})
+			r, _ := NewDeleteLines(dir).execute(context.Background(), args)
+			return r
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+"_absolute", func(t *testing.T) {
+			r := tc.run(outside)
+			if r.Err == nil {
+				t.Errorf("%s accepted an absolute path outside home", tc.name)
+			}
+			if data, _ := os.ReadFile(outside); string(data) != "original" {
+				t.Errorf("%s modified a file outside home!", tc.name)
+			}
+		})
+		t.Run(tc.name+"_traversal", func(t *testing.T) {
+			r := tc.run("../../../etc/hosts")
+			if r.Err == nil {
+				t.Errorf("%s accepted a .. traversal path", tc.name)
+			}
+		})
+	}
+}
