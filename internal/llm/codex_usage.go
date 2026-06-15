@@ -13,18 +13,31 @@ import (
 // usageEndpointURL derives the dedicated rate-limit ("usage") endpoint
 // from the ChatGPT backend root, mirroring the Codex CLI reference
 // (codex-rs backend-client/src/client.rs get_rate_limits_many +
-// PathStyle::from_base_url):
+// PathStyle::from_base_url).
 //
-//   - When the base contains "/backend-api" (our DefaultBackendURL,
-//     "https://chatgpt.com/backend-api/codex"), the ChatGPT WHAM paths
-//     apply → "<base>/wham/usage".
-//   - Otherwise the standalone Codex API paths apply →
+// IMPORTANT: codex-rs roots the backend-client at the bare
+// "/backend-api" base (see client.rs base_url normalization:
+// `base_url = format!("{base_url}/backend-api")`) and forms the WHAM
+// usage path as "{base}/wham/usage" → "https://chatgpt.com/backend-api/wham/usage".
+// The "/codex" segment only belongs to the completions path
+// ("/backend-api/codex/responses"), NOT to /wham/usage. Our
+// CodexConfig.BackendURL bakes "/codex" into the root so that
+// `BackendURL + "/responses"` is correct, so here we must strip a
+// trailing "/codex" before building the WHAM path, otherwise the edge
+// (chatgpt.com WAF) serves a 403 HTML page for the bogus
+// "/backend-api/codex/wham/usage" path.
+//
+//   - When the base contains "/backend-api", the ChatGPT WHAM path
+//     applies → "<backend-api root>/wham/usage" (with any trailing
+//     "/codex" stripped).
+//   - Otherwise the standalone Codex API path applies →
 //     "<base>/api/codex/usage".
 //
 // The base is trimmed of any trailing slash first.
 func usageEndpointURL(backendURL string) string {
 	base := strings.TrimRight(backendURL, "/")
 	if strings.Contains(base, "/backend-api") {
+		base = strings.TrimSuffix(base, "/codex")
 		return base + "/wham/usage"
 	}
 	return base + "/api/codex/usage"
@@ -136,6 +149,21 @@ func windowResetDuration(resetAt int64, windowMin int, now time.Time, reset bool
 	return 0
 }
 
+// snippet returns a single-line, length-capped rendering of a response
+// body for use in error messages — newlines collapsed to spaces so the
+// /usage output stays readable, truncated with an ellipsis past max.
+func snippet(body []byte, max int) string {
+	s := strings.TrimSpace(string(body))
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return "(empty body)"
+	}
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
+}
+
 // FetchUsage performs a lightweight GET against the dedicated usage
 // endpoint to refresh the rate-limit snapshot WITHOUT a completion —
 // it does not consume the quota the way /responses does. On success it
@@ -153,7 +181,7 @@ func (p *CodexProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error)
 	}
 	access, accountID, err := p.cfg.Tokens.Token(ctx)
 	if err != nil {
-		return CodexRateLimits{}, err
+		return CodexRateLimits{}, fmt.Errorf("codex usage: could not obtain access token: %w", err)
 	}
 	url := usageEndpointURL(p.cfg.BackendURL)
 	for attempt := 1; ; attempt++ {
@@ -177,7 +205,12 @@ func (p *CodexProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error)
 			resp.Body.Close()
 			rl := parseCodexUsageBody(body)
 			if !rl.OK {
-				return rl, fmt.Errorf("codex usage: response carried no usable limits")
+				// 200 but the JSON shape didn't match our parser
+				// (no rate_limit/primary_window). Surface the URL and a
+				// snippet of the body so an unexpected response shape is
+				// visible instead of failing silently.
+				return rl, fmt.Errorf("codex usage: GET %s returned 200 but no usable limits (unexpected JSON shape); body: %s",
+					url, snippet(body, 512))
 			}
 			p.setRateLimits(accountID, rl)
 			return rl, nil
@@ -191,6 +224,10 @@ func (p *CodexProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error)
 			}
 			continue
 		}
-		return CodexRateLimits{}, fmt.Errorf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		// Always include the URL: a 404 here almost always means the
+		// usage path is wrong for this backend root, and the user needs
+		// to see which URL was hit to diagnose it.
+		return CodexRateLimits{}, fmt.Errorf("codex usage: GET %s -> http %d: %s",
+			url, resp.StatusCode, snippet(respBody, 512))
 	}
 }

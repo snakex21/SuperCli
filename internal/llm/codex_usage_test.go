@@ -14,14 +14,19 @@ func TestUsageEndpointURL(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "chatgpt backend uses wham path",
+			name:    "chatgpt backend uses wham path rooted at /backend-api (no /codex)",
 			backend: "https://chatgpt.com/backend-api/codex",
-			want:    "https://chatgpt.com/backend-api/codex/wham/usage",
+			want:    "https://chatgpt.com/backend-api/wham/usage",
 		},
 		{
 			name:    "trailing slash trimmed",
 			backend: "https://chatgpt.com/backend-api/codex/",
-			want:    "https://chatgpt.com/backend-api/codex/wham/usage",
+			want:    "https://chatgpt.com/backend-api/wham/usage",
+		},
+		{
+			name:    "backend-api base without /codex still works",
+			backend: "https://chatgpt.com/backend-api",
+			want:    "https://chatgpt.com/backend-api/wham/usage",
 		},
 		{
 			name:    "non-backend-api base uses codex api path",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -258,6 +259,89 @@ func TestRouter_PoolAggregate_SkipsAccountsWithoutData(t *testing.T) {
 	p5, _, n := r.PoolAggregate()
 	if n != 1 || p5 != 20 {
 		t.Errorf("PoolAggregate = (%d, n=%d), want (20, 1) - only accounts with data count", p5, n)
+	}
+}
+
+// fetchUsageProvider simulates a CodexProvider: FetchUsage returns a
+// preconfigured snapshot (or error) and, on success, stores it into rl
+// just like setRateLimits does, so RateLimits() then reports it. It
+// records how many times FetchUsage was called for assertions.
+type fetchUsageProvider struct {
+	scriptedProvider
+	mu       sync.Mutex
+	rl       CodexRateLimits
+	fetched  CodexRateLimits // what FetchUsage will store
+	fetchErr error
+	calls    int
+}
+
+func (p *fetchUsageProvider) RateLimits() (CodexRateLimits, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.rl, p.rl.OK
+}
+
+func (p *fetchUsageProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	if p.fetchErr != nil {
+		return CodexRateLimits{}, p.fetchErr
+	}
+	p.rl = p.fetched
+	return p.fetched, nil
+}
+
+func TestRouter_FetchUsageAll_RefreshesEveryAccount(t *testing.T) {
+	a := &fetchUsageProvider{scriptedProvider: scriptedProvider{name: "a"},
+		fetched: CodexRateLimits{PrimaryUsedPct: 2, SecondaryUsedPct: 10, OK: true}}
+	b := &fetchUsageProvider{scriptedProvider: scriptedProvider{name: "b"},
+		fetched: CodexRateLimits{PrimaryUsedPct: 8, SecondaryUsedPct: 20, OK: true}}
+	r, _ := NewRouter(a, b)
+	r.SetLabels([]string{"default", "drugie"})
+
+	rl, err := r.FetchUsageAll(context.Background())
+	if err != nil {
+		t.Fatalf("FetchUsageAll err = %v, want nil", err)
+	}
+	// Returns the ACTIVE account's snapshot (account 0 = default).
+	if !rl.OK || rl.PrimaryUsedPct != 2 {
+		t.Errorf("active snapshot = %+v, want default's (2%%)", rl)
+	}
+	// BOTH accounts were fetched, not just the active one.
+	if a.calls != 1 || b.calls != 1 {
+		t.Errorf("fetch calls: a=%d b=%d, want 1 each (every account refreshed)", a.calls, b.calls)
+	}
+	// Pool now aggregates BOTH accounts: (2+8)/2=5, (10+20)/2=15, n=2.
+	p5, p7, n := r.PoolAggregate()
+	if n != 2 || p5 != 5 || p7 != 15 {
+		t.Errorf("PoolAggregate = (%d,%d,%d), want (5,15,2) after refreshing all", p5, p7, n)
+	}
+}
+
+func TestRouter_FetchUsageAll_PartialFailureKeepsOthers(t *testing.T) {
+	a := &fetchUsageProvider{scriptedProvider: scriptedProvider{name: "a"},
+		fetched: CodexRateLimits{PrimaryUsedPct: 3, OK: true}}
+	b := &fetchUsageProvider{scriptedProvider: scriptedProvider{name: "b"},
+		fetchErr: errors.New("token expired")}
+	r, _ := NewRouter(a, b)
+	r.SetLabels([]string{"default", "drugie"})
+
+	rl, err := r.FetchUsageAll(context.Background())
+	if err == nil {
+		t.Fatal("want error reporting the failed account")
+	}
+	if !strings.Contains(err.Error(), "drugie") {
+		t.Errorf("err = %v, want it to name the failed account 'drugie'", err)
+	}
+	// Active account still refreshed despite the other's failure.
+	if !rl.OK || rl.PrimaryUsedPct != 3 {
+		t.Errorf("active snapshot = %+v, want default's (3%%) despite drugie failing", rl)
+	}
+	// Pool counts only the account that succeeded.
+	_, _, n := r.PoolAggregate()
+	if n != 1 {
+		t.Errorf("PoolAggregate counted %d accounts, want 1 (only the one that refreshed)", n)
 	}
 }
 

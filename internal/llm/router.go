@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -241,6 +242,75 @@ func (r *RouterProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error
 		return CodexRateLimits{}, fmt.Errorf("llm.Router: active provider %q has no usage", p.Name())
 	}
 	return f.FetchUsage(ctx)
+}
+
+// FetchUsageAll refreshes the usage snapshot for EVERY account in the
+// pool, each with its own token — not just the active one. This is what
+// makes the magazine behave like one combined limit: without it, only
+// the active account ever gets fresh usage data, so the pool aggregate
+// (and the per-account /usage table) only ever counts a single account
+// until the others become active through failover.
+//
+// Each account's provider has its own CodexTokenSource (a per-account
+// auth Manager), so fetching per-provider naturally uses the right
+// token without ever switching the active account under the user.
+//
+// Fetches run concurrently (one goroutine per account); each provider
+// guards its own snapshot with its own rlMu, so there is no shared
+// mutable state to race on here. A per-account failure (expired token,
+// offline) is collected but never aborts the others — accounts that
+// succeeded still get fresh data, and the caller can surface the rest.
+//
+// It returns the active account's refreshed snapshot (so existing
+// callers that want "the current account's numbers" keep working) and
+// a combined error describing any per-account failures (nil when all
+// accounts that support usage succeeded). Providers that do not support
+// usage are skipped silently.
+func (r *RouterProvider) FetchUsageAll(ctx context.Context) (CodexRateLimits, error) {
+	type result struct {
+		idx int
+		rl  CodexRateLimits
+		err error
+	}
+	active := r.ActiveIndex()
+	results := make([]result, len(r.providers))
+	var wg sync.WaitGroup
+	for i, p := range r.providers {
+		f, ok := p.(interface {
+			FetchUsage(context.Context) (CodexRateLimits, error)
+		})
+		if !ok {
+			results[i] = result{idx: i, err: fmt.Errorf("%s: no usage", p.Name())}
+			continue
+		}
+		wg.Add(1)
+		go func(i int, f interface {
+			FetchUsage(context.Context) (CodexRateLimits, error)
+		}) {
+			defer wg.Done()
+			rl, err := f.FetchUsage(ctx)
+			results[i] = result{idx: i, rl: rl, err: err}
+		}(i, f)
+	}
+	wg.Wait()
+
+	var (
+		activeRL CodexRateLimits
+		errs     []string
+	)
+	for i, res := range results {
+		if res.err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", r.LabelAt(i), res.err))
+			continue
+		}
+		if i == active {
+			activeRL = res.rl
+		}
+	}
+	if len(errs) > 0 {
+		return activeRL, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return activeRL, nil
 }
 
 // RateLimits returns the active account's last known snapshot, so

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,35 @@ func TestWorkerRegistry_Stop(t *testing.T) {
 	}
 	if !w.clearCancel() {
 		t.Error("clearCancel after Stop should report stopped=true")
+	}
+}
+
+func TestWorkerRegistry_Counts(t *testing.T) {
+	r := NewWorkerRegistry()
+	if tile := r.Counts().StatusTile(); tile != "" {
+		t.Errorf("empty registry tile = %q, want \"\"", tile)
+	}
+	r.Add("explore", "a", nil) // created -> counts as running
+	r.Add("code", "b", nil).Status = "running"
+	r.Add("code", "c", nil).Status = "done"
+	r.Add("code", "d", nil).Status = "failed"
+	r.Add("code", "e", nil).Status = "stopped"
+
+	c := r.Counts()
+	if c.Total != 5 {
+		t.Errorf("Total = %d, want 5", c.Total)
+	}
+	if c.Running != 2 {
+		t.Errorf("Running = %d, want 2 (created+running)", c.Running)
+	}
+	if c.Done != 1 || c.Failed != 1 || c.Stopped != 1 {
+		t.Errorf("Done/Failed/Stopped = %d/%d/%d, want 1/1/1", c.Done, c.Failed, c.Stopped)
+	}
+	tile := c.StatusTile()
+	for _, want := range []string{"2 running", "1 done", "1 failed", "1 stopped"} {
+		if !strings.Contains(tile, want) {
+			t.Errorf("tile %q missing %q", tile, want)
+		}
 	}
 }
 
