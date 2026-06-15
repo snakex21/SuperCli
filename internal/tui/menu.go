@@ -653,10 +653,12 @@ func displayProvider(name, typ string) (string, string) {
 }
 
 // cursorOnOpenAIRow reports whether the providers-menu cursor is on
-// an OpenAI / ChatGPT row — the only rows for which the ChatGPT
-// accounts screen is relevant. Used to show the [C] hint and gate
-// the 'c' shortcut contextually (like [M]/[E] act on the selected
-// row), instead of advertising accounts on Ollama/LM Studio/etc.
+// the OpenAI / ChatGPT row — the only row for which the ChatGPT
+// accounts screen is relevant. Almost every provider has
+// Type=="openai" (they are OpenAI-compatible), so we match on the
+// NAME "openai" (or the legacy "codex" entry = OpenAI signed in
+// with a ChatGPT account), not the type. Used to show the [C] hint
+// and gate the 'c' shortcut contextually.
 func (m Model) cursorOnOpenAIRow() bool {
 	if m.menu.kind != menuProviders {
 		return false
@@ -666,7 +668,7 @@ func (m Model) cursorOnOpenAIRow() bool {
 		return false
 	}
 	p := rows[minInt(m.menu.cursor, len(rows)-1)]
-	return p.Type == "openai" || p.Type == "codex"
+	return p.Name == "openai" || p.Type == "codex"
 }
 
 // providerStatusCell returns the plain text and the styled text

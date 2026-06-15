@@ -19,8 +19,10 @@ import (
 // accountRow is one line in the accounts menu: either a logged-in
 // account or the trailing "add account" action.
 type accountRow struct {
-	label  string // account label; "" for the add-action row
-	isAdd  bool
+	label string // account label; "" for the add-action row
+	email string // account email (from the token), "" if unknown
+	plan  string // ChatGPT plan type, "" if unknown
+	isAdd bool
 }
 
 // accountRows builds the menu rows: every logged-in account first
@@ -29,7 +31,16 @@ type accountRow struct {
 func (m Model) accountRows() []accountRow {
 	var rows []accountRow
 	for _, label := range m.loggedInAccounts() {
-		rows = append(rows, accountRow{label: label})
+		r := accountRow{label: label}
+		// Best-effort: decode the account's email/plan from its
+		// token so the user sees WHICH ChatGPT account this is, not
+		// just the local label. Never hits the network.
+		mgr := codexauth.NewManagerFor(m.dataDir, label, codexauth.Options{})
+		if info, err := mgr.Account(); err == nil && info.LoggedIn {
+			r.email = info.Email
+			r.plan = info.PlanType
+		}
+		rows = append(rows, r)
 	}
 	rows = append(rows, accountRow{isAdd: true})
 	return rows
@@ -139,7 +150,23 @@ func (m Model) renderAccountsMenu() string {
 			} else {
 				name = m.palette.Bold.Render(name)
 			}
-			line = fmt.Sprintf("%s  %s", check, name)
+			// Show WHICH ChatGPT account this label maps to:
+			// email (and plan) decoded from the token. Falls back
+			// gracefully when the token has no email claim.
+			detail := ""
+			if r.email != "" {
+				detail = r.email
+			}
+			if r.plan != "" {
+				if detail != "" {
+					detail += " · "
+				}
+				detail += r.plan
+			}
+			if detail != "" {
+				detail = "  " + m.palette.Dim.Render("("+detail+")")
+			}
+			line = fmt.Sprintf("%s  %s%s", check, name, detail)
 		}
 		body.WriteString(cursor + line + "\n")
 	}
