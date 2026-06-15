@@ -1150,26 +1150,36 @@ func main() {
 	// active provider is not Codex (or has no auth) it prints a clear
 	// message instead of an error.
 	mergedCommands["usage"] = func(ctx context.Context, args string) (string, error) {
-		f, ok := loop.Provider().(codexUsageFetcher)
+		prov := loop.Provider()
+		f, ok := prov.(codexUsageFetcher)
 		if !ok {
 			return "the active model is not a ChatGPT-subscription (Codex) model — usage limits are only available there.\nRun /login and /model gpt-5.5 to switch.", nil
 		}
+		// The per-account pool table (multi-account router) is shown
+		// regardless of whether the network refresh succeeds — it is
+		// built from each account's last-known snapshot, so it stays
+		// useful even when FetchUsage fails (expired token, offline).
+		pool := codexPoolUsageDetail(prov)
+
 		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		rl, err := f.FetchUsage(fctx)
 		if err != nil {
-			// Fall back to whatever snapshot is already known (from disk
-			// or the last response) so the command is still useful offline.
-			if rp, ok := loop.Provider().(interface {
+			if rp, ok := prov.(interface {
 				RateLimits() (llm.CodexRateLimits, bool)
 			}); ok {
 				if cached, ok := rp.RateLimits(); ok {
-					return "could not refresh (showing last known):\n" + cached.FormatDetail(), nil
+					return "could not refresh (showing last known):\n" + cached.FormatDetail() + pool, nil
 				}
+			}
+			// No snapshot for the active account, but the pool may
+			// still have per-account data worth showing.
+			if pool != "" {
+				return "could not refresh the active account:" + pool, nil
 			}
 			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
 		}
-		return "Codex usage (just refreshed):\n" + rl.FormatDetail() + codexPoolUsageDetail(loop.Provider()), nil
+		return "Codex usage (just refreshed):\n" + rl.FormatDetail() + pool, nil
 	}
 
 	// Wave 2 B6: /memory — inspect persistent memory. No args:
