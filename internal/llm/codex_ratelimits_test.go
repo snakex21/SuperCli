@@ -373,14 +373,15 @@ func TestCodexRateLimitsSaveLoadRoundTrip(t *testing.T) {
 		t.Errorf("round-trip mismatch\n got = %+v\nwant = %+v", got, want)
 	}
 
-	// Unscoped load (empty account) matches anything.
-	if _, ok := loadCodexRateLimits(dir, ""); !ok {
-		t.Error("expected unscoped load to succeed")
-	}
-
-	// Different account => discarded.
+	// Per-account isolation: each account has its OWN file, so a
+	// different account's load finds nothing (no cross-contamination).
 	if _, ok := loadCodexRateLimits(dir, "acc-2"); ok {
-		t.Error("expected snapshot for a different account to be discarded")
+		t.Error("expected a different account to have no snapshot (separate file)")
+	}
+	// The legacy unscoped file is also separate: saving under acc-1
+	// must NOT populate the shared codex_ratelimits.json.
+	if _, ok := loadCodexRateLimits(dir, ""); ok {
+		t.Error("expected unscoped load to be empty when only a scoped file was saved")
 	}
 }
 
@@ -466,7 +467,7 @@ func TestNewCodexSeedsFromDisk(t *testing.T) {
 	if err := saveCodexRateLimits(dir, "acc", saved); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	p, err := NewCodex(CodexConfig{Model: "gpt-5-codex", Tokens: &fakeTokens{access: "t"}, DataDir: dir})
+	p, err := NewCodex(CodexConfig{Model: "gpt-5-codex", Tokens: &fakeTokens{access: "t"}, DataDir: dir, AccountID: "acc"})
 	if err != nil {
 		t.Fatal(err)
 	}

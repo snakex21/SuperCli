@@ -2057,6 +2057,14 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 		var pool []llm.Provider
 		for _, label := range loggedIn {
 			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+			// Resolve the account id from disk (no network) so each
+			// provider scopes its rate-limit snapshot to its own
+			// account — otherwise both accounts share one file and
+			// show the same usage.
+			acctID := ""
+			if info, e := mgr.Account(); e == nil {
+				acctID = info.AccountID
+			}
 			p, err := llm.NewCodex(llm.CodexConfig{
 				BackendURL:   mgr.Options().BackendURL,
 				Model:        cfg.Model,
@@ -2064,6 +2072,7 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 				Timeout:      cfg.Timeout,
 				Capabilities: caps,
 				DataDir:      dataDir,
+				AccountID:    acctID,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("buildCodexPool %q: %w", label, err)

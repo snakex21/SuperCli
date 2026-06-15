@@ -32,14 +32,39 @@ type codexRateLimitsSnapshot struct {
 	Limits CodexRateLimits `json:"limits"`
 }
 
-// codexRateLimitsPath returns <dataDir>/codex_ratelimits.json, or ""
-// when dataDir is empty (persistence disabled, e.g. in unit tests
-// that don't wire a data dir).
-func codexRateLimitsPath(dataDir string) string {
+// codexRateLimitsPath returns the snapshot path for an account.
+// With an accountID it is <dataDir>/codex_ratelimits-<id>.json so
+// each account keeps its OWN usage snapshot — without this every
+// account shared one file and showed another account's numbers.
+// An empty accountID keeps the legacy <dataDir>/codex_ratelimits.json
+// (single-account setups and back-compat). Empty dataDir disables
+// persistence (returns "").
+func codexRateLimitsPath(dataDir, accountID string) string {
 	if dataDir == "" {
 		return ""
 	}
-	return filepath.Join(dataDir, codexRateLimitsFileName)
+	if accountID == "" {
+		return filepath.Join(dataDir, codexRateLimitsFileName)
+	}
+	return filepath.Join(dataDir, "codex_ratelimits-"+sanitizeAccountID(accountID)+".json")
+}
+
+// sanitizeAccountID keeps an account id safe as a filename fragment
+// (it can contain characters not valid in a path). Only [a-zA-Z0-9_-]
+// survive; everything else becomes '_'.
+func sanitizeAccountID(id string) string {
+	b := make([]rune, 0, len(id))
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b = append(b, r)
+		} else {
+			b = append(b, '_')
+		}
+	}
+	if len(b) == 0 {
+		return "acct"
+	}
+	return string(b)
 }
 
 // saveCodexRateLimits writes the snapshot atomically (temp file +
@@ -49,7 +74,7 @@ func codexRateLimitsPath(dataDir string) string {
 // response, it never breaks the stream. A non-OK snapshot is not
 // written (nothing useful to persist).
 func saveCodexRateLimits(dataDir, accountID string, rl CodexRateLimits) error {
-	path := codexRateLimitsPath(dataDir)
+	path := codexRateLimitsPath(dataDir, accountID)
 	if path == "" || !rl.OK {
 		return nil
 	}
@@ -82,17 +107,27 @@ func saveCodexRateLimits(dataDir, accountID string, rl CodexRateLimits) error {
 	return os.Rename(tmpName, path)
 }
 
-// ClearCodexRateLimits deletes the persisted usage snapshot. It is
+// ClearCodexRateLimits deletes persisted usage snapshots. It is
 // called on /logout so a fresh login does not show the previous
 // account's limits in the HUD before the first response arrives.
-// A missing file (or an empty dataDir) is not an error.
+// It removes both the legacy shared file and every per-account
+// snapshot (codex_ratelimits-*.json). A missing file (or an empty
+// dataDir) is not an error.
 func ClearCodexRateLimits(dataDir string) error {
-	path := codexRateLimitsPath(dataDir)
-	if path == "" {
+	if dataDir == "" {
 		return nil
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	// Legacy shared file.
+	shared := codexRateLimitsPath(dataDir, "")
+	if err := os.Remove(shared); err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	// Per-account files: codex_ratelimits-<id>.json.
+	matches, _ := filepath.Glob(filepath.Join(dataDir, "codex_ratelimits-*.json"))
+	for _, m := range matches {
+		if err := os.Remove(m); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -103,7 +138,7 @@ func ClearCodexRateLimits(dataDir string) error {
 // account — all of which mean "show no tile yet", matching first-run
 // behavior. This never panics on bad input.
 func loadCodexRateLimits(dataDir, accountID string) (CodexRateLimits, bool) {
-	path := codexRateLimitsPath(dataDir)
+	path := codexRateLimitsPath(dataDir, accountID)
 	if path == "" {
 		return CodexRateLimits{}, false
 	}
