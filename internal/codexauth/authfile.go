@@ -205,6 +205,39 @@ func ParsePlanType(token string) string {
 	return ""
 }
 
+// ParseEmail extracts the account's email from a JWT's top-level
+// "email" claim (the OAuth scope includes "email"). Empty when the
+// token does not carry it. Used to show WHICH account a label maps
+// to, since a label alone (e.g. "default") does not say whose
+// account it is.
+func ParseEmail(token string) string {
+	claims := jwtTopClaims(token)
+	if v, ok := claims["email"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// jwtTopClaims decodes the JWT payload (no signature check — we
+// only read display metadata) and returns the TOP-LEVEL claim map.
+// Unlike jwtAuthClaims it does not descend into the nested
+// "https://api.openai.com/auth" object.
+func jwtTopClaims(jwt string) map[string]any {
+	parts := splitJWT(jwt)
+	if parts == nil {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var v map[string]any
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return nil
+	}
+	return v
+}
+
 // jwtAuthClaims decodes the JWT payload (without verifying the
 // signature — we only mine display/routing metadata from it) and
 // returns the nested "https://api.openai.com/auth" claim object.

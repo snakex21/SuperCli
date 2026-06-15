@@ -111,6 +111,7 @@ func (m *Manager) Logout() error { return Clear(m.path) }
 type AccountInfo struct {
 	LoggedIn    bool
 	AccountID   string
+	Email       string
 	PlanType    string
 	LastRefresh time.Time
 }
@@ -139,6 +140,11 @@ func (m *Manager) Account() (AccountInfo, error) {
 	info.PlanType = ParsePlanType(af.Tokens.AccessToken)
 	if info.PlanType == "" {
 		info.PlanType = ParsePlanType(af.Tokens.IDToken)
+	}
+	// Email lives as a top-level claim, usually in the id token.
+	info.Email = ParseEmail(af.Tokens.IDToken)
+	if info.Email == "" {
+		info.Email = ParseEmail(af.Tokens.AccessToken)
 	}
 	return info, nil
 }
