@@ -123,14 +123,14 @@ func TestHintLineMentionsNewKeys(t *testing.T) {
 	if !strings.Contains(hint, "Ctrl+Y") {
 		t.Error("hint line missing Ctrl+Y")
 	}
-	if !strings.Contains(hint, "Ctrl+R change reasoning") {
+	if !strings.Contains(hint, "Ctrl+R reasoning menu") {
 		t.Error("hint line missing Ctrl+R reasoning hint")
 	}
 }
 
 func TestHelpContentMentionsNewKeys(t *testing.T) {
 	h := HelpContent()
-	for _, want := range []string{"Alt+Enter", "Ctrl+Y", "Ctrl+R change model reasoning", "Shift+T", "Shift+E"} {
+	for _, want := range []string{"Alt+Enter", "Ctrl+Y", "Ctrl+R open reasoning effort menu", "Shift+T", "Shift+E"} {
 		if !strings.Contains(h, want) {
 			t.Errorf("/help missing %s", want)
 		}

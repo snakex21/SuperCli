@@ -30,7 +30,7 @@ func TestSetReasoningEffort_Validation(t *testing.T) {
 func TestSupportsReasoningEffort(t *testing.T) {
 	t.Cleanup(clearReasoningEffortSupport)
 	yes := []string{"gpt-5.5", "gpt-5.1-codex-max", "o3-mini", "o4-mini", "openai/gpt-5.5", "codex-mini-latest"}
-	no := []string{"gpt-4o", "gpt-4o-mini", "qwen2.5-7b", "llama-3-8b", "claude-sonnet"}
+	no := []string{"gpt-4o", "gpt-4o-mini", "qwen2.5-7b", "llama-3-8b"}
 	for _, m := range yes {
 		if !SupportsReasoningEffort(m) {
 			t.Errorf("SupportsReasoningEffort(%q) = false, want true", m)

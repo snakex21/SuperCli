@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,43 @@ func TestConfiguredProviderNames(t *testing.T) {
 	}
 	if names[0] != "lmstudio" || names[1] != "openai" {
 		t.Fatalf("names = %v, want [lmstudio openai]", names)
+	}
+}
+
+func TestReasoningMenu_CtrlROpensModal(t *testing.T) {
+	t.Cleanup(func() { _ = llm.SetReasoningEffort(""); llm.SetReasoningEffortSupport("gpt-5.5", nil) })
+	llmProvider, _ := newStubLLM("gpt-5.5")
+	m := New(Options{Home: t.TempDir(), DataDir: t.TempDir(), LLM: llmProvider})
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	mm := out.(Model)
+	if mm.mode != modeMenu || mm.menu.kind != menuReasoning {
+		t.Fatalf("mode/kind = %v/%v, want menu/reasoning", mm.mode, mm.menu.kind)
+	}
+	view := mm.renderMenuView()
+	for _, want := range []string{"Reasoning effort", "gpt-5.5", "low", "xhigh"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("reasoning menu missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestReasoningMenu_EnterPersistsSelection(t *testing.T) {
+	t.Cleanup(func() { _ = llm.SetReasoningEffort(""); llm.SetReasoningEffortSupport("gpt-5.5", nil) })
+	llmProvider, _ := newStubLLM("gpt-5.5")
+	m := New(Options{Home: t.TempDir(), DataDir: t.TempDir(), LLM: llmProvider})
+	mm, _ := m.openReasoningMenu()
+	m = mm.(Model)
+	m.menu.cursor = reasoningOptionIndex("low")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := out.(Model)
+	if got.mode != modeNormal {
+		t.Fatalf("mode = %v, want normal", got.mode)
+	}
+	if eff := llm.ReasoningEffort(); eff != "low" {
+		t.Fatalf("ReasoningEffort = %q, want low", eff)
+	}
+	if !strings.Contains(got.statusOverride, "low") {
+		t.Fatalf("statusOverride = %q, want low", got.statusOverride)
 	}
 }
 

@@ -115,6 +115,66 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 	return out, nil
 }
 
+// ListAnthropicModels returns model ids from Anthropic's native /v1/models
+// endpoint. Anthropic uses x-api-key + anthropic-version instead of Bearer auth.
+func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: baseURL is empty")
+	}
+	cacheKey := "anthropic:" + baseURL
+	providerListCache.mu.Lock()
+	if e, ok := providerListCache.m[cacheKey]; ok && time.Since(e.fetched) < providerListCacheTTL {
+		ids := append([]string(nil), e.ids...)
+		providerListCache.mu.Unlock()
+		return ids, nil
+	}
+	providerListCache.mu.Unlock()
+	base := strings.TrimRight(baseURL, "/")
+	u := base + "/models"
+	if !strings.HasSuffix(base, "/v1") {
+		u = base + "/v1/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
+	}
+	req.Header.Set("anthropic-version", anthropicVersion)
+	if key := CleanAPIKey(apiKey); key != "" {
+		req.Header.Set("x-api-key", key)
+	}
+	client := &http.Client{Timeout: providerListTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: status %d: %s", resp.StatusCode, body)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: parse: %w", err)
+	}
+	out := make([]string, 0, len(payload.Data))
+	for _, m := range payload.Data {
+		if m.ID != "" {
+			out = append(out, m.ID)
+		}
+	}
+	providerListCache.mu.Lock()
+	providerListCache.m[cacheKey] = providerListEntry{ids: append([]string(nil), out...), fetched: time.Now()}
+	providerListCache.mu.Unlock()
+	return out, nil
+}
+
 // ListProviderModelContexts fetches /v1/models and returns a
 // model-id → context-window map for entries that advertise one.
 // Different servers use different field names (OpenRouter:

@@ -259,7 +259,7 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 		param = payload.Error.Param
 	}
 	low := strings.ToLower(msg + " " + param)
-	if !strings.Contains(low, "reasoning") && !strings.Contains(low, "effort") {
+	if !strings.Contains(low, "reasoning") && !strings.Contains(low, "effort") && !strings.Contains(low, "thinking") {
 		return ReasoningEffortError{}, false
 	}
 	info := ReasoningEffortError{Message: msg}
@@ -292,8 +292,13 @@ func LearnReasoningEffortFromError(model string, status int, body []byte) (strin
 		return "", false
 	}
 	info, ok := ParseReasoningEffortError(string(body))
-	if !ok || len(info.Supported) == 0 {
+	if !ok {
 		return "", false
+	}
+	if len(info.Supported) == 0 {
+		// The backend rejected the reasoning/thinking parameter but did not
+		// provide an enum of accepted values. Learn the safe option: omit it.
+		info.Supported = []string{"none"}
 	}
 	SetReasoningEffortSupport(model, info.Supported)
 	effective := ReasoningEffortForModel(model)
@@ -331,6 +336,8 @@ func SupportsReasoningEffort(model string) bool {
 	case strings.HasPrefix(m, "codex-") || m == "codex":
 		return true
 	case strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4"):
+		return true
+	case strings.HasPrefix(m, "claude"):
 		return true
 	}
 	return false

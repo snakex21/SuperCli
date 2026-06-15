@@ -409,6 +409,44 @@ func TestOpenAI_StreamReasoningContentIsShown(t *testing.T) {
 	}
 }
 
+func TestOpenAI_StreamGenericThinkingFieldsAreShown(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","thinking":"Plan"}}]}`,
+		`{"choices":[{"index":0,"delta":{"reasoning":{"content":" A"}}}]}`,
+		`{"choices":[{"index":0,"delta":{"content":"\nAnswer"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	defer srv.Close()
+
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "deepseek-reasoner"})
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "cześć"}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	var body strings.Builder
+	for _, d := range ds {
+		body.WriteString(d.Content)
+	}
+	if body.String() != "<thinking>Plan A</thinking>\nAnswer" {
+		t.Fatalf("body = %q, want generic thinking + answer", body.String())
+	}
+}
+
+func TestExtractReasoningTextIgnoresUsageLikeFields(t *testing.T) {
+	delta := map[string]json.RawMessage{
+		"reasoning_tokens": json.RawMessage(`123`),
+		"finish_reason":    json.RawMessage(`"stop"`),
+		"thinking_text":    json.RawMessage(`"visible"`),
+	}
+	if got := extractReasoningText(delta); got != "visible" {
+		t.Fatalf("extractReasoningText = %q, want visible", got)
+	}
+}
+
 func TestOpenAI_StreamToolCall(t *testing.T) {
 	chunks := []string{
 		`{"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}`,

@@ -207,6 +207,8 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				// Skip non-JSON payloads (e.g. ping frames).
 				return nil
 			}
+			var raw openaiRawChunk
+			_ = json.Unmarshal([]byte(data), &raw)
 			if chunk.Usage != nil {
 				lastUsage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens}
 				// Servers that honour stream_options.include_usage
@@ -223,7 +225,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					}
 				}
 			}
-			for _, choice := range chunk.Choices {
+			for i, choice := range chunk.Choices {
 				if choice.Delta.Role != "" {
 					select {
 					case out <- Delta{Role: Role(choice.Delta.Role)}:
@@ -243,8 +245,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 						return ctx.Err()
 					}
 				}
-				if choice.Delta.ReasoningContent != "" {
-					content := choice.Delta.ReasoningContent
+				reasoning := choice.Delta.ReasoningContent
+				if reasoning == "" && i < len(raw.Choices) {
+					reasoning = extractReasoningText(raw.Choices[i].Delta)
+				}
+				if reasoning != "" {
+					content := reasoning
 					if !reasoningOpen {
 						content = "<thinking>" + content
 						reasoningOpen = true
@@ -536,6 +542,12 @@ type openaiChunk struct {
 	Usage   *openaiUsage   `json:"usage,omitempty"`
 }
 
+type openaiRawChunk struct {
+	Choices []struct {
+		Delta map[string]json.RawMessage `json:"delta"`
+	} `json:"choices"`
+}
+
 type openaiChoice struct {
 	Index        int         `json:"index"`
 	Delta        openaiDelta `json:"delta"`
@@ -547,6 +559,71 @@ type openaiDelta struct {
 	Content          string          `json:"content,omitempty"`
 	ReasoningContent string          `json:"reasoning_content,omitempty"`
 	ToolCalls        []openaiToolRef `json:"tool_calls,omitempty"`
+}
+
+func extractReasoningText(delta map[string]json.RawMessage) string {
+	if len(delta) == 0 {
+		return ""
+	}
+	var parts []string
+	for key, raw := range delta {
+		if !isReasoningJSONKey(key) {
+			continue
+		}
+		if s := extractStringLeaves(raw); strings.TrimSpace(s) != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+func isReasoningJSONKey(key string) bool {
+	k := strings.ToLower(key)
+	if strings.Contains(k, "finish") || strings.Contains(k, "token") || strings.Contains(k, "usage") {
+		return false
+	}
+	return strings.Contains(k, "reasoning") || strings.Contains(k, "thinking") || strings.Contains(k, "thought")
+}
+
+func extractStringLeaves(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		var out []string
+		for _, item := range arr {
+			if v := extractStringLeaves(item); v != "" {
+				out = append(out, v)
+			}
+		}
+		return strings.Join(out, "")
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		preferred := []string{"text", "content", "value", "delta", "thinking", "reasoning"}
+		var out []string
+		seen := make(map[string]bool)
+		for _, key := range preferred {
+			if v, ok := obj[key]; ok {
+				seen[key] = true
+				if s := extractStringLeaves(v); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		for key, v := range obj {
+			if seen[key] {
+				continue
+			}
+			if s := extractStringLeaves(v); s != "" {
+				out = append(out, s)
+			}
+		}
+		return strings.Join(out, "")
+	}
+	return ""
 }
 
 type openaiToolRef struct {

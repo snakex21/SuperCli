@@ -29,6 +29,7 @@ const (
 	menuAccounts
 	menuAccountLabel
 	menuGoal
+	menuReasoning
 )
 
 type interactiveMenu struct {
@@ -133,6 +134,13 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 func (m Model) openGoalMenu() (tea.Model, tea.Cmd) {
 	m.mode = modeMenu
 	m.menu = interactiveMenu{kind: menuGoal}
+	m.input.Blur()
+	return m, nil
+}
+
+func (m Model) openReasoningMenu() (tea.Model, tea.Cmd) {
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuReasoning, cursor: reasoningOptionIndex(llm.ReasoningEffort())}
 	m.input.Blur()
 	return m, nil
 }
@@ -250,6 +258,9 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
+		if m.menu.kind == menuModels || m.menu.kind == menuProviderModels {
+			return m.openReasoningMenu()
+		}
 		if m.menu.kind == menuProviders && m.providerMgr != nil {
 			m.providerMgr.Reload()
 			return m, m.probeProvidersCmd()
@@ -382,6 +393,8 @@ func (m *Model) clampMenuCursor() {
 		max = len(m.accountRows()) - 1
 	case menuGoal:
 		max = len(m.goalTaskRows()) - 1
+	case menuReasoning:
+		max = len(reasoningMenuOptions()) - 1
 	}
 	if max < 0 {
 		max = 0
@@ -506,6 +519,8 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	case menuAccounts:
 		return m.accountsMenuEnter()
+	case menuReasoning:
+		return m.selectReasoningEffort()
 	}
 	return m, nil
 }
@@ -531,9 +546,9 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 func (m Model) renderMenuView() string {
 	switch m.menu.kind {
 	case menuModels:
-		return m.renderModelsMenu("Models", "↑↓ move · type filter · Enter select · → enable · ← disable · ESC back")
+		return m.renderModelsMenu("Models", "↑↓ move · type filter · Enter select · [R]easoning · → enable · ← disable · ESC back")
 	case menuProviderModels:
-		return m.renderModelsMenu("Models: "+m.menu.provider, "↑↓ move · type filter · Enter select · → enable · ← disable · ESC back")
+		return m.renderModelsMenu("Models: "+m.menu.provider, "↑↓ move · type filter · Enter select · [R]easoning · → enable · ← disable · ESC back")
 	case menuProviders:
 		return m.renderProvidersMenu()
 	case menuProviderForm:
@@ -548,6 +563,8 @@ func (m Model) renderMenuView() string {
 		return m.renderAccountLabelMenu()
 	case menuGoal:
 		return m.renderGoalMenu()
+	case menuReasoning:
+		return m.renderReasoningMenu()
 	default:
 		return ""
 	}
@@ -816,6 +833,127 @@ func (m Model) renderGoalMenu() string {
 	}
 	b.WriteString("\n" + m.palette.InputHint.Render("Space toggle · [A]dd task · [D]elete · [ESC]back"))
 	return b.String()
+}
+
+type reasoningMenuOption struct {
+	Label string
+	Value string
+	Desc  string
+}
+
+func reasoningMenuOptions() []reasoningMenuOption {
+	return []reasoningMenuOption{
+		{Label: "off / provider default", Value: "", Desc: "do not send a reasoning/thinking budget"},
+		{Label: "none", Value: "none", Desc: "explicitly disable when the provider supports a none value"},
+		{Label: "minimal", Value: "minimal", Desc: "smallest thinking budget if accepted by the backend"},
+		{Label: "low", Value: "low", Desc: "low thinking budget"},
+		{Label: "medium", Value: "medium", Desc: "balanced thinking budget"},
+		{Label: "high", Value: "high", Desc: "larger thinking budget"},
+		{Label: "xhigh", Value: "xhigh", Desc: "maximum thinking budget where supported"},
+	}
+}
+
+func reasoningOptionIndex(value string) int {
+	for i, opt := range reasoningMenuOptions() {
+		if opt.Value == value {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m Model) reasoningModelName() string {
+	if m.modelSwapper != nil && m.modelSwapper.CurrentModel() != "" {
+		return m.modelSwapper.CurrentModel()
+	}
+	if m.llm != nil {
+		return m.llm.Name()
+	}
+	return "no-model"
+}
+
+func (m Model) selectReasoningEffort() (tea.Model, tea.Cmd) {
+	opts := reasoningMenuOptions()
+	if len(opts) == 0 {
+		return m.closeMenu()
+	}
+	opt := opts[minInt(m.menu.cursor, len(opts)-1)]
+	if err := llm.SetReasoningEffort(opt.Value); err != nil {
+		m.statusOverride = fmt.Sprintf("reasoning: %v", err)
+	} else {
+		if opt.Value == "" {
+			m.statusOverride = "reasoning: off (provider default)"
+		} else {
+			model := m.reasoningModelName()
+			_, effective, adjusted := llm.ReasoningEffortAdjustment(model)
+			if adjusted {
+				m.statusOverride = fmt.Sprintf("reasoning: %s (effective %s for %s)", opt.Value, effective, model)
+			} else {
+				m.statusOverride = "reasoning: " + opt.Value
+			}
+		}
+		m.persistReasoningEffort(opt.Value)
+	}
+	m.mode = modeNormal
+	m.menu = interactiveMenu{}
+	m.input.Focus()
+	return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusOverrideClearMsg{} })
+}
+
+func (m Model) renderReasoningMenu() string {
+	model := m.reasoningModelName()
+	configured, effective, adjusted := llm.ReasoningEffortAdjustment(model)
+	if configured == "" {
+		configured = "off / provider default"
+	}
+	if effective == "" {
+		effective = "not sent"
+	}
+	var b strings.Builder
+	b.WriteString(m.palette.PanelTitle.Render("Reasoning effort") + "\n\n")
+	b.WriteString(fmt.Sprintf("model:      %s\n", model))
+	b.WriteString(fmt.Sprintf("configured: %s\n", configured))
+	if adjusted {
+		b.WriteString(fmt.Sprintf("effective:  %s %s\n", effective, m.palette.InputHint.Render("(adjusted from backend evidence)")))
+	} else {
+		b.WriteString(fmt.Sprintf("effective:  %s\n", effective))
+	}
+	if supported, ok := llm.SupportedReasoningEfforts(model); ok {
+		b.WriteString("backend:    " + strings.Join(supported, " | ") + "\n")
+	} else if llm.SupportsReasoningEffort(model) {
+		b.WriteString("backend:    unknown yet — will learn from API errors\n")
+	} else {
+		b.WriteString("backend:    model family does not advertise reasoning effort\n")
+	}
+	b.WriteString("\n")
+	opts := reasoningMenuOptions()
+	supported, learned := llm.SupportedReasoningEfforts(model)
+	for i, opt := range opts {
+		prefix := "  "
+		if i == m.menu.cursor {
+			prefix = "❯ "
+		}
+		label := opt.Label
+		if opt.Value != "" && learned && !containsString(supported, opt.Value) {
+			label += " " + m.palette.Dim.Render("(not in learned backend list)")
+		}
+		line := fmt.Sprintf("%-34s %s", label, m.palette.Dim.Render(opt.Desc))
+		if i == m.menu.cursor {
+			line = m.palette.HeaderMode.Render(line)
+		}
+		b.WriteString(prefix + line + "\n")
+	}
+	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · Enter apply · ESC back"))
+	return b.String()
+}
+
+func containsString(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) filteredModelRows() []llm.ModelInfo {

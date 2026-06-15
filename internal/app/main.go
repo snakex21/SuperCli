@@ -198,7 +198,7 @@ func Main() {
 	listModelsFlag := flag.Bool("list-models", false, "print known model capabilities (with --refresh, re-fetch from the provider)")
 	refreshFlag := flag.Bool("refresh", false, "re-fetch the provider's /v1/models and re-probe unknowns; used with --list-models")
 	modelInfoFlag := flag.String("model-info", "", "print details for a single model id and exit")
-	providerFlag := flag.String("provider", "", "LLM provider: openai or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
+	providerFlag := flag.String("provider", "", "LLM provider: openai, anthropic, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
 	modelFlag := flag.String("model", "", "model id (default: env SUPERCLI_LLM_MODEL, then gpt-4o-mini)")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
 	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")
@@ -2056,6 +2056,16 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 		// account returns a plain CodexProvider — zero overhead and
 		// byte-for-byte the old behaviour.
 		return buildCodexPool(cfg, dataDir, caps)
+	}
+	if cfg.Provider == config.ProviderAnthropic {
+		return llm.NewAnthropic(llm.AnthropicConfig{
+			BaseURL:      cfg.BaseURL,
+			APIKey:       cfg.APIKey,
+			Model:        cfg.Model,
+			MaxTokens:    cfg.MaxTokens,
+			Timeout:      cfg.Timeout,
+			Capabilities: caps,
+		})
 	}
 	return llm.NewOpenAI(llm.OpenAIConfig{
 		BaseURL:      cfg.BaseURL,

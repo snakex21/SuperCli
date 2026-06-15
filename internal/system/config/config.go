@@ -6,7 +6,7 @@
 // Environment variables (all optional, but SUPERCLI_LLM_PROVIDER
 // or SUPERCLI_LLM_API_KEY is required for the real provider):
 //
-//	SUPERCLI_LLM_PROVIDER  - "openai", "echo", or "opencode" (F15)
+//	SUPERCLI_LLM_PROVIDER  - "openai", "anthropic", "echo", or "opencode" (F15)
 //	SUPERCLI_LLM_API_KEY   - bearer token; empty = echo mode
 //	SUPERCLI_LLM_BASE_URL  - defaults to https://api.openai.com
 //	SUPERCLI_LLM_MODEL     - model name; default "gpt-4o-mini"
@@ -30,10 +30,11 @@ import (
 
 // Provider names.
 const (
-	ProviderOpenAI   = "openai"
-	ProviderEcho     = "echo"     // explicit echo; usually inferred from empty API key
-	ProviderOpencode = "opencode" // F15: opencode headless gateway (Ollama/OpenRouter/Groq)
-	ProviderCodex    = "codex"    // ChatGPT-subscription auth (OAuth, Responses API backend)
+	ProviderOpenAI    = "openai"
+	ProviderAnthropic = "anthropic"
+	ProviderEcho      = "echo"     // explicit echo; usually inferred from empty API key
+	ProviderOpencode  = "opencode" // F15: opencode headless gateway (Ollama/OpenRouter/Groq)
+	ProviderCodex     = "codex"    // ChatGPT-subscription auth (OAuth, Responses API backend)
 )
 
 // Config is the resolved runtime configuration. All fields are
@@ -143,6 +144,12 @@ func (c *Config) Normalize() error {
 		if c.Model == "" {
 			c.Model = "no model"
 		}
+	case ProviderAnthropic:
+		// Native Anthropic Messages API. Model is optional at startup — user can
+		// pick one via /models after configuring the provider.
+		if c.Model == "" {
+			c.Model = "no model"
+		}
 	case ProviderEcho:
 		if c.Model == "" {
 			c.Model = "no model"
@@ -163,8 +170,8 @@ func (c *Config) Normalize() error {
 			c.Model = "gpt-5.5"
 		}
 	default:
-		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, or %q)",
-			c.Provider, ProviderOpenAI, ProviderEcho, ProviderOpencode, ProviderCodex)
+		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, %q, or %q)",
+			c.Provider, ProviderOpenAI, ProviderAnthropic, ProviderEcho, ProviderOpencode, ProviderCodex)
 	}
 	return nil
 }
