@@ -260,3 +260,21 @@ func TestRouter_PoolAggregate_SkipsAccountsWithoutData(t *testing.T) {
 		t.Errorf("PoolAggregate = (%d, n=%d), want (20, 1) - only accounts with data count", p5, n)
 	}
 }
+
+func TestRouter_ActiveLabel(t *testing.T) {
+	a := &scriptedProvider{name: "gpt-5.5"}
+	b := &scriptedProvider{name: "gpt-5.5"}
+	r, _ := NewRouter(a, b)
+	// No labels yet: falls back to 1-based index.
+	if got := r.ActiveLabel(); got != "1" {
+		t.Errorf("ActiveLabel without labels = %q, want 1", got)
+	}
+	r.SetLabels([]string{"default", "drugie"})
+	if got := r.ActiveLabel(); got != "default" {
+		t.Errorf("ActiveLabel = %q, want default", got)
+	}
+	r.noteFailure(0) // advance magazine to account 2
+	if got := r.ActiveLabel(); got != "drugie" {
+		t.Errorf("after advance ActiveLabel = %q, want drugie", got)
+	}
+}

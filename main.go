@@ -1672,7 +1672,7 @@ func main() {
 					if rt, ok := loop.Provider().(*llm.RouterProvider); ok {
 						snaps, _, active := rt.PoolUsage()
 						if len(snaps) > 1 {
-							tile += fmt.Sprintf(" · acct %d/%d", active+1, len(snaps))
+							tile += fmt.Sprintf(" · acct: %s (%d/%d)", rt.ActiveLabel(), active+1, len(snaps))
 							if p5, p7, n := rt.PoolAggregate(); n > 0 {
 								tile += fmt.Sprintf(" · pool %dacct 5h ~%d%% 7d ~%d%%", n, p5, p7)
 							}
@@ -2060,8 +2060,15 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 			}
 			pool = append(pool, p)
 		}
-		log.Printf("codex: round-robin across %d accounts", len(pool))
-		return llm.NewRouter(pool...)
+		log.Printf("codex: magazine across %d accounts: %v", len(pool), loggedIn)
+		rt, err := llm.NewRouter(pool...)
+		if err != nil {
+			return nil, err
+		}
+		// Attach account labels so the HUD can show WHICH account is
+		// active (e.g. "acct: drugie"), not just a slot number.
+		rt.SetLabels(loggedIn)
+		return rt, nil
 	}
 
 	// Single (or zero) account: preserve the exact original path,
