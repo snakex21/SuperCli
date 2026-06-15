@@ -1169,7 +1169,7 @@ func main() {
 			}
 			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
 		}
-		return "Codex usage (just refreshed):\n" + rl.FormatDetail(), nil
+		return "Codex usage (just refreshed):\n" + rl.FormatDetail() + codexPoolUsageDetail(loop.Provider()), nil
 	}
 
 	// Wave 2 B6: /memory — inspect persistent memory. No args:
@@ -1665,7 +1665,17 @@ func main() {
 		}); ok {
 			if rl, ok := rp.RateLimits(); ok {
 				if hud := rl.FormatHUD(); hud != "" {
-					bottom = append(bottom, "limit: "+hud)
+					tile := "limit: " + hud
+					// Multi-account: append "acct N/M" so the user
+					// knows which account this limit belongs to and
+					// how many are in the magazine pool.
+					if rt, ok := loop.Provider().(*llm.RouterProvider); ok {
+						snaps, _, active := rt.PoolUsage()
+						if len(snaps) > 1 {
+							tile += fmt.Sprintf(" · acct %d/%d", active+1, len(snaps))
+						}
+					}
+					bottom = append(bottom, tile)
 				}
 			}
 		}
@@ -2076,6 +2086,41 @@ func boolPtr(b bool) *bool { return &b }
 // provider is actually Codex.
 type codexUsageFetcher interface {
 	FetchUsage(ctx context.Context) (llm.CodexRateLimits, error)
+}
+
+// codexPoolUsageDetail returns a per-account usage breakdown when
+// prov is a multi-account router, or "" otherwise. It shows each
+// account's primary (5h) / secondary (7d) usage with the active
+// account marked, so the user sees both "this account" (the active
+// one, drained first by the magazine strategy) and the whole pool.
+func codexPoolUsageDetail(prov llm.Provider) string {
+	rt, ok := prov.(*llm.RouterProvider)
+	if !ok {
+		return ""
+	}
+	snaps, oks, active := rt.PoolUsage()
+	if len(snaps) <= 1 {
+		return "" // single account: the main detail already covers it
+	}
+	var b strings.Builder
+	b.WriteString("\n\naccounts (magazine — active account drains first):")
+	for i, s := range snaps {
+		marker := "  "
+		if i == active {
+			marker = "▶ "
+		}
+		label := fmt.Sprintf("account %d", i+1)
+		if i == active {
+			label += " (active)"
+		}
+		if !oks[i] || !s.OK {
+			fmt.Fprintf(&b, "\n%s%s — no usage data yet", marker, label)
+			continue
+		}
+		fmt.Fprintf(&b, "\n%s%s — 5h: %d%% · 7d: %d%%",
+			marker, label, s.PrimaryUsedPct, s.SecondaryUsedPct)
+	}
+	return b.String()
 }
 
 // kickCodexUsageRefresh refreshes the Codex usage snapshot in the
