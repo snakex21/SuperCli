@@ -92,7 +92,8 @@ func (m *Manager) Login(ctx context.Context, status io.Writer) (*LoginResult, er
 		}
 		if e := q.Get("error"); e != "" {
 			desc := q.Get("error_description")
-			fmt.Fprintf(w, "Sign-in failed: %s %s. You can close this tab.", e, desc)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, callbackErrorHTML(e, desc))
 			resCh <- cbResult{err: fmt.Errorf("codexauth: oauth error: %s %s", e, desc)}
 			return
 		}
@@ -103,7 +104,7 @@ func (m *Manager) Login(ctx context.Context, status io.Writer) (*LoginResult, er
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, "<html><body><h2>SuperCli sign-in complete</h2><p>You can close this tab and return to the terminal.</p></body></html>")
+		fmt.Fprint(w, callbackSuccessHTML())
 		resCh <- cbResult{code: code}
 	})
 	srv := &http.Server{Handler: mux}
