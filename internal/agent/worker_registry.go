@@ -175,3 +175,65 @@ func workerSeq(id string) int {
 	n, _ := strconv.Atoi(strings.TrimPrefix(id, "worker-"))
 	return n
 }
+
+// WorkerCounts summarizes the registry by status for the status bar.
+// Running counts workers currently executing; Done/Failed/Stopped are
+// terminal; Total is everything ever spawned this process.
+type WorkerCounts struct {
+	Running int
+	Done    int
+	Failed  int
+	Stopped int
+	Total   int
+}
+
+// Counts tallies workers by status. Safe to call from the TUI render
+// path; it takes only the registry read lock and reads each worker's
+// status racily (display-only, same contract as Snapshot).
+func (r *WorkerRegistry) Counts() WorkerCounts {
+	var c WorkerCounts
+	if r == nil {
+		return c
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, w := range r.workers {
+		c.Total++
+		switch w.Status {
+		case "running", "created":
+			c.Running++
+		case "done":
+			c.Done++
+		case "failed":
+			c.Failed++
+		case "stopped":
+			c.Stopped++
+		}
+	}
+	return c
+}
+
+// StatusTile renders a one-line worker summary for the status bar, or
+// "" when nothing has been spawned yet. Example: "2 running · 1 done".
+func (c WorkerCounts) StatusTile() string {
+	if c.Total == 0 {
+		return ""
+	}
+	var seg []string
+	if c.Running > 0 {
+		seg = append(seg, fmt.Sprintf("%d running", c.Running))
+	}
+	if c.Done > 0 {
+		seg = append(seg, fmt.Sprintf("%d done", c.Done))
+	}
+	if c.Failed > 0 {
+		seg = append(seg, fmt.Sprintf("%d failed", c.Failed))
+	}
+	if c.Stopped > 0 {
+		seg = append(seg, fmt.Sprintf("%d stopped", c.Stopped))
+	}
+	if len(seg) == 0 {
+		return ""
+	}
+	return strings.Join(seg, " · ")
+}

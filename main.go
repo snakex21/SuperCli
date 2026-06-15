@@ -1151,19 +1151,32 @@ func main() {
 	// message instead of an error.
 	mergedCommands["usage"] = func(ctx context.Context, args string) (string, error) {
 		prov := loop.Provider()
-		f, ok := prov.(codexUsageFetcher)
-		if !ok {
+		_, single := prov.(codexUsageFetcher)
+		_, all := prov.(codexUsageAllFetcher)
+		if !single && !all {
 			return "the active model is not a ChatGPT-subscription (Codex) model — usage limits are only available there.\nRun /login and /model gpt-5.5 to switch.", nil
 		}
-		// The per-account pool table (multi-account router) is shown
-		// regardless of whether the network refresh succeeds — it is
-		// built from each account's last-known snapshot, so it stays
-		// useful even when FetchUsage fails (expired token, offline).
-		pool := codexPoolUsageDetail(prov)
 
 		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		rl, err := f.FetchUsage(fctx)
+		// Refresh BEFORE building the pool table so every account's
+		// snapshot is current. For a multi-account router this fetches
+		// ALL accounts (each with its own token), so the pool table and
+		// POOL aggregate reflect every account — not just the active one.
+		rl, err := refreshCodexUsage(fctx, prov)
+		// The per-account pool table (multi-account router) is built
+		// from each account's last-known snapshot AFTER the refresh, so
+		// it shows the freshly-fetched numbers; it stays useful even
+		// when some accounts failed to refresh (expired token, offline).
+		pool := codexPoolUsageDetail(prov)
+		// Partial success (multi-account): the active account refreshed
+		// fine but another account's token failed. Don't treat that as a
+		// total failure — show the fresh active numbers and pool table,
+		// noting which account(s) could not refresh.
+		if err != nil && rl.OK {
+			return fmt.Sprintf("Codex usage (just refreshed; some accounts failed: %v):\n%s%s",
+				err, rl.FormatDetail(), pool), nil
+		}
 		if err != nil {
 			if rp, ok := prov.(interface {
 				RateLimits() (llm.CodexRateLimits, bool)
@@ -1173,9 +1186,12 @@ func main() {
 				}
 			}
 			// No snapshot for the active account, but the pool may
-			// still have per-account data worth showing.
+			// still have per-account data worth showing. Either way the
+			// real reason (HTTP status, body, URL) MUST be surfaced —
+			// dropping err here is what made /usage print a bare
+			// "could not refresh the active account:" with nothing after.
 			if pool != "" {
-				return "could not refresh the active account:" + pool, nil
+				return fmt.Sprintf("could not refresh the active account: %v%s", err, pool), nil
 			}
 			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
 		}
@@ -1692,6 +1708,14 @@ func main() {
 				}
 			}
 		}
+		// Fala 3: inline worker visibility. Show a compact tile
+		// ("2 running · 1 done") whenever the coordinator has spawned
+		// workers, so the user sees activity without typing /workers.
+		if at != nil && at.Workers != nil {
+			if tile := at.Workers.Counts().StatusTile(); tile != "" {
+				bottom = append(bottom, "workers: "+tile)
+			}
+		}
 		if len(bottom) > 0 {
 			lines = append(lines, strings.Join(bottom, " │ "))
 		}
@@ -1761,14 +1785,14 @@ func main() {
 	}
 
 	model := tui.New(tui.Options{
-		Home:         home,
-		DataDir:      dataDir,
-		Version:      version,
-		Tier:         string(modelTier),
-		Agent:        loop,
-		LLM:          provider,
-		Commands:     mergedCommands,
-		StatusFn:     statusFn,
+		Home:     home,
+		DataDir:  dataDir,
+		Version:  version,
+		Tier:     string(modelTier),
+		Agent:    loop,
+		LLM:      provider,
+		Commands: mergedCommands,
+		StatusFn: statusFn,
 		// Incremental memory: after every finished agent turn,
 		// summarize just the new fragment in the background so
 		// the exit path usually has nothing left to do.
@@ -2117,6 +2141,31 @@ type codexUsageFetcher interface {
 	FetchUsage(ctx context.Context) (llm.CodexRateLimits, error)
 }
 
+// codexUsageAllFetcher is implemented by the multi-account router: it
+// refreshes the usage snapshot for EVERY account in the pool (each with
+// its own token), not just the active one. When a provider implements
+// it, refreshing usage fills in every account's snapshot so the pool
+// aggregate counts all accounts — the whole point of the magazine
+// being one combined limit. Single-account / non-router providers only
+// implement codexUsageFetcher.
+type codexUsageAllFetcher interface {
+	FetchUsageAll(ctx context.Context) (llm.CodexRateLimits, error)
+}
+
+// refreshCodexUsage refreshes usage for all pooled accounts when prov
+// is a multi-account router, otherwise just the active/only account.
+// It returns the active account's snapshot and any (per-account)
+// error, mirroring FetchUsage's signature so callers are unchanged.
+func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLimits, error) {
+	if fa, ok := prov.(codexUsageAllFetcher); ok {
+		return fa.FetchUsageAll(ctx)
+	}
+	if f, ok := prov.(codexUsageFetcher); ok {
+		return f.FetchUsage(ctx)
+	}
+	return llm.CodexRateLimits{}, fmt.Errorf("provider has no usage")
+}
+
 // codexPoolUsageDetail returns a per-account usage breakdown when
 // prov is a multi-account router, or "" otherwise. It renders an
 // aligned table with a small bar for each account's 5h and 7d
@@ -2194,17 +2243,23 @@ func usageBar(pct int) string {
 // from the snapshot at render time, so without a redraw a swap onto a
 // Codex model would not show fresh limits until the next keystroke.
 func kickCodexUsageRefresh(prov llm.Provider, notify func()) {
-	f, ok := prov.(codexUsageFetcher)
-	if !ok {
+	// Accept either the single-account fetcher or the multi-account
+	// router; refreshCodexUsage picks FetchUsageAll when available so
+	// every pooled account gets fresh usage, not just the active one.
+	_, single := prov.(codexUsageFetcher)
+	_, all := prov.(codexUsageAllFetcher)
+	if !single && !all {
 		return
 	}
 	go func() {
 		defer func() { _ = recover() }()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if _, err := f.FetchUsage(ctx); err != nil {
+		// A per-account error (e.g. one expired token) is logged but
+		// not fatal: accounts that succeeded still refreshed, so we
+		// still redraw to show whatever fresh data we got.
+		if _, err := refreshCodexUsage(ctx, prov); err != nil {
 			log.Printf("codex usage refresh: %v", err)
-			return
 		}
 		if notify != nil {
 			notify()
