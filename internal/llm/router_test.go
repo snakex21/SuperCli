@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,24 @@ func drainRouter(t *testing.T, ch <-chan Delta) []Delta {
 func TestRouter_RejectsEmptyPool(t *testing.T) {
 	if _, err := NewRouter(); err == nil {
 		t.Fatal("want error for empty pool")
+	}
+}
+
+func TestRouter_NameReportsModelNotRouterString(t *testing.T) {
+	// Multi-account pool must report the MODEL (so a model swap UI
+	// shows "gpt-5.5 (2 accounts)", never "router(2 providers)").
+	a := &scriptedProvider{name: "gpt-5.5"}
+	b := &scriptedProvider{name: "gpt-5.5"}
+	r, _ := NewRouter(a, b)
+	got := r.Name()
+	if !strings.HasPrefix(got, "gpt-5.5") {
+		t.Errorf("Name = %q, want it to start with the model name", got)
+	}
+	if strings.Contains(got, "router(") {
+		t.Errorf("Name = %q leaks internal router string", got)
+	}
+	if !strings.Contains(got, "2 accounts") {
+		t.Errorf("Name = %q should still show the pool size", got)
 	}
 }
 
