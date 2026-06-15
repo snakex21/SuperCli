@@ -139,6 +139,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		url := p.cfg.BaseURL + "/chat/completions"
 		const maxAttempts = 3
 		var resp *http.Response
+		effortRetried := false
 		for attempt := 1; ; attempt++ {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 			if err != nil {
@@ -167,6 +168,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
+			if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, body); ok && !effortRetried {
+				if patched, patchedOK := patchOpenAIReasoningEffort(reqBody, effort); patchedOK {
+					reqBody = patched
+					effortRetried = true
+					continue
+				}
+			}
 			retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
 			if !retryable || attempt >= maxAttempts {
 				select {
@@ -330,9 +338,9 @@ func parseOpenAIDataLines(r io.Reader, onData func(data string) error) error {
 // --- request body ---
 
 type openaiRequest struct {
-	Model    string           `json:"model"`
-	Messages []openaiReqMsg   `json:"messages"`
-	Stream   bool             `json:"stream"`
+	Model    string         `json:"model"`
+	Messages []openaiReqMsg `json:"messages"`
+	Stream   bool           `json:"stream"`
 	// StreamOptions asks the server to emit a final usage chunk in
 	// streaming mode. Required by the OpenAI spec (and LM Studio,
 	// vLLM, etc.) to get prompt/completion token counts back when
@@ -394,7 +402,7 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 		Stream:        true,
 		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
 	}
-	if e := ReasoningEffort(); e != "" && SupportsReasoningEffort(model) {
+	if e := ReasoningEffortForModel(model); e != "" {
 		req.ReasoningEffort = e
 	}
 	for _, t := range tools {
@@ -435,6 +443,20 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 		req.Messages = append(req.Messages, rm)
 	}
 	return json.Marshal(req)
+}
+
+func patchOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool) {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, false
+	}
+	if effort == "" {
+		delete(req, "reasoning_effort")
+	} else {
+		req["reasoning_effort"] = effort
+	}
+	out, err := json.Marshal(req)
+	return out, err == nil
 }
 
 func encodeOpenAIContent(m Message, vision bool) (any, error) {

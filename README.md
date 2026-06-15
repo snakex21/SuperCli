@@ -33,14 +33,14 @@ constraints:
 ## Quick start
 
 ```bash
-go build -o supercli .
+go build -o supercli ./cmd/supercli
 ./supercli
 ```
 
 Windows:
 
 ```powershell
-go build -o supercli.exe .
+go build -o supercli.exe ./cmd/supercli
 .\supercli.exe
 ```
 
@@ -390,14 +390,14 @@ SuperCli/
 
 ```bash
 go test ./...
-go build -o supercli .
+go build -o supercli ./cmd/supercli
 ```
 
 Windows:
 
 ```powershell
 go test ./...
-go build -o supercli.exe .
+go build -o supercli.exe ./cmd/supercli
 ```
 
 ## Current status

@@ -17,7 +17,7 @@ if errorlevel 1 (
 )
 
 echo [build.bat] Kompiluje supercli.exe...
-go build -o supercli.exe .
+go build -o supercli.exe ./cmd/supercli
 if errorlevel 1 (
     echo [build.bat] BLAD: build nie powiodl sie.
     pause

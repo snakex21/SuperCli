@@ -7,7 +7,7 @@ GO ?= go
 help:
 	@echo "SuperCli Makefile"
 	@echo "  make build   - compile to ./$(BINARY)"
-	@echo "  make run     - run via 'go run .'"
+	@echo "  make run     - run via 'go run ./cmd/supercli'"
 	@echo "  make test    - run all tests (verbose)"
 	@echo "  make vet     - go vet"
 	@echo "  make fmt     - gofmt -w ."
@@ -16,10 +16,10 @@ help:
 	@echo "  make all     - fmt + vet + test + build"
 
 build:
-	$(GO) build -o $(BINARY) .
+	$(GO) build -o $(BINARY) ./cmd/supercli
 
 run:
-	$(GO) run .
+	$(GO) run ./cmd/supercli
 
 test:
 	$(GO) test -race -count=1 $(PKG)
