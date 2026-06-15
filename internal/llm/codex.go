@@ -55,6 +55,14 @@ type CodexConfig struct {
 	// disables persistence (the tile then appears only after the
 	// first response, as before).
 	DataDir string
+	// AccountID scopes the persisted rate-limit snapshot to a
+	// specific account, so multi-account setups keep one snapshot
+	// file per account instead of sharing one (which made every
+	// account display another account's usage). Empty uses the
+	// legacy shared file. Pass the account id known at build time
+	// (e.g. from the auth manager) — it is not required to match
+	// the live token; it only namespaces the on-disk snapshot.
+	AccountID string
 }
 
 // CodexProvider is the Provider implementation backed by a
@@ -334,10 +342,11 @@ func NewCodex(cfg CodexConfig) (*CodexProvider, error) {
 	// Seed the snapshot from disk so the HUD `limit:` tile renders the
 	// last known usage immediately, before any /responses call. This
 	// reads a local file only — it never performs a network request.
-	// The account id is not known yet (resolving it could trigger a
-	// token refresh / network call), so we load unscoped; the first
-	// real response re-scopes and overwrites with fresh numbers.
-	if rl, ok := loadCodexRateLimits(cfg.DataDir, ""); ok {
+	// Load this account's last snapshot so the HUD tile shows its
+	// own numbers immediately. cfg.AccountID scopes the file per
+	// account (empty = legacy shared file). The first real response
+	// re-saves under the live account id from the token.
+	if rl, ok := loadCodexRateLimits(cfg.DataDir, cfg.AccountID); ok {
 		p.rl = rl
 	}
 	return p, nil
