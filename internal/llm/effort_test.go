@@ -28,6 +28,7 @@ func TestSetReasoningEffort_Validation(t *testing.T) {
 }
 
 func TestSupportsReasoningEffort(t *testing.T) {
+	t.Cleanup(clearReasoningEffortSupport)
 	yes := []string{"gpt-5.5", "gpt-5.1-codex-max", "o3-mini", "o4-mini", "openai/gpt-5.5", "codex-mini-latest"}
 	no := []string{"gpt-4o", "gpt-4o-mini", "qwen2.5-7b", "llama-3-8b", "claude-sonnet"}
 	for _, m := range yes {
@@ -43,7 +44,7 @@ func TestSupportsReasoningEffort(t *testing.T) {
 }
 
 func TestBuildOpenAIRequest_ReasoningEffort(t *testing.T) {
-	t.Cleanup(func() { _ = SetReasoningEffort("") })
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
 	msgs := []Message{{Role: RoleUser, Content: "hi"}}
 
 	// Effort set + supporting model → field present.
@@ -77,7 +78,7 @@ func TestBuildOpenAIRequest_ReasoningEffort(t *testing.T) {
 }
 
 func TestBuildCodexRequest_ReasoningEffort(t *testing.T) {
-	t.Cleanup(func() { _ = SetReasoningEffort("") })
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
 	msgs := []Message{{Role: RoleUser, Content: "hi"}}
 
 	if err := SetReasoningEffort("xhigh"); err != nil {
@@ -129,6 +130,7 @@ func TestNextReasoningEffortCycle(t *testing.T) {
 }
 
 func TestSupportsXHighReasoningEffort(t *testing.T) {
+	t.Cleanup(clearReasoningEffortSupport)
 	yes := []string{
 		"openai/gpt-5.1-codex-max",
 		"gpt-5.5",
@@ -151,7 +153,7 @@ func TestSupportsXHighReasoningEffort(t *testing.T) {
 }
 
 func TestReasoningEffortErrorHint(t *testing.T) {
-	t.Cleanup(func() { _ = SetReasoningEffort("") })
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
 
 	// No effort set → no hint.
 	_ = SetReasoningEffort("")
@@ -173,5 +175,88 @@ func TestReasoningEffortErrorHint(t *testing.T) {
 	}
 	if got := badRequestEffortHint(400, []byte("reasoning effort oops")); got == "" {
 		t.Error("400 effort error: want hint")
+	}
+}
+
+func TestParseReasoningEffortError_SupportedValues(t *testing.T) {
+	body := `{
+		"error": {
+			"message": "Unsupported value: 'minimal' is not supported with the 'gpt-5.5' model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.",
+			"type": "invalid_request_error",
+			"param": "reasoning_effort",
+			"code": "unsupported_value"
+		}
+	}`
+	info, ok := ParseReasoningEffortError(body)
+	if !ok {
+		t.Fatal("ParseReasoningEffortError: ok=false")
+	}
+	if info.Requested != "minimal" {
+		t.Fatalf("requested=%q want minimal", info.Requested)
+	}
+	want := []string{"none", "low", "medium", "high", "xhigh"}
+	if strings.Join(info.Supported, "|") != strings.Join(want, "|") {
+		t.Fatalf("supported=%v want %v", info.Supported, want)
+	}
+}
+
+func TestLearnReasoningEffort_MinimalFallsForwardToLow(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("minimal"); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{"error":{"message":"Unsupported value: 'minimal' is not supported. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.","param":"reasoning_effort"}}`)
+	effort, ok := LearnReasoningEffortFromError("openai/gpt-5.5", 400, body)
+	if !ok || effort != "low" {
+		t.Fatalf("learn retry effort=(%q,%v), want (low,true)", effort, ok)
+	}
+	if got := ReasoningEffortForModel("gpt-5.5"); got != "low" {
+		t.Fatalf("ReasoningEffortForModel = %q, want low", got)
+	}
+	if supported, ok := SupportedReasoningEfforts("gpt-5.5"); !ok || strings.Join(supported, "|") != "none|low|medium|high|xhigh" {
+		t.Fatalf("supported=(%v,%v), want learned values", supported, ok)
+	}
+}
+
+func TestBuildCodexRequest_UsesLearnedEffort(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	_ = SetReasoningEffort("minimal")
+	SetReasoningEffortSupport("gpt-5.5", []string{"none", "low", "medium", "high", "xhigh"})
+	body, err := buildCodexRequest("gpt-5.5", []Message{{Role: RoleUser, Content: "hi"}}, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		Reasoning *codexReasoning `json:"reasoning"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Reasoning == nil || req.Reasoning.Effort != "low" {
+		t.Fatalf("reasoning=%+v, want low", req.Reasoning)
+	}
+}
+
+func TestPatchCodexReasoningEffort(t *testing.T) {
+	in := []byte(`{"model":"gpt-5.5","reasoning":{"effort":"minimal","summary":"auto"},"stream":true}`)
+	out, ok := patchCodexReasoningEffort(in, "low")
+	if !ok {
+		t.Fatal("patchCodexReasoningEffort low: ok=false")
+	}
+	var req struct {
+		Reasoning *codexReasoning `json:"reasoning"`
+	}
+	if err := json.Unmarshal(out, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Reasoning == nil || req.Reasoning.Effort != "low" || req.Reasoning.Summary != "auto" {
+		t.Fatalf("reasoning=%+v, want low/auto", req.Reasoning)
+	}
+	out, ok = patchCodexReasoningEffort(out, "none")
+	if !ok {
+		t.Fatal("patchCodexReasoningEffort none: ok=false")
+	}
+	if strings.Contains(string(out), `"reasoning"`) {
+		t.Fatalf("reasoning should be removed for none: %s", out)
 	}
 }

@@ -417,6 +417,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 	if err != nil {
 		return nil, err
 	}
+	effortRetried := false
 	for attempt := 1; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			p.cfg.BackendURL+"/responses", bytes.NewReader(body))
@@ -452,6 +453,13 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 				return nil, fmt.Errorf("codex auth expired and refresh failed: %w", err)
 			}
 			continue
+		}
+		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody); ok && !effortRetried {
+			if patched, patchedOK := patchCodexReasoningEffort(body, effort); patchedOK {
+				body = patched
+				effortRetried = true
+				continue
+			}
 		}
 		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody))
 	}
@@ -654,7 +662,7 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 	}
 	// The ChatGPT backend rejects "none"; the Codex CLI never
 	// sends it either — skip the field in that case.
-	if e := ReasoningEffort(); e != "" && e != "none" && SupportsReasoningEffort(model) {
+	if e := ReasoningEffortForModel(model); e != "" && e != "none" {
 		req.Reasoning = &codexReasoning{Effort: e, Summary: "auto"}
 	}
 	for _, t := range tools {
@@ -703,6 +711,28 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 	}
 	req.Instructions = strings.Join(instructions, "\n\n")
 	return json.Marshal(req)
+}
+
+func patchCodexReasoningEffort(body []byte, effort string) ([]byte, bool) {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, false
+	}
+	if effort == "" || effort == "none" {
+		delete(req, "reasoning")
+	} else {
+		reasoning, _ := req["reasoning"].(map[string]any)
+		if reasoning == nil {
+			reasoning = make(map[string]any)
+		}
+		reasoning["effort"] = effort
+		if _, ok := reasoning["summary"]; !ok {
+			reasoning["summary"] = "auto"
+		}
+		req["reasoning"] = reasoning
+	}
+	out, err := json.Marshal(req)
+	return out, err == nil
 }
 
 // messageText flattens a message's text content.
