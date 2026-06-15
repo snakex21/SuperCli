@@ -47,13 +47,17 @@ func NewRouter(pool ...Provider) (*RouterProvider, error) {
 	return &RouterProvider{providers: pool}, nil
 }
 
-// Name reports the router and its pool size. The active provider
-// changes per call, so the router reports its own stable identity.
+// Name reports the model behind the pool. All pooled providers
+// serve the same model (the pool is multiple ACCOUNTS for one
+// model), so the router reports that model's name — not an opaque
+// "router" string that would leak into the UI on a model swap.
+// The pool size is appended in parentheses so multi-account is
+// still visible without hiding the model.
 func (r *RouterProvider) Name() string {
 	if len(r.providers) == 1 {
 		return r.providers[0].Name()
 	}
-	return fmt.Sprintf("router(%d providers)", len(r.providers))
+	return fmt.Sprintf("%s (%d accounts)", r.providers[0].Name(), len(r.providers))
 }
 
 // order returns the provider indices to try for this call, starting

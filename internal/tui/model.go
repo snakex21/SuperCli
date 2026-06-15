@@ -724,7 +724,14 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	}
 	m.modelSwapper.SetModel(newProv)
 	m.llm = newProv // update header display
-	m.appendLine(m.marker.ModelInfo(fmt.Sprintf("swapped to %s", newProv.Name())))
+	// Show the model the user picked, not the provider's internal
+	// Name() (a multi-account router reports "router(N providers)",
+	// which would leak here). modelID is what the user chose.
+	swapLabel := modelID
+	if swapLabel == "" {
+		swapLabel = newProv.Name()
+	}
+	m.appendLine(m.marker.ModelInfo(fmt.Sprintf("swapped to %s", swapLabel)))
 	// Persist active model + provider for next startup. Done here
 	// (at confirm time) rather than lazily at the next send, so
 	// closing the CLI immediately after picking keeps the choice.
