@@ -2099,10 +2099,10 @@ type codexUsageFetcher interface {
 }
 
 // codexPoolUsageDetail returns a per-account usage breakdown when
-// prov is a multi-account router, or "" otherwise. It shows each
-// account's primary (5h) / secondary (7d) usage with the active
-// account marked, so the user sees both "this account" (the active
-// one, drained first by the magazine strategy) and the whole pool.
+// prov is a multi-account router, or "" otherwise. It renders an
+// aligned table with a small bar for each account's 5h and 7d
+// usage, marks the active account, and adds a pool total row — so
+// the user sees both "this account" and "all accounts combined".
 func codexPoolUsageDetail(prov llm.Provider) string {
 	rt, ok := prov.(*llm.RouterProvider)
 	if !ok {
@@ -2112,25 +2112,52 @@ func codexPoolUsageDetail(prov llm.Provider) string {
 	if len(snaps) <= 1 {
 		return "" // single account: the main detail already covers it
 	}
+	// Column width: longest account label (so the bars line up).
+	nameW := len("account")
+	for i := range snaps {
+		if l := len(rt.LabelAt(i)); l > nameW {
+			nameW = l
+		}
+	}
 	var b strings.Builder
-	b.WriteString("\n\naccounts (magazine — active account drains first):")
+	b.WriteString("\n\naccounts (magazine — active drains first):\n")
 	for i, s := range snaps {
 		marker := "  "
 		if i == active {
 			marker = "▶ "
 		}
-		label := fmt.Sprintf("account %d", i+1)
-		if i == active {
-			label += " (active)"
-		}
+		name := rt.LabelAt(i)
 		if !oks[i] || !s.OK {
-			fmt.Fprintf(&b, "\n%s%s — no usage data yet", marker, label)
+			fmt.Fprintf(&b, "%s%-*s   (no usage data yet)\n", marker, nameW, name)
 			continue
 		}
-		fmt.Fprintf(&b, "\n%s%s — 5h: %d%% · 7d: %d%%",
-			marker, label, s.PrimaryUsedPct, s.SecondaryUsedPct)
+		fmt.Fprintf(&b, "%s%-*s   5h %s   7d %s\n",
+			marker, nameW, name,
+			usageBar(s.PrimaryUsedPct), usageBar(s.SecondaryUsedPct))
 	}
-	return b.String()
+	// Pool total.
+	if p5, p7, n := rt.PoolAggregate(); n > 0 {
+		fmt.Fprintf(&b, "  %-*s   5h %s   7d %s\n",
+			nameW, "POOL", usageBar(p5), usageBar(p7))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// usageBar renders a used-percent as a 10-cell bar plus the number,
+// e.g. 30 -> "▰▰▰▱▱▱▱▱▱▱ 30%". Clamped to 0..100.
+func usageBar(pct int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	filled := (pct + 5) / 10 // round to nearest cell
+	if filled > 10 {
+		filled = 10
+	}
+	return strings.Repeat("▰", filled) + strings.Repeat("▱", 10-filled) +
+		fmt.Sprintf(" %3d%%", pct)
 }
 
 // kickCodexUsageRefresh refreshes the Codex usage snapshot in the

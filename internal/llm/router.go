@@ -121,6 +121,17 @@ func (r *RouterProvider) ActiveLabel() string {
 	return fmt.Sprintf("%d", r.active+1)
 }
 
+// LabelAt returns the label for pool slot i, or a 1-based "N"
+// fallback. Used by /usage to name each account in the breakdown.
+func (r *RouterProvider) LabelAt(i int) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if i >= 0 && i < len(r.labels) && r.labels[i] != "" {
+		return r.labels[i]
+	}
+	return fmt.Sprintf("%d", i+1)
+}
+
 // Complete tries providers in round-robin order, failing over on an
 // early error. It returns an output channel that the router owns and
 // closes exactly once, preserving the Provider streaming contract.
