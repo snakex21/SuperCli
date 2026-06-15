@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"supercli/internal/fileops"
+	"supercli/internal/tools/fileops"
 )
 
 // ReadContext is the F24 tool for reading N lines around

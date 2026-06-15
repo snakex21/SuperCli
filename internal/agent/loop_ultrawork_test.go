@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
+	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/tools"
-	"supercli/internal/ultrawork"
 )
 
 // stubUltraworkGoal is a tiny GoalGate fake used by the

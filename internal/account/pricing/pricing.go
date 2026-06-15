@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/credits"
+	"supercli/internal/account/credits"
 	"supercli/internal/llm"
 )
 
@@ -50,7 +50,7 @@ type Cache struct {
 type Fetcher struct {
 	home    string
 	client  *http.Client
- sources []Source
+	sources []Source
 }
 
 // Source is an external price source.
@@ -174,10 +174,10 @@ func (f *Fetcher) FetchAndUpdate(existing []llm.ModelInfo) []llm.ModelInfo {
 	fresh := make([]llm.ModelInfo, 0, len(entries))
 	for _, e := range entries {
 		fresh = append(fresh, llm.ModelInfo{
-			ID:         e.ModelID,
-			InputCost:  e.InputPer1M,
-			OutputCost: e.OutputPer1M,
-			Source:     llm.SourceExternal,
+			ID:           e.ModelID,
+			InputCost:    e.InputPer1M,
+			OutputCost:   e.OutputPer1M,
+			Source:       llm.SourceExternal,
 			LastVerified: e.FetchedAt,
 		})
 	}
@@ -304,7 +304,7 @@ func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 		}
 		entries = append(entries, PriceEntry{
 			ModelID:     m.ID,
-			InputPer1M:  prompt * 1_000_000,  // per-token → per-1M
+			InputPer1M:  prompt * 1_000_000, // per-token → per-1M
 			OutputPer1M: completion * 1_000_000,
 			Source:      "openrouter",
 			FetchedAt:   now,

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"supercli/internal/consult"
 	"supercli/internal/llm"
+	"supercli/internal/llm/consult"
 )
 
 // stub for tool tests: reuses the same shape as

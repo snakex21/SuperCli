@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"supercli/internal/draft"
 	"supercli/internal/llm"
-	"supercli/internal/stats"
+	"supercli/internal/llm/draft"
+	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 )
 

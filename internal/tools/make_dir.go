@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // MakeDir is the thin tool for creating a folder (and any missing

@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/config"
 	"supercli/internal/llm"
-	"supercli/internal/providers"
+	"supercli/internal/llm/providers"
+	"supercli/internal/system/config"
 )
 
 // newPickerModelWithMgr builds a TUI model wired to a real providers.Manager

@@ -26,7 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/llm"
-	"supercli/internal/providers"
+	"supercli/internal/llm/providers"
 )
 
 // Auth methods for the OpenAI provider.

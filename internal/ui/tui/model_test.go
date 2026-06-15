@@ -9,10 +9,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/agent"
-	"supercli/internal/goal"
 	"supercli/internal/llm"
-	"supercli/internal/stats"
 	"supercli/internal/storage"
+	"supercli/internal/storage/goal"
+	"supercli/internal/system/stats"
 )
 
 type testModelLister struct{ models []llm.ModelInfo }

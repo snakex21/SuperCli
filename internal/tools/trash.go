@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // Trash is the thin tool for removing a file or folder. There is

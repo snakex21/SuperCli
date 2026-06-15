@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
-	"supercli/internal/codexauth"
+	"supercli/internal/account/codexauth"
 )
 
 // menu_accounts.go is the graphical front for the multi-account

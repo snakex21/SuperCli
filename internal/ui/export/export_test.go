@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"supercli/internal/session"
+	"supercli/internal/storage/session"
 )
 
 func TestRenderMarkdown_Basic(t *testing.T) {

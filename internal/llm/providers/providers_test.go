@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/config"
 	"supercli/internal/llm"
+	"supercli/internal/system/config"
 )
 
 func TestNewManager(t *testing.T) {

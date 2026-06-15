@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // DeleteLines is the F24 tool for removing a range of lines.

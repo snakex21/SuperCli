@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/goal"
+	"supercli/internal/storage/goal"
 )
 
 // GoalTool exposes long-term goal state to the model.

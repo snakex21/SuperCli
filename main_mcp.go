@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/config"
-	"supercli/internal/mcp"
+	"supercli/internal/system/config"
 	"supercli/internal/tools"
-	"supercli/internal/tui"
+	"supercli/internal/tools/mcp"
+	"supercli/internal/ui/tui"
 )
 
 // mcpStartTimeout bounds spawning + initialize + tools/list per server.

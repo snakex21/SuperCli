@@ -13,7 +13,7 @@ import (
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
-	"supercli/internal/memory"
+	"supercli/internal/storage/memory"
 	"supercli/internal/tools"
 )
 

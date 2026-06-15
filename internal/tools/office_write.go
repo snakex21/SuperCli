@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/sandbox"
 )
 
 // resolveSandboxed resolves a user-supplied path against

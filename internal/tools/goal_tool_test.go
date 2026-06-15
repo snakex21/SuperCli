@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"supercli/internal/goal"
 	"supercli/internal/storage"
+	"supercli/internal/storage/goal"
 )
 
 // newGoalTestService opens a fresh in-memory-ish SQLite

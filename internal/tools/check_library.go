@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/library"
+	"supercli/internal/storage/library"
 )
 
 // CheckLibraryAlternatives is the F17 opt-in tool. The

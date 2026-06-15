@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/session"
+	"supercli/internal/storage/session"
 )
 
 // Options controls the export output.

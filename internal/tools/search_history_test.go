@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"supercli/internal/llm"
-	"supercli/internal/session"
+	"supercli/internal/storage/session"
 )
 
 // openHistoryStore creates an in-memory session store for tests.

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"supercli/internal/credits"
-	"supercli/internal/stats"
+	"supercli/internal/account/credits"
+	"supercli/internal/system/stats"
 )
 
 // Dashboard holds all data needed to render /cost output.

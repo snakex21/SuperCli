@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // Move is the thin tool that moves or renames a file or folder —

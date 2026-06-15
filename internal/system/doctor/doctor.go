@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"supercli/internal/llm"
-	"supercli/internal/providers"
-	"supercli/internal/session"
+	"supercli/internal/llm/providers"
+	"supercli/internal/storage/session"
 	"supercli/internal/tools"
 )
 

@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/config"
 	"supercli/internal/llm"
-	"supercli/internal/providers"
+	"supercli/internal/llm/providers"
+	"supercli/internal/system/config"
 )
 
 // ---------- configuredProviderNames -----------------------------------------

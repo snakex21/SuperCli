@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/sandbox"
 )
 
 // Runner executes a single command in a sandboxed

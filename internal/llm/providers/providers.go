@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"supercli/internal/config"
 	"supercli/internal/llm"
+	"supercli/internal/system/config"
 )
 
 // Manager reads/writes the providers list from config.toml

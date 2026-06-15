@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"supercli/internal/doctor"
+	"supercli/internal/system/doctor"
 )
 
 func (m Model) renderDoctorView() string {
