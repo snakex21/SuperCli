@@ -1666,13 +1666,16 @@ func main() {
 			if rl, ok := rp.RateLimits(); ok {
 				if hud := rl.FormatHUD(); hud != "" {
 					tile := "limit: " + hud
-					// Multi-account: append "acct N/M" so the user
-					// knows which account this limit belongs to and
-					// how many are in the magazine pool.
+					// Multi-account: append which account is active
+					// AND the pool-wide average, so the user sees both
+					// "this account" and "all accounts combined".
 					if rt, ok := loop.Provider().(*llm.RouterProvider); ok {
 						snaps, _, active := rt.PoolUsage()
 						if len(snaps) > 1 {
 							tile += fmt.Sprintf(" · acct %d/%d", active+1, len(snaps))
+							if p5, p7, n := rt.PoolAggregate(); n > 0 {
+								tile += fmt.Sprintf(" · pool %dacct 5h ~%d%% 7d ~%d%%", n, p5, p7)
+							}
 						}
 					}
 					bottom = append(bottom, tile)

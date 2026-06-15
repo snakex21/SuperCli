@@ -220,3 +220,43 @@ func TestRouter_FailsOverThroughMultipleBadProviders(t *testing.T) {
 		}
 	}
 }
+
+// usageProvider is a scriptedProvider that also reports a fixed
+// RateLimits snapshot, so PoolUsage/PoolAggregate can be tested.
+type usageProvider struct {
+	scriptedProvider
+	rl CodexRateLimits
+}
+
+func (p *usageProvider) RateLimits() (CodexRateLimits, bool) { return p.rl, p.rl.OK }
+
+func TestRouter_PoolAggregate_AveragesAcrossAccounts(t *testing.T) {
+	a := &usageProvider{scriptedProvider: scriptedProvider{name: "a"}, rl: CodexRateLimits{PrimaryUsedPct: 0, SecondaryUsedPct: 0, OK: true}}
+	b := &usageProvider{scriptedProvider: scriptedProvider{name: "b"}, rl: CodexRateLimits{PrimaryUsedPct: 12, SecondaryUsedPct: 20, OK: true}}
+	r, _ := NewRouter(a, b)
+	p5, p7, n := r.PoolAggregate()
+	if n != 2 || p5 != 6 || p7 != 10 {
+		t.Errorf("PoolAggregate = (%d,%d,%d), want (6,10,2) - each account weighs half", p5, p7, n)
+	}
+}
+
+func TestRouter_PoolAggregate_ThreeAccounts(t *testing.T) {
+	mk := func(name string, p int) *usageProvider {
+		return &usageProvider{scriptedProvider: scriptedProvider{name: name}, rl: CodexRateLimits{PrimaryUsedPct: p, OK: true}}
+	}
+	r, _ := NewRouter(mk("a", 0), mk("b", 0), mk("c", 30))
+	p5, _, n := r.PoolAggregate()
+	if n != 3 || p5 != 10 {
+		t.Errorf("PoolAggregate 5h = %d over %d accts, want 10 over 3 (each weighs 1/3)", p5, n)
+	}
+}
+
+func TestRouter_PoolAggregate_SkipsAccountsWithoutData(t *testing.T) {
+	a := &usageProvider{scriptedProvider: scriptedProvider{name: "a"}, rl: CodexRateLimits{PrimaryUsedPct: 20, OK: true}}
+	b := &usageProvider{scriptedProvider: scriptedProvider{name: "b"}, rl: CodexRateLimits{OK: false}}
+	r, _ := NewRouter(a, b)
+	p5, _, n := r.PoolAggregate()
+	if n != 1 || p5 != 20 {
+		t.Errorf("PoolAggregate = (%d, n=%d), want (20, 1) - only accounts with data count", p5, n)
+	}
+}

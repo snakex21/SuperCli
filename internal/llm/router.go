@@ -241,3 +241,35 @@ func (r *RouterProvider) PoolUsage() (snaps []CodexRateLimits, oks []bool, activ
 	}
 	return snaps, oks, active
 }
+
+// PoolAggregate returns the pool-wide usage: the average 5h and 7d
+// used-percent across all accounts that have a snapshot, plus how
+// many accounts were counted. This is the "whole pool" figure —
+// the point of the magazine strategy is summed capacity, so the
+// user wants to see total headroom across every account, not just
+// the active one. Averaging is right because the accounts have
+// equal per-account limits: 0% + 12% over two accounts means ~6%
+// of the combined capacity is spent. counted is 0 when no account
+// has usable data yet (caller then shows nothing).
+func (r *RouterProvider) PoolAggregate() (primaryPct, secondaryPct, counted int) {
+	var pSum, sSum int
+	for _, p := range r.providers {
+		rp, ok := p.(interface {
+			RateLimits() (CodexRateLimits, bool)
+		})
+		if !ok {
+			continue
+		}
+		s, has := rp.RateLimits()
+		if !has || !s.OK {
+			continue
+		}
+		pSum += s.PrimaryUsedPct
+		sSum += s.SecondaryUsedPct
+		counted++
+	}
+	if counted == 0 {
+		return 0, 0, 0
+	}
+	return pSum / counted, sSum / counted, counted
+}
