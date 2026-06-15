@@ -390,8 +390,15 @@ func probeProvider(p config.ProviderConf) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if p.Type == config.ProviderAnthropic {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
 	if key := llm.CleanAPIKey(p.APIKey); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+		if p.Type == config.ProviderAnthropic {
+			req.Header.Set("x-api-key", key)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -429,7 +436,7 @@ type PredefinedProvider struct {
 func PredefinedProviders() []PredefinedProvider {
 	return []PredefinedProvider{
 		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "ChatGPT account or API key"},
-		{Name: "anthropic", Type: "openai", BaseURL: "https://api.anthropic.com/v1", Desc: "Claude 4, Claude 3.5"},
+		{Name: "anthropic", Type: config.ProviderAnthropic, BaseURL: "https://api.anthropic.com/v1", Desc: "Claude 4, Claude 3.5"},
 		{Name: "google", Type: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Desc: "Gemini 2.5, Gemini 2.0"},
 		{Name: "groq", Type: "openai", BaseURL: "https://api.groq.com/openai/v1", Desc: "Fast inference (Llama, Mixtral)"},
 		{Name: "together", Type: "openai", BaseURL: "https://api.together.xyz/v1", Desc: "Open-source models cloud"},
@@ -648,7 +655,13 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 		return res
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	ids, err := llm.ListProviderModels(ctx, p.BaseURL, p.APIKey)
+	var ids []string
+	var err error
+	if p.Type == config.ProviderAnthropic {
+		ids, err = llm.ListAnthropicModels(ctx, p.BaseURL, p.APIKey)
+	} else {
+		ids, err = llm.ListProviderModels(ctx, p.BaseURL, p.APIKey)
+	}
 	cancel()
 	if err != nil {
 		res.Err = err

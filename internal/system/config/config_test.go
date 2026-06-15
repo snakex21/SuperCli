@@ -213,7 +213,7 @@ func TestNormalize_RejectsUnknownProvider(t *testing.T) {
 		Model:       "m",
 		Temperature: 0.5,
 		APIKey:      "k",
-		Provider:    "anthropic",
+		Provider:    "unknown-provider",
 	}
 	if err := c.Normalize(); err == nil {
 		t.Fatal("expected error for unknown provider")
@@ -241,7 +241,7 @@ func TestGetEnvBool_Variants(t *testing.T) {
 	}{
 		{"1", true}, {"true", true}, {"TRUE", true}, {"yes", true}, {"on", true},
 		{"0", false}, {"false", false}, {"no", false}, {"off", false}, {"", false},
-		{"garbage", true /* default if not recognised */ }, // not really, default is false; see test below
+		{"garbage", true /* default if not recognised */}, // not really, default is false; see test below
 	} {
 		t.Setenv("X", c.v)
 		// "garbage" is not a recognised value, so the helper returns the default.

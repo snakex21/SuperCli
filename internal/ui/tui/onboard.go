@@ -43,7 +43,7 @@ type OnboardResult struct {
 	// Name is the [[providers]] entry name ("ollama",
 	// "lmstudio", "openai", "custom", "echo").
 	Name string
-	// Type is the provider type ("openai", "codex" or "echo").
+	// Type is the provider type ("openai", "anthropic", "codex" or "echo").
 	Type string
 	// AuthMethod is set for the OpenAI provider: AuthAPIKey or
 	// AuthChatGPT. AuthChatGPT means main.go must run the OAuth

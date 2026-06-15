@@ -26,8 +26,9 @@ constraints:
   or `~/.supercli` (legacy `~/.supercli` data is migrated automatically
   on first start; the original is kept with a `MOVED.txt` marker).
 - **Pure Go runtime** — no Node/Python/Docker dependency for normal operation.
-- **Provider-flexible** — OpenAI-compatible providers, opencode gateway, echo
-  mode, and configurable provider lists.
+- **Provider-flexible** — native Anthropic, OpenAI-compatible providers,
+  ChatGPT/Codex OAuth, opencode gateway, echo mode, and configurable provider
+  lists.
 - **Test-driven** — `go test ./...` is expected to pass before a build is done.
 
 ## Quick start
@@ -83,6 +84,7 @@ Run one prompt without the TUI:
 
 ### Agent loop
 
+- Native Anthropic Messages API provider.
 - OpenAI-compatible streaming provider interface.
 - Echo provider for offline tests and dry runs.
 - opencode-compatible provider gateway support.
@@ -174,7 +176,9 @@ Type `/` in the TUI to open the command palette.
 
 ### Models and providers
 
+- Native Anthropic API client.
 - OpenAI-compatible API client.
+- ChatGPT/Codex OAuth provider.
 - opencode gateway provider.
 - Echo provider.
 - Provider list in `supercli-data/config.toml`.
@@ -348,38 +352,16 @@ output_cost = 0.60
 
 ```text
 SuperCli/
-  main.go                  # startup, flags, provider/tool/TUI wiring
+  cmd/supercli/            # binary entrypoint
   internal/
-    agent/                 # agent loop, events, sub-agents, session writer integration
-    config/                # env/TOML/flag configuration
-    consult/               # multi-model consultation and judging
-    cost/                  # TUI cost dashboard rendering
-    credits/               # budgets, usage, audit, cost rates
-    ctxexec/               # bounded context execution helper
-    darwin/                # parallel candidate generation/judging
-    doctor/                # runtime diagnostics
-    draft/                 # draft model policy and savings
-    export/                # Markdown session export
-    fileops/               # tracked file edits and undo
-    freshness/             # skill freshness checks
-    goal/                  # active goal/tasks service
-    library/               # library alternative catalog
-    llm/                   # provider interfaces and OpenAI/opencode/echo clients
-    mcp/                   # MCP-related plumbing
-    memory/                # memory/pattern storage
-    mentions/              # @file mention parsing/resolution
-    planmode/              # read-only planning prompt wrapper
-    pricing/               # external model price fetch/cache
-    providers/             # provider manager and model scanning
-    reflect/               # pattern extraction/injection
-    sandbox/               # path/env/sandbox policy helpers
-    session/               # SQLite sessions/messages
-    shellescape/           # !command shell escape runner
-    stats/                 # per-turn token/cost stats
-    storage/               # home resolution and SQLite DB bootstrap
-    tools/                 # built-in and user tool registry
-    tui/                   # Bubble Tea UI, command palette, modals, menus
-    ultrawork/             # goal/credit execution gates
+    account/               # auth, credits, pricing, tiers
+    agent/                 # agent loop plus darwin/reflect/ultrawork subpackages
+    app/                   # startup, flags, provider/tool/TUI wiring
+    llm/                   # provider interfaces; Anthropic/OpenAI/Codex/opencode/echo
+    storage/               # sessions, memory, goals, library
+    system/                # config, doctor, stats
+    tools/                 # tool facade plus domain packages (files, office, web, ...)
+    ui/                    # TUI and export
   test/                    # integration/stress/benchmark tests
   Makefile
   build.bat

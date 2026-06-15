@@ -98,6 +98,35 @@ func TestListProviderModels_HappyPath(t *testing.T) {
 	}
 }
 
+func TestListAnthropicModels_HappyPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("x-api-key"); got != "ANTHROPICKEY" {
+			t.Errorf("x-api-key = %q, want ANTHROPICKEY", got)
+		}
+		if got := r.Header.Get("anthropic-version"); got == "" {
+			t.Errorf("anthropic-version header missing")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "claude-sonnet-4-5", "type": "model"},
+				{"id": "claude-haiku-4-5", "type": "model"},
+			},
+		})
+	}))
+	defer srv.Close()
+	got, err := ListAnthropicModels(context.Background(), srv.URL, "ANTHROPICKEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"claude-sonnet-4-5", "claude-haiku-4-5"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("models=%v want %v", got, want)
+	}
+}
+
 func TestListProviderModels_EmptyBaseURL(t *testing.T) {
 	_, err := ListProviderModels(context.Background(), "", "k")
 	if err == nil {

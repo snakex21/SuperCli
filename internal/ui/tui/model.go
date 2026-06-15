@@ -904,32 +904,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+r":
-		// Cycle reasoning effort: off → minimal → low → medium
-		// → high → (xhigh on gpt-5.5/codex) → off. Same persistence
-		// path as /reasoning (global config.toml).
-		modelName := "no-model"
-		if m.llm != nil {
-			modelName = m.llm.Name()
-		}
-		if m.llm == nil || !llm.SupportsReasoningEffort(modelName) {
-			m.statusOverride = fmt.Sprintf("model %s does not support reasoning effort", modelName)
-		} else {
-			next := llm.NextReasoningEffort(llm.ReasoningEffort(),
-				llm.SupportsXHighReasoningEffort(modelName))
-			if err := llm.SetReasoningEffort(next); err != nil {
-				m.statusOverride = fmt.Sprintf("reasoning: %v", err)
-			} else {
-				m.persistReasoningEffort(next)
-				if next == "" {
-					m.statusOverride = "reasoning: off (provider default)"
-				} else {
-					m.statusOverride = "reasoning: " + next
-				}
-			}
-		}
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return statusOverrideClearMsg{}
-		})
+		return m.openReasoningMenu()
 	case "ctrl+y":
 		// Copy the last assistant response to the clipboard.
 		last := m.chat.lastAssistant()
@@ -1546,7 +1521,7 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
-	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R change reasoning", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
+	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R reasoning menu", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
 		line = "Enter send · Alt+Enter newline · Ctrl+R reasoning · /help · Esc clear · Ctrl+C interrupt"
@@ -2135,7 +2110,7 @@ func renderProvidersList(mgr *providers.Manager, caps *llm.CapabilityRegistry) s
 	var b strings.Builder
 	infos := mgr.List(caps)
 	if len(infos) == 0 {
-		return "No providers configured.\n\nAdd one:\n  /providers add <name> <type> <base_url> [api_key]\n\nTypes: openai, opencode, echo"
+		return "No providers configured.\n\nAdd one:\n  /providers add <name> <type> <base_url> [api_key]\n\nTypes: openai, anthropic, codex, opencode, echo"
 	}
 	for _, pi := range infos {
 		status := "✗ disconnected"

@@ -162,7 +162,7 @@ type CodexAuthConf struct {
 // ProviderConf is a named provider entry in config.toml.
 type ProviderConf struct {
 	Name    string `toml:"name"`
-	Type    string `toml:"type"` // "openai", "opencode", "echo"
+	Type    string `toml:"type"` // "openai", "anthropic", "opencode", "echo"
 	BaseURL string `toml:"base_url"`
 	APIKey  string `toml:"api_key"`
 	Model   string `toml:"model"`
