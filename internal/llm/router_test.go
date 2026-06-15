@@ -162,17 +162,45 @@ func TestRouter_AllProvidersFailToStart(t *testing.T) {
 	}
 }
 
-func TestRouter_RoundRobinSpreadsLoad(t *testing.T) {
+func TestRouter_MagazineSticksToActiveUntilFailure(t *testing.T) {
+	// Magazine strategy: all requests drain account A while it is
+	// healthy; account B is untouched until A fails.
 	a := &scriptedProvider{name: "a", deltas: []Delta{{FinishReason: "stop"}}}
 	b := &scriptedProvider{name: "b", deltas: []Delta{{FinishReason: "stop"}}}
 	r, _ := NewRouter(a, b)
-	// 4 calls → each provider should get 2 (round-robin).
 	for i := 0; i < 4; i++ {
 		ch, _ := r.Complete(context.Background(), nil, nil)
 		drainRouter(t, ch)
 	}
-	if a.callCount != 2 || b.callCount != 2 {
-		t.Errorf("round-robin uneven: a=%d b=%d, want 2/2", a.callCount, b.callCount)
+	if a.callCount != 4 || b.callCount != 0 {
+		t.Errorf("magazine should drain A first: a=%d b=%d, want 4/0", a.callCount, b.callCount)
+	}
+	if r.ActiveIndex() != 0 {
+		t.Errorf("active should still be A (0), got %d", r.ActiveIndex())
+	}
+}
+
+func TestRouter_MagazineAdvancesAfterFailure(t *testing.T) {
+	// A fails to start → magazine advances to B; subsequent calls
+	// then stick to B.
+	a := &scriptedProvider{name: "a", startErr: errors.New("429")}
+	b := &scriptedProvider{name: "b", deltas: []Delta{{Content: "ok"}, {FinishReason: "stop"}}}
+	r, _ := NewRouter(a, b)
+
+	ch, _ := r.Complete(context.Background(), nil, nil)
+	drainRouter(t, ch)
+	if r.ActiveIndex() != 1 {
+		t.Fatalf("after A failed, active should be B (1), got %d", r.ActiveIndex())
+	}
+	// Next call should go straight to B, not retry A.
+	aBefore := a.callCount
+	ch2, _ := r.Complete(context.Background(), nil, nil)
+	drainRouter(t, ch2)
+	if a.callCount != aBefore {
+		t.Errorf("A should not be retried once magazine moved past it (a=%d, was %d)", a.callCount, aBefore)
+	}
+	if b.callCount < 2 {
+		t.Errorf("B should serve subsequent calls, got callCount=%d", b.callCount)
 	}
 }
 
