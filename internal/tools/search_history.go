@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/session"
+	"supercli/internal/storage/session"
 )
 
 // SearchHistory is the F13 tool. It lets the model query its

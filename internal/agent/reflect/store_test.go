@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"supercli/internal/memory"
+	"supercli/internal/storage/memory"
 )
 
 func newTestStore(t *testing.T) (*Store, *memory.Store, string) {

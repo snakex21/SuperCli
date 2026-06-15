@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/stats"
+	"supercli/internal/system/stats"
 )
 
 func TestRender_Basic(t *testing.T) {

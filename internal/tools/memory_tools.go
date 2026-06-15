@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/memory"
+	"supercli/internal/storage/memory"
 )
 
 // MemoryKeeper is the subset of *memory.Store the remember /

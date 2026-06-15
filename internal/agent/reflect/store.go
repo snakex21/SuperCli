@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/memory"
+	"supercli/internal/storage/memory"
 )
 
 // Store persists Patterns via the F2.b memory store. One

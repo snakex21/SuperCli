@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/doctor"
+	"supercli/internal/system/doctor"
 )
 
 func TestRenderDoctorReport(t *testing.T) {

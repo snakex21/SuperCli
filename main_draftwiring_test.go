@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"supercli/internal/config"
+	"supercli/internal/account/tier"
 	"supercli/internal/llm"
-	"supercli/internal/tier"
+	"supercli/internal/system/config"
 )
 
 // draftWiringTestProvider is a minimal verifier provider

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/consult"
 	"supercli/internal/llm"
+	"supercli/internal/llm/consult"
 )
 
 // Consult is the F12 opt-in tool. The model calls

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/memory"
+	"supercli/internal/storage/memory"
 )
 
 func openMemStore(t *testing.T) *memory.Store {

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // WriteFile is the thin tool for creating or overwriting a file

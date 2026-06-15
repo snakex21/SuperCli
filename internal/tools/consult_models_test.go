@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/consult"
 	"supercli/internal/llm"
+	"supercli/internal/llm/consult"
 )
 
 type failP struct{ name string }

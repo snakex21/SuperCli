@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"supercli/internal/fileops"
+	"supercli/internal/tools/fileops"
 )
 
 // EditLines applies SEVERAL content-anchored edits to one file in

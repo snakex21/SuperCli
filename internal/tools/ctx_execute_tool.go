@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"supercli/internal/ctxexec"
+	"supercli/internal/tools/ctxexec"
 )
 
 // CtxExecuteTool is the `ctx_execute` tool. It runs a

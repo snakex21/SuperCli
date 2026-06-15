@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"supercli/internal/credits"
+	"supercli/internal/account/credits"
 	"supercli/internal/llm"
 )
 

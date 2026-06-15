@@ -11,7 +11,7 @@ import (
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
-	"supercli/internal/session"
+	"supercli/internal/storage/session"
 )
 
 // resumeKeepRecent is how many trailing messages are kept

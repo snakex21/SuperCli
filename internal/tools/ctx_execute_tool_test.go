@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/ctxexec"
+	"supercli/internal/tools/ctxexec"
 )
 
 func newCtxTestRunner(t *testing.T) *ctxexec.Runner {
@@ -171,10 +171,10 @@ func TestCtxExecute_Execute_TruncationFlag(t *testing.T) {
 	}
 	tool := NewCtxExecuteTool(newCtxTestRunner(t), ".")
 	res, _ := tool.Execute(context.Background(), mustJSON(t, jsonObj(t, map[string]any{
-		"command":        cmd,
-		"timeout_ms":     800,
-		"max_stdout_kb":  1,
-		"max_stderr_kb":  1,
+		"command":       cmd,
+		"timeout_ms":    800,
+		"max_stdout_kb": 1,
+		"max_stderr_kb": 1,
 	})))
 	var pr ctxexec.Result
 	_ = json.Unmarshal([]byte(res.Text), &pr)

@@ -10,10 +10,10 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/config"
-	"supercli/internal/goal"
 	"supercli/internal/llm"
-	"supercli/internal/providers"
+	"supercli/internal/llm/providers"
+	"supercli/internal/storage/goal"
+	"supercli/internal/system/config"
 )
 
 type menuKind int

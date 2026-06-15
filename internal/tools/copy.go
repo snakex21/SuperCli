@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"supercli/internal/fileops"
-	"supercli/internal/sandbox"
+	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // Copy is the thin tool that copies a file or folder — one verb

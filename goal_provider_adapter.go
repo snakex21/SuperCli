@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"supercli/internal/goal"
 	"supercli/internal/llm"
+	"supercli/internal/storage/goal"
 )
 
 // goalProviderAdapter bridges an llm.Provider (which

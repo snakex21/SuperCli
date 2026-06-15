@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"supercli/internal/draft"
+	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
-	"supercli/internal/prompt"
-	"supercli/internal/stats"
+	"supercli/internal/llm/draft"
+	"supercli/internal/llm/prompt"
+	"supercli/internal/system/stats"
 	"supercli/internal/tools"
-	"supercli/internal/ultrawork"
 )
 
 // SessionWriter is the minimal contract the loop needs to

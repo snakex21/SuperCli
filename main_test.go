@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/config"
-	"supercli/internal/darwin"
-	"supercli/internal/goal"
+	"supercli/internal/agent/darwin"
 	"supercli/internal/llm"
 	"supercli/internal/storage"
+	"supercli/internal/storage/goal"
+	"supercli/internal/system/config"
 	"supercli/internal/tools"
 )
 

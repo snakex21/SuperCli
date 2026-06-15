@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"supercli/internal/library"
+	"supercli/internal/storage/library"
 )
 
 func TestCheckLibraryAlternatives_Basic(t *testing.T) {

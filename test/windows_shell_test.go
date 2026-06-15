@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"supercli/internal/ctxexec"
 	"supercli/internal/tools"
+	"supercli/internal/tools/ctxexec"
 )
 
 func init() {
