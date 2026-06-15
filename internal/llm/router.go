@@ -28,6 +28,7 @@ import (
 // never see duplicated or interleaved output from two providers.
 type RouterProvider struct {
 	providers []Provider
+	labels    []string // optional human labels, 1:1 with providers
 	mu        sync.Mutex
 	active    int // "magazine" cursor: the account currently in use
 }
@@ -96,6 +97,28 @@ func (r *RouterProvider) ActiveIndex() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.active
+}
+
+// SetLabels attaches human-readable labels (e.g. account names) to
+// the pool, 1:1 with the providers passed to NewRouter. Extra or
+// missing labels are tolerated (ActiveLabel falls back to an index
+// string). Call once right after NewRouter.
+func (r *RouterProvider) SetLabels(labels []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.labels = append([]string(nil), labels...)
+}
+
+// ActiveLabel returns the label of the active account, or a 1-based
+// "N" string when no label is known. Used by the HUD to show WHICH
+// account is in use, not just its slot number.
+func (r *RouterProvider) ActiveLabel() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active < len(r.labels) && r.labels[r.active] != "" {
+		return r.labels[r.active]
+	}
+	return fmt.Sprintf("%d", r.active+1)
 }
 
 // Complete tries providers in round-robin order, failing over on an
