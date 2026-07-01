@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,6 +41,15 @@ type OpenAIConfig struct {
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
 	Capabilities *CapabilityRegistry
+	// CachePrompt overrides KV-prompt-cache hinting. When nil (the
+	// default) the provider auto-detects: requests to local/private
+	// hosts (localhost, loopback, RFC-1918, link-local, unspecified)
+	// get `"cache_prompt": true` so llama.cpp-family servers reuse
+	// the KV cache across turns; public endpoints (api.openai.com,
+	// OpenRouter, ...) never see the field, because cloud OpenAI
+	// rejects unknown fields with HTTP 400. Set explicitly to force
+	// the hint on (e.g. a llama.cpp box on a public IP) or off.
+	CachePrompt *bool
 }
 
 // OpenAIProvider is the production Provider for the OpenAI-compat
@@ -48,6 +58,9 @@ type OpenAIProvider struct {
 	cfg  OpenAIConfig
 	http *http.Client
 	caps *CapabilityRegistry
+	// cachePrompt: resolved from cfg.CachePrompt (explicit) or
+	// isLocalBaseURL (auto). See OpenAIConfig.CachePrompt.
+	cachePrompt bool
 }
 
 // NewOpenAI returns an OpenAIProvider. BaseURL defaults to the
@@ -78,7 +91,41 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	if caps == nil {
 		caps = NewCapabilityRegistry()
 	}
-	return &OpenAIProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps}, nil
+	cachePrompt := isLocalBaseURL(cfg.BaseURL)
+	if cfg.CachePrompt != nil {
+		cachePrompt = *cfg.CachePrompt
+	}
+	return &OpenAIProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, cachePrompt: cachePrompt}, nil
+}
+
+// isLocalBaseURL reports whether baseURL points at a local or
+// private-network server (llama.cpp, LM Studio, Ollama, vLLM on the
+// LAN...). Only such hosts get llama.cpp-specific request fields like
+// cache_prompt; public/cloud endpoints must never see them (OpenAI
+// returns HTTP 400 on unknown fields).
+//
+// Note on slots: we deliberately do NOT pin id_slot. llama.cpp already
+// auto-selects the slot with the longest common prefix for each
+// request, which is exactly the per-session KV reuse we want; pinning
+// a slot id would make parallel agents (coordinator + workers sharing
+// one server) evict each other's cache.
+func isLocalBaseURL(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 // Name implements Provider. Returns the configured model id.
@@ -110,7 +157,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	hasVision := p.SupportsVision()
 	warnedNoVision := false
 
-	reqBody, err := buildOpenAIRequest(p.cfg.Model, msgs, tools, hasVision)
+	reqBody, err := buildOpenAIRequest(p.cfg.Model, msgs, tools, hasVision, p.cachePrompt)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -388,6 +435,12 @@ type openaiRequest struct {
 	// it (see SupportsReasoningEffort); other models never see
 	// the field, so non-OpenAI endpoints cannot reject it.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// CachePrompt asks llama.cpp-family servers to reuse the KV
+	// cache for the common prompt prefix across requests. Gated:
+	// only emitted for local/private BaseURLs (or an explicit
+	// config override) — cloud OpenAI 400s on unknown fields.
+	// omitempty drops it entirely when false.
+	CachePrompt bool `json:"cache_prompt,omitempty"`
 }
 
 // openaiStreamOptions carries the include_usage flag.
@@ -431,11 +484,12 @@ type openaiToolFunction struct {
 	Parameters  json.RawMessage `json:"parameters,omitempty"` // embedded JSON object, NOT a string
 }
 
-func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
+func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool) ([]byte, error) {
 	req := openaiRequest{
 		Model:         model,
 		Stream:        true,
 		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
+		CachePrompt:   cachePrompt,
 	}
 	if e := ReasoningEffortForModel(model); e != "" {
 		req.ReasoningEffort = e
