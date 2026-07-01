@@ -162,3 +162,13 @@ func loadCodexRateLimits(dataDir, accountID string) (CodexRateLimits, bool) {
 	}
 	return snap.Limits, true
 }
+
+// LoadCodexRateLimitsSnapshot reads the persisted Codex rate-limit
+// snapshot for accountID from dataDir. It is the public, read-only
+// counterpart to the provider's internal persistence path, intended
+// for status surfaces such as the TUI HUD and web GUI. Empty accountID
+// uses the legacy shared snapshot; a non-empty accountID uses the
+// per-account snapshot and rejects mismatched account ids.
+func LoadCodexRateLimitsSnapshot(dataDir, accountID string) (CodexRateLimits, bool) {
+	return loadCodexRateLimits(dataDir, accountID)
+}

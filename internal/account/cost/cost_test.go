@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"supercli/internal/account/credits"
 	"supercli/internal/system/stats"
 )
 
@@ -79,6 +80,41 @@ func TestRender_Projection(t *testing.T) {
 	out := Render(d)
 	if !strings.Contains(out, "at this rate") {
 		t.Error("missing projection")
+	}
+}
+
+func TestRender_UsesProviderSpecificRate(t *testing.T) {
+	defer credits.SetProviderRates(nil)
+	credits.SetProviderRates(map[string]credits.Rate{
+		"openrouter/deepseek/deepseek-chat": {InputPer1k: 0.07, OutputPer1k: 0.27},
+	})
+	d := Dashboard{
+		Turns:    []stats.Turn{{Step: 1, TokensIn: 1000, TokensOut: 1000, DurationMs: 1000, Model: "deepseek/deepseek-chat"}},
+		Total:    stats.Total{TokensIn: 1000, TokensOut: 1000, Turns: 1},
+		Model:    "deepseek/deepseek-chat",
+		Provider: "openrouter",
+		Billable: true,
+	}
+	out := Render(d)
+	if !strings.Contains(out, "$0.34") {
+		t.Fatalf("dashboard should use provider-specific OpenRouter rate, got:\n%s", out)
+	}
+}
+
+func TestRender_SubscriptionDoesNotShowUSD(t *testing.T) {
+	d := Dashboard{
+		Turns:    []stats.Turn{{Step: 1, TokensIn: 1000, TokensOut: 1000, DurationMs: 1000, Model: "gpt-5.5"}},
+		Total:    stats.Total{TokensIn: 1000, TokensOut: 1000, Turns: 1},
+		Model:    "gpt-5.5",
+		Provider: "codex",
+		Billable: false,
+	}
+	out := Render(d)
+	if strings.Contains(out, "$") {
+		t.Fatalf("subscription dashboard should not show USD:\n%s", out)
+	}
+	if !strings.Contains(out, "subscription/included") {
+		t.Fatalf("subscription dashboard should mention included usage:\n%s", out)
 	}
 }
 

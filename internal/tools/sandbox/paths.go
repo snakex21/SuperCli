@@ -73,11 +73,18 @@ func IsUnder(parent, child string) bool {
 	return !strings.HasPrefix(rel, "..")
 }
 
+// Unsandboxed, when true, skips the home-boundary check in
+// ResolveSafe and AllowDestructive — the path still needs to
+// exist and symlinks are still resolved, but the "outside home"
+// rejection is disabled. Sensitive system paths are still
+// blocked. Set at startup from --unsandboxed.
+var Unsandboxed bool
+
 // ResolveSafe joins rel onto home, evaluates any ".."
 // and symlinks in the result, and returns the canonical
 // absolute path. Returns ErrEscape if the result lands
-// outside home, or if it points at a sensitive system
-// root.
+// outside home (unless Unsandboxed is on), or if it
+// points at a sensitive system root.
 //
 // If home is empty, an error is returned. The function
 // tolerates a non-existent path: it returns the
@@ -109,11 +116,12 @@ func ResolveSafe(home, rel string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("sandbox: resolve symlinks: %w", err)
 	}
-	// Refuse if outside home.
-	if !IsUnder(absHome, resolved) {
+	// Refuse if outside home (skipped when unsandboxed).
+	if !Unsandboxed && !IsUnder(absHome, resolved) {
 		return "", ErrEscape
 	}
-	// Refuse if it lands on a sensitive system path.
+	// Refuse if it lands on a sensitive system path
+	// (always enforced, even when unsandboxed).
 	if isSensitive(resolved) {
 		return "", ErrDenied
 	}

@@ -73,7 +73,7 @@ func (cr *CommandRegistry) Entries() []SlashEntry {
 	out := make([]SlashEntry, 0, len(cr.entries))
 	// Fixed order for deterministic output.
 	order := []string{"help", "goal", "darwin", "council", "clear",
-		"reflect", "compact", "status", "model", "sandbox", "providers", "quit"}
+		"reflect", "compact", "status", "model", "sandbox", "allow-all", "providers", "quit"}
 	seen := make(map[string]struct{}, len(order))
 	for _, name := range order {
 		if e, ok := cr.entries[name]; ok {

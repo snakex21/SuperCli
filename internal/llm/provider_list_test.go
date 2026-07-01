@@ -65,6 +65,24 @@ func TestHeuristicCapabilities_DefaultsToChat(t *testing.T) {
 	}
 }
 
+func TestIsFreeModelID(t *testing.T) {
+	cases := []struct {
+		id   string
+		want bool
+	}{
+		{"kilo-auto/free", true},
+		{"openai/gpt-oss-20b:free", true},
+		{"deepseek-v4-flash-free", true},
+		{"anthropic/claude-sonnet-4.5", false},
+		{"freedom-model", false},
+	}
+	for _, tc := range cases {
+		if got := IsFreeModelID(tc.id); got != tc.want {
+			t.Fatalf("IsFreeModelID(%q) = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+}
+
 func TestListProviderModels_HappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

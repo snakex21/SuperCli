@@ -20,6 +20,8 @@ type Dashboard struct {
 	BudgetIn   int64 // 0 = no cap
 	SessionID  string
 	Model      string
+	Provider   string
+	Billable   bool
 	StartTime  interface{ UnixNano() int64 }
 }
 
@@ -29,7 +31,11 @@ func Render(d Dashboard) string {
 
 	// ── Section 1: Session summary ──
 	totalTokens := d.Total.TokensIn + d.Total.TokensOut
-	costUSD := credits.CostFor(d.Model, int64(d.Total.TokensIn), int64(d.Total.TokensOut))
+	billable := d.Billable || d.Provider == ""
+	costUSD := 0.0
+	if billable {
+		costUSD = credits.CostForProvider(d.Provider, d.Model, int64(d.Total.TokensIn), int64(d.Total.TokensOut))
+	}
 
 	b.WriteString("## Cost Dashboard\n\n")
 
@@ -41,18 +47,31 @@ func Render(d Dashboard) string {
 		if left < 0 {
 			left = 0
 		}
-		b.WriteString(fmt.Sprintf("  tokens: **%s** used │ **%s** left │ **%s**\n\n",
-			compact(totalTokens), compact(int(left)), credits.FormatUSD(costUSD)))
+		if billable {
+			b.WriteString(fmt.Sprintf("  tokens: **%s** used │ **%s** left │ **%s**\n\n",
+				compact(totalTokens), compact(int(left)), credits.FormatUSD(costUSD)))
+		} else {
+			b.WriteString(fmt.Sprintf("  tokens: **%s** used │ **%s** left │ subscription/included\n\n",
+				compact(totalTokens), compact(int(left))))
+		}
 	} else {
-		b.WriteString(fmt.Sprintf("  tokens: **%s** used │ **%s**\n\n",
-			compact(totalTokens), credits.FormatUSD(costUSD)))
+		if billable {
+			b.WriteString(fmt.Sprintf("  tokens: **%s** used │ **%s**\n\n",
+				compact(totalTokens), credits.FormatUSD(costUSD)))
+		} else {
+			b.WriteString(fmt.Sprintf("  tokens: **%s** used │ subscription/included\n\n", compact(totalTokens)))
+		}
 	}
 
 	// ── Section 2: Draft savings ──
 	if d.Total.TokensSaved > 0 {
-		savedCost := credits.CostFor(d.Model, int64(d.Total.TokensSaved), 0)
-		b.WriteString(fmt.Sprintf("  draft saved **%s** tokens (**%s**) this session\n\n",
-			compact(d.Total.TokensSaved), credits.FormatUSD(savedCost)))
+		if billable {
+			savedCost := credits.CostForProvider(d.Provider, d.Model, int64(d.Total.TokensSaved), 0)
+			b.WriteString(fmt.Sprintf("  draft saved **%s** tokens (**%s**) this session\n\n",
+				compact(d.Total.TokensSaved), credits.FormatUSD(savedCost)))
+		} else {
+			b.WriteString(fmt.Sprintf("  draft saved **%s** tokens this session\n\n", compact(d.Total.TokensSaved)))
+		}
 	}
 
 	// ── Section 3: Per-turn breakdown ──
@@ -77,15 +96,24 @@ func Render(d Dashboard) string {
 	if len(modelBreakdown) > 1 {
 		b.WriteString("### Model breakdown\n\n")
 		for _, mb := range modelBreakdown {
-			c := credits.CostFor(mb.Model, int64(mb.In), int64(mb.Out))
-			b.WriteString(fmt.Sprintf("  %s: %s in / %s out = **%s**\n",
-				mb.Model, compact(mb.In), compact(mb.Out), credits.FormatUSD(c)))
+			provider := d.Provider
+			if mb.Model != d.Model {
+				provider = ""
+			}
+			if billable {
+				c := credits.CostForProvider(provider, mb.Model, int64(mb.In), int64(mb.Out))
+				b.WriteString(fmt.Sprintf("  %s: %s in / %s out = **%s**\n",
+					mb.Model, compact(mb.In), compact(mb.Out), credits.FormatUSD(c)))
+			} else {
+				b.WriteString(fmt.Sprintf("  %s: %s in / %s out = subscription/included\n",
+					mb.Model, compact(mb.In), compact(mb.Out)))
+			}
 		}
 		b.WriteString("\n")
 	}
 
 	// ── Section 5: Projection ──
-	if len(d.Turns) >= 2 {
+	if billable && len(d.Turns) >= 2 {
 		totalMs := int64(0)
 		for _, t := range d.Turns {
 			totalMs += t.DurationMs
@@ -106,7 +134,11 @@ func Render(d Dashboard) string {
 // StatusBarCost builds the compact "tokens: used | left | $cost" string
 // for the live status bar.
 func StatusBarCost(used, budget int, model string) string {
-	tokensCost := credits.CostFor(model, int64(used), 0)
+	return StatusBarCostProvider(used, budget, "", model)
+}
+
+func StatusBarCostProvider(used, budget int, provider, model string) string {
+	tokensCost := credits.CostForProvider(provider, model, int64(used), 0)
 	if budget > 0 {
 		left := budget - used
 		if left < 0 {

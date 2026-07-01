@@ -74,7 +74,7 @@ func buildSlashItems(_ map[string]SlashHandler) []autocompleteItem {
 
 func commandCategory(name string) string {
 	switch name {
-	case "help", "status", "cost", "doctor", "sandbox", "context", "mcp":
+	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "mcp":
 		return "system"
 	case "model", "providers", "reasoning", "usage":
 		return "model"
@@ -107,6 +107,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "memory", Desc: "inspect persistent memory", Args: "[search <query> | forget <id>]"},
 		{Name: "providers", Desc: "manage providers"},
 		{Name: "sandbox", Desc: "show sandbox status"},
+		{Name: "allow-all", Desc: "grant full filesystem access", Args: "on|off"},
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
 		{Name: "diff", Desc: "show file changes from current session"},
 		{Name: "model", Desc: "show or swap active model", Args: "[model_id]"},

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,9 +41,12 @@ type CodexConfig struct {
 	Model string
 	// Tokens supplies access tokens. Required.
 	Tokens CodexTokenSource
-	// Timeout caps each HTTP request (default 120s — Codex
-	// streams can be long-lived).
+	// Timeout is the idle/inactivity timeout for the SSE stream (no data
+	// from the server, also bounds time-to-first-token), NOT a whole-
+	// request cap — Codex streams can be long-lived. Defaults to 300s.
 	Timeout time.Duration
+	// ConnectTimeout is the TCP connect (dial) timeout. Defaults to 30s.
+	ConnectTimeout time.Duration
 	// HTTPClient overrides the default client (tests).
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
@@ -328,11 +332,17 @@ func NewCodex(cfg CodexConfig) (*CodexProvider, error) {
 		cfg.BackendURL = "https://chatgpt.com/backend-api/codex"
 	}
 	cfg.BackendURL = strings.TrimRight(cfg.BackendURL, "/")
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 300 * time.Second // idle/inactivity timeout (was a 120s whole-request cap)
+	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = 30 * time.Second
+	}
 	if cfg.HTTPClient == nil {
-		if cfg.Timeout <= 0 {
-			cfg.Timeout = 120 * time.Second
-		}
-		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
+		transport.ResponseHeaderTimeout = 0                 // do NOT cap header wait: a slow model may delay first byte
+		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -396,16 +406,22 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 				}
 			}
 		}()
-		resp, err := p.doWithAuth(ctx, reqBody)
+		// Derive a cancellable child context so the idle watchdog can
+		// abort a stalled stream. cancel runs after the read completes.
+		reqCtx, cancel := context.WithCancel(ctx)
+		resp, err := p.doWithAuth(reqCtx, reqBody)
 		if err != nil {
+			cancel()
 			select {
 			case out <- Delta{Err: err}:
 			case <-ctx.Done():
 			}
 			return
 		}
-		defer resp.Body.Close()
-		p.streamCodexSSE(ctx, resp.Body, out)
+		defer cancel()
+		body := newIdleTimeoutReader(resp.Body, p.cfg.Timeout, cancel)
+		defer body.Close()
+		p.streamCodexSSE(ctx, body, out)
 	}()
 	return out, nil
 }

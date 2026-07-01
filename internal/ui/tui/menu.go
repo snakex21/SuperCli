@@ -10,6 +10,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"supercli/internal/account/credits"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage/goal"
@@ -28,6 +29,7 @@ const (
 	menuOpenAIAuth
 	menuAccounts
 	menuAccountLabel
+	menuProjects
 	menuGoal
 	menuReasoning
 )
@@ -224,6 +226,15 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Blur()
 			return m, nil
 		}
+		// Projects menu: 'a' adds the current directory (same as
+		// the trailing "+ add current directory" row). Dispatched
+		// through /projects add so the same path runs as the
+		// slash command — one source of truth.
+		if m.menu.kind == menuProjects {
+			if mm, cmd, handled := m.projectsMenuKey(key); handled {
+				return mm, cmd
+			}
+		}
 		if m.menu.kind == menuGoal && m.goalSvc != nil {
 			_, err := m.goalSvc.AddTask(context.Background(), "", "new task")
 			if err != nil {
@@ -245,6 +256,12 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Accounts menu: 'd' logs out the selected account.
 		if m.menu.kind == menuAccounts {
 			if mm, cmd, handled := m.menuAccountsKey(key); handled {
+				return mm, cmd
+			}
+		}
+		// Projects menu: 'd' unregisters the selected project.
+		if m.menu.kind == menuProjects {
+			if mm, cmd, handled := m.projectsMenuKey(key); handled {
 				return mm, cmd
 			}
 		}
@@ -391,6 +408,8 @@ func (m *Model) clampMenuCursor() {
 		max = 1
 	case menuAccounts:
 		max = len(m.accountRows()) - 1
+	case menuProjects:
+		max = len(m.projectRows()) - 1
 	case menuGoal:
 		max = len(m.goalTaskRows()) - 1
 	case menuReasoning:
@@ -519,6 +538,8 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	case menuAccounts:
 		return m.accountsMenuEnter()
+	case menuProjects:
+		return m.projectsMenuEnter()
 	case menuReasoning:
 		return m.selectReasoningEffort()
 	}
@@ -561,6 +582,8 @@ func (m Model) renderMenuView() string {
 		return m.renderAccountsMenu()
 	case menuAccountLabel:
 		return m.renderAccountLabelMenu()
+	case menuProjects:
+		return m.renderProjectsMenu()
 	case menuGoal:
 		return m.renderGoalMenu()
 	case menuReasoning:
@@ -578,6 +601,7 @@ func (m Model) renderModelsMenu(title, footer string) string {
 	b.WriteString("on provider        name                         context   input       output      caps\n")
 	b.WriteString("── ────────────── ──────────────────────────── ───────── ─────────── ─────────── ────\n")
 	for i, row := range rows {
+		row = m.enrichModelRow(row)
 		prefix := "  "
 		if i == m.menu.cursor {
 			prefix = "❯ "
@@ -587,7 +611,7 @@ func (m Model) renderModelsMenu(title, footer string) string {
 		if m.menu.kind == menuProviderModels && m.providerMgr != nil && m.providerMgr.IsHidden(row.ID) {
 			on = "✗"
 		}
-		line := fmt.Sprintf("%-2s %-14s %-28s %-9s %-11s %-11s %s", on, row.Provider, row.ID, ctxLen(row.ContextLength), price(row.InputCost), price(row.OutputCost), caps(row))
+		line := fmt.Sprintf("%-2s %-14s %-28s %-9s %-11s %-11s %s", on, row.Provider, row.ID, ctxLen(row.ContextLength), m.modelPrice(row, true), m.modelPrice(row, false), caps(row))
 		if i == m.menu.cursor {
 			line = m.palette.HeaderMode.Render(line)
 		}
@@ -602,6 +626,99 @@ func (m Model) renderModelsMenu(title, footer string) string {
 	}
 	b.WriteString("\n" + m.palette.InputHint.Render(footer))
 	return b.String()
+}
+
+func (m Model) enrichModelRow(row llm.ModelInfo) llm.ModelInfo {
+	subscription := m.isSubscriptionProviderName(row.Provider)
+	if m.caps != nil {
+		if extra, priceSafe, ok := m.lookupModelMetadata(row); ok {
+			if row.ContextLength == 0 {
+				row.ContextLength = extra.ContextLength
+			}
+			if priceSafe && !subscription && row.InputCost == 0 {
+				row.InputCost = extra.InputCost
+			}
+			if priceSafe && !subscription && row.OutputCost == 0 {
+				row.OutputCost = extra.OutputCost
+			}
+		}
+	}
+	if !subscription && (row.InputCost == 0 || row.OutputCost == 0) {
+		if rate, key := credits.RateForProvider(row.Provider, row.ID); key != "default" {
+			if row.InputCost == 0 {
+				row.InputCost = rate.InputPer1k * 1000
+			}
+			if row.OutputCost == 0 {
+				row.OutputCost = rate.OutputPer1k * 1000
+			}
+		}
+	}
+	return row
+}
+
+func (m Model) lookupModelMetadata(row llm.ModelInfo) (info llm.ModelInfo, priceSafe bool, ok bool) {
+	if m.caps == nil || row.ID == "" {
+		return llm.ModelInfo{}, false, false
+	}
+	if row.Provider != "" {
+		if extra, ok := m.caps.Get(row.Provider + "/" + row.ID); ok {
+			return extra, true, true
+		}
+	}
+
+	// OpenRouter uses provider-prefixed ids (deepseek/deepseek-v4-flash),
+	// while a direct provider often exposes only the short id
+	// (deepseek-v4-flash). Use a unique suffix match as metadata only, so
+	// non-OpenRouter rows can still display OpenRouter's context_length.
+	shortID := modelIDSuffix(row.ID)
+	var match llm.ModelInfo
+	found := false
+	for _, extra := range m.caps.All() {
+		if strings.EqualFold(extra.ID, row.ID) || !strings.Contains(extra.ID, "/") {
+			continue
+		}
+		if !strings.EqualFold(modelIDSuffix(extra.ID), shortID) {
+			continue
+		}
+		if found {
+			return llm.ModelInfo{}, false, false
+		}
+		match = extra
+		found = true
+	}
+	return match, false, found
+}
+
+func modelIDSuffix(id string) string {
+	if i := strings.LastIndexByte(id, '/'); i >= 0 && i < len(id)-1 {
+		return id[i+1:]
+	}
+	return id
+}
+
+func (m Model) modelPrice(row llm.ModelInfo, input bool) string {
+	if m.isSubscriptionProviderName(row.Provider) {
+		return "sub"
+	}
+	if input {
+		return price(row.InputCost)
+	}
+	return price(row.OutputCost)
+}
+
+func (m Model) isSubscriptionProviderName(name string) bool {
+	if strings.EqualFold(name, config.ProviderCodex) {
+		return true
+	}
+	if m.providerMgr == nil || name == "" {
+		return false
+	}
+	for _, p := range m.providerMgr.Configured() {
+		if p.Name == name && p.Type == config.ProviderCodex {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) renderProvidersMenu() string {
@@ -979,6 +1096,9 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 				if r.Source == llm.SourceSeed {
 					continue
 				}
+				if !m.providerMgr.ModelVisible(r.Provider, r.ID) {
+					continue
+				}
 				for _, name := range configured {
 					if r.Provider == name {
 						filtered = append(filtered, r)
@@ -993,7 +1113,7 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 			// a blank menu that looks like data loss.
 			if len(filtered) == 0 {
 				for _, r := range rows {
-					if r.Source != llm.SourceSeed {
+					if r.Source != llm.SourceSeed && m.providerMgr.ModelVisible(r.Provider, r.ID) {
 						filtered = append(filtered, r)
 					}
 				}
@@ -1005,6 +1125,9 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	if m.menu.provider != "" {
 		filtered := rows[:0]
 		for _, r := range rows {
+			if m.providerMgr != nil && !m.providerMgr.ModelVisible(r.Provider, r.ID) {
+				continue
+			}
 			if r.Provider == m.menu.provider {
 				filtered = append(filtered, r)
 			}
@@ -1017,6 +1140,9 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	if m.menu.kind == menuModels && m.providerMgr != nil {
 		filtered := rows[:0]
 		for _, r := range rows {
+			if !m.providerMgr.ModelVisible(r.Provider, r.ID) {
+				continue
+			}
 			if !m.providerMgr.IsHidden(r.ID) {
 				filtered = append(filtered, r)
 			}

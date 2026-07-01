@@ -27,6 +27,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,6 +51,7 @@ import (
 	"supercli/internal/llm/draft"
 	"supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
+	"supercli/internal/llm/shuffler"
 	"supercli/internal/storage"
 	"supercli/internal/storage/freshness"
 	"supercli/internal/storage/goal"
@@ -62,6 +64,7 @@ import (
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
 	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 	"supercli/internal/tools/shellescape"
 	"supercli/internal/ui/tui"
 )
@@ -213,6 +216,7 @@ func Main() {
 	resumeFlag := flag.Bool("resume", false, "resume the most recent session on startup")
 	coordinatorFlag := flag.Bool("coordinator", false, "run main loop as a lightweight coordinator that delegates code work to isolated task workers (default on)")
 	noCoordinatorFlag := flag.Bool("no-coordinator", false, "disable default coordinator mode and expose the normal tool set directly to the main loop")
+	unsandboxedFlag := flag.Bool("allow-all", false, "grant full filesystem access — file operations can reach any directory (sensitive system paths still blocked); same as allow_all = true in config.toml")
 	flag.Usage = usage
 	flag.Parse()
 	supercliCoordinatorMode = true
@@ -233,12 +237,8 @@ func Main() {
 		fatal("resolve home", err)
 	}
 	home = resolvedHome
-	// State the real sandbox root (the BaseDir file tools enforce) so
-	// the model's first file/list call uses the correct path. This is
-	// the authoritative working directory; if a memory fact mentions a
-	// different project path, file operations must stay inside this one.
-	workingDirNote = "Working directory (file sandbox root): " + home +
-		"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
+	// workingDirNote is set below, after the TOML + unsandboxed
+	// flag are resolved so it reflects the real sandbox state.
 
 	// SuperCli is ALWAYS portable: the single data directory holds
 	// every piece of CLI state and lives next to the executable
@@ -277,6 +277,20 @@ func Main() {
 	}
 	// Apply TOML as defaults (env/flags still win later).
 	config.TomlConfigToEnv(tomlCfg)
+	// Unsandboxed: flag > env (which TomlConfigToEnv may have set) > default off.
+	if *unsandboxedFlag || envTruthy("SUPERCLI_ALLOW_ALL") {
+		sandbox.Unsandboxed = true
+	}
+	// State the real sandbox root (the BaseDir file tools enforce) so
+	// the model's first file/list call uses the correct path. Set AFTER
+	// the unsandboxed decision so it reflects the actual sandbox state.
+	if sandbox.Unsandboxed {
+		workingDirNote = "Working directory: " + home +
+			"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
+	} else {
+		workingDirNote = "Working directory (file sandbox root): " + home +
+			"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
+	}
 	initCodexAuth(dataDir, tomlCfg)
 	appLog := initAppLog(dataDir)
 	if appLog != nil {
@@ -756,12 +770,25 @@ func Main() {
 	// read); only when it's missing/stale, fetch in the
 	// background — rates pop in a second or two after the TUI is
 	// already interactive.
-	if !pricing.ApplyCachedRates(dataDir) {
+	if cachedPrices := pricing.LoadCache(dataDir); len(cachedPrices) > 0 {
+		pricing.ApplyCachedRates(dataDir)
+		applyPricingMetadata(caps, cachedPrices)
+		if !pricing.HasContextMetadata(cachedPrices) {
+			fetcher := pricing.NewFetcher(dataDir)
+			capsSnapshot := caps.All()
+			go func() {
+				defer recoverAndLog(dataDir)()
+				updated := fetcher.FetchAndUpdate(capsSnapshot)
+				applyModelInfoMetadata(caps, updated)
+			}()
+		}
+	} else {
 		fetcher := pricing.NewFetcher(dataDir)
 		capsSnapshot := caps.All()
 		go func() {
 			defer recoverAndLog(dataDir)()
-			fetcher.FetchAndUpdate(capsSnapshot)
+			updated := fetcher.FetchAndUpdate(capsSnapshot)
+			applyModelInfoMetadata(caps, updated)
 		}()
 	}
 
@@ -979,6 +1006,33 @@ func Main() {
 		defer mcpManager.StopAll()
 	}
 	mergedCommands["mcp"] = mcpCommand(mcpManager, registry, reindexTools)
+
+	// /allow-all — toggle full filesystem access. Persists to config.toml.
+	mergedCommands["allow-all"] = func(ctx context.Context, args string) (string, error) {
+		switch strings.ToLower(strings.TrimSpace(args)) {
+		case "on", "true", "1":
+			sandbox.Unsandboxed = true
+			workingDirNote = "Working directory: " + home +
+				"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
+		case "off", "false", "0", "":
+			sandbox.Unsandboxed = false
+			workingDirNote = "Working directory (file sandbox root): " + home +
+				"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
+		default:
+			return "usage: /allow-all on|off", nil
+		}
+		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
+		if tc, err := config.LoadToml(globalPath); err == nil {
+			tc.AllowAll = sandbox.Unsandboxed
+			if err := config.SaveToml(globalPath, tc); err != nil {
+				log.Printf("allow-all: save config.toml: %v", err)
+			}
+		}
+		if sandbox.Unsandboxed {
+			return "Full filesystem access is now ON — file operations can reach any directory (sensitive system paths still blocked). Persisted to config.toml.", nil
+		}
+		return "Sandbox is now ON — file operations restricted to the working directory. Persisted to config.toml.", nil
+	}
 
 	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
 		hidden := loop.HideLastUserTurns(2)
@@ -1212,6 +1266,15 @@ func Main() {
 	// `/memory forget <id>` deletes an entry wherever it lives.
 	mergedCommands["memory"] = func(ctx context.Context, args string) (string, error) {
 		return memoryCommand(ctx, memStore, globalMemStore, memoryBriefing, args)
+	}
+
+	// /projects — manage the per-project memory map. Backed by
+	// internal/storage/memory/projects.go; the slash command is a
+	// thin shell that calls into app.projectsCommand. The
+	// interactive TUI menu (opened from the 'p' shortcut or any
+	// /projects invocation without args) lives in tui/menu_projects.go.
+	mergedCommands["projects"] = func(ctx context.Context, args string) (string, error) {
+		return projectsCommand(ctx, args, dataDir)
 	}
 
 	// Wave 1 cleanup: the old text-only /models handler was dead
@@ -1587,7 +1650,15 @@ func Main() {
 
 	// F25a: /sandbox — show sandbox status.
 	mergedCommands["sandbox"] = func(ctx context.Context, args string) (string, error) {
-		return fmt.Sprintf("sandbox: active\nhome: %s\ndata: %s", home, dataDir), nil
+		status := "restricted"
+		allowHint := ""
+		if sandbox.Unsandboxed {
+			status = "allow-all (full filesystem access)"
+			allowHint = "\nuse /allow-all off to re-enable the sandbox"
+		} else {
+			allowHint = "\nuse /allow-all on for full filesystem access"
+		}
+		return fmt.Sprintf("sandbox: %s\nhome: %s\ndata: %s%s", status, home, dataDir, allowHint), nil
 	}
 
 	// F17: library alternatives tool. Opt-in
@@ -1651,7 +1722,9 @@ func Main() {
 	// above the credits line when both are present.
 	statusFn := func() string {
 		goal := goalSvc.StatusLine(context.Background())
-		cred := credits.StatusLine(tracker, provider.Name())
+		activeProvider := loop.Provider()
+		activeModel := activeProvider.Name()
+		cred := credits.StatusLine(tracker, activeModel)
 		// F34: live token counter and cost projection.
 		tokens := ""
 		costStr := ""
@@ -1661,13 +1734,17 @@ func Main() {
 			totalTokens := total.TokensIn + total.TokensOut
 			if totalTokens > 0 {
 				tokens = compactNum(totalTokens)
-				// Calculate cost from current model rates.
-				r, _ := credits.RateFor(provider.Name())
-				inputCost := float64(total.TokensIn) / 1000.0 * r.InputPer1k
-				outputCost := float64(total.TokensOut) / 1000.0 * r.OutputPer1k
-				totalCost := inputCost + outputCost
-				if totalCost > 0 {
-					costStr = fmt.Sprintf("$%.4f", totalCost)
+				// Calculate cost from current model rates, including per-provider
+				// OpenRouter/proxy prices when the capability registry knows which
+				// configured provider owns the active model.
+				if !isSubscriptionRuntimeProvider(activeProvider) {
+					r, _ := credits.RateForProvider(providerNameForModel(caps, activeModel), activeModel)
+					inputCost := float64(total.TokensIn) / 1000.0 * r.InputPer1k
+					outputCost := float64(total.TokensOut) / 1000.0 * r.OutputPer1k
+					totalCost := inputCost + outputCost
+					if totalCost > 0 {
+						costStr = fmt.Sprintf("$%.4f", totalCost)
+					}
 				}
 			}
 		}
@@ -2059,21 +2136,124 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 	}
 	if cfg.Provider == config.ProviderAnthropic {
 		return llm.NewAnthropic(llm.AnthropicConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			MaxTokens:    cfg.MaxTokens,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			MaxTokens:      cfg.MaxTokens,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
 		})
 	}
+	// Kilo: use IP shuffler client for proxy rotation.
+	var httpClient *http.Client
+	if strings.Contains(cfg.BaseURL, "api.kilo.ai") {
+		httpClient = shuffler.Global.HTTPClient()
+	}
 	return llm.NewOpenAI(llm.OpenAIConfig{
-		BaseURL:      cfg.BaseURL,
-		APIKey:       cfg.APIKey,
-		Model:        cfg.Model,
-		Timeout:      cfg.Timeout,
-		Capabilities: caps,
+		BaseURL:        cfg.BaseURL,
+		APIKey:         llm.KiloDefaultKey(cfg.BaseURL, cfg.APIKey),
+		Model:          cfg.Model,
+		Timeout:        cfg.Timeout,
+		ConnectTimeout: cfg.ConnectTimeout,
+		HTTPClient:     httpClient,
+		Capabilities:   caps,
 	})
+}
+
+func providerNameForModel(caps *llm.CapabilityRegistry, model string) string {
+	if caps == nil || model == "" {
+		return ""
+	}
+	if info, ok := caps.Get(model); ok {
+		return info.Provider
+	}
+	// RouterProvider.Name() decorates pooled accounts as
+	// "model (N accounts)". Strip that display suffix for a second lookup.
+	if strings.HasSuffix(strings.ToLower(model), " accounts)") {
+		if i := strings.LastIndex(model, " ("); i > 0 {
+			if info, ok := caps.Get(model[:i]); ok {
+				return info.Provider
+			}
+		}
+	}
+	return ""
+}
+
+func isSubscriptionRuntimeProvider(p llm.Provider) bool {
+	if p == nil {
+		return false
+	}
+	_, ok := p.(interface {
+		RateLimits() (llm.CodexRateLimits, bool)
+	})
+	return ok
+}
+
+func applyPricingMetadata(caps *llm.CapabilityRegistry, entries []pricing.PriceEntry) {
+	if caps == nil || len(entries) == 0 {
+		return
+	}
+	infos := make([]llm.ModelInfo, 0, len(entries))
+	for _, e := range entries {
+		infos = append(infos, llm.ModelInfo{
+			ID:            e.ModelID,
+			InputCost:     e.InputPer1M,
+			OutputCost:    e.OutputPer1M,
+			ContextLength: e.ContextLength,
+			Source:        llm.SourceExternal,
+			LastVerified:  e.FetchedAt,
+		})
+	}
+	applyModelInfoMetadata(caps, infos)
+}
+
+func applyModelInfoMetadata(caps *llm.CapabilityRegistry, infos []llm.ModelInfo) {
+	if caps == nil || len(infos) == 0 {
+		return
+	}
+	for _, m := range infos {
+		if m.ID == "" {
+			continue
+		}
+		applyOneModelInfoMetadata(caps, m)
+		// OpenRouter IDs are often provider/model (e.g.
+		// deepseek/deepseek-chat), while the direct provider scan returns the
+		// short model id (deepseek-chat) with Provider=deepseek. Mirror metadata
+		// onto that existing short row when it is clearly the same provider.
+		if slash := strings.IndexByte(m.ID, '/'); slash > 0 && slash < len(m.ID)-1 {
+			provider, shortID := m.ID[:slash], m.ID[slash+1:]
+			if existing, ok := caps.Get(shortID); ok && strings.EqualFold(existing.Provider, provider) {
+				copy := m
+				copy.ID = shortID
+				copy.Provider = existing.Provider
+				applyOneModelInfoMetadata(caps, copy)
+			}
+		}
+	}
+}
+
+func applyOneModelInfoMetadata(caps *llm.CapabilityRegistry, m llm.ModelInfo) {
+	if existing, ok := caps.Get(m.ID); ok {
+		if m.InputCost > 0 {
+			existing.InputCost = m.InputCost
+		}
+		if m.OutputCost > 0 {
+			existing.OutputCost = m.OutputCost
+		}
+		if existing.ContextLength == 0 && m.ContextLength > 0 {
+			existing.ContextLength = m.ContextLength
+		}
+		if existing.Provider == "" {
+			existing.Provider = m.Provider
+		}
+		if m.LastVerified.After(existing.LastVerified) {
+			existing.LastVerified = m.LastVerified
+		}
+		caps.Register(existing)
+		return
+	}
+	caps.Register(m)
 }
 
 // buildCodexPool builds a Codex provider for every logged-in
@@ -2112,13 +2292,14 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 				acctID = info.AccountID
 			}
 			p, err := llm.NewCodex(llm.CodexConfig{
-				BackendURL:   mgr.Options().BackendURL,
-				Model:        cfg.Model,
-				Tokens:       mgr,
-				Timeout:      cfg.Timeout,
-				Capabilities: caps,
-				DataDir:      dataDir,
-				AccountID:    acctID,
+				BackendURL:     mgr.Options().BackendURL,
+				Model:          cfg.Model,
+				Tokens:         mgr,
+				Timeout:        cfg.Timeout,
+				ConnectTimeout: cfg.ConnectTimeout,
+				Capabilities:   caps,
+				DataDir:        dataDir,
+				AccountID:      acctID,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("buildCodexPool %q: %w", label, err)
@@ -2144,12 +2325,13 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 		mgr = codexauth.NewManager(dataDir, codexauth.Options{})
 	}
 	return llm.NewCodex(llm.CodexConfig{
-		BackendURL:   mgr.Options().BackendURL,
-		Model:        cfg.Model,
-		Tokens:       mgr,
-		Timeout:      cfg.Timeout,
-		Capabilities: caps,
-		DataDir:      dataDir,
+		BackendURL:     mgr.Options().BackendURL,
+		Model:          cfg.Model,
+		Tokens:         mgr,
+		Timeout:        cfg.Timeout,
+		ConnectTimeout: cfg.ConnectTimeout,
+		Capabilities:   caps,
+		DataDir:        dataDir,
 	})
 }
 

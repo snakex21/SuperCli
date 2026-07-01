@@ -169,6 +169,46 @@ func TestSetFetchedRates_UnknownStillDefault(t *testing.T) {
 	}
 }
 
+func TestSetFetchedRates_OpenRouterFullModelID(t *testing.T) {
+	defer SetFetchedRates(nil)
+
+	SetFetchedRates(map[string]Rate{
+		"deepseek/deepseek-chat": {InputPer1k: 0.07, OutputPer1k: 0.27},
+	})
+	r, key := RateFor("deepseek/deepseek-chat")
+	if r.InputPer1k != 0.07 || r.OutputPer1k != 0.27 {
+		t.Fatalf("rate=%+v, want OpenRouter fetched deepseek rate", r)
+	}
+	if key != "deepseek/deepseek-chat (fetched)" {
+		t.Fatalf("key=%q", key)
+	}
+}
+
+func TestRateForProvider_UsesFetchedProviderModelKey(t *testing.T) {
+	defer SetFetchedRates(nil)
+
+	SetFetchedRates(map[string]Rate{
+		"deepseek/deepseek-chat": {InputPer1k: 0.07, OutputPer1k: 0.27},
+	})
+	r, key := RateForProvider("deepseek", "deepseek-chat")
+	if r.InputPer1k != 0.07 || r.OutputPer1k != 0.27 {
+		t.Fatalf("rate=%+v, want fetched deepseek/deepseek-chat", r)
+	}
+	if key != "deepseek/deepseek-chat (fetched)" {
+		t.Fatalf("key=%q", key)
+	}
+}
+
+func TestRateFor_StripsRouterDisplaySuffix(t *testing.T) {
+	r, key := RateFor("gpt-5.5 (2 accounts)")
+	if key != "gpt-5.5" {
+		t.Fatalf("key=%q want gpt-5.5", key)
+	}
+	if r.InputPer1k == modelRates["default"].InputPer1k && r.OutputPer1k == modelRates["default"].OutputPer1k {
+		t.Fatalf("expected gpt-5.5 rate, got default %+v", r)
+	}
+}
+
 // F28: SetFetchedRates(nil) restores hardcoded rates.
 func TestSetFetchedRates_NilRestoresHardcoded(t *testing.T) {
 	SetFetchedRates(map[string]Rate{

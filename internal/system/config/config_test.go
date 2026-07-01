@@ -32,8 +32,11 @@ func TestLoad_Defaults(t *testing.T) {
 	if !c.Stream {
 		t.Error("Stream should default to true")
 	}
-	if c.Timeout != 60_000_000_000 {
-		t.Errorf("Timeout = %v, want 60s", c.Timeout)
+	if c.Timeout != 300_000_000_000 {
+		t.Errorf("Timeout = %v, want 300s (idle timeout)", c.Timeout)
+	}
+	if c.ConnectTimeout != 30_000_000_000 {
+		t.Errorf("ConnectTimeout = %v, want 30s", c.ConnectTimeout)
 	}
 }
 

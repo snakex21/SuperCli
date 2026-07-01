@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -26,10 +27,16 @@ type OpenAIConfig struct {
 	APIKey string
 	// Model is the model id, e.g. "gpt-4o-mini". Required.
 	Model string
-	// Timeout caps the whole HTTP request. If zero, defaults to 60s.
+	// Timeout is the idle/inactivity timeout for the SSE stream: the
+	// maximum gap with no data from the server (also bounds time-to-
+	// first-token). It is NOT a whole-request deadline, so a slow but
+	// alive stream is never cut. If zero, defaults to 300s.
 	Timeout time.Duration
-	// HTTPClient overrides the default http.Client. If nil, a
-	// client with Timeout (or 60s) is used.
+	// ConnectTimeout is the TCP connect (dial) timeout. If zero,
+	// defaults to 30s.
+	ConnectTimeout time.Duration
+	// HTTPClient overrides the default http.Client. If nil, a client
+	// with a dial-only timeout (no whole-request cap) is used.
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
 	Capabilities *CapabilityRegistry
@@ -55,11 +62,17 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	}
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 	cfg.APIKey = CleanAPIKey(cfg.APIKey)
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 300 * time.Second // idle/inactivity timeout
+	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = 30 * time.Second
+	}
 	if cfg.HTTPClient == nil {
-		if cfg.Timeout <= 0 {
-			cfg.Timeout = 60 * time.Second
-		}
-		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
+		transport.ResponseHeaderTimeout = 0                 // do NOT cap header wait: a slow local model may delay first byte
+		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -139,10 +152,18 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		url := p.cfg.BaseURL + "/chat/completions"
 		const maxAttempts = 3
 		var resp *http.Response
+		// streamCancel cancels the request context of the attempt that
+		// actually proceeds to streaming. It is invoked after the read
+		// completes (or by the idle watchdog if the stream stalls). Each
+		// attempt builds its own cancellable child; non-streaming attempts
+		// cancel immediately so no context leaks across the retry loop.
+		var streamCancel func()
 		effortRetried := false
 		for attempt := 1; ; attempt++ {
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
+			reqCtx, cancel := context.WithCancel(ctx)
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(reqBody))
 			if err != nil {
+				cancel()
 				select {
 				case out <- Delta{Err: fmt.Errorf("build request: %w", err)}:
 				case <-ctx.Done():
@@ -157,6 +178,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 
 			resp, err = p.http.Do(req)
 			if err != nil {
+				cancel()
 				select {
 				case out <- Delta{Err: fmt.Errorf("http: %w", err)}:
 				case <-ctx.Done():
@@ -164,10 +186,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				return
 			}
 			if resp.StatusCode/100 == 2 {
+				streamCancel = cancel
 				break
 			}
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
+			cancel()
 			if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, body); ok && !effortRetried {
 				if patched, patchedOK := patchOpenAIReasoningEffort(reqBody, effort); patchedOK {
 					reqBody = patched
@@ -190,7 +214,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				return
 			}
 		}
-		defer resp.Body.Close()
+		// Cancel the streaming request context once the read finishes,
+		// and wrap the body with an idle watchdog that fires cancel if no
+		// data arrives within the idle timeout.
+		defer streamCancel()
+		body := newIdleTimeoutReader(resp.Body, p.cfg.Timeout, streamCancel)
+		defer body.Close()
 
 		// Stream parse. We intentionally parse line-by-line like
 		// agent-go instead of waiting for a blank-line terminated SSE
@@ -201,7 +230,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		toolAcc := make(map[int]*ToolCall)
 		var lastUsage *Usage
 		reasoningOpen := false
-		parseErr := parseOpenAIDataLines(resp.Body, func(data string) error {
+		parseErr := parseOpenAIDataLines(body, func(data string) error {
 			var chunk openaiChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				// Skip non-JSON payloads (e.g. ping frames).
