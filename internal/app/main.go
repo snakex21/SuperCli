@@ -180,11 +180,13 @@ func envFalsey(key string) bool {
 // KV-cache optimisation (agent.LoopConfig.StableToolset): when true,
 // tools activated via tool_search are not promoted into the request
 // `tools` list, so the list stays byte-identical all session and the
-// local server's prompt cache survives activations. OFF until a live
-// test with a local model confirms tail tools are still called
-// correctly from the tool_search result text alone; flip to true (or
-// set `stable_toolset = true` in config.toml) after that test.
-const defaultStableToolset = false
+// local server's prompt cache survives activations. ON by default —
+// live-confirmed 2026-07-01 against LM Studio qwen3.5-9b
+// (TestIntegration_StableToolset_ToolSearchThenTailCall: tool_search
+// -> tail tool called by name -> correct result, 4 requests, tools
+// list byte-identical throughout, no retry loop). Opt out with
+// `stable_toolset = false` in config.toml.
+const defaultStableToolset = true
 
 // resolveStableToolset applies the config.toml tri-state override
 // (`stable_toolset`) on top of the built-in default.
