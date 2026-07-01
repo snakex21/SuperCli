@@ -74,7 +74,7 @@ func TestIntegration_Streaming(t *testing.T) {
 	ch, err := p.Complete(ctx, []llm.Message{
 		{Role: llm.RoleSystem, Content: "Reply with exactly 'hello world' in lowercase."},
 		{Role: llm.RoleUser, Content: "say hello"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -174,6 +174,167 @@ func TestIntegration_ToolCall(t *testing.T) {
 	}
 }
 
+// toolListRecorder wraps a Provider and records the tool names
+// passed to every Complete call, so a test can assert the request
+// `tools` list stayed stable across the whole run (the KV-cache
+// guarantee of the stableToolset mode).
+type toolListRecorder struct {
+	llm.Provider
+	mu    sync.Mutex
+	calls [][]string
+}
+
+func (r *toolListRecorder) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
+	names := make([]string, 0, len(tools))
+	for _, td := range tools {
+		names = append(names, td.Name)
+	}
+	r.mu.Lock()
+	r.calls = append(r.calls, names)
+	r.mu.Unlock()
+	return r.Provider.Complete(ctx, msgs, tools)
+}
+
+// TestIntegration_StableToolset_ToolSearchThenTailCall is the live
+// test for the stable-toolset KV-cache mode: the model must (1) call
+// tool_search to discover a dormant tail tool, (2) call that tool by
+// name even though it was never promoted into the request `tools`
+// list, and (3) finish — while every provider request carries the
+// exact same tools list (no growth = no prompt-cache invalidation).
+func TestIntegration_StableToolset_ToolSearchThenTailCall(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{
+		BaseURL: baseURL,
+		Model:   "auto",
+		Timeout: 120 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+
+	reg := tools.NewRegistry()
+	// Dormant tail tool: NOT always-on, reachable only via tool_search.
+	reg.MustRegister(tools.Tool{
+		Name:        "reverse_text",
+		Description: "Reverses the characters of the given text string and returns the reversed text.",
+		Schema:      `{"type":"object","properties":{"text":{"type":"string","description":"the text to reverse"}},"required":["text"]}`,
+		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+			var a struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(args, &a); err != nil {
+				return tools.Result{Err: err}, nil
+			}
+			r := []rune(a.Text)
+			for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+				r[i], r[j] = r[j], r[i]
+			}
+			return tools.Result{Text: string(r)}, nil
+		},
+	})
+	idx, err := tools.NewInMemoryIndex()
+	if err != nil {
+		t.Fatalf("NewInMemoryIndex: %v", err)
+	}
+	defer idx.Close()
+	searcher := tools.NewToolSearcher(reg, idx)
+	reg.MustRegister(searcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
+	if err := searcher.RebuildIndex(); err != nil {
+		t.Fatalf("RebuildIndex: %v", err)
+	}
+
+	loop, err := agent.NewLoop(agent.LoopConfig{
+		Provider:      rec,
+		Registry:      reg,
+		MaxSteps:      8,
+		System:        "You are a test assistant with tools. Follow instructions exactly.",
+		ThinTools:     true,
+		StableToolset: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	ch, err := loop.Run(ctx, "Use tool_search to find a tool that reverses text, then call that tool with the text 'kotek' and tell me the exact result.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var (
+		searchedTool  bool
+		calledReverse bool
+		reverseOutput string
+		finalText     strings.Builder
+		done          bool
+	)
+	for ev := range ch {
+		switch e := ev.(type) {
+		case agent.ToolCallEvent:
+			t.Logf("tool call: %s %s", e.Name, e.Args)
+			if e.Name == "tool_search" {
+				searchedTool = true
+			}
+			if e.Name == "reverse_text" {
+				calledReverse = true
+			}
+		case agent.ToolResultEvent:
+			if e.Err != nil {
+				t.Logf("tool result err: %v", e.Err)
+			} else if calledReverse && reverseOutput == "" && e.Output == "ketok" {
+				reverseOutput = e.Output
+			}
+		case agent.MessageEvent:
+			finalText.WriteString(e.Text)
+		case agent.DoneEvent:
+			done = true
+		case agent.ErrorEvent:
+			t.Fatalf("ErrorEvent: %v", e.Err)
+		}
+	}
+	t.Logf("final text: %q", finalText.String())
+
+	if !searchedTool {
+		t.Error("model never called tool_search")
+	}
+	if !calledReverse {
+		t.Error("model never called the tail tool reverse_text")
+	}
+	if reverseOutput != "ketok" {
+		t.Errorf("reverse_text output = %q, want %q", reverseOutput, "ketok")
+	}
+	if !done {
+		t.Error("no DoneEvent — run did not finish cleanly")
+	}
+
+	// The stable-toolset invariant: every request carried the exact
+	// same tools list, and reverse_text never entered it.
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.calls) == 0 {
+		t.Fatal("no provider calls recorded")
+	}
+	first := strings.Join(rec.calls[0], ",")
+	for i, names := range rec.calls {
+		if got := strings.Join(names, ","); got != first {
+			t.Errorf("request %d tools list drifted: %q != %q (KV prompt cache invalidated)", i, got, first)
+		}
+		for _, n := range names {
+			if n == "reverse_text" {
+				t.Errorf("request %d: reverse_text was promoted into the tools list", i)
+			}
+		}
+	}
+	t.Logf("stable tools list across %d provider calls: %s", len(rec.calls), first)
+}
+
 // TestIntegration_MultiTurn verifies multi-turn conversation
 // (the agent remembers context between turns).
 func TestIntegration_MultiTurn(t *testing.T) {
@@ -248,10 +409,11 @@ func TestIntegration_CancelMidStream(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	ch, err := p.Complete(ctx, []llm.Message{
 		{Role: llm.RoleUser, Content: "Write a very long essay about the history of Poland. Each paragraph should be at least 50 words. Continue until I say stop."},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -298,7 +460,7 @@ func TestIntegration_Timeout(t *testing.T) {
 	// Complete should fail quickly because ctx is already expired.
 	_, err = p.Complete(ctx, []llm.Message{
 		{Role: llm.RoleUser, Content: "hello"},
-	})
+	}, nil)
 	if err == nil {
 		t.Error("expected error from expired context, got nil")
 	} else {
@@ -335,7 +497,7 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 			defer cancel()
 			ch, err := p.Complete(ctx, []llm.Message{
 				{Role: llm.RoleUser, Content: "Say 'hello' in one word."},
-			})
+			}, nil)
 			if err != nil {
 				errs <- fmt.Errorf("session %d Complete: %w", id, err)
 				return
