@@ -63,7 +63,7 @@ func TestBuildOpenAIRequest_TextOnly(t *testing.T) {
 	body, err := buildOpenAIRequest("gpt-4o-mini", []Message{
 		{Role: RoleSystem, Content: "you are helpful"},
 		{Role: RoleUser, Content: "hi"},
-	}, nil, false)
+	}, nil, false, false)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestBuildOpenAIRequest_Vision(t *testing.T) {
 			{Type: PartTypeText, Text: "what is this?"},
 			{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
 		}},
-	}, nil, true)
+	}, nil, true, false)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBuildOpenAIRequest_VisionDisabledDropsImages(t *testing.T) {
 			{Type: PartTypeText, Text: "hi"},
 			{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
 		}},
-	}, nil, false) // vision = false
+	}, nil, false, false) // vision = false
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestBuildOpenAIRequest_ImageURLPassthrough(t *testing.T) {
 		{Role: RoleUser, Parts: []ContentPart{
 			{Type: PartTypeImage, Image: &ImageRef{URL: "https://example.com/cat.png"}},
 		}},
-	}, nil, true)
+	}, nil, true, false)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestBuildOpenAIRequest_EmptyMessagesFails(t *testing.T) {
 	// buildOpenAIRequest itself is a pure builder and accepts an
 	// empty slice. JSON marshals a nil slice as "null"; the empty
 	// check lives in Complete. This test documents the behaviour.
-	body, err := buildOpenAIRequest("gpt-4o", nil, nil, false)
+	body, err := buildOpenAIRequest("gpt-4o", nil, nil, false, false)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestOpenAI_StreamUsageInSeparateEmptyChoicesChunk(t *testing.T) {
 // TestOpenAI_RequestIncludesStreamOptions verifies the request
 // asks for usage in streaming mode; without it servers stay silent.
 func TestOpenAI_RequestIncludesStreamOptions(t *testing.T) {
-	body, err := buildOpenAIRequest("gpt-4o-mini", []Message{{Role: RoleUser, Content: "hi"}}, nil, false)
+	body, err := buildOpenAIRequest("gpt-4o-mini", []Message{{Role: RoleUser, Content: "hi"}}, nil, false, false)
 	if err != nil {
 		t.Fatalf("buildOpenAIRequest: %v", err)
 	}
@@ -876,7 +876,7 @@ func TestBuildOpenAIRequest_ToolParametersIsObject(t *testing.T) {
 	}
 	body, err := buildOpenAIRequest("gpt-4o", []Message{
 		{Role: RoleUser, Content: "hi"},
-	}, tools, false)
+	}, tools, false, false)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}

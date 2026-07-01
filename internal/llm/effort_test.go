@@ -51,7 +51,7 @@ func TestBuildOpenAIRequest_ReasoningEffort(t *testing.T) {
 	if err := SetReasoningEffort("high"); err != nil {
 		t.Fatal(err)
 	}
-	body, err := buildOpenAIRequest("gpt-5.5", msgs, nil, false)
+	body, err := buildOpenAIRequest("gpt-5.5", msgs, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,14 +64,14 @@ func TestBuildOpenAIRequest_ReasoningEffort(t *testing.T) {
 	}
 
 	// Non-supporting model → field absent.
-	body, _ = buildOpenAIRequest("qwen2.5-7b", msgs, nil, false)
+	body, _ = buildOpenAIRequest("qwen2.5-7b", msgs, nil, false, false)
 	if strings.Contains(string(body), "reasoning_effort") {
 		t.Error("reasoning_effort sent to non-supporting model")
 	}
 
 	// Effort unset → field absent everywhere.
 	_ = SetReasoningEffort("")
-	body, _ = buildOpenAIRequest("gpt-5.5", msgs, nil, false)
+	body, _ = buildOpenAIRequest("gpt-5.5", msgs, nil, false, false)
 	if strings.Contains(string(body), "reasoning_effort") {
 		t.Error("reasoning_effort sent with no level set")
 	}
