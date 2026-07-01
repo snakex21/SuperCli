@@ -78,6 +78,17 @@ type TomlConfig struct {
 	// small models get the trimmed core tool set).
 	SmallFullTools bool `toml:"small_full_tools"`
 
+	// StableToolset (thin tool protocol only) keeps the request
+	// `tools` list fixed for the whole session: tools activated
+	// via tool_search are NOT promoted into the schema-carrying
+	// set (their schema still reaches the model as the tool_search
+	// result text, and execution is by name). Chat templates
+	// serialize `tools` at the very start of the prompt, so a
+	// stable list preserves the server-side KV prompt cache across
+	// activations. Tri-state: nil = built-in default, explicit
+	// true/false overrides.
+	StableToolset *bool `toml:"stable_toolset"`
+
 	// ContextWindow overrides the model's context window
 	// (tokens) for auto-compaction. 0 = resolve from
 	// provider metadata / learned limits / default.
@@ -308,6 +319,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.SmallFullTools {
 		dst.SmallFullTools = true
+	}
+	if src.StableToolset != nil {
+		dst.StableToolset = src.StableToolset
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

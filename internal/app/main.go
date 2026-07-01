@@ -176,6 +176,25 @@ func envFalsey(key string) bool {
 	}
 }
 
+// defaultStableToolset is the built-in default for the stable-toolset
+// KV-cache optimisation (agent.LoopConfig.StableToolset): when true,
+// tools activated via tool_search are not promoted into the request
+// `tools` list, so the list stays byte-identical all session and the
+// local server's prompt cache survives activations. OFF until a live
+// test with a local model confirms tail tools are still called
+// correctly from the tool_search result text alone; flip to true (or
+// set `stable_toolset = true` in config.toml) after that test.
+const defaultStableToolset = false
+
+// resolveStableToolset applies the config.toml tri-state override
+// (`stable_toolset`) on top of the built-in default.
+func resolveStableToolset(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return defaultStableToolset
+}
+
 func Main() {
 	startupT := time.Now()
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
@@ -917,7 +936,12 @@ func Main() {
 		// JSON tool calling with full schemas. Mirrors the same
 		// smallTier gate that already trims their always-on set.
 		ThinTools: smallTier,
-		BaseDir:   home,
+		// Stable toolset: keep the request `tools` list fixed all
+		// session so tool_search activations don't invalidate the
+		// server-side KV prompt cache. `stable_toolset = true|false`
+		// in config.toml overrides the built-in default.
+		StableToolset: resolveStableToolset(tomlCfg.StableToolset),
+		BaseDir:       home,
 	})
 	if err != nil {
 		fatal("init agent", err)

@@ -49,6 +49,7 @@ type Loop struct {
 	briefing        string
 	maxSteps        int
 	thinTools       bool
+	stableToolset   bool
 	thinHintMax     int
 	baseDir         string
 	writer          SessionWriter
@@ -202,6 +203,18 @@ type LoopConfig struct {
 	// Intended for small/local models where schema bulk dominates
 	// the prefill cost.
 	ThinTools bool
+	// StableToolset (only meaningful with ThinTools) keeps the
+	// request `tools` list fixed for the whole session: a tool
+	// activated via tool_search is NOT promoted into the
+	// schema-carrying set. Its schema still reaches the model as
+	// the tool_search result text (cache-safe, end of history) and
+	// Registry.Execute runs it by name regardless of promotion.
+	// Chat templates serialize `tools` at the very start of the
+	// prompt, so keeping the list stable preserves the server-side
+	// KV prompt cache across activations instead of invalidating
+	// it on every tool load. Default false = historical behaviour
+	// (activated tools get promoted, tools list grows).
+	StableToolset bool
 	// ThinHintMax caps each catalog hint length in runes. Zero falls
 	// back to defaultThinHintMax. Only consulted when ThinTools is on.
 	ThinHintMax int
@@ -330,6 +343,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		briefing:        cfg.Briefing,
 		maxSteps:        cfg.MaxSteps,
 		thinTools:       cfg.ThinTools,
+		stableToolset:   cfg.StableToolset,
 		thinHintMax:     cfg.ThinHintMax,
 		baseDir:         cfg.BaseDir,
 		writer:          cfg.Writer,
@@ -469,11 +483,21 @@ func (l *Loop) isActivated(name string) bool {
 // is dormant tail. This is the single source of truth for the
 // core/tail decision — buildToolDefs, thinToolsPreamble, and the
 // /context accounting all derive from it so they cannot drift.
+//
+// stableToolset changes the activation rule: activated tools stay
+// in the tail, so the schema set (and therefore the request `tools`
+// list, serialized at the very start of the prompt by chat
+// templates) is byte-identical all session and the server-side KV
+// prompt cache survives tool activations. The activated tool is
+// still fully usable — its schema arrived as the tool_search result
+// text and Registry.Execute dispatches by name, not by promotion.
 func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
 	for _, t := range l.registry.Visible() {
-		if l.thinTools && !isThinCore(t.Name) && !l.isActivated(t.Name) {
-			tail = append(tail, t)
-			continue
+		if l.thinTools && !isThinCore(t.Name) {
+			if l.stableToolset || !l.isActivated(t.Name) {
+				tail = append(tail, t)
+				continue
+			}
 		}
 		schema = append(schema, t)
 	}
