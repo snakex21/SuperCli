@@ -146,15 +146,14 @@ func TestCache_ToolDefsDeterministicWithoutActivation(t *testing.T) {
 }
 
 // TestCache_ActivationGrowsToolDefs documents (and pins) the ONE known
-// KV-cache invalidation point in the thin protocol: pulling in a
-// dormant tail tool via tool_search promotes it into the request tool
-// list, which a chat template serializes near the prompt start — so
-// the cached prefix is invalidated for that one turn. This test makes
-// the behaviour explicit: if a future change alters whether activation
-// mutates the tool list (e.g. an opt-in stable-toolset mode), this
-// test must be updated deliberately rather than drifting silently.
+// KV-cache invalidation point in the thin protocol's DEFAULT mode:
+// pulling in a dormant tail tool via tool_search promotes it into the
+// request tool list, which a chat template serializes near the prompt
+// start — so the cached prefix is invalidated for that one turn. The
+// stableToolset mode removes exactly this point (see the tests below);
+// this test pins the default so the two modes stay deliberate.
 func TestCache_ActivationGrowsToolDefs(t *testing.T) {
-	l := newCacheTestLoop(t)
+	l := newCacheTestLoop(t) // stableToolset defaults to false
 
 	before := len(l.buildToolDefs())
 	// Simulate what tool_search does when it matches web_search.
@@ -163,5 +162,73 @@ func TestCache_ActivationGrowsToolDefs(t *testing.T) {
 
 	if after != before+1 {
 		t.Fatalf("activation should grow the tool list by 1 (known cache-invalidation point); before=%d after=%d", before, after)
+	}
+}
+
+// TestCache_StableToolset_ActivationKeepsToolDefsByteStable pins the
+// stableToolset guarantee: activating a tail tool via tool_search must
+// NOT change the request tool list in any way — same length, same
+// order, same bytes — so the server-side KV prompt cache survives the
+// activation. The schema still reaches the model as the tool_search
+// result text at the (cache-safe) end of history.
+func TestCache_StableToolset_ActivationKeepsToolDefsByteStable(t *testing.T) {
+	l := newCacheTestLoop(t)
+	l.stableToolset = true
+
+	ser := func(defs []llm.ToolDef) string {
+		var b strings.Builder
+		for _, d := range defs {
+			b.WriteString(d.Name)
+			b.WriteByte('\x00')
+			b.WriteString(d.Description)
+			b.WriteByte('\x00')
+			b.WriteString(d.Schema)
+			b.WriteByte('\n')
+		}
+		return b.String()
+	}
+
+	before := ser(l.buildToolDefs())
+	l.registry.Activate("web_search")
+	after := ser(l.buildToolDefs())
+
+	if before != after {
+		t.Fatalf("stableToolset: activation changed the tool defs;\nbefore:\n%q\nafter:\n%q", before, after)
+	}
+	// The activated tool must still be advertised somewhere the model
+	// can see (the thin catalog), not silently dropped.
+	if !strings.Contains(l.thinToolsPreamble(), "web_search") {
+		t.Error("stableToolset: activated tail tool missing from the thin catalog")
+	}
+}
+
+// TestCache_StableToolset_TailToolExecutesWithoutPromotion proves the
+// promotion is redundant for execution: with stableToolset on, a tail
+// tool activated via tool_search is absent from the request tool list
+// yet a model call by name still executes end-to-end through the
+// loop's invoke path (name hardening + Registry.Execute dispatch by
+// name, not by tools-list membership).
+func TestCache_StableToolset_TailToolExecutesWithoutPromotion(t *testing.T) {
+	l := newCacheTestLoop(t)
+	l.stableToolset = true
+	l.registry.Activate("web_search")
+
+	for _, d := range l.buildToolDefs() {
+		if d.Name == "web_search" {
+			t.Fatal("stableToolset: web_search must NOT be promoted into the tool defs")
+		}
+	}
+
+	out := make(chan Event, 8)
+	res := l.invoke(context.Background(), llm.ToolCall{ID: "tc1", Name: "web_search", Arguments: `{"query":"golang"}`}, out)
+	if res.err != nil {
+		t.Fatalf("invoke returned error: %v", res.err)
+	}
+	if len(res.followUps) != 1 {
+		t.Fatalf("expected 1 follow-up tool message, got %d", len(res.followUps))
+	}
+	fu := res.followUps[0]
+	if fu.Role != llm.RoleTool || fu.Name != "web_search" || fu.Content != "x" {
+		t.Fatalf("unexpected follow-up: %+v", fu)
 	}
 }
