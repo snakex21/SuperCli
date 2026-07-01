@@ -80,7 +80,7 @@ func thinReportLoop(t *testing.T) *Loop {
 		`"query":{"type":"string","description":"natural-language search query for the operation"},` +
 		`"limit":{"type":"integer","description":"maximum number of results to return"}},` +
 		`"required":["path"]}`
-	for _, name := range []string{"tool_search", "edit_line", "read_context", "read_lines", "ctx_execute", "recall", "darwin", "web_search", "read_pdf"} {
+	for _, name := range []string{"tool_search", "edit_line", "read_context", "read_lines", "ctx_execute", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
 		reg.MustRegister(tools.Tool{
 			Name:        name,
 			Description: "performs " + name + " operations on behalf of the user; see schema for arguments",

@@ -27,6 +27,13 @@ var thinCoreTools = []string{
 	"read_lines",
 	"ctx_execute",
 	"recall",
+	// list_dir is the "what's in this folder?" primitive. It must
+	// be schema-carrying core, not dormant tail: in the tail the
+	// catalog preamble frames every tool as "call tool_search to
+	// load it", so small models wasted a tool_search round-trip
+	// (peek + retry) just to list a directory. As core it is
+	// directly callable turn 1 for a tiny schema (~80 tok).
+	"list_dir",
 }
 
 // isThinCore reports whether name is in the thin-core set.
