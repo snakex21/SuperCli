@@ -685,6 +685,62 @@ func TestScanProvider_RegistersOnlyAPIReturnedModels(t *testing.T) {
 	}
 }
 
+func TestScanProvider_OpenCodeKiloShowOnlyExplicitFreeModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "claude-sonnet-4-5"},
+				{"id": "gpt-5.4-mini"},
+				{"id": "deepseek-v4-flash-free"},
+				{"id": "openai/gpt-oss-20b:free"},
+				{"id": "kilo-auto/free"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	m := NewManager(t.TempDir())
+	m.Add("opencode", "openai", srv.URL+"/v1", "", "")
+	m.Add("kilo", "openai", srv.URL+"/v1", "", "")
+	m.Reload()
+	caps := llm.NewCapabilityRegistry()
+
+	for _, name := range []string{"opencode", "kilo"} {
+		res := m.ScanProvider(name, caps)
+		if res.Err != nil {
+			t.Fatalf("ScanProvider(%s): %v", name, res.Err)
+		}
+		if len(res.Models) != 3 {
+			t.Fatalf("ScanProvider(%s) models = %v, want 3 explicit free models", name, res.Models)
+		}
+		for _, id := range res.Models {
+			if !llm.IsFreeModelID(id) {
+				t.Fatalf("ScanProvider(%s) returned non-free model %q", name, id)
+			}
+		}
+	}
+	if _, ok := caps.Get("claude-sonnet-4-5"); ok {
+		t.Fatal("paid opencode model should not be registered")
+	}
+}
+
+func TestListConfigured_OpenCodeHidesCachedPaidModels(t *testing.T) {
+	m := NewManager(t.TempDir())
+	m.Add("opencode", "openai", "https://opencode.ai/zen/v1", "", "")
+	m.Reload()
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "gpt-5.4-mini", Provider: "opencode", Source: llm.SourceProvider})
+	caps.Register(llm.ModelInfo{ID: "deepseek-v4-flash-free", Provider: "opencode", Source: llm.SourceProvider})
+
+	rows := m.ListConfigured(caps)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if len(rows[0].Models) != 1 || rows[0].Models[0].ID != "deepseek-v4-flash-free" {
+		t.Fatalf("models = %+v, want only explicit free model", rows[0].Models)
+	}
+}
+
 func TestAddAndUpdateCleanPastedAPIKey(t *testing.T) {
 	m := NewManager(t.TempDir())
 	if err := m.Add("deepseek", "openai", "https://api.deepseek.com/v1", " sk-\r\ntest\t ", ""); err != nil {

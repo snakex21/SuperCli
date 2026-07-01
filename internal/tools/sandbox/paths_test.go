@@ -160,3 +160,34 @@ func TestIsSensitive(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveSafe_UnsandboxedAllowsEscape(t *testing.T) {
+	home := t.TempDir()
+	prev := Unsandboxed
+	Unsandboxed = true
+	defer func() { Unsandboxed = prev }()
+
+	// Absolute path outside home should succeed when unsandboxed.
+	got, err := ResolveSafe(home, "/tmp")
+	if err != nil {
+		t.Fatalf("unsandboxed ResolveSafe outside home: %v", err)
+	}
+	if got == "" {
+		t.Error("expected non-empty path")
+	}
+}
+
+func TestResolveSafe_UnsandboxedStillBlocksSensitive(t *testing.T) {
+	if filepath.Separator == '\\' {
+		t.Skip("Unix-only")
+	}
+	home := t.TempDir()
+	prev := Unsandboxed
+	Unsandboxed = true
+	defer func() { Unsandboxed = prev }()
+
+	_, err := ResolveSafe(home, "/etc/hosts")
+	if err != ErrDenied {
+		t.Errorf("unsandboxed should still block sensitive paths, got %v", err)
+	}
+}

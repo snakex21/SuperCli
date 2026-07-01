@@ -61,11 +61,11 @@ var modelRates = map[string]Rate{
 	"claude-opus-4":            {InputPer1k: 15.00, OutputPer1k: 75.00},
 
 	// Meta Llama (Together / Groq / OpenRouter all converge on these names)
-	"llama-3.1-8b-instant":      {InputPer1k: 0.05, OutputPer1k: 0.08},
-	"llama-3.1-70b-versatile":   {InputPer1k: 0.59, OutputPer1k: 0.79},
-	"llama-3.3-70b-versatile":   {InputPer1k: 0.59, OutputPer1k: 0.79},
-	"llama-3.2-3b-preview":      {InputPer1k: 0.06, OutputPer1k: 0.06},
-	"llama-3.2-1b-preview":      {InputPer1k: 0.04, OutputPer1k: 0.04},
+	"llama-3.1-8b-instant":    {InputPer1k: 0.05, OutputPer1k: 0.08},
+	"llama-3.1-70b-versatile": {InputPer1k: 0.59, OutputPer1k: 0.79},
+	"llama-3.3-70b-versatile": {InputPer1k: 0.59, OutputPer1k: 0.79},
+	"llama-3.2-3b-preview":    {InputPer1k: 0.06, OutputPer1k: 0.06},
+	"llama-3.2-1b-preview":    {InputPer1k: 0.04, OutputPer1k: 0.04},
 
 	// Mistral
 	"mistral-large-latest":  {InputPer1k: 2.00, OutputPer1k: 6.00},
@@ -85,7 +85,7 @@ var modelRates = map[string]Rate{
 
 	// Qwen
 	"qwen-2.5-72b-instruct": {InputPer1k: 0.40, OutputPer1k: 0.40},
-	"qwen-2.5-coder-32b":   {InputPer1k: 0.20, OutputPer1k: 0.20},
+	"qwen-2.5-coder-32b":    {InputPer1k: 0.20, OutputPer1k: 0.20},
 }
 
 // fetchedRates holds prices fetched from external sources
@@ -106,15 +106,9 @@ var (
 // intended to be injected from per-endpoint config. Guarded by
 // fetchedMu (same lock as fetchedRates; they are read together).
 //
-// NOT YET WIRED (task #2, commit 8e9bfe6): the mechanism here is
-// correct and tested, but nothing in production calls
-// SetProviderRates yet. To finish end-to-end three pieces are
-// missing: (1) a price field on config.ProviderConf to source the
-// rates; (2) loading those into SetProviderRates at startup;
-// (3) threading the proxy/provider NAME (not the model id, which
-// Provider.Name() currently returns) into the CostFor call sites.
-// Until then RateForProvider falls back to RateFor and per-proxy
-// pricing is a latent capability, not an active fix.
+// OpenRouter pricing wires this with keys like
+// "openrouter/anthropic/claude-3.5-sonnet" so the same model can be
+// costed differently when used through a proxy/router endpoint.
 var providerRates map[string]Rate // nil = no overrides
 
 // SetFetchedRates replaces the fetched-price cache. rates
@@ -200,6 +194,16 @@ func stripDateSuffix(modelID string) string {
 	return stripped
 }
 
+func stripDisplaySuffix(modelID string) string {
+	low := strings.ToLower(strings.TrimSpace(modelID))
+	if strings.HasSuffix(low, " accounts)") {
+		if i := strings.LastIndex(modelID, " ("); i > 0 {
+			return modelID[:i]
+		}
+	}
+	return modelID
+}
+
 // RateFor returns the rate for a model id, or the
 // "default" rate if the model is unknown. The lookup is
 // case-insensitive and tolerates provider prefixes
@@ -224,11 +228,16 @@ func RateFor(modelID string) (Rate, string) {
 // proxy can price a specific alias without colliding with the
 // canonical model.
 func RateForProvider(provider, modelID string) (Rate, string) {
+	modelID = stripDisplaySuffix(modelID)
+	if modelID == "" {
+		return modelRates["default"], "default"
+	}
+	fullKey := strings.ToLower(strings.TrimSpace(modelID))
 	// Per-endpoint override: highest priority, before any stripping
 	// so the configured "provider/model" key matches verbatim.
-	if provider != "" && modelID != "" {
-		pkey := strings.ToLower(strings.TrimSpace(provider)) + "/" +
-			strings.ToLower(strings.TrimSpace(modelID))
+	providerKey := strings.ToLower(strings.TrimSpace(provider))
+	if providerKey != "" {
+		pkey := providerKey + "/" + fullKey
 		fetchedMu.RLock()
 		if providerRates != nil {
 			if r, ok := providerRates[pkey]; ok {
@@ -238,16 +247,31 @@ func RateForProvider(provider, modelID string) (Rate, string) {
 		}
 		fetchedMu.RUnlock()
 	}
-	if modelID == "" {
-		return modelRates["default"], "default"
+	// Fetched rates may legitimately include provider prefixes from
+	// OpenRouter (e.g. "anthropic/claude-3.5-sonnet"). Check the full
+	// key BEFORE stripping a provider/model prefix for hardcoded fallbacks.
+	fetchedMu.RLock()
+	if fetchedRates != nil {
+		if r, ok := fetchedRates[fullKey]; ok {
+			fetchedMu.RUnlock()
+			return r, fullKey + " (fetched)"
+		}
+		if providerKey != "" {
+			pkey := providerKey + "/" + fullKey
+			if r, ok := fetchedRates[pkey]; ok {
+				fetchedMu.RUnlock()
+				return r, pkey + " (fetched)"
+			}
+		}
 	}
+	fetchedMu.RUnlock()
 	// Strip provider prefix: "openai/gpt-4o" -> "gpt-4o"
 	if i := strings.LastIndexByte(modelID, '/'); i >= 0 && i < len(modelID)-1 {
 		modelID = modelID[i+1:]
 	}
 	modelID = stripDateSuffix(modelID)
 	key := strings.ToLower(strings.TrimSpace(modelID))
-	// F28: check fetched rates first (external > hardcoded).
+	// F28: check fetched rates for stripped canonical IDs too.
 	fetchedMu.RLock()
 	if fetchedRates != nil {
 		if r, ok := fetchedRates[key]; ok {

@@ -67,8 +67,8 @@ func TestParsePricePerToken_Invalid(t *testing.T) {
 func TestParseOpenRouter(t *testing.T) {
 	input := `{
 		"data": [
-			{"id":"openai/gpt-4o","pricing":{"prompt":"0.0025","completion":"0.01"}},
-			{"id":"anthropic/claude-3.5-sonnet","pricing":{"prompt":"0.003","completion":"0.015"}},
+			{"id":"openai/gpt-4o","context_length":128000,"pricing":{"prompt":"0.0025","completion":"0.01"}},
+			{"id":"anthropic/claude-3.5-sonnet","context_length":"200000","pricing":{"prompt":"0.003","completion":"0.015"}},
 			{"id":"free-model","pricing":{}}
 		]
 	}`
@@ -89,6 +89,9 @@ func TestParseOpenRouter(t *testing.T) {
 	}
 	if entries[0].Source != "openrouter" {
 		t.Errorf("source = %q, want openrouter", entries[0].Source)
+	}
+	if entries[0].ContextLength != 128000 || entries[1].ContextLength != 200000 {
+		t.Errorf("context lengths = %d/%d, want 128000/200000", entries[0].ContextLength, entries[1].ContextLength)
 	}
 }
 
@@ -118,6 +121,62 @@ func TestParseOpenRouter_MissingPricing(t *testing.T) {
 	// No pricing fields → both 0 → excluded.
 	if len(entries) != 0 {
 		t.Errorf("expected 0, got %d", len(entries))
+	}
+}
+
+func TestParseOpenRouter_ContextOnlyFromTopProvider(t *testing.T) {
+	input := `{
+		"data": [
+			{"id":"openrouter/fusion","pricing":{"prompt":"-1","completion":"-1"},"top_provider":{"context_length":1000000}}
+		]
+	}`
+	entries, err := parseOpenRouter([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1 context-only entry", len(entries))
+	}
+	if entries[0].ContextLength != 1000000 {
+		t.Fatalf("context = %d, want 1000000", entries[0].ContextLength)
+	}
+	if entries[0].InputPer1M != 0 || entries[0].OutputPer1M != 0 {
+		t.Fatalf("prices = %v/%v, want zero", entries[0].InputPer1M, entries[0].OutputPer1M)
+	}
+}
+
+func TestFetchAll_MergesOpenRouterContextIntoEarlierPrice(t *testing.T) {
+	now := time.Now().UTC()
+	fetcher := &Fetcher{
+		client: &http.Client{},
+		sources: []Source{
+			staticSource{name: "pricepertoken", entries: []PriceEntry{{
+				ModelID:     "deepseek/deepseek-v4-flash",
+				InputPer1M:  90,
+				OutputPer1M: 180,
+				Source:      "pricepertoken",
+				FetchedAt:   now,
+			}}},
+			staticSource{name: "openrouter", entries: []PriceEntry{{
+				ModelID:       "deepseek/deepseek-v4-flash",
+				InputPer1M:    98,
+				OutputPer1M:   196,
+				ContextLength: 1048576,
+				Source:        "openrouter",
+				FetchedAt:     now.Add(time.Second),
+			}}},
+		},
+	}
+
+	entries := fetcher.FetchAll()
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1 merged entry", len(entries))
+	}
+	if entries[0].InputPer1M != 90 || entries[0].OutputPer1M != 180 {
+		t.Fatalf("prices = %v/%v, want first source priority", entries[0].InputPer1M, entries[0].OutputPer1M)
+	}
+	if entries[0].ContextLength != 1048576 {
+		t.Fatalf("context = %d, want OpenRouter context", entries[0].ContextLength)
 	}
 }
 
@@ -348,6 +407,7 @@ func TestFetchAndUpdate_PreservesUserOverrides(t *testing.T) {
 // F28: pushRatesToCredits correctly converts per-1M to per-1k.
 func TestPushRatesToCredits(t *testing.T) {
 	defer credits.SetFetchedRates(nil) // cleanup
+	defer credits.SetProviderRates(nil)
 
 	entries := []PriceEntry{
 		{ModelID: "gpt-4o", InputPer1M: 2500.0, OutputPer1M: 10000.0},
@@ -375,11 +435,46 @@ func TestPushRatesToCredits(t *testing.T) {
 	}
 }
 
+func TestPushRatesToCredits_OpenRouterProviderRates(t *testing.T) {
+	defer credits.SetFetchedRates(nil)
+	defer credits.SetProviderRates(nil)
+
+	pushRatesToCredits([]PriceEntry{{
+		ModelID:     "deepseek/deepseek-chat",
+		InputPer1M:  70.0,
+		OutputPer1M: 270.0,
+		Source:      "openrouter",
+		FetchedAt:   time.Now().UTC(),
+	}})
+
+	r, key := credits.RateForProvider("openrouter", "deepseek/deepseek-chat")
+	if r.InputPer1k != 0.07 || r.OutputPer1k != 0.27 {
+		t.Fatalf("rate=%+v, want OpenRouter provider-specific rate", r)
+	}
+	if key != "openrouter/deepseek/deepseek-chat (endpoint)" {
+		t.Fatalf("key=%q", key)
+	}
+	if got := credits.CostForProvider("openrouter", "deepseek/deepseek-chat", 1000, 1000); got != 0.34 {
+		t.Fatalf("cost=%v, want 0.34", got)
+	}
+}
+
 // ── Mock source for testing ──
 
 type mockSource struct {
 	name string
 	base string
+}
+
+type staticSource struct {
+	name    string
+	entries []PriceEntry
+}
+
+func (s staticSource) Name() string { return s.name }
+
+func (s staticSource) Fetch(client *http.Client) ([]PriceEntry, error) {
+	return append([]PriceEntry(nil), s.entries...), nil
 }
 
 func (m *mockSource) Name() string { return m.name }

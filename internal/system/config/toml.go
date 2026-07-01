@@ -86,6 +86,12 @@ type TomlConfig struct {
 	// Debug logging.
 	Debug bool `toml:"debug"`
 
+	// AllowAll grants full filesystem access, skipping
+	// the sandbox boundary check. File operations can
+	// reach any directory (sensitive system paths are
+	// still blocked). Same as --allow-all flag.
+	AllowAll bool `toml:"allow_all"`
+
 	// CodexAuth configures ChatGPT-subscription ("Codex")
 	// OAuth login. All fields optional; compiled-in defaults
 	// match the OpenAI Codex CLI reference values.
@@ -464,6 +470,9 @@ func TomlConfigToEnv(t TomlConfig) {
 	}
 	if t.Debug {
 		setEnvUnless("SUPERCLI_DEBUG", "1")
+	}
+	if t.AllowAll {
+		setEnvUnless("SUPERCLI_ALLOW_ALL", "1")
 	}
 }
 

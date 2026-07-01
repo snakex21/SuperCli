@@ -5,7 +5,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"supercli/internal/account/pricing"
 	"supercli/internal/agent/darwin"
 	"supercli/internal/llm"
 	"supercli/internal/storage"
@@ -105,6 +107,30 @@ func TestRunBatch_EchoProvider(t *testing.T) {
 	}
 	if p == nil {
 		t.Fatal("provider should not be nil")
+	}
+}
+
+func TestApplyPricingMetadata_MirrorsOpenRouterProviderModelToDirectProvider(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "deepseek-chat", Provider: "deepseek", Source: llm.SourceProvider})
+	applyPricingMetadata(caps, []pricing.PriceEntry{{
+		ModelID:       "deepseek/deepseek-chat",
+		InputPer1M:    70,
+		OutputPer1M:   270,
+		ContextLength: 64000,
+		Source:        "openrouter",
+		FetchedAt:     time.Now(),
+	}})
+
+	direct, ok := caps.Get("deepseek-chat")
+	if !ok {
+		t.Fatal("direct deepseek-chat missing")
+	}
+	if direct.ContextLength != 64000 || direct.InputCost != 70 || direct.OutputCost != 270 {
+		t.Fatalf("direct metadata = %+v, want context/prices from OpenRouter", direct)
+	}
+	if direct.Provider != "deepseek" {
+		t.Fatalf("provider = %q, want deepseek", direct.Provider)
 	}
 }
 

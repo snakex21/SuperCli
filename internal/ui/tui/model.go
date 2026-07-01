@@ -24,6 +24,7 @@ import (
 	"supercli/internal/agent/planmode"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
+	"supercli/internal/llm/shuffler"
 	"supercli/internal/storage/goal"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
@@ -905,6 +906,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+r":
 		return m.openReasoningMenu()
+	case "ctrl+p":
+		// Open the projects menu (per-project memory management).
+		// Ctrl+P mirrors the "projects" mnemonic and avoids
+		// colliding with 'p' which we leave free for future
+		// per-mode shortcuts.
+		return m.openProjectsMenu()
 	case "ctrl+y":
 		// Copy the last assistant response to the clipboard.
 		last := m.chat.lastAssistant()
@@ -1699,6 +1706,97 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	// /shuffle manages the IP shuffler for Kilo proxy rotation.
+	if cmd.Name == "shuffle" {
+		dm := m.marker
+		args := cmd.Args
+		return m, func() tea.Msg {
+			parts := strings.Fields(args)
+			if len(parts) == 0 {
+				return slashResultMsg{Body: dm.Diff(shuffler.Global.Status() + "\n\n/shuffle auto|on|off|add|load|list|status|check|now|interval")}
+			}
+			switch parts[0] {
+			case "auto":
+				msg := shuffler.Global.AutoConfigure(context.Background(), 5*time.Minute)
+				return slashResultMsg{Body: dm.Diff(msg)}
+			case "on":
+				shuffler.Global.Enable()
+				return slashResultMsg{Body: dm.Diff(shuffler.Global.Status())}
+			case "off":
+				shuffler.Global.Disable()
+				return slashResultMsg{Body: dm.Diff(shuffler.Global.Status())}
+			case "add":
+				if len(parts) < 2 {
+					return slashResultMsg{Body: dm.Diff("/shuffle add <proxy_url>\n  e.g. /shuffle add http://1.2.3.4:8080\n  e.g. /shuffle add socks5://1.2.3.4:1080")}
+				}
+				if err := shuffler.Global.AddProxy(parts[1]); err != nil {
+					return slashResultMsg{Err: err}
+				}
+				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("proxy added: %s\n%s", parts[1], shuffler.Global.Status()))}
+			case "load":
+				if len(parts) < 2 {
+					return slashResultMsg{Body: dm.Diff("/shuffle load <url>\n  e.g. /shuffle load https://example.com/proxies.txt")}
+				}
+				if err := shuffler.Global.LoadFromURL(context.Background(), parts[1]); err != nil {
+					return slashResultMsg{Err: err}
+				}
+				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("proxies loaded from %s\n%s", parts[1], shuffler.Global.Status()))}
+			case "list":
+				proxies := shuffler.Global.List()
+				if len(proxies) == 0 {
+					return slashResultMsg{Body: dm.Diff("No proxies configured.\n\nAdd one:\n  /shuffle add http://ip:port\n  /shuffle load https://...")}
+				}
+				var b strings.Builder
+				b.WriteString("Configured proxies:\n")
+				for _, p := range proxies {
+					marker := " "
+					if shuffler.Global.IsEnabled() {
+						if cur := shuffler.Global.GetCurrentProxy(); cur == p {
+							marker = "*"
+						}
+					}
+					b.WriteString(fmt.Sprintf("  %s %s\n", marker, p))
+				}
+				b.WriteString("\n")
+				b.WriteString(shuffler.Global.Status())
+				return slashResultMsg{Body: dm.Diff(b.String())}
+			case "status":
+				return slashResultMsg{Body: dm.Diff(shuffler.Global.Status())}
+			case "check":
+				statuses := shuffler.Global.CheckProxies(context.Background(), "")
+				var b strings.Builder
+				b.WriteString("Proxy check results:\n")
+				for _, st := range statuses {
+					icon := "OK"
+					if !st.OK {
+						icon = "FAIL"
+					}
+					b.WriteString(fmt.Sprintf("  [%s] %s", icon, st.Proxy))
+					if st.Err != "" {
+						b.WriteString(fmt.Sprintf(" — %s", st.Err))
+					}
+					b.WriteString("\n")
+				}
+				return slashResultMsg{Body: dm.Diff(b.String())}
+			case "now":
+				newProxy := shuffler.Global.Rotate()
+				if newProxy == "" {
+					return slashResultMsg{Body: dm.Diff("No proxies configured to rotate.")}
+				}
+				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("rotated to: %s\n%s", newProxy, shuffler.Global.Status()))}
+			case "interval":
+				if len(parts) < 2 {
+					return slashResultMsg{Body: dm.Diff("/shuffle interval <seconds>\n  min 60s  e.g. /shuffle interval 300")}
+				}
+				var secs int
+				fmt.Sscanf(parts[1], "%d", &secs)
+				shuffler.Global.SetInterval(time.Duration(secs) * time.Second)
+				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("rotation interval set to %ds\n%s", secs, shuffler.Global.Status()))}
+			default:
+				return slashResultMsg{Body: dm.Diff("unknown /shuffle subcommand: " + parts[0] + "\n\n/shuffle auto|on|off|add|load|list|status|check|now|interval")}
+			}
+		}
+	}
 	// F27: /export saves session to Markdown file.
 	if cmd.Name == "export" {
 		store := m.sessionStore
@@ -1762,14 +1860,20 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			return slashResultMsg{Body: dm.Diff(tracker.DiffOutput())}
 		}
 	}
+	// /projects — without args opens the interactive projects
+	// menu; with args (list / add / remove / info / help) the
+	// generic handler at the bottom of this function returns the
+	// text result, so we only intercept the bare form here.
+	if cmd.Name == "projects" && cmd.Args == "" {
+		return m.openProjectsMenu()
+	}
 	// F26.5: /model — without args opens the interactive
 	// model picker; with args swaps to the specified model.
 	if cmd.Name == "model" {
 		if cmd.Args == "" {
 			// Open the interactive models menu.
 			return m.openModelsMenu()
-		}
-		// Swap directly by name.
+		}		// Swap directly by name.
 		if m.modelSwapper == nil {
 			return m, func() tea.Msg {
 				return slashResultMsg{Body: m.marker.Diff("/model not available")}
@@ -1987,6 +2091,8 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		swapper := m.modelSwapper
 		dm := m.marker
 		store := m.sessionStore
+		providerName := m.activeProviderName()
+		billable := !m.isSubscriptionProviderName(providerName)
 		return m, func() tea.Msg {
 			if rec == nil {
 				return slashResultMsg{Body: dm.Diff("/cost: stats not available")}
@@ -2009,6 +2115,8 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 				Total:     total,
 				SessionID: sessionID,
 				Model:     model,
+				Provider:  providerName,
+				Billable:  billable,
 			}
 			return slashResultMsg{Body: dm.Diff(cost.Render(d))}
 		}
@@ -2052,15 +2160,16 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 // the network (/council, /compact, /darwin, /login, ...) keeps
 // the busy state so Ctrl+C cancellation works.
 var localSlashCommands = map[string]bool{
-	"help":    true,
-	"memory":  true,
-	"status":  true,
-	"sandbox": true,
-	"clear":   true,
-	"reflect": true,
-	"resume":  true,
-	"workers": true,
-	"context": true,
+	"help":      true,
+	"memory":    true,
+	"status":    true,
+	"sandbox":   true,
+	"allow-all": true,
+	"clear":     true,
+	"reflect":   true,
+	"resume":    true,
+	"workers":   true,
+	"context":   true,
 }
 
 // shellResultMsg is delivered when a !command finishes.

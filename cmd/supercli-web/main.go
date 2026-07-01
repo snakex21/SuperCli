@@ -1,0 +1,110 @@
+// Command supercli-web launches the SuperCli web GUI: a local,
+// dark-themed desktop-style front-end over the same agent engine the
+// TUI drives. It is a separate binary so the default `supercli` stays
+// a pure terminal tool; this one adds an HTTP server + app-mode
+// window while sharing every core package.
+//
+// Usage:
+//
+//	supercli-web [--home PATH] [--provider P] [--model M] [--key K]
+//	             [--base-url U] [--addr ADDR] [--no-window] [--allow-remote]
+//
+// Home/data resolution matches the CLI: --home > $SUPERCLI_HOME > cwd,
+// with all state in the portable supercli-data/ directory.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+
+	"supercli/internal/llm"
+	"supercli/internal/storage"
+	"supercli/internal/system/config"
+	"supercli/internal/webgui"
+)
+
+func main() {
+	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
+	providerFlag := flag.String("provider", "", "LLM provider: openai, anthropic, opencode, or echo")
+	modelFlag := flag.String("model", "", "model id")
+	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
+	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")
+	echoFlag := flag.Bool("echo", false, "force echo provider")
+	addrFlag := flag.String("addr", "", "listen address (default 127.0.0.1:0, an OS-assigned port)")
+	noWindowFlag := flag.Bool("no-window", false, "do not open a browser window; serve only")
+	allowRemoteFlag := flag.Bool("allow-remote", false, "allow non-loopback hosts (no auth provided; use with care)")
+	debugFlag := flag.Bool("debug", false, "verbose logging")
+	flag.Parse()
+
+	home, err := storage.ResolveHome(*homeFlag)
+	if err != nil {
+		fatal("resolve home", err)
+	}
+	dataDir, _, err := storage.ResolveDataRoot(*homeFlag)
+	if err != nil {
+		fatal("resolve data dir", err)
+	}
+	if err := storage.EnsureDir(dataDir); err != nil {
+		fatal("ensure data dir", err)
+	}
+
+	if *echoFlag {
+		*keyFlag = ""
+		*providerFlag = config.ProviderEcho
+	}
+	cwd, _ := os.Getwd()
+	tomlCfg, tomlErr := config.ResolveConfig(dataDir, cwd, "")
+	cfg, err := config.Load(config.FlagOverrides{
+		Provider: *providerFlag,
+		APIKey:   *keyFlag,
+		BaseURL:  *baseFlag,
+		Model:    *modelFlag,
+		Debug:    boolPtr(*debugFlag),
+	})
+	if err != nil {
+		fatal("load config", err)
+	}
+	if tomlErr == nil && !*echoFlag {
+		config.ApplyTomlToConfig(&cfg, tomlCfg)
+		// config.Load normalizes empty model to "no model" before TOML is
+		// applied. For web GUI startup, the saved model must still win when
+		// no explicit --model/env override was provided.
+		if *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" && tomlCfg.DefaultModel != "" {
+			cfg.Model = tomlCfg.DefaultModel
+		}
+		// Restore saved reasoning effort
+		if tomlCfg.ReasoningEffort != "" {
+			if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {
+				log.Printf("config: reasoning_effort: %v (ignored)", err)
+			}
+		}
+		if err := cfg.Normalize(); err != nil {
+			fatal("normalize config", err)
+		}
+	}
+
+	eng, err := webgui.NewEngine(cfg, home, dataDir)
+	if err != nil {
+		fatal("build engine", err)
+	}
+
+	if err := webgui.Run(eng, webgui.RunOptions{
+		Addr:        *addrFlag,
+		AllowRemote: *allowRemoteFlag,
+		NoWindow:    *noWindowFlag,
+	}); err != nil {
+		fatal("run", err)
+	}
+}
+
+// fatal prints a context-tagged error and exits non-zero.
+func fatal(ctx string, err error) {
+	fmt.Fprintf(os.Stderr, "supercli-web: %s: %v\n", ctx, err)
+	log.Fatalf("%s: %v", ctx, err)
+}
+
+// boolPtr returns a pointer to b; used for the optional Debug
+// override which must distinguish unset from false.
+func boolPtr(b bool) *bool { return &b }

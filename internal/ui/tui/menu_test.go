@@ -70,6 +70,58 @@ func TestReasoningMenu_EnterPersistsSelection(t *testing.T) {
 	}
 }
 
+func TestRenderModelsMenu_EnrichesProviderModelPricing(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	mgr.Add("deepseek", "openai", "https://api.deepseek.com/v1", "k", "")
+	mgr.Reload()
+
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "deepseek-chat", Provider: "deepseek", Source: llm.SourceProvider})
+	caps.Register(llm.ModelInfo{ID: "deepseek/deepseek-chat", ContextLength: 64000, InputCost: 70, OutputCost: 270, Source: llm.SourceExternal})
+
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+	m.menu = interactiveMenu{kind: menuProviderModels, provider: "deepseek"}
+	out := m.renderMenuView()
+	for _, want := range []string{"64k", "$70.00", "$270.00"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered models menu missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderModelsMenu_EnrichesContextFromOpenRouterSuffix(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	mgr.Add("local", "openai", "http://localhost:1234/v1", "", "")
+	mgr.Reload()
+
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "deepseek-v4-flash", Provider: "local", Source: llm.SourceProvider})
+	caps.Register(llm.ModelInfo{ID: "deepseek/deepseek-v4-flash", ContextLength: 1048576, Source: llm.SourceExternal})
+
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+	m.menu = interactiveMenu{kind: menuProviderModels, provider: "local"}
+	out := m.renderMenuView()
+	if !strings.Contains(out, "1048k") {
+		t.Fatalf("rendered models menu missing OpenRouter context metadata:\n%s", out)
+	}
+}
+
+func TestRenderModelsMenu_CodexShowsSubscriptionNotUSD(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "gpt-5.5", Provider: "codex", ContextLength: 272000, InputCost: 1250, OutputCost: 10000, Source: llm.SourceExternal})
+	m := New(Options{CapabilityRegistry: caps})
+	m.menu = interactiveMenu{kind: menuModels}
+	out := m.renderMenuView()
+	if !strings.Contains(out, "sub") {
+		t.Fatalf("codex model should show subscription marker, got:\n%s", out)
+	}
+	if strings.Contains(out, "$1250") || strings.Contains(out, "$10000") {
+		t.Fatalf("codex model should not show API dollar prices, got:\n%s", out)
+	}
+}
+
 func TestConfiguredProviderNames_Empty(t *testing.T) {
 	m := New(Options{})
 	names := m.configuredProviderNames()

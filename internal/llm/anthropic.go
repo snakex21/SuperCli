@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -15,13 +16,18 @@ const anthropicVersion = "2023-06-01"
 
 // AnthropicConfig configures the native Anthropic Messages API provider.
 type AnthropicConfig struct {
-	BaseURL      string
-	APIKey       string
-	Model        string
-	MaxTokens    int
-	Timeout      time.Duration
-	HTTPClient   *http.Client
-	Capabilities *CapabilityRegistry
+	BaseURL   string
+	APIKey    string
+	Model     string
+	MaxTokens int
+	// Timeout is the idle/inactivity timeout for the SSE stream (no data
+	// from the server, also bounds time-to-first-token), NOT a whole-
+	// request cap. Defaults to 300s.
+	Timeout time.Duration
+	// ConnectTimeout is the TCP connect (dial) timeout. Defaults to 30s.
+	ConnectTimeout time.Duration
+	HTTPClient     *http.Client
+	Capabilities   *CapabilityRegistry
 }
 
 // AnthropicProvider implements Provider using Anthropic's /v1/messages SSE API.
@@ -43,11 +49,17 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 4096
 	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 300 * time.Second // idle/inactivity timeout
+	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = 30 * time.Second
+	}
 	if cfg.HTTPClient == nil {
-		if cfg.Timeout <= 0 {
-			cfg.Timeout = 60 * time.Second
-		}
-		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
+		transport.ResponseHeaderTimeout = 0                 // do NOT cap header wait: a slow local model may delay first byte
+		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -92,16 +104,22 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 				}
 			}
 		}()
-		resp, err := p.do(ctx, body)
+		// Derive a cancellable child context so the idle watchdog can
+		// abort a stalled stream. cancel runs after the read completes.
+		reqCtx, cancel := context.WithCancel(ctx)
+		resp, err := p.do(reqCtx, body)
 		if err != nil {
+			cancel()
 			select {
 			case out <- Delta{Err: err}:
 			case <-ctx.Done():
 			}
 			return
 		}
-		defer resp.Body.Close()
-		p.streamSSE(ctx, resp.Body, out)
+		defer cancel()
+		respBody := newIdleTimeoutReader(resp.Body, p.cfg.Timeout, cancel)
+		defer respBody.Close()
+		p.streamSSE(ctx, respBody, out)
 	}()
 	return out, nil
 }

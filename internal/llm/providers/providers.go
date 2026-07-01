@@ -69,6 +69,7 @@ type ProviderInfo struct {
 	Type      string
 	BaseURL   string
 	Model     string // default model configured for this provider
+	HasKey    bool   // true if an API key is configured (key value never exposed)
 	Connected bool
 	Error     string
 	Models    []llm.ModelInfo
@@ -106,7 +107,7 @@ func (m *Manager) List(caps *llm.CapabilityRegistry) []ProviderInfo {
 		// entries for configured providers: the provider scanner
 		// must prove the API key works and report real models.
 		for _, mi := range caps.All() {
-			if mi.Provider == p.Name && isDiscoveredProviderModel(mi) {
+			if mi.Provider == p.Name && isDiscoveredProviderModel(mi) && modelVisibleForProvider(p, mi.ID) {
 				pi.Models = append(pi.Models, mi)
 			}
 		}
@@ -131,10 +132,11 @@ func (m *Manager) ListConfigured(caps *llm.CapabilityRegistry) []ProviderInfo {
 			Type:    p.Type,
 			BaseURL: p.BaseURL,
 			Model:   p.Model,
+			HasKey:  strings.TrimSpace(p.APIKey) != "",
 		}
 		if caps != nil {
 			for _, mi := range caps.All() {
-				if mi.Provider == p.Name && isDiscoveredProviderModel(mi) {
+				if mi.Provider == p.Name && isDiscoveredProviderModel(mi) && modelVisibleForProvider(p, mi.ID) {
 					pi.Models = append(pi.Models, mi)
 				}
 			}
@@ -160,7 +162,7 @@ func (m *Manager) Add(name, typ, baseURL, apiKey, model string) error {
 		Name:    name,
 		Type:    typ,
 		BaseURL: baseURL,
-		APIKey:  llm.CleanAPIKey(apiKey),
+		APIKey:  llm.KiloDefaultKey(baseURL, llm.CleanAPIKey(apiKey)),
 		Model:   model,
 	}
 	m.providers = append(m.providers, p)
@@ -273,7 +275,9 @@ func (m *Manager) LoadHiddenState() {
 		return
 	}
 	for _, id := range tc.HiddenModels {
-		m.hidden[id] = struct{}{}
+		if id != "" {
+			m.hidden[id] = struct{}{}
+		}
 	}
 }
 
@@ -306,6 +310,9 @@ func (m *Manager) VisibleModels(caps *llm.CapabilityRegistry, provider string) [
 		if provider != "" && !isDiscoveredProviderModel(mi) {
 			continue
 		}
+		if p, ok := m.providerByNameLocked(mi.Provider); ok && !modelVisibleForProvider(p, mi.ID) {
+			continue
+		}
 		if _, hidden := m.hidden[mi.ID]; hidden {
 			continue
 		}
@@ -316,6 +323,50 @@ func (m *Manager) VisibleModels(caps *llm.CapabilityRegistry, provider string) [
 
 func isDiscoveredProviderModel(mi llm.ModelInfo) bool {
 	return mi.Source != llm.SourceSeed
+}
+
+// ModelVisible reports whether a model should be shown for a configured
+// provider. For anonymous/public OpenCode and Kilo entries we only show
+// explicit free IDs; paid models often arrive without reliable pricing.
+func (m *Manager) ModelVisible(provider, id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.modelVisibleLocked(provider, id)
+}
+
+func (m *Manager) modelVisibleLocked(provider, id string) bool {
+	if p, ok := m.providerByNameLocked(provider); ok {
+		return modelVisibleForProvider(p, id)
+	}
+	return true
+}
+
+func (m *Manager) providerByNameLocked(name string) (config.ProviderConf, bool) {
+	for _, p := range m.providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return config.ProviderConf{}, false
+}
+
+func modelVisibleForProvider(p config.ProviderConf, id string) bool {
+	if !freeOnlyProvider(p) {
+		return true
+	}
+	return llm.IsFreeModelID(id)
+}
+
+func freeOnlyProvider(p config.ProviderConf) bool {
+	key := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
+	if strings.Contains(p.BaseURL, "api.kilo.ai") {
+		return key == "anonymous"
+	}
+	if strings.Contains(p.BaseURL, "opencode.ai/zen") {
+		return key == "public"
+	}
+	name := strings.ToLower(strings.ReplaceAll(p.Name, " ", ""))
+	return (name == "opencode" || name == "kilocode" || name == "kilo") && p.APIKey == ""
 }
 
 // SetPrice updates a model's manual price in config.toml.
@@ -382,6 +433,9 @@ func probeProvider(p config.ProviderConf) (bool, error) {
 	var url string
 	if strings.HasSuffix(base, "/v1") {
 		url = base + "/models"
+	} else if strings.Contains(base, "api.kilo.ai") {
+		// Kilo uses OpenRouter API without /v1 prefix.
+		url = base + "/models"
 	} else {
 		url = base + "/v1/models"
 	}
@@ -445,6 +499,8 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "openrouter", Type: "openai", BaseURL: "https://openrouter.ai/api/v1", Desc: "Meta-router to 200+ models"},
 		{Name: "xai", Type: "openai", BaseURL: "https://api.x.ai/v1", Desc: "Grok-3, Grok-2"},
 		{Name: "huggingface", Type: "openai", BaseURL: "https://api-inference.huggingface.co/v1", Desc: "HF Inference API"},
+		{Name: "kilo", Type: "openai", BaseURL: "https://api.kilo.ai/api/openrouter", Desc: "Kilo AI (free models, no key)"},
+		{Name: "opencode", Type: "openai", BaseURL: "https://opencode.ai/zen/v1", Desc: "OpenCode Zen (free models, no key)"},
 		{Name: "lmstudio", Type: "openai", BaseURL: "http://localhost:1234/v1", Desc: "Local models via LM Studio"},
 		{Name: "ollama", Type: "openai", BaseURL: "http://localhost:11434/v1", Desc: "Local models via Ollama"},
 		{Name: "custom", Type: "openai", BaseURL: "", Desc: "Your own OpenAI-compatible endpoint"},
@@ -541,12 +597,27 @@ func (m *Manager) writeActiveConfig(path, modelID, providerName string) error {
 	tc.DefaultModel = modelID
 	tc.DefaultProvider = providerName
 
-	// Also update the matching provider entry's model field
-	// so the per-provider config stays in sync.
+	// Also update the matching provider entry's model field so the
+	// per-provider config stays in sync. If this config layer does not
+	// contain the selected provider (common for project config overriding
+	// the global providers list), copy the provider entry from the manager
+	// into this layer; otherwise default_provider would point at a provider
+	// that cannot be resolved on next startup.
+	found := false
 	for i, p := range tc.Providers {
 		if p.Name == providerName {
 			tc.Providers[i].Model = modelID
+			found = true
 			break
+		}
+	}
+	if !found && providerName != "" {
+		for _, p := range m.providers {
+			if p.Name == providerName {
+				p.Model = modelID
+				tc.Providers = append(tc.Providers, p)
+				break
+			}
 		}
 	}
 
@@ -579,6 +650,33 @@ func (m *Manager) LoadCouncilModels() []string {
 		return nil
 	}
 	return tc.Council.Models
+}
+
+// SaveReasoningEffort persists reasoning_effort to config.toml.
+// Like SaveActiveConfig, it writes to both project and global config
+// for consistency.
+func (m *Manager) SaveReasoningEffort(level string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := writeReasoningEffort(m.activePath, level); err != nil {
+		return err
+	}
+	if m.activePath != m.tomlPath {
+		if err := writeReasoningEffort(m.tomlPath, level); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeReasoningEffort(path, level string) error {
+	tc, err := config.LoadToml(path)
+	if err != nil {
+		tc = config.TomlConfig{}
+	}
+	tc.ReasoningEffort = level
+	return config.SaveToml(path, tc)
 }
 
 // LoadActiveModel reads the last selected model from the active
@@ -657,15 +755,26 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	var ids []string
 	var err error
+	apiKey := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
 	if p.Type == config.ProviderAnthropic {
-		ids, err = llm.ListAnthropicModels(ctx, p.BaseURL, p.APIKey)
+		ids, err = llm.ListAnthropicModels(ctx, p.BaseURL, apiKey)
 	} else {
-		ids, err = llm.ListProviderModels(ctx, p.BaseURL, p.APIKey)
+		ids, err = llm.ListProviderModels(ctx, p.BaseURL, apiKey)
 	}
 	cancel()
 	if err != nil {
 		res.Err = err
 		return res
+	}
+	// Kilo/OpenCode public access = free models only; own key = all models.
+	if freeOnlyProvider(p) {
+		var free []string
+		for _, id := range ids {
+			if llm.IsFreeModelID(id) {
+				free = append(free, id)
+			}
+		}
+		ids = free
 	}
 	for _, id := range ids {
 		mi := llm.HeuristicCapabilities(id)

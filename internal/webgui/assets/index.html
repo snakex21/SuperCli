@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en" style="background:var(--bg-base)">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SuperCli</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13' fill='%23ee7330'%3E%E2%97%86%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+
+    <!-- ═══ RAIL (left icon bar) ═══ -->
+    <nav class="app-rail" aria-label="Navigation rail" data-i18n-title="rail.nav">
+      <div class="rail-logo" title="SuperCli">◆</div>
+      <button class="rail-item active" data-panel="chat" title="Chat" data-i18n-title="rail.chat">
+        ⌘<span class="status-dot" id="rail-status"></span>
+      </button>
+      <button class="rail-item" data-panel="sessions" title="Sessions" data-i18n-title="rail.sessions">◷</button>
+      <button class="rail-item" data-panel="models" title="Models" data-i18n-title="rail.models">◉</button>
+      <button class="rail-item" data-panel="providers" title="Providers" data-i18n-title="rail.providers">＋</button>
+      <button class="rail-item" data-panel="memory" title="Memory" data-i18n-title="rail.memory">◇</button>
+      <button class="rail-item" data-panel="goal" title="Goal" data-i18n-title="rail.goal">✓</button>
+      <div class="rail-spacer"></div>
+      <button class="rail-item" id="settings-btn" title="Settings" data-i18n-title="rail.settings">⚙</button>
+    </nav>
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside class="app-sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <div>
+          <strong>SuperCli</strong>
+          <small id="status-text" data-i18n="status.connecting">connecting…</small>
+        </div>
+      </header>
+
+      <!-- Active model card -->
+      <div class="sidebar-model" id="sidebar-model-card" title="Click to change model" data-i18n-title="sidebar.changeModel">
+        <span class="label" data-i18n="sidebar.model">Model</span>
+        <span class="value" id="sidebar-model-name">—</span>
+        <span class="provider-tag" id="sidebar-model-provider">—</span>
+      </div>
+
+      <!-- Workspace path -->
+      <div class="sidebar-model" style="margin-top:0;border-top:0;border-radius:0 0 8px 8px;cursor:default">
+        <span class="label" data-i18n="sidebar.workspace">Workspace</span>
+        <span class="value" style="color:var(--text-muted)" id="sidebar-home">—</span>
+      </div>
+
+      <!-- New session -->
+      <button class="sidebar-new-session" id="new-session-btn" type="button">
+        <span class="ns-plus">＋</span><span data-i18n="sidebar.newSession">New session</span>
+      </button>
+
+      <!-- Sessions list -->
+      <div class="sidebar-section">
+        <div class="section-label">
+          <span data-i18n="sidebar.sessions">Sessions</span>
+          <button class="btn btn-tiny btn-ghost" id="reload-sessions" data-i18n="common.refresh">refresh</button>
+        </div>
+        <div id="sessions-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+    </aside>
+
+    <!-- ═══ MAIN AREA ═══ -->
+    <main class="app-main">
+
+      <!-- Topbar -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <h1 data-i18n="topbar.title">New Session</h1>
+        </div>
+        <div class="topbar-actions">
+          <!-- Model picker -->
+          <div class="model-picker">
+            <button class="model-trigger" id="model-picker-btn" type="button">
+              <span class="mt-icon">◉</span>
+              <span class="mt-text">
+                <span class="mt-name" id="model-picker-name">no model</span>
+                <span class="mt-prov" id="model-picker-provider">—</span>
+              </span>
+              <span class="mt-chevron">▾</span>
+            </button>
+            <div class="model-menu" id="model-menu" hidden>
+              <div class="model-menu-header">
+                <input id="model-search" placeholder="Search models…" data-i18n-ph="model.search" autocomplete="off" />
+                <button class="btn btn-tiny btn-ghost" id="model-scan" type="button" data-i18n="common.scan">scan</button>
+              </div>
+              <div class="model-menu-list" id="model-menu-list"></div>
+            </div>
+          </div>
+          <!-- Reasoning selector -->
+          <select id="topbar-reasoning" class="field-select reasoning-select" title="Reasoning effort" data-i18n-title="topbar.reasoning">
+            <option value="" data-i18n="topbar.reasoningDefault">reasoning: default</option>
+          </select>
+          <button class="btn btn-ghost btn-small" id="add-provider-btn" title="Add provider" data-i18n-title="topbar.addProvider">+</button>
+          <!-- Quick action pills -->
+          <button class="btn btn-ghost btn-small" data-panel="memory" data-i18n="topbar.memory">Memory</button>
+          <button class="btn btn-ghost btn-small" data-panel="goal" data-i18n="topbar.goal">Goal</button>
+        </div>
+      </header>
+
+      <!-- Run progress bar -->
+      <div class="run-progress" id="run-progress"><div class="bar"></div></div>
+
+      <!-- Transcript -->
+      <section class="transcript empty-state-mode" id="transcript">
+        <div class="welcome" id="welcome-card">
+          <div class="welcome-icon">◆</div>
+          <h2 data-i18n="welcome.heading">What do you want to build?</h2>
+          <p data-i18n="welcome.subtext">SuperCli agent — code, inspect, edit, and ship faster.</p>
+          <div class="welcome-actions">
+            <button class="btn btn-contrast btn-small" data-prompt="Summarize this project and highlight the key directories." data-i18n="welcome.summarize">Summarize project</button>
+            <button class="btn btn-ghost btn-small" data-prompt="Check the configuration status and suggest next steps." data-i18n="welcome.status">Check status</button>
+            <button class="btn btn-ghost btn-small" data-prompt="Show recent sessions and what we worked on." data-i18n="welcome.history">Show history</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Composer -->
+      <form class="composer" id="composer">
+        <div class="composer-status" id="composer-status" data-i18n="composer.ready">Ready</div>
+        <div class="composer-body">
+          <textarea id="prompt" rows="1" placeholder="Ask SuperCli to build, inspect, edit, test…" data-i18n-ph="composer.placeholder"></textarea>
+          <button type="submit" class="btn btn-contrast" id="send-btn" data-i18n="composer.send">Send</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- ═══ INSPECTOR (right panel) ═══ -->
+    <aside class="app-inspector" id="inspector">
+      <nav class="inspector-tabs" id="inspector-tabs">
+        <button class="inspector-tab active" data-inspector="activity" data-i18n="insp.activity">Activity</button>
+        <button class="inspector-tab" data-inspector="sessions" data-i18n="insp.history">History</button>
+        <button class="inspector-tab" data-inspector="stats" data-i18n="insp.usage">Usage</button>
+        <button class="inspector-tab" data-inspector="models" data-i18n="insp.models">Models</button>
+        <button class="inspector-tab" data-inspector="providers" data-i18n="insp.providers">Providers</button>
+        <button class="inspector-tab" data-inspector="codex" data-i18n="insp.codex">Codex</button>
+        <button class="inspector-tab" data-inspector="context" data-i18n="insp.context">Context</button>
+        <button class="inspector-tab" data-inspector="files" data-i18n="insp.files">Files</button>
+        <button class="inspector-tab" data-inspector="memory" data-i18n="insp.memory">Memory</button>
+        <button class="inspector-tab" data-inspector="goal" data-i18n="insp.goal">Goal</button>
+      </nav>
+
+      <div class="inspector-panels">
+
+        <!-- Activity panel -->
+        <div class="inspector-panel active" id="panel-activity">
+          <div class="mini-metrics" id="mini-metrics">
+            <div class="mini-metric">
+              <span class="metric-label" data-i18n="metric.run">Run</span>
+              <span class="metric-value" id="metric-run-state" data-i18n="metric.idle">idle</span>
+            </div>
+            <div class="mini-metric">
+              <span class="metric-label" data-i18n="metric.tokens">Tokens</span>
+              <span class="metric-value" id="metric-tokens">0</span>
+            </div>
+          </div>
+          <div class="section-label" style="margin-top:4px">
+            <span data-i18n="insp.activity">Activity</span>
+            <button class="btn btn-tiny btn-ghost" id="clear-activity" data-i18n="common.clear">clear</button>
+          </div>
+          <div id="activity-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+            <div class="empty-state" data-i18n="activity.empty">Tool calls and run events appear here.</div>
+          </div>
+        </div>
+
+        <!-- Sessions/History panel -->
+        <div class="inspector-panel" id="panel-sessions">
+          <div class="section-label">
+            <span data-i18n="insp.transcript">Transcript</span>
+          </div>
+          <div id="session-transcript" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+            <div class="empty-state" data-i18n="sessions.selectHint">Select a session from the sidebar.</div>
+          </div>
+        </div>
+
+        <!-- Stats panel -->
+        <div class="inspector-panel" id="panel-stats">
+          <div class="section-label">
+            <span data-i18n="insp.usage">Usage</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-stats" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div id="stats-cards" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+
+        <!-- Models panel -->
+        <div class="inspector-panel" id="panel-models">
+          <div class="section-label">
+            <span data-i18n="insp.models">Models</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-models" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div class="reasoning-block">
+            <label data-i18n="models.reasoningEffort">Reasoning effort</label>
+            <select id="reasoning-select" class="field-select"></select>
+            <small id="reasoning-status">—</small>
+          </div>
+          <div id="models-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+
+        <!-- Providers panel -->
+        <div class="inspector-panel" id="panel-providers">
+          <div class="section-label">
+            <span data-i18n="insp.providers">Providers</span>
+            <button class="btn btn-tiny btn-ghost" id="scan-providers" data-i18n="common.scan">scan</button>
+          </div>
+          <button class="provider-panel-add" id="provider-panel-add" type="button">
+            <span>＋</span>
+            <strong data-i18n="providers.add">Add provider</strong>
+            <small data-i18n="providers.addHint">Open setup popup with templates and custom endpoint config.</small>
+          </button>
+          <div id="providers-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+
+        <!-- Codex panel -->
+        <div class="inspector-panel" id="panel-codex">
+          <div class="section-label">
+            <span data-i18n="codex.accounts">Codex Accounts</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-codex" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div id="codex-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+
+        <!-- Context panel -->
+        <div class="inspector-panel" id="panel-context">
+          <div class="section-label">
+            <span data-i18n="insp.context">Context</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-context" data-i18n="common.refresh">refresh</button>
+          </div>
+          <pre class="context-report" id="context-report">—</pre>
+        </div>
+
+        <!-- Files panel -->
+        <div class="inspector-panel" id="panel-files">
+          <div class="section-label">
+            <span data-i18n="insp.files">Files</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-files" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div id="file-browser" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
+            <div class="empty-state" data-i18n="common.loading">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Memory panel -->
+        <div class="inspector-panel" id="panel-memory">
+          <div class="section-label">
+            <span data-i18n="insp.memory">Memory</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-memory" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div id="memory-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+
+        <!-- Goal panel -->
+        <div class="inspector-panel" id="panel-goal">
+          <div class="section-label">
+            <span data-i18n="insp.goal">Goal</span>
+            <button class="btn btn-tiny btn-ghost" id="reload-goal" data-i18n="common.refresh">refresh</button>
+          </div>
+          <div id="goal-view" style="flex:1;min-height:0;overflow-y:auto"></div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- ═══ Provider Modal ═══ -->
+    <div class="modal-overlay" id="provider-modal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2 data-i18n="provider.title">Add Provider</h2>
+            <p data-i18n="provider.subtitle">Connect cloud or local model providers. Pick a template, review settings, then add and scan models.</p>
+          </div>
+          <button class="btn btn-ghost btn-small modal-close" id="modal-close">&times;</button>
+        </div>
+        <div class="modal-body provider-dialog">
+          <aside class="provider-picker-pane">
+            <div class="section-label" data-i18n="provider.choose">Choose provider</div>
+            <input id="provider-template-search" class="field-input" placeholder="Search providers…" data-i18n-ph="provider.searchPh" autocomplete="off" />
+            <div class="provider-list" id="provider-templates"></div>
+          </aside>
+
+          <section class="provider-config-pane">
+            <div class="section-label" data-i18n="provider.configure">Configure</div>
+            <div class="provider-selected" id="provider-selected">
+              <strong data-i18n="provider.custom">Custom provider</strong>
+              <span data-i18n="provider.customHint">Pick a provider on the left or configure your own endpoint.</span>
+            </div>
+            <form id="provider-custom-form" class="provider-config-form" autocomplete="off">
+              <label><span data-i18n="provider.name">Name</span><input name="name" placeholder="my-provider" class="field-input" required /></label>
+              <label><span data-i18n="provider.type">Type</span><select name="type" class="field-select">
+                <option value="openai">OpenAI-compatible</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="opencode">OpenCode gateway</option>
+              </select></label>
+              <label class="full-width"><span data-i18n="provider.baseUrl">Base URL</span><input name="base_url" placeholder="http://localhost:1234/v1" class="field-input" required /></label>
+              <label><span data-i18n="provider.apiKey">API key</span> <span data-i18n="provider.apiKeyHint">(optional for local/free)</span><input name="api_key" placeholder="sk-… / lm-studio / ollama" type="password" class="field-input" /></label>
+              <label></label>
+              <button type="submit" class="btn btn-primary full-width" data-i18n="provider.addScan">Add & Scan Models</button>
+            </form>
+          </section>
+        </div>
+        <div class="modal-foot">
+          <small id="modal-status" data-i18n="provider.statusHint">Choose a provider template or configure a custom OpenAI-compatible endpoint.</small>
+          <button class="btn btn-ghost btn-small" type="button" data-i18n="common.cancel" onclick="document.getElementById('provider-modal').hidden=true">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Settings Modal ═══ -->
+    <div class="modal-overlay" id="settings-modal" hidden>
+      <div class="modal-card settings-card">
+        <div class="modal-head">
+          <h2 data-i18n="settings.title">Settings</h2>
+          <button class="btn btn-ghost btn-small modal-close" id="settings-close">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:0;display:flex;flex-direction:column">
+          <!-- Settings tabs -->
+          <nav class="settings-tabs">
+            <button class="settings-tab active" data-stab="general" data-i18n="settings.general">General</button>
+            <button class="settings-tab" data-stab="appearance" data-i18n="settings.appearance">Appearance</button>
+            <button class="settings-tab" data-stab="models" data-i18n="settings.models">Models</button>
+            <button class="settings-tab" data-stab="providers" data-i18n="settings.providers">Providers</button>
+            <button class="settings-tab" data-stab="mcp" data-i18n="settings.mcp">MCP</button>
+            <button class="settings-tab" data-stab="keybinds" data-i18n="settings.keybinds">Keybinds</button>
+            <button class="settings-tab" data-stab="about" data-i18n="settings.about">About</button>
+          </nav>
+          <div class="settings-panels">
+            <!-- General -->
+            <div class="settings-panel active" id="stab-general">
+              <div class="settings-group">
+                <label data-i18n="settings.language">Language</label>
+                <select id="setting-lang" class="field-select">
+                  <option value="en">English</option>
+                  <option value="pl">Polski</option>
+                </select>
+              </div>
+              <div class="settings-group">
+                <label data-i18n="settings.notifications">Agent notifications</label>
+                <label class="toggle-row">
+                  <span data-i18n="settings.notifySound">Play sound when agent finishes</span>
+                  <input type="checkbox" id="setting-notify-sound" />
+                </label>
+                <label class="toggle-row">
+                  <span data-i18n="settings.notifyDesktop">Show desktop notification</span>
+                  <input type="checkbox" id="setting-notify-desktop" />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label data-i18n="settings.permissions">Permissions</label>
+                <label class="toggle-row">
+                  <span data-i18n="settings.permWrite">Ask before file writes outside project</span>
+                  <input type="checkbox" id="setting-perm-write" checked />
+                </label>
+                <label class="toggle-row">
+                  <span data-i18n="settings.permNetwork">Ask before network requests</span>
+                  <input type="checkbox" id="setting-perm-network" checked />
+                </label>
+              </div>
+            </div>
+            <!-- Appearance -->
+            <div class="settings-panel" id="stab-appearance">
+              <div class="settings-group">
+                <label data-i18n="settings.theme">Theme</label>
+                <div class="theme-toggle-row">
+                  <button class="theme-option active" data-theme="dark" id="theme-dark" data-i18n="settings.dark">Dark</button>
+                  <button class="theme-option" data-theme="light" id="theme-light" data-i18n="settings.light">Light</button>
+                </div>
+              </div>
+              <div class="settings-group">
+                <label data-i18n="settings.uiFont">Interface font</label>
+                <select id="setting-ui-font" class="field-select">
+                  <option value="inter">Inter</option>
+                  <option value="system">System default</option>
+                  <option value="segoe">Segoe UI</option>
+                </select>
+              </div>
+              <div class="settings-group">
+                <label data-i18n="settings.codeFont">Code / terminal font</label>
+                <select id="setting-code-font" class="field-select">
+                  <option value="jetbrains">JetBrains Mono</option>
+                  <option value="cascadia">Cascadia Code</option>
+                  <option value="consolas">Consolas</option>
+                  <option value="fira">Fira Code</option>
+                  <option value="monospace">System monospace</option>
+                </select>
+              </div>
+            </div>
+            <!-- Models -->
+            <div class="settings-panel" id="stab-models">
+              <div class="settings-group">
+                <label data-i18n="settings.modelVisibility">Model visibility</label>
+                <div id="settings-model-list" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+                  <div class="empty-state" data-i18n="models.loading">Loading models…</div>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-small" id="settings-add-provider" style="margin-top:8px" data-i18n="settings.addProvider">＋ Add provider</button>
+            </div>
+            <!-- Providers -->
+            <div class="settings-panel" id="stab-providers">
+
+              <!-- ═══ VIEW: LIST (default) ═══ -->
+              <div id="sp-view-list" class="sp-view">
+                <div class="settings-group">
+                  <div class="section-label">
+                    <span data-i18n="providers.configured">Configured providers</span>
+                    <div style="display:flex;gap:4px;margin-left:auto">
+                      <button class="btn btn-tiny btn-ghost" id="sp-reload" data-i18n="common.refresh">refresh</button>
+                      <button class="btn btn-tiny btn-primary" id="sp-show-add" type="button">
+                        <span aria-hidden="true">＋</span> <span data-i18n="providers.addBtn">Add provider</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div id="sp-list" style="display:flex;flex-direction:column;gap:6px">
+                    <div class="empty-state" data-i18n="common.loading">Loading…</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══ VIEW: ADD (hidden until "Add provider" clicked) ═══ -->
+              <div id="sp-view-add" class="sp-view" style="display:none">
+                <div class="settings-group">
+                  <div class="section-label">
+                    <span data-i18n="providers.addNew">Add new provider</span>
+                    <button class="btn btn-tiny btn-ghost" id="sp-add-cancel" style="margin-left:auto" data-i18n="common.back">Back</button>
+                  </div>
+                  <input id="sp-template-search" class="field-input sp-search" placeholder="Search providers…" data-i18n-ph="provider.searchPh" autocomplete="off" style="margin-bottom:8px;width:100%;max-width:none" />
+                  <div class="provider-list" id="sp-templates" style="max-height:180px;margin-bottom:14px"></div>
+                </div>
+
+                <form id="sp-add-form" class="provider-config-form" autocomplete="off">
+                  <label>
+                    <span data-i18n="provider.name">Name</span>
+                    <input name="name" placeholder="my-provider" class="field-input" required />
+                  </label>
+                  <label>
+                    <span data-i18n="provider.type">Type</span>
+                    <select name="type" class="field-select">
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="opencode">OpenCode gateway</option>
+                    </select>
+                  </label>
+                  <label class="full-width">
+                    <span data-i18n="provider.baseUrl">Base URL</span>
+                    <input name="base_url" placeholder="http://localhost:1234/v1" class="field-input" required />
+                  </label>
+                  <label class="full-width">
+                    <span data-i18n="provider.apiKey">API key</span>
+                    <span class="hint" data-i18n="provider.apiKeyHint">(optional for local/free)</span>
+                    <input name="api_key" type="password" class="field-input" placeholder="sk-… / lm-studio / ollama" />
+                  </label>
+                  <button type="submit" class="btn btn-primary full-width" data-i18n="provider.addScan">Add & Scan Models</button>
+                  <small id="sp-add-status" class="full-width" style="color:var(--text-faint)"></small>
+                </form>
+              </div>
+
+              <!-- ═══ VIEW: EDIT (hidden until Edit clicked) ═══ -->
+              <div id="sp-view-edit" class="sp-view" style="display:none">
+                <div class="settings-group">
+                  <div class="section-label">
+                    <span><span data-i18n="providers.editing">Editing</span>: <strong id="sp-edit-name">—</strong></span>
+                    <button class="btn btn-tiny btn-ghost" id="sp-edit-cancel" style="margin-left:auto" data-i18n="common.back">Back</button>
+                  </div>
+                  <form id="sp-edit-form" class="provider-config-form" autocomplete="off">
+                    <input type="hidden" name="name" />
+                    <label>
+                      <span data-i18n="provider.type">Type</span>
+                      <select name="type" class="field-select">
+                        <option value="openai">OpenAI-compatible</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="opencode">OpenCode gateway</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span data-i18n="providers.defaultModel">Default model</span>
+                      <input name="model" class="field-input" placeholder="(use first scanned)" />
+                    </label>
+                    <label class="full-width">
+                      <span data-i18n="provider.baseUrl">Base URL</span>
+                      <input name="base_url" class="field-input" />
+                    </label>
+                    <label class="full-width">
+                      <span data-i18n="provider.apiKey">API key</span>
+                      <input name="api_key" type="password" class="field-input" placeholder="(leave empty to keep current)" />
+                    </label>
+                    <label class="full-width toggle-row" style="flex-direction:row;align-items:center;gap:8px">
+                      <input type="checkbox" name="clear_key" id="sp-clear-key" />
+                      <span data-i18n="providers.clearKey">Clear stored API key</span>
+                    </label>
+                    <small id="sp-edit-status" class="full-width" style="color:var(--text-faint)"></small>
+                    <button type="submit" class="btn btn-primary full-width" data-i18n="providers.saveChanges">Save changes</button>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+            <!-- MCP -->
+            <div class="settings-panel" id="stab-mcp">
+              <!-- List view -->
+              <div id="mcp-list-view">
+                <div class="settings-group">
+                  <label><span data-i18n="mcp.servers">MCP Servers</span> <button class="btn btn-tiny btn-ghost" id="mcp-edit-json" style="margin-left:8px" data-i18n="mcp.editJson">Edit as JSON</button></label>
+                  <div id="mcp-server-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+                    <div class="empty-state" data-i18n="common.loading">Loading…</div>
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <label data-i18n="mcp.addServer">Add MCP Server</label>
+                  <form id="mcp-add-form" class="provider-config-form" autocomplete="off">
+                    <label><span data-i18n="provider.name">Name</span><input name="name" placeholder="context7" class="field-input" required /></label>
+                    <label><span data-i18n="mcp.command">Command</span><input name="command" placeholder="npx" class="field-input" required /></label>
+                    <label class="full-width"><span data-i18n="mcp.args">Args (comma-separated)</span><input name="args" placeholder="-y, @upstash/context7-mcp" class="field-input" /></label>
+                    <label class="full-width"><span data-i18n="mcp.env">Env (KEY=VALUE, one per line)</span><textarea name="env" class="field-input" style="height:60px;resize:vertical;font-family:var(--mono);font-size:11px" placeholder="KEY1=value1&#10;KEY2=value2"></textarea></label>
+                    <button type="submit" class="btn btn-primary full-width" data-i18n="mcp.addServer">Add MCP Server</button>
+                  </form>
+                </div>
+              </div>
+              <!-- JSON editor view (hidden by default) -->
+              <div id="mcp-json-view" style="display:none;flex-direction:column;gap:12px">
+                <div class="settings-group">
+                  <label><span data-i18n="mcp.editJsonTitle">Edit MCP config as JSON</span> <button class="btn btn-tiny btn-ghost" id="mcp-back-list" style="margin-left:8px" data-i18n="mcp.backToList">Back to list</button></label>
+                  <textarea id="mcp-json-editor" class="field-input" style="height:380px;resize:vertical;font-family:var(--mono);font-size:12px;width:100%;line-height:1.5;tab-size:2" spellcheck="false"></textarea>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-primary" id="mcp-json-save" data-i18n="mcp.saveJson">Save JSON</button>
+                  <small id="mcp-json-status" style="align-self:center;color:var(--text-faint)"></small>
+                </div>
+              </div>
+            </div>
+            <!-- Keybinds -->
+            <div class="settings-panel" id="stab-keybinds">
+              <div class="settings-group">
+                <label data-i18n="keybinds.title">Keyboard shortcuts</label>
+                <div class="keybind-edit-list" id="keybind-list-edit">
+                  <div class="keybind-row"><span data-i18n="keybinds.send">Send prompt</span><kbd data-key="send">Enter</kbd></div>
+                  <div class="keybind-row"><span data-i18n="keybinds.cancel">Cancel / close</span><kbd data-key="cancel">Esc</kbd></div>
+                  <div class="keybind-row"><span data-i18n="keybinds.palette">Command palette</span><kbd data-key="palette">/</kbd></div>
+                  <div class="keybind-row"><span data-i18n="keybinds.thinking">Toggle thinking</span><kbd data-key="thinking">Shift+T</kbd></div>
+                  <div class="keybind-row"><span data-i18n="keybinds.expand">Expand tool output</span><kbd data-key="expand">Shift+E</kbd></div>
+                  <div class="keybind-row"><span data-i18n="keybinds.newline">New line</span><kbd data-key="newline">Shift+Enter</kbd></div>
+                </div>
+              </div>
+            </div>
+            <!-- About -->
+            <div class="settings-panel" id="stab-about">
+              <div class="settings-group">
+                <label data-i18n="about.title">SuperCli Web GUI</label>
+                <p style="color:var(--text-muted);font-size:12px;margin:4px 0" data-i18n="about.desc">Single-binary AI coding agent with portable data.</p>
+                <div class="about-meta">
+                  <div><span data-i18n="about.binary">Binary</span><strong id="about-exe">supercli-web.exe</strong></div>
+                  <div><span data-i18n="about.data">Data</span><strong id="about-data">supercli-data/</strong></div>
+                  <div><span data-i18n="about.go">Go</span><strong id="about-go">—</strong></div>
+                </div>
+              </div>
+              <div class="settings-group">
+                <label data-i18n="keybinds.title">Keyboard shortcuts</label>
+                <div class="keybind-list">
+                  <div><kbd>Enter</kbd> <span data-i18n="keybinds.send">Send prompt</span></div>
+                  <div><kbd>Esc</kbd> <span data-i18n="keybinds.cancelModal">Cancel / close modal</span></div>
+                  <div><kbd>/</kbd> <span data-i18n="keybinds.openPalette">Open command palette</span></div>
+                  <div><kbd>PgUp</kbd> / <kbd>PgDn</kbd> <span data-i18n="keybinds.scroll">Scroll transcript</span></div>
+                  <div><kbd>Shift+T</kbd> <span data-i18n="keybinds.thinking">Toggle thinking</span></div>
+                  <div><kbd>Shift+E</kbd> <span data-i18n="keybinds.expand">Expand tool output</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ File Editor Modal ═══ -->
+    <div class="modal-overlay" id="editor-modal" hidden>
+      <div class="modal-card" style="width:min(900px,98vw);min-height:min(500px,85vh)">
+        <div class="modal-head">
+          <div>
+            <h2 id="editor-title">file</h2>
+            <p id="editor-path" style="font-family:var(--mono);font-size:11px;color:var(--text-faint)"></p>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary btn-small" id="editor-save" data-i18n="editor.save">Save</button>
+            <button class="btn btn-ghost btn-small modal-close" id="editor-close">&times;</button>
+          </div>
+        </div>
+        <div class="modal-body" style="padding:0">
+          <textarea id="editor-area" style="width:100%;height:100%;min-height:400px;border:0;resize:none;padding:14px;background:var(--bg-deep);color:var(--text-base);font-family:var(--mono);font-size:13px;line-height:1.55;outline:none;tab-size:4" spellcheck="false"></textarea>
+        </div>
+        <div class="modal-foot">
+          <small id="editor-status"></small>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

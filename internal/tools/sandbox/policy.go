@@ -73,5 +73,8 @@ func AllowDestructive(home string, op Op, path string) (Decision, error) {
 			Reason:  fmt.Sprintf("sensitive system path: %s", resolved),
 		}, ErrDenied
 	}
+	if Unsandboxed {
+		return Decision{Allowed: true, Reason: "unsandboxed"}, nil
+	}
 	return Decision{Allowed: true, Reason: "inside home"}, nil
 }

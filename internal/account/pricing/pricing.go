@@ -33,11 +33,12 @@ const CacheTTL = 24 * time.Hour
 
 // PriceEntry is one model's pricing fetched from an external source.
 type PriceEntry struct {
-	ModelID     string    `json:"model_id"`
-	InputPer1M  float64   `json:"input_per_1m"`
-	OutputPer1M float64   `json:"output_per_1m"`
-	Source      string    `json:"source"`
-	FetchedAt   time.Time `json:"fetched_at"`
+	ModelID       string    `json:"model_id"`
+	InputPer1M    float64   `json:"input_per_1m"`
+	OutputPer1M   float64   `json:"output_per_1m"`
+	ContextLength int       `json:"context_length,omitempty"`
+	Source        string    `json:"source"`
+	FetchedAt     time.Time `json:"fetched_at"`
 }
 
 // Cache is the on-disk format for fetched prices.
@@ -95,6 +96,19 @@ func LoadCache(home string) []PriceEntry {
 	return cache.Entries
 }
 
+// HasContextMetadata reports whether cached entries contain at least one
+// context_length. Older cache files from before context parsing have prices but
+// no context windows; callers should apply them immediately but still refresh
+// in the background so /models gets context metadata.
+func HasContextMetadata(entries []PriceEntry) bool {
+	for _, e := range entries {
+		if e.ContextLength > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // SaveCache writes entries to disk.
 func SaveCache(home string, entries []PriceEntry) error {
 	path := CachePath(home)
@@ -120,7 +134,6 @@ func SaveCache(home string, entries []PriceEntry) error {
 // Returns all entries from successful sources.
 func (f *Fetcher) FetchAll() []PriceEntry {
 	seen := make(map[string]PriceEntry)
-	var all []PriceEntry
 	for _, src := range f.sources {
 		entries, err := src.Fetch(f.client)
 		if err != nil {
@@ -128,17 +141,47 @@ func (f *Fetcher) FetchAll() []PriceEntry {
 		}
 		for _, e := range entries {
 			key := strings.ToLower(e.ModelID)
-			if _, exists := seen[key]; !exists {
-				seen[key] = e
-				all = append(all, e)
+			if key == "" {
+				continue
 			}
+			if existing, exists := seen[key]; exists {
+				seen[key] = mergePriceEntryMetadata(existing, e)
+				continue
+			}
+			seen[key] = e
 		}
+	}
+	all := make([]PriceEntry, 0, len(seen))
+	for _, e := range seen {
+		all = append(all, e)
 	}
 	// Sort by model ID for stable output.
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].ModelID < all[j].ModelID
 	})
 	return all
+}
+
+func mergePriceEntryMetadata(existing, fresh PriceEntry) PriceEntry {
+	// Keep the first source's price priority, but do not throw away later
+	// metadata. This matters for context windows: pricepertoken can have a
+	// price for a model while OpenRouter has the context_length for the same id.
+	if existing.InputPer1M == 0 && fresh.InputPer1M > 0 {
+		existing.InputPer1M = fresh.InputPer1M
+	}
+	if existing.OutputPer1M == 0 && fresh.OutputPer1M > 0 {
+		existing.OutputPer1M = fresh.OutputPer1M
+	}
+	if existing.ContextLength == 0 && fresh.ContextLength > 0 {
+		existing.ContextLength = fresh.ContextLength
+	}
+	if existing.Source == "" {
+		existing.Source = fresh.Source
+	}
+	if fresh.FetchedAt.After(existing.FetchedAt) {
+		existing.FetchedAt = fresh.FetchedAt
+	}
+	return existing
 }
 
 // ApplyCachedRates loads the on-disk price cache and, when it is
@@ -174,11 +217,12 @@ func (f *Fetcher) FetchAndUpdate(existing []llm.ModelInfo) []llm.ModelInfo {
 	fresh := make([]llm.ModelInfo, 0, len(entries))
 	for _, e := range entries {
 		fresh = append(fresh, llm.ModelInfo{
-			ID:           e.ModelID,
-			InputCost:    e.InputPer1M,
-			OutputCost:   e.OutputPer1M,
-			Source:       llm.SourceExternal,
-			LastVerified: e.FetchedAt,
+			ID:            e.ModelID,
+			InputCost:     e.InputPer1M,
+			OutputCost:    e.OutputPer1M,
+			ContextLength: e.ContextLength,
+			Source:        llm.SourceExternal,
+			LastVerified:  e.FetchedAt,
 		})
 	}
 	return llm.MergeCatalog(existing, fresh)
@@ -188,15 +232,28 @@ func (f *Fetcher) FetchAndUpdate(existing []llm.ModelInfo) []llm.ModelInfo {
 // credits.Rate (per-1k) and sets them on the credits package.
 func pushRatesToCredits(entries []PriceEntry) {
 	rates := make(map[string]credits.Rate, len(entries))
+	providerRates := make(map[string]credits.Rate)
 	for _, e := range entries {
+		if e.InputPer1M <= 0 && e.OutputPer1M <= 0 {
+			continue
+		}
 		key := strings.ToLower(e.ModelID)
 		// Convert per-1M → per-1k.
-		rates[key] = credits.Rate{
+		rate := credits.Rate{
 			InputPer1k:  e.InputPer1M / 1000.0,
 			OutputPer1k: e.OutputPer1M / 1000.0,
 		}
+		rates[key] = rate
+		if e.Source == "openrouter" {
+			providerRates["openrouter/"+key] = rate
+		}
 	}
 	credits.SetFetchedRates(rates)
+	if len(providerRates) == 0 {
+		credits.SetProviderRates(nil)
+	} else {
+		credits.SetProviderRates(providerRates)
+	}
 }
 
 // ── Source: pricepertoken.com ──
@@ -276,12 +333,18 @@ func (s *OpenRouterSource) Fetch(client *http.Client) ([]PriceEntry, error) {
 }
 
 // parseOpenRouter decodes OpenRouter's /v1/models response.
-// Format: {"data":[{"id":"openai/gpt-4o","pricing":{"prompt":"0.0025","completion":"0.01"}},...]}
-// Prices are per token (not per 1M), so we multiply by 1M.
+// Format: {"data":[{"id":"openai/gpt-4o","context_length":128000,
+// "pricing":{"prompt":"0.0025","completion":"0.01"}},...]}
+// Prices are per token (not per 1M), so we multiply by 1M; context-only
+// rows are kept as metadata but do not create fetched cost rates.
 func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 	var resp struct {
 		Data []struct {
-			ID      string `json:"id"`
+			ID            string          `json:"id"`
+			ContextLength json.RawMessage `json:"context_length"`
+			TopProvider   struct {
+				ContextLength json.RawMessage `json:"context_length"`
+			} `json:"top_provider"`
 			Pricing struct {
 				Prompt     string `json:"prompt"`
 				Completion string `json:"completion"`
@@ -299,18 +362,49 @@ func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 		}
 		prompt, _ := parseFlexFloat(m.Pricing.Prompt)
 		completion, _ := parseFlexFloat(m.Pricing.Completion)
-		if prompt <= 0 && completion <= 0 {
-			continue // free model or missing
+		if prompt < 0 {
+			prompt = 0
+		}
+		if completion < 0 {
+			completion = 0
+		}
+		contextLength := parseFlexInt(m.ContextLength)
+		if contextLength == 0 {
+			contextLength = parseFlexInt(m.TopProvider.ContextLength)
+		}
+		if prompt <= 0 && completion <= 0 && contextLength <= 0 {
+			continue // no usable price or context metadata
 		}
 		entries = append(entries, PriceEntry{
-			ModelID:     m.ID,
-			InputPer1M:  prompt * 1_000_000, // per-token → per-1M
-			OutputPer1M: completion * 1_000_000,
-			Source:      "openrouter",
-			FetchedAt:   now,
+			ModelID:       m.ID,
+			InputPer1M:    prompt * 1_000_000, // per-token → per-1M
+			OutputPer1M:   completion * 1_000_000,
+			ContextLength: contextLength,
+			Source:        "openrouter",
+			FetchedAt:     now,
 		})
 	}
 	return entries, nil
+}
+
+func parseFlexInt(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err == nil {
+		return int(f)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		f, _ := parseFlexFloat(s)
+		return int(f)
+	}
+	return 0
 }
 
 // parseFlexFloat parses a string that might be "0.0025" or 0.0025 (number).

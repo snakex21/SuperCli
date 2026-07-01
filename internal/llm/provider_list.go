@@ -69,7 +69,7 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 	providerListCache.mu.Unlock()
 	base := strings.TrimRight(baseURL, "/")
 	u := base + "/models"
-	if !strings.HasSuffix(base, "/v1") {
+	if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "api.kilo.ai") {
 		u = base + "/v1/models"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -188,7 +188,7 @@ func ListProviderModelContexts(ctx context.Context, baseURL, apiKey string) (map
 	}
 	base := strings.TrimRight(baseURL, "/")
 	u := base + "/models"
-	if !strings.HasSuffix(base, "/v1") {
+	if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "api.kilo.ai") {
 		u = base + "/v1/models"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -344,6 +344,23 @@ func HeuristicCapabilities(id string) ModelInfo {
 	return m
 }
 
+// IsFreeModelID reports whether a provider model id is explicitly
+// labelled as free. OpenCode/Kilo gateways can return paid models
+// without pricing metadata, so the UI must not treat missing cost as
+// free. We only accept a standalone "free" segment, e.g.
+// "kilo-auto/free", "openai/gpt-oss-20b:free", or
+// "deepseek-v4-flash-free".
+func IsFreeModelID(id string) bool {
+	for _, part := range strings.FieldsFunc(strings.ToLower(id), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if part == "free" {
+			return true
+		}
+	}
+	return false
+}
+
 func containsAny(haystack string, needles []string) bool {
 	for _, n := range needles {
 		if strings.Contains(haystack, n) {
@@ -351,4 +368,83 @@ func containsAny(haystack string, needles []string) bool {
 		}
 	}
 	return false
+}
+
+// ListFreeModels fetches /v1/models and returns only models whose
+// cost.input is 0 (free tier). Used by providers like OpenCode Zen
+// where the public API key gives access to both free and paid
+// models, but we want to surface only the free ones.
+func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	base := strings.TrimRight(baseURL, "/")
+	u := base + "/models"
+	if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "api.kilo.ai") && !strings.Contains(base, "opencode.ai/zen") {
+		u = base + "/v1/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+	}
+	if key := CleanAPIKey(apiKey); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: providerListTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("llm: ListFreeModels: status %d: %s", resp.StatusCode, body)
+	}
+	var payload struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Cost *struct {
+				Input float64 `json:"input"`
+			} `json:"cost"`
+			Pricing *struct {
+				Input float64 `json:"input"`
+			} `json:"pricing"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("llm: ListFreeModels: parse: %w", err)
+	}
+	var out []string
+	for _, m := range payload.Data {
+		if m.ID == "" {
+			continue
+		}
+		inputCost := -1.0
+		if m.Cost != nil {
+			inputCost = m.Cost.Input
+		} else if m.Pricing != nil {
+			inputCost = m.Pricing.Input
+		}
+		if inputCost == 0 {
+			out = append(out, m.ID)
+		}
+	}
+	return out, nil
+}
+
+// KiloDefaultKey returns "anonymous" when the base URL points
+// to Kilo AI, or "public" for OpenCode Zen, when no explicit
+// API key was provided. Both services offer free-tier access
+// without authentication.
+func KiloDefaultKey(baseURL, apiKey string) string {
+	if apiKey != "" {
+		return apiKey
+	}
+	if strings.Contains(baseURL, "api.kilo.ai") {
+		return "anonymous"
+	}
+	if strings.Contains(baseURL, "opencode.ai/zen") {
+		return "public"
+	}
+	return apiKey
 }

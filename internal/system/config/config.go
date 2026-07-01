@@ -13,7 +13,11 @@
 //	SUPERCLI_LLM_TEMPERATURE - float; default 0.7
 //	SUPERCLI_LLM_MAX_TOKENS  - int; 0 = provider default
 //	SUPERCLI_LLM_STREAM    - "1" or "true" to force streaming (default true)
-//	SUPERCLI_LLM_TIMEOUT   - HTTP timeout in seconds; default 60
+//	SUPERCLI_LLM_TIMEOUT   - idle/inactivity timeout in seconds (no data
+//	                         from the server, also bounds time-to-first-token);
+//	                         default 300. NOT a whole-request cap, so slow but
+//	                         alive streams are not cut off.
+//	SUPERCLI_LLM_CONNECT_TIMEOUT - TCP connect (dial) timeout in seconds; default 30
 //	SUPERCLI_DEBUG         - "1" or "true" for verbose logging
 //
 // Flags (--key, --model, ...) override the env values. main.go
@@ -55,11 +59,17 @@ type Config struct {
 
 	// Temperature, MaxTokens, Stream, Timeout, Debug are passed
 	// to the provider; see env docs above for defaults.
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Stream      bool          `json:"stream"`
-	Timeout     time.Duration `json:"timeout_ns"`
-	Debug       bool          `json:"debug"`
+	Temperature float64 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens,omitempty"`
+	Stream      bool    `json:"stream"`
+	// Timeout is the idle/inactivity timeout: the maximum gap with no
+	// data from the server (and the bound on time-to-first-token). It is
+	// NOT a whole-request deadline, so a slow but alive stream is never cut.
+	Timeout time.Duration `json:"timeout_ns"`
+	// ConnectTimeout is the TCP connect (dial) timeout, so connection
+	// failures fail fast without capping the streaming body.
+	ConnectTimeout time.Duration `json:"connect_timeout_ns"`
+	Debug          bool          `json:"debug"`
 }
 
 // FlagOverrides mirrors the --key/--model/... flags. Empty fields
@@ -79,14 +89,15 @@ func Load(flags FlagOverrides) (Config, error) {
 		// SUPERCLI_LLM_API_KEY wins; OPENAI_API_KEY is the
 		// standard fallback so plain OpenAI API-key usage works
 		// out of the box (codex OAuth remains a separate provider).
-		APIKey:      getEnv("SUPERCLI_LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
-		BaseURL:     getEnv("SUPERCLI_LLM_BASE_URL", "https://api.openai.com/v1"),
-		Model:       getEnv("SUPERCLI_LLM_MODEL", ""),
-		Temperature: getEnvFloat("SUPERCLI_LLM_TEMPERATURE", 0.7),
-		MaxTokens:   getEnvInt("SUPERCLI_LLM_MAX_TOKENS", 0),
-		Stream:      getEnvBool("SUPERCLI_LLM_STREAM", true),
-		Timeout:     time.Duration(getEnvInt("SUPERCLI_LLM_TIMEOUT", 60)) * time.Second,
-		Debug:       getEnvBool("SUPERCLI_DEBUG", false),
+		APIKey:         getEnv("SUPERCLI_LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
+		BaseURL:        getEnv("SUPERCLI_LLM_BASE_URL", "https://api.openai.com/v1"),
+		Model:          getEnv("SUPERCLI_LLM_MODEL", ""),
+		Temperature:    getEnvFloat("SUPERCLI_LLM_TEMPERATURE", 0.7),
+		MaxTokens:      getEnvInt("SUPERCLI_LLM_MAX_TOKENS", 0),
+		Stream:         getEnvBool("SUPERCLI_LLM_STREAM", true),
+		Timeout:        time.Duration(getEnvInt("SUPERCLI_LLM_TIMEOUT", 300)) * time.Second,
+		ConnectTimeout: time.Duration(getEnvInt("SUPERCLI_LLM_CONNECT_TIMEOUT", 30)) * time.Second,
+		Debug:          getEnvBool("SUPERCLI_DEBUG", false),
 	}
 
 	if flags.Provider != "" {
@@ -123,7 +134,10 @@ func (c *Config) Normalize() error {
 		return fmt.Errorf("config: temperature %v out of [0,2]", c.Temperature)
 	}
 	if c.Timeout <= 0 {
-		c.Timeout = 60 * time.Second
+		c.Timeout = 300 * time.Second
+	}
+	if c.ConnectTimeout <= 0 {
+		c.ConnectTimeout = 30 * time.Second
 	}
 	if c.Provider == "" {
 		if c.APIKey == "" {
