@@ -135,9 +135,15 @@ var I18N = {
     "insp.codex": "Codex",
     "insp.context": "Context",
     "insp.files": "Files",
+    "insp.projects": "Projects",
     "insp.memory": "Memory",
     "insp.goal": "Goal",
     "insp.transcript": "Transcript",
+    "projects.none": "No projects yet. Add the current directory to start.",
+    "projects.useHint": "Click to make active (applies on next launch)",
+    "projects.addCwd": "＋ current dir",
+    "projects.note": "Selecting a project sets the sandbox root and preferred model on the next launch.",
+    "common.remove": "remove",
     // metrics
     "metric.run": "Run",
     "metric.idle": "idle",
@@ -350,9 +356,15 @@ var I18N = {
     "insp.codex": "Codex",
     "insp.context": "Kontekst",
     "insp.files": "Pliki",
+    "insp.projects": "Projekty",
     "insp.memory": "Pamięć",
     "insp.goal": "Cel",
     "insp.transcript": "Transkrypcja",
+    "projects.none": "Brak projektów. Dodaj bieżący katalog, aby zacząć.",
+    "projects.useHint": "Kliknij, aby ustawić aktywny (działa po restarcie)",
+    "projects.addCwd": "＋ bieżący katalog",
+    "projects.note": "Wybór projektu ustawia katalog sandboxa i model przy następnym uruchomieniu.",
+    "common.remove": "usuń",
     "metric.run": "Stan",
     "metric.idle": "bezczynny",
     "metric.tokens": "Tokeny",
@@ -1551,7 +1563,58 @@ loaders.goal = async function() {
   }
 };
 
+// Projects (named workspaces)
+loaders.projects = async function() {
+  var list = $("#projects-list");
+  list.innerHTML = "";
+  try {
+    var r = await fetch("/api/projects");
+    var j = await r.json();
+    var rows = (j && j.projects) || [];
+    if (!rows.length) {
+      list.innerHTML = '<div class="empty-state">' + escHtml(t("projects.none")) + '</div>';
+      return;
+    }
+    rows.forEach(function(p) {
+      var row = el("div", "list-row" + (p.active ? " active" : ""));
+      var badges = "";
+      if (p.active) badges += '<span class="tag" style="color:var(--accent, #ee7330)">★ active</span>';
+      if (p.cwd) badges += '<span class="tag">cwd</span>';
+      if (p.model) badges += '<span class="tag">' + escHtml(p.model) + '</span>';
+      row.innerHTML =
+        '<div class="row-title">' + escHtml(p.name) + '</div>' +
+        '<div class="row-meta">' + badges + ' ' + escHtml(p.path) + '</div>';
+      row.title = t("projects.useHint");
+      row.addEventListener("click", function() { projectAction("use", p.path); });
+      var rm = el("button", "btn btn-tiny btn-ghost");
+      rm.style.marginLeft = "auto";
+      rm.textContent = t("common.remove");
+      rm.addEventListener("click", function(ev) { ev.stopPropagation(); projectAction("remove", p.path); });
+      row.appendChild(rm);
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">' + escHtml(t("common.error") + e.message) + '</div>';
+  }
+};
+
+async function projectAction(action, target) {
+  try {
+    var r = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: action, target: target || "" })
+    });
+    if (!r.ok) { alert("Projects: " + (await r.text())); return; }
+    await loaders.projects();
+  } catch (e) {
+    alert("Projects: " + e.message);
+  }
+}
+
 // ── Reload Buttons ──
+$("#reload-projects").addEventListener("click", function() { loaders.projects(); });
+$("#project-add-cwd").addEventListener("click", function() { projectAction("add", ""); });
 $("#reload-sessions").addEventListener("click", function() { loaders.sessions(); });
 $("#reload-stats").addEventListener("click", function() { loaders.stats(); });
 $("#reload-models").addEventListener("click", function() { loaders.models(); });

@@ -148,6 +148,33 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// handleProjects lists named workspaces (GET) or performs a
+// use/add/remove action (POST {action,target}). On add with an empty
+// target the current sandbox root is registered.
+func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var body struct {
+			Action string `json:"action"`
+			Target string `json:"target"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Action == "add" && strings.TrimSpace(body.Target) == "" {
+			body.Target = s.eng.Home()
+		}
+		if err := s.eng.projectAction(body.Action, body.Target); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	writeJSON(w, map[string]any{
+		"projects": s.eng.listProjects(),
+		"home":     s.eng.Home(),
+	})
+}
+
 // handleGoal returns the active goal and its tasks, or null.
 func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
 	out, err := s.eng.activeGoal(r.Context())
