@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // uiSettingsFile is the on-disk name (inside the data dir) for the
@@ -14,6 +15,81 @@ import (
 // presentation-only settings owned by the browser front-end, kept
 // separate from config.toml (which holds backend/provider config).
 const uiSettingsFile = "webgui-settings.json"
+
+// lastModelKey is the key inside the settings blob that carries the
+// web GUI's own active model. The value is a JSON-encoded string
+// (`"{\"id\":...,\"provider\":...}"`) because the front-end mirrors
+// localStorage entries verbatim, and localStorage values are strings.
+const lastModelKey = "supercli-last-model"
+
+// uiSettingsMu serializes read-modify-write access to the settings
+// file between the /api/settings handler and the server-side
+// last-model writer.
+var uiSettingsMu sync.Mutex
+
+// lastModelEntry is the decoded shape of the lastModelKey value.
+type lastModelEntry struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+}
+
+// LastModel reads the web GUI's own persisted model selection from
+// webgui-settings.json in dataDir. Returns empty strings when the
+// file, the key, or the value is missing/corrupt — callers fall back
+// to config.toml. This is the web GUI's model memory: it is owned by
+// the web front-end and deliberately independent from the CLI's
+// default_model in config.toml.
+func LastModel(dataDir string) (model, provider string) {
+	uiSettingsMu.Lock()
+	defer uiSettingsMu.Unlock()
+	blob := readUISettings(dataDir)
+	raw, ok := blob[lastModelKey].(string)
+	if !ok || raw == "" {
+		return "", ""
+	}
+	var e lastModelEntry
+	if err := json.Unmarshal([]byte(raw), &e); err != nil {
+		return "", ""
+	}
+	return e.ID, e.Provider
+}
+
+// saveLastModel persists the web GUI's active model into
+// webgui-settings.json, preserving every other key in the blob. Errors
+// are returned so SwitchModel can surface a failed persist, but a
+// missing/corrupt existing file just degrades to a fresh blob.
+func saveLastModel(dataDir, modelID, providerName string) error {
+	uiSettingsMu.Lock()
+	defer uiSettingsMu.Unlock()
+	blob := readUISettings(dataDir)
+	val, err := json.Marshal(lastModelEntry{ID: modelID, Provider: providerName})
+	if err != nil {
+		return err
+	}
+	blob[lastModelKey] = string(val)
+	data, err := json.Marshal(blob)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dataDir, uiSettingsFile), data, 0o644)
+}
+
+// readUISettings loads the settings blob, degrading to an empty map
+// on any error. Callers must hold uiSettingsMu.
+func readUISettings(dataDir string) map[string]any {
+	blob := map[string]any{}
+	data, err := os.ReadFile(filepath.Join(dataDir, uiSettingsFile))
+	if err != nil {
+		return blob
+	}
+	if err := json.Unmarshal(data, &blob); err != nil {
+		return map[string]any{}
+	}
+	return blob
+}
 
 // handleUISettings persists the web GUI's UI preferences server-side so
 // they survive restarts.
@@ -32,6 +108,8 @@ const uiSettingsFile = "webgui-settings.json"
 // only validates that it is valid JSON and round-trips it verbatim.
 func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(s.eng.DataDir(), uiSettingsFile)
+	uiSettingsMu.Lock()
+	defer uiSettingsMu.Unlock()
 	switch r.Method {
 	case http.MethodGet:
 		data, err := os.ReadFile(path)

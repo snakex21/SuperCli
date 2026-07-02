@@ -143,9 +143,14 @@ func (e *Engine) providerManager() *providers.Manager {
 	return m
 }
 
-// SwitchModel persists and activates a provider/model pair for future
-// web runs. providerName may be empty; in that case the capability
-// registry's provider hint is used when possible.
+// SwitchModel activates a provider/model pair for future web runs and
+// persists the choice ONLY in the web GUI's own state
+// (webgui-settings.json), never in the global config.toml. The CLI's
+// default_model is deliberately left alone: a model picked in the
+// browser must not silently become the CLI default (that is what
+// SetCLIDefault is for, as an explicit user action). providerName may
+// be empty; in that case the capability registry's provider hint is
+// used when possible.
 func (e *Engine) SwitchModel(modelID, providerName string) error {
 	if modelID == "" {
 		return fmt.Errorf("model is empty")
@@ -171,7 +176,7 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	if err != nil {
 		return err
 	}
-	if err := m.SaveActiveConfig(modelID, providerName); err != nil {
+	if err := saveLastModel(e.dataDir, modelID, providerName); err != nil {
 		return err
 	}
 	e.mu.Lock()
@@ -179,6 +184,22 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	e.prov = prov
 	e.mu.Unlock()
 	return nil
+}
+
+// SetCLIDefault persists modelID/providerName as the GLOBAL default
+// (default_model/default_provider in config.toml) — the value the CLI
+// and TUI start with. This is the explicit, opt-in counterpart to
+// SwitchModel: it is only reachable through a dedicated UI action, so
+// the web GUI never overwrites the CLI default as a side effect of
+// normal browsing.
+func (e *Engine) SetCLIDefault(modelID, providerName string) error {
+	if modelID == "" {
+		return fmt.Errorf("model is empty")
+	}
+	if providerName == "" {
+		providerName = e.caps.Provider(modelID)
+	}
+	return e.providerManager().SaveActiveConfig(modelID, providerName)
 }
 
 // buildProvider mirrors app.buildProvider, which is unexported. It

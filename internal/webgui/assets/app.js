@@ -106,6 +106,9 @@ var I18N = {
     "model.noneFound": "No models found — scan or add providers",
     "model.activeModel": "active model",
     "model.unknown": "unknown",
+    "model.setDefault": "Set as CLI default",
+    "model.setDefaultOk": "saved as CLI default",
+    "model.setDefaultErr": "set CLI default failed",
     // welcome
     "welcome.heading": "What do you want to build?",
     "welcome.subtext": "SuperCli agent — code, inspect, edit, and ship faster.",
@@ -331,6 +334,9 @@ var I18N = {
     "model.noneFound": "Nie znaleziono modeli — przeskanuj lub dodaj dostawcę",
     "model.activeModel": "aktywny model",
     "model.unknown": "nieznany",
+    "model.setDefault": "Ustaw jako domyślny dla CLI",
+    "model.setDefaultOk": "zapisano jako domyślny CLI",
+    "model.setDefaultErr": "nie udało się ustawić domyślnego CLI",
     "welcome.heading": "Co chcesz zbudować?",
     "welcome.subtext": "Agent SuperCli — koduj, analizuj, edytuj i wdrażaj szybciej.",
     "welcome.summarize": "Podsumuj projekt",
@@ -1081,6 +1087,12 @@ function handleEvent(ev, current) {
       addMarker(ev.text);
       addActivity("", "context compacted", ev.text || "");
       return null;
+    case "notice":
+      // Provider status line (e.g. rate-limit retry wait) — visible
+      // but never part of the assistant message.
+      addMarker(ev.text || "");
+      addActivity("", "notice", ev.text || "");
+      return current;
     case "done":
       metricTokens.textContent = String(ev.tok_total || 0);
       setRunState("idle", t("run.done") + " \u00b7 " + t("run.tokens") + ": " + (ev.tok_total || 0));
@@ -1214,8 +1226,38 @@ function modelRow(m) {
   var price = el("div", "model-price");
   price.textContent = (m.input_cost || m.output_cost) ? "$" + (m.input_cost || 0) + "/$" + (m.output_cost || 0) : "\u2014";
   row.appendChild(price);
+  // Explicit opt-in: write this model as the CLI's default_model in
+  // config.toml. Normal row click (selectModel) is web-only state.
+  var defBtn = el("button", "model-default-btn");
+  defBtn.type = "button";
+  defBtn.textContent = "CLI";
+  defBtn.title = t("model.setDefault");
+  defBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    setModelAsCliDefault(m);
+  });
+  row.appendChild(defBtn);
   row.addEventListener("click", function() { selectModel(m); });
   return row;
+}
+
+// setModelAsCliDefault POSTs the explicit "make this the CLI default"
+// action \u2014 the only model action that touches config.toml.
+async function setModelAsCliDefault(m) {
+  try {
+    var res = await fetch("/api/model/default", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: m.id, provider: m.provider }),
+    });
+    if (!res.ok) {
+      addActivity("err", t("model.setDefaultErr"), (await res.text()).trim());
+      return;
+    }
+    addActivity("ok", t("model.setDefaultOk"), (m.provider || "?") + "/" + m.id);
+  } catch (e) {
+    addActivity("err", t("model.setDefaultErr"), String(e));
+  }
 }
 
 async function selectModel(m) {
