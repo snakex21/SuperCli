@@ -128,7 +128,7 @@ func (e *Engine) memoryList(scope string, limit int) ([]memoryItem, error) {
 			out = append(out, toMemoryItems(entries)...)
 		}
 	}
-	if ps, err := memory.OpenProjectStore(e.dataDir, e.home); err == nil {
+	if ps, err := memory.OpenProjectStore(e.dataDir, e.Home()); err == nil {
 		defer ps.Close()
 		if entries, err := ps.List(scope, limit); err == nil {
 			out = append(out, toMemoryItems(entries)...)

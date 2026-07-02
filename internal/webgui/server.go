@@ -149,13 +149,15 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProjects lists named workspaces (GET) or performs a
-// use/add/remove action (POST {action,target}). On add with an empty
-// target the current sandbox root is registered.
+// use/add/remove action (POST {action,target,name}). On add with an empty
+// target the current sandbox root is registered; name is an optional
+// display name for the added project.
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var body struct {
 			Action string `json:"action"`
 			Target string `json:"target"`
+			Name   string `json:"name"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -164,7 +166,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		if body.Action == "add" && strings.TrimSpace(body.Target) == "" {
 			body.Target = s.eng.Home()
 		}
-		if err := s.eng.projectAction(body.Action, body.Target); err != nil {
+		if err := s.eng.projectAction(body.Action, body.Target, body.Name); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

@@ -139,7 +139,7 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID string) (
 	requestedID = strings.TrimSpace(requestedID)
 	if requestedID == "" {
 		title := summarizeHistoryMessage(prompt, 80)
-		sess, err := store.Create(e.home, e.ModelName(), title)
+		sess, err := store.Create(e.Home(), e.ModelName(), title)
 		if err != nil {
 			closeStore()
 			return nil, nil, func() {}, "", fmt.Errorf("create session: %w", err)

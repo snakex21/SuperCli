@@ -14,6 +14,8 @@ let abortController = null;
 let modelCache = [];
 let activePanel = "activity";
 let activeSessionID = "";
+var runStartTime = 0;
+var runTimerInterval = null;
 
 // ── Server-side settings persistence ──
 // The GUI opens in an app-mode browser at http://127.0.0.1:<port>/ where
@@ -70,6 +72,43 @@ function escAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ── Smart Scroll ──
+// Sticky scroll-to-bottom for the transcript: it follows streaming output
+// only while the user is already at (or near) the bottom. Scrolling up to
+// read unsticks it; scrolling back down re-arms it. force=true (your own
+// prompt, session load) always jumps. The double rAF measures scrollHeight
+// after the DOM update has actually been laid out — writing scrollTop
+// before layout is what used to leave the view a strip above the bottom.
+var stickToBottom = true;
+function isNearBottom(container) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+}
+function smartScroll(container, force) {
+  if (!container) return;
+  var sticky = container.id === "transcript";
+  if (sticky) {
+    if (force) stickToBottom = true;
+    if (!stickToBottom) return;
+  }
+  requestAnimationFrame(function() {
+    container.scrollTop = container.scrollHeight;
+    // Second pass after paint — content may have grown meanwhile.
+    requestAnimationFrame(function() {
+      if (!sticky || stickToBottom) container.scrollTop = container.scrollHeight;
+    });
+  });
+}
+
+// ── Duration formatting ──
+function formatDuration(ms) {
+  if (ms < 1000) return ms + "ms";
+  var s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + "s";
+  var m = Math.floor(s / 60);
+  var rem = (s % 60).toFixed(0);
+  return m + "m" + rem + "s";
+}
+
 // ── i18n (lightweight, no framework) ──
 // Bilingual PL/EN. Static markup is tagged with data-i18n / data-i18n-ph /
 // data-i18n-title and translated at runtime by applyI18n(). Dynamic strings
@@ -86,10 +125,12 @@ var I18N = {
     "rail.providers": "Providers",
     "rail.memory": "Memory",
     "rail.goal": "Goal",
+    "rail.projects": "Projects",
     "rail.settings": "Settings",
     // sidebar
     "sidebar.newSession": "New session",
     "sidebar.sessions": "Sessions",
+    "sidebar.projects": "Projects",
     "sidebar.model": "Model",
     "sidebar.changeModel": "Click to change model",
     "sidebar.workspace": "Workspace",
@@ -143,14 +184,33 @@ var I18N = {
     "insp.goal": "Goal",
     "insp.transcript": "Transcript",
     "projects.none": "No projects yet. Add the current directory to start.",
-    "projects.useHint": "Click to make active (applies on next launch)",
+    "projects.useHint": "Click to switch workspace",
     "projects.addCwd": "＋ current dir",
-    "projects.note": "Selecting a project sets the sandbox root and preferred model on the next launch.",
+    "projects.note": "Selecting a project switches the workspace immediately for new chats and file browsing.",
+    "projects.addTitle": "Add project",
+    "projects.addHint": "Name + directory. The directory becomes the agent's sandbox root.",
+    "projects.nameLabel": "Name",
+    "projects.namePh": "project name (optional)",
+    "projects.pathLabel": "Directory",
+    "projects.addBtn": "Add project",
+    "projects.pickerOpening": "Opening folder picker…",
+    "projects.selectedToast": "Project switched — workspace updated",
+    "projects.addedToast": "Project added and selected",
+    "projects.removedToast": "Project removed",
+    "projects.errToast": "Projects: ",
     "common.remove": "remove",
     // metrics
     "metric.run": "Run",
     "metric.idle": "idle",
     "metric.tokens": "Tokens",
+    "metric.time": "Time",
+    "metric.tools": "Tools",
+    // run timeline
+    "insp.timeline": "Run timeline",
+    "timeline.args": "arguments",
+    "timeline.result": "result",
+    "timeline.error": "error",
+    "timeline.cancelled": "cancelled",
     // activity / empty states
     "activity.empty": "Tool calls and run events appear here.",
     "sessions.selectHint": "Select a session from the sidebar.",
@@ -317,9 +377,11 @@ var I18N = {
     "rail.providers": "Dostawcy",
     "rail.memory": "Pamięć",
     "rail.goal": "Cel",
+    "rail.projects": "Projekty",
     "rail.settings": "Ustawienia",
     "sidebar.newSession": "Nowa sesja",
     "sidebar.sessions": "Sesje",
+    "sidebar.projects": "Projekty",
     "sidebar.model": "Model",
     "sidebar.changeModel": "Kliknij, aby zmienić model",
     "sidebar.workspace": "Obszar roboczy",
@@ -367,13 +429,31 @@ var I18N = {
     "insp.goal": "Cel",
     "insp.transcript": "Transkrypcja",
     "projects.none": "Brak projektów. Dodaj bieżący katalog, aby zacząć.",
-    "projects.useHint": "Kliknij, aby ustawić aktywny (działa po restarcie)",
+    "projects.useHint": "Kliknij, aby przełączyć obszar roboczy",
     "projects.addCwd": "＋ bieżący katalog",
-    "projects.note": "Wybór projektu ustawia katalog sandboxa i model przy następnym uruchomieniu.",
+    "projects.note": "Wybór projektu od razu przełącza obszar roboczy dla nowych czatów i przeglądania plików.",
+    "projects.addTitle": "Dodaj projekt",
+    "projects.addHint": "Nazwa + katalog. Katalog staje się katalogiem głównym (sandbox) agenta.",
+    "projects.nameLabel": "Nazwa",
+    "projects.namePh": "nazwa projektu (opcjonalna)",
+    "projects.pathLabel": "Katalog",
+    "projects.addBtn": "Dodaj projekt",
+    "projects.pickerOpening": "Otwieranie wyboru folderu…",
+    "projects.selectedToast": "Przełączono projekt — obszar roboczy zaktualizowany",
+    "projects.addedToast": "Dodano i wybrano projekt",
+    "projects.removedToast": "Usunięto projekt",
+    "projects.errToast": "Projekty: ",
     "common.remove": "usuń",
     "metric.run": "Stan",
     "metric.idle": "bezczynny",
     "metric.tokens": "Tokeny",
+    "metric.time": "Czas",
+    "metric.tools": "Narzędzia",
+    "insp.timeline": "Przebieg zadania",
+    "timeline.args": "argumenty",
+    "timeline.result": "wynik",
+    "timeline.error": "błąd",
+    "timeline.cancelled": "anulowano",
     "activity.empty": "Wywołania narzędzi i zdarzenia pojawią się tutaj.",
     "sessions.selectHint": "Wybierz sesję z paska bocznego.",
     "sessions.none": "Brak zapisanych sesji",
@@ -770,9 +850,11 @@ function mdInlineInline(s) {
   return mdInline(escHtml(String(s || "")));
 }
 
+var _thinkIdCounter = 0;
 function renderThinkBlock(text) {
   var content = renderMarkdownish(String(text).trim());
-  return '<details class="think-block">' +
+  var id = "think-" + (++_thinkIdCounter);
+  return '<details class="think-block" data-think-id="' + id + '">' +
     '<summary><span class="think-label">' + escHtml(t("role.thinking")) + '</span><span class="think-line"></span></summary>' +
     '<div class="think-content">' + content + '</div>' +
     '</details>';
@@ -781,6 +863,11 @@ function renderThinkBlock(text) {
 // Render markdown-ish text safely, but split model reasoning tags into a
 // separate OpenCode-like separator instead of showing raw <thinking> inline.
 function renderText(text) {
+  // Think-block ids must be stable across re-renders of the same message,
+  // or the open-state preservation in handleEvent("message") can never
+  // match them again — that was the "thinking collapses while streaming"
+  // glitch. Resetting the counter per render keeps the ids positional.
+  _thinkIdCounter = 0;
   var src = String(text || "");
   var html = "";
   var re = /<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>/ig;
@@ -829,20 +916,13 @@ function showInspector(name) {
 }
 
 // Rail button clicks
-$$(".rail-item").forEach(function(btn) {
-  btn.addEventListener("click", function() {
-    var name = btn.dataset.panel;
-    if (name === "chat") {
-      // Highlight chat rail and show activity inspector
-      $$(".rail-item").forEach(function(b) { b.classList.toggle("active", b.dataset.panel === "chat"); });
-      showInspector("activity");
-      $("#prompt").focus();
-      return;
-    }
-    $$(".rail-item").forEach(function(b) { b.classList.toggle("active", b.dataset.panel === name); });
-    showInspector(name);
+var chatBtn = $("#rail-chat-btn");
+if (chatBtn) {
+  chatBtn.addEventListener("click", function() {
+    showInspector("activity");
+    $("#prompt").focus();
   });
-});
+}
 
 // Inspector tab clicks
 $("#inspector-tabs").addEventListener("click", function(e) {
@@ -885,7 +965,13 @@ var activityList = $("#activity-list");
 var composerStatus = $("#composer-status");
 var metricRunState = $("#metric-run-state");
 var metricTokens   = $("#metric-tokens");
+var metricTools    = $("#metric-tools");
 var topbarReasoning = $("#topbar-reasoning");
+
+// Re-arm / disarm the sticky follow depending on where the user scrolled.
+transcript.addEventListener("scroll", function() {
+  stickToBottom = isNearBottom(transcript);
+});
 
 function dismissWelcome() {
   var card = $("#welcome-card");
@@ -903,7 +989,9 @@ function addMsg(role, text) {
   body.innerHTML = renderText(text);
   m.appendChild(body);
   transcript.appendChild(m);
-  transcript.scrollTop = transcript.scrollHeight;
+  // Your own prompt always snaps to the bottom; streamed assistant
+  // messages respect the sticky state.
+  smartScroll(transcript, role === "user");
   return body;
 }
 
@@ -929,20 +1017,130 @@ function renderChatTranscript(msgs, title) {
   }
   setTopbarTitle(title || t("sessions.untitled"));
   setRunState("idle", t("composer.ready"));
+  smartScroll(transcript, true);
   promptEl.focus();
 }
 
-function addActivity(kind, title, detail) {
+// ── Run timeline (Activity panel) ──
+// The right-hand panel is a chronological timeline of the current run:
+// one step per tool call (with live duration, status colour and expandable
+// args/result), plus compact notes for run-level events. Raw event dumps
+// that merely duplicated the chat are gone.
+var openToolSteps = []; // FIFO of steps still awaiting their tool_result
+var runToolCount = 0;
+
+function clipText(s, n) {
+  s = String(s == null ? "" : s);
+  return s.length > n ? s.slice(0, n) + "\n… (truncated)" : s;
+}
+
+function tlAppend(node) {
   var empty = activityList.querySelector(".empty-state");
   if (empty) empty.remove();
-  var item = el("div", "activity-item" + (kind ? " " + kind : ""));
+  activityList.appendChild(node);
+  activityList.scrollTop = activityList.scrollHeight;
+}
+
+// addActivity renders a compact one-line note in the timeline. Long details
+// stay readable: they expand on click instead of being cut off.
+function addActivity(kind, title, detail) {
+  var item = el("div", "tl-note" + (kind ? " " + kind : ""));
+  var head = el("div", "tl-note-head");
   var strong = el("strong");
   strong.textContent = title;
-  var span = el("span");
-  span.textContent = detail || "";
-  item.appendChild(strong);
-  item.appendChild(span);
-  activityList.insertBefore(item, activityList.firstChild);
+  head.appendChild(strong);
+  item.appendChild(head);
+  if (detail) {
+    var span = el("span", "tl-note-detail");
+    span.textContent = clipText(detail, 4000);
+    item.appendChild(span);
+    item.addEventListener("click", function() { item.classList.toggle("expanded"); });
+  }
+  tlAppend(item);
+}
+
+// tlRunStart resets the per-run counters and adds a run header with the
+// prompt excerpt and wall-clock start time.
+function tlRunStart(promptText) {
+  runToolCount = 0;
+  openToolSteps = [];
+  if (metricTools) metricTools.textContent = "0";
+  var head = el("div", "tl-run");
+  var dot = el("span", "tl-run-dot");
+  var title = el("span", "tl-run-title");
+  title.textContent = (promptText || "").slice(0, 70) || "run";
+  var when = el("span", "tl-run-when");
+  when.textContent = new Date().toLocaleTimeString();
+  head.appendChild(dot);
+  head.appendChild(title);
+  head.appendChild(when);
+  tlAppend(head);
+}
+
+// tlToolStart adds a running step for one tool call.
+function tlToolStart(name, args) {
+  runToolCount++;
+  if (metricTools) metricTools.textContent = String(runToolCount);
+  var step = el("div", "tl-step running");
+  var head = el("div", "tl-head");
+  var status = el("span", "tl-status");
+  var nm = el("span", "tl-name");
+  nm.textContent = name;
+  var dur = el("span", "tl-dur");
+  dur.textContent = "…";
+  head.appendChild(status);
+  head.appendChild(nm);
+  head.appendChild(dur);
+  step.appendChild(head);
+  var body = el("div", "tl-body");
+  body.hidden = true;
+  if (args && args !== "{}") {
+    var lbl = el("div", "tl-body-label");
+    lbl.textContent = t("timeline.args");
+    var pre = el("pre");
+    pre.textContent = clipText(args, 4000);
+    body.appendChild(lbl);
+    body.appendChild(pre);
+  }
+  step.appendChild(body);
+  head.addEventListener("click", function() {
+    if (body.childNodes.length) {
+      body.hidden = !body.hidden;
+      step.classList.toggle("open", !body.hidden);
+    }
+  });
+  step._t0 = performance.now();
+  step._durEl = dur;
+  step._bodyEl = body;
+  openToolSteps.push(step);
+  tlAppend(step);
+}
+
+// tlToolEnd closes the oldest open step with its duration, status colour
+// and the (expandable) result or error text.
+function tlToolEnd(output, err) {
+  var step = openToolSteps.shift();
+  if (!step) return;
+  step.classList.remove("running");
+  step.classList.add(err ? "err" : "ok");
+  step._durEl.textContent = formatDuration(Math.round(performance.now() - step._t0));
+  var lbl = el("div", "tl-body-label");
+  lbl.textContent = err ? t("timeline.error") : t("timeline.result");
+  var pre = el("pre");
+  pre.textContent = clipText(err || output || "(empty)", 4000);
+  step._bodyEl.appendChild(lbl);
+  step._bodyEl.appendChild(pre);
+}
+
+// tlSettleOpenSteps marks any steps still "running" (stream aborted or
+// errored mid-tool) so nothing keeps spinning forever.
+function tlSettleOpenSteps() {
+  while (openToolSteps.length) {
+    var step = openToolSteps.shift();
+    step.classList.remove("running");
+    step.classList.add("err");
+    step._durEl.textContent = t("timeline.cancelled");
+  }
 }
 
 function setRunState(state, text) {
@@ -954,7 +1152,7 @@ function setRunState(state, text) {
 }
 
 function addToolCall(name, args) {
-  addActivity("tool-call", "tool: " + name, args || "{}");
+  tlToolStart(name, args);
   var t = el("div", "tool-card");
   t.innerHTML = '<div class="tool-name">\u2699 ' + escHtml(name) + "</div>";
   if (args && args !== "{}") {
@@ -963,25 +1161,25 @@ function addToolCall(name, args) {
     t.appendChild(d);
   }
   transcript.appendChild(t);
-  transcript.scrollTop = transcript.scrollHeight;
+  smartScroll(transcript);
 }
 
 function addToolResult(output, err) {
   var cls = err ? "tool-error" : "tool-success";
-  addActivity(err ? "err" : "ok", err ? "tool error" : "tool result", (err || output || "(empty)").slice(0, 200));
+  tlToolEnd(output, err);
   var t = el("div", "tool-card " + cls);
   var d = el("details");
   d.innerHTML = "<summary>" + (err ? "error" : "result") + "</summary><pre>" + escHtml(err || output || "(empty)") + "</pre>";
   t.appendChild(d);
   transcript.appendChild(t);
-  transcript.scrollTop = transcript.scrollHeight;
+  smartScroll(transcript);
 }
 
 function addMarker(text) {
   var m = el("div", "marker");
   m.textContent = "\u2014 " + text + " \u2014";
   transcript.appendChild(m);
-  transcript.scrollTop = transcript.scrollHeight;
+  smartScroll(transcript);
 }
 
 async function sendPrompt(text) {
@@ -994,9 +1192,25 @@ async function sendPrompt(text) {
   sendBtn.classList.add("btn-stop");
   sendBtn.type = "button"; // prevent form submit while stopping
   setRunState("running", t("composer.working"));
-  addActivity("", "user prompt", text.slice(0, 180));
+  tlRunStart(text);
   addMsg("user", text);
   var current = null;
+  // Start duration timer: topbar pill + Time metric + open timeline steps.
+  runStartTime = Date.now();
+  var metricTime = $("#metric-time");
+  var topbarDur = $("#topbar-duration");
+  if (metricTime) metricTime.textContent = "0.0s";
+  if (topbarDur) { topbarDur.textContent = "0.0s"; topbarDur.classList.add("visible"); }
+  if (runTimerInterval) clearInterval(runTimerInterval);
+  runTimerInterval = setInterval(function() {
+    var elapsed = Date.now() - runStartTime;
+    if (metricTime) metricTime.textContent = formatDuration(elapsed);
+    if (topbarDur) topbarDur.textContent = formatDuration(elapsed);
+    // Tick the still-running tool steps too.
+    for (var i = 0; i < openToolSteps.length; i++) {
+      openToolSteps[i]._durEl.textContent = formatDuration(Math.round(performance.now() - openToolSteps[i]._t0));
+    }
+  }, 100);
 
   try {
     var resp = await fetch("/api/chat", {
@@ -1042,6 +1256,10 @@ async function sendPrompt(text) {
   } finally {
     streaming = false;
     abortController = null;
+    // Stop timer if still running (error/abort cases)
+    if (runTimerInterval) { clearInterval(runTimerInterval); runTimerInterval = null; }
+    // Steps still open at this point will never get a result event.
+    tlSettleOpenSteps();
     // Restore button to Send
     sendBtn.textContent = t("composer.send");
     sendBtn.classList.remove("btn-stop");
@@ -1063,8 +1281,25 @@ function handleEvent(ev, current) {
     case "message":
       if (!current) current = addMsg("assistant", "");
       current._raw = (current._raw || "") + ev.text;
+      // Preserve <details> open state across re-renders to prevent
+      // thinking-block glitch when user clicks during streaming.
+      var openDetails = current.querySelectorAll("details[open]");
+      var openKeys = {};
+      for (var di = 0; di < openDetails.length; di++) {
+        var dk = openDetails[di].getAttribute("data-think-id");
+        if (dk) openKeys[dk] = true;
+      }
       current.innerHTML = renderText(current._raw);
-      transcript.scrollTop = transcript.scrollHeight;
+      // Restore open state
+      if (Object.keys(openKeys).length) {
+        var restored = current.querySelectorAll("details[data-think-id]");
+        for (var ri = 0; ri < restored.length; ri++) {
+          if (openKeys[restored[ri].getAttribute("data-think-id")]) {
+            restored[ri].open = true;
+          }
+        }
+      }
+      smartScroll(transcript);
       return current;
     case "session":
       if (ev.session_id) activeSessionID = ev.session_id;
@@ -1094,10 +1329,28 @@ function handleEvent(ev, current) {
       addActivity("", "notice", ev.text || "");
       return current;
     case "done":
+      // Stop timer and compute final elapsed
+      if (runTimerInterval) { clearInterval(runTimerInterval); runTimerInterval = null; }
+      var elapsed = runStartTime ? (Date.now() - runStartTime) : 0;
+      var elapsedStr = formatDuration(elapsed);
+      var metricTime = $("#metric-time");
+      var topbarDur = $("#topbar-duration");
+      if (metricTime) metricTime.textContent = elapsedStr;
+      if (topbarDur) { topbarDur.textContent = elapsedStr; topbarDur.classList.add("visible"); }
       metricTokens.textContent = String(ev.tok_total || 0);
-      setRunState("idle", t("run.done") + " \u00b7 " + t("run.tokens") + ": " + (ev.tok_total || 0));
-      addMarker("done \u00b7 tokens: " + (ev.tok_total || 0));
-      addActivity("ok", "done", "tokens: " + (ev.tok_total || 0));
+      setRunState("idle", t("run.done") + " \u00b7 " + elapsedStr + " \u00b7 " + t("run.tokens") + ": " + (ev.tok_total || 0));
+      addMarker("done \u00b7 " + elapsedStr + " \u00b7 tokens: " + (ev.tok_total || 0));
+      addActivity("ok", "done", elapsedStr + " \u00b7 tokens: " + (ev.tok_total || 0));
+      // Add duration badge to last assistant message
+      var msgs = transcript.querySelectorAll(".message.assistant");
+      if (msgs.length) {
+        var lastMsg = msgs[msgs.length - 1];
+        if (!lastMsg.querySelector(".msg-duration")) {
+          var durBadge = el("span", "msg-duration");
+          durBadge.textContent = elapsedStr;
+          lastMsg.appendChild(durBadge);
+        }
+      }
       playNotifySound();
       scheduleRefresh();
       return null;
@@ -1640,23 +1893,205 @@ loaders.projects = async function() {
   }
 };
 
-async function projectAction(action, target) {
+// ── Toast Notification ──
+function showToast(msg, duration) {
+  duration = duration || 2500;
+  var old = $(".toast-msg");
+  if (old) old.remove();
+  var t = el("div", "toast-msg");
+  t.textContent = msg;
+  document.body.appendChild(t);
+  // Force reflow for animation
+  t.offsetHeight;
+  t.classList.add("visible");
+  setTimeout(function() { t.classList.remove("visible"); }, duration);
+  setTimeout(function() { if (t.parentNode) t.remove(); }, duration + 400);
+}
+
+async function projectAction(action, target, name) {
   try {
     var r = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: action, target: target || "" })
+      body: JSON.stringify({ action: action, target: target || "", name: name || "" })
     });
-    if (!r.ok) { alert("Projects: " + (await r.text())); return; }
+    if (!r.ok) { showToast(t("projects.errToast") + (await r.text()), 5000); return false; }
     await loaders.projects();
+    if (loaders.sidebarProjects) await loaders.sidebarProjects();
+    if (loaders.railProjects) await loaders.railProjects();
+    if (typeof checkHealth === "function") await checkHealth();
+    if (action === "use" || action === "select") {
+      showToast(t("projects.selectedToast"));
+    } else if (action === "add") {
+      showToast(t("projects.addedToast"), 3000);
+    } else if (action === "remove" || action === "delete") {
+      showToast(t("projects.removedToast"));
+    }
+    return true;
   } catch (e) {
-    alert("Projects: " + e.message);
+    showToast(t("projects.errToast") + e.message, 5000);
+    return false;
   }
+}
+
+// ── Sidebar Projects ──
+loaders.sidebarProjects = async function() {
+  var list = $("#sidebar-projects-list");
+  if (!list) return;
+  list.innerHTML = "";
+  try {
+    var r = await fetch("/api/projects");
+    var j = await r.json();
+    var rows = (j && j.projects) || [];
+    if (!rows.length) {
+      list.innerHTML = '<div class="sidebar-proj-empty">' + escHtml(t("projects.none")) + '</div>';
+      return;
+    }
+    rows.forEach(function(p) {
+      var item = el("div", "sidebar-proj-item" + (p.active ? " active" : ""));
+      var icon = el("span", "sidebar-proj-icon");
+      icon.textContent = p.active ? "★" : "◇";
+      var info = el("div");
+      info.style.cssText = "flex:1;min-width:0;overflow:hidden";
+      info.innerHTML =
+        '<div class="sidebar-proj-name">' + escHtml(p.name) + '</div>' +
+        '<div class="sidebar-proj-path">' + escHtml(p.path || p.cwd || "") + '</div>';
+      item.appendChild(icon);
+      item.appendChild(info);
+      item.title = t("projects.useHint");
+      item.addEventListener("click", function() { projectAction("use", p.path); });
+      list.appendChild(item);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="sidebar-proj-empty">' + escHtml(t("common.error") + e.message) + '</div>';
+  }
+};
+
+// ── Rail Projects ──
+loaders.railProjects = async function() {
+  var rail = $("#rail-projects");
+  if (!rail) return;
+  rail.innerHTML = "";
+  try {
+    var r = await fetch("/api/projects");
+    var j = await r.json();
+    var rows = (j && j.projects) || [];
+    rows.forEach(function(p) {
+      var btn = el("button", "rail-proj-btn" + (p.active ? " active" : ""));
+      btn.title = p.name + "\n" + (p.path || p.cwd || "");
+      var initial = el("span", "proj-initial");
+      initial.textContent = (p.name || "?").charAt(0).toUpperCase();
+      btn.appendChild(initial);
+      btn.addEventListener("click", function() { projectAction("use", p.path); });
+      rail.appendChild(btn);
+    });
+  } catch (e) { /* silent */ }
+};
+
+// ── Add Project Dialog ──
+// Flow: native Windows folder picker first; the picked (or manually typed)
+// path lands in a small confirm dialog with an editable display name, so a
+// project is always "name + path". Cancelling the picker just falls back to
+// typing the path by hand.
+async function showAddProjectDialog() {
+  var pickedPath = "";
+  try {
+    showToast(t("projects.pickerOpening"), 1200);
+    var resp = await fetch("/api/folder-picker");
+    if (!resp.ok) throw new Error((await resp.text()) || ("HTTP " + resp.status));
+    var data = await resp.json();
+    if (data.path && data.path.length > 0) {
+      pickedPath = data.path;
+    }
+  } catch (e) {
+    console.warn("[folder-picker] failed, falling back to manual:", e);
+  }
+  openAddProjectForm(pickedPath);
+}
+
+function openAddProjectForm(prefillPath) {
+  var old = $("#add-project-dialog");
+  if (old) old.remove();
+
+  var overlay = el("div", "modal-overlay");
+  overlay.id = "add-project-dialog";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center";
+
+  var box = el("div", "add-project-card");
+  box.innerHTML =
+    '<h3>' + escHtml(t("projects.addTitle")) + '</h3>' +
+    '<p>' + escHtml(t("projects.addHint")) + '</p>';
+
+  function basename(p) {
+    var parts = String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/);
+    return parts[parts.length - 1] || "";
+  }
+
+  var nameLbl = el("label");
+  nameLbl.textContent = t("projects.nameLabel");
+  var nameInput = el("input", "field-input");
+  nameInput.type = "text";
+  nameInput.placeholder = t("projects.namePh");
+  nameInput.value = basename(prefillPath);
+
+  var pathLbl = el("label");
+  pathLbl.textContent = t("projects.pathLabel");
+  var pathInput = el("input", "field-input");
+  pathInput.type = "text";
+  pathInput.placeholder = "C:\\path\\to\\project";
+  pathInput.style.fontFamily = "var(--mono)";
+  pathInput.value = prefillPath || "";
+  // Keep the suggested name in sync while the user types the path, until
+  // they edit the name themselves.
+  var nameTouched = !!nameInput.value;
+  nameInput.addEventListener("input", function() { nameTouched = true; });
+  pathInput.addEventListener("input", function() {
+    if (!nameTouched) nameInput.value = basename(pathInput.value);
+    else if (!nameInput.value) { nameTouched = false; nameInput.value = basename(pathInput.value); }
+  });
+
+  box.appendChild(nameLbl);
+  box.appendChild(nameInput);
+  box.appendChild(pathLbl);
+  box.appendChild(pathInput);
+
+  var btnRow = el("div", "add-project-actions");
+
+  var cancelBtn = el("button", "btn btn-ghost btn-small");
+  cancelBtn.textContent = t("common.cancel");
+  cancelBtn.addEventListener("click", function() { overlay.remove(); });
+
+  var addBtn = el("button", "btn btn-primary btn-small");
+  addBtn.textContent = "＋ " + t("projects.addBtn");
+  addBtn.addEventListener("click", async function() {
+    var target = pathInput.value.trim();
+    if (!target) { pathInput.focus(); return; }
+    var ok = await projectAction("add", target, nameInput.value.trim());
+    if (ok) overlay.remove();
+  });
+
+  function keyNav(e) {
+    if (e.key === "Enter") { addBtn.click(); }
+    if (e.key === "Escape") { overlay.remove(); }
+  }
+  nameInput.addEventListener("keydown", keyNav);
+  pathInput.addEventListener("keydown", keyNav);
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(addBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  (prefillPath ? nameInput : pathInput).focus();
 }
 
 // ── Reload Buttons ──
 $("#reload-projects").addEventListener("click", function() { loaders.projects(); });
 $("#project-add-cwd").addEventListener("click", function() { projectAction("add", ""); });
+if ($("#sidebar-reload-projects")) $("#sidebar-reload-projects").addEventListener("click", function() { loaders.sidebarProjects(); });
+if ($("#sidebar-add-project")) $("#sidebar-add-project").addEventListener("click", function() { showAddProjectDialog(); });
+if ($("#rail-add-project")) $("#rail-add-project").addEventListener("click", function() { showAddProjectDialog(); });
 $("#reload-sessions").addEventListener("click", function() { loaders.sessions(); });
 $("#reload-stats").addEventListener("click", function() { loaders.stats(); });
 $("#reload-models").addEventListener("click", function() { loaders.models(); });
@@ -1665,6 +2100,9 @@ $("#reload-context").addEventListener("click", function() { loaders.context(); }
 $("#reload-memory").addEventListener("click", function() { loaders.memory(); });
 $("#reload-goal").addEventListener("click", function() { loaders.goal(); });
 $("#clear-activity").addEventListener("click", function() {
+  openToolSteps = [];
+  runToolCount = 0;
+  if (metricTools) metricTools.textContent = "0";
   activityList.innerHTML = '<div class="empty-state">' + escHtml(t("activity.empty")) + '</div>';
 });
 
@@ -3028,6 +3466,8 @@ hydrateFromServer();
 autoScanModels().then(function() { return loaders.models(); });
 checkHealth();
 loaders.sessions();
+loaders.sidebarProjects();
+loaders.railProjects();
 loaders.models();
 setInterval(checkHealth, 15000);
 promptEl.focus();

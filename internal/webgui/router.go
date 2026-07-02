@@ -65,6 +65,9 @@ func (s *Server) Handler() http.Handler {
 	// SSE chat stream.
 	mux.HandleFunc("/api/chat", s.handleChat)
 
+	// Native folder picker (Windows dialog)
+	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
+
 	return s.withLocalGuard(mux)
 }
 

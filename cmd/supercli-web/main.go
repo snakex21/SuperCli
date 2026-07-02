@@ -21,6 +21,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/storage"
+	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
 	"supercli/internal/webgui"
 )
@@ -50,12 +51,28 @@ func main() {
 		fatal("ensure data dir", err)
 	}
 
+	// Match CLI project startup semantics: when no explicit --home or
+	// SUPERCLI_HOME is provided, the active named workspace becomes the web
+	// sandbox root. Without this, selecting projects in the UI only changed
+	// workspace.json and never affected the actual web engine.
+	workspace := memory.LoadWorkspace(dataDir)
+	activeProject, hasActiveProject := workspace.ActiveProject()
+	activeProjectApplied := false
+	if hasActiveProject && *homeFlag == "" && os.Getenv(storage.HomeEnv) == "" {
+		if fi, statErr := os.Stat(activeProject.Path); statErr == nil && fi.IsDir() {
+			home = activeProject.Path
+			activeProjectApplied = true
+		}
+	}
+
 	if *echoFlag {
 		*keyFlag = ""
 		*providerFlag = config.ProviderEcho
 	}
-	cwd, _ := os.Getwd()
-	tomlCfg, tomlErr := config.ResolveConfig(dataDir, cwd, "")
+	// Resolve project config against the effective sandbox root, not merely
+	// the process cwd. This keeps web project switching aligned with the file
+	// tools, file browser and displayed workspace.
+	tomlCfg, tomlErr := config.ResolveConfig(dataDir, home, "")
 	cfg, err := config.Load(config.FlagOverrides{
 		Provider: *providerFlag,
 		APIKey:   *keyFlag,
@@ -91,6 +108,26 @@ func main() {
 						break
 					}
 				}
+			}
+		}
+		// Active project's preferred model/provider: more specific than the web
+		// last-model setting, but explicit flags/env still win.
+		if activeProjectApplied {
+			if activeProject.Provider != "" && *providerFlag == "" && os.Getenv("SUPERCLI_LLM_PROVIDER") == "" {
+				for _, p := range tomlCfg.Providers {
+					if p.Name == activeProject.Provider {
+						cfg.Provider = p.Type
+						cfg.BaseURL = p.BaseURL
+						cfg.APIKey = p.APIKey
+						break
+					}
+				}
+			}
+			if activeProject.Model != "" && *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
+				cfg.Model = activeProject.Model
+			}
+			if err := cfg.Normalize(); err != nil {
+				log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
 			}
 		}
 		// Restore saved reasoning effort

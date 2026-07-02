@@ -79,7 +79,20 @@ func (e *Engine) ModelName() string {
 }
 
 // Home returns the file-sandbox root.
-func (e *Engine) Home() string { return e.home }
+func (e *Engine) Home() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.home
+}
+
+// setHome updates the file-sandbox root for future web requests. Web runs
+// build a fresh agent loop per /api/chat request, so unlike the TUI this can
+// take effect immediately for subsequent chats and file-browser calls.
+func (e *Engine) setHome(home string) {
+	e.mu.Lock()
+	e.home = home
+	e.mu.Unlock()
+}
 
 // DataDir returns the SuperCli data directory.
 func (e *Engine) DataDir() string { return e.dataDir }
@@ -136,7 +149,7 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 // sync with changes made by the TUI or by this GUI.
 func (e *Engine) providerManager() *providers.Manager {
 	m := providers.NewManager(e.dataDir)
-	_, projectPath := config.FindTomlPaths(e.dataDir, e.home)
+	_, projectPath := config.FindTomlPaths(e.dataDir, e.Home())
 	m.SetActiveConfigPath(projectPath)
 	m.Reload()
 	m.LoadHiddenState()

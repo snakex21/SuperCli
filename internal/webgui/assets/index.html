@@ -13,14 +13,11 @@
     <!-- ═══ RAIL (left icon bar) ═══ -->
     <nav class="app-rail" aria-label="Navigation rail" data-i18n-title="rail.nav">
       <div class="rail-logo" title="SuperCli">◆</div>
-      <button class="rail-item active" data-panel="chat" title="Chat" data-i18n-title="rail.chat">
+      <button class="rail-item active" id="rail-chat-btn" title="Chat" data-i18n-title="rail.chat">
         ⌘<span class="status-dot" id="rail-status"></span>
       </button>
-      <button class="rail-item" data-panel="sessions" title="Sessions" data-i18n-title="rail.sessions">◷</button>
-      <button class="rail-item" data-panel="models" title="Models" data-i18n-title="rail.models">◉</button>
-      <button class="rail-item" data-panel="providers" title="Providers" data-i18n-title="rail.providers">＋</button>
-      <button class="rail-item" data-panel="memory" title="Memory" data-i18n-title="rail.memory">◇</button>
-      <button class="rail-item" data-panel="goal" title="Goal" data-i18n-title="rail.goal">✓</button>
+      <div class="rail-projects" id="rail-projects"></div>
+      <button class="rail-item rail-add-proj" id="rail-add-project" title="Add project" data-i18n-title="projects.addTitle">＋</button>
       <div class="rail-spacer"></div>
       <button class="rail-item" id="settings-btn" title="Settings" data-i18n-title="rail.settings">⚙</button>
     </nav>
@@ -52,6 +49,18 @@
         <span class="ns-plus">＋</span><span data-i18n="sidebar.newSession">New session</span>
       </button>
 
+      <!-- Projects list -->
+      <div class="sidebar-section sidebar-projects">
+        <div class="section-label">
+          <span data-i18n="sidebar.projects">Projects</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-tiny btn-primary" id="sidebar-add-project" type="button" title="Add project" data-i18n-title="projects.addTitle">＋</button>
+            <button class="btn btn-tiny btn-ghost" id="sidebar-reload-projects" data-i18n="common.refresh">↻</button>
+          </div>
+        </div>
+        <div id="sidebar-projects-list" class="sidebar-proj-list"></div>
+      </div>
+
       <!-- Sessions list -->
       <div class="sidebar-section">
         <div class="section-label">
@@ -69,6 +78,7 @@
       <header class="app-topbar">
         <div class="topbar-left">
           <h1 data-i18n="topbar.title">New Session</h1>
+          <span class="topbar-duration" id="topbar-duration"></span>
         </div>
         <div class="topbar-actions">
           <!-- Model picker -->
@@ -133,14 +143,11 @@
         <button class="inspector-tab active" data-inspector="activity" data-i18n="insp.activity">Activity</button>
         <button class="inspector-tab" data-inspector="sessions" data-i18n="insp.history">History</button>
         <button class="inspector-tab" data-inspector="stats" data-i18n="insp.usage">Usage</button>
-        <button class="inspector-tab" data-inspector="models" data-i18n="insp.models">Models</button>
-        <button class="inspector-tab" data-inspector="providers" data-i18n="insp.providers">Providers</button>
-        <button class="inspector-tab" data-inspector="codex" data-i18n="insp.codex">Codex</button>
         <button class="inspector-tab" data-inspector="context" data-i18n="insp.context">Context</button>
         <button class="inspector-tab" data-inspector="files" data-i18n="insp.files">Files</button>
-        <button class="inspector-tab" data-inspector="projects" data-i18n="insp.projects">Projects</button>
         <button class="inspector-tab" data-inspector="memory" data-i18n="insp.memory">Memory</button>
         <button class="inspector-tab" data-inspector="goal" data-i18n="insp.goal">Goal</button>
+        <button class="inspector-tab" data-inspector="projects" data-i18n="insp.projects">Projects</button>
       </nav>
 
       <div class="inspector-panels">
@@ -156,12 +163,20 @@
               <span class="metric-label" data-i18n="metric.tokens">Tokens</span>
               <span class="metric-value" id="metric-tokens">0</span>
             </div>
+            <div class="mini-metric">
+              <span class="metric-label" data-i18n="metric.time">Time</span>
+              <span class="metric-value" id="metric-time">—</span>
+            </div>
+            <div class="mini-metric">
+              <span class="metric-label" data-i18n="metric.tools">Tools</span>
+              <span class="metric-value" id="metric-tools">0</span>
+            </div>
           </div>
           <div class="section-label" style="margin-top:4px">
-            <span data-i18n="insp.activity">Activity</span>
+            <span data-i18n="insp.timeline">Run timeline</span>
             <button class="btn btn-tiny btn-ghost" id="clear-activity" data-i18n="common.clear">clear</button>
           </div>
-          <div id="activity-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+          <div id="activity-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:6px">
             <div class="empty-state" data-i18n="activity.empty">Tool calls and run events appear here.</div>
           </div>
         </div>
@@ -171,7 +186,7 @@
           <div class="section-label">
             <span data-i18n="insp.transcript">Transcript</span>
           </div>
-          <div id="session-transcript" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+          <div id="session-transcript" class="inspector-scroll" style="display:flex;flex-direction:column;gap:8px">
             <div class="empty-state" data-i18n="sessions.selectHint">Select a session from the sidebar.</div>
           </div>
         </div>
@@ -182,7 +197,7 @@
             <span data-i18n="insp.usage">Usage</span>
             <button class="btn btn-tiny btn-ghost" id="reload-stats" data-i18n="common.refresh">refresh</button>
           </div>
-          <div id="stats-cards" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div id="stats-cards" class="stats-grid"></div>
         </div>
 
         <!-- Models panel -->
@@ -196,7 +211,7 @@
             <select id="reasoning-select" class="field-select"></select>
             <small id="reasoning-status">—</small>
           </div>
-          <div id="models-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+          <div id="models-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:2px"></div>
         </div>
 
         <!-- Providers panel -->
@@ -210,7 +225,7 @@
             <strong data-i18n="providers.add">Add provider</strong>
             <small data-i18n="providers.addHint">Open setup popup with templates and custom endpoint config.</small>
           </button>
-          <div id="providers-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+          <div id="providers-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:2px"></div>
         </div>
 
         <!-- Codex panel -->
@@ -219,7 +234,7 @@
             <span data-i18n="codex.accounts">Codex Accounts</span>
             <button class="btn btn-tiny btn-ghost" id="reload-codex" data-i18n="common.refresh">refresh</button>
           </div>
-          <div id="codex-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+          <div id="codex-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:4px"></div>
         </div>
 
         <!-- Context panel -->
@@ -237,7 +252,7 @@
             <span data-i18n="insp.files">Files</span>
             <button class="btn btn-tiny btn-ghost" id="reload-files" data-i18n="common.refresh">refresh</button>
           </div>
-          <div id="file-browser" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
+          <div id="file-browser" class="inspector-scroll" style="display:flex;flex-direction:column;gap:2px">
             <div class="empty-state" data-i18n="common.loading">Loading…</div>
           </div>
         </div>
@@ -251,10 +266,10 @@
               <button class="btn btn-tiny btn-primary" id="project-add-cwd" type="button" data-i18n="projects.addCwd">＋ current dir</button>
             </div>
           </div>
-          <div id="projects-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+          <div id="projects-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:4px">
             <div class="empty-state" data-i18n="common.loading">Loading…</div>
           </div>
-          <small class="empty-state" style="margin-top:6px" data-i18n="projects.note">Selecting a project sets the sandbox root and preferred model on the next launch.</small>
+          <small class="empty-state" style="margin-top:6px" data-i18n="projects.note">Selecting a project switches the workspace immediately for new chats and file browsing.</small>
         </div>
 
         <!-- Memory panel -->
@@ -263,7 +278,7 @@
             <span data-i18n="insp.memory">Memory</span>
             <button class="btn btn-tiny btn-ghost" id="reload-memory" data-i18n="common.refresh">refresh</button>
           </div>
-          <div id="memory-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+          <div id="memory-list" class="inspector-scroll" style="display:flex;flex-direction:column;gap:2px"></div>
         </div>
 
         <!-- Goal panel -->
