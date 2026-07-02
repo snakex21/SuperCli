@@ -430,6 +430,12 @@ func probeProvider(p config.ProviderConf) (bool, error) {
 		return false, fmt.Errorf("no base URL configured")
 	}
 	base := strings.TrimRight(p.BaseURL, "/")
+	if p.Type == config.ProviderAnthropic {
+		// Anthropic base URLs may be pasted as the full ".../v1/messages"
+		// endpoint; normalize back to the version root so the probe hits
+		// ".../v1/models" rather than ".../v1/messages/v1/models".
+		base = llm.NormalizeAnthropicBaseURL(p.BaseURL)
+	}
 	var url string
 	if strings.HasSuffix(base, "/v1") {
 		url = base + "/models"
@@ -490,7 +496,7 @@ type PredefinedProvider struct {
 func PredefinedProviders() []PredefinedProvider {
 	return []PredefinedProvider{
 		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "ChatGPT account or API key"},
-		{Name: "anthropic", Type: config.ProviderAnthropic, BaseURL: "https://api.anthropic.com/v1", Desc: "Claude 4, Claude 3.5"},
+		{Name: "anthropic", Type: config.ProviderAnthropic, BaseURL: "https://api.anthropic.com/v1", Desc: "Claude Opus 4.8, Sonnet 4.6, Haiku 4.5"},
 		{Name: "google", Type: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Desc: "Gemini 2.5, Gemini 2.0"},
 		{Name: "groq", Type: "openai", BaseURL: "https://api.groq.com/openai/v1", Desc: "Fast inference (Llama, Mixtral)"},
 		{Name: "together", Type: "openai", BaseURL: "https://api.together.xyz/v1", Desc: "Open-source models cloud"},

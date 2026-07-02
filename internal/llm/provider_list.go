@@ -129,7 +129,7 @@ func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string,
 		return ids, nil
 	}
 	providerListCache.mu.Unlock()
-	base := strings.TrimRight(baseURL, "/")
+	base := NormalizeAnthropicBaseURL(baseURL)
 	u := base + "/models"
 	if !strings.HasSuffix(base, "/v1") {
 		u = base + "/v1/models"

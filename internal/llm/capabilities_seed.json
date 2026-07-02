@@ -83,36 +83,40 @@
     "context_length": 200000
   },
   {
-    "id": "claude-3-5-sonnet-latest",
+    "id": "claude-fable-5",
     "provider": "anthropic",
     "vision": true,
     "tool_use": true,
     "stream": true,
+    "reasoning": true,
+    "context_length": 1000000
+  },
+  {
+    "id": "claude-haiku-4-5-20251001",
+    "provider": "anthropic",
+    "vision": true,
+    "tool_use": true,
+    "stream": true,
+    "reasoning": true,
     "context_length": 200000
   },
   {
-    "id": "claude-3-5-haiku-latest",
+    "id": "claude-opus-4-8",
     "provider": "anthropic",
     "vision": true,
     "tool_use": true,
     "stream": true,
-    "context_length": 200000
+    "reasoning": true,
+    "context_length": 1000000
   },
   {
-    "id": "claude-3-opus-latest",
+    "id": "claude-sonnet-4-6",
     "provider": "anthropic",
     "vision": true,
     "tool_use": true,
     "stream": true,
-    "context_length": 200000
-  },
-  {
-    "id": "claude-3-sonnet-20240229",
-    "provider": "anthropic",
-    "vision": true,
-    "tool_use": true,
-    "stream": true,
-    "context_length": 200000
+    "reasoning": true,
+    "context_length": 1000000
   },
   {
     "id": "llama-3.1-70b",
