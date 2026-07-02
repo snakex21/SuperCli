@@ -128,7 +128,13 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 		// Derive a cancellable child context so the idle watchdog can
 		// abort a stalled stream. cancel runs after the read completes.
 		reqCtx, cancel := context.WithCancel(ctx)
-		resp, err := p.do(reqCtx, body)
+		notify := func(msg string) {
+			select {
+			case out <- Delta{Notice: msg}:
+			case <-ctx.Done():
+			}
+		}
+		resp, err := p.do(reqCtx, body, notify)
 		if err != nil {
 			cancel()
 			select {
@@ -145,9 +151,15 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	return out, nil
 }
 
-func (p *AnthropicProvider) do(ctx context.Context, body []byte) (*http.Response, error) {
+// do posts the request with the same bounded 429/5xx retry policy as
+// the OpenAI provider: up to maxAttempts total, Retry-After honoured
+// (clamped by rateLimitWaitBudget), a notify callback per wait so the
+// UI shows the rate-limit pause. notify may be nil.
+func (p *AnthropicProvider) do(ctx context.Context, body []byte, notify func(string)) (*http.Response, error) {
+	const maxAttempts = 3
+	waitBudget := rateLimitWaitBudget
 	thinkingRetried := false
-	for {
+	for attempt := 1; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -174,7 +186,20 @@ func (p *AnthropicProvider) do(ctx context.Context, body []byte) (*http.Response
 				continue
 			}
 		}
-		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody))
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
+		if !retryable || attempt >= maxAttempts {
+			return nil, fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))
+		}
+		backoff := retryWait(resp.Header, attempt, waitBudget)
+		waitBudget -= backoff
+		if notify != nil {
+			notify(rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, attempt, maxAttempts))
+		}
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 

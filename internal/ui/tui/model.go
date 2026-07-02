@@ -1355,6 +1355,13 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()
+	case agent.NoticeEvent:
+		// Provider status (e.g. rate-limit retry wait) — show it so
+		// the user knows the run is waiting, not hung.
+		line := fmt.Sprintf("[%s]", e.Text)
+		m.appendLine(line)
+		m.appendLineToTranscript(line)
+		return m, m.waitForNextEvent()
 	}
 	return m, m.waitForNextEvent()
 }

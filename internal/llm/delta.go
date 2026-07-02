@@ -41,6 +41,13 @@ type Delta struct {
 	// one Delta with Err set (and nothing else) before closing
 	// the channel on a stream error.
 	Err error
+
+	// Notice is an informational, NON-terminal status line for the
+	// user ("rate limited, retrying in 2s…"). It is not assistant
+	// content: consumers must surface it in the UI/log but never
+	// append it to the conversation history. A Delta carrying a
+	// Notice carries nothing else.
+	Notice string
 }
 
 // ToolCall is a single tool invocation requested by the model. The
