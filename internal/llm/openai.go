@@ -193,11 +193,16 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		}
 
 		// HTTP request with bounded retry: 429 and 5xx
-		// responses are retried up to maxAttempts total with
-		// exponential backoff (0.5s, 1s). Other statuses and
-		// transport errors fail immediately.
+		// responses are retried up to maxAttempts total. The wait
+		// honours the Retry-After header when present (seconds or
+		// HTTP-date), falling back to exponential backoff (0.5s,
+		// 1s); total sleep is capped by rateLimitWaitBudget. Each
+		// retry emits a Delta.Notice so the UI shows the wait
+		// instead of appearing hung. Other statuses and transport
+		// errors fail immediately.
 		url := p.cfg.BaseURL + "/chat/completions"
 		const maxAttempts = 3
+		waitBudget := rateLimitWaitBudget
 		var resp *http.Response
 		// streamCancel cancels the request context of the attempt that
 		// actually proceeds to streaming. It is invoked after the read
@@ -249,12 +254,18 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
 			if !retryable || attempt >= maxAttempts {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body))}:
+				case out <- Delta{Err: fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))}:
 				case <-ctx.Done():
 				}
 				return
 			}
-			backoff := 500 * time.Millisecond << (attempt - 1)
+			backoff := retryWait(resp.Header, attempt, waitBudget)
+			waitBudget -= backoff
+			select {
+			case out <- Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, attempt, maxAttempts)}:
+			case <-ctx.Done():
+				return
+			}
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():

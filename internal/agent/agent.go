@@ -205,6 +205,16 @@ type AutoCompactEvent struct {
 
 func (AutoCompactEvent) event() {}
 
+// NoticeEvent is a non-terminal, informational status line from the
+// provider layer (llm.Delta.Notice) — e.g. "rate limited, retrying
+// in 2s". It is UI/log-only: the text is never appended to the
+// conversation history, so the model never sees it.
+type NoticeEvent struct {
+	Text string
+}
+
+func (NoticeEvent) event() {}
+
 // ErrorEvent is the terminal event of a failed run.
 type ErrorEvent struct {
 	Err error

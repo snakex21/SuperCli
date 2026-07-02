@@ -2120,6 +2120,10 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		switch e := ev.(type) {
 		case agent.MessageEvent:
 			fmt.Println(e.Text)
+		case agent.NoticeEvent:
+			// Provider status (rate-limit retry etc.) — stderr so it
+			// never pollutes the assistant output on stdout.
+			fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
 		case agent.DoneEvent:
 			// Real provider-reported token usage for this run
 			// (exact, not an estimate). Printed to stderr so it

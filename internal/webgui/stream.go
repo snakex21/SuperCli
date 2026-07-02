@@ -58,6 +58,8 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "sisyphus", Step: e.Step, Text: e.Text}, true
 	case agent.AutoCompactEvent:
 		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, window %d", e.Reason, e.Removed, e.Window)}, true
+	case agent.NoticeEvent:
+		return wireEvent{Type: "notice", Text: e.Text}, true
 	case agent.DoneEvent:
 		return wireEvent{
 			Type:     "done",

@@ -1228,6 +1228,16 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		if d.Err != nil {
 			return text, toolCalls, usage, d.Err
 		}
+		if d.Notice != "" {
+			// Informational status (rate-limit retry etc.) — surface
+			// to the UI, never into the conversation text.
+			select {
+			case out <- NoticeEvent{Text: d.Notice}:
+			case <-ctx.Done():
+				return text, toolCalls, usage, ctx.Err()
+			}
+			continue
+		}
 		if d.Content != "" {
 			text += d.Content
 
