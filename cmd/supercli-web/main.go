@@ -74,6 +74,25 @@ func main() {
 		if *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" && tomlCfg.DefaultModel != "" {
 			cfg.Model = tomlCfg.DefaultModel
 		}
+		// The web GUI keeps its OWN active model in webgui-settings.json
+		// (written on every picker switch). It outranks the CLI's
+		// default_model from config.toml so the two front-ends stay
+		// independent: picking a model in the browser neither writes to
+		// config.toml nor is it clobbered by a later CLI /model swap.
+		// Explicit --model / env still wins over both.
+		if *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
+			if lm, lp := webgui.LastModel(dataDir); lm != "" {
+				cfg.Model = lm
+				for _, p := range tomlCfg.Providers {
+					if p.Name == lp {
+						cfg.Provider = p.Type
+						cfg.BaseURL = p.BaseURL
+						cfg.APIKey = p.APIKey
+						break
+					}
+				}
+			}
+		}
 		// Restore saved reasoning effort
 		if tomlCfg.ReasoningEffort != "" {
 			if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {

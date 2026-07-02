@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/models", s.handleModels)
 	mux.HandleFunc("/api/model", s.handleModel)
 	mux.HandleFunc("/api/model/toggle", s.handleModelToggle)
+	mux.HandleFunc("/api/model/default", s.handleModelDefault)
 	mux.HandleFunc("/api/reasoning", s.handleReasoning)
 	mux.HandleFunc("/api/providers", s.handleProviders)
 	mux.HandleFunc("/api/provider/scan", s.handleProviderScan)

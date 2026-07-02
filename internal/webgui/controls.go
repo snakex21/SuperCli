@@ -138,6 +138,29 @@ func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "model": s.eng.ModelName()})
 }
 
+// handleModelDefault is the EXPLICIT "set as CLI default" action: it
+// writes default_model/default_provider to config.toml. Regular model
+// switching in the web GUI (POST /api/model) never touches config.toml.
+func (s *Server) handleModelDefault(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Model    string `json:"model"`
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.eng.SetCLIDefault(strings.TrimSpace(req.Model), strings.TrimSpace(req.Provider)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "model": req.Model})
+}
+
 func (s *Server) handleModelToggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

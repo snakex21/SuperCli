@@ -926,7 +926,7 @@ a:hover { text-decoration: underline; }
 
 /* Model row */
 .model-row {
-  display: grid; grid-template-columns: 1fr auto;
+  display: grid; grid-template-columns: 1fr auto auto;
   align-items: center; gap: 10px;
   padding: 9px 10px;
   border-radius: var(--radius-md);
@@ -944,6 +944,22 @@ a:hover { text-decoration: underline; }
   font-size: 10px; color: var(--text-faint);
 }
 .model-row .model-price { font-family: var(--mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+/* Explicit "set as CLI default" action — hidden until row hover so the
+   picker stays clean; clicking it writes config.toml (the ONLY web
+   action that does). */
+.model-row .model-default-btn {
+  visibility: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-layer-03);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  font-size: 10px;
+  padding: 3px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.model-row:hover .model-default-btn { visibility: visible; }
+.model-row .model-default-btn:hover { color: var(--text-base); border-color: var(--v2-blue-500); }
 .model-badge {
   background: var(--bg-layer-03);
   color: var(--text-muted);
