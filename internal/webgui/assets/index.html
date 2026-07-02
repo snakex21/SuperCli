@@ -138,6 +138,7 @@
         <button class="inspector-tab" data-inspector="codex" data-i18n="insp.codex">Codex</button>
         <button class="inspector-tab" data-inspector="context" data-i18n="insp.context">Context</button>
         <button class="inspector-tab" data-inspector="files" data-i18n="insp.files">Files</button>
+        <button class="inspector-tab" data-inspector="projects" data-i18n="insp.projects">Projects</button>
         <button class="inspector-tab" data-inspector="memory" data-i18n="insp.memory">Memory</button>
         <button class="inspector-tab" data-inspector="goal" data-i18n="insp.goal">Goal</button>
       </nav>
@@ -239,6 +240,21 @@
           <div id="file-browser" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
             <div class="empty-state" data-i18n="common.loading">Loading…</div>
           </div>
+        </div>
+
+        <!-- Projects panel -->
+        <div class="inspector-panel" id="panel-projects">
+          <div class="section-label">
+            <span data-i18n="insp.projects">Projects</span>
+            <div style="display:flex;gap:4px;margin-left:auto">
+              <button class="btn btn-tiny btn-ghost" id="reload-projects" data-i18n="common.refresh">refresh</button>
+              <button class="btn btn-tiny btn-primary" id="project-add-cwd" type="button" data-i18n="projects.addCwd">＋ current dir</button>
+            </div>
+          </div>
+          <div id="projects-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+            <div class="empty-state" data-i18n="common.loading">Loading…</div>
+          </div>
+          <small class="empty-state" style="margin-top:6px" data-i18n="projects.note">Selecting a project sets the sandbox root and preferred model on the next launch.</small>
         </div>
 
         <!-- Memory panel -->
