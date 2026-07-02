@@ -117,7 +117,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 	out := fmt.Sprintf("%s contains %d item(s):\n%s", dir, len(lines), strings.Join(lines, "\n"))
 	if truncated {
-		out += fmt.Sprintf("\n... (truncated at %d entries)", t.MaxEntries)
+		out += fmt.Sprintf("\n... (showing first %d of %d entries; list a subfolder to narrow, or use ctx_execute for the full listing)", t.MaxEntries, len(entries))
 	}
 	return Result{Text: out}, nil
 }

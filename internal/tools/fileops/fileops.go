@@ -28,6 +28,10 @@ const (
 	// read_context.
 	DefaultContextRadius = 10
 
+	// MaxContextRadius caps read_context so a huge radius
+	// can't dump an entire large file into the context.
+	MaxContextRadius = 250
+
 	// DiffContext is the number of context lines shown
 	// before/after a mutation in the diff output.
 	DiffContext = 3
@@ -124,6 +128,9 @@ func ReadContext(path string, line, radius int) ([]LineRange, error) {
 	}
 	if radius <= 0 {
 		radius = DefaultContextRadius
+	}
+	if radius > MaxContextRadius {
+		radius = MaxContextRadius
 	}
 	lines, err := readLines(path)
 	if err != nil {

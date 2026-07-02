@@ -149,6 +149,24 @@ func TestReadContext_DefaultRadius(t *testing.T) {
 	}
 }
 
+func TestReadContext_RadiusClamped(t *testing.T) {
+	// A huge radius must be clamped to MaxContextRadius so a
+	// single call can't dump an entire large file.
+	lines := make([]string, 2000)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	path := tmpFile(t, strings.Join(lines, "\n")+"\n")
+	got, err := ReadContext(path, 1000, 100000)
+	if err != nil {
+		t.Fatalf("ReadContext: %v", err)
+	}
+	maxLines := 2*MaxContextRadius + 1
+	if len(got) > maxLines {
+		t.Fatalf("radius not clamped: got %d lines, want <= %d", len(got), maxLines)
+	}
+}
+
 func TestReadContext_AtStart(t *testing.T) {
 	path := tmpFile(t, "a\nb\nc\n")
 	got, err := ReadContext(path, 1, 5)
