@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/ctxexec"
 )
 
 // lmStudioBase is the default LM Studio endpoint.
@@ -333,6 +336,151 @@ func TestIntegration_StableToolset_ToolSearchThenTailCall(t *testing.T) {
 		}
 	}
 	t.Logf("stable tools list across %d provider calls: %s", len(rec.calls), first)
+}
+
+// TestIntegration_CtxExecute_FirstCallSchema is the live test for
+// the SLIMMED ctx_execute schema. It checks that a 9B model, given
+// only the trimmed schema, still forms a CORRECT first call — the
+// key risk of token-cutting is losing first-shot accuracy. The
+// task needs one real command with an argument list (not a shell
+// string), so a malformed call (shell string, missing args) would
+// fail the assertions. Success = ctx_execute called with a JSON
+// array `command`, correct answer, no failure loop.
+func TestIntegration_CtxExecute_FirstCallSchema(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{
+		BaseURL: baseURL,
+		Model:   "auto",
+		Timeout: 120 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+
+	// Sandbox home with a log file: 5 of 20 lines contain ERROR.
+	home := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 20; i++ {
+		if i%4 == 0 {
+			fmt.Fprintf(&b, "ERROR line %d something failed\n", i)
+		} else {
+			fmt.Fprintf(&b, "INFO line %d ok\n", i)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, "data.log"), []byte(b.String()), 0644); err != nil {
+		t.Fatalf("write data.log: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec())
+	reg.MarkAlwaysOn("ctx_execute")
+	// tool_search is the thin-protocol gateway; keep it present so
+	// the thin catalog/preamble render exactly as in production.
+	idx, err := tools.NewInMemoryIndex()
+	if err != nil {
+		t.Fatalf("NewInMemoryIndex: %v", err)
+	}
+	defer idx.Close()
+	searcher := tools.NewToolSearcher(reg, idx)
+	reg.MustRegister(searcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
+	if err := searcher.RebuildIndex(); err != nil {
+		t.Fatalf("RebuildIndex: %v", err)
+	}
+
+	loop, err := agent.NewLoop(agent.LoopConfig{
+		Provider:      rec,
+		Registry:      reg,
+		MaxSteps:      6,
+		System:        "You are a test assistant with tools. Follow instructions exactly.",
+		ThinTools:     true,
+		StableToolset: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	ch, err := loop.Run(ctx, "Using ctx_execute, count how many lines in the file data.log contain the word ERROR. Reply with just the number.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var (
+		ctxCalls      int
+		firstCallOK   bool
+		firstBadShape bool
+		sawFive       bool
+		finalText     strings.Builder
+		done          bool
+	)
+	for ev := range ch {
+		switch e := ev.(type) {
+		case agent.ToolCallEvent:
+			t.Logf("tool call #%d: %s %s", ctxCalls+1, e.Name, e.Args)
+			if e.Name == "ctx_execute" {
+				ctxCalls++
+				// Validate the FIRST ctx_execute call's shape: command
+				// must be a JSON array of strings, not a shell string.
+				if ctxCalls == 1 {
+					var p struct {
+						Command []string `json:"command"`
+					}
+					if err := json.Unmarshal([]byte(e.Args), &p); err == nil && len(p.Command) >= 1 {
+						firstCallOK = true
+					} else {
+						firstBadShape = true
+						t.Logf("first ctx_execute call bad shape: %v", err)
+					}
+				}
+			}
+		case agent.ToolResultEvent:
+			if e.Err != nil {
+				t.Logf("tool result err: %v", e.Err)
+			}
+			if strings.Contains(e.Output, "\"stdout\"") && strings.Contains(e.Output, "5") {
+				sawFive = true
+			}
+		case agent.MessageEvent:
+			finalText.WriteString(e.Text)
+		case agent.DoneEvent:
+			done = true
+		case agent.ErrorEvent:
+			t.Fatalf("ErrorEvent: %v", e.Err)
+		}
+	}
+	t.Logf("final text: %q", finalText.String())
+	u := loop.SessionUsage()
+	t.Logf("ctx_execute called %d time(s); provider requests: %d; tokens in=%d out=%d", ctxCalls, len(rec.calls), u.Input, u.Output)
+
+	if ctxCalls == 0 {
+		t.Error("model never called ctx_execute")
+	}
+	if firstBadShape {
+		t.Error("first ctx_execute call had a malformed command (schema too terse?)")
+	}
+	if !firstCallOK {
+		t.Error("first ctx_execute call did not carry a valid command array")
+	}
+	// The correct answer is 5. Accept it from the tool result stdout
+	// or the final message.
+	if !sawFive && !strings.Contains(finalText.String(), "5") {
+		t.Errorf("expected answer 5 (lines with ERROR); final=%q", finalText.String())
+	}
+	if !done {
+		t.Error("no DoneEvent — run did not finish cleanly")
+	}
+	// First-shot success target: at most 2 ctx_execute calls (allow one
+	// self-correction). More than that signals a failure loop.
+	if ctxCalls > 2 {
+		t.Errorf("ctx_execute called %d times — first-shot accuracy regressed", ctxCalls)
+	}
 }
 
 // TestIntegration_MultiTurn verifies multi-turn conversation
