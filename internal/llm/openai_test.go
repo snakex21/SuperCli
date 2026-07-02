@@ -102,6 +102,45 @@ func TestBuildOpenAIRequest_TextOnly(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIRequest_CoalescesMidConversationSystemMessages(t *testing.T) {
+	body, err := buildOpenAIRequest("qwen-local", []Message{
+		{Role: RoleSystem, Content: "base system"},
+		{Role: RoleUser, Content: "hi"},
+		{Role: RoleAssistant, Content: "hello"},
+		{Role: RoleSystem, Content: "freshness stamp"},
+		{Role: RoleUser, Content: "continue"},
+	}, nil, false, false)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var got struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Messages) != 4 {
+		t.Fatalf("messages = %d, want 4: %s", len(got.Messages), body)
+	}
+	if got.Messages[0].Role != "system" {
+		t.Fatalf("first role = %q, want system", got.Messages[0].Role)
+	}
+	if !strings.Contains(got.Messages[0].Content, "base system") || !strings.Contains(got.Messages[0].Content, "freshness stamp") {
+		t.Fatalf("coalesced system content = %q", got.Messages[0].Content)
+	}
+	for i := 1; i < len(got.Messages); i++ {
+		if got.Messages[i].Role == "system" {
+			t.Fatalf("message %d is system after beginning: %+v", i, got.Messages)
+		}
+	}
+	if got.Messages[1].Role != "user" || got.Messages[2].Role != "assistant" || got.Messages[3].Role != "user" {
+		t.Fatalf("non-system order changed: %+v", got.Messages)
+	}
+}
+
 func TestBuildOpenAIRequest_Vision(t *testing.T) {
 	body, err := buildOpenAIRequest("gpt-4o", []Message{
 		{Role: RoleUser, Parts: []ContentPart{
