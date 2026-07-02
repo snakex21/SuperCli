@@ -289,6 +289,21 @@ func Main() {
 		fatalUnwritableDataDir(dataDir, portable, err)
 	}
 
+	// Projects (named workspaces): the active project's directory becomes
+	// the agent's sandbox root. Sandbox root is a startup decision (every
+	// file tool binds its base dir at construction), so a project is
+	// selected here, before any tool wiring. An explicit --home flag or
+	// $SUPERCLI_HOME always wins over the active project — project
+	// selection only overrides the cwd fallback. The project's optional
+	// model/provider are applied further below, after config load.
+	workspace := memory.LoadWorkspace(dataDir)
+	activeProject, hasActiveProject := workspace.ActiveProject()
+	if hasActiveProject && *homeFlag == "" && os.Getenv(storage.HomeEnv) == "" {
+		if fi, statErr := os.Stat(activeProject.Path); statErr == nil && fi.IsDir() {
+			home = activeProject.Path
+		}
+	}
+
 	// F29: resolve config.toml hierarchy.
 	// global < project < --config < env < flags.
 	cwd, _ := os.Getwd()
@@ -384,6 +399,30 @@ func Main() {
 	// F29: apply TOML defaults for fields not set by env/flags.
 	if tomlErr == nil {
 		config.ApplyTomlToConfig(&cfg, tomlCfg)
+	}
+	// Active project's preferred model/provider. More specific than the
+	// global TOML default, so it wins over it — but explicit --model /
+	// --provider flags and the corresponding env vars still win over the
+	// project. When a project names a provider, resolve its base URL + API
+	// key from the providers list (same fields a runtime /model swap uses)
+	// so the model actually reaches the right endpoint.
+	if hasActiveProject {
+		if activeProject.Provider != "" && *providerFlag == "" && os.Getenv("SUPERCLI_LLM_PROVIDER") == "" {
+			for _, pc := range tomlCfg.Providers {
+				if pc.Name == activeProject.Provider {
+					cfg.Provider = pc.Type
+					cfg.BaseURL = pc.BaseURL
+					cfg.APIKey = pc.APIKey
+					break
+				}
+			}
+		}
+		if activeProject.Model != "" && *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
+			cfg.Model = activeProject.Model
+		}
+		if err := cfg.Normalize(); err != nil {
+			log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
+		}
 	}
 	// Reasoning effort (OpenAI reasoning models): restore the
 	// persisted level; /reasoning changes it at runtime.
@@ -1775,6 +1814,22 @@ func Main() {
 			}
 		}
 		var lines []string
+		// Workspace header: active project · working directory · model.
+		// Always shown so the user knows where the agent is rooted and
+		// which model is answering, at a glance.
+		var head []string
+		if hasActiveProject {
+			head = append(head, "proj: "+activeProject.Name)
+		}
+		if d := shortenDir(home); d != "" {
+			head = append(head, "dir: "+d)
+		}
+		if activeModel != "" {
+			head = append(head, "model: "+activeModel)
+		}
+		if len(head) > 0 {
+			lines = append(lines, strings.Join(head, " │ "))
+		}
 		if goal != "" {
 			lines = append(lines, goal)
 		}
@@ -2546,6 +2601,30 @@ func compactNum(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// shortenDir renders an absolute directory for the status header: the user
+// home prefix collapses to "~", and an over-long tail keeps only the last
+// two path segments so the header stays on one line.
+func shortenDir(p string) string {
+	if p == "" {
+		return ""
+	}
+	if uh, err := os.UserHomeDir(); err == nil && uh != "" {
+		if rel, err := filepath.Rel(uh, p); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			p = "~" + string(filepath.Separator) + rel
+		} else if err == nil && rel == "." {
+			return "~"
+		}
+	}
+	if len(p) <= 40 {
+		return p
+	}
+	parts := strings.Split(filepath.ToSlash(p), "/")
+	if len(parts) > 2 {
+		return "…/" + strings.Join(parts[len(parts)-2:], "/")
+	}
+	return p
 }
 
 func initAppLog(dataDir string) *os.File {
