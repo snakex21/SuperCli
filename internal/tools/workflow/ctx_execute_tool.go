@@ -37,49 +37,16 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name: "ctx_execute",
-		Description: "Run a single command in a sandboxed context-mode environment and return ONLY its bounded stdout. Use this INSTEAD of file_read for any file larger than ~50 lines, for log inspection, for counting matches, for JSON/CSV slicing, and for any time you would otherwise load a large file into the conversation. " +
-			"Command is a list of args (binary + arguments), NOT a shell string. The sandbox resolves the binary via PATH (returns 127 if missing), enforces a wallclock timeout, scrubs the env (no API keys leak to the child), and caps stdout (default 16 KB) and stderr (default 4 KB). " +
-			"Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Prefer over file_read for files >~50 lines, log inspection, counting matches, and JSON/CSV slicing. `command` is a LIST of args (binary + arguments), NOT a shell string; the binary is resolved via PATH. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"command": {
-					"type": "array",
-					"items": {"type": "string"},
-					"minItems": 1,
-					"maxItems": 32,
-					"description": "Binary + arguments. e.g. [\"python3\", \"-c\", \"import json,sys; print(len(json.load(sys.stdin)))\"]. The binary is resolved via PATH. Common interpreters (python3, node, jq, awk, sed, grep, rg, head, tail, wc, cut, tr, sort, uniq, cat, find, ls) are typically available."
-				},
-				"workdir": {
-					"type": "string",
-					"description": "Working directory, relative to home. Default: home root. Must resolve inside home (sandbox-checked)."
-				},
-				"timeout_ms": {
-					"type": "integer",
-					"minimum": 100,
-					"maximum": 30000,
-					"default": 10000,
-					"description": "Wallclock timeout in milliseconds. Default 10000, max 30000."
-				},
-				"max_stdout_kb": {
-					"type": "integer",
-					"minimum": 1,
-					"maximum": 64,
-					"default": 16,
-					"description": "Cap on stdout in KB. Default 16, max 64. Result is truncated from the front when exceeded; truncated_stdout is set."
-				},
-				"max_stderr_kb": {
-					"type": "integer",
-					"minimum": 1,
-					"maximum": 64,
-					"default": 4,
-					"description": "Cap on stderr in KB. Default 4, max 64."
-				},
-				"env_extra": {
-					"type": "array",
-					"items": {"type": "string"},
-					"description": "Optional extra env vars in KEY=VALUE form. Rarely needed."
-				}
+				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "Binary + arguments, e.g. [\"grep\", \"-c\", \"ERROR\", \"app.log\"]. Available: python3, node, jq, awk, sed, grep, rg, head, tail, wc, sort, uniq, cut, find, ls."},
+				"workdir": {"type": "string", "description": "Working dir relative to home. Default: home root."},
+				"timeout_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "default": 10000, "description": "Timeout (ms)."},
+				"max_stdout_kb": {"type": "integer", "minimum": 1, "maximum": 64, "default": 16, "description": "stdout cap (KB); truncated from front when exceeded."},
+				"max_stderr_kb": {"type": "integer", "minimum": 1, "maximum": 64, "default": 4, "description": "stderr cap (KB)."},
+				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "Optional KEY=VALUE env vars. Rarely needed."}
 			},
 			"required": ["command"]
 		}`,
