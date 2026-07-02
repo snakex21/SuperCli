@@ -59,11 +59,7 @@ func (t *ReadContext) execute(ctx context.Context, args json.RawMessage) (Result
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_context: %w", err)}, nil
 	}
-	var text string
-	for _, l := range lines {
-		text += fmt.Sprintf("%4d | %s\n", l.Number, l.Content)
-	}
-	return Result{Text: text}, nil
+	return Result{Text: renderLines(lines)}, nil
 }
 
 func (t *ReadContext) resolvePath(path string) string {
