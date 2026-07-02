@@ -35,6 +35,54 @@ func TestBuildAnthropicRequest_TextToolsThinking(t *testing.T) {
 	}
 }
 
+func TestNormalizeAnthropicBaseURL(t *testing.T) {
+	cases := map[string]string{
+		"https://api.anthropic.com/v1":           "https://api.anthropic.com/v1",
+		"https://api.anthropic.com/v1/":          "https://api.anthropic.com/v1",
+		"https://api.anthropic.com/v1/messages":  "https://api.anthropic.com/v1",
+		"https://api.anthropic.com/v1/messages/": "https://api.anthropic.com/v1",
+		"https://anyrouter.top/v1/messages":      "https://anyrouter.top/v1",
+		"  https://anyrouter.top/v1/messages  ":  "https://anyrouter.top/v1",
+	}
+	for in, want := range cases {
+		if got := NormalizeAnthropicBaseURL(in); got != want {
+			t.Errorf("NormalizeAnthropicBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestAnthropic_BaseURLWithMessagesSuffix guards the "endpoint doesn't work"
+// bug: users paste the full ".../v1/messages" endpoint as the provider base
+// URL, and the request must still hit ".../v1/messages" — not the doubled
+// ".../v1/messages/messages".
+func TestAnthropic_BaseURLWithMessagesSuffix(t *testing.T) {
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			t.Fatalf("path=%s want /v1/messages (base URL /messages suffix must not double)", r.URL.Path)
+		}
+		sseResponse(w,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+			`{"type":"message_stop"}`,
+		)
+	})
+	p, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL + "/v1/messages", APIKey: "key", Model: "claude-opus-4-8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body strings.Builder
+	for _, d := range drainDeltas(t, ch) {
+		body.WriteString(d.Content)
+	}
+	if body.String() != "ok" {
+		t.Fatalf("body=%q want ok", body.String())
+	}
+}
+
 func TestAnthropic_CompleteHeadersAndText(t *testing.T) {
 	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/messages" {

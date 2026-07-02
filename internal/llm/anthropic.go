@@ -14,6 +14,27 @@ import (
 
 const anthropicVersion = "2023-06-01"
 
+// NormalizeAnthropicBaseURL canonicalizes a user-supplied Anthropic base URL to
+// the API version root (e.g. ".../v1"), so callers can safely append
+// "/messages" or "/models" without producing a doubled path.
+//
+// Anthropic's documented endpoint is https://api.anthropic.com/v1/messages, and
+// many Anthropic-compatible proxies advertise the full ".../v1/messages" URL.
+// Users naturally paste that whole URL as the provider base URL. Without this
+// normalization the request path becomes ".../v1/messages/messages" (404) and
+// model discovery hits ".../v1/messages/v1/models" (404) — i.e. "the Anthropic
+// endpoint doesn't work". Stripping a trailing "/messages" (and any trailing
+// slash) makes both the paste-the-endpoint and paste-the-root forms work.
+func NormalizeAnthropicBaseURL(base string) string {
+	base = strings.TrimSpace(base)
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/messages") {
+		base = strings.TrimSuffix(base, "/messages")
+		base = strings.TrimRight(base, "/")
+	}
+	return base
+}
+
 // AnthropicConfig configures the native Anthropic Messages API provider.
 type AnthropicConfig struct {
 	BaseURL   string
@@ -44,7 +65,7 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.anthropic.com/v1"
 	}
-	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
+	cfg.BaseURL = NormalizeAnthropicBaseURL(cfg.BaseURL)
 	cfg.APIKey = CleanAPIKey(cfg.APIKey)
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 4096
