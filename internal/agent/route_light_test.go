@@ -227,7 +227,7 @@ func TestThinTools_TailAdvertisedInCatalog(t *testing.T) {
 	// Isolate the catalog section (after its header). The format
 	// instruction above it legitimately names a core tool as an
 	// example, so we only assert against the catalog body.
-	const hdr = "Additional tools available"
+	const hdr = "loadable on demand"
 	idx := strings.Index(pre, hdr)
 	if idx < 0 {
 		t.Fatalf("catalog header missing from preamble:\n%s", pre)
@@ -297,7 +297,7 @@ func TestThinTools_CatalogInjectedBeforeTimestamp(t *testing.T) {
 	}
 	// the message before last should be the thin preamble (instruction + catalog).
 	prev := msgs[len(msgs)-2]
-	if !strings.Contains(prev.Content, "Additional tools available") {
+	if !strings.Contains(prev.Content, "loadable on demand") {
 		t.Errorf("catalog should sit just before the time stamp, got: %q", prev.Content)
 	}
 }
@@ -330,7 +330,7 @@ func TestThinTools_PreambleInstructionWithoutTail(t *testing.T) {
 	if !strings.Contains(pre, "\u00AB") {
 		t.Errorf("format instruction missing when tail empty:\n%s", pre)
 	}
-	if strings.Contains(pre, "Additional tools available") {
+	if strings.Contains(pre, "loadable on demand") {
 		t.Errorf("no catalog should appear when tail is empty:\n%s", pre)
 	}
 }
