@@ -29,6 +29,7 @@
           <strong>SuperCli</strong>
           <small id="status-text" data-i18n="status.connecting">connecting…</small>
         </div>
+        <button class="panel-collapse-btn" id="toggle-sidebar" type="button" title="Collapse sidebar" aria-label="Collapse sidebar">‹</button>
       </header>
 
       <!-- Active model card -->
@@ -70,6 +71,7 @@
         <div id="sessions-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
       </div>
     </aside>
+    <button class="edge-restore sidebar-restore" id="restore-sidebar" type="button" title="Show sidebar" aria-label="Show sidebar">›</button>
 
     <!-- ═══ MAIN AREA ═══ -->
     <main class="app-main">
@@ -140,6 +142,7 @@
     <!-- ═══ INSPECTOR (right panel) ═══ -->
     <aside class="app-inspector" id="inspector">
       <nav class="inspector-tabs" id="inspector-tabs">
+        <button class="panel-collapse-btn inspector-collapse" id="toggle-inspector" type="button" title="Collapse inspector" aria-label="Collapse inspector">›</button>
         <button class="inspector-tab active" data-inspector="activity" data-i18n="insp.activity">Activity</button>
         <button class="inspector-tab" data-inspector="sessions" data-i18n="insp.history">History</button>
         <button class="inspector-tab" data-inspector="stats" data-i18n="insp.usage">Usage</button>
@@ -292,6 +295,7 @@
 
       </div>
     </aside>
+    <button class="edge-restore inspector-restore" id="restore-inspector" type="button" title="Show inspector" aria-label="Show inspector">‹</button>
 
     <!-- ═══ Provider Modal ═══ -->
     <div class="modal-overlay" id="provider-modal" hidden>
@@ -420,7 +424,7 @@
             <div class="settings-panel" id="stab-models">
               <div class="settings-group">
                 <label data-i18n="settings.modelVisibility">Model visibility</label>
-                <div id="settings-model-list" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+                <div id="settings-model-list">
                   <div class="empty-state" data-i18n="models.loading">Loading models…</div>
                 </div>
               </div>
@@ -531,7 +535,7 @@
               <div id="mcp-list-view">
                 <div class="settings-group">
                   <label><span data-i18n="mcp.servers">MCP Servers</span> <button class="btn btn-tiny btn-ghost" id="mcp-edit-json" style="margin-left:8px" data-i18n="mcp.editJson">Edit as JSON</button></label>
-                  <div id="mcp-server-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+                  <div id="mcp-server-list">
                     <div class="empty-state" data-i18n="common.loading">Loading…</div>
                   </div>
                 </div>

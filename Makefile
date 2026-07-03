@@ -1,12 +1,14 @@
 BINARY := supercli
+WEB_BINARY := supercli-web.exe
 PKG := ./...
 GO ?= go
 
-.PHONY: build run test tidy clean fmt vet all help
+.PHONY: build build-web run test tidy clean fmt vet all help
 
 help:
 	@echo "SuperCli Makefile"
 	@echo "  make build   - compile to ./$(BINARY)"
+	@echo "  make build-web - compile Windows GUI web app to ./$(WEB_BINARY)"
 	@echo "  make run     - run via 'go run ./cmd/supercli'"
 	@echo "  make test    - run all tests (verbose)"
 	@echo "  make vet     - go vet"
@@ -17,6 +19,9 @@ help:
 
 build:
 	$(GO) build -o $(BINARY) ./cmd/supercli
+
+build-web:
+	$(GO) build -ldflags="-H windowsgui" -o $(WEB_BINARY) ./cmd/supercli-web
 
 run:
 	$(GO) run ./cmd/supercli
