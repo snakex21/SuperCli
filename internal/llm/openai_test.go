@@ -581,6 +581,74 @@ func TestOpenAI_StreamUsageInSeparateEmptyChoicesChunk(t *testing.T) {
 	}
 }
 
+// TestOpenAI_StreamUsageParsesDetails covers the cached-prompt and
+// reasoning-token breakdown LM Studio / OpenAI report inside usage:
+// prompt_tokens_details.cached_tokens and
+// completion_tokens_details.reasoning_tokens must reach llm.Usage so
+// the status line can show cache-hit% and think tokens.
+func TestOpenAI_StreamUsageParsesDetails(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		`{"choices":[],"usage":{"prompt_tokens":1800,"completion_tokens":502,"total_tokens":2302,"prompt_tokens_details":{"cached_tokens":1656},"completion_tokens_details":{"reasoning_tokens":496}}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "qwen3.5-9b"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.Input != 1800 || usage.Output != 502 {
+		t.Fatalf("usage = %+v, want 1800 in / 502 out", usage)
+	}
+	if usage.CachedInput != 1656 {
+		t.Fatalf("CachedInput = %d, want 1656", usage.CachedInput)
+	}
+	if usage.Reasoning != 496 {
+		t.Fatalf("Reasoning = %d, want 496", usage.Reasoning)
+	}
+}
+
+// TestOpenAI_StreamUsageNoDetailsZeroValues proves that usage without
+// the details objects (most cloud backends) yields zero cached/reasoning
+// without panicking on the nil detail pointers.
+func TestOpenAI_StreamUsageNoDetailsZeroValues(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		`{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o-mini"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.CachedInput != 0 || usage.Reasoning != 0 {
+		t.Fatalf("want zero details, got Cached=%d Reasoning=%d", usage.CachedInput, usage.Reasoning)
+	}
+}
+
 // TestOpenAI_RequestIncludesStreamOptions verifies the request
 // asks for usage in streaming mode; without it servers stay silent.
 func TestOpenAI_RequestIncludesStreamOptions(t *testing.T) {

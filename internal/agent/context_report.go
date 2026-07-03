@@ -57,6 +57,23 @@ func (l *Loop) SessionUsage() Usage {
 	return l.sessUsage
 }
 
+// LastTurnStats returns observability for the most recent turn: the
+// KV/prompt cache-hit percentage (cached prompt tokens / prompt tokens)
+// and the number of hidden reasoning tokens the model spent. ok is
+// false until a turn with provider usage has completed. Backends that
+// do not report the breakdown yield zeros (still ok once a turn ran).
+func (l *Loop) LastTurnStats() (cacheHitPct int, reasoning int, ok bool) {
+	l.sessUsageMu.Lock()
+	defer l.sessUsageMu.Unlock()
+	if !l.lastTurnSet {
+		return 0, 0, false
+	}
+	if l.lastTurnPrompt > 0 {
+		cacheHitPct = l.lastTurnCached * 100 / l.lastTurnPrompt
+	}
+	return cacheHitPct, l.lastTurnReasoning, true
+}
+
 // Route returns the route chosen for the most recent Run.
 func (l *Loop) Route() RouteMode { return l.route }
 

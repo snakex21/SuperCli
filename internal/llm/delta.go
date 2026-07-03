@@ -69,6 +69,17 @@ type Usage struct {
 	Input  int
 	Output int
 	Total  int
+
+	// CachedInput is the portion of Input that the backend served
+	// from a prompt/KV cache (OpenAI prompt_tokens_details.cached_tokens,
+	// llama.cpp/LM Studio equivalents). Zero when the backend does not
+	// report it. Used to surface a cache-hit ratio in the status line.
+	CachedInput int
+
+	// Reasoning is the number of Output tokens spent on hidden
+	// chain-of-thought (OpenAI completion_tokens_details.reasoning_tokens;
+	// LM Studio reports it for reasoning models). Zero when not reported.
+	Reasoning int
 }
 
 // Validate returns nil if the delta is structurally sound.

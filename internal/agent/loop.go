@@ -66,6 +66,15 @@ type Loop struct {
 	sessUsage   Usage
 	sessUsageMu sync.Mutex
 
+	// lastTurn* hold the provider-reported accounting for the most
+	// recent turn (not cumulative), for the status-line cache-hit% and
+	// reasoning-token badges. Guarded by sessUsageMu. lastTurnSet flips
+	// true after the first turn that carried provider usage.
+	lastTurnPrompt    int
+	lastTurnCached    int
+	lastTurnReasoning int
+	lastTurnSet       bool
+
 	// Auto-compact wiring (wave 4). windowFor resolves the
 	// model's context window (config > provider metadata >
 	// learned > default); summarizer produces the /compact
@@ -676,10 +685,19 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			totalUsage.Input += usage.Input
 			totalUsage.Output += usage.Output
 			totalUsage.Total += usage.Total
+			totalUsage.Cached += usage.CachedInput
+			totalUsage.Reasoning += usage.Reasoning
 			l.sessUsageMu.Lock()
 			l.sessUsage.Input += usage.Input
 			l.sessUsage.Output += usage.Output
 			l.sessUsage.Total += usage.Total
+			l.sessUsage.Cached += usage.CachedInput
+			l.sessUsage.Reasoning += usage.Reasoning
+			// Last-turn snapshot for the status-line badges.
+			l.lastTurnPrompt = usage.Input
+			l.lastTurnCached = usage.CachedInput
+			l.lastTurnReasoning = usage.Reasoning
+			l.lastTurnSet = true
 			l.sessUsageMu.Unlock()
 			// Report per-turn usage to the writer (if any).
 			if l.writer != nil {
