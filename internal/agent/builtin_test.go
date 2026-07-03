@@ -6,10 +6,22 @@ import (
 	"supercli/internal/llm"
 )
 
-func TestBuiltinSubAgents_ReturnsFour(t *testing.T) {
+func TestBuiltinSubAgents_ReturnsFive(t *testing.T) {
 	agents := BuiltinSubAgents()
-	if len(agents) != 4 {
-		t.Fatalf("BuiltinSubAgents() = %d, want 4", len(agents))
+	if len(agents) != 5 {
+		t.Fatalf("BuiltinSubAgents() = %d, want 5", len(agents))
+	}
+}
+
+func TestBuiltinSubAgents_HasGeneralDefault(t *testing.T) {
+	// The general worker is the default when task is called without an
+	// explicit agent kind, so it must exist and inherit the full tool set.
+	g := findAgent(BuiltinSubAgents(), "general")
+	if g == nil {
+		t.Fatal("general default agent not found")
+	}
+	if len(g.AllowedTools) != 0 {
+		t.Errorf("general should inherit all tools (nil AllowedTools), got %v", g.AllowedTools)
 	}
 }
 

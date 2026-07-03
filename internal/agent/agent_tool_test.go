@@ -99,8 +99,8 @@ func TestAgentTool_Spec(t *testing.T) {
 	if !strings.Contains(spec.Schema, `"prompt"`) {
 		t.Errorf("schema missing prompt: %q", spec.Schema)
 	}
-	if !strings.Contains(spec.Schema, `"share_context"`) {
-		t.Errorf("schema missing share_context: %q", spec.Schema)
+	if !strings.Contains(spec.Schema, `"expect"`) {
+		t.Errorf("schema missing expect: %q", spec.Schema)
 	}
 }
 
@@ -525,9 +525,9 @@ func TestBuiltinSubAgents_RegisterCleanly(t *testing.T) {
 	reg := NewSubAgentRegistry()
 	MustRegisterAll(reg, BuiltinSubAgents())
 	names := reg.Names()
-	want := map[string]bool{"explore": true, "plan": true, "review": true, "code": true}
-	if len(names) != 4 {
-		t.Errorf("len = %d, want 4", len(names))
+	want := map[string]bool{"general": true, "explore": true, "plan": true, "review": true, "code": true}
+	if len(names) != 5 {
+		t.Errorf("len = %d, want 5", len(names))
 	}
 	for _, n := range names {
 		if !want[n] {

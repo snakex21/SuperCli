@@ -35,6 +35,16 @@ type AgentTool struct {
 	// Zero means 30s per step (matches the design's "5 min for
 	// MaxSteps=10" default).
 	TimeoutPerStep time.Duration
+	// MaxSteps caps a worker's model calls. It overrides the
+	// per-spec MaxSteps only when the spec leaves it unset (0).
+	// Zero here falls back to the spec value or the built-in 10.
+	MaxSteps int
+	// MaxTokens caps a worker's total token spend (input+output,
+	// summed across turns). When >0 a per-worker budget tracker
+	// stops the child loop as soon as a turn pushes the running
+	// total past the cap; the partial report is still returned
+	// with a failed status. Zero = no token cap.
+	MaxTokens int64
 }
 
 // NewAgentTool returns the tool. reg, base, factory, and
@@ -73,21 +83,19 @@ func (a *AgentTool) Spec() tools.Tool {
 	enumJSON, _ := json.Marshal(names)
 	return tools.Tool{
 		Name: "task",
-		Description: "Spawn a sub-agent to handle a focused subtask. " +
-			"Use this when the parent loop would benefit from delegating " +
-			"(e.g. exploration, planning, code review). The sub-agent has " +
-			"its own system prompt, restricted tool set, and isolated " +
-			"context. Returns a task-notification with a worker id; use " +
-			"send_message to continue the same worker when its context helps.",
+		Description: "Delegate a self-contained subtask to a fresh worker with " +
+			"its own isolated context and tools. Only its final report returns " +
+			"to you, so your context stays lean. Give a complete briefing in " +
+			"prompt (the worker cannot see this conversation). Workers cannot " +
+			"delegate further.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
-				"agent":         {"type": "string", "enum": %s, "description": "which sub-agent kind to spawn"},
-				"prompt":        {"type": "string", "description": "task for the sub-agent"},
-				"async":         {"type": "boolean", "default": false, "description": "if true, run in background and return immediately; completion is delivered as a task-notification"},
-				"share_context": {"type": "boolean", "default": false, "description": "include parent messages as initial context"}
+				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
+				"expect": {"type": "string", "description": "optional: what the report must contain"},
+				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"}
 			},
-			"required": ["agent", "prompt"]
+			"required": ["prompt"]
 		}`, string(enumJSON)),
 		Fn: a.execute,
 	}
@@ -97,6 +105,7 @@ func (a *AgentTool) Spec() tools.Tool {
 type agentArgs struct {
 	Agent        string `json:"agent"`
 	Prompt       string `json:"prompt"`
+	Expect       string `json:"expect"`
 	Async        bool   `json:"async"`
 	ShareContext bool   `json:"share_context"`
 }
@@ -110,15 +119,25 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err := json.Unmarshal(args, &ar); err != nil {
 		return tools.Result{Err: fmt.Errorf("task: bad args: %w", err)}, nil
 	}
-	if ar.Agent == "" {
-		return tools.Result{Err: fmt.Errorf("task: agent is empty")}, nil
-	}
 	if ar.Prompt == "" {
 		return tools.Result{Err: fmt.Errorf("task: prompt is empty")}, nil
+	}
+	// agent is optional: a bare prompt gets the general worker. This
+	// keeps the lean call {"prompt": "..."} valid while still allowing
+	// the model to pick a specialised kind when it wants one.
+	if ar.Agent == "" {
+		ar.Agent = defaultAgentKind
 	}
 	spec, ok := a.Registry.Get(ar.Agent)
 	if !ok {
 		return tools.Result{Err: fmt.Errorf("task: unknown agent %q (known: %s)", ar.Agent, strings.Join(a.Registry.Names(), ", "))}, nil
+	}
+
+	// Fold the optional `expect` into the worker's briefing so its
+	// final report is shaped by what the coordinator asked for.
+	workerPrompt := ar.Prompt
+	if strings.TrimSpace(ar.Expect) != "" {
+		workerPrompt += "\n\nYour final report must contain: " + strings.TrimSpace(ar.Expect)
 	}
 
 	// Build the child's tool registry: only the tools the
@@ -146,7 +165,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		system = a.ParentLoop.system
 	}
 
+	// Step budget: the spec value wins when set; otherwise the
+	// tool-wide MaxSteps (from config), otherwise the built-in 10.
 	maxSteps := spec.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = a.MaxSteps
+	}
 	if maxSteps <= 0 {
 		maxSteps = 10
 	}
@@ -161,6 +185,23 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		defer cancel()
 	}
 
+	// Token budget: a per-worker cap that stops the child loop as
+	// soon as a turn pushes the running total past MaxTokens. Nil
+	// when no cap is configured. The partial report is still
+	// returned on a budget stop (runWorkerLoop keeps the text).
+	var budget CreditTracker
+	if a.MaxTokens > 0 {
+		budget = newTokenBudget(a.MaxTokens)
+	}
+
+	// A worker inherits the parent's KV-cache-relevant loop settings
+	// (thin tool protocol, stable toolset) and its sandbox root so it
+	// behaves like the main session: same small-model reliability and
+	// the same append-only, cache-friendly prefix. The worker builds
+	// its own prefix from scratch (cold prefill is the accepted cost),
+	// but per-turn it stays as cache-friendly as the coordinator.
+	thin, stable, baseDir := a.childLoopSettings()
+
 	loop, err := a.NewLoop(LoopConfig{
 		Provider:        a.Provider,
 		Caps:            a.Caps,
@@ -168,6 +209,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		System:          system,
 		MaxSteps:        maxSteps,
 		InitialMessages: seed,
+		ThinTools:       thin,
+		StableToolset:   stable,
+		BaseDir:         baseDir,
+		CreditTracker:   budget,
+		// Workers never route: they run straight on the coordinator
+		// path with their restricted tool set. No navigator round-trip.
 	})
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: child loop: %w", err)}, nil
@@ -179,7 +226,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 	w := workers.Add(ar.Agent, ar.Prompt, loop)
 	if ar.Async {
-		a.startBackgroundWorker(w, ar.Prompt, maxSteps)
+		a.startBackgroundWorker(w, workerPrompt, maxSteps)
 		return tools.Result{Text: fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>
@@ -188,12 +235,28 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 </task-notification>`, w.ID, w.Agent, w.Agent)}, nil
 	}
 
-	text, err := runWorkerLoop(childCtx, w, ar.Prompt)
+	text, err := runWorkerLoop(childCtx, w, workerPrompt)
 	if err != nil {
 		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
 	}
 	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
 }
+
+// childLoopSettings returns the KV-cache-relevant loop settings a
+// worker inherits from the parent loop: the thin tool protocol flag,
+// the stable-toolset flag, and the sandbox root (BaseDir). When there
+// is no parent (unit tests build the tool without one) it returns
+// zero values, i.e. the historical worker behaviour.
+func (a *AgentTool) childLoopSettings() (thin, stable bool, baseDir string) {
+	if a.ParentLoop == nil {
+		return false, false, ""
+	}
+	return a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.baseDir
+}
+
+// defaultAgentKind is the worker used when task is called without an
+// explicit agent. It must be registered (BuiltinSubAgents provides it).
+const defaultAgentKind = "general"
 
 func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int) {
 	if w == nil {
@@ -224,9 +287,24 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 	}()
 }
 
+// delegationTools are never handed to a worker: they are how the
+// coordinator spawns and steers workers, so exposing them to a worker
+// would allow unbounded nesting. Stripping them structurally (here,
+// not just via spec omission) enforces a depth limit of 1 no matter
+// what a sub-agent spec's AllowedTools says — including the inherit
+// case, where a naive copy of the base set would otherwise include
+// `task` itself.
+var delegationTools = map[string]struct{}{
+	"task":         {},
+	"send_message": {},
+	"task_stop":    {},
+}
+
 // restrictedRegistry returns a fresh registry containing only
 // the tools whose names are in allowed. If allowed is empty,
-// the full base registry is returned (a shallow copy).
+// the full base registry is returned (a shallow copy). In both
+// cases the delegation tools are stripped so a worker can never
+// spawn another worker (depth limit 1).
 //
 // The result is a brand-new *tools.Registry so the parent and
 // child have independent state and the child can never see a
@@ -235,6 +313,9 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 	out := tools.NewRegistry()
 	if len(allowed) == 0 {
 		for _, name := range base.Names() {
+			if _, blocked := delegationTools[name]; blocked {
+				continue
+			}
 			t, ok := base.Get(name)
 			if !ok {
 				continue
@@ -245,6 +326,9 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 		return out
 	}
 	for _, name := range allowed {
+		if _, blocked := delegationTools[name]; blocked {
+			continue
+		}
 		t, ok := base.Get(name)
 		if !ok {
 			// unknown tool in spec — skip silently; the
