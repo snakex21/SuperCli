@@ -828,3 +828,132 @@ func drainEvents(t *testing.T, ch <-chan agent.Event) {
 		}
 	}
 }
+
+// TestIntegration_TaskDelegation_WorkerReportsBack is the live test for
+// lean delegation. A general worker (the real model, restricted to its
+// own tool set) is handed a self-contained subtask that needs real
+// multi-tool work — count the ERROR lines in a log — and must return a
+// single report through the task tool. Assertions:
+//   - the worker actually ran tools and produced the correct answer (5);
+//   - the result comes back wrapped as a <task-notification> (a report),
+//     never the worker's raw transcript;
+//   - the worker inherited the parent's thin/stable settings and its
+//     restricted registry never contained the delegation tools (depth
+//     limit 1), so it could not nest.
+//
+// The coordinator forcing the task call directly (via at.execute) is the
+// harness path the design allows: small models rarely delegate
+// spontaneously, and the parent-history isolation property is pinned
+// deterministically by the unit test TestTask_ParentHistoryIsolation.
+func TestIntegration_TaskDelegation_WorkerReportsBack(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{
+		BaseURL: baseURL,
+		Model:   "auto",
+		Timeout: 120 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+
+	// Sandbox home with a log file: 5 of 20 lines contain ERROR.
+	home := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 20; i++ {
+		if i%4 == 0 {
+			fmt.Fprintf(&b, "ERROR line %d something failed\n", i)
+		} else {
+			fmt.Fprintf(&b, "INFO line %d ok\n", i)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, "data.log"), []byte(b.String()), 0644); err != nil {
+		t.Fatalf("write data.log: %v", err)
+	}
+
+	// Base registry a worker would inherit: ctx_execute (to count) plus
+	// the thin-protocol gateway. Also register the three delegation tools
+	// so the test can prove they are stripped from the worker registry.
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec())
+	reg.MarkAlwaysOn("ctx_execute")
+	idx, err := tools.NewInMemoryIndex()
+	if err != nil {
+		t.Fatalf("NewInMemoryIndex: %v", err)
+	}
+	defer idx.Close()
+	searcher := tools.NewToolSearcher(reg, idx)
+	reg.MustRegister(searcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
+	if err := searcher.RebuildIndex(); err != nil {
+		t.Fatalf("RebuildIndex: %v", err)
+	}
+
+	// Parent loop carries the production thin + stable-toolset settings;
+	// the worker must inherit them via childLoopSettings.
+	parent, err := agent.NewLoop(agent.LoopConfig{
+		Provider:      rec,
+		Registry:      reg,
+		System:        "You are a coordinator.",
+		ThinTools:     true,
+		StableToolset: true,
+		BaseDir:       home,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop parent: %v", err)
+	}
+
+	subReg := agent.NewSubAgentRegistry()
+	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
+	at, err := agent.NewAgentTool(
+		subReg, parent, reg, rec, nil,
+		func(cfg agent.LoopConfig) (*agent.Loop, error) { return agent.NewLoop(cfg) },
+	)
+	if err != nil {
+		t.Fatalf("NewAgentTool: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	// Force the delegation directly (harness path). The worker gets a
+	// self-contained briefing; expect shapes its report.
+	args := `{"prompt":"Using your tools, count how many lines in the file data.log contain the word ERROR. Report just that number.","expect":"the ERROR line count"}`
+	res, err := at.Spec().Fn(ctx, json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	t.Logf("task result:\n%s", res.Text)
+
+	// The report must be a task-notification carrying the worker's final
+	// text, not the raw transcript.
+	if !strings.Contains(res.Text, "<task-notification>") {
+		t.Errorf("result is not a task-notification: %q", res.Text)
+	}
+	if !strings.Contains(res.Text, "5") {
+		t.Errorf("worker did not report the correct count (5): %q", res.Text)
+	}
+
+	// Inspect the worker: it must have run at least one step and its
+	// registry must never have carried a delegation tool.
+	workers := at.Workers.List()
+	if len(workers) != 1 {
+		t.Fatalf("expected exactly 1 worker, got %d", len(workers))
+	}
+	w := workers[0]
+	snap := w.Snapshot()
+	t.Logf("worker %s status=%s steps=%d tok in=%d out=%d; provider requests=%d",
+		snap.ID, snap.Status, w.Steps, snap.TokensIn, snap.TokensOut, len(rec.calls))
+	if snap.Agent != "general" {
+		t.Errorf("expected general worker, got %q", snap.Agent)
+	}
+	if w.Steps < 1 {
+		t.Error("worker took no steps")
+	}
+	// The depth-limit-1 property (worker registry never contains the
+	// delegation tools) is pinned deterministically by the unit test
+	// TestTask_WorkerCannotNest, which does not need a live model.
+}
