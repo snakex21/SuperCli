@@ -1035,6 +1035,11 @@ func Main() {
 	if err != nil {
 		fatal("init agent tool", err)
 	}
+	// Worker resource limits (config `task_max_steps` / `task_max_tokens`,
+	// both optional). Steps only override a spec that leaves its own budget
+	// unset; tokens are a hard runaway-loop cap (0 = no cap).
+	at.MaxSteps = tomlCfg.TaskMaxSteps
+	at.MaxTokens = tomlCfg.TaskMaxTokens
 	registry.MustRegister(at.Spec())
 	sendMessageTool := agent.NewSendMessageTool(at.Workers)
 	registry.MustRegister(sendMessageTool.Spec())
