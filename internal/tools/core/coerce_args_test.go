@@ -87,6 +87,35 @@ func TestCoerceArgs_NonNumericIntLeftForRealError(t *testing.T) {
 	}
 }
 
+// editLineShorthandSchema mirrors edit_line's real schema shape: the
+// historical shorthand where the root object IS the properties map (no
+// {"type":"object","properties":{...}} wrapper). Coercion must still
+// fire for it — otherwise a stringified line ("line":"3") from a small
+// model fails to unmarshal into the tool's int field and fail-loops.
+const editLineShorthandSchema = `{"file":{"type":"string","description":"File path"},
+"line":{"type":"integer","description":"1-based line; a hint when expected_old is set"},
+"new_content":{"type":"string","description":"Replacement line content"},
+"expected_old":{"type":"string","description":"Current line verbatim"}}`
+
+func TestCoerceArgs_ShorthandSchemaStringifiedInt(t *testing.T) {
+	in := json.RawMessage(`{"file":"config.txt","line":"3","expected_old":"debug = false","new_content":"debug = true"}`)
+	out := CoerceArgs(editLineShorthandSchema, in)
+	var a struct {
+		File       string `json:"file"`
+		Line       int    `json:"line"`
+		NewContent string `json:"new_content"`
+	}
+	if err := json.Unmarshal(out, &a); err != nil {
+		t.Fatalf("shorthand-schema coercion failed: %v (out=%s)", err, out)
+	}
+	if a.Line != 3 {
+		t.Errorf("line = %d, want 3 (out=%s)", a.Line, out)
+	}
+	if a.File != "config.txt" {
+		t.Errorf("file = %q, want config.txt", a.File)
+	}
+}
+
 func TestCoerceArgs_NoSchemaReturnsInput(t *testing.T) {
 	in := json.RawMessage(`{"limit":"5"}`)
 	if out := CoerceArgs("", in); string(out) != string(in) {
