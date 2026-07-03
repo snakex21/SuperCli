@@ -197,6 +197,28 @@ func resolveStableToolset(override *bool) bool {
 	return defaultStableToolset
 }
 
+// resolveNavigator maps the config.toml `navigator` value to the two
+// loop flags. Default (empty) is "auto": keyword-first, model navigator
+// only for ambiguous prompts — a strict win over "on" (it skips the
+// extra round-trip on confident turns and routes them identically),
+// which matters most on slow local backends. "on" keeps the historical
+// model-every-turn behaviour; "off" disables the navigator entirely
+// (always coordinator). enable is EnableNavigator; auto is NavigatorAuto.
+func resolveNavigator(mode string) (enable, auto bool) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "off":
+		return false, false
+	case "on":
+		return true, false
+	case "auto", "":
+		return true, true
+	default:
+		// Unknown value: fall back to the safe default rather than
+		// silently disabling routing.
+		return true, true
+	}
+}
+
 func Main() {
 	startupT := time.Now()
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
@@ -951,6 +973,9 @@ func Main() {
 		return wrapCompactSummary(summary), nil
 	}
 
+	// Navigator routing mode (config `navigator`, default auto).
+	navigatorEnable, navigatorAuto := resolveNavigator(tomlCfg.Navigator)
+
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        provider,
@@ -976,7 +1001,8 @@ func Main() {
 		WindowFor:         windowFor,
 		Summarizer:        autoSummarizer,
 		LearnLimit:        learned.Learn,
-		EnableNavigator:   true,
+		EnableNavigator:   navigatorEnable,
+		NavigatorAuto:     navigatorAuto,
 		// Thin tool protocol: small-tier models get the compact
 		// catalog + full schemas only for the core; they suffer most
 		// from schema bulk in the prefill. Big models keep native

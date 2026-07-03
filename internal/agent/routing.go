@@ -95,29 +95,41 @@ func DefaultRouteMap() RouteMap {
 }
 
 func (m RouteMap) Classify(prompt string) RouteMode {
+	mode, _ := m.ClassifyConfident(prompt)
+	return mode
+}
+
+// ClassifyConfident is Classify plus a confidence signal. confident is
+// true only when the prompt matched an explicit rule (a coordinator
+// keyword, or a chat exact/prefix); it is false when the classifier fell
+// through to its RouteCoordinator default (empty or ambiguous input).
+// The navigator's auto mode uses this to take the cheap keyword decision
+// on obvious turns and reserve the extra model round-trip for genuinely
+// ambiguous ones (advisor vs coordinator), which keywords cannot judge.
+func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bool) {
 	p := strings.ToLower(strings.TrimSpace(prompt))
 	p = strings.Trim(p, " \t\r\n.!?…")
 	if p == "" {
-		return RouteCoordinator
+		return RouteCoordinator, false
 	}
 	for _, hit := range m.CoordinatorHits {
 		if strings.Contains(p, hit) {
-			return RouteCoordinator
+			return RouteCoordinator, true
 		}
 	}
 	for _, exact := range m.ChatExact {
 		if p == exact {
-			return RouteChatOnly
+			return RouteChatOnly, true
 		}
 	}
 	if len([]rune(p)) <= 80 {
 		for _, prefix := range m.ChatPrefixes {
 			if strings.HasPrefix(p, prefix) {
-				return RouteChatOnly
+				return RouteChatOnly, true
 			}
 		}
 	}
-	return RouteCoordinator
+	return RouteCoordinator, false
 }
 
 const navigatorSystemPrompt = `You are SuperCli's navigator. Choose which map the next user message should use.
