@@ -141,6 +141,10 @@ type Loop struct {
 	routeMap RouteMap
 	route    RouteMode
 	navigate bool
+	// navAuto (only meaningful with navigate) makes routing keyword-first:
+	// a confident RouteMap hit skips the extra navigator model round-trip;
+	// only ambiguous prompts fall back to the model navigator.
+	navAuto bool
 
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
@@ -204,6 +208,11 @@ type LoopConfig struct {
 	// chat/advisor/coordinator. Main SuperCli enables it; child workers and most
 	// tests leave it off to avoid extra provider calls.
 	EnableNavigator bool
+	// NavigatorAuto (only meaningful with EnableNavigator) makes routing
+	// keyword-first: a confident RouteMap classification is used directly,
+	// and only ambiguous prompts pay for the navigator model round-trip.
+	// Off = the navigator model runs every user turn (historical behaviour).
+	NavigatorAuto bool
 	// ThinTools enables the thin tool protocol on the coordinator
 	// route: only thinCoreTools carry a full JSON Schema each turn;
 	// the rest are advertised in a compact name+hint catalog and
@@ -369,6 +378,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		routeMap:        DefaultRouteMap(),
 		route:           RouteCoordinator,
 		navigate:        cfg.EnableNavigator,
+		navAuto:         cfg.NavigatorAuto,
 	}
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
@@ -623,10 +633,22 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	// A1: the navigator is a full LLM call. It runs here, inside the
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
-	if l.navigate {
-		l.route = l.navigateRoute(ctx, prompt)
-	} else {
+	switch {
+	case !l.navigate:
+		// Navigator off: everything is coordinator (safe default for
+		// scripted/worker use, which must keep the full tool context).
 		l.route = RouteCoordinator
+	case l.navAuto:
+		// Auto: take the cheap keyword decision on obvious turns and
+		// only pay for the navigator model on ambiguous ones. Saves a
+		// full model round-trip per confident turn.
+		if mode, confident := l.routeMap.ClassifyConfident(prompt); confident {
+			l.route = mode
+		} else {
+			l.route = l.navigateRoute(ctx, prompt)
+		}
+	default:
+		l.route = l.navigateRoute(ctx, prompt)
 	}
 	totalUsage := Usage{}
 	// F11: reset the policy's per-Run "drafted" set

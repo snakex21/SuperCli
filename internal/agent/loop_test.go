@@ -177,6 +177,47 @@ func TestLoop_NavigatorCanChooseAdvisorWithoutTools(t *testing.T) {
 	}
 }
 
+// TestLoop_NavigatorAuto_SkipsModelOnConfidentHit proves auto mode
+// takes the keyword decision on an obvious coordinator prompt WITHOUT
+// the extra navigator round-trip: the provider is called once (the
+// answer), not twice (navigator + answer).
+func TestLoop_NavigatorAuto_SkipsModelOnConfidentHit(t *testing.T) {
+	p := &navigatorProvider{name: "navigator"}
+	reg := tools.NewRegistry()
+	l := makeLoop(t, p, reg, "FULL COORDINATOR PROMPT")
+	l.navigate = true
+	l.navAuto = true
+	ch, _ := l.Run(context.Background(), "napraw błąd w read_lines")
+	drainEvents(t, ch)
+
+	if p.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1 (navigator model skipped on confident hit)", p.calls)
+	}
+	if l.Route() != RouteCoordinator {
+		t.Fatalf("route = %s, want coordinator", l.Route())
+	}
+}
+
+// TestLoop_NavigatorAuto_FallsBackToModelOnAmbiguous proves auto mode
+// still pays for the navigator model when the keyword map cannot
+// classify the prompt confidently (advisor vs coordinator).
+func TestLoop_NavigatorAuto_FallsBackToModelOnAmbiguous(t *testing.T) {
+	p := &navigatorProvider{name: "navigator"}
+	reg := tools.NewRegistry()
+	l := makeLoop(t, p, reg, "FULL COORDINATOR PROMPT")
+	l.navigate = true
+	l.navAuto = true
+	ch, _ := l.Run(context.Background(), "co lepsze na dłuższą metę?")
+	drainEvents(t, ch)
+
+	if p.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2 (navigator model + answer)", p.calls)
+	}
+	if l.Route() != RouteAdvisor {
+		t.Fatalf("route = %s, want advisor (navigator chose it)", l.Route())
+	}
+}
+
 func echoProvider(name string) *stubProvider {
 	return &stubProvider{
 		name: name,

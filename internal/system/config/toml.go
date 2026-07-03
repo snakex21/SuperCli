@@ -85,6 +85,14 @@ type TomlConfig struct {
 	// small models get the trimmed core tool set).
 	SmallFullTools bool `toml:"small_full_tools"`
 
+	// Navigator selects how the pre-request route (chat/advisor/
+	// coordinator) is decided: "on" runs the navigator model every user
+	// turn; "off" skips it entirely (always coordinator — safe for
+	// scripted use); "auto" (default) is keyword-first, paying for the
+	// navigator model only on prompts the keyword map cannot classify
+	// confidently. Empty = built-in default ("auto").
+	Navigator string `toml:"navigator"`
+
 	// StableToolset (thin tool protocol only) keeps the request
 	// `tools` list fixed for the whole session: tools activated
 	// via tool_search are NOT promoted into the schema-carrying
@@ -332,6 +340,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.Thinking != nil {
 		dst.Thinking = src.Thinking
+	}
+	if src.Navigator != "" {
+		dst.Navigator = src.Navigator
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
