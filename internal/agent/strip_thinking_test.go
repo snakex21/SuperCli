@@ -24,6 +24,30 @@ func TestStripThinking_RemovesBlocks(t *testing.T) {
 	}
 }
 
+// TestStripThinkingFromMessage_DropsEmptiedTextPart guards the tool-call
+// case: a turn whose only text is a <thinking> block (model reasoned,
+// then emitted a tool call with no visible answer) must NOT leave an
+// empty text part, which the provider rejects on the next request. The
+// tool call is preserved.
+func TestStripThinkingFromMessage_DropsEmptiedTextPart(t *testing.T) {
+	msg := llm.Message{
+		Role:  llm.RoleAssistant,
+		Parts: []llm.ContentPart{{Type: llm.PartTypeText, Text: "<thinking>which tool?</thinking>"}},
+		ToolCalls: []llm.ToolCall{
+			{ID: "1", Name: "ctx_execute", Arguments: `{"command":["ls"]}`},
+		},
+	}
+	got := stripThinkingFromMessage(msg)
+	for i, p := range got.Parts {
+		if p.Type == llm.PartTypeText && p.Text == "" {
+			t.Errorf("part %d is an empty text part; want it dropped", i)
+		}
+	}
+	if len(got.ToolCalls) != 1 {
+		t.Fatalf("tool call lost: %+v", got.ToolCalls)
+	}
+}
+
 // TestLoop_HistoryStripsThinkingButStorageKeepsIt proves the Task 2b
 // invariant: the in-memory history that drives the next request carries
 // only the final answer, while the session store keeps the full text

@@ -51,12 +51,20 @@ func stripThinkingFromMessage(msg llm.Message) llm.Message {
 		msg.Content = stripThinking(msg.Content)
 	}
 	if len(msg.Parts) > 0 {
-		parts := make([]llm.ContentPart, len(msg.Parts))
-		copy(parts, msg.Parts)
-		for i := range parts {
-			if parts[i].Type == llm.PartTypeText {
-				parts[i].Text = stripThinking(parts[i].Text)
+		// Strip text parts and drop any that become empty. A turn whose
+		// only text was a <thinking> block (the model reasoned, then
+		// emitted a tool call with no visible answer) would otherwise
+		// leave an empty text part, which the provider rejects on the
+		// next request. Non-text parts (images) are always kept.
+		parts := make([]llm.ContentPart, 0, len(msg.Parts))
+		for _, p := range msg.Parts {
+			if p.Type == llm.PartTypeText {
+				p.Text = stripThinking(p.Text)
+				if p.Text == "" {
+					continue
+				}
 			}
+			parts = append(parts, p)
 		}
 		msg.Parts = parts
 	}
