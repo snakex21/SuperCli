@@ -26,6 +26,7 @@ type Worker struct {
 	LastError   string
 	TokensIn    int
 	TokensOut   int
+	Steps       int // model turns consumed across all runs
 
 	mu sync.Mutex
 

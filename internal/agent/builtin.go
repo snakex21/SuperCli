@@ -37,7 +37,28 @@ func BuiltinSubAgents() []SubAgent {
 		"verification, and return a concise summary with files changed. " +
 		"Do not spawn other sub-agents."
 
+	// general is the default worker used when the coordinator calls
+	// task with only a prompt (no explicit agent kind). It inherits the
+	// full tool set (minus the delegation tools, which restrictedRegistry
+	// strips so a worker can never nest another worker) so a single bare
+	// prompt can drive real multi-tool work. The report is its final
+	// message; keep it self-contained because the coordinator sees only
+	// that text, never the worker's tool calls.
+	generalSystem := "You are a SuperCli worker with an isolated context. " +
+		"Carry out the delegated task end-to-end using your tools, then " +
+		"return ONE self-contained report as your final message: what you " +
+		"found or did, with concrete file paths and results. The coordinator " +
+		"sees only this report, not your intermediate steps, so include " +
+		"everything it needs. Be concise. Do not spawn other workers."
+
 	return []SubAgent{
+		{
+			Name:        "general",
+			Description: "carry out a delegated task end-to-end and report back",
+			System:      generalSystem,
+			// AllowedTools nil = inherit the full set (minus delegation).
+			MaxSteps: 12,
+		},
 		{
 			Name:         "explore",
 			Description:  "search the codebase and answer a focused question",

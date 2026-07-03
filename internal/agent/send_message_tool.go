@@ -102,6 +102,7 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		case DoneEvent:
 			w.TokensIn += e.Usage.Input
 			w.TokensOut += e.Usage.Output
+			w.Steps++
 		case ErrorEvent:
 			stopped := w.clearCancel()
 			w.UpdatedAt = time.Now()
@@ -146,7 +147,10 @@ func workerSummary(w *Worker) string {
 	if status == "" {
 		status = "done"
 	}
-	summary := fmt.Sprintf("%s %s", w.Agent, status)
+	// One-line status the coordinator can relay: kind, outcome, and the
+	// resource cost (steps + tokens) so a run that hit a limit is legible.
+	summary := fmt.Sprintf("%s %s · %d steps · %d in/%d out tok",
+		w.Agent, status, w.Steps, w.TokensIn, w.TokensOut)
 	if w.LastError != "" {
 		summary += ": " + w.LastError
 	}
