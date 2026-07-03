@@ -542,9 +542,9 @@ func (l *Loop) thinToolsPreamble() string {
 	_, tail := l.thinPartition()
 	if len(tail) > 0 {
 		if body := tools.RenderCatalog(tail, l.thinHintMaxOrDefault()); body != "" {
-			out += "\n\nAdditional tools available on demand (call tool_search " +
-				"with a natural-language query to load any of these — it returns " +
-				"the full schema so you can call it the same turn):\n" + body
+			out += "\n\nMore tools, loadable on demand — call tool_search with a " +
+				"natural-language query to load any (it returns the full schema so " +
+				"you can call it the same turn):\n" + body
 		}
 	}
 	return out

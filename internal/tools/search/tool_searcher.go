@@ -41,18 +41,13 @@ func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 func (s *ToolSearcher) Spec() Tool {
 	return Tool{
 		Name: "tool_search",
-		Description: "Find tools by name/description. The result includes " +
-			"the full JSON schema so you can call the matched tool " +
-			"in the same turn. Use this whenever you are not sure a " +
-			"tool exists or what its arguments are.",
-		Schema: `{
-			"type": "object",
-			"properties": {
-				"query": {"type": "string", "description": "natural-language search, e.g. 'find files by name' or 'search code'"},
-				"limit": {"type": "integer", "default": 3, "maximum": 8, "description": "max number of matches to return"}
-			},
-			"required": ["query"]
-		}`,
+		Description: "Find a tool by name/description. The result includes its " +
+			"full schema so you can call it the same turn. Use whenever you " +
+			"are unsure a tool exists or what its arguments are.",
+		Schema: `{"type":"object","properties":{
+"query":{"type":"string","description":"Natural-language search, e.g. 'find files by name'"},
+"limit":{"type":"integer","default":3,"maximum":8}
+},"required":["query"]}`,
 		Fn: s.execute,
 	}
 }

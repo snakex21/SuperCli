@@ -181,22 +181,15 @@ func NewRecallDual(project, global MemoryKeeper) *Recall {
 func (r *Recall) Spec() Tool {
 	return Tool{
 		Name: "recall",
-		Description: "Search persistent memory for facts saved with the remember tool in " +
-			"this or earlier sessions. Use this at the start of a task to check for " +
-			"relevant prior context: user preferences, past project decisions, " +
-			"environment quirks, or anything the user previously asked you to remember. " +
-			"Do NOT use it to search the current conversation (use search_history) or " +
-			"the codebase (use search_code / grep). The query is full-text (plus " +
-			"semantic search when embeddings are available): a few keywords work best.",
-		Schema: `{
-			"type": "object",
-			"properties": {
-				"query": {"type": "string", "description": "Search query. A few keywords work best."},
-				"scope": {"type": "string", "enum": ["project", "global", "all"], "description": "Which memory to search. Default: all."},
-				"limit": {"type": "integer", "description": "Max results to return. Default 5."}
-			},
-			"required": ["query"]
-		}`,
+		Description: "Search persistent memory for facts saved via remember in past sessions: " +
+			"user preferences, project decisions, environment quirks. Use at task start for " +
+			"prior context. NOT for the current conversation (use search_history) or the " +
+			"codebase (use search_code / grep). Full-text query — a few keywords work best.",
+		Schema: `{"type":"object","properties":{
+"query":{"type":"string","description":"Search keywords"},
+"scope":{"type":"string","enum":["project","global","all"],"description":"Default all"},
+"limit":{"type":"integer","description":"Default 5"}
+},"required":["query"]}`,
 		Fn: r.run,
 	}
 }

@@ -54,13 +54,11 @@ type editLineArgs struct {
 func (t *EditLine) Spec() Tool {
 	return Tool{
 		Name:        "edit_line",
-		Description: "Replace one line in a file. Prefer passing expected_old (the current line content, verbatim): then line is just a hint and the edit is validated against the content — it self-corrects small line drift and fails loudly instead of corrupting the file. Returns a diff for verification. Use read_context first.",
-		Schema: `{
-			"file":         {"type": "string", "description": "File path"},
-			"line":         {"type": "integer", "description": "Line number (1-based). A hint when expected_old is set."},
-			"new_content":  {"type": "string", "description": "New content for the line"},
-			"expected_old": {"type": "string", "description": "Current content of the line, verbatim. When set, the edit is anchored to this content (recommended): line drift is tolerated and a mismatch fails instead of corrupting the file."}
-		}`,
+		Description: "Replace one line in a file. Strongly prefer passing expected_old (the current line, verbatim): then line is only a hint, the edit is validated against the content, self-corrects small drift, and fails loudly instead of corrupting the file. Run read_context first. Returns a diff.",
+		Schema: `{"file":{"type":"string","description":"File path"},
+"line":{"type":"integer","description":"1-based line; a hint when expected_old is set"},
+"new_content":{"type":"string","description":"Replacement line content"},
+"expected_old":{"type":"string","description":"Current line verbatim (recommended): anchors the edit, tolerates drift, fails instead of corrupting"}}`,
 		Fn: t.execute,
 	}
 }
