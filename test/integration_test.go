@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -480,6 +481,159 @@ func TestIntegration_CtxExecute_FirstCallSchema(t *testing.T) {
 	// self-correction). More than that signals a failure loop.
 	if ctxCalls > 2 {
 		t.Errorf("ctx_execute called %d times — first-shot accuracy regressed", ctxCalls)
+	}
+}
+
+// TestIntegration_EditLine_FirstCallSchema is the live test for the
+// SLIMMED edit_line schema. edit_line is the most format-sensitive
+// trimmed tool (a malformed call corrupts the file), so the key risk
+// of token-cutting is losing first-shot accuracy on the argument
+// shape. The task is a single concrete line edit; success = edit_line
+// called with a well-formed call (non-empty file + new_content, line
+// >= 1), the file actually changed, and no failure loop.
+func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{
+		BaseURL: baseURL,
+		Model:   "auto",
+		Timeout: 120 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+
+	// Sandbox home with a small config file. The model must flip the
+	// value on the `debug = false` line to `debug = true`.
+	home := t.TempDir()
+	const original = "name = app\nport = 8080\ndebug = false\nlevel = info\n"
+	cfgPath := filepath.Join(home, "config.txt")
+	if err := os.WriteFile(cfgPath, []byte(original), 0644); err != nil {
+		t.Fatalf("write config.txt: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	// edit_line plus the read tools its description points at
+	// (read_context first) — all in the thin core, so they render
+	// with full schema exactly as in production.
+	reg.MustRegister(tools.NewEditLine(home).Spec())
+	reg.MustRegister(tools.NewReadContext(home).Spec())
+	reg.MustRegister(tools.NewReadLines(home).Spec())
+	reg.MarkAlwaysOn("edit_line")
+	reg.MarkAlwaysOn("read_context")
+	reg.MarkAlwaysOn("read_lines")
+	idx, err := tools.NewInMemoryIndex()
+	if err != nil {
+		t.Fatalf("NewInMemoryIndex: %v", err)
+	}
+	defer idx.Close()
+	searcher := tools.NewToolSearcher(reg, idx)
+	reg.MustRegister(searcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
+	if err := searcher.RebuildIndex(); err != nil {
+		t.Fatalf("RebuildIndex: %v", err)
+	}
+
+	loop, err := agent.NewLoop(agent.LoopConfig{
+		Provider:      rec,
+		Registry:      reg,
+		MaxSteps:      6,
+		System:        "You are a test assistant with tools. Follow instructions exactly.",
+		ThinTools:     true,
+		StableToolset: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	ch, err := loop.Run(ctx, "In the file config.txt, change the line `debug = false` to `debug = true`. Use edit_line.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var (
+		editCalls     int
+		firstCallOK   bool
+		firstBadShape bool
+		done          bool
+		finalText     strings.Builder
+	)
+	for ev := range ch {
+		switch e := ev.(type) {
+		case agent.ToolCallEvent:
+			t.Logf("tool call #%d: %s %s", editCalls+1, e.Name, e.Args)
+			if e.Name == "edit_line" {
+				editCalls++
+				if editCalls == 1 {
+					// Args are the model's RAW output (coercion happens
+					// later at Execute), so a small model legitimately
+					// sends line as a stringified int ("3"). Accept both
+					// shapes — the loop coerces it before the tool runs.
+					var p struct {
+						File       string          `json:"file"`
+						Line       json.RawMessage `json:"line"`
+						NewContent string          `json:"new_content"`
+					}
+					err := json.Unmarshal([]byte(e.Args), &p)
+					lineOK := false
+					if err == nil && len(p.Line) > 0 {
+						s := strings.Trim(strings.TrimSpace(string(p.Line)), `"`)
+						if n, e2 := strconv.Atoi(s); e2 == nil && n >= 1 {
+							lineOK = true
+						}
+					}
+					if err == nil && strings.TrimSpace(p.File) != "" && lineOK &&
+						strings.Contains(p.NewContent, "true") {
+						firstCallOK = true
+					} else {
+						firstBadShape = true
+						t.Logf("first edit_line call bad shape: %v", err)
+					}
+				}
+			}
+		case agent.ToolResultEvent:
+			if e.Err != nil {
+				t.Logf("tool result err: %v", e.Err)
+			}
+		case agent.MessageEvent:
+			finalText.WriteString(e.Text)
+		case agent.DoneEvent:
+			done = true
+		case agent.ErrorEvent:
+			t.Fatalf("ErrorEvent: %v", e.Err)
+		}
+	}
+
+	after, _ := os.ReadFile(cfgPath)
+	u := loop.SessionUsage()
+	t.Logf("edit_line called %d time(s); provider requests: %d; tokens in=%d out=%d", editCalls, len(rec.calls), u.Input, u.Output)
+	t.Logf("file after: %q", string(after))
+
+	if editCalls == 0 {
+		t.Error("model never called edit_line")
+	}
+	if firstBadShape {
+		t.Error("first edit_line call had a malformed shape (schema too terse?)")
+	}
+	if !firstCallOK {
+		t.Error("first edit_line call did not carry a valid file/line/new_content")
+	}
+	if !strings.Contains(string(after), "debug = true") || strings.Contains(string(after), "debug = false") {
+		t.Errorf("file not edited correctly; got:\n%s", string(after))
+	}
+	if !done {
+		t.Error("no DoneEvent — run did not finish cleanly")
+	}
+	// First-shot success target: at most 2 edit_line calls (allow one
+	// self-correction). More signals a failure loop.
+	if editCalls > 2 {
+		t.Errorf("edit_line called %d times — first-shot accuracy regressed", editCalls)
 	}
 }
 
