@@ -104,6 +104,18 @@ type TomlConfig struct {
 	// true/false overrides.
 	StableToolset *bool `toml:"stable_toolset"`
 
+	// TaskMaxSteps caps how many model turns a delegated worker (the
+	// `task` tool) may take before it is stopped. 0 = built-in default
+	// (the per-agent spec value, else 10). Only applied when a spec does
+	// not set its own step budget.
+	TaskMaxSteps int `toml:"task_max_steps"`
+
+	// TaskMaxTokens caps a delegated worker's total token spend
+	// (input+output across turns). Once a turn pushes the running total
+	// past this, the worker is stopped and its partial report is
+	// returned with a failed status. 0 = no token cap.
+	TaskMaxTokens int64 `toml:"task_max_tokens"`
+
 	// ContextWindow overrides the model's context window
 	// (tokens) for auto-compaction. 0 = resolve from
 	// provider metadata / learned limits / default.
@@ -337,6 +349,12 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.StableToolset != nil {
 		dst.StableToolset = src.StableToolset
+	}
+	if src.TaskMaxSteps != 0 {
+		dst.TaskMaxSteps = src.TaskMaxSteps
+	}
+	if src.TaskMaxTokens != 0 {
+		dst.TaskMaxTokens = src.TaskMaxTokens
 	}
 	if src.Thinking != nil {
 		dst.Thinking = src.Thinking
