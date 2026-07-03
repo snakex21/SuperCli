@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 // coerce_args.go makes tool-argument parsing lenient for small and
@@ -104,17 +105,47 @@ func coerceScalar(s, want string) (json.RawMessage, bool) {
 // "boolean", "string", ...). Properties whose type is absent or is a
 // list of types are skipped (ambiguous — leave them alone). Returns an
 // empty map on any parse failure.
+//
+// It accepts BOTH schema shapes SuperCli tools use: a full JSON Schema
+// with an explicit "properties" object, and the historical shorthand
+// where the root object IS the properties map (edit_line and the other
+// file/edit tools use the shorthand). This mirrors
+// llm.normalizeToolSchema so coercion fires regardless of which shape a
+// tool declares — otherwise a shorthand tool with an int arg (line,
+// from, to) breaks the moment a small model stringifies it ("line":"3").
 func schemaPropTypes(schema string) map[string]string {
-	var s struct {
-		Properties map[string]struct {
-			Type json.RawMessage `json:"type"`
-		} `json:"properties"`
-	}
-	if err := json.Unmarshal([]byte(schema), &s); err != nil {
+	trimmed := strings.TrimSpace(schema)
+	if trimmed == "" {
 		return nil
 	}
-	out := make(map[string]string, len(s.Properties))
-	for name, p := range s.Properties {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &root); err != nil {
+		return nil
+	}
+	propsRaw, ok := root["properties"]
+	if !ok {
+		// No "properties" key: treat the root as the properties map,
+		// but only when it is not itself a schema object (a real schema
+		// carrying type/required/additionalProperties is not shorthand).
+		if _, hasType := root["type"]; hasType {
+			return nil
+		}
+		if _, hasReq := root["required"]; hasReq {
+			return nil
+		}
+		if _, hasAP := root["additionalProperties"]; hasAP {
+			return nil
+		}
+		propsRaw = json.RawMessage(trimmed)
+	}
+	var props map[string]struct {
+		Type json.RawMessage `json:"type"`
+	}
+	if err := json.Unmarshal(propsRaw, &props); err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(props))
+	for name, p := range props {
 		var t string
 		if json.Unmarshal(p.Type, &t) != nil {
 			// type omitted or a union ([]string) — skip.
