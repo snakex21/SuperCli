@@ -1853,6 +1853,23 @@ func Main() {
 			}
 			bottom = append(bottom, "tok: "+tokStr)
 		}
+		// Cache/thinking observability: KV-cache hit% and hidden
+		// reasoning-token count for the last turn, when the backend
+		// reports them (llama.cpp/LM Studio/OpenAI). Only shown when
+		// there is a real signal so cloud backends that omit the
+		// breakdown stay uncluttered.
+		if cacheHit, reasoning, ok := loop.LastTurnStats(); ok {
+			var obs []string
+			if cacheHit > 0 {
+				obs = append(obs, fmt.Sprintf("cache:%d%%", cacheHit))
+			}
+			if reasoning > 0 {
+				obs = append(obs, fmt.Sprintf("think:%d", reasoning))
+			}
+			if len(obs) > 0 {
+				bottom = append(bottom, strings.Join(obs, " "))
+			}
+		}
 		// Codex subscription usage (5h rolling + weekly), pulled from
 		// the active provider's last /responses headers. Rendered only
 		// when the active provider is Codex AND a snapshot has arrived.

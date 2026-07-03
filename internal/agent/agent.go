@@ -228,6 +228,13 @@ type Usage struct {
 	Input  int
 	Output int
 	Total  int
+	// Cached is the sum of prompt tokens the backend served from a
+	// KV/prompt cache across the run (provider cached_tokens). Zero
+	// when the backend does not report it.
+	Cached int
+	// Reasoning is the sum of hidden chain-of-thought tokens across
+	// the run (provider reasoning_tokens). Zero when not reported.
+	Reasoning int
 }
 
 // Agent is the minimal interface every agent implementation must

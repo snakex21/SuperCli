@@ -298,6 +298,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			_ = json.Unmarshal([]byte(data), &raw)
 			if chunk.Usage != nil {
 				lastUsage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens}
+				if d := chunk.Usage.PromptTokensDetails; d != nil {
+					lastUsage.CachedInput = d.CachedTokens
+				}
+				if d := chunk.Usage.CompletionTokensDetails; d != nil {
+					lastUsage.Reasoning = d.ReasoningTokens
+				}
 				// Servers that honour stream_options.include_usage
 				// (LM Studio, vLLM, OpenAI) send the usage in a FINAL
 				// chunk whose choices array is EMPTY. The per-choice
@@ -775,9 +781,25 @@ type openaiToolFn struct {
 }
 
 type openaiUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens            int                            `json:"prompt_tokens"`
+	CompletionTokens        int                            `json:"completion_tokens"`
+	TotalTokens             int                            `json:"total_tokens"`
+	PromptTokensDetails     *openaiPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *openaiCompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+}
+
+// openaiPromptTokensDetails carries the cached-prompt breakdown that
+// OpenAI and llama.cpp/LM Studio report inside usage. cached_tokens is
+// the portion of prompt_tokens the backend served from its KV cache.
+type openaiPromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+// openaiCompletionTokensDetails carries the reasoning-token breakdown
+// that reasoning models report inside usage. reasoning_tokens counts the
+// hidden chain-of-thought tokens billed as completion tokens.
+type openaiCompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 // EncodeBase64 is a small helper used by callers that need to
