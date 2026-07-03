@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "supercli-web",
+      "runtimeExecutable": "./supercli-web.exe",
+      "runtimeArgs": ["--echo", "--no-window", "--addr", "127.0.0.1:8765"],
+      "port": 8765
+    }
+  ]
+}
