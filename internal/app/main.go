@@ -431,6 +431,12 @@ func Main() {
 			log.Printf("config: reasoning_effort: %v (ignored)", err)
 		}
 	}
+	// Thinking soft switch (local Qwen /no_think): restore the
+	// persisted state; /think changes it at runtime. Default (nil) is
+	// thinking ON — unchanged from historical behaviour.
+	if tomlCfg.Thinking != nil {
+		llm.SetThinkingEnabled(*tomlCfg.Thinking)
+	}
 	// Apply draft/credit overrides from TOML if not set by flags.
 	if *draftModeFlag == "off" && tomlCfg.DraftMode != "" {
 		*draftModeFlag = tomlCfg.DraftMode
@@ -1270,6 +1276,54 @@ func Main() {
 		return out, nil
 	}
 
+	// /think — toggle chain-of-thought for local models that honour a
+	// prompt soft switch (Qwen /no_think). Orthogonal to /reasoning
+	// (cloud reasoning_effort). Default is on; `/think off` appends
+	// /no_think to the trailing prompt to cut latency on Qwen.
+	mergedCommands["think"] = func(ctx context.Context, args string) (string, error) {
+		args = strings.ToLower(strings.TrimSpace(args))
+		modelName := loop.Provider().Name()
+		if args == "" {
+			state := "on"
+			if !llm.ThinkingEnabled() {
+				state = "off"
+			}
+			note := ""
+			if !llm.SupportsThinkingSoftSwitch(modelName) {
+				note = fmt.Sprintf("\nnote: current model %q has no prompt thinking switch; /think off has no effect on it (use /reasoning for cloud reasoning models)", modelName)
+			}
+			return fmt.Sprintf("thinking: %s\nusage: /think <on|off>%s", state, note), nil
+		}
+		var on bool
+		switch args {
+		case "on", "true", "1":
+			on = true
+		case "off", "false", "0":
+			on = false
+		default:
+			return "usage: /think <on|off>", nil
+		}
+		llm.SetThinkingEnabled(on)
+		// Persist to the GLOBAL config.toml.
+		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
+		if tc, err := config.LoadToml(globalPath); err == nil {
+			v := on
+			tc.Thinking = &v
+			if err := config.SaveToml(globalPath, tc); err != nil {
+				log.Printf("think: save config.toml: %v", err)
+			}
+		}
+		state := "on"
+		if !on {
+			state = "off"
+		}
+		out := fmt.Sprintf("thinking set to %s", state)
+		if !on && !llm.SupportsThinkingSoftSwitch(modelName) {
+			out += fmt.Sprintf("\nnote: current model %q has no prompt thinking switch; the setting applies when you switch to a Qwen-family model", modelName)
+		}
+		return out, nil
+	}
+
 	// /usage — force a fresh fetch of the ChatGPT-subscription usage
 	// limits (5h rolling + weekly window) from the dedicated usage
 	// endpoint and print them. This is NOT a completion: it hits the
@@ -1845,6 +1899,12 @@ func Main() {
 			} else {
 				bottom = append(bottom, "effort: "+effective)
 			}
+		}
+		// Thinking soft-switch state: only surfaced when the user has
+		// turned it off AND the active model honours it (Qwen), so the
+		// user knows /no_think is being appended.
+		if !llm.ThinkingEnabled() && llm.SupportsThinkingSoftSwitch(loop.Provider().Name()) {
+			bottom = append(bottom, "think: off")
 		}
 		if tokens != "" {
 			tokStr := tokens

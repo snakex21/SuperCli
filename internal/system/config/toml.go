@@ -60,6 +60,13 @@ type TomlConfig struct {
 	// high|xhigh). Empty = provider default. Set via /reasoning.
 	ReasoningEffort string `toml:"reasoning_effort"`
 
+	// Thinking toggles chain-of-thought for LOCAL models that honour
+	// an in-prompt soft switch (Qwen /no_think). Tri-state: nil =
+	// built-in default (thinking ON), explicit true/false overrides.
+	// Set at runtime via /think on|off. Orthogonal to reasoning_effort
+	// (which steers cloud reasoning models).
+	Thinking *bool `toml:"thinking"`
+
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
 
@@ -322,6 +329,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.StableToolset != nil {
 		dst.StableToolset = src.StableToolset
+	}
+	if src.Thinking != nil {
+		dst.Thinking = src.Thinking
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
