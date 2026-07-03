@@ -129,6 +129,19 @@ a:hover { text-decoration: underline; }
   background: var(--bg-base);
   min-width: 0;
 }
+.app-shell.sidebar-collapsed {
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--inspector-width);
+}
+.app-shell.inspector-collapsed {
+  grid-template-columns: var(--rail-width) var(--sidebar-width) minmax(0, 1fr);
+}
+.app-shell.sidebar-collapsed.inspector-collapsed {
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+}
+.app-shell.sidebar-collapsed .app-sidebar,
+.app-shell.inspector-collapsed .app-inspector {
+  display: none;
+}
 
 /* ── Rail (left icon bar) ── */
 .app-rail {
@@ -248,6 +261,58 @@ a:hover { text-decoration: underline; }
 .sidebar-header small {
   color: var(--text-faint); font-size: 11px;
   display: block; margin-top: 2px;
+}
+.panel-collapse-btn {
+  width: 26px; height: 26px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.panel-collapse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-base);
+  border-color: var(--border-muted);
+}
+.edge-restore {
+  position: fixed;
+  z-index: 80;
+  width: 24px; height: 46px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-layer-01);
+  color: var(--text-faint);
+  display: none;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: var(--shadow-floating);
+}
+.edge-restore:hover {
+  color: var(--text-base);
+  background: var(--bg-layer-02);
+  border-color: var(--border-muted);
+}
+.sidebar-restore {
+  left: var(--rail-width);
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 0 999px 999px 0;
+}
+.inspector-restore {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 999px 0 0 999px;
+}
+.app-shell.sidebar-collapsed .sidebar-restore,
+.app-shell.inspector-collapsed .inspector-restore {
+  display: grid;
 }
 .sidebar-model {
   margin: 8px 10px 0;
@@ -386,7 +451,9 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border-subtle);
   gap: 12px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 50;
 }
 .topbar-left {
   display: flex; align-items: center; gap: 10px;
@@ -401,7 +468,7 @@ a:hover { text-decoration: underline; }
   flex: 1 1 auto;
   justify-content: flex-end;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 /* Topbar quick-action buttons rendered as subtle rounded pills */
 .topbar-actions .btn-ghost {
@@ -447,7 +514,18 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
   animation: scaleIn .15s ease;
 }
-.settings-card { width: min(900px, 98vw); min-height: min(660px, 92vh); }
+.settings-card {
+  width: min(980px, 98vw);
+  height: min(760px, 92vh);
+  min-height: min(620px, 92vh);
+  max-height: 92vh;
+}
+.settings-card .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 22px;
@@ -970,6 +1048,11 @@ a:hover { text-decoration: underline; }
   padding: 8px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+}
+.inspector-collapse {
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
 }
 .inspector-tab {
   height: 24px;
@@ -1522,9 +1605,101 @@ a:hover { text-decoration: underline; }
 .settings-tab:hover { color: var(--text-base); }
 .settings-tab.active { color: var(--text-base); border-bottom-color: var(--v2-blue-500); }
 
-.settings-panels { flex: 1; min-height: 0; overflow-y: auto; }
+.settings-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
 .settings-panel { display: none; padding: 18px; flex-direction: column; gap: 16px; }
 .settings-panel.active { display: flex; }
+
+/* Settings forms live inside .settings-group, so restore grid label layout
+   after the generic .settings-group label rule below. */
+.settings-panel .provider-config-form label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 0;
+}
+.settings-panel .provider-config-form label span {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+/* Models tab: avoid forced empty modal height and keep Add Provider near list */
+#stab-models.active {
+  height: 100%;
+  min-height: 0;
+}
+#stab-models { gap: 10px; }
+#stab-models .settings-group {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+#stab-models .settings-group > label { flex-shrink: 0; }
+#settings-model-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 6px;
+}
+#settings-add-provider {
+  align-self: flex-start;
+  margin-top: 0 !important;
+}
+
+/* MCP settings: compact, aligned form instead of sparse full-width rows. */
+#stab-mcp.active {
+  height: 100%;
+  min-height: 0;
+}
+#mcp-list-view {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+}
+#stab-mcp .settings-group { margin-bottom: 0; }
+#mcp-server-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+#mcp-add-form {
+  max-width: 760px;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  align-items: end;
+}
+#mcp-add-form .field-input,
+#mcp-add-form .field-select,
+#mcp-add-form textarea {
+  width: 100%;
+}
+#mcp-add-form textarea {
+  min-height: 74px;
+}
+#mcp-add-form button[type="submit"] {
+  width: min(260px, 100%);
+  justify-self: start;
+}
+#mcp-json-view {
+  min-height: 0;
+  height: 100%;
+}
+#mcp-json-editor {
+  height: min(440px, calc(92vh - 250px)) !important;
+}
 
 /* Provider group header in settings */
 .settings-provider-header {
@@ -1542,6 +1717,10 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 0; cursor: pointer;
   color: var(--text-base); font-size: 13px;
+}
+.settings-group .toggle-row {
+  display: flex;
+  margin-bottom: 0;
 }
 .toggle-row span { flex: 1; }
 .toggle-row input[type="checkbox"] {
@@ -1695,6 +1874,7 @@ kbd {
    ═════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1500px) {
   .app-shell { grid-template-columns: var(--rail-width) minmax(220px, var(--sidebar-width)) minmax(0, 1fr); }
+  .app-shell.sidebar-collapsed { grid-template-columns: var(--rail-width) minmax(0, 1fr); }
   .app-inspector { display: none; }
 }
 
@@ -1734,6 +1914,20 @@ kbd {
   .welcome-actions { gap: 6px; }
   .composer-body { gap: 6px; }
   #prompt { min-height: 36px; }
+}
+
+@media (max-width: 780px) {
+  .settings-card {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    min-height: 0;
+    max-height: calc(100dvh - 16px);
+  }
+  .settings-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .settings-tabs::-webkit-scrollbar { display: none; }
 }
 
 /* ═════════════════════════════════════════════════════════════════════

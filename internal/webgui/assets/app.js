@@ -900,7 +900,33 @@ function closeModelPicker() {
   if (menu) menu.hidden = true;
 }
 
+// ── Collapsible side panels ──
+var appShell = $("#app");
+function setPanelCollapsed(side, collapsed) {
+  if (!appShell) return;
+  var cls = side === "sidebar" ? "sidebar-collapsed" : "inspector-collapsed";
+  appShell.classList.toggle(cls, !!collapsed);
+  try { localStorage.setItem("supercli-" + cls, collapsed ? "1" : "0"); } catch(e) {}
+}
+function restorePanel(side) { setPanelCollapsed(side, false); }
+(function initPanelCollapse() {
+  if (!appShell) return;
+  try {
+    appShell.classList.toggle("sidebar-collapsed", localStorage.getItem("supercli-sidebar-collapsed") === "1");
+    appShell.classList.toggle("inspector-collapsed", localStorage.getItem("supercli-inspector-collapsed") === "1");
+  } catch(e) {}
+  var ts = $("#toggle-sidebar");
+  var rs = $("#restore-sidebar");
+  var ti = $("#toggle-inspector");
+  var ri = $("#restore-inspector");
+  if (ts) ts.addEventListener("click", function() { setPanelCollapsed("sidebar", true); });
+  if (rs) rs.addEventListener("click", function() { restorePanel("sidebar"); });
+  if (ti) ti.addEventListener("click", function() { setPanelCollapsed("inspector", true); });
+  if (ri) ri.addEventListener("click", function() { restorePanel("inspector"); });
+})();
+
 function showInspector(name) {
+  restorePanel("inspector");
   activePanel = name;
   closeModelPicker();
   // Update inspector tabs
