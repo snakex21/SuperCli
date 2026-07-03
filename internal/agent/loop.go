@@ -742,6 +742,14 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		}
 
 		// Build the assistant message and append it to history.
+		// Two views: the in-memory history that drives the NEXT
+		// provider request keeps only the final answer (reasoning
+		// blocks stripped, per Qwen/DeepSeek convention — prior-turn
+		// chain-of-thought is not context and re-sending it bloats
+		// every subsequent turn). The persisted copy keeps the full
+		// text with <thinking> so the UI can replay it. Stripping here
+		// (at append time), not in-flight, keeps the cacheable prefix
+		// deterministic: the history bytes never change afterwards.
 		assistant := llm.Message{Role: llm.RoleAssistant}
 		if text != "" {
 			assistant.Parts = append(assistant.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: text})
@@ -751,8 +759,8 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 				ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments,
 			})
 		}
-		l.Messages = append(l.Messages, assistant)
 		l.persist(ctx, assistant)
+		l.Messages = append(l.Messages, stripThinkingFromMessage(assistant))
 
 		// F14: budget-based eviction. After every step we
 		// look at the visible token estimate; if it
@@ -914,6 +922,20 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	return l.consume(ctx, stream, out)
 }
 
+// stampSection is the per-request trailing prompt content: the
+// freshness timestamp plus, when the user has turned thinking off for a
+// model that honours a prompt soft switch (Qwen /no_think), the
+// suppression token. Both live at the very END of the prompt so the
+// cacheable prefix is undisturbed — the token is append-only exactly
+// like the timestamp, and toggling it never rewrites earlier bytes.
+func (l *Loop) stampSection() string {
+	s := timeSection(time.Now())
+	if d := llm.ThinkingDirective(l.modelID); d != "" {
+		s += "\n\n" + d
+	}
+	return s
+}
+
 func (l *Loop) providerMessages() []llm.Message {
 	if l.route == RouteCoordinator {
 		// Per-request freshness stamp: appended at the END so the stable
@@ -928,7 +950,7 @@ func (l *Loop) providerMessages() []llm.Message {
 		if pre := l.thinToolsPreamble(); pre != "" {
 			out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
 		}
-		out = append(out, llm.Message{Role: llm.RoleSystem, Content: timeSection(time.Now())})
+		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
 		return out
 	}
 	visible := l.VisibleMessages()
@@ -942,7 +964,7 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.briefing != "" {
 		system += "\n\n" + l.briefing
 	}
-	system += "\n\n" + timeSection(time.Now())
+	system += "\n\n" + l.stampSection()
 	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 
 	// The current turn (everything from the last user message on) is sent

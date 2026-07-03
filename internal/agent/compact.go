@@ -24,7 +24,18 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 	for keep < len(l.Messages) && l.Messages[keep].Role == llm.RoleSystem {
 		keep++
 	}
-	l.Messages = append(l.Messages[:keep], msgs...)
+	// Strip reasoning from resumed assistant turns so the live history
+	// stays consistent with fresh turns (prior chain-of-thought is not
+	// context). The session store still holds the full text.
+	cleaned := make([]llm.Message, len(msgs))
+	for i, m := range msgs {
+		if m.Role == llm.RoleAssistant {
+			cleaned[i] = stripThinkingFromMessage(m)
+		} else {
+			cleaned[i] = m
+		}
+	}
+	l.Messages = append(l.Messages[:keep], cleaned...)
 	l.resetHidden()
 }
 
