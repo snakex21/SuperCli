@@ -114,6 +114,14 @@ type TomlConfig struct {
 	// self-hosted server behind a public address or a forced choice.
 	TaskParallel *bool `toml:"task_parallel"`
 
+	// CachePrompt hints local llama.cpp-family servers to reuse the KV
+	// prompt cache across turns (`"cache_prompt": true` in the request).
+	// Tri-state: nil = auto (sent to local/private hosts, never to cloud
+	// endpoints that reject unknown fields), explicit true/false forces
+	// it. Applies to providers built after startup; the active provider
+	// keeps its resolved value for the session.
+	CachePrompt *bool `toml:"cache_prompt"`
+
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
@@ -407,6 +415,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.TaskParallel != nil {
 		dst.TaskParallel = src.TaskParallel
+	}
+	if src.CachePrompt != nil {
+		dst.CachePrompt = src.CachePrompt
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

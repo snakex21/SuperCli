@@ -45,3 +45,25 @@ func ThinkingDirective(model string) string {
 	}
 	return ""
 }
+
+// cachePromptDefault is the process-global cache_prompt override, set
+// once at startup from config.toml `cache_prompt`. nil = unset (each
+// provider auto-detects by host). A per-construction
+// OpenAIConfig.CachePrompt still wins over this. Stored via a holder so
+// atomic.Value can carry a nil *bool.
+type cachePromptHolder struct{ v *bool }
+
+var cachePromptDefault atomic.Value
+
+// SetCachePromptDefault sets the process-global cache_prompt default.
+// Pass nil to clear it (back to per-host auto-detection).
+func SetCachePromptDefault(v *bool) { cachePromptDefault.Store(cachePromptHolder{v}) }
+
+// cachePromptDefaultVal returns the current global default, or nil when
+// unset. Consulted by NewOpenAI when no explicit CachePrompt is given.
+func cachePromptDefaultVal() *bool {
+	if h, ok := cachePromptDefault.Load().(cachePromptHolder); ok {
+		return h.v
+	}
+	return nil
+}

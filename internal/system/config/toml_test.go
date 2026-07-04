@@ -240,6 +240,22 @@ func TestMergeToml_TaskParallelOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_CachePromptOverride: a non-nil source cache_prompt
+// overrides the destination in both directions; nil leaves it untouched.
+func TestMergeToml_CachePromptOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{CachePrompt: &off}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.CachePrompt == nil || *dst.CachePrompt {
+		t.Fatalf("nil src should not clear cache_prompt: %v", dst.CachePrompt)
+	}
+	mergeToml(&dst, TomlConfig{CachePrompt: &on})
+	if dst.CachePrompt == nil || !*dst.CachePrompt {
+		t.Fatalf("src=true should override to true: %v", dst.CachePrompt)
+	}
+}
+
 func TestFindTomlPaths(t *testing.T) {
 	global, project := FindTomlPaths("/data/supercli-data", "/home/user/project")
 	wantGlobal := filepath.Join("/data/supercli-data", "config.toml")

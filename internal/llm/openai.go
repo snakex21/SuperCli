@@ -91,7 +91,14 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	if caps == nil {
 		caps = NewCapabilityRegistry()
 	}
+	// Resolution order for the cache_prompt hint: an explicit
+	// per-construction CachePrompt wins; else the process-global
+	// default set from config.toml `cache_prompt` (nil = unset); else
+	// auto-detect by whether the backend is local.
 	cachePrompt := isLocalBaseURL(cfg.BaseURL)
+	if d := cachePromptDefaultVal(); d != nil {
+		cachePrompt = *d
+	}
 	if cfg.CachePrompt != nil {
 		cachePrompt = *cfg.CachePrompt
 	}

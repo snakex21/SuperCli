@@ -74,7 +74,7 @@ func buildSlashItems(_ map[string]SlashHandler) []autocompleteItem {
 
 func commandCategory(name string) string {
 	switch name {
-	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "mcp":
+	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "mcp", "settings":
 		return "system"
 	case "model", "providers", "reasoning", "usage":
 		return "model"
@@ -117,6 +117,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
 		{Name: "usage", Desc: "refresh and show ChatGPT-subscription usage limits (Codex)"},
 		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
+		{Name: "settings", Desc: "edit config settings with reset-to-defaults"},
 		{Name: "doctor", Desc: "diagnose SuperCli runtime and configuration"},
 		{Name: "login", Desc: "sign in with ChatGPT (/login <label> adds another account)", Args: "[label]"},
 		{Name: "account", Desc: "show current ChatGPT account and plan"},
