@@ -18,9 +18,20 @@ import (
 // verbatim when an oversized session is summarized.
 const resumeKeepRecent = 20
 
-// listResumableSessions renders the /resume picker text.
-func listResumableSessions(ctx context.Context, store *session.Store, currentSessionID string) (string, error) {
-	recent, err := store.ListRecent(ctx, 10)
+// listResumableSessions renders the /resume picker text. By default it
+// shows sessions from the current project (cwd); when all is true it
+// shows every project's sessions. An empty cwd falls back to showing all
+// (nothing to filter on).
+func listResumableSessions(ctx context.Context, store *session.Store, currentSessionID, cwd string, all bool) (string, error) {
+	var recent []session.RecentSession
+	var err error
+	scope := "all projects"
+	if all || cwd == "" {
+		recent, err = store.ListRecent(ctx, 10)
+	} else {
+		recent, err = store.ListRecentByCwd(ctx, cwd, 10)
+		scope = "this project"
+	}
 	if err != nil {
 		return "", err
 	}
@@ -42,9 +53,13 @@ func listResumableSessions(ctx context.Context, store *session.Store, currentSes
 		n++
 	}
 	if n == 0 {
+		if !all && cwd != "" {
+			return "resume: no previous sessions in this project (try /resume all)", nil
+		}
 		return "resume: no previous sessions found", nil
 	}
-	return fmt.Sprintf("%d recent session(s):\n%susage: /resume <session-id>", n, b.String()), nil
+	return fmt.Sprintf("%d recent session(s) — %s:\n%susage: /resume <session-id>  ·  /resume all to list every project",
+		n, scope, b.String()), nil
 }
 
 // resumeSession loads session id from store into loop. When the

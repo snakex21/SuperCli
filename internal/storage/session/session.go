@@ -120,6 +120,30 @@ func (s *Store) CreateWithParent(cwd, model, title, parentID string) (Session, e
 	}, nil
 }
 
+// EnsureSession inserts a sessions row for a pre-chosen id if one does
+// not already exist, snapshotting cwd (and model, best-effort). The live
+// TUI picks its session id up front and writes only into the messages
+// table via the Writer, so without this the sessions row — and thus the
+// cwd needed to attribute a session to a project — never existed. Safe
+// to call repeatedly (INSERT OR IGNORE); an empty cwd is rejected.
+func (s *Store) EnsureSession(id, cwd, model string) error {
+	if id == "" {
+		return fmt.Errorf("session.Store.EnsureSession: id is empty")
+	}
+	if cwd == "" {
+		return fmt.Errorf("session.Store.EnsureSession: cwd is empty")
+	}
+	ns := time.Now().UTC().UnixNano()
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO sessions(id, cwd, title, model, parent_id, created_at, updated_at, message_count, token_in, token_out) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		id, cwd, "", model, nullable(""), ns, ns, 0, 0, 0,
+	)
+	if err != nil {
+		return fmt.Errorf("session.Store.EnsureSession: %w", err)
+	}
+	return nil
+}
+
 // Get returns the session with the given ID.
 func (s *Store) Get(id string) (Session, error) {
 	row := s.db.QueryRow(
@@ -234,27 +258,60 @@ type RecentSession struct {
 	StartedAt    time.Time
 	FirstUserMsg string
 	MessageCount int
+	// Cwd is the working directory recorded for the session (from the
+	// sessions row), or "" when no sessions row exists (F13 writer
+	// sessions are message-only). Populated via a LEFT JOIN so the
+	// listing can attribute a session to a project.
+	Cwd string
 }
 
 // ListRecent returns up to limit sessions that have at least
 // one message, most recent first, with the first user message
-// as a snippet source.
+// as a snippet source. Sessions from any project are included.
 func (s *Store) ListRecent(ctx context.Context, limit int) ([]RecentSession, error) {
+	return s.listRecent(ctx, "", limit)
+}
+
+// ListRecentByCwd is ListRecent filtered to sessions whose recorded
+// working directory equals cwd — the backing for the TUI "current
+// project" session view. Sessions with no sessions row (message-only)
+// have an unknown cwd and are therefore excluded from a project filter;
+// they still appear in the unfiltered ListRecent ("all") view. An empty
+// cwd disables the filter and behaves like ListRecent.
+func (s *Store) ListRecentByCwd(ctx context.Context, cwd string, limit int) ([]RecentSession, error) {
+	return s.listRecent(ctx, cwd, limit)
+}
+
+func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]RecentSession, error) {
 	if limit <= 0 {
 		limit = 10
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	// LEFT JOIN sessions so the cwd is available for display and
+	// filtering while message-only sessions (no sessions row) still
+	// appear in the unfiltered view.
+	query := `
 		SELECT m.session_id,
 		       MIN(m.created_at) AS started,
 		       COUNT(*) AS n,
 		       IFNULL((SELECT content FROM messages
 		               WHERE session_id = m.session_id AND role = 'user'
 		                 AND content IS NOT NULL AND content <> ''
-		               ORDER BY seq LIMIT 1), '')
+		               ORDER BY seq LIMIT 1), ''),
+		       IFNULL(s.cwd, '')
 		FROM messages m
+		LEFT JOIN sessions s ON s.id = m.session_id`
+	args := []any{}
+	if cwd != "" {
+		query += `
+		WHERE s.cwd = ?`
+		args = append(args, cwd)
+	}
+	query += `
 		GROUP BY m.session_id
 		ORDER BY started DESC
-		LIMIT ?`, limit)
+		LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("session.Store.ListRecent: %w", err)
 	}
@@ -263,7 +320,7 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]RecentSession, err
 	for rows.Next() {
 		var r RecentSession
 		var startedNanos int64
-		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg); err != nil {
+		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg, &r.Cwd); err != nil {
 			return nil, fmt.Errorf("session.Store.ListRecent: scan: %w", err)
 		}
 		r.StartedAt = time.Unix(0, startedNanos).UTC()
