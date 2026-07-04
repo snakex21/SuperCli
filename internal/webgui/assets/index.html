@@ -399,6 +399,14 @@
                   <input type="checkbox" id="setting-perm-network" checked />
                 </label>
               </div>
+              <div class="settings-group">
+                <label data-i18n="settings.delegation">Delegation</label>
+                <label class="toggle-row" title="When on, the main agent can only read and delegate — it must hand edits and commands to a worker via the task tool. Global setting; takes effect on the next launch." data-i18n-title="settings.orchestratorHint">
+                  <span data-i18n="settings.orchestrator">Orchestrator mode (force delegation)</span>
+                  <input type="checkbox" id="setting-orchestrator" />
+                </label>
+                <small id="orchestrator-status" class="setting-note" data-i18n="settings.orchestratorNote">Applies from the next launch.</small>
+              </div>
             </div>
             <!-- Appearance -->
             <div class="settings-panel" id="stab-appearance">

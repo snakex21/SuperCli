@@ -312,6 +312,10 @@ var I18N = {
     "settings.permissions": "Permissions",
     "settings.permWrite": "Ask before file writes outside project",
     "settings.permNetwork": "Ask before network requests",
+    "settings.delegation": "Delegation",
+    "settings.orchestrator": "Orchestrator mode (force delegation)",
+    "settings.orchestratorHint": "When on, the main agent can only read and delegate — it must hand edits and commands to a worker via the task tool. Global setting; takes effect on the next launch.",
+    "settings.orchestratorNote": "Applies from the next launch.",
     "settings.theme": "Theme",
     "settings.dark": "Dark",
     "settings.light": "Light",
@@ -548,6 +552,10 @@ var I18N = {
     "settings.permissions": "Uprawnienia",
     "settings.permWrite": "Pytaj przed zapisem plików poza projektem",
     "settings.permNetwork": "Pytaj przed żądaniami sieciowymi",
+    "settings.delegation": "Delegacja",
+    "settings.orchestrator": "Tryb orchestratora (wymuś delegację)",
+    "settings.orchestratorHint": "Gdy włączone, główny agent może tylko czytać i delegować — edycje i komendy musi zlecić workerowi przez narzędzie task. Ustawienie globalne; działa od następnego uruchomienia.",
+    "settings.orchestratorNote": "Działa od następnego uruchomienia.",
     "settings.theme": "Motyw",
     "settings.dark": "Ciemny",
     "settings.light": "Jasny",
@@ -3040,7 +3048,34 @@ $("#settings-btn").addEventListener("click", function() {
   $$(".settings-tab").forEach(function(t) { t.classList.toggle("active", t.dataset.stab === "general"); });
   $$(".settings-panel").forEach(function(p) { p.classList.toggle("active", p.id === "stab-general"); });
   loadSettingsValues();
+  loadOrchestratorSetting();
 });
+
+// Orchestrator mode is a GLOBAL config.toml setting (not a per-browser
+// UI preference), so it is read/written through its own endpoint. The
+// change takes effect on the next launch — the running loop is not
+// rebuilt.
+function loadOrchestratorSetting() {
+  var cb = $("#setting-orchestrator");
+  if (!cb) return;
+  fetch("/api/orchestrator").then(function(r) { return r.json(); })
+    .then(function(d) { cb.checked = !!(d && d.enabled); })
+    .catch(function() {});
+}
+(function() {
+  var cb = $("#setting-orchestrator");
+  if (!cb) return;
+  cb.addEventListener("change", function() {
+    var enabled = cb.checked;
+    fetch("/api/orchestrator", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: enabled }),
+    }).then(function(r) { return r.json(); })
+      .then(function(d) { if (d && typeof d.enabled === "boolean") cb.checked = d.enabled; })
+      .catch(function() {});
+  });
+})();
 $("#settings-close").addEventListener("click", function() {
   saveSettings(); // ensure latest state is saved
   settingsModal.hidden = true;
