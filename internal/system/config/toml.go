@@ -85,6 +85,16 @@ type TomlConfig struct {
 	// small models get the trimmed core tool set).
 	SmallFullTools bool `toml:"small_full_tools"`
 
+	// Orchestrator is the HARD delegation switch. When true, the main
+	// loop is built with a restricted registry (delegation + a read-only
+	// lookup set only) so it physically cannot edit files, run commands,
+	// or do heavy work itself — it must delegate to a `task` worker.
+	// Tri-state: nil = built-in default (OFF, unchanged behaviour),
+	// explicit true/false overrides. Set at runtime via /orchestrator
+	// on|off; takes effect on the next launch (a new session), because
+	// swapping the tool list mid-session would break the KV-cache prefix.
+	Orchestrator *bool `toml:"orchestrator"`
+
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
@@ -361,6 +371,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.Navigator != "" {
 		dst.Navigator = src.Navigator
+	}
+	if src.Orchestrator != nil {
+		dst.Orchestrator = src.Orchestrator
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
