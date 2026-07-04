@@ -50,6 +50,7 @@ type Loop struct {
 	maxSteps        int
 	thinTools       bool
 	stableToolset   bool
+	orchestrator    bool
 	thinHintMax     int
 	baseDir         string
 	writer          SessionWriter
@@ -233,6 +234,12 @@ type LoopConfig struct {
 	// it on every tool load. Default false = historical behaviour
 	// (activated tools get promoted, tools list grows).
 	StableToolset bool
+	// Orchestrator enables the HARD delegation mode. It does not by
+	// itself restrict the registry (the app layer passes a restricted
+	// registry via OrchestratorRegistry); it only tells the loop to
+	// treat `task` as a schema-carrying thin-core tool so delegation is
+	// directly callable with a full schema from turn 1. Default false.
+	Orchestrator bool
 	// ThinHintMax caps each catalog hint length in runes. Zero falls
 	// back to defaultThinHintMax. Only consulted when ThinTools is on.
 	ThinHintMax int
@@ -362,6 +369,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		maxSteps:        cfg.MaxSteps,
 		thinTools:       cfg.ThinTools,
 		stableToolset:   cfg.StableToolset,
+		orchestrator:    cfg.Orchestrator,
 		thinHintMax:     cfg.ThinHintMax,
 		baseDir:         cfg.BaseDir,
 		writer:          cfg.Writer,
@@ -443,6 +451,20 @@ func (l *Loop) thinHintMaxOrDefault() int {
 	return l.thinHintMax
 }
 
+// SetRegistry swaps the tool registry the loop exposes to the model.
+// Used at startup to hand the main loop a restricted (orchestrator)
+// registry AFTER every tool — including the late-registered task tools —
+// is present in the full base registry. The loop only reads its registry
+// per-turn (buildToolDefs), so swapping the pointer before the first Run
+// is safe and does not disturb any in-flight state.
+func (l *Loop) SetRegistry(r *tools.Registry) { l.registry = r }
+
+// VisibleToolNames returns the names of tools the model can currently see
+// (the registry's visible + always-on set). Exposed for tests and
+// diagnostics — in orchestrator mode this is the proof that mutating
+// tools are physically absent from the main loop's registry.
+func (l *Loop) VisibleToolNames() []string { return l.registry.VisibleNames() }
+
 // buildToolDefs assembles the tool definitions sent to the
 // provider for the current route. The coordinator route exposes
 // every visible tool with its full JSON Schema; chat/advisor
@@ -512,7 +534,7 @@ func (l *Loop) isActivated(name string) bool {
 // text and Registry.Execute dispatches by name, not by promotion.
 func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
 	for _, t := range l.registry.Visible() {
-		if l.thinTools && !isThinCore(t.Name) {
+		if l.thinTools && !l.isSchemaCore(t.Name) {
 			if l.stableToolset || !l.isActivated(t.Name) {
 				tail = append(tail, t)
 				continue
@@ -521,6 +543,17 @@ func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
 		schema = append(schema, t)
 	}
 	return schema, tail
+}
+
+// isSchemaCore reports whether name belongs to the always-full-schema
+// core for the active mode. Orchestrator mode uses its own core set
+// (delegation-first: task is core, the mutating tools are absent from
+// the registry entirely); every other mode uses thinCoreTools.
+func (l *Loop) isSchemaCore(name string) bool {
+	if l.orchestrator {
+		return isOrchestratorCore(name)
+	}
+	return isThinCore(name)
 }
 
 // thinToolsPreamble builds the request-time system block for the
