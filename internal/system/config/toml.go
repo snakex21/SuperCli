@@ -103,6 +103,17 @@ type TomlConfig struct {
 	// address (auto would misread it as cloud) or to force sequential.
 	DarwinParallel *bool `toml:"darwin_parallel"`
 
+	// TaskParallel controls whether MULTIPLE `task` delegations emitted
+	// in a single model turn run concurrently. Tri-state: nil = auto
+	// (parallel for cloud backends, sequential for local ones, decided
+	// by the base URL — one local GPU serializes the requests on a
+	// single server slot anyway, N× wall time, and interleaved worker
+	// contexts thrash each other's KV cache), explicit true forces
+	// parallel, explicit false forces sequential. Forcing parallel on a
+	// local backend prints a runtime warning. The override exists for a
+	// self-hosted server behind a public address or a forced choice.
+	TaskParallel *bool `toml:"task_parallel"`
+
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
@@ -393,6 +404,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.DarwinParallel != nil {
 		dst.DarwinParallel = src.DarwinParallel
+	}
+	if src.TaskParallel != nil {
+		dst.TaskParallel = src.TaskParallel
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

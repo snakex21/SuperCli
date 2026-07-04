@@ -224,6 +224,22 @@ func TestMergeToml_DarwinParallelOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_TaskParallelOverride: a non-nil source task_parallel
+// overrides the destination in both directions; nil leaves it untouched.
+func TestMergeToml_TaskParallelOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{TaskParallel: &off}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.TaskParallel == nil || *dst.TaskParallel {
+		t.Fatalf("nil src should not clear task_parallel: %v", dst.TaskParallel)
+	}
+	mergeToml(&dst, TomlConfig{TaskParallel: &on})
+	if dst.TaskParallel == nil || !*dst.TaskParallel {
+		t.Fatalf("src=true should override to true: %v", dst.TaskParallel)
+	}
+}
+
 func TestFindTomlPaths(t *testing.T) {
 	global, project := FindTomlPaths("/data/supercli-data", "/home/user/project")
 	wantGlobal := filepath.Join("/data/supercli-data", "config.toml")
