@@ -16,11 +16,12 @@ import (
 // LoopFactory (set by main.go with
 // darwin.AgentLoopAdapter()).
 type DarwinTool struct {
-	provider  llm.Provider
-	registry  *tools.Registry
-	home      string
-	system    string
-	loopFact  LoopFactory
+	provider   llm.Provider
+	registry   *tools.Registry
+	home       string
+	system     string
+	loopFact   LoopFactory
+	sequential bool
 }
 
 // NewDarwinTool returns a DarwinTool ready to
@@ -41,6 +42,18 @@ func NewDarwinTool(provider llm.Provider, registry *tools.Registry, home, system
 func (d *DarwinTool) SetLoopFactory(f LoopFactory) {
 	d.loopFact = f
 }
+
+// SetSequential forces the pool to run agents one at a time (see
+// PoolConfig.Sequential). main.go sets this for local backends, where
+// N concurrent contexts serialize on one GPU slot and thrash each
+// other's KV cache anyway. When sequential, the rendered result carries
+// a "~N× time" note so the user understands the wall-clock cost.
+func (d *DarwinTool) SetSequential(seq bool) {
+	d.sequential = seq
+}
+
+// Sequential reports whether the tool runs agents sequentially.
+func (d *DarwinTool) Sequential() bool { return d.sequential }
 
 // Spec returns the tool spec for registration in
 // the tools.Registry.
@@ -113,11 +126,12 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	}
 	dw, err := NewDarwin(Config{
 		PoolConfig: PoolConfig{
-			Provider:  d.provider,
-			System:    d.system,
-			Home:      d.home,
-			Factory:   d.loopFact,
-			PoolSize:  args.PoolSize,
+			Provider:   d.provider,
+			System:     d.system,
+			Home:       d.home,
+			Factory:    d.loopFact,
+			PoolSize:   args.PoolSize,
+			Sequential: d.sequential,
 		},
 		Judge:       judge,
 		AutoMerge:   args.AutoMerge,
@@ -146,7 +160,12 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	if final == nil {
 		return tools.Result{}, fmt.Errorf("darwin: run closed without DoneEvent")
 	}
-	return tools.Result{Text: renderDarwinResult(*final)}, nil
+	text := renderDarwinResult(*final)
+	if d.sequential {
+		n := len(final.Candidates)
+		text = fmt.Sprintf("_local backend: sequential best-of-%d, expect ~%d× time_\n\n%s", n, n, text)
+	}
+	return tools.Result{Text: text}, nil
 }
 
 // renderDarwinResult formats a Result as a

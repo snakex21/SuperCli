@@ -131,6 +131,14 @@ type PoolConfig struct {
 	// BudgetWall is the wall-clock timeout for
 	// the whole pool. Default 10m.
 	BudgetWall time.Duration
+	// Sequential runs the agents one at a time
+	// instead of concurrently. On a single local
+	// GPU the requests serialize on one server slot
+	// anyway (N× wall time), and concurrent contexts
+	// thrash each other's KV cache — so best-of-N on
+	// a local backend defaults to sequential. Cloud
+	// backends keep the parallel path.
+	Sequential bool
 }
 
 // maxPoolSize caps the PoolSize input. Anything
@@ -179,35 +187,59 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 	}
 	poolCtx, cancel := context.WithTimeout(ctx, wall)
 	out := make(chan LoopEvent, size*4)
+
+	// runAgent drives one agent to completion, emitting its events on
+	// out. Shared by the parallel and sequential paths.
+	runAgent := func(i int) {
+		home := cfg.Home
+		if i < len(cfg.Homes) && cfg.Homes[i] != "" {
+			home = cfg.Homes[i]
+		}
+		loopCfg := LoopConfig{
+			Provider: cfg.Provider,
+			System:   cfg.System,
+			Home:     home,
+			Prompt:   "", // set per-Run by the caller
+		}
+		loop, err := cfg.Factory(loopCfg)
+		if err != nil {
+			emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
+			return
+		}
+		ch, err := loop.Run(poolCtx, "")
+		if err != nil {
+			emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
+			return
+		}
+		for ev := range ch {
+			emitOrSkip(poolCtx, out, stampAgent(ev, i))
+		}
+	}
+
+	if cfg.Sequential {
+		// One goroutine runs the agents back-to-back: on a single
+		// local GPU this is what actually happens on the wire anyway,
+		// minus the KV-cache thrashing of interleaved contexts.
+		go func() {
+			defer close(out)
+			defer cancel()
+			for i := 0; i < size; i++ {
+				if poolCtx.Err() != nil {
+					return
+				}
+				runAgent(i)
+			}
+		}()
+		return out, nil
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(size)
 	for i := 0; i < size; i++ {
 		i := i
 		go func() {
 			defer wg.Done()
-			home := cfg.Home
-			if i < len(cfg.Homes) && cfg.Homes[i] != "" {
-				home = cfg.Homes[i]
-			}
-			loopCfg := LoopConfig{
-				Provider: cfg.Provider,
-				System:   cfg.System,
-				Home:     home,
-				Prompt:   "", // set per-Run by the caller
-			}
-			loop, err := cfg.Factory(loopCfg)
-			if err != nil {
-				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
-				return
-			}
-			ch, err := loop.Run(poolCtx, "")
-			if err != nil {
-				emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
-				return
-			}
-			for ev := range ch {
-				emitOrSkip(poolCtx, out, stampAgent(ev, i))
-			}
+			runAgent(i)
 		}()
 	}
 	go func() {

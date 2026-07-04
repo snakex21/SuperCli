@@ -749,7 +749,10 @@ func Main() {
 		registry.MarkAlwaysOn("ask_user")
 		registry.MarkAlwaysOn("tool_search")
 		registry.MarkAlwaysOn("apply_skill")
-		registry.MarkAlwaysOn("darwin")
+		// darwin is deliberately NOT always-on: its schema (~277 tok)
+		// is a heavy always-on prefix that overlaps conceptually with
+		// task/orchestrator delegation. It stays reachable on demand
+		// via tool_search + the /darwin slash command.
 		registry.MarkAlwaysOn("goal")
 		registry.MarkAlwaysOn("ctx_execute")
 	}
@@ -842,6 +845,19 @@ func Main() {
 	darwinTool.SetLoopFactory(darwin.AgentLoopAdapter(registry, func(root string) (*tools.Registry, error) {
 		return buildChildToolRegistry(root), nil
 	}))
+	// Local backends run best-of-N sequentially: a single GPU serializes
+	// the requests anyway (N× wall time), and interleaved contexts thrash
+	// each other's KV cache. Auto-detected from the base URL; a config
+	// override (darwin_parallel) wins in both directions for self-hosted
+	// servers behind a public address or a forced choice.
+	darwinSequential := llm.IsLocalBaseURL(cfg.BaseURL)
+	if tomlCfg.DarwinParallel != nil {
+		darwinSequential = !*tomlCfg.DarwinParallel
+	}
+	darwinTool.SetSequential(darwinSequential)
+	if darwinSequential {
+		log.Printf("darwin: local backend — sequential best-of-N (expect ~N× time)")
+	}
 	registry.MustRegister(darwinTool.Spec())
 
 	var injector *reflect.Injector

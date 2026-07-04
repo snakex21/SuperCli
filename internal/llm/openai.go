@@ -109,6 +109,11 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 // request, which is exactly the per-session KV reuse we want; pinning
 // a slot id would make parallel agents (coordinator + workers sharing
 // one server) evict each other's cache.
+// IsLocalBaseURL is the exported form of isLocalBaseURL, for callers
+// outside this package (e.g. deciding Darwin's parallel/sequential mode
+// by whether the active backend is local).
+func IsLocalBaseURL(baseURL string) bool { return isLocalBaseURL(baseURL) }
+
 func isLocalBaseURL(baseURL string) bool {
 	u, err := url.Parse(baseURL)
 	if err != nil {
