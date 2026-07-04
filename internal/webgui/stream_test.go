@@ -50,6 +50,20 @@ func TestToWireEvent_Done(t *testing.T) {
 	if w.TokIn != 10 || w.TokOut != 5 || w.TokTotal != 15 {
 		t.Errorf("usage mismatch: %+v", w)
 	}
+	// No cache/reasoning reported → both omitted.
+	if w.CacheHitPct != 0 || w.ReasoningTok != 0 {
+		t.Errorf("expected zero observability, got %+v", w)
+	}
+}
+
+func TestToWireEvent_DoneObservability(t *testing.T) {
+	w, _ := toWireEvent(agent.DoneEvent{Usage: agent.Usage{Input: 2000, Output: 100, Total: 2100, Cached: 1500, Reasoning: 80}})
+	if w.CacheHitPct != 75 {
+		t.Errorf("cache-hit%% = %d, want 75", w.CacheHitPct)
+	}
+	if w.ReasoningTok != 80 {
+		t.Errorf("reasoning = %d, want 80", w.ReasoningTok)
+	}
 }
 
 func TestToWireEvent_Error(t *testing.T) {
