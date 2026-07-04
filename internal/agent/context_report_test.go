@@ -31,6 +31,21 @@ func contextTestLoop(t *testing.T) *Loop {
 	return l
 }
 
+func TestLastTurnPromptTokens(t *testing.T) {
+	l := contextTestLoop(t)
+	if _, ok := l.LastTurnPromptTokens(); ok {
+		t.Fatal("no turn yet: ok should be false")
+	}
+	l.sessUsageMu.Lock()
+	l.lastTurnPrompt = 4096
+	l.lastTurnSet = true
+	l.sessUsageMu.Unlock()
+	got, ok := l.LastTurnPromptTokens()
+	if !ok || got != 4096 {
+		t.Fatalf("LastTurnPromptTokens() = %d, %v; want 4096, true", got, ok)
+	}
+}
+
 func TestContextReport_Breakdown(t *testing.T) {
 	l := contextTestLoop(t)
 	l.Messages = append(l.Messages,

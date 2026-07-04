@@ -74,6 +74,19 @@ func (l *Loop) LastTurnStats() (cacheHitPct int, reasoning int, ok bool) {
 	return cacheHitPct, l.lastTurnReasoning, true
 }
 
+// LastTurnPromptTokens returns the prompt (input) token count the
+// provider reported for the most recent turn. ok is false until a turn
+// with provider usage has completed. Callers pair this with the model's
+// context window to render a "context used" percentage.
+func (l *Loop) LastTurnPromptTokens() (prompt int, ok bool) {
+	l.sessUsageMu.Lock()
+	defer l.sessUsageMu.Unlock()
+	if !l.lastTurnSet {
+		return 0, false
+	}
+	return l.lastTurnPrompt, true
+}
+
 // Route returns the route chosen for the most recent Run.
 func (l *Loop) Route() RouteMode { return l.route }
 
