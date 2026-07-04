@@ -42,24 +42,35 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
-	provider        llm.Provider
-	registry        *tools.Registry
-	caps            *llm.CapabilityRegistry
-	system          string
-	briefing        string
-	maxSteps        int
-	thinTools       bool
-	stableToolset   bool
-	orchestrator    bool
-	thinHintMax     int
-	baseDir         string
-	writer          SessionWriter
-	errorLog        ErrorLogger
-	reflector       Reflector
-	reflectEvery    int
-	patternInjector PatternInjector
-	creditTracker   CreditTracker
-	modelID         string
+	provider      llm.Provider
+	registry      *tools.Registry
+	caps          *llm.CapabilityRegistry
+	system        string
+	briefing      string
+	maxSteps      int
+	thinTools     bool
+	stableToolset bool
+	orchestrator  bool
+	// taskParallel decides whether a batch of multiple `task` calls in
+	// one model turn runs concurrently. Resolved by the app layer:
+	// parallel for cloud backends, sequential for local ones (one GPU
+	// slot serializes them anyway and interleaved contexts thrash the
+	// KV cache), with a config override. taskParallelWarnLocal is set
+	// when the resolution is "parallel on a local backend" (forced) so
+	// the loop can warn once at execution time. taskParallelWarned
+	// guards that one-shot warning.
+	taskParallel          bool
+	taskParallelWarnLocal bool
+	taskParallelWarned    bool
+	thinHintMax           int
+	baseDir               string
+	writer                SessionWriter
+	errorLog              ErrorLogger
+	reflector             Reflector
+	reflectEvery          int
+	patternInjector       PatternInjector
+	creditTracker         CreditTracker
+	modelID               string
 
 	// sessUsage accumulates provider-reported token usage across
 	// every Run of this loop (the whole TUI session). Guarded by
@@ -240,6 +251,19 @@ type LoopConfig struct {
 	// treat `task` as a schema-carrying thin-core tool so delegation is
 	// directly callable with a full schema from turn 1. Default false.
 	Orchestrator bool
+	// TaskParallel makes a batch of multiple `task` delegations emitted
+	// in one model turn run concurrently. Default false = sequential
+	// (safe on a single local GPU, where concurrent worker contexts
+	// serialize on one server slot and thrash each other's KV cache).
+	// The app layer resolves this from the backend (parallel for cloud,
+	// sequential for local) with a config override (task_parallel).
+	// A single `task` call is always run inline regardless.
+	TaskParallel bool
+	// TaskParallelWarnLocal, when true, tells the loop the parallel
+	// decision was FORCED onto a local backend; it emits a one-shot
+	// NoticeEvent (KV-cache thrash, ~N× time) the first time it actually
+	// runs a parallel task batch. Only meaningful with TaskParallel.
+	TaskParallelWarnLocal bool
 	// ThinHintMax caps each catalog hint length in runes. Zero falls
 	// back to defaultThinHintMax. Only consulted when ThinTools is on.
 	ThinHintMax int
@@ -361,32 +385,34 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	msgs = append(msgs, cfg.InitialMessages...)
 
 	loop := &Loop{
-		provider:        cfg.Provider,
-		registry:        cfg.Registry,
-		caps:            cfg.Caps,
-		system:          cfg.System,
-		briefing:        cfg.Briefing,
-		maxSteps:        cfg.MaxSteps,
-		thinTools:       cfg.ThinTools,
-		stableToolset:   cfg.StableToolset,
-		orchestrator:    cfg.Orchestrator,
-		thinHintMax:     cfg.ThinHintMax,
-		baseDir:         cfg.BaseDir,
-		writer:          cfg.Writer,
-		errorLog:        cfg.ErrorLog,
-		reflector:       cfg.Reflector,
-		reflectEvery:    cfg.ReflectEvery,
-		patternInjector: cfg.PatternInjector,
-		creditTracker:   cfg.CreditTracker,
-		modelID:         cfg.Provider.Name(),
-		windowFor:       cfg.WindowFor,
-		summarizer:      cfg.Summarizer,
-		learnLimit:      cfg.LearnLimit,
-		Messages:        msgs,
-		routeMap:        DefaultRouteMap(),
-		route:           RouteCoordinator,
-		navigate:        cfg.EnableNavigator,
-		navAuto:         cfg.NavigatorAuto,
+		provider:              cfg.Provider,
+		registry:              cfg.Registry,
+		caps:                  cfg.Caps,
+		system:                cfg.System,
+		briefing:              cfg.Briefing,
+		maxSteps:              cfg.MaxSteps,
+		thinTools:             cfg.ThinTools,
+		stableToolset:         cfg.StableToolset,
+		orchestrator:          cfg.Orchestrator,
+		taskParallel:          cfg.TaskParallel,
+		taskParallelWarnLocal: cfg.TaskParallelWarnLocal,
+		thinHintMax:           cfg.ThinHintMax,
+		baseDir:               cfg.BaseDir,
+		writer:                cfg.Writer,
+		errorLog:              cfg.ErrorLog,
+		reflector:             cfg.Reflector,
+		reflectEvery:          cfg.ReflectEvery,
+		patternInjector:       cfg.PatternInjector,
+		creditTracker:         cfg.CreditTracker,
+		modelID:               cfg.Provider.Name(),
+		windowFor:             cfg.WindowFor,
+		summarizer:            cfg.Summarizer,
+		learnLimit:            cfg.LearnLimit,
+		Messages:              msgs,
+		routeMap:              DefaultRouteMap(),
+		route:                 RouteCoordinator,
+		navigate:              cfg.EnableNavigator,
+		navAuto:               cfg.NavigatorAuto,
 	}
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
@@ -896,11 +922,19 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 // invokeToolCalls runs the model's tool-call batch and appends the matching
 // tool-result messages to history. Most tools are executed sequentially to
 // avoid surprising write conflicts. A batch made only of the coordinator's
-// `task` calls is safe and useful to run concurrently: each task owns an
-// isolated child loop/context, and parallel research workers are the main
-// reason the coordinator mode exists.
+// `task` calls can be run concurrently: each task owns an isolated child
+// loop/context. Whether it actually runs in parallel is gated by
+// taskParallel — on a single local GPU the workers serialize on one server
+// slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
+// so local backends default to sequential; cloud backends run parallel.
 func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) bool {
-	if len(toolCalls) > 1 && allTaskCalls(toolCalls) {
+	if len(toolCalls) > 1 && allTaskCalls(toolCalls) && l.taskParallel {
+		if l.taskParallelWarnLocal && !l.taskParallelWarned {
+			l.taskParallelWarned = true
+			out <- NoticeEvent{Text: fmt.Sprintf(
+				"running %d task workers in parallel on a local backend — they serialize on one GPU slot (~%d× time) and thrash each other's KV cache; set task_parallel = false for sequential",
+				len(toolCalls), len(toolCalls))}
+		}
 		return l.invokeTaskCallsParallel(ctx, toolCalls, out)
 	}
 

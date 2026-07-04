@@ -860,6 +860,19 @@ func Main() {
 	}
 	registry.MustRegister(darwinTool.Spec())
 
+	// Task delegation parallelism mirrors darwin: a batch of `task` calls
+	// in one turn runs concurrently on cloud backends but sequentially on
+	// local ones (one GPU slot serializes them anyway; interleaved worker
+	// contexts thrash the KV cache). Auto-detected from the base URL;
+	// task_parallel (tri-state) overrides in both directions. Forcing
+	// parallel on a local backend is unusual — the loop warns once when it
+	// actually runs such a batch.
+	taskBackendLocal := llm.IsLocalBaseURL(cfg.BaseURL)
+	taskParallel := !taskBackendLocal
+	if tomlCfg.TaskParallel != nil {
+		taskParallel = *tomlCfg.TaskParallel
+	}
+
 	var injector *reflect.Injector
 	if memStore != nil {
 		patStore, _ := reflect.NewStore(memStore)
@@ -1080,7 +1093,15 @@ func Main() {
 		// itself is applied below via SetRegistry, once the task tools are
 		// registered into the full base registry.
 		Orchestrator: supercliOrchestratorMode,
-		BaseDir:      home,
+		// Task delegation parallelism: multiple `task` calls in one turn
+		// run concurrently on cloud backends, sequentially on local ones
+		// (a single GPU serializes them on one slot anyway, N× wall time,
+		// and interleaved worker contexts thrash the KV cache). The
+		// config override (task_parallel) wins in both directions; forcing
+		// parallel on a local backend warns once at execution time.
+		TaskParallel:          taskParallel,
+		TaskParallelWarnLocal: taskParallel && taskBackendLocal,
+		BaseDir:               home,
 	})
 	if err != nil {
 		fatal("init agent", err)
