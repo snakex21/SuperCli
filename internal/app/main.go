@@ -873,6 +873,11 @@ func Main() {
 		taskParallel = *tomlCfg.TaskParallel
 	}
 
+	// cache_prompt (config.toml) sets the process-global default so
+	// providers built later this session (e.g. after a /model swap)
+	// honour it. nil = per-host auto-detection (unchanged behaviour).
+	llm.SetCachePromptDefault(tomlCfg.CachePrompt)
+
 	var injector *reflect.Injector
 	if memStore != nil {
 		patStore, _ := reflect.NewStore(memStore)

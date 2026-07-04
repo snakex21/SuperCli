@@ -1697,6 +1697,11 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	if cmd.Name == "providers" && cmd.Args == "" {
 		return m.openProvidersMenu()
 	}
+	// /settings opens the interactive config editor (managed knobs +
+	// reset to defaults). No text subcommand form.
+	if cmd.Name == "settings" {
+		return m.openSettingsMenu()
+	}
 	// Bare /goal opens the interactive task menu; with args it
 	// falls through to the text handler (set/list/show/tasks/done),
 	// which was previously unreachable dead code.
@@ -1880,7 +1885,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		if cmd.Args == "" {
 			// Open the interactive models menu.
 			return m.openModelsMenu()
-		}		// Swap directly by name.
+		} // Swap directly by name.
 		if m.modelSwapper == nil {
 			return m, func() tea.Msg {
 				return slashResultMsg{Body: m.marker.Diff("/model not available")}

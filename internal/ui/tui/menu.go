@@ -32,6 +32,7 @@ const (
 	menuProjects
 	menuGoal
 	menuReasoning
+	menuSettings
 )
 
 type interactiveMenu struct {
@@ -43,6 +44,13 @@ type interactiveMenu struct {
 	formAt      int
 	editName    string
 	keyRevealed bool // true = API key shown in plain text
+
+	// /settings panel state. settingsCfg holds the last loaded/saved
+	// global config so the panel renders live values; editing/editBuf
+	// drive inline integer editing of a numeric knob.
+	settingsCfg *config.TomlConfig
+	editing     bool
+	editBuf     string
 }
 
 func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {
@@ -169,6 +177,12 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// /settings integer editing: digits/enter/esc/backspace build the
+	// value instead of navigating the list.
+	if m.menu.kind == menuSettings && m.menu.editing {
+		return m.settingsEditKey(msg)
+	}
+
 	key := msg.String()
 	lowerKey := strings.ToLower(key)
 	switch lowerKey {
@@ -275,6 +289,9 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
+		if m.menu.kind == menuSettings {
+			return m.settingsResetCurrent()
+		}
 		if m.menu.kind == menuModels || m.menu.kind == menuProviderModels {
 			return m.openReasoningMenu()
 		}
@@ -414,6 +431,8 @@ func (m *Model) clampMenuCursor() {
 		max = len(m.goalTaskRows()) - 1
 	case menuReasoning:
 		max = len(reasoningMenuOptions()) - 1
+	case menuSettings:
+		max = len(settingsRows()) - 1
 	}
 	if max < 0 {
 		max = 0
@@ -542,6 +561,8 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m.projectsMenuEnter()
 	case menuReasoning:
 		return m.selectReasoningEffort()
+	case menuSettings:
+		return m.settingsEnter()
 	}
 	return m, nil
 }
@@ -588,6 +609,8 @@ func (m Model) renderMenuView() string {
 		return m.renderGoalMenu()
 	case menuReasoning:
 		return m.renderReasoningMenu()
+	case menuSettings:
+		return m.renderSettingsMenu()
 	default:
 		return ""
 	}
