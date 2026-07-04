@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -90,7 +91,12 @@ func (s *Shuffler) LoadFromURL(ctx context.Context, u string) error {
 // LoadFromFile reads a proxy list from a local file (one proxy per
 // line, # for comments) and adds them to the pool.
 func (s *Shuffler) LoadFromFile(path string) error {
-	return nil // TODO: implement file reading
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return s.loadFromReader(f)
 }
 
 // Enable starts IP shuffling. When rotation is active and interval > 0,
