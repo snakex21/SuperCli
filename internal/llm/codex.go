@@ -409,7 +409,16 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 		// Derive a cancellable child context so the idle watchdog can
 		// abort a stalled stream. cancel runs after the read completes.
 		reqCtx, cancel := context.WithCancel(ctx)
-		resp, err := p.doWithAuth(reqCtx, reqBody)
+		// notify surfaces non-terminal rate-limit/5xx retry notices to
+		// the UI (same Delta.Notice channel openai.go/anthropic.go use);
+		// it respects ctx so a cancelled run doesn't block on the send.
+		notify := func(d Delta) {
+			select {
+			case out <- d:
+			case <-ctx.Done():
+			}
+		}
+		resp, err := p.doWithAuth(reqCtx, reqBody, notify)
 		if err != nil {
 			cancel()
 			select {
@@ -426,15 +435,26 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	return out, nil
 }
 
-// doWithAuth performs the POST with bearer + ChatGPT headers,
-// refreshing the token and retrying once on 401.
-func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Response, error) {
+// doWithAuth performs the POST with bearer + ChatGPT headers.
+// Three orthogonal retry paths interleave in one loop:
+//   - 401: transparent token refresh (once);
+//   - 400 effort-learn: patch reasoning effort from the error (once);
+//   - 429/5xx: honour Retry-After (capped by rateLimitWaitBudget),
+//     mirroring openai.go/anthropic.go. Each rate-limit retry emits a
+//     non-terminal Delta.Notice via notify (may be nil), and after the
+//     retries are exhausted the terminal error carries the same
+//     "switch model" hint as the other providers.
+func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte, notify func(Delta)) (*http.Response, error) {
 	access, accountID, err := p.cfg.Tokens.Token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	effortRetried := false
-	for attempt := 1; ; attempt++ {
+	refreshed := false
+	const maxRateLimitAttempts = 3
+	rlAttempt := 0
+	waitBudget := rateLimitWaitBudget
+	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			p.cfg.BackendURL+"/responses", bytes.NewReader(body))
 		if err != nil {
@@ -462,8 +482,9 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 1 {
+		if resp.StatusCode == http.StatusUnauthorized && !refreshed {
 			// Transparent refresh + single retry.
+			refreshed = true
 			access, err = p.cfg.Tokens.Refresh(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("codex auth expired and refresh failed: %w", err)
@@ -477,7 +498,21 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte) (*http.Resp
 				continue
 			}
 		}
-		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody))
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5) && rlAttempt < maxRateLimitAttempts-1 {
+			rlAttempt++
+			wait := retryWait(resp.Header, rlAttempt, waitBudget)
+			waitBudget -= wait
+			if notify != nil {
+				notify(Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, wait, rlAttempt, maxRateLimitAttempts)})
+			}
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		return nil, fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))
 	}
 }
 

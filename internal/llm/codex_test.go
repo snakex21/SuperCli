@@ -192,6 +192,84 @@ func TestCodexFailedResponseEmitsError(t *testing.T) {
 	}
 }
 
+func TestCodexRetriesOn429WithRetryAfter(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			// Retry-After: 0 skips the backoff sleep so the test is fast.
+			w.Header().Set("Retry-After", "0")
+			http.Error(w, `{"detail":"rate limited"}`, http.StatusTooManyRequests)
+			return
+		}
+		codexSSE(w,
+			`{"type":"response.output_text.delta","delta":"ok"}`,
+			`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		)
+	}))
+	defer srv.Close()
+
+	p, err := NewCodex(CodexConfig{BackendURL: srv.URL, Model: "gpt-5-codex", Tokens: &fakeTokens{access: "t", accountID: "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text strings.Builder
+	var sawNotice bool
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("delta error: %v", d.Err)
+		}
+		if d.Notice != "" {
+			sawNotice = true
+		}
+		text.WriteString(d.Content)
+	}
+	if text.String() != "ok" {
+		t.Fatalf("text = %q, want ok", text.String())
+	}
+	if calls != 2 {
+		t.Fatalf("server calls = %d, want 2 (429 then retry)", calls)
+	}
+	if !sawNotice {
+		t.Fatal("expected a rate-limit retry Notice delta")
+	}
+}
+
+func TestCodexExhausts429WithHint(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "0")
+		http.Error(w, `{"detail":"rate limited"}`, http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	p, err := NewCodex(CodexConfig{BackendURL: srv.URL, Model: "gpt-5-codex", Tokens: &fakeTokens{access: "t"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var errStr string
+	for d := range ch {
+		if d.Err != nil {
+			errStr = d.Err.Error()
+		}
+	}
+	if !strings.Contains(errStr, "rate-limited") || !strings.Contains(errStr, "/model") {
+		t.Fatalf("terminal error missing switch-model hint: %q", errStr)
+	}
+	if calls != 3 {
+		t.Fatalf("server calls = %d, want 3 (maxRateLimitAttempts)", calls)
+	}
+}
+
 func TestNewCodexValidation(t *testing.T) {
 	if _, err := NewCodex(CodexConfig{Model: "", Tokens: &fakeTokens{}}); err == nil {
 		t.Fatal("empty model should error")
