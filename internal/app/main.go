@@ -949,6 +949,12 @@ func Main() {
 	}
 	var sessWriter agent.SessionWriter
 	if sessStore != nil {
+		// Record a sessions row for this live session so it carries a
+		// cwd (the Writer only touches the messages table). This is what
+		// lets /resume filter sessions to the current project.
+		if err := sessStore.EnsureSession(sessionID, home, cfg.Model); err != nil {
+			log.Printf("session: ensure row: %v", err)
+		}
 		sessWriter = session.NewWriter(sessStore, sessionID)
 		// Opt-in tool: the model discovers it via
 		// tool_search when it wants to recall prior
@@ -1213,8 +1219,8 @@ func Main() {
 			return "resume: session store unavailable", nil
 		}
 		args = strings.TrimSpace(args)
-		if args == "" {
-			return listResumableSessions(ctx, sessStore, sessionID)
+		if args == "" || strings.EqualFold(args, "all") {
+			return listResumableSessions(ctx, sessStore, sessionID, home, strings.EqualFold(args, "all"))
 		}
 		out, err := resumeSession(ctx, loop, sessStore, windowFor, args)
 		if err != nil {

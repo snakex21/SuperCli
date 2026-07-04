@@ -145,6 +145,71 @@ func TestStore_SetTitle(t *testing.T) {
 	}
 }
 
+func TestStore_ListRecentByCwd_FiltersByProject(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	// Two sessions in project A, one in project B. EnsureSession is how
+	// the live TUI records a cwd for a pre-chosen session id.
+	for _, tc := range []struct{ id, cwd string }{
+		{"sess-a1", "/proj/a"},
+		{"sess-a2", "/proj/a"},
+		{"sess-b1", "/proj/b"},
+	} {
+		if err := s.EnsureSession(tc.id, tc.cwd, "m"); err != nil {
+			t.Fatalf("EnsureSession(%s): %v", tc.id, err)
+		}
+		enc, _ := FromMessage(llm.Message{Role: llm.RoleUser, Content: "hello from " + tc.id})
+		if err := s.AppendMessage(ctx, tc.id, enc); err != nil {
+			t.Fatalf("AppendMessage(%s): %v", tc.id, err)
+		}
+	}
+
+	a, err := s.ListRecentByCwd(ctx, "/proj/a", 10)
+	if err != nil {
+		t.Fatalf("ListRecentByCwd: %v", err)
+	}
+	if len(a) != 2 {
+		t.Fatalf("project A sessions = %d, want 2 (%+v)", len(a), a)
+	}
+	for _, r := range a {
+		if r.Cwd != "/proj/a" {
+			t.Errorf("session %s cwd = %q, want /proj/a", r.ID, r.Cwd)
+		}
+	}
+
+	all, err := s.ListRecent(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("all sessions = %d, want 3", len(all))
+	}
+}
+
+func TestStore_EnsureSession_Idempotent(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureSession("sess-x", "/a", "m"); err != nil {
+		t.Fatalf("EnsureSession: %v", err)
+	}
+	// A second call must not clobber the row or error (INSERT OR IGNORE).
+	if err := s.EnsureSession("sess-x", "/different", "m2"); err != nil {
+		t.Fatalf("EnsureSession (2nd): %v", err)
+	}
+	got, err := s.Get("sess-x")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Cwd != "/a" {
+		t.Errorf("cwd = %q, want /a (first write wins)", got.Cwd)
+	}
+	if err := s.EnsureSession("", "/a", "m"); err == nil {
+		t.Error("empty id should error")
+	}
+	if err := s.EnsureSession("id", "", "m"); err == nil {
+		t.Error("empty cwd should error")
+	}
+}
+
 func TestStore_Delete_CascadesMessages(t *testing.T) {
 	s := openTestStore(t)
 	sess, _ := s.Create("/a", "m", "")
