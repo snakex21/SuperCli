@@ -160,6 +160,54 @@ func TestSaveToml_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestSaveToml_OrchestratorTriState: the orchestrator switch persists
+// as a tri-state *bool (nil = default OFF, explicit true/false).
+func TestSaveToml_OrchestratorTriState(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	// Absent → nil after round trip.
+	if err := SaveToml(path, TomlConfig{DefaultModel: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadToml(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Orchestrator != nil {
+		t.Errorf("absent orchestrator should load as nil, got %v", *loaded.Orchestrator)
+	}
+
+	// Explicit true survives the round trip.
+	on := true
+	if err := SaveToml(path, TomlConfig{DefaultModel: "m", Orchestrator: &on}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = LoadToml(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Orchestrator == nil || !*loaded.Orchestrator {
+		t.Errorf("orchestrator=true did not round-trip: %v", loaded.Orchestrator)
+	}
+}
+
+// TestMergeToml_OrchestratorOverride: a non-nil source orchestrator
+// overrides the destination; nil leaves it untouched.
+func TestMergeToml_OrchestratorOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{Orchestrator: &on}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.Orchestrator == nil || !*dst.Orchestrator {
+		t.Fatalf("nil src should not clear orchestrator: %v", dst.Orchestrator)
+	}
+	mergeToml(&dst, TomlConfig{Orchestrator: &off})
+	if dst.Orchestrator == nil || *dst.Orchestrator {
+		t.Fatalf("src=false should override to false: %v", dst.Orchestrator)
+	}
+}
+
 func TestFindTomlPaths(t *testing.T) {
 	global, project := FindTomlPaths("/data/supercli-data", "/home/user/project")
 	wantGlobal := filepath.Join("/data/supercli-data", "config.toml")
