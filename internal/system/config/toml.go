@@ -95,6 +95,14 @@ type TomlConfig struct {
 	// swapping the tool list mid-session would break the KV-cache prefix.
 	Orchestrator *bool `toml:"orchestrator"`
 
+	// DarwinParallel controls whether Darwin best-of-N spawns its
+	// agents concurrently. Tri-state: nil = auto (parallel for cloud
+	// backends, sequential for local ones, decided by the base URL),
+	// explicit true forces parallel, explicit false forces sequential.
+	// The override exists for a self-hosted server behind a public
+	// address (auto would misread it as cloud) or to force sequential.
+	DarwinParallel *bool `toml:"darwin_parallel"`
+
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
@@ -382,6 +390,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.Orchestrator != nil {
 		dst.Orchestrator = src.Orchestrator
+	}
+	if src.DarwinParallel != nil {
+		dst.DarwinParallel = src.DarwinParallel
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

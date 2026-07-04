@@ -208,6 +208,22 @@ func TestMergeToml_OrchestratorOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_DarwinParallelOverride: a non-nil source darwin_parallel
+// overrides the destination in both directions; nil leaves it untouched.
+func TestMergeToml_DarwinParallelOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{DarwinParallel: &off}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.DarwinParallel == nil || *dst.DarwinParallel {
+		t.Fatalf("nil src should not clear darwin_parallel: %v", dst.DarwinParallel)
+	}
+	mergeToml(&dst, TomlConfig{DarwinParallel: &on})
+	if dst.DarwinParallel == nil || !*dst.DarwinParallel {
+		t.Fatalf("src=true should override to true: %v", dst.DarwinParallel)
+	}
+}
+
 func TestFindTomlPaths(t *testing.T) {
 	global, project := FindTomlPaths("/data/supercli-data", "/home/user/project")
 	wantGlobal := filepath.Join("/data/supercli-data", "config.toml")

@@ -55,6 +55,72 @@ func validPool(t *testing.T, factory LoopFactory) PoolConfig {
 	}
 }
 
+// concurrencyLoop tracks how many loops run at once so a test can
+// assert the sequential path never overlaps two agents.
+type concurrencyLoop struct {
+	active *int32
+	maxObs *int32
+}
+
+func (c *concurrencyLoop) Run(ctx context.Context, prompt string) (<-chan LoopEvent, error) {
+	n := atomic.AddInt32(c.active, 1)
+	for {
+		m := atomic.LoadInt32(c.maxObs)
+		if n <= m || atomic.CompareAndSwapInt32(c.maxObs, m, n) {
+			break
+		}
+	}
+	time.Sleep(10 * time.Millisecond)
+	atomic.AddInt32(c.active, -1)
+	ch := make(chan LoopEvent, 1)
+	ch <- LoopDoneEvent{Text: "done"}
+	close(ch)
+	return ch, nil
+}
+
+func TestSpawnPool_SequentialRunsOneAtATime(t *testing.T) {
+	var active, maxObs int32
+	cfg := validPool(t, func(LoopConfig) (Loop, error) {
+		return &concurrencyLoop{active: &active, maxObs: &maxObs}, nil
+	})
+	cfg.PoolSize = 4
+	cfg.Sequential = true
+	ch, err := SpawnPool(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := 0
+	for ev := range ch {
+		if _, ok := ev.(LoopDoneEvent); ok {
+			done++
+		}
+	}
+	if done != 4 {
+		t.Fatalf("done events = %d, want 4", done)
+	}
+	if maxObs != 1 {
+		t.Fatalf("max concurrent agents = %d, want 1 (sequential)", maxObs)
+	}
+}
+
+func TestSpawnPool_ParallelOverlaps(t *testing.T) {
+	var active, maxObs int32
+	cfg := validPool(t, func(LoopConfig) (Loop, error) {
+		return &concurrencyLoop{active: &active, maxObs: &maxObs}, nil
+	})
+	cfg.PoolSize = 4
+	cfg.Sequential = false
+	ch, err := SpawnPool(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	if maxObs < 2 {
+		t.Fatalf("max concurrent agents = %d, want >=2 (parallel)", maxObs)
+	}
+}
+
 func TestSpawnPool_NilFactory(t *testing.T) {
 	_, err := SpawnPool(context.Background(), PoolConfig{
 		Provider: providerStub{},
