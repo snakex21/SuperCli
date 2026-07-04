@@ -268,6 +268,20 @@ func TestMergeToml_SkipsZeroValues(t *testing.T) {
 	}
 }
 
+func TestMergeToml_MemoryBriefingTokensOverride(t *testing.T) {
+	// A positive project value overrides the global one; zero is
+	// skipped so the tier default stands.
+	dst := TomlConfig{MemoryBriefingTokens: 700}
+	mergeToml(&dst, TomlConfig{MemoryBriefingTokens: 200})
+	if dst.MemoryBriefingTokens != 200 {
+		t.Errorf("MemoryBriefingTokens override = %d, want 200", dst.MemoryBriefingTokens)
+	}
+	mergeToml(&dst, TomlConfig{}) // zero must not clobber
+	if dst.MemoryBriefingTokens != 200 {
+		t.Errorf("zero clobbered MemoryBriefingTokens: %d", dst.MemoryBriefingTokens)
+	}
+}
+
 func TestMergeToml_ProvidersOverrideEntirely(t *testing.T) {
 	dst := TomlConfig{
 		Providers: []ProviderConf{
