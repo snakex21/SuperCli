@@ -93,6 +93,14 @@ func initCodexAuth(dataDir string, t config.TomlConfig) {
 var supercliSystemPromptBase = prompt.Build(false)
 var supercliCoordinatorMode bool
 
+// supercliOrchestratorMode is the HARD delegation mode (config
+// `orchestrator`, default OFF). When true the main loop runs with a
+// restricted registry (agent.OrchestratorRegistry): delegation + a
+// read-only lookup set only, so the coordinator physically cannot edit
+// files or run commands and must delegate via `task`. Resolved once in
+// main() from config; /orchestrator persists the change for next launch.
+var supercliOrchestratorMode bool
+
 // memoryBriefing is the code-built session-start briefing (user
 // preferences, project card, recent session summaries, other
 // projects). Set once in main() before the loop is created.
@@ -122,7 +130,12 @@ const memoryAutoSaveInstruction = "Memory: after completing a task, call remembe
 // any Darwin children see the same active goal.
 func buildSystemPrompt(svc *goal.Service) string {
 	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
-	if supercliCoordinatorMode {
+	// Orchestrator mode is a stricter coordinator: its lean preamble
+	// replaces the coordinator section (it subsumes the delegate-first
+	// guidance and adds the hard "you have no edit/run tools" boundary).
+	if supercliOrchestratorMode {
+		base += agent.OrchestratorPrompt()
+	} else if supercliCoordinatorMode {
 		base += agent.CoordinatorPrompt()
 	}
 	if memoryBriefing != "" {
@@ -217,6 +230,15 @@ func resolveNavigator(mode string) (enable, auto bool) {
 		// silently disabling routing.
 		return true, true
 	}
+}
+
+// resolveOrchestrator applies the config.toml tri-state override
+// (`orchestrator`) on top of the built-in default (OFF).
+func resolveOrchestrator(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return false
 }
 
 func Main() {
@@ -581,6 +603,17 @@ func Main() {
 	modelTier := tier.Classify(cfg.Model, tierIn, tierOut, tierRules)
 	smallTier := modelTier == tier.Small && !tomlCfg.SmallFullTools
 	supercliSystemPromptBase = prompt.Build(modelTier == tier.Small)
+
+	// Orchestrator mode (hard delegation): resolved from config, with an
+	// env override for scripted/test use. When on, the main loop gets a
+	// restricted registry below (delegation + read-only lookups only).
+	supercliOrchestratorMode = resolveOrchestrator(tomlCfg.Orchestrator)
+	if envTruthy("SUPERCLI_ORCHESTRATOR") {
+		supercliOrchestratorMode = true
+	}
+	if envFalsey("SUPERCLI_ORCHESTRATOR") {
+		supercliOrchestratorMode = false
+	}
 
 	registry := tools.NewRegistry()
 	registry.MustRegister(tools.NewReadImage(home, 0).Spec())
@@ -1014,7 +1047,12 @@ func Main() {
 		// server-side KV prompt cache. `stable_toolset = true|false`
 		// in config.toml overrides the built-in default.
 		StableToolset: resolveStableToolset(tomlCfg.StableToolset),
-		BaseDir:       home,
+		// Orchestrator: task carries a full schema from turn 1 (delegation
+		// is the main loop's primary action). The registry restriction
+		// itself is applied below via SetRegistry, once the task tools are
+		// registered into the full base registry.
+		Orchestrator: supercliOrchestratorMode,
+		BaseDir:      home,
 	})
 	if err != nil {
 		fatal("init agent", err)
@@ -1353,6 +1391,49 @@ func Main() {
 			out += fmt.Sprintf("\nnote: current model %q has no prompt thinking switch; the setting applies when you switch to a Qwen-family model", modelName)
 		}
 		return out, nil
+	}
+
+	// /orchestrator — HARD delegation mode. Unlike /think it does NOT
+	// apply mid-session: it swaps the main loop's tool list, and changing
+	// the tool list in flight would break the KV-cache prefix (chat
+	// templates serialize `tools` at the very start of the prompt), so it
+	// persists to config.toml and takes effect on the next launch.
+	mergedCommands["orchestrator"] = func(ctx context.Context, args string) (string, error) {
+		args = strings.ToLower(strings.TrimSpace(args))
+		curState := "off"
+		if supercliOrchestratorMode {
+			curState = "on"
+		}
+		if args == "" {
+			return fmt.Sprintf("orchestrator: %s (this session)\nusage: /orchestrator <on|off>   — takes effect on next launch", curState), nil
+		}
+		var on bool
+		switch args {
+		case "on", "true", "1":
+			on = true
+		case "off", "false", "0":
+			on = false
+		default:
+			return "usage: /orchestrator <on|off>", nil
+		}
+		// Persist to the GLOBAL config.toml.
+		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
+		if tc, err := config.LoadToml(globalPath); err == nil {
+			v := on
+			tc.Orchestrator = &v
+			if err := config.SaveToml(globalPath, tc); err != nil {
+				log.Printf("orchestrator: save config.toml: %v", err)
+				return "orchestrator: failed to save config", nil
+			}
+		}
+		want := "off"
+		if on {
+			want = "on"
+		}
+		if (on && supercliOrchestratorMode) || (!on && !supercliOrchestratorMode) {
+			return fmt.Sprintf("orchestrator is already %s and saved.", want), nil
+		}
+		return fmt.Sprintf("orchestrator set to %s — takes effect on the next launch (new session). This session keeps its current tool set.", want), nil
 	}
 
 	// /usage — force a fresh fetch of the ChatGPT-subscription usage
@@ -1912,6 +1993,11 @@ func Main() {
 		if activeModel != "" {
 			head = append(head, "model: "+activeModel)
 		}
+		// Orchestrator mode badge: the main loop is delegation-only, so
+		// surface it next to the model like the coordinator conventions.
+		if supercliOrchestratorMode {
+			head = append(head, "orch")
+		}
 		if len(head) > 0 {
 			lines = append(lines, strings.Join(head, " │ "))
 		}
@@ -2047,6 +2133,17 @@ func Main() {
 		defer cancel()
 		memAutoSaver.SummarizePendingRaw(ctx, providerSummarizer(p))
 	}()
+
+	// Orchestrator mode: hand the MAIN loop a restricted registry now
+	// that every tool — including the late-registered task/file tools —
+	// is present in the full base registry. The AgentTool keeps the full
+	// `registry` as its worker BaseRegistry, so workers stay fully
+	// capable; only the coordinator is trimmed to delegation + read-only
+	// lookups. Done as a one-shot swap before the first Run so the tool
+	// list is fixed for the whole session (KV-cache prefix stability).
+	if supercliOrchestratorMode {
+		loop.SetRegistry(agent.OrchestratorRegistry(registry))
+	}
 
 	// redrawStatus forces a TUI re-render so the pull-based footer
 	// (Codex `limit:` tile etc.) reflects data that arrived from a
