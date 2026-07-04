@@ -2052,6 +2052,16 @@ func Main() {
 			}
 			bottom = append(bottom, "tok: "+tokStr)
 		}
+		// Context-window usage: last turn's prompt tokens as a share of
+		// the active model's window. Only shown when the window size is
+		// known (provider metadata / capability registry / learned /
+		// config) — otherwise a percentage would be misleading.
+		if prompt, ok := loop.LastTurnPromptTokens(); ok && prompt > 0 {
+			if win := windowFor(activeModel); win > 0 {
+				pct := prompt * 100 / win
+				bottom = append(bottom, fmt.Sprintf("ctx:%d%%", pct))
+			}
+		}
 		// Cache/thinking observability: KV-cache hit% and hidden
 		// reasoning-token count for the last turn, when the backend
 		// reports them (llama.cpp/LM Studio/OpenAI). Only shown when
