@@ -957,3 +957,211 @@ func TestIntegration_TaskDelegation_WorkerReportsBack(t *testing.T) {
 	// delegation tools) is pinned deterministically by the unit test
 	// TestTask_WorkerCannotNest, which does not need a live model.
 }
+
+// orchestratorTestSetup builds a full base registry (read + edit + exec +
+// delegation) and returns a parent loop whose registry has been restricted
+// to the orchestrator set (delegation + read-only lookups), plus the
+// AgentTool whose workers still inherit the FULL base. This mirrors the
+// production wiring: OrchestratorRegistry(base) for the main loop, `base`
+// as the worker BaseRegistry.
+func orchestratorTestSetup(t *testing.T, home string, rec llm.Provider) (*agent.Loop, *agent.AgentTool) {
+	t.Helper()
+	base := tools.NewRegistry()
+	base.MustRegister(tools.NewEditLine(home).Spec())
+	base.MustRegister(tools.NewReadContext(home).Spec())
+	base.MustRegister(tools.NewReadLines(home).Spec())
+	base.MustRegister(tools.NewListDir(home).Spec())
+	base.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec())
+	for _, n := range []string{"edit_line", "read_context", "read_lines", "list_dir", "ctx_execute"} {
+		base.MarkAlwaysOn(n)
+	}
+	idx, err := tools.NewInMemoryIndex()
+	if err != nil {
+		t.Fatalf("NewInMemoryIndex: %v", err)
+	}
+	t.Cleanup(func() { idx.Close() })
+	searcher := tools.NewToolSearcher(base, idx)
+	base.MustRegister(searcher.Spec())
+	base.MarkAlwaysOn("tool_search")
+	if err := searcher.RebuildIndex(); err != nil {
+		t.Fatalf("RebuildIndex: %v", err)
+	}
+
+	parent, err := agent.NewLoop(agent.LoopConfig{
+		Provider:      rec,
+		Registry:      base,
+		MaxSteps:      6,
+		System:        "You are SuperCli.",
+		ThinTools:     true,
+		StableToolset: true,
+		Orchestrator:  true,
+		BaseDir:       home,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop parent: %v", err)
+	}
+	subReg := agent.NewSubAgentRegistry()
+	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
+	at, err := agent.NewAgentTool(
+		subReg, parent, base, rec, nil,
+		func(cfg agent.LoopConfig) (*agent.Loop, error) { return agent.NewLoop(cfg) },
+	)
+	if err != nil {
+		t.Fatalf("NewAgentTool: %v", err)
+	}
+	base.MustRegister(at.Spec())
+	base.MustRegister(agent.NewSendMessageTool(at.Workers).Spec())
+	base.MustRegister(agent.NewTaskStopTool(at.Workers).Spec())
+	// Restrict the MAIN loop now that the delegation tools exist in base.
+	parent.SetRegistry(agent.OrchestratorRegistry(base))
+	return parent, at
+}
+
+// TestIntegration_Orchestrator_ChatNoTools: in orchestrator mode the main
+// loop answers a plain conversational question directly, with no tool
+// calls (the restricted toolset must not push the model into spurious
+// delegation for small talk).
+func TestIntegration_Orchestrator_ChatNoTools(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{BaseURL: baseURL, Model: "auto", Timeout: 120 * time.Second})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+	home := t.TempDir()
+	loop, _ := orchestratorTestSetup(t, home, rec)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	ch, err := loop.Run(ctx, "Cześć! W jednym zdaniu przywitaj się i powiedz co potrafisz.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var toolCalls int
+	var text strings.Builder
+	done := false
+	for ev := range ch {
+		switch e := ev.(type) {
+		case agent.ToolCallEvent:
+			toolCalls++
+			t.Logf("unexpected tool call: %s %s", e.Name, e.Args)
+		case agent.MessageEvent:
+			text.WriteString(e.Text)
+		case agent.DoneEvent:
+			done = true
+		case agent.ErrorEvent:
+			t.Fatalf("ErrorEvent: %v", e.Err)
+		}
+	}
+	t.Logf("reply: %q", text.String())
+	if toolCalls != 0 {
+		t.Errorf("chat turn made %d tool call(s), want 0", toolCalls)
+	}
+	if !done {
+		t.Error("no DoneEvent")
+	}
+	if strings.TrimSpace(text.String()) == "" {
+		t.Error("empty reply")
+	}
+}
+
+// TestIntegration_Orchestrator_DelegatesEdit: the crux of orchestrator
+// mode. The main loop has NO edit_line (physically absent from its
+// registry), so a file-edit task can only be done by delegating to a
+// worker. We first give the model the chance to delegate spontaneously
+// (the orchestrator briefing tells it to); if the small model does not,
+// we fall back to forcing the task path (documented as acceptable) to
+// prove the worker — which DOES have edit_line — performs the edit and
+// reports back, and that the main loop never touched a mutating tool.
+func TestIntegration_Orchestrator_DelegatesEdit(t *testing.T) {
+	baseURL, ok := lmStudioAvailable(t)
+	if !ok {
+		return
+	}
+	inner, err := llm.NewOpenAI(llm.OpenAIConfig{BaseURL: baseURL, Model: "auto", Timeout: 120 * time.Second})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	rec := &toolListRecorder{Provider: inner}
+	home := t.TempDir()
+	const original = "name = app\nport = 8080\ndebug = false\nlevel = info\n"
+	cfgPath := filepath.Join(home, "config.txt")
+	if err := os.WriteFile(cfgPath, []byte(original), 0644); err != nil {
+		t.Fatalf("write config.txt: %v", err)
+	}
+	loop, at := orchestratorTestSetup(t, home, rec)
+
+	// Prove the hard guarantee: no mutating tool is visible to the main
+	// loop at all. Only the orchestrator set may appear.
+	allowed := map[string]bool{
+		"task": true, "send_message": true, "task_stop": true,
+		"tool_search": true, "read_lines": true, "read_context": true,
+		"list_dir": true, "recall": true, "ask_user": true, "goal": true, "remember": true,
+	}
+	for _, name := range loop.VisibleToolNames() {
+		if !allowed[name] {
+			t.Fatalf("main loop can see non-orchestrator tool %q", name)
+		}
+		if name == "edit_line" || name == "ctx_execute" {
+			t.Fatalf("main loop must not see mutating tool %q", name)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	ch, err := loop.Run(ctx, "In the file config.txt, change the line `debug = false` to `debug = true`. You cannot edit files yourself — delegate the edit to a worker with the task tool, then confirm.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var taskCalls, otherCalls int
+	done := false
+	for ev := range ch {
+		switch e := ev.(type) {
+		case agent.ToolCallEvent:
+			t.Logf("tool call: %s %s", e.Name, e.Args)
+			if e.Name == "task" {
+				taskCalls++
+			} else {
+				otherCalls++
+			}
+		case agent.DoneEvent:
+			done = true
+		case agent.ErrorEvent:
+			t.Logf("ErrorEvent: %v", e.Err)
+		}
+	}
+	_ = done
+	edited := func() bool {
+		b, _ := os.ReadFile(cfgPath)
+		return strings.Contains(string(b), "debug = true")
+	}
+
+	spontaneous := taskCalls > 0
+	if !spontaneous {
+		// Fallback: force the delegation directly (acceptable per the
+		// task brief — small models rarely delegate spontaneously). This
+		// still exercises the real worker doing the real edit.
+		t.Logf("no spontaneous delegation (task calls=%d, other=%d); forcing task path", taskCalls, otherCalls)
+		args := `{"prompt":"In the file config.txt (in your working directory), change the line 'debug = false' to 'debug = true' using edit_line. Read the file first to find the line number. Confirm the change.","expect":"confirmation that debug is now true"}`
+		res, ferr := at.Spec().Fn(ctx, json.RawMessage(args))
+		if ferr != nil {
+			t.Fatalf("forced task execute: %v", ferr)
+		}
+		t.Logf("forced task result:\n%s", res.Text)
+	}
+
+	// The main loop must NEVER have called a mutating tool directly.
+	if otherCalls > 0 {
+		// otherCalls counts any non-task tool the main loop invoked;
+		// with the restricted registry these can only be read/lookups,
+		// never mutations — but flag it so a regression is visible.
+		t.Logf("main loop made %d non-task tool call(s) (read-only lookups only)", otherCalls)
+	}
+	if !edited() {
+		t.Errorf("config.txt was not edited to debug = true; content still original")
+	}
+	t.Logf("delegation was spontaneous: %v; provider requests: %d", spontaneous, len(rec.calls))
+}
