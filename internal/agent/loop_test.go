@@ -473,7 +473,12 @@ func TestLoop_TaskToolCallsRunInParallel(t *testing.T) {
 		},
 	})
 
-	l := makeLoop(t, p, reg, "")
+	// Parallel task execution is opt-in (TaskParallel); the app layer
+	// enables it for cloud backends. This test targets that path.
+	l, err := NewLoop(LoopConfig{Provider: p, Registry: reg, MaxSteps: 5, TaskParallel: true})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
 	start := time.Now()
 	ch, _ := l.Run(context.Background(), "launch workers")
 	events := drainEvents(t, ch)
