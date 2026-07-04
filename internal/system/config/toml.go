@@ -131,6 +131,14 @@ type TomlConfig struct {
 	// provider metadata / learned limits / default.
 	ContextWindow int `toml:"context_window"`
 
+	// MemoryBriefingTokens caps the session-start memory briefing
+	// (user preferences + recent session-journal entries) injected
+	// into the system prompt. It is a HARD budget: preferences and
+	// the freshest journal lines are packed until the cap is hit,
+	// the rest stays in the DB for recall. 0 = built-in default
+	// (700 for normal tiers, 300 for the small tier).
+	MemoryBriefingTokens int `toml:"memory_briefing_tokens"`
+
 	// Debug logging.
 	Debug bool `toml:"debug"`
 
@@ -377,6 +385,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
+	}
+	if src.MemoryBriefingTokens > 0 {
+		dst.MemoryBriefingTokens = src.MemoryBriefingTokens
 	}
 	// Providers list: project overrides global entirely.
 	if len(src.Providers) > 0 {

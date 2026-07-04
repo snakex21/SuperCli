@@ -792,6 +792,12 @@ func Main() {
 	if smallTier {
 		briefCap = 300
 	}
+	// A configured memory_briefing_tokens is a hard override of the
+	// tier default (the briefing packs preferences + freshest journal
+	// lines up to this cap; anything over stays in the DB for recall).
+	if tomlCfg.MemoryBriefingTokens > 0 {
+		briefCap = tomlCfg.MemoryBriefingTokens
+	}
 	memoryBriefing = memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
 	memAutoSaver := &memory.AutoSaver{Project: memStore, Global: globalMemStore, ProjectPath: home}
 	// memProg tracks how much of the conversation the incremental
