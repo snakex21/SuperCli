@@ -30,6 +30,12 @@ type wireEvent struct {
 	TokIn    int `json:"tok_in,omitempty"`
 	TokOut   int `json:"tok_out,omitempty"`
 	TokTotal int `json:"tok_total,omitempty"`
+	// Observability (type "done"): KV/prompt cache-hit percentage
+	// (cached prompt tokens / prompt tokens) and hidden reasoning
+	// tokens for the run. Omitted when the backend does not report
+	// them, mirroring the TUI cache:/think: badges.
+	CacheHitPct  int `json:"cache_hit_pct,omitempty"`
+	ReasoningTok int `json:"reasoning_tok,omitempty"`
 	// Step is set on reflection / sisyphus markers.
 	Step int `json:"step,omitempty"`
 	// SessionID is emitted once at stream start so the browser keeps later
@@ -61,12 +67,17 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	case agent.NoticeEvent:
 		return wireEvent{Type: "notice", Text: e.Text}, true
 	case agent.DoneEvent:
-		return wireEvent{
-			Type:     "done",
-			TokIn:    e.Usage.Input,
-			TokOut:   e.Usage.Output,
-			TokTotal: e.Usage.Total,
-		}, true
+		w := wireEvent{
+			Type:         "done",
+			TokIn:        e.Usage.Input,
+			TokOut:       e.Usage.Output,
+			TokTotal:     e.Usage.Total,
+			ReasoningTok: e.Usage.Reasoning,
+		}
+		if e.Usage.Input > 0 && e.Usage.Cached > 0 {
+			w.CacheHitPct = e.Usage.Cached * 100 / e.Usage.Input
+		}
+		return w, true
 	case agent.ErrorEvent:
 		msg := ""
 		if e.Err != nil {

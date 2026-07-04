@@ -205,6 +205,8 @@ var I18N = {
     "metric.tokens": "Tokens",
     "metric.time": "Time",
     "metric.tools": "Tools",
+    "metric.cache": "Cache",
+    "metric.think": "Think",
     // run timeline
     "insp.timeline": "Run timeline",
     "timeline.args": "arguments",
@@ -449,6 +451,8 @@ var I18N = {
     "metric.tokens": "Tokeny",
     "metric.time": "Czas",
     "metric.tools": "Narzędzia",
+    "metric.cache": "Cache",
+    "metric.think": "Myślenie",
     "insp.timeline": "Przebieg zadania",
     "timeline.args": "argumenty",
     "timeline.result": "wynik",
@@ -1364,6 +1368,19 @@ function handleEvent(ev, current) {
       if (metricTime) metricTime.textContent = elapsedStr;
       if (topbarDur) { topbarDur.textContent = elapsedStr; topbarDur.classList.add("visible"); }
       metricTokens.textContent = String(ev.tok_total || 0);
+      // Cache-hit % and hidden reasoning tokens, mirroring the TUI
+      // cache:/think: badges. Each stays hidden until the backend
+      // actually reports it (cloud backends often omit the breakdown).
+      var miCache = $("#mini-metric-cache"), mCache = $("#metric-cache");
+      var miThink = $("#mini-metric-think"), mThink = $("#metric-think");
+      if (miCache && mCache) {
+        if (ev.cache_hit_pct) { mCache.textContent = ev.cache_hit_pct + "%"; miCache.style.display = ""; }
+        else { miCache.style.display = "none"; }
+      }
+      if (miThink && mThink) {
+        if (ev.reasoning_tok) { mThink.textContent = String(ev.reasoning_tok); miThink.style.display = ""; }
+        else { miThink.style.display = "none"; }
+      }
       setRunState("idle", t("run.done") + " \u00b7 " + elapsedStr + " \u00b7 " + t("run.tokens") + ": " + (ev.tok_total || 0));
       addMarker("done \u00b7 " + elapsedStr + " \u00b7 tokens: " + (ev.tok_total || 0));
       addActivity("ok", "done", elapsedStr + " \u00b7 tokens: " + (ev.tok_total || 0));
