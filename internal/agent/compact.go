@@ -37,6 +37,7 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 	}
 	l.Messages = append(l.Messages[:keep], cleaned...)
 	l.resetHidden()
+	l.chatWindowStart = 0
 }
 
 // CompactWithSummary replaces every non-system message with a
@@ -60,5 +61,6 @@ func (l *Loop) CompactWithSummary(summary string) int {
 	l.Messages = append(l.Messages, sum)
 	l.persist(context.Background(), sum)
 	l.resetHidden()
+	l.chatWindowStart = 0
 	return removed
 }
