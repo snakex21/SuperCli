@@ -159,9 +159,58 @@ type Loop struct {
 	// only ambiguous prompts fall back to the model navigator.
 	navAuto bool
 
+	// chatWindowStart is the sticky start (a VisibleMessages index) of
+	// the growing history window used by the light routes (chat-only /
+	// advisor / clarify). It only ever moves FORWARD, in one big jump,
+	// when the window outgrows chatWindowMaxTokens — so between jumps
+	// each light-route request is a strict append to the previous one
+	// and the provider-side KV prompt cache gets full prefix hits.
+	// Reset to 0 whenever the conversation body is rebuilt
+	// (LoadConversation, CompactWithSummary).
+	chatWindowStart int
+
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
 	Messages []llm.Message
+}
+
+// chatWindowMaxTokens is the estimated-token threshold of the light-route
+// history window. Light routes are cheap smalltalk prompts, so the window
+// is kept small; but cutting it must be RARE and BIG — a per-turn trim
+// would make the prompt non-append-only and cap KV-cache reuse by
+// construction. chars/4 estimate, history only (the current turn is
+// always sent in full).
+const chatWindowMaxTokens = 3000
+
+// chatWindowKeepMsgs is how many eligible messages survive a window jump.
+const chatWindowKeepMsgs = 4
+
+// chatWindowEligible mirrors the historical light-route tail filter:
+// only plain user/assistant text — no system messages, no background
+// task notifications, no tool-call turns — may leak into smalltalk.
+func chatWindowEligible(m llm.Message) bool {
+	if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
+		return false
+	}
+	if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
+		return false
+	}
+	return true
+}
+
+// estimateChatTokens is the chars/4 heuristic over a message slice
+// (same approach as EstimateVisibleTokens).
+func estimateChatTokens(msgs []llm.Message) int {
+	n := 0
+	for _, m := range msgs {
+		n += len(m.Content) / 4
+		for _, p := range m.Parts {
+			if p.Type == llm.PartTypeText {
+				n += len(p.Text) / 4
+			}
+		}
+	}
+	return n
 }
 
 // Reflector is the F5.a hook the loop calls every ReflectEvery
@@ -1067,27 +1116,57 @@ func (l *Loop) providerMessages() []llm.Message {
 			break
 		}
 	}
-	// Keep a tiny conversational tail before the current turn. Skip
-	// system/tool messages and task notifications so background agent
-	// work does not leak into smalltalk.
+	// Conversational history before the current turn: a GROWING
+	// (append-only) window, not a sliding one. A per-turn "last 8" tail
+	// rewrote the prompt front every turn, so the provider-side KV
+	// cache could never reuse more than the leading system prompt —
+	// a construction-level cache killer on these light routes. Instead
+	// the window start is sticky (l.chatWindowStart): below the token
+	// threshold each turn strictly appends to the previous prompt (full
+	// prefix cache hit); once the window outgrows the threshold, the
+	// start jumps forward in ONE big leap, keeping only the last
+	// chatWindowKeepMsgs messages — the re-eval is paid once per many
+	// turns, not every turn ("cut rarely, in big chunks").
+	//
+	// Eligibility (user/assistant only, no task notifications, no tool
+	// calls) is unchanged from the sliding tail: background agent work
+	// must not leak into smalltalk. A current turn that used tools is
+	// therefore trimmed from history on the NEXT turn — that single
+	// divergence point costs one partial re-eval, which is fine (rare
+	// on chat routes) and always safe (the server re-evals from the
+	// divergence).
 	end := len(visible)
 	if lastUser >= 0 {
 		end = lastUser
 	}
-	tail := make([]llm.Message, 0, 8)
-	for i := end - 1; i >= 0 && len(tail) < 8; i-- {
-		m := visible[i]
-		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
-			continue
-		}
-		if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
-			continue
-		}
-		tail = append(tail, m)
+	start := l.chatWindowStart
+	if start > end {
+		// The visible view shrank under us (compaction, /clear).
+		// Restart the window; correctness never depends on it.
+		start = 0
+		l.chatWindowStart = 0
 	}
-	for i := len(tail) - 1; i >= 0; i-- {
-		out = append(out, tail[i])
+	window := make([]llm.Message, 0, end-start)
+	for i := start; i < end; i++ {
+		if chatWindowEligible(visible[i]) {
+			window = append(window, visible[i])
+		}
 	}
+	if estimateChatTokens(window) > chatWindowMaxTokens {
+		// One big jump: advance the sticky start so only the last
+		// chatWindowKeepMsgs eligible messages stay in the window.
+		kept := 0
+		ns := end
+		for i := end - 1; i >= start && kept < chatWindowKeepMsgs; i-- {
+			if chatWindowEligible(visible[i]) {
+				kept++
+				ns = i
+			}
+		}
+		l.chatWindowStart = ns
+		window = window[len(window)-kept:]
+	}
+	out = append(out, window...)
 	if lastUser >= 0 {
 		for _, m := range visible[lastUser:] {
 			if m.Role == llm.RoleSystem {
