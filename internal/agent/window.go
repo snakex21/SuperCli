@@ -50,8 +50,10 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	}
 	removed := 0
 	if l.summarizer != nil {
-		if summary, err := l.summarizer(ctx, l.provider, l.AllMessages()); err == nil && summary != "" {
-			removed = l.CompactWithSummary(summary)
+		all := l.AllMessages()
+		split := compactSplit(all, w)
+		if summary, err := l.summarizer(ctx, l.provider, all[:split]); err == nil && summary != "" {
+			removed = l.CompactPrefixWithSummary(summary, split)
 		}
 	}
 	if removed == 0 {
@@ -73,6 +75,34 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		case <-ctx.Done():
 		}
 	}
+}
+
+// compactSplit picks the summarization cut for auto-compaction: the
+// start of the last user turn, so the current turn survives verbatim
+// (a small model resumes far better from its own recent messages than
+// from a summary of them). Falls back to the full length — the old
+// replace-everything behaviour — when there is nothing meaningful
+// before the last turn, or when the last turn alone would still eat
+// more than half the window (a single huge turn needs the big hammer).
+func compactSplit(all []llm.Message, window int) int {
+	keep := 0
+	for keep < len(all) && all[keep].Role == llm.RoleSystem {
+		keep++
+	}
+	split := -1
+	for i := len(all) - 1; i >= keep; i-- {
+		if all[i].Role == llm.RoleUser {
+			split = i
+			break
+		}
+	}
+	if split <= keep {
+		return len(all)
+	}
+	if llm.EstimateTokens(all[split:]) > window/2 {
+		return len(all)
+	}
+	return split
 }
 
 // contextLimitPhrases are matched (lowercased) against provider

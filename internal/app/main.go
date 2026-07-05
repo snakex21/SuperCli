@@ -1057,6 +1057,10 @@ func Main() {
 		if err != nil {
 			return "", err
 		}
+		// Exact facts the model should not have to re-discover:
+		// file paths touched + tools loaded via tool_search (their
+		// activation survives compaction).
+		summary += compactFacts(msgs, registry.ActiveNames())
 		return wrapCompactSummary(summary), nil
 	}
 
@@ -1348,6 +1352,7 @@ func Main() {
 		if err != nil {
 			return fmt.Sprintf("compact: summarization failed: %v (context unchanged)", err), nil
 		}
+		summary += compactFacts(msgs, registry.ActiveNames())
 		removed := loop.CompactWithSummary(wrapCompactSummary(summary))
 		return fmt.Sprintf("compact: replaced %d message(s) with a %d-char summary", removed, len(summary)), nil
 	}
