@@ -46,6 +46,24 @@ func TestLastTurnPromptTokens(t *testing.T) {
 	}
 }
 
+func TestLastTurnBreakdown(t *testing.T) {
+	l := contextTestLoop(t)
+	if _, _, _, ok := l.LastTurnBreakdown(); ok {
+		t.Fatal("no turn yet: ok should be false")
+	}
+	l.sessUsageMu.Lock()
+	l.lastTurnPrompt = 14580
+	l.lastTurnCached = 14200
+	l.lastTurnOutput = 220
+	l.lastTurnSet = true
+	l.sessUsageMu.Unlock()
+	cached, evaluated, generated, ok := l.LastTurnBreakdown()
+	if !ok || cached != 14200 || evaluated != 380 || generated != 220 {
+		t.Fatalf("LastTurnBreakdown() = %d/%d/%d/%v; want 14200/380/220/true",
+			cached, evaluated, generated, ok)
+	}
+}
+
 func TestContextReport_Breakdown(t *testing.T) {
 	l := contextTestLoop(t)
 	l.Messages = append(l.Messages,

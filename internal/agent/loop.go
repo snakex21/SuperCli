@@ -84,6 +84,7 @@ type Loop struct {
 	// true after the first turn that carried provider usage.
 	lastTurnPrompt    int
 	lastTurnCached    int
+	lastTurnOutput    int
 	lastTurnReasoning int
 	lastTurnSet       bool
 
@@ -777,6 +778,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			// Last-turn snapshot for the status-line badges.
 			l.lastTurnPrompt = usage.Input
 			l.lastTurnCached = usage.CachedInput
+			l.lastTurnOutput = usage.Output
 			l.lastTurnReasoning = usage.Reasoning
 			l.lastTurnSet = true
 			l.sessUsageMu.Unlock()

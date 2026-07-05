@@ -2094,22 +2094,21 @@ func Main() {
 				bottom = append(bottom, fmt.Sprintf("ctx:%d%%", pct))
 			}
 		}
-		// Cache/thinking observability: KV-cache hit% and hidden
-		// reasoning-token count for the last turn, when the backend
-		// reports them (llama.cpp/LM Studio/OpenAI). Only shown when
-		// there is a real signal so cloud backends that omit the
-		// breakdown stay uncluttered.
-		if cacheHit, reasoning, ok := loop.LastTurnStats(); ok {
-			var obs []string
-			if cacheHit > 0 {
-				obs = append(obs, fmt.Sprintf("cache:%d%%", cacheHit))
+		// Cache-miss telemetry for the last turn: the prompt split into
+		// tokens the backend served from its KV/prompt cache vs tokens
+		// it had to (re-)evaluate, plus the generated count. This is
+		// the cache-miss hunting line — a healthy warm turn evaluates
+		// roughly only the new tokens; a large eval means the prefix
+		// churned and the client, not the hardware, is the bottleneck.
+		// Backends that report no usage at all show nothing; backends
+		// without a cached breakdown show cache 0 (pessimistic view).
+		if cached, evaled, gen, ok := loop.LastTurnBreakdown(); ok && cached+evaled+gen > 0 {
+			line := fmt.Sprintf("cache %s | eval %s | gen %s",
+				compactNum(cached), compactNum(evaled), compactNum(gen))
+			if _, reasoning, ok := loop.LastTurnStats(); ok && reasoning > 0 {
+				line += fmt.Sprintf(" think:%d", reasoning)
 			}
-			if reasoning > 0 {
-				obs = append(obs, fmt.Sprintf("think:%d", reasoning))
-			}
-			if len(obs) > 0 {
-				bottom = append(bottom, strings.Join(obs, " "))
-			}
+			bottom = append(bottom, line)
 		}
 		// Codex subscription usage (5h rolling + weekly), pulled from
 		// the active provider's last /responses headers. Rendered only
@@ -2396,9 +2395,16 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		case agent.DoneEvent:
 			// Real provider-reported token usage for this run
 			// (exact, not an estimate). Printed to stderr so it
-			// never pollutes the assistant output on stdout.
-			fmt.Fprintf(os.Stderr, "[tokens] in=%d out=%d total=%d\n",
+			// never pollutes the assistant output on stdout. The
+			// cache/eval split (cache-miss telemetry) is appended
+			// only when the backend reported a cached share, so the
+			// baseline format stays stable for scripts.
+			line := fmt.Sprintf("[tokens] in=%d out=%d total=%d",
 				e.Usage.Input, e.Usage.Output, e.Usage.Total)
+			if e.Usage.Cached > 0 {
+				line += fmt.Sprintf(" cache=%d eval=%d", e.Usage.Cached, e.Usage.Input-e.Usage.Cached)
+			}
+			fmt.Fprintln(os.Stderr, line)
 		case agent.ErrorEvent:
 			fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
 			os.Exit(1)
