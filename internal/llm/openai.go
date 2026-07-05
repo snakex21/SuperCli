@@ -299,6 +299,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// appear stuck on "working".
 		toolAcc := make(map[int]*ToolCall)
 		var lastUsage *Usage
+		var lastTimings *llamaTimings
 		reasoningOpen := false
 		parseErr := parseOpenAIDataLines(body, func(data string) error {
 			var chunk openaiChunk
@@ -308,6 +309,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			var raw openaiRawChunk
 			_ = json.Unmarshal([]byte(data), &raw)
+			// llama.cpp attaches timings to its chunks; remember the
+			// latest so the cache-miss derivation below works whether
+			// timings ride the usage chunk itself or an earlier one.
+			if chunk.Timings != nil {
+				lastTimings = chunk.Timings
+				deriveCachedFromTimings(lastUsage, lastTimings)
+			}
 			if chunk.Usage != nil {
 				lastUsage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens}
 				if d := chunk.Usage.PromptTokensDetails; d != nil {
@@ -316,6 +324,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				if d := chunk.Usage.CompletionTokensDetails; d != nil {
 					lastUsage.Reasoning = d.ReasoningTokens
 				}
+				// Older llama.cpp builds report the cached split only
+				// via timings, not prompt_tokens_details.
+				deriveCachedFromTimings(lastUsage, lastTimings)
 				// Servers that honour stream_options.include_usage
 				// (LM Studio, vLLM, OpenAI) send the usage in a FINAL
 				// chunk whose choices array is EMPTY. The per-choice
@@ -694,6 +705,48 @@ type openaiChunk struct {
 	Model   string         `json:"model"`
 	Choices []openaiChoice `json:"choices"`
 	Usage   *openaiUsage   `json:"usage,omitempty"`
+	// Timings is llama.cpp-specific: the server attaches its
+	// performance block to /v1/chat/completions responses. Absent on
+	// cloud backends; ignored when nil.
+	Timings *llamaTimings `json:"timings,omitempty"`
+}
+
+// llamaTimings is the llama.cpp server performance block, used here
+// for cache-miss telemetry: prompt_n is the number of prompt tokens
+// the server actually (re-)evaluated this request, cache_n (newer
+// builds) is the number of prompt tokens reused from the KV cache,
+// predicted_n is the generated-token count. The native /completion
+// endpoint reports tokens_evaluated/tokens_cached instead, but
+// SuperCli only speaks /v1/chat/completions, where the timings form
+// (plus, on newer builds, usage.prompt_tokens_details) is what
+// actually arrives.
+type llamaTimings struct {
+	PromptN    int `json:"prompt_n"`
+	CacheN     int `json:"cache_n"`
+	PredictedN int `json:"predicted_n"`
+}
+
+// deriveCachedFromTimings fills Usage.CachedInput from llama.cpp's
+// timings block when the OpenAI-style prompt_tokens_details breakdown
+// is absent (older llama.cpp builds). Preference order: an explicit
+// cache_n; else prompt_tokens - prompt_n (everything the server did
+// not re-evaluate came from the KV cache). No-op when the usage
+// already carries a cached count or there is nothing to derive, so
+// cloud responses without timings are untouched.
+func deriveCachedFromTimings(u *Usage, t *llamaTimings) {
+	if u == nil || t == nil || u.CachedInput > 0 {
+		return
+	}
+	cached := t.CacheN
+	if cached == 0 && t.PromptN > 0 && u.Input > t.PromptN {
+		cached = u.Input - t.PromptN
+	}
+	if cached > u.Input {
+		cached = u.Input
+	}
+	if cached > 0 {
+		u.CachedInput = cached
+	}
 }
 
 type openaiRawChunk struct {

@@ -586,6 +586,12 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 					Output: ev.Response.Usage.OutputTokens,
 					Total:  ev.Response.Usage.TotalTokens,
 				}
+				if d := ev.Response.Usage.InputTokensDetails; d != nil {
+					usage.CachedInput = d.CachedTokens
+				}
+				if d := ev.Response.Usage.OutputTokensDetails; d != nil {
+					usage.Reasoning = d.ReasoningTokens
+				}
 			}
 			if reasoningOpen {
 				if !emit(Delta{Content: "</thinking>"}) {
@@ -638,6 +644,19 @@ type codexUsage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
+	// Cache-miss telemetry: the Responses API reports the cached
+	// share of input_tokens (and the hidden reasoning share of
+	// output_tokens) in detail objects. Nil when omitted.
+	InputTokensDetails  *codexInputTokensDetails  `json:"input_tokens_details,omitempty"`
+	OutputTokensDetails *codexOutputTokensDetails `json:"output_tokens_details,omitempty"`
+}
+
+type codexInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type codexOutputTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 type codexError struct {

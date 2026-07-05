@@ -122,6 +122,85 @@ func TestAnthropic_CompleteHeadersAndText(t *testing.T) {
 	}
 }
 
+// TestAnthropic_UsageCachePromptBreakdown: message_start carries the
+// input-side usage including the prompt-cache split
+// (cache_read_input_tokens / cache_creation_input_tokens), message_delta
+// the output side. Input must fold the cache read+creation tokens in
+// (Anthropic reports input_tokens EXCLUSIVE of cache activity) so the
+// cache-hit denominator matches the OpenAI convention, and CachedInput
+// must carry the cache-read share for the per-turn cache-miss line.
+func TestAnthropic_UsageCachePromptBreakdown(t *testing.T) {
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w,
+			`{"type":"message_start","message":{"usage":{"input_tokens":11,"cache_creation_input_tokens":2000,"cache_read_input_tokens":12000,"output_tokens":1}}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":220}}`,
+			`{"type":"message_stop"}`,
+		)
+	})
+	p, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "claude-sonnet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var usage *Usage
+	for _, d := range drainDeltas(t, ch) {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage on the final delta")
+	}
+	if usage.Input != 14011 {
+		t.Errorf("Input = %d, want 14011 (11 + 2000 creation + 12000 read)", usage.Input)
+	}
+	if usage.CachedInput != 12000 {
+		t.Errorf("CachedInput = %d, want 12000 (cache_read_input_tokens)", usage.CachedInput)
+	}
+	if usage.Output != 220 || usage.Total != 14231 {
+		t.Errorf("Output/Total = %d/%d, want 220/14231", usage.Output, usage.Total)
+	}
+}
+
+// TestAnthropic_UsageWithoutCacheFields: plain usage (no cache fields,
+// e.g. proxies or requests without cache_control) must still produce
+// input+output accounting with zero CachedInput — missing telemetry is
+// not an error.
+func TestAnthropic_UsageWithoutCacheFields(t *testing.T) {
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w,
+			`{"type":"message_start","message":{"usage":{"input_tokens":300,"output_tokens":1}}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`,
+			`{"type":"message_stop"}`,
+		)
+	})
+	p, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "claude-sonnet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var usage *Usage
+	for _, d := range drainDeltas(t, ch) {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.Input != 300 || usage.Output != 7 || usage.CachedInput != 0 {
+		t.Errorf("usage = %+v, want 300 in / 7 out / 0 cached", usage)
+	}
+}
+
 func TestAnthropic_StreamThinking(t *testing.T) {
 	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		sseResponse(w,

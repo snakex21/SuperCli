@@ -649,6 +649,105 @@ func TestOpenAI_StreamUsageNoDetailsZeroValues(t *testing.T) {
 	}
 }
 
+// TestOpenAI_LlamaTimingsDeriveCachedInput covers llama.cpp servers
+// whose usage carries no prompt_tokens_details: the timings block
+// (cache_n = prompt tokens reused from the KV cache, prompt_n =
+// prompt tokens re-evaluated) must fill Usage.CachedInput so the
+// per-turn cache-miss line works on local backends too.
+func TestOpenAI_LlamaTimingsDeriveCachedInput(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		`{"choices":[],"usage":{"prompt_tokens":14580,"completion_tokens":220,"total_tokens":14800},"timings":{"prompt_n":380,"cache_n":14200,"predicted_n":220,"prompt_ms":812.5,"predicted_per_second":31.2}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen3.5-9b"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.Input != 14580 || usage.Output != 220 {
+		t.Fatalf("usage = %+v, want 14580 in / 220 out", usage)
+	}
+	if usage.CachedInput != 14200 {
+		t.Fatalf("CachedInput = %d, want 14200 (from timings.cache_n)", usage.CachedInput)
+	}
+}
+
+// TestOpenAI_LlamaTimingsWithoutCacheN covers older llama.cpp builds
+// whose timings lack cache_n: the cached share is derived as
+// prompt_tokens - prompt_n (everything the server did not re-evaluate
+// came from the cache). The timings here ride the finish chunk while
+// usage arrives in the later empty-choices chunk, exercising the
+// cross-chunk memory.
+func TestOpenAI_LlamaTimingsWithoutCacheN(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"timings":{"prompt_n":380,"predicted_n":220}}`,
+		`{"choices":[],"usage":{"prompt_tokens":14580,"completion_tokens":220,"total_tokens":14800}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen3.5-9b"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.CachedInput != 14200 {
+		t.Fatalf("CachedInput = %d, want 14200 (prompt_tokens - prompt_n)", usage.CachedInput)
+	}
+}
+
+// TestOpenAI_UsageDetailsWinOverTimings: when the server reports BOTH
+// prompt_tokens_details.cached_tokens and a timings block (newer
+// llama.cpp does), the OpenAI-style details are authoritative and the
+// timings derivation must not overwrite them.
+func TestOpenAI_UsageDetailsWinOverTimings(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		`{"choices":[],"usage":{"prompt_tokens":2000,"completion_tokens":50,"total_tokens":2050,"prompt_tokens_details":{"cached_tokens":1000}},"timings":{"prompt_n":500,"cache_n":999}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen3.5-9b"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	ds := drainDeltas(t, ch)
+
+	var usage *Usage
+	for _, d := range ds {
+		if d.Usage != nil {
+			usage = d.Usage
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.CachedInput != 1000 {
+		t.Fatalf("CachedInput = %d, want 1000 (details win over timings)", usage.CachedInput)
+	}
+}
+
 // TestOpenAI_RequestIncludesStreamOptions verifies the request
 // asks for usage in streaming mode; without it servers stay silent.
 func TestOpenAI_RequestIncludesStreamOptions(t *testing.T) {

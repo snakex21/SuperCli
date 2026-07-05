@@ -74,6 +74,27 @@ func (l *Loop) LastTurnStats() (cacheHitPct int, reasoning int, ok bool) {
 	return cacheHitPct, l.lastTurnReasoning, true
 }
 
+// LastTurnBreakdown returns the last turn's token split for
+// cache-miss hunting: cached is the prompt tokens the backend served
+// from its KV/prompt cache, evaluated is the prompt tokens it had to
+// (re-)compute, generated is the completion tokens. ok is false until
+// a turn with provider usage has completed. Backends that do not
+// report the cached share yield cached==0, so the whole prompt shows
+// up as evaluated — that pessimistic view is exactly the signal this
+// telemetry exists to surface.
+func (l *Loop) LastTurnBreakdown() (cached, evaluated, generated int, ok bool) {
+	l.sessUsageMu.Lock()
+	defer l.sessUsageMu.Unlock()
+	if !l.lastTurnSet {
+		return 0, 0, 0, false
+	}
+	evaluated = l.lastTurnPrompt - l.lastTurnCached
+	if evaluated < 0 {
+		evaluated = 0
+	}
+	return l.lastTurnCached, evaluated, l.lastTurnOutput, true
+}
+
 // LastTurnPromptTokens returns the prompt (input) token count the
 // provider reported for the most recent turn. ok is false until a turn
 // with provider usage has completed. Callers pair this with the model's

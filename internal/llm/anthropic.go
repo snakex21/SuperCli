@@ -410,6 +410,16 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			return nil
 		}
 		switch ev.Type {
+		case "message_start":
+			// Input-side accounting. Fold the cache read/creation
+			// tokens into Input so it means "total prompt tokens"
+			// like OpenAI's prompt_tokens, keeping the cache-hit
+			// denominator consistent across providers; CachedInput
+			// is the portion served from Anthropic's prompt cache.
+			if u := ev.Message.Usage; u.InputTokens > 0 || u.CacheReadInputTokens > 0 || u.CacheCreationInputTokens > 0 {
+				in := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+				lastUsage = &Usage{Input: in, Total: in, CachedInput: u.CacheReadInputTokens}
+			}
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {
 				args := "{}"
@@ -457,7 +467,13 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 		case "message_delta":
 			finishReason = anthropicFinishReason(ev.Delta.StopReason)
 			if ev.Usage.OutputTokens > 0 {
-				lastUsage = &Usage{Output: ev.Usage.OutputTokens, Total: ev.Usage.OutputTokens}
+				// Merge with the input-side usage captured at
+				// message_start (nil when the server never sent one).
+				if lastUsage == nil {
+					lastUsage = &Usage{}
+				}
+				lastUsage.Output = ev.Usage.OutputTokens
+				lastUsage.Total = lastUsage.Input + lastUsage.Output
 			}
 		case "message_stop":
 			if reasoningOpen {
@@ -510,14 +526,29 @@ type anthropicEvent struct {
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	// Message carries the message_start payload; its usage holds the
+	// input-side accounting (including the prompt-cache breakdown).
+	Message struct {
+		Usage anthropicUsage `json:"usage"`
+	} `json:"message"`
+	Usage anthropicUsage `json:"usage"`
 	Error struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// anthropicUsage is the usage object of the Messages API. Anthropic
+// reports input_tokens EXCLUSIVE of cache activity: prompt tokens
+// served from the cache arrive in cache_read_input_tokens and tokens
+// written to it in cache_creation_input_tokens. All fields are simply
+// zero when the API (or a proxy) omits them — missing telemetry must
+// never break the cloud path.
+type anthropicUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }
 
 func patchAnthropicThinking(body []byte, effort string) ([]byte, bool) {
