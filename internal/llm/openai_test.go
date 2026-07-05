@@ -102,7 +102,13 @@ func TestBuildOpenAIRequest_TextOnly(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_CoalescesMidConversationSystemMessages(t *testing.T) {
+// TestBuildOpenAIRequest_DemotesMidConversationSystemMessages guards the
+// KV-cache fix: a system message appearing after the first non-system turn
+// (freshness stamp, reflection checkpoint, ...) must NOT be hoisted into the
+// leading system block — hoisting put volatile bytes at the front of the
+// prompt and invalidated the whole server-side prompt cache on every minute
+// tick. It stays in place, rendered as a <system-reminder> user turn.
+func TestBuildOpenAIRequest_DemotesMidConversationSystemMessages(t *testing.T) {
 	body, err := buildOpenAIRequest("qwen-local", []Message{
 		{Role: RoleSystem, Content: "base system"},
 		{Role: RoleUser, Content: "hi"},
@@ -128,8 +134,12 @@ func TestBuildOpenAIRequest_CoalescesMidConversationSystemMessages(t *testing.T)
 	if got.Messages[0].Role != "system" {
 		t.Fatalf("first role = %q, want system", got.Messages[0].Role)
 	}
-	if !strings.Contains(got.Messages[0].Content, "base system") || !strings.Contains(got.Messages[0].Content, "freshness stamp") {
-		t.Fatalf("coalesced system content = %q", got.Messages[0].Content)
+	// The volatile stamp must NOT be hoisted to the prompt front.
+	if !strings.Contains(got.Messages[0].Content, "base system") {
+		t.Fatalf("leading system content = %q, want base system", got.Messages[0].Content)
+	}
+	if strings.Contains(got.Messages[0].Content, "freshness stamp") {
+		t.Fatalf("volatile stamp hoisted into leading system block (cache killer): %q", got.Messages[0].Content)
 	}
 	for i := 1; i < len(got.Messages); i++ {
 		if got.Messages[i].Role == "system" {
@@ -138,6 +148,54 @@ func TestBuildOpenAIRequest_CoalescesMidConversationSystemMessages(t *testing.T)
 	}
 	if got.Messages[1].Role != "user" || got.Messages[2].Role != "assistant" || got.Messages[3].Role != "user" {
 		t.Fatalf("non-system order changed: %+v", got.Messages)
+	}
+	// The stamp is rendered in place as a <system-reminder>, folded
+	// together with the adjacent user turn (no user,user for strict
+	// alternating templates).
+	tail := got.Messages[3].Content
+	if !strings.Contains(tail, "<system-reminder>\nfreshness stamp\n</system-reminder>") {
+		t.Fatalf("demoted stamp missing from tail user turn: %q", tail)
+	}
+	if !strings.Contains(tail, "continue") {
+		t.Fatalf("adjacent user text lost in merge: %q", tail)
+	}
+}
+
+// TestBuildOpenAIRequest_TrailingStampStaysLast mirrors the coordinator
+// shape: history ending in a tool result, then the volatile stamp. The stamp
+// must come out as the LAST message, not at the front.
+func TestBuildOpenAIRequest_TrailingStampStaysLast(t *testing.T) {
+	body, err := buildOpenAIRequest("qwen-local", []Message{
+		{Role: RoleSystem, Content: "base system"},
+		{Role: RoleUser, Content: "task"},
+		{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "1", Name: "list_dir", Arguments: `{"path":"."}`}}},
+		{Role: RoleTool, ToolCallID: "1", Content: "a.go"},
+		{Role: RoleSystem, Content: "Current local date/time: 2026-07-05 12:51"},
+	}, nil, false, false)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var got struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Messages) != 5 {
+		t.Fatalf("messages = %d, want 5: %s", len(got.Messages), body)
+	}
+	if strings.Contains(string(got.Messages[0].Content), "12:51") {
+		t.Fatalf("stamp hoisted to leading system block: %s", got.Messages[0].Content)
+	}
+	last := got.Messages[len(got.Messages)-1]
+	if last.Role != "user" {
+		t.Fatalf("last role = %q, want user (demoted stamp)", last.Role)
+	}
+	if !strings.Contains(string(last.Content), "system-reminder") || !strings.Contains(string(last.Content), "12:51") {
+		t.Fatalf("last message is not the demoted stamp: %s", last.Content)
 	}
 }
 

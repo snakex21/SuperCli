@@ -258,6 +258,11 @@ func buildAnthropicRequest(model string, msgs []Message, tools []ToolDef, vision
 	for _, t := range tools {
 		req.Tools = append(req.Tools, anthropicTool{Name: t.Name, Description: t.Description, InputSchema: normalizeToolSchema(t.Schema)})
 	}
+	// Only the leading run of system messages may be hoisted into
+	// req.System; later system messages (freshness stamp, reflection
+	// checkpoints, ...) stay in place as <system-reminder> user turns
+	// so the prompt prefix stays append-only for prompt caching.
+	msgs = demoteMidConversationSystemMessages(msgs)
 	var system []string
 	for _, m := range msgs {
 		switch m.Role {

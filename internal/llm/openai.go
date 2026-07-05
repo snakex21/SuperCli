@@ -525,7 +525,7 @@ type openaiToolFunction struct {
 }
 
 func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool) ([]byte, error) {
-	msgs = coalesceSystemMessagesForChatTemplates(msgs)
+	msgs = demoteMidConversationSystemMessages(msgs)
 	req := openaiRequest{
 		Model:         model,
 		Stream:        true,
@@ -573,47 +573,6 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 		req.Messages = append(req.Messages, rm)
 	}
 	return json.Marshal(req)
-}
-
-// coalesceSystemMessagesForChatTemplates makes OpenAI-compatible requests safe
-// for strict local Jinja chat templates (notably some Qwen/llama.cpp/LM Studio
-// templates) that raise "System message must be at the beginning" when any
-// system message appears after a user/assistant/tool turn. SuperCli internally
-// uses later system messages for freshness stamps, compaction summaries,
-// reflection checkpoints, etc.; before sending to OpenAI-compatible servers we
-// fold all system text into one leading system message and preserve the order of
-// every non-system message so tool-call/result pairing remains intact.
-func coalesceSystemMessagesForChatTemplates(msgs []Message) []Message {
-	if len(msgs) == 0 {
-		return msgs
-	}
-	var systems []string
-	nonSystem := make([]Message, 0, len(msgs))
-	needsRewrite := false
-	seenNonSystem := false
-	for _, m := range msgs {
-		if m.Role == RoleSystem {
-			if seenNonSystem {
-				needsRewrite = true
-			}
-			if text := strings.TrimSpace(messageText(m)); text != "" {
-				systems = append(systems, text)
-			}
-			continue
-		}
-		seenNonSystem = true
-		nonSystem = append(nonSystem, m)
-	}
-	if !needsRewrite {
-		return msgs
-	}
-	if len(systems) == 0 {
-		return nonSystem
-	}
-	out := make([]Message, 0, len(nonSystem)+1)
-	out = append(out, Message{Role: RoleSystem, Content: strings.Join(systems, "\n\n")})
-	out = append(out, nonSystem...)
-	return out
 }
 
 func patchOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool) {
