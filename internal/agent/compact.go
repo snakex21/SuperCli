@@ -51,14 +51,33 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 //
 // Returns the number of messages removed.
 func (l *Loop) CompactWithSummary(summary string) int {
+	return l.CompactPrefixWithSummary(summary, len(l.Messages))
+}
+
+// CompactPrefixWithSummary is CompactWithSummary cutting at a turn
+// boundary: only the non-system messages BEFORE upto are replaced by
+// the summary; the tail [upto:) — typically the last user turn —
+// survives verbatim, so the model never resumes from a summary of
+// its own half-finished turn. upto is clamped to the message range.
+//
+// Returns the number of messages removed.
+func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	keep := 0
 	for keep < len(l.Messages) && l.Messages[keep].Role == llm.RoleSystem {
 		keep++
 	}
-	removed := len(l.Messages) - keep
+	if upto > len(l.Messages) {
+		upto = len(l.Messages)
+	}
+	if upto < keep {
+		upto = keep
+	}
+	removed := upto - keep
+	tail := append([]llm.Message(nil), l.Messages[upto:]...)
 	l.Messages = l.Messages[:keep]
 	sum := llm.Message{Role: llm.RoleSystem, Content: summary}
 	l.Messages = append(l.Messages, sum)
+	l.Messages = append(l.Messages, tail...)
 	l.persist(context.Background(), sum)
 	l.resetHidden()
 	l.chatWindowStart = 0

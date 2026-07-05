@@ -4,29 +4,37 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"supercli/internal/llm"
 )
 
-// compactionPrompt is the 9-section summarization instruction
-// sent to the active model when the user runs /compact.
-const compactionPrompt = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions. This summary will REPLACE the conversation history, so it must capture everything needed to continue the work without the original messages.
+// compactionPrompt is the summarization instruction sent to the
+// active model for /compact and auto-compaction. Deliberately a
+// SHORT forced template: the summary replaces history byte-for-byte
+// in every later prompt, and small local models both ramble and get
+// lost in long 9-section summaries. Exact facts that need no prose
+// (file paths, loaded tools) are appended by code, not the model —
+// see compactFacts.
+const compactionPrompt = `Summarize the conversation so far. The summary will REPLACE the older history, so it must let the work continue without the original messages.
 
-Structure your summary with these sections:
+Use EXACTLY this template, plain text, no code fences:
 
-1. Primary Request and Intent: all of the user's explicit requests and intents, in detail.
-2. Key Technical Concepts: technologies, frameworks, and concepts discussed.
-3. Files and Code Sections: files examined, modified, or created; include why they matter and key code snippets where load-bearing.
-4. Errors and Fixes: every error hit and how it was fixed, including any user feedback on fixes.
-5. Problem Solving: problems solved and any ongoing troubleshooting.
-6. All User Messages: every non-tool user message, so the user's exact asks are preserved.
-7. Pending Tasks: tasks explicitly requested but not yet done.
-8. Current Work: precisely what was being worked on immediately before this summary, with file names and code where relevant.
-9. Next Step: the next step that directly follows from the most recent work, if any. Quote the most recent instruction verbatim where it defines the next step.
+Goal: the user's request(s) and intent; quote the key instruction verbatim.
+Done: what was accomplished (files created/modified, problems solved, errors fixed).
+State: facts needed to continue — key paths, decisions, values, open errors.
+Pending: what remains, and the immediate next step.
 
-Respond with TEXT ONLY — no tool calls, no code fences around the whole answer.`
+Hard limit: 500 tokens total. Prefer bare file paths and short phrases over prose. Respond with TEXT ONLY — no tool calls.`
+
+// compactSummaryMaxChars hard-caps the model-produced summary
+// (~1000 tokens). Small models overshoot instruction limits; the
+// summary is re-sent with EVERY later request, so an unbounded one
+// would defeat the point of compacting. Truncation prefers a line
+// boundary.
+const compactSummaryMaxChars = 4000
 
 // compactSummaryWrapper frames the summary so the model resumes
 // seamlessly on the next turn.
@@ -100,5 +108,73 @@ func summarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	if out == "" {
 		return "", fmt.Errorf("summarizer returned empty text")
 	}
-	return out, nil
+	return clampSummary(out), nil
+}
+
+// clampSummary enforces compactSummaryMaxChars, cutting at the last
+// line boundary before the cap when possible.
+func clampSummary(s string) string {
+	if len(s) <= compactSummaryMaxChars {
+		return s
+	}
+	cut := strings.LastIndexByte(s[:compactSummaryMaxChars], '\n')
+	if cut < compactSummaryMaxChars/2 {
+		cut = compactSummaryMaxChars
+	}
+	return strings.TrimSpace(s[:cut]) + "\n[summary truncated]"
+}
+
+// fileToolModifies classifies a tool call as writing to the file it
+// names (vs merely reading it).
+func fileToolModifies(name string) bool {
+	for _, p := range []string{"write", "edit", "insert", "delete", "move", "copy", "make", "trash"} {
+		if strings.Contains(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// compactFacts derives cheap EXACT context lines from the compacted
+// messages, appended below the model-written summary: bare paths of
+// files read and modified (from tool-call arguments) and the tools
+// loaded via tool_search (registry state survives compaction, so the
+// model must know it doesn't need to search for them again). Costs a
+// handful of tokens and spares re-reading after compaction.
+func compactFacts(msgs []llm.Message, loadedTools []string) string {
+	const maxList = 20
+	seen := map[string]bool{}
+	var read, modified []string
+	for _, m := range msgs {
+		for _, tc := range m.ToolCalls {
+			var args map[string]any
+			if json.Unmarshal([]byte(tc.Arguments), &args) != nil {
+				continue
+			}
+			path, _ := args["path"].(string)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			if fileToolModifies(tc.Name) {
+				modified = append(modified, path)
+			} else {
+				read = append(read, path)
+			}
+		}
+	}
+	var b strings.Builder
+	writeList := func(label string, list []string) {
+		if len(list) == 0 {
+			return
+		}
+		if len(list) > maxList {
+			list = list[len(list)-maxList:] // freshest entries win
+		}
+		fmt.Fprintf(&b, "\n%s: %s", label, strings.Join(list, ", "))
+	}
+	writeList("files_read", read)
+	writeList("files_modified", modified)
+	writeList("loaded_tools", loadedTools)
+	return b.String()
 }

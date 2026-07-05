@@ -79,3 +79,61 @@ func TestMaybeAutoCompact(t *testing.T) {
 		t.Error("compacted below threshold")
 	}
 }
+
+// TestMaybeAutoCompact_KeepsLastTurn: when the bulk sits in OLDER
+// turns, the summary replaces only those; the last user turn (the
+// work in progress) survives verbatim after the summary — and the
+// summarizer never even sees it.
+func TestMaybeAutoCompact_KeepsLastTurn(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	var summarized []llm.Message
+	l := &Loop{
+		provider:  echo,
+		modelID:   "test",
+		windowFor: func(string) int { return 2000 },
+		summarizer: func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
+			summarized = append([]llm.Message(nil), msgs...)
+			return "SUMMARY", nil
+		},
+	}
+	l.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: strings.Repeat("x", 6000)}, // old bulk
+		{Role: llm.RoleAssistant, Content: "done earlier"},
+		{Role: llm.RoleUser, Content: "current question"},
+		{Role: llm.RoleAssistant, Content: "working on it"},
+	}
+	l.maybeAutoCompact(context.Background(), nil, "")
+
+	want := []string{"sys", "SUMMARY", "current question", "working on it"}
+	if len(l.Messages) != len(want) {
+		t.Fatalf("Messages = %d entries, want %d: %+v", len(l.Messages), len(want), l.Messages)
+	}
+	for i, w := range want {
+		if l.Messages[i].Content != w {
+			t.Errorf("Messages[%d] = %q, want %q", i, l.Messages[i].Content, w)
+		}
+	}
+	for _, m := range summarized {
+		if m.Content == "current question" || m.Content == "working on it" {
+			t.Errorf("last turn leaked into the summarizer input: %q", m.Content)
+		}
+	}
+}
+
+// TestMaybeAutoCompact_HugeLastTurnFallsBackToFull: when the last
+// turn alone still eats more than half the window, cutting at the
+// turn boundary would leave the context over budget — everything is
+// summarized (the historical behaviour, exercised above in
+// TestMaybeAutoCompact with a single huge user message).
+func TestMaybeAutoCompact_HugeLastTurnFallsBackToFull(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: "small old turn"},
+		{Role: llm.RoleAssistant, Content: "ok"},
+		{Role: llm.RoleUser, Content: strings.Repeat("y", 6000)}, // huge current turn
+	}
+	if got := compactSplit(msgs, 2000); got != len(msgs) {
+		t.Errorf("compactSplit = %d, want %d (full compaction)", got, len(msgs))
+	}
+}
