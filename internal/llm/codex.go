@@ -718,11 +718,18 @@ type codexToolDecl struct {
 // buildCodexRequest translates SuperCli's chat-completion-shaped
 // history into Responses API items:
 //
-//   - system messages    → the top-level "instructions" field
-//   - user/assistant     → {"type":"message","content":[input_text|output_text]}
-//   - assistant ToolCall → {"type":"function_call",...}
-//   - tool results       → {"type":"function_call_output",...}
+//   - LEADING system msgs → the top-level "instructions" field
+//   - user/assistant      → {"type":"message","content":[input_text|output_text]}
+//   - assistant ToolCall  → {"type":"function_call",...}
+//   - tool results        → {"type":"function_call_output",...}
+//
+// Mid-conversation system messages (freshness stamp, thin preamble,
+// reflection checkpoints) must NOT be hoisted into "instructions":
+// that would move per-request volatile bytes to the prompt front and
+// invalidate the server-side prompt cache every turn. The demote pass
+// renders them in place as <system-reminder> user turns instead.
 func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
+	msgs = demoteMidConversationSystemMessages(msgs)
 	req := codexRequest{
 		Model:      model,
 		ToolChoice: "auto",

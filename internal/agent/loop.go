@@ -1055,7 +1055,6 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.briefing != "" {
 		system += "\n\n" + l.briefing
 	}
-	system += "\n\n" + l.stampSection()
 	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 
 	// The current turn (everything from the last user message on) is sent
@@ -1097,6 +1096,13 @@ func (l *Loop) providerMessages() []llm.Message {
 			out = append(out, m)
 		}
 	}
+	// Per-request freshness stamp at the very END, same pattern as the
+	// coordinator route: the minute-granular stamp used to be baked into
+	// the leading system prompt, rewriting the prompt front every minute
+	// and killing the provider-side KV cache. The provider demote pass
+	// renders this trailing system message in place as a
+	// <system-reminder> user turn.
+	out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
 	return out
 }
 
