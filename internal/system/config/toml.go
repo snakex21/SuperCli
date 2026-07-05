@@ -122,6 +122,17 @@ type TomlConfig struct {
 	// keeps its resolved value for the session.
 	CachePrompt *bool `toml:"cache_prompt"`
 
+	// SlotCache persists llama.cpp slot KV state across SuperCli
+	// sessions (POST /slots/{id}?action=save|restore), so resuming a
+	// session prefills against the saved cache instead of re-evaluating
+	// the whole history. Requires the server to run with
+	// `--slot-save-path <dir>`. Tri-state: nil = auto (attempted on
+	// local/private hosts only, silently disabled after the first
+	// unsupported/failed call), explicit true forces it for a
+	// self-hosted server behind a public address, explicit false turns
+	// it off entirely. Cloud endpoints are never probed.
+	SlotCache *bool `toml:"slot_cache"`
+
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
@@ -418,6 +429,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.CachePrompt != nil {
 		dst.CachePrompt = src.CachePrompt
+	}
+	if src.SlotCache != nil {
+		dst.SlotCache = src.SlotCache
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

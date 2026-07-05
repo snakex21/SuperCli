@@ -878,6 +878,14 @@ func Main() {
 	// honour it. nil = per-host auto-detection (unchanged behaviour).
 	llm.SetCachePromptDefault(tomlCfg.CachePrompt)
 
+	// Warm KV cache across sessions (llama.cpp slot save/restore).
+	// nil for cloud endpoints — they are never probed. slot_cache
+	// (config.toml, tri-state) overrides the local-host auto-gate.
+	// The first failed call (server without --slot-save-path, old
+	// build, network error) disables it for the rest of the process:
+	// the errors below land in the log file only, never in the TUI.
+	slotCache := llm.NewSlotCache(cfg.BaseURL, tomlCfg.SlotCache)
+
 	var injector *reflect.Injector
 	if memStore != nil {
 		patStore, _ := reflect.NewStore(memStore)
@@ -1252,6 +1260,15 @@ func Main() {
 		if err != nil {
 			return fmt.Sprintf("resume: %v", err), nil
 		}
+		// Warm the server-side KV BEFORE the first request of the
+		// resumed conversation. Restore is always safe: llama.cpp
+		// re-evals from the first divergent token, so a stale or
+		// mismatched slot file only costs the benefit.
+		if n, rerr := slotCache.Restore(ctx, args); rerr != nil {
+			log.Printf("slotcache: restore %s: %v (disabled for this session)", args, rerr)
+		} else if n > 0 {
+			log.Printf("slotcache: restored %d cached token(s) for %s", n, args)
+		}
 		return out, nil
 	}
 	// --resume: load the most recent prior session at startup.
@@ -1263,6 +1280,11 @@ func Main() {
 				}
 				if msg, err := resumeSession(context.Background(), loop, sessStore, windowFor, r.ID); err == nil {
 					log.Printf("--resume: %s", msg)
+					if n, rerr := slotCache.Restore(context.Background(), r.ID); rerr != nil {
+						log.Printf("slotcache: restore %s: %v (disabled for this session)", r.ID, rerr)
+					} else if n > 0 {
+						log.Printf("slotcache: restored %d cached token(s) for %s", n, r.ID)
+					}
 				} else {
 					log.Printf("--resume failed: %v", err)
 				}
@@ -2303,6 +2325,21 @@ func Main() {
 		logCrash(dataDir, fmt.Errorf("tui error: %w", err))
 		fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
 		os.Exit(1)
+	}
+	// Persist this session's slot KV state so the next launch can
+	// /resume warm (llama.cpp re-prefills only from the divergence
+	// point). Done FIRST after the TUI exits, before the memory
+	// finalizer below fires its own summary request — that request
+	// shares the session's prompt prefix and would otherwise advance
+	// the slot past the state the resumed history will replay.
+	if !slotCache.Disabled() && len(loop.AllMessages()) > 0 {
+		sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if n, serr := slotCache.Save(sctx, sessionID); serr != nil {
+			log.Printf("slotcache: save %s: %v", sessionID, serr)
+		} else if n > 0 {
+			log.Printf("slotcache: saved %d cached token(s) for %s", n, sessionID)
+		}
+		scancel()
 	}
 	// B4 code guarantee: if the model never called remember this
 	// session, generate a one-call summary and store it as a
