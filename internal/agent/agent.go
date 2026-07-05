@@ -205,6 +205,20 @@ type AutoCompactEvent struct {
 
 func (AutoCompactEvent) event() {}
 
+// ToolResultsPrunedEvent reports that old tool results were replaced
+// in place with short markers (prune.go) — the zero-LLM first line of
+// context defense that runs before the summary fallback. Reclaimed is
+// the estimated token gain; Estimated/Window are the visible estimate
+// before pruning and the resolved context window.
+type ToolResultsPrunedEvent struct {
+	Pruned    int // tool results replaced with markers
+	Reclaimed int // estimated tokens reclaimed
+	Estimated int // visible token estimate before the prune
+	Window    int // resolved context window (tokens)
+}
+
+func (ToolResultsPrunedEvent) event() {}
+
 // NoticeEvent is a non-terminal, informational status line from the
 // provider layer (llm.Delta.Notice) — e.g. "rate limited, retrying
 // in 2s". It is UI/log-only: the text is never appended to the

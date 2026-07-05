@@ -101,22 +101,14 @@ func (l *Loop) VisibleMessages() []llm.Message {
 }
 
 // EstimateVisibleTokens approximates the token count of
-// VisibleMessages() using a chars/4 heuristic. Good enough
-// for budget-based eviction; not for billing. The
-// heuristic is intentionally cheap — we call it after
-// every step in the loop, so anything O(n) on the message
-// length is fine.
+// VisibleMessages() with the calibrated llm.EstimateTokens
+// heuristic (non-whitespace bytes / 3 + per-message framing).
+// Good enough for budget-based eviction and compaction
+// triggers; not for billing. Intentionally cheap — we call
+// it after every step in the loop, so anything O(n) on the
+// message length is fine.
 func (l *Loop) EstimateVisibleTokens() int {
-	n := 0
-	for _, m := range l.VisibleMessages() {
-		n += len(m.Content) / 4
-		for _, p := range m.Parts {
-			if p.Type == llm.PartTypeText {
-				n += len(p.Text) / 4
-			}
-		}
-	}
-	return n
+	return llm.EstimateTokens(l.VisibleMessages())
 }
 
 // EvictForBudget hides the oldest non-system messages

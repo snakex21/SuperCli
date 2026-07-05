@@ -169,6 +169,14 @@ type TomlConfig struct {
 	// provider metadata / learned limits / default.
 	ContextWindow int `toml:"context_window"`
 
+	// PruneProtectTokens sizes the freshest tool-result tail
+	// (estimated tokens) that the zero-LLM context prune keeps
+	// verbatim; older tool results are replaced in place with a
+	// short marker once the context estimate crosses 60% of the
+	// window AND at least 25% of it can be reclaimed in one batch.
+	// 0 = built-in default (8192). Negative disables pruning.
+	PruneProtectTokens int `toml:"prune_protect_tokens"`
+
 	// MemoryBriefingTokens caps the session-start memory briefing
 	// (user preferences + recent session-journal entries) injected
 	// into the system prompt. It is a HARD budget: preferences and
@@ -435,6 +443,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
+	}
+	if src.PruneProtectTokens != 0 {
+		dst.PruneProtectTokens = src.PruneProtectTokens
 	}
 	if src.MemoryBriefingTokens > 0 {
 		dst.MemoryBriefingTokens = src.MemoryBriefingTokens

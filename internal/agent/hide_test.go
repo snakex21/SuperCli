@@ -153,14 +153,16 @@ func TestVisibleMessages_AdjacentRangesSinglePlaceholder(t *testing.T) {
 	}
 }
 
-func TestEstimateVisibleTokens_CharsOver4(t *testing.T) {
-	l := makeLoopWithMessages(
-		llm.Message{Role: llm.RoleUser, Content: strings.Repeat("a", 400)}, // 100 tokens
-		llm.Message{Role: llm.RoleAssistant, Content: strings.Repeat("b", 200)}, // 50 tokens
-	)
+func TestEstimateVisibleTokens_MatchesUnifiedEstimator(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: strings.Repeat("a", 400)},
+		{Role: llm.RoleAssistant, Content: strings.Repeat("b", 200)},
+	}
+	l := makeLoopWithMessages(msgs...)
 	got := l.EstimateVisibleTokens()
-	if got != 150 {
-		t.Errorf("EstimateVisibleTokens = %d, want 150 (400/4 + 200/4)", got)
+	want := llm.EstimateTokens(msgs) // 400/3+16 + 200/3+16 = 231
+	if got != want {
+		t.Errorf("EstimateVisibleTokens = %d, want %d (unified llm estimator)", got, want)
 	}
 }
 
@@ -170,15 +172,16 @@ func TestEstimateVisibleTokens_SkipsHidden(t *testing.T) {
 		llm.Message{Role: llm.RoleAssistant, Content: strings.Repeat("b", 400)}, // hidden
 		llm.Message{Role: llm.RoleUser, Content: strings.Repeat("c", 400)},
 	)
+	allVisible := l.EstimateVisibleTokens()
 	_ = l.HideRange(1, 2)
-	// Visible: u1 (100) + placeholder ("[earlier context cleared — 1 message(s) compacted]" = ~52 chars / 4 = 13) + u2 (100) = 213
 	got := l.EstimateVisibleTokens()
 	if got == 0 {
 		t.Fatal("got 0, expected > 0")
 	}
-	// Sanity: hidden content should NOT be 200 tokens worth
-	if got > 250 {
-		t.Errorf("EstimateVisibleTokens = %d, want < 250 (hidden message should be replaced by short placeholder)", got)
+	// The hidden 400-char message (~149 tok) is replaced by a short
+	// placeholder (~35 tok); the estimate must drop accordingly.
+	if got >= allVisible-50 {
+		t.Errorf("EstimateVisibleTokens = %d, want well below %d (hidden message should be replaced by short placeholder)", got, allVisible)
 	}
 }
 

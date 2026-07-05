@@ -1088,6 +1088,10 @@ func Main() {
 		WindowFor:         windowFor,
 		Summarizer:        autoSummarizer,
 		LearnLimit:        learned.Learn,
+		// Zero-LLM tool-result prune (first line of context defense,
+		// before the summary fallback). Config prune_protect_tokens:
+		// 0 = default 8192-token protected tail, negative = off.
+		PruneProtectTokens: tomlCfg.PruneProtectTokens,
 		EnableNavigator:   navigatorEnable,
 		NavigatorAuto:     navigatorAuto,
 		// Thin tool protocol: small-tier models get the compact
