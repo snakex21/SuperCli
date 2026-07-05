@@ -139,8 +139,15 @@ func TestLoop_ChatOnlyRouteSendsShortPromptAndNoTools(t *testing.T) {
 	if !strings.HasPrefix(p.messages[0].Content, chatOnlySystemPrompt) {
 		t.Fatalf("system prompt = %q, want chat-only prompt prefix", p.messages[0].Content)
 	}
-	if !strings.Contains(p.messages[0].Content, "Current local date/time:") {
-		t.Fatalf("system prompt missing per-request time stamp: %q", p.messages[0].Content)
+	// The per-request time stamp must NOT be baked into the leading
+	// system prompt (that rewrote the prompt front every minute and
+	// killed the provider KV cache); it trails the request instead.
+	if strings.Contains(p.messages[0].Content, "Current local date/time:") {
+		t.Fatalf("volatile time stamp baked into leading system prompt: %q", p.messages[0].Content)
+	}
+	last := p.messages[len(p.messages)-1]
+	if last.Role != llm.RoleSystem || !strings.Contains(last.Content, "Current local date/time:") {
+		t.Fatalf("last message = %+v, want trailing time-stamp system message", last)
 	}
 	for _, m := range p.messages {
 		if strings.Contains(m.Content, "FULL COORDINATOR") {

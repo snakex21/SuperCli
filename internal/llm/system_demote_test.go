@@ -132,6 +132,72 @@ func TestDemote_DoesNotMergeIntoMultimodalUser(t *testing.T) {
 	}
 }
 
+// TestBuildCodexRequest_TailSystemNotHoisted covers the ChatGPT-backend
+// (/responses) path of the same cache killer: buildCodexRequest used to
+// join ALL system messages into the top-level "instructions" field
+// (prompt front). Now only the leading run may be hoisted; the trailing
+// stamp must arrive as the last input item — a user message wrapped in
+// <system-reminder>.
+func TestBuildCodexRequest_TailSystemNotHoisted(t *testing.T) {
+	body, err := buildCodexRequest("gpt-5.5-codex", []Message{
+		{Role: RoleSystem, Content: "base system"},
+		{Role: RoleUser, Content: "task"},
+		{Role: RoleAssistant, Content: "on it"},
+		{Role: RoleSystem, Content: "Current local date/time: 2026-07-05 12:51"},
+	}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req codexRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Instructions != "base system" {
+		t.Fatalf("instructions = %q, want only the leading system block (stamp must not be hoisted)", req.Instructions)
+	}
+	if len(req.Input) != 3 {
+		t.Fatalf("input items = %d, want 3: %+v", len(req.Input), req.Input)
+	}
+	last := req.Input[len(req.Input)-1]
+	if last.Type != "message" || last.Role != "user" {
+		t.Fatalf("last item = type %q role %q, want user message", last.Type, last.Role)
+	}
+	if len(last.Content) != 1 || last.Content[0].Type != "input_text" ||
+		!strings.Contains(last.Content[0].Text, "<system-reminder>") ||
+		!strings.Contains(last.Content[0].Text, "12:51") {
+		t.Fatalf("last item is not the demoted stamp: %+v", last.Content)
+	}
+}
+
+// TestBuildCodexRequest_StampMergedIntoAdjacentUser: when the trailing
+// stamp directly follows a plain user turn, it must be folded into that
+// turn (append-only tail) rather than emitted as user,user.
+func TestBuildCodexRequest_StampMergedIntoAdjacentUser(t *testing.T) {
+	body, err := buildCodexRequest("gpt-5.5-codex", []Message{
+		{Role: RoleSystem, Content: "base system"},
+		{Role: RoleUser, Content: "task"},
+		{Role: RoleSystem, Content: "freshness stamp"},
+	}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req codexRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Instructions != "base system" {
+		t.Fatalf("instructions = %q, want only the leading system block", req.Instructions)
+	}
+	if len(req.Input) != 1 {
+		t.Fatalf("input items = %d, want 1 merged user message: %+v", len(req.Input), req.Input)
+	}
+	text := req.Input[0].Content[0].Text
+	if !strings.HasPrefix(text, "task") ||
+		!strings.Contains(text, "<system-reminder>\nfreshness stamp\n</system-reminder>") {
+		t.Fatalf("stamp not merged append-only into the user turn: %q", text)
+	}
+}
+
 // TestBuildAnthropicRequest_TailSystemNotHoisted covers the Anthropic
 // path of the same cache killer: buildAnthropicRequest used to join
 // ALL system messages into req.System (prompt front). Now only the

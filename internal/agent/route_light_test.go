@@ -56,6 +56,43 @@ func TestLoop_CoordinatorRouteAppendsTimeStamp(t *testing.T) {
 	}
 }
 
+// TestLoop_ChatRouteStampNotInLeadingSystem locks in the cache fix for
+// the chat-only/advisor routes: the minute-granular freshness stamp
+// used to be concatenated into the LEADING system prompt, rewriting the
+// prompt front (and killing the provider KV cache) every minute tick.
+// It must now trail the request as the last message — same pattern as
+// the coordinator route — where the provider demote pass renders it in
+// place as a <system-reminder>.
+func TestLoop_ChatRouteStampNotInLeadingSystem(t *testing.T) {
+	reg := tools.NewRegistry()
+	l, err := NewLoop(LoopConfig{Provider: &stubProvider{name: "stub"}, Registry: reg, System: "base"})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "cześć"})
+
+	for _, route := range []RouteMode{RouteChatOnly, RouteAdvisor, RouteClarify} {
+		l.route = route
+		msgs := l.providerMessages()
+		if len(msgs) < 2 || msgs[0].Role != llm.RoleSystem {
+			t.Fatalf("route %s: unexpected shape: %+v", route, msgs)
+		}
+		if strings.Contains(msgs[0].Content, "Current local date/time:") {
+			t.Errorf("route %s: volatile time stamp baked into the leading system prompt", route)
+		}
+		last := msgs[len(msgs)-1]
+		if last.Role != llm.RoleSystem || !strings.Contains(last.Content, "Current local date/time:") {
+			t.Errorf("route %s: last message = %+v, want trailing time-stamp system message", route, last)
+		}
+		// Only the trailing message may carry the stamp.
+		for i := 0; i < len(msgs)-1; i++ {
+			if strings.Contains(msgs[i].Content, "Current local date/time:") {
+				t.Errorf("route %s: time stamp found at index %d, must only be the final message", route, i)
+			}
+		}
+	}
+}
+
 // TestLoop_BuildToolDefs_CoordinatorExposesAllVisibleWithSchema: the
 // coordinator route must return every visible tool, preserving the
 // full JSON Schema (the historical behaviour B2a extracted verbatim).
