@@ -191,13 +191,7 @@ func (l *Loop) ContextReport() ContextReport {
 }
 
 func estimateMessageTokens(m llm.Message) int {
-	n := len(m.Content) / 4
-	for _, p := range m.Parts {
-		if p.Type == llm.PartTypeText {
-			n += len(p.Text) / 4
-		}
-	}
-	return n
+	return llm.EstimateMessageTokens(m)
 }
 
 func firstWords(s string, n int) string {

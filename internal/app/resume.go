@@ -106,7 +106,7 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		}
 	}
 	summarized := 0
-	if estimateMessagesTokens(msgs) > window*6/10 && len(msgs) > resumeKeepRecent {
+	if llm.EstimateTokens(msgs) > window*6/10 && len(msgs) > resumeKeepRecent {
 		cut := len(msgs) - resumeKeepRecent
 		// Don't start the verbatim tail on an orphan tool
 		// result: advance past consecutive tool messages.
@@ -161,19 +161,4 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		fmt.Fprintf(&b, "\n[%s] %s", m.Role, text)
 	}
 	return b.String(), nil
-}
-
-// estimateMessagesTokens is the chars/4 heuristic over a
-// message slice (same approach as Loop.EstimateVisibleTokens).
-func estimateMessagesTokens(msgs []llm.Message) int {
-	n := 0
-	for _, m := range msgs {
-		n += len(m.Content) / 4
-		for _, p := range m.Parts {
-			if p.Type == llm.PartTypeText {
-				n += len(p.Text) / 4
-			}
-		}
-	}
-	return n
 }

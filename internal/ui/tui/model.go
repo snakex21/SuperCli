@@ -1337,6 +1337,12 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()
+	case agent.ToolResultsPrunedEvent:
+		line := fmt.Sprintf("[prune: %d old tool result(s) → reclaimed ~%d tokens (~%d/%d)]",
+			e.Pruned, e.Reclaimed, e.Estimated, e.Window)
+		m.appendLine(line)
+		m.appendLineToTranscript(line)
+		return m, m.waitForNextEvent()
 	case agent.MessagesHiddenEvent:
 		line := m.marker.ContextHid(e.Count, e.Reason)
 		m.appendLine(line)

@@ -96,6 +96,10 @@ type Loop struct {
 	windowFor  func(model string) int
 	summarizer Summarizer
 	learnLimit func(model string, limit int)
+	// pruneProtect: tool-result tokens protected from pruning
+	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
+	// disabled.
+	pruneProtect int
 
 	// F9 ultrawork wiring. When non-nil, the loop:
 	//   - detects the "ultrawork"/"ulw" keyword in the user
@@ -196,21 +200,6 @@ func chatWindowEligible(m llm.Message) bool {
 		return false
 	}
 	return true
-}
-
-// estimateChatTokens is the chars/4 heuristic over a message slice
-// (same approach as EstimateVisibleTokens).
-func estimateChatTokens(msgs []llm.Message) int {
-	n := 0
-	for _, m := range msgs {
-		n += len(m.Content) / 4
-		for _, p := range m.Parts {
-			if p.Type == llm.PartTypeText {
-				n += len(p.Text) / 4
-			}
-		}
-	}
-	return n
 }
 
 // Reflector is the F5.a hook the loop calls every ReflectEvery
@@ -397,6 +386,12 @@ type LoopConfig struct {
 	// can be persisted per model.
 	LearnLimit func(model string, limit int)
 
+	// PruneProtectTokens is the size of the freshest tool-result
+	// tail (estimated tokens) protected from the zero-LLM prune
+	// pass (prune.go). 0 = built-in default (8192). Negative
+	// disables pruning entirely.
+	PruneProtectTokens int
+
 	// Stats, when non-nil, receives per-step metrics
 	// (token counts, draft savings). F2.g's Memory
 	// impl is the in-memory default; the persistent
@@ -458,6 +453,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		windowFor:             cfg.WindowFor,
 		summarizer:            cfg.Summarizer,
 		learnLimit:            cfg.LearnLimit,
+		pruneProtect:          cfg.PruneProtectTokens,
 		Messages:              msgs,
 		routeMap:              DefaultRouteMap(),
 		route:                 RouteCoordinator,
@@ -790,9 +786,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			l.invokeDraft(ctx, step, out)
 		}
 
-		// Wave 4: auto-compact before the provider call when
-		// the visible token estimate crosses 80% of the
-		// model's context window.
+		// Context defense before the provider call, cheap first:
+		// (1) prune old tool results in place (zero model calls,
+		// prune.go), (2) only if the estimate still crosses 80% of
+		// the window, fall back to the summary compaction.
+		l.maybePruneToolResults(ctx, out)
 		l.maybeAutoCompact(ctx, out, "")
 
 		// Build tool definitions from visible tools. Non-coordinator routes
@@ -1152,7 +1150,7 @@ func (l *Loop) providerMessages() []llm.Message {
 			window = append(window, visible[i])
 		}
 	}
-	if estimateChatTokens(window) > chatWindowMaxTokens {
+	if llm.EstimateTokens(window) > chatWindowMaxTokens {
 		// One big jump: advance the sticky start so only the last
 		// chatWindowKeepMsgs eligible messages stay in the window.
 		kept := 0
