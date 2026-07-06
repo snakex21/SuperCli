@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/llm"
@@ -45,6 +46,21 @@ type AgentTool struct {
 	// total past the cap; the partial report is still returned
 	// with a failed status. Zero = no token cap.
 	MaxTokens int64
+	// WorkerProvider, when non-nil, is the LLM backend delegated
+	// workers run on instead of Provider (config `task_model`). The
+	// coordinator keeps using Provider; only child loops switch. Nil =
+	// workers inherit Provider (default, byte-identical behaviour).
+	WorkerProvider llm.Provider
+	// WorkerPing verifies the worker backend, lazily, on the first
+	// delegation only (never on the startup path). Nil = no probe. On
+	// failure every delegation permanently falls back to Provider and
+	// a single warning NoticeEvent is emitted on the parent loop.
+	WorkerPing func(context.Context) error
+
+	// workerProbe gates the one-time WorkerPing; workerDown records a
+	// failed probe so later delegations skip straight to the fallback.
+	workerProbe sync.Once
+	workerDown  bool
 }
 
 // NewAgentTool returns the tool. reg, base, factory, and
@@ -202,8 +218,15 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// but per-turn it stays as cache-friendly as the coordinator.
 	thin, stable, baseDir := a.childLoopSettings()
 
+	// Model-per-task: pick the worker backend. Defaults to the
+	// coordinator's provider; a configured WorkerProvider switches the
+	// child loop to a different model/host (everything else — tools,
+	// thin protocol, stable toolset, sandbox, budgets — is inherited
+	// identically).
+	prov := a.workerProvider(ctx)
+
 	loop, err := a.NewLoop(LoopConfig{
-		Provider:        a.Provider,
+		Provider:        prov,
 		Caps:            a.Caps,
 		Registry:        childReg,
 		System:          system,
@@ -225,6 +248,13 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		a.Workers = workers
 	}
 	w := workers.Add(ar.Agent, ar.Prompt, loop)
+	// Telemetry: record the worker's model only when it differs from
+	// the coordinator's, so the default single-model summary line is
+	// byte-identical to before and draft-verify economics stay
+	// measurable once a second backend is in play.
+	if prov != a.Provider {
+		w.Model = prov.Name()
+	}
 	if ar.Async {
 		a.startBackgroundWorker(w, workerPrompt, maxSteps)
 		return tools.Result{Text: fmt.Sprintf(`<task-notification>
@@ -252,6 +282,37 @@ func (a *AgentTool) childLoopSettings() (thin, stable bool, baseDir string) {
 		return false, false, ""
 	}
 	return a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.baseDir
+}
+
+// workerProvider picks the LLM backend for a new worker: the
+// configured WorkerProvider when it is set and (checked once, on the
+// first delegation) passes WorkerPing, else the coordinator's
+// Provider. An unreachable worker backend downgrades every delegation
+// for the rest of the process with a single warning line — never a
+// hard error, so a dead second host cannot break delegation itself.
+func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
+	if a.WorkerProvider == nil {
+		return a.Provider
+	}
+	a.workerProbe.Do(func() {
+		if a.WorkerPing == nil {
+			return
+		}
+		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := a.WorkerPing(pctx); err != nil {
+			a.workerDown = true
+			if a.ParentLoop != nil {
+				a.ParentLoop.Emit(NoticeEvent{Text: fmt.Sprintf(
+					"task: worker model %q unreachable (%v) — falling back to %q",
+					a.WorkerProvider.Name(), err, a.Provider.Name())})
+			}
+		}
+	})
+	if a.workerDown {
+		return a.Provider
+	}
+	return a.WorkerProvider
 }
 
 // defaultAgentKind is the worker used when task is called without an

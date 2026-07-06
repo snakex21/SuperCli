@@ -151,6 +151,12 @@ func workerSummary(w *Worker) string {
 	// resource cost (steps + tokens) so a run that hit a limit is legible.
 	summary := fmt.Sprintf("%s %s · %d steps · %d in/%d out tok",
 		w.Agent, status, w.Steps, w.TokensIn, w.TokensOut)
+	// model-per-task telemetry: name the backend only when it differs
+	// from the coordinator's (Model is set by the task tool then), so
+	// the default single-model line keeps its historical format.
+	if w.Model != "" {
+		summary += " · model=" + w.Model
+	}
 	if w.LastError != "" {
 		summary += ": " + w.LastError
 	}

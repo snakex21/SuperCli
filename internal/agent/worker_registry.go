@@ -18,8 +18,12 @@ type Worker struct {
 	ID          string
 	Agent       string
 	Description string
-	Loop        *Loop
-	CreatedAt   time.Time
+	// Model is the worker's backend model when it differs from the
+	// coordinator's (config `task_model`). "" = same backend; the
+	// summary line then stays in its historical single-model format.
+	Model     string
+	Loop      *Loop
+	CreatedAt time.Time
 	UpdatedAt   time.Time
 	Status      string
 	LastResult  string
@@ -74,6 +78,7 @@ type Snapshot struct {
 	ID          string
 	Agent       string
 	Description string
+	Model       string
 	Status      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -90,6 +95,7 @@ func (w *Worker) Snapshot() Snapshot {
 		ID:          w.ID,
 		Agent:       w.Agent,
 		Description: w.Description,
+		Model:       w.Model,
 		Status:      w.Status,
 		CreatedAt:   w.CreatedAt,
 		UpdatedAt:   w.UpdatedAt,

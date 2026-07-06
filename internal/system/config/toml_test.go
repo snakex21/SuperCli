@@ -240,6 +240,20 @@ func TestMergeToml_TaskParallelOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_TaskModelOverride: a non-empty source task_model
+// overrides the destination; an empty one leaves it untouched.
+func TestMergeToml_TaskModelOverride(t *testing.T) {
+	dst := TomlConfig{TaskModel: "small/ministral-3b"}
+	mergeToml(&dst, TomlConfig{}) // empty src leaves dst
+	if dst.TaskModel != "small/ministral-3b" {
+		t.Fatalf("empty src should not clear task_model: %q", dst.TaskModel)
+	}
+	mergeToml(&dst, TomlConfig{TaskModel: "other-model"})
+	if dst.TaskModel != "other-model" {
+		t.Fatalf("src should override task_model: %q", dst.TaskModel)
+	}
+}
+
 // TestMergeToml_CachePromptOverride: a non-nil source cache_prompt
 // overrides the destination in both directions; nil leaves it untouched.
 func TestMergeToml_CachePromptOverride(t *testing.T) {
