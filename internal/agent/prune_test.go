@@ -49,11 +49,12 @@ func TestPrune_BelowTrigger_NoOp(t *testing.T) {
 }
 
 // TestPrune_ReclaimsOldKeepsTailAndLastTurn: old tool results become
-// markers; the protected tail and the whole last turn stay verbatim.
+// markers; the protected token tail — sized here to cover the whole
+// last turn plus the freshest old result — stays verbatim.
 func TestPrune_ReclaimsOldKeepsTailAndLastTurn(t *testing.T) {
-	l := pruneLoop(t, 10000, 1000)
+	l := pruneLoop(t, 10000, 5000)
 	bigToolTurn(l, "old turn", 6, 6000)  // ~12k estimated tokens of tool results
-	bigToolTurn(l, "last turn", 2, 6000) // untouchable current turn
+	bigToolTurn(l, "last turn", 2, 6000) // ~4k: fits inside the protected tail
 	estBefore := l.EstimateVisibleTokens()
 
 	out := make(chan Event, 1)
@@ -81,8 +82,8 @@ func TestPrune_ReclaimsOldKeepsTailAndLastTurn(t *testing.T) {
 			t.Errorf("last turn pruned at index %d", i)
 		}
 	}
-	// The freshest ~1000 estimated tokens of PRE-last-turn tool
-	// results survive: the newest old-turn result must be intact.
+	// The protected tail extends past the last turn into the old
+	// turn: the newest old-turn result must be intact.
 	var oldToolIdx []int
 	for i := 0; i < lastUser; i++ {
 		if l.Messages[i].Role == llm.RoleTool {
@@ -133,15 +134,48 @@ func TestPrune_ReclaimsOldKeepsTailAndLastTurn(t *testing.T) {
 	}
 }
 
-// TestPrune_MinGainGate: over the trigger threshold but with almost
-// nothing reclaimable (all bulk is in the last turn), prune must NOT
-// rewrite anything — a small gain is not worth a KV-cache re-eval.
+// TestPrune_MinGainGate: over the trigger threshold but with only
+// crumbs reclaimable (the bulk sits in the protected current step),
+// prune must NOT rewrite anything — a small gain is not worth a
+// KV-cache re-eval.
 func TestPrune_MinGainGate(t *testing.T) {
-	l := pruneLoop(t, 4000, 100)
-	bigToolTurn(l, "old", 1, 300)      // tiny old result
-	bigToolTurn(l, "current", 3, 4000) // all the bulk is untouchable
+	l := pruneLoop(t, 3000, 100)
+	bigToolTurn(l, "old", 3, 450)      // three tiny old results (~125 tok gain each)
+	bigToolTurn(l, "current", 1, 5000) // the bulk: protected current step
 	if got := l.maybePruneToolResults(context.Background(), nil); got != 0 {
 		t.Fatalf("pruned for a marginal gain: %d", got)
+	}
+	for _, m := range l.Messages {
+		if strings.HasPrefix(m.Content, pruneMarkerPrefix) {
+			t.Fatal("marker written despite min-gain gate")
+		}
+	}
+}
+
+// TestPrune_SingleGiantTurn_KeepsCurrentStep: an agentic run is ONE
+// user turn with many tool steps; prune must still work inside it,
+// while the current step's result (everything after the last
+// tool-calling assistant message) stays untouchable.
+func TestPrune_SingleGiantTurn_KeepsCurrentStep(t *testing.T) {
+	l := pruneLoop(t, 10000, 1)
+	bigToolTurn(l, "the only turn", 6, 6000)
+	if l.maybePruneToolResults(context.Background(), nil) == 0 {
+		t.Fatal("expected a prune inside the single giant turn")
+	}
+	var toolIdx []int
+	for i, m := range l.Messages {
+		if m.Role == llm.RoleTool {
+			toolIdx = append(toolIdx, i)
+		}
+	}
+	last := toolIdx[len(toolIdx)-1]
+	if strings.HasPrefix(l.Messages[last].Content, pruneMarkerPrefix) {
+		t.Error("current step's result was pruned")
+	}
+	for _, i := range toolIdx[:len(toolIdx)-1] {
+		if !strings.HasPrefix(l.Messages[i].Content, pruneMarkerPrefix) {
+			t.Errorf("older result at %d not pruned", i)
+		}
 	}
 }
 
