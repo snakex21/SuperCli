@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,14 @@ type AgentTool struct {
 	// a single warning NoticeEvent is emitted on the parent loop.
 	WorkerPing func(context.Context) error
 
+	// DraftVerify configures the draft-verify ladder (config
+	// `draft_verify`). Nil or disabled = task delegation is byte-identical
+	// to before: the worker report returns as-is with no sieve and no
+	// verdict. When enabled and a synchronous worker touched files, the
+	// objective sieve runs and the coordinator's model issues a verdict on
+	// the diff + evidence (see draftverify.go).
+	DraftVerify *DraftVerifyConfig
+
 	// workerProbe gates the one-time WorkerPing; workerDown records a
 	// failed probe so later delegations skip straight to the fallback.
 	workerProbe sync.Once
@@ -109,7 +118,8 @@ func (a *AgentTool) Spec() tools.Tool {
 			"properties": {
 				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
 				"expect": {"type": "string", "description": "optional: what the report must contain"},
-				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"}
+				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},
+				"advise": {"type": "boolean", "description": "optional: ask a READ-ONLY second opinion on a decision (routed to the advisor worker; never edits files)"}
 			},
 			"required": ["prompt"]
 		}`, string(enumJSON)),
@@ -124,6 +134,10 @@ type agentArgs struct {
 	Expect       string `json:"expect"`
 	Async        bool   `json:"async"`
 	ShareContext bool   `json:"share_context"`
+	// Advise routes the call to the read-only advisor worker (Task B,
+	// "second opinion"): a one-off question answered by another model
+	// (task_model) with no file edits and no draft-verify ladder.
+	Advise bool `json:"advise"`
 }
 
 // execute is the Fn wired into Spec. It parses args, builds a
@@ -137,6 +151,11 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 	if ar.Prompt == "" {
 		return tools.Result{Err: fmt.Errorf("task: prompt is empty")}, nil
+	}
+	// advise (Task B) forces the read-only advisor worker regardless of any
+	// agent kind the model supplied: a second opinion must never edit files.
+	if ar.Advise {
+		ar.Agent = advisorAgentKind
 	}
 	// agent is optional: a bare prompt gets the general worker. This
 	// keeps the lean call {"prompt": "..."} valid while still allowing
@@ -269,7 +288,139 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err != nil {
 		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
 	}
+	// Draft-verify ladder: when enabled, the completed worker run above was
+	// the DRAFT. The objective sieve + big-model verdict now decide its
+	// fate (accept / revise-and-retry / takeover). Disabled or unconfigured
+	// = this is a no-op and the worker report returns exactly as before.
+	// A read-only advisor call (Task B) never enters the ladder: it makes no
+	// changes to sieve or diff, so there is nothing to verify.
+	if a.draftVerifyEnabled() && !ar.Advise {
+		text = a.runDraftVerify(childCtx, w, ar, workerPrompt, text, maxSteps)
+	}
 	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
+}
+
+// draftVerifyEnabled reports whether the ladder is switched on. Guards every
+// entry point so the OFF path stays byte-identical to pre-draft-verify code.
+func (a *AgentTool) draftVerifyEnabled() bool {
+	return a.DraftVerify != nil && a.DraftVerify.Enabled
+}
+
+// runDraftVerify runs the objective sieve and the big-model verdict on the
+// worker's draft, looping through bounded REVISE rounds. It returns the text
+// the coordinator should relay: the accepted draft, an annotated draft, or a
+// TAKEOVER hand-back with the diff + evidence so the coordinator can redo it
+// itself. It NEVER errors — a broken verdict falls back safely to TAKEOVER.
+func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs, workerPrompt, draft string, maxSteps int) string {
+	cfg := a.DraftVerify
+	dir := a.sandboxRoot()
+	maxRounds := cfg.MaxRounds
+	if maxRounds <= 0 {
+		maxRounds = 2
+	}
+
+	tel := draftVerifyTelemetry{Outcome: "ACCEPT"}
+	// Snapshot the draft's cost (the first worker run already happened).
+	tel.DraftSteps = w.Steps
+	tel.DraftTokIn = w.TokensIn
+	tel.DraftTokOut = w.TokensOut
+
+	best := draft
+	for round := 0; ; round++ {
+		tel.Rounds = round + 1
+		sieve := cfg.runSieve(ctx, dir)
+		if !sieve.Green {
+			tel.SieveRed++
+		}
+		diff := cfg.gatherDiff(ctx, dir)
+
+		v, ok, usage := cfg.requestVerdict(ctx, ar.Prompt, ar.Expect, diff, sieve)
+		tel.VerifyTokIn += usage.Input
+		tel.VerifyTokOut += usage.Output
+
+		switch {
+		case ok && v.Kind == verdictAccept:
+			tel.Outcome = "ACCEPT"
+			a.emitDraftVerify(tel)
+			return best
+		case ok && v.Kind == verdictRevise && round < maxRounds:
+			instr := reviseInstruction(v.Instruction, sieve)
+			revised, err := runWorkerLoop(ctx, w, instr)
+			// Refresh the draft cost snapshot to include the revision run.
+			tel.DraftSteps = w.Steps
+			tel.DraftTokIn = w.TokensIn
+			tel.DraftTokOut = w.TokensOut
+			if err == nil && strings.TrimSpace(revised) != "" {
+				best = revised
+			}
+			continue
+		default:
+			// TAKEOVER, or REVISE past the round limit, or a broken/failed
+			// verdict: hand back to the coordinator with the evidence so
+			// the big model can finish it. This is the safe fallback.
+			outcome := "TAKEOVER"
+			if ok && v.Kind == verdictRevise {
+				outcome = "annotated (round limit)"
+			} else if !ok {
+				outcome = "TAKEOVER (unparsed verdict)"
+			}
+			tel.Outcome = outcome
+			a.emitDraftVerify(tel)
+			return draftVerifyHandback(best, diff, sieve, outcome)
+		}
+	}
+}
+
+// reviseInstruction composes the concrete follow-up sent back to the worker on
+// a REVISE round: the big model's instruction, plus the red sieve output as
+// hard evidence the worker must satisfy.
+func reviseInstruction(instruction string, sieve sieveResult) string {
+	var b strings.Builder
+	b.WriteString("Your previous attempt was reviewed and needs revision.\n\n")
+	if strings.TrimSpace(instruction) != "" {
+		b.WriteString("Reviewer instruction: " + strings.TrimSpace(instruction) + "\n\n")
+	}
+	if !sieve.Green && !sieve.Skipped {
+		fmt.Fprintf(&b, "The verify command `%s` is still failing (exit %d):\n%s\n\n",
+			sieve.Command, sieve.Exit, sieve.Output)
+	}
+	b.WriteString("Fix the change and confirm the verify commands pass. Report only what you changed.")
+	return b.String()
+}
+
+// draftVerifyHandback renders the coordinator-facing text when the ladder ends
+// without a clean ACCEPT: the best draft plus the diff and sieve evidence, so
+// the coordinator's big model can take over from an informed position.
+func draftVerifyHandback(best, diff string, sieve sieveResult, outcome string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[draft-verify: %s — the worker draft was NOT auto-accepted]\n\n", outcome)
+	b.WriteString("Worker's last report:\n" + strings.TrimSpace(best) + "\n\n")
+	if !sieve.Green && !sieve.Skipped {
+		fmt.Fprintf(&b, "Objective sieve RED — `%s` exited %d:\n%s\n\n", sieve.Command, sieve.Exit, sieve.Output)
+	}
+	if strings.TrimSpace(diff) != "" {
+		b.WriteString("Diff so far:\n" + diff + "\n\n")
+	}
+	b.WriteString("Verify and finish this yourself using the evidence above.")
+	return b.String()
+}
+
+// sandboxRoot is the directory the sieve and diff run in: the worker's inherited
+// sandbox root, falling back to the process CWD when there is no parent loop.
+func (a *AgentTool) sandboxRoot() string {
+	if a.ParentLoop != nil && a.ParentLoop.baseDir != "" {
+		return a.ParentLoop.baseDir
+	}
+	wd, _ := os.Getwd()
+	return wd
+}
+
+// emitDraftVerify logs the economics line to the parent loop (if any) so the
+// user can measure whether the ladder pays off.
+func (a *AgentTool) emitDraftVerify(tel draftVerifyTelemetry) {
+	if a.ParentLoop != nil {
+		a.ParentLoop.Emit(NoticeEvent{Text: tel.Line()})
+	}
 }
 
 // childLoopSettings returns the KV-cache-relevant loop settings a
@@ -318,6 +469,10 @@ func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
 // defaultAgentKind is the worker used when task is called without an
 // explicit agent. It must be registered (BuiltinSubAgents provides it).
 const defaultAgentKind = "general"
+
+// advisorAgentKind is the read-only "second opinion" worker selected by
+// task's advise:true flag (Task B). Registered by BuiltinSubAgents.
+const advisorAgentKind = "advisor"
 
 func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int) {
 	if w == nil {

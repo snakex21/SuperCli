@@ -176,6 +176,29 @@ type TomlConfig struct {
 	// returned with a failed status. 0 = no token cap.
 	TaskMaxTokens int64 `toml:"task_max_tokens"`
 
+	// DraftVerify turns on the draft-verify ladder for delegated `task`
+	// work that changes files: the worker DRAFTS the change (on task_model
+	// when set, else the coordinator's host), an objective sieve
+	// (verify_commands) runs for free, then the coordinator's big model
+	// issues a verdict on the DIFF and the sieve evidence — accept, revise
+	// (bounded rounds), or take over. Tri-state: nil = built-in default
+	// (OFF, byte-identical behaviour), explicit true/false overrides. The
+	// ladder is only worth it against a small task_model; a red sieve at
+	// zero token cost is the main win. Set at runtime via /draftverify.
+	DraftVerify *bool `toml:"draft_verify"`
+
+	// VerifyCommands is the objective sieve run after a draft: each entry
+	// is a full command line executed in the sandbox root, in order; the
+	// first non-zero exit is the RED evidence. Example:
+	// ["go build ./...", "go test ./..."]. Empty = the verdict runs on the
+	// diff alone (weaker, but still catches nothing-changed drafts). Only
+	// consulted when draft_verify is on.
+	VerifyCommands []string `toml:"verify_commands"`
+
+	// DraftVerifyMaxRounds caps REVISE round-trips before the big model
+	// takes over — the anti-ping-pong bezpiecznik. 0 = built-in default (2).
+	DraftVerifyMaxRounds int `toml:"draft_verify_max_rounds"`
+
 	// ContextWindow overrides the model's context window
 	// (tokens) for auto-compaction. 0 = resolve from
 	// provider metadata / learned limits / default.
@@ -434,6 +457,15 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.TaskModel != "" {
 		dst.TaskModel = src.TaskModel
+	}
+	if src.DraftVerify != nil {
+		dst.DraftVerify = src.DraftVerify
+	}
+	if len(src.VerifyCommands) > 0 {
+		dst.VerifyCommands = src.VerifyCommands
+	}
+	if src.DraftVerifyMaxRounds != 0 {
+		dst.DraftVerifyMaxRounds = src.DraftVerifyMaxRounds
 	}
 	if src.Thinking != nil {
 		dst.Thinking = src.Thinking

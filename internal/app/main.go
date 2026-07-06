@@ -287,6 +287,15 @@ func resolveOrchestrator(override *bool) bool {
 	return false
 }
 
+// resolveDraftVerify applies the config.toml tri-state override
+// (`draft_verify`) on top of the built-in default (OFF).
+func resolveDraftVerify(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return false
+}
+
 func Main() {
 	startupT := time.Now()
 	// ABSOLUTE FIRST thing: catch ANY panic and log it.
@@ -1232,6 +1241,23 @@ func Main() {
 				return pingErr
 			}
 		}
+	}
+	// Draft-verify ladder (config `draft_verify`, tri-state, default OFF).
+	// When on, a file-changing draft is sieved by verify_commands (free,
+	// objective) and then judged by the COORDINATOR's model (the big one,
+	// `provider`) on the diff + evidence. Nil/false = the task tool is
+	// byte-identical to before. The verdict runs on the coordinator's
+	// provider even when workers use task_model — that asymmetry (small
+	// drafts, big verdict) is the whole point.
+	if resolveDraftVerify(tomlCfg.DraftVerify) {
+		at.DraftVerify = &agent.DraftVerifyConfig{
+			Enabled:        true,
+			VerifyCommands: tomlCfg.VerifyCommands,
+			MaxRounds:      tomlCfg.DraftVerifyMaxRounds,
+			Verdict:        provider,
+		}
+		log.Printf("draft-verify: ON · verify_commands=%v · max_rounds=%d · verdict=%s",
+			tomlCfg.VerifyCommands, tomlCfg.DraftVerifyMaxRounds, provider.Name())
 	}
 	registry.MustRegister(at.Spec())
 	sendMessageTool := agent.NewSendMessageTool(at.Workers)
