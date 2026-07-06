@@ -28,8 +28,14 @@ import (
 //     rewritten exactly once (markers are never rewritten again);
 //   - only RoleTool results are touched — never user text, assistant
 //     text or tool-call arguments;
-//   - the freshest pruneProtect tokens of tool results and the whole
-//     last turn (last user message onward) are always kept.
+//   - the freshest pruneProtect tokens of tool results are always
+//     kept, and the current step's results (everything after the last
+//     tool-calling assistant message) are untouchable on top of that.
+//     With the 8k default a normal TUI turn fits entirely inside the
+//     protected tail, so the last user turn survives whole; a single
+//     giant agentic turn (many tool steps in one Run) can still shed
+//     its oldest results instead of being forced straight into
+//     summary compaction.
 const (
 	// pruneTriggerFrac: don't even look at the history below this
 	// fraction of the context window (autoCompactThreshold = 0.8 is
@@ -91,12 +97,13 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		return 0
 	}
 
-	// The last turn (last user message onward) is untouchable: the
-	// model is actively working with those results.
-	lastUser := len(l.Messages)
+	// The current step's results — everything after the last
+	// assistant message that carries tool calls — are untouchable:
+	// the model is actively reasoning over them.
+	lastStep := -1
 	for i := len(l.Messages) - 1; i >= 0; i-- {
-		if l.Messages[i].Role == llm.RoleUser {
-			lastUser = i
+		if l.Messages[i].Role == llm.RoleAssistant && len(l.Messages[i].ToolCalls) > 0 {
+			lastStep = i
 			break
 		}
 	}
@@ -114,10 +121,11 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		if i < len(l.hidden) && l.hidden[i] {
 			continue // not in the provider's view, costs nothing
 		}
-		if i >= lastUser {
+		t := llm.EstimateMessageTokens(m)
+		if i > lastStep {
+			acc += t // current step: protected, but budget-counted
 			continue
 		}
-		t := llm.EstimateMessageTokens(m)
 		if acc < protect {
 			acc += t
 			continue

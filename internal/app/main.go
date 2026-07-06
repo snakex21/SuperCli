@@ -420,7 +420,7 @@ func Main() {
 
 	// --batch short-circuits: run prompt without TUI.
 	if *batchFlag != "" {
-		runBatch(*batchFlag, home, dataDir, *providerFlag, *keyFlag, *baseFlag, *modelFlag, *echoFlag, *debugFlag, *draftModeFlag, *draftModelFlag)
+		runBatch(*batchFlag, home, dataDir, *providerFlag, *keyFlag, *baseFlag, *modelFlag, *echoFlag, *debugFlag, *draftModeFlag, *draftModelFlag, tomlCfg)
 		return
 	}
 
@@ -2362,7 +2362,7 @@ func Main() {
 
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
-func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string) {
+func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, tomlCfg config.TomlConfig) {
 	_ = home // project root; data lives in dataDir
 	// Echo shortcut.
 	if echoFlag {
@@ -2419,6 +2419,11 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		Caps:     caps,
 		MaxSteps: 25,
 		BaseDir:  home,
+		// Batch runs honor the same context-defense knobs as the
+		// TUI: config context_window (0 = loop default 16384) and
+		// prune_protect_tokens for the zero-LLM tool-result prune.
+		WindowFor:          func(string) int { return tomlCfg.ContextWindow },
+		PruneProtectTokens: tomlCfg.PruneProtectTokens,
 	})
 	if err != nil {
 		fatal("agent loop", err)
@@ -2438,6 +2443,12 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 			// Provider status (rate-limit retry etc.) — stderr so it
 			// never pollutes the assistant output on stdout.
 			fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
+		case agent.ToolResultsPrunedEvent:
+			fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d window=%d\n",
+				e.Pruned, e.Reclaimed, e.Estimated, e.Window)
+		case agent.AutoCompactEvent:
+			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d window=%d\n",
+				e.Removed, e.Reason, e.Estimated, e.Window)
 		case agent.DoneEvent:
 			// Real provider-reported token usage for this run
 			// (exact, not an estimate). Printed to stderr so it
