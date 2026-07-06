@@ -232,6 +232,52 @@ func resolveNavigator(mode string) (enable, auto bool) {
 	}
 }
 
+// resolveTaskWorkerConfig maps config `task_model` onto the provider
+// config delegated `task` workers run on. Two forms, matching existing
+// conventions: "model-id" keeps the coordinator's transport and swaps
+// only the model (draft_model style); "providerName/model-id" resolves
+// a configured [[providers]] entry by name (council label style), so
+// the worker hits that provider's host with its own key. A first
+// segment matching no configured provider is treated as part of a bare
+// model id (OpenRouter-style ids contain slashes). Returns ok=false —
+// i.e. workers inherit the coordinator's provider, zero change — when
+// task_model is unset, resolves to no model, or names the exact
+// backend the coordinator already uses.
+func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	tm := strings.TrimSpace(tomlCfg.TaskModel)
+	if tm == "" {
+		return cfg, false
+	}
+	worker := cfg
+	if name, model, found := strings.Cut(tm, "/"); found {
+		for _, p := range tomlCfg.Providers {
+			if p.Name != name {
+				continue
+			}
+			worker.Provider = p.Type
+			worker.BaseURL = p.BaseURL
+			worker.APIKey = p.APIKey
+			worker.Model = model
+			if worker.Model == "" {
+				worker.Model = p.Model
+			}
+			if worker.Model == "" {
+				log.Printf("task_model: %q resolves to no model (provider %q has none configured) — workers use the main provider", tm, name)
+				return cfg, false
+			}
+			if worker.Model == cfg.Model && worker.BaseURL == cfg.BaseURL {
+				return cfg, false // same backend — no override
+			}
+			return worker, true
+		}
+	}
+	worker.Model = tm
+	if worker.Model == cfg.Model {
+		return cfg, false // same backend — no override
+	}
+	return worker, true
+}
+
 // resolveOrchestrator applies the config.toml tri-state override
 // (`orchestrator`) on top of the built-in default (OFF).
 func resolveOrchestrator(override *bool) bool {
@@ -867,7 +913,29 @@ func Main() {
 	// task_parallel (tri-state) overrides in both directions. Forcing
 	// parallel on a local backend is unusual — the loop warns once when it
 	// actually runs such a batch.
-	taskBackendLocal := llm.IsLocalBaseURL(cfg.BaseURL)
+	// Model-per-task (config `task_model`): delegated workers may run on
+	// a different model/host than the coordinator. Resolved here so the
+	// parallelism auto-gate below looks at the WORKER's backend — that
+	// is where a task batch actually executes. Construction is a pure
+	// client build (no network); reachability is probed lazily on the
+	// first delegation. A build failure is a warning, never a hard
+	// error: workers then inherit the coordinator's provider. The
+	// worker provider carries the WORKER's base URL, so host-gated
+	// behaviour (the cache_prompt auto-detection inside llm.NewOpenAI)
+	// follows the worker's host, not the coordinator's.
+	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
+	var taskWorkerProvider llm.Provider
+	if taskWorkerOverride {
+		wp, wpErr := buildProvider(taskWorkerCfg, dataDir, caps)
+		if wpErr != nil {
+			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
+			taskWorkerCfg = cfg // parallel gate falls back to the real backend too
+		} else {
+			taskWorkerProvider = wp
+			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
+		}
+	}
+	taskBackendLocal := llm.IsLocalBaseURL(taskWorkerCfg.BaseURL)
 	taskParallel := !taskBackendLocal
 	if tomlCfg.TaskParallel != nil {
 		taskParallel = *tomlCfg.TaskParallel
@@ -1148,6 +1216,23 @@ func Main() {
 	// unset; tokens are a hard runaway-loop cap (0 = no cap).
 	at.MaxSteps = tomlCfg.TaskMaxSteps
 	at.MaxTokens = tomlCfg.TaskMaxTokens
+	// Model-per-task: hand the worker backend (built above from
+	// `task_model`) to the task tool. The lazy ping (first delegation
+	// only, 5s cap) is a GET /v1/models probe — cheap and universal for
+	// OpenAI-compat hosts; anthropic/codex transports skip it (their
+	// model lists need different auth) and just trust the build.
+	if taskWorkerProvider != nil {
+		at.WorkerProvider = taskWorkerProvider
+		if u := taskWorkerCfg.BaseURL; u != "" &&
+			taskWorkerCfg.Provider != config.ProviderAnthropic &&
+			taskWorkerCfg.Provider != config.ProviderCodex {
+			key := taskWorkerCfg.APIKey
+			at.WorkerPing = func(pctx context.Context) error {
+				_, pingErr := llm.ListProviderModelContexts(pctx, u, key)
+				return pingErr
+			}
+		}
+	}
 	registry.MustRegister(at.Spec())
 	sendMessageTool := agent.NewSendMessageTool(at.Workers)
 	registry.MustRegister(sendMessageTool.Spec())

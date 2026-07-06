@@ -158,6 +158,18 @@ type TomlConfig struct {
 	// not set its own step budget.
 	TaskMaxSteps int `toml:"task_max_steps"`
 
+	// TaskModel routes delegated `task` workers to a different model
+	// than the coordinator. Two forms, matching existing conventions:
+	// "model-id" keeps the coordinator's transport and swaps only the
+	// model (draft_model style); "providerName/model-id" resolves a
+	// configured [[providers]] entry by name (council label style), so
+	// the worker runs against that provider's host/key. Empty = workers
+	// inherit the coordinator's provider (unchanged behaviour, zero
+	// cost). When the worker backend cannot be built or is unreachable,
+	// delegation falls back to the coordinator's provider with a single
+	// warning line — never a hard error.
+	TaskModel string `toml:"task_model"`
+
 	// TaskMaxTokens caps a delegated worker's total token spend
 	// (input+output across turns). Once a turn pushes the running total
 	// past this, the worker is stopped and its partial report is
@@ -419,6 +431,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.TaskMaxTokens != 0 {
 		dst.TaskMaxTokens = src.TaskMaxTokens
+	}
+	if src.TaskModel != "" {
+		dst.TaskModel = src.TaskModel
 	}
 	if src.Thinking != nil {
 		dst.Thinking = src.Thinking

@@ -54,6 +54,7 @@ func settingsRows() []settingRow {
 		{"memory_briefing_tokens", "memory_briefing_tokens", "hard token budget for the session-start memory briefing", setInt, true},
 		{"task_max_steps", "task_max_steps", "cap on model turns a delegated worker may take", setInt, true},
 		{"task_max_tokens", "task_max_tokens", "cap on a delegated worker's total token spend", setInt, true},
+		{"task_model", "task_model", "worker model/host for task delegation — edit config.toml (\"model\" or \"provider/model\")", setReadonly, true},
 		{"default_model", "default_model", "startup model — change with /model", setReadonly, false},
 		{"default_provider", "default_provider", "startup provider — change with /model or /providers", setReadonly, false},
 		{"", "Reset all to defaults", "remove every managed key above (providers & API keys stay untouched)", setResetAll, false},
@@ -260,6 +261,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskMaxSteps = 0
 	case "task_max_tokens":
 		c.TaskMaxTokens = 0
+	case "task_model":
+		c.TaskModel = ""
 	}
 	// default_model / default_provider and the reset-all row (key == "")
 	// are intentionally left untouched.
@@ -299,6 +302,11 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return intDisplay(c.TaskMaxSteps, "spec or 10")
 	case "task_max_tokens":
 		return intDisplay(int(c.TaskMaxTokens), "no cap")
+	case "task_model":
+		if strings.TrimSpace(c.TaskModel) == "" {
+			return "default (coordinator's model)", "default"
+		}
+		return c.TaskModel, "manual"
 	case "default_model":
 		return dashIfEmpty(c.DefaultModel), "set via /model"
 	case "default_provider":
