@@ -3,11 +3,24 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"supercli/internal/system/config"
 )
+
+// typeRunes feeds each rune of s through the text-edit key handler, as if
+// the user typed it while a text knob was in edit mode.
+func typeRunes(m Model, s string) Model {
+	for _, r := range s {
+		mm, _ := m.settingsEditKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	return m
+}
 
 // newSettingsModel builds a Model whose global config.toml lives in a
 // temp dir seeded with the given contents, and opens the /settings panel.
@@ -152,6 +165,124 @@ func TestSettings_EditIntPersists(t *testing.T) {
 	m = mm.(Model)
 	if cfg := loadCfg(t, m); cfg.MemoryBriefingTokens != 250 {
 		t.Fatalf("memory_briefing_tokens = %d, want 250", cfg.MemoryBriefingTokens)
+	}
+}
+
+// TestSettings_EditTextPersists: Enter on task_model enters edit mode,
+// typed characters build the value, and Enter writes it to config.toml.
+func TestSettings_EditTextPersists(t *testing.T) {
+	m := newSettingsModel(t, "")
+	m = cursorForKey(m, "task_model")
+	mm, _ := m.settingsEnter() // enter edit mode
+	m = mm.(Model)
+	if !m.menu.editing {
+		t.Fatal("expected editing mode after Enter on a text row")
+	}
+	if m.menu.editBuf != "" {
+		t.Fatalf("editBuf should preload empty for unset task_model, got %q", m.menu.editBuf)
+	}
+	m = typeRunes(m, "small/ministral-3b")
+	// Enter commits.
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if m.menu.editing {
+		t.Fatal("editing should end after Enter")
+	}
+	if cfg := loadCfg(t, m); cfg.TaskModel != "small/ministral-3b" {
+		t.Fatalf("task_model = %q, want small/ministral-3b", cfg.TaskModel)
+	}
+}
+
+// TestSettings_EditTextBackspace: backspace deletes a trailing rune from
+// the edit buffer before commit.
+func TestSettings_EditTextBackspace(t *testing.T) {
+	m := newSettingsModel(t, "")
+	m = cursorForKey(m, "task_model")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	m = typeRunes(m, "abcX")
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = mm.(Model)
+	if m.menu.editBuf != "abc" {
+		t.Fatalf("editBuf after backspace = %q, want abc", m.menu.editBuf)
+	}
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if cfg := loadCfg(t, m); cfg.TaskModel != "abc" {
+		t.Fatalf("task_model = %q, want abc", cfg.TaskModel)
+	}
+}
+
+// TestSettings_EditTextEscCancels: Esc leaves the underlying value
+// untouched even after typing.
+func TestSettings_EditTextEscCancels(t *testing.T) {
+	m := newSettingsModel(t, "task_model = \"keep-me\"\n")
+	m = cursorForKey(m, "task_model")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	if m.menu.editBuf != "keep-me" {
+		t.Fatalf("editBuf should preload existing value, got %q", m.menu.editBuf)
+	}
+	m = typeRunes(m, "-junk")
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.menu.editing {
+		t.Fatal("editing should end after Esc")
+	}
+	if cfg := loadCfg(t, m); cfg.TaskModel != "keep-me" {
+		t.Fatalf("task_model = %q, want keep-me (Esc must not persist)", cfg.TaskModel)
+	}
+}
+
+// TestSettings_EditTextEmptyClears: committing an empty buffer clears the
+// knob and drops the key from config.toml.
+func TestSettings_EditTextEmptyClears(t *testing.T) {
+	m := newSettingsModel(t, "task_model = \"small/x\"\n")
+	m = cursorForKey(m, "task_model")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	// Erase the preloaded value.
+	m.menu.editBuf = "   " // whitespace-only → treated as empty
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if cfg := loadCfg(t, m); cfg.TaskModel != "" {
+		t.Fatalf("task_model should be cleared, got %q", cfg.TaskModel)
+	}
+	// Non-pointer string keys serialize as an empty value rather than
+	// being dropped (same as the int zero-sentinel), so the file may
+	// still carry `task_model = ""` — the important guarantee is that no
+	// stale non-empty value survives.
+	raw, _ := os.ReadFile(m.settingsGlobalPath())
+	if strings.Contains(string(raw), "small/x") {
+		t.Errorf("config.toml still carries the old task_model value:\n%s", raw)
+	}
+}
+
+// TestSettings_EditVerifyCommandsList: verify_commands is edited as a
+// single semicolon-separated field and parsed back into a trimmed list.
+func TestSettings_EditVerifyCommandsList(t *testing.T) {
+	m := newSettingsModel(t, "")
+	m = cursorForKey(m, "verify_commands")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	m.menu.editBuf = "go build ./... ;  go test ./... ; "
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	want := []string{"go build ./...", "go test ./..."}
+	if cfg := loadCfg(t, m); !reflect.DeepEqual(cfg.VerifyCommands, want) {
+		t.Fatalf("verify_commands = %v, want %v", cfg.VerifyCommands, want)
+	}
+}
+
+// TestSettings_EditVerifyCommandsPreloadsJoined: entering edit mode on an
+// existing list preloads the semicolon-joined form for round-tripping.
+func TestSettings_EditVerifyCommandsPreloadsJoined(t *testing.T) {
+	m := newSettingsModel(t, "verify_commands = [\"go build ./...\", \"go vet ./...\"]\n")
+	m = cursorForKey(m, "verify_commands")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	if m.menu.editBuf != "go build ./... ; go vet ./..." {
+		t.Fatalf("editBuf preload = %q", m.menu.editBuf)
 	}
 }
 
