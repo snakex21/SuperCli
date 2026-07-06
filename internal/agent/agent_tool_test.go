@@ -525,9 +525,9 @@ func TestBuiltinSubAgents_RegisterCleanly(t *testing.T) {
 	reg := NewSubAgentRegistry()
 	MustRegisterAll(reg, BuiltinSubAgents())
 	names := reg.Names()
-	want := map[string]bool{"general": true, "explore": true, "plan": true, "review": true, "code": true}
-	if len(names) != 5 {
-		t.Errorf("len = %d, want 5", len(names))
+	want := map[string]bool{"general": true, "advisor": true, "explore": true, "plan": true, "review": true, "code": true}
+	if len(names) != 6 {
+		t.Errorf("len = %d, want 6", len(names))
 	}
 	for _, n := range names {
 		if !want[n] {

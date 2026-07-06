@@ -6,10 +6,11 @@ import (
 	"supercli/internal/llm"
 )
 
-func TestBuiltinSubAgents_ReturnsFive(t *testing.T) {
+func TestBuiltinSubAgents_ReturnsExpectedSet(t *testing.T) {
 	agents := BuiltinSubAgents()
-	if len(agents) != 5 {
-		t.Fatalf("BuiltinSubAgents() = %d, want 5", len(agents))
+	// general, explore, plan, review, code + advisor (Task B second opinion).
+	if len(agents) != 6 {
+		t.Fatalf("BuiltinSubAgents() = %d, want 6", len(agents))
 	}
 }
 

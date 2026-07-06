@@ -55,6 +55,9 @@ func settingsRows() []settingRow {
 		{"task_max_steps", "task_max_steps", "cap on model turns a delegated worker may take", setInt, true},
 		{"task_max_tokens", "task_max_tokens", "cap on a delegated worker's total token spend", setInt, true},
 		{"task_model", "task_model", "worker model/host for task delegation — edit config.toml (\"model\" or \"provider/model\")", setReadonly, true},
+		{"draft_verify", "draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", setTriState, true},
+		{"draft_verify_max_rounds", "draft_verify_max_rounds", "cap on REVISE round-trips before the big model takes over", setInt, true},
+		{"verify_commands", "verify_commands", "objective sieve for draft-verify — edit config.toml (e.g. [\"go build ./...\"])", setReadonly, true},
 		{"default_model", "default_model", "startup model — change with /model", setReadonly, false},
 		{"default_provider", "default_provider", "startup provider — change with /model or /providers", setReadonly, false},
 		{"", "Reset all to defaults", "remove every managed key above (providers & API keys stay untouched)", setResetAll, false},
@@ -185,6 +188,8 @@ func (m Model) settingsCommitInt() (tea.Model, tea.Cmd) {
 			c.TaskMaxSteps = n
 		case "task_max_tokens":
 			c.TaskMaxTokens = int64(n)
+		case "draft_verify_max_rounds":
+			c.DraftVerifyMaxRounds = n
 		}
 	})
 }
@@ -215,6 +220,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.DarwinParallel = cycleTri(c.DarwinParallel)
 	case "task_parallel":
 		c.TaskParallel = cycleTri(c.TaskParallel)
+	case "draft_verify":
+		c.DraftVerify = cycleTri(c.DraftVerify)
 	case "cache_prompt":
 		c.CachePrompt = cycleTri(c.CachePrompt)
 		llm.SetCachePromptDefault(c.CachePrompt)
@@ -263,6 +270,12 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskMaxTokens = 0
 	case "task_model":
 		c.TaskModel = ""
+	case "draft_verify":
+		c.DraftVerify = nil
+	case "draft_verify_max_rounds":
+		c.DraftVerifyMaxRounds = 0
+	case "verify_commands":
+		c.VerifyCommands = nil
 	}
 	// default_model / default_provider and the reset-all row (key == "")
 	// are intentionally left untouched.
@@ -307,6 +320,15 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return "default (coordinator's model)", "default"
 		}
 		return c.TaskModel, "manual"
+	case "draft_verify":
+		return triDisplay(c.DraftVerify, "off")
+	case "draft_verify_max_rounds":
+		return intDisplay(c.DraftVerifyMaxRounds, "2")
+	case "verify_commands":
+		if len(c.VerifyCommands) == 0 {
+			return "none (diff-only verdict)", "default"
+		}
+		return strings.Join(c.VerifyCommands, " ; "), "manual"
 	case "default_model":
 		return dashIfEmpty(c.DefaultModel), "set via /model"
 	case "default_provider":

@@ -51,6 +51,19 @@ func BuiltinSubAgents() []SubAgent {
 		"sees only this report, not your intermediate steps, so include " +
 		"everything it needs. Be concise. Do not spawn other workers."
 
+	// advisor is the "second opinion" worker (Task B). It is strictly
+	// read-only — search + read tools only, no write/edit/exec — so a
+	// one-off "which of these two approaches?" question can be routed to a
+	// different model (task_model) with ZERO side effects. It is selected
+	// by task's `advise:true` flag, never automatically; the coordinator
+	// asks a question and gets back an opinion, nothing changes on disk.
+	advisorSystem := "You are a SuperCli advisor giving a SECOND OPINION. " +
+		"Answer the coordinator's specific question with a clear recommendation " +
+		"and a one-line rationale. You are READ-ONLY: you may search and read " +
+		"files to ground your answer, but you never modify anything. Return a " +
+		"single concise opinion as your final message; if the question offers " +
+		"options, name the one you recommend first."
+
 	return []SubAgent{
 		{
 			Name:        "general",
@@ -58,6 +71,13 @@ func BuiltinSubAgents() []SubAgent {
 			System:      generalSystem,
 			// AllowedTools nil = inherit the full set (minus delegation).
 			MaxSteps: 12,
+		},
+		{
+			Name:         "advisor",
+			Description:  "give a read-only second opinion on a specific decision",
+			System:       advisorSystem,
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context"),
+			MaxSteps:     6,
 		},
 		{
 			Name:         "explore",
