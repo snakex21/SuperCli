@@ -24,6 +24,7 @@ const (
 	setTriState  settingKind = iota // tri-state *bool (default/auto → on → off → default)
 	setNavigator                    // navigator string (default auto → on → off → default)
 	setInt                          // integer knob (0 = built-in default)
+	setText                         // free-text string knob (empty = clear/default)
 	setReadonly                     // display only (changed elsewhere, e.g. /model)
 	setResetAll                     // the "reset all to defaults" action row
 )
@@ -54,10 +55,10 @@ func settingsRows() []settingRow {
 		{"memory_briefing_tokens", "memory_briefing_tokens", "hard token budget for the session-start memory briefing", setInt, true},
 		{"task_max_steps", "task_max_steps", "cap on model turns a delegated worker may take", setInt, true},
 		{"task_max_tokens", "task_max_tokens", "cap on a delegated worker's total token spend", setInt, true},
-		{"task_model", "task_model", "worker model/host for task delegation — edit config.toml (\"model\" or \"provider/model\")", setReadonly, true},
+		{"task_model", "task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", setText, true},
 		{"draft_verify", "draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", setTriState, true},
 		{"draft_verify_max_rounds", "draft_verify_max_rounds", "cap on REVISE round-trips before the big model takes over", setInt, true},
-		{"verify_commands", "verify_commands", "objective sieve for draft-verify — edit config.toml (e.g. [\"go build ./...\"])", setReadonly, true},
+		{"verify_commands", "verify_commands", "objective sieve for draft-verify — semicolon-separated (e.g. go build ./... ; go test ./...)", setText, true},
 		{"default_model", "default_model", "startup model — change with /model", setReadonly, false},
 		{"default_provider", "default_provider", "startup provider — change with /model or /providers", setReadonly, false},
 		{"", "Reset all to defaults", "remove every managed key above (providers & API keys stay untouched)", setResetAll, false},
@@ -119,6 +120,10 @@ func (m Model) settingsEnter() (tea.Model, tea.Cmd) {
 		m.menu.editing = true
 		m.menu.editBuf = ""
 		return m, nil
+	case setText:
+		m.menu.editing = true
+		m.menu.editBuf = settingTextValue(m.menu.settingsCfg, r.key)
+		return m, nil
 	default: // setTriState, setNavigator
 		return m.settingsApply(func(c *config.TomlConfig) { settingToggleKey(c, r.key) })
 	}
@@ -143,24 +148,37 @@ func (m Model) settingsResetCurrent() (tea.Model, tea.Cmd) {
 	return m.settingsApply(func(c *config.TomlConfig) { settingResetKey(c, r.key) })
 }
 
-// settingsEditKey handles keystrokes while an integer knob is being edited.
+// settingsEditKey handles keystrokes while a knob is being edited. Int
+// rows accept digits only; text rows accept any printable rune. Both
+// share esc=cancel, enter=commit, backspace=delete.
 func (m Model) settingsEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := settingsRows()
+	r := rows[minInt(m.menu.cursor, len(rows)-1)]
+	isText := r.kind == setText
 	switch msg.String() {
 	case "esc":
 		m.menu.editing = false
 		m.menu.editBuf = ""
 		return m, nil
 	case "enter":
+		if isText {
+			return m.settingsCommitText()
+		}
 		return m.settingsCommitInt()
 	case "backspace", "ctrl+h":
 		if len(m.menu.editBuf) > 0 {
-			m.menu.editBuf = m.menu.editBuf[:len(m.menu.editBuf)-1]
+			// Trim a whole rune, not a byte, so multi-byte input
+			// (e.g. a pasted em-dash) deletes cleanly.
+			runes := []rune(m.menu.editBuf)
+			m.menu.editBuf = string(runes[:len(runes)-1])
 		}
 		return m, nil
 	}
-	for _, r := range msg.Runes {
-		if r >= '0' && r <= '9' {
-			m.menu.editBuf += string(r)
+	for _, ch := range msg.Runes {
+		if isText {
+			m.menu.editBuf += string(ch)
+		} else if ch >= '0' && ch <= '9' {
+			m.menu.editBuf += string(ch)
 		}
 	}
 	return m, nil
@@ -192,6 +210,54 @@ func (m Model) settingsCommitInt() (tea.Model, tea.Cmd) {
 			c.DraftVerifyMaxRounds = n
 		}
 	})
+}
+
+// settingTextValue returns the current raw editable string for a text
+// knob, so entering edit mode preloads the existing value rather than a
+// blank line. List knobs render as their semicolon-joined form.
+func settingTextValue(c *config.TomlConfig, key string) string {
+	if c == nil {
+		return ""
+	}
+	switch key {
+	case "task_model":
+		return c.TaskModel
+	case "verify_commands":
+		return strings.Join(c.VerifyCommands, " ; ")
+	}
+	return ""
+}
+
+// settingsCommitText writes the edited string knob. An empty (or
+// whitespace-only) buffer clears the knob back to its default, matching
+// the "reset" semantics of the other kinds.
+func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
+	rows := settingsRows()
+	r := rows[minInt(m.menu.cursor, len(rows)-1)]
+	buf := strings.TrimSpace(m.menu.editBuf)
+	m.menu.editing = false
+	m.menu.editBuf = ""
+	return m.settingsApply(func(c *config.TomlConfig) {
+		switch r.key {
+		case "task_model":
+			c.TaskModel = buf
+		case "verify_commands":
+			c.VerifyCommands = parseCommandList(buf)
+		}
+	})
+}
+
+// parseCommandList splits a semicolon-separated edit buffer into a
+// trimmed command list, dropping empty entries. An empty input yields a
+// nil slice so SaveToml omits the key entirely (= built-in default).
+func parseCommandList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ";") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // cycleTri advances a tri-state *bool: nil(default/auto) → true → false → nil.
@@ -399,7 +465,7 @@ func (m Model) renderSettingsMenu() string {
 			continue
 		}
 		value, source := m.settingValueSource(r, cfg)
-		if r.kind == setInt && m.menu.editing && i == m.menu.cursor {
+		if (r.kind == setInt || r.kind == setText) && m.menu.editing && i == m.menu.cursor {
 			value = m.menu.editBuf + "_"
 			source = "editing"
 		}
@@ -418,6 +484,9 @@ func (m Model) renderSettingsMenu() string {
 	footer := "↑↓ move · Enter toggle/edit · [R] reset option · ESC back"
 	if m.menu.editing {
 		footer = "type digits · Enter save · Backspace delete · ESC cancel"
+		if sel.kind == setText {
+			footer = "type text · Enter save · Backspace delete · ESC cancel (empty = default)"
+		}
 	}
 	b.WriteString("\n" + m.palette.InputHint.Render(footer))
 	return b.String()
