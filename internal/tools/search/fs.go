@@ -12,10 +12,13 @@ import (
 // openFile is os.Open under a tools-package alias.
 func openFile(path string) (io.ReadCloser, error) { return os.Open(path) }
 
-// walkFiles walks root recursively, calling fn for each regular
+// WalkFiles walks root recursively, calling fn for each regular
 // file. It skips common build / dependency directories to keep
 // the search fast. The walk stops when fn returns errStopWalk.
-func walkFiles(root string, fn func(path string) error) error {
+// Exported because it is THE shared ignore-aware tree walk:
+// search_code's rg fallback and the manifest noop-gate both use
+// it, so the ignore set cannot drift between them.
+func WalkFiles(root string, fn func(path string) error) error {
 	skip := map[string]bool{
 		".git": true, "node_modules": true, "vendor": true,
 		"target": true, "dist": true, "build": true,

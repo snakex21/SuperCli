@@ -2481,6 +2481,21 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		providerFlag = config.ProviderEcho
 	}
 
+	// Turn-economy noop-gate (config `noop_gate`, default OFF): if the
+	// working tree is byte-for-byte-fingerprint identical to the state
+	// saved after the last successful run of this exact prompt, there
+	// is nothing for the model to do — skip the run WITHOUT a single
+	// LLM call. Fail-open: any doubt (no manifest, IO error) runs
+	// normally. Interactive sessions are never gated.
+	gateOn := resolveNoopGate(tomlCfg.NoopGate)
+	if gateOn {
+		if rec, skip := noopGateSkip(dataDir, home, prompt); skip {
+			fmt.Printf("no-op: no changes since last identical run (%s)\n",
+				rec.UpdatedAt.Local().Format("2006-01-02 15:04"))
+			return
+		}
+	}
+
 	cfg, err := config.Load(config.FlagOverrides{
 		Provider: providerFlag,
 		APIKey:   keyFlag,
@@ -2577,6 +2592,12 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 			fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
 			os.Exit(1)
 		}
+	}
+
+	// Successful run: record the post-run tree fingerprint so the next
+	// identical prompt over an unchanged tree can be skipped for free.
+	if gateOn {
+		noopGateSave(dataDir, home, prompt)
 	}
 }
 

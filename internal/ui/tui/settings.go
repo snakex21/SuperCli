@@ -56,6 +56,7 @@ func settingsRows() []settingRow {
 		{"task_max_steps", "task_max_steps", "cap on model turns a delegated worker may take", setInt, true},
 		{"task_max_tokens", "task_max_tokens", "cap on a delegated worker's total token spend", setInt, true},
 		{"task_model", "task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", setText, true},
+		{"noop_gate", "noop_gate", "skip a batch (-p) run with zero LLM calls when nothing changed since the last identical run", setTriState, false},
 		{"draft_verify", "draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", setTriState, true},
 		{"draft_verify_max_rounds", "draft_verify_max_rounds", "cap on REVISE round-trips before the big model takes over", setInt, true},
 		{"verify_commands", "verify_commands", "objective sieve for draft-verify — semicolon-separated (e.g. go build ./... ; go test ./...)", setText, true},
@@ -288,6 +289,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.TaskParallel = cycleTri(c.TaskParallel)
 	case "draft_verify":
 		c.DraftVerify = cycleTri(c.DraftVerify)
+	case "noop_gate":
+		c.NoopGate = cycleTri(c.NoopGate)
 	case "cache_prompt":
 		c.CachePrompt = cycleTri(c.CachePrompt)
 		llm.SetCachePromptDefault(c.CachePrompt)
@@ -338,6 +341,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskModel = ""
 	case "draft_verify":
 		c.DraftVerify = nil
+	case "noop_gate":
+		c.NoopGate = nil
 	case "draft_verify_max_rounds":
 		c.DraftVerifyMaxRounds = 0
 	case "verify_commands":
@@ -388,6 +393,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return c.TaskModel, "manual"
 	case "draft_verify":
 		return triDisplay(c.DraftVerify, "off")
+	case "noop_gate":
+		return triDisplay(c.NoopGate, "off")
 	case "draft_verify_max_rounds":
 		return intDisplay(c.DraftVerifyMaxRounds, "2")
 	case "verify_commands":

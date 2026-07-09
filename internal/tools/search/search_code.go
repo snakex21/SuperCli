@@ -162,7 +162,7 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) 
 		}
 		return nil
 	}
-	if err := walkFiles(root, walk); err != nil && err != errStopWalk {
+	if err := WalkFiles(root, walk); err != nil && err != errStopWalk {
 		return Result{Text: fmt.Sprintf("search_code: walk failed: %v", err)}, nil
 	}
 	if b.Len() == 0 {

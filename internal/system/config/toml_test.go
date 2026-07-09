@@ -254,6 +254,22 @@ func TestMergeToml_TaskModelOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_NoopGateOverride: a non-nil source noop_gate
+// overrides the destination in both directions; nil leaves it untouched.
+func TestMergeToml_NoopGateOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{NoopGate: &off}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.NoopGate == nil || *dst.NoopGate {
+		t.Fatalf("nil src should not clear noop_gate: %v", dst.NoopGate)
+	}
+	mergeToml(&dst, TomlConfig{NoopGate: &on})
+	if dst.NoopGate == nil || !*dst.NoopGate {
+		t.Fatalf("src=true should override to true: %v", dst.NoopGate)
+	}
+}
+
 // TestMergeToml_CachePromptOverride: a non-nil source cache_prompt
 // overrides the destination in both directions; nil leaves it untouched.
 func TestMergeToml_CachePromptOverride(t *testing.T) {

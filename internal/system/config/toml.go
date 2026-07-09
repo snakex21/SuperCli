@@ -199,6 +199,16 @@ type TomlConfig struct {
 	// takes over — the anti-ping-pong bezpiecznik. 0 = built-in default (2).
 	DraftVerifyMaxRounds int `toml:"draft_verify_max_rounds"`
 
+	// NoopGate skips a batch (-p) run entirely — zero LLM calls —
+	// when the working tree manifest (path+size+mtime fingerprint)
+	// is identical to the one saved after the last successful run of
+	// the SAME prompt. Interactive sessions are never gated (the user
+	// typing to the model means they want the model). The gate fails
+	// open: any missing/broken manifest just runs normally.
+	// Tri-state: nil = built-in default (OFF), explicit true/false
+	// overrides.
+	NoopGate *bool `toml:"noop_gate"`
+
 	// ContextWindow overrides the model's context window
 	// (tokens) for auto-compaction. 0 = resolve from
 	// provider metadata / learned limits / default.
@@ -487,6 +497,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.SlotCache != nil {
 		dst.SlotCache = src.SlotCache
+	}
+	if src.NoopGate != nil {
+		dst.NoopGate = src.NoopGate
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
