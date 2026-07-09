@@ -58,6 +58,13 @@ type AgentTool struct {
 	// a single warning NoticeEvent is emitted on the parent loop.
 	WorkerPing func(context.Context) error
 
+	// Preflight, when non-nil, returns a compact repo-state block
+	// (config preflight_repo) appended to every worker's briefing.
+	// A worker starts with a cold, isolated context, so this is where
+	// the turn saving is largest: it skips the "where am I" discovery
+	// turns. Nil = no block (default, byte-identical behaviour).
+	Preflight func() string
+
 	// DraftVerify configures the draft-verify ladder (config
 	// `draft_verify`). Nil or disabled = task delegation is byte-identical
 	// to before: the worker report returns as-is with no sieve and no
@@ -173,6 +180,15 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	workerPrompt := ar.Prompt
 	if strings.TrimSpace(ar.Expect) != "" {
 		workerPrompt += "\n\nYour final report must contain: " + strings.TrimSpace(ar.Expect)
+	}
+	// Preflight repo context (config preflight_repo): the worker's
+	// context is cold, so the repo-state block saves it the initial
+	// discovery turns. Rides the briefing (user message) — the
+	// worker's system prefix stays stable.
+	if a.Preflight != nil {
+		if block := strings.TrimSpace(a.Preflight()); block != "" {
+			workerPrompt += "\n\n" + block
+		}
 	}
 
 	// Build the child's tool registry: only the tools the

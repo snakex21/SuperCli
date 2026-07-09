@@ -163,6 +163,13 @@ type Loop struct {
 	// only ambiguous prompts fall back to the model navigator.
 	navAuto bool
 
+	// nextUserAddon is appended ONCE to the next Run's user message
+	// (then cleared). Used by the preflight repo-context block
+	// (config preflight_repo): the block rides the VARIABLE side of
+	// the prompt — a user message — never the system prefix, so the
+	// stable KV-cache front is untouched. Set via SetNextUserAddon.
+	nextUserAddon string
+
 	// chatWindowStart is the sticky start (a VisibleMessages index) of
 	// the growing history window used by the light routes (chat-only /
 	// advisor / clarify). It only ever moves FORWARD, in one big jump,
@@ -716,6 +723,13 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	userMsg := llm.Message{
 		Role:    llm.RoleUser,
 		Content: prompt,
+	}
+	// One-shot user-message addon (preflight repo context). Appended
+	// to the message CONTENT only — routing/ultrawork detection above
+	// still saw the user's raw words. Cleared so later Runs are clean.
+	if l.nextUserAddon != "" {
+		userMsg.Content = prompt + "\n\n" + l.nextUserAddon
+		l.nextUserAddon = ""
 	}
 	l.Messages = append(l.Messages, userMsg)
 	l.persist(ctx, userMsg)
@@ -1954,6 +1968,15 @@ func (l *Loop) InjectUserMessage(ctx context.Context, content string) {
 	msg := llm.Message{Role: llm.RoleUser, Content: content}
 	l.Messages = append(l.Messages, msg)
 	l.persist(ctx, msg)
+}
+
+// SetNextUserAddon queues text that will be appended once to the
+// NEXT Run's user message, then cleared. It must be called before
+// that Run starts (same goroutine discipline as SetExternalSink).
+// The addon lands on the variable side of the prompt (a user
+// message), never in the system prefix — KV-cache-prefix safe.
+func (l *Loop) SetNextUserAddon(s string) {
+	l.nextUserAddon = strings.TrimSpace(s)
 }
 
 // CurrentModel returns the name of the active provider.

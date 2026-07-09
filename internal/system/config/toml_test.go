@@ -270,6 +270,22 @@ func TestMergeToml_NoopGateOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_PreflightRepoOverride: a non-nil source preflight_repo
+// overrides the destination in both directions; nil leaves it untouched.
+func TestMergeToml_PreflightRepoOverride(t *testing.T) {
+	on := true
+	off := false
+	dst := TomlConfig{PreflightRepo: &off}
+	mergeToml(&dst, TomlConfig{}) // nil src leaves dst
+	if dst.PreflightRepo == nil || *dst.PreflightRepo {
+		t.Fatalf("nil src should not clear preflight_repo: %v", dst.PreflightRepo)
+	}
+	mergeToml(&dst, TomlConfig{PreflightRepo: &on})
+	if dst.PreflightRepo == nil || !*dst.PreflightRepo {
+		t.Fatalf("src=true should override to true: %v", dst.PreflightRepo)
+	}
+}
+
 // TestMergeToml_CachePromptOverride: a non-nil source cache_prompt
 // overrides the destination in both directions; nil leaves it untouched.
 func TestMergeToml_CachePromptOverride(t *testing.T) {
