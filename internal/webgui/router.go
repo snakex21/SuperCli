@@ -40,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/model/default", s.handleModelDefault)
 	mux.HandleFunc("/api/reasoning", s.handleReasoning)
 	mux.HandleFunc("/api/orchestrator", s.handleOrchestrator)
+	mux.HandleFunc("/api/config", s.handleConfigKnobs)
 	mux.HandleFunc("/api/providers", s.handleProviders)
 	mux.HandleFunc("/api/provider/scan", s.handleProviderScan)
 	mux.HandleFunc("/api/codex/accounts", s.handleCodexAccounts)
