@@ -217,7 +217,7 @@ type TomlConfig struct {
 	// when available; pure-Go mtime fallback otherwise — git is never
 	// required. The block rides the variable side of the prompt, never
 	// the system prefix (KV-cache safe). Tri-state: nil = built-in
-	// default (OFF), explicit true/false overrides.
+	// default (ON), explicit true/false overrides.
 	PreflightRepo *bool `toml:"preflight_repo"`
 
 	// ContextWindow overrides the model's context window

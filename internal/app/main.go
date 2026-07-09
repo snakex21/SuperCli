@@ -211,11 +211,26 @@ func resolveStableToolset(override *bool) bool {
 	return defaultStableToolset
 }
 
+// defaultPreflightRepo: the repo-state preflight block is ON by
+// default. Live A/B (2026-07-03, qwen3.5-9b): ~73 tok on the variable
+// side of the first user message bought −33% turns / −42% tokens on a
+// repo task, with zero change to the result — the model just skips
+// the discovery turns. Degrades safely everywhere: pure-Go mtime
+// listing when git is absent, empty block (no addon at all) in an
+// empty directory, rides a user message so the KV-cache prefix stays
+// stable, and is host-agnostic (cloud pays the same small block and
+// saves the same discovery turns). Opt out with
+// `preflight_repo = false` in config.toml.
+const defaultPreflightRepo = true
+
 // resolvePreflightRepo applies the config.toml tri-state
-// (`preflight_repo`): nil = built-in default (OFF), explicit
+// (`preflight_repo`): nil = built-in default (ON), explicit
 // true/false overrides.
 func resolvePreflightRepo(override *bool) bool {
-	return override != nil && *override
+	if override != nil {
+		return *override
+	}
+	return defaultPreflightRepo
 }
 
 // resolveNavigator maps the config.toml `navigator` value to the two
@@ -1268,7 +1283,7 @@ func Main() {
 			tomlCfg.VerifyCommands, tomlCfg.DraftVerifyMaxRounds, provider.Name())
 	}
 	// Preflight repo context (config `preflight_repo`, tri-state, default
-	// OFF). When on, a compact repo-state block (hard token budget) is
+	// ON). When on, a compact repo-state block (hard token budget) is
 	// appended ONCE to the first user message — the variable side of the
 	// prompt, never the system prefix, so the KV-cache front stays stable
 	// — and freshly rebuilt for every delegated worker's briefing (cold
