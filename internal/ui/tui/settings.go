@@ -401,7 +401,7 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 	case "noop_gate":
 		return triDisplay(c.NoopGate, "off")
 	case "preflight_repo":
-		return triDisplay(c.PreflightRepo, "off")
+		return triDisplay(c.PreflightRepo, "on")
 	case "draft_verify_max_rounds":
 		return intDisplay(c.DraftVerifyMaxRounds, "2")
 	case "verify_commands":

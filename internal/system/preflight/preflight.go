@@ -1,6 +1,6 @@
 // Package preflight builds a compact repo-state block that is
 // appended ONCE to the first user message of a session (config
-// `preflight_repo`, default OFF), so the model does not burn its
+// `preflight_repo`, default ON), so the model does not burn its
 // first 2-5 turns rediscovering where it is: current branch/HEAD,
 // pending changes, recent commits, recently modified files.
 //
