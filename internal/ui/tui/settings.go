@@ -57,6 +57,7 @@ func settingsRows() []settingRow {
 		{"task_max_tokens", "task_max_tokens", "cap on a delegated worker's total token spend", setInt, true},
 		{"task_model", "task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", setText, true},
 		{"noop_gate", "noop_gate", "skip a batch (-p) run with zero LLM calls when nothing changed since the last identical run", setTriState, false},
+		{"preflight_repo", "preflight_repo", "append a compact repo-state block to the first message and worker briefings (git optional)", setTriState, true},
 		{"draft_verify", "draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", setTriState, true},
 		{"draft_verify_max_rounds", "draft_verify_max_rounds", "cap on REVISE round-trips before the big model takes over", setInt, true},
 		{"verify_commands", "verify_commands", "objective sieve for draft-verify — semicolon-separated (e.g. go build ./... ; go test ./...)", setText, true},
@@ -291,6 +292,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.DraftVerify = cycleTri(c.DraftVerify)
 	case "noop_gate":
 		c.NoopGate = cycleTri(c.NoopGate)
+	case "preflight_repo":
+		c.PreflightRepo = cycleTri(c.PreflightRepo)
 	case "cache_prompt":
 		c.CachePrompt = cycleTri(c.CachePrompt)
 		llm.SetCachePromptDefault(c.CachePrompt)
@@ -343,6 +346,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.DraftVerify = nil
 	case "noop_gate":
 		c.NoopGate = nil
+	case "preflight_repo":
+		c.PreflightRepo = nil
 	case "draft_verify_max_rounds":
 		c.DraftVerifyMaxRounds = 0
 	case "verify_commands":
@@ -395,6 +400,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return triDisplay(c.DraftVerify, "off")
 	case "noop_gate":
 		return triDisplay(c.NoopGate, "off")
+	case "preflight_repo":
+		return triDisplay(c.PreflightRepo, "off")
 	case "draft_verify_max_rounds":
 		return intDisplay(c.DraftVerifyMaxRounds, "2")
 	case "verify_commands":

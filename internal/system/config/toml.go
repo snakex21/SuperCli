@@ -209,6 +209,17 @@ type TomlConfig struct {
 	// overrides.
 	NoopGate *bool `toml:"noop_gate"`
 
+	// PreflightRepo appends a compact auto-collected repo-state block
+	// (branch/HEAD, pending changes, recent commits, recently modified
+	// files; hard token budget) to the FIRST user message of a session
+	// and to every delegated worker's briefing, so the model does not
+	// spend its first turns rediscovering the repo. Uses the git binary
+	// when available; pure-Go mtime fallback otherwise — git is never
+	// required. The block rides the variable side of the prompt, never
+	// the system prefix (KV-cache safe). Tri-state: nil = built-in
+	// default (OFF), explicit true/false overrides.
+	PreflightRepo *bool `toml:"preflight_repo"`
+
 	// ContextWindow overrides the model's context window
 	// (tokens) for auto-compaction. 0 = resolve from
 	// provider metadata / learned limits / default.
@@ -500,6 +511,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.NoopGate != nil {
 		dst.NoopGate = src.NoopGate
+	}
+	if src.PreflightRepo != nil {
+		dst.PreflightRepo = src.PreflightRepo
 	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow

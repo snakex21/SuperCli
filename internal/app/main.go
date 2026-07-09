@@ -60,6 +60,7 @@ import (
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/doctor"
+	"supercli/internal/system/preflight"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
@@ -208,6 +209,13 @@ func resolveStableToolset(override *bool) bool {
 		return *override
 	}
 	return defaultStableToolset
+}
+
+// resolvePreflightRepo applies the config.toml tri-state
+// (`preflight_repo`): nil = built-in default (OFF), explicit
+// true/false overrides.
+func resolvePreflightRepo(override *bool) bool {
+	return override != nil && *override
 }
 
 // resolveNavigator maps the config.toml `navigator` value to the two
@@ -1258,6 +1266,21 @@ func Main() {
 		}
 		log.Printf("draft-verify: ON · verify_commands=%v · max_rounds=%d · verdict=%s",
 			tomlCfg.VerifyCommands, tomlCfg.DraftVerifyMaxRounds, provider.Name())
+	}
+	// Preflight repo context (config `preflight_repo`, tri-state, default
+	// OFF). When on, a compact repo-state block (hard token budget) is
+	// appended ONCE to the first user message — the variable side of the
+	// prompt, never the system prefix, so the KV-cache front stays stable
+	// — and freshly rebuilt for every delegated worker's briefing (cold
+	// contexts benefit most). Cost is visible in the normal per-turn
+	// token telemetry; the one-line log states the estimate up front.
+	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
+		if block := preflight.Build(home, preflight.Options{}); block != "" {
+			loop.SetNextUserAddon(block)
+			log.Printf("preflight: repo context ~%d tok (rides the first user message)",
+				preflight.EstimateTokens(block))
+		}
+		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
 	}
 	registry.MustRegister(at.Spec())
 	sendMessageTool := agent.NewSendMessageTool(at.Workers)
@@ -2553,6 +2576,16 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	})
 	if err != nil {
 		fatal("agent loop", err)
+	}
+
+	// Preflight repo context (config `preflight_repo`): batch runs are
+	// always a fresh context, so the repo block saves the same early
+	// discovery turns as in the TUI. Appended to the user prompt side.
+	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
+		if block := preflight.Build(home, preflight.Options{}); block != "" {
+			l.SetNextUserAddon(block)
+			fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok\n", preflight.EstimateTokens(block))
+		}
 	}
 
 	ch, err := l.Run(context.Background(), prompt)
