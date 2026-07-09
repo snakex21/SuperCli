@@ -20,16 +20,24 @@ type wireEvent struct {
 	// Text carries assistant message chunks (type "message") and
 	// reflection/marker text.
 	Text string `json:"text,omitempty"`
-	// Tool fields (type "tool_call" / "tool_result").
+	// Tool fields (type "tool_call" / "tool_result"). Name doubles as
+	// the worker agent kind on type "worker".
 	Name   string `json:"name,omitempty"`
 	Args   string `json:"args,omitempty"`
 	ID     string `json:"id,omitempty"`
 	Output string `json:"output,omitempty"`
 	Err    string `json:"err,omitempty"`
+	// Status carries the worker outcome on type "worker".
+	Status string `json:"status,omitempty"`
 	// Usage fields (type "done").
 	TokIn    int `json:"tok_in,omitempty"`
 	TokOut   int `json:"tok_out,omitempty"`
 	TokTotal int `json:"tok_total,omitempty"`
+	// TokCached is the raw cached-prompt token count (type "done"),
+	// so the front-end can render the TUI-style
+	// "cache X · eval Y · gen Z" breakdown without recomputing it
+	// from the percentage.
+	TokCached int `json:"tok_cached,omitempty"`
 	// Observability (type "done"): KV/prompt cache-hit percentage
 	// (cached prompt tokens / prompt tokens) and hidden reasoning
 	// tokens for the run. Omitted when the backend does not report
@@ -68,12 +76,29 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens", e.Pruned, e.Reclaimed)}, true
 	case agent.NoticeEvent:
 		return wireEvent{Type: "notice", Text: e.Text}, true
+	case agent.WorkerNotificationEvent:
+		// Background worker lifecycle (task delegation). Name carries
+		// the agent kind, Status the outcome, Output the short summary.
+		return wireEvent{Type: "worker", ID: e.TaskID, Name: e.Agent, Status: e.Status, Output: e.Summary, Text: e.Text}, true
+	case agent.DraftUsedEvent:
+		return wireEvent{Type: "notice", Text: fmt.Sprintf(
+			"draft-verify: %s · draft %s → verdict %s · saved ~%d tok",
+			e.Decision, e.DraftModel, e.VerifierModel, e.Savings)}, true
+	case agent.MessagesHiddenEvent:
+		return wireEvent{Type: "notice", Text: fmt.Sprintf("hid %d old message(s) from the model's view (%s)", e.Count, e.Reason)}, true
+	case agent.ConsultEvent:
+		txt := fmt.Sprintf("consult: %d candidate(s), winner %s", e.CandidateCount, e.WinnerProvider)
+		if e.AllFailed {
+			txt = "consult: all candidates failed"
+		}
+		return wireEvent{Type: "notice", Text: txt}, true
 	case agent.DoneEvent:
 		w := wireEvent{
 			Type:         "done",
 			TokIn:        e.Usage.Input,
 			TokOut:       e.Usage.Output,
 			TokTotal:     e.Usage.Total,
+			TokCached:    e.Usage.Cached,
 			ReasoningTok: e.Usage.Reasoning,
 		}
 		if e.Usage.Input > 0 && e.Usage.Cached > 0 {
@@ -119,6 +144,16 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	loop, err := e.newLoopWithSession(initial, writer)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
+	}
+	// Preflight repo context (config preflight_repo, default ON): the
+	// block rides the FIRST user message of a session only — resumed
+	// conversations already paid for it. The notice makes the cost
+	// visible in the transcript, mirroring the CLI's startup log line.
+	if len(initial) == 0 {
+		if block, tokens := e.preflightBlock(); block != "" {
+			loop.SetNextUserAddon(block)
+			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (rides this message)", tokens)})
+		}
 	}
 	ch, err := loop.Run(ctx, prompt)
 	if err != nil {
