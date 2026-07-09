@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 
 	"supercli/internal/llm"
@@ -101,4 +102,25 @@ func findAgent(agents []SubAgent, name string) *SubAgent {
 		}
 	}
 	return nil
+}
+
+// Turn-economy soft budget: the file-changing workers (general, code)
+// must carry the proportionality discipline — no-op is a valid report,
+// no formatting-only edits — and it must stay small (it is a constant
+// cost in every worker's prefix).
+func TestBuiltin_SoftBudgetInWorkerPrompts(t *testing.T) {
+	agents := BuiltinSubAgents()
+	for _, name := range []string{"general", "code"} {
+		a := findAgent(agents, name)
+		if a == nil {
+			t.Fatalf("agent %q missing", name)
+		}
+		hasNoop := strings.Contains(a.System, "no-op") || strings.Contains(a.System, "no change is needed")
+		if !hasNoop || !strings.Contains(a.System, "formatting-only") {
+			t.Errorf("%s system prompt missing the soft-budget rules:\n%s", name, a.System)
+		}
+		if len(a.System) > 900 {
+			t.Errorf("%s system prompt grew to %d chars — keep worker prefixes small", name, len(a.System))
+		}
+	}
 }

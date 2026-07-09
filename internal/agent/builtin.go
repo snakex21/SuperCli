@@ -35,7 +35,9 @@ func BuiltinSubAgents() []SubAgent {
 		"implement the requested change end-to-end in your isolated context. " +
 		"Read only the files you need, make targeted edits, run relevant " +
 		"verification, and return a concise summary with files changed. " +
-		"Do not spawn other sub-agents."
+		"Do not spawn other sub-agents. Keep the edit proportional to the " +
+		"request; if no change is needed, say so instead of editing for the " +
+		"sake of it — never make formatting-only edits."
 
 	// general is the default worker used when the coordinator calls
 	// task with only a prompt (no explicit agent kind). It inherits the
@@ -49,7 +51,10 @@ func BuiltinSubAgents() []SubAgent {
 		"return ONE self-contained report as your final message: what you " +
 		"found or did, with concrete file paths and results. The coordinator " +
 		"sees only this report, not your intermediate steps, so include " +
-		"everything it needs. Be concise. Do not spawn other workers."
+		"everything it needs. Be concise. Do not spawn other workers. " +
+		"Match effort to scope: touch few files for a small task, and if the " +
+		"task turns out to need no changes, report that no-op instead of " +
+		"making cosmetic or formatting-only edits."
 
 	// advisor is the "second opinion" worker (Task B). It is strictly
 	// read-only — search + read tools only, no write/edit/exec — so a

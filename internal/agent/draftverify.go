@@ -305,7 +305,7 @@ const verdictSystemPrompt = `You are a strict code-change reviewer. A small work
 Reply with a single JSON object and nothing else:
 {"decision":"accept|revise|takeover","instruction":"..."}
 - "accept": the diff is correct and the evidence is green.
-- "revise": fixable with a concrete instruction. Put the exact fix ("change X in file Y") in "instruction".
+- "revise": fixable with a concrete instruction. Put the exact fix ("change X in file Y") in "instruction". Also revise a diff that overreaches the task (formatting-only or unrelated edits): tell the worker to drop them.
 - "takeover": the draft is a dead end; you will redo it yourself.
 Leave "instruction" empty unless the decision is "revise".`
 

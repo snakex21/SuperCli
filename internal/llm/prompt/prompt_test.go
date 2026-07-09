@@ -31,6 +31,17 @@ func TestBuildLayers(t *testing.T) {
 	}
 }
 
+// Turn-economy soft budget: the core must carry the proportionality
+// discipline (small task = few edits; a no-op is a valid answer; no
+// formatting-only edits) — and still fit the char budget above.
+func TestCoreSoftBudgetRules(t *testing.T) {
+	for _, want := range []string{"Match effort to scope", "no-op is a valid result", "formatting-only"} {
+		if !strings.Contains(Core, want) {
+			t.Errorf("Core missing soft-budget rule %q", want)
+		}
+	}
+}
+
 func TestCoreKeepsOfficeHints(t *testing.T) {
 	if !strings.Contains(Core, "backup") {
 		t.Error("Core must state backups are automatic")
