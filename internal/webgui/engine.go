@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 
 	"supercli/internal/account/codexauth"
@@ -19,6 +20,7 @@ import (
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
 	"supercli/internal/system/config"
+	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
 )
@@ -133,7 +135,7 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
-	return agent.NewLoop(agent.LoopConfig{
+	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        prov,
 		Registry:        reg,
 		Caps:            caps,
@@ -142,6 +144,120 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 		InitialMessages: initial,
 		Writer:          writer,
 	})
+	if err != nil {
+		return nil, err
+	}
+	// Task delegation (mirrors the CLI's runBatch wiring, minus the
+	// draft-verify ladder): the web agent can hand self-contained
+	// subtasks to fresh workers. A wiring failure degrades to a loop
+	// without `task` rather than breaking chat.
+	e.wireTaskTool(loop, reg, prov, caps, home)
+	return loop, nil
+}
+
+// wireTaskTool registers the task / send_message / task_stop tools on
+// reg, honouring the config knobs the CLI honours: task_max_steps,
+// task_max_tokens, task_model (worker backend override) and
+// preflight_repo (cold-context repo briefing for workers).
+func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string) {
+	subReg := agent.NewSubAgentRegistry()
+	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
+	at, err := agent.NewAgentTool(subReg, loop, reg, prov, caps,
+		func(cfg agent.LoopConfig) (*agent.Loop, error) { return agent.NewLoop(cfg) })
+	if err != nil {
+		return
+	}
+	tc := e.tomlConfig()
+	at.MaxSteps = tc.TaskMaxSteps
+	at.MaxTokens = tc.TaskMaxTokens
+	if wp := e.taskWorkerProvider(tc); wp != nil {
+		at.WorkerProvider = wp
+	}
+	if tc.PreflightRepo == nil || *tc.PreflightRepo {
+		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
+	}
+	for _, sp := range []tools.Tool{at.Spec(), agent.NewSendMessageTool(at.Workers).Spec(), agent.NewTaskStopTool(at.Workers).Spec()} {
+		reg.MustRegister(sp)
+		reg.MarkAlwaysOn(sp.Name)
+	}
+}
+
+// tomlConfig returns the merged (global + project) config.toml view,
+// degrading to the zero value when nothing is on disk.
+func (e *Engine) tomlConfig() config.TomlConfig {
+	tc, err := config.ResolveConfig(e.dataDir, e.Home(), "")
+	if err != nil {
+		return config.TomlConfig{}
+	}
+	return tc
+}
+
+// preflightBlock builds the repo-state block for the current sandbox
+// root when preflight_repo is enabled (nil = built-in default ON).
+// Returns the block and its token estimate; empty when disabled or when
+// the directory yields nothing worth sending.
+func (e *Engine) preflightBlock() (string, int) {
+	tc := e.tomlConfig()
+	if tc.PreflightRepo != nil && !*tc.PreflightRepo {
+		return "", 0
+	}
+	block := preflight.Build(e.Home(), preflight.Options{})
+	if block == "" {
+		return "", 0
+	}
+	return block, preflight.EstimateTokens(block)
+}
+
+// taskWorkerProvider maps the task_model knob onto a worker backend,
+// mirroring the CLI's resolveTaskWorkerConfig: "model-id" keeps the
+// coordinator's transport and swaps only the model; "provider/model"
+// resolves a configured [[providers]] entry by name. Nil = workers
+// inherit the coordinator's provider (task_model unset, unresolvable,
+// or naming the coordinator's own backend).
+func (e *Engine) taskWorkerProvider(tc config.TomlConfig) llm.Provider {
+	tm := strings.TrimSpace(tc.TaskModel)
+	if tm == "" {
+		return nil
+	}
+	e.mu.RLock()
+	worker := e.cfg
+	e.mu.RUnlock()
+	if name, model, found := strings.Cut(tm, "/"); found {
+		for _, p := range tc.Providers {
+			if p.Name != name {
+				continue
+			}
+			worker.Provider = p.Type
+			worker.BaseURL = p.BaseURL
+			worker.APIKey = p.APIKey
+			worker.Model = model
+			if worker.Model == "" {
+				worker.Model = p.Model
+			}
+			if worker.Model == "" || (worker.Model == e.cfg.Model && worker.BaseURL == e.cfg.BaseURL) {
+				return nil
+			}
+			return e.buildWorker(worker)
+		}
+	}
+	worker.Model = tm
+	if worker.Model == e.cfg.Model {
+		return nil
+	}
+	return e.buildWorker(worker)
+}
+
+// buildWorker constructs the override provider, degrading to nil (=
+// inherit the coordinator's backend) on any build failure.
+func (e *Engine) buildWorker(cfg config.Config) llm.Provider {
+	if err := cfg.Normalize(); err != nil {
+		return nil
+	}
+	wp, err := buildProviderWithDataDir(cfg, e.dataDir, e.caps)
+	if err != nil {
+		return nil
+	}
+	return wp
 }
 
 // providerManager returns a freshly reloaded provider manager over

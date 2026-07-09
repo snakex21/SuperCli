@@ -61,8 +61,40 @@ func TestToWireEvent_DoneObservability(t *testing.T) {
 	if w.CacheHitPct != 75 {
 		t.Errorf("cache-hit%% = %d, want 75", w.CacheHitPct)
 	}
+	if w.TokCached != 1500 {
+		t.Errorf("tok_cached = %d, want 1500", w.TokCached)
+	}
 	if w.ReasoningTok != 80 {
 		t.Errorf("reasoning = %d, want 80", w.ReasoningTok)
+	}
+}
+
+func TestToWireEvent_Worker(t *testing.T) {
+	w, keep := toWireEvent(agent.WorkerNotificationEvent{TaskID: "t1", Agent: "general", Status: "done", Summary: "did it", Text: "full report"})
+	if !keep || w.Type != "worker" {
+		t.Fatalf("got %+v keep=%v", w, keep)
+	}
+	if w.ID != "t1" || w.Name != "general" || w.Status != "done" || w.Output != "did it" || w.Text != "full report" {
+		t.Errorf("worker fields: %+v", w)
+	}
+}
+
+func TestToWireEvent_DraftUsed(t *testing.T) {
+	w, keep := toWireEvent(agent.DraftUsedEvent{Decision: "accepted", DraftModel: "small", VerifierModel: "big", Savings: 42})
+	if !keep || w.Type != "notice" {
+		t.Fatalf("got %+v keep=%v", w, keep)
+	}
+	for _, want := range []string{"accepted", "small", "big", "42"} {
+		if !strings.Contains(w.Text, want) {
+			t.Errorf("draft notice missing %q: %q", want, w.Text)
+		}
+	}
+}
+
+func TestToWireEvent_MessagesHidden(t *testing.T) {
+	w, keep := toWireEvent(agent.MessagesHiddenEvent{Count: 3, Reason: "budget"})
+	if !keep || w.Type != "notice" || !strings.Contains(w.Text, "3") || !strings.Contains(w.Text, "budget") {
+		t.Errorf("got %+v keep=%v", w, keep)
 	}
 }
 
