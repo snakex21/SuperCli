@@ -205,6 +205,7 @@ func TestCleanAPIKey_StripsCommonPasteWrappers(t *testing.T) {
 		`"sk-test"`:          "sk-test",
 		`"Bearer sk-test"`:   "sk-test",
 		`Bearer "sk-test"`:   "sk-test",
+		"Bearer ":            "",
 		" 'sk-test' ":        "sk-test",
 		"\tBearer sk-\nkey ": "sk-key",
 	}

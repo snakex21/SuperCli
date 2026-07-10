@@ -3,8 +3,10 @@ package webgui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,6 +132,10 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.eng.transcript(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, errSessionOutsideWorkspace) {
+			http.Error(w, "session not found in active project", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -228,6 +234,18 @@ func isLoopbackHost(host string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+// isLoopbackRemoteAddr validates the actual TCP peer address. Unlike Host it
+// cannot be supplied by a remote browser, so secret-returning handlers use it
+// in addition to the DNS-rebinding Host check. Malformed and empty values fail
+// closed.
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	addr, err := netip.ParseAddrPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		return false
+	}
+	return addr.Addr().Unmap().IsLoopback()
 }
 
 // shutdownTimeout bounds graceful shutdown of the HTTP server.

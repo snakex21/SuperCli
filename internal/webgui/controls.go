@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -31,18 +32,18 @@ type modelView struct {
 }
 
 type modelsResponse struct {
-	Active    string       `json:"active"`
-	Provider  string       `json:"provider"`
+	Active    string        `json:"active"`
+	Provider  string        `json:"provider"`
 	Reasoning reasoningView `json:"reasoning"`
-	Models    []modelView  `json:"models"`
+	Models    []modelView   `json:"models"`
 }
 
 type reasoningView struct {
 	Configured string   `json:"configured"`
-	Effective   string   `json:"effective"`
-	Adjusted    bool     `json:"adjusted"`
-	Supported   bool     `json:"supported"`
-	Levels      []string `json:"levels"`
+	Effective  string   `json:"effective"`
+	Adjusted   bool     `json:"adjusted"`
+	Supported  bool     `json:"supported"`
+	Levels     []string `json:"levels"`
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +100,10 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			models = append(models, toModelView(mi, provider, active, m.IsHidden(active)))
 		}
 	}
-	configured, effective, adjusted := llm.ReasoningEffortAdjustment(active)
 	writeJSON(w, modelsResponse{
 		Active: active, Provider: provider,
-		Reasoning: reasoningView{Configured: configured, Effective: effective, Adjusted: adjusted, Supported: llm.SupportsReasoningEffort(active), Levels: llm.ReasoningEffortLevels},
-		Models: models,
+		Reasoning: s.reasoningView(active),
+		Models:    models,
 	})
 }
 
@@ -180,7 +180,9 @@ func (s *Server) handleModelToggle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReasoning(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		var req struct{ Level string `json:"level"` }
+		var req struct {
+			Level string `json:"level"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -200,9 +202,23 @@ func (s *Server) handleReasoning(w http.ResponseWriter, r *http.Request) {
 			_ = err
 		}
 	}
-	model := s.eng.ModelName()
-	configured, effective, adjusted := llm.ReasoningEffortAdjustment(model)
-	writeJSON(w, reasoningView{Configured: configured, Effective: effective, Adjusted: adjusted, Supported: llm.SupportsReasoningEffort(model), Levels: llm.ReasoningEffortLevels})
+	writeJSON(w, s.reasoningView(s.eng.ModelName()))
+}
+
+func (s *Server) reasoningView(model string) reasoningView {
+	// Reasoning is an always-present user preference. Providers negotiate the
+	// actual wire parameter and learn rejection per endpoint/model, so model
+	// discovery (and its optional scan) must never gate this control.
+	capability := true
+	key := s.eng.ReasoningSupportKey()
+	configured, effective, adjusted := llm.ReasoningEffortAdjustmentWithCapability(key, capability)
+	return reasoningView{
+		Configured: configured,
+		Effective:  effective,
+		Adjusted:   adjusted,
+		Supported:  true,
+		Levels:     llm.ReasoningEffortLevels,
+	}
 }
 
 func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +294,44 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleProviderKeyReveal returns one stored API key for the provider edit
+// form. Routing applies an additional Host + socket-peer loopback guard even
+// when the rest of the GUI was explicitly started with --allow-remote.
+func (s *Server) handleProviderKeyReveal(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	key, ok := s.eng.providerManager().APIKey(name)
+	if !ok {
+		http.Error(w, "provider not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]string{"api_key": key})
+}
+
 func (s *Server) handleProviderScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -295,15 +349,15 @@ func (s *Server) handleProviderScan(w http.ResponseWriter, r *http.Request) {
 }
 
 type codexAccountView struct {
-	Label          string               `json:"label"`
-	LoggedIn       bool                 `json:"logged_in"`
-	AccountID      string               `json:"account_id,omitempty"`
-	Email          string               `json:"email,omitempty"`
-	PlanType       string               `json:"plan_type,omitempty"`
-	LastRefresh    string               `json:"last_refresh,omitempty"`
-	Limits         *llm.CodexRateLimits `json:"limits,omitempty"`
-	LoginInProgress bool                `json:"login_in_progress,omitempty"`
-	LoginError     string               `json:"login_error,omitempty"`
+	Label           string               `json:"label"`
+	LoggedIn        bool                 `json:"logged_in"`
+	AccountID       string               `json:"account_id,omitempty"`
+	Email           string               `json:"email,omitempty"`
+	PlanType        string               `json:"plan_type,omitempty"`
+	LastRefresh     string               `json:"last_refresh,omitempty"`
+	Limits          *llm.CodexRateLimits `json:"limits,omitempty"`
+	LoginInProgress bool                 `json:"login_in_progress,omitempty"`
+	LoginError      string               `json:"login_error,omitempty"`
 }
 
 func (s *Server) handleCodexAccounts(w http.ResponseWriter, r *http.Request) {
@@ -339,8 +393,8 @@ func (s *Server) handleCodexAccounts(w http.ResponseWriter, r *http.Request) {
 	// refresh once the OAuth callback finally lands.
 	pending := s.codexPendingLogins(labels)
 	writeJSON(w, map[string]any{
-		"accounts":        out,
-		"pending_logins":  pending,
+		"accounts":       out,
+		"pending_logins": pending,
 	})
 }
 
@@ -379,7 +433,9 @@ func (s *Server) handleCodexLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Label string `json:"label"` }
+	var req struct {
+		Label string `json:"label"`
+	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
@@ -423,7 +479,9 @@ func (s *Server) handleCodexLogout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Label string `json:"label"` }
+	var req struct {
+		Label string `json:"label"`
+	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
@@ -452,7 +510,9 @@ func (s *Server) handleCodexRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Label string `json:"label"` }
+	var req struct {
+		Label string `json:"label"`
+	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}

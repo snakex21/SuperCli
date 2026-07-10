@@ -17,6 +17,7 @@ import (
 	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
+	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
 	"supercli/internal/system/config"
@@ -80,6 +81,33 @@ func (e *Engine) ModelName() string {
 	return e.prov.Name()
 }
 
+// ReasoningSupportKey returns the backend-scoped key used by the OpenAI-
+// compatible provider's live effort negotiation. Native providers retain the
+// model-only key used by their request builders.
+func (e *Engine) ReasoningSupportKey() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.cfg.Provider == config.ProviderOpenAI || e.cfg.Provider == config.ProviderResponses || e.cfg.Provider == config.ProviderOpencode {
+		model := e.cfg.Model
+		if e.cfg.Provider == config.ProviderOpencode {
+			model = strings.TrimPrefix(model, "opencode/")
+		}
+		return llm.ReasoningSupportKey(e.cfg.BaseURL, model)
+	}
+	return e.cfg.Model
+}
+
+// SupportsUnifiedReasoningGateway reports whether the active OpenAI-compatible
+// endpoint performs its own reasoning-effort mapping (Kilo/OpenRouter/OpenCode).
+func (e *Engine) SupportsUnifiedReasoningGateway() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.cfg.Provider != config.ProviderOpenAI && e.cfg.Provider != config.ProviderOpencode {
+		return false
+	}
+	return llm.IsUnifiedReasoningGateway(e.cfg.BaseURL)
+}
+
 // Home returns the file-sandbox root.
 func (e *Engine) Home() string {
 	e.mu.RLock()
@@ -111,17 +139,32 @@ func (e *Engine) newLoop() (*agent.Loop, error) {
 // an optional session writer. The web GUI uses this to keep one browser chat as
 // one persisted SuperCli session across multiple /api/chat requests.
 func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionWriter) (*agent.Loop, error) {
+	return e.newLoopWithSessionAt(initial, writer, e.Home())
+}
+
+// newLoopWithSessionAt pins one run to the workspace captured before session
+// creation/validation. A concurrent project switch affects future requests but
+// cannot move an in-flight run's tools into another sandbox.
+func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.SessionWriter, home string) (*agent.Loop, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
-	home := e.home
+	cfg := e.cfg
 	e.mu.RUnlock()
+	tc := e.tomlConfigAt(home)
+	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
+	taskParallel := !llm.IsLocalBaseURL(cfg.BaseURL)
+	if tc.TaskParallel != nil {
+		taskParallel = *tc.TaskParallel
+	}
 	reg := tools.NewRegistry()
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
+		tools.NewReadImage(home, 0).Spec(),
 		tools.NewListDir(home).Spec(),
 		tools.NewEditLine(home).Spec(),
+		tools.NewEditLines(home).Spec(),
 		tools.NewInsertAfter(home).Spec(),
 		tools.NewDeleteLines(home).Spec(),
 		tools.NewWriteFile(home).Spec(),
@@ -139,7 +182,10 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 		Provider:        prov,
 		Registry:        reg,
 		Caps:            caps,
+		System:          webAgentSystemPrompt(home, orchestrator),
 		MaxSteps:        25,
+		Orchestrator:    orchestrator,
+		TaskParallel:    taskParallel,
 		BaseDir:         home,
 		InitialMessages: initial,
 		Writer:          writer,
@@ -151,23 +197,44 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 	// draft-verify ladder): the web agent can hand self-contained
 	// subtasks to fresh workers. A wiring failure degrades to a loop
 	// without `task` rather than breaking chat.
-	e.wireTaskTool(loop, reg, prov, caps, home)
+	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
+		return nil, err
+	}
+	if orchestrator {
+		// Workers retain the complete base registry above; only the parent loop
+		// is physically restricted to delegation and read-only lookup tools.
+		loop.SetRegistry(agent.OrchestratorRegistry(reg))
+	}
 	return loop, nil
+}
+
+func webAgentSystemPrompt(home string, orchestrator bool) string {
+	system := llmprompt.Build(false)
+	if orchestrator {
+		system += agent.OrchestratorPrompt()
+	} else {
+		system += agent.CoordinatorPrompt()
+	}
+	// An HTTP/SSE run ends with the parent turn. Background task notifications
+	// cannot be delivered to a closed response, so web coordinators deliberately
+	// use synchronous task calls.
+	system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
+	system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
+	return system
 }
 
 // wireTaskTool registers the task / send_message / task_stop tools on
 // reg, honouring the config knobs the CLI honours: task_max_steps,
 // task_max_tokens, task_model (worker backend override) and
 // preflight_repo (cold-context repo briefing for workers).
-func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string) {
+func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig) error {
 	subReg := agent.NewSubAgentRegistry()
 	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
 	at, err := agent.NewAgentTool(subReg, loop, reg, prov, caps,
 		func(cfg agent.LoopConfig) (*agent.Loop, error) { return agent.NewLoop(cfg) })
 	if err != nil {
-		return
+		return fmt.Errorf("wire task delegation: %w", err)
 	}
-	tc := e.tomlConfig()
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
 	if wp := e.taskWorkerProvider(tc); wp != nil {
@@ -180,12 +247,17 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	return nil
 }
 
 // tomlConfig returns the merged (global + project) config.toml view,
 // degrading to the zero value when nothing is on disk.
 func (e *Engine) tomlConfig() config.TomlConfig {
-	tc, err := config.ResolveConfig(e.dataDir, e.Home(), "")
+	return e.tomlConfigAt(e.Home())
+}
+
+func (e *Engine) tomlConfigAt(home string) config.TomlConfig {
+	tc, err := config.ResolveConfig(e.dataDir, home, "")
 	if err != nil {
 		return config.TomlConfig{}
 	}
@@ -197,11 +269,15 @@ func (e *Engine) tomlConfig() config.TomlConfig {
 // Returns the block and its token estimate; empty when disabled or when
 // the directory yields nothing worth sending.
 func (e *Engine) preflightBlock() (string, int) {
-	tc := e.tomlConfig()
+	return e.preflightBlockAt(e.Home())
+}
+
+func (e *Engine) preflightBlockAt(home string) (string, int) {
+	tc := e.tomlConfigAt(home)
 	if tc.PreflightRepo != nil && !*tc.PreflightRepo {
 		return "", 0
 	}
-	block := preflight.Build(e.Home(), preflight.Options{})
+	block := preflight.Build(home, preflight.Options{})
 	if block == "" {
 		return "", 0
 	}
@@ -343,6 +419,15 @@ func buildProviderWithDataDir(cfg config.Config, dataDir string, caps *llm.Capab
 		return llm.NewEcho(cfg.Model)
 	}
 	switch cfg.Provider {
+	case config.ProviderResponses:
+		return llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
 	case config.ProviderOpencode:
 		p, err := llm.NewOpencode(llm.OpencodeConfig{
 			BaseURL:      cfg.BaseURL,

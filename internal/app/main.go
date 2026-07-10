@@ -344,7 +344,7 @@ func Main() {
 	listModelsFlag := flag.Bool("list-models", false, "print known model capabilities (with --refresh, re-fetch from the provider)")
 	refreshFlag := flag.Bool("refresh", false, "re-fetch the provider's /v1/models and re-probe unknowns; used with --list-models")
 	modelInfoFlag := flag.String("model-info", "", "print details for a single model id and exit")
-	providerFlag := flag.String("provider", "", "LLM provider: openai, anthropic, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
+	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
 	modelFlag := flag.String("model", "", "model id (default: env SUPERCLI_LLM_MODEL, then gpt-4o-mini)")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
 	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")
@@ -1196,8 +1196,8 @@ func Main() {
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
 		PruneProtectTokens: tomlCfg.PruneProtectTokens,
-		EnableNavigator:   navigatorEnable,
-		NavigatorAuto:     navigatorAuto,
+		EnableNavigator:    navigatorEnable,
+		NavigatorAuto:      navigatorAuto,
 		// Thin tool protocol: small-tier models get the compact
 		// catalog + full schemas only for the core; they suffer most
 		// from schema bulk in the prefill. Big models keep native
@@ -2691,6 +2691,16 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 	if cfg.IsEcho() {
 		return llm.NewEcho(cfg.Model)
 	}
+	if cfg.Provider == config.ProviderResponses {
+		return llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
 	if cfg.Provider == config.ProviderOpencode {
 		// F15: opencode headless gateway. The
 		// provider wraps an OpenAI-compat client
@@ -3211,6 +3221,17 @@ func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *l
 		// Echo mode: build a separate echo for the
 		// draft, which is fine for tests / offline.
 		prov, _ = llm.NewEcho("draft:" + draftModel)
+	} else if cfg.Provider == config.ProviderResponses {
+		prov, err = llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:      cfg.BaseURL,
+			APIKey:       cfg.APIKey,
+			Model:        draftModel,
+			Capabilities: caps,
+		})
+		if err != nil {
+			log.Printf("F11: draft responses provider build failed: %v; F11 disabled silently", err)
+			return nil, nil
+		}
 	} else {
 		prov, err = llm.NewOpenAI(llm.OpenAIConfig{
 			BaseURL:      cfg.BaseURL,
@@ -3273,13 +3294,9 @@ func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegist
 // judge itself). The judge is the running main
 // provider (the user is already paying for it).
 //
-// The first-cut implementation uses the SAME
-// transport (OpenAI-compat) for all samples — we
-// rebuild llm.OpenAI with a different Model id per
-// sample, sharing the user's API key + base URL.
-// This is the cheapest, most portable design: any
-// OpenAI-compat endpoint the user has configured
-// can serve every council member. When the user
+// Samples use the SAME transport as the judge: chat-completions and
+// Responses providers are rebuilt with a different model id while sharing
+// the user's API key + base URL. When the user
 // later adds Anthropic / Ollama / Groq adapters
 // (F15 territory), the per-provider factory will
 // branch on caps.Provider(id).
@@ -3307,6 +3324,18 @@ func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry
 		var prov llm.Provider
 		if cfg.IsEcho() {
 			prov, _ = llm.NewEcho("consult-sample:" + id)
+		} else if cfg.Provider == config.ProviderResponses {
+			p, err := llm.NewResponses(llm.ResponsesConfig{
+				BaseURL:      cfg.BaseURL,
+				APIKey:       cfg.APIKey,
+				Model:        id,
+				Capabilities: caps,
+			})
+			if err != nil {
+				log.Printf("F12: responses sample provider %q build failed: %v", id, err)
+				continue
+			}
+			prov = p
 		} else {
 			p, err := llm.NewOpenAI(llm.OpenAIConfig{
 				BaseURL:      cfg.BaseURL,
@@ -3990,7 +4019,7 @@ Usage:
 
 Flags:
   --home PATH                     override the home directory (also: $SUPERCLI_HOME)
-  --provider P                    LLM provider: openai (default) or echo
+  --provider P                    LLM provider: openai, responses, anthropic, codex, opencode, or echo
   --model M                       model id (default: $SUPERCLI_LLM_MODEL or gpt-4o-mini)
   --key K                         API key (overrides SUPERCLI_LLM_API_KEY)
   --base-url U                    base URL (overrides SUPERCLI_LLM_BASE_URL)

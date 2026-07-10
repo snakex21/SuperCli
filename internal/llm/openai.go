@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -41,6 +42,10 @@ type OpenAIConfig struct {
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
 	Capabilities *CapabilityRegistry
+	// CapabilityModel overrides the registry ID used for capability checks.
+	// Opencode transports send a raw model ID while keeping a namespaced
+	// opencode/<id> entry in the shared registry.
+	CapabilityModel string
 	// CachePrompt overrides KV-prompt-cache hinting. When nil (the
 	// default) the provider auto-detects: requests to local/private
 	// hosts (localhost, loopback, RFC-1918, link-local, unspecified)
@@ -62,6 +67,17 @@ type OpenAIProvider struct {
 	// isLocalBaseURL (auto). See OpenAIConfig.CachePrompt.
 	cachePrompt bool
 }
+
+type openAIReasoningFormat uint8
+
+const (
+	openAIReasoningNone openAIReasoningFormat = iota
+	// Direct OpenAI chat completions use the top-level reasoning_effort field.
+	openAIReasoningEffort
+	// OpenRouter and compatible gateways normalize models through
+	// reasoning: {effort: ...}.
+	openAIReasoningUnified
+)
 
 // NewOpenAI returns an OpenAIProvider. BaseURL defaults to the
 // public OpenAI endpoint. Model is required. APIKey is optional
@@ -169,7 +185,8 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	hasVision := p.SupportsVision()
 	warnedNoVision := false
 
-	reqBody, err := buildOpenAIRequest(p.cfg.Model, msgs, tools, hasVision, p.cachePrompt)
+	reasoningFormat := p.reasoningFormat()
+	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, hasVision, p.cachePrompt, reasoningFormat)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -256,8 +273,8 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
 			cancel()
-			if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, body); ok && !effortRetried {
-				if patched, patchedOK := patchOpenAIReasoningEffort(reqBody, effort); patchedOK {
+			if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, body); ok && !effortRetried {
+				if patched, patchedOK := patchOpenAIReasoning(reqBody, effort, reasoningFormat); patchedOK {
 					reqBody = patched
 					effortRetried = true
 					continue
@@ -393,7 +410,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 				if choice.FinishReason != "" {
 					// Flush accumulated tool calls BEFORE the
-					// terminal delta so consumers see them.
+					// terminal delta so consumers see them. The
+					// accumulator is then RESET: some servers (newer
+					// llama.cpp among them) send a second
+					// finish_reason chunk (e.g. the final usage
+					// frame), and re-flushing would emit every tool
+					// call twice — the agent loop would then really
+					// execute each call twice.
 					for i := 0; i < len(toolAcc); i++ {
 						if tc, ok := toolAcc[i]; ok {
 							tcCopy := *tc
@@ -404,6 +427,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 							}
 						}
 					}
+					toolAcc = make(map[int]*ToolCall)
 					d := Delta{FinishReason: choice.FinishReason}
 					if lastUsage != nil {
 						d.Usage = lastUsage
@@ -475,12 +499,19 @@ type openaiRequest struct {
 	// it (see SupportsReasoningEffort); other models never see
 	// the field, so non-OpenAI endpoints cannot reject it.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Reasoning is the unified OpenRouter-compatible control used for models
+	// discovered as reasoning-capable behind a gateway.
+	Reasoning *openAIReasoning `json:"reasoning,omitempty"`
 	// CachePrompt asks llama.cpp-family servers to reuse the KV
 	// cache for the common prompt prefix across requests. Gated:
 	// only emitted for local/private BaseURLs (or an explicit
 	// config override) — cloud OpenAI 400s on unknown fields.
 	// omitempty drops it entirely when false.
 	CachePrompt bool `json:"cache_prompt,omitempty"`
+}
+
+type openAIReasoning struct {
+	Effort string `json:"effort"`
 }
 
 // openaiStreamOptions carries the include_usage flag.
@@ -525,6 +556,18 @@ type openaiToolFunction struct {
 }
 
 func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool) ([]byte, error) {
+	format := openAIReasoningNone
+	if SupportsReasoningEffort(model) {
+		format = openAIReasoningEffort
+	}
+	return buildOpenAIRequestWithReasoning(model, msgs, tools, vision, cachePrompt, format)
+}
+
+func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
+	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format)
+}
+
+func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
 	msgs = demoteMidConversationSystemMessages(msgs)
 	req := openaiRequest{
 		Model:         model,
@@ -532,8 +575,12 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
 		CachePrompt:   cachePrompt,
 	}
-	if e := ReasoningEffortForModel(model); e != "" {
-		req.ReasoningEffort = e
+	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone); e != "" {
+		if format == openAIReasoningUnified {
+			req.Reasoning = &openAIReasoning{Effort: e}
+		} else if format == openAIReasoningEffort {
+			req.ReasoningEffort = e
+		}
 	}
 	for _, t := range tools {
 		req.Tools = append(req.Tools, openaiToolDecl{
@@ -576,17 +623,78 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 }
 
 func patchOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool) {
+	return patchOpenAIReasoning(body, effort, openAIReasoningEffort)
+}
+
+func patchOpenAIReasoning(body []byte, effort string, format openAIReasoningFormat) ([]byte, bool) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, false
 	}
-	if effort == "" {
+	if format == openAIReasoningUnified {
 		delete(req, "reasoning_effort")
+		if effort == "" {
+			delete(req, "reasoning")
+		} else {
+			req["reasoning"] = map[string]any{"effort": effort}
+		}
 	} else {
-		req["reasoning_effort"] = effort
+		delete(req, "reasoning")
+		if effort == "" {
+			delete(req, "reasoning_effort")
+		} else {
+			req["reasoning_effort"] = effort
+		}
 	}
 	out, err := json.Marshal(req)
 	return out, err == nil
+}
+
+func (p *OpenAIProvider) reasoningFormat() openAIReasoningFormat {
+	gateway := IsUnifiedReasoningGateway(p.cfg.BaseURL)
+	// Offer best-effort reasoning for every OpenAI-compatible model. Known
+	// OpenAI families use reasoning_effort; gateways and unknown families use
+	// the portable reasoning:{effort} object. A rejecting backend is learned
+	// once and the retry removes the parameter.
+	capability := true
+	if !SupportsReasoningEffortWithCapability(p.reasoningKey(), capability) {
+		return openAIReasoningNone
+	}
+	if gateway {
+		return openAIReasoningUnified
+	}
+	// Unknown reasoning families discovered from provider metadata generally
+	// sit behind normalizing gateways, where the unified object is portable.
+	if capability && !supportsReasoningEffortByName(p.cfg.Model) {
+		return openAIReasoningUnified
+	}
+	return openAIReasoningEffort
+}
+
+// IsUnifiedReasoningGateway reports whether an OpenAI-compatible endpoint
+// accepts the cross-provider reasoning:{effort:...} control. These gateways
+// perform their own per-model mapping, so the control can remain available even
+// when their lightweight /models response omitted capability metadata.
+func IsUnifiedReasoningGateway(baseURL string) bool {
+	base := strings.ToLower(strings.TrimSpace(baseURL))
+	return strings.Contains(base, "openrouter") ||
+		strings.Contains(base, "api.kilo.ai") ||
+		strings.Contains(base, "opencode.ai/zen")
+}
+
+func (p *OpenAIProvider) reasoningKey() string {
+	return ReasoningSupportKey(p.cfg.BaseURL, p.cfg.Model)
+}
+
+func (p *OpenAIProvider) hasReasoningCapability() bool {
+	if p.caps == nil {
+		return false
+	}
+	model := p.cfg.CapabilityModel
+	if model == "" {
+		model = p.cfg.Model
+	}
+	return p.caps.HasReasoning(model)
 }
 
 func encodeOpenAIContent(m Message, vision bool) (any, error) {
@@ -731,16 +839,33 @@ func extractReasoningText(delta map[string]json.RawMessage) string {
 	if len(delta) == 0 {
 		return ""
 	}
-	var parts []string
-	for key, raw := range delta {
+	// One delta, one reasoning text. Newer servers mirror the same
+	// reasoning chunk under several keys (a structured `reasoning`
+	// object plus a flat `reasoning_text`, say) — joining them doubled
+	// every streamed word in the GUI. Pick a single best key instead:
+	// well-known flat keys first, then any remaining reasoning-ish key
+	// in deterministic (sorted) order.
+	for _, key := range []string{"reasoning_content", "reasoning_text", "reasoning", "thinking", "thought"} {
+		if raw, ok := delta[key]; ok {
+			if s := extractStringLeaves(raw); strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+	}
+	keys := make([]string, 0, len(delta))
+	for key := range delta {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
 		if !isReasoningJSONKey(key) {
 			continue
 		}
-		if s := extractStringLeaves(raw); strings.TrimSpace(s) != "" {
-			parts = append(parts, s)
+		if s := extractStringLeaves(delta[key]); strings.TrimSpace(s) != "" {
+			return s
 		}
 	}
-	return strings.Join(parts, "")
+	return ""
 }
 
 func isReasoningJSONKey(key string) bool {
@@ -768,28 +893,51 @@ func extractStringLeaves(raw json.RawMessage) string {
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err == nil {
+		// Text-bearing keys first. When any of them yields text, that IS
+		// the reasoning: the remaining keys are metadata (type, format,
+		// index, …) and must never leak into the visible stream — that is
+		// how literal "reasoning.text"/"unknown" ended up interleaved
+		// with the model's thinking in the GUI.
 		preferred := []string{"text", "content", "value", "delta", "thinking", "reasoning"}
 		var out []string
-		seen := make(map[string]bool)
 		for _, key := range preferred {
 			if v, ok := obj[key]; ok {
-				seen[key] = true
 				if s := extractStringLeaves(v); s != "" {
 					out = append(out, s)
 				}
 			}
 		}
-		for key, v := range obj {
-			if seen[key] {
+		if len(out) > 0 {
+			return strings.Join(out, "")
+		}
+		// No known text key: walk the rest deterministically, skipping
+		// anything metadata-shaped.
+		keys := make([]string, 0, len(obj))
+		for key := range obj {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if isReasoningMetadataKey(key) {
 				continue
 			}
-			if s := extractStringLeaves(v); s != "" {
+			if s := extractStringLeaves(obj[key]); s != "" {
 				out = append(out, s)
 			}
 		}
 		return strings.Join(out, "")
 	}
 	return ""
+}
+
+// isReasoningMetadataKey reports whether a key inside a structured
+// reasoning delta carries protocol metadata rather than model text.
+func isReasoningMetadataKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "type", "format", "index", "id", "status", "channel", "role", "name", "signature", "encrypted_content":
+		return true
+	}
+	return false
 }
 
 type openaiToolRef struct {

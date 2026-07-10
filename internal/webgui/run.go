@@ -43,7 +43,7 @@ func Run(eng *Engine, opts RunOptions) error {
 	if err != nil {
 		return fmt.Errorf("webgui.Run: listen: %w", err)
 	}
-	url := "http://" + ln.Addr().String() + "/"
+	url := localLaunchURL(ln.Addr().String())
 
 	srv := &http.Server{
 		Handler:           NewServer(eng, opts.AllowRemote).Handler(),
@@ -86,4 +86,22 @@ func Run(eng *Engine, opts RunOptions) error {
 	case serveErr := <-errCh:
 		return serveErr
 	}
+}
+
+// localLaunchURL turns a wildcard listener address into a loopback URL for
+// the automatically opened local window. A browser cannot use 0.0.0.0 or ::
+// as a trustworthy local Host header, even when the listener accepts it.
+func localLaunchURL(listenerAddr string) string {
+	host, port, err := net.SplitHostPort(listenerAddr)
+	if err != nil {
+		return "http://" + listenerAddr + "/"
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		if ip.To4() != nil {
+			host = "127.0.0.1"
+		} else {
+			host = "::1"
+		}
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/"
 }

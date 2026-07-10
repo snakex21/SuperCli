@@ -760,6 +760,37 @@ func TestAddAndUpdateCleanPastedAPIKey(t *testing.T) {
 	}
 }
 
+func TestUpdateAPIKeyPresenceSemantics(t *testing.T) {
+	m := NewManager(t.TempDir())
+	if err := m.Add("p", "openai", "https://example.test/v1", "sk-secret", "m"); err != nil {
+		t.Fatal(err)
+	}
+	model := "m2"
+	if err := m.Update("p", nil, nil, nil, &model); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	if got, ok := m.APIKey("p"); !ok || got != "sk-secret" {
+		t.Fatalf("omitted API key = %q, ok=%v; want preserved", got, ok)
+	}
+	for _, invalid := range []string{"   ", "Bearer ", "``", `""`} {
+		if err := m.Update("p", nil, nil, &invalid, nil); err == nil {
+			t.Fatalf("API key %q should be rejected after cleaning to empty", invalid)
+		}
+		if got, ok := m.APIKey("p"); !ok || got != "sk-secret" {
+			t.Fatalf("invalid API key %q changed stored key to %q, ok=%v", invalid, got, ok)
+		}
+	}
+	empty := ""
+	if err := m.Update("p", nil, nil, &empty, nil); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	if got, ok := m.APIKey("p"); !ok || got != "" {
+		t.Fatalf("explicit empty API key = %q, ok=%v; want cleared", got, ok)
+	}
+}
+
 func TestList_DoesNotExposeSeedModelsForConfiguredProvider(t *testing.T) {
 	m := NewManager(t.TempDir())
 	m.Add("deepseek", "openai", "http://127.0.0.1:1/v1", "", "")

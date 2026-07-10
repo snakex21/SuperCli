@@ -42,6 +42,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/orchestrator", s.handleOrchestrator)
 	mux.HandleFunc("/api/config", s.handleConfigKnobs)
 	mux.HandleFunc("/api/providers", s.handleProviders)
+	mux.Handle("/api/provider/key/reveal", s.withSecretLocalOnly(http.HandlerFunc(s.handleProviderKeyReveal)))
 	mux.HandleFunc("/api/provider/scan", s.handleProviderScan)
 	mux.HandleFunc("/api/codex/accounts", s.handleCodexAccounts)
 	mux.HandleFunc("/api/codex/login", s.handleCodexLogin)
@@ -71,6 +72,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
 
 	return s.withLocalGuard(mux)
+}
+
+// withSecretLocalOnly protects endpoints that return plaintext credentials.
+// It deliberately ignores allowRemote so this endpoint never returns a stored
+// key to a non-loopback peer. Host and the actual socket peer must both be
+// loopback to also resist a spoofed Host header / DNS rebinding. This is an
+// endpoint-specific safeguard; --allow-remote still exposes the rest of the
+// unauthenticated GUI and must be used with care.
+func (s *Server) withSecretLocalOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackHost(r.Host) || !isLoopbackRemoteAddr(r.RemoteAddr) {
+			http.Error(w, "forbidden: secret is local-only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // withLocalGuard rejects requests whose Host is not a loopback

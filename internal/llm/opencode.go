@@ -113,10 +113,11 @@ func NewOpencode(cfg OpencodeConfig) (*OpencodeProvider, error) {
 	// in the JSON body so the gateway recognizes
 	// it. Its cfg.Model is rawModel.
 	inner, err := NewOpenAI(OpenAIConfig{
-		BaseURL:      cfg.BaseURL,
-		APIKey:       apiKey,
-		Model:        rawModel,
-		Capabilities: caps,
+		BaseURL:         cfg.BaseURL,
+		APIKey:          apiKey,
+		Model:           rawModel,
+		Capabilities:    caps,
+		CapabilityModel: prefixed,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("llm.NewOpencode: %w", err)

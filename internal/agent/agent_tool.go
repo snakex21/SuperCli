@@ -302,6 +302,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 
 	text, err := runWorkerLoop(childCtx, w, workerPrompt)
 	if err != nil {
+		a.emitWorkerNotification(w, text)
 		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
 	}
 	// Draft-verify ladder: when enabled, the completed worker run above was
@@ -313,6 +314,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if a.draftVerifyEnabled() && !ar.Advise {
 		text = a.runDraftVerify(childCtx, w, ar, workerPrompt, text, maxSteps)
 	}
+	a.emitWorkerNotification(w, text)
 	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
 }
 
@@ -508,15 +510,22 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 		notification := renderWorkerNotification(w, text)
 		if a.ParentLoop != nil {
 			a.ParentLoop.InjectUserMessage(context.Background(), notification)
-			a.ParentLoop.Emit(WorkerNotificationEvent{
-				TaskID:  w.ID,
-				Agent:   w.Agent,
-				Status:  w.Status,
-				Summary: workerSummary(w),
-				Text:    notification,
-			})
 		}
+		a.emitWorkerNotification(w, text)
 	}()
+}
+
+func (a *AgentTool) emitWorkerNotification(w *Worker, text string) {
+	if a.ParentLoop == nil || w == nil {
+		return
+	}
+	a.ParentLoop.Emit(WorkerNotificationEvent{
+		TaskID:  w.ID,
+		Agent:   w.Agent,
+		Status:  w.Status,
+		Summary: workerSummary(w),
+		Text:    renderWorkerNotification(w, text),
+	})
 }
 
 // delegationTools are never handed to a worker: they are how the

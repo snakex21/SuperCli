@@ -358,7 +358,7 @@ func (m onboardModel) startVerify() (tea.Model, tea.Cmd) {
 	baseURL, apiKey, model := m.result.BaseURL, m.result.APIKey, m.result.Model
 	m.step = onboardVerify
 	return m, func() tea.Msg {
-		return onboardVerifyMsg{err: providers.VerifyConnection(context.Background(), baseURL, apiKey, model)}
+		return onboardVerifyMsg{err: providers.VerifyConnectionForProvider(context.Background(), m.result.Type, baseURL, apiKey, model)}
 	}
 }
 

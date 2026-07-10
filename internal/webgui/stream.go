@@ -134,23 +134,31 @@ func (w wireEvent) marshal() []byte {
 // closes or ctx is cancelled. emit is called from this goroutine; the
 // HTTP handler is responsible for flushing to the client.
 func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit func(wireEvent)) error {
-	initial, writer, closeStore, sid, err := e.sessionState(ctx, prompt, sessionID)
+	home := e.Home()
+	initial, writer, closeStore, sid, err := e.sessionState(ctx, prompt, sessionID, home)
 	if err != nil {
 		return err
 	}
 	defer closeStore()
 	emit(wireEvent{Type: "session", SessionID: sid})
 
-	loop, err := e.newLoopWithSession(initial, writer)
+	loop, err := e.newLoopWithSessionAt(initial, writer, home)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
+	// Worker completions, worker-backend fallback notices and draft-verify
+	// telemetry are emitted through Loop's external sink rather than the main
+	// Run channel. Bridge that sink into the same SSE response so delegations
+	// are visible in the transcript and Workers panel.
+	external := make(chan agent.Event, 32)
+	loop.SetExternalSink(external)
+	defer loop.SetExternalSink(nil)
 	// Preflight repo context (config preflight_repo, default ON): the
 	// block rides the FIRST user message of a session only — resumed
 	// conversations already paid for it. The notice makes the cost
 	// visible in the transcript, mirroring the CLI's startup log line.
 	if len(initial) == 0 {
-		if block, tokens := e.preflightBlock(); block != "" {
+		if block, tokens := e.preflightBlockAt(home); block != "" {
 			loop.SetNextUserAddon(block)
 			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (rides this message)", tokens)})
 		}
@@ -165,8 +173,23 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 			return ctx.Err()
 		case ev, ok := <-ch:
 			if !ok {
-				return nil
+				// Synchronous task completion may enqueue its external marker just
+				// before the parent turn closes. Drain what is already available.
+				for {
+					select {
+					case extra := <-external:
+						if w, keep := toWireEvent(extra); keep {
+							emit(w)
+						}
+					default:
+						return nil
+					}
+				}
 			}
+			if w, keep := toWireEvent(ev); keep {
+				emit(w)
+			}
+		case ev := <-external:
 			if w, keep := toWireEvent(ev); keep {
 				emit(w)
 			}
@@ -177,7 +200,7 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 // sessionState opens the persistent session store, creates a new session when
 // no id was supplied, or loads existing messages when the browser continues a
 // chat. The returned close function must be called after the run completes.
-func (e *Engine) sessionState(ctx context.Context, prompt, requestedID string) ([]llm.Message, agent.SessionWriter, func(), string, error) {
+func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home string) ([]llm.Message, agent.SessionWriter, func(), string, error) {
 	store, err := session.OpenStore(e.dataDir)
 	if err != nil {
 		return nil, nil, func() {}, "", fmt.Errorf("open session store: %w", err)
@@ -187,7 +210,7 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID string) (
 	requestedID = strings.TrimSpace(requestedID)
 	if requestedID == "" {
 		title := summarizeHistoryMessage(prompt, 80)
-		sess, err := store.Create(e.Home(), e.ModelName(), title)
+		sess, err := store.Create(home, e.ModelName(), title)
 		if err != nil {
 			closeStore()
 			return nil, nil, func() {}, "", fmt.Errorf("create session: %w", err)
@@ -196,9 +219,14 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID string) (
 		return nil, session.NewWriter(store, sess.ID), closeStore, sess.ID, nil
 	}
 
-	if _, err := store.Get(requestedID); err != nil {
+	meta, err := store.Get(requestedID)
+	if err != nil {
 		closeStore()
 		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", err)
+	}
+	if !sameSessionWorkspace(meta.Cwd, home) {
+		closeStore()
+		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", errSessionOutsideWorkspace)
 	}
 	rows, err := store.ReadMessages(ctx, requestedID)
 	if err != nil {

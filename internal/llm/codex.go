@@ -51,6 +51,15 @@ type CodexConfig struct {
 	HTTPClient *http.Client
 	// Capabilities, if nil, defaults to a registry lookup.
 	Capabilities *CapabilityRegistry
+	// StandardResponsesAPI switches the transport from the ChatGPT-specific
+	// Codex backend dialect to the public OpenAI Responses API dialect. The
+	// request/event schema is shared, but standard gateways must not receive
+	// ChatGPT-only headers and static API keys cannot be refreshed through the
+	// OAuth token source.
+	StandardResponsesAPI bool
+	// PromptCacheKey groups related standard Responses API calls for provider-
+	// side prompt caching. It is ignored by the ChatGPT backend dialect.
+	PromptCacheKey string
 	// DataDir is the resolved SuperCli data directory. When set, the
 	// last rate-limit snapshot is persisted there (codex_ratelimits.json)
 	// and reloaded at startup so the HUD `limit:` tile shows the most
@@ -394,6 +403,12 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+	if p.cfg.StandardResponsesAPI {
+		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, SupportsReasoningEffort(p.cfg.Model))
+		if err != nil {
+			return nil, fmt.Errorf("build standard responses request: %w", err)
+		}
+	}
 
 	out := make(chan Delta, 16)
 	go func() {
@@ -462,11 +477,15 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte, notify func
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
-		req.Header.Set("Authorization", "Bearer "+access)
-		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		req.Header.Set("originator", "codex_cli_go")
-		if accountID != "" {
-			req.Header.Set("chatgpt-account-id", accountID)
+		if access != "" {
+			req.Header.Set("Authorization", "Bearer "+access)
+		}
+		if !p.cfg.StandardResponsesAPI {
+			req.Header.Set("OpenAI-Beta", "responses=experimental")
+			req.Header.Set("originator", "codex_cli_go")
+			if accountID != "" {
+				req.Header.Set("chatgpt-account-id", accountID)
+			}
 		}
 		resp, err := p.http.Do(req)
 		if err != nil {
@@ -482,7 +501,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, body []byte, notify func
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusUnauthorized && !refreshed {
+		if resp.StatusCode == http.StatusUnauthorized && !refreshed && !p.cfg.StandardResponsesAPI {
 			// Transparent refresh + single retry.
 			refreshed = true
 			access, err = p.cfg.Tokens.Refresh(ctx)
@@ -610,13 +629,32 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 			if ev.Response != nil && ev.Response.Error != nil && ev.Response.Error.Message != "" {
 				msg = ev.Response.Error.Message
 			}
-			emit(Delta{Err: fmt.Errorf("codex: %s", msg)})
+			emit(Delta{Err: fmt.Errorf("%s: %s", p.responsesAPIName(), msg)})
+			return
+		case "error":
+			msg := ev.Message
+			if msg == "" && ev.Error != nil {
+				msg = ev.Error.Message
+			}
+			if msg == "" {
+				msg = "stream error"
+			}
+			emit(Delta{Err: fmt.Errorf("%s: %s", p.responsesAPIName(), msg)})
 			return
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		emit(Delta{Err: fmt.Errorf("sse: %w", err)})
+		return
 	}
+	emit(Delta{Err: fmt.Errorf("%s: stream ended before response.completed", p.responsesAPIName())})
+}
+
+func (p *CodexProvider) responsesAPIName() string {
+	if p.cfg.StandardResponsesAPI {
+		return "responses"
+	}
+	return "codex"
 }
 
 // --- SSE event shape ---
@@ -624,6 +662,9 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 type codexEvent struct {
 	Type     string         `json:"type"`
 	Delta    string         `json:"delta,omitempty"`
+	Code     string         `json:"code,omitempty"`
+	Message  string         `json:"message,omitempty"`
+	Error    *codexError    `json:"error,omitempty"`
 	Item     *codexItemEv   `json:"item,omitempty"`
 	Response *codexRespMeta `json:"response,omitempty"`
 }
@@ -787,6 +828,41 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 		}
 	}
 	req.Instructions = strings.Join(instructions, "\n\n")
+	return json.Marshal(req)
+}
+
+// prepareStandardResponsesRequest adds the state-carrying fields used by
+// Codex-compatible public Responses gateways. They are deliberately absent
+// from the ChatGPT-subscription dialect above. Reasoning-only fields are sent
+// only to model families that support them; a stable non-empty prompt cache
+// key lets the gateway reuse the shared prefix across turns.
+func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoningModel bool) ([]byte, error) {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+	if reasoningModel {
+		reasoning, _ := req["reasoning"].(map[string]any)
+		if reasoning == nil {
+			reasoning = make(map[string]any)
+		}
+		if effort, ok := reasoning["effort"].(string); !ok || strings.TrimSpace(effort) == "" {
+			reasoning["effort"] = "medium"
+		}
+		if summary, ok := reasoning["summary"].(string); !ok || strings.TrimSpace(summary) == "" {
+			reasoning["summary"] = "auto"
+		}
+		req["reasoning"] = reasoning
+		req["include"] = []string{"reasoning.encrypted_content"}
+	}
+	if _, ok := req["tools"]; !ok {
+		req["tools"] = []any{}
+	}
+	promptCacheKey = strings.TrimSpace(promptCacheKey)
+	if promptCacheKey == "" {
+		promptCacheKey = "supercli"
+	}
+	req["prompt_cache_key"] = promptCacheKey
 	return json.Marshal(req)
 }
 

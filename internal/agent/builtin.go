@@ -17,7 +17,8 @@ import (
 func BuiltinSubAgents() []SubAgent {
 	exploreSystem := "You are the SuperCli explore sub-agent. Your job is to " +
 		"answer a focused question about the codebase. Use search_code " +
-		"to locate files, then read them. Be concise: return only the " +
+		"to locate files, then read source with read_lines/read_context. " +
+		"Use read_image only for actual images. Be concise: return only the " +
 		"answer, no preamble."
 
 	planSystem := "You are the SuperCli plan sub-agent. Your job is to " +
@@ -27,7 +28,7 @@ func BuiltinSubAgents() []SubAgent {
 
 	reviewSystem := "You are the SuperCli review sub-agent. Your job is to " +
 		"review code for correctness, performance, and clarity. Read the " +
-		"targeted files with read_image (binary-safe) and search_code to " +
+		"targeted source with read_lines/read_context and search_code to " +
 		"find call sites. Return findings as a bulleted list, ordered by " +
 		"severity."
 
@@ -81,28 +82,28 @@ func BuiltinSubAgents() []SubAgent {
 			Name:         "advisor",
 			Description:  "give a read-only second opinion on a specific decision",
 			System:       advisorSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context"),
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir"),
 			MaxSteps:     6,
 		},
 		{
 			Name:         "explore",
 			Description:  "search the codebase and answer a focused question",
 			System:       exploreSystem,
-			AllowedTools: allowedTools("search_code", "read_image"),
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir"),
 			MaxSteps:     8,
 		},
 		{
 			Name:         "plan",
 			Description:  "analyse a question and return a numbered plan",
 			System:       planSystem,
-			AllowedTools: allowedTools("read_image"),
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir"),
 			MaxSteps:     6,
 		},
 		{
 			Name:         "review",
 			Description:  "review existing code for correctness and clarity",
 			System:       reviewSystem,
-			AllowedTools: allowedTools("search_code", "read_image"),
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir"),
 			MaxSteps:     8,
 		},
 		{

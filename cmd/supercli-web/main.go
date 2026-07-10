@@ -28,7 +28,7 @@ import (
 
 func main() {
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
-	providerFlag := flag.String("provider", "", "LLM provider: openai, anthropic, opencode, or echo")
+	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, opencode, codex, or echo")
 	modelFlag := flag.String("model", "", "model id")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
 	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")
@@ -85,10 +85,30 @@ func main() {
 	}
 	if tomlErr == nil && !*echoFlag {
 		config.ApplyTomlToConfig(&cfg, tomlCfg)
+		// ApplyTomlToConfig resolves a named TOML provider as one
+		// type/base/key bundle. Restore explicit env and flag values after
+		// that merge so command-line startup overrides remain authoritative.
+		config.EnvOverrideConfig(&cfg)
+		if *providerFlag != "" {
+			cfg.Provider = *providerFlag
+		}
+		if *keyFlag != "" {
+			cfg.APIKey = *keyFlag
+		}
+		if *baseFlag != "" {
+			cfg.BaseURL = *baseFlag
+		}
+		if *modelFlag != "" {
+			cfg.Model = *modelFlag
+		}
+		providerExplicit := *providerFlag != "" || os.Getenv("SUPERCLI_LLM_PROVIDER") != ""
+		baseExplicit := *baseFlag != "" || os.Getenv("SUPERCLI_LLM_BASE_URL") != ""
+		keyExplicit := *keyFlag != "" || os.Getenv("SUPERCLI_LLM_API_KEY") != ""
+		modelExplicit := *modelFlag != "" || os.Getenv("SUPERCLI_LLM_MODEL") != ""
 		// config.Load normalizes empty model to "no model" before TOML is
 		// applied. For web GUI startup, the saved model must still win when
 		// no explicit --model/env override was provided.
-		if *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" && tomlCfg.DefaultModel != "" {
+		if !modelExplicit && tomlCfg.DefaultModel != "" {
 			cfg.Model = tomlCfg.DefaultModel
 		}
 		// The web GUI keeps its OWN active model in webgui-settings.json
@@ -97,15 +117,19 @@ func main() {
 		// independent: picking a model in the browser neither writes to
 		// config.toml nor is it clobbered by a later CLI /model swap.
 		// Explicit --model / env still wins over both.
-		if *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
+		if !modelExplicit && !providerExplicit {
 			if lm, lp := webgui.LastModel(dataDir); lm != "" {
-				cfg.Model = lm
-				for _, p := range tomlCfg.Providers {
-					if p.Name == lp {
-						cfg.Provider = p.Type
+				if p, ok := config.ResolveProviderConf(dataDir, tomlCfg, lp); ok {
+					// Restore the remembered model only when its provider can be
+					// resolved. This prevents stale UI state from pairing a model
+					// with unrelated credentials.
+					cfg.Model = lm
+					cfg.Provider = p.Type
+					if !baseExplicit {
 						cfg.BaseURL = p.BaseURL
+					}
+					if !keyExplicit {
 						cfg.APIKey = p.APIKey
-						break
 					}
 				}
 			}
@@ -113,17 +137,18 @@ func main() {
 		// Active project's preferred model/provider: more specific than the web
 		// last-model setting, but explicit flags/env still win.
 		if activeProjectApplied {
-			if activeProject.Provider != "" && *providerFlag == "" && os.Getenv("SUPERCLI_LLM_PROVIDER") == "" {
-				for _, p := range tomlCfg.Providers {
-					if p.Name == activeProject.Provider {
-						cfg.Provider = p.Type
+			if activeProject.Provider != "" && !providerExplicit {
+				if p, ok := config.ResolveProviderConf(dataDir, tomlCfg, activeProject.Provider); ok {
+					cfg.Provider = p.Type
+					if !baseExplicit {
 						cfg.BaseURL = p.BaseURL
+					}
+					if !keyExplicit {
 						cfg.APIKey = p.APIKey
-						break
 					}
 				}
 			}
-			if activeProject.Model != "" && *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
+			if activeProject.Model != "" && !modelExplicit {
 				cfg.Model = activeProject.Model
 			}
 			if err := cfg.Normalize(); err != nil {
