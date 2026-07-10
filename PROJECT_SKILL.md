@@ -2,6 +2,8 @@
 
 Use this file as the first project-specific instruction source before editing or building SuperCli.
 
+Mechanism documentation (how the agent loop, delegation, caching, and config defaults work — and why) lives in `docs/`; start with `docs/quickstart.md`.
+
 ## Project shape
 
 - Language: Go.
