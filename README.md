@@ -12,6 +12,18 @@ SuperCli uses Bubble Tea for the TUI and `modernc.org/sqlite` for persistence,
 so the default build is a standalone executable: no Node, no Python, no Docker,
 no CGO runtime.
 
+## Documentation
+
+Start with [docs/quickstart.md](docs/quickstart.md) — what SuperCli
+optimizes for and where everything lives. Then:
+[architecture](docs/architecture.md) (agent loop, KV-cache discipline,
+compaction) · [delegation](docs/delegation.md) (task workers,
+orchestrator, draft-verify) · [performance](docs/performance.md)
+(telemetry, caches, turn economy) ·
+[configuration](docs/configuration.md) (every knob and its default) ·
+[webgui](docs/webgui.md) (web GUI design). The docs explain not just how
+the mechanisms work but *why* — each decision cites its live measurement.
+
 ## Why
 
 Most CLI AI agents drift toward hidden global state, provider lock-in, large
