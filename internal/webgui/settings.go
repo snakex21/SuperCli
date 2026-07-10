@@ -137,11 +137,26 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid settings JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		// MERGE into the existing blob instead of replacing it. The
+		// browser only ever knows the keys it owns; a POST fired from a
+		// stale or still-loading client must not wipe server-written
+		// keys like the last-model entry (that is how changing a font
+		// once erased the model selection). Same load-fresh → mutate →
+		// save discipline as the TUI settingsApply.
+		blob := readUISettings(s.eng.DataDir())
+		for k, val := range v {
+			blob[k] = val
+		}
+		data, err := json.Marshal(blob)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if err := os.MkdirAll(s.eng.DataDir(), 0o755); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := os.WriteFile(path, body, 0o644); err != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

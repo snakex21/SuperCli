@@ -35,6 +35,7 @@ import (
 // Provider names.
 const (
 	ProviderOpenAI    = "openai"
+	ProviderResponses = "responses" // API-key authenticated OpenAI Responses API
 	ProviderAnthropic = "anthropic"
 	ProviderEcho      = "echo"     // explicit echo; usually inferred from empty API key
 	ProviderOpencode  = "opencode" // F15: opencode headless gateway (Ollama/OpenRouter/Groq)
@@ -45,13 +46,14 @@ const (
 // populated by Load; never construct Config directly outside tests.
 type Config struct {
 	// Provider selects which implementation backs the agent.
-	// "openai" or "echo". Empty means "decide from API key".
+	// "openai", "responses", "anthropic", "codex", "opencode", or
+	// "echo". Empty means "decide from API key".
 	Provider string `json:"provider"`
 
 	// APIKey is the bearer token. Empty means echo mode.
 	APIKey string `json:"api_key,omitempty"`
 
-	// BaseURL is the chat-completions endpoint root, no trailing slash.
+	// BaseURL is the provider endpoint root, no trailing slash.
 	BaseURL string `json:"base_url"`
 
 	// Model is the model name sent in each request.
@@ -147,7 +149,7 @@ func (c *Config) Normalize() error {
 		}
 	}
 	switch c.Provider {
-	case ProviderOpenAI:
+	case ProviderOpenAI, ProviderResponses:
 		// Allow empty API key for local providers (LM Studio,
 		// Ollama) that use the OpenAI-compatible protocol without
 		// authentication. The real OpenAI API will return 401 at
@@ -184,8 +186,8 @@ func (c *Config) Normalize() error {
 			c.Model = "gpt-5.5"
 		}
 	default:
-		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, %q, or %q)",
-			c.Provider, ProviderOpenAI, ProviderAnthropic, ProviderEcho, ProviderOpencode, ProviderCodex)
+		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, %q, %q, or %q)",
+			c.Provider, ProviderOpenAI, ProviderResponses, ProviderAnthropic, ProviderEcho, ProviderOpencode, ProviderCodex)
 	}
 	return nil
 }

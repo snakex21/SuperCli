@@ -514,7 +514,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			if model == "" {
 				model = res.Models[0]
 			}
-			if err := providers.VerifyConnection(context.Background(), conf.BaseURL, conf.APIKey, model); err != nil {
+			if err := providers.VerifyConnectionForProvider(context.Background(), conf.Type, conf.BaseURL, conf.APIKey, model); err != nil {
 				return providerSavedMsg{name: savedName, err: err}
 			}
 			return providerSavedMsg{name: savedName, body: fmt.Sprintf("✓ connected — %d model(s), test request OK (%s)", len(res.Models), model)}

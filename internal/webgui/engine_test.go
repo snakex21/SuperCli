@@ -2,7 +2,10 @@ package webgui
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -79,6 +82,17 @@ func TestBuildProvider_OpenAIDefault(t *testing.T) {
 	}
 }
 
+func TestBuildProvider_Responses(t *testing.T) {
+	cfg := config.Config{Provider: config.ProviderResponses, Model: "gpt-responses", BaseURL: "https://example.test/v1", APIKey: "key"}
+	p, err := buildProvider(cfg, nil)
+	if err != nil {
+		t.Fatalf("buildProvider responses: %v", err)
+	}
+	if p.Name() != "gpt-responses" {
+		t.Errorf("Name = %q", p.Name())
+	}
+}
+
 func TestEngine_NewLoop(t *testing.T) {
 	dir := t.TempDir()
 	eng, err := NewEngine(echoConfig(), dir, dir)
@@ -91,6 +105,126 @@ func TestEngine_NewLoop(t *testing.T) {
 	}
 	if loop == nil {
 		t.Fatal("nil loop")
+	}
+}
+
+func TestEngine_WebOrchestratorRestrictsParentAndKeepsTask(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	on := true
+	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &on}); err != nil {
+		t.Fatal(err)
+	}
+	loop, err := eng.newLoop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := strings.Join(loop.VisibleToolNames(), "|")
+	if !strings.Contains(names, "task") {
+		t.Fatalf("orchestrator tools missing task: %s", names)
+	}
+	if strings.Contains(names, "write_file") || strings.Contains(names, "ctx_execute") {
+		t.Fatalf("orchestrator parent still has mutating tools: %s", names)
+	}
+	msgs := loop.AllMessages()
+	if len(msgs) == 0 || !strings.Contains(msgs[0].Content, "## Orchestrator mode") {
+		t.Fatalf("web loop missing orchestrator prompt: %+v", msgs)
+	}
+}
+
+type delegationScriptProvider struct {
+	mu          sync.Mutex
+	parentCalls int
+	sawTask     bool
+	childTools  map[string]bool
+}
+
+func (p *delegationScriptProvider) Name() string { return "delegation-script" }
+
+func (p *delegationScriptProvider) Complete(_ context.Context, _ []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
+	hasTask := false
+	for _, d := range defs {
+		if d.Name == "task" {
+			hasTask = true
+			break
+		}
+	}
+	p.mu.Lock()
+	if hasTask {
+		p.sawTask = true
+		p.parentCalls++
+	} else {
+		p.childTools = make(map[string]bool, len(defs))
+		for _, d := range defs {
+			p.childTools[d.Name] = true
+		}
+	}
+	parentCall := p.parentCalls
+	p.mu.Unlock()
+
+	ch := make(chan llm.Delta, 3)
+	if !hasTask {
+		ch <- llm.Delta{Role: llm.RoleAssistant, Content: "worker inspected the project"}
+		ch <- llm.Delta{FinishReason: "stop"}
+	} else if parentCall == 1 {
+		ch <- llm.Delta{Role: llm.RoleAssistant, ToolCall: &llm.ToolCall{
+			ID: "task-1", Name: "task", Arguments: `{"agent":"explore","prompt":"Inspect the project and report."}`,
+		}}
+		ch <- llm.Delta{FinishReason: "tool_calls"}
+	} else {
+		ch <- llm.Delta{Role: llm.RoleAssistant, Content: "delegation complete"}
+		ch <- llm.Delta{FinishReason: "stop"}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	on := true
+	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &on}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &delegationScriptProvider{}
+	eng.mu.Lock()
+	eng.prov = provider
+	eng.mu.Unlock()
+
+	var events []wireEvent
+	if err := eng.runStream(context.Background(), "delegate this", "", func(ev wireEvent) {
+		events = append(events, ev)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var sawTaskCall, sawWorker, sawDone bool
+	for _, ev := range events {
+		if ev.Type == "tool_call" && ev.Name == "task" {
+			sawTaskCall = true
+		}
+		if ev.Type == "worker" && ev.Name == "explore" && ev.Status == "done" {
+			sawWorker = true
+		}
+		if ev.Type == "done" {
+			sawDone = true
+		}
+	}
+	provider.mu.Lock()
+	providerTask := provider.sawTask
+	childSearch := provider.childTools["search_code"]
+	childReadImage := provider.childTools["read_image"]
+	provider.mu.Unlock()
+	if !providerTask || !childSearch || !childReadImage || !sawTaskCall || !sawWorker || !sawDone {
+		t.Fatalf("delegation incomplete: providerTask=%v taskCall=%v worker=%v done=%v events=%+v",
+			providerTask, sawTaskCall, sawWorker, sawDone, events)
 	}
 }
 
@@ -158,6 +292,81 @@ func TestEngine_DataPanels_EmptyStores(t *testing.T) {
 	}
 	if sv.Model != "echo-test" {
 		t.Errorf("stats model = %q", sv.Model)
+	}
+}
+
+func TestEngine_ListSessionsFiltersActiveWorkspace(t *testing.T) {
+	dataDir := t.TempDir()
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	eng, err := NewEngine(echoConfig(), projectA, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	store, err := session.OpenStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	create := func(cwd, text string) string {
+		sess, err := store.Create(cwd, "echo-test", text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := session.NewWriter(store, sess.ID).AppendMessage(ctx, llm.Message{Role: llm.RoleUser, Content: text}); err != nil {
+			t.Fatal(err)
+		}
+		return sess.ID
+	}
+	aID := create(projectA, "from A")
+	_ = create(projectB, "from B")
+
+	got, err := eng.listSessions(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != aID {
+		t.Fatalf("project A sessions = %+v, want only %s", got, aID)
+	}
+
+	eng.setHome(projectB)
+	got, err = eng.listSessions(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].FirstUserMsg != "from B" {
+		t.Fatalf("project B sessions = %+v, want only B", got)
+	}
+}
+
+func TestEngine_RejectsSessionFromAnotherWorkspace(t *testing.T) {
+	dataDir := t.TempDir()
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	eng, err := NewEngine(echoConfig(), projectA, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	store, err := session.OpenStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Create(projectB, "echo-test", "foreign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.NewWriter(store, sess.ID).AppendMessage(context.Background(), llm.Message{Role: llm.RoleUser, Content: "foreign"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+
+	if _, err := eng.transcript(context.Background(), sess.ID); !errors.Is(err, errSessionOutsideWorkspace) {
+		t.Fatalf("transcript error = %v, want workspace rejection", err)
+	}
+	if _, _, closeStore, _, err := eng.sessionState(context.Background(), "continue", sess.ID, projectA); !errors.Is(err, errSessionOutsideWorkspace) {
+		closeStore()
+		t.Fatalf("sessionState error = %v, want workspace rejection", err)
 	}
 }
 

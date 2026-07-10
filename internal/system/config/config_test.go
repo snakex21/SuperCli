@@ -167,6 +167,23 @@ func TestNormalize_DefaultsTimeout(t *testing.T) {
 	}
 }
 
+func TestNormalize_ResponsesProvider(t *testing.T) {
+	c := Config{
+		Provider: ProviderResponses,
+		BaseURL:  "https://example.test/v1/",
+		APIKey:   "key",
+	}
+	if err := c.Normalize(); err != nil {
+		t.Fatalf("Normalize responses: %v", err)
+	}
+	if c.Model != "no model" {
+		t.Fatalf("Model = %q, want no model", c.Model)
+	}
+	if c.BaseURL != "https://example.test/v1" {
+		t.Fatalf("BaseURL = %q, want trailing slash removed", c.BaseURL)
+	}
+}
+
 func TestNormalize_RejectsBadTemperature(t *testing.T) {
 	c := Config{
 		BaseURL:     "http://x",

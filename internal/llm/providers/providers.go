@@ -6,6 +6,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -190,14 +191,17 @@ func (m *Manager) Remove(name string) error {
 	return m.saveLocked()
 }
 
-// Update modifies an existing provider's fields. Only non-empty
-// values are applied.
+// Update modifies an existing provider's fields. Only non-nil pointers are
+// applied; an explicit pointer to "" clears that field.
 func (m *Manager) Update(name string, typ, baseURL, apiKey, model *string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for i, p := range m.providers {
 		if p.Name == name {
+			if apiKey != nil && *apiKey != "" && llm.CleanAPIKey(*apiKey) == "" {
+				return errors.New("API key is empty after removing whitespace and wrappers")
+			}
 			if typ != nil {
 				m.providers[i].Type = *typ
 			}
@@ -534,6 +538,20 @@ func (m *Manager) Configured() []config.ProviderConf {
 	out := make([]config.ProviderConf, len(m.providers))
 	copy(out, m.providers)
 	return out
+}
+
+// APIKey returns the stored key for one configured provider. It is kept as a
+// narrow accessor so secret-aware callers do not need to copy or serialize the
+// complete provider configuration. The web GUI exposes this only through its
+// loopback-only reveal endpoint.
+func (m *Manager) APIKey(name string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.providerByNameLocked(name)
+	if !ok {
+		return "", false
+	}
+	return p.APIKey, true
 }
 
 // Ping checks one provider conf's /v1/models endpoint with a

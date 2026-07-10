@@ -56,7 +56,29 @@ func isValidReasoningEffort(level string) bool {
 }
 
 func normalizeReasoningModel(model string) string {
-	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.ToLower(strings.TrimSpace(model))
+}
+
+// ReasoningSupportKey scopes live backend evidence to an endpoint and model.
+// The model-only form remains valid for callers (Codex/TUI) that have a single
+// protocol endpoint. OpenAI-compatible routers should include their BaseURL so
+// one gateway rejecting a control cannot disable it on another gateway.
+func ReasoningSupportKey(scope, model string) string {
+	scope = strings.TrimRight(strings.ToLower(strings.TrimSpace(scope)), "/")
+	model = normalizeReasoningModel(model)
+	if scope == "" {
+		return model
+	}
+	return scope + "\x00" + model
+}
+
+// reasoningModelFamily strips support scope and provider namespace only for
+// static family heuristics. Live support maps deliberately retain both.
+func reasoningModelFamily(model string) string {
+	m := normalizeReasoningModel(model)
+	if i := strings.LastIndexByte(m, 0); i >= 0 {
+		m = m[i+1:]
+	}
 	if i := strings.LastIndexByte(m, '/'); i >= 0 {
 		m = m[i+1:]
 	}
@@ -86,6 +108,20 @@ func SetReasoningEffortSupport(model string, levels []string) {
 	}
 	reasoningEffortSupport.Lock()
 	reasoningEffortSupport.byModel[model] = out
+	reasoningEffortSupport.Unlock()
+}
+
+// setReasoningEffortUnsupported records live evidence that a backend rejects
+// reasoning controls altogether. An empty, present entry is intentionally
+// different from no entry: no entry allows capability/name fallbacks, while an
+// empty entry prevents the same rejected parameter being sent on every turn.
+func setReasoningEffortUnsupported(model string) {
+	model = normalizeReasoningModel(model)
+	if model == "" {
+		return
+	}
+	reasoningEffortSupport.Lock()
+	reasoningEffortSupport.byModel[model] = []string{}
 	reasoningEffortSupport.Unlock()
 }
 
@@ -174,23 +210,38 @@ func nearestSupportedEffort(want string, supported []string) string {
 	return want
 }
 
-// ReasoningEffortForModel returns the configured effort adjusted by live
-// backend evidence for model.
-func ReasoningEffortForModel(model string) string {
+// ReasoningEffortForModelWithCapability returns the configured effort adjusted
+// by live backend evidence. capability is the model registry's reasoning flag;
+// it lets discovered OpenRouter-compatible models participate without adding
+// every model family to a hardcoded name table.
+func ReasoningEffortForModelWithCapability(model string, capability bool) string {
 	eff := ReasoningEffort()
-	if eff == "" || !SupportsReasoningEffort(model) {
+	if eff == "" || !SupportsReasoningEffortWithCapability(model, capability) {
 		return ""
 	}
 	if supported, ok := SupportedReasoningEfforts(model); ok {
+		if len(supported) == 0 {
+			return ""
+		}
 		return nearestSupportedEffort(eff, supported)
 	}
 	return eff
 }
 
-func ReasoningEffortAdjustment(model string) (configured, effective string, adjusted bool) {
+// ReasoningEffortForModel is the conservative, name-based variant used by
+// callers that do not have a capability registry.
+func ReasoningEffortForModel(model string) string {
+	return ReasoningEffortForModelWithCapability(model, false)
+}
+
+func ReasoningEffortAdjustmentWithCapability(model string, capability bool) (configured, effective string, adjusted bool) {
 	configured = ReasoningEffort()
-	effective = ReasoningEffortForModel(model)
+	effective = ReasoningEffortForModelWithCapability(model, capability)
 	return configured, effective, configured != "" && effective != "" && configured != effective
+}
+
+func ReasoningEffortAdjustment(model string) (configured, effective string, adjusted bool) {
+	return ReasoningEffortAdjustmentWithCapability(model, false)
 }
 
 // SupportsXHighReasoningEffort reports whether the model accepts xhigh. When
@@ -199,7 +250,7 @@ func SupportsXHighReasoningEffort(model string) bool {
 	if supported, ok := SupportedReasoningEfforts(model); ok {
 		return hasEffort(supported, "xhigh")
 	}
-	m := normalizeReasoningModel(model)
+	m := reasoningModelFamily(model)
 	return strings.Contains(m, "codex") || strings.HasPrefix(m, "gpt-5.5")
 }
 
@@ -268,7 +319,7 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 			info.Requested = strings.ToLower(strings.TrimSpace(m[1]))
 		}
 	}
-	supportedPart := msg
+	supportedPart := ""
 	if idx := strings.Index(strings.ToLower(msg), "supported values"); idx >= 0 {
 		supportedPart = msg[idx:]
 	}
@@ -281,7 +332,11 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 			info.Supported = append(info.Supported, v)
 		}
 	}
-	return info, info.Requested != "" || len(info.Supported) > 0
+	// Some OpenAI-compatible gateways only say that the reasoning parameter is
+	// unsupported and do not echo the requested value or an enum. That is still
+	// actionable evidence: the retry path should omit the control.
+	rejected := strings.Contains(low, "unsupported") || strings.Contains(low, "not supported") || strings.Contains(low, "invalid")
+	return info, info.Requested != "" || len(info.Supported) > 0 || rejected
 }
 
 // LearnReasoningEffortFromError records effort support discovered from a 400
@@ -297,8 +352,10 @@ func LearnReasoningEffortFromError(model string, status int, body []byte) (strin
 	}
 	if len(info.Supported) == 0 {
 		// The backend rejected the reasoning/thinking parameter but did not
-		// provide an enum of accepted values. Learn the safe option: omit it.
-		info.Supported = []string{"none"}
+		// provide an enum of accepted values. Remember that live evidence and
+		// retry once with the parameter omitted.
+		setReasoningEffortUnsupported(model)
+		return "", true
 	}
 	SetReasoningEffortSupport(model, info.Supported)
 	effective := ReasoningEffortForModel(model)
@@ -322,14 +379,25 @@ func NextReasoningEffort(current string, xhigh bool) string {
 	return ""
 }
 
-// SupportsReasoningEffort reports whether SuperCli should try the reasoning
-// effort parameter. Runtime evidence wins; otherwise we keep a conservative
-// family fallback for first contact with OpenAI/Codex reasoning models.
-func SupportsReasoningEffort(model string) bool {
+// SupportsReasoningEffortWithCapability reports whether SuperCli should expose
+// and send a reasoning control. Runtime evidence wins; then the discovered
+// capability flag; finally a conservative family fallback handles first
+// contact with direct OpenAI/Codex/Anthropic models.
+func SupportsReasoningEffortWithCapability(model string, capability bool) bool {
 	if supported, ok := SupportedReasoningEfforts(model); ok {
 		return len(supported) > 0
 	}
-	m := normalizeReasoningModel(model)
+	if capability {
+		return true
+	}
+	return supportsReasoningEffortByName(model)
+}
+
+// supportsReasoningEffortByName is intentionally independent of runtime
+// evidence. Request serializers use it to choose a stable direct-OpenAI wire
+// format even after learning a model's supported levels.
+func supportsReasoningEffortByName(model string) bool {
+	m := reasoningModelFamily(model)
 	switch {
 	case strings.HasPrefix(m, "gpt-5"):
 		return true
@@ -341,4 +409,8 @@ func SupportsReasoningEffort(model string) bool {
 		return true
 	}
 	return false
+}
+
+func SupportsReasoningEffort(model string) bool {
+	return SupportsReasoningEffortWithCapability(model, false)
 }

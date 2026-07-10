@@ -314,6 +314,41 @@ func TestFindTomlPaths(t *testing.T) {
 	}
 }
 
+func TestResolveProviderConfFallsBackToGlobalProvider(t *testing.T) {
+	dataDir := t.TempDir()
+	globalPath, _ := FindTomlPaths(dataDir, "")
+	if err := SaveToml(globalPath, TomlConfig{Providers: []ProviderConf{{
+		Name: "global-only", Type: ProviderResponses, BaseURL: "https://global.test/v1", APIKey: "global-key",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := TomlConfig{Providers: []ProviderConf{{Name: "project-only", Type: ProviderOpenAI, BaseURL: "https://project.test/v1"}}}
+	got, ok := ResolveProviderConf(dataDir, resolved, "global-only")
+	if !ok {
+		t.Fatal("global provider not found through fallback")
+	}
+	if got.Type != ProviderResponses || got.BaseURL != "https://global.test/v1" || got.APIKey != "global-key" {
+		t.Fatalf("provider fallback = %+v", got)
+	}
+}
+
+func TestResolveProviderConfPrefersResolvedProjectProvider(t *testing.T) {
+	dataDir := t.TempDir()
+	globalPath, _ := FindTomlPaths(dataDir, "")
+	if err := SaveToml(globalPath, TomlConfig{Providers: []ProviderConf{{
+		Name: "same", Type: ProviderOpenAI, BaseURL: "https://global.test/v1", APIKey: "global-key",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := TomlConfig{Providers: []ProviderConf{{
+		Name: "same", Type: ProviderResponses, BaseURL: "https://project.test/v1", APIKey: "project-key",
+	}}}
+	got, ok := ResolveProviderConf(dataDir, resolved, "same")
+	if !ok || got.BaseURL != "https://project.test/v1" || got.APIKey != "project-key" {
+		t.Fatalf("resolved provider precedence = %+v, ok=%v", got, ok)
+	}
+}
+
 func TestFindTomlPaths_SameDir(t *testing.T) {
 	// When the project config would resolve to the same file as the
 	// global one (data dir = <cwd>/.supercli), project must be empty.

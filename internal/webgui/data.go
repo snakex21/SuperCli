@@ -2,6 +2,11 @@ package webgui
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"supercli/internal/account/credits"
@@ -9,6 +14,27 @@ import (
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
 )
+
+var errSessionOutsideWorkspace = errors.New("session not found in active project")
+
+func sameSessionWorkspace(a, b string) bool {
+	a = filepath.Clean(a)
+	b = filepath.Clean(b)
+	if a == "." || b == "." {
+		return false
+	}
+	// Resolve aliases/symlinks when both directories still exist. This is the
+	// strongest portable identity check and also handles separator variants.
+	if ai, errA := os.Stat(a); errA == nil {
+		if bi, errB := os.Stat(b); errB == nil && os.SameFile(ai, bi) {
+			return true
+		}
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
 
 // sessionMeta is the browser-facing summary of one stored session.
 type sessionMeta struct {
@@ -58,7 +84,9 @@ type statsView struct {
 	DailyToken   int64  `json:"daily_tokens"`
 }
 
-// listSessions returns up to limit recent sessions, newest first.
+// listSessions returns up to limit recent sessions for the active workspace,
+// newest first. The shared database keeps every project's history; filtering
+// changes visibility only and never deletes or migrates sessions.
 // A nil store (open failure) yields an empty slice, never an error,
 // so the panel degrades gracefully.
 func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, error) {
@@ -67,7 +95,7 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 		return []sessionMeta{}, nil
 	}
 	defer store.Close()
-	recent, err := store.ListRecent(ctx, limit)
+	recent, err := store.ListRecentByCwd(ctx, e.Home(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +125,13 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 		return []transcriptMsg{}, nil
 	}
 	defer store.Close()
+	meta, err := store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return nil, errSessionOutsideWorkspace
+	}
 	rows, err := store.ReadMessages(ctx, id)
 	if err != nil {
 		return nil, err

@@ -596,6 +596,35 @@ func ResolveConfig(dataDir, cwd, configPath string) (TomlConfig, error) {
 	return global, nil
 }
 
+// ResolveProviderConf finds a configured provider by name in the resolved
+// project view, then falls back to the global provider store. Project provider
+// lists intentionally replace the global list, but UI state may still name a
+// global provider selected from the shared provider manager. This fallback
+// keeps the remembered model/provider pair attached to its base URL and key on
+// restart without weakening project precedence for duplicate names.
+func ResolveProviderConf(dataDir string, resolved TomlConfig, name string) (ProviderConf, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ProviderConf{}, false
+	}
+	for _, p := range resolved.Providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	globalPath, _ := FindTomlPaths(dataDir, "")
+	global, err := LoadToml(globalPath)
+	if err != nil {
+		return ProviderConf{}, false
+	}
+	for _, p := range global.Providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return ProviderConf{}, false
+}
+
 // ApplyTomlToConfig applies resolved TOML values onto a
 // Config that already has env+flag values applied. The TOML
 // values act as defaults — env and flags always win. Fields

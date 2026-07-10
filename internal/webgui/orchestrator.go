@@ -33,9 +33,13 @@ func (s *Server) handleOrchestrator(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// Missing file loads as a zero config; a real error means the
+		// file is unreadable — do not save a zero struct over it (that
+		// would wipe providers and default_model).
 		tc, err := config.LoadToml(path)
 		if err != nil {
-			tc = config.TomlConfig{}
+			http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 		v := req.Enabled
 		tc.Orchestrator = &v

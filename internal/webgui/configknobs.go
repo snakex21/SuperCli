@@ -39,6 +39,7 @@ type knobView struct {
 	Value       string `json:"value"`  // display value
 	Source      string `json:"source"` // "default" | "manual"
 	Raw         string `json:"raw"`    // editable raw value (int/text kinds)
+	State       string `json:"state,omitempty"` // tri/nav kinds: "default" | "on" | "off"
 	NextSession bool   `json:"next_session"`
 }
 
@@ -168,6 +169,47 @@ func intKnob(v int, def string) (value, source, raw string) {
 		return "default (" + def + ")", "default", ""
 	}
 	return strconv.Itoa(v), "manual", strconv.Itoa(v)
+}
+
+// knobState returns the raw switch position for tri/nav kinds so the
+// front-end's segmented control does not have to reverse-map display
+// labels like "parallel"/"sequential" back onto on/off.
+func knobState(c *config.TomlConfig, key string) string {
+	tri := func(p *bool) string {
+		if p == nil {
+			return "default"
+		}
+		if *p {
+			return "on"
+		}
+		return "off"
+	}
+	switch key {
+	case "orchestrator":
+		return tri(c.Orchestrator)
+	case "thinking":
+		return tri(c.Thinking)
+	case "navigator":
+		if strings.TrimSpace(c.Navigator) == "" {
+			return "default"
+		}
+		return c.Navigator
+	case "stable_toolset":
+		return tri(c.StableToolset)
+	case "cache_prompt":
+		return tri(c.CachePrompt)
+	case "darwin_parallel":
+		return tri(c.DarwinParallel)
+	case "task_parallel":
+		return tri(c.TaskParallel)
+	case "noop_gate":
+		return tri(c.NoopGate)
+	case "preflight_repo":
+		return tri(c.PreflightRepo)
+	case "draft_verify":
+		return tri(c.DraftVerify)
+	}
+	return ""
 }
 
 func dashKnob(s string) string {
@@ -311,9 +353,14 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		// A load error means the file exists but is unreadable/corrupt
+		// (a missing file loads as a clean zero config). Saving a zero
+		// struct over it would silently wipe providers, API keys and
+		// default_model — refuse instead.
 		tc, err := config.LoadToml(global)
 		if err != nil {
-			tc = config.TomlConfig{}
+			http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 		if req.ResetAll {
 			knobResetAll(&tc)
@@ -336,7 +383,8 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 		value, source, raw := knobValue(&tc, d.key)
 		out = append(out, knobView{
 			Key: d.key, Label: d.key, Desc: d.desc, Kind: d.kind,
-			Value: value, Source: source, Raw: raw, NextSession: d.nextSession,
+			Value: value, Source: source, Raw: raw,
+			State: knobState(&tc, d.key), NextSession: d.nextSession,
 		})
 	}
 	writeJSON(w, map[string]any{"knobs": out})

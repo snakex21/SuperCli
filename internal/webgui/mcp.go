@@ -57,9 +57,12 @@ func (s *Server) handleMcpAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := filepath.Join(s.eng.dataDir, "config.toml")
+	// Same guard as the other config writers: never save a zero struct
+	// over an existing-but-unreadable config.toml.
 	tc, err := config.LoadToml(path)
 	if err != nil {
-		tc = config.TomlConfig{}
+		http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 	if tc.Mcp.Servers == nil {
 		tc.Mcp.Servers = make(map[string]config.McpServerConf)

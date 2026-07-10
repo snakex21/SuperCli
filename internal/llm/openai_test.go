@@ -533,6 +533,80 @@ func TestOpenAI_StreamGenericThinkingFieldsAreShown(t *testing.T) {
 	}
 }
 
+func TestOpenAI_StreamStructuredReasoningMetadataNotShown(t *testing.T) {
+	// Newer llama.cpp builds stream reasoning as a structured object
+	// whose metadata fields (type/format) must never leak into the
+	// visible text. Regression: the GUI showed "Let me
+	// checkreasoning.textunknown …".
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","reasoning":{"type":"reasoning.text","format":"unknown","text":"Let me check"}}}]}`,
+		`{"choices":[{"index":0,"delta":{"reasoning":{"type":"reasoning.text","format":"unknown","text":" the file"}}}]}`,
+		`{"choices":[{"index":0,"delta":{"content":"Answer"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	defer srv.Close()
+
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen-local"})
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	var body strings.Builder
+	for _, d := range ds {
+		body.WriteString(d.Content)
+	}
+	if body.String() != "<thinking>Let me check the file</thinking>\nAnswer" {
+		t.Fatalf("body = %q, want clean reasoning without metadata leakage", body.String())
+	}
+}
+
+func TestExtractReasoningText_MirroredKeysNotDoubled(t *testing.T) {
+	// One reasoning delta mirrored under two keys must yield the text
+	// once, not word-doubled.
+	delta := map[string]json.RawMessage{
+		"reasoning":      json.RawMessage(`{"type":"reasoning.text","text":"what"}`),
+		"reasoning_text": json.RawMessage(`"what"`),
+	}
+	if got := extractReasoningText(delta); got != "what" {
+		t.Fatalf("extractReasoningText = %q, want %q", got, "what")
+	}
+}
+
+func TestOpenAI_StreamToolCallsNotDuplicatedOnDoubleFinish(t *testing.T) {
+	// Some servers send finish_reason twice (the tool_calls finish plus
+	// a final usage frame). The accumulated tool calls must be emitted
+	// once — a re-flush made the agent loop execute every call twice.
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"list_dir","arguments":"{}"}}]}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	defer srv.Close()
+
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen-local"})
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "ls"}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	calls := 0
+	for _, d := range ds {
+		if d.ToolCall != nil {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("tool call deltas = %d, want exactly 1", calls)
+	}
+}
+
 func TestExtractReasoningTextIgnoresUsageLikeFields(t *testing.T) {
 	delta := map[string]json.RawMessage{
 		"reasoning_tokens": json.RawMessage(`123`),

@@ -77,6 +77,28 @@ func TestBuildOpenAIRequest_ReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIRequest_CapabilityUsesUnifiedReasoning(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("high"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := buildOpenAIRequestWithReasoning("custom-thinker", []Message{{Role: RoleUser, Content: "hi"}}, nil, false, false, openAIReasoningUnified)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	reasoning, ok := req["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "high" {
+		t.Fatalf("reasoning = %#v, want effort high", req["reasoning"])
+	}
+	if _, ok := req["reasoning_effort"]; ok {
+		t.Fatalf("unified request also contains reasoning_effort: %s", body)
+	}
+}
+
 func TestBuildCodexRequest_ReasoningEffort(t *testing.T) {
 	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
 	msgs := []Message{{Role: RoleUser, Content: "hi"}}
@@ -210,11 +232,133 @@ func TestLearnReasoningEffort_MinimalFallsForwardToLow(t *testing.T) {
 	if !ok || effort != "low" {
 		t.Fatalf("learn retry effort=(%q,%v), want (low,true)", effort, ok)
 	}
-	if got := ReasoningEffortForModel("gpt-5.5"); got != "low" {
+	if got := ReasoningEffortForModel("openai/gpt-5.5"); got != "low" {
 		t.Fatalf("ReasoningEffortForModel = %q, want low", got)
 	}
-	if supported, ok := SupportedReasoningEfforts("gpt-5.5"); !ok || strings.Join(supported, "|") != "none|low|medium|high|xhigh" {
+	if supported, ok := SupportedReasoningEfforts("openai/gpt-5.5"); !ok || strings.Join(supported, "|") != "none|low|medium|high|xhigh" {
 		t.Fatalf("supported=(%v,%v), want learned values", supported, ok)
+	}
+}
+
+func TestLearnReasoningEffort_UnsupportedParameterIsOmitted(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("high"); err != nil {
+		t.Fatal(err)
+	}
+	effort, retry := LearnReasoningEffortFromError("custom-thinker", 400, []byte(`{"error":{"message":"reasoning parameter is not supported"}}`))
+	if !retry || effort != "" {
+		t.Fatalf("LearnReasoningEffortFromError = (%q, %v), want empty retry", effort, retry)
+	}
+	if SupportsReasoningEffortWithCapability("custom-thinker", true) {
+		t.Fatal("live rejection must override the capability fallback")
+	}
+	if got := ReasoningEffortForModelWithCapability("custom-thinker", true); got != "" {
+		t.Fatalf("effective effort = %q, want omitted", got)
+	}
+}
+
+func TestLearnReasoningEffort_InvalidQuotedValueIsNotLearnedAsSupported(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("high"); err != nil {
+		t.Fatal(err)
+	}
+	effort, retry := LearnReasoningEffortFromError("custom-thinker", 400, []byte(`{"error":{"message":"Invalid value 'high' for reasoning_effort"}}`))
+	if !retry || effort != "" {
+		t.Fatalf("LearnReasoningEffortFromError = (%q, %v), want empty retry", effort, retry)
+	}
+	if supported, ok := SupportedReasoningEfforts("custom-thinker"); !ok || len(supported) != 0 {
+		t.Fatalf("supported = (%v, %v), want learned unsupported sentinel", supported, ok)
+	}
+}
+
+func TestReasoningSupportEvidenceIsScoped(t *testing.T) {
+	t.Cleanup(clearReasoningEffortSupport)
+	a := ReasoningSupportKey("https://a.example/v1", "vendor/model")
+	b := ReasoningSupportKey("https://b.example/v1", "vendor/model")
+	setReasoningEffortUnsupported(a)
+	if SupportsReasoningEffortWithCapability(a, true) {
+		t.Fatal("rejected endpoint still supports reasoning")
+	}
+	if !SupportsReasoningEffortWithCapability(b, true) {
+		t.Fatal("evidence from endpoint A leaked into endpoint B")
+	}
+}
+
+func TestOpenAIReasoningFormat_UsesGatewayAndCapabilities(t *testing.T) {
+	t.Cleanup(clearReasoningEffortSupport)
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "vendor/custom-thinker", Reasoning: true, Source: SourceProvider})
+	p, err := NewOpenAI(OpenAIConfig{
+		BaseURL:      "https://openrouter.ai/api/v1",
+		Model:        "vendor/custom-thinker",
+		Capabilities: caps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.reasoningFormat(); got != openAIReasoningUnified {
+		t.Fatalf("reasoningFormat = %v, want unified", got)
+	}
+	SetReasoningEffortSupport(p.reasoningKey(), []string{"low", "medium", "high"})
+	if got := p.reasoningFormat(); got != openAIReasoningUnified {
+		t.Fatalf("reasoningFormat after learning = %v, want stable unified", got)
+	}
+}
+
+func TestUnifiedReasoningGatewayDoesNotRequireModelMetadata(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("medium"); err != nil {
+		t.Fatal(err)
+	}
+	for _, baseURL := range []string{
+		"https://openrouter.ai/api/v1",
+		"https://api.kilo.ai/api/openrouter",
+		"https://opencode.ai/zen/v1",
+	} {
+		p, err := NewOpenAI(OpenAIConfig{BaseURL: baseURL, Model: "model-without-capability-metadata"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.reasoningFormat(); got != openAIReasoningUnified {
+			t.Errorf("%s: reasoningFormat = %v, want unified", baseURL, got)
+		}
+	}
+}
+
+func TestUnknownOpenAICompatibleModelTriesUnifiedReasoning(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("low"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := NewOpenAI(OpenAIConfig{
+		BaseURL: "https://custom.example/v1",
+		Model:   "plain-model-without-metadata",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.reasoningFormat(); got != openAIReasoningUnified {
+		t.Fatalf("reasoningFormat = %v, want best-effort unified", got)
+	}
+}
+
+func TestOpencodeReasoningCapabilityUsesNamespacedRegistryID(t *testing.T) {
+	t.Cleanup(clearReasoningEffortSupport)
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "opencode/vendor/custom-thinker", Reasoning: true, Source: SourceProvider})
+	p, err := NewOpencode(OpencodeConfig{
+		BaseURL:      "http://localhost:4096/v1",
+		Model:        "vendor/custom-thinker",
+		Capabilities: caps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.inner.hasReasoningCapability() {
+		t.Fatal("inner provider lost namespaced Opencode reasoning capability")
+	}
+	if got := p.inner.reasoningFormat(); got != openAIReasoningUnified {
+		t.Fatalf("reasoningFormat = %v, want unified", got)
 	}
 }
 

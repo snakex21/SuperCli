@@ -260,7 +260,9 @@ func CleanAPIKey(s string) string {
 				s = strings.TrimSpace(s[1 : len(s)-1])
 			}
 		}
-		if strings.HasPrefix(strings.ToLower(s), "bearer ") {
+		if strings.EqualFold(s, "bearer") {
+			s = ""
+		} else if strings.HasPrefix(strings.ToLower(s), "bearer ") {
 			s = strings.TrimSpace(s[len("bearer "):])
 		}
 		if s == before {
