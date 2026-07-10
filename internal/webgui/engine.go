@@ -43,6 +43,10 @@ type Engine struct {
 	home    string
 	caps    *llm.CapabilityRegistry
 	prov    llm.Provider
+	// learned holds per-model context limits persisted from past
+	// context-length errors (<dataDir>/context_limits.json), shared
+	// with the CLI so both front-ends size auto-compaction the same.
+	learned *llm.LearnedLimits
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -68,6 +72,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		home:    home,
 		caps:    caps,
 		prov:    prov,
+		learned: llm.LoadLearnedLimits(dataDir),
 	}, nil
 }
 
@@ -178,6 +183,23 @@ func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.Sessio
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	// Context defense (mirrors the TUI wiring in app/main.go): without
+	// WindowFor the loop assumes its 16384-token default for every
+	// model, and without Summarizer auto-compaction degrades to the
+	// blind hide fallback — the model silently loses the whole prior
+	// conversation ("[earlier context cleared]" with no summary).
+	windowFor := func(model string) int {
+		if tc.ContextWindow > 0 {
+			return tc.ContextWindow
+		}
+		if info, ok := caps.Get(model); ok && info.ContextLength > 0 {
+			return info.ContextLength
+		}
+		if v := e.learned.Get(model); v > 0 {
+			return v
+		}
+		return 0 // loop falls back to its 16384 default
+	}
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        prov,
 		Registry:        reg,
@@ -189,6 +211,13 @@ func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.Sessio
 		BaseDir:         home,
 		InitialMessages: initial,
 		Writer:          writer,
+		WindowFor:       windowFor,
+		Summarizer:      agent.NewAutoSummarizer(reg.ActiveNames),
+		LearnLimit:      e.learned.Learn,
+		// Zero-LLM tool-result prune (first line of context defense,
+		// before the summary fallback). Config prune_protect_tokens:
+		// 0 = default 8192-token protected tail, negative = off.
+		PruneProtectTokens: tc.PruneProtectTokens,
 	})
 	if err != nil {
 		return nil, err

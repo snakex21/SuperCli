@@ -75,7 +75,13 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	removed := upto - keep
 	tail := append([]llm.Message(nil), l.Messages[upto:]...)
 	l.Messages = l.Messages[:keep]
-	sum := llm.Message{Role: llm.RoleSystem, Content: summary}
+	// The summary rides as a USER message, not system: several chat
+	// templates (e.g. Qwen3.5's Jinja) hard-reject any system message
+	// that is not at the very beginning of the conversation, so a
+	// mid-history system summary 400s the whole session. The resume
+	// framing text (wrapCompactSummary) already reads naturally as a
+	// user hand-off.
+	sum := llm.Message{Role: llm.RoleUser, Content: summary}
 	l.Messages = append(l.Messages, sum)
 	l.Messages = append(l.Messages, tail...)
 	l.persist(context.Background(), sum)
