@@ -1,4 +1,4 @@
-package app
+package agent
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestClampSummary_ShortUntouched(t *testing.T) {
-	if got := clampSummary("Goal: x\nDone: y"); got != "Goal: x\nDone: y" {
+	if got := ClampSummary("Goal: x\nDone: y"); got != "Goal: x\nDone: y" {
 		t.Errorf("short summary modified: %q", got)
 	}
 }
@@ -16,7 +16,7 @@ func TestClampSummary_ShortUntouched(t *testing.T) {
 func TestClampSummary_CutsAtLineBoundary(t *testing.T) {
 	line := strings.Repeat("a", 99) + "\n"
 	long := strings.Repeat(line, 60) // 6000 chars
-	got := clampSummary(long)
+	got := ClampSummary(long)
 	if len(got) > compactSummaryMaxChars+len("\n[summary truncated]") {
 		t.Errorf("clamped summary too long: %d chars", len(got))
 	}
@@ -44,7 +44,7 @@ func TestCompactFacts_PathsAndTools(t *testing.T) {
 			{ID: "5", Name: "read_lines", Arguments: `not json`},         // ignored
 		}},
 	}
-	got := compactFacts(msgs, []string{"edit_line", "search_code"})
+	got := CompactFacts(msgs, []string{"edit_line", "search_code"})
 	for _, want := range []string{
 		"files_read: internal/agent/loop.go",
 		"files_modified: internal/agent/prune.go, main.go",
@@ -57,7 +57,7 @@ func TestCompactFacts_PathsAndTools(t *testing.T) {
 }
 
 func TestCompactFacts_EmptyIsEmpty(t *testing.T) {
-	if got := compactFacts([]llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil); got != "" {
+	if got := CompactFacts([]llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil); got != "" {
 		t.Errorf("expected empty facts, got %q", got)
 	}
 }

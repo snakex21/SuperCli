@@ -12,7 +12,7 @@ import (
 // (and remain persisted to the F13 session store +
 // searchable via F13 search_history), but
 // VisibleMessages() replaces each consecutive run of hidden
-// entries with a single placeholder system message:
+// entries with a single placeholder user message:
 //
 //	"[earlier context cleared — N message(s) compacted]"
 //
@@ -65,9 +65,10 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 
 // VisibleMessages returns l.Messages with consecutive runs
 // of hidden entries collapsed into a single placeholder.
-// The placeholder is a system message; the model sees it
-// as part of the system context but cannot tell where in
-// the original conversation the cleared range was.
+// The placeholder is a user-role message (strict chat
+// templates reject mid-history system messages); the model
+// cannot tell where in the original conversation the
+// cleared range was.
 func (l *Loop) VisibleMessages() []llm.Message {
 	out := make([]llm.Message, 0, len(l.Messages))
 	runStart := -1
@@ -77,7 +78,9 @@ func (l *Loop) VisibleMessages() []llm.Message {
 		}
 		n := end - runStart
 		out = append(out, llm.Message{
-			Role: llm.RoleSystem,
+			// User role, not system: mid-conversation system messages
+			// are rejected outright by some chat templates (Qwen3.5).
+			Role: llm.RoleUser,
 			Content: fmt.Sprintf(
 				"[earlier context cleared — %d message(s) compacted]",
 				n,
