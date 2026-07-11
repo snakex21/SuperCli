@@ -145,6 +145,28 @@ func TestStore_SetTitle(t *testing.T) {
 	}
 }
 
+func TestStore_SetTitleIfCurrentPreservesManualRename(t *testing.T) {
+	s := openTestStore(t)
+	sess, err := s.Create("/tmp", "model", "generated locally")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTitle(sess.ID, "My conversation"); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.SetTitleIfCurrent(sess.ID, "generated locally", "LLM summary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated {
+		t.Fatal("asynchronous generated title overwrote a manual rename")
+	}
+	got, err := s.Get(sess.ID)
+	if err != nil || got.Title != "My conversation" {
+		t.Fatalf("title = %q, err=%v", got.Title, err)
+	}
+}
+
 func TestStore_ListRecentByCwd_FiltersByProject(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -380,10 +402,10 @@ func seedSearchable(t *testing.T, s *Store) (sessA, sessB Session) {
 	// tests; we use AppendMessage's own clock. Skip.
 	_ = base
 	items := []struct {
-		sessID  string
-		role    string
-		text    string
-		toolID  string
+		sessID string
+		role   string
+		text   string
+		toolID string
 	}{
 		{sessA.ID, "user", "konspekt spotkania o refaktoryzacji", ""},
 		{sessA.ID, "assistant", "Jasne, zacznijmy od celów projektu refaktoryzacji", ""},

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/system/childproc"
 	"supercli/internal/tools/sandbox"
 )
 
@@ -114,6 +115,7 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	runCtx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, binary, req.Command[1:]...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = wd
 	cmd.Env = buildEnv(req.EnvExtra)
 

@@ -9,6 +9,13 @@ import (
 	"strings"
 )
 
+var skippedDirs = map[string]bool{
+	".git": true, "node_modules": true, "vendor": true,
+	"target": true, "dist": true, "build": true,
+	".next": true, ".cache": true, "__pycache__": true,
+	".venv": true, "venv": true, ".supercli": true,
+}
+
 // openFile is os.Open under a tools-package alias.
 func openFile(path string) (io.ReadCloser, error) { return os.Open(path) }
 
@@ -19,12 +26,6 @@ func openFile(path string) (io.ReadCloser, error) { return os.Open(path) }
 // search_code's rg fallback and the manifest noop-gate both use
 // it, so the ignore set cannot drift between them.
 func WalkFiles(root string, fn func(path string) error) error {
-	skip := map[string]bool{
-		".git": true, "node_modules": true, "vendor": true,
-		"target": true, "dist": true, "build": true,
-		".next": true, ".cache": true, "__pycache__": true,
-		".venv": true, "venv": true, ".supercli": true,
-	}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Permission errors on individual files are
@@ -35,7 +36,7 @@ func WalkFiles(root string, fn func(path string) error) error {
 			return err
 		}
 		if d.IsDir() {
-			if skip[d.Name()] {
+			if skippedDirs[d.Name()] {
 				return fs.SkipDir
 			}
 			return nil

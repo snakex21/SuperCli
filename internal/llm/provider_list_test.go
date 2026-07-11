@@ -200,6 +200,57 @@ func TestListProviderModels_CleansPastedAPIKey(t *testing.T) {
 	}
 }
 
+func TestListProviderModels_CacheIsScopedByCredential(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.Header.Get("Authorization") {
+		case "Bearer key-a":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "model-a"}}})
+		default:
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+	if _, err := ListProviderModels(context.Background(), srv.URL, "key-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListProviderModels(context.Background(), srv.URL, "key-b"); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("new credential reused an old successful cache entry: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
+func TestInvalidateProviderModelCacheForcesCredentialVerification(t *testing.T) {
+	authorized := true
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if !authorized {
+			http.Error(w, "revoked", http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "model"}}})
+	}))
+	defer srv.Close()
+	if _, err := ListProviderModels(context.Background(), srv.URL, "key"); err != nil {
+		t.Fatal(err)
+	}
+	authorized = false
+	if _, err := ListProviderModels(context.Background(), srv.URL, "key"); err != nil {
+		t.Fatalf("expected the ordinary catalog read to use its fresh cache: %v", err)
+	}
+	InvalidateProviderModelCache(srv.URL)
+	if _, err := ListProviderModels(context.Background(), srv.URL, "key"); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("invalidated cache still hid revoked credentials: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
 func TestCleanAPIKey_StripsCommonPasteWrappers(t *testing.T) {
 	cases := map[string]string{
 		`"sk-test"`:          "sk-test",

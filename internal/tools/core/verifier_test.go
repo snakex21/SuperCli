@@ -104,6 +104,40 @@ func TestVerify_FileWrite_EmptyFile_Fails(t *testing.T) {
 	}
 }
 
+func TestVerify_WriteFile_ExplicitEmptyContent_Passes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := Check{
+		Family: "file_write",
+		Tool:   "write_file",
+		Args:   mkArgs(t, map[string]any{"path": path, "content": ""}),
+		Result: Result{Text: "Overwrote empty.txt (0 bytes)"},
+	}
+	if v := (DefaultVerifier{}).Verify(c); !v.OK {
+		t.Fatalf("explicit empty write should pass: %s", v.Reason)
+	}
+}
+
+func TestVerify_ReadLines_ExistingEmptyFile_Passes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "empty.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := Check{
+		Family:  "read",
+		Tool:    "read_lines",
+		Args:    mkArgs(t, map[string]any{"file": "empty.txt", "from": 1, "to": 20}),
+		Result:  Result{Text: ""},
+		BaseDir: dir,
+	}
+	if v := (DefaultVerifier{}).Verify(c); !v.OK {
+		t.Fatalf("empty file read should pass: %s", v.Reason)
+	}
+}
+
 func TestVerify_FileWrite_ExpectedContent_Present(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.txt")

@@ -341,9 +341,11 @@ type ModelTierConf struct {
 
 // ModelPriceConf allows manual price overrides.
 type ModelPriceConf struct {
-	Model      string  `toml:"model"`
-	InputCost  float64 `toml:"input_cost"`  // per 1M tokens
-	OutputCost float64 `toml:"output_cost"` // per 1M tokens
+	Provider        string  `toml:"provider,omitempty"` // empty = legacy/global
+	Model           string  `toml:"model"`
+	InputCost       float64 `toml:"input_cost"`        // per 1M tokens
+	CachedInputCost float64 `toml:"cached_input_cost"` // per 1M tokens; 0 = unknown
+	OutputCost      float64 `toml:"output_cost"`       // per 1M tokens
 }
 
 // LoadToml reads a config.toml at the given path. Returns

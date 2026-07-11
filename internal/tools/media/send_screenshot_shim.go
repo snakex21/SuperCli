@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"supercli/internal/system/childproc"
 )
 
 // captureClipboardWindows uses PowerShell +
@@ -37,6 +39,7 @@ $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
 [System.Convert]::ToBase64String($ms.ToArray())
 `
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	childproc.HideWindow(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -79,6 +82,7 @@ on error errMsg
 end try
 `
 	cmd := exec.Command("osascript", "-e", script)
+	childproc.HideWindow(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -104,6 +108,7 @@ end try
 func captureClipboardLinux() ([]byte, string, error) {
 	if _, err := exec.LookPath("xclip"); err == nil {
 		cmd := exec.Command("xclip", "-selection", "clipboard", "-t", "image/png", "-o")
+		childproc.HideWindow(cmd)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -118,6 +123,7 @@ func captureClipboardLinux() ([]byte, string, error) {
 	}
 	if _, err := exec.LookPath("wl-paste"); err == nil {
 		cmd := exec.Command("wl-paste", "--type", "image/png")
+		childproc.HideWindow(cmd)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

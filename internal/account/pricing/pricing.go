@@ -33,12 +33,13 @@ const CacheTTL = 24 * time.Hour
 
 // PriceEntry is one model's pricing fetched from an external source.
 type PriceEntry struct {
-	ModelID       string    `json:"model_id"`
-	InputPer1M    float64   `json:"input_per_1m"`
-	OutputPer1M   float64   `json:"output_per_1m"`
-	ContextLength int       `json:"context_length,omitempty"`
-	Source        string    `json:"source"`
-	FetchedAt     time.Time `json:"fetched_at"`
+	ModelID          string    `json:"model_id"`
+	InputPer1M       float64   `json:"input_per_1m"`
+	CachedInputPer1M float64   `json:"cached_input_per_1m,omitempty"`
+	OutputPer1M      float64   `json:"output_per_1m"`
+	ContextLength    int       `json:"context_length,omitempty"`
+	Source           string    `json:"source"`
+	FetchedAt        time.Time `json:"fetched_at"`
 }
 
 // Cache is the on-disk format for fetched prices.
@@ -169,6 +170,9 @@ func mergePriceEntryMetadata(existing, fresh PriceEntry) PriceEntry {
 	if existing.InputPer1M == 0 && fresh.InputPer1M > 0 {
 		existing.InputPer1M = fresh.InputPer1M
 	}
+	if existing.CachedInputPer1M == 0 && fresh.CachedInputPer1M > 0 {
+		existing.CachedInputPer1M = fresh.CachedInputPer1M
+	}
 	if existing.OutputPer1M == 0 && fresh.OutputPer1M > 0 {
 		existing.OutputPer1M = fresh.OutputPer1M
 	}
@@ -240,8 +244,9 @@ func pushRatesToCredits(entries []PriceEntry) {
 		key := strings.ToLower(e.ModelID)
 		// Convert per-1M → per-1k.
 		rate := credits.Rate{
-			InputPer1k:  e.InputPer1M / 1000.0,
-			OutputPer1k: e.OutputPer1M / 1000.0,
+			InputPer1k:       e.InputPer1M / 1000.0,
+			CachedInputPer1k: e.CachedInputPer1M / 1000.0,
+			OutputPer1k:      e.OutputPer1M / 1000.0,
 		}
 		rates[key] = rate
 		if e.Source == "openrouter" {
@@ -334,7 +339,7 @@ func (s *OpenRouterSource) Fetch(client *http.Client) ([]PriceEntry, error) {
 
 // parseOpenRouter decodes OpenRouter's /v1/models response.
 // Format: {"data":[{"id":"openai/gpt-4o","context_length":128000,
-// "pricing":{"prompt":"0.0025","completion":"0.01"}},...]}
+// "pricing":{"prompt":"0.0000025","completion":"0.00001"}},...]}
 // Prices are per token (not per 1M), so we multiply by 1M; context-only
 // rows are kept as metadata but do not create fetched cost rates.
 func parseOpenRouter(data []byte) ([]PriceEntry, error) {
@@ -346,8 +351,9 @@ func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 				ContextLength json.RawMessage `json:"context_length"`
 			} `json:"top_provider"`
 			Pricing struct {
-				Prompt     string `json:"prompt"`
-				Completion string `json:"completion"`
+				Prompt         string `json:"prompt"`
+				Completion     string `json:"completion"`
+				InputCacheRead string `json:"input_cache_read"`
 			} `json:"pricing"`
 		} `json:"data"`
 	}
@@ -362,11 +368,15 @@ func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 		}
 		prompt, _ := parseFlexFloat(m.Pricing.Prompt)
 		completion, _ := parseFlexFloat(m.Pricing.Completion)
+		cachedInput, _ := parseFlexFloat(m.Pricing.InputCacheRead)
 		if prompt < 0 {
 			prompt = 0
 		}
 		if completion < 0 {
 			completion = 0
+		}
+		if cachedInput < 0 {
+			cachedInput = 0
 		}
 		contextLength := parseFlexInt(m.ContextLength)
 		if contextLength == 0 {
@@ -376,12 +386,13 @@ func parseOpenRouter(data []byte) ([]PriceEntry, error) {
 			continue // no usable price or context metadata
 		}
 		entries = append(entries, PriceEntry{
-			ModelID:       m.ID,
-			InputPer1M:    prompt * 1_000_000, // per-token → per-1M
-			OutputPer1M:   completion * 1_000_000,
-			ContextLength: contextLength,
-			Source:        "openrouter",
-			FetchedAt:     now,
+			ModelID:          m.ID,
+			InputPer1M:       prompt * 1_000_000, // per-token → per-1M
+			CachedInputPer1M: cachedInput * 1_000_000,
+			OutputPer1M:      completion * 1_000_000,
+			ContextLength:    contextLength,
+			Source:           "openrouter",
+			FetchedAt:        now,
 		})
 	}
 	return entries, nil

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // UserToolDef is the parsed shape of a single user-tool TOML
@@ -268,6 +270,7 @@ func interpolateArgs(templates []string, params map[string]any) ([]string, []str
 func runShell(ctx context.Context, command string, templates []string, params map[string]any) (Result, error) {
 	args, notes := interpolateArgs(templates, params)
 	cmd := exec.CommandContext(ctx, command, args...)
+	childproc.HideWindow(cmd)
 	out, err := cmd.CombinedOutput()
 	res := Result{Text: string(out)}
 	if len(notes) > 0 {
@@ -289,6 +292,7 @@ func runShell(ctx context.Context, command string, templates []string, params ma
 func runScript(ctx context.Context, interpreter, body string, templates []string, params map[string]any) (Result, error) {
 	args, notes := interpolateArgs(templates, params)
 	cmd := exec.CommandContext(ctx, interpreter, args...)
+	childproc.HideWindow(cmd)
 	cmd.Stdin = strings.NewReader(body)
 	out, err := cmd.CombinedOutput()
 	res := Result{Text: string(out)}

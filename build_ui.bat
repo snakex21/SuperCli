@@ -24,6 +24,25 @@ if not exist "cmd\supercli-web\main.go" (
 )
 
 echo [build_ui.bat] Kompiluje supercli-web.exe bez okna konsoli...
+pushd cmd\supercli-web
+go run icon_generate.go
+if errorlevel 1 (
+    popd
+    echo [build_ui.bat] BLAD: nie udalo sie wygenerowac ikony.
+    pause
+    exit /b 1
+)
+where windres >nul 2>nul
+if not errorlevel 1 (
+    windres -i supercli.rc -o rsrc_windows_amd64.syso -O coff
+    if errorlevel 1 (
+        popd
+        echo [build_ui.bat] BLAD: nie udalo sie osadzic ikony Windows.
+        pause
+        exit /b 1
+    )
+)
+popd
 go build -ldflags="-H=windowsgui" -o supercli-web.exe ./cmd/supercli-web
 if errorlevel 1 (
     echo [build_ui.bat] BLAD: build UI nie powiodl sie.

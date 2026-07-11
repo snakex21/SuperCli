@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/system/childproc"
 	"supercli/internal/tools/search"
 )
 
@@ -162,6 +163,7 @@ func Build(root string, o Options) string {
 func realRunGit(root string, args ...string) (string, error) {
 	full := append([]string{"-C", root}, args...)
 	cmd := exec.Command("git", full...)
+	childproc.HideWindow(cmd)
 	done := make(chan struct{})
 	var out []byte
 	var err error

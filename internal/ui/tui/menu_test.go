@@ -507,6 +507,44 @@ func TestProviderFormSaveScansProviderInBackground(t *testing.T) {
 	}
 }
 
+func TestProviderEditPrefillsMaskedKeyAndPreservesIt(t *testing.T) {
+	mgr := providers.NewManager(t.TempDir())
+	if err := mgr.Add("router", "openai", "https://router.example/v1", "secret-key", "model"); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: llm.NewCapabilityRegistry()})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuProviders}
+
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	mm := out.(Model)
+	if mm.menu.kind != menuProviderForm || len(mm.menu.form) < 4 || mm.menu.form[3] != "secret-key" {
+		t.Fatalf("edit form did not retain stored key: %+v", mm.menu)
+	}
+	masked := mm.renderProviderForm()
+	if strings.Contains(masked, "secret-key") || !strings.Contains(masked, "**********") {
+		t.Fatalf("key should be masked until explicitly revealed: %q", masked)
+	}
+	mm.menu.formAt = 3
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mm = out.(Model)
+	if !strings.Contains(mm.renderProviderForm(), "secret-key") {
+		t.Fatal("Right Arrow should reveal the prefilled key")
+	}
+
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = out.(Model)
+	if mm.menu.kind != menuProviders {
+		t.Fatalf("menu kind = %v, want providers after save", mm.menu.kind)
+	}
+	mgr.Reload()
+	providers := mgr.Configured()
+	if len(providers) != 1 || providers[0].APIKey != "secret-key" {
+		t.Fatalf("unrelated edit deleted provider key: %+v", providers)
+	}
+}
+
 // ---------- helpers ---------------------------------------------------------
 
 func init() {

@@ -141,6 +141,36 @@ func TestSetPrice(t *testing.T) {
 	}
 }
 
+func TestSetProviderPriceScopesSameModelAndRemovesExactly(t *testing.T) {
+	m := NewManager(t.TempDir())
+	if err := m.SetProviderPrice("direct", "gpt-same", 5, 0.5, 30); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetProviderPrice("router", "gpt-same", 7, 0.7, 40); err != nil {
+		t.Fatal(err)
+	}
+	tc, err := config.LoadToml(m.tomlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tc.ModelPrices) != 2 || tc.ModelPrices[0].Provider != "direct" || tc.ModelPrices[1].Provider != "router" {
+		t.Fatalf("provider-scoped prices were merged unexpectedly: %+v", tc.ModelPrices)
+	}
+	if tc.ModelPrices[0].CachedInputCost != 0.5 || tc.ModelPrices[1].OutputCost != 40 {
+		t.Fatalf("price fields were not preserved: %+v", tc.ModelPrices)
+	}
+	if err := m.RemoveProviderPrice("direct", "gpt-same"); err != nil {
+		t.Fatal(err)
+	}
+	tc, _ = config.LoadToml(m.tomlPath)
+	if len(tc.ModelPrices) != 1 || tc.ModelPrices[0].Provider != "router" {
+		t.Fatalf("exact remove affected the wrong price: %+v", tc.ModelPrices)
+	}
+	if err := m.SetProviderPrice("router", "bad", -1, 0, 0); err == nil {
+		t.Fatal("negative price should be rejected")
+	}
+}
+
 func TestProviderInfo(t *testing.T) {
 	pi := ProviderInfo{
 		Name:      "test",
