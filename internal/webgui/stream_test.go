@@ -1,12 +1,28 @@
 package webgui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/agent"
+	"supercli/internal/llm"
 )
+
+type stalledWebProvider struct{}
+
+func (stalledWebProvider) Name() string { return "stalled" }
+
+func (stalledWebProvider) Complete(ctx context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	ch := make(chan llm.Delta)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
 
 func TestToWireEvent_Message(t *testing.T) {
 	w, keep := toWireEvent(agent.MessageEvent{Text: "hello"})
@@ -140,5 +156,23 @@ func TestWireEvent_Marshal(t *testing.T) {
 	// Omitempty: a bare message must not carry tool/usage fields.
 	if strings.Contains(s, "tok_total") || strings.Contains(s, `"name"`) {
 		t.Errorf("expected omitted empty fields, got %s", s)
+	}
+}
+
+func TestRunStreamStopsAfterSemanticProgressTimeout(t *testing.T) {
+	srv := newTestServer(t, false)
+	id := seedWebSession(t, srv, srv.eng.Home(), "Existing")
+	srv.eng.mu.Lock()
+	srv.eng.prov = stalledWebProvider{}
+	srv.eng.cfg.Timeout = 40 * time.Millisecond
+	srv.eng.mu.Unlock()
+
+	started := time.Now()
+	err := srv.eng.runStream(context.Background(), "hello", id, func(wireEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "no model progress") {
+		t.Fatalf("runStream error = %v, want semantic progress timeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("progress timeout took too long: %s", elapsed)
 	}
 }

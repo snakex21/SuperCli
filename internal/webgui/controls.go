@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -138,6 +139,62 @@ func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "model": s.eng.ModelName()})
 }
 
+// handleModelPrice stores or removes an exact provider/model price in USD per
+// million tokens. Prices are deliberately provider-scoped: a familiar model
+// name routed through a custom gateway must never inherit an unrelated direct
+// API price.
+func (s *Server) handleModelPrice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Provider              string  `json:"provider"`
+		Model                 string  `json:"model"`
+		InputPerMillion       float64 `json:"input_per_million"`
+		CachedInputPerMillion float64 `json:"cached_input_per_million"`
+		OutputPerMillion      float64 `json:"output_per_million"`
+		Remove                bool    `json:"remove"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	req.Provider = strings.TrimSpace(req.Provider)
+	req.Model = strings.TrimSpace(req.Model)
+	if req.Provider == "" || req.Model == "" {
+		http.Error(w, "provider and model are required", http.StatusBadRequest)
+		return
+	}
+	prices := []float64{req.InputPerMillion, req.CachedInputPerMillion, req.OutputPerMillion}
+	for _, price := range prices {
+		if math.IsNaN(price) || math.IsInf(price, 0) || price < 0 || price > 1_000_000 {
+			http.Error(w, "prices must be finite values between 0 and 1000000 USD per million tokens", http.StatusBadRequest)
+			return
+		}
+	}
+
+	m := s.eng.providerManager()
+	var err error
+	if req.Remove {
+		err = m.RemoveProviderPrice(req.Provider, req.Model)
+	} else {
+		err = m.SetProviderPrice(req.Provider, req.Model, req.InputPerMillion, req.CachedInputPerMillion, req.OutputPerMillion)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	m.SetModelPrices(s.eng.caps)
+	writeJSON(w, map[string]any{"ok": true, "provider": req.Provider, "model": req.Model, "removed": req.Remove})
+}
+
 // handleModelDefault is the EXPLICIT "set as CLI default" action: it
 // writes default_model/default_provider to config.toml. Regular model
 // switching in the web GUI (POST /api/model) never touches config.toml.
@@ -238,12 +295,25 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := m.Add(strings.TrimSpace(req.Name), strings.TrimSpace(req.Type), strings.TrimSpace(req.BaseURL), req.APIKey, strings.TrimSpace(req.Model)); err != nil {
+		name := strings.TrimSpace(req.Name)
+		if err := m.Add(name, strings.TrimSpace(req.Type), strings.TrimSpace(req.BaseURL), req.APIKey, strings.TrimSpace(req.Model)); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		res := m.ScanProvider(req.Name, s.eng.caps)
-		writeJSON(w, map[string]any{"ok": true, "scan_error": errString(res.Err), "models": res.Models})
+		res := m.ScanProvider(name, s.eng.caps)
+		if res.Err != nil {
+			// Adding a provider is transactional from the GUI's point of view:
+			// an entry that cannot be verified must not silently remain in the
+			// config. This also makes a non-2xx response mean exactly what the
+			// form tells the user: the provider was not added.
+			if rollbackErr := m.Remove(name); rollbackErr != nil {
+				http.Error(w, fmt.Sprintf("provider verification failed: %v; rollback failed: %v", res.Err, rollbackErr), http.StatusBadGateway)
+				return
+			}
+			http.Error(w, fmt.Sprintf("provider verification failed: %v; provider was not added", res.Err), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "models": res.Models})
 	case http.MethodPut:
 		// Partial update: name identifies the provider; only
 		// non-nil fields are applied by Manager.Update. The

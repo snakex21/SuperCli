@@ -3,7 +3,8 @@ package webgui
 import (
 	"os/exec"
 	"runtime"
-	"syscall"
+
+	"supercli/internal/system/childproc"
 )
 
 // OpenAppWindow tries to open url in a chromeless "app mode" window
@@ -15,15 +16,15 @@ import (
 // on it (closing the window then ends the program) or nil plus an
 // error when no suitable browser was found. A nil error with a nil
 // Cmd never happens: either a browser launched or err is set.
-func OpenAppWindow(url string) (*exec.Cmd, error) {
+func OpenAppWindow(url, profileDir string) (*exec.Cmd, error) {
 	browsers := chromiumCandidates()
-	flag := "--app=" + url
+	args := appWindowArgs(url, profileDir)
 	for _, b := range browsers {
 		path, err := exec.LookPath(b)
 		if err != nil {
 			continue
 		}
-		cmd := exec.Command(path, flag, "--new-window")
+		cmd := exec.Command(path, args...)
 		if err := cmd.Start(); err != nil {
 			continue
 		}
@@ -40,13 +41,30 @@ func OpenInBrowser(url string) error {
 	switch runtime.GOOS {
 	case "windows":
 		cmd = exec.Command("cmd", "/c", "start", "", url)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		childproc.HideWindow(cmd)
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
+}
+
+func appWindowArgs(url, profileDir string) []string {
+	args := []string{
+		"--app=" + url,
+		"--new-window",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-background-mode",
+	}
+	if profileDir != "" {
+		// A dedicated profile prevents Edge/Chrome from handing the app window
+		// to an already-running normal browser process and immediately exiting.
+		// Run uses the child lifetime to know when the app window was closed.
+		args = append(args, "--user-data-dir="+profileDir)
+	}
+	return args
 }
 
 // chromiumCandidates returns the executable names/paths to probe for

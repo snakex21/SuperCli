@@ -2,6 +2,7 @@ package webgui
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net"
@@ -112,15 +113,50 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSessions lists recent sessions for the history panel.
+// handleSessions lists, renames, or deletes conversations in the active
+// workspace. Mutations are workspace-scoped by Engine before touching SQLite.
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	limit := queryInt(r, "limit", 30)
-	out, err := s.eng.listSessions(r.Context(), limit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	switch r.Method {
+	case http.MethodGet:
+		limit := queryInt(r, "limit", 30)
+		out, err := s.eng.listSessions(r.Context(), limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	case http.MethodPatch:
+		var body struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.eng.renameSession(body.ID, body.Title); err != nil {
+			writeSessionMutationError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "id": strings.TrimSpace(body.ID), "title": strings.TrimSpace(body.Title)})
+	case http.MethodDelete:
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if err := s.eng.deleteSession(id); err != nil {
+			writeSessionMutationError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func writeSessionMutationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errSessionOutsideWorkspace) || errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "session not found in active project", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, out)
+	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 
 // handleTranscript returns one session's full message list.
@@ -196,9 +232,17 @@ func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
 // handleStats returns the cost/credit dashboard; ?session= scopes the
 // per-session token total.
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	id := strings.TrimSpace(r.URL.Query().Get("session"))
 	out, err := s.eng.stats(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, errSessionOutsideWorkspace) || errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "session not found in active project", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

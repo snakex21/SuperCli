@@ -15,11 +15,13 @@ import (
 	"sync"
 
 	"supercli/internal/account/codexauth"
+	"supercli/internal/account/pricing"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
+	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
@@ -58,17 +60,79 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("webgui.NewEngine: capabilities: %w", err)
 	}
+	if cachedPrices := pricing.LoadCache(dataDir); len(cachedPrices) > 0 {
+		pricing.ApplyCachedRates(dataDir)
+		applyWebPricingEntries(caps, cachedPrices)
+	}
 	prov, err := buildProviderWithDataDir(cfg, dataDir, caps)
 	if err != nil {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
-	return &Engine{
+	eng := &Engine{
 		cfg:     cfg,
 		dataDir: dataDir,
 		home:    home,
 		caps:    caps,
 		prov:    prov,
-	}, nil
+	}
+	eng.providerManager().SetModelPrices(caps)
+	return eng, nil
+}
+
+// RefreshPricingAsync mirrors the CLI startup policy: a fresh cache is used
+// immediately and network refresh, when needed, never delays the GUI opening.
+func (e *Engine) RefreshPricingAsync() {
+	if e == nil || e.caps == nil {
+		return
+	}
+	if cached := pricing.LoadCache(e.dataDir); len(cached) > 0 && pricing.HasContextMetadata(cached) {
+		return
+	}
+	fetcher := pricing.NewFetcher(e.dataDir)
+	snapshot := e.caps.All()
+	go func() {
+		updated := fetcher.FetchAndUpdate(snapshot)
+		applyWebModelInfo(e.caps, updated)
+	}()
+}
+
+func applyWebPricingEntries(caps *llm.CapabilityRegistry, entries []pricing.PriceEntry) {
+	infos := make([]llm.ModelInfo, 0, len(entries))
+	for _, entry := range entries {
+		infos = append(infos, llm.ModelInfo{
+			ID: entry.ModelID, InputCost: entry.InputPer1M, OutputCost: entry.OutputPer1M,
+			ContextLength: entry.ContextLength, Source: llm.SourceExternal, LastVerified: entry.FetchedAt,
+		})
+	}
+	applyWebModelInfo(caps, infos)
+}
+
+func applyWebModelInfo(caps *llm.CapabilityRegistry, infos []llm.ModelInfo) {
+	if caps == nil {
+		return
+	}
+	for _, info := range infos {
+		if info.ID == "" {
+			continue
+		}
+		if existing, ok := caps.Get(info.ID); ok {
+			if info.InputCost > 0 {
+				existing.InputCost = info.InputCost
+			}
+			if info.OutputCost > 0 {
+				existing.OutputCost = info.OutputCost
+			}
+			if existing.ContextLength == 0 && info.ContextLength > 0 {
+				existing.ContextLength = info.ContextLength
+			}
+			if info.LastVerified.After(existing.LastVerified) {
+				existing.LastVerified = info.LastVerified
+			}
+			caps.Register(existing)
+			continue
+		}
+		caps.Register(info)
+	}
 }
 
 // ModelName returns the active model id for display.
@@ -146,11 +210,18 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 // creation/validation. A concurrent project switch affects future requests but
 // cannot move an in-flight run's tools into another sandbox.
 func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.SessionWriter, home string) (*agent.Loop, error) {
+	return e.newLoopWithSessionAtUsage(initial, writer, home, nil, "")
+}
+
+func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.SessionWriter, home string, usageStore *session.Store, sessionID string) (*agent.Loop, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
 	cfg := e.cfg
 	e.mu.RUnlock()
+	if usageStore != nil && sessionID != "" {
+		prov = newMeteredProvider(prov, usageStore, sessionID, e.usageIdentity(cfg, "model"))
+	}
 	tc := e.tomlConfigAt(home)
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
 	taskParallel := !llm.IsLocalBaseURL(cfg.BaseURL)
@@ -197,7 +268,7 @@ func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.Sessio
 	// draft-verify ladder): the web agent can hand self-contained
 	// subtasks to fresh workers. A wiring failure degrades to a loop
 	// without `task` rather than breaking chat.
-	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
+	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc, usageStore, sessionID); err != nil {
 		return nil, err
 	}
 	if orchestrator {
@@ -227,7 +298,7 @@ func webAgentSystemPrompt(home string, orchestrator bool) string {
 // reg, honouring the config knobs the CLI honours: task_max_steps,
 // task_max_tokens, task_model (worker backend override) and
 // preflight_repo (cold-context repo briefing for workers).
-func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig) error {
+func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig, usageStore *session.Store, sessionID string) error {
 	subReg := agent.NewSubAgentRegistry()
 	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
 	at, err := agent.NewAgentTool(subReg, loop, reg, prov, caps,
@@ -237,7 +308,10 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	}
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
-	if wp := e.taskWorkerProvider(tc); wp != nil {
+	if wp, workerCfg := e.taskWorkerProvider(tc); wp != nil {
+		if usageStore != nil && sessionID != "" && workerCfg != nil {
+			wp = newMeteredProvider(wp, usageStore, sessionID, e.usageIdentity(*workerCfg, "worker"))
+		}
 		at.WorkerProvider = wp
 	}
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
@@ -290,13 +364,15 @@ func (e *Engine) preflightBlockAt(home string) (string, int) {
 // resolves a configured [[providers]] entry by name. Nil = workers
 // inherit the coordinator's provider (task_model unset, unresolvable,
 // or naming the coordinator's own backend).
-func (e *Engine) taskWorkerProvider(tc config.TomlConfig) llm.Provider {
+func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config.Config) {
 	tm := strings.TrimSpace(tc.TaskModel)
 	if tm == "" {
-		return nil
+		return nil, nil
 	}
 	e.mu.RLock()
 	worker := e.cfg
+	coordinatorModel := e.cfg.Model
+	coordinatorBaseURL := e.cfg.BaseURL
 	e.mu.RUnlock()
 	if name, model, found := strings.Cut(tm, "/"); found {
 		for _, p := range tc.Providers {
@@ -310,30 +386,30 @@ func (e *Engine) taskWorkerProvider(tc config.TomlConfig) llm.Provider {
 			if worker.Model == "" {
 				worker.Model = p.Model
 			}
-			if worker.Model == "" || (worker.Model == e.cfg.Model && worker.BaseURL == e.cfg.BaseURL) {
-				return nil
+			if worker.Model == "" || (worker.Model == coordinatorModel && worker.BaseURL == coordinatorBaseURL) {
+				return nil, nil
 			}
 			return e.buildWorker(worker)
 		}
 	}
 	worker.Model = tm
-	if worker.Model == e.cfg.Model {
-		return nil
+	if worker.Model == coordinatorModel {
+		return nil, nil
 	}
 	return e.buildWorker(worker)
 }
 
 // buildWorker constructs the override provider, degrading to nil (=
 // inherit the coordinator's backend) on any build failure.
-func (e *Engine) buildWorker(cfg config.Config) llm.Provider {
+func (e *Engine) buildWorker(cfg config.Config) (llm.Provider, *config.Config) {
 	if err := cfg.Normalize(); err != nil {
-		return nil
+		return nil, nil
 	}
 	wp, err := buildProviderWithDataDir(cfg, e.dataDir, e.caps)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return wp
+	return wp, &cfg
 }
 
 // providerManager returns a freshly reloaded provider manager over
