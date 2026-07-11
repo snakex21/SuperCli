@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 	"supercli/internal/system/childproc"
@@ -179,8 +180,13 @@ func clampEvidence(s string) string {
 	if len(s) <= draftVerifyMaxEvidenceBytes {
 		return s
 	}
-	tail := s[len(s)-draftVerifyMaxEvidenceBytes:]
-	return "[...truncated...]\n" + tail
+	// Move the cut forward (at most 3 bytes) to the next rune
+	// boundary so a multi-byte character is never split in half.
+	i := len(s) - draftVerifyMaxEvidenceBytes
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return "[...truncated...]\n" + s[i:]
 }
 
 // verdictKind is the parsed decision from the big model.
