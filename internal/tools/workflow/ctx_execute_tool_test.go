@@ -113,8 +113,8 @@ func TestCtxExecute_Execute_NonZeroExit(t *testing.T) {
 	if res.Err == nil {
 		t.Error("expected Err for non-zero exit")
 	}
-	if !strings.Contains(res.Err.Error(), "exit") {
-		t.Errorf("err = %q, want 'exit' prefix", res.Err.Error())
+	if !strings.HasPrefix(res.Err.Error(), "command_failed exit=1") {
+		t.Errorf("err = %q, want 'command_failed exit=1' prefix", res.Err.Error())
 	}
 	// The text should still contain the JSON result.
 	var pr ctxexec.Result
@@ -123,6 +123,27 @@ func TestCtxExecute_Execute_NonZeroExit(t *testing.T) {
 	}
 	if pr.ExitCode == 0 {
 		t.Error("exit should be non-zero in json")
+	}
+}
+
+func TestCtxExecute_Execute_FailureIncludesStderrTail(t *testing.T) {
+	cmd, ok := stderrFailCmd()
+	if !ok {
+		t.Skip("no stderr-fail equivalent")
+	}
+	tool := NewCtxExecuteTool(newCtxTestRunner(t), ".")
+	res, _ := tool.Execute(context.Background(), mustJSON(t, jsonObj(t, map[string]any{
+		"command": cmd,
+	})))
+	if res.Err == nil {
+		t.Fatal("expected Err for failing command")
+	}
+	msg := res.Err.Error()
+	if !strings.HasPrefix(msg, "command_failed exit=3") {
+		t.Errorf("err = %q, want 'command_failed exit=3' prefix", msg)
+	}
+	if !strings.Contains(msg, "stderr:") || !strings.Contains(msg, "oops") {
+		t.Errorf("err = %q, want stderr tail with 'oops'", msg)
 	}
 }
 
@@ -150,8 +171,8 @@ func TestCtxExecute_Execute_TimeoutFlag(t *testing.T) {
 	if res.Err == nil {
 		t.Error("expected Err for timeout")
 	}
-	if !strings.Contains(res.Err.Error(), "exit") {
-		t.Errorf("err = %q", res.Err.Error())
+	if !strings.HasPrefix(res.Err.Error(), "command_failed timeout") {
+		t.Errorf("err = %q, want 'command_failed timeout' prefix", res.Err.Error())
 	}
 	// Underlying Result should have exit_code == ExitTimeout (124).
 	var pr ctxexec.Result
@@ -277,6 +298,20 @@ func sleepCmd(seconds int) ([]string, bool) {
 	}
 	if _, err := exec.LookPath("sleep"); err == nil {
 		return []string{"sleep", itoa(seconds)}, true
+	}
+	return nil, false
+}
+
+// stderrFailCmd prints "oops" to stderr and exits 3.
+func stderrFailCmd() ([]string, bool) {
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("cmd"); err == nil {
+			return []string{"cmd", "/c", "echo oops 1>&2 & exit 3"}, true
+		}
+		return nil, false
+	}
+	if _, err := exec.LookPath("sh"); err == nil {
+		return []string{"sh", "-c", "echo oops >&2; exit 3"}, true
 	}
 	return nil, false
 }

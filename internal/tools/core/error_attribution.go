@@ -180,8 +180,10 @@ func classifyEnvMarkers(s string) (Verdict, bool) {
 			Suggestion: "check connectivity or skip the task",
 		}, true
 	}
-	// Permission denied on a directory path.
-	if strings.Contains(low, "permission denied") {
+	// Permission denied on a directory path. "permission <path>"
+	// is the structured file-tool form (fileops.FileErr).
+	if strings.Contains(low, "permission denied") ||
+		strings.Contains(low, "permission ") {
 		return Verdict{
 			Category:   CategoryEnvironment,
 			Confidence: 0.9,
@@ -189,8 +191,10 @@ func classifyEnvMarkers(s string) (Verdict, bool) {
 			Suggestion: "run with elevated rights or change path",
 		}, true
 	}
-	// Context deadline (timeout from ctx.WithTimeout).
-	if strings.Contains(low, "context deadline exceeded") {
+	// Context deadline (timeout from ctx.WithTimeout) or the
+	// structured process-tool form ("command_failed timeout ...").
+	if strings.Contains(low, "context deadline exceeded") ||
+		strings.Contains(low, "command_failed timeout") {
 		return Verdict{
 			Category:   CategoryEnvironment,
 			Confidence: 0.9,
@@ -218,7 +222,12 @@ func classifySchemaError(s string) (Verdict, bool) {
 
 func classifyNotFound(s string, args json.RawMessage) (Verdict, bool) {
 	low := strings.ToLower(s)
-	if !strings.Contains(low, "not found") && !strings.Contains(low, "no such file") {
+	// "not_found <path>" is the structured file-tool form
+	// (fileops.FileErr); the prose variants come from raw OS /
+	// exec errors.
+	if !strings.Contains(low, "not found") &&
+		!strings.Contains(low, "not_found") &&
+		!strings.Contains(low, "no such file") {
 		return Verdict{}, false
 	}
 	// Absolute path that doesn't exist → likely model

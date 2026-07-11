@@ -36,7 +36,7 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 // Spec returns the Tool descriptor.
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
-		Name: "ctx_execute",
+		Name:        "ctx_execute",
 		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Prefer over file_read for files >~50 lines, log inspection, counting matches, and JSON/CSV slicing. `command` is a LIST of args (binary + arguments), NOT a shell string; the binary is resolved via PATH. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
 		Schema: `{
 			"type": "object",
@@ -112,15 +112,13 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		return Result{Text: string(jb), Err: runErr}, runErr
 	}
 	// If the underlying run failed (non-zero exit),
-	// surface a short message in Err so the model
-	// gets a clear signal, but ALSO return the JSON
-	// text so it can read stdout.
+	// surface the structured failure summary in Err —
+	// first line "command_failed exit=N (D)" plus the
+	// capped stderr/stdout tails — so the model can
+	// self-correct in one turn. The JSON text is still
+	// returned for UIs that show tool output.
 	if res.ExitCode != 0 {
-		msg := fmt.Sprintf("ctx_execute: exit %d", res.ExitCode)
-		if res.Error != "" {
-			msg = "ctx_execute: " + res.Error
-		}
-		return Result{Text: string(jb), Err: errors.New(msg)}, nil
+		return Result{Text: string(jb), Err: errors.New(res.FailureSummary())}, nil
 	}
 	return Result{Text: string(jb)}, nil
 }

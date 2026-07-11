@@ -101,7 +101,7 @@ type Result struct {
 	TruncatedStdout bool   `json:"truncated_stdout"`
 	TruncatedStderr bool   `json:"truncated_stderr"`
 	DurationMS      int64  `json:"duration_ms"`
-	Command         string `json:"command"`  // echoed, joined with spaces
+	Command         string `json:"command"` // echoed, joined with spaces
 	Workdir         string `json:"workdir"`
 	// Error is set only for sandbox / Go-level errors
 	// (path escape, nil binary, etc.). The ExitCode
@@ -111,9 +111,9 @@ type Result struct {
 
 // Error sentinels. Use errors.Is.
 var (
-	ErrEmptyCommand  = errors.New("ctxexec: command is empty")
+	ErrEmptyCommand   = errors.New("ctxexec: command is empty")
 	ErrCommandTooLong = errors.New("ctxexec: command string too long")
-	ErrNoWorkdir     = errors.New("ctxexec: workdir not set")
+	ErrNoWorkdir      = errors.New("ctxexec: workdir not set")
 )
 
 // Validate returns nil if the Request is well-formed.
@@ -154,4 +154,62 @@ func (r *Result) FormatError() string {
 		return fmt.Sprintf("%s: %s", r.Error, strings.TrimSpace(r.Stderr))
 	}
 	return r.Error
+}
+
+// FailTailBytes caps how much of each captured stream is
+// inlined into FailureSummary. The runner already caps the
+// streams (MaxStderrKB / MaxStdoutKB); this tighter cap
+// keeps the ERROR message itself lean — the model usually
+// only needs the last error lines to self-correct.
+const FailTailBytes = 2048
+
+// FailureSummary renders a failed run as a compact,
+// deterministic message for the model. First line carries
+// only facts the CLI is sure of (exit code, wallclock,
+// timeout); then the stderr/stdout tails so the model can
+// fix the command in one turn instead of guessing:
+//
+//	command_failed exit=1 (1.3s)
+//	stderr:
+//	FAIL: TestFoo ...
+//
+// Timeouts are marked explicitly; truncated tails carry a
+// marker. No cause guessing — streams are quoted verbatim.
+func (r *Result) FailureSummary() string {
+	var b strings.Builder
+	switch {
+	case r.ExitCode == ExitTimeout:
+		fmt.Fprintf(&b, "command_failed timeout exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
+	case r.Error != "":
+		fmt.Fprintf(&b, "command_failed exit=%d: %s", r.ExitCode, r.Error)
+	default:
+		fmt.Fprintf(&b, "command_failed exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
+	}
+	appendTail(&b, "stderr", r.Stderr, r.TruncatedStderr)
+	appendTail(&b, "stdout", r.Stdout, r.TruncatedStdout)
+	return b.String()
+}
+
+// appendTail writes a labelled stream tail, capped at
+// FailTailBytes with a truncation marker (also set when the
+// runner already truncated the stream at capture time).
+func appendTail(b *strings.Builder, label, s string, preTruncated bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return
+	}
+	truncated := preTruncated
+	if len(s) > FailTailBytes {
+		s = s[len(s)-FailTailBytes:]
+		truncated = true
+	}
+	if truncated {
+		label += " (tail, truncated)"
+	}
+	fmt.Fprintf(b, "\n%s:\n%s", label, s)
+}
+
+// fmtDurMS renders milliseconds as "1.3s".
+func fmtDurMS(ms int64) string {
+	return fmt.Sprintf("%.1fs", float64(ms)/1000)
 }
