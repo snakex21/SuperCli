@@ -261,7 +261,20 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			rows := m.providerRows()
 			if len(rows) > 0 {
 				p := rows[minInt(m.menu.cursor, len(rows)-1)]
-				m.menu = interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, ""}}
+				apiKey := ""
+				if m.providerMgr != nil {
+					for _, configured := range m.providerMgr.Configured() {
+						if configured.Name == p.Name {
+							apiKey = configured.APIKey
+							break
+						}
+					}
+				}
+				// Keep the stored key in the edit form. Rendering masks it by
+				// default and the user can reveal it explicitly with Right Arrow.
+				// An empty fourth field used to be submitted as an explicit clear,
+				// silently deleting a working key on unrelated edits.
+				m.menu = interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, apiKey}}
 				m.input.Blur()
 			}
 		}
@@ -473,13 +486,22 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		savedName := ""
 		if m.providerMgr != nil && len(m.menu.form) >= 4 {
 			f := m.menu.form
+			var saveErr error
 			if m.menu.editName != "" {
 				typ, url, key := f[1], f[2], f[3]
-				_ = m.providerMgr.Update(m.menu.editName, &typ, &url, &key, nil)
-				savedName = m.menu.editName
+				saveErr = m.providerMgr.Update(m.menu.editName, &typ, &url, &key, nil)
+				if saveErr == nil {
+					savedName = m.menu.editName
+				}
 			} else if strings.TrimSpace(f[0]) != "" {
-				_ = m.providerMgr.Add(f[0], f[1], f[2], f[3], "")
-				savedName = f[0]
+				saveErr = m.providerMgr.Add(f[0], f[1], f[2], f[3], "")
+				if saveErr == nil {
+					savedName = f[0]
+				}
+			}
+			if saveErr != nil {
+				m.appendLine(m.marker.Error(saveErr))
+				return m, nil
 			}
 			m.providerMgr.Reload()
 		}

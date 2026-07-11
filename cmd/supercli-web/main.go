@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime/debug"
+	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/storage"
@@ -27,6 +30,16 @@ import (
 )
 
 func main() {
+	crashDataDir := storage.PortableDataRoot()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			writeWebCrash(crashDataDir, recovered)
+		}
+	}()
+	run(&crashDataDir)
+}
+
+func run(crashDataDir *string) {
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
 	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, opencode, codex, or echo")
 	modelFlag := flag.String("model", "", "model id")
@@ -49,6 +62,10 @@ func main() {
 	}
 	if err := storage.EnsureDir(dataDir); err != nil {
 		fatal("ensure data dir", err)
+	}
+	*crashDataDir = dataDir
+	if logFile := initWebLog(dataDir); logFile != nil {
+		defer logFile.Close()
 	}
 
 	// Match CLI project startup semantics: when no explicit --home or
@@ -170,6 +187,7 @@ func main() {
 	if err != nil {
 		fatal("build engine", err)
 	}
+	eng.RefreshPricingAsync()
 
 	if err := webgui.Run(eng, webgui.RunOptions{
 		Addr:        *addrFlag,
@@ -189,3 +207,28 @@ func fatal(ctx string, err error) {
 // boolPtr returns a pointer to b; used for the optional Debug
 // override which must distinguish unset from false.
 func boolPtr(b bool) *bool { return &b }
+
+func initWebLog(dataDir string) *os.File {
+	logsDir := filepath.Join(dataDir, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(filepath.Join(logsDir, "supercli-web.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil
+	}
+	log.SetOutput(f)
+	return f
+}
+
+func writeWebCrash(dataDir string, recovered any) {
+	path := filepath.Join(dataDir, "logs", "supercli-web-crash.log")
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "=== CRASH %s ===\npanic: %v\n%s\n\n", time.Now().Format(time.RFC3339Nano), recovered, debug.Stack())
+	_ = f.Sync()
+}

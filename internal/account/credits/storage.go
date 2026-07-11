@@ -130,17 +130,23 @@ func (s *Storage) SessionTotal(ctx context.Context, sessionID string) (int64, er
 // DailyTotal returns the total tokens recorded since
 // midnight UTC. It sums across all sessions.
 func (s *Storage) DailyTotal(ctx context.Context) (int64, error) {
+	return s.TotalSince(ctx, time.Now().UTC().Truncate(24*time.Hour))
+}
+
+// TotalSince returns the total tokens recorded at or after since. It lets
+// user-facing dashboards define "today" in the user's local timezone while
+// DailyTotal retains its historical UTC contract for budget enforcement.
+func (s *Storage) TotalSince(ctx context.Context, since time.Time) (int64, error) {
 	if s == nil || s.db == nil {
-		return 0, fmt.Errorf("credits: DailyTotal: nil storage")
+		return 0, fmt.Errorf("credits: TotalSince: nil storage")
 	}
-	midnight := time.Now().UTC().Truncate(24 * time.Hour).UnixNano()
 	var total sql.NullInt64
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
-		 FROM credit_ledger WHERE ts >= ?`, midnight,
+		 FROM credit_ledger WHERE ts >= ?`, since.UnixNano(),
 	).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("credits: DailyTotal query: %w", err)
+		return 0, fmt.Errorf("credits: TotalSince query: %w", err)
 	}
 	return total.Int64, nil
 }

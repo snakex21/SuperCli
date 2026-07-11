@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // ServerConfig mirrors a [mcp.servers.<name>] section in config.toml.
@@ -54,6 +56,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("mcp server %s: command is empty", s.Name)
 	}
 	cmd := exec.Command(s.Config.Command, s.Config.Args...)
+	childproc.HideWindow(cmd)
 	cmd.Env = os.Environ()
 	for k, v := range s.Config.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)

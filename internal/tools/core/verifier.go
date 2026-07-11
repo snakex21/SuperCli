@@ -114,6 +114,14 @@ func verifyFileWrite(c Check) VerifyVerdict {
 		return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file does not exist: %s", path)}
 	}
 	if info.Size() == 0 {
+		// An explicitly empty write_file payload means truncation was the
+		// requested result. Treating that successful write as a failure makes
+		// the agent retry an operation that already completed.
+		if strings.EqualFold(c.Tool, "write_file") {
+			if content, present := extractStringArg(c.Args, "content"); present && content == "" {
+				return VerifyVerdict{OK: true}
+			}
+		}
 		return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file %s is empty", path)}
 	}
 	if want, ok := extractExpectedContent(c.Args); ok && want != "" {
@@ -174,6 +182,15 @@ func verifyRead(c Check) VerifyVerdict {
 		return VerifyVerdict{OK: true}
 	}
 	if strings.TrimSpace(c.Result.Text) == "" {
+		// Reading an existing zero-byte file is a valid, useful result. The
+		// empty response describes the file faithfully and must not be shown as
+		// a failed tool call in the chat.
+		if path, ok := extractPath(c.Args); ok {
+			info, err := os.Stat(resolveForVerify(c.BaseDir, path))
+			if err == nil && info.Mode().IsRegular() && info.Size() == 0 {
+				return VerifyVerdict{OK: true}
+			}
+		}
 		return VerifyVerdict{OK: false, Reason: "verification failed: read returned empty content"}
 	}
 	return VerifyVerdict{OK: true}
@@ -207,6 +224,22 @@ func extractPath(args json.RawMessage) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func extractStringArg(args json.RawMessage, key string) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	var m map[string]any
+	if err := json.Unmarshal(args, &m); err != nil {
+		return "", false
+	}
+	v, ok := m[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
 }
 
 // extractExpectedContent returns the expected_content /

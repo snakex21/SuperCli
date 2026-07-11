@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/system/childproc"
 )
 
 // DraftVerifyConfig configures the draft-verify ladder (design 2026-07-05/06).
@@ -113,6 +114,7 @@ func runSieveCommand(ctx context.Context, dir, command string, timeout time.Dura
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, fields[0], fields[1:]...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	text := string(out)
@@ -162,6 +164,7 @@ func gitCapture(ctx context.Context, dir string, args ...string) string {
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "git", args...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

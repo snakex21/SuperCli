@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // Result holds the output of a shell escape command.
@@ -77,6 +79,7 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	}
 
 	cmd := exec.CommandContext(ctx, shell, flag, command)
+	childproc.HideWindow(cmd)
 	if r.Home != "" {
 		cmd.Dir = r.Home
 	}

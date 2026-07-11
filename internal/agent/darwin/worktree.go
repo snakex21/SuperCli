@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // runGitCtx is the testable seam for executing git
@@ -17,6 +19,7 @@ import (
 // helper fails fast instead of hanging.
 var runGitCtx = func(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd.CombinedOutput()

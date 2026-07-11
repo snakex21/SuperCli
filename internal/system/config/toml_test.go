@@ -130,7 +130,7 @@ func TestSaveToml_RoundTrip(t *testing.T) {
 			{Name: "test", Type: "openai", BaseURL: "http://x", APIKey: "k"},
 		},
 		ModelPrices: []ModelPriceConf{
-			{Model: "m1", InputCost: 1.0, OutputCost: 2.0},
+			{Provider: "router", Model: "m1", InputCost: 1.0, CachedInputCost: 0.1, OutputCost: 2.0},
 		},
 	}
 	if err := SaveToml(path, original); err != nil {
@@ -157,6 +157,9 @@ func TestSaveToml_RoundTrip(t *testing.T) {
 	}
 	if len(loaded.ModelPrices) != 1 {
 		t.Fatalf("ModelPrices len = %d", len(loaded.ModelPrices))
+	}
+	if loaded.ModelPrices[0].Provider != "router" || loaded.ModelPrices[0].CachedInputCost != 0.1 {
+		t.Fatalf("ModelPrices round trip = %+v", loaded.ModelPrices[0])
 	}
 }
 

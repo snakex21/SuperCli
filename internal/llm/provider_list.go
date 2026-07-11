@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,8 +25,9 @@ const providerListTimeout = 10 * time.Second
 // provider enabling/retiring models surfaces the same day.
 const providerListCacheTTL = time.Hour
 
-// providerListCache memoizes successful ListProviderModels calls
-// keyed by baseURL. Errors are never cached. Guarded by its own
+// providerListCache memoizes successful ListProviderModels calls keyed by
+// protocol, baseURL, and a one-way credential fingerprint. Errors are never
+// cached. Guarded by its own
 // mutex; the map is tiny (one entry per configured provider).
 var providerListCache = struct {
 	mu sync.Mutex
@@ -35,6 +37,26 @@ var providerListCache = struct {
 type providerListEntry struct {
 	ids     []string
 	fetched time.Time
+}
+
+func providerModelsCacheKey(protocol, baseURL, apiKey string) string {
+	cleanBase := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	sum := sha256.Sum256([]byte(CleanAPIKey(apiKey)))
+	return protocol + "\x00" + cleanBase + "\x00" + fmt.Sprintf("%x", sum[:8])
+}
+
+// InvalidateProviderModelCache forces the next discovery request for baseURL
+// to hit the server. Provider edits call this before their verification scan
+// so a success cached under old credentials cannot hide a 401.
+func InvalidateProviderModelCache(baseURL string) {
+	cleanBase := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	providerListCache.mu.Lock()
+	defer providerListCache.mu.Unlock()
+	for key := range providerListCache.m {
+		if strings.HasPrefix(key, "openai\x00"+cleanBase+"\x00") || strings.HasPrefix(key, "anthropic\x00"+cleanBase+"\x00") {
+			delete(providerListCache.m, key)
+		}
+	}
 }
 
 // ListProviderModels returns the model ids exposed
@@ -60,8 +82,9 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 	if baseURL == "" {
 		return nil, fmt.Errorf("llm: ListProviderModels: baseURL is empty")
 	}
+	cacheKey := providerModelsCacheKey("openai", baseURL, apiKey)
 	providerListCache.mu.Lock()
-	if e, ok := providerListCache.m[baseURL]; ok && time.Since(e.fetched) < providerListCacheTTL {
+	if e, ok := providerListCache.m[cacheKey]; ok && time.Since(e.fetched) < providerListCacheTTL {
 		ids := append([]string(nil), e.ids...)
 		providerListCache.mu.Unlock()
 		return ids, nil
@@ -110,7 +133,7 @@ func ListProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, 
 		}
 	}
 	providerListCache.mu.Lock()
-	providerListCache.m[baseURL] = providerListEntry{ids: append([]string(nil), out...), fetched: time.Now()}
+	providerListCache.m[cacheKey] = providerListEntry{ids: append([]string(nil), out...), fetched: time.Now()}
 	providerListCache.mu.Unlock()
 	return out, nil
 }
@@ -121,7 +144,7 @@ func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string,
 	if baseURL == "" {
 		return nil, fmt.Errorf("llm: ListAnthropicModels: baseURL is empty")
 	}
-	cacheKey := "anthropic:" + baseURL
+	cacheKey := providerModelsCacheKey("anthropic", baseURL, apiKey)
 	providerListCache.mu.Lock()
 	if e, ok := providerListCache.m[cacheKey]; ok && time.Since(e.fetched) < providerListCacheTTL {
 		ids := append([]string(nil), e.ids...)

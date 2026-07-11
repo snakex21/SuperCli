@@ -2,6 +2,7 @@ package pricing
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"supercli/internal/account/credits"
 	"supercli/internal/llm"
 )
+
+func closePrice(a, b float64) bool { return math.Abs(a-b) < 1e-12 }
 
 // ── parsePricePerToken tests ──
 
@@ -67,8 +70,8 @@ func TestParsePricePerToken_Invalid(t *testing.T) {
 func TestParseOpenRouter(t *testing.T) {
 	input := `{
 		"data": [
-			{"id":"openai/gpt-4o","context_length":128000,"pricing":{"prompt":"0.0025","completion":"0.01"}},
-			{"id":"anthropic/claude-3.5-sonnet","context_length":"200000","pricing":{"prompt":"0.003","completion":"0.015"}},
+			{"id":"openai/gpt-4o","context_length":128000,"pricing":{"prompt":"0.0000025","input_cache_read":"0.00000125","completion":"0.00001"}},
+			{"id":"anthropic/claude-3.5-sonnet","context_length":"200000","pricing":{"prompt":"0.000003","completion":"0.000015"}},
 			{"id":"free-model","pricing":{}}
 		]
 	}`
@@ -81,11 +84,14 @@ func TestParseOpenRouter(t *testing.T) {
 		t.Fatalf("expected 2 entries (free excluded), got %d", len(entries))
 	}
 	// Check per-token → per-1M conversion.
-	if entries[0].InputPer1M != 2500.0 {
-		t.Errorf("gpt-4o input = %v, want 2500.0 (0.0025 * 1M)", entries[0].InputPer1M)
+	if entries[0].InputPer1M != 2.5 {
+		t.Errorf("gpt-4o input = %v, want 2.5", entries[0].InputPer1M)
 	}
-	if entries[0].OutputPer1M != 10000.0 {
-		t.Errorf("gpt-4o output = %v, want 10000.0 (0.01 * 1M)", entries[0].OutputPer1M)
+	if entries[0].CachedInputPer1M != 1.25 {
+		t.Errorf("gpt-4o cached input = %v, want 1.25", entries[0].CachedInputPer1M)
+	}
+	if entries[0].OutputPer1M != 10.0 {
+		t.Errorf("gpt-4o output = %v, want 10.0", entries[0].OutputPer1M)
 	}
 	if entries[0].Source != "openrouter" {
 		t.Errorf("source = %q, want openrouter", entries[0].Source)
@@ -283,8 +289,8 @@ func TestFetchAll_MockSources(t *testing.T) {
 		// gpt-4o same ID as PT source — tests dedup (first source wins).
 		// deepseek is unique to OR.
 		json.NewEncoder(w).Encode([]map[string]interface{}{
-			{"model": "gpt-4o", "input_price": 2500.0, "output_price": 10000.0},
-			{"model": "deepseek/deepseek-r1", "input_price": 1000.0, "output_price": 2000.0},
+			{"model": "gpt-4o", "input_price": 2.5, "output_price": 10.0},
+			{"model": "deepseek/deepseek-r1", "input_price": 0.14, "output_price": 0.28},
 		})
 	}))
 	defer orServer.Close()
@@ -410,8 +416,8 @@ func TestPushRatesToCredits(t *testing.T) {
 	defer credits.SetProviderRates(nil)
 
 	entries := []PriceEntry{
-		{ModelID: "gpt-4o", InputPer1M: 2500.0, OutputPer1M: 10000.0},
-		{ModelID: "claude-3.5-sonnet", InputPer1M: 3000.0, OutputPer1M: 15000.0},
+		{ModelID: "gpt-4o", InputPer1M: 2.5, CachedInputPer1M: 1.25, OutputPer1M: 10.0},
+		{ModelID: "claude-3.5-sonnet", InputPer1M: 3.0, OutputPer1M: 15.0},
 	}
 	pushRatesToCredits(entries)
 	got := credits.GetFetchedRates()
@@ -421,17 +427,19 @@ func TestPushRatesToCredits(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(got))
 	}
-	// gpt-4o: 2500/1M = 2.5/1k input, 10000/1M = 10.0/1k output.
-	if got["gpt-4o"].InputPer1k != 2.5 {
-		t.Errorf("gpt-4o input = %v, want 2.5", got["gpt-4o"].InputPer1k)
+	if !closePrice(got["gpt-4o"].InputPer1k, 0.0025) {
+		t.Errorf("gpt-4o input = %v, want 0.0025", got["gpt-4o"].InputPer1k)
 	}
-	if got["gpt-4o"].OutputPer1k != 10.0 {
-		t.Errorf("gpt-4o output = %v, want 10.0", got["gpt-4o"].OutputPer1k)
+	if !closePrice(got["gpt-4o"].CachedInputPer1k, 0.00125) {
+		t.Errorf("gpt-4o cached input = %v, want 0.00125", got["gpt-4o"].CachedInputPer1k)
+	}
+	if !closePrice(got["gpt-4o"].OutputPer1k, 0.01) {
+		t.Errorf("gpt-4o output = %v, want 0.01", got["gpt-4o"].OutputPer1k)
 	}
 	// CostFor should use fetched rates.
 	cost := credits.CostFor("gpt-4o", 1000, 1000)
-	if cost != 12.50 {
-		t.Errorf("CostFor(gpt-4o, 1k, 1k) = %v, want 12.50", cost)
+	if cost != 0.0125 {
+		t.Errorf("CostFor(gpt-4o, 1k, 1k) = %v, want 0.0125", cost)
 	}
 }
 
@@ -440,22 +448,23 @@ func TestPushRatesToCredits_OpenRouterProviderRates(t *testing.T) {
 	defer credits.SetProviderRates(nil)
 
 	pushRatesToCredits([]PriceEntry{{
-		ModelID:     "deepseek/deepseek-chat",
-		InputPer1M:  70.0,
-		OutputPer1M: 270.0,
-		Source:      "openrouter",
-		FetchedAt:   time.Now().UTC(),
+		ModelID:          "deepseek/deepseek-chat",
+		InputPer1M:       0.14,
+		CachedInputPer1M: 0.0028,
+		OutputPer1M:      0.28,
+		Source:           "openrouter",
+		FetchedAt:        time.Now().UTC(),
 	}})
 
 	r, key := credits.RateForProvider("openrouter", "deepseek/deepseek-chat")
-	if r.InputPer1k != 0.07 || r.OutputPer1k != 0.27 {
+	if !closePrice(r.InputPer1k, 0.00014) || !closePrice(r.CachedInputPer1k, 0.0000028) || !closePrice(r.OutputPer1k, 0.00028) {
 		t.Fatalf("rate=%+v, want OpenRouter provider-specific rate", r)
 	}
 	if key != "openrouter/deepseek/deepseek-chat (endpoint)" {
 		t.Fatalf("key=%q", key)
 	}
-	if got := credits.CostForProvider("openrouter", "deepseek/deepseek-chat", 1000, 1000); got != 0.34 {
-		t.Fatalf("cost=%v, want 0.34", got)
+	if got := credits.CostForProvider("openrouter", "deepseek/deepseek-chat", 1000, 1000); got != 0.00042 {
+		t.Fatalf("cost=%v, want 0.00042", got)
 	}
 }
 

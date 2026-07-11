@@ -156,7 +156,7 @@ func (s *Store) Get(id string) (Session, error) {
 // List returns up to limit sessions, newest first.
 func (s *Store) List(limit int) ([]Session, error) {
 	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, id DESC`,
+		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func (s *Store) List(limit int) ([]Session, error) {
 // first.
 func (s *Store) ListByCwd(cwd string, limit int) ([]Session, error) {
 	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, id DESC`,
+		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
 		cwd,
 	)
 	if err != nil {
@@ -183,7 +183,7 @@ func (s *Store) ListByCwd(cwd string, limit int) ([]Session, error) {
 // sql.ErrNoRows if none.
 func (s *Store) LastForCwd(cwd string) (Session, error) {
 	row := s.db.QueryRow(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 1`,
+		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC LIMIT 1`,
 		cwd,
 	)
 	return scanSession(row)
@@ -201,6 +201,19 @@ func (s *Store) SetTitle(id, title string) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// SetTitleIfCurrent updates a generated title only when nobody renamed the
+// session in the meantime. It prevents an asynchronous title summarizer from
+// overwriting a user's explicit conversation name.
+func (s *Store) SetTitleIfCurrent(id, current, title string) (bool, error) {
+	now := time.Now().UTC()
+	res, err := s.db.Exec(`UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title = ?`, title, now.UnixNano(), id, current)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // Delete removes a session and cascades to its messages.
@@ -487,6 +500,33 @@ func (s *Store) migrate() error {
 			UNIQUE (session_id, seq)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq)`,
+		`CREATE TABLE IF NOT EXISTS session_usage (
+			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id            TEXT NOT NULL,
+			call_seq              INTEGER NOT NULL,
+			provider              TEXT NOT NULL DEFAULT '',
+			provider_type         TEXT NOT NULL DEFAULT '',
+			endpoint_host         TEXT NOT NULL DEFAULT '',
+			model                 TEXT NOT NULL DEFAULT '',
+			input_tokens          INTEGER NOT NULL DEFAULT 0,
+			output_tokens         INTEGER NOT NULL DEFAULT 0,
+			cached_input_tokens   INTEGER NOT NULL DEFAULT 0,
+			reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
+			has_cached_input      INTEGER NOT NULL DEFAULT 0,
+			has_reasoning         INTEGER NOT NULL DEFAULT 0,
+			context_window        INTEGER NOT NULL DEFAULT 0,
+			ctx_system_tokens     INTEGER NOT NULL DEFAULT 0,
+			ctx_user_tokens       INTEGER NOT NULL DEFAULT 0,
+			ctx_assistant_tokens  INTEGER NOT NULL DEFAULT 0,
+			ctx_tool_tokens       INTEGER NOT NULL DEFAULT 0,
+			ctx_other_tokens      INTEGER NOT NULL DEFAULT 0,
+			source                TEXT NOT NULL DEFAULT 'model',
+			created_at            INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+			UNIQUE (session_id, call_seq)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_usage_session ON session_usage(session_id, call_seq)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_usage_created ON session_usage(created_at)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {

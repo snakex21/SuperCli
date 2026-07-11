@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"supercli/internal/system/childproc"
 )
 
 // SearchCode is a simple code-search tool used by the explore
@@ -100,9 +102,13 @@ func (s *SearchCode) hasRG() bool {
 }
 
 func (s *SearchCode) ripgrep(ctx context.Context, root, query string, max int) (Result, error) {
-	cmd := exec.CommandContext(ctx, "rg", "--no-heading", "--line-number",
-		"--max-count", fmt.Sprintf("%d", max),
-		"--", query, root)
+	args := []string{"--no-heading", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
+	for _, dir := range []string{".git", "node_modules", "vendor", "target", "dist", "build", ".next", ".cache", "__pycache__", ".venv", "venv", ".supercli"} {
+		args = append(args, "-g", "!"+dir+"/**")
+	}
+	args = append(args, "--", query, root)
+	cmd := exec.CommandContext(ctx, "rg", args...)
+	childproc.HideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		// rg exits 1 when no matches — not an error.
@@ -115,7 +121,46 @@ func (s *SearchCode) ripgrep(ctx context.Context, root, query string, max int) (
 	if text == "" {
 		return Result{Text: "no matches"}, nil
 	}
-	return Result{Text: text}, nil
+	// ripgrep's --max-count is per file, while the tool contract is a global
+	// result cap. Trim the merged output as the final cross-platform guard.
+	lines := make([]string, 0, max)
+	for _, line := range strings.Split(text, "\n") {
+		if ripgrepPathIsSkipped(line) {
+			continue
+		}
+		lines = append(lines, line)
+		if len(lines) == max {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return Result{Text: "no matches"}, nil
+	}
+	return Result{Text: strings.Join(lines, "\n")}, nil
+}
+
+func ripgrepPathIsSkipped(line string) bool {
+	path := line
+	for i := 0; i < len(line); i++ {
+		if line[i] != ':' {
+			continue
+		}
+		j := i + 1
+		for j < len(line) && line[j] >= '0' && line[j] <= '9' {
+			j++
+		}
+		if j > i+1 && j < len(line) && line[j] == ':' {
+			path = line[:i]
+			break
+		}
+	}
+	path = strings.ReplaceAll(path, "\\", "/")
+	for _, part := range strings.Split(path, "/") {
+		if skippedDirs[strings.ToLower(part)] {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SearchCode) fallbackErr(err error, out []byte) string {

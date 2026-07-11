@@ -167,7 +167,11 @@ func (m *Manager) Add(name, typ, baseURL, apiKey, model string) error {
 		Model:   model,
 	}
 	m.providers = append(m.providers, p)
-	return m.saveLocked()
+	err := m.saveLocked()
+	if err == nil {
+		llm.InvalidateProviderModelCache(baseURL)
+	}
+	return err
 }
 
 // Remove removes a provider by name from the config.toml list.
@@ -176,10 +180,12 @@ func (m *Manager) Remove(name string) error {
 	defer m.mu.Unlock()
 
 	found := false
+	removedBaseURL := ""
 	var filtered []config.ProviderConf
 	for _, p := range m.providers {
 		if p.Name == name {
 			found = true
+			removedBaseURL = p.BaseURL
 			continue
 		}
 		filtered = append(filtered, p)
@@ -188,7 +194,11 @@ func (m *Manager) Remove(name string) error {
 		return fmt.Errorf("provider %q not found", name)
 	}
 	m.providers = filtered
-	return m.saveLocked()
+	err := m.saveLocked()
+	if err == nil {
+		llm.InvalidateProviderModelCache(removedBaseURL)
+	}
+	return err
 }
 
 // Update modifies an existing provider's fields. Only non-nil pointers are
@@ -199,6 +209,7 @@ func (m *Manager) Update(name string, typ, baseURL, apiKey, model *string) error
 
 	for i, p := range m.providers {
 		if p.Name == name {
+			oldBaseURL := p.BaseURL
 			if apiKey != nil && *apiKey != "" && llm.CleanAPIKey(*apiKey) == "" {
 				return errors.New("API key is empty after removing whitespace and wrappers")
 			}
@@ -214,7 +225,12 @@ func (m *Manager) Update(name string, typ, baseURL, apiKey, model *string) error
 			if model != nil {
 				m.providers[i].Model = *model
 			}
-			return m.saveLocked()
+			err := m.saveLocked()
+			if err == nil {
+				llm.InvalidateProviderModelCache(oldBaseURL)
+				llm.InvalidateProviderModelCache(m.providers[i].BaseURL)
+			}
+			return err
 		}
 	}
 	return fmt.Errorf("provider %q not found", name)
@@ -376,8 +392,22 @@ func freeOnlyProvider(p config.ProviderConf) bool {
 // SetPrice updates a model's manual price in config.toml.
 // This writes to the model_prices array with source="user".
 func (m *Manager) SetPrice(modelID string, inputCost, outputCost float64) error {
+	return m.SetProviderPrice("", modelID, inputCost, 0, outputCost)
+}
+
+// SetProviderPrice stores a provider-scoped manual price. Provider may be
+// empty for backwards compatibility with legacy global model overrides.
+func (m *Manager) SetProviderPrice(provider, modelID string, inputCost, cachedInputCost, outputCost float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	provider = strings.TrimSpace(provider)
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return errors.New("model is required")
+	}
+	if inputCost < 0 || cachedInputCost < 0 || outputCost < 0 {
+		return errors.New("model prices cannot be negative")
+	}
 
 	// Update in-memory TOML config.
 	tc, err := config.LoadToml(m.tomlPath)
@@ -389,8 +419,9 @@ func (m *Manager) SetPrice(modelID string, inputCost, outputCost float64) error 
 	// Find existing entry or append.
 	found := false
 	for i, mp := range tc.ModelPrices {
-		if mp.Model == modelID {
+		if mp.Provider == provider && mp.Model == modelID {
 			tc.ModelPrices[i].InputCost = inputCost
+			tc.ModelPrices[i].CachedInputCost = cachedInputCost
 			tc.ModelPrices[i].OutputCost = outputCost
 			found = true
 			break
@@ -398,17 +429,45 @@ func (m *Manager) SetPrice(modelID string, inputCost, outputCost float64) error 
 	}
 	if !found {
 		tc.ModelPrices = append(tc.ModelPrices, config.ModelPriceConf{
-			Model:      modelID,
-			InputCost:  inputCost,
-			OutputCost: outputCost,
+			Provider:        provider,
+			Model:           modelID,
+			InputCost:       inputCost,
+			CachedInputCost: cachedInputCost,
+			OutputCost:      outputCost,
 		})
 	}
 
 	return config.SaveToml(m.tomlPath, tc)
 }
 
-// SetModelPrices pushes user-defined prices into the capability
-// registry and credits system. Called on startup and after price edits.
+// RemoveProviderPrice deletes one exact provider/model manual override.
+func (m *Manager) RemoveProviderPrice(provider, modelID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	provider = strings.TrimSpace(provider)
+	modelID = strings.TrimSpace(modelID)
+	tc, err := config.LoadToml(m.tomlPath)
+	if err != nil {
+		return err
+	}
+	filtered := tc.ModelPrices[:0]
+	found := false
+	for _, mp := range tc.ModelPrices {
+		if mp.Provider == provider && mp.Model == modelID {
+			found = true
+			continue
+		}
+		filtered = append(filtered, mp)
+	}
+	if !found {
+		return fmt.Errorf("manual price for %q/%q not found", provider, modelID)
+	}
+	tc.ModelPrices = filtered
+	return config.SaveToml(m.tomlPath, tc)
+}
+
+// SetModelPrices pushes applicable user-defined prices into the capability
+// registry. Provider-scoped entries only apply to matching model ownership.
 func (m *Manager) SetModelPrices(caps *llm.CapabilityRegistry) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -419,9 +478,13 @@ func (m *Manager) SetModelPrices(caps *llm.CapabilityRegistry) {
 	}
 	for _, mp := range tc.ModelPrices {
 		if existing, ok := caps.Get(mp.Model); ok {
+			if mp.Provider != "" && existing.Provider != mp.Provider {
+				continue
+			}
 			existing.InputCost = mp.InputCost
 			existing.OutputCost = mp.OutputCost
-			caps.Register(existing) // SourceUser priority
+			existing.Source = llm.SourceUser
+			caps.Register(existing)
 		}
 	}
 }
