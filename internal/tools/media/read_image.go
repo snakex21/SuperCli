@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 // ReadImageTool loads an image file from disk and returns it as
@@ -78,7 +80,8 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_image: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.IsDir() {
 		err := fmt.Errorf("read_image: %q is a directory", full)
@@ -91,7 +94,8 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 
 	data, err := os.ReadFile(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_image: read %q: %w", full, err)}, err
+		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 
 	mime := detectImageMIME(data)

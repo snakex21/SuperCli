@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/ledongthuc/pdf"
+
+	"supercli/internal/tools/fileops"
 )
 
 // Default bounds for the read_pdf tool. PDFs
@@ -111,7 +113,8 @@ func (t *ReadPdfTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_pdf: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("read_pdf: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.IsDir() {
 		err := fmt.Errorf("read_pdf: %q is a directory, not a pdf", full)
@@ -124,7 +127,8 @@ func (t *ReadPdfTool) Execute(ctx context.Context, args json.RawMessage) (Result
 
 	f, err := os.Open(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_pdf: open %q: %w", full, err)}, err
+		err = fmt.Errorf("read_pdf: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	defer f.Close()
 	reader, err := pdf.NewReader(f, info.Size())

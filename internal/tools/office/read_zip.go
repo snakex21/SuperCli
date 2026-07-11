@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"supercli/internal/tools/fileops"
 )
 
 // Default bounds for the read_zip tool. The
@@ -154,7 +156,8 @@ func (t *ReadZipTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_zip: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("read_zip: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.IsDir() {
 		err := fmt.Errorf("read_zip: %q is a directory, not a zip", full)
@@ -407,7 +410,7 @@ func (t *ReadZipTool) ListEntries(path string) ([]ZipEntry, error) {
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return nil, err
+		return nil, fileops.FileErr(err, full)
 	}
 	if info.Size() > t.MaxZipBytes {
 		return nil, fmt.Errorf("zip too large: %d > %d", info.Size(), t.MaxZipBytes)

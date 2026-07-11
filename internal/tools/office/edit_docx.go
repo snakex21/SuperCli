@@ -48,6 +48,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 const docxDocumentEntry = "word/document.xml"
@@ -138,7 +140,7 @@ func (t *EditDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 func (t *EditDocxTool) loadDocumentXML(full string) ([]byte, error) {
 	info, err := os.Stat(full)
 	if err != nil {
-		return nil, fmt.Errorf("stat %q: %w", full, err)
+		return nil, fileops.FileErr(err, full)
 	}
 	if info.Size() > t.MaxDocxBytes {
 		return nil, fmt.Errorf("file too large: %d > %d", info.Size(), t.MaxDocxBytes)
