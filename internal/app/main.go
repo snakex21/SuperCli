@@ -1209,6 +1209,16 @@ func Main() {
 		// server-side KV prompt cache. `stable_toolset = true|false`
 		// in config.toml overrides the built-in default.
 		StableToolset: resolveStableToolset(tomlCfg.StableToolset),
+		// Catalog hoist (EXPERIMENTAL, default off): with the stable
+		// toolset, move the thin-tools preamble (sentinel instruction
+		// + dormant catalog) into the KV-cached system prefix instead
+		// of re-injecting it behind the growing history every step
+		// (where llama.cpp re-evaluates it on every call). Kept behind
+		// an env switch until live-verified on a small local model —
+		// the recency risk is that the model reaches for tool_search
+		// less reliably when the catalog is not at the prompt end.
+		// Enable with SUPERCLI_CATALOG_HOIST=1.
+		CatalogHoist: envTruthy("SUPERCLI_CATALOG_HOIST"),
 		// Orchestrator: task carries a full schema from turn 1 (delegation
 		// is the main loop's primary action). The registry restriction
 		// itself is applied below via SetRegistry, once the task tools are
