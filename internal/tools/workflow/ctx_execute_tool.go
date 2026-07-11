@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	core "supercli/internal/tools/core"
 	"supercli/internal/tools/ctxexec"
 )
 
@@ -116,9 +117,12 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// first line "command_failed exit=N (D)" plus the
 	// capped stderr/stdout tails — so the model can
 	// self-correct in one turn. The JSON text is still
-	// returned for UIs that show tool output.
+	// returned for UIs that show tool output; the error
+	// is marked self-contained so Result.ModelContent
+	// does not append the JSON (same streams) a second
+	// time for the model.
 	if res.ExitCode != 0 {
-		return Result{Text: string(jb), Err: errors.New(res.FailureSummary())}, nil
+		return Result{Text: string(jb), Err: core.SelfContainedErr(errors.New(res.FailureSummary()))}, nil
 	}
 	return Result{Text: string(jb)}, nil
 }

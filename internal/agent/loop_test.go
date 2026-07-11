@@ -568,6 +568,48 @@ func TestLoop_ToolErrorReturnedAsToolMessage(t *testing.T) {
 	}
 }
 
+func TestLoop_ToolErrorKeepsDiagnosticText(t *testing.T) {
+	// Contract: a tool returning Result{Text: diagnostics, Err: err}
+	// must surface BOTH to the model. The historical ctx_execute bug
+	// was the loop using only Err and dropping the Text diagnostics.
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "id1", Name: "diagfail", Arguments: `{}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "ok"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name:        "diagfail",
+		Description: "fails with diagnostics",
+		Schema:      "{}",
+		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "stderr tail: permission denied on /x", Err: errors.New("exit 1")}, nil
+		},
+	})
+	l := makeLoop(t, p, reg, "")
+	ch, _ := l.Run(context.Background(), "x")
+	drainEvents(t, ch)
+	found := false
+	for _, m := range l.Messages {
+		if m.Role == llm.RoleTool && contains(m.Content, "error: exit 1") &&
+			contains(m.Content, "stderr tail: permission denied on /x") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected tool message to carry both the error and the diagnostic Text")
+	}
+}
+
 func TestLoop_MaxStepsEmitsError(t *testing.T) {
 	// Provider always returns a tool call so the loop never stops naturally.
 	p := &stubProvider{

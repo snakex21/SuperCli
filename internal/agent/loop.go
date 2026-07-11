@@ -1586,7 +1586,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
-				Content:    "error: " + res.Err.Error(),
+				// ModelContent is the single contract point for
+				// what the model sees: the error PLUS a capped
+				// tail of res.Text (deduplicated), so diagnostics
+				// a tool returns next to its error are not lost.
+				Content: res.ModelContent(),
 			}},
 		}
 	}
@@ -1596,7 +1600,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		Role:       llm.RoleTool,
 		ToolCallID: tc.ID,
 		Name:       tc.Name,
-		Content:    res.Text,
+		Content:    res.ModelContent(),
 	}}
 	if res.Image != nil {
 		img := &llm.ImageRef{
