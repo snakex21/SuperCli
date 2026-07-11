@@ -70,6 +70,16 @@ func (t *Tracker) SessionID() string { return t.sessionID }
 // The caller can use it to display caps.
 func (t *Tracker) Budget() Budget { return t.budget }
 
+// SessionCap returns the per-session token cap (0 means
+// unlimited). Satisfies the agent loop's optional
+// sessionCapper interface for budget-based eviction.
+func (t *Tracker) SessionCap() int64 {
+	if t == nil {
+		return 0
+	}
+	return t.budget.PerSession
+}
+
 // Record adds in/out tokens to the running session total
 // and persists a ledger row. Returns ErrBudgetExceeded
 // if the addition would push the session over its cap

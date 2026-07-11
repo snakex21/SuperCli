@@ -248,12 +248,12 @@ func TestEvictForBudget_TrimsOldestNonSystem(t *testing.T) {
 		llm.Message{Role: llm.RoleUser, Content: strings.Repeat("c", 1000)},
 		llm.Message{Role: llm.RoleAssistant, Content: strings.Repeat("d", 1000)},
 	)
-	// Stub credit tracker: 500 tokens used, threshold 400
-	l.creditTracker = &fakeCredit{used: 500}
+	// Stub credit tracker: session cap 500, threshold 400
+	l.creditTracker = &fakeCredit{cap: 500}
 	out := make(chan Event, 8)
 	defer close(out)
-	// Initial visible tokens: 1000 chars / 4 + 1000/4 + 1000/4 + 1000/4 = 1000 tokens
-	// Threshold: 500 * 0.8 = 400. Evict until <= 400.
+	// Visible token estimate is well above the threshold
+	// (cap 500 * 0.8 = 400), so eviction must kick in.
 	evicted := l.EvictForBudget(context.Background(), out)
 	if evicted < 1 {
 		t.Errorf("evicted = %d, want >= 1", evicted)
@@ -287,11 +287,48 @@ func TestEvictForBudget_NoEvictionUnderThreshold(t *testing.T) {
 		llm.Message{Role: llm.RoleUser, Content: "tiny"},
 		llm.Message{Role: llm.RoleAssistant, Content: "tiny"},
 	)
-	l.creditTracker = &fakeCredit{used: 10000} // threshold 8000
+	l.creditTracker = &fakeCredit{cap: 10000} // threshold 8000
 	out := make(chan Event, 8)
 	defer close(out)
 	if n := l.EvictForBudget(context.Background(), out); n != 0 {
 		t.Errorf("evicted = %d, want 0 (way under threshold)", n)
+	}
+}
+
+func TestEvictForBudget_NoCapNoOp(t *testing.T) {
+	l := makeLoopWithMessages(
+		llm.Message{Role: llm.RoleUser, Content: strings.Repeat("a", 100000)},
+		llm.Message{Role: llm.RoleAssistant, Content: strings.Repeat("b", 100000)},
+	)
+	// cap == 0 means unlimited: never evict, no matter how
+	// large the visible context or how much was already used.
+	l.creditTracker = &fakeCredit{cap: 0, used: 1 << 30}
+	out := make(chan Event, 8)
+	defer close(out)
+	if n := l.EvictForBudget(context.Background(), out); n != 0 {
+		t.Errorf("evicted = %d, want 0 (cap 0 = unlimited)", n)
+	}
+	if l.HiddenCount() != 0 {
+		t.Errorf("hidden = %d, want 0", l.HiddenCount())
+	}
+}
+
+// trackerNoCap is a CreditTracker that does not implement
+// sessionCapper at all.
+type trackerNoCap struct{}
+
+func (trackerNoCap) Record(_ context.Context, _, _ int64, _ string) error { return nil }
+func (trackerNoCap) Used() (session, daily int64)                         { return 1 << 30, 0 }
+
+func TestEvictForBudget_TrackerWithoutCapNoOp(t *testing.T) {
+	l := makeLoopWithMessages(
+		llm.Message{Role: llm.RoleUser, Content: strings.Repeat("a", 100000)},
+	)
+	l.creditTracker = trackerNoCap{}
+	out := make(chan Event, 8)
+	defer close(out)
+	if n := l.EvictForBudget(context.Background(), out); n != 0 {
+		t.Errorf("evicted = %d, want 0 (tracker exposes no cap)", n)
 	}
 }
 
@@ -317,7 +354,10 @@ func TestResetHidden(t *testing.T) {
 // fakeCredit is a stub credit tracker for F14 tests.
 type fakeCredit struct {
 	used int64
+	cap  int64
 }
+
+func (f *fakeCredit) SessionCap() int64 { return f.cap }
 
 func (f *fakeCredit) Record(_ context.Context, in, out int64, _ string) error {
 	f.used += in + out
