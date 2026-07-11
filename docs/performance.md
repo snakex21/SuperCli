@@ -18,6 +18,81 @@ actually prefilled. Verified token-exact against server logs during the
 2026-07-05 cache hunt. This line is the ground truth used for every
 number below — if you change prompt construction, watch it.
 
+## Phase telemetry (per-step breakdown, **default ON**)
+
+**What.** Every agent step is timed phase-by-phase and counted, so
+turn-economy work gets measured, not guessed (`internal/system/stats/`,
+fed by the loop since df8fbca). Per step it records:
+
+- **Phases** — wall time per canonical phase: `context_prepare`,
+  `request_encode`, `backend_wait` (= TTFT), `stream_total`,
+  `tool_execution`, `session_persist`, `next_turn_prepare`
+  (remainder), plus a `tool:<name>` entry per executed tool;
+- **ToolCalls** — raw tool-call batch size per step (duplicates
+  count) — THE metric for judging read-only tool parallelism;
+- tokens in/out per turn (same numbers as the `[tokens]` line).
+
+All timings are whole-phase `time.Since` measurements; TTFT is a single
+timestamp at the first delta, so the streaming hot path stays
+allocation-free.
+
+**How to look at it.**
+
+- TUI: `/cost` — per-turn table with a calls column, plus a "Phase
+  breakdown" section (per-step lines, phase totals, tool-calls
+  distribution: avg/step and steps with >1 call);
+- batch: one greppable stderr line per step —
+  `[phase] step=N calls=N in=N out=N <phase>=<ms> ...`;
+- programmatic: `stats.Save(path, turns)` dumps the turns as JSON.
+
+**Why ON.** No new knobs — the recorder was already wired by default;
+the loop now feeds it every step. Cost is a handful of timestamps per
+step, invisible next to a local-model turn.
+
+## Structured tool errors (deterministic failure results)
+
+**What.** When a tool fails, the model gets a short, deterministic,
+machine-shaped reason instead of a raw Go/OS error — so a small model
+fixes itself in one turn instead of guessing at "exit status 1".
+The CLI states only facts it is certain of (exit code, timeout,
+truncation, path); it never guesses causes.
+
+**Process tools** (`ctx_execute` via `ctxexec.FailureSummary`, user
+tools via `commandFailedErr`): first line is the fact line, then the
+tail of the captured streams — errors live at the end, so tails keep
+the LAST bytes, capped (2 KB per stream) with an explicit marker:
+
+```
+command_failed exit=1 (1.3s)
+stderr:
+FAIL: TestFoo ...
+```
+
+- timeout: `command_failed timeout exit=124 (10.0s)` + partial output;
+- process never started: `command_failed: exec: "nope": executable
+  file not found ...` (raw exec reason, verbatim);
+- over-long streams: `stderr (tail, truncated):` marker, same
+  retry-safe convention as the c74e100 read-tool caps. Before this,
+  a failed `ctx_execute` surfaced only `ctx_execute: exit 1` — the
+  stderr the model needed was dropped on the error path.
+
+**File tools** (`fileops.FileErr`, used by read_lines/read_context/
+edit_line(+anchored)/insert_after/delete_lines/write_file/move/copy/
+trash/list_dir): stable keyword + the exact path that was tried,
+instead of OS prose like `open C:\...: The system cannot find the file
+specified.`:
+
+```
+not_found C:\proj\data.txt
+permission C:\proj\locked.txt
+is_directory C:\proj\src
+```
+
+Unknown causes pass through unchanged (no fact, no rewrite). The error
+attribution heuristics (F4.d) recognise the structured forms, so error
+-log classification keeps working. Success outputs are untouched —
+only the failure path changed.
+
 ## KV-cache discipline (summary; details in architecture.md)
 
 The prompt must be byte-stable at the front, append-only at the tail.
@@ -102,3 +177,20 @@ clock; tokens are cheap by comparison. Hence:
 
 When adding a feature, price it in turns first, tokens second, and put
 the measurement in a telemetry line so the trade stays visible.
+
+## Recent fixes and experiments (2026-07-11)
+
+- **EvictForBudget threshold fix** (b2a393c): eviction now compares
+  against the session cap instead of tokens already used, so history
+  is no longer evicted too early.
+- **Streaming consume() O(n)** (593a352): the incremental marker
+  scanner replaces the quadratic `text += delta` accumulation on long
+  streamed answers.
+- **Catalog hoist** (`SUPERCLI_CATALOG_HOIST=1`, 8b43f4f, **default
+  OFF**): moves the thin-tools catalog into the stable prompt prefix
+  so it caches instead of re-evaluating each turn. Stays off until a
+  live A/B confirms the cache win outweighs the prefix-invalidation
+  risk when the catalog changes.
+- **Navigator on the small provider** (fadc051): route classification
+  for the navigator runs on the small side provider; awaiting live
+  test.
