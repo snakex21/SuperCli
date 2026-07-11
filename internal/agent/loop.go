@@ -172,6 +172,14 @@ type Loop struct {
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
 	navAuto bool
+	// navProvider (optional) runs the navigator's route classification
+	// on a small side provider instead of the main one. On a llama.cpp
+	// host with a single slot the navigator prompt (different prefix)
+	// evicts the coordinator's KV cache, forcing a full prefill re-eval
+	// on the next call — routing it to another model/host avoids that.
+	// nil = classify on the main provider (historical behaviour). Any
+	// error still degrades to the keyword RouteMap fallback.
+	navProvider llm.Provider
 
 	// nextUserAddon is appended ONCE to the next Run's user message
 	// (then cleared). Used by the preflight repo-context block
@@ -388,6 +396,14 @@ type LoopConfig struct {
 	Draft         *draft.Policy
 	DraftProvider llm.Provider
 
+	// NavigatorProvider, when non-nil, is the small side provider the
+	// navigator uses for route classification instead of the main one
+	// (see Loop.navProvider). main.go wires the task_model worker
+	// provider or the draft provider here when one is configured; the
+	// loop never picks a model itself. nil = classify on the main
+	// provider.
+	NavigatorProvider llm.Provider
+
 	// DraftOverrideSink, when non-nil, receives one
 	// record per "verifier overrode the draft" event.
 	// The F5 reflector package provides a default
@@ -489,6 +505,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		route:                 RouteCoordinator,
 		navigate:              cfg.EnableNavigator,
 		navAuto:               cfg.NavigatorAuto,
+		navProvider:           cfg.NavigatorProvider,
 	}
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
@@ -1260,7 +1277,17 @@ func (l *Loop) providerMessages() []llm.Message {
 func (l *Loop) navigateRoute(ctx context.Context, prompt string) RouteMode {
 	fallback := l.routeMap.Classify(prompt)
 	msgs := l.navigatorMessages(prompt)
-	stream, err := l.provider.Complete(ctx, msgs, nil)
+	// Classification runs on the small side provider when one is wired
+	// (task_model worker / draft provider) so the navigator's prompt —
+	// a different prefix — never evicts the main conversation from a
+	// single-slot llama.cpp KV cache. Errors (including a dead side
+	// host) degrade to the keyword fallback, exactly like main-provider
+	// errors always have — a broken navigator never breaks the turn.
+	prov := l.provider
+	if l.navProvider != nil {
+		prov = l.navProvider
+	}
+	stream, err := prov.Complete(ctx, msgs, nil)
 	if err != nil {
 		return fallback
 	}
