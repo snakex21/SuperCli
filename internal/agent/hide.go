@@ -117,17 +117,21 @@ func (l *Loop) EstimateVisibleTokens() int {
 // messages evicted. Emits a MessagesHiddenEvent when
 // anything was evicted.
 //
-// When CreditTracker is nil or the per-session cap is 0
-// (unlimited), this is a no-op.
+// When CreditTracker is nil, does not expose a cap, or the
+// per-session cap is 0 (unlimited), this is a no-op.
 func (l *Loop) EvictForBudget(ctx context.Context, out chan<- Event) (evicted int) {
 	if l.creditTracker == nil {
 		return 0
 	}
-	sessionUsed, _ := l.creditTracker.Used()
-	if sessionUsed <= 0 {
+	capper, ok := l.creditTracker.(sessionCapper)
+	if !ok {
 		return 0
 	}
-	threshold := int64(float64(sessionUsed) * 0.8)
+	sessionCap := capper.SessionCap()
+	if sessionCap <= 0 {
+		return 0 // unlimited: never evict for budget
+	}
+	threshold := int64(float64(sessionCap) * 0.8)
 	if threshold <= 0 {
 		return 0
 	}
@@ -150,6 +154,14 @@ func (l *Loop) EvictForBudget(ctx context.Context, out chan<- Event) (evicted in
 		}
 	}
 	return evicted
+}
+
+// sessionCapper is optionally implemented by CreditTrackers
+// that know their per-session token cap. EvictForBudget only
+// evicts when the cap is known and positive; trackers without
+// a cap (or with cap 0 = unlimited) never trigger eviction.
+type sessionCapper interface {
+	SessionCap() int64
 }
 
 // HiddenCount returns the number of currently-hidden

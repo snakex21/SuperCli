@@ -43,6 +43,12 @@ func (b *tokenBudget) Record(_ context.Context, in, out int64, _ string) error {
 	return nil
 }
 
+// SessionCap reports the worker's token limit so budget-based
+// eviction can key off the cap rather than tokens already spent.
+func (b *tokenBudget) SessionCap() int64 {
+	return b.limit
+}
+
 // Used reports the running total for both the session and daily slots
 // (a worker has no daily concept, so they are the same).
 func (b *tokenBudget) Used() (session, daily int64) {
