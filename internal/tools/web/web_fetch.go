@@ -167,11 +167,14 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: %w", err)}, nil
+		return Result{Err: fmt.Errorf("web_fetch: %w", requestFailedErr(err, u.Host))}, nil
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return Result{Err: fmt.Errorf("web_fetch: %s returned HTTP %d", u.Host, resp.StatusCode)}, nil
+		// Keep a capped tail of the error body: API error
+		// payloads carry the actionable detail a bare status
+		// code hides.
+		return Result{Err: fmt.Errorf("web_fetch: %w", httpFailedErr(resp, u.Host))}, nil
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, webFetchMaxBody))

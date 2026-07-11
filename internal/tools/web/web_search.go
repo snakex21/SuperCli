@@ -156,11 +156,11 @@ func (t *WebSearch) searchDuckDuckGo(ctx context.Context, query string, n int) (
 	req.Header.Set("Accept", "text/html")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, requestFailedErr(err, "html.duckduckgo.com")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from duckduckgo", resp.StatusCode)
+		return nil, httpFailedErr(resp, "html.duckduckgo.com")
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, webSearchMaxBody))
 	if err != nil {
@@ -237,11 +237,11 @@ func (t *WebSearch) searchBrave(ctx context.Context, query string, n int) ([]Web
 	req.Header.Set("X-Subscription-Token", t.apiKey)
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, requestFailedErr(err, "api.search.brave.com")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from brave", resp.StatusCode)
+		return nil, httpFailedErr(resp, "api.search.brave.com")
 	}
 	var parsed struct {
 		Web struct {
@@ -290,11 +290,11 @@ func (t *WebSearch) searchTavily(ctx context.Context, query string, n int) ([]We
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, requestFailedErr(err, "api.tavily.com")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from tavily", resp.StatusCode)
+		return nil, httpFailedErr(resp, "api.tavily.com")
 	}
 	var parsed struct {
 		Results []struct {
