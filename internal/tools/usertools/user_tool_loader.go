@@ -11,8 +11,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/system/childproc"
+	core "supercli/internal/tools/core"
 )
 
 // UserToolDef is the parsed shape of a single user-tool TOML
@@ -281,8 +283,10 @@ func runShell(ctx context.Context, command string, templates []string, params ma
 		// Structured, deterministic failure the model can
 		// act on in one turn: "command_failed exit=N" (or
 		// timeout) + the output tail. Also classifiable by
-		// the error attribution system (F4.d).
-		res.Err = commandFailedErr(ctx, err, string(out))
+		// the error attribution system (F4.d). res.Text is
+		// passed (not the raw output) so the interpolation
+		// notes reach the model on the error path too.
+		res.Err = commandFailedErr(ctx, err, res.Text)
 	}
 	return res, nil
 }
@@ -302,7 +306,7 @@ func runScript(ctx context.Context, interpreter, body string, templates []string
 		res.Text += "\n[notes]\n" + strings.Join(notes, "\n")
 	}
 	if err != nil {
-		res.Err = commandFailedErr(ctx, err, string(out))
+		res.Err = commandFailedErr(ctx, err, res.Text)
 	}
 	return res, nil
 }
@@ -336,12 +340,20 @@ func commandFailedErr(ctx context.Context, err error, out string) error {
 	}
 	out = strings.TrimSpace(out)
 	if out == "" {
-		return errors.New(head)
+		return core.SelfContainedErr(errors.New(head))
 	}
 	label := "output"
 	if len(out) > failTailBytes {
-		out = out[len(out)-failTailBytes:]
+		// Cut on a rune boundary (at most 3 bytes forward) so a
+		// multi-byte character is never split in half.
+		i := len(out) - failTailBytes
+		for i < len(out) && !utf8.RuneStart(out[i]) {
+			i++
+		}
+		out = out[i:]
 		label = "output (tail, truncated)"
 	}
-	return fmt.Errorf("%s\n%s:\n%s", head, label, out)
+	// The error already carries the output tail, so the model
+	// loop must not append Result.Text a second time.
+	return core.SelfContainedErr(fmt.Errorf("%s\n%s:\n%s", head, label, out))
 }

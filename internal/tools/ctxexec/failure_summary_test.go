@@ -3,6 +3,7 @@ package ctxexec
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // FailureSummary is the structured error the model sees when a
@@ -74,6 +75,29 @@ func TestFailureSummary_PreTruncatedFlagMarks(t *testing.T) {
 	got := r.FailureSummary()
 	if !strings.Contains(got, "stderr (tail, truncated):") {
 		t.Errorf("missing marker for pre-truncated stream:\n%s", got)
+	}
+}
+
+func TestFailureSummary_TailCutIsUTF8Safe(t *testing.T) {
+	// Build a stream whose FailTailBytes-from-the-end cut lands
+	// in the middle of a multi-byte rune: "ż" is 2 bytes, so a
+	// run of them with one leading ASCII byte guarantees a
+	// misaligned byte cut somewhere.
+	long := "x" + strings.Repeat("ż", FailTailBytes)
+	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long}
+	got := r.FailureSummary()
+	if !utf8.ValidString(got) {
+		t.Fatalf("summary is not valid UTF-8:\n%q", got[:120])
+	}
+	// The tail must start at a rune boundary: locate the quoted
+	// tail and check its first rune decodes cleanly.
+	i := strings.Index(got, "stderr (tail, truncated):\n")
+	if i < 0 {
+		t.Fatalf("missing truncation marker:\n%s", got[:120])
+	}
+	tail := got[i+len("stderr (tail, truncated):\n"):]
+	if r, _ := utf8.DecodeRuneInString(tail); r == utf8.RuneError {
+		t.Errorf("tail starts mid-rune: %q", tail[:8])
 	}
 }
 
