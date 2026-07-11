@@ -88,8 +88,8 @@ func TestVisibleMessages_CollapsesConsecutive(t *testing.T) {
 	if !strings.Contains(vis[1].Content, "2 message(s)") {
 		t.Errorf("vis[1] should say '2 message(s)', got %q", vis[1].Content)
 	}
-	if vis[1].Role != llm.RoleSystem {
-		t.Errorf("vis[1] role = %v, want system", vis[1].Role)
+	if vis[1].Role != llm.RoleUser {
+		t.Errorf("vis[1] role = %v, want user (mid-history system 400s strict chat templates)", vis[1].Role)
 	}
 	if vis[2].Content != "a2" {
 		t.Errorf("vis[2] = %q, want a2", vis[2].Content)

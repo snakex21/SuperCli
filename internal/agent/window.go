@@ -36,6 +36,13 @@ func (l *Loop) window() int {
 	return defaultContextWindow
 }
 
+// ContextWindow exposes the resolved window (config > provider
+// metadata > learned > default) so front-ends and tests can verify
+// the WindowFor wiring actually reached the loop.
+func (l *Loop) ContextWindow() int {
+	return l.window()
+}
+
 // maybeAutoCompact runs before every provider call. When the
 // visible token estimate exceeds 80% of the model's context
 // window, the conversation is summarized (via the same

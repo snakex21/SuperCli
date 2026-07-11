@@ -24,7 +24,7 @@ func TestCompactWithSummary_KeepsLeadingSystem(t *testing.T) {
 	if l.Messages[0].Content != "base prompt" {
 		t.Errorf("leading system message = %q, want it preserved", l.Messages[0].Content)
 	}
-	if l.Messages[1].Role != llm.RoleSystem || !strings.Contains(l.Messages[1].Content, "the summary") {
+	if l.Messages[1].Role != llm.RoleUser || !strings.Contains(l.Messages[1].Content, "the summary") {
 		t.Errorf("summary message = %q (%s)", l.Messages[1].Content, l.Messages[1].Role)
 	}
 }
@@ -53,8 +53,8 @@ func TestCompactPrefixWithSummary_KeepsTail(t *testing.T) {
 			t.Errorf("Messages[%d] = %q, want %q", i, l.Messages[i].Content, w)
 		}
 	}
-	if l.Messages[1].Role != llm.RoleSystem {
-		t.Errorf("summary role = %s, want system", l.Messages[1].Role)
+	if l.Messages[1].Role != llm.RoleUser {
+		t.Errorf("summary role = %s, want user (mid-history system 400s strict chat templates)", l.Messages[1].Role)
 	}
 }
 
