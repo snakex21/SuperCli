@@ -93,6 +93,44 @@ attribution heuristics (F4.d) recognise the structured forms, so error
 -log classification keeps working. Success outputs are untouched —
 only the failure path changed.
 
+The office/media readers (`read_pdf`, `read_docx`, `read_xlsx`,
+`read_zip`, `read_image`, `edit_docx`, `edit_xlsx`) route their
+stat/open/read failures through the same `fileops.FileErr` forms.
+
+**Web tools** (`web_fetch`, `web_search` — all engines): a non-200
+response keeps the error body instead of dropping it (API errors
+carry the fix, e.g. `{"code":"missing_api_key",...}`):
+
+```
+http_failed status=401 host=api.search.brave.com content_type=application/json retry_after=30
+body:
+<first 2 KB + last 2 KB, UTF-8-safe, omitted_bytes marker>
+```
+
+Transport failures (no response at all) get a deterministic cause
+token the model can branch on: `request_failed cause=timeout|dns|
+tls|canceled|error host=<h>: <err>`. Request headers (Authorization,
+tokens) are never echoed.
+
+**search_code**: a real ripgrep failure (bad pattern, crash — NOT
+exit 1, which means "no matches" and stays a valid result) falls
+back to the Go scanner; if that also fails the model gets a
+structured `search_failed ...` error instead of a fake result text.
+The `max` cap is now truly global: rg output is read streaming and
+the process is killed once the limit is hit (rg's `--max-count` is
+per file).
+
+**Output caps at the boundary** (all head+tail with an explicit
+`[... omitted_bytes=N ...]` marker, UTF-8-safe cuts,
+`core.HeadTail` / `core.HeadTailBuffer`):
+
+- user tools (shell/script): combined output bounded DURING the run
+  (first 8 KB + last 8 KB) — replaces `CombinedOutput()`, which held
+  arbitrary output in RAM before truncating;
+- MCP tools: external server results capped at 16 KB + 4 KB on
+  success, standard 2 KB error cap on `IsError` — a chatty server
+  can no longer inject megabytes into one tool result.
+
 ## KV-cache discipline (summary; details in architecture.md)
 
 The prompt must be byte-stable at the front, append-only at the tail.
