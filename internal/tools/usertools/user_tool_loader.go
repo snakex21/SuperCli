@@ -3,6 +3,7 @@ package usertools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -277,10 +278,11 @@ func runShell(ctx context.Context, command string, templates []string, params ma
 		res.Text += "\n[notes]\n" + strings.Join(notes, "\n")
 	}
 	if err != nil {
-		// Surface exit code in the error string so the
-		// error attribution system (F4.d) can classify
-		// it.
-		res.Err = fmt.Errorf("exit error: %w (output: %s)", err, truncate(string(out), 200))
+		// Structured, deterministic failure the model can
+		// act on in one turn: "command_failed exit=N" (or
+		// timeout) + the output tail. Also classifiable by
+		// the error attribution system (F4.d).
+		res.Err = commandFailedErr(ctx, err, string(out))
 	}
 	return res, nil
 }
@@ -300,14 +302,46 @@ func runScript(ctx context.Context, interpreter, body string, templates []string
 		res.Text += "\n[notes]\n" + strings.Join(notes, "\n")
 	}
 	if err != nil {
-		res.Err = fmt.Errorf("script error: %w (output: %s)", err, truncate(string(out), 200))
+		res.Err = commandFailedErr(ctx, err, string(out))
 	}
 	return res, nil
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+// failTailBytes caps the output tail inlined into a
+// command_failed error (CombinedOutput = one stream).
+const failTailBytes = 2048
+
+// commandFailedErr renders a failed process as the structured
+// failure the model sees:
+//
+//	command_failed exit=1
+//	output:
+//	<combined output tail>
+//
+// First line states only certain facts: the exit code when the
+// process ran and failed, "timeout" when the context deadline
+// killed it, or the raw exec error when it never started
+// (e.g. executable file not found). The tail keeps the LAST
+// bytes — where errors usually are — with a truncation marker.
+func commandFailedErr(ctx context.Context, err error, out string) error {
+	var head string
+	var ee *exec.ExitError
+	switch {
+	case ctx.Err() == context.DeadlineExceeded:
+		head = "command_failed timeout"
+	case errors.As(err, &ee):
+		head = fmt.Sprintf("command_failed exit=%d", ee.ExitCode())
+	default:
+		head = "command_failed: " + err.Error()
 	}
-	return s[:n] + "…"
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return errors.New(head)
+	}
+	label := "output"
+	if len(out) > failTailBytes {
+		out = out[len(out)-failTailBytes:]
+		label = "output (tail, truncated)"
+	}
+	return fmt.Errorf("%s\n%s:\n%s", head, label, out)
 }

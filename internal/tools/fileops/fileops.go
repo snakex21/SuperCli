@@ -10,6 +10,7 @@
 package fileops
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -42,13 +43,43 @@ const (
 	AnchorSearchRadius = 10
 )
 
+// FileErr maps a Go filesystem error to a short deterministic
+// message the model can act on without parsing OS prose:
+//
+//	not_found <path>
+//	permission <path>
+//	is_directory <path>
+//
+// Only facts the CLI is sure of — unknown causes pass through
+// unchanged. Raw Go errors like "open C:\...: The system cannot
+// find the file specified." are longer and harder for small
+// models to react to than a stable keyword + the exact path.
+func FileErr(err error, path string) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("not_found %s", path)
+	case errors.Is(err, fs.ErrPermission):
+		return fmt.Errorf("permission %s", path)
+	}
+	// A read/open that failed on an existing directory: state
+	// the shape fact instead of the OS-specific error text.
+	if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+		return fmt.Errorf("is_directory %s", path)
+	}
+	return err
+}
+
 // readLines reads all lines from path. Returns the lines
 // slice (0-indexed) and nil error on success. Lines do
-// NOT include trailing newlines.
+// NOT include trailing newlines. Errors are pre-classified
+// via FileErr so callers can return them verbatim.
 func readLines(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, FileErr(err, path)
 	}
 	// Handle empty file.
 	if len(data) == 0 {
@@ -85,7 +116,7 @@ func writeLines(path string, lines []string) error {
 
 // LineRange represents a single line with its 1-based number.
 type LineRange struct {
-	Number int    `json:"number"`
+	Number  int    `json:"number"`
 	Content string `json:"content"`
 }
 
@@ -104,7 +135,7 @@ func ReadLines(path string, from, to int) ([]LineRange, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return nil, fmt.Errorf("fileops.ReadLines: %w", err)
+		return nil, err
 	}
 	total := len(lines)
 	if from > total {
@@ -134,7 +165,7 @@ func ReadContext(path string, line, radius int) ([]LineRange, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return nil, fmt.Errorf("fileops.ReadContext: %w", err)
+		return nil, err
 	}
 	total := len(lines)
 	if line > total {
@@ -164,7 +195,7 @@ func EditLine(path string, line int, newContent string) (string, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return "", fmt.Errorf("fileops.EditLine: %w", err)
+		return "", err
 	}
 	total := len(lines)
 	if line > total {
@@ -201,7 +232,7 @@ func EditLine(path string, line int, newContent string) (string, error) {
 func EditLineAnchored(path string, line int, expectedOld, newContent string) (string, error) {
 	lines, err := readLines(path)
 	if err != nil {
-		return "", fmt.Errorf("fileops.EditLineAnchored: %w", err)
+		return "", err
 	}
 	at, err := resolveAnchor(lines, line, expectedOld)
 	if err != nil {
@@ -300,7 +331,7 @@ func EditLinesAnchored(path string, edits []AnchoredEdit) (string, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return "", fmt.Errorf("fileops.EditLinesAnchored: %w", err)
+		return "", err
 	}
 
 	// Phase 1: resolve & validate ALL anchors against the
@@ -371,7 +402,7 @@ func InsertAfter(path string, line int, newContent string) (string, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return "", fmt.Errorf("fileops.InsertAfter: %w", err)
+		return "", err
 	}
 	total := len(lines)
 	if line > total {
@@ -401,7 +432,7 @@ func DeleteLines(path string, from, to int) (string, error) {
 	}
 	lines, err := readLines(path)
 	if err != nil {
-		return "", fmt.Errorf("fileops.DeleteLines: %w", err)
+		return "", err
 	}
 	total := len(lines)
 	if from > total {
@@ -441,7 +472,7 @@ func buildDiff(lines []string, at int, oldLine, newLine string) string {
 	}
 	for i := from; i <= to; i++ {
 		prefix := " "
-	Content := lines[i]
+		Content := lines[i]
 		if i == at {
 			if oldLine != "" {
 				prefix = "-"
@@ -507,11 +538,11 @@ func WriteFile(path, content string) (WriteResult, error) {
 
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return WriteResult{}, fmt.Errorf("fileops.WriteFile: mkdir %s: %w", dir, err)
+			return WriteResult{}, FileErr(err, dir)
 		}
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return WriteResult{}, fmt.Errorf("fileops.WriteFile: %w", err)
+		return WriteResult{}, FileErr(err, path)
 	}
 	return WriteResult{Created: !existed, Bytes: len(content)}, nil
 }
@@ -556,7 +587,7 @@ func Move(src, dst string) (finalDst string, err error) {
 		return "", fmt.Errorf("fileops.Move: src and dst are required")
 	}
 	if _, err := os.Lstat(src); err != nil {
-		return "", fmt.Errorf("fileops.Move: source: %w", err)
+		return "", FileErr(err, src)
 	}
 	// move-INTO-folder convenience.
 	if info, err := os.Lstat(dst); err == nil {
@@ -593,7 +624,7 @@ func Copy(src, dst string) (finalDst string, err error) {
 	}
 	srcInfo, err := os.Lstat(src)
 	if err != nil {
-		return "", fmt.Errorf("fileops.Copy: source: %w", err)
+		return "", FileErr(err, src)
 	}
 	if info, err := os.Lstat(dst); err == nil {
 		if info.IsDir() && dst != src {
@@ -674,7 +705,7 @@ func Trash(src, trashDir string, now time.Time) (dst string, err error) {
 		return "", fmt.Errorf("fileops.Trash: empty path")
 	}
 	if _, err := os.Lstat(src); err != nil {
-		return "", fmt.Errorf("fileops.Trash: source: %w", err)
+		return "", FileErr(err, src)
 	}
 	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		return "", fmt.Errorf("fileops.Trash: prepare trash folder: %w", err)

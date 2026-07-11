@@ -18,6 +18,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 // ListDirTool lists the entries of a single directory.
@@ -83,7 +85,8 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 
 	info, err := os.Stat(dir)
 	if err != nil {
-		return Result{Err: fmt.Errorf("list_dir: %w", err)}, err
+		err = fmt.Errorf("list_dir: %w", fileops.FileErr(err, dir))
+		return Result{Err: err}, err
 	}
 	if !info.IsDir() {
 		return Result{Text: fmt.Sprintf("%s is a file (%d bytes), not a folder.", dir, info.Size())}, nil
