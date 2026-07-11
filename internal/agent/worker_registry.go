@@ -24,18 +24,29 @@ type Worker struct {
 	Model     string
 	Loop      *Loop
 	CreatedAt time.Time
-	UpdatedAt   time.Time
-	Status      string
-	LastResult  string
-	LastError   string
-	TokensIn    int
-	TokensOut   int
-	Steps       int // model turns consumed across all runs
 
-	mu sync.Mutex
+	// Mutable run state, guarded by stateMu. The run goroutine updates
+	// these mid-run while the TUI status bar and "/workers" read them via
+	// Snapshot/Counts, so every access outside single-threaded setup code
+	// must hold stateMu.
+	UpdatedAt  time.Time
+	Status     string
+	LastResult string
+	LastError  string
+	TokensIn   int
+	TokensOut  int
+	Steps      int // model turns consumed across all runs
 
-	// cancelMu guards cancel separately from mu: runWorkerLoop holds mu
-	// for the whole run, and Stop must be callable mid-run.
+	// runMu serializes runs: runWorkerLoop holds it for the whole run so
+	// a worker executes at most one prompt at a time.
+	runMu sync.Mutex
+	// stateMu guards the mutable state fields above. It is only ever held
+	// briefly (copying fields), never across Loop/provider calls, and is
+	// always acquired after runMu when both are needed.
+	stateMu sync.RWMutex
+
+	// cancelMu guards cancel separately from runMu: runWorkerLoop holds
+	// runMu for the whole run, and Stop must be callable mid-run.
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
 	stopped  bool
@@ -85,12 +96,15 @@ type Snapshot struct {
 	LastError   string
 	TokensIn    int
 	TokensOut   int
+	Steps       int
 }
 
-// Snapshot returns the current reportable state. It deliberately does NOT
-// take w.mu (held for the whole run); fields are read racily but are only
-// used for display.
+// Snapshot returns the current reportable state. It takes stateMu (not
+// runMu, which is held for the whole run) so it can be called safely from
+// the TUI/"/workers" while the run goroutine updates the worker.
 func (w *Worker) Snapshot() Snapshot {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
 	return Snapshot{
 		ID:          w.ID,
 		Agent:       w.Agent,
@@ -102,7 +116,24 @@ func (w *Worker) Snapshot() Snapshot {
 		LastError:   w.LastError,
 		TokensIn:    w.TokensIn,
 		TokensOut:   w.TokensOut,
+		Steps:       w.Steps,
 	}
+}
+
+// setState applies a state mutation under stateMu. The callback must only
+// touch the state fields — never call back into the loop/provider while
+// stateMu is held.
+func (w *Worker) setState(fn func(w *Worker)) {
+	w.stateMu.Lock()
+	fn(w)
+	w.stateMu.Unlock()
+}
+
+// status returns the current status under the state lock.
+func (w *Worker) status() string {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+	return w.Status
 }
 
 // WorkerRegistry stores live/completed workers for the current process.
@@ -173,7 +204,7 @@ func (r *WorkerRegistry) Stop(id string) error {
 		return fmt.Errorf("unknown worker %q", id)
 	}
 	if !w.Stop() {
-		return fmt.Errorf("worker %s is not running (status: %s)", id, w.Status)
+		return fmt.Errorf("worker %s is not running (status: %s)", id, w.status())
 	}
 	return nil
 }
@@ -195,8 +226,8 @@ type WorkerCounts struct {
 }
 
 // Counts tallies workers by status. Safe to call from the TUI render
-// path; it takes only the registry read lock and reads each worker's
-// status racily (display-only, same contract as Snapshot).
+// path; it takes the registry read lock and each worker's state read
+// lock (same contract as Snapshot).
 func (r *WorkerRegistry) Counts() WorkerCounts {
 	var c WorkerCounts
 	if r == nil {
@@ -206,7 +237,7 @@ func (r *WorkerRegistry) Counts() WorkerCounts {
 	defer r.mu.RUnlock()
 	for _, w := range r.workers {
 		c.Total++
-		switch w.Status {
+		switch w.status() {
 		case "running", "created":
 			c.Running++
 		case "done":

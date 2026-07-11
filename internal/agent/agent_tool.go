@@ -287,9 +287,11 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// Telemetry: record the worker's model only when it differs from
 	// the coordinator's, so the default single-model summary line is
 	// byte-identical to before and draft-verify economics stay
-	// measurable once a second backend is in play.
+	// measurable once a second backend is in play. Written under the
+	// state lock: the worker is already published in the registry, so
+	// Snapshot may be reading it concurrently.
 	if prov != a.Provider {
-		w.Model = prov.Name()
+		w.setState(func(w *Worker) { w.Model = prov.Name() })
 	}
 	if ar.Async {
 		a.startBackgroundWorker(w, workerPrompt, maxSteps)
@@ -340,9 +342,10 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 
 	tel := draftVerifyTelemetry{Outcome: "ACCEPT"}
 	// Snapshot the draft's cost (the first worker run already happened).
-	tel.DraftSteps = w.Steps
-	tel.DraftTokIn = w.TokensIn
-	tel.DraftTokOut = w.TokensOut
+	snap := w.Snapshot()
+	tel.DraftSteps = snap.Steps
+	tel.DraftTokIn = snap.TokensIn
+	tel.DraftTokOut = snap.TokensOut
 
 	best := draft
 	for round := 0; ; round++ {
@@ -366,9 +369,10 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 			instr := reviseInstruction(v.Instruction, sieve)
 			revised, err := runWorkerLoop(ctx, w, instr)
 			// Refresh the draft cost snapshot to include the revision run.
-			tel.DraftSteps = w.Steps
-			tel.DraftTokIn = w.TokensIn
-			tel.DraftTokOut = w.TokensOut
+			snap = w.Snapshot()
+			tel.DraftSteps = snap.Steps
+			tel.DraftTokIn = snap.TokensIn
+			tel.DraftTokOut = snap.TokensOut
 			if err == nil && strings.TrimSpace(revised) != "" {
 				best = revised
 			}
@@ -523,7 +527,7 @@ func (a *AgentTool) emitWorkerNotification(w *Worker, text string) {
 	a.ParentLoop.Emit(WorkerNotificationEvent{
 		TaskID:  w.ID,
 		Agent:   w.Agent,
-		Status:  w.Status,
+		Status:  w.status(),
 		Summary: workerSummary(w),
 		Text:    renderWorkerNotification(w, text),
 	})
