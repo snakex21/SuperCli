@@ -265,6 +265,26 @@ func interpolateArgs(templates []string, params map[string]any) ([]string, []str
 	return args, notes
 }
 
+// Output caps for user-tool processes. The buffer bounds memory
+// DURING the run (a tool printing 500 MB costs 16 KB of RAM, not
+// 500 MB), and the capped combined output is what reaches the
+// history on success too.
+const (
+	outputHeadBytes = 8 << 10 // first 8 KB of combined output
+	outputTailBytes = 8 << 10 // last 8 KB of combined output
+)
+
+// runCapped runs a prepared command with stdout+stderr combined
+// into a head+tail bounded buffer (replaces CombinedOutput, which
+// held the entire output in RAM before any truncation).
+func runCapped(cmd *exec.Cmd) (string, error) {
+	buf := core.NewHeadTailBuffer(outputHeadBytes, outputTailBytes)
+	cmd.Stdout = buf
+	cmd.Stderr = buf // same writer: os/exec serializes the streams
+	err := cmd.Run()
+	return buf.String(), err
+}
+
 // runShell executes the command with interpolated args. The
 // command is sandboxed to the current process working
 // directory (or HOME override); it can NOT walk up to system
@@ -274,8 +294,8 @@ func runShell(ctx context.Context, command string, templates []string, params ma
 	args, notes := interpolateArgs(templates, params)
 	cmd := exec.CommandContext(ctx, command, args...)
 	childproc.HideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	res := Result{Text: string(out)}
+	out, err := runCapped(cmd)
+	res := Result{Text: out}
 	if len(notes) > 0 {
 		res.Text += "\n[notes]\n" + strings.Join(notes, "\n")
 	}
@@ -300,8 +320,8 @@ func runScript(ctx context.Context, interpreter, body string, templates []string
 	cmd := exec.CommandContext(ctx, interpreter, args...)
 	childproc.HideWindow(cmd)
 	cmd.Stdin = strings.NewReader(body)
-	out, err := cmd.CombinedOutput()
-	res := Result{Text: string(out)}
+	out, err := runCapped(cmd)
+	res := Result{Text: out}
 	if len(notes) > 0 {
 		res.Text += "\n[notes]\n" + strings.Join(notes, "\n")
 	}
