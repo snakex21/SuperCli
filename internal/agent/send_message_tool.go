@@ -68,15 +68,19 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.Status = "running"
-	w.UpdatedAt = time.Now()
-	w.LastError = ""
+	w.runMu.Lock()
+	defer w.runMu.Unlock()
+	w.setState(func(w *Worker) {
+		w.Status = "running"
+		w.UpdatedAt = time.Now()
+		w.LastError = ""
+	})
 
 	if w.Loop == nil {
-		w.Status = "failed"
-		w.LastError = "worker loop is nil"
+		w.setState(func(w *Worker) {
+			w.Status = "failed"
+			w.LastError = "worker loop is nil"
+		})
 		return "", fmt.Errorf("worker %s: loop is nil", w.ID)
 	}
 	// Make this run stoppable: task_stop / "/workers stop <id>" cancel
@@ -89,8 +93,10 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 	events, err := w.Loop.Run(runCtx, prompt)
 	if err != nil {
 		w.clearCancel()
-		w.Status = "failed"
-		w.LastError = err.Error()
+		w.setState(func(w *Worker) {
+			w.Status = "failed"
+			w.LastError = err.Error()
+		})
 		return "", err
 	}
 
@@ -100,32 +106,42 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		case MessageEvent:
 			text.WriteString(e.Text)
 		case DoneEvent:
-			w.TokensIn += e.Usage.Input
-			w.TokensOut += e.Usage.Output
-			w.Steps++
+			w.setState(func(w *Worker) {
+				w.TokensIn += e.Usage.Input
+				w.TokensOut += e.Usage.Output
+				w.Steps++
+			})
 		case ErrorEvent:
 			stopped := w.clearCancel()
-			w.UpdatedAt = time.Now()
-			w.LastResult = text.String()
+			w.setState(func(w *Worker) {
+				w.UpdatedAt = time.Now()
+				w.LastResult = text.String()
+				if stopped {
+					w.Status = "stopped"
+					w.LastError = "stopped by request"
+					return
+				}
+				w.Status = "failed"
+				w.LastError = e.Err.Error()
+			})
 			if stopped {
-				w.Status = "stopped"
-				w.LastError = "stopped by request"
 				return text.String(), fmt.Errorf("worker %s stopped by request", w.ID)
 			}
-			w.Status = "failed"
-			w.LastError = e.Err.Error()
 			return text.String(), e.Err
 		}
 	}
 	w.clearCancel()
-	w.Status = "done"
-	w.UpdatedAt = time.Now()
-	w.LastResult = text.String()
+	w.setState(func(w *Worker) {
+		w.Status = "done"
+		w.UpdatedAt = time.Now()
+		w.LastResult = text.String()
+	})
 	return text.String(), nil
 }
 
 func renderWorkerNotification(w *Worker, result string) string {
-	status := w.Status
+	s := w.Snapshot()
+	status := s.Status
 	if status == "" {
 		status = "done"
 	}
@@ -136,29 +152,30 @@ func renderWorkerNotification(w *Worker, result string) string {
 <status>%s</status>
 <summary>%s</summary>
 <result>%s</result>
-</task-notification>`, w.ID, w.Agent, status, summary, result)
+</task-notification>`, s.ID, s.Agent, status, summary, result)
 }
 
 func workerSummary(w *Worker) string {
 	if w == nil {
 		return "worker unknown"
 	}
-	status := w.Status
+	s := w.Snapshot()
+	status := s.Status
 	if status == "" {
 		status = "done"
 	}
 	// One-line status the coordinator can relay: kind, outcome, and the
 	// resource cost (steps + tokens) so a run that hit a limit is legible.
 	summary := fmt.Sprintf("%s %s · %d steps · %d in/%d out tok",
-		w.Agent, status, w.Steps, w.TokensIn, w.TokensOut)
+		s.Agent, status, s.Steps, s.TokensIn, s.TokensOut)
 	// model-per-task telemetry: name the backend only when it differs
 	// from the coordinator's (Model is set by the task tool then), so
 	// the default single-model line keeps its historical format.
-	if w.Model != "" {
-		summary += " · model=" + w.Model
+	if s.Model != "" {
+		summary += " · model=" + s.Model
 	}
-	if w.LastError != "" {
-		summary += ": " + w.LastError
+	if s.LastError != "" {
+		summary += ": " + s.LastError
 	}
 	return summary
 }
