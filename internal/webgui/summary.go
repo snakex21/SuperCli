@@ -40,14 +40,20 @@ func summarizeHistoryMessage(text string, maxRunes int) string {
 // summary of the conversation so far. Falls back to summarizeHistoryMessage
 // so history still works offline or when the provider refuses the request.
 func (e *Engine) summarizeHistoryMessageLLM(ctx context.Context, text string, maxRunes int) string {
-	fallback := summarizeHistoryMessage(text, maxRunes)
-	if strings.TrimSpace(text) == "" || e == nil {
-		return fallback
+	if e == nil {
+		return summarizeHistoryMessage(text, maxRunes)
 	}
-
 	e.mu.RLock()
 	prov := e.prov
 	e.mu.RUnlock()
+	return summarizeHistoryMessageWithProvider(ctx, text, maxRunes, prov)
+}
+
+func summarizeHistoryMessageWithProvider(ctx context.Context, text string, maxRunes int, prov llm.Provider) string {
+	fallback := summarizeHistoryMessage(text, maxRunes)
+	if strings.TrimSpace(text) == "" {
+		return fallback
+	}
 	if prov == nil {
 		return fallback
 	}
@@ -102,17 +108,23 @@ func (e *Engine) updateSessionTitleAsync(sessionID, prompt string) {
 	if sessionID == "" || strings.TrimSpace(prompt) == "" {
 		return
 	}
+	initialTitle := summarizeHistoryMessage(prompt, 80)
 	go func() {
-		title := e.summarizeHistoryMessageLLM(context.Background(), prompt, 80)
-		if title == "" || strings.HasPrefix(title, "<") {
-			return
-		}
 		store, err := session.OpenStore(e.dataDir)
 		if err != nil {
 			return
 		}
 		defer store.Close()
-		_ = store.SetTitle(sessionID, title)
+		e.mu.RLock()
+		prov := e.prov
+		cfg := e.cfg
+		e.mu.RUnlock()
+		prov = newMeteredProvider(prov, store, sessionID, e.usageIdentity(cfg, "title"))
+		title := summarizeHistoryMessageWithProvider(context.Background(), prompt, 80, prov)
+		if title == "" || strings.HasPrefix(title, "<") {
+			return
+		}
+		_, _ = store.SetTitleIfCurrent(sessionID, initialTitle, title)
 	}()
 }
 
@@ -127,7 +139,7 @@ func cleanLLMSummary(text string) string {
 
 // stripThinking removes common thinking/reasoning wrappers from model output.
 // Handles: <thinking>...</thinking>, <reasoning>...</reasoning>,
-// <thought>...</thought>, ``, and unclosed tags.
+// <thought>...</thought>, “, and unclosed tags.
 func stripThinking(text string) string {
 	lower := strings.ToLower(text)
 

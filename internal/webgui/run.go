@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 )
 
@@ -60,7 +61,22 @@ func Run(eng *Engine, opts RunOptions) error {
 	log.Printf("SuperCli web GUI: %s", url)
 	windowClosedCh := make(chan struct{}, 1)
 	if !opts.NoWindow {
-		if appCmd, werr := OpenAppWindow(url); werr != nil {
+		// Prefer a true native WebView2 host. Besides giving the program its own
+		// Windows identity, this avoids tying server lifetime to a Chrome/Edge
+		// launcher process. The browser path remains a compatibility fallback
+		// for machines without the WebView2 runtime.
+		if nativeErr := runNativeAppWindow(url); nativeErr == nil {
+			log.Printf("native app window closed; shutting down…")
+			return Shutdown(srv)
+		} else {
+			log.Printf("native app window unavailable (%v); trying browser app mode", nativeErr)
+		}
+		profileDir := filepath.Join(eng.DataDir(), "browser-profile")
+		if mkErr := os.MkdirAll(profileDir, 0o700); mkErr != nil {
+			log.Printf("could not prepare isolated app profile: %v", mkErr)
+			profileDir = ""
+		}
+		if appCmd, werr := OpenAppWindow(url, profileDir); werr != nil {
 			log.Printf("app-mode window unavailable (%v); opening default browser", werr)
 			if berr := OpenInBrowser(url); berr != nil {
 				log.Printf("could not open a browser automatically: %v — open %s manually", berr, url)

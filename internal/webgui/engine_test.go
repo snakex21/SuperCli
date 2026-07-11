@@ -293,6 +293,9 @@ func TestEngine_DataPanels_EmptyStores(t *testing.T) {
 	if sv.Model != "echo-test" {
 		t.Errorf("stats model = %q", sv.Model)
 	}
+	if sv.Cost.Calls != 0 || sv.Cost.UnknownCalls != 0 || sv.Cost.IncludedCalls != 0 {
+		t.Errorf("empty stats preview must not invent calls: %+v", sv.Cost)
+	}
 }
 
 func TestEngine_ListSessionsFiltersActiveWorkspace(t *testing.T) {

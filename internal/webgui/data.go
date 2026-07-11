@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/account/credits"
 	"supercli/internal/storage/goal"
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
@@ -77,13 +76,6 @@ type taskView struct {
 	Status string `json:"status"`
 }
 
-// statsView is the cost/credit dashboard payload.
-type statsView struct {
-	Model        string `json:"model"`
-	SessionToken int64  `json:"session_tokens"`
-	DailyToken   int64  `json:"daily_tokens"`
-}
-
 // listSessions returns up to limit recent sessions for the active workspace,
 // newest first. The shared database keeps every project's history; filtering
 // changes visibility only and never deletes or migrates sessions.
@@ -116,6 +108,53 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 		})
 	}
 	return out, nil
+}
+
+func (e *Engine) renameSession(id, title string) error {
+	id = strings.TrimSpace(id)
+	title = strings.TrimSpace(title)
+	if id == "" {
+		return errors.New("session id is required")
+	}
+	if title == "" {
+		return errors.New("session title is required")
+	}
+	if len([]rune(title)) > 120 {
+		return errors.New("session title is too long (maximum 120 characters)")
+	}
+	store, err := session.OpenStore(e.dataDir)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	meta, err := store.Get(id)
+	if err != nil {
+		return err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return errSessionOutsideWorkspace
+	}
+	return store.SetTitle(id, title)
+}
+
+func (e *Engine) deleteSession(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("session id is required")
+	}
+	store, err := session.OpenStore(e.dataDir)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	meta, err := store.Get(id)
+	if err != nil {
+		return err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return errSessionOutsideWorkspace
+	}
+	return store.Delete(id)
 }
 
 // transcript returns all messages for one session in order.
@@ -220,27 +259,4 @@ func (e *Engine) activeGoal(ctx context.Context) (*goalView, error) {
 		Status: string(g.Status),
 		Tasks:  tv,
 	}, nil
-}
-
-// stats returns the cost/credit dashboard payload for one session id.
-func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error) {
-	sv := statsView{Model: e.ModelName()}
-	db, err := openDataDB(e.dataDir)
-	if err != nil {
-		return sv, nil
-	}
-	defer db.Close()
-	cs := credits.NewStorage(db)
-	if err := cs.Migrate(ctx); err != nil {
-		return sv, nil
-	}
-	if sessionID != "" {
-		if total, err := cs.SessionTotal(ctx, sessionID); err == nil {
-			sv.SessionToken = total
-		}
-	}
-	if total, err := cs.DailyTotal(ctx); err == nil {
-		sv.DailyToken = total
-	}
-	return sv, nil
 }

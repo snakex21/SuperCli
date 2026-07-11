@@ -47,6 +47,46 @@ function fmtWhen(iso) {
   if (diff < 86400000) return Math.round(diff / 3600000) + "h";
   return d.toLocaleDateString();
 }
+function statsLocale() {
+  return typeof ui !== "undefined" && ui.lang === "pl" ? "pl-PL" : "en-US";
+}
+function fmtInteger(n) {
+  n = Number(n);
+  if (!Number.isFinite(n)) n = 0;
+  try { return new Intl.NumberFormat(statsLocale(), { maximumFractionDigits: 0 }).format(Math.round(n)); }
+  catch (e) { return String(Math.round(n)); }
+}
+function fmtCompactNumber(n) {
+  n = Number(n);
+  if (!Number.isFinite(n)) n = 0;
+  try {
+    return new Intl.NumberFormat(statsLocale(), {
+      notation: "compact", maximumFractionDigits: Math.abs(n) >= 10000 ? 1 : 0,
+    }).format(n);
+  } catch (e) { return fmtTok(n); }
+}
+function fmtMoney(n, currency, rate) {
+  n = Number(n);
+  if (!Number.isFinite(n)) return "—";
+  var abs = Math.abs(n);
+  var digits = rate ? 6 : (abs > 0 && abs < 0.0001 ? 6 : (abs > 0 && abs < 0.01 ? 4 : 2));
+  try {
+    return new Intl.NumberFormat(statsLocale(), {
+      style: "currency", currency: currency || "USD",
+      minimumFractionDigits: rate ? 2 : Math.min(2, digits), maximumFractionDigits: digits,
+    }).format(n);
+  } catch (e) { return (currency || "USD") + " " + n.toFixed(digits); }
+}
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  var d = new Date(iso);
+  if (isNaN(d)) return "—";
+  try {
+    return new Intl.DateTimeFormat(statsLocale(), {
+      dateStyle: "medium", timeStyle: "short",
+    }).format(d);
+  } catch (e) { return d.toLocaleString(); }
+}
 async function j(url, opts) {
   var resp = await fetch(url, opts);
   if (!resp.ok) throw new Error((await resp.text() || resp.status).toString().trim());
@@ -71,6 +111,9 @@ var I18N = {
   en: {
     "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects",
     "side.add": "add", "side.noSessions": "No sessions yet.", "side.noProjects": "No projects registered.",
+    "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name",
+    "session.deleteConfirm": "Delete this conversation permanently?", "session.renamed": "Conversation renamed.",
+    "session.deleted": "Conversation deleted.", "session.stopRun": "Stop the current run before deleting this conversation.",
     "project.stopRun": "Stop the current run before switching projects.",
     "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save",
     "common.cancel": "Cancel", "common.edit": "edit", "common.remove": "remove", "common.add": "Add",
@@ -82,13 +125,20 @@ var I18N = {
     "welcome.sub": "The agent reads, edits and runs code in the active workspace.",
     "welcome.h1": "Summarize this project", "welcome.h2": "Check configuration status", "welcome.h3": "How do I run the tests?",
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
-    "composer.ready": "Ready", "composer.working": "Working…", "composer.stopped": "Stopped.",
+    "composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
     "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached",
     "role.thinking": "Thinking", "chat.stopped": "stopped by user", "chat.connError": "connection error",
-    "stats.model": "model", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
+    "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
+    "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
     "stats.daily": "tokens today", "stats.workers": "Workers", "stats.noWorkers": "No delegations this session.",
     "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "hard delegation · next session",
-    "stats.noTurn": "No turns yet.",
+    "stats.noTurn": "No turns yet.", "stats.sessionSection": "Session", "stats.totalTokens": "total tokens",
+    "stats.inputTokens": "input tokens", "stats.evaluatedInput": "evaluated input", "stats.cachedInput": "cached input",
+    "stats.outputTokens": "output tokens", "stats.reasoningTokens": "reasoning", "stats.totalCost": "total cost",
+    "stats.messages": "messages", "stats.userMessages": "user", "stats.assistantMessages": "assistant",
+    "stats.toolMessages": "tool", "stats.toolCalls": "tool calls", "stats.calls": "model calls",
+    "stats.created": "created", "stats.updated": "last activity", "stats.contextWindow": "context window",
+    "stats.currentContext": "Current context", "stats.contextShare": "estimated request composition",
     "panel.title": "Control panel", "panel.settings": "Settings", "panel.appearance": "Appearance",
     "panel.models": "Models", "panel.providers": "Providers", "panel.accounts": "Accounts",
     "panel.mcp": "MCP", "panel.memory": "Memory", "panel.goal": "Goal", "panel.usage": "Usage",
@@ -107,6 +157,7 @@ var I18N = {
     "prov.showKey": "Show", "prov.hideKey": "Hide", "prov.loadingKey": "Loading saved key…",
     "prov.keyLoaded": "Saved key loaded locally.", "prov.keyLoadFailed": "Saved key could not be shown; leaving this field empty will keep it.",
     "prov.key": "key", "prov.noKey": "no key", "prov.models": "models",
+    "prov.added": "Provider added.", "prov.addFailed": "Error — provider was not added",
     "acct.title": "Codex accounts", "acct.login": "Log in", "acct.logout": "Log out",
     "acct.refreshTok": "Refresh token", "acct.loggingIn": "logging in…", "acct.loggedOut": "logged out",
     "mcp.servers": "MCP servers", "mcp.none": "No MCP servers configured.", "mcp.addServer": "Add MCP server",
@@ -114,7 +165,29 @@ var I18N = {
     "mcp.editJson": "edit as JSON", "mcp.saveJson": "Save JSON", "mcp.backToList": "back to list",
     "mem.empty": "No memory entries.", "goal.none": "No active goal.",
     "usage.model": "Model", "usage.session": "Session tokens", "usage.daily": "Tokens today",
-    "usage.context": "Context report",
+    "usage.context": "Context report", "usage.summary": "Session summary", "usage.details": "Session details",
+    "usage.noSession": "Start or select a session to collect persistent usage statistics.",
+    "usage.contextEmpty": "No context snapshot has been recorded yet.",
+    "cost.estimated": "Estimated", "cost.manual": "Manual rate", "cost.subscription": "Subscription",
+    "cost.local": "Local", "cost.free": "Free", "cost.unknown": "Unknown", "cost.partial": "Partial estimate",
+    "cost.subscriptionValue": "Included in plan", "cost.localValue": "Runs locally", "cost.freeValue": "Free",
+    "cost.unknownValue": "Price unavailable", "cost.partialValue": "Partial coverage",
+    "cost.source": "Source", "cost.source.manual": "manual rate", "cost.source.official": "official pricing",
+    "cost.source.provider": "provider pricing", "cost.source.catalog": "price catalog",
+    "cost.source.mixed": "mixed rates", "cost.source.free": "free model",
+    "cost.source.subscription": "subscription", "cost.source.local": "local runtime",
+    "cost.unknownCalls.one": "call without a known price", "cost.unknownCalls.other": "calls without a known price",
+    "cost.includedCalls.one": "included or local call", "cost.includedCalls.other": "included or local calls",
+    "cost.cacheUnknown": "No separate cache rate is known; cached input uses the regular input rate in this estimate.",
+    "price.title": "Rates & manual override", "price.hint": "USD per 1M tokens for this exact provider/model pair.",
+    "price.input": "Input", "price.cache": "Cached input", "price.output": "Output", "price.unit": "USD / 1M tokens",
+    "price.cacheHint": "Use 0 when the provider does not publish a separate cache rate.",
+    "price.save": "Save manual rate", "price.remove": "Remove manual rate",
+    "price.saved": "Manual rate saved.", "price.removed": "Manual rate removed.",
+    "price.invalid": "Enter finite values from 0 to 1,000,000.",
+    "price.identityMissing": "A provider and model are required before a manual rate can be saved.",
+    "price.removeConfirm": "Remove the manual rate for this provider and model?",
+    "context.user": "User", "context.assistant": "Assistant", "context.tools": "Tools", "context.other": "Other",
     "files.up": "up", "files.save": "Save", "files.saved": "Saved.",
     "about.desc": "Single-binary AI coding agent with portable data. This GUI is a thin front-end over the same engine the TUI drives.",
     "about.workspace": "Workspace", "about.model": "Model", "about.shortcuts": "Keyboard shortcuts",
@@ -127,6 +200,9 @@ var I18N = {
   pl: {
     "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty",
     "side.add": "dodaj", "side.noSessions": "Brak sesji.", "side.noProjects": "Brak projektów.",
+    "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy",
+    "session.deleteConfirm": "Usunąć tę rozmowę na stałe?", "session.renamed": "Zmieniono nazwę rozmowy.",
+    "session.deleted": "Usunięto rozmowę.", "session.stopRun": "Zatrzymaj trwającą odpowiedź przed usunięciem tej rozmowy.",
     "project.stopRun": "Zatrzymaj bieżące zadanie przed zmianą projektu.",
     "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz",
     "common.cancel": "Anuluj", "common.edit": "edytuj", "common.remove": "usuń", "common.add": "Dodaj",
@@ -138,13 +214,20 @@ var I18N = {
     "welcome.sub": "Agent czyta, edytuje i uruchamia kod w aktywnym projekcie.",
     "welcome.h1": "Podsumuj ten projekt", "welcome.h2": "Sprawdź stan konfiguracji", "welcome.h3": "Jak uruchomić testy?",
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
-    "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.stopped": "Zatrzymano.",
+    "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
     "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache",
     "role.thinking": "Myślenie", "chat.stopped": "zatrzymane przez użytkownika", "chat.connError": "błąd połączenia",
-    "stats.model": "model", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
+    "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
+    "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
     "stats.daily": "tokeny dziś", "stats.workers": "Workerzy", "stats.noWorkers": "Brak delegacji w tej sesji.",
     "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "twarda delegacja · następna sesja",
-    "stats.noTurn": "Jeszcze bez tur.",
+    "stats.noTurn": "Jeszcze bez tur.", "stats.sessionSection": "Sesja", "stats.totalTokens": "łącznie tokenów",
+    "stats.inputTokens": "tokeny wejściowe", "stats.evaluatedInput": "wejście bez cache", "stats.cachedInput": "wejście z cache",
+    "stats.outputTokens": "tokeny wyjściowe", "stats.reasoningTokens": "rozumowanie", "stats.totalCost": "łączny koszt",
+    "stats.messages": "wiadomości", "stats.userMessages": "użytkownik", "stats.assistantMessages": "asystent",
+    "stats.toolMessages": "narzędzia", "stats.toolCalls": "wywołania narzędzi", "stats.calls": "wywołania modelu",
+    "stats.created": "utworzono", "stats.updated": "ostatnia aktywność", "stats.contextWindow": "limit kontekstu",
+    "stats.currentContext": "Bieżący kontekst", "stats.contextShare": "szacowany podział zapytania",
     "panel.title": "Panel sterowania", "panel.settings": "Ustawienia", "panel.appearance": "Wygląd",
     "panel.models": "Modele", "panel.providers": "Dostawcy", "panel.accounts": "Konta",
     "panel.mcp": "MCP", "panel.memory": "Pamięć", "panel.goal": "Cel", "panel.usage": "Zużycie",
@@ -163,6 +246,7 @@ var I18N = {
     "prov.showKey": "Pokaż", "prov.hideKey": "Ukryj", "prov.loadingKey": "Wczytywanie zapisanego klucza…",
     "prov.keyLoaded": "Zapisany klucz wczytano lokalnie.", "prov.keyLoadFailed": "Nie udało się pokazać klucza; puste pole nadal go zachowa.",
     "prov.key": "klucz", "prov.noKey": "brak klucza", "prov.models": "modeli",
+    "prov.added": "Provider został dodany.", "prov.addFailed": "Błąd — provider nie został dodany",
     "acct.title": "Konta Codex", "acct.login": "Zaloguj", "acct.logout": "Wyloguj",
     "acct.refreshTok": "Odśwież token", "acct.loggingIn": "logowanie…", "acct.loggedOut": "wylogowany",
     "mcp.servers": "Serwery MCP", "mcp.none": "Brak serwerów MCP.", "mcp.addServer": "Dodaj serwer MCP",
@@ -170,7 +254,31 @@ var I18N = {
     "mcp.editJson": "edytuj jako JSON", "mcp.saveJson": "Zapisz JSON", "mcp.backToList": "wróć do listy",
     "mem.empty": "Brak wpisów pamięci.", "goal.none": "Brak aktywnego celu.",
     "usage.model": "Model", "usage.session": "Tokeny sesji", "usage.daily": "Tokeny dziś",
-    "usage.context": "Raport kontekstu",
+    "usage.context": "Raport kontekstu", "usage.summary": "Podsumowanie sesji", "usage.details": "Szczegóły sesji",
+    "usage.noSession": "Rozpocznij lub wybierz sesję, aby zbierać trwałe statystyki użycia.",
+    "usage.contextEmpty": "Nie zapisano jeszcze migawki kontekstu.",
+    "cost.estimated": "Szacunek", "cost.manual": "Stawka ręczna", "cost.subscription": "Subskrypcja",
+    "cost.local": "Lokalny", "cost.free": "Bezpłatny", "cost.unknown": "Nieznany", "cost.partial": "Częściowy szacunek",
+    "cost.subscriptionValue": "W ramach subskrypcji", "cost.localValue": "Działa lokalnie", "cost.freeValue": "Bezpłatnie",
+    "cost.unknownValue": "Brak danych o cenie", "cost.partialValue": "Częściowe pokrycie",
+    "cost.source": "Źródło", "cost.source.manual": "stawka ręczna", "cost.source.official": "oficjalny cennik",
+    "cost.source.provider": "cennik dostawcy", "cost.source.catalog": "katalog cen",
+    "cost.source.mixed": "mieszane stawki", "cost.source.free": "model bezpłatny",
+    "cost.source.subscription": "subskrypcja", "cost.source.local": "lokalne uruchomienie",
+    "cost.unknownCalls.one": "wywołanie bez znanej ceny", "cost.unknownCalls.few": "wywołania bez znanej ceny",
+    "cost.unknownCalls.many": "wywołań bez znanej ceny", "cost.unknownCalls.other": "wywołania bez znanej ceny",
+    "cost.includedCalls.one": "wywołanie w planie lub lokalne", "cost.includedCalls.few": "wywołania w planie lub lokalne",
+    "cost.includedCalls.many": "wywołań w planie lub lokalnych", "cost.includedCalls.other": "wywołania w planie lub lokalne",
+    "cost.cacheUnknown": "Brak osobnej stawki cache; w tym szacunku użyto zwykłej ceny wejścia.",
+    "price.title": "Stawki i ręczne nadpisanie", "price.hint": "USD za 1 mln tokenów dla tej dokładnej pary dostawca/model.",
+    "price.input": "Wejście", "price.cache": "Wejście z cache", "price.output": "Wyjście", "price.unit": "USD / 1 mln tokenów",
+    "price.cacheHint": "Wpisz 0, jeśli dostawca nie publikuje osobnej stawki cache.",
+    "price.save": "Zapisz stawkę ręczną", "price.remove": "Usuń stawkę ręczną",
+    "price.saved": "Zapisano stawkę ręczną.", "price.removed": "Usunięto stawkę ręczną.",
+    "price.invalid": "Wpisz skończone wartości od 0 do 1 000 000.",
+    "price.identityMissing": "Przed zapisaniem stawki wymagane są dostawca i model.",
+    "price.removeConfirm": "Usunąć ręczną stawkę dla tego dostawcy i modelu?",
+    "context.user": "Użytkownik", "context.assistant": "Asystent", "context.tools": "Narzędzia", "context.other": "Inne",
     "files.up": "wyżej", "files.save": "Zapisz", "files.saved": "Zapisano.",
     "about.desc": "Agent kodowania w jednej binarce z przenośnymi danymi. To GUI jest cienkim frontem nad tym samym silnikiem co TUI.",
     "about.workspace": "Projekt", "about.model": "Model", "about.shortcuts": "Skróty klawiszowe",
@@ -280,7 +388,11 @@ function renderMarkdownish(text) {
       if (nl > 0) { lang = code.slice(0, nl).trim(); code = code.slice(nl + 1); }
       html += '<pre data-lang="' + escAttr(lang) + '"><code>' + escHtml(code.replace(/\s+$/, "")) + "</code></pre>";
     } else {
-      html += mdBlocks(parts[i]);
+      // Some providers emit empty HTML comment markers while transitioning
+      // between reasoning and visible text. They carry no content and should
+      // not appear as literal "<!-- -->" paragraphs. Fenced code is handled
+      // by the branch above and remains byte-for-byte visible.
+      html += mdBlocks(parts[i].replace(/^[ \t]*<!--\s*-->\s*$/gm, ""));
     }
   }
   return html;
@@ -416,6 +528,7 @@ function addUserMsg(text) {
 function addAssistantMsg() {
   var m = el("div", "msg-assistant");
   m._raw = "";
+  m._renderTimer = null;
   stream.appendChild(m);
   return m;
 }
@@ -430,6 +543,30 @@ function renderAssistant(node) {
   node.querySelectorAll("details[data-think-id]").forEach(function (d) {
     if (closed[d.dataset.thinkId]) d.open = false;
   });
+}
+
+// Providers often send a token in each SSE frame. Rebuilding all accumulated
+// Markdown for every token makes long answers progressively more expensive and
+// can freeze the WebView UI. Batch chunks and render at an adaptive cadence.
+function scheduleAssistantRender(node) {
+  if (!node || node._renderTimer !== null) return;
+  var n = node._raw.length;
+  var delay = n > 32000 ? 200 : (n > 8000 ? 100 : 40);
+  node._renderTimer = setTimeout(function () {
+    node._renderTimer = null;
+    renderAssistant(node);
+    smartScroll();
+  }, delay);
+}
+
+function flushAssistantRender(node) {
+  if (!node) return;
+  if (node._renderTimer !== null) {
+    clearTimeout(node._renderTimer);
+    node._renderTimer = null;
+  }
+  renderAssistant(node);
+  smartScroll();
 }
 function addEventLine(text, cls, tag) {
   var line = el("div", "event-line" + (cls ? " " + cls : ""));
@@ -565,10 +702,15 @@ async function sendPrompt(text) {
   sendBtn.type = "button";
   addUserMsg(text);
   var current = null;
+  var terminalSeen = false;
+  var lastProgressAt = Date.now();
   runStart = Date.now();
   setRunState("running", t("composer.working"));
   runTimer = setInterval(function () {
-    runStatus.textContent = t("composer.working") + " " + fmtDuration(Date.now() - runStart);
+    var now = Date.now();
+    var quiet = now - lastProgressAt;
+    runStatus.textContent = (quiet >= 10000 ? t("composer.waiting") + " " + fmtDuration(quiet) :
+      t("composer.working") + " " + fmtDuration(now - runStart));
   }, 100);
 
   try {
@@ -585,17 +727,32 @@ async function sendPrompt(text) {
     var reader = resp.body.getReader();
     var decoder = new TextDecoder();
     var buf = "";
+    function processFrame(frame) {
+      var line = frame.replace(/^data: /, "").trim();
+      if (!line) return;
+      try {
+        var ev = JSON.parse(line);
+        lastProgressAt = Date.now();
+        if (ev.type === "done" || ev.type === "error") terminalSeen = true;
+        current = handleEvent(ev, current);
+      } catch (e) {}
+    }
     for (;;) {
       var chunk = await reader.read();
       if (chunk.done) break;
       buf += decoder.decode(chunk.value, { stream: true });
-      var frames = buf.split("\n\n");
+      var frames = buf.split(/\r?\n\r?\n/);
       buf = frames.pop();
       for (var f = 0; f < frames.length; f++) {
-        var line = frames[f].replace(/^data: /, "").trim();
-        if (!line) continue;
-        try { current = handleEvent(JSON.parse(line), current); } catch (e) {}
+        processFrame(frames[f]);
       }
+    }
+    buf += decoder.decode();
+    if (buf.trim()) processFrame(buf);
+    flushAssistantRender(current);
+    if (!terminalSeen) {
+      addEventLine(t("chat.streamEnded"), "error", "error");
+      setRunState("idle", t("common.error"));
     }
   } catch (e) {
     if (e.name === "AbortError") {
@@ -606,6 +763,7 @@ async function sendPrompt(text) {
       setRunState("idle", t("chat.connError"));
     }
   } finally {
+    flushAssistantRender(current);
     streaming = false;
     abortCtl = null;
     clearInterval(runTimer);
@@ -629,10 +787,10 @@ function handleEvent(ev, current) {
     case "message":
       if (!current) current = addAssistantMsg();
       current._raw += ev.text;
-      renderAssistant(current);
-      smartScroll();
+      scheduleAssistantRender(current);
       return current;
     case "tool_call":
+      flushAssistantRender(current);
       addToolCall(ev.name, ev.args, ev.id);
       return null;
     case "tool_result":
@@ -655,6 +813,7 @@ function handleEvent(ev, current) {
       addEventLine(clip(ev.text || "goal continuation", 120), "", "goal");
       return current;
     case "done":
+      flushAssistantRender(current);
       var elapsed = Date.now() - runStart;
       lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount };
       addTurnMeta(ev, elapsed);
@@ -662,6 +821,7 @@ function handleEvent(ev, current) {
       notifyDone(elapsed);
       return null;
     case "error":
+      flushAssistantRender(current);
       addEventLine(ev.err || "error", "error", "error");
       setRunState("idle", t("common.error"));
       return null;
@@ -754,14 +914,52 @@ async function checkHealth() {
 
 /* ═══ side panel: tabs ═══ */
 
+function activateSideTab(button) {
+  if (!button) return;
+  $$("#side-tabs button[data-tab]").forEach(function (tab) {
+    var selected = tab === button;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  $$(".side-pane").forEach(function (pane) {
+    var selected = pane.id === "tab-" + button.dataset.tab;
+    pane.classList.toggle("active", selected);
+    pane.hidden = !selected;
+  });
+}
+(function initSideTabs() {
+  var tabs = $("#side-tabs");
+  tabs.setAttribute("role", "tablist");
+  $$("#side-tabs button[data-tab]").forEach(function (button) {
+    var pane = $("#tab-" + button.dataset.tab);
+    button.id = "side-tab-" + button.dataset.tab;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", pane.id);
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", button.id);
+  });
+  activateSideTab($("#side-tabs button.active") || $("#side-tabs button[data-tab]"));
+})();
 $("#side-tabs").addEventListener("click", function (e) {
   var b = e.target.closest("button[data-tab]");
   if (!b) return;
-  $$("#side-tabs button").forEach(function (x) { x.classList.toggle("active", x === b); });
-  $$(".side-pane").forEach(function (p) { p.classList.toggle("active", p.id === "tab-" + b.dataset.tab); });
+  activateSideTab(b);
   if (b.dataset.tab === "stats") renderStats();
   if (b.dataset.tab === "sessions") loadSessions();
   if (b.dataset.tab === "projects") loadProjects();
+});
+$("#side-tabs").addEventListener("keydown", function (e) {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].indexOf(e.key) < 0) return;
+  var tabs = $$("#side-tabs button[data-tab]");
+  var index = tabs.indexOf(document.activeElement);
+  if (index < 0) return;
+  e.preventDefault();
+  if (e.key === "Home") index = 0;
+  else if (e.key === "End") index = tabs.length - 1;
+  else index = (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[index].focus();
+  tabs[index].click();
 });
 function toggleSidebar() {
   ui.sidebarHidden = !ui.sidebarHidden;
@@ -776,68 +974,198 @@ $("#toggle-sidebar").addEventListener("click", toggleSidebar);
 function statRow(label, value) {
   var row = el("div", "stat-row");
   row.appendChild(el("span", "", label));
-  row.appendChild(el("span", "v", value));
+  var val = el("span", "v", value);
+  val.title = value;
+  row.appendChild(val);
   return row;
 }
 
+function statNumber(value, fallback) {
+  var n = Number(value);
+  return Number.isFinite(n) ? n : (fallback || 0);
+}
+function statNullableNumber(value) {
+  var n = Number(value);
+  return value !== null && value !== "" && Number.isFinite(n) ? n : null;
+}
+function normalizeStats(raw) {
+  raw = raw || {};
+  var session = raw.session || {};
+  var tokens = raw.tokens || {};
+  var context = raw.context || {};
+  var breakdown = context.breakdown || {};
+  var cost = raw.cost || {};
+  var input = statNumber(tokens.input);
+  var cached = statNumber(tokens.cached_input);
+  var output = statNumber(tokens.output);
+  var total = Object.prototype.hasOwnProperty.call(tokens, "total")
+    ? statNumber(tokens.total) : statNumber(raw.session_tokens, input + output);
+  return {
+    model: raw.model || session.model || activeModelID || "",
+    dailyTokens: statNumber(raw.daily_tokens),
+    session: {
+      id: session.id || "", title: session.title || "", provider: session.provider || "",
+      providerType: session.provider_type || "", model: session.model || raw.model || activeModelID || "",
+      createdAt: session.created_at || "", updatedAt: session.updated_at || "",
+      messages: statNumber(session.messages), userMessages: statNumber(session.user_messages),
+      assistantMessages: statNumber(session.assistant_messages), toolMessages: statNumber(session.tool_messages),
+      toolCalls: statNumber(session.tool_calls),
+    },
+    tokens: {
+      input: input, evaluatedInput: Object.prototype.hasOwnProperty.call(tokens, "evaluated_input")
+        ? statNumber(tokens.evaluated_input) : Math.max(0, input - cached),
+      cachedInput: cached, output: output, reasoning: statNumber(tokens.reasoning), total: total,
+      hasCached: !!tokens.has_cached || cached > 0, hasReasoning: !!tokens.has_reasoning || statNumber(tokens.reasoning) > 0,
+    },
+    context: {
+      window: statNumber(context.window), estimatedUsed: statNumber(context.estimated_used),
+      percent: Math.max(0, Math.min(100, statNumber(context.percent))),
+      breakdown: {
+        user: statNumber(breakdown.user), assistant: statNumber(breakdown.assistant),
+        tools: statNumber(breakdown.tools), other: statNumber(breakdown.other),
+      },
+    },
+    cost: {
+      state: String(cost.state || "unknown").toLowerCase(), amount: statNullableNumber(cost.amount),
+      currency: cost.currency || "USD", source: String(cost.source || ""), estimated: !!cost.estimated,
+      partial: !!cost.partial, calls: statNumber(cost.calls), unknownCalls: statNumber(cost.unknown_calls),
+      includedCalls: statNumber(cost.included_calls), inputPerMillion: statNullableNumber(cost.input_per_million),
+      cachedInputPerMillion: statNullableNumber(cost.cached_input_per_million),
+      outputPerMillion: statNullableNumber(cost.output_per_million),
+      cacheDiscountKnown: !!cost.cache_discount_known, manual: !!cost.manual,
+    },
+  };
+}
+function statsURL() {
+  return "/api/stats" + (activeSessionID ? "?session=" + encodeURIComponent(activeSessionID) : "");
+}
+function normalizedCostState(cost) {
+  if (cost && cost.partial) return "partial";
+  var state = cost && cost.state || "unknown";
+  return ["estimated", "manual", "subscription", "local", "free", "unknown"].indexOf(state) >= 0 ? state : "unknown";
+}
+function costStateLabel(cost) { return t("cost." + normalizedCostState(cost)); }
+function costSourceLabel(source) {
+  if (!source) return "";
+  var key = "cost.source." + source;
+  var label = t(key);
+  return label === key ? source : label;
+}
+function costPrimary(cost) {
+  var state = normalizedCostState(cost);
+  if ((state === "estimated" || state === "manual" || state === "partial") && cost.amount !== null) {
+    return (state === "manual" ? "" : "~") + fmtMoney(cost.amount, cost.currency);
+  }
+  if (state === "subscription") return t("cost.subscriptionValue");
+  if (state === "local") return t("cost.localValue");
+  if (state === "free") return t("cost.freeValue");
+  if (state === "partial") return t("cost.partialValue");
+  return t("cost.unknownValue");
+}
+function costMeta(cost) {
+  var parts = [costStateLabel(cost)];
+  var source = costSourceLabel(cost.source);
+  if (source && ["estimated", "manual", "partial"].indexOf(normalizedCostState(cost)) >= 0) parts.push(source);
+  return parts.join(" · ");
+}
+function costCoverage(cost) {
+  var parts = [];
+  if (cost.unknownCalls) parts.push(fmtCountLabel(cost.unknownCalls, "cost.unknownCalls"));
+  if (cost.includedCalls) parts.push(fmtCountLabel(cost.includedCalls, "cost.includedCalls"));
+  return parts.join(" · ");
+}
+function fmtCountLabel(value, baseKey) {
+  var category = "other";
+  try { category = new Intl.PluralRules(statsLocale()).select(value); } catch (e) {}
+  var key = baseKey + "." + category;
+  var label = t(key);
+  if (label === key) label = t(baseKey + ".other");
+  return fmtInteger(value) + " " + label;
+}
+function appendCompactContext(parent, context) {
+  if (!context || context.window <= 0) return;
+  var pct = Math.max(0, Math.min(100, context.percent));
+  var bar = el("div", "ctx-bar");
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-label", t("stats.currentContext"));
+  bar.setAttribute("aria-valuemin", "0");
+  bar.setAttribute("aria-valuemax", "100");
+  bar.setAttribute("aria-valuenow", String(pct));
+  bar.setAttribute("aria-valuetext", pct + "% · " + fmtInteger(context.estimatedUsed) + " / " + fmtInteger(context.window));
+  var fill = el("div");
+  fill.style.width = pct + "%";
+  bar.appendChild(fill);
+  parent.appendChild(bar);
+  parent.appendChild(el("div", "stats-note", t("stats.currentContext") + ": " + pct + "% · " +
+    fmtCompactNumber(context.estimatedUsed) + " / " + fmtCompactNumber(context.window)));
+}
+function appendSidebarCost(parent, cost) {
+  var state = normalizedCostState(cost);
+  var block = el("div", "side-cost cost-state-" + state);
+  block.appendChild(el("div", "side-cost-label", t("stats.totalCost")));
+  block.appendChild(el("div", "side-cost-value" + (cost.amount === null ? " text" : ""), costPrimary(cost)));
+  block.appendChild(el("div", "side-cost-meta", costMeta(cost)));
+  var coverage = costCoverage(cost);
+  if (coverage) block.appendChild(el("div", "side-cost-coverage", coverage));
+  parent.appendChild(block);
+}
+
+var statsRenderSeq = 0;
 async function renderStats() {
   var box = $("#stats-block");
   if (!box || ui.sidebarHidden) return;
+  var seq = ++statsRenderSeq;
+  var requestSession = activeSessionID;
   box.innerHTML = "";
+  box.setAttribute("role", "region");
+  box.setAttribute("aria-label", t("side.stats"));
+  box.setAttribute("aria-live", "polite");
+  box.setAttribute("aria-busy", "true");
 
-  box.appendChild(el("div", "stats-head", t("stats.turn")));
-  box.appendChild(statRow(t("stats.model"), activeModelID || "—"));
   if (lastTurn) {
+    box.appendChild(el("div", "stats-head", t("stats.turn")));
+    box.appendChild(statRow(t("stats.model"), activeModelID || "—"));
     var ev = lastTurn.ev;
-    // Context bar: last turn's prompt size vs the active model's window.
-    var ctxLen = 0;
-    for (var i = 0; i < modelCache.length; i++) {
-      if (modelCache[i].id === activeModelID && modelCache[i].context_length) { ctxLen = modelCache[i].context_length; break; }
-    }
-    if (ctxLen && ev.tok_in) {
-      var pct = Math.min(100, Math.round(ev.tok_in * 100 / ctxLen));
-      var bar = el("div", "ctx-bar");
-      var fill = el("div");
-      fill.style.width = pct + "%";
-      bar.appendChild(fill);
-      box.appendChild(bar);
-      box.appendChild(el("div", "stats-note", t("stats.ctx") + ": " + pct + "% · " + fmtTok(ev.tok_in) + " / " + fmtTok(ctxLen)));
-    }
     var evalTok = (ev.tok_in || 0) - (ev.tok_cached || 0);
-    if (ev.tok_cached) box.appendChild(statRow("cache / eval / gen", fmtTok(ev.tok_cached) + " / " + fmtTok(evalTok) + " / " + fmtTok(ev.tok_out)));
-    else if (ev.tok_total) box.appendChild(statRow("in / gen", fmtTok(ev.tok_in) + " / " + fmtTok(ev.tok_out)));
+    if (ev.tok_cached) box.appendChild(statRow("cache / eval / gen", fmtCompactNumber(ev.tok_cached) + " / " + fmtCompactNumber(evalTok) + " / " + fmtCompactNumber(ev.tok_out)));
+    else if (ev.tok_total) box.appendChild(statRow("in / gen", fmtCompactNumber(ev.tok_in) + " / " + fmtCompactNumber(ev.tok_out)));
     if (ev.cache_hit_pct) box.appendChild(statRow(t("run.cached"), ev.cache_hit_pct + "%"));
-    if (ev.reasoning_tok) box.appendChild(statRow(t("run.think"), fmtTok(ev.reasoning_tok)));
+    if (ev.reasoning_tok) box.appendChild(statRow(t("run.think"), fmtCompactNumber(ev.reasoning_tok)));
     if (lastTurn.tools) box.appendChild(statRow(t("run.tools"), String(lastTurn.tools)));
-  } else {
-    box.appendChild(el("div", "side-empty", t("stats.noTurn")));
   }
 
-  // Session / daily totals from the credits store.
+  var cfgPromise = j("/api/config").catch(function () { return null; });
   try {
-    var s = await j("/api/stats" + (activeSessionID ? "?session=" + encodeURIComponent(activeSessionID) : ""));
-    box.appendChild(el("div", "stats-head", t("panel.usage")));
-    box.appendChild(statRow(t("stats.session"), fmtTok(s.session_tokens)));
-    box.appendChild(statRow(t("stats.daily"), fmtTok(s.daily_tokens)));
-  } catch (e) {}
+    var stats = normalizeStats(await j(statsURL()));
+    if (seq !== statsRenderSeq || requestSession !== activeSessionID) return;
+    box.appendChild(el("div", "stats-head", t("stats.sessionSection")));
+    if (stats.session.provider) box.appendChild(statRow(t("stats.provider"), stats.session.provider));
+    box.appendChild(statRow(t("stats.model"), stats.session.model || stats.model || "—"));
+    box.appendChild(statRow(t("stats.totalTokens"), fmtCompactNumber(stats.tokens.total)));
+    if (stats.dailyTokens > 0) box.appendChild(statRow(t("stats.daily"), fmtCompactNumber(stats.dailyTokens)));
+    appendCompactContext(box, stats.context);
+    appendSidebarCost(box, stats.cost);
+  } catch (e) {
+    if (seq !== statsRenderSeq) return;
+    box.appendChild(el("div", "side-empty", t("common.error") + ": " + e.message));
+  }
 
-  // Workers seen this session (delegation breakdown).
-  box.appendChild(el("div", "stats-head", t("stats.workers")));
-  if (!workersSeen.length) {
-    box.appendChild(el("div", "side-empty", t("stats.noWorkers")));
-  } else {
+  // Delegations stay visible when present, but an empty section would make the
+  // narrow inspector feel like a dashboard rather than a compact HUD.
+  if (workersSeen.length) {
+    box.appendChild(el("div", "stats-head", t("stats.workers")));
     workersSeen.slice(-8).forEach(function (wk) {
       box.appendChild(statRow(wk.name + (wk.status ? " · " + wk.status : ""), clip(wk.summary, 40) || "—"));
     });
   }
 
   // Orchestrator switch — visible without digging (config.toml knob).
-  box.appendChild(el("div", "stats-head", t("stats.orch")));
-  try {
-    var cfg = await j("/api/config");
+  var cfg = await cfgPromise;
+  if (seq === statsRenderSeq && cfg) {
     var knob = null;
     (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator") knob = k; });
     if (knob) {
+      box.appendChild(el("div", "stats-head", t("stats.orch")));
       var row = el("div", "stat-row");
       row.appendChild(el("span", "", t("stats.orchDesc")));
       var seg = el("span", "seg");
@@ -854,7 +1182,8 @@ async function renderStats() {
       row.appendChild(seg);
       box.appendChild(row);
     }
-  } catch (e) {}
+  }
+  if (seq === statsRenderSeq) box.setAttribute("aria-busy", "false");
 }
 
 /* ═══ sessions ═══ */
@@ -874,12 +1203,73 @@ async function loadSessions() {
       b.appendChild(el("span", "t", s.first_user_msg || s.id));
       b.appendChild(el("span", "s", fmtWhen(s.started_at) + " · " + s.message_count));
       b.addEventListener("click", function () { resumeSession(s.id); });
+
+      var actions = el("span", "session-actions");
+      var rename = el("span", "session-action rename", "✎");
+      rename.setAttribute("role", "button");
+      rename.tabIndex = 0;
+      rename.title = t("session.rename");
+      rename.setAttribute("aria-label", t("session.rename"));
+      function doRename(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        renameSession(s);
+      }
+      rename.addEventListener("click", doRename);
+      rename.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doRename(e); });
+      actions.appendChild(rename);
+
+      var remove = el("span", "session-action delete", "×");
+      remove.setAttribute("role", "button");
+      remove.tabIndex = 0;
+      remove.title = t("session.delete");
+      remove.setAttribute("aria-label", t("session.delete"));
+      function doDelete(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteSession(s.id);
+      }
+      remove.addEventListener("click", doDelete);
+      remove.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doDelete(e); });
+      actions.appendChild(remove);
+      b.appendChild(actions);
       list.appendChild(b);
     });
   } catch (e) {
     list.innerHTML = "";
     list.appendChild(el("div", "side-empty", t("common.error")));
   }
+}
+
+async function renameSession(session) {
+  var current = session.first_user_msg || "";
+  var title = window.prompt(t("session.namePrompt"), current);
+  if (title === null) return;
+  title = title.trim();
+  if (!title || title === current) return;
+  try {
+    await j("/api/sessions", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: session.id, title: title }),
+    });
+    toast(t("session.renamed"));
+    await loadSessions();
+    renderStats();
+  } catch (e) { toast(e.message); }
+}
+
+async function deleteSession(id) {
+  if (streaming && id === activeSessionID) {
+    toast(t("session.stopRun"));
+    return;
+  }
+  if (!window.confirm(t("session.deleteConfirm"))) return;
+  try {
+    await j("/api/sessions?id=" + encodeURIComponent(id), { method: "DELETE" });
+    if (id === activeSessionID) newSession();
+    else await loadSessions();
+    toast(t("session.deleted"));
+  } catch (e) { toast(e.message); }
 }
 
 async function resumeSession(id) {
@@ -891,6 +1281,7 @@ async function resumeSession(id) {
     activeSessionID = id;
     stream.innerHTML = "";
     toolRows = {}; openToolOrder = [];
+    lastTurn = null; workersSeen = [];
     hideWelcome();
     (msgs || []).forEach(function (m) {
       if (m.role === "user") {
@@ -918,6 +1309,7 @@ async function resumeSession(id) {
     });
     smartScroll(true);
     loadSessions();
+    renderStats();
     promptEl.focus();
   } catch (e) {
     toast(t("common.error") + ": " + e.message);
@@ -1325,7 +1717,16 @@ sections.appearance = function () {
       sel.appendChild(opt);
     });
     sel.value = ui[key];
-    sel.addEventListener("change", function () { ui[key] = sel.value; applyUI(); saveUI(); });
+    sel.addEventListener("change", function () {
+      ui[key] = sel.value;
+      applyUI();
+      saveUI();
+      if (key === "lang") {
+        $("#panel-title").textContent = t("panel." + currentSection);
+        renderStats();
+        sections.appearance();
+      }
+    });
     tr.appendChild(sel);
     gg.appendChild(tr);
     return gg;
@@ -1606,11 +2007,12 @@ function renderProviderForm(templates, existing) {
         var res2 = await jpost("/api/providers", {
           name: nameI.value.trim(), type: typeI.value, base_url: urlI.value.trim(), api_key: keyI.value, model: "",
         });
-        status.textContent = res2.scan_error ? "scan: " + res2.scan_error : "OK · " + (providerModelCount(res2.models) + " " + t("prov.models"));
-        loadModels();
+        toast(t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
+        await loadModels();
+        await renderProvidersList();
       }
     } catch (err) {
-      status.textContent = err.message;
+      status.textContent = existing ? err.message : t("prov.addFailed") + ": " + err.message;
     }
   });
   g.appendChild(form);
@@ -1878,35 +2280,277 @@ sections.goal = async function () {
 
 /* ── Usage (stats + context report) ── */
 
-sections.usage = async function () {
-  panelContent.innerHTML = "";
-  var g = el("div", "group");
-  g.appendChild(el("div", "g-label", t("panel.usage")));
-  var grid = el("div", "stat-grid");
-  g.appendChild(grid);
-  panelContent.appendChild(g);
-  try {
-    var s = await j("/api/stats" + (activeSessionID ? "?session=" + encodeURIComponent(activeSessionID) : ""));
-    [[s.model || "—", t("usage.model")], [fmtTok(s.session_tokens), t("usage.session")], [fmtTok(s.daily_tokens), t("usage.daily")]].forEach(function (c) {
-      var card = el("div", "stat-card");
-      card.appendChild(el("div", "sv", String(c[0])));
-      card.appendChild(el("div", "sl", c[1]));
-      grid.appendChild(card);
+function usageLeadMetric(label, value, meta, extraClass) {
+  var metric = el("div", "usage-lead-metric" + (extraClass ? " " + extraClass : ""));
+  metric.appendChild(el("div", "usage-lead-label", label));
+  var main = el("div", "usage-lead-value", value);
+  main.title = value;
+  metric.appendChild(main);
+  if (meta) metric.appendChild(el("div", "usage-lead-meta", meta));
+  metric.setAttribute("aria-label", label + ": " + value + (meta ? ", " + meta : ""));
+  return metric;
+}
+function usageFact(label, value, note) {
+  var item = el("div", "usage-fact");
+  item.appendChild(el("dt", "usage-fact-label", label));
+  var dd = el("dd", "usage-fact-value", value == null || value === "" ? "—" : String(value));
+  dd.title = dd.textContent;
+  item.appendChild(dd);
+  if (note) item.appendChild(el("div", "usage-fact-note", note));
+  return item;
+}
+function messageBreakdown(session) {
+  return fmtInteger(session.userMessages) + " " + t("stats.userMessages") + " · " +
+    fmtInteger(session.assistantMessages) + " " + t("stats.assistantMessages") + " · " +
+    fmtInteger(session.toolMessages) + " " + t("stats.toolMessages");
+}
+function contextItems(context) {
+  return [
+    { key: "user", label: t("context.user"), value: context.breakdown.user },
+    { key: "assistant", label: t("context.assistant"), value: context.breakdown.assistant },
+    { key: "tools", label: t("context.tools"), value: context.breakdown.tools },
+    { key: "other", label: t("context.other"), value: context.breakdown.other },
+  ];
+}
+function renderContextInspector(context) {
+  var section = el("section", "usage-section usage-context");
+  var head = el("div", "usage-section-head");
+  head.appendChild(el("h3", "usage-section-title", t("stats.currentContext")));
+  if (context.window > 0) {
+    head.appendChild(el("div", "usage-section-value", context.percent + "% · " +
+      fmtInteger(context.estimatedUsed) + " / " + fmtInteger(context.window)));
+  }
+  section.appendChild(head);
+
+  var items = contextItems(context);
+  var total = items.reduce(function (sum, item) { return sum + item.value; }, 0);
+  if (total <= 0) {
+    section.appendChild(el("div", "usage-empty", t("usage.contextEmpty")));
+    return section;
+  }
+
+  var ariaParts = [t("stats.currentContext") + " " + context.percent + "%"];
+  var meter = el("div", "context-split");
+  meter.setAttribute("role", "img");
+  items.forEach(function (item) {
+    var pct = item.value * 100 / total;
+    ariaParts.push(item.label + " " + Math.round(pct) + "%");
+    if (item.value <= 0) return;
+    var segment = el("span", "context-segment context-" + item.key);
+    segment.style.width = pct + "%";
+    segment.title = item.label + ": " + fmtInteger(item.value) + " (" + Math.round(pct) + "%)";
+    meter.appendChild(segment);
+  });
+  meter.setAttribute("aria-label", ariaParts.join(". "));
+  section.appendChild(meter);
+
+  var legend = el("div", "context-legend");
+  items.forEach(function (item) {
+    var pct = total > 0 ? Math.round(item.value * 100 / total) : 0;
+    var entry = el("div", "context-legend-item");
+    entry.appendChild(el("span", "context-dot context-" + item.key));
+    entry.appendChild(el("span", "context-name", item.label));
+    entry.appendChild(el("span", "context-value", pct + "% · " + fmtCompactNumber(item.value)));
+    legend.appendChild(entry);
+  });
+  section.appendChild(legend);
+  section.appendChild(el("div", "usage-caption", t("stats.contextShare")));
+  return section;
+}
+function priceField(label, name, value, required, hint) {
+  var wrap = el("label", "price-field");
+  wrap.appendChild(el("span", "price-field-label", label));
+  var input = el("input", "field-input");
+  input.type = "number";
+  input.name = name;
+  input.min = "0";
+  input.max = "1000000";
+  input.step = "0.000001";
+  input.inputMode = "decimal";
+  input.required = !!required;
+  input.value = value === null ? (required ? "" : "0") : String(value);
+  input.setAttribute("aria-label", label + " · " + t("price.unit"));
+  wrap.appendChild(input);
+  if (hint) wrap.appendChild(el("span", "price-field-hint", hint));
+  return { root: wrap, input: input };
+}
+function priceValue(input, optional) {
+  var raw = input.value.trim();
+  if (raw === "") return optional ? 0 : NaN;
+  return Number(raw);
+}
+function validPrice(value) {
+  return Number.isFinite(value) && value >= 0 && value <= 1000000;
+}
+function renderPriceDetails(stats) {
+  var cost = stats.cost;
+  var state = normalizedCostState(cost);
+  var details = el("details", "usage-rates");
+  details.open = state === "unknown" || state === "partial";
+  details.appendChild(el("summary", "usage-rates-summary", t("price.title")));
+  var body = el("div", "usage-rates-body");
+
+  var rates = el("dl", "price-rates");
+  rates.appendChild(usageFact(t("cost.source"), costSourceLabel(cost.source) || "—"));
+  rates.appendChild(usageFact(t("price.input"), cost.inputPerMillion === null ? "—" : fmtMoney(cost.inputPerMillion, cost.currency, true)));
+  rates.appendChild(usageFact(t("price.cache"), cost.cachedInputPerMillion === null ? "—" : fmtMoney(cost.cachedInputPerMillion, cost.currency, true)));
+  rates.appendChild(usageFact(t("price.output"), cost.outputPerMillion === null ? "—" : fmtMoney(cost.outputPerMillion, cost.currency, true)));
+  body.appendChild(rates);
+  var coverage = costCoverage(cost);
+  if (coverage) body.appendChild(el("div", "price-note", coverage));
+  if (stats.tokens.cachedInput > 0 && !cost.cacheDiscountKnown && ["estimated", "manual", "partial"].indexOf(state) >= 0) {
+    body.appendChild(el("div", "price-note warning", t("cost.cacheUnknown")));
+  }
+
+  var form = el("form", "manual-price-form");
+  form.setAttribute("aria-label", t("price.title"));
+  form.appendChild(el("p", "price-hint", t("price.hint")));
+  var identity = el("div", "price-identity");
+  identity.appendChild(el("code", "", (stats.session.provider || "—") + " / " + (stats.session.model || stats.model || "—")));
+  form.appendChild(identity);
+  var fields = el("div", "price-fields");
+  var inputField = priceField(t("price.input"), "input_per_million", cost.inputPerMillion, true);
+  var cacheField = priceField(t("price.cache"), "cached_input_per_million", cost.cachedInputPerMillion, false, t("price.cacheHint"));
+  var outputField = priceField(t("price.output"), "output_per_million", cost.outputPerMillion, true);
+  fields.appendChild(inputField.root);
+  fields.appendChild(cacheField.root);
+  fields.appendChild(outputField.root);
+  form.appendChild(fields);
+
+  var actions = el("div", "price-actions");
+  var save = el("button", "btn primary", t("price.save"));
+  save.type = "submit";
+  actions.appendChild(save);
+  var remove = null;
+  if (cost.manual || cost.state === "manual") {
+    remove = el("button", "btn danger", t("price.remove"));
+    remove.type = "button";
+    actions.appendChild(remove);
+  }
+  var status = el("span", "price-status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  actions.appendChild(status);
+  form.appendChild(actions);
+
+  var provider = stats.session.provider || "";
+  var model = stats.session.model || stats.model || "";
+  if (!provider || !model) {
+    save.disabled = true;
+    status.textContent = t("price.identityMissing");
+  }
+  function setPriceBusy(busy) {
+    save.disabled = busy || !provider || !model;
+    if (remove) remove.disabled = busy;
+    inputField.input.disabled = busy;
+    cacheField.input.disabled = busy;
+    outputField.input.disabled = busy;
+  }
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var input = priceValue(inputField.input, false);
+    var cached = priceValue(cacheField.input, true);
+    var output = priceValue(outputField.input, false);
+    if (![input, cached, output].every(validPrice)) {
+      status.textContent = t("price.invalid");
+      return;
+    }
+    setPriceBusy(true);
+    status.textContent = t("common.loading");
+    try {
+      await jpost("/api/model/price", {
+        provider: provider, model: model, input_per_million: input,
+        cached_input_per_million: cached, output_per_million: output,
+      });
+      toast(t("price.saved"));
+      await sections.usage();
+      renderStats();
+    } catch (err) {
+      status.textContent = err.message;
+      setPriceBusy(false);
+    }
+  });
+  if (remove) {
+    remove.addEventListener("click", async function () {
+      if (!window.confirm(t("price.removeConfirm"))) return;
+      setPriceBusy(true);
+      status.textContent = t("common.loading");
+      try {
+        await jpost("/api/model/price", { provider: provider, model: model, remove: true });
+        toast(t("price.removed"));
+        await sections.usage();
+        renderStats();
+      } catch (err) {
+        status.textContent = err.message;
+        setPriceBusy(false);
+      }
     });
-  } catch (e) {
-    grid.appendChild(el("div", "note", e.message));
   }
-  var gc = el("div", "group");
-  gc.appendChild(el("div", "g-label", t("usage.context")));
-  var pre = el("pre", "pre-block", t("common.loading"));
-  gc.appendChild(pre);
-  panelContent.appendChild(gc);
+  body.appendChild(form);
+  details.appendChild(body);
+  return details;
+}
+function renderUsageInspector(stats) {
+  var root = el("div", "usage-inspector");
+  root.setAttribute("role", "region");
+  root.setAttribute("aria-label", t("panel.usage"));
+  if (!stats.session.id) root.appendChild(el("div", "usage-empty top", t("usage.noSession")));
+
+  var lead = el("div", "usage-lead");
+  lead.appendChild(usageLeadMetric(t("stats.totalTokens"), fmtInteger(stats.tokens.total), t("usage.session"), "tokens"));
+  var costMetric = usageLeadMetric(t("stats.totalCost"), costPrimary(stats.cost), costMeta(stats.cost),
+    "cost cost-state-" + normalizedCostState(stats.cost));
+  var coverage = costCoverage(stats.cost);
+  if (coverage) costMetric.appendChild(el("div", "usage-lead-coverage", coverage));
+  lead.appendChild(costMetric);
+  root.appendChild(lead);
+
+  var factsSection = el("section", "usage-section");
+  factsSection.appendChild(el("h3", "usage-section-title", t("usage.details")));
+  var facts = el("dl", "usage-facts");
+  facts.appendChild(usageFact(t("stats.provider"), stats.session.provider || "—", stats.session.providerType));
+  facts.appendChild(usageFact(t("stats.model"), stats.session.model || stats.model || "—"));
+  facts.appendChild(usageFact(t("stats.inputTokens"), fmtInteger(stats.tokens.input)));
+  facts.appendChild(usageFact(t("stats.outputTokens"), fmtInteger(stats.tokens.output)));
+  if (stats.tokens.hasCached) {
+    facts.appendChild(usageFact(t("stats.evaluatedInput"), fmtInteger(stats.tokens.evaluatedInput)));
+    facts.appendChild(usageFact(t("stats.cachedInput"), fmtInteger(stats.tokens.cachedInput)));
+  }
+  if (stats.tokens.hasReasoning) facts.appendChild(usageFact(t("stats.reasoningTokens"), fmtInteger(stats.tokens.reasoning)));
+  facts.appendChild(usageFact(t("stats.calls"), fmtInteger(stats.cost.calls)));
+  facts.appendChild(usageFact(t("stats.messages"), fmtInteger(stats.session.messages), messageBreakdown(stats.session)));
+  facts.appendChild(usageFact(t("stats.toolCalls"), fmtInteger(stats.session.toolCalls)));
+  facts.appendChild(usageFact(t("usage.daily"), fmtInteger(stats.dailyTokens)));
+  facts.appendChild(usageFact(t("stats.contextWindow"), stats.context.window > 0 ? fmtInteger(stats.context.window) : "—"));
+  facts.appendChild(usageFact(t("stats.created"), fmtDateTime(stats.session.createdAt)));
+  facts.appendChild(usageFact(t("stats.updated"), fmtDateTime(stats.session.updatedAt)));
+  factsSection.appendChild(facts);
+  root.appendChild(factsSection);
+
+  root.appendChild(renderContextInspector(stats.context));
+  root.appendChild(renderPriceDetails(stats));
+  return root;
+}
+
+var usageRenderSeq = 0;
+sections.usage = async function () {
+  var seq = ++usageRenderSeq;
+  var requestSession = activeSessionID;
+  panelContent.innerHTML = "";
+  panelContent.setAttribute("aria-busy", "true");
+  panelContent.appendChild(el("div", "usage-loading", t("common.loading")));
   try {
-    var c = await j("/api/context");
-    pre.textContent = c.text || "—";
+    var stats = normalizeStats(await j(statsURL()));
+    if (seq !== usageRenderSeq || currentSection !== "usage" || requestSession !== activeSessionID) return;
+    panelContent.innerHTML = "";
+    panelContent.appendChild(renderUsageInspector(stats));
   } catch (e) {
-    pre.textContent = e.message;
+    if (seq === usageRenderSeq && currentSection === "usage") {
+      panelContent.innerHTML = "";
+      panelContent.appendChild(el("div", "usage-empty top", t("common.error") + ": " + e.message));
+    }
   }
+  if (seq === usageRenderSeq && currentSection === "usage") panelContent.setAttribute("aria-busy", "false");
 };
 
 /* ── Files ── */

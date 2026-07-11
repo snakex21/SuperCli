@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
@@ -142,7 +143,14 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	defer closeStore()
 	emit(wireEvent{Type: "session", SessionID: sid})
 
-	loop, err := e.newLoopWithSessionAt(initial, writer, home)
+	// A separate lightweight store handle records one row per actual model
+	// call. The session writer still owns messages and legacy aggregates.
+	var usageStore *session.Store
+	if us, openErr := session.OpenStore(e.dataDir); openErr == nil {
+		usageStore = us
+		defer usageStore.Close()
+	}
+	loop, err := e.newLoopWithSessionAtUsage(initial, writer, home, usageStore, sid)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
@@ -167,10 +175,40 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	// Provider transports may keep an HTTP connection alive with comment-only
+	// heartbeats while producing no model/tool progress. The transport-level
+	// idle reader sees those bytes and cannot distinguish that state from a
+	// healthy stream, so enforce the configured inactivity limit at the agent
+	// event layer too. This guarantees a terminal error instead of an endless
+	// spinner when an upstream job is wedged.
+	e.mu.RLock()
+	progressTimeout := e.cfg.Timeout
+	e.mu.RUnlock()
+	var progressTimer *time.Timer
+	var progressC <-chan time.Time
+	if progressTimeout > 0 {
+		progressTimer = time.NewTimer(progressTimeout)
+		progressC = progressTimer.C
+		defer progressTimer.Stop()
+	}
+	resetProgress := func() {
+		if progressTimer == nil {
+			return
+		}
+		if !progressTimer.Stop() {
+			select {
+			case <-progressTimer.C:
+			default:
+			}
+		}
+		progressTimer.Reset(progressTimeout)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-progressC:
+			return fmt.Errorf("provider produced no model progress for %s", progressTimeout)
 		case ev, ok := <-ch:
 			if !ok {
 				// Synchronous task completion may enqueue its external marker just
@@ -186,10 +224,12 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 					}
 				}
 			}
+			resetProgress()
 			if w, keep := toWireEvent(ev); keep {
 				emit(w)
 			}
 		case ev := <-external:
+			resetProgress()
 			if w, keep := toWireEvent(ev); keep {
 				emit(w)
 			}
