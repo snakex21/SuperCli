@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"supercli/internal/system/childproc"
+	core "supercli/internal/tools/core"
 )
 
 // SearchCode is a simple code-search tool used by the explore
@@ -102,41 +103,86 @@ func (s *SearchCode) hasRG() bool {
 }
 
 func (s *SearchCode) ripgrep(ctx context.Context, root, query string, max int) (Result, error) {
+	// rg's --max-count is PER FILE, while the tool contract is a
+	// GLOBAL cap. The pipe reader below enforces the real limit:
+	// it stops after `max` surviving matches and kills rg, so a
+	// query hitting thousands of files never buffers the full
+	// output in RAM (cmd.Output() used to load everything before
+	// trimming to `max` lines).
 	args := []string{"--no-heading", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
 	for _, dir := range []string{".git", "node_modules", "vendor", "target", "dist", "build", ".next", ".cache", "__pycache__", ".venv", "venv", ".supercli"} {
 		args = append(args, "-g", "!"+dir+"/**")
 	}
 	args = append(args, "--", query, root)
-	cmd := exec.CommandContext(ctx, "rg", args...)
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, "rg", args...)
 	childproc.HideWindow(cmd)
-	out, err := cmd.Output()
+	stderr := core.NewHeadTailBuffer(2048, 1024)
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		// rg exits 1 when no matches — not an error.
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
-			return Result{Text: "no matches"}, nil
-		}
-		return Result{Text: s.fallbackErr(err, out)}, nil
+		return s.rgFailed(ctx, root, query, max, err, stderr)
 	}
-	text := strings.TrimSpace(string(out))
-	if text == "" {
-		return Result{Text: "no matches"}, nil
+	if err := cmd.Start(); err != nil {
+		return s.rgFailed(ctx, root, query, max, err, stderr)
 	}
-	// ripgrep's --max-count is per file, while the tool contract is a global
-	// result cap. Trim the merged output as the final cross-platform guard.
+
 	lines := make([]string, 0, max)
-	for _, line := range strings.Split(text, "\n") {
+	hitLimit := false
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if ripgrepPathIsSkipped(line) {
 			continue
 		}
 		lines = append(lines, line)
 		if len(lines) == max {
+			hitLimit = true
 			break
 		}
+	}
+	if hitLimit {
+		cancel() // global limit reached: kill rg, drop the rest
+	}
+	waitErr := cmd.Wait()
+	switch {
+	case hitLimit:
+		// Kill-induced Wait errors are expected here.
+		return Result{Text: strings.Join(lines, "\n")}, nil
+	case waitErr != nil:
+		// rg exits 1 when there are no matches — a valid result,
+		// NOT a failure.
+		if ee, ok := waitErr.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+			break
+		}
+		return s.rgFailed(ctx, root, query, max, waitErr, stderr)
 	}
 	if len(lines) == 0 {
 		return Result{Text: "no matches"}, nil
 	}
 	return Result{Text: strings.Join(lines, "\n")}, nil
+}
+
+// rgFailed handles a real ripgrep failure (bad pattern, crash —
+// not "no matches"). The failure must never be presented as a
+// successful search result: try the Go fallback scanner, and if
+// that also fails return a structured search_failed error.
+func (s *SearchCode) rgFailed(ctx context.Context, root, query string, max int, rgErr error, stderr *core.HeadTailBuffer) (Result, error) {
+	res, err := s.fallback(ctx, root, query, max)
+	if err == nil && res.Err == nil {
+		return res, nil
+	}
+	msg := fmt.Sprintf("search_failed rg: %v", rgErr)
+	if detail := strings.TrimSpace(stderr.String()); detail != "" {
+		msg += "\nrg stderr:\n" + detail
+	}
+	if res.Err != nil {
+		msg += fmt.Sprintf("\nfallback scanner: %v", res.Err)
+	}
+	return Result{Err: core.SelfContainedErr(fmt.Errorf("%s", msg))}, nil
 }
 
 func ripgrepPathIsSkipped(line string) bool {
@@ -161,10 +207,6 @@ func ripgrepPathIsSkipped(line string) bool {
 		}
 	}
 	return false
-}
-
-func (s *SearchCode) fallbackErr(err error, out []byte) string {
-	return fmt.Sprintf("ripgrep failed: %v\n%s", err, strings.TrimSpace(string(out)))
 }
 
 // fallback is a tiny case-insensitive substring search used
@@ -208,7 +250,8 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) 
 		return nil
 	}
 	if err := WalkFiles(root, walk); err != nil && err != errStopWalk {
-		return Result{Text: fmt.Sprintf("search_code: walk failed: %v", err)}, nil
+		// A failed scan is an error, not a search result.
+		return Result{Err: fmt.Errorf("search_failed walk: %w", err)}, nil
 	}
 	if b.Len() == 0 {
 		return Result{Text: "no matches"}, nil

@@ -104,6 +104,40 @@ func TestSearchCode_MaxLimit(t *testing.T) {
 	}
 }
 
+func TestSearchCode_GlobalCapWithinOneFile(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte(strings.Repeat("match\n", 100)), 0o644)
+	s := NewSearchCode(dir)
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"match","max":3}`))
+	if res.Err != nil {
+		t.Fatalf("run: %v", res.Err)
+	}
+	lines := strings.Split(strings.TrimSpace(res.Text), "\n")
+	if len(lines) != 3 {
+		t.Errorf("got %d lines, want 3", len(lines))
+	}
+}
+
+func TestSearchCode_RGFailureNeverAResult(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("call(x)\n"), 0o644)
+	s := NewSearchCode(dir)
+	// "call(" is an invalid regex, so rg exits 2 (a real failure,
+	// unlike exit 1 = no matches). The failure must never be
+	// presented as a search result; the substring fallback finds
+	// the line instead.
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"call("}`))
+	if strings.Contains(res.Text, "ripgrep failed") {
+		t.Fatalf("rg failure leaked as a result: %q", res.Text)
+	}
+	if res.Err != nil {
+		t.Fatalf("expected fallback success, got: %v", res.Err)
+	}
+	if !strings.Contains(res.Text, "call(x)") {
+		t.Fatalf("fallback missed the match: %q", res.Text)
+	}
+}
+
 func TestMatchLine(t *testing.T) {
 	if !matchLine("Hello World", "world") {
 		t.Error("case-insensitive match failed")
