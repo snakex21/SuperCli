@@ -6,6 +6,16 @@ import (
 	"fmt"
 
 	"supercli/internal/tools"
+	core "supercli/internal/tools/core"
+)
+
+// Result cap for external MCP servers. A server is out of our
+// control and can return many MB in one call; the boundary keeps
+// the first 16 KB + last 4 KB (~ the 20k-char web_fetch default)
+// with an explicit omitted_bytes marker, UTF-8-safe cuts.
+const (
+	mcpResultHeadBytes = 16 << 10
+	mcpResultTailBytes = 4 << 10
 )
 
 // RegisterTools registers every tool of every *running* server into reg
@@ -49,9 +59,10 @@ func wrapTool(s *Server, td ToolDef) tools.Tool {
 				return tools.Result{Err: err}, nil
 			}
 			if res.IsError {
-				return tools.Result{Err: fmt.Errorf("mcp %s/%s: %s", s.Name, remote, res.Text)}, nil
+				return tools.Result{Err: fmt.Errorf("mcp %s/%s: %s", s.Name, remote,
+					core.HeadTail(res.Text, core.ModelContentTailBytes, core.ModelContentTailBytes))}, nil
 			}
-			return tools.Result{Text: res.Text}, nil
+			return tools.Result{Text: core.HeadTail(res.Text, mcpResultHeadBytes, mcpResultTailBytes)}, nil
 		},
 	}
 }
