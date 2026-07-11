@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNoop_DiscardsEverything(t *testing.T) {
@@ -203,5 +204,114 @@ func TestJSON_RoundtripWithImage(t *testing.T) {
 	}
 	if back.Step != 1 || back.TokensIn != 10 {
 		t.Errorf("back = %+v", back)
+	}
+}
+
+func TestMemory_RecordPhase_Accumulates(t *testing.T) {
+	r := NewMemory()
+	r.StartStep(1)
+	r.RecordPhase(PhaseContextPrepare, 1500*time.Microsecond)
+	r.RecordPhase(PhaseContextPrepare, 500*time.Microsecond) // retry path adds up
+	r.RecordPhase("tool:read_lines", 2*time.Millisecond)
+	r.RecordPhase("", time.Second)                // empty name ignored
+	r.RecordPhase(PhaseBackendWait, -time.Second) // negative ignored
+	r.EndStep()
+	turns := r.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("len = %d", len(turns))
+	}
+	p := turns[0].Phases
+	if p[PhaseContextPrepare] != 2000 {
+		t.Errorf("context_prepare = %dµs, want 2000", p[PhaseContextPrepare])
+	}
+	if p["tool:read_lines"] != 2000 {
+		t.Errorf("tool:read_lines = %dµs, want 2000", p["tool:read_lines"])
+	}
+	if _, ok := p[""]; ok {
+		t.Error("empty phase name recorded")
+	}
+	if _, ok := p[PhaseBackendWait]; ok {
+		t.Error("negative duration recorded")
+	}
+}
+
+func TestMemory_RecordToolCalls(t *testing.T) {
+	r := NewMemory()
+	r.StartStep(1)
+	r.EndStep() // zero calls stays zero
+	r.StartStep(2)
+	r.RecordToolCalls(1)
+	r.EndStep()
+	r.StartStep(3)
+	r.RecordToolCalls(3)
+	r.RecordToolCalls(2) // second batch in the same step adds up
+	r.RecordToolCalls(0) // no-op
+	r.RecordToolCalls(-1)
+	r.EndStep()
+	turns := r.Snapshot()
+	want := []int{0, 1, 5}
+	for i, w := range want {
+		if turns[i].ToolCalls != w {
+			t.Errorf("step %d ToolCalls = %d, want %d", i+1, turns[i].ToolCalls, w)
+		}
+	}
+	total := Sum(turns)
+	if total.ToolCalls != 6 {
+		t.Errorf("Total.ToolCalls = %d, want 6", total.ToolCalls)
+	}
+	if total.MultiCall != 1 {
+		t.Errorf("Total.MultiCall = %d, want 1", total.MultiCall)
+	}
+}
+
+func TestMemory_PhaseAndCalls_OutsideStep_NoPanic(t *testing.T) {
+	r := NewMemory()
+	// No StartStep: everything must be a silent no-op.
+	r.RecordPhase(PhaseStreamTotal, time.Second)
+	r.RecordToolCalls(3)
+	if got := r.Snapshot(); len(got) != 0 {
+		t.Errorf("Snapshot = %v, want empty", got)
+	}
+}
+
+func TestNoop_PhaseAndCalls_NoPanic(t *testing.T) {
+	r := NewNoop()
+	r.RecordPhase(PhaseStreamTotal, time.Second)
+	r.RecordToolCalls(2)
+	if got := r.Snapshot(); got != nil {
+		t.Errorf("Noop.Snapshot = %v, want nil", got)
+	}
+}
+
+func TestFormatPhases_OrderAndUnits(t *testing.T) {
+	got := FormatPhases(map[string]int64{
+		"tool:echo":          1500,
+		PhaseStreamTotal:     250_000,
+		PhaseContextPrepare:  800,
+		PhaseNextTurnPrepare: 4200,
+	})
+	want := "context_prepare=800µs stream_total=250ms next_turn_prepare=4.2ms tool:echo=1.5ms"
+	if got != want {
+		t.Errorf("FormatPhases = %q, want %q", got, want)
+	}
+	if FormatPhases(nil) != "" {
+		t.Error("FormatPhases(nil) should be empty")
+	}
+}
+
+func TestPhaseLine(t *testing.T) {
+	line := PhaseLine(Turn{
+		Step:      2,
+		ToolCalls: 3,
+		TokensIn:  100,
+		TokensOut: 20,
+		Phases:    map[string]int64{PhaseBackendWait: 120_000},
+	})
+	want := "[phase] step=2 calls=3 in=100 out=20 backend_wait=120ms"
+	if line != want {
+		t.Errorf("PhaseLine = %q, want %q", line, want)
+	}
+	if PhaseLine(Turn{Step: 1}) != "" {
+		t.Error("PhaseLine without phases should be empty")
 	}
 }

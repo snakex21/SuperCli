@@ -146,6 +146,16 @@ type Loop struct {
 	draftOverrideSink DraftOverrideSink
 	stats             stats.Recorder
 
+	// stepPhaseWall accumulates the DISJOINT wall-clock phases of the
+	// current step (context_prepare, request_encode, backend_wait,
+	// stream_total, tool_execution) so statsEndStep can attribute the
+	// remainder of the step to next_turn_prepare. Loop-goroutine only —
+	// overlapping phases recorded from worker goroutines (per-tool
+	// timings, session_persist) go straight to the recorder and are
+	// deliberately kept out of this sum, otherwise the remainder would
+	// double-count and go negative. Reset at every statsStartStep.
+	stepPhaseWall time.Duration
+
 	// F14 selective context deletion. The hidden
 	// shadow slice has the same length as Messages;
 	// a true entry means the corresponding message
@@ -506,6 +516,10 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		navigate:              cfg.EnableNavigator,
 		navAuto:               cfg.NavigatorAuto,
 		navProvider:           cfg.NavigatorProvider,
+		// Phase telemetry rides the same recorder (and the same
+		// default-on wiring) as the historical per-turn stats — it is
+		// no longer gated on the F11 draft bridge being configured.
+		stats: cfg.Stats,
 	}
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
@@ -533,7 +547,6 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 			loop.draftPolicy = cfg.Draft
 			loop.draftSavings = draft.NewSavings()
 			loop.draftOverrideSink = cfg.DraftOverrideSink
-			loop.stats = cfg.Stats
 		}
 	}
 
@@ -831,6 +844,12 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			return
 		}
 
+		// Phase telemetry: one stats turn per step. All timings are
+		// whole-phase time.Since measurements — nothing is measured
+		// per-delta, so the streaming hot path stays allocation-free.
+		stepStart := time.Now()
+		l.statsStartStep(step + 1)
+
 		// F11 draft step: ask the bridge whether
 		// this step should get a draft, and if so,
 		// call the draft model and inject the plan
@@ -851,6 +870,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// (1) prune old tool results in place (zero model calls,
 		// prune.go), (2) only if the estimate still crosses 80% of
 		// the window, fall back to the summary compaction.
+		prepStart := time.Now()
 		l.maybePruneToolResults(ctx, out)
 		l.maybeAutoCompact(ctx, out, "")
 
@@ -859,15 +879,21 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// the model can pull in more when needed; the full tool list is the
 		// actual token cost the router avoids.
 		toolDefs := l.buildToolDefs()
+		// context_prepare part 1: prune/compact/tool defs. Part 2
+		// (provider message assembly) is added inside completeOnce.
+		l.recordWallPhase(stats.PhaseContextPrepare, time.Since(prepStart))
 
 		text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
 		if err != nil && l.handleContextOverflow(ctx, err, out) {
 			// Wave 4: provider rejected the context size.
 			// The learned limit was persisted and the
-			// conversation compacted; retry once.
+			// conversation compacted; retry once. The retry's phase
+			// timings accumulate onto this step's (documented in
+			// stats.Turn.Phases).
 			text, toolCalls, usage, err = l.completeOnce(ctx, toolDefs, out)
 		}
 		if err != nil {
+			l.statsEndStep(stepStart)
 			out <- ErrorEvent{Err: err}
 			return
 		}
@@ -890,6 +916,13 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			l.lastTurnReasoning = usage.Reasoning
 			l.lastTurnSet = true
 			l.sessUsageMu.Unlock()
+			// Provider-reported prompt/completion tokens for the
+			// phase telemetry (llama.cpp and the cloud backends
+			// report usage on the final delta).
+			if l.stats != nil {
+				l.stats.RecordTokens(usage.Input, usage.Output)
+				l.stats.RecordModel(l.modelID)
+			}
 			// Report per-turn usage to the writer (if any).
 			if l.writer != nil {
 				_ = l.writer.UpdateUsage(usage.Input, usage.Output)
@@ -899,6 +932,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			// the partial usage for the turn.
 			if l.creditTracker != nil {
 				if err := l.creditTracker.Record(ctx, int64(usage.Input), int64(usage.Output), l.modelID); err != nil {
+					l.statsEndStep(stepStart)
 					out <- ErrorEvent{Err: err}
 					return
 				}
@@ -911,6 +945,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			// invokeDraft.
 			if l.draftSavings != nil && l.lastDraftTokens > 0 {
 				if err := l.recordDraftUsage(ctx); err != nil {
+					l.statsEndStep(stepStart)
 					out <- ErrorEvent{Err: err}
 					return
 				}
@@ -972,6 +1007,14 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			l.upcomingTools = append(l.upcomingTools, tc.Name)
 		}
 
+		// Tool-calls-per-step is THE parallelism-worthiness metric:
+		// count the raw batch size (duplicates included) plus the
+		// unique tool names for the per-turn report.
+		if l.stats != nil && len(toolCalls) > 0 {
+			l.stats.RecordToolCalls(len(toolCalls))
+			l.stats.RecordTools(l.upcomingTools)
+		}
+
 		if len(toolCalls) == 0 {
 			// F9 Sisyphus: when ultrawork is on AND
 			// the active /goal still has unfinished
@@ -994,14 +1037,20 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 						Hit:  sisyphusHitFromMessage(msg),
 						Text: msg,
 					}
+					l.statsEndStep(stepStart)
 					continue
 				}
 			}
+			l.statsEndStep(stepStart)
 			out <- DoneEvent{Usage: totalUsage}
 			return
 		}
 
-		if !l.invokeToolCalls(ctx, toolCalls, out) {
+		toolStart := time.Now()
+		toolsOK := l.invokeToolCalls(ctx, toolCalls, out)
+		l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
+		if !toolsOK {
+			l.statsEndStep(stepStart)
 			return
 		}
 
@@ -1025,6 +1074,8 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			// reflection is best-effort, must not break
 			// the run.
 		}
+
+		l.statsEndStep(stepStart)
 	}
 	out <- ErrorEvent{Err: fmt.Errorf("agent: max steps (%d) reached", l.maxSteps)}
 }
@@ -1114,7 +1165,18 @@ func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.Tool
 // consumes the stream. Split out so the run loop can retry
 // once after a context-overflow compaction.
 func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
-	stream, err := l.provider.Complete(ctx, l.providerMessages(), toolDefs)
+	// context_prepare part 2: provider message assembly (visible
+	// view, thin preamble placement, freshness stamp).
+	msgStart := time.Now()
+	msgs := l.providerMessages()
+	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
+
+	// request_encode: provider.Complete up to the stream handoff —
+	// request serialization plus whatever the provider does before
+	// returning its delta channel.
+	encStart := time.Now()
+	stream, err := l.provider.Complete(ctx, msgs, toolDefs)
+	l.recordWallPhase(stats.PhaseRequestEncode, time.Since(encStart))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
 	}
@@ -1367,10 +1429,66 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) {
 	if l.writer == nil {
 		return
 	}
+	// session_persist accumulates across the step's AppendMessage
+	// calls. It OVERLAPS other phases (persists happen inside the
+	// step, some from worker goroutines), so statsEndStep keeps it
+	// out of the next_turn_prepare remainder math.
+	t := time.Now()
 	if err := l.writer.AppendMessage(ctx, msg); err != nil {
 		// Best-effort. We could add a logger field later.
 		_ = err
 	}
+	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
+}
+
+// statsStartStep opens a new telemetry turn for a step (1-based)
+// and resets the wall-phase accumulator. Nil recorder = no-op, so
+// loops built without stats (tests, child workers) pay nothing.
+func (l *Loop) statsStartStep(step int) {
+	if l.stats == nil {
+		return
+	}
+	l.stepPhaseWall = 0
+	l.stats.StartStep(step)
+}
+
+// recordPhase forwards one phase measurement to the recorder.
+// Safe from any goroutine (the recorder locks internally) and
+// with a nil recorder.
+func (l *Loop) recordPhase(name string, d time.Duration) {
+	if l.stats == nil {
+		return
+	}
+	l.stats.RecordPhase(name, d)
+}
+
+// recordWallPhase records a phase that is part of the step's
+// DISJOINT wall-clock pipeline (context_prepare, request_encode,
+// backend_wait, stream_total, tool_execution) and adds it to the
+// accumulator statsEndStep subtracts from the step total. Must be
+// called from the run goroutine only.
+func (l *Loop) recordWallPhase(name string, d time.Duration) {
+	if l.stats == nil {
+		return
+	}
+	l.stepPhaseWall += d
+	l.stats.RecordPhase(name, d)
+}
+
+// statsEndStep attributes the unmeasured remainder of the step to
+// next_turn_prepare (history append, eviction, draft accounting,
+// reflection, event plumbing) and closes the telemetry turn.
+// Called on every step exit path.
+func (l *Loop) statsEndStep(stepStart time.Time) {
+	if l.stats == nil {
+		return
+	}
+	rest := time.Since(stepStart) - l.stepPhaseWall
+	if rest < 0 {
+		rest = 0
+	}
+	l.stats.RecordPhase(stats.PhaseNextTurnPrepare, rest)
+	l.stats.EndStep()
 }
 
 // toolResult is the internal envelope for a single tool execution.
@@ -1402,7 +1520,14 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 
 	raw := json.RawMessage(tc.Arguments)
+	// Per-tool timing under a "tool:<name>" phase key. Repeated calls
+	// of the same tool in one step accumulate; the recorder is
+	// mutex-guarded so parallel task batches are safe. Goes straight
+	// to the recorder (NOT the wall-phase sum): the whole batch is
+	// already covered by tool_execution in run().
+	execStart := time.Now()
 	res, err := l.registry.Execute(ctx, tc.Name, raw)
+	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 
 	out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 
@@ -1629,7 +1754,26 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	var toolCalls []llm.ToolCall
 	var usage *llm.Usage
 	sc := newToolCallScanner()
+	// backend_wait (TTFT) is ONE timestamp taken at the first delta;
+	// stream_total is one measurement at stream close. Nothing is
+	// timed per-delta — the streaming hot path pays a single zero-
+	// value comparison per delta and no allocations.
+	waitStart := time.Now()
+	var firstDelta time.Time
+	defer func() {
+		if firstDelta.IsZero() {
+			// The stream ended (or errored) before any delta:
+			// the whole wait was backend time.
+			l.recordWallPhase(stats.PhaseBackendWait, time.Since(waitStart))
+			return
+		}
+		l.recordWallPhase(stats.PhaseStreamTotal, time.Since(firstDelta))
+	}()
 	for d := range stream {
+		if firstDelta.IsZero() {
+			firstDelta = time.Now()
+			l.recordWallPhase(stats.PhaseBackendWait, firstDelta.Sub(waitStart))
+		}
 		if err := ctx.Err(); err != nil {
 			return sc.buf.String(), toolCalls, usage, err
 		}
