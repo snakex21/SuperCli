@@ -234,13 +234,25 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) 
 		if !exts[ext] {
 			return nil
 		}
-		lines := readLines(path)
-		for i, line := range lines {
+		// Scan the file line-by-line instead of materializing a
+		// []string of the whole file: constant memory, and the
+		// scan stops as soon as the global limit is reached.
+		f, err := openFile(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		lineNo := 0
+		for scanner.Scan() {
+			lineNo++
+			line := scanner.Text()
 			if strings.Contains(strings.ToLower(line), lower) {
 				if b.Len() > 0 {
 					b.WriteString("\n")
 				}
-				fmt.Fprintf(&b, "%s:%d:%s", path, i+1, line)
+				fmt.Fprintf(&b, "%s:%d:%s", path, lineNo, line)
 				count++
 				if count >= max {
 					return errStopWalk
@@ -260,21 +272,6 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) 
 }
 
 var errStopWalk = fmt.Errorf("stop")
-
-func readLines(path string) []string {
-	f, err := openFile(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var out []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		out = append(out, scanner.Text())
-	}
-	return out
-}
 
 // cross-platform hidden guards
 var _ = runtime.GOOS
