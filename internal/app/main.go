@@ -1123,6 +1123,12 @@ func Main() {
 	if draftProvider != nil {
 		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
 	}
+	// Per-turn telemetry recorder (F28 /cost + phase timings). The
+	// loop feeds it on every step — tokens, tool-call batch sizes,
+	// and the phase breakdown (context prep / TTFT / stream / tools
+	// / persist) land here; /cost renders the report. Historically
+	// only the F11 draft savings flowed in, hence the old name kept
+	// at the call sites below.
 	draftStats := stats.NewMemory()
 
 	// F5.a: mid-run reflection checkpoint. Every
@@ -2624,12 +2630,16 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	// Phase telemetry for batch runs: same recorder as the TUI,
+	// dumped as one [phase] stderr line per step after the run.
+	batchStats := stats.NewMemory()
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider: p,
 		Registry: reg,
 		Caps:     caps,
 		MaxSteps: 25,
 		BaseDir:  home,
+		Stats:    batchStats,
 		// Batch runs honor the same context-defense knobs as the
 		// TUI: config context_window (0 = loop default 16384) and
 		// prune_protect_tokens for the zero-LLM tool-result prune.
@@ -2686,6 +2696,15 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		case agent.ErrorEvent:
 			fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
 			os.Exit(1)
+		}
+	}
+
+	// Phase telemetry: one machine-greppable line per step on stderr
+	// (stdout stays pure assistant output). Where each step's wall
+	// time went + how many tool calls the model batched per step.
+	for _, t := range batchStats.Snapshot() {
+		if line := stats.PhaseLine(t); line != "" {
+			fmt.Fprintln(os.Stderr, line)
 		}
 	}
 

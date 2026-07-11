@@ -77,16 +77,39 @@ func Render(d Dashboard) string {
 	// ── Section 3: Per-turn breakdown ──
 	if len(d.Turns) > 0 {
 		b.WriteString("### Per-turn breakdown\n\n")
-		b.WriteString("  step │  in    │  out   │ ms    │ saved │ tools\n")
-		b.WriteString("  ─────┼────────┼────────┼───────┼───────┼──────\n")
+		b.WriteString("  step │  in    │  out   │ ms    │ calls │ saved │ tools\n")
+		b.WriteString("  ─────┼────────┼────────┼───────┼───────┼───────┼──────\n")
 		for _, t := range d.Turns {
-			b.WriteString(fmt.Sprintf("  %-4d │ %5s │ %5s │ %5d │ %5s │ %s\n",
+			b.WriteString(fmt.Sprintf("  %-4d │ %5s │ %5s │ %5d │ %5d │ %5s │ %s\n",
 				t.Step,
 				compact(t.TokensIn),
 				compact(t.TokensOut),
 				t.DurationMs,
+				t.ToolCalls,
 				compact(t.TokensSaved),
 				joinTools(t.Tools)))
+		}
+		b.WriteString("\n")
+	}
+
+	// ── Section 3b: Phase breakdown (turn-economics telemetry) ──
+	// Where each step's wall time went: context prep, request
+	// encode, TTFT, streaming, tools, persistence, and the
+	// unmeasured remainder. Rendered only when the loop recorded
+	// phases, so old snapshots and tests render unchanged.
+	if phases := stats.SumPhases(d.Turns); len(phases) > 0 {
+		b.WriteString("### Phase breakdown\n\n")
+		for _, t := range d.Turns {
+			if p := stats.FormatPhases(t.Phases); p != "" {
+				b.WriteString(fmt.Sprintf("  %-4d %s\n", t.Step, p))
+			}
+		}
+		b.WriteString(fmt.Sprintf("\n  totals: %s\n", stats.FormatPhases(phases)))
+		if d.Total.Turns > 0 {
+			b.WriteString(fmt.Sprintf("  tool calls: %d total, %.1f avg/step, %d step(s) with >1 call\n",
+				d.Total.ToolCalls,
+				float64(d.Total.ToolCalls)/float64(d.Total.Turns),
+				d.Total.MultiCall))
 		}
 		b.WriteString("\n")
 	}
