@@ -210,6 +210,83 @@ func TestSentinel_ConsumeExtractsCall(t *testing.T) {
 	}
 }
 
+// TestSentinel_ConsumeSplitAcrossDeltas streams a sentinel block
+// cut into many deltas — including the « and » markers split in
+// half (mid-UTF-8, byte-wise) — and asserts the call is still
+// extracted exactly as if it had arrived in one piece.
+func TestSentinel_ConsumeSplitAcrossDeltas(t *testing.T) {
+	l := makeLoop(t, &stubProvider{name: "stub"}, tools.NewRegistry(), "base")
+
+	full := "prose first "
+	// « = C2 AB, » = C2 BB: split each marker between its two bytes.
+	parts := []string{
+		"prose ", "first ",
+		"\xc2", "\xab", "read_li", "nes\nfile: a", ".go\nfrom: 1\nto: 10", "\xc2", "\xbb",
+		" trailing",
+	}
+	ch := make(chan llm.Delta, len(parts)+1)
+	for _, p := range parts {
+		ch <- llm.Delta{Content: p}
+	}
+	ch <- llm.Delta{FinishReason: "stop"}
+	close(ch)
+
+	out := make(chan Event, 64)
+	text, toolCalls, _, err := l.consume(context.Background(), ch, out)
+	close(out)
+	if err != nil {
+		t.Fatalf("consume: %v", err)
+	}
+	if len(toolCalls) != 1 || toolCalls[0].Name != "read_lines" {
+		t.Fatalf("toolCalls = %+v, want one read_lines", toolCalls)
+	}
+	m := decodeArgs(t, toolCalls[0].Arguments)
+	if m["file"] != "a.go" || m["from"] != "1" || m["to"] != "10" {
+		t.Errorf("args = %v", m)
+	}
+	// Text after the block keeps accumulating on the remainder.
+	if want := full + " trailing"; text != want {
+		t.Errorf("text = %q, want %q", text, want)
+	}
+	var sawProse bool
+	for ev := range out {
+		if me, ok := ev.(MessageEvent); ok && me.Text == full {
+			sawProse = true
+		}
+	}
+	if !sawProse {
+		t.Error("prose before the split block was not emitted")
+	}
+}
+
+// TestSentinel_ConsumeXMLSplitAcrossDeltas does the same for the
+// XML <tool_call> fallback: markers cut mid-tag across deltas.
+func TestSentinel_ConsumeXMLSplitAcrossDeltas(t *testing.T) {
+	l := makeLoop(t, &stubProvider{name: "stub"}, tools.NewRegistry(), "base")
+
+	parts := []string{
+		"hi ", "<tool_c", "all>",
+		"<function=get_", "time><param", "eter=tz>utc</parameter></func", "tion>",
+		"</tool_", "call>",
+	}
+	ch := make(chan llm.Delta, len(parts)+1)
+	for _, p := range parts {
+		ch <- llm.Delta{Content: p}
+	}
+	ch <- llm.Delta{FinishReason: "stop"}
+	close(ch)
+
+	out := make(chan Event, 64)
+	_, toolCalls, _, err := l.consume(context.Background(), ch, out)
+	close(out)
+	if err != nil {
+		t.Fatalf("consume: %v", err)
+	}
+	if len(toolCalls) != 1 || toolCalls[0].Name != "get_time" {
+		t.Fatalf("toolCalls = %+v, want one get_time", toolCalls)
+	}
+}
+
 // TestSentinel_ConsumePlainTextUntouched ensures a normal streamed
 // answer with no sentinel produces no tool calls.
 func TestSentinel_ConsumePlainTextUntouched(t *testing.T) {

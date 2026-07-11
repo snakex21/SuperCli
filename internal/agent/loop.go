@@ -1443,18 +1443,111 @@ func sisyphusHitFromMessage(msg string) int {
 	return n
 }
 
+// toolCallScanner accumulates streamed text in a strings.Builder
+// (amortized O(n) instead of the quadratic `text += delta`) and
+// tracks marker positions incrementally so the full-buffer
+// extractXMLToolCalls / extractSentinelToolCalls scans run only
+// when a complete block can actually be present. Each appended
+// delta is scanned once (plus a marker-length-1 overlap so a
+// marker split across deltas is still found), never the whole
+// buffer.
+type toolCallScanner struct {
+	buf strings.Builder
+
+	xmlOpen   int  // index of first "<tool_call>", -1 if none
+	xmlClose  bool // "</tool_call>" seen after xmlOpen
+	xmlFailed bool // complete block parsed to zero calls (deterministic → skip)
+
+	sentOpen   int // index of first «, -1 if none
+	sentClose  bool
+	sentFailed bool
+}
+
+func newToolCallScanner() *toolCallScanner {
+	return &toolCallScanner{xmlOpen: -1, sentOpen: -1}
+}
+
+// append adds a delta and scans only the new tail for markers.
+func (sc *toolCallScanner) append(delta string) {
+	prev := sc.buf.Len()
+	sc.buf.WriteString(delta)
+	sc.scanFrom(prev)
+}
+
+// reset replaces the buffer with the text remaining after an
+// extraction and recomputes marker state from scratch (the
+// remainder is short: it is only the prose before the block).
+func (sc *toolCallScanner) reset(remaining string) {
+	sc.buf.Reset()
+	sc.xmlOpen, sc.xmlClose, sc.xmlFailed = -1, false, false
+	sc.sentOpen, sc.sentClose, sc.sentFailed = -1, false, false
+	sc.buf.WriteString(remaining)
+	sc.scanFrom(0)
+}
+
+// scanFrom updates marker state by scanning from prev (minus a
+// marker-length-1 overlap for markers split across deltas).
+func (sc *toolCallScanner) scanFrom(prev int) {
+	const xmlOpenTag = "<tool_call>"
+	const xmlCloseTag = "</tool_call>"
+	s := sc.buf.String()
+
+	scanOpen := func(open string, at *int) {
+		if *at >= 0 {
+			return
+		}
+		from := prev - len(open) + 1
+		if from < 0 {
+			from = 0
+		}
+		if i := strings.Index(s[from:], open); i >= 0 {
+			*at = from + i
+		}
+	}
+	scanClose := func(open, close string, openAt int, seen *bool) {
+		if openAt < 0 || *seen {
+			return
+		}
+		// A close marker only counts after the open marker; also
+		// re-check the overlap window for split markers.
+		from := prev - len(close) + 1
+		if min := openAt + len(open); from < min {
+			from = min
+		}
+		if from <= len(s) && strings.Contains(s[from:], close) {
+			*seen = true
+		}
+	}
+
+	scanOpen(xmlOpenTag, &sc.xmlOpen)
+	scanClose(xmlOpenTag, xmlCloseTag, sc.xmlOpen, &sc.xmlClose)
+	scanOpen(sentinelOpen, &sc.sentOpen)
+	scanClose(sentinelOpen, sentinelClose, sc.sentOpen, &sc.sentClose)
+}
+
+// xmlReady/sentReady report whether the corresponding extract
+// function could return a non-empty result for the buffer.
+func (sc *toolCallScanner) xmlReady() bool {
+	return sc.xmlOpen >= 0 && sc.xmlClose && !sc.xmlFailed
+}
+func (sc *toolCallScanner) sentReady() bool {
+	return sc.sentOpen >= 0 && sc.sentClose && !sc.sentFailed
+}
+
 // consume drains the provider channel, emitting MessageEvents and
 // collecting tool calls + usage.
 // It also detects XML <tool_call> blocks as a fallback for models
 // that don't support native function calling.
-func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- Event) (text string, toolCalls []llm.ToolCall, usage *llm.Usage, err error) {
-	var xmlBuf strings.Builder // buffers text between XML tool call markers
+func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
+	var toolCalls []llm.ToolCall
+	var usage *llm.Usage
+	sc := newToolCallScanner()
 	for d := range stream {
 		if err := ctx.Err(); err != nil {
-			return text, toolCalls, usage, err
+			return sc.buf.String(), toolCalls, usage, err
 		}
 		if d.Err != nil {
-			return text, toolCalls, usage, d.Err
+			return sc.buf.String(), toolCalls, usage, d.Err
 		}
 		if d.Notice != "" {
 			// Informational status (rate-limit retry etc.) — surface
@@ -1462,55 +1555,62 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			select {
 			case out <- NoticeEvent{Text: d.Notice}:
 			case <-ctx.Done():
-				return text, toolCalls, usage, ctx.Err()
+				return sc.buf.String(), toolCalls, usage, ctx.Err()
 			}
 			continue
 		}
 		if d.Content != "" {
-			text += d.Content
+			sc.append(d.Content)
 
 			// XML tool call fallback: detect <tool_call> blocks
 			// in the accumulated text and convert to real tool calls.
-			tcs, remaining := extractXMLToolCalls(text)
-			if len(tcs) > 0 {
-				// Emit remaining text BEFORE the XML block.
-				if remaining != "" {
-					select {
-					case out <- MessageEvent{Text: remaining}:
-					case <-ctx.Done():
-						return text, toolCalls, usage, ctx.Err()
+			// Gated by the incremental scanner so the O(buffer) pass
+			// runs only when a complete block is actually present.
+			if sc.xmlReady() {
+				tcs, remaining := extractXMLToolCalls(sc.buf.String())
+				if len(tcs) > 0 {
+					// Emit remaining text BEFORE the XML block.
+					if remaining != "" {
+						select {
+						case out <- MessageEvent{Text: remaining}:
+						case <-ctx.Done():
+							return sc.buf.String(), toolCalls, usage, ctx.Err()
+						}
 					}
+					toolCalls = append(toolCalls, tcs...)
+					// Reset text to just the remaining portion.
+					sc.reset(remaining)
+					continue
 				}
-				for _, tc := range tcs {
-					toolCalls = append(toolCalls, tc)
-				}
-				// Reset text to just the remaining portion.
-				text = remaining
-				_ = xmlBuf
-				continue
+				// The first complete block is fixed once seen and the
+				// parse is deterministic — never retry it.
+				sc.xmlFailed = true
 			}
 
 			// Sentinel tool call (thin protocol B3): detect «...»
 			// blocks. Same streaming contract as the XML fallback —
 			// checked after XML so the historical path is untouched.
-			stcs, sbefore := extractSentinelToolCalls(text)
-			if len(stcs) > 0 {
-				if sbefore != "" {
-					select {
-					case out <- MessageEvent{Text: sbefore}:
-					case <-ctx.Done():
-						return text, toolCalls, usage, ctx.Err()
+			if sc.sentReady() {
+				stcs, sbefore := extractSentinelToolCalls(sc.buf.String())
+				if len(stcs) > 0 {
+					if sbefore != "" {
+						select {
+						case out <- MessageEvent{Text: sbefore}:
+						case <-ctx.Done():
+							return sc.buf.String(), toolCalls, usage, ctx.Err()
+						}
 					}
+					toolCalls = append(toolCalls, stcs...)
+					sc.reset(sbefore)
+					continue
 				}
-				toolCalls = append(toolCalls, stcs...)
-				text = sbefore
-				continue
+				sc.sentFailed = true
 			}
 
 			select {
 			case out <- MessageEvent{Text: d.Content}:
 			case <-ctx.Done():
-				return text, toolCalls, usage, ctx.Err()
+				return sc.buf.String(), toolCalls, usage, ctx.Err()
 			}
 		}
 		if d.ToolCall != nil {
@@ -1520,7 +1620,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			usage = d.Usage
 		}
 	}
-	return text, toolCalls, usage, nil
+	return sc.buf.String(), toolCalls, usage, nil
 }
 
 // extractXMLToolCalls scans text for <tool_call>...</tool_call>
