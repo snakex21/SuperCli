@@ -301,6 +301,30 @@ func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (conf
 	return worker, true
 }
 
+// resolveNavigatorProvider picks the small side provider the navigator
+// classifies routes on, so its prompt (a different prefix) never evicts
+// the main conversation from a single-slot llama.cpp KV cache. Zero new
+// knobs ("ma działać samo"): it only reuses providers the user already
+// configured. Preference order:
+//
+//  1. the task_model worker provider — by construction a different
+//     model or host than the coordinator (resolveTaskWorkerConfig
+//     returns no override for the same backend), so the main slot is
+//     never touched;
+//  2. the draft provider (F11), same "cheap side model" role — skipping
+//     echo/test stubs, mirroring summaryProviderFor;
+//  3. nil — the loop classifies on the main provider (today's
+//     behaviour).
+func resolveNavigatorProvider(taskWorker, draft llm.Provider) llm.Provider {
+	if taskWorker != nil {
+		return taskWorker
+	}
+	if draft != nil && !strings.Contains(strings.ToLower(draft.Name()), "echo") {
+		return draft
+	}
+	return nil
+}
+
 // resolveOrchestrator applies the config.toml tri-state override
 // (`orchestrator`) on top of the built-in default (OFF).
 func resolveOrchestrator(override *bool) bool {
@@ -1167,6 +1191,18 @@ func Main() {
 	// Navigator routing mode (config `navigator`, default auto).
 	navigatorEnable, navigatorAuto := resolveNavigator(tomlCfg.Navigator)
 
+	// The navigator's route classification is a tiny call, but on the
+	// main provider it thrashes a single-slot llama.cpp KV cache (its
+	// prompt is a different prefix, so the coordinator re-prefills on
+	// the next call). When a small side provider is already configured,
+	// reuse it — no new knob: task_model's worker host first (a
+	// dedicated second host, so the main slot is never touched), then
+	// the draft provider. Nil keeps today's behaviour (main provider).
+	navigatorProvider := resolveNavigatorProvider(taskWorkerProvider, draftProvider)
+	if navigatorProvider != nil {
+		log.Printf("navigator: route classification uses side provider %q", navigatorProvider.Name())
+	}
+
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:        provider,
@@ -1187,6 +1223,7 @@ func Main() {
 		},
 		Draft:             draftPolicy,
 		DraftProvider:     draftProvider,
+		NavigatorProvider: navigatorProvider,
 		DraftOverrideSink: draftSink,
 		Stats:             draftStats,
 		WindowFor:         windowFor,
