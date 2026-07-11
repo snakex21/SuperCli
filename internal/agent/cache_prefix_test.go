@@ -202,6 +202,78 @@ func TestCache_StableToolset_ActivationKeepsToolDefsByteStable(t *testing.T) {
 	}
 }
 
+// TestCache_StableToolset_PreambleHoistedIntoStablePrefix pins the
+// hoist: with stableToolset on, the thin preamble (sentinel instruction
+// + catalog) lives in the leading system block of the prompt — inside
+// the KV-cacheable prefix — and is NOT re-injected behind the growing
+// history. Across steps the serialized prompt (minus the volatile
+// trailing stamp) of step N must be a literal byte prefix of step N+1.
+func TestCache_StableToolset_PreambleHoistedIntoStablePrefix(t *testing.T) {
+	l := newCacheTestLoop(t)
+	l.stableToolset = true
+	l.catalogHoist = true
+	// Make web_search a visible dormant-tail tool so the catalog is
+	// non-empty (in the fixture it is registered but not always-on).
+	l.registry.MarkAlwaysOn("web_search")
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "pierwsze zadanie"})
+
+	stripStamp := func(msgs []llm.Message) []llm.Message {
+		last := msgs[len(msgs)-1]
+		if !strings.Contains(last.Content, "Current local date/time:") {
+			t.Fatalf("last message must be the volatile stamp, got %+v", last)
+		}
+		return msgs[:len(msgs)-1]
+	}
+
+	stepN := stripStamp(l.providerMessages())
+	// The preamble must be in the leading system run, right after the
+	// base system prompt.
+	if stepN[0].Content != "STABLE BASE SYSTEM PROMPT" {
+		t.Fatalf("first message must be the base system prompt, got %q", stepN[0].Content)
+	}
+	if stepN[1].Role != llm.RoleSystem || !strings.Contains(stepN[1].Content, "web_search") {
+		t.Fatalf("hoisted preamble with catalog expected at index 1, got %+v", stepN[1])
+	}
+	// No trailing copy behind the history.
+	tail := stepN[len(stepN)-1]
+	if strings.Contains(tail.Content, "loadable on demand") {
+		t.Error("preamble must not be duplicated at the end of the prompt when hoisted")
+	}
+
+	// Step N+1: history grew append-only; even a tool activation must
+	// not move or rewrite the hoisted preamble.
+	l.registry.Activate("web_search")
+	l.Messages = append(l.Messages,
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "list_dir", Arguments: `{"path":"."}`}}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "1", Content: "a.go"},
+	)
+	stepN1 := stripStamp(l.providerMessages())
+
+	if !strings.HasPrefix(serializeForCache(stepN1), serializeForCache(stepN)) {
+		t.Fatalf("stableToolset hoist: step N prompt is not a byte prefix of step N+1;\nN:\n%q\nN+1:\n%q",
+			serializeForCache(stepN), serializeForCache(stepN1))
+	}
+}
+
+// TestCache_HoistOff_PreambleStaysAtTail pins the default behaviour:
+// without catalogHoist (even with stableToolset on) the preamble keeps
+// its historical recency placement just before the freshness stamp.
+func TestCache_HoistOff_PreambleStaysAtTail(t *testing.T) {
+	l := newCacheTestLoop(t) // catalogHoist defaults to false
+	l.stableToolset = true
+	l.registry.MarkAlwaysOn("web_search")
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "zrob cos"})
+
+	msgs := l.providerMessages()
+	pre := msgs[len(msgs)-2]
+	if pre.Role != llm.RoleSystem || !strings.Contains(pre.Content, "web_search") {
+		t.Fatalf("stableToolset off: preamble must sit second-to-last, got %+v", pre)
+	}
+	if strings.Contains(msgs[1].Content, "web_search") && msgs[1].Role == llm.RoleSystem {
+		t.Error("stableToolset off: preamble must not be hoisted into the prefix")
+	}
+}
+
 // TestCache_StableToolset_TailToolExecutesWithoutPromotion proves the
 // promotion is redundant for execution: with stableToolset on, a tail
 // tool activated via tool_search is absent from the request tool list

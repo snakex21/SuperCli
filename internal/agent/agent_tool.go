@@ -251,7 +251,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// the same append-only, cache-friendly prefix. The worker builds
 	// its own prefix from scratch (cold prefill is the accepted cost),
 	// but per-turn it stays as cache-friendly as the coordinator.
-	thin, stable, baseDir := a.childLoopSettings()
+	thin, stable, hoist, baseDir := a.childLoopSettings()
 
 	// Model-per-task: pick the worker backend. Defaults to the
 	// coordinator's provider; a configured WorkerProvider switches the
@@ -269,6 +269,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		InitialMessages: seed,
 		ThinTools:       thin,
 		StableToolset:   stable,
+		CatalogHoist:    hoist,
 		BaseDir:         baseDir,
 		CreditTracker:   budget,
 		// Workers never route: they run straight on the coordinator
@@ -446,11 +447,11 @@ func (a *AgentTool) emitDraftVerify(tel draftVerifyTelemetry) {
 // the stable-toolset flag, and the sandbox root (BaseDir). When there
 // is no parent (unit tests build the tool without one) it returns
 // zero values, i.e. the historical worker behaviour.
-func (a *AgentTool) childLoopSettings() (thin, stable bool, baseDir string) {
+func (a *AgentTool) childLoopSettings() (thin, stable, hoist bool, baseDir string) {
 	if a.ParentLoop == nil {
-		return false, false, ""
+		return false, false, false, ""
 	}
-	return a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.baseDir
+	return a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.catalogHoist, a.ParentLoop.baseDir
 }
 
 // workerProvider picks the LLM backend for a new worker: the

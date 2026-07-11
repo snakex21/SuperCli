@@ -50,6 +50,7 @@ type Loop struct {
 	maxSteps      int
 	thinTools     bool
 	stableToolset bool
+	catalogHoist  bool
 	orchestrator  bool
 	// taskParallel decides whether a batch of multiple `task` calls in
 	// one model turn runs concurrently. Resolved by the app layer:
@@ -63,14 +64,23 @@ type Loop struct {
 	taskParallelWarnLocal bool
 	taskParallelWarned    bool
 	thinHintMax           int
-	baseDir               string
-	writer                SessionWriter
-	errorLog              ErrorLogger
-	reflector             Reflector
-	reflectEvery          int
-	patternInjector       PatternInjector
-	creditTracker         CreditTracker
-	modelID               string
+	// hoistedPre freezes the thin-tools preamble bytes for the whole
+	// session when stableToolset is on: the preamble then lives in the
+	// stable system prefix (paid once, KV-cached) instead of being
+	// re-injected — and re-evaluated by llama.cpp — behind the growing
+	// history every step. hoistedPreSet gates the lazy first render so
+	// the freeze happens after any SetRegistry swap. Guarded by nothing:
+	// providerMessages runs on the loop goroutine only.
+	hoistedPre      string
+	hoistedPreSet   bool
+	baseDir         string
+	writer          SessionWriter
+	errorLog        ErrorLogger
+	reflector       Reflector
+	reflectEvery    int
+	patternInjector PatternInjector
+	creditTracker   CreditTracker
+	modelID         string
 
 	// sessUsage accumulates provider-reported token usage across
 	// every Run of this loop (the whole TUI session). Guarded by
@@ -291,6 +301,18 @@ type LoopConfig struct {
 	// it on every tool load. Default false = historical behaviour
 	// (activated tools get promoted, tools list grows).
 	StableToolset bool
+	// CatalogHoist (only meaningful with ThinTools+StableToolset)
+	// moves the thin-tools preamble (sentinel instruction + dormant
+	// catalog) from its per-request tail position into the stable
+	// system prefix. At the tail its position shifts every step as
+	// history grows, so llama.cpp re-evaluates the whole catalog
+	// (hundreds–1500 tok) on every model call; hoisted, it sits in
+	// the KV-cached prefix and is paid once per session. The rendered
+	// bytes are frozen on first use so the prefix stays byte-stable.
+	// Default false: the catalog keeps its recency placement until
+	// the hoist is live-verified (risk: a small model may reach for
+	// tool_search less reliably when the catalog is not at the end).
+	CatalogHoist bool
 	// Orchestrator enables the HARD delegation mode. It does not by
 	// itself restrict the registry (the app layer passes a restricted
 	// registry via OrchestratorRegistry); it only tells the loop to
@@ -445,6 +467,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		maxSteps:              cfg.MaxSteps,
 		thinTools:             cfg.ThinTools,
 		stableToolset:         cfg.StableToolset,
+		catalogHoist:          cfg.CatalogHoist,
 		orchestrator:          cfg.Orchestrator,
 		taskParallel:          cfg.TaskParallel,
 		taskParallelWarnLocal: cfg.TaskParallelWarnLocal,
@@ -536,7 +559,14 @@ func (l *Loop) thinHintMaxOrDefault() int {
 // is present in the full base registry. The loop only reads its registry
 // per-turn (buildToolDefs), so swapping the pointer before the first Run
 // is safe and does not disturb any in-flight state.
-func (l *Loop) SetRegistry(r *tools.Registry) { l.registry = r }
+func (l *Loop) SetRegistry(r *tools.Registry) {
+	l.registry = r
+	// The hoisted thin-tools preamble (stableToolset) renders from the
+	// registry; a swap before the first Run must re-render it, not
+	// serve a stale frozen copy.
+	l.hoistedPreSet = false
+	l.hoistedPre = ""
+}
 
 // VisibleToolNames returns the names of tools the model can currently see
 // (the registry's visible + always-on set). Exposed for tests and
@@ -1094,13 +1124,43 @@ func (l *Loop) providerMessages() []llm.Message {
 		// prompt prefix stays cacheable by the provider.
 		visible := l.VisibleMessages()
 		out := make([]llm.Message, 0, len(visible)+2)
-		out = append(out, visible...)
-		// Thin tool protocol: inject the sentinel call-format
-		// instruction (and the dormant-tail catalog when non-empty)
-		// just before the freshness stamp. Empty when thin tools are
-		// off, so nothing is injected then.
-		if pre := l.thinToolsPreamble(); pre != "" {
-			out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
+		// Thin tool protocol placement depends on stableToolset:
+		//
+		// stableToolset + catalogHoist: the catalog is byte-stable all
+		// session (activated tools stay in the tail), so the preamble
+		// is HOISTED into the stable prompt prefix — right after the
+		// leading run of system messages. There it sits in the
+		// server-side KV cache and is evaluated once, instead of being
+		// re-injected behind the growing history (a position that
+		// shifts every step, forcing llama.cpp to re-eval the whole
+		// catalog on every call). The rendered bytes are frozen on
+		// first use so late registry changes cannot silently rewrite
+		// the prefix. The hoisted message never enters l.Messages, so
+		// prune/compaction/token accounting never see it.
+		//
+		// stableToolset OFF (or hoist not enabled): the catalog can
+		// change on activation / recency is preferred, so keep the
+		// historical placement — injected just before the freshness
+		// stamp at the end of the prompt.
+		if l.stableToolset && l.catalogHoist {
+			if !l.hoistedPreSet {
+				l.hoistedPre = l.thinToolsPreamble()
+				l.hoistedPreSet = true
+			}
+			lead := 0
+			for lead < len(visible) && visible[lead].Role == llm.RoleSystem {
+				lead++
+			}
+			out = append(out, visible[:lead]...)
+			if l.hoistedPre != "" {
+				out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.hoistedPre})
+			}
+			out = append(out, visible[lead:]...)
+		} else {
+			out = append(out, visible...)
+			if pre := l.thinToolsPreamble(); pre != "" {
+				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
+			}
 		}
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
 		return out
