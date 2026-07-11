@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // MaxCommandLen caps the size of the command string. A
@@ -200,13 +201,25 @@ func appendTail(b *strings.Builder, label, s string, preTruncated bool) {
 	}
 	truncated := preTruncated
 	if len(s) > FailTailBytes {
-		s = s[len(s)-FailTailBytes:]
+		s = tailUTF8(s, FailTailBytes)
 		truncated = true
 	}
 	if truncated {
 		label += " (tail, truncated)"
 	}
 	fmt.Fprintf(b, "\n%s:\n%s", label, s)
+}
+
+// tailUTF8 returns the last max bytes of s, moving the cut
+// forward (at most 3 bytes) to the next rune boundary so a
+// multi-byte character is never split in half. s must be
+// longer than max.
+func tailUTF8(s string, max int) string {
+	i := len(s) - max
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return s[i:]
 }
 
 // fmtDurMS renders milliseconds as "1.3s".

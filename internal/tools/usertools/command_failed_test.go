@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	core "supercli/internal/tools/core"
 )
 
 // commandFailedErr is the structured failure a user tool's
@@ -66,5 +69,35 @@ func TestCommandFailedErr_TailCapped(t *testing.T) {
 	}
 	if len(got.Error()) > failTailBytes+200 {
 		t.Errorf("error too long: %d bytes", len(got.Error()))
+	}
+}
+
+func TestCommandFailedErr_TailCutIsUTF8Safe(t *testing.T) {
+	// A run of 2-byte runes with one leading ASCII byte makes the
+	// failTailBytes-from-the-end cut land mid-rune unless the cut
+	// is moved to a rune boundary.
+	long := "x" + strings.Repeat("ż", failTailBytes)
+	got := commandFailedErr(context.Background(), errors.New("boom"), long)
+	if !utf8.ValidString(got.Error()) {
+		t.Fatalf("error is not valid UTF-8: %q", got.Error()[:120])
+	}
+	i := strings.Index(got.Error(), "output (tail, truncated):\n")
+	if i < 0 {
+		t.Fatal("missing truncation marker")
+	}
+	tail := got.Error()[i+len("output (tail, truncated):\n"):]
+	if r, _ := utf8.DecodeRuneInString(tail); r == utf8.RuneError {
+		t.Errorf("tail starts mid-rune: %q", tail[:8])
+	}
+}
+
+func TestCommandFailedErr_IsSelfContained(t *testing.T) {
+	// The error already embeds the output tail, so ModelContent
+	// must not append Result.Text a second time.
+	got := commandFailedErr(context.Background(), errors.New("boom"), "some output")
+	res := core.Result{Text: "some output", Err: got}
+	mc := res.ModelContent()
+	if n := strings.Count(mc, "some output"); n != 1 {
+		t.Errorf("output appears %d times in ModelContent, want 1:\n%s", n, mc)
 	}
 }
