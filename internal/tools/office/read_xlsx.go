@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 // Default bounds for the read_xlsx tool. XLSX
@@ -118,7 +120,8 @@ func (t *ReadXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_xlsx: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("read_xlsx: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.IsDir() {
 		err := fmt.Errorf("read_xlsx: %q is a directory, not an xlsx", full)

@@ -33,6 +33,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 // EditXlsxTool edits .xlsx files.
@@ -117,7 +119,8 @@ func (t *EditXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("edit_xlsx: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("edit_xlsx: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.Size() > t.MaxXlsxBytes {
 		err := fmt.Errorf("edit_xlsx: file too large: %d > %d", info.Size(), t.MaxXlsxBytes)

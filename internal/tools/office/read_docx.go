@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"supercli/internal/tools/fileops"
 )
 
 // Default bounds for the read_docx tool. The
@@ -127,7 +129,8 @@ func (t *ReadDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_docx: stat %q: %w", full, err)}, err
+		err = fmt.Errorf("read_docx: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
 	}
 	if info.IsDir() {
 		err := fmt.Errorf("read_docx: %q is a directory, not a docx", full)
