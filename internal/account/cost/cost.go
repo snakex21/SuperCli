@@ -14,6 +14,7 @@ import (
 // Dashboard holds all data needed to render /cost output.
 type Dashboard struct {
 	Turns      []stats.Turn
+	Calls      []stats.Call
 	Total      stats.Total
 	SessionIn  int64
 	SessionOut int64
@@ -114,6 +115,37 @@ func Render(d Dashboard) string {
 		b.WriteString("\n")
 	}
 
+	// ── Section 3c: Model calls (per purpose) ──
+	// Every Provider.Complete call this session, main and helper
+	// inferences alike (navigator, compact, reflection, draft,
+	// memory autosave, ...), aggregated by purpose. This is where
+	// previously invisible model time becomes accountable.
+	if len(d.Calls) > 0 {
+		b.WriteString("### Model calls\n\n")
+		b.WriteString("  purpose      │ calls │ time     │ ttft~   │  in    │  out  │ notes\n")
+		b.WriteString("  ─────────────┼───────┼──────────┼─────────┼────────┼───────┼──────\n")
+		for _, a := range stats.SumCalls(d.Calls) {
+			ttft := "-"
+			if a.TTFTCount > 0 {
+				ttft = formatUsShort(a.TTFTUs / int64(a.TTFTCount))
+			}
+			notes := ""
+			if a.Background > 0 {
+				notes += fmt.Sprintf("bg=%d ", a.Background)
+			}
+			if a.Canceled > 0 {
+				notes += fmt.Sprintf("canceled=%d ", a.Canceled)
+			}
+			if a.Failed > 0 {
+				notes += fmt.Sprintf("failed=%d", a.Failed)
+			}
+			b.WriteString(fmt.Sprintf("  %-12s │ %5d │ %8s │ %7s │ %6s │ %5s │ %s\n",
+				a.Purpose, a.Count, formatUsShort(a.TotalUs), ttft,
+				compact(a.TokensIn), compact(a.TokensOut), strings.TrimSpace(notes)))
+		}
+		b.WriteString("\n")
+	}
+
 	// ── Section 4: Model breakdown (per-model) ──
 	modelBreakdown := stats.SumByModel(d.Turns)
 	if len(modelBreakdown) > 1 {
@@ -172,6 +204,15 @@ func StatusBarCostProvider(used, budget int, provider, model string) string {
 	}
 	return fmt.Sprintf("%s used │ %s",
 		compact(used), credits.FormatUSD(tokensCost))
+}
+
+// formatUsShort renders microseconds compactly: sub-second values
+// as ms, everything else with one decimal of seconds.
+func formatUsShort(us int64) string {
+	if us < 1_000_000 {
+		return fmt.Sprintf("%dms", us/1000)
+	}
+	return fmt.Sprintf("%.1fs", float64(us)/1_000_000)
 }
 
 func compact(n int) string {

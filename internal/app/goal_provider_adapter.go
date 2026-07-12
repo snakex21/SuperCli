@@ -31,7 +31,7 @@ func (a goalProviderAdapter) Complete(ctx context.Context, msgs []goal.Message) 
 	for i, m := range msgs {
 		llmMsgs[i] = llm.Message{Role: llm.Role(m.Role), Content: m.Content}
 	}
-	ch, err := a.Provider.Complete(ctx, llmMsgs, nil) // goal decompose doesn't need tools
+	ch, err := a.Provider.Complete(llm.WithPurpose(ctx, llm.PurposeGoal), llmMsgs, nil) // goal decompose doesn't need tools
 	if err != nil {
 		return "", err
 	}

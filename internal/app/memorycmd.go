@@ -172,8 +172,11 @@ func (p *memProgress) lockWithin(d time.Duration) bool {
 }
 
 // providerSummarizer adapts an llm.Provider to memory.SummarizeFunc.
+// Every call is labeled as background "memory" work so the metered
+// stats attribute it correctly (autosave used to be invisible).
 func providerSummarizer(provider llm.Provider) memory.SummarizeFunc {
 	return func(ctx context.Context, prompt string) (string, error) {
+		ctx = llm.WithBackground(llm.WithPurpose(ctx, llm.PurposeMemory))
 		ch, err := provider.Complete(ctx, []llm.Message{
 			{Role: llm.RoleUser, Content: prompt},
 		}, nil)

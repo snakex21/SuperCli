@@ -2130,6 +2130,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			}
 			d := cost.Dashboard{
 				Turns:     turns,
+				Calls:     rec.Calls(),
 				Total:     total,
 				SessionID: sessionID,
 				Model:     model,

@@ -692,6 +692,22 @@ func Main() {
 	// frame; the swap path below wires the redraw that the bug needs.
 	kickCodexUsageRefresh(provider, nil)
 
+	// Per-turn telemetry recorder (F28 /cost + phase timings + the
+	// purpose-labeled model-call ledger). Created BEFORE the provider
+	// decorators below so every Complete call in the process — main
+	// step calls AND helper inferences (navigator, compact,
+	// reflection, draft, memory autosave, goal, judges) — lands here.
+	// Historically only the F11 draft savings flowed in, hence the
+	// old name kept at the call sites below.
+	draftStats := stats.NewMemory()
+	callSink := statsCallSink(draftStats)
+	// Central model-call metering: ONE decorator on the main provider
+	// funnels every call into the recorder with a purpose label (call
+	// sites override the default via llm.WithPurpose on the context).
+	// Capability probing (Codex usage fetchers, RouterProvider pool)
+	// unwraps via llm.Unwrap.
+	provider = llm.Metered(provider, cfg.Provider, llm.PurposeMain, callSink)
+
 	// Model tier (internal/tier): config glob overrides >
 	// price > parsed parameter count / marker words > small.
 	// Small-tier models get the core prompt only (and, below,
@@ -987,7 +1003,10 @@ func Main() {
 			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
 			taskWorkerCfg = cfg // parallel gate falls back to the real backend too
 		} else {
-			taskWorkerProvider = wp
+			// Worker calls run outside the coordinator's steps; the
+			// "task" purpose keeps them visible (and separable) in
+			// the session's model-call ledger.
+			taskWorkerProvider = llm.Metered(wp, taskWorkerCfg.Provider, llm.PurposeTask, callSink)
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
 		}
 	}
@@ -1122,14 +1141,11 @@ func Main() {
 	var draftSink agent.DraftOverrideSink
 	if draftProvider != nil {
 		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
+		// Meter the draft provider too (default purpose "draft");
+		// its other roles (navigator side provider, memory
+		// summarizer) re-label per call via llm.WithPurpose.
+		draftProvider = llm.Metered(draftProvider, cfg.Provider, llm.PurposeDraft, callSink)
 	}
-	// Per-turn telemetry recorder (F28 /cost + phase timings). The
-	// loop feeds it on every step — tokens, tool-call batch sizes,
-	// and the phase breakdown (context prep / TTFT / stream / tools
-	// / persist) land here; /cost renders the report. Historically
-	// only the F11 draft savings flowed in, hence the old name kept
-	// at the call sites below.
-	draftStats := stats.NewMemory()
 
 	// F5.a: mid-run reflection checkpoint. Every
 	// reflectEvery steps the loop asks the model for a
@@ -1730,7 +1746,7 @@ func Main() {
 	// active provider is not Codex (or has no auth) it prints a clear
 	// message instead of an error.
 	mergedCommands["usage"] = func(ctx context.Context, args string) (string, error) {
-		prov := loop.Provider()
+		prov := llm.Unwrap(loop.Provider())
 		_, single := prov.(codexUsageFetcher)
 		_, all := prov.(codexUsageAllFetcher)
 		if !single && !all {
@@ -2346,7 +2362,7 @@ func Main() {
 		// Codex subscription usage (5h rolling + weekly), pulled from
 		// the active provider's last /responses headers. Rendered only
 		// when the active provider is Codex AND a snapshot has arrived.
-		if rp, ok := loop.Provider().(interface {
+		if rp, ok := llm.Unwrap(loop.Provider()).(interface {
 			RateLimits() (llm.CodexRateLimits, bool)
 		}); ok {
 			if rl, ok := rp.RateLimits(); ok {
@@ -2355,7 +2371,7 @@ func Main() {
 					// Multi-account: append which account is active
 					// AND the pool-wide average, so the user sees both
 					// "this account" and "all accounts combined".
-					if rt, ok := loop.Provider().(*llm.RouterProvider); ok {
+					if rt, ok := llm.Unwrap(loop.Provider()).(*llm.RouterProvider); ok {
 						snaps, _, active := rt.PoolUsage()
 						if len(snaps) > 1 {
 							tile += fmt.Sprintf(" · acct: %s (%d/%d)", rt.ActiveLabel(), active+1, len(snaps))
@@ -2505,6 +2521,8 @@ func Main() {
 				// fetch lands, so the `limit:` tile appears on its own
 				// without the user pressing a key.
 				kickCodexUsageRefresh(np, redrawStatus)
+				// Keep the model-call metering across /model swaps.
+				np = llm.Metered(np, swapCfg.Provider, llm.PurposeMain, callSink)
 			}
 			return np, err
 		},
@@ -2631,8 +2649,10 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		reg.MarkAlwaysOn(sp.Name)
 	}
 	// Phase telemetry for batch runs: same recorder as the TUI,
-	// dumped as one [phase] stderr line per step after the run.
+	// dumped as one [phase] stderr line per step (plus one [calls]
+	// per-purpose model-call line) after the run.
 	batchStats := stats.NewMemory()
+	p = llm.Metered(p, cfg.Provider, llm.PurposeMain, statsCallSink(batchStats))
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider: p,
 		Registry: reg,
@@ -2706,6 +2726,11 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		if line := stats.PhaseLine(t); line != "" {
 			fmt.Fprintln(os.Stderr, line)
 		}
+	}
+	// Purpose-labeled model-call ledger: every Complete call this
+	// run (main + helper inferences), aggregated per purpose.
+	if line := stats.CallsLine(batchStats.Calls()); line != "" {
+		fmt.Fprintln(os.Stderr, line)
 	}
 
 	// Successful run: record the post-run tree fingerprint so the next
@@ -2857,7 +2882,7 @@ func isSubscriptionRuntimeProvider(p llm.Provider) bool {
 	if p == nil {
 		return false
 	}
-	_, ok := p.(interface {
+	_, ok := llm.Unwrap(p).(interface {
 		RateLimits() (llm.CodexRateLimits, bool)
 	})
 	return ok
@@ -3034,6 +3059,7 @@ type codexUsageAllFetcher interface {
 // It returns the active account's snapshot and any (per-account)
 // error, mirroring FetchUsage's signature so callers are unchanged.
 func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLimits, error) {
+	prov = llm.Unwrap(prov)
 	if fa, ok := prov.(codexUsageAllFetcher); ok {
 		return fa.FetchUsageAll(ctx)
 	}
@@ -3049,7 +3075,7 @@ func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLim
 // usage, marks the active account, and adds a pool total row — so
 // the user sees both "this account" and "all accounts combined".
 func codexPoolUsageDetail(prov llm.Provider) string {
-	rt, ok := prov.(*llm.RouterProvider)
+	rt, ok := llm.Unwrap(prov).(*llm.RouterProvider)
 	if !ok {
 		return ""
 	}
