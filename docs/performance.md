@@ -53,7 +53,7 @@ step, invisible next to a local-model turn.
 
 **What.** Every `Provider.Complete` in the process — not just the main
 step call — is metered centrally by the `llm.Metered` decorator on the
-provider (installed in `main.go`; call sites re-label via
+provider (installed by `internal/llm/factory`; call sites re-label via
 `llm.WithPurpose` / `llm.WithBackground` on the context). Per call it
 records: purpose, model + provider, TTFT, total time, tokens in/out,
 foreground/background, canceled/failed. Purposes: `main`, `navigator`,
@@ -102,12 +102,25 @@ Now:
   abrupt-close handler) and the NEXT startup summarizes it in its
   idle window. Exits are instant; nothing is lost, only saved later.
 
-On top of that, `llm.Metered` serializes background-marked calls
-process-wide: at most ONE background inference (memory autosave,
-startup summarization, webgui title) runs at a time. Foreground calls
-never touch the gate — the user's turn is never queued behind
-background work, and a queued background call abandons the wait the
-moment its context is canceled.
+On top of that, `llm.Metered` gives foreground calls strict priority:
+
+- at most ONE background inference (memory autosave, startup
+  summarization, webgui title) runs process-wide;
+- a new foreground call cancels background work that is streaming or
+  waiting on the background gate;
+- background work starting while one or more foreground streams are
+  active waits until ALL of them finish; foreground calls never wait
+  for one another;
+- the registration and foreground counter share one lock, so a
+  start-vs-preempt race can only resolve as "background registered and
+  canceled" or "foreground registered and background waits".
+
+The metering relay uses a fixed 32-delta buffer: small enough to keep
+streaming bounded, large enough to avoid a goroutine hand-off for every
+token-sized provider fragment. Synthetic 1000-delta benchmark on the
+2026-07-12 Windows dev host: bare provider ~53 ns/delta, metered relay
+~160 ns/delta (previous unbuffered relay ~283 ns/delta), about 10.7 ms
+of decorator work even for an unusually fragmented 100k-delta stream.
 
 **Why.** On a single local backend every concurrent request splits
 compute and evicts the KV prefix of the main conversation. The main

@@ -152,11 +152,18 @@ func TestMetered_ErrorAndCancel(t *testing.T) {
 type holdStub struct {
 	name    string
 	release chan struct{}
+	started chan struct{}
 }
 
 func (p *holdStub) Name() string { return p.name }
 
 func (p *holdStub) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
+	if p.started != nil {
+		select {
+		case p.started <- struct{}{}:
+		default:
+		}
+	}
 	ch := make(chan Delta)
 	go func() {
 		defer close(ch)
@@ -166,6 +173,98 @@ func (p *holdStub) Complete(ctx context.Context, msgs []Message, tools []ToolDef
 		}
 	}()
 	return ch, nil
+}
+
+// TestMetered_ForegroundPreemptsStreamingBackground proves the part
+// that the old background semaphore could not provide: a helper that
+// already owns the backend slot is canceled when user work arrives.
+func TestMetered_ForegroundPreemptsStreamingBackground(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	bgStats := &sinkCapture{}
+	bg := Metered(&holdStub{name: "bg", release: release, started: started}, "t", "memory", bgStats.sink())
+
+	bgCh, err := bg.Complete(WithBackground(context.Background()), nil, nil)
+	if err != nil {
+		t.Fatalf("background Complete: %v", err)
+	}
+	bgDone := make(chan struct{})
+	go func() { defer close(bgDone); drainMetered(t, bgCh) }()
+	<-started
+
+	fg := Metered(&meterStub{name: "fg", deltas: []Delta{{Content: "ok"}}}, "t", "main", (&sinkCapture{}).sink())
+	fgCh, err := fg.Complete(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("foreground Complete: %v", err)
+	}
+	drainMetered(t, fgCh)
+
+	select {
+	case <-bgDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("streaming background was not preempted by foreground")
+	}
+	stats := bgStats.all()
+	if len(stats) != 1 || !stats[0].Canceled || !stats[0].Background {
+		t.Fatalf("preempted background stat = %+v, want Canceled+Background", stats)
+	}
+	close(release)
+}
+
+// TestMetered_BackgroundWaitsForAllForeground streams guards against
+// the race left by a cancel-only implementation: helper work starting
+// AFTER foreground must still wait, and two concurrent foreground
+// streams keep it waiting until both are done.
+func TestMetered_BackgroundWaitsForAllForeground(t *testing.T) {
+	fgRelease1 := make(chan struct{})
+	fgRelease2 := make(chan struct{})
+	fg1 := Metered(&holdStub{name: "fg1", release: fgRelease1}, "t", "main", (&sinkCapture{}).sink())
+	fg2 := Metered(&holdStub{name: "fg2", release: fgRelease2}, "t", "main", (&sinkCapture{}).sink())
+
+	fgCh1, err := fg1.Complete(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fgCh2, err := fg2.Complete(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainMetered(t, fgCh1)
+	go drainMetered(t, fgCh2)
+
+	bgStarted := make(chan struct{}, 1)
+	bgRelease := make(chan struct{})
+	bg := Metered(&holdStub{name: "bg", release: bgRelease, started: bgStarted}, "t", "memory", (&sinkCapture{}).sink())
+	bgDone := make(chan error, 1)
+	go func() {
+		ch, err := bg.Complete(WithBackground(context.Background()), nil, nil)
+		if err == nil {
+			drainMetered(t, ch)
+		}
+		bgDone <- err
+	}()
+
+	select {
+	case <-bgStarted:
+		t.Fatal("background entered provider while foreground was active")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(fgRelease1)
+	select {
+	case <-bgStarted:
+		t.Fatal("background entered provider while second foreground was active")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(fgRelease2)
+	select {
+	case <-bgStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background did not start after all foreground streams finished")
+	}
+	close(bgRelease)
+	if err := <-bgDone; err != nil {
+		t.Fatalf("background Complete after idle: %v", err)
+	}
 }
 
 // TestMetered_BackgroundGateSerializes: at most ONE background
@@ -304,4 +403,40 @@ func TestUnwrap(t *testing.T) {
 	if got := Unwrap(nil); got != nil {
 		t.Error("Unwrap(nil) must be nil")
 	}
+}
+
+// BenchmarkMeteredStreamOverhead measures the decorator itself, not
+// model latency. The same scripted provider and delta slice are used
+// in both cases; the delta-normalized metric makes regressions in the
+// hot streaming path visible as ns/delta and allocs/op.
+func BenchmarkMeteredStreamOverhead(b *testing.B) {
+	const deltaCount = 1000
+	deltas := make([]Delta, deltaCount)
+	for i := range deltas {
+		deltas[i] = Delta{Content: "x"}
+	}
+	deltas[deltaCount-1].Usage = &Usage{Input: 100, Output: deltaCount}
+
+	run := func(b *testing.B, p Provider) {
+		b.Helper()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			ch, err := p.Complete(context.Background(), nil, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			for range ch {
+			}
+		}
+		b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*deltaCount), "ns/delta")
+	}
+
+	b.Run("bare", func(b *testing.B) {
+		run(b, &meterStub{name: "bare", deltas: deltas})
+	})
+	b.Run("metered", func(b *testing.B) {
+		p := Metered(&meterStub{name: "metered", deltas: deltas}, "test", PurposeMain, func(CallStat) {})
+		run(b, p)
+	})
 }
