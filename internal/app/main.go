@@ -1595,6 +1595,30 @@ func Main() {
 		} else {
 			fmt.Fprintf(&b, "daily: %d tokens (no cap)\n", dayUsed)
 		}
+		// Session-write health: silent-loss protection. One line
+		// when everything is fine; the sticky first error, the
+		// failure counter and the retry-buffer depth when not.
+		ps := loop.PersistStatus()
+		switch {
+		case ps.Failures == 0:
+			fmt.Fprintf(&b, "persistence: ok\n")
+		default:
+			state := "recovered (last write ok)"
+			if !ps.LastWriteOK {
+				state = "FAILING (last write failed)"
+			}
+			fmt.Fprintf(&b, "persistence: %s\n", state)
+			fmt.Fprintf(&b, "  failures: %d (first: %s at %s — %s)\n",
+				ps.Failures, ps.FirstOp, ps.FirstAt.Format("15:04:05"), ps.FirstErr)
+			fmt.Fprintf(&b, "  last: %s at %s — %s\n",
+				ps.LastOp, ps.LastAt.Format("15:04:05"), ps.LastErr)
+			if ps.Pending > 0 {
+				fmt.Fprintf(&b, "  buffered for retry: %d message(s)\n", ps.Pending)
+			}
+			if ps.Dropped > 0 {
+				fmt.Fprintf(&b, "  LOST to buffer overflow: %d message(s)\n", ps.Dropped)
+			}
+		}
 		return b.String(), nil
 	}
 
