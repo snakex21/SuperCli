@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -89,6 +90,7 @@ type Loop struct {
 	errorLog        ErrorLogger
 	reflector       Reflector
 	reflectEvery    int
+	adaptiveReflect bool
 	patternInjector PatternInjector
 	creditTracker   CreditTracker
 	modelID         string
@@ -384,14 +386,19 @@ type LoopConfig struct {
 	// record per failed tool call. The loop does not block
 	// on this write; failures are silent.
 	ErrorLog ErrorLogger
-	// Reflector, when non-nil, is invoked every ReflectEvery
-	// steps. The returned text is appended to Messages as a
-	// system message BEFORE the next provider call. F5.a.
+	// Reflector, when non-nil, can inject a self-review before the next
+	// provider call. AdaptiveReflection makes this signal-driven so a
+	// healthy local-model run does not pay for a periodic extra inference.
 	Reflector Reflector
-	// ReflectEvery controls how often reflection fires. 0
-	// (or negative) disables reflection. Default 5 when
-	// Reflector != nil.
+	// ReflectEvery controls the legacy fixed interval. A value <= 0
+	// disables fixed checkpoints; AdaptiveReflection may still trigger
+	// unless the app also omits Reflector.
 	ReflectEvery int
+	// AdaptiveReflection fires only after deterministic signs of trouble:
+	// repeated tool failures, an identical tool-call batch, or the final
+	// useful checkpoint before MaxSteps. It is the app default; the bool is
+	// explicit so tests and embedders retain the legacy fixed contract.
+	AdaptiveReflection bool
 	// PatternInjector, when non-nil, contributes a section
 	// to the system message at the start of every Run. F5.d.
 	PatternInjector PatternInjector
@@ -522,6 +529,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		errorLog:              cfg.ErrorLog,
 		reflector:             cfg.Reflector,
 		reflectEvery:          cfg.ReflectEvery,
+		adaptiveReflect:       cfg.AdaptiveReflection,
 		patternInjector:       cfg.PatternInjector,
 		creditTracker:         cfg.CreditTracker,
 		modelID:               cfg.Provider.Name(),
@@ -852,6 +860,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		l.route = l.navigateRoute(ctx, prompt)
 	}
 	totalUsage := Usage{}
+	var reflectionProgress adaptiveReflectionProgress
 	// F11: reset the policy's per-Run "drafted" set
 	// at the start of every Run so a ModeBalanced
 	// "draft once" rule applies to THIS Run, not to
@@ -1082,34 +1091,26 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		}
 
 		toolStart := time.Now()
-		toolsOK := l.invokeToolCalls(ctx, toolCalls, out)
+		toolsOK, toolFailures := l.invokeToolCalls(ctx, toolCalls, out)
 		l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
 		if !toolsOK {
 			l.statsEndStep(stepStart)
 			return
 		}
 
-		// F5.a: reflection checkpoint. After every step,
-		// check if this is a reflection step and inject the
-		// reflection as a mid-conversation system message.
-		// The next iteration of the loop will see it as
-		// part of the history.
-		if l.reflector != nil && l.reflectEvery > 0 && (step+1)%l.reflectEvery == 0 {
-			reflStart := time.Now()
-			txt, err := l.reflector.Reflect(llm.WithPurpose(ctx, llm.PurposeReflect), l.Messages)
-			l.recordAuxWall(llm.PurposeReflect, time.Since(reflStart))
-			if err == nil && strings.TrimSpace(txt) != "" {
-				refMsg := llm.Message{
-					Role:    llm.RoleSystem,
-					Content: fmt.Sprintf("[reflection checkpoint @ step %d] %s", step+1, txt),
-				}
-				l.Messages = append(l.Messages, refMsg)
-				l.persist(ctx, refMsg)
-				out <- ReflectionEvent{Step: step + 1, Text: txt}
-			}
-			// On error or empty body: silently skip;
-			// reflection is best-effort, must not break
-			// the run.
+		// F5.a: default to signal-driven reflection. A healthy run pays no
+		// auxiliary inference merely because it crossed an arbitrary step
+		// number. Explicit fixed intervals remain available to embedders and
+		// users who set reflect_every=N.
+		reason := ""
+		if l.adaptiveReflect {
+			reason = reflectionProgress.observe(step+1, l.maxSteps, toolCalls, toolFailures)
+		} else if l.reflectEvery > 0 && (step+1)%l.reflectEvery == 0 {
+			reason = "fixed_interval"
+		}
+		if reason != "" {
+			l.runReflection(ctx, step+1, reason, out)
+			reflectionProgress.reset()
 		}
 
 		l.statsEndStep(stepStart)
@@ -1125,7 +1126,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 // taskParallel — on a single local GPU the workers serialize on one server
 // slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
 // so local backends default to sequential; cloud backends run parallel.
-func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) bool {
+func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
 	if len(toolCalls) > 1 && allTaskCalls(toolCalls) && l.taskParallel {
 		if l.taskParallelWarnLocal && !l.taskParallelWarned {
 			l.taskParallelWarned = true
@@ -1136,18 +1137,22 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return l.invokeTaskCallsParallel(ctx, toolCalls, out)
 	}
 
+	failures := 0
 	for _, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
+		if ev.failed {
+			failures++
+		}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false
+			return false, failures
 		}
 	}
-	return true
+	return true, failures
 }
 
 func allTaskCalls(toolCalls []llm.ToolCall) bool {
@@ -1159,7 +1164,7 @@ func allTaskCalls(toolCalls []llm.ToolCall) bool {
 	return len(toolCalls) > 0
 }
 
-func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) bool {
+func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
 	type item struct {
 		idx int
 		res toolResult
@@ -1185,17 +1190,21 @@ func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.Tool
 
 	// Append tool results in the same order as the assistant's tool calls so
 	// provider APIs that expect call/result pairing stay deterministic.
+	failures := 0
 	for _, ev := range results {
+		if ev.failed {
+			failures++
+		}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false
+			return false, failures
 		}
 	}
-	return true
+	return true, failures
 }
 
 // completeOnce performs one provider Complete call and
@@ -1566,7 +1575,91 @@ func (l *Loop) statsEndStep(stepStart time.Time) {
 type toolResult struct {
 	followUps []llm.Message
 	fatal     bool
+	failed    bool
 	err       error
+}
+
+// adaptiveReflectionProgress is reset for every Run. It deliberately uses
+// only facts the CLI already has; deciding whether the answer is "good" is
+// left to the reflector only after a concrete signal justifies that model
+// call. Hashing the batch keeps large write_file arguments out of loop state.
+type adaptiveReflectionProgress struct {
+	lastBatch         [sha256.Size]byte
+	haveBatch         bool
+	repeatedBatches   int
+	failedBatchStreak int
+}
+
+func (p *adaptiveReflectionProgress) observe(step, maxSteps int, calls []llm.ToolCall, failures int) string {
+	fingerprint := toolCallBatchFingerprint(calls)
+	if p.haveBatch && fingerprint == p.lastBatch {
+		p.repeatedBatches++
+	} else {
+		p.lastBatch = fingerprint
+		p.haveBatch = true
+		p.repeatedBatches = 1
+	}
+	if failures > 0 {
+		p.failedBatchStreak++
+	} else {
+		p.failedBatchStreak = 0
+	}
+
+	// Two consecutive bad batches means the model has already had one
+	// ordinary opportunity to self-correct from the structured diagnostic.
+	if p.failedBatchStreak >= 2 {
+		return "repeated_tool_failure"
+	}
+	// Repeating the exact names and arguments is a stronger no-progress
+	// signal than merely using the same tool on a different file/range.
+	if p.repeatedBatches >= 2 {
+		return "repeated_tool_batch"
+	}
+	// A reflection after the final model step cannot influence anything.
+	// Fire when exactly one useful provider call remains instead.
+	if maxSteps > 1 && step == maxSteps-1 {
+		return "step_budget_low"
+	}
+	return ""
+}
+
+func (p *adaptiveReflectionProgress) reset() {
+	p.haveBatch = false
+	p.repeatedBatches = 0
+	p.failedBatchStreak = 0
+}
+
+func toolCallBatchFingerprint(calls []llm.ToolCall) [sha256.Size]byte {
+	h := sha256.New()
+	for _, call := range calls {
+		h.Write([]byte(call.Name))
+		h.Write([]byte{0})
+		h.Write([]byte(call.Arguments))
+		h.Write([]byte{0xff})
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+func (l *Loop) runReflection(ctx context.Context, step int, reason string, out chan<- Event) {
+	if l.reflector == nil {
+		return
+	}
+	reflStart := time.Now()
+	txt, err := l.reflector.Reflect(llm.WithPurpose(ctx, llm.PurposeReflect), l.Messages)
+	l.recordAuxWall(llm.PurposeReflect, time.Since(reflStart))
+	if err != nil || strings.TrimSpace(txt) == "" {
+		// Best-effort: reflection must never break the user's run.
+		return
+	}
+	refMsg := llm.Message{
+		Role:    llm.RoleSystem,
+		Content: fmt.Sprintf("[reflection checkpoint @ step %d; reason=%s] %s", step, reason, txt),
+	}
+	l.Messages = append(l.Messages, refMsg)
+	l.persist(ctx, refMsg)
+	out <- ReflectionEvent{Step: step, Text: txt, Reason: reason}
 }
 
 // invoke runs a single tool call, emits the matching events, and
@@ -1581,6 +1674,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", errMsg)}
 		return toolResult{
+			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
@@ -1642,6 +1736,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	if err != nil {
 		out <- ToolResultEvent{ID: tc.ID, Err: err}
 		return toolResult{
+			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
@@ -1653,6 +1748,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	if res.Err != nil {
 		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err}
 		return toolResult{
+			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,

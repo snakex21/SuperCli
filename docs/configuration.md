@@ -59,7 +59,7 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 | knob | default | touch when |
 |---|---|---|
 | `draft_mode` / `draft_model` | off / empty | opt-in speculative drafting (F11) |
-| `reflect_every` | 0 = built-in (8) | negative disables reflection checkpoints |
+| `reflect_every` | 0 = adaptive | positive forces a fixed N-step interval; negative disables reflection. Adaptive mode runs only after two consecutive failing tool batches, an identical repeated tool-call batch, or when one useful step remains before `MaxSteps` |
 | `model_tiers` | none | force a model into the small/big tier cascade |
 | `small_full_tools` | false | escape hatch: full always-on toolset for small-tier models |
 | `max_credits_per_session` / `_day` | 0 = uncapped | budget enforcement |

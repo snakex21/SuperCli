@@ -199,6 +199,96 @@ func TestLoop_ReflectionEmptyIsNoop(t *testing.T) {
 	}
 }
 
+func TestLoop_AdaptiveReflectionSkipsHealthyRun(t *testing.T) {
+	prov := &adaptiveReflectionProvider{calls: []llm.ToolCall{
+		{ID: "c1", Name: "probe", Arguments: `{"n":1}`},
+		{ID: "c2", Name: "probe", Arguments: `{"n":2}`},
+		{ID: "c3", Name: "probe", Arguments: `{"n":3}`},
+		{ID: "c4", Name: "probe", Arguments: `{"n":4}`},
+		{ID: "c5", Name: "probe", Arguments: `{"n":5}`},
+	}}
+	reflector := &stubReflector{text: "should not run"}
+	loop := newAdaptiveReflectionLoop(t, prov, reflector, 10, false)
+	events, _ := loop.Run(context.Background(), "start")
+	drainEvents(t, events)
+	if got := atomic.LoadInt32(&reflector.calls); got != 0 {
+		t.Fatalf("healthy run reflections = %d, want 0", got)
+	}
+}
+
+func TestLoop_AdaptiveReflectionOnRepeatedBatch(t *testing.T) {
+	call := llm.ToolCall{ID: "same", Name: "probe", Arguments: `{"n":1}`}
+	prov := &adaptiveReflectionProvider{calls: []llm.ToolCall{call, call}}
+	reflector := &stubReflector{text: "change approach"}
+	loop := newAdaptiveReflectionLoop(t, prov, reflector, 10, false)
+	events, _ := loop.Run(context.Background(), "start")
+	evs := drainEvents(t, events)
+	assertReflectionReason(t, evs, "repeated_tool_batch", 2)
+}
+
+func TestLoop_AdaptiveReflectionOnRepeatedFailures(t *testing.T) {
+	prov := &adaptiveReflectionProvider{calls: []llm.ToolCall{
+		{ID: "c1", Name: "probe", Arguments: `{"n":1}`},
+		{ID: "c2", Name: "probe", Arguments: `{"n":2}`},
+	}}
+	reflector := &stubReflector{text: "use the diagnostic"}
+	loop := newAdaptiveReflectionLoop(t, prov, reflector, 10, true)
+	events, _ := loop.Run(context.Background(), "start")
+	evs := drainEvents(t, events)
+	assertReflectionReason(t, evs, "repeated_tool_failure", 2)
+}
+
+func TestLoop_AdaptiveReflectionBeforeStepLimit(t *testing.T) {
+	prov := &adaptiveReflectionProvider{calls: []llm.ToolCall{
+		{ID: "c1", Name: "probe", Arguments: `{"n":1}`},
+		{ID: "c2", Name: "probe", Arguments: `{"n":2}`},
+		{ID: "c3", Name: "probe", Arguments: `{"n":3}`},
+	}}
+	reflector := &stubReflector{text: "one final correction"}
+	loop := newAdaptiveReflectionLoop(t, prov, reflector, 4, false)
+	events, _ := loop.Run(context.Background(), "start")
+	evs := drainEvents(t, events)
+	assertReflectionReason(t, evs, "step_budget_low", 3)
+}
+
+func newAdaptiveReflectionLoop(t *testing.T, prov llm.Provider, reflector Reflector, maxSteps int, fail bool) *Loop {
+	t.Helper()
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "probe", Description: "test probe", Schema: `{}`,
+		Fn: func(_ context.Context, _ json.RawMessage) (tools.Result, error) {
+			if fail {
+				return tools.Result{Err: errStr("probe failed")}, nil
+			}
+			return tools.Result{Text: "ok"}, nil
+		},
+	})
+	loop, err := NewLoop(LoopConfig{
+		Provider: prov, Registry: reg, MaxSteps: maxSteps,
+		Reflector: reflector, ReflectEvery: 8, AdaptiveReflection: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	return loop
+}
+
+func assertReflectionReason(t *testing.T, events []Event, reason string, step int) {
+	t.Helper()
+	var got []ReflectionEvent
+	for _, ev := range events {
+		if reflection, ok := ev.(ReflectionEvent); ok {
+			got = append(got, reflection)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("reflection events = %d, want 1 (%+v)", len(got), got)
+	}
+	if got[0].Reason != reason || got[0].Step != step {
+		t.Fatalf("reflection = %+v, want reason=%q step=%d", got[0], reason, step)
+	}
+}
+
 func TestLoop_PatternInjector_AppendsAtStart(t *testing.T) {
 	prov := echoProvider("ok")
 	reg := tools.NewRegistry()
@@ -247,6 +337,30 @@ func TestLoop_PatternInjector_EmptyIsNoop(t *testing.T) {
 type reflectionTestProvider struct {
 	calls    int
 	provider reflectCounter
+}
+
+type adaptiveReflectionProvider struct {
+	calls    []llm.ToolCall
+	provider reflectCounter
+}
+
+func (p *adaptiveReflectionProvider) Name() string         { return "test" }
+func (p *adaptiveReflectionProvider) SupportsVision() bool { return false }
+func (p *adaptiveReflectionProvider) Complete(_ context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	idx := int(atomic.AddInt32(&p.provider.n, 1)) - 1
+	ch := make(chan llm.Delta, 2)
+	go func() {
+		defer close(ch)
+		if idx < len(p.calls) {
+			call := p.calls[idx]
+			ch <- llm.Delta{Role: llm.RoleAssistant, ToolCall: &call}
+			ch <- llm.Delta{FinishReason: "tool_calls"}
+			return
+		}
+		ch <- llm.Delta{Role: llm.RoleAssistant, Content: "done"}
+		ch <- llm.Delta{FinishReason: "stop"}
+	}()
+	return ch, nil
 }
 
 type reflectCounter struct{ n int32 }

@@ -52,8 +52,9 @@ func (DoneEvent) event() {}
 // line; the model itself sees the reflection text injected
 // as a system message in the conversation history.
 type ReflectionEvent struct {
-	Step int
-	Text string
+	Step   int
+	Text   string
+	Reason string // fixed_interval, repeated_tool_failure/batch, step_budget_low
 }
 
 func (ReflectionEvent) event() {}
