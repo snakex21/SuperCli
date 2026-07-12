@@ -216,6 +216,25 @@ clock; tokens are cheap by comparison. Hence:
 When adding a feature, price it in turns first, tokens second, and put
 the measurement in a telemetry line so the trade stays visible.
 
+## Worker retention and concurrency (defaults, no toml knobs)
+
+Every worker holds its whole Loop (full conversation history), so an
+unbounded registry is a slow memory leak in long coordinator sessions.
+Two process-wide constants (`internal/agent/worker_registry.go`),
+env-overridable, no new config fields:
+
+- **Retention of finished workers: 20** (`SUPERCLI_WORKER_RETENTION`).
+  The oldest finished (done/failed/stopped) workers beyond the cap are
+  evicted LRU by UpdatedAt; a compact summary (status, error, tokens,
+  `core.HeadTail`-capped last result) is kept, so `/workers`,
+  `send_message` and `task_stop` answer "evicted, here is what it did"
+  instead of "unknown worker". Active workers are never evicted.
+- **Max concurrent active workers: 6** (`SUPERCLI_MAX_ACTIVE_WORKERS`).
+  There is no read/write worker classification in the codebase, so this
+  is one global cap; an over-limit `task` fails fast with guidance
+  (wait / task_stop / send_message) rather than queueing inside a tool
+  call and stalling the coordinator's turn.
+
 ## Recent fixes and experiments (2026-07-11)
 
 - **EvictForBudget threshold fix** (b2a393c): eviction now compares

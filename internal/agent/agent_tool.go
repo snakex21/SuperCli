@@ -283,7 +283,13 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		workers = NewWorkerRegistry()
 		a.Workers = workers
 	}
-	w := workers.Add(ar.Agent, ar.Prompt, loop)
+	// TryAdd enforces the global active-worker cap (see
+	// DefaultMaxActiveWorkers): failing fast here keeps the coordinator's
+	// turn moving instead of silently queueing behind a full pool.
+	w, err := workers.TryAdd(ar.Agent, ar.Prompt, loop)
+	if err != nil {
+		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
+	}
 	// Telemetry: record the worker's model only when it differs from
 	// the coordinator's, so the default single-model summary line is
 	// byte-identical to before and draft-verify economics stay

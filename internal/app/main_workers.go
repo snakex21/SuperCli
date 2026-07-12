@@ -12,7 +12,8 @@ import (
 // agent kind, status, age, token usage, and a shortened task description.
 func formatWorkers(reg *agent.WorkerRegistry) string {
 	workers := reg.List()
-	if len(workers) == 0 {
+	evicted := reg.EvictedList()
+	if len(workers) == 0 && len(evicted) == 0 {
 		return "workers: none yet (the coordinator spawns them via the task tool)"
 	}
 	var b strings.Builder
@@ -32,6 +33,12 @@ func formatWorkers(reg *agent.WorkerRegistry) string {
 		}
 		if s.LastError != "" && s.Status != "done" {
 			fmt.Fprintf(&b, "             error: %s\n", shortenLine(s.LastError, 100))
+		}
+	}
+	if len(evicted) > 0 {
+		b.WriteString("\nEvicted (retention keeps a summary only; the worker context is gone):\n")
+		for _, e := range evicted {
+			fmt.Fprintf(&b, "  %s\n", shortenLine(strings.ReplaceAll(e.Line(), "\n", " "), 140))
 		}
 	}
 	b.WriteString("\nstop a running worker: /workers stop <id>\n")

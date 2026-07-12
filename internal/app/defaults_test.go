@@ -16,6 +16,7 @@ package app
 import (
 	"testing"
 
+	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
@@ -91,5 +92,19 @@ func TestFreshConfigDefaults(t *testing.T) {
 	}
 	if fresh.ContextWindow != 0 { // 0 = provider metadata / learned / default
 		t.Error("context_window zero value must stay 0 (auto-resolve)")
+	}
+
+	// Worker retention/concurrency are constants (no toml knobs — "just
+	// works"), env-overridable via SUPERCLI_WORKER_RETENTION /
+	// SUPERCLI_MAX_ACTIVE_WORKERS. Pinned so a change is a conscious
+	// decision: retention 20 keeps enough finished workers for
+	// send_message follow-ups without leaking whole conversations;
+	// 6 concurrent active workers is plenty for one coordinator turn on
+	// a local host, and over-limit spawns fail fast with guidance.
+	if agent.DefaultFinishedWorkerRetention != 20 {
+		t.Errorf("finished-worker retention = %d, want 20", agent.DefaultFinishedWorkerRetention)
+	}
+	if agent.DefaultMaxActiveWorkers != 6 {
+		t.Errorf("max active workers = %d, want 6", agent.DefaultMaxActiveWorkers)
 	}
 }
