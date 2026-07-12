@@ -187,8 +187,12 @@ func (l *Loop) AllMessages() []llm.Message {
 	return l.Messages
 }
 
-// resetHidden clears the hidden map. Called at the start
-// of every Run so a previous Run's hides don't leak.
+// resetHidden clears the hidden map. Called ONLY where the
+// message indices the flags refer to become invalid: after
+// compaction rewrites l.Messages and when LoadConversation
+// replaces the conversation body. Hides otherwise persist
+// across Runs — /clear, hide_messages and budget eviction are
+// durable user/budget intent, not per-Run state.
 func (l *Loop) resetHidden() {
 	l.hidden = nil
 }
