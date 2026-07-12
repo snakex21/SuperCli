@@ -49,7 +49,7 @@ type CallStat struct {
 	// Request is a request-shape estimate (tokens by role),
 	// computed locally from the outgoing messages/tools so sinks
 	// can attribute context weight without seeing the prompt.
-	Request RequestBreakdown
+	Request   RequestBreakdown
 	StartedAt time.Time
 }
 
@@ -186,6 +186,105 @@ func acquireBackgroundGate(ctx context.Context) (func(), error) {
 	}
 }
 
+// Foreground/background priority. The gate above only guarantees "at
+// most one background inference at a time"; by itself it neither stops
+// an already-streaming helper nor prevents a new helper from starting
+// while a foreground stream is active. The coordinator below provides
+// both halves of the contract:
+//
+//   - foreground calls never wait for one another;
+//   - the first foreground call cancels every running/gate-waiting
+//     background call, and background stays blocked until ALL active
+//     foreground streams finish;
+//   - a background call that wins the idle race registers its cancel
+//     before leaving the lock, so a foreground call starting one
+//     instruction later still preempts it.
+//
+// Background jobs treat cancellation as "retry later" (memory keeps
+// its backlog and web titles retain their deterministic fallback), so
+// the priority switch is loss-free.
+var (
+	callPriorityMu  sync.Mutex
+	foregroundCalls int
+	foregroundIdle  = closedSignal()
+	bgCallSeq       uint64
+	bgCalls         = map[uint64]context.CancelFunc{}
+)
+
+func closedSignal() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+// beginForeground marks one foreground stream active and preempts all
+// helper calls that registered before it. The returned function must
+// be held until the stream closes, not merely until Complete returns:
+// the backend remains occupied for the whole stream lifetime.
+func beginForeground() func() {
+	callPriorityMu.Lock()
+	if foregroundCalls == 0 {
+		foregroundIdle = make(chan struct{})
+	}
+	foregroundCalls++
+	cancels := make([]context.CancelFunc, 0, len(bgCalls))
+	for id, cancel := range bgCalls {
+		cancels = append(cancels, cancel)
+		delete(bgCalls, id)
+	}
+	callPriorityMu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			callPriorityMu.Lock()
+			foregroundCalls--
+			if foregroundCalls == 0 {
+				close(foregroundIdle)
+			}
+			callPriorityMu.Unlock()
+		})
+	}
+}
+
+// registerBackgroundWhenIdle waits until no foreground stream is
+// active, then atomically publishes the helper's cancel function.
+// Publishing under the same lock that beginForeground uses closes the
+// start-vs-preempt race: either background registers first and gets
+// canceled, or foreground registers first and background waits.
+func registerBackgroundWhenIdle(ctx context.Context, cancel context.CancelFunc) (uint64, error) {
+	for {
+		callPriorityMu.Lock()
+		if foregroundCalls == 0 {
+			bgCallSeq++
+			id := bgCallSeq
+			bgCalls[id] = cancel
+			callPriorityMu.Unlock()
+			return id, nil
+		}
+		idle := foregroundIdle
+		callPriorityMu.Unlock()
+
+		select {
+		case <-idle:
+			// Re-check under the lock: another foreground call may
+			// have started between the close and this goroutine waking.
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+}
+
+func unregisterBackgroundCall(id uint64) {
+	callPriorityMu.Lock()
+	delete(bgCalls, id)
+	callPriorityMu.Unlock()
+}
+
 // metered decorates a Provider and reports one CallStat per
 // Complete call to the sink. The stat is emitted BEFORE the output
 // channel closes, so a consumer that drains the stream observes
@@ -196,6 +295,12 @@ type metered struct {
 	purpose  string // default purpose when the ctx carries none
 	sink     CallSink
 }
+
+// meteredDeltaBuffer absorbs short provider bursts without forcing a
+// goroutine hand-off for every token-sized delta. It is deliberately
+// small and fixed: enough to make metering cheap, never enough to turn
+// streaming into response buffering or grow with model output.
+const meteredDeltaBuffer = 32
 
 // Metered wraps inner so every Complete call is measured and
 // reported to sink with the given default purpose. providerLabel
@@ -268,32 +373,63 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	// Background calls are serialized process-wide (see
 	// backgroundGate): only one helper inference at a time, and
 	// canceling ctx (user sent a new prompt) abandons the wait.
+	// They are also PREEMPTABLE: the call runs under a derived
+	// cancelable context registered in bgCalls, and any foreground
+	// call cancels it — mid-stream or still waiting on the gate.
 	release := func() {}
+	cleanup := func() {}
+	finishForeground := func() {}
 	if stat.Background {
+		bgCtx, bgCancel := context.WithCancel(ctx)
+		ctx = bgCtx
+		id, waitErr := registerBackgroundWhenIdle(ctx, bgCancel)
+		if waitErr != nil {
+			bgCancel()
+			stat.Duration = time.Since(start)
+			stat.Failed = true
+			stat.Canceled = true
+			emit()
+			return nil, waitErr
+		}
+		cleanup = func() {
+			unregisterBackgroundCall(id)
+			bgCancel()
+		}
 		var err error
 		release, err = acquireBackgroundGate(ctx)
 		if err != nil {
+			cleanup()
 			stat.Duration = time.Since(start)
 			stat.Failed = true
 			stat.Canceled = true
 			emit()
 			return nil, err
 		}
+	} else {
+		// Keep the foreground marker for the WHOLE stream. This is
+		// what prevents a helper scheduled a millisecond later from
+		// entering the backend while the user response is generating.
+		finishForeground = beginForeground()
 	}
 	in, err := m.inner.Complete(ctx, msgs, tools)
 	if err != nil {
 		release()
+		cleanup()
+		finishForeground()
 		stat.Duration = time.Since(start)
 		stat.Failed = true
 		stat.Canceled = ctx != nil && ctx.Err() != nil
 		emit()
 		return nil, err
 	}
-	out := make(chan Delta)
+	out := make(chan Delta, meteredDeltaBuffer)
 	go func() {
-		// LIFO defers: the gate is released LAST — after the stat
-		// is recorded and close(out) unblocks the consumer.
+		// LIFO defers: the gate is released and the preemption
+		// registration dropped LAST — after the stat is recorded and
+		// close(out) unblocks the consumer.
+		defer cleanup()
 		defer release()
+		defer finishForeground()
 		defer close(out)
 		defer func() {
 			stat.Duration = time.Since(start)
