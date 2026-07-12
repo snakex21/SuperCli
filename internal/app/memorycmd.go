@@ -154,6 +154,10 @@ func memoryForget(project, global *memory.Store, id string) string {
 type memProgress struct {
 	mu      sync.Mutex
 	covered int // number of loop messages already summarized
+	// factsCovered tracks the deterministic user-fact extractor
+	// separately: facts are saved IMMEDIATELY after each turn (no
+	// model call), while the summary waits for the idle window.
+	factsCovered int
 }
 
 // lockWithin acquires the mutex, giving up after d (so the exit
@@ -242,25 +246,46 @@ func compactFragment(msgs []llm.Message) string {
 	return transcript
 }
 
-// incrementalMemorySave runs in the background after each finished
-// agent turn: it summarizes ONLY the not-yet-covered slice of the
-// conversation into a task-log entry, so the exit path usually has
-// nothing left to do and the program quits instantly. summarizer
-// should be the small/cheap tier provider when one is configured.
-func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress, summarizer llm.Provider) {
+// saveDeterministicMemoryFacts persists simple personal
+// declarations from the user's raw words right after each turn —
+// pure string matching, NO model call, dedup'd in the store. It
+// runs immediately (not in the idle window) so short declarations
+// ("nazywam się Maks") survive even a kill -9 seconds later.
+func saveDeterministicMemoryFacts(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress) {
 	if saver == nil || loop == nil || prog == nil {
 		return
 	}
 	prog.mu.Lock()
 	defer prog.mu.Unlock()
 	msgs := loop.AllMessages()
-	// Deterministic safety net: persist simple personal declarations
-	// from the user's raw words BEFORE any LLM gating, so they survive
-	// even when the model "remembered" something else or the small
-	// summarizer returns NOTHING. Pure string matching, dedup'd in the
-	// store, cheap enough to run on every turn.
-	if len(msgs) > prog.covered {
-		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.covered:]))
+	if len(msgs) > prog.factsCovered {
+		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.factsCovered:]))
+		prog.factsCovered = len(msgs)
+	}
+}
+
+// incrementalMemorySave summarizes ONLY the not-yet-covered slice
+// of the conversation into a task-log entry, so the exit path has
+// nothing left to do and the program quits instantly. It makes one
+// model call, so it runs ONLY in the idle window (see the
+// idleScheduler wiring in main.go): ctx is canceled when the user
+// sends a new prompt, and the uncovered fragment — several turns
+// batched into one summary if the user kept typing — is retried at
+// the next idle. summarizer should be the small/cheap tier
+// provider when one is configured.
+func incrementalMemorySave(ctx context.Context, saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress, summarizer llm.Provider) {
+	if saver == nil || loop == nil || prog == nil {
+		return
+	}
+	prog.mu.Lock()
+	defer prog.mu.Unlock()
+	msgs := loop.AllMessages()
+	// Deterministic safety net: normally already done right after
+	// the turn (saveDeterministicMemoryFacts), repeated here for
+	// call sites that reach this path first. Dedup makes it free.
+	if len(msgs) > prog.factsCovered {
+		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.factsCovered:]))
+		prog.factsCovered = len(msgs)
 	}
 	if saver.Remembered() {
 		// The model saves its own notes; nothing synthetic needed.
@@ -283,7 +308,11 @@ func incrementalMemorySave(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 		return
 	}
 	snapshot := len(msgs)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// ctx comes from the idle scheduler: canceled the moment the
+	// user sends a new prompt. A canceled/failed summary leaves
+	// `covered` untouched, so nothing is lost — the fragment is
+	// retried (batched with newer turns) at the next idle window.
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if saver.StoreSummary(ctx, transcript, providerSummarizer(summarizer)) {
 		prog.covered = snapshot
@@ -322,27 +351,27 @@ func dumpRawMemoryTail(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgr
 	saver.StoreRawTail(compactFragment(uncovered))
 }
 
-// finalizeMemorySession is the end-of-session auto-save. With the
-// incremental saver running after every turn, the usual case here
-// is "everything already covered" → instant exit (card bump only).
-// Any uncovered tail is summarized with a short prompt under a
-// hard 3s cap so the exit is never held hostage.
-func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress, summarizer llm.Provider) {
+// finalizeMemorySession is the end-of-session auto-save. It makes
+// NO model call — blocking the exit on an inference is exactly the
+// foreground-vs-background priority inversion the idle saver
+// exists to avoid. Any conversation tail the idle saver has not
+// summarized yet is stored VERBATIM as a raw-log entry (the same
+// mechanism as the abrupt-close handler); the NEXT startup
+// summarizes it in its idle window. Nothing is lost, the exit is
+// instant.
+func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress) {
 	if saver == nil || loop == nil {
 		return
 	}
-	bumpOnly := func() { saver.Finalize(context.Background(), "", nil) }
-	if !usableSummaryProvider(summarizer) {
-		bumpOnly()
-		return
-	}
+	// Always bump the project card's last-session stamp.
+	defer saver.Finalize(context.Background(), "", nil)
 	if prog == nil {
 		prog = &memProgress{}
 	}
-	// If a background save is mid-flight it is already covering
-	// the tail; don't double-summarize and don't block the exit.
+	// The idle scheduler is Close()d before this runs, so any
+	// in-flight background save is already canceled; the short
+	// bounded wait is just for its goroutine to release the lock.
 	if !prog.lockWithin(3 * time.Second) {
-		bumpOnly()
 		return
 	}
 	defer prog.mu.Unlock()
@@ -353,22 +382,16 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 	}
 	// Deterministic safety net on the exit path too: a final short
 	// declaration ("nazywam się Maks") must persist even if it was
-	// never covered by an incremental save. No LLM call, runs under
-	// the 3s cap.
-	saver.SaveDeterministicUserFacts(rawUserTexts(uncovered))
-	// Exit-latency rule: only spend an LLM call when the uncovered
-	// tail actually has user content. An empty session (user opened
-	// the TUI, looked around, quit) must exit instantly.
+	// never covered by an incremental save. No LLM call.
+	if len(msgs) > prog.factsCovered {
+		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.factsCovered:]))
+		prog.factsCovered = len(msgs)
+	}
 	if !hasUserTurn(uncovered) {
-		bumpOnly()
 		return
 	}
-	transcript := compactFragment(uncovered)
-	// Hard cap: the summary call may not hold the exit hostage.
-	// 3s is enough for a short completion; on timeout we simply
-	// skip the auto-save (the session log/db are already saved).
-	fmt.Fprintln(os.Stderr, "saving memory...")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	saver.Finalize(ctx, transcript, providerSummarizer(summarizer))
+	if saver.Remembered() {
+		return // the model saved its own notes this session
+	}
+	saver.StoreRawTail(compactFragment(uncovered))
 }
