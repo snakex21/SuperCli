@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -105,6 +106,28 @@ func IsBackground(ctx context.Context) bool {
 	return b
 }
 
+// backgroundGate serializes background model calls process-wide:
+// at most ONE background inference (memory autosave, startup
+// raw-memory summarization, webgui title) runs at a time, so
+// helper work never piles multiple requests onto a single local
+// backend. Foreground calls never touch the gate — the user's
+// turn is never queued behind background work. The gate is held
+// from Complete() until the stream closes (the backend is busy
+// for the whole stream, not just the request).
+var backgroundGate = make(chan struct{}, 1)
+
+// acquireBackgroundGate blocks until the gate is free or ctx is
+// done. Returns a release func (no-op on failure) and ctx.Err().
+func acquireBackgroundGate(ctx context.Context) (func(), error) {
+	select {
+	case backgroundGate <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-backgroundGate }) }, nil
+	case <-ctx.Done():
+		return func() {}, ctx.Err()
+	}
+}
+
 // metered decorates a Provider and reports one CallStat per
 // Complete call to the sink. The stat is emitted BEFORE the output
 // channel closes, so a consumer that drains the stream observes
@@ -165,8 +188,24 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		stat.Purpose = p
 	}
 	start := time.Now()
+	// Background calls are serialized process-wide (see
+	// backgroundGate): only one helper inference at a time, and
+	// canceling ctx (user sent a new prompt) abandons the wait.
+	release := func() {}
+	if stat.Background {
+		var err error
+		release, err = acquireBackgroundGate(ctx)
+		if err != nil {
+			stat.Duration = time.Since(start)
+			stat.Failed = true
+			stat.Canceled = true
+			m.sink(stat)
+			return nil, err
+		}
+	}
 	in, err := m.inner.Complete(ctx, msgs, tools)
 	if err != nil {
+		release()
 		stat.Duration = time.Since(start)
 		stat.Failed = true
 		stat.Canceled = ctx != nil && ctx.Err() != nil
@@ -175,8 +214,9 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	}
 	out := make(chan Delta)
 	go func() {
-		// LIFO defers: the stat is recorded BEFORE close(out)
-		// unblocks the consumer's range loop.
+		// LIFO defers: the gate is released LAST — after the stat
+		// is recorded and close(out) unblocks the consumer.
+		defer release()
 		defer close(out)
 		defer func() {
 			stat.Duration = time.Since(start)

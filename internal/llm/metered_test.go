@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -142,6 +143,142 @@ func TestMetered_ErrorAndCancel(t *testing.T) {
 	s2 := cap2.all()
 	if len(s2) != 1 || !s2[0].Canceled {
 		t.Fatalf("canceled call not recorded: %+v", s2)
+	}
+}
+
+// holdStub is a provider whose stream stays open until release is
+// closed — it lets the gate tests hold the background semaphore
+// for a controlled window.
+type holdStub struct {
+	name    string
+	release chan struct{}
+}
+
+func (p *holdStub) Name() string { return p.name }
+
+func (p *holdStub) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
+	ch := make(chan Delta)
+	go func() {
+		defer close(ch)
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+		}
+	}()
+	return ch, nil
+}
+
+// TestMetered_BackgroundGateSerializes: at most ONE background
+// model call runs at a time — a second background Complete blocks
+// until the first stream closes.
+func TestMetered_BackgroundGateSerializes(t *testing.T) {
+	release := make(chan struct{})
+	p := Metered(&holdStub{name: "m", release: release}, "t", "main", (&sinkCapture{}).sink())
+	bctx := WithBackground(context.Background())
+
+	// First background call: acquires the gate and holds it while
+	// its stream is open.
+	ch1, err := p.Complete(bctx, nil, nil)
+	if err != nil {
+		t.Fatalf("first Complete: %v", err)
+	}
+	firstDone := make(chan struct{})
+	go func() { defer close(firstDone); drainMetered(t, ch1) }()
+
+	// Second background call: must NOT get past the gate yet.
+	var secondStarted atomic.Bool
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		ch2, err := p.Complete(bctx, nil, nil)
+		secondStarted.Store(true)
+		if err != nil {
+			t.Errorf("second Complete: %v", err)
+			return
+		}
+		drainMetered(t, ch2)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if secondStarted.Load() {
+		t.Fatal("second background call ran while the first held the gate")
+	}
+
+	close(release) // first stream closes → gate released → second runs
+	select {
+	case <-secondDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second background call never ran after the gate was released")
+	}
+	<-firstDone
+}
+
+// TestMetered_ForegroundNeverWaitsForGate: a foreground call must
+// complete even while a background call holds the gate.
+func TestMetered_ForegroundNeverWaitsForGate(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	p := Metered(&holdStub{name: "m", release: release}, "t", "main", (&sinkCapture{}).sink())
+
+	ch1, err := p.Complete(WithBackground(context.Background()), nil, nil)
+	if err != nil {
+		t.Fatalf("background Complete: %v", err)
+	}
+	go drainMetered(t, ch1) // holds the gate until release closes
+
+	fg := Metered(&meterStub{name: "m", deltas: []Delta{{Content: "ok"}}}, "t", "main", (&sinkCapture{}).sink())
+	fgDone := make(chan struct{})
+	go func() {
+		defer close(fgDone)
+		ch, err := fg.Complete(context.Background(), nil, nil)
+		if err != nil {
+			t.Errorf("foreground Complete: %v", err)
+			return
+		}
+		drainMetered(t, ch)
+	}()
+	select {
+	case <-fgDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("foreground call waited behind the background gate")
+	}
+}
+
+// TestMetered_BackgroundGateCancelWhileWaiting: canceling the
+// context of a background call that is queued on the gate returns
+// promptly with a canceled stat (the memory saver relies on this —
+// a new user prompt must be able to abandon a queued autosave).
+func TestMetered_BackgroundGateCancelWhileWaiting(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	p := Metered(&holdStub{name: "m", release: release}, "t", "main", (&sinkCapture{}).sink())
+
+	ch1, err := p.Complete(WithBackground(context.Background()), nil, nil)
+	if err != nil {
+		t.Fatalf("first Complete: %v", err)
+	}
+	go drainMetered(t, ch1) // holds the gate
+
+	cap2 := &sinkCapture{}
+	p2 := Metered(&holdStub{name: "m", release: release}, "t", "main", cap2.sink())
+	ctx, cancel := context.WithCancel(WithBackground(context.Background()))
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := p2.Complete(ctx, nil, nil)
+		errCh <- err
+	}()
+	time.Sleep(30 * time.Millisecond) // let it queue on the gate
+	cancel()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("queued background call returned nil error after cancel")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued background call did not return after cancel")
+	}
+	stats := cap2.all()
+	if len(stats) != 1 || !stats[0].Canceled || !stats[0].Background {
+		t.Fatalf("canceled queued call stat = %+v, want Canceled+Background", stats)
 	}
 }
 
