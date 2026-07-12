@@ -735,10 +735,13 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	if prompt == "" {
 		return nil, fmt.Errorf("agent.Loop.Run: prompt is empty")
 	}
-	// F14: clear any hidden flags from a previous Run. The
-	// user's /clear or hide_messages calls in this Run start
-	// from a clean slate.
-	l.resetHidden()
+	// F14: hidden flags deliberately SURVIVE across Runs. /clear,
+	// hide_messages and budget eviction all fire between or during
+	// Runs and express durable intent ("this content is out of the
+	// model's context"); resetting here made /clear a no-op for the
+	// next message and invalidated the KV-cache prefix. Hides are
+	// only reset where the message indices themselves become invalid
+	// (compaction, LoadConversation).
 	out := make(chan Event, 32)
 
 	// F9 ultrawork: detect the keyword in the user prompt.
