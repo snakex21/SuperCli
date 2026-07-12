@@ -134,8 +134,8 @@ var I18N = {
     "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
     "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
     "stats.daily": "tokens today", "stats.workers": "Workers", "stats.noWorkers": "No delegations this session.",
-    "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "main agent",
-    "stats.orchOn": "delegates", "stats.orchOff": "direct",
+    "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "delegation",
+    "stats.orchAuto": "auto", "stats.orchOn": "always", "stats.orchOff": "never",
     "stats.noTurn": "No turns yet.", "stats.sessionSection": "Session", "stats.totalTokens": "total tokens",
     "stats.inputTokens": "input tokens", "stats.evaluatedInput": "evaluated input", "stats.cachedInput": "cached input",
     "stats.outputTokens": "output tokens", "stats.reasoningTokens": "reasoning", "stats.totalCost": "total cost",
@@ -227,8 +227,8 @@ var I18N = {
     "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
     "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
     "stats.daily": "tokeny dziś", "stats.workers": "Workerzy", "stats.noWorkers": "Brak delegacji w tej sesji.",
-    "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "główny agent",
-    "stats.orchOn": "deleguje", "stats.orchOff": "sam",
+    "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "delegowanie",
+    "stats.orchAuto": "auto", "stats.orchOn": "zawsze", "stats.orchOff": "nigdy",
     "stats.noTurn": "Jeszcze bez tur.", "stats.sessionSection": "Sesja", "stats.totalTokens": "łącznie tokenów",
     "stats.inputTokens": "tokeny wejściowe", "stats.evaluatedInput": "wejście bez cache", "stats.cachedInput": "wejście z cache",
     "stats.outputTokens": "tokeny wyjściowe", "stats.reasoningTokens": "rozumowanie", "stats.totalCost": "łączny koszt",
@@ -1378,9 +1378,9 @@ async function renderStats() {
       var row = el("div", "stat-row");
       row.appendChild(el("span", "", t("stats.orchDesc")));
       var seg = el("span", "seg");
-      ["on", "off"].forEach(function (st) {
-        var label = st === "on" ? t("stats.orchOn") : t("stats.orchOff");
-        var b = el("button", st === (knob.value || "off") ? "on" : "", label);
+      ["default", "on", "off"].forEach(function (st) {
+        var label = st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff"));
+        var b = el("button", st === (knob.state || "default") ? "on" : "", label);
         b.type = "button";
         b.addEventListener("click", function () {
           jpost("/api/config", { key: "orchestrator", value: st })
