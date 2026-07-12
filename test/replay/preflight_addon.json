@@ -1,0 +1,30 @@
+{
+  "name": "preflight_addon",
+  "description": "The preflight repo block rides the FIRST user message (variable prompt side, never a system message), is strictly one-shot, and does not disturb a normal tool round-trip in the same run.",
+  "steps": [
+    {
+      "note": "run 1: model does a lookup despite the addon riding the user message",
+      "deltas": [
+        {"role": "assistant"},
+        {"tool_call": {"id": "call_a", "name": "lookup", "arguments": "{\"key\":\"a\"}"}},
+        {"finish_reason": "tool_calls", "usage": {"input": 240, "output": 12, "total": 252}}
+      ]
+    },
+    {
+      "note": "run 1 ends",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Branch main is clean; alpha found."},
+        {"finish_reason": "stop", "usage": {"input": 280, "output": 10, "total": 290}}
+      ]
+    },
+    {
+      "note": "run 2: the addon must NOT repeat",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Nothing more to do."},
+        {"finish_reason": "stop", "usage": {"input": 300, "output": 6, "total": 306}}
+      ]
+    }
+  ]
+}

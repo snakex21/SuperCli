@@ -1,0 +1,22 @@
+{
+  "name": "http_failed_body",
+  "description": "A web tool fails with http_failed status=401 plus the error BODY. The recorded second step acts on the body content (missing_api_key) — possible only if the body reached the model.",
+  "steps": [
+    {
+      "note": "model fetches the API",
+      "deltas": [
+        {"role": "assistant"},
+        {"tool_call": {"id": "call_fetch", "name": "fetch_api", "arguments": "{\"url\":\"https://api.example.com/v1/data\"}"}},
+        {"finish_reason": "tool_calls", "usage": {"input": 180, "output": 14, "total": 194}}
+      ]
+    },
+    {
+      "note": "model branches on the 401 body, not on a bare status",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "The request failed with HTTP 401 and the body says missing_api_key — set EXAMPLE_API_KEY and retry; do not change the URL."},
+        {"finish_reason": "stop", "usage": {"input": 250, "output": 26, "total": 276}}
+      ]
+    }
+  ]
+}

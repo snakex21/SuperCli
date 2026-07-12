@@ -1,0 +1,22 @@
+{
+  "name": "truncated_result",
+  "description": "A tool result capped by core.HeadTailBuffer keeps its explicit [... omitted_bytes=N ...] marker all the way into the provider request, so the model KNOWS the output was cut instead of trusting a silently truncated result.",
+  "steps": [
+    {
+      "note": "model asks for the big output",
+      "deltas": [
+        {"role": "assistant"},
+        {"tool_call": {"id": "call_big", "name": "big_output", "arguments": "{}"}},
+        {"finish_reason": "tool_calls", "usage": {"input": 150, "output": 8, "total": 158}}
+      ]
+    },
+    {
+      "note": "model acknowledges the omission marker",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "The output was truncated — the omitted_bytes marker is present; head starts with HEAD-START and the tail ends with TAIL-END."},
+        {"finish_reason": "stop", "usage": {"input": 400, "output": 24, "total": 424}}
+      ]
+    }
+  ]
+}
