@@ -45,10 +45,11 @@ make the prompt non-append-only and cap KV reuse by construction.
 
 **What.** On the coordinator route only a small **schema-core** of tools
 carries a full JSON Schema every turn (`thinCoreTools`, routing.go:
-tool_search, edit_line, read_context, read_lines, read_many, ctx_execute, recall,
-list_dir). Every other tool is advertised as a one-line name+hint in a
-compact catalog and activated on demand via `tool_search`, which returns
-the full schema as its result text.
+tool_search, invoke_tool, edit_line, read_context, read_lines, read_many,
+ctx_execute, recall, list_dir). Simple flat-schema tools certified read-only
+are advertised as directly callable through the schema-stable `invoke_tool`;
+complex and mutating tools remain catalog entries activated on demand via
+`tool_search`, which returns the full schema as its result text.
 
 **How.** `thinPartition` (loop.go) is the single source of truth for the
 core/tail split; `buildToolDefs`, the catalog preamble and the /context
@@ -161,6 +162,13 @@ messages need no snapshot rewrite, while removed context cannot silently
 return after a restart. Missing/corrupt projection data fails open to the
 full transcript. Leading system messages are not snapshotted because a
 new loop rebuilds them from the current configuration.
+
+If transcript appends are buffered during a database outage, projection writes
+are marked dirty instead of being paired with an incomplete `MAX(seq)`
+boundary. After append recovery the run goroutine rebuilds the projection from
+the current visible conversation and retries; no stale snapshot is retained.
+The same retry handles projection-only write failures and is visible in
+`/status`.
 
 ### Window resolution
 

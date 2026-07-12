@@ -739,8 +739,20 @@ func (l *Loop) thinToolsPreamble() string {
 	out := prompt.ThinToolProtocol
 
 	_, tail := l.thinPartition()
-	if len(tail) > 0 {
-		if body := tools.RenderCatalog(tail, l.thinHintMaxOrDefault()); body != "" {
+	var direct, loadable []tools.Tool
+	for _, tool := range tail {
+		if isDirectToolEligible(tool) {
+			direct = append(direct, tool)
+		} else {
+			loadable = append(loadable, tool)
+		}
+	}
+	if body := tools.RenderCatalog(direct, l.thinHintMaxOrDefault()); body != "" {
+		out += "\n\nSimple read-only tools, callable now through invoke_tool " +
+			"(tool: name, arg.<field>: value):\n" + body
+	}
+	if len(loadable) > 0 {
+		if body := tools.RenderCatalog(loadable, l.thinHintMaxOrDefault()); body != "" {
 			out += "\n\nMore tools, loadable on demand — call tool_search with a " +
 				"natural-language query to load any (it returns the full schema so " +
 				"you can call it the same turn):\n" + body
@@ -829,6 +841,14 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
+	// A final run-goroutine retry covers recovery on the last step. The
+	// projection is rebuilt from current Messages, never from a stale snapshot.
+	// Bound it so a locked database can never delay shutdown indefinitely.
+	defer func() {
+		retryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		l.retryDirtyProjection(retryCtx)
+	}()
 	defer func() {
 		if r := recover(); r != nil {
 			// Send the panic as an ErrorEvent so the TUI
@@ -874,6 +894,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			out <- ErrorEvent{Err: err}
 			return
 		}
+		l.retryDirtyProjection(ctx)
 
 		// Phase telemetry: one stats turn per step. All timings are
 		// whole-phase time.Since measurements — nothing is measured
@@ -936,6 +957,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			out <- ErrorEvent{Err: err}
 			return
 		}
+		// Resolve the schema-stable invoke_tool dispatcher before the
+		// assistant/tool-result pair enters history. Valid direct calls become
+		// ordinary target calls, so verification, error attribution and
+		// telemetry all retain the real tool name.
+		toolCalls = l.resolveInvokeToolCalls(toolCalls)
 		if usage != nil {
 			totalUsage.Input += usage.Input
 			totalUsage.Output += usage.Output
@@ -1509,6 +1535,17 @@ func (l *Loop) persistProjection(ctx context.Context) {
 	if !ok {
 		return
 	}
+	h := &l.persistHealth
+	h.mu.Lock()
+	// Saving now would pair a projection snapshot with a transcript boundary
+	// that is missing buffered messages. Delay and rebuild after recovery.
+	if h.outage || len(h.pending) > 0 {
+		h.projectionDirty = true
+		h.mu.Unlock()
+		return
+	}
+	h.mu.Unlock()
+
 	visible := l.VisibleMessages()
 	// Base/system-prefix messages are rebuilt from current config when a
 	// loop is resumed. Persist only the conversation body, otherwise Web
@@ -1518,11 +1555,37 @@ func (l *Loop) persistProjection(ctx context.Context) {
 		lead++
 	}
 	if err := w.SaveContextProjection(ctx, visible[lead:]); err != nil {
-		h := &l.persistHealth
 		h.mu.Lock()
+		h.projectionDirty = true
+		h.projectionOutage = true
 		warn := h.noteFailureLocked("context_projection", err)
 		h.mu.Unlock()
 		l.persistNotify(warn)
+		return
+	}
+	h.mu.Lock()
+	recovered := h.projectionOutage
+	h.projectionDirty = false
+	h.projectionOutage = false
+	if recovered && !h.outage {
+		h.warned = false
+	}
+	h.mu.Unlock()
+	if recovered {
+		l.persistNotify("session context projection persistence recovered")
+	}
+}
+
+// retryDirtyProjection must run on the loop goroutine: it rebuilds the latest
+// visible context after append recovery. Persisting an old saved slice with a
+// new MAX(seq) boundary could otherwise skip newer messages on resume.
+func (l *Loop) retryDirtyProjection(ctx context.Context) {
+	h := &l.persistHealth
+	h.mu.Lock()
+	ready := h.projectionDirty && !h.outage && len(h.pending) == 0
+	h.mu.Unlock()
+	if ready {
+		l.persistProjection(ctx)
 	}
 }
 

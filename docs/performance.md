@@ -176,6 +176,41 @@ The core prompt spends one short sentence asking models to batch independent
 file ranges. Replay coverage pins the important economy contract: three file
 ranges, one tool call, one follow-up model turn.
 
+### Direct simple tools without a search turn (default ON)
+
+`invoke_tool` is one schema-stable dispatcher shared by native cloud tool
+calling and the sentinel protocol. It advertises at most 16 registered tools
+that are both certified `ReadOnly` and described by a flat scalar schema.
+Native calls pass an `args` object; sentinel calls use `arg.<field>` lines. The
+loop rewrites a valid dispatch to the real target before history, verification,
+error attribution and telemetry, so no subsystem sees a fake wrapper tool.
+
+Unknown arguments, nested arrays/objects/unions and every mutating tool are
+rejected with `requires tool_search`. Replay pins the turn win: direct call →
+result → answer in two provider turns, with no intermediate `tool_search`
+round-trip. The small-model catalog separates directly callable read-only
+entries from complex load-on-demand entries; cloud models see the same compact
+eligible signatures in the dispatcher's description.
+
+### Deterministic advisor routing
+
+Navigator auto mode treats strong conceptual prefixes (`wyjaśnij`, `jak
+działa`, `what is`, `explain`, etc.) as a confident advisor route. Project/file
+keywords are checked first, so “wyjaśnij ten kod w pliku” remains coordinator.
+Truly ambiguous prompts still pay for the navigator. This removes one helper
+inference without replacing semantic uncertainty with broad keyword guesses.
+
+### Catalog-hoist live A/B harness
+
+`TestCatalogHoist_AB_Live` runs three real turns per arm against
+`SUPERCLI_LIVE_BASEURL` / `SUPERCLI_LIVE_MODEL`, discards each cold first call,
+and compares provider-reported evaluated input (`input - cached`) for tail vs
+hoisted catalog placement. A second guard requires the model to discover and
+execute a direct `catalog_probe` in both placements. The 2026-07-12 run skipped
+because no local host was available; therefore `SUPERCLI_CATALOG_HOIST`
+deliberately remains default OFF until the harness produces a quality-safe live
+result.
+
 ## Structured tool errors (deterministic failure results)
 
 **What.** When a tool fails, the model gets a short, deterministic,

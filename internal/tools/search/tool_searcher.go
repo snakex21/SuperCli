@@ -251,7 +251,7 @@ func (s *ToolSearcher) RebuildIndex() error {
 // pass through their server name.
 func classifyServer(name string) string {
 	switch name {
-	case "tool_search", "apply_skill", "task", "ask_user", "read_image", "search_code":
+	case "tool_search", "invoke_tool", "apply_skill", "task", "ask_user", "read_image", "search_code":
 		return "core"
 	}
 	if strings.HasPrefix(name, "mcp_") {

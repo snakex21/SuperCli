@@ -1,0 +1,27 @@
+{
+  "name": "invoke_tool_direct",
+  "description": "A simple dormant read-only tool is dispatched without a tool_search turn.",
+  "steps": [
+    {
+      "note": "The model uses the stable dispatcher directly.",
+      "deltas": [
+        {
+          "role": "assistant",
+          "tool_call": {
+            "id": "call_direct",
+            "name": "invoke_tool",
+            "arguments": "{\"tool\":\"read_lines\",\"args\":{\"file\":\"sample.txt\",\"from\":1,\"to\":2}}"
+          }
+        },
+        {"finish_reason":"tool_calls","usage":{"input":20,"output":8,"total":28}}
+      ]
+    },
+    {
+      "note": "The next model turn already sees the target result.",
+      "deltas": [
+        {"role":"assistant","content":"The file contains alpha and beta."},
+        {"finish_reason":"stop","usage":{"input":30,"output":8,"total":38}}
+      ]
+    }
+  ]
+}

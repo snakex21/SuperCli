@@ -55,7 +55,8 @@ func NewSearchHistory(store *session.Store) *SearchHistory {
 // Spec returns the tools.Tool description for the registry.
 func (s *SearchHistory) Spec() Tool {
 	return Tool{
-		Name: "search_history",
+		Name:     "search_history",
+		ReadOnly: true,
 		Description: "Search the conversation history of all prior sessions. " +
 			"Returns matching messages with their session, role, seq, and timestamp, " +
 			"plus a snippet of the message text with matches highlighted in <mark>...</mark>. " +

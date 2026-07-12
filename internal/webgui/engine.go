@@ -263,6 +263,8 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
+	reg.MarkAlwaysOn("invoke_tool")
 	// Context defense (mirrors the TUI wiring in app/main.go): without
 	// WindowFor the loop assumes its 16384-token default for every
 	// model, and without Summarizer auto-compaction degrades to the

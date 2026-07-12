@@ -32,6 +32,11 @@ func TestRouteMapClassifyConfident(t *testing.T) {
 		// Explicit coordinator keyword hits — confident.
 		{"napraw błąd w read_lines", RouteCoordinator, true},
 		{"uruchom go test", RouteCoordinator, true},
+		// Strong conceptual prefixes skip the navigator model.
+		{"wyjaśnij jak działa rekursja", RouteAdvisor, true},
+		{"what is speculative decoding?", RouteAdvisor, true},
+		// Project evidence wins before the advisor prefix.
+		{"wyjaśnij ten kod w pliku main.go", RouteCoordinator, true},
 		// Explicit chat exact / prefix — confident.
 		{"cześć", RouteChatOnly, true},
 		{"lubisz mnie?", RouteChatOnly, true},

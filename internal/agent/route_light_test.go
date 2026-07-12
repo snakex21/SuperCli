@@ -213,7 +213,7 @@ func thinLoop(t *testing.T) *Loop {
 		return tools.Result{Text: "x"}, nil
 	}
 	// core + tail, all always-on.
-	for _, name := range []string{"tool_search", "edit_line", "read_context", "read_lines", "read_many", "ctx_execute", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
+	for _, name := range []string{"tool_search", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "ctx_execute", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "does " + name + " things for the user", Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
 	}

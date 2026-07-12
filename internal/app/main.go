@@ -860,7 +860,7 @@ func Main() {
 			"insert_after", "delete_lines", "write_file", "make_dir",
 			"move", "copy", "trash",
 			"list_dir",
-			"goal", "tool_search",
+			"goal", "tool_search", "invoke_tool",
 		} {
 			registry.MarkAlwaysOn(name)
 		}
@@ -868,6 +868,7 @@ func Main() {
 		registry.MarkAlwaysOn("read_image")
 		registry.MarkAlwaysOn("ask_user")
 		registry.MarkAlwaysOn("tool_search")
+		registry.MarkAlwaysOn("invoke_tool")
 		registry.MarkAlwaysOn("apply_skill")
 		// darwin is deliberately NOT always-on: its schema (~277 tok)
 		// is a heavy always-on prefix that overlaps conceptually with
@@ -1619,6 +1620,9 @@ func Main() {
 			if ps.Pending > 0 {
 				fmt.Fprintf(&b, "  buffered for retry: %d message(s)\n", ps.Pending)
 			}
+			if ps.ProjectionDirty {
+				fmt.Fprintf(&b, "  context projection: dirty (retry pending)\n")
+			}
 			if ps.Dropped > 0 {
 				fmt.Fprintf(&b, "  LOST to buffer overflow: %d message(s)\n", ps.Dropped)
 			}
@@ -2269,6 +2273,7 @@ func Main() {
 		}
 	}
 	registry.MustRegister(tools.NewWebSearch(wsEngine, wsKey).Spec())
+	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
 
 	// outlook_mail: Windows-only COM automation of desktop
 	// Outlook (read folders/messages, search, create DRAFTS —
@@ -2714,6 +2719,8 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
+	reg.MarkAlwaysOn("invoke_tool")
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider: p,
 		Registry: reg,

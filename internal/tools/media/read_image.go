@@ -45,6 +45,7 @@ func (t *ReadImageTool) Spec() Tool {
 	return Tool{
 		Name:        "read_image",
 		Description: "Read an image file from disk and attach it to the conversation. Returns the image plus a short text summary. Supported formats: PNG, JPEG, GIF, WebP.",
+		ReadOnly:    true,
 		Schema: `{
 			"type": "object",
 			"properties": {

@@ -205,6 +205,21 @@ func TestLoop_NavigatorAuto_SkipsModelOnConfidentHit(t *testing.T) {
 	}
 }
 
+func TestLoop_NavigatorAuto_SkipsModelOnConceptualAdvisor(t *testing.T) {
+	p := &navigatorProvider{name: "navigator"}
+	l := makeLoop(t, p, tools.NewRegistry(), "FULL COORDINATOR PROMPT")
+	l.navigate = true
+	l.navAuto = true
+	ch, _ := l.Run(context.Background(), "wyjaśnij jak działa rekursja")
+	drainEvents(t, ch)
+	if p.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1 (deterministic advisor skipped navigator)", p.calls)
+	}
+	if l.Route() != RouteAdvisor {
+		t.Fatalf("route = %s, want advisor", l.Route())
+	}
+}
+
 // TestLoop_NavigatorAuto_FallsBackToModelOnAmbiguous proves auto mode
 // still pays for the navigator model when the keyword map cannot
 // classify the prompt confidently (advisor vs coordinator).

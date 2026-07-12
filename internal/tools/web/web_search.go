@@ -71,7 +71,8 @@ type webSearchArgs struct {
 // Spec returns the tool registration.
 func (t *WebSearch) Spec() Tool {
 	return Tool{
-		Name: "web_search",
+		Name:     "web_search",
+		ReadOnly: true,
 		Description: "Search the web and return a list of results (title, URL, snippet). " +
 			"Use for current events, documentation lookups, or anything not in your training data. " +
 			"Follow up with web_fetch to read a result in full. Default engine needs no API key.",
