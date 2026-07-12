@@ -330,6 +330,7 @@ a:hover { text-decoration: underline; }
 .tool-row .tname { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-row .thint { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-row .tstat { font-size: 11px; color: var(--faint); text-align: right; white-space: nowrap; }
+.tool-row.running .tstat { color: var(--accent); }
 .tool-row .tstat.err { color: var(--danger); }
 .tool-row .tbody { border-top: 1px solid var(--line-soft); padding: 8px 10px; }
 .tool-row .tbody pre {

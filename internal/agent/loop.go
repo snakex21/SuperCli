@@ -1767,6 +1767,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 
 	raw := json.RawMessage(tc.Arguments)
+	// Announce the call before execution. Long-running tools (most notably a
+	// synchronous task worker) must become visible to TUI/WebGUI while they are
+	// running, not only after Execute returns. ToolResultEvent remains the
+	// matching completion edge, so clients can measure and render real elapsed
+	// time without a separate worker-specific protocol.
+	out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
+
 	// Per-tool timing under a "tool:<name>" phase key. Repeated calls
 	// of the same tool in one step accumulate; the recorder is
 	// mutex-guarded so parallel task batches are safe. Goes straight
@@ -1775,8 +1782,6 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	execStart := time.Now()
 	res, err := l.registry.Execute(ctx, tc.Name, raw)
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
-
-	out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 
 	// F4.e: tool result verification. After a successful
 	// (no Go-level error) execution, ask the per-tool

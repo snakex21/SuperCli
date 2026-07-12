@@ -432,6 +432,57 @@ func TestLoop_ToolCallAndContinue(t *testing.T) {
 	}
 }
 
+func TestLoop_EmitsToolCallBeforeLongRunningToolCompletes(t *testing.T) {
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "task_1", Name: "task", Arguments: `{"agent":"explore","prompt":"inspect"}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "done"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "task", Description: "blocking worker", Schema: `{"type":"object"}`,
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			<-release
+			close(finished)
+			return tools.Result{Text: "worker done"}, nil
+		},
+	})
+
+	l := makeLoop(t, p, reg, "")
+	events, err := l.Run(context.Background(), "delegate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-events:
+		call, ok := ev.(ToolCallEvent)
+		if !ok || call.Name != "task" || call.ID != "task_1" {
+			t.Fatalf("first event = %#v, want task ToolCallEvent", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ToolCallEvent was not emitted while tool was running")
+	}
+	select {
+	case <-finished:
+		t.Fatal("tool completed before the UI received its start event")
+	default:
+	}
+	close(release)
+	for range events {
+	}
+}
+
 func TestLoop_UnknownTool_ProducesErrorMessage(t *testing.T) {
 	p := &stubProvider{
 		name: "m",

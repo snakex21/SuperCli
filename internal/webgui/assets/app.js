@@ -126,7 +126,7 @@ var I18N = {
     "welcome.h1": "Summarize this project", "welcome.h2": "Check configuration status", "welcome.h3": "How do I run the tests?",
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
     "composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
-    "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached",
+    "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached", "tool.running": "running",
     "role.thinking": "Thinking", "chat.stopped": "stopped by user", "chat.connError": "connection error",
     "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
     "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
@@ -215,7 +215,7 @@ var I18N = {
     "welcome.h1": "Podsumuj ten projekt", "welcome.h2": "Sprawdź stan konfiguracji", "welcome.h3": "Jak uruchomić testy?",
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
     "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
-    "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache",
+    "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache", "tool.running": "pracuje",
     "role.thinking": "Myślenie", "chat.stopped": "zatrzymane przez użytkownika", "chat.connError": "błąd połączenia",
     "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
     "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
@@ -618,7 +618,7 @@ function addToolCall(name, args, id) {
   var sum = el("summary");
   sum.appendChild(el("span", "tname", info.name));
   sum.appendChild(el("span", "thint", info.hint));
-  var stat = el("span", "tstat", "…");
+  var stat = el("span", "tstat");
   sum.appendChild(stat);
   row.appendChild(sum);
   var body = el("div", "tbody");
@@ -629,6 +629,12 @@ function addToolCall(name, args, id) {
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
   row._stat = stat; row._body = body; row._t0 = performance.now();
+  row.classList.add("running");
+  function updateElapsed() {
+    stat.textContent = t("tool.running") + " · " + fmtDuration(performance.now() - row._t0);
+  }
+  updateElapsed();
+  row._clock = setInterval(updateElapsed, 250);
   stream.appendChild(row);
   var key = id || ("~" + openToolOrder.length);
   toolRows[key] = row;
@@ -641,6 +647,9 @@ function addToolResult(id, output, err) {
   var row = toolRows[key];
   openToolOrder = openToolOrder.filter(function (k) { return k !== key; });
   if (!row) return;
+  clearInterval(row._clock);
+  row._clock = null;
+  row.classList.remove("running");
   var ms = performance.now() - row._t0;
   row._stat.textContent = (err ? "✕ " : "") + fmtDuration(ms);
   if (err) row._stat.classList.add("err");
@@ -652,7 +661,12 @@ function addToolResult(id, output, err) {
 function settleOpenTools() {
   openToolOrder.forEach(function (k) {
     var row = toolRows[k];
-    if (row && row._stat.textContent === "…") row._stat.textContent = "—";
+    if (row) {
+      clearInterval(row._clock);
+      row._clock = null;
+      row.classList.remove("running");
+      row._stat.textContent = "—";
+    }
   });
   openToolOrder = [];
 }
