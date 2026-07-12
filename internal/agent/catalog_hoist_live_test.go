@@ -28,7 +28,7 @@ func TestCatalogHoist_AB_Live(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runArm := func(t *testing.T, hoist bool) (eval int, calls int) {
+	runArm := func(t *testing.T, hoist bool) (eval int, cached int, calls int) {
 		t.Helper()
 		reg := tools.NewRegistry()
 		noop := func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil }
@@ -60,10 +60,13 @@ func TestCatalogHoist_AB_Live(t *testing.T) {
 			for event := range ch {
 				switch e := event.(type) {
 				case DoneEvent:
+					t.Logf("catalog A/B arm hoist=%v round=%d input=%d cached=%d eval=%d",
+						hoist, i, e.Usage.Input, e.Usage.Cached, e.Usage.Input-e.Usage.Cached)
 					// Exclude the cold first request: the question is how much
 					// catalog work repeats as the conversation grows.
 					if i > 1 {
 						eval += e.Usage.Input - e.Usage.Cached
+						cached += e.Usage.Cached
 						calls++
 					}
 				case ErrorEvent:
@@ -73,17 +76,19 @@ func TestCatalogHoist_AB_Live(t *testing.T) {
 			}
 			cancel()
 		}
-		return eval, calls
+		return eval, cached, calls
 	}
 
-	tailEval, tailCalls := runArm(t, false)
-	hoistEval, hoistCalls := runArm(t, true)
-	t.Logf("catalog A/B: tail eval=%d/%d calls; hoist eval=%d/%d calls; saved=%d evaluated tokens",
-		tailEval, tailCalls, hoistEval, hoistCalls, tailEval-hoistEval)
+	tailEval, tailCached, tailCalls := runArm(t, false)
+	hoistEval, hoistCached, hoistCalls := runArm(t, true)
+	t.Logf("catalog A/B: tail eval=%d cached=%d/%d calls; hoist eval=%d cached=%d/%d calls; saved=%d evaluated tokens",
+		tailEval, tailCached, tailCalls, hoistEval, hoistCached, hoistCalls, tailEval-hoistEval)
 	if tailCalls != 2 || hoistCalls != 2 {
 		t.Fatalf("incomplete A/B: tail calls=%d hoist calls=%d", tailCalls, hoistCalls)
 	}
-	if tailEval > 0 && hoistEval >= tailEval {
+	if tailCached+hoistCached == 0 {
+		t.Log("catalog A/B is cache-inconclusive: provider reported zero cached tokens in both arms")
+	} else if tailEval > 0 && hoistEval >= tailEval {
 		t.Errorf("catalog hoist did not reduce evaluated prompt tokens: tail=%d hoist=%d", tailEval, hoistEval)
 	}
 
@@ -125,13 +130,25 @@ func TestCatalogHoist_AB_Live(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		toolCalls, toolErrors := 0, 0
 		for event := range ch {
-			if e, ok := event.(ErrorEvent); ok {
+			switch e := event.(type) {
+			case ToolCallEvent:
+				toolCalls++
+			case ToolResultEvent:
+				if e.Err != nil {
+					toolErrors++
+					t.Logf("hoist=%v: tool error: %v", hoist, e.Err)
+				}
+			case ErrorEvent:
 				t.Fatal(e.Err)
 			}
 		}
 		if !executed.Load() {
 			t.Errorf("hoist=%v: model did not execute catalog_probe", hoist)
+		}
+		if toolErrors != 0 || toolCalls != 1 {
+			t.Errorf("hoist=%v: wanted one successful direct tool call, got calls=%d errors=%d", hoist, toolCalls, toolErrors)
 		}
 	}
 	qualityArm(t, false)
