@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -85,6 +86,85 @@ var phaseOrder = []string{
 	PhaseToolExecution,
 	PhaseSessionPersist,
 	PhaseNextTurnPrepare,
+}
+
+// Call is one measured model invocation, labeled with its purpose
+// ("main", "navigator", "compact", "reflection", "draft", "memory",
+// ...). Every Provider.Complete call in the process flows here via
+// the llm.Metered decorator, so helper inferences can no longer
+// hide inside a CLI phase (the audit found a 13.9s model call
+// booked as next_turn_prepare). Step is the 1-based step in
+// progress when the call landed, 0 = outside any step (navigator
+// pre-step classification, background memory saves).
+type Call struct {
+	Purpose    string    `json:"purpose"`
+	Model      string    `json:"model,omitempty"`
+	Provider   string    `json:"provider,omitempty"`
+	Background bool      `json:"background,omitempty"`
+	Canceled   bool      `json:"canceled,omitempty"`
+	Failed     bool      `json:"failed,omitempty"`
+	TTFTUs     int64     `json:"ttft_us,omitempty"`
+	DurationUs int64     `json:"duration_us"`
+	TokensIn   int       `json:"tokens_in"`
+	TokensOut  int       `json:"tokens_out"`
+	Step       int       `json:"step,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
+}
+
+// CallAgg is the per-purpose aggregate over a set of calls.
+type CallAgg struct {
+	Purpose    string
+	Count      int
+	Background int
+	Canceled   int
+	Failed     int
+	TokensIn   int
+	TokensOut  int
+	TotalUs    int64
+	TTFTUs     int64 // sum over calls that got a first delta
+	TTFTCount  int   // calls contributing to TTFTUs
+}
+
+// SumCalls aggregates calls per purpose, in order of first
+// appearance (the main call naturally sorts first in a normal
+// session).
+func SumCalls(calls []Call) []CallAgg {
+	byPurpose := make(map[string]*CallAgg)
+	order := make([]string, 0)
+	for _, c := range calls {
+		p := c.Purpose
+		if p == "" {
+			p = "unknown"
+		}
+		agg, ok := byPurpose[p]
+		if !ok {
+			agg = &CallAgg{Purpose: p}
+			byPurpose[p] = agg
+			order = append(order, p)
+		}
+		agg.Count++
+		if c.Background {
+			agg.Background++
+		}
+		if c.Canceled {
+			agg.Canceled++
+		}
+		if c.Failed {
+			agg.Failed++
+		}
+		agg.TokensIn += c.TokensIn
+		agg.TokensOut += c.TokensOut
+		agg.TotalUs += c.DurationUs
+		if c.TTFTUs > 0 {
+			agg.TTFTUs += c.TTFTUs
+			agg.TTFTCount++
+		}
+	}
+	out := make([]CallAgg, 0, len(order))
+	for _, p := range order {
+		out = append(out, *byPurpose[p])
+	}
+	return out
 }
 
 // Total summarises a set of turns.
@@ -168,9 +248,16 @@ type Recorder interface {
 	RecordSources(sources map[string]int)
 	RecordSaved(saved int)
 	RecordModel(model string)
+	// RecordCall stores one purpose-labeled model invocation
+	// (llm.Metered feeds this). Unlike the Record* methods above
+	// it works OUTSIDE a step too — navigator classification and
+	// background memory saves land here with Step 0.
+	RecordCall(c Call)
 	TotalSaved() int
 	EndStep()
 	Snapshot() []Turn
+	// Calls returns a copy of every recorded model call.
+	Calls() []Call
 	Reset()
 }
 
@@ -189,9 +276,11 @@ func (Noop) RecordPhase(string, time.Duration) {}
 func (Noop) RecordSources(map[string]int)      {}
 func (Noop) RecordSaved(int)                   {}
 func (Noop) RecordModel(string)                {}
+func (Noop) RecordCall(Call)                   {}
 func (Noop) TotalSaved() int                   { return 0 }
 func (Noop) EndStep()                          {}
 func (Noop) Snapshot() []Turn                  { return nil }
+func (Noop) Calls() []Call                     { return nil }
 func (Noop) Reset()                            {}
 
 // Memory collects turns in process memory. Thread-safe.
@@ -199,6 +288,7 @@ type Memory struct {
 	mu    sync.Mutex
 	turns []Turn
 	cur   *Turn
+	calls []Call
 	saved int // F11 draft savings accumulator (per Memory instance)
 }
 
@@ -327,6 +417,27 @@ func (m *Memory) RecordModel(model string) {
 	m.cur.Model = model
 }
 
+// RecordCall appends one model-call record. When a step is in
+// progress its number is stamped onto the record (best effort —
+// background calls may land between steps, keeping Step 0).
+func (m *Memory) RecordCall(c Call) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c.Step == 0 && m.cur != nil {
+		c.Step = m.cur.Step
+	}
+	m.calls = append(m.calls, c)
+}
+
+// Calls returns a copy of the recorded model calls.
+func (m *Memory) Calls() []Call {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Call, len(m.calls))
+	copy(out, m.calls)
+	return out
+}
+
 // TotalSaved returns the cumulative F11 savings
 // across all RecordSaved calls (including those
 // outside any in-progress step).
@@ -358,18 +469,19 @@ func (m *Memory) Snapshot() []Turn {
 	return out
 }
 
-// Reset drops all recorded turns.
+// Reset drops all recorded turns and calls.
 func (m *Memory) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.turns = nil
 	m.cur = nil
+	m.calls = nil
 	m.saved = 0
 }
 
 // Save writes the snapshot to a JSON file at path. The file
-// is overwritten.
-func Save(path string, turns []Turn) error {
+// is overwritten. calls may be nil (old snapshots stay valid).
+func Save(path string, turns []Turn, calls []Call) error {
 	if path == "" {
 		return fmt.Errorf("stats.Save: path is empty")
 	}
@@ -378,7 +490,8 @@ func Save(path string, turns []Turn) error {
 	}
 	buf, err := json.MarshalIndent(struct {
 		Turns []Turn `json:"turns"`
-	}{turns}, "", "  ")
+		Calls []Call `json:"calls,omitempty"`
+	}{turns, calls}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -386,25 +499,27 @@ func Save(path string, turns []Turn) error {
 }
 
 // Load reads a snapshot from a JSON file produced by Save.
-// Missing file returns nil turns and no error.
-func Load(path string) ([]Turn, error) {
+// Missing file returns nil turns/calls and no error. Snapshots
+// written before the calls field existed load with nil calls.
+func Load(path string) ([]Turn, []Call, error) {
 	if path == "" {
-		return nil, fmt.Errorf("stats.Load: path is empty")
+		return nil, nil, fmt.Errorf("stats.Load: path is empty")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	var wrapped struct {
 		Turns []Turn `json:"turns"`
+		Calls []Call `json:"calls"`
 	}
 	if err := json.Unmarshal(data, &wrapped); err != nil {
-		return nil, fmt.Errorf("stats.Load: %w", err)
+		return nil, nil, fmt.Errorf("stats.Load: %w", err)
 	}
-	return wrapped.Turns, nil
+	return wrapped.Turns, wrapped.Calls, nil
 }
 
 // Print writes a human-readable table of turns to w followed
@@ -431,6 +546,42 @@ func Print(w io.Writer, turns []Turn) {
 	if p := FormatPhases(SumPhases(turns)); p != "" {
 		fmt.Fprintf(w, "phase totals: %s\n", p)
 	}
+}
+
+// FormatCallAgg renders one per-purpose aggregate as a compact
+// single line: purpose, call count, total wall time, average TTFT,
+// tokens, plus background/canceled/failed markers when non-zero.
+func FormatCallAgg(a CallAgg) string {
+	s := fmt.Sprintf("%s: %d call(s) %s", a.Purpose, a.Count, formatUs(a.TotalUs))
+	if a.TTFTCount > 0 {
+		s += fmt.Sprintf(" ttft~%s", formatUs(a.TTFTUs/int64(a.TTFTCount)))
+	}
+	s += fmt.Sprintf(" in=%d out=%d", a.TokensIn, a.TokensOut)
+	if a.Background > 0 {
+		s += fmt.Sprintf(" bg=%d", a.Background)
+	}
+	if a.Canceled > 0 {
+		s += fmt.Sprintf(" canceled=%d", a.Canceled)
+	}
+	if a.Failed > 0 {
+		s += fmt.Sprintf(" failed=%d", a.Failed)
+	}
+	return s
+}
+
+// CallsLine renders the per-purpose aggregate of calls as one
+// machine-greppable stderr line for batch mode, mirroring
+// PhaseLine. Returns "" when there are no calls.
+func CallsLine(calls []Call) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	for _, a := range SumCalls(calls) {
+		parts = append(parts, fmt.Sprintf("%s=%dx/%s/in=%d/out=%d",
+			a.Purpose, a.Count, formatUs(a.TotalUs), a.TokensIn, a.TokensOut))
+	}
+	return "[calls] " + strings.Join(parts, " ")
 }
 
 // FormatPhases renders a phase map (µs) as one compact line:
