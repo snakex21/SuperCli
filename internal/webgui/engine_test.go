@@ -336,6 +336,9 @@ func TestEngine_RunStream_Echo(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].ID != sessionID || sessions[0].MessageCount == 0 {
 		t.Fatalf("persisted session mismatch: id=%q sessions=%+v", sessionID, sessions)
 	}
+	if sessions[0].Model != "echo-test" || sessions[0].Provider != "echo" || !sessions[0].RuntimeKnown {
+		t.Fatalf("session runtime was not persisted: %+v", sessions[0])
+	}
 }
 
 func TestEngine_DataPanels_EmptyStores(t *testing.T) {

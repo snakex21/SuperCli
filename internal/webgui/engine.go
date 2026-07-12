@@ -161,6 +161,31 @@ func (e *Engine) ModelName() string {
 	return e.prov.Name()
 }
 
+// RuntimeSelection returns the browser-facing provider/model/reasoning tuple
+// that future turns will use. Provider is the configured provider name when it
+// can be resolved, falling back to the transport type for local/legacy setups.
+func (e *Engine) RuntimeSelection() (provider, model, reasoning string) {
+	e.mu.RLock()
+	cfg := e.cfg
+	e.mu.RUnlock()
+	model = cfg.Model
+	for _, configured := range e.providerManager().Configured() {
+		if configured.Type == cfg.Provider && strings.TrimRight(configured.BaseURL, "/") == strings.TrimRight(cfg.BaseURL, "/") {
+			provider = configured.Name
+			if configured.Model == model {
+				break
+			}
+		}
+	}
+	if provider == "" {
+		provider = e.caps.Provider(model)
+	}
+	if provider == "" {
+		provider = cfg.Provider
+	}
+	return provider, model, llm.ReasoningEffort()
+}
+
 // ReasoningSupportKey returns the backend-scoped key used by the OpenAI-
 // compatible provider's live effort negotiation. Native providers retain the
 // model-only key used by their request builders.

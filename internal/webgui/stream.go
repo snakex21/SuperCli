@@ -271,16 +271,21 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 	closeStore := func() { _ = store.Close() }
 
 	requestedID = strings.TrimSpace(requestedID)
+	provider, model, reasoning := e.RuntimeSelection()
 	if requestedID == "" {
 		// The first title is deterministic and local — set right here,
 		// zero inference, so the session is named instantly and the
 		// model slot stays free for the actual answer. The nicer LLM
 		// title runs later, after the stream + idle (see title.go).
 		title := summarizeHistoryMessage(prompt, 80)
-		sess, err := store.Create(home, e.ModelName(), title)
+		sess, err := store.Create(home, model, title)
 		if err != nil {
 			closeStore()
 			return nil, nil, func() {}, "", fmt.Errorf("create session: %w", err)
+		}
+		if err := store.SetRuntime(sess.ID, provider, model, reasoning); err != nil {
+			closeStore()
+			return nil, nil, func() {}, "", fmt.Errorf("save session runtime: %w", err)
 		}
 		return nil, session.NewWriter(store, sess.ID), closeStore, sess.ID, nil
 	}
@@ -293,6 +298,10 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 	if !sameSessionWorkspace(meta.Cwd, home) {
 		closeStore()
 		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", errSessionOutsideWorkspace)
+	}
+	if err := store.SetRuntime(requestedID, provider, model, reasoning); err != nil {
+		closeStore()
+		return nil, nil, func() {}, "", fmt.Errorf("save session runtime: %w", err)
 	}
 	initial, err := store.ReadModelContext(ctx, requestedID)
 	if err != nil {
