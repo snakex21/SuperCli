@@ -3,12 +3,15 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"supercli/internal/tools/core"
 )
 
 // Worker is a persistent child loop created by the task tool. It keeps its
@@ -136,20 +139,157 @@ func (w *Worker) status() string {
 	return w.Status
 }
 
+// Worker retention and concurrency defaults ("just works": empty
+// config = the best version, no new toml knobs). Both are process-wide
+// constants with an env escape hatch for unusual setups:
+//
+//   - DefaultFinishedWorkerRetention caps how many FINISHED workers
+//     (done/failed/stopped) the registry keeps alive. Every worker
+//     holds its whole Loop — the full conversation history — so an
+//     unbounded registry is a slow memory leak in long sessions. The
+//     oldest finished workers (LRU by UpdatedAt) are evicted; a compact
+//     result summary is kept so /workers, send_message and task_stop
+//     can say "evicted, here is what it did" instead of "unknown".
+//     Override: SUPERCLI_WORKER_RETENTION.
+//   - DefaultMaxActiveWorkers caps CONCURRENT active (created/running)
+//     workers. Workers write files and spawn processes; an unbounded
+//     fan-out from one over-eager coordinator turn can swamp a local
+//     host. There is no read/write worker distinction in the codebase
+//     (any worker with file tools may write), so this is a single
+//     global cap — a new task over the limit fails fast with a clear
+//     message instead of queueing (blocking inside a tool call would
+//     stall the coordinator's whole turn). Active workers are NEVER
+//     evicted. Override: SUPERCLI_MAX_ACTIVE_WORKERS.
+const (
+	DefaultFinishedWorkerRetention = 20
+	DefaultMaxActiveWorkers        = 6
+)
+
+// evictedResultHead/Tail cap the kept LastResult of an evicted worker
+// (core.HeadTail convention: head + omission marker + tail).
+const (
+	evictedResultHead = 300
+	evictedResultTail = 100
+)
+
+// EvictedWorker is the compact snapshot kept after a finished worker
+// is evicted from the registry: enough to answer "what did it do"
+// without holding the Loop (and thus the whole conversation) alive.
+type EvictedWorker struct {
+	ID         string
+	Agent      string
+	Model      string
+	Status     string
+	LastError  string
+	LastResult string // capped via core.HeadTail
+	TokensIn   int
+	TokensOut  int
+	Steps      int
+	UpdatedAt  time.Time
+}
+
+// Line renders the one-line summary used in errors and /workers.
+func (e EvictedWorker) Line() string {
+	s := fmt.Sprintf("%s (%s, %s) · %d steps · %d in/%d out tok",
+		e.ID, e.Agent, e.Status, e.Steps, e.TokensIn, e.TokensOut)
+	if e.Model != "" {
+		s += " · model=" + e.Model
+	}
+	if e.LastError != "" {
+		s += " · error: " + e.LastError
+	}
+	if strings.TrimSpace(e.LastResult) != "" {
+		s += " · result: " + strings.TrimSpace(e.LastResult)
+	}
+	return s
+}
+
+// evictionSnapshot copies the fields kept after eviction, under the
+// worker's state lock (same contract as Snapshot).
+func (w *Worker) evictionSnapshot() EvictedWorker {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+	return EvictedWorker{
+		ID:         w.ID,
+		Agent:      w.Agent,
+		Model:      w.Model,
+		Status:     w.Status,
+		LastError:  w.LastError,
+		LastResult: core.HeadTail(w.LastResult, evictedResultHead, evictedResultTail),
+		TokensIn:   w.TokensIn,
+		TokensOut:  w.TokensOut,
+		Steps:      w.Steps,
+		UpdatedAt:  w.UpdatedAt,
+	}
+}
+
 // WorkerRegistry stores live/completed workers for the current process.
 type WorkerRegistry struct {
 	mu      sync.RWMutex
 	seq     atomic.Uint64
 	workers map[string]*Worker
+	// evicted keeps compact summaries of finished workers pruned by the
+	// retention policy, so references by id stay answerable. Guarded by mu.
+	evicted map[string]EvictedWorker
+	// retention/maxActive are set once at construction (env-overridable
+	// constants) and read-only afterwards.
+	retention int
+	maxActive int
 }
 
 func NewWorkerRegistry() *WorkerRegistry {
-	return &WorkerRegistry{workers: make(map[string]*Worker)}
+	return &WorkerRegistry{
+		workers:   make(map[string]*Worker),
+		evicted:   make(map[string]EvictedWorker),
+		retention: envPositiveInt("SUPERCLI_WORKER_RETENTION", DefaultFinishedWorkerRetention),
+		maxActive: envPositiveInt("SUPERCLI_MAX_ACTIVE_WORKERS", DefaultMaxActiveWorkers),
+	}
+}
+
+// envPositiveInt reads a positive-integer env override, falling back
+// to def when unset, unparsable, or non-positive.
+func envPositiveInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 func (r *WorkerRegistry) Add(agentName, description string, loop *Loop) *Worker {
 	if r == nil {
 		return nil
+	}
+	w, _ := r.add(agentName, description, loop, false)
+	return w
+}
+
+// TryAdd is Add with the active-worker cap enforced: when maxActive
+// workers are already active (created/running) it returns a clear
+// error instead of registering a new one. The task tool uses this so
+// an over-eager coordinator cannot fan out unbounded concurrent
+// workers; Add (no cap) stays for callers/tests that manage their own
+// concurrency.
+func (r *WorkerRegistry) TryAdd(agentName, description string, loop *Loop) (*Worker, error) {
+	if r == nil {
+		return nil, fmt.Errorf("worker registry is nil")
+	}
+	return r.add(agentName, description, loop, true)
+}
+
+func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceLimit bool) (*Worker, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if enforceLimit && r.maxActive > 0 {
+		if active := r.activeCountLocked(); active >= r.maxActive {
+			return nil, fmt.Errorf(
+				"worker limit reached: %d workers active (max %d) — wait for one to finish, stop one with task_stop, or continue an existing worker with send_message",
+				active, r.maxActive)
+		}
 	}
 	id := fmt.Sprintf("worker-%d", r.seq.Add(1))
 	now := time.Now()
@@ -162,10 +302,84 @@ func (r *WorkerRegistry) Add(agentName, description string, loop *Loop) *Worker 
 		UpdatedAt:   now,
 		Status:      "created",
 	}
-	r.mu.Lock()
 	r.workers[id] = w
-	r.mu.Unlock()
-	return w
+	r.evictLocked()
+	return w, nil
+}
+
+// activeCountLocked counts created/running workers. Caller holds mu.
+func (r *WorkerRegistry) activeCountLocked() int {
+	n := 0
+	for _, w := range r.workers {
+		switch w.status() {
+		case "created", "running":
+			n++
+		}
+	}
+	return n
+}
+
+// evictLocked applies the retention policy: when more than retention
+// FINISHED workers (done/failed/stopped) are held, the oldest by
+// UpdatedAt are dropped from the registry and replaced by compact
+// EvictedWorker summaries. Active workers are never touched. Caller
+// holds mu (write). Lock order is registry mu → worker stateMu, the
+// same as every other registry read path (Counts, List+Snapshot).
+func (r *WorkerRegistry) evictLocked() {
+	if r.retention <= 0 || r.evicted == nil {
+		return
+	}
+	var finished []*Worker
+	for _, w := range r.workers {
+		switch w.status() {
+		case "done", "failed", "stopped":
+			finished = append(finished, w)
+		}
+	}
+	if len(finished) <= r.retention {
+		return
+	}
+	sort.Slice(finished, func(i, j int) bool {
+		si, sj := finished[i].Snapshot(), finished[j].Snapshot()
+		if si.UpdatedAt.Equal(sj.UpdatedAt) {
+			return workerSeq(si.ID) < workerSeq(sj.ID)
+		}
+		return si.UpdatedAt.Before(sj.UpdatedAt)
+	})
+	for _, w := range finished[:len(finished)-r.retention] {
+		r.evicted[w.ID] = w.evictionSnapshot()
+		delete(r.workers, w.ID)
+	}
+}
+
+// Evicted returns the kept summary of a worker pruned by the
+// retention policy, if any.
+func (r *WorkerRegistry) Evicted(id string) (EvictedWorker, bool) {
+	if r == nil {
+		return EvictedWorker{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	e, ok := r.evicted[id]
+	return e, ok
+}
+
+// EvictedList returns all kept eviction summaries ordered by numeric
+// worker id, for the /workers panel.
+func (r *WorkerRegistry) EvictedList() []EvictedWorker {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	out := make([]EvictedWorker, 0, len(r.evicted))
+	for _, e := range r.evicted {
+		out = append(out, e)
+	}
+	r.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool {
+		return workerSeq(out[i].ID) < workerSeq(out[j].ID)
+	})
+	return out
 }
 
 func (r *WorkerRegistry) Get(id string) (*Worker, bool) {
@@ -201,6 +415,9 @@ func (r *WorkerRegistry) List() []*Worker {
 func (r *WorkerRegistry) Stop(id string) error {
 	w, ok := r.Get(id)
 	if !ok {
+		if e, evicted := r.Evicted(id); evicted {
+			return fmt.Errorf("worker %s was evicted (finished workers beyond retention are pruned); it is not running. Summary: %s", id, e.Line())
+		}
 		return fmt.Errorf("unknown worker %q", id)
 	}
 	if !w.Stop() {
@@ -240,6 +457,19 @@ func (r *WorkerRegistry) Counts() WorkerCounts {
 		switch w.status() {
 		case "running", "created":
 			c.Running++
+		case "done":
+			c.Done++
+		case "failed":
+			c.Failed++
+		case "stopped":
+			c.Stopped++
+		}
+	}
+	// Evicted workers were spawned this process too: keep Total (and the
+	// terminal buckets) meaning "everything ever spawned", not "still held".
+	for _, e := range r.evicted {
+		c.Total++
+		switch e.Status {
 		case "done":
 			c.Done++
 		case "failed":

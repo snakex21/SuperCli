@@ -57,6 +57,14 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 	}
 	w, ok := s.Workers.Get(args.To)
 	if !ok {
+		// An evicted worker's Loop (its conversation) is gone, but the kept
+		// summary lets the coordinator learn what it did instead of a dead
+		// "unknown worker".
+		if e, evicted := s.Workers.Evicted(args.To); evicted {
+			return tools.Result{Err: fmt.Errorf(
+				"send_message: worker %s was evicted (finished workers beyond retention are pruned; its context is gone — start a new task instead). Summary: %s",
+				args.To, e.Line())}, nil
+		}
 		return tools.Result{Err: fmt.Errorf("send_message: unknown worker %q", args.To)}, nil
 	}
 
