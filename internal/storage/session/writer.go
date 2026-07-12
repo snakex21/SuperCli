@@ -32,6 +32,12 @@ func (w *Writer) AppendMessage(ctx context.Context, msg llm.Message) error {
 	return w.store.AppendMessage(ctx, w.sessionID, enc)
 }
 
+// SaveContextProjection persists the loop's provider-visible view while
+// leaving the full transcript intact.
+func (w *Writer) SaveContextProjection(ctx context.Context, msgs []llm.Message) error {
+	return w.store.SaveContextProjection(ctx, w.sessionID, msgs)
+}
+
 // UpdateUsage records per-turn token counters on the session.
 func (w *Writer) UpdateUsage(in, out int) error {
 	return w.store.UpdateUsage(w.sessionID, in, out)

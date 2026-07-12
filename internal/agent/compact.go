@@ -87,5 +87,6 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	l.persist(context.Background(), sum)
 	l.resetHidden()
 	l.chatWindowStart = 0
+	l.persistProjection(context.Background())
 	return removed
 }
