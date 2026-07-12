@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"supercli/internal/tools"
+	toolcore "supercli/internal/tools/core"
 )
 
 type SendMessageTool struct {
@@ -113,6 +114,25 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
+		case ToolCallEvent:
+			w.setState(func(w *Worker) {
+				if len(w.ToolNames) < 32 {
+					w.ToolNames = append(w.ToolNames, e.Name)
+				}
+			})
+			w.emitProgress(WorkerProgressEvent{
+				Kind: "tool_call", CallID: e.ID, Tool: e.Name,
+				Args: toolcore.HeadTail(e.Args, 180, 60),
+			})
+		case ToolResultEvent:
+			progress := WorkerProgressEvent{
+				Kind: "tool_result", CallID: e.ID,
+				Output: toolcore.HeadTail(e.Output, 220, 80),
+			}
+			if e.Err != nil {
+				progress.Err = toolcore.HeadTail(e.Err.Error(), 180, 60)
+			}
+			w.emitProgress(progress)
 		case DoneEvent:
 			w.setState(func(w *Worker) {
 				w.TokensIn += e.Usage.Input
@@ -154,13 +174,38 @@ func renderWorkerNotification(w *Worker, result string) string {
 		status = "done"
 	}
 	summary := workerSummary(w)
+	toolsUsed := workerToolSummary(s.ToolNames)
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>
 <status>%s</status>
 <summary>%s</summary>
+<tools>%s</tools>
 <result>%s</result>
-</task-notification>`, s.ID, s.Agent, status, summary, result)
+</task-notification>`, s.ID, s.Agent, status, summary, toolsUsed, result)
+}
+
+func workerToolSummary(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	counts := make(map[string]int, len(names))
+	order := make([]string, 0, len(names))
+	for _, name := range names {
+		if counts[name] == 0 {
+			order = append(order, name)
+		}
+		counts[name]++
+	}
+	parts := make([]string, 0, len(order))
+	for _, name := range order {
+		if counts[name] == 1 {
+			parts = append(parts, name)
+		} else {
+			parts = append(parts, fmt.Sprintf("%s×%d", name, counts[name]))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func workerSummary(w *Worker) string {

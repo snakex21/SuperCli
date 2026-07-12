@@ -109,6 +109,34 @@ func TestEngine_NewLoop(t *testing.T) {
 	}
 }
 
+func TestEngine_WebOrchestratorOffRemovesDelegation(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &off}); err != nil {
+		t.Fatal(err)
+	}
+	loop, err := eng.newLoop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := "|" + strings.Join(loop.VisibleToolNames(), "|") + "|"
+	for _, forbidden := range []string{"task", "send_message", "task_stop"} {
+		if strings.Contains(names, "|"+forbidden+"|") {
+			t.Errorf("orchestrator off still exposes %s: %s", forbidden, names)
+		}
+	}
+	msgs := loop.AllMessages()
+	if len(msgs) > 0 && (strings.Contains(msgs[0].Content, "## Coordinator mode") ||
+		strings.Contains(msgs[0].Content, "## Orchestrator mode")) {
+		t.Fatalf("orchestrator off still injects delegation guidance: %s", msgs[0].Content)
+	}
+}
+
 func TestEngine_WebOrchestratorRestrictsParentAndKeepsTask(t *testing.T) {
 	dataDir := t.TempDir()
 	home := t.TempDir()
@@ -140,6 +168,7 @@ func TestEngine_WebOrchestratorRestrictsParentAndKeepsTask(t *testing.T) {
 type delegationScriptProvider struct {
 	mu          sync.Mutex
 	parentCalls int
+	childCalls  int
 	sawTask     bool
 	childTools  map[string]bool
 }
@@ -159,16 +188,23 @@ func (p *delegationScriptProvider) Complete(_ context.Context, _ []llm.Message, 
 		p.sawTask = true
 		p.parentCalls++
 	} else {
+		p.childCalls++
 		p.childTools = make(map[string]bool, len(defs))
 		for _, d := range defs {
 			p.childTools[d.Name] = true
 		}
 	}
 	parentCall := p.parentCalls
+	childCall := p.childCalls
 	p.mu.Unlock()
 
 	ch := make(chan llm.Delta, 3)
-	if !hasTask {
+	if !hasTask && childCall == 1 {
+		ch <- llm.Delta{Role: llm.RoleAssistant, ToolCall: &llm.ToolCall{
+			ID: "search-1", Name: "search_code", Arguments: `{"query":"delegation_probe_no_match"}`,
+		}}
+		ch <- llm.Delta{FinishReason: "tool_calls"}
+	} else if !hasTask {
 		ch <- llm.Delta{Role: llm.RoleAssistant, Content: "worker inspected the project"}
 		ch <- llm.Delta{FinishReason: "stop"}
 	} else if parentCall == 1 {
@@ -206,13 +242,19 @@ func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var sawTaskCall, sawWorker, sawDone bool
+	var sawTaskCall, sawWorkerCall, sawWorkerResult, sawWorker, sawDone bool
 	for _, ev := range events {
 		if ev.Type == "tool_call" && ev.Name == "task" {
 			sawTaskCall = true
 		}
 		if ev.Type == "worker" && ev.Name == "explore" && ev.Status == "done" {
 			sawWorker = true
+		}
+		if ev.Type == "worker_progress" && ev.Kind == "tool_call" && ev.Tool == "search_code" {
+			sawWorkerCall = true
+		}
+		if ev.Type == "worker_progress" && ev.Kind == "tool_result" && ev.CallID == "search-1" {
+			sawWorkerResult = true
 		}
 		if ev.Type == "done" {
 			sawDone = true
@@ -223,9 +265,9 @@ func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
 	childSearch := provider.childTools["search_code"]
 	childReadImage := provider.childTools["read_image"]
 	provider.mu.Unlock()
-	if !providerTask || !childSearch || !childReadImage || !sawTaskCall || !sawWorker || !sawDone {
-		t.Fatalf("delegation incomplete: providerTask=%v taskCall=%v worker=%v done=%v events=%+v",
-			providerTask, sawTaskCall, sawWorker, sawDone, events)
+	if !providerTask || !childSearch || !childReadImage || !sawTaskCall || !sawWorkerCall || !sawWorkerResult || !sawWorker || !sawDone {
+		t.Fatalf("delegation incomplete: providerTask=%v taskCall=%v workerCall=%v workerResult=%v worker=%v done=%v events=%+v",
+			providerTask, sawTaskCall, sawWorkerCall, sawWorkerResult, sawWorker, sawDone, events)
 	}
 }
 

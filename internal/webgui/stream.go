@@ -30,6 +30,9 @@ type wireEvent struct {
 	Err    string `json:"err,omitempty"`
 	// Status carries the worker outcome on type "worker".
 	Status string `json:"status,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+	CallID string `json:"call_id,omitempty"`
+	Tool   string `json:"tool,omitempty"`
 	// Usage fields (type "done").
 	TokIn    int `json:"tok_in,omitempty"`
 	TokOut   int `json:"tok_out,omitempty"`
@@ -81,6 +84,9 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		// Background worker lifecycle (task delegation). Name carries
 		// the agent kind, Status the outcome, Output the short summary.
 		return wireEvent{Type: "worker", ID: e.TaskID, Name: e.Agent, Status: e.Status, Output: e.Summary, Text: e.Text}, true
+	case agent.WorkerProgressEvent:
+		return wireEvent{Type: "worker_progress", ID: e.TaskID, Name: e.Agent, Kind: e.Kind,
+			CallID: e.CallID, Tool: e.Tool, Args: e.Args, Output: e.Output, Err: e.Err}, true
 	case agent.DraftUsedEvent:
 		return wireEvent{Type: "notice", Text: fmt.Sprintf(
 			"draft-verify: %s · draft %s → verdict %s · saved ~%d tok",

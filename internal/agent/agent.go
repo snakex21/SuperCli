@@ -165,6 +165,23 @@ type WorkerNotificationEvent struct {
 
 func (WorkerNotificationEvent) event() {}
 
+// WorkerProgressEvent surfaces factual activity from a delegated worker while
+// its parent task tool is still running. It deliberately carries tool events,
+// not private chain-of-thought. Output/arguments are capped at the producer so
+// a verbose child cannot flood the parent UI stream.
+type WorkerProgressEvent struct {
+	TaskID string
+	Agent  string
+	Kind   string // tool_call or tool_result
+	CallID string
+	Tool   string
+	Args   string
+	Output string
+	Err    string
+}
+
+func (WorkerProgressEvent) event() {}
+
 // DraftOverrideSink is the F11 contract for recording
 // "the verifier overrode the draft" instances so the
 // F5 reflector can later learn when drafts help and

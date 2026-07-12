@@ -363,6 +363,24 @@ a:hover { text-decoration: underline; }
 .task-row .task-report .think-content { font-size: 12.5px; }
 .task-row .task-report p { margin: 0 0 10px; }
 .task-row .task-report ul, .task-row .task-report ol { margin: 0 0 10px 20px; }
+.task-activity { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.task-activity-item {
+  display: grid; grid-template-columns: 8px minmax(110px, 160px) 1fr auto;
+  align-items: center; gap: 8px; min-width: 0; padding: 3px 0;
+  font: 11.5px var(--mono); color: var(--muted);
+}
+.task-activity-item .activity-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--faint);
+}
+.task-activity-item.running .activity-dot { background: var(--accent); }
+.task-activity-item.done .activity-dot { background: var(--ok); }
+.task-activity-item.failed .activity-dot { background: var(--danger); }
+.task-activity-item .activity-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.task-activity-item .activity-hint { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-activity-item .activity-status { color: var(--faint); white-space: nowrap; }
+.task-activity-item.running .activity-status { color: var(--accent); }
+.task-activity-item.done .activity-status { color: var(--ok); }
+.task-activity-item.failed .activity-status { color: var(--danger); }
 
 /* Event lines — [compact], [prune], preflight, workers, errors */
 .event-line {
