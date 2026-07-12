@@ -155,6 +155,14 @@ type Loop struct {
 	// deliberately kept out of this sum, otherwise the remainder would
 	// double-count and go negative. Reset at every statsStartStep.
 	stepPhaseWall time.Duration
+	// stepAuxWall accumulates the wall time of model-powered AUX
+	// operations inside the current step (draft, auto-compact
+	// summary, reflection). Each is recorded as its own
+	// "model:<purpose>" phase and added to stepPhaseWall, so
+	// context_prepare and next_turn_prepare keep measuring PURE
+	// CLI overhead — hidden inference no longer inflates them.
+	// Loop-goroutine only; reset at every statsStartStep.
+	stepAuxWall time.Duration
 
 	// F14 selective context deletion. The hidden
 	// shadow slice has the same length as Messages;
@@ -875,6 +883,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// the window, fall back to the summary compaction.
 		prepStart := time.Now()
 		l.maybePruneToolResults(ctx, out)
+		auxBefore := l.stepAuxWall
 		l.maybeAutoCompact(ctx, out, "")
 
 		// Build tool definitions from visible tools. Non-coordinator routes
@@ -884,7 +893,14 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		toolDefs := l.buildToolDefs()
 		// context_prepare part 1: prune/compact/tool defs. Part 2
 		// (provider message assembly) is added inside completeOnce.
-		l.recordWallPhase(stats.PhaseContextPrepare, time.Since(prepStart))
+		// The auto-compact SUMMARY MODEL CALL is excluded — it is
+		// booked as its own model:compact phase (recordAuxWall in
+		// maybeAutoCompact), so context_prepare stays pure CLI time.
+		prep := time.Since(prepStart) - (l.stepAuxWall - auxBefore)
+		if prep < 0 {
+			prep = 0
+		}
+		l.recordWallPhase(stats.PhaseContextPrepare, prep)
 
 		text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
 		if err != nil && l.handleContextOverflow(ctx, err, out) {
@@ -1063,7 +1079,9 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// The next iteration of the loop will see it as
 		// part of the history.
 		if l.reflector != nil && l.reflectEvery > 0 && (step+1)%l.reflectEvery == 0 {
-			txt, err := l.reflector.Reflect(ctx, l.Messages)
+			reflStart := time.Now()
+			txt, err := l.reflector.Reflect(llm.WithPurpose(ctx, llm.PurposeReflect), l.Messages)
+			l.recordAuxWall(llm.PurposeReflect, time.Since(reflStart))
 			if err == nil && strings.TrimSpace(txt) != "" {
 				refMsg := llm.Message{
 					Role:    llm.RoleSystem,
@@ -1352,7 +1370,7 @@ func (l *Loop) navigateRoute(ctx context.Context, prompt string) RouteMode {
 	if l.navProvider != nil {
 		prov = l.navProvider
 	}
-	stream, err := prov.Complete(ctx, msgs, nil)
+	stream, err := prov.Complete(llm.WithPurpose(ctx, llm.PurposeNavigator), msgs, nil)
 	if err != nil {
 		return fallback
 	}
@@ -1452,6 +1470,7 @@ func (l *Loop) statsStartStep(step int) {
 		return
 	}
 	l.stepPhaseWall = 0
+	l.stepAuxWall = 0
 	l.stats.StartStep(step)
 }
 
@@ -1476,6 +1495,19 @@ func (l *Loop) recordWallPhase(name string, d time.Duration) {
 	}
 	l.stepPhaseWall += d
 	l.stats.RecordPhase(name, d)
+}
+
+// recordAuxWall records the wall time of a model-powered aux
+// operation (draft, compact summary, reflection) as its own
+// "model:<purpose>" phase and adds it to both accumulators, so
+// the surrounding CLI phases (context_prepare, the
+// next_turn_prepare remainder) exclude it. Run goroutine only.
+func (l *Loop) recordAuxWall(purpose string, d time.Duration) {
+	if l.stats == nil {
+		return
+	}
+	l.stepAuxWall += d
+	l.recordWallPhase("model:"+purpose, d)
 }
 
 // statsEndStep attributes the unmeasured remainder of the step to
@@ -2049,7 +2081,9 @@ func (l *Loop) invokeDraft(ctx context.Context, step int, _ chan<- Event) {
 	if prompt == "" {
 		return
 	}
-	res, err := l.draftBridge.Plan(ctx, prompt)
+	draftStart := time.Now()
+	res, err := l.draftBridge.Plan(llm.WithPurpose(ctx, llm.PurposeDraft), prompt)
+	l.recordAuxWall(llm.PurposeDraft, time.Since(draftStart))
 	if err != nil || strings.TrimSpace(res.Text) == "" {
 		// Silent no-op: a draft failure must not
 		// break the run. Reset state so the
