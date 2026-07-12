@@ -131,6 +131,10 @@ type Model struct {
 	// finishes. See Options.OnRunEnd.
 	onRunEnd func()
 
+	// onRunStart is invoked synchronously when the user submits
+	// a prompt, before the run begins. See Options.OnRunStart.
+	onRunStart func()
+
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
 	// a few seconds. Cleared by statusOverrideClearMsg.
@@ -288,6 +292,12 @@ type Options struct {
 	// agent run finishes (runEndMsg). main.go uses it for the
 	// incremental memory saver so exits are instant.
 	OnRunEnd func()
+	// OnRunStart, if non-nil, is called synchronously the moment
+	// the user submits a prompt for the agent, BEFORE the run
+	// begins. main.go uses it to cancel background memory
+	// inference so the foreground turn never queues behind it.
+	// Must be fast and non-blocking.
+	OnRunStart func()
 	// Version is shown in the header bar (e.g. "0.6.0").
 	Version string
 	// Tier is the active model tier shown in the header
@@ -367,6 +377,7 @@ func New(opts Options) Model {
 		goalSvc:       opts.GoalService,
 		toolRegistry:  opts.ToolRegistry,
 		onRunEnd:      opts.OnRunEnd,
+		onRunStart:    opts.OnRunStart,
 	}
 }
 
@@ -863,6 +874,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// happens inside the tea.Cmd goroutine below, so a slow
 		// disk never freezes the input box on Enter.
 		//
+		// Foreground beats background: tell main.go a user turn is
+		// starting so it can cancel background memory inference
+		// before the agent's model call competes for the backend.
+		if m.onRunStart != nil {
+			m.onRunStart()
+		}
 		// F25: create a cancellable context for Ctrl+C support.
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancel.Arm(cancelRun, cancel)

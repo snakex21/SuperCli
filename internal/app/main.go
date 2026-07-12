@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -2432,19 +2433,39 @@ func Main() {
 		dumpRawMemoryTail(memAutoSaver, loop, memProg)
 	})
 
-	// Summarize raw-log entries left behind by a previous abrupt
-	// shutdown into normal task-log entries (+ USER: facts), in
-	// the background — startup stays network-free.
-	go func() {
+	// Background memory work — startup raw-log summarization AND
+	// the incremental per-turn summary — runs ONLY when the user
+	// has been idle for memoryIdleDelay. On a single local model
+	// an autosave inference fired right after the answer competes
+	// with the user's next question (worse TTFT, KV-prefix churn);
+	// deferring it to the idle window keeps the foreground path
+	// clean. A new prompt cancels the in-flight call; the
+	// uncovered fragment is retried (turns batched into one
+	// summary) at the next idle window, so nothing is ever lost.
+	var rawSummarized atomic.Bool
+	memIdle := newIdleScheduler(memoryIdleDelay, func(ctx context.Context) {
 		defer recoverAndLog(dataDir)()
 		p := summaryProviderFor()
 		if !usableSummaryProvider(p) {
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		memAutoSaver.SummarizePendingRaw(ctx, providerSummarizer(p))
-	}()
+		// Raw-log entries left behind by a previous abrupt
+		// shutdown (or a normal exit — see finalizeMemorySession)
+		// are summarized first, once per process. A canceled pass
+		// keeps its raw entries and retries at the next idle.
+		if !rawSummarized.Load() {
+			rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			memAutoSaver.SummarizePendingRaw(rctx, providerSummarizer(p))
+			cancel()
+			if ctx.Err() == nil {
+				rawSummarized.Store(true)
+			}
+		}
+		incrementalMemorySave(ctx, memAutoSaver, loop, memProg, p)
+	})
+	// Startup backlog waits for idle too — never in the way of the
+	// user's first question.
+	memIdle.Schedule()
 
 	// Orchestrator mode: hand the MAIN loop a restricted registry now
 	// that every tool — including the late-registered task/file tools —
@@ -2481,12 +2502,18 @@ func Main() {
 		Commands: mergedCommands,
 		StatusFn: statusFn,
 		// Incremental memory: after every finished agent turn,
-		// summarize just the new fragment in the background so
-		// the exit path usually has nothing left to do.
+		// deterministic user facts are saved immediately (no model
+		// call) and the model-backed summary is scheduled for the
+		// next idle window.
 		OnRunEnd: func() {
 			defer recoverAndLog(dataDir)()
-			incrementalMemorySave(memAutoSaver, loop, memProg, summaryProviderFor())
+			saveDeterministicMemoryFacts(memAutoSaver, loop, memProg)
+			memIdle.Schedule()
 		},
+		// Foreground beats background: the moment the user submits
+		// a new prompt, stop the idle timer and cancel any
+		// in-flight background memory inference.
+		OnRunStart:   memIdle.Activity,
 		ExtCh:        extCh,
 		ShellRunner:  shellescape.NewRunner(home),
 		Tracker:      fileops.NewTracker(200),
@@ -2570,11 +2597,13 @@ func Main() {
 		}
 		scancel()
 	}
-	// B4 code guarantee: if the model never called remember this
-	// session, generate a one-call summary and store it as a
-	// task-log entry (plus refresh the project card). Runs BEFORE
-	// the shutdown timer so the call is not cut off at 200ms.
-	finalizeMemorySession(memAutoSaver, loop, memProg, summaryProviderFor())
+	// B4 code guarantee, model-free: cancel any in-flight idle
+	// save, then store the un-summarized conversation tail as a
+	// raw-log entry (no inference — the exit is never held hostage
+	// by a model call). The next startup summarizes it in ITS idle
+	// window.
+	memIdle.Close()
+	finalizeMemorySession(memAutoSaver, loop, memProg)
 	startPostTUIShutdownTimer(dataDir, 200*time.Millisecond)
 	close(askCh)
 	<-pumpDone
