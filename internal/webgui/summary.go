@@ -79,7 +79,7 @@ Rules:
 Message:
 %s`, maxRunes, text)
 
-	ch, err := prov.Complete(ctx, []llm.Message{
+	ch, err := prov.Complete(llm.WithBackground(llm.WithPurpose(ctx, llm.PurposeTitle)), []llm.Message{
 		{Role: llm.RoleSystem, Content: "You write concise PR-style conversation summaries."},
 		{Role: llm.RoleUser, Content: prompt},
 	}, nil)
