@@ -42,6 +42,7 @@ func (t *ReadLines) Spec() Tool {
 	return Tool{
 		Name:        "read_lines",
 		Description: "Read a specific range of lines from a file (1-based, inclusive). Max 500 lines. Use instead of file_read for targeted reads.",
+		ReadOnly:    true,
 		Schema: `{
 			"file": {"type": "string", "description": "File path (relative or absolute)"},
 			"from": {"type": "integer", "description": "Start line number (1-based)"},

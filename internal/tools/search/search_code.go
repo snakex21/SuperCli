@@ -47,7 +47,8 @@ func NewSearchCode(workDir string) *SearchCode {
 // Spec returns the tools.Tool description for the registry.
 func (s *SearchCode) Spec() Tool {
 	return Tool{
-		Name: "search_code",
+		Name:     "search_code",
+		ReadOnly: true,
 		Description: "Search the codebase for lines matching a regex. " +
 			"Returns file:line:content for each match, up to max results. " +
 			"Use this before reading files to find relevant locations.",

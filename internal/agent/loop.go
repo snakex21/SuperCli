@@ -1127,6 +1127,12 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 // slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
 // so local backends default to sequential; cloud backends run parallel.
 func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
+	// Independent reads do not touch the model backend and cannot conflict
+	// with one another. Run them concurrently on both local and cloud setups;
+	// the results are still appended in call order for a stable prompt.
+	if len(toolCalls) > 1 && l.allReadOnlyCalls(toolCalls) {
+		return l.invokeCallsParallel(ctx, toolCalls, out)
+	}
 	if len(toolCalls) > 1 && allTaskCalls(toolCalls) && l.taskParallel {
 		if l.taskParallelWarnLocal && !l.taskParallelWarned {
 			l.taskParallelWarned = true
@@ -1134,7 +1140,7 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 				"running %d task workers in parallel on a local backend — they serialize on one GPU slot (~%d× time) and thrash each other's KV cache; set task_parallel = false for sequential",
 				len(toolCalls), len(toolCalls))}
 		}
-		return l.invokeTaskCallsParallel(ctx, toolCalls, out)
+		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
 
 	failures := 0
@@ -1164,7 +1170,20 @@ func allTaskCalls(toolCalls []llm.ToolCall) bool {
 	return len(toolCalls) > 0
 }
 
-func (l *Loop) invokeTaskCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
+func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
+	if len(toolCalls) == 0 {
+		return false
+	}
+	for _, call := range toolCalls {
+		tool, ok := l.registry.Get(call.Name)
+		if !ok || !tool.ReadOnly {
+			return false
+		}
+	}
+	return true
+}
+
+func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
 	type item struct {
 		idx int
 		res toolResult
