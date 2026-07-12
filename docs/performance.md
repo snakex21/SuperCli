@@ -43,11 +43,40 @@ allocation-free.
   distribution: avg/step and steps with >1 call);
 - batch: one greppable stderr line per step —
   `[phase] step=N calls=N in=N out=N <phase>=<ms> ...`;
-- programmatic: `stats.Save(path, turns)` dumps the turns as JSON.
+- programmatic: `stats.Save(path, turns, calls)` dumps the snapshot as JSON.
 
 **Why ON.** No new knobs — the recorder was already wired by default;
 the loop now feeds it every step. Cost is a handful of timestamps per
 step, invisible next to a local-model turn.
+
+### Purpose-labeled model calls (default ON)
+
+**What.** Every `Provider.Complete` in the process — not just the main
+step call — is metered centrally by the `llm.Metered` decorator on the
+provider (installed in `main.go`; call sites re-label via
+`llm.WithPurpose` / `llm.WithBackground` on the context). Per call it
+records: purpose, model + provider, TTFT, total time, tokens in/out,
+foreground/background, canceled/failed. Purposes: `main`, `navigator`,
+`compact`, `reflection`, `draft`, `verdict`, `memory` (autosave +
+startup raw-log summarization, background), `goal`, `consult`,
+`judge`, `darwin_judge`, `task` (task_model workers), `title` (webgui).
+
+**Why.** Helper inferences used to be invisible or booked to the wrong
+phase — the audit found a step with `next_turn_prepare=14s` of which
+13.9s was a hidden model call. Model-powered aux operations inside a
+step (draft, auto-compact summary, reflection) are now booked as their
+own `model:<purpose>` phases and subtracted from `context_prepare` /
+the `next_turn_prepare` remainder, so those phases measure PURE CLI
+overhead.
+
+**How to look at it.**
+
+- TUI: `/cost` — "Model calls" section: per purpose count, total time,
+  average TTFT, tokens, background/canceled/failed markers;
+- batch: one greppable stderr line —
+  `[calls] <purpose>=<n>x/<time>/in=<tok>/out=<tok> ...`;
+- programmatic: `stats.Save(path, turns, calls)` includes the ledger,
+  `stats.SumCalls` aggregates it.
 
 ## Structured tool errors (deterministic failure results)
 
