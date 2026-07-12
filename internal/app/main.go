@@ -856,7 +856,7 @@ func Main() {
 		registry.MarkAlwaysOn("goal")
 	} else if smallTier {
 		for _, name := range []string{
-			"read_lines", "read_context", "edit_line", "edit_lines",
+			"read_lines", "read_context", "read_many", "edit_line", "edit_lines",
 			"insert_after", "delete_lines", "write_file", "make_dir",
 			"move", "copy", "trash",
 			"list_dir",
@@ -2241,6 +2241,7 @@ func Main() {
 	// ranges instead of entire files.
 	registry.MustRegister(tools.NewReadLines(home).Spec())
 	registry.MustRegister(tools.NewReadContext(home).Spec())
+	registry.MustRegister(tools.NewReadMany(home).Spec())
 	registry.MustRegister(tools.NewEditLine(home).Spec())
 	registry.MustRegister(tools.NewEditLines(home).Spec())
 	registry.MustRegister(tools.NewInsertAfter(home).Spec())
@@ -2699,6 +2700,7 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
+		tools.NewReadMany(home).Spec(),
 		tools.NewListDir(home).Spec(),
 		tools.NewEditLine(home).Spec(),
 		tools.NewInsertAfter(home).Spec(),
@@ -2821,6 +2823,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewListDir(root).Spec())
 	reg.MustRegister(tools.NewReadLines(root).Spec())
 	reg.MustRegister(tools.NewReadContext(root).Spec())
+	reg.MustRegister(tools.NewReadMany(root).Spec())
 	reg.MustRegister(tools.NewEditLine(root).Spec())
 	reg.MustRegister(tools.NewEditLines(root).Spec())
 	reg.MustRegister(tools.NewInsertAfter(root).Spec())

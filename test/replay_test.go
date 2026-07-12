@@ -591,6 +591,45 @@ func TestReplay_MultiToolBatch_OrderedResults(t *testing.T) {
 	}
 }
 
+// read_many is the cross-backend turn-economy path: even a small model that
+// can emit only one sentinel call can fetch several independent ranges before
+// the next provider request. Native cloud tool calling uses the same schema.
+func TestReplay_ReadMany_ThreeFilesOneToolTurn(t *testing.T) {
+	prov := loadReplayProvider(t, "read_many_one_turn.json")
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"a.txt": "alpha-1\nalpha-2\n",
+		"b.txt": "beta-1\nbeta-2\n",
+		"c.txt": "gamma-1\ngamma-2\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.NewReadMany(dir).Spec())
+	l := newReplayLoop(t, agent.LoopConfig{Provider: prov, Registry: reg})
+
+	ch, err := l.Run(context.Background(), "inspect a.txt, b.txt and c.txt")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	events := collectReplay(t, ch)
+	m := replaySummary(prov, l, events, 0)
+	logReplayMetrics(t, "read_many_one_turn", m)
+	requireCleanDone(t, m)
+	if m.Turns != 2 || m.ToolCalls != 1 || m.ToolErrs != 0 {
+		t.Fatalf("turns=%d calls=%d errs=%d, want 2/1/0", m.Turns, m.ToolCalls, m.ToolErrs)
+	}
+	req2 := reqText(prov.reqs()[1])
+	for _, want := range []string{"alpha-1", "beta-1", "gamma-1", "[read_many: 3 ok, 0 failed]"} {
+		if !strings.Contains(req2, want) {
+			t.Errorf("request 2 missing %q", want)
+		}
+	}
+	assertToolPairing(t, l.Messages)
+}
+
 // ---------------------------------------------------------------------------
 // (e) Preflight addon: rides the USER message (never system), is
 // one-shot, and does not disturb the tool round-trip. The noop-gate is

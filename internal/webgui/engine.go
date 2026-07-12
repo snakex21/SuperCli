@@ -245,6 +245,7 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
+		tools.NewReadMany(home).Spec(),
 		tools.NewReadImage(home, 0).Spec(),
 		tools.NewListDir(home).Spec(),
 		tools.NewEditLine(home).Spec(),

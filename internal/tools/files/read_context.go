@@ -40,6 +40,7 @@ func (t *ReadContext) Spec() Tool {
 	return Tool{
 		Name:        "read_context",
 		Description: "Read N lines around a target line (default ±10). Use before edit_line to understand context.",
+		ReadOnly:    true,
 		Schema: `{
 			"file":   {"type": "string", "description": "File path"},
 			"line":   {"type": "integer", "description": "Target line (1-based)"},

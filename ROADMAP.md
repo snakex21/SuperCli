@@ -73,6 +73,11 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
   kroków; self-review odpala się dopiero po powtarzających się błędach,
   identycznej partii tool-calli albo przed wyczerpaniem limitu kroków.
   Jawne `reflect_every = N` zachowuje tryb okresowy.
+- **Uniwersalne grupowanie odczytów** — `read_many` pobiera do 12 zakresów
+  w jednym tool-callu zarówno przez natywne API, jak i protokół sentinel;
+  wynik ma globalny cap, częściowe błędy, stabilną kolejność. Partie jawnie
+  oznaczonych narzędzi read-only wykonują się równolegle bez uruchamiania
+  równoległych inferencji na lokalnej GPU.
 - **MCP klient** — konfiguracja serwerów MCP wróciła
   (`internal/mcp`, `internal/app/main_mcp.go`), wyniki capowane na granicy.
 - **Darwin (mechanizm)** — pool N agentów w izolowanych worktree, judge

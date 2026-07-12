@@ -34,6 +34,11 @@ type ImageContent struct {
 type Tool struct {
 	Name        string
 	Description string
+	// ReadOnly certifies that concurrent execution cannot mutate files,
+	// process state, user data, or external services. The agent may run a
+	// batch consisting exclusively of ReadOnly tools in parallel. False is
+	// the safe default; tools must opt in explicitly.
+	ReadOnly bool
 	// Schema is a JSON Schema string for the tool's arguments.
 	// F4 will parse and validate against it. For F1 it is passed
 	// through to the provider as a hint.

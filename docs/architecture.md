@@ -45,7 +45,7 @@ make the prompt non-append-only and cap KV reuse by construction.
 
 **What.** On the coordinator route only a small **schema-core** of tools
 carries a full JSON Schema every turn (`thinCoreTools`, routing.go:
-tool_search, edit_line, read_context, read_lines, ctx_execute, recall,
+tool_search, edit_line, read_context, read_lines, read_many, ctx_execute, recall,
 list_dir). Every other tool is advertised as a one-line name+hint in a
 compact catalog and activated on demand via `tool_search`, which returns
 the full schema as its result text.

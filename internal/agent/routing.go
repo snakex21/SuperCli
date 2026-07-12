@@ -25,6 +25,7 @@ var thinCoreTools = []string{
 	"edit_line",
 	"read_context",
 	"read_lines",
+	"read_many",
 	"ctx_execute",
 	"recall",
 	// list_dir is the "what's in this folder?" primitive. It must

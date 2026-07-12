@@ -41,7 +41,8 @@ func NewListDir(baseDir string) *ListDirTool {
 // Spec returns the Tool descriptor.
 func (t *ListDirTool) Spec() Tool {
 	return Tool{
-		Name: "list_dir",
+		Name:     "list_dir",
+		ReadOnly: true,
 		Description: "List a folder's contents — the 'ls'/'dir' for SuperCli. " +
 			"Use this (not file_ops) for \"what's in this folder?\". " +
 			"Empty 'path' lists the working directory; one level, not recursive.",

@@ -150,6 +150,32 @@ for users who want it; a negative value disables reflection. Purpose telemetry
 continues to report every actual call as `reflection`, so `/cost` shows the
 saved inferences directly.
 
+### Cross-backend read batching (default ON)
+
+`read_many` fetches up to 12 independent file ranges in one tool call, with a
+300-line cap per range and a 32 KB global result cap. Its compact
+`file:from-to | file:from-to` argument works unchanged with native cloud tool
+calling and the sentinel protocol used by small local models. Individual read
+failures are returned beside successful ranges instead of discarding the whole
+batch, so one missing file does not force another recovery turn.
+
+Ranges are streamed from disk instead of loading whole files. Even a multi-MB
+single line is consumed in fixed-size chunks, retained as a short UTF-8-safe
+prefix with an explicit truncation marker, and never multiplied into 12 full
+file buffers when the reads run concurrently.
+
+The tool itself reads ranges concurrently and renders them in request order.
+Separately, when a native model emits several calls in one response, the loop
+runs them concurrently only if every registered tool explicitly declares
+`ReadOnly`. Any unknown or mutating tool keeps the entire batch sequential.
+This parallelises local I/O, never model inference: a single-GPU backend still
+uses the existing sequential worker policy, while cloud backends retain their
+safe inference parallelism.
+
+The core prompt spends one short sentence asking models to batch independent
+file ranges. Replay coverage pins the important economy contract: three file
+ranges, one tool call, one follow-up model turn.
+
 ## Structured tool errors (deterministic failure results)
 
 **What.** When a tool fails, the model gets a short, deterministic,

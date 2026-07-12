@@ -81,6 +81,7 @@ type (
 	Move        = files.Move
 	ReadContext = files.ReadContext
 	ReadLines   = files.ReadLines
+	ReadMany    = files.ReadMany
 	Trash       = files.Trash
 	WriteFile   = files.WriteFile
 )
@@ -96,6 +97,7 @@ var (
 	NewMove        = files.NewMove
 	NewReadContext = files.NewReadContext
 	NewReadLines   = files.NewReadLines
+	NewReadMany    = files.NewReadMany
 	NewTrash       = files.NewTrash
 	NewWriteFile   = files.NewWriteFile
 )

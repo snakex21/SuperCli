@@ -1,0 +1,27 @@
+{
+  "name": "read_many_one_turn",
+  "description": "Three independent file ranges are returned by one tool call and one follow-up model turn.",
+  "steps": [
+    {
+      "note": "The model batches all reads instead of spending one turn per file.",
+      "deltas": [
+        {
+          "role": "assistant",
+          "tool_call": {
+            "id": "call_many",
+            "name": "read_many",
+            "arguments": "{\"reads\":\"a.txt:1-2 | b.txt:1-2 | c.txt:1-2\"}"
+          }
+        },
+        {"finish_reason": "tool_calls", "usage": {"input": 20, "output": 10, "total": 30}}
+      ]
+    },
+    {
+      "note": "One follow-up turn sees all three results.",
+      "deltas": [
+        {"role": "assistant", "content": "I inspected alpha, beta and gamma in one batch."},
+        {"finish_reason": "stop", "usage": {"input": 40, "output": 10, "total": 50}}
+      ]
+    }
+  ]
+}

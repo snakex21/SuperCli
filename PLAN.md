@@ -19,6 +19,7 @@ rzeczywisty backlog. Świeży stan wydajnościowy: `docs/performance.md`.
 - [x] `/context` — diagnostyka rozkładu tokenów: system prompt, tools/katalog, messages, navigator (`internal/agent/context_report.go`)
 - [x] Prompt cache / stabilność requestu — `stable_toolset` domyślnie ON, demote system-wiadomości do ogona, `cache_prompt` na lokalnych hostach, warm cache między sesjami (`slot_cache`); szczegóły i pomiary w `docs/performance.md`
 - [x] Hardening tool calli — naprawa uciętego/niedomkniętego JSON + jedna runda re-promptu z błędem (`internal/agent/toolcall_repair.go`), sentinel-tagi dla małych modeli (`internal/agent/sentinel_toolcall.go`)
+- [x] Grupowe odczyty lokalne/chmurowe — `read_many` (do 12 zakresów, częściowe błędy, globalny cap) działa przez natywne API i sentinel; partie wyłącznie read-only wykonują się równolegle z deterministyczną kolejnością wyników
 - [x] Limity workerów — retencja zakończonych workerów (LRU, snapshot wyniku po evikcji) + limit równoczesnych aktywnych workerów; env-override `SUPERCLI_WORKER_RETENTION` / `SUPERCLI_MAX_ACTIVE_WORKERS` (`internal/agent/worker_registry.go`); rozróżnienia read/write workerów nie ma, więc `max_writer_workers` świadomie nie istnieje
 
 ## Wdrożone eksperymentalnie (za knobem)
