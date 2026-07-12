@@ -147,6 +147,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		m.Content = pruneMarker(m.Name)
 		m.Parts = nil
 	}
+	l.persistProjection(context.Background())
 
 	ev := ToolResultsPrunedEvent{
 		Pruned:    len(victims),

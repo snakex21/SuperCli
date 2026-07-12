@@ -32,6 +32,13 @@ type SessionWriter interface {
 	UpdateUsage(in, out int) error
 }
 
+// contextProjectionWriter is an optional extension implemented by the
+// SQLite session writer. It stores the exact provider-visible view while
+// the ordinary writer retains the full transcript.
+type contextProjectionWriter interface {
+	SaveContextProjection(ctx context.Context, msgs []llm.Message) error
+}
+
 // SessionReader is the resume contract. F2.c reads the
 // conversation history back as []llm.Message.
 type SessionReader interface {
@@ -71,14 +78,14 @@ type Loop struct {
 	// history every step. hoistedPreSet gates the lazy first render so
 	// the freeze happens after any SetRegistry swap. Guarded by nothing:
 	// providerMessages runs on the loop goroutine only.
-	hoistedPre      string
-	hoistedPreSet   bool
-	baseDir         string
-	writer          SessionWriter
+	hoistedPre    string
+	hoistedPreSet bool
+	baseDir       string
+	writer        SessionWriter
 	// persistHealth tracks session-write reliability: sticky
 	// first error, failure counter, in-order retry buffer and
 	// the one-shot UI warning. See persist_health.go.
-	persistHealth persistHealth
+	persistHealth   persistHealth
 	errorLog        ErrorLogger
 	reflector       Reflector
 	reflectEvery    int
@@ -1467,6 +1474,28 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) {
 	t := time.Now()
 	l.persistAppend(ctx, msg)
 	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
+}
+
+func (l *Loop) persistProjection(ctx context.Context) {
+	w, ok := l.writer.(contextProjectionWriter)
+	if !ok {
+		return
+	}
+	visible := l.VisibleMessages()
+	// Base/system-prefix messages are rebuilt from current config when a
+	// loop is resumed. Persist only the conversation body, otherwise Web
+	// GUI would prepend a fresh system prompt to a stale duplicate.
+	lead := 0
+	for lead < len(visible) && visible[lead].Role == llm.RoleSystem {
+		lead++
+	}
+	if err := w.SaveContextProjection(ctx, visible[lead:]); err != nil {
+		h := &l.persistHealth
+		h.mu.Lock()
+		warn := h.noteFailureLocked("context_projection", err)
+		h.mu.Unlock()
+		l.persistNotify(warn)
+	}
 }
 
 // statsStartStep opens a new telemetry turn for a step (1-based)

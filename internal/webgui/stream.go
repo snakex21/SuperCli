@@ -288,19 +288,10 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 		closeStore()
 		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", errSessionOutsideWorkspace)
 	}
-	rows, err := store.ReadMessages(ctx, requestedID)
+	initial, err := store.ReadModelContext(ctx, requestedID)
 	if err != nil {
 		closeStore()
 		return nil, nil, func() {}, "", fmt.Errorf("read session messages: %w", err)
-	}
-	initial := make([]llm.Message, 0, len(rows))
-	for _, row := range rows {
-		msg, err := row.ToMessage()
-		if err != nil {
-			closeStore()
-			return nil, nil, func() {}, "", fmt.Errorf("decode session message: %w", err)
-		}
-		initial = append(initial, msg)
 	}
 	return initial, session.NewWriter(store, requestedID), closeStore, requestedID, nil
 }

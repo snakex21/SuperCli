@@ -31,6 +31,7 @@ func (l *Loop) HideRange(from, to int) error {
 	for i := from; i < to; i++ {
 		l.hidden[i] = true
 	}
+	l.persistProjection(context.Background())
 	return nil
 }
 
@@ -59,6 +60,9 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 			l.hidden[i] = true
 			hidden++
 		}
+	}
+	if hidden > 0 {
+		l.persistProjection(context.Background())
 	}
 	return hidden
 }
@@ -182,6 +186,9 @@ func (l *Loop) EvictForBudget(ctx context.Context, out chan<- Event) (evicted in
 		case out <- MessagesHiddenEvent{Count: evicted, Reason: "budget"}:
 		case <-ctx.Done():
 		}
+	}
+	if evicted > 0 {
+		l.persistProjection(context.Background())
 	}
 	return evicted
 }

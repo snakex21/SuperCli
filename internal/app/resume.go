@@ -69,11 +69,11 @@ func listResumableSessions(ctx context.Context, store *session.Store, currentSes
 // Returns a human-readable result line.
 func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, windowFor func(string) int, id string) (string, error) {
 	id = strings.TrimSpace(id)
-	enc, err := store.ReadMessages(ctx, id)
+	loaded, err := store.ReadModelContext(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("resume: read %s: %w", id, err)
 	}
-	if len(enc) == 0 {
+	if len(loaded) == 0 {
 		return fmt.Sprintf("resume: session %q not found or empty", id), nil
 	}
 	// Decode, dropping the leading system run (the old base
@@ -82,11 +82,7 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 	// are kept: they carry conversation state.
 	var msgs []llm.Message
 	leading := true
-	for _, e := range enc {
-		m, err := e.ToMessage()
-		if err != nil {
-			continue // defensive: skip rows that no longer decode
-		}
+	for _, m := range loaded {
 		if leading && m.Role == llm.RoleSystem {
 			continue
 		}

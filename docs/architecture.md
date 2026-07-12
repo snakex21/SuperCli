@@ -143,8 +143,24 @@ recent messages than from a summary of them. A single giant turn (> half
 the window) falls back to replace-all. If summarization itself fails,
 the loop hides all but the last user turn — compaction can never wedge
 the session. Originals always stay in the SQLite session store
-(searchable via search_history); prune/compact mutate only the in-memory
-view.
+(searchable via search_history). Prune/compact also save a separate
+provider-visible projection; they never rewrite the transcript.
+
+### Durable model-context projection
+
+The session database deliberately stores two views. `messages` is the
+lossless transcript used by the UI, export and FTS search. The optional
+`session_context_projections` row stores the exact conversation body the
+model should see after `/clear`, `hide_messages`, budget eviction,
+tool-result pruning or compaction, together with the highest transcript
+sequence covered by that snapshot.
+
+On `/resume` and every new Web GUI request, `ReadModelContext` loads the
+snapshot and appends transcript rows newer than its boundary. Thus new
+messages need no snapshot rewrite, while removed context cannot silently
+return after a restart. Missing/corrupt projection data fails open to the
+full transcript. Leading system messages are not snapshotted because a
+new loop rebuilds them from the current configuration.
 
 ### Window resolution
 

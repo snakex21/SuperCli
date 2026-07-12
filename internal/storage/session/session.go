@@ -500,6 +500,13 @@ func (s *Store) migrate() error {
 			UNIQUE (session_id, seq)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq)`,
+		`CREATE TABLE IF NOT EXISTS session_context_projections (
+			session_id    TEXT PRIMARY KEY,
+			through_seq   INTEGER NOT NULL,
+			messages_json BLOB NOT NULL,
+			updated_at    INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS session_usage (
 			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id            TEXT NOT NULL,
