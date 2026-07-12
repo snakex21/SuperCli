@@ -138,14 +138,41 @@ func (l *Loop) EvictForBudget(ctx context.Context, out chan<- Event) (evicted in
 	if threshold <= 0 {
 		return 0
 	}
-	for l.EstimateVisibleTokens() > int(threshold) {
+	// Single pass, oldest first: price the visible history ONCE,
+	// then subtract each evicted message's own estimate from a
+	// running total. The old form re-ran EstimateVisibleTokens()
+	// (O(n)) on every iteration — O(n²) on a mass evict.
+	est := l.EstimateVisibleTokens()
+	if est > int(threshold) {
+		l.ensureHidden(len(l.Messages))
+		for i, m := range l.Messages {
+			if est <= int(threshold) {
+				break
+			}
+			if m.Role == llm.RoleSystem || l.hidden[i] {
+				continue
+			}
+			l.hidden[i] = true
+			evicted++
+			est -= llm.EstimateMessageTokens(m)
+			if evicted == 1 {
+				// The new hidden run costs one collapsed placeholder
+				// in VisibleMessages(); charge it once so the running
+				// estimate stays conservative.
+				est += llm.EstimateMessageTokens(llm.Message{
+					Role:    llm.RoleUser,
+					Content: "[earlier context cleared — 999999 message(s) compacted]",
+				})
+			}
+		}
+	}
+	// One final exact control: the running estimate can drift from
+	// VisibleMessages() by a placeholder merge or two. In practice
+	// this loop runs zero or one iteration.
+	for evicted > 0 && l.EstimateVisibleTokens() > int(threshold) {
 		idx := l.findOldestEvictable()
 		if idx < 0 {
 			break
-		}
-		l.ensureHidden(len(l.Messages))
-		if l.hidden[idx] {
-			break // safety: shouldn't happen
 		}
 		l.hidden[idx] = true
 		evicted++

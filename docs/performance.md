@@ -266,6 +266,8 @@ BenchmarkWorkerRegistry/counts/finished=1000-16      90990      13387 ns/op     
 BenchmarkWorkerRegistry/list/finished=1000-16         6475     181606 ns/op     8248 B/op        3 allocs/op
 BenchmarkTokenThroughput-16                           2773    6188995 ns/op  1022891 B/op     1287 allocs/op
 BenchmarkToolDispatch-16                          48786834      24.73 ns/op        2 B/op        1 allocs/op
+BenchmarkEvictForBudget_1kMsgs-16                     4263     288340 ns/op   230792 B/op        5 allocs/op
+BenchmarkEvictForBudget_10kMsgs-16                     486    2483012 ns/op  2256277 B/op        7 allocs/op
 ```
 
 Reading the baseline:
@@ -283,6 +285,26 @@ Reading the baseline:
   LRU sort) on a registry FULL of finished workers; ~0.5 ms at 1000 is
   fine because retention caps the real registry at 20 (29194ae) — the
   benchmark exists to catch accidental O(n²) in the sweep.
+- **EvictForBudget is the single-pass regression pin** (2026-07-12):
+  mass evict of nearly the whole history scales linearly (0.29 ms at
+  1k msgs → 2.5 ms at 10k). The pre-rewrite loop re-ran
+  `EstimateVisibleTokens()` per eviction — O(n²): 75.1 ms at 1k and
+  6.93 s (!) at 10k on the same box (~260× / ~2800× slower). A
+  superlinear jump between the two sizes means the per-iteration
+  recount came back.
+
+## Recent fixes and experiments (2026-07-12)
+
+- **Hidden messages persist across Runs** (9731077): Run() no longer
+  resets the hidden map, so /clear, hide_messages and budget
+  evictions issued between Runs actually stay out of the next
+  provider request (and the KV-cache prefix stays stable). Hides are
+  reset only when their indices die: compaction and /resume.
+- **EvictForBudget single pass**: the eviction loop re-ran the full
+  visible-token estimate per evicted message — O(n²) on a mass
+  evict. Now: price once, subtract per message, one exact final
+  check. 1k msgs 75.1 ms → 0.29 ms, 10k msgs 6.93 s → 2.5 ms
+  (BenchmarkEvictForBudget baseline above).
 
 ## Recent fixes and experiments (2026-07-11)
 
