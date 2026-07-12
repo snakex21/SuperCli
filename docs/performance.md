@@ -235,6 +235,55 @@ env-overridable, no new config fields:
   (wait / task_stop / send_message) rather than queueing inside a tool
   call and stalling the coordinator's turn.
 
+## Allocation benchmark baseline (2026-07-12)
+
+`go test -tags benchmark -run xxx -bench . -benchmem ./test/`
+(test/benchmark_alloc_test.go + test/benchmark_test.go). Compare with
+benchstat after touching providerMessages/consume/prune, tool
+dispatch, `core.HeadTailBuffer`, or the worker registry. Reference
+box: Ryzen 7 5800X3D, go1.26.2 windows/amd64.
+
+```
+BenchmarkLongSessionPrepare/msgs=100-16              46556      26673 ns/op    92216 B/op       28 allocs/op
+BenchmarkLongSessionPrepare/msgs=500-16              10000     100832 ns/op   317787 B/op       29 allocs/op
+BenchmarkLongSessionPrepare/msgs=2000-16              2599     463617 ns/op  1179129 B/op       31 allocs/op
+BenchmarkConsumeLargeStream/deltas=1000-16            4036     287740 ns/op    94290 B/op     1039 allocs/op
+BenchmarkConsumeLargeStream/deltas=10000-16            416    2864172 ns/op   707412 B/op    10050 allocs/op
+BenchmarkConsumeLargeStream/deltas=100000-16            40   28532732 ns/op  6876053 B/op   100062 allocs/op
+BenchmarkToolBatch/calls=4-16                        25069      50654 ns/op    76980 B/op      241 allocs/op
+BenchmarkToolBatch/calls=16-16                       10000     123602 ns/op   128469 B/op      826 allocs/op
+BenchmarkToolBatch/calls=64-16                        2678     438534 ns/op   322835 B/op     3139 allocs/op
+BenchmarkContextReport/msgs=200-16                    6332     277399 ns/op   143547 B/op     1490 allocs/op
+BenchmarkContextReport/msgs=1000-16                    796    1480923 ns/op   693543 B/op     8040 allocs/op
+BenchmarkHeadTailBuffer/total=1MB-16                 23900      51280 ns/op    51388 B/op        8 allocs/op
+BenchmarkHeadTailBuffer/total=16MB-16                 8205     151960 ns/op    51380 B/op        8 allocs/op
+BenchmarkHeadTailBuffer/total=64MB-16                 2131     569407 ns/op    51382 B/op        8 allocs/op
+BenchmarkWorkerRegistry/add_sweep/finished=100-16    31711      38074 ns/op     2760 B/op       14 allocs/op
+BenchmarkWorkerRegistry/counts/finished=100-16     1000000       1057 ns/op        0 B/op        0 allocs/op
+BenchmarkWorkerRegistry/list/finished=100-16        106268      11140 ns/op      952 B/op        3 allocs/op
+BenchmarkWorkerRegistry/add_sweep/finished=1000-16    2162     515434 ns/op    18130 B/op       17 allocs/op
+BenchmarkWorkerRegistry/counts/finished=1000-16      90990      13387 ns/op        0 B/op        0 allocs/op
+BenchmarkWorkerRegistry/list/finished=1000-16         6475     181606 ns/op     8248 B/op        3 allocs/op
+BenchmarkTokenThroughput-16                           2773    6188995 ns/op  1022891 B/op     1287 allocs/op
+BenchmarkToolDispatch-16                          48786834      24.73 ns/op        2 B/op        1 allocs/op
+```
+
+Reading the baseline:
+
+- **ConsumeLargeStream is the 593a352 regression pin**: ns/op scales
+  ~10× per 10× deltas (288 µs → 2.86 ms → 28.5 ms) — linear, and
+  allocs ≈ 1/delta (the MessageEvent). A superlinear jump between
+  sizes means the quadratic `text += delta` came back.
+- **HeadTailBuffer is size-independent in memory**: 8 allocs and
+  ~51 KB regardless of 1 MB or 64 MB streamed — the bound-during-run
+  guarantee.
+- **LongSessionPrepare** grows linearly with history (allocs stay
+  ~flat — the cost is the visible-view copy, not churn).
+- **WorkerRegistry add_sweep** is the retention sweep (status scan +
+  LRU sort) on a registry FULL of finished workers; ~0.5 ms at 1000 is
+  fine because retention caps the real registry at 20 (29194ae) — the
+  benchmark exists to catch accidental O(n²) in the sweep.
+
 ## Recent fixes and experiments (2026-07-11)
 
 - **EvictForBudget threshold fix** (b2a393c): eviction now compares
