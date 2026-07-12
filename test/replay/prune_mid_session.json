@@ -1,0 +1,22 @@
+{
+  "name": "prune_mid_session",
+  "description": "With a small context window, the zero-LLM prune replaces OLD tool results with markers before the provider call; the freshest result survives, tool_call/tool_result pairing stays intact, and the next request strictly appends to the previous one (stable prefix, KV-cache-safe).",
+  "steps": [
+    {
+      "note": "run 1 after prune: plain reply",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Earlier steps are summarized as pruned markers; the freshest result is intact."},
+        {"finish_reason": "stop", "usage": {"input": 1800, "output": 20, "total": 1820}}
+      ]
+    },
+    {
+      "note": "run 2: request must be an append-only extension of run 1's request",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Continuing on the same coherent history."},
+        {"finish_reason": "stop", "usage": {"input": 1850, "output": 10, "total": 1860}}
+      ]
+    }
+  ]
+}

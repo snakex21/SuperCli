@@ -1,0 +1,22 @@
+{
+  "name": "command_failed_diag",
+  "description": "A tool fails with a structured command_failed summary (exit code + stderr tail). The recorded second step CITES the exit code and the failing test name — a citation that is only possible if the diagnostics actually reached the model.",
+  "steps": [
+    {
+      "note": "model runs the tests",
+      "deltas": [
+        {"role": "assistant"},
+        {"tool_call": {"id": "call_tests", "name": "run_tests", "arguments": "{}"}},
+        {"finish_reason": "tool_calls", "usage": {"input": 200, "output": 10, "total": 210}}
+      ]
+    },
+    {
+      "note": "model reacts to the concrete diagnostics, not a generic failure",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "The run failed with command_failed exit=1: TestFoo asserts x != y. I would fix the assertion in TestFoo before retrying."},
+        {"finish_reason": "stop", "usage": {"input": 260, "output": 28, "total": 288}}
+      ]
+    }
+  ]
+}

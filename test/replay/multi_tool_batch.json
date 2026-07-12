@@ -1,0 +1,24 @@
+{
+  "name": "multi_tool_batch",
+  "description": "Three tool calls in one model turn all execute, and their results are appended to history in call order (provider APIs require deterministic call/result pairing).",
+  "steps": [
+    {
+      "note": "one turn, three lookups",
+      "deltas": [
+        {"role": "assistant"},
+        {"tool_call": {"id": "call_a", "name": "lookup", "arguments": "{\"key\":\"a\"}"}},
+        {"tool_call": {"id": "call_b", "name": "lookup", "arguments": "{\"key\":\"b\"}"}},
+        {"tool_call": {"id": "call_c", "name": "lookup", "arguments": "{\"key\":\"c\"}"}},
+        {"finish_reason": "tool_calls", "usage": {"input": 220, "output": 30, "total": 250}}
+      ]
+    },
+    {
+      "note": "model combines all three results",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Combined: alpha, beta, gamma."},
+        {"finish_reason": "stop", "usage": {"input": 300, "output": 8, "total": 308}}
+      ]
+    }
+  ]
+}

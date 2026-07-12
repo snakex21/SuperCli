@@ -1,0 +1,24 @@
+{
+  "name": "tool_call_sentinel",
+  "description": "A sentinel-format tool call, split across stream deltas (marker torn in half), is parsed by the streaming scanner, executed, and its result comes back to the model on the next step.",
+  "steps": [
+    {
+      "note": "model emits prose, then a sentinel call torn across two deltas",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Let me echo that.\n"},
+        {"content": "«ec"},
+        {"content": "ho\nmsg: hi»"},
+        {"finish_reason": "stop", "usage": {"input": 120, "output": 15, "total": 135}}
+      ]
+    },
+    {
+      "note": "model saw the tool result and quotes it",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "The tool replied: echoed: hi"},
+        {"finish_reason": "stop", "usage": {"input": 150, "output": 9, "total": 159}}
+      ]
+    }
+  ]
+}
