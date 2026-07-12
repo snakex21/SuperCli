@@ -1,0 +1,19 @@
+{
+  "name": "invoke_tool_sentinel",
+  "description": "The thin sentinel dispatcher reaches a simple read-only target without tool_search.",
+  "steps": [
+    {
+      "deltas": [
+        {"role":"assistant","content":"«invoke_"},
+        {"content":"tool\ntool: read_lines\narg.file: sample.txt\narg.from: 1\narg.to: 2»"},
+        {"finish_reason":"stop","usage":{"input":18,"output":10,"total":28}}
+      ]
+    },
+    {
+      "deltas": [
+        {"role":"assistant","content":"The file contains alpha and beta."},
+        {"finish_reason":"stop","usage":{"input":28,"output":8,"total":36}}
+      ]
+    }
+  ]
+}

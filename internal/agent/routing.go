@@ -22,6 +22,7 @@ var chatRouteTools = []string{"tool_search", "recall"}
 // be here — it is the gateway to the rest.
 var thinCoreTools = []string{
 	"tool_search",
+	"invoke_tool",
 	"edit_line",
 	"read_context",
 	"read_lines",
@@ -73,6 +74,7 @@ const (
 type RouteMap struct {
 	ChatExact       []string
 	ChatPrefixes    []string
+	AdvisorPrefixes []string
 	CoordinatorHits []string
 }
 
@@ -84,7 +86,16 @@ func DefaultRouteMap() RouteMap {
 		},
 		ChatPrefixes: []string{
 			"co tam", "jak tam", "lubisz", "kim jesteś", "kim jestes", "opowiedz żart", "opowiedz zart",
-			"wyjaśnij mi", "wyjasnij mi", "co znaczy", "przetłumacz", "przetlumacz",
+			"przetłumacz", "przetlumacz", "translate",
+		},
+		// These prefixes describe self-contained conceptual questions. The
+		// coordinator keyword pass runs first, so "wyjaśnij ten kod/plik"
+		// still gets project tools while "wyjaśnij rekurencję" avoids a
+		// navigator model call and uses the lightweight advisor route.
+		AdvisorPrefixes: []string{
+			"wyjaśnij", "wyjasnij", "wytłumacz", "wytlumacz", "co to jest", "co oznacza", "co znaczy",
+			"jak działa", "jak dziala", "dlaczego", "jaka jest różnica", "jaka jest roznica",
+			"explain", "what is", "what does", "how does", "why does", "difference between",
 		},
 		CoordinatorHits: []string{
 			"plik", "pliki", "folder", "projekt", "repo", "kod", "funkcj", "test", "build", "błąd", "blad",
@@ -127,6 +138,13 @@ func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bo
 		for _, prefix := range m.ChatPrefixes {
 			if strings.HasPrefix(p, prefix) {
 				return RouteChatOnly, true
+			}
+		}
+	}
+	if len([]rune(p)) <= 240 {
+		for _, prefix := range m.AdvisorPrefixes {
+			if strings.HasPrefix(p, prefix) {
+				return RouteAdvisor, true
 			}
 		}
 	}

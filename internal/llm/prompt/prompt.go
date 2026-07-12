@@ -69,4 +69,5 @@ file: main.go
 line: 42
 expected_old: return nil
 new_content: return err»
-For a tool with no arguments write «tool_name» on one line. Do not wrap arguments in JSON or braces. One tool call at a time.`
+For a tool with no arguments write «tool_name» on one line. Do not wrap arguments in JSON or braces. One tool call at a time.
+Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`

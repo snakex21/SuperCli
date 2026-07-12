@@ -20,6 +20,9 @@ rzeczywisty backlog. Świeży stan wydajnościowy: `docs/performance.md`.
 - [x] Prompt cache / stabilność requestu — `stable_toolset` domyślnie ON, demote system-wiadomości do ogona, `cache_prompt` na lokalnych hostach, warm cache między sesjami (`slot_cache`); szczegóły i pomiary w `docs/performance.md`
 - [x] Hardening tool calli — naprawa uciętego/niedomkniętego JSON + jedna runda re-promptu z błędem (`internal/agent/toolcall_repair.go`), sentinel-tagi dla małych modeli (`internal/agent/sentinel_toolcall.go`)
 - [x] Grupowe odczyty lokalne/chmurowe — `read_many` (do 12 zakresów, częściowe błędy, globalny cap) działa przez natywne API i sentinel; partie wyłącznie read-only wykonują się równolegle z deterministyczną kolejnością wyników
+- [x] `invoke_tool` — uniwersalny skrót dla prostych narzędzi read-only usuwa turę `tool_search`; natywne `args` i sentinel `arg.*`, pełna walidacja i replay 2-turn
+- [x] Adaptacyjny navigator — silne pytania koncepcyjne idą deterministycznie do advisor, projekt/file nadal wygrywa
+- [x] Projection dirty — retry aktualnego widoku po odzyskaniu appendów, bez zapisu starej projekcji pod nowym boundary
 - [x] Limity workerów — retencja zakończonych workerów (LRU, snapshot wyniku po evikcji) + limit równoczesnych aktywnych workerów; env-override `SUPERCLI_WORKER_RETENTION` / `SUPERCLI_MAX_ACTIVE_WORKERS` (`internal/agent/worker_registry.go`); rozróżnienia read/write workerów nie ma, więc `max_writer_workers` świadomie nie istnieje
 
 ## Wdrożone eksperymentalnie (za knobem)
@@ -29,7 +32,7 @@ rzeczywisty backlog. Świeży stan wydajnościowy: `docs/performance.md`.
 
 ## Wymagające live-testu
 
-- Catalog hoist — live A/B na lokalnym hoście (patrz wyżej)
+- Catalog hoist — live A/B harness gotowy; uruchomienie bez hosta poprawnie SKIP, realny pomiar nadal czeka na lokalny host
 - Navigator na small-providerze (fadc051) — klasyfikacja trasy na małym modelu; czeka na live-test
 
 ## Rzeczywisty backlog

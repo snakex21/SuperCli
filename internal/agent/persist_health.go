@@ -60,6 +60,12 @@ type persistHealth struct {
 	// dropped counts messages evicted from a full pending
 	// buffer — real, unrecoverable history loss.
 	dropped int
+	// projectionDirty means a context projection could not be saved while
+	// transcript appends were missing (or its own write failed). It stores no
+	// stale snapshot: the run goroutine rebuilds the latest visible context
+	// after append recovery so the projection boundary cannot skip messages.
+	projectionDirty  bool
+	projectionOutage bool
 }
 
 // PersistStatus is the /status- and doctor-facing snapshot of
@@ -82,6 +88,9 @@ type PersistStatus struct {
 	Pending int
 	// Dropped is the number of messages lost to buffer overflow.
 	Dropped int
+	// ProjectionDirty reports that the durable model-context projection is
+	// waiting for a safe retry with the current conversation view.
+	ProjectionDirty bool
 }
 
 // PersistStatus returns a snapshot of session-write health. Safe
@@ -91,16 +100,17 @@ func (l *Loop) PersistStatus() PersistStatus {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return PersistStatus{
-		Failures:    h.failures,
-		FirstOp:     h.firstOp,
-		FirstErr:    h.firstErr,
-		FirstAt:     h.firstAt,
-		LastOp:      h.lastOp,
-		LastErr:     h.lastErr,
-		LastAt:      h.lastAt,
-		LastWriteOK: !h.outage,
-		Pending:     len(h.pending),
-		Dropped:     h.dropped,
+		Failures:        h.failures,
+		FirstOp:         h.firstOp,
+		FirstErr:        h.firstErr,
+		FirstAt:         h.firstAt,
+		LastOp:          h.lastOp,
+		LastErr:         h.lastErr,
+		LastAt:          h.lastAt,
+		LastWriteOK:     !h.outage && !h.projectionDirty && !h.projectionOutage,
+		Pending:         len(h.pending),
+		Dropped:         h.dropped,
+		ProjectionDirty: h.projectionDirty,
 	}
 }
 

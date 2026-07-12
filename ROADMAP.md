@@ -78,6 +78,14 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
   wynik ma globalny cap, częściowe błędy, stabilną kolejność. Partie jawnie
   oznaczonych narzędzi read-only wykonują się równolegle bez uruchamiania
   równoległych inferencji na lokalnej GPU.
+- **Bezpośrednie proste narzędzia** — `invoke_tool` usuwa turę `tool_search`
+  dla płaskich narzędzi read-only; jeden kontrakt działa przez natywne tools
+  i sentinel, a mutacje/złożone schematy zostają na starej bezpiecznej ścieżce.
+- **Deterministyczny advisor** — silne prefiksy pytań koncepcyjnych omijają
+  inferencję navigatora, z pierwszeństwem słów projektowych/plikowych.
+- **Projection dirty + retry** — projekcja nie zapisuje się nad niepełnym
+  transcript boundary; po odzyskaniu appendów jest odbudowana z aktualnego
+  widoku modelu i ponawiana, ze stanem widocznym w `/status`.
 - **MCP klient** — konfiguracja serwerów MCP wróciła
   (`internal/mcp`, `internal/app/main_mcp.go`), wyniki capowane na granicy.
 - **Darwin (mechanizm)** — pool N agentów w izolowanych worktree, judge
@@ -96,8 +104,9 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
 
 ## Wymagające live-testu
 
-- **Catalog hoist A/B** — pomiar na lokalnym hoście, potem decyzja o
-  defaultcie.
+- **Catalog hoist A/B** — deterministyczny live-harness gotowy i uruchomiony;
+  bez aktywnego hosta test się pominął. Pomiar na lokalnym hoście nadal jest
+  wymagany przed decyzją o defaultcie.
 - **Navigator na small-providerze** (fadc051) — klasyfikacja trasy na
   małym modelu; czeka na live-test.
 - **Streaming podsumowań** — zweryfikować, czy compact/raporty workerów

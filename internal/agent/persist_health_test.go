@@ -13,11 +13,13 @@ import (
 // then succeeds and records messages in arrival order. UpdateUsage
 // fails while failUsage is true.
 type flakyWriter struct {
-	mu          sync.Mutex
-	failAppends int
-	failUsage   bool
-	attempts    int
-	messages    []llm.Message
+	mu             sync.Mutex
+	failAppends    int
+	failUsage      bool
+	failProjection bool
+	attempts       int
+	messages       []llm.Message
+	projections    [][]llm.Message
 }
 
 func (w *flakyWriter) AppendMessage(ctx context.Context, msg llm.Message) error {
@@ -37,6 +39,16 @@ func (w *flakyWriter) UpdateUsage(in, out int) error {
 	if w.failUsage {
 		return errors.New("database is locked")
 	}
+	return nil
+}
+
+func (w *flakyWriter) SaveContextProjection(_ context.Context, msgs []llm.Message) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.failProjection {
+		return errors.New("projection database is locked")
+	}
+	w.projections = append(w.projections, append([]llm.Message(nil), msgs...))
 	return nil
 }
 
@@ -213,5 +225,58 @@ func TestPersist_UsageFailureSticky(t *testing.T) {
 	}
 	if n := len(drainNotices(sink)); n != 1 {
 		t.Errorf("notices = %d, want 1", n)
+	}
+}
+
+func TestProjectionDirtyWaitsForAppendRecoveryAndRebuildsCurrentView(t *testing.T) {
+	w := &flakyWriter{failAppends: 1 << 30}
+	l, _ := newPersistTestLoop(t, w)
+	m1, m2 := msgU("first"), msgU("second")
+	l.Messages = append(l.Messages, m1)
+	l.persist(context.Background(), m1) // opens append outage
+	l.persistProjection(context.Background())
+	if ps := l.PersistStatus(); !ps.ProjectionDirty || ps.LastWriteOK {
+		t.Fatalf("during outage status = %+v, want dirty/not-ok", ps)
+	}
+	w.mu.Lock()
+	if len(w.projections) != 0 {
+		t.Fatal("projection was written against an incomplete transcript")
+	}
+	w.failAppends = w.attempts // next retry succeeds
+	w.mu.Unlock()
+	l.Messages = append(l.Messages, m2)
+	l.persist(context.Background(), m2) // flushes first + second
+	if ps := l.PersistStatus(); !ps.ProjectionDirty || ps.LastWriteOK {
+		t.Fatalf("before loop retry status = %+v, want dirty/not-ok", ps)
+	}
+	l.retryDirtyProjection(context.Background())
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.projections) != 1 || len(w.projections[0]) != 2 || w.projections[0][1].Content != "second" {
+		t.Fatalf("projection = %+v, want rebuilt [first second]", w.projections)
+	}
+	if ps := l.PersistStatus(); ps.ProjectionDirty || !ps.LastWriteOK {
+		t.Fatalf("after retry status = %+v, want clean/ok", ps)
+	}
+}
+
+func TestProjectionWriteFailureRetriesAndReportsRecovery(t *testing.T) {
+	w := &flakyWriter{failProjection: true}
+	l, sink := newPersistTestLoop(t, w)
+	l.Messages = append(l.Messages, msgU("visible"))
+	l.persistProjection(context.Background())
+	if ps := l.PersistStatus(); !ps.ProjectionDirty || ps.LastWriteOK || ps.LastOp != "context_projection" {
+		t.Fatalf("failed projection status = %+v", ps)
+	}
+	w.mu.Lock()
+	w.failProjection = false
+	w.mu.Unlock()
+	l.retryDirtyProjection(context.Background())
+	if ps := l.PersistStatus(); ps.ProjectionDirty || !ps.LastWriteOK {
+		t.Fatalf("recovered projection status = %+v", ps)
+	}
+	notices := drainNotices(sink)
+	if len(notices) != 2 {
+		t.Fatalf("notices = %d, want warning + recovery", len(notices))
 	}
 }

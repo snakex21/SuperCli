@@ -630,6 +630,45 @@ func TestReplay_ReadMany_ThreeFilesOneToolTurn(t *testing.T) {
 	assertToolPairing(t, l.Messages)
 }
 
+func TestReplay_InvokeTool_SkipsToolSearchTurn(t *testing.T) {
+	for _, recording := range []string{"invoke_tool_direct.json", "invoke_tool_sentinel.json"} {
+		t.Run(recording, func(t *testing.T) {
+			prov := loadReplayProvider(t, recording)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "sample.txt"), []byte("alpha\nbeta\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			reg := tools.NewRegistry()
+			reg.MustRegister(tools.NewReadLines(dir).Spec())
+			reg.MustRegister(agent.NewInvokeTool(reg).Spec())
+			reg.MarkAlwaysOn("invoke_tool")
+			l := newReplayLoop(t, agent.LoopConfig{Provider: prov, Registry: reg})
+			ch, err := l.Run(context.Background(), "read sample.txt")
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			events := collectReplay(t, ch)
+			m := replaySummary(prov, l, events, 0)
+			logReplayMetrics(t, recording, m)
+			requireCleanDone(t, m)
+			if m.Turns != 2 || m.ToolCalls != 1 || m.ToolErrs != 0 {
+				t.Fatalf("turns=%d calls=%d errs=%d, want 2/1/0", m.Turns, m.ToolCalls, m.ToolErrs)
+			}
+			if strings.Contains(reqText(prov.reqs()[1]), "tool_search") || !strings.Contains(reqText(prov.reqs()[1]), "alpha") {
+				t.Error("direct target result missing or tool_search leaked into path")
+			}
+			for _, msg := range l.Messages {
+				for _, call := range msg.ToolCalls {
+					if call.Name == "invoke_tool" {
+						t.Errorf("history kept dispatcher name instead of target")
+					}
+				}
+			}
+			assertToolPairing(t, l.Messages)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // (e) Preflight addon: rides the USER message (never system), is
 // one-shot, and does not disturb the tool round-trip. The noop-gate is

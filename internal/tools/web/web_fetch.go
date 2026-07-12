@@ -123,7 +123,8 @@ type webFetchArgs struct {
 // Spec returns the tool registration.
 func (t *WebFetch) Spec() Tool {
 	return Tool{
-		Name: "web_fetch",
+		Name:     "web_fetch",
+		ReadOnly: true,
 		Description: "Fetch a public web page by URL and return its title and readable text content (HTML is converted to plain text; scripts/styles/navigation stripped). " +
 			"Use when the user gives a URL, or after web_search to read a result in full. " +
 			"Do not use for local files (use read_lines/file tools), internal/private addresses (blocked), or APIs requiring authentication. Read-only; never submits forms.",
