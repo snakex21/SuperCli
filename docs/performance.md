@@ -78,6 +78,45 @@ overhead.
 - programmatic: `stats.Save(path, turns, calls)` includes the ledger,
   `stats.SumCalls` aggregates it.
 
+### Foreground beats background: idle memory autosave (default ON)
+
+**What.** Background model calls no longer compete with the user's
+turn. The per-turn incremental memory summary used to fire an extra
+inference IMMEDIATELY after every answer — racing the user's next
+question for the same local backend (worse TTFT, KV-prefix churn).
+Now:
+
+- **deterministic user facts** (pure string matching, no model) are
+  still saved immediately after each turn — a "nazywam się Maks"
+  survives even a kill seconds later;
+- the **model-backed summary** waits until the user has been idle for
+  15 s (a constant, not a knob). Several turns finishing inside one
+  window are batched into ONE summary call;
+- a **new prompt cancels** the in-flight background summary
+  (context cancel) and stops the idle timer; the uncovered fragment
+  is retried — batched with newer turns — at the next idle window;
+- **startup raw-log summarization** waits for the same idle window,
+  so it is never in the way of the user's first question;
+- **exit makes no model call**: the un-summarized conversation tail
+  is stored verbatim as a raw-log entry (same mechanism as the
+  abrupt-close handler) and the NEXT startup summarizes it in its
+  idle window. Exits are instant; nothing is lost, only saved later.
+
+On top of that, `llm.Metered` serializes background-marked calls
+process-wide: at most ONE background inference (memory autosave,
+startup summarization, webgui title) runs at a time. Foreground calls
+never touch the gate — the user's turn is never queued behind
+background work, and a queued background call abandons the wait the
+moment its context is canceled.
+
+**Why.** On a single local backend every concurrent request splits
+compute and evicts the KV prefix of the main conversation. The main
+conversation is the product; helper inferences are bookkeeping —
+bookkeeping runs when the user is not looking.
+
+**Batch mode** (`--batch`) is unaffected: it never ran memory
+autosave and still doesn't — one prompt, pure stdout, exit.
+
 ## Structured tool errors (deterministic failure results)
 
 **What.** When a tool fails, the model gets a short, deterministic,
