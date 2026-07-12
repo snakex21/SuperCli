@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,61 @@ func TestStore_Create(t *testing.T) {
 	}
 	if sess.CreatedAt.IsZero() || sess.UpdatedAt.IsZero() {
 		t.Errorf("timestamps not set")
+	}
+}
+
+func TestStore_SetRuntime(t *testing.T) {
+	s := openTestStore(t)
+	sess, err := s.Create("/cwd", "old-model", "runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRuntime(sess.ID, "any-router", "gpt-5.6-sol", "high"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != "any-router" || got.Model != "gpt-5.6-sol" || got.ReasoningEffort != "high" {
+		t.Fatalf("runtime = provider=%q model=%q reasoning=%q", got.Provider, got.Model, got.ReasoningEffort)
+	}
+}
+
+func TestOpenStore_MigratesSessionRuntimeColumns(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE sessions (
+		id TEXT PRIMARY KEY, cwd TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', model TEXT NOT NULL,
+		parent_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+		message_count INTEGER NOT NULL DEFAULT 0, token_in INTEGER NOT NULL DEFAULT 0, token_out INTEGER NOT NULL DEFAULT 0
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().UnixNano()
+	if _, err := db.Exec(`INSERT INTO sessions(id,cwd,title,model,created_at,updated_at) VALUES('old','/cwd','old','legacy-model',?,?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	store, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SetRuntime("old", "legacy-provider", "legacy-model", "medium"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != "legacy-provider" || got.ReasoningEffort != "medium" {
+		t.Fatalf("migrated runtime = %+v", got)
 	}
 }
 

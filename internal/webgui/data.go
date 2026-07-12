@@ -37,10 +37,14 @@ func sameSessionWorkspace(a, b string) bool {
 
 // sessionMeta is the browser-facing summary of one stored session.
 type sessionMeta struct {
-	ID           string `json:"id"`
-	FirstUserMsg string `json:"first_user_msg"`
-	MessageCount int    `json:"message_count"`
-	StartedAt    string `json:"started_at"`
+	ID              string `json:"id"`
+	FirstUserMsg    string `json:"first_user_msg"`
+	MessageCount    int    `json:"message_count"`
+	StartedAt       string `json:"started_at"`
+	Model           string `json:"model,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	RuntimeKnown    bool   `json:"runtime_known,omitempty"`
 }
 
 // transcriptMsg is one message in a session transcript.
@@ -94,17 +98,22 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 	out := make([]sessionMeta, 0, len(recent))
 	for _, r := range recent {
 		title := ""
-		if meta, err := store.Get(r.ID); err == nil {
+		meta, metaErr := store.Get(r.ID)
+		if metaErr == nil {
 			title = cleanLLMSummary(meta.Title)
 		}
 		if title == "" {
 			title = summarizeHistoryMessage(r.FirstUserMsg, defaultHistorySummaryLen)
 		}
 		out = append(out, sessionMeta{
-			ID:           r.ID,
-			FirstUserMsg: title,
-			MessageCount: r.MessageCount,
-			StartedAt:    r.StartedAt.Format(time.RFC3339),
+			ID:              r.ID,
+			FirstUserMsg:    title,
+			MessageCount:    r.MessageCount,
+			StartedAt:       r.StartedAt.Format(time.RFC3339),
+			Model:           meta.Model,
+			Provider:        meta.Provider,
+			ReasoningEffort: meta.ReasoningEffort,
+			RuntimeKnown:    meta.Provider != "",
 		})
 	}
 	return out, nil

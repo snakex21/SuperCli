@@ -114,6 +114,8 @@ var I18N = {
     "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name",
     "session.deleteConfirm": "Delete this conversation permanently?", "session.renamed": "Conversation renamed.",
     "session.deleted": "Conversation deleted.", "session.stopRun": "Stop the current run before deleting this conversation.",
+    "session.runtime": "Remember chat model", "session.runtimeHint": "Restore this session's provider, model and reasoning level when it is opened.",
+    "session.runtimeFailed": "Could not restore the session model; keeping the current selection.",
     "project.stopRun": "Stop the current run before switching projects.",
     "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save",
     "common.cancel": "Cancel", "common.edit": "edit", "common.remove": "remove", "common.add": "Add",
@@ -207,6 +209,8 @@ var I18N = {
     "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy",
     "session.deleteConfirm": "Usunąć tę rozmowę na stałe?", "session.renamed": "Zmieniono nazwę rozmowy.",
     "session.deleted": "Usunięto rozmowę.", "session.stopRun": "Zatrzymaj trwającą odpowiedź przed usunięciem tej rozmowy.",
+    "session.runtime": "Pamiętaj model czatu", "session.runtimeHint": "Po otwarciu sesji przywróć jej provider, model i poziom myślenia.",
+    "session.runtimeFailed": "Nie udało się przywrócić modelu sesji; pozostawiono bieżący wybór.",
     "project.stopRun": "Zatrzymaj bieżące zadanie przed zmianą projektu.",
     "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz",
     "common.cancel": "Anuluj", "common.edit": "edytuj", "common.remove": "usuń", "common.add": "Dodaj",
@@ -310,7 +314,7 @@ function applyI18n() {
 
 var ui = {
   theme: "dark", lang: "en", uiFont: "system", codeFont: "system",
-  notifySound: false, notifyDesktop: false, sidebarHidden: true,
+  notifySound: false, notifyDesktop: false, sidebarHidden: true, rememberSessionRuntime: true,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
@@ -1411,8 +1415,10 @@ async function loadSessions() {
       var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
       b.type = "button";
       b.appendChild(el("span", "t", s.first_user_msg || s.id));
-      b.appendChild(el("span", "s", fmtWhen(s.started_at) + " · " + s.message_count));
-      b.addEventListener("click", function () { resumeSession(s.id); });
+      var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
+      if (s.model) sessionMeta += " · " + s.model;
+      b.appendChild(el("span", "s", sessionMeta));
+      b.addEventListener("click", function () { resumeSession(s.id, s); });
 
       var actions = el("span", "session-actions");
       var rename = el("span", "session-action rename", "✎");
@@ -1482,10 +1488,25 @@ async function deleteSession(id) {
   } catch (e) { toast(e.message); }
 }
 
-async function resumeSession(id) {
+async function restoreSessionRuntime(session) {
+  if (!ui.rememberSessionRuntime || !session || !session.model) return;
+  try {
+    await jpost("/api/model", { model: session.model, provider: session.provider || "" });
+    if (session.runtime_known) {
+      await jpost("/api/reasoning", { level: session.reasoning_effort || "default" });
+    }
+    await loadModels();
+    checkHealth();
+  } catch (e) {
+    toast(t("session.runtimeFailed"));
+  }
+}
+
+async function resumeSession(id, session) {
   if (streaming) return;
   var epoch = projectEpoch;
   try {
+    await restoreSessionRuntime(session);
     var msgs = await j("/api/transcript?id=" + encodeURIComponent(id));
     if (epoch !== projectEpoch) return;
     activeSessionID = id;
@@ -1974,6 +1995,26 @@ sections.appearance = function () {
   panelContent.appendChild(gn);
 };
 
+function sessionRuntimePreferenceGroup() {
+  var gs = el("div", "group");
+  gs.appendChild(el("div", "g-label", t("session.runtime")));
+  var sr = el("label", "toggle-row");
+  var sc = el("span");
+  sc.appendChild(el("span", "", t("session.runtime")));
+  sc.appendChild(el("span", "toggle-hint", t("session.runtimeHint")));
+  sr.appendChild(sc);
+  var sessionRuntime = document.createElement("input");
+  sessionRuntime.type = "checkbox";
+  sessionRuntime.checked = !!ui.rememberSessionRuntime;
+  sessionRuntime.addEventListener("change", function () {
+    ui.rememberSessionRuntime = sessionRuntime.checked;
+    saveUI();
+  });
+  sr.appendChild(sessionRuntime);
+  gs.appendChild(sr);
+  return gs;
+}
+
 /* ── Models (visibility management) ── */
 
 sections.models = async function () {
@@ -1983,6 +2024,7 @@ sections.models = async function () {
     return;
   }
   panelContent.innerHTML = "";
+  panelContent.appendChild(sessionRuntimePreferenceGroup());
   var g = el("div", "group");
   var lbl = el("div", "g-label", t("panel.models"));
   var scan = el("button", "g-act", t("common.scan"));

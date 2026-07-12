@@ -569,6 +569,7 @@ a:hover { text-decoration: underline; }
   padding: 6px 0; font-size: 13px; gap: 12px;
 }
 .toggle-row select { width: auto; min-width: 160px; }
+.toggle-row .toggle-hint { display: block; margin-top: 2px; font-size: 10.5px; color: var(--faint); }
 
 /* List rows (providers, models, mcp, memory) */
 .list-row {

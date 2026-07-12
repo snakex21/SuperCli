@@ -19,16 +19,18 @@ import (
 
 // Session is metadata for a single conversation.
 type Session struct {
-	ID           string
-	Cwd          string
-	Title        string
-	Model        string
-	ParentID     string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	MessageCount int
-	TokenIn      int
-	TokenOut     int
+	ID              string
+	Cwd             string
+	Title           string
+	Model           string
+	Provider        string
+	ReasoningEffort string
+	ParentID        string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	MessageCount    int
+	TokenIn         int
+	TokenOut        int
 }
 
 // Store is the SQLite-backed session store. It is safe for
@@ -147,7 +149,7 @@ func (s *Store) EnsureSession(id, cwd, model string) error {
 // Get returns the session with the given ID.
 func (s *Store) Get(id string) (Session, error) {
 	row := s.db.QueryRow(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE id = ?`,
+		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE id = ?`,
 		id,
 	)
 	return scanSession(row)
@@ -156,7 +158,7 @@ func (s *Store) Get(id string) (Session, error) {
 // List returns up to limit sessions, newest first.
 func (s *Store) List(limit int) ([]Session, error) {
 	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
+		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -169,7 +171,7 @@ func (s *Store) List(limit int) ([]Session, error) {
 // first.
 func (s *Store) ListByCwd(cwd string, limit int) ([]Session, error) {
 	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
+		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
 		cwd,
 	)
 	if err != nil {
@@ -183,10 +185,32 @@ func (s *Store) ListByCwd(cwd string, limit int) ([]Session, error) {
 // sql.ErrNoRows if none.
 func (s *Store) LastForCwd(cwd string) (Session, error) {
 	row := s.db.QueryRow(
-		`SELECT id, cwd, title, model, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC LIMIT 1`,
+		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC LIMIT 1`,
 		cwd,
 	)
 	return scanSession(row)
+}
+
+// SetRuntime snapshots the provider/model/reasoning selection actually used by
+// the next turn. It does not bump UpdatedAt: opening or preparing a session is
+// not conversation activity, and AppendMessage will update the timestamp once
+// the user really sends something.
+func (s *Store) SetRuntime(id, provider, model, reasoningEffort string) error {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(model) == "" {
+		return fmt.Errorf("session.Store.SetRuntime: id and model are required")
+	}
+	res, err := s.db.Exec(
+		`UPDATE sessions SET provider = ?, model = ?, reasoning_effort = ? WHERE id = ?`,
+		strings.TrimSpace(provider), strings.TrimSpace(model), strings.TrimSpace(reasoningEffort), id,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // SetTitle updates a session's title.
@@ -475,6 +499,8 @@ func (s *Store) migrate() error {
 			cwd           TEXT NOT NULL,
 			title         TEXT NOT NULL DEFAULT '',
 			model         TEXT NOT NULL,
+			provider      TEXT NOT NULL DEFAULT '',
+			reasoning_effort TEXT NOT NULL DEFAULT '',
 			parent_id     TEXT,
 			created_at    INTEGER NOT NULL,
 			updated_at    INTEGER NOT NULL,
@@ -540,6 +566,17 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("exec %q: %w", firstLine(q), err)
 		}
 	}
+	for _, column := range []struct {
+		name string
+		def  string
+	}{
+		{"provider", "TEXT NOT NULL DEFAULT ''"},
+		{"reasoning_effort", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := s.ensureSessionColumn(column.name, column.def); err != nil {
+			return err
+		}
+	}
 	// F13: FTS5 index on messages.content with porter stemming +
 	// diacritic folding. Triggers keep the index in sync. The
 	// 'rebuild' command backfills any rows that pre-existed.
@@ -582,7 +619,7 @@ func (s *Store) migrate() error {
 func scanSession(row *sql.Row) (Session, error) {
 	var sess Session
 	var created, updated int64
-	err := row.Scan(&sess.ID, &sess.Cwd, &sess.Title, &sess.Model, &sess.ParentID, &created, &updated, &sess.MessageCount, &sess.TokenIn, &sess.TokenOut)
+	err := row.Scan(&sess.ID, &sess.Cwd, &sess.Title, &sess.Model, &sess.Provider, &sess.ReasoningEffort, &sess.ParentID, &created, &updated, &sess.MessageCount, &sess.TokenIn, &sess.TokenOut)
 	if err != nil {
 		return Session{}, err
 	}
@@ -596,7 +633,7 @@ func scanAll(rows *sql.Rows, limit int) ([]Session, error) {
 	for rows.Next() {
 		var sess Session
 		var created, updated int64
-		if err := rows.Scan(&sess.ID, &sess.Cwd, &sess.Title, &sess.Model, &sess.ParentID, &created, &updated, &sess.MessageCount, &sess.TokenIn, &sess.TokenOut); err != nil {
+		if err := rows.Scan(&sess.ID, &sess.Cwd, &sess.Title, &sess.Model, &sess.Provider, &sess.ReasoningEffort, &sess.ParentID, &created, &updated, &sess.MessageCount, &sess.TokenIn, &sess.TokenOut); err != nil {
 			return nil, err
 		}
 		sess.CreatedAt = time.Unix(0, created).UTC()
@@ -610,6 +647,36 @@ func scanAll(rows *sql.Rows, limit int) ([]Session, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *Store) ensureSessionColumn(name, definition string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return fmt.Errorf("session columns: %w", err)
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var column, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &column, &typ, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("session columns scan: %w", err)
+		}
+		if column == name {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	if _, err := s.db.Exec(`ALTER TABLE sessions ADD COLUMN ` + name + ` ` + definition); err != nil {
+		return fmt.Errorf("add sessions.%s: %w", name, err)
+	}
+	return nil
 }
 
 // newID returns a 16-character hex id.
