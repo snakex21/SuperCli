@@ -130,6 +130,26 @@ bookkeeping runs when the user is not looking.
 **Batch mode** (`--batch`) is unaffected: it never ran memory
 autosave and still doesn't — one prompt, pure stdout, exit.
 
+### Signal-driven reflection (default ON)
+
+Mid-run self-review used to launch an extra foreground model inference every
+eight tool steps whether the run was healthy or not. On a slow local backend
+that means another full prefill and it cannot be hidden behind CLI work.
+
+The default `reflect_every = 0` is now adaptive and deterministic. Reflection
+fires only after the model has already had one normal opportunity to recover
+from a tool failure (two consecutive failing batches), repeats the exact same
+tool names and arguments in consecutive steps, or reaches the last checkpoint
+that can still influence a run before `MaxSteps`. Different arguments to the
+same tool count as progress. The detector hashes batches, so large tool
+arguments do not remain resident in loop state, and resets after every
+reflection to prevent a call on every subsequent step.
+
+An explicit positive `reflect_every = N` retains the historical fixed interval
+for users who want it; a negative value disables reflection. Purpose telemetry
+continues to report every actual call as `reflection`, so `/cost` shows the
+saved inferences directly.
+
 ## Structured tool errors (deterministic failure results)
 
 **What.** When a tool fails, the model gets a short, deterministic,

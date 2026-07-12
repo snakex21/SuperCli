@@ -70,9 +70,9 @@ type TomlConfig struct {
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
 
-	// ReflectEvery controls the F5.a mid-run reflection
-	// checkpoint interval (every N agent steps). 0 = use
-	// the built-in default; negative disables reflection.
+	// ReflectEvery controls F5.a mid-run reflection. 0 selects the
+	// adaptive signal-driven policy, a positive value forces a fixed
+	// N-step interval, and a negative value disables reflection.
 	ReflectEvery int `toml:"reflect_every"`
 
 	// ModelTiers are user overrides for the model tier

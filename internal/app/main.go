@@ -1148,16 +1148,19 @@ func Main() {
 		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
 	}
 
-	// F5.a: mid-run reflection checkpoint. Every
-	// reflectEvery steps the loop asks the model for a
-	// 2-3 sentence self-review and injects it as a
-	// system message. Default 8; config.toml
-	// reflect_every overrides (negative disables).
+	// F5.a: mid-run reflection. The default is adaptive: it spends the
+	// extra model call only after repeated tool failures, an identical
+	// tool-call batch, or just before MaxSteps. An explicit positive
+	// reflect_every preserves fixed periodic checkpoints; negative disables.
 	reflectEvery := 8
+	adaptiveReflection := tomlCfg.ReflectEvery == 0
 	if tomlCfg.ReflectEvery != 0 {
 		reflectEvery = tomlCfg.ReflectEvery
 	}
-	reflector := &reflect.ModelReflector{Provider: provider}
+	var reflector agent.Reflector
+	if reflectEvery >= 0 {
+		reflector = &reflect.ModelReflector{Provider: provider}
+	}
 
 	// Wave 4: context-window resolution + auto-compact wiring.
 	// Cascade: config context_window > provider /v1/models
@@ -1228,17 +1231,18 @@ func Main() {
 
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(agent.LoopConfig{
-		Provider:        provider,
-		Registry:        registry,
-		System:          buildSystemPrompt(goalSvc),
-		Briefing:        memoryBriefing,
-		MaxSteps:        10,
-		ErrorLog:        errorLog,
-		Reflector:       reflector,
-		ReflectEvery:    reflectEvery,
-		PatternInjector: injector,
-		CreditTracker:   tracker,
-		Writer:          sessWriter,
+		Provider:           provider,
+		Registry:           registry,
+		System:             buildSystemPrompt(goalSvc),
+		Briefing:           memoryBriefing,
+		MaxSteps:           10,
+		ErrorLog:           errorLog,
+		Reflector:          reflector,
+		ReflectEvery:       reflectEvery,
+		AdaptiveReflection: adaptiveReflection,
+		PatternInjector:    injector,
+		CreditTracker:      tracker,
+		Writer:             sessWriter,
 		Ultrawork: &ultrawork.Wiring{
 			Goal:        ultraworkGoalAdapter{svc: goalSvc},
 			Credit:      ultraworkCreditAdapter{tracker: tracker},

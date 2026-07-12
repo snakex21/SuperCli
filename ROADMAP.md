@@ -69,6 +69,10 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
 - **Kompakcja kontekstu** — skalibrowany estymator, prune bez LLM,
   summary-fallback; telemetria faz per-step; `preflight_repo` ON;
   structured tool errors; caps wyników na granicy (`docs/performance.md`).
+- **Adaptacyjna refleksja** — domyślnie bez sztywnej inferencji co 8
+  kroków; self-review odpala się dopiero po powtarzających się błędach,
+  identycznej partii tool-calli albo przed wyczerpaniem limitu kroków.
+  Jawne `reflect_every = N` zachowuje tryb okresowy.
 - **MCP klient** — konfiguracja serwerów MCP wróciła
   (`internal/mcp`, `internal/app/main_mcp.go`), wyniki capowane na granicy.
 - **Darwin (mechanizm)** — pool N agentów w izolowanych worktree, judge
