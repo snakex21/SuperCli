@@ -164,3 +164,23 @@ and retry once.
   (`task_parallel` tri-state, auto by base URL).
 - Reflection checkpoints and ultrawork reminders ride the demote path
   like everything else — they no longer invalidate the prompt front.
+
+## Session-write reliability
+
+Session persistence (SQLite message appends, usage counters) is
+best-effort by design: a failed write never aborts inference. It is not
+silent, though — a health tracker on the loop keeps the FIRST error
+sticky (operation, message, time), counts every failure, and surfaces
+exactly one warning per outage (a notice line in the TUI/webgui, one
+stderr line in batch mode).
+
+Failed appends are buffered in memory (up to 64 messages) and retried
+in the original order before the next append, so a transient failure —
+released file lock, freed disk space — leaves no hole in the on-disk
+history. The store assigns `seq` at write time, which makes in-order
+retry safe. If the outage outlasts the buffer, the oldest entries are
+dropped and counted as lost. A successful write after an outage emits a
+one-line "persistence recovered" notice.
+
+`/status` shows the current state: ok, or the failure count, sticky
+first/last error, retry-buffer depth and any overflow losses.
