@@ -123,21 +123,25 @@ func TestSaveLoad_Roundtrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "stats.json")
 	turns := []Turn{{Step: 1, TokensIn: 10, TokensOut: 5, Tools: []string{"x"}}}
-	if err := Save(path, turns); err != nil {
+	calls := []Call{{Purpose: "main", DurationUs: 1500, TokensIn: 10, TokensOut: 5}}
+	if err := Save(path, turns, calls); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	back, err := Load(path)
+	back, backCalls, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if len(back) != 1 || back[0].Step != 1 {
 		t.Errorf("back = %+v", back)
 	}
+	if len(backCalls) != 1 || backCalls[0].Purpose != "main" || backCalls[0].DurationUs != 1500 {
+		t.Errorf("backCalls = %+v", backCalls)
+	}
 }
 
 func TestLoad_MissingFile(t *testing.T) {
 	dir := t.TempDir()
-	turns, err := Load(filepath.Join(dir, "missing.json"))
+	turns, _, err := Load(filepath.Join(dir, "missing.json"))
 	if err != nil {
 		t.Errorf("Load(missing): %v", err)
 	}
@@ -150,7 +154,7 @@ func TestLoad_CorruptFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "stats.json")
 	os.WriteFile(path, []byte("not json"), 0o644)
-	if _, err := Load(path); err == nil {
+	if _, _, err := Load(path); err == nil {
 		t.Fatal("expected error on corrupt file")
 	}
 }
