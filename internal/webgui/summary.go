@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"supercli/internal/llm"
-	"supercli/internal/storage/session"
 )
 
 const defaultHistorySummaryLen = 90
@@ -99,37 +98,6 @@ Message:
 		return fallback
 	}
 	return truncateRunes(out, maxRunes)
-}
-
-// updateSessionTitleAsync refreshes the cheap local session title with an LLM
-// PR-style summary after the chat request has already started. Title generation
-// must never delay the user's main answer.
-func (e *Engine) updateSessionTitleAsync(sessionID, prompt string) {
-	if sessionID == "" || strings.TrimSpace(prompt) == "" {
-		return
-	}
-	initialTitle := summarizeHistoryMessage(prompt, 80)
-	go func() {
-		store, err := session.OpenStore(e.dataDir)
-		if err != nil {
-			return
-		}
-		defer store.Close()
-		e.mu.RLock()
-		prov := e.prov
-		e.mu.RUnlock()
-		// prov is the factory-built metered provider; the per-session
-		// usage recorder rides the context instead of a second wrapper.
-		ctx := context.Background()
-		if sink := e.usageCallSink(store, sessionID); sink != nil {
-			ctx = llm.WithCallSink(ctx, sink)
-		}
-		title := summarizeHistoryMessageWithProvider(ctx, prompt, 80, prov)
-		if title == "" || strings.HasPrefix(title, "<") {
-			return
-		}
-		_, _ = store.SetTitleIfCurrent(sessionID, initialTitle, title)
-	}()
 }
 
 // cleanLLMSummary strips thinking/reasoning tags and normalizes whitespace.
