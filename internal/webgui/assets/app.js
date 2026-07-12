@@ -127,6 +127,9 @@ var I18N = {
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
     "composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
     "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached", "tool.running": "running",
+    "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
+    "task.brief": "Task", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
+    "task.input": "input", "task.output": "output",
     "role.thinking": "Thinking", "chat.stopped": "stopped by user", "chat.connError": "connection error",
     "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
     "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
@@ -216,6 +219,9 @@ var I18N = {
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
     "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
     "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache", "tool.running": "pracuje",
+    "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
+    "task.brief": "Zadanie", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
+    "task.input": "wej.", "task.output": "wyj.",
     "role.thinking": "Myślenie", "chat.stopped": "zatrzymane przez użytkownika", "chat.connError": "błąd połączenia",
     "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
     "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
@@ -592,14 +598,18 @@ function noticeTag(text) {
 }
 
 /* Tool rows */
-var toolRows = {}; // id -> row
+var toolRows = {}; // provider tool-call id -> row
+var workerRows = {}; // worker task id -> delegated-task row
 var openToolOrder = []; // ids without results yet
 function toolHint(name, args) {
   try {
     var a = JSON.parse(args || "{}");
     if (name === "task") {
       var kind = a.agent || "general";
-      return { name: "task → " + kind + (a.advise ? " (advise)" : ""), hint: clip(a.prompt || "", 90) };
+      return {
+        name: t("task.delegation") + " · " + kind + (a.advise ? " (advise)" : ""),
+        hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
+      };
     }
     var keys = ["path", "file", "dir", "query", "pattern", "cmd", "command", "prompt", "text"];
     for (var i = 0; i < keys.length; i++) {
@@ -611,13 +621,97 @@ function toolHint(name, args) {
     return { name: name, hint: clip(args || "", 90) };
   }
 }
+
+// task results use a compact XML envelope for the model. Keep that protocol
+// out of the UI: extract its stable fields and render the report as content.
+function parseTaskNotification(text) {
+  var src = String(text || "");
+  if (src.indexOf("<task-notification>") < 0) return null;
+  function field(name) {
+    var open = "<" + name + ">", close = "</" + name + ">";
+    var from = src.indexOf(open);
+    var to = name === "result" ? src.lastIndexOf(close) : src.indexOf(close, from + open.length);
+    if (from < 0 || to < from) return "";
+    return src.slice(from + open.length, to).trim();
+  }
+  return {
+    id: field("task-id"), agent: field("agent") || "worker",
+    status: field("status") || "done", summary: field("summary"), result: field("result"),
+  };
+}
+
+function taskStatusLabel(status) {
+  if (status === "running") return t("tool.running");
+  if (status === "failed") return t("task.failed");
+  if (status === "stopped") return t("task.stopped");
+  return t("task.done");
+}
+
+function taskMetrics(note) {
+  var summary = String(note.summary || "");
+  var parts = [], steps = summary.match(/(\d+)\s+steps?/i);
+  var tokens = summary.match(/(\d+)\s+in\/(\d+)\s+out\s+tok/i);
+  var model = summary.match(/(?:^|\s·\s)model=([^·]+)/i);
+  if (steps) {
+    var n = Number(steps[1]);
+    parts.push(fmtInteger(n) + " " + t(n === 1 ? "task.step" : "task.steps"));
+  }
+  if (tokens) {
+    parts.push(fmtCompactNumber(Number(tokens[1])) + " " + t("task.input"));
+    parts.push(fmtCompactNumber(Number(tokens[2])) + " " + t("task.output"));
+  }
+  if (model) parts.push(model[1].trim());
+  var agent = String(note.agent || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var status = String(note.status || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return parts.join(" · ") || summary.replace(new RegExp("^" + agent + "\\s+" + status + "\\s*[·-]?\\s*", "i"), "");
+}
+
+function renderTaskResult(row, note, elapsed, prompt, err) {
+  row.classList.add("task-row");
+  row.classList.remove("running", "done", "failed");
+  row.classList.add(err || note.status === "failed" ? "failed" : (note.status === "running" ? "running" : "done"));
+  row._tname.textContent = t("task.delegation") + " · " + note.agent;
+  row._thint.textContent = taskMetrics(note);
+  row._stat.textContent = taskStatusLabel(err ? "failed" : note.status) + (elapsed != null ? " · " + fmtDuration(elapsed) : "");
+  row._stat.classList.toggle("err", !!err || note.status === "failed");
+  row._body.innerHTML = "";
+  if (prompt) {
+    row._body.appendChild(el("div", "lbl", t("task.brief")));
+    row._body.appendChild(el("div", "task-brief", prompt));
+  }
+  if (note.result) {
+    row._body.appendChild(el("div", "lbl", t("task.report")));
+    var report = el("div", "task-report msg-assistant");
+    report.innerHTML = renderText(note.result);
+    row._body.appendChild(report);
+  }
+}
+
+function addHistoryTask(note) {
+  var row = document.createElement("details");
+  row.className = "tool-row task-row done";
+  var sum = el("summary");
+  row._tname = el("span", "tname");
+  row._thint = el("span", "thint");
+  row._stat = el("span", "tstat");
+  sum.appendChild(row._tname); sum.appendChild(row._thint); sum.appendChild(row._stat);
+  row.appendChild(sum);
+  row._body = el("div", "tbody");
+  row.appendChild(row._body);
+  renderTaskResult(row, note, null, "", note.status === "failed");
+  row.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+  stream.appendChild(row);
+  return row;
+}
 function addToolCall(name, args, id) {
   var info = toolHint(name, args);
   var row = document.createElement("details");
   row.className = "tool-row";
   var sum = el("summary");
-  sum.appendChild(el("span", "tname", info.name));
-  sum.appendChild(el("span", "thint", info.hint));
+  var title = el("span", "tname", info.name);
+  var hint = el("span", "thint", info.hint);
+  sum.appendChild(title);
+  sum.appendChild(hint);
   var stat = el("span", "tstat");
   sum.appendChild(stat);
   row.appendChild(sum);
@@ -628,7 +722,10 @@ function addToolCall(name, args, id) {
   body.appendChild(el("pre", "", prettyJSON(args)));
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
-  row._stat = stat; row._body = body; row._t0 = performance.now();
+  row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
+  row._toolName = name; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
+  row._t0 = performance.now();
+  if (name === "task") row.classList.add("task-row");
   row.classList.add("running");
   function updateElapsed() {
     stat.textContent = t("tool.running") + " · " + fmtDuration(performance.now() - row._t0);
@@ -651,6 +748,13 @@ function addToolResult(id, output, err) {
   row._clock = null;
   row.classList.remove("running");
   var ms = performance.now() - row._t0;
+  var task = row._toolName === "task" ? parseTaskNotification(output || err) : null;
+  if (task) {
+    if (task.id) workerRows[task.id] = row;
+    renderTaskResult(row, task, ms, row._taskPrompt, err);
+    smartScroll();
+    return;
+  }
   row._stat.textContent = (err ? "✕ " : "") + fmtDuration(ms);
   if (err) row._stat.classList.add("err");
   var lbl = el("div", "lbl", err ? "error" : "output");
@@ -710,7 +814,7 @@ async function sendPrompt(text) {
   streaming = true;
   abortCtl = new AbortController();
   runToolCount = 0;
-  toolRows = {}; openToolOrder = [];
+  toolRows = {}; workerRows = {}; openToolOrder = [];
   sendBtn.textContent = t("composer.stop");
   sendBtn.classList.add("stop");
   sendBtn.type = "button";
@@ -818,6 +922,28 @@ function handleEvent(ev, current) {
       return current;
     case "worker":
       workersSeen.push({ name: ev.name || "worker", status: ev.status || "", summary: ev.output || "" });
+      var task = parseTaskNotification(ev.text) || {
+        id: ev.id || "", agent: ev.name || "worker", status: ev.status || "done",
+        summary: ev.output || "", result: "",
+      };
+      var workerRow = task.id ? workerRows[task.id] : null;
+      if (!workerRow) {
+        for (var wi = openToolOrder.length - 1; wi >= 0; wi--) {
+          var candidate = toolRows[openToolOrder[wi]];
+          if (candidate && candidate._toolName === "task" &&
+            (!task.agent || candidate._taskAgent === task.agent)) {
+            workerRow = candidate;
+            break;
+          }
+        }
+      }
+      if (workerRow) {
+        clearInterval(workerRow._clock);
+        workerRow._clock = null;
+        if (task.id) workerRows[task.id] = workerRow;
+        renderTaskResult(workerRow, task, performance.now() - workerRow._t0, workerRow._taskPrompt, task.status === "failed");
+        return current;
+      }
       addEventLine((ev.name || "worker") + " · " + (ev.status || "") + (ev.output ? " — " + clip(ev.output, 160) : ""), "", "worker");
       return current;
     case "reflection":
@@ -874,7 +1000,7 @@ function newSession() {
   if (streaming) return;
   activeSessionID = "";
   stream.innerHTML = "";
-  toolRows = {}; openToolOrder = [];
+  toolRows = {}; workerRows = {}; openToolOrder = [];
   lastTurn = null; workersSeen = [];
   showWelcome();
   setRunState("idle", t("composer.ready"));
@@ -1294,7 +1420,7 @@ async function resumeSession(id) {
     if (epoch !== projectEpoch) return;
     activeSessionID = id;
     stream.innerHTML = "";
-    toolRows = {}; openToolOrder = [];
+    toolRows = {}; workerRows = {}; openToolOrder = [];
     lastTurn = null; workersSeen = [];
     hideWelcome();
     (msgs || []).forEach(function (m) {
@@ -1308,6 +1434,12 @@ async function resumeSession(id) {
         // History replay: thinking folded (only live streams open it).
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
       } else if (m.role === "tool") {
+        var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
+          parseTaskNotification(m.content) : null;
+        if (task) {
+          addHistoryTask(task);
+          return;
+        }
         var row = document.createElement("details");
         row.className = "tool-row";
         var sum = el("summary");

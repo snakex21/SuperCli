@@ -344,6 +344,26 @@ a:hover { text-decoration: underline; }
 }
 .tool-row .tbody .lbl:first-child { margin-top: 0; }
 
+/* Delegated workers — protocol XML becomes a compact, readable work trace. */
+.task-row { border-left: 2px solid var(--accent); }
+.task-row.done { border-left-color: var(--ok); }
+.task-row.failed { border-left-color: var(--danger); }
+.task-row summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto; }
+.task-row .tname { font-family: var(--sans); font-weight: 600; }
+.task-row.done .tstat { color: var(--ok); }
+.task-row.failed .tstat { color: var(--danger); }
+.task-row .task-brief {
+  color: var(--muted); font: 12.5px/1.55 var(--sans);
+  padding-bottom: 8px; border-bottom: 1px solid var(--line-soft);
+}
+.task-row .task-report {
+  color: var(--text); font: 13.5px/1.65 var(--sans);
+  max-height: 480px; overflow-y: auto; padding: 2px 6px 2px 0;
+}
+.task-row .task-report .think-content { font-size: 12.5px; }
+.task-row .task-report p { margin: 0 0 10px; }
+.task-row .task-report ul, .task-row .task-report ol { margin: 0 0 10px 20px; }
+
 /* Event lines — [compact], [prune], preflight, workers, errors */
 .event-line {
   font: 11.5px var(--mono); color: var(--faint);
