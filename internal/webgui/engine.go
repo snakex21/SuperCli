@@ -304,14 +304,13 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	if err != nil {
 		return nil, err
 	}
-	// Task delegation (mirrors the CLI's runBatch wiring, minus the
-	// draft-verify ladder): the web agent can hand self-contained
-	// subtasks to fresh workers. A wiring failure degrades to a loop
-	// without `task` rather than breaking chat.
-	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
-		return nil, err
-	}
 	if orchestrator {
+		// OFF means direct work: do not expose task/send_message/task_stop or
+		// coordinator guidance. ON wires workers and then physically restricts
+		// the parent to the delegation/read-only registry.
+		if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
+			return nil, err
+		}
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
 		loop.SetRegistry(agent.OrchestratorRegistry(reg))
@@ -323,13 +322,13 @@ func webAgentSystemPrompt(home string, orchestrator bool) string {
 	system := llmprompt.Build(false)
 	if orchestrator {
 		system += agent.OrchestratorPrompt()
-	} else {
-		system += agent.CoordinatorPrompt()
 	}
 	// An HTTP/SSE run ends with the parent turn. Background task notifications
 	// cannot be delivered to a closed response, so web coordinators deliberately
 	// use synchronous task calls.
-	system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
+	if orchestrator {
+		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
+	}
 	system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
 	return system
 }

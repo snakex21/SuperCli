@@ -128,13 +128,14 @@ var I18N = {
     "composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
     "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached", "tool.running": "running",
     "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
-    "task.brief": "Task", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
+    "task.brief": "Task", "task.activity": "Activity", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
     "task.input": "input", "task.output": "output",
     "role.thinking": "Thinking", "chat.stopped": "stopped by user", "chat.connError": "connection error",
     "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
     "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
     "stats.daily": "tokens today", "stats.workers": "Workers", "stats.noWorkers": "No delegations this session.",
-    "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "hard delegation · next session",
+    "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "main agent",
+    "stats.orchOn": "delegates", "stats.orchOff": "direct",
     "stats.noTurn": "No turns yet.", "stats.sessionSection": "Session", "stats.totalTokens": "total tokens",
     "stats.inputTokens": "input tokens", "stats.evaluatedInput": "evaluated input", "stats.cachedInput": "cached input",
     "stats.outputTokens": "output tokens", "stats.reasoningTokens": "reasoning", "stats.totalCost": "total cost",
@@ -220,13 +221,14 @@ var I18N = {
     "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
     "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache", "tool.running": "pracuje",
     "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
-    "task.brief": "Zadanie", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
+    "task.brief": "Zadanie", "task.activity": "Aktywność", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
     "task.input": "wej.", "task.output": "wyj.",
     "role.thinking": "Myślenie", "chat.stopped": "zatrzymane przez użytkownika", "chat.connError": "błąd połączenia",
     "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
     "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
     "stats.daily": "tokeny dziś", "stats.workers": "Workerzy", "stats.noWorkers": "Brak delegacji w tej sesji.",
-    "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "twarda delegacja · następna sesja",
+    "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "główny agent",
+    "stats.orchOn": "deleguje", "stats.orchOff": "sam",
     "stats.noTurn": "Jeszcze bez tur.", "stats.sessionSection": "Sesja", "stats.totalTokens": "łącznie tokenów",
     "stats.inputTokens": "tokeny wejściowe", "stats.evaluatedInput": "wejście bez cache", "stats.cachedInput": "wejście z cache",
     "stats.outputTokens": "tokeny wyjściowe", "stats.reasoningTokens": "rozumowanie", "stats.totalCost": "łączny koszt",
@@ -636,7 +638,8 @@ function parseTaskNotification(text) {
   }
   return {
     id: field("task-id"), agent: field("agent") || "worker",
-    status: field("status") || "done", summary: field("summary"), result: field("result"),
+    status: field("status") || "done", summary: field("summary"),
+    tools: field("tools"), result: field("result"),
   };
 }
 
@@ -667,6 +670,7 @@ function taskMetrics(note) {
 }
 
 function renderTaskResult(row, note, elapsed, prompt, err) {
+  var activity = row._activity;
   row.classList.add("task-row");
   row.classList.remove("running", "done", "failed");
   row.classList.add(err || note.status === "failed" ? "failed" : (note.status === "running" ? "running" : "done"));
@@ -678,6 +682,23 @@ function renderTaskResult(row, note, elapsed, prompt, err) {
   if (prompt) {
     row._body.appendChild(el("div", "lbl", t("task.brief")));
     row._body.appendChild(el("div", "task-brief", prompt));
+  }
+  if (activity && activity.childNodes.length) {
+    row._body.appendChild(el("div", "lbl", t("task.activity")));
+    row._body.appendChild(activity);
+  } else if (note.tools) {
+    row._body.appendChild(el("div", "lbl", t("task.activity")));
+    activity = el("div", "task-activity");
+    String(note.tools).split(/,\s*/).filter(Boolean).forEach(function (name) {
+      var item = el("div", "task-activity-item done");
+      item.appendChild(el("span", "activity-dot"));
+      item.appendChild(el("span", "activity-name", name));
+      item.appendChild(el("span", "activity-hint", ""));
+      item.appendChild(el("span", "activity-status", t("task.done")));
+      activity.appendChild(item);
+    });
+    row._activity = activity;
+    row._body.appendChild(activity);
   }
   if (note.result) {
     row._body.appendChild(el("div", "lbl", t("task.report")));
@@ -725,7 +746,16 @@ function addToolCall(name, args, id) {
   row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
   row._toolName = name; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
   row._t0 = performance.now();
-  if (name === "task") row.classList.add("task-row");
+  if (name === "task") {
+    row.classList.add("task-row");
+    body.innerHTML = "";
+    body.appendChild(el("div", "lbl", t("task.brief")));
+    body.appendChild(el("div", "task-brief", info.prompt || ""));
+    body.appendChild(el("div", "lbl", t("task.activity")));
+    row._activity = el("div", "task-activity");
+    row._workerCalls = {};
+    body.appendChild(row._activity);
+  }
   row.classList.add("running");
   function updateElapsed() {
     stat.textContent = t("tool.running") + " · " + fmtDuration(performance.now() - row._t0);
@@ -776,6 +806,52 @@ function settleOpenTools() {
 }
 function prettyJSON(s) {
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s || ""; }
+}
+
+function findTaskRow(taskID, agentName) {
+  if (taskID && workerRows[taskID]) return workerRows[taskID];
+  for (var i = openToolOrder.length - 1; i >= 0; i--) {
+    var candidate = toolRows[openToolOrder[i]];
+    if (candidate && candidate._toolName === "task" &&
+      (!agentName || candidate._taskAgent === agentName)) return candidate;
+  }
+  return null;
+}
+
+function addWorkerProgress(ev) {
+  var row = findTaskRow(ev.id, ev.name);
+  if (!row) return false;
+  if (ev.id) workerRows[ev.id] = row;
+  if (!row._activity) row._activity = el("div", "task-activity");
+  if (!row._workerCalls) row._workerCalls = {};
+  var item = ev.call_id ? row._workerCalls[ev.call_id] : null;
+  if (ev.kind === "tool_call") {
+    var info = toolHint(ev.tool || "tool", ev.args || "{}");
+    item = el("div", "task-activity-item running");
+    item.appendChild(el("span", "activity-dot"));
+    item.appendChild(el("span", "activity-name", ev.tool || "tool"));
+    item.appendChild(el("span", "activity-hint", info.hint || ""));
+    item.appendChild(el("span", "activity-status", t("tool.running")));
+    row._activity.appendChild(item);
+    if (ev.call_id) row._workerCalls[ev.call_id] = item;
+  } else if (ev.kind === "tool_result") {
+    if (!item) {
+      item = el("div", "task-activity-item");
+      item.appendChild(el("span", "activity-dot"));
+      item.appendChild(el("span", "activity-name", ev.tool || "tool"));
+      item.appendChild(el("span", "activity-hint", ""));
+      item.appendChild(el("span", "activity-status"));
+      row._activity.appendChild(item);
+    }
+    item.classList.remove("running");
+    item.classList.add(ev.err ? "failed" : "done");
+    item.querySelector(".activity-status").textContent = ev.err ? t("task.failed") : t("task.done");
+    if (ev.err || ev.output) item.title = ev.err || ev.output;
+  }
+  if (!row.open) row.open = true;
+  row._body.hidden = false;
+  smartScroll();
+  return true;
 }
 
 // Telemetry line: time · cache/eval/gen · cached% · think · tools
@@ -920,23 +996,16 @@ function handleEvent(ev, current) {
     case "notice":
       addEventLine(ev.text || "", "", noticeTag(ev.text || ""));
       return current;
+    case "worker_progress":
+      addWorkerProgress(ev);
+      return current;
     case "worker":
       workersSeen.push({ name: ev.name || "worker", status: ev.status || "", summary: ev.output || "" });
       var task = parseTaskNotification(ev.text) || {
         id: ev.id || "", agent: ev.name || "worker", status: ev.status || "done",
         summary: ev.output || "", result: "",
       };
-      var workerRow = task.id ? workerRows[task.id] : null;
-      if (!workerRow) {
-        for (var wi = openToolOrder.length - 1; wi >= 0; wi--) {
-          var candidate = toolRows[openToolOrder[wi]];
-          if (candidate && candidate._toolName === "task" &&
-            (!task.agent || candidate._taskAgent === task.agent)) {
-            workerRow = candidate;
-            break;
-          }
-        }
-      }
+      var workerRow = findTaskRow(task.id, task.agent);
       if (workerRow) {
         clearInterval(workerRow._clock);
         workerRow._clock = null;
@@ -1309,8 +1378,9 @@ async function renderStats() {
       var row = el("div", "stat-row");
       row.appendChild(el("span", "", t("stats.orchDesc")));
       var seg = el("span", "seg");
-      ["default", "on", "off"].forEach(function (st) {
-        var b = el("button", st === (knob.state || "default") ? "on" : "", st);
+      ["on", "off"].forEach(function (st) {
+        var label = st === "on" ? t("stats.orchOn") : t("stats.orchOff");
+        var b = el("button", st === (knob.value || "off") ? "on" : "", label);
         b.type = "button";
         b.addEventListener("click", function () {
           jpost("/api/config", { key: "orchestrator", value: st })

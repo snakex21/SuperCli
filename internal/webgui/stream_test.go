@@ -95,6 +95,20 @@ func TestToWireEvent_Worker(t *testing.T) {
 	}
 }
 
+func TestToWireEvent_WorkerProgress(t *testing.T) {
+	w, keep := toWireEvent(agent.WorkerProgressEvent{
+		TaskID: "worker-1", Agent: "explore", Kind: "tool_call", CallID: "call-2",
+		Tool: "search_code", Args: `{"query":"worker"}`,
+	})
+	if !keep || w.Type != "worker_progress" {
+		t.Fatalf("got %+v keep=%v", w, keep)
+	}
+	if w.ID != "worker-1" || w.Name != "explore" || w.Kind != "tool_call" ||
+		w.CallID != "call-2" || w.Tool != "search_code" {
+		t.Errorf("worker progress fields: %+v", w)
+	}
+}
+
 func TestToWireEvent_DraftUsed(t *testing.T) {
 	w, keep := toWireEvent(agent.DraftUsedEvent{Decision: "accepted", DraftModel: "small", VerifierModel: "big", Savings: 42})
 	if !keep || w.Type != "notice" {

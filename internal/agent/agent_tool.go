@@ -290,6 +290,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
+	if a.ParentLoop != nil {
+		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
+	}
 	// Telemetry: record the worker's model only when it differs from
 	// the coordinator's, so the default single-model summary line is
 	// byte-identical to before and draft-verify economics stay

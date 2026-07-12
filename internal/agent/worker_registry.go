@@ -39,6 +39,11 @@ type Worker struct {
 	TokensIn   int
 	TokensOut  int
 	Steps      int // model turns consumed across all runs
+	ToolNames  []string
+
+	// progress is installed by AgentTool before the first run. It is immutable
+	// afterwards and emits best-effort UI events through the parent loop.
+	progress func(WorkerProgressEvent)
 
 	// runMu serializes runs: runWorkerLoop holds it for the whole run so
 	// a worker executes at most one prompt at a time.
@@ -100,6 +105,7 @@ type Snapshot struct {
 	TokensIn    int
 	TokensOut   int
 	Steps       int
+	ToolNames   []string
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -120,7 +126,17 @@ func (w *Worker) Snapshot() Snapshot {
 		TokensIn:    w.TokensIn,
 		TokensOut:   w.TokensOut,
 		Steps:       w.Steps,
+		ToolNames:   append([]string(nil), w.ToolNames...),
 	}
+}
+
+func (w *Worker) emitProgress(ev WorkerProgressEvent) {
+	if w == nil || w.progress == nil {
+		return
+	}
+	ev.TaskID = w.ID
+	ev.Agent = w.Agent
+	w.progress(ev)
 }
 
 // setState applies a state mutation under stateMu. The callback must only

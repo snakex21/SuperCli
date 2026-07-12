@@ -36,9 +36,9 @@ type knobView struct {
 	Label       string `json:"label"`
 	Desc        string `json:"desc"`
 	Kind        string `json:"kind"`
-	Value       string `json:"value"`  // display value
-	Source      string `json:"source"` // "default" | "manual"
-	Raw         string `json:"raw"`    // editable raw value (int/text kinds)
+	Value       string `json:"value"`           // display value
+	Source      string `json:"source"`          // "default" | "manual"
+	Raw         string `json:"raw"`             // editable raw value (int/text kinds)
 	State       string `json:"state,omitempty"` // tri/nav kinds: "default" | "on" | "off"
 	NextSession bool   `json:"next_session"`
 }
@@ -54,7 +54,7 @@ type knobDef struct {
 // knobDefs mirrors settingsRows() in the TUI — same keys, same order.
 func knobDefs() []knobDef {
 	return []knobDef{
-		{"orchestrator", "hard delegation: main loop can only delegate via task, not edit/run itself", knobTri, true},
+		{"orchestrator", "on: keep the main chat lean by delegating work; off: remove worker tools and work directly", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
 		{"navigator", "pre-request route (chat/advisor/coordinator) decision mode", knobNav, true},
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
