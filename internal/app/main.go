@@ -50,6 +50,7 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/llm/consult"
 	"supercli/internal/llm/draft"
+	"supercli/internal/llm/factory"
 	"supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/llm/shuffler"
@@ -681,7 +682,23 @@ func Main() {
 		return
 	}
 
-	provider, err := buildProvider(cfg, dataDir, caps)
+	// Per-turn telemetry recorder (F28 /cost + phase timings + the
+	// purpose-labeled model-call ledger). Created BEFORE the provider
+	// factory so every Complete call in the process — main step calls
+	// AND helper inferences (navigator, compact, reflection, draft,
+	// memory autosave, goal, judges, consult samples) — lands here.
+	// Historically only the F11 draft savings flowed in, hence the
+	// old name kept at the call sites below.
+	draftStats := stats.NewMemory()
+	callSink := statsCallSink(draftStats)
+	// Central provider factory: EVERY provider in the process (main,
+	// /model swaps, task workers, draft, council members, consult
+	// samples) is built here and comes out wrapped in llm.Metered, so
+	// purpose labels, the background gate and foreground preemption
+	// apply uniformly. Capability probing (Codex usage fetchers,
+	// RouterProvider pool) unwraps via llm.Unwrap.
+	provFactory := factory.New(buildProvider, dataDir, caps, callSink)
+	provider, err := provFactory.Build(cfg, llm.PurposeMain)
 	if err != nil {
 		fatal("init provider", err)
 	}
@@ -692,22 +709,6 @@ func Main() {
 	// exist yet, and the on-disk snapshot already renders on the first
 	// frame; the swap path below wires the redraw that the bug needs.
 	kickCodexUsageRefresh(provider, nil)
-
-	// Per-turn telemetry recorder (F28 /cost + phase timings + the
-	// purpose-labeled model-call ledger). Created BEFORE the provider
-	// decorators below so every Complete call in the process — main
-	// step calls AND helper inferences (navigator, compact,
-	// reflection, draft, memory autosave, goal, judges) — lands here.
-	// Historically only the F11 draft savings flowed in, hence the
-	// old name kept at the call sites below.
-	draftStats := stats.NewMemory()
-	callSink := statsCallSink(draftStats)
-	// Central model-call metering: ONE decorator on the main provider
-	// funnels every call into the recorder with a purpose label (call
-	// sites override the default via llm.WithPurpose on the context).
-	// Capability probing (Codex usage fetchers, RouterProvider pool)
-	// unwraps via llm.Unwrap.
-	provider = llm.Metered(provider, cfg.Provider, llm.PurposeMain, callSink)
 
 	// Model tier (internal/tier): config glob overrides >
 	// price > parsed parameter count / marker words > small.
@@ -999,15 +1000,15 @@ func Main() {
 	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
 	var taskWorkerProvider llm.Provider
 	if taskWorkerOverride {
-		wp, wpErr := buildProvider(taskWorkerCfg, dataDir, caps)
+		// Worker calls run outside the coordinator's steps; the
+		// "task" purpose keeps them visible (and separable) in
+		// the session's model-call ledger.
+		wp, wpErr := provFactory.Build(taskWorkerCfg, llm.PurposeTask)
 		if wpErr != nil {
 			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
 			taskWorkerCfg = cfg // parallel gate falls back to the real backend too
 		} else {
-			// Worker calls run outside the coordinator's steps; the
-			// "task" purpose keeps them visible (and separable) in
-			// the session's model-call ledger.
-			taskWorkerProvider = llm.Metered(wp, taskWorkerCfg.Provider, llm.PurposeTask, callSink)
+			taskWorkerProvider = wp
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
 		}
 	}
@@ -1138,14 +1139,13 @@ func Main() {
 	// from the F16 CapabilityRegistry's
 	// SuggestCheapestForTask("plan") — never
 	// hardcoded in Go (D1 decision).
-	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, caps, cfg, tierRules)
+	// The draft provider comes metered from the factory (default
+	// purpose "draft"); its other roles (navigator side provider,
+	// memory summarizer) re-label per call via llm.WithPurpose.
+	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, provFactory, cfg, tierRules)
 	var draftSink agent.DraftOverrideSink
 	if draftProvider != nil {
 		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
-		// Meter the draft provider too (default purpose "draft");
-		// its other roles (navigator side provider, memory
-		// summarizer) re-label per call via llm.WithPurpose.
-		draftProvider = llm.Metered(draftProvider, cfg.Provider, llm.PurposeDraft, callSink)
 	}
 
 	// F5.a: mid-run reflection checkpoint. Every
@@ -1911,13 +1911,16 @@ func Main() {
 				break
 			}
 		}
-		return buildProvider(mCfg, dataDir, caps)
+		// Through the factory: council members are metered too, so
+		// their calls land in the ledger under "consult" instead of
+		// vanishing (WithPurpose on a raw provider was ignored).
+		return provFactory.Build(mCfg, llm.PurposeConsult)
 	}
 
 	// The auto council (cheapest-N pool) stays as the fallback
 	// for the consult tool and for /council when the user never
 	// picked a roster.
-	council := buildConsultCouncil(3, provider, caps, cfg)
+	council := buildConsultCouncil(3, provider, caps, cfg, provFactory)
 	if council == nil {
 		// No cheap pool available — keep a judge-only council
 		// so explicit model selection (tool `models` param and
@@ -2563,7 +2566,8 @@ func Main() {
 					}
 				}
 			}
-			np, err := buildProvider(swapCfg, dataDir, caps)
+			// The factory keeps the model-call metering across /model swaps.
+			np, err := provFactory.Build(swapCfg, llm.PurposeMain)
 			if err == nil {
 				// Just switched models — if the new provider is Codex,
 				// refresh its usage snapshot in the background so the HUD
@@ -2572,8 +2576,6 @@ func Main() {
 				// fetch lands, so the `limit:` tile appears on its own
 				// without the user pressing a key.
 				kickCodexUsageRefresh(np, redrawStatus)
-				// Keep the model-call metering across /model swaps.
-				np = llm.Metered(np, swapCfg.Provider, llm.PurposeMain, callSink)
 			}
 			return np, err
 		},
@@ -2674,7 +2676,12 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		fatal("load capabilities", err)
 	}
 
-	p, err := buildProvider(cfg, dataDir, caps)
+	// Phase telemetry for batch runs: same recorder as the TUI,
+	// dumped as one [phase] stderr line per step (plus one [calls]
+	// per-purpose model-call line) after the run. The factory bakes
+	// the sink into the provider it builds.
+	batchStats := stats.NewMemory()
+	p, err := factory.New(buildProvider, dataDir, caps, statsCallSink(batchStats)).Build(cfg, llm.PurposeMain)
 	if err != nil {
 		fatal("build provider", err)
 	}
@@ -2701,11 +2708,6 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
-	// Phase telemetry for batch runs: same recorder as the TUI,
-	// dumped as one [phase] stderr line per step (plus one [calls]
-	// per-purpose model-call line) after the run.
-	batchStats := stats.NewMemory()
-	p = llm.Metered(p, cfg.Provider, llm.PurposeMain, statsCallSink(batchStats))
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider: p,
 		Registry: reg,
@@ -3199,6 +3201,9 @@ func usageBar(pct int) string {
 // from the snapshot at render time, so without a redraw a swap onto a
 // Codex model would not show fresh limits until the next keystroke.
 func kickCodexUsageRefresh(prov llm.Provider, notify func()) {
+	// Providers now arrive metered from the factory; peel the
+	// decorator so the capability assertions see the transport.
+	prov = llm.Unwrap(prov)
 	// Accept either the single-account fetcher or the multi-account
 	// router; refreshCodexUsage picks FetchUsageAll when available so
 	// every pooled account gets fresh usage, not just the active one.
@@ -3327,7 +3332,7 @@ func initAppLog(dataDir string) *os.File {
 //
 // Returns (nil, nil) when F11 is off or no draft model
 // was configured — silent fallback per D1.
-func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config, tierRules []tier.Rule) (*draft.Policy, llm.Provider) {
+func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, f *factory.Factory, cfg config.Config, tierRules []tier.Rule) (*draft.Policy, llm.Provider) {
 	mode, err := draft.ParseMode(modeFlag)
 	if err != nil {
 		log.Printf("F11: bad --draft-mode %q, defaulting to off: %v", modeFlag, err)
@@ -3360,34 +3365,20 @@ func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, caps *l
 	// Build a second provider instance with the same
 	// transport but a different model id. The
 	// verifier's provider and the draft's provider
-	// share API key, base URL, etc.
-	var prov llm.Provider
+	// share API key, base URL, etc. Built through the
+	// factory, so the draft comes back metered (default
+	// purpose "draft").
+	dCfg := cfg
+	dCfg.Model = draftModel
 	if cfg.IsEcho() {
 		// Echo mode: build a separate echo for the
 		// draft, which is fine for tests / offline.
-		prov, _ = llm.NewEcho("draft:" + draftModel)
-	} else if cfg.Provider == config.ProviderResponses {
-		prov, err = llm.NewResponses(llm.ResponsesConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        draftModel,
-			Capabilities: caps,
-		})
-		if err != nil {
-			log.Printf("F11: draft responses provider build failed: %v; F11 disabled silently", err)
-			return nil, nil
-		}
-	} else {
-		prov, err = llm.NewOpenAI(llm.OpenAIConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        draftModel,
-			Capabilities: caps,
-		})
-		if err != nil {
-			log.Printf("F11: draft provider build failed: %v; F11 disabled silently", err)
-			return nil, nil
-		}
+		dCfg.Model = "draft:" + draftModel
+	}
+	prov, err := f.Build(dCfg, llm.PurposeDraft)
+	if err != nil {
+		log.Printf("F11: draft provider build failed: %v; F11 disabled silently", err)
+		return nil, nil
 	}
 	return policy, prov
 }
@@ -3451,11 +3442,11 @@ func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegist
 // construction fails for every id. The consult
 // tool and the /council slash command both
 // gracefully degrade to "not wired" in that case.
-func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config) *consult.Council {
+func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config, f *factory.Factory) *consult.Council {
 	if n <= 0 {
 		n = 3
 	}
-	if caps == nil || judge == nil {
+	if caps == nil || judge == nil || f == nil {
 		return nil
 	}
 	judgeName := judge.Name()
@@ -3466,33 +3457,18 @@ func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry
 	}
 	samples := make([]llm.Provider, 0, len(ids))
 	for _, id := range ids {
-		var prov llm.Provider
+		// Same transport as the judge, different model id — built
+		// through the factory so sample calls are metered under
+		// "consult" like every other model call in the process.
+		sCfg := cfg
+		sCfg.Model = id
 		if cfg.IsEcho() {
-			prov, _ = llm.NewEcho("consult-sample:" + id)
-		} else if cfg.Provider == config.ProviderResponses {
-			p, err := llm.NewResponses(llm.ResponsesConfig{
-				BaseURL:      cfg.BaseURL,
-				APIKey:       cfg.APIKey,
-				Model:        id,
-				Capabilities: caps,
-			})
-			if err != nil {
-				log.Printf("F12: responses sample provider %q build failed: %v", id, err)
-				continue
-			}
-			prov = p
-		} else {
-			p, err := llm.NewOpenAI(llm.OpenAIConfig{
-				BaseURL:      cfg.BaseURL,
-				APIKey:       cfg.APIKey,
-				Model:        id,
-				Capabilities: caps,
-			})
-			if err != nil {
-				log.Printf("F12: sample provider %q build failed: %v", id, err)
-				continue
-			}
-			prov = p
+			sCfg.Model = "consult-sample:" + id
+		}
+		prov, err := f.Build(sCfg, llm.PurposeConsult)
+		if err != nil {
+			log.Printf("F12: sample provider %q build failed: %v", id, err)
+			continue
 		}
 		if prov != nil {
 			samples = append(samples, prov)

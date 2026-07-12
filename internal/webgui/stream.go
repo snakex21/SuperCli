@@ -145,12 +145,18 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 
 	// A separate lightweight store handle records one row per actual model
 	// call. The session writer still owns messages and legacy aggregates.
+	// The recorder rides the run context as an llm.CallSink: the single
+	// factory-built metered provider reports every call (coordinator
+	// steps AND delegated workers) here — no second wrapper.
 	var usageStore *session.Store
 	if us, openErr := session.OpenStore(e.dataDir); openErr == nil {
 		usageStore = us
 		defer usageStore.Close()
+		if sink := e.usageCallSink(usageStore, sid); sink != nil {
+			ctx = llm.WithCallSink(ctx, sink)
+		}
 	}
-	loop, err := e.newLoopWithSessionAtUsage(initial, writer, home, usageStore, sid)
+	loop, err := e.newLoopWithSessionAtUsage(initial, writer, home)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}

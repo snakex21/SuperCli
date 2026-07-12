@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/llm/factory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 )
@@ -51,7 +52,7 @@ func TestNewEngine_Echo(t *testing.T) {
 }
 
 func TestBuildProvider_Echo(t *testing.T) {
-	p, err := buildProvider(echoConfig(), nil)
+	p, err := factory.Default(echoConfig(), "", nil)
 	if err != nil {
 		t.Fatalf("buildProvider echo: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestBuildProvider_Echo(t *testing.T) {
 
 func TestBuildProvider_CodexRejected(t *testing.T) {
 	cfg := config.Config{Provider: config.ProviderCodex, Model: "gpt-5", BaseURL: "http://x"}
-	_, err := buildProvider(cfg, nil)
+	_, err := factory.Default(cfg, "", nil)
 	if err == nil {
 		t.Fatal("expected codex to be rejected in web GUI")
 	}
@@ -73,7 +74,7 @@ func TestBuildProvider_CodexRejected(t *testing.T) {
 
 func TestBuildProvider_OpenAIDefault(t *testing.T) {
 	cfg := config.Config{Provider: config.ProviderOpenAI, Model: "gpt-4o-mini", BaseURL: "https://api.openai.com/v1"}
-	p, err := buildProvider(cfg, nil)
+	p, err := factory.Default(cfg, "", nil)
 	if err != nil {
 		t.Fatalf("buildProvider openai: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestBuildProvider_OpenAIDefault(t *testing.T) {
 
 func TestBuildProvider_Responses(t *testing.T) {
 	cfg := config.Config{Provider: config.ProviderResponses, Model: "gpt-responses", BaseURL: "https://example.test/v1", APIKey: "key"}
-	p, err := buildProvider(cfg, nil)
+	p, err := factory.Default(cfg, "", nil)
 	if err != nil {
 		t.Fatalf("buildProvider responses: %v", err)
 	}
@@ -408,5 +409,29 @@ func TestEngine_TranscriptDecodesAssistantTextParts(t *testing.T) {
 	}
 	if msgs[1].Role != string(llm.RoleAssistant) || msgs[1].Content != "AI answer" {
 		t.Fatalf("assistant transcript = %+v", msgs[1])
+	}
+}
+
+// TestEngine_ProvidersComeOutMetered is the web GUI's factory
+// contract: the engine's main provider and any task-worker override
+// are llm.Metered, so web calls share the CLI's purpose ledger,
+// background gate and foreground preemption.
+func TestEngine_ProvidersComeOutMetered(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	if !llm.IsMetered(eng.prov) {
+		t.Fatalf("engine provider is not metered: %T", eng.prov)
+	}
+	if wp, _ := eng.taskWorkerProvider(config.TomlConfig{TaskModel: "other-echo"}); wp == nil || !llm.IsMetered(wp) {
+		t.Fatalf("task worker provider is not metered: %T", wp)
+	}
+	if err := eng.SwitchModel("echo-two", ""); err != nil {
+		t.Fatalf("SwitchModel: %v", err)
+	}
+	if !llm.IsMetered(eng.prov) {
+		t.Fatalf("provider after SwitchModel is not metered: %T", eng.prov)
 	}
 }

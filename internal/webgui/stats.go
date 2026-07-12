@@ -233,10 +233,10 @@ func contextFromUsage(u session.UsageRecord) statsContextView {
 }
 
 func contextFromMessages(messages []llm.Message, window int) statsContextView {
-	b := estimateRequestBreakdown(messages, nil)
+	b := llm.EstimateRequestBreakdown(messages, nil)
 	return contextFromUsage(session.UsageRecord{
-		ContextWindow: window, ContextSystem: b.system, ContextUser: b.user,
-		ContextAssistant: b.assistant, ContextTool: b.tools, ContextOther: b.other,
+		ContextWindow: window, ContextSystem: b.System, ContextUser: b.User,
+		ContextAssistant: b.Assistant, ContextTool: b.Tool, ContextOther: b.Other,
 	})
 }
 
