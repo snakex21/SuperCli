@@ -8,20 +8,18 @@
 package webgui
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
 
-	"supercli/internal/account/codexauth"
 	"supercli/internal/account/pricing"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
+	"supercli/internal/llm/factory"
 	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
-	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
@@ -45,6 +43,12 @@ type Engine struct {
 	home    string
 	caps    *llm.CapabilityRegistry
 	prov    llm.Provider
+	// factory is the single provider-construction funnel: every
+	// provider (main, model switches, task workers) comes out of it
+	// wrapped in llm.Metered, so purpose labels, the background gate
+	// and foreground preemption apply to web calls exactly like CLI
+	// calls. Per-session usage rows attach via llm.WithCallSink.
+	factory *factory.Factory
 	// learned holds per-model context limits persisted from past
 	// context-length errors (<dataDir>/context_limits.json), shared
 	// with the CLI so both front-ends size auto-compaction the same.
@@ -68,7 +72,8 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		pricing.ApplyCachedRates(dataDir)
 		applyWebPricingEntries(caps, cachedPrices)
 	}
-	prov, err := buildProviderWithDataDir(cfg, dataDir, caps)
+	f := factory.New(nil, dataDir, caps)
+	prov, err := f.Build(cfg, llm.PurposeMain)
 	if err != nil {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
@@ -78,6 +83,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		home:    home,
 		caps:    caps,
 		prov:    prov,
+		factory: f,
 		learned: llm.LoadLearnedLimits(dataDir),
 	}
 	eng.providerManager().SetModelPrices(caps)
@@ -215,18 +221,15 @@ func (e *Engine) newLoopWithSession(initial []llm.Message, writer agent.SessionW
 // creation/validation. A concurrent project switch affects future requests but
 // cannot move an in-flight run's tools into another sandbox.
 func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.SessionWriter, home string) (*agent.Loop, error) {
-	return e.newLoopWithSessionAtUsage(initial, writer, home, nil, "")
+	return e.newLoopWithSessionAtUsage(initial, writer, home)
 }
 
-func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.SessionWriter, home string, usageStore *session.Store, sessionID string) (*agent.Loop, error) {
+func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.SessionWriter, home string) (*agent.Loop, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
 	cfg := e.cfg
 	e.mu.RUnlock()
-	if usageStore != nil && sessionID != "" {
-		prov = newMeteredProvider(prov, usageStore, sessionID, e.usageIdentity(cfg, "model"))
-	}
 	tc := e.tomlConfigAt(home)
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
 	taskParallel := !llm.IsLocalBaseURL(cfg.BaseURL)
@@ -297,7 +300,7 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	// draft-verify ladder): the web agent can hand self-contained
 	// subtasks to fresh workers. A wiring failure degrades to a loop
 	// without `task` rather than breaking chat.
-	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc, usageStore, sessionID); err != nil {
+	if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
 		return nil, err
 	}
 	if orchestrator {
@@ -327,7 +330,7 @@ func webAgentSystemPrompt(home string, orchestrator bool) string {
 // reg, honouring the config knobs the CLI honours: task_max_steps,
 // task_max_tokens, task_model (worker backend override) and
 // preflight_repo (cold-context repo briefing for workers).
-func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig, usageStore *session.Store, sessionID string) error {
+func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig) error {
 	subReg := agent.NewSubAgentRegistry()
 	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
 	at, err := agent.NewAgentTool(subReg, loop, reg, prov, caps,
@@ -337,10 +340,10 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	}
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
-	if wp, workerCfg := e.taskWorkerProvider(tc); wp != nil {
-		if usageStore != nil && sessionID != "" && workerCfg != nil {
-			wp = newMeteredProvider(wp, usageStore, sessionID, e.usageIdentity(*workerCfg, "worker"))
-		}
+	if wp, _ := e.taskWorkerProvider(tc); wp != nil {
+		// wp is metered by the factory (purpose "task"); the
+		// per-session usage sink rides the run context, so no extra
+		// wrapper is stacked here.
 		at.WorkerProvider = wp
 	}
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
@@ -394,9 +397,21 @@ func (e *Engine) preflightBlockAt(home string) (string, int) {
 // inherit the coordinator's provider (task_model unset, unresolvable,
 // or naming the coordinator's own backend).
 func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config.Config) {
+	worker := e.taskWorkerConfig(tc)
+	if worker == nil {
+		return nil, nil
+	}
+	return e.buildWorker(*worker)
+}
+
+// taskWorkerConfig resolves the task_model knob to a worker config
+// WITHOUT building a provider, so the usage sink can label worker
+// calls with the right identity cheaply. Nil = workers inherit the
+// coordinator's backend.
+func (e *Engine) taskWorkerConfig(tc config.TomlConfig) *config.Config {
 	tm := strings.TrimSpace(tc.TaskModel)
 	if tm == "" {
-		return nil, nil
+		return nil
 	}
 	e.mu.RLock()
 	worker := e.cfg
@@ -416,25 +431,26 @@ func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config
 				worker.Model = p.Model
 			}
 			if worker.Model == "" || (worker.Model == coordinatorModel && worker.BaseURL == coordinatorBaseURL) {
-				return nil, nil
+				return nil
 			}
-			return e.buildWorker(worker)
+			return &worker
 		}
 	}
 	worker.Model = tm
 	if worker.Model == coordinatorModel {
-		return nil, nil
+		return nil
 	}
-	return e.buildWorker(worker)
+	return &worker
 }
 
-// buildWorker constructs the override provider, degrading to nil (=
-// inherit the coordinator's backend) on any build failure.
+// buildWorker constructs the override provider through the factory
+// (metered, purpose "task"), degrading to nil (= inherit the
+// coordinator's backend) on any build failure.
 func (e *Engine) buildWorker(cfg config.Config) (llm.Provider, *config.Config) {
 	if err := cfg.Normalize(); err != nil {
 		return nil, nil
 	}
-	wp, err := buildProviderWithDataDir(cfg, e.dataDir, e.caps)
+	wp, err := e.factory.Build(cfg, llm.PurposeTask)
 	if err != nil {
 		return nil, nil
 	}
@@ -482,7 +498,7 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	if err := cfg.Normalize(); err != nil {
 		return err
 	}
-	prov, err := buildProviderWithDataDir(cfg, e.dataDir, e.caps)
+	prov, err := e.factory.Build(cfg, llm.PurposeMain)
 	if err != nil {
 		return err
 	}
@@ -512,101 +528,6 @@ func (e *Engine) SetCLIDefault(modelID, providerName string) error {
 	return e.providerManager().SaveActiveConfig(modelID, providerName)
 }
 
-// buildProvider mirrors app.buildProvider, which is unexported. It
-// maps a config to a concrete llm.Provider. Kept in sync with the
-// CLI: echo, opencode, codex, anthropic, or OpenAI-compatible.
-func buildProvider(cfg config.Config, caps *llm.CapabilityRegistry) (llm.Provider, error) {
-	return buildProviderWithDataDir(cfg, "", caps)
-}
-
-func buildProviderWithDataDir(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
-	if cfg.IsEcho() {
-		return llm.NewEcho(cfg.Model)
-	}
-	switch cfg.Provider {
-	case config.ProviderResponses:
-		return llm.NewResponses(llm.ResponsesConfig{
-			BaseURL:        cfg.BaseURL,
-			APIKey:         cfg.APIKey,
-			Model:          cfg.Model,
-			Timeout:        cfg.Timeout,
-			ConnectTimeout: cfg.ConnectTimeout,
-			Capabilities:   caps,
-		})
-	case config.ProviderOpencode:
-		p, err := llm.NewOpencode(llm.OpencodeConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			Capabilities: caps,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("opencode: %w", err)
-		}
-		// Best-effort model discovery; gateway being down is not fatal.
-		_, _ = p.ProbeModels(context.Background())
-		return p, nil
-	case config.ProviderCodex:
-		return buildCodexProvider(cfg, dataDir, caps)
-	case config.ProviderAnthropic:
-		return llm.NewAnthropic(llm.AnthropicConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			MaxTokens:    cfg.MaxTokens,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
-		})
-	default:
-		return llm.NewOpenAI(llm.OpenAIConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
-		})
-	}
-}
-
-func buildCodexProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
-	if dataDir == "" {
-		return nil, fmt.Errorf("codex provider requires SuperCli data dir")
-	}
-	labels, _ := codexauth.ListAccounts(dataDir)
-	var logged []string
-	for _, label := range labels {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{BackendURL: cfg.BaseURL})
-		if mgr.LoggedIn() {
-			logged = append(logged, label)
-		}
-	}
-	if len(logged) == 0 {
-		mgr := codexauth.NewManager(dataDir, codexauth.Options{BackendURL: cfg.BaseURL})
-		if !mgr.LoggedIn() {
-			return nil, fmt.Errorf("codex: not logged in — run /login in TUI first")
-		}
-		logged = []string{codexauth.DefaultAccount}
-	}
-	pool := make([]llm.Provider, 0, len(logged))
-	for _, label := range logged {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{BackendURL: cfg.BaseURL})
-		info, _ := mgr.Account()
-		p, err := llm.NewCodex(llm.CodexConfig{
-			BackendURL:   mgr.Options().BackendURL,
-			Model:        cfg.Model,
-			Tokens:       mgr,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
-			DataDir:      dataDir,
-			AccountID:    info.AccountID,
-		})
-		if err != nil {
-			return nil, err
-		}
-		pool = append(pool, p)
-	}
-	if len(pool) == 1 {
-		return pool[0], nil
-	}
-	return llm.NewRouter(pool...)
-}
+// Provider construction moved to internal/llm/factory (factory.Default):
+// the web GUI and the CLI now share one construction table, and every
+// provider built here comes out metered via Engine.factory.

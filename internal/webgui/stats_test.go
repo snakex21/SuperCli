@@ -63,13 +63,14 @@ func (p oneUsageProvider) Complete(context.Context, []llm.Message, []llm.ToolDef
 	return out, nil
 }
 
-func TestMeteredProviderPersistsUsageWhenConsumerCancels(t *testing.T) {
-	_, store, sess, _ := statsFixture(t)
+func TestUsageCallSinkPersistsUsageWhenConsumerCancels(t *testing.T) {
+	eng, store, sess, _ := statsFixture(t)
 	inner := oneUsageProvider{name: "gpt-5.6-sol", usage: llm.Usage{Input: 123, Output: 45, CachedInput: 100, Reasoning: 20}}
-	provider := newMeteredProvider(inner, store, sess.ID, usageIdentity{
-		Provider: "openai", ProviderType: config.ProviderOpenAI, EndpointHost: "api.openai.com", ContextWindow: 1000,
-	})
+	// The provider comes metered from the factory; the per-session
+	// usage recorder rides the context as an llm.CallSink.
+	provider := llm.Metered(inner, config.ProviderOpenAI, llm.PurposeMain, func(llm.CallStat) {})
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = llm.WithCallSink(ctx, eng.usageCallSink(store, sess.ID))
 	out, err := provider.Complete(ctx, []llm.Message{{Role: llm.RoleUser, Content: "hello"}}, nil)
 	if err != nil {
 		t.Fatal(err)

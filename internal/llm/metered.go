@@ -41,6 +41,15 @@ type CallStat struct {
 	// call (0 when the backend sent no usage frame).
 	TokensIn  int
 	TokensOut int
+	// TokensCached is the cached-prompt portion of TokensIn and
+	// TokensReasoning the hidden chain-of-thought portion of
+	// TokensOut, both provider-reported (0 when not reported).
+	TokensCached    int
+	TokensReasoning int
+	// Request is a request-shape estimate (tokens by role),
+	// computed locally from the outgoing messages/tools so sinks
+	// can attribute context weight without seeing the prompt.
+	Request RequestBreakdown
 	StartedAt time.Time
 }
 
@@ -49,8 +58,57 @@ type CallStat struct {
 // goroutines).
 type CallSink func(CallStat)
 
+// MultiSink fans one CallStat out to every non-nil sink. Nil when
+// no usable sink remains, so Metered's "nil sink disables metering"
+// contract keeps working for pure pass-through configurations.
+func MultiSink(sinks ...CallSink) CallSink {
+	nz := make([]CallSink, 0, len(sinks))
+	for _, s := range sinks {
+		if s != nil {
+			nz = append(nz, s)
+		}
+	}
+	switch len(nz) {
+	case 0:
+		return nil
+	case 1:
+		return nz[0]
+	default:
+		return func(stat CallStat) {
+			for _, s := range nz {
+				s(stat)
+			}
+		}
+	}
+}
+
 type purposeCtxKey struct{}
 type backgroundCtxKey struct{}
+type callSinkCtxKey struct{}
+
+// WithCallSink attaches an ADDITIONAL per-request sink to ctx: every
+// metered Complete call under ctx reports to the wrapper's own sink
+// AND to sink. Front-ends that account per session (the web GUI's
+// metered-usage rows) attach their recorder here instead of stacking
+// a second metering wrapper on the same provider.
+func WithCallSink(ctx context.Context, sink CallSink) context.Context {
+	if sink == nil {
+		return ctx
+	}
+	prev := callSinksFromContext(ctx)
+	sinks := make([]CallSink, 0, len(prev)+1)
+	sinks = append(sinks, prev...)
+	sinks = append(sinks, sink)
+	return context.WithValue(ctx, callSinkCtxKey{}, sinks)
+}
+
+func callSinksFromContext(ctx context.Context) []CallSink {
+	if ctx == nil {
+		return nil
+	}
+	s, _ := ctx.Value(callSinkCtxKey{}).([]CallSink)
+	return s
+}
 
 // Common purpose labels. Plain strings on purpose (call sites in
 // other packages may define their own).
@@ -156,6 +214,15 @@ func Metered(inner Provider, providerLabel, purpose string, sink CallSink) Provi
 // working on a metered provider.
 func (m *metered) Unwrap() Provider { return m.inner }
 
+// IsMetered reports whether p is (already) a Metered wrapper. The
+// provider factory uses it to guarantee exactly ONE metering layer
+// per provider — a nested wrapper would double-report every call and
+// deadlock the background gate (one goroutine acquiring it twice).
+func IsMetered(p Provider) bool {
+	_, ok := p.(*metered)
+	return ok
+}
+
 // Unwrap peels every decorator implementing Unwrap() Provider and
 // returns the innermost provider. Safe on nil and non-wrapped
 // providers.
@@ -182,10 +249,20 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		Provider:   m.provider,
 		Model:      m.inner.Name(),
 		Background: IsBackground(ctx),
+		Request:    EstimateRequestBreakdown(msgs, tools),
 		StartedAt:  time.Now().UTC(),
 	}
 	if p := PurposeFromContext(ctx); p != "" {
 		stat.Purpose = p
+	}
+	// The wrapper's own sink plus any per-request sinks attached via
+	// WithCallSink (e.g. the web GUI's per-session usage recorder).
+	ctxSinks := callSinksFromContext(ctx)
+	emit := func() {
+		m.sink(stat)
+		for _, s := range ctxSinks {
+			s(stat)
+		}
 	}
 	start := time.Now()
 	// Background calls are serialized process-wide (see
@@ -199,7 +276,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 			stat.Duration = time.Since(start)
 			stat.Failed = true
 			stat.Canceled = true
-			m.sink(stat)
+			emit()
 			return nil, err
 		}
 	}
@@ -209,7 +286,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		stat.Duration = time.Since(start)
 		stat.Failed = true
 		stat.Canceled = ctx != nil && ctx.Err() != nil
-		m.sink(stat)
+		emit()
 		return nil, err
 	}
 	out := make(chan Delta)
@@ -223,7 +300,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 			if ctx != nil && ctx.Err() != nil {
 				stat.Canceled = true
 			}
-			m.sink(stat)
+			emit()
 		}()
 		gotFirst := false
 		for d := range in {
@@ -234,6 +311,8 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 			if d.Usage != nil {
 				stat.TokensIn = d.Usage.Input
 				stat.TokensOut = d.Usage.Output
+				stat.TokensCached = d.Usage.CachedInput
+				stat.TokensReasoning = d.Usage.Reasoning
 			}
 			if d.Err != nil {
 				stat.Failed = true

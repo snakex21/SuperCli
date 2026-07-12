@@ -20,125 +20,70 @@ type usageIdentity struct {
 	Source        string
 }
 
-// meteredProvider records provider-reported usage after each real model call.
-// It stores only counters and request-shape estimates, never prompts, URLs,
-// headers, or credentials.
-type meteredProvider struct {
-	inner     llm.Provider
-	store     *session.Store
-	sessionID string
-	identity  usageIdentity
-}
-
-func newMeteredProvider(inner llm.Provider, store *session.Store, sessionID string, identity usageIdentity) llm.Provider {
-	if inner == nil || store == nil || sessionID == "" {
-		return inner
+// usageCallSink records provider-reported usage after each real model
+// call as one metered-usage row per call. It is an llm.CallSink
+// attached to the run context (llm.WithCallSink), so the single
+// factory-built metered provider reports here without a second
+// wrapper. It stores only counters and request-shape estimates, never
+// prompts, URLs, headers, or credentials.
+//
+// One sink covers every call of the request: the coordinator's own
+// steps ("model"), delegated worker calls (purpose "task" → source
+// "worker", labeled with the task_model backend identity when
+// configured) and background title summaries (purpose "title").
+func (e *Engine) usageCallSink(store *session.Store, sessionID string) llm.CallSink {
+	if store == nil || sessionID == "" {
+		return nil
 	}
-	identity.Model = inner.Name()
-	return &meteredProvider{inner: inner, store: store, sessionID: sessionID, identity: identity}
-}
-
-func (p *meteredProvider) Name() string { return p.inner.Name() }
-
-func (p *meteredProvider) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
-	in, err := p.inner.Complete(ctx, msgs, tools)
-	if err != nil {
-		return nil, err
+	e.mu.RLock()
+	cfg := e.cfg
+	e.mu.RUnlock()
+	model := e.usageIdentity(cfg, "model")
+	var worker *usageIdentity
+	if wcfg := e.taskWorkerConfig(e.tomlConfig()); wcfg != nil {
+		id := e.usageIdentity(*wcfg, "worker")
+		worker = &id
 	}
-	out := make(chan llm.Delta)
-	breakdown := estimateRequestBreakdown(msgs, tools)
-	go func() {
-		var final *llm.Usage
-		defer func() {
-			if final != nil {
-				p.recordUsage(*final, breakdown)
-			}
-			close(out)
-		}()
-		for d := range in {
-			if d.Usage != nil {
-				copyUsage := *d.Usage
-				final = &copyUsage
-			}
-			select {
-			case out <- d:
-			case <-ctx.Done():
-				return
-			}
+	return func(s llm.CallStat) {
+		// Mirror the old wrapper's contract: only calls that produced
+		// a terminal usage frame become rows (failed or usage-less
+		// calls carry no billable counters).
+		if s.TokensIn == 0 && s.TokensOut == 0 {
+			return
 		}
-	}()
-	return out, nil
-}
-
-func (p *meteredProvider) recordUsage(final llm.Usage, breakdown requestBreakdown) {
-	recordCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = p.store.AppendUsage(recordCtx, session.UsageRecord{
-		SessionID:        p.sessionID,
-		Provider:         p.identity.Provider,
-		ProviderType:     p.identity.ProviderType,
-		EndpointHost:     p.identity.EndpointHost,
-		Model:            p.inner.Name(),
-		Input:            int64(final.Input),
-		Output:           int64(final.Output),
-		CachedInput:      int64(final.CachedInput),
-		Reasoning:        int64(final.Reasoning),
-		HasCachedInput:   final.CachedInput > 0,
-		HasReasoning:     final.Reasoning > 0,
-		ContextWindow:    p.identity.ContextWindow,
-		ContextSystem:    breakdown.system,
-		ContextUser:      breakdown.user,
-		ContextAssistant: breakdown.assistant,
-		ContextTool:      breakdown.tools,
-		ContextOther:     breakdown.other,
-		Source:           p.identity.Source,
-	})
-}
-
-type requestBreakdown struct {
-	system    int
-	user      int
-	assistant int
-	tools     int
-	other     int
-}
-
-func estimateRequestBreakdown(msgs []llm.Message, tools []llm.ToolDef) requestBreakdown {
-	var out requestBreakdown
-	for _, msg := range msgs {
-		tokens := llm.EstimateMessageTokens(msg)
-		switch msg.Role {
-		case llm.RoleSystem:
-			out.system += tokens
-		case llm.RoleUser:
-			out.user += tokens
-		case llm.RoleTool:
-			out.tools += tokens
-		case llm.RoleAssistant:
-			toolTokens := 0
-			if len(msg.ToolCalls) > 0 {
-				toolOnly := llm.Message{Role: llm.RoleAssistant, ToolCalls: msg.ToolCalls}
-				toolTokens = llm.EstimateMessageTokens(toolOnly) - 16
-				if toolTokens < 0 {
-					toolTokens = 0
-				}
-				if toolTokens > tokens {
-					toolTokens = tokens
-				}
+		id := model
+		switch s.Purpose {
+		case llm.PurposeTask:
+			if worker != nil {
+				id = *worker
 			}
-			out.tools += toolTokens
-			out.assistant += tokens - toolTokens
-		default:
-			out.other += tokens
+			id.Source = "worker"
+		case llm.PurposeTitle:
+			id.Source = "title"
 		}
+		recordCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = store.AppendUsage(recordCtx, session.UsageRecord{
+			SessionID:        sessionID,
+			Provider:         id.Provider,
+			ProviderType:     id.ProviderType,
+			EndpointHost:     id.EndpointHost,
+			Model:            s.Model,
+			Input:            int64(s.TokensIn),
+			Output:           int64(s.TokensOut),
+			CachedInput:      int64(s.TokensCached),
+			Reasoning:        int64(s.TokensReasoning),
+			HasCachedInput:   s.TokensCached > 0,
+			HasReasoning:     s.TokensReasoning > 0,
+			ContextWindow:    id.ContextWindow,
+			ContextSystem:    s.Request.System,
+			ContextUser:      s.Request.User,
+			ContextAssistant: s.Request.Assistant,
+			ContextTool:      s.Request.Tool,
+			ContextOther:     s.Request.Other,
+			Source:           id.Source,
+		})
 	}
-	for _, tool := range tools {
-		text := strings.TrimSpace(tool.Name + " " + tool.Description + " " + tool.Schema)
-		if text != "" {
-			out.tools += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: text})
-		}
-	}
-	return out
 }
 
 func endpointHost(baseURL string) string {

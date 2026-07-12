@@ -6,6 +6,7 @@ import (
 
 	"supercli/internal/account/tier"
 	"supercli/internal/llm"
+	"supercli/internal/llm/factory"
 	"supercli/internal/system/config"
 )
 
@@ -44,7 +45,7 @@ func TestBuildDraftWiring_NoModel_NoDraft(t *testing.T) {
 	cfg := config.Config{Provider: config.ProviderEcho}
 
 	for _, mode := range []string{"critical", "balanced", "always"} {
-		policy, prov := buildDraftWiring(mode, "", verifier, caps, cfg, []tier.Rule(nil))
+		policy, prov := buildDraftWiring(mode, "", verifier, factory.New(buildProvider, "", caps), cfg, []tier.Rule(nil))
 		if policy != nil || prov != nil {
 			t.Errorf("mode=%q with empty draft model: got (policy=%v, prov=%v), want (nil, nil) — F11 must stay opt-in", mode, policy, prov)
 		}
@@ -59,7 +60,7 @@ func TestBuildDraftWiring_OffMode_NoDraft(t *testing.T) {
 	caps := regWithCandidate(verifier.name)
 	cfg := config.Config{Provider: config.ProviderEcho}
 
-	policy, prov := buildDraftWiring("off", "llama-3.1-8b", verifier, caps, cfg, []tier.Rule(nil))
+	policy, prov := buildDraftWiring("off", "llama-3.1-8b", verifier, factory.New(buildProvider, "", caps), cfg, []tier.Rule(nil))
 	if policy != nil || prov != nil {
 		t.Errorf("mode=off: got (policy=%v, prov=%v), want (nil, nil)", policy, prov)
 	}
@@ -73,11 +74,14 @@ func TestBuildDraftWiring_ExplicitModel_Engages(t *testing.T) {
 	caps := regWithCandidate(verifier.name)
 	cfg := config.Config{Provider: config.ProviderEcho}
 
-	policy, prov := buildDraftWiring("balanced", "llama-3.1-8b", verifier, caps, cfg, []tier.Rule(nil))
+	policy, prov := buildDraftWiring("balanced", "llama-3.1-8b", verifier, factory.New(buildProvider, "", caps), cfg, []tier.Rule(nil))
 	if policy == nil || prov == nil {
 		t.Fatalf("explicit draft model: got (policy=%v, prov=%v), want both non-nil", policy, prov)
 	}
 	if policy.Model != "llama-3.1-8b" {
 		t.Errorf("policy.Model = %q, want llama-3.1-8b", policy.Model)
+	}
+	if !llm.IsMetered(prov) {
+		t.Errorf("draft provider from the factory must be metered")
 	}
 }

@@ -117,10 +117,14 @@ func (e *Engine) updateSessionTitleAsync(sessionID, prompt string) {
 		defer store.Close()
 		e.mu.RLock()
 		prov := e.prov
-		cfg := e.cfg
 		e.mu.RUnlock()
-		prov = newMeteredProvider(prov, store, sessionID, e.usageIdentity(cfg, "title"))
-		title := summarizeHistoryMessageWithProvider(context.Background(), prompt, 80, prov)
+		// prov is the factory-built metered provider; the per-session
+		// usage recorder rides the context instead of a second wrapper.
+		ctx := context.Background()
+		if sink := e.usageCallSink(store, sessionID); sink != nil {
+			ctx = llm.WithCallSink(ctx, sink)
+		}
+		title := summarizeHistoryMessageWithProvider(ctx, prompt, 80, prov)
 		if title == "" || strings.HasPrefix(title, "<") {
 			return
 		}
