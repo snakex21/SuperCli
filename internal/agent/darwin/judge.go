@@ -225,7 +225,7 @@ func (j *LLMJudge) Judge(ctx context.Context, prompt string, cands []Candidate) 
 	sys := "You are a strict judge evaluating parallel code-writing agents. Pick the best candidate. Some candidates include a git diff of the actual changes they made in their isolated worktree; weigh the diff over the prose — a candidate whose diff really implements the task beats one that only describes a solution. Reply ONLY with JSON: {\"winner\": <1-based index>, \"score\": <0..1>, \"reason\": <one short sentence>}. No prose, no markdown."
 	user := renderJudgePrompt(prompt, cands)
 	// Call the provider.
-	stream, err := j.Provider.Complete(ctx, []llm.Message{{
+	stream, err := j.Provider.Complete(llm.WithPurpose(ctx, llm.PurposeDarwin), []llm.Message{{
 		Role:    llm.RoleUser,
 		Content: sys + "\n\n" + user,
 	}}, nil) // judge doesn't need tools

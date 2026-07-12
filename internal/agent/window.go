@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -59,7 +60,14 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	if l.summarizer != nil {
 		all := l.AllMessages()
 		split := compactSplit(all, w)
-		if summary, err := l.summarizer(ctx, l.provider, all[:split]); err == nil && summary != "" {
+		// The summary is a model call: label it and book its wall
+		// time as model:compact, so context_prepare (which wraps
+		// this whole function on the pre-call path) keeps measuring
+		// pure CLI overhead.
+		sumStart := time.Now()
+		summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, all[:split])
+		l.recordAuxWall(llm.PurposeCompact, time.Since(sumStart))
+		if err == nil && summary != "" {
 			removed = l.CompactPrefixWithSummary(summary, split)
 		}
 	}

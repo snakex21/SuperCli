@@ -362,7 +362,7 @@ func (c *Council) callOne(ctx context.Context, p llm.Provider, q string) Candida
 		return Candidate{Provider: "<nil>", Err: fmt.Errorf("nil provider")}
 	}
 	name := p.Name()
-	stream, err := p.Complete(ctx, []llm.Message{{
+	stream, err := p.Complete(llm.WithPurpose(ctx, llm.PurposeConsult), []llm.Message{{
 		Role:    llm.RoleUser,
 		Content: q,
 	}}, nil) // no tools for consultation
@@ -408,7 +408,7 @@ func (c *Council) judge(ctx context.Context, q string, cands []Candidate, cap, m
 		"Pick the single best one. Reply ONLY with JSON: " +
 		"{\"winner\": <1-based int>, \"reason\": <one short sentence>}. No prose, no markdown."
 	user := renderJudgePrompt(q, cands, cap)
-	stream, err := c.Judge.Complete(ctx, []llm.Message{
+	stream, err := c.Judge.Complete(llm.WithPurpose(ctx, llm.PurposeJudge), []llm.Message{
 		{Role: llm.RoleSystem, Content: sys},
 		{Role: llm.RoleUser, Content: user},
 	}, nil) // judge doesn't need tools

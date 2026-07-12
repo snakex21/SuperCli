@@ -96,6 +96,11 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	if strings.TrimSpace(transcript) == "" {
 		return "", fmt.Errorf("nothing to summarize")
 	}
+	// Label the call for the purpose-metered stats unless the caller
+	// already picked a more specific label.
+	if llm.PurposeFromContext(ctx) == "" {
+		ctx = llm.WithPurpose(ctx, llm.PurposeCompact)
+	}
 	ch, err := provider.Complete(ctx, []llm.Message{
 		{Role: llm.RoleSystem, Content: compactionPrompt},
 		{Role: llm.RoleUser, Content: transcript},

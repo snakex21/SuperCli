@@ -333,7 +333,7 @@ func (c *DraftVerifyConfig) requestVerdict(ctx context.Context, task, expect, di
 		{Role: llm.RoleSystem, Content: verdictSystemPrompt},
 		{Role: llm.RoleUser, Content: payload},
 	}
-	stream, err := c.Verdict.Complete(ctx, msgs, nil)
+	stream, err := c.Verdict.Complete(llm.WithPurpose(ctx, llm.PurposeVerdict), msgs, nil)
 	if err != nil {
 		return verdict{Kind: verdictTakeover}, false, usage
 	}
