@@ -49,6 +49,10 @@ type Engine struct {
 	// and foreground preemption apply to web calls exactly like CLI
 	// calls. Per-session usage rows attach via llm.WithCallSink.
 	factory *factory.Factory
+	// titles defers the LLM session-title summary until after the
+	// first answer finished and the session sat idle; the immediate
+	// title is deterministic and local (see title.go).
+	titles *titleScheduler
 	// learned holds per-model context limits persisted from past
 	// context-length errors (<dataDir>/context_limits.json), shared
 	// with the CLI so both front-ends size auto-compaction the same.
@@ -86,6 +90,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		factory: f,
 		learned: llm.LoadLearnedLimits(dataDir),
 	}
+	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.providerManager().SetModelPrices(caps)
 	return eng, nil
 }
