@@ -137,6 +137,32 @@ func TestEngine_WebOrchestratorOffRemovesDelegation(t *testing.T) {
 	}
 }
 
+func TestEngine_WebOrchestratorDefaultIsAdaptive(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop, err := eng.newLoop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := "|" + strings.Join(loop.VisibleToolNames(), "|") + "|"
+	for _, required := range []string{"task", "write_file", "ctx_execute"} {
+		if !strings.Contains(names, "|"+required+"|") {
+			t.Errorf("adaptive default missing %s: %s", required, names)
+		}
+	}
+	msgs := loop.AllMessages()
+	if len(msgs) == 0 || !strings.Contains(msgs[0].Content, "## Coordinator mode") {
+		t.Fatalf("adaptive default missing optional-delegation guidance: %+v", msgs)
+	}
+	if strings.Contains(msgs[0].Content, "## Orchestrator mode") {
+		t.Fatalf("adaptive default received hard-orchestrator guidance: %s", msgs[0].Content)
+	}
+}
+
 func TestEngine_WebOrchestratorRestrictsParentAndKeepsTask(t *testing.T) {
 	dataDir := t.TempDir()
 	home := t.TempDir()

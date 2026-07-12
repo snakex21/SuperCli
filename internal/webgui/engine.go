@@ -236,7 +236,12 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	cfg := e.cfg
 	e.mu.RUnlock()
 	tc := e.tomlConfigAt(home)
+	// Tri-state contract:
+	//   nil   = adaptive delegation (full parent tools + optional task workers)
+	//   true  = hard orchestrator (parent restricted; substantial work delegates)
+	//   false = direct mode (worker tools physically absent)
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
+	delegation := tc.Orchestrator == nil || *tc.Orchestrator
 	taskParallel := !llm.IsLocalBaseURL(cfg.BaseURL)
 	if tc.TaskParallel != nil {
 		taskParallel = *tc.TaskParallel
@@ -286,7 +291,7 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 		Provider:        prov,
 		Registry:        reg,
 		Caps:            caps,
-		System:          webAgentSystemPrompt(home, orchestrator),
+		System:          webAgentSystemPrompt(home, orchestrator, delegation),
 		MaxSteps:        25,
 		Orchestrator:    orchestrator,
 		TaskParallel:    taskParallel,
@@ -304,13 +309,14 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	if err != nil {
 		return nil, err
 	}
-	if orchestrator {
-		// OFF means direct work: do not expose task/send_message/task_stop or
-		// coordinator guidance. ON wires workers and then physically restricts
-		// the parent to the delegation/read-only registry.
+	if delegation {
+		// AUTO and ON expose workers. Explicit OFF skips this block, so task,
+		// send_message and task_stop cannot be discovered or executed.
 		if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
 			return nil, err
 		}
+	}
+	if orchestrator {
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
 		loop.SetRegistry(agent.OrchestratorRegistry(reg))
@@ -318,15 +324,17 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	return loop, nil
 }
 
-func webAgentSystemPrompt(home string, orchestrator bool) string {
+func webAgentSystemPrompt(home string, orchestrator, delegation bool) string {
 	system := llmprompt.Build(false)
 	if orchestrator {
 		system += agent.OrchestratorPrompt()
+	} else if delegation {
+		system += agent.CoordinatorPrompt()
 	}
 	// An HTTP/SSE run ends with the parent turn. Background task notifications
 	// cannot be delivered to a closed response, so web coordinators deliberately
 	// use synchronous task calls.
-	if orchestrator {
+	if delegation {
 		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
 	}
 	system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)

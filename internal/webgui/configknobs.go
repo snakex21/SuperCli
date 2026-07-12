@@ -54,7 +54,7 @@ type knobDef struct {
 // knobDefs mirrors settingsRows() in the TUI — same keys, same order.
 func knobDefs() []knobDef {
 	return []knobDef{
-		{"orchestrator", "on: keep the main chat lean by delegating work; off: remove worker tools and work directly", knobTri, false},
+		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
 		{"navigator", "pre-request route (chat/advisor/coordinator) decision mode", knobNav, true},
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
@@ -80,8 +80,13 @@ func knobDefs() []knobDef {
 func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	switch key {
 	case "orchestrator":
-		v, s := triKnob(c.Orchestrator, "off")
-		return v, s, ""
+		if c.Orchestrator == nil {
+			return "auto", "default", ""
+		}
+		if *c.Orchestrator {
+			return "on", "manual", ""
+		}
+		return "off", "manual", ""
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {

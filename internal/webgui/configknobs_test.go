@@ -69,7 +69,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		}
 	}
 
-	if k := findKnob(t, knobs, "orchestrator"); k.Value != "off" || k.Source != "default" {
+	if k := findKnob(t, knobs, "orchestrator"); k.Value != "auto" || k.Source != "default" {
 		t.Errorf("orchestrator default: %+v", k)
 	}
 	if k := findKnob(t, knobs, "preflight_repo"); k.Value != "on" || k.Source != "default" {
@@ -102,7 +102,7 @@ func TestConfigKnobs_SetAndReset(t *testing.T) {
 	if rec := knobsPOST(t, srv, `{"key":"orchestrator","value":"default"}`); rec.Code != http.StatusOK {
 		t.Fatalf("reset orchestrator: %d", rec.Code)
 	}
-	if k := findKnob(t, knobsGET(t, srv), "orchestrator"); k.Value != "off" || k.Source != "default" {
+	if k := findKnob(t, knobsGET(t, srv), "orchestrator"); k.Value != "auto" || k.Source != "default" {
 		t.Errorf("after reset: %+v", k)
 	}
 }
