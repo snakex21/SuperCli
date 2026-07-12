@@ -166,8 +166,10 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 
 	args := make(map[string]json.RawMessage)
 	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &args); err != nil {
-			return call, fmt.Errorf("invoke_tool: args must be an object: %w", err)
+		var err error
+		args, err = decodeInvokeArgs(raw)
+		if err != nil {
+			return call, fmt.Errorf("invoke_tool: %w", err)
 		}
 	}
 	for key, value := range envelope {
@@ -192,6 +194,45 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	call.Name = target
 	call.Arguments = string(rawArgs)
 	return call, nil
+}
+
+// decodeInvokeArgs tolerates the three shapes real chat templates emit for an
+// object parameter: a JSON object, a JSON object encoded as a string, or a
+// newline/comma-separated "key: value" string. The last form is common when a
+// local model uses XML function calls. Keys are still checked against the
+// target schema by resolveInvokeToolCall, so leniency does not widen access.
+func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
+	var args map[string]json.RawMessage
+	if len(raw) > 0 && raw[0] == '{' {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("args must be an object: %w", err)
+		}
+		return args, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return nil, fmt.Errorf("args must be an object or key:value text")
+	}
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "{") {
+		if err := json.Unmarshal([]byte(text), &args); err == nil {
+			return args, nil
+		}
+	}
+	args = make(map[string]json.RawMessage)
+	parts := strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == ',' || r == ';' })
+	for _, part := range parts {
+		key, value, ok := strings.Cut(part, ":")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("invalid args text %q; want key: value", part)
+		}
+		encoded, _ := json.Marshal(strings.TrimSpace(value))
+		args[strings.TrimSpace(key)] = encoded
+	}
+	if len(args) == 0 && text != "" {
+		return nil, fmt.Errorf("invalid args text; want key: value")
+	}
+	return args, nil
 }
 
 func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {

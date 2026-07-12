@@ -181,9 +181,12 @@ ranges, one tool call, one follow-up model turn.
 `invoke_tool` is one schema-stable dispatcher shared by native cloud tool
 calling and the sentinel protocol. It advertises at most 16 registered tools
 that are both certified `ReadOnly` and described by a flat scalar schema.
-Native calls pass an `args` object; sentinel calls use `arg.<field>` lines. The
-loop rewrites a valid dispatch to the real target before history, verification,
-error attribution and telemetry, so no subsystem sees a fake wrapper tool.
+Native calls pass an `args` object; sentinel calls use `arg.<field>` lines. Some
+local XML chat templates stringify nested objects, so the dispatcher also
+accepts a JSON-object string or flat `key: value` text and then applies the same
+target-schema validation. The loop rewrites a valid dispatch to the real target
+before history, verification, error attribution and telemetry, so no subsystem
+sees a fake wrapper tool.
 
 Unknown arguments, nested arrays/objects/unions and every mutating tool are
 rejected with `requires tool_search`. Replay pins the turn win: direct call →
@@ -206,10 +209,18 @@ inference without replacing semantic uncertainty with broad keyword guesses.
 `SUPERCLI_LIVE_BASEURL` / `SUPERCLI_LIVE_MODEL`, discards each cold first call,
 and compares provider-reported evaluated input (`input - cached`) for tail vs
 hoisted catalog placement. A second guard requires the model to discover and
-execute a direct `catalog_probe` in both placements. The 2026-07-12 run skipped
-because no local host was available; therefore `SUPERCLI_CATALOG_HOIST`
-deliberately remains default OFF until the harness produces a quality-safe live
-result.
+execute a direct `catalog_probe` in both placements with exactly one successful
+tool call (recovery turns fail the guard).
+
+2026-07-12 live result: LM Studio, Qwen3.5-9B Q8, full GPU offload, 32k context,
+parallelism 1. Tail evaluated 2891 warm input tokens; hoist evaluated 2867, a
+24-token / 0.83% difference. Both quality arms completed in one tool call.
+LM Studio's OpenAI-compatible usage reported zero cached tokens for every arm,
+so this run cannot establish a KV-cache win; the small input difference is only
+prompt shape. `SUPERCLI_CATALOG_HOIST` therefore deliberately remains default
+OFF. The live run also exposed an XML-template compatibility issue where Qwen
+encoded nested `invoke_tool.args` as text; the tolerant, schema-checked decoder
+now prevents the otherwise necessary repair turns.
 
 ## Structured tool errors (deterministic failure results)
 
@@ -477,10 +488,10 @@ Reading the baseline:
   scanner replaces the quadratic `text += delta` accumulation on long
   streamed answers.
 - **Catalog hoist** (`SUPERCLI_CATALOG_HOIST=1`, 8b43f4f, **default
-  OFF**): moves the thin-tools catalog into the stable prompt prefix
-  so it caches instead of re-evaluating each turn. Stays off until a
-  live A/B confirms the cache win outweighs the prefix-invalidation
-  risk when the catalog changes.
+  OFF**): moves the thin-tools catalog into the stable prompt prefix.
+  The LM Studio/Qwen3.5-9B live A/B found only 0.83% fewer input tokens
+  and the endpoint reported no cached-token accounting, so there is no
+  measured reason to accept prefix-invalidation risk by default.
 - **Navigator on the small provider** (fadc051): route classification
   for the navigator runs on the small side provider; awaiting live
   test.

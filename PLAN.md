@@ -27,12 +27,11 @@ rzeczywisty backlog. Świeży stan wydajnościowy: `docs/performance.md`.
 
 ## Wdrożone eksperymentalnie (za knobem)
 
-- Catalog hoist — katalog thin-tooli w stabilnym prefiksie promptu; `SUPERCLI_CATALOG_HOIST=1`, default OFF do czasu live-A/B (prefix-invalidation vs cache-win)
+- Catalog hoist — katalog thin-tooli w stabilnym prefiksie promptu; `SUPERCLI_CATALOG_HOIST=1`, default OFF: live A/B LM Studio/Qwen3.5-9B dał tylko 0,83% mniej tokenów wejścia, a host nie raportował cached tokens
 - Noop-gate (`noop_gate`) — pomijanie identycznych batch-runów; default OFF świadomie (zmienia semantykę odpowiedzi na pytania), opt-in dla idempotentnych pipeline'ów
 
 ## Wymagające live-testu
 
-- Catalog hoist — live A/B harness gotowy; uruchomienie bez hosta poprawnie SKIP, realny pomiar nadal czeka na lokalny host
 - Navigator na small-providerze (fadc051) — klasyfikacja trasy na małym modelu; czeka na live-test
 
 ## Rzeczywisty backlog

@@ -38,6 +38,8 @@ func TestResolveInvokeToolCall_NativeAndSentinel(t *testing.T) {
 
 	for _, args := range []string{
 		`{"tool":"lookup","args":{"query":"alpha","limit":3}}`,
+		`{"tool":"lookup","args":"{\"query\":\"alpha\",\"limit\":3}"}`,
+		`{"tool":"lookup","args":"query: alpha, limit: 3"}`,
 		`{"tool":"lookup","arg.query":"alpha","arg.limit":"3"}`,
 	} {
 		got, err := resolveInvokeToolCall(reg, llm.ToolCall{ID: "c1", Name: invokeToolName, Arguments: args})

@@ -96,17 +96,14 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
 ## Wdrożone eksperymentalnie (za knobem)
 
 - **Catalog hoist** — katalog thin-tooli w stabilnym prefiksie promptu;
-  `SUPERCLI_CATALOG_HOIST=1`, default OFF do czasu live-A/B
-  (cache-win vs ryzyko inwalidacji prefiksu przy zmianie katalogu).
+  `SUPERCLI_CATALOG_HOIST=1`, default OFF po live A/B LM Studio/Qwen3.5-9B:
+  tylko 0,83% mniej tokenów wejścia i brak raportowania cached tokens przez host.
 - **Noop-gate** (`noop_gate`) — pomijanie identycznych batch-runów bez
   LLM; default OFF świadomie (zmienia semantykę odpowiedzi na pytania),
   opt-in dla idempotentnych pipeline'ów.
 
 ## Wymagające live-testu
 
-- **Catalog hoist A/B** — deterministyczny live-harness gotowy i uruchomiony;
-  bez aktywnego hosta test się pominął. Pomiar na lokalnym hoście nadal jest
-  wymagany przed decyzją o defaultcie.
 - **Navigator na small-providerze** (fadc051) — klasyfikacja trasy na
   małym modelu; czeka na live-test.
 - **Streaming podsumowań** — zweryfikować, czy compact/raporty workerów
