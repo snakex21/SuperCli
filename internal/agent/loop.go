@@ -75,6 +75,10 @@ type Loop struct {
 	hoistedPreSet   bool
 	baseDir         string
 	writer          SessionWriter
+	// persistHealth tracks session-write reliability: sticky
+	// first error, failure counter, in-order retry buffer and
+	// the one-shot UI warning. See persist_health.go.
+	persistHealth persistHealth
 	errorLog        ErrorLogger
 	reflector       Reflector
 	reflectEvery    int
@@ -943,8 +947,13 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 				l.stats.RecordModel(l.modelID)
 			}
 			// Report per-turn usage to the writer (if any).
+			// Failures feed the persistence-health tracker
+			// (sticky first error + /status) but never abort
+			// the run.
 			if l.writer != nil {
-				_ = l.writer.UpdateUsage(usage.Input, usage.Output)
+				if err := l.writer.UpdateUsage(usage.Input, usage.Output); err != nil {
+					l.persistUsageFailure(err)
+				}
 			}
 			// F7: record to credit tracker. A budget
 			// cap is a hard stop, but we still emit
@@ -1442,10 +1451,11 @@ func parseNavigatorMode(s string) (RouteMode, bool) {
 	}
 }
 
-// persist calls the writer if one is configured. Errors are
-// intentionally swallowed: a failed write must not abort the
-// run, only the persistence. F2.c logs the error to stderr; the
-// F5 reflect module will surface it to the user.
+// persist calls the writer if one is configured. A failed write
+// must not abort the run — but it is no longer swallowed silently:
+// persistAppend (persist_health.go) keeps the first error sticky,
+// counts failures, buffers the message for in-order retry on the
+// next append, and surfaces a one-shot warning to the user.
 func (l *Loop) persist(ctx context.Context, msg llm.Message) {
 	if l.writer == nil {
 		return
@@ -1455,10 +1465,7 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) {
 	// step, some from worker goroutines), so statsEndStep keeps it
 	// out of the next_turn_prepare remainder math.
 	t := time.Now()
-	if err := l.writer.AppendMessage(ctx, msg); err != nil {
-		// Best-effort. We could add a logger field later.
-		_ = err
-	}
+	l.persistAppend(ctx, msg)
 	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
 }
 
