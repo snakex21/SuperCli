@@ -36,6 +36,7 @@ type RunOptions struct {
 // The listener is created before the window opens so the URL always
 // resolves to a live server (no race, no fixed-port collision).
 func Run(eng *Engine, opts RunOptions) error {
+	defer eng.Close()
 	addr := opts.Addr
 	if addr == "" {
 		addr = "127.0.0.1:0"

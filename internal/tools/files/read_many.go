@@ -47,7 +47,8 @@ func (t *ReadMany) Spec() Tool {
 	return Tool{
 		Name: "read_many",
 		Description: "Read up to 12 independent file ranges in one call to save model turns. " +
-			"Use 'file:from-to | file:from-to'; works with native and thin/sentinel tool calling.",
+			"Use 'file:from-to | file:from-to'; file may contain a glob such as internal/*.go. " +
+			"Works with native and thin/sentinel tool calling.",
 		ReadOnly: true,
 		Schema: `{
   "type": "object",
@@ -75,20 +76,29 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	if len(requests) > maxReadManyRequests {
 		return Result{Err: fmt.Errorf("read_many: %d reads exceeds cap %d", len(requests), maxReadManyRequests)}, nil
 	}
+	work := expandReadManyRequests(t.BaseDir, requests)
+	if len(work) > maxReadManyRequests {
+		return Result{Err: fmt.Errorf("read_many: glob expansion produced %d reads, exceeds cap %d", len(work), maxReadManyRequests)}, nil
+	}
 
 	type outcome struct {
 		request readManyRequest
 		text    string
 		err     error
 	}
-	outcomes := make([]outcome, len(requests))
+	outcomes := make([]outcome, len(work))
 	var wg sync.WaitGroup
-	for i, request := range requests {
-		i, request := i, request
+	for i, item := range work {
+		i, item := i, item
+		request := item.request
 		outcomes[i].request = request
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if item.err != nil {
+				outcomes[i].err = item.err
+				return
+			}
 			if err := ctx.Err(); err != nil {
 				outcomes[i].err = err
 				return
@@ -97,9 +107,10 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 				outcomes[i].err = err
 				return
 			}
-			path := request.File
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(t.BaseDir, path)
+			path, err := resolveSandboxed(t.BaseDir, request.File)
+			if err != nil {
+				outcomes[i].err = err
+				return
 			}
 			lines, err := readManyLinesStreaming(path, request.From, request.To)
 			if err != nil {
@@ -134,6 +145,72 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 	fmt.Fprintf(&b, "[read_many: %d ok, %d failed]", okCount, failedCount)
 	return Result{Text: core.HeadTail(b.String(), maxReadManyBytes*3/4, maxReadManyBytes/4)}, nil
+}
+
+type readManyWork struct {
+	request readManyRequest
+	err     error
+}
+
+// expandReadManyRequests turns a glob into independent bounded reads before
+// starting any goroutines. filepath.Glob is sorted, so result ordering stays
+// deterministic and therefore KV-cache/replay friendly. Invalid/no-match globs
+// remain item-level errors: other requested files still reach the model.
+func expandReadManyRequests(baseDir string, requests []readManyRequest) []readManyWork {
+	work := make([]readManyWork, 0, len(requests))
+	for _, request := range requests {
+		if err := validateReadManyRequest(request); err != nil {
+			work = append(work, readManyWork{request: request, err: err})
+			continue
+		}
+		if !hasGlobMeta(request.File) {
+			work = append(work, readManyWork{request: request})
+			continue
+		}
+		pattern, err := resolveSandboxed(baseDir, request.File)
+		if err != nil {
+			work = append(work, readManyWork{request: request, err: err})
+			continue
+		}
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			work = append(work, readManyWork{request: request, err: fmt.Errorf("glob_invalid %s: %w", request.File, err)})
+			continue
+		}
+		if len(matches) == 0 {
+			work = append(work, readManyWork{request: request, err: fmt.Errorf("glob_no_matches %s", request.File)})
+			continue
+		}
+		for _, match := range matches {
+			resolved, err := resolveSandboxed(baseDir, match)
+			if err != nil {
+				resolved = match
+			}
+			matched := request
+			matched.File = displayGlobMatch(baseDir, request.File, resolved)
+			work = append(work, readManyWork{request: matched, err: err})
+		}
+	}
+	return work
+}
+
+func hasGlobMeta(path string) bool {
+	return strings.ContainsAny(path, "*?[")
+}
+
+func displayGlobMatch(baseDir, pattern, match string) string {
+	if filepath.IsAbs(pattern) {
+		return match
+	}
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return match
+	}
+	rel, err := filepath.Rel(absBase, match)
+	if err != nil {
+		return match
+	}
+	return filepath.ToSlash(rel)
 }
 
 // readManyLinesStreaming reads only through the requested final line and

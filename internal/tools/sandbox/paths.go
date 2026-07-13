@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 )
 
 // sensitiveRoots are absolute paths that the sandbox
@@ -78,7 +79,16 @@ func IsUnder(parent, child string) bool {
 // exist and symlinks are still resolved, but the "outside home"
 // rejection is disabled. Sensitive system paths are still
 // blocked. Set at startup from --unsandboxed.
-var Unsandboxed bool
+var unsandboxed atomic.Bool
+
+// SetUnsandboxed changes the process-wide filesystem boundary. Atomic state is
+// required because the GUI can toggle it while independent HTTP requests are
+// finishing. Sensitive system roots remain blocked in either mode.
+func SetUnsandboxed(on bool) { unsandboxed.Store(on) }
+
+// IsUnsandboxed reports whether absolute paths outside the workspace are
+// currently allowed.
+func IsUnsandboxed() bool { return unsandboxed.Load() }
 
 // ResolveSafe joins rel onto home, evaluates any ".."
 // and symlinks in the result, and returns the canonical
@@ -117,7 +127,7 @@ func ResolveSafe(home, rel string) (string, error) {
 		return "", fmt.Errorf("sandbox: resolve symlinks: %w", err)
 	}
 	// Refuse if outside home (skipped when unsandboxed).
-	if !Unsandboxed && !IsUnder(absHome, resolved) {
+	if !IsUnsandboxed() && !IsUnder(absHome, resolved) {
 		return "", ErrEscape
 	}
 	// Refuse if it lands on a sensitive system path

@@ -133,7 +133,8 @@ type Model struct {
 
 	// onRunStart is invoked synchronously when the user submits
 	// a prompt, before the run begins. See Options.OnRunStart.
-	onRunStart func()
+	onRunStart     func()
+	checkpointUndo func(context.Context, bool) (string, error)
 
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
@@ -231,6 +232,9 @@ type pendingAsk struct {
 	Header      string
 	Options     []tools.AskOption
 	MultiSelect bool
+	AllowCustom bool
+	customMode  bool
+	custom      string
 	// cursor is the currently focused option (0..len(Options)-1).
 	cursor int
 	// toggled tracks which options are checked in multi-select
@@ -298,6 +302,9 @@ type Options struct {
 	// inference so the foreground turn never queues behind it.
 	// Must be fast and non-blocking.
 	OnRunStart func()
+	// CheckpointUndo performs a conflict-safe whole-turn undo/redo. The bool
+	// is true for redo. When set it supersedes the legacy operation tracker.
+	CheckpointUndo func(context.Context, bool) (string, error)
 	// Version is shown in the header bar (e.g. "0.6.0").
 	Version string
 	// Tier is the active model tier shown in the header
@@ -348,36 +355,37 @@ func New(opts Options) Model {
 	vp.SetContent(welcome(opts, p))
 
 	return Model{
-		home:          opts.Home,
-		dataDir:       opts.DataDir,
-		version:       opts.Version,
-		tierName:      opts.Tier,
-		agent:         opts.Agent,
-		llm:           opts.LLM,
-		commands:      opts.Commands,
-		statusFn:      opts.StatusFn,
-		palette:       p,
-		marker:        mkr,
-		extCh:         opts.ExtCh,
-		viewport:      vp,
-		input:         ti,
-		spinner:       sp,
-		chat:          newChat(80),
-		cancel:        NewCancelState(),
-		scroll:        ScrollConfig{},
-		shellRunner:   opts.ShellRunner,
-		tracker:       opts.Tracker,
-		modelSwapper:  opts.ModelSwapper,
-		modelLister:   opts.ModelLister,
-		modelSwapFn:   opts.ModelSwapFn,
-		sessionStore:  opts.SessionStore,
-		statsRecorder: opts.StatsRecorder,
-		providerMgr:   opts.ProviderMgr,
-		caps:          opts.CapabilityRegistry,
-		goalSvc:       opts.GoalService,
-		toolRegistry:  opts.ToolRegistry,
-		onRunEnd:      opts.OnRunEnd,
-		onRunStart:    opts.OnRunStart,
+		home:           opts.Home,
+		dataDir:        opts.DataDir,
+		version:        opts.Version,
+		tierName:       opts.Tier,
+		agent:          opts.Agent,
+		llm:            opts.LLM,
+		commands:       opts.Commands,
+		statusFn:       opts.StatusFn,
+		palette:        p,
+		marker:         mkr,
+		extCh:          opts.ExtCh,
+		viewport:       vp,
+		input:          ti,
+		spinner:        sp,
+		chat:           newChat(80),
+		cancel:         NewCancelState(),
+		scroll:         ScrollConfig{},
+		shellRunner:    opts.ShellRunner,
+		tracker:        opts.Tracker,
+		modelSwapper:   opts.ModelSwapper,
+		modelLister:    opts.ModelLister,
+		modelSwapFn:    opts.ModelSwapFn,
+		sessionStore:   opts.SessionStore,
+		statsRecorder:  opts.StatsRecorder,
+		providerMgr:    opts.ProviderMgr,
+		caps:           opts.CapabilityRegistry,
+		goalSvc:        opts.GoalService,
+		toolRegistry:   opts.ToolRegistry,
+		onRunEnd:       opts.OnRunEnd,
+		onRunStart:     opts.OnRunStart,
+		checkpointUndo: opts.CheckpointUndo,
 	}
 }
 
@@ -1185,6 +1193,7 @@ func (m Model) beginAsk(req tools.AskRequest) (tea.Model, tea.Cmd) {
 		Header:      req.Header,
 		Options:     req.Options,
 		MultiSelect: req.MultiSelect,
+		AllowCustom: req.AllowCustom,
 		cursor:      0,
 		toggled:     make(map[int]bool),
 		respond:     req.Respond,
@@ -1200,6 +1209,31 @@ func (m Model) handleAskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a == nil {
 		m.mode = modeNormal
 		m.input.Focus()
+		return m, nil
+	}
+	if a.customMode {
+		switch msg.String() {
+		case "esc":
+			a.customMode = false
+			return m, nil
+		case "enter":
+			custom := strings.TrimSpace(a.custom)
+			if custom == "" {
+				return m, nil
+			}
+			safeRespond(a.respond, tools.AskAnswer{Custom: custom, MultiSelect: a.MultiSelect})
+			m.endAsk()
+			return m, nil
+		case "backspace", "ctrl+h":
+			runes := []rune(a.custom)
+			if len(runes) > 0 {
+				a.custom = string(runes[:len(runes)-1])
+			}
+			return m, nil
+		}
+		if len(msg.Runes) > 0 {
+			a.custom += string(msg.Runes)
+		}
 		return m, nil
 	}
 	switch msg.String() {
@@ -1243,6 +1277,11 @@ func (m Model) handleAskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		if a.MultiSelect {
 			a.toggled[a.cursor] = !a.toggled[a.cursor]
+		}
+		return m, nil
+	case "c":
+		if a.AllowCustom {
+			a.customMode = true
 		}
 		return m, nil
 	}
@@ -2008,6 +2047,13 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	}
 	// F32: /undo — revert last file write/edit operations.
 	if cmd.Name == "undo" {
+		if m.checkpointUndo != nil {
+			undo := m.checkpointUndo
+			return m, func() tea.Msg {
+				body, err := undo(context.Background(), false)
+				return slashResultMsg{Body: body, Err: err}
+			}
+		}
 		trk := m.tracker
 		dm := m.marker
 		args := cmd.Args
@@ -2032,6 +2078,16 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 				fmt.Fprintf(&b, "  %s (%s)\n", r.Path, r.Op)
 			}
 			return slashResultMsg{Body: dm.Diff(b.String())}
+		}
+	}
+	if cmd.Name == "redo" {
+		if m.checkpointUndo == nil {
+			return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("/redo: checkpoint undo not wired")} }
+		}
+		redo := m.checkpointUndo
+		return m, func() tea.Msg {
+			body, err := redo(context.Background(), true)
+			return slashResultMsg{Body: body, Err: err}
 		}
 	}
 	if cmd.Name == "providers" {

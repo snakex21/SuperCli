@@ -13,9 +13,10 @@
 // numeric cells.
 //
 // LIMITATIONS (kept deliberately small for v1, documented in
-// the tool description): no formulas, no cell styles —
-// overwriting a cell drops its old style and any formula; the
-// stored <dimension> hint is not updated (Excel recalculates
+// the tool description): formulas cannot be authored. Setting
+// a cell replaces its formula with a plain value, but retains
+// its style index; new cells inherit the nearest column style.
+// The stored <dimension> hint is not updated (Excel recalculates
 // it on open); rows are addressed by their r="N" attribute,
 // which every mainstream producer writes.
 //
@@ -62,9 +63,10 @@ func (t *EditXlsxTool) Spec() Tool {
 			"'append_row' (add one row of values after the last used row). " +
 			"Safety: before the file is changed, a backup copy is saved next to it as '<name>.bak', and the " +
 			"write is atomic — tell the user the backup exists if they want to undo. All other sheets, charts " +
-			"and styles are preserved byte-for-byte. " +
-			"LIMITATIONS: cannot write formulas or cell formatting; overwriting a cell that had a formula or " +
-			"style replaces it with a plain value. Do NOT use this for Word documents (use edit_docx), for " +
+			"and styles are preserved byte-for-byte. Existing cells retain their style; new cells and appended " +
+			"rows inherit the nearest style in the same column so edits match the workbook. " +
+			"LIMITATION: formulas cannot be authored; overwriting a formula replaces it with a plain value while " +
+			"retaining the cell style. Do NOT use this for Word documents (use edit_docx), for " +
 			"creating brand-new spreadsheets, or for bulk restructuring (read the data with read_xlsx first " +
 			"and discuss with the user).",
 		Schema: `{
@@ -75,7 +77,9 @@ func (t *EditXlsxTool) Spec() Tool {
     "sheet":  {"type": "string", "description": "Sheet number, 1-based (e.g. '1'). Defaults to 1."},
     "cell":   {"type": "string", "description": "set_cell: the cell reference, e.g. 'B3'."},
     "value":  {"description": "set_cell: the value. JSON number => numeric cell, JSON string => text cell, boolean => TRUE/FALSE."},
-    "values": {"type": "array", "description": "append_row: the row's cell values, left to right (numbers/strings/booleans)."}
+    "values": {"type": "array", "description": "append_row: the row's cell values, left to right (numbers/strings/booleans)."},
+    "style_from": {"type": "string", "description": "set_cell: explicitly clone style from another cell on the same sheet, e.g. B2."},
+    "style_from_row": {"type": "integer", "description": "append_row: explicitly clone per-column styles from this 1-based row."}
   },
   "required": ["path", "action"]
 }`,
@@ -84,12 +88,14 @@ func (t *EditXlsxTool) Spec() Tool {
 }
 
 type editXlsxArgs struct {
-	Path   string            `json:"path"`
-	Action string            `json:"action"`
-	Sheet  string            `json:"sheet"`
-	Cell   string            `json:"cell"`
-	Value  json.RawMessage   `json:"value"`
-	Values []json.RawMessage `json:"values"`
+	Path         string            `json:"path"`
+	Action       string            `json:"action"`
+	Sheet        string            `json:"sheet"`
+	Cell         string            `json:"cell"`
+	Value        json.RawMessage   `json:"value"`
+	Values       []json.RawMessage `json:"values"`
+	StyleFrom    string            `json:"style_from"`
+	StyleFromRow int               `json:"style_from_row"`
 }
 
 // Execute dispatches on action.
@@ -139,7 +145,7 @@ func (t *EditXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 			err := fmt.Errorf("edit_xlsx set_cell: 'cell' and 'value' are required")
 			return Result{Err: err}, err
 		}
-		newXML, err = xlsxSetCell(sheetXML, p.Cell, p.Value)
+		newXML, err = xlsxSetCellWithStyle(sheetXML, p.Cell, p.Value, p.StyleFrom)
 		if err != nil {
 			return Result{Err: fmt.Errorf("edit_xlsx: %w", err)}, err
 		}
@@ -150,7 +156,7 @@ func (t *EditXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 			return Result{Err: err}, err
 		}
 		var rowNum int
-		newXML, rowNum, err = xlsxAppendRow(sheetXML, p.Values)
+		newXML, rowNum, err = xlsxAppendRowWithStyleRow(sheetXML, p.Values, p.StyleFromRow)
 		if err != nil {
 			return Result{Err: fmt.Errorf("edit_xlsx: %w", err)}, err
 		}
@@ -304,12 +310,15 @@ func sheetDataInsertPoint(doc []byte) ([]byte, int, error) {
 
 // xlsxSetCell writes one cell value into the sheet XML.
 func xlsxSetCell(doc []byte, ref string, value json.RawMessage) ([]byte, error) {
+	return xlsxSetCellWithStyle(doc, ref, value, "")
+}
+
+func xlsxSetCellWithStyle(doc []byte, ref string, value json.RawMessage, styleFrom string) ([]byte, error) {
 	col, rowNum, err := splitCellRef(ref)
 	if err != nil {
 		return nil, err
 	}
 	cellRef := col + strconv.Itoa(rowNum)
-	cellXML := buildCellXML(cellRef, value)
 
 	doc, _, err = sheetDataInsertPoint(doc) // normalizes <sheetData/>
 	if err != nil {
@@ -319,6 +328,18 @@ func xlsxSetCell(doc []byte, ref string, value json.RawMessage) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	style := nearestColumnStyle(doc, rows, rowNum, col)
+	if strings.TrimSpace(styleFrom) != "" {
+		var found bool
+		style, found, err = exactCellStyle(doc, rows, styleFrom)
+		if err != nil {
+			return nil, fmt.Errorf("style_from: %w", err)
+		}
+		if !found {
+			return nil, fmt.Errorf("style_from cell %s does not exist", strings.ToUpper(strings.TrimSpace(styleFrom)))
+		}
+	}
+	cellXML := applyCellStyle(buildCellXML(cellRef, value), style)
 	for _, r := range rows {
 		if r.num != rowNum {
 			continue
@@ -385,6 +406,131 @@ type xlsxCellSpan struct {
 	ref        string
 }
 
+var cellStyleAttrRe = regexp.MustCompile(`(?:^|\s)s=("[^"]*"|'[^']*')`)
+
+func cellStyleAttr(cell []byte) string {
+	gt := bytes.IndexByte(cell, '>')
+	if gt < 0 {
+		return ""
+	}
+	m := cellStyleAttrRe.FindSubmatch(cell[:gt])
+	if len(m) != 2 {
+		return ""
+	}
+	return " s=" + string(m[1])
+}
+
+func applyCellStyle(cellXML, styleAttr string) string {
+	if styleAttr == "" {
+		return cellXML
+	}
+	gt := strings.IndexByte(cellXML, '>')
+	if gt < 0 {
+		return cellXML
+	}
+	return cellXML[:gt] + styleAttr + cellXML[gt:]
+}
+
+// nearestColumnStyle returns the style from the target cell itself or, for a
+// new cell/row, from the closest populated cell in the same column. This is a
+// deterministic workbook-side decision and costs the model no style tokens.
+func nearestColumnStyle(doc []byte, rows []xlsxRowSpan, rowNum int, col string) string {
+	return nearestColumnStyles(doc, rows, rowNum, []string{col})[col]
+}
+
+func nearestColumnStyles(doc []byte, rows []xlsxRowSpan, rowNum int, cols []string) map[string]string {
+	type candidate struct {
+		distance int
+		style    string
+	}
+	wanted := make(map[string]bool, len(cols))
+	best := make(map[string]candidate, len(cols))
+	for _, col := range cols {
+		wanted[col] = true
+	}
+	for _, row := range rows {
+		rowBytes := doc[row.start:row.end]
+		cells, err := scanCells(rowBytes)
+		if err != nil {
+			continue
+		}
+		for _, cell := range cells {
+			m := cellRefRe.FindStringSubmatch(cell.ref)
+			if m == nil {
+				continue
+			}
+			col := strings.ToUpper(m[1])
+			if !wanted[col] {
+				continue
+			}
+			style := cellStyleAttr(rowBytes[cell.start:cell.end])
+			if style == "" {
+				continue
+			}
+			distance := row.num - rowNum
+			if distance < 0 {
+				distance = -distance
+			}
+			current, ok := best[col]
+			if !ok || distance < current.distance {
+				best[col] = candidate{distance: distance, style: style}
+			}
+		}
+	}
+	styles := make(map[string]string, len(best))
+	for col, candidate := range best {
+		styles[col] = candidate.style
+	}
+	return styles
+}
+
+func exactCellStyle(doc []byte, rows []xlsxRowSpan, ref string) (string, bool, error) {
+	col, rowNum, err := splitCellRef(ref)
+	if err != nil {
+		return "", false, err
+	}
+	want := col + strconv.Itoa(rowNum)
+	for _, row := range rows {
+		if row.num != rowNum {
+			continue
+		}
+		rowBytes := doc[row.start:row.end]
+		cells, err := scanCells(rowBytes)
+		if err != nil {
+			return "", false, err
+		}
+		for _, cell := range cells {
+			if strings.EqualFold(cell.ref, want) {
+				return cellStyleAttr(rowBytes[cell.start:cell.end]), true, nil
+			}
+		}
+		return "", false, nil
+	}
+	return "", false, nil
+}
+
+func columnStylesFromRow(doc []byte, rows []xlsxRowSpan, rowNum int) (map[string]string, bool, error) {
+	for _, row := range rows {
+		if row.num != rowNum {
+			continue
+		}
+		rowBytes := doc[row.start:row.end]
+		cells, err := scanCells(rowBytes)
+		if err != nil {
+			return nil, false, err
+		}
+		styles := make(map[string]string, len(cells))
+		for _, cell := range cells {
+			m := cellRefRe.FindStringSubmatch(cell.ref)
+			if m != nil {
+				styles[strings.ToUpper(m[1])] = cellStyleAttr(rowBytes[cell.start:cell.end])
+			}
+		}
+		return styles, true, nil
+	}
+	return nil, false, nil
+}
+
 var cellAttrRe = regexp.MustCompile(`r="([A-Za-z]{1,3}[0-9]+)"`)
 
 // scanCells locates the <c> elements inside one row's bytes.
@@ -429,6 +575,13 @@ func scanCells(row []byte) ([]xlsxCellSpan, error) {
 // xlsxAppendRow appends one row after the last used row.
 // Returns the new doc and the new row's 1-based number.
 func xlsxAppendRow(doc []byte, values []json.RawMessage) ([]byte, int, error) {
+	return xlsxAppendRowWithStyleRow(doc, values, 0)
+}
+
+func xlsxAppendRowWithStyleRow(doc []byte, values []json.RawMessage, styleFromRow int) ([]byte, int, error) {
+	if styleFromRow < 0 {
+		return nil, 0, fmt.Errorf("style_from_row must be a positive row number")
+	}
 	doc, end, err := sheetDataInsertPoint(doc)
 	if err != nil {
 		return nil, 0, err
@@ -445,9 +598,25 @@ func xlsxAppendRow(doc []byte, values []json.RawMessage) ([]byte, int, error) {
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<row r="%d">`, rowNum)
+	cols := make([]string, len(values))
+	for i := range values {
+		cols[i] = indexToCol(i + 1)
+	}
+	styles := nearestColumnStyles(doc, rows, rowNum, cols)
+	if styleFromRow > 0 {
+		var found bool
+		styles, found, err = columnStylesFromRow(doc, rows, styleFromRow)
+		if err != nil {
+			return nil, 0, fmt.Errorf("style_from_row: %w", err)
+		}
+		if !found {
+			return nil, 0, fmt.Errorf("style_from_row %d does not exist", styleFromRow)
+		}
+	}
 	for i, v := range values {
-		ref := indexToCol(i+1) + strconv.Itoa(rowNum)
-		sb.WriteString(buildCellXML(ref, v))
+		col := cols[i]
+		ref := col + strconv.Itoa(rowNum)
+		sb.WriteString(applyCellStyle(buildCellXML(ref, v), styles[col]))
 	}
 	sb.WriteString("</row>")
 	return spliceBytes(doc, end, end, []byte(sb.String())), rowNum, nil

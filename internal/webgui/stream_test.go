@@ -11,6 +11,26 @@ import (
 	"supercli/internal/llm"
 )
 
+func TestShouldAttachPreflightWaitsForFirstProjectTurn(t *testing.T) {
+	if shouldAttachPreflight(nil, "hello") {
+		t.Fatal("greeting should not pay repository preflight")
+	}
+	history := []llm.Message{
+		{Role: llm.RoleUser, Content: "hello"},
+		{Role: llm.RoleAssistant, Content: "hi"},
+	}
+	if !shouldAttachPreflight(history, "inspect project files") {
+		t.Fatal("first project turn should receive repository preflight")
+	}
+	history = append(history,
+		llm.Message{Role: llm.RoleUser, Content: "inspect project files"},
+		llm.Message{Role: llm.RoleAssistant, Content: "done"},
+	)
+	if shouldAttachPreflight(history, "fix another file") {
+		t.Fatal("preflight must not repeat after a project turn")
+	}
+}
+
 type stalledWebProvider struct{}
 
 func (stalledWebProvider) Name() string { return "stalled" }
@@ -170,6 +190,24 @@ func TestWireEvent_Marshal(t *testing.T) {
 	// Omitempty: a bare message must not carry tool/usage fields.
 	if strings.Contains(s, "tok_total") || strings.Contains(s, `"name"`) {
 		t.Errorf("expected omitted empty fields, got %s", s)
+	}
+}
+
+func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
+	var got []wireEvent
+	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
+	if !c.Push(wireEvent{Type: "message", Text: "one"}) {
+		t.Fatal("first text chunk did not start a batch")
+	}
+	if c.Push(wireEvent{Type: "message", Text: " two"}) {
+		t.Fatal("second text chunk started a second batch")
+	}
+	if len(got) != 0 {
+		t.Fatalf("text flushed too early: %+v", got)
+	}
+	c.Push(wireEvent{Type: "tool_call", Name: "search_code"})
+	if len(got) != 2 || got[0].Type != "message" || got[0].Text != "one two" || got[1].Type != "tool_call" {
+		t.Fatalf("event order changed: %+v", got)
 	}
 }
 

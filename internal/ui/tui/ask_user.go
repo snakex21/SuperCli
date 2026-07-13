@@ -87,6 +87,30 @@ func renderAskView(a *pendingAsk, width, height int) string {
 			b.WriteString(padTo(opt.Description, boxW-6))
 			b.WriteString("    │\n")
 		}
+		if opt.Preview != "" {
+			b.WriteString(pad)
+			b.WriteString("│    ")
+			b.WriteString(padTo("preview: "+opt.Preview, boxW-6))
+			b.WriteString("    │\n")
+		}
+		if opt.Image != "" {
+			b.WriteString(pad)
+			b.WriteString("│    ")
+			b.WriteString(padTo("image: "+opt.Image, boxW-6))
+			b.WriteString("    │\n")
+		}
+		if opt.ImagePrompt != "" && opt.Image == "" {
+			b.WriteString(pad)
+			b.WriteString("│    ")
+			b.WriteString(padTo("prompt: "+opt.ImagePrompt, boxW-6))
+			b.WriteString("    │\n")
+		}
+	}
+	if a.customMode {
+		b.WriteString(pad)
+		b.WriteString("│  ")
+		b.WriteString(padTo("Your answer: "+a.custom+"_", boxW-4))
+		b.WriteString("  │\n")
 	}
 
 	// Bottom padding.
@@ -119,10 +143,17 @@ func headerLine(a *pendingAsk) string {
 }
 
 func helpLine(a *pendingAsk) string {
-	if a.MultiSelect {
-		return "1-4 toggle · ↑↓ move · ⏎ confirm · esc cancel"
+	if a.customMode {
+		return "type answer · ⏎ submit · esc options"
 	}
-	return "1-4 quick pick · ↑↓ move · ⏎ confirm · esc cancel"
+	custom := ""
+	if a.AllowCustom {
+		custom = " · c custom"
+	}
+	if a.MultiSelect {
+		return "1-4 toggle · ↑↓ move · ⏎ confirm" + custom + " · esc cancel"
+	}
+	return "1-4 quick pick · ↑↓ move · ⏎ confirm" + custom + " · esc cancel"
 }
 
 // writeCentered writes s centered in width characters, padding

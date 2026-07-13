@@ -68,5 +68,14 @@ func stripThinkingFromMessage(msg llm.Message) llm.Message {
 		}
 		msg.Parts = parts
 	}
+	// Some local reasoning models occasionally finish a turn with only a
+	// reasoning channel and no visible answer. Stripping that reasoning used
+	// to leave an invalid empty assistant message in history; the NEXT request
+	// then failed before reaching the model. Keep a tiny semantic placeholder
+	// only in provider-facing history. The persisted/UI copy is written before
+	// this function runs and therefore retains the original reasoning stream.
+	if msg.Role == llm.RoleAssistant && msg.Content == "" && len(msg.Parts) == 0 && len(msg.ToolCalls) == 0 {
+		msg.Content = "[no visible answer]"
+	}
 	return msg
 }

@@ -25,6 +25,7 @@ func statsFixture(t *testing.T) (*Engine, *session.Store, session.Session, strin
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)

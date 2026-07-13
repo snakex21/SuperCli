@@ -195,32 +195,74 @@ round-trip. The small-model catalog separates directly callable read-only
 entries from complex load-on-demand entries; cloud models see the same compact
 eligible signatures in the dispatcher's description.
 
+### One execution profile across TUI, WebGUI and batch
+
+All three front-ends resolve the same two independent axes before creating a
+loop: model capability (tier rules, price and model metadata) and backend shape
+(local/private versus cloud). Small-capability models receive the short core
+prompt and compact tool protocol. A large model keeps the richer guidance, but
+on a local/private host its tool schemas are still thinned because prefill, not
+reasoning quality, is the bottleneck. The profile is frozen for the loop so the
+tool prefix never changes mid-session. `small_full_tools = true` remains the
+explicit full-schema escape hatch.
+
+`SUPERCLI_LLM_MAX_TOKENS` is carried through OpenAI-compatible and OpenCode
+transports as `max_tokens` (zero omits it). Batch streaming writes delta
+fragments verbatim rather than adding a newline after every fragment.
+Repository preflight waits for a coordinator/project turn, so a greeting or
+general-advice turn no longer pays for repository state.
+
 ### Deterministic advisor routing
 
 Navigator auto mode treats strong conceptual prefixes (`wyjaśnij`, `jak
 działa`, `what is`, `explain`, etc.) as a confident advisor route. Project/file
 keywords are checked first, so “wyjaśnij ten kod w pliku” remains coordinator.
-Truly ambiguous prompts still pay for the navigator. This removes one helper
-inference without replacing semantic uncertainty with broad keyword guesses.
+With `navigator = auto`, ambiguity safely falls back to coordinator without a
+model call. If a separate task/draft provider is configured, the TUI may use it
+for ambiguous classification without evicting the main model's KV cache.
+`navigator = on` remains the explicit model-every-turn mode.
 
 ### Catalog-hoist live A/B harness
 
 `TestCatalogHoist_AB_Live` runs three real turns per arm against
 `SUPERCLI_LIVE_BASEURL` / `SUPERCLI_LIVE_MODEL`, discards each cold first call,
 and compares provider-reported evaluated input (`input - cached`) for tail vs
-hoisted catalog placement. A second guard requires the model to discover and
-execute a direct `catalog_probe` in both placements with exactly one successful
-tool call (recovery turns fail the guard).
+hoisted catalog placement. A second guard runs with normal thinking and
+requires the model to discover and execute a direct `catalog_probe` in both
+placements without tool errors. It logs repeats and terminal loop errors but
+does not compare them for Qwen builds with a known stochastic tool-loop issue.
 
 2026-07-12 live result: LM Studio, Qwen3.5-9B Q8, full GPU offload, 32k context,
 parallelism 1. Tail evaluated 2891 warm input tokens; hoist evaluated 2867, a
 24-token / 0.83% difference. Both quality arms completed in one tool call.
 LM Studio's OpenAI-compatible usage reported zero cached tokens for every arm,
-so this run cannot establish a KV-cache win; the small input difference is only
-prompt shape. `SUPERCLI_CATALOG_HOIST` therefore deliberately remains default
-OFF. The live run also exposed an XML-template compatibility issue where Qwen
+so this run could not establish a KV-cache win; the small input difference was
+only prompt shape. The live run also exposed an XML-template compatibility issue where Qwen
 encoded nested `invoke_tool.args` as text; the tolerant, schema-checked decoder
 now prevents the otherwise necessary repair turns.
+
+2026-07-13 live result: llama.cpp on HP Z6, Qwen3.5-122B-A10B Q4_K_P. The two
+warm tail turns evaluated 1743 input tokens (725 cached per turn); the hoisted
+turns evaluated 237 (1466 cached per turn): **1506 fewer evaluated tokens,
+86.4%**. With normal thinking enabled, both placement quality arms discovered
+and executed `catalog_probe`. Tool-call counts are logged but are not used as a
+placement verdict because this Qwen build has a known stochastic looping
+tendency; one observed run produced five calls at the tail and one when
+hoisted, but that comparison is informational rather than causal. The run also proved that strict Qwen templates
+require one leading system message, so the base system prompt and hoisted
+catalog are merged into one stable block. Catalog hoist is now automatic for
+thin+stable profiles; `stable_toolset=false` or `small_full_tools=true` is the
+escape hatch.
+
+### Bounded large-result store
+
+Successful tool output up to 8 KiB remains byte-identical. Larger output is
+kept in a per-loop in-memory LRU (32 entries / 16 MiB) while provider history
+receives a roughly 4 KiB head/tail preview and a `read_output` handle. The UI
+event retains the complete result. This reduces local-model prefill without
+blindly discarding evidence: the model can fetch another 8 KiB range only when
+needed. Handles intentionally expire with the run and are never written to
+disk.
 
 ## Structured tool errors (deterministic failure results)
 
@@ -340,8 +382,10 @@ This is an upstream limitation, documented in slotcache.go.
 **What.** A compact auto-collected repo-state block (branch/HEAD,
 uncommitted changes, recent commits — or a pure-Go recently-modified-files
 fallback when git is absent; git is never required) appended to the first
-user message of a session and to every worker briefing. Hard token budget
-(800, most-important-first trimming). `internal/system/preflight/`.
+user message of a session and to every worker briefing. Small worktrees keep
+exact paths; large dirty trees use status counts, hot areas and a 16-path
+sample. Hard token budget: 300 (most-important-first trimming).
+`internal/system/preflight/`.
 
 **Why ON.** Measured 2026-07-09, identical task with/without: the ~73
 token block turned 6 turns into 4 (−33%), eval −36%, total tokens −42%,
@@ -479,6 +523,48 @@ Reading the baseline:
   check. 1k msgs 75.1 ms → 0.29 ms, 10k msgs 6.93 s → 2.5 ms
   (BenchmarkEvictForBudget baseline above).
 
+## Web GUI request hot path (2026-07-13)
+
+`Engine` owns one lazy, concurrency-safe `session.Store`; endpoints, chat
+history, per-call usage, titles, stats and checkpoint events reuse it. This
+removes repeated SQLite `Ping` plus schema/FTS migration checks. Baseline on
+the same Ryzen 7 5800X3D Windows host:
+
+```
+go test ./internal/webgui -run '^$' -bench BenchmarkEngineSessionStore -benchmem -benchtime=200ms
+BenchmarkEngineSessionStore/shared_handle-16       5.7-5.9 ns/op       0 B/op      0 allocs/op
+BenchmarkEngineSessionStore/open_and_migrate-16    1.28-1.32 ms/op    ~14.9 KB/op  514-515 allocs/op
+```
+
+Assistant text SSE events are coalesced for at most 40 ms or 4 KB. Tool,
+worker, question, notice, done and error boundaries flush pending text first
+and remain immediate. The browser already batches Markdown rendering; this
+server-side layer removes redundant JSON encodes, flush syscalls and WebView
+event dispatches.
+
+## Bounded durable memory (2026-07-13)
+
+Persistent memory is an indexed working set, never a transcript file injected
+wholesale into the model. The session-start briefing remains hard-capped at
+700 estimated tokens (300 on the small tier); older entries are available only
+through the explicit `recall` tool. Disk and tool-output safety rails prevent
+the multi-gigabyte memory-file failure mode seen in some other CLIs:
+
+- 16 KiB maximum for any stored entry; `remember` asks the model to summarize
+  at 4 KiB instead of accepting transcript dumps;
+- 4096 live entries and 32 MiB source text per project/global store;
+- rolling retention of 200 automatic task logs, 3 emergency raw tails and 200
+  scratch notes per day; durable preferences/decisions are not silently pruned;
+- `recall` clamps requests to 10 hits, 1800 bytes per hit and about 8 KiB total,
+  always marking truncation;
+- SQLite FTS/vector indexes stay on disk and only the selected bounded result
+  reaches the provider, so database size does not translate into prompt cost.
+
+The web prompt replay test also found that `task.agent.enum` inherited Go map
+iteration order from `SubAgentRegistry.Names`. Names are now sorted, keeping
+both the system prompt and model-facing tool catalog byte-stable across turns
+for KV-cache reuse.
+
 ## Recent fixes and experiments (2026-07-11)
 
 - **EvictForBudget threshold fix** (b2a393c): eviction now compares
@@ -487,11 +573,12 @@ Reading the baseline:
 - **Streaming consume() O(n)** (593a352): the incremental marker
   scanner replaces the quadratic `text += delta` accumulation on long
   streamed answers.
-- **Catalog hoist** (`SUPERCLI_CATALOG_HOIST=1`, 8b43f4f, **default
-  OFF**): moves the thin-tools catalog into the stable prompt prefix.
-  The LM Studio/Qwen3.5-9B live A/B found only 0.83% fewer input tokens
-  and the endpoint reported no cached-token accounting, so there is no
-  measured reason to accept prefix-invalidation risk by default.
+- **Catalog hoist**: moves the thin-tools catalog into the stable prompt
+  prefix. Default ON for thin+stable profiles after HP Z6/Qwen3.5-122B
+  measured 86.4% fewer evaluated warm-turn tokens. Thinking-enabled probes
+  confirmed tool visibility in both placements; repeat counts are excluded
+  because this Qwen build can loop stochastically. Disable through
+  `stable_toolset=false` or `small_full_tools=true`.
 - **Navigator on the small provider** (fadc051): route classification
   for the navigator runs on the small side provider; awaiting live
   test.

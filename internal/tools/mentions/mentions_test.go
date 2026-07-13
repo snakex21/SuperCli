@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"supercli/internal/tools/sandbox"
 )
 
 func TestParse_SingleMention(t *testing.T) {
@@ -110,15 +112,31 @@ func TestResolve_ReadsFile(t *testing.T) {
 }
 
 func TestResolve_AbsolutePath(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	home := filepath.Join(root, "workspace")
+	dir := filepath.Join(root, "shared")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	f := filepath.Join(dir, "abs.txt")
 	if err := os.WriteFile(f, []byte("absolute"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mentions := Resolve("/nowhere", []string{f}, 0)
+	sandbox.SetUnsandboxed(false)
+	t.Cleanup(func() { sandbox.SetUnsandboxed(false) })
+	mentions := Resolve(home, []string{f}, 0)
 	if len(mentions) != 1 {
 		t.Fatalf("len = %d", len(mentions))
 	}
+	if !strings.Contains(mentions[0].Content, "escapes home") {
+		t.Fatalf("external mention was allowed while sandboxed: %q", mentions[0].Content)
+	}
+
+	sandbox.SetUnsandboxed(true)
+	mentions = Resolve(home, []string{f}, 0)
 	if mentions[0].Content != "absolute" {
 		t.Errorf("content = %q", mentions[0].Content)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"supercli/internal/system/config"
+	"supercli/internal/tools/sandbox"
 )
 
 // knobsGET fetches the panel and decodes the rows.
@@ -53,7 +54,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 
 	// Same keys, same order as the TUI settingsRows() (minus reset-all).
 	wantOrder := []string{
-		"orchestrator", "thinking", "navigator", "stable_toolset",
+		"orchestrator", "allow_all", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin_parallel", "task_parallel",
 		"memory_briefing_tokens", "task_max_steps", "task_max_tokens",
 		"task_model", "noop_gate", "preflight_repo", "draft_verify",
@@ -72,6 +73,9 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 	if k := findKnob(t, knobs, "orchestrator"); k.Value != "auto" || k.Source != "default" {
 		t.Errorf("orchestrator default: %+v", k)
 	}
+	if k := findKnob(t, knobs, "allow_all"); k.Value != "off" || k.Source != "default" {
+		t.Errorf("allow_all default: %+v", k)
+	}
 	if k := findKnob(t, knobs, "preflight_repo"); k.Value != "on" || k.Source != "default" {
 		t.Errorf("preflight_repo default: %+v", k)
 	}
@@ -85,6 +89,8 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 
 func TestConfigKnobs_SetAndReset(t *testing.T) {
 	srv := newTestServer(t, false)
+	sandbox.SetUnsandboxed(false)
+	t.Cleanup(func() { sandbox.SetUnsandboxed(false) })
 
 	if rec := knobsPOST(t, srv, `{"key":"orchestrator","value":"on"}`); rec.Code != http.StatusOK {
 		t.Fatalf("set orchestrator: %d %s", rec.Code, rec.Body.String())
@@ -104,6 +110,19 @@ func TestConfigKnobs_SetAndReset(t *testing.T) {
 	}
 	if k := findKnob(t, knobsGET(t, srv), "orchestrator"); k.Value != "auto" || k.Source != "default" {
 		t.Errorf("after reset: %+v", k)
+	}
+
+	if rec := knobsPOST(t, srv, `{"key":"allow_all","value":"on"}`); rec.Code != http.StatusOK {
+		t.Fatalf("set allow_all: %d %s", rec.Code, rec.Body.String())
+	}
+	if !sandbox.IsUnsandboxed() {
+		t.Error("allow_all did not update the live sandbox state")
+	}
+	if rec := knobsPOST(t, srv, `{"key":"allow_all","value":"off"}`); rec.Code != http.StatusOK {
+		t.Fatalf("reset allow_all: %d %s", rec.Code, rec.Body.String())
+	}
+	if sandbox.IsUnsandboxed() {
+		t.Error("disabling allow_all left the live sandbox open")
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"supercli/internal/tools/fileops"
@@ -88,12 +87,17 @@ func NewReadDocx(baseDir string, maxBytes int64) *ReadDocxTool {
 func (t *ReadDocxTool) Spec() Tool {
 	return Tool{
 		Name:        "read_docx",
-		Description: "Read a Word .docx file and extract its text. Pure Go: opens the .docx as a zip, parses word/document.xml, and emits paragraphs (one per line) and tables (pipe-separated rows). Refuses to read entries other than word/document.xml.",
+		Description: "Read a Word .docx file and extract its current text (accepted base plus tracked insertions, without tracked deletions). Pure Go. Set selectors=true for stable paragraph paths used by precise edits; formatting=true adds compact style hints. Headers, footers and review comments are opt-in.",
 		Schema: `{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Path to the .docx file."},
-    "max_paragraphs": {"type": "integer", "description": "Cap on paragraphs to render (default 5000)."}
+    "max_paragraphs": {"type": "integer", "description": "Cap on paragraphs to render (default 5000)."},
+    "selectors": {"type": "boolean", "description": "Emit direct body paragraphs as /body/p[N] [style=ID] text."},
+    "formatting": {"type": "boolean", "description": "With selectors, include compact direct-format hints such as alignment, font, size, bold, color and spacing."},
+    "include_headers": {"type": "boolean", "description": "Also extract word/header*.xml text."},
+    "include_footers": {"type": "boolean", "description": "Also extract word/footer*.xml text."},
+    "include_comments": {"type": "boolean", "description": "Also list Word review comments with id and author."}
   },
   "required": ["path"]
 }`,
@@ -108,8 +112,13 @@ func (t *ReadDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		return Result{Err: err}, err
 	}
 	var params struct {
-		Path          string `json:"path"`
-		MaxParagraphs int    `json:"max_paragraphs"`
+		Path            string `json:"path"`
+		MaxParagraphs   int    `json:"max_paragraphs"`
+		Selectors       bool   `json:"selectors"`
+		Formatting      bool   `json:"formatting"`
+		IncludeHeaders  bool   `json:"include_headers"`
+		IncludeFooters  bool   `json:"include_footers"`
+		IncludeComments bool   `json:"include_comments"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return Result{Err: fmt.Errorf("read_docx: bad args: %w", err)}, err
@@ -123,9 +132,9 @@ func (t *ReadDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		maxP = t.MaxParagraphs
 	}
 
-	full := params.Path
-	if !filepath.IsAbs(full) {
-		full = filepath.Join(t.BaseDir, full)
+	full, err := resolveSandboxed(t.BaseDir, params.Path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("read_docx: %w", err)}, nil
 	}
 	info, err := os.Stat(full)
 	if err != nil {
@@ -150,11 +159,79 @@ func (t *ReadDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_docx: %w", err)}, err
 	}
-	text, err := t.renderDocument(body, maxP)
+	var text string
+	if params.Selectors {
+		text, err = t.renderDocumentSelectors(body, maxP, params.Formatting)
+	} else {
+		text, err = t.renderDocument(body, maxP)
+	}
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_docx: %w", err)}, err
 	}
+	if params.IncludeHeaders || params.IncludeFooters {
+		parts, partErr := listDocxStoryParts(full, params.IncludeHeaders, params.IncludeFooters, t.MaxDocxBytes)
+		if partErr != nil {
+			return Result{Err: fmt.Errorf("read_docx: %w", partErr)}, partErr
+		}
+		var stories strings.Builder
+		for _, name := range parts {
+			part, readErr := readZipEntry(full, name, t.MaxDocxBytes)
+			if readErr != nil {
+				return Result{Err: fmt.Errorf("read_docx: %s: %w", name, readErr)}, readErr
+			}
+			rendered, renderErr := renderDocxStoryPart(part, maxP, t.MaxOutputBytes)
+			if renderErr != nil {
+				return Result{Err: fmt.Errorf("read_docx: %s: %w", name, renderErr)}, renderErr
+			}
+			fmt.Fprintf(&stories, "\n== %s ==\n%s\n", name, rendered)
+		}
+		if int64(len(text)+stories.Len()) > t.MaxOutputBytes {
+			return Result{Err: fmt.Errorf("read_docx: rendered document and stories exceed %d bytes", t.MaxOutputBytes)}, nil
+		}
+		text += stories.String()
+	}
+	if params.IncludeComments {
+		comments, exists, readErr := readOptionalZipEntry(full, docxCommentsEntry, t.MaxDocxBytes)
+		if readErr != nil {
+			return Result{Err: fmt.Errorf("read_docx: comments: %w", readErr)}, readErr
+		}
+		if exists {
+			rendered, renderErr := renderDocxComments(comments, t.MaxOutputBytes-int64(len(text)))
+			if renderErr != nil {
+				return Result{Err: fmt.Errorf("read_docx: comments: %w", renderErr)}, renderErr
+			}
+			text += rendered
+		}
+	}
 	return Result{Text: text}, nil
+}
+
+func (t *ReadDocxTool) renderDocumentSelectors(data []byte, maxParagraphs int, formatting bool) (string, error) {
+	paragraphs, err := collectDocxParagraphLocations(data)
+	if err != nil {
+		return "", err
+	}
+	if len(paragraphs) > maxParagraphs {
+		paragraphs = paragraphs[:maxParagraphs]
+	}
+	var out strings.Builder
+	for _, paragraph := range paragraphs {
+		style := paragraph.style
+		if style == "" {
+			style = "Normal"
+		}
+		text := strings.ReplaceAll(paragraph.text, "\n", `\n`)
+		text = strings.ReplaceAll(text, "\t", `\t`)
+		format := ""
+		if formatting {
+			format = docxParagraphFormatSummary(paragraph.frag)
+		}
+		fmt.Fprintf(&out, "%s [style=%s%s] %s\n", paragraph.selector, style, format, text)
+		if int64(out.Len()) > t.MaxOutputBytes {
+			return "", fmt.Errorf("rendered selector text exceeds %d bytes", t.MaxOutputBytes)
+		}
+	}
+	return out.String(), nil
 }
 
 // renderDocument walks the document.xml bytes
@@ -259,6 +336,15 @@ func parseParagraph(dec *xml.Decoder) (docxParagraph, error) {
 					return p, err
 				}
 				p.Runs = append(p.Runs, run)
+			case "ins", "hyperlink", "smartTag", "sdtContent":
+				if err := parseVisibleRunContainer(dec, se.Name.Local, &p); err != nil {
+					return p, err
+				}
+			case "del":
+				// Default rendering shows the current document view.
+				if err := dec.Skip(); err != nil {
+					return p, fmt.Errorf("skip deletion: %w", err)
+				}
 			default:
 				// Skip unknown children
 				// (bookmarks, hyperlinks,
@@ -271,6 +357,42 @@ func parseParagraph(dec *xml.Decoder) (docxParagraph, error) {
 		case xml.EndElement:
 			if se.Name.Local == "p" {
 				return p, nil
+			}
+		}
+	}
+}
+
+func parseVisibleRunContainer(dec *xml.Decoder, endName string, p *docxParagraph) error {
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", endName, err)
+		}
+		switch se := tok.(type) {
+		case xml.StartElement:
+			switch se.Name.Local {
+			case "r":
+				run, err := parseRun(dec)
+				if err != nil {
+					return err
+				}
+				p.Runs = append(p.Runs, run)
+			case "ins", "hyperlink", "smartTag", "sdtContent":
+				if err := parseVisibleRunContainer(dec, se.Name.Local, p); err != nil {
+					return err
+				}
+			case "del":
+				if err := dec.Skip(); err != nil {
+					return err
+				}
+			default:
+				if err := dec.Skip(); err != nil {
+					return err
+				}
+			}
+		case xml.EndElement:
+			if se.Name.Local == endName {
+				return nil
 			}
 		}
 	}

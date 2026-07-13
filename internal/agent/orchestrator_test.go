@@ -20,7 +20,7 @@ func orchestratorBaseRegistry() *tools.Registry {
 		// orchestrator set
 		"task", "send_message", "task_stop",
 		"tool_search", "read_lines", "read_context", "list_dir", "recall",
-		"ask_user", "goal", "remember",
+		"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 		// mutating / executing tools that must be stripped
 		"edit_line", "edit_lines", "insert_after", "delete_lines",
 		"write_file", "make_dir", "move", "copy", "trash",

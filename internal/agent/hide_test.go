@@ -15,6 +15,89 @@ func makeLoopWithMessages(msgs ...llm.Message) *Loop {
 	return &Loop{Messages: append([]llm.Message(nil), msgs...)}
 }
 
+func TestVisibleMessages_NoHiddenReturnsView(t *testing.T) {
+	l := makeLoopWithMessages(
+		llm.Message{Role: llm.RoleUser, Content: "u1"},
+		llm.Message{Role: llm.RoleAssistant, Content: "a1"},
+	)
+
+	visible := l.VisibleMessages()
+	if len(visible) != len(l.Messages) {
+		t.Fatalf("VisibleMessages length = %d, want %d", len(visible), len(l.Messages))
+	}
+	if &visible[0] != &l.Messages[0] {
+		t.Fatal("VisibleMessages copied an unhidden conversation; want a read-only view")
+	}
+
+	var sink []llm.Message
+	if allocs := testing.AllocsPerRun(100, func() { sink = l.VisibleMessages() }); allocs != 0 {
+		t.Fatalf("VisibleMessages allocations = %.2f, want 0", allocs)
+	}
+	_ = sink
+}
+
+func TestEstimateVisibleTokens_AppendOnlyAndRewrite(t *testing.T) {
+	l := makeLoopWithMessages(
+		llm.Message{Role: llm.RoleSystem, Content: "system"},
+		llm.Message{Role: llm.RoleUser, Content: "first"},
+	)
+	assertExact := func(label string) {
+		t.Helper()
+		want := llm.EstimateTokens(l.VisibleMessages())
+		if got := l.EstimateVisibleTokens(); got != want {
+			t.Fatalf("%s: EstimateVisibleTokens = %d, want %d", label, got, want)
+		}
+	}
+
+	assertExact("initial")
+	counted := l.visibleEstimateCount
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleAssistant, Content: "new tail"})
+	assertExact("append")
+	if l.visibleEstimateCount != counted+1 {
+		t.Fatalf("append counted %d messages, want %d", l.visibleEstimateCount, counted+1)
+	}
+
+	l.CompactWithSummary("a substantially different compact summary")
+	assertExact("compaction rewrite")
+}
+
+func TestNavigatorMessagesDoesNotMutateEstimatedHistory(t *testing.T) {
+	long := strings.Repeat("fragment ", 100)
+	l := makeLoopWithMessages(llm.Message{
+		Role:    llm.RoleUser,
+		Content: long,
+		Parts:   []llm.ContentPart{{Type: llm.PartTypeText, Text: long}},
+	})
+	want := l.EstimateVisibleTokens()
+	_ = l.navigatorMessages("route this")
+	if got := l.EstimateVisibleTokens(); got != want {
+		t.Fatalf("navigator mutated cached history estimate: got %d, want %d", got, want)
+	}
+	if l.Messages[0].Content != long || l.Messages[0].Parts[0].Text != long {
+		t.Fatal("navigator preparation mutated conversation history")
+	}
+}
+
+func BenchmarkEstimateVisibleTokensStableHistory(b *testing.B) {
+	msgs := make([]llm.Message, 2000)
+	for i := range msgs {
+		msgs[i] = llm.Message{Role: llm.RoleUser, Content: strings.Repeat("token payload ", 20)}
+	}
+	l := makeLoopWithMessages(msgs...)
+	l.EstimateVisibleTokens() // warm the append-only cache
+
+	b.Run("full_scan", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = llm.EstimateTokens(l.Messages)
+		}
+	})
+	b.Run("incremental_cached", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = l.EstimateVisibleTokens()
+		}
+	})
+}
+
 func TestHideRange_BasicMark(t *testing.T) {
 	l := makeLoopWithMessages(
 		llm.Message{Role: llm.RoleUser, Content: "u1"},
@@ -42,10 +125,10 @@ func TestHideRange_InvalidRange(t *testing.T) {
 	cases := []struct {
 		from, to int
 	}{
-		{-1, 1},   // from < 0
-		{0, 5},    // to > len
-		{2, 1},    // from > to
-		{0, 0},    // no-op, NOT an error
+		{-1, 1}, // from < 0
+		{0, 5},  // to > len
+		{2, 1},  // from > to
+		{0, 0},  // no-op, NOT an error
 	}
 	for _, c := range cases {
 		err := l.HideRange(c.from, c.to)

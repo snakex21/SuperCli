@@ -41,6 +41,9 @@ type OpencodeConfig struct {
 	// model listing.
 	Model string
 
+	// MaxTokens caps generated tokens; zero keeps the gateway default.
+	MaxTokens int
+
 	// Capabilities, if nil, defaults to a
 	// fresh registry. Pass the main registry
 	// so discovered models land in the
@@ -116,6 +119,7 @@ func NewOpencode(cfg OpencodeConfig) (*OpencodeProvider, error) {
 		BaseURL:         cfg.BaseURL,
 		APIKey:          apiKey,
 		Model:           rawModel,
+		MaxTokens:       cfg.MaxTokens,
 		Capabilities:    caps,
 		CapabilityModel: prefixed,
 	})

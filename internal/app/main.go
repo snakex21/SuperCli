@@ -47,6 +47,7 @@ import (
 	"supercli/internal/agent/darwin"
 	"supercli/internal/agent/reflect"
 	"supercli/internal/agent/ultrawork"
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/consult"
 	"supercli/internal/llm/draft"
@@ -62,6 +63,7 @@ import (
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/doctor"
+	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
@@ -70,6 +72,7 @@ import (
 	"supercli/internal/tools/sandbox"
 	"supercli/internal/tools/shellescape"
 	"supercli/internal/ui/tui"
+	"supercli/internal/verification/hardtest"
 )
 
 const version = "0.6.0"
@@ -94,6 +97,7 @@ func initCodexAuth(dataDir string, t config.TomlConfig) {
 // once the model's tier is known — small-tier models get the
 // core only (see internal/prompt and internal/tier).
 var supercliSystemPromptBase = prompt.Build(false)
+var supercliModelProfile string
 var supercliCoordinatorMode bool
 
 // supercliOrchestratorMode is the HARD delegation mode (config
@@ -133,6 +137,9 @@ const memoryAutoSaveInstruction = "Memory: after completing a task, call remembe
 // any Darwin children see the same active goal.
 func buildSystemPrompt(svc *goal.Service) string {
 	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
+	if supercliModelProfile != "" {
+		base += "\n\n" + supercliModelProfile
+	}
 	// Orchestrator mode is a stricter coordinator: its lean preamble
 	// replaces the coordinator section (it subsumes the delegate-first
 	// guidance and adds the hard "you have no edit/run tools" boundary).
@@ -207,10 +214,7 @@ const defaultStableToolset = true
 // resolveStableToolset applies the config.toml tri-state override
 // (`stable_toolset`) on top of the built-in default.
 func resolveStableToolset(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return defaultStableToolset
+	return execution.StableToolset(override)
 }
 
 // defaultPreflightRepo: the repo-state preflight block is ON by
@@ -243,18 +247,7 @@ func resolvePreflightRepo(override *bool) bool {
 // model-every-turn behaviour; "off" disables the navigator entirely
 // (always coordinator). enable is EnableNavigator; auto is NavigatorAuto.
 func resolveNavigator(mode string) (enable, auto bool) {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "off":
-		return false, false
-	case "on":
-		return true, false
-	case "auto", "":
-		return true, true
-	default:
-		// Unknown value: fall back to the safe default rather than
-		// silently disabling routing.
-		return true, true
-	}
+	return execution.Navigator(mode)
 }
 
 // resolveTaskWorkerConfig maps config `task_model` onto the provider
@@ -463,12 +456,12 @@ func Main() {
 	config.TomlConfigToEnv(tomlCfg)
 	// Unsandboxed: flag > env (which TomlConfigToEnv may have set) > default off.
 	if *unsandboxedFlag || envTruthy("SUPERCLI_ALLOW_ALL") {
-		sandbox.Unsandboxed = true
+		sandbox.SetUnsandboxed(true)
 	}
 	// State the real sandbox root (the BaseDir file tools enforce) so
 	// the model's first file/list call uses the correct path. Set AFTER
 	// the unsandboxed decision so it reflects the actual sandbox state.
-	if sandbox.Unsandboxed {
+	if sandbox.IsUnsandboxed() {
 		workingDirNote = "Working directory: " + home +
 			"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
 	} else {
@@ -722,7 +715,9 @@ func Main() {
 	}
 	modelTier := tier.Classify(cfg.Model, tierIn, tierOut, tierRules)
 	smallTier := modelTier == tier.Small && !tomlCfg.SmallFullTools
-	supercliSystemPromptBase = prompt.Build(modelTier == tier.Small)
+	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
+	supercliSystemPromptBase = prompt.Build(execProfile.PromptSmall)
+	supercliModelProfile = prompt.LoadProfile(home, cfg.Model)
 
 	// Orchestrator mode (hard delegation): resolved from config, with an
 	// env override for scripted/test use. When on, the main loop gets a
@@ -733,6 +728,20 @@ func Main() {
 	}
 	if envFalsey("SUPERCLI_ORCHESTRATOR") {
 		supercliOrchestratorMode = false
+	}
+
+	sessionID := fmt.Sprintf("sess-%d", time.Now().UnixNano())
+	var checkpointCtrl *checkpoint.Controller
+	if manager, cpErr := checkpoint.Open(home, dataDir); cpErr == nil {
+		checkpointCtrl = checkpoint.NewController(manager, sessionID)
+	} else if cpErr != checkpoint.ErrUnavailable {
+		log.Printf("checkpoint: %v", cpErr)
+	}
+	checkpointSpec := func(spec tools.Tool) tools.Tool {
+		if checkpointCtrl != nil {
+			return checkpointCtrl.Wrap(spec)
+		}
+		return spec
 	}
 
 	registry := tools.NewRegistry()
@@ -774,8 +783,8 @@ func Main() {
 	// stdlib. file_ops is the safe file manager for
 	// office users: no overwrite, no hard delete
 	// (trash folder instead), sandboxed paths.
-	registry.MustRegister(tools.NewEditDocx(home).Spec())
-	registry.MustRegister(tools.NewEditXlsx(home).Spec())
+	registry.MustRegister(checkpointSpec(tools.NewEditDocx(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewEditXlsx(home).Spec()))
 	registry.MustRegister(tools.NewListDir(home).Spec())
 
 	// F20: read_pdf is opt-in (not always-on).
@@ -806,7 +815,7 @@ func Main() {
 	toolSearcher := tools.NewToolSearcher(registry, ftsIndex)
 	registry.MustRegister(toolSearcher.Spec())
 
-	discoverer := tools.NewDiscoverer(home, dataDir)
+	discoverer := tools.NewDiscovererWithBuiltins(home, dataDir)
 	skillApplier := tools.NewSkillApplier(discoverer)
 	registry.MustRegister(skillApplier.Spec())
 
@@ -844,19 +853,19 @@ func Main() {
 		defer audit.Close()
 	}
 
-	// Tier-aware always-on tools. Small-tier models get a
-	// trimmed core set (file read/edit, office editing,
-	// goal/memory, tool_search) so their tiny context isn't
-	// burned on tool schemas; everything else stays reachable
-	// via tool_search. `small_full_tools = true` in
-	// config.toml restores the full set.
+	// Execution-profile-aware visibility. Small models and slow local hosts
+	// expose the same practical core; ThinTools decides which of these carry a
+	// schema and which stay in the compact catalog. This keeps a local 122B
+	// model's prefill small without taking read_many/search_code away from it.
+	// `small_full_tools = true` is the explicit full-schema escape hatch.
 	if supercliCoordinatorMode {
 		registry.MarkAlwaysOn("ask_user")
 		registry.MarkAlwaysOn("tool_search")
 		registry.MarkAlwaysOn("goal")
-	} else if smallTier {
+	} else if execProfile.ThinTools {
 		for _, name := range []string{
-			"read_lines", "read_context", "read_many", "edit_line", "edit_lines",
+			"read_lines", "read_context", "read_many", "read_image", "search_code",
+			"ctx_execute", "ask_user", "edit_line", "edit_lines",
 			"insert_after", "delete_lines", "write_file", "make_dir",
 			"move", "copy", "trash",
 			"list_dir",
@@ -949,7 +958,7 @@ func Main() {
 	// token-savings tool from turn 1.
 	ctxRunner := ctxexec.New(home)
 	ctxTool := tools.NewCtxExecuteTool(ctxRunner, home)
-	registry.MustRegister(ctxTool.Spec())
+	registry.MustRegister(checkpointSpec(ctxTool.Spec()))
 
 	// F8: goal tool is always-on. It exposes the active
 	// goal and tasks to the model. Decomposition uses
@@ -1013,11 +1022,7 @@ func Main() {
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
 		}
 	}
-	taskBackendLocal := llm.IsLocalBaseURL(taskWorkerCfg.BaseURL)
-	taskParallel := !taskBackendLocal
-	if tomlCfg.TaskParallel != nil {
-		taskParallel = *tomlCfg.TaskParallel
-	}
+	taskParallel, taskParallelWarnLocal := execution.Parallel(taskWorkerCfg.BaseURL, tomlCfg.TaskParallel)
 
 	// cache_prompt (config.toml) sets the process-global default so
 	// providers built later this session (e.g. after a /model swap)
@@ -1068,7 +1073,6 @@ func Main() {
 	if err := budget.Validate(); err != nil {
 		fatal("credit budget", err)
 	}
-	sessionID := fmt.Sprintf("sess-%d", time.Now().UnixNano())
 	tracker := credits.NewTracker(sessionID, budget, creditStorage)
 	if err := creditStorage.SaveBudget(context.Background(), sessionID, budget); err != nil {
 		log.Printf("save budget: %v", err)
@@ -1215,9 +1219,6 @@ func Main() {
 		return wrapCompactSummary(summary), nil
 	}
 
-	// Navigator routing mode (config `navigator`, default auto).
-	navigatorEnable, navigatorAuto := resolveNavigator(tomlCfg.Navigator)
-
 	// The navigator's route classification is a tiny call, but on the
 	// main provider it thrashes a single-slot llama.cpp KV cache (its
 	// prompt is a different prefix, so the coordinator re-prefills on
@@ -1260,30 +1261,30 @@ func Main() {
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
-		PruneProtectTokens: tomlCfg.PruneProtectTokens,
-		EnableNavigator:    navigatorEnable,
-		NavigatorAuto:      navigatorAuto,
+		PruneProtectTokens:    tomlCfg.PruneProtectTokens,
+		EnableNavigator:       execProfile.EnableNavigator,
+		NavigatorAuto:         execProfile.NavigatorAuto,
+		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly && navigatorProvider == nil,
 		// Thin tool protocol: small-tier models get the compact
 		// catalog + full schemas only for the core; they suffer most
 		// from schema bulk in the prefill. Big models keep native
 		// JSON tool calling with full schemas. Mirrors the same
 		// smallTier gate that already trims their always-on set.
-		ThinTools: smallTier,
+		ThinTools: execProfile.ThinTools,
 		// Stable toolset: keep the request `tools` list fixed all
 		// session so tool_search activations don't invalidate the
 		// server-side KV prompt cache. `stable_toolset = true|false`
 		// in config.toml overrides the built-in default.
-		StableToolset: resolveStableToolset(tomlCfg.StableToolset),
-		// Catalog hoist (EXPERIMENTAL, default off): with the stable
+		StableToolset: execProfile.StableToolset,
+		// Catalog hoist (default for thin+stable profiles): with the stable
 		// toolset, move the thin-tools preamble (sentinel instruction
 		// + dormant catalog) into the KV-cached system prefix instead
 		// of re-injecting it behind the growing history every step
-		// (where llama.cpp re-evaluates it on every call). Kept behind
-		// an env switch until live-verified on a small local model —
-		// the recency risk is that the model reaches for tool_search
-		// less reliably when the catalog is not at the prompt end.
-		// Enable with SUPERCLI_CATALOG_HOIST=1.
-		CatalogHoist: envTruthy("SUPERCLI_CATALOG_HOIST"),
+		// (where llama.cpp re-evaluates it on every call). Enabled after
+		// HP Z6/Qwen3.5-122B measured 86.4% fewer evaluated warm-turn
+		// tokens with both quality arms passing. stable_toolset=false
+		// or small_full_tools=true disables the automatic profile.
+		CatalogHoist: execProfile.CatalogHoist,
 		// Orchestrator: task carries a full schema from turn 1 (delegation
 		// is the main loop's primary action). The registry restriction
 		// itself is applied below via SetRegistry, once the task tools are
@@ -1296,7 +1297,7 @@ func Main() {
 		// config override (task_parallel) wins in both directions; forcing
 		// parallel on a local backend warns once at execution time.
 		TaskParallel:          taskParallel,
-		TaskParallelWarnLocal: taskParallel && taskBackendLocal,
+		TaskParallelWarnLocal: taskParallelWarnLocal,
 		BaseDir:               home,
 	})
 	if err != nil {
@@ -1366,7 +1367,7 @@ func Main() {
 	// token telemetry; the one-line log states the estimate up front.
 	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
 		if block := preflight.Build(home, preflight.Options{}); block != "" {
-			loop.SetNextUserAddon(block)
+			loop.SetNextCoordinatorAddon(block)
 			log.Printf("preflight: repo context ~%d tok (rides the first user message)",
 				preflight.EstimateTokens(block))
 		}
@@ -1398,7 +1399,7 @@ func Main() {
 	// "new session" because the TUI scrollback, the
 	// FTS5 search index, and the on-disk session.db
 	// all stay intact.
-	mergedCommands := mergedSlashCommands(darwinTool, goalSvc)
+	mergedCommands := mergedSlashCommands(darwinTool, goalSvc, home)
 
 	// Fala 3: /workers — coordinator visibility. Lists workers from the
 	// task registry; "/workers stop <id>" cancels a running one.
@@ -1427,29 +1428,29 @@ func Main() {
 		return agent.FormatContextReport(loop.ContextReport()), nil
 	}
 
-	// MCP client: spawn configured [mcp.servers.*] stdio servers in the
-	// background, register their tools (deferred, tool_search-only),
-	// and expose status/restart via /mcp.
+	// MCP client: merge configured servers with portable dataDir/mcp packages,
+	// expose one thin bridge, and start each stdio process only on first use.
+	// /mcp remains the human-readable status/restart surface.
 	reindexTools := func() {
 		if err := toolSearcher.RebuildIndex(); err != nil {
 			log.Printf("mcp: tool index rebuild: %v", err)
 		}
 	}
-	mcpManager := initMcp(tomlCfg, registry, reindexTools)
+	mcpManager := initMcp(dataDir, tomlCfg, registry, reindexTools)
 	if mcpManager != nil {
 		defer mcpManager.StopAll()
 	}
-	mergedCommands["mcp"] = mcpCommand(mcpManager, registry, reindexTools)
+	mergedCommands["mcp"] = mcpCommand(mcpManager)
 
 	// /allow-all — toggle full filesystem access. Persists to config.toml.
 	mergedCommands["allow-all"] = func(ctx context.Context, args string) (string, error) {
 		switch strings.ToLower(strings.TrimSpace(args)) {
 		case "on", "true", "1":
-			sandbox.Unsandboxed = true
+			sandbox.SetUnsandboxed(true)
 			workingDirNote = "Working directory: " + home +
 				"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
 		case "off", "false", "0", "":
-			sandbox.Unsandboxed = false
+			sandbox.SetUnsandboxed(false)
 			workingDirNote = "Working directory (file sandbox root): " + home +
 				"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
 		default:
@@ -1457,14 +1458,16 @@ func Main() {
 		}
 		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
 		if tc, err := config.LoadToml(globalPath); err == nil {
-			tc.AllowAll = sandbox.Unsandboxed
+			tc.AllowAll = sandbox.IsUnsandboxed()
 			if err := config.SaveToml(globalPath, tc); err != nil {
 				log.Printf("allow-all: save config.toml: %v", err)
 			}
 		}
-		if sandbox.Unsandboxed {
+		if sandbox.IsUnsandboxed() {
+			loop.InjectUserMessage(ctx, "[filesystem access] Full filesystem access is now ON. Absolute file and search paths outside the workspace are allowed; sensitive system folders remain blocked.")
 			return "Full filesystem access is now ON — file operations can reach any directory (sensitive system paths still blocked). Persisted to config.toml.", nil
 		}
+		loop.InjectUserMessage(ctx, "[filesystem access] Workspace sandbox is now ON. File and search paths must stay inside the active workspace.")
 		return "Sandbox is now ON — file operations restricted to the working directory. Persisted to config.toml.", nil
 	}
 
@@ -1879,7 +1882,7 @@ func Main() {
 	// handler, and only under the hardcoded "codex" name, while the
 	// onboarding wizard saves the entry as name "openai").
 	for _, p := range provMgr.Configured() {
-		if p.Type == config.ProviderCodex {
+		if !p.Disabled && p.Type == config.ProviderCodex {
 			llm.RegisterCodexCatalog(caps, p.Name)
 		}
 	}
@@ -1900,7 +1903,7 @@ func Main() {
 		if i := strings.Index(spec, "/"); i > 0 {
 			prefix := spec[:i]
 			for _, pc := range provMgr.Configured() {
-				if pc.Name == prefix {
+				if pc.Name == prefix && !pc.Disabled {
 					provName, model = prefix, spec[i+1:]
 					break
 				}
@@ -1912,7 +1915,7 @@ func Main() {
 		mCfg := cfg
 		mCfg.Model = model
 		for _, pc := range provMgr.Configured() {
-			if pc.Name == provName {
+			if pc.Name == provName && !pc.Disabled {
 				mCfg.Provider = pc.Type
 				mCfg.BaseURL = pc.BaseURL
 				mCfg.APIKey = pc.APIKey
@@ -2222,7 +2225,7 @@ func Main() {
 	mergedCommands["sandbox"] = func(ctx context.Context, args string) (string, error) {
 		status := "restricted"
 		allowHint := ""
-		if sandbox.Unsandboxed {
+		if sandbox.IsUnsandboxed() {
 			status = "allow-all (full filesystem access)"
 			allowHint = "\nuse /allow-all off to re-enable the sandbox"
 		} else {
@@ -2246,18 +2249,19 @@ func Main() {
 	registry.MustRegister(tools.NewReadLines(home).Spec())
 	registry.MustRegister(tools.NewReadContext(home).Spec())
 	registry.MustRegister(tools.NewReadMany(home).Spec())
-	registry.MustRegister(tools.NewEditLine(home).Spec())
-	registry.MustRegister(tools.NewEditLines(home).Spec())
-	registry.MustRegister(tools.NewInsertAfter(home).Spec())
-	registry.MustRegister(tools.NewDeleteLines(home).Spec())
-	registry.MustRegister(tools.NewWriteFile(home).Spec())
-	registry.MustRegister(tools.NewMakeDir(home).Spec())
-	registry.MustRegister(tools.NewMove(home).Spec())
-	registry.MustRegister(tools.NewCopy(home).Spec())
-	registry.MustRegister(tools.NewTrash(home).Spec())
+	registry.MustRegister(tools.NewScratchpad(home).Spec())
+	registry.MustRegister(checkpointSpec(tools.NewEditLine(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewEditLines(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewInsertAfter(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewDeleteLines(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewWriteFile(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewMakeDir(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewMove(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewCopy(home).Spec()))
+	registry.MustRegister(checkpointSpec(tools.NewTrash(home).Spec()))
 
 	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
-	// web_search (DuckDuckGo by default — no key; Brave/Tavily
+	// web_search (DuckDuckGo by default — no key; Brave/Tavily/SearXNG
 	// when [web_search] in config.toml or BRAVE_API_KEY /
 	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
 	// MarkAlwaysOn); the model discovers them via tool_search.
@@ -2272,7 +2276,7 @@ func Main() {
 			wsKey = os.Getenv("TAVILY_API_KEY")
 		}
 	}
-	registry.MustRegister(tools.NewWebSearch(wsEngine, wsKey).Spec())
+	registry.MustRegister(tools.NewWebSearch(wsEngine, wsKey, tomlCfg.WebSearch.BaseURL).Spec())
 	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
 
 	// outlook_mail: Windows-only COM automation of desktop
@@ -2544,13 +2548,49 @@ func Main() {
 		// next idle window.
 		OnRunEnd: func() {
 			defer recoverAndLog(dataDir)()
+			if checkpointCtrl != nil {
+				cpCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				if _, err := checkpointCtrl.Complete(cpCtx); err != nil {
+					log.Printf("checkpoint complete: %v", err)
+				}
+				cancel()
+			}
 			saveDeterministicMemoryFacts(memAutoSaver, loop, memProg)
 			memIdle.Schedule()
 		},
 		// Foreground beats background: the moment the user submits
 		// a new prompt, stop the idle timer and cancel any
 		// in-flight background memory inference.
-		OnRunStart:   memIdle.Activity,
+		OnRunStart: func() {
+			memIdle.Activity()
+			if checkpointCtrl != nil {
+				checkpointCtrl.Start("")
+			}
+		},
+		CheckpointUndo: func(ctx context.Context, redo bool) (string, error) {
+			if checkpointCtrl == nil {
+				return "", checkpoint.ErrUnavailable
+			}
+			var result checkpoint.Result
+			var err error
+			if redo {
+				result, err = checkpointCtrl.Redo(ctx)
+			} else {
+				result, err = checkpointCtrl.Undo(ctx)
+			}
+			if err != nil {
+				if len(result.Conflicts) > 0 {
+					return "", fmt.Errorf("conflicts: %s", strings.Join(result.Conflicts, ", "))
+				}
+				return "", err
+			}
+			verb := "reverted"
+			if redo {
+				verb = "restored"
+			}
+			loop.InjectUserMessage(ctx, fmt.Sprintf("[checkpoint] User %s changes from turn %s (%d files). Current workspace state supersedes the earlier implementation.", verb, result.Record.ID, len(result.Files)))
+			return fmt.Sprintf("%s %d file(s) from turn %s", verb, len(result.Files), result.Record.ID), nil
+		},
 		ExtCh:        extCh,
 		ShellRunner:  shellescape.NewRunner(home),
 		Tracker:      fileops.NewTracker(200),
@@ -2647,7 +2687,7 @@ func Main() {
 
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
-func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, tomlCfg config.TomlConfig) {
+func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, tomlCfg config.TomlConfig) {
 	_ = home // project root; data lives in dataDir
 	// Echo shortcut.
 	if echoFlag {
@@ -2663,7 +2703,7 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	// normally. Interactive sessions are never gated.
 	gateOn := resolveNoopGate(tomlCfg.NoopGate)
 	if gateOn {
-		if rec, skip := noopGateSkip(dataDir, home, prompt); skip {
+		if rec, skip := noopGateSkip(dataDir, home, userPrompt); skip {
 			fmt.Printf("no-op: no changes since last identical run (%s)\n",
 				rec.UpdatedAt.Local().Format("2006-01-02 15:04"))
 			return
@@ -2695,6 +2735,7 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	if err != nil {
 		fatal("build provider", err)
 	}
+	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
 
 	// Build the agent loop.
 	reg := tools.NewRegistry()
@@ -2706,6 +2747,7 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
 		tools.NewReadMany(home).Spec(),
+		tools.NewScratchpad(home).Spec(),
 		tools.NewListDir(home).Spec(),
 		tools.NewEditLine(home).Spec(),
 		tools.NewInsertAfter(home).Spec(),
@@ -2715,19 +2757,37 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 		tools.NewMove(home).Spec(),
 		tools.NewCopy(home).Spec(),
 		tools.NewTrash(home).Spec(),
+		tools.NewSearchCode(home).Spec(),
+		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
 	} {
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
 	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
 	reg.MarkAlwaysOn("invoke_tool")
+	// A short-lived batch registry does not need a SQLite FTS database: the
+	// searcher uses its deterministic lexical fallback over this small set.
+	toolSearcher := tools.NewToolSearcher(reg, nil)
+	reg.MustRegister(toolSearcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
+	systemPrompt := prompt.Build(execProfile.PromptSmall)
+	if modelProfile := prompt.LoadProfile(home, cfg.Model); modelProfile != "" {
+		systemPrompt += "\n\n" + modelProfile
+	}
 	l, err := agent.NewLoop(agent.LoopConfig{
-		Provider: p,
-		Registry: reg,
-		Caps:     caps,
-		MaxSteps: 25,
-		BaseDir:  home,
-		Stats:    batchStats,
+		Provider:              p,
+		Registry:              reg,
+		Caps:                  caps,
+		System:                systemPrompt,
+		MaxSteps:              25,
+		BaseDir:               home,
+		Stats:                 batchStats,
+		EnableNavigator:       execProfile.EnableNavigator,
+		NavigatorAuto:         execProfile.NavigatorAuto,
+		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly,
+		ThinTools:             execProfile.ThinTools,
+		StableToolset:         execProfile.StableToolset,
+		CatalogHoist:          execProfile.CatalogHoist,
 		// Batch runs honor the same context-defense knobs as the
 		// TUI: config context_window (0 = loop default 16384) and
 		// prune_protect_tokens for the zero-LLM tool-result prune.
@@ -2741,23 +2801,32 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	// Preflight repo context (config `preflight_repo`): batch runs are
 	// always a fresh context, so the repo block saves the same early
 	// discovery turns as in the TUI. Appended to the user prompt side.
-	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
+	preflightTurn := !execProfile.EnableNavigator
+	if execProfile.EnableNavigator {
+		mode, confident := agent.DefaultRouteMap().ClassifyConfident(userPrompt)
+		preflightTurn = !confident || mode == agent.RouteCoordinator
+	}
+	if resolvePreflightRepo(tomlCfg.PreflightRepo) && preflightTurn {
 		if block := preflight.Build(home, preflight.Options{}); block != "" {
-			l.SetNextUserAddon(block)
-			fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok\n", preflight.EstimateTokens(block))
+			l.SetNextCoordinatorAddon(block)
+			fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok (project turn)\n", preflight.EstimateTokens(block))
 		}
 	}
 
-	ch, err := l.Run(context.Background(), prompt)
+	ch, err := l.Run(context.Background(), userPrompt)
 	if err != nil {
 		fatal("agent run", err)
 	}
 
-	// Consume events, print MessageEvent texts.
+	// Consume events. MessageEvent carries streaming fragments, not logical
+	// lines; Print preserves the model's formatting while Println inserted a
+	// newline after every token/delta on slow local streams.
+	printedMessage := false
 	for ev := range ch {
 		switch e := ev.(type) {
 		case agent.MessageEvent:
-			fmt.Println(e.Text)
+			fmt.Print(e.Text)
+			printedMessage = true
 		case agent.NoticeEvent:
 			// Provider status (rate-limit retry etc.) — stderr so it
 			// never pollutes the assistant output on stdout.
@@ -2786,6 +2855,9 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 			os.Exit(1)
 		}
 	}
+	if printedMessage {
+		fmt.Println()
+	}
 
 	// Phase telemetry: one machine-greppable line per step on stderr
 	// (stdout stays pure assistant output). Where each step's wall
@@ -2804,7 +2876,7 @@ func runBatch(prompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag 
 	// Successful run: record the post-run tree fingerprint so the next
 	// identical prompt over an unchanged tree can be skipped for free.
 	if gateOn {
-		noopGateSave(dataDir, home, prompt)
+		noopGateSave(dataDir, home, userPrompt)
 	}
 }
 
@@ -2831,6 +2903,7 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewReadLines(root).Spec())
 	reg.MustRegister(tools.NewReadContext(root).Spec())
 	reg.MustRegister(tools.NewReadMany(root).Spec())
+	reg.MustRegister(tools.NewScratchpad(root).Spec())
 	reg.MustRegister(tools.NewEditLine(root).Spec())
 	reg.MustRegister(tools.NewEditLines(root).Spec())
 	reg.MustRegister(tools.NewInsertAfter(root).Spec())
@@ -2872,6 +2945,7 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 			BaseURL:      cfg.BaseURL,
 			APIKey:       cfg.APIKey,
 			Model:        cfg.Model,
+			MaxTokens:    cfg.MaxTokens,
 			Capabilities: caps,
 		})
 		if err != nil {
@@ -2921,6 +2995,7 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 		BaseURL:        cfg.BaseURL,
 		APIKey:         llm.KiloDefaultKey(cfg.BaseURL, cfg.APIKey),
 		Model:          cfg.Model,
+		MaxTokens:      cfg.MaxTokens,
 		Timeout:        cfg.Timeout,
 		ConnectTimeout: cfg.ConnectTimeout,
 		HTTPClient:     httpClient,
@@ -3748,10 +3823,22 @@ func runGoalTasks(svc *goal.Service, args string) (string, error) {
 // mergedSlashCommands returns darwin + goal commands.
 // Goal gets priority on key collision (defensive; they
 // don't currently share keys).
-func mergedSlashCommands(dt *darwin.DarwinTool, svc *goal.Service) map[string]tui.SlashHandler {
+func mergedSlashCommands(dt *darwin.DarwinTool, svc *goal.Service, home string) map[string]tui.SlashHandler {
 	out := darwinCommands(dt)
 	for k, v := range goalCommands(svc) {
 		out[k] = v
+	}
+	out["test"] = func(ctx context.Context, args string) (string, error) {
+		if strings.TrimSpace(args) != "hard" {
+			return "usage: /test hard", nil
+		}
+		runCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer cancel()
+		report, err := hardtest.Run(runCtx, home)
+		if err != nil {
+			return "", err
+		}
+		return hardtest.Markdown(report), nil
 	}
 	return out
 }
@@ -4039,7 +4126,7 @@ func startPostTUIShutdownTimer(dataDir string, d time.Duration) {
 // with file mtimes. Used by --doctor to report stale
 // skills without requiring a running provider.
 func discoverSkillsForDoctor(home, dataDir string) []freshness.SkillEntry {
-	d := tools.NewDiscoverer(home, dataDir)
+	d := tools.NewDiscovererWithBuiltins(home, dataDir)
 	skills, err := d.Discover()
 	if err != nil {
 		return nil

@@ -98,6 +98,7 @@ func TestRunSessionTitleLLM_CanceledKeepsLocalTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +132,7 @@ func TestRunSessionTitleLLM_SetsTitleAndRespectsRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)

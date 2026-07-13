@@ -381,4 +381,7 @@ func TestReadDocx_Spec(t *testing.T) {
 	if spec.Fn == nil {
 		t.Error("Fn is nil")
 	}
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("invalid read_docx spec: %v", err)
+	}
 }

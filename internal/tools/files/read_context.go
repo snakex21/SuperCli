@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"supercli/internal/tools/fileops"
 )
@@ -55,17 +54,13 @@ func (t *ReadContext) execute(ctx context.Context, args json.RawMessage) (Result
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("read_context: bad args: %w", err)}, nil
 	}
-	full := t.resolvePath(a.File)
+	full, err := resolveSandboxed(t.BaseDir, a.File)
+	if err != nil {
+		return Result{Err: fmt.Errorf("read_context: %w", err)}, nil
+	}
 	lines, err := fileops.ReadContext(full, a.Line, a.Radius)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_context: %w", err)}, nil
 	}
 	return Result{Text: renderLines(lines)}, nil
-}
-
-func (t *ReadContext) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(t.BaseDir, path)
 }

@@ -3,6 +3,7 @@ package memorytools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -57,6 +58,17 @@ func TestRemember_EmptyTextFails(t *testing.T) {
 	}
 }
 
+func TestRemember_RejectsTranscriptSizedMemory(t *testing.T) {
+	rem := NewRemember(openMemStore(t))
+	res, err := rem.Spec().Fn(context.Background(), json.RawMessage(`{"text":"`+strings.Repeat("x", maxRememberTextBytes+1)+`"}`))
+	if err != nil {
+		t.Fatalf("go-level error: %v", err)
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "summarize") {
+		t.Fatalf("want actionable size error, got %+v", res)
+	}
+}
+
 func TestRecall_NoMatches(t *testing.T) {
 	rec := NewRecall(openMemStore(t))
 	res, err := rec.Spec().Fn(context.Background(), json.RawMessage(`{"query":"zzzznothing"}`))
@@ -76,6 +88,31 @@ func TestRecall_EmptyQueryFails(t *testing.T) {
 	}
 	if res.Err == nil {
 		t.Error("empty query should be a tool error")
+	}
+}
+
+func TestRecall_ClampsLimitAndOutputBytes(t *testing.T) {
+	s := openMemStore(t)
+	for i := 0; i < 12; i++ {
+		if err := s.Put(memory.Entry{
+			ID: fmt.Sprintf("hit-%02d", i), Scope: memory.ScopeFact,
+			Content: "needle " + strings.Repeat(fmt.Sprintf("payload-%02d ", i), 240), Source: memory.SourceAgent,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := NewRecall(s).Spec().Fn(context.Background(), json.RawMessage(`{"query":"needle","limit":999}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("recall err=%v result=%v", err, res.Err)
+	}
+	if len(res.Text) > maxRecallOutputBytes+128 { // UTF-8-safe omission marker has small bookkeeping overhead.
+		t.Fatalf("recall output=%d bytes, want bounded near %d", len(res.Text), maxRecallOutputBytes)
+	}
+	if strings.Count(res.Text, "- [") > maxRecallLimit {
+		t.Fatalf("recall returned too many entries: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "omitted_bytes") {
+		t.Fatalf("bounded output should disclose truncation: %s", res.Text)
 	}
 }
 

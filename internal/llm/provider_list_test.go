@@ -83,6 +83,32 @@ func TestIsFreeModelID(t *testing.T) {
 	}
 }
 
+func TestListFreeModelsUsesProviderMetadataWithoutTreatingMissingPricesAsZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "paid-without-metadata"},
+				{"id": "paid", "isFree": false, "pricing": map[string]any{"prompt": "0.000001", "completion": "0.000002"}},
+				{"id": "zero-priced-preview", "isFree": false, "pricing": map[string]any{"prompt": "0", "completion": "0"}},
+				{"id": "kilo-routed", "isFree": true, "pricing": map[string]any{"prompt": "0", "completion": "0"}},
+				{"id": "promotional-free"},
+				{"id": "zero-priced-alias", "pricing": map[string]any{"input": 0, "output": 0}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	got, err := ListFreeModels(context.Background(), srv.URL+"/v1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"kilo-routed", "promotional-free", "zero-priced-alias"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("free models = %v, want %v", got, want)
+	}
+}
+
 func TestListProviderModels_HappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

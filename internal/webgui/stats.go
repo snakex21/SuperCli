@@ -96,12 +96,11 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		},
 	}
 
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		sv.Cost = resolveStatsCost(e.tomlConfig(), nil, usageRecordFromIdentity(preview))
 		return sv, nil
 	}
-	defer store.Close()
 
 	var meta session.Session
 	var messages []llm.Message

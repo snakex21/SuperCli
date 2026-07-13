@@ -32,7 +32,7 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 | `slot_cache` | unset = auto (local hosts only; first failure = permanent off) | same as above, or `false` to stop slot files being written |
 | `prune_protect_tokens` | 0 = 8192 | shrink for tiny windows; negative disables pruning entirely |
 | `memory_briefing_tokens` | 0 = 700 (300 small tier) | briefing crowds a tiny window |
-| `navigator` | unset = `auto` (keyword-first, model on ambiguity) | `off` for scripted use (always coordinator), `on` to always ask the model |
+| `navigator` | unset = `auto` (zero-call keyword routing; ambiguity = coordinator) | `off` for scripted use (always coordinator), `on` to always ask the model; auto may use an already-configured side model without touching the main model |
 
 ## Turn economy
 
@@ -61,11 +61,54 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 | `draft_mode` / `draft_model` | off / empty | opt-in speculative drafting (F11) |
 | `reflect_every` | 0 = adaptive | positive forces a fixed N-step interval; negative disables reflection. Adaptive mode runs only after two consecutive failing tool batches, an identical repeated tool-call batch, or when one useful step remains before `MaxSteps` |
 | `model_tiers` | none | force a model into the small/big tier cascade |
-| `small_full_tools` | false | escape hatch: full always-on toolset for small-tier models |
+| `small_full_tools` | false | full-schema escape hatch; disables automatic thinning for both small models and large models on local/private hosts |
 | `max_credits_per_session` / `_day` | 0 = uncapped | budget enforcement |
 | `allow_all` | false | disables the sandbox boundary — know why |
-| `[mcp.servers.*]` | none | external stdio MCP servers (tools land behind tool_search) |
+| `[mcp.servers.*]` | none | external stdio MCP servers (lazy through `mcp_bridge`) |
+
+Relocatable MCP packages can also be placed under
+`supercli-data/mcp/<package>/manifest.toml`; see
+[Portable MCP packages](portable-mcp.md). They are discovered without starting
+processes and move with the whole SuperCli directory.
 | `[council]`, `[web_search]`, `[codex_auth]` | see toml.go | feature-specific |
+
+### Web search
+
+No configuration is required: `web_search` uses DuckDuckGo by default. Search
+results are deduplicated and kept in a small process-local LRU cache (64
+queries; 30 minutes for current topics, 24 hours for reference queries).
+Transient failures and empty responses from a configured engine fall back to
+DuckDuckGo; authentication and configuration errors remain visible.
+
+Optional keyed engine:
+
+```toml
+[web_search]
+engine = "brave" # or "tavily"
+api_key = "..."  # BRAVE_API_KEY / TAVILY_API_KEY also work
+```
+
+Optional public SearXNG instance (JSON output must be enabled):
+
+```toml
+[web_search]
+engine = "searxng"
+base_url = "https://search.example.com"
+```
+
+The existing tool accepts optional `freshness`, `include_domains`, and
+`exclude_domains` fields. This adds no system-prompt block or extra model call;
+the work happens only when the model invokes `web_search`. `web_fetch` prefers
+Markdown/plain responses when a site provides them, reducing HTML cleanup and
+tokens, with normal HTML as a fallback.
+
+`allow_all` permits absolute file and search paths outside the active
+workspace while keeping sensitive operating-system folders blocked. It
+can be changed live with `/allow-all on|off` in the TUI or with the
+`allow_all` switch in web settings. At startup, `--allow-all` and
+`SUPERCLI_ALLOW_ALL=1` are equivalent. The boundary applies consistently
+to file reads and writes, code search, `@file` mentions, images, Office
+documents, and ZIP extraction targets.
 
 ## For agents changing defaults
 

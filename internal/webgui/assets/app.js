@@ -109,7 +109,7 @@ function toast(msg) {
 
 var I18N = {
   en: {
-    "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects",
+    "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects", "side.tasks": "Tasks",
     "side.add": "add", "side.noSessions": "No sessions yet.", "side.noProjects": "No projects registered.",
     "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name",
     "session.deleteConfirm": "Delete this conversation permanently?", "session.renamed": "Conversation renamed.",
@@ -117,17 +117,27 @@ var I18N = {
     "session.runtime": "Remember chat model", "session.runtimeHint": "Restore this session's provider, model and reasoning level when it is opened.",
     "session.runtimeFailed": "Could not restore the session model; keeping the current selection.",
     "project.stopRun": "Stop the current run before switching projects.",
-    "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save",
+    "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save", "common.openFolder": "Open folder",
+    "common.openProjectFolder": "Open project folder", "common.closePanel": "Close side panel",
     "common.cancel": "Cancel", "common.edit": "edit", "common.remove": "remove", "common.add": "Add",
     "common.loading": "Loading…", "common.error": "error",
-    "model.none": "no model", "model.search": "Search models…", "model.reasoning": "Reasoning effort",
+    "model.none": "no model", "model.search": "Search models…", "model.noMatches": "No models match this search.", "model.reasoning": "Reasoning effort",
     "model.think": "think", "model.auto": "auto", "model.default": "default",
     "model.hide": "hide", "model.show": "show", "model.setDefault": "CLI default",
+    "model.allProviders": "All", "model.hideAll": "Hide all", "model.showAll": "Show all",
     "welcome.title": "What are we building?",
     "welcome.sub": "The agent reads, edits and runs code in the active workspace.",
     "welcome.h1": "Summarize this project", "welcome.h2": "Check configuration status", "welcome.h3": "How do I run the tests?",
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
-    "composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
+	"composer.queue": "Queue", "composer.queued": "Queued", "composer.interrupt": "Interrupt & send",
+	"composer.sendNow": "Send now", "composer.resume": "Resume queue", "composer.remove": "Remove",
+	"composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
+	"question.title": "Decision needed", "question.custom": "Your own answer…", "question.submit": "Continue",
+	"question.cancel": "Cancel question", "question.pick": "Select an option or enter your own answer.",
+	"question.prompt": "Image prompt", "question.copy": "Copy prompt", "question.copied": "Prompt copied.",
+	"question.waiting": "Waiting for your decision…", "question.zoom": "Open full preview",
+	"undo.undo": "Undo changes", "undo.redo": "Restore changes", "undo.done": "Changes undone.",
+	"undo.redone": "Changes restored.", "undo.conflict": "Undo stopped: files changed after the agent turn.",
     "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached", "tool.running": "running",
     "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
     "task.brief": "Task", "task.activity": "Activity", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
@@ -146,13 +156,24 @@ var I18N = {
     "stats.created": "created", "stats.updated": "last activity", "stats.contextWindow": "context window",
     "stats.currentContext": "Current context", "stats.contextShare": "estimated request composition",
     "panel.title": "Control panel", "panel.settings": "Settings", "panel.appearance": "Appearance",
-    "panel.models": "Models", "panel.providers": "Providers", "panel.accounts": "Accounts",
+    "panel.models": "Models", "panel.providers": "Providers", "panel.runtime": "Model servers", "panel.accounts": "Accounts",
     "panel.mcp": "MCP", "panel.memory": "Memory", "panel.goal": "Goal", "panel.usage": "Usage",
-    "panel.files": "Files", "panel.about": "About",
+    "panel.files": "Files", "panel.about": "About", "panel.workflow": "Workflow",
+	"workflow.queue": "Persistent task queue", "workflow.branches": "Session branches", "workflow.profile": "Model prompt profile",
+	"workflow.scratch": "Worker scratchpad", "workflow.hard": "Hard verification", "workflow.runHard": "Run /test hard",
+	"workflow.noBranches": "No branches yet.", "workflow.fork": "Fork", "workflow.compare": "Compare selected", "workflow.open": "Open",
+	"workflow.runBoth": "Queue same prompt in both",
+	"workflow.profileHint": "Only this bounded local file is appended for the active model family. No extra model call.",
+	"undo.learn": "Why did you undo this? (optional)", "undo.learnHint": "A short reason helps the agent avoid repeating the same mistake.",
+	"undo.sessionScope": "This session", "undo.globalScope": "All projects", "undo.saveLesson": "Save lesson",
+	"sandbox.allowConfirm": "Allow the agent to read, search and modify files outside the active project? Sensitive Windows system folders remain blocked.",
     "set.nextSession": "next session", "set.resetAll": "Reset all to defaults",
+    "set.state.default": "default", "set.state.auto": "auto", "set.state.on": "on", "set.state.off": "off",
+    "set.source.default": "default", "set.source.manual": "custom",
     "set.resetAllHint": "Removes every managed key above; providers and API keys stay untouched.",
     "set.hint": "value · source — same knobs as the TUI /settings panel, stored in config.toml.",
-    "app.theme": "Theme", "app.dark": "Dark", "app.light": "Light", "app.lang": "Language",
+    "app.theme": "Theme", "app.dark": "Dark", "app.light": "Light", "app.midnight": "Midnight", "app.lang": "Language",
+	"app.scale": "Interface size", "app.auto": "Auto", "app.badge": "App icon counter",
     "app.uiFont": "Interface font", "app.codeFont": "Code font", "app.notify": "Notifications",
     "app.sound": "Play a sound when a run finishes", "app.desktop": "Desktop notification when tab is hidden",
     "prov.configured": "Configured providers", "prov.addNew": "Add provider", "prov.templates": "Templates",
@@ -164,11 +185,25 @@ var I18N = {
     "prov.keyLoaded": "Saved key loaded locally.", "prov.keyLoadFailed": "Saved key could not be shown; leaving this field empty will keep it.",
     "prov.key": "key", "prov.noKey": "no key", "prov.models": "models",
     "prov.added": "Provider added.", "prov.addFailed": "Error — provider was not added",
+    "runtime.title": "Model servers", "runtime.hint": "Passive status check. Refresh never starts an inference or loads a model.",
+    "runtime.empty": "No providers configured.", "runtime.checking": "checking", "runtime.online": "online",
+    "runtime.offline": "offline", "runtime.disabled": "disabled", "runtime.active": "active",
+    "runtime.endpoint": "endpoint", "runtime.model": "selected model", "runtime.models": "reported models",
+    "runtime.latency": "endpoint latency", "runtime.ttft": "first token", "runtime.speed": "generation",
+    "runtime.duration": "last call", "runtime.context": "context window", "runtime.tools": "tool calling",
+    "runtime.available": "available", "runtime.unknown": "not reported", "runtime.lastRun": "this app run",
+    "runtime.measured": "measured", "runtime.reported": "reported", "runtime.catalog": "catalog",
+    "runtime.limits": "Not exposed by this endpoint", "runtime.hardware": "VRAM / RAM / GPU",
+    "runtime.backendQueue": "backend queue", "runtime.details": "models and limitations",
+    "runtime.enable": "enable", "runtime.disable": "disable", "runtime.switchFirst": "Switch model before disabling the active provider.",
     "acct.title": "Codex accounts", "acct.login": "Log in", "acct.logout": "Log out",
     "acct.refreshTok": "Refresh token", "acct.loggingIn": "logging in…", "acct.loggedOut": "logged out",
     "mcp.servers": "MCP servers", "mcp.none": "No MCP servers configured.", "mcp.addServer": "Add MCP server",
     "mcp.command": "Command", "mcp.args": "Args (comma-separated)", "mcp.env": "Env (KEY=VALUE, one per line)",
     "mcp.editJson": "edit as JSON", "mcp.saveJson": "Save JSON", "mcp.backToList": "back to list",
+    "mcp.portable": "Portable MCP packages", "mcp.portableHint": "Drop one self-contained package folder with manifest.toml into supercli-data/mcp. It moves with SuperCli and starts only when the agent needs it.",
+    "mcp.openPackages": "Open package folder", "mcp.noPackages": "No portable packages installed.",
+    "mcp.ready": "ready", "mcp.running": "running", "mcp.disabled": "disabled", "mcp.unavailable": "unavailable", "mcp.lazy": "lazy start",
     "mem.empty": "No memory entries.", "goal.none": "No active goal.",
     "usage.model": "Model", "usage.session": "Session tokens", "usage.daily": "Tokens today",
     "usage.context": "Context report", "usage.summary": "Session summary", "usage.details": "Session details",
@@ -204,7 +239,7 @@ var I18N = {
     "status.connected": "connected", "status.connecting": "connecting…", "status.offline": "server unreachable",
   },
   pl: {
-    "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty",
+    "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty", "side.tasks": "Zadania",
     "side.add": "dodaj", "side.noSessions": "Brak sesji.", "side.noProjects": "Brak projektów.",
     "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy",
     "session.deleteConfirm": "Usunąć tę rozmowę na stałe?", "session.renamed": "Zmieniono nazwę rozmowy.",
@@ -212,17 +247,27 @@ var I18N = {
     "session.runtime": "Pamiętaj model czatu", "session.runtimeHint": "Po otwarciu sesji przywróć jej provider, model i poziom myślenia.",
     "session.runtimeFailed": "Nie udało się przywrócić modelu sesji; pozostawiono bieżący wybór.",
     "project.stopRun": "Zatrzymaj bieżące zadanie przed zmianą projektu.",
-    "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz",
+    "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz", "common.openFolder": "Otwórz folder",
+    "common.openProjectFolder": "Otwórz folder projektu", "common.closePanel": "Zamknij panel boczny",
     "common.cancel": "Anuluj", "common.edit": "edytuj", "common.remove": "usuń", "common.add": "Dodaj",
     "common.loading": "Wczytywanie…", "common.error": "błąd",
-    "model.none": "brak modelu", "model.search": "Szukaj modeli…", "model.reasoning": "Wysiłek rozumowania",
+    "model.none": "brak modelu", "model.search": "Szukaj modeli…", "model.noMatches": "Żaden model nie pasuje do wyszukiwania.", "model.reasoning": "Wysiłek rozumowania",
     "model.think": "think", "model.auto": "auto", "model.default": "domyślny",
     "model.hide": "ukryj", "model.show": "pokaż", "model.setDefault": "domyślny CLI",
+    "model.allProviders": "Wszystkie", "model.hideAll": "Ukryj wszystkie", "model.showAll": "Pokaż wszystkie",
     "welcome.title": "Co dziś budujemy?",
     "welcome.sub": "Agent czyta, edytuje i uruchamia kod w aktywnym projekcie.",
     "welcome.h1": "Podsumuj ten projekt", "welcome.h2": "Sprawdź stan konfiguracji", "welcome.h3": "Jak uruchomić testy?",
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
-    "composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
+	"composer.queue": "Dodaj do kolejki", "composer.queued": "W kolejce", "composer.interrupt": "Przerwij i wyślij",
+	"composer.sendNow": "Wyślij teraz", "composer.resume": "Wznów kolejkę", "composer.remove": "Usuń",
+	"composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
+	"question.title": "Potrzebna decyzja", "question.custom": "Własna odpowiedź…", "question.submit": "Kontynuuj",
+	"question.cancel": "Anuluj pytanie", "question.pick": "Wybierz opcję albo wpisz własną odpowiedź.",
+	"question.prompt": "Prompt do obrazu", "question.copy": "Kopiuj prompt", "question.copied": "Skopiowano prompt.",
+	"question.waiting": "Czekam na Twoją decyzję…", "question.zoom": "Otwórz pełny podgląd",
+	"undo.undo": "Cofnij zmiany", "undo.redo": "Przywróć zmiany", "undo.done": "Cofnięto zmiany.",
+	"undo.redone": "Przywrócono zmiany.", "undo.conflict": "Cofanie zatrzymane: pliki zmieniono po turze agenta.",
     "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache", "tool.running": "pracuje",
     "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
     "task.brief": "Zadanie", "task.activity": "Aktywność", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
@@ -241,13 +286,24 @@ var I18N = {
     "stats.created": "utworzono", "stats.updated": "ostatnia aktywność", "stats.contextWindow": "limit kontekstu",
     "stats.currentContext": "Bieżący kontekst", "stats.contextShare": "szacowany podział zapytania",
     "panel.title": "Panel sterowania", "panel.settings": "Ustawienia", "panel.appearance": "Wygląd",
-    "panel.models": "Modele", "panel.providers": "Dostawcy", "panel.accounts": "Konta",
+    "panel.models": "Modele", "panel.providers": "Dostawcy", "panel.runtime": "Serwery modeli", "panel.accounts": "Konta",
     "panel.mcp": "MCP", "panel.memory": "Pamięć", "panel.goal": "Cel", "panel.usage": "Zużycie",
-    "panel.files": "Pliki", "panel.about": "O programie",
+    "panel.files": "Pliki", "panel.about": "O programie", "panel.workflow": "Przepływ pracy",
+	"workflow.queue": "Trwała kolejka zadań", "workflow.branches": "Gałęzie sesji", "workflow.profile": "Profil promptu modelu",
+	"workflow.scratch": "Notatnik workerów", "workflow.hard": "Twarda weryfikacja", "workflow.runHard": "Uruchom /test hard",
+	"workflow.noBranches": "Brak gałęzi.", "workflow.fork": "Rozgałęź", "workflow.compare": "Porównaj wybrane", "workflow.open": "Otwórz",
+	"workflow.runBoth": "Dodaj ten sam prompt do obu",
+	"workflow.profileHint": "Do promptu trafia tylko ten ograniczony plik rodziny aktywnego modelu. Bez dodatkowej inferencji.",
+	"undo.learn": "Dlaczego cofnąłeś tę zmianę? (opcjonalnie)", "undo.learnHint": "Krótki powód pomoże agentowi nie powtórzyć tego błędu.",
+	"undo.sessionScope": "Ta sesja", "undo.globalScope": "Wszystkie projekty", "undo.saveLesson": "Zapisz wskazówkę",
+	"sandbox.allowConfirm": "Pozwolić agentowi czytać, przeszukiwać i modyfikować pliki poza aktywnym projektem? Wrażliwe foldery systemowe Windows nadal będą zablokowane.",
     "set.nextSession": "następna sesja", "set.resetAll": "Przywróć wszystkie domyślne",
+    "set.state.default": "domyślnie", "set.state.auto": "auto", "set.state.on": "włącz", "set.state.off": "wyłącz",
+    "set.source.default": "domyślne", "set.source.manual": "własne",
     "set.resetAllHint": "Usuwa wszystkie zarządzane klucze powyżej; dostawcy i klucze API zostają.",
     "set.hint": "wartość · źródło — te same pokrętła co panel /settings w TUI, zapisywane w config.toml.",
-    "app.theme": "Motyw", "app.dark": "Ciemny", "app.light": "Jasny", "app.lang": "Język",
+    "app.theme": "Motyw", "app.dark": "Ciemny", "app.light": "Jasny", "app.midnight": "Północ", "app.lang": "Język",
+	"app.scale": "Rozmiar interfejsu", "app.auto": "Automatyczny", "app.badge": "Licznik na ikonie aplikacji",
     "app.uiFont": "Czcionka interfejsu", "app.codeFont": "Czcionka kodu", "app.notify": "Powiadomienia",
     "app.sound": "Dźwięk po zakończeniu pracy", "app.desktop": "Powiadomienie systemowe gdy karta ukryta",
     "prov.configured": "Skonfigurowani dostawcy", "prov.addNew": "Dodaj dostawcę", "prov.templates": "Szablony",
@@ -259,11 +315,25 @@ var I18N = {
     "prov.keyLoaded": "Zapisany klucz wczytano lokalnie.", "prov.keyLoadFailed": "Nie udało się pokazać klucza; puste pole nadal go zachowa.",
     "prov.key": "klucz", "prov.noKey": "brak klucza", "prov.models": "modeli",
     "prov.added": "Provider został dodany.", "prov.addFailed": "Błąd — provider nie został dodany",
+    "runtime.title": "Serwery modeli", "runtime.hint": "Pasywne sprawdzenie stanu. Odświeżenie nie uruchamia inferencji ani nie ładuje modelu.",
+    "runtime.empty": "Brak skonfigurowanych providerów.", "runtime.checking": "sprawdzanie", "runtime.online": "online",
+    "runtime.offline": "offline", "runtime.disabled": "wyłączony", "runtime.active": "aktywny",
+    "runtime.endpoint": "endpoint", "runtime.model": "wybrany model", "runtime.models": "zgłoszone modele",
+    "runtime.latency": "opóźnienie endpointu", "runtime.ttft": "pierwszy token", "runtime.speed": "generowanie",
+    "runtime.duration": "ostatnie wywołanie", "runtime.context": "limit kontekstu", "runtime.tools": "wywołania narzędzi",
+    "runtime.available": "dostępne", "runtime.unknown": "brak danych", "runtime.lastRun": "bieżące uruchomienie",
+    "runtime.measured": "zmierzone", "runtime.reported": "zgłoszone", "runtime.catalog": "katalog",
+    "runtime.limits": "Endpoint tego nie udostępnia", "runtime.hardware": "VRAM / RAM / GPU",
+    "runtime.backendQueue": "kolejka backendu", "runtime.details": "modele i ograniczenia",
+    "runtime.enable": "włącz", "runtime.disable": "wyłącz", "runtime.switchFirst": "Przed wyłączeniem aktywnego providera zmień model.",
     "acct.title": "Konta Codex", "acct.login": "Zaloguj", "acct.logout": "Wyloguj",
     "acct.refreshTok": "Odśwież token", "acct.loggingIn": "logowanie…", "acct.loggedOut": "wylogowany",
     "mcp.servers": "Serwery MCP", "mcp.none": "Brak serwerów MCP.", "mcp.addServer": "Dodaj serwer MCP",
     "mcp.command": "Polecenie", "mcp.args": "Argumenty (po przecinku)", "mcp.env": "Env (KLUCZ=WARTOŚĆ, po jednym w linii)",
     "mcp.editJson": "edytuj jako JSON", "mcp.saveJson": "Zapisz JSON", "mcp.backToList": "wróć do listy",
+    "mcp.portable": "Przenośne paczki MCP", "mcp.portableHint": "Wrzuć samodzielny folder paczki z manifest.toml do supercli-data/mcp. Przenosi się razem z SuperCli i startuje dopiero, gdy agent jej potrzebuje.",
+    "mcp.openPackages": "Otwórz folder paczek", "mcp.noPackages": "Brak zainstalowanych paczek przenośnych.",
+    "mcp.ready": "gotowa", "mcp.running": "uruchomiona", "mcp.disabled": "wyłączona", "mcp.unavailable": "niedostępna", "mcp.lazy": "start na żądanie",
     "mem.empty": "Brak wpisów pamięci.", "goal.none": "Brak aktywnego celu.",
     "usage.model": "Model", "usage.session": "Tokeny sesji", "usage.daily": "Tokeny dziś",
     "usage.context": "Raport kontekstu", "usage.summary": "Podsumowanie sesji", "usage.details": "Szczegóły sesji",
@@ -305,19 +375,73 @@ function t(key) {
   var lang = ui.lang || "en";
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
 }
+
+// Config keys remain the stable API, but they are implementation details.
+// The panel leads with task-oriented names and keeps the raw key in a tooltip.
+var SETTING_COPY = {
+  en: {
+    orchestrator: ["Orchestrator", "Delegate substantial work adaptively, always, or never."],
+    allow_all: ["Access outside the project", "Allow file operations beyond the active project; sensitive system folders remain blocked."],
+    thinking: ["Thinking mode", "Enable explicit thinking for local models that support a soft switch."],
+    navigator: ["Task navigator", "Choose whether requests are routed as chat, advice, or coordinated work."],
+    stable_toolset: ["Stable tool set", "Keep the tool catalog unchanged during a session to preserve the KV cache."],
+    cache_prompt: ["Prompt cache", "Ask compatible local llama.cpp servers to reuse their KV prompt cache."],
+    darwin_parallel: ["Parallel Darwin variants", "Run best-of-N candidate agents concurrently when the backend can handle it."],
+    task_parallel: ["Parallel delegations", "Let independent delegated tasks run at the same time."],
+    memory_briefing_tokens: ["Startup memory budget", "Maximum tokens used by the memory briefing at session start."],
+    task_max_steps: ["Worker step limit", "Maximum number of model turns a delegated worker may take."],
+    task_max_tokens: ["Worker token limit", "Maximum total token spend for one delegated worker."],
+    task_model: ["Worker model", "Optional model or provider/model used for delegated work."],
+    noop_gate: ["Skip unchanged batch runs", "Avoid an unnecessary model call when an identical batch request has no new changes."],
+    preflight_repo: ["Repository preflight", "Add a compact repository-state briefing to the first message and delegated tasks."],
+    draft_verify: ["Draft and verify", "Draft file changes with a worker, then verify them before applying the result."],
+    draft_verify_max_rounds: ["Draft revision limit", "Maximum revise rounds before the coordinator takes over."],
+    verify_commands: ["Verification commands", "Commands used as objective checks for draft verification, separated with semicolons."],
+    default_model: ["Default model", "Model selected when SuperCli starts."],
+    default_provider: ["Default provider", "Provider selected when SuperCli starts."]
+  },
+  pl: {
+    orchestrator: ["Orkiestrator", "Deleguj większe zadania automatycznie, zawsze albo nigdy."],
+    allow_all: ["Dostęp poza projektem", "Pozwala działać na plikach poza aktywnym projektem; wrażliwe foldery systemowe pozostają zablokowane."],
+    thinking: ["Tryb myślenia", "Włącza jawne myślenie w lokalnych modelach obsługujących miękkie przełączanie."],
+    navigator: ["Nawigator zadań", "Rozpoznaje, czy prośba jest rozmową, poradą czy pracą wymagającą koordynacji."],
+    stable_toolset: ["Stały zestaw narzędzi", "Nie zmienia katalogu narzędzi w trakcie sesji, aby zachować cache KV."],
+    cache_prompt: ["Pamięć promptu", "Prosi zgodne serwery llama.cpp o ponowne użycie pamięci KV promptu."],
+    darwin_parallel: ["Równoległe warianty Darwin", "Uruchamia kandydatów best-of-N równolegle, gdy backend sobie z tym poradzi."],
+    task_parallel: ["Równoległe delegacje", "Pozwala wykonywać niezależne delegowane zadania w tym samym czasie."],
+    memory_briefing_tokens: ["Budżet pamięci startowej", "Maksymalna liczba tokenów na przypomnienie pamięci przy starcie sesji."],
+    task_max_steps: ["Limit kroków workera", "Maksymalna liczba tur modelu dla jednego delegowanego workera."],
+    task_max_tokens: ["Limit tokenów workera", "Maksymalny łączny koszt tokenów jednego delegowanego workera."],
+    task_model: ["Model workerów", "Opcjonalny model lub dostawca/model używany do delegowanej pracy."],
+    noop_gate: ["Pomijanie niezmienionych zadań", "Nie wywołuje modelu ponownie, gdy identyczne zadanie wsadowe nie ma nowych zmian."],
+    preflight_repo: ["Wstępny kontekst repozytorium", "Dodaje krótki stan repozytorium do pierwszej wiadomości i delegowanych zadań."],
+    draft_verify: ["Szkic i weryfikacja", "Worker przygotowuje zmiany, a system sprawdza je przed zastosowaniem."],
+    draft_verify_max_rounds: ["Limit poprawek szkicu", "Maksymalna liczba rund poprawek przed przejęciem pracy przez koordynatora."],
+    verify_commands: ["Polecenia weryfikacyjne", "Polecenia obiektywnie sprawdzające szkic, rozdzielone średnikami."],
+    default_model: ["Domyślny model", "Model wybierany przy uruchomieniu SuperCli."],
+    default_provider: ["Domyślny dostawca", "Dostawca wybierany przy uruchomieniu SuperCli."]
+  }
+};
+function settingCopy(k) {
+  var lang = SETTING_COPY[ui.lang] || SETTING_COPY.en;
+  return lang[k.key] || SETTING_COPY.en[k.key] || [k.label || k.key, k.desc || ""];
+}
 function applyI18n() {
   $$("[data-i18n]").forEach(function (n) { n.textContent = t(n.dataset.i18n); });
   $$("[data-i18n-ph]").forEach(function (n) { n.placeholder = t(n.dataset.i18nPh); });
+  $$("[data-i18n-title]").forEach(function (n) { n.title = t(n.dataset.i18nTitle); });
+  $$("[data-i18n-aria]").forEach(function (n) { n.setAttribute("aria-label", t(n.dataset.i18nAria)); });
 }
 
 /* ═══ UI settings (server-persisted blob) ═══ */
 
 var ui = {
-  theme: "dark", lang: "en", uiFont: "system", codeFont: "system",
-  notifySound: false, notifyDesktop: false, sidebarHidden: true, rememberSessionRuntime: true,
+  theme: "dark", lang: "en", uiFont: "system", codeFont: "system", uiScale: "auto",
+  notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
+var sidebarCompactMQ = window.matchMedia("(max-width: 1180px)");
 
 // Real, commonly-installed font choices. Every option must visibly
 // change rendering on a stock Windows box — a knob that does nothing
@@ -328,6 +452,9 @@ var UI_FONTS = {
   arial: 'Arial, Helvetica, sans-serif',
   tahoma: 'Tahoma, Geneva, sans-serif',
   georgia: 'Georgia, "Times New Roman", serif',
+  aptos: 'Aptos, Calibri, "Segoe UI", sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  trebuchet: '"Trebuchet MS", Arial, sans-serif',
 };
 var CODE_FONTS = {
   system: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
@@ -335,6 +462,8 @@ var CODE_FONTS = {
   consolas: 'Consolas, "Lucida Console", monospace',
   courier: '"Courier New", Courier, monospace',
   lucida: '"Lucida Console", Consolas, monospace',
+  jetbrains: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace',
+  fira: '"Fira Code", "Cascadia Mono", Consolas, monospace',
 };
 
 var pushTimer = null;
@@ -356,12 +485,24 @@ function saveBlobKey(key, value) {
   jpost("/api/settings", patch).catch(function () {});
 }
 function applyUI() {
-  document.documentElement.dataset.theme = ui.theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = ui.theme || "dark";
   document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
   document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
+  var scale = ({compact:.9, normal:1, large:1.1, xlarge:1.25, huge:1.4})[ui.uiScale];
+  if (ui.uiScale === "auto" || !scale) {
+    scale = 1;
+    if (window.innerWidth >= 3000 && window.innerHeight >= 1500) scale = 1.2;
+    else if (window.innerWidth >= 2300 && window.innerHeight >= 1200) scale = 1.12;
+    else if (window.innerWidth >= 1800 && window.innerHeight >= 950) scale = 1.06;
+  }
+  document.documentElement.style.zoom = scale;
   $("#shell").classList.toggle("sidebar-hidden", !!ui.sidebarHidden);
   applyI18n();
+  if (typeof promptQueue !== "undefined") renderPromptQueue();
 }
+window.addEventListener("resize", function () {
+  if (ui.uiScale === "auto") applyUI();
+});
 async function loadUI() {
   try { Object.assign(ui, JSON.parse(localStorage.getItem("supercli-ui") || "{}")); } catch (e) {}
   applyUI();
@@ -375,6 +516,9 @@ async function loadUI() {
       if (Array.isArray(uiBlob["supercli-model-cache"])) modelCache = uiBlob["supercli-model-cache"];
     }
   } catch (e) {}
+  // A persisted desktop-open inspector must not cover the conversation when
+  // the app is reopened on a smaller monitor or in a narrow window.
+  if (sidebarCompactMQ.matches) ui.sidebarHidden = true;
   applyUI();
 }
 
@@ -499,22 +643,50 @@ function renderThinkBlock(text) {
 }
 function renderText(text) {
   _thinkId = 0;
-  var src = String(text || ""), html = "", last = 0, m;
-  var re = /<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>/gi;
-  while ((m = re.exec(src)) !== null) {
-    if (m.index > last) html += renderMarkdownish(src.slice(last, m.index));
-    html += renderThinkBlock(m[0].replace(/^<(?:thinking|think)>/i, "").replace(/<\/(?:thinking|think)>$/i, ""));
-    last = re.lastIndex;
-  }
-  if (last < src.length) {
-    var tail = src.slice(last);
-    var open = tail.search(/<(?:thinking|think)>/i);
-    if (open >= 0) {
-      html += renderMarkdownish(tail.slice(0, open));
-      html += renderThinkBlock(tail.slice(open).replace(/^<(?:thinking|think)>/i, ""));
-    } else {
-      html += renderMarkdownish(tail);
+  var src = String(text || ""), html = "", outside = 0, inside = 0, depth = 0, thought = "", m;
+  var renderedThinking = false;
+  // Local servers are inconsistent: some use <think>, others <thinking>,
+  // and a few emit a second opening marker or an orphan closing marker when
+  // native reasoning_content switches back to visible content. A depth-aware
+  // parser keeps nested/split streams renderable and never shows protocol tags
+  // as assistant prose.
+  var tags = /<\/?(?:thinking|think|reasoning|reflection)>/gi;
+  while ((m = tags.exec(src)) !== null) {
+    var closing = m[0].charAt(1) === "/";
+    if (depth === 0) {
+      if (m.index > outside) html += renderMarkdownish(src.slice(outside, m.index));
+      if (closing) {
+        // Orphan close: provider/model both closed the same native channel.
+        outside = tags.lastIndex;
+        continue;
+      }
+      depth = 1;
+      thought = "";
+      inside = tags.lastIndex;
+      outside = tags.lastIndex;
+      continue;
     }
+    thought += src.slice(inside, m.index);
+    if (closing) depth--;
+    else depth++;
+    inside = tags.lastIndex;
+    if (depth === 0) {
+      if (thought.trim()) {
+        // One assistant segment has one reasoning phase. Some local servers
+        // incorrectly open the native channel again around the final answer;
+        // keep the first block as reasoning and recover later blocks as prose.
+        html += renderedThinking ? renderMarkdownish(thought) : renderThinkBlock(thought);
+        renderedThinking = true;
+      }
+      thought = "";
+      outside = tags.lastIndex;
+    }
+  }
+  if (depth > 0) {
+    thought += src.slice(inside);
+    if (thought.trim()) html += renderedThinking ? renderMarkdownish(thought) : renderThinkBlock(thought);
+  } else if (outside < src.length) {
+    html += renderMarkdownish(src.slice(outside));
   }
   return html;
 }
@@ -859,7 +1031,8 @@ function addWorkerProgress(ev) {
 }
 
 // Telemetry line: time · cache/eval/gen · cached% · think · tools
-function addTurnMeta(ev, elapsed) {
+function addTurnMeta(ev, elapsed, toolCount, seq) {
+	if (toolCount == null) toolCount = runToolCount;
   var parts = [fmtDuration(elapsed)];
   var evalTok = (ev.tok_in || 0) - (ev.tok_cached || 0);
   if (ev.tok_cached) {
@@ -869,20 +1042,165 @@ function addTurnMeta(ev, elapsed) {
   }
   if (ev.cache_hit_pct) parts.push(ev.cache_hit_pct + "% " + t("run.cached"));
   if (ev.reasoning_tok) parts.push(t("run.think") + " " + fmtTok(ev.reasoning_tok));
-  if (runToolCount) parts.push(runToolCount + " " + t("run.tools"));
+	if (toolCount) parts.push(toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
-  line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
-  stream.appendChild(line);
+	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
+	if (ev.checkpoint_id) line.appendChild(checkpointButton({ id: ev.checkpoint_id, undone: false }));
+	if (seq) {
+	  var fork = el("button", "turn-undo", t("workflow.fork")); fork.type="button";
+	  fork.addEventListener("click", function(){ forkSession(activeSessionID, seq); }); line.appendChild(fork);
+	}
+	stream.appendChild(line);
   smartScroll();
+}
+
+function checkpointButton(record) {
+  var button = el("button", "turn-undo", record.undone ? t("undo.redo") : t("undo.undo"));
+  button.type = "button";
+  button.addEventListener("click", function () { runCheckpoint(record, button); });
+  return button;
+}
+
+async function runCheckpoint(record, button) {
+  button.disabled = true;
+  var action = record.undone ? "redo" : "undo";
+  try {
+    var resp = await fetch("/api/checkpoint", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:record.id, action:action}) });
+    var data = await resp.json();
+    if (!resp.ok) {
+      var conflicts = data.conflicts && data.conflicts.length ? "\n" + data.conflicts.join("\n") : "";
+      throw new Error(t("undo.conflict") + conflicts);
+    }
+    record = data.record;
+    button.textContent = record.undone ? t("undo.redo") : t("undo.undo");
+    toast(action === "undo" ? t("undo.done") : t("undo.redone"));
+	if (action === "undo") askUndoLesson(record.id);
+    loadSessions(); renderStats();
+  } catch (e) { toast(e.message); }
+  finally { button.disabled = false; }
+}
+
+function askUndoLesson(checkpointID) {
+  var overlay = el("div", "question-overlay undo-lesson");
+  var panel = el("div", "question-panel compact");
+  panel.appendChild(el("div", "question-kicker", t("undo.learn")));
+  panel.appendChild(el("div", "question-option-desc", t("undo.learnHint")));
+  var input = el("textarea", "question-custom"); input.rows=3; panel.appendChild(input);
+  var scope=el("select","field-select");
+  [["session",t("undo.sessionScope")],["global",t("undo.globalScope")]].forEach(function(x){var o=el("option","",x[1]);o.value=x[0];scope.appendChild(o);});panel.appendChild(scope);
+  var actions=el("div","question-actions");var skip=el("button","btn",t("common.cancel"));var save=el("button","btn primary",t("undo.saveLesson"));
+  function close(){overlay.remove();}
+  skip.addEventListener("click",close);save.addEventListener("click",async function(){var reason=input.value.trim();if(!reason){close();return;}save.disabled=true;try{await jpost("/api/checkpoint/lesson",{session_id:activeSessionID,checkpoint_id:checkpointID,reason:reason,scope:scope.value});toast(t("undo.saveLesson")+" ✓");close();}catch(e){toast(e.message);save.disabled=false;}});
+  actions.appendChild(skip);actions.appendChild(save);panel.appendChild(actions);overlay.appendChild(panel);document.body.appendChild(overlay);input.focus();
+}
+
+async function loadCheckpointAction(sessionID) {
+  try {
+    var data = await j("/api/checkpoint?session=" + encodeURIComponent(sessionID));
+    if (!data.available || !data.record) return;
+    var row = el("div", "checkpoint-history");
+    row.appendChild(el("span", "", data.record.files.length + " " + t("run.tools")));
+    row.appendChild(checkpointButton(data.record));
+    stream.appendChild(row);
+  } catch (e) {}
 }
 
 /* ═══ chat streaming ═══ */
 
 var streaming = false, abortCtl = null, activeSessionID = "", projectEpoch = 0;
+var activeQuestionOverlay = null;
 var runStart = 0, runTimer = null, runToolCount = 0;
 var lastTurn = null;    // last done-event payload + elapsed (stats pane)
 var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
+var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
+var appFocused = !document.hidden && document.hasFocus();
+
+function updateAppBadge() {
+  // The taskbar number means "finished while you were away", not queue depth.
+  // Pending prompts already have their own visible queue and must not look like
+  // unread results after the user returns to the app.
+  var count = unreadDone;
+  if (!ui.appBadge) count = 0;
+  if (navigator.setAppBadge) {
+    (count ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(function () {});
+  }
+  if (window.supercliSetBadge) window.supercliSetBadge(count).catch(function () {});
+  document.title = count ? "(" + count + ") SuperCli" : "SuperCli";
+}
+function renderPromptQueue() {
+  var host = $("#prompt-queue");
+  host.innerHTML = "";
+  host.hidden = !promptQueue.length;
+  if (pauseQueue && promptQueue.length) {
+    var resume = el("button", "queue-resume", "▶ " + t("composer.resume"));
+    resume.type = "button";
+    resume.addEventListener("click", function () {
+      pauseQueue = false;
+      var next = promptQueue[0];
+      if (next && !streaming) runQueuedTask(next, false);
+    });
+    host.appendChild(resume);
+  }
+  promptQueue.forEach(function (item, index) {
+    var row = el("div", "queue-row");
+    row.appendChild(el("span", "queue-index", String(index + 1).padStart(2, "0")));
+    row.appendChild(el("span", "queue-text", item.text));
+    var now = el("button", "queue-action", t("composer.sendNow")); now.type = "button";
+    now.addEventListener("click", function () { runQueuedTask(item, true); });
+    var remove = el("button", "queue-remove", "×"); remove.type = "button"; remove.title = t("composer.remove");
+    remove.addEventListener("click", function () { removeQueuedTask(item.id); });
+    row.appendChild(now); row.appendChild(remove); host.appendChild(row);
+  });
+  updateAppBadge();
+  renderTaskCenter();
+}
+async function enqueuePrompt(text) {
+  try {
+    var q = await jpost("/api/tasks", { session_id: activeSessionID, prompt: text });
+    q.text = q.prompt;
+    promptQueue.push(q);
+    pauseQueue = false;
+    renderPromptQueue();
+  } catch (e) { toast(e.message); return; }
+  setRunState("running", promptQueue.length + " · " + t("composer.queued"));
+}
+async function loadPromptQueue() {
+  try { promptQueue = await j("/api/tasks") || []; promptQueue.forEach(function (q) { q.text = q.prompt; }); pauseQueue = promptQueue.length > 0; }
+  catch (e) { promptQueue = []; }
+  renderPromptQueue();
+}
+async function removeQueuedTask(id) {
+  try { await j("/api/tasks?id=" + encodeURIComponent(id), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
+  catch (e) { toast(e.message); return false; }
+}
+async function runQueuedTask(item, interrupt) {
+  if (!await removeQueuedTask(item.id)) return;
+  pauseQueue = false;
+  if (interrupt) interruptAndSend(item.text, item);
+  else { await prepareQueuedTask(item); sendPrompt(item.text); }
+}
+function renderTaskCenter() {
+  var host = $("#task-list"); if (!host) return; host.innerHTML = "";
+  if (!promptQueue.length) { host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak oczekujących zadań." : "No queued tasks.")); return; }
+  promptQueue.forEach(function (item, i) {
+    var row = el("div", "task-center-row"); row.appendChild(el("span", "task-center-index", String(i + 1).padStart(2, "0")));
+    var copy = el("div", "task-center-copy"); copy.appendChild(el("span", "t", item.text)); copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : "new session")); row.appendChild(copy);
+    var go = el("button", "queue-action", t("composer.sendNow")); go.addEventListener("click", function () { runQueuedTask(item, true); }); row.appendChild(go); host.appendChild(row);
+	if (i > 0) { var up=el("button","queue-action","↑"); up.title="Move up"; up.addEventListener("click",async function(){try{await j("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:item.id,position:i-1})});await loadPromptQueue();}catch(e){toast(e.message);}}); row.insertBefore(up,go); }
+  });
+}
+$("#reload-tasks").addEventListener("click", loadPromptQueue);
+async function prepareQueuedTask(item) {
+  if (!item || !item.session_id) return;
+  activeSessionID = item.session_id;
+  if (sessionByID[item.session_id]) await restoreSessionRuntime(sessionByID[item.session_id]);
+}
+function interruptAndSend(text, item) {
+  pendingImmediate = item || { text: text, session_id: activeSessionID };
+  pauseQueue = false;
+  if (abortCtl) abortCtl.abort(); else { var next=pendingImmediate; pendingImmediate=null; prepareQueuedTask(next).then(function(){sendPrompt(next.text);}); }
+}
 
 function setRunState(state, text) {
   runStatus.textContent = text || "";
@@ -895,9 +1213,11 @@ async function sendPrompt(text) {
   abortCtl = new AbortController();
   runToolCount = 0;
   toolRows = {}; workerRows = {}; openToolOrder = [];
-  sendBtn.textContent = t("composer.stop");
-  sendBtn.classList.add("stop");
-  sendBtn.type = "button";
+  sendBtn.textContent = t("composer.queue");
+  sendBtn.classList.add("queue");
+  sendBtn.type = "submit";
+  $("#stop-run-btn").hidden = false;
+  $("#interrupt-btn").hidden = false;
   addUserMsg(text);
   var current = null;
   var terminalSeen = false;
@@ -960,20 +1280,36 @@ async function sendPrompt(text) {
       addEventLine(t("chat.connError") + ": " + e.message, "error");
       setRunState("idle", t("chat.connError"));
     }
-  } finally {
-    flushAssistantRender(current);
-    streaming = false;
+	} finally {
+	  flushAssistantRender(current);
+	  closeQuestionOverlay();
+	  streaming = false;
     abortCtl = null;
     clearInterval(runTimer);
     settleOpenTools();
     sendBtn.textContent = t("composer.send");
-    sendBtn.classList.remove("stop");
+    sendBtn.classList.remove("queue");
     sendBtn.type = "submit";
+    $("#stop-run-btn").hidden = true;
+    $("#interrupt-btn").hidden = true;
     if (runStatus.textContent.indexOf(t("composer.working")) === 0) setRunState("idle", t("composer.ready"));
     $("#status-dot").classList.remove("busy");
     promptEl.focus();
     loadSessions();
     renderStats();
+    var immediate = pendingImmediate;
+    pendingImmediate = null;
+	var next = "";
+	if (immediate) { await prepareQueuedTask(immediate); next = immediate.text; }
+    if (!next && !pauseQueue && promptQueue.length) {
+      var queued = promptQueue[0];
+      if (!await removeQueuedTask(queued.id)) queued = null;
+	  if (!queued) { renderPromptQueue(); return; }
+	  await prepareQueuedTask(queued);
+      next = queued.text;
+    }
+    renderPromptQueue();
+    if (next) setTimeout(function () { sendPrompt(next); }, 0);
   }
 }
 
@@ -1000,9 +1336,13 @@ function handleEvent(ev, current) {
     case "notice":
       addEventLine(ev.text || "", "", noticeTag(ev.text || ""));
       return current;
-    case "worker_progress":
+	case "worker_progress":
       addWorkerProgress(ev);
-      return current;
+	  return current;
+	case "question":
+	  if (ev.question) showQuestion(ev.question);
+	  setRunState("running", t("question.waiting"));
+	  return current;
     case "worker":
       workersSeen.push({ name: ev.name || "worker", status: ev.status || "", summary: ev.output || "" });
       var task = parseTaskNotification(ev.text) || {
@@ -1043,17 +1383,109 @@ function handleEvent(ev, current) {
   }
 }
 
+function closeQuestionOverlay() {
+  if (activeQuestionOverlay) activeQuestionOverlay.remove();
+  activeQuestionOverlay = null;
+}
+
+function showQuestion(q) {
+  closeQuestionOverlay();
+  var overlay = el("div", "question-overlay");
+  var panel = el("form", "question-panel");
+  panel.setAttribute("aria-label", q.header || t("question.title"));
+  var head = el("div", "question-head");
+  head.appendChild(el("span", "question-kicker", q.header || t("question.title")));
+  head.appendChild(el("h2", "question-text", q.question || ""));
+  panel.appendChild(head);
+
+  var options = el("div", "question-options" + ((q.options || []).some(function (o) { return o.image; }) ? " visual" : ""));
+  (q.options || []).forEach(function (opt, idx) {
+    var card = el("label", "question-option");
+    var input = document.createElement("input");
+    input.type = q.multi_select ? "checkbox" : "radio";
+    input.name = "question-choice";
+    input.value = opt.label;
+    card.appendChild(input);
+    if (opt.image) {
+      var preview = el("button", "question-image-button");
+      preview.type = "button";
+      preview.title = t("question.zoom");
+      var img = document.createElement("img");
+      img.src = opt.image;
+      img.alt = opt.label;
+      preview.appendChild(img);
+      preview.addEventListener("click", function (e) {
+        e.preventDefault();
+        var light = el("div", "question-lightbox");
+        var full = document.createElement("img"); full.src = opt.image; full.alt = opt.label;
+        light.appendChild(full);
+        light.addEventListener("click", function () { light.remove(); });
+        overlay.appendChild(light);
+      });
+      card.appendChild(preview);
+    }
+    var copy = el("span", "question-option-copy");
+    copy.appendChild(el("strong", "question-option-label", opt.label));
+    if (opt.description) copy.appendChild(el("span", "question-option-desc", opt.description));
+    if (opt.preview) copy.appendChild(el("span", "question-option-preview", opt.preview));
+    if (opt.image_prompt) {
+      var details = document.createElement("details"); details.className = "question-prompt";
+      var summary = document.createElement("summary"); summary.textContent = t("question.prompt");
+      details.appendChild(summary);
+      details.appendChild(el("code", "", opt.image_prompt));
+      var copyBtn = el("button", "question-copy", t("question.copy")); copyBtn.type = "button";
+      copyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        navigator.clipboard.writeText(opt.image_prompt).then(function () { toast(t("question.copied")); });
+      });
+      details.appendChild(copyBtn); copy.appendChild(details);
+    }
+    card.appendChild(copy);
+    options.appendChild(card);
+  });
+  panel.appendChild(options);
+  var custom = document.createElement("textarea");
+  custom.className = "question-custom"; custom.rows = 3; custom.placeholder = t("question.custom");
+  if (q.allow_custom !== false) panel.appendChild(custom);
+  var error = el("div", "question-error"); panel.appendChild(error);
+  var actions = el("div", "question-actions");
+  var cancel = el("button", "btn", t("question.cancel")); cancel.type = "button";
+  var submit = el("button", "btn primary", t("question.submit")); submit.type = "submit";
+  actions.appendChild(cancel); actions.appendChild(submit); panel.appendChild(actions);
+  overlay.appendChild(panel); document.body.appendChild(overlay); activeQuestionOverlay = overlay;
+
+  function answer(cancelled) {
+    var selected = Array.prototype.slice.call(panel.querySelectorAll('input[name="question-choice"]:checked')).map(function (x) { return x.value; });
+    var own = custom.value.trim();
+    if (!cancelled && !selected.length && !own) { error.textContent = t("question.pick"); return; }
+    submit.disabled = true; cancel.disabled = true;
+    jpost("/api/question/answer", { id: q.id, selected: selected, custom: own, cancelled: !!cancelled })
+      .then(function () { closeQuestionOverlay(); setRunState("running", t("composer.working")); })
+      .catch(function (e) { error.textContent = e.message; submit.disabled = false; cancel.disabled = false; });
+  }
+  panel.addEventListener("submit", function (e) { e.preventDefault(); answer(false); });
+  cancel.addEventListener("click", function () { answer(true); });
+  setTimeout(function () { var first = panel.querySelector("input"); if (first) first.focus(); }, 0);
+}
+
 $("#composer").addEventListener("submit", function (e) {
   e.preventDefault();
-  if (streaming) return;
   var text = promptEl.value.trim();
   if (!text) return;
   promptEl.value = "";
   promptEl.style.height = "auto";
+  if (streaming) { enqueuePrompt(text); return; }
   sendPrompt(text);
 });
-sendBtn.addEventListener("click", function (e) {
-  if (streaming) { e.preventDefault(); if (abortCtl) abortCtl.abort(); }
+$("#stop-run-btn").addEventListener("click", function () {
+  pauseQueue = true;
+  if (abortCtl) abortCtl.abort();
+});
+$("#interrupt-btn").addEventListener("click", function () {
+  var text = promptEl.value.trim();
+  if (!text) return;
+  promptEl.value = ""; promptEl.style.height = "auto";
+  interruptAndSend(text);
 });
 promptEl.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -1086,6 +1518,7 @@ $("#new-session").addEventListener("click", newSession);
 /* ═══ notifications ═══ */
 
 function notifyDone(elapsed) {
+  if (!appFocused || document.hidden) { unreadDone++; updateAppBadge(); }
   if (ui.notifySound) {
     try {
       var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1095,22 +1528,38 @@ function notifyDone(elapsed) {
       osc.start(); osc.stop(ctx.currentTime + 0.12);
     } catch (e) {}
   }
-  if (ui.notifyDesktop && document.hidden && window.Notification && Notification.permission === "granted") {
+  if (ui.notifyDesktop && (!appFocused || document.hidden) && window.Notification && Notification.permission === "granted") {
     try { new Notification("SuperCli", { body: t("run.done") + " · " + fmtDuration(elapsed) }); } catch (e) {}
   }
 }
+window.addEventListener("blur", function () { appFocused = false; });
+window.addEventListener("focus", function () { appFocused = true; unreadDone = 0; updateAppBadge(); });
+document.addEventListener("visibilitychange", function () {
+  appFocused = !document.hidden && document.hasFocus();
+  if (appFocused) { unreadDone = 0; updateAppBadge(); }
+});
 
 /* ═══ health / status ═══ */
 
 var activeModelID = "";
+var activeWorkspacePath = "";
+function workspaceDisplayName(path) {
+  var clean = String(path || "").replace(/[\\/]+$/, "");
+  return clean.split(/[\\/]/).pop() || clean;
+}
+$("#open-project-folder").addEventListener("click", function () {
+  if (activeWorkspacePath) openWorkspaceFolder(activeWorkspacePath);
+});
 async function checkHealth() {
   var dot = $("#status-dot");
   try {
     var h = await j("/api/health");
     dot.className = "status-dot ok" + (streaming ? " busy" : "");
     dot.title = t("status.connected") + " · " + (h.model || "");
-    $("#workspace").textContent = h.home || "";
-    $("#workspace").title = h.home || "";
+    activeWorkspacePath = h.home || "";
+    $("#workspace").textContent = workspaceDisplayName(activeWorkspacePath);
+    $("#workspace").title = activeWorkspacePath;
+    $("#open-project-folder").disabled = !activeWorkspacePath;
     if (h.model) {
       var modelChanged = h.model !== activeModelID;
       activeModelID = h.model;
@@ -1121,6 +1570,7 @@ async function checkHealth() {
   } catch (e) {
     dot.className = "status-dot err";
     dot.title = t("status.offline");
+    $("#open-project-folder").disabled = !activeWorkspacePath;
     return null;
   }
 }
@@ -1180,7 +1630,18 @@ function toggleSidebar() {
   saveUI();
   if (!ui.sidebarHidden) renderStats();
 }
+function closeSidebar() {
+  if (ui.sidebarHidden) return;
+  ui.sidebarHidden = true;
+  applyUI();
+  saveUI();
+}
 $("#toggle-sidebar").addEventListener("click", toggleSidebar);
+$("#close-sidebar").addEventListener("click", closeSidebar);
+$("#sidebar-backdrop").addEventListener("click", closeSidebar);
+sidebarCompactMQ.addEventListener("change", function (event) {
+  if (event.matches) closeSidebar();
+});
 
 /* ═══ stats pane ═══ */
 
@@ -1402,10 +1863,12 @@ async function renderStats() {
 
 /* ═══ sessions ═══ */
 
+var sessionByID = {};
 async function loadSessions() {
   var list = $("#session-list");
   try {
     var rows = await j("/api/sessions?limit=40");
+	sessionByID = {}; (rows || []).forEach(function(s){sessionByID[s.id]=s;});
     list.innerHTML = "";
     if (!rows || !rows.length) {
       list.appendChild(el("div", "side-empty", t("side.noSessions")));
@@ -1414,7 +1877,7 @@ async function loadSessions() {
     rows.forEach(function (s) {
       var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
       b.type = "button";
-      b.appendChild(el("span", "t", s.first_user_msg || s.id));
+      b.appendChild(el("span", "t", (s.parent_id ? "â”” " : "") + (s.first_user_msg || s.id)));
       var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
       if (s.model) sessionMeta += " · " + s.model;
       b.appendChild(el("span", "s", sessionMeta));
@@ -1434,6 +1897,11 @@ async function loadSessions() {
       rename.addEventListener("click", doRename);
       rename.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doRename(e); });
       actions.appendChild(rename);
+
+	  var fork = el("span", "session-action fork", "â†—");
+	  fork.setAttribute("role", "button"); fork.tabIndex = 0; fork.title = t("workflow.fork");
+	  function doFork(e) { e.preventDefault(); e.stopPropagation(); forkSession(s.id, 0); }
+	  fork.addEventListener("click", doFork); fork.addEventListener("keydown", function(e){if(e.key==="Enter"||e.key===" ")doFork(e);}); actions.appendChild(fork);
 
       var remove = el("span", "session-action delete", "×");
       remove.setAttribute("role", "button");
@@ -1455,6 +1923,17 @@ async function loadSessions() {
     list.innerHTML = "";
     list.appendChild(el("div", "side-empty", t("common.error")));
   }
+}
+
+async function forkSession(id, throughSeq) {
+  var chosen = window.prompt(t("workflow.fork") + " · model", activeModelID || "");
+  if (chosen === null) return;
+  try {
+    var branch = await jpost("/api/branches", { session_id:id, through_seq:throughSeq||0, model:chosen.trim() });
+    await loadSessions();
+    await resumeSession(branch.id, branch);
+    toast(t("workflow.fork") + " ✓");
+  } catch(e) { toast(e.message); }
 }
 
 async function renameSession(session) {
@@ -1514,16 +1993,17 @@ async function resumeSession(id, session) {
     toolRows = {}; workerRows = {}; openToolOrder = [];
     lastTurn = null; workersSeen = [];
     hideWelcome();
-    (msgs || []).forEach(function (m) {
+	(msgs || []).forEach(function (m) {
       if (m.role === "user") {
         addUserMsg(m.content);
-      } else if (m.role === "assistant") {
+	      } else if (m.role === "assistant") {
         if (!m.content) return;
         var node = addAssistantMsg();
         node._raw = m.content;
         renderAssistant(node);
         // History replay: thinking folded (only live streams open it).
-        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+	        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+        if (m.turn) addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
       } else if (m.role === "tool") {
         var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
           parseTaskNotification(m.content) : null;
@@ -1543,8 +2023,9 @@ async function resumeSession(id, session) {
         row.appendChild(body);
         stream.appendChild(row);
       }
-    });
-    smartScroll(true);
+	});
+	loadCheckpointAction(id);
+	smartScroll(true);
     loadSessions();
     renderStats();
     promptEl.focus();
@@ -1603,7 +2084,7 @@ async function projectAction(action, target, name) {
     // A conversation belongs to the workspace where it was created. Switching
     // projects starts a clean browser conversation and reloads only that
     // project's history; the old session remains stored under its project.
-    if (action === "use" || action === "add") newSession();
+    if (action === "use" || action === "add") { newSession(); loadPromptQueue(); }
   } catch (e) {
     toast(e.message);
   }
@@ -1649,7 +2130,6 @@ function slimModels(models) {
   });
 }
 
-var scanKicked = false;
 async function loadModels() {
   try {
     var got = await j("/api/models");
@@ -1658,17 +2138,10 @@ async function loadModels() {
       $("#model-name").textContent = got.active;
     }
     $("#model-prov").textContent = got.provider || "";
-    if (got.models && got.models.length) {
-      // Fresh server list: adopt it and persist as the instant-start
-      // cache for the next launch (merged server-side, wipe-safe).
-      modelCache = slimModels(got.models);
-      saveBlobKey("supercli-model-cache", modelCache);
-    } else if (modelCache.length && !scanKicked) {
-      // Server knows nothing yet (fresh process): keep showing the
-      // cached list and kick one silent background scan.
-      scanKicked = true;
-      jpost("/api/provider/scan", {}).then(loadModels).catch(function () {});
-    }
+    // A successful response is authoritative, including an empty list. This
+    // prevents paid models surviving after a key was removed or expired.
+    modelCache = slimModels(got.models || []);
+    saveBlobKey("supercli-model-cache", modelCache);
     renderModelList($("#model-search").value.trim().toLowerCase());
     renderReasoning(got.reasoning);
     return got;
@@ -1852,10 +2325,52 @@ function showSection(name) {
   });
   $("#panel-title").textContent = t("panel." + name);
   panelContent.innerHTML = '<div class="note">' + escHtml(t("common.loading")) + "</div>";
-  (sections[name] || function () {})();
+  var rendered = (sections[name] || function () {})();
+  // Async sections share one surface. If an older request finishes after the
+  // user switched tabs, redraw the current tab so stale content cannot win.
+  Promise.resolve(rendered).finally(function () {
+    if (currentSection !== name) showSection(currentSection);
+  });
 }
 
 /* ── Settings (config.toml knobs — TUI /settings parity) ── */
+
+sections.workflow = async function () {
+  panelContent.innerHTML = "";
+  var queue = el("div", "group"); queue.appendChild(el("div", "g-label", t("workflow.queue")));
+  queue.appendChild(el("div", "workflow-lead", String(promptQueue.length).padStart(2,"0") + " · " + t("composer.queued")));
+  queue.appendChild(el("div", "note", ui.lang === "pl" ? "Kolejka przeżywa restart aplikacji i czeka na wznowienie." : "The queue survives app restarts and waits for you to resume it.")); panelContent.appendChild(queue);
+
+  var branches = el("div", "group"), bh=el("div","g-label",t("workflow.branches"));
+  var fork=el("button","g-act",t("workflow.fork"));fork.disabled=!activeSessionID;fork.addEventListener("click",function(){forkSession(activeSessionID,0);});bh.appendChild(fork);branches.appendChild(bh);
+  var selected=[];
+  if(activeSessionID){
+    try{var rows=await j("/api/branches?session="+encodeURIComponent(activeSessionID));
+      (rows||[]).forEach(function(s){var row=el("label","branch-row"),cb=document.createElement("input");cb.type="checkbox";cb.addEventListener("change",function(){if(cb.checked){if(selected.length>=2){cb.checked=false;return;}selected.push(s.id);}else selected=selected.filter(function(id){return id!==s.id;});});row.appendChild(cb);var copy=el("span","branch-copy");copy.appendChild(el("span","branch-title",s.first_user_msg||s.id));copy.appendChild(el("span","branch-meta",(s.model||"—")+" · "+s.message_count+" msg"));row.appendChild(copy);var open=el("button","queue-action",t("workflow.open"));open.type="button";open.addEventListener("click",function(e){e.preventDefault();resumeSession(s.id,s);closePanel();});row.appendChild(open);branches.appendChild(row);});
+      if(!rows||rows.length<2)branches.appendChild(el("div","note",t("workflow.noBranches")));
+      var compare=el("button","btn",t("workflow.compare"));compare.addEventListener("click",function(){if(selected.length!==2){toast(ui.lang==="pl"?"Wybierz dokładnie dwie gałęzie.":"Select exactly two branches.");return;}compareBranches(selected);});branches.appendChild(compare);
+	  var runBoth=el("button","btn",t("workflow.runBoth"));runBoth.addEventListener("click",async function(){if(selected.length!==2){toast(ui.lang==="pl"?"Wybierz dokładnie dwie gałęzie.":"Select exactly two branches.");return;}var prompt=window.prompt(t("composer.ph"),"");if(!prompt||!prompt.trim())return;try{for(var i=0;i<selected.length;i++){var q=await jpost("/api/tasks",{session_id:selected[i],prompt:prompt.trim()});q.text=q.prompt;promptQueue.push(q);}pauseQueue=true;renderPromptQueue();toast(t("workflow.runBoth")+" ✓");}catch(e){toast(e.message);}});branches.appendChild(runBoth);
+    }catch(e){branches.appendChild(el("div","note",e.message));}
+  }else branches.appendChild(el("div","note",t("workflow.noBranches")));
+  panelContent.appendChild(branches);
+
+  var profile=el("div","group");profile.appendChild(el("div","g-label",t("workflow.profile")));
+  try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=el("button","btn",t("common.openFolder"));openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=ui.lang==="pl"?"Np. preferuj krótkie wywołania narzędzi.":"Example: prefer short tool calls.";profile.appendChild(ta);var save=el("button","btn primary",t("common.save"));save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(el("div","note",t("workflow.profileHint")));}catch(e){profile.appendChild(el("div","note",e.message));}
+  panelContent.appendChild(profile);
+
+  var scratch=el("div","group");scratch.appendChild(el("div","g-label",t("workflow.scratch")));try{var sc=await j("/api/scratchpad");scratch.appendChild(el("div","file-path",sc.path));var openScratch=el("button","btn",t("common.openFolder"));openScratch.addEventListener("click",function(){openWorkspaceFolder(sc.path);});scratch.appendChild(openScratch);scratch.appendChild(el("div","note",sc.notes.length?sc.notes.join(" · "):(ui.lang==="pl"?"Notatnik jest pusty.":"Scratchpad is empty.")));}catch(e){scratch.appendChild(el("div","note",e.message));}panelContent.appendChild(scratch);
+
+  var hard=el("div","group");hard.appendChild(el("div","g-label",t("workflow.hard")));var run=el("button","btn primary",t("workflow.runHard")),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=(report.ok?"PASS":"FAIL")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
+};
+
+async function compareBranches(ids){
+  try{var all=await Promise.all(ids.map(function(id){return j("/api/transcript?id="+encodeURIComponent(id));})),overlay=el("div","question-overlay branch-compare"),panel=el("div","question-panel compare-panel"),head=el("div","question-actions"),close=el("button","btn",t("common.cancel"));close.addEventListener("click",function(){overlay.remove();});head.appendChild(close);panel.appendChild(head);var grid=el("div","compare-grid");all.forEach(function(msgs,i){var col=el("div","compare-col");col.appendChild(el("div","g-label",clip(ids[i],22)));var answer="";for(var n=msgs.length-1;n>=0;n--){if(msgs[n].role==="assistant"){answer=msgs[n].content;break;}}var body=el("div","msg-assistant");body.innerHTML=renderText(answer||"—");col.appendChild(body);grid.appendChild(col);});panel.appendChild(grid);overlay.appendChild(panel);document.body.appendChild(overlay);}catch(e){toast(e.message);}
+}
+
+async function openWorkspaceFolder(path) {
+  try { await jpost("/api/folder/open", { path: path }); }
+  catch (e) { toast(e.message); }
+}
 
 sections.settings = async function () {
   var got;
@@ -1881,13 +2396,16 @@ sections.settings = async function () {
 
 function knobRow(k) {
   var row = el("div", "knob-row");
-  var name = el("div", "k-name", k.key);
-  var d = el("small", "", k.desc);
+  var copy = settingCopy(k);
+  var name = el("div", "k-name", copy[0]);
+  name.title = "config.toml · " + k.key;
+  var d = el("small", "", copy[1]);
   name.appendChild(d);
   row.appendChild(name);
   if (k.next_session) row.appendChild(el("span", "k-next", "(" + t("set.nextSession") + ")"));
 
   function post(value) {
+	if (k.key === "allow_all" && value === "on" && !window.confirm(t("sandbox.allowConfirm"))) return;
     jpost("/api/config", { key: k.key, value: value })
       .then(function () { sections.settings(); })
       .catch(function (e) { toast(e.message); });
@@ -1897,7 +2415,7 @@ function knobRow(k) {
     var states = k.kind === "tri" ? ["default", "on", "off"] : ["auto", "on", "off"];
     var seg = el("span", "seg");
     states.forEach(function (st) {
-      var b = el("button", "", st);
+      var b = el("button", "", t("set.state." + st));
       b.type = "button";
       if (st === (k.state || "default") || (st === "auto" && (k.state || "default") === "default")) b.classList.add("on");
       b.addEventListener("click", function () { post(st === "auto" ? "default" : st); });
@@ -1920,7 +2438,7 @@ function knobRow(k) {
   } else {
     row.appendChild(el("span", "k-val", k.value));
   }
-  var src = el("span", "k-src" + (k.source !== "default" ? " manual" : ""), k.source);
+  var src = el("span", "k-src" + (k.source !== "default" ? " manual" : ""), t("set.source." + k.source));
   row.appendChild(src);
   return row;
 }
@@ -1932,7 +2450,7 @@ sections.appearance = function () {
   var g = el("div", "group");
   g.appendChild(el("div", "g-label", t("app.theme")));
   var seg = el("span", "seg");
-  [["dark", t("app.dark")], ["light", t("app.light")]].forEach(function (pair) {
+  [["dark", t("app.dark")], ["midnight", t("app.midnight")], ["light", t("app.light")]].forEach(function (pair) {
     var b = el("button", ui.theme === pair[0] ? "on" : "", pair[1]);
     b.type = "button";
     b.addEventListener("click", function () {
@@ -1970,13 +2488,14 @@ sections.appearance = function () {
   }
   panelContent.appendChild(selectRow(t("app.lang"), "lang", [["en", "English"], ["pl", "Polski"]]));
   panelContent.appendChild(selectRow(t("app.uiFont"), "uiFont",
-    [["system", "System"], ["segoe", "Segoe UI"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["georgia", "Georgia"]]));
+    [["system", "System"], ["segoe", "Segoe UI"], ["aptos", "Aptos"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["verdana", "Verdana"], ["trebuchet", "Trebuchet MS"], ["georgia", "Georgia"]]));
   panelContent.appendChild(selectRow(t("app.codeFont"), "codeFont",
-    [["system", "System monospace"], ["cascadia", "Cascadia Mono"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
+    [["system", "System monospace"], ["cascadia", "Cascadia Mono"], ["jetbrains", "JetBrains Mono"], ["fira", "Fira Code"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
+  panelContent.appendChild(selectRow(t("app.scale"), "uiScale", [["auto", t("app.auto")], ["compact", "90%"], ["normal", "100%"], ["large", "110%"], ["xlarge", "125%"], ["huge", "140%"]]));
 
   var gn = el("div", "group");
   gn.appendChild(el("div", "g-label", t("app.notify")));
-  [["notifySound", t("app.sound")], ["notifyDesktop", t("app.desktop")]].forEach(function (pair) {
+  [["notifySound", t("app.sound")], ["notifyDesktop", t("app.desktop")], ["appBadge", t("app.badge")]].forEach(function (pair) {
     var tr = el("label", "toggle-row");
     tr.appendChild(el("span", "", pair[1]));
     var cb = document.createElement("input");
@@ -1985,6 +2504,7 @@ sections.appearance = function () {
     cb.addEventListener("change", function () {
       ui[pair[0]] = cb.checked;
       saveUI();
+      if (pair[0] === "appBadge") updateAppBadge();
       if (pair[0] === "notifyDesktop" && cb.checked && window.Notification && Notification.permission === "default") {
         Notification.requestPermission();
       }
@@ -2017,6 +2537,8 @@ function sessionRuntimePreferenceGroup() {
 
 /* ── Models (visibility management) ── */
 
+var modelProviderTab = "";
+var modelSettingsSearch = "";
 sections.models = async function () {
   var got;
   try { got = await j("/api/models"); } catch (e) {
@@ -2035,41 +2557,263 @@ sections.models = async function () {
   });
   lbl.appendChild(scan);
   g.appendChild(lbl);
-  var models = (got.models && got.models.length) ? slimModels(got.models) : modelCache;
+  // /api/models is authoritative even when it is empty. Falling back to the
+  // browser cache here used to resurrect paid models after a key was removed.
+  var models = slimModels(got.models || []);
+  var counts = {};
   models.forEach(function (m) {
-    var row = el("div", "list-row");
-    row.appendChild(el("span", "state-dot " + (m.hidden ? "off" : "on")));
-    var main = el("div", "lr-main");
-    var title = el("div", "lr-title");
-    title.innerHTML = "<code>" + escHtml(m.id) + "</code>" + (m.id === activeModelID ? ' <span style="color:var(--accent)">●</span>' : "");
-    main.appendChild(title);
-    var caps = [];
-    if (m.context_length) caps.push("ctx " + fmtTok(m.context_length));
-    if (m.tool_use) caps.push("tools");
-    if (m.reasoning) caps.push("think");
-    if (m.vision) caps.push("vision");
-    main.appendChild(el("div", "lr-sub", (m.provider || "") + (caps.length ? " · " + caps.join(" · ") : "")));
-    row.appendChild(main);
-    var act = el("div", "lr-act");
-    var bh = el("button", "", m.hidden ? t("model.show") : t("model.hide"));
-    bh.addEventListener("click", function () {
-      jpost("/api/model/toggle", { model: m.id }).then(sections.models);
-    });
-    act.appendChild(bh);
-    var bd = el("button", "", t("model.setDefault"));
-    bd.addEventListener("click", function () {
-      jpost("/api/model/default", { model: m.id, provider: m.provider })
-        .then(function () { toast("CLI default: " + m.id); })
-        .catch(function (e) { toast(e.message); });
-    });
-    act.appendChild(bd);
-    row.appendChild(act);
-    g.appendChild(row);
+    var provider = m.provider || "—";
+    if (!counts[provider]) counts[provider] = { total: 0, visible: 0 };
+    counts[provider].total++;
+    if (!m.hidden) counts[provider].visible++;
   });
+  var providers = Object.keys(counts).sort(function (a, b) { return a.localeCompare(b); });
+  if (modelProviderTab && providers.indexOf(modelProviderTab) < 0) modelProviderTab = "";
+
+  var tabs = el("div", "model-provider-tabs");
+  tabs.setAttribute("role", "tablist");
+  function addProviderTab(provider, label, total, visible) {
+    var b = el("button", modelProviderTab === provider ? "active" : "");
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", modelProviderTab === provider ? "true" : "false");
+    b.appendChild(el("span", "", label));
+    b.appendChild(el("small", "", visible + "/" + total));
+    b.addEventListener("click", function () { modelProviderTab = provider; sections.models(); });
+    tabs.appendChild(b);
+  }
+  var allVisible = models.filter(function (m) { return !m.hidden; }).length;
+  addProviderTab("", t("model.allProviders"), models.length, allVisible);
+  providers.forEach(function (provider) {
+    addProviderTab(provider, provider, counts[provider].total, counts[provider].visible);
+  });
+  g.appendChild(tabs);
+
+  var searchWrap = el("div", "model-settings-search");
+  var searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "field-input";
+  searchInput.placeholder = t("model.search");
+  searchInput.setAttribute("aria-label", t("model.search"));
+  searchInput.autocomplete = "off";
+  searchInput.spellcheck = false;
+  searchInput.value = modelSettingsSearch;
+  searchWrap.appendChild(searchInput);
+  g.appendChild(searchWrap);
+
+  var providerModels = models.filter(function (m) { return !modelProviderTab || (m.provider || "—") === modelProviderTab; });
+  function matchingModels() {
+    var query = modelSettingsSearch.trim().toLocaleLowerCase();
+    if (!query) return providerModels;
+    return providerModels.filter(function (m) {
+      var features = [m.id, m.provider, m.tool_use ? "tools" : "", m.reasoning ? "think reasoning" : "", m.vision ? "vision" : "", m.hidden ? "hidden" : "visible"];
+      return features.join(" ").toLocaleLowerCase().indexOf(query) >= 0;
+    });
+  }
+  var tools = el("div", "model-provider-actions");
+  var matchCount = el("span", "note", "");
+  tools.appendChild(matchCount);
+  var bulkButtons = [];
+  function bulkButton(label, hidden) {
+    var b = el("button", "btn", label); b.type = "button";
+    b.addEventListener("click", async function () {
+      var filtered = matchingModels();
+      b.disabled = true;
+      try {
+        await jpost("/api/model/visibility", { models: filtered.map(function (m) { return m.id; }), hidden: hidden });
+        await loadModels();
+        await sections.models();
+      } catch (e) { toast(e.message); b.disabled = false; }
+    });
+    tools.appendChild(b);
+    bulkButtons.push({ button: b, hidden: hidden });
+  }
+  bulkButton(t("model.hideAll"), true);
+  bulkButton(t("model.showAll"), false);
+  g.appendChild(tools);
+
+  var rows = el("div", "model-provider-rows");
+  function renderFilteredModels() {
+    var filtered = matchingModels();
+    rows.innerHTML = "";
+    matchCount.textContent = filtered.length + " / " + providerModels.length + " " + t("prov.models");
+    bulkButtons.forEach(function (item) {
+      item.button.disabled = !filtered.length || filtered.every(function (m) { return !!m.hidden === item.hidden; });
+    });
+    if (!filtered.length) rows.appendChild(el("div", "note model-no-matches", t("model.noMatches")));
+    filtered.forEach(function (m) {
+      var row = el("div", "list-row");
+      row.appendChild(el("span", "state-dot " + (m.hidden ? "off" : "on")));
+      var main = el("div", "lr-main");
+      var title = el("div", "lr-title");
+      title.innerHTML = "<code>" + escHtml(m.id) + "</code>" + (m.id === activeModelID ? ' <span style="color:var(--accent)">●</span>' : "");
+      main.appendChild(title);
+      var caps = [];
+      if (m.context_length) caps.push("ctx " + fmtTok(m.context_length));
+      if (m.tool_use) caps.push("tools");
+      if (m.reasoning) caps.push("think");
+      if (m.vision) caps.push("vision");
+      main.appendChild(el("div", "lr-sub", (m.provider || "") + (caps.length ? " · " + caps.join(" · ") : "")));
+      row.appendChild(main);
+      var act = el("div", "lr-act");
+      var bh = el("button", "", m.hidden ? t("model.show") : t("model.hide"));
+      bh.addEventListener("click", function () {
+        jpost("/api/model/toggle", { model: m.id }).then(sections.models);
+      });
+      act.appendChild(bh);
+      var bd = el("button", "", t("model.setDefault"));
+      bd.addEventListener("click", function () {
+        jpost("/api/model/default", { model: m.id, provider: m.provider })
+          .then(function () { toast("CLI default: " + m.id); })
+          .catch(function (e) { toast(e.message); });
+      });
+      act.appendChild(bd);
+      row.appendChild(act);
+      rows.appendChild(row);
+    });
+  }
+  searchInput.addEventListener("input", function () {
+    modelSettingsSearch = searchInput.value;
+    renderFilteredModels();
+  });
+  searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && searchInput.value) {
+      searchInput.value = "";
+      modelSettingsSearch = "";
+      renderFilteredModels();
+    }
+  });
+  renderFilteredModels();
+  g.appendChild(rows);
   panelContent.appendChild(g);
 };
 
 /* ── Providers ── */
+
+var runtimeRenderSeq = 0;
+sections.runtime = async function () {
+  var seq = ++runtimeRenderSeq;
+  panelContent.innerHTML = "";
+  var intro = el("div", "runtime-intro");
+  var introCopy = el("div");
+  introCopy.appendChild(el("div", "runtime-title", t("runtime.title")));
+  introCopy.appendChild(el("div", "note", t("runtime.hint")));
+  intro.appendChild(introCopy);
+  var refreshAll = el("button", "btn", t("common.refresh")); refreshAll.type = "button";
+  refreshAll.addEventListener("click", function () { sections.runtime(); });
+  intro.appendChild(refreshAll); panelContent.appendChild(intro);
+
+  var got;
+  try { got = await j("/api/providers"); } catch (e) {
+    panelContent.appendChild(el("div", "note", e.message));
+    return;
+  }
+  if (seq !== runtimeRenderSeq || currentSection !== "runtime") return;
+  var providers = got.providers || [];
+  if (!providers.length) {
+    panelContent.appendChild(el("div", "runtime-empty", t("runtime.empty")));
+    return;
+  }
+  var list = el("div", "runtime-list"); panelContent.appendChild(list);
+  providers.forEach(function (p) {
+    var row = el("section", "runtime-row checking");
+    var head = el("div", "runtime-head");
+    var identity = el("div", "runtime-identity");
+    identity.appendChild(el("span", "runtime-dot"));
+    identity.appendChild(el("strong", "", p.Name));
+    identity.appendChild(el("span", "runtime-kind", p.Type || ""));
+    head.appendChild(identity);
+    var state = el("span", "runtime-state", t("runtime.checking") + "…"); head.appendChild(state);
+    row.appendChild(head);
+    var endpoint = el("div", "runtime-endpoint", p.BaseURL || "—"); row.appendChild(endpoint);
+    var facts = el("div", "runtime-facts"); row.appendChild(facts);
+    var details = document.createElement("details"); details.className = "runtime-details";
+    var summary = document.createElement("summary"); summary.textContent = t("runtime.details");
+    details.appendChild(summary); details.appendChild(el("div", "runtime-detail-body", t("common.loading")));
+    row.appendChild(details);
+    var actions = el("div", "runtime-actions");
+    var refresh = el("button", "", t("common.refresh")); refresh.type = "button";
+    var toggle = el("button", "", p.Disabled ? t("runtime.enable") : t("runtime.disable")); toggle.type = "button";
+    actions.appendChild(refresh); actions.appendChild(toggle); row.appendChild(actions); list.appendChild(row);
+
+    async function update() {
+      row.className = "runtime-row checking";
+      state.textContent = t("runtime.checking") + "…";
+      refresh.disabled = true;
+      try {
+        var d = await j("/api/provider/diagnostics?name=" + encodeURIComponent(p.Name));
+        if (seq !== runtimeRenderSeq || currentSection !== "runtime") return;
+        renderRuntimeDiagnostic(row, facts, details, endpoint, state, d);
+        toggle.textContent = d.disabled ? t("runtime.enable") : t("runtime.disable");
+        toggle.dataset.disabled = d.disabled ? "1" : "0";
+        toggle.dataset.active = d.active ? "1" : "0";
+      } catch (e) {
+        row.className = "runtime-row offline";
+        state.textContent = t("runtime.offline");
+        facts.innerHTML = "";
+        facts.appendChild(runtimeFact(t("common.error"), e.message, ""));
+      } finally { refresh.disabled = false; }
+    }
+    refresh.addEventListener("click", update);
+    toggle.addEventListener("click", async function () {
+      if (toggle.dataset.active === "1" && toggle.dataset.disabled !== "1") {
+        toast(t("runtime.switchFirst")); return;
+      }
+      toggle.disabled = true;
+      try {
+        await j("/api/providers", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name:p.Name, disabled:toggle.dataset.disabled !== "1"})});
+        await loadModels(); await update();
+      } catch (e) { toast(e.message); }
+      finally { toggle.disabled = false; }
+    });
+    update();
+  });
+};
+
+function runtimeFact(label, value, source) {
+  var fact = el("div", "runtime-fact");
+  fact.appendChild(el("span", "runtime-fact-label", label));
+  var right = el("span", "runtime-fact-right");
+  right.appendChild(el("strong", "", value || "—"));
+  if (source) right.appendChild(el("small", "", source));
+  fact.appendChild(right);
+  return fact;
+}
+
+function renderRuntimeDiagnostic(row, facts, details, endpoint, state, d) {
+  row.className = "runtime-row " + (d.status || "offline");
+  state.textContent = t("runtime." + (d.status || "offline")) + (d.active ? " · " + t("runtime.active") : "");
+  endpoint.textContent = d.endpoint || "—";
+  var kind = row.querySelector(".runtime-kind");
+  kind.textContent = (d.server || d.type || "") + (d.scope ? " · " + d.scope.toUpperCase() : "");
+  facts.innerHTML = "";
+  if (d.status === "offline") {
+    facts.appendChild(runtimeFact(t("common.error"), d.error || t("runtime.offline"), ""));
+  } else if (d.status !== "disabled") {
+    facts.appendChild(runtimeFact(t("runtime.latency"), d.latency_ms + " ms", t("runtime.measured")));
+    facts.appendChild(runtimeFact(t("runtime.model"), d.selected_model || "—", t("runtime.reported")));
+    facts.appendChild(runtimeFact(t("runtime.models"), String((d.models || []).length), t("runtime.reported")));
+    if (d.context_window) facts.appendChild(runtimeFact(t("runtime.context"), fmtTok(d.context_window), t("runtime.reported")));
+    if (d.capability_known) facts.appendChild(runtimeFact(t("runtime.tools"), d.tool_use ? t("runtime.available") : "—", t("runtime.catalog")));
+  }
+  if (d.last_call) {
+    var c = d.last_call;
+    if (c.ttft_ms) facts.appendChild(runtimeFact(t("runtime.ttft"), fmtDuration(c.ttft_ms), t("runtime.lastRun")));
+    if (c.tokens_per_second) facts.appendChild(runtimeFact(t("runtime.speed"), c.tokens_per_second.toFixed(1) + " tok/s", t("runtime.lastRun")));
+    if (c.duration_ms) facts.appendChild(runtimeFact(t("runtime.duration"), fmtDuration(c.duration_ms), t("runtime.lastRun")));
+  }
+  var body = details.querySelector(".runtime-detail-body"); body.innerHTML = "";
+  if ((d.models || []).length) {
+    var models = el("div", "runtime-models");
+    d.models.forEach(function (model) { models.appendChild(el("code", "", model)); });
+    body.appendChild(models);
+  }
+  var limits = el("div", "runtime-limits");
+  limits.appendChild(el("div", "runtime-limit-title", t("runtime.limits")));
+  limits.appendChild(el("span", "", t("runtime.hardware")));
+  limits.appendChild(el("span", "", t("runtime.backendQueue")));
+  body.appendChild(limits);
+}
 
 sections.providers = function () { renderProvidersList(); };
 
@@ -2093,17 +2837,27 @@ async function renderProvidersList() {
   var provs = got.providers || [];
   if (!provs.length) g.appendChild(el("div", "note", t("prov.none")));
   provs.forEach(function (p) {
-    var row = el("div", "list-row");
+    var row = el("div", "list-row" + (p.Disabled ? " provider-disabled" : ""));
     var main = el("div", "lr-main");
     var title = el("div", "lr-title");
     title.innerHTML = "<strong>" + escHtml(p.Name) + "</strong> <span class='note'>" + escHtml(p.Type || "") + "</span>";
     main.appendChild(title);
     var sub = (p.BaseURL || "") + " · " + (p.HasKey ? t("prov.key") : t("prov.noKey")) +
       ((p.Models || []).length ? " · " + p.Models.length + " " + t("prov.models") : "");
+    if (p.Disabled) sub = (ui.lang === "pl" ? "wyłączony · " : "disabled · ") + sub;
     main.appendChild(el("div", "lr-sub", sub));
     row.appendChild(main);
     var act = el("div", "lr-act");
+    var bt = el("button", "", p.Disabled ? (ui.lang === "pl" ? "włącz" : "enable") : (ui.lang === "pl" ? "wyłącz" : "disable"));
+    bt.addEventListener("click", async function () {
+      try {
+        await j("/api/providers", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name:p.Name, disabled:!p.Disabled}) });
+        await loadModels(); await renderProvidersList();
+      } catch (e) { toast(e.message); }
+    });
+    act.appendChild(bt);
     var bs = el("button", "", t("common.scan"));
+    bs.disabled = !!p.Disabled;
     bs.addEventListener("click", async function () {
       bs.textContent = "…";
       try {
@@ -2373,6 +3127,37 @@ async function renderMcpList() {
     return;
   }
   panelContent.innerHTML = "";
+  var portable = el("div", "group");
+  var portableLabel = el("div", "g-label", t("mcp.portable"));
+  var openPackages = el("button", "g-act", t("mcp.openPackages"));
+  openPackages.addEventListener("click", async function () {
+    try { await jpost("/api/mcp/folder", {}); }
+    catch (e) { toast(e.message); }
+  });
+  portableLabel.appendChild(openPackages);
+  portable.appendChild(portableLabel);
+  portable.appendChild(el("div", "note mcp-portable-hint", t("mcp.portableHint")));
+  var packages = got.packages || [];
+  if (!packages.length) portable.appendChild(el("div", "note", t("mcp.noPackages")));
+  packages.forEach(function (p) {
+    var row = el("div", "list-row mcp-package-row");
+    var main = el("div", "lr-main");
+    var title = el("div", "lr-title");
+    title.innerHTML = "<strong>" + escHtml(p.name || p.id) + "</strong>" +
+      (p.version ? " <small>" + escHtml(p.version) + "</small>" : "");
+    main.appendChild(title);
+    if (p.description) main.appendChild(el("div", "lr-desc", p.description));
+    main.appendChild(el("div", "lr-sub", p.manifest || "manifest.toml"));
+    if (p.error) main.appendChild(el("div", "mcp-package-error", p.error));
+    row.appendChild(main);
+    var state = p.running ? t("mcp.running") : (p.available ? t("mcp.ready") : (p.enabled ? t("mcp.unavailable") : t("mcp.disabled")));
+    var badge = el("span", "mcp-state " + (p.running ? "running" : (p.available ? "ready" : "error")), state);
+    badge.title = p.running ? ((p.tools || 0) + " tools") : (p.available ? t("mcp.lazy") : (p.error || ""));
+    row.appendChild(badge);
+    portable.appendChild(row);
+  });
+  panelContent.appendChild(portable);
+
   var g = el("div", "group");
   var lbl = el("div", "g-label", t("mcp.servers"));
   var jb = el("button", "g-act", t("mcp.editJson"));
@@ -2993,12 +3778,13 @@ document.addEventListener("keydown", function (e) {
   await loadUI();
   applyI18n();
   var h = await checkHealth();
-  if (h && h.model) {
-    loadReasoning();
+  if (h) {
+    if (h.model) loadReasoning();
     loadModels();
   }
   loadSessions();
   loadProjects();
+	loadPromptQueue();
   renderStats();
   setInterval(checkHealth, 30000);
   promptEl.focus();

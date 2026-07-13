@@ -80,7 +80,7 @@ func commandCategory(name string) string {
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact", "workers":
 		return "agent"
-	case "diff", "undo", "export", "resume", "clear", "memory":
+	case "diff", "undo", "redo", "export", "resume", "clear", "memory":
 		return "session"
 	case "login", "logout", "account", "accounts":
 		return "account"
@@ -116,7 +116,9 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "export", Desc: "export session to Markdown (arg 'clip' copies to clipboard)", Args: "[filename.md|clip]"},
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},
 		{Name: "usage", Desc: "refresh and show ChatGPT-subscription usage limits (Codex)"},
-		{Name: "undo", Desc: "revert last file write/edit operations", Args: "[N]"},
+		{Name: "undo", Desc: "revert the last agent turn", Args: ""},
+		{Name: "redo", Desc: "restore the last reverted turn", Args: ""},
+		{Name: "test", Desc: "run deterministic tests, lint and race checks", Args: "hard"},
 		{Name: "settings", Desc: "edit config settings with reset-to-defaults"},
 		{Name: "doctor", Desc: "diagnose SuperCli runtime and configuration"},
 		{Name: "login", Desc: "sign in with ChatGPT (/login <label> adds another account)", Args: "[label]"},

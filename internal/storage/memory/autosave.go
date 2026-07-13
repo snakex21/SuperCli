@@ -109,12 +109,19 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 		return true
 	}
 	now := time.Now()
-	_ = a.Project.Put(Entry{
+	// Automatic journals are a rolling working set, not an append-only audit
+	// log. Keep their size bounded before and after the write so a long-running
+	// project can never grow memory into a multi-gigabyte prompt/index file.
+	_, _ = a.Project.Retain(ScopeTaskLog, MaxTaskLogEntries-1)
+	if err := a.Project.Put(Entry{
 		ID:      fmt.Sprintf("log-%x", now.UnixNano()),
 		Scope:   ScopeTaskLog,
 		Content: summary,
 		Source:  SourceAgent,
-	})
+	}); err != nil {
+		return false
+	}
+	_, _ = a.Project.Retain(ScopeTaskLog, MaxTaskLogEntries)
 	// Use the first line of the summary as the card description.
 	first := summary
 	if i := strings.IndexByte(first, '\n'); i > 0 {
@@ -141,12 +148,15 @@ func (a *AutoSaver) StoreRawTail(transcript string) {
 	if len(transcript) > maxRaw {
 		transcript = transcript[len(transcript)-maxRaw:]
 	}
-	_ = a.Project.Put(Entry{
+	_, _ = a.Project.Retain(ScopeRawLog, MaxRawLogEntries-1)
+	if err := a.Project.Put(Entry{
 		ID:      fmt.Sprintf("raw-%x", time.Now().UnixNano()),
 		Scope:   ScopeRawLog,
 		Content: transcript,
 		Source:  SourceAgent,
-	})
+	}); err == nil {
+		_, _ = a.Project.Retain(ScopeRawLog, MaxRawLogEntries)
+	}
 }
 
 // SummarizePendingRaw summarizes raw-log entries left behind by an

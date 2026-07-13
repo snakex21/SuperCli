@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -395,10 +396,10 @@ func containsAny(haystack string, needles []string) bool {
 	return false
 }
 
-// ListFreeModels fetches /v1/models and returns only models whose
-// cost.input is 0 (free tier). Used by providers like OpenCode Zen
-// where the public API key gives access to both free and paid
-// models, but we want to surface only the free ones.
+// ListFreeModels fetches /v1/models and returns only models explicitly marked
+// free by the provider, labelled "free" in their ID, or carrying complete
+// zero input/output pricing metadata. An explicit isFree=false wins over price
+// heuristics because some gateways publish zero-priced non-chat previews.
 func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 	base := strings.TrimRight(baseURL, "/")
 	u := base + "/models"
@@ -427,13 +428,10 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 	}
 	var payload struct {
 		Data []struct {
-			ID   string `json:"id"`
-			Cost *struct {
-				Input float64 `json:"input"`
-			} `json:"cost"`
-			Pricing *struct {
-				Input float64 `json:"input"`
-			} `json:"pricing"`
+			ID      string                     `json:"id"`
+			IsFree  *bool                      `json:"isFree"`
+			Cost    map[string]json.RawMessage `json:"cost"`
+			Pricing map[string]json.RawMessage `json:"pricing"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -444,17 +442,56 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 		if m.ID == "" {
 			continue
 		}
-		inputCost := -1.0
-		if m.Cost != nil {
-			inputCost = m.Cost.Input
-		} else if m.Pricing != nil {
-			inputCost = m.Pricing.Input
+		// Kilo exposes the authoritative isFree flag and serializes prices as
+		// strings. OpenCode currently exposes only IDs, whose free variants are
+		// explicitly labelled. Accept zero pricing as a third, portable signal,
+		// but only when both input and output fields are actually present: absent
+		// JSON fields also decode as zero and must not make every model look free.
+		free := IsFreeModelID(m.ID)
+		if m.IsFree != nil {
+			// When the provider supplies an explicit flag it outranks price
+			// heuristics. Kilo has zero-priced non-chat preview entries which are
+			// deliberately marked isFree=false and must not enter the chat picker.
+			free = free || *m.IsFree
+		} else {
+			free = free || modelPricingIsZero(m.Cost) || modelPricingIsZero(m.Pricing)
 		}
-		if inputCost == 0 {
+		if free {
 			out = append(out, m.ID)
 		}
 	}
 	return out, nil
+}
+
+func modelPricingIsZero(fields map[string]json.RawMessage) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	input, inputOK := firstJSONPrice(fields, "input", "prompt")
+	output, outputOK := firstJSONPrice(fields, "output", "completion")
+	return inputOK && outputOK && input == 0 && output == 0
+}
+
+func firstJSONPrice(fields map[string]json.RawMessage, names ...string) (float64, bool) {
+	for _, name := range names {
+		raw, ok := fields[name]
+		if !ok || len(raw) == 0 || string(raw) == "null" {
+			continue
+		}
+		var number float64
+		if err := json.Unmarshal(raw, &number); err == nil {
+			return number, true
+		}
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		if err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
 }
 
 // KiloDefaultKey returns "anonymous" when the base URL points

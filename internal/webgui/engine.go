@@ -10,20 +10,29 @@ package webgui
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"supercli/internal/account/pricing"
 	"supercli/internal/agent"
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
 	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
+	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
+	"supercli/internal/tools/mcp"
+	"supercli/internal/tools/sandbox"
 )
 
 // openDataDB opens the shared SuperCli SQLite database in dataDir.
@@ -56,7 +65,27 @@ type Engine struct {
 	// learned holds per-model context limits persisted from past
 	// context-length errors (<dataDir>/context_limits.json), shared
 	// with the CLI so both front-ends size auto-compaction the same.
-	learned *llm.LearnedLimits
+	learned    *llm.LearnedLimits
+	questionMu sync.Mutex
+	questions  map[string]tools.AskRequest
+	perfMu     sync.RWMutex
+	perf       map[string]providerCallPerformance
+	// sessions is opened lazily and shared by every web request. Store wraps
+	// sql.DB and is safe for concurrent use; keeping one handle avoids running
+	// SQLite Ping + the complete migration/FTS audit on every endpoint call.
+	sessionMu sync.Mutex
+	sessions  *session.Store
+	closed    bool
+	// Checkpoint metadata is workspace-specific. The GUI can hot-switch
+	// projects, so cache one manager per canonical workspace rather than one
+	// process-global manager.
+	checkpointMu sync.Mutex
+	checkpoints  map[string]*checkpoint.Manager
+	// mcpManager owns both explicit config.toml servers and relocatable
+	// packages from <dataDir>/mcp. Servers remain stopped until mcp_bridge
+	// searches or calls one of them.
+	mcpMu      sync.RWMutex
+	mcpManager *mcp.Manager
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -82,17 +111,167 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
 	eng := &Engine{
-		cfg:     cfg,
-		dataDir: dataDir,
-		home:    home,
-		caps:    caps,
-		prov:    prov,
-		factory: f,
-		learned: llm.LoadLearnedLimits(dataDir),
+		cfg:         cfg,
+		dataDir:     dataDir,
+		home:        home,
+		caps:        caps,
+		prov:        prov,
+		factory:     f,
+		learned:     llm.LoadLearnedLimits(dataDir),
+		questions:   make(map[string]tools.AskRequest),
+		perf:        make(map[string]providerCallPerformance),
+		checkpoints: make(map[string]*checkpoint.Manager),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.providerManager().SetModelPrices(caps)
+	if err := eng.reloadMCP(); err != nil {
+		// A broken optional package must not prevent the application from
+		// opening. Discovery diagnostics remain visible in the MCP panel.
+		eng.mcpManager = nil
+	}
 	return eng, nil
+}
+
+func explicitMCPConfigs(tc config.TomlConfig) map[string]mcp.ServerConfig {
+	configs := make(map[string]mcp.ServerConfig, len(tc.Mcp.Servers))
+	for name, sc := range tc.Mcp.Servers {
+		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env}
+	}
+	return configs
+}
+
+// reloadMCP atomically replaces the lazy MCP runtime after a configuration
+// edit. Old subprocesses are stopped only after new discovery succeeded.
+func (e *Engine) reloadMCP() error {
+	tc, err := config.ResolveConfig(e.dataDir, e.Home(), "")
+	if err != nil {
+		return err
+	}
+	configs, _, err := mcp.LoadWorkspace(e.dataDir, explicitMCPConfigs(tc))
+	if err != nil {
+		return err
+	}
+	var next *mcp.Manager
+	if len(configs) > 0 {
+		next = mcp.NewManager(configs)
+	}
+	e.mcpMu.Lock()
+	previous := e.mcpManager
+	e.mcpManager = next
+	e.mcpMu.Unlock()
+	if previous != nil {
+		previous.StopAll()
+	}
+	return nil
+}
+
+func (e *Engine) mcpRuntime() *mcp.Manager {
+	e.mcpMu.RLock()
+	defer e.mcpMu.RUnlock()
+	return e.mcpManager
+}
+
+// sessionStore returns the Engine-owned session database. Opening is lazy so
+// health/model-only uses do not pay for SQLite, while the first session request
+// performs migrations exactly once for the lifetime of the Engine.
+func (e *Engine) sessionStore() (*session.Store, error) {
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+	if e.closed {
+		return nil, fmt.Errorf("webgui engine is closed")
+	}
+	if e.sessions == nil {
+		store, err := session.OpenStore(e.dataDir)
+		if err != nil {
+			return nil, err
+		}
+		e.sessions = store
+	}
+	return e.sessions, nil
+}
+
+// checkpointManager returns a long-lived manager for home. Manager serializes
+// its mutable Git metadata internally; Engine only guards cache creation.
+func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		return nil, err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		abs = resolved
+	}
+	key := filepath.Clean(abs)
+	if runtime.GOOS == "windows" {
+		key = strings.ToLower(key)
+	}
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	if manager := e.checkpoints[key]; manager != nil {
+		return manager, nil
+	}
+	manager, err := checkpoint.Open(abs, e.dataDir)
+	if err != nil {
+		return nil, err
+	}
+	e.checkpoints[key] = manager
+	return manager, nil
+}
+
+// Close releases Engine-owned resources after the HTTP server has drained.
+func (e *Engine) Close() error {
+	if e == nil {
+		return nil
+	}
+	if e.titles != nil {
+		e.titles.Close()
+	}
+	e.mcpMu.Lock()
+	mcpManager := e.mcpManager
+	e.mcpManager = nil
+	e.mcpMu.Unlock()
+	if mcpManager != nil {
+		mcpManager.StopAll()
+	}
+	e.sessionMu.Lock()
+	if e.closed {
+		e.sessionMu.Unlock()
+		return nil
+	}
+	e.closed = true
+	store := e.sessions
+	e.sessions = nil
+	e.sessionMu.Unlock()
+	if store != nil {
+		return store.Close()
+	}
+	return nil
+}
+
+func (e *Engine) recordProviderPerformance(provider string, stat llm.CallStat) {
+	if e == nil || strings.TrimSpace(provider) == "" {
+		return
+	}
+	perf := providerCallPerformance{
+		Model: stat.Model, TTFTMS: stat.TTFT.Milliseconds(), DurationMS: stat.Duration.Milliseconds(),
+		TokensIn: stat.TokensIn, TokensOut: stat.TokensOut,
+		Failed: stat.Failed, Canceled: stat.Canceled, CompletedAt: time.Now().UTC(),
+	}
+	if generated := stat.Duration - stat.TTFT; stat.TokensOut > 0 && generated > 0 {
+		perf.TokensPerS = float64(stat.TokensOut) / generated.Seconds()
+	}
+	e.perfMu.Lock()
+	e.perf[provider] = perf
+	e.perfMu.Unlock()
+}
+
+func (e *Engine) providerPerformance(provider string) (providerCallPerformance, bool) {
+	if e == nil {
+		return providerCallPerformance{}, false
+	}
+	e.perfMu.RLock()
+	defer e.perfMu.RUnlock()
+	perf, ok := e.perf[provider]
+	return perf, ok
 }
 
 // RefreshPricingAsync mirrors the CLI startup policy: a fresh cache is used
@@ -227,6 +406,9 @@ func (e *Engine) setHome(home string) {
 	e.mu.Lock()
 	e.home = home
 	e.mu.Unlock()
+	// Project config may add or override MCP servers. Refresh metadata now;
+	// no process is started until a later bridge call.
+	_ = e.reloadMCP()
 }
 
 // DataDir returns the SuperCli data directory.
@@ -255,23 +437,34 @@ func (e *Engine) newLoopWithSessionAt(initial []llm.Message, writer agent.Sessio
 }
 
 func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.SessionWriter, home string) (*agent.Loop, error) {
+	return e.newLoopWithSessionAtUsageAsk(initial, writer, home, nil)
+}
+
+func (e *Engine) newLoopWithSessionAtUsageAsk(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest) (*agent.Loop, error) {
+	return e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, nil)
+}
+
+func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest, turn *checkpoint.Turn) (*agent.Loop, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
 	cfg := e.cfg
 	e.mu.RUnlock()
 	tc := e.tomlConfigAt(home)
+	catalogHoist := strings.EqualFold(strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")), "true") || strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")) == "1"
+	execProfile := execution.Resolve(cfg, tc, caps, catalogHoist)
 	// Tri-state contract:
 	//   nil   = adaptive delegation (full parent tools + optional task workers)
 	//   true  = hard orchestrator (parent restricted; substantial work delegates)
 	//   false = direct mode (worker tools physically absent)
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
 	delegation := tc.Orchestrator == nil || *tc.Orchestrator
-	taskParallel := !llm.IsLocalBaseURL(cfg.BaseURL)
-	if tc.TaskParallel != nil {
-		taskParallel = *tc.TaskParallel
-	}
+	taskParallel, taskParallelWarnLocal := execution.Parallel(cfg.BaseURL, tc.TaskParallel)
 	reg := tools.NewRegistry()
+	discoverer := tools.NewDiscovererWithBuiltins(home, e.dataDir)
+	skillApplier := tools.NewSkillApplier(discoverer)
+	reg.MustRegister(skillApplier.Spec())
+	reg.MarkAlwaysOn("apply_skill")
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
@@ -289,12 +482,38 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 		tools.NewTrash(home).Spec(),
 		tools.NewSearchCode(home).Spec(),
 		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
+		tools.NewScratchpad(home).Spec(),
 	} {
+		if turn != nil {
+			sp = turn.Wrap(sp)
+		}
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
-	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
+	invoke := agent.NewInvokeTool(reg).Spec()
+	if turn != nil {
+		invoke = turn.Wrap(invoke)
+	}
+	reg.MustRegister(invoke)
 	reg.MarkAlwaysOn("invoke_tool")
+	if askCh != nil {
+		ask := tools.NewAskUser(askCh)
+		// Visual decisions often take longer than a text choice, especially
+		// when the user opens previews. The run context still cancels promptly.
+		ask.Timeout = 10 * time.Minute
+		reg.MustRegister(ask.Spec())
+		reg.MarkAlwaysOn("ask_user")
+	}
+	if manager := e.mcpRuntime(); manager != nil && len(manager.Names()) > 0 {
+		reg.MustRegister(mcp.NewBridge(manager).Spec())
+		reg.MarkAlwaysOn("mcp_bridge")
+	}
+	// Web loops are short-lived and have a small registry. Lexical discovery
+	// avoids opening an FTS database per request while preserving the exact
+	// tool_search contract used by TUI and batch.
+	toolSearcher := tools.NewToolSearcher(reg, nil)
+	reg.MustRegister(toolSearcher.Spec())
+	reg.MarkAlwaysOn("tool_search")
 	// Context defense (mirrors the TUI wiring in app/main.go): without
 	// WindowFor the loop assumes its 16384-token default for every
 	// model, and without Summarizer auto-compaction degrades to the
@@ -313,19 +532,26 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 		return 0 // loop falls back to its 16384 default
 	}
 	loop, err := agent.NewLoop(agent.LoopConfig{
-		Provider:        prov,
-		Registry:        reg,
-		Caps:            caps,
-		System:          webAgentSystemPrompt(home, orchestrator, delegation),
-		MaxSteps:        25,
-		Orchestrator:    orchestrator,
-		TaskParallel:    taskParallel,
-		BaseDir:         home,
-		InitialMessages: initial,
-		Writer:          writer,
-		WindowFor:       windowFor,
-		Summarizer:      agent.NewAutoSummarizer(reg.ActiveNames),
-		LearnLimit:      e.learned.Learn,
+		Provider:              prov,
+		Registry:              reg,
+		Caps:                  caps,
+		System:                webAgentSystemPrompt(home, cfg.Model, execProfile.PromptSmall, orchestrator, delegation),
+		MaxSteps:              25,
+		Orchestrator:          orchestrator,
+		TaskParallel:          taskParallel,
+		TaskParallelWarnLocal: taskParallelWarnLocal,
+		EnableNavigator:       execProfile.EnableNavigator,
+		NavigatorAuto:         execProfile.NavigatorAuto,
+		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly,
+		ThinTools:             execProfile.ThinTools,
+		StableToolset:         execProfile.StableToolset,
+		CatalogHoist:          execProfile.CatalogHoist,
+		BaseDir:               home,
+		InitialMessages:       initial,
+		Writer:                writer,
+		WindowFor:             windowFor,
+		Summarizer:            agent.NewAutoSummarizer(reg.ActiveNames),
+		LearnLimit:            e.learned.Learn,
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
@@ -349,8 +575,11 @@ func (e *Engine) newLoopWithSessionAtUsage(initial []llm.Message, writer agent.S
 	return loop, nil
 }
 
-func webAgentSystemPrompt(home string, orchestrator, delegation bool) string {
-	system := llmprompt.Build(false)
+func webAgentSystemPrompt(home, model string, promptSmall, orchestrator, delegation bool) string {
+	system := llmprompt.Build(promptSmall)
+	if profile := llmprompt.LoadProfile(home, model); profile != "" {
+		system += "\n\n" + profile
+	}
 	if orchestrator {
 		system += agent.OrchestratorPrompt()
 	} else if delegation {
@@ -362,7 +591,11 @@ func webAgentSystemPrompt(home string, orchestrator, delegation bool) string {
 	if delegation {
 		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
 	}
-	system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
+	if sandbox.IsUnsandboxed() {
+		system += fmt.Sprintf("\n\nActive workspace: %s\nFull filesystem access is ON. File and search tools may use absolute paths outside this workspace; sensitive system folders remain blocked.", home)
+	} else {
+		system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
+	}
 	return system
 }
 
@@ -527,13 +760,21 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	}
 	cfg := e.cfg
 	cfg.Model = modelID
+	found := false
 	for _, pc := range m.Configured() {
 		if pc.Name == providerName {
+			if pc.Disabled {
+				return fmt.Errorf("provider %q is disabled", providerName)
+			}
+			found = true
 			cfg.Provider = pc.Type
 			cfg.BaseURL = pc.BaseURL
 			cfg.APIKey = pc.APIKey
 			break
 		}
+	}
+	if providerName != "" && !found {
+		return fmt.Errorf("provider %q is not configured", providerName)
 	}
 	if err := cfg.Normalize(); err != nil {
 		return err

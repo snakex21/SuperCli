@@ -90,14 +90,19 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
   (`internal/mcp`, `internal/app/main_mcp.go`), wyniki capowane na granicy.
 - **Darwin (mechanizm)** — pool N agentów w izolowanych worktree, judge
   (LLM + heurystyka), opcjonalny auto-merge; `/darwin`.
-- **Checkpointy plików + `/undo`** — migawka per-edycja i cofanie; wersja
-  per-WIADOMOŚĆ pozostaje w backlogu (sekcja niżej).
+- **Checkpointy per tura + `/undo` / `/redo`** — leniwa migawka przed pierwszą
+  mutacją, wspólny zakres głównego agenta i workerów, konflikt-safe restore,
+  trwała historia po restarcie oraz akcje w WebGUI. Osobny shadow-git nie
+  dotyka brancha ani indeksu użytkownika; tury read-only nie inicjalizują repo.
 
 ## Wdrożone eksperymentalnie (za knobem)
 
-- **Catalog hoist** — katalog thin-tooli w stabilnym prefiksie promptu;
-  `SUPERCLI_CATALOG_HOIST=1`, default OFF po live A/B LM Studio/Qwen3.5-9B:
-  tylko 0,83% mniej tokenów wejścia i brak raportowania cached tokens przez host.
+- **Catalog hoist** — domyślnie aktywny dla profilu thin+stable po live A/B
+  HP Z6/Qwen3.5-122B: 1743 → 237 ewaluowanych tokenów w dwóch ciepłych
+  turach (−86,4%); thinking potwierdził widoczność narzędzia w obu położeniach,
+  ale liczba powtórzeń nie jest porównywana z powodu znanej skłonności tego
+  Qwena do losowych pętli tool-calli. Wyłączenie:
+  `stable_toolset=false` albo `small_full_tools=true`.
 - **Noop-gate** (`noop_gate`) — pomijanie identycznych batch-runów bez
   LLM; default OFF świadomie (zmienia semantykę odpowiedzi na pytania),
   opt-in dla idempotentnych pipeline'ów.
@@ -173,22 +178,21 @@ Dawne "problemy z pudełka" i fale 1/3, plus większość dawnych TODO:
 - Scraping darmowych chatbotów przez przeglądarkę (ToS, kruchość) —
   zamiast tego tani/lokalny model.
 
-### TODO — undo per-wiadomość + powiązanie z Darwinem
+### Wdrożone — undo per-wiadomość; otwarte powiązanie z Darwinem
 
-Rozszerza wdrożone "Checkpointy plików + /undo" (dziś migawka per-edycja,
-nie per-wiadomość). Cel: cofanie całej tury czatu, z zachowaniem nauki
-z nieudanej próby.
+Checkpoint całej tury, konflikt-safe undo/redo, WebGUI/TUI i zachowanie krótkiej
+informacji o cofnięciu w kontekście modelu są wdrożone. Otwarte pozostaje
+wykorzystanie tych samych preferencji przez sędziego Darwina.
 
-1. **Checkpointy zaczepione o turę czatu.** Każda wiadomość użytkownika =
-   snapshot stanu plików. Cofnięcie do wiadomości N = restore plików do
-   tego stanu **plus** ucięcie rozmowy za N (stan plików i historia cofają
-   się **razem**). Snapshotować **tylko zmienione pliki per tura**
-   (diff / copy-on-write). Może siedzieć na **shadow-gicie**.
+1. **[DONE] Checkpointy zaczepione o turę czatu.** Leniwy snapshot powstaje
+   przed pierwszą mutacją, a diff per-tura siedzi na shadow-gicie. Undo
+   przywraca pliki; rozmowa nie jest destrukcyjnie ucinana — dostaje trwały
+   marker, że wcześniejsza implementacja nie odpowiada już stanowi dysku.
 
-2. **Undo jako sygnał uczenia (opcjonalny, NIEblokujący).** Po cofnięciu
+2. **[PARTIAL] Undo jako sygnał uczenia (opcjonalny, NIEblokujący).** Po cofnięciu
    agent **może** zapytać "co było nie tak", ale **proponuje, nie żąda**.
-   Przy cofnięciu wycinamy tokeny nieudanej próby, ale **zachowujemy
-   JEDNĄ linię nauki** (destylowaną).
+   Dziś zachowujemy jedną strukturalną linię o cofnięciu; opcjonalne pytanie
+   o powód i destylacja odpowiedzi pozostają otwarte.
 
 3. **Routing lekcji.** Ogólna preferencja → **trwała pamięć**; specyficzna
    dla zadania → **tylko notatka sesyjna**. Jasny moment cross-session

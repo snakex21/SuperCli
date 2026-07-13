@@ -25,4 +25,8 @@ func editZipEntryInPlace(target, entryName string, newData []byte) (string, erro
 	return core.EditZipEntryInPlace(target, entryName, newData)
 }
 
+func editZipEntriesInPlace(target string, replacements map[string][]byte) (string, error) {
+	return core.EditZipEntriesInPlace(target, replacements)
+}
+
 func xmlEscapeText(s string) string { return core.XMLEscapeText(s) }

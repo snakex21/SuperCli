@@ -13,6 +13,18 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	// These are live-store safety rails, not prompt budgets. SQLite/FTS/vector
+	// overhead varies by embedder, so bounding both rows and source text keeps
+	// the complete store comfortably below multi-gigabyte territory.
+	MaxStoreEntries      = 4096
+	MaxStoreContentBytes = 32 * 1024 * 1024
+
+	MaxTaskLogEntries      = 200
+	MaxRawLogEntries       = 3
+	MaxDailyScratchEntries = 200
+)
+
 // Store is the persistent memory store: SQLite for queries
 // (with FTS5 search) plus a markdown file mirror for human
 // inspection. The two are kept in sync by every Put/Delete.
@@ -22,6 +34,10 @@ import (
 type Store struct {
 	db   *sql.DB
 	root string
+	// writeMu makes the SQLite+Markdown dual write one logical operation.
+	// database/sql is concurrent-safe, but two atomic Markdown replacements of
+	// the same scope would otherwise be individually valid yet lose an entry.
+	writeMu sync.Mutex
 
 	// Optional embedding backend for hybrid search (hybrid.go).
 	// Guarded by embedMu because detection runs in a background
@@ -130,7 +146,12 @@ func (s *Store) Get(id string) (Entry, error) {
 // Put inserts or updates an entry. The markdown file mirror is
 // kept in sync; the SQLite row stores the resulting line range.
 func (s *Store) Put(e Entry) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if err := e.Validate(); err != nil {
+		return err
+	}
+	if err := s.ensureCapacity(e); err != nil {
 		return err
 	}
 	if e.Source == "" {
@@ -195,9 +216,28 @@ func (s *Store) Put(e Entry) error {
 	return nil
 }
 
+func (s *Store) ensureCapacity(e Entry) error {
+	var entries, contentBytes int64
+	err := s.db.QueryRow(`
+		SELECT COUNT(*), COALESCE(SUM(length(CAST(content AS BLOB))), 0)
+		FROM memory_entries WHERE id <> ?`, e.ID).Scan(&entries, &contentBytes)
+	if err != nil {
+		return fmt.Errorf("memory.Store.Put(%s): capacity check: %w", e.ID, err)
+	}
+	if entries+1 > MaxStoreEntries {
+		return fmt.Errorf("memory.Store.Put(%s): store entry limit %d reached; delete or compact old memories before saving more", e.ID, MaxStoreEntries)
+	}
+	if contentBytes+int64(len(e.Content)) > MaxStoreContentBytes {
+		return fmt.Errorf("memory.Store.Put(%s): store content limit %d bytes reached; delete or compact old memories before saving more", e.ID, MaxStoreContentBytes)
+	}
+	return nil
+}
+
 // Delete removes the entry from both the markdown file and the
 // SQLite tables. Missing entries are not an error.
 func (s *Store) Delete(id string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	e, err := s.Get(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -353,12 +393,19 @@ func (s *Store) AppendScratch(line string) error {
 	scope := "scratch:" + date
 	// id = date-nanos short
 	id := fmt.Sprintf("%s-%x", date, time.Now().UnixNano()&0xffff)
-	return s.Put(Entry{
+	// Make room before writing so the store-wide capacity guard cannot block a
+	// fresh scratch note merely because today's automatic scope reached its cap.
+	_, _ = s.Retain(scope, MaxDailyScratchEntries-1)
+	if err := s.Put(Entry{
 		ID:      id,
 		Scope:   scope,
 		Content: line,
 		Source:  SourceAgent,
-	})
+	}); err != nil {
+		return err
+	}
+	_, err := s.Retain(scope, MaxDailyScratchEntries)
+	return err
 }
 
 // ArchiveOldScratches moves scratch files older than 30 days

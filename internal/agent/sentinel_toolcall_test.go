@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"supercli/internal/llm"
@@ -248,14 +249,14 @@ func TestSentinel_ConsumeSplitAcrossDeltas(t *testing.T) {
 	if want := full + " trailing"; text != want {
 		t.Errorf("text = %q, want %q", text, want)
 	}
-	var sawProse bool
+	var streamed strings.Builder
 	for ev := range out {
-		if me, ok := ev.(MessageEvent); ok && me.Text == full {
-			sawProse = true
+		if me, ok := ev.(MessageEvent); ok {
+			streamed.WriteString(me.Text)
 		}
 	}
-	if !sawProse {
-		t.Error("prose before the split block was not emitted")
+	if got, want := streamed.String(), full+" trailing"; got != want {
+		t.Errorf("streamed text = %q, want %q (tool marker must stay hidden and prose must not repeat)", got, want)
 	}
 }
 

@@ -59,6 +59,7 @@ func newTestServer(t *testing.T, allowRemote bool) *Server {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	return NewServer(eng, allowRemote)
 }
 

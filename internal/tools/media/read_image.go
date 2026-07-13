@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // ReadImageTool loads an image file from disk and returns it as
@@ -74,9 +75,9 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 		return Result{Err: err}, err
 	}
 
-	full := params.Path
-	if !filepath.IsAbs(full) {
-		full = filepath.Join(t.BaseDir, full)
+	full, err := sandbox.ResolveSafe(t.BaseDir, params.Path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("read_image: %w", err)}, nil
 	}
 
 	info, err := os.Stat(full)

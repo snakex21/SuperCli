@@ -157,6 +157,22 @@ func TestStore_List_OrderedByUpdated(t *testing.T) {
 	}
 }
 
+func TestStore_List_AppliesLimitInQuery(t *testing.T) {
+	s := openTestStore(t)
+	for i := 0; i < 5; i++ {
+		if _, err := s.Create("/a", "m", "session"); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	got, err := s.List(2)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("List returned %d sessions, want 2", len(got))
+	}
+}
+
 func TestStore_ListByCwd(t *testing.T) {
 	s := openTestStore(t)
 	s.Create("/x", "m", "")

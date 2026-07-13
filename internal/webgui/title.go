@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"supercli/internal/llm"
-	"supercli/internal/storage/session"
 )
 
 // titleIdleDelay is how long a session must stay quiet after its
@@ -39,9 +38,10 @@ type titleJob struct {
 // the session cancel pending and in-flight work (Cancel); the job is
 // re-armed after the next stream for a fresh session completes.
 type titleScheduler struct {
-	mu    sync.Mutex
-	delay time.Duration
-	jobs  map[string]*titleJob
+	mu     sync.Mutex
+	delay  time.Duration
+	jobs   map[string]*titleJob
+	closed bool
 	// run performs the actual title generation; it reports success so
 	// the scheduler knows whether to retry. Swappable in tests.
 	run func(ctx context.Context, sessionID, prompt string) bool
@@ -60,6 +60,9 @@ func (s *titleScheduler) Schedule(sessionID, prompt string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
 	job := s.jobs[sessionID]
 	if job == nil {
 		job = &titleJob{}
@@ -94,9 +97,37 @@ func (s *titleScheduler) Cancel(sessionID string) {
 	}
 }
 
+// Close stops every pending timer and in-flight background title call. It is
+// invoked after the HTTP server has drained, before Engine closes SQLite.
+func (s *titleScheduler) Close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	for id, job := range s.jobs {
+		if job.timer != nil {
+			job.timer.Stop()
+		}
+		if job.cancel != nil {
+			job.cancel()
+		}
+		delete(s.jobs, id)
+	}
+}
+
 func (s *titleScheduler) fire(sessionID, prompt string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cancel()
+		return
+	}
 	job := s.jobs[sessionID]
 	if job == nil {
 		s.mu.Unlock()
@@ -110,6 +141,11 @@ func (s *titleScheduler) fire(sessionID, prompt string) {
 	ok := s.run(ctx, sessionID, prompt)
 
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cancel()
+		return
+	}
 	if job.cancel != nil {
 		job.cancel = nil
 	}
@@ -137,11 +173,10 @@ func (s *titleScheduler) fire(sessionID, prompt string) {
 // starts. Returns true when the LLM title actually landed.
 func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt string) bool {
 	initialTitle := summarizeHistoryMessage(prompt, 80)
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		return false
 	}
-	defer store.Close()
 	e.mu.RLock()
 	prov := e.prov
 	e.mu.RUnlock()

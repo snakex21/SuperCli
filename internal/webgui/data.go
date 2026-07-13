@@ -45,14 +45,26 @@ type sessionMeta struct {
 	Provider        string `json:"provider,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	RuntimeKnown    bool   `json:"runtime_known,omitempty"`
+	ParentID        string `json:"parent_id,omitempty"`
 }
 
 // transcriptMsg is one message in a session transcript.
 type transcriptMsg struct {
-	Seq     int    `json:"seq"`
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`
+	Seq     int             `json:"seq"`
+	Role    string          `json:"role"`
+	Content string          `json:"content"`
+	Name    string          `json:"name,omitempty"`
+	Turn    *transcriptTurn `json:"turn,omitempty"`
+}
+
+type transcriptTurn struct {
+	ElapsedMS    int64 `json:"elapsed_ms"`
+	TokIn        int64 `json:"tok_in"`
+	TokOut       int64 `json:"tok_out"`
+	TokTotal     int64 `json:"tok_total"`
+	TokCached    int64 `json:"tok_cached,omitempty"`
+	ReasoningTok int64 `json:"reasoning_tok,omitempty"`
+	ToolCalls    int   `json:"tool_calls,omitempty"`
 }
 
 // memoryItem is the browser-facing form of a memory entry.
@@ -86,11 +98,10 @@ type taskView struct {
 // A nil store (open failure) yields an empty slice, never an error,
 // so the panel degrades gracefully.
 func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, error) {
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		return []sessionMeta{}, nil
 	}
-	defer store.Close()
 	recent, err := store.ListRecentByCwd(ctx, e.Home(), limit)
 	if err != nil {
 		return nil, err
@@ -114,7 +125,103 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 			Provider:        meta.Provider,
 			ReasoningEffort: meta.ReasoningEffort,
 			RuntimeKnown:    meta.Provider != "",
+			ParentID:        meta.ParentID,
 		})
+	}
+	return out, nil
+}
+
+func (e *Engine) queuedTasks(ctx context.Context) ([]session.QueuedTask, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return nil, err
+	}
+	return store.ListQueuedTasks(ctx, e.Home())
+}
+
+func (e *Engine) enqueueTask(ctx context.Context, sessionID, prompt string) (session.QueuedTask, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return session.QueuedTask{}, err
+	}
+	if sessionID != "" {
+		meta, err := store.Get(sessionID)
+		if err != nil || !sameSessionWorkspace(meta.Cwd, e.Home()) {
+			return session.QueuedTask{}, errSessionOutsideWorkspace
+		}
+	}
+	return store.EnqueueTask(ctx, e.Home(), sessionID, prompt)
+}
+
+func (e *Engine) deleteTask(ctx context.Context, id string) error {
+	store, err := e.sessionStore()
+	if err != nil {
+		return err
+	}
+	return store.DeleteQueuedTask(ctx, e.Home(), id)
+}
+
+func (e *Engine) moveTask(ctx context.Context, id string, position int) error {
+	store, err := e.sessionStore()
+	if err != nil {
+		return err
+	}
+	return store.MoveQueuedTask(ctx, e.Home(), id, position)
+}
+
+func (e *Engine) forkSession(ctx context.Context, id string, seq int, provider, model, reasoning string) (sessionMeta, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return sessionMeta{}, err
+	}
+	meta, err := store.Get(id)
+	if err != nil {
+		return sessionMeta{}, err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return sessionMeta{}, errSessionOutsideWorkspace
+	}
+	if strings.TrimSpace(provider) == "" && strings.TrimSpace(model) != "" {
+		if info, ok := e.caps.Get(strings.TrimSpace(model)); ok {
+			provider = info.Provider
+		}
+	}
+	child, err := store.Fork(ctx, id, seq, provider, model, reasoning)
+	if err != nil {
+		return sessionMeta{}, err
+	}
+	return sessionMeta{ID: child.ID, FirstUserMsg: child.Title, MessageCount: child.MessageCount, StartedAt: child.CreatedAt.Format(time.RFC3339), Model: child.Model, Provider: child.Provider, ReasoningEffort: child.ReasoningEffort, RuntimeKnown: child.Provider != "", ParentID: child.ParentID}, nil
+}
+
+func (e *Engine) branchSessions(ctx context.Context, id string) ([]sessionMeta, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return nil, err
+	}
+	meta, err := store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return nil, errSessionOutsideWorkspace
+	}
+	root := meta.ID
+	if meta.ParentID != "" {
+		root = meta.ParentID
+	}
+	all := []session.Session{}
+	rootMeta, err := store.Get(root)
+	if err == nil {
+		all = append(all, rootMeta)
+	}
+	children, err := store.Children(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	all = append(all, children...)
+	out := make([]sessionMeta, 0, len(all))
+	for _, v := range all {
+		out = append(out, sessionMeta{ID: v.ID, FirstUserMsg: v.Title, MessageCount: v.MessageCount, StartedAt: v.CreatedAt.Format(time.RFC3339), Model: v.Model, Provider: v.Provider, ReasoningEffort: v.ReasoningEffort, RuntimeKnown: v.Provider != "", ParentID: v.ParentID})
 	}
 	return out, nil
 }
@@ -131,11 +238,10 @@ func (e *Engine) renameSession(id, title string) error {
 	if len([]rune(title)) > 120 {
 		return errors.New("session title is too long (maximum 120 characters)")
 	}
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 	meta, err := store.Get(id)
 	if err != nil {
 		return err
@@ -151,11 +257,10 @@ func (e *Engine) deleteSession(id string) error {
 	if id == "" {
 		return errors.New("session id is required")
 	}
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 	meta, err := store.Get(id)
 	if err != nil {
 		return err
@@ -168,11 +273,10 @@ func (e *Engine) deleteSession(id string) error {
 
 // transcript returns all messages for one session in order.
 func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, error) {
-	store, err := session.OpenStore(e.dataDir)
+	store, err := e.sessionStore()
 	if err != nil {
 		return []transcriptMsg{}, nil
 	}
-	defer store.Close()
 	meta, err := store.Get(id)
 	if err != nil {
 		return nil, err
@@ -184,6 +288,14 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 	if err != nil {
 		return nil, err
 	}
+	turnRows, err := store.ReadTurnSummaries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	turns := make(map[int]session.TurnSummary, len(turnRows))
+	for _, turn := range turnRows {
+		turns[turn.AssistantSeq] = turn
+	}
 	out := make([]transcriptMsg, 0, len(rows))
 	for _, m := range rows {
 		msg, err := m.ToMessage()
@@ -191,12 +303,20 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 			return nil, err
 		}
 		textOnly := msg.TextOnly()
-		out = append(out, transcriptMsg{
+		item := transcriptMsg{
 			Seq:     m.Seq,
 			Role:    m.Role,
 			Content: textOnly.Content,
 			Name:    m.Name,
-		})
+		}
+		if turn, ok := turns[m.Seq]; ok {
+			item.Turn = &transcriptTurn{
+				ElapsedMS: turn.DurationMS, TokIn: turn.Input, TokOut: turn.Output,
+				TokTotal: turn.Input + turn.Output, TokCached: turn.CachedInput,
+				ReasoningTok: turn.Reasoning, ToolCalls: turn.ToolCalls,
+			}
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }

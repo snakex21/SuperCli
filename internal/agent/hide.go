@@ -68,12 +68,17 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 }
 
 // VisibleMessages returns l.Messages with consecutive runs
-// of hidden entries collapsed into a single placeholder.
+// of hidden entries collapsed into a single placeholder. When
+// nothing is hidden it returns a read-only view of l.Messages so
+// the dominant provider path does not copy the full conversation.
 // The placeholder is a user-role message (strict chat
 // templates reject mid-history system messages); the model
 // cannot tell where in the original conversation the
 // cleared range was.
 func (l *Loop) VisibleMessages() []llm.Message {
+	if l.hidden == nil {
+		return l.Messages
+	}
 	out := make([]llm.Message, 0, len(l.Messages))
 	runStart := -1
 	flush := func(end int) {
@@ -111,11 +116,29 @@ func (l *Loop) VisibleMessages() []llm.Message {
 // VisibleMessages() with the calibrated llm.EstimateTokens
 // heuristic (non-whitespace bytes / 3 + per-message framing).
 // Good enough for budget-based eviction and compaction
-// triggers; not for billing. Intentionally cheap — we call
-// it after every step in the loop, so anything O(n) on the
-// message length is fine.
+// triggers; not for billing. The common append-only path keeps
+// an exact running sum. Hidden histories use the exact full scan
+// because placeholder merging makes incremental accounting rare
+// and substantially more error-prone.
 func (l *Loop) EstimateVisibleTokens() int {
-	return llm.EstimateTokens(l.VisibleMessages())
+	if l.hidden != nil {
+		return llm.EstimateTokens(l.VisibleMessages())
+	}
+	if l.visibleEstimateCount > len(l.Messages) {
+		l.invalidateVisibleEstimate()
+	}
+	for i := l.visibleEstimateCount; i < len(l.Messages); i++ {
+		l.visibleEstimateTokens += llm.EstimateMessageTokens(l.Messages[i])
+	}
+	l.visibleEstimateCount = len(l.Messages)
+	return l.visibleEstimateTokens
+}
+
+// invalidateVisibleEstimate must be called whenever an already-counted
+// message is replaced or edited. Plain appends deliberately do not call it.
+func (l *Loop) invalidateVisibleEstimate() {
+	l.visibleEstimateCount = 0
+	l.visibleEstimateTokens = 0
 }
 
 // EvictForBudget hides the oldest non-system messages
@@ -229,6 +252,7 @@ func (l *Loop) AllMessages() []llm.Message {
 // durable user/budget intent, not per-Run state.
 func (l *Loop) resetHidden() {
 	l.hidden = nil
+	l.invalidateVisibleEstimate()
 }
 
 // ensureHidden grows the hidden slice to at least n

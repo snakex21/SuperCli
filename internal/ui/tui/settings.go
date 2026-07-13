@@ -10,6 +10,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
+	"supercli/internal/tools/sandbox"
 )
 
 // statusClearCmd clears a transient status override after a short delay.
@@ -46,6 +47,7 @@ type settingRow struct {
 func settingsRows() []settingRow {
 	return []settingRow{
 		{"orchestrator", "orchestrator", "hard delegation: main loop can only delegate via task, not edit/run itself", setTriState, true},
+		{"allow_all", "allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", setTriState, false},
 		{"thinking", "thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", setTriState, false},
 		{"navigator", "navigator", "pre-request route (chat/advisor/coordinator) decision mode", setNavigator, true},
 		{"stable_toolset", "stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", setTriState, true},
@@ -282,6 +284,9 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 	switch key {
 	case "orchestrator":
 		c.Orchestrator = cycleTri(c.Orchestrator)
+	case "allow_all":
+		c.AllowAll = !c.AllowAll
+		sandbox.SetUnsandboxed(c.AllowAll)
 	case "stable_toolset":
 		c.StableToolset = cycleTri(c.StableToolset)
 	case "darwin_parallel":
@@ -320,6 +325,9 @@ func settingResetKey(c *config.TomlConfig, key string) {
 	switch key {
 	case "orchestrator":
 		c.Orchestrator = nil
+	case "allow_all":
+		c.AllowAll = false
+		sandbox.SetUnsandboxed(false)
 	case "stable_toolset":
 		c.StableToolset = nil
 	case "darwin_parallel":
@@ -363,6 +371,11 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 	switch r.key {
 	case "orchestrator":
 		return triDisplay(c.Orchestrator, "off")
+	case "allow_all":
+		if c.AllowAll {
+			return "on", "manual"
+		}
+		return "off", "default"
 	case "stable_toolset":
 		return triDisplay(c.StableToolset, "on")
 	case "thinking":

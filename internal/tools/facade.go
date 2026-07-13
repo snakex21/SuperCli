@@ -15,6 +15,7 @@ import (
 	"supercli/internal/tools/media"
 	"supercli/internal/tools/memorytools"
 	"supercli/internal/tools/office"
+	"supercli/internal/tools/scratchpad"
 	"supercli/internal/tools/search"
 	"supercli/internal/tools/skills"
 	"supercli/internal/tools/usertools"
@@ -24,23 +25,23 @@ import (
 
 // Core contracts and registry.
 type (
-	Tool          = core.Tool
-	Result        = core.Result
-	ImageContent  = core.ImageContent
-	Registry      = core.Registry
-	CatalogEntry  = core.CatalogEntry
-	Check         = core.Check
-	VerifyVerdict = core.VerifyVerdict
-	Verifier      = core.Verifier
-	VerifyFn      = core.VerifyFn
+	Tool            = core.Tool
+	Result          = core.Result
+	ImageContent    = core.ImageContent
+	Registry        = core.Registry
+	CatalogEntry    = core.CatalogEntry
+	Check           = core.Check
+	VerifyVerdict   = core.VerifyVerdict
+	Verifier        = core.Verifier
+	VerifyFn        = core.VerifyFn
 	DefaultVerifier = core.DefaultVerifier
-	Category      = core.Category
-	Verdict       = core.Verdict
-	Action        = core.Action
-	Policy        = core.Policy
-	Classifier    = core.Classifier
-	ErrorRecord   = core.ErrorRecord
-	ErrorLog      = core.ErrorLog
+	Category        = core.Category
+	Verdict         = core.Verdict
+	Action          = core.Action
+	Policy          = core.Policy
+	Classifier      = core.Classifier
+	ErrorRecord     = core.ErrorRecord
+	ErrorLog        = core.ErrorLog
 )
 
 const (
@@ -68,6 +69,10 @@ var (
 	EstimateSchemaTokens  = core.EstimateSchemaTokens
 	EstimateCatalogTokens = core.EstimateCatalogTokens
 )
+
+type Scratchpad = scratchpad.Scratchpad
+
+var NewScratchpad = scratchpad.New
 
 // File-system tools.
 type (
@@ -114,18 +119,18 @@ type (
 )
 
 const (
-	DefaultMaxDocxBytes      = office.DefaultMaxDocxBytes
-	DefaultMaxDocxParagraph  = office.DefaultMaxDocxParagraph
-	DefaultMaxDocxOutput     = office.DefaultMaxDocxOutput
-	DefaultMaxXlsxBytes      = office.DefaultMaxXlsxBytes
-	DefaultMaxXlsxCells      = office.DefaultMaxXlsxCells
-	DefaultMaxXlsxOutput     = office.DefaultMaxXlsxOutput
-	DefaultMaxPdfBytes       = office.DefaultMaxPdfBytes
-	DefaultMaxPdfPages       = office.DefaultMaxPdfPages
-	DefaultMaxPdfOutput      = office.DefaultMaxPdfOutput
-	DefaultMaxZipBytes       = office.DefaultMaxZipBytes
-	DefaultMaxZipEntries     = office.DefaultMaxZipEntries
-	DefaultMaxExtractedBytes = office.DefaultMaxExtractedBytes
+	DefaultMaxDocxBytes       = office.DefaultMaxDocxBytes
+	DefaultMaxDocxParagraph   = office.DefaultMaxDocxParagraph
+	DefaultMaxDocxOutput      = office.DefaultMaxDocxOutput
+	DefaultMaxXlsxBytes       = office.DefaultMaxXlsxBytes
+	DefaultMaxXlsxCells       = office.DefaultMaxXlsxCells
+	DefaultMaxXlsxOutput      = office.DefaultMaxXlsxOutput
+	DefaultMaxPdfBytes        = office.DefaultMaxPdfBytes
+	DefaultMaxPdfPages        = office.DefaultMaxPdfPages
+	DefaultMaxPdfOutput       = office.DefaultMaxPdfOutput
+	DefaultMaxZipBytes        = office.DefaultMaxZipBytes
+	DefaultMaxZipEntries      = office.DefaultMaxZipEntries
+	DefaultMaxExtractedBytes  = office.DefaultMaxExtractedBytes
 	DefaultMaxSingleFileBytes = office.DefaultMaxSingleFileBytes
 )
 
@@ -153,12 +158,12 @@ var (
 
 // Search/meta tools.
 type (
-	Index        = search.Index
-	IndexedTool  = search.IndexedTool
-	SearchResult = search.SearchResult
-	SearchCode   = search.SearchCode
+	Index         = search.Index
+	IndexedTool   = search.IndexedTool
+	SearchResult  = search.SearchResult
+	SearchCode    = search.SearchCode
 	SearchHistory = search.SearchHistory
-	ToolSearcher = search.ToolSearcher
+	ToolSearcher  = search.ToolSearcher
 )
 
 var (
@@ -191,7 +196,7 @@ type (
 )
 
 var (
-	ErrUnsafeCommand = usertools.ErrUnsafeCommand
+	ErrUnsafeCommand  = usertools.ErrUnsafeCommand
 	NewUserToolLoader = usertools.NewUserToolLoader
 )
 
@@ -204,8 +209,9 @@ type (
 )
 
 var (
-	NewDiscoverer   = skills.NewDiscoverer
-	NewSkillApplier = skills.NewSkillApplier
+	NewDiscoverer             = skills.NewDiscoverer
+	NewDiscovererWithBuiltins = skills.NewDiscovererWithBuiltins
+	NewSkillApplier           = skills.NewSkillApplier
 )
 
 // Media / user interaction.
@@ -222,10 +228,10 @@ type (
 const DefaultMaxScreenshotBytes = media.DefaultMaxScreenshotBytes
 
 var (
-	NewReadImage      = media.NewReadImage
+	NewReadImage        = media.NewReadImage
 	SupportedImageMIMEs = media.SupportedImageMIMEs
-	NewSendScreenshot = media.NewSendScreenshot
-	NewAskUser        = interactive.NewAskUser
+	NewSendScreenshot   = media.NewSendScreenshot
+	NewAskUser          = interactive.NewAskUser
 )
 
 // Workflow / agent-facing tools.

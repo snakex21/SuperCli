@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,6 +43,13 @@ type AskOption struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Preview     string `json:"preview,omitempty"`
+	// Image is an optional project-relative path to a generated preview. The
+	// presentation layer decides whether it can render it (WebGUI) or should
+	// show the path as a fallback (TUI).
+	Image string `json:"image,omitempty"`
+	// ImagePrompt is the ready-to-copy generation prompt shown when no image
+	// provider is configured, or alongside a preview for reproducibility.
+	ImagePrompt string `json:"image_prompt,omitempty"`
 }
 
 // AskRequest is sent from the tool to the TUI.
@@ -57,6 +66,9 @@ type AskRequest struct {
 	// MultiSelect lets the user pick several options. When
 	// false, the user picks exactly one or cancels.
 	MultiSelect bool `json:"multiSelect"`
+	// AllowCustom exposes a free-form answer in addition to the suggested
+	// options. SuperCli enables it for model-originated questions by default.
+	AllowCustom bool `json:"allowCustom"`
 	// Respond is the channel the TUI sends the answer to. The
 	// tool's goroutine is blocked reading from this channel;
 	// the TUI is the only writer.
@@ -74,19 +86,39 @@ type AskAnswer struct {
 	MultiSelect bool `json:"multiSelect"`
 	// Cancelled is true when the user pressed Esc.
 	Cancelled bool `json:"cancelled"`
+	// Custom is the user's own answer when none of the suggested labels is a
+	// good fit. It may accompany Selected in multi-select mode.
+	Custom string `json:"custom,omitempty"`
 }
 
-// askParams is what the model sends in the tool arguments.
-type askParams struct {
+type askQuestionParams struct {
 	Question    string      `json:"question"`
 	Header      string      `json:"header"`
 	Options     []AskOption `json:"options"`
 	MultiSelect bool        `json:"multiSelect"`
 }
 
+// askParams accepts the original one-question shape and a forms-style
+// questions array. Multiple questions are presented sequentially by simple
+// clients and can be rendered as one form by richer clients later without
+// changing the model contract.
+type askParams struct {
+	Question    string              `json:"question"`
+	Header      string              `json:"header"`
+	Options     []AskOption         `json:"options"`
+	MultiSelect bool                `json:"multiSelect"`
+	Questions   []askQuestionParams `json:"questions,omitempty"`
+}
+
+// Validate keeps the original single-question validation contract used by
+// embedders and tests. Execute additionally validates the questions form.
+func (p askParams) Validate() error {
+	return (askQuestionParams{Question: p.Question, Header: p.Header, Options: p.Options, MultiSelect: p.MultiSelect}).Validate()
+}
+
 // Validate returns nil if the parameters can be rendered. The
 // tool refuses to push a malformed question to the user.
-func (p askParams) Validate() error {
+func (p askQuestionParams) Validate() error {
 	if p.Question == "" {
 		return fmt.Errorf("ask_user: question is required")
 	}
@@ -108,42 +140,9 @@ func (p askParams) Validate() error {
 func (a *AskUser) Spec() Tool {
 	return Tool{
 		Name:        "ask_user",
-		Description: "Ask the user a question with 2-4 options instead of guessing. Use this when the user's intent is ambiguous or there are several reasonable approaches. The model will receive the chosen label(s) back and continue from there. Saves tokens by preventing the model from going down the wrong path.",
-		Schema: `{
-			"type": "object",
-			"properties": {
-				"question": {
-					"type": "string",
-					"description": "The question to ask the user (one short sentence)."
-				},
-				"header": {
-					"type": "string",
-					"maxLength": 12,
-					"description": "Very short label (max 12 chars) shown above the options."
-				},
-				"options": {
-					"type": "array",
-					"minItems": 2,
-					"maxItems": 4,
-					"items": {
-						"type": "object",
-						"properties": {
-							"label":       {"type": "string", "description": "1-5 word option label."},
-							"description": {"type": "string", "description": "What this option means."},
-							"preview":     {"type": "string", "description": "Optional preview of the result."}
-						},
-						"required": ["label"]
-					}
-				},
-				"multiSelect": {
-					"type": "boolean",
-					"default": false,
-					"description": "Whether the user may select multiple options."
-				}
-			},
-			"required": ["question", "options"]
-		}`,
-		Fn: a.Execute,
+		Description: "Ask focused questions with 2-4 choices and a custom-answer fallback instead of guessing. Prefer 1-3; use up to 8 only when one coherent decision genuinely needs it. Default to text only. Add visual fields only when requested or materially useful; use 2-3 focused variants, never whole pages speculatively. image is a project-relative preview path; without a generator use preview plus optional image_prompt.",
+		Schema:      `{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"},"questions":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"}},"required":["question","options"]}}},"anyOf":[{"required":["question","options"]},{"required":["questions"]}]}`,
+		Fn:          a.Execute,
 	}
 }
 
@@ -155,8 +154,18 @@ func (a *AskUser) Execute(ctx context.Context, args json.RawMessage) (Result, er
 	if err := json.Unmarshal(args, &p); err != nil {
 		return Result{Err: fmt.Errorf("ask_user: bad args: %w", err)}, err
 	}
-	if err := p.Validate(); err != nil {
+	questions := p.Questions
+	if len(questions) == 0 {
+		questions = []askQuestionParams{{Question: p.Question, Header: p.Header, Options: p.Options, MultiSelect: p.MultiSelect}}
+	}
+	if len(questions) > 8 {
+		err := fmt.Errorf("ask_user: questions count is %d, max 8", len(questions))
 		return Result{Err: err}, err
+	}
+	for _, question := range questions {
+		if err := question.Validate(); err != nil {
+			return Result{Err: err}, err
+		}
 	}
 
 	timeout := a.Timeout
@@ -164,35 +173,41 @@ func (a *AskUser) Execute(ctx context.Context, args json.RawMessage) (Result, er
 		timeout = 60 * time.Second
 	}
 
-	respond := make(chan AskAnswer, 1)
-	req := AskRequest{
-		ID:          newAskID(),
-		Question:    p.Question,
-		Header:      p.Header,
-		Options:     p.Options,
-		MultiSelect: p.MultiSelect,
-		Respond:     respond,
+	answers := make([]string, 0, len(questions))
+	for i, question := range questions {
+		respond := make(chan AskAnswer, 1)
+		req := AskRequest{
+			ID: newAskID(), Question: question.Question, Header: question.Header,
+			Options: question.Options, MultiSelect: question.MultiSelect,
+			AllowCustom: true, Respond: respond,
+		}
+		select {
+		case a.In <- req:
+		case <-ctx.Done():
+			return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
+		}
+		timer := time.NewTimer(timeout)
+		select {
+		case ans := <-respond:
+			timer.Stop()
+			if ans.Cancelled {
+				return Result{Text: fmt.Sprintf("question %d: user cancelled", i+1)}, nil
+			}
+			answers = append(answers, fmt.Sprintf("question %d (%s): %s", i+1, question.Question, formatAskAnswer(ans)))
+		case <-ctx.Done():
+			timer.Stop()
+			return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
+		case <-timer.C:
+			err := fmt.Errorf("ask_user: user did not answer question %d within %v", i+1, timeout)
+			return Result{Err: err}, err
+		}
 	}
-
-	// Push the request; respect context cancel.
-	select {
-	case a.In <- req:
-	case <-ctx.Done():
-		return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
+	if len(answers) == 1 {
+		// Preserve the original one-question tool output to avoid needless
+		// prompt churn and keep old replay fixtures byte-compatible.
+		return Result{Text: strings.TrimPrefix(answers[0], fmt.Sprintf("question 1 (%s): ", questions[0].Question))}, nil
 	}
-
-	// Wait for the answer with timeout.
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case ans := <-respond:
-		return Result{Text: formatAskAnswer(ans)}, nil
-	case <-ctx.Done():
-		return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
-	case <-timer.C:
-		err := fmt.Errorf("ask_user: user did not answer within %v", timeout)
-		return Result{Err: err}, err
-	}
+	return Result{Text: joinAnswers(answers)}, nil
 }
 
 // formatAskAnswer returns a human-readable summary the model
@@ -202,8 +217,14 @@ func formatAskAnswer(ans AskAnswer) string {
 	if ans.Cancelled {
 		return "user cancelled the question"
 	}
+	if len(ans.Selected) == 0 && ans.Custom != "" {
+		return "user answered: " + ans.Custom
+	}
 	if len(ans.Selected) == 0 {
 		return "user did not pick any option"
+	}
+	if ans.Custom != "" {
+		return "user selected: " + joinLabels(ans.Selected) + "; custom note: " + ans.Custom
 	}
 	if ans.MultiSelect {
 		return "user selected: " + joinLabels(ans.Selected)
@@ -212,6 +233,19 @@ func formatAskAnswer(ans AskAnswer) string {
 		return "user selected: " + ans.Selected[0]
 	}
 	return "user selected: " + joinLabels(ans.Selected) + " (unexpected multiple for single-select)"
+}
+
+func joinAnswers(answers []string) string { return joinWith(answers, "\n") }
+
+func joinWith(items []string, sep string) string {
+	var out string
+	for i, item := range items {
+		if i > 0 {
+			out += sep
+		}
+		out += item
+	}
+	return out
 }
 
 func joinLabels(ls []string) string {
@@ -228,9 +262,8 @@ func joinLabels(ls []string) string {
 // newAskID returns a short pseudo-unique id for log correlation.
 // F4 will replace this with a real uuid library; for F2 the
 // monotonic counter is enough.
-var askIDCounter uint64
+var askIDCounter atomic.Uint64
 
 func newAskID() string {
-	askIDCounter++
-	return fmt.Sprintf("ask-%d", askIDCounter)
+	return fmt.Sprintf("ask-%d", askIDCounter.Add(1))
 }

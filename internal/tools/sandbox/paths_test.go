@@ -163,9 +163,9 @@ func TestIsSensitive(t *testing.T) {
 
 func TestResolveSafe_UnsandboxedAllowsEscape(t *testing.T) {
 	home := t.TempDir()
-	prev := Unsandboxed
-	Unsandboxed = true
-	defer func() { Unsandboxed = prev }()
+	prev := IsUnsandboxed()
+	SetUnsandboxed(true)
+	defer SetUnsandboxed(prev)
 
 	// Absolute path outside home should succeed when unsandboxed.
 	got, err := ResolveSafe(home, "/tmp")
@@ -182,9 +182,9 @@ func TestResolveSafe_UnsandboxedStillBlocksSensitive(t *testing.T) {
 		t.Skip("Unix-only")
 	}
 	home := t.TempDir()
-	prev := Unsandboxed
-	Unsandboxed = true
-	defer func() { Unsandboxed = prev }()
+	prev := IsUnsandboxed()
+	SetUnsandboxed(true)
+	defer SetUnsandboxed(prev)
 
 	_, err := ResolveSafe(home, "/etc/hosts")
 	if err != ErrDenied {

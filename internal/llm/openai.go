@@ -29,6 +29,9 @@ type OpenAIConfig struct {
 	APIKey string
 	// Model is the model id, e.g. "gpt-4o-mini". Required.
 	Model string
+	// MaxTokens caps generated tokens. Zero leaves the provider default.
+	// This is the OpenAI-compatible chat-completions `max_tokens` field.
+	MaxTokens int
 	// Timeout is the idle/inactivity timeout for the SSE stream: the
 	// maximum gap with no data from the server (also bounds time-to-
 	// first-token). It is NOT a whole-request deadline, so a slow but
@@ -186,7 +189,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	warnedNoVision := false
 
 	reasoningFormat := p.reasoningFormat()
-	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, hasVision, p.cachePrompt, reasoningFormat)
+	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, hasVision, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -484,9 +487,10 @@ func parseOpenAIDataLines(r io.Reader, onData func(data string) error) error {
 // --- request body ---
 
 type openaiRequest struct {
-	Model    string         `json:"model"`
-	Messages []openaiReqMsg `json:"messages"`
-	Stream   bool           `json:"stream"`
+	Model     string         `json:"model"`
+	MaxTokens int            `json:"max_tokens,omitempty"`
+	Messages  []openaiReqMsg `json:"messages"`
+	Stream    bool           `json:"stream"`
 	// StreamOptions asks the server to emit a final usage chunk in
 	// streaming mode. Required by the OpenAI spec (and LM Studio,
 	// vLLM, etc.) to get prompt/completion token counts back when
@@ -564,13 +568,14 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 }
 
 func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
-	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format)
+	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format, 0)
 }
 
-func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
+func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int) ([]byte, error) {
 	msgs = demoteMidConversationSystemMessages(msgs)
 	req := openaiRequest{
 		Model:         model,
+		MaxTokens:     maxTokens,
 		Stream:        true,
 		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
 		CachePrompt:   cachePrompt,

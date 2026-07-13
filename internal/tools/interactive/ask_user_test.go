@@ -262,6 +262,31 @@ func TestFormatAskAnswer(t *testing.T) {
 	}
 }
 
+func TestAskUser_CustomAnswerAndMultipleQuestions(t *testing.T) {
+	ch := make(chan AskRequest, 2)
+	tool := NewAskUser(ch)
+	tool.Timeout = time.Second
+	done := make(chan Result, 1)
+	go func() {
+		res, _ := tool.Execute(context.Background(), json.RawMessage(`{"questions":[
+			{"question":"Layout?","options":[{"label":"A"},{"label":"B"}]},
+			{"question":"Colors?","options":[{"label":"Warm"},{"label":"Cool"}],"multiSelect":true}
+		]}`))
+		done <- res
+	}()
+	first := <-ch
+	if !first.AllowCustom || first.Question != "Layout?" {
+		t.Fatalf("first request = %+v", first)
+	}
+	first.Respond <- AskAnswer{Custom: "A, but with a narrower sidebar"}
+	second := <-ch
+	second.Respond <- AskAnswer{Selected: []string{"Warm", "Cool"}, MultiSelect: true}
+	res := <-done
+	if res.Err != nil || !strings.Contains(res.Text, "narrower sidebar") || !strings.Contains(res.Text, "Warm, Cool") {
+		t.Fatalf("multi answer = %+v", res)
+	}
+}
+
 func TestJoinLabels(t *testing.T) {
 	if got := joinLabels([]string{"a", "b", "c"}); got != "a, b, c" {
 		t.Errorf("got %q", got)

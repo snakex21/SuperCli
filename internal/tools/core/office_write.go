@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"supercli/internal/tools/sandbox"
@@ -36,7 +37,7 @@ func resolveSandboxed(baseDir, p string) (string, error) {
 	}
 	resolved, err := sandbox.ResolveSafe(baseDir, p)
 	if err != nil {
-		return "", fmt.Errorf("path %q is not allowed: %w (paths must stay inside %s)", p, err, baseDir)
+		return "", fmt.Errorf("path %q is not allowed: %w (workspace: %s; use /allow-all on for external paths)", p, err, baseDir)
 	}
 	return resolved, nil
 }
@@ -111,6 +112,13 @@ func BackupAndReplace(target, tmpPath string) (string, error) {
 // preserved exactly. If the entry does not exist in the
 // source it is appended.
 func rewriteZipEntry(srcPath, dstPath, entryName string, newData []byte) error {
+	return rewriteZipEntries(srcPath, dstPath, map[string][]byte{entryName: newData})
+}
+
+// rewriteZipEntries is the multi-part form used by DOCX story edits (main
+// document plus optional headers/footers). Replacements already present in the
+// archive keep their original ZIP headers; missing names are appended.
+func rewriteZipEntries(srcPath, dstPath string, replacements map[string][]byte) error {
 	zr, err := zip.OpenReader(srcPath)
 	if err != nil {
 		return fmt.Errorf("open zip: %w", err)
@@ -122,9 +130,10 @@ func rewriteZipEntry(srcPath, dstPath, entryName string, newData []byte) error {
 		return fmt.Errorf("create temp zip: %w", err)
 	}
 	zw := zip.NewWriter(out)
-	wrote := false
+	written := make(map[string]bool, len(replacements))
 	for _, f := range zr.File {
-		if f.Name == entryName {
+		newData, replace := replacements[f.Name]
+		if replace {
 			hdr := f.FileHeader // copy
 			hdr.CompressedSize = 0
 			hdr.CompressedSize64 = 0
@@ -134,13 +143,13 @@ func rewriteZipEntry(srcPath, dstPath, entryName string, newData []byte) error {
 			w, err := zw.CreateHeader(&hdr)
 			if err != nil {
 				out.Close()
-				return fmt.Errorf("write entry %q: %w", entryName, err)
+				return fmt.Errorf("write entry %q: %w", f.Name, err)
 			}
 			if _, err := w.Write(newData); err != nil {
 				out.Close()
-				return fmt.Errorf("write entry %q: %w", entryName, err)
+				return fmt.Errorf("write entry %q: %w", f.Name, err)
 			}
-			wrote = true
+			written[f.Name] = true
 			continue
 		}
 		// Raw copy: compressed bytes pass through
@@ -161,7 +170,16 @@ func rewriteZipEntry(srcPath, dstPath, entryName string, newData []byte) error {
 			return fmt.Errorf("copy raw %q: %w", f.Name, err)
 		}
 	}
-	if !wrote {
+	missing := make([]string, 0, len(replacements))
+	for entryName := range replacements {
+		if written[entryName] {
+			continue
+		}
+		missing = append(missing, entryName)
+	}
+	sort.Strings(missing)
+	for _, entryName := range missing {
+		newData := replacements[entryName]
 		w, err := zw.Create(entryName)
 		if err != nil {
 			out.Close()
@@ -177,6 +195,26 @@ func rewriteZipEntry(srcPath, dstPath, entryName string, newData []byte) error {
 		return fmt.Errorf("finalize zip: %w", err)
 	}
 	return out.Close()
+}
+
+// EditZipEntriesInPlace rewrites several archive parts with one temp archive,
+// one backup and one final rename. This avoids exposing a half-edited DOCX if
+// a document+header replacement is interrupted between entries.
+func EditZipEntriesInPlace(target string, replacements map[string][]byte) (string, error) {
+	if len(replacements) == 0 {
+		return "", fmt.Errorf("edit zip entries: no replacements")
+	}
+	tmp := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".tmp")
+	if err := rewriteZipEntries(target, tmp, replacements); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	backup, err := backupAndReplace(target, tmp)
+	if err != nil {
+		os.Remove(tmp)
+		return backup, err
+	}
+	return backup, nil
 }
 
 // editZipEntryInPlace runs the full safe-write protocol for a

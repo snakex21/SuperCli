@@ -48,6 +48,23 @@ func TestStripThinkingFromMessage_DropsEmptiedTextPart(t *testing.T) {
 	}
 }
 
+func TestStripThinkingFromMessage_ReasoningOnlyStaysProviderValid(t *testing.T) {
+	msg := llm.Message{
+		Role:  llm.RoleAssistant,
+		Parts: []llm.ContentPart{{Type: llm.PartTypeText, Text: "<thinking>private reasoning only</thinking>"}},
+	}
+	got := stripThinkingFromMessage(msg)
+	if err := got.Validate(); err != nil {
+		t.Fatalf("reasoning-only assistant became invalid: %+v: %v", got, err)
+	}
+	if got.Content != "[no visible answer]" {
+		t.Fatalf("placeholder = %q", got.Content)
+	}
+	if strings.Contains(got.Content, "private reasoning") {
+		t.Fatal("reasoning leaked into provider history")
+	}
+}
+
 // TestLoop_HistoryStripsThinkingButStorageKeepsIt proves the Task 2b
 // invariant: the in-memory history that drives the next request carries
 // only the final answer, while the session store keeps the full text

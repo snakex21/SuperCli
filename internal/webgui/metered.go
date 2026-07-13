@@ -45,12 +45,6 @@ func (e *Engine) usageCallSink(store *session.Store, sessionID string) llm.CallS
 		worker = &id
 	}
 	return func(s llm.CallStat) {
-		// Mirror the old wrapper's contract: only calls that produced
-		// a terminal usage frame become rows (failed or usage-less
-		// calls carry no billable counters).
-		if s.TokensIn == 0 && s.TokensOut == 0 {
-			return
-		}
 		id := model
 		switch s.Purpose {
 		case llm.PurposeTask:
@@ -60,6 +54,14 @@ func (e *Engine) usageCallSink(store *session.Store, sessionID string) llm.CallS
 			id.Source = "worker"
 		case llm.PurposeTitle:
 			id.Source = "title"
+		}
+		e.recordProviderPerformance(id.Provider, s)
+		// Mirror the old wrapper's contract: only calls that produced
+		// a terminal usage frame become rows (failed or usage-less
+		// calls carry no billable counters). Performance still records
+		// those calls above so the diagnostics panel can explain them.
+		if s.TokensIn == 0 && s.TokensOut == 0 {
+			return
 		}
 		recordCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

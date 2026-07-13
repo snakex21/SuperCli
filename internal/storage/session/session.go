@@ -157,35 +157,42 @@ func (s *Store) Get(id string) (Session, error) {
 
 // List returns up to limit sessions, newest first.
 func (s *Store) List(limit int) ([]Session, error) {
-	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
-	)
+	query := `SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions ORDER BY updated_at DESC, created_at DESC, id DESC`
+	var args []any
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAll(rows, limit)
+	return scanAll(rows, 0)
 }
 
 // ListByCwd returns sessions whose cwd matches exactly, newest
 // first.
 func (s *Store) ListByCwd(cwd string, limit int) ([]Session, error) {
-	rows, err := s.db.Query(
-		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC`,
-		cwd,
-	)
+	query := `SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, id DESC`
+	args := []any{cwd}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAll(rows, limit)
+	return scanAll(rows, 0)
 }
 
 // LastForCwd returns the most recent session for cwd, or
 // sql.ErrNoRows if none.
 func (s *Store) LastForCwd(cwd string) (Session, error) {
 	row := s.db.QueryRow(
-		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, rowid DESC LIMIT 1`,
+		`SELECT id, cwd, title, model, provider, reasoning_effort, IFNULL(parent_id,''), created_at, updated_at, message_count, token_in, token_out FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 1`,
 		cwd,
 	)
 	return scanSession(row)
@@ -509,8 +516,22 @@ func (s *Store) migrate() error {
 			token_out     INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY (parent_id) REFERENCES sessions(id) ON DELETE SET NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_list ON sessions(updated_at DESC, created_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_cwd_list ON sessions(cwd, updated_at DESC, created_at DESC, id DESC)`,
+		// The composite indexes subsume the old single-column indexes. Dropping
+		// them avoids paying for four index updates on every appended message.
+		`DROP INDEX IF EXISTS idx_sessions_updated`,
+		`DROP INDEX IF EXISTS idx_sessions_cwd`,
+		`CREATE TABLE IF NOT EXISTS prompt_queue (
+			id         TEXT PRIMARY KEY,
+			cwd        TEXT NOT NULL,
+			session_id TEXT,
+			prompt     TEXT NOT NULL,
+			position   INTEGER NOT NULL,
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_prompt_queue_cwd ON prompt_queue(cwd, position)`,
 		`CREATE TABLE IF NOT EXISTS messages (
 			id              INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id      TEXT NOT NULL,
@@ -560,6 +581,23 @@ func (s *Store) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_usage_session ON session_usage(session_id, call_seq)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_usage_created ON session_usage(created_at)`,
+		`CREATE TABLE IF NOT EXISTS session_turns (
+			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id            TEXT NOT NULL,
+			assistant_seq         INTEGER NOT NULL,
+			duration_ms           INTEGER NOT NULL DEFAULT 0,
+			input_tokens          INTEGER NOT NULL DEFAULT 0,
+			output_tokens         INTEGER NOT NULL DEFAULT 0,
+			cached_input_tokens   INTEGER NOT NULL DEFAULT 0,
+			reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
+			has_cached_input      INTEGER NOT NULL DEFAULT 0,
+			has_reasoning         INTEGER NOT NULL DEFAULT 0,
+			tool_calls            INTEGER NOT NULL DEFAULT 0,
+			created_at            INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+			UNIQUE (session_id, assistant_seq)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, assistant_seq)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {

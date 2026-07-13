@@ -17,40 +17,40 @@ import (
 // npx-based servers may need to download packages on first run.
 const mcpStartTimeout = 60 * time.Second
 
-// initMcp builds the MCP manager from config.toml [mcp.servers.*]
-// sections and starts the servers in the background. Discovered tools
-// are registered as mcp_<server>_<tool>, deferred (NOT always-on): the
-// model pulls their schemas through tool_search, so MCP never bloats
-// the default context. Returns nil when no servers are configured.
-func initMcp(tomlCfg config.TomlConfig, registry *tools.Registry, reindex func()) *mcp.Manager {
-	if len(tomlCfg.Mcp.Servers) == 0 {
-		return nil
-	}
+// initMcp merges config.toml servers with portable packages discovered under
+// <dataDir>/mcp. It registers one small bridge tool and deliberately starts no
+// subprocesses: a server is launched only when the model searches or calls it.
+func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry, reindex func()) *mcp.Manager {
 	configs := make(map[string]mcp.ServerConfig, len(tomlCfg.Mcp.Servers))
 	for name, s := range tomlCfg.Mcp.Servers {
 		configs[name] = mcp.ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env}
 	}
+	merged, packages, err := mcp.LoadWorkspace(dataDir, configs)
+	if err != nil {
+		log.Printf("mcp: portable workspace discovery: %v", err)
+	} else {
+		configs = merged
+	}
+	for _, pkg := range packages {
+		if pkg.Error != "" {
+			log.Printf("mcp: portable package %s unavailable: %s", pkg.ID, pkg.Error)
+		}
+	}
+	if len(configs) == 0 {
+		return nil
+	}
 	manager := mcp.NewManager(configs)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), mcpStartTimeout)
-		defer cancel()
-		errs := manager.StartAll(ctx)
-		for name, err := range errs {
-			log.Printf("mcp: server %s failed to start: %v", name, err)
-		}
-		if n := mcp.RegisterTools(manager, registry); n > 0 {
-			log.Printf("mcp: registered %d tool(s) from %d server(s)", n, len(configs))
-			if reindex != nil {
-				reindex()
-			}
-		}
-	}()
+	registry.MustRegister(mcp.NewBridge(manager).Spec())
+	registry.MarkAlwaysOn("mcp_bridge")
+	if reindex != nil {
+		reindex()
+	}
 	return manager
 }
 
 // mcpCommand returns the /mcp slash handler: list servers and their
 // status, or "/mcp restart <name>" to stop+start one server.
-func mcpCommand(manager *mcp.Manager, registry *tools.Registry, reindex func()) tui.SlashHandler {
+func mcpCommand(manager *mcp.Manager) tui.SlashHandler {
 	return func(ctx context.Context, args string) (string, error) {
 		if manager == nil {
 			return "mcp: no servers configured.\nAdd to config.toml:\n" +
@@ -69,11 +69,7 @@ func mcpCommand(manager *mcp.Manager, registry *tools.Registry, reindex func()) 
 			if err := manager.Restart(rctx, name); err != nil {
 				return fmt.Sprintf("mcp: restart %s: %v", name, err), nil
 			}
-			n := mcp.RegisterTools(manager, registry) // re-register any new tools
-			if n > 0 && reindex != nil {
-				reindex()
-			}
-			return fmt.Sprintf("mcp: %s restarted (%d new tool(s) registered)", name, n), nil
+			return fmt.Sprintf("mcp: %s restarted and ready", name), nil
 		}
 		var b strings.Builder
 		b.WriteString("MCP servers:\n")
@@ -82,12 +78,16 @@ func mcpCommand(manager *mcp.Manager, registry *tools.Registry, reindex func()) 
 			if st.Running {
 				state = fmt.Sprintf("running %s", st.Uptime.Round(time.Second))
 			}
-			fmt.Fprintf(&b, "  %-14s %-18s %d tool(s)  cmd: %s\n", st.Name, state, st.Tools, st.Command)
+			kind := "configured"
+			if st.Portable {
+				kind = "portable"
+			}
+			fmt.Fprintf(&b, "  %-14s %-18s %d tool(s)  %s  cmd: %s\n", st.Name, state, st.Tools, kind, st.Command)
 			if st.Err != "" {
 				fmt.Fprintf(&b, "                 error: %s\n", st.Err)
 			}
 		}
-		b.WriteString("\ntools are named mcp_<server>_<tool>; the model finds them via tool_search\n")
+		b.WriteString("\nservers start lazily through mcp_bridge only when the model needs them\n")
 		b.WriteString("restart: /mcp restart <name>\n")
 		return b.String(), nil
 	}

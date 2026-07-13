@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // EditLines applies SEVERAL content-anchored edits to one file in
@@ -86,7 +86,10 @@ func (t *EditLines) execute(ctx context.Context, args json.RawMessage) (Result, 
 		}
 		edits[i] = fileops.AnchoredEdit{Line: e.Line, ExpectedOld: e.ExpectedOld, NewContent: e.NewContent}
 	}
-	full := t.resolvePath(a.File)
+	full, err := t.resolvePath(a.File)
+	if err != nil {
+		return Result{Err: fmt.Errorf("edit_lines: %w", err)}, nil
+	}
 	diff, err := fileops.EditLinesAnchored(full, edits)
 	if err != nil {
 		return Result{Err: fmt.Errorf("edit_lines: %w", err)}, nil
@@ -94,9 +97,6 @@ func (t *EditLines) execute(ctx context.Context, args json.RawMessage) (Result, 
 	return Result{Text: fmt.Sprintf("Edited %d lines (anchored) in %s:\n%s", len(edits), a.File, diff)}, nil
 }
 
-func (t *EditLines) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(t.BaseDir, path)
+func (t *EditLines) resolvePath(path string) (string, error) {
+	return sandbox.ResolveSafe(t.BaseDir, path)
 }

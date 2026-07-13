@@ -72,6 +72,14 @@ func TestMustRegisterAll(t *testing.T) {
 	}
 }
 
+func TestSubAgentNamesAreStableForTaskSchema(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	MustRegisterAll(reg, BuiltinSubAgents())
+	if got, want := strings.Join(reg.Names(), ","), "advisor,code,explore,general,plan,review"; got != want {
+		t.Fatalf("Names() = %q, want %q", got, want)
+	}
+}
+
 func TestMustRegisterAll_EmptyList(t *testing.T) {
 	reg := NewSubAgentRegistry()
 	MustRegisterAll(reg, nil)
