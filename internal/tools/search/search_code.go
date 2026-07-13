@@ -12,6 +12,7 @@ import (
 
 	"supercli/internal/system/childproc"
 	core "supercli/internal/tools/core"
+	"supercli/internal/tools/sandbox"
 )
 
 // SearchCode is a simple code-search tool used by the explore
@@ -90,6 +91,10 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 		// Best-effort: join with WorkDir so relative
 		// paths from the model resolve correctly.
 		root = filepath.Join(s.WorkDir, root)
+	}
+	root, err := sandbox.ResolveSafe(s.WorkDir, root)
+	if err != nil {
+		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
 	}
 
 	if !s.hasRG() {

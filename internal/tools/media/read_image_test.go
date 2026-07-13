@@ -82,7 +82,7 @@ func TestReadImage_LoadsJPEG(t *testing.T) {
 func TestReadImage_AbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	img := writePNG(t, dir, "abs.png")
-	tool := NewReadImage(".", 0)
+	tool := NewReadImage(dir, 0)
 	// Build JSON body as a string (not raw literal) so the
 	// backslashes in the Windows path survive.
 	body := `{"path":"` + filepath.ToSlash(img) + `"}`
@@ -187,12 +187,12 @@ func TestReadImage_Spec(t *testing.T) {
 }
 
 func TestReadImage_RegisteredInRegistry(t *testing.T) {
-	tool := NewReadImage(".", 0)
+	dir := t.TempDir()
+	tool := NewReadImage(dir, 0)
 	r := NewRegistry()
 	if err := r.Register(tool.Spec()); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	dir := t.TempDir()
 	png := writePNG(t, dir, "y.png")
 	body := `{"path":"` + filepath.ToSlash(png) + `"}`
 	res, err := r.Execute(context.Background(), "read_image", json.RawMessage(body))

@@ -20,12 +20,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
+	"supercli/internal/tools/sandbox"
 	"supercli/internal/webgui"
 )
 
@@ -49,6 +51,7 @@ func run(crashDataDir *string) {
 	addrFlag := flag.String("addr", "", "listen address (default 127.0.0.1:0, an OS-assigned port)")
 	noWindowFlag := flag.Bool("no-window", false, "do not open a browser window; serve only")
 	allowRemoteFlag := flag.Bool("allow-remote", false, "allow non-loopback hosts (no auth provided; use with care)")
+	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
 	flag.Parse()
 
@@ -182,6 +185,12 @@ func run(crashDataDir *string) {
 			fatal("normalize config", err)
 		}
 	}
+	allowAll := *allowAllFlag || (tomlErr == nil && tomlCfg.AllowAll)
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SUPERCLI_ALLOW_ALL"))) {
+	case "1", "true", "yes", "on":
+		allowAll = true
+	}
+	sandbox.SetUnsandboxed(allowAll)
 
 	eng, err := webgui.NewEngine(cfg, home, dataDir)
 	if err != nil {

@@ -1,6 +1,7 @@
 package office
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -69,6 +70,46 @@ func TestEditXlsx_SetCellStringInline(t *testing.T) {
 	}
 }
 
+func TestEditXlsx_SetCellPreservesExistingStyle(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestXlsx(t, dir, "styled.xlsx", twoByTwo())
+	sheet, err := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet = bytes.Replace(sheet, []byte(`<c r="B2">`), []byte(`<c r="B2" s="7">`), 1)
+	if _, err := editZipEntryInPlace(path, "xl/worksheets/sheet1.xml", sheet); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path + ".bak")
+
+	runEditXlsx(t, NewEditXlsx(dir), `{"path":"styled.xlsx","action":"set_cell","cell":"B2","value":42.5}`)
+	got, err := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(got, []byte(`<c r="B2" s="7"><v>42.5</v></c>`)) {
+		t.Fatalf("existing style was not retained: %s", got)
+	}
+}
+
+func TestEditXlsx_SetCellClonesExplicitStyleReference(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestXlsx(t, dir, "styled.xlsx", twoByTwo())
+	sheet, _ := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	sheet = bytes.Replace(sheet, []byte(`<c r="B2">`), []byte(`<c r="B2" s="7">`), 1)
+	if _, err := editZipEntryInPlace(path, "xl/worksheets/sheet1.xml", sheet); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path + ".bak")
+
+	runEditXlsx(t, NewEditXlsx(dir), `{"path":"styled.xlsx","action":"set_cell","cell":"A2","value":"Bob","style_from":"B2"}`)
+	got, _ := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if !bytes.Contains(got, []byte(`<c r="A2" t="inlineStr" s="7">`)) {
+		t.Fatalf("explicit style reference was not applied: %s", got)
+	}
+}
+
 func TestEditXlsx_SetCellNewCellInRow(t *testing.T) {
 	dir := t.TempDir()
 	writeTestXlsx(t, dir, "a.xlsx", twoByTwo())
@@ -104,6 +145,52 @@ func TestEditXlsx_AppendRow(t *testing.T) {
 	got := readXlsxText(t, dir, "a.xlsx")
 	if !strings.Contains(got, "Carol | 99 | TRUE") {
 		t.Fatalf("append_row failed: %q", got)
+	}
+}
+
+func TestEditXlsx_AppendRowInheritsColumnStyles(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestXlsx(t, dir, "styled.xlsx", twoByTwo())
+	sheet, err := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet = bytes.Replace(sheet, []byte(`<c r="A2"`), []byte(`<c r="A2" s="4"`), 1)
+	sheet = bytes.Replace(sheet, []byte(`<c r="B2"`), []byte(`<c r="B2" s="7"`), 1)
+	if _, err := editZipEntryInPlace(path, "xl/worksheets/sheet1.xml", sheet); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path + ".bak")
+
+	runEditXlsx(t, NewEditXlsx(dir), `{"path":"styled.xlsx","action":"append_row","values":["Carol",99]}`)
+	got, err := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(got, []byte(`<c r="A3" t="inlineStr" s="4">`)) ||
+		!bytes.Contains(got, []byte(`<c r="B3" s="7"><v>99</v></c>`)) {
+		t.Fatalf("appended row did not inherit column styles: %s", got)
+	}
+}
+
+func TestEditXlsx_AppendRowClonesExplicitStyleRow(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestXlsx(t, dir, "styled.xlsx", twoByTwo())
+	sheet, _ := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	sheet = bytes.Replace(sheet, []byte(`<c r="A1"`), []byte(`<c r="A1" s="2"`), 1)
+	sheet = bytes.Replace(sheet, []byte(`<c r="B1"`), []byte(`<c r="B1" s="3"`), 1)
+	sheet = bytes.Replace(sheet, []byte(`<c r="A2"`), []byte(`<c r="A2" s="8"`), 1)
+	sheet = bytes.Replace(sheet, []byte(`<c r="B2"`), []byte(`<c r="B2" s="9"`), 1)
+	if _, err := editZipEntryInPlace(path, "xl/worksheets/sheet1.xml", sheet); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path + ".bak")
+
+	runEditXlsx(t, NewEditXlsx(dir), `{"path":"styled.xlsx","action":"append_row","values":["Carol",99],"style_from_row":1}`)
+	got, _ := readZipEntry(path, "xl/worksheets/sheet1.xml", 1<<20)
+	if !bytes.Contains(got, []byte(`<c r="A3" t="inlineStr" s="2">`)) ||
+		!bytes.Contains(got, []byte(`<c r="B3" s="3"><v>99</v></c>`)) {
+		t.Fatalf("explicit style row was not applied: %s", got)
 	}
 }
 

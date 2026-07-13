@@ -82,6 +82,7 @@ type Registry struct {
 	visible  map[string]struct{} // subset of tools visible to the model
 	order    []string            // insertion order, for stable Visible()
 	alwaysOn map[string]struct{} // tools that ignore visibility (tool_search, ask_user, read_image, ...)
+	outputs  *OutputStore        // bounded large-result store owned by this registry/loop
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
@@ -91,7 +92,38 @@ func NewRegistry() *Registry {
 		tools:    make(map[string]Tool),
 		visible:  make(map[string]struct{}),
 		alwaysOn: make(map[string]struct{}),
+		outputs:  NewOutputStore(),
 	}
+}
+
+// EnsureReadOutput installs the bounded large-result escape hatch exactly
+// once and makes it visible. NewLoop calls this after application wiring so
+// every embedding surface (TUI, batch, WebGUI and workers) gets the same
+// contract without duplicating registration code.
+func (r *Registry) EnsureReadOutput() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.outputs == nil {
+		r.outputs = NewOutputStore()
+	}
+	if _, ok := r.tools["read_output"]; !ok {
+		t := r.outputs.ReadOutputTool()
+		r.tools[t.Name] = t
+		r.order = append(r.order, t.Name)
+	}
+	r.alwaysOn["read_output"] = struct{}{}
+}
+
+// CompactModelOutput returns a bounded provider-facing view of a successful
+// tool result while retaining the complete text for read_output.
+func (r *Registry) CompactModelOutput(toolName, text string) string {
+	r.mu.RLock()
+	store := r.outputs
+	r.mu.RUnlock()
+	if store == nil {
+		return text
+	}
+	return store.Compact(toolName, text)
 }
 
 // Register adds t. If a tool with the same name exists, Register

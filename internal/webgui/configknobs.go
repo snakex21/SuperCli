@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
+	"supercli/internal/tools/sandbox"
 )
 
 // This file is the web counterpart of the TUI /settings panel
@@ -55,6 +56,7 @@ type knobDef struct {
 func knobDefs() []knobDef {
 	return []knobDef{
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
+		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
 		{"navigator", "pre-request route (chat/advisor/coordinator) decision mode", knobNav, true},
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
@@ -87,6 +89,11 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "on", "manual", ""
 		}
 		return "off", "manual", ""
+	case "allow_all":
+		if c.AllowAll {
+			return "on", "manual", ""
+		}
+		return "off", "default", ""
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {
@@ -192,6 +199,11 @@ func knobState(c *config.TomlConfig, key string) string {
 	switch key {
 	case "orchestrator":
 		return tri(c.Orchestrator)
+	case "allow_all":
+		if c.AllowAll {
+			return "on"
+		}
+		return "off"
 	case "thinking":
 		return tri(c.Thinking)
 	case "navigator":
@@ -261,6 +273,17 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 	switch key {
 	case "orchestrator":
 		return setTri(&c.Orchestrator)
+	case "allow_all":
+		switch val {
+		case "on":
+			c.AllowAll = true
+		case "off", "default", "auto", "":
+			c.AllowAll = false
+		default:
+			return fmt.Errorf("bad value %q (want on/off)", val)
+		}
+		sandbox.SetUnsandboxed(c.AllowAll)
+		return nil
 	case "thinking":
 		if err := setTri(&c.Thinking); err != nil {
 			return err

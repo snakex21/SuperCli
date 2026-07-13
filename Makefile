@@ -3,7 +3,7 @@ WEB_BINARY := supercli-web.exe
 PKG := ./...
 GO ?= go
 
-.PHONY: build build-web run test tidy clean fmt vet all help
+.PHONY: build build-web run test tidy clean clean-data fmt vet all help
 
 help:
 	@echo "SuperCli Makefile"
@@ -14,14 +14,15 @@ help:
 	@echo "  make vet     - go vet"
 	@echo "  make fmt     - gofmt -w ."
 	@echo "  make tidy    - go mod tidy"
-	@echo "  make clean   - remove binary, .supercli/supercli-data data, test cache"
+	@echo "  make clean   - remove build outputs and test cache (preserves runtime data)"
+	@echo "  make clean-data - remove .supercli and supercli-data, including the skills pack"
 	@echo "  make all     - fmt + vet + test + build"
 
 build:
 	$(GO) build -o $(BINARY) ./cmd/supercli
 
 build-web:
-	$(GO) build -ldflags="-H windowsgui" -o $(WEB_BINARY) ./cmd/supercli-web
+	$(GO) build -ldflags="-H=windowsgui" -o $(WEB_BINARY) ./cmd/supercli-web
 
 run:
 	$(GO) run ./cmd/supercli
@@ -40,7 +41,10 @@ tidy:
 
 clean:
 	rm -f $(BINARY)
-	rm -rf .supercli supercli-data
+	rm -f $(WEB_BINARY)
 	$(GO) clean -testcache
+
+clean-data:
+	rm -rf .supercli supercli-data
 
 all: fmt vet test build

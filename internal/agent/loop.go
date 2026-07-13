@@ -203,6 +203,9 @@ type Loop struct {
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
 	navAuto bool
+	// navKeywordsOnly uses the safe coordinator fallback for ambiguous
+	// prompts instead of spending an extra call on the main model.
+	navKeywordsOnly bool
 	// navProvider (optional) runs the navigator's route classification
 	// on a small side provider instead of the main one. On a llama.cpp
 	// host with a single slot the navigator prompt (different prefix)
@@ -218,6 +221,11 @@ type Loop struct {
 	// the prompt — a user message — never the system prefix, so the
 	// stable KV-cache front is untouched. Set via SetNextUserAddon.
 	nextUserAddon string
+	// nextCoordinatorAddon is the route-aware variant used by repository
+	// preflight. It waits until a coordinator turn, so greetings and general
+	// advice do not pay hundreds of irrelevant repository tokens. Unlike the
+	// user's actual message it is ephemeral and is not persisted to history.
+	nextCoordinatorAddon string
 
 	// chatWindowStart is the sticky start (a VisibleMessages index) of
 	// the growing history window used by the light routes (chat-only /
@@ -232,6 +240,12 @@ type Loop struct {
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
 	Messages []llm.Message
+	// visibleEstimate caches the exact estimate of the append-only,
+	// fully-visible prefix. Most sessions never hide messages, so each
+	// step prices only the newly appended tail instead of rescanning the
+	// entire conversation. Rewrites explicitly invalidate the cache.
+	visibleEstimateCount  int
+	visibleEstimateTokens int
 }
 
 // chatWindowMaxTokens is the estimated-token threshold of the light-route
@@ -320,6 +334,9 @@ type LoopConfig struct {
 	// and only ambiguous prompts pay for the navigator model round-trip.
 	// Off = the navigator model runs every user turn (historical behaviour).
 	NavigatorAuto bool
+	// NavigatorKeywordsOnly (with NavigatorAuto) never calls a model merely
+	// to select a route. Ambiguous prompts safely use coordinator mode.
+	NavigatorKeywordsOnly bool
 	// ThinTools enables the thin tool protocol on the coordinator
 	// route: only thinCoreTools carry a full JSON Schema each turn;
 	// the rest are advertised in a compact name+hint catalog and
@@ -501,6 +518,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.Registry == nil {
 		return nil, fmt.Errorf("agent.NewLoop: registry is nil")
 	}
+	cfg.Registry.EnsureReadOutput()
 	if cfg.MaxSteps == 0 {
 		cfg.MaxSteps = 10
 	}
@@ -542,6 +560,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		route:                 RouteCoordinator,
 		navigate:              cfg.EnableNavigator,
 		navAuto:               cfg.NavigatorAuto,
+		navKeywordsOnly:       cfg.NavigatorKeywordsOnly,
 		navProvider:           cfg.NavigatorProvider,
 		// Phase telemetry rides the same recorder (and the same
 		// default-on wiring) as the historical per-turn stats — it is
@@ -617,6 +636,10 @@ func (l *Loop) thinHintMaxOrDefault() int {
 // per-turn (buildToolDefs), so swapping the pointer before the first Run
 // is safe and does not disturb any in-flight state.
 func (l *Loop) SetRegistry(r *tools.Registry) {
+	if r == nil {
+		return
+	}
+	r.EnsureReadOutput()
 	l.registry = r
 	// The hoisted thin-tools preamble (stableToolset) renders from the
 	// registry; a swap before the first Run must re-render it, not
@@ -873,11 +896,27 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// full model round-trip per confident turn.
 		if mode, confident := l.routeMap.ClassifyConfident(prompt); confident {
 			l.route = mode
+		} else if l.navKeywordsOnly {
+			l.route = l.routeMap.Classify(prompt)
 		} else {
 			l.route = l.navigateRoute(ctx, prompt)
 		}
 	default:
 		l.route = l.navigateRoute(ctx, prompt)
+	}
+	// Repository context is useful only on the full coordinator route. Keep it
+	// queued across chat/advisor turns and attach it to the newest user message
+	// immediately before the first coordinator provider call. Routing above saw
+	// only the user's raw prompt, and the session store keeps that raw prompt.
+	if l.route == RouteCoordinator && l.nextCoordinatorAddon != "" {
+		for i := len(l.Messages) - 1; i >= 0; i-- {
+			if l.Messages[i].Role == llm.RoleUser {
+				l.Messages[i].Content += "\n\n" + l.nextCoordinatorAddon
+				l.invalidateVisibleEstimate()
+				break
+			}
+		}
+		l.nextCoordinatorAddon = ""
 	}
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
@@ -1321,9 +1360,23 @@ func (l *Loop) providerMessages() []llm.Message {
 			for lead < len(visible) && visible[lead].Role == llm.RoleSystem {
 				lead++
 			}
-			out = append(out, visible[:lead]...)
+			// Strict llama.cpp templates commonly accept exactly ONE system
+			// message, at index zero. A separate hoisted system message made
+			// those templates reject the request before inference. Merge the
+			// entire leading system run and the frozen preamble into one stable
+			// message; the bytes remain append-only and cacheable, which is the
+			// purpose of the hoist in the first place.
+			leading := make([]string, 0, lead+1)
+			for _, msg := range visible[:lead] {
+				if text := messageDraftText(msg); text != "" {
+					leading = append(leading, text)
+				}
+			}
 			if l.hoistedPre != "" {
-				out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.hoistedPre})
+				leading = append(leading, l.hoistedPre)
+			}
+			if len(leading) > 0 {
+				out = append(out, llm.Message{Role: llm.RoleSystem, Content: strings.Join(leading, "\n\n")})
 			}
 			out = append(out, visible[lead:]...)
 		} else {
@@ -1471,6 +1524,10 @@ func (l *Loop) navigatorMessages(prompt string) []llm.Message {
 			continue
 		}
 		m.Content = truncateForNavigator(m.Content)
+		// Message is copied by value, but Parts is a slice. Clone it before
+		// truncating so navigator preparation never rewrites conversation
+		// history (and never invalidates append-only token accounting).
+		m.Parts = append([]llm.ContentPart(nil), m.Parts...)
 		for i := range m.Parts {
 			m.Parts[i].Text = truncateForNavigator(m.Parts[i].Text)
 		}
@@ -1850,11 +1907,12 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text}
+	modelContent := l.registry.CompactModelOutput(tc.Name, res.ModelContent())
 	follow := []llm.Message{{
 		Role:       llm.RoleTool,
 		ToolCallID: tc.ID,
 		Name:       tc.Name,
-		Content:    res.ModelContent(),
+		Content:    modelContent,
 	}}
 	if res.Image != nil {
 		img := &llm.ImageRef{
@@ -1923,6 +1981,10 @@ func sisyphusHitFromMessage(msg string) int {
 // buffer.
 type toolCallScanner struct {
 	buf strings.Builder
+	// emitted is the byte prefix already surfaced as MessageEvents. Tool-call
+	// markers are buffered until parsed, so raw sentinel/XML calls never flash
+	// in streaming UIs and prose before a call is never emitted twice.
+	emitted int
 
 	xmlOpen   int  // index of first "<tool_call>", -1 if none
 	xmlClose  bool // "</tool_call>" seen after xmlOpen
@@ -1949,10 +2011,41 @@ func (sc *toolCallScanner) append(delta string) {
 // remainder is short: it is only the prose before the block).
 func (sc *toolCallScanner) reset(remaining string) {
 	sc.buf.Reset()
+	sc.emitted = 0
 	sc.xmlOpen, sc.xmlClose, sc.xmlFailed = -1, false, false
 	sc.sentOpen, sc.sentClose, sc.sentFailed = -1, false, false
 	sc.buf.WriteString(remaining)
 	sc.scanFrom(0)
+}
+
+// safeEmitEnd returns the largest prefix known not to belong to a tool-call
+// marker or body. A partial marker at the end is retained until the next delta
+// (e.g. "<tool_c" + "all>" or a split UTF-8 guillemet).
+func (sc *toolCallScanner) safeEmitEnd() int {
+	s := sc.buf.String()
+	end := len(s)
+	if sc.xmlOpen >= 0 && !sc.xmlFailed && sc.xmlOpen < end {
+		end = sc.xmlOpen
+	}
+	if sc.sentOpen >= 0 && !sc.sentFailed && sc.sentOpen < end {
+		end = sc.sentOpen
+	}
+	if end < len(s) {
+		return end
+	}
+	for _, marker := range []string{"<tool_call>", sentinelOpen} {
+		max := len(marker) - 1
+		if max > len(s) {
+			max = len(s)
+		}
+		for n := max; n > 0; n-- {
+			if strings.HasSuffix(s, marker[:n]) && len(s)-n < end {
+				end = len(s) - n
+				break
+			}
+		}
+	}
+	return end
 }
 
 // scanFrom updates marker state by scanning from prev (minus a
@@ -2012,6 +2105,19 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	var toolCalls []llm.ToolCall
 	var usage *llm.Usage
 	sc := newToolCallScanner()
+	emitTo := func(end int) error {
+		if end <= sc.emitted {
+			return nil
+		}
+		text := sc.buf.String()[sc.emitted:end]
+		select {
+		case out <- MessageEvent{Text: text}:
+			sc.emitted = end
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	// backend_wait (TTFT) is ONE timestamp taken at the first delta;
 	// stream_total is one measurement at stream close. Nothing is
 	// timed per-delta — the streaming hot path pays a single zero-
@@ -2058,17 +2164,14 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			if sc.xmlReady() {
 				tcs, remaining := extractXMLToolCalls(sc.buf.String())
 				if len(tcs) > 0 {
-					// Emit remaining text BEFORE the XML block.
-					if remaining != "" {
-						select {
-						case out <- MessageEvent{Text: remaining}:
-						case <-ctx.Done():
-							return sc.buf.String(), toolCalls, usage, ctx.Err()
-						}
+					// Only emit the not-yet-streamed portion before the block.
+					if err := emitTo(len(remaining)); err != nil {
+						return sc.buf.String(), toolCalls, usage, err
 					}
 					toolCalls = append(toolCalls, tcs...)
 					// Reset text to just the remaining portion.
 					sc.reset(remaining)
+					sc.emitted = len(remaining)
 					continue
 				}
 				// The first complete block is fixed once seen and the
@@ -2082,24 +2185,19 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			if sc.sentReady() {
 				stcs, sbefore := extractSentinelToolCalls(sc.buf.String())
 				if len(stcs) > 0 {
-					if sbefore != "" {
-						select {
-						case out <- MessageEvent{Text: sbefore}:
-						case <-ctx.Done():
-							return sc.buf.String(), toolCalls, usage, ctx.Err()
-						}
+					if err := emitTo(len(sbefore)); err != nil {
+						return sc.buf.String(), toolCalls, usage, err
 					}
 					toolCalls = append(toolCalls, stcs...)
 					sc.reset(sbefore)
+					sc.emitted = len(sbefore)
 					continue
 				}
 				sc.sentFailed = true
 			}
 
-			select {
-			case out <- MessageEvent{Text: d.Content}:
-			case <-ctx.Done():
-				return sc.buf.String(), toolCalls, usage, ctx.Err()
+			if err := emitTo(sc.safeEmitEnd()); err != nil {
+				return sc.buf.String(), toolCalls, usage, err
 			}
 		}
 		if d.ToolCall != nil {
@@ -2108,6 +2206,11 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		if d.Usage != nil {
 			usage = d.Usage
 		}
+	}
+	// No complete tool block claimed the retained suffix: surface it as plain
+	// text (including malformed/incomplete markers) rather than losing output.
+	if err := emitTo(sc.buf.Len()); err != nil {
+		return sc.buf.String(), toolCalls, usage, err
 	}
 	return sc.buf.String(), toolCalls, usage, nil
 }
@@ -2568,6 +2671,13 @@ func (l *Loop) InjectUserMessage(ctx context.Context, content string) {
 // message), never in the system prefix — KV-cache-prefix safe.
 func (l *Loop) SetNextUserAddon(s string) {
 	l.nextUserAddon = strings.TrimSpace(s)
+}
+
+// SetNextCoordinatorAddon queues text for the next coordinator-routed Run.
+// Chat/advisor turns skip it without consuming it. This is the preferred API
+// for automatically collected repository context.
+func (l *Loop) SetNextCoordinatorAddon(s string) {
+	l.nextCoordinatorAddon = strings.TrimSpace(s)
 }
 
 // CurrentModel returns the name of the active provider.

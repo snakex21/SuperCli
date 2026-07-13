@@ -30,6 +30,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/transcript", s.handleTranscript)
+	mux.HandleFunc("/api/tasks", s.handleTasks)
+	mux.HandleFunc("/api/branches", s.handleBranches)
 	mux.HandleFunc("/api/memory", s.handleMemory)
 	mux.HandleFunc("/api/projects", s.handleProjects)
 	mux.HandleFunc("/api/goal", s.handleGoal)
@@ -38,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/model", s.handleModel)
 	mux.HandleFunc("/api/model/price", s.handleModelPrice)
 	mux.HandleFunc("/api/model/toggle", s.handleModelToggle)
+	mux.HandleFunc("/api/model/visibility", s.handleModelVisibility)
 	mux.HandleFunc("/api/model/default", s.handleModelDefault)
 	mux.HandleFunc("/api/reasoning", s.handleReasoning)
 	mux.HandleFunc("/api/orchestrator", s.handleOrchestrator)
@@ -45,6 +48,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/providers", s.handleProviders)
 	mux.Handle("/api/provider/key/reveal", s.withSecretLocalOnly(http.HandlerFunc(s.handleProviderKeyReveal)))
 	mux.HandleFunc("/api/provider/scan", s.handleProviderScan)
+	mux.HandleFunc("/api/provider/diagnostics", s.handleProviderDiagnostics)
 	mux.HandleFunc("/api/codex/accounts", s.handleCodexAccounts)
 	mux.HandleFunc("/api/codex/login", s.handleCodexLogin)
 	mux.HandleFunc("/api/codex/logout", s.handleCodexLogout)
@@ -60,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mcp/servers", s.handleMcpServers)
 	mux.HandleFunc("/api/mcp/add", s.handleMcpAdd)
 	mux.HandleFunc("/api/mcp/remove", s.handleMcpRemove)
+	mux.HandleFunc("/api/mcp/folder", s.handleMcpFolder)
 
 	// File browser & editor
 	mux.HandleFunc("/api/files", s.handleFiles)
@@ -68,9 +73,17 @@ func (s *Server) Handler() http.Handler {
 
 	// SSE chat stream.
 	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/api/question/answer", s.handleQuestionAnswer)
+	mux.HandleFunc("/api/question/image", s.handleQuestionImage)
+	mux.HandleFunc("/api/checkpoint", s.handleCheckpoint)
+	mux.HandleFunc("/api/checkpoint/lesson", s.handleCheckpointLesson)
+	mux.HandleFunc("/api/test/hard", s.handleHardTest)
+	mux.HandleFunc("/api/prompt/profile", s.handlePromptProfile)
+	mux.HandleFunc("/api/scratchpad", s.handleScratchpad)
 
 	// Native folder picker (Windows dialog)
 	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
+	mux.HandleFunc("/api/folder/open", s.handleOpenFolder)
 
 	return s.withLocalGuard(mux)
 }

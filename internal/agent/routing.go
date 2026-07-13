@@ -23,11 +23,15 @@ var chatRouteTools = []string{"tool_search", "recall"}
 var thinCoreTools = []string{
 	"tool_search",
 	"invoke_tool",
+	"read_output",
 	"edit_line",
 	"read_context",
 	"read_lines",
 	"read_many",
+	"read_image",
+	"search_code",
 	"ctx_execute",
+	"ask_user",
 	"recall",
 	// list_dir is the "what's in this folder?" primitive. It must
 	// be schema-carrying core, not dormant tail: in the tail the

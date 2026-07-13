@@ -45,7 +45,9 @@ Worker prompt rules:
 - Never say only "based on the previous findings"; synthesize the findings into
   concrete instructions first.
 - Workers should return concise summaries, not huge logs. Keep detailed output
-  inside the worker context unless the user needs it.
+  inside the worker context unless the user needs it. When detailed evidence
+  must survive, ask the worker to write it to scratchpad and return only the
+  note name plus a concise conclusion.
 
 After workers finish, summarize their results for the user and keep only the
 important decisions, changed files, and verification status in the main chat.`

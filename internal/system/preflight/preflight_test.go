@@ -136,3 +136,40 @@ func TestBuild_CleanTree(t *testing.T) {
 		t.Errorf("clean repo should state it:\n%s", block)
 	}
 }
+
+func TestBuild_LargeDirtyTreeIsSummarized(t *testing.T) {
+	var status strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&status, " M internal/webgui/file_%02d.go\n", i)
+	}
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&status, "?? internal/tools/new_%02d.go\n", i)
+	}
+	block := Build(t.TempDir(), Options{
+		LookPath: hasGit,
+		RunGit:   gitStub("public-main", "abc1234 head", status.String(), "abc1234 head"),
+	})
+	for _, want := range []string{
+		"total: 50 (modified 30, untracked 20)",
+		"areas: internal/webgui 30, internal/tools 20",
+		"(and 34 more)",
+	} {
+		if !strings.Contains(block, want) {
+			t.Errorf("summary missing %q:\n%s", want, block)
+		}
+	}
+	if strings.Contains(block, "file_29.go") {
+		t.Errorf("large status leaked the full path list:\n%s", block)
+	}
+	if got := EstimateTokens(block); got > DefaultBudget {
+		t.Errorf("default budget exceeded: %d > %d", got, DefaultBudget)
+	}
+}
+
+func TestCompactStatus_SmallTreeStaysExact(t *testing.T) {
+	status := " M a.go\n?? b.go"
+	got := compactStatus(status)
+	if strings.Join(got, "\n") != status {
+		t.Fatalf("small status changed: %q", got)
+	}
+}

@@ -164,7 +164,9 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("web_fetch: %w", err)}, nil
 	}
 	req.Header.Set("User-Agent", "SuperCli/1.0 (web_fetch tool)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
+	// Prefer compact Markdown/plain representations when a site exposes them;
+	// falling back to HTML keeps compatibility with ordinary pages.
+	req.Header.Set("Accept", "text/markdown;q=1.0,text/x-markdown;q=0.95,text/plain;q=0.9,text/html;q=0.8,application/xhtml+xml;q=0.7,*/*;q=0.1")
 
 	resp, err := t.client.Do(req)
 	if err != nil {

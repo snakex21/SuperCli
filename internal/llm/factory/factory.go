@@ -87,6 +87,7 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 			BaseURL:      cfg.BaseURL,
 			APIKey:       cfg.APIKey,
 			Model:        cfg.Model,
+			MaxTokens:    cfg.MaxTokens,
 			Capabilities: caps,
 		})
 		if err != nil {
@@ -111,6 +112,7 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 			BaseURL:      cfg.BaseURL,
 			APIKey:       cfg.APIKey,
 			Model:        cfg.Model,
+			MaxTokens:    cfg.MaxTokens,
 			Timeout:      cfg.Timeout,
 			Capabilities: caps,
 		})

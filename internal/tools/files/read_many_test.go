@@ -64,6 +64,59 @@ func TestReadMany_SentinelShorthand(t *testing.T) {
 	}
 }
 
+func TestReadMany_GlobExpandsDeterministically(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"b.go": "bravo\n", "a.go": "alpha\n", "skip.txt": "skip\n"} {
+		if err := os.WriteFile(filepath.Join(dir, "internal", name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"internal/*.go:1-1"}`))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	for _, want := range []string{"== [1] internal/a.go:1-1 ==", "alpha", "== [2] internal/b.go:1-1 ==", "bravo", "[read_many: 2 ok, 0 failed]"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("glob output missing %q:\n%s", want, res.Text)
+		}
+	}
+	if strings.Index(res.Text, "internal/a.go") > strings.Index(res.Text, "internal/b.go") {
+		t.Fatalf("glob order is not deterministic: %s", res.Text)
+	}
+}
+
+func TestReadMany_GlobNoMatchIsPartialError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ok.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"ok.txt:1-1 | missing/*.go:1-2"}`))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	for _, want := range []string{"ok", "glob_no_matches missing/*.go", "[read_many: 1 ok, 1 failed]"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("partial glob output missing %q:\n%s", want, res.Text)
+		}
+	}
+}
+
+func TestReadMany_GlobExpansionHonorsGlobalCap(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < maxReadManyRequests+1; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%02d.go", i)), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"*.go:1-1"}`))
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "glob expansion produced") {
+		t.Fatalf("want expansion cap error, got %+v", res)
+	}
+}
+
 func TestDecodeReadManyShorthand_WindowsDrive(t *testing.T) {
 	got, err := decodeReadManyRequests([]byte(`"C:\\\\repo\\\\main.go:10-20 | D:\\\\x.go:1-2"`))
 	if err != nil {

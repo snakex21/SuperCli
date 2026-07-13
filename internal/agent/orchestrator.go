@@ -27,7 +27,7 @@ import "supercli/internal/tools"
 var orchestratorTools = []string{
 	"task", "send_message", "task_stop",
 	"tool_search", "read_lines", "read_context", "list_dir", "recall",
-	"ask_user", "goal", "remember",
+	"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 }
 
 // orchestratorCoreTools is the schema-carrying core for orchestrator mode
@@ -37,7 +37,7 @@ var orchestratorTools = []string{
 // loop's primary action, so (list_dir lesson) it has to be directly
 // callable with a full schema from turn 1, never buried in the tail.
 var orchestratorCoreTools = []string{
-	"task", "tool_search", "read_lines", "read_context", "list_dir", "recall",
+	"task", "tool_search", "read_lines", "read_context", "read_output", "list_dir", "recall",
 }
 
 // isOrchestratorCore reports whether name is in the orchestrator thin-core.
@@ -91,5 +91,7 @@ self-contained: goal, relevant file paths/lines, expected result, and what
 Use your read tools only for quick lookups to plan the delegation. Answer
 simple conversational or explanatory questions directly, without tools. After a
 worker reports back, summarize the outcome for the user and keep only the
-decisions, changed files, and verification status in the main chat.`
+decisions, changed files, and verification status in the main chat. Use
+scratchpad for detailed worker evidence that should survive without bloating
+the conversation.`
 }

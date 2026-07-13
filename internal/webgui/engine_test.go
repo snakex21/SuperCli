@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	"supercli/internal/tools/sandbox"
 )
 
 // echoConfig returns a normalized echo-provider config for tests:
@@ -48,6 +51,154 @@ func TestNewEngine_Echo(t *testing.T) {
 	}
 	if eng.ModelName() != "echo-test" {
 		t.Errorf("ModelName = %q, want echo-test", eng.ModelName())
+	}
+}
+
+func TestEngineSessionStoreIsReusedAndClosed(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("sessionStore reopened SQLite instead of reusing Engine handle")
+	}
+	if err := eng.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.sessionStore(); err == nil {
+		t.Fatal("closed Engine reopened its session store")
+	}
+}
+
+func TestEngineCheckpointManagersAreCachedPerWorkspace(t *testing.T) {
+	dataDir := t.TempDir()
+	homeA := t.TempDir()
+	homeB := t.TempDir()
+	eng, err := NewEngine(echoConfig(), homeA, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	a, err := eng.checkpointManager(homeA)
+	if errors.Is(err, checkpoint.ErrUnavailable) {
+		t.Skip("git unavailable")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := eng.checkpointManager(filepath.Join(homeA, "."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != again {
+		t.Fatal("same workspace received two checkpoint managers")
+	}
+	b, err := eng.checkpointManager(homeB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatal("different workspaces shared checkpoint metadata")
+	}
+}
+
+func BenchmarkEngineSessionStore(b *testing.B) {
+	sharedDir := b.TempDir()
+	eng := &Engine{dataDir: sharedDir}
+	if _, err := eng.sessionStore(); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = eng.Close() })
+	b.Run("shared_handle", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := eng.sessionStore(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("open_and_migrate", func(b *testing.B) {
+		dir := b.TempDir()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			store, err := session.OpenStore(dir)
+			if err != nil {
+				b.Fatal(err)
+			}
+			_ = store.Close()
+		}
+	})
+}
+
+type promptStabilityProvider struct {
+	mu      sync.Mutex
+	systems []string
+	tools   [][]llm.ToolDef
+}
+
+func (p *promptStabilityProvider) Name() string { return "prompt-stability" }
+func (p *promptStabilityProvider) Complete(_ context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
+	system := ""
+	for _, msg := range msgs {
+		if msg.Role == llm.RoleSystem {
+			system = msg.Content
+			break
+		}
+	}
+	p.mu.Lock()
+	p.systems = append(p.systems, system)
+	p.tools = append(p.tools, append([]llm.ToolDef(nil), tools...))
+	p.mu.Unlock()
+	out := make(chan llm.Delta, 2)
+	out <- llm.Delta{Role: llm.RoleAssistant, Content: "ok"}
+	out <- llm.Delta{FinishReason: "stop"}
+	close(out)
+	return out, nil
+}
+
+func TestWebPromptPrefixIsByteStableAcrossTurns(t *testing.T) {
+	dir := t.TempDir()
+	sandbox.SetUnsandboxed(false)
+	t.Cleanup(func() { sandbox.SetUnsandboxed(false) })
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	provider := &promptStabilityProvider{}
+	eng.mu.Lock()
+	eng.prov = provider
+	eng.mu.Unlock()
+	var sessionID string
+	if err := eng.runStream(context.Background(), "first", "", func(ev wireEvent) {
+		if ev.Type == "session" {
+			sessionID = ev.SessionID
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.runStream(context.Background(), "second", sessionID, func(wireEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if len(provider.systems) != 2 {
+		t.Fatalf("provider calls = %d, want 2", len(provider.systems))
+	}
+	if provider.systems[0] == "" || provider.systems[0] != provider.systems[1] {
+		t.Fatal("web system prompt changed between turns")
+	}
+	if !reflect.DeepEqual(provider.tools[0], provider.tools[1]) {
+		t.Fatalf("web tool catalog changed between turns:\nfirst:  %+v\nsecond: %+v", provider.tools[0], provider.tools[1])
 	}
 }
 
@@ -253,6 +404,7 @@ func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	on := true
 	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &on}); err != nil {
 		t.Fatal(err)
@@ -303,6 +455,7 @@ func TestEngine_RunStream_Echo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -339,6 +492,26 @@ func TestEngine_RunStream_Echo(t *testing.T) {
 	if sessions[0].Model != "echo-test" || sessions[0].Provider != "echo" || !sessions[0].RuntimeKnown {
 		t.Fatalf("session runtime was not persisted: %+v", sessions[0])
 	}
+	// A reopened browser gets the same per-turn telemetry that was rendered
+	// live; it is attached to the final assistant response in the transcript.
+	reopened, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("reopen engine: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	transcript, err := reopened.transcript(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("reopened transcript: %v", err)
+	}
+	var persisted *transcriptTurn
+	for _, msg := range transcript {
+		if msg.Turn != nil {
+			persisted = msg.Turn
+		}
+	}
+	if persisted == nil {
+		t.Fatalf("reopened transcript lost turn telemetry: %+v", transcript)
+	}
 }
 
 func TestEngine_DataPanels_EmptyStores(t *testing.T) {
@@ -347,6 +520,7 @@ func TestEngine_DataPanels_EmptyStores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	ctx := context.Background()
 	// Empty data dir: every panel must degrade gracefully, never error.
 	if sessions, err := eng.listSessions(ctx, 10); err != nil || sessions == nil {
@@ -378,6 +552,7 @@ func TestEngine_ListSessionsFiltersActiveWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -423,6 +598,7 @@ func TestEngine_RejectsSessionFromAnotherWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -439,8 +615,7 @@ func TestEngine_RejectsSessionFromAnotherWorkspace(t *testing.T) {
 	if _, err := eng.transcript(context.Background(), sess.ID); !errors.Is(err, errSessionOutsideWorkspace) {
 		t.Fatalf("transcript error = %v, want workspace rejection", err)
 	}
-	if _, _, closeStore, _, err := eng.sessionState(context.Background(), "continue", sess.ID, projectA); !errors.Is(err, errSessionOutsideWorkspace) {
-		closeStore()
+	if _, _, _, err := eng.sessionState(context.Background(), "continue", sess.ID, projectA); !errors.Is(err, errSessionOutsideWorkspace) {
 		t.Fatalf("sessionState error = %v, want workspace rejection", err)
 	}
 }
@@ -451,6 +626,7 @@ func TestEngine_TranscriptDecodesAssistantTextParts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	store, err := session.OpenStore(dir)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)

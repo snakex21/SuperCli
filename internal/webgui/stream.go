@@ -3,13 +3,17 @@ package webgui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"supercli/internal/agent"
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/tools"
 )
 
 // wireEvent is the JSON shape sent to the browser for each agent
@@ -46,13 +50,15 @@ type wireEvent struct {
 	// (cached prompt tokens / prompt tokens) and hidden reasoning
 	// tokens for the run. Omitted when the backend does not report
 	// them, mirroring the TUI cache:/think: badges.
-	CacheHitPct  int `json:"cache_hit_pct,omitempty"`
-	ReasoningTok int `json:"reasoning_tok,omitempty"`
+	CacheHitPct  int    `json:"cache_hit_pct,omitempty"`
+	ReasoningTok int    `json:"reasoning_tok,omitempty"`
+	CheckpointID string `json:"checkpoint_id,omitempty"`
 	// Step is set on reflection / sisyphus markers.
 	Step int `json:"step,omitempty"`
 	// SessionID is emitted once at stream start so the browser keeps later
 	// prompts in the same persisted conversation.
-	SessionID string `json:"session_id,omitempty"`
+	SessionID string        `json:"session_id,omitempty"`
+	Question  *questionWire `json:"question,omitempty"`
 }
 
 // toWireEvent maps a typed agent.Event to its JSON wire form. The
@@ -136,17 +142,68 @@ func (w wireEvent) marshal() []byte {
 	return b
 }
 
+const (
+	// A 40 ms window is below the normal visual rendering cadence while
+	// collapsing token-at-a-time providers into far fewer JSON/SSE writes.
+	messageCoalesceWindow = 40 * time.Millisecond
+	// Large bursts flush eagerly so the batching layer never becomes an
+	// output-sized buffer or adds noticeable latency on very fast backends.
+	messageCoalesceBytes = 4 * 1024
+)
+
+// messageCoalescer combines only consecutive assistant text chunks. Every
+// semantic boundary (tool, worker, question, notice, done, error) first flushes
+// pending text and is then emitted immediately, preserving event order.
+type messageCoalescer struct {
+	emit    func(wireEvent)
+	pending strings.Builder
+}
+
+func (c *messageCoalescer) Pending() bool { return c.pending.Len() > 0 }
+
+// Push returns true when a new timed batch was started.
+func (c *messageCoalescer) Push(ev wireEvent) (started bool) {
+	if ev.Type == "message" {
+		started = !c.Pending()
+		c.pending.WriteString(ev.Text)
+		if c.pending.Len() >= messageCoalesceBytes {
+			c.Flush()
+			return false
+		}
+		return started && c.Pending()
+	}
+	c.Flush()
+	c.emit(ev)
+	return false
+}
+
+func (c *messageCoalescer) Flush() {
+	if !c.Pending() {
+		return
+	}
+	text := c.pending.String()
+	c.pending.Reset()
+	c.emit(wireEvent{Type: "message", Text: text})
+}
+
 // runStream runs one prompt on a fresh loop and forwards every
 // translated event to emit. It blocks until the loop's event channel
 // closes or ctx is cancelled. emit is called from this goroutine; the
 // HTTP handler is responsible for flushing to the client.
 func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit func(wireEvent)) error {
+	runStarted := time.Now()
+	askCh := make(chan tools.AskRequest, 3)
+	activeQuestions := []string{}
+	defer func() {
+		for _, id := range activeQuestions {
+			e.cancelQuestion(id)
+		}
+	}()
 	home := e.Home()
-	initial, writer, closeStore, sid, err := e.sessionState(ctx, prompt, sessionID, home)
+	initial, writer, sid, err := e.sessionState(ctx, prompt, sessionID, home)
 	if err != nil {
 		return err
 	}
-	defer closeStore()
 	if strings.TrimSpace(sessionID) == "" {
 		// Fresh session: the LLM title summary runs only after this
 		// answer has fully streamed AND the session sat idle — the
@@ -166,14 +223,19 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	// factory-built metered provider reports every call (coordinator
 	// steps AND delegated workers) here — no second wrapper.
 	var usageStore *session.Store
-	if us, openErr := session.OpenStore(e.dataDir); openErr == nil {
+	if us, openErr := e.sessionStore(); openErr == nil {
 		usageStore = us
-		defer usageStore.Close()
 		if sink := e.usageCallSink(usageStore, sid); sink != nil {
 			ctx = llm.WithCallSink(ctx, sink)
 		}
 	}
-	loop, err := e.newLoopWithSessionAtUsage(initial, writer, home)
+	var checkpointTurn *checkpoint.Turn
+	if manager, openErr := e.checkpointManager(home); openErr == nil {
+		checkpointTurn = manager.NewTurn(sid, prompt)
+	} else if !errors.Is(openErr, checkpoint.ErrUnavailable) {
+		log.Printf("checkpoint open: %v", openErr)
+	}
+	loop, err := e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, checkpointTurn)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
@@ -188,10 +250,10 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	// block rides the FIRST user message of a session only — resumed
 	// conversations already paid for it. The notice makes the cost
 	// visible in the transcript, mirroring the CLI's startup log line.
-	if len(initial) == 0 {
+	if shouldAttachPreflight(initial, prompt) {
 		if block, tokens := e.preflightBlockAt(home); block != "" {
-			loop.SetNextUserAddon(block)
-			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (rides this message)", tokens)})
+			loop.SetNextCoordinatorAddon(block)
+			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (next project turn)", tokens)})
 		}
 	}
 	ch, err := loop.Run(ctx, prompt)
@@ -226,12 +288,52 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 		}
 		progressTimer.Reset(progressTimeout)
 	}
+	coalescer := &messageCoalescer{emit: emit}
+	var messageTimer *time.Timer
+	var messageTimerC <-chan time.Time
+	stopMessageTimer := func() {
+		messageTimerC = nil
+		if messageTimer == nil {
+			return
+		}
+		if !messageTimer.Stop() {
+			select {
+			case <-messageTimer.C:
+			default:
+			}
+		}
+	}
+	flushMessages := func() {
+		stopMessageTimer()
+		coalescer.Flush()
+	}
+	send := func(ev wireEvent) {
+		started := coalescer.Push(ev)
+		if !coalescer.Pending() {
+			stopMessageTimer()
+			return
+		}
+		if started {
+			if messageTimer == nil {
+				messageTimer = time.NewTimer(messageCoalesceWindow)
+			} else {
+				messageTimer.Reset(messageCoalesceWindow)
+			}
+			messageTimerC = messageTimer.C
+		}
+	}
+	defer flushMessages()
+	toolCalls := 0
+	turnSaved := false
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-progressC:
 			return fmt.Errorf("provider produced no model progress for %s", progressTimeout)
+		case <-messageTimerC:
+			messageTimerC = nil
+			coalescer.Flush()
 		case ev, ok := <-ch:
 			if !ok {
 				// Synchronous task completion may enqueue its external marker just
@@ -240,7 +342,7 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 					select {
 					case extra := <-external:
 						if w, keep := toWireEvent(extra); keep {
-							emit(w)
+							send(w)
 						}
 					default:
 						return nil
@@ -248,27 +350,78 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 				}
 			}
 			resetProgress()
+			if _, ok := ev.(agent.ToolCallEvent); ok {
+				toolCalls++
+			}
+			checkpointID := ""
+			if _, ok := ev.(agent.DoneEvent); ok && checkpointTurn != nil {
+				finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				record, finishErr := checkpointTurn.Complete(finishCtx)
+				cancel()
+				if finishErr != nil {
+					log.Printf("checkpoint complete: %v", finishErr)
+				} else if record != nil {
+					checkpointID = record.ID
+				}
+			}
+			if done, ok := ev.(agent.DoneEvent); ok && !turnSaved && usageStore != nil {
+				turnSaved = true
+				if saveErr := usageStore.AppendTurnSummary(context.Background(), session.TurnSummary{
+					SessionID: sid, DurationMS: time.Since(runStarted).Milliseconds(),
+					Input: int64(done.Usage.Input), Output: int64(done.Usage.Output),
+					CachedInput: int64(done.Usage.Cached), Reasoning: int64(done.Usage.Reasoning),
+					HasCachedInput: done.Usage.Cached > 0, HasReasoning: done.Usage.Reasoning > 0,
+					ToolCalls: toolCalls,
+				}); saveErr != nil {
+					// Telemetry must never fail the user's completed answer.
+					log.Printf("web turn summary: session=%q: %v", sid, saveErr)
+				}
+			}
 			if w, keep := toWireEvent(ev); keep {
-				emit(w)
+				w.CheckpointID = checkpointID
+				send(w)
 			}
 		case ev := <-external:
 			resetProgress()
 			if w, keep := toWireEvent(ev); keep {
-				emit(w)
+				send(w)
 			}
+		case req := <-askCh:
+			activeQuestions = append(activeQuestions, req.ID)
+			question := e.registerQuestion(req)
+			send(wireEvent{Type: "question", Question: &question})
 		}
 	}
+}
+
+// shouldAttachPreflight lets a new WebGUI chat start with cheap smalltalk and
+// delays repository context until the first project-like turn. WebGUI builds a
+// fresh loop per HTTP request, so we infer whether a previous user turn already
+// crossed that boundary from persisted prompts. Ambiguous prompts count as
+// project-like: paying once is safer than starving a real task of repo facts.
+func shouldAttachPreflight(initial []llm.Message, prompt string) bool {
+	routes := agent.DefaultRouteMap()
+	for _, msg := range initial {
+		if msg.Role != llm.RoleUser || strings.Contains(msg.Content, "<task-notification>") {
+			continue
+		}
+		mode, confident := routes.ClassifyConfident(msg.Content)
+		if !confident || mode == agent.RouteCoordinator {
+			return false
+		}
+	}
+	mode, confident := routes.ClassifyConfident(prompt)
+	return !confident || mode == agent.RouteCoordinator
 }
 
 // sessionState opens the persistent session store, creates a new session when
 // no id was supplied, or loads existing messages when the browser continues a
 // chat. The returned close function must be called after the run completes.
-func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home string) ([]llm.Message, agent.SessionWriter, func(), string, error) {
-	store, err := session.OpenStore(e.dataDir)
+func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home string) ([]llm.Message, agent.SessionWriter, string, error) {
+	store, err := e.sessionStore()
 	if err != nil {
-		return nil, nil, func() {}, "", fmt.Errorf("open session store: %w", err)
+		return nil, nil, "", fmt.Errorf("open session store: %w", err)
 	}
-	closeStore := func() { _ = store.Close() }
 
 	requestedID = strings.TrimSpace(requestedID)
 	provider, model, reasoning := e.RuntimeSelection()
@@ -280,33 +433,27 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 		title := summarizeHistoryMessage(prompt, 80)
 		sess, err := store.Create(home, model, title)
 		if err != nil {
-			closeStore()
-			return nil, nil, func() {}, "", fmt.Errorf("create session: %w", err)
+			return nil, nil, "", fmt.Errorf("create session: %w", err)
 		}
 		if err := store.SetRuntime(sess.ID, provider, model, reasoning); err != nil {
-			closeStore()
-			return nil, nil, func() {}, "", fmt.Errorf("save session runtime: %w", err)
+			return nil, nil, "", fmt.Errorf("save session runtime: %w", err)
 		}
-		return nil, session.NewWriter(store, sess.ID), closeStore, sess.ID, nil
+		return nil, session.NewWriter(store, sess.ID), sess.ID, nil
 	}
 
 	meta, err := store.Get(requestedID)
 	if err != nil {
-		closeStore()
-		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", err)
+		return nil, nil, "", fmt.Errorf("resume session: %w", err)
 	}
 	if !sameSessionWorkspace(meta.Cwd, home) {
-		closeStore()
-		return nil, nil, func() {}, "", fmt.Errorf("resume session: %w", errSessionOutsideWorkspace)
+		return nil, nil, "", fmt.Errorf("resume session: %w", errSessionOutsideWorkspace)
 	}
 	if err := store.SetRuntime(requestedID, provider, model, reasoning); err != nil {
-		closeStore()
-		return nil, nil, func() {}, "", fmt.Errorf("save session runtime: %w", err)
+		return nil, nil, "", fmt.Errorf("save session runtime: %w", err)
 	}
 	initial, err := store.ReadModelContext(ctx, requestedID)
 	if err != nil {
-		closeStore()
-		return nil, nil, func() {}, "", fmt.Errorf("read session messages: %w", err)
+		return nil, nil, "", fmt.Errorf("read session messages: %w", err)
 	}
-	return initial, session.NewWriter(store, requestedID), closeStore, requestedID, nil
+	return initial, session.NewWriter(store, requestedID), requestedID, nil
 }

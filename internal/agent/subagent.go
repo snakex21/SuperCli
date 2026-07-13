@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -75,9 +76,9 @@ func (r *SubAgentRegistry) Get(name string) (SubAgent, bool) {
 	return a, ok
 }
 
-// Names returns the registered sub-agent names in unspecified
-// order. Used to build tool schemas and to render the available
-// agents list.
+// Names returns registered sub-agent names in lexical order. The order is part
+// of the model-facing task schema, so it must be stable across loop rebuilds to
+// preserve the provider's prompt/KV-cache prefix.
 func (r *SubAgentRegistry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -85,6 +86,7 @@ func (r *SubAgentRegistry) Names() []string {
 	for n := range r.agents {
 		out = append(out, n)
 	}
+	sort.Strings(out)
 	return out
 }
 

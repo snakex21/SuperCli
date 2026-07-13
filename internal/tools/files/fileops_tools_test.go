@@ -37,8 +37,8 @@ func TestReadLinesTool_Basic(t *testing.T) {
 }
 
 func TestReadLinesTool_AbsolutePath(t *testing.T) {
-	path, _ := tmpToolFile(t, "line1\nline2\n")
-	tool := NewReadLines("/nonexistent")
+	path, dir := tmpToolFile(t, "line1\nline2\n")
+	tool := NewReadLines(dir)
 	args, _ := json.Marshal(readLinesArgs{File: path, From: 1, To: 1})
 	r, err := tool.execute(context.Background(), args)
 	if err != nil {

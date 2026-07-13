@@ -70,6 +70,11 @@ func (l *Loop) prunable(i int) bool {
 	if m.Role != llm.RoleTool {
 		return false
 	}
+	// Applied skill guidance is an instruction, not disposable command
+	// output. Keep it until normal conversation compaction summarizes it.
+	if m.Name == "apply_skill" {
+		return false
+	}
 	if i < len(l.hidden) && l.hidden[i] {
 		return false
 	}
@@ -147,6 +152,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		m.Content = pruneMarker(m.Name)
 		m.Parts = nil
 	}
+	l.invalidateVisibleEstimate()
 	l.persistProjection(context.Background())
 
 	ev := ToolResultsPrunedEvent{

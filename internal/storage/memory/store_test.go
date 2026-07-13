@@ -2,8 +2,10 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -46,6 +48,18 @@ func TestStore_PutGet_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestStore_PutRejectsOversizedEntryBeforeWritingMirror(t *testing.T) {
+	s := openTestStore(t)
+	err := s.Put(Entry{ID: "huge", Scope: ScopeFact, Content: strings.Repeat("x", MaxEntryContentBytes+1), Source: SourceAgent})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("want entry size error, got %v", err)
+	}
+	path, _, _ := ScopeFile(s.markdownRoot(), ScopeFact)
+	if _, statErr := osStat(path); !errIsNotExist(statErr) {
+		t.Fatalf("oversized entry created a mirror: %v", statErr)
+	}
+}
+
 func TestStore_Put_DuplicateIdReplaces(t *testing.T) {
 	s := openTestStore(t)
 	s.Put(Entry{ID: "a1", Scope: "general", Content: "first", Source: SourceUser})
@@ -56,6 +70,35 @@ func TestStore_Put_DuplicateIdReplaces(t *testing.T) {
 	}
 	if all[0].Content != "second" {
 		t.Errorf("Content = %q", all[0].Content)
+	}
+}
+
+func TestStore_ConcurrentPutsDoNotLoseMarkdownEntries(t *testing.T) {
+	s := openTestStore(t)
+	var wg sync.WaitGroup
+	errCh := make(chan error, 24)
+	for i := 0; i < 24; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errCh <- s.Put(Entry{ID: fmt.Sprintf("parallel-%02d", i), Scope: ScopeFact, Content: fmt.Sprintf("fact %d", i), Source: SourceAgent})
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.List(ScopeFact, 0)
+	if err != nil || len(entries) != 24 {
+		t.Fatalf("sqlite entries=%d err=%v", len(entries), err)
+	}
+	path, _, _ := ScopeFile(s.markdownRoot(), ScopeFact)
+	mirror, err := mdRead(path)
+	if err != nil || len(mirror) != 24 {
+		t.Fatalf("markdown entries=%d err=%v", len(mirror), err)
 	}
 }
 
@@ -78,6 +121,39 @@ func TestStore_DeleteMissing_NoError(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Delete("nope"); err != nil {
 		t.Errorf("Delete missing: %v", err)
+	}
+}
+
+func TestStore_RetainKeepsNewestAndRewritesMirrorOnce(t *testing.T) {
+	s := openTestStore(t)
+	for i := 1; i <= 5; i++ {
+		id := fmt.Sprintf("log-%d", i)
+		if err := s.Put(Entry{ID: id, Scope: ScopeTaskLog, Content: id, Source: SourceAgent, CreatedAt: time.Unix(int64(i), 0)}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	removed, err := s.Retain(ScopeTaskLog, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 3 {
+		t.Fatalf("removed=%d want 3", removed)
+	}
+	entries, err := s.List(ScopeTaskLog, 0)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries=%v err=%v", entries, err)
+	}
+	if entries[0].ID != "log-5" || entries[1].ID != "log-4" {
+		t.Fatalf("retained wrong entries: %+v", entries)
+	}
+	path, _, _ := ScopeFile(s.markdownRoot(), ScopeTaskLog)
+	data, err := readFile(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(data, "log-1") || !strings.Contains(data, "log-5") {
+		t.Fatalf("mirror not retained correctly: %s", data)
 	}
 }
 

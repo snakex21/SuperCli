@@ -12,6 +12,13 @@ coverage.out
 # Runtime state / databases — never publish these
 .supercli/
 supercli-data/
+# The shared built-in skill pack is distributable application data. Keep every
+# user database/config/credential ignored while allowing this one exact asset.
+!supercli-data/
+supercli-data/*
+!supercli-data/skills/
+supercli-data/skills/*
+!supercli-data/skills/builtin-skills.zip
 *.db
 *.db-shm
 *.db-wal

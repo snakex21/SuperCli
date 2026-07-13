@@ -80,9 +80,9 @@ type TomlConfig struct {
 	// model name; first match wins. None ship by default.
 	ModelTiers []ModelTierConf `toml:"model_tiers"`
 
-	// SmallFullTools restores the full always-on tool set
-	// for small-tier models (escape hatch; default false =
-	// small models get the trimmed core tool set).
+	// SmallFullTools is the full-schema escape hatch for automatic tool
+	// thinning. Despite the historical name, it also disables local-host
+	// thinning for a large model on a private backend.
 	SmallFullTools bool `toml:"small_full_tools"`
 
 	// Orchestrator is the HARD delegation switch. When true, the main
@@ -136,9 +136,10 @@ type TomlConfig struct {
 	// Navigator selects how the pre-request route (chat/advisor/
 	// coordinator) is decided: "on" runs the navigator model every user
 	// turn; "off" skips it entirely (always coordinator — safe for
-	// scripted use); "auto" (default) is keyword-first, paying for the
-	// navigator model only on prompts the keyword map cannot classify
-	// confidently. Empty = built-in default ("auto").
+	// scripted use); "auto" (default) is keyword-first and never pays the main
+	// model for ambiguity (safe coordinator fallback). When the TUI
+	// already has a separate task/draft provider, auto may classify there.
+	// Empty = built-in default ("auto").
 	Navigator string `toml:"navigator"`
 
 	// StableToolset (thin tool protocol only) keeps the request
@@ -301,12 +302,14 @@ type CouncilConf struct {
 }
 
 // WebSearchConf is the [web_search] section of config.toml.
-// Engine: "duckduckgo" (default, no key), "brave", or "tavily".
+// Engine: "duckduckgo" (default, no key), "brave", "tavily", or
+// "searxng". BaseURL is required only for SearXNG.
 // APIKey is required for brave/tavily; env vars BRAVE_API_KEY /
 // TAVILY_API_KEY are used as fallbacks by main.go.
 type WebSearchConf struct {
-	Engine string `toml:"engine"`
-	APIKey string `toml:"api_key"`
+	Engine  string `toml:"engine"`
+	APIKey  string `toml:"api_key"`
+	BaseURL string `toml:"base_url"`
 }
 
 // CodexAuthConf is the [codex_auth] section of config.toml.
@@ -325,11 +328,12 @@ type CodexAuthConf struct {
 
 // ProviderConf is a named provider entry in config.toml.
 type ProviderConf struct {
-	Name    string `toml:"name"`
-	Type    string `toml:"type"` // "openai", "anthropic", "opencode", "echo"
-	BaseURL string `toml:"base_url"`
-	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"`
+	Name     string `toml:"name"`
+	Type     string `toml:"type"` // "openai", "anthropic", "opencode", "echo"
+	BaseURL  string `toml:"base_url"`
+	APIKey   string `toml:"api_key"`
+	Model    string `toml:"model"`
+	Disabled bool   `toml:"disabled,omitempty"` // keep configuration but exclude from scans/model picker
 }
 
 // ModelTierConf is a [[model_tiers]] entry: a glob pattern on
@@ -555,6 +559,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.WebSearch.APIKey != "" {
 		dst.WebSearch.APIKey = src.WebSearch.APIKey
+	}
+	if src.WebSearch.BaseURL != "" {
+		dst.WebSearch.BaseURL = src.WebSearch.BaseURL
 	}
 	// MCP servers: merged per name; a project entry overrides
 	// the global entry with the same name.

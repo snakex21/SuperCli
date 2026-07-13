@@ -226,13 +226,15 @@ func TestCache_StableToolset_PreambleHoistedIntoStablePrefix(t *testing.T) {
 	}
 
 	stepN := stripStamp(l.providerMessages())
-	// The preamble must be in the leading system run, right after the
-	// base system prompt.
-	if stepN[0].Content != "STABLE BASE SYSTEM PROMPT" {
-		t.Fatalf("first message must be the base system prompt, got %q", stepN[0].Content)
+	// Strict local templates accept one leading system message only. The
+	// stable base and hoisted catalog must therefore be merged at index 0.
+	if stepN[0].Role != llm.RoleSystem ||
+		!strings.Contains(stepN[0].Content, "STABLE BASE SYSTEM PROMPT") ||
+		!strings.Contains(stepN[0].Content, "web_search") {
+		t.Fatalf("merged base+catalog system expected at index 0, got %+v", stepN[0])
 	}
-	if stepN[1].Role != llm.RoleSystem || !strings.Contains(stepN[1].Content, "web_search") {
-		t.Fatalf("hoisted preamble with catalog expected at index 1, got %+v", stepN[1])
+	if len(stepN) > 1 && stepN[1].Role == llm.RoleSystem {
+		t.Fatalf("strict-template hoist left a second leading system message: %+v", stepN[:2])
 	}
 	// No trailing copy behind the history.
 	tail := stepN[len(stepN)-1]

@@ -48,6 +48,17 @@ func TestPrune_BelowTrigger_NoOp(t *testing.T) {
 	}
 }
 
+func TestPrune_AppliedSkillGuidanceIsProtected(t *testing.T) {
+	l := pruneLoop(t, 1000, 1)
+	l.Messages = []llm.Message{{
+		Role: llm.RoleTool, Name: "apply_skill",
+		Content: strings.Repeat("important skill guidance ", 1000),
+	}}
+	if l.prunable(0) {
+		t.Fatal("apply_skill guidance must not be treated as disposable tool output")
+	}
+}
+
 // TestPrune_ReclaimsOldKeepsTailAndLastTurn: old tool results become
 // markers; the protected token tail — sized here to cover the whole
 // last turn plus the freshest old result — stays verbatim.

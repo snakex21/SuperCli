@@ -6,9 +6,10 @@ package mentions
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
+
+	"supercli/internal/tools/sandbox"
 )
 
 // Mention is a single @file reference parsed from user input.
@@ -76,11 +77,12 @@ func Resolve(home string, paths []string, maxBytes int) []Mention {
 	out := make([]Mention, 0, len(paths))
 	for _, p := range paths {
 		m := Mention{Path: p}
-		abs := p
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(home, p)
+		abs, err := sandbox.ResolveSafe(home, p)
+		if err != nil {
+			m.Content = fmt.Sprintf("(error reading @%s: %v)", p, err)
+			out = append(out, m)
+			continue
 		}
-		abs = filepath.Clean(abs)
 		m.Abs = abs
 
 		data, err := os.ReadFile(abs)

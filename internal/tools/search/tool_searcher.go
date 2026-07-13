@@ -77,9 +77,18 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	if limit > s.MaxLimit {
 		limit = s.MaxLimit
 	}
-	hits, err := s.Index.Search(a.Query, limit)
-	if err != nil {
-		return Result{Err: fmt.Errorf("tool_search: index: %w", err)}, nil
+	// Small per-request registries (WebGUI/batch) can skip SQLite entirely
+	// and use the deterministic lexical ranker. The long-lived TUI supplies
+	// an in-memory FTS index for its much larger catalog.
+	var hits []SearchResult
+	if s.Index != nil {
+		var err error
+		hits, err = s.Index.Search(a.Query, limit)
+		if err != nil {
+			// Discovery is a convenience layer. A broken/unavailable index must
+			// not strand the model when the registry itself is healthy.
+			hits = nil
+		}
 	}
 	// FTS5 uses an implicit AND across query tokens, so a
 	// reasonable phrase like "list files in directory" can

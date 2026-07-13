@@ -109,8 +109,8 @@ func TestLoop_BuildToolDefs_CoordinatorExposesAllVisibleWithSchema(t *testing.T)
 	l.route = RouteCoordinator
 
 	defs := l.buildToolDefs()
-	if len(defs) != 4 {
-		t.Fatalf("coordinator defs = %d, want 4 (all visible)", len(defs))
+	if len(defs) != 5 {
+		t.Fatalf("coordinator defs = %d, want 5 (all visible + read_output)", len(defs))
 	}
 	for _, d := range defs {
 		if !strings.Contains(d.Schema, "properties") {
@@ -213,7 +213,7 @@ func thinLoop(t *testing.T) *Loop {
 		return tools.Result{Text: "x"}, nil
 	}
 	// core + tail, all always-on.
-	for _, name := range []string{"tool_search", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "ctx_execute", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
+	for _, name := range []string{"tool_search", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "read_image", "search_code", "ctx_execute", "ask_user", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "does " + name + " things for the user", Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
 	}

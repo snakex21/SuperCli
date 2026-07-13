@@ -30,7 +30,7 @@ Most CLI AI agents drift toward hidden global state, provider lock-in, large
 runtime stacks, and IDE-like weight. SuperCli is built around the opposite
 constraints:
 
-- **Single binary** — `go build` produces one `supercli.exe` / `supercli`.
+- **Single-binary core** — `go build` produces one `supercli.exe` / `supercli`; the optional 1,410-skill content pack is shared from `supercli-data/skills/builtin-skills.zip`.
 - **Always portable** — all data lives in a single `supercli-data/`
   directory next to the executable. Copy the folder, take your config,
   memory, sessions and credentials with you.
@@ -129,7 +129,8 @@ Built-in tool system includes:
 - `insert_after` — insert text after a line.
 - `delete_lines` — delete line ranges.
 - `read_zip` — inspect ZIP archives.
-- `read_docx` — extract DOCX text using pure Go ZIP/XML parsing.
+- `read_docx` — extract current DOCX body/table/header/footer text, review comments and stable paragraph selectors using pure Go ZIP/XML parsing.
+- `edit_docx` — style-preserving paragraph/table-cell edits, minimal tracked suggestions, review comments, header/footer replacement, previews and atomic backup writes.
 - `read_xlsx` — extract XLSX sheets as text tables using pure Go ZIP/XML.
 - `read_pdf` — extract PDF text via pure Go library integration.
 - `ctx_execute` — run bounded context-mode scripts for large-file inspection.
@@ -163,7 +164,8 @@ Type `/` in the TUI to open the command palette.
 | `/resume [session_id]` | List or resume previous sessions. |
 | `/export [filename.md]` | Export current session to Markdown. |
 | `/cost` | Show per-turn token/cost dashboard. |
-| `/undo [N]` | Revert last file write/edit operations tracked by SuperCli. |
+| `/undo` | Conflict-safe revert of the last agent turn (does not touch your Git index/branch). |
+| `/redo` | Restore the last reverted agent turn. |
 | `/doctor` | Open runtime/config diagnostics modal. |
 | `/quit` / `/exit` | Exit explicitly. |
 

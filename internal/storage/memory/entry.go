@@ -18,6 +18,12 @@ const (
 	SourceUser  = "user"
 	SourceAgent = "agent"
 	SourceTool  = "tool"
+
+	// MaxEntryContentBytes prevents one malformed tool/model response from
+	// turning the durable memory mirror, FTS index and optional vector index
+	// into a multi-gigabyte store. Normal memories are a few sentences; raw
+	// emergency tails are already capped at 8 KiB.
+	MaxEntryContentBytes = 16 * 1024
 )
 
 // ScopeKind returns the scope prefix and the on-disk file name.
@@ -108,6 +114,9 @@ func (e Entry) Validate() error {
 	}
 	if e.Content == "" {
 		return fmt.Errorf("memory.Entry.Validate(%s): content is empty", e.ID)
+	}
+	if len(e.Content) > MaxEntryContentBytes {
+		return fmt.Errorf("memory.Entry.Validate(%s): content is %d bytes, exceeds %d byte limit", e.ID, len(e.Content), MaxEntryContentBytes)
 	}
 	if e.Scope == "" {
 		return fmt.Errorf("memory.Entry.Validate(%s): scope is empty", e.ID)

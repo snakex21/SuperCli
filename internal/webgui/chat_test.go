@@ -59,4 +59,10 @@ func TestHandleChat_StreamsEcho(t *testing.T) {
 	if !strings.Contains(body, `"type":"done"`) {
 		t.Errorf("stream missing done event: %q", body)
 	}
+	// Echo emits its prefix and body as separate provider deltas. They should
+	// cross the HTTP boundary as one text frame, followed by the immediate
+	// terminal frame.
+	if got := strings.Count(body, `"type":"message"`); got != 1 {
+		t.Errorf("message SSE frames = %d, want 1: %q", got, body)
+	}
 }

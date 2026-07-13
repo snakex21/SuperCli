@@ -150,9 +150,9 @@ func (t *ReadZipTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		maxEntries = t.MaxEntries
 	}
 
-	full := params.Path
-	if !filepath.IsAbs(full) {
-		full = filepath.Join(t.BaseDir, full)
+	full, err := resolveSandboxed(t.BaseDir, params.Path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("read_zip: %w", err)}, nil
 	}
 	info, err := os.Stat(full)
 	if err != nil {
@@ -193,6 +193,10 @@ func (t *ReadZipTool) Execute(ctx context.Context, args json.RawMessage) (Result
 			base := strings.TrimSuffix(filepath.Base(full), filepath.Ext(full))
 			ts := time.Now().UTC().Format("20060102-150405")
 			target = filepath.Join(t.ExtractRoot, base+"-"+ts)
+		}
+		target, err = resolveSandboxed(t.BaseDir, target)
+		if err != nil {
+			return Result{Err: fmt.Errorf("read_zip: target: %w", err)}, nil
 		}
 		return t.extractAction(ctx, &r.Reader, pattern, target)
 	default:
@@ -404,9 +408,9 @@ func matchEntry(name, pattern string) bool {
 // can override by constructing its own
 // ReadZipTool.
 func (t *ReadZipTool) ListEntries(path string) ([]ZipEntry, error) {
-	full := path
-	if !filepath.IsAbs(full) {
-		full = filepath.Join(t.BaseDir, full)
+	full, err := resolveSandboxed(t.BaseDir, path)
+	if err != nil {
+		return nil, fmt.Errorf("read_zip: %w", err)
 	}
 	info, err := os.Stat(full)
 	if err != nil {

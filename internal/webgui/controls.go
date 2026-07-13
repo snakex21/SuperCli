@@ -52,7 +52,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	m.Reload()
 	m.LoadHiddenState()
 	active := s.eng.ModelName()
-	provider := s.eng.caps.Provider(active)
+	provider, _, _ := s.eng.RuntimeSelection()
 
 	// Auto-scan if no models cached yet (first request after startup)
 	if total := cachedModelCount(m, s.eng.caps); total == 0 {
@@ -63,11 +63,14 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	models := make([]modelView, 0)
 	seen := map[string]struct{}{}
 	for _, p := range m.Configured() {
-		if p.Type == config.ProviderCodex {
+		if !p.Disabled && p.Type == config.ProviderCodex {
 			llm.RegisterCodexCatalog(s.eng.caps, p.Name)
 		}
 	}
 	for _, p := range m.ListConfigured(s.eng.caps) {
+		if p.Disabled {
+			continue
+		}
 		for _, mi := range p.Models {
 			if _, ok := seen[p.Name+"\x00"+mi.ID]; ok {
 				continue
@@ -76,6 +79,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			models = append(models, toModelView(mi, p.Name, active, m.IsHidden(mi.ID)))
 		}
 		if p.Model != "" {
+			if !m.ModelVisible(p.Name, p.Model) {
+				continue
+			}
 			if _, ok := seen[p.Name+"\x00"+p.Model]; ok {
 				continue
 			}
@@ -90,7 +96,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	if active != "" {
 		key := provider + "\x00" + active
-		if _, ok := seen[key]; !ok && active != "no model" {
+		if _, ok := seen[key]; !ok && active != "no model" && m.ModelVisible(provider, active) {
 			mi, ok := s.eng.caps.Get(active)
 			if !ok {
 				mi = llm.HeuristicCapabilities(active)
@@ -235,6 +241,30 @@ func (s *Server) handleModelToggle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "model": req.Model, "hidden": hidden})
 }
 
+func (s *Server) handleModelVisibility(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Models []string `json:"models"`
+		Hidden bool     `json:"hidden"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Models) == 0 || len(req.Models) > 10_000 {
+		http.Error(w, "models must contain between 1 and 10000 entries", http.StatusBadRequest)
+		return
+	}
+	changed := s.eng.providerManager().SetModelsHidden(req.Models, req.Hidden)
+	writeJSON(w, map[string]any{"ok": true, "hidden": req.Hidden, "changed": changed})
+}
+
 func (s *Server) handleReasoning(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var req struct {
@@ -323,11 +353,12 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		// sends api_key only when the user typed something or
 		// explicitly ticked "clear key".
 		var req struct {
-			Name    string  `json:"name"`
-			Type    *string `json:"type"`
-			BaseURL *string `json:"base_url"`
-			APIKey  *string `json:"api_key"`
-			Model   *string `json:"model"`
+			Name     string  `json:"name"`
+			Type     *string `json:"type"`
+			BaseURL  *string `json:"base_url"`
+			APIKey   *string `json:"api_key"`
+			Model    *string `json:"model"`
+			Disabled *bool   `json:"disabled"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -338,15 +369,41 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
+		if req.Disabled != nil && *req.Disabled {
+			activeProvider, _, _ := s.eng.RuntimeSelection()
+			if activeProvider == name {
+				http.Error(w, "switch to another model before disabling the active provider", http.StatusConflict)
+				return
+			}
+		}
 		if err := m.Update(name, req.Type, req.BaseURL, req.APIKey, req.Model); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if req.Disabled != nil {
+			if err := m.SetDisabled(name, *req.Disabled); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		// Re-scan so the capability registry reflects the new
 		// credentials (or the lack of them). Scan errors are
 		// surfaced as a soft warning — the update itself
 		// already succeeded.
+		if req.Disabled != nil && *req.Disabled {
+			writeJSON(w, map[string]any{"ok": true, "name": name, "disabled": true, "models": []string{}})
+			return
+		}
 		res := m.ScanProvider(name, s.eng.caps)
+		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) == "" && res.Err == nil && len(res.Models) > 0 {
+			activeProvider, activeModel, _ := s.eng.RuntimeSelection()
+			if activeProvider == name && !m.ModelVisible(name, activeModel) {
+				// Removing a gateway key must not leave the runtime pointing at a
+				// now-hidden paid model that will fail with 401 on the next prompt.
+				// Pick the first server-reported free model without running inference.
+				_ = s.eng.SwitchModel(res.Models[0], name)
+			}
+		}
 		writeJSON(w, map[string]any{"ok": true, "name": name, "scan_error": errString(res.Err), "models": res.Models})
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))

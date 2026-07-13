@@ -106,6 +106,50 @@ func TestPreflight_AddonIsOneShot(t *testing.T) {
 	}
 }
 
+func TestPreflight_CoordinatorAddonSkipsChatThenRidesProjectTurn(t *testing.T) {
+	prov := &capturingProvider{reply: "done"}
+	l, err := NewLoop(LoopConfig{
+		Provider:              prov,
+		Registry:              tools.NewRegistry(),
+		System:                "SYS",
+		EnableNavigator:       true,
+		NavigatorAuto:         true,
+		NavigatorKeywordsOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	l.SetNextCoordinatorAddon(testRepoBlock)
+
+	ch, _ := l.Run(context.Background(), "hello")
+	drainEvents(t, ch)
+	reqs := prov.requests()
+	if len(reqs) != 1 {
+		t.Fatalf("chat requests=%d, want 1", len(reqs))
+	}
+	for _, msg := range reqs[0] {
+		if strings.Contains(msg.Content, testRepoBlock) {
+			t.Fatal("chat route paid for coordinator preflight")
+		}
+	}
+
+	ch, _ = l.Run(context.Background(), "inspect project files")
+	drainEvents(t, ch)
+	reqs = prov.requests()
+	if len(reqs) != 2 {
+		t.Fatalf("total requests=%d, want 2", len(reqs))
+	}
+	found := false
+	for _, msg := range reqs[1] {
+		if msg.Role == llm.RoleUser && strings.Contains(msg.Content, "inspect project files") && strings.Contains(msg.Content, testRepoBlock) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("queued preflight did not ride the next coordinator turn")
+	}
+}
+
 // A delegated worker's briefing gets the preflight block appended
 // when AgentTool.Preflight is set — and stays untouched when nil.
 func TestPreflight_WorkerBriefingCarriesBlock(t *testing.T) {

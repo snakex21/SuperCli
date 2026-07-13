@@ -8,6 +8,14 @@ import (
 	"time"
 
 	"supercli/internal/storage/memory"
+	"supercli/internal/tools/core"
+)
+
+const (
+	maxRememberTextBytes = 4 * 1024
+	maxRecallLimit       = 10
+	maxRecallOutputBytes = 8 * 1024
+	maxRecallEntryBytes  = 1800
 )
 
 // MemoryKeeper is the subset of *memory.Store the remember /
@@ -96,6 +104,9 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 	a.Text = strings.TrimSpace(a.Text)
 	if a.Text == "" {
 		return Result{Err: fmt.Errorf("remember: text is empty")}, nil
+	}
+	if len(a.Text) > maxRememberTextBytes {
+		return Result{Err: fmt.Errorf("remember: text is %d bytes, exceeds %d byte limit; summarize it into one short self-contained fact", len(a.Text), maxRememberTextBytes)}, nil
 	}
 	entryScope := normalizeMemType(a.Type)
 	target := r.Store
@@ -226,6 +237,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 	if a.Limit <= 0 {
 		a.Limit = 5
 	}
+	if a.Limit > maxRecallLimit {
+		a.Limit = maxRecallLimit
+	}
 	scope := strings.ToLower(strings.TrimSpace(a.Scope))
 	if scope == "" {
 		scope = "all"
@@ -274,7 +288,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 		if !e.UpdatedAt.IsZero() {
 			date = " " + e.UpdatedAt.Format("2006-01-02")
 		}
-		fmt.Fprintf(&b, "- [%s] %s/%s%s%s %s\n", e.ID, h.where, e.Scope, date, tag, strings.TrimSpace(e.Content))
+		content := strings.Join(strings.Fields(e.Content), " ")
+		content = core.HeadTail(content, maxRecallEntryBytes-300, 300)
+		fmt.Fprintf(&b, "- [%s] %s/%s%s%s %s\n", e.ID, h.where, e.Scope, date, tag, content)
 	}
-	return Result{Text: b.String()}, nil
+	return Result{Text: core.HeadTail(b.String(), maxRecallOutputBytes-1024, 1024)}, nil
 }

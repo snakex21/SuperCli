@@ -571,6 +571,13 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 			if _, blocked := delegationTools[name]; blocked {
 				continue
 			}
+			// read_output closes over its registry-owned OutputStore. Copying
+			// the Tool value would make the child read from the parent's store
+			// while compacting into its own. NewLoop installs a fresh closure
+			// for the child registry instead.
+			if name == "read_output" {
+				continue
+			}
 			t, ok := base.Get(name)
 			if !ok {
 				continue
@@ -583,6 +590,9 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 	for _, name := range allowed {
 		if _, blocked := delegationTools[name]; blocked {
 			continue
+		}
+		if name == "read_output" {
+			continue // NewLoop installs the child registry's own store closure.
 		}
 		t, ok := base.Get(name)
 		if !ok {

@@ -32,12 +32,17 @@ import (
 // DefaultBudget is the hard token cap of the block. Sections are
 // added most-important-first and trimmed line by line, so the least
 // important content (old commits, extra files) is cut first.
-const DefaultBudget = 800
+const DefaultBudget = 300
 
 const (
 	defaultMaxCommits = 8
 	defaultMaxFiles   = 10
-	gitTimeout        = 5 * time.Second
+	// Listing every path is useful for a small worktree, but it becomes a
+	// prompt tax in exactly the repositories where an agent is most useful.
+	// Above this threshold we send counts, hot areas and a short sample.
+	defaultMaxStatusFiles = 16
+	defaultMaxStatusAreas = 6
+	gitTimeout            = 5 * time.Second
 )
 
 // Options configures Build. The zero value uses the real git binary
@@ -108,7 +113,7 @@ func Build(root string, o Options) string {
 				if status == "" {
 					secs = append(secs, section{lines: []string{"working tree clean"}})
 				} else {
-					secs = append(secs, section{header: "uncommitted changes:", lines: splitLines(status)})
+					secs = append(secs, section{header: "uncommitted changes:", lines: compactStatus(status)})
 				}
 			}
 			if lg, err := runGit(root, "log", "--oneline", "-"+itoa(defaultMaxCommits)); err == nil && lg != "" {
@@ -241,4 +246,112 @@ func splitLines(s string) []string {
 		}
 	}
 	return out
+}
+
+// compactStatus preserves the exact porcelain listing for a small worktree.
+// Large dirty trees are summarized so the first coordinator turn does not pay
+// hundreds of path tokens merely to learn that many files changed. Porcelain
+// status is deliberately parsed only at the stable two-column status/path
+// boundary; rename payloads and unusual filenames stay opaque display text.
+func compactStatus(status string) []string {
+	lines := splitLines(status)
+	if len(lines) <= defaultMaxStatusFiles {
+		return lines
+	}
+
+	types := make(map[string]int)
+	areas := make(map[string]int)
+	sample := make([]string, 0, defaultMaxStatusFiles)
+	for _, line := range lines {
+		code, path := porcelainParts(line)
+		types[statusKind(code)]++
+		areas[statusArea(path)]++
+		if len(sample) < defaultMaxStatusFiles {
+			sample = append(sample, path)
+		}
+	}
+
+	type orderCount struct {
+		name  string
+		count int
+	}
+	orderedTypes := make([]orderCount, 0, len(types))
+	for _, name := range []string{"modified", "untracked", "added", "deleted", "renamed", "conflicted", "other"} {
+		if n := types[name]; n > 0 {
+			orderedTypes = append(orderedTypes, orderCount{name, n})
+		}
+	}
+	typeParts := make([]string, 0, len(orderedTypes))
+	for _, item := range orderedTypes {
+		typeParts = append(typeParts, item.name+" "+itoa(item.count))
+	}
+
+	orderedAreas := make([]orderCount, 0, len(areas))
+	for name, count := range areas {
+		orderedAreas = append(orderedAreas, orderCount{name, count})
+	}
+	sort.Slice(orderedAreas, func(i, j int) bool {
+		if orderedAreas[i].count != orderedAreas[j].count {
+			return orderedAreas[i].count > orderedAreas[j].count
+		}
+		return orderedAreas[i].name < orderedAreas[j].name
+	})
+	if len(orderedAreas) > defaultMaxStatusAreas {
+		orderedAreas = orderedAreas[:defaultMaxStatusAreas]
+	}
+	areaParts := make([]string, 0, len(orderedAreas))
+	for _, item := range orderedAreas {
+		areaParts = append(areaParts, item.name+" "+itoa(item.count))
+	}
+
+	return []string{
+		"total: " + itoa(len(lines)) + " (" + strings.Join(typeParts, ", ") + ")",
+		"areas: " + strings.Join(areaParts, ", "),
+		"sample: " + strings.Join(sample, ", ") + " (and " + itoa(len(lines)-len(sample)) + " more)",
+	}
+}
+
+func porcelainParts(line string) (code, path string) {
+	if len(line) >= 3 {
+		return line[:2], strings.TrimSpace(line[3:])
+	}
+	return line, strings.TrimSpace(line)
+}
+
+func statusKind(code string) string {
+	switch {
+	case code == "??":
+		return "untracked"
+	case strings.Contains(code, "U") || code == "AA" || code == "DD":
+		return "conflicted"
+	case strings.Contains(code, "R"):
+		return "renamed"
+	case strings.Contains(code, "D"):
+		return "deleted"
+	case strings.Contains(code, "A"):
+		return "added"
+	case strings.Contains(code, "M"):
+		return "modified"
+	default:
+		return "other"
+	}
+}
+
+func statusArea(path string) string {
+	path = strings.Trim(path, `"`)
+	path = strings.ReplaceAll(path, `\`, "/")
+	if arrow := strings.LastIndex(path, " -> "); arrow >= 0 {
+		path = strings.TrimSpace(path[arrow+4:])
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) >= 2 && parts[0] == "internal" {
+		return strings.Join(parts[:2], "/")
+	}
+	if len(parts) >= 2 && (parts[0] == "cmd" || parts[0] == "docs" || parts[0] == "test") {
+		return parts[0]
+	}
+	if len(parts) > 1 {
+		return parts[0]
+	}
+	return "root"
 }

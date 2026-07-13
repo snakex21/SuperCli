@@ -14,9 +14,15 @@ import (
 
 // ServerConfig mirrors a [mcp.servers.<name>] section in config.toml.
 type ServerConfig struct {
-	Command string            `toml:"command"`
-	Args    []string          `toml:"args"`
-	Env     map[string]string `toml:"env"`
+	Command     string            `toml:"command"`
+	Args        []string          `toml:"args"`
+	Env         map[string]string `toml:"env"`
+	Dir         string            `toml:"-"`
+	Description string            `toml:"-"`
+	Portable    bool              `toml:"-"`
+	PackageDir  string            `toml:"-"`
+	PackageID   string            `toml:"-"`
+	Tags        []string          `toml:"-"`
 }
 
 // Server is one configured MCP server: a subprocess speaking JSON-RPC
@@ -35,12 +41,17 @@ type Server struct {
 
 // Status is a display snapshot for /mcp.
 type Status struct {
-	Name    string
-	Command string
-	Running bool
-	Tools   int
-	Err     string
-	Uptime  time.Duration
+	Name        string
+	Command     string
+	Description string
+	Portable    bool
+	PackageID   string
+	PackageDir  string
+	Tags        []string
+	Running     bool
+	Tools       int
+	Err         string
+	Uptime      time.Duration
 }
 
 // Start spawns the subprocess, performs the initialize handshake, and
@@ -57,6 +68,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	cmd := exec.Command(s.Config.Command, s.Config.Args...)
 	childproc.HideWindow(cmd)
+	if s.Config.Dir != "" {
+		cmd.Dir = s.Config.Dir
+	}
 	cmd.Env = os.Environ()
 	for k, v := range s.Config.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
@@ -134,11 +148,16 @@ func (s *Server) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := Status{
-		Name:    s.Name,
-		Command: s.Config.Command,
-		Running: s.cmd != nil,
-		Tools:   len(s.tools),
-		Err:     s.lastErr,
+		Name:        s.Name,
+		Command:     s.Config.Command,
+		Description: s.Config.Description,
+		Portable:    s.Config.Portable,
+		PackageID:   s.Config.PackageID,
+		PackageDir:  s.Config.PackageDir,
+		Tags:        append([]string(nil), s.Config.Tags...),
+		Running:     s.cmd != nil,
+		Tools:       len(s.tools),
+		Err:         s.lastErr,
 	}
 	if st.Running {
 		st.Uptime = time.Since(s.started)

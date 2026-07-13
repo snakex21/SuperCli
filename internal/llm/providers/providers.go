@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,7 @@ type ProviderInfo struct {
 	BaseURL   string
 	Model     string // default model configured for this provider
 	HasKey    bool   // true if an API key is configured (key value never exposed)
+	Disabled  bool   // saved but excluded from scans and active model selection
 	Connected bool
 	Error     string
 	Models    []llm.ModelInfo
@@ -94,9 +96,14 @@ func (m *Manager) List(caps *llm.CapabilityRegistry) []ProviderInfo {
 	var out []ProviderInfo
 	for _, p := range m.providers {
 		pi := ProviderInfo{
-			Name:    p.Name,
-			Type:    p.Type,
-			BaseURL: p.BaseURL,
+			Name:     p.Name,
+			Type:     p.Type,
+			BaseURL:  p.BaseURL,
+			Disabled: p.Disabled,
+		}
+		if p.Disabled {
+			out = append(out, pi)
+			continue
 		}
 		// Probe connectivity.
 		connected, err := probeProvider(p)
@@ -129,13 +136,14 @@ func (m *Manager) ListConfigured(caps *llm.CapabilityRegistry) []ProviderInfo {
 	var out []ProviderInfo
 	for _, p := range m.providers {
 		pi := ProviderInfo{
-			Name:    p.Name,
-			Type:    p.Type,
-			BaseURL: p.BaseURL,
-			Model:   p.Model,
-			HasKey:  strings.TrimSpace(p.APIKey) != "",
+			Name:     p.Name,
+			Type:     p.Type,
+			BaseURL:  p.BaseURL,
+			Model:    p.Model,
+			HasKey:   hasExplicitProviderKey(p),
+			Disabled: p.Disabled,
 		}
-		if caps != nil {
+		if caps != nil && !p.Disabled {
 			for _, mi := range caps.All() {
 				if mi.Provider == p.Name && isDiscoveredProviderModel(mi) && modelVisibleForProvider(p, mi.ID) {
 					pi.Models = append(pi.Models, mi)
@@ -147,10 +155,29 @@ func (m *Manager) ListConfigured(caps *llm.CapabilityRegistry) []ProviderInfo {
 	return out
 }
 
+// SetDisabled keeps a provider's credentials and cached model metadata while
+// removing it from scans and active selection. This is intended for local or
+// remote self-hosted servers that are only online occasionally.
+func (m *Manager) SetDisabled(name string, disabled bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.providers {
+		if m.providers[i].Name == name {
+			m.providers[i].Disabled = disabled
+			return m.saveLocked()
+		}
+	}
+	return fmt.Errorf("provider %q not found", name)
+}
+
 // Add appends a new provider to the config.toml list.
 func (m *Manager) Add(name, typ, baseURL, apiKey, model string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("provider name is required")
+	}
 
 	// Check for duplicate name.
 	for _, p := range m.providers {
@@ -163,8 +190,11 @@ func (m *Manager) Add(name, typ, baseURL, apiKey, model string) error {
 		Name:    name,
 		Type:    typ,
 		BaseURL: baseURL,
-		APIKey:  llm.KiloDefaultKey(baseURL, llm.CleanAPIKey(apiKey)),
-		Model:   model,
+		// Store only a key the user actually supplied. Public gateway
+		// placeholders ("anonymous"/"public") are injected at request time,
+		// otherwise the UI misleadingly claims that a key is configured.
+		APIKey: llm.CleanAPIKey(apiKey),
+		Model:  model,
 	}
 	m.providers = append(m.providers, p)
 	err := m.saveLocked()
@@ -251,10 +281,45 @@ func (m *Manager) ToggleHidden(modelID string) bool {
 	defer m.mu.Unlock()
 	if _, ok := m.hidden[modelID]; ok {
 		delete(m.hidden, modelID)
+		m.saveHiddenLocked()
 		return false
 	}
 	m.hidden[modelID] = struct{}{}
+	m.saveHiddenLocked()
 	return true
+}
+
+// SetModelsHidden applies one visibility state to a group of model IDs and
+// persists the hidden set once. This is intentionally a batch operation: a
+// provider catalog can contain hundreds of models and should not cause one
+// config rewrite (or one HTTP request) per row.
+func (m *Manager) SetModelsHidden(modelIDs []string, hidden bool) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := 0
+	seen := make(map[string]struct{}, len(modelIDs))
+	for _, raw := range modelIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		_, alreadyHidden := m.hidden[id]
+		if hidden && !alreadyHidden {
+			m.hidden[id] = struct{}{}
+			changed++
+		} else if !hidden && alreadyHidden {
+			delete(m.hidden, id)
+			changed++
+		}
+	}
+	if changed > 0 {
+		m.saveHiddenLocked()
+	}
+	return changed
 }
 
 // ShowModel ensures a model is visible (removes it from the
@@ -356,6 +421,9 @@ func (m *Manager) ModelVisible(provider, id string) bool {
 
 func (m *Manager) modelVisibleLocked(provider, id string) bool {
 	if p, ok := m.providerByNameLocked(provider); ok {
+		if p.Disabled {
+			return false
+		}
 		return modelVisibleForProvider(p, id)
 	}
 	return true
@@ -591,6 +659,43 @@ func (m *Manager) Reload() {
 		return
 	}
 	m.providers = tc.Providers
+	if m.repairUnnamedProvidersLocked() {
+		// Older GUI builds accepted an empty provider name. Preserve the whole
+		// provider (including credentials and selected model), but give it a
+		// stable hostname-derived identity so models can be grouped and selected.
+		_ = m.saveLocked()
+	}
+}
+
+func (m *Manager) repairUnnamedProvidersLocked() bool {
+	used := make(map[string]struct{}, len(m.providers))
+	for i := range m.providers {
+		if name := strings.TrimSpace(m.providers[i].Name); name != "" {
+			m.providers[i].Name = name
+			used[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	changed := false
+	for i := range m.providers {
+		if strings.TrimSpace(m.providers[i].Name) != "" {
+			continue
+		}
+		base := "provider"
+		if parsed, err := url.Parse(strings.TrimSpace(m.providers[i].BaseURL)); err == nil && parsed.Hostname() != "" {
+			base = strings.ToLower(parsed.Hostname())
+		}
+		name := base
+		for suffix := 2; ; suffix++ {
+			if _, exists := used[strings.ToLower(name)]; !exists {
+				break
+			}
+			name = fmt.Sprintf("%s-%d", base, suffix)
+		}
+		m.providers[i].Name = name
+		used[strings.ToLower(name)] = struct{}{}
+		changed = true
+	}
+	return changed
 }
 
 // Configured returns a copy of the configured provider entries
@@ -614,7 +719,18 @@ func (m *Manager) APIKey(name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	if !hasExplicitProviderKey(p) {
+		return "", true
+	}
 	return p.APIKey, true
+}
+
+func hasExplicitProviderKey(p config.ProviderConf) bool {
+	key := strings.TrimSpace(p.APIKey)
+	if key == "" {
+		return false
+	}
+	return key != llm.KiloDefaultKey(p.BaseURL, "")
 }
 
 // Ping checks one provider conf's /v1/models endpoint with a
@@ -792,6 +908,9 @@ func (m *Manager) ScanModels(caps *llm.CapabilityRegistry) int {
 
 	total := 0
 	for _, p := range providers {
+		if p.Disabled {
+			continue
+		}
 		res := scanProviderConf(p, caps)
 		if res.Err == nil {
 			total += len(res.Models)
@@ -819,6 +938,9 @@ func (m *Manager) ScanProvider(name string, caps *llm.CapabilityRegistry) ScanRe
 	if !ok {
 		return ScanResult{Provider: name, Err: fmt.Errorf("provider %q not found", name)}
 	}
+	if found.Disabled {
+		return ScanResult{Provider: name, Err: fmt.Errorf("provider %q is disabled", name)}
+	}
 	return scanProviderConf(found, caps)
 }
 
@@ -845,6 +967,12 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	apiKey := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
 	if p.Type == config.ProviderAnthropic {
 		ids, err = llm.ListAnthropicModels(ctx, p.BaseURL, apiKey)
+	} else if freeOnlyProvider(p) {
+		// Public OpenCode/Kilo catalogs contain paid entries as well. Their
+		// metadata (Kilo isFree / zero pricing, OpenCode's explicit free IDs) is
+		// the authority; downloading every ID and guessing later leaked hundreds
+		// of unusable models into the picker.
+		ids, err = llm.ListFreeModels(ctx, p.BaseURL, apiKey)
 	} else {
 		ids, err = llm.ListProviderModels(ctx, p.BaseURL, apiKey)
 	}
@@ -852,16 +980,6 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	if err != nil {
 		res.Err = err
 		return res
-	}
-	// Kilo/OpenCode public access = free models only; own key = all models.
-	if freeOnlyProvider(p) {
-		var free []string
-		for _, id := range ids {
-			if llm.IsFreeModelID(id) {
-				free = append(free, id)
-			}
-		}
-		ids = free
 	}
 	for _, id := range ids {
 		mi := llm.HeuristicCapabilities(id)

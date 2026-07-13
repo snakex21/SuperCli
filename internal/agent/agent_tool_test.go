@@ -182,8 +182,8 @@ func TestAgentTool_Execute_RestrictsTools(t *testing.T) {
 		t.Fatal("factory not called")
 	}
 	names := captured.Names()
-	if len(names) != 1 || names[0] != "search_code" {
-		t.Errorf("child registry = %v, want only search_code", names)
+	if len(names) != 2 || !containsString(names, "search_code") || !containsString(names, "read_output") {
+		t.Errorf("child registry = %v, want search_code + bounded read_output escape hatch", names)
 	}
 }
 
@@ -204,9 +204,18 @@ func TestAgentTool_Execute_InheritsAllTools(t *testing.T) {
 	if captured == nil {
 		t.Fatal("factory not called")
 	}
-	if captured.Len() != newTestBaseRegistry().Len() {
-		t.Errorf("len = %d, want %d", captured.Len(), newTestBaseRegistry().Len())
+	if captured.Len() != newTestBaseRegistry().Len()+1 {
+		t.Errorf("len = %d, want inherited tools + read_output (%d)", captured.Len(), newTestBaseRegistry().Len()+1)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgentTool_Execute_UnknownAgent(t *testing.T) {
@@ -503,6 +512,19 @@ func TestRestrictedRegistry_Inherits(t *testing.T) {
 	got := restrictedRegistry(base, nil)
 	if got.Len() != base.Len() {
 		t.Errorf("got len %d, want %d", got.Len(), base.Len())
+	}
+}
+
+func TestRestrictedRegistry_DoesNotCopyParentOutputStoreClosure(t *testing.T) {
+	base := newTestBaseRegistry()
+	base.EnsureReadOutput()
+	got := restrictedRegistry(base, nil)
+	if _, ok := got.Get("read_output"); ok {
+		t.Fatal("child copied parent's read_output closure")
+	}
+	got.EnsureReadOutput()
+	if _, ok := got.Get("read_output"); !ok {
+		t.Fatal("child could not install its own read_output")
 	}
 }
 

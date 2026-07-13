@@ -18,10 +18,17 @@
           <span class="name">SuperCli</span>
           <span class="ws" id="workspace" title="">—</span>
         </div>
+        <button class="project-folder-btn" id="open-project-folder" type="button" disabled
+                data-i18n-title="common.openProjectFolder" data-i18n-aria="common.openProjectFolder">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2.75 5.25h5l1.5 1.75h8v7.75H2.75zM2.75 5.25V3.75h5l1.5 1.5" />
+          </svg>
+          <span data-i18n="common.openProjectFolder">Open project folder</span>
+        </button>
         <div class="spacer"></div>
         <button class="icon-btn" id="new-session" type="button" title="New session">＋</button>
         <button class="model-btn" id="model-btn" type="button" title="Switch model">
-          <span class="m-name" id="model-name" data-i18n="model.none">no model</span>
+          <span class="m-name" id="model-name">no model</span>
           <span class="m-prov" id="model-prov"></span>
           <span class="chev">▼</span>
         </button>
@@ -67,11 +74,14 @@
       </main>
 
       <div class="composer-wrap">
+        <div class="prompt-queue" id="prompt-queue" hidden></div>
         <form class="composer" id="composer">
           <div class="box">
             <textarea id="prompt" rows="1" placeholder="Message SuperCli…" data-i18n-ph="composer.ph"></textarea>
             <div class="row">
               <span class="hint" id="run-status" data-i18n="composer.ready">Ready</span>
+              <button type="button" class="stop-run-btn" id="stop-run-btn" data-i18n="composer.stop" hidden>Stop</button>
+              <button type="button" class="interrupt-btn" id="interrupt-btn" data-i18n="composer.interrupt" hidden>Interrupt &amp; send</button>
               <button type="submit" class="send-btn" id="send-btn" data-i18n="composer.send">Send</button>
             </div>
           </div>
@@ -81,11 +91,16 @@
 
     <!-- ── Side panel (right): stats / sessions / projects ── -->
     <aside class="sidebar" id="sidebar">
-      <nav class="side-tabs" id="side-tabs">
-        <button data-tab="stats" class="active" data-i18n="side.stats">Stats</button>
-        <button data-tab="sessions" data-i18n="side.sessions">Sessions</button>
-        <button data-tab="projects" data-i18n="side.projects">Projects</button>
-      </nav>
+      <div class="sidebar-head">
+        <nav class="side-tabs" id="side-tabs">
+          <button data-tab="stats" class="active" data-i18n="side.stats">Stats</button>
+          <button data-tab="sessions" data-i18n="side.sessions">Sessions</button>
+          <button data-tab="projects" data-i18n="side.projects">Projects</button>
+		  <button data-tab="tasks" data-i18n="side.tasks">Tasks</button>
+        </nav>
+        <button class="sidebar-close" id="close-sidebar" type="button"
+                data-i18n-title="common.closePanel" data-i18n-aria="common.closePanel">×</button>
+      </div>
 
       <!-- Stats tab -->
       <div class="side-pane active" id="tab-stats">
@@ -111,7 +126,13 @@
         </div>
         <div class="side-list projects" id="project-list"></div>
       </div>
+
+	  <div class="side-pane" id="tab-tasks">
+		<div class="side-label"><span data-i18n="side.tasks">Tasks</span><button id="reload-tasks" type="button" data-i18n="common.refresh">refresh</button></div>
+		<div class="side-list task-center" id="task-list"></div>
+	  </div>
     </aside>
+    <button class="sidebar-backdrop" id="sidebar-backdrop" type="button" aria-label="Close side panel"></button>
   </div>
 
   <!-- ── Control panel ── -->
@@ -123,6 +144,8 @@
         <button data-sec="appearance" data-i18n="panel.appearance">Appearance</button>
         <button data-sec="models" data-i18n="panel.models">Models</button>
         <button data-sec="providers" data-i18n="panel.providers">Providers</button>
+        <button data-sec="runtime" data-i18n="panel.runtime">Model servers</button>
+		<button data-sec="workflow" data-i18n="panel.workflow">Workflow</button>
         <button data-sec="accounts" data-i18n="panel.accounts">Accounts</button>
         <button data-sec="mcp" data-i18n="panel.mcp">MCP</button>
         <button data-sec="memory" data-i18n="panel.memory">Memory</button>

@@ -118,6 +118,10 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(confs))
 	for _, p := range confs {
 		p := p
+		if p.Disabled {
+			m.providerStatuses[p.Name] = providerStatus{checked: true, err: "disabled (saved, not contacted)"}
+			continue
+		}
 		// Echo and ChatGPT-OAuth (codex) providers have no
 		// pingable /v1/models endpoint; mark them online.
 		if p.Type == "echo" || p.Type == "codex" {

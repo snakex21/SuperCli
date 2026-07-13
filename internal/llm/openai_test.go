@@ -102,6 +102,30 @@ func TestBuildOpenAIRequest_TextOnly(t *testing.T) {
 	}
 }
 
+func TestOpenAICompleteSendsConfiguredMaxTokens(t *testing.T) {
+	srv, captured := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		sseResponse(w, `{"choices":[{"delta":{"content":"ok"}}]}`)
+	})
+	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "qwen-local", MaxTokens: 321})
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	drainDeltas(t, ch)
+	var body struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal([]byte(*captured), &body); err != nil {
+		t.Fatalf("request JSON: %v", err)
+	}
+	if body.MaxTokens != 321 {
+		t.Fatalf("max_tokens=%d, want 321; body=%s", body.MaxTokens, *captured)
+	}
+}
+
 // TestBuildOpenAIRequest_DemotesMidConversationSystemMessages guards the
 // KV-cache fix: a system message appearing after the first non-system turn
 // (freshness stamp, reflection checkpoint, ...) must NOT be hoisted into the

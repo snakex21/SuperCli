@@ -107,6 +107,37 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+func TestSetDisabledPreservesProviderAndExcludesModels(t *testing.T) {
+	home := t.TempDir()
+	m := NewManager(home)
+	if err := m.Add("sleeping-local", "openai", "http://other-pc:8080/v1", "secret", "local-moe"); err != nil {
+		t.Fatal(err)
+	}
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "local-moe", Provider: "sleeping-local", Source: llm.SourceProbe})
+	if err := m.SetDisabled("sleeping-local", true); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	configured := m.ListConfigured(caps)
+	if len(configured) != 1 || !configured[0].Disabled || configured[0].HasKey != true {
+		t.Fatalf("disabled provider was not preserved: %+v", configured)
+	}
+	if len(configured[0].Models) != 0 {
+		t.Fatalf("disabled provider leaked models: %+v", configured[0].Models)
+	}
+	if res := m.ScanProvider("sleeping-local", caps); res.Err == nil || !strings.Contains(res.Err.Error(), "disabled") {
+		t.Fatalf("disabled scan = %v, want disabled error", res.Err)
+	}
+	if err := m.SetDisabled("sleeping-local", false); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	if m.Configured()[0].Disabled {
+		t.Fatal("provider did not re-enable")
+	}
+}
+
 func TestSetPrice(t *testing.T) {
 	home := t.TempDir()
 	m := NewManager(home)
@@ -183,6 +214,34 @@ func TestProviderInfo(t *testing.T) {
 	}
 	if !pi.Connected {
 		t.Fatal("should be connected")
+	}
+}
+
+func TestPublicGatewayPlaceholderIsNotStoredOrReportedAsUserKey(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{name: "kilo", url: "https://api.kilo.ai/api/openrouter"},
+		{name: "opencode", url: "https://opencode.ai/zen/v1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewManager(t.TempDir())
+			if err := m.Add(tc.name, "openai", tc.url, "", ""); err != nil {
+				t.Fatal(err)
+			}
+			m.Reload()
+			if got := m.Configured()[0].APIKey; got != "" {
+				t.Fatalf("stored synthetic key %q", got)
+			}
+			info := m.ListConfigured(nil)[0]
+			if info.HasKey {
+				t.Fatal("public access was reported as a configured key")
+			}
+			if key, ok := m.APIKey(tc.name); !ok || key != "" {
+				t.Fatalf("APIKey = %q, %v; want empty, true", key, ok)
+			}
+		})
 	}
 }
 
@@ -768,6 +827,58 @@ func TestListConfigured_OpenCodeHidesCachedPaidModels(t *testing.T) {
 	}
 	if len(rows[0].Models) != 1 || rows[0].Models[0].ID != "deepseek-v4-flash-free" {
 		t.Fatalf("models = %+v, want only explicit free model", rows[0].Models)
+	}
+}
+
+func TestSetModelsHiddenPersistsBatchOnceAndDeduplicates(t *testing.T) {
+	m := NewManager(t.TempDir())
+	if changed := m.SetModelsHidden([]string{"a", "b", "a", "  "}, true); changed != 2 {
+		t.Fatalf("hide changed = %d, want 2", changed)
+	}
+	if changed := m.SetModelsHidden([]string{"a", "b"}, true); changed != 0 {
+		t.Fatalf("second hide changed = %d, want 0", changed)
+	}
+
+	reloaded := NewManager(m.home)
+	reloaded.LoadHiddenState()
+	if !reloaded.IsHidden("a") || !reloaded.IsHidden("b") {
+		t.Fatal("batch-hidden models were not persisted")
+	}
+	if changed := reloaded.SetModelsHidden([]string{"a", "b"}, false); changed != 2 {
+		t.Fatalf("show changed = %d, want 2", changed)
+	}
+}
+
+func TestReloadRepairsLegacyUnnamedProviderWithoutLosingConfiguration(t *testing.T) {
+	m := NewManager(t.TempDir())
+	m.providers = []config.ProviderConf{{
+		Name: "", Type: "openai", BaseURL: "https://newapi.example.test/v1",
+		APIKey: "secret", Model: "model-a",
+	}}
+	if err := m.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+
+	m.Reload()
+	if len(m.providers) != 1 {
+		t.Fatalf("providers = %d, want 1", len(m.providers))
+	}
+	got := m.providers[0]
+	if got.Name != "newapi.example.test" || got.APIKey != "secret" || got.Model != "model-a" {
+		t.Fatalf("repaired provider = %+v", got)
+	}
+
+	reloaded := NewManager(m.home)
+	reloaded.Reload()
+	if len(reloaded.providers) != 1 || reloaded.providers[0].Name != "newapi.example.test" {
+		t.Fatalf("repair was not persisted: %+v", reloaded.providers)
+	}
+}
+
+func TestAddRejectsEmptyProviderName(t *testing.T) {
+	m := NewManager(t.TempDir())
+	if err := m.Add("  ", "openai", "https://example.test/v1", "", ""); err == nil {
+		t.Fatal("expected empty provider name to be rejected")
 	}
 }
 
