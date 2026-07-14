@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,10 +20,11 @@ type statsView struct {
 	SessionToken int64  `json:"session_tokens"`
 	DailyToken   int64  `json:"daily_tokens"`
 
-	Session statsSessionView `json:"session"`
-	Tokens  statsTokensView  `json:"tokens"`
-	Context statsContextView `json:"context"`
-	Cost    statsCostView    `json:"cost"`
+	Session   statsSessionView   `json:"session"`
+	Tokens    statsTokensView    `json:"tokens"`
+	Context   statsContextView   `json:"context"`
+	Cost      statsCostView      `json:"cost"`
+	Telemetry statsTelemetryView `json:"telemetry"`
 }
 
 type statsSessionView struct {
@@ -80,6 +82,32 @@ type statsCostView struct {
 	OutputPerMillion      *float64 `json:"output_per_million,omitempty"`
 	CacheDiscountKnown    bool     `json:"cache_discount_known"`
 	Manual                bool     `json:"manual"`
+}
+
+type statsTelemetryView struct {
+	Scope           string                `json:"scope,omitempty"`
+	Samples         int                   `json:"samples"`
+	Steps           int                   `json:"steps"`
+	DurationMS      int64                 `json:"duration_ms"`
+	AverageMS       int64                 `json:"average_ms"`
+	ModelMS         int64                 `json:"model_ms"`
+	ToolsMS         int64                 `json:"tools_ms"`
+	CLIMS           int64                 `json:"cli_ms"`
+	PersistMS       int64                 `json:"persist_ms"`
+	ModelCalls      int                   `json:"model_calls"`
+	HelperCalls     int                   `json:"helper_calls"`
+	FailedCalls     int                   `json:"failed_calls"`
+	CanceledCalls   int                   `json:"canceled_calls"`
+	ToolFailures    int                   `json:"tool_failures"`
+	Bottleneck      string                `json:"bottleneck,omitempty"`
+	BottleneckShare int                   `json:"bottleneck_share"`
+	Signals         []string              `json:"signals,omitempty"`
+	Tools           []statsToolTimingView `json:"tools,omitempty"`
+}
+
+type statsToolTimingView struct {
+	Name       string `json:"name"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 // stats returns persisted per-call usage when available and falls back to the
@@ -171,6 +199,13 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		sv.Tokens.EvaluatedInput = 0
 	}
 	sv.SessionToken = sv.Tokens.Total
+	// Cross-session diagnosis is deliberately a bounded, panel-time query.
+	// Normal turns do not aggregate history and the cap prevents old stores
+	// from turning observability into a new performance problem.
+	if recent, recentErr := store.ReadRecentTurnSummaries(ctx, time.Now().Add(-7*24*time.Hour), 2000); recentErr == nil {
+		sv.Telemetry = summarizeTelemetry(recent, sv.Tokens)
+		sv.Telemetry.Scope = "7d"
+	}
 
 	now := time.Now()
 	localMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -196,6 +231,92 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		sv.Cost = resolveStatsCost(tc, usage, session.UsageRecord{})
 	}
 	return sv, nil
+}
+
+func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) statsTelemetryView {
+	var out statsTelemetryView
+	toolUS := map[string]int64{}
+	var modelUS, toolsUS, cliUS, persistUS int64
+	for _, turn := range turns {
+		if len(turn.Phases) == 0 {
+			continue // legacy rows are not false zero-duration samples
+		}
+		out.Samples++
+		out.Steps += turn.Steps
+		out.DurationMS += turn.DurationMS
+		out.ModelCalls += turn.ModelCalls
+		out.HelperCalls += turn.HelperCalls
+		out.FailedCalls += turn.FailedCalls
+		out.CanceledCalls += turn.CanceledCalls
+		out.ToolFailures += turn.ToolFailures
+		for name, us := range turn.Phases {
+			switch {
+			case name == "request_encode", name == "backend_wait", name == "stream_total", strings.HasPrefix(name, "model:"):
+				modelUS += us
+			case name == "tool_execution":
+				toolsUS += us
+			case name == "context_prepare", name == "next_turn_prepare":
+				cliUS += us
+			case name == "session_persist":
+				persistUS += us
+			case strings.HasPrefix(name, "tool:"):
+				toolUS[strings.TrimPrefix(name, "tool:")] += us
+			}
+		}
+	}
+	if out.Samples == 0 {
+		return out
+	}
+	out.ModelMS, out.ToolsMS, out.CLIMS, out.PersistMS = modelUS/1000, toolsUS/1000, cliUS/1000, persistUS/1000
+	out.AverageMS = out.DurationMS / int64(out.Samples)
+	pipeline := out.ModelMS + out.ToolsMS + out.CLIMS
+	type part struct {
+		name string
+		ms   int64
+	}
+	parts := []part{{"model", out.ModelMS}, {"tools", out.ToolsMS}, {"cli", out.CLIMS}}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].ms > parts[j].ms })
+	out.Bottleneck = parts[0].name
+	if pipeline > 0 {
+		out.BottleneckShare = int(math.Round(float64(parts[0].ms) * 100 / float64(pipeline)))
+	}
+	if out.Samples < 5 {
+		out.Signals = append(out.Signals, "collect_more")
+	}
+	if out.Bottleneck == "model" && out.BottleneckShare >= 75 {
+		out.Signals = append(out.Signals, "model_bound")
+	}
+	if out.Bottleneck == "cli" && out.BottleneckShare >= 15 && out.CLIMS/int64(out.Samples) >= 25 {
+		out.Signals = append(out.Signals, "cli_overhead")
+	}
+	if out.Steps > out.Samples*3 {
+		out.Signals = append(out.Signals, "many_steps")
+	}
+	if out.ToolFailures > 0 {
+		out.Signals = append(out.Signals, "tool_failures")
+	}
+	if out.FailedCalls > 0 || out.CanceledCalls > 0 {
+		out.Signals = append(out.Signals, "model_failures")
+	}
+	if tokens.Input >= 2000 && tokens.HasCached && tokens.CachedInput*2 < tokens.Input {
+		out.Signals = append(out.Signals, "low_cache")
+	}
+	if out.PersistMS/int64(out.Samples) >= 25 {
+		out.Signals = append(out.Signals, "slow_persist")
+	}
+	for name, us := range toolUS {
+		out.Tools = append(out.Tools, statsToolTimingView{Name: name, DurationMS: us / 1000})
+	}
+	sort.Slice(out.Tools, func(i, j int) bool {
+		if out.Tools[i].DurationMS == out.Tools[j].DurationMS {
+			return out.Tools[i].Name < out.Tools[j].Name
+		}
+		return out.Tools[i].DurationMS > out.Tools[j].DurationMS
+	})
+	if len(out.Tools) > 5 {
+		out.Tools = out.Tools[:5]
+	}
+	return out
 }
 
 func summarizeSession(meta session.Session, messages []llm.Message) statsSessionView {

@@ -31,6 +31,7 @@ import (
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
+	systats "supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
 	"supercli/internal/tools/mcp"
@@ -559,7 +560,7 @@ func (e *Engine) newLoopWithSessionAtUsageAsk(initial []llm.Message, writer agen
 	return e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, nil)
 }
 
-func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest, turn *checkpoint.Turn) (*agent.Loop, error) {
+func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest, turn *checkpoint.Turn, telemetry ...systats.Recorder) (*agent.Loop, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
@@ -568,6 +569,10 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	tc := e.tomlConfigAt(home)
 	catalogHoist := strings.EqualFold(strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")), "true") || strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")) == "1"
 	execProfile := execution.Resolve(cfg, tc, caps, catalogHoist)
+	var recorder systats.Recorder
+	if len(telemetry) > 0 {
+		recorder = telemetry[0]
+	}
 	// Tri-state contract:
 	//   nil   = adaptive delegation (full parent tools + optional task workers)
 	//   true  = hard orchestrator (parent restricted; substantial work delegates)
@@ -667,7 +672,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		Provider:              prov,
 		Registry:              reg,
 		Caps:                  caps,
-		System:                webAgentSystemPrompt(home, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc),
+		System:                webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc),
 		MaxSteps:              25,
 		Orchestrator:          orchestrator,
 		TaskParallel:          taskParallel,
@@ -688,6 +693,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
 		PruneProtectTokens: tc.PruneProtectTokens,
+		Stats:              recorder,
 	})
 	if err != nil {
 		return nil, err
@@ -707,9 +713,9 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	return loop, nil
 }
 
-func webAgentSystemPrompt(home, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service) string {
+func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service) string {
 	system := llmprompt.Build(promptSmall)
-	if profile := llmprompt.LoadProfile(home, model); profile != "" {
+	if profile := llmprompt.LoadProfileAt(home, dataDir, model); profile != "" {
 		system += "\n\n" + profile
 	}
 	if orchestrator {

@@ -241,6 +241,20 @@ var I18N = {
     "usage.context": "Context report", "usage.summary": "Session summary", "usage.details": "Session details",
     "usage.noSession": "Start or select a session to collect persistent usage statistics.",
     "usage.contextEmpty": "No context snapshot has been recorded yet.",
+    "telemetry.title": "Performance telemetry", "telemetry.empty": "Use this build for a few turns to collect timing samples.",
+    "telemetry.scope.7d": "last 7 days",
+    "telemetry.samples": "measured replies", "telemetry.average": "Average reply", "telemetry.steps": "Agent steps",
+    "telemetry.model": "Model backend", "telemetry.tools": "Tools", "telemetry.cli": "CLI overhead", "telemetry.persist": "Session write",
+    "telemetry.topTools": "Slowest tools", "telemetry.bottleneck.model": "The model backend is the limit",
+    "telemetry.bottleneck.tools": "Tool execution is the limit", "telemetry.bottleneck.cli": "CLI overhead is the limit",
+    "telemetry.signal.collect_more": "A few more replies will make this diagnosis more reliable.",
+    "telemetry.signal.model_bound": "The CLI is out of the hot path; backend or hardware changes will have the largest effect.",
+    "telemetry.signal.cli_overhead": "Client-side preparation is measurable and worth profiling further.",
+    "telemetry.signal.many_steps": "The agent uses many model rounds per reply; batching or clearer tool results may help.",
+    "telemetry.signal.tool_failures": "Some tool calls fail; removing those retries can save complete model rounds.",
+    "telemetry.signal.model_failures": "Provider calls failed or were canceled; inspect endpoint stability and timeouts.",
+    "telemetry.signal.low_cache": "Prompt-cache reuse is low; keep the system/tool prefix byte-stable.",
+    "telemetry.signal.slow_persist": "Session persistence is slower than expected, although it does not block inference.",
     "cost.estimated": "Estimated", "cost.manual": "Manual rate", "cost.subscription": "Subscription",
     "cost.local": "Local", "cost.free": "Free", "cost.unknown": "Unknown", "cost.partial": "Partial estimate",
     "cost.subscriptionValue": "Included in plan", "cost.localValue": "Runs locally", "cost.freeValue": "Free",
@@ -403,6 +417,20 @@ var I18N = {
     "usage.context": "Raport kontekstu", "usage.summary": "Podsumowanie sesji", "usage.details": "Szczegóły sesji",
     "usage.noSession": "Rozpocznij lub wybierz sesję, aby zbierać trwałe statystyki użycia.",
     "usage.contextEmpty": "Nie zapisano jeszcze migawki kontekstu.",
+    "telemetry.title": "Telemetria wydajności", "telemetry.empty": "Poużywaj tej wersji przez kilka tur, aby zebrać próbki czasu.",
+    "telemetry.scope.7d": "ostatnie 7 dni",
+    "telemetry.samples": "zmierzonych odpowiedzi", "telemetry.average": "Średnia odpowiedź", "telemetry.steps": "Kroki agenta",
+    "telemetry.model": "Backend modelu", "telemetry.tools": "Narzędzia", "telemetry.cli": "Narzut CLI", "telemetry.persist": "Zapis sesji",
+    "telemetry.topTools": "Najwolniejsze narzędzia", "telemetry.bottleneck.model": "Ograniczeniem jest backend modelu",
+    "telemetry.bottleneck.tools": "Ograniczeniem jest wykonywanie narzędzi", "telemetry.bottleneck.cli": "Ograniczeniem jest narzut CLI",
+    "telemetry.signal.collect_more": "Kilka kolejnych odpowiedzi zwiększy wiarygodność diagnozy.",
+    "telemetry.signal.model_bound": "CLI jest poza gorącą ścieżką; największy efekt da backend lub sprzęt.",
+    "telemetry.signal.cli_overhead": "Przygotowanie po stronie klienta jest mierzalne i warto je dalej profilować.",
+    "telemetry.signal.many_steps": "Agent zużywa wiele tur modelu na odpowiedź; pomóc może grupowanie pracy lub lepsze wyniki narzędzi.",
+    "telemetry.signal.tool_failures": "Część narzędzi kończy się błędem; usunięcie powtórek oszczędzi pełne tury modelu.",
+    "telemetry.signal.model_failures": "Wywołania providera nie powiodły się lub zostały anulowane; sprawdź stabilność endpointu i timeouty.",
+    "telemetry.signal.low_cache": "Ponowne użycie cache promptu jest niskie; prefiks systemu i narzędzi powinien pozostać bajtowo stały.",
+    "telemetry.signal.slow_persist": "Zapis sesji jest wolniejszy niż oczekiwano, choć nie blokuje inferencji.",
     "cost.estimated": "Szacunek", "cost.manual": "Stawka ręczna", "cost.subscription": "Subskrypcja",
     "cost.local": "Lokalny", "cost.free": "Bezpłatny", "cost.unknown": "Nieznany", "cost.partial": "Częściowy szacunek",
     "cost.subscriptionValue": "W ramach subskrypcji", "cost.localValue": "Działa lokalnie", "cost.freeValue": "Bezpłatnie",
@@ -1982,6 +2010,7 @@ function normalizeStats(raw) {
   var context = raw.context || {};
   var breakdown = context.breakdown || {};
   var cost = raw.cost || {};
+  var telemetry = raw.telemetry || {};
   var input = statNumber(tokens.input);
   var cached = statNumber(tokens.cached_input);
   var output = statNumber(tokens.output);
@@ -2020,6 +2049,19 @@ function normalizeStats(raw) {
       cachedInputPerMillion: statNullableNumber(cost.cached_input_per_million),
       outputPerMillion: statNullableNumber(cost.output_per_million),
       cacheDiscountKnown: !!cost.cache_discount_known, manual: !!cost.manual,
+    },
+    telemetry: {
+      scope: telemetry.scope || "",
+      samples: statNumber(telemetry.samples), steps: statNumber(telemetry.steps),
+      durationMS: statNumber(telemetry.duration_ms), averageMS: statNumber(telemetry.average_ms),
+      modelMS: statNumber(telemetry.model_ms), toolsMS: statNumber(telemetry.tools_ms),
+      cliMS: statNumber(telemetry.cli_ms), persistMS: statNumber(telemetry.persist_ms),
+      modelCalls: statNumber(telemetry.model_calls), helperCalls: statNumber(telemetry.helper_calls),
+      failedCalls: statNumber(telemetry.failed_calls), canceledCalls: statNumber(telemetry.canceled_calls),
+      toolFailures: statNumber(telemetry.tool_failures), bottleneck: telemetry.bottleneck || "",
+      bottleneckShare: statNumber(telemetry.bottleneck_share),
+      signals: Array.isArray(telemetry.signals) ? telemetry.signals : [],
+      tools: Array.isArray(telemetry.tools) ? telemetry.tools : [],
     },
   };
 }
@@ -4284,6 +4326,8 @@ function renderUsageInspector(stats) {
   lead.appendChild(costMetric);
   root.appendChild(lead);
 
+  root.appendChild(renderPerformanceTelemetry(stats.telemetry));
+
   var factsSection = el("section", "usage-section");
   factsSection.appendChild(el("h3", "usage-section-title", t("usage.details")));
   var facts = el("dl", "usage-facts");
@@ -4309,6 +4353,59 @@ function renderUsageInspector(stats) {
   root.appendChild(renderContextInspector(stats.context));
   root.appendChild(renderPriceDetails(stats));
   return root;
+}
+
+function renderPerformanceTelemetry(telemetry) {
+  var section = el("section", "usage-section telemetry-section");
+  var head = el("div", "usage-section-head");
+  head.appendChild(el("h3", "usage-section-title", t("telemetry.title")));
+  if (telemetry.samples) {
+    var sampleLabel = fmtInteger(telemetry.samples) + " " + t("telemetry.samples");
+    if (telemetry.scope) sampleLabel += " · " + t("telemetry.scope." + telemetry.scope);
+    head.appendChild(el("div", "usage-section-value", sampleLabel));
+  }
+  section.appendChild(head);
+  if (!telemetry.samples) {
+    section.appendChild(el("div", "usage-empty", t("telemetry.empty")));
+    return section;
+  }
+
+  var verdict = el("div", "telemetry-verdict");
+  verdict.appendChild(el("strong", "", t("telemetry.bottleneck." + telemetry.bottleneck)));
+  verdict.appendChild(el("span", "", " " + fmtInteger(telemetry.bottleneckShare) + "%"));
+  section.appendChild(verdict);
+
+  var pipeline = telemetry.modelMS + telemetry.toolsMS + telemetry.cliMS;
+  var split = el("div", "telemetry-split");
+  [["model", telemetry.modelMS], ["tools", telemetry.toolsMS], ["cli", telemetry.cliMS]].forEach(function (part) {
+    var seg = el("span", "telemetry-segment telemetry-" + part[0]);
+    seg.style.width = (pipeline > 0 ? part[1] * 100 / pipeline : 0) + "%";
+    split.appendChild(seg);
+  });
+  section.appendChild(split);
+
+  var facts = el("dl", "usage-facts telemetry-facts");
+  facts.appendChild(usageFact(t("telemetry.model"), fmtDuration(telemetry.modelMS)));
+  facts.appendChild(usageFact(t("telemetry.tools"), fmtDuration(telemetry.toolsMS)));
+  facts.appendChild(usageFact(t("telemetry.cli"), fmtDuration(telemetry.cliMS)));
+  facts.appendChild(usageFact(t("telemetry.average"), fmtDuration(telemetry.averageMS)));
+  facts.appendChild(usageFact(t("telemetry.steps"), fmtInteger(telemetry.steps)));
+  if (telemetry.persistMS) facts.appendChild(usageFact(t("telemetry.persist"), fmtDuration(telemetry.persistMS)));
+  if (telemetry.tools.length) {
+    facts.appendChild(usageFact(t("telemetry.topTools"), telemetry.tools.map(function (tool) {
+      return tool.name + " " + fmtDuration(statNumber(tool.duration_ms));
+    }).join(" · ")));
+  }
+  section.appendChild(facts);
+
+  if (telemetry.signals.length) {
+    var notes = el("div", "telemetry-signals");
+    telemetry.signals.forEach(function (signal) {
+      notes.appendChild(el("p", "", t("telemetry.signal." + signal)));
+    });
+    section.appendChild(notes);
+  }
+  return section;
 }
 
 var usageRenderSeq = 0;

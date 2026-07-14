@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,26 @@ func TestStatsAggregatesCallsWithoutDoubleCountingCacheOrReasoning(t *testing.T)
 	}
 	if got.Cost.State != "estimated" || got.Cost.Amount == nil || math.Abs(*got.Cost.Amount-4.411) > 1e-9 {
 		t.Fatalf("OpenAI cost = %+v", got.Cost)
+	}
+}
+
+func TestSummarizeTelemetryFindsBottleneckWithoutPromptData(t *testing.T) {
+	turns := []session.TurnSummary{
+		{DurationMS: 1200, Steps: 2, ModelCalls: 2, HelperCalls: 1, ToolFailures: 1, Phases: map[string]int64{
+			"request_encode": 10_000, "backend_wait": 700_000, "stream_total": 300_000,
+			"tool_execution": 100_000, "context_prepare": 20_000, "next_turn_prepare": 10_000,
+			"session_persist": 5_000, "tool:read_many": 80_000,
+		}},
+	}
+	got := summarizeTelemetry(turns, statsTokensView{})
+	if got.Samples != 1 || got.Bottleneck != "model" || got.ModelMS != 1010 || got.ToolsMS != 100 || got.CLIMS != 30 {
+		t.Fatalf("telemetry summary = %+v", got)
+	}
+	if len(got.Tools) != 1 || got.Tools[0].Name != "read_many" || got.Tools[0].DurationMS != 80 {
+		t.Fatalf("tool telemetry = %+v", got.Tools)
+	}
+	if !slices.Contains(got.Signals, "model_bound") || !slices.Contains(got.Signals, "tool_failures") {
+		t.Fatalf("signals = %v", got.Signals)
 	}
 }
 

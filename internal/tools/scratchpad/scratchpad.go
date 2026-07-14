@@ -15,7 +15,11 @@ import (
 	"supercli/internal/tools/core"
 )
 
-const maxNoteBytes = 64 * 1024
+const (
+	maxNoteBytes  = 32 * 1024
+	maxTotalBytes = 512 * 1024
+	maxNotes      = 32
+)
 
 type Scratchpad struct{ BaseDir string }
 
@@ -86,10 +90,61 @@ func (s *Scratchpad) run(_ context.Context, raw json.RawMessage) (Result, error)
 		if err := os.WriteFile(p, []byte(text+"\n"), 0644); err != nil {
 			return Result{Err: err}, nil
 		}
+		// Retention runs only on an actual scratchpad write. Ordinary turns do
+		// not scan this directory and therefore pay no scratchpad overhead.
+		if err := prune(root, p); err != nil {
+			return Result{Err: fmt.Errorf("scratchpad: retain: %w", err)}, nil
+		}
 		return Result{Text: "scratchpad saved: " + filepath.Base(p)}, nil
 	default:
 		return Result{Err: fmt.Errorf("scratchpad: action must be write, read, or list")}, nil
 	}
+}
+
+type noteInfo struct {
+	path string
+	size int64
+	mod  int64
+}
+
+func prune(root, keep string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	notes := make([]noteInfo, 0, len(entries))
+	var total int64
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		n := noteInfo{path: filepath.Join(root, entry.Name()), size: info.Size(), mod: info.ModTime().UnixNano()}
+		notes = append(notes, n)
+		total += n.size
+	}
+	sort.Slice(notes, func(i, j int) bool {
+		if notes[i].mod == notes[j].mod {
+			return notes[i].path < notes[j].path
+		}
+		return notes[i].mod < notes[j].mod
+	})
+	for len(notes) > maxNotes || total > maxTotalBytes {
+		idx := 0
+		if filepath.Clean(notes[idx].path) == filepath.Clean(keep) && len(notes) > 1 {
+			idx = 1
+		}
+		victim := notes[idx]
+		if err := os.Remove(victim.path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		total -= victim.size
+		notes = append(notes[:idx], notes[idx+1:]...)
+	}
+	return nil
 }
 
 func notePath(root, name string) (string, error) {
