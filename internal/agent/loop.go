@@ -163,6 +163,11 @@ type Loop struct {
 	// verification must follow at least one successful, concrete tool result in
 	// that same foreground run; manual UI verification bypasses the agent loop.
 	toolEvidence atomic.Bool
+	// concreteFailure is true when the latest concrete tool result failed. Goal
+	// task completion and passing verification are held back until the model
+	// performs another successful concrete action. This prevents a red test or
+	// failed write from being immediately declared complete.
+	concreteFailure atomic.Bool
 
 	// stepPhaseWall accumulates the DISJOINT wall-clock phases of the
 	// current step (context_prepare, request_encode, backend_wait,
@@ -870,6 +875,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
 	l.toolEvidence.Store(false)
+	l.concreteFailure.Store(false)
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.
@@ -1859,8 +1865,10 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	execStart := time.Now()
 	var res tools.Result
 	var err error
-	if isPassingGoalVerification(tc.Name, raw) && !l.toolEvidence.Load() {
-		res.Err = fmt.Errorf("goal: passing verification requires a successful tool result in this run; run or inspect a concrete check first")
+	if isPassingGoalVerification(tc.Name, raw) && (!l.toolEvidence.Load() || l.concreteFailure.Load()) {
+		res.Err = fmt.Errorf("goal: passing verification requires a successful concrete check after the latest tool failure")
+	} else if isGoalTaskCompletion(tc.Name, raw) && l.concreteFailure.Load() {
+		res.Err = fmt.Errorf("goal: cannot complete a task after a failed tool result; fix the failure and run a successful concrete check first")
 	} else {
 		res, err = l.registry.Execute(ctx, tc.Name, raw)
 	}
@@ -1904,6 +1912,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 
 	// Tool not found.
 	if err != nil {
+		if isConcreteEvidenceTool(tc.Name) {
+			l.concreteFailure.Store(true)
+		}
 		out <- ToolResultEvent{ID: tc.ID, Err: err}
 		return toolResult{
 			failed: true,
@@ -1916,6 +1927,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		}
 	}
 	if res.Err != nil {
+		if isConcreteEvidenceTool(tc.Name) {
+			l.concreteFailure.Store(true)
+		}
 		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err}
 		return toolResult{
 			failed: true,
@@ -1933,6 +1947,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 	if isConcreteEvidenceTool(tc.Name) {
 		l.toolEvidence.Store(true)
+		l.concreteFailure.Store(false)
 	}
 
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text}
@@ -1972,6 +1987,16 @@ func isPassingGoalVerification(name string, raw json.RawMessage) bool {
 		Passed bool   `json:"passed"`
 	}
 	return json.Unmarshal(raw, &p) == nil && p.Action == "verify" && p.Passed
+}
+
+func isGoalTaskCompletion(name string, raw json.RawMessage) bool {
+	if name != "goal" {
+		return false
+	}
+	var p struct {
+		Action string `json:"action"`
+	}
+	return json.Unmarshal(raw, &p) == nil && p.Action == "complete_task"
 }
 
 func isConcreteEvidenceTool(name string) bool {

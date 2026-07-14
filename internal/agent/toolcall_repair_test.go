@@ -86,6 +86,27 @@ func TestHardenToolCallUnknownName(t *testing.T) {
 	}
 }
 
+func TestHardenToolCallExplainsGoalActions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{"complete_task", `"action":"complete_task","task_seq":1`},
+		{"verify", `"action":"verify","passed":true`},
+		{"mark_done", `"action":"mark_done"`},
+	} {
+		call := llm.ToolCall{Name: tc.name, Arguments: `{}`}
+		msg := HardenToolCall(&call, []string{"tool_search", "goal"}, 0)
+		if !strings.Contains(msg, `action of the "goal" tool`) || !strings.Contains(msg, tc.want) {
+			t.Errorf("HardenToolCall(%q) = %q", tc.name, msg)
+		}
+	}
+	call := llm.ToolCall{Name: "read_fil", Arguments: `{}`}
+	if msg := HardenToolCall(&call, []string{"read_file", "goal"}, 0); !strings.Contains(msg, `Did you mean "read_file"`) {
+		t.Fatalf("ordinary suggestion changed: %q", msg)
+	}
+}
+
 func TestHardenToolCallRepairsArgs(t *testing.T) {
 	tc := llm.ToolCall{Name: "read_file", Arguments: `{"path": "main.go"`}
 	msg := HardenToolCall(&tc, []string{"read_file"}, 0)
