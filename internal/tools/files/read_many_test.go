@@ -64,6 +64,34 @@ func TestReadMany_SentinelShorthand(t *testing.T) {
 	}
 }
 
+func TestReadMany_BareFilesUseBoundedDefaultRange(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{"a.go": "alpha\n", "b.go": "bravo\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"a.go | b.go"}`))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	for _, want := range []string{"a.go:1-300", "alpha", "b.go:1-300", "bravo", "[read_many: 2 ok, 0 failed]"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("bare-file output missing %q:\n%s", want, res.Text)
+		}
+	}
+}
+
+func TestReadMany_ArrayFileOnlyUsesBoundedDefaultRange(t *testing.T) {
+	got, err := decodeReadManyRequests([]byte(`[{"file":"a.go"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].From != 1 || got[0].To != maxReadManyRange {
+		t.Fatalf("decoded defaults = %+v", got)
+	}
+}
+
 func TestReadMany_GlobExpandsDeterministically(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "internal"), 0o755); err != nil {

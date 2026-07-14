@@ -242,7 +242,20 @@ func EditLineAnchored(path string, line int, expectedOld, newContent string) (st
 	if err != nil {
 		return "", fmt.Errorf("fileops.EditLineAnchored: %w; nothing changed", err)
 	}
-	return applyAnchoredEdit(path, lines, at, expectedOld, newContent)
+	actualOld := lines[at]
+	// Local models commonly copy the visible line text but omit its leading
+	// tab/spaces. When that is the ONLY mismatch, preserve the file's actual
+	// indentation in the replacement. Content after indentation remains an
+	// exact anchor, so this cannot silently turn a fuzzy semantic match into an
+	// edit.
+	if actualOld != expectedOld && sameIgnoringIndent(actualOld, expectedOld) {
+		actualIndent := leadingIndent(actualOld)
+		expectedIndent := leadingIndent(expectedOld)
+		if leadingIndent(newContent) == expectedIndent {
+			newContent = actualIndent + strings.TrimPrefix(newContent, expectedIndent)
+		}
+	}
+	return applyAnchoredEdit(path, lines, at, actualOld, newContent)
 }
 
 // resolveAnchor resolves a content anchor to a concrete 0-based
@@ -268,6 +281,11 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 	if line <= total && lines[line-1] == expectedOld {
 		return line - 1, nil
 	}
+	// Safe local-model tolerance: a line at the exact hint may differ only in
+	// leading indentation. The non-whitespace content still has to be exact.
+	if line <= total && sameIgnoringIndent(lines[line-1], expectedOld) {
+		return line - 1, nil
+	}
 	// Drift path: scan ±AnchorSearchRadius around the hint for a
 	// verbatim match. Clamp the window to the file bounds.
 	from := line - AnchorSearchRadius
@@ -282,6 +300,13 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 	for i := from - 1; i < to; i++ {
 		if lines[i] == expectedOld {
 			matches = append(matches, i)
+		}
+	}
+	if len(matches) == 0 {
+		for i := from - 1; i < to; i++ {
+			if sameIgnoringIndent(lines[i], expectedOld) {
+				matches = append(matches, i)
+			}
 		}
 	}
 	switch len(matches) {
@@ -300,6 +325,15 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 			"content is ambiguous near line %d (matches lines %v); provide more context",
 			line, nums)
 	}
+}
+
+func trimIndent(s string) string { return strings.TrimLeft(s, " \t") }
+
+func leadingIndent(s string) string { return s[:len(s)-len(trimIndent(s))] }
+
+func sameIgnoringIndent(actual, expected string) bool {
+	trimmed := trimIndent(expected)
+	return trimmed != "" && trimIndent(actual) == trimmed
 }
 
 // AnchoredEdit is one content-anchored replacement: replace the

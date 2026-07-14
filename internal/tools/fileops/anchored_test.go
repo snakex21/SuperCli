@@ -70,6 +70,28 @@ func TestEditLineAnchored_DriftUp(t *testing.T) {
 	}
 }
 
+func TestEditLineAnchored_ToleratesLeadingIndentationOnly(t *testing.T) {
+	path := tmpFile(t, "func add() int {\n\treturn 2 - 1\n}\n")
+	_, err := EditLineAnchored(path, 2, "return 2 - 1", "return 2 + 1")
+	if err != nil {
+		t.Fatalf("EditLineAnchored indentation tolerance: %v", err)
+	}
+	got := readBack(t, path)
+	if got[1] != "\treturn 2 + 1" {
+		t.Fatalf("replacement lost indentation: %q", got[1])
+	}
+}
+
+func TestEditLineAnchored_DoesNotFuzzWhitespaceOnlyAnchor(t *testing.T) {
+	path := tmpFile(t, "alpha\n\t\nbeta\n")
+	if _, err := EditLineAnchored(path, 2, " ", "replacement"); err == nil {
+		t.Fatal("whitespace-only anchor must not match by indentation tolerance")
+	}
+	if got := readBack(t, path); got[1] != "\t" {
+		t.Fatalf("file changed after rejected whitespace-only anchor: %q", got)
+	}
+}
+
 // --- EditLineAnchored: hint wins over duplicate content ---
 
 func TestEditLineAnchored_HintDisambiguatesDuplicates(t *testing.T) {

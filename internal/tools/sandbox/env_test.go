@@ -44,6 +44,26 @@ func TestScrubEnv_DefaultKeep(t *testing.T) {
 	}
 }
 
+func TestScrubEnv_KeepsWindowsAndGoCacheLocations(t *testing.T) {
+	env := []string{
+		`USERPROFILE=C:\Users\tester`,
+		`LOCALAPPDATA=C:\Users\tester\AppData\Local`,
+		`GOCACHE=C:\cache\go-build`,
+		`GOMODCACHE=C:\cache\go-mod`,
+		`OPENAI_API_KEY=must-not-leak`,
+	}
+	got := ScrubEnv(env)
+	joined := strings.Join(got, "\n")
+	for _, name := range []string{"USERPROFILE=", "LOCALAPPDATA=", "GOCACHE=", "GOMODCACHE="} {
+		if !strings.Contains(joined, name) {
+			t.Fatalf("%s missing from scrubbed environment: %v", name, got)
+		}
+	}
+	if strings.Contains(joined, "must-not-leak") {
+		t.Fatalf("secret leaked with development environment: %v", got)
+	}
+}
+
 func TestScrubEnv_EmptyEnv(t *testing.T) {
 	got := ScrubEnv(nil)
 	if got == nil {

@@ -47,7 +47,7 @@ func (t *ReadMany) Spec() Tool {
 	return Tool{
 		Name: "read_many",
 		Description: "Read up to 12 independent file ranges in one call to save model turns. " +
-			"Use 'file:from-to | file:from-to'; file may contain a glob such as internal/*.go. " +
+			"Use 'file:from-to | file:from-to'; a bare file defaults to lines 1-300; globs are allowed. " +
 			"Works with native and thin/sentinel tool calling.",
 		ReadOnly: true,
 		Schema: `{
@@ -311,6 +311,9 @@ func decodeReadManyRequests(raw json.RawMessage) ([]readManyRequest, error) {
 		if err := json.Unmarshal(raw, &requests); err != nil {
 			return nil, fmt.Errorf("invalid reads array: %w", err)
 		}
+		for i := range requests {
+			defaultReadManyRange(&requests[i])
+		}
 		return requests, nil
 	}
 	var shorthand string
@@ -320,20 +323,30 @@ func decodeReadManyRequests(raw json.RawMessage) ([]readManyRequest, error) {
 	for _, item := range strings.Split(shorthand, "|") {
 		item = strings.TrimSpace(item)
 		colon := strings.LastIndexByte(item, ':')
-		if colon <= 0 {
-			return nil, fmt.Errorf("invalid shorthand %q; want file:from-to", item)
+		if colon > 0 {
+			rangeText := strings.TrimSpace(item[colon+1:])
+			dash := strings.IndexByte(rangeText, '-')
+			if dash > 0 {
+				from, errFrom := strconv.Atoi(strings.TrimSpace(rangeText[:dash]))
+				to, errTo := strconv.Atoi(strings.TrimSpace(rangeText[dash+1:]))
+				if errFrom == nil && errTo == nil {
+					requests = append(requests, readManyRequest{File: strings.TrimSpace(item[:colon]), From: from, To: to})
+					continue
+				}
+			}
 		}
-		rangeText := strings.TrimSpace(item[colon+1:])
-		dash := strings.IndexByte(rangeText, '-')
-		if dash <= 0 {
-			return nil, fmt.Errorf("invalid shorthand range %q", rangeText)
-		}
-		from, errFrom := strconv.Atoi(strings.TrimSpace(rangeText[:dash]))
-		to, errTo := strconv.Atoi(strings.TrimSpace(rangeText[dash+1:]))
-		if errFrom != nil || errTo != nil {
-			return nil, fmt.Errorf("invalid shorthand range %q", rangeText)
-		}
-		requests = append(requests, readManyRequest{File: strings.TrimSpace(item[:colon]), From: from, To: to})
+		request := readManyRequest{File: item}
+		defaultReadManyRange(&request)
+		requests = append(requests, request)
 	}
 	return requests, nil
+}
+
+func defaultReadManyRange(request *readManyRequest) {
+	if request.From == 0 && request.To == 0 {
+		request.From = 1
+		request.To = maxReadManyRange
+	} else if request.From > 0 && request.To == 0 {
+		request.To = request.From + maxReadManyRange - 1
+	}
 }
