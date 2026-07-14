@@ -68,7 +68,7 @@ func Run(eng *Engine, opts RunOptions) error {
 		// for machines without the WebView2 runtime.
 		if nativeErr := runNativeAppWindow(url); nativeErr == nil {
 			log.Printf("native app window closed; shutting down…")
-			return Shutdown(srv)
+			return shutdownAfterWindowClose(srv)
 		} else {
 			log.Printf("native app window unavailable (%v); trying browser app mode", nativeErr)
 		}
@@ -99,10 +99,29 @@ func Run(eng *Engine, opts RunOptions) error {
 		return Shutdown(srv)
 	case <-windowClosedCh:
 		log.Printf("app window closed; shutting down…")
-		return Shutdown(srv)
+		return shutdownAfterWindowClose(srv)
 	case serveErr := <-errCh:
 		return serveErr
 	}
+}
+
+// Closing the desktop window is an explicit request to exit, so there is no
+// value in leaving an invisible process around for the full generic shutdown
+// timeout. Give ordinary requests a short grace period, then close remaining
+// browser/SSE connections. Ctrl+C and server-only mode still use Shutdown's
+// longer graceful timeout.
+func shutdownAfterWindowClose(srv *http.Server) error {
+	const windowGrace = 350 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), windowGrace)
+	defer cancel()
+	err := srv.Shutdown(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if closeErr := srv.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+		return closeErr
+	}
+	return nil
 }
 
 // localLaunchURL turns a wildcard listener address into a loopback URL for

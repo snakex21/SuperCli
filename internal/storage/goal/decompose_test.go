@@ -71,8 +71,8 @@ func TestHeuristicFromTitle_LongTruncated(t *testing.T) {
 
 // stubProvider is a minimal Provider for ModelDecompose.
 type stubProvider struct {
-	resp string
-	err  error
+	resp  string
+	err   error
 	calls int
 }
 

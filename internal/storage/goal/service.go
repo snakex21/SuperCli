@@ -116,7 +116,11 @@ func (s *Service) AddTask(ctx context.Context, goalID, title string) (*Task, err
 		}
 		goalID = g.ID
 	}
-	return s.storage.AddTask(ctx, goalID, title)
+	task, err := s.storage.AddTask(ctx, goalID, title)
+	if err == nil {
+		s.refreshIfActive(ctx, goalID)
+	}
+	return task, err
 }
 
 // SetTaskStatus updates a task's status.
@@ -131,7 +135,40 @@ func (s *Service) SetTaskStatus(ctx context.Context, goalID string, seq int, sta
 		}
 		goalID = g.ID
 	}
-	return s.storage.SetTaskStatus(ctx, goalID, seq, status)
+	if err := s.storage.SetTaskStatus(ctx, goalID, seq, status); err != nil {
+		return err
+	}
+	s.refreshIfActive(ctx, goalID)
+	return nil
+}
+
+// Verify records a foreground check of the complete task set against the
+// goal's success criteria (or title when criteria are omitted). Evidence is
+// mandatory so a pass is auditable rather than a bare boolean.
+func (s *Service) Verify(ctx context.Context, goalID string, passed bool, evidence string) error {
+	if s == nil || s.storage == nil {
+		return fmt.Errorf("goal: Service.Verify: nil storage")
+	}
+	goalID, err := s.resolveGoalID(goalID)
+	if err != nil {
+		return err
+	}
+	_, _, open, err := s.storage.TaskProgress(ctx, goalID)
+	if err != nil {
+		return err
+	}
+	if open > 0 {
+		return fmt.Errorf("%w: %d", ErrOpenTasks, open)
+	}
+	status := VerificationFailed
+	if passed {
+		status = VerificationPassed
+	}
+	if err := s.storage.SetVerification(ctx, goalID, status, evidence); err != nil {
+		return err
+	}
+	s.refreshIfActive(ctx, goalID)
+	return nil
 }
 
 // SetStatus updates a goal's status. Empty goalID means
@@ -148,8 +185,14 @@ func (s *Service) SetStatus(ctx context.Context, goalID string, status Status) e
 		}
 		goalID = g.ID
 	}
-	if err := s.storage.UpdateGoalStatus(ctx, goalID, status); err != nil {
-		return err
+	if status == StatusDone {
+		if err := s.storage.CompleteVerifiedGoal(ctx, goalID); err != nil {
+			return err
+		}
+	} else {
+		if err := s.storage.UpdateGoalStatus(ctx, goalID, status); err != nil {
+			return err
+		}
 	}
 	if status != StatusActive {
 		s.mu.Lock()
@@ -160,6 +203,26 @@ func (s *Service) SetStatus(ctx context.Context, goalID string, status Status) e
 		s.mu.Unlock()
 	}
 	return nil
+}
+
+func (s *Service) resolveGoalID(goalID string) (string, error) {
+	if goalID != "" {
+		return goalID, nil
+	}
+	g := s.Active()
+	if g == nil {
+		return "", fmt.Errorf("goal: no active goal")
+	}
+	return g.ID, nil
+}
+
+func (s *Service) refreshIfActive(ctx context.Context, goalID string) {
+	s.mu.RLock()
+	isActive := s.active != nil && s.active.ID == goalID
+	s.mu.RUnlock()
+	if isActive {
+		_, _ = s.Refresh(ctx)
+	}
 }
 
 // AppendNote appends a timestamped note to a goal.
@@ -261,9 +324,27 @@ func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (
 			}
 			fmt.Fprintf(&b, "  - [%s] %d. %s\n", mark, t.Seq, t.Title)
 		}
+	} else if g.VerificationStatus == VerificationPassed {
+		b.WriteString("verification: passed\n")
+		fmt.Fprintf(&b, "verification_evidence: %s\n", compactVerificationEvidence(g.VerificationEvidence, 240))
+		b.WriteString("completion_ready: true (call goal mark_done only after the final response is ready)\n")
+	} else {
+		b.WriteString("verification_required: true\n")
+		if g.VerificationStatus == VerificationFailed {
+			fmt.Fprintf(&b, "last_verification: failed — %s\n", compactVerificationEvidence(g.VerificationEvidence, 240))
+		}
+		b.WriteString("instruction: verify the result against success_criteria (or the goal title), then call goal verify with passed and concrete evidence; mark_done is blocked until verification passes.\n")
 	}
 	b.WriteString("[end current_goal]\n")
 	return b.String(), nil
+}
+
+func compactVerificationEvidence(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // StatusLine returns a short, single-line summary of
@@ -279,9 +360,19 @@ func (s *Service) StatusLine(ctx context.Context) string {
 	if g == nil {
 		return ""
 	}
-	total, done, err := s.storage.CountTasks(ctx, g.ID)
+	total, terminal, open, err := s.storage.TaskProgress(ctx, g.ID)
 	if err != nil || total == 0 {
 		return fmt.Sprintf("goal: %s", g.Title)
 	}
-	return fmt.Sprintf("goal: %s (%d/%d tasks)", g.Title, done, total)
+	if open == 0 {
+		switch g.VerificationStatus {
+		case VerificationPassed:
+			return fmt.Sprintf("goal: %s (%d/%d tasks, verified)", g.Title, terminal, total)
+		case VerificationFailed:
+			return fmt.Sprintf("goal: %s (%d/%d tasks, verification failed)", g.Title, terminal, total)
+		default:
+			return fmt.Sprintf("goal: %s (%d/%d tasks, verify)", g.Title, terminal, total)
+		}
+	}
+	return fmt.Sprintf("goal: %s (%d/%d tasks)", g.Title, terminal, total)
 }

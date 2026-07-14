@@ -8,6 +8,7 @@
 package tools
 
 import (
+	"supercli/internal/tools/codeintel"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/files"
 	"supercli/internal/tools/interactive"
@@ -15,6 +16,7 @@ import (
 	"supercli/internal/tools/media"
 	"supercli/internal/tools/memorytools"
 	"supercli/internal/tools/office"
+	"supercli/internal/tools/processsession"
 	"supercli/internal/tools/scratchpad"
 	"supercli/internal/tools/search"
 	"supercli/internal/tools/skills"
@@ -22,6 +24,16 @@ import (
 	"supercli/internal/tools/web"
 	"supercli/internal/tools/workflow"
 )
+
+// Lazy language-server code intelligence.
+type CodeIntel = codeintel.Tool
+
+var NewCodeIntel = codeintel.New
+
+// Bounded long-running command sessions.
+type ProcessSession = processsession.Tool
+
+var NewProcessSession = processsession.New
 
 // Core contracts and registry.
 type (

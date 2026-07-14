@@ -8,6 +8,8 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/charmbracelet/x/conpty v0.2.0
+	github.com/creack/pty v1.1.24
 	github.com/crgimenes/glaze v0.0.31
 	github.com/go-ole/go-ole v1.3.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728

@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,11 +51,25 @@ type sessionMeta struct {
 
 // transcriptMsg is one message in a session transcript.
 type transcriptMsg struct {
-	Seq     int             `json:"seq"`
-	Role    string          `json:"role"`
-	Content string          `json:"content"`
-	Name    string          `json:"name,omitempty"`
-	Turn    *transcriptTurn `json:"turn,omitempty"`
+	Seq        int                  `json:"seq"`
+	Role       string               `json:"role"`
+	Content    string               `json:"content"`
+	Name       string               `json:"name,omitempty"`
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+	ToolCalls  []transcriptToolCall `json:"tool_calls,omitempty"`
+	Turn       *transcriptTurn      `json:"turn,omitempty"`
+}
+
+type transcriptPage struct {
+	Messages  []transcriptMsg `json:"messages"`
+	HasMore   bool            `json:"has_more"`
+	BeforeSeq int             `json:"before_seq,omitempty"`
+}
+
+type transcriptToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type transcriptTurn struct {
@@ -79,10 +94,18 @@ type memoryItem struct {
 
 // goalView is the active goal plus its tasks for the goals panel.
 type goalView struct {
-	ID     string     `json:"id"`
-	Title  string     `json:"title"`
-	Status string     `json:"status"`
-	Tasks  []taskView `json:"tasks"`
+	ID                   string     `json:"id"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description,omitempty"`
+	SuccessCriteria      string     `json:"success_criteria,omitempty"`
+	Notes                string     `json:"notes,omitempty"`
+	Status               string     `json:"status"`
+	VerificationStatus   string     `json:"verification_status,omitempty"`
+	VerificationEvidence string     `json:"verification_evidence,omitempty"`
+	VerifiedAt           string     `json:"verified_at,omitempty"`
+	ReadyForVerification bool       `json:"ready_for_verification"`
+	CanFinish            bool       `json:"can_finish"`
+	Tasks                []taskView `json:"tasks"`
 }
 
 // taskView is one task under a goal.
@@ -90,6 +113,18 @@ type taskView struct {
 	Seq    int    `json:"seq"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
+}
+
+type goalMutation struct {
+	Action          string `json:"action"`
+	Title           string `json:"title,omitempty"`
+	Description     string `json:"description,omitempty"`
+	SuccessCriteria string `json:"success_criteria,omitempty"`
+	ParentSessionID string `json:"parent_session_id,omitempty"`
+	TaskSeq         int    `json:"task_seq,omitempty"`
+	Status          string `json:"status,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Passed          *bool  `json:"passed,omitempty"`
 }
 
 // listSessions returns up to limit recent sessions for the active workspace,
@@ -108,11 +143,7 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 	}
 	out := make([]sessionMeta, 0, len(recent))
 	for _, r := range recent {
-		title := ""
-		meta, metaErr := store.Get(r.ID)
-		if metaErr == nil {
-			title = cleanLLMSummary(meta.Title)
-		}
+		title := cleanLLMSummary(r.Title)
 		if title == "" {
 			title = summarizeHistoryMessage(r.FirstUserMsg, defaultHistorySummaryLen)
 		}
@@ -121,11 +152,11 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 			FirstUserMsg:    title,
 			MessageCount:    r.MessageCount,
 			StartedAt:       r.StartedAt.Format(time.RFC3339),
-			Model:           meta.Model,
-			Provider:        meta.Provider,
-			ReasoningEffort: meta.ReasoningEffort,
-			RuntimeKnown:    meta.Provider != "",
-			ParentID:        meta.ParentID,
+			Model:           r.Model,
+			Provider:        r.Provider,
+			ReasoningEffort: r.ReasoningEffort,
+			RuntimeKnown:    r.Provider != "",
+			ParentID:        r.ParentID,
 		})
 	}
 	return out, nil
@@ -288,7 +319,43 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 	if err != nil {
 		return nil, err
 	}
-	turnRows, err := store.ReadTurnSummaries(ctx, id)
+	return buildTranscript(ctx, store, id, rows)
+}
+
+func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit int) (transcriptPage, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return transcriptPage{Messages: []transcriptMsg{}}, nil
+	}
+	meta, err := store.Get(id)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return transcriptPage{}, errSessionOutsideWorkspace
+	}
+	rows, hasMore, err := store.ReadMessagesBefore(ctx, id, beforeSeq, limit)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	messages, err := buildTranscript(ctx, store, id, rows)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	cursor := 0
+	if len(messages) > 0 {
+		cursor = messages[0].Seq
+	}
+	return transcriptPage{Messages: messages, HasMore: hasMore, BeforeSeq: cursor}, nil
+}
+
+func buildTranscript(ctx context.Context, store *session.Store, id string, rows []session.Encoded) ([]transcriptMsg, error) {
+	if len(rows) == 0 {
+		return []transcriptMsg{}, nil
+	}
+	fromSeq, toSeq := 0, 0
+	fromSeq, toSeq = rows[0].Seq, rows[len(rows)-1].Seq
+	turnRows, err := store.ReadTurnSummariesRange(ctx, id, fromSeq, toSeq)
 	if err != nil {
 		return nil, err
 	}
@@ -304,10 +371,16 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 		}
 		textOnly := msg.TextOnly()
 		item := transcriptMsg{
-			Seq:     m.Seq,
-			Role:    m.Role,
-			Content: textOnly.Content,
-			Name:    m.Name,
+			Seq:        m.Seq,
+			Role:       m.Role,
+			Content:    textOnly.Content,
+			Name:       m.Name,
+			ToolCallID: msg.ToolCallID,
+		}
+		for _, call := range msg.ToolCalls {
+			item.ToolCalls = append(item.ToolCalls, transcriptToolCall{
+				ID: call.ID, Name: call.Name, Arguments: call.Arguments,
+			})
 		}
 		if turn, ok := turns[m.Seq]; ok {
 			item.Turn = &transcriptTurn{
@@ -356,36 +429,94 @@ func toMemoryItems(entries []memory.Entry) []memoryItem {
 	return out
 }
 
-// activeGoal returns the current goal and its tasks, or nil when no
-// goal is set. Open/refresh failures degrade to nil so the panel
-// simply shows "no active goal".
+// activeGoal returns the current goal and its tasks, or nil when no goal is
+// set. Refresh observes changes made by the TUI or another running instance.
 func (e *Engine) activeGoal(ctx context.Context) (*goalView, error) {
-	db, err := openDataDB(e.dataDir)
+	svc, err := e.goalService(ctx)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
-	defer db.Close()
-	gs := goal.NewStorage(db)
-	if err := gs.Migrate(ctx); err != nil {
-		return nil, nil
-	}
-	svc := goal.NewService(gs)
 	if _, err := svc.Refresh(ctx); err != nil {
-		return nil, nil
+		return nil, err
 	}
 	g := svc.Active()
 	if g == nil {
 		return nil, nil
 	}
-	tasks, _ := svc.ListTasks(ctx, g.ID)
+	tasks, err := svc.ListTasks(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
 	tv := make([]taskView, 0, len(tasks))
+	open := 0
 	for _, t := range tasks {
 		tv = append(tv, taskView{Seq: t.Seq, Title: t.Title, Status: string(t.Status)})
+		if t.Status != goal.TaskDone && t.Status != goal.TaskSkipped {
+			open++
+		}
+	}
+	verifiedAt := ""
+	if g.VerifiedAt != nil {
+		verifiedAt = g.VerifiedAt.Format(time.RFC3339)
 	}
 	return &goalView{
-		ID:     g.ID,
-		Title:  g.Title,
-		Status: string(g.Status),
-		Tasks:  tv,
+		ID:                   g.ID,
+		Title:                g.Title,
+		Description:          g.Description,
+		SuccessCriteria:      g.SuccessCriteria,
+		Notes:                g.Notes,
+		Status:               string(g.Status),
+		VerificationStatus:   string(g.VerificationStatus),
+		VerificationEvidence: g.VerificationEvidence,
+		VerifiedAt:           verifiedAt,
+		ReadyForVerification: open == 0,
+		CanFinish:            open == 0 && g.VerificationStatus == goal.VerificationPassed,
+		Tasks:                tv,
 	}, nil
+}
+
+// mutateGoal applies one bounded UI operation and returns the fresh active
+// view. Goal history remains in SQLite when a goal is completed or abandoned.
+func (e *Engine) mutateGoal(ctx context.Context, in goalMutation) (*goalView, error) {
+	svc, err := e.goalService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := svc.Refresh(ctx); err != nil {
+		return nil, err
+	}
+	switch strings.TrimSpace(in.Action) {
+	case "set":
+		_, err = svc.Set(ctx, in.Title, strings.TrimSpace(in.Description), strings.TrimSpace(in.SuccessCriteria), strings.TrimSpace(in.ParentSessionID))
+	case "add_task":
+		_, err = svc.AddTask(ctx, "", in.Title)
+	case "set_task_status":
+		status := goal.Status(strings.TrimSpace(in.Status))
+		if !goal.ValidTaskStatus(status) {
+			return nil, fmt.Errorf("invalid task status %q", in.Status)
+		}
+		if in.TaskSeq <= 0 {
+			return nil, fmt.Errorf("task_seq must be positive")
+		}
+		err = svc.SetTaskStatus(ctx, "", in.TaskSeq, status)
+	case "add_note":
+		err = svc.AppendNote(ctx, "", in.Text)
+	case "verify":
+		if in.Passed == nil {
+			return nil, fmt.Errorf("verify requires passed")
+		}
+		err = svc.Verify(ctx, "", *in.Passed, in.Text)
+	case "set_status":
+		status := goal.Status(strings.TrimSpace(in.Status))
+		if status != goal.StatusDone && status != goal.StatusAbandoned {
+			return nil, fmt.Errorf("invalid terminal goal status %q", in.Status)
+		}
+		err = svc.SetStatus(ctx, "", status)
+	default:
+		return nil, fmt.Errorf("unknown goal action %q", in.Action)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return e.activeGoal(ctx)
 }

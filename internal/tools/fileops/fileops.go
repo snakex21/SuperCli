@@ -193,6 +193,8 @@ func EditLine(path string, line int, newContent string) (string, error) {
 	if line < 1 {
 		return "", fmt.Errorf("fileops.EditLine: line=%d must be >= 1", line)
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	lines, err := readLines(path)
 	if err != nil {
 		return "", err
@@ -230,6 +232,8 @@ func EditLine(path string, line int, newContent string) (string, error) {
 //
 // Returns the same ±DiffContext diff as EditLine on success.
 func EditLineAnchored(path string, line int, expectedOld, newContent string) (string, error) {
+	release := LockMutationPaths(path)
+	defer release()
 	lines, err := readLines(path)
 	if err != nil {
 		return "", err
@@ -329,6 +333,8 @@ func EditLinesAnchored(path string, edits []AnchoredEdit) (string, error) {
 	if len(edits) == 0 {
 		return "", fmt.Errorf("fileops.EditLinesAnchored: no edits supplied")
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	lines, err := readLines(path)
 	if err != nil {
 		return "", err
@@ -400,6 +406,8 @@ func InsertAfter(path string, line int, newContent string) (string, error) {
 	if line < 1 {
 		return "", fmt.Errorf("fileops.InsertAfter: line=%d must be >= 1", line)
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	lines, err := readLines(path)
 	if err != nil {
 		return "", err
@@ -430,6 +438,8 @@ func DeleteLines(path string, from, to int) (string, error) {
 	if to < from {
 		return "", fmt.Errorf("fileops.DeleteLines: to=%d must be >= from=%d", to, from)
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	lines, err := readLines(path)
 	if err != nil {
 		return "", err
@@ -533,6 +543,8 @@ func WriteFile(path, content string) (WriteResult, error) {
 	if path == "" {
 		return WriteResult{}, fmt.Errorf("fileops.WriteFile: empty path")
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	_, statErr := os.Stat(path)
 	existed := statErr == nil
 
@@ -558,6 +570,8 @@ func MakeDir(path string) (created bool, err error) {
 	if path == "" {
 		return false, fmt.Errorf("fileops.MakeDir: empty path")
 	}
+	release := LockMutationPaths(path)
+	defer release()
 	if info, statErr := os.Stat(path); statErr == nil {
 		if !info.IsDir() {
 			return false, fmt.Errorf("fileops.MakeDir: %q exists and is a file, not a folder", path)
@@ -586,6 +600,8 @@ func Move(src, dst string) (finalDst string, err error) {
 	if src == "" || dst == "" {
 		return "", fmt.Errorf("fileops.Move: src and dst are required")
 	}
+	release := LockMutationPaths(src, dst)
+	defer release()
 	if _, err := os.Lstat(src); err != nil {
 		return "", FileErr(err, src)
 	}
@@ -622,6 +638,8 @@ func Copy(src, dst string) (finalDst string, err error) {
 	if src == "" || dst == "" {
 		return "", fmt.Errorf("fileops.Copy: src and dst are required")
 	}
+	release := LockMutationPaths(src, dst)
+	defer release()
 	srcInfo, err := os.Lstat(src)
 	if err != nil {
 		return "", FileErr(err, src)
@@ -704,6 +722,8 @@ func Trash(src, trashDir string, now time.Time) (dst string, err error) {
 	if src == "" {
 		return "", fmt.Errorf("fileops.Trash: empty path")
 	}
+	release := LockMutationPaths(src, trashDir)
+	defer release()
 	if _, err := os.Lstat(src); err != nil {
 		return "", FileErr(err, src)
 	}

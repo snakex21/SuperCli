@@ -37,6 +37,9 @@ func (s *Storage) Migrate(ctx context.Context) error {
 			description TEXT NOT NULL DEFAULT '',
 			success_criteria TEXT NOT NULL DEFAULT '',
 			notes TEXT NOT NULL DEFAULT '',
+			verification_status TEXT NOT NULL DEFAULT '',
+			verification_evidence TEXT NOT NULL DEFAULT '',
+			verified_at INTEGER,
 			status TEXT NOT NULL DEFAULT 'active',
 			created_at INTEGER NOT NULL,
 			completed_at INTEGER,
@@ -62,6 +65,51 @@ func (s *Storage) Migrate(ctx context.Context) error {
 			return fmt.Errorf("goal: Migrate exec: %w", err)
 		}
 	}
+	// Existing portable databases predate verification. SQLite has no portable
+	// ADD COLUMN IF NOT EXISTS form, so inspect the schema before each additive
+	// migration. This keeps Migrate idempotent without rebuilding the table.
+	for _, col := range []struct {
+		name string
+		ddl  string
+	}{
+		{"verification_status", "TEXT NOT NULL DEFAULT ''"},
+		{"verification_evidence", "TEXT NOT NULL DEFAULT ''"},
+		{"verified_at", "INTEGER"},
+	} {
+		if err := s.ensureGoalColumn(ctx, col.name, col.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Storage) ensureGoalColumn(ctx context.Context, name, ddl string) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(goals)`)
+	if err != nil {
+		return fmt.Errorf("goal: inspect goals schema: %w", err)
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var column, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &column, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("goal: scan goals schema: %w", err)
+		}
+		if column == name {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE goals ADD COLUMN `+name+` `+ddl); err != nil {
+		return fmt.Errorf("goal: add goals.%s: %w", name, err)
+	}
 	return nil
 }
 
@@ -80,6 +128,9 @@ func (s *Storage) CreateGoal(ctx context.Context, g *Goal) error {
 	if err := validateStatus(g.Status); err != nil {
 		return err
 	}
+	if !ValidVerificationStatus(g.VerificationStatus) {
+		return fmt.Errorf("goal: invalid verification status %q", g.VerificationStatus)
+	}
 	if g.ID == "" {
 		g.ID = generateID(defaultRandBytes)
 	}
@@ -88,9 +139,11 @@ func (s *Storage) CreateGoal(ctx context.Context, g *Goal) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO goals
-			(id, title, description, success_criteria, notes, status, created_at, completed_at, parent_session_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		g.ID, g.Title, g.Description, g.SuccessCriteria, g.Notes, string(g.Status),
+			(id, title, description, success_criteria, notes, verification_status, verification_evidence,
+			 verified_at, status, created_at, completed_at, parent_session_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		g.ID, g.Title, g.Description, g.SuccessCriteria, g.Notes, string(g.VerificationStatus), g.VerificationEvidence,
+		nullableTime(g.VerifiedAt), string(g.Status),
 		g.CreatedAt.UnixNano(), nullableTime(g.CompletedAt), nullableString(g.ParentSessionID),
 	)
 	if err != nil {
@@ -107,6 +160,7 @@ func (s *Storage) GetGoal(ctx context.Context, id string) (*Goal, error) {
 	}
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
+		        verification_status, verification_evidence, verified_at,
 		        status, created_at, completed_at, parent_session_id
 		 FROM goals WHERE id = ?`, id)
 	return scanGoal(row)
@@ -122,6 +176,7 @@ func (s *Storage) ActiveGoal(ctx context.Context) (*Goal, error) {
 	}
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
+		        verification_status, verification_evidence, verified_at,
 		        status, created_at, completed_at, parent_session_id
 		 FROM goals WHERE status = 'active'
 		 ORDER BY created_at DESC, id DESC LIMIT 1`)
@@ -139,6 +194,7 @@ func (s *Storage) ListGoals(ctx context.Context) ([]*Goal, error) {
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
+		        verification_status, verification_evidence, verified_at,
 		        status, created_at, completed_at, parent_session_id
 		 FROM goals ORDER BY created_at DESC, id DESC`)
 	if err != nil {
@@ -230,8 +286,23 @@ func (s *Storage) AddTask(ctx context.Context, goalID, title string) (*Task, err
 		Status:    TaskPending,
 		CreatedAt: time.Now(),
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("goal: AddTask begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var goalStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM goals WHERE id = ?`, goalID).Scan(&goalStatus); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("goal: AddTask goal status: %w", err)
+	}
+	if Status(goalStatus) != StatusActive {
+		return nil, fmt.Errorf("goal: cannot add a task to a %s goal", goalStatus)
+	}
 	var nextSeq int
-	err := s.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(seq), 0) + 1 FROM goal_tasks WHERE goal_id = ?`,
 		goalID,
 	).Scan(&nextSeq)
@@ -239,13 +310,19 @@ func (s *Storage) AddTask(ctx context.Context, goalID, title string) (*Task, err
 		return nil, fmt.Errorf("goal: AddTask seq: %w", err)
 	}
 	t.Seq = nextSeq
-	_, err = s.db.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO goal_tasks (id, goal_id, seq, title, status, created_at, completed_at)
 		 VALUES (?, ?, ?, ?, ?, ?, NULL)`,
 		t.ID, t.GoalID, t.Seq, t.Title, string(t.Status), t.CreatedAt.UnixNano(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("goal: AddTask insert: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, clearVerificationSQL, goalID); err != nil {
+		return nil, fmt.Errorf("goal: AddTask invalidate verification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("goal: AddTask commit: %w", err)
 	}
 	return t, nil
 }
@@ -287,10 +364,16 @@ func (s *Storage) SetTaskStatus(ctx context.Context, goalID string, seq int, sta
 	} else {
 		completedAt = nil
 	}
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("goal: SetTaskStatus begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx,
 		`UPDATE goal_tasks SET status = ?, completed_at = ?
-		 WHERE goal_id = ? AND seq = ?`,
-		string(status), completedAt, goalID, seq,
+		 WHERE goal_id = ? AND seq = ?
+		   AND EXISTS (SELECT 1 FROM goals WHERE id = ? AND status = 'active')`,
+		string(status), completedAt, goalID, seq, goalID,
 	)
 	if err != nil {
 		return fmt.Errorf("goal: SetTaskStatus: %w", err)
@@ -302,7 +385,123 @@ func (s *Storage) SetTaskStatus(ctx context.Context, goalID string, seq int, sta
 	if n == 0 {
 		return ErrNotFound
 	}
+	if _, err := tx.ExecContext(ctx, clearVerificationSQL, goalID); err != nil {
+		return fmt.Errorf("goal: SetTaskStatus invalidate verification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("goal: SetTaskStatus commit: %w", err)
+	}
 	return nil
+}
+
+const clearVerificationSQL = `UPDATE goals
+	SET verification_status = '', verification_evidence = '', verified_at = NULL
+	WHERE id = ?`
+
+// SetVerification stores the latest explicit outcome and its evidence.
+func (s *Storage) SetVerification(ctx context.Context, goalID string, status VerificationStatus, evidence string) error {
+	if status != VerificationPassed && status != VerificationFailed {
+		return fmt.Errorf("goal: invalid verification status %q", status)
+	}
+	evidence = strings.TrimSpace(evidence)
+	if evidence == "" {
+		return fmt.Errorf("goal: verification evidence is empty")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE goals SET verification_status = ?, verification_evidence = ?, verified_at = ?
+		 WHERE id = ? AND status = 'active'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM goal_tasks
+		     WHERE goal_id = ? AND status NOT IN ('done', 'skipped')
+		   )`,
+		string(status), evidence, time.Now().UnixNano(), goalID, goalID,
+	)
+	if err != nil {
+		return fmt.Errorf("goal: SetVerification: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		var exists int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goals WHERE id = ?`, goalID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return ErrNotFound
+		}
+		_, _, open, err := s.TaskProgress(ctx, goalID)
+		if err != nil {
+			return err
+		}
+		if open > 0 {
+			return fmt.Errorf("%w: %d", ErrOpenTasks, open)
+		}
+		g, err := s.GetGoal(ctx, goalID)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("goal: cannot verify goal with status %s", g.Status)
+	}
+	return nil
+}
+
+// CompleteVerifiedGoal atomically enforces the final contract. The conditional
+// update cannot race with a task mutation because both are SQLite writes.
+func (s *Storage) CompleteVerifiedGoal(ctx context.Context, goalID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE goals SET status = 'done', completed_at = ?
+		 WHERE id = ? AND status = 'active'
+		   AND verification_status = 'passed' AND TRIM(verification_evidence) <> ''
+		   AND NOT EXISTS (
+		     SELECT 1 FROM goal_tasks
+		     WHERE goal_id = ? AND status NOT IN ('done', 'skipped')
+		   )`,
+		time.Now().UnixNano(), goalID, goalID,
+	)
+	if err != nil {
+		return fmt.Errorf("goal: CompleteVerifiedGoal: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	g, err := s.GetGoal(ctx, goalID)
+	if err != nil {
+		return err
+	}
+	_, _, open, err := s.TaskProgress(ctx, goalID)
+	if err != nil {
+		return err
+	}
+	if open > 0 {
+		return fmt.Errorf("%w: %d", ErrOpenTasks, open)
+	}
+	if g.VerificationStatus != VerificationPassed || strings.TrimSpace(g.VerificationEvidence) == "" {
+		return ErrVerificationRequired
+	}
+	return fmt.Errorf("goal: cannot complete goal with status %s", g.Status)
+}
+
+// TaskProgress returns total, terminal and open task counts. Done and skipped
+// tasks are terminal; pending and in-progress tasks remain open.
+func (s *Storage) TaskProgress(ctx context.Context, goalID string) (total, terminal, open int, err error) {
+	if s == nil || s.db == nil {
+		return 0, 0, 0, ErrNotFound
+	}
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*),
+		        COALESCE(SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN status NOT IN ('done', 'skipped') THEN 1 ELSE 0 END), 0)
+		 FROM goal_tasks WHERE goal_id = ?`, goalID).Scan(&total, &terminal, &open)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("goal: TaskProgress: %w", err)
+	}
+	return total, terminal, open, nil
 }
 
 // CountTasks returns the number of tasks and the number
@@ -331,11 +530,14 @@ type scannable interface {
 func scanGoal(r scannable) (*Goal, error) {
 	var g Goal
 	var status string
+	var verificationStatus string
 	var createdAt int64
 	var completedAt sql.NullInt64
+	var verifiedAt sql.NullInt64
 	var parentSessionID sql.NullString
 	if err := r.Scan(
 		&g.ID, &g.Title, &g.Description, &g.SuccessCriteria, &g.Notes,
+		&verificationStatus, &g.VerificationEvidence, &verifiedAt,
 		&status, &createdAt, &completedAt, &parentSessionID,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -344,7 +546,12 @@ func scanGoal(r scannable) (*Goal, error) {
 		return nil, fmt.Errorf("goal: scanGoal: %w", err)
 	}
 	g.Status = Status(status)
+	g.VerificationStatus = VerificationStatus(verificationStatus)
 	g.CreatedAt = time.Unix(0, createdAt)
+	if verifiedAt.Valid {
+		t := time.Unix(0, verifiedAt.Int64)
+		g.VerifiedAt = &t
+	}
 	if completedAt.Valid {
 		t := time.Unix(0, completedAt.Int64)
 		g.CompletedAt = &t

@@ -43,6 +43,29 @@ func TestGoalTool_Show_NoActive(t *testing.T) {
 	}
 }
 
+func TestGoalTool_SetCreatesActiveGoal(t *testing.T) {
+	svc := newGoalTestService(t)
+	res, err := NewGoalTool(svc).Execute(context.Background(), jsonRaw(t,
+		`{"action":"set","title":"ship web goals","description":"from the GUI","success_criteria":"all green"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("err=%v res.Err=%v", err, res.Err)
+	}
+	active := svc.Active()
+	if active == nil || active.Title != "ship web goals" || active.Description != "from the GUI" || active.SuccessCriteria != "all green" {
+		t.Fatalf("active goal = %+v", active)
+	}
+	if !strings.Contains(res.Text, "active goal: ship web goals") {
+		t.Errorf("got %q", res.Text)
+	}
+}
+
+func TestGoalTool_SetRequiresTitle(t *testing.T) {
+	res, err := NewGoalTool(newGoalTestService(t)).Execute(context.Background(), jsonRaw(t, `{"action":"set"}`))
+	if err == nil || res.Err == nil {
+		t.Fatalf("expected validation error, got err=%v result=%+v", err, res)
+	}
+}
+
 func TestGoalTool_Show_Active(t *testing.T) {
 	svc := newGoalTestService(t)
 	ctx := context.Background()
@@ -156,12 +179,35 @@ func TestGoalTool_MarkDone(t *testing.T) {
 	svc := newGoalTestService(t)
 	ctx := context.Background()
 	_, _ = svc.Set(ctx, "x", "", "", "")
+	verified, err := NewGoalTool(svc).Execute(ctx, jsonRaw(t, `{"action":"verify","passed":true,"text":"manual acceptance passed"}`))
+	if err != nil || verified.Err != nil {
+		t.Fatalf("verify err=%v res.Err=%v", err, verified.Err)
+	}
 	res, _ := NewGoalTool(svc).Execute(ctx, jsonRaw(t, `{"action":"mark_done"}`))
 	if !strings.Contains(res.Text, "done") {
 		t.Errorf("got %q", res.Text)
 	}
 	if svc.Active() != nil {
 		t.Error("active should be cleared after mark_done")
+	}
+}
+
+func TestGoalTool_MarkDoneRejectsMissingVerification(t *testing.T) {
+	svc := newGoalTestService(t)
+	ctx := context.Background()
+	_, _ = svc.Set(ctx, "x", "", "", "")
+	res, err := NewGoalTool(svc).Execute(ctx, jsonRaw(t, `{"action":"mark_done"}`))
+	if err == nil || res.Err == nil || !strings.Contains(err.Error(), "verification required") {
+		t.Fatalf("mark_done err=%v result=%+v", err, res)
+	}
+}
+
+func TestGoalTool_VerifyRequiresEvidence(t *testing.T) {
+	svc := newGoalTestService(t)
+	_, _ = svc.Set(context.Background(), "x", "", "", "")
+	_, err := NewGoalTool(svc).Execute(context.Background(), jsonRaw(t, `{"action":"verify","passed":true}`))
+	if err == nil || !strings.Contains(err.Error(), "evidence") {
+		t.Fatalf("verify error = %v", err)
 	}
 }
 

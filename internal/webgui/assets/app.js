@@ -109,13 +109,15 @@ function toast(msg) {
 
 var I18N = {
   en: {
-    "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects", "side.tasks": "Tasks",
+    "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects", "side.tasks": "Tasks", "side.goal": "Goal",
     "side.add": "add", "side.noSessions": "No sessions yet.", "side.noProjects": "No projects registered.",
     "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name",
     "session.deleteConfirm": "Delete this conversation permanently?", "session.renamed": "Conversation renamed.",
     "session.deleted": "Conversation deleted.", "session.stopRun": "Stop the current run before deleting this conversation.",
     "session.runtime": "Remember chat model", "session.runtimeHint": "Restore this session's provider, model and reasoning level when it is opened.",
     "session.runtimeFailed": "Could not restore the session model; keeping the current selection.",
+    "session.older": "Show older messages", "session.loadingOlder": "Loading older messages…",
+    "session.today": "Today", "session.yesterday": "Yesterday",
     "project.stopRun": "Stop the current run before switching projects.",
     "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save", "common.openFolder": "Open folder",
     "common.openProjectFolder": "Open project folder", "common.closePanel": "Close side panel",
@@ -139,6 +141,11 @@ var I18N = {
 	"undo.undo": "Undo changes", "undo.redo": "Restore changes", "undo.done": "Changes undone.",
 	"undo.redone": "Changes restored.", "undo.conflict": "Undo stopped: files changed after the agent turn.",
     "run.done": "Done", "run.tools": "tools", "run.think": "think", "run.cached": "cached", "tool.running": "running",
+    "tool.input": "Input", "tool.output": "Output", "tool.error": "Error", "tool.stdout": "Output", "tool.stderr": "Error output",
+    "tool.ctx_execute": "Command", "tool.process_session": "Process", "tool.list_dir": "Folder contents",
+    "tool.read_lines": "Read file", "tool.read_many": "Read files", "tool.read_context": "Read context",
+    "tool.search_code": "Search code", "tool.edit_line": "Edit file", "tool.edit_lines": "Edit file",
+    "tool.insert_after": "Insert line", "tool.delete_lines": "Delete lines", "tool.write_file": "Write file",
     "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
     "task.brief": "Task", "task.activity": "Activity", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
     "task.input": "input", "task.output": "output",
@@ -205,6 +212,31 @@ var I18N = {
     "mcp.openPackages": "Open package folder", "mcp.noPackages": "No portable packages installed.",
     "mcp.ready": "ready", "mcp.running": "running", "mcp.disabled": "disabled", "mcp.unavailable": "unavailable", "mcp.lazy": "lazy start",
     "mem.empty": "No memory entries.", "goal.none": "No active goal.",
+    "goal.noneHint": "Create one for work that spans several steps or sessions.",
+    "goal.new": "New goal", "goal.title": "What should be accomplished?", "goal.description": "Context (optional)",
+    "goal.criteria": "Definition of done (optional)", "goal.create": "Create goal", "goal.tasks": "Steps",
+    "goal.noTasks": "No steps yet.", "goal.addTask": "Add step", "goal.taskPlaceholder": "Next concrete step",
+    "goal.start": "Start", "goal.complete": "Complete", "goal.skip": "Skip", "goal.reopen": "Reopen",
+    "goal.finish": "Finish goal", "goal.abandon": "Abandon", "goal.finishConfirm": "Mark this goal as completed?",
+    "goal.abandonConfirm": "Abandon this goal? Its history will remain saved.", "goal.progress": "Progress",
+    "goal.notes": "Progress note", "goal.notePlaceholder": "Decision, result or blocker", "goal.addNote": "Add note",
+    "goal.descriptionLabel": "Context", "goal.criteriaLabel": "Done when", "goal.updated": "Goal updated.",
+    "goal.verification": "Final verification", "goal.verificationWaiting": "Complete or skip every open step before verification.",
+    "goal.verificationReady": "Check the finished work against the definition of done and record concrete evidence.",
+    "goal.verificationPassed": "Verified — ready to finish", "goal.verificationFailed": "Verification failed — more work is required",
+    "goal.verificationEvidence": "Evidence", "goal.verifyPlaceholder": "Checks run and their results", "goal.verifyPass": "Verification passed",
+    "goal.verifyFail": "Needs more work", "goal.finishBlocked": "Finish every step and record a successful verification first.",
+    "goal.awaitingVerification": "Awaiting verification", "goal.readyToFinish": "Verified — ready to finish",
+    "goal.status.active": "active", "goal.status.pending": "pending", "goal.status.in_progress": "in progress",
+    "goal.status.done": "done", "goal.status.skipped": "skipped",
+    "goal.manage": "manage", "goal.sideHelpLabel": "How does Goal work?",
+    "goal.sideHelpTitle": "How Goal works",
+    "goal.sideHelpPurpose": "It is a persistent plan for work spanning multiple messages or sessions.",
+    "goal.sideHelpAgent": "The agent sees the active goal and open steps in every turn, and can update steps and notes as it works.",
+    "goal.sideHelpFinish": "After every step is finished, the result must pass a concrete verification. Only then can you or the agent explicitly close the goal.",
+    "goal.sideHelpNoBackground": "It does not start background work or extra model calls by itself.",
+    "goal.sideEmpty": "No active goal.", "goal.sideEmptyHint": "Use it for work that should survive more than one message.",
+    "goal.openSteps": "open steps", "goal.currentStep": "Current step", "goal.nextSteps": "Next steps",
     "usage.model": "Model", "usage.session": "Session tokens", "usage.daily": "Tokens today",
     "usage.context": "Context report", "usage.summary": "Session summary", "usage.details": "Session details",
     "usage.noSession": "Start or select a session to collect persistent usage statistics.",
@@ -239,13 +271,15 @@ var I18N = {
     "status.connected": "connected", "status.connecting": "connecting…", "status.offline": "server unreachable",
   },
   pl: {
-    "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty", "side.tasks": "Zadania",
+    "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty", "side.tasks": "Zadania", "side.goal": "Cel",
     "side.add": "dodaj", "side.noSessions": "Brak sesji.", "side.noProjects": "Brak projektów.",
     "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy",
     "session.deleteConfirm": "Usunąć tę rozmowę na stałe?", "session.renamed": "Zmieniono nazwę rozmowy.",
     "session.deleted": "Usunięto rozmowę.", "session.stopRun": "Zatrzymaj trwającą odpowiedź przed usunięciem tej rozmowy.",
     "session.runtime": "Pamiętaj model czatu", "session.runtimeHint": "Po otwarciu sesji przywróć jej provider, model i poziom myślenia.",
     "session.runtimeFailed": "Nie udało się przywrócić modelu sesji; pozostawiono bieżący wybór.",
+    "session.older": "Pokaż starsze wiadomości", "session.loadingOlder": "Wczytuję starsze wiadomości…",
+    "session.today": "Dzisiaj", "session.yesterday": "Wczoraj",
     "project.stopRun": "Zatrzymaj bieżące zadanie przed zmianą projektu.",
     "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz", "common.openFolder": "Otwórz folder",
     "common.openProjectFolder": "Otwórz folder projektu", "common.closePanel": "Zamknij panel boczny",
@@ -269,6 +303,11 @@ var I18N = {
 	"undo.undo": "Cofnij zmiany", "undo.redo": "Przywróć zmiany", "undo.done": "Cofnięto zmiany.",
 	"undo.redone": "Przywrócono zmiany.", "undo.conflict": "Cofanie zatrzymane: pliki zmieniono po turze agenta.",
     "run.done": "Gotowe", "run.tools": "narzędzia", "run.think": "myślenie", "run.cached": "z cache", "tool.running": "pracuje",
+    "tool.input": "Dane wejściowe", "tool.output": "Wynik", "tool.error": "Błąd", "tool.stdout": "Wynik", "tool.stderr": "Wyjście błędu",
+    "tool.ctx_execute": "Komenda", "tool.process_session": "Proces", "tool.list_dir": "Zawartość folderu",
+    "tool.read_lines": "Odczyt pliku", "tool.read_many": "Odczyt plików", "tool.read_context": "Kontekst pliku",
+    "tool.search_code": "Szukanie w kodzie", "tool.edit_line": "Edycja pliku", "tool.edit_lines": "Edycja pliku",
+    "tool.insert_after": "Dodanie linii", "tool.delete_lines": "Usunięcie linii", "tool.write_file": "Zapis pliku",
     "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
     "task.brief": "Zadanie", "task.activity": "Aktywność", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
     "task.input": "wej.", "task.output": "wyj.",
@@ -335,6 +374,31 @@ var I18N = {
     "mcp.openPackages": "Otwórz folder paczek", "mcp.noPackages": "Brak zainstalowanych paczek przenośnych.",
     "mcp.ready": "gotowa", "mcp.running": "uruchomiona", "mcp.disabled": "wyłączona", "mcp.unavailable": "niedostępna", "mcp.lazy": "start na żądanie",
     "mem.empty": "Brak wpisów pamięci.", "goal.none": "Brak aktywnego celu.",
+    "goal.noneHint": "Utwórz go dla pracy obejmującej kilka kroków lub sesji.",
+    "goal.new": "Nowy cel", "goal.title": "Co ma zostać osiągnięte?", "goal.description": "Kontekst (opcjonalnie)",
+    "goal.criteria": "Warunek ukończenia (opcjonalnie)", "goal.create": "Utwórz cel", "goal.tasks": "Kroki",
+    "goal.noTasks": "Brak kroków.", "goal.addTask": "Dodaj krok", "goal.taskPlaceholder": "Następny konkretny krok",
+    "goal.start": "Rozpocznij", "goal.complete": "Ukończ", "goal.skip": "Pomiń", "goal.reopen": "Otwórz ponownie",
+    "goal.finish": "Zakończ cel", "goal.abandon": "Porzuć", "goal.finishConfirm": "Oznaczyć ten cel jako ukończony?",
+    "goal.abandonConfirm": "Porzucić ten cel? Jego historia pozostanie zapisana.", "goal.progress": "Postęp",
+    "goal.notes": "Notatka postępu", "goal.notePlaceholder": "Decyzja, wynik lub blokada", "goal.addNote": "Dodaj notatkę",
+    "goal.descriptionLabel": "Kontekst", "goal.criteriaLabel": "Gotowe, gdy", "goal.updated": "Cel zaktualizowany.",
+    "goal.verification": "Weryfikacja końcowa", "goal.verificationWaiting": "Najpierw ukończ lub świadomie pomiń wszystkie otwarte kroki.",
+    "goal.verificationReady": "Sprawdź gotową pracę względem warunku ukończenia i zapisz konkretny dowód.",
+    "goal.verificationPassed": "Zweryfikowano — można zakończyć", "goal.verificationFailed": "Weryfikacja nieudana — potrzebna jest dalsza praca",
+    "goal.verificationEvidence": "Dowód", "goal.verifyPlaceholder": "Wykonane sprawdzenia i ich wyniki", "goal.verifyPass": "Weryfikacja udana",
+    "goal.verifyFail": "Wymaga poprawek", "goal.finishBlocked": "Najpierw ukończ kroki i zapisz pozytywną weryfikację.",
+    "goal.awaitingVerification": "Czeka na weryfikację", "goal.readyToFinish": "Zweryfikowano — można zakończyć",
+    "goal.status.active": "aktywny", "goal.status.pending": "oczekuje", "goal.status.in_progress": "w toku",
+    "goal.status.done": "gotowe", "goal.status.skipped": "pominięte",
+    "goal.manage": "zarządzaj", "goal.sideHelpLabel": "Jak działa Cel?",
+    "goal.sideHelpTitle": "Jak działa Cel",
+    "goal.sideHelpPurpose": "To trwały plan dla pracy obejmującej wiele wiadomości lub sesji.",
+    "goal.sideHelpAgent": "Agent widzi aktywny cel i otwarte kroki w każdej turze. Podczas pracy może aktualizować kroki oraz dopisywać wyniki, decyzje i blokady.",
+    "goal.sideHelpFinish": "Po wykonaniu kroków wynik musi przejść konkretną weryfikację. Dopiero wtedy Ty lub agent możecie świadomie zamknąć cel.",
+    "goal.sideHelpNoBackground": "Cel sam nie uruchamia pracy w tle ani dodatkowych wywołań modelu.",
+    "goal.sideEmpty": "Brak aktywnego celu.", "goal.sideEmptyHint": "Użyj go, gdy praca powinna przetrwać więcej niż jedną wiadomość.",
+    "goal.openSteps": "otwarte kroki", "goal.currentStep": "Bieżący krok", "goal.nextSteps": "Następne kroki",
     "usage.model": "Model", "usage.session": "Tokeny sesji", "usage.daily": "Tokeny dziś",
     "usage.context": "Raport kontekstu", "usage.summary": "Podsumowanie sesji", "usage.details": "Szczegóły sesji",
     "usage.noSession": "Rozpocznij lub wybierz sesję, aby zbierać trwałe statystyki użycia.",
@@ -694,9 +758,15 @@ function renderText(text) {
 /* ═══ transcript ═══ */
 
 var stage = $("#stage"), stream = $("#stream"), welcome = $("#welcome");
+var streamAppendTarget = null;
+
+function appendStream(node) {
+  (streamAppendTarget || stream).appendChild(node);
+}
 
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
 function smartScroll(force) {
+  if (streamAppendTarget) return;
   if (force || nearBottom()) stage.scrollTop = stage.scrollHeight;
 }
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
@@ -705,7 +775,7 @@ function showWelcome() { if (welcome) welcome.style.display = ""; }
 function addUserMsg(text) {
   hideWelcome();
   var m = el("div", "msg-user", text);
-  stream.appendChild(m);
+  appendStream(m);
   smartScroll(true);
   return m;
 }
@@ -713,7 +783,7 @@ function addAssistantMsg() {
   var m = el("div", "msg-assistant");
   m._raw = "";
   m._renderTimer = null;
-  stream.appendChild(m);
+  appendStream(m);
   return m;
 }
 function renderAssistant(node) {
@@ -759,7 +829,7 @@ function addEventLine(text, cls, tag) {
     line.appendChild(tg);
   }
   line.appendChild(document.createTextNode(text));
-  stream.appendChild(line);
+  appendStream(line);
   smartScroll();
   return line;
 }
@@ -779,6 +849,21 @@ function noticeTag(text) {
 var toolRows = {}; // provider tool-call id -> row
 var workerRows = {}; // worker task id -> delegated-task row
 var openToolOrder = []; // ids without results yet
+
+function toolDisplayName(name) {
+  var key = "tool." + name;
+  var translated = t(key);
+  return translated === key ? name : translated;
+}
+
+function commandPreview(command) {
+  if (!Array.isArray(command)) command = [command];
+  return "$ " + command.filter(function (part) { return part != null && String(part) !== ""; }).map(function (part) {
+    part = String(part);
+    return /^[\w@%+=:,./\\-]+$/.test(part) ? part : JSON.stringify(part);
+  }).join(" ");
+}
+
 function toolHint(name, args) {
   try {
     var a = JSON.parse(args || "{}");
@@ -789,15 +874,118 @@ function toolHint(name, args) {
         hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
       };
     }
-    var keys = ["path", "file", "dir", "query", "pattern", "cmd", "command", "prompt", "text"];
+    var display = toolDisplayName(name);
+    if (a.command) {
+      var action = name === "process_session" && a.action ? String(a.action) + " · " : "";
+      return { name: display, hint: clip(action + commandPreview(a.command), 150) };
+    }
+    if (a.cmd) return { name: display, hint: clip(commandPreview(a.cmd), 150) };
+    var keys = ["path", "file", "dir", "query", "pattern", "prompt", "text"];
     for (var i = 0; i < keys.length; i++) {
-      if (a[keys[i]]) return { name: name, hint: clip(String(a[keys[i]]), 90) };
+      if (a[keys[i]]) {
+        var detail = String(a[keys[i]]);
+        if (a.line) detail += " · " + a.line;
+        else if (a.from) detail += " · " + a.from + (a.to ? "–" + a.to : "");
+        return { name: display, hint: clip(detail, 150) };
+      }
     }
     var flat = Object.keys(a).map(function (k) { return k + "=" + clip(JSON.stringify(a[k]), 30); }).join(" ");
-    return { name: name, hint: clip(flat, 90) };
+    return { name: display, hint: clip(flat, 150) };
   } catch (e) {
-    return { name: name, hint: clip(args || "", 90) };
+    return { name: toolDisplayName(name), hint: clip(args || "", 150) };
   }
+}
+
+var DIFF_TOOLS = {
+  edit_line: true, edit_lines: true, insert_after: true, delete_lines: true,
+  apply_patch: true, patch: true,
+};
+
+var FILE_READ_TOOLS = {
+  read_lines: true, read_context: true, read_many: true,
+};
+
+function appendFileReadPayload(body, text) {
+  var viewer = el("div", "tool-file-view");
+  String(text == null ? "" : text).split(/\r?\n/).forEach(function (line) {
+    var numbered = line.match(/^\s*(\d+)\s*\|\s?(.*)$/);
+    if (numbered) {
+      var row = el("div", "file-code-line");
+      row.appendChild(el("span", "file-line-no", numbered[1]));
+      row.appendChild(el("code", "file-line-code", numbered[2] || " "));
+      viewer.appendChild(row);
+      return;
+    }
+    var section = line.match(/^==\s*(.*?)\s*==$/);
+    if (section) {
+      viewer.appendChild(el("div", "file-code-section", section[1]));
+      return;
+    }
+    if (/^\[read_many:/.test(line)) {
+      viewer.appendChild(el("div", "file-code-summary", line));
+      return;
+    }
+    if (line || viewer.childNodes.length === 0) {
+      viewer.appendChild(el("div", /^error:/i.test(line) ? "file-code-note error" : "file-code-note", line || " "));
+    }
+  });
+  body.appendChild(viewer);
+}
+
+function toolChangeStats(name, text) {
+  if (!DIFF_TOOLS[name]) return { added: 0, removed: 0, diff: false };
+  var stats = { added: 0, removed: 0, diff: false };
+  String(text || "").split(/\r?\n/).forEach(function (line) {
+    if (/^\+(?!\+\+)/.test(line)) { stats.added++; stats.diff = true; }
+    else if (/^-(?!---)/.test(line)) { stats.removed++; stats.diff = true; }
+  });
+  return stats;
+}
+
+function appendToolPayload(body, label, text, name, isError) {
+  var raw = String(text == null ? "" : text);
+  if (FILE_READ_TOOLS[name] && !isError) {
+    appendFileReadPayload(body, raw);
+    return;
+  }
+  body.appendChild(el("div", "lbl", label));
+  if (name === "ctx_execute" && !isError) {
+    try {
+      var execution = JSON.parse(raw);
+      if (execution && Object.prototype.hasOwnProperty.call(execution, "exit_code")) {
+        var meta = el("div", "tool-exec-meta");
+        meta.appendChild(el("span", execution.exit_code === 0 ? "ok" : "err", "exit " + execution.exit_code));
+        if (execution.duration_ms != null) meta.appendChild(el("span", "", fmtDuration(Number(execution.duration_ms))));
+        if (execution.workdir) meta.appendChild(el("span", "", execution.workdir));
+        body.appendChild(meta);
+        if (execution.stdout) appendToolPayload(body, t("tool.stdout"), execution.stdout, "", false);
+        if (execution.stderr) appendToolPayload(body, t("tool.stderr"), execution.stderr, "", true);
+        if (!execution.stdout && !execution.stderr) body.appendChild(el("pre", "tool-output", "(empty)"));
+        return;
+      }
+    } catch (e) {}
+  }
+  var changes = toolChangeStats(name, raw);
+  if (!changes.diff) {
+    body.appendChild(el("pre", "tool-output" + (isError ? " error" : ""), raw || "(empty)"));
+    return;
+  }
+  var diff = el("div", "tool-diff");
+  raw.split(/\r?\n/).forEach(function (line) {
+    var cls = "diff-line";
+    if (/^\+(?!\+\+)/.test(line)) cls += " added";
+    else if (/^-(?!---)/.test(line)) cls += " removed";
+    else cls += " context";
+    diff.appendChild(el("div", cls, line || " "));
+  });
+  body.appendChild(diff);
+}
+
+function setToolResultStatus(row, elapsed, err, changes) {
+  row._stat.innerHTML = "";
+  if (changes && changes.added) row._stat.appendChild(el("span", "change-add", "+" + changes.added));
+  if (changes && changes.removed) row._stat.appendChild(el("span", "change-remove", "−" + changes.removed));
+  row._stat.appendChild(el("span", err ? "status-error" : "", (err ? "× · " : "") + fmtDuration(elapsed)));
 }
 
 // task results use a compact XML envelope for the model. Keep that protocol
@@ -897,7 +1085,7 @@ function addHistoryTask(note) {
   row.appendChild(row._body);
   renderTaskResult(row, note, null, "", note.status === "failed");
   row.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
-  stream.appendChild(row);
+  appendStream(row);
   return row;
 }
 function addToolCall(name, args, id) {
@@ -906,6 +1094,7 @@ function addToolCall(name, args, id) {
   row.className = "tool-row";
   var sum = el("summary");
   var title = el("span", "tname", info.name);
+  title.title = name;
   var hint = el("span", "thint", info.hint);
   sum.appendChild(title);
   sum.appendChild(hint);
@@ -914,13 +1103,15 @@ function addToolCall(name, args, id) {
   row.appendChild(sum);
   var body = el("div", "tbody");
   body.hidden = true;
-  var lblA = el("div", "lbl", "args");
-  body.appendChild(lblA);
-  body.appendChild(el("pre", "", prettyJSON(args)));
+  if (!FILE_READ_TOOLS[name]) {
+    var lblA = el("div", "lbl", t("tool.input"));
+    body.appendChild(lblA);
+    body.appendChild(el("pre", "", prettyJSON(args)));
+  }
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
   row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
-  row._toolName = name; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
+  row._toolName = name; row._toolArgs = args || "{}"; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
   row._t0 = performance.now();
   if (name === "task") {
     row.classList.add("task-row");
@@ -938,7 +1129,7 @@ function addToolCall(name, args, id) {
   }
   updateElapsed();
   row._clock = setInterval(updateElapsed, 250);
-  stream.appendChild(row);
+  appendStream(row);
   var key = id || ("~" + openToolOrder.length);
   toolRows[key] = row;
   openToolOrder.push(key);
@@ -953,6 +1144,7 @@ function addToolResult(id, output, err) {
   clearInterval(row._clock);
   row._clock = null;
   row.classList.remove("running");
+  row.classList.add(err ? "failed" : "done");
   var ms = performance.now() - row._t0;
   var task = row._toolName === "task" ? parseTaskNotification(output || err) : null;
   if (task) {
@@ -961,11 +1153,12 @@ function addToolResult(id, output, err) {
     smartScroll();
     return;
   }
-  row._stat.textContent = (err ? "✕ " : "") + fmtDuration(ms);
+  var payload = err || output || "";
+  var changes = toolChangeStats(row._toolName, payload);
+  if (changes.diff) row.classList.add("has-changes");
   if (err) row._stat.classList.add("err");
-  var lbl = el("div", "lbl", err ? "error" : "output");
-  row._body.appendChild(lbl);
-  row._body.appendChild(el("pre", "", err || output || "(empty)"));
+  setToolResultStatus(row, ms, err, changes);
+  appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err);
   smartScroll();
 }
 function settleOpenTools() {
@@ -1050,7 +1243,7 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	  var fork = el("button", "turn-undo", t("workflow.fork")); fork.type="button";
 	  fork.addEventListener("click", function(){ forkSession(activeSessionID, seq); }); line.appendChild(fork);
 	}
-	stream.appendChild(line);
+	appendStream(line);
   smartScroll();
 }
 
@@ -1094,20 +1287,26 @@ function askUndoLesson(checkpointID) {
   actions.appendChild(skip);actions.appendChild(save);panel.appendChild(actions);overlay.appendChild(panel);document.body.appendChild(overlay);input.focus();
 }
 
+var checkpointLoadSeq = 0;
 async function loadCheckpointAction(sessionID) {
+  var seq = ++checkpointLoadSeq;
   try {
     var data = await j("/api/checkpoint?session=" + encodeURIComponent(sessionID));
+    if (seq !== checkpointLoadSeq || sessionID !== activeSessionID) return;
     if (!data.available || !data.record) return;
+    var previous = stream.querySelector(".checkpoint-history");
+    if (previous) previous.remove();
     var row = el("div", "checkpoint-history");
     row.appendChild(el("span", "", data.record.files.length + " " + t("run.tools")));
     row.appendChild(checkpointButton(data.record));
-    stream.appendChild(row);
+    appendStream(row);
   } catch (e) {}
 }
 
 /* ═══ chat streaming ═══ */
 
 var streaming = false, abortCtl = null, activeSessionID = "", projectEpoch = 0;
+var sessionRuntimeReady = Promise.resolve();
 var activeQuestionOverlay = null;
 var runStart = 0, runTimer = null, runToolCount = 0;
 var lastTurn = null;    // last done-event payload + elapsed (stats pane)
@@ -1190,7 +1389,91 @@ function renderTaskCenter() {
 	if (i > 0) { var up=el("button","queue-action","↑"); up.title="Move up"; up.addEventListener("click",async function(){try{await j("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:item.id,position:i-1})});await loadPromptQueue();}catch(e){toast(e.message);}}); row.insertBefore(up,go); }
   });
 }
+
+var sideGoalSeq = 0;
+function renderSideGoal(got) {
+  var host = $("#side-goal");
+  if (!host) return;
+  host.innerHTML = "";
+  host.removeAttribute("aria-busy");
+  if (!got) {
+    var empty = el("div", "side-goal-empty");
+    empty.appendChild(el("div", "side-goal-empty-title", t("goal.sideEmpty")));
+    empty.appendChild(el("div", "side-goal-empty-copy", t("goal.sideEmptyHint")));
+    var create = el("button", "side-goal-manage", t("goal.create"));
+    create.type = "button";
+    create.addEventListener("click", function () { openPanel("goal"); });
+    empty.appendChild(create);
+    host.appendChild(empty);
+    return;
+  }
+
+  var tasks = got.tasks || [];
+  var open = tasks.filter(function (task) { return task.status !== "done" && task.status !== "skipped"; });
+  var terminal = tasks.length - open.length;
+  var intro = el("div", "side-goal-intro");
+  var status = el("div", "side-goal-status");
+  status.appendChild(el("span", "side-goal-dot"));
+  status.appendChild(document.createTextNode(goalStatus(got.status)));
+  intro.appendChild(status);
+  intro.appendChild(el("div", "side-goal-title", got.title));
+  host.appendChild(intro);
+
+  var progressMeta = el("div", "side-goal-progress-meta");
+  progressMeta.appendChild(el("span", "", t("goal.progress")));
+  progressMeta.appendChild(el("span", "", terminal + " / " + tasks.length));
+  host.appendChild(progressMeta);
+  var progress = el("div", "side-goal-progress");
+  var fill = el("span");
+  fill.style.width = (tasks.length ? terminal * 100 / tasks.length : 0) + "%";
+  progress.appendChild(fill);
+  progress.setAttribute("aria-label", t("goal.progress") + ": " + terminal + " / " + tasks.length);
+  host.appendChild(progress);
+
+  if (!open.length) {
+	var verificationCopy = t("goal.awaitingVerification");
+	var verificationClass = " awaiting";
+	if (got.verification_status === "passed") {
+	  verificationCopy = t("goal.readyToFinish");
+	  verificationClass = " passed";
+	} else if (got.verification_status === "failed") {
+	  verificationCopy = t("goal.verificationFailed");
+	  verificationClass = " failed";
+	}
+	host.appendChild(el("div", "side-goal-all-done" + verificationClass, verificationCopy));
+    return;
+  }
+  var active = open.filter(function (task) { return task.status === "in_progress"; })[0] || null;
+  host.appendChild(el("div", "side-goal-steps-label", active ? t("goal.currentStep") : t("goal.nextSteps")));
+  var visible = active ? [active].concat(open.filter(function (task) { return task !== active; })) : open;
+  visible.slice(0, 3).forEach(function (task) {
+    var row = el("div", "side-goal-step" + (task === active ? " current" : ""));
+    row.appendChild(el("span", "side-goal-step-index", String(task.seq).padStart(2, "0")));
+    var copy = el("div", "side-goal-step-copy");
+    copy.appendChild(el("div", "side-goal-step-title", task.title));
+    copy.appendChild(el("div", "side-goal-step-status", goalStatus(task.status)));
+    row.appendChild(copy);
+    host.appendChild(row);
+  });
+  if (visible.length > 3) host.appendChild(el("div", "side-goal-more", "+" + (visible.length - 3) + " · " + t("goal.openSteps")));
+}
+async function loadSideGoal() {
+  var host = $("#side-goal");
+  if (!host) return;
+  var seq = ++sideGoalSeq;
+  host.setAttribute("aria-busy", "true");
+  try {
+    var got = await j("/api/goal");
+    if (seq === sideGoalSeq) renderSideGoal(got);
+  } catch (e) {
+    if (seq !== sideGoalSeq) return;
+    host.removeAttribute("aria-busy");
+    host.innerHTML = "";
+    host.appendChild(el("div", "side-empty", e.message));
+  }
+}
 $("#reload-tasks").addEventListener("click", loadPromptQueue);
+$("#manage-side-goal").addEventListener("click", function () { openPanel("goal"); });
 async function prepareQueuedTask(item) {
   if (!item || !item.session_id) return;
   activeSessionID = item.session_id;
@@ -1209,6 +1492,25 @@ function setRunState(state, text) {
 
 async function sendPrompt(text) {
   if (streaming) return;
+  // A reopened conversation becomes visible before its remembered model has
+  // necessarily finished switching. Never let an immediate Enter use the
+  // previous session's runtime; if another session wins meanwhile, await it.
+  for (;;) {
+    var readyRuntime = sessionRuntimeReady;
+    await readyRuntime;
+    if (readyRuntime === sessionRuntimeReady) break;
+  }
+  if (streaming) return;
+  // Once a live turn starts, the DOM becomes append-only again. Retire the
+  // history pager so a late older-page response cannot rebuild the transcript
+  // over messages currently arriving from SSE.
+  if (transcriptAbortCtl) transcriptAbortCtl.abort();
+  transcriptAbortCtl = null;
+  transcriptHasMore = false;
+  transcriptBeforeSeq = 0;
+  loadedTranscriptMessages = [];
+  var olderHistory = stream.querySelector(".history-older");
+  if (olderHistory) olderHistory.remove();
   streaming = true;
   abortCtl = new AbortController();
   runToolCount = 0;
@@ -1297,6 +1599,10 @@ async function sendPrompt(text) {
     promptEl.focus();
     loadSessions();
     renderStats();
+    // A model may have updated the durable goal through its tool during this
+    // turn. Keep an already-open Goal panel in sync without polling.
+    if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
+    if ($("#side-tab-goal").classList.contains("active")) loadSideGoal();
     var immediate = pendingImmediate;
     pendingImmediate = null;
 	var next = "";
@@ -1503,6 +1809,12 @@ $$(".welcome .hints button").forEach(function (b) {
 
 function newSession() {
   if (streaming) return;
+  if (transcriptAbortCtl) transcriptAbortCtl.abort();
+  transcriptAbortCtl = null;
+  loadedTranscriptMessages = [];
+  transcriptHasMore = false;
+  transcriptBeforeSeq = 0;
+  transcriptSessionID = "";
   activeSessionID = "";
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
@@ -1611,6 +1923,7 @@ $("#side-tabs").addEventListener("click", function (e) {
   if (b.dataset.tab === "stats") renderStats();
   if (b.dataset.tab === "sessions") loadSessions();
   if (b.dataset.tab === "projects") loadProjects();
+  if (b.dataset.tab === "goal") loadSideGoal();
 });
 $("#side-tabs").addEventListener("keydown", function (e) {
   if (["ArrowLeft", "ArrowRight", "Home", "End"].indexOf(e.key) < 0) return;
@@ -1864,6 +2177,43 @@ async function renderStats() {
 /* ═══ sessions ═══ */
 
 var sessionByID = {};
+var sessionResumeSeq = 0;
+
+function setSessionOpening(id) {
+  $$("#session-list .side-item").forEach(function (item) {
+    var opening = !!id && item.dataset.sessionId === id;
+    item.classList.toggle("opening", opening);
+    item.classList.toggle("active", opening || item.dataset.sessionId === activeSessionID);
+    if (opening) item.setAttribute("aria-busy", "true");
+    else item.removeAttribute("aria-busy");
+  });
+}
+
+function compactSessionModel(model) {
+  var value = String(model || "").replace(/\.gguf$/i, "");
+  if (value.length <= 32) return value;
+  return value.slice(0, 21) + "…" + value.slice(-10);
+}
+
+function sessionDateGroup(iso) {
+  var date = new Date(iso);
+  if (isNaN(date)) return { key: "unknown", label: "" };
+  var today = new Date();
+  var startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  var startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  var days = Math.round((startToday - startDate) / 86400000);
+  if (days === 0) return { key: "today", label: t("session.today") };
+  if (days === 1) return { key: "yesterday", label: t("session.yesterday") };
+  var key = date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
+  var label;
+  try {
+    label = new Intl.DateTimeFormat(statsLocale(), {
+      day: "numeric", month: "short", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+    }).format(date);
+  } catch (e) { label = date.toLocaleDateString(); }
+  return { key: key, label: label };
+}
+
 async function loadSessions() {
   var list = $("#session-list");
   try {
@@ -1874,17 +2224,26 @@ async function loadSessions() {
       list.appendChild(el("div", "side-empty", t("side.noSessions")));
       return;
     }
+    var currentDateGroup = "";
     rows.forEach(function (s) {
+      var dateGroup = sessionDateGroup(s.started_at);
+      if (dateGroup.key !== currentDateGroup) {
+        currentDateGroup = dateGroup.key;
+        if (dateGroup.label) list.appendChild(el("div", "session-date", dateGroup.label));
+      }
       var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
       b.type = "button";
-      b.appendChild(el("span", "t", (s.parent_id ? "â”” " : "") + (s.first_user_msg || s.id)));
+      b.dataset.sessionId = s.id;
+      b.appendChild(el("span", "t", (s.parent_id ? "\u2514 " : "") + (s.first_user_msg || s.id)));
       var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
-      if (s.model) sessionMeta += " · " + s.model;
-      b.appendChild(el("span", "s", sessionMeta));
+      if (s.model) sessionMeta += " · " + compactSessionModel(s.model);
+      var meta = el("span", "s", sessionMeta);
+      meta.title = s.model || "";
+      b.appendChild(meta);
       b.addEventListener("click", function () { resumeSession(s.id, s); });
 
       var actions = el("span", "session-actions");
-      var rename = el("span", "session-action rename", "✎");
+      var rename = el("span", "session-action rename", "\u270E");
       rename.setAttribute("role", "button");
       rename.tabIndex = 0;
       rename.title = t("session.rename");
@@ -1898,12 +2257,12 @@ async function loadSessions() {
       rename.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doRename(e); });
       actions.appendChild(rename);
 
-	  var fork = el("span", "session-action fork", "â†—");
+	  var fork = el("span", "session-action fork", "\u2387");
 	  fork.setAttribute("role", "button"); fork.tabIndex = 0; fork.title = t("workflow.fork");
 	  function doFork(e) { e.preventDefault(); e.stopPropagation(); forkSession(s.id, 0); }
 	  fork.addEventListener("click", doFork); fork.addEventListener("keydown", function(e){if(e.key==="Enter"||e.key===" ")doFork(e);}); actions.appendChild(fork);
 
-      var remove = el("span", "session-action delete", "×");
+      var remove = el("span", "session-action delete", "\u00D7");
       remove.setAttribute("role", "button");
       remove.tabIndex = 0;
       remove.title = t("session.delete");
@@ -1974,29 +2333,176 @@ async function restoreSessionRuntime(session) {
     if (session.runtime_known) {
       await jpost("/api/reasoning", { level: session.reasoning_effort || "default" });
     }
-    await loadModels();
+    // The runtime is ready after the two mutations above. Catalog and health
+    // are presentation refreshes and must never delay opening the transcript.
+    loadModels();
     checkHealth();
   } catch (e) {
     toast(t("session.runtimeFailed"));
   }
 }
 
-async function resumeSession(id, session) {
-  if (streaming) return;
-  var epoch = projectEpoch;
+var transcriptAbortCtl = null;
+var loadedTranscriptMessages = [];
+var transcriptHasMore = false;
+var transcriptBeforeSeq = 0;
+var transcriptSessionID = "";
+var transcriptPageSize = 100;
+
+function buildHistoryFragment(messages) {
+  var historyCalls = {};
+  var fragment = document.createDocumentFragment();
+  streamAppendTarget = fragment;
   try {
-    await restoreSessionRuntime(session);
-    var msgs = await j("/api/transcript?id=" + encodeURIComponent(id));
-    if (epoch !== projectEpoch) return;
+    (messages || []).forEach(function (m) {
+      if (m.role === "user") {
+        addUserMsg(m.content);
+      } else if (m.role === "assistant") {
+        (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
+        if (!m.content) return;
+        var node = addAssistantMsg();
+        node._raw = m.content;
+        renderAssistant(node);
+        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+        if (m.turn) addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
+      } else if (m.role === "tool") {
+        var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
+          parseTaskNotification(m.content) : null;
+        if (task) {
+          addHistoryTask(task);
+          return;
+        }
+        var persistedCall = historyCalls[m.tool_call_id] || null;
+        var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
+        var persistedArgs = persistedCall ? persistedCall.arguments : "";
+        var historyInfo = persistedArgs ? toolHint(persistedName, persistedArgs) :
+          { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
+        var row = document.createElement("details");
+        row.className = "tool-row done";
+        var sum = el("summary");
+        var historyName = el("span", "tname", historyInfo.name);
+        historyName.title = persistedName;
+        sum.appendChild(historyName);
+        sum.appendChild(el("span", "thint", historyInfo.hint));
+        var historyStat = el("span", "tstat", "");
+        var historyChanges = toolChangeStats(persistedName, m.content);
+        if (historyChanges.added) historyStat.appendChild(el("span", "change-add", "+" + historyChanges.added));
+        if (historyChanges.removed) historyStat.appendChild(el("span", "change-remove", "−" + historyChanges.removed));
+        if (historyChanges.diff) row.classList.add("has-changes");
+        sum.appendChild(historyStat);
+        row.appendChild(sum);
+        var body = el("div", "tbody");
+        if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
+          body.appendChild(el("div", "lbl", t("tool.input")));
+          body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
+        }
+        appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
+        row.appendChild(body);
+        appendStream(row);
+      }
+    });
+  } finally {
+    streamAppendTarget = null;
+  }
+  return fragment;
+}
+
+function renderLoadedTranscript(preserveScroll) {
+  var oldHeight = stage.scrollHeight;
+  var oldTop = stage.scrollTop;
+  stream.innerHTML = "";
+  toolRows = {}; workerRows = {}; openToolOrder = [];
+  lastTurn = null; workersSeen = [];
+  hideWelcome();
+  if (transcriptHasMore) {
+    var older = el("button", "history-older", t("session.older"));
+    older.type = "button";
+    older.addEventListener("click", loadOlderTranscript);
+    stream.appendChild(older);
+  }
+  stream.appendChild(buildHistoryFragment(loadedTranscriptMessages));
+  if (preserveScroll) {
+    stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
+  } else {
+    smartScroll(true);
+  }
+}
+
+async function loadOlderTranscript() {
+  if (!transcriptHasMore || !transcriptBeforeSeq || !transcriptSessionID) return;
+  var sessionID = transcriptSessionID;
+  var button = stream.querySelector(".history-older");
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("session.loadingOlder");
+  }
+  if (transcriptAbortCtl) transcriptAbortCtl.abort();
+  var controller = new AbortController();
+  transcriptAbortCtl = controller;
+  try {
+    var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) +
+      "&limit=" + transcriptPageSize + "&before=" + transcriptBeforeSeq, { signal: controller.signal });
+    if (sessionID !== transcriptSessionID || controller !== transcriptAbortCtl) return;
+    loadedTranscriptMessages = (page.messages || []).concat(loadedTranscriptMessages);
+    transcriptHasMore = !!page.has_more;
+    transcriptBeforeSeq = page.before_seq || 0;
+    renderLoadedTranscript(true);
+    loadCheckpointAction(sessionID);
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      toast(t("common.error") + ": " + e.message);
+      if (button && button.isConnected) {
+        button.disabled = false;
+        button.textContent = t("session.older");
+      }
+    }
+  } finally {
+    if (controller === transcriptAbortCtl) transcriptAbortCtl = null;
+  }
+}
+
+async function resumeSession(id, session) {
+  if (streaming) {
+    toast(t("session.stopRun"));
+    return;
+  }
+  var resumeSeq = ++sessionResumeSeq;
+  var epoch = projectEpoch;
+  var releaseRuntimeReady;
+  var runtimeQueued = false;
+  sessionRuntimeReady = new Promise(function (resolve) { releaseRuntimeReady = resolve; });
+  if (transcriptAbortCtl) transcriptAbortCtl.abort();
+  var controller = new AbortController();
+  transcriptAbortCtl = controller;
+  setSessionOpening(id);
+  try {
+    var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=" + transcriptPageSize,
+      { signal: controller.signal });
+    var msgs = page.messages || [];
+    if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return;
     activeSessionID = id;
+    transcriptSessionID = id;
+    loadedTranscriptMessages = msgs;
+    transcriptHasMore = !!page.has_more;
+    transcriptBeforeSeq = page.before_seq || 0;
     stream.innerHTML = "";
     toolRows = {}; workerRows = {}; openToolOrder = [];
     lastTurn = null; workersSeen = [];
     hideWelcome();
+    var historyCalls = {};
+	var historyFragment = document.createDocumentFragment();
+	if (transcriptHasMore) {
+	  var older = el("button", "history-older", t("session.older"));
+	  older.type = "button";
+	  older.addEventListener("click", loadOlderTranscript);
+	  historyFragment.appendChild(older);
+	}
+	streamAppendTarget = historyFragment;
 	(msgs || []).forEach(function (m) {
       if (m.role === "user") {
         addUserMsg(m.content);
 	      } else if (m.role === "assistant") {
+        (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
         if (!m.content) return;
         var node = addAssistantMsg();
         node._raw = m.content;
@@ -2011,26 +2517,54 @@ async function resumeSession(id, session) {
           addHistoryTask(task);
           return;
         }
+        var persistedCall = historyCalls[m.tool_call_id] || null;
+        var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
+        var persistedArgs = persistedCall ? persistedCall.arguments : "";
+        var historyInfo = persistedArgs ? toolHint(persistedName, persistedArgs) :
+          { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
         var row = document.createElement("details");
-        row.className = "tool-row";
+        row.className = "tool-row done";
         var sum = el("summary");
-        sum.appendChild(el("span", "tname", m.name || "tool"));
-        sum.appendChild(el("span", "thint", clip(m.content || "", 90)));
-        sum.appendChild(el("span", "tstat", ""));
+        var historyName = el("span", "tname", historyInfo.name);
+        historyName.title = persistedName;
+        sum.appendChild(historyName);
+        sum.appendChild(el("span", "thint", historyInfo.hint));
+        var historyStat = el("span", "tstat", "");
+        var historyChanges = toolChangeStats(persistedName, m.content);
+        if (historyChanges.added) historyStat.appendChild(el("span", "change-add", "+" + historyChanges.added));
+        if (historyChanges.removed) historyStat.appendChild(el("span", "change-remove", "−" + historyChanges.removed));
+        if (historyChanges.diff) row.classList.add("has-changes");
+        sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
-        body.appendChild(el("pre", "", m.content || ""));
+        if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
+          body.appendChild(el("div", "lbl", t("tool.input")));
+          body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
+        }
+        appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
         row.appendChild(body);
-        stream.appendChild(row);
+        appendStream(row);
       }
 	});
+	streamAppendTarget = null;
+	stream.appendChild(historyFragment);
 	loadCheckpointAction(id);
 	smartScroll(true);
     loadSessions();
     renderStats();
     promptEl.focus();
+    // Remembered provider/model restoration continues after the conversation
+    // is already usable. Errors retain the current model and are surfaced by
+    // restoreSessionRuntime without rolling back the opened transcript.
+    runtimeQueued = true;
+    restoreSessionRuntime(session).then(releaseRuntimeReady, releaseRuntimeReady);
   } catch (e) {
-    toast(t("common.error") + ": " + e.message);
+    if (e.name !== "AbortError") toast(t("common.error") + ": " + e.message);
+  } finally {
+    if (!runtimeQueued) releaseRuntimeReady();
+    streamAppendTarget = null;
+    if (controller === transcriptAbortCtl) transcriptAbortCtl = null;
+    if (resumeSeq === sessionResumeSeq) setSessionOpening("");
   }
 }
 $("#reload-sessions").addEventListener("click", loadSessions);
@@ -3296,29 +3830,231 @@ sections.memory = async function () {
 
 /* ── Goal ── */
 
-sections.goal = async function () {
-  var got;
-  try { got = await j("/api/goal"); } catch (e) {
-    panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
+function goalStatus(status) { return t("goal.status." + status); }
+
+async function goalMutate(button, body) {
+  if (button) button.disabled = true;
+  try {
+    var got = await jpost("/api/goal", body);
+    renderGoalPanel(got);
+    if ($("#side-tab-goal").classList.contains("active")) renderSideGoal(got);
+    toast(t("goal.updated"));
+  } catch (e) {
+    toast(e.message);
+    if (button) button.disabled = false;
+  }
+}
+
+function goalInput(placeholder, multiline) {
+  var input = el(multiline ? "textarea" : "input", "field-input goal-input");
+  input.placeholder = placeholder;
+  if (!multiline) input.type = "text";
+  return input;
+}
+
+function renderGoalCreate() {
+  var empty = el("div", "goal-empty");
+  empty.appendChild(el("div", "goal-empty-title", t("goal.none")));
+  empty.appendChild(el("div", "note", t("goal.noneHint")));
+  var form = el("form", "goal-create-form");
+  var title = goalInput(t("goal.title"), false);
+  title.required = true;
+  var description = goalInput(t("goal.description"), true);
+  var criteria = goalInput(t("goal.criteria"), true);
+  var submit = el("button", "btn primary", t("goal.create"));
+  submit.type = "submit";
+  form.appendChild(title);
+  form.appendChild(description);
+  form.appendChild(criteria);
+  form.appendChild(submit);
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var value = title.value.trim();
+    if (!value) { title.focus(); return; }
+    goalMutate(submit, { action: "set", title: value, description: description.value.trim(),
+      success_criteria: criteria.value.trim(), parent_session_id: activeSessionID });
+  });
+  empty.appendChild(form);
+  panelContent.appendChild(empty);
+  title.focus();
+}
+
+function goalTaskAction(label, task, status) {
+  var button = el("button", "goal-task-action", label);
+  button.type = "button";
+  button.addEventListener("click", function () {
+    goalMutate(button, { action: "set_task_status", task_seq: task.seq, status: status });
+  });
+  return button;
+}
+
+function renderGoalVerification(got) {
+  var section = el("section", "group goal-verification status-" + (got.verification_status || "pending"));
+  section.appendChild(el("div", "g-label", t("goal.verification")));
+  var state = el("div", "goal-verification-state");
+  var mark = el("span", "goal-verification-mark");
+  state.appendChild(mark);
+  var copy = el("div", "goal-verification-copy");
+  if (!got.ready_for_verification) {
+    copy.appendChild(el("div", "goal-verification-title", t("goal.verificationWaiting")));
+    copy.appendChild(el("div", "goal-verification-hint", t("goal.finishBlocked")));
+  } else if (got.verification_status === "passed") {
+    copy.appendChild(el("div", "goal-verification-title", t("goal.verificationPassed")));
+    if (got.verification_evidence) {
+      copy.appendChild(el("div", "goal-verification-evidence", got.verification_evidence));
+    }
+  } else {
+    copy.appendChild(el("div", "goal-verification-title",
+      got.verification_status === "failed" ? t("goal.verificationFailed") : t("goal.awaitingVerification")));
+    copy.appendChild(el("div", "goal-verification-hint", t("goal.verificationReady")));
+    if (got.verification_evidence) {
+      copy.appendChild(el("div", "goal-verification-evidence", got.verification_evidence));
+    }
+  }
+  state.appendChild(copy);
+  section.appendChild(state);
+
+  if (got.ready_for_verification && got.verification_status !== "passed") {
+    var form = el("form", "goal-verify-form");
+    var evidence = goalInput(t("goal.verifyPlaceholder"), true);
+    evidence.required = true;
+    var actions = el("div", "goal-verify-actions");
+    var pass = el("button", "btn primary", t("goal.verifyPass"));
+    pass.type = "submit";
+    var fail = el("button", "btn", t("goal.verifyFail"));
+    fail.type = "button";
+    actions.appendChild(pass);
+    actions.appendChild(fail);
+    form.appendChild(evidence);
+    form.appendChild(actions);
+    function verify(passed, button) {
+      var value = evidence.value.trim();
+      if (!value) { evidence.focus(); return; }
+      goalMutate(button, { action: "verify", passed: passed, text: value });
+    }
+    form.addEventListener("submit", function (ev) { ev.preventDefault(); verify(true, pass); });
+    fail.addEventListener("click", function () { verify(false, fail); });
+    section.appendChild(form);
+  }
+  return section;
+}
+
+function renderGoalPanel(got) {
+  panelContent.innerHTML = "";
+  if (!got) {
+    renderGoalCreate();
     return;
   }
-  panelContent.innerHTML = "";
-  var g = el("div", "group");
-  g.appendChild(el("div", "g-label", t("panel.goal")));
-  if (!got) {
-    g.appendChild(el("div", "note", t("goal.none")));
-  } else {
-    var title = el("div", "lr-title");
-    title.innerHTML = "<strong>" + escHtml(got.title) + "</strong> <span class='note'>" + escHtml(got.status) + "</span>";
-    g.appendChild(title);
-    (got.tasks || []).forEach(function (task) {
-      var row = el("div", "goal-task");
-      row.appendChild(el("span", "gs" + (task.status === "done" ? " done" : ""), task.status));
-      row.appendChild(el("span", "", task.title));
-      g.appendChild(row);
-    });
+
+  var head = el("section", "goal-overview");
+  var copy = el("div", "goal-overview-copy");
+  var eyebrow = el("div", "goal-eyebrow");
+  eyebrow.appendChild(el("span", "goal-live-dot"));
+  eyebrow.appendChild(document.createTextNode(goalStatus(got.status)));
+  copy.appendChild(eyebrow);
+  copy.appendChild(el("h3", "goal-title", got.title));
+  if (got.description) {
+    var desc = el("div", "goal-detail");
+    desc.appendChild(el("span", "goal-detail-label", t("goal.descriptionLabel")));
+    desc.appendChild(el("span", "", got.description));
+    copy.appendChild(desc);
   }
-  panelContent.appendChild(g);
+  if (got.success_criteria) {
+    var criteria = el("div", "goal-detail");
+    criteria.appendChild(el("span", "goal-detail-label", t("goal.criteriaLabel")));
+    criteria.appendChild(el("span", "", got.success_criteria));
+    copy.appendChild(criteria);
+  }
+  head.appendChild(copy);
+  var goalActions = el("div", "goal-head-actions");
+  var finish = el("button", "btn primary", t("goal.finish"));
+	finish.disabled = !got.can_finish;
+	if (!got.can_finish) finish.title = t("goal.finishBlocked");
+  finish.addEventListener("click", function () {
+    if (window.confirm(t("goal.finishConfirm"))) goalMutate(finish, { action: "set_status", status: "done" });
+  });
+  var abandon = el("button", "btn danger", t("goal.abandon"));
+  abandon.addEventListener("click", function () {
+    if (window.confirm(t("goal.abandonConfirm"))) goalMutate(abandon, { action: "set_status", status: "abandoned" });
+  });
+  goalActions.appendChild(finish);
+  goalActions.appendChild(abandon);
+  head.appendChild(goalActions);
+  panelContent.appendChild(head);
+
+  var tasks = got.tasks || [];
+  var terminal = tasks.filter(function (task) { return task.status === "done" || task.status === "skipped"; }).length;
+  var group = el("section", "group goal-task-group");
+  var label = el("div", "g-label", t("goal.tasks"));
+  label.appendChild(el("span", "g-act", tasks.length ? terminal + " / " + tasks.length : ""));
+  group.appendChild(label);
+  if (tasks.length) {
+    var progress = el("div", "goal-progress");
+    var bar = el("span");
+    bar.style.width = (terminal * 100 / tasks.length) + "%";
+    progress.appendChild(bar);
+    progress.setAttribute("aria-label", t("goal.progress") + ": " + terminal + " / " + tasks.length);
+    group.appendChild(progress);
+  }
+  if (!tasks.length) group.appendChild(el("div", "goal-no-tasks", t("goal.noTasks")));
+  tasks.forEach(function (task) {
+    var row = el("div", "goal-task status-" + task.status);
+    var mark = task.status === "done" ? "✓" : (task.status === "skipped" ? "—" : (task.status === "in_progress" ? "●" : "○"));
+    row.appendChild(el("span", "goal-task-mark", mark));
+    var taskCopy = el("div", "goal-task-copy");
+    taskCopy.appendChild(el("div", "goal-task-title", task.title));
+    taskCopy.appendChild(el("div", "goal-task-status", goalStatus(task.status)));
+    row.appendChild(taskCopy);
+    var actions = el("div", "goal-task-actions");
+    if (task.status === "pending") actions.appendChild(goalTaskAction(t("goal.start"), task, "in_progress"));
+    if (task.status === "pending" || task.status === "in_progress") {
+      actions.appendChild(goalTaskAction(t("goal.complete"), task, "done"));
+      actions.appendChild(goalTaskAction(t("goal.skip"), task, "skipped"));
+    } else {
+      actions.appendChild(goalTaskAction(t("goal.reopen"), task, "pending"));
+    }
+    row.appendChild(actions);
+    group.appendChild(row);
+  });
+  var addForm = el("form", "goal-inline-form");
+  var taskInput = goalInput(t("goal.taskPlaceholder"), false);
+  var add = el("button", "btn", t("goal.addTask"));
+  add.type = "submit";
+  addForm.appendChild(taskInput);
+  addForm.appendChild(add);
+  addForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var value = taskInput.value.trim();
+    if (!value) { taskInput.focus(); return; }
+    goalMutate(add, { action: "add_task", title: value });
+  });
+  group.appendChild(addForm);
+  panelContent.appendChild(group);
+	panelContent.appendChild(renderGoalVerification(got));
+
+  var notes = el("section", "group goal-notes");
+  notes.appendChild(el("div", "g-label", t("goal.notes")));
+  if (got.notes) notes.appendChild(el("div", "goal-notes-history", got.notes));
+  var noteForm = el("form", "goal-inline-form");
+  var noteInput = goalInput(t("goal.notePlaceholder"), false);
+  var addNote = el("button", "btn", t("goal.addNote"));
+  addNote.type = "submit";
+  noteForm.appendChild(noteInput);
+  noteForm.appendChild(addNote);
+  noteForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var value = noteInput.value.trim();
+    if (!value) { noteInput.focus(); return; }
+    goalMutate(addNote, { action: "add_note", text: value });
+  });
+  notes.appendChild(noteForm);
+  panelContent.appendChild(notes);
+}
+
+sections.goal = async function () {
+  try { renderGoalPanel(await j("/api/goal")); } catch (e) {
+    panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
+  }
 };
 
 /* ── Usage (stats + context report) ── */

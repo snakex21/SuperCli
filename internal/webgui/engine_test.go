@@ -79,6 +79,31 @@ func TestEngineSessionStoreIsReusedAndClosed(t *testing.T) {
 	}
 }
 
+func TestEngineGoalServiceIsReusedAndClosed(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := eng.goalService(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := eng.goalService(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("goalService reopened SQLite instead of reusing Engine handle")
+	}
+	if err := eng.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.goalService(context.Background()); err == nil {
+		t.Fatal("closed Engine reopened its goal service")
+	}
+}
+
 func TestEngineCheckpointManagersAreCachedPerWorkspace(t *testing.T) {
 	dataDir := t.TempDir()
 	homeA := t.TempDir()
@@ -251,6 +276,7 @@ func TestEngine_NewLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	loop, err := eng.newLoop()
 	if err != nil {
 		t.Fatalf("newLoop: %v", err)
@@ -267,6 +293,7 @@ func TestEngine_WebOrchestratorOffRemovesDelegation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	off := false
 	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &off}); err != nil {
 		t.Fatal(err)
@@ -295,6 +322,7 @@ func TestEngine_WebOrchestratorDefaultIsAdaptive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	loop, err := eng.newLoop()
 	if err != nil {
 		t.Fatal(err)
@@ -321,6 +349,7 @@ func TestEngine_WebOrchestratorRestrictsParentAndKeepsTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	on := true
 	if err := config.SaveToml(filepath.Join(dataDir, "config.toml"), config.TomlConfig{Orchestrator: &on}); err != nil {
 		t.Fatal(err)
@@ -570,6 +599,9 @@ func TestEngine_ListSessionsFiltersActiveWorkspace(t *testing.T) {
 		return sess.ID
 	}
 	aID := create(projectA, "from A")
+	if err := store.SetRuntime(aID, "provider-a", "model-a", "high"); err != nil {
+		t.Fatal(err)
+	}
 	_ = create(projectB, "from B")
 
 	got, err := eng.listSessions(ctx, 20)
@@ -578,6 +610,9 @@ func TestEngine_ListSessionsFiltersActiveWorkspace(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != aID {
 		t.Fatalf("project A sessions = %+v, want only %s", got, aID)
+	}
+	if got[0].Provider != "provider-a" || got[0].Model != "model-a" || got[0].ReasoningEffort != "high" {
+		t.Fatalf("list query lost session runtime metadata: %+v", got[0])
 	}
 
 	eng.setHome(projectB)
@@ -656,6 +691,46 @@ func TestEngine_TranscriptDecodesAssistantTextParts(t *testing.T) {
 	}
 	if msgs[1].Role != string(llm.RoleAssistant) || msgs[1].Content != "AI answer" {
 		t.Fatalf("assistant transcript = %+v", msgs[1])
+	}
+}
+
+func TestEngine_TranscriptKeepsToolArgumentsForHistoryUI(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	store, err := session.OpenStore(dir)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+	sess, err := store.Create(dir, "echo-test", "tool history")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writer := session.NewWriter(store, sess.ID)
+	call := llm.ToolCall{ID: "call-1", Name: "ctx_execute", Arguments: `{"command":["go","test","./..."]}`}
+	if err := writer.AppendMessage(context.Background(), llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	if err := writer.AppendMessage(context.Background(), llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Name: call.Name, Content: `{"exit_code":0}`}); err != nil {
+		t.Fatalf("append tool: %v", err)
+	}
+
+	msgs, err := eng.transcript(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("transcript: %v", err)
+	}
+	if len(msgs) != 2 || len(msgs[0].ToolCalls) != 1 {
+		t.Fatalf("tool-call transcript = %+v", msgs)
+	}
+	if got := msgs[0].ToolCalls[0]; got.ID != call.ID || got.Name != call.Name || got.Arguments != call.Arguments {
+		t.Fatalf("tool call = %+v, want %+v", got, call)
+	}
+	if msgs[1].ToolCallID != call.ID {
+		t.Fatalf("tool result link = %q, want %q", msgs[1].ToolCallID, call.ID)
 	}
 }
 

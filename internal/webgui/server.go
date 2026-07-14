@@ -166,7 +166,18 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	out, err := s.eng.transcript(r.Context(), id)
+	var out any
+	var err error
+	if r.URL.Query().Has("limit") {
+		limit := queryInt(r, "limit", 100)
+		if limit > 500 {
+			limit = 500
+		}
+		out, err = s.eng.transcriptPage(r.Context(), id, queryInt(r, "before", 0), limit)
+	} else {
+		// Keep the original array response for older clients and integrations.
+		out, err = s.eng.transcript(r.Context(), id)
+	}
 	if err != nil {
 		if errors.Is(err, errSessionOutsideWorkspace) {
 			http.Error(w, "session not found in active project", http.StatusNotFound)
@@ -219,8 +230,30 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGoal returns the active goal and its tasks, or null.
+// handleGoal returns the active goal and its tasks, or applies one local UI
+// mutation. The route remains behind the server's local/remote guard.
 func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		var in goalMutation
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&in); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		out, err := s.eng.mutateGoal(r.Context(), in)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, out)
+		return
+	}
 	out, err := s.eng.activeGoal(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

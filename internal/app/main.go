@@ -752,6 +752,15 @@ func Main() {
 	registry.MustRegister(askUser.Spec())
 
 	registry.MustRegister(tools.NewSearchCode(home).Spec())
+	codeIntel := tools.NewCodeIntel(home)
+	defer codeIntel.Close()
+	diagnosticSpec := codeIntel.WrapMutation
+	// Dormant by default: tool_search exposes its one compact schema only when
+	// the model needs exact symbols, references or diagnostics.
+	registry.MustRegister(codeIntel.Spec())
+	processSession := tools.NewProcessSession(home)
+	defer processSession.Close()
+	registry.MustRegister(processSession.Spec())
 
 	// F21: read_zip is opt-in (not always-on).
 	// The model discovers it via tool_search
@@ -783,8 +792,8 @@ func Main() {
 	// stdlib. file_ops is the safe file manager for
 	// office users: no overwrite, no hard delete
 	// (trash folder instead), sandboxed paths.
-	registry.MustRegister(checkpointSpec(tools.NewEditDocx(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewEditXlsx(home).Spec()))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditDocx(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditXlsx(home).Spec())))
 	registry.MustRegister(tools.NewListDir(home).Spec())
 
 	// F20: read_pdf is opt-in (not always-on).
@@ -2250,15 +2259,15 @@ func Main() {
 	registry.MustRegister(tools.NewReadContext(home).Spec())
 	registry.MustRegister(tools.NewReadMany(home).Spec())
 	registry.MustRegister(tools.NewScratchpad(home).Spec())
-	registry.MustRegister(checkpointSpec(tools.NewEditLine(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewEditLines(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewInsertAfter(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewDeleteLines(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewWriteFile(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewMakeDir(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewMove(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewCopy(home).Spec()))
-	registry.MustRegister(checkpointSpec(tools.NewTrash(home).Spec()))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditLine(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditLines(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewInsertAfter(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewDeleteLines(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewWriteFile(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewMakeDir(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewMove(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewCopy(home).Spec())))
+	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewTrash(home).Spec())))
 
 	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
 	// web_search (DuckDuckGo by default — no key; Brave/Tavily/SearXNG
@@ -2739,6 +2748,10 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 
 	// Build the agent loop.
 	reg := tools.NewRegistry()
+	codeIntel := tools.NewCodeIntel(home)
+	defer codeIntel.Close()
+	processSession := tools.NewProcessSession(home)
+	defer processSession.Close()
 	// Register the thin file tools so batch mode can actually
 	// exercise them (CI / live tool tests). tool_search makes the
 	// rest reachable; these are the create/edit/move/copy/trash
@@ -2760,9 +2773,12 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		tools.NewSearchCode(home).Spec(),
 		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
 	} {
+		sp = codeIntel.WrapMutation(sp)
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	reg.MustRegister(codeIntel.Spec())
+	reg.MustRegister(processSession.Spec())
 	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
 	reg.MarkAlwaysOn("invoke_tool")
 	// A short-lived batch registry does not need a SQLite FTS database: the
@@ -3617,6 +3633,7 @@ func darwinCommands(dt *darwin.DarwinTool) map[string]tui.SlashHandler {
 //	/goal tasks add design doc
 //	/goal tasks done 1
 //	/goal note we have a draft
+//	/goal verify pass go test ./... passed
 //	/goal done
 //
 // All mutations call Refresh on the service so the
@@ -3688,6 +3705,9 @@ func runGoalCommand(svc *goal.Service, args string) (string, error) {
 		if g.SuccessCriteria != "" {
 			fmt.Fprintf(&b, "  criteria: %s\n", g.SuccessCriteria)
 		}
+		if g.VerificationStatus != goal.VerificationNone {
+			fmt.Fprintf(&b, "  verification: %s — %s\n", g.VerificationStatus, shortenLine(g.VerificationEvidence, 200))
+		}
 		if g.Notes != "" {
 			fmt.Fprintf(&b, "  notes: %s\n", shortenLine(g.Notes, 200))
 		}
@@ -3727,6 +3747,28 @@ func runGoalCommand(svc *goal.Service, args string) (string, error) {
 			return "goal: " + err.Error(), nil
 		}
 		return "note appended.", nil
+
+	case "verify":
+		parts := strings.SplitN(rest, " ", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			return "goal: /goal verify <pass|fail> <evidence>", nil
+		}
+		var passed bool
+		switch strings.ToLower(strings.TrimSpace(parts[0])) {
+		case "pass", "passed", "ok":
+			passed = true
+		case "fail", "failed":
+			passed = false
+		default:
+			return "goal: /goal verify <pass|fail> <evidence>", nil
+		}
+		if err := svc.Verify(ctx, "", passed, strings.TrimSpace(parts[1])); err != nil {
+			return "goal: " + err.Error(), nil
+		}
+		if passed {
+			return "goal verification passed; the goal can now be marked done.", nil
+		}
+		return "goal verification failed; reopen or add the required task before retrying.", nil
 
 	case "done":
 		if err := svc.SetStatus(ctx, "", goal.StatusDone); err != nil {
@@ -3844,7 +3886,7 @@ func mergedSlashCommands(dt *darwin.DarwinTool, svc *goal.Service, home string) 
 }
 
 func goalUsage() string {
-	return "usage: /goal <set|list|show|tasks|note|done|abandon|decompose|help> [args]\n" +
+	return "usage: /goal <set|list|show|tasks|note|verify|done|abandon|decompose|help> [args]\n" +
 		"  set <title>             start a new active goal (auto-pauses prior)\n" +
 		"  list                    show all goals\n" +
 		"  show [id]               show one goal (default: active)\n" +
@@ -3853,7 +3895,9 @@ func goalUsage() string {
 		"  tasks done <seq>        mark task done\n" +
 		"  tasks skip <seq>        skip a task\n" +
 		"  note <text>             append a timestamped note\n" +
-		"  done                    mark the active goal done\n" +
+		"  verify pass <evidence>  record successful final verification\n" +
+		"  verify fail <evidence>  record a failed final verification\n" +
+		"  done                    close a successfully verified goal\n" +
 		"  abandon                 abandon the active goal\n" +
 		"  decompose <title>       split a title into tasks (heuristic)"
 }

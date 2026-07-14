@@ -142,6 +142,9 @@ func DiscoverPortable(dataDir string) ([]PortablePackage, error) {
 // LoadWorkspace merges portable packages with explicit config.toml entries.
 // Explicit entries win by name, preserving today's configuration semantics.
 func LoadWorkspace(dataDir string, explicit map[string]ServerConfig) (map[string]ServerConfig, []PortablePackage, error) {
+	if err := SeedDetectedPortableProfiles(dataDir); err != nil {
+		return nil, nil, fmt.Errorf("seed portable profiles: %w", err)
+	}
 	packages, err := DiscoverPortable(dataDir)
 	if err != nil {
 		return nil, nil, err

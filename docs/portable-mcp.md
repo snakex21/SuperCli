@@ -95,3 +95,19 @@ Host applications such as Blender or Godot are not copied automatically. Their
 MCP bridge and portable runtime can travel with SuperCli; the host must either
 already exist on the destination computer or be included legally in the
 package itself.
+
+## Obscura browser profile
+
+SuperCli recognizes the optional [Obscura](https://github.com/sgavrl/obscura)
+browser MCP without adding its tool catalog to every model request. Put the
+standalone `obscura.exe` (`obscura` on Linux/macOS) here:
+
+```text
+supercli-data/mcp/obscura/obscura.exe
+```
+
+On the next start SuperCli creates the small `manifest.toml` automatically.
+The same profile is also detected when `obscura` is already on `PATH`. Nothing
+is downloaded or launched during discovery: `obscura mcp` starts lazily only
+after the agent selects the MCP bridge for a browser task. A custom manifest is
+never overwritten.
