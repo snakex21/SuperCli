@@ -904,7 +904,9 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	if providerName == "" {
 		providerName = e.caps.Provider(modelID)
 	}
+	e.mu.RLock()
 	cfg := e.cfg
+	e.mu.RUnlock()
 	cfg.Model = modelID
 	found := false
 	for _, pc := range m.Configured() {

@@ -111,6 +111,53 @@ func TestProvidersDisableKeepsConfigurationAndRemovesModels(t *testing.T) {
 	}
 }
 
+func TestProvidersUpdateRefreshesActiveRuntime(t *testing.T) {
+	oldUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"remote-model"}]}`))
+	}))
+	defer oldUpstream.Close()
+	newUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"remote-model"}]}`))
+	}))
+	defer newUpstream.Close()
+
+	srv := newTestServer(t, false)
+	add := `{"name":"remote","type":"openai","base_url":"` + oldUpstream.URL + `/v1","api_key":"key","model":"remote-model"}`
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPost, "/api/providers", add))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := srv.eng.SwitchModel("remote-model", "remote"); err != nil {
+		t.Fatalf("activate provider: %v", err)
+	}
+
+	update := `{"name":"remote","base_url":"` + newUpstream.URL + `/v1"}`
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPut, "/api/providers", update))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		RuntimeRefreshed bool `json:"runtime_refreshed"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.RuntimeRefreshed {
+		t.Fatalf("active runtime was not reported as refreshed: %s", rec.Body.String())
+	}
+
+	srv.eng.mu.RLock()
+	activeURL := srv.eng.cfg.BaseURL
+	srv.eng.mu.RUnlock()
+	if activeURL != newUpstream.URL+"/v1" {
+		t.Fatalf("active runtime URL = %q, want %q", activeURL, newUpstream.URL+"/v1")
+	}
+}
+
 func TestClearingPublicGatewayKeyRemovesPaidModelsFromPicker(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
