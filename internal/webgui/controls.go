@@ -369,8 +369,13 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
+		// Capture the active selection before changing the provider config.
+		// RuntimeSelection resolves configured providers by transport + URL, so
+		// after a URL edit the old runtime may no longer match the freshly saved
+		// entry. Keeping this snapshot also lets us rebuild the active transport
+		// immediately instead of continuing to send requests to the old address.
+		activeProvider, activeModel, _ := s.eng.RuntimeSelection()
 		if req.Disabled != nil && *req.Disabled {
-			activeProvider, _, _ := s.eng.RuntimeSelection()
 			if activeProvider == name {
 				http.Error(w, "switch to another model before disabling the active provider", http.StatusConflict)
 				return
@@ -394,9 +399,16 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]any{"ok": true, "name": name, "disabled": true, "models": []string{}})
 			return
 		}
+		runtimeRefreshed := false
+		if activeProvider == name {
+			if err := s.eng.SwitchModel(activeModel, name); err != nil {
+				http.Error(w, fmt.Sprintf("provider saved but active connection could not be refreshed: %v", err), http.StatusBadGateway)
+				return
+			}
+			runtimeRefreshed = true
+		}
 		res := m.ScanProvider(name, s.eng.caps)
 		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) == "" && res.Err == nil && len(res.Models) > 0 {
-			activeProvider, activeModel, _ := s.eng.RuntimeSelection()
 			if activeProvider == name && !m.ModelVisible(name, activeModel) {
 				// Removing a gateway key must not leave the runtime pointing at a
 				// now-hidden paid model that will fail with 401 on the next prompt.
@@ -404,7 +416,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 				_ = s.eng.SwitchModel(res.Models[0], name)
 			}
 		}
-		writeJSON(w, map[string]any{"ok": true, "name": name, "scan_error": errString(res.Err), "models": res.Models})
+		writeJSON(w, map[string]any{"ok": true, "name": name, "runtime_refreshed": runtimeRefreshed, "scan_error": errString(res.Err), "models": res.Models})
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
 		if name == "" {
