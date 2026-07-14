@@ -53,3 +53,16 @@ func TestRouteMapClassifyConfident(t *testing.T) {
 		}
 	}
 }
+
+func TestImplementationVerificationHintOnlyForMutationWork(t *testing.T) {
+	for _, prompt := range []string{"napraw ten błąd", "zaimplementuj panel", "refactor this function"} {
+		if got := implementationVerificationHint(prompt); got == "" {
+			t.Errorf("mutation prompt %q did not get verification contract", prompt)
+		}
+	}
+	for _, prompt := range []string{"cześć", "co sądzisz o projekcie?", "wyjaśnij jak działa cache"} {
+		if got := implementationVerificationHint(prompt); got != "" {
+			t.Errorf("read-only prompt %q got verification contract %q", prompt, got)
+		}
+	}
+}

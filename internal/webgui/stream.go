@@ -13,6 +13,7 @@ import (
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	systats "supercli/internal/system/stats"
 	"supercli/internal/tools"
 )
 
@@ -223,19 +224,21 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	// factory-built metered provider reports every call (coordinator
 	// steps AND delegated workers) here — no second wrapper.
 	var usageStore *session.Store
+	telemetry := systats.NewMemory()
 	if us, openErr := e.sessionStore(); openErr == nil {
 		usageStore = us
 		if sink := e.usageCallSink(usageStore, sid); sink != nil {
 			ctx = llm.WithCallSink(ctx, sink)
 		}
 	}
+	ctx = llm.WithCallSink(ctx, telemetryCallSink(telemetry))
 	var checkpointTurn *checkpoint.Turn
 	if manager, openErr := e.checkpointManager(home); openErr == nil {
 		checkpointTurn = manager.NewTurn(sid, prompt)
 	} else if !errors.Is(openErr, checkpoint.ErrUnavailable) {
 		log.Printf("checkpoint open: %v", openErr)
 	}
-	loop, err := e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, checkpointTurn)
+	loop, err := e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, checkpointTurn, telemetry)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
@@ -324,6 +327,7 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	}
 	defer flushMessages()
 	toolCalls := 0
+	toolFailures := 0
 	turnSaved := false
 	for {
 		select {
@@ -353,6 +357,9 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 			if _, ok := ev.(agent.ToolCallEvent); ok {
 				toolCalls++
 			}
+			if result, ok := ev.(agent.ToolResultEvent); ok && result.Err != nil {
+				toolFailures++
+			}
 			checkpointID := ""
 			if _, ok := ev.(agent.DoneEvent); ok && checkpointTurn != nil {
 				finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -366,12 +373,18 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 			}
 			if done, ok := ev.(agent.DoneEvent); ok && !turnSaved && usageStore != nil {
 				turnSaved = true
+				turns := telemetry.Snapshot()
+				calls := telemetry.Calls()
+				failedCalls, canceledCalls, backgroundCalls, helperCalls := summarizeTelemetryCalls(calls)
 				if saveErr := usageStore.AppendTurnSummary(context.Background(), session.TurnSummary{
 					SessionID: sid, DurationMS: time.Since(runStarted).Milliseconds(),
 					Input: int64(done.Usage.Input), Output: int64(done.Usage.Output),
 					CachedInput: int64(done.Usage.Cached), Reasoning: int64(done.Usage.Reasoning),
 					HasCachedInput: done.Usage.Cached > 0, HasReasoning: done.Usage.Reasoning > 0,
-					ToolCalls: toolCalls,
+					ToolCalls: toolCalls, ToolFailures: toolFailures, Steps: len(turns),
+					ModelCalls: len(calls), FailedCalls: failedCalls, CanceledCalls: canceledCalls,
+					BackgroundCalls: backgroundCalls, HelperCalls: helperCalls,
+					Phases: systats.SumPhases(turns),
 				}); saveErr != nil {
 					// Telemetry must never fail the user's completed answer.
 					log.Printf("web turn summary: session=%q: %v", sid, saveErr)

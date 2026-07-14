@@ -717,7 +717,7 @@ func Main() {
 	smallTier := modelTier == tier.Small && !tomlCfg.SmallFullTools
 	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
 	supercliSystemPromptBase = prompt.Build(execProfile.PromptSmall)
-	supercliModelProfile = prompt.LoadProfile(home, cfg.Model)
+	supercliModelProfile = prompt.LoadProfileAt(home, dataDir, cfg.Model)
 
 	// Orchestrator mode (hard delegation): resolved from config, with an
 	// env override for scripted/test use. When on, the main loop gets a
@@ -2787,7 +2787,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	reg.MustRegister(toolSearcher.Spec())
 	reg.MarkAlwaysOn("tool_search")
 	systemPrompt := prompt.Build(execProfile.PromptSmall)
-	if modelProfile := prompt.LoadProfile(home, cfg.Model); modelProfile != "" {
+	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
 		systemPrompt += "\n\n" + modelProfile
 	}
 	l, err := agent.NewLoop(agent.LoopConfig{

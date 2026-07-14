@@ -648,11 +648,20 @@ func (s *Store) migrate() error {
 			has_cached_input      INTEGER NOT NULL DEFAULT 0,
 			has_reasoning         INTEGER NOT NULL DEFAULT 0,
 			tool_calls            INTEGER NOT NULL DEFAULT 0,
+			tool_failures         INTEGER NOT NULL DEFAULT 0,
+			steps                 INTEGER NOT NULL DEFAULT 0,
+			model_calls           INTEGER NOT NULL DEFAULT 0,
+			failed_model_calls    INTEGER NOT NULL DEFAULT 0,
+			canceled_model_calls  INTEGER NOT NULL DEFAULT 0,
+			background_calls      INTEGER NOT NULL DEFAULT 0,
+			helper_calls          INTEGER NOT NULL DEFAULT 0,
+			phases_json           TEXT NOT NULL DEFAULT '{}',
 			created_at            INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
 			UNIQUE (session_id, assistant_seq)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, assistant_seq)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_turns_created ON session_turns(created_at)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -667,6 +676,25 @@ func (s *Store) migrate() error {
 		{"reasoning_effort", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureSessionColumn(column.name, column.def); err != nil {
+			return err
+		}
+	}
+	// Enrich the existing one-row-per-answer summary. This adds no second
+	// telemetry stream and therefore no extra writes during a completed turn.
+	for _, column := range []struct {
+		name string
+		def  string
+	}{
+		{"tool_failures", "INTEGER NOT NULL DEFAULT 0"},
+		{"steps", "INTEGER NOT NULL DEFAULT 0"},
+		{"model_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"failed_model_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"canceled_model_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"background_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"helper_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"phases_json", "TEXT NOT NULL DEFAULT '{}'"},
+	} {
+		if err := s.ensureTableColumn("session_turns", column.name, column.def); err != nil {
 			return err
 		}
 	}
@@ -743,9 +771,16 @@ func scanAll(rows *sql.Rows, limit int) ([]Session, error) {
 }
 
 func (s *Store) ensureSessionColumn(name, definition string) error {
-	rows, err := s.db.Query(`PRAGMA table_info(sessions)`)
+	return s.ensureTableColumn("sessions", name, definition)
+}
+
+func (s *Store) ensureTableColumn(table, name, definition string) error {
+	if table != "sessions" && table != "session_turns" {
+		return fmt.Errorf("unsupported migration table %q", table)
+	}
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
-		return fmt.Errorf("session columns: %w", err)
+		return fmt.Errorf("%s columns: %w", table, err)
 	}
 	found := false
 	for rows.Next() {
@@ -754,7 +789,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 		var defaultValue any
 		if err := rows.Scan(&cid, &column, &typ, &notNull, &defaultValue, &pk); err != nil {
 			rows.Close()
-			return fmt.Errorf("session columns scan: %w", err)
+			return fmt.Errorf("%s columns scan: %w", table, err)
 		}
 		if column == name {
 			found = true
@@ -766,8 +801,8 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 	if found {
 		return nil
 	}
-	if _, err := s.db.Exec(`ALTER TABLE sessions ADD COLUMN ` + name + ` ` + definition); err != nil {
-		return fmt.Errorf("add sessions.%s: %w", name, err)
+	if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + name + ` ` + definition); err != nil {
+		return fmt.Errorf("add %s.%s: %w", table, name, err)
 	}
 	return nil
 }

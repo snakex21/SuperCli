@@ -170,3 +170,22 @@ Do not use keyword matching blindly. Read the recent context and infer intent. P
 const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. You have only two tools: recall (look up remembered user facts) and tool_search (find and activate extra tools like web_search when genuinely needed, e.g. to check a current fact). Do not use tools for plain conversation. If the user asks for project/file/code/terminal/document work, say you need agent mode and ask them to repeat or clarify the task.`
 
 const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. You have only two tools: recall (remembered user facts) and tool_search (activate extra tools like web_search to verify current versions or facts). If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
+
+const implementationVerificationInstruction = `Completion contract: after changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Report exactly what passed and what was not verified.`
+
+// implementationVerificationHint recognizes explicit mutation intent without
+// a model call. Keep the list narrow: asking about a project must not inherit a
+// testing lecture, while concrete implementation work should.
+func implementationVerificationHint(prompt string) string {
+	p := strings.ToLower(prompt)
+	for _, hit := range []string{
+		"napraw", "zaimplement", "dodaj", "usuń", "usun", "zmień", "zmien", "edytuj",
+		"przerób", "przerob", "popraw", "zbuduj", "stwórz", "stworz", "zrób", "zrob",
+		"implement", "fix ", "fix:", "add ", "remove ", "change ", "edit ", "refactor", "build ",
+	} {
+		if strings.Contains(p, hit) {
+			return implementationVerificationInstruction
+		}
+	}
+	return ""
+}

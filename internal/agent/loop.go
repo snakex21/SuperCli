@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"supercli/internal/agent/ultrawork"
@@ -158,6 +159,10 @@ type Loop struct {
 	lastDraftTokens   int
 	draftOverrideSink DraftOverrideSink
 	stats             stats.Recorder
+	// toolEvidence is reset for each user Run. A model-issued positive goal
+	// verification must follow at least one successful, concrete tool result in
+	// that same foreground run; manual UI verification bypasses the agent loop.
+	toolEvidence atomic.Bool
 
 	// stepPhaseWall accumulates the DISJOINT wall-clock phases of the
 	// current step (context_prepare, request_encode, backend_wait,
@@ -864,6 +869,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
+	l.toolEvidence.Store(false)
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.
@@ -917,6 +923,20 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			}
 		}
 		l.nextCoordinatorAddon = ""
+	}
+	// Verification is a variable, one-shot user-message hint, never part of the
+	// cacheable system prefix. It is injected only for explicit mutation work;
+	// project questions and ordinary chat pay zero tokens for it.
+	if l.route == RouteCoordinator {
+		if hint := implementationVerificationHint(prompt); hint != "" {
+			for i := len(l.Messages) - 1; i >= 0; i-- {
+				if l.Messages[i].Role == llm.RoleUser {
+					l.Messages[i].Content += "\n\n" + hint
+					l.invalidateVisibleEstimate()
+					break
+				}
+			}
+		}
 	}
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
@@ -1837,7 +1857,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// to the recorder (NOT the wall-phase sum): the whole batch is
 	// already covered by tool_execution in run().
 	execStart := time.Now()
-	res, err := l.registry.Execute(ctx, tc.Name, raw)
+	var res tools.Result
+	var err error
+	if isPassingGoalVerification(tc.Name, raw) && !l.toolEvidence.Load() {
+		res.Err = fmt.Errorf("goal: passing verification requires a successful tool result in this run; run or inspect a concrete check first")
+	} else {
+		res, err = l.registry.Execute(ctx, tc.Name, raw)
+	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 
 	// F4.e: tool result verification. After a successful
@@ -1905,6 +1931,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			}},
 		}
 	}
+	if isConcreteEvidenceTool(tc.Name) {
+		l.toolEvidence.Store(true)
+	}
 
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text}
 	modelContent := l.registry.CompactModelOutput(tc.Name, res.ModelContent())
@@ -1932,6 +1961,26 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		}
 	}
 	return toolResult{followUps: follow}
+}
+
+func isPassingGoalVerification(name string, raw json.RawMessage) bool {
+	if name != "goal" {
+		return false
+	}
+	var p struct {
+		Action string `json:"action"`
+		Passed bool   `json:"passed"`
+	}
+	return json.Unmarshal(raw, &p) == nil && p.Action == "verify" && p.Passed
+}
+
+func isConcreteEvidenceTool(name string) bool {
+	switch name {
+	case "", "goal", "tool_search", "recall", "remember", "ask_user", "send_message", "task_stop":
+		return false
+	default:
+		return true
+	}
 }
 
 // visionOK reports whether the configured model can see images.
