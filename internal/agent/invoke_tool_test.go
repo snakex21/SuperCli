@@ -64,6 +64,24 @@ func TestResolveInvokeToolCallRejectsMutationAndUnknownArgs(t *testing.T) {
 	}
 }
 
+func TestResolveInvokeToolCallGoalControlEnvelope(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{Name: "goal", Description: "goal", Schema: `{"type":"object"}`, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
+	for _, args := range []string{
+		`{"tool":"goal","action":"complete_task","task_seq":"1"}`,
+		`{"tool":"goal","args":{"action":"verify","passed":true,"text":"tests pass"}}`,
+		`{"tool":"goal","arg.action":"mark_done"}`,
+	} {
+		got, err := resolveInvokeToolCall(reg, llm.ToolCall{ID: "g1", Name: invokeToolName, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Name != "goal" || got.ID != "g1" || !json.Valid([]byte(got.Arguments)) || !strings.Contains(got.Arguments, `"action"`) {
+			t.Fatalf("resolved = %+v", got)
+		}
+	}
+}
+
 func TestInvokeToolSpecAdvertisesOnlyEligibleTools(t *testing.T) {
 	reg := tools.NewRegistry()
 	noop := func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil }

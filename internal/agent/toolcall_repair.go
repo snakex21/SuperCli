@@ -40,6 +40,11 @@ const badToolCallMarker = "invalid tool call: "
 func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 1. Tool name validation with did-you-mean.
 	if !containsName(known, tc.Name) {
+		if containsName(known, "goal") {
+			if advice := goalActionToolAdvice(tc.Name, attempt); advice != "" {
+				return advice
+			}
+		}
 		suggestion := SuggestToolName(tc.Name, known)
 		msg := fmt.Sprintf("%sunknown tool %q.", badToolCallMarker, tc.Name)
 		if suggestion != "" {
@@ -66,6 +71,34 @@ func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 3. Beyond repair: bounce it back with the correct format.
 	return fmt.Sprintf("%sthe arguments for %q are not valid JSON (possibly truncated).",
 		badToolCallMarker, tc.Name) + retryAdvice(tc.Name, tc.Name, attempt)
+}
+
+// goalActionToolAdvice catches a common local-model mistake: the values of
+// goal.action are emitted as standalone tool names. Keep Goal dormant until it
+// is needed, but give the model the exact compact correction instead of the
+// generic placeholder call that tends to cause another wasted inference.
+func goalActionToolAdvice(name string, attempt int) string {
+	var args string
+	switch name {
+	case "start_task", "complete_task", "skip_task":
+		args = fmt.Sprintf(`{"action":%q,"task_seq":1}`, name)
+	case "verify":
+		args = `{"action":"verify","passed":true,"text":"concrete check and result"}`
+	case "mark_done", "abandon", "show", "list", "tasks":
+		args = fmt.Sprintf(`{"action":%q}`, name)
+	case "add_task":
+		args = `{"action":"add_task","title":"next concrete step"}`
+	case "add_note":
+		args = `{"action":"add_note","text":"progress or blocker"}`
+	default:
+		return ""
+	}
+	msg := fmt.Sprintf(`%s%q is an action of the "goal" tool, not a standalone tool. Activate "goal" with tool_search if needed, then call {"name":"goal","arguments":%s}.`,
+		badToolCallMarker, name, args)
+	if attempt >= maxToolFormatRetries {
+		return msg + " Do not repeat the standalone action name."
+	}
+	return msg
 }
 
 // retryAdvice appends a format example and an invitation to retry,

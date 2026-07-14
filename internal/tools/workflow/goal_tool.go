@@ -121,7 +121,12 @@ type goalParams struct {
 	SuccessCriteria string `json:"success_criteria,omitempty"`
 	Context         string `json:"context,omitempty"`
 	Text            string `json:"text,omitempty"`
-	Passed          *bool  `json:"passed,omitempty"`
+	// Result/Evidence are input-only compatibility aliases. The advertised
+	// schema stays small and canonical (`text`), while local models that use a
+	// semantically equivalent field do not waste a repair inference.
+	Result   string `json:"result,omitempty"`
+	Evidence string `json:"evidence,omitempty"`
+	Passed   *bool  `json:"passed,omitempty"`
 }
 
 func (p goalParams) Validate() error {
@@ -181,6 +186,19 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("goal: bad args: %w", err)},
 			fmt.Errorf("goal: bad args: %w", err)
 	}
+	p.GoalID = normalizeActiveGoalID(p.GoalID)
+	if p.GoalID != "" {
+		if active := g.Service.Active(); active != nil && strings.EqualFold(p.GoalID, strings.TrimSpace(active.Title)) {
+			p.GoalID = ""
+		}
+	}
+	if strings.TrimSpace(p.Text) == "" {
+		if strings.TrimSpace(p.Evidence) != "" {
+			p.Text = p.Evidence
+		} else if strings.TrimSpace(p.Result) != "" {
+			p.Text = p.Result
+		}
+	}
 	if err := p.Validate(); err != nil {
 		return Result{Err: err}, err
 	}
@@ -214,6 +232,18 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return g.execDecompose(ctx, p.GoalID, p.Title, p.Context)
 	}
 	return Result{Err: errors.New("goal: unreachable")}, nil
+}
+
+func normalizeActiveGoalID(id string) string {
+	// Local models often copy the injected block label or a schema placeholder
+	// as a logical id. These aliases are unambiguous because generated ids always
+	// start with g-, and an empty id already means the active goal.
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "current", "current_goal", "active", "active_goal", "goal_id", "<id>", "<goal_id>":
+		return ""
+	default:
+		return strings.TrimSpace(id)
+	}
 }
 
 func (g *GoalTool) execSet(ctx context.Context, title, description, criteria string) (Result, error) {

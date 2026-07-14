@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +142,63 @@ func TestGoalTool_CompleteTask(t *testing.T) {
 	res, _ := NewGoalTool(svc).Execute(ctx, jsonRaw(t, `{"action":"complete_task","task_seq":1}`))
 	if !strings.Contains(res.Text, "task 1 -> done") {
 		t.Errorf("got %q", res.Text)
+	}
+}
+
+func TestGoalTool_CurrentGoalAliases(t *testing.T) {
+	for _, alias := range []string{"current", "current_goal", "active", "active_goal", "goal_id", "<id>", "<goal_id>"} {
+		t.Run(alias, func(t *testing.T) {
+			svc := newGoalTestService(t)
+			ctx := context.Background()
+			_, _ = svc.Set(ctx, "ship", "", "", "")
+			_, _ = svc.AddTask(ctx, "", "test it")
+			res, err := NewGoalTool(svc).Execute(ctx, jsonRaw(t,
+				fmt.Sprintf(`{"action":"complete_task","goal_id":%q,"task_seq":1}`, alias)))
+			if err != nil || res.Err != nil {
+				t.Fatalf("alias %q: err=%v result=%v", alias, err, res.Err)
+			}
+			tasks, _ := svc.ListTasks(ctx, "")
+			if len(tasks) != 1 || tasks[0].Status != goal.TaskDone {
+				t.Fatalf("alias %q did not update active task: %+v", alias, tasks)
+			}
+		})
+	}
+}
+
+func TestGoalTool_ActiveTitleAsID(t *testing.T) {
+	svc := newGoalTestService(t)
+	ctx := context.Background()
+	_, _ = svc.Set(ctx, "Napraw Add", "", "", "")
+	_, _ = svc.AddTask(ctx, "", "test it")
+	res, err := NewGoalTool(svc).Execute(ctx, jsonRaw(t,
+		`{"action":"complete_task","goal_id":"napraw add","task_seq":1}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("active title alias: err=%v result=%v", err, res.Err)
+	}
+	tasks, _ := svc.ListTasks(ctx, "")
+	if len(tasks) != 1 || tasks[0].Status != goal.TaskDone {
+		t.Fatalf("active title did not resolve: %+v", tasks)
+	}
+}
+
+func TestGoalTool_VerificationEvidenceAliases(t *testing.T) {
+	for _, field := range []string{"result", "evidence"} {
+		t.Run(field, func(t *testing.T) {
+			svc := newGoalTestService(t)
+			ctx := context.Background()
+			created, _ := svc.Set(ctx, "ship", "", "tests pass", "")
+			_, _ = svc.AddTask(ctx, "", "test it")
+			_ = svc.SetTaskStatus(ctx, "", 1, goal.TaskDone)
+			args := fmt.Sprintf(`{"action":"verify","passed":true,%q:"go test passed"}`, field)
+			res, err := NewGoalTool(svc).Execute(ctx, jsonRaw(t, args))
+			if err != nil || res.Err != nil {
+				t.Fatalf("alias %q: err=%v result=%v", field, err, res.Err)
+			}
+			persisted, _ := svc.Goal(ctx, created.ID)
+			if persisted.VerificationStatus != goal.VerificationPassed || persisted.VerificationEvidence != "go test passed" {
+				t.Fatalf("alias %q did not persist evidence: %+v", field, persisted)
+			}
+		})
 	}
 }
 

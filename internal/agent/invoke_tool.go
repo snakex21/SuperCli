@@ -159,6 +159,20 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	if !ok {
 		return call, fmt.Errorf("invoke_tool: unknown tool %q", target)
 	}
+	// Some local chat templates wrap every call in invoke_tool, including the
+	// Goal control plane. Goal is not advertised in the direct read-only catalog,
+	// but accepting this exact envelope is safe: it resolves back to the normal
+	// goal tool and its schema/service still validate every action. Filesystem
+	// and process mutations remain ineligible below.
+	if target == "goal" {
+		goalArgs, err := decodeGoalInvokeEnvelope(envelope)
+		if err != nil {
+			return call, err
+		}
+		call.Name = target
+		call.Arguments = string(goalArgs)
+		return call, nil
+	}
 	allowed, eligible := flatScalarSchemaProperties(tool.Schema)
 	if !eligible || !tool.ReadOnly || target == invokeToolName || target == "tool_search" {
 		return call, fmt.Errorf("invoke_tool: %s requires tool_search (not a simple read-only tool)", target)
@@ -194,6 +208,36 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	call.Name = target
 	call.Arguments = string(rawArgs)
 	return call, nil
+}
+
+func decodeGoalInvokeEnvelope(envelope map[string]json.RawMessage) (json.RawMessage, error) {
+	args := make(map[string]json.RawMessage)
+	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
+		decoded, err := decodeInvokeArgs(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invoke_tool: goal %w", err)
+		}
+		for key, value := range decoded {
+			args[key] = value
+		}
+	}
+	for key, value := range envelope {
+		switch {
+		case key == "tool" || key == "args":
+			continue
+		case strings.HasPrefix(key, "arg."):
+			key = strings.TrimPrefix(key, "arg.")
+		}
+		if _, exists := args[key]; exists {
+			return nil, fmt.Errorf("invoke_tool: goal duplicate argument %q", key)
+		}
+		args[key] = value
+	}
+	encoded, err := json.Marshal(args)
+	if err != nil {
+		return nil, fmt.Errorf("invoke_tool: encode goal args: %w", err)
+	}
+	return encoded, nil
 }
 
 // decodeInvokeArgs tolerates the three shapes real chat templates emit for an

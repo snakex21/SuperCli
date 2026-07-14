@@ -309,6 +309,7 @@ func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (
 	b.WriteString(systemBase)
 	b.WriteString("\n\n[current_goal]\n")
 	fmt.Fprintf(&b, "title: %s\n", g.Title)
+	fmt.Fprintf(&b, "goal_id: %s\n", g.ID)
 	if g.Description != "" {
 		fmt.Fprintf(&b, "description: %s\n", g.Description)
 	}
@@ -324,6 +325,7 @@ func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (
 			}
 			fmt.Fprintf(&b, "  - [%s] %d. %s\n", mark, t.Seq, t.Title)
 		}
+		b.WriteString("state_updates: use the goal tool; start_task, complete_task, verify, and mark_done are action values, not tool names. Omit goal_id to use this active goal.\n")
 	} else if g.VerificationStatus == VerificationPassed {
 		b.WriteString("verification: passed\n")
 		fmt.Fprintf(&b, "verification_evidence: %s\n", compactVerificationEvidence(g.VerificationEvidence, 240))

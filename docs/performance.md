@@ -617,3 +617,46 @@ those cases plus Windows `USERPROFILE`/`LOCALAPPDATA`/Go-cache preservation in
 the scrubbed command environment removed the repair turns. A deliberately
 underspecified discovery prompt remains a separate harder workload; it failed
 0/2 initial probes and must not be conflated with the scoped 10/10 result.
+
+## Durable Goal live benchmark (2026-07-14)
+
+`TestGoalWorkload_Live` exercises the complete persistent Goal contract on a
+real backend. Each isolated trial creates an active SQLite goal with one task
+and a fresh buggy Go project. The model must inspect, edit and run `go test`,
+then perform `complete_task -> verify -> mark_done`. The harness stops at the
+durable `mark_done`, reopens SQLite, checks the terminal goal/task/verification
+state, and independently runs the test again. A red diagnostic test is tracked
+separately from a tool/protocol failure.
+
+```powershell
+$env:SUPERCLI_EVAL_GOAL_URL='http://host:port/v1'
+$env:SUPERCLI_EVAL_GOAL_MODEL='model-id'
+$env:SUPERCLI_EVAL_GOAL_TRIALS='3'
+go test ./internal/agent -run '^TestGoalWorkload_Live$' -count=1 -v -timeout 30m
+```
+
+HP Z6 / Qwen3.5-122B-A10B Q4_K_P, thinking enabled, three sequential final
+trials after the compatibility fixes:
+
+- success: **3/3**, zero tool and protocol failures;
+- average time to independently verified, durably closed goal: **273.925 s**;
+- average model calls: **6.33**; average tool calls: **6.33**;
+- aggregate backend wait + streaming: **819.421 s** (about 99.71%);
+- aggregate tools, including three real `go test` runs: **2.344 s**;
+- aggregate CLI context preparation: **6 ms**;
+- two trials used the minimal six-call sequence; one emitted a duplicate
+  `verify` in the same model turn, which did not add an inference or corrupt
+  state.
+
+The discovery runs were deliberately retained as engineering evidence. They
+exposed local-model ambiguities that ordinary unit tests did not: Goal action
+names emitted as standalone tools, logical ids (`current_goal`), schema
+placeholders (`<id>`), the active title copied into `goal_id`, verification
+evidence sent as `result`/`evidence`, and a Goal call wrapped in `invoke_tool`.
+The fixes are bounded aliases around the same validated Goal service; they do
+not bypass open-task, evidence, or persistence checks. An active WebGUI goal
+also exposes the Goal schema immediately (ordinary no-goal chat still keeps it
+dormant), removing repeated discovery inferences while retaining a stable
+KV-cache prefix. Finally, after any failed concrete tool result the loop blocks
+`complete_task` and passing verification until a later concrete action
+succeeds, so a red test cannot be immediately declared complete.

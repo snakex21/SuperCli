@@ -629,10 +629,15 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	}
 	reg.MustRegister(invoke)
 	reg.MarkAlwaysOn("invoke_tool")
-	// Keep the full goal schema out of ordinary turns. tool_search can activate
-	// it when the compact system hint or an injected active goal makes it
-	// relevant, preserving the thin-tool/KV-cache contract.
-	reg.MustRegister(tools.NewGoalTool(goalSvc).Spec())
+	// Keep the full goal schema out of ordinary turns. Once a goal is active it
+	// is no longer speculative: expose the schema from the first request so a
+	// slow/local model does not spend a fresh inference rediscovering it before
+	// every state transition. Stable toolsets pay this prefix once in KV cache.
+	goalSpec := tools.NewGoalTool(goalSvc).Spec()
+	reg.MustRegister(goalSpec)
+	if goalSvc != nil && goalSvc.Active() != nil {
+		reg.MarkAlwaysOn(goalSpec.Name)
+	}
 	if askCh != nil {
 		ask := tools.NewAskUser(askCh)
 		// Visual decisions often take longer than a text choice, especially
