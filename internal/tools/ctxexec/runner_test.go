@@ -328,6 +328,21 @@ func TestRunner_Run_CustomExtras(t *testing.T) {
 	}
 }
 
+func TestRunner_Run_GoToolHasUsableCache(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go not on PATH")
+	}
+	r := newTestRunner(t)
+	res, err := r.Run(context.Background(), &Request{Command: []string{"go", "env", "GOCACHE"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := strings.TrimSpace(res.Stdout)
+	if res.ExitCode != 0 || cache == "" || !filepath.IsAbs(cache) {
+		t.Fatalf("go cache is unusable in scrubbed environment: exit=%d cache=%q stderr=%q", res.ExitCode, cache, res.Stderr)
+	}
+}
+
 func TestRunner_Run_NilRunner(t *testing.T) {
 	var r *Runner
 	_, err := r.Run(context.Background(), &Request{Command: []string{"echo", "hi"}})

@@ -58,3 +58,12 @@ func TestListDir_Empty(t *testing.T) {
 		t.Fatalf("expected empty notice, got: %q", res.Text)
 	}
 }
+
+func TestListDir_UnwrapsRedundantlyQuotedEmptyPath(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "visible.txt"), "ok")
+	res := runListDir(t, NewListDir(dir), `{"path":"\"\""}`)
+	if !strings.Contains(res.Text, "visible.txt") {
+		t.Fatalf("quoted empty path did not list BaseDir: %q", res.Text)
+	}
+}

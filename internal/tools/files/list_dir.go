@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"supercli/internal/tools/fileops"
@@ -72,11 +73,21 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 			return Result{Err: fmt.Errorf("list_dir: bad args: %w", err)}, err
 		}
 	}
+	path := strings.TrimSpace(p.Path)
+	// Some local models serialize an empty path twice and produce a JSON
+	// string whose value is literally "\"\"". Treat one redundant quoting
+	// layer as transport noise; this avoids an otherwise pointless repair turn
+	// while keeping the resolved path inside the normal sandbox.
+	if unquoted, err := strconv.Unquote(path); err == nil {
+		path = strings.TrimSpace(unquoted)
+	} else if path == "''" {
+		path = ""
+	}
 	var dir string
-	if strings.TrimSpace(p.Path) == "" {
+	if path == "" {
 		dir = t.BaseDir
 	} else {
-		resolved, err := resolveSandboxed(t.BaseDir, p.Path)
+		resolved, err := resolveSandboxed(t.BaseDir, path)
 		if err != nil {
 			err = fmt.Errorf("list_dir: %w", err)
 			return Result{Err: err}, err

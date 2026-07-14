@@ -582,3 +582,38 @@ for KV-cache reuse.
 - **Navigator on the small provider** (fadc051): route classification
   for the navigator runs on the small side provider; awaiting live
   test.
+
+## Local tool-workload live benchmark (2026-07-14)
+
+`TestToolWorkload_Live` is an opt-in, repeatable end-to-end workload for any
+OpenAI-compatible local or cloud backend. Every trial creates a fresh tiny Go
+project with one deterministic production bug. The model must use
+`read_many -> edit_line -> ctx_execute(go test ./...)`; the harness then runs
+an independent `go test` and inspects the production file. Prompt/model text is
+not persisted. The measurement stops at the first green `ctx_execute`, so a
+local model's optional final prose cannot hide time-to-verified-change.
+
+```powershell
+$env:SUPERCLI_EVAL_TOOL_URL='http://host:port/v1'
+$env:SUPERCLI_EVAL_TOOL_MODEL='model-id'
+$env:SUPERCLI_EVAL_TOOL_TRIALS='10'
+go test ./internal/agent -run '^TestToolWorkload_Live$' -count=1 -v -timeout 35m
+```
+
+HP Z6 / Qwen3.5-122B-A10B Q4_K_P, thinking enabled, 10 sequential trials:
+
+- success: **10/10**; zero tool failures;
+- average time to independently verified fix: **137.954 s**;
+- average model calls: **3.9**; tool calls: exactly **3.0**;
+- aggregate model wait + streaming: **1371.938 s** (about 99.45%);
+- aggregate tools, including ten real `go test` runs: **7.592 s**;
+- aggregate CLI context preparation: **6 ms**.
+
+The exploratory baseline also exposed three high-leverage local-model
+compatibility gaps before the green run: redundant quotes around an empty
+`list_dir` path, omitted leading indentation in an otherwise exact
+`edit_line` anchor, and bare filenames in `read_many`. Safe normalization for
+those cases plus Windows `USERPROFILE`/`LOCALAPPDATA`/Go-cache preservation in
+the scrubbed command environment removed the repair turns. A deliberately
+underspecified discovery prompt remains a separate harder workload; it failed
+0/2 initial probes and must not be conflated with the scoped 10/10 result.

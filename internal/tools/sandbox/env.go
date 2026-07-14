@@ -10,11 +10,16 @@ import (
 // sensitive patterns (in which case it is dropped too).
 var defaultKeep = []string{
 	"HOME", "PATH", "PATHEXT", "LANG", "LC_ALL", "LC_CTYPE",
-	"USER", "USERNAME", "SHELL", "COMSPEC",
+	"USER", "USERNAME", "USERPROFILE", "SHELL", "COMSPEC",
+	"APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR",
 	"TMPDIR", "TMP", "TEMP",
 	"PWD", "OLDPWD",
 	"TERM", "COLORTERM", "NO_COLOR",
 	"EDITOR", "VISUAL",
+	// Non-secret Go toolchain locations and cache controls. Go derives its
+	// defaults from HOME on Unix and USERPROFILE/LOCALAPPDATA on Windows; both
+	// platform families must survive scrubbing so ctx_execute can build/test.
+	"GOCACHE", "GOMODCACHE", "GOPATH", "GOROOT", "GOFLAGS", "GOTOOLCHAIN",
 	"SUPERCLI_HOME", "SUPERCLI_DEBUG",
 }
 
@@ -28,10 +33,10 @@ var secretPatterns = []string{
 	"PASSWORD", // covers DB_PASSWORD, etc.
 	"CREDENTIAL",
 	"AUTH",
-	"AWS_",     // AWS_ACCESS_KEY, AWS_SECRET_KEY
-	"GITHUB_",  // GITHUB_TOKEN
-	"GITLAB_",  // GITLAB_TOKEN
-	"OPENAI_",  // OPENAI_API_KEY
+	"AWS_",    // AWS_ACCESS_KEY, AWS_SECRET_KEY
+	"GITHUB_", // GITHUB_TOKEN
+	"GITLAB_", // GITLAB_TOKEN
+	"OPENAI_", // OPENAI_API_KEY
 	"ANTHROPIC_",
 	"GOOGLE_",
 	"AZURE_",

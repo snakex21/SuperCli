@@ -171,7 +171,7 @@ const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directl
 
 const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. You have only two tools: recall (remembered user facts) and tool_search (activate extra tools like web_search to verify current versions or facts). If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
 
-const implementationVerificationInstruction = `Completion contract: after changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Report exactly what passed and what was not verified.`
+const implementationVerificationInstruction = `Completion contract: continue past discovery and make the requested change unless blocked. If a tool call fails, correct it or report the blocker. After changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Do not claim completion before a concrete check succeeds; report exactly what passed and what was not verified.`
 
 // implementationVerificationHint recognizes explicit mutation intent without
 // a model call. Keep the list narrow: asking about a project must not inherit a
