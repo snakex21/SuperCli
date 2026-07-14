@@ -112,6 +112,8 @@ func (t *EditXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		err = fmt.Errorf("edit_xlsx: %w", err)
 		return Result{Err: err}, err
 	}
+	release := fileops.LockMutationPaths(full)
+	defer release()
 	sheetN := 1
 	if strings.TrimSpace(p.Sheet) != "" {
 		n, err := strconv.Atoi(strings.TrimSpace(p.Sheet))

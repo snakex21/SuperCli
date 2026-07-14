@@ -2,6 +2,7 @@ package goal
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,9 @@ func TestService_SetStatus_ClearsActiveOnTerminal(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
 	g, _ := svc.Set(ctx, "x", "", "", "")
+	if err := svc.Verify(ctx, g.ID, true, "goal output inspected successfully"); err != nil {
+		t.Fatal(err)
+	}
 	if err := svc.SetStatus(ctx, g.ID, StatusDone); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +118,57 @@ func TestService_SetStatus_ClearsActiveOnTerminal(t *testing.T) {
 	cur, _ := svc.Refresh(ctx)
 	if cur != nil {
 		t.Error("storage should not return an active after SetStatus(done)")
+	}
+}
+
+func TestService_CompletionRequiresClosedTasksAndFreshPassingVerification(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	g, _ := svc.Set(ctx, "ship", "", "tests green", "")
+	_, _ = svc.AddTask(ctx, g.ID, "run tests")
+
+	if err := svc.Verify(ctx, g.ID, true, "tests passed"); !errors.Is(err, ErrOpenTasks) {
+		t.Fatalf("Verify with open task error = %v, want ErrOpenTasks", err)
+	}
+	if err := svc.SetStatus(ctx, g.ID, StatusDone); !errors.Is(err, ErrOpenTasks) {
+		t.Fatalf("SetStatus with open task error = %v, want ErrOpenTasks", err)
+	}
+	if err := svc.SetTaskStatus(ctx, g.ID, 1, TaskDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetStatus(ctx, g.ID, StatusDone); !errors.Is(err, ErrVerificationRequired) {
+		t.Fatalf("unverified SetStatus error = %v, want ErrVerificationRequired", err)
+	}
+	if err := svc.Verify(ctx, g.ID, false, "integration test failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetStatus(ctx, g.ID, StatusDone); !errors.Is(err, ErrVerificationRequired) {
+		t.Fatalf("failed verification SetStatus error = %v, want ErrVerificationRequired", err)
+	}
+	if err := svc.Verify(ctx, g.ID, true, "go test ./... passed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetStatus(ctx, g.ID, StatusDone); err != nil {
+		t.Fatalf("verified SetStatus: %v", err)
+	}
+}
+
+func TestService_TaskMutationInvalidatesVerification(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	g, _ := svc.Set(ctx, "ship", "", "tests green", "")
+	if err := svc.Verify(ctx, g.ID, true, "initial checks passed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddTask(ctx, g.ID, "new requirement"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Goal(ctx, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.VerificationStatus != VerificationNone || got.VerificationEvidence != "" || got.VerifiedAt != nil {
+		t.Fatalf("verification survived task mutation: %+v", got)
 	}
 }
 
@@ -160,6 +215,31 @@ func TestService_Inject_SkipsDoneTasks(t *testing.T) {
 	}
 	if strings.Contains(got, "2. b") {
 		t.Errorf("done task 'b' should not appear: %q", got)
+	}
+}
+
+func TestService_InjectGuidesVerificationAfterLastTask(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	_, _ = svc.Set(ctx, "ship", "", "tests green", "")
+	_, _ = svc.AddTask(ctx, "", "run tests")
+	_ = svc.SetTaskStatus(ctx, "", 1, TaskDone)
+
+	got, err := svc.Inject(ctx, "base", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"verification_required: true", "goal verify", "mark_done is blocked"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Inject missing %q: %s", want, got)
+		}
+	}
+	if err := svc.Verify(ctx, "", true, "go test ./... passed"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = svc.Inject(ctx, "base", 5)
+	if !strings.Contains(got, "verification: passed") || !strings.Contains(got, "completion_ready: true") {
+		t.Fatalf("verified Inject = %s", got)
 	}
 }
 

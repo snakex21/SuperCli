@@ -82,6 +82,7 @@ func TestGoalSlashCommandsAreSafe(t *testing.T) {
 		{"tasks done 1", "task 1 -> done"},
 		{"note tested slash commands", "note appended"},
 		{"list", "goal(s)"},
+		{"verify pass go test ./... passed", "verification passed"},
 		{"done", "marked done"},
 	}
 	for _, tc := range cases {

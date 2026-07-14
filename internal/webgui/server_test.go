@@ -1,10 +1,15 @@
 package webgui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"supercli/internal/llm"
+	"supercli/internal/storage/session"
 )
 
 func TestIsLoopbackHost(t *testing.T) {
@@ -116,6 +121,113 @@ func TestHandleHealth(t *testing.T) {
 	}
 }
 
+func TestEmbeddedUIIncludesGoalInspector(t *testing.T) {
+	srv := newTestServer(t, false)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, marker := range []string{`data-tab="goal"`, `id="tab-goal"`, `id="goal-side-help"`, `id="manage-side-goal"`} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("embedded UI missing %s", marker)
+		}
+	}
+}
+
+func TestHandleGoal_CreateManageAndInject(t *testing.T) {
+	srv := newTestServer(t, false)
+	post := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/goal", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		srv.handleGoal(rec, req)
+		return rec
+	}
+
+	created := post(`{"action":"set","title":"Ship web goals","description":"shared state","success_criteria":"all tests green"}`)
+	if created.Code != http.StatusOK {
+		t.Fatalf("set status = %d: %s", created.Code, created.Body.String())
+	}
+	var view goalView
+	if err := json.Unmarshal(created.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Title != "Ship web goals" || view.Description != "shared state" || view.SuccessCriteria != "all tests green" {
+		t.Fatalf("created goal = %+v", view)
+	}
+
+	added := post(`{"action":"add_task","title":"Wire the panel"}`)
+	if added.Code != http.StatusOK {
+		t.Fatalf("add task status = %d: %s", added.Code, added.Body.String())
+	}
+	if err := json.Unmarshal(added.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Tasks) != 1 || view.Tasks[0].Title != "Wire the panel" || view.Tasks[0].Status != "pending" {
+		t.Fatalf("tasks after add = %+v", view.Tasks)
+	}
+
+	completed := post(`{"action":"set_task_status","task_seq":1,"status":"done"}`)
+	if completed.Code != http.StatusOK {
+		t.Fatalf("complete status = %d: %s", completed.Code, completed.Body.String())
+	}
+	if err := json.Unmarshal(completed.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Tasks[0].Status != "done" {
+		t.Fatalf("task status = %+v", view.Tasks[0])
+	}
+	if !view.ReadyForVerification || view.CanFinish {
+		t.Fatalf("readiness after completing tasks = %+v", view)
+	}
+
+	blocked := post(`{"action":"set_status","status":"done"}`)
+	if blocked.Code != http.StatusBadRequest || !strings.Contains(blocked.Body.String(), "verification required") {
+		t.Fatalf("unverified finish status = %d: %s", blocked.Code, blocked.Body.String())
+	}
+	verified := post(`{"action":"verify","passed":true,"text":"go test ./internal/webgui passed"}`)
+	if verified.Code != http.StatusOK {
+		t.Fatalf("verify status = %d: %s", verified.Code, verified.Body.String())
+	}
+	if err := json.Unmarshal(verified.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.VerificationStatus != "passed" || !view.CanFinish || view.VerificationEvidence == "" {
+		t.Fatalf("verified view = %+v", view)
+	}
+
+	loop, err := srv.eng.newLoop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := loop.AllMessages()
+	if len(messages) == 0 || !strings.Contains(messages[0].Content, "[current_goal]") ||
+		!strings.Contains(messages[0].Content, "Ship web goals") ||
+		!strings.Contains(messages[0].Content, "verification: passed") {
+		t.Fatalf("active goal was not injected into web agent prompt: %+v", messages)
+	}
+
+	finished := post(`{"action":"set_status","status":"done"}`)
+	if finished.Code != http.StatusOK || strings.TrimSpace(finished.Body.String()) != "null" {
+		t.Fatalf("verified finish status = %d: %s", finished.Code, finished.Body.String())
+	}
+}
+
+func TestHandleGoal_RejectsInvalidMutation(t *testing.T) {
+	srv := newTestServer(t, false)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/goal", strings.NewReader(`{"action":"set","title":""}`))
+	srv.handleGoal(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty title status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleTranscript_MissingID(t *testing.T) {
 	srv := newTestServer(t, false)
 	req := httptest.NewRequest(http.MethodGet, "/api/transcript", nil)
@@ -123,5 +235,46 @@ func TestHandleTranscript_MissingID(t *testing.T) {
 	srv.handleTranscript(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("missing id: status = %d, want 400", rec.Code)
+	}
+}
+
+func TestHandleTranscript_PagedAndLegacyContracts(t *testing.T) {
+	srv := newTestServer(t, false)
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Create(srv.eng.Home(), "echo-test", "paged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := session.NewWriter(store, sess.ID)
+	for _, content := range []string{"one", "two", "three"} {
+		if err := writer.AppendMessage(context.Background(), llm.Message{Role: llm.RoleUser, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paged := httptest.NewRecorder()
+	srv.handleTranscript(paged, httptest.NewRequest(http.MethodGet, "/api/transcript?id="+sess.ID+"&limit=2", nil))
+	if paged.Code != http.StatusOK {
+		t.Fatalf("paged status = %d: %s", paged.Code, paged.Body.String())
+	}
+	var page transcriptPage
+	if err := json.Unmarshal(paged.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if !page.HasMore || page.BeforeSeq != 2 || len(page.Messages) != 2 || page.Messages[0].Content != "two" {
+		t.Fatalf("paged transcript = %+v", page)
+	}
+
+	legacy := httptest.NewRecorder()
+	srv.handleTranscript(legacy, httptest.NewRequest(http.MethodGet, "/api/transcript?id="+sess.ID, nil))
+	var messages []transcriptMsg
+	if err := json.Unmarshal(legacy.Body.Bytes(), &messages); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 3 || messages[0].Content != "one" {
+		t.Fatalf("legacy transcript = %+v", messages)
 	}
 }

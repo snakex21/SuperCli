@@ -3,6 +3,7 @@ package goal
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,38 @@ func TestStorage_Migrate_Idempotent(t *testing.T) {
 	gs2 := NewStorage(db)
 	if err := gs2.Migrate(context.Background()); err != nil {
 		t.Errorf("second Migrate failed: %v", err)
+	}
+}
+
+func TestStorage_Migrate_AddsVerificationToExistingDatabase(t *testing.T) {
+	db, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	_, err = db.Exec(`CREATE TABLE goals (
+		id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+		success_criteria TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL,
+		completed_at INTEGER, parent_session_id TEXT
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := NewStorage(db)
+	if err := gs.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	g := &Goal{Title: "migrated"}
+	if err := gs.CreateGoal(context.Background(), g); err != nil {
+		t.Fatalf("CreateGoal after additive migration: %v", err)
+	}
+	if err := gs.SetVerification(context.Background(), g.ID, VerificationPassed, "legacy database verified"); err != nil {
+		t.Fatalf("SetVerification after additive migration: %v", err)
+	}
+	got, err := gs.GetGoal(context.Background(), g.ID)
+	if err != nil || got.VerificationStatus != VerificationPassed || got.VerifiedAt == nil {
+		t.Fatalf("migrated goal = %+v, err=%v", got, err)
 	}
 }
 
@@ -352,7 +385,7 @@ func TestStorage_AddTask_TightLoopNoCollision(t *testing.T) {
 // test above; this one is unit-fast and runs in
 // microseconds.
 func TestGenerateID_UniqueUnderContention(t *testing.T) {
-	const G = 8  // goroutines
+	const G = 8   // goroutines
 	const N = 500 // ids per goroutine
 	ids := make(chan string, G*N)
 	done := make(chan struct{})
@@ -558,6 +591,33 @@ func TestStorage_SetTaskStatus_ReopenClearsCompletedAt(t *testing.T) {
 	}
 }
 
+func TestStorage_VerificationAndCompletionContract(t *testing.T) {
+	_, gs := newTestStorage(t)
+	ctx := context.Background()
+	g := &Goal{Title: "ship"}
+	if err := gs.CreateGoal(ctx, g); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := gs.AddTask(ctx, g.ID, "test")
+	if err := gs.SetVerification(ctx, g.ID, VerificationPassed, "tests passed"); !errors.Is(err, ErrOpenTasks) {
+		t.Fatalf("verification with open task error = %v", err)
+	}
+	_ = gs.SetTaskStatus(ctx, g.ID, task.Seq, TaskDone)
+	if err := gs.SetVerification(ctx, g.ID, VerificationPassed, "go test ./... passed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := gs.CompleteVerifiedGoal(ctx, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gs.AddTask(ctx, g.ID, "late task"); err == nil {
+		t.Fatal("completed goal accepted a late task")
+	}
+	got, _ := gs.GetGoal(ctx, g.ID)
+	if got.Status != StatusDone || got.VerificationStatus != VerificationPassed {
+		t.Fatalf("completed goal = %+v", got)
+	}
+}
+
 func TestStorage_CountTasks(t *testing.T) {
 	_, gs := newTestStorage(t)
 	ctx := context.Background()
@@ -629,11 +689,11 @@ func TestStatusValidators(t *testing.T) {
 
 func TestRenderGoalMarkdown(t *testing.T) {
 	g := &Goal{
-		ID:         "g-1",
-		Title:      "ship F8",
-		Status:     StatusActive,
-		CreatedAt:  time.Now(),
-		Notes:      "first\nsecond",
+		ID:        "g-1",
+		Title:     "ship F8",
+		Status:    StatusActive,
+		CreatedAt: time.Now(),
+		Notes:     "first\nsecond",
 	}
 	tasks := []Task{
 		{Seq: 1, Title: "design doc", Status: TaskDone},

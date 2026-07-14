@@ -10,11 +10,11 @@
 //
 // Three storage layers cooperate:
 //
-//   1. Storage    (storage.go)  — SQLite CRUD
-//   2. Service    (service.go)  — in-memory state + prompt
-//                                 injection
-//   3. Decompose  (decompose.go) — model-driven task
-//                                 suggestion (opt-in)
+//  1. Storage    (storage.go)  — SQLite CRUD
+//  2. Service    (service.go)  — in-memory state + prompt
+//     injection
+//  3. Decompose  (decompose.go) — model-driven task
+//     suggestion (opt-in)
 //
 // The package does NOT depend on agent, llm, tui, or
 // reflect. It only depends on database/sql and the
@@ -36,6 +36,11 @@ import (
 // zero value is StatusActive; callers should set it
 // explicitly to avoid surprises.
 type Status string
+
+// VerificationStatus records the latest explicit check of a goal's success
+// criteria. It is deliberately separate from Status: a goal remains active
+// after verification until the user or agent explicitly closes it.
+type VerificationStatus string
 
 const (
 	// StatusActive is the default state. Visible to the
@@ -63,7 +68,21 @@ const (
 	// TaskSkipped is final; the task is recorded but
 	// was deliberately not done.
 	TaskSkipped Status = "skipped"
+
+	VerificationNone   VerificationStatus = ""
+	VerificationPassed VerificationStatus = "passed"
+	VerificationFailed VerificationStatus = "failed"
 )
+
+// ValidVerificationStatus reports whether s is a persistable verification
+// result. VerificationNone represents a goal that has not been checked yet.
+func ValidVerificationStatus(s VerificationStatus) bool {
+	switch s {
+	case VerificationNone, VerificationPassed, VerificationFailed:
+		return true
+	}
+	return false
+}
 
 // ValidGoalStatus reports whether s is one of the four
 // valid goal statuses.
@@ -96,15 +115,18 @@ func ValidTaskStatus(s Status) bool {
 //     goal; useful for "what was I doing when I started
 //     this?" queries.
 type Goal struct {
-	ID              string
-	Title           string
-	Description     string
-	SuccessCriteria string
-	Notes           string
-	Status          Status
-	CreatedAt       time.Time
-	CompletedAt     *time.Time
-	ParentSessionID string
+	ID                   string
+	Title                string
+	Description          string
+	SuccessCriteria      string
+	Notes                string
+	VerificationStatus   VerificationStatus
+	VerificationEvidence string
+	VerifiedAt           *time.Time
+	Status               Status
+	CreatedAt            time.Time
+	CompletedAt          *time.Time
+	ParentSessionID      string
 }
 
 // Task is one ordered step under a Goal.
@@ -128,6 +150,13 @@ var ErrEmptyTitle = errors.New("goal: title is empty")
 // ErrInvalidStatus is returned when a status string
 // doesn't match one of the known values.
 var ErrInvalidStatus = errors.New("goal: invalid status")
+
+// ErrOpenTasks prevents verification and completion while work remains.
+var ErrOpenTasks = errors.New("goal: open tasks remain")
+
+// ErrVerificationRequired prevents completion until the latest goal shape has
+// a successful, evidence-bearing verification result.
+var ErrVerificationRequired = errors.New("goal: successful verification required")
 
 // validateStatus returns nil for valid goal statuses and
 // ErrInvalidStatus otherwise.
@@ -214,7 +243,7 @@ func defaultRandBytes() string {
 	// consecutive calls land in different nanoseconds, plus
 	// a counter to break ties.
 	return shortHash(int(time.Now().UnixNano()&0xFFFFFFFF)) +
-		shortHash(int(time.Now().UnixNano()>>32) & 0xFFFFFFFF)
+		shortHash(int(time.Now().UnixNano()>>32)&0xFFFFFFFF)
 }
 
 // renderGoalMarkdown is the human-readable form of a
@@ -232,6 +261,9 @@ func renderGoalMarkdown(g *Goal, tasks []Task) string {
 	fmt.Fprintf(&b, "\nstatus: %s\n", g.Status)
 	if g.Notes != "" {
 		fmt.Fprintf(&b, "\n## Notes\n\n%s\n", g.Notes)
+	}
+	if g.VerificationStatus != VerificationNone {
+		fmt.Fprintf(&b, "\n## Verification\n\n%s: %s\n", g.VerificationStatus, g.VerificationEvidence)
 	}
 	if len(tasks) > 0 {
 		fmt.Fprintf(&b, "\n## Tasks\n")

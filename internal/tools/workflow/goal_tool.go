@@ -18,13 +18,15 @@ import (
 // Schema:
 //
 //	{
-//	  "action": "show" | "list" | "tasks" | "add_task" |
+//	  "action": "set" | "show" | "list" | "tasks" | "add_task" |
 //	            "complete_task" | "skip_task" |
-//	            "add_note" | "mark_done" | "abandon" |
+//	            "add_note" | "verify" | "mark_done" | "abandon" |
 //	            "decompose",
 //	  "goal_id":  "...",            // optional, defaults to active
 //	  "task_seq": 2,                // for complete_task / skip_task
 //	  "title":    "do the thing",   // for set, add_task, decompose (input)
+//	  "description": "background",  // optional for set
+//	  "success_criteria": "done",   // optional for set
 //	  "context":  "background...",  // for decompose
 //	  "text":     "note body"       // for add_note
 //	}
@@ -80,21 +82,29 @@ func (g *GoalTool) Spec() Tool {
 			"- Keep exactly ONE task in_progress at a time; finish or skip it before starting the next\n" +
 			"- Mark tasks complete (complete_task) IMMEDIATELY when done — do not batch completions\n" +
 			"- Never complete a task while tests fail or the work is partial; keep it in_progress and add_note what is blocking\n\n" +
-			"Actions: show, list, tasks, add_task, start_task, complete_task, skip_task, add_note, mark_done (close the goal), abandon, decompose (break the goal title into 3-7 tasks). Returns Markdown to surface to the user.",
+			"## Completion rules\n" +
+			"- After every task is done or deliberately skipped, verify the result against success_criteria (or the goal title)\n" +
+			"- Call verify with passed=true only after concrete checks; evidence must name those checks and results\n" +
+			"- If verification fails, record passed=false, reopen or add the needed task, fix it, and verify again\n" +
+			"- mark_done is rejected until the latest verification passes\n\n" +
+			"Actions: set (create and activate a goal), show, list, tasks, add_task, start_task, complete_task, skip_task, add_note, verify, mark_done (close a verified goal), abandon, decompose (break the goal title into 3-7 tasks). Returns Markdown to surface to the user.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"action": {
 					"type": "string",
-					"enum": ["show", "list", "tasks", "add_task", "start_task", "complete_task",
-					         "skip_task", "add_note", "mark_done", "abandon", "decompose"],
+					"enum": ["set", "show", "list", "tasks", "add_task", "start_task", "complete_task",
+					         "skip_task", "add_note", "verify", "mark_done", "abandon", "decompose"],
 					"description": "What to do."
 				},
 				"goal_id":  {"type": "string", "description": "Goal id (g-...). Defaults to the active goal."},
 				"task_seq": {"type": "integer", "description": "Task sequence number (1-based)."},
-				"title":    {"type": "string", "description": "For add_task / decompose input."},
+				"title":    {"type": "string", "description": "For set / add_task / decompose input."},
+				"description": {"type": "string", "description": "Optional background for set."},
+				"success_criteria": {"type": "string", "description": "Optional definition of done for set."},
 				"context":  {"type": "string", "description": "Optional context for decompose."},
-				"text":     {"type": "string", "description": "Note body for add_note."}
+				"text":     {"type": "string", "description": "Note body for add_note; concrete evidence for verify."},
+				"passed":   {"type": "boolean", "description": "Required for verify. True only when concrete checks satisfy the goal."}
 			},
 			"required": ["action"]
 		}`,
@@ -103,17 +113,25 @@ func (g *GoalTool) Spec() Tool {
 }
 
 type goalParams struct {
-	Action  string `json:"action"`
-	GoalID  string `json:"goal_id,omitempty"`
-	TaskSeq int    `json:"task_seq,omitempty"`
-	Title   string `json:"title,omitempty"`
-	Context string `json:"context,omitempty"`
-	Text    string `json:"text,omitempty"`
+	Action          string `json:"action"`
+	GoalID          string `json:"goal_id,omitempty"`
+	TaskSeq         int    `json:"task_seq,omitempty"`
+	Title           string `json:"title,omitempty"`
+	Description     string `json:"description,omitempty"`
+	SuccessCriteria string `json:"success_criteria,omitempty"`
+	Context         string `json:"context,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Passed          *bool  `json:"passed,omitempty"`
 }
 
 func (p goalParams) Validate() error {
 	switch p.Action {
 	case "show", "list", "tasks":
+		return nil
+	case "set":
+		if strings.TrimSpace(p.Title) == "" {
+			return fmt.Errorf("goal: set requires title")
+		}
 		return nil
 	case "add_task":
 		if strings.TrimSpace(p.Title) == "" {
@@ -128,6 +146,14 @@ func (p goalParams) Validate() error {
 	case "add_note":
 		if strings.TrimSpace(p.Text) == "" {
 			return fmt.Errorf("goal: add_note requires text")
+		}
+		return nil
+	case "verify":
+		if p.Passed == nil {
+			return fmt.Errorf("goal: verify requires passed")
+		}
+		if strings.TrimSpace(p.Text) == "" {
+			return fmt.Errorf("goal: verify requires evidence in text")
 		}
 		return nil
 	case "mark_done", "abandon":
@@ -160,6 +186,8 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 
 	switch p.Action {
+	case "set":
+		return g.execSet(ctx, p.Title, p.Description, p.SuccessCriteria)
 	case "show":
 		return g.execShow(ctx, p.GoalID)
 	case "list":
@@ -176,6 +204,8 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return g.execSetTaskStatus(ctx, p.GoalID, p.TaskSeq, goal.TaskSkipped)
 	case "add_note":
 		return g.execAddNote(ctx, p.GoalID, p.Text)
+	case "verify":
+		return g.execVerify(ctx, p.GoalID, *p.Passed, p.Text)
 	case "mark_done":
 		return g.execSetGoalStatus(ctx, p.GoalID, goal.StatusDone)
 	case "abandon":
@@ -184,6 +214,14 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return g.execDecompose(ctx, p.GoalID, p.Title, p.Context)
 	}
 	return Result{Err: errors.New("goal: unreachable")}, nil
+}
+
+func (g *GoalTool) execSet(ctx context.Context, title, description, criteria string) (Result, error) {
+	gl, err := g.Service.Set(ctx, title, strings.TrimSpace(description), strings.TrimSpace(criteria), "")
+	if err != nil {
+		return Result{Err: err}, err
+	}
+	return Result{Text: fmt.Sprintf("active goal: %s (%s)", gl.Title, gl.ID)}, nil
 }
 
 func (g *GoalTool) execShow(ctx context.Context, id string) (Result, error) {
@@ -291,6 +329,17 @@ func (g *GoalTool) execAddNote(ctx context.Context, id, text string) (Result, er
 	return Result{Text: fmt.Sprintf("note appended: %q", shorten(text, 60))}, nil
 }
 
+func (g *GoalTool) execVerify(ctx context.Context, id string, passed bool, evidence string) (Result, error) {
+	if err := g.Service.Verify(ctx, id, passed, evidence); err != nil {
+		return Result{Err: err}, err
+	}
+	status := "failed"
+	if passed {
+		status = "passed; goal can now be marked done"
+	}
+	return Result{Text: fmt.Sprintf("goal verification %s: %s", status, shorten(strings.TrimSpace(evidence), 160))}, nil
+}
+
 func (g *GoalTool) execSetGoalStatus(ctx context.Context, id string, status goal.Status) (Result, error) {
 	if id == "" {
 		a := g.Service.Active()
@@ -349,6 +398,9 @@ func renderGoal(g goal.Goal) string {
 	}
 	if g.SuccessCriteria != "" {
 		fmt.Fprintf(&b, "\n## success_criteria\n%s\n", g.SuccessCriteria)
+	}
+	if g.VerificationStatus != goal.VerificationNone {
+		fmt.Fprintf(&b, "\n## verification\n%s: %s\n", g.VerificationStatus, g.VerificationEvidence)
 	}
 	fmt.Fprintf(&b, "\nid: %s\nstatus: %s\n", g.ID, g.Status)
 	if g.Notes != "" {

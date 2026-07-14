@@ -298,10 +298,15 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 // written by the F13 writer — which never created a sessions
 // row — still show up.
 type RecentSession struct {
-	ID           string
-	StartedAt    time.Time
-	FirstUserMsg string
-	MessageCount int
+	ID              string
+	StartedAt       time.Time
+	FirstUserMsg    string
+	MessageCount    int
+	Title           string
+	Model           string
+	Provider        string
+	ReasoningEffort string
+	ParentID        string
 	// Cwd is the working directory recorded for the session (from the
 	// sessions row), or "" when no sessions row exists (F13 writer
 	// sessions are message-only). Populated via a LEFT JOIN so the
@@ -341,7 +346,9 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 		               WHERE session_id = m.session_id AND role = 'user'
 		                 AND content IS NOT NULL AND content <> ''
 		               ORDER BY seq LIMIT 1), ''),
-		       IFNULL(s.cwd, '')
+		       IFNULL(s.cwd, ''), IFNULL(s.title, ''), IFNULL(s.model, ''),
+		       IFNULL(s.provider, ''), IFNULL(s.reasoning_effort, ''),
+		       IFNULL(s.parent_id, '')
 		FROM messages m
 		LEFT JOIN sessions s ON s.id = m.session_id`
 	args := []any{}
@@ -364,7 +371,8 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 	for rows.Next() {
 		var r RecentSession
 		var startedNanos int64
-		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg, &r.Cwd); err != nil {
+		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg,
+			&r.Cwd, &r.Title, &r.Model, &r.Provider, &r.ReasoningEffort, &r.ParentID); err != nil {
 			return nil, fmt.Errorf("session.Store.ListRecent: scan: %w", err)
 		}
 		r.StartedAt = time.Unix(0, startedNanos).UTC()
@@ -395,6 +403,53 @@ func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, 
 		return nil, err
 	}
 	return out, nil
+}
+
+// ReadMessagesBefore returns the newest limit messages with seq < beforeSeq,
+// in transcript order. A non-positive beforeSeq starts at the end. One extra
+// row is fetched to report whether an older page exists without a COUNT scan.
+func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, beforeSeq, limit int) ([]Encoded, bool, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	query := `SELECT session_id, seq, role, content, IFNULL(parts_json,''),
+		IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'')
+		FROM messages WHERE session_id = ?`
+	args := []any{sessionID}
+	if beforeSeq > 0 {
+		query += ` AND seq < ?`
+		args = append(args, beforeSeq)
+	}
+	query += ` ORDER BY seq DESC LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := make([]Encoded, 0, limit+1)
+	for rows.Next() {
+		var m Encoded
+		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content,
+			&m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+			return nil, false, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
+		out[left], out[right] = out[right], out[left]
+	}
+	return out, hasMore, nil
 }
 
 // UpdateUsage updates the cumulative token counters for a

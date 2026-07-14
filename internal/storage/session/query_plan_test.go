@@ -21,6 +21,8 @@ func TestSessionListIndexesAvoidTempSort(t *testing.T) {
 		`SELECT id FROM sessions ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT ?`, 5)
 	assertQueryPlanHasNoTempSort(t, s,
 		`SELECT id FROM sessions WHERE cwd = ? ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT ?`, "/a", 5)
+	assertQueryPlanHasNoTempSort(t, s,
+		`SELECT seq FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`, "session", 100, 20)
 }
 
 func assertQueryPlanHasNoTempSort(t *testing.T, s *Store, query string, args ...any) {

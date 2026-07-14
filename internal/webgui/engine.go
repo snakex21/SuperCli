@@ -8,6 +8,7 @@
 package webgui
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage"
+	"supercli/internal/storage/goal"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
@@ -76,11 +78,24 @@ type Engine struct {
 	sessionMu sync.Mutex
 	sessions  *session.Store
 	closed    bool
+	// goals is a shared service over the same portable SQLite database used by
+	// the TUI. Keeping one handle per Engine avoids reopening and migrating the
+	// database for every panel refresh and lets web agent tools observe UI edits
+	// immediately.
+	goalMu sync.Mutex
+	goalDB *sql.DB
+	goals  *goal.Service
 	// Checkpoint metadata is workspace-specific. The GUI can hot-switch
 	// projects, so cache one manager per canonical workspace rather than one
 	// process-global manager.
 	checkpointMu sync.Mutex
 	checkpoints  map[string]*checkpoint.Manager
+	// Language servers are workspace-scoped and expensive to initialize. Keep
+	// one lazy code-intelligence tool per project and reuse it across requests.
+	codeIntelMu sync.Mutex
+	codeIntel   map[string]*tools.CodeIntel
+	processMu   sync.Mutex
+	processes   map[string]*tools.ProcessSession
 	// mcpManager owns both explicit config.toml servers and relocatable
 	// packages from <dataDir>/mcp. Servers remain stopped until mcp_bridge
 	// searches or calls one of them.
@@ -121,6 +136,8 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		questions:   make(map[string]tools.AskRequest),
 		perf:        make(map[string]providerCallPerformance),
 		checkpoints: make(map[string]*checkpoint.Manager),
+		codeIntel:   make(map[string]*tools.CodeIntel),
+		processes:   make(map[string]*tools.ProcessSession),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.providerManager().SetModelPrices(caps)
@@ -190,6 +207,40 @@ func (e *Engine) sessionStore() (*session.Store, error) {
 	return e.sessions, nil
 }
 
+// goalService returns the Engine-owned goal service, opening and migrating the
+// shared portable database once. Callers that need to observe changes made by
+// another SuperCli process should call Refresh on the returned service.
+func (e *Engine) goalService(ctx context.Context) (*goal.Service, error) {
+	e.goalMu.Lock()
+	defer e.goalMu.Unlock()
+	e.sessionMu.Lock()
+	closed := e.closed
+	e.sessionMu.Unlock()
+	if closed {
+		return nil, fmt.Errorf("webgui engine is closed")
+	}
+	if e.goals != nil {
+		return e.goals, nil
+	}
+	db, err := openDataDB(e.dataDir)
+	if err != nil {
+		return nil, err
+	}
+	storage := goal.NewStorage(db)
+	if err := storage.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	svc := goal.NewService(storage)
+	if _, err := svc.Refresh(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	e.goalDB = db
+	e.goals = svc
+	return svc, nil
+}
+
 // checkpointManager returns a long-lived manager for home. Manager serializes
 // its mutable Git metadata internally; Engine only guards cache creation.
 func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
@@ -232,6 +283,29 @@ func (e *Engine) Close() error {
 	if mcpManager != nil {
 		mcpManager.StopAll()
 	}
+	e.codeIntelMu.Lock()
+	codeIntel := e.codeIntel
+	e.codeIntel = make(map[string]*tools.CodeIntel)
+	e.codeIntelMu.Unlock()
+	for _, tool := range codeIntel {
+		tool.Close()
+	}
+	e.processMu.Lock()
+	processes := e.processes
+	e.processes = make(map[string]*tools.ProcessSession)
+	e.processMu.Unlock()
+	for _, tool := range processes {
+		tool.Close()
+	}
+	e.goalMu.Lock()
+	goalDB := e.goalDB
+	e.goalDB = nil
+	e.goals = nil
+	e.goalMu.Unlock()
+	var goalErr error
+	if goalDB != nil {
+		goalErr = goalDB.Close()
+	}
 	e.sessionMu.Lock()
 	if e.closed {
 		e.sessionMu.Unlock()
@@ -242,9 +316,50 @@ func (e *Engine) Close() error {
 	e.sessions = nil
 	e.sessionMu.Unlock()
 	if store != nil {
-		return store.Close()
+		if err := store.Close(); err != nil {
+			return err
+		}
 	}
-	return nil
+	return goalErr
+}
+
+func (e *Engine) codeIntelFor(home string) *tools.CodeIntel {
+	abs, key := workspaceCacheKey(home)
+	e.codeIntelMu.Lock()
+	defer e.codeIntelMu.Unlock()
+	if tool := e.codeIntel[key]; tool != nil {
+		return tool
+	}
+	tool := tools.NewCodeIntel(abs)
+	e.codeIntel[key] = tool
+	return tool
+}
+
+func (e *Engine) processSessionFor(home string) *tools.ProcessSession {
+	abs, key := workspaceCacheKey(home)
+	e.processMu.Lock()
+	defer e.processMu.Unlock()
+	if tool := e.processes[key]; tool != nil {
+		return tool
+	}
+	tool := tools.NewProcessSession(abs)
+	e.processes[key] = tool
+	return tool
+}
+
+func workspaceCacheKey(home string) (string, string) {
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		abs = filepath.Clean(home)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		abs = resolved
+	}
+	key := filepath.Clean(abs)
+	if runtime.GOOS == "windows" {
+		key = strings.ToLower(key)
+	}
+	return abs, key
 }
 
 func (e *Engine) recordProviderPerformance(provider string, stat llm.CallStat) {
@@ -460,7 +575,19 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
 	delegation := tc.Orchestrator == nil || *tc.Orchestrator
 	taskParallel, taskParallelWarnLocal := execution.Parallel(cfg.BaseURL, tc.TaskParallel)
+	goalSvc, err := e.goalService(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("goal service: %w", err)
+	}
+	if _, err := goalSvc.Refresh(context.Background()); err != nil {
+		return nil, fmt.Errorf("refresh goal: %w", err)
+	}
 	reg := tools.NewRegistry()
+	// Registered but not always-on: thin discovery keeps the LSP schema out of
+	// ordinary chat turns, while the Engine reuses the lazy server per project.
+	codeIntel := e.codeIntelFor(home)
+	reg.MustRegister(codeIntel.Spec())
+	reg.MustRegister(e.processSessionFor(home).Spec())
 	discoverer := tools.NewDiscovererWithBuiltins(home, e.dataDir)
 	skillApplier := tools.NewSkillApplier(discoverer)
 	reg.MustRegister(skillApplier.Spec())
@@ -487,6 +614,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		if turn != nil {
 			sp = turn.Wrap(sp)
 		}
+		sp = codeIntel.WrapMutation(sp)
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
@@ -496,6 +624,10 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	}
 	reg.MustRegister(invoke)
 	reg.MarkAlwaysOn("invoke_tool")
+	// Keep the full goal schema out of ordinary turns. tool_search can activate
+	// it when the compact system hint or an injected active goal makes it
+	// relevant, preserving the thin-tool/KV-cache contract.
+	reg.MustRegister(tools.NewGoalTool(goalSvc).Spec())
 	if askCh != nil {
 		ask := tools.NewAskUser(askCh)
 		// Visual decisions often take longer than a text choice, especially
@@ -535,7 +667,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		Provider:              prov,
 		Registry:              reg,
 		Caps:                  caps,
-		System:                webAgentSystemPrompt(home, cfg.Model, execProfile.PromptSmall, orchestrator, delegation),
+		System:                webAgentSystemPrompt(home, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc),
 		MaxSteps:              25,
 		Orchestrator:          orchestrator,
 		TaskParallel:          taskParallel,
@@ -575,7 +707,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	return loop, nil
 }
 
-func webAgentSystemPrompt(home, model string, promptSmall, orchestrator, delegation bool) string {
+func webAgentSystemPrompt(home, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service) string {
 	system := llmprompt.Build(promptSmall)
 	if profile := llmprompt.LoadProfile(home, model); profile != "" {
 		system += "\n\n" + profile
@@ -595,6 +727,14 @@ func webAgentSystemPrompt(home, model string, promptSmall, orchestrator, delegat
 		system += fmt.Sprintf("\n\nActive workspace: %s\nFull filesystem access is ON. File and search tools may use absolute paths outside this workspace; sensitive system folders remain blocked.", home)
 	} else {
 		system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
+	}
+	// A tiny discovery hint is cheaper than carrying the complete goal schema in
+	// every request. When a goal is active, inject its open steps directly.
+	system += "\n\nFor durable multi-step work, find and use the goal tool."
+	if goalSvc != nil {
+		if injected, err := goalSvc.Inject(context.Background(), system, 5); err == nil {
+			system = injected
+		}
 	}
 	return system
 }

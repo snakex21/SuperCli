@@ -83,10 +83,27 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 // order. Sessions created before this table existed simply return an empty
 // slice.
 func (s *Store) ReadTurnSummaries(ctx context.Context, sessionID string) ([]TurnSummary, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT session_id, assistant_seq, duration_ms,
+	return s.ReadTurnSummariesRange(ctx, sessionID, 0, 0)
+}
+
+// ReadTurnSummariesRange returns telemetry attached to assistant messages in
+// the inclusive sequence range. Non-positive bounds are left open.
+func (s *Store) ReadTurnSummariesRange(ctx context.Context, sessionID string, fromSeq, toSeq int) ([]TurnSummary, error) {
+	query := `SELECT session_id, assistant_seq, duration_ms,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, created_at
-		FROM session_turns WHERE session_id = ? ORDER BY assistant_seq`, sessionID)
+		FROM session_turns WHERE session_id = ?`
+	args := []any{sessionID}
+	if fromSeq > 0 {
+		query += ` AND assistant_seq >= ?`
+		args = append(args, fromSeq)
+	}
+	if toSeq > 0 {
+		query += ` AND assistant_seq <= ?`
+		args = append(args, toSeq)
+	}
+	query += ` ORDER BY assistant_seq`
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

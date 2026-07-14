@@ -52,6 +52,7 @@ func TestWebLoop_AutoCompactUsesSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	loop, err := eng.newLoopWithSession(fatTurns(4, 700), nil)
 	if err != nil {
 		t.Fatalf("newLoopWithSession: %v", err)
@@ -109,6 +110,7 @@ func TestWebLoop_WindowFromConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	loop, err := eng.newLoop()
 	if err != nil {
 		t.Fatalf("newLoop: %v", err)
@@ -127,6 +129,7 @@ func TestWebLoop_WindowFromLearnedLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+	t.Cleanup(func() { _ = eng.Close() })
 	loop, err := eng.newLoop()
 	if err != nil {
 		t.Fatalf("newLoop: %v", err)

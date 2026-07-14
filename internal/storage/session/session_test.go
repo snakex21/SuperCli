@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,6 +149,12 @@ func TestStore_List_OrderedByUpdated(t *testing.T) {
 	a, _ := s.Create("/a", "m", "first")
 	b, _ := s.Create("/b", "m", "second")
 	c, _ := s.Create("/c", "m", "third")
+	// Do not rely on the wall clock advancing between sub-millisecond inserts.
+	for i, id := range []string{a.ID, b.ID, c.ID} {
+		if _, err := s.db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`, int64(i+1), id); err != nil {
+			t.Fatal(err)
+		}
+	}
 	got, _ := s.List(10)
 	if len(got) != 3 {
 		t.Fatalf("len = %d", len(got))
@@ -383,6 +390,48 @@ func TestStore_ReadMessages_Empty(t *testing.T) {
 	if len(msgs) != 0 {
 		t.Errorf("len = %d, want 0", len(msgs))
 	}
+}
+
+func TestStore_ReadMessagesBefore_PagesNewestWithoutCount(t *testing.T) {
+	s := openTestStore(t)
+	sess, _ := s.Create("/a", "m", "")
+	ctx := context.Background()
+	for i := 1; i <= 7; i++ {
+		enc, _ := FromMessage(llm.Message{Role: llm.RoleUser, Content: fmt.Sprintf("message-%d", i)})
+		if err := s.AppendMessage(ctx, sess.ID, enc); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	page, more, err := s.ReadMessagesBefore(ctx, sess.ID, 0, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !more || len(page) != 3 || page[0].Seq != 5 || page[2].Seq != 7 {
+		t.Fatalf("latest page = seq %v, more=%v", messageSeqs(page), more)
+	}
+	page, more, err = s.ReadMessagesBefore(ctx, sess.ID, page[0].Seq, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !more || len(page) != 3 || page[0].Seq != 2 || page[2].Seq != 4 {
+		t.Fatalf("middle page = seq %v, more=%v", messageSeqs(page), more)
+	}
+	page, more, err = s.ReadMessagesBefore(ctx, sess.ID, page[0].Seq, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if more || len(page) != 1 || page[0].Seq != 1 {
+		t.Fatalf("oldest page = seq %v, more=%v", messageSeqs(page), more)
+	}
+}
+
+func messageSeqs(messages []Encoded) []int {
+	out := make([]int, len(messages))
+	for i, message := range messages {
+		out[i] = message.Seq
+	}
+	return out
 }
 
 func TestStore_UpdateUsage(t *testing.T) {
