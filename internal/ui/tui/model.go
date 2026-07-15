@@ -21,7 +21,6 @@ import (
 
 	"supercli/internal/account/cost"
 	"supercli/internal/agent"
-	"supercli/internal/agent/planmode"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/llm/shuffler"
@@ -32,7 +31,6 @@ import (
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/fileops"
-	"supercli/internal/tools/mentions"
 	"supercli/internal/tools/shellescape"
 	"supercli/internal/ui/export"
 )
@@ -1056,88 +1054,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.syncInputHeight()
 	m.updateAutocompleteState()
 	return m, cmd
-}
-
-// startPrompt is the single foreground-run path used by both the composer and
-// the persistent task queue. Keeping it centralized guarantees queued work has
-// identical cancellation, mentions, plan-mode and persistence semantics.
-func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return m, nil
-	}
-	if isQuitCommand(text) {
-		m.quitting = true
-		return m, tea.Quit
-	}
-	// Bare "q"/"quit"/"exit" (no slash): show the exit tip
-	// once, then treat further occurrences as regular input.
-	if low := strings.ToLower(text); (low == "q" || low == "quit" || low == "exit") && !m.tipShown {
-		m.tipShown = true
-		m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
-		m.refreshTranscript()
-		return m, nil
-	}
-	// Slash command? Dispatch to the registered handler.
-	if cmd := ParseSlashCommand(text); cmd != nil {
-		return m.dispatchSlashCommand(*cmd)
-	}
-	// F26.2: !command shell escape — run directly without agent.
-	if shellescape.IsShellEscape(text) {
-		return m.dispatchShellEscape(text)
-	}
-	if m.agent == nil {
-		m.appendLine(m.marker.NoAgent())
-		return m, nil
-	}
-	// Echo the prompt and start the spinner IMMEDIATELY.
-	// All potentially blocking work — @mention file reads
-	// and agent.Run (which synchronously persists the user
-	// message to the SQLite history before returning) —
-	// happens inside the tea.Cmd goroutine below, so a slow
-	// disk never freezes the input box on Enter.
-	//
-	// Foreground beats background: tell main.go a user turn is
-	// starting so it can cancel background memory inference
-	// before the agent's model call competes for the backend.
-	if m.onRunStart != nil {
-		m.onRunStart()
-	}
-	// F25: create a cancellable context for Ctrl+C support.
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel.Arm(cancelRun, cancel)
-	m.chat.addUser("> " + text)
-	m.appendLineToTranscript("> " + text)
-	m.busy = true
-	m.current = ""
-	// Replace the welcome/previous frame immediately. Slow local
-	// backends may take seconds before runStartMsg or the first token.
-	m.refreshTranscript()
-	home, planMode, ag := m.home, m.planMode, m.agent
-	return m, func() tea.Msg {
-		// F26.1: @file mentions — parse @path references,
-		// read files, and prepend content to the prompt.
-		prompt := text
-		remaining, mentionPaths := mentions.Parse(text)
-		var mentionCount, mentionTokens int
-		if len(mentionPaths) > 0 {
-			ments := mentions.Resolve(home, mentionPaths, 0)
-			prompt = mentions.FormatBlock(ments, remaining)
-			mentionCount = len(mentionPaths)
-			mentionTokens = mentions.TotalTokens(ments)
-		}
-		// F26.3: if plan mode is active, wrap the prompt.
-		runPrompt := prompt
-		if planMode {
-			runPrompt = planmode.WrapPrompt(prompt)
-		}
-		ch, err := ag.Run(ctx, runPrompt)
-		if err != nil {
-			cancel()
-			return runStartMsg{err: err}
-		}
-		return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens}
-	}
 }
 
 // persistReasoningEffort writes the level to the GLOBAL
