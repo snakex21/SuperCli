@@ -31,6 +31,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/transcript", s.handleTranscript)
 	mux.HandleFunc("/api/tasks", s.handleTasks)
+	mux.HandleFunc("/api/workers", s.handleWorkers)
+	mux.HandleFunc("/api/doctor", s.handleDoctor)
 	mux.HandleFunc("/api/branches", s.handleBranches)
 	mux.HandleFunc("/api/memory", s.handleMemory)
 	mux.HandleFunc("/api/projects", s.handleProjects)

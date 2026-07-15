@@ -158,6 +158,87 @@ func (s *Server) handleDataExportFull(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ExportDataBackup writes a portable backup to <dataDir>/backups and returns
+// its absolute path. It is shared by the TUI and the web download handlers so
+// both surfaces use the same SQLite snapshot and allow-list rules. When full
+// is true provider credentials and portable MCP/skill packages are included.
+func ExportDataBackup(dataDir string, full bool) (string, error) {
+	var (
+		stage string
+		err   error
+	)
+	if full {
+		stage, err = buildFullDataExport(dataDir)
+	} else {
+		stage, err = buildDataExport(dataDir)
+	}
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(stage)
+	backupDir := filepath.Join(dataDir, "backups")
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
+		return "", err
+	}
+	prefix := "supercli-backup-"
+	if full {
+		prefix = "supercli-full-backup-"
+	}
+	dst := filepath.Join(backupDir, prefix+time.Now().Format("20060102-150405")+".zip")
+	file, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	writeErr := writeZip(file, stage)
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		_ = os.Remove(dst)
+		return "", err
+	}
+	return dst, nil
+}
+
+// StageDataImport validates and extracts a backup into the private imports
+// directory. Nothing live is replaced here: ApplyPendingDataImport performs
+// the atomic swap on the next process start. The boolean reports whether the
+// archive is a full backup containing credentials.
+func StageDataImport(dataDir, archivePath string) (bool, error) {
+	archivePath = filepath.Clean(strings.TrimSpace(archivePath))
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		return false, err
+	}
+	if info.IsDir() || info.Size() > maxDataBackupBytes {
+		return false, errors.New("backup must be a ZIP file smaller than 512 MiB")
+	}
+	meta, err := readDataBackupMeta(archivePath)
+	if err != nil {
+		return false, err
+	}
+	importsRoot := filepath.Join(dataDir, "imports")
+	if err := os.MkdirAll(importsRoot, 0o700); err != nil {
+		return false, err
+	}
+	id := randomDataID()
+	stage := filepath.Join(importsRoot, id)
+	meta, err = extractDataBackupMode(archivePath, stage, meta.Secrets)
+	if err != nil {
+		_ = os.RemoveAll(stage)
+		return false, err
+	}
+	markerPath := filepath.Join(dataDir, pendingImportFile)
+	if old, readErr := readPendingDataImport(markerPath); readErr == nil {
+		_ = removeImportStage(dataDir, old.Stage)
+	}
+	marker := pendingDataImport{Stage: stage, CreatedAt: time.Now().UTC(), Full: meta.Secrets}
+	data, _ := json.MarshalIndent(marker, "", "  ")
+	if err := os.WriteFile(markerPath, data, 0o600); err != nil {
+		_ = os.RemoveAll(stage)
+		return false, err
+	}
+	return meta.Secrets, nil
+}
+
 func (s *Server) handleDataImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -195,32 +276,8 @@ func (s *Server) handleDataImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer os.Remove(uploadPath)
-	meta, err := readDataBackupMeta(uploadPath)
+	full, err := StageDataImport(s.eng.DataDir(), uploadPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	full := meta.Secrets
-	stage := filepath.Join(importsRoot, id)
-	meta, err = extractDataBackupMode(uploadPath, stage, full)
-	if err != nil {
-		os.RemoveAll(stage)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if meta.Secrets != full {
-		os.RemoveAll(stage)
-		http.Error(w, "backup protection level does not match its contents", http.StatusBadRequest)
-		return
-	}
-	markerPath := filepath.Join(s.eng.DataDir(), pendingImportFile)
-	if old, readErr := readPendingDataImport(markerPath); readErr == nil {
-		_ = removeImportStage(s.eng.DataDir(), old.Stage)
-	}
-	marker := pendingDataImport{Stage: stage, CreatedAt: time.Now().UTC(), Full: full}
-	data, _ := json.MarshalIndent(marker, "", "  ")
-	if err := os.WriteFile(markerPath, data, 0o600); err != nil {
-		os.RemoveAll(stage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

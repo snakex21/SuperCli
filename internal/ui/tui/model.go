@@ -138,6 +138,8 @@ type Model struct {
 	onRunStart        func()
 	checkpointUndo    func(context.Context, bool) (string, error)
 	checkpointPreview func(redo bool) (CheckpointPreview, error)
+	dataExport        func(context.Context, bool) (string, error)
+	dataImport        func(context.Context, string) (bool, error)
 
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
@@ -323,6 +325,10 @@ type Options struct {
 	// CheckpointPreview reports the files affected by undo/redo without changing
 	// them. When present, the action centre asks for confirmation first.
 	CheckpointPreview func(redo bool) (CheckpointPreview, error)
+	// DataExport and DataImport back the local backup panel. They run in a
+	// Bubble Tea command goroutine, so large archives never block rendering.
+	DataExport func(context.Context, bool) (string, error)
+	DataImport func(context.Context, string) (bool, error)
 	// Version is shown in the header bar (e.g. "0.6.0").
 	Version string
 	// Tier is the active model tier shown in the header
@@ -434,6 +440,8 @@ func New(opts Options) Model {
 		onRunStart:        opts.OnRunStart,
 		checkpointUndo:    opts.CheckpointUndo,
 		checkpointPreview: opts.CheckpointPreview,
+		dataExport:        opts.DataExport,
+		dataImport:        opts.DataImport,
 	}
 }
 
@@ -509,6 +517,13 @@ type runEventMsg struct {
 }
 
 type runEndMsg struct{}
+
+type dataOperationMsg struct {
+	kind string
+	path string
+	full bool
+	err  error
+}
 
 // statusOverrideClearMsg clears the temporary status override
 // (e.g. "cancelled" → normal status).
@@ -670,6 +685,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// disappear merely because the run ended first.
 		m.syncInputHeight()
 		m.input.Focus()
+		return m, nil
+
+	case dataOperationMsg:
+		if msg.err != nil {
+			m.statusOverride = "data: " + msg.err.Error()
+			return m, nil
+		}
+		m.mode = modeNormal
+		m.menu = interactiveMenu{}
+		m.input.Focus()
+		if msg.kind == "import" {
+			m.statusOverride = m.tr("backup ready; restart SuperCli to apply it", "kopia przygotowana; uruchom SuperCli ponownie, aby ją zastosować")
+			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
+		} else {
+			m.statusOverride = m.tr("backup saved: ", "kopia zapisana: ") + msg.path
+			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
+		}
+		m.refreshTranscript()
 		return m, nil
 
 	case askRequestMsg:
@@ -978,81 +1011,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		text := strings.TrimSpace(m.input.Value())
 		m.input.Reset()
 		m.syncInputHeight()
-		if text == "" {
-			return m, nil
-		}
-		if isQuitCommand(text) {
-			m.quitting = true
-			return m, tea.Quit
-		}
-		// Bare "q"/"quit"/"exit" (no slash): show the exit tip
-		// once, then treat further occurrences as regular input.
-		if low := strings.ToLower(text); (low == "q" || low == "quit" || low == "exit") && !m.tipShown {
-			m.tipShown = true
-			m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
-			m.refreshTranscript()
-			return m, nil
-		}
-		// Slash command? Dispatch to the registered handler.
-		if cmd := ParseSlashCommand(text); cmd != nil {
-			return m.dispatchSlashCommand(*cmd)
-		}
-		// F26.2: !command shell escape — run directly without agent.
-		if shellescape.IsShellEscape(text) {
-			return m.dispatchShellEscape(text)
-		}
-		if m.agent == nil {
-			m.appendLine(m.marker.NoAgent())
-			return m, nil
-		}
-		// Echo the prompt and start the spinner IMMEDIATELY.
-		// All potentially blocking work — @mention file reads
-		// and agent.Run (which synchronously persists the user
-		// message to the SQLite history before returning) —
-		// happens inside the tea.Cmd goroutine below, so a slow
-		// disk never freezes the input box on Enter.
-		//
-		// Foreground beats background: tell main.go a user turn is
-		// starting so it can cancel background memory inference
-		// before the agent's model call competes for the backend.
-		if m.onRunStart != nil {
-			m.onRunStart()
-		}
-		// F25: create a cancellable context for Ctrl+C support.
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancel.Arm(cancelRun, cancel)
-		m.chat.addUser("> " + text)
-		m.appendLineToTranscript("> " + text)
-		m.busy = true
-		m.current = ""
-		// Replace the welcome/previous frame immediately. Slow local
-		// backends may take seconds before runStartMsg or the first token.
-		m.refreshTranscript()
-		home, planMode, ag := m.home, m.planMode, m.agent
-		return m, func() tea.Msg {
-			// F26.1: @file mentions — parse @path references,
-			// read files, and prepend content to the prompt.
-			prompt := text
-			remaining, mentionPaths := mentions.Parse(text)
-			var mentionCount, mentionTokens int
-			if len(mentionPaths) > 0 {
-				ments := mentions.Resolve(home, mentionPaths, 0)
-				prompt = mentions.FormatBlock(ments, remaining)
-				mentionCount = len(mentionPaths)
-				mentionTokens = mentions.TotalTokens(ments)
-			}
-			// F26.3: if plan mode is active, wrap the prompt.
-			runPrompt := prompt
-			if planMode {
-				runPrompt = planmode.WrapPrompt(prompt)
-			}
-			ch, err := ag.Run(ctx, runPrompt)
-			if err != nil {
-				cancel()
-				return runStartMsg{err: err}
-			}
-			return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens}
-		}
+		return m.startPrompt(text)
 	case "ctrl+v":
 		if text, err := clipboard.ReadAll(); err == nil && text != "" {
 			// Multi-line pastes keep their newlines (code,
@@ -1076,10 +1035,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openActionsMenu()
 		}
 	case "ctrl+p":
-		// Open the projects menu (per-project memory management).
-		// Ctrl+P mirrors the "projects" mnemonic and avoids
-		// colliding with 'p' which we leave free for future
-		// per-mode shortcuts.
 		return m.openProjectsMenu()
 	case "ctrl+y":
 		// Copy the last assistant response to the clipboard.
@@ -1096,17 +1051,93 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 	}
 
-	// Pass other keys to the textarea. Alt+Enter / Ctrl+J
-	// insert a newline (textarea's rebound InsertNewline);
-	// plain Enter never reaches here (handled above).
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.syncInputHeight()
-
-	// After input update, check if autocomplete should activate.
 	m.updateAutocompleteState()
-
 	return m, cmd
+}
+
+// startPrompt is the single foreground-run path used by both the composer and
+// the persistent task queue. Keeping it centralized guarantees queued work has
+// identical cancellation, mentions, plan-mode and persistence semantics.
+func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return m, nil
+	}
+	if isQuitCommand(text) {
+		m.quitting = true
+		return m, tea.Quit
+	}
+	// Bare "q"/"quit"/"exit" (no slash): show the exit tip
+	// once, then treat further occurrences as regular input.
+	if low := strings.ToLower(text); (low == "q" || low == "quit" || low == "exit") && !m.tipShown {
+		m.tipShown = true
+		m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
+		m.refreshTranscript()
+		return m, nil
+	}
+	// Slash command? Dispatch to the registered handler.
+	if cmd := ParseSlashCommand(text); cmd != nil {
+		return m.dispatchSlashCommand(*cmd)
+	}
+	// F26.2: !command shell escape — run directly without agent.
+	if shellescape.IsShellEscape(text) {
+		return m.dispatchShellEscape(text)
+	}
+	if m.agent == nil {
+		m.appendLine(m.marker.NoAgent())
+		return m, nil
+	}
+	// Echo the prompt and start the spinner IMMEDIATELY.
+	// All potentially blocking work — @mention file reads
+	// and agent.Run (which synchronously persists the user
+	// message to the SQLite history before returning) —
+	// happens inside the tea.Cmd goroutine below, so a slow
+	// disk never freezes the input box on Enter.
+	//
+	// Foreground beats background: tell main.go a user turn is
+	// starting so it can cancel background memory inference
+	// before the agent's model call competes for the backend.
+	if m.onRunStart != nil {
+		m.onRunStart()
+	}
+	// F25: create a cancellable context for Ctrl+C support.
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel.Arm(cancelRun, cancel)
+	m.chat.addUser("> " + text)
+	m.appendLineToTranscript("> " + text)
+	m.busy = true
+	m.current = ""
+	// Replace the welcome/previous frame immediately. Slow local
+	// backends may take seconds before runStartMsg or the first token.
+	m.refreshTranscript()
+	home, planMode, ag := m.home, m.planMode, m.agent
+	return m, func() tea.Msg {
+		// F26.1: @file mentions — parse @path references,
+		// read files, and prepend content to the prompt.
+		prompt := text
+		remaining, mentionPaths := mentions.Parse(text)
+		var mentionCount, mentionTokens int
+		if len(mentionPaths) > 0 {
+			ments := mentions.Resolve(home, mentionPaths, 0)
+			prompt = mentions.FormatBlock(ments, remaining)
+			mentionCount = len(mentionPaths)
+			mentionTokens = mentions.TotalTokens(ments)
+		}
+		// F26.3: if plan mode is active, wrap the prompt.
+		runPrompt := prompt
+		if planMode {
+			runPrompt = planmode.WrapPrompt(prompt)
+		}
+		ch, err := ag.Run(ctx, runPrompt)
+		if err != nil {
+			cancel()
+			return runStartMsg{err: err}
+		}
+		return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens}
+	}
 }
 
 // persistReasoningEffort writes the level to the GLOBAL

@@ -32,6 +32,11 @@ rzeczywisty backlog**. Świeże pomiary i mechanizmy wydajnościowe:
 - **Porządek repo** — odpowiedzialności katalogów opisuje
   `docs/project-structure.md`; modułowe `go.mod`/`go.sum` świadomie pozostają w
   korzeniu, a stan uruchomieniowy należy do `supercli-data/`.
+- **Zgodność TUI i aplikacji** — TUI ma trwałą kolejkę zadań oraz bezpieczny i
+  pełny eksport/import danych; WebGUI pokazuje wspólny rejestr workerów z
+  możliwością zatrzymania i pełny raport Doctor. Test kontraktowy pilnuje
+  obecności najważniejszych funkcji na obu powierzchniach. Operacje danych,
+  diagnostyka i odświeżanie workerów nie wywołują modelu.
 
 ## Wdrożone (zweryfikowane w kodzie — NIE re-implementować)
 

@@ -1494,6 +1494,45 @@ async function loadPromptQueue() {
   catch (e) { promptQueue = []; }
   renderPromptQueue();
 }
+
+async function loadWorkers() {
+  var host = $("#worker-list"); if (!host) return;
+  $("#worker-heading").textContent = ui.lang === "pl" ? "Agenci pomocniczy" : "Workers";
+  try {
+    var got = await j("/api/workers");
+    renderWorkers(got && got.workers ? got.workers : []);
+  } catch (e) {
+    host.innerHTML = "";
+    host.appendChild(el("div", "side-empty", e.message));
+  }
+}
+function renderWorkers(workers) {
+  var host = $("#worker-list"); if (!host) return; host.innerHTML = "";
+  if (!workers.length) {
+    host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak agentów w tym procesie." : "No workers in this process."));
+    return;
+  }
+  workers.slice().reverse().forEach(function (worker) {
+    var row = el("div", "task-center-row worker-center-row");
+    var state = String(worker.status || "created");
+    row.appendChild(el("span", "task-center-index worker-state " + state, state === "running" || state === "created" ? "●" : "✓"));
+    var copy = el("div", "task-center-copy");
+    copy.appendChild(el("span", "t", worker.id + " · " + (worker.agent || "worker")));
+    var meta = state + " · " + (worker.steps || 0) + " " + (ui.lang === "pl" ? "kroków" : "steps") + " · " + ((worker.tokens_in || 0) + (worker.tokens_out || 0)) + " tok";
+    copy.appendChild(el("span", "s", meta));
+    if (worker.description) copy.title = worker.description;
+    row.appendChild(copy);
+    if (state === "running" || state === "created") {
+      var stop = el("button", "queue-action", ui.lang === "pl" ? "zatrzymaj" : "stop");
+      stop.addEventListener("click", async function () {
+        try { await jpost("/api/workers", { id: worker.id, action: "stop" }); await loadWorkers(); }
+        catch (e) { toast(e.message); }
+      });
+      row.appendChild(stop);
+    }
+    host.appendChild(row);
+  });
+}
 async function removeQueuedTask(id) {
   try { await j("/api/tasks?id=" + encodeURIComponent(id), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
   catch (e) { toast(e.message); return false; }
@@ -1597,7 +1636,7 @@ async function loadSideGoal() {
     host.appendChild(el("div", "side-empty", e.message));
   }
 }
-$("#reload-tasks").addEventListener("click", loadPromptQueue);
+$("#reload-tasks").addEventListener("click", function () { loadPromptQueue(); loadWorkers(); });
 $("#manage-side-goal").addEventListener("click", function () { openPanel("goal"); });
 async function prepareQueuedTask(item) {
   if (!item || !item.session_id) return;
@@ -2059,6 +2098,7 @@ $("#side-tabs").addEventListener("click", function (e) {
   if (b.dataset.tab === "stats") renderStats();
   if (b.dataset.tab === "sessions") loadSessions();
   if (b.dataset.tab === "projects") loadProjects();
+	if (b.dataset.tab === "tasks") { loadPromptQueue(); loadWorkers(); }
   if (b.dataset.tab === "goal") loadSideGoal();
 });
 $("#side-tabs").addEventListener("keydown", function (e) {
@@ -4848,6 +4888,34 @@ sections.about = async function () {
   });
   panelContent.appendChild(gi);
 
+  var gd = el("div", "group");
+  var doctorHead = el("div", "g-label", ui.lang === "pl" ? "Diagnostyka" : "Doctor");
+  var refreshDoctor = el("button", "btn small", ui.lang === "pl" ? "sprawdź ponownie" : "run again");
+  doctorHead.appendChild(refreshDoctor);
+  gd.appendChild(doctorHead);
+  var doctorBody = el("div", "doctor-report");
+  gd.appendChild(doctorBody);
+  async function runDoctor() {
+    doctorBody.innerHTML = "";
+    doctorBody.appendChild(el("div", "note", ui.lang === "pl" ? "Sprawdzanie…" : "Checking…"));
+    try {
+      var report = await j("/api/doctor"); doctorBody.innerHTML = "";
+      var s = report.summary || {};
+      doctorBody.appendChild(el("div", "note", (s.ok || 0) + " ok · " + (s.warn || 0) + " warn · " + (s.fail || 0) + " fail · " + (s.skip || 0) + " skip"));
+      (report.checks || []).forEach(function (check) {
+        var row = el("div", "toggle-row doctor-row " + String(check.Status || check.status || ""));
+        var name = check.Name || check.name || "check";
+        var detail = check.Detail || check.detail || "";
+        row.appendChild(el("span", "", name));
+        var value = el("span", "note", detail); value.title = detail;
+        row.appendChild(value); doctorBody.appendChild(row);
+      });
+    } catch (e) { doctorBody.innerHTML = ""; doctorBody.appendChild(el("div", "note", e.message)); }
+  }
+  refreshDoctor.addEventListener("click", runDoctor);
+  panelContent.appendChild(gd);
+  runDoctor();
+
   var gk = el("div", "group");
   gk.appendChild(el("div", "g-label", t("about.shortcuts")));
   gk.appendChild(el("div", "note", t("about.rebindHint")));
@@ -4940,7 +5008,12 @@ document.addEventListener("keydown", function (e) {
   loadSessions();
   loadProjects();
 	loadPromptQueue();
+	loadWorkers();
   renderStats();
   setInterval(checkHealth, 30000);
+	setInterval(function () {
+	  var tasksTab = $("#side-tabs button[data-tab='tasks']");
+	  if (tasksTab && tasksTab.classList.contains("active")) loadWorkers();
+	}, 2500);
   promptEl.focus();
 })();

@@ -103,6 +103,14 @@ type Engine struct {
 	// searches or calls one of them.
 	mcpMu      sync.RWMutex
 	mcpManager *mcp.Manager
+	// workers is process-wide for the web application. Short-lived HTTP loops
+	// share it so active delegations remain observable and stoppable after a
+	// panel refresh, while the registry's existing retention bounds memory.
+	workers *agent.WorkerRegistry
+	// diagnosticRegistry points at the most recently built complete tool
+	// registry. Doctor only reads it; ordinary rendering never touches it.
+	diagnosticMu       sync.RWMutex
+	diagnosticRegistry *tools.Registry
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -141,6 +149,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		checkpoints: make(map[string]*checkpoint.Manager),
 		codeIntel:   make(map[string]*tools.CodeIntel),
 		processes:   make(map[string]*tools.ProcessSession),
+		workers:     agent.NewWorkerRegistry(),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.providerManager().SetModelPrices(caps)
@@ -743,6 +752,9 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 			return nil, err
 		}
 	}
+	e.diagnosticMu.Lock()
+	e.diagnosticRegistry = reg
+	e.diagnosticMu.Unlock()
 	if orchestrator {
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
@@ -795,6 +807,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	if err != nil {
 		return fmt.Errorf("wire task delegation: %w", err)
 	}
+	at.Workers = e.workers
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
 	if wp, _ := e.taskWorkerProvider(tc); wp != nil {

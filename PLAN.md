@@ -9,6 +9,10 @@ tu historii projektu, żeby plan nie starzał się po każdej większej zmianie.
 
 ## Teraz
 
+- [ ] Rozbić największe pliki wewnątrz istniejących pakietów (`app/main.go`,
+  `agent/loop.go`, `ui/tui/model.go`, `webgui/assets/app.js`) bez zmiany
+  promptów, schematów narzędzi i formatów danych; po każdym etapie uruchomić
+  replay, race i benchmark startu.
 - [ ] Uruchomić pełną macierz `cmd/supercli-eval` na dużym Qwenie lokalnym,
   małym modelu lokalnym oraz modelach chmurowych; zapisać medianę i p95.
 - [ ] Sprawdzić live routing navigatora na małym providerze.
@@ -24,7 +28,8 @@ tu historii projektu, żeby plan nie starzał się po każdej większej zmianie.
 - [ ] UX Darwina: porównanie kandydatów, koszt przed startem i jawny wybór
   zwycięskiego diffu.
 - [ ] Dalszy podział dużych plików wewnątrz istniejących pakietów, bez zmiany
-  promptów, schematów narzędzi i formatów danych.
+  promptów, schematów narzędzi i formatów danych (kontynuować tylko tam, gdzie
+  pomiar lub utrzymanie kodu uzasadnia kolejny podział).
 
 ## Zasady decyzji
 

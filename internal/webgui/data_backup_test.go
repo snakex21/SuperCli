@@ -372,3 +372,35 @@ func TestAllowedBackupPathRejectsNestedDatabaseAndUnsafeProjectNames(t *testing.
 		}
 	}
 }
+
+func TestExportAndStageDataBackupSharedWorkflow(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "projects.json"), []byte(`{"portable":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := ExportDataBackup(source, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Ext(archive) != ".zip" {
+		t.Fatalf("archive=%q", archive)
+	}
+	target := t.TempDir()
+	full, err := StageDataImport(target, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full {
+		t.Fatal("safe backup reported credentials")
+	}
+	if err := ApplyPendingDataImport(target); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(target, "projects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"portable":true}` {
+		t.Fatalf("projects.json=%s", got)
+	}
+}
