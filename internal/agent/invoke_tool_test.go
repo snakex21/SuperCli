@@ -56,7 +56,8 @@ func TestResolveInvokeToolCallRejectsMutationAndUnknownArgs(t *testing.T) {
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{Name: "write", Description: "write", Schema: `{"path":{"type":"string"}}`, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
 	reg.MustRegister(tools.Tool{Name: "read", Description: "read", ReadOnly: true, Schema: `{"path":{"type":"string"}}`, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
-	if _, err := resolveInvokeToolCall(reg, llm.ToolCall{Name: invokeToolName, Arguments: `{"tool":"write","arg.path":"x"}`}); err == nil || !strings.Contains(err.Error(), "requires tool_search") {
+	if _, err := resolveInvokeToolCall(reg, llm.ToolCall{Name: invokeToolName, Arguments: `{"tool":"write","arg.path":"x"}`}); err == nil ||
+		!strings.Contains(err.Error(), "call write directly") || !strings.Contains(err.Error(), "do not repeat tool_search") {
 		t.Fatalf("mutation err = %v", err)
 	}
 	if _, err := resolveInvokeToolCall(reg, llm.ToolCall{Name: invokeToolName, Arguments: `{"tool":"read","arg.unknown":"x"}`}); err == nil || !strings.Contains(err.Error(), "not valid") {

@@ -660,3 +660,27 @@ dormant), removing repeated discovery inferences while retaining a stable
 KV-cache prefix. Finally, after any failed concrete tool result the loop blocks
 `complete_task` and passing verification until a later concrete action
 succeeds, so a red test cannot be immediately declared complete.
+
+## Release performance smoke and model eval matrix (2026-07-14)
+
+The release-only `cmd/supercli-perf` command measures a built binary over a
+small repeated sample: process cold start, time to its first stdout/stderr
+fragment, drain time after first output, and peak child-process RSS. It writes a
+stable JSON report and can fail CI on a configured warning threshold. The
+benchmark is a separate binary; ordinary SuperCli startup imports none of it.
+
+```powershell
+go build -o supercli.exe ./cmd/supercli
+go run ./cmd/supercli-perf --binary .\supercli.exe --iterations 5 `
+  --output test\perf\latest.json --fail-on-warning
+```
+
+The initial Windows development-host smoke measured three post-warmup samples:
+cold-start p95 **11.43 ms**, first-output p95 **10.88 ms**, and peak RSS
+**10.24 MB**. These are a local baseline, not universal release limits.
+
+`cmd/supercli-eval` complements microbenchmarks with agent quality. Its bundled
+suite contains ten isolated Go tasks and scores expected/forbidden file changes,
+verification argv, optional JSONL trace events, timeout, and model matrix runs.
+Validation is fully offline; live calls happen only through the explicitly
+supplied agent command.

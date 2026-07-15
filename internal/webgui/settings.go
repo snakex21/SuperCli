@@ -7,13 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 )
 
 // uiSettingsFile is the on-disk name (inside the data dir) for the
-// front-end UI preferences blob: theme, fonts, keybinds, language,
+// front-end UI preferences blob: theme, fonts, keybinds,
 // notification/permission toggles, and the last-used model. These are
-// presentation-only settings owned by the browser front-end, kept
-// separate from config.toml (which holds backend/provider config).
+// presentation-only settings owned by the browser front-end. Language is
+// overlaid from config.toml so the desktop app and TUI share one preference.
 const uiSettingsFile = "webgui-settings.json"
 
 // lastModelKey is the key inside the settings blob that carries the
@@ -112,19 +115,13 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 	defer uiSettingsMu.Unlock()
 	switch r.Method {
 	case http.MethodGet:
-		data, err := os.ReadFile(path)
-		if err != nil {
-			// Missing file (first run) is not an error: report empty.
-			writeJSON(w, map[string]any{"settings": nil})
-			return
-		}
-		var v any
-		if err := json.Unmarshal(data, &v); err != nil {
-			// Corrupt file degrades to empty rather than failing the UI.
-			writeJSON(w, map[string]any{"settings": nil})
-			return
-		}
-		writeJSON(w, map[string]any{"settings": v})
+		blob := readUISettings(s.eng.DataDir())
+		resolved, _ := config.ResolveConfig(s.eng.DataDir(), s.eng.Home(), "")
+		language, _ := config.EnsureLanguage(s.eng.DataDir(), s.eng.Home(), resolved.Language)
+		// config.toml is the cross-front-end source of truth. Always overlay it
+		// so a language changed in the TUI wins over a stale browser blob.
+		blob["ui.lang"] = language
+		writeJSON(w, map[string]any{"settings": blob})
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
@@ -136,6 +133,17 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(body, &v); err != nil {
 			http.Error(w, "invalid settings JSON: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+		if raw, ok := v["ui.lang"]; ok {
+			language, ok := raw.(string)
+			if !ok || uilang.Normalize(language) == "" {
+				http.Error(w, "ui.lang must be en or pl", http.StatusBadRequest)
+				return
+			}
+			if err := config.SetLanguage(s.eng.DataDir(), s.eng.Home(), language); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		// MERGE into the existing blob instead of replacing it. The
 		// browser only ever knows the keys it owns; a POST fired from a

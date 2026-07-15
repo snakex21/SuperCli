@@ -1,0 +1,117 @@
+{
+  "id": "supercli-core-agent",
+  "name": "SuperCli core coding-agent regression suite",
+  "description": "Ten small, objective Go tasks for comparing local and cloud models without touching the real repository.",
+  "tasks": [
+    {
+      "id": "integer-add",
+      "name": "Implement integer addition",
+      "tags": ["go", "edit", "easy"],
+      "difficulty": "easy",
+      "prompt": "In this tiny Go module, implement Add correctly in ops.go. Change only ops.go, do not edit tests or go.mod, and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-add", "args": ["go", "test", "./...", "-run", "^TestAdd$"]}]
+    },
+    {
+      "id": "bounded-clamp",
+      "name": "Implement a bounded clamp",
+      "tags": ["go", "branches"],
+      "difficulty": "easy",
+      "prompt": "Implement Clamp in ops.go so values below low become low, values above high become high, and values inside remain unchanged. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-clamp", "args": ["go", "test", "./...", "-run", "^TestClamp$"]}]
+    },
+    {
+      "id": "normalize-whitespace",
+      "name": "Normalize whitespace",
+      "tags": ["go", "strings"],
+      "difficulty": "easy",
+      "prompt": "Implement NormalizeSpace in ops.go. Collapse all runs of Unicode whitespace to one ASCII space and trim the ends. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-space", "args": ["go", "test", "./...", "-run", "^TestNormalizeSpace$"]}]
+    },
+    {
+      "id": "stable-deduplicate",
+      "name": "Stable deduplication",
+      "tags": ["go", "slice"],
+      "difficulty": "easy",
+      "prompt": "Implement Deduplicate in ops.go. Remove repeated strings while preserving first-seen order. Do not mutate tests or go.mod. Run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-deduplicate", "args": ["go", "test", "./...", "-run", "^TestDeduplicate$"]}]
+    },
+    {
+      "id": "validated-port",
+      "name": "Parse and validate a TCP port",
+      "tags": ["go", "errors"],
+      "difficulty": "medium",
+      "prompt": "Implement ParsePort in ops.go. Accept a decimal port from 1 through 65535 and return a useful error for empty, non-numeric, zero, or out-of-range input. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-port", "args": ["go", "test", "./...", "-run", "^TestParsePort$"]}]
+    },
+    {
+      "id": "ascii-slug",
+      "name": "Create a stable ASCII slug",
+      "tags": ["go", "strings", "regex"],
+      "difficulty": "medium",
+      "prompt": "Implement Slug in ops.go for ASCII text: lowercase it, replace every run of non-alphanumeric characters with one dash, and trim leading/trailing dashes. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-slug", "args": ["go", "test", "./...", "-run", "^TestSlug$"]}]
+    },
+    {
+      "id": "capped-backoff",
+      "name": "Capped exponential backoff",
+      "tags": ["go", "time", "reliability"],
+      "difficulty": "medium",
+      "prompt": "Implement RetryDelay in ops.go. Attempt 0 waits 1 second, then double per attempt, capped at 8 seconds; negative attempts should behave like 0. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-backoff", "args": ["go", "test", "./...", "-run", "^TestRetryDelay$"]}]
+    },
+    {
+      "id": "secret-redaction",
+      "name": "Redact all secret occurrences",
+      "tags": ["go", "security", "strings"],
+      "difficulty": "easy",
+      "prompt": "Implement Redact in ops.go. Replace every occurrence of a non-empty secret with [REDACTED]; an empty secret must leave the input unchanged. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-redact", "args": ["go", "test", "./...", "-run", "^TestRedact$"]}]
+    },
+    {
+      "id": "bounded-chunks",
+      "name": "Split a slice into chunks",
+      "tags": ["go", "slice", "edge-cases"],
+      "difficulty": "medium",
+      "prompt": "Implement Chunk in ops.go. Split values into consecutive chunks of at most size elements, preserve order, and return nil for size <= 0. Avoid aliasing each result chunk to later appends. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-chunk", "args": ["go", "test", "./...", "-run", "^TestChunk$"]}]
+    },
+    {
+      "id": "local-url-detection",
+      "name": "Recognize local model endpoints",
+      "tags": ["go", "url", "local-model"],
+      "difficulty": "medium",
+      "prompt": "Implement IsLocalURL in ops.go. Return true only for valid HTTP(S) URLs whose host is localhost, loopback, or a private IPv4 address. Return false for public and malformed URLs. Change only ops.go and run the targeted test.",
+      "workspaceFixture": "fixtures/go-mini",
+      "expectedChangedFiles": ["ops.go"],
+      "forbiddenChangedFiles": ["ops_test.go", "go.mod"],
+      "verificationCommands": [{"id": "test-local-url", "args": ["go", "test", "./...", "-run", "^TestIsLocalURL$"]}]
+    }
+  ]
+}

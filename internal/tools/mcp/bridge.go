@@ -25,7 +25,7 @@ func NewBridge(manager *Manager) *Bridge { return &Bridge{manager: manager} }
 func (b *Bridge) Spec() core.Tool {
 	return core.Tool{
 		Name:        "mcp_bridge",
-		Description: "List, inspect, and call configured MCP servers. list is local; search lazily starts only matching servers; call starts one server and invokes one tool.",
+		Description: "Access configured MCP capabilities, including web/browser tools. list is local; search starts a matching server lazily; call invokes one tool.",
 		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["list","search","call"]},"server":{"type":"string","description":"MCP server name"},"query":{"type":"string","description":"Tool/server capability to find"},"tool":{"type":"string","description":"Exact remote MCP tool name"},"arguments":{"type":"object","additionalProperties":true}},"required":["action"]}`,
 		Fn:          b.run,
 	}
@@ -152,8 +152,9 @@ func (b *Bridge) call(ctx context.Context, serverName, toolName string, argument
 	if !known {
 		return core.Result{Err: fmt.Errorf("MCP server %s has no tool %q; use action=search", serverName, toolName)}
 	}
-	if len(arguments) == 0 || string(arguments) == "null" {
-		arguments = json.RawMessage(`{}`)
+	arguments, err := normalizeBridgeArguments(arguments)
+	if err != nil {
+		return core.Result{Err: fmt.Errorf("mcp_bridge call arguments: %w", err)}
 	}
 	result, err := s.CallTool(ctx, toolName, arguments)
 	if err != nil {
@@ -164,4 +165,28 @@ func (b *Bridge) call(ctx context.Context, serverName, toolName string, argument
 		return core.Result{Err: fmt.Errorf("mcp %s/%s: %s", serverName, toolName, text)}
 	}
 	return core.Result{Text: text}
+}
+
+// normalizeBridgeArguments accepts the object required by MCP and repairs the
+// common small-model form where that object is emitted as a JSON-encoded
+// string. Without this repair the string reaches the MCP server unchanged, so
+// required fields appear to be missing even though they are visible in the
+// model's tool call.
+func normalizeBridgeArguments(raw json.RawMessage) (json.RawMessage, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.RawMessage(`{}`), nil
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return nil, fmt.Errorf("decode stringified JSON: %w", err)
+		}
+		raw = json.RawMessage(strings.TrimSpace(encoded))
+	}
+	var object map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &object) != nil || object == nil {
+		return nil, fmt.Errorf("must be a JSON object (a stringified object is also accepted)")
+	}
+	return raw, nil
 }

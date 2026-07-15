@@ -21,6 +21,8 @@ compaction) · [delegation](docs/delegation.md) (task workers,
 orchestrator, draft-verify) · [performance](docs/performance.md)
 (telemetry, caches, turn economy) ·
 [configuration](docs/configuration.md) (every knob and its default) ·
+[project structure](docs/project-structure.md) (package ownership and
+dependency rules) ·
 [webgui](docs/webgui.md) (web GUI design). The docs explain not just how
 the mechanisms work but *why* — each decision cites its live measurement.
 
@@ -76,6 +78,18 @@ Run one prompt without the TUI:
 ./supercli --batch "summarize this project"
 ```
 
+Maintainer quality and performance checks (separate tools; no runtime cost in
+the normal binary):
+
+```bash
+go run ./cmd/supercli-eval --validate
+go run ./cmd/supercli-eval --model local-qwen --model cloud-model -- \
+  ./supercli --home {workspace} --model {model} --batch {prompt}
+
+go build -o supercli ./cmd/supercli
+go run ./cmd/supercli-perf --binary ./supercli --output test/perf/latest.json
+```
+
 ## Core features
 
 ### TUI
@@ -83,16 +97,28 @@ Run one prompt without the TUI:
 - Bubble Tea terminal UI.
 - Warm Claude-Code-inspired visual style.
 - Structured chat transcript with separate `You` and `SuperCli` blocks.
+- Responsive two-column/stacked welcome surface, compact short-terminal mode,
+  and a focused bordered composer.
 - Streaming assistant output.
 - Status footer for credits, goals, tokens, and cost projection.
 - Scrollable transcript with PgUp/PgDn.
+- Cached completed transcript rendering, so streaming cost depends on the new
+  delta instead of the full conversation length.
+- `Ctrl+F` transcript search with per-message folding; folding is visual only
+  and never changes the model context.
 - Markdown rendering for assistant messages.
 - Collapsible thinking blocks with `Shift+T`.
 - Expand/collapse tool output with `Shift+E`.
+- Compact tool activity rows (safe argument summaries and four-line previews by default).
 - Command palette for `/` commands.
+- GUI-like action centre on `Tab` / `Ctrl+K`, with common tasks and a
+  searchable recent-session picker that do not require command names.
+- Prompts typed while a run is active are queued for the next safe model step
+  instead of being discarded or splitting a tool call from its result.
 - `@file` mention autocomplete.
 - Modal `/doctor` diagnostics screen.
-- Interactive menus for models, providers, and goal tasks.
+- Height-bounded, virtualized menus for models, providers, settings, projects,
+  accounts, and goal tasks; long local-model names never widen the terminal.
 
 ### Agent loop
 
@@ -155,9 +181,9 @@ Type `/` in the TUI to open the command palette.
 | `/reflect` | Show learned patterns from reflection memory. |
 | `/compact [instructions]` | Compress/hide context to save tokens. |
 | `/status` | Show model, credit, and session status. |
-| `/models` | Open/list known models and capabilities. |
-| `/model [model_id]` | Show or switch active model. |
-| `/providers` | Manage configured providers. |
+| `/model [model_id]` | Pick or switch to one of the enabled models. |
+| `/models` | Manage the complete model catalog, including disabled models. |
+| `/providers` | Inspect, pause/resume, scan, and manage configured providers. |
 | `/sandbox` | Show sandbox/home/data status. |
 | `/plan` | Toggle read-only plan mode. |
 | `/diff` | Show file changes recorded in the current session. |
@@ -203,7 +229,9 @@ Type `/` in the TUI to open the command palette.
   - reasoning,
   - context length,
   - input/output costs.
-- `/models`, `/model`, and `/providers` TUI menus.
+- `/model` fast picker for enabled models and `/models` full visibility catalog with filtering and bulk toggles.
+- `/providers` connection dashboard with model counts, pause/resume, scanning, and per-provider catalogs.
+- `/settings` grouped editor, including the visible 60% prune / 80% compaction context policy and its limits.
 - `--list-models`, `--refresh`, and `--model-info` non-interactive commands.
 - Background provider model scanning.
 - Hidden model state.
@@ -350,6 +378,8 @@ output_cost = 0.60
 | Key | Action |
 | --- | --- |
 | `Enter` | Send prompt / accept modal action. |
+| `Tab` on empty input / `Ctrl+K` | Open the action centre (models, sessions, projects, goal, files, usage, settings). |
+| `Ctrl+F` | Search the current transcript and fold/unfold one matching block. |
 | `/` | Open command palette. |
 | `@` | Open file mention autocomplete. |
 | `Esc` | Clear input, close autocomplete/modal, or cancel run. |

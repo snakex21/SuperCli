@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // shutdownGrace bounds how long Shutdown waits for the server to exit cleanly
@@ -17,6 +19,7 @@ const shutdownGrace = 2 * time.Second
 // to it over stdio, with the LSP initialize handshake already completed.
 type Server struct {
 	cmd    *exec.Cmd
+	scope  *childproc.Scope
 	client *Client
 	stdin  io.WriteCloser
 }
@@ -40,11 +43,12 @@ func StartServer(ctx context.Context, command []string, rootPath string) (*Serve
 	// The server's stderr is diagnostic noise for our purposes; discard it so it
 	// can't block on a full pipe.
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	scope, err := childproc.Start(cmd)
+	if err != nil {
 		return nil, err
 	}
 
-	server := &Server{cmd: cmd, client: NewClient(stdout, stdin), stdin: stdin}
+	server := &Server{cmd: cmd, scope: scope, client: NewClient(stdout, stdin), stdin: stdin}
 	if err := performInitialize(ctx, server.client, rootPath); err != nil {
 		_ = server.Shutdown(context.Background())
 		return nil, err
@@ -72,6 +76,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		_ = s.cmd.Wait()
+		_ = s.scope.Close()
 		close(done)
 	}()
 	select {
@@ -80,10 +85,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		// Caller's deadline/cancellation fired: kill now instead of waiting out the
 		// full grace window. Without this, Shutdown could block up to shutdownGrace
 		// per server regardless of the context (L19).
-		_ = s.cmd.Process.Kill()
+		_ = s.scope.Kill(s.cmd)
 		<-done
 	case <-time.After(shutdownGrace):
-		_ = s.cmd.Process.Kill()
+		_ = s.scope.Kill(s.cmd)
 		<-done
 	}
 	return nil

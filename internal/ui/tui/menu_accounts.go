@@ -121,35 +121,35 @@ func (m Model) menuAccountsKey(key string) (tea.Model, tea.Cmd, bool) {
 func (m Model) renderAccountsMenu() string {
 	rows := m.accountRows()
 	nAccts := len(rows) - 1 // minus the add row
+	width := maxInt(24, m.menuWidth()-6)
 
 	var body strings.Builder
-	title := m.palette.PanelTitle.Render("ChatGPT accounts")
+	title := m.palette.PanelTitle.Render(m.tr("ChatGPT accounts", "Konta ChatGPT"))
 	body.WriteString(title + "\n")
-	body.WriteString(m.palette.Dim.Render("sign in to one or more ChatGPT accounts") + "\n\n")
+	body.WriteString(m.palette.Dim.Render(m.tr("sign in to one or more ChatGPT accounts", "zaloguj jedno lub kilka kont ChatGPT")) + "\n\n")
 
-	for i, r := range rows {
+	start, end := 0, len(rows)
+	if m.height > 0 {
+		start, end = menuWindow(len(rows), m.menu.cursor, m.height-7)
+	}
+	for i := start; i < end; i++ {
+		r := rows[i]
 		selected := i == m.menu.cursor
 		cursor := "  "
 		if selected {
-			cursor = m.palette.HeaderMode.Render("❯ ")
+			cursor = m.palette.HeaderMode.Render("> ")
 		}
 
 		var line string
 		if r.isAdd {
-			label := "+  add account"
+			label := m.tr("+  add account", "+  dodaj konto")
 			if selected {
 				line = m.palette.HeaderMode.Render(label)
 			} else {
 				line = m.palette.Marker.Render(label)
 			}
 		} else {
-			check := m.palette.Success.Render("✓")
 			name := r.label
-			if selected {
-				name = m.palette.HeaderMode.Render(name)
-			} else {
-				name = m.palette.Bold.Render(name)
-			}
 			// Show WHICH ChatGPT account this label maps to:
 			// email (and plan) decoded from the token. Falls back
 			// gracefully when the token has no email claim.
@@ -164,9 +164,14 @@ func (m Model) renderAccountsMenu() string {
 				detail += r.plan
 			}
 			if detail != "" {
-				detail = "  " + m.palette.Dim.Render("("+detail+")")
+				detail = "  (" + detail + ")"
 			}
-			line = fmt.Sprintf("%s  %s%s", check, name, detail)
+			line = truncateText("[on] "+name+detail, width-2)
+			if selected {
+				line = m.palette.HeaderMode.Render(line)
+			} else {
+				line = m.palette.Bold.Render(line)
+			}
 		}
 		body.WriteString(cursor + line + "\n")
 	}
@@ -175,11 +180,11 @@ func (m Model) renderAccountsMenu() string {
 	body.WriteString("\n")
 	switch {
 	case nAccts >= 2:
-		body.WriteString(m.palette.Success.Render(fmt.Sprintf("● %d accounts — requests round-robin across them", nAccts)))
+		body.WriteString(m.palette.Success.Render(truncateText(m.tr(fmt.Sprintf("%d accounts — requests round-robin across them", nAccts), fmt.Sprintf("%d konta — żądania są rozdzielane między nimi", nAccts)), width)))
 	case nAccts == 1:
-		body.WriteString(m.palette.Dim.Render("add a second account to spread load (round-robin)"))
+		body.WriteString(m.palette.Dim.Render(truncateText(m.tr("add a second account to spread load (round-robin)", "dodaj drugie konto, aby rozłożyć obciążenie"), width)))
 	default:
-		body.WriteString(m.palette.Dim.Render("no accounts yet — add one to sign in"))
+		body.WriteString(m.palette.Dim.Render(m.tr("no accounts yet — add one to sign in", "brak kont — dodaj konto, aby się zalogować")))
 	}
 
 	panel := lipgloss.NewStyle().
@@ -188,7 +193,7 @@ func (m Model) renderAccountsMenu() string {
 		Padding(0, 2).
 		Render(body.String())
 
-	hint := m.palette.InputHint.Render("↑↓ select · Enter add · d log out · ESC back")
+	hint := m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter add · d log out · Esc back", "↑↓ wybierz · Enter dodaj · d wyloguj · Esc wróć"), m.menuWidth()))
 	return panel + "\n" + hint
 }
 
@@ -200,10 +205,10 @@ func (m Model) renderAccountLabelMenu() string {
 		label = m.menu.form[0]
 	}
 	var body strings.Builder
-	body.WriteString(m.palette.PanelTitle.Render("Name the new account") + "\n\n")
+	body.WriteString(m.palette.PanelTitle.Render(m.tr("Name the new account", "Nazwij nowe konto")) + "\n\n")
 	field := m.palette.HeaderMode.Render(" " + label + "▌ ")
-	body.WriteString("label  " + field + "\n\n")
-	body.WriteString(m.palette.Dim.Render("e.g. praca, prywatne — saved as auth-<label>.json"))
+	body.WriteString(m.tr("label", "nazwa") + "  " + field + "\n\n")
+	body.WriteString(m.palette.Dim.Render(m.tr("e.g. work, private — saved as auth-<label>.json", "np. praca, prywatne — zapisane jako auth-<nazwa>.json")))
 
 	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -211,7 +216,7 @@ func (m Model) renderAccountLabelMenu() string {
 		Padding(0, 2).
 		Render(body.String())
 
-	hint := m.palette.InputHint.Render("type · Enter sign in · ESC cancel")
+	hint := m.palette.InputHint.Render(m.tr("type · Enter sign in · Esc cancel", "pisz · Enter zaloguj · Esc anuluj"))
 	return panel + "\n" + hint
 }
 

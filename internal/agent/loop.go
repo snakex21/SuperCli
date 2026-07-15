@@ -237,6 +237,14 @@ type Loop struct {
 	// user's actual message it is ephemeral and is not persisted to history.
 	nextCoordinatorAddon string
 
+	// interjections are user messages typed while a Run is active. The TUI
+	// enqueues from Bubble Tea's goroutine; the loop drains only between model
+	// steps, so history mutation remains single-owner and tool-call/result pairs
+	// can never be split. The small cap prevents an unattended UI from growing
+	// an unbounded side queue.
+	interjectionMu sync.Mutex
+	interjections  []string
+
 	// chatWindowStart is the sticky start (a VisibleMessages index) of
 	// the growing history window used by the light routes (chat-only /
 	// advisor / clarify). It only ever moves FORWARD, in one big jump,
@@ -867,7 +875,10 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.nextUserAddon = ""
 	}
 	l.Messages = append(l.Messages, userMsg)
-	l.persist(ctx, userMsg)
+	// Addons are one-shot provider context, not transcript content. Persist the
+	// user's raw words so reopening a session never exposes internal preflight
+	// or rewind-feedback markers in the conversation UI.
+	l.persist(ctx, llm.Message{Role: llm.RoleUser, Content: prompt})
 	go l.run(ctx, prompt, out)
 	return out, nil
 }
@@ -1151,6 +1162,14 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		}
 
 		if len(toolCalls) == 0 {
+			// A user may have typed while this provider call was running. Treat
+			// that as the next user turn instead of completing the Run and making
+			// them wait/re-submit. Draining here is a safe history boundary: the
+			// assistant message above is already complete and persisted.
+			if l.drainInterjections(ctx) > 0 {
+				l.statsEndStep(stepStart)
+				continue
+			}
 			// F9 Sisyphus: when ultrawork is on AND
 			// the active /goal still has unfinished
 			// tasks, re-prompt the model instead of
@@ -1188,6 +1207,9 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			l.statsEndStep(stepStart)
 			return
 		}
+		// Tool results have all been appended in deterministic call order. This
+		// is the other safe drain point for mid-turn user messages.
+		l.drainInterjections(ctx)
 
 		// F5.a: default to signal-driven reflection. A healthy run pays no
 		// auxiliary inference merely because it crossed an arbitrary step
@@ -2752,6 +2774,42 @@ func (l *Loop) SetNextUserAddon(s string) {
 // for automatically collected repository context.
 func (l *Loop) SetNextCoordinatorAddon(s string) {
 	l.nextCoordinatorAddon = strings.TrimSpace(s)
+}
+
+const maxPendingInterjections = 8
+
+// QueueInterjection accepts a user message while Run is active. It performs no
+// model call and never mutates Messages from the caller goroutine; run() drains
+// it at the next assistant/tool boundary. False means empty input or a full
+// queue, allowing the UI to keep the draft for retry.
+func (l *Loop) QueueInterjection(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	l.interjectionMu.Lock()
+	defer l.interjectionMu.Unlock()
+	if len(l.interjections) >= maxPendingInterjections {
+		return false
+	}
+	l.interjections = append(l.interjections, s)
+	return true
+}
+
+func (l *Loop) drainInterjections(ctx context.Context) int {
+	l.interjectionMu.Lock()
+	pending := append([]string(nil), l.interjections...)
+	l.interjections = l.interjections[:0]
+	l.interjectionMu.Unlock()
+	for _, text := range pending {
+		msg := llm.Message{Role: llm.RoleUser, Content: text}
+		l.Messages = append(l.Messages, msg)
+		l.persist(ctx, msg)
+	}
+	if len(pending) > 0 {
+		l.invalidateVisibleEstimate()
+	}
+	return len(pending)
 }
 
 // CurrentModel returns the name of the active provider.

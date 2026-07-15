@@ -33,6 +33,7 @@ type Server struct {
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
+	scope   *childproc.Scope
 	client  *Client
 	tools   []ToolDef
 	lastErr string
@@ -67,7 +68,6 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("mcp server %s: command is empty", s.Name)
 	}
 	cmd := exec.Command(s.Config.Command, s.Config.Args...)
-	childproc.HideWindow(cmd)
 	if s.Config.Dir != "" {
 		cmd.Dir = s.Config.Dir
 	}
@@ -85,25 +85,29 @@ func (s *Server) Start(ctx context.Context) error {
 		s.lastErr = err.Error()
 		return fmt.Errorf("mcp server %s: stdout: %w", s.Name, err)
 	}
-	if err := cmd.Start(); err != nil {
+	scope, err := childproc.Start(cmd)
+	if err != nil {
 		s.lastErr = err.Error()
 		return fmt.Errorf("mcp server %s: start %q: %w", s.Name, s.Config.Command, err)
 	}
 	client := NewClient(stdout, stdin)
 	if _, err := client.Initialize(ctx); err != nil {
-		_ = cmd.Process.Kill()
+		_ = scope.Kill(cmd)
 		_ = cmd.Wait()
+		_ = scope.Close()
 		s.lastErr = err.Error()
 		return fmt.Errorf("mcp server %s: initialize: %w", s.Name, err)
 	}
 	tools, err := client.ListTools(ctx)
 	if err != nil {
-		_ = cmd.Process.Kill()
+		_ = scope.Kill(cmd)
 		_ = cmd.Wait()
+		_ = scope.Close()
 		s.lastErr = err.Error()
 		return fmt.Errorf("mcp server %s: tools/list: %w", s.Name, err)
 	}
 	s.cmd = cmd
+	s.scope = scope
 	s.client = client
 	s.tools = tools
 	s.lastErr = ""
@@ -118,9 +122,11 @@ func (s *Server) Stop() error {
 	if s.cmd == nil {
 		return nil
 	}
-	err := s.cmd.Process.Kill()
+	err := s.scope.Kill(s.cmd)
 	_ = s.cmd.Wait()
+	_ = s.scope.Close()
 	s.cmd = nil
+	s.scope = nil
 	s.client = nil
 	return err
 }

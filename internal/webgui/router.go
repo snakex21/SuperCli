@@ -54,11 +54,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/codex/logout", s.handleCodexLogout)
 	mux.HandleFunc("/api/codex/refresh", s.handleCodexRefresh)
 	mux.HandleFunc("/api/context", s.handleContext)
+	mux.HandleFunc("/api/context/compact", s.handleContextCompact)
 
 	// UI preferences (theme/fonts/keybinds/etc.) persisted server-side
 	// so they survive restarts despite the per-launch random port that
 	// would otherwise reset browser localStorage.
 	mux.HandleFunc("/api/settings", s.handleUISettings)
+	mux.HandleFunc("/api/data/status", s.handleDataStatus)
+	mux.HandleFunc("/api/data/clear", s.handleDataClear)
+	mux.HandleFunc("/api/data/export", s.handleDataExport)
+	mux.Handle("/api/data/export/full", s.withSecretLocalOnly(http.HandlerFunc(s.handleDataExportFull)))
+	mux.Handle("/api/data/import", s.withSecretLocalOnly(http.HandlerFunc(s.handleDataImport)))
 
 	// MCP server management
 	mux.HandleFunc("/api/mcp/servers", s.handleMcpServers)
@@ -76,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/question/answer", s.handleQuestionAnswer)
 	mux.HandleFunc("/api/question/image", s.handleQuestionImage)
 	mux.HandleFunc("/api/checkpoint", s.handleCheckpoint)
+	mux.HandleFunc("/api/checkpoint/rewind", s.handleCheckpointRewind)
 	mux.HandleFunc("/api/checkpoint/lesson", s.handleCheckpointLesson)
 	mux.HandleFunc("/api/test/hard", s.handleHardTest)
 	mux.HandleFunc("/api/prompt/profile", s.handlePromptProfile)

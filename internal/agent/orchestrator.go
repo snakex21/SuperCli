@@ -13,7 +13,7 @@ import "supercli/internal/tools"
 //
 // The switch is a NEW-SESSION setting: swapping the tool list mid-session
 // would break the KV-cache prefix (chat templates serialize `tools` at
-// the very start of the prompt). `/orchestrator on|off` persists to
+// the very start of the prompt). `/orchestrator auto|on|off` persists to
 // config.toml and takes effect on the next launch.
 
 // orchestratorTools is the exact set the main loop may hold in
@@ -26,7 +26,7 @@ import "supercli/internal/tools"
 // pure interaction. Anything doubtful is left out (worker territory).
 var orchestratorTools = []string{
 	"task", "send_message", "task_stop",
-	"tool_search", "read_lines", "read_context", "list_dir", "recall",
+	"tool_search", "web_lookup", "read_lines", "read_context", "list_dir", "recall",
 	"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 }
 
@@ -37,7 +37,7 @@ var orchestratorTools = []string{
 // loop's primary action, so (list_dir lesson) it has to be directly
 // callable with a full schema from turn 1, never buried in the tail.
 var orchestratorCoreTools = []string{
-	"task", "tool_search", "read_lines", "read_context", "read_output", "list_dir", "recall",
+	"task", "tool_search", "web_lookup", "read_lines", "read_context", "read_output", "list_dir", "recall",
 }
 
 // isOrchestratorCore reports whether name is in the orchestrator thin-core.

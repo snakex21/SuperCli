@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"supercli/internal/llm"
+	"supercli/internal/tools"
 )
 
 func TestIsContextLimitErr(t *testing.T) {
@@ -30,7 +33,7 @@ func TestExtractContextLimit(t *testing.T) {
 	cases := map[string]int{
 		"This model's maximum context length is 8192 tokens": 8192,
 		"model loaded with context length of only 4096":      4096,
-		"too many tokens":                                    0,
+		"too many tokens": 0,
 	}
 	for msg, want := range cases {
 		if got := extractContextLimit(msg); got != want {
@@ -77,6 +80,94 @@ func TestMaybeAutoCompact(t *testing.T) {
 	l.maybeAutoCompact(context.Background(), out, "")
 	if len(l.Messages) != before {
 		t.Error("compacted below threshold")
+	}
+}
+
+func TestEstimateNextRequestTokensIncludesToolSchemas(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "large_schema", Description: strings.Repeat("d", 900),
+		Schema: `{"type":"object","properties":{"path":{"type":"string"}}}`,
+		Fn:     func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil },
+	})
+	l := &Loop{provider: echo, registry: reg, route: RouteCoordinator}
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: "small message"}}
+	if full, messages := l.EstimateNextRequestTokens(), l.EstimateVisibleTokens(); full <= messages {
+		t.Fatalf("complete request estimate %d must exceed message-only estimate %d", full, messages)
+	}
+}
+
+func TestCompactNowKeepsProjectionUnchangedOnSummaryFailure(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	l := &Loop{
+		provider:  echo,
+		windowFor: func(string) int { return 2000 },
+		summarizer: func(context.Context, llm.Provider, []llm.Message) (string, error) {
+			return "", errors.New("backend unavailable")
+		},
+	}
+	l.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: "old"},
+		{Role: llm.RoleAssistant, Content: "answer"},
+	}
+	before := append([]llm.Message(nil), l.Messages...)
+	if _, err := l.CompactNow(context.Background()); err == nil {
+		t.Fatal("CompactNow error = nil, want summary failure")
+	}
+	if !reflect.DeepEqual(l.Messages, before) {
+		t.Fatalf("messages changed after failed manual compaction: %#v", l.Messages)
+	}
+}
+
+func TestCompactNowRejectsSummaryThatDoesNotReduceContext(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	l := &Loop{
+		provider:  echo,
+		windowFor: func(string) int { return 2000 },
+		summarizer: func(_ context.Context, _ llm.Provider, msgs []llm.Message) (string, error) {
+			return strings.Repeat("verbose summary ", 1000), nil
+		},
+	}
+	l.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: strings.Repeat("old context ", 100)},
+		{Role: llm.RoleAssistant, Content: "answer"},
+	}
+	before := append([]llm.Message(nil), l.Messages...)
+	if _, err := l.CompactNow(context.Background()); err == nil || !strings.Contains(err.Error(), "insufficient reduction") {
+		t.Fatalf("CompactNow error = %v, want insufficient reduction", err)
+	}
+	if !reflect.DeepEqual(l.Messages, before) {
+		t.Fatalf("messages changed after ineffective manual compaction: %#v", l.Messages)
+	}
+}
+
+func TestMaybeAutoCompactDoesNotResummarizeSummaryOnlyPrefix(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	calls := 0
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "fixed_overhead", Description: strings.Repeat("schema", 700), Schema: `{"type":"object"}`,
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil },
+	})
+	l := &Loop{
+		provider: echo, registry: reg, route: RouteCoordinator,
+		windowFor: func(string) int { return 1000 },
+		summarizer: func(context.Context, llm.Provider, []llm.Message) (string, error) {
+			calls++
+			return "unexpected", nil
+		},
+	}
+	l.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: "This session is continued from a previous conversation that was compacted to save context."},
+		{Role: llm.RoleUser, Content: "current"},
+	}
+	l.maybeAutoCompact(context.Background(), nil, "")
+	if calls != 0 {
+		t.Fatalf("summary-only prefix was summarized %d time(s)", calls)
 	}
 }
 

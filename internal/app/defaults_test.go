@@ -6,8 +6,8 @@
 // decision, never an accident.
 //
 // Deliberately OFF/empty by default (opt-in features for a conscious
-// choice, not pure wins): orchestrator (hard delegation changes how
-// the main loop works), draft_verify + task_model (only pay off with
+// choice, not pure wins): hard orchestration (adaptive delegation remains
+// available), draft_verify + task_model (only pay off with
 // a second/smaller model), noop_gate (would change ANSWER semantics:
 // a repeated identical batch QUESTION would return "no-op" instead of
 // the answer — see the table below).
@@ -26,6 +26,9 @@ import (
 // expected fresh-install behaviour.
 func TestFreshConfigDefaults(t *testing.T) {
 	fresh := config.TomlConfig{}
+	if mode := resolveOrchestratorMode(fresh.Orchestrator); mode != orchestratorAdaptive {
+		t.Fatalf("fresh orchestrator mode = %v, want adaptive", mode)
+	}
 
 	navEnable, navAuto := resolveNavigator(fresh.Navigator)
 	bools := []struct {
@@ -106,5 +109,30 @@ func TestFreshConfigDefaults(t *testing.T) {
 	}
 	if agent.DefaultMaxActiveWorkers != 6 {
 		t.Errorf("max active workers = %d, want 6", agent.DefaultMaxActiveWorkers)
+	}
+}
+
+func TestResolveOrchestratorModes(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name           string
+		in             *bool
+		want           orchestratorMode
+		wantHard       bool
+		wantDelegation bool
+	}{
+		{"unset is adaptive", nil, orchestratorAdaptive, false, true},
+		{"true is always", &on, orchestratorAlways, true, true},
+		{"false is never", &off, orchestratorNever, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveOrchestratorMode(tc.in)
+			if got != tc.want {
+				t.Fatalf("mode = %v, want %v", got, tc.want)
+			}
+			if got.hard() != tc.wantHard || got.delegationEnabled() != tc.wantDelegation {
+				t.Fatalf("mode flags hard/delegation = %v/%v, want %v/%v", got.hard(), got.delegationEnabled(), tc.wantHard, tc.wantDelegation)
+			}
+		})
 	}
 }

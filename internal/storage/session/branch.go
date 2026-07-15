@@ -8,8 +8,9 @@ import (
 )
 
 // Fork creates a child session and copies the transcript through throughSeq.
-// A zero sequence means the full transcript. Usage is deliberately not copied:
-// the branch only accounts for calls made after it diverges.
+// Zero means the full transcript; a negative value creates an empty branch.
+// Usage is deliberately not copied: the branch only accounts for calls made
+// after it diverges.
 func (s *Store) Fork(ctx context.Context, sourceID string, throughSeq int, provider, model, reasoning string) (Session, error) {
 	source, err := s.Get(strings.TrimSpace(sourceID))
 	if err != nil {
@@ -44,6 +45,8 @@ func (s *Store) Fork(ctx context.Context, sourceID string, throughSeq int, provi
 	if throughSeq > 0 {
 		limitClause = " AND seq <= ?"
 		args = append(args, throughSeq)
+	} else if throughSeq < 0 {
+		limitClause = " AND 1=0"
 	}
 	q := `INSERT INTO messages(session_id,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,created_at) SELECT ?,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,created_at FROM messages WHERE session_id=?` + limitClause + ` ORDER BY seq`
 	res, err := tx.ExecContext(ctx, q, args...)

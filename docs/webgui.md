@@ -83,8 +83,30 @@ code, paths, telemetry. Base 14px; chat 14.5px/1.65.
 
 ## Persistence
 
-UI preferences (theme, fonts, language, keybinds, notifications) live
-in the server-side blob (`/api/settings` → `webgui-settings.json`)
+UI preferences (theme, fonts, keybinds, notifications) live in the
+server-side blob (`/api/settings` → `webgui-settings.json`)
 because the app-mode window gets a fresh port — and thus a fresh
-localStorage — on every launch. Backend knobs live in `config.toml`
-via `/api/config`, shared with the TUI `/settings` panel.
+localStorage — on every launch. The UI language is the one deliberate
+exception: first launch detects the operating-system UI language and stores
+`language = "en"` or `"pl"` in global `config.toml`. The desktop app and TUI
+then read and update that same value. Backend knobs also live in `config.toml`
+via `/api/config`, shared with the TUI settings panel.
+
+## Data backup
+
+The **Data** settings section offers two deliberately different exports:
+
+- A safe ZIP contains conversations, memory, goals, project references and UI
+  preferences. It never contains API keys, OAuth accounts or executable
+  packages.
+- A full ZIP additionally contains `config.toml`, Codex `auth*.json`, portable
+  MCP and skill packages, user tools, prompt profiles and learned model limits.
+  It is deliberately password-free for recovery after a format or transfer to
+  another computer. The ZIP contains readable credentials and must be stored
+  like any other secret.
+
+Import validates file counts, paths, manifest and unpacked size before staging
+anything. Matching state is replaced only on the next application
+start, before databases and MCP processes are opened. The previous state is
+moved to `supercli-data/backups/pre-import-*` first. Secret-bearing export and
+all import operations remain loopback-only even when `--allow-remote` is used.

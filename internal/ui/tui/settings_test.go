@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,7 +35,7 @@ func newSettingsModel(t *testing.T, toml string) Model {
 	}
 	ti := newInputArea()
 	p := DefaultPalette()
-	m := Model{home: dir, dataDir: dir, palette: p, marker: NewMarker(p), input: ti}
+	m := Model{home: dir, dataDir: dir, language: "pl", palette: p, marker: NewMarker(p, "pl"), input: ti}
 	mm, _ := m.openSettingsMenu()
 	return mm.(Model)
 }
@@ -65,10 +66,12 @@ func TestSettings_RenderListsKnobs(t *testing.T) {
 	m := newSettingsModel(t, "")
 	out := m.renderSettingsMenu()
 	for _, want := range []string{
-		"Settings", "orchestrator", "thinking", "navigator", "stable_toolset",
+		"Ustawienia", "orchestrator", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin_parallel", "task_parallel", "memory_briefing_tokens",
-		"task_max_steps", "task_max_tokens", "default_model", "default_provider",
-		"Reset all to defaults", "(next session)",
+		"context_policy", "context_window", "prune_protect_tokens",
+		"task_max_steps", "task_max_tokens", "fallback_models", "fallback_cooldown_seconds",
+		"default_model", "default_provider",
+		"Przywróć ustawienia domyślne", "(następna sesja)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("settings render missing %q\n%s", want, out)
@@ -86,6 +89,45 @@ func TestSettings_RenderShowsSourceAndDefaults(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in render\n%s", want, out)
 		}
+	}
+}
+
+func TestSettingsLanguageToggleUpdatesTUIAndPersists(t *testing.T) {
+	m := newSettingsModel(t, "language = \"pl\"\n")
+	m = cursorForKey(m, "language")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	if m.language != "en" || m.chat.language != "en" {
+		t.Fatalf("language not applied live: model=%q chat=%q", m.language, m.chat.language)
+	}
+	if !strings.Contains(m.input.Placeholder, "Message SuperCli") {
+		t.Fatalf("placeholder not localized: %q", m.input.Placeholder)
+	}
+	if cfg := loadCfg(t, m); cfg.Language != "en" {
+		t.Fatalf("persisted language=%q, want en", cfg.Language)
+	}
+}
+
+func TestSettings_OrchestratorShowsThreeDistinctModes(t *testing.T) {
+	m := newSettingsModel(t, "")
+	var row settingRow
+	for _, candidate := range settingsRows() {
+		if candidate.key == "orchestrator" {
+			row = candidate
+			break
+		}
+	}
+	if value, source := m.settingValueSource(row, m.menu.settingsCfg); value != "auto" || source != "default" {
+		t.Fatalf("default orchestrator = %q/%q, want auto/default", value, source)
+	}
+	on, off := true, false
+	m.menu.settingsCfg.Orchestrator = &on
+	if value, source := m.settingValueSource(row, m.menu.settingsCfg); value != "zawsze" || source != "manual" {
+		t.Fatalf("on orchestrator = %q/%q, want zawsze/manual", value, source)
+	}
+	m.menu.settingsCfg.Orchestrator = &off
+	if value, source := m.settingValueSource(row, m.menu.settingsCfg); value != "nigdy" || source != "manual" {
+		t.Fatalf("off orchestrator = %q/%q, want nigdy/manual", value, source)
 	}
 }
 
@@ -165,6 +207,22 @@ func TestSettings_EditIntPersists(t *testing.T) {
 	m = mm.(Model)
 	if cfg := loadCfg(t, m); cfg.MemoryBriefingTokens != 250 {
 		t.Fatalf("memory_briefing_tokens = %d, want 250", cfg.MemoryBriefingTokens)
+	}
+}
+
+func TestSettings_ContextControlsPersist(t *testing.T) {
+	m := newSettingsModel(t, "")
+	for key, want := range map[string]int{"context_window": 131072, "prune_protect_tokens": 4096} {
+		m = cursorForKey(m, key)
+		mm, _ := m.settingsEnter()
+		m = mm.(Model)
+		m.menu.editBuf = strconv.Itoa(want)
+		mm, _ = m.settingsCommitInt()
+		m = mm.(Model)
+	}
+	cfg := loadCfg(t, m)
+	if cfg.ContextWindow != 131072 || cfg.PruneProtectTokens != 4096 {
+		t.Fatalf("context controls not persisted: window=%d protect=%d", cfg.ContextWindow, cfg.PruneProtectTokens)
 	}
 }
 
@@ -283,6 +341,20 @@ func TestSettings_EditVerifyCommandsPreloadsJoined(t *testing.T) {
 	m = mm.(Model)
 	if m.menu.editBuf != "go build ./... ; go vet ./..." {
 		t.Fatalf("editBuf preload = %q", m.menu.editBuf)
+	}
+}
+
+func TestSettings_EditFallbackList(t *testing.T) {
+	m := newSettingsModel(t, "")
+	m = cursorForKey(m, "fallback_models")
+	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	m.menu.editBuf = "hp/qwen ; cloud/gpt"
+	mm, _ = m.settingsEditKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	want := []string{"hp/qwen", "cloud/gpt"}
+	if cfg := loadCfg(t, m); !reflect.DeepEqual(cfg.FallbackModels, want) {
+		t.Fatalf("fallback_models = %v, want %v", cfg.FallbackModels, want)
 	}
 }
 

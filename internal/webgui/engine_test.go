@@ -204,14 +204,14 @@ func TestWebPromptPrefixIsByteStableAcrossTurns(t *testing.T) {
 	eng.prov = provider
 	eng.mu.Unlock()
 	var sessionID string
-	if err := eng.runStream(context.Background(), "first", "", func(ev wireEvent) {
+	if err := eng.runStream(context.Background(), "first", "", "", func(ev wireEvent) {
 		if ev.Type == "session" {
 			sessionID = ev.SessionID
 		}
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := eng.runStream(context.Background(), "second", sessionID, func(wireEvent) {}); err != nil {
+	if err := eng.runStream(context.Background(), "second", sessionID, "", func(wireEvent) {}); err != nil {
 		t.Fatal(err)
 	}
 	provider.mu.Lock()
@@ -283,6 +283,23 @@ func TestEngine_NewLoop(t *testing.T) {
 	}
 	if loop == nil {
 		t.Fatal("nil loop")
+	}
+}
+
+func TestEngine_NewLoopExposesDirectCurrentFactsLookup(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	loop, err := eng.newLoop()
+	if err != nil {
+		t.Fatalf("newLoop: %v", err)
+	}
+	names := "|" + strings.Join(loop.VisibleToolNames(), "|") + "|"
+	if !strings.Contains(names, "|web_lookup|") {
+		t.Fatalf("WebGUI loop does not expose web_lookup: %s", names)
 	}
 }
 
@@ -444,7 +461,7 @@ func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
 	eng.mu.Unlock()
 
 	var events []wireEvent
-	if err := eng.runStream(context.Background(), "delegate this", "", func(ev wireEvent) {
+	if err := eng.runStream(context.Background(), "delegate this", "", "", func(ev wireEvent) {
 		events = append(events, ev)
 	}); err != nil {
 		t.Fatal(err)
@@ -490,7 +507,7 @@ func TestEngine_RunStream_Echo(t *testing.T) {
 
 	var types []string
 	var sessionID string
-	err = eng.runStream(ctx, "hello world", "", func(ev wireEvent) {
+	err = eng.runStream(ctx, "hello world", "", "", func(ev wireEvent) {
 		types = append(types, ev.Type)
 		if ev.Type == "session" {
 			sessionID = ev.SessionID

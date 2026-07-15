@@ -2,18 +2,32 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/system/config"
 )
+
+func TestProviderStatusCellIncludesMeasuredLatency(t *testing.T) {
+	m := New(Options{NoColor: true})
+	m.providerStatuses = map[string]providerStatus{
+		"local": {checked: true, online: true, latency: 42 * time.Millisecond},
+	}
+	plain, _ := m.providerStatusCell("local")
+	if plain != "online · 42ms" {
+		t.Fatalf("status=%q", plain)
+	}
+}
 
 // ---------- configuredProviderNames -----------------------------------------
 
@@ -122,6 +136,198 @@ func TestRenderModelsMenu_CodexShowsSubscriptionNotUSD(t *testing.T) {
 	}
 }
 
+func TestModelAndModelsHaveDistinctVisibilitySemantics(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	if err := mgr.Add("local", "openai", "http://localhost:1234/v1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	mgr.HideModelFor("local", "gemma")
+	caps := llm.NewCapabilityRegistry()
+	for _, id := range []string{"gemma", "qwen"} {
+		caps.Register(llm.ModelInfo{ID: id, Provider: "local", Source: llm.SourceProvider, ToolUse: true})
+	}
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+
+	// /model is the fast picker: hidden models stay out.
+	m.input.SetValue("/model")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	picker := out.(Model)
+	pickerView := picker.renderMenuView()
+	if picker.menu.kind != menuModels || strings.Contains(pickerView, "gemma") || !strings.Contains(pickerView, "qwen") {
+		t.Fatalf("/model should contain only enabled models:\n%s", picker.renderMenuView())
+	}
+	if strings.Contains(pickerView, "[on]") || strings.Contains(pickerView, "[off]") {
+		t.Fatalf("/model is a picker and should not render visibility switches:\n%s", pickerView)
+	}
+	picker.menu.filter = "qwen"
+	out, _ = picker.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	picker = out.(Model)
+	if mgr.IsHiddenFor("local", "qwen") {
+		t.Fatal("Left Arrow in /model must not disable a model")
+	}
+
+	// /models is the full catalog: hidden models remain reachable and Enter
+	// toggles them back on without selecting/swapping the active model.
+	m.input.SetValue("/models")
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	catalog := out.(Model)
+	if catalog.menu.kind != menuModelCatalog || !strings.Contains(catalog.renderMenuView(), "gemma") || !strings.Contains(catalog.renderMenuView(), "[off]") {
+		t.Fatalf("/models should expose the full catalog:\n%s", catalog.renderMenuView())
+	}
+	catalog.menu.filter = "gemma"
+	catalog.menu.cursor = 0
+	out, _ = catalog.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if mgr.IsHiddenFor("local", "gemma") {
+		t.Fatal("Enter in /models should enable a hidden model")
+	}
+	out, _ = catalog.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	_ = out.(Model)
+	if !mgr.IsHiddenFor("local", "gemma") {
+		t.Fatal("Left Arrow in /models should still disable a model")
+	}
+}
+
+func TestOfflineConfiguredModelRemainsInPickerAndPausedOnlyInCatalog(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	if err := mgr.Add("lmstudio", "openai", "http://localhost:1234/v1", "", "local-qwen"); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: llm.NewCapabilityRegistry()})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuModels}
+	if view := m.renderMenuView(); !strings.Contains(view, "local-qwen") {
+		t.Fatalf("configured offline default should remain selectable:\n%s", view)
+	}
+
+	if err := mgr.SetDisabled("lmstudio", true); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	m.menu = interactiveMenu{kind: menuModels}
+	if view := m.renderMenuView(); strings.Contains(view, "local-qwen") {
+		t.Fatalf("paused provider model should leave the fast picker:\n%s", view)
+	}
+	m.menu = interactiveMenu{kind: menuModelCatalog}
+	if view := m.renderMenuView(); !strings.Contains(view, "local-qwen") || !strings.Contains(view, "provider paused") {
+		t.Fatalf("paused provider model should remain manageable in the catalog:\n%s", view)
+	}
+}
+
+func TestModelCatalogFilterAcceptsShortcutLettersAndBulkTogglesVisible(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	if err := mgr.Add("local", "openai", "http://localhost:1234/v1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	caps := llm.NewCapabilityRegistry()
+	for _, id := range []string{"dreamer", "qwen"} {
+		caps.Register(llm.ModelInfo{ID: id, Provider: "local", Source: llm.SourceProvider})
+	}
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuModelCatalog}
+
+	// These letters used to be swallowed by provider/model shortcuts.
+	for _, r := range "dream" {
+		out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = out.(Model)
+	}
+	if m.menu.filter != "dream" || len(m.filteredModelRows()) != 1 || m.filteredModelRows()[0].ID != "dreamer" {
+		t.Fatalf("catalog filter=%q rows=%v, want dreamer", m.menu.filter, m.filteredModelRows())
+	}
+
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	m = out.(Model)
+	if !mgr.IsHiddenFor("local", "dreamer") || mgr.IsHiddenFor("local", "qwen") {
+		t.Fatalf("X should disable only filtered rows: dreamer=%v qwen=%v", mgr.IsHiddenFor("local", "dreamer"), mgr.IsHiddenFor("local", "qwen"))
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	_ = out.(Model)
+	if mgr.IsHiddenFor("local", "dreamer") {
+		t.Fatal("A should enable filtered rows")
+	}
+}
+
+func TestProviderModelToggleDoesNotAffectSameIDAtAnotherProvider(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	for _, name := range []string{"provider-x", "provider-y"} {
+		if err := mgr.Add(name, "openai", "http://"+name+"/v1", "", "shared-model"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mgr.Reload()
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: llm.NewCapabilityRegistry()})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuProviderModels, provider: "provider-x"}
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = out.(Model)
+	if !mgr.IsHiddenFor("provider-x", "shared-model") {
+		t.Fatal("selected provider/model should be disabled")
+	}
+	if mgr.IsHiddenFor("provider-y", "shared-model") {
+		t.Fatal("same model ID at another provider must remain enabled")
+	}
+}
+
+func TestProvidersEnterOpensModelsAndSpacePauses(t *testing.T) {
+	home := t.TempDir()
+	mgr := providers.NewManager(home)
+	if err := mgr.Add("local", "openai", "http://localhost:1234/v1", "", "qwen"); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Reload()
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "qwen", Provider: "local", Source: llm.SourceProvider})
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuProviders}
+
+	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	opened := out.(Model)
+	if opened.menu.kind != menuProviderModels || opened.menu.provider != "local" || cmd == nil {
+		t.Fatalf("Enter should open and refresh provider models: kind=%v provider=%q cmd=%v", opened.menu.kind, opened.menu.provider, cmd)
+	}
+
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuProviders}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	paused := out.(Model)
+	rows := paused.providerRows()
+	if len(rows) != 1 || !rows[0].Disabled || !strings.Contains(paused.renderProvidersMenu(), "paused") {
+		t.Fatalf("Space should pause provider without deleting it: %+v\n%s", rows, paused.renderProvidersMenu())
+	}
+}
+
+func TestRenderModelsMenuIsVirtualizedAndNarrowSafe(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	for i := 0; i < 30; i++ {
+		caps.Register(llm.ModelInfo{ID: fmt.Sprintf("model-%02d-with-a-very-long-name", i), Provider: "local", ContextLength: 131072, ToolUse: true})
+	}
+	m := New(Options{CapabilityRegistry: caps})
+	m.palette = NoColorPalette()
+	m.width, m.height = 60, 18
+	m.menu = interactiveMenu{kind: menuModels, cursor: 20}
+	out := m.renderMenuView()
+	if !strings.Contains(out, "model-20") || strings.Contains(out, "model-00") {
+		t.Fatalf("model window does not follow cursor:\n%s", out)
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) > m.height {
+		t.Fatalf("models menu uses %d rows in %d-row terminal:\n%s", len(lines), m.height, out)
+	}
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got > m.width {
+			t.Fatalf("line %d width=%d exceeds menu width: %q", i+1, got, line)
+		}
+	}
+}
+
 func TestConfiguredProviderNames_Empty(t *testing.T) {
 	m := New(Options{})
 	names := m.configuredProviderNames()
@@ -210,7 +416,7 @@ func TestFilteredModelRows_HidesDisabledModelsInGlobalView(t *testing.T) {
 	mgr := providers.NewManager(home)
 	mgr.Add("lmstudio", "openai", "http://localhost:1234/v1", "", "")
 	mgr.Reload()
-	mgr.HideModel("gemma") // mark gemma as hidden
+	mgr.HideModelFor("lmstudio", "gemma") // mark only this provider/model pair as hidden
 
 	caps := llm.NewCapabilityRegistry()
 	caps.Register(llm.ModelInfo{ID: "qwen3.6", Provider: "lmstudio", ToolUse: true, Stream: true})
@@ -236,7 +442,7 @@ func TestFilteredModelRows_ShowsDisabledModelsInProviderView(t *testing.T) {
 	mgr := providers.NewManager(home)
 	mgr.Add("lmstudio", "openai", "http://localhost:1234/v1", "", "")
 	mgr.Reload()
-	mgr.HideModel("gemma")
+	mgr.HideModelFor("lmstudio", "gemma")
 
 	caps := llm.NewCapabilityRegistry()
 	caps.Register(llm.ModelInfo{ID: "qwen3.6", Provider: "lmstudio", ToolUse: true, Stream: true})
@@ -330,7 +536,7 @@ func TestSaveActiveConfigThenLoadHiddenState(t *testing.T) {
 	}
 
 	// Hide a model.
-	mgr.HideModel("gemma")
+	mgr.HideModelFor("lmstudio", "gemma")
 
 	// Simulate restart: create new manager, reload, load hidden.
 	mgr2 := providers.NewManager(home)
@@ -343,7 +549,7 @@ func TestSaveActiveConfigThenLoadHiddenState(t *testing.T) {
 	}
 
 	// Verify hidden state persisted.
-	if !mgr2.IsHidden("gemma") {
+	if !mgr2.IsHiddenFor("lmstudio", "gemma") {
 		t.Fatal("gemma should still be hidden after restart")
 	}
 
@@ -359,7 +565,7 @@ func TestSaveActiveConfigThenLoadHiddenState(t *testing.T) {
 	if tc.DefaultProvider != "lmstudio" {
 		t.Fatalf("default_provider = %q", tc.DefaultProvider)
 	}
-	if len(tc.HiddenModels) != 1 || tc.HiddenModels[0] != "gemma" {
+	if len(tc.HiddenModels) != 1 || !strings.HasPrefix(tc.HiddenModels[0], "ref:") {
 		t.Fatalf("hidden_models = %v", tc.HiddenModels)
 	}
 }
@@ -507,6 +713,80 @@ func TestProviderFormSaveScansProviderInBackground(t *testing.T) {
 	}
 }
 
+func TestProviderFormInvalidKeyRollsBackAndReopensForm(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided","code":"invalid_api_key"}}`))
+	}))
+	defer srv.Close()
+
+	mgr := providers.NewManager(t.TempDir())
+	caps := llm.NewCapabilityRegistry()
+	m := New(Options{ProviderMgr: mgr, CapabilityRegistry: caps})
+	m.mode = modeMenu
+	m.menu = interactiveMenu{
+		kind:   menuProviderForm,
+		form:   []string{"openai", "openai", srv.URL + "/v1", "bad-key", ""},
+		formAt: 4,
+	}
+
+	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := out.(Model)
+	if mm.menu.kind != menuProviders {
+		t.Fatalf("menu kind immediately after submit = %v, want providers while verification runs", mm.menu.kind)
+	}
+	if cmd == nil {
+		t.Fatal("expected background verification command")
+	}
+
+	var saved providerSavedMsg
+	var found bool
+	var drain func(tea.Cmd)
+	drain = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				drain(sub)
+			}
+			return
+		}
+		if got, ok := msg.(providerSavedMsg); ok {
+			saved = got
+			found = true
+		}
+	}
+	drain(cmd)
+	if !found || saved.err == nil {
+		t.Fatalf("providerSavedMsg = %+v, want validation error", saved)
+	}
+	if !saved.rolledBack || saved.rollbackErr != nil {
+		t.Fatalf("rollback state = rolledBack %v, err %v", saved.rolledBack, saved.rollbackErr)
+	}
+	if names := mgr.Names(); len(names) != 0 {
+		t.Fatalf("invalid provider remained configured: %v", names)
+	}
+
+	out, _ = mm.Update(saved)
+	mm = out.(Model)
+	if mm.mode != modeMenu || mm.menu.kind != menuProviderForm {
+		t.Fatalf("failed validation did not reopen provider form: mode=%v menu=%v", mm.mode, mm.menu.kind)
+	}
+	if mm.menu.editName != "" || mm.menu.formAt != 3 {
+		t.Fatalf("reopened form state = editName %q, field %d; want new provider API-key field", mm.menu.editName, mm.menu.formAt)
+	}
+	if len(mm.menu.form) < 4 || mm.menu.form[3] != "bad-key" {
+		t.Fatalf("reopened form did not preserve entered values: %#v", mm.menu.form)
+	}
+	rendered := mm.renderProviderForm()
+	if !strings.Contains(rendered, "401") || !strings.Contains(rendered, "Provider was not added") {
+		t.Fatalf("validation error is not visible in form: %q", rendered)
+	}
+}
+
 func TestProviderEditPrefillsMaskedKeyAndPreservesIt(t *testing.T) {
 	mgr := providers.NewManager(t.TempDir())
 	if err := mgr.Add("router", "openai", "https://router.example/v1", "secret-key", "model"); err != nil {
@@ -519,7 +799,7 @@ func TestProviderEditPrefillsMaskedKeyAndPreservesIt(t *testing.T) {
 
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	mm := out.(Model)
-	if mm.menu.kind != menuProviderForm || len(mm.menu.form) < 4 || mm.menu.form[3] != "secret-key" {
+	if mm.menu.kind != menuProviderForm || len(mm.menu.form) < 5 || mm.menu.form[3] != "secret-key" || mm.menu.form[4] != "model" {
 		t.Fatalf("edit form did not retain stored key: %+v", mm.menu)
 	}
 	masked := mm.renderProviderForm()
@@ -533,6 +813,11 @@ func TestProviderEditPrefillsMaskedKeyAndPreservesIt(t *testing.T) {
 		t.Fatal("Right Arrow should reveal the prefilled key")
 	}
 
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = out.(Model)
+	if mm.menu.kind != menuProviderForm || mm.menu.formAt != 4 {
+		t.Fatalf("API key Enter should advance to optional model field: %+v", mm.menu)
+	}
 	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm = out.(Model)
 	if mm.menu.kind != menuProviders {

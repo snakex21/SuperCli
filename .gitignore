@@ -1,6 +1,6 @@
 # Build outputs
-supercli
-supercli.exe
+/supercli
+/supercli.exe
 *.exe
 *.exe~
 *.dll
@@ -8,6 +8,7 @@ supercli.exe
 *.dylib
 *.test
 coverage.out
+test/perf/*.json
 
 # Runtime state / databases — never publish these
 .supercli/
@@ -55,6 +56,8 @@ Thumbs.db
 *.swo
 
 # Temporary files
+/\.tmp-home/
+/%SystemDrive%/
 tmp/
 temp/
 *.tmp

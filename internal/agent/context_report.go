@@ -24,6 +24,7 @@ type ContextReport struct {
 	Hidden  int // messages hidden by /clear, compaction, hide_messages
 
 	EstimatedTokens int // chars/4 estimate of the visible conversation
+	RequestTokens   int // complete next request, including tools/catalog/stamp
 
 	// Breakdown of EstimatedTokens by message kind.
 	SystemTokens     int // system prompt(s), incl. briefing/patterns
@@ -38,10 +39,10 @@ type ContextReport struct {
 	// ToolSchemaTokens; the dormant tail is advertised in a compact
 	// catalog whose cost is CatalogTokens instead — that split is
 	// where the per-turn saving shows up.
-	ToolCount        int // tools carrying a full schema this turn
-	ToolSchemaTokens int // chars/4 cost of those schemas
+	ToolCount        int  // tools carrying a full schema this turn
+	ToolSchemaTokens int  // chars/4 cost of those schemas
 	Thin             bool // thin tool protocol active on this route
-	CatalogTokens    int // chars/4 cost of the catalog + call-format preamble (thin only)
+	CatalogTokens    int  // chars/4 cost of the catalog + call-format preamble (thin only)
 
 	// Provider-reported cumulative usage for this session.
 	UsageIn  int
@@ -187,6 +188,7 @@ func (l *Loop) ContextReport() ContextReport {
 		items = items[:5]
 	}
 	r.Top = items
+	r.RequestTokens = l.EstimateNextRequestTokens()
 	return r
 }
 
@@ -213,7 +215,10 @@ func FormatContextReport(r ContextReport) string {
 		}
 		return fmt.Sprintf(" (%.1f%% of %d window)", float64(t)/float64(r.Window)*100, r.Window)
 	}
-	total := r.EstimatedTokens + r.ToolSchemaTokens + r.CatalogTokens
+	total := r.RequestTokens
+	if total <= 0 {
+		total = r.EstimatedTokens + r.ToolSchemaTokens + r.CatalogTokens
+	}
 	fmt.Fprintf(&b, "  messages: %d visible, %d hidden\n", r.Visible, r.Hidden)
 	fmt.Fprintf(&b, "  estimated context: ~%d tok%s\n", total, pct(total))
 	fmt.Fprintf(&b, "    system prompt + briefing: ~%d tok\n", r.SystemTokens)

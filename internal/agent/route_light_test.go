@@ -11,14 +11,14 @@ import (
 )
 
 // TestLoop_ChatRouteSendsMinimalToolSet: the chat route must send only
-// tool_search + recall (when registered), never the full tool list.
+// web_lookup + tool_search + recall (when registered), never the full tool list.
 func TestLoop_ChatRouteSendsMinimalToolSet(t *testing.T) {
 	p := &captureProvider{name: "capture"}
 	reg := tools.NewRegistry()
 	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "x"}, nil
 	}
-	for _, name := range []string{"tool_search", "recall", "expensive_tool", "another_big_tool"} {
+	for _, name := range []string{"web_lookup", "tool_search", "recall", "expensive_tool", "another_big_tool"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "d " + name, Schema: `{"type":"object"}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
 	}
@@ -27,8 +27,8 @@ func TestLoop_ChatRouteSendsMinimalToolSet(t *testing.T) {
 	ch, _ := l.Run(context.Background(), "hej")
 	drainEvents(t, ch)
 
-	if p.toolCount != 2 {
-		t.Fatalf("toolCount=%d, want 2 (tool_search + recall)", p.toolCount)
+	if p.toolCount != 3 {
+		t.Fatalf("toolCount=%d, want 3 (web_lookup + tool_search + recall)", p.toolCount)
 	}
 }
 
@@ -123,14 +123,14 @@ func TestLoop_BuildToolDefs_CoordinatorExposesAllVisibleWithSchema(t *testing.T)
 }
 
 // TestLoop_BuildToolDefs_ChatRouteMinimalSet: chat/advisor routes must
-// return only the chatRouteTools that are registered (tool_search +
-// recall), never the full visible set.
+// return only the chatRouteTools that are registered (web_lookup +
+// tool_search + recall), never the full visible set.
 func TestLoop_BuildToolDefs_ChatRouteMinimalSet(t *testing.T) {
 	reg := tools.NewRegistry()
 	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "x"}, nil
 	}
-	for _, name := range []string{"tool_search", "recall", "edit_line", "darwin"} {
+	for _, name := range []string{"web_lookup", "tool_search", "recall", "edit_line", "darwin"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "d " + name, Schema: `{"type":"object"}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
 	}
@@ -138,14 +138,14 @@ func TestLoop_BuildToolDefs_ChatRouteMinimalSet(t *testing.T) {
 	l.route = RouteChatOnly
 
 	defs := l.buildToolDefs()
-	if len(defs) != 2 {
-		t.Fatalf("chat defs = %d, want 2 (tool_search + recall)", len(defs))
+	if len(defs) != 3 {
+		t.Fatalf("chat defs = %d, want 3 (web_lookup + tool_search + recall)", len(defs))
 	}
 	got := map[string]bool{}
 	for _, d := range defs {
 		got[d.Name] = true
 	}
-	if !got["tool_search"] || !got["recall"] {
+	if !got["web_lookup"] || !got["tool_search"] || !got["recall"] {
 		t.Errorf("chat route missing core tools: %v", got)
 	}
 	if got["edit_line"] || got["darwin"] {
@@ -213,7 +213,7 @@ func thinLoop(t *testing.T) *Loop {
 		return tools.Result{Text: "x"}, nil
 	}
 	// core + tail, all always-on.
-	for _, name := range []string{"tool_search", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "read_image", "search_code", "ctx_execute", "ask_user", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
+	for _, name := range []string{"tool_search", "web_lookup", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "read_image", "search_code", "ctx_execute", "ask_user", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "does " + name + " things for the user", Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
 	}

@@ -9,11 +9,13 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/account/credits"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage/goal"
+	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 )
 
@@ -21,7 +23,10 @@ type menuKind int
 
 const (
 	menuNone menuKind = iota
-	menuModels
+	menuActions
+	menuSessions
+	menuModels       // enabled models: fast picker used by /model
+	menuModelCatalog // every model: visibility manager used by /models
 	menuProviders
 	menuProviderModels
 	menuProviderForm
@@ -33,7 +38,18 @@ const (
 	menuGoal
 	menuReasoning
 	menuSettings
+	menuCheckpoint
+	menuTranscript
 )
+
+// CheckpointPreview is intentionally presentation-sized metadata. It contains
+// no file contents and is cheap to obtain before a destructive-looking action.
+type CheckpointPreview struct {
+	ID     string
+	Prompt string
+	Files  []string
+	Redo   bool
+}
 
 type interactiveMenu struct {
 	kind        menuKind
@@ -42,8 +58,10 @@ type interactiveMenu struct {
 	provider    string
 	form        []string
 	formAt      int
+	formErr     string
 	editName    string
 	keyRevealed bool // true = API key shown in plain text
+	sessions    []session.Session
 
 	// /settings panel state. settingsCfg holds the last loaded/saved
 	// global config so the panel renders live values; editing/editBuf
@@ -51,6 +69,7 @@ type interactiveMenu struct {
 	settingsCfg *config.TomlConfig
 	editing     bool
 	editBuf     string
+	checkpoint  *CheckpointPreview
 }
 
 func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {
@@ -67,27 +86,49 @@ func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openModelCatalogMenu opens the complete catalog, including models hidden
+// from the fast /model picker. Visibility changes are local and persisted;
+// opening the catalog never calls an LLM.
+func (m Model) openModelCatalogMenu() (tea.Model, tea.Cmd) {
+	if m.providerMgr != nil && m.caps != nil && len(m.caps.All()) == 0 {
+		m.providerMgr.ScanModels(m.caps)
+	}
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuModelCatalog}
+	m.input.Blur()
+	return m, nil
+}
+
 // providerStatus is the cached result of one async connectivity
 // probe for the /providers menu.
 type providerStatus struct {
-	checked bool // false = probe still running
-	online  bool
-	err     string
+	checked   bool // false = probe still running
+	online    bool
+	err       string
+	latency   time.Duration
+	checkedAt time.Time
 }
 
 // providerStatusMsg delivers one provider's async probe result.
 type providerStatusMsg struct {
-	name   string
-	online bool
-	err    string
+	name      string
+	online    bool
+	err       string
+	latency   time.Duration
+	checkedAt time.Time
 }
 
 // providerSavedMsg delivers the async result of saving a provider
 // from the form (scan + test request).
 type providerSavedMsg struct {
-	name string
-	body string
-	err  error
+	name        string
+	body        string
+	err         error
+	form        []string
+	editName    string
+	wasNew      bool
+	rolledBack  bool
+	rollbackErr error
 }
 
 // providerScanDoneMsg signals that a background model scan
@@ -130,13 +171,15 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 		}
 		m.providerStatuses[p.Name] = providerStatus{} // checking...
 		cmds = append(cmds, func() tea.Msg {
+			started := time.Now()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			err := providers.Ping(ctx, p)
+			latency := time.Since(started)
 			if err != nil {
-				return providerStatusMsg{name: p.Name, online: false, err: err.Error()}
+				return providerStatusMsg{name: p.Name, online: false, err: err.Error(), latency: latency, checkedAt: time.Now()}
 			}
-			return providerStatusMsg{name: p.Name, online: true}
+			return providerStatusMsg{name: p.Name, online: true, latency: latency, checkedAt: time.Now()}
 		})
 	}
 	if len(cmds) == 0 {
@@ -167,6 +210,28 @@ func (m Model) closeMenu() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.menu.kind == menuActions {
+		return m.handleActionsKey(msg)
+	}
+	if m.menu.kind == menuSessions {
+		return m.handleSessionsKey(msg)
+	}
+	if m.menu.kind == menuTranscript {
+		return m.handleTranscriptKey(msg)
+	}
+	if m.menu.kind == menuCheckpoint {
+		switch msg.String() {
+		case "esc", "n":
+			return m.closeMenu()
+		case "enter", "y":
+			name := "undo"
+			if m.menu.checkpoint != nil && m.menu.checkpoint.Redo {
+				name = "redo"
+			}
+			return m.dispatchVisualCommand(name, "")
+		}
+		return m, nil
+	}
 	// In the provider form, most keys are text input — handle only
 	// navigation/special keys here, everything else falls to rune handler.
 	if m.menu.kind == menuProviderForm {
@@ -189,6 +254,15 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	key := msg.String()
 	lowerKey := strings.ToLower(key)
+	if (m.menu.kind == menuModelCatalog || m.menu.kind == menuProviderModels) && m.providerMgr != nil && (key == "A" || key == "X") {
+		rows := m.filteredModelRows()
+		refs := make([]providers.ModelRef, 0, len(rows))
+		for _, row := range rows {
+			refs = append(refs, providers.ModelRef{Provider: row.Provider, ID: row.ID})
+		}
+		m.providerMgr.SetModelRefsHidden(refs, key == "X")
+		return m, nil
+	}
 	switch lowerKey {
 	case "esc":
 		return m.closeMenu()
@@ -222,19 +296,21 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.menuSpace()
 	case "right":
 		// Right arrow: enable/show model.
-		if (m.menu.kind == menuModels || m.menu.kind == menuProviderModels) && m.providerMgr != nil {
+		if isModelVisibilityMenu(m.menu.kind) && m.providerMgr != nil {
 			rows := m.filteredModelRows()
 			if len(rows) > 0 {
-				m.providerMgr.ShowModel(rows[minInt(m.menu.cursor, len(rows)-1)].ID)
+				row := rows[minInt(m.menu.cursor, len(rows)-1)]
+				m.providerMgr.ShowModelFor(row.Provider, row.ID)
 			}
 		}
 		return m, nil
 	case "left":
 		// Left arrow: disable/hide model.
-		if (m.menu.kind == menuModels || m.menu.kind == menuProviderModels) && m.providerMgr != nil {
+		if isModelVisibilityMenu(m.menu.kind) && m.providerMgr != nil {
 			rows := m.filteredModelRows()
 			if len(rows) > 0 {
-				m.providerMgr.HideModel(rows[minInt(m.menu.cursor, len(rows)-1)].ID)
+				row := rows[minInt(m.menu.cursor, len(rows)-1)]
+				m.providerMgr.HideModelFor(row.Provider, row.ID)
 			}
 		}
 		return m, nil
@@ -259,7 +335,10 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.appendLine(m.marker.Error(err))
 			}
 		}
-		return m, nil
+		// In model menus ordinary lowercase letters belong to the filter.
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	case "e":
 		if m.menu.kind == menuProviders {
 			rows := m.providerRows()
@@ -278,11 +357,13 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// default and the user can reveal it explicitly with Right Arrow.
 				// An empty fourth field used to be submitted as an explicit clear,
 				// silently deleting a working key on unrelated edits.
-				m.menu = interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, apiKey}}
+				m.menu = interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, apiKey, p.Model}}
 				m.input.Blur()
 			}
 		}
-		return m, nil
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	case "d":
 		// Accounts menu: 'd' logs out the selected account.
 		if m.menu.kind == menuAccounts {
@@ -304,19 +385,42 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.menu.cursor = 0
 			}
 		}
-		return m, nil
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	case "r":
 		if m.menu.kind == menuSettings {
 			return m.settingsResetCurrent()
 		}
-		if m.menu.kind == menuModels || m.menu.kind == menuProviderModels {
+		if m.menu.kind == menuModels && key == "R" {
 			return m.openReasoningMenu()
+		}
+		if key == "R" && (m.menu.kind == menuModelCatalog || m.menu.kind == menuProviderModels) && m.providerMgr != nil && m.caps != nil {
+			mgr, caps, provider := m.providerMgr, m.caps, m.menu.provider
+			return m, func() tea.Msg {
+				if provider == "" {
+					mgr.ScanModels(caps)
+				} else {
+					mgr.ScanProvider(provider, caps)
+				}
+				return providerScanDoneMsg{}
+			}
 		}
 		if m.menu.kind == menuProviders && m.providerMgr != nil {
 			m.providerMgr.Reload()
-			return m, m.probeProvidersCmd()
+			if m.caps == nil {
+				return m, m.probeProvidersCmd()
+			}
+			mgr, caps := m.providerMgr, m.caps
+			scan := func() tea.Msg {
+				mgr.ScanModels(caps)
+				return providerScanDoneMsg{}
+			}
+			return m, tea.Batch(m.probeProvidersCmd(), scan)
 		}
-		return m, nil
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	case "c":
 		// Shortcut to the ChatGPT accounts screen — only on an
 		// OpenAI/ChatGPT row (contextual, like [M]/[E]).
@@ -324,27 +428,18 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menu = interactiveMenu{kind: menuAccounts}
 			return m, nil
 		}
-		return m, nil
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	case "m":
 		if m.menu.kind == menuProviders {
-			rows := m.providerRows()
-			if len(rows) > 0 {
-				idx := minInt(m.menu.cursor, len(rows)-1)
-				name := rows[idx].Name
-				m.menu = interactiveMenu{kind: menuProviderModels, provider: name}
-				// Scan this provider's models in the background so
-				// the menu opens instantly.
-				if mgr, caps := m.providerMgr, m.caps; mgr != nil && caps != nil {
-					return m, func() tea.Msg {
-						mgr.ScanProvider(name, caps)
-						return providerScanDoneMsg{}
-					}
-				}
-			}
+			return m.openProviderModelsAtCursor()
 		}
-		return m, nil
+		if !isModelMenu(m.menu.kind) {
+			return m, nil
+		}
 	}
-	if len(msg.Runes) > 0 && (m.menu.kind == menuModels || m.menu.kind == menuProviderModels) {
+	if len(msg.Runes) > 0 && isModelMenu(m.menu.kind) {
 		// Only add printable characters to the filter.
 		// Skip control characters and Alt/Meta sequences.
 		for _, r := range msg.Runes {
@@ -353,6 +448,27 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.menu.cursor = 0
+	}
+	return m, nil
+}
+
+func (m Model) openProviderModelsAtCursor() (tea.Model, tea.Cmd) {
+	rows := m.providerRows()
+	if len(rows) == 0 {
+		return m, nil
+	}
+	p := rows[minInt(m.menu.cursor, len(rows)-1)]
+	if p.Disabled {
+		m.statusOverride = "provider " + p.Name + " is paused; press Space to enable it"
+		return m, statusClearCmd()
+	}
+	m.menu = interactiveMenu{kind: menuProviderModels, provider: p.Name}
+	if mgr, caps := m.providerMgr, m.caps; mgr != nil && caps != nil {
+		name := p.Name
+		return m, func() tea.Msg {
+			mgr.ScanProvider(name, caps)
+			return providerScanDoneMsg{}
+		}
 	}
 	return m, nil
 }
@@ -399,11 +515,13 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.menu.form) > m.menu.formAt && m.menu.form[m.menu.formAt] != "" {
 			r := []rune(m.menu.form[m.menu.formAt])
 			m.menu.form[m.menu.formAt] = string(r[:len(r)-1])
+			m.menu.formErr = ""
 		}
 		return m, nil
 	case "ctrl+v":
 		if text, err := clipboard.ReadAll(); err == nil && text != "" {
 			m.menu.form[m.menu.formAt] += normalizePastedLine(text)
+			m.menu.formErr = ""
 		}
 		return m, nil
 	}
@@ -414,6 +532,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			text = normalizePastedLine(text)
 		}
 		m.menu.form[m.menu.formAt] += text
+		m.menu.formErr = ""
 		return m, nil
 	}
 	return m, nil
@@ -422,7 +541,13 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) clampMenuCursor() {
 	max := 0
 	switch m.menu.kind {
-	case menuModels, menuProviderModels:
+	case menuActions:
+		max = len(m.filteredActionRows()) - 1
+	case menuSessions:
+		max = len(m.filteredSessionRows()) - 1
+	case menuTranscript:
+		max = len(m.filteredTranscriptRows()) - 1
+	case menuModels, menuModelCatalog, menuProviderModels:
 		max = len(m.filteredModelRows()) - 1
 	case menuProviders:
 		max = len(m.providerRows()) - 1
@@ -449,7 +574,7 @@ func (m *Model) clampMenuCursor() {
 	case menuReasoning:
 		max = len(reasoningMenuOptions()) - 1
 	case menuSettings:
-		max = len(settingsRows()) - 1
+		max = len(m.localizedSettingsRows()) - 1
 	}
 	if max < 0 {
 		max = 0
@@ -461,7 +586,13 @@ func (m *Model) clampMenuCursor() {
 
 func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 	switch m.menu.kind {
-	case menuModels, menuProviderModels:
+	case menuActions:
+		return m.selectAction()
+	case menuSessions:
+		return m.selectSession()
+	case menuTranscript:
+		return m.selectTranscriptMatch()
+	case menuModels:
 		rows := m.filteredModelRows()
 		if len(rows) == 0 {
 			return m, nil
@@ -480,31 +611,51 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		m.applyModelSwap(selected.ID, selected.Provider)
 		m.refreshTranscript()
 		return m.closeMenu()
-	case menuProviders:
+	case menuModelCatalog, menuProviderModels:
+		rows := m.filteredModelRows()
+		if len(rows) == 0 || m.providerMgr == nil {
+			return m, nil
+		}
+		row := rows[minInt(m.menu.cursor, len(rows)-1)]
+		if m.providerMgr.IsHiddenFor(row.Provider, row.ID) {
+			m.providerMgr.ShowModelFor(row.Provider, row.ID)
+		} else {
+			m.providerMgr.HideModelFor(row.Provider, row.ID)
+		}
 		return m, nil
+	case menuProviders:
+		return m.openProviderModelsAtCursor()
 	case menuProviderForm:
 		if m.menu.formAt < len(m.menu.form)-1 {
 			m.menu.formAt++
 			return m, nil
 		}
+		m.menu.formErr = ""
+		formSnapshot := append([]string(nil), m.menu.form...)
+		editName := m.menu.editName
+		wasNew := editName == ""
 		savedName := ""
 		if m.providerMgr != nil && len(m.menu.form) >= 4 {
 			f := m.menu.form
+			model := ""
+			if len(f) > 4 {
+				model = f[4]
+			}
 			var saveErr error
 			if m.menu.editName != "" {
 				typ, url, key := f[1], f[2], f[3]
-				saveErr = m.providerMgr.Update(m.menu.editName, &typ, &url, &key, nil)
+				saveErr = m.providerMgr.Update(m.menu.editName, &typ, &url, &key, &model)
 				if saveErr == nil {
 					savedName = m.menu.editName
 				}
 			} else if strings.TrimSpace(f[0]) != "" {
-				saveErr = m.providerMgr.Add(f[0], f[1], f[2], f[3], "")
+				saveErr = m.providerMgr.Add(f[0], f[1], f[2], f[3], model)
 				if saveErr == nil {
 					savedName = f[0]
 				}
 			}
 			if saveErr != nil {
-				m.appendLine(m.marker.Error(saveErr))
+				m.menu.formErr = compactProviderError(saveErr)
 				return m, nil
 			}
 			m.providerMgr.Reload()
@@ -517,12 +668,39 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		// ("Say OK") in the background, then report the outcome.
 		mgr, caps := m.providerMgr, m.caps
 		verifyCmd := func() tea.Msg {
-			res := mgr.ScanProvider(savedName, caps)
+			baseMsg := providerSavedMsg{
+				name:     savedName,
+				form:     formSnapshot,
+				editName: editName,
+				wasNew:   wasNew,
+			}
+			failed := func(err error) providerSavedMsg {
+				msg := baseMsg
+				msg.err = err
+				if wasNew {
+					if rollbackErr := mgr.Remove(savedName); rollbackErr != nil {
+						msg.rollbackErr = rollbackErr
+						// Remove updates memory before persisting. Restore the
+						// on-disk state if that persistence step itself failed.
+						mgr.Reload()
+					} else {
+						msg.rolledBack = true
+					}
+				}
+				return msg
+			}
+
+			// Probe into a temporary registry. If /models succeeds but the
+			// inference request rejects the credentials, the live picker must
+			// not retain ghost models from the rejected provider.
+			probeCaps := llm.NewCapabilityRegistry()
+			res := mgr.ScanProvider(savedName, probeCaps)
 			if res.Err != nil {
-				return providerSavedMsg{name: savedName, err: res.Err}
+				return failed(res.Err)
 			}
 			if len(res.Models) == 0 {
-				return providerSavedMsg{name: savedName, body: "endpoint reachable, but it returned 0 models — load/pull a model first"}
+				baseMsg.body = "endpoint reachable, but it returned 0 models — load/pull a model first"
+				return baseMsg
 			}
 			// Test request against the first model.
 			var conf *config.ProviderConf
@@ -534,16 +712,19 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 				}
 			}
 			if conf == nil {
-				return providerSavedMsg{name: savedName, body: fmt.Sprintf("found %d model(s)", len(res.Models))}
+				baseMsg.body = fmt.Sprintf("found %d model(s)", len(res.Models))
+				return baseMsg
 			}
 			model := conf.Model
 			if model == "" {
 				model = res.Models[0]
 			}
 			if err := providers.VerifyConnectionForProvider(context.Background(), conf.Type, conf.BaseURL, conf.APIKey, model); err != nil {
-				return providerSavedMsg{name: savedName, err: err}
+				return failed(err)
 			}
-			return providerSavedMsg{name: savedName, body: fmt.Sprintf("✓ connected — %d model(s), test request OK (%s)", len(res.Models), model)}
+			caps.RegisterAll(probeCaps.All())
+			baseMsg.body = fmt.Sprintf("✓ connected — %d model(s), test request OK (%s)", len(res.Models), model)
+			return baseMsg
 		}
 		return m, tea.Batch(m.probeProvidersCmd(), verifyCmd)
 	case menuProviderPredefined:
@@ -560,7 +741,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		}
 		m.menu = interactiveMenu{
 			kind:     menuProviderForm,
-			form:     []string{p.Name, p.Type, p.BaseURL, ""},
+			form:     []string{p.Name, p.Type, p.BaseURL, "", ""},
 			formAt:   0,
 			editName: "",
 		}
@@ -577,7 +758,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		// API key: prefill the regular provider form.
 		m.menu = interactiveMenu{
 			kind:   menuProviderForm,
-			form:   []string{"openai", "openai", "https://api.openai.com/v1", ""},
+			form:   []string{"openai", "openai", "https://api.openai.com/v1", "", ""},
 			formAt: 3,
 		}
 		return m, nil
@@ -594,6 +775,27 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) menuSpace() (tea.Model, tea.Cmd) {
+	if m.menu.kind == menuProviders && m.providerMgr != nil {
+		rows := m.providerRows()
+		if len(rows) == 0 {
+			return m, nil
+		}
+		p := rows[minInt(m.menu.cursor, len(rows)-1)]
+		if err := m.providerMgr.SetDisabled(p.Name, !p.Disabled); err != nil {
+			m.statusOverride = "provider: " + err.Error()
+			return m, statusClearCmd()
+		}
+		m.providerMgr.Reload()
+		if p.Disabled && m.caps != nil {
+			mgr, caps, name := m.providerMgr, m.caps, p.Name
+			scan := func() tea.Msg {
+				mgr.ScanProvider(name, caps)
+				return providerScanDoneMsg{}
+			}
+			return m, tea.Batch(m.probeProvidersCmd(), scan)
+		}
+		return m, m.probeProvidersCmd()
+	}
 	if m.menu.kind == menuGoal && m.goalSvc != nil {
 		rows := m.goalTaskRows()
 		if len(rows) == 0 {
@@ -613,10 +815,18 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 
 func (m Model) renderMenuView() string {
 	switch m.menu.kind {
+	case menuActions:
+		return m.renderActionsMenu()
+	case menuSessions:
+		return m.renderSessionsMenu()
+	case menuTranscript:
+		return m.renderTranscriptMenu()
 	case menuModels:
-		return m.renderModelsMenu("Models", "↑↓ move · type filter · Enter select · [R]easoning · → enable · ← disable · ESC back")
+		return m.renderModelsMenu(m.tr("Enabled models", "Włączone modele"), m.tr("↑↓ select · type to filter · Enter use · R reasoning · Esc back", "↑↓ wybierz · pisz aby filtrować · Enter użyj · R myślenie · Esc wróć"))
+	case menuModelCatalog:
+		return m.renderModelsMenu(m.tr("Model catalog", "Katalog modeli"), m.tr("↑↓ select · type filter · Enter toggle · A enable visible · X disable visible · R refresh · Esc back", "↑↓ wybierz · pisz filtr · Enter przełącz · A włącz widoczne · X wyłącz widoczne · R odśwież · Esc wróć"))
 	case menuProviderModels:
-		return m.renderModelsMenu("Models: "+m.menu.provider, "↑↓ move · type filter · Enter select · [R]easoning · → enable · ← disable · ESC back")
+		return m.renderModelsMenu(m.tr("Models · ", "Modele · ")+m.menu.provider, m.tr("↑↓ select · Enter toggle · A enable visible · X disable visible · R refresh · Esc back", "↑↓ wybierz · Enter przełącz · A włącz widoczne · X wyłącz widoczne · R odśwież · Esc wróć"))
 	case menuProviders:
 		return m.renderProvidersMenu()
 	case menuProviderForm:
@@ -637,44 +847,147 @@ func (m Model) renderMenuView() string {
 		return m.renderReasoningMenu()
 	case menuSettings:
 		return m.renderSettingsMenu()
+	case menuCheckpoint:
+		return m.renderCheckpointMenu()
 	default:
 		return ""
 	}
 }
 
+func (m Model) openCheckpointMenu(redo bool) (tea.Model, tea.Cmd) {
+	if m.checkpointPreview == nil {
+		return m.dispatchVisualCommand(map[bool]string{false: "undo", true: "redo"}[redo], "")
+	}
+	preview, err := m.checkpointPreview(redo)
+	if err != nil {
+		m.statusOverride = err.Error()
+		return m.closeMenu()
+	}
+	preview.Redo = redo
+	m.mode = modeMenu
+	m.menu = interactiveMenu{kind: menuCheckpoint, checkpoint: &preview}
+	m.input.Blur()
+	return m, nil
+}
+
+func (m Model) renderCheckpointMenu() string {
+	preview := m.menu.checkpoint
+	if preview == nil {
+		return m.palette.Error.Render("Brak danych checkpointu")
+	}
+	width := maxInt(24, m.menuWidth())
+	action := "Cofnij ostatnią turę"
+	verb := "przywrócone do stanu sprzed tury"
+	if preview.Redo {
+		action = "Ponów cofniętą turę"
+		verb = "przywrócone do stanu po turze"
+	}
+	var b strings.Builder
+	b.WriteString(m.palette.PanelTitle.Render(action) + "\n")
+	b.WriteString(m.palette.Dim.Render(truncateText("Checkpoint "+preview.ID+" · pliki zostaną "+verb+". Rozmowa nie jest usuwana.", width)) + "\n\n")
+	if strings.TrimSpace(preview.Prompt) != "" {
+		b.WriteString(m.palette.StatusKey.Render("Tura: ") + m.palette.StatusValue.Render(truncateText(preview.Prompt, width-8)) + "\n\n")
+	}
+	b.WriteString(m.palette.StatusKey.Render(fmt.Sprintf("Pliki (%d):", len(preview.Files))) + "\n")
+	limit := minInt(len(preview.Files), maxInt(3, m.height-9))
+	for _, file := range preview.Files[:limit] {
+		b.WriteString(m.palette.StatusValue.Render("  • "+truncateText(file, width-4)) + "\n")
+	}
+	if len(preview.Files) > limit {
+		b.WriteString(m.palette.Dim.Render(fmt.Sprintf("  … i %d więcej", len(preview.Files)-limit)) + "\n")
+	}
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible("Enter potwierdź · Esc anuluj", width)))
+	return b.String()
+}
+
+func isModelMenu(kind menuKind) bool {
+	return kind == menuModels || kind == menuModelCatalog || kind == menuProviderModels
+}
+
+func isModelVisibilityMenu(kind menuKind) bool {
+	return kind == menuModelCatalog || kind == menuProviderModels
+}
+
 func (m Model) renderModelsMenu(title, footer string) string {
 	rows := m.filteredModelRows()
+	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(title) + "\n")
-	b.WriteString(m.palette.InputHint.Render("filter: "+m.menu.filter) + "\n\n")
-	b.WriteString("on provider        name                         context   input       output      caps\n")
-	b.WriteString("── ────────────── ──────────────────────────── ───────── ─────────── ─────────── ────\n")
-	for i, row := range rows {
+	b.WriteString(m.palette.PanelTitle.Render(fmt.Sprintf("%s · %d", title, len(rows))) + "\n")
+	filter := m.menu.filter
+	if filter == "" {
+		filter = m.tr("start typing", "zacznij pisać")
+	}
+	b.WriteString(m.palette.InputHint.Render(m.tr("Search: ", "Szukaj: ")+filter) + "\n\n")
+	start, end := 0, len(rows)
+	if m.height > 0 {
+		available := (m.height - 5) / 2
+		start, end = menuWindow(len(rows), m.menu.cursor, available)
+	}
+	for i := start; i < end; i++ {
+		row := rows[i]
 		row = m.enrichModelRow(row)
 		prefix := "  "
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
-		// Show enabled/disabled indicator.
-		on := "✓"
-		if m.menu.kind == menuProviderModels && m.providerMgr != nil && m.providerMgr.IsHidden(row.ID) {
-			on = "✗"
+		state := ""
+		if m.menu.kind == menuModels {
+			if row.ID == m.reasoningModelName() {
+				state = m.tr("[active]", "[aktywny]")
+			}
+		} else {
+			state = "[on]"
+			if m.providerMgr != nil && m.providerMgr.IsHiddenFor(row.Provider, row.ID) {
+				state = "[off]"
+			}
 		}
-		line := fmt.Sprintf("%-2s %-14s %-28s %-9s %-11s %-11s %s", on, row.Provider, row.ID, ctxLen(row.ContextLength), m.modelPrice(row, true), m.modelPrice(row, false), caps(row))
+		nameWidth := width - lipgloss.Width(prefix)
+		if state != "" {
+			nameWidth -= lipgloss.Width(state) + 1
+		}
+		if nameWidth < 18 {
+			nameWidth = 18
+		}
+		line := prefix + truncateText(row.ID, nameWidth)
+		if state != "" {
+			line += " " + state
+		}
 		if i == m.menu.cursor {
 			line = m.palette.HeaderMode.Render(line)
+		} else {
+			line = m.palette.Bold.Render(line)
 		}
-		b.WriteString(prefix + line + "\n")
+		b.WriteString(line + "\n")
+
+		meta := row.Provider + " · ctx " + ctxLen(row.ContextLength) +
+			" · in " + m.modelPrice(row, true) + " · out " + m.modelPrice(row, false)
+		if c := caps(row); c != "" {
+			meta += " · " + c
+		}
+		if providerState := m.modelProviderState(row.Provider); providerState != "" {
+			meta += " · " + providerState
+		}
+		b.WriteString(m.palette.Dim.Render(truncateText("    "+meta, width)) + "\n")
 	}
 	if len(rows) == 0 {
 		if m.caps != nil && len(m.caps.All()) == 0 {
-			b.WriteString("  scanning providers for models...\n")
+			b.WriteString("  " + m.tr("scanning providers for models...", "skanowanie modeli dostawców...") + "\n")
 		} else {
-			b.WriteString("  no matching models\n")
+			b.WriteString("  " + m.tr("no matching models", "brak pasujących modeli") + "\n")
 		}
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(footer))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(footer, width)))
 	return b.String()
+}
+
+func (m Model) modelProviderState(provider string) string {
+	if m.providerMgr != nil && m.providerMgr.IsDisabled(provider) {
+		return m.tr("provider paused", "dostawca wstrzymany")
+	}
+	if status, ok := m.providerStatuses[provider]; ok && status.checked && !status.online {
+		return "offline"
+	}
+	return ""
 }
 
 func (m Model) enrichModelRow(row llm.ModelInfo) llm.ModelInfo {
@@ -773,56 +1086,102 @@ func (m Model) isSubscriptionProviderName(name string) bool {
 func (m Model) renderProvidersMenu() string {
 	rows := m.providerRows()
 	active := m.activeProviderName()
+	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Providers") + "\n\n")
-	header := fmt.Sprintf("    %-14s %-8s %-24s %-12s %s", "name", "type", "model", "status", "endpoint")
-	b.WriteString(m.palette.InputHint.Render(header) + "\n")
-	b.WriteString(m.palette.Dim.Render("    ────────────── ──────── ──────────────────────── ──────────── ────────────") + "\n")
-	for i, p := range rows {
+	b.WriteString(m.palette.PanelTitle.Render(fmt.Sprintf(m.tr("Providers · %d", "Dostawcy · %d"), len(rows))) + "\n")
+	b.WriteString(m.palette.InputHint.Render(m.tr("Connection status and active model", "Stan połączenia i aktywny model")) + "\n\n")
+	start, end := 0, len(rows)
+	if m.height > 0 {
+		available := (m.height - 5) / 2
+		start, end = menuWindow(len(rows), m.menu.cursor, available)
+	}
+	for i := start; i < end; i++ {
+		p := rows[i]
 		prefix := "  "
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
-		check := " "
+		activeText := ""
 		if p.Name == active {
-			check = "✓"
+			activeText = m.tr(" [active]", " [aktywny]")
 		}
 		model := p.Model
 		if model == "" {
 			model = "-"
 		}
-		if len(model) > 24 {
-			model = model[:21] + "..."
-		}
 		name, typ := displayProvider(p.Name, p.Type)
 		statusText, statusStyled := m.providerStatusCell(p.Name)
-		// Pad with the unstyled width, then swap in the styled text
-		// so ANSI codes don't break column alignment.
-		line := fmt.Sprintf("%-14s %-8s %-24s %-12s", name, typ, model, statusText)
-		line = strings.Replace(line, statusText, statusStyled, 1) + " " + m.palette.Dim.Render(p.BaseURL)
-		full := prefix + check + " " + line
+		if p.Disabled {
+			statusText = m.tr("paused", "wstrzymany")
+			statusStyled = m.palette.InputHint.Render(statusText)
+		}
+		plainLine := truncateText(prefix+name+activeText+" · "+statusText, width)
+		line := prefix + name + activeText + " · " + statusStyled
 		if i == m.menu.cursor {
-			full = prefix + m.palette.HeaderMode.Render(check+" "+fmt.Sprintf("%-14s %-8s %-24s %-12s", name, typ, model, statusText)) + " " + m.palette.Dim.Render(p.BaseURL)
+			line = m.palette.HeaderMode.Render(plainLine)
+		} else {
+			plainPrefix := truncateText(prefix+name+activeText+" · ", maxInt(4, width-lipgloss.Width(statusText)))
+			line = m.palette.Bold.Render(plainPrefix) + statusStyled
 		}
-		b.WriteString(full + "\n")
-		if st, ok := m.providerStatuses[p.Name]; ok && st.checked && !st.online && st.err != "" {
-			errLine := st.err
-			if len(errLine) > 70 {
-				errLine = errLine[:70] + "..."
-			}
-			b.WriteString(m.palette.Error.Render("        "+errLine) + "\n")
+		b.WriteString(line + "\n")
+		enabled, total := m.providerModelCounts(p)
+		modelState := m.tr("models not scanned", "modele nieskanowane")
+		if total > 0 {
+			modelState = fmt.Sprintf(m.tr("models %d/%d on", "modele włączone %d/%d"), enabled, total)
 		}
+		keyState := m.tr("public/no key", "publiczny/bez klucza")
+		if p.HasKey {
+			keyState = m.tr("key configured", "klucz skonfigurowany")
+		}
+		meta := "    " + typ + " · " + modelState + " · " + keyState
+		if model != "-" {
+			meta += m.tr(" · default ", " · domyślny ") + model
+		}
+		if p.BaseURL != "" {
+			meta += " · " + p.BaseURL
+		}
+		if st, ok := m.providerStatuses[p.Name]; ok && !p.Disabled && st.checked && !st.online && st.err != "" {
+			meta += " · " + st.err
+		}
+		b.WriteString(m.palette.Dim.Render(truncateText(meta, width)) + "\n")
 	}
 	if len(rows) == 0 {
-		b.WriteString("  no providers configured — press A to add one\n")
+		b.WriteString("  " + m.tr("no providers configured — press A to add one", "brak dostawców — naciśnij A, aby dodać") + "\n")
 	}
-	hint := "↑↓ move · [A]dd [E]dit [D]elete [R]echeck [M]odels"
+	hint := m.tr("↑↓ select · Enter models · Space pause/resume · A add · E edit · D delete · R scan", "↑↓ wybierz · Enter modele · Space wstrzymaj/wznów · A dodaj · E edytuj · D usuń · R skanuj")
 	if m.cursorOnOpenAIRow() {
-		hint += " [C]hatGPT accounts"
+		hint += m.tr(" · C ChatGPT accounts", " · C konta ChatGPT")
 	}
-	hint += " · ✓ = active · ESC back"
-	b.WriteString("\n" + m.palette.InputHint.Render(hint))
+	hint += m.tr(" · Esc back", " · Esc wróć")
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
+}
+
+func (m Model) providerModelCounts(p providers.ProviderInfo) (enabled, total int) {
+	models := p.Models
+	// A paused remote/local provider intentionally is not scanned, but its
+	// already discovered catalog should remain visible in the summary.
+	if len(models) == 0 && m.caps != nil {
+		for _, model := range m.caps.All() {
+			if model.Provider == p.Name && model.Source != llm.SourceSeed {
+				models = append(models, model)
+			}
+		}
+	}
+	total = len(models)
+	for _, model := range models {
+		if m.providerMgr == nil || !m.providerMgr.IsHiddenFor(p.Name, model.ID) {
+			enabled++
+		}
+	}
+	return enabled, total
+}
+
+func (m Model) menuWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 120
 }
 
 // displayProvider maps internal provider entries to what the user
@@ -860,16 +1219,29 @@ func (m Model) providerStatusCell(name string) (plain, styled string) {
 	st, ok := m.providerStatuses[name]
 	switch {
 	case !ok || !st.checked:
-		plain = "⋯ checking"
+		plain = m.tr("checking", "sprawdzanie")
 		styled = m.palette.InputHint.Render(plain)
 	case st.online:
-		plain = "● online"
+		plain = m.tr("online", "online")
+		if st.latency > 0 {
+			plain += " · " + formatProbeLatency(st.latency)
+		}
 		styled = m.palette.Success.Render(plain)
 	default:
-		plain = "○ offline"
+		plain = m.tr("offline", "offline")
 		styled = m.palette.Error.Render(plain)
 	}
 	return plain, styled
+}
+
+func formatProbeLatency(d time.Duration) string {
+	if d < time.Millisecond {
+		return "<1ms"
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // activeProviderName returns the name of the provider that owns
@@ -897,17 +1269,24 @@ func (m Model) activeProviderName() string {
 }
 
 func (m Model) renderProviderForm() string {
-	labels := []string{"name", "type", "base URL", "API key"}
+	labels := []string{m.tr("name", "nazwa"), m.tr("type", "typ"), "base URL", m.tr("API key", "klucz API"), m.tr("default model", "domyślny model")}
+	width := m.menuWidth()
 	var b strings.Builder
-	title := "Add provider"
+	title := m.tr("Add provider", "Dodaj dostawcę")
 	if m.menu.editName != "" {
-		title = "Edit provider: " + m.menu.editName
+		title = m.tr("Edit provider: ", "Edytuj dostawcę: ") + m.menu.editName
 	}
 	b.WriteString(m.palette.PanelTitle.Render(title) + "\n\n")
+	if m.menu.formErr != "" {
+		for _, line := range wrap(m.menu.formErr, maxInt(24, width-2)) {
+			b.WriteString(m.palette.Error.Render(truncateText("! "+line, width)) + "\n")
+		}
+		b.WriteString("\n")
+	}
 	for i, label := range labels {
 		prefix := "  "
 		if i == m.menu.formAt {
-			prefix = "❯ "
+			prefix = "> "
 		}
 		value := ""
 		if i < len(m.menu.form) {
@@ -915,89 +1294,125 @@ func (m Model) renderProviderForm() string {
 		}
 		if label == "API key" && value != "" {
 			if m.menu.formAt == 3 && m.menu.keyRevealed {
-				// On API key field + right arrow pressed → show real key
-				value = m.palette.HeaderMode.Render(value)
+				// On API key field + right arrow pressed → show real key.
 			} else {
 				value = strings.Repeat("*", len([]rune(value)))
 			}
 		}
-		b.WriteString(fmt.Sprintf("%s%-9s %s\n", prefix, label+":", value))
+		line := truncateText(fmt.Sprintf("%s%-9s %s", prefix, label+":", value), width)
+		if i == m.menu.formAt {
+			line = m.palette.HeaderMode.Render(line)
+		}
+		b.WriteString(line + "\n")
 	}
-	hint := "type/paste · Ctrl+V paste · Enter next/save · ↑↓ fields · ESC back"
+	hint := m.tr("type/paste · Ctrl+V paste · Enter next/save · ↑↓ fields · Esc back", "pisz/wklej · Ctrl+V wklej · Enter dalej/zapisz · ↑↓ pola · Esc wróć")
 	if m.menu.formAt == 3 {
 		if m.menu.keyRevealed {
-			hint = "← hide key · type/paste · Ctrl+V paste · Enter save · ESC back"
+			hint = m.tr("← hide key · type/paste · Ctrl+V paste · Enter save · Esc back", "← ukryj klucz · pisz/wklej · Ctrl+V wklej · Enter zapisz · Esc wróć")
 		} else {
-			hint = "→ reveal key · type/paste · Ctrl+V paste · Enter save · ESC back"
+			hint = m.tr("→ reveal key · type/paste · Ctrl+V paste · Enter save · Esc back", "→ pokaż klucz · pisz/wklej · Ctrl+V wklej · Enter zapisz · Esc wróć")
 		}
+	} else if m.menu.formAt == 4 {
+		hint = m.tr("optional · keeps an offline model in /model · Enter save · Esc back", "opcjonalne · zachowuje model offline na liście · Enter zapisz · Esc wróć")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(hint))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
+}
+
+// compactProviderError preserves the useful HTTP status/body while keeping a
+// verbose upstream response from taking over the whole provider form.
+func compactProviderError(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := strings.Join(strings.Fields(err.Error()), " ")
+	const maxRunes = 700
+	r := []rune(s)
+	if len(r) > maxRunes {
+		s = string(r[:maxRunes]) + "…"
+	}
+	return s
 }
 
 func (m Model) renderPredefinedMenu() string {
 	pres := providers.PredefinedProviders()
+	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Add provider — pick a template") + "\n\n")
-	for i, p := range pres {
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("Add provider — pick a template", "Dodaj dostawcę — wybierz szablon")) + "\n\n")
+	start, end := 0, len(pres)
+	if m.height > 0 {
+		start, end = menuWindow(len(pres), m.menu.cursor, (m.height-5)/2)
+	}
+	for i := start; i < end; i++ {
+		p := pres[i]
 		prefix := "  "
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
-		line := fmt.Sprintf("%-14s %-42s %s", p.Name, p.Desc, m.palette.Dim.Render(p.BaseURL))
+		line := truncateText(p.Name+" · "+p.Desc, width-2)
 		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(line)
+			line = m.palette.HeaderMode.Render(prefix + line)
+		} else {
+			line = prefix + m.palette.Bold.Render(line)
 		}
-		b.WriteString(prefix + line + "\n")
+		b.WriteString(line + "\n")
+		b.WriteString(m.palette.Dim.Render(truncateText("    "+p.BaseURL, width)) + "\n")
 	}
 	if len(pres) == 0 {
-		b.WriteString("  no predefined providers\n")
+		b.WriteString("  " + m.tr("no predefined providers", "brak gotowych dostawców") + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ select · Enter pick · ESC back"))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter pick · Esc back", "↑↓ wybierz · Enter zatwierdź · Esc wróć"), width)))
 	return b.String()
 }
 
 func (m Model) renderOpenAIAuthMenu() string {
+	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("OpenAI — choose how to sign in") + "\n\n")
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("OpenAI — choose how to sign in", "OpenAI — wybierz sposób logowania")) + "\n\n")
 	opts := []string{
-		"Sign in with your ChatGPT account (uses your subscription limits)",
-		"API key (pay-as-you-go platform.openai.com key)",
+		m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (korzysta z limitów subskrypcji)"),
+		m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (płatność za użycie w platform.openai.com)"),
 	}
 	for i, o := range opts {
 		prefix := "  "
-		line := o
+		line := truncateText(o, width-2)
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 			line = m.palette.HeaderMode.Render(line)
 		} else {
 			line = m.palette.Dim.Render(line)
 		}
 		b.WriteString(prefix + line + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ select · Enter pick · ESC back"))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter pick · Esc back", "↑↓ wybierz · Enter zatwierdź · Esc wróć"), width)))
 	return b.String()
 }
 
 func (m Model) renderGoalMenu() string {
 	rows := m.goalTaskRows()
+	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Goal tasks") + "\n\n")
-	for i, t := range rows {
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("Goal tasks", "Zadania celu")) + "\n\n")
+	start, end := 0, len(rows)
+	if m.height > 0 {
+		start, end = menuWindow(len(rows), m.menu.cursor, m.height-5)
+	}
+	for i := start; i < end; i++ {
+		t := rows[i]
 		prefix := "  "
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
 		mark := "[ ]"
 		if t.Status == goal.TaskDone {
 			mark = "[x]"
 		}
-		b.WriteString(fmt.Sprintf("%s%s %d. %s\n", prefix, mark, t.Seq, t.Title))
+		b.WriteString(truncateText(fmt.Sprintf("%s%s %d. %s", prefix, mark, t.Seq, t.Title), width) + "\n")
 	}
 	if len(rows) == 0 {
-		b.WriteString("  no active goal tasks\n")
+		b.WriteString("  " + m.tr("no active goal tasks", "brak aktywnych zadań celu") + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("Space toggle · [A]dd task · [D]elete · [ESC]back"))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("Space toggle · A add task · D delete · Esc back", "Space przełącz · A dodaj zadanie · D usuń · Esc wróć"), width)))
 	return b.String()
 }
 
@@ -1016,6 +1431,21 @@ func reasoningMenuOptions() []reasoningMenuOption {
 		{Label: "medium", Value: "medium", Desc: "balanced thinking budget"},
 		{Label: "high", Value: "high", Desc: "larger thinking budget"},
 		{Label: "xhigh", Value: "xhigh", Desc: "maximum thinking budget where supported"},
+	}
+}
+
+func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
+	if m.language != "pl" {
+		return reasoningMenuOptions()
+	}
+	return []reasoningMenuOption{
+		{Label: "wyłączone / domyślne dostawcy", Value: "", Desc: "nie wysyłaj budżetu myślenia"},
+		{Label: "brak", Value: "none", Desc: "wyłącz jawnie, jeśli dostawca obsługuje tę wartość"},
+		{Label: "minimalne", Value: "minimal", Desc: "najmniejszy budżet myślenia akceptowany przez backend"},
+		{Label: "niskie", Value: "low", Desc: "niski budżet myślenia"},
+		{Label: "średnie", Value: "medium", Desc: "zrównoważony budżet myślenia"},
+		{Label: "wysokie", Value: "high", Desc: "większy budżet myślenia"},
+		{Label: "maksymalne", Value: "xhigh", Desc: "największy obsługiwany budżet myślenia"},
 	}
 }
 
@@ -1067,49 +1497,53 @@ func (m Model) selectReasoningEffort() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderReasoningMenu() string {
+	width := m.menuWidth()
 	model := m.reasoningModelName()
 	configured, effective, adjusted := llm.ReasoningEffortAdjustment(model)
 	if configured == "" {
-		configured = "off / provider default"
+		configured = m.tr("off / provider default", "wyłączone / domyślne dostawcy")
 	}
 	if effective == "" {
-		effective = "not sent"
+		effective = m.tr("not sent", "niewysyłane")
 	}
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Reasoning effort") + "\n\n")
-	b.WriteString(fmt.Sprintf("model:      %s\n", model))
-	b.WriteString(fmt.Sprintf("configured: %s\n", configured))
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("Reasoning effort", "Poziom myślenia")) + "\n\n")
+	b.WriteString(truncateText(fmt.Sprintf("model:      %s", model), width) + "\n")
+	b.WriteString(truncateVisible(fmt.Sprintf(m.tr("configured: %s", "ustawione:   %s"), configured), width) + "\n")
 	if adjusted {
-		b.WriteString(fmt.Sprintf("effective:  %s %s\n", effective, m.palette.InputHint.Render("(adjusted from backend evidence)")))
+		b.WriteString(truncateVisible(fmt.Sprintf(m.tr("effective:  %s (adjusted from backend evidence)", "efektywne:   %s (dopasowane na podstawie backendu)"), effective), width) + "\n")
 	} else {
-		b.WriteString(fmt.Sprintf("effective:  %s\n", effective))
+		b.WriteString(truncateVisible(fmt.Sprintf(m.tr("effective:  %s", "efektywne:   %s"), effective), width) + "\n")
 	}
 	if supported, ok := llm.SupportedReasoningEfforts(model); ok {
-		b.WriteString("backend:    " + strings.Join(supported, " | ") + "\n")
+		b.WriteString(truncateVisible("backend:    "+strings.Join(supported, " | "), width) + "\n")
 	} else if llm.SupportsReasoningEffort(model) {
-		b.WriteString("backend:    unknown yet — will learn from API errors\n")
+		b.WriteString(truncateVisible(m.tr("backend:    unknown yet — will learn from API errors", "backend:    jeszcze nieznany — zostanie rozpoznany z błędów API"), width) + "\n")
 	} else {
-		b.WriteString("backend:    model family does not advertise reasoning effort\n")
+		b.WriteString(truncateVisible(m.tr("backend:    model family does not advertise reasoning effort", "backend:    rodzina modelu nie zgłasza obsługi poziomu myślenia"), width) + "\n")
 	}
 	b.WriteString("\n")
-	opts := reasoningMenuOptions()
+	opts := m.localizedReasoningMenuOptions()
 	supported, learned := llm.SupportedReasoningEfforts(model)
 	for i, opt := range opts {
 		prefix := "  "
 		if i == m.menu.cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
 		label := opt.Label
 		if opt.Value != "" && learned && !containsString(supported, opt.Value) {
-			label += " " + m.palette.Dim.Render("(not in learned backend list)")
+			label += m.tr(" (not in learned backend list)", " (brak na wykrytej liście backendu)")
 		}
-		line := fmt.Sprintf("%-34s %s", label, m.palette.Dim.Render(opt.Desc))
+		plain := truncateText(fmt.Sprintf("%-34s %s", label, opt.Desc), width-2)
+		line := plain
 		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(line)
+			line = m.palette.HeaderMode.Render(prefix + line)
+		} else {
+			line = prefix + m.palette.Dim.Render(line)
 		}
-		b.WriteString(prefix + line + "\n")
+		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render("↑↓ move · Enter apply · ESC back"))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ move · Enter apply · Esc back", "↑↓ wybierz · Enter zastosuj · Esc wróć"), width)))
 	return b.String()
 }
 
@@ -1130,11 +1564,37 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	if len(rows) == 0 && m.caps != nil {
 		rows = m.caps.All()
 	}
+	// Merge the provider's persisted last-known inventory. This keeps local
+	// and remote self-hosted models available after a restart even when their
+	// server is currently offline. Runtime registry rows win on duplicates.
+	if m.providerMgr != nil {
+		seen := make(map[string]struct{}, len(rows))
+		for _, row := range rows {
+			seen[row.Provider+"\x00"+row.ID] = struct{}{}
+		}
+		for _, p := range m.providerMgr.ListConfigured(m.caps) {
+			for _, row := range p.Models {
+				key := row.Provider + "\x00" + row.ID
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				rows = append(rows, row)
+				seen[key] = struct{}{}
+			}
+		}
+	}
 
 	// Only show models from configured providers —
 	// hide seed/hardcoded models (e.g. gpt-4o-mini)
 	// unless their provider is in the [[providers]] list.
 	if m.providerMgr != nil {
+		catalog := m.menu.kind != menuModels
+		visible := func(provider, id string) bool {
+			if catalog {
+				return m.providerMgr.ModelCatalogVisible(provider, id)
+			}
+			return m.providerMgr.ModelVisible(provider, id)
+		}
 		configured := m.configuredProviderNames()
 		if len(configured) > 0 {
 			filtered := make([]llm.ModelInfo, 0, len(rows))
@@ -1145,7 +1605,7 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 				if r.Source == llm.SourceSeed {
 					continue
 				}
-				if !m.providerMgr.ModelVisible(r.Provider, r.ID) {
+				if !visible(r.Provider, r.ID) {
 					continue
 				}
 				for _, name := range configured {
@@ -1162,7 +1622,7 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 			// a blank menu that looks like data loss.
 			if len(filtered) == 0 {
 				for _, r := range rows {
-					if r.Source != llm.SourceSeed && m.providerMgr.ModelVisible(r.Provider, r.ID) {
+					if r.Source != llm.SourceSeed && visible(r.Provider, r.ID) {
 						filtered = append(filtered, r)
 					}
 				}
@@ -1174,7 +1634,7 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 	if m.menu.provider != "" {
 		filtered := rows[:0]
 		for _, r := range rows {
-			if m.providerMgr != nil && !m.providerMgr.ModelVisible(r.Provider, r.ID) {
+			if m.providerMgr != nil && !m.providerMgr.ModelCatalogVisible(r.Provider, r.ID) {
 				continue
 			}
 			if r.Provider == m.menu.provider {
@@ -1183,16 +1643,16 @@ func (m Model) filteredModelRows() []llm.ModelInfo {
 		}
 		rows = filtered
 	}
-	// In the global /models view, hide disabled models.
-	// In the per-provider view (menuProviderModels), show
-	// all models so the user can toggle them with arrows.
+	// The fast /model picker hides disabled models. The complete /models
+	// catalog and per-provider view keep them visible so the user can turn
+	// them back on without editing config.toml.
 	if m.menu.kind == menuModels && m.providerMgr != nil {
 		filtered := rows[:0]
 		for _, r := range rows {
 			if !m.providerMgr.ModelVisible(r.Provider, r.ID) {
 				continue
 			}
-			if !m.providerMgr.IsHidden(r.ID) {
+			if !m.providerMgr.IsHiddenFor(r.Provider, r.ID) {
 				filtered = append(filtered, r)
 			}
 		}

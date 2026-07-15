@@ -41,18 +41,27 @@ type TomlConfig struct {
 	MaxCreditsPerDay     int64 `toml:"max_credits_per_day"`
 
 	// UI.
-	NoColor bool `toml:"no_color"`
+	NoColor  bool   `toml:"no_color"`
+	Language string `toml:"language"`
 
 	// Provider configuration.
 	Provider  string         `toml:"provider"`
 	Providers []ProviderConf `toml:"providers"`
 
+	// FallbackModels is an explicit, ordered main-model failover chain.
+	// Entries use "providerName/model-id" to switch host/key, or a bare
+	// model id to stay on the primary transport. Empty (the default) means
+	// no cross-model failover and therefore can never trigger a paid model.
+	FallbackModels []string `toml:"fallback_models"`
+	// FallbackCooldownSeconds is how long a backend that failed before its
+	// first output is skipped. Zero selects the conservative 30s default.
+	FallbackCooldownSeconds int `toml:"fallback_cooldown_seconds"`
+
 	// Model price overrides (F28 source="user").
 	ModelPrices []ModelPriceConf `toml:"model_prices"`
 
-	// HiddenModels lists model IDs that the user has disabled
-	// in the TUI. They are hidden from the global /models view
-	// but still visible in the per-provider model list.
+	// HiddenModels stores provider-scoped visibility references. Older bare
+	// model IDs are migrated by providers.Manager on load.
 	HiddenModels []string `toml:"hidden_models"`
 
 	// ReasoningEffort is the default reasoning-effort level for
@@ -85,13 +94,13 @@ type TomlConfig struct {
 	// thinning for a large model on a private backend.
 	SmallFullTools bool `toml:"small_full_tools"`
 
-	// Orchestrator is the HARD delegation switch. When true, the main
-	// loop is built with a restricted registry (delegation + a read-only
-	// lookup set only) so it physically cannot edit files, run commands,
-	// or do heavy work itself — it must delegate to a `task` worker.
-	// Tri-state: nil = built-in default (OFF, unchanged behaviour),
-	// explicit true/false overrides. Set at runtime via /orchestrator
-	// on|off; takes effect on the next launch (a new session), because
+	// Orchestrator is the three-state delegation policy. Nil is adaptive:
+	// the normal coordinator has full tools and delegates when useful.
+	// True is hard orchestration: the main loop gets delegation plus a
+	// read-only lookup set and must delegate substantial work. False is
+	// never: worker tools are absent from the main agent entirely.
+	// Set via /orchestrator auto|on|off; takes effect on the next launch,
+	// because
 	// swapping the tool list mid-session would break the KV-cache prefix.
 	Orchestrator *bool `toml:"orchestrator"`
 
@@ -328,12 +337,13 @@ type CodexAuthConf struct {
 
 // ProviderConf is a named provider entry in config.toml.
 type ProviderConf struct {
-	Name     string `toml:"name"`
-	Type     string `toml:"type"` // "openai", "anthropic", "opencode", "echo"
-	BaseURL  string `toml:"base_url"`
-	APIKey   string `toml:"api_key"`
-	Model    string `toml:"model"`
-	Disabled bool   `toml:"disabled,omitempty"` // keep configuration but exclude from scans/model picker
+	Name         string   `toml:"name"`
+	Type         string   `toml:"type"` // "openai", "anthropic", "opencode", "echo"
+	BaseURL      string   `toml:"base_url"`
+	APIKey       string   `toml:"api_key"`
+	Model        string   `toml:"model"`
+	CachedModels []string `toml:"cached_models,omitempty"` // last successful /models result; keeps offline servers selectable
+	Disabled     bool     `toml:"disabled,omitempty"`      // keep configuration but exclude from scans/model picker
 }
 
 // ModelTierConf is a [[model_tiers]] entry: a glob pattern on
@@ -533,6 +543,12 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	// Providers list: project overrides global entirely.
 	if len(src.Providers) > 0 {
 		dst.Providers = src.Providers
+	}
+	if len(src.FallbackModels) > 0 {
+		dst.FallbackModels = src.FallbackModels
+	}
+	if src.FallbackCooldownSeconds > 0 {
+		dst.FallbackCooldownSeconds = src.FallbackCooldownSeconds
 	}
 	// Model prices: append (user may add more).
 	if len(src.ModelPrices) > 0 {

@@ -38,15 +38,22 @@ func sameSessionWorkspace(a, b string) bool {
 
 // sessionMeta is the browser-facing summary of one stored session.
 type sessionMeta struct {
-	ID              string `json:"id"`
-	FirstUserMsg    string `json:"first_user_msg"`
-	MessageCount    int    `json:"message_count"`
-	StartedAt       string `json:"started_at"`
-	Model           string `json:"model,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	RuntimeKnown    bool   `json:"runtime_known,omitempty"`
-	ParentID        string `json:"parent_id,omitempty"`
+	ID              string             `json:"id"`
+	FirstUserMsg    string             `json:"first_user_msg"`
+	MessageCount    int                `json:"message_count"`
+	StartedAt       string             `json:"started_at"`
+	Model           string             `json:"model,omitempty"`
+	Provider        string             `json:"provider,omitempty"`
+	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
+	RuntimeKnown    bool               `json:"runtime_known,omitempty"`
+	ParentID        string             `json:"parent_id,omitempty"`
+	FileRewind      *fileRewindReceipt `json:"file_rewind,omitempty"`
+}
+
+type fileRewindReceipt struct {
+	SessionID     string   `json:"session_id"`
+	CheckpointIDs []string `json:"checkpoint_ids"`
+	Files         []string `json:"files"`
 }
 
 // transcriptMsg is one message in a session transcript.

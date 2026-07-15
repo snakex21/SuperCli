@@ -114,6 +114,34 @@ func TestMarker_ToolCall_TruncatesArgs(t *testing.T) {
 	}
 }
 
+func TestMarker_ToolCallSummarizesCommonJSON(t *testing.T) {
+	p := NoColorPalette()
+	m := NewMarker(p)
+	rendered := m.ToolCall("read_lines", `{"file":"README.md","from":1,"to":80,"content":"must not leak"}`)
+	for _, want := range []string{"README.md", "lines 1–80"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("summary missing %q: %q", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "must not leak") {
+		t.Fatalf("large content field leaked into activity row: %q", rendered)
+	}
+}
+
+func TestMarker_ToolResultFullIsCompactUntilExpanded(t *testing.T) {
+	p := NoColorPalette()
+	m := NewMarker(p)
+	output := "one\ntwo\nthree\nfour\nfive\nsix"
+	compact := m.ToolResultFull("read_lines", output, false)
+	if strings.Contains(compact, "│ five") || !strings.Contains(compact, "2 more") {
+		t.Fatalf("compact output should show four lines and remainder: %q", compact)
+	}
+	expanded := m.ToolResultFull("read_lines", output, true)
+	if !strings.Contains(expanded, "│ five") || strings.Contains(expanded, "more ·") {
+		t.Fatalf("expanded output should contain all lines: %q", expanded)
+	}
+}
+
 func TestMarker_ToolResult(t *testing.T) {
 	p := DefaultPalette()
 	m := NewMarker(p)

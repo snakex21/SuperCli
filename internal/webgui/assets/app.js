@@ -164,11 +164,28 @@ var I18N = {
     "stats.currentContext": "Current context", "stats.contextShare": "estimated request composition",
     "panel.title": "Control panel", "panel.settings": "Settings", "panel.appearance": "Appearance",
     "panel.models": "Models", "panel.providers": "Providers", "panel.runtime": "Model servers", "panel.accounts": "Accounts",
-    "panel.mcp": "MCP", "panel.memory": "Memory", "panel.goal": "Goal", "panel.usage": "Usage",
+    "panel.mcp": "MCP", "panel.memory": "Memory", "panel.data": "Data", "panel.goal": "Goal", "panel.usage": "Usage",
     "panel.files": "Files", "panel.about": "About", "panel.workflow": "Workflow",
+	"data.hint": "Back up or remove SuperCli's local conversations and memory. Project files and API keys are never deleted here.",
+	"data.sessions": "Conversations", "data.memories": "Memory entries", "data.goals": "Goals",
+	"data.backup": "Backup", "data.export": "Export data", "data.exportHint": "Downloads conversations, memory, goals and UI preferences. API keys, accounts, caches and checkpoints are excluded.",
+	"data.import": "Import data", "data.importHint": "Validated data replaces the current conversations and memory after restart. A rescue copy is made automatically.",
+	"data.importPending": "Import prepared — restart SuperCli to apply it.", "data.importReady": "Import prepared. Restart SuperCli to apply it.",
+	"data.danger": "Delete local data", "data.clearSessions": "Delete all conversations", "data.clearMemory": "Clear AI memory",
+	"data.confirmSessions": "Permanently delete all conversations? Project files, settings and API keys remain untouched.",
+	"data.confirmMemory": "Permanently clear global and project AI memory? Conversations, project files and API keys remain untouched.",
+	"data.cleared": "Local data was cleared.",
 	"workflow.queue": "Persistent task queue", "workflow.branches": "Session branches", "workflow.profile": "Model prompt profile",
 	"workflow.scratch": "Worker scratchpad", "workflow.hard": "Hard verification", "workflow.runHard": "Run /test hard",
 	"workflow.noBranches": "No branches yet.", "workflow.fork": "Fork", "workflow.compare": "Compare selected", "workflow.open": "Open",
+	"workflow.rewind": "Rewind here", "workflow.rewindDone": "Message ready to edit or send again.",
+	"workflow.rewindHint": "Return to just before this message and place it in the composer. The original conversation stays available.",
+	"workflow.rewindWhy": "Why are you rewinding? (optional)", "workflow.rewindWhyHint": "A short reason helps the model avoid repeating the rejected approach.",
+	"workflow.rewindReason": "What should the model do differently?", "workflow.rewindContinue": "Rewind",
+	"workflow.rewindFiles": "Also restore file changes", "workflow.rewindFilesHint": "checkpoint(s), file(s). Conflicts stop the entire rewind.",
+	"workflow.rewindConflict": "File rewind stopped because these files changed later",
+	"workflow.restoreFiles": "Restore the agent's version", "workflow.restoreFilesHint": "File changes were rewound. You can restore the complete version produced by the agent.",
+	"workflow.rewindFileCount": "Rewound files: {n}", "workflow.filesRestored": "The agent's file version was restored.",
 	"workflow.runBoth": "Queue same prompt in both",
 	"workflow.profileHint": "Only this bounded local file is appended for the active model family. No extra model call.",
 	"undo.learn": "Why did you undo this? (optional)", "undo.learnHint": "A short reason helps the agent avoid repeating the same mistake.",
@@ -340,11 +357,28 @@ var I18N = {
     "stats.currentContext": "Bieżący kontekst", "stats.contextShare": "szacowany podział zapytania",
     "panel.title": "Panel sterowania", "panel.settings": "Ustawienia", "panel.appearance": "Wygląd",
     "panel.models": "Modele", "panel.providers": "Dostawcy", "panel.runtime": "Serwery modeli", "panel.accounts": "Konta",
-    "panel.mcp": "MCP", "panel.memory": "Pamięć", "panel.goal": "Cel", "panel.usage": "Zużycie",
+    "panel.mcp": "MCP", "panel.memory": "Pamięć", "panel.data": "Dane", "panel.goal": "Cel", "panel.usage": "Zużycie",
     "panel.files": "Pliki", "panel.about": "O programie", "panel.workflow": "Przepływ pracy",
+	"data.hint": "Twórz kopie lub usuwaj lokalne rozmowy i pamięć SuperCli. Pliki projektów ani klucze API nie są tutaj usuwane.",
+	"data.sessions": "Rozmowy", "data.memories": "Wpisy pamięci", "data.goals": "Cele",
+	"data.backup": "Kopia zapasowa", "data.export": "Eksportuj dane", "data.exportHint": "Pobiera rozmowy, pamięć, cele i preferencje wyglądu. Klucze API, konta, cache i checkpointy są pomijane.",
+	"data.import": "Importuj dane", "data.importHint": "Po ponownym uruchomieniu sprawdzone dane zastąpią obecne rozmowy i pamięć. Program automatycznie utworzy kopię ratunkową.",
+	"data.importPending": "Import przygotowany — uruchom SuperCli ponownie, aby go zastosować.", "data.importReady": "Import przygotowany. Uruchom SuperCli ponownie, aby go zastosować.",
+	"data.danger": "Usuwanie danych lokalnych", "data.clearSessions": "Usuń wszystkie rozmowy", "data.clearMemory": "Wyczyść pamięć AI",
+	"data.confirmSessions": "Trwale usunąć wszystkie rozmowy? Pliki projektów, ustawienia i klucze API pozostaną nietknięte.",
+	"data.confirmMemory": "Trwale wyczyścić globalną i projektową pamięć AI? Rozmowy, pliki projektów i klucze API pozostaną nietknięte.",
+	"data.cleared": "Wyczyszczono dane lokalne.",
 	"workflow.queue": "Trwała kolejka zadań", "workflow.branches": "Gałęzie sesji", "workflow.profile": "Profil promptu modelu",
 	"workflow.scratch": "Notatnik workerów", "workflow.hard": "Twarda weryfikacja", "workflow.runHard": "Uruchom /test hard",
 	"workflow.noBranches": "Brak gałęzi.", "workflow.fork": "Rozgałęź", "workflow.compare": "Porównaj wybrane", "workflow.open": "Otwórz",
+	"workflow.rewind": "Wróć tutaj", "workflow.rewindDone": "Wiadomość jest gotowa do poprawienia lub ponownego wysłania.",
+	"workflow.rewindHint": "Wróć tuż przed tę wiadomość i wstaw ją do pola edycji. Oryginalna rozmowa pozostanie zachowana.",
+	"workflow.rewindWhy": "Dlaczego cofasz? (opcjonalnie)", "workflow.rewindWhyHint": "Krótki powód pomoże modelowi nie powtórzyć odrzuconego podejścia.",
+	"workflow.rewindReason": "Co model powinien zrobić inaczej?", "workflow.rewindContinue": "Cofnij",
+	"workflow.rewindFiles": "Cofnij również zmiany w plikach", "workflow.rewindFilesHint": "checkpointów, plików. Konflikt zatrzyma całe cofanie.",
+	"workflow.rewindConflict": "Cofanie plików zatrzymane — te pliki zmieniono później",
+	"workflow.restoreFiles": "Przywróć wersję agenta", "workflow.restoreFilesHint": "Cofnięto zmiany w plikach. Możesz przywrócić całą wersję wykonaną przez agenta.",
+	"workflow.rewindFileCount": "Cofnięte pliki: {n}", "workflow.filesRestored": "Przywrócono wersję plików wykonaną przez agenta.",
 	"workflow.runBoth": "Dodaj ten sam prompt do obu",
 	"workflow.profileHint": "Do promptu trafia tylko ten ograniczony plik rodziny aktywnego modelu. Bez dodatkowej inferencji.",
 	"undo.learn": "Dlaczego cofnąłeś tę zmianę? (opcjonalnie)", "undo.learnHint": "Krótki powód pomoże agentowi nie powtórzyć tego błędu.",
@@ -463,6 +497,44 @@ var I18N = {
     "status.connected": "połączono", "status.connecting": "łączenie…", "status.offline": "serwer niedostępny",
   },
 };
+Object.assign(I18N.en, {
+  "data.export": "Export without secrets",
+  "data.exportFull": "Export everything",
+  "data.exportFullHint": "Portable ZIP with conversations, memory, goals, provider keys, Codex accounts, MCP/skills, user tools and prompt profiles. It contains readable secrets, so store it securely.",
+  "data.importHint": "Accepts a safe or full SuperCli ZIP. After restart it replaces the matching data and creates a rescue copy."
+});
+Object.assign(I18N.pl, {
+  "data.export": "Eksportuj bez sekret\u00f3w",
+  "data.exportFull": "Eksportuj wszystko",
+  "data.exportFullHint": "Przeno\u015bny ZIP z rozmowami, pami\u0119ci\u0105, celami, kluczami provider\u00f3w, kontami Codex, MCP/skills, narz\u0119dziami i profilami promptu. Zawiera czytelne sekrety, wi\u0119c przechowuj go bezpiecznie.",
+  "data.importHint": "Przyjmuje bezpieczny lub pe\u0142ny ZIP SuperCli. Po restarcie zast\u0119puje odpowiednie dane i tworzy kopi\u0119 ratunkow\u0105."
+});
+Object.assign(I18N.en, {
+  "context.safe": "Safe",
+  "context.approaching": "Approaching limit",
+  "context.compactionRecommended": "Compaction recommended",
+  "context.pruneThreshold": "old tool results may be shortened",
+  "context.compactThreshold": "automatic compaction",
+  "context.compactNow": "Compact now",
+  "context.compacting": "Compacting\u2026",
+  "context.compactHint": "Summarizes the older model-visible context. The complete conversation remains saved and searchable.",
+  "context.compacted": "Context compacted: {n} older messages replaced by a summary.",
+  "context.selectSession": "Open a conversation before compacting its context.",
+  "context.busy": "Wait for the current answer to finish before compacting."
+});
+Object.assign(I18N.pl, {
+  "context.safe": "Bezpieczny",
+  "context.approaching": "Zbli\u017ca si\u0119 do limitu",
+  "context.compactionRecommended": "Zalecana kompakcja",
+  "context.pruneThreshold": "mog\u0105 zosta\u0107 skr\u00f3cone stare wyniki narz\u0119dzi",
+  "context.compactThreshold": "automatyczna kompakcja",
+  "context.compactNow": "Kompaktuj teraz",
+  "context.compacting": "Kompaktowanie\u2026",
+  "context.compactHint": "Streszcza starszy kontekst widziany przez model. Pe\u0142na rozmowa pozostaje zapisana i dost\u0119pna do wyszukiwania.",
+  "context.compacted": "Kontekst skompaktowany: {n} starszych wiadomo\u015bci zast\u0105piono podsumowaniem.",
+  "context.selectSession": "Otw\u00f3rz rozmow\u0119, zanim skompaktujesz jej kontekst.",
+  "context.busy": "Poczekaj na zako\u0144czenie bie\u017c\u0105cej odpowiedzi."
+});
 function t(key) {
   var lang = ui.lang || "en";
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
@@ -528,7 +600,7 @@ function applyI18n() {
 /* ═══ UI settings (server-persisted blob) ═══ */
 
 var ui = {
-  theme: "dark", lang: "en", uiFont: "system", codeFont: "system", uiScale: "auto",
+  theme: "dark", lang: /^pl(?:-|_|$)/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "pl" : "en", uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
@@ -800,12 +872,93 @@ function smartScroll(force) {
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
 function showWelcome() { if (welcome) welcome.style.display = ""; }
 
-function addUserMsg(text) {
+function addUserMsg(text, seq) {
   hideWelcome();
   var m = el("div", "msg-user", text);
+  if (seq) addMessageRewind(m, seq, text);
   appendStream(m);
   smartScroll(true);
   return m;
+}
+
+function addMessageRewind(node, seq, text) {
+  if (!node || !seq || node.querySelector(".msg-rewind")) return;
+  var button = el("button", "msg-rewind", "↶ " + t("workflow.rewind"));
+  button.type = "button";
+  button.title = t("workflow.rewindHint");
+  button.setAttribute("aria-label", t("workflow.rewind"));
+  button.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    showRewindDialog(activeSessionID, seq, text, button);
+  });
+  node.appendChild(button);
+}
+
+async function showRewindDialog(sessionID, seq, text, trigger) {
+  if (trigger) trigger.disabled = true;
+  var preview = null;
+  try {
+    preview = await j("/api/checkpoint/rewind?session=" + encodeURIComponent(sessionID) + "&from_seq=" + seq);
+  } catch (e) {}
+  if (trigger) trigger.disabled = false;
+  var overlay = el("div", "question-overlay rewind-dialog");
+  var panel = el("div", "question-panel compact");
+  panel.appendChild(el("div", "question-kicker", t("workflow.rewindWhy")));
+  panel.appendChild(el("div", "question-option-desc", t("workflow.rewindWhyHint")));
+  var input = el("textarea", "question-custom");
+  input.rows = 3;
+  input.maxLength = 400;
+  input.placeholder = t("workflow.rewindReason");
+  panel.appendChild(input);
+  var rewindFiles = null;
+  if (preview && preview.available && (preview.files || []).length) {
+    var fileOption = el("label", "question-option rewind-files");
+    rewindFiles = document.createElement("input");
+    rewindFiles.type = "checkbox";
+    fileOption.appendChild(rewindFiles);
+    var fileCopy = el("span", "question-option-copy");
+    fileCopy.appendChild(el("strong", "", t("workflow.rewindFiles")));
+    fileCopy.appendChild(el("span", "question-option-desc",
+      preview.checkpoints + " " + t("workflow.rewindFilesHint").replace("file(s)", (preview.files || []).length + " file(s)").replace("plików", (preview.files || []).length + " plików")));
+    fileOption.appendChild(fileCopy);
+    panel.appendChild(fileOption);
+  }
+  var actions = el("div", "question-actions");
+  var cancel = el("button", "btn", t("common.cancel"));
+  var confirm = el("button", "btn primary", t("workflow.rewindContinue"));
+  cancel.type = confirm.type = "button";
+  function close() { overlay.remove(); }
+  cancel.addEventListener("click", close);
+  confirm.addEventListener("click", async function () {
+    confirm.disabled = true;
+    cancel.disabled = true;
+    var ok = await rewindSession(sessionID, seq, text, input.value.trim(), !!(rewindFiles && rewindFiles.checked), trigger);
+    if (ok) close();
+    else { confirm.disabled = false; cancel.disabled = false; }
+  });
+  actions.appendChild(cancel);
+  actions.appendChild(confirm);
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  input.focus();
+}
+
+async function addLatestMessageRewind(node, text) {
+  if (!node || !node.isConnected || !activeSessionID) return;
+  var sessionID = activeSessionID;
+  try {
+    var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) + "&limit=24");
+    if (sessionID !== activeSessionID || !node.isConnected) return;
+    var messages = page.messages || [];
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user" && messages[i].content === text) {
+        addMessageRewind(node, messages[i].seq, text);
+        return;
+      }
+    }
+  } catch (e) {}
 }
 function addAssistantMsg() {
   var m = el("div", "msg-assistant");
@@ -1266,69 +1419,12 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount) parts.push(toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
 	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
-	if (ev.checkpoint_id) line.appendChild(checkpointButton({ id: ev.checkpoint_id, undone: false }));
 	if (seq) {
 	  var fork = el("button", "turn-undo", t("workflow.fork")); fork.type="button";
 	  fork.addEventListener("click", function(){ forkSession(activeSessionID, seq); }); line.appendChild(fork);
 	}
 	appendStream(line);
   smartScroll();
-}
-
-function checkpointButton(record) {
-  var button = el("button", "turn-undo", record.undone ? t("undo.redo") : t("undo.undo"));
-  button.type = "button";
-  button.addEventListener("click", function () { runCheckpoint(record, button); });
-  return button;
-}
-
-async function runCheckpoint(record, button) {
-  button.disabled = true;
-  var action = record.undone ? "redo" : "undo";
-  try {
-    var resp = await fetch("/api/checkpoint", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:record.id, action:action}) });
-    var data = await resp.json();
-    if (!resp.ok) {
-      var conflicts = data.conflicts && data.conflicts.length ? "\n" + data.conflicts.join("\n") : "";
-      throw new Error(t("undo.conflict") + conflicts);
-    }
-    record = data.record;
-    button.textContent = record.undone ? t("undo.redo") : t("undo.undo");
-    toast(action === "undo" ? t("undo.done") : t("undo.redone"));
-	if (action === "undo") askUndoLesson(record.id);
-    loadSessions(); renderStats();
-  } catch (e) { toast(e.message); }
-  finally { button.disabled = false; }
-}
-
-function askUndoLesson(checkpointID) {
-  var overlay = el("div", "question-overlay undo-lesson");
-  var panel = el("div", "question-panel compact");
-  panel.appendChild(el("div", "question-kicker", t("undo.learn")));
-  panel.appendChild(el("div", "question-option-desc", t("undo.learnHint")));
-  var input = el("textarea", "question-custom"); input.rows=3; panel.appendChild(input);
-  var scope=el("select","field-select");
-  [["session",t("undo.sessionScope")],["global",t("undo.globalScope")]].forEach(function(x){var o=el("option","",x[1]);o.value=x[0];scope.appendChild(o);});panel.appendChild(scope);
-  var actions=el("div","question-actions");var skip=el("button","btn",t("common.cancel"));var save=el("button","btn primary",t("undo.saveLesson"));
-  function close(){overlay.remove();}
-  skip.addEventListener("click",close);save.addEventListener("click",async function(){var reason=input.value.trim();if(!reason){close();return;}save.disabled=true;try{await jpost("/api/checkpoint/lesson",{session_id:activeSessionID,checkpoint_id:checkpointID,reason:reason,scope:scope.value});toast(t("undo.saveLesson")+" ✓");close();}catch(e){toast(e.message);save.disabled=false;}});
-  actions.appendChild(skip);actions.appendChild(save);panel.appendChild(actions);overlay.appendChild(panel);document.body.appendChild(overlay);input.focus();
-}
-
-var checkpointLoadSeq = 0;
-async function loadCheckpointAction(sessionID) {
-  var seq = ++checkpointLoadSeq;
-  try {
-    var data = await j("/api/checkpoint?session=" + encodeURIComponent(sessionID));
-    if (seq !== checkpointLoadSeq || sessionID !== activeSessionID) return;
-    if (!data.available || !data.record) return;
-    var previous = stream.querySelector(".checkpoint-history");
-    if (previous) previous.remove();
-    var row = el("div", "checkpoint-history");
-    row.appendChild(el("span", "", data.record.files.length + " " + t("run.tools")));
-    row.appendChild(checkpointButton(data.record));
-    appendStream(row);
-  } catch (e) {}
 }
 
 /* ═══ chat streaming ═══ */
@@ -1341,6 +1437,7 @@ var lastTurn = null;    // last done-event payload + elapsed (stats pane)
 var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
+var pendingRewind = null;
 var appFocused = !document.hidden && document.hasFocus();
 
 function updateAppBadge() {
@@ -1540,6 +1637,8 @@ async function sendPrompt(text) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
+  var rewindInfo = pendingRewind;
+  pendingRewind = null;
   abortCtl = new AbortController();
   runToolCount = 0;
   toolRows = {}; workerRows = {}; openToolOrder = [];
@@ -1548,7 +1647,7 @@ async function sendPrompt(text) {
   sendBtn.type = "submit";
   $("#stop-run-btn").hidden = false;
   $("#interrupt-btn").hidden = false;
-  addUserMsg(text);
+  var liveUserNode = addUserMsg(text);
   var current = null;
   var terminalSeen = false;
   var lastProgressAt = Date.now();
@@ -1565,7 +1664,14 @@ async function sendPrompt(text) {
     var resp = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: text, session_id: activeSessionID }),
+      body: JSON.stringify({
+        prompt: text,
+        session_id: activeSessionID,
+        rewound: rewindInfo !== null,
+        rewind_reason: rewindInfo ? rewindInfo.reason : "",
+        rewind_files: !!(rewindInfo && rewindInfo.files),
+        rewind_files_restored: !!(rewindInfo && rewindInfo.filesRestored),
+      }),
       signal: abortCtl.signal,
     });
     if (!resp.ok || !resp.body) {
@@ -1627,6 +1733,7 @@ async function sendPrompt(text) {
     promptEl.focus();
     loadSessions();
     renderStats();
+    addLatestMessageRewind(liveUserNode, text);
     // A model may have updated the durable goal through its tool during this
     // turn. Keep an already-open Goal panel in sync without polling.
     if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
@@ -1837,6 +1944,7 @@ $$(".welcome .hints button").forEach(function (b) {
 
 function newSession() {
   if (streaming) return;
+  pendingRewind = null;
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;
   loadedTranscriptMessages = [];
@@ -2337,6 +2445,83 @@ async function forkSession(id, throughSeq) {
   } catch(e) { toast(e.message); }
 }
 
+async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button) {
+  if (!id || !selectedSeq || streaming) return false;
+  if (button) button.disabled = true;
+  try {
+    var branch = await jpost("/api/branches", {
+      session_id: id,
+      through_seq: selectedSeq > 1 ? selectedSeq - 1 : -1,
+      selected_seq: selectedSeq,
+      rewind_files: !!rewindFiles,
+    });
+	if (branch.file_rewind) rememberFileRewind(branch.id, branch.file_rewind);
+    await resumeSession(branch.id, branch);
+    pendingRewind = { reason: reason || "", files: !!rewindFiles, filesRestored: false };
+    promptEl.value = text || "";
+    promptEl.dispatchEvent(new Event("input"));
+    promptEl.focus();
+    promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length);
+    toast(t("workflow.rewindDone"));
+    return true;
+  } catch (e) {
+    var message = e.message;
+    try {
+      var detail = JSON.parse(e.message);
+      if (detail.conflicts && detail.conflicts.length) {
+        message = t("workflow.rewindConflict") + ": " + detail.conflicts.join(", ");
+      }
+    } catch (ignore) {}
+    toast(message);
+    if (button && button.isConnected) button.disabled = false;
+    return false;
+  }
+}
+
+var fileRewindStorageKey = "supercli-file-rewind-receipts";
+function fileRewindReceipts() {
+  try { return JSON.parse(localStorage.getItem(fileRewindStorageKey) || "{}") || {}; }
+  catch (e) { return {}; }
+}
+function rememberFileRewind(sessionID, receipt) {
+  var all = fileRewindReceipts(); all[sessionID] = receipt;
+  try { localStorage.setItem(fileRewindStorageKey, JSON.stringify(all)); } catch (e) {}
+}
+function forgetFileRewind(sessionID) {
+  var all = fileRewindReceipts(); delete all[sessionID];
+  try { localStorage.setItem(fileRewindStorageKey, JSON.stringify(all)); } catch (e) {}
+}
+function renderFileRewindAction(sessionID) {
+  var previous = stream.querySelector(".rewind-restore");
+  if (previous) previous.remove();
+  var receipt = fileRewindReceipts()[sessionID];
+  if (!receipt || !(receipt.checkpoint_ids || []).length) return;
+  var row = el("div", "rewind-restore");
+  var copy = el("div", "rewind-restore-copy");
+  copy.appendChild(el("strong", "", t("workflow.rewindFileCount").replace("{n}", (receipt.files || []).length)));
+  copy.appendChild(el("span", "", t("workflow.restoreFilesHint")));
+  var restore = el("button", "btn", t("workflow.restoreFiles"));
+  restore.type = "button";
+  restore.addEventListener("click", async function () {
+    restore.disabled = true;
+    try {
+      await jpost("/api/checkpoint/rewind", {
+        session_id: receipt.session_id,
+        branch_session_id: sessionID,
+        checkpoint_ids: receipt.checkpoint_ids,
+      });
+      forgetFileRewind(sessionID);
+      row.remove();
+      if (pendingRewind) { pendingRewind.files = false; pendingRewind.filesRestored = true; }
+      toast(t("workflow.filesRestored"));
+    } catch (e) {
+      restore.disabled = false;
+      toast(e.message);
+    }
+  });
+  row.appendChild(copy); row.appendChild(restore); stream.appendChild(row);
+}
+
 async function renameSession(session) {
   var current = session.first_user_msg || "";
   var title = window.prompt(t("session.namePrompt"), current);
@@ -2398,7 +2583,7 @@ function buildHistoryFragment(messages) {
   try {
     (messages || []).forEach(function (m) {
       if (m.role === "user") {
-        addUserMsg(m.content);
+        addUserMsg(m.content, m.seq);
       } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
         if (!m.content) return;
@@ -2463,6 +2648,7 @@ function renderLoadedTranscript(preserveScroll) {
     stream.appendChild(older);
   }
   stream.appendChild(buildHistoryFragment(loadedTranscriptMessages));
+  renderFileRewindAction(transcriptSessionID);
   if (preserveScroll) {
     stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
   } else {
@@ -2489,7 +2675,6 @@ async function loadOlderTranscript() {
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
     renderLoadedTranscript(true);
-    loadCheckpointAction(sessionID);
   } catch (e) {
     if (e.name !== "AbortError") {
       toast(t("common.error") + ": " + e.message);
@@ -2508,6 +2693,7 @@ async function resumeSession(id, session) {
     toast(t("session.stopRun"));
     return;
   }
+  pendingRewind = null;
   var resumeSeq = ++sessionResumeSeq;
   var epoch = projectEpoch;
   var releaseRuntimeReady;
@@ -2542,7 +2728,7 @@ async function resumeSession(id, session) {
 	streamAppendTarget = historyFragment;
 	(msgs || []).forEach(function (m) {
       if (m.role === "user") {
-        addUserMsg(m.content);
+        addUserMsg(m.content, m.seq);
 	      } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
         if (!m.content) return;
@@ -2590,7 +2776,7 @@ async function resumeSession(id, session) {
 	});
 	streamAppendTarget = null;
 	stream.appendChild(historyFragment);
-	loadCheckpointAction(id);
+	renderFileRewindAction(id);
 	smartScroll(true);
     loadSessions();
     renderStats();
@@ -2752,7 +2938,7 @@ function renderModelList(filter) {
     var bh = el("button", "", m.hidden ? t("model.show") : t("model.hide"));
     bh.addEventListener("click", function (e) {
       e.stopPropagation();
-      jpost("/api/model/toggle", { model: m.id }).then(function () {
+      jpost("/api/model/toggle", { provider: m.provider, model: m.id }).then(function () {
         m.hidden = !m.hidden;
         saveBlobKey("supercli-model-cache", modelCache);
         renderModelList(filter);
@@ -2991,7 +3177,13 @@ function knobRow(k) {
     var states = k.kind === "tri" ? ["default", "on", "off"] : ["auto", "on", "off"];
     var seg = el("span", "seg");
     states.forEach(function (st) {
-      var b = el("button", "", t("set.state." + st));
+      var label = t("set.state." + st);
+      if (k.key === "orchestrator") {
+        label = st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff"));
+      } else if (st === "default" && k.default) {
+        label += " (" + t("set.state." + k.default) + ")";
+      }
+      var b = el("button", "", label);
       b.type = "button";
       if (st === (k.state || "default") || (st === "auto" && (k.state || "default") === "default")) b.classList.add("on");
       b.addEventListener("click", function () { post(st === "auto" ? "default" : st); });
@@ -3196,7 +3388,7 @@ sections.models = async function () {
       var filtered = matchingModels();
       b.disabled = true;
       try {
-        await jpost("/api/model/visibility", { models: filtered.map(function (m) { return m.id; }), hidden: hidden });
+        await jpost("/api/model/visibility", { refs: filtered.map(function (m) { return { provider: m.provider, model: m.id }; }), hidden: hidden });
         await loadModels();
         await sections.models();
       } catch (e) { toast(e.message); b.disabled = false; }
@@ -3234,7 +3426,7 @@ sections.models = async function () {
       var act = el("div", "lr-act");
       var bh = el("button", "", m.hidden ? t("model.show") : t("model.hide"));
       bh.addEventListener("click", function () {
-        jpost("/api/model/toggle", { model: m.id }).then(sections.models);
+        jpost("/api/model/toggle", { provider: m.provider, model: m.id }).then(sections.models);
       });
       act.appendChild(bh);
       var bd = el("button", "", t("model.setDefault"));
@@ -3847,6 +4039,74 @@ function renderMcpJSON(servers) {
 
 /* ── Memory ── */
 
+sections.data = async function () {
+  panelContent.innerHTML = "";
+  panelContent.appendChild(el("div", "note", t("data.hint")));
+  var status;
+  try { status = await j("/api/data/status"); }
+  catch (e) { panelContent.appendChild(el("div", "note", e.message)); return; }
+  var facts = el("div", "data-facts");
+  [["data.sessions", status.sessions], ["data.memories", status.memory_entries], ["data.goals", status.goals]].forEach(function (item) {
+    var fact = el("div", "data-fact");
+    fact.appendChild(el("span", "", t(item[0])));
+    fact.appendChild(el("strong", "", fmtCompactNumber(item[1] || 0)));
+    facts.appendChild(fact);
+  });
+  panelContent.appendChild(facts);
+  if (status.import_pending) panelContent.appendChild(el("div", "data-pending", t("data.importPending")));
+
+  function dataAction(title, hint, button) {
+    var row = el("div", "data-action"), copy = el("div", "data-action-copy");
+    copy.appendChild(el("strong", "", title)); copy.appendChild(el("span", "", hint));
+    row.appendChild(copy); row.appendChild(button); return row;
+  }
+  var backup = el("div", "group data-group"); backup.appendChild(el("div", "g-label", t("data.backup")));
+  var exportBtn = el("button", "btn", t("data.export")); exportBtn.type = "button";
+  exportBtn.addEventListener("click", function () {
+    var link = document.createElement("a"); link.href = "/api/data/export"; link.download = "";
+    document.body.appendChild(link); link.click(); link.remove();
+  });
+  backup.appendChild(dataAction(t("data.export"), t("data.exportHint"), exportBtn));
+  var fullExportBtn = el("button", "btn", t("data.exportFull")); fullExportBtn.type = "button";
+  fullExportBtn.addEventListener("click", function () {
+    var link = document.createElement("a"); link.href = "/api/data/export/full"; link.download = "";
+    document.body.appendChild(link); link.click(); link.remove();
+  });
+  backup.appendChild(dataAction(t("data.exportFull"), t("data.exportFullHint"), fullExportBtn));
+  var importBtn = el("button", "btn", t("data.import")); importBtn.type = "button";
+  var importInput = document.createElement("input"); importInput.type = "file"; importInput.accept = ".zip,application/zip"; importInput.hidden = true;
+  importBtn.addEventListener("click", function () { importInput.click(); });
+  importInput.addEventListener("change", async function () {
+    if (!importInput.files || !importInput.files[0]) return;
+    var selectedFile = importInput.files[0];
+    importBtn.disabled = true;
+    var form = new FormData(); form.append("backup", selectedFile);
+    try {
+      var response = await fetch("/api/data/import", { method:"POST", body:form });
+      if (!response.ok) throw new Error((await response.text()).trim() || String(response.status));
+      toast(t("data.importReady")); await sections.data();
+    } catch (e) { toast(e.message); importBtn.disabled = false; }
+    finally { importInput.value = ""; }
+  });
+  var importRow = dataAction(t("data.import"), t("data.importHint"), importBtn); importRow.appendChild(importInput); backup.appendChild(importRow);
+  panelContent.appendChild(backup);
+
+  var danger = el("div", "group data-group danger-zone"); danger.appendChild(el("div", "g-label", t("data.danger")));
+  function destructiveAction(labelKey, hintKey, action, after) {
+    var button = el("button", "btn danger", t(labelKey)); button.type = "button"; button.disabled = streaming;
+    button.addEventListener("click", async function () {
+      if (!window.confirm(t(hintKey))) return;
+      button.disabled = true;
+      try { await jpost("/api/data/clear", { action:action }); toast(t("data.cleared")); if (after) after(); await sections.data(); }
+      catch (e) { toast(e.message); button.disabled = false; }
+    });
+    danger.appendChild(dataAction(t(labelKey), t(hintKey), button));
+  }
+  destructiveAction("data.clearSessions", "data.confirmSessions", "sessions", function () { try { localStorage.removeItem(fileRewindStorageKey); } catch (e) {} newSession(); loadSessions(); renderStats(); });
+  destructiveAction("data.clearMemory", "data.confirmMemory", "memory", function () {});
+  panelContent.appendChild(danger);
+};
+
 sections.memory = async function () {
   var got;
   try { got = await j("/api/memory?limit=100"); } catch (e) {
@@ -4133,6 +4393,23 @@ function contextItems(context) {
     { key: "other", label: t("context.other"), value: context.breakdown.other },
   ];
 }
+function normalizedContext(raw) {
+  raw = raw || {};
+  var breakdown = raw.breakdown || {};
+  return {
+    window: statNumber(raw.window), estimatedUsed: statNumber(raw.estimated_used, raw.estimatedUsed),
+    percent: Math.max(0, Math.min(100, statNumber(raw.percent))),
+    breakdown: {
+      user: statNumber(breakdown.user), assistant: statNumber(breakdown.assistant),
+      tools: statNumber(breakdown.tools), other: statNumber(breakdown.other),
+    },
+  };
+}
+function contextState(percent) {
+  if (percent >= 80) return { key: "context.compactionRecommended", cls: "danger" };
+  if (percent >= 60) return { key: "context.approaching", cls: "warning" };
+  return { key: "context.safe", cls: "safe" };
+}
 function renderContextInspector(context) {
   var section = el("section", "usage-section usage-context");
   var head = el("div", "usage-section-head");
@@ -4150,9 +4427,17 @@ function renderContextInspector(context) {
     return section;
   }
 
-  var ariaParts = [t("stats.currentContext") + " " + context.percent + "%"];
-  var meter = el("div", "context-split");
+  var state = contextState(context.percent);
+  var status = el("div", "context-status " + state.cls);
+  status.appendChild(el("span", "context-status-dot"));
+  status.appendChild(el("strong", "", t(state.key)));
+  section.appendChild(status);
+
+  var ariaParts = [t("stats.currentContext") + " " + context.percent + "%", t(state.key)];
+  var meter = el("div", "context-budget");
   meter.setAttribute("role", "img");
+  var used = el("div", "context-used");
+  used.style.width = context.percent + "%";
   items.forEach(function (item) {
     var pct = item.value * 100 / total;
     ariaParts.push(item.label + " " + Math.round(pct) + "%");
@@ -4160,10 +4445,22 @@ function renderContextInspector(context) {
     var segment = el("span", "context-segment context-" + item.key);
     segment.style.width = pct + "%";
     segment.title = item.label + ": " + fmtInteger(item.value) + " (" + Math.round(pct) + "%)";
-    meter.appendChild(segment);
+    used.appendChild(segment);
+  });
+  meter.appendChild(used);
+  [60, 80].forEach(function (threshold) {
+    var marker = el("span", "context-threshold threshold-" + threshold);
+    marker.style.left = threshold + "%";
+    marker.title = threshold + "% \u00b7 " + t(threshold === 60 ? "context.pruneThreshold" : "context.compactThreshold");
+    meter.appendChild(marker);
   });
   meter.setAttribute("aria-label", ariaParts.join(". "));
   section.appendChild(meter);
+
+  var thresholdLegend = el("div", "context-threshold-legend");
+  thresholdLegend.appendChild(el("span", "", "60% \u00b7 " + t("context.pruneThreshold")));
+  thresholdLegend.appendChild(el("span", "", "80% \u00b7 " + t("context.compactThreshold")));
+  section.appendChild(thresholdLegend);
 
   var legend = el("div", "context-legend");
   items.forEach(function (item) {
@@ -4175,7 +4472,32 @@ function renderContextInspector(context) {
     legend.appendChild(entry);
   });
   section.appendChild(legend);
-  section.appendChild(el("div", "usage-caption", t("stats.contextShare")));
+  var footer = el("div", "context-actions");
+  footer.appendChild(el("div", "usage-caption", t("context.compactHint")));
+  var compact = el("button", "btn context-compact", t("context.compactNow"));
+  compact.type = "button";
+  compact.disabled = !activeSessionID;
+  compact.title = t("context.compactHint");
+  compact.addEventListener("click", async function () {
+    if (!activeSessionID) { toast(t("context.selectSession")); return; }
+    if (streaming) { toast(t("context.busy")); return; }
+    compact.disabled = true;
+    compact.classList.add("busy");
+    compact.textContent = t("context.compacting");
+    try {
+      var result = await jpost("/api/context/compact", { session_id: activeSessionID });
+      var next = normalizedContext(result.context);
+      section.replaceWith(renderContextInspector(next));
+      toast(t("context.compacted").replace("{n}", fmtInteger(result.removed)));
+    } catch (err) {
+      toast(err.message);
+      compact.disabled = false;
+      compact.classList.remove("busy");
+      compact.textContent = t("context.compactNow");
+    }
+  });
+  footer.appendChild(compact);
+  section.appendChild(footer);
   return section;
 }
 function priceField(label, name, value, required, hint) {

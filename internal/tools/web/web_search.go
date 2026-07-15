@@ -91,6 +91,37 @@ type webSearchArgs struct {
 	ExcludeDomains []string `json:"exclude_domains"`
 }
 
+type webLookupArgs struct {
+	Query string `json:"query"`
+}
+
+// LookupSpec is the tiny always-on path for current facts. It deliberately
+// exposes only a query: models can search in one call without first spending a
+// turn discovering the larger web_search schema. Advanced filters remain on
+// web_search behind tool_search.
+func (t *WebSearch) LookupSpec() Tool {
+	return Tool{
+		Name:        "web_lookup",
+		ReadOnly:    true,
+		Description: "Search the live public web for current facts. Use before answering time-sensitive questions.",
+		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"What to look up on the web."}},"required":["query"]}`,
+		Fn:          t.lookup,
+	}
+}
+
+func (t *WebSearch) lookup(ctx context.Context, raw json.RawMessage) (Result, error) {
+	var a webLookupArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return Result{Err: fmt.Errorf("web_lookup: bad args: %w", err)}, nil
+	}
+	a.Query = strings.TrimSpace(a.Query)
+	if a.Query == "" {
+		return Result{Err: fmt.Errorf("web_lookup: query is empty")}, nil
+	}
+	forward, _ := json.Marshal(webSearchArgs{Query: a.Query, MaxResults: webSearchDefaultResults})
+	return t.execute(ctx, forward)
+}
+
 // Spec returns the tool registration.
 func (t *WebSearch) Spec() Tool {
 	return Tool{

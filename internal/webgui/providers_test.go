@@ -38,7 +38,7 @@ func TestProvidersAddRollsBackWhenVerificationFails(t *testing.T) {
 func TestModelVisibilityBatchEndpoint(t *testing.T) {
 	srv := newTestServer(t, false)
 	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPost, "/api/model/visibility", `{"models":["m1","m2","m1"],"hidden":true}`))
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPost, "/api/model/visibility", `{"refs":[{"provider":"x","model":"shared"},{"provider":"x","model":"m2"},{"provider":"x","model":"shared"}],"hidden":true}`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -52,8 +52,11 @@ func TestModelVisibilityBatchEndpoint(t *testing.T) {
 		t.Fatalf("changed = %d, want 2", response.Changed)
 	}
 	m := srv.eng.providerManager()
-	if !m.IsHidden("m1") || !m.IsHidden("m2") {
+	if !m.IsHiddenFor("x", "shared") || !m.IsHiddenFor("x", "m2") {
 		t.Fatal("models were not hidden")
+	}
+	if m.IsHiddenFor("y", "shared") {
+		t.Fatal("batch visibility leaked to another provider with the same model ID")
 	}
 }
 

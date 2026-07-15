@@ -1,4 +1,4 @@
-# SuperCli — Roadmapa (audyt 2026-06-11, stan zweryfikowany w kodzie 2026-07-12)
+# SuperCli — Roadmapa (audyt 2026-06-11, stan zweryfikowany w kodzie 2026-07-16)
 
 SuperCli to agentowe CLI w Go (bubbletea TUI), repo: `SuperCli/SuperCli`.
 Pakiety (`internal/`): `agent` (pętla, coordinator/workers, subagenci,
@@ -13,6 +13,25 @@ Dokument uporządkowany po weryfikacji każdej pozycji względem kodu:
 **wdrożone / wdrożone eksperymentalnie (za knobem) / wymagające live-testu /
 rzeczywisty backlog**. Świeże pomiary i mechanizmy wydajnościowe:
 `docs/performance.md`; architektura cache/kompakcji: `docs/architecture.md`.
+
+### Ostatnio domknięte — TUI i odporność runtime (2026-07-16)
+
+- **TUI bez kosztu dla modelu** — render ukończonej części rozmowy jest
+  cache'owany, `Ctrl+F` wyszukuje bloki rozmowy, a pojedynczy wynik można
+  zwinąć bez zmiany historii przekazywanej modelowi.
+- **Wiadomość podczas pracy** — tekst wpisany w czasie inferencji trafia do
+  ograniczonej kolejki i jest dołączany dopiero na bezpiecznej granicy między
+  odpowiedzią a kolejnym krokiem; nie rozcina par tool-call/tool-result i nie
+  uruchamia dodatkowego modelu w tle.
+- **Obrona kompakcji** — podsumowanie jest przyjmowane tylko wtedy, gdy usuwa
+  co najmniej 20% wycenianego prefiksu; stały narzut schematów narzędzi jest
+  uwzględniany w progu i nie powoduje zapętlenia ponownej kompakcji.
+- **Drzewa procesów na Windows** — MCP, LSP i długie sesje procesów korzystają
+  z Job Object `KILL_ON_JOB_CLOSE`, więc procesy pomocnicze nie zostają po
+  zamknięciu lub przerwaniu SuperCli.
+- **Porządek repo** — odpowiedzialności katalogów opisuje
+  `docs/project-structure.md`; modułowe `go.mod`/`go.sum` świadomie pozostają w
+  korzeniu, a stan uruchomieniowy należy do `supercli-data/`.
 
 ## Wdrożone (zweryfikowane w kodzie — NIE re-implementować)
 
@@ -210,13 +229,29 @@ wykorzystanie tych samych preferencji przez sędziego Darwina.
 **Kolejność wdrożenia:** snapshoty → undo z nauką → dopiero potem spięcie
 preferencji z sędzią Darwina. Undo **nie zależy** od Darwina.
 
-### TODO — eval-harness dla agenta
+### DONE — eval-harness dla agenta
 
-Zestaw 10-15 nagranych zadań z jasnym pass/fail, odpalany jednym
-poleceniem, żeby przy dłubaniu w promptach/protokole narzędzi wychwytywać
-regresje jakości agenta ("czy nie zrobiłem go głupszym"). Nieoczywisty
-fundament — ratuje przed cichym dryfem jakości przy iteracji nad
-promptami. (`test/` ma testy integracyjne, ale nie taki harness.)
+`cmd/supercli-eval` uruchamia 10 izolowanych zadań fixture-driven z jasnym
+pass/fail, macierzą modeli, oczekiwanymi/zabronionymi plikami, komendami
+weryfikacji, timeoutem i raportem JSON. Zwykły runtime nie importuje harnessu,
+więc sesje nie płacą za niego startem, RAM-em ani tokenami.
+
+### TODO — live macierz modeli i regresje wydajności
+
+- Uruchomić komplet 10 zadań `test/eval/suite.json` co najmniej na:
+  Qwen3.5-122B z HP Z6 (thinking), małym modelu lokalnym oraz jednym małym
+  i jednym mocnym modelu chmurowym.
+- Dla każdego przebiegu zachować: pass/fail, czas, liczbę wywołań modelu i
+  narzędzi, tokeny wejścia/cache/wyjścia oraz ewentualne użycie fallbacku.
+- Porównywać medianę i p95 między wersjami CLI; pojedynczy szybszy przebieg
+  nie może być podstawą optymalizacji promptu lub protokołu narzędzi.
+- Dodać widoczne zdarzenie `primary -> fallback` do interfejsu i telemetrii,
+  bez dodatkowego wywołania modelu.
+- Uruchamiać `cmd/supercli-perf` przed wydaniem i ostrzegać przy regresji
+  cold-start, first-output lub peak RSS; nie obciążać tym zwykłego startu CLI.
+- Z dobrych rzeczywistych sesji tworzyć małe, zanonimizowane scenariusze eval:
+  prompt, oczekiwane zmiany, test i budżet tur — bez archiwizowania pełnych,
+  ciężkich wyników narzędzi.
 
 ## Inspiracje z konkurencyjnych CLI (gdzie szukać)
 

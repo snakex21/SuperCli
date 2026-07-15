@@ -42,6 +42,8 @@ tidy:
 clean:
 	rm -f $(BINARY)
 	rm -f $(WEB_BINARY)
+	rm -f *.test *.test.exe headerprobe.exe coverage.out stdout.log stderr.log
+	rm -rf .tmp-home
 	$(GO) clean -testcache
 
 clean-data:

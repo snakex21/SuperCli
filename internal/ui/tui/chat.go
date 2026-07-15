@@ -20,8 +20,9 @@ const (
 // The role drives the color; the body is the raw text
 // (no ANSI codes — styling is applied at render time).
 type msg struct {
-	role role
-	text string
+	role      role
+	text      string
+	collapsed bool
 }
 
 // chat holds the ordered message history and the current
@@ -29,9 +30,17 @@ type msg struct {
 // transcript strings.Builder approach with structured
 // messages that can be colored per-role.
 type chat struct {
-	msgs    []msg
-	current string // streaming assistant text (flushed on DoneEvent)
-	width   int    // terminal width for word-wrapping
+	msgs     []msg
+	current  string // streaming assistant text (flushed on DoneEvent)
+	width    int    // terminal width for word-wrapping
+	language string
+
+	// completedCache is the rendered, immutable prefix of completed messages.
+	// Streaming used to run Markdown/ANSI rendering over the entire conversation
+	// for every provider delta. Only current changes while a response streams,
+	// so keep the completed prefix until a message/fold setting really changes.
+	completedCache string
+	completedDirty bool
 
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
@@ -39,18 +48,24 @@ type chat struct {
 }
 
 // newChat creates an empty chat with the given terminal width.
-func newChat(width int) chat {
-	return chat{width: width}
+func newChat(width int, language ...string) chat {
+	lang := "en"
+	if len(language) > 0 {
+		lang = normalizeLanguage(language[0])
+	}
+	return chat{width: width, language: lang}
 }
 
 // addUser appends a user prompt.
 func (c *chat) addUser(text string) {
 	c.msgs = append(c.msgs, msg{role: roleUser, text: text})
+	c.completedDirty = true
 }
 
 // addSystem appends a system message (markers, errors, etc).
 func (c *chat) addSystem(text string) {
 	c.msgs = append(c.msgs, msg{role: roleSystem, text: text})
+	c.completedDirty = true
 }
 
 // lastAssistant returns the most recent completed assistant
@@ -77,6 +92,7 @@ func (c *chat) removeLastSystem(text string) bool {
 	for i := len(c.msgs) - 1; i >= 0; i-- {
 		if c.msgs[i].role == roleSystem && c.msgs[i].text == text {
 			c.msgs = append(c.msgs[:i], c.msgs[i+1:]...)
+			c.completedDirty = true
 			return true
 		}
 	}
@@ -86,6 +102,7 @@ func (c *chat) removeLastSystem(text string) bool {
 // addAssistant appends a completed assistant message.
 func (c *chat) addAssistant(text string) {
 	c.msgs = append(c.msgs, msg{role: roleAssistant, text: text})
+	c.completedDirty = true
 }
 
 // appendCurrent appends text to the streaming assistant message.
@@ -99,6 +116,7 @@ func (c *chat) flushCurrent() {
 	if c.current != "" {
 		c.msgs = append(c.msgs, msg{role: roleAssistant, text: c.current})
 		c.current = ""
+		c.completedDirty = true
 	}
 }
 
@@ -106,14 +124,14 @@ func (c *chat) flushCurrent() {
 // is prefixed with a role label and colored with the palette.
 func (c *chat) render(p Palette) string {
 	var b strings.Builder
-	for _, m := range c.msgs {
-		b.WriteString(c.renderMsg(m, p))
-		b.WriteByte('\n')
-	}
+	b.WriteString(c.renderCompleted(p))
 	// Render the current streaming message with a trailing newline
 	// so the viewport cursor stays below it.
 	if c.current != "" {
-		b.WriteString(renderAssistantMarkdown(c.current, p, c.thinkingCollapsed))
+		if len(c.msgs) > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(renderAssistantMarkdown(c.current, p, c.thinkingCollapsed, c.language))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -121,11 +139,21 @@ func (c *chat) render(p Palette) string {
 
 // renderMsg renders a single message with role-based color.
 func (c *chat) renderMsg(m msg, p Palette) string {
+	if m.collapsed {
+		first := strings.TrimSpace(strings.SplitN(m.text, "\n", 2)[0])
+		if first == "" {
+			first = textFor(c.language, "(collapsed block)", "(zwini\u0119ty blok)")
+		}
+		return p.Dim.Render(first + textFor(c.language, "  \u2026 collapsed", "  \u2026 zwini\u0119te"))
+	}
 	switch m.role {
 	case roleUser:
-		return renderRoleBlock(p.UserLabel.Render("You"), p.User.Render(m.text), p.UserGutter)
+		// The plain transcript keeps a "> " prefix for compatibility; the
+		// colored gutter already communicates the role visually.
+		body := strings.TrimPrefix(m.text, "> ")
+		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "You", "Ty")), p.User.Render(body), p.UserGutter)
 	case roleAssistant:
-		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed), p.AssistGutter)
+		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language), p.AssistGutter)
 	case roleSystem:
 		// System messages already carry ANSI styling from
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
@@ -163,12 +191,12 @@ func renderRoleBlock(label, body string, gutter lipgloss.Style) string {
 // streaming text with a spinner appended.
 func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 	var b strings.Builder
-	for _, m := range c.msgs {
-		b.WriteString(c.renderMsg(m, p))
-		b.WriteByte('\n')
-	}
+	b.WriteString(c.renderCompleted(p))
 	if c.current != "" {
-		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(c.current, p, c.thinkingCollapsed), p.AssistGutter))
+		if len(c.msgs) > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(c.current, p, c.thinkingCollapsed, c.language), p.AssistGutter))
 		b.WriteString(" ")
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
@@ -179,6 +207,25 @@ func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// renderCompleted keeps operational system events compact while adding one
+// calm line of whitespace at real conversational boundaries.
+func (c *chat) renderCompleted(p Palette) string {
+	if !c.completedDirty {
+		return c.completedCache
+	}
+	var b strings.Builder
+	for i, m := range c.msgs {
+		if i > 0 && (m.role == roleUser || m.role == roleAssistant) {
+			b.WriteByte('\n')
+		}
+		b.WriteString(c.renderMsg(m, p))
+		b.WriteByte('\n')
+	}
+	c.completedCache = b.String()
+	c.completedDirty = false
+	return c.completedCache
 }
 
 // lastRole returns the role of the most recent message, or
@@ -199,4 +246,67 @@ func (c *chat) len() int {
 // toggleThinking flips the thinking block visibility.
 func (c *chat) toggleThinking() {
 	c.thinkingCollapsed = !c.thinkingCollapsed
+	c.completedDirty = true
+}
+
+// transcriptMatch is presentation-only search metadata. MessageIndex remains
+// stable until a new completed message is appended; the search menu is modal,
+// so the transcript cannot change underneath it.
+type transcriptMatch struct {
+	MessageIndex int
+	Role         role
+	Preview      string
+}
+
+// search returns messages containing query without rendering Markdown or ANSI.
+// This is intentionally local and allocation-bounded by the number of messages;
+// it never touches the model context or session database.
+func (c *chat) search(query string) []transcriptMatch {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil
+	}
+	matches := make([]transcriptMatch, 0, 8)
+	for i, m := range c.msgs {
+		plain := strings.Join(strings.Fields(m.text), " ")
+		if !strings.Contains(strings.ToLower(plain), q) {
+			continue
+		}
+		matches = append(matches, transcriptMatch{MessageIndex: i, Role: m.role, Preview: plain})
+	}
+	return matches
+}
+
+func (c *chat) isFoldable(index int) bool {
+	return index >= 0 && index < len(c.msgs) && strings.Contains(c.msgs[index].text, "\n")
+}
+
+func (c *chat) toggleMessage(index int) bool {
+	if !c.isFoldable(index) {
+		return false
+	}
+	c.msgs[index].collapsed = !c.msgs[index].collapsed
+	c.completedDirty = true
+	return c.msgs[index].collapsed
+}
+
+// renderedLineForMessage resolves a raw message index to its first rendered
+// terminal row. It is paid only when the user selects a search result, never on
+// redraw or streaming paths.
+func (c *chat) renderedLineForMessage(index int, p Palette) int {
+	if index <= 0 {
+		return 0
+	}
+	if index > len(c.msgs) {
+		index = len(c.msgs)
+	}
+	lines := 0
+	for i := 0; i < index; i++ {
+		if i > 0 && (c.msgs[i].role == roleUser || c.msgs[i].role == roleAssistant) {
+			lines++
+		}
+		rendered := c.renderMsg(c.msgs[i], p)
+		lines += strings.Count(rendered, "\n") + 1
+	}
+	return lines
 }

@@ -70,3 +70,33 @@ func TestForkCopiesTranscriptWithoutUsage(t *testing.T) {
 		t.Fatalf("messages=%+v", msgs)
 	}
 }
+
+func TestForkNegativeSequenceCreatesEmptyBranch(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	parent, err := s.Create("/work", "old", "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := FromMessage(llm.Message{Role: llm.RoleUser, Content: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendMessage(ctx, parent.ID, enc); err != nil {
+		t.Fatal(err)
+	}
+	child, err := s.Fork(ctx, parent.ID, -1, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.MessageCount != 0 {
+		t.Fatalf("empty branch message count = %d", child.MessageCount)
+	}
+	msgs, err := s.ReadMessages(ctx, child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("empty branch messages = %+v", msgs)
+	}
+}

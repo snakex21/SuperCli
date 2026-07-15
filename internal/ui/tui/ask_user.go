@@ -8,7 +8,11 @@ import (
 // renderAskView produces the full-screen overlay shown when the
 // model has called ask_user. The viewport is suspended; the
 // user navigates with 1-4 / arrows / space / enter / esc.
-func renderAskView(a *pendingAsk, width, height int) string {
+func renderAskView(a *pendingAsk, width, height int, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	if width < 40 {
 		width = 80
 	}
@@ -90,26 +94,26 @@ func renderAskView(a *pendingAsk, width, height int) string {
 		if opt.Preview != "" {
 			b.WriteString(pad)
 			b.WriteString("│    ")
-			b.WriteString(padTo("preview: "+opt.Preview, boxW-6))
+			b.WriteString(padTo(textFor(language, "preview: ", "podgląd: ")+opt.Preview, boxW-6))
 			b.WriteString("    │\n")
 		}
 		if opt.Image != "" {
 			b.WriteString(pad)
 			b.WriteString("│    ")
-			b.WriteString(padTo("image: "+opt.Image, boxW-6))
+			b.WriteString(padTo(textFor(language, "image: ", "obraz: ")+opt.Image, boxW-6))
 			b.WriteString("    │\n")
 		}
 		if opt.ImagePrompt != "" && opt.Image == "" {
 			b.WriteString(pad)
 			b.WriteString("│    ")
-			b.WriteString(padTo("prompt: "+opt.ImagePrompt, boxW-6))
+			b.WriteString(padTo(textFor(language, "prompt: ", "opis obrazu: ")+opt.ImagePrompt, boxW-6))
 			b.WriteString("    │\n")
 		}
 	}
 	if a.customMode {
 		b.WriteString(pad)
 		b.WriteString("│  ")
-		b.WriteString(padTo("Your answer: "+a.custom+"_", boxW-4))
+		b.WriteString(padTo(textFor(language, "Your answer: ", "Twoja odpowiedź: ")+a.custom+"_", boxW-4))
 		b.WriteString("  │\n")
 	}
 
@@ -120,7 +124,7 @@ func renderAskView(a *pendingAsk, width, height int) string {
 	b.WriteString(" │\n")
 
 	// Help line.
-	help := helpLine(a)
+	help := helpLine(a, language)
 	b.WriteString(pad)
 	b.WriteString("│ ")
 	writeCentered(&b, help, boxW-2)
@@ -142,18 +146,22 @@ func headerLine(a *pendingAsk) string {
 	return "?"
 }
 
-func helpLine(a *pendingAsk) string {
+func helpLine(a *pendingAsk, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	if a.customMode {
-		return "type answer · ⏎ submit · esc options"
+		return textFor(language, "type answer · ⏎ submit · Esc options", "wpisz odpowiedź · ⏎ wyślij · Esc opcje")
 	}
 	custom := ""
 	if a.AllowCustom {
-		custom = " · c custom"
+		custom = textFor(language, " · c custom", " · c własna")
 	}
 	if a.MultiSelect {
-		return "1-4 toggle · ↑↓ move · ⏎ confirm" + custom + " · esc cancel"
+		return textFor(language, "1-4 toggle · ↑↓ move · ⏎ confirm", "1-4 przełącz · ↑↓ wybierz · ⏎ potwierdź") + custom + textFor(language, " · Esc cancel", " · Esc anuluj")
 	}
-	return "1-4 quick pick · ↑↓ move · ⏎ confirm" + custom + " · esc cancel"
+	return textFor(language, "1-4 quick pick · ↑↓ move · ⏎ confirm", "1-4 szybki wybór · ↑↓ wybierz · ⏎ potwierdź") + custom + textFor(language, " · Esc cancel", " · Esc anuluj")
 }
 
 // writeCentered writes s centered in width characters, padding

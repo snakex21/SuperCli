@@ -41,4 +41,20 @@ func TestBridgeListsWithoutStartingAndCanSearchAndCall(t *testing.T) {
 	if call.Err != nil || !strings.Contains(call.Text, "echo:") {
 		t.Fatalf("call = %+v", call)
 	}
+
+	// Smaller/local models often encode the nested MCP arguments object as a
+	// JSON string. The bridge repairs that form instead of silently forwarding
+	// a string that makes every required remote parameter look absent.
+	stringCall, _ := bridge.Spec().Fn(ctx, json.RawMessage(`{"action":"call","server":"portable-demo","tool":"echo","arguments":"{\"text\":\"from-string\"}"}`))
+	if stringCall.Err != nil || !strings.Contains(stringCall.Text, `{"text":"from-string"}`) {
+		t.Fatalf("stringified arguments call = %+v", stringCall)
+	}
+}
+
+func TestNormalizeBridgeArgumentsRejectsNonObjects(t *testing.T) {
+	for _, raw := range []string{`[]`, `"plain text"`, `42`} {
+		if _, err := normalizeBridgeArguments(json.RawMessage(raw)); err == nil {
+			t.Fatalf("normalizeBridgeArguments(%s) succeeded, want error", raw)
+		}
+	}
 }

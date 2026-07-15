@@ -1,11 +1,15 @@
 package webgui
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
+
+	"supercli/internal/checkpoint"
 )
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
@@ -72,20 +76,71 @@ func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		SessionID  string `json:"session_id"`
-		ThroughSeq int    `json:"through_seq"`
-		Provider   string `json:"provider"`
-		Model      string `json:"model"`
-		Reasoning  string `json:"reasoning"`
+		SessionID   string `json:"session_id"`
+		ThroughSeq  int    `json:"through_seq"`
+		SelectedSeq int    `json:"selected_seq,omitempty"`
+		RewindFiles bool   `json:"rewind_files,omitempty"`
+		Provider    string `json:"provider"`
+		Model       string `json:"model"`
+		Reasoning   string `json:"reasoning"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		http.Error(w, "bad request: "+err.Error(), 400)
 		return
 	}
+	undone := checkpoint.BatchResult{}
+	var err error
+	if b.RewindFiles {
+		if b.SelectedSeq <= 0 {
+			http.Error(w, "selected_seq is required when rewinding files", http.StatusBadRequest)
+			return
+		}
+		manager, managerErr := s.eng.checkpointManager(s.eng.Home())
+		if managerErr != nil {
+			http.Error(w, managerErr.Error(), http.StatusBadRequest)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		undone, err = manager.UndoFrom(ctx, strings.TrimSpace(b.SessionID), b.SelectedSeq)
+		cancel()
+		if err != nil {
+			writeJSONStatus(w, http.StatusConflict, checkpointRewindView{
+				Available:   len(undone.Records) > 0,
+				Checkpoints: len(undone.Records),
+				Files:       undone.Files,
+				Conflicts:   undone.Conflicts,
+			})
+			return
+		}
+	}
 	out, err := s.eng.forkSession(r.Context(), b.SessionID, b.ThroughSeq, b.Provider, b.Model, b.Reasoning)
 	if err != nil {
+		if len(undone.Records) > 0 {
+			if manager, managerErr := s.eng.checkpointManager(s.eng.Home()); managerErr == nil {
+				rollbackCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				rollbackErr := manager.RedoBatch(rollbackCtx, undone)
+				cancel()
+				if rollbackErr != nil {
+					err = errors.Join(err, errors.New("file rewind rollback failed: "+rollbackErr.Error()))
+				}
+			}
+		}
 		writeWorkflowError(w, err)
 		return
+	}
+	for _, record := range undone.Records {
+		_ = s.appendCheckpointEvent(record, "undo", record.Files)
+	}
+	if len(undone.Records) > 0 {
+		ids := make([]string, 0, len(undone.Records))
+		for _, record := range undone.Records {
+			ids = append(ids, record.ID)
+		}
+		out.FileRewind = &fileRewindReceipt{
+			SessionID:     strings.TrimSpace(b.SessionID),
+			CheckpointIDs: ids,
+			Files:         undone.Files,
+		}
 	}
 	writeJSON(w, out)
 }

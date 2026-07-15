@@ -9,8 +9,9 @@ import (
 )
 
 // orchestratorView is the JSON shape for the orchestrator toggle. Set
-// reports the tri-state config value (nil = default OFF), Enabled is the
-// resolved boolean the next launch will use.
+// reports the legacy boolean view of the tri-state config value. The main
+// settings API is authoritative for auto/always/never; this endpoint remains
+// for backwards compatibility with older clients.
 type orchestratorView struct {
 	Enabled bool `json:"enabled"`
 	Set     bool `json:"set"`

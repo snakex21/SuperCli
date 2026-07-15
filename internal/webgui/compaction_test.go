@@ -10,6 +10,9 @@ package webgui
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +21,7 @@ import (
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
+	"supercli/internal/storage/session"
 )
 
 // writeDataConfig drops a global config.toml into dataDir.
@@ -136,5 +140,72 @@ func TestWebLoop_WindowFromLearnedLimit(t *testing.T) {
 	}
 	if got := loop.ContextWindow(); got != 4242 {
 		t.Errorf("ContextWindow = %d, want learned 4242", got)
+	}
+}
+
+func TestContextCompactEndpointPreservesTranscriptAndRewritesProjection(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	store, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Create(dir, "echo-test", "manual compact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := session.NewWriter(store, sess.ID)
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: "old question " + strings.Repeat("x", 20000)},
+		{Role: llm.RoleAssistant, Content: "old answer"},
+		{Role: llm.RoleUser, Content: "latest question"},
+		{Role: llm.RoleAssistant, Content: "latest answer"},
+	}
+	for _, msg := range msgs {
+		if err := writer.AppendMessage(context.Background(), msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srv := NewServer(eng, false)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/context/compact", strings.NewReader(`{"session_id":"`+sess.ID+`"}`))
+	srv.handleContextCompact(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response contextCompactResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.OK || response.Removed == 0 || response.After >= response.Before {
+		t.Fatalf("unexpected response: %+v", response)
+	}
+	rows, err := store.ReadMessages(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(msgs)+1 { // summary is appended; originals remain intact
+		t.Fatalf("transcript rows=%d, want original %d + summary", len(rows), len(msgs))
+	}
+	projection, err := store.ReadModelContext(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projection) >= len(msgs) {
+		t.Fatalf("projection was not compacted: %d messages", len(projection))
+	}
+	foundSummary := false
+	for _, msg := range projection {
+		if strings.Contains(msg.Content, "continued from a previous conversation") {
+			foundSummary = true
+		}
+	}
+	if !foundSummary {
+		t.Fatal("compacted projection is missing the summary hand-off")
 	}
 }

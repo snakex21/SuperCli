@@ -122,6 +122,7 @@ func (m Model) projectsMenuEnter() (tea.Model, tea.Cmd) {
 //   - 'i' shows info for the highlighted project
 //   - 'a' adds the current directory (same as the + row)
 //   - 'd' unregisters the highlighted project (memory preserved)
+//
 // Returns handled=false for keys it does not consume so the
 // generic menu keypath can still process navigation/filtering.
 func (m Model) projectsMenuKey(key string) (tea.Model, tea.Cmd, bool) {
@@ -171,27 +172,34 @@ func (m Model) projectsMenuKey(key string) (tea.Model, tea.Cmd, bool) {
 func (m Model) renderProjectsMenu() string {
 	rows := m.projectRows()
 	nReal := len(rows) - 1 // minus the add row
+	width := maxInt(24, m.menuWidth()-6)
 
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render("Projects") + "\n")
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("Projects", "Projekty")) + "\n")
 	switch {
 	case nReal == 0:
-		b.WriteString(m.palette.Dim.Render("no projects registered — add one to start its memory") + "\n")
+		b.WriteString(m.palette.Dim.Render(truncateText(m.tr("no projects registered — add one to start its memory", "brak projektów — dodaj projekt, aby uruchomić jego pamięć"), width)) + "\n")
 	default:
-		b.WriteString(m.palette.Dim.Render(fmt.Sprintf("%d project(s) registered · per-project memory under %%USERPROFILE%%\\supercli-data\\projects\\", nReal)) + "\n")
+		desc := m.tr(fmt.Sprintf("%d project(s) registered · per-project memory under %%USERPROFILE%%\\supercli-data\\projects\\", nReal), fmt.Sprintf("Zarejestrowane projekty: %d · pamięć w %%USERPROFILE%%\\supercli-data\\projects\\", nReal))
+		b.WriteString(m.palette.Dim.Render(truncateText(desc, width)) + "\n")
 	}
 	b.WriteString("\n")
 
-	for i, r := range rows {
+	start, end := 0, len(rows)
+	if m.height > 0 {
+		start, end = menuWindow(len(rows), m.menu.cursor, m.height-7)
+	}
+	for i := start; i < end; i++ {
+		r := rows[i]
 		selected := i == m.menu.cursor
 		cursor := "  "
 		if selected {
-			cursor = m.palette.HeaderMode.Render("❯ ")
+			cursor = m.palette.HeaderMode.Render("> ")
 		}
 
 		var line string
 		if r.isAdd {
-			label := "+  add current directory"
+			label := m.tr("+  add current directory", "+  dodaj bieżący folder")
 			if selected {
 				line = m.palette.HeaderMode.Render(label)
 			} else {
@@ -203,36 +211,37 @@ func (m Model) renderProjectsMenu() string {
 				name = filepath.Base(r.path)
 			}
 			// Memory size on disk (best-effort stat)
-			size := "(no memory yet)"
+			size := m.tr("(no memory yet)", "(jeszcze bez pamięci)")
 			if r.key != "" && m.dataDir != "" {
 				if fi, err := os.Stat(filepath.Join(m.dataDir, "projects", r.key, "memory.db")); err == nil {
 					size = fmt.Sprintf("%.1f KB", float64(fi.Size())/1024)
 				}
 			}
-			// Marker: ★ active, ✓ otherwise.
-			marker := m.palette.Success.Render("✓")
+			// ASCII markers stay readable in legacy Windows terminal fonts.
+			marker := "[on]"
 			if r.isActive {
-				marker = m.palette.HeaderMode.Render("★")
+				marker = m.tr("[active]", "[aktywny]")
 			}
 			parts := []string{marker}
-			nameParts := []string{}
+			nameParts := []string{name}
 			if r.isActive {
-				nameParts = append(nameParts, m.palette.Bold.Render(name), m.palette.HeaderMode.Render("(active)"))
-			} else if selected {
-				nameParts = append(nameParts, m.palette.HeaderMode.Render(name))
-			} else {
-				nameParts = append(nameParts, m.palette.Bold.Render(name))
+				nameParts = append(nameParts, m.tr("(active)", "(aktywny)"))
 			}
 			if r.isCwd {
-				nameParts = append(nameParts, m.palette.Dim.Render("(cwd)"))
+				nameParts = append(nameParts, m.tr("(cwd)", "(bieżący folder)"))
 			}
 			parts = append(parts, nameParts...)
 			meta := "  " + size + " · " + r.key
 			if r.model != "" {
 				meta += " · " + r.model
 			}
-			parts = append(parts, m.palette.Dim.Render(meta))
-			line = strings.Join(parts, " ")
+			parts = append(parts, meta)
+			line = truncateText(strings.Join(parts, " "), width-2)
+			if selected {
+				line = m.palette.HeaderMode.Render(line)
+			} else {
+				line = m.palette.Bold.Render(line)
+			}
 		}
 		b.WriteString(cursor + line + "\n")
 	}
@@ -243,6 +252,6 @@ func (m Model) renderProjectsMenu() string {
 		Padding(0, 2).
 		Render(b.String())
 
-	hint := m.palette.InputHint.Render("↑↓ select · Enter use · i info · a add · d remove · ESC back")
+	hint := m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter use · i info · a add · d remove · Esc back", "↑↓ wybierz · Enter użyj · i informacje · a dodaj · d usuń · Esc wróć"), m.menuWidth()))
 	return panel + "\n" + hint
 }

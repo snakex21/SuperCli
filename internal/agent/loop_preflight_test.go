@@ -82,6 +82,42 @@ func TestPreflight_AddonRidesUserMessageNotSystem(t *testing.T) {
 	}
 }
 
+func TestUserAddonIsProviderOnlyAndPersistsRawPrompt(t *testing.T) {
+	prov := &capturingProvider{reply: "done"}
+	w := &recordingWriter{}
+	l, err := NewLoop(LoopConfig{
+		Provider: prov,
+		Registry: tools.NewRegistry(),
+		System:   "SYS",
+		Writer:   w,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetNextUserAddon("[rewind_feedback]do not repeat[/rewind_feedback]")
+	ch, err := l.Run(context.Background(), "try again")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, ch)
+	if len(w.messages) == 0 || w.messages[0].Content != "try again" {
+		t.Fatalf("persisted user message = %+v, want raw prompt", w.messages)
+	}
+	reqs := prov.requests()
+	if len(reqs) == 0 {
+		t.Fatal("no provider request")
+	}
+	found := false
+	for _, msg := range reqs[0] {
+		if msg.Role == llm.RoleUser && strings.Contains(msg.Content, "rewind_feedback") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("provider did not receive the one-shot addon")
+	}
+}
+
 // The addon is one-shot: the second Run must not repeat it.
 func TestPreflight_AddonIsOneShot(t *testing.T) {
 	prov := &capturingProvider{reply: "done"}

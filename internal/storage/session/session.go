@@ -253,6 +253,23 @@ func (s *Store) Delete(id string) error {
 	return err
 }
 
+// DeleteAll removes every conversation and its cascaded messages, turns and
+// usage rows. Provider configuration and project files are not stored here.
+func (s *Store) DeleteAll() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM prompt_queue`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // AppendMessage adds a message to a session, assigning the next
 // seq number. tokenIn/tokenOut are optional (zero is fine).
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded) error {
@@ -291,6 +308,21 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 		return err
 	}
 	return nil
+}
+
+// LatestMessageSeq returns the latest transcript sequence for one role. It is
+// used to associate out-of-band turn metadata (such as workspace checkpoints)
+// with the user message that initiated the turn.
+func (s *Store) LatestMessageSeq(ctx context.Context, sessionID, role string) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("session.Store.LatestMessageSeq: nil store")
+	}
+	var seq int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(seq), 0) FROM messages WHERE session_id = ? AND role = ?`,
+		sessionID, role,
+	).Scan(&seq)
+	return seq, err
 }
 
 // RecentSession is a /resume listing entry. It is derived from

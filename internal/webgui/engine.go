@@ -10,6 +10,7 @@ package webgui
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,7 +123,8 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		applyWebPricingEntries(caps, cachedPrices)
 	}
 	f := factory.New(nil, dataDir, caps)
-	prov, err := f.Build(cfg, llm.PurposeMain)
+	tc, _ := config.ResolveConfig(dataDir, home, "")
+	prov, err := f.BuildChain(cfg, tc, llm.PurposeMain)
 	if err != nil {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
@@ -267,6 +269,19 @@ func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
 	}
 	e.checkpoints[key] = manager
 	return manager, nil
+}
+
+func (e *Engine) clearCheckpointManagers() error {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	var result error
+	for key, manager := range e.checkpoints {
+		if err := manager.Clear(); err != nil {
+			result = errors.Join(result, err)
+		}
+		delete(e.checkpoints, key)
+	}
+	return errors.Join(result, os.RemoveAll(filepath.Join(e.dataDir, "checkpoints")))
 }
 
 // Close releases Engine-owned resources after the HTTP server has drained.
@@ -646,6 +661,24 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		reg.MustRegister(ask.Spec())
 		reg.MarkAlwaysOn("ask_user")
 	}
+	// Current facts should not fall through to browser automation. Keep one
+	// tiny query-only tool always available, while the larger filtered search
+	// and fetch schemas remain discoverable through tool_search.
+	reg.MustRegister(tools.NewWebFetch().Spec())
+	webEngine := tc.WebSearch.Engine
+	webKey := tc.WebSearch.APIKey
+	if webKey == "" {
+		switch strings.ToLower(webEngine) {
+		case "brave":
+			webKey = os.Getenv("BRAVE_API_KEY")
+		case "tavily":
+			webKey = os.Getenv("TAVILY_API_KEY")
+		}
+	}
+	webSearcher := tools.NewWebSearch(webEngine, webKey, tc.WebSearch.BaseURL)
+	reg.MustRegister(webSearcher.Spec())
+	reg.MustRegister(webSearcher.LookupSpec())
+	reg.MarkAlwaysOn("web_lookup")
 	if manager := e.mcpRuntime(); manager != nil && len(manager.Names()) > 0 {
 		reg.MustRegister(mcp.NewBridge(manager).Spec())
 		reg.MarkAlwaysOn("mcp_bridge")
@@ -932,7 +965,8 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	if err := cfg.Normalize(); err != nil {
 		return err
 	}
-	prov, err := e.factory.Build(cfg, llm.PurposeMain)
+	tc, _ := config.ResolveConfig(e.dataDir, e.Home(), "")
+	prov, err := e.factory.BuildChain(cfg, tc, llm.PurposeMain)
 	if err != nil {
 		return err
 	}
