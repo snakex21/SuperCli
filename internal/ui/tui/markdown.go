@@ -26,7 +26,11 @@ var (
 // <thinking> block styling, and heuristic thinking detection
 // to assistant text. collapsed controls whether completed
 // thinking blocks are hidden.
-func renderAssistantMarkdown(text string, p Palette, collapsed bool) string {
+func renderAssistantMarkdown(text string, p Palette, collapsed bool, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	// Strip XML tool call blocks — they're an internal
 	// fallback format and should never appear in the TUI.
 	text = reXMLToolCall.ReplaceAllString(text, "")
@@ -34,15 +38,15 @@ func renderAssistantMarkdown(text string, p Palette, collapsed bool) string {
 	segments := splitThinking(text)
 	if len(segments) <= 1 && !segments[0].thinking {
 		// No <thinking> tags. Run heuristic detection.
-		return renderWithHeuristicThinking(text, p, collapsed)
+		return renderWithHeuristicThinking(text, p, collapsed, language)
 	}
 	var b strings.Builder
 	for _, seg := range segments {
 		if seg.thinking {
-			b.WriteString(renderThinkingBlock(seg.text, p, collapsed))
+			b.WriteString(renderThinkingBlock(seg.text, p, collapsed, language))
 		} else {
 			// Apply heuristic to non-thinking segments too.
-			b.WriteString(renderWithHeuristicThinking(seg.text, p, collapsed))
+			b.WriteString(renderWithHeuristicThinking(seg.text, p, collapsed, language))
 		}
 	}
 	return b.String()
@@ -51,7 +55,11 @@ func renderAssistantMarkdown(text string, p Palette, collapsed bool) string {
 // renderWithHeuristicThinking scans lines for thinking-like
 // patterns (lines starting with "The user", "I should", etc.)
 // and renders them as dimmed thinking blocks.
-func renderWithHeuristicThinking(text string, p Palette, collapsed bool) string {
+func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 {
 		return ""
@@ -63,7 +71,7 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool) string 
 	flushThinking := func() {
 		if len(thinkBuf) > 0 {
 			block := strings.Join(thinkBuf, "\n")
-			b.WriteString(renderThinkingBlock(block, p, collapsed))
+			b.WriteString(renderThinkingBlock(block, p, collapsed, language))
 			thinkBuf = nil
 		}
 		inThinking = false
@@ -167,16 +175,20 @@ func splitThinking(text string) []textSegment {
 // renderThinkingBlock renders a thinking segment.
 // When collapsed and the block is closed, shows a summary line.
 // Streaming (unclosed) blocks are never collapsed.
-func renderThinkingBlock(text string, p Palette, collapsed bool) string {
+func renderThinkingBlock(text string, p Palette, collapsed bool, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
 	if collapsed {
-		return p.MdThinkingHeader.Render("Thinking (hidden — T to expand)") + "\n"
+		return p.MdThinkingHeader.Render(textFor(language, "Thinking (hidden — T to expand)", "Myślenie (ukryte — T rozwija)")) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(p.MdThinkingHeader.Render("Thinking:"))
+	b.WriteString(p.MdThinkingHeader.Render(textFor(language, "Thinking:", "Myślenie:")))
 	b.WriteByte('\n')
 	for _, line := range strings.Split(text, "\n") {
 		b.WriteString(p.MdThinking.Render("  " + line))

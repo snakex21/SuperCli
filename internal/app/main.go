@@ -30,7 +30,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,13 +99,19 @@ var supercliSystemPromptBase = prompt.Build(false)
 var supercliModelProfile string
 var supercliCoordinatorMode bool
 
-// supercliOrchestratorMode is the HARD delegation mode (config
-// `orchestrator`, default OFF). When true the main loop runs with a
+// supercliOrchestratorMode is the HARD delegation mode (explicit
+// `orchestrator = true`). When true the main loop runs with a
 // restricted registry (agent.OrchestratorRegistry): delegation + a
 // read-only lookup set only, so the coordinator physically cannot edit
 // files or run commands and must delegate via `task`. Resolved once in
 // main() from config; /orchestrator persists the change for next launch.
 var supercliOrchestratorMode bool
+
+// supercliDelegationDisabled is the explicit `orchestrator = false` state.
+// Unlike the nil/default adaptive state, it removes task/send_message/task_stop
+// from the main agent entirely, so "never" is a real capability boundary and
+// not merely a prompt suggestion.
+var supercliDelegationDisabled bool
 
 // memoryBriefing is the code-built session-start briefing (user
 // preferences, project card, recent session summaries, other
@@ -166,176 +171,6 @@ func buildSystemPrompt(svc *goal.Service) string {
 		return base
 	}
 	return injected
-}
-
-// platformHint returns OS-specific shell hints so the
-// model uses correct commands for the current platform.
-func platformHint() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "OS: Windows. Use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm', 'copy' instead of 'cp', 'move' instead of 'mv', backslash paths. For shell commands use cmd /c prefix."
-	case "darwin":
-		return "OS: macOS. Use standard Unix commands."
-	default:
-		return "OS: Linux. Use standard Unix commands."
-	}
-}
-
-func envTruthy(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "true", "yes", "on", "y":
-		return true
-	default:
-		return false
-	}
-}
-
-func envFalsey(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "0", "false", "no", "off", "n":
-		return true
-	default:
-		return false
-	}
-}
-
-// defaultStableToolset is the built-in default for the stable-toolset
-// KV-cache optimisation (agent.LoopConfig.StableToolset): when true,
-// tools activated via tool_search are not promoted into the request
-// `tools` list, so the list stays byte-identical all session and the
-// local server's prompt cache survives activations. ON by default —
-// live-confirmed 2026-07-01 against LM Studio qwen3.5-9b
-// (TestIntegration_StableToolset_ToolSearchThenTailCall: tool_search
-// -> tail tool called by name -> correct result, 4 requests, tools
-// list byte-identical throughout, no retry loop). Opt out with
-// `stable_toolset = false` in config.toml.
-const defaultStableToolset = true
-
-// resolveStableToolset applies the config.toml tri-state override
-// (`stable_toolset`) on top of the built-in default.
-func resolveStableToolset(override *bool) bool {
-	return execution.StableToolset(override)
-}
-
-// defaultPreflightRepo: the repo-state preflight block is ON by
-// default. Live A/B (2026-07-03, qwen3.5-9b): ~73 tok on the variable
-// side of the first user message bought −33% turns / −42% tokens on a
-// repo task, with zero change to the result — the model just skips
-// the discovery turns. Degrades safely everywhere: pure-Go mtime
-// listing when git is absent, empty block (no addon at all) in an
-// empty directory, rides a user message so the KV-cache prefix stays
-// stable, and is host-agnostic (cloud pays the same small block and
-// saves the same discovery turns). Opt out with
-// `preflight_repo = false` in config.toml.
-const defaultPreflightRepo = true
-
-// resolvePreflightRepo applies the config.toml tri-state
-// (`preflight_repo`): nil = built-in default (ON), explicit
-// true/false overrides.
-func resolvePreflightRepo(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return defaultPreflightRepo
-}
-
-// resolveNavigator maps the config.toml `navigator` value to the two
-// loop flags. Default (empty) is "auto": keyword-first, model navigator
-// only for ambiguous prompts — a strict win over "on" (it skips the
-// extra round-trip on confident turns and routes them identically),
-// which matters most on slow local backends. "on" keeps the historical
-// model-every-turn behaviour; "off" disables the navigator entirely
-// (always coordinator). enable is EnableNavigator; auto is NavigatorAuto.
-func resolveNavigator(mode string) (enable, auto bool) {
-	return execution.Navigator(mode)
-}
-
-// resolveTaskWorkerConfig maps config `task_model` onto the provider
-// config delegated `task` workers run on. Two forms, matching existing
-// conventions: "model-id" keeps the coordinator's transport and swaps
-// only the model (draft_model style); "providerName/model-id" resolves
-// a configured [[providers]] entry by name (council label style), so
-// the worker hits that provider's host with its own key. A first
-// segment matching no configured provider is treated as part of a bare
-// model id (OpenRouter-style ids contain slashes). Returns ok=false —
-// i.e. workers inherit the coordinator's provider, zero change — when
-// task_model is unset, resolves to no model, or names the exact
-// backend the coordinator already uses.
-func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
-	tm := strings.TrimSpace(tomlCfg.TaskModel)
-	if tm == "" {
-		return cfg, false
-	}
-	worker := cfg
-	if name, model, found := strings.Cut(tm, "/"); found {
-		for _, p := range tomlCfg.Providers {
-			if p.Name != name {
-				continue
-			}
-			worker.Provider = p.Type
-			worker.BaseURL = p.BaseURL
-			worker.APIKey = p.APIKey
-			worker.Model = model
-			if worker.Model == "" {
-				worker.Model = p.Model
-			}
-			if worker.Model == "" {
-				log.Printf("task_model: %q resolves to no model (provider %q has none configured) — workers use the main provider", tm, name)
-				return cfg, false
-			}
-			if worker.Model == cfg.Model && worker.BaseURL == cfg.BaseURL {
-				return cfg, false // same backend — no override
-			}
-			return worker, true
-		}
-	}
-	worker.Model = tm
-	if worker.Model == cfg.Model {
-		return cfg, false // same backend — no override
-	}
-	return worker, true
-}
-
-// resolveNavigatorProvider picks the small side provider the navigator
-// classifies routes on, so its prompt (a different prefix) never evicts
-// the main conversation from a single-slot llama.cpp KV cache. Zero new
-// knobs ("ma działać samo"): it only reuses providers the user already
-// configured. Preference order:
-//
-//  1. the task_model worker provider — by construction a different
-//     model or host than the coordinator (resolveTaskWorkerConfig
-//     returns no override for the same backend), so the main slot is
-//     never touched;
-//  2. the draft provider (F11), same "cheap side model" role — skipping
-//     echo/test stubs, mirroring summaryProviderFor;
-//  3. nil — the loop classifies on the main provider (today's
-//     behaviour).
-func resolveNavigatorProvider(taskWorker, draft llm.Provider) llm.Provider {
-	if taskWorker != nil {
-		return taskWorker
-	}
-	if draft != nil && !strings.Contains(strings.ToLower(draft.Name()), "echo") {
-		return draft
-	}
-	return nil
-}
-
-// resolveOrchestrator applies the config.toml tri-state override
-// (`orchestrator`) on top of the built-in default (OFF).
-func resolveOrchestrator(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return false
-}
-
-// resolveDraftVerify applies the config.toml tri-state override
-// (`draft_verify`) on top of the built-in default (OFF).
-func resolveDraftVerify(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return false
 }
 
 func Main() {
@@ -452,6 +287,11 @@ func Main() {
 	if tomlErr != nil {
 		log.Printf("config.toml: %v (using defaults)", tomlErr)
 	}
+	uiLanguage, languageErr := config.EnsureLanguage(dataDir, cwd, tomlCfg.Language)
+	if languageErr != nil {
+		log.Printf("language: %v (using %s for this run)", languageErr, uiLanguage)
+	}
+	tomlCfg.Language = uiLanguage
 	// Apply TOML as defaults (env/flags still win later).
 	config.TomlConfigToEnv(tomlCfg)
 	// Unsandboxed: flag > env (which TomlConfigToEnv may have set) > default off.
@@ -603,7 +443,7 @@ func Main() {
 	// chat with the chosen provider.
 	if !*echoFlag && cfg.IsEcho() &&
 		len(tomlCfg.Providers) == 0 && tomlCfg.Provider == "" && tomlCfg.DefaultProvider == "" {
-		if res := tui.RunOnboarding(); !res.Skipped {
+		if res := tui.RunOnboarding(uiLanguage); !res.Skipped {
 			// "Sign in with ChatGPT" needs the OAuth browser flow,
 			// which the wizard cannot run itself. Do it here, on
 			// the plain console, before the TUI starts.
@@ -691,7 +531,7 @@ func Main() {
 	// apply uniformly. Capability probing (Codex usage fetchers,
 	// RouterProvider pool) unwraps via llm.Unwrap.
 	provFactory := factory.New(buildProvider, dataDir, caps, callSink)
-	provider, err := provFactory.Build(cfg, llm.PurposeMain)
+	provider, err := provFactory.BuildChain(cfg, tomlCfg, llm.PurposeMain)
 	if err != nil {
 		fatal("init provider", err)
 	}
@@ -722,12 +562,22 @@ func Main() {
 	// Orchestrator mode (hard delegation): resolved from config, with an
 	// env override for scripted/test use. When on, the main loop gets a
 	// restricted registry below (delegation + read-only lookups only).
-	supercliOrchestratorMode = resolveOrchestrator(tomlCfg.Orchestrator)
+	orchMode := resolveOrchestratorMode(tomlCfg.Orchestrator)
 	if envTruthy("SUPERCLI_ORCHESTRATOR") {
-		supercliOrchestratorMode = true
+		orchMode = orchestratorAlways
 	}
 	if envFalsey("SUPERCLI_ORCHESTRATOR") {
-		supercliOrchestratorMode = false
+		orchMode = orchestratorNever
+	}
+	supercliOrchestratorMode = orchMode.hard()
+	supercliDelegationDisabled = !orchMode.delegationEnabled()
+	if supercliOrchestratorMode {
+		// Hard orchestration always carries the coordinator contract.
+		supercliCoordinatorMode = true
+	} else if supercliDelegationDisabled {
+		// Explicit "never" must not leave the adaptive coordinator prompt
+		// asking for tools that are deliberately absent below.
+		supercliCoordinatorMode = false
 	}
 
 	sessionID := fmt.Sprintf("sess-%d", time.Now().UnixNano())
@@ -1382,15 +1232,17 @@ func Main() {
 		}
 		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
 	}
-	registry.MustRegister(at.Spec())
-	sendMessageTool := agent.NewSendMessageTool(at.Workers)
-	registry.MustRegister(sendMessageTool.Spec())
-	taskStopTool := agent.NewTaskStopTool(at.Workers)
-	registry.MustRegister(taskStopTool.Spec())
-	if supercliCoordinatorMode {
-		registry.MarkAlwaysOn("task")
-		registry.MarkAlwaysOn("send_message")
-		registry.MarkAlwaysOn("task_stop")
+	if !supercliDelegationDisabled {
+		registry.MustRegister(at.Spec())
+		sendMessageTool := agent.NewSendMessageTool(at.Workers)
+		registry.MustRegister(sendMessageTool.Spec())
+		taskStopTool := agent.NewTaskStopTool(at.Workers)
+		registry.MustRegister(taskStopTool.Spec())
+		if supercliCoordinatorMode {
+			registry.MarkAlwaysOn("task")
+			registry.MarkAlwaysOn("send_message")
+			registry.MarkAlwaysOn("task_stop")
+		}
 	}
 
 	// F14: opt-in tool. The model calls hide_messages
@@ -1547,9 +1399,9 @@ func Main() {
 	mergedCommands["help"] = func(ctx context.Context, args string) (string, error) {
 		// Short grouped list by default; /help all shows everything.
 		if strings.TrimSpace(strings.ToLower(args)) == "all" {
-			return tui.HelpContentAll(), nil
+			return tui.HelpContentAllFor(uiLanguage), nil
 		}
-		return tui.HelpContent(), nil
+		return tui.HelpContentFor(uiLanguage), nil
 	}
 
 	// F25a: /reflect — show learned patterns from reflection.
@@ -1741,44 +1593,48 @@ func Main() {
 		return out, nil
 	}
 
-	// /orchestrator — HARD delegation mode. Unlike /think it does NOT
+	// /orchestrator — three delegation modes. Unlike /think it does NOT
 	// apply mid-session: it swaps the main loop's tool list, and changing
 	// the tool list in flight would break the KV-cache prefix (chat
 	// templates serialize `tools` at the very start of the prompt), so it
 	// persists to config.toml and takes effect on the next launch.
 	mergedCommands["orchestrator"] = func(ctx context.Context, args string) (string, error) {
 		args = strings.ToLower(strings.TrimSpace(args))
-		curState := "off"
+		curState := "auto"
 		if supercliOrchestratorMode {
 			curState = "on"
+		} else if supercliDelegationDisabled {
+			curState = "off"
 		}
 		if args == "" {
-			return fmt.Sprintf("orchestrator: %s (this session)\nusage: /orchestrator <on|off>   — takes effect on next launch", curState), nil
+			return fmt.Sprintf("orchestrator: %s (this session)\nusage: /orchestrator <auto|on|off>   — auto=delegate when useful, on=always, off=never; next launch", curState), nil
 		}
-		var on bool
+		var saved *bool
+		want := "auto"
 		switch args {
+		case "auto", "default":
+			saved = nil
 		case "on", "true", "1":
-			on = true
+			v := true
+			saved = &v
+			want = "on"
 		case "off", "false", "0":
-			on = false
+			v := false
+			saved = &v
+			want = "off"
 		default:
-			return "usage: /orchestrator <on|off>", nil
+			return "usage: /orchestrator <auto|on|off>", nil
 		}
 		// Persist to the GLOBAL config.toml.
 		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
 		if tc, err := config.LoadToml(globalPath); err == nil {
-			v := on
-			tc.Orchestrator = &v
+			tc.Orchestrator = saved
 			if err := config.SaveToml(globalPath, tc); err != nil {
 				log.Printf("orchestrator: save config.toml: %v", err)
 				return "orchestrator: failed to save config", nil
 			}
 		}
-		want := "off"
-		if on {
-			want = "on"
-		}
-		if (on && supercliOrchestratorMode) || (!on && !supercliOrchestratorMode) {
+		if want == curState {
 			return fmt.Sprintf("orchestrator is already %s and saved.", want), nil
 		}
 		return fmt.Sprintf("orchestrator set to %s — takes effect on the next launch (new session). This session keeps its current tool set.", want), nil
@@ -1856,9 +1712,9 @@ func Main() {
 		return projectsCommand(ctx, args, dataDir)
 	}
 
-	// Wave 1 cleanup: the old text-only /models handler was dead
-	// code — the TUI rewrites /models to /model before handlers
-	// run, so the interactive picker always won. Removed.
+	// Model menus are handled directly by the TUI: /model is the fast
+	// picker of enabled models, while /models is the complete visibility
+	// catalog. The old text-only handler would only duplicate that state.
 
 	// F30: create provider manager, load persisted
 	// hidden-models state, and reload the providers list
@@ -2285,7 +2141,10 @@ func Main() {
 			wsKey = os.Getenv("TAVILY_API_KEY")
 		}
 	}
-	registry.MustRegister(tools.NewWebSearch(wsEngine, wsKey, tomlCfg.WebSearch.BaseURL).Spec())
+	webSearcher := tools.NewWebSearch(wsEngine, wsKey, tomlCfg.WebSearch.BaseURL)
+	registry.MustRegister(webSearcher.Spec())
+	registry.MustRegister(webSearcher.LookupSpec())
+	registry.MarkAlwaysOn("web_lookup")
 	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
 
 	// outlook_mail: Windows-only COM automation of desktop
@@ -2543,14 +2402,16 @@ func Main() {
 	}
 
 	model := tui.New(tui.Options{
-		Home:     home,
-		DataDir:  dataDir,
-		Version:  version,
-		Tier:     string(modelTier),
-		Agent:    loop,
-		LLM:      provider,
-		Commands: mergedCommands,
-		StatusFn: statusFn,
+		Home:      home,
+		DataDir:   dataDir,
+		SessionID: sessionID,
+		Version:   version,
+		Tier:      string(modelTier),
+		Language:  uiLanguage,
+		Agent:     loop,
+		LLM:       provider,
+		Commands:  mergedCommands,
+		StatusFn:  statusFn,
 		// Incremental memory: after every finished agent turn,
 		// deterministic user facts are saved immediately (no model
 		// call) and the model-backed summary is scheduled for the
@@ -2600,6 +2461,19 @@ func Main() {
 			loop.InjectUserMessage(ctx, fmt.Sprintf("[checkpoint] User %s changes from turn %s (%d files). Current workspace state supersedes the earlier implementation.", verb, result.Record.ID, len(result.Files)))
 			return fmt.Sprintf("%s %d file(s) from turn %s", verb, len(result.Files), result.Record.ID), nil
 		},
+		CheckpointPreview: func(redo bool) (tui.CheckpointPreview, error) {
+			if checkpointCtrl == nil {
+				return tui.CheckpointPreview{}, checkpoint.ErrUnavailable
+			}
+			record, err := checkpointCtrl.Preview(redo)
+			if err != nil {
+				return tui.CheckpointPreview{}, err
+			}
+			return tui.CheckpointPreview{
+				ID: record.ID, Prompt: record.Prompt,
+				Files: append([]string(nil), record.Files...), Redo: redo,
+			}, nil
+		},
 		ExtCh:        extCh,
 		ShellRunner:  shellescape.NewRunner(home),
 		Tracker:      fileops.NewTracker(200),
@@ -2611,22 +2485,22 @@ func Main() {
 			// from the config.toml providers list.
 			swapCfg := cfg
 			swapCfg.Model = modelID
+			swapToml, _ := config.ResolveConfig(dataDir, home, "")
 			if providerName != "" {
-				globalPath, _ := config.FindTomlPaths(dataDir, ".")
-				tc, err := config.LoadToml(globalPath)
-				if err == nil {
-					for _, pc := range tc.Providers {
-						if pc.Name == providerName {
-							swapCfg.BaseURL = pc.BaseURL
-							swapCfg.APIKey = pc.APIKey
-							swapCfg.Provider = pc.Type
-							break
+				for _, pc := range swapToml.Providers {
+					if pc.Name == providerName {
+						if pc.Disabled {
+							return nil, fmt.Errorf("provider %q is disabled", providerName)
 						}
+						swapCfg.BaseURL = pc.BaseURL
+						swapCfg.APIKey = pc.APIKey
+						swapCfg.Provider = pc.Type
+						break
 					}
 				}
 			}
 			// The factory keeps the model-call metering across /model swaps.
-			np, err := provFactory.Build(swapCfg, llm.PurposeMain)
+			np, err := provFactory.BuildChain(swapCfg, swapToml, llm.PurposeMain)
 			if err == nil {
 				// Just switched models — if the new provider is Codex,
 				// refresh its usage snapshot in the background so the HUD
@@ -2740,7 +2614,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// per-purpose model-call line) after the run. The factory bakes
 	// the sink into the provider it builds.
 	batchStats := stats.NewMemory()
-	p, err := factory.New(buildProvider, dataDir, caps, statsCallSink(batchStats)).Build(cfg, llm.PurposeMain)
+	p, err := factory.New(buildProvider, dataDir, caps, statsCallSink(batchStats)).BuildChain(cfg, tomlCfg, llm.PurposeMain)
 	if err != nil {
 		fatal("build provider", err)
 	}
@@ -2781,6 +2655,23 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	reg.MustRegister(processSession.Spec())
 	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
 	reg.MarkAlwaysOn("invoke_tool")
+	// A compact current-facts tool is always available in batch mode. The
+	// advanced web_search/web_fetch contracts stay discoverable on demand.
+	reg.MustRegister(tools.NewWebFetch().Spec())
+	batchWebEngine := tomlCfg.WebSearch.Engine
+	batchWebKey := tomlCfg.WebSearch.APIKey
+	if batchWebKey == "" {
+		switch strings.ToLower(batchWebEngine) {
+		case "brave":
+			batchWebKey = os.Getenv("BRAVE_API_KEY")
+		case "tavily":
+			batchWebKey = os.Getenv("TAVILY_API_KEY")
+		}
+	}
+	batchWeb := tools.NewWebSearch(batchWebEngine, batchWebKey, tomlCfg.WebSearch.BaseURL)
+	reg.MustRegister(batchWeb.Spec())
+	reg.MustRegister(batchWeb.LookupSpec())
+	reg.MarkAlwaysOn("web_lookup")
 	// A short-lived batch registry does not need a SQLite FTS database: the
 	// searcher uses its deterministic lexical fallback over this small set.
 	toolSearcher := tools.NewToolSearcher(reg, nil)
@@ -3503,7 +3394,7 @@ func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegist
 	seen := make(map[string]struct{})
 	for _, pi := range provMgr.ListConfigured(caps) {
 		for _, mi := range pi.Models {
-			if provMgr.IsHidden(mi.ID) {
+			if provMgr.IsHiddenFor(pi.Name, mi.ID) {
 				continue
 			}
 			label := pi.Name + "/" + mi.ID
@@ -3516,7 +3407,7 @@ func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegist
 	}
 	if len(opts) == 0 && caps != nil {
 		for _, mi := range caps.All() {
-			if provMgr.IsHidden(mi.ID) {
+			if provMgr.IsHiddenFor(mi.Provider, mi.ID) {
 				continue
 			}
 			opts = append(opts, tools.AskOption{Label: mi.ID, Description: mi.Provider})

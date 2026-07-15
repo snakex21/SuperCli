@@ -94,6 +94,29 @@ type navigatorProvider struct {
 	toolCount int
 }
 
+type interjectionProvider struct {
+	loop     *Loop
+	calls    int
+	requests [][]llm.Message
+}
+
+func (p *interjectionProvider) Name() string { return "interjection" }
+
+func (p *interjectionProvider) Complete(_ context.Context, msgs []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	p.calls++
+	p.requests = append(p.requests, append([]llm.Message(nil), msgs...))
+	if p.calls == 1 {
+		if !p.loop.QueueInterjection("doprecyzowanie w trakcie") {
+			return nil, errors.New("failed to queue test interjection")
+		}
+	}
+	ch := make(chan llm.Delta, 2)
+	ch <- llm.Delta{Role: llm.RoleAssistant, Content: "answer"}
+	ch <- llm.Delta{FinishReason: "stop"}
+	close(ch)
+	return ch, nil
+}
+
 func (p *navigatorProvider) Name() string         { return p.name }
 func (p *navigatorProvider) SupportsVision() bool { return true }
 func (p *navigatorProvider) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
@@ -318,6 +341,33 @@ func TestLoop_TextOnlyRun_EmitsMessageAndDone(t *testing.T) {
 	}
 	if done.Usage.Total != 7 {
 		t.Fatalf("usage.Total = %d, want 7", done.Usage.Total)
+	}
+}
+
+func TestLoop_InterjectionContinuesRunAtSafeBoundary(t *testing.T) {
+	p := &interjectionProvider{}
+	l := makeLoop(t, p, tools.NewRegistry(), "")
+	p.loop = l
+	ch, err := l.Run(context.Background(), "pierwsza wiadomość")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	drainEvents(t, ch)
+	if p.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", p.calls)
+	}
+	if len(p.requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(p.requests))
+	}
+	found := false
+	for _, msg := range p.requests[1] {
+		if msg.Role == llm.RoleUser && msg.Content == "doprecyzowanie w trakcie" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("second request does not contain queued interjection: %#v", p.requests[1])
 	}
 }
 

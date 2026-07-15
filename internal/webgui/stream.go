@@ -191,7 +191,7 @@ func (c *messageCoalescer) Flush() {
 // translated event to emit. It blocks until the loop's event channel
 // closes or ctx is cancelled. emit is called from this goroutine; the
 // HTTP handler is responsible for flushing to the client.
-func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit func(wireEvent)) error {
+func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon string, emit func(wireEvent)) error {
 	runStarted := time.Now()
 	askCh := make(chan tools.AskRequest, 3)
 	activeQuestions := []string{}
@@ -241,6 +241,9 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 	loop, err := e.newLoopWithSessionAtUsageInteractive(initial, writer, home, askCh, checkpointTurn, telemetry)
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
+	}
+	if strings.TrimSpace(userAddon) != "" {
+		loop.SetNextUserAddon(userAddon)
 	}
 	// Worker completions, worker-backend fallback notices and draft-verify
 	// telemetry are emitted through Loop's external sink rather than the main
@@ -363,6 +366,13 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID string, emit f
 			checkpointID := ""
 			if _, ok := ev.(agent.DoneEvent); ok && checkpointTurn != nil {
 				finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				if usageStore != nil {
+					if userSeq, seqErr := usageStore.LatestMessageSeq(finishCtx, sid, string(llm.RoleUser)); seqErr == nil {
+						checkpointTurn.SetUserSeq(userSeq)
+					} else {
+						log.Printf("checkpoint user sequence: %v", seqErr)
+					}
+				}
 				record, finishErr := checkpointTurn.Complete(finishCtx)
 				cancel()
 				if finishErr != nil {

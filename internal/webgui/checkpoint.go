@@ -22,6 +22,89 @@ type checkpointView struct {
 	Conflicts []string           `json:"conflicts,omitempty"`
 }
 
+type checkpointRewindView struct {
+	Available   bool     `json:"available"`
+	Checkpoints int      `json:"checkpoints"`
+	Files       []string `json:"files,omitempty"`
+	Conflicts   []string `json:"conflicts,omitempty"`
+}
+
+func (s *Server) handleCheckpointRewind(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.handleCheckpointRewindRedo(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session"))
+	fromSeq := queryInt(r, "from_seq", 0)
+	if sessionID == "" || fromSeq <= 0 {
+		http.Error(w, "session and positive from_seq are required", http.StatusBadRequest)
+		return
+	}
+	if !s.checkpointSessionAllowed(sessionID) {
+		http.Error(w, "session not found in active project", http.StatusNotFound)
+		return
+	}
+	manager, err := s.eng.checkpointManager(s.eng.Home())
+	if err != nil {
+		if errors.Is(err, checkpoint.ErrUnavailable) {
+			writeJSON(w, checkpointRewindView{})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	preview := manager.PreviewFrom(sessionID, fromSeq)
+	writeJSON(w, checkpointRewindView{
+		Available:   len(preview.Records) > 0,
+		Checkpoints: len(preview.Records),
+		Files:       preview.Files,
+	})
+}
+
+func (s *Server) handleCheckpointRewindRedo(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SessionID     string   `json:"session_id"`
+		BranchID      string   `json:"branch_session_id"`
+		CheckpointIDs []string `json:"checkpoint_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body.SessionID = strings.TrimSpace(body.SessionID)
+	body.BranchID = strings.TrimSpace(body.BranchID)
+	if !s.checkpointSessionAllowed(body.SessionID) || !s.checkpointSessionAllowed(body.BranchID) {
+		http.Error(w, "session not found in active project", http.StatusNotFound)
+		return
+	}
+	manager, err := s.eng.checkpointManager(s.eng.Home())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	result, err := manager.RedoIDs(ctx, body.SessionID, body.CheckpointIDs)
+	cancel()
+	if err != nil {
+		writeJSONStatus(w, http.StatusConflict, checkpointRewindView{
+			Available:   true,
+			Checkpoints: len(result.Records),
+			Files:       result.Files,
+			Conflicts:   result.Conflicts,
+		})
+		return
+	}
+	content := fmt.Sprintf("[checkpoint] User restored the previously rewound implementation (%d checkpoints, %d files). The workspace now contains the agent's former file state.", len(result.Records), len(result.Files))
+	if store, storeErr := s.eng.sessionStore(); storeErr == nil {
+		_ = session.NewWriter(store, body.BranchID).AppendMessage(context.Background(), llm.Message{Role: llm.RoleSystem, Content: content})
+	}
+	writeJSON(w, checkpointRewindView{Checkpoints: len(result.Records), Files: result.Files})
+}
+
 // handleCheckpointLesson records optional feedback after an undo. Session
 // lessons guide only this branch; global lessons become durable preferences.
 // No model call is made merely to store the feedback.

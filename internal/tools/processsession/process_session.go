@@ -239,7 +239,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		item.streams.Add(1)
 		go func() { defer item.streams.Done(); _, _ = io.Copy(item.stdout, terminal) }()
 	} else {
-		cmd := childproc.HideWindow(exec.CommandContext(procCtx, p.Command[0], p.Command[1:]...))
+		cmd := exec.CommandContext(procCtx, p.Command[0], p.Command[1:]...)
 		cmd.Dir = workdir
 		cmd.Env = append(os.Environ(), env...)
 		stdin, pipeErr := cmd.StdinPipe()
@@ -260,7 +260,8 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			m.mu.Unlock()
 			return snapshot{}, fmt.Errorf("process_session: stderr: %w", pipeErr)
 		}
-		if startErr := cmd.Start(); startErr != nil {
+		scope, startErr := childproc.Start(cmd)
+		if startErr != nil {
 			cancel()
 			m.mu.Unlock()
 			return snapshot{}, fmt.Errorf("process_session: start: %w", startErr)
@@ -268,6 +269,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		item.stdin = stdin
 		item.waitFn = func() (int, error) {
 			waitErr := cmd.Wait()
+			_ = scope.Close()
 			if cmd.ProcessState != nil {
 				return cmd.ProcessState.ExitCode(), waitErr
 			}
@@ -277,7 +279,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			if cmd.Process == nil {
 				return nil
 			}
-			return cmd.Process.Kill()
+			return scope.Kill(cmd)
 		}
 		item.streams.Add(2)
 		go func() { defer item.streams.Done(); _, _ = io.Copy(item.stdout, stdout) }()

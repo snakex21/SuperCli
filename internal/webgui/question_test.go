@@ -101,7 +101,7 @@ func TestRunStreamPresentsAndResumesAskUser(t *testing.T) {
 	eng.prov = &askingProvider{}
 	eng.mu.Unlock()
 	var sawQuestion, sawResult, sawDone bool
-	err = eng.runStream(context.Background(), "ask me", "", func(ev wireEvent) {
+	err = eng.runStream(context.Background(), "ask me", "", "", func(ev wireEvent) {
 		switch ev.Type {
 		case "question":
 			sawQuestion = ev.Question != nil && ev.Question.AllowCustom

@@ -25,6 +25,7 @@ var ErrUnavailable = errors.New("checkpoint unavailable (git executable is requi
 type Record struct {
 	ID        string    `json:"id"`
 	SessionID string    `json:"session_id"`
+	UserSeq   int       `json:"user_seq,omitempty"`
 	Prompt    string    `json:"prompt,omitempty"`
 	Before    string    `json:"before"`
 	After     string    `json:"after"`
@@ -36,6 +37,15 @@ type Record struct {
 type Result struct {
 	Record    Record   `json:"record"`
 	Files     []string `json:"files"`
+	Conflicts []string `json:"conflicts,omitempty"`
+}
+
+// BatchResult is a newest-to-oldest set of checkpoints reverted together.
+// Records is retained so a caller can roll the operation forward if a later
+// step (for example creating the conversation branch) fails.
+type BatchResult struct {
+	Records   []Record `json:"records,omitempty"`
+	Files     []string `json:"files,omitempty"`
 	Conflicts []string `json:"conflicts,omitempty"`
 }
 
@@ -75,6 +85,7 @@ type Turn struct {
 	mu                        sync.Mutex
 	manager                   *Manager
 	sessionID, prompt, before string
+	userSeq                   int
 	touched                   bool
 }
 
@@ -148,8 +159,36 @@ func (c *Controller) Redo(ctx context.Context) (Result, error) {
 	return c.manager.Redo(ctx, r.ID)
 }
 
+// Preview returns metadata for the next whole-turn undo/redo without touching
+// the workspace. UI layers use it to show the exact file scope before asking
+// for confirmation.
+func (c *Controller) Preview(redo bool) (*Record, error) {
+	r := c.manager.Latest(c.sessionID)
+	if r == nil {
+		return nil, os.ErrNotExist
+	}
+	if redo && !r.Undone {
+		return nil, errors.New("nothing to redo")
+	}
+	if !redo && r.Undone {
+		return nil, errors.New("nothing to undo")
+	}
+	return r, nil
+}
+
 func (m *Manager) NewTurn(sessionID, prompt string) *Turn {
 	return &Turn{manager: m, sessionID: sessionID, prompt: clip(prompt, 160)}
+}
+
+// SetUserSeq associates the checkpoint with the user message that started the
+// turn. It is optional for non-persistent callers, but enables precise GUI
+// rewind of every file-changing turn at and after a selected message.
+func (t *Turn) SetUserSeq(seq int) {
+	t.mu.Lock()
+	if seq > 0 {
+		t.userSeq = seq
+	}
+	t.mu.Unlock()
 }
 
 // Wrap lazily captures the workspace immediately before the first mutating
@@ -210,7 +249,7 @@ func (t *Turn) Complete(ctx context.Context) (*Record, error) {
 	}
 	now := time.Now().UTC()
 	sum := sha256.Sum256([]byte(t.sessionID + t.before + after + now.String()))
-	rec := Record{ID: hex.EncodeToString(sum[:8]), SessionID: t.sessionID, Prompt: t.prompt, Before: t.before, After: after, Files: files, CreatedAt: now}
+	rec := Record{ID: hex.EncodeToString(sum[:8]), SessionID: t.sessionID, UserSeq: t.userSeq, Prompt: t.prompt, Before: t.before, After: after, Files: files, CreatedAt: now}
 	if err := t.manager.append(rec); err != nil {
 		return nil, err
 	}
@@ -314,6 +353,145 @@ func (m *Manager) Latest(sessionID string) *Record {
 		}
 	}
 	return nil
+}
+
+// Clear drops all conversation-linked checkpoints for this workspace. It is
+// used only when the user explicitly deletes every conversation.
+func (m *Manager) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = nil
+	return os.RemoveAll(filepath.Dir(m.repo))
+}
+
+// PreviewFrom reports non-undone checkpoints at or after a user message.
+// Older records without UserSeq are deliberately excluded: guessing by prompt
+// text could restore the wrong files when a prompt was repeated.
+func (m *Manager) PreviewFrom(sessionID string, userSeq int) BatchResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := BatchResult{}
+	files := map[string]struct{}{}
+	for i := len(m.records) - 1; i >= 0; i-- {
+		r := m.records[i]
+		if r.SessionID != sessionID || r.UserSeq < userSeq || r.UserSeq == 0 || r.Undone {
+			continue
+		}
+		result.Records = append(result.Records, r)
+		for _, file := range r.Files {
+			files[file] = struct{}{}
+		}
+	}
+	for file := range files {
+		result.Files = append(result.Files, file)
+	}
+	sort.Strings(result.Files)
+	return result
+}
+
+// UndoFrom restores every recorded turn at and after userSeq, newest first.
+// If any restore conflicts, already-applied restores are redone so callers do
+// not observe a half-rewound workspace.
+func (m *Manager) UndoFrom(ctx context.Context, sessionID string, userSeq int) (BatchResult, error) {
+	preview := m.PreviewFrom(sessionID, userSeq)
+	applied := BatchResult{Files: preview.Files}
+	for _, record := range preview.Records {
+		result, err := m.Undo(ctx, record.ID)
+		if err != nil {
+			applied.Conflicts = append(applied.Conflicts, result.Conflicts...)
+			rollbackErr := m.RedoBatch(ctx, applied)
+			if rollbackErr != nil {
+				return applied, fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+			}
+			return applied, err
+		}
+		applied.Records = append(applied.Records, result.Record)
+	}
+	return applied, nil
+}
+
+// RedoBatch reverses UndoFrom. Records are redone oldest first so consecutive
+// snapshots of the same file are applied in chronological order.
+func (m *Manager) RedoBatch(ctx context.Context, batch BatchResult) error {
+	_, err := m.redoBatch(ctx, batch)
+	return err
+}
+
+// RedoIDs restores one exact UndoFrom batch. IDs must be supplied in the
+// newest-to-oldest order returned by UndoFrom; keeping the receipt explicit
+// prevents an older, unrelated undone checkpoint from being restored.
+func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (BatchResult, error) {
+	m.mu.Lock()
+	batch := BatchResult{}
+	files := map[string]struct{}{}
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			m.mu.Unlock()
+			return BatchResult{}, errors.New("empty checkpoint id")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			m.mu.Unlock()
+			return BatchResult{}, fmt.Errorf("duplicate checkpoint %q", id)
+		}
+		seen[id] = struct{}{}
+		idx := -1
+		for i := range m.records {
+			if m.records[i].ID == id {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 || m.records[idx].SessionID != sessionID {
+			m.mu.Unlock()
+			return BatchResult{}, fmt.Errorf("checkpoint %q does not belong to session", id)
+		}
+		if !m.records[idx].Undone {
+			m.mu.Unlock()
+			return BatchResult{}, fmt.Errorf("checkpoint %q is not undone", id)
+		}
+		record := m.records[idx]
+		batch.Records = append(batch.Records, record)
+		for _, file := range record.Files {
+			files[file] = struct{}{}
+		}
+	}
+	m.mu.Unlock()
+	if len(batch.Records) == 0 {
+		return BatchResult{}, errors.New("no checkpoints to restore")
+	}
+	for file := range files {
+		batch.Files = append(batch.Files, file)
+	}
+	sort.SliceStable(batch.Records, func(i, j int) bool {
+		return batch.Records[i].CreatedAt.After(batch.Records[j].CreatedAt)
+	})
+	sort.Strings(batch.Files)
+	return m.redoBatch(ctx, batch)
+}
+
+func (m *Manager) redoBatch(ctx context.Context, batch BatchResult) (BatchResult, error) {
+	applied := make([]Record, 0, len(batch.Records))
+	for i := len(batch.Records) - 1; i >= 0; i-- {
+		result, err := m.Redo(ctx, batch.Records[i].ID)
+		if err == nil {
+			applied = append(applied, result.Record)
+			continue
+		}
+		batch.Conflicts = append(batch.Conflicts, result.Conflicts...)
+		var rollbackErr error
+		for j := len(applied) - 1; j >= 0; j-- {
+			if _, undoErr := m.Undo(ctx, applied[j].ID); undoErr != nil {
+				rollbackErr = errors.Join(rollbackErr, undoErr)
+			}
+		}
+		if rollbackErr != nil {
+			return batch, errors.Join(err, fmt.Errorf("redo rollback failed: %w", rollbackErr))
+		}
+		return batch, err
+	}
+	return batch, nil
 }
 
 func (m *Manager) Undo(ctx context.Context, id string) (Result, error) {

@@ -41,7 +41,16 @@ benefits from it most.
 off-chat. Live-confirmed on qwen3.5-9b (worker does real multi-tool work,
 report returns, commit 0009f8f).
 
-## Orchestrator mode (`orchestrator`, default OFF)
+## Delegation policy (`orchestrator`, default AUTO)
+
+The setting has three distinct states:
+
+- unset / `auto`: the normal coordinator keeps its full tools and delegates
+  only when useful;
+- `true` / `on`: hard orchestration restricts the parent to delegation and
+  read-only lookup tools;
+- `false` / `off`: worker tools are physically absent, so delegation cannot
+  occur.
 
 **What.** The HARD delegation switch. The main loop's registry is
 physically restricted to delegation + read-only lookup
@@ -61,13 +70,12 @@ per turn dropped ~41%, and the model delegated spontaneously.
 
 **Why new-session only.** Swapping the tool list mid-session would change
 the serialized `tools` block at the front of the prompt and break the KV
-prefix. `/orchestrator on|off` persists to config.toml and takes effect
+prefix. `/orchestrator auto|on|off` persists to config.toml and takes effect
 on the next launch.
 
-**When to enable.** Long working sessions where the chat is the control
-plane and the work is many delegable chunks. Leave OFF for quick
-interactive editing — the defaults contract deliberately keeps it OFF
-(hard delegation changes how the main loop works; not a pure win).
+**When to enable.** Use ON for long sessions where the chat is the control
+plane and the work has many delegable chunks. AUTO is the general-purpose
+default. Use OFF only when no background/child worker may be created.
 
 ## Model-per-task (`task_model`, default empty)
 

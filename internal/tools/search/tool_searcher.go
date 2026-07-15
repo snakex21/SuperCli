@@ -41,9 +41,9 @@ func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 func (s *ToolSearcher) Spec() Tool {
 	return Tool{
 		Name: "tool_search",
-		Description: "Find a tool by name/description. The result includes its " +
-			"full schema so you can call it the same turn. Use whenever you " +
-			"are unsure a tool exists or what its arguments are.",
+		Description: "Find a tool by capability (including live web search). " +
+			"Returns its full schema for immediate use. Call when a needed tool " +
+			"is absent or its arguments are unknown.",
 		Schema: `{"type":"object","properties":{
 "query":{"type":"string","description":"Natural-language search, e.g. 'find files by name'"},
 "limit":{"type":"integer","default":3,"maximum":8}
@@ -169,6 +169,11 @@ func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
 	}
 	var ranked []scored
 	for _, name := range s.Registry.Names() {
+		// Returning the discovery tool itself wastes one of the deliberately
+		// small result slots and can hide the capability the model asked for.
+		if name == "tool_search" {
+			continue
+		}
 		t, ok := s.Registry.Get(name)
 		if !ok {
 			continue
@@ -240,6 +245,11 @@ func (s *ToolSearcher) RebuildIndex() error {
 	tools := s.Registry.Names()
 	indexed := make([]IndexedTool, 0, len(tools))
 	for _, name := range tools {
+		// tool_search already carries its complete schema in every route. It is
+		// a gateway, never a useful answer to its own search query.
+		if name == "tool_search" {
+			continue
+		}
 		t, ok := s.Registry.Get(name)
 		if !ok {
 			continue

@@ -17,11 +17,38 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 
 | knob | default | touch when |
 |---|---|---|
+| `language` | detected once from the OS (`en` fallback) | switch the desktop app and TUI together between `en` and `pl` |
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
 | `reasoning_effort` | provider default | steering cloud reasoning models; `/reasoning` |
 | `max_steps` | built-in | runaway loops in exotic setups |
 | `context_window` | 0 = auto (provider metadata > learned > 16384) | the provider lies about its window |
+| `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
+| `fallback_cooldown_seconds` | 0 = 30 | a remote/local host flaps and should be retried sooner or later |
+
+`fallback_models` is ordered and safe-before-output only. SuperCli tries the
+selected model first, skips a backend temporarily after an early connection or
+stream error, and may try the next configured entry only if no content or tool
+call reached the conversation. Once a response starts, an error is returned
+normally rather than risking duplicated output. With the default empty list no
+fallback provider is constructed and no paid backend can be called implicitly.
+
+```toml
+fallback_models = ["cloud/gpt-5-mini", "cloud/gpt-5"]
+fallback_cooldown_seconds = 30
+
+[[providers]]
+name = "cloud"
+type = "openai"
+base_url = "https://api.example.com/v1"
+api_key = "..."
+```
+
+After a successful provider scan, SuperCli stores only the returned model IDs
+as `cached_models` inside that provider entry. This tiny portable inventory
+keeps LM Studio and remote llama.cpp models visible when their server is
+offline; the next successful scan refreshes it. It does not trigger a model
+call or add anything to the agent prompt.
 
 ## Cache / prompt shape (see architecture.md, performance.md)
 
@@ -45,7 +72,7 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 
 | knob | default | touch when |
 |---|---|---|
-| `orchestrator` | unset = **OFF** | opt-in working mode: long sessions of delegable work; new-session only |
+| `orchestrator` | unset = **AUTO** | unset: delegate when useful; `true`: always delegate substantial work; `false`: never expose worker tools; new-session only |
 | `task_model` | empty = workers inherit coordinator | you have a second (smaller/cheaper) host or model for workers |
 | `task_max_steps` / `task_max_tokens` | 0 = spec-or-10 / no cap | runaway or expensive workers |
 | `task_parallel` | unset = auto (cloud parallel, local sequential) | self-hosted server behind a public address; forcing parallel on one local GPU warns (slot serialization + KV thrash) |

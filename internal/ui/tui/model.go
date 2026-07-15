@@ -51,13 +51,15 @@ const (
 // Model is the root Bubble Tea model. F25 adds Palette, Marker,
 // structured chat, CancelState, and ScrollConfig.
 type Model struct {
-	home    string
-	dataDir string
+	home      string
+	dataDir   string
+	sessionID string
 
 	// version and tierName feed the slim header bar
 	// ("✻ SuperCli 0.6.0 · model · tier").
 	version  string
 	tierName string
+	language string
 	agent    agent.Agent
 	llm      llm.Provider
 
@@ -133,8 +135,9 @@ type Model struct {
 
 	// onRunStart is invoked synchronously when the user submits
 	// a prompt, before the run begins. See Options.OnRunStart.
-	onRunStart     func()
-	checkpointUndo func(context.Context, bool) (string, error)
+	onRunStart        func()
+	checkpointUndo    func(context.Context, bool) (string, error)
+	checkpointPreview func(redo bool) (CheckpointPreview, error)
 
 	// statusOverride holds a temporary status message (e.g.
 	// "cancelled") that replaces the normal status bar for
@@ -164,6 +167,12 @@ type Model struct {
 	// lastToolName stores the name of the most recent tool
 	// call. Used to label the tool result in the chat.
 	lastToolName string
+	toolActivity toolActivity
+
+	// runtimeHUD is refreshed once after a completed turn. It is deliberately
+	// not recomputed from the full conversation in View(), keeping redraws and
+	// token streaming free of context-estimation work.
+	runtimeHUD string
 
 	// toolExpanded: when true, tool results are shown in
 	// full (max 50 lines). Toggled with 'E' key.
@@ -247,11 +256,17 @@ type pendingAsk struct {
 // Options bundles optional dependencies so the constructor signature
 // stays stable as the real loop grows.
 type Options struct {
-	Home     string
-	DataDir  string
-	Agent    agent.Agent
-	LLM      llm.Provider
-	Commands map[string]SlashHandler
+	Home    string
+	DataDir string
+	// Language is the shared UI language (en/pl), detected and persisted by
+	// the executable before constructing the TUI.
+	Language string
+	// SessionID identifies the live conversation so the interactive
+	// session picker can omit it from the "continue session" list.
+	SessionID string
+	Agent     agent.Agent
+	LLM       llm.Provider
+	Commands  map[string]SlashHandler
 	// StatusFn, if non-nil, is called from View() to
 	// render the footer status line (typically
 	// "credits: 1.2k/10k (12%)"). The TUI does not own
@@ -305,11 +320,39 @@ type Options struct {
 	// CheckpointUndo performs a conflict-safe whole-turn undo/redo. The bool
 	// is true for redo. When set it supersedes the legacy operation tracker.
 	CheckpointUndo func(context.Context, bool) (string, error)
+	// CheckpointPreview reports the files affected by undo/redo without changing
+	// them. When present, the action centre asks for confirmation first.
+	CheckpointPreview func(redo bool) (CheckpointPreview, error)
 	// Version is shown in the header bar (e.g. "0.6.0").
 	Version string
 	// Tier is the active model tier shown in the header
 	// (e.g. "big", "small"). Optional.
 	Tier string
+}
+
+type toolActivity struct {
+	calls         int
+	errors        int
+	repeats       int
+	lastSignature string
+	byName        map[string]int
+}
+
+func (a *toolActivity) reset() {
+	*a = toolActivity{byName: make(map[string]int)}
+}
+
+func (a *toolActivity) call(name, args string) {
+	if a.byName == nil {
+		a.byName = make(map[string]int)
+	}
+	a.calls++
+	a.byName[name]++
+	sig := name + "\x00" + strings.TrimSpace(args)
+	if sig == a.lastSignature {
+		a.repeats++
+	}
+	a.lastSignature = sig
 }
 
 // ModelSwapper is implemented by agent.Loop for /model hot-swap.
@@ -329,7 +372,9 @@ type ModelSwapFunc func(modelID, provider string) (llm.Provider, error)
 
 // New builds the root model.
 func New(opts Options) Model {
+	opts.Language = normalizeLanguage(opts.Language)
 	ti := newInputArea()
+	ti.Placeholder = textFor(opts.Language, "Message SuperCli · Tab opens actions", "Napisz do SuperCli · Tab otwiera działania")
 	ti.Focus()
 
 	sp := spinner.New()
@@ -342,7 +387,7 @@ func New(opts Options) Model {
 	if opts.NoColor {
 		p = NoColorPalette()
 	}
-	mkr := NewMarker(p)
+	mkr := NewMarker(p, opts.Language)
 	sp.Style = p.Header // accent-colored spinner animation
 	ti.FocusedStyle.Prompt = p.InputPrompt
 	ti.FocusedStyle.Text = p.InputText
@@ -355,37 +400,40 @@ func New(opts Options) Model {
 	vp.SetContent(welcome(opts, p))
 
 	return Model{
-		home:           opts.Home,
-		dataDir:        opts.DataDir,
-		version:        opts.Version,
-		tierName:       opts.Tier,
-		agent:          opts.Agent,
-		llm:            opts.LLM,
-		commands:       opts.Commands,
-		statusFn:       opts.StatusFn,
-		palette:        p,
-		marker:         mkr,
-		extCh:          opts.ExtCh,
-		viewport:       vp,
-		input:          ti,
-		spinner:        sp,
-		chat:           newChat(80),
-		cancel:         NewCancelState(),
-		scroll:         ScrollConfig{},
-		shellRunner:    opts.ShellRunner,
-		tracker:        opts.Tracker,
-		modelSwapper:   opts.ModelSwapper,
-		modelLister:    opts.ModelLister,
-		modelSwapFn:    opts.ModelSwapFn,
-		sessionStore:   opts.SessionStore,
-		statsRecorder:  opts.StatsRecorder,
-		providerMgr:    opts.ProviderMgr,
-		caps:           opts.CapabilityRegistry,
-		goalSvc:        opts.GoalService,
-		toolRegistry:   opts.ToolRegistry,
-		onRunEnd:       opts.OnRunEnd,
-		onRunStart:     opts.OnRunStart,
-		checkpointUndo: opts.CheckpointUndo,
+		home:              opts.Home,
+		dataDir:           opts.DataDir,
+		sessionID:         opts.SessionID,
+		version:           opts.Version,
+		tierName:          opts.Tier,
+		language:          opts.Language,
+		agent:             opts.Agent,
+		llm:               opts.LLM,
+		commands:          opts.Commands,
+		statusFn:          opts.StatusFn,
+		palette:           p,
+		marker:            mkr,
+		extCh:             opts.ExtCh,
+		viewport:          vp,
+		input:             ti,
+		spinner:           sp,
+		chat:              newChat(80, opts.Language),
+		cancel:            NewCancelState(),
+		scroll:            ScrollConfig{},
+		shellRunner:       opts.ShellRunner,
+		tracker:           opts.Tracker,
+		modelSwapper:      opts.ModelSwapper,
+		modelLister:       opts.ModelLister,
+		modelSwapFn:       opts.ModelSwapFn,
+		sessionStore:      opts.SessionStore,
+		statsRecorder:     opts.StatsRecorder,
+		providerMgr:       opts.ProviderMgr,
+		caps:              opts.CapabilityRegistry,
+		goalSvc:           opts.GoalService,
+		toolRegistry:      opts.ToolRegistry,
+		onRunEnd:          opts.OnRunEnd,
+		onRunStart:        opts.OnRunStart,
+		checkpointUndo:    opts.CheckpointUndo,
+		checkpointPreview: opts.CheckpointPreview,
 	}
 }
 
@@ -400,8 +448,10 @@ const maxInputLines = 5
 // from Enter on Windows terminals).
 func newInputArea() textarea.Model {
 	ti := textarea.New()
-	ti.Placeholder = "Message SuperCli, or type /help"
-	ti.Prompt = "❯ "
+	ti.Placeholder = "Message SuperCli · Tab opens actions"
+	// Keep the primary prompt ASCII-safe. A surprising number of Windows
+	// terminal/font combinations render the former ❯ glyph as an empty box.
+	ti.Prompt = "> "
 	ti.CharLimit = 0
 	ti.ShowLineNumbers = false
 	ti.MaxHeight = maxInputLines
@@ -520,6 +570,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = m.viewportHeight()
 		m.chat.width = msg.Width
 		m.input.SetWidth(msg.Width)
+		// Keep the empty-state welcome responsive. Once a conversation has
+		// started refreshTranscript owns the viewport and resize must never
+		// replace the chat with the welcome screen.
+		if m.transcript.String() == "" && m.current == "" {
+			m.viewport.SetContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -562,7 +618,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if HandleScroll(&m.viewport, msg, m.scroll) {
 				return m, nil
 			}
-			return m, nil
+			return m.handleBusyInput(msg)
 		}
 		return m.handleKey(msg)
 
@@ -587,6 +643,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.current = ""
 		m.responseLen = 0
+		m.toolActivity.reset()
 		m.eventCh = msg.ch
 		return m, tea.Batch(waitForEvent(msg.ch), streamFlushCmd())
 
@@ -608,7 +665,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go m.onRunEnd()
 		}
 		m.refreshTranscript()
-		m.input.Reset()
+		// Preserve a draft typed while the final provider delta was landing.
+		// Submitted interjections reset themselves; an unsent draft must not
+		// disappear merely because the run ended first.
 		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
@@ -620,12 +679,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.providerStatuses == nil {
 			m.providerStatuses = make(map[string]providerStatus)
 		}
-		m.providerStatuses[msg.name] = providerStatus{checked: true, online: msg.online, err: msg.err}
+		m.providerStatuses[msg.name] = providerStatus{checked: true, online: msg.online, err: msg.err, latency: msg.latency, checkedAt: msg.checkedAt}
 		return m, nil
 
 	case providerSavedMsg:
 		if msg.err != nil {
-			m.appendLine(m.marker.Error(fmt.Errorf("provider %s: %w", msg.name, msg.err)))
+			formAt := 0
+			if len(msg.form) > 3 {
+				formAt = 3 // credentials are the most likely verification failure
+			} else if len(msg.form) > 0 {
+				formAt = len(msg.form) - 1
+			}
+			formErr := "Verification failed. "
+			formEditName := msg.editName
+			switch {
+			case msg.wasNew && msg.rolledBack:
+				formErr += "Provider was not added. "
+				formEditName = ""
+			case msg.wasNew && msg.rollbackErr != nil:
+				formErr += "Automatic rollback also failed; the provider may still be saved. "
+				formErr += "Rollback: " + compactProviderError(msg.rollbackErr) + ". "
+				formEditName = msg.name
+			default:
+				formErr += "The edited provider remains saved; correct its settings and try again. "
+			}
+			formErr += compactProviderError(msg.err)
+			m.mode = modeMenu
+			m.menu = interactiveMenu{
+				kind:     menuProviderForm,
+				form:     append([]string(nil), msg.form...),
+				formAt:   formAt,
+				formErr:  formErr,
+				editName: formEditName,
+			}
+			m.input.Blur()
+			if m.providerStatuses != nil && msg.rolledBack {
+				delete(m.providerStatuses, msg.name)
+			}
+			return m, nil
 		} else {
 			m.appendLine(m.palette.InputHint.Render("provider " + msg.name + ": " + msg.body))
 		}
@@ -758,6 +849,45 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	if m.providerMgr != nil {
 		_ = m.providerMgr.SaveActiveConfig(modelID, provider)
 	}
+}
+
+type interjectionQueuer interface {
+	QueueInterjection(string) bool
+}
+
+// handleBusyInput keeps the composer usable while the model or a tool is
+// working. Enter queues a normal user message for the next safe loop boundary;
+// all other text editing stays entirely local to Bubble Tea.
+func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "enter" {
+		text := strings.TrimSpace(m.input.Value())
+		if text == "" {
+			return m, nil
+		}
+		q, ok := m.agent.(interjectionQueuer)
+		if !ok || !q.QueueInterjection(text) {
+			m.statusOverride = m.tr("message queue is full", "kolejka wiadomo\u015bci jest pe\u0142na")
+			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusOverrideClearMsg{} })
+		}
+		m.chat.addUser("> " + text)
+		m.appendLineToTranscript("> " + text)
+		m.appendLine(m.palette.InputHint.Render(m.tr("queued for the next safe step", "dodano do najbli\u017cszego bezpiecznego kroku")))
+		m.input.Reset()
+		m.syncInputHeight()
+		m.refreshTranscript()
+		return m, nil
+	}
+	if msg.String() == "ctrl+v" {
+		if text, err := clipboard.ReadAll(); err == nil && text != "" {
+			m.input.InsertString(normalizePastedText(text))
+			m.syncInputHeight()
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	m.syncInputHeight()
+	return m, cmd
 }
 
 // handleCtrlC implements the F25 cancel behavior:
@@ -895,6 +1025,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.appendLineToTranscript("> " + text)
 		m.busy = true
 		m.current = ""
+		// Replace the welcome/previous frame immediately. Slow local
+		// backends may take seconds before runStartMsg or the first token.
+		m.refreshTranscript()
 		home, planMode, ag := m.home, m.planMode, m.agent
 		return m, func() tea.Msg {
 			// F26.1: @file mentions — parse @path references,
@@ -931,6 +1064,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+r":
 		return m.openReasoningMenu()
+	case "ctrl+f":
+		return m.openTranscriptSearchMenu()
+	case "ctrl+k":
+		return m.openActionsMenu()
+	case "tab":
+		// Empty-input Tab is the discoverable, GUI-like entry point to
+		// common actions. A non-empty input keeps the textarea's normal
+		// Tab behaviour; slash/@ autocomplete owns Tab while it is open.
+		if strings.TrimSpace(m.input.Value()) == "" {
+			return m.openActionsMenu()
+		}
 	case "ctrl+p":
 		// Open the projects menu (per-project memory management).
 		// Ctrl+P mirrors the "projects" mnemonic and avoids
@@ -1167,13 +1311,13 @@ func (m *Model) updateAutocompleteState() {
 	case autocompSlash:
 		m.autocomp = autocomplete{
 			kind:  autocompSlash,
-			items: buildSlashItems(m.commands),
+			items: buildSlashItems(m.commands, m.language),
 			query: query,
 		}
 	case autocompMention:
 		m.autocomp = autocomplete{
 			kind:  autocompMention,
-			items: buildMentionItems(resolveAutocompleteHome(m.home)),
+			items: buildMentionItems(resolveAutocompleteHome(m.home), m.language),
 			query: query,
 		}
 	}
@@ -1332,11 +1476,13 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		return m, m.waitForNextEvent()
 	case agent.ToolCallEvent:
 		m.lastToolName = e.Name
+		m.toolActivity.call(e.Name, e.Args)
 		line := m.marker.ToolCall(e.Name, e.Args)
 		m.appendLine(line)
 		return m, m.waitForNextEvent()
 	case agent.ToolResultEvent:
 		if e.Err != nil {
+			m.toolActivity.errors++
 			m.appendLine(m.marker.ToolResultErr(m.lastToolName, e.Err.Error()))
 		} else {
 			m.appendLine(m.marker.ToolResultFull(m.lastToolName, e.Output, m.toolExpanded))
@@ -1362,11 +1508,18 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 				in = 1
 			}
 		}
+		if m.toolActivity.calls > 0 {
+			m.chat.addSystem(m.marker.ToolActivity(m.toolActivity.calls, m.toolActivity.errors, m.toolActivity.repeats, m.toolActivity.byName))
+		}
 		m.chat.addSystem(m.marker.DoneEst(in, out, estimated))
+		m.refreshRuntimeHUD()
 		m.appendLineToTranscript(fmt.Sprintf("(done · %d in / %d out)", in, out))
 		return m, func() tea.Msg { return runEndMsg{} }
 	case agent.ErrorEvent:
 		m.flushCurrent()
+		if m.toolActivity.calls > 0 {
+			m.chat.addSystem(m.marker.ToolActivity(m.toolActivity.calls, m.toolActivity.errors, m.toolActivity.repeats, m.toolActivity.byName))
+		}
 		err := e.Err
 		// A4: a retired/unknown model returns a raw provider
 		// error. Surface it as an actionable message instead —
@@ -1433,7 +1586,11 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 func (m *Model) refreshTranscript() {
 	// Sync the chat's streaming text with the model's current.
 	m.chat.current = m.current
-	content := m.chat.renderWithSpinner(m.palette, m.spinner.View())
+	spinnerView := ""
+	if m.busy && m.current != "" {
+		spinnerView = m.spinner.View()
+	}
+	content := m.chat.renderWithSpinner(m.palette, spinnerView)
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
@@ -1477,7 +1634,7 @@ func (m Model) View() string {
 		return "SuperCli closed.\n"
 	}
 	if m.mode == modeAsking && m.pendingAsk != nil {
-		return renderAskView(m.pendingAsk, m.width, m.height)
+		return renderAskView(m.pendingAsk, m.width, m.height, m.language)
 	}
 	if m.mode == modeDoctor && m.doctorReport != nil {
 		return m.renderDoctorView()
@@ -1504,23 +1661,26 @@ func (m Model) View() string {
 	if m.statusOverride != "" {
 		fmt.Fprintf(&b, "%s\n", m.palette.Error.Render(m.statusOverride))
 	} else if m.busy {
-		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render("working · Ctrl+C interrupt · Esc cancel"))
+		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render(m.tr("working · Ctrl+C interrupt · Esc cancel", "praca · Ctrl+C przerwij · Esc anuluj")))
 	}
 	if m.statusFn != nil {
 		if line := m.statusFn(); line != "" {
 			fmt.Fprintf(&b, "%s\n", line)
 		}
 	}
+	if m.runtimeHUD != "" {
+		fmt.Fprintf(&b, "%s\n", m.palette.InputHint.Render(truncateVisible(m.runtimeHUD, m.width)))
+	}
 
 	// 5. Autocomplete popup (above input line)
-	acView := renderAutocomplete(&m.autocomp, m.width, m.palette)
+	acView := renderAutocomplete(&m.autocomp, m.width, m.palette, m.language)
 	if acView != "" {
 		b.WriteString(acView)
 		b.WriteString("\n")
 	}
 
-	// 6. Input line + persistent key hints
-	b.WriteString(m.input.View())
+	// 6. Input box + persistent key hints
+	b.WriteString(m.renderInputBox())
 	b.WriteString("\n")
 	b.WriteString(m.renderHintLine())
 	return b.String()
@@ -1534,13 +1694,16 @@ func (m Model) renderHeader() string {
 	if width <= 0 {
 		width = 80
 	}
-	mode := "idle"
+	mode := m.tr("● ready", "● gotowy")
 	if m.busy {
-		mode = "working"
+		mode = m.tr("● working", "● pracuje")
 	} else if m.mode == modeAsking {
-		mode = "asking"
+		mode = m.tr("● asking", "● pyta")
 	}
-	model := "no-model"
+	if m.planMode {
+		mode = "PLAN · " + mode
+	}
+	model := m.tr("no-model", "brak modelu")
 	if m.llm != nil {
 		model = m.llm.Name()
 		// Show the active reasoning-effort level next to the
@@ -1553,7 +1716,7 @@ func (m Model) renderHeader() string {
 			model += " (" + eff + ")"
 		}
 	}
-	name := "✻ SuperCli"
+	name := "> SuperCli"
 	if m.version != "" {
 		name += " " + m.version
 	}
@@ -1562,7 +1725,10 @@ func (m Model) renderHeader() string {
 	if m.tierName != "" {
 		left += sep + m.palette.HeaderDim.Render(m.tierName)
 	}
-	right := m.palette.HeaderMode.Render(mode)
+	right := m.palette.Success.Render(mode)
+	if m.busy || m.mode == modeAsking || m.planMode {
+		right = m.palette.HeaderMode.Render(mode)
+	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
@@ -1583,7 +1749,7 @@ func (m Model) renderInputBox() string {
 		style = m.palette.InputBorderFocused
 	}
 	if m.width > 4 {
-		style = style.Width(m.width - 2)
+		style = style.Width(m.width - 4)
 	}
 	return style.Render(m.input.View())
 }
@@ -1597,10 +1763,24 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
-	hints := []string{"Enter send", "Alt+Enter newline", "Ctrl+Y copy reply", "Ctrl+R reasoning menu", "/help commands", "Esc clear", "Ctrl+C interrupt", "PgUp/PgDn scroll", "Shift+T thinking", "Shift+E expand"}
+	hints := []string{
+		m.tr("While working: type + Enter queues", "Podczas pracy: wpisz + Enter dodaje do kolejki"),
+		m.tr("Tab actions", "Tab działania"), m.tr("Enter send", "Enter wyślij"),
+		m.tr("Alt+Enter newline", "Alt+Enter nowa linia"), m.tr("Ctrl+Y copy reply", "Ctrl+Y kopiuj odpowiedź"),
+		m.tr("Ctrl+R reasoning menu", "Ctrl+R poziom myślenia"), m.tr("Esc clear", "Esc wyczyść"),
+		m.tr("Ctrl+C interrupt", "Ctrl+C przerwij"), m.tr("PgUp/PgDn scroll", "PgUp/PgDn przewiń"),
+		m.tr("Shift+T thinking", "Shift+T myślenie"), m.tr("Shift+E expand", "Shift+E rozwiń"),
+		m.tr("/ advanced", "/ zaawansowane"),
+	}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = "Enter send · Alt+Enter newline · Ctrl+R reasoning · /help · Esc clear · Ctrl+C interrupt"
+		line = m.tr("Tab actions · Enter send · Alt+Enter newline · Esc clear · Ctrl+C interrupt · / advanced", "Tab działania · Enter wyślij · Alt+Enter nowa linia · Esc wyczyść · Ctrl+C przerwij · / zaawansowane")
+	}
+	if m.width > 0 && lipgloss.Width(line) > m.width {
+		line = m.tr("Tab actions · Enter send · Esc clear · Ctrl+C stop", "Tab działania · Enter wyślij · Esc wyczyść · Ctrl+C stop")
+	}
+	if m.width > 0 {
+		line = truncateVisible(line, m.width)
 	}
 	return m.palette.InputHint.Render(line)
 }
@@ -1633,14 +1813,82 @@ func (m Model) viewportHeight() int {
 	}
 	if m.statusFn != nil {
 		if s := m.statusFn(); s != "" {
-			reserved += len(strings.Split(s, "\n"))
+			reserved += visualLineCount(s, m.width)
 		}
+	}
+	if m.runtimeHUD != "" {
+		reserved++
 	}
 	h := m.height - reserved
 	if h < 3 {
 		return 3
 	}
 	return h
+}
+
+type contextReporter interface {
+	ContextReport() agent.ContextReport
+}
+
+type turnBreakdownReporter interface {
+	LastTurnBreakdown() (cached, evaluated, generated int, ok bool)
+}
+
+// refreshRuntimeHUD pays the O(history) context estimate once per completed
+// turn, never per frame. The HUD is presentation-only and causes no model call.
+func (m *Model) refreshRuntimeHUD() {
+	reporter, ok := m.agent.(contextReporter)
+	if !ok {
+		return
+	}
+	report := reporter.ContextReport()
+	used := report.EstimatedTokens + report.ToolSchemaTokens + report.CatalogTokens
+	parts := make([]string, 0, 3)
+	if report.Window > 0 {
+		pct := used * 100 / report.Window
+		parts = append(parts, fmt.Sprintf("ctx %d%% (%s/%s)", pct, compactTokens(used), compactTokens(report.Window)))
+		parts = append(parts, "compact 80%")
+	}
+	if breakdown, ok := m.agent.(turnBreakdownReporter); ok {
+		cached, evaluated, _, set := breakdown.LastTurnBreakdown()
+		if set && cached+evaluated > 0 {
+			parts = append(parts, fmt.Sprintf("cache %d%%", cached*100/(cached+evaluated)))
+		}
+	}
+	m.runtimeHUD = strings.Join(parts, " · ")
+	m.viewport.Height = m.viewportHeight()
+}
+
+func compactTokens(n int) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fm", float64(n)/1_000_000)
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
+// visualLineCount returns the number of terminal rows occupied by text after
+// wrapping at width. It deliberately uses lipgloss.Width so ANSI styling does
+// not make the height calculation drift from what Bubble Tea renders.
+func visualLineCount(s string, width int) int {
+	if s == "" {
+		return 0
+	}
+	if width <= 0 {
+		return len(strings.Split(s, "\n"))
+	}
+	total := 0
+	for _, line := range strings.Split(s, "\n") {
+		w := lipgloss.Width(line)
+		rows := (w + width - 1) / width
+		if rows < 1 {
+			rows = 1
+		}
+		total += rows
+	}
+	return total
 }
 
 func (m Model) autocompleteHeight() int {
@@ -1666,26 +1914,73 @@ func (m Model) autocompleteHeight() int {
 }
 
 func welcome(opts Options, p Palette) string {
-	model := "not configured"
+	return welcomeAtWidth(opts, p, 80)
+}
+
+func welcomeAtWidth(opts Options, p Palette, width int) string {
+	return welcomeAtSize(opts, p, width, 0)
+}
+
+func welcomeAtSize(opts Options, p Palette, width, height int) string {
+	language := normalizeLanguage(opts.Language)
+	tr := func(en, pl string) string { return textFor(language, en, pl) }
+	model := tr("not configured", "nieskonfigurowany")
 	if opts.LLM != nil {
 		model = opts.LLM.Name()
 	}
-	left := p.Panel.Width(44).Render(
-		p.PanelTitle.Render("✻ SuperCli") + "\n" +
-			p.PanelMuted.Render("portable AI coding agent") + "\n\n" +
-			p.Bold.Render("Welcome back") + "\n" +
-			"Ask for a change, inspect files, or run a plan.\n\n" +
-			p.Dim.Render("model ") + p.StatusValue.Render(model),
-	)
-	right := p.Panel.Width(44).Render(
-		p.PanelTitle.Render("Start here") + "\n\n" +
-			p.HeaderMode.Render("/help") + p.Dim.Render("      command palette") + "\n" +
-			p.HeaderMode.Render("/plan") + p.Dim.Render("      read-only planning") + "\n" +
-			p.HeaderMode.Render("/diff") + p.Dim.Render("      review file changes") + "\n" +
-			p.HeaderMode.Render("/resume") + p.Dim.Render("    continue session") + "\n\n" +
-			p.Dim.Render("Esc clears · Ctrl+C interrupts · Shift+E expands tools"),
-	)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right) + "\n"
+	if width <= 0 {
+		width = 80
+	}
+	// A short terminal needs the chat viewport more than decorative cards.
+	// Keep the same actions visible in a five-line, borderless empty state.
+	if height > 0 && height < 28 {
+		modelWidth := width - lipgloss.Width("model ")
+		if modelWidth < 8 {
+			modelWidth = 8
+		}
+		lines := []string{
+			p.PanelTitle.Render("> SuperCli") + " " + p.PanelMuted.Render(tr("· portable AI coding agent", "· przenośny agent programistyczny AI")),
+			p.Bold.Render(tr("Welcome back", "Witaj ponownie")) + " " + p.Dim.Render(tr("· ask for a change, inspect files, or run a plan", "· zleć zmianę, sprawdź pliki lub uruchom plan")),
+			p.Dim.Render(tr("model ", "model ")) + p.StatusValue.Render(truncateVisible(model, modelWidth)),
+			p.HeaderMode.Render("Tab") + p.Dim.Render(tr(" actions · ", " działania · ")) + p.HeaderMode.Render("@") + p.Dim.Render(tr(" attach file · ", " dołącz plik · ")) + p.HeaderMode.Render("/") + p.Dim.Render(tr(" advanced", " zaawansowane")),
+		}
+		for i := range lines {
+			lines[i] = truncateVisible(lines[i], width)
+		}
+		return strings.Join(lines, "\n") + "\n"
+	}
+	cardWidth := (width - 7) / 2
+	if cardWidth < 32 {
+		cardWidth = 32
+	}
+	leftContent :=
+		p.PanelTitle.Render("> SuperCli") + "\n" +
+			p.PanelMuted.Render(tr("portable AI coding agent", "przenośny agent programistyczny AI")) + "\n\n" +
+			p.Bold.Render(tr("Welcome back", "Witaj ponownie")) + "\n" +
+			tr("Ask for a change, inspect files, or run a plan.", "Zleć zmianę, sprawdź pliki lub uruchom plan.") + "\n\n" +
+			p.Dim.Render("model ") + p.StatusValue.Render(model)
+	rightContent :=
+		p.PanelTitle.Render(tr("Start here", "Zacznij tutaj")) + "\n\n" +
+			p.HeaderMode.Render("Tab") + p.Dim.Render(tr("        action centre", "        centrum działań")) + "\n" +
+			p.HeaderMode.Render("Enter") + p.Dim.Render(tr("      send message", "      wyślij wiadomość")) + "\n" +
+			p.HeaderMode.Render("@") + p.Dim.Render(tr("          attach a project file", "          dołącz plik projektu")) + "\n" +
+			p.HeaderMode.Render("/") + p.Dim.Render(tr("          advanced commands", "          komendy zaawansowane")) + "\n\n" +
+			p.Dim.Render(tr("Esc clears · Ctrl+C interrupts · Shift+E expands tools", "Esc czyści · Ctrl+C przerywa · Shift+E rozwija narzędzia"))
+	left := p.Panel.Width(cardWidth).Render(leftContent)
+	right := p.Panel.Width(cardWidth).Render(rightContent)
+	horizontal := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	if lipgloss.Width(horizontal) <= width {
+		return horizontal + "\n"
+	}
+	// Narrow terminals get the same cards stacked. Subtract the border
+	// width so no line is clipped by the terminal's final column.
+	stackWidth := width - 2
+	if stackWidth < 32 {
+		stackWidth = 32
+	}
+	left = p.Panel.Width(stackWidth).Render(leftContent)
+	right = p.Panel.Width(stackWidth).Render(rightContent)
+	return lipgloss.JoinVertical(lipgloss.Left, left, right) + "\n"
 }
 
 func isQuitCommand(text string) bool {
@@ -1763,6 +2058,11 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	// reset to defaults). No text subcommand form.
 	if cmd.Name == "settings" {
 		return m.openSettingsMenu()
+	}
+	// /models is the complete visibility catalog. /model remains the fast
+	// picker containing only models that are currently enabled.
+	if cmd.Name == "models" && cmd.Args == "" {
+		return m.openModelCatalogMenu()
 	}
 	// Bare /goal opens the interactive task menu; with args it
 	// falls through to the text handler (set/list/show/tasks/done),
@@ -1958,17 +2258,27 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 				return slashResultMsg{Body: m.marker.Diff("/model: listing not available")}
 			}
 		}
-		models := m.modelLister.ListModels()
+		// Use the same enabled inventory as the interactive picker, including
+		// persisted models from a currently-offline local provider.
+		previousMenu := m.menu
+		m.menu.kind = menuModels
+		models := m.filteredModelRows()
+		m.menu = previousMenu
 		target := strings.TrimSpace(cmd.Args)
 		var found *llm.ModelInfo
 		for i := range models {
+			if m.providerMgr != nil {
+				if !m.providerMgr.ModelVisible(models[i].Provider, models[i].ID) || m.providerMgr.IsHiddenFor(models[i].Provider, models[i].ID) {
+					continue
+				}
+			}
 			if models[i].ID == target || strings.Contains(models[i].ID, target) {
 				found = &models[i]
 				break
 			}
 		}
 		if found == nil {
-			errMsg := fmt.Sprintf("/model: %q not found in registry", target)
+			errMsg := fmt.Sprintf("/model: %q is unavailable or disabled; enable it in /models", target)
 			return m, func() tea.Msg {
 				return slashResultMsg{Body: m.marker.Diff(errMsg)}
 			}
@@ -2141,15 +2451,17 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 				}
 				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("price set for %s: $%.2f/$%.2f per 1M tokens", parts[1], inputCost, outputCost))}
 			case "toggle":
-				if len(parts) < 2 {
-					return slashResultMsg{Body: dm.Diff("/providers toggle <model_id>")}
+				ref := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(args), "toggle"))
+				provider, modelID, ok := strings.Cut(ref, "::")
+				if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(modelID) == "" {
+					return slashResultMsg{Body: dm.Diff("/providers toggle <provider>::<model_id>\nUse the interactive /models menu for names containing unusual separators.")}
 				}
-				hidden := mgr.ToggleHidden(parts[1])
+				hidden := mgr.ToggleHiddenFor(strings.TrimSpace(provider), strings.TrimSpace(modelID))
 				state := "visible"
 				if hidden {
 					state = "hidden"
 				}
-				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("%s is now %s", parts[1], state))}
+				return slashResultMsg{Body: dm.Diff(fmt.Sprintf("%s/%s is now %s", provider, modelID, state))}
 			default:
 				// Treat as provider name — show its details.
 				return slashResultMsg{Body: dm.Diff(renderProvidersList(mgr, nil))}
@@ -2220,8 +2532,10 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	handler = SafeWrap(cmd.Name, handler)
-	m.chat.addUser("> /" + cmd.Name + " " + cmd.Args)
-	m.appendLineToTranscript("> /" + cmd.Name + " " + cmd.Args)
+	if !cmd.Quiet {
+		m.chat.addUser("> /" + cmd.Name + " " + cmd.Args)
+		m.appendLineToTranscript("> /" + cmd.Name + " " + cmd.Args)
+	}
 	if localSlashCommands[cmd.Name] {
 		// Fast local commands (no LLM/network work) must not flip
 		// the TUI into the busy/running state: no "running ·

@@ -76,7 +76,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			seen[p.Name+"\x00"+mi.ID] = struct{}{}
-			models = append(models, toModelView(mi, p.Name, active, m.IsHidden(mi.ID)))
+			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, mi.ID)))
 		}
 		if p.Model != "" {
 			if !m.ModelVisible(p.Name, p.Model) {
@@ -91,7 +91,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			}
 			mi.Provider = p.Name
 			seen[p.Name+"\x00"+p.Model] = struct{}{}
-			models = append(models, toModelView(mi, p.Name, active, m.IsHidden(p.Model)))
+			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, p.Model)))
 		}
 	}
 	if active != "" {
@@ -104,7 +104,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			if provider == "" {
 				provider = mi.Provider
 			}
-			models = append(models, toModelView(mi, provider, active, m.IsHidden(active)))
+			models = append(models, toModelView(mi, provider, active, m.IsHiddenFor(provider, active)))
 		}
 	}
 	writeJSON(w, modelsResponse{
@@ -230,14 +230,15 @@ func (s *Server) handleModelToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Model string `json:"model"`
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	m := s.eng.providerManager()
-	hidden := m.ToggleHidden(strings.TrimSpace(req.Model))
+	hidden := m.ToggleHiddenFor(strings.TrimSpace(req.Provider), strings.TrimSpace(req.Model))
 	writeJSON(w, map[string]any{"ok": true, "model": req.Model, "hidden": hidden})
 }
 
@@ -247,8 +248,12 @@ func (s *Server) handleModelVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Models []string `json:"models"`
-		Hidden bool     `json:"hidden"`
+		Models []string `json:"models,omitempty"` // legacy unscoped clients
+		Refs   []struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+		} `json:"refs,omitempty"`
+		Hidden bool `json:"hidden"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	dec := json.NewDecoder(r.Body)
@@ -257,11 +262,18 @@ func (s *Server) handleModelVisibility(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(req.Models) == 0 || len(req.Models) > 10_000 {
-		http.Error(w, "models must contain between 1 and 10000 entries", http.StatusBadRequest)
+	if len(req.Models)+len(req.Refs) == 0 || len(req.Models)+len(req.Refs) > 10_000 {
+		http.Error(w, "models/refs must contain between 1 and 10000 entries", http.StatusBadRequest)
 		return
 	}
-	changed := s.eng.providerManager().SetModelsHidden(req.Models, req.Hidden)
+	refs := make([]providers.ModelRef, 0, len(req.Models)+len(req.Refs))
+	for _, model := range req.Models {
+		refs = append(refs, providers.ModelRef{ID: model})
+	}
+	for _, ref := range req.Refs {
+		refs = append(refs, providers.ModelRef{Provider: ref.Provider, ID: ref.Model})
+	}
+	changed := s.eng.providerManager().SetModelRefsHidden(refs, req.Hidden)
 	writeJSON(w, map[string]any{"ok": true, "hidden": req.Hidden, "changed": changed})
 }
 

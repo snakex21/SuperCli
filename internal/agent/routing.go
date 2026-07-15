@@ -11,7 +11,7 @@ import (
 // activate web_search etc.) and to remember the user (recall). The
 // full tool list is deliberately NOT loaded outside the coordinator
 // route — that is the token-saving point of the router.
-var chatRouteTools = []string{"tool_search", "recall"}
+var chatRouteTools = []string{"web_lookup", "tool_search", "recall"}
 
 // thinCoreTools is the small, always-full-schema core for the thin
 // tool protocol (B2b). On the coordinator route, when thin tools are
@@ -22,6 +22,7 @@ var chatRouteTools = []string{"tool_search", "recall"}
 // be here — it is the gateway to the rest.
 var thinCoreTools = []string{
 	"tool_search",
+	"web_lookup",
 	"invoke_tool",
 	"read_output",
 	"edit_line",
@@ -167,9 +168,9 @@ Modes:
 
 Do not use keyword matching blindly. Read the recent context and infer intent. Prefer coordinator when project-specific evidence is needed. Prefer advisor when general reasoning is enough.`
 
-const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. You have only two tools: recall (look up remembered user facts) and tool_search (find and activate extra tools like web_search when genuinely needed, e.g. to check a current fact). Do not use tools for plain conversation. If the user asks for project/file/code/terminal/document work, say you need agent mode and ask them to repeat or clarify the task.`
+const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. Use web_lookup to verify current facts, recall for remembered user facts, and tool_search only to find other capabilities. Do not use tools for plain conversation. If the user asks for project/file/code/terminal/document work, say you need agent mode and ask them to repeat or clarify the task.`
 
-const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. You have only two tools: recall (remembered user facts) and tool_search (activate extra tools like web_search to verify current versions or facts). If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
+const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. Use web_lookup for current facts, recall for remembered facts, and tool_search for other capabilities. If project-specific evidence is needed, say that agent/coordinator mode should inspect it.`
 
 const implementationVerificationInstruction = `Completion contract: continue past discovery and make the requested change unless blocked. If a tool call fails, correct it or report the blocker. After changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Do not claim completion before a concrete check succeeds; report exactly what passed and what was not verified.`
 

@@ -97,10 +97,11 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		protect = defaultPruneProtectTokens
 	}
 	w := l.window()
-	est := l.EstimateVisibleTokens()
+	est := l.EstimateNextRequestTokens()
 	if float64(est) <= pruneTriggerFrac*float64(w) {
 		return 0
 	}
+	historyEst := l.EstimateVisibleTokens()
 
 	// The current step's results — everything after the last
 	// assistant message that carries tool calls — are untouchable:
@@ -143,7 +144,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		reclaimable += t - marker
 	}
 
-	if reclaimable < int(pruneMinGainFrac*float64(est)) {
+	if reclaimable < int(pruneMinGainFrac*float64(historyEst)) {
 		return 0 // not worth invalidating the KV cache
 	}
 

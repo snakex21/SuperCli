@@ -66,3 +66,22 @@ func TestHandleChat_StreamsEcho(t *testing.T) {
 		t.Errorf("message SSE frames = %d, want 1: %q", got, body)
 	}
 }
+
+func TestHandleChat_RewindFeedbackReachesModelWithoutExtraCall(t *testing.T) {
+	srv := newTestServer(t, false)
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(
+		`{"prompt":"try again","rewound":true,"rewind_reason":"wrong file was changed","rewind_files":true}`))
+	rec := httptest.NewRecorder()
+	srv.handleChat(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "rewind_feedback") || !strings.Contains(body, "wrong file was changed") ||
+		!strings.Contains(body, "restored the affected workspace files") {
+		t.Fatalf("model response did not receive rewind feedback: %s", body)
+	}
+	if got := strings.Count(body, `"type":"done"`); got != 1 {
+		t.Fatalf("done events = %d, want one model run: %s", got, body)
+	}
+}

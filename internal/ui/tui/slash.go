@@ -11,6 +11,9 @@ import (
 type SlashCommand struct {
 	Name string
 	Args string
+	// Quiet suppresses the technical command bubble when a visual menu
+	// invokes an existing handler on the user's behalf.
+	Quiet bool
 }
 
 // ParseSlashCommand returns a non-nil SlashCommand
@@ -73,7 +76,7 @@ func (cr *CommandRegistry) Entries() []SlashEntry {
 	out := make([]SlashEntry, 0, len(cr.entries))
 	// Fixed order for deterministic output.
 	order := []string{"help", "goal", "darwin", "council", "clear",
-		"reflect", "compact", "status", "model", "sandbox", "allow-all", "providers", "quit"}
+		"reflect", "compact", "status", "model", "models", "sandbox", "allow-all", "providers", "quit"}
 	seen := make(map[string]struct{}, len(order))
 	for _, name := range order {
 		if e, ok := cr.entries[name]; ok {
@@ -132,7 +135,7 @@ var helpEssentials = []struct {
 	group string
 	names []string
 }{
-	{"models & providers", []string{"model", "reasoning", "providers", "login"}},
+	{"models & providers", []string{"model", "models", "reasoning", "providers", "login"}},
 	{"session", []string{"clear", "compact", "resume", "export", "cost", "status", "memory"}},
 	{"agents", []string{"plan", "goal", "darwin", "council"}},
 	{"system", []string{"settings", "doctor", "help", "quit"}},
@@ -142,15 +145,27 @@ var helpEssentials = []struct {
 // commands with descriptions, the rest as a compact list, and the
 // key bindings. Use HelpContentAll for the full per-command list.
 func HelpContent() string {
+	return HelpContentFor("en")
+}
+
+// HelpContentFor returns the short help in the selected interface language.
+func HelpContentFor(language string) string {
 	byName := make(map[string]SlashEntry)
 	for _, e := range HelpContentEntries() {
+		if normalizeLanguage(language) == "pl" {
+			e.Desc = polishCommandDescription(e.Name, e.Desc)
+		}
 		byName[e.Name] = e
 	}
 	shown := make(map[string]struct{})
 	var b strings.Builder
-	b.WriteString("Commands:\n")
+	b.WriteString(textFor(language, "Commands:\n", "Polecenia:\n"))
 	for _, g := range helpEssentials {
-		b.WriteString("\n " + g.group + "\n")
+		group := g.group
+		if normalizeLanguage(language) == "pl" {
+			group = map[string]string{"models & providers": "modele i dostawcy", "session": "sesja", "agents": "agenci", "system": "system"}[group]
+		}
+		b.WriteString("\n " + group + "\n")
 		for _, name := range g.names {
 			e, ok := byName[name]
 			if !ok {
@@ -171,19 +186,52 @@ func HelpContent() string {
 		}
 	}
 	if len(rest) > 0 {
-		b.WriteString("\n more: " + strings.Join(rest, " ") + "\n")
+		b.WriteString("\n " + textFor(language, "more: ", "więcej: ") + strings.Join(rest, " ") + "\n")
 	}
-	b.WriteString(" type /help all for every command with its description\n")
-	b.WriteString(helpKeys())
+	b.WriteString(textFor(language, " type /help all for every command with its description\n", " wpisz /help all, aby zobaczyć opisy wszystkich poleceń\n"))
+	b.WriteString(helpKeysFor(language))
 	return b.String()
 }
 
 // HelpContentAll returns the full per-command help list.
 func HelpContentAll() string {
-	return FormatHelp(HelpContentEntries())
+	return HelpContentAllFor("en")
+}
+
+// HelpContentAllFor returns full command help in the selected language.
+func HelpContentAllFor(language string) string {
+	entries := HelpContentEntries()
+	if normalizeLanguage(language) == "pl" {
+		for i := range entries {
+			entries[i].Desc = polishCommandDescription(entries[i].Name, entries[i].Desc)
+		}
+	}
+	if normalizeLanguage(language) != "pl" {
+		return FormatHelp(entries)
+	}
+	var b strings.Builder
+	b.WriteString("Polecenia:\n")
+	for _, e := range entries {
+		if e.Args != "" {
+			fmt.Fprintf(&b, "  /%-14s %s  (%s)\n", e.Name, e.Desc, e.Args)
+		} else {
+			fmt.Fprintf(&b, "  /%-14s %s\n", e.Name, e.Desc)
+		}
+	}
+	b.WriteString(helpKeysFor(language))
+	return b.String()
 }
 
 func helpKeys() string {
+	return helpKeysFor("en")
+}
+
+func helpKeysFor(language string) string {
+	if normalizeLanguage(language) == "pl" {
+		return "\nKlawisze: PgUp/PgDn przewijanie · Ctrl+C wyjście/przerwanie · Esc wyczyść pole\n" +
+			"          Alt+Enter (lub Ctrl+J) nowa linia · Ctrl+Y kopiuj ostatnią odpowiedź · Ctrl+V wklej\n" +
+			"          Ctrl+R poziom myślenia · Shift+T pokaż/ukryj myślenie · Shift+E rozwiń wynik narzędzia"
+	}
 	return "\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n" +
 		"      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n" +
 		"      Ctrl+R open reasoning effort menu\n" +

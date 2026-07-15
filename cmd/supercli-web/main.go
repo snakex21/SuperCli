@@ -66,6 +66,12 @@ func run(crashDataDir *string) {
 	if err := storage.EnsureDir(dataDir); err != nil {
 		fatal("ensure data dir", err)
 	}
+	if err := webgui.ApplyPendingDataImport(dataDir); err != nil {
+		failed := filepath.Join(dataDir, fmt.Sprintf("pending-data-import.failed-%d.json", time.Now().Unix()))
+		_ = os.Rename(filepath.Join(dataDir, "pending-data-import.json"), failed)
+		_ = os.MkdirAll(filepath.Join(dataDir, "logs"), 0o755)
+		_ = os.WriteFile(filepath.Join(dataDir, "logs", "data-import-error.log"), []byte(err.Error()+"\n"), 0o600)
+	}
 	*crashDataDir = dataDir
 	if logFile := initWebLog(dataDir); logFile != nil {
 		defer logFile.Close()
@@ -93,6 +99,11 @@ func run(crashDataDir *string) {
 	// the process cwd. This keeps web project switching aligned with the file
 	// tools, file browser and displayed workspace.
 	tomlCfg, tomlErr := config.ResolveConfig(dataDir, home, "")
+	uiLanguage, languageErr := config.EnsureLanguage(dataDir, home, tomlCfg.Language)
+	if languageErr != nil {
+		log.Printf("language: %v (using %s for this run)", languageErr, uiLanguage)
+	}
+	tomlCfg.Language = uiLanguage
 	cfg, err := config.Load(config.FlagOverrides{
 		Provider: *providerFlag,
 		APIKey:   *keyFlag,

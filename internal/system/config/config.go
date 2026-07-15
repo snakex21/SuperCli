@@ -204,6 +204,47 @@ func (c Config) Sanitized() Config {
 	return c
 }
 
+// ResolveModelReference maps a model reference used by task/fallback routing
+// onto a complete runtime config. A provider prefix is recognized only when it
+// matches a configured, enabled provider; otherwise the whole string remains a
+// model id (important for OpenRouter-style vendor/model ids).
+func ResolveModelReference(base Config, providers []ProviderConf, reference string) (Config, error) {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return Config{}, fmt.Errorf("config: empty model reference")
+	}
+	resolved := base
+	if name, model, found := strings.Cut(reference, "/"); found {
+		for _, provider := range providers {
+			if provider.Name != name {
+				continue
+			}
+			if provider.Disabled {
+				return Config{}, fmt.Errorf("config: fallback provider %q is disabled", name)
+			}
+			resolved.Provider = provider.Type
+			resolved.BaseURL = provider.BaseURL
+			resolved.APIKey = provider.APIKey
+			resolved.Model = strings.TrimSpace(model)
+			if resolved.Model == "" {
+				resolved.Model = provider.Model
+			}
+			if resolved.Model == "" {
+				return Config{}, fmt.Errorf("config: provider %q has no fallback model", name)
+			}
+			if err := resolved.Normalize(); err != nil {
+				return Config{}, err
+			}
+			return resolved, nil
+		}
+	}
+	resolved.Model = reference
+	if err := resolved.Normalize(); err != nil {
+		return Config{}, err
+	}
+	return resolved, nil
+}
+
 // helpers ------------------------------------------------------------------
 
 func getEnv(key, def string) string {

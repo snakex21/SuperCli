@@ -158,3 +158,59 @@ func TestChat_Render_MultipleMessages(t *testing.T) {
 		t.Fatalf("expected 2 'You' prefixes, got %d", count)
 	}
 }
+
+func TestChat_RenderAddsTurnSpacingAndHidesStoredPromptMarker(t *testing.T) {
+	p := NoColorPalette()
+	c := newChat(80)
+	c.addUser("> inspect this")
+	c.addSystem("tool event")
+	c.addAssistant("done")
+	rendered := c.render(p)
+	if strings.Contains(rendered, "▌ > inspect this") {
+		t.Fatalf("stored prompt marker leaked into styled chat: %q", rendered)
+	}
+	if !strings.Contains(rendered, "You\n▌ inspect this") {
+		t.Fatalf("user block not rendered cleanly: %q", rendered)
+	}
+	if !strings.Contains(rendered, "tool event\n\nSuperCli") {
+		t.Fatalf("assistant boundary needs breathing room: %q", rendered)
+	}
+}
+
+func TestChatCompletedRenderCacheSurvivesStreamingDeltas(t *testing.T) {
+	p := NoColorPalette()
+	c := newChat(80)
+	c.addAssistant("completed **answer**")
+	first := c.renderCompleted(p)
+	if c.completedDirty || first == "" {
+		t.Fatalf("completed cache not populated: dirty=%v value=%q", c.completedDirty, first)
+	}
+	c.appendCurrent("one delta")
+	second := c.renderCompleted(p)
+	if second != first || c.completedDirty {
+		t.Fatalf("streaming invalidated immutable prefix: first=%q second=%q dirty=%v", first, second, c.completedDirty)
+	}
+	c.addSystem("new event")
+	if !c.completedDirty {
+		t.Fatal("completed message must invalidate the cache")
+	}
+}
+
+func TestChatSearchAndIndividualFold(t *testing.T) {
+	p := NoColorPalette()
+	c := newChat(80)
+	c.addUser("find the config")
+	c.addSystem("read_lines done\nline one\nline two")
+	c.addAssistant("config is ready")
+	matches := c.search("config")
+	if len(matches) != 2 || matches[0].MessageIndex != 0 || matches[1].MessageIndex != 2 {
+		t.Fatalf("matches=%+v", matches)
+	}
+	if !c.toggleMessage(1) {
+		t.Fatal("multi-line tool block should collapse")
+	}
+	rendered := c.render(p)
+	if strings.Contains(rendered, "line two") || !strings.Contains(rendered, "collapsed") {
+		t.Fatalf("folded block rendered incorrectly: %q", rendered)
+	}
+}

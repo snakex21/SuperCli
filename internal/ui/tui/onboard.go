@@ -102,7 +102,10 @@ type onboardModel struct {
 	choices  []onboardChoice
 	models   []string
 	errMsg   string // last verification/load error shown above the menu
+	language string
 }
+
+func (m onboardModel) tr(english, polish string) string { return textFor(m.language, english, polish) }
 
 func (m onboardModel) Init() tea.Cmd {
 	return func() tea.Msg {
@@ -112,7 +115,12 @@ func (m onboardModel) Init() tea.Cmd {
 
 // buildChoices assembles the menu: detected local servers first,
 // then the static options.
-func buildChoices(detected []providers.LocalServer) []onboardChoice {
+func buildChoices(detected []providers.LocalServer, languages ...string) []onboardChoice {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
+	tr := func(en, pl string) string { return textFor(language, en, pl) }
 	var out []onboardChoice
 	haveOllama, haveLMStudio := false, false
 	for i := range detected {
@@ -123,19 +131,19 @@ func buildChoices(detected []providers.LocalServer) []onboardChoice {
 		case "lmstudio":
 			haveLMStudio = true
 		}
-		desc := fmt.Sprintf("detected · %d model(s) · %s", len(s.Models), s.BaseURL)
+		desc := fmt.Sprintf(tr("detected · %d model(s) · %s", "wykryto · %d modeli · %s"), len(s.Models), s.BaseURL)
 		out = append(out, onboardChoice{label: s.Label, desc: desc, local: &detected[i], kind: "local"})
 	}
 	if !haveOllama {
-		out = append(out, onboardChoice{label: "Ollama", desc: "not detected · " + ollamaDefaultURL, kind: "ollama-manual"})
+		out = append(out, onboardChoice{label: "Ollama", desc: tr("not detected · ", "nie wykryto · ") + ollamaDefaultURL, kind: "ollama-manual"})
 	}
 	if !haveLMStudio {
-		out = append(out, onboardChoice{label: "LM Studio", desc: "not detected · " + lmStudioDefaultURL, kind: "lmstudio-manual"})
+		out = append(out, onboardChoice{label: "LM Studio", desc: tr("not detected · ", "nie wykryto · ") + lmStudioDefaultURL, kind: "lmstudio-manual"})
 	}
 	out = append(out,
-		onboardChoice{label: "OpenAI", desc: "ChatGPT account or API key", kind: "openai"},
-		onboardChoice{label: "OpenAI-compatible API", desc: "any endpoint · URL + key", kind: "custom"},
-		onboardChoice{label: "Offline / echo", desc: "no LLM, just try the UI", kind: "echo"},
+		onboardChoice{label: "OpenAI", desc: tr("ChatGPT account or API key", "konto ChatGPT lub klucz API"), kind: "openai"},
+		onboardChoice{label: tr("OpenAI-compatible API", "API zgodne z OpenAI"), desc: tr("any endpoint · URL + key", "dowolny endpoint · URL + klucz"), kind: "custom"},
+		onboardChoice{label: "Offline / echo", desc: tr("no LLM, just try the UI", "bez LLM, tylko test interfejsu"), kind: "echo"},
 	)
 	return out
 }
@@ -144,7 +152,7 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case onboardDetectedMsg:
 		m.detected = msg.servers
-		m.choices = buildChoices(msg.servers)
+		m.choices = buildChoices(msg.servers, m.language)
 		m.step = onboardMenu
 		return m, nil
 	case onboardModelsMsg:
@@ -152,7 +160,7 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.errMsg = msg.err.Error()
 			} else {
-				m.errMsg = "the server returned no models — load/pull a model first"
+				m.errMsg = m.tr("the server returned no models — load/pull a model first", "serwer nie zwrócił modeli — najpierw załaduj model")
 			}
 			m.step = onboardMenu
 			m.cursor = 0
@@ -365,12 +373,12 @@ func (m onboardModel) startVerify() (tea.Model, tea.Cmd) {
 func (m onboardModel) View() string {
 	p := DefaultPalette()
 	var b strings.Builder
-	b.WriteString(p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(" — first-run setup") + "\n")
+	b.WriteString(p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr(" — first-run setup", " — pierwsze uruchomienie")) + "\n")
 	switch m.step {
 	case onboardDetect:
-		b.WriteString(p.PanelMuted.Render("Looking for local LLM servers (Ollama, LM Studio)...") + "\n")
+		b.WriteString(p.PanelMuted.Render(m.tr("Looking for local LLM servers (Ollama, LM Studio)...", "Szukam lokalnych serwerów LLM (Ollama, LM Studio)...")) + "\n")
 	case onboardMenu:
-		b.WriteString(p.PanelMuted.Render("No provider is configured yet. Pick one (saved to config.toml in the data dir):") + "\n")
+		b.WriteString(p.PanelMuted.Render(m.tr("No provider is configured yet. Pick one (saved to config.toml in the data dir):", "Nie skonfigurowano jeszcze dostawcy. Wybierz jednego (zapis w config.toml):")) + "\n")
 		if m.errMsg != "" {
 			b.WriteString(p.Error.Render("✗ "+m.errMsg) + "\n")
 		}
@@ -378,40 +386,40 @@ func (m onboardModel) View() string {
 		for i, c := range m.choices {
 			line := fmt.Sprintf("%d. %-22s %s", i+1, c.label, c.desc)
 			if i == m.cursor {
-				fmt.Fprintf(&b, "%s\n", p.Header.Render("❯ "+line))
+				fmt.Fprintf(&b, "%s\n", p.Header.Render("> "+line))
 			} else {
 				fmt.Fprintf(&b, "%s\n", p.Dim.Render("  "+line))
 			}
 		}
-		b.WriteString("\n" + p.InputHint.Render("↑↓ + Enter (or number) · Esc to skip") + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter (or number) · Esc to skip", "↑↓ + Enter (lub numer) · Esc pomiń")) + "\n")
 	case onboardAuthMethod:
-		b.WriteString("\nHow do you want to use OpenAI?\n\n")
+		b.WriteString("\n" + m.tr("How do you want to use OpenAI?", "Jak chcesz korzystać z OpenAI?") + "\n\n")
 		opts := []string{
-			"Sign in with your ChatGPT account (uses your subscription limits)",
-			"API key (pay-as-you-go platform.openai.com key)",
+			m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (używa limitów subskrypcji)"),
+			m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (rozliczenie za użycie z platform.openai.com)"),
 		}
 		for i, o := range opts {
 			line := fmt.Sprintf("%d. %s", i+1, o)
 			if i == m.cursor {
-				fmt.Fprintf(&b, "%s\n", p.Header.Render("❯ "+line))
+				fmt.Fprintf(&b, "%s\n", p.Header.Render("> "+line))
 			} else {
 				fmt.Fprintf(&b, "%s\n", p.Dim.Render("  "+line))
 			}
 		}
-		b.WriteString("\n" + p.InputHint.Render("↑↓ + Enter · Esc back") + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter · Esc back", "↑↓ + Enter · Esc wróć")) + "\n")
 	case onboardURL:
-		b.WriteString("\nBase URL of the OpenAI-compatible server:\n")
-		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render("❯"), m.input)
-		b.WriteString("\n" + p.InputHint.Render("Enter to confirm · Esc back") + "\n")
+		b.WriteString("\n" + m.tr("Base URL of the OpenAI-compatible server:", "Bazowy URL serwera zgodnego z OpenAI:") + "\n")
+		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), m.input)
+		b.WriteString("\n" + p.InputHint.Render(m.tr("Enter to confirm · Esc back", "Enter potwierdź · Esc wróć")) + "\n")
 	case onboardKey:
 		masked := strings.Repeat("*", len([]rune(m.input)))
-		b.WriteString("\nAPI key (Enter to skip if the server needs none):\n")
-		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render("❯"), masked)
-		b.WriteString("\n" + p.InputHint.Render("Enter to confirm · Esc back") + "\n")
+		b.WriteString("\n" + m.tr("API key (Enter to skip if the server needs none):", "Klucz API (Enter pomija, jeśli serwer go nie wymaga):") + "\n")
+		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), masked)
+		b.WriteString("\n" + p.InputHint.Render(m.tr("Enter to confirm · Esc back", "Enter potwierdź · Esc wróć")) + "\n")
 	case onboardLoadModels:
-		b.WriteString(p.PanelMuted.Render("\nFetching the model list from "+m.result.BaseURL+"...") + "\n")
+		b.WriteString(p.PanelMuted.Render("\n"+m.tr("Fetching the model list from ", "Pobieram listę modeli z ")+m.result.BaseURL+"...") + "\n")
 	case onboardModels:
-		b.WriteString(p.PanelMuted.Render("Pick a model ("+m.result.Name+"):") + "\n\n")
+		b.WriteString(p.PanelMuted.Render(m.tr("Pick a model (", "Wybierz model (")+m.result.Name+"):") + "\n\n")
 		// Show a window of up to 10 models around the cursor.
 		start := 0
 		if m.cursor > 9 {
@@ -420,19 +428,19 @@ func (m onboardModel) View() string {
 		end := minInt(start+10, len(m.models))
 		for i := start; i < end; i++ {
 			if i == m.cursor {
-				fmt.Fprintf(&b, "%s\n", p.Header.Render("❯ "+m.models[i]))
+				fmt.Fprintf(&b, "%s\n", p.Header.Render("> "+m.models[i]))
 			} else {
 				fmt.Fprintf(&b, "%s\n", p.Dim.Render("  "+m.models[i]))
 			}
 		}
 		if end < len(m.models) {
-			fmt.Fprintf(&b, "%s\n", p.Dim.Render(fmt.Sprintf("  ... %d more", len(m.models)-end)))
+			fmt.Fprintf(&b, "%s\n", p.Dim.Render(fmt.Sprintf(m.tr("  ... %d more", "  ... i jeszcze %d"), len(m.models)-end)))
 		}
-		b.WriteString("\n" + p.InputHint.Render("↑↓ + Enter · Esc back") + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter · Esc back", "↑↓ + Enter · Esc wróć")) + "\n")
 	case onboardVerify:
-		b.WriteString(p.PanelMuted.Render("\nTesting the connection (asking the model to say OK)...") + "\n")
+		b.WriteString(p.PanelMuted.Render("\n"+m.tr("Testing the connection (asking the model to say OK)...", "Testuję połączenie (proszę model o odpowiedź OK)...")) + "\n")
 	case onboardDone:
-		b.WriteString(p.Success.Render("✓ connected — saved. Starting chat...") + "\n")
+		b.WriteString(p.Success.Render(m.tr("✓ connected — saved. Starting chat...", "✓ połączono — zapisano. Uruchamiam czat...")) + "\n")
 	}
 	return b.String()
 }
@@ -440,8 +448,8 @@ func (m onboardModel) View() string {
 // RunOnboarding runs the wizard in its own bubbletea program
 // and returns the user's choice. A TTY error or abort returns
 // Skipped=true so the caller falls back to echo mode.
-func RunOnboarding() OnboardResult {
-	p := tea.NewProgram(onboardModel{})
+func RunOnboarding(language string) OnboardResult {
+	p := tea.NewProgram(onboardModel{language: normalizeLanguage(language)})
 	final, err := p.Run()
 	if err != nil {
 		return OnboardResult{Skipped: true}

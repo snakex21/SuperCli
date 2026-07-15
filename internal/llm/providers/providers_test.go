@@ -44,6 +44,56 @@ func TestToggleHidden(t *testing.T) {
 	}
 }
 
+func TestHiddenVisibilityIsScopedByProvider(t *testing.T) {
+	home := t.TempDir()
+	m := NewManager(home)
+	if err := m.Add("provider-x", "openai", "http://x/v1", "", "shared-model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add("provider-y", "openai", "http://y/v1", "", "shared-model"); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	m.HideModelFor("provider-x", "shared-model")
+	if !m.IsHiddenFor("provider-x", "shared-model") {
+		t.Fatal("provider-x/shared-model should be hidden")
+	}
+	if m.IsHiddenFor("provider-y", "shared-model") {
+		t.Fatal("hiding provider-x/shared-model must not affect provider-y")
+	}
+
+	reloaded := NewManager(home)
+	reloaded.Reload()
+	reloaded.LoadHiddenState()
+	if !reloaded.IsHiddenFor("provider-x", "shared-model") || reloaded.IsHiddenFor("provider-y", "shared-model") {
+		t.Fatal("provider-scoped visibility did not survive restart")
+	}
+}
+
+func TestLegacyHiddenModelMigratesToExistingProviders(t *testing.T) {
+	home := t.TempDir()
+	path, _ := config.FindTomlPaths(home, ".")
+	if err := config.SaveToml(path, config.TomlConfig{
+		Providers:    []config.ProviderConf{{Name: "x"}, {Name: "y"}},
+		HiddenModels: []string{"shared-model"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(home)
+	m.Reload()
+	m.LoadHiddenState()
+	if !m.IsHiddenFor("x", "shared-model") || !m.IsHiddenFor("y", "shared-model") {
+		t.Fatal("legacy global visibility should retain its old effect during migration")
+	}
+	cfg, err := config.LoadToml(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.HiddenModels) != 2 || !strings.HasPrefix(cfg.HiddenModels[0], hiddenRefPrefix) {
+		t.Fatalf("legacy hidden_models were not rewritten as scoped refs: %v", cfg.HiddenModels)
+	}
+}
+
 func TestAddAndRemove(t *testing.T) {
 	home := t.TempDir()
 	m := NewManager(home)
@@ -107,7 +157,7 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-func TestSetDisabledPreservesProviderAndExcludesModels(t *testing.T) {
+func TestSetDisabledPreservesProviderAndRememberedModels(t *testing.T) {
 	home := t.TempDir()
 	m := NewManager(home)
 	if err := m.Add("sleeping-local", "openai", "http://other-pc:8080/v1", "secret", "local-moe"); err != nil {
@@ -123,8 +173,8 @@ func TestSetDisabledPreservesProviderAndExcludesModels(t *testing.T) {
 	if len(configured) != 1 || !configured[0].Disabled || configured[0].HasKey != true {
 		t.Fatalf("disabled provider was not preserved: %+v", configured)
 	}
-	if len(configured[0].Models) != 0 {
-		t.Fatalf("disabled provider leaked models: %+v", configured[0].Models)
+	if len(configured[0].Models) != 1 || configured[0].Models[0].ID != "local-moe" {
+		t.Fatalf("disabled provider lost its remembered models: %+v", configured[0].Models)
 	}
 	if res := m.ScanProvider("sleeping-local", caps); res.Err == nil || !strings.Contains(res.Err.Error(), "disabled") {
 		t.Fatalf("disabled scan = %v, want disabled error", res.Err)
@@ -771,6 +821,16 @@ func TestScanProvider_RegistersOnlyAPIReturnedModels(t *testing.T) {
 	rows := m.List(caps)
 	if len(rows) != 1 || len(rows[0].Models) != 2 {
 		t.Fatalf("provider rows = %+v, want exactly API-returned models", rows)
+	}
+
+	// A fresh manager with an empty runtime registry still exposes the last
+	// successful inventory. This is what keeps LM Studio/remote llama.cpp
+	// models visible while their server is offline after a restart.
+	m2 := NewManager(m.home)
+	m2.Reload()
+	cached := m2.ListConfigured(llm.NewCapabilityRegistry())
+	if len(cached) != 1 || len(cached[0].Models) != 2 || cached[0].Models[0].ID != "deepseek-chat" || cached[0].Models[1].ID != "deepseek-reasoner" {
+		t.Fatalf("persisted provider model inventory = %+v", cached)
 	}
 }
 

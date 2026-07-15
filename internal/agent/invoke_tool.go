@@ -175,7 +175,12 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	}
 	allowed, eligible := flatScalarSchemaProperties(tool.Schema)
 	if !eligible || !tool.ReadOnly || target == invokeToolName || target == "tool_search" {
-		return call, fmt.Errorf("invoke_tool: %s requires tool_search (not a simple read-only tool)", target)
+		// invoke_tool is intentionally restricted to flat read-only tools. A
+		// mutating/nested tool discovered through tool_search is already active
+		// and must be called by its own name. Saying merely "requires
+		// tool_search" made local models repeat tool_search and invoke_tool in a
+		// loop even after discovery had succeeded.
+		return call, fmt.Errorf("invoke_tool cannot dispatch %s (not a simple read-only tool); call %s directly with its schema, and do not repeat tool_search", target, target)
 	}
 
 	args := make(map[string]json.RawMessage)

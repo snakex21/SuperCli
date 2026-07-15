@@ -6,10 +6,12 @@ package providers
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -143,13 +145,40 @@ func (m *Manager) ListConfigured(caps *llm.CapabilityRegistry) []ProviderInfo {
 			HasKey:   hasExplicitProviderKey(p),
 			Disabled: p.Disabled,
 		}
-		if caps != nil && !p.Disabled {
+		seen := make(map[string]struct{})
+		if caps != nil {
 			for _, mi := range caps.All() {
 				if mi.Provider == p.Name && isDiscoveredProviderModel(mi) && modelVisibleForProvider(p, mi.ID) {
 					pi.Models = append(pi.Models, mi)
+					seen[mi.ID] = struct{}{}
 				}
 			}
 		}
+		known := append([]string(nil), p.CachedModels...)
+		if p.Model != "" {
+			known = append(known, p.Model)
+		}
+		for _, id := range known {
+			id = strings.TrimSpace(id)
+			if id == "" || !modelVisibleForProvider(p, id) {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			mi := llm.HeuristicCapabilities(id)
+			if caps != nil {
+				if cached, ok := caps.Get(id); ok {
+					mi = cached
+				}
+			}
+			mi.ID = id
+			mi.Provider = p.Name
+			mi.Source = llm.SourceProvider
+			pi.Models = append(pi.Models, mi)
+			seen[id] = struct{}{}
+		}
+		sort.Slice(pi.Models, func(i, j int) bool { return pi.Models[i].ID < pi.Models[j].ID })
 		out = append(out, pi)
 	}
 	return out
@@ -168,6 +197,14 @@ func (m *Manager) SetDisabled(name string, disabled bool) error {
 		}
 	}
 	return fmt.Errorf("provider %q not found", name)
+}
+
+// IsDisabled reports the saved availability switch without probing or IO.
+func (m *Manager) IsDisabled(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.providerByNameLocked(name)
+	return ok && p.Disabled
 }
 
 // Add appends a new provider to the config.toml list.
@@ -266,53 +303,81 @@ func (m *Manager) Update(name string, typ, baseURL, apiKey, model *string) error
 	return fmt.Errorf("provider %q not found", name)
 }
 
-// IsHidden returns true if a model ID has visibility toggled off.
-func (m *Manager) IsHidden(modelID string) bool {
+// ModelRef identifies one model at one provider. Model IDs are not globally
+// unique: the same ID may be served by several independent endpoints.
+type ModelRef struct {
+	Provider string
+	ID       string
+}
+
+func hiddenKey(provider, modelID string) string {
+	return strings.TrimSpace(provider) + "\x00" + strings.TrimSpace(modelID)
+}
+
+// IsHiddenFor reports visibility for one provider/model pair.
+func (m *Manager) IsHiddenFor(provider, modelID string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	_, ok := m.hidden[modelID]
+	_, ok := m.hidden[hiddenKey(provider, modelID)]
 	return ok
 }
 
-// ToggleHidden flips a model's visibility. Returns the new state
-// (true = hidden).
-func (m *Manager) ToggleHidden(modelID string) bool {
+// IsHidden is the legacy unscoped form kept for programmatic compatibility.
+func (m *Manager) IsHidden(modelID string) bool { return m.IsHiddenFor("", modelID) }
+
+// ToggleHiddenFor flips visibility for one provider/model pair.
+func (m *Manager) ToggleHiddenFor(provider, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.hidden[modelID]; ok {
-		delete(m.hidden, modelID)
+	key := hiddenKey(provider, modelID)
+	if _, ok := m.hidden[key]; ok {
+		delete(m.hidden, key)
 		m.saveHiddenLocked()
 		return false
 	}
-	m.hidden[modelID] = struct{}{}
+	m.hidden[key] = struct{}{}
 	m.saveHiddenLocked()
 	return true
 }
+
+// ToggleHidden is the legacy unscoped form.
+func (m *Manager) ToggleHidden(modelID string) bool { return m.ToggleHiddenFor("", modelID) }
 
 // SetModelsHidden applies one visibility state to a group of model IDs and
 // persists the hidden set once. This is intentionally a batch operation: a
 // provider catalog can contain hundreds of models and should not cause one
 // config rewrite (or one HTTP request) per row.
 func (m *Manager) SetModelsHidden(modelIDs []string, hidden bool) int {
+	refs := make([]ModelRef, 0, len(modelIDs))
+	for _, id := range modelIDs {
+		refs = append(refs, ModelRef{ID: id})
+	}
+	return m.SetModelRefsHidden(refs, hidden)
+}
+
+// SetModelRefsHidden applies one visibility state to provider-scoped models
+// and persists once, even for a large filtered catalog.
+func (m *Manager) SetModelRefsHidden(refs []ModelRef, hidden bool) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	changed := 0
-	seen := make(map[string]struct{}, len(modelIDs))
-	for _, raw := range modelIDs {
-		id := strings.TrimSpace(raw)
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		id := strings.TrimSpace(ref.ID)
 		if id == "" {
 			continue
 		}
-		if _, duplicate := seen[id]; duplicate {
+		key := hiddenKey(ref.Provider, id)
+		if _, duplicate := seen[key]; duplicate {
 			continue
 		}
-		seen[id] = struct{}{}
-		_, alreadyHidden := m.hidden[id]
+		seen[key] = struct{}{}
+		_, alreadyHidden := m.hidden[key]
 		if hidden && !alreadyHidden {
-			m.hidden[id] = struct{}{}
+			m.hidden[key] = struct{}{}
 			changed++
 		} else if !hidden && alreadyHidden {
-			delete(m.hidden, id)
+			delete(m.hidden, key)
 			changed++
 		}
 	}
@@ -325,29 +390,35 @@ func (m *Manager) SetModelsHidden(modelIDs []string, hidden bool) int {
 // ShowModel ensures a model is visible (removes it from the
 // hidden set if present). Returns true if the model was
 // previously hidden and is now visible.
-func (m *Manager) ShowModel(modelID string) bool {
+func (m *Manager) ShowModelFor(provider, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.hidden[modelID]; ok {
-		delete(m.hidden, modelID)
+	key := hiddenKey(provider, modelID)
+	if _, ok := m.hidden[key]; ok {
+		delete(m.hidden, key)
 		m.saveHiddenLocked()
 		return true
 	}
 	return false
 }
 
+func (m *Manager) ShowModel(modelID string) bool { return m.ShowModelFor("", modelID) }
+
 // HideModel hides a model (adds it to the hidden set).
 // Returns true if the model was previously visible.
-func (m *Manager) HideModel(modelID string) bool {
+func (m *Manager) HideModelFor(provider, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.hidden[modelID]; !ok {
-		m.hidden[modelID] = struct{}{}
+	key := hiddenKey(provider, modelID)
+	if _, ok := m.hidden[key]; !ok {
+		m.hidden[key] = struct{}{}
 		m.saveHiddenLocked()
 		return true
 	}
 	return false
 }
+
+func (m *Manager) HideModel(modelID string) bool { return m.HideModelFor("", modelID) }
 
 // LoadHiddenState loads the list of hidden model IDs from
 // config.toml into the in-memory hidden map.
@@ -359,10 +430,31 @@ func (m *Manager) LoadHiddenState() {
 	if err != nil {
 		return
 	}
-	for _, id := range tc.HiddenModels {
-		if id != "" {
-			m.hidden[id] = struct{}{}
+	m.hidden = make(map[string]struct{})
+	migrated := false
+	for _, raw := range tc.HiddenModels {
+		if key, ok := decodeHiddenRef(raw); ok {
+			m.hidden[key] = struct{}{}
+			continue
 		}
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		migrated = true
+		if len(m.providers) == 0 {
+			m.hidden[hiddenKey("", id)] = struct{}{}
+			continue
+		}
+		// Legacy entries were global, so preserve their old effect for every
+		// provider that existed at migration time. Future providers remain
+		// independent.
+		for _, p := range m.providers {
+			m.hidden[hiddenKey(p.Name, id)] = struct{}{}
+		}
+	}
+	if migrated {
+		m.saveHiddenLocked()
 	}
 }
 
@@ -374,11 +466,29 @@ func (m *Manager) saveHiddenLocked() {
 		tc = config.TomlConfig{}
 	}
 	ids := make([]string, 0, len(m.hidden))
-	for id := range m.hidden {
-		ids = append(ids, id)
+	for key := range m.hidden {
+		ids = append(ids, encodeHiddenRef(key))
 	}
+	sort.Strings(ids)
 	tc.HiddenModels = ids
 	config.SaveToml(m.tomlPath, tc)
+}
+
+const hiddenRefPrefix = "ref:"
+
+func encodeHiddenRef(key string) string {
+	return hiddenRefPrefix + base64.RawURLEncoding.EncodeToString([]byte(key))
+}
+
+func decodeHiddenRef(raw string) (string, bool) {
+	if !strings.HasPrefix(raw, hiddenRefPrefix) {
+		return "", false
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(raw, hiddenRefPrefix))
+	if err != nil || !strings.ContainsRune(string(b), '\x00') {
+		return "", false
+	}
+	return string(b), true
 }
 
 // VisibleModels returns models from caps.All() that are not hidden
@@ -398,7 +508,7 @@ func (m *Manager) VisibleModels(caps *llm.CapabilityRegistry, provider string) [
 		if p, ok := m.providerByNameLocked(mi.Provider); ok && !modelVisibleForProvider(p, mi.ID) {
 			continue
 		}
-		if _, hidden := m.hidden[mi.ID]; hidden {
+		if _, hidden := m.hidden[hiddenKey(mi.Provider, mi.ID)]; hidden {
 			continue
 		}
 		out = append(out, mi)
@@ -417,6 +527,18 @@ func (m *Manager) ModelVisible(provider, id string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.modelVisibleLocked(provider, id)
+}
+
+// ModelCatalogVisible is the catalog counterpart of ModelVisible. A paused
+// provider is not selectable in /model, but its remembered models remain in
+// /models so the user can inspect them and resume the provider later.
+func (m *Manager) ModelCatalogVisible(provider, id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if p, ok := m.providerByNameLocked(provider); ok {
+		return modelVisibleForProvider(p, id)
+	}
+	return true
 }
 
 func (m *Manager) modelVisibleLocked(provider, id string) bool {
@@ -914,6 +1036,7 @@ func (m *Manager) ScanModels(caps *llm.CapabilityRegistry) int {
 		res := scanProviderConf(p, caps)
 		if res.Err == nil {
 			total += len(res.Models)
+			m.cacheProviderModels(p.Name, res.Models)
 		}
 	}
 	return total
@@ -941,7 +1064,61 @@ func (m *Manager) ScanProvider(name string, caps *llm.CapabilityRegistry) ScanRe
 	if found.Disabled {
 		return ScanResult{Provider: name, Err: fmt.Errorf("provider %q is disabled", name)}
 	}
-	return scanProviderConf(found, caps)
+	res := scanProviderConf(found, caps)
+	if res.Err == nil {
+		m.cacheProviderModels(found.Name, res.Models)
+	}
+	return res
+}
+
+// cacheProviderModels persists only the compact model-id inventory. Detailed
+// capabilities stay in the registry; this list keeps an offline local or
+// remote server from disappearing from the picker after a restart.
+func (m *Manager) cacheProviderModels(name string, ids []string) {
+	normalized := normalizeModelIDs(ids)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.providers {
+		if m.providers[i].Name != name {
+			continue
+		}
+		if stringSlicesEqual(m.providers[i].CachedModels, normalized) {
+			return
+		}
+		m.providers[i].CachedModels = normalized
+		_ = m.saveLocked()
+		return
+	}
+}
+
+func normalizeModelIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanResult {

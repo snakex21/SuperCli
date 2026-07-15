@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -256,6 +257,36 @@ func (s *Store) Delete(id string) error {
 	}
 	s.afterDelete(id)
 	return nil
+}
+
+// Clear removes every learned entry through the normal deletion path so the
+// SQLite, FTS, vector and human-readable Markdown mirrors stay consistent.
+func (s *Store) Clear() (int, error) {
+	entries, err := s.List("", 0)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, entry := range entries {
+		if err := s.Delete(entry.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	for _, table := range []string{"memory_scratch_archive", "memory_vectors", "project_cards"} {
+		if _, err := s.db.Exec(`DELETE FROM ` + table); err != nil && !strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return removed, err
+		}
+	}
+	if err := os.RemoveAll(s.markdownRoot()); err != nil {
+		return removed, err
+	}
+	for _, sub := range []string{"", "patterns", "archive"} {
+		if err := mkdirAll(filepath.Join(s.markdownRoot(), sub), 0o755); err != nil {
+			return removed, err
+		}
+	}
+	return removed, nil
 }
 
 // List returns entries for a scope, newest first. Empty scope

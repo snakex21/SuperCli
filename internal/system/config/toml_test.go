@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadToml_Missing(t *testing.T) {
@@ -164,7 +166,7 @@ func TestSaveToml_RoundTrip(t *testing.T) {
 }
 
 // TestSaveToml_OrchestratorTriState: the orchestrator switch persists
-// as a tri-state *bool (nil = default OFF, explicit true/false).
+// as a tri-state *bool (nil = adaptive, true = always, false = never).
 func TestSaveToml_OrchestratorTriState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -428,6 +430,33 @@ func TestMergeToml_ProvidersOverrideEntirely(t *testing.T) {
 	mergeToml(&dst, src)
 	if len(dst.Providers) != 1 || dst.Providers[0].Name != "new" {
 		t.Errorf("providers not overridden: %+v", dst.Providers)
+	}
+}
+
+func TestMergeToml_FallbackChainOverridesEntirely(t *testing.T) {
+	dst := TomlConfig{FallbackModels: []string{"old/model"}, FallbackCooldownSeconds: 10}
+	mergeToml(&dst, TomlConfig{FallbackModels: []string{"local/qwen", "cloud/gpt"}, FallbackCooldownSeconds: 45})
+	if got := strings.Join(dst.FallbackModels, ","); got != "local/qwen,cloud/gpt" || dst.FallbackCooldownSeconds != 45 {
+		t.Fatalf("fallback merge = %v cooldown=%d", dst.FallbackModels, dst.FallbackCooldownSeconds)
+	}
+}
+
+func TestResolveModelReferenceNamedProviderAndBareModel(t *testing.T) {
+	base := Config{Provider: ProviderOpenAI, BaseURL: "http://localhost:8080/v1", Model: "local", Timeout: time.Minute}
+	providers := []ProviderConf{{Name: "cloud", Type: ProviderAnthropic, BaseURL: "https://api.example.test", APIKey: "secret", Model: "default"}}
+	got, err := ResolveModelReference(base, providers, "cloud/strong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != ProviderAnthropic || got.BaseURL != "https://api.example.test" || got.Model != "strong" || got.APIKey != "secret" {
+		t.Fatalf("resolved = %+v", got.Sanitized())
+	}
+	bare, err := ResolveModelReference(base, providers, "vendor/model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bare.BaseURL != base.BaseURL || bare.Model != "vendor/model" {
+		t.Fatalf("bare = %+v", bare)
 	}
 }
 

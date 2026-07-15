@@ -37,10 +37,11 @@ type knobView struct {
 	Label       string `json:"label"`
 	Desc        string `json:"desc"`
 	Kind        string `json:"kind"`
-	Value       string `json:"value"`           // display value
-	Source      string `json:"source"`          // "default" | "manual"
-	Raw         string `json:"raw"`             // editable raw value (int/text kinds)
-	State       string `json:"state,omitempty"` // tri/nav kinds: "default" | "on" | "off"
+	Value       string `json:"value"`             // display value
+	Source      string `json:"source"`            // "default" | "manual"
+	Raw         string `json:"raw"`               // editable raw value (int/text kinds)
+	State       string `json:"state,omitempty"`   // tri/nav kinds: "default" | "on" | "off"
+	Default     string `json:"default,omitempty"` // effective value restored by "default"
 	NextSession bool   `json:"next_session"`
 }
 
@@ -67,6 +68,8 @@ func knobDefs() []knobDef {
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
+		{"fallback_models", "ordered opt-in main-model failover list; semicolon-separated provider/model references", knobText, true},
+		{"fallback_cooldown_seconds", "seconds to skip a backend that failed before first output", knobInt, true},
 		{"noop_gate", "skip a batch (-p) run with zero LLM calls when nothing changed since the last identical run", knobTri, false},
 		{"preflight_repo", "append a compact repo-state block to the first message and worker briefings (git optional)", knobTri, true},
 		{"draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", knobTri, true},
@@ -131,6 +134,14 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (coordinator's model)", "default", ""
 		}
 		return c.TaskModel, "manual", c.TaskModel
+	case "fallback_models":
+		if len(c.FallbackModels) == 0 {
+			return "off (no automatic paid fallback)", "default", ""
+		}
+		joined := strings.Join(c.FallbackModels, " ; ")
+		return joined, "manual", joined
+	case "fallback_cooldown_seconds":
+		return intKnob(c.FallbackCooldownSeconds, "30")
 	case "noop_gate":
 		v, s := triKnob(c.NoopGate, "off")
 		return v, s, ""
@@ -227,6 +238,22 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.DraftVerify)
 	}
 	return ""
+}
+
+// knobDefault makes the reset target explicit in the UI. Fixed tri-state
+// defaults must never require reading code to learn whether "default" means
+// on or off; backend-aware policies deliberately report auto.
+func knobDefault(key string) string {
+	switch key {
+	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
+		return "auto"
+	case "thinking", "stable_toolset", "preflight_repo":
+		return "on"
+	case "allow_all", "noop_gate", "draft_verify":
+		return "off"
+	default:
+		return ""
+	}
 }
 
 func dashKnob(s string) string {
@@ -326,6 +353,11 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 	case "task_model":
 		c.TaskModel = val
 		return nil
+	case "fallback_models":
+		c.FallbackModels = splitList(val)
+		return nil
+	case "fallback_cooldown_seconds":
+		return setInt(&c.FallbackCooldownSeconds)
 	case "noop_gate":
 		return setTri(&c.NoopGate)
 	case "preflight_repo":
@@ -335,16 +367,20 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 	case "draft_verify_max_rounds":
 		return setInt(&c.DraftVerifyMaxRounds)
 	case "verify_commands":
-		var out []string
-		for _, part := range strings.Split(val, ";") {
-			if p := strings.TrimSpace(part); p != "" {
-				out = append(out, p)
-			}
-		}
-		c.VerifyCommands = out
+		c.VerifyCommands = splitList(val)
 		return nil
 	}
 	return fmt.Errorf("unknown or read-only setting %q", key)
+}
+
+func splitList(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ";") {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // knobResetAll returns every managed knob to its default. Provider
@@ -412,7 +448,7 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 		out = append(out, knobView{
 			Key: d.key, Label: d.key, Desc: d.desc, Kind: d.kind,
 			Value: value, Source: source, Raw: raw,
-			State: knobState(&tc, d.key), NextSession: d.nextSession,
+			State: knobState(&tc, d.key), Default: knobDefault(d.key), NextSession: d.nextSession,
 		})
 	}
 	writeJSON(w, map[string]any{"knobs": out})

@@ -57,7 +57,8 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		"orchestrator", "allow_all", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin_parallel", "task_parallel",
 		"memory_briefing_tokens", "task_max_steps", "task_max_tokens",
-		"task_model", "noop_gate", "preflight_repo", "draft_verify",
+		"task_model", "fallback_models", "fallback_cooldown_seconds",
+		"noop_gate", "preflight_repo", "draft_verify",
 		"draft_verify_max_rounds", "verify_commands",
 		"default_model", "default_provider",
 	}
@@ -70,7 +71,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		}
 	}
 
-	if k := findKnob(t, knobs, "orchestrator"); k.Value != "auto" || k.Source != "default" {
+	if k := findKnob(t, knobs, "orchestrator"); k.Value != "auto" || k.Source != "default" || k.Default != "auto" {
 		t.Errorf("orchestrator default: %+v", k)
 	}
 	if k := findKnob(t, knobs, "allow_all"); k.Value != "off" || k.Source != "default" {
@@ -78,6 +79,12 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 	}
 	if k := findKnob(t, knobs, "preflight_repo"); k.Value != "on" || k.Source != "default" {
 		t.Errorf("preflight_repo default: %+v", k)
+	}
+	if k := findKnob(t, knobs, "thinking"); k.Default != "on" {
+		t.Errorf("thinking reset target should be explicit: %+v", k)
+	}
+	if k := findKnob(t, knobs, "draft_verify"); k.Default != "off" {
+		t.Errorf("draft_verify reset target should be explicit: %+v", k)
 	}
 	if k := findKnob(t, knobs, "cache_prompt"); k.Value != "auto" || k.Kind != knobTriAuto {
 		t.Errorf("cache_prompt default: %+v", k)
@@ -151,6 +158,13 @@ func TestConfigKnobs_IntAndText(t *testing.T) {
 	}
 	if k := findKnob(t, knobsGET(t, srv), "verify_commands"); k.Source != "default" {
 		t.Errorf("text knob after clear: %+v", k)
+	}
+
+	if rec := knobsPOST(t, srv, `{"key":"fallback_models","value":"hp/qwen ; cloud/gpt"}`); rec.Code != http.StatusOK {
+		t.Fatalf("set fallback list: %d", rec.Code)
+	}
+	if k := findKnob(t, knobsGET(t, srv), "fallback_models"); k.Raw != "hp/qwen ; cloud/gpt" || k.Source != "manual" {
+		t.Errorf("fallback knob: %+v", k)
 	}
 }
 

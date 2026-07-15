@@ -116,6 +116,31 @@ func TestSearXNGRequest(t *testing.T) {
 	}
 }
 
+func TestWebLookupUsesCompactContractAndSharedSearch(t *testing.T) {
+	tool := NewWebSearch("searxng", "", "https://search.example.com")
+	tool.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.URL.Query().Get("q"); got != "second World Cup semifinal 2026" {
+			t.Fatalf("query = %q", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"results":[{"title":"Official schedule","url":"https://example.com/schedule","content":"15 July 2026"}]}`)),
+			Request: req,
+		}, nil
+	})}
+
+	spec := tool.LookupSpec()
+	if spec.Name != "web_lookup" || !spec.ReadOnly || strings.Contains(spec.Schema, "freshness") {
+		t.Fatalf("unexpected compact spec: %+v", spec)
+	}
+	result, err := spec.Fn(context.Background(), []byte(`{"query":"second World Cup semifinal 2026"}`))
+	if err != nil || result.Err != nil || !strings.Contains(result.Text, "15 July 2026") {
+		t.Fatalf("lookup = %+v, err=%v", result, err)
+	}
+}
+
 func TestSearchCacheTTL(t *testing.T) {
 	if got := searchCacheTTL(webSearchArgs{Query: "go interface tutorial"}); got != webSearchReferenceTTL {
 		t.Fatalf("reference TTL = %s", got)

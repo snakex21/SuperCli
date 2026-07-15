@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"supercli/internal/tools/web"
 )
 
 func TestIndex_RebuildAndLen(t *testing.T) {
@@ -285,6 +287,59 @@ func TestToolSearcher_Execute_LexicalFallback(t *testing.T) {
 	if !strings.Contains(resp.Hint, "callable") {
 		t.Errorf("hint should confirm callable tools, got %q", resp.Hint)
 	}
+}
+
+// A current-facts question must be able to discover the native no-key web
+// search instead of concluding that internet access is unavailable. This is
+// the exact class of query models use after being asked for a live schedule.
+func TestToolSearcher_CurrentInternetQueryFindsWebSearch(t *testing.T) {
+	reg := NewRegistry()
+	reg.MustRegister(web.NewWebSearch("", "").Spec())
+	reg.MustRegister(NewToolSearcher(reg, nil).Spec())
+	reg.MarkAlwaysOn("tool_search")
+	reg.MustRegister(Tool{
+		Name:        "mcp_bridge",
+		Description: "Access configured MCP capabilities, including web/browser tools.",
+		Schema:      `{"type":"object"}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	reg.MustRegister(Tool{
+		Name:        "apply_skill",
+		Description: "Search and apply a reusable workflow skill.",
+		Schema:      `{"type":"object"}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	idx, _ := NewInMemoryIndex()
+	defer idx.Close()
+	ts := NewToolSearcher(reg, idx)
+	if err := ts.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := ts.execute(context.Background(), json.RawMessage(`{"query":"internet search web browse"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resErr=%v", err, res.Err)
+	}
+	var response struct {
+		Matches []struct {
+			Name string `json:"name"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(res.Text), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, match := range response.Matches {
+		if match.Name == "tool_search" {
+			t.Fatalf("tool_search must never return itself: %s", res.Text)
+		}
+		if match.Name == "web_search" {
+			if !reg.IsVisible("web_search") {
+				t.Fatal("web_search matched but was not activated")
+			}
+			return
+		}
+	}
+	t.Fatalf("web_search not discovered: %s", res.Text)
 }
 
 // TestToolSearcher_Execute_NoMatchHonestHint verifies that a

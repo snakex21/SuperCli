@@ -350,10 +350,10 @@ func TestAutocomplete_OpenAndClose(t *testing.T) {
 func TestAutocomplete_FilterSlash(t *testing.T) {
 	m := newTestModel(t)
 	m.commands = map[string]SlashHandler{
-		"help":   func(_ context.Context, _ string) (string, error) { return "", nil },
-		"goal":   func(_ context.Context, _ string) (string, error) { return "", nil },
-		"model":  func(_ context.Context, _ string) (string, error) { return "", nil },
-		"quit":   func(_ context.Context, _ string) (string, error) { return "", nil },
+		"help":  func(_ context.Context, _ string) (string, error) { return "", nil },
+		"goal":  func(_ context.Context, _ string) (string, error) { return "", nil },
+		"model": func(_ context.Context, _ string) (string, error) { return "", nil },
+		"quit":  func(_ context.Context, _ string) (string, error) { return "", nil },
 	}
 
 	m.input.SetValue("/mo")
@@ -363,16 +363,16 @@ func TestAutocomplete_FilterSlash(t *testing.T) {
 		t.Fatalf("expected slash autocomplete, got kind=%d", m.autocomp.kind)
 	}
 	filtered := filterItems(m.autocomp.items, m.autocomp.query)
-	// "/mo" matches /model (prefix) and /memory (fuzzy m..o).
-	if len(filtered) != 2 {
-		t.Fatalf("expected 2 filtered items (/model, /memory), got %d", len(filtered))
+	// "/mo" matches /model and /models (prefix), plus /memory (fuzzy m..o).
+	if len(filtered) != 3 {
+		t.Fatalf("expected 3 filtered items (/model, /models, /memory), got %d", len(filtered))
 	}
 	labels := map[string]bool{}
 	for _, f := range filtered {
 		labels[f.Label] = true
 	}
-	if !labels["/model"] || !labels["/memory"] {
-		t.Fatalf("expected /model and /memory, got %v", labels)
+	if !labels["/model"] || !labels["/models"] || !labels["/memory"] {
+		t.Fatalf("expected /model, /models and /memory, got %v", labels)
 	}
 }
 

@@ -56,14 +56,23 @@ func (a autocomplete) triggerChar() string {
 // We show every command from HelpContentEntries — many are handled inline
 // in dispatchSlashCommand (models, providers, goal, plan, export, quit)
 // and are NOT in the m.commands map, so we must not filter by it.
-func buildSlashItems(_ map[string]SlashHandler) []autocompleteItem {
+func buildSlashItems(_ map[string]SlashHandler, languages ...string) []autocompleteItem {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	entries := HelpContentEntries()
 	items := make([]autocompleteItem, 0, len(entries))
 	for _, e := range entries {
 		category := commandCategory(e.Name)
+		desc := e.Desc
+		if language == "pl" {
+			category = polishCommandCategory(category)
+			desc = polishCommandDescription(e.Name, desc)
+		}
 		items = append(items, autocompleteItem{
 			Label:    "/" + e.Name,
-			Desc:     e.Desc,
+			Desc:     desc,
 			Hint:     e.Args,
 			Category: category,
 			Value:    "/" + e.Name + " ",
@@ -72,11 +81,35 @@ func buildSlashItems(_ map[string]SlashHandler) []autocompleteItem {
 	return items
 }
 
+func polishCommandCategory(category string) string {
+	return map[string]string{"system": "system", "model": "model", "agent": "agent", "session": "sesja", "account": "konto", "command": "polecenie"}[category]
+}
+
+func polishCommandDescription(name, fallback string) string {
+	if desc, ok := map[string]string{
+		"help": "pokaż pomoc", "goal": "zarządzaj aktywnym celem", "darwin": "uruchom N agentów i wybierz najlepszy wynik",
+		"council": "zapytaj wybrane modele równolegle", "clear": "ukryj ostatnie wiadomości przed modelem", "reflect": "pokaż wzorce z refleksji",
+		"compact": "skompresuj kontekst, aby oszczędzić tokeny", "status": "pokaż stan sesji i kredytów", "workers": "pokaż lub zatrzymaj workery",
+		"context": "pokaż wykorzystanie kontekstu i tokenów", "mcp": "pokaż lub uruchom ponownie serwery MCP", "memory": "przeglądaj trwałą pamięć",
+		"providers": "zarządzaj dostawcami", "sandbox": "pokaż stan piaskownicy", "allow-all": "zezwól na dostęp do całego systemu plików",
+		"plan": "przełącz tryb planowania", "diff": "pokaż zmiany plików z sesji", "model": "wybierz spośród włączonych modeli",
+		"models": "zarządzaj pełnym katalogiem modeli", "reasoning": "ustaw poziom myślenia modelu", "resume": "wznów wcześniejszą sesję",
+		"export": "eksportuj sesję do Markdown", "cost": "pokaż koszty według tur", "usage": "odśwież limity subskrypcji ChatGPT",
+		"undo": "cofnij ostatnią turę agenta", "redo": "przywróć cofniętą turę", "test": "uruchom testy, lint i wykrywanie wyścigów",
+		"settings": "zmień ustawienia bez edycji TOML", "doctor": "sprawdź konfigurację i środowisko", "login": "zaloguj konto ChatGPT",
+		"account": "pokaż bieżące konto ChatGPT", "accounts": "pokaż zalogowane konta ChatGPT", "logout": "usuń zapisane dane logowania",
+		"quit": "zamknij SuperCli",
+	}[name]; ok {
+		return desc
+	}
+	return fallback
+}
+
 func commandCategory(name string) string {
 	switch name {
 	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "mcp", "settings":
 		return "system"
-	case "model", "providers", "reasoning", "usage":
+	case "model", "models", "providers", "reasoning", "usage":
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact", "workers":
 		return "agent"
@@ -110,7 +143,8 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "allow-all", Desc: "grant full filesystem access", Args: "on|off"},
 		{Name: "plan", Desc: "toggle plan mode (read-only analysis)"},
 		{Name: "diff", Desc: "show file changes from current session"},
-		{Name: "model", Desc: "show or swap active model", Args: "[model_id]"},
+		{Name: "model", Desc: "choose from enabled models", Args: "[model_id]"},
+		{Name: "models", Desc: "manage the complete model catalog"},
 		{Name: "reasoning", Desc: "show or set reasoning effort (OpenAI reasoning models)", Args: "[none|minimal|low|medium|high|xhigh|off]"},
 		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
 		{Name: "export", Desc: "export session to Markdown (arg 'clip' copies to clipboard)", Args: "[filename.md|clip]"},
@@ -133,7 +167,11 @@ func HelpContentEntries() []SlashEntry {
 
 // buildMentionItems scans the current directory for files and returns
 // autocomplete items. Directories get a trailing slash.
-func buildMentionItems(home string) []autocompleteItem {
+func buildMentionItems(home string, languages ...string) []autocompleteItem {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	entries, err := os.ReadDir(home)
 	if err != nil {
 		return nil
@@ -149,7 +187,7 @@ func buildMentionItems(home string) []autocompleteItem {
 		desc := ""
 		if e.IsDir() {
 			label = name + "/"
-			desc = "dir"
+			desc = textFor(language, "dir", "folder")
 		} else {
 			// Show file size.
 			info, err := e.Info()
@@ -161,7 +199,7 @@ func buildMentionItems(home string) []autocompleteItem {
 			Label:    label,
 			Desc:     desc,
 			Value:    "@" + label + " ",
-			Category: "file",
+			Category: textFor(language, "file", "plik"),
 		})
 	}
 	return items
@@ -197,7 +235,11 @@ func filterItems(items []autocompleteItem, query string) []autocompleteItem {
 
 // renderAutocomplete renders the popup as a string (max visible items).
 // It's designed to be inserted above the input line in View().
-func renderAutocomplete(ac *autocomplete, width int, palette Palette) string {
+func renderAutocomplete(ac *autocomplete, width int, palette Palette, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = normalizeLanguage(languages[0])
+	}
 	if ac == nil || ac.kind == autocompNone {
 		return ""
 	}
@@ -251,9 +293,9 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette) string {
 	}
 
 	var b strings.Builder
-	title := "Commands"
+	title := textFor(language, "Commands", "Polecenia")
 	if ac.kind == autocompMention {
-		title = "Files"
+		title = textFor(language, "Files", "Pliki")
 	}
 	if ac.query != "" {
 		title += " · " + ac.triggerChar() + ac.query
@@ -271,7 +313,7 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette) string {
 		globalIdx := ac.scroll + i
 		cursor := "  "
 		if globalIdx == ac.cursor {
-			cursor = "❯ "
+			cursor = "> "
 		}
 
 		label := padRight(truncateText(it.Label, labelWidth), labelWidth)
@@ -308,9 +350,9 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette) string {
 		b.WriteString(palette.Rule.Render("│"))
 		b.WriteString("\n")
 	}
-	footer := "  ↑/↓ select · Tab insert · Enter run · Esc close"
+	footer := textFor(language, "  ↑/↓ select · Tab insert · Enter run · Esc close", "  ↑/↓ wybierz · Tab wstaw · Enter uruchom · Esc zamknij")
 	if ac.kind == autocompMention {
-		footer = "  ↑/↓ select · Tab insert · Enter insert · Esc close"
+		footer = textFor(language, "  ↑/↓ select · Tab insert · Enter insert · Esc close", "  ↑/↓ wybierz · Tab wstaw · Enter wstaw · Esc zamknij")
 	}
 	b.WriteString(palette.Rule.Render("├" + strings.Repeat("─", boxWidth-2) + "┤"))
 	b.WriteString("\n")

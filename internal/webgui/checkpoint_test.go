@@ -40,7 +40,7 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	eng.prov = &writingProvider{}
 	eng.mu.Unlock()
 	var checkpointID, sessionID string
-	if err := eng.runStream(context.Background(), "write it", "", func(ev wireEvent) {
+	if err := eng.runStream(context.Background(), "write it", "", "", func(ev wireEvent) {
 		if ev.Type == "session" {
 			sessionID = ev.SessionID
 		}
@@ -52,6 +52,13 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	}
 	if checkpointID == "" {
 		t.Fatal("done event missing checkpoint id")
+	}
+	manager, err := eng.checkpointManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record := manager.Latest(sessionID); record == nil || record.UserSeq != 1 {
+		t.Fatalf("checkpoint is not tied to initiating user message: %+v", record)
 	}
 	path := filepath.Join(dir, "agent.txt")
 	if _, err := os.Stat(path); err != nil {

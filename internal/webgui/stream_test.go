@@ -220,7 +220,7 @@ func TestRunStreamStopsAfterSemanticProgressTimeout(t *testing.T) {
 	srv.eng.mu.Unlock()
 
 	started := time.Now()
-	err := srv.eng.runStream(context.Background(), "hello", id, func(wireEvent) {})
+	err := srv.eng.runStream(context.Background(), "hello", id, "", func(wireEvent) {})
 	if err == nil || !strings.Contains(err.Error(), "no model progress") {
 		t.Fatalf("runStream error = %v, want semantic progress timeout", err)
 	}

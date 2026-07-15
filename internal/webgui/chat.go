@@ -11,8 +11,12 @@ import (
 
 // chatRequest is the JSON body posted to /api/chat.
 type chatRequest struct {
-	Prompt    string `json:"prompt"`
-	SessionID string `json:"session_id,omitempty"`
+	Prompt              string `json:"prompt"`
+	SessionID           string `json:"session_id,omitempty"`
+	Rewound             bool   `json:"rewound,omitempty"`
+	RewindReason        string `json:"rewind_reason,omitempty"`
+	RewindFiles         bool   `json:"rewind_files,omitempty"`
+	RewindFilesRestored bool   `json:"rewind_files_restored,omitempty"`
 }
 
 // handleChat runs one prompt and streams the agent's events back as
@@ -30,6 +34,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
+	req.RewindReason = strings.TrimSpace(truncateRunes(req.RewindReason, 400))
 	if req.Prompt == "" {
 		http.Error(w, "empty prompt", http.StatusBadRequest)
 		return
@@ -67,7 +72,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// The request context cancels when the client disconnects; the
 	// loop honours it and stops the run.
-	if err := s.eng.runStream(r.Context(), req.Prompt, req.SessionID, emit); err != nil {
+	rewindFeedback := ""
+	if req.Rewound {
+		rewindFeedback = "[rewind_feedback]\nThe user deliberately rejected and rewound the previous attempt. Reconsider the approach and do not repeat it without verification."
+		if req.RewindFiles {
+			rewindFeedback += "\nThe program also restored the affected workspace files to their checkpointed state."
+		} else if req.RewindFilesRestored {
+			rewindFeedback += "\nThe user reconsidered and restored the complete file version produced by the rejected attempt. Preserve that workspace state unless the new request requires changing it."
+		}
+		if req.RewindReason != "" {
+			rewindFeedback += "\nUser-provided reason: " + req.RewindReason
+		}
+		rewindFeedback += "\n[/rewind_feedback]"
+	}
+	if err := s.eng.runStream(r.Context(), req.Prompt, req.SessionID, rewindFeedback, emit); err != nil {
 		// Surface run-setup failures (provider/loop build) as a final
 		// error frame so the UI can show them instead of a dead stream.
 		emit(wireEvent{Type: "error", Err: err.Error()})

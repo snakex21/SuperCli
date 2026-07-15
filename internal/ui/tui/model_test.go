@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
@@ -23,6 +24,26 @@ type testModelSwapper struct{ current string }
 
 func (t *testModelSwapper) CurrentModel() string    { return t.current }
 func (t *testModelSwapper) SetModel(p llm.Provider) { t.current = p.Name() }
+
+type reportingAgent struct{ scriptedAgent }
+
+type queueingAgent struct {
+	scriptedAgent
+	queued []string
+}
+
+func (a *queueingAgent) QueueInterjection(text string) bool {
+	a.queued = append(a.queued, text)
+	return true
+}
+
+func (reportingAgent) ContextReport() agent.ContextReport {
+	return agent.ContextReport{Window: 10_000, EstimatedTokens: 4_000, ToolSchemaTokens: 1_000}
+}
+
+func (reportingAgent) LastTurnBreakdown() (int, int, int, bool) {
+	return 8_000, 2_000, 100, true
+}
 
 // newMockStatsRecorder returns a stats.Memory for tests.
 func newMockStatsRecorder() stats.Recorder {
@@ -49,13 +70,116 @@ func TestNew_EmptyContextRendersPlaceholder(t *testing.T) {
 	if !strings.Contains(view, "─") {
 		t.Fatalf("expected separator line, got %q", view)
 	}
-	if !strings.Contains(view, "❯") {
+	if !strings.Contains(view, ">") {
 		t.Fatalf("expected input prompt, got %q", view)
 	}
 }
 
+func TestNewPolishLanguageLocalizesPrimaryTUI(t *testing.T) {
+	m := New(Options{Language: "pl"})
+	view := m.View()
+	for _, want := range []string{"Witaj ponownie", "Napisz do SuperCli", "gotowy"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Polish TUI missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestPolishWelcomeSurvivesInitialWindowResize(t *testing.T) {
+	m := New(Options{Language: "pl"})
+	out, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	view := out.(Model).View()
+	for _, want := range []string{"Witaj ponownie", "Zacznij tutaj", "wyślij wiadomość"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Polish welcome lost %q after resize:\n%s", want, view)
+		}
+	}
+	for _, unwanted := range []string{"Welcome back", "Start here", "send message"} {
+		if strings.Contains(view, unwanted) {
+			t.Fatalf("English welcome leaked %q after resize:\n%s", unwanted, view)
+		}
+	}
+}
+
+func TestViewFitsShortTerminal(t *testing.T) {
+	m := New(Options{})
+	out, _ := m.Update(tea.WindowSizeMsg{Width: 72, Height: 22})
+	view := out.(Model).View()
+	lines := strings.Split(view, "\n")
+	if len(lines) > 22 {
+		t.Fatalf("view uses %d rows in 22-row terminal:\n%s", len(lines), view)
+	}
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got > 72 {
+			t.Fatalf("line %d width=%d exceeds terminal: %q", i+1, got, line)
+		}
+	}
+}
+
+func TestCompletedTurnSummarizesToolsAndRefreshesContextHUD(t *testing.T) {
+	m := New(Options{NoColor: true, Agent: reportingAgent{}})
+	m.toolActivity.reset()
+	for i := 0; i < 2; i++ {
+		out, _ := m.handleAgentEvent(agent.ToolCallEvent{Name: "read_lines", Args: `{"file":"README.md"}`})
+		m = out.(Model)
+	}
+	out, _ := m.handleAgentEvent(agent.ToolResultEvent{Err: errors.New("not found")})
+	m = out.(Model)
+	out, _ = m.handleAgentEvent(agent.DoneEvent{})
+	m = out.(Model)
+	view := m.chat.render(m.palette)
+	for _, want := range []string{"2 calls", "1 errors", "1 repeats", "read_lines×2"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("tool summary missing %q: %q", want, view)
+		}
+	}
+	if m.runtimeHUD != "ctx 50% (5.0k/10.0k) · compact 80% · cache 80%" {
+		t.Fatalf("runtimeHUD=%q", m.runtimeHUD)
+	}
+}
+
+func TestRefreshTranscriptShowsSpinnerOnlyWhileBusy(t *testing.T) {
+	m := New(Options{})
+	m.chat.addAssistant("finished")
+	m.busy = false
+	m.refreshTranscript()
+	spinner := m.spinner.View()
+	if spinner != "" && strings.Contains(m.viewport.View(), spinner) {
+		t.Fatalf("idle transcript contains spinner: %q", m.viewport.View())
+	}
+	m.busy = true
+	m.current = "streaming"
+	m.refreshTranscript()
+	if spinner != "" && !strings.Contains(m.viewport.View(), spinner) {
+		t.Fatalf("busy transcript missing spinner: %q", m.viewport.View())
+	}
+}
+
+func TestRenderInputBoxFitsTerminal(t *testing.T) {
+	m := New(Options{})
+	m.width = 80
+	box := m.renderInputBox()
+	for i, line := range strings.Split(box, "\n") {
+		if got := lipgloss.Width(line); got > m.width {
+			t.Fatalf("line %d width=%d exceeds terminal: %q", i+1, got, line)
+		}
+	}
+}
+
+func TestHeaderShowsReadableState(t *testing.T) {
+	m := New(Options{})
+	m.width = 80
+	if got := m.renderHeader(); !strings.Contains(got, "ready") {
+		t.Fatalf("idle header missing ready state: %q", got)
+	}
+	m.planMode = true
+	if got := m.renderHeader(); !strings.Contains(got, "PLAN") {
+		t.Fatalf("plan header missing PLAN state: %q", got)
+	}
+}
+
 func TestUpdate_QIsNormalInput(t *testing.T) {
-	m := New(Options{Home: "/x"})
+	m := New(Options{Home: "/x", Language: "pl"})
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	mm := out.(Model)
 	if mm.quitting {
@@ -353,7 +477,7 @@ func TestInteractiveModelsMenu_FilterAndSelect(t *testing.T) {
 }
 
 func TestInteractiveProvidersMenu_OpensAndBacksOut(t *testing.T) {
-	m := New(Options{Home: "/x"})
+	m := New(Options{Home: "/x", Language: "pl"})
 	m.input.SetValue("/providers")
 	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := out.(Model)
@@ -363,7 +487,7 @@ func TestInteractiveProvidersMenu_OpensAndBacksOut(t *testing.T) {
 	if mm.mode != modeMenu || mm.menu.kind != menuProviders {
 		t.Fatalf("not provider menu: mode=%v kind=%v", mm.mode, mm.menu.kind)
 	}
-	if !strings.Contains(mm.View(), "Providers") {
+	if !strings.Contains(mm.View(), "Dostawcy") {
 		t.Fatalf("provider menu title missing: %q", mm.View())
 	}
 	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -423,6 +547,9 @@ func TestUpdate_EnterStartsRunWhenAgentSet(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected runStartMsg cmd")
 	}
+	if view := mm.viewport.View(); !strings.Contains(view, "hello") || strings.Contains(view, "Welcome back") {
+		t.Fatalf("submitted prompt was not rendered immediately: %q", view)
+	}
 	// The cmd should produce a runStartMsg containing the channel.
 	msg := cmd()
 	rs, ok := msg.(runStartMsg)
@@ -460,14 +587,18 @@ func TestUpdate_EnterWithoutAgentShowsError(t *testing.T) {
 	}
 }
 
-func TestUpdate_BusyIgnoresInput(t *testing.T) {
-	a := scriptedAgent{n: "stub", events: []agent.Event{agent.DoneEvent{}}}
+func TestUpdate_BusyQueuesInputForNextSafeStep(t *testing.T) {
+	a := &queueingAgent{scriptedAgent: scriptedAgent{n: "stub", events: []agent.Event{agent.DoneEvent{}}}}
 	m := New(Options{Home: "/x", Agent: a})
 	m.busy = true
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	out, _ = out.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := out.(Model)
 	if mm.input.Value() != "" {
-		t.Fatalf("input should not accept text while busy, got %q", mm.input.Value())
+		t.Fatalf("input should reset after queueing, got %q", mm.input.Value())
+	}
+	if len(a.queued) != 1 || a.queued[0] != "x" {
+		t.Fatalf("queued = %#v, want [x]", a.queued)
 	}
 }
 
