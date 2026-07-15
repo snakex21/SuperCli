@@ -1399,3 +1399,4 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 	.compare-grid { grid-template-columns:minmax(0,1fr); }
 	.compare-col + .compare-col { border-left:0; border-top:1px solid var(--line); }
 }
+.task-worker-label{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}.worker-state{font-size:10px}.worker-state.running,.worker-state.created{color:var(--accent)}.doctor-report{display:grid;gap:2px}.doctor-row .note{max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doctor-row.fail>span:first-child{color:var(--danger)}.doctor-row.warn>span:first-child{color:var(--accent)}

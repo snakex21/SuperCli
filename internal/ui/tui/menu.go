@@ -40,6 +40,8 @@ const (
 	menuSettings
 	menuCheckpoint
 	menuTranscript
+	menuQueue
+	menuData
 )
 
 // CheckpointPreview is intentionally presentation-sized metadata. It contains
@@ -62,6 +64,7 @@ type interactiveMenu struct {
 	editName    string
 	keyRevealed bool // true = API key shown in plain text
 	sessions    []session.Session
+	tasks       []session.QueuedTask
 
 	// /settings panel state. settingsCfg holds the last loaded/saved
 	// global config so the panel renders live values; editing/editBuf
@@ -218,6 +221,12 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.menu.kind == menuTranscript {
 		return m.handleTranscriptKey(msg)
+	}
+	if m.menu.kind == menuQueue {
+		return m.handleQueueKey(msg)
+	}
+	if m.menu.kind == menuData {
+		return m.handleDataKey(msg)
 	}
 	if m.menu.kind == menuCheckpoint {
 		switch msg.String() {
@@ -547,6 +556,10 @@ func (m *Model) clampMenuCursor() {
 		max = len(m.filteredSessionRows()) - 1
 	case menuTranscript:
 		max = len(m.filteredTranscriptRows()) - 1
+	case menuQueue:
+		max = len(m.menu.tasks) - 1
+	case menuData:
+		max = 2
 	case menuModels, menuModelCatalog, menuProviderModels:
 		max = len(m.filteredModelRows()) - 1
 	case menuProviders:
@@ -592,6 +605,10 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m.selectSession()
 	case menuTranscript:
 		return m.selectTranscriptMatch()
+	case menuQueue:
+		return m.runQueuedTask()
+	case menuData:
+		return m.runDataAction()
 	case menuModels:
 		rows := m.filteredModelRows()
 		if len(rows) == 0 {
@@ -821,6 +838,10 @@ func (m Model) renderMenuView() string {
 		return m.renderSessionsMenu()
 	case menuTranscript:
 		return m.renderTranscriptMenu()
+	case menuQueue:
+		return m.renderQueueMenu()
+	case menuData:
+		return m.renderDataMenu()
 	case menuModels:
 		return m.renderModelsMenu(m.tr("Enabled models", "Włączone modele"), m.tr("↑↓ select · type to filter · Enter use · R reasoning · Esc back", "↑↓ wybierz · pisz aby filtrować · Enter użyj · R myślenie · Esc wróć"))
 	case menuModelCatalog:

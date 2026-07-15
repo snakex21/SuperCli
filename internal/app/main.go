@@ -72,6 +72,7 @@ import (
 	"supercli/internal/tools/shellescape"
 	"supercli/internal/ui/tui"
 	"supercli/internal/verification/hardtest"
+	"supercli/internal/webgui"
 )
 
 const version = "0.6.0"
@@ -2518,6 +2519,12 @@ func Main() {
 		CapabilityRegistry: caps,
 		GoalService:        goalSvc,
 		ToolRegistry:       registry,
+		DataExport: func(_ context.Context, full bool) (string, error) {
+			return webgui.ExportDataBackup(dataDir, full)
+		},
+		DataImport: func(_ context.Context, path string) (bool, error) {
+			return webgui.StageDataImport(dataDir, path)
+		},
 	})
 
 	// Startup-latency tripwire: everything above must be local

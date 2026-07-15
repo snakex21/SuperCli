@@ -155,6 +155,83 @@ func TestSessionsMenuSelectsWithoutSlashBubble(t *testing.T) {
 	}
 }
 
+func TestTaskQueuePersistsAddsMovesAndDeletes(t *testing.T) {
+	home := t.TempDir()
+	store, err := session.OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	m := New(Options{Home: home, SessionStore: store, NoColor: true})
+
+	out, _ := m.openQueueMenu()
+	mm := out.(Model)
+	if mm.menu.kind != menuQueue {
+		t.Fatalf("kind=%v, want queue", mm.menu.kind)
+	}
+	for _, prompt := range []string{"first task", "second task"} {
+		out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+		mm = out.(Model)
+		if !mm.menu.editing {
+			t.Fatal("N did not enter queue editor")
+		}
+		for _, r := range []rune(prompt) {
+			out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			mm = out.(Model)
+		}
+		out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		mm = out.(Model)
+		if mm.menu.editing {
+			t.Fatalf("Enter did not save queue prompt %q", mm.menu.editBuf)
+		}
+	}
+	if len(mm.menu.tasks) != 2 || mm.menu.tasks[0].Prompt != "first task" {
+		t.Fatalf("tasks=%+v", mm.menu.tasks)
+	}
+	mm.menu.cursor = 1
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyCtrlUp})
+	mm = out.(Model)
+	if mm.menu.tasks[0].Prompt != "second task" {
+		t.Fatalf("move did not persist: %+v", mm.menu.tasks)
+	}
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	mm = out.(Model)
+	if len(mm.menu.tasks) != 1 || mm.menu.tasks[0].Prompt != "first task" {
+		t.Fatalf("delete failed: %+v", mm.menu.tasks)
+	}
+	reopened, _ := mm.openQueueMenu()
+	if got := reopened.(Model).menu.tasks; len(got) != 1 || got[0].Prompt != "first task" {
+		t.Fatalf("queue not durable: %+v", got)
+	}
+}
+
+func TestDataMenuRunsBackupOutsideUpdateLoop(t *testing.T) {
+	called := false
+	m := New(Options{Home: t.TempDir(), NoColor: true, DataExport: func(_ context.Context, full bool) (string, error) {
+		called = true
+		if full {
+			t.Fatal("safe backup unexpectedly requested full archive")
+		}
+		return `C:\backup\safe.zip`, nil
+	}})
+	out, _ := m.openDataMenu()
+	mm := out.(Model)
+	out, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = out.(Model)
+	if cmd == nil || called {
+		t.Fatalf("backup must be deferred to tea.Cmd; cmd=%v called=%v", cmd != nil, called)
+	}
+	msg := cmd()
+	if !called {
+		t.Fatal("backup callback was not called")
+	}
+	out, _ = mm.Update(msg)
+	mm = out.(Model)
+	if mm.mode != modeNormal || !strings.Contains(mm.statusOverride, `C:\backup\safe.zip`) {
+		t.Fatalf("mode=%v status=%q", mm.mode, mm.statusOverride)
+	}
+}
+
 func TestIntentMenusFitNarrowTerminal(t *testing.T) {
 	m := New(Options{Home: t.TempDir(), NoColor: true})
 	m.width, m.height = 48, 18
