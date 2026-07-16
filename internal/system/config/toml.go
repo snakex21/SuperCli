@@ -78,6 +78,8 @@ type TomlConfig struct {
 
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
+	// MaxStepsOr (below) is how consumers read it: 0 = per-surface
+	// built-in default (TUI 10, batch and WebGUI 25).
 
 	// ReflectEvery controls F5.a mid-run reflection. 0 selects the
 	// adaptive signal-driven policy, a positive value forces a fixed
@@ -589,6 +591,17 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 			dst.Mcp.Servers[name] = s
 		}
 	}
+}
+
+// MaxStepsOr returns the configured max_steps when positive, otherwise
+// def — the caller's built-in default (TUI 10, batch and WebGUI 25).
+// This keeps the documented `max_steps` knob honoured on every surface
+// while an empty config still gets the tuned per-surface cap.
+func (t TomlConfig) MaxStepsOr(def int) int {
+	if t.MaxSteps > 0 {
+		return t.MaxSteps
+	}
+	return def
 }
 
 // ResolveConfig builds the final config by merging layers.

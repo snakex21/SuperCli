@@ -750,7 +750,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		Registry:              reg,
 		Caps:                  caps,
 		System:                webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc),
-		MaxSteps:              25,
+		MaxSteps:              tc.MaxStepsOr(25),
 		Orchestrator:          orchestrator,
 		TaskParallel:          taskParallel,
 		TaskParallelWarnLocal: taskParallelWarnLocal,
