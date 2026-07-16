@@ -9,6 +9,7 @@
 *.test
 coverage.out
 test/perf/*.json
+/cmd/supercli-web/nestcafe-ui/
 
 # Runtime state / databases — never publish these
 .supercli/

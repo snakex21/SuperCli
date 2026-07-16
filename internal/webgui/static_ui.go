@@ -2,6 +2,7 @@ package webgui
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,17 @@ import (
 // It must be called before Handler.
 func (s *Server) UseUIRoot(root string) error {
 	handler, err := staticUIHandler(root)
+	if err != nil {
+		return err
+	}
+	s.uiHandler = handler
+	return nil
+}
+
+// UseUIFS replaces the embedded SuperCli front-end with another embedded
+// filesystem. It lets branded builds remain a single executable.
+func (s *Server) UseUIFS(fsys fs.FS) error {
+	handler, err := staticUIFSHandler(fsys)
 	if err != nil {
 		return err
 	}
@@ -44,4 +56,18 @@ func staticUIHandler(root string) (http.Handler, error) {
 		return nil, fmt.Errorf("webgui: ui root index.html is not a file: %s", index)
 	}
 	return http.FileServer(http.Dir(abs)), nil
+}
+
+func staticUIFSHandler(fsys fs.FS) (http.Handler, error) {
+	if fsys == nil {
+		return nil, fmt.Errorf("webgui: UI filesystem is nil")
+	}
+	info, err := fs.Stat(fsys, "index.html")
+	if err != nil {
+		return nil, fmt.Errorf("webgui: embedded UI requires index.html: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("webgui: embedded UI index.html is not a file")
+	}
+	return http.FileServer(http.FS(fsys)), nil
 }

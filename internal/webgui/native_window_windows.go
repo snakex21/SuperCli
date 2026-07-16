@@ -41,16 +41,16 @@ const (
 // runNativeAppWindow hosts the local GUI in a real Win32 window backed by the
 // system WebView2 runtime. The process therefore has SuperCli's own taskbar and
 // Alt+Tab identity instead of appearing as a Chrome/Edge app-mode window.
-func runNativeAppWindow(url string) error {
+func runNativeAppWindow(url, appName string) error {
 	enablePerMonitorDPI()
-	setNativeAppIdentity()
+	setNativeAppIdentity(appName)
 	w, err := glaze.New(false)
 	if err != nil {
 		return fmt.Errorf("native WebView2 unavailable: %w", err)
 	}
 	defer w.Destroy()
 
-	w.SetTitle("SuperCli")
+	w.SetTitle(appName)
 	badge, badgeErr := newNativeTaskbarBadge(uintptr(w.Window()))
 	if badgeErr != nil {
 		log.Printf("native taskbar badge unavailable: %v", badgeErr)
@@ -66,14 +66,14 @@ func runNativeAppWindow(url string) error {
 	_ = w.Bind("supercliSetBadge", func(count int) {
 		if badge != nil {
 			badge.Set(count)
-			w.SetTitle("SuperCli")
+			w.SetTitle(appName)
 			return
 		}
 		if count > 0 {
-			w.SetTitle(fmt.Sprintf("(%d) SuperCli", count))
+			w.SetTitle(fmt.Sprintf("(%d) %s", count, appName))
 			return
 		}
-		w.SetTitle("SuperCli")
+		w.SetTitle(appName)
 	})
 	setNativeWindowIcon(w.Window())
 	width, height := nativeWindowSize()
@@ -132,8 +132,8 @@ func enablePerMonitorDPI() {
 	}
 }
 
-func setNativeAppIdentity() {
-	id, err := windows.UTF16PtrFromString("SuperCli.Desktop")
+func setNativeAppIdentity(appName string) {
+	id, err := windows.UTF16PtrFromString(appName + ".Desktop")
 	if err == nil {
 		_, _, _ = setAppID.Call(uintptr(unsafe.Pointer(id)))
 	}
