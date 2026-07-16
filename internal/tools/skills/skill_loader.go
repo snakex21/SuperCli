@@ -270,6 +270,37 @@ func (d *Discoverer) Search(query string, limit int) ([]Skill, error) {
 	return out, nil
 }
 
+// List returns one metadata-only catalog page and the total number of matches.
+// It reads the shared immutable catalog directly, avoiding the full slice copy
+// made by Discover when a UI only needs a small visible window.
+func (d *Discoverer) List(query string, offset, limit int) ([]Skill, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	all, err := d.catalog()
+	if err != nil {
+		return nil, 0, err
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	out := make([]Skill, 0, min(limit, len(all)))
+	total := 0
+	for _, skill := range all {
+		if query != "" && !strings.Contains(skill.searchText, query) {
+			continue
+		}
+		if total >= offset && len(out) < limit {
+			skill.Content = ""
+			skill.Frontmatter = nil
+			out = append(out, skill)
+		}
+		total++
+	}
+	return out, total, nil
+}
+
 func skillTokens(s string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
