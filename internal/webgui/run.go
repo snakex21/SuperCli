@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,11 @@ type RunOptions struct {
 	NoWindow bool
 	// UIRoot serves a host application's front-end instead of the embedded UI.
 	UIRoot string
+	// UIFS serves an application front-end embedded in the executable. UIRoot
+	// takes precedence when both are set.
+	UIFS fs.FS
+	// AppName controls the native window title and Windows application identity.
+	AppName string
 }
 
 // Run starts the web GUI server on a loopback port, opens an
@@ -55,6 +62,11 @@ func Run(eng *Engine, opts RunOptions) error {
 			_ = ln.Close()
 			return fmt.Errorf("webgui.Run: custom UI: %w", err)
 		}
+	} else if opts.UIFS != nil {
+		if err := webServer.UseUIFS(opts.UIFS); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("webgui.Run: embedded custom UI: %w", err)
+		}
 	}
 	srv := &http.Server{
 		Handler:           webServer.Handler(),
@@ -68,14 +80,18 @@ func Run(eng *Engine, opts RunOptions) error {
 		}
 	}()
 
-	log.Printf("SuperCli web GUI: %s", url)
+	appName := strings.TrimSpace(opts.AppName)
+	if appName == "" {
+		appName = "SuperCli"
+	}
+	log.Printf("%s web GUI: %s", appName, url)
 	windowClosedCh := make(chan struct{}, 1)
 	if !opts.NoWindow {
 		// Prefer a true native WebView2 host. Besides giving the program its own
 		// Windows identity, this avoids tying server lifetime to a Chrome/Edge
 		// launcher process. The browser path remains a compatibility fallback
 		// for machines without the WebView2 runtime.
-		if nativeErr := runNativeAppWindow(url); nativeErr == nil {
+		if nativeErr := runNativeAppWindow(url, appName); nativeErr == nil {
 			log.Printf("native app window closed; shutting down…")
 			return shutdownAfterWindowClose(srv)
 		} else {

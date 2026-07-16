@@ -223,11 +223,17 @@ func run(crashDataDir *string) {
 	}
 	eng.RefreshPricingAsync()
 
+	uiFS, appName, _ := bundledUI()
+	if *uiDirFlag != "" {
+		uiFS = nil
+	}
 	if err := webgui.Run(eng, webgui.RunOptions{
 		Addr:        *addrFlag,
 		AllowRemote: *allowRemoteFlag,
 		NoWindow:    *noWindowFlag,
 		UIRoot:      *uiDirFlag,
+		UIFS:        uiFS,
+		AppName:     appName,
 	}); err != nil {
 		fatal("run", err)
 	}

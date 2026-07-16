@@ -33,3 +33,26 @@ func TestServerCustomUIRootRequiresIndex(t *testing.T) {
 		t.Fatal("UseUIRoot should reject a directory without index.html")
 	}
 }
+
+func TestServerCustomUIFS(t *testing.T) {
+	srv := NewServer(nil, false)
+	fsys := os.DirFS(t.TempDir())
+	if err := srv.UseUIFS(fsys); err == nil {
+		t.Fatal("UseUIFS should reject a filesystem without index.html")
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<title>Bundled app</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.UseUIFS(os.DirFS(root)); err != nil {
+		t.Fatalf("UseUIFS: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Bundled app") {
+		t.Fatalf("embedded custom UI response = %d %q", rec.Code, rec.Body.String())
+	}
+}

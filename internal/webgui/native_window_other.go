@@ -4,6 +4,6 @@ package webgui
 
 import "errors"
 
-func runNativeAppWindow(string) error {
+func runNativeAppWindow(string, string) error {
 	return errors.New("native WebView2 window is only available on Windows")
 }
