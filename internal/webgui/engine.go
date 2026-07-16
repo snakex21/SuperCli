@@ -98,6 +98,11 @@ type Engine struct {
 	codeIntel   map[string]*tools.CodeIntel
 	processMu   sync.Mutex
 	processes   map[string]*tools.ProcessSession
+	// Skill catalogs are workspace-scoped and immutable for the lifetime of a
+	// process. Reuse each lazy Discoverer across UI browsing and agent turns so
+	// external SKILL.md files are scanned once instead of once per request.
+	skillMu      sync.Mutex
+	skillCatalog map[string]*tools.Discoverer
 	// mcpManager owns both explicit config.toml servers and relocatable
 	// packages from <dataDir>/mcp. Servers remain stopped until mcp_bridge
 	// searches or calls one of them.
@@ -137,19 +142,20 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
 	eng := &Engine{
-		cfg:         cfg,
-		dataDir:     dataDir,
-		home:        home,
-		caps:        caps,
-		prov:        prov,
-		factory:     f,
-		learned:     llm.LoadLearnedLimits(dataDir),
-		questions:   make(map[string]tools.AskRequest),
-		perf:        make(map[string]providerCallPerformance),
-		checkpoints: make(map[string]*checkpoint.Manager),
-		codeIntel:   make(map[string]*tools.CodeIntel),
-		processes:   make(map[string]*tools.ProcessSession),
-		workers:     agent.NewWorkerRegistry(),
+		cfg:          cfg,
+		dataDir:      dataDir,
+		home:         home,
+		caps:         caps,
+		prov:         prov,
+		factory:      f,
+		learned:      llm.LoadLearnedLimits(dataDir),
+		questions:    make(map[string]tools.AskRequest),
+		perf:         make(map[string]providerCallPerformance),
+		checkpoints:  make(map[string]*checkpoint.Manager),
+		codeIntel:    make(map[string]*tools.CodeIntel),
+		processes:    make(map[string]*tools.ProcessSession),
+		skillCatalog: make(map[string]*tools.Discoverer),
+		workers:      agent.NewWorkerRegistry(),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.providerManager().SetModelPrices(caps)
@@ -370,6 +376,18 @@ func (e *Engine) processSessionFor(home string) *tools.ProcessSession {
 	tool := tools.NewProcessSession(abs)
 	e.processes[key] = tool
 	return tool
+}
+
+func (e *Engine) skillDiscovererFor(home string) *tools.Discoverer {
+	abs, key := workspaceCacheKey(home)
+	e.skillMu.Lock()
+	defer e.skillMu.Unlock()
+	if discoverer := e.skillCatalog[key]; discoverer != nil {
+		return discoverer
+	}
+	discoverer := tools.NewDiscovererWithBuiltins(abs, e.dataDir)
+	e.skillCatalog[key] = discoverer
+	return discoverer
 }
 
 func workspaceCacheKey(home string) (string, string) {
@@ -617,7 +635,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	codeIntel := e.codeIntelFor(home)
 	reg.MustRegister(codeIntel.Spec())
 	reg.MustRegister(e.processSessionFor(home).Spec())
-	discoverer := tools.NewDiscovererWithBuiltins(home, e.dataDir)
+	discoverer := e.skillDiscovererFor(home)
 	skillApplier := tools.NewSkillApplier(discoverer)
 	reg.MustRegister(skillApplier.Spec())
 	reg.MarkAlwaysOn("apply_skill")
