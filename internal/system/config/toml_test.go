@@ -642,3 +642,15 @@ command = "echo-server"
 		t.Error("merge dropped context7")
 	}
 }
+
+func TestMaxStepsOr(t *testing.T) {
+	if got := (TomlConfig{}).MaxStepsOr(25); got != 25 {
+		t.Errorf("unset: MaxStepsOr(25) = %d, want 25", got)
+	}
+	if got := (TomlConfig{MaxSteps: 15}).MaxStepsOr(10); got != 15 {
+		t.Errorf("set: MaxStepsOr(10) = %d, want 15", got)
+	}
+	if got := (TomlConfig{MaxSteps: -3}).MaxStepsOr(10); got != 10 {
+		t.Errorf("negative: MaxStepsOr(10) = %d, want 10", got)
+	}
+}

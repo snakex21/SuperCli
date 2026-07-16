@@ -1094,7 +1094,7 @@ func Main() {
 		Registry:           registry,
 		System:             buildSystemPrompt(goalSvc),
 		Briefing:           memoryBriefing,
-		MaxSteps:           10,
+		MaxSteps:           tomlCfg.MaxStepsOr(10),
 		ErrorLog:           errorLog,
 		Reflector:          reflector,
 		ReflectEvery:       reflectEvery,
