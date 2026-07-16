@@ -11,12 +11,13 @@ import (
 
 // chatRequest is the JSON body posted to /api/chat.
 type chatRequest struct {
-	Prompt              string `json:"prompt"`
-	SessionID           string `json:"session_id,omitempty"`
-	Rewound             bool   `json:"rewound,omitempty"`
-	RewindReason        string `json:"rewind_reason,omitempty"`
-	RewindFiles         bool   `json:"rewind_files,omitempty"`
-	RewindFilesRestored bool   `json:"rewind_files_restored,omitempty"`
+	Prompt              string   `json:"prompt"`
+	SessionID           string   `json:"session_id,omitempty"`
+	Attachments         []string `json:"attachments,omitempty"`
+	Rewound             bool     `json:"rewound,omitempty"`
+	RewindReason        string   `json:"rewind_reason,omitempty"`
+	RewindFiles         bool     `json:"rewind_files,omitempty"`
+	RewindFilesRestored bool     `json:"rewind_files_restored,omitempty"`
 }
 
 // handleChat runs one prompt and streams the agent's events back as
@@ -37,6 +38,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	req.RewindReason = strings.TrimSpace(truncateRunes(req.RewindReason, 400))
 	if req.Prompt == "" {
 		http.Error(w, "empty prompt", http.StatusBadRequest)
+		return
+	}
+	attachmentAddon, err := buildAttachmentAddon(s.eng.Home(), req.Attachments)
+	if err != nil {
+		http.Error(w, "invalid attachments: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -72,9 +78,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// The request context cancels when the client disconnects; the
 	// loop honours it and stops the run.
-	rewindFeedback := ""
+	userAddons := make([]string, 0, 2)
 	if req.Rewound {
-		rewindFeedback = "[rewind_feedback]\nThe user deliberately rejected and rewound the previous attempt. Reconsider the approach and do not repeat it without verification."
+		rewindFeedback := "[rewind_feedback]\nThe user deliberately rejected and rewound the previous attempt. Reconsider the approach and do not repeat it without verification."
 		if req.RewindFiles {
 			rewindFeedback += "\nThe program also restored the affected workspace files to their checkpointed state."
 		} else if req.RewindFilesRestored {
@@ -84,8 +90,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			rewindFeedback += "\nUser-provided reason: " + req.RewindReason
 		}
 		rewindFeedback += "\n[/rewind_feedback]"
+		userAddons = append(userAddons, rewindFeedback)
 	}
-	if err := s.eng.runStream(r.Context(), req.Prompt, req.SessionID, rewindFeedback, emit); err != nil {
+	if attachmentAddon != "" {
+		userAddons = append(userAddons, attachmentAddon)
+	}
+	if err := s.eng.runStream(r.Context(), req.Prompt, req.SessionID, strings.Join(userAddons, "\n\n"), emit); err != nil {
 		// Surface run-setup failures (provider/loop build) as a final
 		// error frame so the UI can show them instead of a dead stream.
 		emit(wireEvent{Type: "error", Err: err.Error()})

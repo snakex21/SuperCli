@@ -96,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Native folder picker (Windows dialog)
 	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
+	mux.HandleFunc("/api/file-picker", s.handleFilePicker)
 	mux.HandleFunc("/api/folder/open", s.handleOpenFolder)
 
 	return s.withLocalGuard(mux)
