@@ -24,7 +24,11 @@ func (s *Server) Handler() http.Handler {
 		// only fire in a broken build, never at runtime in the field.
 		panic("webgui: embed assets: " + err.Error())
 	}
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	if s.uiHandler != nil {
+		mux.Handle("/", s.uiHandler)
+	} else {
+		mux.Handle("/", http.FileServer(http.FS(sub)))
+	}
 
 	// JSON read APIs for the side panels.
 	mux.HandleFunc("/api/health", s.handleHealth)

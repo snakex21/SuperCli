@@ -18,7 +18,8 @@ import (
 // runtime) and exposes it over JSON + SSE. Construct it with
 // NewServer; build the routing with Handler.
 type Server struct {
-	eng *Engine
+	eng       *Engine
+	uiHandler http.Handler
 	// allowRemote disables the loopback-only guard. Off by default:
 	// the GUI is a local single-user app. The separate binary may
 	// flip it on for explicit, opt-in network exposure.

@@ -43,6 +43,7 @@ func main() {
 
 func run(crashDataDir *string) {
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
+	workspaceFlag := flag.String("workspace", "", "active workspace directory without changing the portable data/config location")
 	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, opencode, codex, or echo")
 	modelFlag := flag.String("model", "", "model id")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
@@ -50,6 +51,7 @@ func run(crashDataDir *string) {
 	echoFlag := flag.Bool("echo", false, "force echo provider")
 	addrFlag := flag.String("addr", "", "listen address (default 127.0.0.1:0, an OS-assigned port)")
 	noWindowFlag := flag.Bool("no-window", false, "do not open a browser window; serve only")
+	uiDirFlag := flag.String("ui-dir", "", "serve a custom static UI directory instead of the embedded SuperCli front-end")
 	allowRemoteFlag := flag.Bool("allow-remote", false, "allow non-loopback hosts (no auth provided; use with care)")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
@@ -84,7 +86,19 @@ func run(crashDataDir *string) {
 	workspace := memory.LoadWorkspace(dataDir)
 	activeProject, hasActiveProject := workspace.ActiveProject()
 	activeProjectApplied := false
-	if hasActiveProject && *homeFlag == "" && os.Getenv(storage.HomeEnv) == "" {
+	if *workspaceFlag != "" {
+		workspaceHome, workspaceErr := filepath.Abs(*workspaceFlag)
+		if workspaceErr != nil {
+			fatal("resolve workspace", workspaceErr)
+		}
+		if fi, statErr := os.Stat(workspaceHome); statErr != nil || !fi.IsDir() {
+			if statErr != nil {
+				fatal("open workspace", statErr)
+			}
+			fatal("open workspace", fmt.Errorf("not a directory: %s", workspaceHome))
+		}
+		home = workspaceHome
+	} else if hasActiveProject && *homeFlag == "" && os.Getenv(storage.HomeEnv) == "" {
 		if fi, statErr := os.Stat(activeProject.Path); statErr == nil && fi.IsDir() {
 			home = activeProject.Path
 			activeProjectApplied = true
@@ -213,6 +227,7 @@ func run(crashDataDir *string) {
 		Addr:        *addrFlag,
 		AllowRemote: *allowRemoteFlag,
 		NoWindow:    *noWindowFlag,
+		UIRoot:      *uiDirFlag,
 	}); err != nil {
 		fatal("run", err)
 	}

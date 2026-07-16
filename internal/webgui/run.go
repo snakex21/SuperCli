@@ -26,6 +26,8 @@ type RunOptions struct {
 	AllowRemote bool
 	// NoWindow skips opening a browser window (server only).
 	NoWindow bool
+	// UIRoot serves a host application's front-end instead of the embedded UI.
+	UIRoot string
 }
 
 // Run starts the web GUI server on a loopback port, opens an
@@ -47,8 +49,15 @@ func Run(eng *Engine, opts RunOptions) error {
 	}
 	url := localLaunchURL(ln.Addr().String())
 
+	webServer := NewServer(eng, opts.AllowRemote)
+	if opts.UIRoot != "" {
+		if err := webServer.UseUIRoot(opts.UIRoot); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("webgui.Run: custom UI: %w", err)
+		}
+	}
 	srv := &http.Server{
-		Handler:           NewServer(eng, opts.AllowRemote).Handler(),
+		Handler:           webServer.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
