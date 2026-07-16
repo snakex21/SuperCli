@@ -116,6 +116,7 @@ type Engine struct {
 	// registry. Doctor only reads it; ordinary rendering never touches it.
 	diagnosticMu       sync.RWMutex
 	diagnosticRegistry *tools.Registry
+	schedules          *scheduleManager
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -158,6 +159,13 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		workers:      agent.NewWorkerRegistry(),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
+	eng.schedules = newScheduleManager(dataDir, func(workspace, prompt string) error {
+		if !sameSessionWorkspace(workspace, eng.Home()) {
+			return errors.New("scheduled workspace is not active")
+		}
+		_, err := eng.enqueueTask(context.Background(), "", prompt)
+		return err
+	})
 	eng.providerManager().SetModelPrices(caps)
 	if err := eng.reloadMCP(); err != nil {
 		// A broken optional package must not prevent the application from
@@ -306,6 +314,10 @@ func (e *Engine) Close() error {
 	}
 	if e.titles != nil {
 		e.titles.Close()
+	}
+	if e.schedules != nil {
+		e.schedules.Close()
+		e.schedules = nil
 	}
 	e.mcpMu.Lock()
 	mcpManager := e.mcpManager
