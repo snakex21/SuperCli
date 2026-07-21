@@ -51,9 +51,10 @@ type wireEvent struct {
 	// (cached prompt tokens / prompt tokens) and hidden reasoning
 	// tokens for the run. Omitted when the backend does not report
 	// them, mirroring the TUI cache:/think: badges.
-	CacheHitPct  int    `json:"cache_hit_pct,omitempty"`
-	ReasoningTok int    `json:"reasoning_tok,omitempty"`
-	CheckpointID string `json:"checkpoint_id,omitempty"`
+	CacheHitPct  int                     `json:"cache_hit_pct,omitempty"`
+	ReasoningTok int                     `json:"reasoning_tok,omitempty"`
+	CheckpointID string                  `json:"checkpoint_id,omitempty"`
+	FileChanges  []checkpoint.FileChange `json:"file_changes,omitempty"`
 	// Step is set on reflection / sisyphus markers.
 	Step int `json:"step,omitempty"`
 	// SessionID is emitted once at stream start so the browser keeps later
@@ -82,7 +83,7 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	case agent.SisyphusEvent:
 		return wireEvent{Type: "sisyphus", Step: e.Step, Text: e.Text}, true
 	case agent.AutoCompactEvent:
-		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, window %d", e.Reason, e.Removed, e.Window)}, true
+		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, ~%d/%d tokens, estimate=%s, window=%s", e.Reason, e.Removed, e.Estimated, e.Window, e.EstimateSource, e.WindowSource)}, true
 	case agent.ToolResultsPrunedEvent:
 		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens", e.Pruned, e.Reclaimed)}, true
 	case agent.NoticeEvent:
@@ -192,6 +193,10 @@ func (c *messageCoalescer) Flush() {
 // closes or ctx is cancelled. emit is called from this goroutine; the
 // HTTP handler is responsible for flushing to the client.
 func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon string, emit func(wireEvent)) error {
+	return e.runStreamWithImages(ctx, prompt, sessionID, userAddon, nil, emit)
+}
+
+func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, userAddon string, images []llm.ImageRef, emit func(wireEvent)) error {
 	runStarted := time.Now()
 	askCh := make(chan tools.AskRequest, 3)
 	activeQuestions := []string{}
@@ -224,9 +229,11 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 	// factory-built metered provider reports every call (coordinator
 	// steps AND delegated workers) here — no second wrapper.
 	var usageStore *session.Store
+	assistantSeqBefore := 0
 	telemetry := systats.NewMemory()
 	if us, openErr := e.sessionStore(); openErr == nil {
 		usageStore = us
+		assistantSeqBefore, _ = usageStore.LatestMessageSeq(ctx, sid, string(llm.RoleAssistant))
 		if sink := e.usageCallSink(usageStore, sid); sink != nil {
 			ctx = llm.WithCallSink(ctx, sink)
 		}
@@ -244,6 +251,9 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 	}
 	if strings.TrimSpace(userAddon) != "" {
 		loop.SetNextUserAddon(userAddon)
+	}
+	if len(images) > 0 {
+		loop.SetNextUserImages(images)
 	}
 	// Worker completions, worker-backend fallback notices and draft-verify
 	// telemetry are emitted through Loop's external sink rather than the main
@@ -332,17 +342,117 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 	toolCalls := 0
 	toolFailures := 0
 	turnSaved := false
+	terminalUsage := agent.Usage{}
+	var turnFileChanges []checkpoint.FileChange
+	finishCheckpoint := func() (string, []checkpoint.FileChange) {
+		if checkpointTurn == nil {
+			return "", turnFileChanges
+		}
+		turn := checkpointTurn
+		checkpointTurn = nil
+		finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if usageStore != nil {
+			if userSeq, seqErr := usageStore.LatestMessageSeq(finishCtx, sid, string(llm.RoleUser)); seqErr == nil {
+				turn.SetUserSeq(userSeq)
+			} else {
+				log.Printf("checkpoint user sequence: %v", seqErr)
+			}
+		}
+		record, finishErr := turn.Complete(finishCtx)
+		if finishErr != nil {
+			log.Printf("checkpoint complete: %v", finishErr)
+			return "", nil
+		}
+		if record == nil {
+			return "", nil
+		}
+		turnFileChanges = append([]checkpoint.FileChange(nil), record.Changes...)
+		return record.ID, turnFileChanges
+	}
+	saveTurnSummary := func() {
+		if turnSaved || usageStore == nil {
+			return
+		}
+		turns := telemetry.Snapshot()
+		calls := telemetry.Calls()
+		if len(turns) == 0 && len(calls) == 0 && toolCalls == 0 {
+			return
+		}
+		saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		assistantSeq, seqErr := usageStore.LatestMessageSeq(saveCtx, sid, string(llm.RoleAssistant))
+		if seqErr != nil {
+			log.Printf("web turn summary assistant sequence: session=%q: %v", sid, seqErr)
+			return
+		}
+		// A provider can fail before producing any assistant message. Never
+		// attach that failed attempt to (and overwrite) the previous answer.
+		if assistantSeq <= assistantSeqBefore {
+			return
+		}
+		usage := terminalUsage
+		if usage.Input == 0 && usage.Output == 0 {
+			total := systats.Sum(turns)
+			usage.Input = total.TokensIn
+			usage.Output = total.TokensOut
+			usage.Total = usage.Input + usage.Output
+		}
+		steps := len(turns)
+		for _, call := range calls {
+			if call.Step > steps {
+				steps = call.Step
+			}
+		}
+		failedCalls, canceledCalls, backgroundCalls, helperCalls := summarizeTelemetryCalls(calls)
+		storedChanges := make([]session.FileChange, 0, len(turnFileChanges))
+		for _, change := range turnFileChanges {
+			storedChanges = append(storedChanges, session.FileChange{Path: change.Path, Kind: change.Kind})
+		}
+		if saveErr := usageStore.AppendTurnSummary(saveCtx, session.TurnSummary{
+			SessionID: sid, AssistantSeq: assistantSeq,
+			DurationMS: time.Since(runStarted).Milliseconds(),
+			Input:      int64(usage.Input), Output: int64(usage.Output),
+			CachedInput: int64(usage.Cached), Reasoning: int64(usage.Reasoning),
+			HasCachedInput: usage.Cached > 0, HasReasoning: usage.Reasoning > 0,
+			ToolCalls: toolCalls, ToolFailures: toolFailures, Steps: steps,
+			ModelCalls: len(calls), FailedCalls: failedCalls, CanceledCalls: canceledCalls,
+			BackgroundCalls: backgroundCalls, HelperCalls: helperCalls,
+			Phases: systats.SumPhases(turns), FileChanges: storedChanges,
+		}); saveErr != nil {
+			// Telemetry must never fail or delay the user's answer/error.
+			log.Printf("web turn summary: session=%q: %v", sid, saveErr)
+			return
+		}
+		turnSaved = true
+	}
+	// Context cancellation and semantic progress timeouts return before the
+	// loop's terminal event can always be observed. Persist whatever completed
+	// phase/call data exists so failed runs are not invisible in telemetry.
+	defer saveTurnSummary()
 	for {
 		select {
 		case <-ctx.Done():
+			checkpointID, changes := finishCheckpoint()
+			if len(changes) > 0 {
+				send(wireEvent{Type: "file_changes", CheckpointID: checkpointID, FileChanges: changes})
+			}
 			return ctx.Err()
 		case <-progressC:
+			checkpointID, changes := finishCheckpoint()
+			if len(changes) > 0 {
+				send(wireEvent{Type: "file_changes", CheckpointID: checkpointID, FileChanges: changes})
+			}
 			return fmt.Errorf("provider produced no model progress for %s", progressTimeout)
 		case <-messageTimerC:
 			messageTimerC = nil
 			coalescer.Flush()
 		case ev, ok := <-ch:
 			if !ok {
+				checkpointID, changes := finishCheckpoint()
+				if len(changes) > 0 {
+					send(wireEvent{Type: "file_changes", CheckpointID: checkpointID, FileChanges: changes})
+				}
 				// Synchronous task completion may enqueue its external marker just
 				// before the parent turn closes. Drain what is already available.
 				for {
@@ -364,44 +474,23 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 				toolFailures++
 			}
 			checkpointID := ""
-			if _, ok := ev.(agent.DoneEvent); ok && checkpointTurn != nil {
-				finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				if usageStore != nil {
-					if userSeq, seqErr := usageStore.LatestMessageSeq(finishCtx, sid, string(llm.RoleUser)); seqErr == nil {
-						checkpointTurn.SetUserSeq(userSeq)
-					} else {
-						log.Printf("checkpoint user sequence: %v", seqErr)
-					}
-				}
-				record, finishErr := checkpointTurn.Complete(finishCtx)
-				cancel()
-				if finishErr != nil {
-					log.Printf("checkpoint complete: %v", finishErr)
-				} else if record != nil {
-					checkpointID = record.ID
-				}
+			var fileChanges []checkpoint.FileChange
+			_, doneEvent := ev.(agent.DoneEvent)
+			_, errorEvent := ev.(agent.ErrorEvent)
+			if doneEvent || errorEvent {
+				checkpointID, fileChanges = finishCheckpoint()
 			}
-			if done, ok := ev.(agent.DoneEvent); ok && !turnSaved && usageStore != nil {
-				turnSaved = true
-				turns := telemetry.Snapshot()
-				calls := telemetry.Calls()
-				failedCalls, canceledCalls, backgroundCalls, helperCalls := summarizeTelemetryCalls(calls)
-				if saveErr := usageStore.AppendTurnSummary(context.Background(), session.TurnSummary{
-					SessionID: sid, DurationMS: time.Since(runStarted).Milliseconds(),
-					Input: int64(done.Usage.Input), Output: int64(done.Usage.Output),
-					CachedInput: int64(done.Usage.Cached), Reasoning: int64(done.Usage.Reasoning),
-					HasCachedInput: done.Usage.Cached > 0, HasReasoning: done.Usage.Reasoning > 0,
-					ToolCalls: toolCalls, ToolFailures: toolFailures, Steps: len(turns),
-					ModelCalls: len(calls), FailedCalls: failedCalls, CanceledCalls: canceledCalls,
-					BackgroundCalls: backgroundCalls, HelperCalls: helperCalls,
-					Phases: systats.SumPhases(turns),
-				}); saveErr != nil {
-					// Telemetry must never fail the user's completed answer.
-					log.Printf("web turn summary: session=%q: %v", sid, saveErr)
-				}
+			if done, ok := ev.(agent.DoneEvent); ok {
+				terminalUsage = done.Usage
+				saveTurnSummary()
+			}
+			if failed, ok := ev.(agent.ErrorEvent); ok {
+				terminalUsage = failed.Usage
+				saveTurnSummary()
 			}
 			if w, keep := toWireEvent(ev); keep {
 				w.CheckpointID = checkpointID
+				w.FileChanges = fileChanges
 				send(w)
 			}
 		case ev := <-external:

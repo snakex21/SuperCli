@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/storage/memory"
 )
 
@@ -44,6 +45,9 @@ type dataStatus struct {
 	Sessions      int  `json:"sessions"`
 	MemoryEntries int  `json:"memory_entries"`
 	Goals         int  `json:"goals"`
+	QueuedTasks   int  `json:"queued_tasks"`
+	Schedules     int  `json:"schedules"`
+	FolderSources int  `json:"folder_sources"`
 	ImportPending bool `json:"import_pending"`
 }
 
@@ -64,6 +68,16 @@ func (s *Server) handleDataStatus(w http.ResponseWriter, r *http.Request) {
 			status.Goals = len(goals)
 		}
 	}
+	if tasks, err := s.eng.queuedTasks(r.Context()); err == nil {
+		status.QueuedTasks = len(tasks)
+	}
+	if s.eng.schedules != nil {
+		status.Schedules = len(s.eng.schedules.List(s.eng.Home()))
+	}
+	folderIndexMu.Lock()
+	folderConfig := loadFolderIndexConfig(s.eng.DataDir())
+	folderIndexMu.Unlock()
+	status.FolderSources = len(folderConfig.SelectedPaths)
 	_, err := os.Stat(filepath.Join(s.eng.DataDir(), pendingImportFile))
 	status.ImportPending = err == nil
 	writeJSON(w, status)
@@ -310,7 +324,7 @@ func buildDataExportMode(dataDir string, full bool) (string, error) {
 			}
 		}
 	}
-	for _, name := range []string{"projects.json", "workspace.json", "webgui-settings.json"} {
+	for _, name := range []string{"projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"} {
 		if err := copyIfExists(filepath.Join(dataDir, name), filepath.Join(dataRoot, name)); err != nil {
 			return fail(err)
 		}
@@ -319,6 +333,9 @@ func buildDataExportMode(dataDir string, full bool) (string, error) {
 		return fail(err)
 	}
 	if err := copyTreeIfExists(filepath.Join(dataDir, "reflect"), filepath.Join(dataRoot, "reflect")); err != nil {
+		return fail(err)
+	}
+	if err := copyTreeIfExists(filepath.Join(dataDir, "module-sources"), filepath.Join(dataRoot, "module-sources")); err != nil {
 		return fail(err)
 	}
 	projectsRoot := filepath.Join(dataDir, "projects")
@@ -540,10 +557,10 @@ func allowedBackupPathMode(name string, allowSecrets bool) bool {
 		}
 	}
 	switch rel {
-	case "sessions.db", "memory.db", "supercli.db", "projects.json", "workspace.json", "webgui-settings.json":
+	case "sessions.db", "memory.db", "supercli.db", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
 		return true
 	}
-	if len(parts) >= 2 && (parts[0] == "memory" || parts[0] == "reflect") {
+	if len(parts) >= 2 && (parts[0] == "memory" || parts[0] == "reflect" || parts[0] == "module-sources") {
 		return true
 	}
 	if len(parts) >= 3 && parts[0] == "projects" && safeDataName(parts[1]) {
@@ -630,7 +647,7 @@ func ApplyPendingDataImport(dataDir string) error {
 }
 
 func dataImportTargets(dataDir string, full bool) []string {
-	targets := []string{"sessions.db", "sessions.db-wal", "sessions.db-shm", "memory.db", "memory.db-wal", "memory.db-shm", "supercli.db", "supercli.db-wal", "supercli.db-shm", "memory", "projects", "reflect", "checkpoints", "projects.json", "workspace.json", "webgui-settings.json"}
+	targets := []string{"sessions.db", "sessions.db-wal", "sessions.db-shm", "memory.db", "memory.db-wal", "memory.db-shm", "supercli.db", "supercli.db-wal", "supercli.db-shm", "memory", "projects", "reflect", "module-sources", "checkpoints", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"}
 	if !full {
 		return targets
 	}
@@ -646,7 +663,7 @@ func dataImportTargets(dataDir string, full bool) []string {
 
 func allowedImportedRoot(name string, full bool) bool {
 	switch name {
-	case "sessions.db", "memory.db", "supercli.db", "memory", "projects", "reflect", "projects.json", "workspace.json", "webgui-settings.json":
+	case "sessions.db", "memory.db", "supercli.db", "memory", "projects", "reflect", "module-sources", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
 		return true
 	case "config.toml", "models.json", "context_limits.json", "mcp", "skills", "tools", "profiles":
 		return full

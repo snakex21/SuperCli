@@ -46,6 +46,17 @@ func TestDataBackupRoundTripPreservesSecretsOutsideArchive(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "auth.json"), []byte(`{"token":"source-token"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	sourceDocument := filepath.Join(source, "module-sources", "ocr-test", "history.png")
+	if err := os.MkdirAll(filepath.Dir(sourceDocument), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourceDocument, []byte("saved OCR source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userInstructions := `{"version":1,"enabled":true,"active_id":"office","presets":[{"id":"office","name":"Office","content":"Keep formatting"}]}`
+	if err := os.WriteFile(filepath.Join(source, "user-instructions.json"), []byte(userInstructions), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	exportStage, err := buildDataExport(source)
 	if err != nil {
@@ -131,6 +142,12 @@ func TestDataBackupRoundTripPreservesSecretsOutsideArchive(t *testing.T) {
 	}
 	if got, err := os.ReadFile(filepath.Join(target, "config.toml")); err != nil || !bytes.Equal(got, targetConfig) {
 		t.Fatalf("target secret config changed: %q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(target, "module-sources", "ocr-test", "history.png")); err != nil || string(got) != "saved OCR source" {
+		t.Fatalf("OCR source was not restored: %q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(target, "user-instructions.json")); err != nil || string(got) != userInstructions {
+		t.Fatalf("user instructions were not restored: %q err=%v", got, err)
 	}
 	backups, err := filepath.Glob(filepath.Join(target, "backups", "pre-import-*", "sessions.db"))
 	if err != nil || len(backups) != 1 {
@@ -348,6 +365,10 @@ func TestAllowedBackupPathRejectsNestedDatabaseAndUnsafeProjectNames(t *testing.
 		"data/projects/project/memory.db",
 		"data/projects/project/memory/patterns/item.md",
 		"data/memory/patterns/item.md",
+		"data/module-sources/ocr-test/history.png",
+		"data/folder-indexing.json",
+		"data/schedules.json",
+		"data/user-instructions.json",
 	} {
 		if !allowedBackupPath(name) {
 			t.Errorf("rejected supported backup path %q", name)

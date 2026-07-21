@@ -1,9 +1,7 @@
-//go:build !nestcafe
-
 package main
 
 import "io/fs"
 
-func bundledUI() (fs.FS, string, bool) {
-	return nil, "SuperCli", false
+func bundledUI() (fs.FS, string, string) {
+	return nil, "SuperCli", "supercli"
 }

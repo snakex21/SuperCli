@@ -6,11 +6,13 @@
 //
 // Usage:
 //
-//	supercli-web [--home PATH] [--provider P] [--model M] [--key K]
-//	             [--base-url U] [--addr ADDR] [--no-window] [--allow-remote]
+//	supercli-web [--home PATH] [--data-dir PATH] [--provider P] [--model M]
+//	             [--key K] [--base-url U] [--addr ADDR] [--no-window]
+//	             [--allow-remote]
 //
-// Home/data resolution matches the CLI: --home > $SUPERCLI_HOME > cwd,
-// with all state in the portable supercli-data/ directory.
+// --home/SUPERCLI_HOME select only the workspace. Application state defaults
+// to supercli-data beside this executable and can be changed only with the
+// explicit --data-dir/SUPERCLI_DATA_DIR override.
 package main
 
 import (
@@ -32,6 +34,7 @@ import (
 )
 
 func main() {
+	detachAccidentalConsole()
 	crashDataDir := storage.PortableDataRoot()
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -44,6 +47,7 @@ func main() {
 func run(crashDataDir *string) {
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
 	workspaceFlag := flag.String("workspace", "", "active workspace directory without changing the portable data/config location")
+	dataDirFlag := flag.String("data-dir", "", "runtime data directory (overrides $SUPERCLI_DATA_DIR; default: supercli-data beside this executable)")
 	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, opencode, codex, or echo")
 	modelFlag := flag.String("model", "", "model id")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
@@ -52,16 +56,45 @@ func run(crashDataDir *string) {
 	addrFlag := flag.String("addr", "", "listen address (default 127.0.0.1:0, an OS-assigned port)")
 	noWindowFlag := flag.Bool("no-window", false, "do not open a browser window; serve only")
 	uiDirFlag := flag.String("ui-dir", "", "serve a custom static UI directory instead of the embedded SuperCli front-end")
+	appNameFlag := flag.String("app-name", "", "desktop window name (for branded launchers)")
+	appProfileFlag := flag.String("app-profile", "", "single-instance profile (for branded launchers)")
+	iconFlag := flag.String("icon", "", "path to a Windows .ico file for the native window")
+	requireUIContractFlag := flag.Int("require-ui-contract", 0, "minimum shared UI contract required by the launcher")
+	parentPIDFlag := flag.Int("parent-pid", 0, "exit when this launcher process exits")
 	allowRemoteFlag := flag.Bool("allow-remote", false, "allow non-loopback hosts (no auth provided; use with care)")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
 	flag.Parse()
 
+	uiFS, appName, appProfile := bundledUI()
+	if strings.TrimSpace(*appNameFlag) != "" {
+		appName = strings.TrimSpace(*appNameFlag)
+	}
+	if strings.TrimSpace(*appProfileFlag) != "" {
+		appProfile = strings.TrimSpace(*appProfileFlag)
+	}
+	if err := validateUIContract(*requireUIContractFlag); err != nil {
+		fmt.Fprintln(os.Stderr, "supercli-web: UI compatibility:", err)
+		os.Exit(2)
+	}
+	monitorParent(*parentPIDFlag)
+	if !*noWindowFlag {
+		releaseInstance, alreadyRunning, instanceErr := claimSingleInstance(appProfile)
+		if instanceErr != nil {
+			fatal("single instance", instanceErr)
+		}
+		if alreadyRunning {
+			notifyAlreadyRunning(appName)
+			return
+		}
+		defer releaseInstance()
+	}
+
 	home, err := storage.ResolveHome(*homeFlag)
 	if err != nil {
 		fatal("resolve home", err)
 	}
-	dataDir, _, err := storage.ResolveDataRoot(*homeFlag)
+	dataDir, _, err := storage.ResolveRuntimeDataRoot(*dataDirFlag)
 	if err != nil {
 		fatal("resolve data dir", err)
 	}
@@ -210,20 +243,16 @@ func run(crashDataDir *string) {
 			fatal("normalize config", err)
 		}
 	}
-	allowAll := *allowAllFlag || (tomlErr == nil && tomlCfg.AllowAll)
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("SUPERCLI_ALLOW_ALL"))) {
-	case "1", "true", "yes", "on":
-		allowAll = true
-	}
+	allowAll := resolveAllowAll(appProfile, *allowAllFlag, tomlErr == nil && tomlCfg.AllowAll, os.Getenv("SUPERCLI_ALLOW_ALL"))
 	sandbox.SetUnsandboxed(allowAll)
 
 	eng, err := webgui.NewEngine(cfg, home, dataDir)
 	if err != nil {
 		fatal("build engine", err)
 	}
+	eng.SetAppProfile(appProfile)
 	eng.RefreshPricingAsync()
 
-	uiFS, appName, _ := bundledUI()
 	if *uiDirFlag != "" {
 		uiFS = nil
 	}
@@ -234,8 +263,24 @@ func run(crashDataDir *string) {
 		UIRoot:      *uiDirFlag,
 		UIFS:        uiFS,
 		AppName:     appName,
+		IconPath:    *iconFlag,
 	}); err != nil {
 		fatal("run", err)
+	}
+}
+
+func resolveAllowAll(appProfile string, flagEnabled, configured bool, environment string) bool {
+	if strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe") {
+		return true
+	}
+	if flagEnabled || configured {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -248,6 +293,13 @@ func fatal(ctx string, err error) {
 // boolPtr returns a pointer to b; used for the optional Debug
 // override which must distinguish unset from false.
 func boolPtr(b bool) *bool { return &b }
+
+func validateUIContract(required int) error {
+	if required < 0 || required > webgui.UIContractVersion {
+		return fmt.Errorf("launcher requires UI contract %d, engine provides %d", required, webgui.UIContractVersion)
+	}
+	return nil
+}
 
 func initWebLog(dataDir string) *os.File {
 	logsDir := filepath.Join(dataDir, "logs")

@@ -44,6 +44,23 @@ func (stalledWebProvider) Complete(ctx context.Context, _ []llm.Message, _ []llm
 	return ch, nil
 }
 
+type failAfterToolWebProvider struct{ calls int }
+
+func (p *failAfterToolWebProvider) Name() string { return "fail-after-tool" }
+
+func (p *failAfterToolWebProvider) Complete(context.Context, []llm.Message, []llm.ToolDef) (<-chan llm.Delta, error) {
+	p.calls++
+	ch := make(chan llm.Delta, 3)
+	if p.calls == 1 {
+		ch <- llm.Delta{ToolCall: &llm.ToolCall{ID: "list", Name: "list_dir", Arguments: `{"path":""}`}}
+		ch <- llm.Delta{FinishReason: "tool_calls", Usage: &llm.Usage{Input: 10, Output: 2, Total: 12}}
+	} else {
+		ch <- llm.Delta{Err: errors.New("upstream failed after tool")}
+	}
+	close(ch)
+	return ch, nil
+}
+
 func TestToWireEvent_Message(t *testing.T) {
 	w, keep := toWireEvent(agent.MessageEvent{Text: "hello"})
 	if !keep {
@@ -226,5 +243,39 @@ func TestRunStreamStopsAfterSemanticProgressTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("progress timeout took too long: %s", elapsed)
+	}
+}
+
+func TestRunStreamPersistsTelemetryForFailedTurn(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.eng.mu.Lock()
+	srv.eng.prov = &failAfterToolWebProvider{}
+	srv.eng.mu.Unlock()
+
+	sessionID := ""
+	err := srv.eng.runStream(context.Background(), "inspect project files", "", "", func(ev wireEvent) {
+		if ev.Type == "session" {
+			sessionID = ev.SessionID
+		}
+	})
+	if err != nil {
+		t.Fatalf("runStream: %v", err)
+	}
+	if sessionID == "" {
+		t.Fatal("missing session id")
+	}
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	turns, err := store.ReadTurnSummaries(context.Background(), sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 {
+		t.Fatalf("failed turn telemetry = %+v", turns)
+	}
+	if turns[0].Steps != 2 || turns[0].Input != 10 || turns[0].Output != 2 || turns[0].ToolCalls != 1 {
+		t.Fatalf("failed turn summary = %+v", turns[0])
 	}
 }

@@ -9,12 +9,20 @@ import (
 //go:embed assets/*
 var assetsFS embed.FS
 
+//go:embed shared-ui/*
+var sharedUIFS embed.FS
+
 // Handler builds the HTTP routing for the web GUI. It serves the
 // embedded front-end at / and the JSON/SSE API under /api/. The
 // returned handler is safe for concurrent use; each request opens its
 // own short-lived stores so there is no shared mutable state.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	sharedUI, err := fs.Sub(sharedUIFS, "shared-ui")
+	if err != nil {
+		panic("webgui: embed shared UI: " + err.Error())
+	}
+	mux.Handle("/.__supercli/ui/", http.StripPrefix("/.__supercli/ui/", http.FileServer(http.FS(sharedUI))))
 
 	// Static front-end from the embedded assets directory.
 	sub, err := fs.Sub(assetsFS, "assets")
@@ -38,8 +46,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/schedules", s.handleSchedules)
 	mux.HandleFunc("/api/workers", s.handleWorkers)
 	mux.HandleFunc("/api/doctor", s.handleDoctor)
-	mux.HandleFunc("/api/branches", s.handleBranches)
+	mux.HandleFunc("/api/session/rewind", s.handleSessionRewind)
 	mux.HandleFunc("/api/memory", s.handleMemory)
+	mux.HandleFunc("/api/folder-indexing", s.handleFolderIndexing)
+	mux.HandleFunc("/api/vision/transcribe", s.handleVisionTranscribe)
+	mux.HandleFunc("/api/document/export", s.handleDocumentExport)
 	mux.HandleFunc("/api/skills", s.handleSkills)
 	mux.HandleFunc("/api/projects", s.handleProjects)
 	mux.HandleFunc("/api/goal", s.handleGoal)
@@ -47,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/models", s.handleModels)
 	mux.HandleFunc("/api/model", s.handleModel)
 	mux.HandleFunc("/api/model/price", s.handleModelPrice)
+	mux.HandleFunc("/api/model/context", s.handleModelContext)
 	mux.HandleFunc("/api/model/toggle", s.handleModelToggle)
 	mux.HandleFunc("/api/model/visibility", s.handleModelVisibility)
 	mux.HandleFunc("/api/model/default", s.handleModelDefault)
@@ -68,6 +80,8 @@ func (s *Server) Handler() http.Handler {
 	// so they survive restarts despite the per-launch random port that
 	// would otherwise reset browser localStorage.
 	mux.HandleFunc("/api/settings", s.handleUISettings)
+	mux.HandleFunc("/api/runtime", s.handleRuntime)
+	mux.HandleFunc("/api/runtime/logs", s.handleRuntimeLogs)
 	mux.HandleFunc("/api/data/status", s.handleDataStatus)
 	mux.HandleFunc("/api/data/clear", s.handleDataClear)
 	mux.HandleFunc("/api/data/export", s.handleDataExport)
@@ -76,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 
 	// MCP server management
 	mux.HandleFunc("/api/mcp/servers", s.handleMcpServers)
+	mux.Handle("/api/mcp/config", s.withSecretLocalOnly(http.HandlerFunc(s.handleMcpConfig)))
 	mux.HandleFunc("/api/mcp/add", s.handleMcpAdd)
 	mux.HandleFunc("/api/mcp/remove", s.handleMcpRemove)
 	mux.HandleFunc("/api/mcp/folder", s.handleMcpFolder)
@@ -94,11 +109,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/checkpoint/lesson", s.handleCheckpointLesson)
 	mux.HandleFunc("/api/test/hard", s.handleHardTest)
 	mux.HandleFunc("/api/prompt/profile", s.handlePromptProfile)
+	mux.HandleFunc("/api/user-instructions", s.handleUserInstructions)
 	mux.HandleFunc("/api/scratchpad", s.handleScratchpad)
 
 	// Native folder picker (Windows dialog)
 	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
 	mux.HandleFunc("/api/file-picker", s.handleFilePicker)
+	mux.HandleFunc("/api/attachment/upload", s.handleAttachmentUpload)
+	mux.HandleFunc("/api/attachment/preview", s.handleAttachmentPreview)
 	mux.HandleFunc("/api/folder/open", s.handleOpenFolder)
 
 	return s.withLocalGuard(mux)

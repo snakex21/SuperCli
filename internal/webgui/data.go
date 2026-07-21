@@ -38,22 +38,15 @@ func sameSessionWorkspace(a, b string) bool {
 
 // sessionMeta is the browser-facing summary of one stored session.
 type sessionMeta struct {
-	ID              string             `json:"id"`
-	FirstUserMsg    string             `json:"first_user_msg"`
-	MessageCount    int                `json:"message_count"`
-	StartedAt       string             `json:"started_at"`
-	Model           string             `json:"model,omitempty"`
-	Provider        string             `json:"provider,omitempty"`
-	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
-	RuntimeKnown    bool               `json:"runtime_known,omitempty"`
-	ParentID        string             `json:"parent_id,omitempty"`
-	FileRewind      *fileRewindReceipt `json:"file_rewind,omitempty"`
-}
-
-type fileRewindReceipt struct {
-	SessionID     string   `json:"session_id"`
-	CheckpointIDs []string `json:"checkpoint_ids"`
-	Files         []string `json:"files"`
+	ID              string `json:"id"`
+	FirstUserMsg    string `json:"first_user_msg"`
+	MessageCount    int    `json:"message_count"`
+	StartedAt       string `json:"started_at"`
+	Model           string `json:"model,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	RuntimeKnown    bool   `json:"runtime_known,omitempty"`
+	ParentID        string `json:"parent_id,omitempty"`
 }
 
 // transcriptMsg is one message in a session transcript.
@@ -80,13 +73,14 @@ type transcriptToolCall struct {
 }
 
 type transcriptTurn struct {
-	ElapsedMS    int64 `json:"elapsed_ms"`
-	TokIn        int64 `json:"tok_in"`
-	TokOut       int64 `json:"tok_out"`
-	TokTotal     int64 `json:"tok_total"`
-	TokCached    int64 `json:"tok_cached,omitempty"`
-	ReasoningTok int64 `json:"reasoning_tok,omitempty"`
-	ToolCalls    int   `json:"tool_calls,omitempty"`
+	ElapsedMS    int64                `json:"elapsed_ms"`
+	TokIn        int64                `json:"tok_in"`
+	TokOut       int64                `json:"tok_out"`
+	TokTotal     int64                `json:"tok_total"`
+	TokCached    int64                `json:"tok_cached,omitempty"`
+	ReasoningTok int64                `json:"reasoning_tok,omitempty"`
+	ToolCalls    int                  `json:"tool_calls,omitempty"`
+	FileChanges  []session.FileChange `json:"file_changes,omitempty"`
 }
 
 // memoryItem is the browser-facing form of a memory entry.
@@ -205,63 +199,6 @@ func (e *Engine) moveTask(ctx context.Context, id string, position int) error {
 		return err
 	}
 	return store.MoveQueuedTask(ctx, e.Home(), id, position)
-}
-
-func (e *Engine) forkSession(ctx context.Context, id string, seq int, provider, model, reasoning string) (sessionMeta, error) {
-	store, err := e.sessionStore()
-	if err != nil {
-		return sessionMeta{}, err
-	}
-	meta, err := store.Get(id)
-	if err != nil {
-		return sessionMeta{}, err
-	}
-	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
-		return sessionMeta{}, errSessionOutsideWorkspace
-	}
-	if strings.TrimSpace(provider) == "" && strings.TrimSpace(model) != "" {
-		if info, ok := e.caps.Get(strings.TrimSpace(model)); ok {
-			provider = info.Provider
-		}
-	}
-	child, err := store.Fork(ctx, id, seq, provider, model, reasoning)
-	if err != nil {
-		return sessionMeta{}, err
-	}
-	return sessionMeta{ID: child.ID, FirstUserMsg: child.Title, MessageCount: child.MessageCount, StartedAt: child.CreatedAt.Format(time.RFC3339), Model: child.Model, Provider: child.Provider, ReasoningEffort: child.ReasoningEffort, RuntimeKnown: child.Provider != "", ParentID: child.ParentID}, nil
-}
-
-func (e *Engine) branchSessions(ctx context.Context, id string) ([]sessionMeta, error) {
-	store, err := e.sessionStore()
-	if err != nil {
-		return nil, err
-	}
-	meta, err := store.Get(id)
-	if err != nil {
-		return nil, err
-	}
-	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
-		return nil, errSessionOutsideWorkspace
-	}
-	root := meta.ID
-	if meta.ParentID != "" {
-		root = meta.ParentID
-	}
-	all := []session.Session{}
-	rootMeta, err := store.Get(root)
-	if err == nil {
-		all = append(all, rootMeta)
-	}
-	children, err := store.Children(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	all = append(all, children...)
-	out := make([]sessionMeta, 0, len(all))
-	for _, v := range all {
-		out = append(out, sessionMeta{ID: v.ID, FirstUserMsg: v.Title, MessageCount: v.MessageCount, StartedAt: v.CreatedAt.Format(time.RFC3339), Model: v.Model, Provider: v.Provider, ReasoningEffort: v.ReasoningEffort, RuntimeKnown: v.Provider != "", ParentID: v.ParentID})
-	}
-	return out, nil
 }
 
 func (e *Engine) renameSession(id, title string) error {
@@ -394,6 +331,7 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 				ElapsedMS: turn.DurationMS, TokIn: turn.Input, TokOut: turn.Output,
 				TokTotal: turn.Input + turn.Output, TokCached: turn.CachedInput,
 				ReasoningTok: turn.Reasoning, ToolCalls: turn.ToolCalls,
+				FileChanges: append([]session.FileChange(nil), turn.FileChanges...),
 			}
 		}
 		out = append(out, item)

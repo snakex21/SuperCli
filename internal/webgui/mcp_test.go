@@ -1,12 +1,15 @@
 package webgui
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"supercli/internal/system/config"
 )
 
 func TestPortableMCPIsDiscoveredButNotStarted(t *testing.T) {
@@ -60,5 +63,49 @@ tags = ["scene", "3d"]
 	}
 	if response.Packages[0].Running {
 		t.Fatal("status endpoint started the package")
+	}
+}
+
+func TestMCPJSONConfigReplacesExplicitServers(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	server := NewServer(eng, false)
+
+	body := []byte(`{"servers":{"docs":{"command":"mcp-docs","args":["--stdio"],"env":{"MODE":"safe"}}}}`)
+	rec := httptest.NewRecorder()
+	server.handleMcpConfig(rec, httptest.NewRequest(http.MethodPut, "/api/mcp/config", bytes.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status %d: %s", rec.Code, rec.Body.String())
+	}
+	tc, err := config.LoadToml(filepath.Join(dataDir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tc.Mcp.Servers) != 1 || tc.Mcp.Servers["docs"].Command != "mcp-docs" {
+		t.Fatalf("saved servers = %#v", tc.Mcp.Servers)
+	}
+
+	rec = httptest.NewRecorder()
+	server.handleMcpConfig(rec, httptest.NewRequest(http.MethodGet, "/api/mcp/config", nil))
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"docs"`)) {
+		t.Fatalf("get status %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	server.handleMcpConfig(rec, httptest.NewRequest(http.MethodPut, "/api/mcp/config", bytes.NewReader([]byte(`{"servers":{}}`))))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear status %d: %s", rec.Code, rec.Body.String())
+	}
+	tc, err = config.LoadToml(filepath.Join(dataDir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tc.Mcp.Servers) != 0 {
+		t.Fatalf("servers were not replaced: %#v", tc.Mcp.Servers)
 	}
 }

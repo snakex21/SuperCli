@@ -93,19 +93,18 @@ func (s *Server) handleProviderDiagnostics(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
 	llm.InvalidateProviderModelCache(p.BaseURL)
 	started := time.Now()
-	key := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
 	var models []string
 	var err error
-	if p.Type == config.ProviderAnthropic {
-		models, err = llm.ListAnthropicModels(ctx, p.BaseURL, key)
-	} else if p.Type == config.ProviderCodex {
+	if p.Type == config.ProviderCodex {
 		models = llm.RegisterCodexCatalog(s.eng.caps, p.Name)
 	} else {
-		models, err = llm.ListProviderModels(ctx, p.BaseURL, key)
+		// A diagnostic refresh is also the explicit capability refresh. The
+		// manager reads the same passive model endpoints and records their
+		// modality metadata, including native local-server capabilities.
+		res := m.ScanProvider(p.Name, s.eng.caps)
+		models, err = res.Models, res.Err
 	}
 	view.LatencyMS = time.Since(started).Milliseconds()
 	view.CheckedAt = time.Now().UTC()

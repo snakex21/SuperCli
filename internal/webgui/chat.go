@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -36,7 +37,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
 	req.RewindReason = strings.TrimSpace(truncateRunes(req.RewindReason, 400))
-	if req.Prompt == "" {
+	if req.Prompt == "" && len(req.Attachments) == 0 {
 		http.Error(w, "empty prompt", http.StatusBadRequest)
 		return
 	}
@@ -45,12 +46,39 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid attachments: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	directImages, err := buildDirectAttachmentImages(s.eng.Home(), req.Attachments)
+	if err != nil {
+		http.Error(w, "prepare attachment images: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Prompt == "" {
+		req.Prompt = "Inspect and describe the attached files."
+	}
+	visiblePrompt := req.Prompt
+	if len(req.Attachments) > 0 {
+		names := make([]string, 0, len(req.Attachments))
+		for _, path := range req.Attachments {
+			if name := filepath.Base(strings.TrimSpace(path)); name != "" && name != "." {
+				names = append(names, name)
+			}
+		}
+		if len(names) > 0 {
+			visiblePrompt += "\n\n📎 " + strings.Join(names, ", ")
+		}
+	}
+	// The Electron version saved personal declarations immediately
+	// to its user-profile wiki page. Keep the same guarantee in the
+	// Go web runtime: this deterministic path does not depend on the
+	// model remembering to call a tool or on an end-of-task summary.
+	saveWebUserFacts(s.eng.DataDir(), req.Prompt)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	finishActiveRun := s.eng.beginActiveRun()
+	defer finishActiveRun()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -95,7 +123,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if attachmentAddon != "" {
 		userAddons = append(userAddons, attachmentAddon)
 	}
-	if err := s.eng.runStream(r.Context(), req.Prompt, req.SessionID, strings.Join(userAddons, "\n\n"), emit); err != nil {
+	if err := s.eng.runStreamWithImages(r.Context(), visiblePrompt, req.SessionID, strings.Join(userAddons, "\n\n"), directImages, emit); err != nil {
 		// Surface run-setup failures (provider/loop build) as a final
 		// error frame so the UI can show them instead of a dead stream.
 		emit(wireEvent{Type: "error", Err: err.Error()})

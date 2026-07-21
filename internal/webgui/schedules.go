@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const scheduleQueuePrefix = "[NESTCAFE_SCHEDULE] "
+const scheduleQueuePrefix = "[SUPERCLI_SCHEDULE] "
 
 type webSchedule struct {
 	ID        string `json:"id"`
@@ -152,6 +152,9 @@ func (m *scheduleManager) tick(now time.Time) {
 		if err != nil || now.Before(next) {
 			continue
 		}
+		// Scheduled prompts deliberately enter the durable queue only. They are
+		// never passed to an agent loop here: the SuperCli UI must display them
+		// and the user explicitly resumes or sends the queued task.
 		if m.enqueue != nil && m.enqueue(item.Workspace, scheduleQueuePrefix+item.Prompt) != nil {
 			continue
 		}

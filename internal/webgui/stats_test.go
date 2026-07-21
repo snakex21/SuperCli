@@ -316,6 +316,37 @@ func TestNewEngineAppliesFreshPricingCache(t *testing.T) {
 	}
 }
 
+func TestApplyWebPricingEntriesMirrorsUniqueCanonicalIDToRouterAlias(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "gpt-5.6-sol", Provider: "any-router", Source: llm.SourceProvider})
+	applyWebPricingEntries(caps, []pricing.PriceEntry{{
+		ModelID:       "openai/gpt-5.6-sol",
+		InputPer1M:    5,
+		OutputPer1M:   30,
+		ContextLength: 1_050_000,
+		FetchedAt:     time.Now(),
+	}})
+
+	got, ok := caps.Get("gpt-5.6-sol")
+	if !ok || got.ContextLength != 1_050_000 || got.Provider != "any-router" {
+		t.Fatalf("router alias metadata = %+v ok=%v", got, ok)
+	}
+}
+
+func TestApplyWebPricingEntriesLeavesAmbiguousShortIDUnknown(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "shared-model", Provider: "custom-router", Source: llm.SourceProvider})
+	applyWebPricingEntries(caps, []pricing.PriceEntry{
+		{ModelID: "vendor-a/shared-model", ContextLength: 100_000},
+		{ModelID: "vendor-b/shared-model", ContextLength: 200_000},
+	})
+
+	got, _ := caps.Get("shared-model")
+	if got.ContextLength != 0 {
+		t.Fatalf("ambiguous alias received context_length %d", got.ContextLength)
+	}
+}
+
 func TestStatsRejectsSessionOutsideWorkspace(t *testing.T) {
 	eng, store, _, dir := statsFixture(t)
 	foreign, err := store.Create(filepath.Join(dir, "other"), "model", "foreign")

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"supercli/internal/agent"
+	"supercli/internal/buildinfo"
 	"supercli/internal/system/doctor"
 )
 
@@ -90,7 +91,7 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	provider, caps := s.eng.prov, s.eng.caps
 	s.eng.mu.RUnlock()
 	report := doctor.Run(r.Context(), doctor.Env{
-		Version: "0.6.0", Home: s.eng.Home(), DataDir: s.eng.DataDir(),
+		Version: buildinfo.Version, Home: s.eng.Home(), DataDir: s.eng.DataDir(),
 		Provider: provider, Registry: registry, Sessions: store,
 		ProviderMgr: s.eng.providerManager(), Caps: caps,
 	})
