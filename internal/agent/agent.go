@@ -40,9 +40,11 @@ type ToolResultEvent struct {
 func (ToolResultEvent) event() {}
 
 // DoneEvent is the terminal event of a successful run. Usage is the
-// total token usage reported by the model.
+// total token usage reported by the model. Steps is the number of model
+// turns consumed by this Run.
 type DoneEvent struct {
 	Usage Usage
+	Steps int
 }
 
 func (DoneEvent) event() {}
@@ -215,10 +217,15 @@ type DraftOverride struct {
 // ("auto") or because the provider returned a context-length
 // error ("context-limit").
 type AutoCompactEvent struct {
-	Removed   int    // messages removed/hidden
-	Window    int    // resolved context window (tokens)
-	Estimated int    // visible token estimate before compaction
-	Reason    string // "auto" | "context-limit"
+	Removed        int    // messages removed/hidden
+	Window         int    // resolved context window (tokens)
+	Estimated      int    // effective next-request estimate before compaction
+	RawEstimated   int    // local estimator before provider calibration
+	EstimateSource string // "estimate" | "provider+delta"
+	ExactBase      int    // last provider-reported prompt usage, if used
+	Threshold      int    // automatic trigger in tokens
+	WindowSource   string // config/provider/catalog/learned/fallback
+	Reason         string // "auto" | "context-limit" | "manual"
 }
 
 func (AutoCompactEvent) event() {}
@@ -247,9 +254,13 @@ type NoticeEvent struct {
 
 func (NoticeEvent) event() {}
 
-// ErrorEvent is the terminal event of a failed run.
+// ErrorEvent is the terminal event of a failed run. Usage and Steps retain
+// partial accounting so callers can report work already consumed before the
+// failure (notably workers that hit MaxSteps).
 type ErrorEvent struct {
-	Err error
+	Err   error
+	Usage Usage
+	Steps int
 }
 
 func (ErrorEvent) event() {}

@@ -54,16 +54,20 @@ func TestMaybeAutoCompact(t *testing.T) {
 	}
 	l.Messages = []llm.Message{
 		{Role: llm.RoleSystem, Content: "sys"},
-		{Role: llm.RoleUser, Content: strings.Repeat("x", 2000)}, // ~500 tokens > 80
-		{Role: llm.RoleAssistant, Content: "ok"},
+		{Role: llm.RoleUser, Content: strings.Repeat("x", 2000)}, // completed old turn
+		{Role: llm.RoleAssistant, Content: "old answer"},
+		{Role: llm.RoleUser, Content: "current task"},
 	}
 	out := make(chan Event, 4)
 	l.maybeAutoCompact(context.Background(), out, "")
-	if len(l.Messages) != 2 { // sys + summary
-		t.Fatalf("expected compaction to [sys, summary], got %d messages", len(l.Messages))
+	if len(l.Messages) != 3 { // sys + summary + current user
+		t.Fatalf("expected compaction to [sys, summary, current], got %d messages", len(l.Messages))
 	}
 	if l.Messages[1].Content != "SUMMARY" {
 		t.Errorf("summary message = %q", l.Messages[1].Content)
+	}
+	if l.Messages[2].Content != "current task" {
+		t.Errorf("current turn was not preserved: %q", l.Messages[2].Content)
 	}
 	select {
 	case ev := <-out:
@@ -95,6 +99,78 @@ func TestEstimateNextRequestTokensIncludesToolSchemas(t *testing.T) {
 	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: "small message"}}
 	if full, messages := l.EstimateNextRequestTokens(), l.EstimateVisibleTokens(); full <= messages {
 		t.Fatalf("complete request estimate %d must exceed message-only estimate %d", full, messages)
+	}
+}
+
+func TestResolveContextWindowSharedCascadeAndShortAlias(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "openai/gpt-5.6-sol", ContextLength: 1_050_000})
+	learned := llm.LoadLearnedLimits(t.TempDir())
+	learned.Learn("learned-model", 65_536)
+
+	if got := ResolveContextWindow("gpt-5.6-sol", 32_000, 64_000, caps, learned); got.Tokens != 32_000 || got.Source != "config" {
+		t.Fatalf("config resolution = %+v", got)
+	}
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 128_000, caps, learned); got.Tokens != 128_000 || got.Source != "provider" {
+		t.Fatalf("provider resolution = %+v", got)
+	}
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned); got.Tokens != 1_050_000 || got.Source != "catalog-alias" {
+		t.Fatalf("short-id catalog resolution = %+v", got)
+	}
+	caps.Register(llm.ModelInfo{ID: "other/gpt-5.6-sol", ContextLength: 512_000})
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned); got.Tokens != 0 {
+		t.Fatalf("ambiguous short-id resolution = %+v, want unresolved", got)
+	}
+	if got := ResolveContextWindow("learned-model", 0, 0, caps, learned); got.Tokens != 65_536 || got.Source != "learned" {
+		t.Fatalf("learned resolution = %+v", got)
+	}
+	if got := ResolveContextWindow("unknown", 0, 0, caps, learned); got.Tokens != 0 || got.Source != "" {
+		t.Fatalf("unknown resolution = %+v, want unresolved", got)
+	}
+}
+
+func TestNextRequestEstimateUsesExactBasePlusAppendOnlyDelta(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	l := &Loop{provider: echo, route: RouteCoordinator}
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: strings.Repeat("base ", 300)}}
+	baseRaw := l.estimateNextRequestTokensRaw()
+	l.recordContextBaseline(baseRaw, baseRaw-120)
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleTool, Content: strings.Repeat("new-result ", 60)})
+
+	got := l.nextRequestTokenEstimate()
+	want := (baseRaw - 120) + got.Raw - baseRaw
+	if got.Source != "provider+delta" || got.Effective != want || got.ExactBase != baseRaw-120 {
+		t.Fatalf("hybrid estimate = %+v, want effective=%d", got, want)
+	}
+
+	// A context rewrite invalidates the append-only baseline. Falling back to
+	// the raw estimate is safer than carrying an old calibration across it.
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: "compacted"}}
+	shrunk := l.nextRequestTokenEstimate()
+	if shrunk.Source != "estimate" || shrunk.Effective != shrunk.Raw {
+		t.Fatalf("estimate after shrink = %+v, want raw fallback", shrunk)
+	}
+}
+
+func TestScopedContextWindowKeepsSameModelProvidersSeparate(t *testing.T) {
+	l := &Loop{
+		modelID: "gpt-5.6-sol", contextProvider: "anyrouter",
+		scopedWindowFor: func(provider, model string) ContextWindowResolution {
+			if provider == "anyrouter" && model == "gpt-5.6-sol" {
+				return ContextWindowResolution{Tokens: 100_000, Source: "model-override"}
+			}
+			return ContextWindowResolution{}
+		},
+		contextWindowFor: func(string) ContextWindowResolution {
+			return ContextWindowResolution{Tokens: 1_050_000, Source: "catalog-alias"}
+		},
+	}
+	if got := l.windowResolution(); got.Tokens != 100_000 || got.Source != "model-override" {
+		t.Fatalf("AnyRouter resolution = %+v", got)
+	}
+	l.SetContextProvider("openai")
+	if got := l.windowResolution(); got.Tokens != 1_050_000 || got.Source != "catalog-alias" {
+		t.Fatalf("OpenAI resolution = %+v", got)
 	}
 }
 
@@ -168,6 +244,56 @@ func TestMaybeAutoCompactDoesNotResummarizeSummaryOnlyPrefix(t *testing.T) {
 	l.maybeAutoCompact(context.Background(), nil, "")
 	if calls != 0 {
 		t.Fatalf("summary-only prefix was summarized %d time(s)", calls)
+	}
+}
+
+func TestMaybeAutoCompactDoesNotSummarizeLargeActiveTurn(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	calls := 0
+	l := &Loop{
+		provider: echo, modelID: "test",
+		windowFor: func(string) int { return 2000 },
+		summarizer: func(context.Context, llm.Provider, []llm.Message) (string, error) {
+			calls++
+			return "unexpected", nil
+		},
+	}
+	summary := "This session is continued from a previous conversation that was compacted to save context."
+	l.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: summary},
+		{Role: llm.RoleUser, Content: "current task"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "read", Name: "read_lines", Arguments: `{"file":"large.go"}`},
+		}},
+		{Role: llm.RoleTool, ToolCallID: "read", Name: "read_lines", Content: strings.Repeat("large result ", 1000)},
+	}
+	before := append([]llm.Message(nil), l.Messages...)
+
+	l.maybeAutoCompact(context.Background(), nil, "")
+
+	if calls != 0 {
+		t.Fatalf("active turn was summarized %d time(s)", calls)
+	}
+	if !reflect.DeepEqual(l.Messages, before) {
+		t.Fatalf("active turn changed during speculative compaction: %#v", l.Messages)
+	}
+}
+
+func TestAutoCompactSplitPreservesCurrentUserTurn(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: "old"},
+		{Role: llm.RoleAssistant, Content: "done"},
+		{Role: llm.RoleUser, Content: "current"},
+		{Role: llm.RoleTool, Content: strings.Repeat("x", 10000)},
+	}
+	if got := autoCompactSplit(msgs); got != 3 {
+		t.Fatalf("autoCompactSplit = %d, want current user index 3", got)
+	}
+	singleTurn := msgs[:3]
+	if got := autoCompactSplit(singleTurn); got != 1 {
+		t.Fatalf("single-turn autoCompactSplit = %d, want leading boundary/current user 1", got)
 	}
 }
 

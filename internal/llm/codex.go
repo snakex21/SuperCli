@@ -399,7 +399,9 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			return nil, fmt.Errorf("Complete: message %d: %w", i, err)
 		}
 	}
-	reqBody, err := buildCodexRequest(p.cfg.Model, msgs, tools, p.SupportsVision())
+	// Always forward image parts and let the Codex endpoint decide whether the
+	// selected model accepts them. Local capability metadata is advisory only.
+	reqBody, err := buildCodexRequest(p.cfg.Model, msgs, tools, true)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}

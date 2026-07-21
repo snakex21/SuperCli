@@ -52,6 +52,24 @@ func TestBuiltinSubAgents_ExploreHasAllowedTools(t *testing.T) {
 	}
 }
 
+func TestBuiltinResearchAgentsCanUseWebTools(t *testing.T) {
+	for _, name := range []string{"explore", "advisor"} {
+		spec := findAgent(BuiltinSubAgents(), name)
+		if spec == nil {
+			t.Fatalf("%s agent not found", name)
+		}
+		allowed := map[string]bool{}
+		for _, tool := range spec.AllowedTools {
+			allowed[tool] = true
+		}
+		for _, tool := range []string{"web_lookup", "web_fetch", "web_search", "tool_search"} {
+			if !allowed[tool] {
+				t.Errorf("%s cannot use %s for current external documentation", name, tool)
+			}
+		}
+	}
+}
+
 func TestBuiltinSubAgents_MaxStepsDefault(t *testing.T) {
 	agents := BuiltinSubAgents()
 	for _, a := range agents {

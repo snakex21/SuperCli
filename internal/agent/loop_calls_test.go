@@ -8,6 +8,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,8 +205,14 @@ func TestLoop_Calls_CompactNotInContextPrepare(t *testing.T) {
 		Registry: echoToolRegistry(t),
 		MaxSteps: 3,
 		Stats:    rec,
-		// A 1-token window forces auto-compaction on the very first step.
-		WindowFor: func(string) int { return 1 },
+		// A tiny window forces the completed old turn to compact before the
+		// new active user turn. Auto-compaction no longer summarizes the
+		// currently running turn itself.
+		WindowFor: func(string) int { return 100 },
+		InitialMessages: []llm.Message{
+			{Role: llm.RoleUser, Content: strings.Repeat("old context ", 300)},
+			{Role: llm.RoleAssistant, Content: "old answer"},
+		},
 		Summarizer: func(ctx context.Context, prov llm.Provider, msgs []llm.Message) (string, error) {
 			if got := llm.PurposeFromContext(ctx); got != llm.PurposeCompact {
 				t.Errorf("summarizer ctx purpose = %q, want %q", got, llm.PurposeCompact)

@@ -57,6 +57,7 @@ type Loop struct {
 	system        string
 	briefing      string
 	maxSteps      int
+	maxStepGrace  int
 	thinTools     bool
 	stableToolset bool
 	catalogHoist  bool
@@ -111,15 +112,25 @@ type Loop struct {
 	lastTurnOutput    int
 	lastTurnReasoning int
 	lastTurnSet       bool
+	// contextBase* calibrate the cheap next-request estimate with the most
+	// recent provider-reported prompt usage. The calibration is additive only
+	// while the estimated request grows; if history is compacted/pruned/hidden
+	// and the estimate shrinks, window.go deliberately falls back to the raw
+	// estimate until the provider supplies a fresh baseline.
+	contextBaseExact     int
+	contextBaseEstimated int
 
 	// Auto-compact wiring (wave 4). windowFor resolves the
 	// model's context window (config > provider metadata >
 	// learned > default); summarizer produces the /compact
 	// summary; learnLimit persists a limit discovered from a
 	// provider context-length error.
-	windowFor  func(model string) int
-	summarizer Summarizer
-	learnLimit func(model string, limit int)
+	windowFor        func(model string) int
+	contextWindowFor func(model string) ContextWindowResolution
+	contextProvider  string
+	scopedWindowFor  func(provider, model string) ContextWindowResolution
+	summarizer       Summarizer
+	learnLimit       func(model string, limit int)
 	// pruneProtect: tool-result tokens protected from pruning
 	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
 	// disabled.
@@ -231,6 +242,10 @@ type Loop struct {
 	// the prompt — a user message — never the system prefix, so the
 	// stable KV-cache front is untouched. Set via SetNextUserAddon.
 	nextUserAddon string
+	// nextUserImages are delivered directly with the next user message. They
+	// remain available across all provider/tool steps of that Run, then their
+	// heavy base64 payload is removed before a later Run can reuse it.
+	nextUserImages []llm.ImageRef
 	// nextCoordinatorAddon is the route-aware variant used by repository
 	// preflight. It waits until a coordinator turn, so greetings and general
 	// advice do not pay hundreds of irrelevant repository tokens. Unlike the
@@ -339,6 +354,10 @@ type LoopConfig struct {
 	// MaxSteps caps the number of model calls in a single Run.
 	// Zero means default (10). Negative means no cap (dangerous).
 	MaxSteps int
+	// MaxStepGrace makes MaxSteps a soft limit while successful, non-repeated
+	// tool batches show concrete progress. The loop extends in small chunks up
+	// to MaxSteps+MaxStepGrace. Zero keeps MaxSteps as a strict hard cap.
+	MaxStepGrace int
 	// InitialMessages seeds the conversation. Used for tests and
 	// for resuming a session. The session writer, if any, is
 	// NOT called for these.
@@ -490,6 +509,20 @@ type LoopConfig struct {
 	// /v1/models metadata > learned limit > default.
 	WindowFor func(model string) int
 
+	// ContextWindowFor is the source-aware form of WindowFor. New front-ends
+	// should use it so compaction telemetry explains whether a limit came from
+	// config, provider metadata, the model catalog, learned errors, or fallback.
+	// WindowFor remains supported for embedders and older tests.
+	ContextWindowFor func(model string) ContextWindowResolution
+
+	// ContextProvider is the configured connection/profile name owning the
+	// active model. ScopedContextWindowFor uses it to keep manual budgets for
+	// identical model IDs on different APIs isolated.
+	ContextProvider string
+	// ScopedContextWindowFor is preferred for provider-scoped manual budgets.
+	// It runs before ContextWindowFor and may return zero to continue fallback.
+	ScopedContextWindowFor func(provider, model string) ContextWindowResolution
+
 	// Summarizer, when non-nil, enables automatic context
 	// compaction: before each provider call, if the visible
 	// token estimate exceeds 80% of the window, the
@@ -540,6 +573,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.MaxSteps == 0 {
 		cfg.MaxSteps = 10
 	}
+	if cfg.MaxStepGrace < 0 {
+		cfg.MaxStepGrace = 0
+	}
 	msgs := make([]llm.Message, 0, len(cfg.InitialMessages)+4)
 	if cfg.System != "" {
 		msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: cfg.System})
@@ -553,6 +589,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		system:                cfg.System,
 		briefing:              cfg.Briefing,
 		maxSteps:              cfg.MaxSteps,
+		maxStepGrace:          cfg.MaxStepGrace,
 		thinTools:             cfg.ThinTools,
 		stableToolset:         cfg.StableToolset,
 		catalogHoist:          cfg.CatalogHoist,
@@ -570,6 +607,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		creditTracker:         cfg.CreditTracker,
 		modelID:               cfg.Provider.Name(),
 		windowFor:             cfg.WindowFor,
+		contextWindowFor:      cfg.ContextWindowFor,
+		contextProvider:       cfg.ContextProvider,
+		scopedWindowFor:       cfg.ScopedContextWindowFor,
 		summarizer:            cfg.Summarizer,
 		learnLimit:            cfg.LearnLimit,
 		pruneProtect:          cfg.PruneProtectTokens,
@@ -863,28 +903,42 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.ultraworkMode = false
 	}
 
-	userMsg := llm.Message{
-		Role:    llm.RoleUser,
-		Content: prompt,
-	}
+	userText := prompt
 	// One-shot user-message addon (preflight repo context). Appended
 	// to the message CONTENT only — routing/ultrawork detection above
 	// still saw the user's raw words. Cleared so later Runs are clean.
 	if l.nextUserAddon != "" {
-		userMsg.Content = prompt + "\n\n" + l.nextUserAddon
+		userText = prompt + "\n\n" + l.nextUserAddon
 		l.nextUserAddon = ""
+	}
+	userMsg := llm.Message{Role: llm.RoleUser, Content: userText}
+	transientImageIndex := -1
+	if len(l.nextUserImages) > 0 {
+		userMsg.Content = ""
+		userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: userText})
+		for i := range l.nextUserImages {
+			image := l.nextUserImages[i]
+			userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &image})
+		}
+		l.nextUserImages = nil
+		transientImageIndex = len(l.Messages)
 	}
 	l.Messages = append(l.Messages, userMsg)
 	// Addons are one-shot provider context, not transcript content. Persist the
 	// user's raw words so reopening a session never exposes internal preflight
 	// or rewind-feedback markers in the conversation UI.
 	l.persist(ctx, llm.Message{Role: llm.RoleUser, Content: prompt})
-	go l.run(ctx, prompt, out)
+	go l.run(ctx, prompt, out, transientImageIndex)
 	return out, nil
 }
 
-func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
+func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transientImageIndex int) {
 	defer close(out)
+	defer func() {
+		if transientImageIndex >= 0 && transientImageIndex < len(l.Messages) {
+			l.Messages[transientImageIndex] = l.Messages[transientImageIndex].TextOnly()
+		}
+	}()
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
 	// A final run-goroutine retry covers recovery on the last step. The
@@ -965,9 +1019,15 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	if l.draftPolicy != nil {
 		l.draftPolicy.Drafted = &map[int]struct{}{}
 	}
-	for step := 0; step < l.maxSteps; step++ {
+	stepLimit := l.maxSteps
+	hardStepLimit := l.maxSteps
+	if l.maxSteps > 0 && l.maxStepGrace > 0 {
+		hardStepLimit += l.maxStepGrace
+	}
+	var limitProgress stepLimitProgress
+	for step := 0; step < stepLimit; step++ {
 		if err := ctx.Err(); err != nil {
-			out <- ErrorEvent{Err: err}
+			out <- ErrorEvent{Err: err, Usage: totalUsage, Steps: step}
 			return
 		}
 		l.retryDirtyProjection(ctx)
@@ -1030,7 +1090,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		}
 		if err != nil {
 			l.statsEndStep(stepStart)
-			out <- ErrorEvent{Err: err}
+			out <- ErrorEvent{Err: err, Usage: totalUsage, Steps: step + 1}
 			return
 		}
 		// Resolve the schema-stable invoke_tool dispatcher before the
@@ -1079,7 +1139,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			if l.creditTracker != nil {
 				if err := l.creditTracker.Record(ctx, int64(usage.Input), int64(usage.Output), l.modelID); err != nil {
 					l.statsEndStep(stepStart)
-					out <- ErrorEvent{Err: err}
+					out <- ErrorEvent{Err: err, Usage: totalUsage, Steps: step + 1}
 					return
 				}
 			}
@@ -1092,7 +1152,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			if l.draftSavings != nil && l.lastDraftTokens > 0 {
 				if err := l.recordDraftUsage(ctx); err != nil {
 					l.statsEndStep(stepStart)
-					out <- ErrorEvent{Err: err}
+					out <- ErrorEvent{Err: err, Usage: totalUsage, Steps: step + 1}
 					return
 				}
 			}
@@ -1196,7 +1256,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 				}
 			}
 			l.statsEndStep(stepStart)
-			out <- DoneEvent{Usage: totalUsage}
+			out <- DoneEvent{Usage: totalUsage, Steps: step + 1}
 			return
 		}
 
@@ -1207,6 +1267,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			l.statsEndStep(stepStart)
 			return
 		}
+		progressing := limitProgress.observe(toolCalls, toolFailures)
 		// Tool results have all been appended in deterministic call order. This
 		// is the other safe drain point for mid-turn user messages.
 		l.drainInterjections(ctx)
@@ -1217,7 +1278,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		// users who set reflect_every=N.
 		reason := ""
 		if l.adaptiveReflect {
-			reason = reflectionProgress.observe(step+1, l.maxSteps, toolCalls, toolFailures)
+			reason = reflectionProgress.observe(step+1, stepLimit, toolCalls, toolFailures)
 		} else if l.reflectEvery > 0 && (step+1)%l.reflectEvery == 0 {
 			reason = "fixed_interval"
 		}
@@ -1226,9 +1287,22 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 			reflectionProgress.reset()
 		}
 
+		if step+1 == stepLimit && stepLimit < hardStepLimit && progressing {
+			previous := stepLimit
+			stepLimit = min(stepLimit+5, hardStepLimit)
+			out <- NoticeEvent{Text: fmt.Sprintf(
+				"step budget extended from %d to %d because %d/%d tool calls succeeded and work is still progressing",
+				previous, stepLimit, len(toolCalls)-toolFailures, len(toolCalls),
+			)}
+		}
+
 		l.statsEndStep(stepStart)
 	}
-	out <- ErrorEvent{Err: fmt.Errorf("agent: max steps (%d) reached", l.maxSteps)}
+	out <- ErrorEvent{
+		Err:   fmt.Errorf("agent: max steps (%d) reached", stepLimit),
+		Usage: totalUsage,
+		Steps: stepLimit,
+	}
 }
 
 // invokeToolCalls runs the model's tool-call batch and appends the matching
@@ -1347,6 +1421,11 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// view, thin preamble placement, freshness stamp).
 	msgStart := time.Now()
 	msgs := l.providerMessages()
+	// Calibrate against the same local projection used by the NEXT compaction
+	// check. Chat/advisor routes intentionally send a smaller history window;
+	// comparing that wire-only estimate with the full logical estimate on the
+	// next turn would manufacture a large delta that was never appended.
+	requestEstimate := l.estimateNextRequestTokensRaw()
 	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
 
 	// request_encode: provider.Complete up to the stream handoff —
@@ -1358,7 +1437,11 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
 	}
-	return l.consume(ctx, stream, out)
+	text, calls, usage, err := l.consume(ctx, stream, out)
+	if err == nil && usage != nil {
+		l.recordContextBaseline(requestEstimate, usage.Input)
+	}
+	return text, calls, usage, err
 }
 
 // stampSection is the per-request trailing prompt content: the
@@ -1777,6 +1860,26 @@ type adaptiveReflectionProgress struct {
 	failedBatchStreak int
 }
 
+// stepLimitProgress is deliberately separate from reflection tracking.
+// Reflection resets after each checkpoint; soft-limit decisions must retain
+// the previous batch so an exact tool-call loop never earns extra steps.
+type stepLimitProgress struct {
+	lastBatch [sha256.Size]byte
+	haveBatch bool
+}
+
+func (p *stepLimitProgress) observe(calls []llm.ToolCall, failures int) bool {
+	successes := len(calls) - failures
+	if len(calls) == 0 || successes <= failures {
+		return false
+	}
+	fingerprint := toolCallBatchFingerprint(calls)
+	repeated := p.haveBatch && fingerprint == p.lastBatch
+	p.lastBatch = fingerprint
+	p.haveBatch = true
+	return !repeated
+}
+
 func (p *adaptiveReflectionProgress) observe(step, maxSteps int, calls []llm.ToolCall, failures int) string {
 	fingerprint := toolCallBatchFingerprint(calls)
 	if p.haveBatch && fingerprint == p.lastBatch {
@@ -1985,17 +2088,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			MediaType: res.Image.MediaType,
 			Data:      base64.StdEncoding.EncodeToString(res.Image.Data),
 		}
-		if !l.visionOK() {
-			follow[0].Content += "\n[note: image dropped, model lacks vision]"
-		} else {
-			follow = append(follow, llm.Message{
-				Role: llm.RoleUser,
-				Parts: []llm.ContentPart{
-					{Type: llm.PartTypeText, Text: "Attached image from tool " + tc.Name + ":"},
-					{Type: llm.PartTypeImage, Image: img},
-				},
-			})
-		}
+		follow = append(follow, llm.Message{
+			Role: llm.RoleUser,
+			Parts: []llm.ContentPart{
+				{Type: llm.PartTypeText, Text: "Attached image from tool " + tc.Name + ":"},
+				{Type: llm.PartTypeImage, Image: img},
+			},
+		})
 	}
 	return toolResult{followUps: follow}
 }
@@ -2028,14 +2127,6 @@ func isConcreteEvidenceTool(name string) bool {
 	default:
 		return true
 	}
-}
-
-// visionOK reports whether the configured model can see images.
-func (l *Loop) visionOK() bool {
-	if l.caps == nil {
-		return true
-	}
-	return l.caps.HasVision(l.provider.Name())
 }
 
 // sisyphusHitFromMessage extracts the 1-indexed attempt
@@ -2359,6 +2450,13 @@ func (l *Loop) SetNextUserAddon(s string) {
 	l.nextUserAddon = strings.TrimSpace(s)
 }
 
+// SetNextUserImages queues normalized images for direct multimodal delivery
+// with the next Run. This avoids the legacy path -> read_image -> second model
+// call round trip. Pixels are not persisted and are removed after the Run.
+func (l *Loop) SetNextUserImages(images []llm.ImageRef) {
+	l.nextUserImages = append(l.nextUserImages[:0], images...)
+}
+
 // SetNextCoordinatorAddon queues text for the next coordinator-routed Run.
 // Chat/advisor turns skip it without consuming it. This is the preferred API
 // for automatically collected repository context.
@@ -2413,6 +2511,13 @@ func (l *Loop) CurrentModel() string {
 func (l *Loop) SetModel(p llm.Provider) {
 	l.provider = p
 	l.modelID = p.Name()
+}
+
+// SetContextProvider updates the configured connection identity after a TUI
+// hot-swap. It is separate from SetModel because llm.Provider.Name returns the
+// model ID, not the user-defined connection/profile name.
+func (l *Loop) SetContextProvider(provider string) {
+	l.contextProvider = strings.TrimSpace(provider)
 }
 
 // ListModels returns all models from the capability registry.

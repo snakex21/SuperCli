@@ -9,15 +9,70 @@ import (
 	"testing"
 )
 
-func TestHeuristicCapabilities_Vision(t *testing.T) {
-	cases := []string{"gpt-4-vision-preview", "llama-3.2-vision", "claude-3-vision", "FooVISION-bar"}
+func TestHeuristicCapabilities_DoesNotGuessVisionFromModelName(t *testing.T) {
+	cases := []string{
+		"gpt-4-vision-preview",
+		"llama-3.2-vision",
+		"qwen3.5-9b-uncensored-hauhaucs-aggressive",
+		"qwen2.5-vl-32b-instruct",
+		"qwen3-omni-30b",
+	}
 	for _, id := range cases {
 		t.Run(id, func(t *testing.T) {
 			m := HeuristicCapabilities(id)
-			if !m.Vision {
-				t.Errorf("Vision = false, want true for %q", id)
+			if m.Vision || m.VisionKnown {
+				t.Errorf("vision was guessed from model name %q: %+v", id, m)
 			}
 		})
+	}
+}
+
+func TestHeuristicCapabilities_TextOnlyQwen3DoesNotBecomeVision(t *testing.T) {
+	for _, id := range []string{"qwen3-8b", "qwen3-32b-instruct", "qwen2.5-14b"} {
+		if got := HeuristicCapabilities(id); got.Vision {
+			t.Errorf("Vision = true, want false for text-only family %q", id)
+		}
+	}
+}
+
+func TestParseProviderModelInfos_UsesAdvertisedModalities(t *testing.T) {
+	body := []byte(`{"data":[
+		{"id":"vision-model","architecture":{"input_modalities":["text","image"]},"context_length":131072},
+		{"id":"text-model","architecture":{"input_modalities":["text"]}},
+		{"id":"unknown-model"}
+	]}`)
+	models, err := parseProviderModelInfos(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 3 {
+		t.Fatalf("models = %d, want 3", len(models))
+	}
+	if !models[0].Vision || !models[0].VisionKnown || models[0].ContextLength != 131072 {
+		t.Fatalf("vision metadata not parsed: %+v", models[0])
+	}
+	if models[1].Vision || !models[1].VisionKnown {
+		t.Fatalf("text-only metadata not parsed: %+v", models[1])
+	}
+	if models[2].Vision || models[2].VisionKnown {
+		t.Fatalf("missing metadata should stay unknown: %+v", models[2])
+	}
+}
+
+func TestParseProviderModelInfos_LMStudioNativeCapabilities(t *testing.T) {
+	body := []byte(`{"models":[
+		{"key":"loaded-vlm","type":"vlm","capabilities":{"vision":true,"trained_for_tool_use":true}},
+		{"key":"loaded-text","type":"llm","capabilities":{"vision":false}}
+	]}`)
+	models, err := parseProviderModelInfos(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || !models[0].Vision || !models[0].VisionKnown {
+		t.Fatalf("LM Studio VLM metadata not parsed: %+v", models)
+	}
+	if models[1].Vision || !models[1].VisionKnown {
+		t.Fatalf("LM Studio text metadata not parsed: %+v", models[1])
 	}
 }
 
