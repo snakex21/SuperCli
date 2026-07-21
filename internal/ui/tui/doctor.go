@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"supercli/internal/buildinfo"
 	"supercli/internal/system/doctor"
 )
 
@@ -32,7 +33,7 @@ func (m Model) handleDoctorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "r", "R":
 		rep := doctor.Run(nil_to_ctx(), doctor.Env{
-			Version:     "0.6.0",
+			Version:     buildinfo.Version,
 			Home:        m.home,
 			DataDir:     m.dataDir,
 			Provider:    m.llm,

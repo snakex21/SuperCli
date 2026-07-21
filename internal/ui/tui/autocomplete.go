@@ -90,7 +90,7 @@ func polishCommandDescription(name, fallback string) string {
 		"help": "pokaż pomoc", "goal": "zarządzaj aktywnym celem", "darwin": "uruchom N agentów i wybierz najlepszy wynik",
 		"council": "zapytaj wybrane modele równolegle", "clear": "ukryj ostatnie wiadomości przed modelem", "reflect": "pokaż wzorce z refleksji",
 		"compact": "skompresuj kontekst, aby oszczędzić tokeny", "status": "pokaż stan sesji i kredytów", "workers": "pokaż lub zatrzymaj workery",
-		"context": "pokaż wykorzystanie kontekstu i tokenów", "mcp": "pokaż lub uruchom ponownie serwery MCP", "memory": "przeglądaj trwałą pamięć",
+		"context": "pokaż wykorzystanie kontekstu i tokenów", "context-limit": "ustaw budżet kontekstu dla aktywnego dostawcy i modelu", "mcp": "pokaż lub uruchom ponownie serwery MCP", "memory": "przeglądaj trwałą pamięć",
 		"providers": "zarządzaj dostawcami", "sandbox": "pokaż stan piaskownicy", "allow-all": "zezwól na dostęp do całego systemu plików",
 		"plan": "przełącz tryb planowania", "diff": "pokaż zmiany plików z sesji", "model": "wybierz spośród włączonych modeli",
 		"models": "zarządzaj pełnym katalogiem modeli", "reasoning": "ustaw poziom myślenia modelu", "resume": "wznów wcześniejszą sesję",
@@ -107,7 +107,7 @@ func polishCommandDescription(name, fallback string) string {
 
 func commandCategory(name string) string {
 	switch name {
-	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "mcp", "settings":
+	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "context-limit", "mcp", "settings":
 		return "system"
 	case "model", "models", "providers", "reasoning", "usage":
 		return "model"
@@ -136,6 +136,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "status", Desc: "show credits and session info"},
 		{Name: "workers", Desc: "list coordinator workers / stop one", Args: "[stop <id>]"},
 		{Name: "context", Desc: "show context/token usage breakdown"},
+		{Name: "context-limit", Desc: "set working context for active provider/model", Args: "[100k|131072|1m|auto]"},
 		{Name: "mcp", Desc: "list MCP servers, restart one", Args: "[restart <name>]"},
 		{Name: "memory", Desc: "inspect persistent memory", Args: "[search <query> | forget <id>]"},
 		{Name: "providers", Desc: "manage providers"},

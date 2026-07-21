@@ -21,6 +21,7 @@ import (
 
 	"supercli/internal/account/cost"
 	"supercli/internal/agent"
+	"supercli/internal/buildinfo"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/llm/shuffler"
@@ -109,18 +110,20 @@ type Model struct {
 	tracker *fileops.Tracker
 
 	// F26.5: modelSwapper for /model hot-swap.
-	modelSwapper  ModelSwapper
-	modelLister   ModelLister
-	modelSwapFn   ModelSwapFunc
-	sessionStore  *session.Store
-	statsRecorder stats.Recorder     // F28: per-turn metrics for /cost
-	providerMgr   *providers.Manager // F30: provider management
-	caps          *llm.CapabilityRegistry
-	goalSvc       *goal.Service
-	toolRegistry  *tools.Registry
-	doctorReport  *doctor.Report
-	menu          interactiveMenu
-	autocomp      autocomplete // autocomplete popup state
+	modelSwapper   ModelSwapper
+	modelLister    ModelLister
+	modelSwapFn    ModelSwapFunc
+	sessionStore   *session.Store
+	statsRecorder  stats.Recorder     // F28: per-turn metrics for /cost
+	providerMgr    *providers.Manager // F30: provider management
+	activeProvider string
+	modelContexts  *config.ModelContextStore
+	caps           *llm.CapabilityRegistry
+	goalSvc        *goal.Service
+	toolRegistry   *tools.Registry
+	doctorReport   *doctor.Report
+	menu           interactiveMenu
+	autocomp       autocomplete // autocomplete popup state
 	// providerStatuses caches async connectivity probe results for
 	// the /providers menu (key: provider name). The menu renders
 	// instantly with "checking..." and statuses pop in as the
@@ -301,6 +304,10 @@ type Options struct {
 	StatsRecorder stats.Recorder
 	// F30: ProviderMgr manages the provider list from config.toml.
 	ProviderMgr *providers.Manager
+	// ActiveProvider is the configured connection/profile name owning the
+	// initial model. ModelContextStore persists provider+model context budgets.
+	ActiveProvider    string
+	ModelContextStore *config.ModelContextStore
 	// CapabilityRegistry feeds /models and /providers menus.
 	CapabilityRegistry *llm.CapabilityRegistry
 	// GoalService feeds the interactive /goal task menu.
@@ -363,6 +370,10 @@ func (a *toolActivity) call(name, args string) {
 type ModelSwapper interface {
 	CurrentModel() string
 	SetModel(p llm.Provider)
+}
+
+type contextProviderSetter interface {
+	SetContextProvider(provider string)
 }
 
 // ModelLister provides the list of available models.
@@ -431,6 +442,8 @@ func New(opts Options) Model {
 		sessionStore:      opts.SessionStore,
 		statsRecorder:     opts.StatsRecorder,
 		providerMgr:       opts.ProviderMgr,
+		activeProvider:    opts.ActiveProvider,
+		modelContexts:     opts.ModelContextStore,
 		caps:              opts.CapabilityRegistry,
 		goalSvc:           opts.GoalService,
 		toolRegistry:      opts.ToolRegistry,
@@ -865,6 +878,10 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 		return
 	}
 	m.modelSwapper.SetModel(newProv)
+	if setter, ok := m.modelSwapper.(contextProviderSetter); ok {
+		setter.SetContextProvider(provider)
+	}
+	m.activeProvider = provider
 	m.llm = newProv // update header display
 	// Show the model the user picked, not the provider's internal
 	// Name() (a multi-account router reports "router(N providers)",
@@ -1488,8 +1505,8 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLineToTranscript(fmt.Sprintf("[draft: %s → %s, saved %d tokens]", e.DraftModel, e.VerifierModel, e.Savings))
 		return m, m.waitForNextEvent()
 	case agent.AutoCompactEvent:
-		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens)]",
-			e.Removed, e.Reason, e.Estimated, e.Window)
+		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens, estimate=%s, window=%s)]",
+			e.Removed, e.Reason, e.Estimated, e.Window, e.EstimateSource, e.WindowSource)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()
@@ -2006,6 +2023,49 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	if cmd.Name == "settings" {
 		return m.openSettingsMenu()
 	}
+	// /context-limit edits the working context budget for the exact active
+	// provider/model pair. It applies immediately and cannot leak to a second
+	// API connection exposing the same model ID.
+	if cmd.Name == "context-limit" {
+		provider := m.activeProviderName()
+		model := ""
+		if m.modelSwapper != nil {
+			model = m.modelSwapper.CurrentModel()
+		}
+		if model == "" && m.llm != nil {
+			model = m.llm.Name()
+		}
+		if m.modelContexts == nil || provider == "" || model == "" {
+			msg := m.tr("context limit: active provider/model is unavailable", "limit kontekstu: brak aktywnego dostawcy/modelu")
+			return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Diff(msg)} }
+		}
+		if strings.TrimSpace(cmd.Args) == "" {
+			value := "auto"
+			if tokens, ok := m.modelContexts.Get(provider, model); ok {
+				value = fmt.Sprintf("%d", tokens)
+			}
+			msg := fmt.Sprintf("%s / %s: %s", provider, model, value)
+			return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Diff(msg)} }
+		}
+		tokens, automatic, err := config.ParseContextBudget(cmd.Args)
+		if err != nil {
+			return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Error(err)} }
+		}
+		if automatic {
+			_, err = m.modelContexts.Remove(provider, model)
+		} else {
+			err = m.modelContexts.Set(provider, model, tokens)
+		}
+		if err != nil {
+			return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Error(err)} }
+		}
+		value := "auto"
+		if !automatic {
+			value = fmt.Sprintf("%d (compact ~%d)", tokens, tokens*80/100)
+		}
+		msg := fmt.Sprintf("%s / %s: %s", provider, model, value)
+		return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Diff(msg)} }
+	}
 	// /models is the complete visibility catalog. /model remains the fast
 	// picker containing only models that are currently enabled.
 	if cmd.Name == "models" && cmd.Args == "" {
@@ -2420,7 +2480,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		// providers (network IO) — run it as a background
 		// tea.Cmd so the UI never freezes.
 		env := doctor.Env{
-			Version:     "0.6.0",
+			Version:     buildinfo.Version,
 			Home:        m.home,
 			DataDir:     m.dataDir,
 			Provider:    m.llm,
