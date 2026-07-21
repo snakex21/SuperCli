@@ -11,7 +11,7 @@ import (
 
 func TestServerCustomUIRoot(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<h1>NestCafe bridge</h1>"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<h1>SuperCli bridge</h1>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	srv := NewServer(nil, false)
@@ -22,7 +22,7 @@ func TestServerCustomUIRoot(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "NestCafe bridge") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SuperCli bridge") {
 		t.Fatalf("custom UI response = %d %q", rec.Code, rec.Body.String())
 	}
 }
@@ -54,5 +54,155 @@ func TestServerCustomUIFS(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Bundled app") {
 		t.Fatalf("embedded custom UI response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServerSharedUIRuntimeIsAvailableWithCustomUI(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<title>Branded app</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(nil, false)
+	if err := srv.UseUIFS(os.DirFS(root)); err != nil {
+		t.Fatalf("UseUIFS: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/.__supercli/ui/runtime.js", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("shared runtime response = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, required := range []string{"SuperCliUI", "readSSE", "normalizeFileChanges", "mutationKind"} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("shared runtime is missing %q", required)
+		}
+	}
+}
+
+func TestAttachmentUIHasThumbnailAndCenteredPreview(t *testing.T) {
+	js, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"attachmentPreviewSource", "attachment-thumbnail", "image-attachment", "renderSentAttachments", "sentAttachmentsFor"} {
+		if !strings.Contains(string(js), required) {
+			t.Fatalf("attachment UI is missing %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	style := string(css)
+	for _, required := range []string{
+		".attachment-thumbnail",
+		".sent-attachment-gallery",
+		".sent-attachment-preview",
+		".attachment-preview-dialog",
+		"position: fixed; inset: 0; margin: auto;",
+		"width: min(1400px, calc(var(--app-viewport-width) - 28px));",
+		"width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain;",
+	} {
+		if !strings.Contains(style, required) {
+			t.Fatalf("attachment styles are missing %q", required)
+		}
+	}
+}
+
+func TestWebUIUsesOwnedDialogs(t *testing.T) {
+	js, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(js)
+	for _, banned := range []string{"window.prompt(", "window.confirm(", "window.alert("} {
+		if strings.Contains(script, banned) {
+			t.Fatalf("web UI still uses browser dialog %q", banned)
+		}
+	}
+	for _, required := range []string{"showAppDialog", "appConfirm", "appPrompt"} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("web UI is missing owned dialog helper %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{".app-dialog-overlay", ".app-dialog-input", ".app-dialog-danger"} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("web UI is missing owned dialog style %q", required)
+		}
+	}
+}
+
+func TestModelContextControlIsDiscoverableInPalette(t *testing.T) {
+	html, err := assetsFS.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"model-context-control", "model-context-input", "model-context-save"} {
+		if !strings.Contains(string(html), required) {
+			t.Fatalf("model palette is missing %q", required)
+		}
+	}
+	js, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"renderActiveContextControl", "saveActiveModelContext", "activeProviderID"} {
+		if !strings.Contains(string(js), required) {
+			t.Fatalf("model context control is missing behavior %q", required)
+		}
+	}
+}
+
+func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
+	content, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(content)
+	for _, required := range []string{
+		"height: min(560px, calc(var(--app-viewport-height) - 54px))",
+		"min-height: 0; overflow-y: auto",
+		"scrollbar-gutter: stable",
+	} {
+		if !strings.Contains(css, required) {
+			t.Fatalf("model palette is missing responsive scroll rule %q", required)
+		}
+	}
+}
+
+func TestUIScaleKeepsLayoutInsideEffectiveViewport(t *testing.T) {
+	js, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"function applyViewportScale()",
+		"window.innerWidth / scale",
+		"window.innerHeight / scale",
+		`--app-viewport-width`,
+		`--app-viewport-height`,
+	} {
+		if !strings.Contains(string(js), required) {
+			t.Fatalf("UI scale is missing effective viewport behavior %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		".shell { display: flex; width: 100%; height: 100%; }",
+		"width: var(--app-viewport-width); height: var(--app-viewport-height);",
+		":root.ui-scale-compact .sidebar",
+	} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("UI scale styles are missing %q", required)
+		}
 	}
 }

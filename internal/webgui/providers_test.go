@@ -114,6 +114,42 @@ func TestProvidersDisableKeepsConfigurationAndRemovesModels(t *testing.T) {
 	}
 }
 
+func TestProviderAdvertisedImageModalityIsExposedAsVisionCapable(t *testing.T) {
+	const modelID = "qwen3.5-9b-uncensored-hauhaucs-aggressive"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"` + modelID + `","architecture":{"input_modalities":["text","image"]}}]}`))
+	}))
+	defer upstream.Close()
+
+	srv := newTestServer(t, false)
+	add := `{"name":"local-qwen","type":"openai","base_url":"` + upstream.URL + `/v1","model":"` + modelID + `"}`
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPost, "/api/providers", add))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodGet, "/api/models", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("models status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response modelsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, model := range response.Models {
+		if model.Provider == "local-qwen" && model.ID == modelID {
+			if !model.Vision || !model.VisionKnown {
+				t.Fatalf("provider vision metadata was not exposed: %+v", model)
+			}
+			return
+		}
+	}
+	t.Fatalf("Qwen 3.5 community model missing from response: %s", rec.Body.String())
+}
+
 func TestProvidersUpdateRefreshesActiveRuntime(t *testing.T) {
 	oldUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

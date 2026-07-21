@@ -35,6 +35,9 @@ type RunOptions struct {
 	UIFS fs.FS
 	// AppName controls the native window title and Windows application identity.
 	AppName string
+	// IconPath optionally replaces the executable icon in the native window.
+	// Branded launchers use it while keeping the engine binary replaceable.
+	IconPath string
 }
 
 // Run starts the web GUI server on a loopback port, opens an
@@ -57,6 +60,11 @@ func Run(eng *Engine, opts RunOptions) error {
 	url := localLaunchURL(ln.Addr().String())
 
 	webServer := NewServer(eng, opts.AllowRemote)
+	appName := strings.TrimSpace(opts.AppName)
+	if appName == "" {
+		appName = "SuperCli"
+	}
+	webServer.appName = appName
 	if opts.UIRoot != "" {
 		if err := webServer.UseUIRoot(opts.UIRoot); err != nil {
 			_ = ln.Close()
@@ -80,10 +88,6 @@ func Run(eng *Engine, opts RunOptions) error {
 		}
 	}()
 
-	appName := strings.TrimSpace(opts.AppName)
-	if appName == "" {
-		appName = "SuperCli"
-	}
 	log.Printf("%s web GUI: %s", appName, url)
 	windowClosedCh := make(chan struct{}, 1)
 	if !opts.NoWindow {
@@ -91,7 +95,7 @@ func Run(eng *Engine, opts RunOptions) error {
 		// Windows identity, this avoids tying server lifetime to a Chrome/Edge
 		// launcher process. The browser path remains a compatibility fallback
 		// for machines without the WebView2 runtime.
-		if nativeErr := runNativeAppWindow(url, appName); nativeErr == nil {
+		if nativeErr := runNativeAppWindow(url, appName, eng.DataDir(), opts.IconPath, eng.HasActiveWork); nativeErr == nil {
 			log.Printf("native app window closed; shutting down…")
 			return shutdownAfterWindowClose(srv)
 		} else {
@@ -116,7 +120,7 @@ func Run(eng *Engine, opts RunOptions) error {
 	}
 
 	// Wait for Ctrl+C / SIGTERM or a fatal serve error.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
 	select {
 	case <-ctx.Done():

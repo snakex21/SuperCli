@@ -116,7 +116,7 @@ func stripThinking(text string) string {
 	lower := strings.ToLower(text)
 
 	// Remove complete thinking/reasoning/thought blocks
-	for _, tag := range []string{"thinking", "reasoning", "thought"} {
+	for _, tag := range []string{"thinking", "think", "reasoning", "reflection", "thought"} {
 		openTag := "<" + tag + ">"
 		closeTag := "</" + tag + ">"
 		for {
@@ -139,7 +139,9 @@ func stripThinking(text string) string {
 	for _, tag := range []string{
 		"",
 		"<thinking>", "</thinking>",
+		"<think>", "</think>",
 		"<reasoning>", "</reasoning>",
+		"<reflection>", "</reflection>",
 		"<thought>", "</thought>",
 	} {
 		text = strings.ReplaceAll(text, tag, "")

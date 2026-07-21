@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"supercli/internal/storage/memory"
 )
 
 // Server is the web GUI HTTP server. It wraps an Engine (the agent
@@ -20,6 +23,8 @@ import (
 type Server struct {
 	eng       *Engine
 	uiHandler http.Handler
+	appName   string
+	startedAt time.Time
 	// allowRemote disables the loopback-only guard. Off by default:
 	// the GUI is a local single-user app. The separate binary may
 	// flip it on for explicit, opt-in network exposure.
@@ -33,6 +38,10 @@ type Server struct {
 	// polls /api/codex/accounts to detect the LoggedIn flip.
 	codexLoginMu sync.Mutex
 	codexLogins  map[string]*codexLoginState
+
+	folderJobMu     sync.Mutex
+	folderJob       *folderIndexJob
+	folderJobCancel context.CancelFunc
 }
 
 // codexLoginState is the per-account (by label) tracking record for
@@ -49,7 +58,13 @@ type codexLoginState struct {
 // false unless the operator explicitly wants network exposure (which
 // then needs its own auth — not provided here).
 func NewServer(eng *Engine, allowRemote bool) *Server {
-	return &Server{eng: eng, allowRemote: allowRemote, codexLogins: make(map[string]*codexLoginState)}
+	return &Server{
+		eng:         eng,
+		allowRemote: allowRemote,
+		appName:     "SuperCli",
+		codexLogins: make(map[string]*codexLoginState),
+		startedAt:   time.Now().UTC(),
+	}
 }
 
 // codexLoginInProgress returns the current state of an async login
@@ -192,14 +207,95 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 
 // handleMemory lists memory entries; ?scope= filters by scope.
 func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
-	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
-	limit := queryInt(r, "limit", 50)
-	out, err := s.eng.memoryList(scope, limit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+		limit := queryInt(r, "limit", 50)
+		out, err := s.eng.memoryList(scope, limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	case http.MethodPost:
+		var body struct {
+			Content string `json:"content"`
+			Type    string `json:"type"`
+			Target  string `json:"target"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		content := strings.TrimSpace(body.Content)
+		if content == "" {
+			http.Error(w, "content is required", http.StatusBadRequest)
+			return
+		}
+		scope := memory.ScopeFact
+		switch strings.ToLower(strings.TrimSpace(body.Type)) {
+		case "", "fact":
+		case "preference":
+			scope = memory.ScopePreference
+		case "decision":
+			scope = memory.ScopeDecision
+		case "task-log":
+			scope = memory.ScopeTaskLog
+		default:
+			http.Error(w, "type must be fact, preference, decision or task-log", http.StatusBadRequest)
+			return
+		}
+		var store *memory.Store
+		var err error
+		target := strings.ToLower(strings.TrimSpace(body.Target))
+		if target == "global" {
+			store, err = memory.OpenStore(s.eng.DataDir())
+		} else {
+			target = "project"
+			store, err = memory.OpenProjectStore(s.eng.DataDir(), s.eng.Home())
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer store.Close()
+		entry := memory.Entry{
+			ID:      fmt.Sprintf("mem-ui-%x", time.Now().UnixNano()),
+			Scope:   scope,
+			Content: content,
+			Source:  memory.SourceUser,
+		}
+		if err := store.Put(entry); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "id": entry.ID, "target": target})
+	case http.MethodDelete:
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		target := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("target")))
+		var stores []*memory.Store
+		if target == "" || target == "project" {
+			if store, err := memory.OpenProjectStore(s.eng.DataDir(), s.eng.Home()); err == nil {
+				stores = append(stores, store)
+			}
+		}
+		if target == "" || target == "global" {
+			if store, err := memory.OpenStore(s.eng.DataDir()); err == nil {
+				stores = append(stores, store)
+			}
+		}
+		for _, store := range stores {
+			_ = store.Delete(id)
+			_ = store.Close()
+		}
+		writeJSON(w, map[string]any{"ok": true, "id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	writeJSON(w, out)
 }
 
 // handleProjects lists named workspaces (GET) or performs a

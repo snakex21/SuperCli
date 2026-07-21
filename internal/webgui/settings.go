@@ -94,6 +94,20 @@ func readUISettings(dataDir string) map[string]any {
 	return blob
 }
 
+func uiSettingBool(dataDir, key string, fallback bool) bool {
+	uiSettingsMu.Lock()
+	defer uiSettingsMu.Unlock()
+	value, ok := readUISettings(dataDir)[key]
+	if !ok {
+		return fallback
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return fallback
+	}
+	return enabled
+}
+
 // handleUISettings persists the web GUI's UI preferences server-side so
 // they survive restarts.
 //

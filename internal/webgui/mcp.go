@@ -38,6 +38,16 @@ type mcpPackageView struct {
 	Tools       int      `json:"tools"`
 }
 
+type mcpConfigServer struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+type mcpConfigDocument struct {
+	Servers map[string]mcpConfigServer `json:"servers"`
+}
+
 // handleMcpServers returns all configured MCP servers.
 func (s *Server) handleMcpServers(w http.ResponseWriter, r *http.Request) {
 	tc, err := config.LoadToml(filepath.Join(s.eng.dataDir, "config.toml"))
@@ -88,6 +98,76 @@ func (s *Server) handleMcpServers(w http.ResponseWriter, r *http.Request) {
 		response["error"] = discoverErr.Error()
 	}
 	writeJSON(w, response)
+}
+
+// handleMcpConfig exposes the explicit MCP configuration as a small JSON
+// document. It intentionally does not expose the rest of config.toml, so the
+// editor can replace MCP servers without risking provider keys or unrelated
+// runtime settings.
+func (s *Server) handleMcpConfig(w http.ResponseWriter, r *http.Request) {
+	path := filepath.Join(s.eng.dataDir, "config.toml")
+	tc, err := config.LoadToml(path)
+	if err != nil {
+		http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		servers := make(map[string]mcpConfigServer, len(tc.Mcp.Servers))
+		for name, server := range tc.Mcp.Servers {
+			servers[name] = mcpConfigServer{
+				Command: server.Command,
+				Args:    append([]string(nil), server.Args...),
+				Env:     server.Env,
+			}
+		}
+		writeJSON(w, mcpConfigDocument{Servers: servers})
+	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		var document mcpConfigDocument
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&document); err != nil {
+			http.Error(w, "invalid MCP JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if document.Servers == nil {
+			document.Servers = map[string]mcpConfigServer{}
+		}
+		if len(document.Servers) > 256 {
+			http.Error(w, "too many MCP servers", http.StatusBadRequest)
+			return
+		}
+		next := make(map[string]config.McpServerConf, len(document.Servers))
+		for rawName, server := range document.Servers {
+			name := strings.TrimSpace(rawName)
+			command := strings.TrimSpace(server.Command)
+			if name == "" || command == "" {
+				http.Error(w, "every MCP server needs a name and command", http.StatusBadRequest)
+				return
+			}
+			if len(server.Args) > 512 || len(server.Env) > 256 {
+				http.Error(w, "MCP server has too many arguments or environment variables", http.StatusBadRequest)
+				return
+			}
+			if server.Env == nil {
+				server.Env = map[string]string{}
+			}
+			next[name] = config.McpServerConf{Command: command, Args: server.Args, Env: server.Env}
+		}
+		tc.Mcp.Servers = next
+		if err := config.SaveToml(path, tc); err != nil {
+			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.eng.reloadMCP(); err != nil {
+			http.Error(w, "reload MCP: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "servers": len(next)})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleMcpAdd adds or updates an MCP server in config.toml.

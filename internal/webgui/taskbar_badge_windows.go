@@ -212,14 +212,14 @@ func createTaskbarBadgeIcon(count int) (uintptr, error) {
 		Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: size, Height: -size,
 		Planes: 1, BitCount: 32, SizeImage: size * size * 4,
 	}}
-	var bits uintptr
+	var bits unsafe.Pointer
 	color, _, callErr := createDIBSection.Call(0, uintptr(unsafe.Pointer(&info)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
-	if color == 0 || bits == 0 {
+	if color == 0 || bits == nil {
 		return 0, fmt.Errorf("CreateDIBSection: %v", callErr)
 	}
 	defer deleteObject.Call(color)
 	pixels := taskbarBadgePixels(count)
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(bits)), len(pixels)), pixels)
+	copy(unsafe.Slice((*byte)(bits), len(pixels)), pixels)
 
 	mask, _, callErr := createBitmap.Call(size, size, 1, 1, 0)
 	if mask == 0 {

@@ -19,17 +19,19 @@ import (
 )
 
 type modelView struct {
-	ID            string  `json:"id"`
-	Provider      string  `json:"provider"`
-	Vision        bool    `json:"vision"`
-	ToolUse       bool    `json:"tool_use"`
-	Stream        bool    `json:"stream"`
-	Reasoning     bool    `json:"reasoning"`
-	ContextLength int     `json:"context_length,omitempty"`
-	InputCost     float64 `json:"input_cost,omitempty"`
-	OutputCost    float64 `json:"output_cost,omitempty"`
-	Hidden        bool    `json:"hidden"`
-	Active        bool    `json:"active"`
+	ID                  string  `json:"id"`
+	Provider            string  `json:"provider"`
+	Vision              bool    `json:"vision"`
+	VisionKnown         bool    `json:"vision_known"`
+	ToolUse             bool    `json:"tool_use"`
+	Stream              bool    `json:"stream"`
+	Reasoning           bool    `json:"reasoning"`
+	ContextLength       int     `json:"context_length,omitempty"`
+	ManualContextLength int     `json:"manual_context_length,omitempty"`
+	InputCost           float64 `json:"input_cost,omitempty"`
+	OutputCost          float64 `json:"output_cost,omitempty"`
+	Hidden              bool    `json:"hidden"`
+	Active              bool    `json:"active"`
 }
 
 type modelsResponse struct {
@@ -76,7 +78,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			seen[p.Name+"\x00"+mi.ID] = struct{}{}
-			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, mi.ID)))
+			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, mi.ID), s.manualContextWindow(p.Name, mi.ID)))
 		}
 		if p.Model != "" {
 			if !m.ModelVisible(p.Name, p.Model) {
@@ -91,7 +93,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			}
 			mi.Provider = p.Name
 			seen[p.Name+"\x00"+p.Model] = struct{}{}
-			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, p.Model)))
+			models = append(models, toModelView(mi, p.Name, active, m.IsHiddenFor(p.Name, p.Model), s.manualContextWindow(p.Name, p.Model)))
 		}
 	}
 	if active != "" {
@@ -104,7 +106,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			if provider == "" {
 				provider = mi.Provider
 			}
-			models = append(models, toModelView(mi, provider, active, m.IsHiddenFor(provider, active)))
+			models = append(models, toModelView(mi, provider, active, m.IsHiddenFor(provider, active), s.manualContextWindow(provider, active)))
 		}
 	}
 	writeJSON(w, modelsResponse{
@@ -114,15 +116,74 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func toModelView(mi llm.ModelInfo, provider, active string, hidden bool) modelView {
+func (s *Server) manualContextWindow(provider, model string) int {
+	if s == nil || s.eng == nil || s.eng.modelContexts == nil {
+		return 0
+	}
+	tokens, _ := s.eng.modelContexts.Get(provider, model)
+	return tokens
+}
+
+func toModelView(mi llm.ModelInfo, provider, active string, hidden bool, manualContext int) modelView {
 	if provider == "" {
 		provider = mi.Provider
 	}
 	return modelView{
-		ID: mi.ID, Provider: provider, Vision: mi.Vision, ToolUse: mi.ToolUse,
-		Stream: mi.Stream, Reasoning: mi.Reasoning, ContextLength: mi.ContextLength,
-		InputCost: mi.InputCost, OutputCost: mi.OutputCost, Hidden: hidden, Active: mi.ID == active,
+		ID: mi.ID, Provider: provider, Vision: mi.Vision,
+		VisionKnown: mi.Vision || mi.VisionKnown || mi.Source == llm.SourceSeed || mi.Source == llm.SourceCatalog,
+		ToolUse:     mi.ToolUse,
+		Stream:      mi.Stream, Reasoning: mi.Reasoning, ContextLength: mi.ContextLength,
+		ManualContextLength: manualContext,
+		InputCost:           mi.InputCost, OutputCost: mi.OutputCost, Hidden: hidden, Active: mi.ID == active,
 	}
+}
+
+// handleModelContext stores/removes an exact provider+model working-context
+// override. Value accepts 100k/1m/plain integers; auto removes only this pair.
+func (s *Server) handleModelContext(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		Value    string `json:"value"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Provider = strings.TrimSpace(req.Provider)
+	req.Model = strings.TrimSpace(req.Model)
+	if req.Provider == "" || req.Model == "" {
+		http.Error(w, "provider and model are required", http.StatusBadRequest)
+		return
+	}
+	if s.eng == nil || s.eng.modelContexts == nil {
+		http.Error(w, "model context store is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	tokens, automatic, err := config.ParseContextBudget(req.Value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if automatic {
+		_, err = s.eng.modelContexts.Remove(req.Provider, req.Model)
+	} else {
+		err = s.eng.modelContexts.Set(req.Provider, req.Model, tokens)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok": true, "provider": req.Provider, "model": req.Model,
+		"tokens": tokens, "automatic": automatic, "compact_at": tokens * 80 / 100,
+	})
 }
 
 func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {

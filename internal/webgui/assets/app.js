@@ -3,6 +3,8 @@
 // Design notes: docs/webgui.md. Talks JSON + SSE to the local server.
 "use strict";
 
+var superCliUI = window.SuperCliUI;
+
 /* ═══ helpers ═══ */
 
 function $(sel) { return document.querySelector(sel); }
@@ -88,9 +90,7 @@ function fmtDateTime(iso) {
   } catch (e) { return d.toLocaleString(); }
 }
 async function j(url, opts) {
-  var resp = await fetch(url, opts);
-  if (!resp.ok) throw new Error((await resp.text() || resp.status).toString().trim());
-  return resp.json();
+  return superCliUI.requestJSON(url, opts);
 }
 function jpost(url, body) {
   return j(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -105,13 +105,109 @@ function toast(msg) {
   toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600);
 }
 
+var activeAppDialog = null;
+function showAppDialog(options) {
+  options = options || {};
+  if (activeAppDialog) activeAppDialog(null);
+  return new Promise(function (resolve) {
+    var previousFocus = document.activeElement;
+    var overlay = el("div", "app-dialog-overlay");
+    overlay.setAttribute("role", "presentation");
+    var panel = el("form", "app-dialog" + (options.danger ? " danger" : ""));
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    var titleID = "app-dialog-title-" + Date.now();
+    panel.setAttribute("aria-labelledby", titleID);
+    panel.appendChild(el("div", "app-dialog-kicker", options.danger ? t("dialog.caution") : t("dialog.action")));
+    var title = el("h2", "app-dialog-title", options.title || t("dialog.confirmTitle"));
+    title.id = titleID;
+    panel.appendChild(title);
+    if (options.message) panel.appendChild(el("p", "app-dialog-message", options.message));
+
+    var input = null;
+    var error = null;
+    if (options.input) {
+      input = document.createElement("input");
+      input.className = "app-dialog-input";
+      input.type = "text";
+      input.value = options.value || "";
+      input.maxLength = options.maxLength || 160;
+      input.autocomplete = "off";
+      input.spellcheck = true;
+      input.setAttribute("aria-label", options.title || t("dialog.editTitle"));
+      panel.appendChild(input);
+      error = el("div", "app-dialog-error");
+      error.setAttribute("aria-live", "polite");
+      panel.appendChild(error);
+    }
+
+    var actions = el("div", "app-dialog-actions");
+    var cancel = el("button", "btn", options.cancelLabel || t("common.cancel"));
+    cancel.type = "button";
+    var confirm = el("button", "btn " + (options.danger ? "danger app-dialog-danger" : "primary"),
+      options.confirmLabel || (options.input ? t("common.save") : t("dialog.confirm")));
+    confirm.type = "submit";
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    panel.appendChild(actions);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    var settled = false;
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKeyDown, true);
+      overlay.classList.add("closing");
+      setTimeout(function () { overlay.remove(); }, 120);
+      activeAppDialog = null;
+      if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+      resolve(value);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(null);
+      }
+    }
+    activeAppDialog = finish;
+    document.addEventListener("keydown", onKeyDown, true);
+    cancel.addEventListener("click", function () { finish(null); });
+    overlay.addEventListener("mousedown", function (event) { if (event.target === overlay) finish(null); });
+    panel.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!input) { finish(true); return; }
+      var value = input.value.trim();
+      if (!value) {
+        error.textContent = t("dialog.required");
+        input.focus();
+        return;
+      }
+      finish(value);
+    });
+    requestAnimationFrame(function () {
+      if (input) { input.focus(); input.select(); }
+      else confirm.focus();
+    });
+  });
+}
+function appConfirm(message, options) {
+  options = Object.assign({}, options || {}, { message: message });
+  return showAppDialog(options);
+}
+function appPrompt(title, value, options) {
+  options = Object.assign({}, options || {}, { title: title, value: value, input: true });
+  return showAppDialog(options);
+}
+
 /* ═══ i18n ═══ */
 
 var I18N = {
   en: {
     "side.stats": "Stats", "side.sessions": "Sessions", "side.projects": "Projects", "side.tasks": "Tasks", "side.goal": "Goal",
     "side.add": "add", "side.noSessions": "No sessions yet.", "side.noProjects": "No projects registered.",
-    "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name",
+    "session.rename": "Rename", "session.delete": "Delete", "session.namePrompt": "Conversation name", "session.new": "new session",
+    "session.renameHint": "Choose a short name that will be easy to find in the conversation list.",
     "session.deleteConfirm": "Delete this conversation permanently?", "session.renamed": "Conversation renamed.",
     "session.deleted": "Conversation deleted.", "session.stopRun": "Stop the current run before deleting this conversation.",
     "session.runtime": "Remember chat model", "session.runtimeHint": "Restore this session's provider, model and reasoning level when it is opened.",
@@ -120,19 +216,30 @@ var I18N = {
     "session.today": "Today", "session.yesterday": "Yesterday",
     "project.stopRun": "Stop the current run before switching projects.",
     "common.refresh": "refresh", "common.scan": "scan", "common.back": "Back", "common.save": "Save", "common.openFolder": "Open folder",
-    "common.openProjectFolder": "Open project folder", "common.closePanel": "Close side panel",
+    "common.openProjectFolder": "Open project folder", "common.closePanel": "Close side panel", "common.close": "Close",
     "common.cancel": "Cancel", "common.edit": "edit", "common.remove": "remove", "common.add": "Add",
     "common.loading": "Loading…", "common.error": "error",
+    "dialog.action": "SuperCli", "dialog.caution": "Confirmation required", "dialog.confirmTitle": "Confirm action",
+    "dialog.editTitle": "Edit", "dialog.confirm": "Continue", "dialog.required": "Enter a value to continue.",
     "model.none": "no model", "model.search": "Search models…", "model.noMatches": "No models match this search.", "model.reasoning": "Reasoning effort",
     "model.think": "think", "model.auto": "auto", "model.default": "default",
     "model.hide": "hide", "model.show": "show", "model.setDefault": "CLI default",
     "model.allProviders": "All", "model.hideAll": "Hide all", "model.showAll": "Show all",
+    "model.contextLabel": "Model context", "model.contextHint": "100k, 1m, or auto · saved per provider/model",
+    "model.contextDetected": "auto detects",
+    "model.contextBudget": "Working context for this provider and model (for example 100k or auto)",
+    "model.contextSaved": "Context budget saved", "model.contextInvalid": "Enter a value such as 100k, 1m, or auto",
     "welcome.title": "What are we building?",
     "welcome.sub": "The agent reads, edits and runs code in the active workspace.",
     "welcome.h1": "Summarize this project", "welcome.h2": "Check configuration status", "welcome.h3": "How do I run the tests?",
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
 	"composer.queue": "Queue", "composer.queued": "Queued", "composer.interrupt": "Interrupt & send",
-	"composer.sendNow": "Send now", "composer.resume": "Resume queue", "composer.remove": "Remove",
+	"composer.sendNow": "Send now", "composer.resume": "Resume queue", "composer.remove": "Remove", "composer.moveUp": "Move up",
+	"composer.attach": "Attach images or files", "composer.attachFailed": "Could not attach files",
+	"composer.attachQueue": "Attachments cannot enter the persistent queue. Wait or use Interrupt & send.",
+	"composer.inspectAttachments": "Inspect the attached files.",
+	"composer.pasted": "Added from clipboard", "composer.dropped": "Added dropped files",
+	"attachment.preview": "Preview attachment", "attachment.previewUnavailable": "Preview is available for images and PDF files.",
 	"composer.ready": "Ready", "composer.working": "Working…", "composer.waiting": "Waiting for provider…", "composer.stopped": "Stopped.",
 	"question.title": "Decision needed", "question.custom": "Your own answer…", "question.submit": "Continue",
 	"question.cancel": "Cancel question", "question.pick": "Select an option or enter your own answer.",
@@ -146,6 +253,10 @@ var I18N = {
     "tool.read_lines": "Read file", "tool.read_many": "Read files", "tool.read_context": "Read context",
     "tool.search_code": "Search code", "tool.edit_line": "Edit file", "tool.edit_lines": "Edit file",
     "tool.insert_after": "Insert line", "tool.delete_lines": "Delete lines", "tool.write_file": "Write file",
+    "tool.make_dir": "Create folder", "tool.move": "Move file", "tool.copy": "Copy file", "tool.trash": "Remove file",
+    "change.title": "File changes", "change.created": "Created", "change.modified": "Modified", "change.deleted": "Deleted",
+    "change.fileCreated": "Created file", "change.fileModified": "Modified file", "change.fileDeleted": "Removed file",
+    "change.folderCreated": "Created folder", "change.fileMoved": "Moved file", "change.fileCopied": "Copied file",
     "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
     "task.brief": "Task", "task.activity": "Activity", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
     "task.input": "input", "task.output": "output",
@@ -175,13 +286,13 @@ var I18N = {
 	"data.confirmSessions": "Permanently delete all conversations? Project files, settings and API keys remain untouched.",
 	"data.confirmMemory": "Permanently clear global and project AI memory? Conversations, project files and API keys remain untouched.",
 	"data.cleared": "Local data was cleared.",
-	"workflow.queue": "Persistent task queue", "workflow.branches": "Session branches", "workflow.profile": "Model prompt profile",
+	"workflow.queue": "Persistent task queue", "workflow.profile": "Model prompt profile",
 	"workflow.scratch": "Worker scratchpad", "workflow.hard": "Hard verification", "workflow.runHard": "Run /test hard",
-	"workflow.noBranches": "No branches yet.", "workflow.fork": "Fork", "workflow.compare": "Compare selected", "workflow.open": "Open",
 	"workflow.rewind": "Rewind here", "workflow.rewindDone": "Message ready to edit or send again.",
-	"workflow.rewindHint": "Return to just before this message and place it in the composer. The original conversation stays available.",
+	"workflow.rewindHint": "Return to just before this message and place it in the composer. Later messages are permanently removed.",
 	"workflow.rewindWhy": "Why are you rewinding? (optional)", "workflow.rewindWhyHint": "A short reason helps the model avoid repeating the rejected approach.",
 	"workflow.rewindReason": "What should the model do differently?", "workflow.rewindContinue": "Rewind",
+	"workflow.rewindPermanent": "This edits the current conversation. The selected message and everything after it will be permanently removed.",
 	"workflow.rewindFiles": "Also restore file changes", "workflow.rewindFilesHint": "checkpoint(s), file(s). Conflicts stop the entire rewind.",
 	"workflow.rewindConflict": "File rewind stopped because these files changed later",
 	"workflow.restoreFiles": "Restore the agent's version", "workflow.restoreFilesHint": "File changes were rewound. You can restore the complete version produced by the agent.",
@@ -190,6 +301,7 @@ var I18N = {
 	"workflow.profileHint": "Only this bounded local file is appended for the active model family. No extra model call.",
 	"undo.learn": "Why did you undo this? (optional)", "undo.learnHint": "A short reason helps the agent avoid repeating the same mistake.",
 	"undo.sessionScope": "This session", "undo.globalScope": "All projects", "undo.saveLesson": "Save lesson",
+	"sandbox.allowTitle": "Allow access outside the project",
 	"sandbox.allowConfirm": "Allow the agent to read, search and modify files outside the active project? Sensitive Windows system folders remain blocked.",
     "set.nextSession": "next session", "set.resetAll": "Reset all to defaults",
     "set.state.default": "default", "set.state.auto": "auto", "set.state.on": "on", "set.state.off": "off",
@@ -304,7 +416,8 @@ var I18N = {
   pl: {
     "side.stats": "Statystyki", "side.sessions": "Sesje", "side.projects": "Projekty", "side.tasks": "Zadania", "side.goal": "Cel",
     "side.add": "dodaj", "side.noSessions": "Brak sesji.", "side.noProjects": "Brak projektów.",
-    "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy",
+    "session.rename": "Zmień nazwę", "session.delete": "Usuń", "session.namePrompt": "Nazwa rozmowy", "session.new": "nowa sesja",
+    "session.renameHint": "Wpisz krótką nazwę, którą łatwo znajdziesz później na liście rozmów.",
     "session.deleteConfirm": "Usunąć tę rozmowę na stałe?", "session.renamed": "Zmieniono nazwę rozmowy.",
     "session.deleted": "Usunięto rozmowę.", "session.stopRun": "Zatrzymaj trwającą odpowiedź przed usunięciem tej rozmowy.",
     "session.runtime": "Pamiętaj model czatu", "session.runtimeHint": "Po otwarciu sesji przywróć jej provider, model i poziom myślenia.",
@@ -313,19 +426,30 @@ var I18N = {
     "session.today": "Dzisiaj", "session.yesterday": "Wczoraj",
     "project.stopRun": "Zatrzymaj bieżące zadanie przed zmianą projektu.",
     "common.refresh": "odśwież", "common.scan": "skanuj", "common.back": "Wróć", "common.save": "Zapisz", "common.openFolder": "Otwórz folder",
-    "common.openProjectFolder": "Otwórz folder projektu", "common.closePanel": "Zamknij panel boczny",
+    "common.openProjectFolder": "Otwórz folder projektu", "common.closePanel": "Zamknij panel boczny", "common.close": "Zamknij",
     "common.cancel": "Anuluj", "common.edit": "edytuj", "common.remove": "usuń", "common.add": "Dodaj",
     "common.loading": "Wczytywanie…", "common.error": "błąd",
+    "dialog.action": "SuperCli", "dialog.caution": "Wymagane potwierdzenie", "dialog.confirmTitle": "Potwierdź działanie",
+    "dialog.editTitle": "Edycja", "dialog.confirm": "Kontynuuj", "dialog.required": "Wpisz wartość, aby kontynuować.",
     "model.none": "brak modelu", "model.search": "Szukaj modeli…", "model.noMatches": "Żaden model nie pasuje do wyszukiwania.", "model.reasoning": "Wysiłek rozumowania",
     "model.think": "think", "model.auto": "auto", "model.default": "domyślny",
     "model.hide": "ukryj", "model.show": "pokaż", "model.setDefault": "domyślny CLI",
     "model.allProviders": "Wszystkie", "model.hideAll": "Ukryj wszystkie", "model.showAll": "Pokaż wszystkie",
+    "model.contextLabel": "Kontekst modelu", "model.contextHint": "100k, 1m albo auto · osobno dla dostawcy/modelu",
+    "model.contextDetected": "auto wykrywa",
+    "model.contextBudget": "Kontekst roboczy dla tego dostawcy i modelu (np. 100k albo auto)",
+    "model.contextSaved": "Zapisano budżet kontekstu", "model.contextInvalid": "Wpisz wartość, np. 100k, 1m albo auto",
     "welcome.title": "Co dziś budujemy?",
     "welcome.sub": "Agent czyta, edytuje i uruchamia kod w aktywnym projekcie.",
     "welcome.h1": "Podsumuj ten projekt", "welcome.h2": "Sprawdź stan konfiguracji", "welcome.h3": "Jak uruchomić testy?",
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
 	"composer.queue": "Dodaj do kolejki", "composer.queued": "W kolejce", "composer.interrupt": "Przerwij i wyślij",
-	"composer.sendNow": "Wyślij teraz", "composer.resume": "Wznów kolejkę", "composer.remove": "Usuń",
+	"composer.sendNow": "Wyślij teraz", "composer.resume": "Wznów kolejkę", "composer.remove": "Usuń", "composer.moveUp": "Przesuń wyżej",
+	"composer.attach": "Dołącz zdjęcia lub pliki", "composer.attachFailed": "Nie udało się dołączyć plików",
+	"composer.attachQueue": "Załączniki nie mogą trafić do trwałej kolejki. Poczekaj albo użyj „Przerwij i wyślij”.",
+	"composer.inspectAttachments": "Przeanalizuj załączone pliki.",
+	"composer.pasted": "Dodano ze schowka", "composer.dropped": "Dodano upuszczone pliki",
+	"attachment.preview": "Podgląd załącznika", "attachment.previewUnavailable": "Podgląd jest dostępny dla obrazów i plików PDF.",
 	"composer.ready": "Gotowy", "composer.working": "Pracuję…", "composer.waiting": "Czekam na odpowiedź providera…", "composer.stopped": "Zatrzymano.",
 	"question.title": "Potrzebna decyzja", "question.custom": "Własna odpowiedź…", "question.submit": "Kontynuuj",
 	"question.cancel": "Anuluj pytanie", "question.pick": "Wybierz opcję albo wpisz własną odpowiedź.",
@@ -339,6 +463,10 @@ var I18N = {
     "tool.read_lines": "Odczyt pliku", "tool.read_many": "Odczyt plików", "tool.read_context": "Kontekst pliku",
     "tool.search_code": "Szukanie w kodzie", "tool.edit_line": "Edycja pliku", "tool.edit_lines": "Edycja pliku",
     "tool.insert_after": "Dodanie linii", "tool.delete_lines": "Usunięcie linii", "tool.write_file": "Zapis pliku",
+    "tool.make_dir": "Tworzenie folderu", "tool.move": "Przenoszenie pliku", "tool.copy": "Kopiowanie pliku", "tool.trash": "Usuwanie pliku",
+    "change.title": "Zmiany w plikach", "change.created": "Utworzono", "change.modified": "Zmodyfikowano", "change.deleted": "Usunięto",
+    "change.fileCreated": "Utworzono plik", "change.fileModified": "Zmodyfikowano plik", "change.fileDeleted": "Usunięto plik",
+    "change.folderCreated": "Utworzono folder", "change.fileMoved": "Przeniesiono plik", "change.fileCopied": "Skopiowano plik",
     "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
     "task.brief": "Zadanie", "task.activity": "Aktywność", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
     "task.input": "wej.", "task.output": "wyj.",
@@ -368,13 +496,13 @@ var I18N = {
 	"data.confirmSessions": "Trwale usunąć wszystkie rozmowy? Pliki projektów, ustawienia i klucze API pozostaną nietknięte.",
 	"data.confirmMemory": "Trwale wyczyścić globalną i projektową pamięć AI? Rozmowy, pliki projektów i klucze API pozostaną nietknięte.",
 	"data.cleared": "Wyczyszczono dane lokalne.",
-	"workflow.queue": "Trwała kolejka zadań", "workflow.branches": "Gałęzie sesji", "workflow.profile": "Profil promptu modelu",
+	"workflow.queue": "Trwała kolejka zadań", "workflow.profile": "Profil promptu modelu",
 	"workflow.scratch": "Notatnik workerów", "workflow.hard": "Twarda weryfikacja", "workflow.runHard": "Uruchom /test hard",
-	"workflow.noBranches": "Brak gałęzi.", "workflow.fork": "Rozgałęź", "workflow.compare": "Porównaj wybrane", "workflow.open": "Otwórz",
 	"workflow.rewind": "Wróć tutaj", "workflow.rewindDone": "Wiadomość jest gotowa do poprawienia lub ponownego wysłania.",
-	"workflow.rewindHint": "Wróć tuż przed tę wiadomość i wstaw ją do pola edycji. Oryginalna rozmowa pozostanie zachowana.",
+	"workflow.rewindHint": "Wróć tuż przed tę wiadomość i wstaw ją do pola edycji. Późniejsze wiadomości zostaną trwale usunięte.",
 	"workflow.rewindWhy": "Dlaczego cofasz? (opcjonalnie)", "workflow.rewindWhyHint": "Krótki powód pomoże modelowi nie powtórzyć odrzuconego podejścia.",
 	"workflow.rewindReason": "Co model powinien zrobić inaczej?", "workflow.rewindContinue": "Cofnij",
+	"workflow.rewindPermanent": "To zmieni bieżącą rozmowę. Wybrana wiadomość i wszystko po niej zostaną trwale usunięte.",
 	"workflow.rewindFiles": "Cofnij również zmiany w plikach", "workflow.rewindFilesHint": "checkpointów, plików. Konflikt zatrzyma całe cofanie.",
 	"workflow.rewindConflict": "Cofanie plików zatrzymane — te pliki zmieniono później",
 	"workflow.restoreFiles": "Przywróć wersję agenta", "workflow.restoreFilesHint": "Cofnięto zmiany w plikach. Możesz przywrócić całą wersję wykonaną przez agenta.",
@@ -383,6 +511,7 @@ var I18N = {
 	"workflow.profileHint": "Do promptu trafia tylko ten ograniczony plik rodziny aktywnego modelu. Bez dodatkowej inferencji.",
 	"undo.learn": "Dlaczego cofnąłeś tę zmianę? (opcjonalnie)", "undo.learnHint": "Krótki powód pomoże agentowi nie powtórzyć tego błędu.",
 	"undo.sessionScope": "Ta sesja", "undo.globalScope": "Wszystkie projekty", "undo.saveLesson": "Zapisz wskazówkę",
+	"sandbox.allowTitle": "Dostęp poza projektem",
 	"sandbox.allowConfirm": "Pozwolić agentowi czytać, przeszukiwać i modyfikować pliki poza aktywnym projektem? Wrażliwe foldery systemowe Windows nadal będą zablokowane.",
     "set.nextSession": "następna sesja", "set.resetAll": "Przywróć wszystkie domyślne",
     "set.state.default": "domyślnie", "set.state.auto": "auto", "set.state.on": "włącz", "set.state.off": "wyłącz",
@@ -648,10 +777,7 @@ function saveBlobKey(key, value) {
   patch[key] = value;
   jpost("/api/settings", patch).catch(function () {});
 }
-function applyUI() {
-  document.documentElement.dataset.theme = ui.theme || "dark";
-  document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
-  document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
+function resolvedUIScale() {
   var scale = ({compact:.9, normal:1, large:1.1, xlarge:1.25, huge:1.4})[ui.uiScale];
   if (ui.uiScale === "auto" || !scale) {
     scale = 1;
@@ -659,13 +785,35 @@ function applyUI() {
     else if (window.innerWidth >= 2300 && window.innerHeight >= 1200) scale = 1.12;
     else if (window.innerWidth >= 1800 && window.innerHeight >= 950) scale = 1.06;
   }
-  document.documentElement.style.zoom = scale;
+  return scale;
+}
+function applyViewportScale() {
+  var scale = resolvedUIScale();
+  var width = Math.max(1, window.innerWidth / scale);
+  var height = Math.max(1, window.innerHeight / scale);
+  var root = document.documentElement;
+  root.dataset.uiScale = ui.uiScale || "auto";
+  root.style.zoom = scale;
+  root.style.width = width + "px";
+  root.style.height = height + "px";
+  root.style.setProperty("--app-viewport-width", width + "px");
+  root.style.setProperty("--app-viewport-height", height + "px");
+  root.style.setProperty("--ui-scale", scale);
+  root.classList.toggle("ui-scale-compact", width <= 1180);
+  root.classList.toggle("ui-scale-narrow", width <= 900);
+  root.classList.toggle("ui-scale-mobile", width <= 600);
+}
+function applyUI() {
+  document.documentElement.dataset.theme = ui.theme || "dark";
+  document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
+  document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
+  applyViewportScale();
   $("#shell").classList.toggle("sidebar-hidden", !!ui.sidebarHidden);
   applyI18n();
   if (typeof promptQueue !== "undefined") renderPromptQueue();
 }
 window.addEventListener("resize", function () {
-  if (ui.uiScale === "auto") applyUI();
+  applyViewportScale();
 });
 async function loadUI() {
   try { Object.assign(ui, JSON.parse(localStorage.getItem("supercli-ui") || "{}")); } catch (e) {}
@@ -678,11 +826,12 @@ async function loadUI() {
         if (uiBlob["ui." + k] !== undefined) ui[k] = uiBlob["ui." + k];
       });
       if (Array.isArray(uiBlob["supercli-model-cache"])) modelCache = uiBlob["supercli-model-cache"];
+      if (Array.isArray(uiBlob[sentAttachmentStorageKey])) sentAttachmentIndex = uiBlob[sentAttachmentStorageKey];
     }
   } catch (e) {}
   // A persisted desktop-open inspector must not cover the conversation when
   // the app is reopened on a smaller monitor or in a narrow window.
-  if (sidebarCompactMQ.matches) ui.sidebarHidden = true;
+  if (sidebarCompactMQ.matches || document.documentElement.classList.contains("ui-scale-compact")) ui.sidebarHidden = true;
   applyUI();
 }
 
@@ -872,9 +1021,13 @@ function smartScroll(force) {
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
 function showWelcome() { if (welcome) welcome.style.display = ""; }
 
-function addUserMsg(text, seq) {
+function addUserMsg(text, seq, attachments) {
   hideWelcome();
-  var m = el("div", "msg-user", text);
+  attachments = (attachments || []).slice();
+  var m = el("div", "msg-user");
+  var displayText = userMessageDisplayText(text, attachments);
+  if (displayText) m.appendChild(el("div", "msg-user-text", displayText));
+  renderSentAttachments(m, attachments);
   if (seq) addMessageRewind(m, seq, text);
   appendStream(m);
   smartScroll(true);
@@ -906,6 +1059,7 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
   var panel = el("div", "question-panel compact");
   panel.appendChild(el("div", "question-kicker", t("workflow.rewindWhy")));
   panel.appendChild(el("div", "question-option-desc", t("workflow.rewindWhyHint")));
+	panel.appendChild(el("div", "question-option-desc rewind-warning", t("workflow.rewindPermanent")));
   var input = el("textarea", "question-custom");
   input.rows = 3;
   input.maxLength = 400;
@@ -916,6 +1070,7 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
     var fileOption = el("label", "question-option rewind-files");
     rewindFiles = document.createElement("input");
     rewindFiles.type = "checkbox";
+		rewindFiles.checked = true;
     fileOption.appendChild(rewindFiles);
     var fileCopy = el("span", "question-option-copy");
     fileCopy.appendChild(el("strong", "", t("workflow.rewindFiles")));
@@ -946,19 +1101,20 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
 }
 
 async function addLatestMessageRewind(node, text) {
-  if (!node || !node.isConnected || !activeSessionID) return;
+  if (!node || !node.isConnected || !activeSessionID) return 0;
   var sessionID = activeSessionID;
   try {
     var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) + "&limit=24");
-    if (sessionID !== activeSessionID || !node.isConnected) return;
+    if (sessionID !== activeSessionID || !node.isConnected) return 0;
     var messages = page.messages || [];
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "user" && messages[i].content === text) {
         addMessageRewind(node, messages[i].seq, text);
-        return;
+        return messages[i].seq;
       }
     }
   } catch (e) {}
+  return 0;
 }
 function addAssistantMsg() {
   var m = el("div", "msg-assistant");
@@ -1061,6 +1217,9 @@ function toolHint(name, args) {
       return { name: display, hint: clip(action + commandPreview(a.command), 150) };
     }
     if (a.cmd) return { name: display, hint: clip(commandPreview(a.cmd), 150) };
+    if ((name === "move" || name === "copy") && a.src) {
+      return { name: display, hint: clip(String(a.src) + " → " + String(a.dest || ""), 150) };
+    }
     var keys = ["path", "file", "dir", "query", "pattern", "prompt", "text"];
     for (var i = 0; i < keys.length; i++) {
       if (a[keys[i]]) {
@@ -1081,6 +1240,20 @@ var DIFF_TOOLS = {
   edit_line: true, edit_lines: true, insert_after: true, delete_lines: true,
   apply_patch: true, patch: true,
 };
+
+var FILE_MUTATION_TOOLS = superCliUI.fileMutationTools;
+
+function mutationOutcomeLabel(name, output, isError) {
+  var kind = superCliUI.mutationKind(name, output, isError);
+  return {
+    created: "change.fileCreated",
+    modified: "change.fileModified",
+    deleted: "change.fileDeleted",
+    "folder-created": "change.folderCreated",
+    moved: "change.fileMoved",
+    copied: "change.fileCopied",
+  }[kind] || "";
+}
 
 var FILE_READ_TOOLS = {
   read_lines: true, read_context: true, read_many: true,
@@ -1336,10 +1509,30 @@ function addToolResult(id, output, err) {
   }
   var payload = err || output || "";
   var changes = toolChangeStats(row._toolName, payload);
-  if (changes.diff) row.classList.add("has-changes");
+  var mutationLabel = mutationOutcomeLabel(row._toolName, payload, !!err);
+  if (mutationLabel) row._tname.textContent = t(mutationLabel);
+  if (changes.diff || mutationLabel) row.classList.add("has-changes");
   if (err) row._stat.classList.add("err");
   setToolResultStatus(row, ms, err, changes);
   appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err);
+  smartScroll();
+}
+
+function addFileChanges(changes) {
+  changes = superCliUI.normalizeFileChanges(changes);
+  if (!changes.length) return;
+  var row = el("div", "file-change-summary");
+  row.appendChild(el("div", "file-change-title", t("change.title") + " · " + changes.length));
+  var list = el("div", "file-change-list");
+  changes.forEach(function (change) {
+    var kind = ["created", "modified", "deleted"].indexOf(change.kind) >= 0 ? change.kind : "modified";
+    var item = el("div", "file-change-item " + kind);
+    item.appendChild(el("span", "file-change-kind", t("change." + kind)));
+    item.appendChild(el("code", "file-change-path", String(change.path)));
+    list.appendChild(item);
+  });
+  row.appendChild(list);
+  appendStream(row);
   smartScroll();
 }
 function settleOpenTools() {
@@ -1419,10 +1612,6 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount) parts.push(toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
 	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
-	if (seq) {
-	  var fork = el("button", "turn-undo", t("workflow.fork")); fork.type="button";
-	  fork.addEventListener("click", function(){ forkSession(activeSessionID, seq); }); line.appendChild(fork);
-	}
 	appendStream(line);
   smartScroll();
 }
@@ -1437,8 +1626,202 @@ var lastTurn = null;    // last done-event payload + elapsed (stats pane)
 var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
-var pendingRewind = null;
+var pendingAttachments = [];
 var appFocused = !document.hidden && document.hasFocus();
+var sentAttachmentStorageKey = "supercli-sent-attachments-v1";
+var sentAttachmentIndex = loadSentAttachmentIndex();
+
+function attachmentName(path) {
+  var parts = String(path || "").split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+function attachmentExtension(path) {
+  var name = attachmentName(path).toLowerCase();
+  var dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot) : "";
+}
+function previewableAttachment(path) {
+  return [".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"].indexOf(attachmentExtension(path)) >= 0;
+}
+function imageAttachment(path) {
+  return [".png", ".jpg", ".jpeg", ".webp", ".gif"].indexOf(attachmentExtension(path)) >= 0;
+}
+function attachmentPreviewSource(path) {
+  return "/api/attachment/preview?path=" + encodeURIComponent(path);
+}
+function attachmentTranscriptText(text, paths) {
+  paths = paths || [];
+  if (!paths.length) return text;
+  return text + "\n\n" + String.fromCodePoint(0x1F4CE) + " " + paths.map(attachmentName).join(", ");
+}
+function userMessageDisplayText(text, paths) {
+  text = String(text || "");
+  paths = paths || [];
+  if (!paths.length) return text;
+  var suffix = "\n\n" + String.fromCodePoint(0x1F4CE) + " " + paths.map(attachmentName).join(", ");
+  if (text.slice(-suffix.length) === suffix) text = text.slice(0, -suffix.length);
+  var documents = paths.filter(function (path) { return !imageAttachment(path); });
+  if (documents.length) {
+    text += "\n\n" + String.fromCodePoint(0x1F4CE) + " " + documents.map(attachmentName).join(", ");
+  }
+  return text;
+}
+function loadSentAttachmentIndex() {
+  try {
+    var parsed = JSON.parse(localStorage.getItem(sentAttachmentStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+function saveSentAttachmentIndex() {
+  if (sentAttachmentIndex.length > 240) sentAttachmentIndex = sentAttachmentIndex.slice(-240);
+  try { localStorage.setItem(sentAttachmentStorageKey, JSON.stringify(sentAttachmentIndex)); } catch (e) {}
+  saveBlobKey(sentAttachmentStorageKey, sentAttachmentIndex);
+}
+function rememberSentAttachments(sessionID, seq, paths) {
+  if (!sessionID || !seq || !(paths || []).length) return;
+  sentAttachmentIndex = sentAttachmentIndex.filter(function (item) {
+    return item.session !== sessionID || item.seq !== seq;
+  });
+  sentAttachmentIndex.push({ session: sessionID, seq: seq, paths: paths.slice(), at: Date.now() });
+  saveSentAttachmentIndex();
+}
+function sentAttachmentsFor(sessionID, seq) {
+  for (var i = sentAttachmentIndex.length - 1; i >= 0; i--) {
+    var item = sentAttachmentIndex[i];
+    if (item.session === sessionID && item.seq === seq) return (item.paths || []).slice();
+  }
+  return [];
+}
+function forgetSentAttachments(sessionID, fromSeq) {
+  sentAttachmentIndex = sentAttachmentIndex.filter(function (item) {
+    if (item.session !== sessionID) return true;
+    return fromSeq && item.seq < fromSeq;
+  });
+  saveSentAttachmentIndex();
+}
+function renderSentAttachments(node, paths) {
+  var images = (paths || []).filter(imageAttachment);
+  if (!node || !images.length) return;
+  var gallery = el("div", "sent-attachment-gallery" + (images.length === 1 ? " single" : ""));
+  images.forEach(function (path) {
+    var open = el("button", "sent-attachment-preview");
+    open.type = "button";
+    open.title = t("attachment.preview") + ": " + attachmentName(path);
+    open.setAttribute("aria-label", open.title);
+    open.addEventListener("click", function () { openAttachmentPreview(path); });
+    var image = document.createElement("img");
+    image.src = attachmentPreviewSource(path);
+    image.alt = attachmentName(path);
+    image.loading = "lazy";
+    image.addEventListener("error", function () { open.remove(); });
+    open.appendChild(image);
+    gallery.appendChild(open);
+  });
+  node.appendChild(gallery);
+}
+function addAttachmentPaths(paths) {
+  (paths || []).forEach(function (path) {
+    if (pendingAttachments.indexOf(path) < 0 && pendingAttachments.length < 8) {
+      pendingAttachments.push(path);
+    }
+  });
+  renderAttachments();
+}
+async function uploadAttachmentFiles(files, successKey) {
+  files = Array.prototype.slice.call(files || []).slice(0, 8 - pendingAttachments.length);
+  if (!files.length) return;
+  var form = new FormData();
+  files.forEach(function (file, index) {
+    var name = file.name || ("clipboard-" + (index + 1) + ".png");
+    form.append("files", file, name);
+  });
+  var response = await fetch("/api/attachment/upload", { method: "POST", body: form });
+  if (!response.ok) throw new Error((await response.text() || response.status).toString().trim());
+  var result = await response.json();
+  addAttachmentPaths(result.paths || []);
+  toast(t(successKey) + " · " + (result.paths || []).length);
+}
+function closeAttachmentPreview() {
+  var dialog = $("#attachment-preview-dialog");
+  $("#attachment-preview-content").replaceChildren();
+  if (dialog.open) dialog.close();
+}
+function openAttachmentPreview(path) {
+  if (!previewableAttachment(path)) {
+    toast(t("attachment.previewUnavailable"));
+    return;
+  }
+  var dialog = $("#attachment-preview-dialog");
+  var content = $("#attachment-preview-content");
+  content.replaceChildren();
+  $("#attachment-preview-title").textContent = attachmentName(path);
+  var source = attachmentPreviewSource(path);
+  if (attachmentExtension(path) === ".pdf") {
+    var frame = document.createElement("iframe");
+    frame.src = source + "#view=FitH";
+    frame.title = attachmentName(path);
+    content.appendChild(frame);
+  } else {
+    var image = document.createElement("img");
+    image.src = source;
+    image.alt = attachmentName(path);
+    content.appendChild(image);
+  }
+  dialog.showModal();
+}
+function renderAttachments() {
+  var host = $("#attachment-list");
+  host.innerHTML = "";
+  host.hidden = !pendingAttachments.length;
+  pendingAttachments.forEach(function (path, index) {
+    var isImage = imageAttachment(path);
+    var chip = el("div", "attachment-chip" + (isImage ? " image-attachment" : ""));
+    chip.title = path;
+    var open = el("button", "attachment-open" + (previewableAttachment(path) ? " previewable" : ""));
+    open.type = "button";
+    open.title = previewableAttachment(path) ? t("attachment.preview") : path;
+    open.addEventListener("click", function () { openAttachmentPreview(path); });
+    if (isImage) {
+      var thumbnail = document.createElement("img");
+      thumbnail.className = "attachment-thumbnail";
+      thumbnail.src = attachmentPreviewSource(path);
+      thumbnail.alt = "";
+      thumbnail.loading = "lazy";
+      thumbnail.addEventListener("error", function () {
+        chip.classList.add("thumbnail-unavailable");
+        thumbnail.remove();
+      });
+      open.appendChild(thumbnail);
+    }
+    open.appendChild(el("span", "attachment-name", attachmentName(path)));
+    chip.appendChild(open);
+    var remove = el("button", "attachment-remove", "×");
+    remove.type = "button";
+    remove.setAttribute("aria-label", t("composer.remove"));
+    remove.addEventListener("click", function () {
+      pendingAttachments.splice(index, 1);
+      renderAttachments();
+    });
+    chip.appendChild(remove);
+    host.appendChild(chip);
+  });
+}
+function clearAttachments() {
+  pendingAttachments = [];
+  renderAttachments();
+}
+async function pickAttachments() {
+  var button = $("#attach-btn");
+  button.disabled = true;
+  try {
+    var got = await j("/api/file-picker");
+    addAttachmentPaths(got.paths || []);
+  } catch (e) {
+    toast(t("composer.attachFailed") + ": " + e.message);
+  } finally {
+    button.disabled = false;
+  }
+}
 
 function updateAppBadge() {
   // The taskbar number means "finished while you were away", not queue depth.
@@ -1540,17 +1923,17 @@ async function removeQueuedTask(id) {
 async function runQueuedTask(item, interrupt) {
   if (!await removeQueuedTask(item.id)) return;
   pauseQueue = false;
-  if (interrupt) interruptAndSend(item.text, item);
-  else { await prepareQueuedTask(item); sendPrompt(item.text); }
+  if (interrupt) interruptAndSend(item.text, item, item.attachments || []);
+  else { await prepareQueuedTask(item); sendPrompt(item.text, item.attachments || []); }
 }
 function renderTaskCenter() {
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
   if (!promptQueue.length) { host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak oczekujących zadań." : "No queued tasks.")); return; }
   promptQueue.forEach(function (item, i) {
     var row = el("div", "task-center-row"); row.appendChild(el("span", "task-center-index", String(i + 1).padStart(2, "0")));
-    var copy = el("div", "task-center-copy"); copy.appendChild(el("span", "t", item.text)); copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : "new session")); row.appendChild(copy);
+    var copy = el("div", "task-center-copy"); copy.appendChild(el("span", "t", item.text)); copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new"))); row.appendChild(copy);
     var go = el("button", "queue-action", t("composer.sendNow")); go.addEventListener("click", function () { runQueuedTask(item, true); }); row.appendChild(go); host.appendChild(row);
-	if (i > 0) { var up=el("button","queue-action","↑"); up.title="Move up"; up.addEventListener("click",async function(){try{await j("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:item.id,position:i-1})});await loadPromptQueue();}catch(e){toast(e.message);}}); row.insertBefore(up,go); }
+	if (i > 0) { var up=el("button","queue-action","↑"); up.title=t("composer.moveUp"); up.addEventListener("click",async function(){try{await j("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:item.id,position:i-1})});await loadPromptQueue();}catch(e){toast(e.message);}}); row.insertBefore(up,go); }
   });
 }
 
@@ -1643,10 +2026,15 @@ async function prepareQueuedTask(item) {
   activeSessionID = item.session_id;
   if (sessionByID[item.session_id]) await restoreSessionRuntime(sessionByID[item.session_id]);
 }
-function interruptAndSend(text, item) {
-  pendingImmediate = item || { text: text, session_id: activeSessionID };
+function interruptAndSend(text, item, attachments) {
+  pendingImmediate = item || { text: text, session_id: activeSessionID, attachments: attachments || [] };
+  if (item && attachments && attachments.length) pendingImmediate.attachments = attachments;
   pauseQueue = false;
-  if (abortCtl) abortCtl.abort(); else { var next=pendingImmediate; pendingImmediate=null; prepareQueuedTask(next).then(function(){sendPrompt(next.text);}); }
+  if (abortCtl) abortCtl.abort(); else {
+    var next = pendingImmediate;
+    pendingImmediate = null;
+    prepareQueuedTask(next).then(function () { sendPrompt(next.text, next.attachments || []); });
+  }
 }
 
 function setRunState(state, text) {
@@ -1654,8 +2042,12 @@ function setRunState(state, text) {
   $("#status-dot").classList.toggle("busy", state === "running");
 }
 
-async function sendPrompt(text) {
+async function sendPrompt(text, attachments) {
   if (streaming) return;
+  attachments = (attachments || []).slice();
+  text = String(text || "").trim();
+  if (!text && attachments.length) text = t("composer.inspectAttachments");
+  if (!text) return;
   // A reopened conversation becomes visible before its remembered model has
   // necessarily finished switching. Never let an immediate Enter use the
   // previous session's runtime; if another session wins meanwhile, await it.
@@ -1676,8 +2068,6 @@ async function sendPrompt(text) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
-  var rewindInfo = pendingRewind;
-  pendingRewind = null;
   abortCtl = new AbortController();
   runToolCount = 0;
   toolRows = {}; workerRows = {}; openToolOrder = [];
@@ -1686,7 +2076,8 @@ async function sendPrompt(text) {
   sendBtn.type = "submit";
   $("#stop-run-btn").hidden = false;
   $("#interrupt-btn").hidden = false;
-  var liveUserNode = addUserMsg(text);
+  var persistedText = attachmentTranscriptText(text, attachments);
+  var liveUserNode = addUserMsg(text, 0, attachments);
   var current = null;
   var terminalSeen = false;
   var lastProgressAt = Date.now();
@@ -1706,10 +2097,7 @@ async function sendPrompt(text) {
       body: JSON.stringify({
         prompt: text,
         session_id: activeSessionID,
-        rewound: rewindInfo !== null,
-        rewind_reason: rewindInfo ? rewindInfo.reason : "",
-        rewind_files: !!(rewindInfo && rewindInfo.files),
-        rewind_files_restored: !!(rewindInfo && rewindInfo.filesRestored),
+        attachments: attachments,
       }),
       signal: abortCtl.signal,
     });
@@ -1717,31 +2105,11 @@ async function sendPrompt(text) {
       addEventLine(t("common.error") + ": " + resp.status, "error");
       return;
     }
-    var reader = resp.body.getReader();
-    var decoder = new TextDecoder();
-    var buf = "";
-    function processFrame(frame) {
-      var line = frame.replace(/^data: /, "").trim();
-      if (!line) return;
-      try {
-        var ev = JSON.parse(line);
-        lastProgressAt = Date.now();
-        if (ev.type === "done" || ev.type === "error") terminalSeen = true;
-        current = handleEvent(ev, current);
-      } catch (e) {}
-    }
-    for (;;) {
-      var chunk = await reader.read();
-      if (chunk.done) break;
-      buf += decoder.decode(chunk.value, { stream: true });
-      var frames = buf.split(/\r?\n\r?\n/);
-      buf = frames.pop();
-      for (var f = 0; f < frames.length; f++) {
-        processFrame(frames[f]);
-      }
-    }
-    buf += decoder.decode();
-    if (buf.trim()) processFrame(buf);
+    await superCliUI.readSSE(resp.body, function (ev) {
+      lastProgressAt = Date.now();
+      if (ev.type === "done" || ev.type === "error") terminalSeen = true;
+      current = handleEvent(ev, current);
+    });
     flushAssistantRender(current);
     if (!terminalSeen) {
       addEventLine(t("chat.streamEnded"), "error", "error");
@@ -1772,24 +2140,25 @@ async function sendPrompt(text) {
     promptEl.focus();
     loadSessions();
     renderStats();
-    addLatestMessageRewind(liveUserNode, text);
+    var userSeq = await addLatestMessageRewind(liveUserNode, persistedText);
+    if (userSeq) rememberSentAttachments(activeSessionID, userSeq, attachments);
     // A model may have updated the durable goal through its tool during this
     // turn. Keep an already-open Goal panel in sync without polling.
     if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
     if ($("#side-tab-goal").classList.contains("active")) loadSideGoal();
     var immediate = pendingImmediate;
     pendingImmediate = null;
-	var next = "";
-	if (immediate) { await prepareQueuedTask(immediate); next = immediate.text; }
+	var next = null;
+	if (immediate) { await prepareQueuedTask(immediate); next = immediate; }
     if (!next && !pauseQueue && promptQueue.length) {
       var queued = promptQueue[0];
       if (!await removeQueuedTask(queued.id)) queued = null;
 	  if (!queued) { renderPromptQueue(); return; }
 	  await prepareQueuedTask(queued);
-      next = queued.text;
+      next = { text: queued.text, attachments: queued.attachments || [] };
     }
     renderPromptQueue();
-    if (next) setTimeout(function () { sendPrompt(next); }, 0);
+    if (next) setTimeout(function () { sendPrompt(next.text, next.attachments || []); }, 0);
   }
 }
 
@@ -1809,6 +2178,9 @@ function handleEvent(ev, current) {
       return null;
     case "tool_result":
       addToolResult(ev.id, ev.output, ev.err);
+      return current;
+    case "file_changes":
+      addFileChanges(ev.file_changes);
       return current;
     case "compact":
       addEventLine(ev.text || "", "", "compact");
@@ -1849,12 +2221,14 @@ function handleEvent(ev, current) {
       flushAssistantRender(current);
       var elapsed = Date.now() - runStart;
       lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount };
+      addFileChanges(ev.file_changes);
       addTurnMeta(ev, elapsed);
       setRunState("idle", t("run.done") + " · " + fmtDuration(elapsed));
       notifyDone(elapsed);
       return null;
     case "error":
       flushAssistantRender(current);
+      addFileChanges(ev.file_changes);
       addEventLine(ev.err || "error", "error", "error");
       setRunState("idle", t("common.error"));
       return null;
@@ -1951,11 +2325,17 @@ function showQuestion(q) {
 $("#composer").addEventListener("submit", function (e) {
   e.preventDefault();
   var text = promptEl.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachments.length) return;
+  if (streaming && pendingAttachments.length) {
+    toast(t("composer.attachQueue"));
+    return;
+  }
+  var attachments = pendingAttachments.slice();
   promptEl.value = "";
   promptEl.style.height = "auto";
   if (streaming) { enqueuePrompt(text); return; }
-  sendPrompt(text);
+  clearAttachments();
+  sendPrompt(text, attachments);
 });
 $("#stop-run-btn").addEventListener("click", function () {
   pauseQueue = true;
@@ -1963,9 +2343,16 @@ $("#stop-run-btn").addEventListener("click", function () {
 });
 $("#interrupt-btn").addEventListener("click", function () {
   var text = promptEl.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachments.length) return;
+  var attachments = pendingAttachments.slice();
   promptEl.value = ""; promptEl.style.height = "auto";
-  interruptAndSend(text);
+  clearAttachments();
+  interruptAndSend(text, null, attachments);
+});
+$("#attach-btn").addEventListener("click", pickAttachments);
+$("#attachment-preview-close").addEventListener("click", closeAttachmentPreview);
+$("#attachment-preview-dialog").addEventListener("click", function (event) {
+  if (event.target === this) closeAttachmentPreview();
 });
 promptEl.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -1977,13 +2364,38 @@ promptEl.addEventListener("input", function () {
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 200) + "px";
 });
+promptEl.addEventListener("paste", function (event) {
+  var files = event.clipboardData ? Array.prototype.slice.call(event.clipboardData.files || []) : [];
+  if (!files.length) return;
+  if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+  uploadAttachmentFiles(files, "composer.pasted").catch(function (error) {
+    toast(t("composer.attachFailed") + ": " + error.message);
+  });
+});
+$("#composer").addEventListener("dragover", function (event) {
+  if (!event.dataTransfer) return;
+  var hasFiles = event.dataTransfer.files.length ||
+    Array.prototype.some.call(event.dataTransfer.items || [], function (item) { return item.kind === "file"; });
+  if (!hasFiles) return;
+  event.preventDefault();
+  this.classList.add("drop-target");
+});
+$("#composer").addEventListener("dragleave", function () { this.classList.remove("drop-target"); });
+$("#composer").addEventListener("drop", function (event) {
+  this.classList.remove("drop-target");
+  if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+  event.preventDefault();
+  uploadAttachmentFiles(event.dataTransfer.files, "composer.dropped").catch(function (error) {
+    toast(t("composer.attachFailed") + ": " + error.message);
+  });
+});
 $$(".welcome .hints button").forEach(function (b) {
-  b.addEventListener("click", function () { if (!streaming) sendPrompt(b.dataset.prompt); });
+  b.addEventListener("click", function () { if (!streaming) sendPrompt(b.dataset.prompt, []); });
 });
 
 function newSession() {
   if (streaming) return;
-  pendingRewind = null;
+  clearAttachments();
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;
   loadedTranscriptMessages = [];
@@ -2028,7 +2440,7 @@ document.addEventListener("visibilitychange", function () {
 
 /* ═══ health / status ═══ */
 
-var activeModelID = "";
+var activeModelID = "", activeProviderID = "";
 var activeWorkspacePath = "";
 function workspaceDisplayName(path) {
   var clean = String(path || "").replace(/[\\/]+$/, "");
@@ -2424,7 +2836,7 @@ async function loadSessions() {
       var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
       b.type = "button";
       b.dataset.sessionId = s.id;
-      b.appendChild(el("span", "t", (s.parent_id ? "\u2514 " : "") + (s.first_user_msg || s.id)));
+      b.appendChild(el("span", "t", s.first_user_msg || s.id));
       var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
       if (s.model) sessionMeta += " · " + compactSessionModel(s.model);
       var meta = el("span", "s", sessionMeta);
@@ -2446,11 +2858,6 @@ async function loadSessions() {
       rename.addEventListener("click", doRename);
       rename.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doRename(e); });
       actions.appendChild(rename);
-
-	  var fork = el("span", "session-action fork", "\u2387");
-	  fork.setAttribute("role", "button"); fork.tabIndex = 0; fork.title = t("workflow.fork");
-	  function doFork(e) { e.preventDefault(); e.stopPropagation(); forkSession(s.id, 0); }
-	  fork.addEventListener("click", doFork); fork.addEventListener("keydown", function(e){if(e.key==="Enter"||e.key===" ")doFork(e);}); actions.appendChild(fork);
 
       var remove = el("span", "session-action delete", "\u00D7");
       remove.setAttribute("role", "button");
@@ -2474,35 +2881,25 @@ async function loadSessions() {
   }
 }
 
-async function forkSession(id, throughSeq) {
-  var chosen = window.prompt(t("workflow.fork") + " · model", activeModelID || "");
-  if (chosen === null) return;
-  try {
-    var branch = await jpost("/api/branches", { session_id:id, through_seq:throughSeq||0, model:chosen.trim() });
-    await loadSessions();
-    await resumeSession(branch.id, branch);
-    toast(t("workflow.fork") + " ✓");
-  } catch(e) { toast(e.message); }
-}
-
 async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button) {
   if (!id || !selectedSeq || streaming) return false;
   if (button) button.disabled = true;
   try {
-    var branch = await jpost("/api/branches", {
+    var result = await jpost("/api/session/rewind", {
       session_id: id,
-      through_seq: selectedSeq > 1 ? selectedSeq - 1 : -1,
       selected_seq: selectedSeq,
       rewind_files: !!rewindFiles,
+      reason: reason || "",
     });
-	if (branch.file_rewind) rememberFileRewind(branch.id, branch.file_rewind);
-    await resumeSession(branch.id, branch);
-    pendingRewind = { reason: reason || "", files: !!rewindFiles, filesRestored: false };
+		forgetSentAttachments(id, selectedSeq);
+		await loadSessions();
+    await resumeSession(id, sessionByID[id] || null);
     promptEl.value = text || "";
     promptEl.dispatchEvent(new Event("input"));
     promptEl.focus();
     promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length);
     toast(t("workflow.rewindDone"));
+		if (result.warning) toast(result.warning);
     return true;
   } catch (e) {
     var message = e.message;
@@ -2518,55 +2915,12 @@ async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button)
   }
 }
 
-var fileRewindStorageKey = "supercli-file-rewind-receipts";
-function fileRewindReceipts() {
-  try { return JSON.parse(localStorage.getItem(fileRewindStorageKey) || "{}") || {}; }
-  catch (e) { return {}; }
-}
-function rememberFileRewind(sessionID, receipt) {
-  var all = fileRewindReceipts(); all[sessionID] = receipt;
-  try { localStorage.setItem(fileRewindStorageKey, JSON.stringify(all)); } catch (e) {}
-}
-function forgetFileRewind(sessionID) {
-  var all = fileRewindReceipts(); delete all[sessionID];
-  try { localStorage.setItem(fileRewindStorageKey, JSON.stringify(all)); } catch (e) {}
-}
-function renderFileRewindAction(sessionID) {
-  var previous = stream.querySelector(".rewind-restore");
-  if (previous) previous.remove();
-  var receipt = fileRewindReceipts()[sessionID];
-  if (!receipt || !(receipt.checkpoint_ids || []).length) return;
-  var row = el("div", "rewind-restore");
-  var copy = el("div", "rewind-restore-copy");
-  copy.appendChild(el("strong", "", t("workflow.rewindFileCount").replace("{n}", (receipt.files || []).length)));
-  copy.appendChild(el("span", "", t("workflow.restoreFilesHint")));
-  var restore = el("button", "btn", t("workflow.restoreFiles"));
-  restore.type = "button";
-  restore.addEventListener("click", async function () {
-    restore.disabled = true;
-    try {
-      await jpost("/api/checkpoint/rewind", {
-        session_id: receipt.session_id,
-        branch_session_id: sessionID,
-        checkpoint_ids: receipt.checkpoint_ids,
-      });
-      forgetFileRewind(sessionID);
-      row.remove();
-      if (pendingRewind) { pendingRewind.files = false; pendingRewind.filesRestored = true; }
-      toast(t("workflow.filesRestored"));
-    } catch (e) {
-      restore.disabled = false;
-      toast(e.message);
-    }
-  });
-  row.appendChild(copy); row.appendChild(restore); stream.appendChild(row);
-}
-
 async function renameSession(session) {
   var current = session.first_user_msg || "";
-  var title = window.prompt(t("session.namePrompt"), current);
+  var title = await appPrompt(t("session.namePrompt"), current, {
+    message: t("session.renameHint"), confirmLabel: t("common.save"),
+  });
   if (title === null) return;
-  title = title.trim();
   if (!title || title === current) return;
   try {
     await j("/api/sessions", {
@@ -2584,9 +2938,12 @@ async function deleteSession(id) {
     toast(t("session.stopRun"));
     return;
   }
-  if (!window.confirm(t("session.deleteConfirm"))) return;
+  if (!await appConfirm(t("session.deleteConfirm"), {
+    title: t("session.delete"), danger: true, confirmLabel: t("common.remove"),
+  })) return;
   try {
     await j("/api/sessions?id=" + encodeURIComponent(id), { method: "DELETE" });
+    forgetSentAttachments(id);
     if (id === activeSessionID) newSession();
     else await loadSessions();
     toast(t("session.deleted"));
@@ -2623,15 +2980,21 @@ function buildHistoryFragment(messages) {
   try {
     (messages || []).forEach(function (m) {
       if (m.role === "user") {
-        addUserMsg(m.content, m.seq);
+        addUserMsg(m.content, m.seq, sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq));
       } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
-        if (!m.content) return;
+        if (!m.content) {
+          if (m.turn) { addFileChanges(m.turn.file_changes); addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq); }
+          return;
+        }
         var node = addAssistantMsg();
         node._raw = m.content;
         renderAssistant(node);
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
-        if (m.turn) addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
+        if (m.turn) {
+          addFileChanges(m.turn.file_changes);
+          addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
+        }
       } else if (m.role === "tool") {
         var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
           parseTaskNotification(m.content) : null;
@@ -2653,9 +3016,11 @@ function buildHistoryFragment(messages) {
         sum.appendChild(el("span", "thint", historyInfo.hint));
         var historyStat = el("span", "tstat", "");
         var historyChanges = toolChangeStats(persistedName, m.content);
+        var historyMutationLabel = mutationOutcomeLabel(persistedName, m.content, /^error:/i.test(String(m.content || "")));
+        if (historyMutationLabel) historyName.textContent = t(historyMutationLabel);
         if (historyChanges.added) historyStat.appendChild(el("span", "change-add", "+" + historyChanges.added));
         if (historyChanges.removed) historyStat.appendChild(el("span", "change-remove", "−" + historyChanges.removed));
-        if (historyChanges.diff) row.classList.add("has-changes");
+        if (historyChanges.diff || historyMutationLabel) row.classList.add("has-changes");
         sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
@@ -2688,7 +3053,6 @@ function renderLoadedTranscript(preserveScroll) {
     stream.appendChild(older);
   }
   stream.appendChild(buildHistoryFragment(loadedTranscriptMessages));
-  renderFileRewindAction(transcriptSessionID);
   if (preserveScroll) {
     stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
   } else {
@@ -2733,7 +3097,6 @@ async function resumeSession(id, session) {
     toast(t("session.stopRun"));
     return;
   }
-  pendingRewind = null;
   var resumeSeq = ++sessionResumeSeq;
   var epoch = projectEpoch;
   var releaseRuntimeReady;
@@ -2768,16 +3131,22 @@ async function resumeSession(id, session) {
 	streamAppendTarget = historyFragment;
 	(msgs || []).forEach(function (m) {
       if (m.role === "user") {
-        addUserMsg(m.content, m.seq);
+        addUserMsg(m.content, m.seq, sentAttachmentsFor(id, m.seq));
 	      } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
-        if (!m.content) return;
+        if (!m.content) {
+          if (m.turn) { addFileChanges(m.turn.file_changes); addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq); }
+          return;
+        }
         var node = addAssistantMsg();
         node._raw = m.content;
         renderAssistant(node);
         // History replay: thinking folded (only live streams open it).
 	        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
-        if (m.turn) addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
+        if (m.turn) {
+          addFileChanges(m.turn.file_changes);
+          addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
+        }
       } else if (m.role === "tool") {
         var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
           parseTaskNotification(m.content) : null;
@@ -2799,9 +3168,11 @@ async function resumeSession(id, session) {
         sum.appendChild(el("span", "thint", historyInfo.hint));
         var historyStat = el("span", "tstat", "");
         var historyChanges = toolChangeStats(persistedName, m.content);
+        var historyMutationLabel = mutationOutcomeLabel(persistedName, m.content, /^error:/i.test(String(m.content || "")));
+        if (historyMutationLabel) historyName.textContent = t(historyMutationLabel);
         if (historyChanges.added) historyStat.appendChild(el("span", "change-add", "+" + historyChanges.added));
         if (historyChanges.removed) historyStat.appendChild(el("span", "change-remove", "−" + historyChanges.removed));
-        if (historyChanges.diff) row.classList.add("has-changes");
+        if (historyChanges.diff || historyMutationLabel) row.classList.add("has-changes");
         sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
@@ -2816,7 +3187,6 @@ async function resumeSession(id, session) {
 	});
 	streamAppendTarget = null;
 	stream.appendChild(historyFragment);
-	renderFileRewindAction(id);
 	smartScroll(true);
     loadSessions();
     renderStats();
@@ -2926,7 +3296,8 @@ function slimModels(models) {
   return (models || []).map(function (m) {
     return {
       id: m.id, provider: m.provider, hidden: !!m.hidden, active: !!m.active,
-      context_length: m.context_length || 0, reasoning: !!m.reasoning,
+      context_length: m.context_length || 0, manual_context_length: m.manual_context_length || 0,
+      reasoning: !!m.reasoning,
       vision: !!m.vision, tool_use: !!m.tool_use,
     };
   });
@@ -2939,6 +3310,7 @@ async function loadModels() {
       activeModelID = got.active;
       $("#model-name").textContent = got.active;
     }
+    activeProviderID = got.provider || "";
     $("#model-prov").textContent = got.provider || "";
     // A successful response is authoritative, including an empty list. This
     // prevents paid models surviving after a key was removed or expired.
@@ -2951,20 +3323,79 @@ async function loadModels() {
     if (!modelCache.length) $("#model-list").innerHTML = '<div class="side-empty">' + escHtml(e.message) + "</div>";
   }
 }
+
+function contextBudgetText(tokens) {
+  if (!tokens) return "auto";
+  if (tokens % 1000000 === 0) return (tokens / 1000000) + "m";
+  if (tokens % 1000 === 0) return (tokens / 1000) + "k";
+  return String(tokens);
+}
+
+function activeModelEntry() {
+  var exact = modelCache.find(function (m) {
+    return m.id === activeModelID && (!activeProviderID || m.provider === activeProviderID);
+  });
+  if (exact) return exact;
+  return modelCache.find(function (m) { return m.active; }) || null;
+}
+
+function renderActiveContextControl() {
+  var control = $("#model-context-control");
+  var active = activeModelEntry();
+  control.hidden = !active;
+  if (!active) return;
+  $("#model-context-target").textContent = (active.provider || "—") + " / " + active.id;
+  $("#model-context-input").value = contextBudgetText(active.manual_context_length);
+  var hint = t("model.contextHint");
+  if (active.context_length) hint += " · " + t("model.contextDetected") + " " + fmtTok(active.context_length);
+  $("#model-context-hint").textContent = hint;
+}
+
+function saveActiveModelContext() {
+  var active = activeModelEntry();
+  if (!active) return;
+  var input = $("#model-context-input");
+  var button = $("#model-context-save");
+  var value = input.value.trim() || "auto";
+  button.disabled = true;
+  jpost("/api/model/context", { provider: active.provider, model: active.id, value: value })
+    .then(function (result) {
+      active.manual_context_length = result.automatic ? 0 : (result.tokens || 0);
+      saveBlobKey("supercli-model-cache", modelCache);
+      renderModelList($("#model-search").value.trim().toLowerCase());
+      toast(t("model.contextSaved") + ": " + active.provider + " / " + active.id + " = " + contextBudgetText(active.manual_context_length));
+    })
+    .catch(function (err) { toast(err.message || t("model.contextInvalid")); })
+    .finally(function () { button.disabled = false; });
+}
+
+$("#model-context-save").addEventListener("click", saveActiveModelContext);
+$("#model-context-input").addEventListener("keydown", function (event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveActiveModelContext();
+  }
+  if (event.key === "Escape") renderActiveContextControl();
+});
+
 function renderModelList(filter) {
   var list = $("#model-list");
   list.innerHTML = "";
   modelCache.forEach(function (m) {
     if (filter && (m.id + " " + m.provider).toLowerCase().indexOf(filter) < 0) return;
-    var isActive = m.id === activeModelID || m.active;
+    var isActive = m.id === activeModelID && (!activeProviderID || m.provider === activeProviderID);
     var row = el("div", "prow" + (isActive ? " active" : "") + (m.hidden ? " hidden-model" : ""));
     // Small state dot: green = visible, red = hidden (information, not lacquer).
     row.appendChild(el("span", "state-dot " + (m.hidden ? "off" : "on")));
     row.appendChild(el("span", "pid", m.id));
     row.appendChild(el("span", "pprov", m.provider || ""));
     if (m.context_length) row.appendChild(el("span", "pbadge", fmtTok(m.context_length)));
+    if (m.manual_context_length) {
+      var manualBadge = el("span", "pbadge manual-context", "ctx " + contextBudgetText(m.manual_context_length));
+      manualBadge.title = t("model.contextBudget");
+      row.appendChild(manualBadge);
+    }
     if (m.reasoning) row.appendChild(el("span", "pbadge", "think"));
-    if (m.vision) row.appendChild(el("span", "pbadge", "vision"));
     var act = el("span", "pact");
     var bd = el("button", "", t("model.setDefault"));
     bd.title = "Set as CLI default (config.toml)";
@@ -2994,6 +3425,7 @@ function renderModelList(filter) {
     list.appendChild(row);
   });
   if (!list.children.length) list.innerHTML = '<div class="side-empty">—</div>';
+  renderActiveContextControl();
 }
 $("#model-search").addEventListener("input", function () {
   renderModelList(this.value.trim().toLowerCase());
@@ -3139,22 +3571,10 @@ function showSection(name) {
 
 sections.workflow = async function () {
   panelContent.innerHTML = "";
+  panelContent.appendChild(SuperCliUI.createUserInstructionsEditor({ lang: ui.lang, className: "group" }));
   var queue = el("div", "group"); queue.appendChild(el("div", "g-label", t("workflow.queue")));
   queue.appendChild(el("div", "workflow-lead", String(promptQueue.length).padStart(2,"0") + " · " + t("composer.queued")));
   queue.appendChild(el("div", "note", ui.lang === "pl" ? "Kolejka przeżywa restart aplikacji i czeka na wznowienie." : "The queue survives app restarts and waits for you to resume it.")); panelContent.appendChild(queue);
-
-  var branches = el("div", "group"), bh=el("div","g-label",t("workflow.branches"));
-  var fork=el("button","g-act",t("workflow.fork"));fork.disabled=!activeSessionID;fork.addEventListener("click",function(){forkSession(activeSessionID,0);});bh.appendChild(fork);branches.appendChild(bh);
-  var selected=[];
-  if(activeSessionID){
-    try{var rows=await j("/api/branches?session="+encodeURIComponent(activeSessionID));
-      (rows||[]).forEach(function(s){var row=el("label","branch-row"),cb=document.createElement("input");cb.type="checkbox";cb.addEventListener("change",function(){if(cb.checked){if(selected.length>=2){cb.checked=false;return;}selected.push(s.id);}else selected=selected.filter(function(id){return id!==s.id;});});row.appendChild(cb);var copy=el("span","branch-copy");copy.appendChild(el("span","branch-title",s.first_user_msg||s.id));copy.appendChild(el("span","branch-meta",(s.model||"—")+" · "+s.message_count+" msg"));row.appendChild(copy);var open=el("button","queue-action",t("workflow.open"));open.type="button";open.addEventListener("click",function(e){e.preventDefault();resumeSession(s.id,s);closePanel();});row.appendChild(open);branches.appendChild(row);});
-      if(!rows||rows.length<2)branches.appendChild(el("div","note",t("workflow.noBranches")));
-      var compare=el("button","btn",t("workflow.compare"));compare.addEventListener("click",function(){if(selected.length!==2){toast(ui.lang==="pl"?"Wybierz dokładnie dwie gałęzie.":"Select exactly two branches.");return;}compareBranches(selected);});branches.appendChild(compare);
-	  var runBoth=el("button","btn",t("workflow.runBoth"));runBoth.addEventListener("click",async function(){if(selected.length!==2){toast(ui.lang==="pl"?"Wybierz dokładnie dwie gałęzie.":"Select exactly two branches.");return;}var prompt=window.prompt(t("composer.ph"),"");if(!prompt||!prompt.trim())return;try{for(var i=0;i<selected.length;i++){var q=await jpost("/api/tasks",{session_id:selected[i],prompt:prompt.trim()});q.text=q.prompt;promptQueue.push(q);}pauseQueue=true;renderPromptQueue();toast(t("workflow.runBoth")+" ✓");}catch(e){toast(e.message);}});branches.appendChild(runBoth);
-    }catch(e){branches.appendChild(el("div","note",e.message));}
-  }else branches.appendChild(el("div","note",t("workflow.noBranches")));
-  panelContent.appendChild(branches);
 
   var profile=el("div","group");profile.appendChild(el("div","g-label",t("workflow.profile")));
   try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=el("button","btn",t("common.openFolder"));openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=ui.lang==="pl"?"Np. preferuj krótkie wywołania narzędzi.":"Example: prefer short tool calls.";profile.appendChild(ta);var save=el("button","btn primary",t("common.save"));save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(el("div","note",t("workflow.profileHint")));}catch(e){profile.appendChild(el("div","note",e.message));}
@@ -3164,10 +3584,6 @@ sections.workflow = async function () {
 
   var hard=el("div","group");hard.appendChild(el("div","g-label",t("workflow.hard")));var run=el("button","btn primary",t("workflow.runHard")),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=(report.ok?"PASS":"FAIL")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
 };
-
-async function compareBranches(ids){
-  try{var all=await Promise.all(ids.map(function(id){return j("/api/transcript?id="+encodeURIComponent(id));})),overlay=el("div","question-overlay branch-compare"),panel=el("div","question-panel compare-panel"),head=el("div","question-actions"),close=el("button","btn",t("common.cancel"));close.addEventListener("click",function(){overlay.remove();});head.appendChild(close);panel.appendChild(head);var grid=el("div","compare-grid");all.forEach(function(msgs,i){var col=el("div","compare-col");col.appendChild(el("div","g-label",clip(ids[i],22)));var answer="";for(var n=msgs.length-1;n>=0;n--){if(msgs[n].role==="assistant"){answer=msgs[n].content;break;}}var body=el("div","msg-assistant");body.innerHTML=renderText(answer||"—");col.appendChild(body);grid.appendChild(col);});panel.appendChild(grid);overlay.appendChild(panel);document.body.appendChild(overlay);}catch(e){toast(e.message);}
-}
 
 async function openWorkspaceFolder(path) {
   try { await jpost("/api/folder/open", { path: path }); }
@@ -3206,8 +3622,10 @@ function knobRow(k) {
   row.appendChild(name);
   if (k.next_session) row.appendChild(el("span", "k-next", "(" + t("set.nextSession") + ")"));
 
-  function post(value) {
-	if (k.key === "allow_all" && value === "on" && !window.confirm(t("sandbox.allowConfirm"))) return;
+  async function post(value) {
+	if (k.key === "allow_all" && value === "on" && !await appConfirm(t("sandbox.allowConfirm"), {
+      title: t("sandbox.allowTitle"), danger: true, confirmLabel: t("dialog.confirm"),
+    })) return;
     jpost("/api/config", { key: k.key, value: value })
       .then(function () { sections.settings(); })
       .catch(function (e) { toast(e.message); });
@@ -3414,7 +3832,7 @@ sections.models = async function () {
     var query = modelSettingsSearch.trim().toLocaleLowerCase();
     if (!query) return providerModels;
     return providerModels.filter(function (m) {
-      var features = [m.id, m.provider, m.tool_use ? "tools" : "", m.reasoning ? "think reasoning" : "", m.vision ? "vision" : "", m.hidden ? "hidden" : "visible"];
+      var features = [m.id, m.provider, m.reasoning ? "think reasoning" : "", m.hidden ? "hidden" : "visible"];
       return features.join(" ").toLocaleLowerCase().indexOf(query) >= 0;
     });
   }
@@ -3458,9 +3876,7 @@ sections.models = async function () {
       main.appendChild(title);
       var caps = [];
       if (m.context_length) caps.push("ctx " + fmtTok(m.context_length));
-      if (m.tool_use) caps.push("tools");
       if (m.reasoning) caps.push("think");
-      if (m.vision) caps.push("vision");
       main.appendChild(el("div", "lr-sub", (m.provider || "") + (caps.length ? " · " + caps.join(" · ") : "")));
       row.appendChild(main);
       var act = el("div", "lr-act");
@@ -3602,7 +4018,6 @@ function renderRuntimeDiagnostic(row, facts, details, endpoint, state, d) {
     facts.appendChild(runtimeFact(t("runtime.model"), d.selected_model || "—", t("runtime.reported")));
     facts.appendChild(runtimeFact(t("runtime.models"), String((d.models || []).length), t("runtime.reported")));
     if (d.context_window) facts.appendChild(runtimeFact(t("runtime.context"), fmtTok(d.context_window), t("runtime.reported")));
-    if (d.capability_known) facts.appendChild(runtimeFact(t("runtime.tools"), d.tool_use ? t("runtime.available") : "—", t("runtime.catalog")));
   }
   if (d.last_call) {
     var c = d.last_call;
@@ -4135,14 +4550,16 @@ sections.data = async function () {
   function destructiveAction(labelKey, hintKey, action, after) {
     var button = el("button", "btn danger", t(labelKey)); button.type = "button"; button.disabled = streaming;
     button.addEventListener("click", async function () {
-      if (!window.confirm(t(hintKey))) return;
+      if (!await appConfirm(t(hintKey), {
+        title: t(labelKey), danger: true, confirmLabel: t("common.remove"),
+      })) return;
       button.disabled = true;
       try { await jpost("/api/data/clear", { action:action }); toast(t("data.cleared")); if (after) after(); await sections.data(); }
       catch (e) { toast(e.message); button.disabled = false; }
     });
     danger.appendChild(dataAction(t(labelKey), t(hintKey), button));
   }
-  destructiveAction("data.clearSessions", "data.confirmSessions", "sessions", function () { try { localStorage.removeItem(fileRewindStorageKey); } catch (e) {} newSession(); loadSessions(); renderStats(); });
+  destructiveAction("data.clearSessions", "data.confirmSessions", "sessions", function () { newSession(); loadSessions(); renderStats(); });
   destructiveAction("data.clearMemory", "data.confirmMemory", "memory", function () {});
   panelContent.appendChild(danger);
 };
@@ -4312,12 +4729,16 @@ function renderGoalPanel(got) {
   var finish = el("button", "btn primary", t("goal.finish"));
 	finish.disabled = !got.can_finish;
 	if (!got.can_finish) finish.title = t("goal.finishBlocked");
-  finish.addEventListener("click", function () {
-    if (window.confirm(t("goal.finishConfirm"))) goalMutate(finish, { action: "set_status", status: "done" });
+  finish.addEventListener("click", async function () {
+    if (await appConfirm(t("goal.finishConfirm"), {
+      title: t("goal.finish"), confirmLabel: t("goal.finish"),
+    })) goalMutate(finish, { action: "set_status", status: "done" });
   });
   var abandon = el("button", "btn danger", t("goal.abandon"));
-  abandon.addEventListener("click", function () {
-    if (window.confirm(t("goal.abandonConfirm"))) goalMutate(abandon, { action: "set_status", status: "abandoned" });
+  abandon.addEventListener("click", async function () {
+    if (await appConfirm(t("goal.abandonConfirm"), {
+      title: t("goal.abandon"), danger: true, confirmLabel: t("goal.abandon"),
+    })) goalMutate(abandon, { action: "set_status", status: "abandoned" });
   });
   goalActions.appendChild(finish);
   goalActions.appendChild(abandon);
@@ -4655,7 +5076,9 @@ function renderPriceDetails(stats) {
   });
   if (remove) {
     remove.addEventListener("click", async function () {
-      if (!window.confirm(t("price.removeConfirm"))) return;
+      if (!await appConfirm(t("price.removeConfirm"), {
+        title: t("price.remove"), danger: true, confirmLabel: t("common.remove"),
+      })) return;
       setPriceBusy(true);
       status.textContent = t("common.loading");
       try {

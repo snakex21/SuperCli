@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"supercli/internal/account/pricing"
@@ -50,12 +51,13 @@ func openDataDB(dataDir string) (*sql.DB, error) {
 // the model. It is built once at server start from the resolved
 // config and data directory, mirroring the CLI's runBatch wiring.
 type Engine struct {
-	mu      sync.RWMutex
-	cfg     config.Config
-	dataDir string
-	home    string
-	caps    *llm.CapabilityRegistry
-	prov    llm.Provider
+	mu         sync.RWMutex
+	cfg        config.Config
+	dataDir    string
+	home       string
+	appProfile string
+	caps       *llm.CapabilityRegistry
+	prov       llm.Provider
 	// factory is the single provider-construction funnel: every
 	// provider (main, model switches, task workers) comes out of it
 	// wrapped in llm.Metered, so purpose labels, the background gate
@@ -117,6 +119,11 @@ type Engine struct {
 	diagnosticMu       sync.RWMutex
 	diagnosticRegistry *tools.Registry
 	schedules          *scheduleManager
+	modelContexts      *config.ModelContextStore
+	// activeRuns counts foreground chat streams currently executing. The
+	// native close handler combines it with active delegated workers so an
+	// idle window closes immediately and only real work triggers a warning.
+	activeRuns atomic.Int32
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -143,20 +150,21 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
 	eng := &Engine{
-		cfg:          cfg,
-		dataDir:      dataDir,
-		home:         home,
-		caps:         caps,
-		prov:         prov,
-		factory:      f,
-		learned:      llm.LoadLearnedLimits(dataDir),
-		questions:    make(map[string]tools.AskRequest),
-		perf:         make(map[string]providerCallPerformance),
-		checkpoints:  make(map[string]*checkpoint.Manager),
-		codeIntel:    make(map[string]*tools.CodeIntel),
-		processes:    make(map[string]*tools.ProcessSession),
-		skillCatalog: make(map[string]*tools.Discoverer),
-		workers:      agent.NewWorkerRegistry(),
+		cfg:           cfg,
+		dataDir:       dataDir,
+		home:          home,
+		caps:          caps,
+		prov:          prov,
+		factory:       f,
+		learned:       llm.LoadLearnedLimits(dataDir),
+		modelContexts: config.LoadModelContextStore(dataDir),
+		questions:     make(map[string]tools.AskRequest),
+		perf:          make(map[string]providerCallPerformance),
+		checkpoints:   make(map[string]*checkpoint.Manager),
+		codeIntel:     make(map[string]*tools.CodeIntel),
+		processes:     make(map[string]*tools.ProcessSession),
+		skillCatalog:  make(map[string]*tools.Discoverer),
+		workers:       agent.NewWorkerRegistry(),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.schedules = newScheduleManager(dataDir, func(workspace, prompt string) error {
@@ -173,6 +181,30 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		eng.mcpManager = nil
 	}
 	return eng, nil
+}
+
+func (e *Engine) beginActiveRun() func() {
+	if e == nil {
+		return func() {}
+	}
+	e.activeRuns.Add(1)
+	var once sync.Once
+	return func() {
+		once.Do(func() { e.activeRuns.Add(-1) })
+	}
+}
+
+// HasActiveWork reports whether closing the desktop window would interrupt a
+// foreground response or a delegated worker. Persisted queued tasks are not
+// included because they survive application shutdown.
+func (e *Engine) HasActiveWork() bool {
+	if e == nil {
+		return false
+	}
+	if e.activeRuns.Load() > 0 {
+		return true
+	}
+	return e.workers != nil && e.workers.Counts().Running > 0
 }
 
 func explicitMCPConfigs(tc config.TomlConfig) map[string]mcp.ServerConfig {
@@ -476,28 +508,47 @@ func applyWebModelInfo(caps *llm.CapabilityRegistry, infos []llm.ModelInfo) {
 	if caps == nil {
 		return
 	}
+	shortCounts := make(map[string]int)
+	for _, info := range infos {
+		if slash := strings.IndexByte(info.ID, '/'); slash > 0 && slash < len(info.ID)-1 {
+			shortCounts[strings.ToLower(info.ID[slash+1:])]++
+		}
+	}
 	for _, info := range infos {
 		if info.ID == "" {
 			continue
 		}
-		if existing, ok := caps.Get(info.ID); ok {
-			if info.InputCost > 0 {
-				existing.InputCost = info.InputCost
+		applyOneWebModelInfo(caps, info)
+		if slash := strings.IndexByte(info.ID, '/'); slash > 0 && slash < len(info.ID)-1 {
+			shortID := info.ID[slash+1:]
+			if existing, ok := caps.Get(shortID); ok && shortCounts[strings.ToLower(shortID)] == 1 {
+				alias := info
+				alias.ID = shortID
+				alias.Provider = existing.Provider
+				applyOneWebModelInfo(caps, alias)
 			}
-			if info.OutputCost > 0 {
-				existing.OutputCost = info.OutputCost
-			}
-			if existing.ContextLength == 0 && info.ContextLength > 0 {
-				existing.ContextLength = info.ContextLength
-			}
-			if info.LastVerified.After(existing.LastVerified) {
-				existing.LastVerified = info.LastVerified
-			}
-			caps.Register(existing)
-			continue
 		}
-		caps.Register(info)
 	}
+}
+
+func applyOneWebModelInfo(caps *llm.CapabilityRegistry, info llm.ModelInfo) {
+	if existing, ok := caps.Get(info.ID); ok {
+		if info.InputCost > 0 {
+			existing.InputCost = info.InputCost
+		}
+		if info.OutputCost > 0 {
+			existing.OutputCost = info.OutputCost
+		}
+		if existing.ContextLength == 0 && info.ContextLength > 0 {
+			existing.ContextLength = info.ContextLength
+		}
+		if info.LastVerified.After(existing.LastVerified) {
+			existing.LastVerified = info.LastVerified
+		}
+		caps.Register(existing)
+		return
+	}
+	caps.Register(info)
 }
 
 // ModelName returns the active model id for display.
@@ -584,6 +635,15 @@ func (e *Engine) setHome(home string) {
 // DataDir returns the SuperCli data directory.
 func (e *Engine) DataDir() string { return e.dataDir }
 
+// SetAppProfile applies behavior owned by a branded front-end without
+// changing SuperCli defaults. The profile is fixed by the launcher before the
+// first request; the lock keeps tests and future embedded callers safe.
+func (e *Engine) SetAppProfile(profile string) {
+	e.mu.Lock()
+	e.appProfile = strings.ToLower(strings.TrimSpace(profile))
+	e.mu.Unlock()
+}
+
 // newLoop builds a fresh agent loop with the standard always-on file
 // tool set. Each web run gets its own loop so concurrent browser tabs
 // do not share mutable conversation state. Mirrors runBatch's
@@ -619,8 +679,17 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	prov := e.prov
 	caps := e.caps
 	cfg := e.cfg
+	appProfile := e.appProfile
 	e.mu.RUnlock()
 	tc := e.tomlConfigAt(home)
+	if strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe") {
+		// Repository preflight is useful in SuperCli, but it primes an office
+		// assistant to treat every folder as a source-code project. NestCafe
+		// keeps a technical working directory internally, without exposing its
+		// git/repository state to the model on ordinary document tasks.
+		off := false
+		tc.PreflightRepo = &off
+	}
 	catalogHoist := strings.EqualFold(strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")), "true") || strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")) == "1"
 	execProfile := execution.Resolve(cfg, tc, caps, catalogHoist)
 	var recorder systats.Recorder
@@ -651,6 +720,12 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	skillApplier := tools.NewSkillApplier(discoverer)
 	reg.MustRegister(skillApplier.Spec())
 	reg.MarkAlwaysOn("apply_skill")
+	projectMemory := webMemoryKeeper{dataDir: e.dataDir, home: home}
+	globalMemory := webMemoryKeeper{dataDir: e.dataDir, home: home, global: true}
+	reg.MustRegister(tools.NewRememberDual(projectMemory, globalMemory).Spec())
+	reg.MustRegister(tools.NewRecallDual(projectMemory, globalMemory).Spec())
+	reg.MarkAlwaysOn("remember")
+	reg.MarkAlwaysOn("recall")
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
@@ -676,6 +751,29 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		sp = codeIntel.WrapMutation(sp)
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
+	}
+	// Rich attachment readers stay discoverable through tool_search so their
+	// larger schemas do not burden ordinary chat turns. The attachment prompt
+	// names the exact reader, making selection deterministic.
+	for _, sp := range []tools.Tool{
+		tools.NewReadPdf(home, 0).Spec(),
+		tools.NewReadDocx(home, 0).Spec(),
+		tools.NewReadXlsx(home, 0).Spec(),
+		tools.NewReadZip(home, 0).Spec(),
+	} {
+		reg.MustRegister(sp)
+	}
+	// Office editors are discoverable alongside their readers. Keeping them
+	// out of the always-on set avoids schema overhead in ordinary chat, while
+	// tool_search can expose them for an explicit Word or Excel request.
+	for _, sp := range []tools.Tool{
+		tools.NewEditDocx(home).Spec(),
+		tools.NewEditXlsx(home).Spec(),
+	} {
+		if turn != nil {
+			sp = turn.Wrap(sp)
+		}
+		reg.MustRegister(sp)
 	}
 	invoke := agent.NewInvokeTool(reg).Spec()
 	if turn != nil {
@@ -733,39 +831,66 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// model, and without Summarizer auto-compaction degrades to the
 	// blind hide fallback — the model silently loses the whole prior
 	// conversation ("[earlier context cleared]" with no summary).
-	windowFor := func(model string) int {
-		if tc.ContextWindow > 0 {
-			return tc.ContextWindow
+	contextWindowFor := func(model string) agent.ContextWindowResolution {
+		return agent.ResolveContextWindow(model, tc.ContextWindow, 0, caps, e.learned)
+	}
+	contextProvider, _, _ := e.RuntimeSelection()
+	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {
+		if tokens, ok := e.modelContexts.Get(provider, model); ok {
+			return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
 		}
-		if info, ok := caps.Get(model); ok && info.ContextLength > 0 {
-			return info.ContextLength
-		}
-		if v := e.learned.Get(model); v > 0 {
-			return v
-		}
-		return 0 // loop falls back to its 16384 default
+		return agent.ContextWindowResolution{}
+	}
+	systemPrompt := webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc, appProfile)
+	if instructions := llmprompt.ActiveUserInstructions(e.dataDir); instructions != "" {
+		systemPrompt += "\n\n" + instructions
+	}
+	if briefing := webMemoryBriefing(e.dataDir, home, tc.MemoryBriefingTokens); briefing != "" {
+		systemPrompt += "\n\n" + briefing
+	}
+	if folders := folderIndexPrompt(e.dataDir); folders != "" {
+		systemPrompt += "\n\n" + folders
+	}
+	// Branded overlays keep their own adjacent data root. Retain the legacy
+	// NestCafe preference key while the overlay migrates to the shared key.
+	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory",
+		uiSettingBool(e.dataDir, "nestcafe.autoMemory", true))
+	if autoMemory {
+		systemPrompt += "\n\nAfter completing a useful task or learning a durable user preference, call remember with one short self-contained fact. Never store secrets."
+	} else {
+		systemPrompt += "\n\nDo not proactively save new memory. Only call remember when the user explicitly asks you to remember something."
+	}
+	maxSteps := tc.MaxStepsOr(25)
+	maxStepGrace := 0
+	if tc.MaxSteps <= 0 {
+		// The built-in WebGUI budget is a safety baseline, not a reason to cut
+		// off a healthy long task. Explicit max_steps remains a strict user cap.
+		maxStepGrace = maxSteps
 	}
 	loop, err := agent.NewLoop(agent.LoopConfig{
-		Provider:              prov,
-		Registry:              reg,
-		Caps:                  caps,
-		System:                webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc),
-		MaxSteps:              tc.MaxStepsOr(25),
-		Orchestrator:          orchestrator,
-		TaskParallel:          taskParallel,
-		TaskParallelWarnLocal: taskParallelWarnLocal,
-		EnableNavigator:       execProfile.EnableNavigator,
-		NavigatorAuto:         execProfile.NavigatorAuto,
-		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly,
-		ThinTools:             execProfile.ThinTools,
-		StableToolset:         execProfile.StableToolset,
-		CatalogHoist:          execProfile.CatalogHoist,
-		BaseDir:               home,
-		InitialMessages:       initial,
-		Writer:                writer,
-		WindowFor:             windowFor,
-		Summarizer:            agent.NewAutoSummarizer(reg.ActiveNames),
-		LearnLimit:            e.learned.Learn,
+		Provider:               prov,
+		Registry:               reg,
+		Caps:                   caps,
+		System:                 systemPrompt,
+		MaxSteps:               maxSteps,
+		MaxStepGrace:           maxStepGrace,
+		Orchestrator:           orchestrator,
+		TaskParallel:           taskParallel,
+		TaskParallelWarnLocal:  taskParallelWarnLocal,
+		EnableNavigator:        execProfile.EnableNavigator,
+		NavigatorAuto:          execProfile.NavigatorAuto,
+		NavigatorKeywordsOnly:  execProfile.NavigatorKeywordsOnly,
+		ThinTools:              execProfile.ThinTools,
+		StableToolset:          execProfile.StableToolset,
+		CatalogHoist:           execProfile.CatalogHoist,
+		BaseDir:                home,
+		InitialMessages:        initial,
+		Writer:                 writer,
+		ContextWindowFor:       contextWindowFor,
+		ContextProvider:        contextProvider,
+		ScopedContextWindowFor: scopedContextWindowFor,
+		Summarizer:             agent.NewAutoSummarizer(reg.ActiveNames),
+		LearnLimit:             e.learned.Learn,
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
@@ -793,8 +918,14 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	return loop, nil
 }
 
-func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service) string {
+func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service, appProfile string) string {
+	officeProfile := strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe")
 	system := llmprompt.Build(promptSmall)
+	if officeProfile {
+		// The extended SuperCli layer is intentionally code-oriented. NestCafe
+		// uses the universal core and adds its office behavior below.
+		system = llmprompt.Core
+	}
 	if profile := llmprompt.LoadProfileAt(home, dataDir, model); profile != "" {
 		system += "\n\n" + profile
 	}
@@ -809,10 +940,22 @@ func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator
 	if delegation {
 		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
 	}
-	if sandbox.IsUnsandboxed() {
+	if officeProfile && sandbox.IsUnsandboxed() {
+		system += fmt.Sprintf("\n\nTechnical working directory: %s\nFull access to ordinary user files is ON. File, document, search, and command tools may use absolute paths such as Desktop, Documents, Downloads, Pictures, and user-named folders. Sensitive system folders remain blocked.", home)
+	} else if sandbox.IsUnsandboxed() {
 		system += fmt.Sprintf("\n\nActive workspace: %s\nFull filesystem access is ON. File and search tools may use absolute paths outside this workspace; sensitive system folders remain blocked.", home)
 	} else {
 		system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
+	}
+	if officeProfile {
+		system += `
+
+NestCafe office mode:
+- Act as a general desktop and office assistant, not primarily as a programming agent.
+- For requests about the user's Desktop, Documents, Downloads, pictures, or another named location, inspect that location directly with file tools. Full filesystem access covers ordinary user files; do not claim that the active workspace prevents access.
+- Prefer the dedicated Word, Excel, PDF, image, archive, and file tools for document work. Preserve formatting and existing files unless the user asks for a conversion or replacement.
+- Organizing, renaming, copying, and summarizing files are normal tasks. Before a bulk move, overwrite, or removal, show the intended scope and ask for confirmation. Use recoverable trash instead of hard deletion.
+- Treat source-code and repository workflows as exceptional: use them only when the user explicitly asks for programming work.`
 	}
 	// A tiny discovery hint is cheaper than carrying the complete goal schema in
 	// every request. When a goal is active, inject its open steps directly.
@@ -879,6 +1022,12 @@ func (e *Engine) preflightBlock() (string, int) {
 }
 
 func (e *Engine) preflightBlockAt(home string) (string, int) {
+	e.mu.RLock()
+	officeProfile := strings.EqualFold(strings.TrimSpace(e.appProfile), "nestcafe")
+	e.mu.RUnlock()
+	if officeProfile {
+		return "", 0
+	}
 	tc := e.tomlConfigAt(home)
 	if tc.PreflightRepo != nil && !*tc.PreflightRepo {
 		return "", 0

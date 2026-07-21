@@ -54,6 +54,19 @@
           <input id="model-search" placeholder="Search models…" data-i18n-ph="model.search" autocomplete="off" />
           <button id="model-scan" type="button" data-i18n="common.scan">scan</button>
         </div>
+        <div class="model-context-control" id="model-context-control" hidden>
+          <div class="model-context-copy">
+            <strong data-i18n="model.contextLabel">Model context</strong>
+            <span id="model-context-target"></span>
+          </div>
+          <div class="model-context-edit">
+            <input id="model-context-input" type="text" inputmode="text" value="auto"
+                   autocomplete="off" data-i18n-title="model.contextBudget"
+                   data-i18n-aria="model.contextBudget" />
+            <button id="model-context-save" type="button" data-i18n="common.save">Save</button>
+          </div>
+          <small id="model-context-hint" data-i18n="model.contextHint">100k, 1m, or auto · saved per provider/model</small>
+        </div>
         <div class="plist" id="model-list"></div>
       </div>
 
@@ -77,8 +90,11 @@
         <div class="prompt-queue" id="prompt-queue" hidden></div>
         <form class="composer" id="composer">
           <div class="box">
+            <div class="attachment-list" id="attachment-list" hidden></div>
             <textarea id="prompt" rows="1" placeholder="Message SuperCli…" data-i18n-ph="composer.ph"></textarea>
             <div class="row">
+              <button type="button" class="attach-btn" id="attach-btn"
+                      data-i18n-title="composer.attach" data-i18n-aria="composer.attach">📎</button>
               <span class="hint" id="run-status" data-i18n="composer.ready">Ready</span>
               <button type="button" class="stop-run-btn" id="stop-run-btn" data-i18n="composer.stop" hidden>Stop</button>
               <button type="button" class="interrupt-btn" id="interrupt-btn" data-i18n="composer.interrupt" hidden>Interrupt &amp; send</button>
@@ -88,6 +104,15 @@
         </form>
       </div>
     </div>
+
+    <dialog class="attachment-preview-dialog" id="attachment-preview-dialog">
+      <div class="attachment-preview-head">
+        <strong id="attachment-preview-title">Attachment preview</strong>
+        <button type="button" id="attachment-preview-close"
+                data-i18n-title="common.close" data-i18n-aria="common.close">×</button>
+      </div>
+      <div class="attachment-preview-content" id="attachment-preview-content"></div>
+    </dialog>
 
     <!-- ── Side panel (right): stats / sessions / projects ── -->
     <aside class="sidebar" id="sidebar">
@@ -189,6 +214,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
+  <script src="/.__supercli/ui/runtime.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

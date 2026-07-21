@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"supercli/internal/tools/sandbox"
 )
+
+func (s *Server) resolveWorkspacePath(path string) (string, error) {
+	return sandbox.ResolveWithin(s.eng.Home(), path)
+}
 
 // handleFiles lists files in a directory (shallow, like a file tree).
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -14,9 +19,8 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	if dir == "" {
 		dir = s.eng.Home()
 	}
-	// Security: only allow paths within home
-	abs, err := filepath.Abs(dir)
-	if err != nil || !strings.HasPrefix(filepath.Clean(abs), filepath.Clean(s.eng.Home())) {
+	abs, err := s.resolveWorkspacePath(dir)
+	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -54,8 +58,8 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing path", http.StatusBadRequest)
 		return
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil || !strings.HasPrefix(filepath.Clean(abs), filepath.Clean(s.eng.Home())) {
+	abs, err := s.resolveWorkspacePath(path)
+	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -81,8 +85,8 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	abs, err := filepath.Abs(req.Path)
-	if err != nil || !strings.HasPrefix(filepath.Clean(abs), filepath.Clean(s.eng.Home())) {
+	abs, err := s.resolveWorkspacePath(req.Path)
+	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
