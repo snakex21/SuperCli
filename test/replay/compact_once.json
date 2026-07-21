@@ -1,0 +1,22 @@
+{
+  "name": "compact_once",
+  "description": "Completed old history compacts once while the active turn survives; the next append-only turn does not trigger a compaction loop.",
+  "steps": [
+    {
+      "note": "first request after summary compaction",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Active work retained."},
+        {"finish_reason": "stop", "usage": {"input": 180, "output": 8, "total": 188}}
+      ]
+    },
+    {
+      "note": "second request remains below threshold",
+      "deltas": [
+        {"role": "assistant"},
+        {"content": "Continued without another compaction."},
+        {"finish_reason": "stop", "usage": {"input": 205, "output": 9, "total": 214}}
+      ]
+    }
+  ]
+}

@@ -12,6 +12,17 @@ Mechanism documentation (how the agent loop, delegation, caching, and config def
 - Web GUI assets are embedded from `internal/webgui/assets/*` via Go `//go:embed`.
 - After changing HTML/CSS/JS in `internal/webgui/assets`, rebuild `supercli-web.exe`; there is no separate frontend build step.
 
+## Replaceable branded launchers
+
+- Branded applications run the ordinary `supercli-web.exe` as a replaceable
+  sidecar engine. Do not add brand-specific build tags or embed a branded UI
+  into the SuperCli command.
+- Launcher integration uses `--ui-dir`, `--app-name`, `--app-profile`,
+  `--data-dir`, `--icon`, `--require-ui-contract`, and `--parent-pid`.
+- Shared browser behavior belongs in `internal/webgui/shared-ui/` and is served
+  under `/.__supercli/ui/` for both the standard UI and branded overlays.
+- Bump `webgui.UIContractVersion` only for a breaking overlay/API change.
+
 ## Required Windows web GUI build
 
 Always build the Windows web GUI with the GUI subsystem flag:

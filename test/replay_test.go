@@ -842,6 +842,63 @@ func TestReplay_PruneMidSession_CoherentHistory(t *testing.T) {
 	}
 }
 
+// (f2) Auto-compaction: completed history is summarized once, the active turn
+// survives byte-for-byte, and the provider-reported baseline prevents a second
+// speculative compaction on the next append-only turn.
+func TestReplay_AutoCompactOnce_PreservesActiveTurn(t *testing.T) {
+	prov := loadReplayProvider(t, "compact_once.json")
+	reg := tools.NewRegistry()
+	hist := []llm.Message{
+		{Role: llm.RoleUser, Content: strings.Repeat("OLD-CONTEXT ", 700)},
+		{Role: llm.RoleAssistant, Content: "old answer"},
+	}
+	l := newReplayLoop(t, agent.LoopConfig{
+		Provider:        prov,
+		Registry:        reg,
+		InitialMessages: hist,
+		ContextWindowFor: func(string) agent.ContextWindowResolution {
+			return agent.ContextWindowResolution{Tokens: 2_000, Source: "catalog"}
+		},
+		Summarizer: func(context.Context, llm.Provider, []llm.Message) (string, error) {
+			return "This session is continued from a previous conversation that was compacted to save context. OLD-CONTEXT was summarized.", nil
+		},
+	})
+
+	run := func(prompt string) []agent.Event {
+		ch, err := l.Run(context.Background(), prompt)
+		if err != nil {
+			t.Fatalf("Run(%q): %v", prompt, err)
+		}
+		return collectReplay(t, ch)
+	}
+	events1 := run("ACTIVE-TURN must stay exact")
+	events2 := run("continue")
+
+	compactions := 0
+	for _, ev := range append(events1, events2...) {
+		if compact, ok := ev.(agent.AutoCompactEvent); ok {
+			compactions++
+			if compact.WindowSource != "catalog" || compact.EstimateSource == "" || compact.Threshold != 1_600 {
+				t.Errorf("compact telemetry = %+v", compact)
+			}
+		}
+	}
+	if compactions != 1 {
+		t.Fatalf("auto compactions = %d, want exactly 1", compactions)
+	}
+	reqs := prov.reqs()
+	if len(reqs) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(reqs))
+	}
+	first := reqText(reqs[0])
+	if !strings.Contains(first, "ACTIVE-TURN must stay exact") {
+		t.Error("active turn did not survive compaction")
+	}
+	if strings.Count(first, "OLD-CONTEXT") != 1 {
+		t.Errorf("old exact history leaked past summary: %q", first)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // (g) Truncated tool result: the [... omitted_bytes=N ...] marker
 // produced by core.HeadTailBuffer survives all the way into the
