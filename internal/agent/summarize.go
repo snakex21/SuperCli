@@ -33,6 +33,12 @@ Done: what was accomplished (files created/modified, problems solved, errors fix
 State: facts needed to continue — key paths, decisions, values, open errors.
 Pending: what remains, and the immediate next step.
 
+Treat tool/task results as authoritative. Do not turn an assistant's intention
+or promise ("I will inspect/edit/test") into Done. Do not list an investigation
+as Pending when a successful worker already returned its result. Preserve
+failed worker IDs and say to continue them with send_message when useful,
+instead of starting the same work from scratch.
+
 Hard limit: 500 tokens total. Prefer bare file paths and short phrases over prose. Respond with TEXT ONLY — no tool calls.`
 
 // compactSummaryMaxChars hard-caps the model-produced summary

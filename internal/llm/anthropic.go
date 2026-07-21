@@ -110,7 +110,10 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 			return nil, fmt.Errorf("Complete: message %d: %w", i, err)
 		}
 	}
-	body, err := buildAnthropicRequest(p.cfg.Model, msgs, tools, p.SupportsVision(), p.cfg.MaxTokens)
+	// Do not gate attachments on catalog metadata. Anthropic-compatible
+	// gateways frequently expose custom model IDs whose capabilities are not
+	// present in our registry; the provider response is the source of truth.
+	body, err := buildAnthropicRequest(p.cfg.Model, msgs, tools, true, p.cfg.MaxTokens)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}

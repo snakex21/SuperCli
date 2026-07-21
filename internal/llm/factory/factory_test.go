@@ -58,6 +58,23 @@ func TestBuild_NeverDoubleWraps(t *testing.T) {
 	}
 }
 
+func TestBuild_Qwen35VisionWorksBeforeModelDiscovery(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	f := New(nil, t.TempDir(), caps)
+	p, err := f.Build(config.Config{
+		Provider: config.ProviderOpenAI,
+		Model:    "qwen3.5-9b-uncensored-hauhaucs-aggressive",
+		BaseURL:  "http://localhost:1234/v1",
+	}, llm.PurposeMain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vision, ok := llm.Unwrap(p).(interface{ SupportsVision() bool })
+	if !ok || !vision.SupportsVision() {
+		t.Fatal("Qwen 3.5 vision depended on opening/scanning the model picker first")
+	}
+}
+
 // TestBuild_SinksReceiveCalls: the factory bakes the fan-out sink in,
 // so a call on the built provider reports to every registered sink.
 func TestBuild_SinksReceiveCalls(t *testing.T) {

@@ -73,6 +73,40 @@ type captureProvider struct {
 	toolCount int
 }
 
+func TestLoop_DirectImageIsAvailableForOneRunOnly(t *testing.T) {
+	p := &captureProvider{name: "qwen3.5-9b-custom"}
+	l := makeLoop(t, p, tools.NewRegistry(), "system")
+	l.SetNextUserAddon("attachment: scan.png")
+	l.SetNextUserImages([]llm.ImageRef{{MediaType: "image/png", Data: "AAAA"}})
+
+	ch, err := l.Run(context.Background(), "co jest na obrazie?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, ch)
+
+	var delivered *llm.Message
+	for i := range p.messages {
+		if p.messages[i].Role == llm.RoleUser && p.messages[i].HasImage() {
+			delivered = &p.messages[i]
+		}
+	}
+	if delivered == nil || len(delivered.Parts) != 2 {
+		t.Fatalf("provider did not receive direct text+image message: %+v", p.messages)
+	}
+	if delivered.Parts[0].Text != "co jest na obrazie?\n\nattachment: scan.png" {
+		t.Fatalf("direct image text = %q", delivered.Parts[0].Text)
+	}
+
+	// After the Run, the live loop retains only lightweight text. A later turn
+	// cannot resend or re-count the old base64 payload.
+	for _, message := range l.Messages {
+		if message.HasImage() {
+			t.Fatalf("image payload survived completed Run: %+v", message)
+		}
+	}
+}
+
 func (p *captureProvider) Name() string         { return p.name }
 func (p *captureProvider) SupportsVision() bool { return true }
 func (p *captureProvider) Complete(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
@@ -733,7 +767,7 @@ func TestLoop_MaxStepsEmitsError(t *testing.T) {
 		scripts: [][]llm.Delta{{
 			{Role: llm.RoleAssistant},
 			{ToolCall: &llm.ToolCall{ID: "loop", Name: "noop", Arguments: `{}`}},
-			{FinishReason: "tool_calls"},
+			{FinishReason: "tool_calls", Usage: &llm.Usage{Input: 2, Output: 1, Total: 3}},
 		}},
 	}
 	reg := tools.NewRegistry()
@@ -753,6 +787,95 @@ func TestLoop_MaxStepsEmitsError(t *testing.T) {
 	}
 	if !contains(errEv.Err.Error(), "max steps") {
 		t.Fatalf("err = %v, want max steps", errEv.Err)
+	}
+	if errEv.Steps != 5 || errEv.Usage.Input != 10 || errEv.Usage.Output != 5 {
+		t.Fatalf("partial accounting = steps:%d usage:%+v, want 5 steps and 10/5 tokens", errEv.Steps, errEv.Usage)
+	}
+}
+
+func TestLoop_MaxStepsExtendsWhileToolsMakeProgress(t *testing.T) {
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "one", Name: "noop", Arguments: `{"n":1}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "two", Name: "noop", Arguments: `{"n":2}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "finished"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "noop", Description: "n", Schema: `{"type":"object"}`,
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "ok"}, nil
+		},
+	})
+	l, err := NewLoop(LoopConfig{
+		Provider: p, Registry: reg, MaxSteps: 2, MaxStepGrace: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := l.Run(context.Background(), "continue while progress is real")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := drainEvents(t, ch)
+	var extended bool
+	for _, ev := range events {
+		if notice, ok := ev.(NoticeEvent); ok && strings.Contains(notice.Text, "extended from 2 to 4") {
+			extended = true
+		}
+	}
+	if !extended {
+		t.Fatalf("events = %#v, want step-budget extension notice", events)
+	}
+	done, ok := events[len(events)-1].(DoneEvent)
+	if !ok || done.Steps != 3 {
+		t.Fatalf("last = %#v, want DoneEvent after 3 steps", events[len(events)-1])
+	}
+}
+
+func TestLoop_MaxStepsDoesNotExtendRepeatedToolBatch(t *testing.T) {
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{{
+			{Role: llm.RoleAssistant},
+			{ToolCall: &llm.ToolCall{ID: "same", Name: "noop", Arguments: `{}`}},
+			{FinishReason: "tool_calls"},
+		}},
+	}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "noop", Description: "n", Schema: "{}",
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "ok"}, nil
+		},
+	})
+	l, err := NewLoop(LoopConfig{
+		Provider: p, Registry: reg, MaxSteps: 2, MaxStepGrace: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := l.Run(context.Background(), "do not loop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := drainEvents(t, ch)
+	failed, ok := events[len(events)-1].(ErrorEvent)
+	if !ok || failed.Steps != 2 {
+		t.Fatalf("last = %#v, want strict error at repeated step 2", events[len(events)-1])
 	}
 }
 

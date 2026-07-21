@@ -1101,8 +1101,8 @@ func TestOpenAI_SupportsVision(t *testing.T) {
 	}
 }
 
-func TestOpenAI_VisionDisabled_EmitsError(t *testing.T) {
-	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+func TestOpenAI_CapabilityMetadataDoesNotDropImage(t *testing.T) {
+	srv, body := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		sseResponse(w, `{"choices":[{"delta":{"content":"hi"}}]}`)
 	})
 	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "gpt-3.5-turbo"})
@@ -1117,11 +1117,13 @@ func TestOpenAI_VisionDisabled_EmitsError(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 	ds := drainDeltas(t, ch)
-	if len(ds) != 1 || ds[0].Err == nil {
-		t.Fatalf("expected single error delta, got %+v", ds)
+	for _, delta := range ds {
+		if delta.Err != nil {
+			t.Fatalf("unexpected local capability error: %v", delta.Err)
+		}
 	}
-	if !strings.Contains(ds[0].Err.Error(), "vision") {
-		t.Fatalf("err = %v", ds[0].Err)
+	if !strings.Contains(*body, "image_url") || !strings.Contains(*body, "data:image/png;base64,AAA") {
+		t.Fatalf("image was not forwarded to provider: %s", *body)
 	}
 }
 

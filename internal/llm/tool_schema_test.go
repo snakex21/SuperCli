@@ -60,6 +60,50 @@ func TestNormalizeToolSchemaHandlesEmptyOrInvalidSchema(t *testing.T) {
 	}
 }
 
+func TestNormalizeToolSchemaForMoonshotDropsRootAnyOf(t *testing.T) {
+	raw := `{"type":"object","properties":{"question":{"type":"string"},"questions":{"type":"array"}},"anyOf":[{"required":["question"]},{"required":["questions"]}]}`
+	schema := decodeSchema(t, normalizeToolSchemaForModel(raw, "zyloo/kimi-k3"))
+
+	if schema["type"] != "object" {
+		t.Fatalf("Moonshot tool root type = %v, want object: %v", schema["type"], schema)
+	}
+	if _, ok := schema["properties"].(map[string]any)["question"]; !ok {
+		t.Fatalf("root properties were not preserved: %v", schema)
+	}
+	if _, exists := schema["anyOf"]; exists {
+		t.Fatalf("root anyOf must be removed for Moonshot tool parameters: %v", schema)
+	}
+}
+
+func TestNormalizeToolSchemaForMoonshotMovesNestedTypeIntoAnyOfBranches(t *testing.T) {
+	raw := `{"type":"object","properties":{"choice":{"type":"object","anyOf":[{"required":["question"]},{"required":["questions"]}]}}}`
+	schema := decodeSchema(t, normalizeToolSchemaForModel(raw, "moonshot/kimi-k3"))
+	choice := schema["properties"].(map[string]any)["choice"].(map[string]any)
+	if _, exists := choice["type"]; exists {
+		t.Fatalf("nested anyOf parent type must be omitted: %v", choice)
+	}
+	branches := choice["anyOf"].([]any)
+	for i, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		if branch["type"] != "object" {
+			t.Fatalf("anyOf branch %d type = %v, want object", i, branch["type"])
+		}
+	}
+}
+
+func TestNormalizeToolSchemaForNonMoonshotKeepsConventionalRootType(t *testing.T) {
+	raw := `{"type":"object","properties":{"question":{"type":"string"}},"anyOf":[{"required":["question"]}]}`
+	schema := decodeSchema(t, normalizeToolSchemaForModel(raw, "gpt-5.6"))
+
+	if schema["type"] != "object" {
+		t.Fatalf("root type = %v, want object: %v", schema["type"], schema)
+	}
+	branch := schema["anyOf"].([]any)[0].(map[string]any)
+	if _, exists := branch["type"]; exists {
+		t.Fatalf("non-Moonshot branch type should not be rewritten: %v", branch)
+	}
+}
+
 func decodeSchema(t *testing.T, raw json.RawMessage) map[string]any {
 	t.Helper()
 	var schema map[string]any

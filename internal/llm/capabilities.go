@@ -16,9 +16,12 @@ import (
 // The zero Source is SourceUnknown; new entries
 // created in Go should always set Source explicitly.
 type ModelInfo struct {
-	ID            string    `json:"id"`
-	Provider      string    `json:"provider,omitempty"`
-	Vision        bool      `json:"vision"`
+	ID       string `json:"id"`
+	Provider string `json:"provider,omitempty"`
+	Vision   bool   `json:"vision"`
+	// VisionKnown distinguishes an authoritative "text only" result from a
+	// provider that did not publish modality metadata at all.
+	VisionKnown   bool      `json:"vision_known,omitempty"`
 	ToolUse       bool      `json:"tool_use"`
 	Stream        bool      `json:"stream"`
 	Reasoning     bool      `json:"reasoning"`
@@ -115,6 +118,24 @@ func (r *CapabilityRegistry) HasVision(id string) bool {
 		return false
 	}
 	return m.Vision
+}
+
+// AllowsVisionAttempt reports whether an image should be sent to the
+// provider. Authoritative text-only metadata blocks it. A dynamically
+// discovered provider model with no modality metadata is tried
+// optimistically, so an incomplete /models response cannot disable real
+// vision support. Curated seed/catalog entries remain strict.
+func (r *CapabilityRegistry) AllowsVisionAttempt(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.models[id]
+	if !ok {
+		return false
+	}
+	if m.Vision {
+		return true
+	}
+	return !m.VisionKnown && m.Source == SourceProvider
 }
 
 // HasToolUse reports whether the model supports

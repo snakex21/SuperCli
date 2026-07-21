@@ -1031,3 +1031,15 @@ func TestScanModels_NoProviders(t *testing.T) {
 		t.Fatalf("ScanModels = %d, want 0", count)
 	}
 }
+
+func TestMergeDiscoveredContextLengthsDoesNotCopyCapabilityFlags(t *testing.T) {
+	base := []llm.ModelInfo{{ID: "local-model", Vision: false, VisionKnown: false, ToolUse: false}}
+	native := []llm.ModelInfo{{ID: "local-model", ContextLength: 131072, Vision: true, VisionKnown: true, ToolUse: true}}
+	merged := mergeDiscoveredContextLengths(base, native)
+	if merged[0].ContextLength != 131072 {
+		t.Fatalf("context length = %d", merged[0].ContextLength)
+	}
+	if merged[0].Vision || merged[0].VisionKnown || merged[0].ToolUse {
+		t.Fatalf("capability flags leaked from native metadata: %+v", merged[0])
+	}
+}

@@ -137,13 +137,21 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 			w.setState(func(w *Worker) {
 				w.TokensIn += e.Usage.Input
 				w.TokensOut += e.Usage.Output
-				w.Steps++
+				if e.Steps > 0 {
+					w.Steps += e.Steps
+				} else {
+					w.Steps++
+				}
 			})
 		case ErrorEvent:
 			stopped := w.clearCancel()
+			result := strings.TrimSpace(stripThinking(text.String()))
 			w.setState(func(w *Worker) {
 				w.UpdatedAt = time.Now()
-				w.LastResult = text.String()
+				w.LastResult = result
+				w.TokensIn += e.Usage.Input
+				w.TokensOut += e.Usage.Output
+				w.Steps += e.Steps
 				if stopped {
 					w.Status = "stopped"
 					w.LastError = "stopped by request"
@@ -153,18 +161,19 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 				w.LastError = e.Err.Error()
 			})
 			if stopped {
-				return text.String(), fmt.Errorf("worker %s stopped by request", w.ID)
+				return result, fmt.Errorf("worker %s stopped by request", w.ID)
 			}
-			return text.String(), e.Err
+			return result, e.Err
 		}
 	}
 	w.clearCancel()
+	result := strings.TrimSpace(stripThinking(text.String()))
 	w.setState(func(w *Worker) {
 		w.Status = "done"
 		w.UpdatedAt = time.Now()
-		w.LastResult = text.String()
+		w.LastResult = result
 	})
-	return text.String(), nil
+	return result, nil
 }
 
 func renderWorkerNotification(w *Worker, result string) string {
@@ -229,6 +238,9 @@ func workerSummary(w *Worker) string {
 	}
 	if s.LastError != "" {
 		summary += ": " + s.LastError
+		if strings.Contains(strings.ToLower(s.LastError), "max steps") {
+			summary += fmt.Sprintf("; continue this worker with send_message to %s instead of starting over", s.ID)
+		}
 	}
 	return summary
 }

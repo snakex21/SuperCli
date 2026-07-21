@@ -44,6 +44,27 @@ func TestCapabilityRegistry_HasVision(t *testing.T) {
 	}
 }
 
+func TestCapabilityRegistry_AllowsVisionAttemptForUnknownProviderMetadata(t *testing.T) {
+	r := NewCapabilityRegistry()
+	r.Register(ModelInfo{ID: "dynamic-unknown", Source: SourceProvider})
+	r.Register(ModelInfo{ID: "dynamic-text", VisionKnown: true, Source: SourceProvider})
+	r.Register(ModelInfo{ID: "dynamic-vision", Vision: true, VisionKnown: true, Source: SourceProvider})
+	r.Register(ModelInfo{ID: "curated-text", Source: SourceSeed})
+
+	if !r.AllowsVisionAttempt("dynamic-unknown") {
+		t.Fatal("provider model without modality metadata should be tried optimistically")
+	}
+	if r.AllowsVisionAttempt("dynamic-text") {
+		t.Fatal("authoritative text-only metadata should block image input")
+	}
+	if !r.AllowsVisionAttempt("dynamic-vision") {
+		t.Fatal("advertised vision model should accept image input")
+	}
+	if r.AllowsVisionAttempt("curated-text") || r.AllowsVisionAttempt("missing") {
+		t.Fatal("curated text and missing models should remain strict")
+	}
+}
+
 func TestCapabilityRegistry_HasToolUse(t *testing.T) {
 	r := NewCapabilityRegistry()
 	r.Register(ModelInfo{ID: "t1", ToolUse: true, Stream: true, Source: SourceSeed})

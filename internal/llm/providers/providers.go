@@ -1140,6 +1140,7 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	var ids []string
+	var discovered []llm.ModelInfo
 	var err error
 	apiKey := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
 	if p.Type == config.ProviderAnthropic {
@@ -1150,19 +1151,64 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 		// the authority; downloading every ID and guessing later leaked hundreds
 		// of unusable models into the picker.
 		ids, err = llm.ListFreeModels(ctx, p.BaseURL, apiKey)
+		if err == nil {
+			if all, listErr := llm.ListProviderModelInfos(ctx, p.BaseURL, apiKey); listErr == nil {
+				allowed := make(map[string]struct{}, len(ids))
+				for _, id := range ids {
+					allowed[id] = struct{}{}
+				}
+				for _, model := range all {
+					if _, ok := allowed[model.ID]; ok {
+						discovered = append(discovered, model)
+					}
+				}
+			}
+		}
 	} else {
-		ids, err = llm.ListProviderModels(ctx, p.BaseURL, apiKey)
+		discovered, err = llm.ListProviderModelInfos(ctx, p.BaseURL, apiKey)
+		for _, model := range discovered {
+			ids = append(ids, model.ID)
+		}
+	}
+	// Native local endpoints are consulted only for context-window sizes. Their
+	// vision/tool flags are deliberately ignored: those hints must not become a
+	// second permission layer in front of the selected model.
+	if err == nil && p.Type != config.ProviderAnthropic {
+		discovered = mergeDiscoveredContextLengths(discovered, llm.ListLocalNativeModelInfos(ctx, p.BaseURL, apiKey))
 	}
 	cancel()
 	if err != nil {
 		res.Err = err
 		return res
 	}
+	byID := make(map[string]llm.ModelInfo, len(discovered))
+	for _, model := range discovered {
+		byID[model.ID] = model
+	}
 	for _, id := range ids {
-		mi := llm.HeuristicCapabilities(id)
+		mi, ok := byID[id]
+		if !ok {
+			mi = llm.HeuristicCapabilities(id)
+		}
 		mi.Provider = p.Name
 		caps.Register(mi)
 	}
 	res.Models = ids
 	return res
+}
+
+func mergeDiscoveredContextLengths(base, native []llm.ModelInfo) []llm.ModelInfo {
+	byID := make(map[string]int, len(base))
+	for index, model := range base {
+		byID[model.ID] = index
+	}
+	for _, model := range native {
+		if model.ContextLength <= 0 {
+			continue
+		}
+		if index, ok := byID[model.ID]; ok {
+			base[index].ContextLength = model.ContextLength
+		}
+	}
+	return base
 }

@@ -165,7 +165,11 @@ func (p *OpenAIProvider) Name() string { return p.cfg.Model }
 // SupportsVision returns true when the model is known to handle
 // image inputs.
 func (p *OpenAIProvider) SupportsVision() bool {
-	return p.caps.HasVision(p.cfg.Model)
+	model := strings.TrimSpace(p.cfg.CapabilityModel)
+	if model == "" {
+		model = p.cfg.Model
+	}
+	return p.caps.AllowsVisionAttempt(model)
 }
 
 // Complete implements Provider.
@@ -182,14 +186,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		}
 	}
 
-	// Vision gating: if the model cannot see images, strip them
-	// with a warning on the channel's first delta (rather than
-	// failing the request). The agent loop decides how to react.
-	hasVision := p.SupportsVision()
-	warnedNoVision := false
-
 	reasoningFormat := p.reasoningFormat()
-	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, hasVision, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens)
+	// Always forward image parts. Provider catalogs are useful as hints for
+	// the UI, but they are incomplete and must never decide what the selected
+	// model is allowed to receive. The upstream API remains authoritative.
+	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, true, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -205,25 +206,6 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 			}
 		}()
-		// Emit an early warning if any image part was dropped.
-		if !hasVision {
-			for _, m := range msgs {
-				if m.HasImage() {
-					warnedNoVision = true
-					break
-				}
-			}
-			if warnedNoVision {
-				select {
-				case out <- Delta{
-					Err: fmt.Errorf("llm.OpenAI: model %q does not support vision; image parts were dropped", p.cfg.Model),
-				}:
-				case <-ctx.Done():
-				}
-				return
-			}
-		}
-
 		// HTTP request with bounded retry: 429 and 5xx
 		// responses are retried up to maxAttempts total. The wait
 		// honours the Retry-After header when present (seconds or
@@ -593,7 +575,7 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			Function: openaiToolFunction{
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  normalizeToolSchema(t.Schema),
+				Parameters:  normalizeToolSchemaForModel(t.Schema, model),
 			},
 		})
 	}

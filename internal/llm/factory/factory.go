@@ -69,6 +69,23 @@ func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error)
 // (Moved verbatim from the web GUI's private buildProviderWithDataDir
 // so both front-ends share one construction table.)
 func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
+	// Provider discovery normally populates capabilities, but a saved local
+	// model can be used before /api/models is ever opened. Ensure name-based
+	// multimodal families (notably Qwen 3.5 community builds) are available to
+	// the transport at construction time, otherwise it strips direct images.
+	if caps != nil && cfg.Model != "" {
+		heuristic := llm.HeuristicCapabilities(cfg.Model)
+		if existing, ok := caps.Get(cfg.Model); ok {
+			if existing.Source != llm.SourceCatalog && existing.Source != llm.SourceProbe {
+				existing.Vision = existing.Vision || heuristic.Vision
+				existing.Reasoning = existing.Reasoning || heuristic.Reasoning
+				existing.Stream = existing.Stream || heuristic.Stream
+				caps.Register(existing)
+			}
+		} else {
+			caps.Register(heuristic)
+		}
+	}
 	if cfg.IsEcho() {
 		return llm.NewEcho(cfg.Model)
 	}

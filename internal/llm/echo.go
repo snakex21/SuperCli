@@ -12,7 +12,7 @@ import (
 // provider name, sent as two streaming deltas with a tiny pause in
 // between so consumers can verify their streaming wiring.
 type EchoProvider struct {
-	name    string
+	name      string
 	hasVision bool
 }
 
@@ -39,9 +39,8 @@ func (e *EchoProvider) SupportsVision() bool { return e.hasVision }
 // "[echo:<name>] " (text), <message body> (text), finish "stop".
 //
 // For tool messages, the provider echoes the tool name + body.
-// For multimodal messages with vision enabled, the same path runs;
-// without vision, images are stripped via TextOnly() with a stub
-// marker.
+// Multimodal messages follow the same path. Echo does not interpret image
+// bytes, but it also does not use its capability flag to reject the request.
 func (e *EchoProvider) Complete(ctx context.Context, msgs []Message, _ []ToolDef) (<-chan Delta, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -79,12 +78,6 @@ func (e *EchoProvider) Complete(ctx context.Context, msgs []Message, _ []ToolDef
 				}
 			}
 		}()
-		// If vision is disabled but the message has images, strip them.
-		if !e.hasVision && target.HasImage() {
-			textOnly := target.TextOnly()
-			target = textOnly
-		}
-
 		var body string
 		switch target.Role {
 		case RoleUser:

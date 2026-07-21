@@ -18,6 +18,8 @@ func BuiltinSubAgents() []SubAgent {
 	exploreSystem := "You are the SuperCli explore sub-agent. Your job is to " +
 		"answer a focused question about the codebase. Use search_code " +
 		"to locate files, then read source with read_lines/read_context. " +
+		"When the task requires current external documentation, use web_lookup " +
+		"and web_fetch/web_search instead of guessing from model memory. " +
 		"Use read_image only for actual images. Be concise: return only the " +
 		"answer, no preamble."
 
@@ -36,6 +38,10 @@ func BuiltinSubAgents() []SubAgent {
 		"implement the requested change end-to-end in your isolated context. " +
 		"Read only the files you need, make targeted edits, run relevant " +
 		"verification, and return a concise summary with files changed. " +
+		"The workspace is already your working directory: use relative paths " +
+		"with file/search tools and do not spend turns probing cwd or PATH. " +
+		"ctx_execute runs an argv list directly (not shell syntax); use it for " +
+		"tests and commands, not for rediscovering files that read/search tools expose. " +
 		"Do not spawn other sub-agents. Keep the edit proportional to the " +
 		"request; if no change is needed, say so instead of editing for the " +
 		"sake of it — never make formatting-only edits."
@@ -53,6 +59,8 @@ func BuiltinSubAgents() []SubAgent {
 		"found or did, with concrete file paths and results. The coordinator " +
 		"sees only this report, not your intermediate steps, so include " +
 		"everything it needs. Be concise. Do not spawn other workers. " +
+		"The workspace is already your working directory; prefer relative " +
+		"paths and file/search tools over cwd or PATH probing. " +
 		"Match effort to scope: touch few files for a small task, and if the " +
 		"task turns out to need no changes, report that no-op instead of " +
 		"making cosmetic or formatting-only edits."
@@ -66,7 +74,8 @@ func BuiltinSubAgents() []SubAgent {
 	advisorSystem := "You are a SuperCli advisor giving a SECOND OPINION. " +
 		"Answer the coordinator's specific question with a clear recommendation " +
 		"and a one-line rationale. You are READ-ONLY: you may search and read " +
-		"files to ground your answer, but you never modify anything. Return a " +
+		"files or use web_lookup/web_fetch/web_search for current documentation " +
+		"to ground your answer, but you never modify anything. Return a " +
 		"single concise opinion as your final message; if the question offers " +
 		"options, name the one you recommend first."
 
@@ -79,18 +88,24 @@ func BuiltinSubAgents() []SubAgent {
 			MaxSteps: 12,
 		},
 		{
-			Name:         "advisor",
-			Description:  "give a read-only second opinion on a specific decision",
-			System:       advisorSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad"),
-			MaxSteps:     6,
+			Name:        "advisor",
+			Description: "give a read-only second opinion on a specific decision",
+			System:      advisorSystem,
+			AllowedTools: allowedTools(
+				"search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad",
+				"web_lookup", "web_fetch", "web_search", "tool_search",
+			),
+			MaxSteps: 6,
 		},
 		{
-			Name:         "explore",
-			Description:  "search the codebase and answer a focused question",
-			System:       exploreSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad"),
-			MaxSteps:     8,
+			Name:        "explore",
+			Description: "search the codebase and answer a focused question",
+			System:      exploreSystem,
+			AllowedTools: allowedTools(
+				"search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad",
+				"web_lookup", "web_fetch", "web_search", "tool_search",
+			),
+			MaxSteps: 8,
 		},
 		{
 			Name:         "plan",

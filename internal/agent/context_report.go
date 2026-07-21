@@ -17,14 +17,18 @@ type ContextItem struct {
 // ContextReport is the data behind the /context command: where the
 // input tokens of the current session go.
 type ContextReport struct {
-	Route   string // route of the last Run (chat/advisor/coordinator)
-	Model   string
-	Window  int // resolved context window (tokens)
-	Visible int // messages the model sees
-	Hidden  int // messages hidden by /clear, compaction, hide_messages
+	Route        string // route of the last Run (chat/advisor/coordinator)
+	Model        string
+	Window       int    // resolved context window (tokens)
+	WindowSource string // config/provider/catalog/learned/fallback
+	Visible      int    // messages the model sees
+	Hidden       int    // messages hidden by /clear, compaction, hide_messages
 
-	EstimatedTokens int // chars/4 estimate of the visible conversation
-	RequestTokens   int // complete next request, including tools/catalog/stamp
+	EstimatedTokens       int    // chars/4 estimate of the visible conversation
+	RequestTokens         int    // complete next request, including tools/catalog/stamp
+	RawRequestTokens      int    // local estimate before provider calibration
+	RequestEstimateSource string // estimate | provider+delta
+	ExactRequestBase      int    // last exact provider prompt used for calibration
 
 	// Breakdown of EstimatedTokens by message kind.
 	SystemTokens     int // system prompt(s), incl. briefing/patterns
@@ -115,11 +119,13 @@ func (l *Loop) Route() RouteMode { return l.route }
 // ContextReport builds the /context diagnostic from the loop's
 // current visible messages and tool registry.
 func (l *Loop) ContextReport() ContextReport {
+	window := l.windowResolution()
 	r := ContextReport{
-		Route:  string(l.route),
-		Model:  l.modelID,
-		Window: l.window(),
-		Hidden: l.HiddenCount(),
+		Route:        string(l.route),
+		Model:        l.modelID,
+		Window:       window.Tokens,
+		WindowSource: window.Source,
+		Hidden:       l.HiddenCount(),
 	}
 	u := l.SessionUsage()
 	r.UsageIn, r.UsageOut = u.Input, u.Output
@@ -188,7 +194,11 @@ func (l *Loop) ContextReport() ContextReport {
 		items = items[:5]
 	}
 	r.Top = items
-	r.RequestTokens = l.EstimateNextRequestTokens()
+	estimate := l.nextRequestTokenEstimate()
+	r.RequestTokens = estimate.Effective
+	r.RawRequestTokens = estimate.Raw
+	r.RequestEstimateSource = estimate.Source
+	r.ExactRequestBase = estimate.ExactBase
 	return r
 }
 
@@ -208,7 +218,7 @@ func firstWords(s string, n int) string {
 // FormatContextReport renders the report for the TUI transcript.
 func FormatContextReport(r ContextReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Context (model: %s, route: %s)\n", r.Model, r.Route)
+	fmt.Fprintf(&b, "Context (model: %s, route: %s, window source: %s)\n", r.Model, r.Route, r.WindowSource)
 	pct := func(t int) string {
 		if r.Window <= 0 {
 			return ""
@@ -220,7 +230,10 @@ func FormatContextReport(r ContextReport) string {
 		total = r.EstimatedTokens + r.ToolSchemaTokens + r.CatalogTokens
 	}
 	fmt.Fprintf(&b, "  messages: %d visible, %d hidden\n", r.Visible, r.Hidden)
-	fmt.Fprintf(&b, "  estimated context: ~%d tok%s\n", total, pct(total))
+	fmt.Fprintf(&b, "  estimated context: ~%d tok%s [%s]\n", total, pct(total), r.RequestEstimateSource)
+	if r.RequestEstimateSource == "provider+delta" {
+		fmt.Fprintf(&b, "    exact provider base:      %d tok (raw now ~%d)\n", r.ExactRequestBase, r.RawRequestTokens)
+	}
 	fmt.Fprintf(&b, "    system prompt + briefing: ~%d tok\n", r.SystemTokens)
 	fmt.Fprintf(&b, "    user messages:            ~%d tok\n", r.UserTokens)
 	fmt.Fprintf(&b, "    assistant messages:       ~%d tok\n", r.AssistantTokens)
