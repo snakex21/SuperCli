@@ -28,19 +28,13 @@ func (f fakeCapture) Capture() ([]byte, string, error) {
 // check.
 var pngHeader = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
 
-func TestSendScreenshot_VisionGateRejects(t *testing.T) {
+func TestSendScreenshot_CapabilityMetadataDoesNotReject(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewSendScreenshot(dir, func(id string) bool { return false })
 	tool.Capture = fakeCapture{data: pngHeader, mediaType: "image/png"}
 	res, _ := tool.Execute(context.Background(), json.RawMessage(`{"model":"gpt-4o"}`))
-	if res.Err == nil {
-		t.Fatal("expected error for non-vision model")
-	}
-	if !strings.Contains(res.Err.Error(), "does not support vision") {
-		t.Errorf("error text wrong: %v", res.Err)
-	}
-	if !strings.Contains(res.Err.Error(), "--list-models") {
-		t.Errorf("error should hint at --list-models: %v", res.Err)
+	if res.Err != nil || res.Image == nil {
+		t.Fatalf("capability metadata rejected the image: %+v", res)
 	}
 }
 
@@ -71,8 +65,8 @@ func TestSendScreenshot_EmptyModel(t *testing.T) {
 	tool := NewSendScreenshot(dir, func(id string) bool { return true })
 	tool.Capture = fakeCapture{data: pngHeader, mediaType: "image/png"}
 	res, _ := tool.Execute(context.Background(), json.RawMessage(`{}`))
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "model is required") {
-		t.Errorf("expected 'model is required'; got %v", res.Err)
+	if res.Err != nil || res.Image == nil {
+		t.Fatalf("model identifier should no longer be required: %+v", res)
 	}
 }
 
@@ -81,11 +75,8 @@ func TestSendScreenshot_NilHasVision(t *testing.T) {
 	tool := NewSendScreenshot(dir, nil) // not wired
 	tool.Capture = fakeCapture{data: pngHeader, mediaType: "image/png"}
 	res, _ := tool.Execute(context.Background(), json.RawMessage(`{"model":"gpt-4o"}`))
-	if res.Err == nil {
-		t.Fatal("expected error when capability gate is not wired")
-	}
-	if !strings.Contains(res.Err.Error(), "capability gate is not wired") {
-		t.Errorf("error should mention the gate; got %v", res.Err)
+	if res.Err != nil || res.Image == nil {
+		t.Fatalf("missing legacy capability callback rejected image: %+v", res)
 	}
 }
 

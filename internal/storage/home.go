@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DataDirName is the subdirectory inside Home that holds the database,
@@ -25,6 +26,10 @@ const DBFileName = "supercli.db"
 // (cwd-based) home. Lower-case on purpose: this is a developer-facing
 // knob, not a user setting, so we keep the API surface small.
 const HomeEnv = "SUPERCLI_HOME"
+
+// DataRootEnv explicitly overrides the instance-local runtime data directory.
+// Unlike SUPERCLI_HOME, it does not change the workspace/sandbox root.
+const DataRootEnv = "SUPERCLI_DATA_DIR"
 
 // ResolveHome picks the home directory in this priority order:
 //
@@ -94,15 +99,13 @@ func EnsureDataDir(home string) (string, error) {
 const PortableDataDirName = "supercli-data"
 
 // PortableDataRoot returns <dir-of-executable>/supercli-data.
-// Symlinks on the executable path are resolved so a symlinked binary
-// still finds its real data directory. When os.Executable fails the
-// current working directory is the fallback base.
+// The executable path is deliberately not resolved through symlinks: a copy or
+// launcher placed in another folder represents a separate portable instance
+// and must keep its own adjacent data. When os.Executable fails the current
+// working directory is the fallback base.
 func PortableDataRoot() string {
 	base := ""
 	if exe, err := os.Executable(); err == nil && exe != "" {
-		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil && resolved != "" {
-			exe = resolved
-		}
 		base = filepath.Dir(exe)
 	}
 	if base == "" {
@@ -118,25 +121,29 @@ func PortableDataRoot() string {
 	return filepath.Join(base, PortableDataDirName)
 }
 
-// ResolveDataRoot is the SINGLE source of truth for where SuperCli
-// writes its data. Priority:
+// ResolveRuntimeDataRoot resolves application state independently from the
+// workspace. Priority:
 //
-//  1. --home flag       → <flag>/.supercli   (explicit override)
-//  2. $SUPERCLI_HOME    → <env>/.supercli    (explicit override)
-//  3. default (portable) → <exe dir>/supercli-data
+//  1. --data-dir flag
+//  2. SUPERCLI_DATA_DIR
+//  3. <directory-of-this-executable>/supercli-data
 //
-// portable reports whether the default exe-relative location was
-// chosen (i.e. no explicit override) — callers use it to gate the
-// one-time ~/.supercli migration.
-func ResolveDataRoot(flagValue string) (root string, portable bool, err error) {
-	if flagValue != "" || os.Getenv(HomeEnv) != "" {
-		home, herr := ResolveHome(flagValue)
-		if herr != nil {
-			return "", false, herr
-		}
-		return DataDir(home), false, nil
+// SUPERCLI_HOME and --home intentionally do not participate. They select only
+// the workspace/sandbox, so two portable SuperCli copies cannot steal each
+// other's settings merely because they open the same project.
+func ResolveRuntimeDataRoot(flagValue string) (root string, portable bool, err error) {
+	candidate := strings.TrimSpace(flagValue)
+	if candidate == "" {
+		candidate = strings.TrimSpace(os.Getenv(DataRootEnv))
 	}
-	return PortableDataRoot(), true, nil
+	if candidate == "" {
+		return PortableDataRoot(), true, nil
+	}
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve data directory %q: %w", candidate, err)
+	}
+	return abs, false, nil
 }
 
 // EnsureDir creates dir (and parents) if missing.

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/system/childproc"
 	"supercli/internal/tools/core"
 )
 
@@ -79,6 +80,7 @@ func Run(ctx context.Context, root string) (Report, error) {
 		beg := time.Now()
 		var buf bytes.Buffer
 		cmd := exec.CommandContext(ctx, c.bin, c.args...)
+		childproc.HideWindow(cmd)
 		cmd.Dir = root
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf

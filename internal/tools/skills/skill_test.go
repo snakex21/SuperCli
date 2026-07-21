@@ -175,6 +175,13 @@ func TestSkillApplier_ApplyOnceAppends(t *testing.T) {
 	}
 }
 
+func TestSkillApplierSpecIsSafeForDirectInvoke(t *testing.T) {
+	spec := NewSkillApplier(NewDiscoverer(t.TempDir(), t.TempDir())).Spec()
+	if !spec.ReadOnly {
+		t.Fatal("apply_skill must be read-only so invoke_tool can dispatch it without a retry loop")
+	}
+}
+
 func TestSkillApplier_SearchDoesNotApply(t *testing.T) {
 	project := t.TempDir()
 	user := t.TempDir()

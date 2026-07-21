@@ -191,3 +191,16 @@ func TestResolveSafe_UnsandboxedStillBlocksSensitive(t *testing.T) {
 		t.Errorf("unsandboxed should still block sensitive paths, got %v", err)
 	}
 }
+
+func TestResolveWithinRejectsEscapeWhenUnsandboxed(t *testing.T) {
+	home := t.TempDir()
+	outside := t.TempDir()
+	prev := IsUnsandboxed()
+	SetUnsandboxed(true)
+	defer SetUnsandboxed(prev)
+
+	_, err := ResolveWithin(home, outside)
+	if err != ErrEscape {
+		t.Fatalf("ResolveWithin outside workspace = %v, want ErrEscape", err)
+	}
+}

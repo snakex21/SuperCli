@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -230,27 +231,46 @@ func buildEnv(extras []string) []string {
 	// (so tests can pass an empty slice for isolation).
 	host := os.Environ()
 	base := sandbox.ScrubEnv(host)
-	if len(extras) == 0 {
-		return base
+	out := append([]string(nil), base...)
+	if runtime.GOOS == "windows" {
+		// Python otherwise inherits the legacy console code page (for example
+		// CP1250) and can crash merely by printing documentation containing
+		// non-European characters. These variables are ignored by other tools.
+		out = replaceEnv(out, "PYTHONIOENCODING=utf-8")
+		out = replaceEnv(out, "PYTHONUTF8=1")
 	}
-	out := make([]string, 0, len(base)+len(extras))
-	out = append(out, base...)
 	// For each extra, replace any existing key.
 	for _, kv := range extras {
 		i := strings.IndexByte(kv, '=')
 		if i < 0 {
 			continue
 		}
-		k := kv[:i]
-		for j, existing := range out {
-			if strings.HasPrefix(existing, k+"=") {
-				out = append(out[:j], out[j+1:]...)
-				break
-			}
-		}
-		out = append(out, kv)
+		out = replaceEnv(out, kv)
 	}
 	return out
+}
+
+func replaceEnv(env []string, kv string) []string {
+	i := strings.IndexByte(kv, '=')
+	if i < 0 {
+		return env
+	}
+	key := kv[:i]
+	for j := len(env) - 1; j >= 0; j-- {
+		eq := strings.IndexByte(env[j], '=')
+		if eq < 0 || !envNamesEqual(env[j][:eq], key) {
+			continue
+		}
+		env = append(env[:j], env[j+1:]...)
+	}
+	return append(env, kv)
+}
+
+func envNamesEqual(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // ensureCompileTimeInterfaceCheck keeps a few stdlib

@@ -23,6 +23,8 @@ func startPTY(command []string, workdir string, env []string, columns, rows int)
 	if err != nil {
 		return nil, err
 	}
+	// ConPTY is already headless. CREATE_NO_WINDOW must not be added here:
+	// Windows accepts it but disconnects the pseudo-console output stream.
 	_, handle, err := terminal.Spawn(command[0], command, &syscall.ProcAttr{Dir: workdir, Env: env})
 	if err != nil {
 		_ = terminal.Close()

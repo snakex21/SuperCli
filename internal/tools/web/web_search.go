@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
@@ -194,16 +195,38 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	results = filterAndDedupeResults(results, a.IncludeDomains, a.ExcludeDomains, n)
 	usedEngine := t.engine
 	fallbackFrom := ""
+	if t.engine == "duckduckgo" && (err != nil || len(results) == 0) {
+		duckErr := err
+		results, err = t.searchBraveHTML(ctx, a)
+		usedEngine = "brave-web"
+		if err != nil || len(results) == 0 {
+			braveErr := searchAttemptErr(err, results)
+			results, err = t.searchBingRSS(ctx, a)
+			usedEngine = "bing-rss"
+			if err != nil || len(results) == 0 {
+				return Result{Err: fmt.Errorf("web_search public fallbacks failed: duckduckgo: %v; brave-web: %v; bing-rss: %v", searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))}, nil
+			}
+		}
+		fallbackFrom = "duckduckgo"
+	}
 	if t.engine != "duckduckgo" && ((err != nil && shouldFallbackSearch(err)) || (err == nil && len(results) == 0)) {
 		primaryErr := err
 		results, err = t.searchDuckDuckGo(ctx, a)
-		if err != nil {
-			if primaryErr != nil {
-				return Result{Err: fmt.Errorf("web_search (%s failed; duckduckgo fallback failed): %v; %w", t.engine, primaryErr, err)}, nil
+		fallbackEngine := "duckduckgo"
+		if err != nil || len(results) == 0 {
+			duckErr := err
+			results, err = t.searchBraveHTML(ctx, a)
+			fallbackEngine = "brave-web"
+			if err != nil || len(results) == 0 {
+				braveErr := searchAttemptErr(err, results)
+				results, err = t.searchBingRSS(ctx, a)
+				fallbackEngine = "bing-rss"
+				if err != nil || len(results) == 0 {
+					return Result{Err: fmt.Errorf("web_search (%s failed; public fallbacks failed): primary: %v; duckduckgo: %v; brave-web: %v; bing-rss: %v", t.engine, searchAttemptErr(primaryErr, nil), searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))}, nil
+				}
 			}
-			return Result{Err: fmt.Errorf("web_search (%s returned no results; duckduckgo fallback failed): %w", t.engine, err)}, nil
 		}
-		usedEngine = "duckduckgo"
+		usedEngine = fallbackEngine
 		fallbackFrom = t.engine
 	}
 	if err != nil {
@@ -213,6 +236,16 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	value := searchCacheValue{results: results, engine: usedEngine, fallbackFrom: fallbackFrom}
 	t.cache.set(cacheKey, value, searchCacheTTL(a), time.Now())
 	return Result{Text: formatSearchResults(q, usedEngine, fallbackFrom, results)}, nil
+}
+
+func searchAttemptErr(err error, results []WebSearchResult) error {
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 {
+		return fmt.Errorf("returned no results")
+	}
+	return nil
 }
 
 func (t *WebSearch) search(ctx context.Context, a webSearchArgs) ([]WebSearchResult, error) {
@@ -252,9 +285,12 @@ func formatSearchResults(query, engine, fallbackFrom string, results []WebSearch
 // --- DuckDuckGo (HTML scrape, no key) --------------------------------------
 
 var (
-	ddgResultRe  = regexp.MustCompile(`(?s)<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
-	ddgSnippetRe = regexp.MustCompile(`(?s)<a[^>]*class="result__snippet"[^>]*>(.*?)</a>|<td[^>]*class="result-snippet"[^>]*>(.*?)</td>`)
-	tagRe        = regexp.MustCompile(`<[^>]+>`)
+	ddgResultRe    = regexp.MustCompile(`(?s)<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
+	ddgSnippetRe   = regexp.MustCompile(`(?s)<a[^>]*class="result__snippet"[^>]*>(.*?)</a>|<td[^>]*class="result-snippet"[^>]*>(.*?)</td>`)
+	braveStartRe   = regexp.MustCompile(`(?s)<div class="snippet[^"]*"[^>]*data-type="web"[^>]*>`)
+	braveTitleRe   = regexp.MustCompile(`(?s)<a[^>]*href="([^"]+)"[^>]*>.*?<div class="title search-snippet-title[^"]*"[^>]*>(.*?)</div>`)
+	braveSnippetRe = regexp.MustCompile(`(?s)<div class="generic-snippet[^"]*"[^>]*>.*?<div class="content[^"]*"[^>]*>(.*?)</div>`)
+	tagRe          = regexp.MustCompile(`<[^>]+>`)
 )
 
 func (t *WebSearch) searchDuckDuckGo(ctx context.Context, a webSearchArgs) ([]WebSearchResult, error) {
@@ -312,6 +348,124 @@ func parseDuckDuckGoHTML(body string, n int) []WebSearchResult {
 		out = append(out, WebSearchResult{Title: title, URL: href, Snippet: snippet})
 	}
 	return out
+}
+
+// searchBraveHTML is a no-key fallback for environments where DuckDuckGo's
+// HTML endpoint rate-limits or challenges non-browser clients. It uses Brave's
+// public web results page, not the keyed Brave Search API.
+func (t *WebSearch) searchBraveHTML(ctx context.Context, a webSearchArgs) ([]WebSearchResult, error) {
+	u, _ := url.Parse("https://search.brave.com/search")
+	params := u.Query()
+	params.Set("q", queryWithDomainFilters(a.Query, a.IncludeDomains, a.ExcludeDomains))
+	params.Set("source", "web")
+	u.RawQuery = params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36")
+	req.Header.Set("Accept", "text/html")
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, requestFailedErr(err, "search.brave.com")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, httpFailedErr(resp, "search.brave.com")
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, webSearchMaxBody))
+	if err != nil {
+		return nil, err
+	}
+	return parseBraveHTML(string(body), a.MaxResults), nil
+}
+
+func parseBraveHTML(body string, n int) []WebSearchResult {
+	starts := braveStartRe.FindAllStringIndex(body, -1)
+	out := make([]WebSearchResult, 0, min(n, len(starts)))
+	for i, start := range starts {
+		if len(out) >= n {
+			break
+		}
+		end := len(body)
+		if i+1 < len(starts) {
+			end = starts[i+1][0]
+		}
+		block := body[start[0]:end]
+		match := braveTitleRe.FindStringSubmatch(block)
+		if len(match) < 3 {
+			continue
+		}
+		href := html.UnescapeString(match[1])
+		title := cleanHTMLFragment(match[2])
+		if href == "" || title == "" {
+			continue
+		}
+		snippet := ""
+		if match := braveSnippetRe.FindStringSubmatch(block); len(match) > 1 {
+			snippet = cleanHTMLFragment(match[1])
+		}
+		out = append(out, WebSearchResult{Title: title, URL: href, Snippet: snippet})
+	}
+	return out
+}
+
+// searchBingRSS is the last no-key fallback. Bing's RSS representation avoids
+// the JavaScript/challenge markup used by its normal result page and is much
+// less brittle to parse than another HTML scraper.
+func (t *WebSearch) searchBingRSS(ctx context.Context, a webSearchArgs) ([]WebSearchResult, error) {
+	u, _ := url.Parse("https://www.bing.com/search")
+	params := u.Query()
+	params.Set("q", queryWithDomainFilters(a.Query, a.IncludeDomains, a.ExcludeDomains))
+	params.Set("format", "rss")
+	u.RawQuery = params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SuperCli/0.6 web_search")
+	req.Header.Set("Accept", "application/rss+xml, application/xml;q=0.9")
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, requestFailedErr(err, "www.bing.com")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, httpFailedErr(resp, "www.bing.com")
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, webSearchMaxBody))
+	if err != nil {
+		return nil, err
+	}
+	return parseBingRSS(body, a.MaxResults)
+}
+
+func parseBingRSS(body []byte, n int) ([]WebSearchResult, error) {
+	var feed struct {
+		Channel struct {
+			Items []struct {
+				Title       string `xml:"title"`
+				Link        string `xml:"link"`
+				Description string `xml:"description"`
+			} `xml:"item"`
+		} `xml:"channel"`
+	}
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return nil, fmt.Errorf("parse bing rss: %w", err)
+	}
+	out := make([]WebSearchResult, 0, min(n, len(feed.Channel.Items)))
+	for _, item := range feed.Channel.Items {
+		if len(out) >= n {
+			break
+		}
+		title := cleanHTMLFragment(item.Title)
+		href := strings.TrimSpace(item.Link)
+		if title == "" || href == "" {
+			continue
+		}
+		out = append(out, WebSearchResult{Title: title, URL: href, Snippet: cleanHTMLFragment(item.Description)})
+	}
+	return out, nil
 }
 
 // decodeDDGHref unwraps DuckDuckGo redirect links of the form

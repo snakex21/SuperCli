@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 const ReportSchemaVersion = 1
@@ -180,6 +182,7 @@ func commandRunner(argv []string) AgentRunner {
 			expanded[i] = r.Replace(arg)
 		}
 		cmd := exec.CommandContext(ctx, expanded[0], expanded[1:]...)
+		childproc.HideWindow(cmd)
 		cmd.Dir = input.Workspace
 		var stdout, stderr strings.Builder
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -194,6 +197,7 @@ func commandRunner(argv []string) AgentRunner {
 func runCheck(ctx context.Context, workspace string, check VerificationCommand) CheckReport {
 	started := time.Now()
 	cmd := exec.CommandContext(ctx, check.Args[0], check.Args[1:]...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = workspace
 	out, err := cmd.CombinedOutput()
 	report := CheckReport{ID: check.ID, Passed: err == nil, DurationMs: time.Since(started).Milliseconds(), OutputTail: tail(string(out), 4096)}

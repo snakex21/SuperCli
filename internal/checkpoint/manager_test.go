@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"supercli/internal/tools"
@@ -37,6 +38,9 @@ func TestTurnUndoRedoAndConflictProtection(t *testing.T) {
 	}
 	if record == nil || len(record.Files) != 1 || record.Files[0] != "app.txt" {
 		t.Fatalf("record=%+v", record)
+	}
+	if len(record.Changes) != 1 || record.Changes[0] != (FileChange{Path: "app.txt", Kind: "modified"}) {
+		t.Fatalf("changes=%+v", record.Changes)
 	}
 	controller := NewController(m, "session-1")
 	preview, err := controller.Preview(false)
@@ -110,6 +114,46 @@ func TestUndoRemovesFileCreatedByTurn(t *testing.T) {
 	}
 }
 
+func TestForgetFromDetachesDiscardedConversationCheckpoints(t *testing.T) {
+	home, data := t.TempDir(), t.TempDir()
+	m, err := Open(home, data)
+	if errors.Is(err, ErrUnavailable) {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []Record{
+		{ID: "keep", SessionID: "session", UserSeq: 1},
+		{ID: "discard-a", SessionID: "session", UserSeq: 3},
+		{ID: "discard-b", SessionID: "session", UserSeq: 5, Undone: true},
+		{ID: "other", SessionID: "other-session", UserSeq: 7},
+	} {
+		if err := m.append(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.ForgetFrom("session", 3); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.PreviewFrom("session", 3); len(got.Records) != 0 {
+		t.Fatalf("discarded checkpoints remain: %+v", got.Records)
+	}
+	if latest := m.Latest("session"); latest == nil || latest.ID != "keep" {
+		t.Fatalf("latest checkpoint = %+v, want keep", latest)
+	}
+	if latest := m.Latest("other-session"); latest == nil || latest.ID != "other" {
+		t.Fatalf("other session was changed: %+v", latest)
+	}
+	reopened, err := Open(home, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest := reopened.Latest("session"); latest == nil || latest.ID != "keep" {
+		t.Fatalf("persisted checkpoints = %+v", latest)
+	}
+}
+
 func TestUndoRedoPreservesBinaryFiles(t *testing.T) {
 	home, data := t.TempDir(), t.TempDir()
 	modifiedPath := filepath.Join(home, "image.png")
@@ -151,6 +195,14 @@ func TestUndoRedoPreservesBinaryFiles(t *testing.T) {
 	}
 	if record == nil || len(record.Files) != 3 {
 		t.Fatalf("record=%+v", record)
+	}
+	wantChanges := []FileChange{
+		{Path: "archive.zip", Kind: "created"},
+		{Path: "document.docx", Kind: "deleted"},
+		{Path: "image.png", Kind: "modified"},
+	}
+	if !reflect.DeepEqual(record.Changes, wantChanges) {
+		t.Fatalf("changes=%+v, want %+v", record.Changes, wantChanges)
 	}
 
 	if _, err := m.Undo(context.Background(), record.ID); err != nil {

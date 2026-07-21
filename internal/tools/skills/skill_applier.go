@@ -52,6 +52,7 @@ func NewSkillApplier(d *Discoverer) *SkillApplier {
 func (s *SkillApplier) Spec() Tool {
 	return Tool{
 		Name: "apply_skill",
+		ReadOnly: true,
 		Description: "Search or activate an installed skill. Pass query to find " +
 			"matching skills without loading their bodies; then pass name to apply " +
 			"one. Applied guidance is returned once as an append-only tool result " +

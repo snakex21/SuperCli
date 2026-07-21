@@ -20,8 +20,7 @@ const (
 )
 
 // SendScreenshotTool captures an image from
-// the OS clipboard, gates on the model's
-// vision capability (F16), and returns the
+// the OS clipboard and returns the
 // image as a Result.Image so the agent loop
 // can attach it to the next model request.
 //
@@ -39,10 +38,9 @@ const (
 // stuffed with arbitrary bytes can't
 // smuggle a file into the agent.
 type SendScreenshotTool struct {
-	BaseDir   string
-	HasVision func(model string) bool // injected from F16 caps
-	Capture   ClipboardCapture        // injected; default = osCapture{}
-	MaxBytes  int64
+	BaseDir  string
+	Capture  ClipboardCapture // injected; default = osCapture{}
+	MaxBytes int64
 }
 
 // ClipboardCapture is the small interface
@@ -60,20 +58,17 @@ type ClipboardCapture interface {
 }
 
 // NewSendScreenshot returns a SendScreenshotTool
-// with default bounds. hasVision is the F16
-// capability gate — when the current model
-// does not support image input, the tool
-// refuses with a clear error suggesting
-// --list-models.
-func NewSendScreenshot(baseDir string, hasVision func(string) bool) *SendScreenshotTool {
+// with default bounds. The legacy hasVision argument is intentionally ignored:
+// provider catalogs are incomplete, so the selected API receives the image and
+// remains the source of truth about whether it can process it.
+func NewSendScreenshot(baseDir string, _ func(string) bool) *SendScreenshotTool {
 	if baseDir == "" {
 		baseDir = "."
 	}
 	return &SendScreenshotTool{
-		BaseDir:   baseDir,
-		HasVision: hasVision,
-		Capture:   osCapture{},
-		MaxBytes:  DefaultMaxScreenshotBytes,
+		BaseDir:  baseDir,
+		Capture:  osCapture{},
+		MaxBytes: DefaultMaxScreenshotBytes,
 	}
 }
 
@@ -81,46 +76,26 @@ func NewSendScreenshot(baseDir string, hasVision func(string) bool) *SendScreens
 func (t *SendScreenshotTool) Spec() Tool {
 	return Tool{
 		Name:        "send_screenshot",
-		Description: "Capture the OS clipboard image (e.g. a screenshot) and attach it to the next model message. Refuses if the current model does not support vision — use --list-models to find one that does. Saves a copy to <home>/.supercli/snapshots/ for the audit trail.",
+		Description: "Capture the OS clipboard image (e.g. a screenshot) and attach it to the next model message. Saves a copy to <home>/.supercli/snapshots/ for the audit trail.",
 		Schema: `{
   "type": "object",
-  "properties": {
-    "model": {"type": "string", "description": "The model ID currently in use. The tool checks F16 vision capability against this ID."}
-  },
-  "required": ["model"]
+  "properties": {}
 }`,
 		Fn: t.Execute,
 	}
 }
 
 // Execute captures the clipboard image,
-// gates on vision support, saves a snapshot,
-// and returns Result with the image attached.
+// saves a snapshot and returns Result with the image attached.
 func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{Err: err}, err
 	}
-	var params struct {
-		Model string `json:"model"`
-	}
-	if err := json.Unmarshal(args, &params); err != nil {
-		return Result{Err: fmt.Errorf("send_screenshot: bad args: %w", err)}, err
-	}
-	if params.Model == "" {
-		err := fmt.Errorf("send_screenshot: model is required (pass the current model ID)")
-		return Result{Err: err}, err
-	}
-	// F16 vision gate. If the gate is missing
-	// (caller didn't wire it), we treat that
-	// as "no vision" — safer than silently
-	// allowing the call.
-	if t.HasVision == nil || !t.HasVision(params.Model) {
-		hint := "use --list-models to find a vision-capable model"
-		if t.HasVision == nil {
-			hint = "internal: capability gate is not wired; " + hint
+	var params map[string]any
+	if len(args) > 0 && string(args) != "null" {
+		if err := json.Unmarshal(args, &params); err != nil {
+			return Result{Err: fmt.Errorf("send_screenshot: bad args: %w", err)}, err
 		}
-		err := fmt.Errorf("send_screenshot: model %q does not support vision (%s)", params.Model, hint)
-		return Result{Err: err}, err
 	}
 
 	capture := t.Capture

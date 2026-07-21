@@ -26,6 +26,13 @@ type MemoryKeeper interface {
 	Search(query string, k int) ([]memory.Entry, error)
 }
 
+// RecentKeeper is an optional capability used when lexical search
+// cannot bridge languages (for example, an English "user name"
+// query for a Polish "Użytkownik ma na imię Maks" memory).
+type RecentKeeper interface {
+	Recent(scope string, n int) ([]memory.Entry, error)
+}
+
 // HybridSearcher is the optional upgrade a MemoryKeeper can
 // implement (the real *memory.Store does): FTS5 + vector search
 // with rank fusion. recall type-asserts for it and falls back to
@@ -67,7 +74,9 @@ func (r *Remember) Spec() Tool {
 			"Use this when you learn something worth carrying forward: user preferences " +
 			"(coding style, language, tools they like), project decisions and their " +
 			"rationale, environment quirks, session summaries, or anything the user " +
-			"explicitly asks you to remember. After finishing a task, save a short " +
+			"explicitly asks you to remember. Save personal information such as the " +
+			"user's name, preferences, location or habits immediately with " +
+			"topic=user_profile; do not wait until task completion. After finishing a task, save a short " +
 			"type=task-log note: WHAT you did, WHY, and which files you touched. " +
 			"Do NOT use it for transient task state (use the goal tool), for " +
 			"facts already obvious from the codebase, or for secrets/credentials. " +
@@ -108,7 +117,14 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 	if len(a.Text) > maxRememberTextBytes {
 		return Result{Err: fmt.Errorf("remember: text is %d bytes, exceeds %d byte limit; summarize it into one short self-contained fact", len(a.Text), maxRememberTextBytes)}, nil
 	}
+	topic := strings.TrimSpace(a.Topic)
 	entryScope := normalizeMemType(a.Type)
+	// Models commonly save identity facts with a user_profile topic
+	// but omit type=preference. Treat those as durable user
+	// preferences so they default to the global store.
+	if strings.TrimSpace(a.Type) == "" && isUserProfileTopic(topic) {
+		entryScope = memory.ScopePreference
+	}
 	target := r.Store
 	targetName := "project"
 	switch strings.ToLower(strings.TrimSpace(a.Scope)) {
@@ -142,8 +158,8 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 		Content: a.Text,
 		Source:  memory.SourceAgent,
 	}
-	if t := strings.TrimSpace(a.Topic); t != "" {
-		e.Tags = []string{t}
+	if topic != "" {
+		e.Tags = []string{topic}
 	}
 	if err := target.Put(e); err != nil {
 		return Result{Err: fmt.Errorf("remember: %w", err)}, nil
@@ -152,6 +168,17 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 		r.OnSave()
 	}
 	return Result{Text: fmt.Sprintf("remembered [%s] (%s, %s): %s", e.ID, entryScope, targetName, a.Text)}, nil
+}
+
+func isUserProfileTopic(topic string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(topic))
+	normalized = strings.NewReplacer("-", "_", " ", "_").Replace(normalized)
+	switch normalized {
+	case "user_profile", "user_identity", "profile", "identity", "personal_profile":
+		return true
+	default:
+		return false
+	}
 }
 
 // normalizeMemType maps the tool's `type` argument to an entry
@@ -222,6 +249,16 @@ func searchOne(ctx context.Context, s MemoryKeeper, query string, k int) ([]memo
 	return s.Search(query, k)
 }
 
+func recentOne(s MemoryKeeper, k int) ([]memory.Entry, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if recent, ok := s.(RecentKeeper); ok {
+		return recent.Recent("", k)
+	}
+	return nil, nil
+}
+
 func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) {
 	if r.Store == nil && r.Global == nil {
 		return Result{Text: "recall: memory store not available"}, nil
@@ -243,6 +280,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 	scope := strings.ToLower(strings.TrimSpace(a.Scope))
 	if scope == "" {
 		scope = "all"
+	}
+	if scope != "project" && scope != "global" && scope != "all" {
+		return Result{Err: fmt.Errorf("recall: scope must be project, global or all")}, nil
 	}
 	type hit struct {
 		e     memory.Entry
@@ -267,8 +307,43 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 			hits = append(hits, hit{e, "global"})
 		}
 	}
-	if scope != "project" && scope != "global" && scope != "all" {
-		return Result{Err: fmt.Errorf("recall: scope must be project, global or all")}, nil
+
+	fallback := false
+	if len(hits) == 0 {
+		var recentHits []hit
+		if scope == "project" || scope == "all" {
+			es, err := recentOne(r.Store, a.Limit)
+			if err != nil {
+				return Result{Err: fmt.Errorf("recall fallback: %w", err)}, nil
+			}
+			for _, e := range es {
+				recentHits = append(recentHits, hit{e, "project"})
+			}
+		}
+		if scope == "global" || scope == "all" {
+			es, err := recentOne(r.Global, a.Limit)
+			if err != nil {
+				return Result{Err: fmt.Errorf("recall fallback: %w", err)}, nil
+			}
+			for _, e := range es {
+				recentHits = append(recentHits, hit{e, "global"})
+			}
+		}
+		// Identity and preference memories are the most useful
+		// cross-language fallback. Keep them ahead of unrelated
+		// recent project notes while preserving recency within each
+		// group.
+		for _, h := range recentHits {
+			if h.e.Scope == memory.ScopePreference || hasUserProfileTag(h.e.Tags) {
+				hits = append(hits, h)
+			}
+		}
+		for _, h := range recentHits {
+			if h.e.Scope != memory.ScopePreference && !hasUserProfileTag(h.e.Tags) {
+				hits = append(hits, h)
+			}
+		}
+		fallback = len(hits) > 0
 	}
 	if len(hits) == 0 {
 		return Result{Text: fmt.Sprintf("recall: no memories match %q", a.Query)}, nil
@@ -277,7 +352,11 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 		hits = hits[:a.Limit]
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d memor(ies) matching %q:\n", len(hits), a.Query)
+	if fallback {
+		fmt.Fprintf(&b, "No lexical match for %q; showing %d recent durable memor(ies) as a cross-language fallback:\n", a.Query, len(hits))
+	} else {
+		fmt.Fprintf(&b, "%d memor(ies) matching %q:\n", len(hits), a.Query)
+	}
 	for _, h := range hits {
 		e := h.e
 		tag := ""
@@ -293,4 +372,13 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 		fmt.Fprintf(&b, "- [%s] %s/%s%s%s %s\n", e.ID, h.where, e.Scope, date, tag, content)
 	}
 	return Result{Text: core.HeadTail(b.String(), maxRecallOutputBytes-1024, 1024)}, nil
+}
+
+func hasUserProfileTag(tags []string) bool {
+	for _, tag := range tags {
+		if isUserProfileTopic(tag) {
+			return true
+		}
+	}
+	return false
 }

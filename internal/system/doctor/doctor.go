@@ -60,7 +60,9 @@ func Run(ctx context.Context, env Env) Report {
 		goRuntimeCheck(),
 		dirCheck("home", env.Home, true),
 		dirCheck("data dir", env.DataDir, true),
-		fileCheck("sqlite db", filepath.Join(env.DataDir, "supercli.db"), false),
+		sqliteIntegrityCheck("storage db", filepath.Join(env.DataDir, "supercli.db"), false),
+		sqliteIntegrityCheck("sessions db", filepath.Join(env.DataDir, "sessions.db"), false),
+		sqliteIntegrityCheck("memory db", filepath.Join(env.DataDir, "memory.db"), false),
 		sessionsCheck(ctx, env.Sessions),
 		providerCheck(env.Provider),
 		providerConfigCheck(env.ProviderMgr, env.Caps),
@@ -71,6 +73,40 @@ func Run(ctx context.Context, env Env) Report {
 	checks = append(checks, localServerChecks(ctx)...)
 	checks = append(checks, providerPingChecks(ctx, env.ProviderMgr)...)
 	return Report{GeneratedAt: time.Now(), Version: env.Version, Checks: checks}
+}
+
+// sqliteIntegrityCheck verifies both that a database can be opened and that
+// SQLite can traverse its pages and indexes. quick_check is read-only and much
+// cheaper than integrity_check, which makes it suitable for the interactive
+// doctor while still detecting malformed/truncated databases.
+func sqliteIntegrityCheck(name, path string, required bool) Check {
+	if path == "" {
+		return Check{Name: name, Status: Skip, Detail: "not configured"}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if required {
+			return Check{Name: name, Status: Fail, Detail: path + " missing", Remediation: "restore the database from backup or start SuperCli once to initialize storage"}
+		}
+		return Check{Name: name, Status: Warn, Detail: path + " not created yet"}
+	}
+	if info.IsDir() {
+		return Check{Name: name, Status: Fail, Detail: path + " is a directory"}
+	}
+
+	db, err := sql.Open("sqlite", path+"?_pragma=query_only(1)&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return Check{Name: name, Status: Fail, Detail: err.Error(), Remediation: "restore this database from a known-good backup"}
+	}
+	defer db.Close()
+	var result string
+	if err := db.QueryRow(`PRAGMA quick_check(1)`).Scan(&result); err != nil {
+		return Check{Name: name, Status: Fail, Detail: path + " · " + err.Error(), Remediation: "stop SuperCli and restore this database from a known-good backup"}
+	}
+	if !strings.EqualFold(strings.TrimSpace(result), "ok") {
+		return Check{Name: name, Status: Fail, Detail: path + " · " + result, Remediation: "stop SuperCli and restore this database from a known-good backup"}
+	}
+	return Check{Name: name, Status: OK, Detail: fmt.Sprintf("%s · %s · quick_check ok", path, humanSize(info.Size()))}
 }
 
 func (r Report) Summary() (ok, warn, fail, skip int) {

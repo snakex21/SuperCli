@@ -87,6 +87,44 @@ func TestDataDir(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeDataRootIgnoresWorkspaceHome(t *testing.T) {
+	t.Setenv(HomeEnv, t.TempDir())
+	t.Setenv(DataRootEnv, "")
+	got, portable, err := ResolveRuntimeDataRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !portable || got != PortableDataRoot() {
+		t.Fatalf("runtime data = %q portable=%v, want executable-local %q", got, portable, PortableDataRoot())
+	}
+}
+
+func TestResolveRuntimeDataRootExplicitOverride(t *testing.T) {
+	t.Setenv(DataRootEnv, t.TempDir())
+	flagDir := filepath.Join(t.TempDir(), "instance-data")
+	got, portable, err := ResolveRuntimeDataRoot(flagDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.Abs(flagDir)
+	if portable || got != want {
+		t.Fatalf("runtime data = %q portable=%v, want %q false", got, portable, want)
+	}
+}
+
+func TestResolveRuntimeDataRootEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(DataRootEnv, dir)
+	got, portable, err := ResolveRuntimeDataRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.Abs(dir)
+	if portable || got != want {
+		t.Fatalf("runtime data = %q portable=%v, want %q false", got, portable, want)
+	}
+}
+
 func TestEnsureDataDir_CreatesMissing(t *testing.T) {
 	home := t.TempDir()
 	dir, err := EnsureDataDir(home)

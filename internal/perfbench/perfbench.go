@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 type Thresholds struct {
@@ -111,6 +113,7 @@ func Run(ctx context.Context, options Options) (Report, error) {
 
 func measure(ctx context.Context, argv []string) (sample, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	childproc.HideWindow(cmd)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

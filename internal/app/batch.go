@@ -69,6 +69,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		fatal("build provider", err)
 	}
 	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
+	learned := llm.LoadLearnedLimits(dataDir)
+	modelContexts := config.LoadModelContextStore(dataDir)
+	contextProvider := config.RuntimeProviderName(tomlCfg, cfg)
 
 	// Build the agent loop.
 	reg := tools.NewRegistry()
@@ -131,6 +134,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
 		systemPrompt += "\n\n" + modelProfile
 	}
+	if instructions := prompt.ActiveUserInstructions(dataDir); instructions != "" {
+		systemPrompt += "\n\n" + instructions
+	}
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider:              p,
 		Registry:              reg,
@@ -145,10 +151,21 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		ThinTools:             execProfile.ThinTools,
 		StableToolset:         execProfile.StableToolset,
 		CatalogHoist:          execProfile.CatalogHoist,
-		// Batch runs honor the same context-defense knobs as the
-		// TUI: config context_window (0 = loop default 16384) and
-		// prune_protect_tokens for the zero-LLM tool-result prune.
-		WindowFor:          func(string) int { return tomlCfg.ContextWindow },
+		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
+		// intentionally local and latency-free: config > cached model catalog >
+		// learned provider limit > conservative loop fallback.
+		ContextWindowFor: func(model string) agent.ContextWindowResolution {
+			return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, 0, caps, learned)
+		},
+		ContextProvider: contextProvider,
+		ScopedContextWindowFor: func(provider, model string) agent.ContextWindowResolution {
+			if tokens, ok := modelContexts.Get(provider, model); ok {
+				return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
+			}
+			return agent.ContextWindowResolution{}
+		},
+		Summarizer:         agent.NewAutoSummarizer(reg.ActiveNames),
+		LearnLimit:         learned.Learn,
 		PruneProtectTokens: tomlCfg.PruneProtectTokens,
 	})
 	if err != nil {
@@ -192,8 +209,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 			fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d window=%d\n",
 				e.Pruned, e.Reclaimed, e.Estimated, e.Window)
 		case agent.AutoCompactEvent:
-			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d window=%d\n",
-				e.Removed, e.Reason, e.Estimated, e.Window)
+			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d raw=%d estimate_source=%s exact_base=%d threshold=%d window=%d window_source=%s\n",
+				e.Removed, e.Reason, e.Estimated, e.RawEstimated, e.EstimateSource,
+				e.ExactBase, e.Threshold, e.Window, e.WindowSource)
 		case agent.DoneEvent:
 			// Real provider-reported token usage for this run
 			// (exact, not an estimate). Printed to stderr so it
