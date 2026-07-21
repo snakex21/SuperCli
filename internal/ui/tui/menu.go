@@ -1268,6 +1268,9 @@ func formatProbeLatency(d time.Duration) string {
 // activeProviderName returns the name of the provider that owns
 // the currently loaded model, or empty string if unknown.
 func (m Model) activeProviderName() string {
+	if strings.TrimSpace(m.activeProvider) != "" {
+		return m.activeProvider
+	}
 	if m.caps == nil {
 		return ""
 	}
