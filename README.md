@@ -59,11 +59,18 @@ go build -o supercli.exe ./cmd/supercli
 .\supercli.exe
 ```
 
-Override the home directory:
+Open a different workspace without changing this copy's settings:
 
 ```bash
 ./supercli --home /tmp/my-project
 SUPERCLI_HOME=/tmp/my-project ./supercli
+```
+
+Override the instance data directory only when explicitly needed:
+
+```bash
+./supercli --data-dir /tmp/supercli-instance-data
+SUPERCLI_DATA_DIR=/tmp/supercli-instance-data ./supercli
 ```
 
 Run a quick diagnosis:
@@ -294,14 +301,19 @@ Type `/` in the TUI to open the command palette.
 
 | Priority | Source | Data directory |
 | --- | --- | --- |
-| 1 | `--home` flag | `<flag>/.supercli/` |
-| 2 | `$SUPERCLI_HOME` | `<env>/.supercli/` |
-| 3 | default (portable) | `supercli-data/` next to the executable |
+| 1 | `--data-dir` flag | the explicitly selected directory |
+| 2 | `$SUPERCLI_DATA_DIR` | the explicitly selected directory |
+| 3 | default (portable) | `supercli-data/` next to this executable |
 
-The resolved path is made absolute and symlinks on the executable path
-are resolved. On first start, existing data in the legacy `~/.supercli`
-location is copied into `supercli-data/` automatically; the original is
-left in place with a `MOVED.txt` marker so nothing is ever lost.
+The resolved path is made absolute. The executable path is deliberately not
+resolved through symlinks: each copied executable or launcher owns the
+`supercli-data/` directory beside itself. `--home` and `SUPERCLI_HOME` select
+only the workspace/sandbox and never redirect settings, sessions, memory,
+auth, logs, or caches to another SuperCli copy.
+
+For the terminal CLI, on first start existing data in the legacy
+`~/.supercli` location may be copied into an empty adjacent `supercli-data/`;
+after that every instance remains independent. The original is left in place.
 
 The project working directory (cwd) is still used for project-scoped
 artifacts: a `.supercli/config.toml` override, trash, and snapshots.
@@ -310,6 +322,7 @@ artifacts: a `.supercli/config.toml` override, trash, and snapshots.
 
 ```text
 SUPERCLI_HOME
+SUPERCLI_DATA_DIR
 SUPERCLI_LLM_PROVIDER
 SUPERCLI_LLM_API_KEY
 SUPERCLI_LLM_BASE_URL
@@ -324,6 +337,7 @@ SUPERCLI_DEBUG
 
 ```text
 --home PATH
+--data-dir PATH
 --provider P
 --model M
 --key K

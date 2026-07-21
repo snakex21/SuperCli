@@ -21,8 +21,8 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
 | `reasoning_effort` | provider default | steering cloud reasoning models; `/reasoning` |
-| `max_steps` | 0 = per-surface built-in (TUI 10, batch/WebGUI 25) | runaway loops in exotic setups |
-| `context_window` | 0 = auto (provider metadata > learned > 16384) | the provider lies about its window |
+| `max_steps` | 0 = per-surface built-in (TUI 10, batch/WebGUI 25) | runaway loops in exotic setups; WebGUI's built-in 25 is a soft baseline that may extend to 50 while successful, non-repeated tool work shows progress; an explicit positive value remains a strict cap |
+| `context_window` | 0 = auto (provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
 | `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
 | `fallback_cooldown_seconds` | 0 = 30 | a remote/local host flaps and should be retried sooner or later |
 
@@ -49,6 +49,13 @@ as `cached_models` inside that provider entry. This tiny portable inventory
 keeps LM Studio and remote llama.cpp models visible when their server is
 offline; the next successful scan refreshes it. It does not trigger a model
 call or add anything to the agent prompt.
+
+For a limit that belongs to one connection and one model, use the model palette
+in WebGUI (type `100k`, `1m`, or `auto`) or `/context-limit 100k` in the TUI.
+The key is the configured provider name plus the exact model ID. Therefore
+`anyrouter / gpt-5.6-sol = 100k` does not change `openai / gpt-5.6-sol`, which
+continues to use automatic provider/catalog detection. These values are saved
+in the instance-local `model-context-windows.json`; the UI manages the file.
 
 ## Cache / prompt shape (see architecture.md, performance.md)
 
