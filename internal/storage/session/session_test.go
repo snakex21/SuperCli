@@ -59,6 +59,67 @@ func TestStore_Create(t *testing.T) {
 	}
 }
 
+func TestStoreTruncateFromRewindsInPlaceAndInvalidatesDerivedContext(t *testing.T) {
+	s := openTestStore(t)
+	sess, err := s.Create("/cwd", "model", "rewind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := NewWriter(s, sess.ID)
+	for _, message := range []llm.Message{
+		{Role: llm.RoleUser, Content: "keep"},
+		{Role: llm.RoleAssistant, Content: "kept answer"},
+		{Role: llm.RoleUser, Content: "edit me"},
+		{Role: llm.RoleAssistant, Content: "remove me"},
+	} {
+		if err := writer.AppendMessage(context.Background(), message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SaveContextProjection(context.Background(), sess.ID, []llm.Message{{Role: llm.RoleSystem, Content: "compacted"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendTurnSummary(context.Background(), TurnSummary{SessionID: sess.ID, AssistantSeq: 4}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := s.TruncateFrom(context.Background(), sess.ID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2", removed)
+	}
+	messages, err := s.ReadMessages(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || messages[1].Content != "kept answer" {
+		t.Fatalf("messages after truncate = %+v", messages)
+	}
+	meta, err := s.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.MessageCount != 2 {
+		t.Fatalf("message count = %d, want 2", meta.MessageCount)
+	}
+	turns, err := s.ReadTurnSummaries(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 0 {
+		t.Fatalf("turn summaries survived truncate: %+v", turns)
+	}
+	var projections int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM session_context_projections WHERE session_id = ?`, sess.ID).Scan(&projections); err != nil {
+		t.Fatal(err)
+	}
+	if projections != 0 {
+		t.Fatalf("context projection survived truncate")
+	}
+}
+
 func TestStore_SetRuntime(t *testing.T) {
 	s := openTestStore(t)
 	sess, err := s.Create("/cwd", "old-model", "runtime")

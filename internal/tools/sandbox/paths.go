@@ -102,8 +102,21 @@ func IsUnsandboxed() bool { return unsandboxed.Load() }
 // ancestors can be walked. (We use evalSymlinks on the
 // longest existing prefix.)
 func ResolveSafe(home, rel string) (string, error) {
+	return resolvePath(home, rel, !IsUnsandboxed())
+}
+
+// ResolveWithin is the strict workspace variant of ResolveSafe. It always
+// enforces the home boundary, even when the process-wide agent sandbox is in
+// unsandboxed/allow-all mode. User-facing file browsers and editors use this
+// because their navigation boundary must not change with the model's tool
+// permissions.
+func ResolveWithin(home, rel string) (string, error) {
+	return resolvePath(home, rel, true)
+}
+
+func resolvePath(home, rel string, enforceHome bool) (string, error) {
 	if home == "" {
-		return "", fmt.Errorf("sandbox: ResolveSafe: empty home")
+		return "", fmt.Errorf("sandbox: resolve path: empty home")
 	}
 	home = filepath.Clean(home)
 	absHome, err := filepath.Abs(home)
@@ -126,8 +139,9 @@ func ResolveSafe(home, rel string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("sandbox: resolve symlinks: %w", err)
 	}
-	// Refuse if outside home (skipped when unsandboxed).
-	if !IsUnsandboxed() && !IsUnder(absHome, resolved) {
+	// Refuse if outside home. ResolveSafe disables this only for the explicit
+	// agent allow-all mode; ResolveWithin always keeps it enabled.
+	if enforceHome && !IsUnder(absHome, resolved) {
 		return "", ErrEscape
 	}
 	// Refuse if it lands on a sensitive system path

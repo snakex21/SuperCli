@@ -310,6 +310,27 @@ func TestRunner_Run_EnvScrubbed(t *testing.T) {
 	}
 }
 
+func TestRunner_Run_WindowsSystemDriveIsExpanded(t *testing.T) {
+	if runtime.GOOS != "windows" || !hasCmd() {
+		t.Skip("Windows cmd.exe required")
+	}
+	t.Setenv("SystemDrive", "C:")
+	r := newTestRunner(t)
+	res, err := r.Run(context.Background(), &Request{
+		Command: []string{"cmd", "/d", "/c", "echo", "%SystemDrive%"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit=%d stderr=%q", res.ExitCode, res.Stderr)
+	}
+	got := strings.TrimSpace(res.Stdout)
+	if got != "C:" {
+		t.Fatalf("SystemDrive was not expanded by cmd.exe: got %q", got)
+	}
+}
+
 func TestRunner_Run_CustomExtras(t *testing.T) {
 	cmd, ok := envCheckCmd("CTXEXEC_TEST")
 	if !ok {
@@ -384,6 +405,26 @@ func TestBuildEnv_ReplacesKey(t *testing.T) {
 	}
 }
 
+func TestBuildEnv_WindowsForcesUTF8AndReplacesPathCaseInsensitively(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows environment names are case-insensitive")
+	}
+	out := buildEnv([]string{"PATH=C:\\custom", "PYTHONIOENCODING=ascii"})
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "PATH=C:\\custom") {
+		t.Fatalf("PATH override missing: %v", out)
+	}
+	if strings.Contains(joined, "\nPath=") {
+		t.Fatalf("duplicate mixed-case Path survived: %v", out)
+	}
+	if !strings.Contains(joined, "PYTHONIOENCODING=ascii") {
+		t.Fatalf("explicit encoding override missing: %v", out)
+	}
+	if !strings.Contains(joined, "PYTHONUTF8=1") {
+		t.Fatalf("UTF-8 default missing: %v", out)
+	}
+}
+
 func TestBuildEnv_DropsNoEquals(t *testing.T) {
 	out := buildEnv([]string{"NOEQUALS", "OK=1"})
 	for _, kv := range out {
@@ -451,11 +492,10 @@ func stdoutFloodCmd() ([]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	// Write a 50 MB stream in 64 KB chunks so the
-	// kernel pipe buffer is constantly refilled and
-	// the timeout (1s) always wins.
-	script := "import sys, time; " +
-		"[sys.stdout.write('a' * 65536) or sys.stdout.flush() or time.sleep(0.001) for _ in range(10000)]"
+	// Keep writing until the timeout wins. A finite 50 MB producer could
+	// occasionally complete within one second on fast Windows storage because
+	// Runner deliberately captures output in a file rather than a pipe.
+	script := "import sys, time\nwhile True:\n sys.stdout.write('a' * 65536)\n sys.stdout.flush()\n time.sleep(0.001)"
 	return append(py, "-u", "-c", script), true
 }
 

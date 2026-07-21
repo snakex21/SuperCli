@@ -147,9 +147,12 @@ func TestBuildBriefing_RespectsBudgetAndContent(t *testing.T) {
 	if err := project.Put(Entry{ID: "l1", Scope: ScopeTaskLog, Content: "added login form", Source: SourceAgent}); err != nil {
 		t.Fatalf("put log: %v", err)
 	}
+	if err := global.Put(Entry{ID: "f1", Scope: ScopeFact, Content: "Użytkownik ma na imię Maks.", Source: SourceAgent}); err != nil {
+		t.Fatalf("put fact: %v", err)
+	}
 
 	b := BuildBriefing(global, project, "C:/work/demo", 700)
-	for _, want := range []string{"answers in Polish", "demo project for tests", "added login form"} {
+	for _, want := range []string{"answers in Polish", "Użytkownik ma na imię Maks.", "demo project for tests", "added login form"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("briefing missing %q:\n%s", want, b)
 		}

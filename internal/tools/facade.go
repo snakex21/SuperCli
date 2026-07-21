@@ -266,5 +266,9 @@ var (
 
 // Mail.
 type OutlookMail = mail.OutlookMail
+type OutlookIndexMessage = mail.OutlookIndexMessage
 
-var NewOutlookMail = mail.NewOutlookMail
+var (
+	NewOutlookMail       = mail.NewOutlookMail
+	IndexOutlookMessages = mail.IndexOutlookMessages
+)

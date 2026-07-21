@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	supercli [--home PATH] [--provider P] [--model M] [--key K] [--base-url U]
-//	         [--status] [--doctor] [--echo] [--debug]
+//	supercli [--home PATH] [--data-dir PATH] [--provider P] [--model M]
+//	         [--key K] [--base-url U] [--status] [--doctor] [--echo] [--debug]
 //	         [--max-credits-per-session N] [--max-credits-per-day N]
 //
 // HOME RESOLUTION ORDER (highest priority first):
@@ -16,9 +16,9 @@
 //  2. SUPERCLI_LLM_* env vars
 //  3. Default: echo provider (no API key set)
 //
-// The resolved home is where the .supercli/ subdirectory lives; all
-// state (db, memory, sessions) is written there. Nothing is ever
-// written to %APPDATA%, ~/.config or the user's home directory.
+// The resolved home is only the working-directory sandbox. Runtime state
+// (config, sessions, memory, auth) lives beside this executable in
+// supercli-data, unless --data-dir/SUPERCLI_DATA_DIR explicitly overrides it.
 package app
 
 import (
@@ -45,6 +45,7 @@ import (
 	"supercli/internal/agent/darwin"
 	"supercli/internal/agent/reflect"
 	"supercli/internal/agent/ultrawork"
+	"supercli/internal/buildinfo"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/consult"
@@ -72,7 +73,7 @@ import (
 	"supercli/internal/webgui"
 )
 
-const version = "0.6.0"
+var version = buildinfo.Version
 
 // codexAuthMgr handles ChatGPT-subscription (Codex) OAuth tokens.
 // Set once at startup from the [codex_auth] config section;
@@ -95,6 +96,7 @@ func initCodexAuth(dataDir string, t config.TomlConfig) {
 // core only (see internal/prompt and internal/tier).
 var supercliSystemPromptBase = prompt.Build(false)
 var supercliModelProfile string
+var supercliUserInstructions string
 var supercliCoordinatorMode bool
 
 // supercliOrchestratorMode is the HARD delegation mode (explicit
@@ -143,6 +145,9 @@ func buildSystemPrompt(svc *goal.Service) string {
 	if supercliModelProfile != "" {
 		base += "\n\n" + supercliModelProfile
 	}
+	if supercliUserInstructions != "" {
+		base += "\n\n" + supercliUserInstructions
+	}
 	// Orchestrator mode is a stricter coordinator: its lean preamble
 	// replaces the coordinator section (it subsumes the delegate-first
 	// guidance and adds the hard "you have no edit/run tools" boundary).
@@ -190,6 +195,7 @@ func Main() {
 	}()
 
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
+	dataDirFlag := flag.String("data-dir", "", "runtime data directory (overrides $SUPERCLI_DATA_DIR; default: supercli-data beside this executable)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	statusFlag := flag.Bool("status", false, "print session/credit usage + audit tail and exit")
 	doctorFlag := flag.Bool("doctor", false, "run environment checks and exit")
@@ -235,11 +241,10 @@ func Main() {
 	// workingDirNote is set below, after the TOML + unsandboxed
 	// flag are resolved so it reflects the real sandbox state.
 
-	// SuperCli is ALWAYS portable: the single data directory holds
-	// every piece of CLI state and lives next to the executable
-	// (supercli-data/), unless --home/$SUPERCLI_HOME explicitly
-	// override it.
-	resolvedData, portable, err := storage.ResolveDataRoot(*homeFlag)
+	// Workspace and application state are intentionally independent. Opening a
+	// project through --home/SUPERCLI_HOME must never make this portable copy
+	// read another copy's settings.
+	resolvedData, portable, err := storage.ResolveRuntimeDataRoot(*dataDirFlag)
 	if err != nil {
 		fatal("resolve data dir", err)
 	}
@@ -556,6 +561,7 @@ func Main() {
 	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
 	supercliSystemPromptBase = prompt.Build(execProfile.PromptSmall)
 	supercliModelProfile = prompt.LoadProfileAt(home, dataDir, cfg.Model)
+	supercliUserInstructions = prompt.ActiveUserInstructions(dataDir)
 
 	// Orchestrator mode (hard delegation): resolved from config, with an
 	// env override for scripted/test use. When on, the main loop gets a
@@ -1030,6 +1036,8 @@ func Main() {
 	// > learned limit (persisted from past context-length
 	// errors) > 16384 default (applied inside the loop).
 	learned := loadLearnedLimits(dataDir)
+	modelContexts := config.LoadModelContextStore(dataDir)
+	initialContextProvider := config.RuntimeProviderName(tomlCfg, cfg)
 	var provWinMu sync.Mutex
 	provWindows := map[string]int{}
 	if cfg.BaseURL != "" {
@@ -1046,24 +1054,21 @@ func Main() {
 			provWinMu.Unlock()
 		}()
 	}
-	windowFor := func(model string) int {
-		if tomlCfg.ContextWindow > 0 {
-			return tomlCfg.ContextWindow
-		}
+	contextWindowFor := func(model string) agent.ContextWindowResolution {
 		provWinMu.Lock()
 		w := provWindows[model]
 		provWinMu.Unlock()
-		if w > 0 {
-			return w
-		}
-		if info, ok := caps.Get(model); ok && info.ContextLength > 0 {
-			return info.ContextLength
-		}
-		if v := learned.Get(model); v > 0 {
-			return v
-		}
-		return 0 // loop falls back to its 16384 default
+		return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, w, caps, learned)
 	}
+	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {
+		if tokens, ok := modelContexts.Get(provider, model); ok {
+			return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
+		}
+		return agent.ContextWindowResolution{}
+	}
+	// Legacy helpers such as resume sizing need only the numeric value; keep
+	// them on the same resolver rather than duplicating the cascade.
+	windowFor := func(model string) int { return contextWindowFor(model).Tokens }
 	autoSummarizer := func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
 		summary, err := summarizeForCompaction(ctx, p, msgs)
 		if err != nil {
@@ -1107,14 +1112,16 @@ func Main() {
 			Credit:      ultraworkCreditAdapter{tracker: tracker},
 			SisyphusMax: 3,
 		},
-		Draft:             draftPolicy,
-		DraftProvider:     draftProvider,
-		NavigatorProvider: navigatorProvider,
-		DraftOverrideSink: draftSink,
-		Stats:             draftStats,
-		WindowFor:         windowFor,
-		Summarizer:        autoSummarizer,
-		LearnLimit:        learned.Learn,
+		Draft:                  draftPolicy,
+		DraftProvider:          draftProvider,
+		NavigatorProvider:      navigatorProvider,
+		DraftOverrideSink:      draftSink,
+		Stats:                  draftStats,
+		ContextWindowFor:       contextWindowFor,
+		ContextProvider:        initialContextProvider,
+		ScopedContextWindowFor: scopedContextWindowFor,
+		Summarizer:             autoSummarizer,
+		LearnLimit:             learned.Learn,
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = default 8192-token protected tail, negative = off.
@@ -2513,6 +2520,8 @@ func Main() {
 		SessionStore:       sessStore,
 		StatsRecorder:      draftStats,
 		ProviderMgr:        provMgr,
+		ActiveProvider:     initialContextProvider,
+		ModelContextStore:  modelContexts,
 		CapabilityRegistry: caps,
 		GoalService:        goalSvc,
 		ToolRegistry:       registry,
@@ -2706,6 +2715,12 @@ func applyModelInfoMetadata(caps *llm.CapabilityRegistry, infos []llm.ModelInfo)
 	if caps == nil || len(infos) == 0 {
 		return
 	}
+	shortCounts := make(map[string]int)
+	for _, m := range infos {
+		if slash := strings.IndexByte(m.ID, '/'); slash > 0 && slash < len(m.ID)-1 {
+			shortCounts[strings.ToLower(m.ID[slash+1:])]++
+		}
+	}
 	for _, m := range infos {
 		if m.ID == "" {
 			continue
@@ -2715,9 +2730,15 @@ func applyModelInfoMetadata(caps *llm.CapabilityRegistry, infos []llm.ModelInfo)
 		// deepseek/deepseek-chat), while the direct provider scan returns the
 		// short model id (deepseek-chat) with Provider=deepseek. Mirror metadata
 		// onto that existing short row when it is clearly the same provider.
+		// Routers may advertise only the short id under their own provider name;
+		// accept that alias when the external catalog has exactly one canonical
+		// provider/model entry for the short id.
 		if slash := strings.IndexByte(m.ID, '/'); slash > 0 && slash < len(m.ID)-1 {
 			provider, shortID := m.ID[:slash], m.ID[slash+1:]
-			if existing, ok := caps.Get(shortID); ok && strings.EqualFold(existing.Provider, provider) {
+			existing, ok := caps.Get(shortID)
+			sameProvider := ok && strings.EqualFold(existing.Provider, provider)
+			uniqueAlias := shortCounts[strings.ToLower(shortID)] == 1
+			if ok && (sameProvider || uniqueAlias) {
 				copy := m
 				copy.ID = shortID
 				copy.Provider = existing.Provider
@@ -3320,7 +3341,8 @@ Usage:
   supercli [flags]
 
 Flags:
-  --home PATH                     override the home directory (also: $SUPERCLI_HOME)
+  --home PATH                     select the workspace/sandbox (also: $SUPERCLI_HOME)
+  --data-dir PATH                 override instance data (also: $SUPERCLI_DATA_DIR)
   --provider P                    LLM provider: openai, responses, anthropic, codex, opencode, or echo
   --model M                       model id (default: $SUPERCLI_LLM_MODEL or gpt-4o-mini)
   --key K                         API key (overrides SUPERCLI_LLM_API_KEY)
@@ -3343,10 +3365,11 @@ Flags:
 Env vars:
   SUPERCLI_LLM_PROVIDER, SUPERCLI_LLM_API_KEY, SUPERCLI_LLM_BASE_URL,
   SUPERCLI_LLM_MODEL, SUPERCLI_LLM_TEMPERATURE, SUPERCLI_LLM_STREAM,
-  SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME
+  SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME, SUPERCLI_DATA_DIR
 
 Data is stored in a single portable supercli-data/ directory next to
-the executable (override with --home or SUPERCLI_HOME).
+this exact executable (override only with --data-dir or SUPERCLI_DATA_DIR).
+--home and SUPERCLI_HOME change the workspace, never the instance data.
 Nothing is written to %%APPDATA%% or the user home without consent.
 `, version)
 }

@@ -32,6 +32,7 @@ func TestStoreTurnSummarySurvivesReopenAndClampsSubsets(t *testing.T) {
 		HasReasoning: true, ToolCalls: 3, ToolFailures: 1, Steps: 2,
 		ModelCalls: 3, FailedCalls: 1, CanceledCalls: 1, BackgroundCalls: 1,
 		HelperCalls: 2, Phases: map[string]int64{"backend_wait": 1234, "tool:read": 456},
+		FileChanges: []FileChange{{Path: "new.txt", Kind: "created"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +58,9 @@ func TestStoreTurnSummarySurvivesReopenAndClampsSubsets(t *testing.T) {
 	}
 	if got.ToolFailures != 1 || got.Steps != 2 || got.ModelCalls != 3 || got.FailedCalls != 1 || got.CanceledCalls != 1 || got.BackgroundCalls != 1 || got.HelperCalls != 2 || got.Phases["backend_wait"] != 1234 {
 		t.Fatalf("turn telemetry = %+v", got)
+	}
+	if len(got.FileChanges) != 1 || got.FileChanges[0] != (FileChange{Path: "new.txt", Kind: "created"}) {
+		t.Fatalf("turn file changes = %+v", got.FileChanges)
 	}
 }
 

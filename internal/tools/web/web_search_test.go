@@ -141,6 +141,75 @@ func TestWebLookupUsesCompactContractAndSharedSearch(t *testing.T) {
 	}
 }
 
+func TestDuckDuckGoFallsBackToBraveWeb(t *testing.T) {
+	tool := NewWebSearch("", "")
+	tool.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Host {
+		case "html.duckduckgo.com":
+			return &http.Response{
+				StatusCode: http.StatusAccepted,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("challenge")),
+				Request:    req,
+			}, nil
+		case "search.brave.com":
+			body := `<div class="snippet svelte-x" data-pos="1" data-type="web">
+				<a href="https://go.dev/doc/" class="x">
+					<div class="title search-snippet-title line-clamp-1 svelte-y">The Go documentation</div>
+				</a>
+				<div class="generic-snippet svelte-z"><div class="content desktop-default-regular">Official Go docs.</div></div>
+			</div>`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		default:
+			t.Fatalf("unexpected host %q", req.URL.Host)
+			return nil, nil
+		}
+	})}
+	result, err := tool.Spec().Fn(context.Background(), []byte(`{"query":"Go documentation"}`))
+	if err != nil || result.Err != nil {
+		t.Fatalf("search = %+v, err=%v", result, err)
+	}
+	if !strings.Contains(result.Text, "engine: brave-web, fallback from duckduckgo") ||
+		!strings.Contains(result.Text, "https://go.dev/doc/") ||
+		!strings.Contains(result.Text, "Official Go docs.") {
+		t.Fatalf("fallback result = %q", result.Text)
+	}
+}
+
+func TestDuckDuckGoAndBraveFallBackToBingRSS(t *testing.T) {
+	tool := NewWebSearch("", "")
+	tool.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Host {
+		case "html.duckduckgo.com":
+			return &http.Response{StatusCode: http.StatusAccepted, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("challenge")), Request: req}, nil
+		case "search.brave.com":
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("limited")), Request: req}, nil
+		case "www.bing.com":
+			if req.URL.Query().Get("format") != "rss" {
+				t.Fatalf("Bing request did not use RSS: %s", req.URL.String())
+			}
+			body := `<?xml version="1.0"?><rss><channel><item><title>Go documentation</title><link>https://go.dev/doc/</link><description>Official Go docs.</description></item></channel></rss>`
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+		default:
+			t.Fatalf("unexpected host %q", req.URL.Host)
+			return nil, nil
+		}
+	})}
+	result, err := tool.Spec().Fn(context.Background(), []byte(`{"query":"Go documentation"}`))
+	if err != nil || result.Err != nil {
+		t.Fatalf("search = %+v, err=%v", result, err)
+	}
+	if !strings.Contains(result.Text, "engine: bing-rss, fallback from duckduckgo") ||
+		!strings.Contains(result.Text, "https://go.dev/doc/") {
+		t.Fatalf("fallback result = %q", result.Text)
+	}
+}
+
 func TestSearchCacheTTL(t *testing.T) {
 	if got := searchCacheTTL(webSearchArgs{Query: "go interface tutorial"}); got != webSearchReferenceTTL {
 		t.Fatalf("reference TTL = %s", got)

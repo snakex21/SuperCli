@@ -16,7 +16,7 @@ import (
 // returns the bounded stdout/stderr as JSON. The model
 // uses it instead of `file_read` for any large file
 // (logs, JSON, CSVs, source trees): it writes a small
-// script (grep, awk, python3 -c, jq, ...) and the
+// script or an installed project command and the
 // sandbox returns just the answer.
 //
 // Always-on: the model sees it from turn 1 because the
@@ -38,11 +38,11 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Prefer over file_read for files >~50 lines, log inspection, counting matches, and JSON/CSV slicing. `command` is a LIST of args (binary + arguments), NOT a shell string; the binary is resolved via PATH. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Description: "Run one command in a sandbox and return ONLY its bounded stdout. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved via PATH. The workspace is already the default workdir. On Windows, shell built-ins such as dir/set/copy require [\"cmd\",\"/c\",...]; on Unix, shell syntax requires [\"sh\",\"-c\",...]. Prefer file/search tools for source discovery; do not assume optional programs such as rg, jq, or awk are installed. Use this for tests, installed project commands, scripts, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "Binary + arguments, e.g. [\"grep\", \"-c\", \"ERROR\", \"app.log\"]. Available: python3, node, jq, awk, sed, grep, rg, head, tail, wc, sort, uniq, cut, find, ls."},
+				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "Executable + arguments, e.g. [\"git\",\"status\",\"--short\"]. Use only binaries actually on PATH. Use search_code instead of assuming rg is installed. Windows built-ins need [\"cmd\",\"/c\",...]."},
 				"workdir": {"type": "string", "description": "Working dir relative to home. Default: home root."},
 				"timeout_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "default": 10000, "description": "Timeout (ms)."},
 				"max_stdout_kb": {"type": "integer", "minimum": 1, "maximum": 64, "default": 16, "description": "stdout cap (KB); truncated from front when exceeded."},

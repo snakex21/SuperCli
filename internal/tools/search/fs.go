@@ -28,9 +28,11 @@ func openFile(path string) (io.ReadCloser, error) { return os.Open(path) }
 func WalkFiles(root string, fn func(path string) error) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Permission errors on individual files are
-			// not fatal: keep walking.
-			if os.IsPermission(err) {
+			// Permission errors and files removed concurrently are not fatal.
+			// Editors and security scanners commonly replace config files while
+			// a search is in progress; one disappearing entry must not abort the
+			// whole code search.
+			if os.IsPermission(err) || os.IsNotExist(err) {
 				return nil
 			}
 			return err

@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"runtime"
 	"strings"
 )
 
@@ -11,7 +12,8 @@ import (
 var defaultKeep = []string{
 	"HOME", "PATH", "PATHEXT", "LANG", "LC_ALL", "LC_CTYPE",
 	"USER", "USERNAME", "USERPROFILE", "SHELL", "COMSPEC",
-	"APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR",
+	"APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR",
+	"PROGRAMDATA", "ALLUSERSPROFILE", "PUBLIC", "HOMEDRIVE", "HOMEPATH",
 	"TMPDIR", "TMP", "TEMP",
 	"PWD", "OLDPWD",
 	"TERM", "COLORTERM", "NO_COLOR",
@@ -55,7 +57,7 @@ func ScrubEnv(env []string) []string {
 	}
 	keep := make(map[string]bool, len(defaultKeep))
 	for _, k := range defaultKeep {
-		keep[k] = true
+		keep[envNameKey(k)] = true
 	}
 	out := make([]string, 0, len(env))
 	for _, line := range env {
@@ -64,7 +66,7 @@ func ScrubEnv(env []string) []string {
 			continue
 		}
 		name := line[:eq]
-		if !keep[name] {
+		if !keep[envNameKey(name)] {
 			continue
 		}
 		if matchesSecret(name) {
@@ -88,7 +90,7 @@ func ScrubEnvWithExtra(env []string, extraKeep ...string) []string {
 	merged = append(merged, extraKeep...)
 	keep := make(map[string]bool, len(merged))
 	for _, k := range merged {
-		keep[k] = true
+		keep[envNameKey(k)] = true
 	}
 	if env == nil {
 		env = environ()
@@ -100,7 +102,7 @@ func ScrubEnvWithExtra(env []string, extraKeep ...string) []string {
 			continue
 		}
 		name := line[:eq]
-		if !keep[name] {
+		if !keep[envNameKey(name)] {
 			continue
 		}
 		if matchesSecret(name) {
@@ -109,6 +111,17 @@ func ScrubEnvWithExtra(env []string, extraKeep ...string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// Windows environment variable names are case-insensitive. Explorer commonly
+// supplies "Path" rather than "PATH"; treating the name as case-sensitive
+// silently removed it from GUI child processes and made cmd built-ins such as
+// findstr appear to be missing. Unix keeps its native case-sensitive behavior.
+func envNameKey(name string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(name)
+	}
+	return name
 }
 
 func matchesSecret(name string) bool {

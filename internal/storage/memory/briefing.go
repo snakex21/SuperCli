@@ -71,7 +71,39 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 		}
 	}
 
-	// 2. This project's card.
+	// 2. Durable facts. Older builds and manual entries may have
+	// stored user identity as a plain fact instead of a preference,
+	// so both global and project facts must be injected.
+	if global != nil {
+		if facts, err := global.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
+			write("Remembered user facts:\n")
+			for _, e := range facts {
+				if !write("- " + oneLine(e.Content) + "\n") {
+					break
+				}
+			}
+		}
+	}
+	if project != nil {
+		if facts, err := project.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
+			write("Remembered project facts:\n")
+			for _, e := range facts {
+				if !write("- " + oneLine(e.Content) + "\n") {
+					break
+				}
+			}
+		}
+		if decisions, err := project.Recent(ScopeDecision, 4); err == nil && len(decisions) > 0 {
+			write("Project decisions:\n")
+			for _, e := range decisions {
+				if !write("- " + oneLine(e.Content) + "\n") {
+					break
+				}
+			}
+		}
+	}
+
+	// 3. This project's card.
 	key := ProjectKey(projectPath)
 	if global != nil {
 		if c, ok := global.GetProjectCard(key); ok {
@@ -89,7 +121,7 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 		}
 	}
 
-	// 3. Recent session summaries from the project store.
+	// 4. Recent session summaries from the project store.
 	if project != nil {
 		if logs, err := project.Recent(ScopeTaskLog, 3); err == nil && len(logs) > 0 {
 			write("Recent sessions:\n")
@@ -102,7 +134,7 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 		}
 	}
 
-	// 3b. Raw tail of an abruptly-terminated session (window
+	// 4b. Raw tail of an abruptly-terminated session (window
 	// closed before the summarizer ran). Shown verbatim so facts
 	// from that session are available immediately; a background
 	// job turns it into a normal task-log entry shortly after
@@ -114,7 +146,7 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 		}
 	}
 
-	// 4. Other projects, one line each.
+	// 5. Other projects, one line each.
 	if global != nil {
 		if cards, err := global.ListProjectCards(6); err == nil {
 			var lines []string

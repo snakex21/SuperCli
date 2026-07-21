@@ -55,6 +55,26 @@ func TestEditDocx_ReplaceSimple(t *testing.T) {
 	}
 }
 
+func TestWriteSimpleDocxProducesRealWordPackage(t *testing.T) {
+	var out bytes.Buffer
+	if err := WriteSimpleDocx(&out, "# Tytuł\n\nPierwszy akapit.\n\n## Sekcja\n\nDrugi akapit."); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
+	if err != nil {
+		t.Fatalf("output is not a zip/docx package: %v", err)
+	}
+	entries := map[string]bool{}
+	for _, file := range reader.File {
+		entries[file.Name] = true
+	}
+	for _, required := range []string{"[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml"} {
+		if !entries[required] {
+			t.Fatalf("docx is missing %s", required)
+		}
+	}
+}
+
 // Text split across multiple runs in one paragraph must still
 // be found (the run-merge behavior).
 func TestEditDocx_ReplaceAcrossRuns(t *testing.T) {

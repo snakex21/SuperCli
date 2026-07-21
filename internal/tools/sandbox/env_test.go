@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -44,17 +45,41 @@ func TestScrubEnv_DefaultKeep(t *testing.T) {
 	}
 }
 
+func TestScrubEnv_WindowsKeepsMixedCasePath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows environment names are case-insensitive")
+	}
+	got := ScrubEnv([]string{"Path=C:\\Windows\\System32", "SystemRoot=C:\\Windows"})
+	joined := strings.Join(got, "\n")
+	if !strings.Contains(joined, "Path=C:\\Windows\\System32") {
+		t.Fatalf("mixed-case Windows Path was removed: %v", got)
+	}
+	if !strings.Contains(joined, "SystemRoot=C:\\Windows") {
+		t.Fatalf("mixed-case Windows SystemRoot was removed: %v", got)
+	}
+}
+
 func TestScrubEnv_KeepsWindowsAndGoCacheLocations(t *testing.T) {
 	env := []string{
 		`USERPROFILE=C:\Users\tester`,
 		`LOCALAPPDATA=C:\Users\tester\AppData\Local`,
+		`SYSTEMDRIVE=C:`,
+		`PROGRAMDATA=C:\ProgramData`,
+		`ALLUSERSPROFILE=C:\ProgramData`,
+		`HOMEDRIVE=C:`,
+		`HOMEPATH=\Users\tester`,
+		`PUBLIC=C:\Users\Public`,
 		`GOCACHE=C:\cache\go-build`,
 		`GOMODCACHE=C:\cache\go-mod`,
 		`OPENAI_API_KEY=must-not-leak`,
 	}
 	got := ScrubEnv(env)
 	joined := strings.Join(got, "\n")
-	for _, name := range []string{"USERPROFILE=", "LOCALAPPDATA=", "GOCACHE=", "GOMODCACHE="} {
+	for _, name := range []string{
+		"USERPROFILE=", "LOCALAPPDATA=", "SYSTEMDRIVE=", "PROGRAMDATA=",
+		"ALLUSERSPROFILE=", "HOMEDRIVE=", "HOMEPATH=", "PUBLIC=",
+		"GOCACHE=", "GOMODCACHE=",
+	} {
 		if !strings.Contains(joined, name) {
 			t.Fatalf("%s missing from scrubbed environment: %v", name, got)
 		}

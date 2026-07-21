@@ -29,7 +29,13 @@ type TurnSummary struct {
 	BackgroundCalls int
 	HelperCalls     int
 	Phases          map[string]int64
+	FileChanges     []FileChange
 	CreatedAt       time.Time
+}
+
+type FileChange struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
 }
 
 // AppendTurnSummary attaches telemetry to the latest assistant message in a
@@ -59,6 +65,10 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 	if err != nil {
 		return fmt.Errorf("session.Store.AppendTurnSummary phases: %w", err)
 	}
+	fileChanges, err := json.Marshal(turn.FileChanges)
+	if err != nil {
+		return fmt.Errorf("session.Store.AppendTurnSummary file changes: %w", err)
+	}
 	if turn.CreatedAt.IsZero() {
 		turn.CreatedAt = time.Now().UTC()
 	}
@@ -80,8 +90,9 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 		session_id, assistant_seq, duration_ms, input_tokens, output_tokens,
 		cached_input_tokens, reasoning_tokens, has_cached_input, has_reasoning,
 		tool_calls, tool_failures, steps, model_calls, failed_model_calls,
-		canceled_model_calls, background_calls, helper_calls, phases_json, created_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		canceled_model_calls, background_calls, helper_calls, phases_json,
+		file_changes_json, created_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(session_id, assistant_seq) DO UPDATE SET
 		duration_ms=excluded.duration_ms, input_tokens=excluded.input_tokens,
 		output_tokens=excluded.output_tokens, cached_input_tokens=excluded.cached_input_tokens,
@@ -91,12 +102,12 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 		model_calls=excluded.model_calls, failed_model_calls=excluded.failed_model_calls,
 		canceled_model_calls=excluded.canceled_model_calls,
 		background_calls=excluded.background_calls, helper_calls=excluded.helper_calls,
-		phases_json=excluded.phases_json,
+		phases_json=excluded.phases_json, file_changes_json=excluded.file_changes_json,
 		created_at=excluded.created_at`,
 		turn.SessionID, turn.AssistantSeq, turn.DurationMS, turn.Input, turn.Output,
 		turn.CachedInput, turn.Reasoning, boolInt(turn.HasCachedInput), boolInt(turn.HasReasoning),
 		turn.ToolCalls, turn.ToolFailures, turn.Steps, turn.ModelCalls, turn.FailedCalls,
-		turn.CanceledCalls, turn.BackgroundCalls, turn.HelperCalls, string(phases),
+		turn.CanceledCalls, turn.BackgroundCalls, turn.HelperCalls, string(phases), string(fileChanges),
 		turn.CreatedAt.UnixNano())
 	if err != nil {
 		return fmt.Errorf("session.Store.AppendTurnSummary insert: %w", err)
@@ -124,7 +135,7 @@ func (s *Store) ReadRecentTurnSummaries(ctx context.Context, since time.Time, li
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
-		helper_calls, phases_json, created_at
+		helper_calls, phases_json, file_changes_json, created_at
 		FROM session_turns WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?`, since.UnixNano(), limit)
 	if err != nil {
 		return nil, err
@@ -140,7 +151,7 @@ func (s *Store) ReadTurnSummariesRange(ctx context.Context, sessionID string, fr
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
-		helper_calls, phases_json, created_at
+		helper_calls, phases_json, file_changes_json, created_at
 		FROM session_turns WHERE session_id = ?`
 	args := []any{sessionID}
 	if fromSeq > 0 {
@@ -171,17 +182,20 @@ func scanTurnSummaries(rows rowScanner) ([]TurnSummary, error) {
 	for rows.Next() {
 		var turn TurnSummary
 		var cached, reasoning int
-		var phases string
+		var phases, fileChanges string
 		var created int64
 		if err := rows.Scan(&turn.SessionID, &turn.AssistantSeq, &turn.DurationMS,
 			&turn.Input, &turn.Output, &turn.CachedInput, &turn.Reasoning,
 			&cached, &reasoning, &turn.ToolCalls, &turn.ToolFailures, &turn.Steps,
 			&turn.ModelCalls, &turn.FailedCalls, &turn.CanceledCalls,
-			&turn.BackgroundCalls, &turn.HelperCalls, &phases, &created); err != nil {
+			&turn.BackgroundCalls, &turn.HelperCalls, &phases, &fileChanges, &created); err != nil {
 			return nil, err
 		}
 		if phases != "" {
 			_ = json.Unmarshal([]byte(phases), &turn.Phases)
+		}
+		if fileChanges != "" {
+			_ = json.Unmarshal([]byte(fileChanges), &turn.FileChanges)
 		}
 		turn.HasCachedInput = cached != 0
 		turn.HasReasoning = reasoning != 0

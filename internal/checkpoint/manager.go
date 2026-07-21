@@ -17,21 +17,32 @@ import (
 	"sync"
 	"time"
 
+	"supercli/internal/system/childproc"
 	"supercli/internal/tools"
 )
 
 var ErrUnavailable = errors.New("checkpoint unavailable (git executable is required)")
 
 type Record struct {
-	ID        string    `json:"id"`
-	SessionID string    `json:"session_id"`
-	UserSeq   int       `json:"user_seq,omitempty"`
-	Prompt    string    `json:"prompt,omitempty"`
-	Before    string    `json:"before"`
-	After     string    `json:"after"`
-	Files     []string  `json:"files"`
-	Undone    bool      `json:"undone"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string       `json:"id"`
+	SessionID string       `json:"session_id"`
+	UserSeq   int          `json:"user_seq,omitempty"`
+	Prompt    string       `json:"prompt,omitempty"`
+	Before    string       `json:"before"`
+	After     string       `json:"after"`
+	Files     []string     `json:"files"`
+	Changes   []FileChange `json:"changes,omitempty"`
+	Undone    bool         `json:"undone"`
+	CreatedAt time.Time    `json:"created_at"`
+}
+
+// FileChange is the user-facing classification of one workspace change.
+// Kinds are stable wire values consumed by the WebGUI: created, modified,
+// deleted. Rename detection is disabled so moves are represented as one
+// deletion and one creation, which is unambiguous and undo-safe.
+type FileChange struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
 }
 
 type Result struct {
@@ -243,13 +254,20 @@ func (t *Turn) Complete(ctx context.Context) (*Record, error) {
 	if after == t.before {
 		return nil, nil
 	}
-	files, err := t.manager.diffFiles(ctx, t.before, after)
+	changes, err := t.manager.diffChanges(ctx, t.before, after)
 	if err != nil {
 		return nil, err
 	}
+	if len(changes) == 0 {
+		return nil, nil
+	}
+	files := make([]string, 0, len(changes))
+	for _, change := range changes {
+		files = append(files, change.Path)
+	}
 	now := time.Now().UTC()
 	sum := sha256.Sum256([]byte(t.sessionID + t.before + after + now.String()))
-	rec := Record{ID: hex.EncodeToString(sum[:8]), SessionID: t.sessionID, UserSeq: t.userSeq, Prompt: t.prompt, Before: t.before, After: after, Files: files, CreatedAt: now}
+	rec := Record{ID: hex.EncodeToString(sum[:8]), SessionID: t.sessionID, UserSeq: t.userSeq, Prompt: t.prompt, Before: t.before, After: after, Files: files, Changes: changes, CreatedAt: now}
 	if err := t.manager.append(rec); err != nil {
 		return nil, err
 	}
@@ -270,6 +288,7 @@ func (m *Manager) capture(ctx context.Context) (string, error) {
 		return "", err
 	}
 	cmd := exec.CommandContext(ctx, "git", "--git-dir="+m.repo, "commit-tree", strings.TrimSpace(tree), "-m", "SuperCli checkpoint")
+	childproc.HideWindow(cmd)
 	cmd.Dir = m.home
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=SuperCli", "GIT_AUTHOR_EMAIL=checkpoint@local", "GIT_COMMITTER_NAME=SuperCli", "GIT_COMMITTER_EMAIL=checkpoint@local")
 	out, err := cmd.CombinedOutput()
@@ -285,7 +304,9 @@ func (m *Manager) ensureRepoLocked() error {
 	if _, err := os.Stat(filepath.Join(m.repo, "HEAD")); err == nil {
 		return nil
 	}
-	if out, err := exec.Command("git", "init", "--bare", m.repo).CombinedOutput(); err != nil {
+	cmd := exec.Command("git", "init", "--bare", m.repo)
+	childproc.HideWindow(cmd)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("checkpoint init: %w: %s", err, out)
 	}
 	return os.WriteFile(filepath.Join(m.repo, "info", "exclude"), []byte(m.excludes), 0o600)
@@ -294,6 +315,7 @@ func (m *Manager) ensureRepoLocked() error {
 func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
 	base := []string{"--git-dir=" + m.repo, "--work-tree=" + m.home}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	childproc.HideWindow(cmd)
 	cmd.Dir = m.home
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -303,19 +325,56 @@ func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
 }
 
 func (m *Manager) diffFiles(ctx context.Context, a, b string) ([]string, error) {
-	out, err := m.git(ctx, "diff", "--name-only", "-z", a, b)
+	changes, err := m.diffChanges(ctx, a, b)
 	if err != nil {
 		return nil, err
 	}
-	parts := strings.Split(out, "\x00")
-	files := parts[:0]
-	for _, p := range parts {
-		if p != "" {
-			files = append(files, filepath.ToSlash(p))
-		}
+	files := make([]string, 0, len(changes))
+	for _, change := range changes {
+		files = append(files, change.Path)
 	}
-	sort.Strings(files)
 	return files, nil
+}
+
+func (m *Manager) diffChanges(ctx context.Context, a, b string) ([]FileChange, error) {
+	out, err := m.git(ctx, "diff", "--name-status", "-z", "--no-renames", a, b)
+	if err != nil {
+		return nil, err
+	}
+	return parseNameStatus(out), nil
+}
+
+func parseNameStatus(out string) []FileChange {
+	parts := strings.Split(out, "\x00")
+	changes := make([]FileChange, 0, len(parts)/2)
+	for i := 0; i < len(parts); {
+		status := parts[i]
+		i++
+		if status == "" {
+			continue
+		}
+		path := ""
+		if tab := strings.IndexByte(status, '\t'); tab >= 0 {
+			path = status[tab+1:]
+			status = status[:tab]
+		} else if i < len(parts) {
+			path = parts[i]
+			i++
+		}
+		if path == "" {
+			continue
+		}
+		kind := "modified"
+		switch status[0] {
+		case 'A':
+			kind = "created"
+		case 'D':
+			kind = "deleted"
+		}
+		changes = append(changes, FileChange{Path: filepath.ToSlash(path), Kind: kind})
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	return changes
 }
 
 func (m *Manager) append(r Record) error {
@@ -387,6 +446,38 @@ func (m *Manager) PreviewFrom(sessionID string, userSeq int) BatchResult {
 	}
 	sort.Strings(result.Files)
 	return result
+}
+
+// ForgetFrom detaches checkpoints belonging to transcript turns that were
+// permanently removed by an in-place conversation rewind. It never changes
+// workspace files. This makes the files currently on disk the new baseline
+// and prevents newly appended messages (which can reuse sequence numbers)
+// from colliding with checkpoints from the discarded conversation tail.
+func (m *Manager) ForgetFrom(sessionID string, userSeq int) error {
+	if strings.TrimSpace(sessionID) == "" || userSeq <= 0 {
+		return errors.New("session id and positive user sequence are required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kept := make([]Record, 0, len(m.records))
+	changed := false
+	for _, record := range m.records {
+		if record.SessionID == sessionID && record.UserSeq >= userSeq && record.UserSeq > 0 {
+			changed = true
+			continue
+		}
+		kept = append(kept, record)
+	}
+	if !changed {
+		return nil
+	}
+	previous := m.records
+	m.records = kept
+	if err := m.saveLocked(); err != nil {
+		m.records = previous
+		return err
+	}
+	return nil
 }
 
 // UndoFrom restores every recorded turn at and after userSeq, newest first.

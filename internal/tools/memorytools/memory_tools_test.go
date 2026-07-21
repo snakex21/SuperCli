@@ -80,6 +80,59 @@ func TestRecall_NoMatches(t *testing.T) {
 	}
 }
 
+func TestRecall_CrossLanguageFallbackFindsProfileFact(t *testing.T) {
+	s := openMemStore(t)
+	if err := s.Put(memory.Entry{
+		ID:      "name-pl",
+		Scope:   memory.ScopeFact,
+		Content: "Użytkownik ma na imię Maks.",
+		Source:  memory.SourceAgent,
+		Tags:    []string{"user_profile"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := NewRecall(s).Spec().Fn(context.Background(), json.RawMessage(`{"query":"user name"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("recall: err=%v res.Err=%v", err, res.Err)
+	}
+	if !strings.Contains(res.Text, "Maks") {
+		t.Fatalf("cross-language fallback did not return the profile fact: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "cross-language fallback") {
+		t.Fatalf("fallback should be explicit in tool output: %s", res.Text)
+	}
+}
+
+func TestRemember_UserProfileDefaultsToGlobalPreference(t *testing.T) {
+	project := openMemStore(t)
+	global := openMemStore(t)
+	res, err := NewRememberDual(project, global).Spec().Fn(
+		context.Background(),
+		json.RawMessage(`{"text":"Użytkownik ma na imię Maks.","topic":"user_profile"}`),
+	)
+	if err != nil || res.Err != nil {
+		t.Fatalf("remember: err=%v res.Err=%v", err, res.Err)
+	}
+	if !strings.Contains(res.Text, "(preference, global)") {
+		t.Fatalf("profile fact should be routed to global preferences: %s", res.Text)
+	}
+	projectEntries, err := project.Recent("", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projectEntries) != 0 {
+		t.Fatalf("profile fact unexpectedly stored in project memory: %+v", projectEntries)
+	}
+	globalEntries, err := global.Recent(memory.ScopePreference, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(globalEntries) != 1 || !strings.Contains(globalEntries[0].Content, "Maks") {
+		t.Fatalf("global profile memory missing: %+v", globalEntries)
+	}
+}
+
 func TestRecall_EmptyQueryFails(t *testing.T) {
 	rec := NewRecall(openMemStore(t))
 	res, err := rec.Spec().Fn(context.Background(), json.RawMessage(`{"query":""}`))

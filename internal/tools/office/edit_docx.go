@@ -1164,8 +1164,23 @@ func writeMinimalDocx(path string, paraXML []byte) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	zw := zip.NewWriter(f)
+	if err := writeMinimalDocxTo(f, paraXML); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// WriteSimpleDocx writes a complete Word document to w from Markdown-ish
+// text. It is shared by the edit_docx tool and lightweight UI exports, so a
+// downloaded .docx is a real OOXML package rather than HTML with a .doc name.
+func WriteSimpleDocx(w io.Writer, text string) error {
+	paraXML, _ := buildParagraphsXML(text, "")
+	return writeMinimalDocxTo(w, paraXML)
+}
+
+func writeMinimalDocxTo(dst io.Writer, paraXML []byte) error {
+	zw := zip.NewWriter(dst)
 	body := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
 		`<w:document xmlns:w="` + wordProcessingNS + `"><w:body>` +
 		string(paraXML) +
@@ -1189,7 +1204,7 @@ func writeMinimalDocx(path string, paraXML []byte) error {
 	if err := zw.Close(); err != nil {
 		return err
 	}
-	return f.Close()
+	return nil
 }
 
 const docxContentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

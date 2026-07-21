@@ -270,6 +270,60 @@ func (s *Store) DeleteAll() error {
 	return tx.Commit()
 }
 
+// TruncateFrom permanently removes transcript messages at and after fromSeq
+// from one session. It is the storage primitive behind the WebGUI's simple
+// in-place rewind: the conversation keeps its identity and no branch is
+// created. Historical usage remains intact because tokens already consumed
+// are still real usage, while transcript-derived projections and turn
+// summaries are invalidated so a resumed model cannot see removed content.
+func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("session.Store.TruncateFrom: nil store")
+	}
+	if strings.TrimSpace(sessionID) == "" || fromSeq <= 0 {
+		return 0, fmt.Errorf("session.Store.TruncateFrom: session id and positive sequence are required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = ?`, sessionID).Scan(&exists); err != nil {
+		return 0, err
+	}
+	if exists == 0 {
+		return 0, sql.ErrNoRows
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id = ? AND seq >= ?`, sessionID, fromSeq)
+	if err != nil {
+		return 0, fmt.Errorf("truncate messages: %w", err)
+	}
+	removed64, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if removed64 == 0 {
+		return 0, sql.ErrNoRows
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session_turns WHERE session_id = ? AND assistant_seq >= ?`, sessionID, fromSeq); err != nil {
+		return 0, fmt.Errorf("truncate turn summaries: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session_context_projections WHERE session_id = ?`, sessionID); err != nil {
+		return 0, fmt.Errorf("invalidate context projection: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sessions SET
+		message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?),
+		updated_at = ? WHERE id = ?`, sessionID, time.Now().UTC().UnixNano(), sessionID); err != nil {
+		return 0, fmt.Errorf("update truncated session: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int(removed64), nil
+}
+
 // AppendMessage adds a message to a session, assigning the next
 // seq number. tokenIn/tokenOut are optional (zero is fine).
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded) error {
@@ -688,6 +742,7 @@ func (s *Store) migrate() error {
 			background_calls      INTEGER NOT NULL DEFAULT 0,
 			helper_calls          INTEGER NOT NULL DEFAULT 0,
 			phases_json           TEXT NOT NULL DEFAULT '{}',
+			file_changes_json     TEXT NOT NULL DEFAULT '[]',
 			created_at            INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
 			UNIQUE (session_id, assistant_seq)
@@ -725,6 +780,7 @@ func (s *Store) migrate() error {
 		{"background_calls", "INTEGER NOT NULL DEFAULT 0"},
 		{"helper_calls", "INTEGER NOT NULL DEFAULT 0"},
 		{"phases_json", "TEXT NOT NULL DEFAULT '{}'"},
+		{"file_changes_json", "TEXT NOT NULL DEFAULT '[]'"},
 	} {
 		if err := s.ensureTableColumn("session_turns", column.name, column.def); err != nil {
 			return err
