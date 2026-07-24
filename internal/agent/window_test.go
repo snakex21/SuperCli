@@ -56,18 +56,20 @@ func TestMaybeAutoCompact(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "sys"},
 		{Role: llm.RoleUser, Content: strings.Repeat("x", 2000)}, // completed old turn
 		{Role: llm.RoleAssistant, Content: "old answer"},
+		{Role: llm.RoleUser, Content: "previous correction"},
+		{Role: llm.RoleAssistant, Content: "previous answer"},
 		{Role: llm.RoleUser, Content: "current task"},
 	}
 	out := make(chan Event, 4)
 	l.maybeAutoCompact(context.Background(), out, "")
-	if len(l.Messages) != 3 { // sys + summary + current user
-		t.Fatalf("expected compaction to [sys, summary, current], got %d messages", len(l.Messages))
+	if len(l.Messages) != 5 { // sys + summary + two newest user turns
+		t.Fatalf("expected compaction to keep two recent turns, got %d messages", len(l.Messages))
 	}
 	if l.Messages[1].Content != "SUMMARY" {
 		t.Errorf("summary message = %q", l.Messages[1].Content)
 	}
-	if l.Messages[2].Content != "current task" {
-		t.Errorf("current turn was not preserved: %q", l.Messages[2].Content)
+	if l.Messages[2].Content != "previous correction" || l.Messages[4].Content != "current task" {
+		t.Errorf("two recent turns were not preserved: %+v", l.Messages)
 	}
 	select {
 	case ev := <-out:
@@ -129,6 +131,20 @@ func TestResolveContextWindowSharedCascadeAndShortAlias(t *testing.T) {
 	}
 }
 
+func TestAutoCompactThresholdUsesBoundedReserve(t *testing.T) {
+	cases := map[int]int{
+		100:       88,
+		16_384:    14_336,
+		100_000:   90_000,
+		1_050_000: 984_464,
+	}
+	for window, want := range cases {
+		if got := autoCompactThreshold(window); got != want {
+			t.Errorf("autoCompactThreshold(%d) = %d, want %d", window, got, want)
+		}
+	}
+}
+
 func TestNextRequestEstimateUsesExactBasePlusAppendOnlyDelta(t *testing.T) {
 	echo, _ := llm.NewEcho("test")
 	l := &Loop{provider: echo, route: RouteCoordinator}
@@ -149,6 +165,30 @@ func TestNextRequestEstimateUsesExactBasePlusAppendOnlyDelta(t *testing.T) {
 	shrunk := l.nextRequestTokenEstimate()
 	if shrunk.Source != "estimate" || shrunk.Effective != shrunk.Raw {
 		t.Fatalf("estimate after shrink = %+v, want raw fallback", shrunk)
+	}
+}
+
+func TestNextRequestEstimateDoesNotReuseChatBaselineAfterRouteChange(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	l := &Loop{provider: echo, route: RouteChatOnly}
+	for i := 0; i < 40; i++ {
+		l.Messages = append(l.Messages,
+			llm.Message{Role: llm.RoleUser, Content: strings.Repeat("history ", 80)},
+			llm.Message{Role: llm.RoleAssistant, Content: "answer"},
+		)
+	}
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "current"})
+	chatRaw := l.estimateNextRequestTokensRaw()
+	l.recordContextBaseline(chatRaw, chatRaw)
+
+	l.route = RouteCoordinator
+	coordinatorRaw := l.estimateNextRequestTokensRaw()
+	if coordinatorRaw <= chatRaw {
+		t.Fatalf("test setup: coordinator=%d must exceed chat=%d", coordinatorRaw, chatRaw)
+	}
+	got := l.nextRequestTokenEstimate()
+	if got.Source != "estimate" || got.Effective != coordinatorRaw {
+		t.Fatalf("route-changed estimate = %+v, want fresh raw %d", got, coordinatorRaw)
 	}
 }
 
@@ -210,6 +250,7 @@ func TestCompactNowRejectsSummaryThatDoesNotReduceContext(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "sys"},
 		{Role: llm.RoleUser, Content: strings.Repeat("old context ", 100)},
 		{Role: llm.RoleAssistant, Content: "answer"},
+		{Role: llm.RoleUser, Content: "recent turn kept verbatim"},
 	}
 	before := append([]llm.Message(nil), l.Messages...)
 	if _, err := l.CompactNow(context.Background()); err == nil || !strings.Contains(err.Error(), "insufficient reduction") {
@@ -280,16 +321,18 @@ func TestMaybeAutoCompactDoesNotSummarizeLargeActiveTurn(t *testing.T) {
 	}
 }
 
-func TestAutoCompactSplitPreservesCurrentUserTurn(t *testing.T) {
+func TestAutoCompactSplitPreservesTwoRecentUserTurns(t *testing.T) {
 	msgs := []llm.Message{
 		{Role: llm.RoleSystem, Content: "sys"},
-		{Role: llm.RoleUser, Content: "old"},
+		{Role: llm.RoleUser, Content: "oldest"},
 		{Role: llm.RoleAssistant, Content: "done"},
+		{Role: llm.RoleUser, Content: "previous"},
+		{Role: llm.RoleAssistant, Content: "also done"},
 		{Role: llm.RoleUser, Content: "current"},
 		{Role: llm.RoleTool, Content: strings.Repeat("x", 10000)},
 	}
 	if got := autoCompactSplit(msgs); got != 3 {
-		t.Fatalf("autoCompactSplit = %d, want current user index 3", got)
+		t.Fatalf("autoCompactSplit = %d, want previous user index 3", got)
 	}
 	singleTurn := msgs[:3]
 	if got := autoCompactSplit(singleTurn); got != 1 {
@@ -317,12 +360,14 @@ func TestMaybeAutoCompact_KeepsLastTurn(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "sys"},
 		{Role: llm.RoleUser, Content: strings.Repeat("x", 6000)}, // old bulk
 		{Role: llm.RoleAssistant, Content: "done earlier"},
+		{Role: llm.RoleUser, Content: "previous correction"},
+		{Role: llm.RoleAssistant, Content: "acknowledged"},
 		{Role: llm.RoleUser, Content: "current question"},
 		{Role: llm.RoleAssistant, Content: "working on it"},
 	}
 	l.maybeAutoCompact(context.Background(), nil, "")
 
-	want := []string{"sys", "SUMMARY", "current question", "working on it"}
+	want := []string{"sys", "SUMMARY", "previous correction", "acknowledged", "current question", "working on it"}
 	if len(l.Messages) != len(want) {
 		t.Fatalf("Messages = %d entries, want %d: %+v", len(l.Messages), len(want), l.Messages)
 	}
@@ -332,7 +377,7 @@ func TestMaybeAutoCompact_KeepsLastTurn(t *testing.T) {
 		}
 	}
 	for _, m := range summarized {
-		if m.Content == "current question" || m.Content == "working on it" {
+		if m.Content == "previous correction" || m.Content == "acknowledged" || m.Content == "current question" || m.Content == "working on it" {
 			t.Errorf("last turn leaked into the summarizer input: %q", m.Content)
 		}
 	}

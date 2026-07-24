@@ -20,6 +20,14 @@ type Bridge struct {
 	manager *Manager
 }
 
+type bridgeRequest struct {
+	Action    string          `json:"action"`
+	Server    string          `json:"server"`
+	Query     string          `json:"query"`
+	Tool      string          `json:"tool"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
 func NewBridge(manager *Manager) *Bridge { return &Bridge{manager: manager} }
 
 func (b *Bridge) Spec() core.Tool {
@@ -35,14 +43,8 @@ func (b *Bridge) run(ctx context.Context, raw json.RawMessage) (core.Result, err
 	if b == nil || b.manager == nil {
 		return core.Result{Err: fmt.Errorf("mcp: no servers configured")}, nil
 	}
-	var req struct {
-		Action    string          `json:"action"`
-		Server    string          `json:"server"`
-		Query     string          `json:"query"`
-		Tool      string          `json:"tool"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(raw, &req); err != nil {
+	req, err := decodeBridgeRequest(raw)
+	if err != nil {
 		return core.Result{Err: fmt.Errorf("mcp_bridge: invalid arguments: %w", err)}, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(req.Action)) {
@@ -55,6 +57,32 @@ func (b *Bridge) run(ctx context.Context, raw json.RawMessage) (core.Result, err
 	default:
 		return core.Result{Err: fmt.Errorf("mcp_bridge: action must be list, search, or call")}, nil
 	}
+}
+
+// decodeBridgeRequest repairs a common local-model mix-up: the model copies
+// the requested operation into the `tool` field (for example
+// {"tool":"search","query":"browser"}) and omits `action`. The alias is
+// accepted only when action is absent and tool is exactly list or search.
+// `call` is deliberately not an alias because that same field carries the
+// remote MCP tool name; mutating calls must keep the unambiguous canonical
+// action=call form.
+func decodeBridgeRequest(raw json.RawMessage) (bridgeRequest, error) {
+	var req bridgeRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return bridgeRequest{}, err
+	}
+	if strings.TrimSpace(req.Action) != "" {
+		return req, nil
+	}
+	alias := strings.ToLower(strings.TrimSpace(req.Tool))
+	switch alias {
+	case "list", "search":
+		req.Action = alias
+		// list/search do not consume a remote tool name. Clearing the alias
+		// prevents it from being mistaken for one by future code.
+		req.Tool = ""
+	}
+	return req, nil
 }
 
 func (b *Bridge) list() string {

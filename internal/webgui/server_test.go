@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -73,10 +74,23 @@ func TestLocalGuard_BlocksRemoteHost(t *testing.T) {
 	h := srv.Handler()
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	req.Host = "evil.example.com"
+	req.RemoteAddr = "127.0.0.1:43210"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("remote host: status = %d, want 403", rec.Code)
+	}
+}
+
+func TestLocalGuard_BlocksRemotePeerWithSpoofedLoopbackHost(t *testing.T) {
+	srv := newTestServer(t, false)
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Host = "127.0.0.1:1234"
+	req.RemoteAddr = "203.0.113.8:43210"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("spoofed loopback Host status = %d, want 403", rec.Code)
 	}
 }
 
@@ -85,6 +99,7 @@ func TestLocalGuard_AllowsLoopback(t *testing.T) {
 	h := srv.Handler()
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	req.Host = "127.0.0.1:1234"
+	req.RemoteAddr = "127.0.0.1:43210"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -92,15 +107,92 @@ func TestLocalGuard_AllowsLoopback(t *testing.T) {
 	}
 }
 
-func TestLocalGuard_AllowRemoteBypass(t *testing.T) {
+func TestAllowRemoteRequiresSessionTokenForAPI(t *testing.T) {
 	srv := newTestServer(t, true)
 	h := srv.Handler()
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	req.Host = "evil.example.com"
+	req.RemoteAddr = "203.0.113.8:43210"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("allowRemote without token: status = %d, want 401", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Host = "evil.example.com"
+	req.RemoteAddr = "203.0.113.8:43210"
+	req.Header.Set("Authorization", "Bearer "+srv.sessionToken)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Errorf("allowRemote: status = %d, want 200", rec.Code)
+		t.Errorf("allowRemote with token: status = %d, want 200", rec.Code)
+	}
+}
+
+func TestAllowRemoteBrowserUsesNativeBasicSignIn(t *testing.T) {
+	srv := newTestServer(t, true)
+	request := func(password string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = "workstation.example:8080"
+		req.RemoteAddr = "203.0.113.8:43210"
+		if password != "" {
+			req.SetBasicAuth("supercli", password)
+		}
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	unauthorized := request("")
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("remote UI without password status=%d", unauthorized.Code)
+	}
+	challenges := unauthorized.Header().Values("WWW-Authenticate")
+	if len(challenges) < 1 || !strings.HasPrefix(challenges[0], "Basic ") {
+		t.Fatalf("authentication challenges = %v", challenges)
+	}
+	if wrong := request("wrong"); wrong.Code != http.StatusUnauthorized {
+		t.Fatalf("remote UI with wrong password status=%d", wrong.Code)
+	}
+	if authenticated := request(srv.sessionToken); authenticated.Code != http.StatusOK {
+		t.Fatalf("remote UI with token status=%d body=%s", authenticated.Code, authenticated.Body.String())
+	}
+}
+
+func TestAllowRemoteLocalBootstrapSetsHttpOnlyCookie(t *testing.T) {
+	srv := newTestServer(t, true)
+	req := httptest.NewRequest(http.MethodGet, localSessionBootstrap, nil)
+	req.Host = "127.0.0.1:1234"
+	req.RemoteAddr = "127.0.0.1:43210"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+		t.Fatalf("bootstrap status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != remoteSessionCookie || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("bootstrap cookies = %+v", cookies)
+	}
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	apiReq.Host = "127.0.0.1:1234"
+	apiReq.RemoteAddr = "127.0.0.1:43210"
+	apiReq.AddCookie(cookies[0])
+	apiRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(apiRec, apiReq)
+	if apiRec.Code != http.StatusOK {
+		t.Fatalf("cookie-authenticated API status=%d body=%s", apiRec.Code, apiRec.Body.String())
+	}
+}
+
+func TestAllowRemoteBootstrapRejectsRemotePeer(t *testing.T) {
+	srv := newTestServer(t, true)
+	req := httptest.NewRequest(http.MethodGet, localSessionBootstrap, nil)
+	req.Host = "127.0.0.1:1234"
+	req.RemoteAddr = "203.0.113.8:43210"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("remote bootstrap status=%d cookies=%v", rec.Code, rec.Result().Cookies())
 	}
 }
 
@@ -125,6 +217,7 @@ func TestEmbeddedUIIncludesGoalInspector(t *testing.T) {
 	srv := newTestServer(t, false)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "127.0.0.1"
+	req.RemoteAddr = "127.0.0.1:43210"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -254,6 +347,10 @@ func TestHandleTranscript_PagedAndLegacyContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	attachmentPath := filepath.Join(srv.eng.Home(), "photo.png")
+	if err := store.SaveMessageAttachments(context.Background(), sess.ID, 2, []string{attachmentPath}); err != nil {
+		t.Fatal(err)
+	}
 
 	paged := httptest.NewRecorder()
 	srv.handleTranscript(paged, httptest.NewRequest(http.MethodGet, "/api/transcript?id="+sess.ID+"&limit=2", nil))
@@ -264,7 +361,7 @@ func TestHandleTranscript_PagedAndLegacyContracts(t *testing.T) {
 	if err := json.Unmarshal(paged.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
-	if !page.HasMore || page.BeforeSeq != 2 || len(page.Messages) != 2 || page.Messages[0].Content != "two" {
+	if !page.HasMore || page.BeforeSeq != 2 || len(page.Messages) != 2 || page.Messages[0].Content != "two" || len(page.Messages[0].Attachments) != 1 || page.Messages[0].Attachments[0] != attachmentPath {
 		t.Fatalf("paged transcript = %+v", page)
 	}
 
@@ -274,7 +371,41 @@ func TestHandleTranscript_PagedAndLegacyContracts(t *testing.T) {
 	if err := json.Unmarshal(legacy.Body.Bytes(), &messages); err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 || messages[0].Content != "one" {
+	if len(messages) != 3 || messages[0].Content != "one" || len(messages[1].Attachments) != 1 || messages[1].Attachments[0] != attachmentPath {
 		t.Fatalf("legacy transcript = %+v", messages)
+	}
+}
+
+func TestRecordMessageAttachmentsRequiresNewUserMessage(t *testing.T) {
+	srv := newTestServer(t, false)
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Create(srv.eng.Home(), "echo-test", "attachments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := session.NewWriter(store, sess.ID)
+	ctx := context.Background()
+	if err := writer.AppendMessage(ctx, llm.Message{Role: llm.RoleUser, Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(srv.eng.Home(), "new-photo.png")
+	if err := srv.recordMessageAttachments(ctx, sess.ID, 1, []string{path}); err == nil {
+		t.Fatal("recordMessageAttachments attached a new image to the previous user message")
+	}
+	if err := writer.AppendMessage(ctx, llm.Message{Role: llm.RoleUser, Content: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.recordMessageAttachments(ctx, sess.ID, 1, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	attachments, err := store.ReadMessageAttachmentsRange(ctx, sess.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 1 || len(attachments[2]) != 1 || attachments[2][0] != path {
+		t.Fatalf("attachments = %#v", attachments)
 	}
 }

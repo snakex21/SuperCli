@@ -81,6 +81,9 @@ func TestContextReport_Breakdown(t *testing.T) {
 	if r.ToolCount != 2 || r.ToolSchemaTokens == 0 {
 		t.Errorf("tool schema accounting: count=%d tokens=%d", r.ToolCount, r.ToolSchemaTokens)
 	}
+	if r.CompactThreshold != autoCompactThreshold(r.Window) {
+		t.Errorf("compact threshold = %d, want %d for window %d", r.CompactThreshold, autoCompactThreshold(r.Window), r.Window)
+	}
 	if len(r.Top) == 0 || len(r.Top) > 5 {
 		t.Errorf("Top len = %d", len(r.Top))
 	}
@@ -89,7 +92,7 @@ func TestContextReport_Breakdown(t *testing.T) {
 		t.Errorf("Top[0] = %+v, want the tool result first", r.Top[0])
 	}
 	out := FormatContextReport(r)
-	for _, want := range []string{"tool schemas", "system prompt", "top items"} {
+	for _, want := range []string{"tool schemas", "system prompt", "automatic compaction", "top items"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formatted report missing %q:\n%s", want, out)
 		}
@@ -113,7 +116,8 @@ func thinReportLoop(t *testing.T) *Loop {
 		`"query":{"type":"string","description":"natural-language search query for the operation"},` +
 		`"limit":{"type":"integer","description":"maximum number of results to return"}},` +
 		`"required":["path"]}`
-	for _, name := range []string{"tool_search", "web_lookup", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "read_image", "search_code", "ctx_execute", "ask_user", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
+	names := append(append([]string{}, thinCoreTools...), "darwin", "web_search", "read_pdf", "edit_line")
+	for _, name := range names {
 		reg.MustRegister(tools.Tool{
 			Name:        name,
 			Description: "performs " + name + " operations on behalf of the user; see schema for arguments",

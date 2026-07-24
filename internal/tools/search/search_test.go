@@ -122,6 +122,49 @@ func TestToolSearcher_Spec(t *testing.T) {
 	}
 }
 
+// Exact name query must short-circuit ranking and activate that one tool.
+func TestToolSearcher_ExactNameActivates(t *testing.T) {
+	reg := NewRegistry()
+	reg.MustRegister(Tool{
+		Name:        "read_docx",
+		Description: "Read Word documents",
+		Schema:      `{"type":"object","properties":{"path":{"type":"string"}}}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	reg.MustRegister(Tool{
+		Name:        "search_code",
+		Description: "ripgrep search",
+		Schema:      `{}`,
+		Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+	})
+	ts := NewToolSearcher(reg, nil)
+	res, err := ts.execute(context.Background(), json.RawMessage(`{"query":"READ_DOCX"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resErr=%v", err, res.Err)
+	}
+	var resp struct {
+		Matches []struct {
+			Name  string  `json:"name"`
+			Score float64 `json:"score"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(res.Text), &resp); err != nil {
+		t.Fatalf("unmarshal: %v text=%s", err, res.Text)
+	}
+	if len(resp.Matches) != 1 || resp.Matches[0].Name != "read_docx" {
+		t.Fatalf("matches=%+v, want single read_docx", resp.Matches)
+	}
+	if resp.Matches[0].Score != 1.0 {
+		t.Errorf("score=%v, want 1.0", resp.Matches[0].Score)
+	}
+	if !reg.IsVisible("read_docx") {
+		t.Error("read_docx should be activated after exact-name search")
+	}
+	if reg.IsActive("search_code") {
+		t.Error("unrelated tool must not activate on exact-name search")
+	}
+}
+
 func TestToolSearcher_RebuildIndex(t *testing.T) {
 	reg := NewRegistry()
 	reg.MustRegister(Tool{

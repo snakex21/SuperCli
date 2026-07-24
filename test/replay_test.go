@@ -842,15 +842,17 @@ func TestReplay_PruneMidSession_CoherentHistory(t *testing.T) {
 	}
 }
 
-// (f2) Auto-compaction: completed history is summarized once, the active turn
-// survives byte-for-byte, and the provider-reported baseline prevents a second
-// speculative compaction on the next append-only turn.
+// (f2) Auto-compaction: completed history is summarized once, the two recent
+// user turns survive byte-for-byte, and the provider-reported baseline prevents
+// a second speculative compaction on the next append-only turn.
 func TestReplay_AutoCompactOnce_PreservesActiveTurn(t *testing.T) {
 	prov := loadReplayProvider(t, "compact_once.json")
 	reg := tools.NewRegistry()
 	hist := []llm.Message{
 		{Role: llm.RoleUser, Content: strings.Repeat("OLD-CONTEXT ", 700)},
 		{Role: llm.RoleAssistant, Content: "old answer"},
+		{Role: llm.RoleUser, Content: "RECENT-CORRECTION must also stay exact"},
+		{Role: llm.RoleAssistant, Content: "correction acknowledged"},
 	}
 	l := newReplayLoop(t, agent.LoopConfig{
 		Provider:        prov,
@@ -878,7 +880,7 @@ func TestReplay_AutoCompactOnce_PreservesActiveTurn(t *testing.T) {
 	for _, ev := range append(events1, events2...) {
 		if compact, ok := ev.(agent.AutoCompactEvent); ok {
 			compactions++
-			if compact.WindowSource != "catalog" || compact.EstimateSource == "" || compact.Threshold != 1_600 {
+			if compact.WindowSource != "catalog" || compact.EstimateSource == "" || compact.Threshold != 1_750 {
 				t.Errorf("compact telemetry = %+v", compact)
 			}
 		}
@@ -893,6 +895,9 @@ func TestReplay_AutoCompactOnce_PreservesActiveTurn(t *testing.T) {
 	first := reqText(reqs[0])
 	if !strings.Contains(first, "ACTIVE-TURN must stay exact") {
 		t.Error("active turn did not survive compaction")
+	}
+	if !strings.Contains(first, "RECENT-CORRECTION must also stay exact") {
+		t.Error("previous user turn did not survive compaction")
 	}
 	if strings.Count(first, "OLD-CONTEXT") != 1 {
 		t.Errorf("old exact history leaked past summary: %q", first)

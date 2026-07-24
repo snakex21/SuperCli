@@ -270,6 +270,30 @@ func TestCodexExhausts429WithHint(t *testing.T) {
 	}
 }
 
+func TestCodexMalformedStreamIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		codexSSE(w, `not json`)
+	}))
+	defer srv.Close()
+	provider, err := NewCodex(CodexConfig{BackendURL: srv.URL, Model: "model", Tokens: &fakeTokens{access: "token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltas, err := provider.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var streamErr error
+	for delta := range deltas {
+		if delta.Err != nil {
+			streamErr = delta.Err
+		}
+	}
+	if streamErr == nil || !strings.Contains(streamErr.Error(), "malformed SSE payload") {
+		t.Fatalf("expected malformed SSE error, got %v", streamErr)
+	}
+}
+
 func TestNewCodexValidation(t *testing.T) {
 	if _, err := NewCodex(CodexConfig{Model: "", Tokens: &fakeTokens{}}); err == nil {
 		t.Fatal("empty model should error")

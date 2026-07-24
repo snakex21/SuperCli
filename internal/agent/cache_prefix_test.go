@@ -200,6 +200,9 @@ func TestCache_StableToolset_ActivationKeepsToolDefsByteStable(t *testing.T) {
 	if !strings.Contains(l.thinToolsPreamble(), "web_search") {
 		t.Error("stableToolset: activated tail tool missing from the thin catalog")
 	}
+	if pre := l.thinToolsPreamble(); !strings.Contains(pre, "through invoke_tool") || !strings.Contains(pre, "tool_search once") {
+		t.Fatalf("stableToolset must explain its schema-stable dispatch path:\n%s", pre)
+	}
 }
 
 // TestCache_StableToolset_PreambleHoistedIntoStablePrefix pins the

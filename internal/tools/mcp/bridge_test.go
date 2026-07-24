@@ -58,3 +58,40 @@ func TestNormalizeBridgeArgumentsRejectsNonObjects(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeBridgeRequestAcceptsToolAsActionAlias(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		raw        string
+		wantAction string
+		wantTool   string
+	}{
+		{name: "search", raw: `{"tool":"search","query":"browser"}`, wantAction: "search"},
+		{name: "list case and whitespace", raw: `{"tool":" LIST "}`, wantAction: "list"},
+		{name: "canonical call wins", raw: `{"action":"call","tool":"search"}`, wantAction: "call", wantTool: "search"},
+		{name: "call is not an ambiguous alias", raw: `{"tool":"call"}`, wantTool: "call"},
+		{name: "unknown remains invalid", raw: `{"tool":"remote_search"}`, wantTool: "remote_search"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := decodeBridgeRequest(json.RawMessage(tc.raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if req.Action != tc.wantAction || req.Tool != tc.wantTool {
+				t.Fatalf("request = %+v, want action=%q tool=%q", req, tc.wantAction, tc.wantTool)
+			}
+		})
+	}
+}
+
+func TestBridgeToolSearchAliasUsesSearchAction(t *testing.T) {
+	manager := &Manager{servers: map[string]*Server{}}
+	bridge := NewBridge(manager)
+	result, err := bridge.Spec().Fn(testCtx(t), json.RawMessage(`{"tool":"search","query":"browser"}`))
+	if err != nil || result.Err != nil {
+		t.Fatalf("alias search result=%+v err=%v", result, err)
+	}
+	if !strings.Contains(result.Text, "no MCP server metadata matched") {
+		t.Fatalf("alias did not route to search: %+v", result)
+	}
+}

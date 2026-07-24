@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -762,14 +763,9 @@ func TestLoop_ToolErrorKeepsDiagnosticText(t *testing.T) {
 
 func TestLoop_MaxStepsEmitsError(t *testing.T) {
 	// Provider always returns a tool call so the loop never stops naturally.
-	p := &stubProvider{
-		name: "m",
-		scripts: [][]llm.Delta{{
-			{Role: llm.RoleAssistant},
-			{ToolCall: &llm.ToolCall{ID: "loop", Name: "noop", Arguments: `{}`}},
-			{FinishReason: "tool_calls", Usage: &llm.Usage{Input: 2, Output: 1, Total: 3}},
-		}},
-	}
+	// Unique args each call so discovery cycle/force-reply does not end the run
+	// before MaxSteps; this test asserts the hard step ceiling itself.
+	p2 := &uniqueNoopProvider{}
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{
 		Name: "noop", Description: "n", Schema: "{}",
@@ -777,13 +773,13 @@ func TestLoop_MaxStepsEmitsError(t *testing.T) {
 			return tools.Result{Text: "x"}, nil
 		},
 	})
-	l := makeLoop(t, p, reg, "")
+	l := makeLoop(t, p2, reg, "")
 	ch, _ := l.Run(context.Background(), "x")
 	events := drainEvents(t, ch)
 	last := events[len(events)-1]
 	errEv, ok := last.(ErrorEvent)
 	if !ok {
-		t.Fatalf("last = %T, want ErrorEvent", last)
+		t.Fatalf("last = %#v, want ErrorEvent", last)
 	}
 	if !contains(errEv.Err.Error(), "max steps") {
 		t.Fatalf("err = %v, want max steps", errEv.Err)
@@ -793,18 +789,41 @@ func TestLoop_MaxStepsEmitsError(t *testing.T) {
 	}
 }
 
+// uniqueNoopProvider always tool-calls noop with a unique n so discovery
+// cycle detection does not force-reply before MaxSteps.
+type uniqueNoopProvider struct {
+	calls int32
+}
+
+func (p *uniqueNoopProvider) Name() string         { return "unique-noop" }
+func (p *uniqueNoopProvider) SupportsVision() bool { return false }
+func (p *uniqueNoopProvider) Complete(ctx context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	n := int(atomic.AddInt32(&p.calls, 1))
+	args := fmt.Sprintf(`{"n":%d}`, n)
+	ch := make(chan llm.Delta, 4)
+	go func() {
+		defer close(ch)
+		ch <- llm.Delta{Role: llm.RoleAssistant}
+		ch <- llm.Delta{ToolCall: &llm.ToolCall{ID: fmt.Sprintf("c%d", n), Name: "noop", Arguments: args}}
+		ch <- llm.Delta{FinishReason: "tool_calls", Usage: &llm.Usage{Input: 2, Output: 1, Total: 3}}
+	}()
+	return ch, nil
+}
+
 func TestLoop_MaxStepsExtendsWhileToolsMakeProgress(t *testing.T) {
+	// Soft step extension requires a successful mutation/execution, not an
+	// arbitrary "other" tool. ctx_execute is the progress signal (no file verifier).
 	p := &stubProvider{
 		name: "m",
 		scripts: [][]llm.Delta{
 			{
 				{Role: llm.RoleAssistant},
-				{ToolCall: &llm.ToolCall{ID: "one", Name: "noop", Arguments: `{"n":1}`}},
+				{ToolCall: &llm.ToolCall{ID: "one", Name: "ctx_execute", Arguments: `{"n":1}`}},
 				{FinishReason: "tool_calls"},
 			},
 			{
 				{Role: llm.RoleAssistant},
-				{ToolCall: &llm.ToolCall{ID: "two", Name: "noop", Arguments: `{"n":2}`}},
+				{ToolCall: &llm.ToolCall{ID: "two", Name: "ctx_execute", Arguments: `{"n":2}`}},
 				{FinishReason: "tool_calls"},
 			},
 			{
@@ -815,7 +834,7 @@ func TestLoop_MaxStepsExtendsWhileToolsMakeProgress(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{
-		Name: "noop", Description: "n", Schema: `{"type":"object"}`,
+		Name: "ctx_execute", Description: "run", Schema: `{"type":"object"}`,
 		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "ok"}, nil
 		},

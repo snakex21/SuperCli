@@ -183,8 +183,7 @@ func (o *OpencodeProvider) ProbeModels(ctx context.Context) ([]ModelInfo, error)
 	// OpenAI provider's BaseURL already includes
 	// the /v1 suffix (e.g. "http://host:port/v1"),
 	// so we just append /models.
-	base := o.inner.cfg.BaseURL
-	url := strings.TrimRight(base, "/") + "/models"
+	url := ResolveOpenAIEndpoints(o.inner.cfg.BaseURL).Models
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -249,16 +248,7 @@ func ProbeOpencodeModels(ctx context.Context, baseURL, apiKey string) ([]opencod
 	if baseURL == "" {
 		baseURL = DefaultOpencodeBaseURL
 	}
-	baseURL = strings.TrimRight(baseURL, "/")
-	// If the caller passed a base URL that already
-	// ends with /v1, append /models. If not, append
-	// /v1/models. The OpenAI provider stores the
-	// full /v1 path in BaseURL, but standalone
-	// callers may pass just the host.
-	url := baseURL + "/models"
-	if !strings.HasSuffix(baseURL, "/v1") {
-		url = baseURL + "/v1/models"
-	}
+	url := ResolveOpenAIEndpoints(baseURL).Models
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

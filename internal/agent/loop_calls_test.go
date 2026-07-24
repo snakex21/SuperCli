@@ -212,6 +212,8 @@ func TestLoop_Calls_CompactNotInContextPrepare(t *testing.T) {
 		InitialMessages: []llm.Message{
 			{Role: llm.RoleUser, Content: strings.Repeat("old context ", 300)},
 			{Role: llm.RoleAssistant, Content: "old answer"},
+			{Role: llm.RoleUser, Content: "recent correction"},
+			{Role: llm.RoleAssistant, Content: "recent answer"},
 		},
 		Summarizer: func(ctx context.Context, prov llm.Provider, msgs []llm.Message) (string, error) {
 			if got := llm.PurposeFromContext(ctx); got != llm.PurposeCompact {

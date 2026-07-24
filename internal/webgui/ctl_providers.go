@@ -1,0 +1,190 @@
+package webgui
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"supercli/internal/llm/providers"
+)
+
+func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
+	m := s.eng.providerManager()
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]any{"providers": m.ListConfigured(s.eng.caps), "templates": providers.PredefinedProviders()})
+	case http.MethodPost:
+		var req struct {
+			Name    string `json:"name"`
+			Type    string `json:"type"`
+			BaseURL string `json:"base_url"`
+			APIKey  string `json:"api_key"`
+			Model   string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		name := strings.TrimSpace(req.Name)
+		if err := m.Add(name, strings.TrimSpace(req.Type), strings.TrimSpace(req.BaseURL), req.APIKey, strings.TrimSpace(req.Model)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res := m.ScanProvider(name, s.eng.caps)
+		if res.Err != nil {
+			// Adding a provider is transactional from the GUI's point of view:
+			// an entry that cannot be verified must not silently remain in the
+			// config. This also makes a non-2xx response mean exactly what the
+			// form tells the user: the provider was not added.
+			if rollbackErr := m.Remove(name); rollbackErr != nil {
+				http.Error(w, fmt.Sprintf("provider verification failed: %v; rollback failed: %v", res.Err, rollbackErr), http.StatusBadGateway)
+				return
+			}
+			http.Error(w, fmt.Sprintf("provider verification failed: %v; provider was not added", res.Err), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "models": res.Models})
+	case http.MethodPut:
+		// Partial update: name identifies the provider; only
+		// non-nil fields are applied by Manager.Update. The
+		// request uses *string semantics: a field omitted (or
+		// JSON null) means "keep current"; a field present with
+		// an empty string means "clear this value". The frontend
+		// sends api_key only when the user typed something or
+		// explicitly ticked "clear key".
+		var req struct {
+			Name     string  `json:"name"`
+			Type     *string `json:"type"`
+			BaseURL  *string `json:"base_url"`
+			APIKey   *string `json:"api_key"`
+			Model    *string `json:"model"`
+			Disabled *bool   `json:"disabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		// Capture the active selection before changing the provider config.
+		// RuntimeSelection resolves configured providers by transport + URL, so
+		// after a URL edit the old runtime may no longer match the freshly saved
+		// entry. Keeping this snapshot also lets us rebuild the active transport
+		// immediately instead of continuing to send requests to the old address.
+		activeProvider, activeModel, _ := s.eng.RuntimeSelection()
+		if req.Disabled != nil && *req.Disabled {
+			if activeProvider == name {
+				http.Error(w, "switch to another model before disabling the active provider", http.StatusConflict)
+				return
+			}
+		}
+		if err := m.Update(name, req.Type, req.BaseURL, req.APIKey, req.Model); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Disabled != nil {
+			if err := m.SetDisabled(name, *req.Disabled); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		// Re-scan so the capability registry reflects the new
+		// credentials (or the lack of them). Scan errors are
+		// surfaced as a soft warning — the update itself
+		// already succeeded.
+		if req.Disabled != nil && *req.Disabled {
+			writeJSON(w, map[string]any{"ok": true, "name": name, "disabled": true, "models": []string{}})
+			return
+		}
+		runtimeRefreshed := false
+		if activeProvider == name {
+			if err := s.eng.SwitchModel(activeModel, name); err != nil {
+				http.Error(w, fmt.Sprintf("provider saved but active connection could not be refreshed: %v", err), http.StatusBadGateway)
+				return
+			}
+			runtimeRefreshed = true
+		}
+		res := m.ScanProvider(name, s.eng.caps)
+		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) == "" && res.Err == nil && len(res.Models) > 0 {
+			if activeProvider == name && !m.ModelVisible(name, activeModel) {
+				// Removing a gateway key must not leave the runtime pointing at a
+				// now-hidden paid model that will fail with 401 on the next prompt.
+				// Pick the first server-reported free model without running inference.
+				_ = s.eng.SwitchModel(res.Models[0], name)
+			}
+		}
+		writeJSON(w, map[string]any{"ok": true, "name": name, "runtime_refreshed": runtimeRefreshed, "scan_error": errString(res.Err), "models": res.Models})
+	case http.MethodDelete:
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		if name == "" {
+			http.Error(w, "name query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := m.Remove(name); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "name": name})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleProviderKeyReveal returns one stored API key for the provider edit
+// form. Routing applies an additional Host + socket-peer loopback guard even
+// when the rest of the GUI was explicitly started with --allow-remote.
+func (s *Server) handleProviderKeyReveal(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	key, ok := s.eng.providerManager().APIKey(name)
+	if !ok {
+		http.Error(w, "provider not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]string{"api_key": key})
+}
+
+func (s *Server) handleProviderScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	m := s.eng.providerManager()
+	if name == "" {
+		count := m.ScanModels(s.eng.caps)
+		writeJSON(w, map[string]any{"ok": true, "count": count})
+		return
+	}
+	res := m.ScanProvider(name, s.eng.caps)
+	writeJSON(w, map[string]any{"ok": res.Err == nil, "provider": res.Provider, "models": res.Models, "error": errString(res.Err)})
+}

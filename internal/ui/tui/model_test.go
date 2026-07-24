@@ -38,7 +38,7 @@ func (a *queueingAgent) QueueInterjection(text string) bool {
 }
 
 func (reportingAgent) ContextReport() agent.ContextReport {
-	return agent.ContextReport{Window: 10_000, EstimatedTokens: 4_000, ToolSchemaTokens: 1_000}
+	return agent.ContextReport{Window: 10_000, EstimatedTokens: 4_000, ToolSchemaTokens: 1_000, RequestTokens: 5_200}
 }
 
 func (reportingAgent) LastTurnBreakdown() (int, int, int, bool) {
@@ -133,7 +133,7 @@ func TestCompletedTurnSummarizesToolsAndRefreshesContextHUD(t *testing.T) {
 			t.Fatalf("tool summary missing %q: %q", want, view)
 		}
 	}
-	if m.runtimeHUD != "ctx 50% (5.0k/10.0k) · compact 80% · cache 80%" {
+	if m.runtimeHUD != "ctx 52% (5.2k/10.0k) · compact 80% · cache 80%" {
 		t.Fatalf("runtimeHUD=%q", m.runtimeHUD)
 	}
 }

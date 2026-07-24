@@ -1,10 +1,8 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,10 +30,9 @@ type OpenAIConfig struct {
 	// MaxTokens caps generated tokens. Zero leaves the provider default.
 	// This is the OpenAI-compatible chat-completions `max_tokens` field.
 	MaxTokens int
-	// Timeout is the idle/inactivity timeout for the SSE stream: the
-	// maximum gap with no data from the server (also bounds time-to-
-	// first-token). It is NOT a whole-request deadline, so a slow but
-	// alive stream is never cut. If zero, defaults to 300s.
+	// Timeout bounds both the wait for HTTP response headers and the maximum
+	// idle gap between SSE bytes. It is not a whole-request deadline, so a
+	// slow but active stream is never cut. If zero, defaults to 300s.
 	Timeout time.Duration
 	// ConnectTimeout is the TCP connect (dial) timeout. If zero,
 	// defaults to 30s.
@@ -92,7 +89,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com/v1"
 	}
-	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
+	cfg.BaseURL = ResolveOpenAIEndpoints(cfg.BaseURL).BaseURL
 	cfg.APIKey = CleanAPIKey(cfg.APIKey)
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 300 * time.Second // idle/inactivity timeout
@@ -103,7 +100,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	if cfg.HTTPClient == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
-		transport.ResponseHeaderTimeout = 0                 // do NOT cap header wait: a slow local model may delay first byte
+		transport.ResponseHeaderTimeout = 0                 // bounded per request below so custom clients behave the same
 		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
 	}
 	caps := cfg.Capabilities
@@ -214,9 +211,10 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// retry emits a Delta.Notice so the UI shows the wait
 		// instead of appearing hung. Other statuses and transport
 		// errors fail immediately.
-		url := p.cfg.BaseURL + "/chat/completions"
+		url := ResolveOpenAIEndpoints(p.cfg.BaseURL).ChatCompletions
 		const maxAttempts = 3
 		waitBudget := rateLimitWaitBudget
+		rateAttempts := 0
 		var resp *http.Response
 		// streamCancel cancels the request context of the attempt that
 		// actually proceeds to streaming. It is invoked after the read
@@ -225,7 +223,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// cancel immediately so no context leaks across the retry loop.
 		var streamCancel func()
 		effortRetried := false
-		for attempt := 1; ; attempt++ {
+		for {
 			reqCtx, cancel := context.WithCancel(ctx)
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(reqBody))
 			if err != nil {
@@ -242,7 +240,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			req.Header.Set("Accept", "text/event-stream")
 
-			resp, err = p.http.Do(req)
+			resp, err = doWithResponseHeaderTimeout(p.http, req, p.cfg.Timeout, cancel)
 			if err != nil {
 				cancel()
 				select {
@@ -265,18 +263,25 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					continue
 				}
 			}
-			retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode/100 == 5
-			if !retryable || attempt >= maxAttempts {
+			if !isRetryableHTTPStatus(resp.StatusCode) {
 				select {
 				case out <- Delta{Err: fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))}:
 				case <-ctx.Done():
 				}
 				return
 			}
-			backoff := retryWait(resp.Header, attempt, waitBudget)
+			rateAttempts++
+			if rateAttempts >= maxAttempts {
+				select {
+				case out <- Delta{Err: fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			backoff := retryWait(resp.Header, rateAttempts, waitBudget)
 			waitBudget -= backoff
 			select {
-			case out <- Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, attempt, maxAttempts)}:
+			case out <- Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, rateAttempts, maxAttempts)}:
 			case <-ctx.Done():
 				return
 			}
@@ -303,11 +308,55 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		var lastUsage *Usage
 		var lastTimings *llamaTimings
 		reasoningOpen := false
-		parseErr := parseOpenAIDataLines(body, func(data string) error {
+		sawResponse := false
+		emittedFinish := false
+		emit := func(d Delta) error {
+			select {
+			case out <- d:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		closeReasoning := func() error {
+			if !reasoningOpen {
+				return nil
+			}
+			reasoningOpen = false
+			return emit(Delta{Content: "</thinking>"})
+		}
+		flushToolCalls := func() error {
+			indices := make([]int, 0, len(toolAcc))
+			for index := range toolAcc {
+				indices = append(indices, index)
+			}
+			sort.Ints(indices)
+			for _, index := range indices {
+				tcCopy := *toolAcc[index]
+				if err := emit(Delta{ToolCall: &tcCopy}); err != nil {
+					return err
+				}
+			}
+			toolAcc = make(map[int]*ToolCall)
+			return nil
+		}
+		sawDone, parseErr := parseOpenAIDataLines(body, func(data string) error {
+			if isSSEHeartbeatData(data) {
+				return nil
+			}
 			var chunk openaiChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				// Skip non-JSON payloads (e.g. ping frames).
-				return nil
+				sample := data
+				if len(sample) > 256 {
+					sample = sample[:256] + "..."
+				}
+				return fmt.Errorf("%w: %v (%q)", errSSEUnexpected, err, sample)
+			}
+			if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
+				return fmt.Errorf("provider stream error: %s", openAIErrorMessage(chunk.Error))
+			}
+			if len(chunk.Choices) > 0 || chunk.Usage != nil || chunk.ID != "" || chunk.Object != "" {
+				sawResponse = true
 			}
 			var raw openaiRawChunk
 			_ = json.Unmarshal([]byte(data), &raw)
@@ -393,7 +442,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					}
 					acc.Arguments += tc.Function.Arguments
 				}
-				if choice.FinishReason != "" {
+				if choice.FinishReason != "" && !emittedFinish {
 					// Flush accumulated tool calls BEFORE the
 					// terminal delta so consumers see them. The
 					// accumulator is then RESET: some servers (newer
@@ -402,26 +451,20 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					// frame), and re-flushing would emit every tool
 					// call twice — the agent loop would then really
 					// execute each call twice.
-					for i := 0; i < len(toolAcc); i++ {
-						if tc, ok := toolAcc[i]; ok {
-							tcCopy := *tc
-							select {
-							case out <- Delta{ToolCall: &tcCopy}:
-							case <-ctx.Done():
-								return ctx.Err()
-							}
-						}
+					if err := closeReasoning(); err != nil {
+						return err
 					}
-					toolAcc = make(map[int]*ToolCall)
+					if err := flushToolCalls(); err != nil {
+						return err
+					}
 					d := Delta{FinishReason: choice.FinishReason}
 					if lastUsage != nil {
 						d.Usage = lastUsage
 					}
-					select {
-					case out <- d:
-					case <-ctx.Done():
-						return ctx.Err()
+					if err := emit(d); err != nil {
+						return err
 					}
+					emittedFinish = true
 				}
 			}
 			return nil
@@ -431,543 +474,26 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			case out <- Delta{Err: fmt.Errorf("sse: %w", parseErr)}:
 			case <-ctx.Done():
 			}
-		} else if reasoningOpen {
-			select {
-			case out <- Delta{Content: "</thinking>"}:
-			case <-ctx.Done():
+		} else if !sawResponse {
+			_ = emit(Delta{Err: fmt.Errorf("sse: empty stream")})
+		} else if !sawDone && !emittedFinish {
+			_ = emit(Delta{Err: fmt.Errorf("sse: stream ended before a terminal event")})
+		} else if !emittedFinish {
+			if err := closeReasoning(); err != nil {
+				return
 			}
+			hadTools := len(toolAcc) > 0
+			if err := flushToolCalls(); err != nil {
+				return
+			}
+			reason := "stop"
+			if hadTools {
+				reason = "tool_calls"
+			}
+			_ = emit(Delta{FinishReason: reason, Usage: lastUsage})
+		} else if reasoningOpen {
+			_ = closeReasoning()
 		}
 	}()
 	return out, nil
 }
-
-func parseOpenAIDataLines(r io.Reader, onData func(data string) error) error {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if isDone(data) {
-			return nil
-		}
-		if data == "" {
-			continue
-		}
-		if err := onData(data); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
-
-// --- request body ---
-
-type openaiRequest struct {
-	Model     string         `json:"model"`
-	MaxTokens int            `json:"max_tokens,omitempty"`
-	Messages  []openaiReqMsg `json:"messages"`
-	Stream    bool           `json:"stream"`
-	// StreamOptions asks the server to emit a final usage chunk in
-	// streaming mode. Required by the OpenAI spec (and LM Studio,
-	// vLLM, etc.) to get prompt/completion token counts back when
-	// stream=true — without it usage is silently empty. Pointer +
-	// omitempty so it is dropped entirely for non-streaming calls,
-	// which some endpoints reject if the field is present.
-	StreamOptions *openaiStreamOptions `json:"stream_options,omitempty"`
-	Tools         []openaiToolDecl     `json:"tools,omitempty"`
-	// ReasoningEffort is only set for models known to support
-	// it (see SupportsReasoningEffort); other models never see
-	// the field, so non-OpenAI endpoints cannot reject it.
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	// Reasoning is the unified OpenRouter-compatible control used for models
-	// discovered as reasoning-capable behind a gateway.
-	Reasoning *openAIReasoning `json:"reasoning,omitempty"`
-	// CachePrompt asks llama.cpp-family servers to reuse the KV
-	// cache for the common prompt prefix across requests. Gated:
-	// only emitted for local/private BaseURLs (or an explicit
-	// config override) — cloud OpenAI 400s on unknown fields.
-	// omitempty drops it entirely when false.
-	CachePrompt bool `json:"cache_prompt,omitempty"`
-}
-
-type openAIReasoning struct {
-	Effort string `json:"effort"`
-}
-
-// openaiStreamOptions carries the include_usage flag.
-type openaiStreamOptions struct {
-	IncludeUsage bool `json:"include_usage"`
-}
-
-type openaiReqMsg struct {
-	Role       string             `json:"role"`
-	Content    any                `json:"content,omitempty"`
-	Name       string             `json:"name,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
-	ToolCalls  []openaiReqToolRef `json:"tool_calls,omitempty"`
-}
-
-type openaiReqToolRef struct {
-	ID       string       `json:"id"`
-	Type     string       `json:"type"`
-	Function openaiToolFn `json:"function"`
-}
-
-type openaiPart struct {
-	Type     string        `json:"type"`
-	Text     string        `json:"text,omitempty"`
-	ImageURL *openaiImgURL `json:"image_url,omitempty"`
-}
-
-type openaiImgURL struct {
-	URL    string `json:"url"`
-	Detail string `json:"detail,omitempty"`
-}
-
-type openaiToolDecl struct {
-	Type     string             `json:"type"`
-	Function openaiToolFunction `json:"function"`
-}
-
-type openaiToolFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters,omitempty"` // embedded JSON object, NOT a string
-}
-
-func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool) ([]byte, error) {
-	format := openAIReasoningNone
-	if SupportsReasoningEffort(model) {
-		format = openAIReasoningEffort
-	}
-	return buildOpenAIRequestWithReasoning(model, msgs, tools, vision, cachePrompt, format)
-}
-
-func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
-	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format, 0)
-}
-
-func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int) ([]byte, error) {
-	msgs = demoteMidConversationSystemMessages(msgs)
-	req := openaiRequest{
-		Model:         model,
-		MaxTokens:     maxTokens,
-		Stream:        true,
-		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
-		CachePrompt:   cachePrompt,
-	}
-	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone); e != "" {
-		if format == openAIReasoningUnified {
-			req.Reasoning = &openAIReasoning{Effort: e}
-		} else if format == openAIReasoningEffort {
-			req.ReasoningEffort = e
-		}
-	}
-	for _, t := range tools {
-		req.Tools = append(req.Tools, openaiToolDecl{
-			Type: "function",
-			Function: openaiToolFunction{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  normalizeToolSchemaForModel(t.Schema, model),
-			},
-		})
-	}
-	for _, m := range msgs {
-		rm := openaiReqMsg{
-			Role:       string(m.Role),
-			Name:       m.Name,
-			ToolCallID: m.ToolCallID,
-		}
-		// Tool result messages carry plain string content; OpenAI
-		// expects {"role":"tool","tool_call_id":"...","content":"..."}.
-		if m.Role == RoleTool {
-			rm.Content = m.Content
-		} else {
-			content, err := encodeOpenAIContent(m, vision)
-			if err != nil {
-				return nil, err
-			}
-			rm.Content = content
-		}
-		// Assistant tool calls.
-		for _, tc := range m.ToolCalls {
-			rm.ToolCalls = append(rm.ToolCalls, openaiReqToolRef{
-				ID:       tc.ID,
-				Type:     "function",
-				Function: openaiToolFn{Name: tc.Name, Arguments: tc.Arguments},
-			})
-		}
-		req.Messages = append(req.Messages, rm)
-	}
-	return json.Marshal(req)
-}
-
-func patchOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool) {
-	return patchOpenAIReasoning(body, effort, openAIReasoningEffort)
-}
-
-func patchOpenAIReasoning(body []byte, effort string, format openAIReasoningFormat) ([]byte, bool) {
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, false
-	}
-	if format == openAIReasoningUnified {
-		delete(req, "reasoning_effort")
-		if effort == "" {
-			delete(req, "reasoning")
-		} else {
-			req["reasoning"] = map[string]any{"effort": effort}
-		}
-	} else {
-		delete(req, "reasoning")
-		if effort == "" {
-			delete(req, "reasoning_effort")
-		} else {
-			req["reasoning_effort"] = effort
-		}
-	}
-	out, err := json.Marshal(req)
-	return out, err == nil
-}
-
-func (p *OpenAIProvider) reasoningFormat() openAIReasoningFormat {
-	gateway := IsUnifiedReasoningGateway(p.cfg.BaseURL)
-	// Offer best-effort reasoning for every OpenAI-compatible model. Known
-	// OpenAI families use reasoning_effort; gateways and unknown families use
-	// the portable reasoning:{effort} object. A rejecting backend is learned
-	// once and the retry removes the parameter.
-	capability := true
-	if !SupportsReasoningEffortWithCapability(p.reasoningKey(), capability) {
-		return openAIReasoningNone
-	}
-	if gateway {
-		return openAIReasoningUnified
-	}
-	// Unknown reasoning families discovered from provider metadata generally
-	// sit behind normalizing gateways, where the unified object is portable.
-	if capability && !supportsReasoningEffortByName(p.cfg.Model) {
-		return openAIReasoningUnified
-	}
-	return openAIReasoningEffort
-}
-
-// IsUnifiedReasoningGateway reports whether an OpenAI-compatible endpoint
-// accepts the cross-provider reasoning:{effort:...} control. These gateways
-// perform their own per-model mapping, so the control can remain available even
-// when their lightweight /models response omitted capability metadata.
-func IsUnifiedReasoningGateway(baseURL string) bool {
-	base := strings.ToLower(strings.TrimSpace(baseURL))
-	return strings.Contains(base, "openrouter") ||
-		strings.Contains(base, "api.kilo.ai") ||
-		strings.Contains(base, "opencode.ai/zen")
-}
-
-func (p *OpenAIProvider) reasoningKey() string {
-	return ReasoningSupportKey(p.cfg.BaseURL, p.cfg.Model)
-}
-
-func (p *OpenAIProvider) hasReasoningCapability() bool {
-	if p.caps == nil {
-		return false
-	}
-	model := p.cfg.CapabilityModel
-	if model == "" {
-		model = p.cfg.Model
-	}
-	return p.caps.HasReasoning(model)
-}
-
-func encodeOpenAIContent(m Message, vision bool) (any, error) {
-	// Most local OpenAI-compatible servers (LM Studio, Ollama,
-	// llama.cpp) are happiest with plain string content for
-	// text-only messages. Use multipart arrays only when an image
-	// actually needs to be sent.
-	if len(m.Parts) == 0 {
-		return m.Content, nil
-	}
-	hasImage := false
-	for _, p := range m.Parts {
-		if p.Type == PartTypeImage && vision {
-			hasImage = true
-			break
-		}
-	}
-	if !hasImage {
-		var b strings.Builder
-		for _, p := range m.Parts {
-			if p.Type == PartTypeText {
-				b.WriteString(p.Text)
-			}
-		}
-		return b.String(), nil
-	}
-	return encodeOpenAIParts(m, vision)
-}
-
-func encodeOpenAIParts(m Message, vision bool) ([]openaiPart, error) {
-	// Legacy text-only path: if Parts is empty, encode Content as
-	// a single text part.
-	if len(m.Parts) == 0 {
-		return []openaiPart{{Type: "text", Text: m.Content}}, nil
-	}
-	out := make([]openaiPart, 0, len(m.Parts))
-	for _, p := range m.Parts {
-		switch p.Type {
-		case PartTypeText:
-			out = append(out, openaiPart{Type: "text", Text: p.Text})
-		case PartTypeImage:
-			if !vision {
-				// Drop with a no-op part. The warning is sent
-				// at the channel level in Complete().
-				continue
-			}
-			img := p.Image
-			if img == nil {
-				return nil, fmt.Errorf("image part with nil Image")
-			}
-			url := img.URL
-			if url == "" {
-				if img.MediaType == "" || img.Data == "" {
-					return nil, fmt.Errorf("image part: incomplete (need URL or MediaType+Data)")
-				}
-				url = "data:" + img.MediaType + ";base64," + img.Data
-			}
-			out = append(out, openaiPart{
-				Type:     "image_url",
-				ImageURL: &openaiImgURL{URL: url},
-			})
-		default:
-			return nil, fmt.Errorf("unknown part type %q", p.Type)
-		}
-	}
-	return out, nil
-}
-
-// --- response chunk ---
-
-type openaiChunk struct {
-	ID      string         `json:"id"`
-	Object  string         `json:"object"`
-	Created int64          `json:"created"`
-	Model   string         `json:"model"`
-	Choices []openaiChoice `json:"choices"`
-	Usage   *openaiUsage   `json:"usage,omitempty"`
-	// Timings is llama.cpp-specific: the server attaches its
-	// performance block to /v1/chat/completions responses. Absent on
-	// cloud backends; ignored when nil.
-	Timings *llamaTimings `json:"timings,omitempty"`
-}
-
-// llamaTimings is the llama.cpp server performance block, used here
-// for cache-miss telemetry: prompt_n is the number of prompt tokens
-// the server actually (re-)evaluated this request, cache_n (newer
-// builds) is the number of prompt tokens reused from the KV cache,
-// predicted_n is the generated-token count. The native /completion
-// endpoint reports tokens_evaluated/tokens_cached instead, but
-// SuperCli only speaks /v1/chat/completions, where the timings form
-// (plus, on newer builds, usage.prompt_tokens_details) is what
-// actually arrives.
-type llamaTimings struct {
-	PromptN    int `json:"prompt_n"`
-	CacheN     int `json:"cache_n"`
-	PredictedN int `json:"predicted_n"`
-}
-
-// deriveCachedFromTimings fills Usage.CachedInput from llama.cpp's
-// timings block when the OpenAI-style prompt_tokens_details breakdown
-// is absent (older llama.cpp builds). Preference order: an explicit
-// cache_n; else prompt_tokens - prompt_n (everything the server did
-// not re-evaluate came from the KV cache). No-op when the usage
-// already carries a cached count or there is nothing to derive, so
-// cloud responses without timings are untouched.
-func deriveCachedFromTimings(u *Usage, t *llamaTimings) {
-	if u == nil || t == nil || u.CachedInput > 0 {
-		return
-	}
-	cached := t.CacheN
-	if cached == 0 && t.PromptN > 0 && u.Input > t.PromptN {
-		cached = u.Input - t.PromptN
-	}
-	if cached > u.Input {
-		cached = u.Input
-	}
-	if cached > 0 {
-		u.CachedInput = cached
-	}
-}
-
-type openaiRawChunk struct {
-	Choices []struct {
-		Delta map[string]json.RawMessage `json:"delta"`
-	} `json:"choices"`
-}
-
-type openaiChoice struct {
-	Index        int         `json:"index"`
-	Delta        openaiDelta `json:"delta"`
-	FinishReason string      `json:"finish_reason"`
-}
-
-type openaiDelta struct {
-	Role             string          `json:"role,omitempty"`
-	Content          string          `json:"content,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	ToolCalls        []openaiToolRef `json:"tool_calls,omitempty"`
-}
-
-func extractReasoningText(delta map[string]json.RawMessage) string {
-	if len(delta) == 0 {
-		return ""
-	}
-	// One delta, one reasoning text. Newer servers mirror the same
-	// reasoning chunk under several keys (a structured `reasoning`
-	// object plus a flat `reasoning_text`, say) — joining them doubled
-	// every streamed word in the GUI. Pick a single best key instead:
-	// well-known flat keys first, then any remaining reasoning-ish key
-	// in deterministic (sorted) order.
-	for _, key := range []string{"reasoning_content", "reasoning_text", "reasoning", "thinking", "thought"} {
-		if raw, ok := delta[key]; ok {
-			if s := extractStringLeaves(raw); strings.TrimSpace(s) != "" {
-				return s
-			}
-		}
-	}
-	keys := make([]string, 0, len(delta))
-	for key := range delta {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if !isReasoningJSONKey(key) {
-			continue
-		}
-		if s := extractStringLeaves(delta[key]); strings.TrimSpace(s) != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func isReasoningJSONKey(key string) bool {
-	k := strings.ToLower(key)
-	if strings.Contains(k, "finish") || strings.Contains(k, "token") || strings.Contains(k, "usage") {
-		return false
-	}
-	return strings.Contains(k, "reasoning") || strings.Contains(k, "thinking") || strings.Contains(k, "thought")
-}
-
-func extractStringLeaves(raw json.RawMessage) string {
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var arr []json.RawMessage
-	if err := json.Unmarshal(raw, &arr); err == nil {
-		var out []string
-		for _, item := range arr {
-			if v := extractStringLeaves(item); v != "" {
-				out = append(out, v)
-			}
-		}
-		return strings.Join(out, "")
-	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err == nil {
-		// Text-bearing keys first. When any of them yields text, that IS
-		// the reasoning: the remaining keys are metadata (type, format,
-		// index, …) and must never leak into the visible stream — that is
-		// how literal "reasoning.text"/"unknown" ended up interleaved
-		// with the model's thinking in the GUI.
-		preferred := []string{"text", "content", "value", "delta", "thinking", "reasoning"}
-		var out []string
-		for _, key := range preferred {
-			if v, ok := obj[key]; ok {
-				if s := extractStringLeaves(v); s != "" {
-					out = append(out, s)
-				}
-			}
-		}
-		if len(out) > 0 {
-			return strings.Join(out, "")
-		}
-		// No known text key: walk the rest deterministically, skipping
-		// anything metadata-shaped.
-		keys := make([]string, 0, len(obj))
-		for key := range obj {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if isReasoningMetadataKey(key) {
-				continue
-			}
-			if s := extractStringLeaves(obj[key]); s != "" {
-				out = append(out, s)
-			}
-		}
-		return strings.Join(out, "")
-	}
-	return ""
-}
-
-// isReasoningMetadataKey reports whether a key inside a structured
-// reasoning delta carries protocol metadata rather than model text.
-func isReasoningMetadataKey(key string) bool {
-	switch strings.ToLower(key) {
-	case "type", "format", "index", "id", "status", "channel", "role", "name", "signature", "encrypted_content":
-		return true
-	}
-	return false
-}
-
-type openaiToolRef struct {
-	Index    int          `json:"index"`
-	ID       string       `json:"id,omitempty"`
-	Type     string       `json:"type,omitempty"`
-	Function openaiToolFn `json:"function"`
-}
-
-type openaiToolFn struct {
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-}
-
-type openaiUsage struct {
-	PromptTokens            int                            `json:"prompt_tokens"`
-	CompletionTokens        int                            `json:"completion_tokens"`
-	TotalTokens             int                            `json:"total_tokens"`
-	PromptTokensDetails     *openaiPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
-	CompletionTokensDetails *openaiCompletionTokensDetails `json:"completion_tokens_details,omitempty"`
-}
-
-// openaiPromptTokensDetails carries the cached-prompt breakdown that
-// OpenAI and llama.cpp/LM Studio report inside usage. cached_tokens is
-// the portion of prompt_tokens the backend served from its KV cache.
-type openaiPromptTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
-}
-
-// openaiCompletionTokensDetails carries the reasoning-token breakdown
-// that reasoning models report inside usage. reasoning_tokens counts the
-// hidden chain-of-thought tokens billed as completion tokens.
-type openaiCompletionTokensDetails struct {
-	ReasoningTokens int `json:"reasoning_tokens"`
-}
-
-// EncodeBase64 is a small helper used by callers that need to
-// turn a file into a base64 string for an ImageRef. It is a
-// convenience around encoding/base64.
-func EncodeBase64(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data)
-}
-
-// Ensure bufio is referenced (used in streaming helpers that may
-// land here in a follow-up).
-var _ = bufio.NewReader

@@ -370,6 +370,7 @@ func TestHandleModelPriceSaveValidateAndRemove(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, "/api/model/price", strings.NewReader(body))
 		req.Host = "127.0.0.1:8080"
+		req.RemoteAddr = "127.0.0.1:43210"
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

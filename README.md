@@ -14,17 +14,25 @@ no CGO runtime.
 
 ## Documentation
 
-Start with [docs/quickstart.md](docs/quickstart.md) — what SuperCli
-optimizes for and where everything lives. Then:
-[architecture](docs/architecture.md) (agent loop, KV-cache discipline,
-compaction) · [delegation](docs/delegation.md) (task workers,
-orchestrator, draft-verify) · [performance](docs/performance.md)
-(telemetry, caches, turn economy) ·
-[configuration](docs/configuration.md) (every knob and its default) ·
-[project structure](docs/project-structure.md) (package ownership and
-dependency rules) ·
-[webgui](docs/webgui.md) (web GUI design). The docs explain not just how
-the mechanisms work but *why* — each decision cites its live measurement.
+Index: **[docs/README.md](docs/README.md)** (reading order).
+
+Start with [docs/quickstart.md](docs/quickstart.md), then
+[data layout](docs/data-layout.md) and [architecture](docs/architecture.md).
+Deeper: [delegation](docs/delegation.md) · [configuration](docs/configuration.md) ·
+[performance](docs/performance.md) · [webgui](docs/webgui.md) ·
+[project structure](docs/project-structure.md) · [PLAN](docs/PLAN.md) /
+[ROADMAP](docs/ROADMAP.md). Docs explain *how* and *why* — decisions cite
+measurements where it matters.
+
+### Build (Windows)
+
+| Script | Output |
+|--------|--------|
+| `build.bat` | `supercli.exe` (TUI / CLI) |
+| `build_ui.bat` | `supercli-web.exe` (Web GUI, no console) |
+| `run.bat` | build if needed, then run with `SUPERCLI_HOME=.` |
+
+Local `*.exe` and `*.db` stay gitignored; keep them next to the scripts if you like.
 
 ## Why
 
@@ -238,7 +246,7 @@ Type `/` in the TUI to open the command palette.
   - input/output costs.
 - `/model` fast picker for enabled models and `/models` full visibility catalog with filtering and bulk toggles.
 - `/providers` connection dashboard with model counts, pause/resume, scanning, and per-provider catalogs.
-- `/settings` grouped editor, including the visible 60% prune / 80% compaction context policy and its limits.
+- `/settings` grouped editor, including the visible 60% prune threshold and the dynamic window-minus-reserve compaction policy.
 - `--list-models`, `--refresh`, and `--model-info` non-interactive commands.
 - Background provider model scanning.
 - Hidden model state.

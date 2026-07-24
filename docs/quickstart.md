@@ -1,17 +1,30 @@
 # SuperCli — quickstart and map
 
-Read this first. It tells you what SuperCli is optimizing for and where
-everything lives; the other docs go one level deeper.
+**Start here.** SuperCli optimizes for portable local-agent work: one binary,
+data next to the exe, cheap turns on llama.cpp-class servers, one engine behind
+TUI / WebGUI / batch.
 
-- [architecture.md](architecture.md) — the agent loop end-to-end (routing,
-  thin tools, KV-cache discipline, compaction)
-- [delegation.md](delegation.md) — task workers, orchestrator mode,
-  model-per-task, draft-verify, second opinion
-- [performance.md](performance.md) — telemetry, warm cache, preflight,
-  noop-gate, turn economy
-- [configuration.md](configuration.md) — every knob, its default, and when
-  (not) to touch it
-- [webgui.md](webgui.md) — web GUI design notes
+## Reading order (about 30–40 minutes)
+
+| # | Doc | Why |
+|---|-----|-----|
+| 1 | **This file** | Vision in one page + where to run |
+| 2 | [data-layout.md](data-layout.md) | HOME vs `supercli-data` vs project `.supercli/` |
+| 3 | [architecture.md](architecture.md) | One user turn: route → cache → tools → answer |
+| 4 | [configuration.md](configuration.md) | Empty config is best; knobs as escapes |
+| 5 | [delegation.md](delegation.md) | Workers, orchestrator, draft-verify |
+
+**When you need more (not required on day one):**
+
+| Doc | When |
+|------|------|
+| [performance.md](performance.md) | Deep telemetry, KV/cache numbers, turn economy |
+| [webgui.md](webgui.md) | Desktop / web UI design |
+| [project-structure.md](project-structure.md) | Source tree + file-name prefixes after refactor |
+| [PROJECT_SKILL.md](PROJECT_SKILL.md) | Build rules for agents editing this repo |
+| [PLAN.md](PLAN.md) | Near-term checklist |
+| [ROADMAP.md](ROADMAP.md) | What is shipped vs backlog (long; product registry) |
+| [portable-mcp.md](portable-mcp.md) · [builtin-skills.md](builtin-skills.md) · [telemetry.md](telemetry.md) | Feature-specific |
 
 ## What
 
@@ -48,17 +61,28 @@ go build -o supercli ./cmd/supercli
 ./supercli --doctor            # diagnostics
 ```
 
-Web GUI (Windows needs the GUI-subsystem flag, see PROJECT_SKILL.md):
+Web GUI (Windows needs the GUI-subsystem flag, see [PROJECT_SKILL.md](PROJECT_SKILL.md)):
 
 ```powershell
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web
 ```
 
-All state lives in `supercli-data/` next to the binary (portable; no
-`~/.config`, no `%APPDATA%`). Config: `supercli-data/config.toml` global,
-`<project>/.supercli/config.toml` per-project override.
+### Where data lives (two roots)
 
-## Map (7 domains under internal/)
+| Root | Meaning |
+|------|---------|
+| **HOME** (`--home` / `SUPERCLI_HOME` / cwd) | Workspace the agent edits |
+| **DATA DIR** (`supercli-data/` next to the exe by default) | App state: chats, auth, global config |
+| **`<HOME>/.supercli/`** | Optional **project** config overlay (e.g. `config.toml`) |
+
+If you run SuperCli *inside* a project folder, `.supercli/` there is that
+project overlay — not “junk”. Full diagrams: [data-layout.md](data-layout.md).
+
+Global app config: `supercli-data/config.toml`. Portable; no `%APPDATA%` /
+`~/.config` required. Legacy `~/.supercli` may be migrated once into
+`supercli-data/`.
+
+## Map (domains under internal/)
 
 ```text
 internal/
@@ -66,17 +90,13 @@ internal/
   agent/     THE loop: routing, thin tools, prune/compact, delegation,
              orchestrator, draft-verify; subpackages darwin/reflect/
              planmode/ultrawork
-  app/       startup wiring: flags, config resolution, defaults contract,
-             noop-gate, batch mode
-  llm/       providers (Anthropic/OpenAI/Codex/Responses/opencode/echo),
-             token estimator, system-message demote, slot cache,
-             capabilities, effort
-  storage/   sessions, memory, goals, library (SQLite)
-  system/    config (TOML layers), doctor, manifest, preflight, stats
-  tools/     tool registry facade + domain packages (files, office, web,
-             search, sandbox, ...)
-  ui/        TUI (Bubble Tea) and export
-  webgui/    web GUI server + embedded assets
+  app/       composition root: flags → workspace → wire → TUI/batch
+  llm/       providers, metering, capabilities, slot cache, effort
+  storage/   sessions, memory, goals, library (SQLite); home resolution
+  system/    config (global + project TOML), doctor, preflight, stats
+  tools/     tool registry + domain packages (files, office, web, …)
+  ui/tui/    Bubble Tea presentation
+  webgui/    HTTP/SSE + desktop web UI
 ```
 
 Sources of truth when docs and code disagree: the code and its tests.

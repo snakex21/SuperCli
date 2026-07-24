@@ -38,7 +38,7 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one command in a sandbox and return ONLY its bounded stdout. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved via PATH. The workspace is already the default workdir. On Windows, shell built-ins such as dir/set/copy require [\"cmd\",\"/c\",...]; on Unix, shell syntax requires [\"sh\",\"-c\",...]. Prefer file/search tools for source discovery; do not assume optional programs such as rg, jq, or awk are installed. Use this for tests, installed project commands, scripts, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Description: "Run one command in a sandbox and return ONLY its bounded stdout. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH (bundled rg is also supported). The workspace is already the default workdir. On Windows, shell built-ins such as dir/set/copy require [\"cmd\",\"/c\",...]; on Unix, shell syntax requires [\"sh\",\"-c\",...]. Prefer file/search tools for source discovery; use search_code when rg is unavailable. Use this for tests, installed project commands, scripts, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
 		Schema: `{
 			"type": "object",
 			"properties": {

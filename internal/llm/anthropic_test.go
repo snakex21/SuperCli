@@ -16,7 +16,7 @@ func TestBuildAnthropicRequest_TextToolsThinking(t *testing.T) {
 	body, err := buildAnthropicRequest("claude-sonnet-4-5", []Message{
 		{Role: RoleSystem, Content: "you are helpful"},
 		{Role: RoleUser, Content: "hi"},
-	}, []ToolDef{{Name: "read_file", Description: "Read", Schema: `{"path":{"type":"string"}`}}, true, 4096)
+	}, []ToolDef{{Name: "read_file", Description: "Read", Schema: `{"path":{"type":"string"}}`}}, true, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,5 +250,39 @@ func TestAnthropic_StreamToolUse(t *testing.T) {
 	}
 	if finish != "tool_calls" {
 		t.Fatalf("finish=%q want tool_calls", finish)
+	}
+}
+
+func TestAnthropicMalformedAndIncompleteStreamsAreErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks []string
+		want   string
+	}{
+		{name: "malformed", chunks: []string{`not json`}, want: "malformed SSE payload"},
+		{name: "incomplete", chunks: []string{`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}`}, want: "before message_stop"},
+		{name: "structured error", chunks: []string{`{"type":"error","error":{"message":"overloaded"}}`}, want: "overloaded"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) { sseResponse(w, tt.chunks...) })
+			provider, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "claude"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			deltas, err := provider.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var streamErr error
+			for delta := range deltas {
+				if delta.Err != nil {
+					streamErr = delta.Err
+				}
+			}
+			if streamErr == nil || !strings.Contains(streamErr.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", streamErr, tt.want)
+			}
+		})
 	}
 }

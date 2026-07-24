@@ -144,3 +144,42 @@ func TestResolveTaskWorkerConfig_ProviderWithoutModelIsNoop(t *testing.T) {
 		t.Fatalf("config changed without an override: %+v", got)
 	}
 }
+
+func TestResolveCompactConfig_UnsetIsNoop(t *testing.T) {
+	cfg := taskModelBaseCfg()
+	got, ok := resolveCompactConfig(config.TomlConfig{}, cfg)
+	if ok {
+		t.Fatal("unset compact_model must not report an override")
+	}
+	if got != cfg {
+		t.Fatalf("config changed without a compact override: %+v", got)
+	}
+}
+
+func TestResolveCompactConfig_BareModelKeepsTransport(t *testing.T) {
+	cfg := taskModelBaseCfg()
+	got, ok := resolveCompactConfig(config.TomlConfig{CompactModel: "qwen3.5-3b"}, cfg)
+	if !ok {
+		t.Fatal("expected compact-model override")
+	}
+	if got.Model != "qwen3.5-3b" || got.BaseURL != cfg.BaseURL || got.APIKey != cfg.APIKey || got.Provider != cfg.Provider {
+		t.Fatalf("bare compact model should only replace Model: %+v", got)
+	}
+}
+
+func TestResolveCompactConfig_ProviderFormSwitchesBackend(t *testing.T) {
+	cfg := taskModelBaseCfg()
+	tomlCfg := config.TomlConfig{
+		CompactModel: "cheap/qwen3.5-3b",
+		Providers: []config.ProviderConf{
+			{Name: "cheap", Type: "openai", BaseURL: "http://127.0.0.1:8092/v1", APIKey: "cheap-key"},
+		},
+	}
+	got, ok := resolveCompactConfig(tomlCfg, cfg)
+	if !ok {
+		t.Fatal("expected compact provider override")
+	}
+	if got.Model != "qwen3.5-3b" || got.BaseURL != "http://127.0.0.1:8092/v1" || got.APIKey != "cheap-key" {
+		t.Fatalf("compact provider form not resolved: %+v", got)
+	}
+}

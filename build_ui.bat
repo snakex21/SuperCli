@@ -43,7 +43,7 @@ if not errorlevel 1 (
     )
 )
 popd
-go build -ldflags="-H=windowsgui" -o supercli-web.exe ./cmd/supercli-web
+go build -buildvcs=false -ldflags="-H=windowsgui" -o supercli-web.exe ./cmd/supercli-web
 if errorlevel 1 (
     echo [build_ui.bat] BLAD: build UI nie powiodl sie.
     pause

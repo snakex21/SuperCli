@@ -81,8 +81,8 @@ func TestFreshConfigDefaults(t *testing.T) {
 	// Zero-sentinel int knobs: 0 = built-in default resolved at the
 	// point of use. Pinned so a stray "default" written into the
 	// struct would surface here.
-	if fresh.PruneProtectTokens != 0 { // loop resolves 0 → 8192
-		t.Error("prune_protect_tokens zero value must stay 0 (loop default 8192)")
+	if fresh.PruneProtectTokens != 0 { // loop resolves 0 from the active context window
+		t.Error("prune_protect_tokens zero value must stay 0 (loop scales the default)")
 	}
 	if fresh.MemoryBriefingTokens != 0 { // memory resolves 0 → 700/300 by tier
 		t.Error("memory_briefing_tokens zero value must stay 0 (700/300 by tier)")

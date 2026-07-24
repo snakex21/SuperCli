@@ -1,0 +1,321 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"supercli/internal/llm"
+	"supercli/internal/tools"
+)
+
+const invokeToolName = "invoke_tool"
+
+const maxDirectCatalogEntries = 16
+
+// InvokeTool is a schema-stable dispatcher. Simple read-only tools can be used
+// immediately. Complex or mutating tools can be dispatched only after
+// tool_search explicitly activates them, so discovering a schema is also the
+// authorization gate for the broader dispatcher path.
+type InvokeTool struct{ registry *tools.Registry }
+
+func NewInvokeTool(registry *tools.Registry) *InvokeTool { return &InvokeTool{registry: registry} }
+
+func (t *InvokeTool) Spec() tools.Tool {
+	eligible := directToolCatalog(t.registry)
+	description := "Schema-stable tool dispatcher. Simple read-only tools work immediately. For a complex or mutating tool, call tool_search once to activate it, then use invoke_tool with target arguments in args (or arg.<name> fields); target execution still uses its normal validation and safety controls."
+	if eligible != "" {
+		description += " Eligible: " + eligible
+	}
+	return tools.Tool{
+		Name:        invokeToolName,
+		Description: description,
+		// The resolved target determines whether a call is read-only. Marking the
+		// dispatcher itself read-only would be incorrect for unresolved/error
+		// calls and could make an embedder parallelize it with mutations.
+		ReadOnly: false,
+		Schema:   `{"type":"object","properties":{"tool":{"type":"string"},"args":{"type":"object","description":"Target arguments for native tool calling"}},"required":["tool"],"additionalProperties":true}`,
+		Fn: func(_ context.Context, raw json.RawMessage) (tools.Result, error) {
+			_, err := resolveInvokeToolCall(t.registry, llm.ToolCall{Name: invokeToolName, Arguments: string(raw)})
+			if err == nil {
+				// Valid calls are rewritten by the loop before dispatch. Reaching
+				// this function would mean an embedder bypassed that contract.
+				err = fmt.Errorf("invoke_tool: dispatcher was not resolved by the agent loop")
+			}
+			return tools.Result{Err: err}, nil
+		},
+	}
+}
+
+func directToolCatalog(registry *tools.Registry) string {
+	if registry == nil {
+		return ""
+	}
+	var signatures []string
+	for _, name := range registry.Names() {
+		tool, ok := registry.Get(name)
+		if !ok || !isDirectToolEligible(tool) {
+			continue
+		}
+		signatures = append(signatures, directToolSignature(tool))
+	}
+	sort.Strings(signatures)
+	if len(signatures) > maxDirectCatalogEntries {
+		signatures = signatures[:maxDirectCatalogEntries]
+	}
+	return strings.Join(signatures, "; ")
+}
+
+func directToolSignature(tool tools.Tool) string {
+	props, ok := flatScalarSchemaProperties(tool.Schema)
+	if !ok || len(props) == 0 {
+		return tool.Name
+	}
+	keys := make([]string, 0, len(props))
+	for key := range props {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for i, key := range keys {
+		typ := props[key]
+		switch typ {
+		case "integer":
+			typ = "int"
+		case "boolean":
+			typ = "bool"
+		case "number":
+			typ = "num"
+		}
+		keys[i] = key + ":" + typ
+	}
+	return tool.Name + "(" + strings.Join(keys, ",") + ")"
+}
+
+func isDirectToolEligible(tool tools.Tool) bool {
+	if !tool.ReadOnly || tool.Name == "" || tool.Name == invokeToolName || tool.Name == "tool_search" {
+		return false
+	}
+	_, ok := flatScalarSchemaProperties(tool.Schema)
+	return ok
+}
+
+// isCoreDispatchName lists thin-core mutations/reads that are always-on
+// and must be invokable without tool_search activation.
+func isCoreDispatchName(name string) bool {
+	switch name {
+	case "patch_file", "create_file", "list_dir", "search_code",
+		"read_lines", "read_many", "read_context", "ctx_execute",
+		"web_lookup", "recall", "ask_user":
+		return true
+	default:
+		return false
+	}
+}
+
+// flatScalarSchemaProperties accepts both standard JSON Schema
+// {properties:{...}} and SuperCli's historical compact {field:{type:...}}
+// shape. Nested objects/arrays/unions stay behind tool_search.
+func flatScalarSchemaProperties(schema string) (map[string]string, bool) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(schema), &root); err != nil {
+		return nil, false
+	}
+	propsRaw, standard := root["properties"]
+	if standard {
+		var props map[string]json.RawMessage
+		if err := json.Unmarshal(propsRaw, &props); err != nil {
+			return nil, false
+		}
+		root = props
+	}
+	props := make(map[string]string)
+	for name, raw := range root {
+		if !standard && (name == "type" || name == "required" || name == "additionalProperties") {
+			continue
+		}
+		var spec map[string]json.RawMessage
+		if json.Unmarshal(raw, &spec) != nil {
+			return nil, false
+		}
+		if _, complex := spec["oneOf"]; complex {
+			return nil, false
+		}
+		if _, complex := spec["anyOf"]; complex {
+			return nil, false
+		}
+		var typ string
+		if json.Unmarshal(spec["type"], &typ) != nil {
+			return nil, false
+		}
+		switch typ {
+		case "string", "integer", "number", "boolean":
+			props[name] = typ
+		default:
+			return nil, false
+		}
+	}
+	return props, true
+}
+
+func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.ToolCall, error) {
+	if registry == nil {
+		return call, fmt.Errorf("invoke_tool: registry unavailable")
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(call.Arguments), &envelope); err != nil {
+		return call, fmt.Errorf("invoke_tool: bad args: %w", err)
+	}
+	var target string
+	if err := json.Unmarshal(envelope["tool"], &target); err != nil || strings.TrimSpace(target) == "" {
+		return call, fmt.Errorf("invoke_tool: tool is required")
+	}
+	target = strings.TrimSpace(target)
+	tool, ok := registry.Get(target)
+	if !ok {
+		return call, fmt.Errorf("invoke_tool: unknown tool %q", target)
+	}
+	// Some local chat templates wrap every call in invoke_tool, including the
+	// Goal control plane. Goal is not advertised in the direct read-only catalog,
+	// but accepting this exact envelope is safe: it resolves back to the normal
+	// goal tool and its schema/service still validate every action. Filesystem
+	// and process mutations remain ineligible below.
+	if target == "goal" {
+		goalArgs, err := decodeGoalInvokeEnvelope(envelope)
+		if err != nil {
+			return call, err
+		}
+		call.Name = target
+		call.Arguments = string(goalArgs)
+		return call, nil
+	}
+	if target == invokeToolName || target == "tool_search" {
+		return call, fmt.Errorf("invoke_tool cannot dispatch meta-tool %s", target)
+	}
+	allowed, flatScalar := flatScalarSchemaProperties(tool.Schema)
+	directReadOnly := flatScalar && tool.ReadOnly
+	// Always-on core tools (patch_file, create_file, list_dir, …) are
+	// schema-stable and must not require a prior tool_search activation.
+	coreAlwaysOn := registry.IsVisible(target) && !registry.IsActive(target) && isCoreDispatchName(target)
+	if !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
+		return call, fmt.Errorf("invoke_tool: %s is complex or mutating and is not active; call tool_search once to activate %s, then retry invoke_tool", target, target)
+	}
+
+	args := make(map[string]json.RawMessage)
+	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
+		var err error
+		args, err = decodeInvokeArgs(raw)
+		if err != nil {
+			return call, fmt.Errorf("invoke_tool: %w", err)
+		}
+	}
+	for key, value := range envelope {
+		if !strings.HasPrefix(key, "arg.") {
+			continue
+		}
+		name := strings.TrimPrefix(key, "arg.")
+		if _, exists := args[name]; exists {
+			return call, fmt.Errorf("invoke_tool: duplicate argument %q", name)
+		}
+		args[name] = value
+	}
+	// For flat schemas we can cheaply reject misspelled fields here. Complex
+	// schemas remain untouched and are validated/coerced by the target's normal
+	// Registry.Execute path after this call is rewritten to the real tool name.
+	if flatScalar {
+		for name := range args {
+			if _, ok := allowed[name]; !ok {
+				return call, fmt.Errorf("invoke_tool: argument %q is not valid for %s", name, target)
+			}
+		}
+	}
+	rawArgs, err := json.Marshal(args)
+	if err != nil {
+		return call, fmt.Errorf("invoke_tool: encode target args: %w", err)
+	}
+	call.Name = target
+	call.Arguments = string(rawArgs)
+	return call, nil
+}
+
+func decodeGoalInvokeEnvelope(envelope map[string]json.RawMessage) (json.RawMessage, error) {
+	args := make(map[string]json.RawMessage)
+	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
+		decoded, err := decodeInvokeArgs(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invoke_tool: goal %w", err)
+		}
+		for key, value := range decoded {
+			args[key] = value
+		}
+	}
+	for key, value := range envelope {
+		switch {
+		case key == "tool" || key == "args":
+			continue
+		case strings.HasPrefix(key, "arg."):
+			key = strings.TrimPrefix(key, "arg.")
+		}
+		if _, exists := args[key]; exists {
+			return nil, fmt.Errorf("invoke_tool: goal duplicate argument %q", key)
+		}
+		args[key] = value
+	}
+	encoded, err := json.Marshal(args)
+	if err != nil {
+		return nil, fmt.Errorf("invoke_tool: encode goal args: %w", err)
+	}
+	return encoded, nil
+}
+
+// decodeInvokeArgs tolerates the three shapes real chat templates emit for an
+// object parameter: a JSON object, a JSON object encoded as a string, or a
+// newline/comma-separated "key: value" string. The last form is common when a
+// local model uses XML function calls. Keys are still checked against the
+// target schema by resolveInvokeToolCall, so leniency does not widen access.
+func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
+	var args map[string]json.RawMessage
+	if len(raw) > 0 && raw[0] == '{' {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("args must be an object: %w", err)
+		}
+		return args, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return nil, fmt.Errorf("args must be an object or key:value text")
+	}
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "{") {
+		if err := json.Unmarshal([]byte(text), &args); err == nil {
+			return args, nil
+		}
+	}
+	args = make(map[string]json.RawMessage)
+	parts := strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == ',' || r == ';' })
+	for _, part := range parts {
+		key, value, ok := strings.Cut(part, ":")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("invalid args text %q; want key: value", part)
+		}
+		encoded, _ := json.Marshal(strings.TrimSpace(value))
+		args[strings.TrimSpace(key)] = encoded
+	}
+	if len(args) == 0 && text != "" {
+		return nil, fmt.Errorf("invalid args text; want key: value")
+	}
+	return args, nil
+}
+
+func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
+	for i := range calls {
+		if calls[i].Name != invokeToolName {
+			continue
+		}
+		if resolved, err := resolveInvokeToolCall(l.registry, calls[i]); err == nil {
+			calls[i] = resolved
+		}
+	}
+	return calls
+}

@@ -23,158 +23,36 @@ package app
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/account/codexauth"
 	"supercli/internal/account/credits"
-	"supercli/internal/account/pricing"
 	"supercli/internal/account/tier"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
-	"supercli/internal/agent/reflect"
-	"supercli/internal/agent/ultrawork"
 	"supercli/internal/buildinfo"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
-	"supercli/internal/llm/consult"
-	"supercli/internal/llm/draft"
 	"supercli/internal/llm/factory"
 	"supercli/internal/llm/prompt"
-	"supercli/internal/llm/providers"
-	"supercli/internal/llm/shuffler"
 	"supercli/internal/storage"
 	"supercli/internal/storage/freshness"
 	"supercli/internal/storage/goal"
-	"supercli/internal/storage/library"
-	"supercli/internal/storage/memory"
-	"supercli/internal/storage/session"
-	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
-	"supercli/internal/system/preflight"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
-	"supercli/internal/tools/fileops"
-	"supercli/internal/tools/sandbox"
-	"supercli/internal/tools/shellescape"
 	"supercli/internal/ui/tui"
-	"supercli/internal/webgui"
 )
 
 var version = buildinfo.Version
-
-// codexAuthMgr handles ChatGPT-subscription (Codex) OAuth tokens.
-// Set once at startup from the [codex_auth] config section;
-// buildProvider and the /login and /logout commands use it.
-var codexAuthMgr *codexauth.Manager
-
-// initCodexAuth builds the codex auth manager from config.
-func initCodexAuth(dataDir string, t config.TomlConfig) {
-	codexAuthMgr = codexauth.NewManager(dataDir, codexauth.Options{
-		ClientID:   t.CodexAuth.ClientID,
-		Issuer:     t.CodexAuth.Issuer,
-		BackendURL: t.CodexAuth.BackendURL,
-	})
-}
-
-// supercliSystemPromptBase is the layered system prompt
-// shared by the main loop and any F6 Darwin children. It
-// defaults to core + extended guidance; main() rebuilds it
-// once the model's tier is known — small-tier models get the
-// core only (see internal/prompt and internal/tier).
-var supercliSystemPromptBase = prompt.Build(false)
-var supercliModelProfile string
-var supercliUserInstructions string
-var supercliCoordinatorMode bool
-
-// supercliOrchestratorMode is the HARD delegation mode (explicit
-// `orchestrator = true`). When true the main loop runs with a
-// restricted registry (agent.OrchestratorRegistry): delegation + a
-// read-only lookup set only, so the coordinator physically cannot edit
-// files or run commands and must delegate via `task`. Resolved once in
-// main() from config; /orchestrator persists the change for next launch.
-var supercliOrchestratorMode bool
-
-// supercliDelegationDisabled is the explicit `orchestrator = false` state.
-// Unlike the nil/default adaptive state, it removes task/send_message/task_stop
-// from the main agent entirely, so "never" is a real capability boundary and
-// not merely a prompt suggestion.
-var supercliDelegationDisabled bool
-
-// memoryBriefing is the code-built session-start briefing (user
-// preferences, project card, recent session summaries, other
-// projects). Set once in main() before the loop is created.
-var memoryBriefing string
-
-// workingDirNote states the ACTUAL sandbox root (the BaseDir the
-// file tools enforce) so the model uses the right path on its
-// first file call. Derived in main() from the same resolved home
-// the tools get — never hardcoded — and injected last so it wins
-// over any conflicting project path a memory fact might mention.
-var workingDirNote string
-
-// memoryAutoSaveInstruction backs the B4 contract: the model is
-// told to save a task-log entry after each finished task; the
-// AutoSaver in code covers sessions where it forgets.
-const memoryAutoSaveInstruction = "Memory: after completing a task, call remember with " +
-	"type=task-log summarizing WHAT you did, WHY, and which files you touched. " +
-	"Save user preferences with type=preference (scope=global). Use recall at the " +
-	"start of non-trivial tasks to check prior context."
-
-// buildSystemPrompt returns the base prompt plus the
-// current ISO date stamp and, if a goal service is
-// passed and has an active goal, the [current_goal]
-// block listing the title and pending tasks.
-//
-// F8: goal injection lives here so the main agent and
-// any Darwin children see the same active goal.
-func buildSystemPrompt(svc *goal.Service) string {
-	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
-	if supercliModelProfile != "" {
-		base += "\n\n" + supercliModelProfile
-	}
-	if supercliUserInstructions != "" {
-		base += "\n\n" + supercliUserInstructions
-	}
-	// Orchestrator mode is a stricter coordinator: its lean preamble
-	// replaces the coordinator section (it subsumes the delegate-first
-	// guidance and adds the hard "you have no edit/run tools" boundary).
-	if supercliOrchestratorMode {
-		base += agent.OrchestratorPrompt()
-	} else if supercliCoordinatorMode {
-		base += agent.CoordinatorPrompt()
-	}
-	if memoryBriefing != "" {
-		base += "\n\n" + memoryBriefing
-	}
-	// Inject AFTER the briefing so the real sandbox root wins over
-	// any conflicting project path a memory fact may carry.
-	if workingDirNote != "" {
-		base += "\n\n" + workingDirNote
-	}
-	base += "\n\n" + memoryAutoSaveInstruction
-	if svc == nil {
-		return base
-	}
-	injected, err := svc.Inject(context.Background(), base, 5)
-	if err != nil {
-		log.Printf("goal inject: %v", err)
-		return base
-	}
-	return injected
-}
 
 func Main() {
 	startupT := time.Now()
@@ -184,7 +62,6 @@ func Main() {
 	// until the data root is resolved we fall back to the portable
 	// default; afterwards the crash log lands in the resolved data
 	// dir, same as every other crash path (crash.go).
-	var home string
 	dataDir := storage.PortableDataRoot()
 	defer func() {
 		if r := recover(); r != nil {
@@ -194,123 +71,19 @@ func Main() {
 		}
 	}()
 
-	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
-	dataDirFlag := flag.String("data-dir", "", "runtime data directory (overrides $SUPERCLI_DATA_DIR; default: supercli-data beside this executable)")
-	showVersion := flag.Bool("version", false, "print version and exit")
-	statusFlag := flag.Bool("status", false, "print session/credit usage + audit tail and exit")
-	doctorFlag := flag.Bool("doctor", false, "run environment checks and exit")
-	listModelsFlag := flag.Bool("list-models", false, "print known model capabilities (with --refresh, re-fetch from the provider)")
-	refreshFlag := flag.Bool("refresh", false, "re-fetch the provider's /v1/models and re-probe unknowns; used with --list-models")
-	modelInfoFlag := flag.String("model-info", "", "print details for a single model id and exit")
-	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
-	modelFlag := flag.String("model", "", "model id (default: env SUPERCLI_LLM_MODEL, then gpt-4o-mini)")
-	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
-	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")
-	echoFlag := flag.Bool("echo", false, "force echo provider regardless of env/flags")
-	debugFlag := flag.Bool("debug", false, "verbose logging")
-	maxSession := flag.Int64("max-credits-per-session", 0, "cap total tokens (in+out) per session (0 = no cap)")
-	maxDay := flag.Int64("max-credits-per-day", 0, "cap total tokens (in+out) per UTC day (0 = no cap)")
-	draftModeFlag := flag.String("draft-mode", "off", "F11 draft mode: off|always|balanced|critical (default off; opt-in, requires --draft-model)")
-	draftModelFlag := flag.String("draft-model", "", "F11 draft model id (required to enable F11; no auto-pick)")
-	configFlag := flag.String("config", "", "path to config.toml override")
-	batchFlag := flag.String("batch", "", "F33: run prompt without TUI, output to stdout and exit")
-	resumeFlag := flag.Bool("resume", false, "resume the most recent session on startup")
-	coordinatorFlag := flag.Bool("coordinator", false, "run main loop as a lightweight coordinator that delegates code work to isolated task workers (default on)")
-	noCoordinatorFlag := flag.Bool("no-coordinator", false, "disable default coordinator mode and expose the normal tool set directly to the main loop")
-	unsandboxedFlag := flag.Bool("allow-all", false, "grant full filesystem access — file operations can reach any directory (sensitive system paths still blocked); same as allow_all = true in config.toml")
-	flag.Usage = usage
-	flag.Parse()
-	supercliCoordinatorMode = true
-	if *noCoordinatorFlag || envFalsey("SUPERCLI_COORDINATOR") {
-		supercliCoordinatorMode = false
-	}
-	if *coordinatorFlag || envTruthy("SUPERCLI_COORDINATOR") {
-		supercliCoordinatorMode = true
-	}
-
-	if *showVersion {
-		fmt.Println("supercli", version)
+	// Pipeline: flags -> workspace/config -> short-circuits -> runtime cfg -> onboarding -> TUI.
+	flags := parseCLIFlags()
+	if flags.ShowVersion {
+		printVersion()
 		return
 	}
 
-	resolvedHome, err := storage.ResolveHome(*homeFlag)
-	if err != nil {
-		fatal("resolve home", err)
-	}
-	home = resolvedHome
-	// workingDirNote is set below, after the TOML + unsandboxed
-	// flag are resolved so it reflects the real sandbox state.
+	ws := resolveWorkspace(flags)
+	home, dataDir := ws.Home, ws.DataDir
+	cwd, uiLanguage := ws.Cwd, ws.UILanguage
+	tomlCfg, tomlErr := ws.Toml, ws.TomlErr
+	activeProject, hasActiveProject := ws.ActiveProject, ws.HasActiveProject
 
-	// Workspace and application state are intentionally independent. Opening a
-	// project through --home/SUPERCLI_HOME must never make this portable copy
-	// read another copy's settings.
-	resolvedData, portable, err := storage.ResolveRuntimeDataRoot(*dataDirFlag)
-	if err != nil {
-		fatal("resolve data dir", err)
-	}
-	dataDir = resolvedData
-
-	// One-time migration from the legacy ~/.supercli location.
-	if portable {
-		if msg, merr := migrateLegacyData(dataDir); merr != nil {
-			log.Printf("legacy data migration failed: %v (continuing with a fresh %s)", merr, dataDir)
-		} else if msg != "" {
-			fmt.Fprintln(os.Stderr, msg)
-		}
-	}
-
-	if err := storage.EnsureDir(dataDir); err != nil {
-		fatalUnwritableDataDir(dataDir, portable, err)
-	}
-	// Verify write permissions — the exe may sit in a read-only
-	// location (e.g. Program Files, network drives).
-	if err := checkDirWritable(dataDir); err != nil {
-		fatalUnwritableDataDir(dataDir, portable, err)
-	}
-
-	// Projects (named workspaces): the active project's directory becomes
-	// the agent's sandbox root. Sandbox root is a startup decision (every
-	// file tool binds its base dir at construction), so a project is
-	// selected here, before any tool wiring. An explicit --home flag or
-	// $SUPERCLI_HOME always wins over the active project — project
-	// selection only overrides the cwd fallback. The project's optional
-	// model/provider are applied further below, after config load.
-	workspace := memory.LoadWorkspace(dataDir)
-	activeProject, hasActiveProject := workspace.ActiveProject()
-	if hasActiveProject && *homeFlag == "" && os.Getenv(storage.HomeEnv) == "" {
-		if fi, statErr := os.Stat(activeProject.Path); statErr == nil && fi.IsDir() {
-			home = activeProject.Path
-		}
-	}
-
-	// F29: resolve config.toml hierarchy.
-	// global < project < --config < env < flags.
-	cwd, _ := os.Getwd()
-	tomlCfg, tomlErr := config.ResolveConfig(dataDir, cwd, *configFlag)
-	if tomlErr != nil {
-		log.Printf("config.toml: %v (using defaults)", tomlErr)
-	}
-	uiLanguage, languageErr := config.EnsureLanguage(dataDir, cwd, tomlCfg.Language)
-	if languageErr != nil {
-		log.Printf("language: %v (using %s for this run)", languageErr, uiLanguage)
-	}
-	tomlCfg.Language = uiLanguage
-	// Apply TOML as defaults (env/flags still win later).
-	config.TomlConfigToEnv(tomlCfg)
-	// Unsandboxed: flag > env (which TomlConfigToEnv may have set) > default off.
-	if *unsandboxedFlag || envTruthy("SUPERCLI_ALLOW_ALL") {
-		sandbox.SetUnsandboxed(true)
-	}
-	// State the real sandbox root (the BaseDir file tools enforce) so
-	// the model's first file/list call uses the correct path. Set AFTER
-	// the unsandboxed decision so it reflects the actual sandbox state.
-	if sandbox.IsUnsandboxed() {
-		workingDirNote = "Working directory: " + home +
-			"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
-	} else {
-		workingDirNote = "Working directory (file sandbox root): " + home +
-			"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
-	}
 	initCodexAuth(dataDir, tomlCfg)
 	appLog := initAppLog(dataDir)
 	if appLog != nil {
@@ -340,7 +113,7 @@ func Main() {
 	}
 
 	// --doctor short-circuits before the TUI.
-	if *doctorFlag {
+	if flags.Doctor {
 		// F18: build staleness report from
 		// discovered skills (no provider needed).
 		checker := freshness.NewChecker()
@@ -351,7 +124,7 @@ func Main() {
 	}
 
 	// --status short-circuits before the TUI.
-	if *statusFlag {
+	if flags.Status {
 		if err := runStatus(home, creditStorage); err != nil {
 			fatal("status", err)
 		}
@@ -359,133 +132,13 @@ func Main() {
 	}
 
 	// --batch short-circuits: run prompt without TUI.
-	if *batchFlag != "" {
-		runBatch(*batchFlag, home, dataDir, *providerFlag, *keyFlag, *baseFlag, *modelFlag, *echoFlag, *debugFlag, *draftModeFlag, *draftModelFlag, tomlCfg)
+	if flags.Batch != "" {
+		runBatch(flags.Batch, home, dataDir, flags.Provider, flags.Key, flags.BaseURL, flags.Model, flags.Echo, flags.Debug, flags.DraftMode, flags.DraftModel, tomlCfg)
 		return
 	}
 
-	// --echo short-circuits config.
-	if *echoFlag {
-		*keyFlag = ""
-		*providerFlag = config.ProviderEcho
-	}
-
-	cfg, err := config.Load(config.FlagOverrides{
-		Provider: *providerFlag,
-		APIKey:   *keyFlag,
-		BaseURL:  *baseFlag,
-		Model:    *modelFlag,
-		Debug:    boolPtr(*debugFlag),
-	})
-	if err != nil {
-		fatal("load config", err)
-	}
-	// F29: apply TOML defaults for fields not set by env/flags.
-	if tomlErr == nil {
-		config.ApplyTomlToConfig(&cfg, tomlCfg)
-	}
-	// Active project's preferred model/provider. More specific than the
-	// global TOML default, so it wins over it — but explicit --model /
-	// --provider flags and the corresponding env vars still win over the
-	// project. When a project names a provider, resolve its base URL + API
-	// key from the providers list (same fields a runtime /model swap uses)
-	// so the model actually reaches the right endpoint.
-	if hasActiveProject {
-		if activeProject.Provider != "" && *providerFlag == "" && os.Getenv("SUPERCLI_LLM_PROVIDER") == "" {
-			for _, pc := range tomlCfg.Providers {
-				if pc.Name == activeProject.Provider {
-					cfg.Provider = pc.Type
-					cfg.BaseURL = pc.BaseURL
-					cfg.APIKey = pc.APIKey
-					break
-				}
-			}
-		}
-		if activeProject.Model != "" && *modelFlag == "" && os.Getenv("SUPERCLI_LLM_MODEL") == "" {
-			cfg.Model = activeProject.Model
-		}
-		if err := cfg.Normalize(); err != nil {
-			log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
-		}
-	}
-	// Reasoning effort (OpenAI reasoning models): restore the
-	// persisted level; /reasoning changes it at runtime.
-	if tomlCfg.ReasoningEffort != "" {
-		if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {
-			log.Printf("config: reasoning_effort: %v (ignored)", err)
-		}
-	}
-	// Thinking soft switch (local Qwen /no_think): restore the
-	// persisted state; /think changes it at runtime. Default (nil) is
-	// thinking ON — unchanged from historical behaviour.
-	if tomlCfg.Thinking != nil {
-		llm.SetThinkingEnabled(*tomlCfg.Thinking)
-	}
-	// Apply draft/credit overrides from TOML if not set by flags.
-	if *draftModeFlag == "off" && tomlCfg.DraftMode != "" {
-		*draftModeFlag = tomlCfg.DraftMode
-	}
-	if *draftModelFlag == "" && tomlCfg.DraftModel != "" {
-		*draftModelFlag = tomlCfg.DraftModel
-	}
-	if *maxSession == 0 && tomlCfg.MaxCreditsPerSession > 0 {
-		*maxSession = tomlCfg.MaxCreditsPerSession
-	}
-	if *maxDay == 0 && tomlCfg.MaxCreditsPerDay > 0 {
-		*maxDay = tomlCfg.MaxCreditsPerDay
-	}
-	if cfg.Debug {
-		log.Printf("config: %+v", cfg.Sanitized())
-	}
-
-	// Wave 4: first-run onboarding. When nothing at all is
-	// configured (no providers in config.toml, no env/flag
-	// provider — the resolved provider fell back to echo
-	// without the user asking for it), walk the user through
-	// a minimal setup, persist config.toml, and continue into
-	// chat with the chosen provider.
-	if !*echoFlag && cfg.IsEcho() &&
-		len(tomlCfg.Providers) == 0 && tomlCfg.Provider == "" && tomlCfg.DefaultProvider == "" {
-		if res := tui.RunOnboarding(uiLanguage); !res.Skipped {
-			// "Sign in with ChatGPT" needs the OAuth browser flow,
-			// which the wizard cannot run itself. Do it here, on
-			// the plain console, before the TUI starts.
-			if res.AuthMethod == tui.AuthChatGPT {
-				initCodexAuth(dataDir, tomlCfg)
-				if _, err := codexAuthMgr.Login(context.Background(), os.Stdout); err != nil {
-					fmt.Fprintf(os.Stderr, "ChatGPT login failed: %v\nFalling back to setup-free start — run /login inside SuperCli to retry.\n", err)
-				} else {
-					res.BaseURL = codexAuthMgr.Options().BackendURL
-				}
-			}
-			globalTomlPath, _ := config.FindTomlPaths(dataDir, cwd)
-			saved := tomlCfg
-			saved.Providers = []config.ProviderConf{{
-				Name:    res.Name,
-				Type:    res.Type,
-				BaseURL: res.BaseURL,
-				APIKey:  res.APIKey,
-				Model:   res.Model,
-			}}
-			saved.DefaultProvider = res.Name
-			if res.Model != "" {
-				saved.DefaultModel = res.Model
-			}
-			if err := config.SaveToml(globalTomlPath, saved); err != nil {
-				log.Printf("onboarding: save config.toml: %v", err)
-			}
-			tomlCfg = saved
-			cfg.Provider = res.Type
-			cfg.BaseURL = res.BaseURL
-			cfg.APIKey = res.APIKey
-			if res.Model != "" {
-				cfg.Model = res.Model
-			}
-			if err := cfg.Normalize(); err != nil {
-				log.Printf("onboarding: normalize config: %v", err)
-			}
-		}
-	}
+	cfg := applyRuntimeConfig(&flags, tomlCfg, tomlErr, activeProject, hasActiveProject)
+	maybeRunOnboarding(flags.Echo, &cfg, &tomlCfg, dataDir, cwd, uiLanguage)
 
 	// F16: build the capability registry from
 	// seed + catalog + probe cache. A load
@@ -504,8 +157,8 @@ func Main() {
 	// shell. If the model is unknown, we fall
 	// back to the heuristic so the user gets
 	// SOME answer.
-	if *modelInfoFlag != "" {
-		runModelInfo(caps, *modelInfoFlag)
+	if flags.ModelInfo != "" {
+		runModelInfo(caps, flags.ModelInfo)
 		return
 	}
 
@@ -513,8 +166,8 @@ func Main() {
 	// With --refresh, we fetch /v1/models from
 	// the configured provider and register the
 	// heuristic capabilities before printing.
-	if *listModelsFlag {
-		runListModels(caps, cfg.BaseURL, cfg.APIKey, cfg.Provider, *refreshFlag)
+	if flags.ListModels {
+		runListModels(caps, cfg.BaseURL, cfg.APIKey, cfg.Provider, flags.Refresh)
 		return
 	}
 
@@ -599,97 +252,21 @@ func Main() {
 	}
 
 	registry := tools.NewRegistry()
-	registry.MustRegister(tools.NewReadImage(home, 0).Spec())
-
-	askCh := make(chan tools.AskRequest, 4)
-	askUser := tools.NewAskUser(askCh)
-	registry.MustRegister(askUser.Spec())
-
-	registry.MustRegister(tools.NewSearchCode(home).Spec())
-	codeIntel := tools.NewCodeIntel(home)
+	wrap := toolWrappers{
+		checkpoint: checkpointSpec,
+		// diagnostic is set after codeIntel is created below.
+	}
+	askCh, codeIntel, processSession, toolSearcher, ftsClose := registerMediaAndOfficeTools(
+		registry, home, dataDir, caps, wrap,
+	)
 	defer codeIntel.Close()
-	diagnosticSpec := codeIntel.WrapMutation
-	// Dormant by default: tool_search exposes its one compact schema only when
-	// the model needs exact symbols, references or diagnostics.
-	registry.MustRegister(codeIntel.Spec())
-	processSession := tools.NewProcessSession(home)
 	defer processSession.Close()
-	registry.MustRegister(processSession.Spec())
-
-	// F21: read_zip is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + path/filepath), so
-	// the binary stays self-contained.
-	registry.MustRegister(tools.NewReadZip(home, 0).Spec())
-
-	// F19: read_docx is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + encoding/xml); no
-	// libreoffice, no docx library, no shell-out.
-	registry.MustRegister(tools.NewReadDocx(home, 0).Spec())
-
-	// F22: read_xlsx is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + encoding/xml); no
-	// excelize, no libreoffice, no shell-out.
-	// Renders cells as a markdown-style
-	// pipe-separated table (one row per line,
-	// cells joined by " | ").
-	registry.MustRegister(tools.NewReadXlsx(home, 0).Spec())
-
-	// Wave-2 office editing: edit_docx / edit_xlsx
-	// rewrite a single zip entry byte-for-byte safe
-	// (temp file + atomic swap + .bak backup), pure
-	// stdlib. file_ops is the safe file manager for
-	// office users: no overwrite, no hard delete
-	// (trash folder instead), sandboxed paths.
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditDocx(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditXlsx(home).Spec())))
-	registry.MustRegister(tools.NewListDir(home).Spec())
-
-	// F20: read_pdf is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation uses
-	// github.com/ledongthuc/pdf (pure Go, no
-	// cgo, no shell-out — no pdftotext, no
-	// poppler). Pages are separated by
-	// "--- Page N ---" headers.
-	registry.MustRegister(tools.NewReadPdf(home, 0).Spec())
-
-	// F23: send_screenshot is opt-in (not
-	// always-on). The model discovers it via
-	// tool_search when it needs to attach a
-	// clipboard image to the next message.
-	// The capture uses OS-specific commands
-	// (PowerShell / osascript / xclip /
-	// wl-paste) and the F16 vision gate
-	// refuses the call if the current model
-	// doesn't support image input.
-	registry.MustRegister(tools.NewSendScreenshot(home, caps.HasVision).Spec())
-
-	ftsIndex, err := tools.NewInMemoryIndex()
-	if err != nil {
-		fatal("init fts index", err)
+	if ftsClose != nil {
+		defer ftsClose()
 	}
-	defer ftsIndex.Close()
-	toolSearcher := tools.NewToolSearcher(registry, ftsIndex)
-	registry.MustRegister(toolSearcher.Spec())
-
-	discoverer := tools.NewDiscovererWithBuiltins(home, dataDir)
-	skillApplier := tools.NewSkillApplier(discoverer)
-	registry.MustRegister(skillApplier.Spec())
-
-	userLoader := tools.NewUserToolLoader(home, dataDir)
-	userTools, userErrs := userLoader.Load()
-	for _, e := range userErrs {
-		log.Printf("user tool load: %v", e)
-	}
-	for _, t := range userTools {
-		registry.MustRegister(t)
-	}
+	// wrap.diagnostic is set inside registerMediaAndOfficeTools once
+	// codeIntel exists; late file tools below use wrap.mut.
+	_ = askCh
 
 	if err := toolSearcher.RebuildIndex(); err != nil {
 		log.Printf("rebuild fts index: %v", err)
@@ -716,103 +293,21 @@ func Main() {
 		defer audit.Close()
 	}
 
-	// Execution-profile-aware visibility. Small models and slow local hosts
-	// expose the same practical core; ThinTools decides which of these carry a
-	// schema and which stay in the compact catalog. This keeps a local 122B
-	// model's prefill small without taking read_many/search_code away from it.
-	// `small_full_tools = true` is the explicit full-schema escape hatch.
-	if supercliCoordinatorMode {
-		registry.MarkAlwaysOn("ask_user")
-		registry.MarkAlwaysOn("tool_search")
-		registry.MarkAlwaysOn("goal")
-	} else if execProfile.ThinTools {
-		for _, name := range []string{
-			"read_lines", "read_context", "read_many", "read_image", "search_code",
-			"ctx_execute", "ask_user", "edit_line", "edit_lines",
-			"insert_after", "delete_lines", "write_file", "make_dir",
-			"move", "copy", "trash",
-			"list_dir",
-			"goal", "tool_search", "invoke_tool",
-		} {
-			registry.MarkAlwaysOn(name)
-		}
-	} else {
-		registry.MarkAlwaysOn("read_image")
-		registry.MarkAlwaysOn("ask_user")
-		registry.MarkAlwaysOn("tool_search")
-		registry.MarkAlwaysOn("invoke_tool")
-		registry.MarkAlwaysOn("apply_skill")
-		// darwin is deliberately NOT always-on: its schema (~277 tok)
-		// is a heavy always-on prefix that overlaps conceptually with
-		// task/orchestrator delegation. It stays reachable on demand
-		// via tool_search + the /darwin slash command.
-		registry.MarkAlwaysOn("goal")
-		registry.MarkAlwaysOn("ctx_execute")
+	// Execution-profile-aware visibility + dual memory stack.
+	applyAlwaysOnToolProfile(registry, supercliCoordinatorMode, execProfile.ThinTools)
+	memBundle := openMemoryStack(dataDir, home, cfg.APIKey, smallTier, tomlCfg)
+	if memBundle.Global != nil {
+		defer memBundle.Global.Close()
 	}
-
-	// Wave 2 memory: two SQLite stores. The GLOBAL store lives in
-	// <data dir>/memory.db (user preferences + one "card" per known
-	// project); the PROJECT store lives in
-	// <data dir>/projects/<name>-<hash>/memory.db (facts,
-	// decisions, session log). <data dir>/projects.json maps
-	// project paths to their directories. All failures are
-	// non-fatal: memory never blocks startup.
-	memoryHome := dataDir
-	globalMemStore, gMemErr := memory.OpenStore(memoryHome)
-	if gMemErr != nil {
-		log.Printf("global memory store: %v (global memory disabled)", gMemErr)
-		globalMemStore = nil
-	} else {
-		defer globalMemStore.Close()
+	if memBundle.Project != nil {
+		defer memBundle.Project.Close()
 	}
-	memStore, memErr := memory.OpenProjectStore(memoryHome, home)
-	if memErr != nil {
-		log.Printf("project memory store: %v (F5 disabled)", memErr)
-		memStore = nil
-	} else {
-		defer memStore.Close()
-	}
-	// Embedding backend detection pings local servers, so it runs
-	// in the background; until it lands, searches are FTS5-only.
-	go func() {
-		defer recoverAndLog(dataDir)()
-		if e := memory.DetectEmbedder(cfg.APIKey); e != nil {
-			globalMemStore.SetEmbedder(e)
-			memStore.SetEmbedder(e)
-		}
-	}()
-	// Refresh this project's card (bumps last-session) and build
-	// the session-start briefing injected into the system prompt.
-	memory.RefreshCard(globalMemStore, home, "", "active")
-	briefCap := 700
-	if smallTier {
-		briefCap = 300
-	}
-	// A configured memory_briefing_tokens is a hard override of the
-	// tier default (the briefing packs preferences + freshest journal
-	// lines up to this cap; anything over stays in the DB for recall).
-	if tomlCfg.MemoryBriefingTokens > 0 {
-		briefCap = tomlCfg.MemoryBriefingTokens
-	}
-	memoryBriefing = memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
-	memAutoSaver := &memory.AutoSaver{Project: memStore, Global: globalMemStore, ProjectPath: home}
-	// memProg tracks how much of the conversation the incremental
-	// background saver already summarized (see incrementalMemorySave).
-	memProg := &memProgress{}
-
-	// Persistent memory tools: always-on so the model can save
-	// and recall facts across sessions. remember routes entries
-	// to the project or global store via its `scope` argument;
-	// recall searches both hybridly (FTS5 + vectors when an
-	// embedder was detected).
-	if memStore != nil || globalMemStore != nil {
-		rememberTool := tools.NewRememberDual(storeOrNil(memStore), storeOrNil(globalMemStore))
-		rememberTool.OnSave = memAutoSaver.NoteRemember
-		registry.MustRegister(rememberTool.Spec())
-		registry.MustRegister(tools.NewRecallDual(storeOrNil(memStore), storeOrNil(globalMemStore)).Spec())
-		registry.MarkAlwaysOn("remember")
-		registry.MarkAlwaysOn("recall")
-	}
+	globalMemStore := memBundle.Global
+	memStore := memBundle.Project
+	memAutoSaver := memBundle.AutoSaver
+	memProg := memBundle.Progress
+	memoryBriefing = memBundle.Briefing
+	registerMemoryTools(registry, memBundle)
 
 	// F10: ctx_execute is the context-mode sandbox.
 	// The model uses it instead of file_read for
@@ -885,6 +380,17 @@ func Main() {
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
 		}
 	}
+	compactCfg, compactOverride := resolveCompactConfig(tomlCfg, cfg)
+	var compactProvider llm.Provider
+	if compactOverride {
+		cp, cpErr := provFactory.Build(compactCfg, llm.PurposeCompact)
+		if cpErr != nil {
+			log.Printf("compact_model: provider %q build failed: %v — compaction uses the main provider", tomlCfg.CompactModel, cpErr)
+		} else {
+			compactProvider = cp
+			log.Printf("compact_model: summaries use %q @ %s", cp.Name(), compactCfg.BaseURL)
+		}
+	}
 	taskParallel, taskParallelWarnLocal := execution.Parallel(taskWorkerCfg.BaseURL, tomlCfg.TaskParallel)
 
 	// cache_prompt (config.toml) sets the process-global default so
@@ -900,39 +406,13 @@ func Main() {
 	// the errors below land in the log file only, never in the TUI.
 	slotCache := llm.NewSlotCache(cfg.BaseURL, tomlCfg.SlotCache)
 
-	var injector *reflect.Injector
-	if memStore != nil {
-		patStore, _ := reflect.NewStore(memStore)
-		if patStore != nil {
-			ext := &reflect.Extractor{
-				ErrorsPath:  filepath.Join(logsDir, "tool_errors.log"),
-				MaxPatterns: 5,
-			}
-			// Pattern extraction parses the whole tool_errors.log;
-			// run it off the startup path (the injector reads the
-			// store lazily, so late-stored patterns still apply).
-			go func() {
-				defer recoverAndLog(dataDir)()
-				patterns, extErr := ext.Extract(context.Background())
-				if extErr != nil {
-					log.Printf("F5 extract: %v", extErr)
-				} else if len(patterns) > 0 {
-					if saveErr := patStore.SaveAll(context.Background(), patterns); saveErr != nil {
-						log.Printf("F5 save: %v", saveErr)
-					} else {
-						log.Printf("F5: stored %d patterns", len(patterns))
-					}
-				}
-			}()
-			injector = &reflect.Injector{Store: patStore}
-		}
-	}
+	injector := startPatternInjector(memStore, dataDir, logsDir)
 
 	// F7: build the credit tracker. The session id is
 	// the cwd-based default; for F7 we do not yet
 	// support --resume so each launch is a new
 	// session.
-	budget := credits.Budget{PerSession: *maxSession, PerDay: *maxDay}
+	budget := credits.Budget{PerSession: flags.MaxSession, PerDay: flags.MaxDay}
 	if err := budget.Validate(); err != nil {
 		fatal("credit budget", err)
 	}
@@ -942,323 +422,76 @@ func Main() {
 	}
 	defer tracker.Close()
 
-	// F28: external prices (pricepertoken.com, OpenRouter) push
-	// fetched rates into the credits package so CostFor/StatusBar
-	// use live prices. Non-fatal: if all sources fail, the
-	// hardcoded fallback rates in credits/cost.go still work.
-	//
-	// Startup-latency rule: NEVER hit the network on the startup
-	// path. Apply the 24h disk cache synchronously (pure file
-	// read); only when it's missing/stale, fetch in the
-	// background — rates pop in a second or two after the TUI is
-	// already interactive.
-	if cachedPrices := pricing.LoadCache(dataDir); len(cachedPrices) > 0 {
-		pricing.ApplyCachedRates(dataDir)
-		applyPricingMetadata(caps, cachedPrices)
-		if !pricing.HasContextMetadata(cachedPrices) {
-			fetcher := pricing.NewFetcher(dataDir)
-			capsSnapshot := caps.All()
-			go func() {
-				defer recoverAndLog(dataDir)()
-				updated := fetcher.FetchAndUpdate(capsSnapshot)
-				applyModelInfoMetadata(caps, updated)
-			}()
-		}
-	} else {
-		fetcher := pricing.NewFetcher(dataDir)
-		capsSnapshot := caps.All()
-		go func() {
-			defer recoverAndLog(dataDir)()
-			updated := fetcher.FetchAndUpdate(capsSnapshot)
-			applyModelInfoMetadata(caps, updated)
-		}()
-	}
+	applyPricingStartup(dataDir, caps)
 
-	// F13: open the session store. Messages get persisted
-	// as the loop emits them, and a FTS5 index on
-	// messages.content keeps the search_history tool fast.
-	// A failure here is non-fatal: search_history is
-	// disabled, but the loop still runs in-memory.
-	sessStore, sessErr := session.OpenStore(dataDir)
-	if sessErr != nil {
-		log.Printf("session store: %v (search_history disabled)", sessErr)
-		sessStore = nil
-	} else {
+	// F13: session store + optional search_history tool.
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry)
+	if sessStore != nil {
 		defer sessStore.Close()
 	}
-	var sessWriter agent.SessionWriter
-	if sessStore != nil {
-		// Record a sessions row for this live session so it carries a
-		// cwd (the Writer only touches the messages table). This is what
-		// lets /resume filter sessions to the current project.
-		if err := sessStore.EnsureSession(sessionID, home, cfg.Model); err != nil {
-			log.Printf("session: ensure row: %v", err)
-		}
-		sessWriter = session.NewWriter(sessStore, sessionID)
-		// Opt-in tool: the model discovers it via
-		// tool_search when it wants to recall prior
-		// sessions. We do NOT MarkAlwaysOn.
-		registry.MustRegister(tools.NewSearchHistory(sessStore).Spec())
-	}
 
-	// F11 draft wiring. Build the draft policy +
-	// provider + sink + stats only when F11 is not
-	// explicitly off. The draft model is picked
-	// from the F16 CapabilityRegistry's
-	// SuggestCheapestForTask("plan") — never
-	// hardcoded in Go (D1 decision).
-	// The draft provider comes metered from the factory (default
-	// purpose "draft"); its other roles (navigator side provider,
-	// memory summarizer) re-label per call via llm.WithPurpose.
-	draftPolicy, draftProvider := buildDraftWiring(*draftModeFlag, *draftModelFlag, provider, provFactory, cfg, tierRules)
-	var draftSink agent.DraftOverrideSink
-	if draftProvider != nil {
-		draftSink = reflect.NewJSONLDraftOverrideSink(filepath.Join(dataDir, "reflect"))
-	}
-
-	// F5.a: mid-run reflection. The default is adaptive: it spends the
-	// extra model call only after repeated tool failures, an identical
-	// tool-call batch, or just before MaxSteps. An explicit positive
-	// reflect_every preserves fixed periodic checkpoints; negative disables.
-	reflectEvery := 8
-	adaptiveReflection := tomlCfg.ReflectEvery == 0
-	if tomlCfg.ReflectEvery != 0 {
-		reflectEvery = tomlCfg.ReflectEvery
-	}
-	var reflector agent.Reflector
-	if reflectEvery >= 0 {
-		reflector = &reflect.ModelReflector{Provider: provider}
-	}
-
-	// Wave 4: context-window resolution + auto-compact wiring.
-	// Cascade: config context_window > provider /v1/models
-	// metadata (fetched in the background, parsed defensively)
-	// > learned limit (persisted from past context-length
-	// errors) > 16384 default (applied inside the loop).
-	learned := loadLearnedLimits(dataDir)
-	modelContexts := config.LoadModelContextStore(dataDir)
-	initialContextProvider := config.RuntimeProviderName(tomlCfg, cfg)
-	var provWinMu sync.Mutex
-	provWindows := map[string]int{}
-	if cfg.BaseURL != "" {
-		go func() {
-			defer recoverAndLog(dataDir)()
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			m, err := llm.ListProviderModelContexts(ctx, cfg.BaseURL, cfg.APIKey)
-			if err != nil || len(m) == 0 {
-				return
-			}
-			provWinMu.Lock()
-			provWindows = m
-			provWinMu.Unlock()
-		}()
-	}
-	contextWindowFor := func(model string) agent.ContextWindowResolution {
-		provWinMu.Lock()
-		w := provWindows[model]
-		provWinMu.Unlock()
-		return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, w, caps, learned)
-	}
-	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {
-		if tokens, ok := modelContexts.Get(provider, model); ok {
-			return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
-		}
-		return agent.ContextWindowResolution{}
-	}
-	// Legacy helpers such as resume sizing need only the numeric value; keep
-	// them on the same resolver rather than duplicating the cascade.
-	windowFor := func(model string) int { return contextWindowFor(model).Tokens }
-	autoSummarizer := func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
-		summary, err := summarizeForCompaction(ctx, p, msgs)
-		if err != nil {
-			return "", err
-		}
-		// Exact facts the model should not have to re-discover:
-		// file paths touched + tools loaded via tool_search (their
-		// activation survives compaction).
-		summary += compactFacts(msgs, registry.ActiveNames())
-		return wrapCompactSummary(summary), nil
-	}
-
-	// The navigator's route classification is a tiny call, but on the
-	// main provider it thrashes a single-slot llama.cpp KV cache (its
-	// prompt is a different prefix, so the coordinator re-prefills on
-	// the next call). When a small side provider is already configured,
-	// reuse it — no new knob: task_model's worker host first (a
-	// dedicated second host, so the main slot is never touched), then
-	// the draft provider. Nil keeps today's behaviour (main provider).
-	navigatorProvider := resolveNavigatorProvider(taskWorkerProvider, draftProvider)
+	// F11 draft + F5.a reflection + Wave 4 context windows.
+	dr := wireDraftAndReflection(flags.DraftMode, flags.DraftModel, provider, provFactory, cfg, tierRules, tomlCfg, dataDir)
+	draftPolicy, draftProvider, draftSink := dr.Policy, dr.Provider, dr.Sink
+	reflectEvery, adaptiveReflection, reflector := dr.ReflectEvery, dr.AdaptiveReflection, dr.Reflector
+	cw := wireContextWindows(dataDir, cfg, tomlCfg, caps, compactProvider, registry, taskWorkerProvider, draftProvider)
+	learned, modelContexts := cw.Learned, cw.ModelContexts
+	initialContextProvider := cw.InitialContextProvider
+	contextWindowFor, scopedContextWindowFor := cw.ContextWindowFor, cw.ScopedContextWindowFor
+	windowFor, autoSummarizer := cw.WindowFor, cw.AutoSummarizer
+	navigatorProvider := cw.NavigatorProvider
 	if navigatorProvider != nil {
 		log.Printf("navigator: route classification uses side provider %q", navigatorProvider.Name())
 	}
 
 	// Build the real loop. Pass the home as the image base dir.
-	loop, err := agent.NewLoop(agent.LoopConfig{
-		Provider:           provider,
-		Registry:           registry,
-		System:             buildSystemPrompt(goalSvc),
-		Briefing:           memoryBriefing,
-		MaxSteps:           tomlCfg.MaxStepsOr(10),
-		ErrorLog:           errorLog,
-		Reflector:          reflector,
-		ReflectEvery:       reflectEvery,
-		AdaptiveReflection: adaptiveReflection,
-		PatternInjector:    injector,
-		CreditTracker:      tracker,
-		Writer:             sessWriter,
-		Ultrawork: &ultrawork.Wiring{
-			Goal:        ultraworkGoalAdapter{svc: goalSvc},
-			Credit:      ultraworkCreditAdapter{tracker: tracker},
-			SisyphusMax: 3,
-		},
-		Draft:                  draftPolicy,
-		DraftProvider:          draftProvider,
-		NavigatorProvider:      navigatorProvider,
-		DraftOverrideSink:      draftSink,
-		Stats:                  draftStats,
-		ContextWindowFor:       contextWindowFor,
-		ContextProvider:        initialContextProvider,
-		ScopedContextWindowFor: scopedContextWindowFor,
-		Summarizer:             autoSummarizer,
-		LearnLimit:             learned.Learn,
-		// Zero-LLM tool-result prune (first line of context defense,
-		// before the summary fallback). Config prune_protect_tokens:
-		// 0 = default 8192-token protected tail, negative = off.
-		PruneProtectTokens:    tomlCfg.PruneProtectTokens,
-		EnableNavigator:       execProfile.EnableNavigator,
-		NavigatorAuto:         execProfile.NavigatorAuto,
-		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly && navigatorProvider == nil,
-		// Thin tool protocol: small-tier models get the compact
-		// catalog + full schemas only for the core; they suffer most
-		// from schema bulk in the prefill. Big models keep native
-		// JSON tool calling with full schemas. Mirrors the same
-		// smallTier gate that already trims their always-on set.
-		ThinTools: execProfile.ThinTools,
-		// Stable toolset: keep the request `tools` list fixed all
-		// session so tool_search activations don't invalidate the
-		// server-side KV prompt cache. `stable_toolset = true|false`
-		// in config.toml overrides the built-in default.
-		StableToolset: execProfile.StableToolset,
-		// Catalog hoist (default for thin+stable profiles): with the stable
-		// toolset, move the thin-tools preamble (sentinel instruction
-		// + dormant catalog) into the KV-cached system prefix instead
-		// of re-injecting it behind the growing history every step
-		// (where llama.cpp re-evaluates it on every call). Enabled after
-		// HP Z6/Qwen3.5-122B measured 86.4% fewer evaluated warm-turn
-		// tokens with both quality arms passing. stable_toolset=false
-		// or small_full_tools=true disables the automatic profile.
-		CatalogHoist: execProfile.CatalogHoist,
-		// Orchestrator: task carries a full schema from turn 1 (delegation
-		// is the main loop's primary action). The registry restriction
-		// itself is applied below via SetRegistry, once the task tools are
-		// registered into the full base registry.
-		Orchestrator: supercliOrchestratorMode,
-		// Task delegation parallelism: multiple `task` calls in one turn
-		// run concurrently on cloud backends, sequentially on local ones
-		// (a single GPU serializes them on one slot anyway, N× wall time,
-		// and interleaved worker contexts thrash the KV cache). The
-		// config override (task_parallel) wins in both directions; forcing
-		// parallel on a local backend warns once at execution time.
-		TaskParallel:          taskParallel,
-		TaskParallelWarnLocal: taskParallelWarnLocal,
-		BaseDir:               home,
-	})
+	loop, err := agent.NewLoop(buildMainLoopConfig(loopAssembly{
+		provider:               provider,
+		registry:               registry,
+		goalSvc:                goalSvc,
+		memoryBriefing:         memoryBriefing,
+		tomlCfg:                tomlCfg,
+		errorLog:               errorLog,
+		reflector:              reflector,
+		reflectEvery:           reflectEvery,
+		adaptiveReflection:     adaptiveReflection,
+		injector:               injector,
+		tracker:                tracker,
+		sessWriter:             sessWriter,
+		draftPolicy:            draftPolicy,
+		draftProvider:          draftProvider,
+		navigatorProvider:      navigatorProvider,
+		draftSink:              draftSink,
+		draftStats:             draftStats,
+		contextWindowFor:       contextWindowFor,
+		initialContextProvider: initialContextProvider,
+		scopedContextWindowFor: scopedContextWindowFor,
+		autoSummarizer:         autoSummarizer,
+		learned:                learned,
+		execProfile:            execProfile,
+		taskParallel:           taskParallel,
+		taskParallelWarnLocal:  taskParallelWarnLocal,
+		home:                   home,
+	}))
 	if err != nil {
 		fatal("init agent", err)
 	}
 
-	subReg := agent.NewSubAgentRegistry()
-	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
-	at, err := agent.NewAgentTool(
-		subReg,
-		loop,
-		registry,
-		provider,
-		caps,
-		func(cfg agent.LoopConfig) (*agent.Loop, error) {
-			return agent.NewLoop(cfg)
-		},
-	)
+	at, err := wireAgentTool(agentToolWiring{
+		loop:               loop,
+		registry:           registry,
+		provider:           provider,
+		caps:               caps,
+		tomlCfg:            tomlCfg,
+		taskWorkerProvider: taskWorkerProvider,
+		taskWorkerCfg:      taskWorkerCfg,
+		home:               home,
+		delegationOff:      supercliDelegationDisabled,
+		coordinatorMode:    supercliCoordinatorMode,
+	})
 	if err != nil {
 		fatal("init agent tool", err)
 	}
-	// Worker resource limits (config `task_max_steps` / `task_max_tokens`,
-	// both optional). Steps only override a spec that leaves its own budget
-	// unset; tokens are a hard runaway-loop cap (0 = no cap).
-	at.MaxSteps = tomlCfg.TaskMaxSteps
-	at.MaxTokens = tomlCfg.TaskMaxTokens
-	// Model-per-task: hand the worker backend (built above from
-	// `task_model`) to the task tool. The lazy ping (first delegation
-	// only, 5s cap) is a GET /v1/models probe — cheap and universal for
-	// OpenAI-compat hosts; anthropic/codex transports skip it (their
-	// model lists need different auth) and just trust the build.
-	if taskWorkerProvider != nil {
-		at.WorkerProvider = taskWorkerProvider
-		if u := taskWorkerCfg.BaseURL; u != "" &&
-			taskWorkerCfg.Provider != config.ProviderAnthropic &&
-			taskWorkerCfg.Provider != config.ProviderCodex {
-			key := taskWorkerCfg.APIKey
-			at.WorkerPing = func(pctx context.Context) error {
-				_, pingErr := llm.ListProviderModelContexts(pctx, u, key)
-				return pingErr
-			}
-		}
-	}
-	// Draft-verify ladder (config `draft_verify`, tri-state, default OFF).
-	// When on, a file-changing draft is sieved by verify_commands (free,
-	// objective) and then judged by the COORDINATOR's model (the big one,
-	// `provider`) on the diff + evidence. Nil/false = the task tool is
-	// byte-identical to before. The verdict runs on the coordinator's
-	// provider even when workers use task_model — that asymmetry (small
-	// drafts, big verdict) is the whole point.
-	if resolveDraftVerify(tomlCfg.DraftVerify) {
-		at.DraftVerify = &agent.DraftVerifyConfig{
-			Enabled:        true,
-			VerifyCommands: tomlCfg.VerifyCommands,
-			MaxRounds:      tomlCfg.DraftVerifyMaxRounds,
-			Verdict:        provider,
-		}
-		log.Printf("draft-verify: ON · verify_commands=%v · max_rounds=%d · verdict=%s",
-			tomlCfg.VerifyCommands, tomlCfg.DraftVerifyMaxRounds, provider.Name())
-	}
-	// Preflight repo context (config `preflight_repo`, tri-state, default
-	// ON). When on, a compact repo-state block (hard token budget) is
-	// appended ONCE to the first user message — the variable side of the
-	// prompt, never the system prefix, so the KV-cache front stays stable
-	// — and freshly rebuilt for every delegated worker's briefing (cold
-	// contexts benefit most). Cost is visible in the normal per-turn
-	// token telemetry; the one-line log states the estimate up front.
-	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
-		if block := preflight.Build(home, preflight.Options{}); block != "" {
-			loop.SetNextCoordinatorAddon(block)
-			log.Printf("preflight: repo context ~%d tok (rides the first user message)",
-				preflight.EstimateTokens(block))
-		}
-		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
-	}
-	if !supercliDelegationDisabled {
-		registry.MustRegister(at.Spec())
-		sendMessageTool := agent.NewSendMessageTool(at.Workers)
-		registry.MustRegister(sendMessageTool.Spec())
-		taskStopTool := agent.NewTaskStopTool(at.Workers)
-		registry.MustRegister(taskStopTool.Spec())
-		if supercliCoordinatorMode {
-			registry.MarkAlwaysOn("task")
-			registry.MarkAlwaysOn("send_message")
-			registry.MarkAlwaysOn("task_stop")
-		}
-	}
-
-	// F14: opt-in tool. The model calls hide_messages
-	// when it wants to drop old messages from its own
-	// context. We bind it after NewLoop because the tool
-	// needs the loop as Hider and a way to ask its
-	// current Messages length.
-	hideTool := tools.NewHideMessages(loop, func() int {
-		return len(loop.AllMessages())
-	})
-	registry.MustRegister(hideTool.Spec())
 
 	// F14: /clear slash command. Hides all but the last
 	// 2 user turns from the model's view. Cheaper than
@@ -1266,33 +499,28 @@ func Main() {
 	// FTS5 search index, and the on-disk session.db
 	// all stay intact.
 	mergedCommands := mergedSlashCommands(darwinTool, goalSvc, home)
-
-	// Fala 3: /workers — coordinator visibility. Lists workers from the
-	// task registry; "/workers stop <id>" cancels a running one.
-	mergedCommands["workers"] = func(ctx context.Context, args string) (string, error) {
-		fields := strings.Fields(args)
-		if len(fields) >= 1 && strings.EqualFold(fields[0], "stop") {
-			if len(fields) < 2 {
-				return "usage: /workers stop <id>   (id like worker-1; see /workers)", nil
-			}
-			id := fields[1]
-			if !strings.HasPrefix(id, "worker-") {
-				id = "worker-" + id
-			}
-			if err := at.Workers.Stop(id); err != nil {
-				return fmt.Sprintf("workers: %v", err), nil
-			}
-			return fmt.Sprintf("workers: stop requested for %s", id), nil
-		}
-		return formatWorkers(at.Workers), nil
-	}
-
-	// Fala 3: /context — where the input tokens go (system prompt,
-	// tool schemas, tool results, messages) plus the top 5 heaviest
-	// items, so the user can see what is bloating the context.
-	mergedCommands["context"] = func(ctx context.Context, args string) (string, error) {
-		return agent.FormatContextReport(loop.ContextReport()), nil
-	}
+	wireSlashEarly(mergedCommands, slashWireDeps{
+		home:           home,
+		dataDir:        dataDir,
+		cwd:            cwd,
+		sessionID:      sessionID,
+		uiLanguage:     uiLanguage,
+		tomlCfg:        tomlCfg,
+		loop:           loop,
+		at:             at,
+		tracker:        tracker,
+		provider:       provider,
+		caps:           caps,
+		sessStore:      sessStore,
+		windowFor:      windowFor,
+		slotCache:      slotCache,
+		injector:       injector,
+		registry:       registry,
+		memStore:       memStore,
+		globalMemStore: globalMemStore,
+		memoryBriefing: memoryBriefing,
+		askCh:          askCh,
+	})
 
 	// MCP client: merge configured servers with portable dataDir/mcp packages,
 	// expose one thin bridge, and start each stdio process only on first use.
@@ -1308,72 +536,8 @@ func Main() {
 	}
 	mergedCommands["mcp"] = mcpCommand(mcpManager)
 
-	// /allow-all — toggle full filesystem access. Persists to config.toml.
-	mergedCommands["allow-all"] = func(ctx context.Context, args string) (string, error) {
-		switch strings.ToLower(strings.TrimSpace(args)) {
-		case "on", "true", "1":
-			sandbox.SetUnsandboxed(true)
-			workingDirNote = "Working directory: " + home +
-				"\nFull filesystem access is ON (--allow-all). You can read and write files anywhere on the filesystem. Prefer absolute paths."
-		case "off", "false", "0", "":
-			sandbox.SetUnsandboxed(false)
-			workingDirNote = "Working directory (file sandbox root): " + home +
-				"\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
-		default:
-			return "usage: /allow-all on|off", nil
-		}
-		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
-		if tc, err := config.LoadToml(globalPath); err == nil {
-			tc.AllowAll = sandbox.IsUnsandboxed()
-			if err := config.SaveToml(globalPath, tc); err != nil {
-				log.Printf("allow-all: save config.toml: %v", err)
-			}
-		}
-		if sandbox.IsUnsandboxed() {
-			loop.InjectUserMessage(ctx, "[filesystem access] Full filesystem access is now ON. Absolute file and search paths outside the workspace are allowed; sensitive system folders remain blocked.")
-			return "Full filesystem access is now ON — file operations can reach any directory (sensitive system paths still blocked). Persisted to config.toml.", nil
-		}
-		loop.InjectUserMessage(ctx, "[filesystem access] Workspace sandbox is now ON. File and search paths must stay inside the active workspace.")
-		return "Sandbox is now ON — file operations restricted to the working directory. Persisted to config.toml.", nil
-	}
-
-	mergedCommands["clear"] = func(ctx context.Context, args string) (string, error) {
-		hidden := loop.HideLastUserTurns(2)
-		if hidden == 0 {
-			return "nothing to clear", nil
-		}
-		return fmt.Sprintf("cleared: hid %d message(s) from context (scrollback kept)", hidden), nil
-	}
-
-	// Wave 4: /resume — list recent sessions or load one back
-	// into the live loop. The continuation is recorded under
-	// the NEW session id (sessWriter keeps writing here); the
-	// original session stays intact and searchable.
-	mergedCommands["resume"] = func(ctx context.Context, args string) (string, error) {
-		if sessStore == nil {
-			return "resume: session store unavailable", nil
-		}
-		args = strings.TrimSpace(args)
-		if args == "" || strings.EqualFold(args, "all") {
-			return listResumableSessions(ctx, sessStore, sessionID, home, strings.EqualFold(args, "all"))
-		}
-		out, err := resumeSession(ctx, loop, sessStore, windowFor, args)
-		if err != nil {
-			return fmt.Sprintf("resume: %v", err), nil
-		}
-		// Warm the server-side KV BEFORE the first request of the
-		// resumed conversation. Restore is always safe: llama.cpp
-		// re-evals from the first divergent token, so a stale or
-		// mismatched slot file only costs the benefit.
-		if n, rerr := slotCache.Restore(ctx, args); rerr != nil {
-			log.Printf("slotcache: restore %s: %v (disabled for this session)", args, rerr)
-		} else if n > 0 {
-			log.Printf("slotcache: restored %d cached token(s) for %s", n, args)
-		}
-		return out, nil
-	}
 	// --resume: load the most recent prior session at startup.
-	if *resumeFlag && sessStore != nil {
+	if flags.Resume && sessStore != nil {
 		if recent, err := sessStore.ListRecent(context.Background(), 2); err == nil {
 			for _, r := range recent {
 				if r.ID == sessionID {
@@ -1400,918 +564,60 @@ func Main() {
 	// roster needs config.toml provider entries to build
 	// per-model providers.
 
-	// F25a: /help — list all registered slash commands.
-	mergedCommands["help"] = func(ctx context.Context, args string) (string, error) {
-		// Short grouped list by default; /help all shows everything.
-		if strings.TrimSpace(strings.ToLower(args)) == "all" {
-			return tui.HelpContentAllFor(uiLanguage), nil
-		}
-		return tui.HelpContentFor(uiLanguage), nil
-	}
-
-	// F25a: /reflect — show learned patterns from reflection.
-	mergedCommands["reflect"] = func(ctx context.Context, args string) (string, error) {
-		if injector == nil {
-			return "reflect: no patterns learned yet (F5 memory store not available)", nil
-		}
-		suffix, err := injector.Build(ctx, "")
-		if err != nil {
-			return fmt.Sprintf("reflect: %v", err), nil
-		}
-		if suffix == "" {
-			return "reflect: no relevant patterns found", nil
-		}
-		return suffix, nil
-	}
-
-	// F25a: /compact — real context compaction. The active
-	// model summarizes the conversation (9-section prompt),
-	// then every non-system message is replaced by a single
-	// system message containing the summary plus a resume
-	// wrapper. The dropped messages stay in the F13 session
-	// store and remain searchable via search_history.
-	mergedCommands["compact"] = func(ctx context.Context, args string) (string, error) {
-		msgs := loop.AllMessages()
-		nonSystem := 0
-		for _, m := range msgs {
-			if m.Role != llm.RoleSystem {
-				nonSystem++
-			}
-		}
-		if nonSystem == 0 {
-			return "compact: nothing to compact (already minimal)", nil
-		}
-		summary, err := summarizeForCompaction(ctx, loop.Provider(), msgs)
-		if err != nil {
-			return fmt.Sprintf("compact: summarization failed: %v (context unchanged)", err), nil
-		}
-		summary += compactFacts(msgs, registry.ActiveNames())
-		removed := loop.CompactWithSummary(wrapCompactSummary(summary))
-		return fmt.Sprintf("compact: replaced %d message(s) with a %d-char summary", removed, len(summary)), nil
-	}
-
-	// F25a: /status — show credits and session info.
-	mergedCommands["status"] = func(ctx context.Context, args string) (string, error) {
-		sessUsed, dayUsed := tracker.Used()
-		budget := tracker.Budget()
-		name := provider.Name()
-		var b strings.Builder
-		fmt.Fprintf(&b, "model: %s\n", name)
-		if budget.PerSession > 0 {
-			fmt.Fprintf(&b, "session: %d / %d tokens (%.0f%%)\n",
-				sessUsed, budget.PerSession, float64(sessUsed)/float64(budget.PerSession)*100)
-		} else {
-			fmt.Fprintf(&b, "session: %d tokens (no cap)\n", sessUsed)
-		}
-		if budget.PerDay > 0 {
-			fmt.Fprintf(&b, "daily: %d / %d tokens (%.0f%%)\n",
-				dayUsed, budget.PerDay, float64(dayUsed)/float64(budget.PerDay)*100)
-		} else {
-			fmt.Fprintf(&b, "daily: %d tokens (no cap)\n", dayUsed)
-		}
-		// Session-write health: silent-loss protection. One line
-		// when everything is fine; the sticky first error, the
-		// failure counter and the retry-buffer depth when not.
-		ps := loop.PersistStatus()
-		switch {
-		case ps.Failures == 0:
-			fmt.Fprintf(&b, "persistence: ok\n")
-		default:
-			state := "recovered (last write ok)"
-			if !ps.LastWriteOK {
-				state = "FAILING (last write failed)"
-			}
-			fmt.Fprintf(&b, "persistence: %s\n", state)
-			fmt.Fprintf(&b, "  failures: %d (first: %s at %s — %s)\n",
-				ps.Failures, ps.FirstOp, ps.FirstAt.Format("15:04:05"), ps.FirstErr)
-			fmt.Fprintf(&b, "  last: %s at %s — %s\n",
-				ps.LastOp, ps.LastAt.Format("15:04:05"), ps.LastErr)
-			if ps.Pending > 0 {
-				fmt.Fprintf(&b, "  buffered for retry: %d message(s)\n", ps.Pending)
-			}
-			if ps.ProjectionDirty {
-				fmt.Fprintf(&b, "  context projection: dirty (retry pending)\n")
-			}
-			if ps.Dropped > 0 {
-				fmt.Fprintf(&b, "  LOST to buffer overflow: %d message(s)\n", ps.Dropped)
-			}
-		}
-		return b.String(), nil
-	}
-
-	// /reasoning — show or set the reasoning-effort level for
-	// OpenAI-family reasoning models. Persisted to the global
-	// config.toml; sent only to models that support the parameter.
-	mergedCommands["reasoning"] = func(ctx context.Context, args string) (string, error) {
-		args = strings.ToLower(strings.TrimSpace(args))
-		modelName := loop.Provider().Name()
-		if args == "" {
-			cur, effective, adjusted := llm.ReasoningEffortAdjustment(modelName)
-			if cur == "" {
-				cur = "(not set — provider default)"
-			}
-			note := ""
-			if !llm.SupportsReasoningEffort(modelName) {
-				note = fmt.Sprintf("\nnote: current model %q does not support reasoning effort; the parameter is not sent", modelName)
-			}
-			if supported, ok := llm.SupportedReasoningEfforts(modelName); ok {
-				note += fmt.Sprintf("\nbackend-supported for %s: %s", modelName, strings.Join(supported, "|"))
-			}
-			if adjusted {
-				note += fmt.Sprintf("\neffective for current model: %s (configured %s was adjusted from backend evidence)", effective, cur)
-			}
-			return fmt.Sprintf("reasoning effort: %s\nusage: /reasoning <%s|off>%s",
-				cur, strings.Join(llm.ReasoningEffortLevels, "|"), note), nil
-		}
-		if args == "off" || args == "default" {
-			args = ""
-		}
-		if err := llm.SetReasoningEffort(args); err != nil {
-			return fmt.Sprintf("reasoning: %v", err), nil
-		}
-		// Persist to the GLOBAL config.toml (same file the
-		// onboarding wizard and provider manager write).
-		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
-		if tc, err := config.LoadToml(globalPath); err == nil {
-			tc.ReasoningEffort = args
-			if err := config.SaveToml(globalPath, tc); err != nil {
-				log.Printf("reasoning: save config.toml: %v", err)
-			}
-		}
-		if args == "" {
-			return "reasoning effort cleared (provider default)", nil
-		}
-		out := fmt.Sprintf("reasoning effort set to %s", args)
-		if !llm.SupportsReasoningEffort(modelName) {
-			out += fmt.Sprintf("\nnote: current model %q does not support it; the parameter will apply when you switch to an OpenAI reasoning model", modelName)
-		} else if configured, effective, adjusted := llm.ReasoningEffortAdjustment(modelName); adjusted {
-			out += fmt.Sprintf("\nnote: current backend evidence adjusts %s -> %s for %s", configured, effective, modelName)
-		}
-		return out, nil
-	}
-
-	// /think — toggle chain-of-thought for local models that honour a
-	// prompt soft switch (Qwen /no_think). Orthogonal to /reasoning
-	// (cloud reasoning_effort). Default is on; `/think off` appends
-	// /no_think to the trailing prompt to cut latency on Qwen.
-	mergedCommands["think"] = func(ctx context.Context, args string) (string, error) {
-		args = strings.ToLower(strings.TrimSpace(args))
-		modelName := loop.Provider().Name()
-		if args == "" {
-			state := "on"
-			if !llm.ThinkingEnabled() {
-				state = "off"
-			}
-			note := ""
-			if !llm.SupportsThinkingSoftSwitch(modelName) {
-				note = fmt.Sprintf("\nnote: current model %q has no prompt thinking switch; /think off has no effect on it (use /reasoning for cloud reasoning models)", modelName)
-			}
-			return fmt.Sprintf("thinking: %s\nusage: /think <on|off>%s", state, note), nil
-		}
-		var on bool
-		switch args {
-		case "on", "true", "1":
-			on = true
-		case "off", "false", "0":
-			on = false
-		default:
-			return "usage: /think <on|off>", nil
-		}
-		llm.SetThinkingEnabled(on)
-		// Persist to the GLOBAL config.toml.
-		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
-		if tc, err := config.LoadToml(globalPath); err == nil {
-			v := on
-			tc.Thinking = &v
-			if err := config.SaveToml(globalPath, tc); err != nil {
-				log.Printf("think: save config.toml: %v", err)
-			}
-		}
-		state := "on"
-		if !on {
-			state = "off"
-		}
-		out := fmt.Sprintf("thinking set to %s", state)
-		if !on && !llm.SupportsThinkingSoftSwitch(modelName) {
-			out += fmt.Sprintf("\nnote: current model %q has no prompt thinking switch; the setting applies when you switch to a Qwen-family model", modelName)
-		}
-		return out, nil
-	}
-
-	// /orchestrator — three delegation modes. Unlike /think it does NOT
-	// apply mid-session: it swaps the main loop's tool list, and changing
-	// the tool list in flight would break the KV-cache prefix (chat
-	// templates serialize `tools` at the very start of the prompt), so it
-	// persists to config.toml and takes effect on the next launch.
-	mergedCommands["orchestrator"] = func(ctx context.Context, args string) (string, error) {
-		args = strings.ToLower(strings.TrimSpace(args))
-		curState := "auto"
-		if supercliOrchestratorMode {
-			curState = "on"
-		} else if supercliDelegationDisabled {
-			curState = "off"
-		}
-		if args == "" {
-			return fmt.Sprintf("orchestrator: %s (this session)\nusage: /orchestrator <auto|on|off>   — auto=delegate when useful, on=always, off=never; next launch", curState), nil
-		}
-		var saved *bool
-		want := "auto"
-		switch args {
-		case "auto", "default":
-			saved = nil
-		case "on", "true", "1":
-			v := true
-			saved = &v
-			want = "on"
-		case "off", "false", "0":
-			v := false
-			saved = &v
-			want = "off"
-		default:
-			return "usage: /orchestrator <auto|on|off>", nil
-		}
-		// Persist to the GLOBAL config.toml.
-		globalPath, _ := config.FindTomlPaths(dataDir, cwd)
-		if tc, err := config.LoadToml(globalPath); err == nil {
-			tc.Orchestrator = saved
-			if err := config.SaveToml(globalPath, tc); err != nil {
-				log.Printf("orchestrator: save config.toml: %v", err)
-				return "orchestrator: failed to save config", nil
-			}
-		}
-		if want == curState {
-			return fmt.Sprintf("orchestrator is already %s and saved.", want), nil
-		}
-		return fmt.Sprintf("orchestrator set to %s — takes effect on the next launch (new session). This session keeps its current tool set.", want), nil
-	}
-
-	// /usage — force a fresh fetch of the ChatGPT-subscription usage
-	// limits (5h rolling + weekly window) from the dedicated usage
-	// endpoint and print them. This is NOT a completion: it hits the
-	// usage endpoint directly and does not consume the quota. When the
-	// active provider is not Codex (or has no auth) it prints a clear
-	// message instead of an error.
-	mergedCommands["usage"] = func(ctx context.Context, args string) (string, error) {
-		prov := llm.Unwrap(loop.Provider())
-		_, single := prov.(codexUsageFetcher)
-		_, all := prov.(codexUsageAllFetcher)
-		if !single && !all {
-			return "the active model is not a ChatGPT-subscription (Codex) model — usage limits are only available there.\nRun /login and /model gpt-5.5 to switch.", nil
-		}
-
-		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-		// Refresh BEFORE building the pool table so every account's
-		// snapshot is current. For a multi-account router this fetches
-		// ALL accounts (each with its own token), so the pool table and
-		// POOL aggregate reflect every account — not just the active one.
-		rl, err := refreshCodexUsage(fctx, prov)
-		// The per-account pool table (multi-account router) is built
-		// from each account's last-known snapshot AFTER the refresh, so
-		// it shows the freshly-fetched numbers; it stays useful even
-		// when some accounts failed to refresh (expired token, offline).
-		pool := codexPoolUsageDetail(prov)
-		// Partial success (multi-account): the active account refreshed
-		// fine but another account's token failed. Don't treat that as a
-		// total failure — show the fresh active numbers and pool table,
-		// noting which account(s) could not refresh.
-		if err != nil && rl.OK {
-			return fmt.Sprintf("Codex usage (just refreshed; some accounts failed: %v):\n%s%s",
-				err, rl.FormatDetail(), pool), nil
-		}
-		if err != nil {
-			if rp, ok := prov.(interface {
-				RateLimits() (llm.CodexRateLimits, bool)
-			}); ok {
-				if cached, ok := rp.RateLimits(); ok {
-					return "could not refresh (showing last known):\n" + cached.FormatDetail() + pool, nil
-				}
-			}
-			// No snapshot for the active account, but the pool may
-			// still have per-account data worth showing. Either way the
-			// real reason (HTTP status, body, URL) MUST be surfaced —
-			// dropping err here is what made /usage print a bare
-			// "could not refresh the active account:" with nothing after.
-			if pool != "" {
-				return fmt.Sprintf("could not refresh the active account: %v%s", err, pool), nil
-			}
-			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
-		}
-		return "Codex usage (just refreshed):\n" + rl.FormatDetail() + pool, nil
-	}
-
-	// Wave 2 B6: /memory — inspect persistent memory. No args:
-	// overview (recent entries, DB sizes, embedding status).
-	// `/memory search <q>` runs a hybrid search over both stores;
-	// `/memory forget <id>` deletes an entry wherever it lives.
-	mergedCommands["memory"] = func(ctx context.Context, args string) (string, error) {
-		return memoryCommand(ctx, memStore, globalMemStore, memoryBriefing, args)
-	}
-
-	// /projects — manage the per-project memory map. Backed by
-	// internal/storage/memory/projects.go; the slash command is a
-	// thin shell that calls into app.projectsCommand. The
-	// interactive TUI menu (opened from the 'p' shortcut or any
-	// /projects invocation without args) lives in tui/menu_projects.go.
-	mergedCommands["projects"] = func(ctx context.Context, args string) (string, error) {
-		return projectsCommand(ctx, args, dataDir)
-	}
-
 	// Model menus are handled directly by the TUI: /model is the fast
 	// picker of enabled models, while /models is the complete visibility
 	// catalog. The old text-only handler would only duplicate that state.
 
-	// F30: create provider manager, load persisted
-	// hidden-models state, and reload the providers list
-	// from config.toml so model filtering works immediately.
-	// (Created before /login so it can register the codex
-	// provider entry.)
-	provMgr := providers.NewManager(dataDir)
-	// Persist the runtime /model selection to the highest-priority
-	// config that startup resolution actually reads. When a project
-	// config (<cwd>/.supercli/config.toml) is in effect it overrides
-	// the global config at startup, so saving the selection only to
-	// the global config would let the project config silently shadow
-	// it — the model swap would be forgotten on the next launch.
-	if gp, pp := config.FindTomlPaths(dataDir, cwd); pp != "" {
-		if _, statErr := os.Stat(pp); statErr == nil {
-			provMgr.SetActiveConfigPath(pp)
-		} else {
-			provMgr.SetActiveConfigPath(gp)
-		}
-	}
-	provMgr.Reload()
-	provMgr.LoadHiddenState()
+	// F30 provider manager + F12 council/consult tool.
+	provMgr := setupProviderManager(dataDir, cwd, caps)
+	buildCouncilMember := makeCouncilMemberBuilder(provMgr, caps, cfg, provFactory)
+	council := wireConsultTool(provider, caps, cfg, provFactory, buildCouncilMember, loop, registry)
 
-	// ChatGPT-OAuth (codex) providers have no /v1/models endpoint,
-	// so the background ScanModels alone could never discover their
-	// models in past releases. Register the static Codex catalog for
-	// every configured codex-type entry NOW, under the entry's own
-	// name — otherwise the /model picker stays empty after a restart
-	// (the catalog used to be registered only inside the /login
-	// handler, and only under the hardcoded "codex" name, while the
-	// onboarding wizard saves the entry as name "openai").
-	for _, p := range provMgr.Configured() {
-		if !p.Disabled && p.Type == config.ProviderCodex {
-			llm.RegisterCodexCatalog(caps, p.Name)
-		}
-	}
+	wireSlashLate(mergedCommands, slashWireDeps{
+		home:               home,
+		dataDir:            dataDir,
+		cwd:                cwd,
+		sessionID:          sessionID,
+		uiLanguage:         uiLanguage,
+		tomlCfg:            tomlCfg,
+		loop:               loop,
+		at:                 at,
+		tracker:            tracker,
+		provider:           provider,
+		caps:               caps,
+		sessStore:          sessStore,
+		windowFor:          windowFor,
+		slotCache:          slotCache,
+		injector:           injector,
+		registry:           registry,
+		memStore:           memStore,
+		globalMemStore:     globalMemStore,
+		memoryBriefing:     memoryBriefing,
+		askCh:              askCh,
+		provMgr:            provMgr,
+		council:            council,
+		buildCouncilMember: buildCouncilMember,
+	})
 
-	// F12: cross-model consultation. Built here (after the
-	// provider manager) so the user-picked council roster can
-	// resolve "providerName/modelID" specs against config.toml
-	// provider entries (local + online endpoints alike).
-	//
-	// buildCouncilMember builds a one-shot provider for a
-	// roster spec. The spec is "providerName/modelID" when the
-	// prefix matches a configured provider (model ids may
-	// themselves contain "/" or ":", e.g. openrouter/ollama);
-	// otherwise the whole spec is treated as a bare model id
-	// served by the active transport.
-	buildCouncilMember := func(spec string) (llm.Provider, error) {
-		provName, model := "", spec
-		if i := strings.Index(spec, "/"); i > 0 {
-			prefix := spec[:i]
-			for _, pc := range provMgr.Configured() {
-				if pc.Name == prefix && !pc.Disabled {
-					provName, model = prefix, spec[i+1:]
-					break
-				}
-			}
-		}
-		if provName == "" {
-			provName = caps.Provider(model)
-		}
-		mCfg := cfg
-		mCfg.Model = model
-		for _, pc := range provMgr.Configured() {
-			if pc.Name == provName && !pc.Disabled {
-				mCfg.Provider = pc.Type
-				mCfg.BaseURL = pc.BaseURL
-				mCfg.APIKey = pc.APIKey
-				break
-			}
-		}
-		// Through the factory: council members are metered too, so
-		// their calls land in the ledger under "consult" instead of
-		// vanishing (WithPurpose on a raw provider was ignored).
-		return provFactory.Build(mCfg, llm.PurposeConsult)
-	}
+	registerFileWebAndLineTools(registry, home, tomlCfg, wrap, toolSearcher)
 
-	// The auto council (cheapest-N pool) stays as the fallback
-	// for the consult tool and for /council when the user never
-	// picked a roster.
-	council := buildConsultCouncil(3, provider, caps, cfg, provFactory)
-	if council == nil {
-		// No cheap pool available — keep a judge-only council
-		// so explicit model selection (tool `models` param and
-		// the /council roster) still works.
-		council = &consult.Council{Judge: provider}
+	// F7 + F8 status bar (goal, credits, tokens, ctx, codex limits, workers).
+	projName := ""
+	if hasActiveProject {
+		projName = activeProject.Name
 	}
-	consultTool := tools.NewConsult(council)
-	consultTool.BuildProvider = buildCouncilMember
-	consultTool.OnResult = func(r consult.Result) {
-		winner := r.Verdict.WinnerIndex
-		prov := ""
-		if !r.AllFailed && winner >= 0 && winner < len(r.Candidates) {
-			prov = r.Candidates[winner].Provider
-		} else {
-			winner = -1
-		}
-		loop.Emit(agent.ConsultEvent{
-			Question:       r.Question,
-			CandidateCount: len(r.Candidates),
-			WinnerIndex:    winner,
-			WinnerProvider: prov,
-			Reason:         r.Verdict.Reason,
-			AllFailed:      r.AllFailed,
-			TotalTokens:    r.TotalTokens,
-		})
-	}
-	registry.MustRegister(consultTool.Spec())
-
-	// /council — manual brainstorming across hand-picked models.
-	//
-	//	/council               → multi-select roster picker
-	//	                         (space toggles, enter confirms;
-	//	                          selection persists in config.toml
-	//	                          under [council] models)
-	//	/council <question>    → ask the saved roster in parallel
-	//	/council N <question>  → legacy: auto cheapest-N pool
-	//	                         (used only when no roster is saved)
-	mergedCommands["council"] = func(ctx context.Context, args string) (string, error) {
-		q := strings.TrimSpace(args)
-		if q == "" {
-			// Interactive roster picker via the ask_user UI.
-			opts := councilPickerOptions(provMgr, caps)
-			if len(opts) == 0 {
-				return "council: no models available — add providers via /providers first", nil
-			}
-			respond := make(chan tools.AskAnswer, 1)
-			req := tools.AskRequest{
-				ID:          "council-pick",
-				Question:    "Pick council members (space toggles, enter confirms)",
-				Header:      "council",
-				Options:     opts,
-				MultiSelect: true,
-				Respond:     respond,
-			}
-			select {
-			case askCh <- req:
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-			select {
-			case ans := <-respond:
-				if ans.Cancelled || len(ans.Selected) == 0 {
-					return "council: selection cancelled", nil
-				}
-				if err := provMgr.SaveCouncilModels(ans.Selected); err != nil {
-					log.Printf("council: save roster failed: %v", err)
-				}
-				return fmt.Sprintf("council roster saved: %s\nask away: /council <question>",
-					strings.Join(ans.Selected, ", ")), nil
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-		}
-		// Roster: last picker selection (global config.toml) or
-		// the merged [council] models section (project override).
-		roster := provMgr.LoadCouncilModels()
-		if len(roster) == 0 {
-			roster = tomlCfg.Council.Models
-		}
-		// Legacy optional leading N (only meaningful for the
-		// auto-pool fallback path).
-		n := 3
-		if fields := strings.Fields(q); len(fields) > 1 {
-			if v, err := strconv.Atoi(fields[0]); err == nil && v > 0 {
-				n = v
-				q = strings.TrimSpace(strings.TrimPrefix(q, fields[0]))
-			}
-		}
-		if len(roster) == 0 {
-			// Fallback: auto cheapest-N council with judge pick.
-			if len(council.Samples) == 0 {
-				return "council: no roster picked yet — run /council (no args) to choose models", nil
-			}
-			res, err := council.Consult(ctx, consult.Request{Question: q, N: n})
-			if err != nil {
-				return fmt.Sprintf("council: %v", err), nil
-			}
-			if res.AllFailed {
-				return "council: all samples failed", nil
-			}
-			w := res.Candidates[res.Verdict.WinnerIndex]
-			return fmt.Sprintf("winner (#%d, %s):\n%s\n\njudge: %s\n[%d candidate(s), %d tokens]",
-				res.Verdict.WinnerIndex+1, w.Provider, w.Response, res.Verdict.Reason,
-				len(res.Candidates), res.TotalTokens), nil
-		}
-		// Hand-picked roster: build each member; a single bad
-		// model never aborts the rest.
-		var provs []llm.Provider
-		var specs []string
-		var buildErrs []string
-		for _, s := range roster {
-			p, err := buildCouncilMember(s)
-			if err != nil {
-				buildErrs = append(buildErrs, fmt.Sprintf("model %s: error: %v", s, err))
-				continue
-			}
-			provs = append(provs, p)
-			specs = append(specs, s)
-		}
-		if len(provs) == 0 {
-			return "council: no usable models in roster: " + strings.Join(buildErrs, "; "), nil
-		}
-		cc := &consult.Council{Samples: provs, Judge: loop.Provider()}
-		res, err := cc.ConsultSelected(ctx, q, provs)
-		if err != nil {
-			return fmt.Sprintf("council: %v", err), nil
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "council × %d — %s\n", len(provs), q)
-		for i, cd := range res.Candidates {
-			if cd.Err != nil {
-				fmt.Fprintf(&b, "\n━━ %s · error ━━\nmodel %s: error: %v\n", specs[i], specs[i], cd.Err)
-				continue
-			}
-			fmt.Fprintf(&b, "\n━━ %s · %s · in %d / out %d tok ━━\n%s\n",
-				specs[i], cd.Elapsed.Round(time.Millisecond), cd.In, cd.Out,
-				strings.TrimSpace(cd.Response))
-		}
-		for _, e := range buildErrs {
-			b.WriteString("\n" + e + "\n")
-		}
-		if w := res.Verdict.WinnerIndex; w >= 0 && w < len(specs) {
-			fmt.Fprintf(&b, "\njudge (%s): winner=%s · %s\n", loop.Provider().Name(), specs[w], res.Verdict.Reason)
-		} else if res.Verdict.Reason != "" {
-			fmt.Fprintf(&b, "\njudge: %s\n", res.Verdict.Reason)
-		}
-		fmt.Fprintf(&b, "[%d model(s), %d total tokens]", len(res.Candidates), res.TotalTokens)
-		return b.String(), nil
-	}
-
-	// ChatGPT-subscription auth: /login runs the OAuth+PKCE
-	// browser flow and registers a "codex" provider entry;
-	// /logout clears the saved tokens.
-	mergedCommands["login"] = func(ctx context.Context, args string) (string, error) {
-		if codexAuthMgr == nil {
-			initCodexAuth(dataDir, tomlCfg)
-		}
-		// Multi-account: "/login <label>" signs a SECOND (named)
-		// account into auth-<label>.json. Bare "/login" uses the
-		// default account exactly as before.
-		label := strings.TrimSpace(args)
-		mgr := codexAuthMgr
-		if label != "" {
-			mgr = codexauth.NewManagerFor(dataDir, label, codexauth.Options{
-				ClientID:   tomlCfg.CodexAuth.ClientID,
-				Issuer:     tomlCfg.CodexAuth.Issuer,
-				BackendURL: tomlCfg.CodexAuth.BackendURL,
-			})
-		}
-		var status strings.Builder
-		res, err := mgr.Login(ctx, &status)
-		if err != nil {
-			out := strings.TrimSpace(status.String())
-			if out != "" {
-				return out + "\n" + fmt.Sprintf("login failed: %v", err), nil
-			}
-			return fmt.Sprintf("login failed: %v", err), nil
-		}
-		// Register a "codex" provider entry so /model and the
-		// provider menus can route through the ChatGPT backend.
-		if provMgr != nil {
-			if err := provMgr.Add("codex", config.ProviderCodex,
-				mgr.Options().BackendURL, "", "gpt-5.5"); err != nil &&
-				!strings.Contains(err.Error(), "already exists") {
-				log.Printf("login: register codex provider: %v", err)
-			}
-			provMgr.Reload()
-		}
-		// Register the Codex model family in the capability
-		// registry so /model gpt-5.5 resolves immediately
-		// (the ChatGPT backend has no /v1/models to probe).
-		llm.RegisterCodexCatalog(caps, "codex")
-		plan := res.PlanType
-		if plan == "" {
-			plan = "unknown plan"
-		}
-		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5.5) — requests now route through the ChatGPT backend.", plan), nil
-	}
-	mergedCommands["logout"] = func(ctx context.Context, args string) (string, error) {
-		// Multi-account: "/logout <label>" removes that named
-		// account's auth-<label>.json. Bare "/logout" removes the
-		// default account (and its usage snapshot) as before.
-		label := strings.TrimSpace(args)
-		if label != "" {
-			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
-			if !mgr.LoggedIn() {
-				return fmt.Sprintf("account %s is not logged in", strconv.Quote(label)), nil
-			}
-			if err := mgr.Logout(); err != nil {
-				return "", fmt.Errorf("logout %s: %w", label, err)
-			}
-			return fmt.Sprintf("logged out account %s (credentials removed)", strconv.Quote(label)), nil
-		}
-		if codexAuthMgr == nil || !codexAuthMgr.LoggedIn() {
-			return "not logged in (no ChatGPT credentials saved)", nil
-		}
-		if err := codexAuthMgr.Logout(); err != nil {
-			return "", fmt.Errorf("logout: %w", err)
-		}
-		// Drop the saved usage snapshot too, so the HUD does not keep
-		// showing the logged-out account's rate limits.
-		if err := llm.ClearCodexRateLimits(dataDir); err != nil {
-			log.Printf("logout: clear usage snapshot: %v", err)
-		}
-		return "logged out — ChatGPT credentials and saved usage limits removed from the data dir", nil
-	}
-
-	// /accounts lists all logged-in ChatGPT accounts (default +
-	// any named ones). With 2+, requests round-robin across them.
-	mergedCommands["accounts"] = func(ctx context.Context, args string) (string, error) {
-		labels, err := codexauth.ListAccounts(dataDir)
-		if err != nil {
-			return "", fmt.Errorf("accounts: %w", err)
-		}
-		var loggedIn []string
-		for _, label := range labels {
-			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
-			if mgr.LoggedIn() {
-				loggedIn = append(loggedIn, label)
-			}
-		}
-		if len(loggedIn) == 0 {
-			return "no ChatGPT accounts logged in. Use /login (or /login <label>) to add one.", nil
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "ChatGPT accounts (%d):\n", len(loggedIn))
-		for _, label := range loggedIn {
-			fmt.Fprintf(&b, "  - %s\n", label)
-		}
-		if len(loggedIn) > 1 {
-			b.WriteString("requests round-robin across these accounts.")
-		} else {
-			b.WriteString("add another with /login <label> to enable round-robin.")
-		}
-		return strings.TrimRight(b.String(), "\n"), nil
-	}
-
-	// /account — show the current ChatGPT-subscription login (account
-	// id + plan) without hitting the network. Read-only counterpart to
-	// /login and /logout.
-	mergedCommands["account"] = func(ctx context.Context, args string) (string, error) {
-		if codexAuthMgr == nil {
-			initCodexAuth(dataDir, tomlCfg)
-		}
-		info, err := codexAuthMgr.Account()
-		if err != nil {
-			return "", fmt.Errorf("account: %w", err)
-		}
-		if !info.LoggedIn {
-			return "not logged in — run /login to sign in with ChatGPT.", nil
-		}
-		plan := info.PlanType
-		if plan == "" {
-			plan = "unknown"
-		}
-		acct := info.AccountID
-		if acct == "" {
-			acct = "(unknown)"
-		}
-		var b strings.Builder
-		b.WriteString("ChatGPT account\n")
-		b.WriteString(fmt.Sprintf("  plan:    %s\n", plan))
-		b.WriteString(fmt.Sprintf("  account: %s", acct))
-		if !info.LastRefresh.IsZero() {
-			b.WriteString(fmt.Sprintf("\n  refreshed: %s", info.LastRefresh.Format("2006-01-02 15:04")))
-		}
-		return b.String(), nil
-	}
-
-	// F25a: /sandbox — show sandbox status.
-	mergedCommands["sandbox"] = func(ctx context.Context, args string) (string, error) {
-		status := "restricted"
-		allowHint := ""
-		if sandbox.IsUnsandboxed() {
-			status = "allow-all (full filesystem access)"
-			allowHint = "\nuse /allow-all off to re-enable the sandbox"
-		} else {
-			allowHint = "\nuse /allow-all on for full filesystem access"
-		}
-		return fmt.Sprintf("sandbox: %s\nhome: %s\ndata: %s%s", status, home, dataDir, allowHint), nil
-	}
-
-	// F17: library alternatives tool. Opt-in
-	// (NOT MarkAlwaysOn); the model discovers
-	// it via tool_search. The Finder uses a
-	// built-in catalog of ~25 curated mappings.
-	libFinder := library.NewFinder()
-	registry.MustRegister(tools.NewCheckLibraryAlternatives(libFinder).Spec())
-
-	// F24: targeted file operations. All five
-	// tools are opt-in (NOT MarkAlwaysOn); the
-	// model discovers them via tool_search. They
-	// save tokens by reading/editing specific line
-	// ranges instead of entire files.
-	registry.MustRegister(tools.NewReadLines(home).Spec())
-	registry.MustRegister(tools.NewReadContext(home).Spec())
-	registry.MustRegister(tools.NewReadMany(home).Spec())
-	registry.MustRegister(tools.NewScratchpad(home).Spec())
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditLine(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewEditLines(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewInsertAfter(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewDeleteLines(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewWriteFile(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewMakeDir(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewMove(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewCopy(home).Spec())))
-	registry.MustRegister(diagnosticSpec(checkpointSpec(tools.NewTrash(home).Spec())))
-
-	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
-	// web_search (DuckDuckGo by default — no key; Brave/Tavily/SearXNG
-	// when [web_search] in config.toml or BRAVE_API_KEY /
-	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
-	// MarkAlwaysOn); the model discovers them via tool_search.
-	registry.MustRegister(tools.NewWebFetch().Spec())
-	wsEngine := tomlCfg.WebSearch.Engine
-	wsKey := tomlCfg.WebSearch.APIKey
-	if wsKey == "" {
-		switch strings.ToLower(wsEngine) {
-		case "brave":
-			wsKey = os.Getenv("BRAVE_API_KEY")
-		case "tavily":
-			wsKey = os.Getenv("TAVILY_API_KEY")
-		}
-	}
-	webSearcher := tools.NewWebSearch(wsEngine, wsKey, tomlCfg.WebSearch.BaseURL)
-	registry.MustRegister(webSearcher.Spec())
-	registry.MustRegister(webSearcher.LookupSpec())
-	registry.MarkAlwaysOn("web_lookup")
-	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
-
-	// outlook_mail: Windows-only COM automation of desktop
-	// Outlook (read folders/messages, search, create DRAFTS —
-	// never sends/deletes/moves). Opt-in via tool_search; on
-	// non-Windows it returns an explanatory error.
-	registry.MustRegister(tools.NewOutlookMail().Spec())
-
-	// Re-index for tool_search: many tools (ctx_execute, goal,
-	// memory, task, consult, file-line tools, web tools, ...)
-	// are registered AFTER the first RebuildIndex call above, so
-	// without this second pass they were invisible to tool_search
-	// and effectively unreachable for small-tier models.
-	if err := toolSearcher.RebuildIndex(); err != nil {
-		log.Printf("tool_search reindex: %v", err)
-	}
-
-	// F7 + F8 status bar. The goal line is rendered
-	// above the credits line when both are present.
-	statusFn := func() string {
-		goal := goalSvc.StatusLine(context.Background())
-		activeProvider := loop.Provider()
-		activeModel := activeProvider.Name()
-		cred := credits.StatusLine(tracker, activeModel)
-		// F34: live token counter and cost projection.
-		tokens := ""
-		costStr := ""
-		if draftStats != nil {
-			turns := draftStats.Snapshot()
-			total := stats.Sum(turns)
-			totalTokens := total.TokensIn + total.TokensOut
-			if totalTokens > 0 {
-				tokens = compactNum(totalTokens)
-				// Calculate cost from current model rates, including per-provider
-				// OpenRouter/proxy prices when the capability registry knows which
-				// configured provider owns the active model.
-				if !isSubscriptionRuntimeProvider(activeProvider) {
-					r, _ := credits.RateForProvider(providerNameForModel(caps, activeModel), activeModel)
-					inputCost := float64(total.TokensIn) / 1000.0 * r.InputPer1k
-					outputCost := float64(total.TokensOut) / 1000.0 * r.OutputPer1k
-					totalCost := inputCost + outputCost
-					if totalCost > 0 {
-						costStr = fmt.Sprintf("$%.4f", totalCost)
-					}
-				}
-			}
-		}
-		var lines []string
-		// Workspace header: active project · working directory · model.
-		// Always shown so the user knows where the agent is rooted and
-		// which model is answering, at a glance.
-		var head []string
-		if hasActiveProject {
-			head = append(head, "proj: "+activeProject.Name)
-		}
-		if d := shortenDir(home); d != "" {
-			head = append(head, "dir: "+d)
-		}
-		if activeModel != "" {
-			head = append(head, "model: "+activeModel)
-		}
-		// Orchestrator mode badge: the main loop is delegation-only, so
-		// surface it next to the model like the coordinator conventions.
-		if supercliOrchestratorMode {
-			head = append(head, "orch")
-		}
-		if len(head) > 0 {
-			lines = append(lines, strings.Join(head, " │ "))
-		}
-		if goal != "" {
-			lines = append(lines, goal)
-		}
-		var bottom []string
-		if cred != "" {
-			bottom = append(bottom, cred)
-		}
-		// Reasoning effort badge, next to the model name, only
-		// when set and applicable to the active model.
-		if configured, effective, adjusted := llm.ReasoningEffortAdjustment(loop.Provider().Name()); effective != "" {
-			if adjusted {
-				bottom = append(bottom, "effort: "+configured+"→"+effective)
-			} else {
-				bottom = append(bottom, "effort: "+effective)
-			}
-		}
-		// Thinking soft-switch state: only surfaced when the user has
-		// turned it off AND the active model honours it (Qwen), so the
-		// user knows /no_think is being appended.
-		if !llm.ThinkingEnabled() && llm.SupportsThinkingSoftSwitch(loop.Provider().Name()) {
-			bottom = append(bottom, "think: off")
-		}
-		if tokens != "" {
-			tokStr := tokens
-			if costStr != "" {
-				tokStr += " │ " + costStr
-			}
-			bottom = append(bottom, "tok: "+tokStr)
-		}
-		// Context-window usage: last turn's prompt tokens as a share of
-		// the active model's window. Only shown when the window size is
-		// known (provider metadata / capability registry / learned /
-		// config) — otherwise a percentage would be misleading.
-		if prompt, ok := loop.LastTurnPromptTokens(); ok && prompt > 0 {
-			if win := windowFor(activeModel); win > 0 {
-				pct := prompt * 100 / win
-				bottom = append(bottom, fmt.Sprintf("ctx:%d%%", pct))
-			}
-		}
-		// Cache-miss telemetry for the last turn: the prompt split into
-		// tokens the backend served from its KV/prompt cache vs tokens
-		// it had to (re-)evaluate, plus the generated count. This is
-		// the cache-miss hunting line — a healthy warm turn evaluates
-		// roughly only the new tokens; a large eval means the prefix
-		// churned and the client, not the hardware, is the bottleneck.
-		// Backends that report no usage at all show nothing; backends
-		// without a cached breakdown show cache 0 (pessimistic view).
-		if cached, evaled, gen, ok := loop.LastTurnBreakdown(); ok && cached+evaled+gen > 0 {
-			line := fmt.Sprintf("cache %s | eval %s | gen %s",
-				compactNum(cached), compactNum(evaled), compactNum(gen))
-			if _, reasoning, ok := loop.LastTurnStats(); ok && reasoning > 0 {
-				line += fmt.Sprintf(" think:%d", reasoning)
-			}
-			bottom = append(bottom, line)
-		}
-		// Codex subscription usage (5h rolling + weekly), pulled from
-		// the active provider's last /responses headers. Rendered only
-		// when the active provider is Codex AND a snapshot has arrived.
-		if rp, ok := llm.Unwrap(loop.Provider()).(interface {
-			RateLimits() (llm.CodexRateLimits, bool)
-		}); ok {
-			if rl, ok := rp.RateLimits(); ok {
-				if hud := rl.FormatHUD(); hud != "" {
-					tile := "limit: " + hud
-					// Multi-account: append which account is active
-					// AND the pool-wide average, so the user sees both
-					// "this account" and "all accounts combined".
-					if rt, ok := llm.Unwrap(loop.Provider()).(*llm.RouterProvider); ok {
-						snaps, _, active := rt.PoolUsage()
-						if len(snaps) > 1 {
-							tile += fmt.Sprintf(" · acct: %s (%d/%d)", rt.ActiveLabel(), active+1, len(snaps))
-							if p5, p7, n := rt.PoolAggregate(); n > 0 {
-								tile += fmt.Sprintf(" · pool %dacct 5h ~%d%% 7d ~%d%%", n, p5, p7)
-							}
-						}
-					}
-					bottom = append(bottom, tile)
-				}
-			}
-		}
-		// Fala 3: inline worker visibility. Show a compact tile
-		// ("2 running · 1 done") whenever the coordinator has spawned
-		// workers, so the user sees activity without typing /workers.
-		if at != nil && at.Workers != nil {
-			if tile := at.Workers.Counts().StatusTile(); tile != "" {
-				bottom = append(bottom, "workers: "+tile)
-			}
-		}
-		if len(bottom) > 0 {
-			lines = append(lines, strings.Join(bottom, " │ "))
-		}
-		return strings.Join(lines, "\n")
-	}
+	statusFn := buildStatusFn(statusBarDeps{
+		goalSvc:          goalSvc,
+		loop:             loop,
+		tracker:          tracker,
+		draftStats:       draftStats,
+		caps:             caps,
+		home:             home,
+		hasActiveProject: hasActiveProject,
+		projectName:      projName,
+		windowFor:        windowFor,
+		agentTool:        at,
+	})
 
 	// F12: external event sink. The consult
 	// tool and the /council slash command emit
@@ -2406,132 +712,34 @@ func Main() {
 		}
 	}
 
-	model := tui.New(tui.Options{
-		Home:      home,
-		DataDir:   dataDir,
-		SessionID: sessionID,
-		Version:   version,
-		Tier:      string(modelTier),
-		Language:  uiLanguage,
-		Agent:     loop,
-		LLM:       provider,
-		Commands:  mergedCommands,
-		StatusFn:  statusFn,
-		// Incremental memory: after every finished agent turn,
-		// deterministic user facts are saved immediately (no model
-		// call) and the model-backed summary is scheduled for the
-		// next idle window.
-		OnRunEnd: func() {
-			defer recoverAndLog(dataDir)()
-			if checkpointCtrl != nil {
-				cpCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				if _, err := checkpointCtrl.Complete(cpCtx); err != nil {
-					log.Printf("checkpoint complete: %v", err)
-				}
-				cancel()
-			}
-			saveDeterministicMemoryFacts(memAutoSaver, loop, memProg)
-			memIdle.Schedule()
-		},
-		// Foreground beats background: the moment the user submits
-		// a new prompt, stop the idle timer and cancel any
-		// in-flight background memory inference.
-		OnRunStart: func() {
-			memIdle.Activity()
-			if checkpointCtrl != nil {
-				checkpointCtrl.Start("")
-			}
-		},
-		CheckpointUndo: func(ctx context.Context, redo bool) (string, error) {
-			if checkpointCtrl == nil {
-				return "", checkpoint.ErrUnavailable
-			}
-			var result checkpoint.Result
-			var err error
-			if redo {
-				result, err = checkpointCtrl.Redo(ctx)
-			} else {
-				result, err = checkpointCtrl.Undo(ctx)
-			}
-			if err != nil {
-				if len(result.Conflicts) > 0 {
-					return "", fmt.Errorf("conflicts: %s", strings.Join(result.Conflicts, ", "))
-				}
-				return "", err
-			}
-			verb := "reverted"
-			if redo {
-				verb = "restored"
-			}
-			loop.InjectUserMessage(ctx, fmt.Sprintf("[checkpoint] User %s changes from turn %s (%d files). Current workspace state supersedes the earlier implementation.", verb, result.Record.ID, len(result.Files)))
-			return fmt.Sprintf("%s %d file(s) from turn %s", verb, len(result.Files), result.Record.ID), nil
-		},
-		CheckpointPreview: func(redo bool) (tui.CheckpointPreview, error) {
-			if checkpointCtrl == nil {
-				return tui.CheckpointPreview{}, checkpoint.ErrUnavailable
-			}
-			record, err := checkpointCtrl.Preview(redo)
-			if err != nil {
-				return tui.CheckpointPreview{}, err
-			}
-			return tui.CheckpointPreview{
-				ID: record.ID, Prompt: record.Prompt,
-				Files: append([]string(nil), record.Files...), Redo: redo,
-			}, nil
-		},
-		ExtCh:        extCh,
-		ShellRunner:  shellescape.NewRunner(home),
-		Tracker:      fileops.NewTracker(200),
-		ModelSwapper: loop,
-		ModelLister:  loop,
-		ModelSwapFn: func(modelID, providerName string) (llm.Provider, error) {
-			// Build a new provider with the target model.
-			// Look up the provider's base URL and API key
-			// from the config.toml providers list.
-			swapCfg := cfg
-			swapCfg.Model = modelID
-			swapToml, _ := config.ResolveConfig(dataDir, home, "")
-			if providerName != "" {
-				for _, pc := range swapToml.Providers {
-					if pc.Name == providerName {
-						if pc.Disabled {
-							return nil, fmt.Errorf("provider %q is disabled", providerName)
-						}
-						swapCfg.BaseURL = pc.BaseURL
-						swapCfg.APIKey = pc.APIKey
-						swapCfg.Provider = pc.Type
-						break
-					}
-				}
-			}
-			// The factory keeps the model-call metering across /model swaps.
-			np, err := provFactory.BuildChain(swapCfg, swapToml, llm.PurposeMain)
-			if err == nil {
-				// Just switched models — if the new provider is Codex,
-				// refresh its usage snapshot in the background so the HUD
-				// reflects the newly selected model's limits promptly.
-				// redrawStatus forces the footer to re-render once the
-				// fetch lands, so the `limit:` tile appears on its own
-				// without the user pressing a key.
-				kickCodexUsageRefresh(np, redrawStatus)
-			}
-			return np, err
-		},
-		SessionStore:       sessStore,
-		StatsRecorder:      draftStats,
-		ProviderMgr:        provMgr,
-		ActiveProvider:     initialContextProvider,
-		ModelContextStore:  modelContexts,
-		CapabilityRegistry: caps,
-		GoalService:        goalSvc,
-		ToolRegistry:       registry,
-		DataExport: func(_ context.Context, full bool) (string, error) {
-			return webgui.ExportDataBackup(dataDir, full)
-		},
-		DataImport: func(_ context.Context, path string) (bool, error) {
-			return webgui.StageDataImport(dataDir, path)
-		},
-	})
+	model := tui.New(buildTUIOptions(tuiLaunchDeps{
+		home:                   home,
+		dataDir:                dataDir,
+		sessionID:              sessionID,
+		version:                version,
+		uiLanguage:             uiLanguage,
+		modelTier:              modelTier,
+		loop:                   loop,
+		provider:               provider,
+		mergedCommands:         mergedCommands,
+		statusFn:               statusFn,
+		checkpointCtrl:         checkpointCtrl,
+		memAutoSaver:           memAutoSaver,
+		memProg:                memProg,
+		memIdle:                memIdle,
+		extCh:                  extCh,
+		sessStore:              sessStore,
+		draftStats:             draftStats,
+		provMgr:                provMgr,
+		initialContextProvider: initialContextProvider,
+		modelContexts:          modelContexts,
+		caps:                   caps,
+		goalSvc:                goalSvc,
+		registry:               registry,
+		provFactory:            provFactory,
+		cfg:                    cfg,
+		redrawStatus:           redrawStatus,
+	}))
 
 	// Startup-latency tripwire: everything above must be local
 	// IO only. If this ever creeps past a few hundred ms, check
@@ -2554,822 +762,5 @@ func Main() {
 		fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
 		os.Exit(1)
 	}
-	// Persist this session's slot KV state so the next launch can
-	// /resume warm (llama.cpp re-prefills only from the divergence
-	// point). Done FIRST after the TUI exits, before the memory
-	// finalizer below fires its own summary request — that request
-	// shares the session's prompt prefix and would otherwise advance
-	// the slot past the state the resumed history will replay.
-	if !slotCache.Disabled() && len(loop.AllMessages()) > 0 {
-		sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if n, serr := slotCache.Save(sctx, sessionID); serr != nil {
-			log.Printf("slotcache: save %s: %v", sessionID, serr)
-		} else if n > 0 {
-			log.Printf("slotcache: saved %d cached token(s) for %s", n, sessionID)
-		}
-		scancel()
-	}
-	// B4 code guarantee, model-free: cancel any in-flight idle
-	// save, then store the un-summarized conversation tail as a
-	// raw-log entry (no inference — the exit is never held hostage
-	// by a model call). The next startup summarizes it in ITS idle
-	// window.
-	memIdle.Close()
-	finalizeMemorySession(memAutoSaver, loop, memProg)
-	startPostTUIShutdownTimer(dataDir, 200*time.Millisecond)
-	close(askCh)
-	<-pumpDone
-}
-
-func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
-	if cfg.IsEcho() {
-		return llm.NewEcho(cfg.Model)
-	}
-	if cfg.Provider == config.ProviderResponses {
-		return llm.NewResponses(llm.ResponsesConfig{
-			BaseURL:        cfg.BaseURL,
-			APIKey:         cfg.APIKey,
-			Model:          cfg.Model,
-			Timeout:        cfg.Timeout,
-			ConnectTimeout: cfg.ConnectTimeout,
-			Capabilities:   caps,
-		})
-	}
-	if cfg.Provider == config.ProviderOpencode {
-		// F15: opencode headless gateway. The
-		// provider wraps an OpenAI-compat client
-		// pointed at the local gateway URL. Model
-		// discovery happens after construction
-		// (caller probes /v1/models and registers
-		// in the capability registry).
-		p, err := llm.NewOpencode(llm.OpencodeConfig{
-			BaseURL:      cfg.BaseURL,
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			MaxTokens:    cfg.MaxTokens,
-			Capabilities: caps,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("buildProvider opencode: %w", err)
-		}
-		// Probe /v1/models and register discovered
-		// models in the F16 capability pool. This
-		// is best-effort; if the gateway is down
-		// we still return the provider — the user
-		// can still use an explicit --model.
-		models, _ := p.ProbeModels(context.Background())
-		if len(models) > 0 {
-			log.Printf("F15: discovered %d model(s) from opencode gateway", len(models))
-		}
-		return p, nil
-	}
-	if cfg.Provider == config.ProviderCodex {
-		// ChatGPT-subscription auth: requests route to the
-		// ChatGPT backend Responses API with the OAuth bearer
-		// token from <data dir>/auth.json instead of an API key.
-		//
-		// Multi-account: when more than one account is logged in
-		// (auth.json + auth-<label>.json), build one CodexProvider
-		// per account and wrap them in a round-robin RouterProvider
-		// so calls spread across accounts with failover. A single
-		// account returns a plain CodexProvider — zero overhead and
-		// byte-for-byte the old behaviour.
-		return buildCodexPool(cfg, dataDir, caps)
-	}
-	if cfg.Provider == config.ProviderAnthropic {
-		return llm.NewAnthropic(llm.AnthropicConfig{
-			BaseURL:        cfg.BaseURL,
-			APIKey:         cfg.APIKey,
-			Model:          cfg.Model,
-			MaxTokens:      cfg.MaxTokens,
-			Timeout:        cfg.Timeout,
-			ConnectTimeout: cfg.ConnectTimeout,
-			Capabilities:   caps,
-		})
-	}
-	// Kilo: use IP shuffler client for proxy rotation.
-	var httpClient *http.Client
-	if strings.Contains(cfg.BaseURL, "api.kilo.ai") {
-		httpClient = shuffler.Global.HTTPClient()
-	}
-	return llm.NewOpenAI(llm.OpenAIConfig{
-		BaseURL:        cfg.BaseURL,
-		APIKey:         llm.KiloDefaultKey(cfg.BaseURL, cfg.APIKey),
-		Model:          cfg.Model,
-		MaxTokens:      cfg.MaxTokens,
-		Timeout:        cfg.Timeout,
-		ConnectTimeout: cfg.ConnectTimeout,
-		HTTPClient:     httpClient,
-		Capabilities:   caps,
-	})
-}
-
-func providerNameForModel(caps *llm.CapabilityRegistry, model string) string {
-	if caps == nil || model == "" {
-		return ""
-	}
-	if info, ok := caps.Get(model); ok {
-		return info.Provider
-	}
-	// RouterProvider.Name() decorates pooled accounts as
-	// "model (N accounts)". Strip that display suffix for a second lookup.
-	if strings.HasSuffix(strings.ToLower(model), " accounts)") {
-		if i := strings.LastIndex(model, " ("); i > 0 {
-			if info, ok := caps.Get(model[:i]); ok {
-				return info.Provider
-			}
-		}
-	}
-	return ""
-}
-
-func isSubscriptionRuntimeProvider(p llm.Provider) bool {
-	if p == nil {
-		return false
-	}
-	_, ok := llm.Unwrap(p).(interface {
-		RateLimits() (llm.CodexRateLimits, bool)
-	})
-	return ok
-}
-
-func applyPricingMetadata(caps *llm.CapabilityRegistry, entries []pricing.PriceEntry) {
-	if caps == nil || len(entries) == 0 {
-		return
-	}
-	infos := make([]llm.ModelInfo, 0, len(entries))
-	for _, e := range entries {
-		infos = append(infos, llm.ModelInfo{
-			ID:            e.ModelID,
-			InputCost:     e.InputPer1M,
-			OutputCost:    e.OutputPer1M,
-			ContextLength: e.ContextLength,
-			Source:        llm.SourceExternal,
-			LastVerified:  e.FetchedAt,
-		})
-	}
-	applyModelInfoMetadata(caps, infos)
-}
-
-func applyModelInfoMetadata(caps *llm.CapabilityRegistry, infos []llm.ModelInfo) {
-	if caps == nil || len(infos) == 0 {
-		return
-	}
-	shortCounts := make(map[string]int)
-	for _, m := range infos {
-		if slash := strings.IndexByte(m.ID, '/'); slash > 0 && slash < len(m.ID)-1 {
-			shortCounts[strings.ToLower(m.ID[slash+1:])]++
-		}
-	}
-	for _, m := range infos {
-		if m.ID == "" {
-			continue
-		}
-		applyOneModelInfoMetadata(caps, m)
-		// OpenRouter IDs are often provider/model (e.g.
-		// deepseek/deepseek-chat), while the direct provider scan returns the
-		// short model id (deepseek-chat) with Provider=deepseek. Mirror metadata
-		// onto that existing short row when it is clearly the same provider.
-		// Routers may advertise only the short id under their own provider name;
-		// accept that alias when the external catalog has exactly one canonical
-		// provider/model entry for the short id.
-		if slash := strings.IndexByte(m.ID, '/'); slash > 0 && slash < len(m.ID)-1 {
-			provider, shortID := m.ID[:slash], m.ID[slash+1:]
-			existing, ok := caps.Get(shortID)
-			sameProvider := ok && strings.EqualFold(existing.Provider, provider)
-			uniqueAlias := shortCounts[strings.ToLower(shortID)] == 1
-			if ok && (sameProvider || uniqueAlias) {
-				copy := m
-				copy.ID = shortID
-				copy.Provider = existing.Provider
-				applyOneModelInfoMetadata(caps, copy)
-			}
-		}
-	}
-}
-
-func applyOneModelInfoMetadata(caps *llm.CapabilityRegistry, m llm.ModelInfo) {
-	if existing, ok := caps.Get(m.ID); ok {
-		if m.InputCost > 0 {
-			existing.InputCost = m.InputCost
-		}
-		if m.OutputCost > 0 {
-			existing.OutputCost = m.OutputCost
-		}
-		if existing.ContextLength == 0 && m.ContextLength > 0 {
-			existing.ContextLength = m.ContextLength
-		}
-		if existing.Provider == "" {
-			existing.Provider = m.Provider
-		}
-		if m.LastVerified.After(existing.LastVerified) {
-			existing.LastVerified = m.LastVerified
-		}
-		caps.Register(existing)
-		return
-	}
-	caps.Register(m)
-}
-
-// buildCodexPool builds a Codex provider for every logged-in
-// account and, when there is more than one, wraps them in a
-// round-robin RouterProvider. Order is stable (ListAccounts sorts),
-// default account first is not guaranteed — round-robin treats them
-// equally, which is the point of spreading load across accounts.
-func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
-	labels, err := codexauth.ListAccounts(dataDir)
-	if err != nil {
-		labels = nil // fall through to the default-account path
-	}
-
-	// Count accounts that actually have usable tokens. Only a
-	// genuine multi-account setup (>=2) takes the router path; a
-	// single account uses the original global-manager path
-	// unchanged (preserving its usage snapshot / HUD behaviour).
-	var loggedIn []string
-	for _, label := range labels {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
-		if mgr.LoggedIn() {
-			loggedIn = append(loggedIn, label)
-		}
-	}
-
-	if len(loggedIn) > 1 {
-		var pool []llm.Provider
-		for _, label := range loggedIn {
-			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
-			// Resolve the account id from disk (no network) so each
-			// provider scopes its rate-limit snapshot to its own
-			// account — otherwise both accounts share one file and
-			// show the same usage.
-			acctID := ""
-			if info, e := mgr.Account(); e == nil {
-				acctID = info.AccountID
-			}
-			p, err := llm.NewCodex(llm.CodexConfig{
-				BackendURL:     mgr.Options().BackendURL,
-				Model:          cfg.Model,
-				Tokens:         mgr,
-				Timeout:        cfg.Timeout,
-				ConnectTimeout: cfg.ConnectTimeout,
-				Capabilities:   caps,
-				DataDir:        dataDir,
-				AccountID:      acctID,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("buildCodexPool %q: %w", label, err)
-			}
-			pool = append(pool, p)
-		}
-		log.Printf("codex: magazine across %d accounts: %v", len(pool), loggedIn)
-		rt, err := llm.NewRouter(pool...)
-		if err != nil {
-			return nil, err
-		}
-		// Attach account labels so the HUD can show WHICH account is
-		// active (e.g. "acct: drugie"), not just a slot number.
-		rt.SetLabels(loggedIn)
-		return rt, nil
-	}
-
-	// Single (or zero) account: preserve the exact original path,
-	// including the global codexAuthMgr the /login command already
-	// populated (carries the usage snapshot for the HUD).
-	mgr := codexAuthMgr
-	if mgr == nil {
-		mgr = codexauth.NewManager(dataDir, codexauth.Options{})
-	}
-	return llm.NewCodex(llm.CodexConfig{
-		BackendURL:     mgr.Options().BackendURL,
-		Model:          cfg.Model,
-		Tokens:         mgr,
-		Timeout:        cfg.Timeout,
-		ConnectTimeout: cfg.ConnectTimeout,
-		Capabilities:   caps,
-		DataDir:        dataDir,
-	})
-}
-
-func boolPtr(b bool) *bool { return &b }
-
-// codexUsageFetcher is satisfied by *llm.CodexProvider. It lets the
-// startup / model-swap hooks refresh the Codex rate-limit snapshot
-// without importing the concrete type or caring whether the active
-// provider is actually Codex.
-type codexUsageFetcher interface {
-	FetchUsage(ctx context.Context) (llm.CodexRateLimits, error)
-}
-
-// codexUsageAllFetcher is implemented by the multi-account router: it
-// refreshes the usage snapshot for EVERY account in the pool (each with
-// its own token), not just the active one. When a provider implements
-// it, refreshing usage fills in every account's snapshot so the pool
-// aggregate counts all accounts — the whole point of the magazine
-// being one combined limit. Single-account / non-router providers only
-// implement codexUsageFetcher.
-type codexUsageAllFetcher interface {
-	FetchUsageAll(ctx context.Context) (llm.CodexRateLimits, error)
-}
-
-// refreshCodexUsage refreshes usage for all pooled accounts when prov
-// is a multi-account router, otherwise just the active/only account.
-// It returns the active account's snapshot and any (per-account)
-// error, mirroring FetchUsage's signature so callers are unchanged.
-func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLimits, error) {
-	prov = llm.Unwrap(prov)
-	if fa, ok := prov.(codexUsageAllFetcher); ok {
-		return fa.FetchUsageAll(ctx)
-	}
-	if f, ok := prov.(codexUsageFetcher); ok {
-		return f.FetchUsage(ctx)
-	}
-	return llm.CodexRateLimits{}, fmt.Errorf("provider has no usage")
-}
-
-// codexPoolUsageDetail returns a per-account usage breakdown when
-// prov is a multi-account router, or "" otherwise. It renders an
-// aligned table with a small bar for each account's 5h and 7d
-// usage, marks the active account, and adds a pool total row — so
-// the user sees both "this account" and "all accounts combined".
-func codexPoolUsageDetail(prov llm.Provider) string {
-	rt, ok := llm.Unwrap(prov).(*llm.RouterProvider)
-	if !ok {
-		return ""
-	}
-	snaps, oks, active := rt.PoolUsage()
-	if len(snaps) <= 1 {
-		return "" // single account: the main detail already covers it
-	}
-	// Column width: longest account label (so the bars line up).
-	nameW := len("account")
-	for i := range snaps {
-		if l := len(rt.LabelAt(i)); l > nameW {
-			nameW = l
-		}
-	}
-	var b strings.Builder
-	b.WriteString("\n\naccounts (magazine — active drains first):\n")
-	for i, s := range snaps {
-		marker := "  "
-		if i == active {
-			marker = "▶ "
-		}
-		name := rt.LabelAt(i)
-		if !oks[i] || !s.OK {
-			fmt.Fprintf(&b, "%s%-*s   (no usage data yet)\n", marker, nameW, name)
-			continue
-		}
-		fmt.Fprintf(&b, "%s%-*s   5h %s   7d %s\n",
-			marker, nameW, name,
-			usageBar(s.PrimaryUsedPct), usageBar(s.SecondaryUsedPct))
-	}
-	// Pool total.
-	if p5, p7, n := rt.PoolAggregate(); n > 0 {
-		fmt.Fprintf(&b, "  %-*s   5h %s   7d %s\n",
-			nameW, "POOL", usageBar(p5), usageBar(p7))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// usageBar renders a used-percent as a 10-cell bar plus the number,
-// e.g. 30 -> "▰▰▰▱▱▱▱▱▱▱ 30%". Clamped to 0..100.
-func usageBar(pct int) string {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 100 {
-		pct = 100
-	}
-	filled := (pct + 5) / 10 // round to nearest cell
-	if filled > 10 {
-		filled = 10
-	}
-	return strings.Repeat("▰", filled) + strings.Repeat("▱", 10-filled) +
-		fmt.Sprintf(" %3d%%", pct)
-}
-
-// kickCodexUsageRefresh refreshes the Codex usage snapshot in the
-// background when prov is a Codex provider. It is fire-and-forget and
-// deliberately silent: a failure (offline, 401, non-Codex provider)
-// leaves the last on-disk snapshot in place and never blocks the
-// caller or surfaces an error to the user. The HUD reads the snapshot
-// pull-style, so a successful refresh shows up on the next render.
-//
-// This is NOT a completion — it hits the dedicated usage endpoint and
-// does not consume the quota the way /responses does.
-//
-// notify, when non-nil, is invoked after a SUCCESSFUL fetch so the
-// caller can force a TUI redraw — the HUD `limit:` tile is pulled
-// from the snapshot at render time, so without a redraw a swap onto a
-// Codex model would not show fresh limits until the next keystroke.
-func kickCodexUsageRefresh(prov llm.Provider, notify func()) {
-	// Providers now arrive metered from the factory; peel the
-	// decorator so the capability assertions see the transport.
-	prov = llm.Unwrap(prov)
-	// Accept either the single-account fetcher or the multi-account
-	// router; refreshCodexUsage picks FetchUsageAll when available so
-	// every pooled account gets fresh usage, not just the active one.
-	_, single := prov.(codexUsageFetcher)
-	_, all := prov.(codexUsageAllFetcher)
-	if !single && !all {
-		return
-	}
-	go func() {
-		defer func() { _ = recover() }()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		// A per-account error (e.g. one expired token) is logged but
-		// not fatal: accounts that succeeded still refreshed, so we
-		// still redraw to show whatever fresh data we got.
-		if _, err := refreshCodexUsage(ctx, prov); err != nil {
-			log.Printf("codex usage refresh: %v", err)
-		}
-		if notify != nil {
-			notify()
-		}
-	}()
-}
-
-// tierRulesFromToml converts config.toml [[model_tiers]]
-// entries into tier.Rule values.
-func tierRulesFromToml(t config.TomlConfig) []tier.Rule {
-	if len(t.ModelTiers) == 0 {
-		return nil
-	}
-	out := make([]tier.Rule, 0, len(t.ModelTiers))
-	for _, r := range t.ModelTiers {
-		out = append(out, tier.Rule{Pattern: r.Pattern, Tier: r.Tier})
-	}
-	return out
-}
-
-// pickSmallestSmallTierModel scans the capability registry for
-// the model with the smallest parsed (active) parameter count
-// that classifies as small-tier. Used as the second priority
-// for draft-model selection (after an explicit --draft-model /
-// config, before the price-based fallback).
-func pickSmallestSmallTierModel(caps *llm.CapabilityRegistry, exclude string, rules []tier.Rule) (string, bool) {
-	best := ""
-	bestParams := 0.0
-	for _, m := range caps.All() {
-		if m.ID == exclude {
-			continue
-		}
-		params, ok := tier.ParseParams(m.ID)
-		if !ok {
-			continue
-		}
-		if tier.Classify(m.ID, m.InputCost, m.OutputCost, rules) != tier.Small {
-			continue
-		}
-		if best == "" || params < bestParams {
-			best, bestParams = m.ID, params
-		}
-	}
-	return best, best != ""
-}
-
-// compactNum formats large numbers as "1.2k" etc.
-func compactNum(n int) string {
-	switch {
-	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fm", float64(n)/1_000_000)
-	case n >= 1_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1_000)
-	default:
-		return fmt.Sprintf("%d", n)
-	}
-}
-
-// shortenDir renders an absolute directory for the status header: the user
-// home prefix collapses to "~", and an over-long tail keeps only the last
-// two path segments so the header stays on one line.
-func shortenDir(p string) string {
-	if p == "" {
-		return ""
-	}
-	if uh, err := os.UserHomeDir(); err == nil && uh != "" {
-		if rel, err := filepath.Rel(uh, p); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-			p = "~" + string(filepath.Separator) + rel
-		} else if err == nil && rel == "." {
-			return "~"
-		}
-	}
-	if len(p) <= 40 {
-		return p
-	}
-	parts := strings.Split(filepath.ToSlash(p), "/")
-	if len(parts) > 2 {
-		return "…/" + strings.Join(parts[len(parts)-2:], "/")
-	}
-	return p
-}
-
-func initAppLog(dataDir string) *os.File {
-	logsDir := filepath.Join(dataDir, "logs")
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
-		return nil
-	}
-	f, err := os.OpenFile(filepath.Join(logsDir, "supercli.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil
-	}
-	log.SetOutput(f)
-	return f
-}
-
-// buildDraftWiring assembles the F11 draft policy +
-// provider. The provider is a SECOND llm.OpenAI
-// instance (or llm.Echo when the verifier is echo)
-// configured with a different Model id.
-//
-// F11 is OPT-IN. It engages only when BOTH:
-//   - a draft mode other than "off" is set, AND
-//   - a draft model is EXPLICITLY configured via
-//     --draft-model (or config.toml draft_model).
-//
-// There is deliberately no auto-pick: an unset draft
-// model means no speculative decoding. This avoids
-// silently engaging a draft model the user never chose.
-//
-// Returns (nil, nil) when F11 is off or no draft model
-// was configured — silent fallback per D1.
-func buildDraftWiring(modeFlag, modelFlag string, verifier llm.Provider, f *factory.Factory, cfg config.Config, tierRules []tier.Rule) (*draft.Policy, llm.Provider) {
-	mode, err := draft.ParseMode(modeFlag)
-	if err != nil {
-		log.Printf("F11: bad --draft-mode %q, defaulting to off: %v", modeFlag, err)
-		return nil, nil
-	}
-	if mode == draft.ModeOff {
-		return nil, nil
-	}
-	verifierName := verifier.Name()
-	// F11 is OPT-IN: it engages only when the user has
-	// EXPLICITLY configured a draft model (via --draft-model
-	// or config.toml draft_model). We deliberately do NOT
-	// auto-pick a draft model from the F16 registry — an
-	// unset draft model means "no speculative decoding",
-	// even if a mode was supplied.
-	if modelFlag == "" {
-		log.Printf("F11: no draft model configured (--draft-model unset); F11 disabled (opt-in)")
-		return nil, nil
-	}
-	draftModel := modelFlag
-	if draftModel == verifierName {
-		log.Printf("F11: draft model %q == verifier; F11 disabled silently (per D1 rule)", draftModel)
-		return nil, nil
-	}
-	policy, err := draft.NewPolicy(mode, draftModel, verifierName, nil)
-	if err != nil {
-		log.Printf("F11: policy build failed: %v; F11 disabled silently", err)
-		return nil, nil
-	}
-	// Build a second provider instance with the same
-	// transport but a different model id. The
-	// verifier's provider and the draft's provider
-	// share API key, base URL, etc. Built through the
-	// factory, so the draft comes back metered (default
-	// purpose "draft").
-	dCfg := cfg
-	dCfg.Model = draftModel
-	if cfg.IsEcho() {
-		// Echo mode: build a separate echo for the
-		// draft, which is fine for tests / offline.
-		dCfg.Model = "draft:" + draftModel
-	}
-	prov, err := f.Build(dCfg, llm.PurposeDraft)
-	if err != nil {
-		log.Printf("F11: draft provider build failed: %v; F11 disabled silently", err)
-		return nil, nil
-	}
-	return policy, prov
-}
-
-// councilPickerOptions builds the option list for the
-// /council roster picker. Preferred source: models the
-// provider scanner discovered per configured provider
-// (labels "providerName/modelID" — buildable directly).
-// Fallback when nothing has been scanned yet: every
-// visible model id from the capability registry (bare
-// ids; the active transport serves them). Hidden models
-// are skipped; the list is capped to keep the picker
-// usable.
-func councilPickerOptions(provMgr *providers.Manager, caps *llm.CapabilityRegistry) []tools.AskOption {
-	const maxOpts = 40
-	var opts []tools.AskOption
-	seen := make(map[string]struct{})
-	for _, pi := range provMgr.ListConfigured(caps) {
-		for _, mi := range pi.Models {
-			if provMgr.IsHiddenFor(pi.Name, mi.ID) {
-				continue
-			}
-			label := pi.Name + "/" + mi.ID
-			if _, ok := seen[label]; ok {
-				continue
-			}
-			seen[label] = struct{}{}
-			opts = append(opts, tools.AskOption{Label: label, Description: pi.BaseURL})
-		}
-	}
-	if len(opts) == 0 && caps != nil {
-		for _, mi := range caps.All() {
-			if provMgr.IsHiddenFor(mi.Provider, mi.ID) {
-				continue
-			}
-			opts = append(opts, tools.AskOption{Label: mi.ID, Description: mi.Provider})
-		}
-	}
-	if len(opts) > maxOpts {
-		opts = opts[:maxOpts]
-	}
-	return opts
-}
-
-// buildConsultCouncil assembles the F12 cross-model
-// consultation engine. The samples are N model ids
-// pulled from the F16 CapabilityRegistry
-// (SuggestCheapestN, cheapest-first, excluding the
-// judge itself). The judge is the running main
-// provider (the user is already paying for it).
-//
-// Samples use the SAME transport as the judge: chat-completions and
-// Responses providers are rebuilt with a different model id while sharing
-// the user's API key + base URL. When the user
-// later adds Anthropic / Ollama / Groq adapters
-// (F15 territory), the per-provider factory will
-// branch on caps.Provider(id).
-//
-// Returns nil when the registry is empty, when no
-// candidates are available, or when provider
-// construction fails for every id. The consult
-// tool and the /council slash command both
-// gracefully degrade to "not wired" in that case.
-func buildConsultCouncil(n int, judge llm.Provider, caps *llm.CapabilityRegistry, cfg config.Config, f *factory.Factory) *consult.Council {
-	if n <= 0 {
-		n = 3
-	}
-	if caps == nil || judge == nil || f == nil {
-		return nil
-	}
-	judgeName := judge.Name()
-	ids := caps.SuggestCheapestN("consult", judgeName, n)
-	if len(ids) == 0 {
-		log.Printf("F12: no sample models available (judge=%q); consult disabled", judgeName)
-		return nil
-	}
-	samples := make([]llm.Provider, 0, len(ids))
-	for _, id := range ids {
-		// Same transport as the judge, different model id — built
-		// through the factory so sample calls are metered under
-		// "consult" like every other model call in the process.
-		sCfg := cfg
-		sCfg.Model = id
-		if cfg.IsEcho() {
-			sCfg.Model = "consult-sample:" + id
-		}
-		prov, err := f.Build(sCfg, llm.PurposeConsult)
-		if err != nil {
-			log.Printf("F12: sample provider %q build failed: %v", id, err)
-			continue
-		}
-		if prov != nil {
-			samples = append(samples, prov)
-		}
-	}
-	if len(samples) == 0 {
-		log.Printf("F12: no sample providers built; consult disabled")
-		return nil
-	}
-	log.Printf("F12: council assembled: %d sample(s) (judge=%q)", len(samples), judgeName)
-	return &consult.Council{
-		Samples: samples,
-		Judge:   judge,
-	}
-}
-
-// ultraworkGoalAdapter bridges *goal.Service to the
-// ultrawork.GoalGate interface. Defined here (not in the
-// ultrawork package) so the ultrawork package does not
-// have to import goal.
-type ultraworkGoalAdapter struct {
-	svc *goal.Service
-}
-
-func (g ultraworkGoalAdapter) ActiveID() string {
-	if g.svc == nil {
-		return ""
-	}
-	a := g.svc.Active()
-	if a == nil {
-		return ""
-	}
-	return a.ID
-}
-
-func (g ultraworkGoalAdapter) ActiveTitle() string {
-	if g.svc == nil {
-		return ""
-	}
-	a := g.svc.Active()
-	if a == nil {
-		return ""
-	}
-	return a.Title
-}
-
-func (g ultraworkGoalAdapter) UnfinishedTasks(ctx context.Context) int {
-	if g.svc == nil {
-		return 0
-	}
-	a := g.svc.Active()
-	if a == nil {
-		return 0
-	}
-	tasks, err := g.svc.ListTasks(ctx, a.ID)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, t := range tasks {
-		if t.Status == goal.TaskDone || t.Status == goal.TaskSkipped {
-			continue
-		}
-		n++
-	}
-	return n
-}
-
-// ultraworkCreditAdapter bridges *credits.Tracker to the
-// ultrawork.CreditGate interface. Defined here (not in
-// the ultrawork package) so the ultrawork package does
-// not have to import credits.
-type ultraworkCreditAdapter struct {
-	tracker *credits.Tracker
-}
-
-func (c ultraworkCreditAdapter) Remaining(ctx context.Context) (int64, int64) {
-	if c.tracker == nil {
-		return 0, 0
-	}
-	// credits.Tracker has no Remaining() method, only
-	// Used(). Compute the gap from the budget.
-	budget := c.tracker.Budget()
-	sessUsed, dayUsed := c.tracker.Used()
-	sess := budget.PerSession - sessUsed
-	if sess < 0 {
-		sess = 0
-	}
-	day := budget.PerDay - dayUsed
-	if day < 0 {
-		day = 0
-	}
-	return sess, day
-}
-
-func (c ultraworkCreditAdapter) HasBudget() bool {
-	if c.tracker == nil {
-		return false
-	}
-	b := c.tracker.Budget()
-	return b.PerSession > 0 || b.PerDay > 0
-}
-
-func usage() {
-	fmt.Fprintf(os.Stderr, `supercli %s — portable AI CLI agent
-
-Usage:
-  supercli [flags]
-
-Flags:
-  --home PATH                     select the workspace/sandbox (also: $SUPERCLI_HOME)
-  --data-dir PATH                 override instance data (also: $SUPERCLI_DATA_DIR)
-  --provider P                    LLM provider: openai, responses, anthropic, codex, opencode, or echo
-  --model M                       model id (default: $SUPERCLI_LLM_MODEL or gpt-4o-mini)
-  --key K                         API key (overrides SUPERCLI_LLM_API_KEY)
-  --base-url U                    base URL (overrides SUPERCLI_LLM_BASE_URL)
-  --echo                          force echo provider (useful for offline testing)
-  --debug                         verbose logging
-  --status                        print credit usage + audit tail and exit
-  --doctor                        run environment checks and exit
-  --list-models                   print known model capabilities and exit (add --refresh to re-fetch)
-  --refresh                       with --list-models, re-fetch /v1/models and re-probe
-  --model-info ID                 print details for a single model and exit
-  --max-credits-per-session N     cap total tokens per session (0 = no cap)
-  --max-credits-per-day N         cap total tokens per UTC day (0 = no cap)
-  --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default off; opt-in)
-  --draft-model ID                F11 draft model id (required to enable F11; no auto-pick)
-  --resume                        resume the most recent session on startup (also: /resume in the TUI)
-  --version                       print version and exit
-  -h, --help                      show this help
-
-Env vars:
-  SUPERCLI_LLM_PROVIDER, SUPERCLI_LLM_API_KEY, SUPERCLI_LLM_BASE_URL,
-  SUPERCLI_LLM_MODEL, SUPERCLI_LLM_TEMPERATURE, SUPERCLI_LLM_STREAM,
-  SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME, SUPERCLI_DATA_DIR
-
-Data is stored in a single portable supercli-data/ directory next to
-this exact executable (override only with --data-dir or SUPERCLI_DATA_DIR).
---home and SUPERCLI_HOME change the workspace, never the instance data.
-Nothing is written to %%APPDATA%% or the user home without consent.
-`, version)
+	afterTUIShutdown(slotCache, loop, sessionID, memIdle, memAutoSaver, memProg, dataDir, askCh, pumpDone)
 }
