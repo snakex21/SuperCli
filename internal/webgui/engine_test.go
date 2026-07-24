@@ -345,7 +345,9 @@ func TestEngine_WebOrchestratorDefaultIsAdaptive(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := "|" + strings.Join(loop.VisibleToolNames(), "|") + "|"
-	for _, required := range []string{"task", "write_file", "ctx_execute"} {
+	// patch_file, not write_file: the web profile carries the same single
+	// edit path as the TUI core (agent.thinCoreTools).
+	for _, required := range []string{"task", "patch_file", "create_file", "ctx_execute"} {
 		if !strings.Contains(names, "|"+required+"|") {
 			t.Errorf("adaptive default missing %s: %s", required, names)
 		}
