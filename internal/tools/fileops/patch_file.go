@@ -57,6 +57,12 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	if err != nil {
 		return PatchResult{}, FileErr(err, path)
 	}
+	// Without this the failure is misleading: searching a compressed
+	// stream for a sentence found in the document reports "found 0", the
+	// model concludes the text is absent and escalates to write_file.
+	if err := ensureTextBytes(path, data, false); err != nil {
+		return PatchResult{}, err
+	}
 	beforeHash := sha256.Sum256(data)
 	beforeHex := hex.EncodeToString(beforeHash[:])
 	if baseHash != "" && !strings.EqualFold(baseHash, beforeHex) {
