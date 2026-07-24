@@ -103,6 +103,10 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	reg.MustRegister(tools.NewRecallDual(projectMemory, globalMemory).Spec())
 	reg.MarkAlwaysOn("remember")
 	reg.MarkAlwaysOn("recall")
+	// One edit path, matching agent.thinCoreTools in the TUI: patch_file
+	// to change a file, create_file to make one. Offering the model seven
+	// interchangeable editors every turn is what made it pick the wrong
+	// one (and reach for write_file on a Word document).
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
@@ -111,11 +115,6 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		tools.NewListDir(home).Spec(),
 		tools.NewPatchFile(home).Spec(),
 		tools.NewCreateFile(home).Spec(),
-		tools.NewEditLine(home).Spec(),
-		tools.NewEditLines(home).Spec(),
-		tools.NewInsertAfter(home).Spec(),
-		tools.NewDeleteLines(home).Spec(),
-		tools.NewWriteFile(home).Spec(),
 		tools.NewMakeDir(home).Spec(),
 		tools.NewMove(home).Spec(),
 		tools.NewCopy(home).Spec(),
@@ -130,6 +129,23 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		sp = codeIntel.WrapMutation(sp)
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
+	}
+	// The legacy line editors stay registered — workers, checkpoints and
+	// tool_search all still reach them — but they no longer spend schema
+	// tokens on every chat turn, and they no longer compete with
+	// patch_file for the model's attention.
+	for _, sp := range []tools.Tool{
+		tools.NewEditLine(home).Spec(),
+		tools.NewEditLines(home).Spec(),
+		tools.NewInsertAfter(home).Spec(),
+		tools.NewDeleteLines(home).Spec(),
+		tools.NewWriteFile(home).Spec(),
+	} {
+		if turn != nil {
+			sp = turn.Wrap(sp)
+		}
+		sp = codeIntel.WrapMutation(sp)
+		reg.MustRegister(sp)
 	}
 	// Rich attachment readers stay discoverable through tool_search so their
 	// larger schemas do not burden ordinary chat turns. The attachment prompt
