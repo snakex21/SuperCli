@@ -73,18 +73,9 @@ func (n *schemaNode) validate(value any, path string) error {
 
 	switch typed := value.(type) {
 	case map[string]any:
-		for _, name := range n.required {
-			if _, ok := typed[name]; !ok {
-				return fmt.Errorf("%s: is required", propertyPath(path, name))
-			}
-		}
-		for _, name := range n.propertyOrder {
-			if childValue, ok := typed[name]; ok {
-				if err := n.properties[name].validate(childValue, propertyPath(path, name)); err != nil {
-					return err
-				}
-			}
-		}
+		// Unknown keys are reported before missing required ones on purpose: a
+		// misspelled argument is usually the required argument, and naming the
+		// key the caller actually sent lets the next attempt be the right one.
 		unknown := make([]string, 0)
 		for name := range typed {
 			if _, known := n.properties[name]; !known {
@@ -100,7 +91,28 @@ func (n *schemaNode) validate(value any, path string) error {
 					return err
 				}
 			case n.denyAdditional && !n.hasPatternProperties:
-				return fmt.Errorf("%s: additional property is not allowed", childPath)
+				return &unknownArgumentError{
+					path:  childPath,
+					valid: n.propertyOrder,
+					hint:  nearestArgument(name, n.propertyOrder),
+				}
+			default:
+				// Fail-open on purpose. The key is unknown to this node, but the
+				// node was never sealed: it is a nested envelope (invoke_tool.args,
+				// mcp_bridge.arguments) whose keys belong to another tool. Only
+				// argument roots are sealed, in sealToolSchemaRoot.
+			}
+		}
+		for _, name := range n.required {
+			if _, ok := typed[name]; !ok {
+				return fmt.Errorf("%s: is required", propertyPath(path, name))
+			}
+		}
+		for _, name := range n.propertyOrder {
+			if childValue, ok := typed[name]; ok {
+				if err := n.properties[name].validate(childValue, propertyPath(path, name)); err != nil {
+					return err
+				}
 			}
 		}
 	case []any:

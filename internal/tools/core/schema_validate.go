@@ -31,6 +31,10 @@ type schemaNode struct {
 	required       []string
 	additional     *schemaNode
 	denyAdditional bool
+	// additionalDeclared records whether the schema spelled additionalProperties
+	// out. Sealing the argument root (sealToolSchemaRoot) must never override an
+	// explicit author decision such as invoke_tool's additionalProperties:true.
+	additionalDeclared bool
 	// patternProperties is not part of the deliberately small validator. If it
 	// is present, unknown properties must remain allowed (fail-open), otherwise
 	// additionalProperties:false could reject a property a pattern permits.
@@ -90,10 +94,68 @@ func compileToolSchema(raw string) (*compiledToolSchema, error) {
 		if err != nil {
 			return nil, err
 		}
+		sealToolSchemaRoot(node)
 		return &compiledToolSchema{root: node}, nil
 	default:
 		return nil, fmt.Errorf("invalid JSON schema: root must be an object or boolean")
 	}
+}
+
+// sealToolSchemaRoot makes a tool's argument envelope fail-closed. Almost no
+// tool spells out additionalProperties:false, yet an argument its schema does
+// not declare is always a model mistake: json.Unmarshal drops the key without a
+// word and the tool then runs on a zero value nobody asked for. That is how
+// search_code{"query":...,"file":"internal/llm/providers"} (the real key is
+// "path") searched the entire repository and reported success - a believable
+// wrong answer the model had no way to learn from.
+//
+// Only the root envelope is sealed. Nested objects must stay fail-open because
+// they carry arguments for something else: invoke_tool.args holds the target
+// tool's arguments and mcp_bridge.arguments holds an arbitrary MCP server's.
+func sealToolSchemaRoot(n *schemaNode) {
+	switch {
+	case n == nil, n.boolean != nil:
+		return
+	case n.additionalDeclared:
+		// The schema author already decided (invoke_tool says true on purpose).
+		return
+	case n.hasPatternProperties:
+		// Unsupported keyword: a pattern may permit what we would reject.
+		return
+	case len(n.properties) == 0:
+		// No declared arguments at all ({} or {"type":"object"}, including MCP
+		// tools registered without a schema). There is no list to check against
+		// and nothing to put in an error message, so stay compatible.
+		return
+	case combinatorsDeclareProperties(n):
+		// Branch schemas (anyOf/oneOf/allOf) may accept properties the root does
+		// not list; rejecting on the root's list alone would be wrong.
+		return
+	}
+	n.denyAdditional = true
+}
+
+// combinatorsDeclareProperties reports whether any combinator branch below n
+// constrains object properties, which would make the root's property list an
+// incomplete picture of what is accepted.
+func combinatorsDeclareProperties(n *schemaNode) bool {
+	if n == nil {
+		return false
+	}
+	for _, group := range [][]*schemaNode{n.anyOf, n.oneOf, n.allOf} {
+		for _, branch := range group {
+			if branch == nil {
+				continue
+			}
+			if len(branch.properties) > 0 || branch.hasPatternProperties || branch.additionalDeclared {
+				return true
+			}
+			if combinatorsDeclareProperties(branch) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func normalizeToolSchemaRoot(root map[string]any) map[string]any {
@@ -184,6 +246,7 @@ func compileSchemaNode(value any, at string) (*schemaNode, error) {
 		}
 	}
 	if raw, exists := obj["additionalProperties"]; exists {
+		n.additionalDeclared = true
 		switch value := raw.(type) {
 		case bool:
 			n.denyAdditional = !value

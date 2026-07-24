@@ -10,15 +10,24 @@ import (
 
 type validationProbe struct {
 	registry *Registry
+	name     string
 	calls    int
 	lastArgs json.RawMessage
 }
 
 func newValidationProbe(t *testing.T, schema string) *validationProbe {
 	t.Helper()
-	p := &validationProbe{registry: NewRegistry()}
+	return newNamedValidationProbe(t, "probe", schema)
+}
+
+// newNamedValidationProbe registers the schema under a chosen tool name, which
+// matters when the assertion is about the error message: unknown-argument
+// errors name the tool alongside its valid arguments.
+func newNamedValidationProbe(t *testing.T, name, schema string) *validationProbe {
+	t.Helper()
+	p := &validationProbe{registry: NewRegistry(), name: name}
 	p.registry.MustRegister(Tool{
-		Name:        "probe",
+		Name:        name,
 		Description: "validation probe",
 		Schema:      schema,
 		Fn: func(_ context.Context, args json.RawMessage) (Result, error) {
@@ -32,7 +41,7 @@ func newValidationProbe(t *testing.T, schema string) *validationProbe {
 
 func (p *validationProbe) execute(t *testing.T, args string) Result {
 	t.Helper()
-	result, err := p.registry.Execute(context.Background(), "probe", json.RawMessage(args))
+	result, err := p.registry.Execute(context.Background(), p.name, json.RawMessage(args))
 	if err != nil {
 		t.Fatalf("Execute returned Go-level error: %v", err)
 	}
@@ -65,7 +74,7 @@ func (p *validationProbe) requireInvalid(t *testing.T, args, contains string) Re
 	if p.calls != before {
 		t.Fatalf("invalid arguments invoked tool: calls = %d, want %d", p.calls, before)
 	}
-	verdict := (Classifier{}).Classify("probe", json.RawMessage(args), result)
+	verdict := (Classifier{}).Classify(p.name, json.RawMessage(args), result)
 	if verdict.Category != CategoryModel || verdict.Confidence < 0.9 {
 		t.Fatalf("validation attribution = %+v, want high-confidence model error", verdict)
 	}
@@ -169,7 +178,7 @@ func TestRegistryValidatesObjectsAndAdditionalProperties(t *testing.T) {
 	p.requireInvalid(t, `{"nullable":null}`, "$.name: is required")
 	p.requireInvalid(t, `{"name":9,"nullable":null}`, "$.name: expected string")
 	p.requireInvalid(t, `{"name":"Ada","nullable":false}`, "$.nullable: expected null or string")
-	p.requireInvalid(t, `{"name":"Ada","nullable":null,"extra":1}`, "$.extra: additional property")
+	p.requireInvalid(t, `{"name":"Ada","nullable":null,"extra":1}`, "$.extra: unknown argument")
 	p.requireInvalid(t, `{`, "invalid JSON")
 
 	t.Run("additionalProperties schema", func(t *testing.T) {
@@ -258,6 +267,140 @@ func TestRegistryValidatesCombinators(t *testing.T) {
 	p.requireInvalid(t, `{"any":false,"one":1.5,"all":"AB"}`, "must match at least one anyOf branch")
 	p.requireInvalid(t, `{"any":"ok","one":1,"all":"AB"}`, "must match exactly one oneOf branch")
 	p.requireInvalid(t, `{"any":"ok","one":1.5,"all":"a"}`, "length must be at least 2")
+}
+
+// TestRegistryRejectsUnknownToolArgumentsInsteadOfDroppingThem pins the fix for
+// a production failure: the model called search_code with "file" instead of
+// "path", validation passed, json.Unmarshal dropped the key, and the tool
+// searched the whole repository and reported success. Rejecting the call is
+// only half the fix - the message has to name the arguments the tool does have,
+// or the model's cheapest next move is to send the same call again.
+func TestRegistryRejectsUnknownToolArgumentsInsteadOfDroppingThem(t *testing.T) {
+	// Schema copied from internal/tools/search/search_code.go.
+	search := newNamedValidationProbe(t, "search_code", `{
+		"type": "object",
+		"properties": {
+			"query": {"type": "string"},
+			"path":  {"type": "string"},
+			"max":   {"type": "integer"}
+		},
+		"required": ["query"]
+	}`)
+	search.requireValid(t, `{"query":"ProviderConf","path":"internal/llm/providers","max":20}`)
+
+	result := search.requireInvalid(t,
+		`{"query":"ProviderConf","max":20,"file":"internal/llm/providers"}`,
+		"$.file: unknown argument")
+	message := result.Err.Error()
+	for _, want := range []string{"search_code", "max", "path", "query"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error %q does not mention %q: the model cannot repair the call from it", message, want)
+		}
+	}
+	// "file" for "path" is a semantic mix-up, not a typo. Guessing there would
+	// be worse than the list itself.
+	if strings.Contains(message, "did you mean") {
+		t.Fatalf("error %q guesses a replacement for a non-typo", message)
+	}
+
+	// A misspelled required argument must be reported as the misspelling, not as
+	// a missing argument: "$.query: is required" would leave "quer" in the next
+	// call and cost another turn.
+	t.Run("obvious typo gets a hint", func(t *testing.T) {
+		typo := search.requireInvalid(t, `{"quer":"x"}`, "$.quer: unknown argument")
+		if !strings.Contains(typo.Err.Error(), `did you mean "query"?`) {
+			t.Fatalf("error %q does not suggest the near-identical name", typo.Err)
+		}
+	})
+
+	t.Run("invoke_tool keeps its explicit additionalProperties", func(t *testing.T) {
+		// Schema copied from internal/agent/tool_invoke.go. The dispatcher passes
+		// target arguments as arg.<name> keys; sealing this root would break every
+		// dispatched call.
+		invoke := newNamedValidationProbe(t, "invoke_tool", `{"type":"object","properties":{"tool":{"type":"string"},"args":{"type":"object","description":"Target arguments for native tool calling"}},"required":["tool"],"additionalProperties":true}`)
+		invoke.requireValid(t, `{"tool":"read_lines","arg.file":"sample.txt","arg.from":"1"}`)
+		invoke.requireValid(t, `{"tool":"read_lines","args":{"file":"sample.txt","from":1,"to":2}}`)
+	})
+
+	t.Run("shorthand schema is sealed after normalization", func(t *testing.T) {
+		// Schema copied from internal/tools/files/edit_line.go: root is the bare
+		// property map, so the fix has to survive normalizeToolSchemaRoot.
+		edit := newNamedValidationProbe(t, "edit_line", `{"file":{"type":"string"},
+"line":{"type":"integer"},
+"new_content":{"type":"string"},
+"expected_old":{"type":"string"}}`)
+		edit.requireValid(t, `{"file":"a.go","line":3,"new_content":"x","expected_old":"y"}`)
+		typo := edit.requireInvalid(t, `{"fil":"a.go","line":3,"new_content":"x"}`, "$.fil: unknown argument")
+		for _, want := range []string{`did you mean "file"?`, "expected_old, file, line, new_content"} {
+			if !strings.Contains(typo.Err.Error(), want) {
+				t.Fatalf("error %q does not contain %q", typo.Err, want)
+			}
+		}
+	})
+
+	t.Run("nested argument envelopes stay fail-open", func(t *testing.T) {
+		// Schema copied from internal/tools/mcp/bridge.go: arguments carries an
+		// arbitrary remote server's arguments and must never be sealed.
+		bridge := newNamedValidationProbe(t, "mcp_bridge", `{"type":"object","properties":{"action":{"type":"string","enum":["list","search","call"]},"server":{"type":"string"},"query":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object","additionalProperties":true}},"required":["action"]}`)
+		bridge.requireValid(t, `{"action":"call","server":"web","tool":"fetch","arguments":{"url":"https://example.com","depth":2,"opts":{"raw":true}}}`)
+		bridge.requireInvalid(t, `{"action":"list","argments":{"a":1}}`, "$.argments: unknown argument")
+	})
+
+	t.Run("schemas without declared arguments stay fail-open", func(t *testing.T) {
+		for _, schema := range []string{`{}`, `{"type":"object"}`, `{"type":"object","properties":{}}`} {
+			open := newValidationProbe(t, schema)
+			open.requireValid(t, `{"anything":1}`)
+		}
+	})
+
+	t.Run("combinator roots are sealed only when branches add nothing", func(t *testing.T) {
+		// ask_user's shape: branches pick which declared properties are required.
+		either := newNamedValidationProbe(t, "ask_user", `{
+			"type":"object",
+			"properties":{"question":{"type":"string"},"questions":{"type":"array"}},
+			"anyOf":[{"required":["question"]},{"required":["questions"]}]
+		}`)
+		either.requireValid(t, `{"question":"go on?"}`)
+		either.requireInvalid(t, `{"question":"go on?","prompt":"x"}`, "$.prompt: unknown argument")
+
+		// A branch that declares its own properties makes the root list an
+		// incomplete picture, so the root must not be sealed.
+		branching := newValidationProbe(t, `{
+			"type":"object",
+			"properties":{"kind":{"type":"string"}},
+			"anyOf":[{"properties":{"extra":{"type":"integer"}}},{"required":["kind"]}]
+		}`)
+		branching.requireValid(t, `{"kind":"a","extra":1}`)
+	})
+}
+
+func TestNearestArgumentOnlySuggestsTypographicNeighbours(t *testing.T) {
+	valid := []string{"expected_old", "file", "line", "new_content"}
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"fil", "file"},
+		{"File", "file"},
+		{"lines", "line"},
+		{"new_contents", "new_content"},
+		{"path", ""},         // semantic mix-up, not a typo
+		{"content", ""},      // three edits away from new_content
+		{"", ""},             // nothing to match
+		{"expected", ""},     // four edits away
+		{"xyzzy", ""},        // unrelated
+		{"expected_new", ""}, // one edit, but a different argument is meant
+	}
+	for _, test := range tests {
+		if got := nearestArgument(test.name, valid); got != test.want {
+			t.Fatalf("nearestArgument(%q) = %q, want %q", test.name, got, test.want)
+		}
+	}
+	t.Run("ties stay silent", func(t *testing.T) {
+		if got := nearestArgument("fro", []string{"from", "frob", "to"}); got != "" {
+			t.Fatalf("nearestArgument with two equally near names = %q, want no guess", got)
+		}
+	})
 }
 
 func TestRegistryRejectsExtremeArgumentExponentWithoutCallingTool(t *testing.T) {

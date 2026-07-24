@@ -7,6 +7,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -331,6 +332,13 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	args = coerceCompiledArgs(schema, args)
 	if schema != nil {
 		if err := schema.validateJSON(args); err != nil {
+			// An unknown argument names the tool inside its own list of valid
+			// arguments, so the model reads one repair instruction instead of a
+			// prefix plus a detail. See unknownArgumentError.
+			var unknown *unknownArgumentError
+			if errors.As(err, &unknown) {
+				return Result{Err: fmt.Errorf("%w: %s", ErrInvalidToolArgs, unknown.messageFor(name))}, nil
+			}
 			validationErr := fmt.Errorf("%w for %s: %s", ErrInvalidToolArgs, name, err)
 			// Bad model arguments are an ordinary tool failure, not a Go/runtime
 			// failure. Returning it in Result.Err lets the attribution layer mark
