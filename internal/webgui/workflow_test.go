@@ -58,10 +58,21 @@ func postSessionRewind(t *testing.T, srv *Server, sessionID string, seq int, fil
 func TestHandleSessionRewindEditsCurrentConversationWithoutBranch(t *testing.T) {
 	srv := newTestServer(t, false)
 	source, store := createRewindSession(t, srv, "rewind in place")
+	attachmentPath := filepath.Join(srv.eng.Home(), ".supercli", "attachments", "photo.png")
+	if err := store.SaveMessageAttachments(context.Background(), source.ID, 3, []string{attachmentPath}); err != nil {
+		t.Fatal(err)
+	}
 
 	response := postSessionRewind(t, srv, source.ID, 3, false, "try a safer approach")
-	if !response.OK || response.Removed != 2 || response.FilesRewound {
+	if !response.OK || response.Removed != 2 || response.FilesRewound || len(response.Attachments) != 1 || response.Attachments[0] != attachmentPath {
 		t.Fatalf("response = %+v", response)
+	}
+	attachments, err := store.ReadMessageAttachmentsRange(context.Background(), source.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("rewound attachment metadata remains in storage: %#v", attachments)
 	}
 	page, err := srv.eng.transcriptPage(context.Background(), source.ID, 0, 100)
 	if err != nil {

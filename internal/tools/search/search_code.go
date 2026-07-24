@@ -50,9 +50,11 @@ func (s *SearchCode) Spec() Tool {
 	return Tool{
 		Name:     "search_code",
 		ReadOnly: true,
-		Description: "Search the codebase for lines matching a regex. " +
+		Description: "Search the codebase for lines matching a regex (read-only). " +
 			"Returns file:line:content for each match, up to max results. " +
-			"Use this before reading files to find relevant locations.",
+			"Use to find locations, then read_lines/read_many and patch_file — " +
+			"do not keep running alternate searches without a concrete new question. " +
+			"Never invent edits from search hits alone.",
 		Schema: `{
 			"type": "object",
 			"properties": {

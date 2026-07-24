@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -375,13 +376,14 @@ func (p *reflectionTestProvider) Complete(_ context.Context, _ []llm.Message, _ 
 	go func() {
 		defer close(ch)
 		if idx < p.calls {
-			// Emit a tool_call so the loop continues.
+			// Unique args so discovery cycle fuse does not force-reply
+			// before ReflectEvery can fire (these tests measure reflection).
 			ch <- llm.Delta{
 				Role: llm.RoleAssistant,
 				ToolCall: &llm.ToolCall{
-					ID:        "call_1",
+					ID:        fmt.Sprintf("call_%d", idx),
 					Name:      "noop",
-					Arguments: `{}`,
+					Arguments: fmt.Sprintf(`{"n":%d}`, idx),
 				},
 			}
 			ch <- llm.Delta{FinishReason: "tool_calls"}

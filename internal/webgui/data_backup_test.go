@@ -293,6 +293,7 @@ func TestFullBackupEndpointsStayLoopbackOnlyWithAllowRemote(t *testing.T) {
 		req := httptest.NewRequest(item.method, item.path, nil)
 		req.Host = "example.test"
 		req.RemoteAddr = "203.0.113.10:12345"
+		req.Header.Set("Authorization", "Bearer "+srv.sessionToken)
 		srv.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("remote %s=%d, want 403", item.path, rec.Code)

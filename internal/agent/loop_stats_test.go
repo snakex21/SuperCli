@@ -46,7 +46,9 @@ func makeStatsLoop(t *testing.T, p llm.Provider, reg *tools.Registry, rec stats.
 }
 
 func echoCall(id string) llm.Delta {
-	return llm.Delta{ToolCall: &llm.ToolCall{ID: id, Name: "echo", Arguments: `{"msg":"hi"}`}}
+	// Unique args per id so discovery cycle detection (A-A-A) does not
+	// short-circuit stats tests that intentionally batch multiple calls.
+	return llm.Delta{ToolCall: &llm.ToolCall{ID: id, Name: "echo", Arguments: `{"msg":"` + id + `"}`}}
 }
 
 // TestLoop_Stats_PhasesRecorded proves a plain text turn (zero tool

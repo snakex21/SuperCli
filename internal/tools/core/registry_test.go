@@ -170,6 +170,12 @@ func TestRegistry_ActiveNames_ExcludesAlwaysOn(t *testing.T) {
 	if !r.IsVisible("core") {
 		t.Error("core should be visible (always-on)")
 	}
+	if r.IsActive("core") {
+		t.Error("always-on core must not satisfy explicit activation gate")
+	}
+	if !r.IsActive("tail_b") {
+		t.Error("activated tail_b should satisfy explicit activation gate")
+	}
 	for _, n := range got {
 		if n == "core" {
 			t.Error("ActiveNames leaked always-on tool 'core'")

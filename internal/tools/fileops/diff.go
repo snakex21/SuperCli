@@ -15,9 +15,9 @@ import (
 // Change records a single file modification.
 type Change struct {
 	Path      string
-	Op        string    // "write", "edit", "insert", "delete"
-	Old       string    // content before (empty for new files)
-	New       string    // content after (empty for delete)
+	Op        string // "write", "edit", "insert", "delete"
+	Old       string // content before (empty for new files)
+	New       string // content after (empty for delete)
 	Timestamp time.Time
 }
 

@@ -41,6 +41,7 @@ func TestCoreSurfaceParity(t *testing.T) {
 			}
 			req := httptest.NewRequest(http.MethodGet, capability.route, nil)
 			req.Host = "localhost"
+			req.RemoteAddr = "127.0.0.1:43210"
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			isJSON := strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json")

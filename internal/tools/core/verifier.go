@@ -77,7 +77,8 @@ func (DefaultVerifier) Verify(c Check) VerifyVerdict {
 func inferFamily(tool string, args json.RawMessage, r Result) string {
 	n := strings.ToLower(tool)
 	switch {
-	case strings.HasSuffix(n, "_write"), strings.HasSuffix(n, "_edit"), n == "write_file":
+	case strings.HasSuffix(n, "_write"), strings.HasSuffix(n, "_edit"),
+		n == "write_file", n == "patch_file", n == "create_file":
 		return "file_write"
 	case strings.HasSuffix(n, "_bash"), strings.HasSuffix(n, "_exec"), n == "bash":
 		return "bash"

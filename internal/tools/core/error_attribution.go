@@ -210,6 +210,7 @@ func classifySchemaError(s string) (Verdict, bool) {
 	if strings.Contains(low, "bad args") ||
 		strings.Contains(low, "json: cannot unmarshal") ||
 		strings.Contains(low, "schema") ||
+		strings.Contains(low, "invalid tool arguments") ||
 		strings.Contains(low, "invalid argument") {
 		return Verdict{
 			Category:   CategoryModel,

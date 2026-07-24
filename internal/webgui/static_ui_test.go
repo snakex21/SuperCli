@@ -1,13 +1,51 @@
 package webgui
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
+
+// readEmbeddedAppJS loads the split WebGUI front-end modules under
+// assets/js/ in lexical order (00-helpers … 12-keyboard-init) and
+// joins them so string-presence tests stay independent of the file
+// layout.
+func readEmbeddedAppJS(t *testing.T) string {
+	t.Helper()
+	var names []string
+	err := fs.WalkDir(assetsFS, "assets/js", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".js") {
+			return nil
+		}
+		names = append(names, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk assets/js: %v", err)
+	}
+	if len(names) == 0 {
+		t.Fatal("no assets/js/*.js modules embedded")
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		raw, err := assetsFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		b.Write(raw)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
 
 func TestServerCustomUIRoot(t *testing.T) {
 	root := t.TempDir()
@@ -82,12 +120,9 @@ func TestServerSharedUIRuntimeIsAvailableWithCustomUI(t *testing.T) {
 }
 
 func TestAttachmentUIHasThumbnailAndCenteredPreview(t *testing.T) {
-	js, err := assetsFS.ReadFile("assets/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
+	js := readEmbeddedAppJS(t)
 	for _, required := range []string{"attachmentPreviewSource", "attachment-thumbnail", "image-attachment", "renderSentAttachments", "sentAttachmentsFor"} {
-		if !strings.Contains(string(js), required) {
+		if !strings.Contains(js, required) {
 			t.Fatalf("attachment UI is missing %q", required)
 		}
 	}
@@ -112,11 +147,7 @@ func TestAttachmentUIHasThumbnailAndCenteredPreview(t *testing.T) {
 }
 
 func TestWebUIUsesOwnedDialogs(t *testing.T) {
-	js, err := assetsFS.ReadFile("assets/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(js)
+	script := readEmbeddedAppJS(t)
 	for _, banned := range []string{"window.prompt(", "window.confirm(", "window.alert("} {
 		if strings.Contains(script, banned) {
 			t.Fatalf("web UI still uses browser dialog %q", banned)
@@ -148,12 +179,9 @@ func TestModelContextControlIsDiscoverableInPalette(t *testing.T) {
 			t.Fatalf("model palette is missing %q", required)
 		}
 	}
-	js, err := assetsFS.ReadFile("assets/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
+	js := readEmbeddedAppJS(t)
 	for _, required := range []string{"renderActiveContextControl", "saveActiveModelContext", "activeProviderID"} {
-		if !strings.Contains(string(js), required) {
+		if !strings.Contains(js, required) {
 			t.Fatalf("model context control is missing behavior %q", required)
 		}
 	}
@@ -177,10 +205,7 @@ func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 }
 
 func TestUIScaleKeepsLayoutInsideEffectiveViewport(t *testing.T) {
-	js, err := assetsFS.ReadFile("assets/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
+	js := readEmbeddedAppJS(t)
 	for _, required := range []string{
 		"function applyViewportScale()",
 		"window.innerWidth / scale",
@@ -188,7 +213,7 @@ func TestUIScaleKeepsLayoutInsideEffectiveViewport(t *testing.T) {
 		`--app-viewport-width`,
 		`--app-viewport-height`,
 	} {
-		if !strings.Contains(string(js), required) {
+		if !strings.Contains(js, required) {
 			t.Fatalf("UI scale is missing effective viewport behavior %q", required)
 		}
 	}

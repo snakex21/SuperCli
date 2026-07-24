@@ -61,7 +61,7 @@ func run(crashDataDir *string) {
 	iconFlag := flag.String("icon", "", "path to a Windows .ico file for the native window")
 	requireUIContractFlag := flag.Int("require-ui-contract", 0, "minimum shared UI contract required by the launcher")
 	parentPIDFlag := flag.Int("parent-pid", 0, "exit when this launcher process exits")
-	allowRemoteFlag := flag.Bool("allow-remote", false, "allow non-loopback hosts (no auth provided; use with care)")
+	allowRemoteFlag := flag.Bool("allow-remote", false, "allow token-protected non-loopback access")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
 	flag.Parse()

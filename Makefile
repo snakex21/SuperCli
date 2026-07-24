@@ -40,13 +40,17 @@ tidy:
 	$(GO) mod tidy
 
 clean:
-	rm -f $(BINARY)
-	rm -f $(WEB_BINARY)
+	rm -f $(BINARY) $(BINARY).exe $(WEB_BINARY)
 	rm -f *.test *.test.exe headerprobe.exe coverage.out stdout.log stderr.log
-	rm -rf .tmp-home
+	rm -f memory.db sessions.db memory.db-shm memory.db-wal sessions.db-shm sessions.db-wal
+	rm -rf .tmp-home memory
 	$(GO) clean -testcache
 
 clean-data:
 	rm -rf .supercli supercli-data
+
+# Local-only: wipe orphan temp dirs (does not touch supercli-data credentials)
+clean-tmp:
+	rm -rf .tmp-home memory
 
 all: fmt vet test build

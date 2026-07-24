@@ -41,9 +41,11 @@ func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 func (s *ToolSearcher) Spec() Tool {
 	return Tool{
 		Name: "tool_search",
-		Description: "Find a tool by capability (including live web search). " +
-			"Returns its full schema for immediate use. Call when a needed tool " +
-			"is absent or its arguments are unknown.",
+		Description: "Find a rare tool, plugin, MCP bridge, or optional capability by name/intent. " +
+			"Returns its full schema and activates it. " +
+			"Do not use for listing directories, reading files, searching code, or editing files — " +
+			"use list_dir, read_lines/read_many, search_code, patch_file, or create_file directly. " +
+			"Call only when a needed tool is absent from the core set or its arguments are unknown.",
 		Schema: `{"type":"object","properties":{
 "query":{"type":"string","description":"Natural-language search, e.g. 'find files by name'"},
 "limit":{"type":"integer","default":3,"maximum":8}
@@ -77,11 +79,17 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	if limit > s.MaxLimit {
 		limit = s.MaxLimit
 	}
+	// Exact tool-name query: activate that one tool immediately.
+	// Models often call tool_search("read_docx") after seeing a catalog
+	// name; FTS/lexical ranking is unnecessary and can dilute the hit.
+	var hits []SearchResult
+	if exact := exactToolNameHit(s.Registry, a.Query); exact != nil {
+		hits = []SearchResult{*exact}
+	}
 	// Small per-request registries (WebGUI/batch) can skip SQLite entirely
 	// and use the deterministic lexical ranker. The long-lived TUI supplies
 	// an in-memory FTS index for its much larger catalog.
-	var hits []SearchResult
-	if s.Index != nil {
+	if len(hits) == 0 && s.Index != nil {
 		var err error
 		hits, err = s.Index.Search(a.Query, limit)
 		if err != nil {
@@ -119,6 +127,9 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		Query: a.Query,
 	}
 	for _, h := range hits {
+		if h.Name == "tool_search" || h.Name == "invoke_tool" {
+			continue
+		}
 		tool, ok := s.Registry.Get(h.Name)
 		if !ok {
 			continue
@@ -137,7 +148,7 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	// point the model at the catalog instead of implying it can
 	// now call something.
 	if len(resp.Matches) > 0 {
-		resp.Hint = "These tools are now callable by name. Each match includes its signature and full JSON schema (the exact arguments)."
+		resp.Hint = "These tools are now callable. Each match includes its exact signature and JSON schema; call by name when exposed, or through invoke_tool in the schema-stable toolset."
 	} else {
 		resp.Hint = "No tool matched this query. Try different keywords, or use the tools already listed in the catalog."
 	}
@@ -146,6 +157,33 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		return Result{Err: fmt.Errorf("tool_search: marshal: %w", err)}, nil
 	}
 	return Result{Text: string(out)}, nil
+}
+
+// exactToolNameHit returns a single perfect hit when the query is exactly
+// a registered tool name (case-insensitive). Skips meta-tools.
+func exactToolNameHit(reg *Registry, query string) *SearchResult {
+	if reg == nil {
+		return nil
+	}
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	// Prefer exact case match first (registration is case-sensitive).
+	if t, ok := reg.Get(q); ok && t.Name != "tool_search" && t.Name != "invoke_tool" {
+		return &SearchResult{Name: t.Name, Server: classifyServer(t.Name), Score: 1.0}
+	}
+	// Case-insensitive fallback for local models that lower/upper the name.
+	low := strings.ToLower(q)
+	for _, name := range reg.Names() {
+		if name == "tool_search" || name == "invoke_tool" {
+			continue
+		}
+		if strings.ToLower(name) == low {
+			return &SearchResult{Name: name, Server: classifyServer(name), Score: 1.0}
+		}
+	}
+	return nil
 }
 
 // lexicalFallback ranks registered tools by simple token
@@ -169,9 +207,8 @@ func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
 	}
 	var ranked []scored
 	for _, name := range s.Registry.Names() {
-		// Returning the discovery tool itself wastes one of the deliberately
-		// small result slots and can hide the capability the model asked for.
-		if name == "tool_search" {
+		// Meta-tools are gateways, never useful search answers.
+		if name == "tool_search" || name == "invoke_tool" {
 			continue
 		}
 		t, ok := s.Registry.Get(name)
@@ -245,9 +282,9 @@ func (s *ToolSearcher) RebuildIndex() error {
 	tools := s.Registry.Names()
 	indexed := make([]IndexedTool, 0, len(tools))
 	for _, name := range tools {
-		// tool_search already carries its complete schema in every route. It is
-		// a gateway, never a useful answer to its own search query.
-		if name == "tool_search" {
+		// Meta-tools already carry full schema on every route; never index them
+		// as discoverable answers (would waste FTS slots / confuse models).
+		if name == "tool_search" || name == "invoke_tool" {
 			continue
 		}
 		t, ok := s.Registry.Get(name)

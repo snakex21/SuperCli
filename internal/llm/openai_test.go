@@ -126,6 +126,64 @@ func TestOpenAICompleteSendsConfiguredMaxTokens(t *testing.T) {
 	}
 }
 
+func TestOpenAICompleteUsesPortableToolSchemaOnFirstRequest(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		var request struct {
+			Tools []struct {
+				Function struct {
+					Parameters map[string]any `json:"parameters"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(request.Tools) == 0 {
+			t.Error("request did not contain tools")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if _, hasAnyOf := request.Tools[0].Function.Parameters["anyOf"]; hasAnyOf {
+			t.Errorf("root anyOf reached provider: %v", request.Tools[0].Function.Parameters)
+		}
+		sseResponse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "grok-4.5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := []ToolDef{{
+		Name: "ask_user",
+		Schema: `{"type":"object","properties":{"question":{"type":"string"},"options":{"type":"array"}},` +
+			`"anyOf":[{"required":["question","options"]},{"required":["questions"]}]}`,
+	}}
+
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltas := drainDeltas(t, ch)
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("calls = %d, want exactly one request", got)
+	}
+	var content strings.Builder
+	for _, delta := range deltas {
+		content.WriteString(delta.Content)
+		if delta.Err != nil {
+			t.Fatalf("unexpected error: %v", delta.Err)
+		}
+	}
+	if content.String() != "ok" {
+		t.Fatalf("content=%q, want ok", content.String())
+	}
+}
+
 // TestBuildOpenAIRequest_DemotesMidConversationSystemMessages guards the
 // KV-cache fix: a system message appearing after the first non-system turn
 // (freshness stamp, reflection checkpoint, ...) must NOT be hoisted into the
@@ -1135,10 +1193,10 @@ func TestEncodeBase64(t *testing.T) {
 
 // --- chunk-decoding resilience ---
 
-func TestOpenAI_IgnoreNonJSONChunk(t *testing.T) {
-	// Real providers sometimes send "ping:" frames or other noise.
+func TestOpenAI_IgnoresKnownHeartbeatChunk(t *testing.T) {
+	// Real providers sometimes send explicit ping frames between JSON chunks.
 	chunks := []string{
-		`not json`,
+		`ping`,
 		`{"choices":[{"index":0,"delta":{"content":"ok"}}]}`,
 		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
 	}
@@ -1157,6 +1215,56 @@ func TestOpenAI_IgnoreNonJSONChunk(t *testing.T) {
 	}
 }
 
+func TestOpenAI_MalformedChunkIsAnError(t *testing.T) {
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, `not json`)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+	ds := drainDeltas(t, ch)
+	if len(ds) == 0 || ds[len(ds)-1].Err == nil || !strings.Contains(ds[len(ds)-1].Err.Error(), "unexpected SSE payload") {
+		t.Fatalf("expected malformed SSE error, got %+v", ds)
+	}
+}
+
+func TestOpenAI_StructuredStreamErrorIsAnError(t *testing.T) {
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, `{"error":{"message":"upstream overloaded","type":"server_error"}}`)
+	})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+	ds := drainDeltas(t, ch)
+	if len(ds) == 0 || ds[len(ds)-1].Err == nil || !strings.Contains(ds[len(ds)-1].Err.Error(), "upstream overloaded") {
+		t.Fatalf("expected structured provider error, got %+v", ds)
+	}
+}
+
+func TestOpenAI_EmptyAndIncompleteStreamsAreErrors(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			sseResponse(w)
+		})
+		p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+		ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+		ds := drainDeltas(t, ch)
+		if len(ds) == 0 || ds[len(ds)-1].Err == nil || !strings.Contains(ds[len(ds)-1].Err.Error(), "empty stream") {
+			t.Fatalf("expected empty stream error, got %+v", ds)
+		}
+	})
+	t.Run("incomplete", func(t *testing.T) {
+		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+		})
+		p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+		ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+		ds := drainDeltas(t, ch)
+		if len(ds) == 0 || ds[len(ds)-1].Err == nil || !strings.Contains(ds[len(ds)-1].Err.Error(), "terminal event") {
+			t.Fatalf("expected incomplete stream error, got %+v", ds)
+		}
+	})
+}
+
 // --- request counter (proves we use BaseURL correctly) ---
 
 func TestOpenAI_RequestURL(t *testing.T) {
@@ -1168,8 +1276,8 @@ func TestOpenAI_RequestURL(t *testing.T) {
 	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o"})
 	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
 	drainDeltas(t, ch) // wait for the request to be processed
-	if got.Load() != "/chat/completions" {
-		t.Fatalf("path = %v, want /chat/completions", got.Load())
+	if got.Load() != "/v1/chat/completions" {
+		t.Fatalf("path = %v, want /v1/chat/completions", got.Load())
 	}
 }
 
@@ -1195,6 +1303,23 @@ func TestOpenAI_MultipleToolCalls(t *testing.T) {
 	if !calls["a"] || !calls["b"] {
 		t.Fatalf("missing tool calls: %+v", calls)
 	}
+}
+
+func TestOpenAI_SparseToolCallIndexIsFlushed(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":3,"id":"c3","type":"function","function":{"name":"third","arguments":"{}"}}]}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) { sseResponse(w, chunks...) })
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "do"}}, nil)
+	ds := drainDeltas(t, ch)
+	for _, d := range ds {
+		if d.ToolCall != nil && d.ToolCall.Name == "third" {
+			return
+		}
+	}
+	t.Fatalf("sparse tool call was lost: %+v", ds)
 }
 
 // Sentinel error to make sure error wrapping works.

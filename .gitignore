@@ -9,9 +9,9 @@
 *.test
 coverage.out
 test/perf/*.json
-/cmd/supercli-web/nestcafe-ui/
 
-# Runtime state / databases — never publish these
+# Runtime state / databases — never publish these.
+# Portable app state lives under supercli-data/ only (not repo root).
 .supercli/
 supercli-data/
 # The shared built-in skill pack is distributable application data. Keep every
@@ -26,8 +26,14 @@ supercli-data/skills/*
 *.db-wal
 *.sqlite
 *.sqlite3
+/sessions.db*
+/memory.db*
 sessions.db*
 memory.db*
+
+# Local build outputs kept next to build.bat / build_ui.bat for convenience
+# (still ignored — never commit binaries)
+/supercli-web.exe
 
 # Logs and crash dumps
 logs/
@@ -56,8 +62,9 @@ Thumbs.db
 *.swp
 *.swo
 
-# Temporary files
+# Temporary files / local tool state
 /\.tmp-home/
+/\.claude/
 /%SystemDrive%/
 tmp/
 temp/

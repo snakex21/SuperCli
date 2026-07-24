@@ -1,11 +1,9 @@
 package memory
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -33,12 +31,19 @@ const (
 // A Store is safe for concurrent use. Close releases the
 // underlying *sql.DB.
 type Store struct {
-	db   *sql.DB
-	root string
-	// writeMu makes the SQLite+Markdown dual write one logical operation.
-	// database/sql is concurrent-safe, but two atomic Markdown replacements of
-	// the same scope would otherwise be individually valid yet lose an entry.
+	db       *sql.DB
+	root     string
+	mirrorMu *sync.Mutex
+	// writeMu serializes mutations and outbox draining within this Store. SQLite
+	// generations also make independently opened Store instances converge when
+	// they render the same scope concurrently.
 	writeMu sync.Mutex
+	// beforeMirrorWrite is a test-only fault-injection hook. Production stores
+	// leave it nil; keeping the failure point here lets recovery tests exercise
+	// a committed SQLite mutation followed by an unavailable filesystem.
+	beforeMirrorWrite func(scope string) error
+	afterMirrorRead   func(scope string)
+	afterStaleRead    func()
 
 	// Optional embedding backend for hybrid search (hybrid.go).
 	// Guarded by embedMu because detection runs in a background
@@ -70,7 +75,11 @@ func OpenStore(home string) (*Store, error) {
 	if err := mkdirAll(filepath.Join(home, "memory", "archive"), 0o755); err != nil {
 		return nil, fmt.Errorf("memory.OpenStore: mkdir archive/: %w", err)
 	}
-	dsn := filepath.Join(home, "memory.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	// IMMEDIATE transactions acquire SQLite's single-writer reservation before
+	// reading. Mirror rendering deliberately holds that reservation from outbox
+	// selection through the atomic Markdown replace and acknowledgement, which
+	// also serializes renderers living in different SuperCli processes.
+	dsn := filepath.Join(home, "memory.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("memory.OpenStore: open: %w", err)
@@ -79,10 +88,14 @@ func OpenStore(home string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("memory.OpenStore: ping: %w", err)
 	}
-	s := &Store{db: db, root: home}
+	s := &Store{db: db, root: home, mirrorMu: processMirrorLock(home)}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("memory.OpenStore: migrate: %w", err)
+	}
+	if err := s.reconcileMarkdown(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("memory.OpenStore: reconcile markdown: %w", err)
 	}
 	return s, nil
 }
@@ -129,6 +142,11 @@ func (s *Store) migrate() error {
 			path        TEXT NOT NULL,
 			archived_at INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS memory_mirror_outbox (
+			scope       TEXT PRIMARY KEY,
+			generation  INTEGER NOT NULL DEFAULT 1,
+			enqueued_at INTEGER NOT NULL
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -144,8 +162,8 @@ func (s *Store) Get(id string) (Entry, error) {
 	return scanEntry(row)
 }
 
-// Put inserts or updates an entry. The markdown file mirror is
-// kept in sync; the SQLite row stores the resulting line range.
+// Put commits SQLite and its mirror outbox first, then atomically regenerates
+// Markdown. A failed filesystem step remains queued for startup recovery.
 func (s *Store) Put(e Entry) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -168,22 +186,6 @@ func (s *Store) Put(e Entry) error {
 	if err != nil {
 		return err
 	}
-	if err := mdUpsert(filePath, e); err != nil {
-		return fmt.Errorf("memory.Store.Put(%s): %w", e.ID, err)
-	}
-	// Re-read the file to capture the (possibly new) line range.
-	disk, err := mdRead(filePath)
-	if err != nil {
-		return fmt.Errorf("memory.Store.Put(%s): reread: %w", e.ID, err)
-	}
-	var lineStart, lineEnd int
-	for _, d := range disk {
-		if d.ID == e.ID {
-			lineStart = d.LineStart
-			lineEnd = d.LineEnd
-			break
-		}
-	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -191,6 +193,10 @@ func (s *Store) Put(e Entry) error {
 	}
 	defer tx.Rollback()
 
+	var oldScope string
+	if err := tx.QueryRow(`SELECT scope FROM memory_entries WHERE id = ?`, e.ID).Scan(&oldScope); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read old scope: %w", err)
+	}
 	if _, err := tx.Exec(`DELETE FROM memory_entries WHERE id = ?`, e.ID); err != nil {
 		return fmt.Errorf("delete old: %w", err)
 	}
@@ -199,7 +205,7 @@ func (s *Store) Put(e Entry) error {
 	}
 	if _, err := tx.Exec(
 		`INSERT INTO memory_entries(id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		e.ID, e.Scope, filePath, lineStart, lineEnd, e.Content, e.TagsCSV(), e.Source, e.CreatedAt.Unix(), e.UpdatedAt.Unix(),
+		e.ID, e.Scope, filePath, 0, 0, e.Content, e.TagsCSV(), e.Source, e.CreatedAt.Unix(), e.UpdatedAt.Unix(),
 	); err != nil {
 		return fmt.Errorf("insert entry: %w", err)
 	}
@@ -209,11 +215,20 @@ func (s *Store) Put(e Entry) error {
 	); err != nil {
 		return fmt.Errorf("insert fts: %w", err)
 	}
+	if err := enqueueMirrorTx(tx, oldScope); err != nil {
+		return fmt.Errorf("enqueue old mirror: %w", err)
+	}
+	if err := enqueueMirrorTx(tx, e.Scope); err != nil {
+		return fmt.Errorf("enqueue mirror: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	// Best-effort vector indexing (hybrid.go) — never fails Put.
 	s.afterPut(e)
+	if err := s.drainMirrorOutboxLocked(); err != nil {
+		return fmt.Errorf("memory.Store.Put(%s): %w", e.ID, err)
+	}
 	return nil
 }
 
@@ -239,317 +254,95 @@ func (s *Store) ensureCapacity(e Entry) error {
 func (s *Store) Delete(id string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	e, err := s.Get(id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	e, err := scanEntry(tx.QueryRow(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE id = ?`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil
+			_ = tx.Rollback()
+			// A retry after a previously committed deletion may be the first
+			// opportunity to finish its still-pending mirror cleanup.
+			return s.drainMirrorOutboxLocked()
 		}
 		return err
 	}
-	if err := mdDelete(e.FilePath, id); err != nil {
-		return fmt.Errorf("memory.Store.Delete(%s): md: %w", id, err)
-	}
-	if _, err := s.db.Exec(`DELETE FROM memory_entries WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM memory_entries WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("memory.Store.Delete(%s): db: %w", id, err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("memory.Store.Delete(%s): fts: %w", id, err)
 	}
+	if err := enqueueMirrorTx(tx, e.Scope); err != nil {
+		return fmt.Errorf("memory.Store.Delete(%s): enqueue mirror: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	s.afterDelete(id)
+	if err := s.drainMirrorOutboxLocked(); err != nil {
+		return fmt.Errorf("memory.Store.Delete(%s): %w", id, err)
+	}
 	return nil
 }
 
-// Clear removes every learned entry through the normal deletion path so the
-// SQLite, FTS, vector and human-readable Markdown mirrors stay consistent.
+// Clear removes all learned state in one SQLite transaction and queues every
+// affected scope for mirror cleanup. A filesystem failure therefore cannot
+// roll back into a half-cleared database or become permanent.
 func (s *Store) Clear() (int, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	entries, err := s.List("", 0)
 	if err != nil {
 		return 0, err
 	}
-	removed := 0
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	scopes := make(map[string]struct{})
 	for _, entry := range entries {
-		if err := s.Delete(entry.ID); err != nil {
-			return removed, err
+		scopes[entry.Scope] = struct{}{}
+	}
+	for scope := range scopes {
+		if err := enqueueMirrorTx(tx, scope); err != nil {
+			return 0, err
 		}
-		removed++
+	}
+	if _, err := tx.Exec(`DELETE FROM memory_entries`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM memory_fts`); err != nil {
+		return 0, err
 	}
 	for _, table := range []string{"memory_scratch_archive", "memory_vectors", "project_cards"} {
-		if _, err := s.db.Exec(`DELETE FROM ` + table); err != nil && !strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return removed, err
+		var exists int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&exists); err != nil {
+			return 0, err
+		}
+		if exists > 0 {
+			if _, err := tx.Exec(`DELETE FROM ` + table); err != nil {
+				return 0, err
+			}
 		}
 	}
-	if err := os.RemoveAll(s.markdownRoot()); err != nil {
-		return removed, err
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
-	for _, sub := range []string{"", "patterns", "archive"} {
-		if err := mkdirAll(filepath.Join(s.markdownRoot(), sub), 0o755); err != nil {
-			return removed, err
-		}
+	for _, entry := range entries {
+		s.afterDelete(entry.ID)
 	}
-	return removed, nil
+	if err := s.drainMirrorOutboxLocked(); err != nil {
+		return len(entries), fmt.Errorf("memory.Store.Clear: %w", err)
+	}
+	if err := s.removeStaleMarkdownLocked(); err != nil {
+		return len(entries), fmt.Errorf("memory.Store.Clear: %w", err)
+	}
+	return len(entries), nil
 }
 
 // List returns entries for a scope, newest first. Empty scope
 // returns everything. Limit <= 0 means no limit.
-func (s *Store) List(scope string, limit int) ([]Entry, error) {
-	var rows *sql.Rows
-	var err error
-	if scope == "" {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY updated_at DESC, created_at DESC, id`)
-	} else {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY updated_at DESC, created_at DESC, id`, scope)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAll(rows, limit)
-}
-
-// Search runs an FTS5 query, falling back to LIKE when the
-// query is empty or contains no FTS5 operators. Results are
-// ranked by FTS5 rank (best match first) and capped at k.
-func (s *Store) Search(query string, k int) ([]Entry, error) {
-	if query == "" {
-		return nil, nil
-	}
-	// FTS5 wants the query as-is. Escape embedded quotes by
-	// switching to a phrase search if needed.
-	rows, err := s.db.Query(
-		`SELECT e.id, e.scope, e.file_path, e.line_start, e.line_end, e.content, e.tags, e.source, e.created_at, e.updated_at
-		 FROM memory_fts f
-		 JOIN memory_entries e ON e.id = f.id
-		 WHERE memory_fts MATCH ?
-		 ORDER BY rank
-		 LIMIT ?`,
-		query, k,
-	)
-	if err != nil {
-		// Fall back to LIKE for queries that are not valid FTS5.
-		rows, err = s.db.Query(
-			`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE content LIKE ? ORDER BY updated_at DESC LIMIT ?`,
-			"%"+query+"%", k,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-	defer rows.Close()
-	return scanAll(rows, 0)
-}
-
-// Recent returns the n most recent entries in the scope.
-// scope == "" means every scope.
-func (s *Store) Recent(scope string, n int) ([]Entry, error) {
-	return s.List(scope, n)
-}
-
-// RecentBudgeted returns the newest entries in scope whose
-// total estimated tokens is at most tokenCap. The returned
-// string is the concatenated, rendered form (the same data
-// the model would see).
-func (s *Store) RecentBudgeted(scope string, tokenCap int) (string, error) {
-	if tokenCap <= 0 {
-		return "", nil
-	}
-	entries, err := s.recentByCreated(scope, 50)
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	tokens := 0
-	for _, e := range entries {
-		t := estimateTokens(e.Content)
-		if tokens+t > tokenCap {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString("- [")
-		b.WriteString(e.ID)
-		b.WriteString("] ")
-		b.WriteString(oneLine(e.Content))
-		tokens += t
-	}
-	return b.String(), nil
-}
-
-// recentByCreated returns the newest entries in scope ordered by
-// CREATION time (created_at DESC, id as a stable tie-break). Unlike
-// List/Recent — which order by updated_at first — this is immune to
-// the millisecond race where three quick Puts get slightly different
-// updated_at values and reorder unpredictably. RecentBudgeted needs
-// "newest authored", and a deterministic order, so it uses this.
-func (s *Store) recentByCreated(scope string, limit int) ([]Entry, error) {
-	var rows *sql.Rows
-	var err error
-	if scope == "" {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY created_at DESC, id`)
-	} else {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY created_at DESC, id`, scope)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAll(rows, limit)
-}
-
-// ByTag returns up to k entries that include the given tag.
-func (s *Store) ByTag(tag string, k int) ([]Entry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at
-		 FROM memory_entries
-		 WHERE tags LIKE ?
-		 ORDER BY updated_at DESC
-		 LIMIT ?`,
-		"%"+tag+"%", k,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAll(rows, 0)
-}
-
-// AppendScratch adds a single line to today's scratch file. The
-// line gets a fresh id and the "agent" source.
-func (s *Store) AppendScratch(line string) error {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return fmt.Errorf("memory.Store.AppendScratch: line is empty")
-	}
-	date := time.Now().UTC().Format("2006-01-02")
-	scope := "scratch:" + date
-	// id = date-nanos short
-	id := fmt.Sprintf("%s-%x", date, time.Now().UnixNano()&0xffff)
-	// Make room before writing so the store-wide capacity guard cannot block a
-	// fresh scratch note merely because today's automatic scope reached its cap.
-	_, _ = s.Retain(scope, MaxDailyScratchEntries-1)
-	if err := s.Put(Entry{
-		ID:      id,
-		Scope:   scope,
-		Content: line,
-		Source:  SourceAgent,
-	}); err != nil {
-		return err
-	}
-	_, err := s.Retain(scope, MaxDailyScratchEntries)
-	return err
-}
-
-// ArchiveOldScratches moves scratch files older than 30 days
-// into `<root>/memory/archive/`. Files already archived are
-// skipped. Returns the count of newly archived files.
-func (s *Store) ArchiveOldScratches(ctx context.Context) (int, error) {
-	memDir := filepath.Join(s.root, "memory")
-	entries, err := readDir(memDir)
-	if err != nil {
-		return 0, fmt.Errorf("memory.Store.ArchiveOldScratches: %w", err)
-	}
-	cutoff := time.Now().UTC().AddDate(0, 0, -30)
-	archived := 0
-	for _, name := range entries {
-		if ctx.Err() != nil {
-			return archived, ctx.Err()
-		}
-		if !strings.HasPrefix(name, "scratch-") || !strings.HasSuffix(name, ".md") {
-			continue
-		}
-		dateStr := strings.TrimSuffix(strings.TrimPrefix(name, "scratch-"), ".md")
-		d, err := time.Parse("2006-01-02", dateStr)
-		if err != nil {
-			continue
-		}
-		if !d.Before(cutoff) {
-			continue
-		}
-		var existed int
-		err = s.db.QueryRow(`SELECT COUNT(*) FROM memory_scratch_archive WHERE date = ?`, dateStr).Scan(&existed)
-		if err != nil {
-			return archived, err
-		}
-		if existed > 0 {
-			continue
-		}
-		src := filepath.Join(memDir, name)
-		dst := filepath.Join(memDir, "archive", name)
-		if err := renameFile(src, dst); err != nil {
-			return archived, err
-		}
-		if _, err := s.db.Exec(
-			`INSERT OR REPLACE INTO memory_scratch_archive(date, path, archived_at) VALUES (?,?,?)`,
-			dateStr, dst, time.Now().Unix(),
-		); err != nil {
-			return archived, err
-		}
-		archived++
-	}
-	return archived, nil
-}
-
-// markdownRoot returns the directory under root where the
-// markdown files live.
-func (s *Store) markdownRoot() string {
-	return filepath.Join(s.root, "memory")
-}
-
-// scanEntry reads one row into an Entry.
-func scanEntry(row *sql.Row) (Entry, error) {
-	var e Entry
-	var tagsCSV string
-	var tsC, tsU int64
-	err := row.Scan(&e.ID, &e.Scope, &e.FilePath, &e.LineStart, &e.LineEnd, &e.Content, &tagsCSV, &e.Source, &tsC, &tsU)
-	if err != nil {
-		return Entry{}, err
-	}
-	e.Tags = EntriesFromCSV(tagsCSV)
-	e.CreatedAt = time.Unix(tsC, 0).UTC()
-	e.UpdatedAt = time.Unix(tsU, 0).UTC()
-	return e, nil
-}
-
-// scanAll reads entries from rows. limit <= 0 means no limit.
-func scanAll(rows *sql.Rows, limit int) ([]Entry, error) {
-	var out []Entry
-	for rows.Next() {
-		var e Entry
-		var tagsCSV string
-		var tsC, tsU int64
-		if err := rows.Scan(&e.ID, &e.Scope, &e.FilePath, &e.LineStart, &e.LineEnd, &e.Content, &tagsCSV, &e.Source, &tsC, &tsU); err != nil {
-			return nil, err
-		}
-		e.Tags = EntriesFromCSV(tagsCSV)
-		e.CreatedAt = time.Unix(tsC, 0).UTC()
-		e.UpdatedAt = time.Unix(tsU, 0).UTC()
-		out = append(out, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
-}
-
-// estimateTokens is the same crude len/4 estimate as
-// context.Source. Kept here to avoid an import cycle.
-func estimateTokens(s string) int { return (len(s) + 3) / 4 }
-
-// oneLine returns s with newlines collapsed to spaces.
-func oneLine(s string) string {
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return strings.TrimSpace(s)
-}
-
-// firstLine returns the first line of s (used to format
-// error messages without dumping the full SQL).
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}

@@ -110,3 +110,13 @@ anything. Matching state is replaced only on the next application
 start, before databases and MCP processes are opened. The previous state is
 moved to `supercli-data/backups/pre-import-*` first. Secret-bearing export and
 all import operations remain loopback-only even when `--allow-remote` is used.
+
+When `--allow-remote` is enabled, every remote request requires a random token
+that exists only for the lifetime of that process. SuperCli writes it to a
+permission-restricted temporary file in the data directory and logs only that
+file's path. Open the remote address, enter `supercli` as the username and the
+file contents as the password in the browser's native sign-in prompt. The file
+is removed on a clean exit. The automatically opened local window instead
+receives an HttpOnly session cookie through a loopback-only bootstrap, so the
+token is never placed in a URL or log. Credential reveal, full backup and import
+remain loopback-only even for an authenticated remote request.

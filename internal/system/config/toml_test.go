@@ -259,6 +259,18 @@ func TestMergeToml_TaskModelOverride(t *testing.T) {
 	}
 }
 
+func TestMergeToml_CompactModelOverride(t *testing.T) {
+	dst := TomlConfig{CompactModel: "cheap/qwen"}
+	mergeToml(&dst, TomlConfig{})
+	if dst.CompactModel != "cheap/qwen" {
+		t.Fatalf("empty src should not clear compact_model: %q", dst.CompactModel)
+	}
+	mergeToml(&dst, TomlConfig{CompactModel: "other-model"})
+	if dst.CompactModel != "other-model" {
+		t.Fatalf("src should override compact_model: %q", dst.CompactModel)
+	}
+}
+
 // TestMergeToml_NoopGateOverride: a non-nil source noop_gate
 // overrides the destination in both directions; nil leaves it untouched.
 func TestMergeToml_NoopGateOverride(t *testing.T) {

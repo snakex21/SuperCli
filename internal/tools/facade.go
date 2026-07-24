@@ -89,6 +89,7 @@ var NewScratchpad = scratchpad.New
 // File-system tools.
 type (
 	Copy        = files.Copy
+	CreateFile  = files.CreateFile
 	DeleteLines = files.DeleteLines
 	EditLine    = files.EditLine
 	EditLines   = files.EditLines
@@ -96,6 +97,7 @@ type (
 	ListDirTool = files.ListDirTool
 	MakeDir     = files.MakeDir
 	Move        = files.Move
+	PatchFile   = files.PatchFile
 	ReadContext = files.ReadContext
 	ReadLines   = files.ReadLines
 	ReadMany    = files.ReadMany
@@ -105,6 +107,7 @@ type (
 
 var (
 	NewCopy        = files.NewCopy
+	NewCreateFile  = files.NewCreateFile
 	NewDeleteLines = files.NewDeleteLines
 	NewEditLine    = files.NewEditLine
 	NewEditLines   = files.NewEditLines
@@ -112,6 +115,7 @@ var (
 	NewListDir     = files.NewListDir
 	NewMakeDir     = files.NewMakeDir
 	NewMove        = files.NewMove
+	NewPatchFile   = files.NewPatchFile
 	NewReadContext = files.NewReadContext
 	NewReadLines   = files.NewReadLines
 	NewReadMany    = files.NewReadMany

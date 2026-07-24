@@ -212,10 +212,15 @@ func thinLoop(t *testing.T) *Loop {
 	noop := func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "x"}, nil
 	}
-	// core + tail, all always-on.
-	for _, name := range []string{"tool_search", "web_lookup", "invoke_tool", "edit_line", "read_context", "read_lines", "read_many", "read_image", "search_code", "ctx_execute", "ask_user", "recall", "list_dir", "darwin", "web_search", "read_pdf"} {
+	// core + dormant tail, all always-on.
+	names := append(append([]string{}, thinCoreTools...), "darwin", "web_search", "read_pdf")
+	for _, name := range names {
 		reg.MustRegister(tools.Tool{Name: name, Description: "does " + name + " things for the user", Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
 		reg.MarkAlwaysOn(name)
+	}
+	// Legacy editors registered but not always-on (compat path, not thin core).
+	for _, name := range []string{"edit_line", "write_file"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: "legacy " + name, Schema: `{"type":"object","properties":{"q":{"type":"string"}}}`, Fn: noop})
 	}
 	l, err := NewLoop(LoopConfig{
 		Provider:  &stubProvider{name: "stub"},
@@ -271,8 +276,8 @@ func TestThinTools_TailAdvertisedInCatalog(t *testing.T) {
 	}
 	catalog := pre[idx:]
 	// Core tools must NOT be re-advertised in the catalog body.
-	for _, core := range []string{"ctx_execute", "read_lines", "read_context"} {
-		if strings.Contains(catalog, core) {
+	for _, core := range []string{"ctx_execute", "read_lines", "patch_file", "list_dir"} {
+		if strings.Contains(catalog, core+"(") || strings.Contains(catalog, core+" —") || strings.Contains(catalog, core+" -") {
 			t.Errorf("core tool %q should not appear in catalog body", core)
 		}
 	}

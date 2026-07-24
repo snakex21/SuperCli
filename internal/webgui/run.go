@@ -57,9 +57,10 @@ func Run(eng *Engine, opts RunOptions) error {
 	if err != nil {
 		return fmt.Errorf("webgui.Run: listen: %w", err)
 	}
-	url := localLaunchURL(ln.Addr().String())
+	baseURL := localLaunchURL(ln.Addr().String())
 
 	webServer := NewServer(eng, opts.AllowRemote)
+	url := webServer.bootstrapLaunchURL(baseURL)
 	appName := strings.TrimSpace(opts.AppName)
 	if appName == "" {
 		appName = "SuperCli"
@@ -75,6 +76,15 @@ func Run(eng *Engine, opts RunOptions) error {
 			_ = ln.Close()
 			return fmt.Errorf("webgui.Run: embedded custom UI: %w", err)
 		}
+	}
+	if opts.AllowRemote {
+		tokenPath, removeToken, tokenErr := writeRemoteSessionTokenFile(eng.DataDir(), webServer.sessionToken)
+		if tokenErr != nil {
+			_ = ln.Close()
+			return fmt.Errorf("webgui.Run: remote authentication: %w", tokenErr)
+		}
+		defer removeToken()
+		log.Printf("%s remote sign-in: username supercli; password is in %s", appName, tokenPath)
 	}
 	srv := &http.Server{
 		Handler:           webServer.Handler(),

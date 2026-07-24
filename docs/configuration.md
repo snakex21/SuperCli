@@ -64,7 +64,8 @@ in the instance-local `model-context-windows.json`; the UI manages the file.
 | `stable_toolset` | unset = **ON** | debugging only; OFF re-enables the tools-list cache-killer |
 | `cache_prompt` | unset = auto (local hosts only) | self-hosted server behind a public address (force on) |
 | `slot_cache` | unset = auto (local hosts only; first failure = permanent off) | same as above, or `false` to stop slot files being written |
-| `prune_protect_tokens` | 0 = 8192 | shrink for tiny windows; negative disables pruning entirely |
+| `prune_protect_tokens` | 0 = 1/16 of the active window, clamped to 2048..65536 | override only for unusual tool-heavy workloads; negative disables pruning entirely |
+| `compact_model` | empty = active model | route summaries to a cheaper/separate `model` or `provider/model`; failure falls back to the active model |
 | `memory_briefing_tokens` | 0 = 700 (300 small tier) | briefing crowds a tiny window |
 | `navigator` | unset = `auto` (zero-call keyword routing; ambiguity = coordinator) | `off` for scripted use (always coordinator), `on` to always ask the model; auto may use an already-configured side model without touching the main model |
 
@@ -150,7 +151,7 @@ documents, and ZIP extraction targets.
    `internal/app/defaults_test.go` — the test failing is the mechanism
    working.
 2. Zero-value sentinels are contracts: `0` means "resolve the built-in at
-   point of use" (e.g. `prune_protect_tokens` 0 → 8192). Never write a
+   point of use" (e.g. `prune_protect_tokens` 0 → a window-scaled tail). Never write a
    resolved default back into the struct.
 3. Host-gated autos (`cache_prompt`, `slot_cache`, `*_parallel`) must
    stay `nil` by default: the decision is per base URL, and cloud

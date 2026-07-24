@@ -28,6 +28,11 @@ type Runner struct {
 	// exec.LookPath.
 	LookPath func(file string) (string, error)
 
+	// ExecutablePath is overridable for tests. It is used only to look for a
+	// bundled ripgrep binary next to SuperCli (or in its bin/tools directory)
+	// when rg is absent from PATH.
+	ExecutablePath func() (string, error)
+
 	// Now is overridable for tests. Default = time.Now.
 	Now func() time.Time
 }
@@ -35,9 +40,10 @@ type Runner struct {
 // New returns a Runner bound to the F7 home directory.
 func New(home string) *Runner {
 	return &Runner{
-		home:     home,
-		LookPath: exec.LookPath,
-		Now:      time.Now,
+		home:           home,
+		LookPath:       exec.LookPath,
+		ExecutablePath: os.Executable,
+		Now:            time.Now,
 	}
 }
 
@@ -74,15 +80,16 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}, err
 	}
 
-	// Resolve binary via LookPath. We run the binary
-	// directly, not through a shell.
-	binary, err := r.LookPath(req.Command[0])
+	// Resolve the binary directly, never through cmd/PowerShell. In addition to
+	// PATH, rg may be bundled beside the GUI executable because desktop apps do
+	// not always inherit the user's terminal PATH.
+	binary, err := r.resolveBinary(req.Command[0])
 	if err != nil {
 		return &Result{
 			ExitCode: ExitNotFound,
 			Command:  req.String(),
 			Workdir:  wd,
-			Error:    fmt.Sprintf("interpreter not found: %s", req.Command[0]),
+			Error:    missingBinaryMessage(req.Command[0]),
 		}, nil
 	}
 
@@ -176,6 +183,58 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		Command:         req.String(),
 		Workdir:         wd,
 	}, nil
+}
+
+func (r *Runner) resolveBinary(file string) (string, error) {
+	lookPath := r.LookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	binary, pathErr := lookPath(file)
+	if pathErr == nil {
+		return binary, nil
+	}
+	if !isRipgrepCommand(file) {
+		return "", pathErr
+	}
+	executablePath := r.ExecutablePath
+	if executablePath == nil {
+		executablePath = os.Executable
+	}
+	executable, err := executablePath()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		return "", pathErr
+	}
+	base := filepath.Dir(executable)
+	for _, rel := range []string{
+		"rg.exe", "rg",
+		filepath.Join("bin", "rg.exe"), filepath.Join("bin", "rg"),
+		filepath.Join("tools", "rg.exe"), filepath.Join("tools", "rg"),
+		filepath.Join("bin", "tools", "rg.exe"), filepath.Join("bin", "tools", "rg"),
+	} {
+		candidate := filepath.Join(base, rel)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || !info.Mode().IsRegular() {
+			continue
+		}
+		if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		return candidate, nil
+	}
+	return "", pathErr
+}
+
+func isRipgrepCommand(file string) bool {
+	file = strings.TrimSpace(file)
+	return file == "rg" || strings.EqualFold(file, "rg.exe")
+}
+
+func missingBinaryMessage(file string) string {
+	if isRipgrepCommand(file) {
+		return "executable not found: rg; use the built-in search_code tool for file and content searches (no rg installation required)"
+	}
+	return fmt.Sprintf("executable not found: %s", file)
 }
 
 // classifyErr maps a non-ExitError to one of our exit

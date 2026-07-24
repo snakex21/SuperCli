@@ -79,10 +79,11 @@ func (t Tool) Validate() error {
 type Registry struct {
 	mu       sync.RWMutex
 	tools    map[string]Tool
-	visible  map[string]struct{} // subset of tools visible to the model
-	order    []string            // insertion order, for stable Visible()
-	alwaysOn map[string]struct{} // tools that ignore visibility (tool_search, ask_user, read_image, ...)
-	outputs  *OutputStore        // bounded large-result store owned by this registry/loop
+	schemas  map[string]*compiledToolSchema // normalized once at Register; nil means fail-open
+	visible  map[string]struct{}            // subset of tools visible to the model
+	order    []string                       // insertion order, for stable Visible()
+	alwaysOn map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
+	outputs  *OutputStore                   // bounded large-result store owned by this registry/loop
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
@@ -90,6 +91,7 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return &Registry{
 		tools:    make(map[string]Tool),
+		schemas:  make(map[string]*compiledToolSchema),
 		visible:  make(map[string]struct{}),
 		alwaysOn: make(map[string]struct{}),
 		outputs:  NewOutputStore(),
@@ -108,7 +110,12 @@ func (r *Registry) EnsureReadOutput() {
 	}
 	if _, ok := r.tools["read_output"]; !ok {
 		t := r.outputs.ReadOutputTool()
+		compiled, err := compileToolSchema(t.Schema)
+		if err != nil {
+			panic(fmt.Sprintf("register %q: %v", t.Name, err))
+		}
 		r.tools[t.Name] = t
+		r.schemas[t.Name] = compiled
 		r.order = append(r.order, t.Name)
 	}
 	r.alwaysOn["read_output"] = struct{}{}
@@ -133,12 +140,17 @@ func (r *Registry) Register(t Tool) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
+	compiled, err := compileToolSchema(t.Schema)
+	if err != nil {
+		return fmt.Errorf("register %q: %w", t.Name, err)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.tools[t.Name]; exists {
 		return fmt.Errorf("register %q: already present", t.Name)
 	}
 	r.tools[t.Name] = t
+	r.schemas[t.Name] = compiled
 	r.order = append(r.order, t.Name)
 	return nil
 }
@@ -275,6 +287,18 @@ func (r *Registry) ActiveNames() []string {
 	return out
 }
 
+// IsActive reports whether a tool was explicitly activated through the
+// on-demand visibility set. Unlike IsVisible, always-on tools do not count as
+// active. This distinction is important for schema-stable dispatchers: merely
+// being present in the small always-on catalog must not authorize dispatch to
+// a complex or mutating tool.
+func (r *Registry) IsActive(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.visible[name]
+	return ok
+}
+
 // IsVisible reports whether a tool is currently visible.
 func (r *Registry) IsVisible(name string) bool {
 	r.mu.RLock()
@@ -294,6 +318,7 @@ func (r *Registry) IsVisible(name string) bool {
 func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessage) (Result, error) {
 	r.mu.RLock()
 	t, ok := r.tools[name]
+	schema := r.schemas[name]
 	r.mu.RUnlock()
 	if !ok {
 		return Result{Err: fmt.Errorf("%w: %q", ErrUnknownTool, name)}, ErrUnknownTool
@@ -303,10 +328,23 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	// conservative: only fields the tool's schema types as
 	// int/number/bool are touched, and only when the string is a
 	// valid literal. See coerce_args.go.
-	args = CoerceArgs(t.Schema, args)
+	args = coerceCompiledArgs(schema, args)
+	if schema != nil {
+		if err := schema.validateJSON(args); err != nil {
+			validationErr := fmt.Errorf("%w for %s: %s", ErrInvalidToolArgs, name, err)
+			// Bad model arguments are an ordinary tool failure, not a Go/runtime
+			// failure. Returning it in Result.Err lets the attribution layer mark
+			// it as CategoryModel and gives the model one compact repair hint.
+			return Result{Err: validationErr}, nil
+		}
+	}
 	return t.Fn(ctx, args)
 }
 
 // ErrUnknownTool is returned by Execute when the name is not in
 // the registry. Use errors.Is(err, tools.ErrUnknownTool) to detect.
 var ErrUnknownTool = fmt.Errorf("unknown tool")
+
+// ErrInvalidToolArgs marks a local JSON-Schema violation produced by the
+// model. It is returned in Result.Err (not as a Go-level execution error).
+var ErrInvalidToolArgs = fmt.Errorf("invalid tool arguments")

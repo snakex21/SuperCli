@@ -257,6 +257,65 @@ func TestRunner_Run_MissingInterpreter(t *testing.T) {
 	}
 }
 
+func TestRunner_Run_MissingRipgrepPointsToSearchCode(t *testing.T) {
+	r := New(t.TempDir())
+	r.LookPath = func(string) (string, error) { return "", errors.New("not found") }
+	r.ExecutablePath = func() (string, error) { return "", errors.New("no executable") }
+	res, err := r.Run(context.Background(), &Request{Command: []string{"rg", "needle"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != ExitNotFound || !strings.Contains(res.Error, "search_code") {
+		t.Fatalf("result = %+v, want safe search_code fallback hint", res)
+	}
+}
+
+func TestRunnerResolveBinaryFindsBundledRipgrep(t *testing.T) {
+	dir := t.TempDir()
+	bundled := filepath.Join(dir, "rg.exe")
+	if err := os.WriteFile(bundled, []byte("test"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := New(t.TempDir())
+	r.LookPath = func(string) (string, error) { return "", errors.New("not on PATH") }
+	r.ExecutablePath = func() (string, error) { return filepath.Join(dir, "SuperCli.exe"), nil }
+	got, err := r.resolveBinary("rg")
+	if err != nil || got != bundled {
+		t.Fatalf("resolveBinary = %q, %v; want %q", got, err, bundled)
+	}
+}
+
+func TestRunnerResolveBinaryFindsRipgrepInBinTools(t *testing.T) {
+	dir := t.TempDir()
+	bundled := filepath.Join(dir, "bin", "tools", "rg.exe")
+	if err := os.MkdirAll(filepath.Dir(bundled), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bundled, []byte("test"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := New(t.TempDir())
+	r.LookPath = func(string) (string, error) { return "", errors.New("not on PATH") }
+	r.ExecutablePath = func() (string, error) { return filepath.Join(dir, "SuperCli.exe"), nil }
+	got, err := r.resolveBinary("rg")
+	if err != nil || got != bundled {
+		t.Fatalf("resolveBinary = %q, %v; want %q", got, err, bundled)
+	}
+}
+
+func TestRunnerResolveBinaryDoesNotBundleFallbackArbitraryCommands(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "python.exe"), []byte("test"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := New(t.TempDir())
+	r.LookPath = func(string) (string, error) { return "", errors.New("not on PATH") }
+	r.ExecutablePath = func() (string, error) { return filepath.Join(dir, "SuperCli.exe"), nil }
+	if got, err := r.resolveBinary("python"); err == nil || got != "" {
+		t.Fatalf("arbitrary adjacent command resolved: %q, %v", got, err)
+	}
+}
+
 func TestRunner_Run_WorkdirEscape(t *testing.T) {
 	r := newTestRunner(t)
 	res, err := r.Run(context.Background(), &Request{

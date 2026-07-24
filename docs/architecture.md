@@ -1,5 +1,9 @@
 # Architecture — the agent loop end-to-end
 
+For **where files live on disk** (workspace vs `supercli-data` vs project
+`.supercli/`), see [data-layout.md](./data-layout.md). This page is about
+**runtime behaviour** of one agent turn.
+
 One user turn, coordinator route:
 
 ```text
@@ -20,7 +24,8 @@ answer + telemetry line (cache | eval | gen)
 ```
 
 Everything below explains one stage: What / How / Why, with the measured
-numbers that forced each decision. Main file: `internal/agent/loop.go`.
+numbers that forced each decision. Main loop entry:
+`internal/agent/loop.go` (+ same-package `loop_*.go` helpers).
 
 ## Routing (navigator, keyword-first)
 
