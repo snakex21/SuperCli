@@ -9,11 +9,8 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
-
-	"supercli/internal/system/childproc"
 )
 
 // Result holds the output of a shell escape command.
@@ -71,15 +68,9 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var shell, flag string
-	if runtime.GOOS == "windows" {
-		shell, flag = "cmd", "/c"
-	} else {
-		shell, flag = "sh", "-c"
-	}
-
-	cmd := exec.CommandContext(ctx, shell, flag, command)
-	childproc.HideWindow(cmd)
+	// Shell selection and, on Windows, the raw command-line handling live in
+	// shell_windows.go / shell_other.go.
+	cmd := newShellCmd(ctx, command)
 	if r.Home != "" {
 		cmd.Dir = r.Home
 	}
