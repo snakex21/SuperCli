@@ -151,6 +151,35 @@ func TestRunner_ExitCodeWindows(t *testing.T) {
 	}
 }
 
+// TestRunner_OutputCapsWindows checks the 16 KB stdout / 4 KB stderr caps on a
+// path that runs on Windows (the existing cap test needs python3 and is skipped
+// here). The payload is written from Go and echoed back with "type" so the test
+// stays fast and deterministic.
+func TestRunner_OutputCapsWindows(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("x", 40*1024)
+	if err := os.WriteFile(filepath.Join(dir, "big.txt"), []byte(big), 0o600); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	r := NewRunner(dir)
+
+	res := r.Run(context.Background(), "type big.txt")
+	if len(res.Stdout) > 17*1024 {
+		t.Errorf("stdout = %d bytes, want capped near 16 KB", len(res.Stdout))
+	}
+	if !strings.Contains(res.Stdout, "truncated") {
+		t.Errorf("capped stdout carries no truncation marker")
+	}
+
+	res = r.Run(context.Background(), "type big.txt 1>&2")
+	if len(res.Stderr) > 4*1024 {
+		t.Errorf("stderr = %d bytes, want capped at 4 KB", len(res.Stderr))
+	}
+	if res.Stderr == "" {
+		t.Errorf("stderr empty, want the redirected payload")
+	}
+}
+
 // TestRunner_CwdIsHomeWindows checks that the working directory is honoured on
 // the raw command-line path too.
 func TestRunner_CwdIsHomeWindows(t *testing.T) {
@@ -162,11 +191,8 @@ func TestRunner_CwdIsHomeWindows(t *testing.T) {
 	}
 }
 
-// TestRunner_TimeoutWindows checks that the context timeout still kills the
-// child and surfaces a non-zero exit code. The command is a cmd.exe builtin
-// loop on purpose: CommandContext kills the shell itself, and a long-running
-// grandchild (ping, timeout.exe) would keep the inherited output handles open
-// past the deadline. That grandchild behaviour predates this test.
+// TestRunner_TimeoutWindows checks that the context timeout kills the child and
+// surfaces a non-zero exit code, using a cmd.exe builtin loop (no grandchild).
 func TestRunner_TimeoutWindows(t *testing.T) {
 	r := NewRunner(t.TempDir())
 	r.Timeout = 200 * time.Millisecond
@@ -177,5 +203,60 @@ func TestRunner_TimeoutWindows(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Errorf("timeout not enforced: took %v", elapsed)
+	}
+}
+
+// TestRunner_TimeoutKillsProcessTreeWindows is the regression test for the
+// timeout that was not enforced: exec.CommandContext kills cmd.exe, but a
+// grandchild started by it (here ping.exe) inherits the stdout/stderr pipe
+// handles, and cmd.Wait blocks until those handles close. Measured before the
+// fix: a 200 ms timeout on "ping -n 30" returned after 29.3 s.
+func TestRunner_TimeoutKillsProcessTreeWindows(t *testing.T) {
+	r := NewRunner(t.TempDir())
+	r.Timeout = 200 * time.Millisecond
+
+	start := time.Now()
+	res := r.Run(context.Background(), "ping -n 30 127.0.0.1")
+	elapsed := time.Since(start)
+
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout not enforced on the process tree: took %v, want < 3s", elapsed)
+	}
+	if res.ExitCode == 0 {
+		t.Errorf("exit = 0 after timeout, want non-zero")
+	}
+}
+
+// TestRunner_TimeoutIsLabeledWindows: a timeout must be distinguishable from an
+// ordinary failure. It used to surface as exit code 1 with an empty Error, which
+// gives the model no reason to change its next move, so it re-ran the same
+// command.
+func TestRunner_TimeoutIsLabeledWindows(t *testing.T) {
+	r := NewRunner(t.TempDir())
+	r.Timeout = 200 * time.Millisecond
+
+	res := r.Run(context.Background(), "ping -n 30 127.0.0.1")
+	if res.Error == "" {
+		t.Fatal("Error is empty after a timeout: model cannot tell a timeout from a normal failure")
+	}
+	if !strings.Contains(strings.ToLower(res.Error), "timeout") {
+		t.Errorf("Error = %q, want it to name the timeout", res.Error)
+	}
+	if !strings.Contains(res.Error, "200ms") {
+		t.Errorf("Error = %q, want it to state the deadline that was exceeded", res.Error)
+	}
+}
+
+// TestRunner_NoFalseTimeoutWindows guards the other direction: commands that
+// finish on their own must never be labelled as timed out.
+func TestRunner_NoFalseTimeoutWindows(t *testing.T) {
+	r := NewRunner(t.TempDir())
+
+	res := r.Run(context.Background(), "exit 3")
+	if res.ExitCode != 3 {
+		t.Fatalf("exit = %d, want 3", res.ExitCode)
+	}
+	if res.Error != "" {
+		t.Errorf("Error = %q for a plain non-zero exit, want empty", res.Error)
 	}
 }
