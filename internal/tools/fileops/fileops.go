@@ -81,6 +81,13 @@ func readLines(path string) ([]string, error) {
 	if len(data) == 0 {
 		return []string{}, nil
 	}
+	// A binary file must never reach the line splitter: reading it
+	// mangles the bytes through JSON (U+FFFD) and editing it rewrites a
+	// compressed stream line by line. Refuse with a message that names
+	// the tool that actually works.
+	if err := ensureTextBytes(path, data, false); err != nil {
+		return nil, err
+	}
 	raw := string(data)
 	// Split into lines, stripping the trailing newline
 	// from the last line if present.

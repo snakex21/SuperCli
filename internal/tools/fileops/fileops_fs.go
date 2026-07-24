@@ -41,6 +41,12 @@ func WriteFile(path, content string) (WriteResult, error) {
 	}
 	release := LockMutationPaths(path)
 	defer release()
+	// Overwriting a binary file with text destroys it irrecoverably (no
+	// backup is taken here), and writing text to a path NAMED like a
+	// binary document produces a file its application cannot open.
+	if err := EnsureTextFile(path); err != nil {
+		return WriteResult{}, err
+	}
 	_, statErr := os.Stat(path)
 	existed := statErr == nil
 
