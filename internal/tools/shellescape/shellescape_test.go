@@ -110,6 +110,63 @@ func TestRunner_Timeout(t *testing.T) {
 	}
 }
 
+// TestRunner_TimeoutKillsProcessTree is the POSIX half of the process-tree
+// regression: sh forks children that inherit the stdout pipe, so killing sh
+// alone leaves cmd.Wait blocked on those inherited handles until the children
+// finish. The whole group has to go down with the shell.
+func TestRunner_TimeoutKillsProcessTree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip on windows")
+	}
+	r := NewRunner(t.TempDir())
+	r.Timeout = 200 * time.Millisecond
+
+	start := time.Now()
+	res := r.Run(context.Background(), "sleep 30 & sleep 30")
+	elapsed := time.Since(start)
+
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout not enforced on the process tree: took %v, want < 3s", elapsed)
+	}
+	if res.ExitCode == 0 {
+		t.Errorf("exit = 0 after timeout, want non-zero")
+	}
+}
+
+// TestRunner_TimeoutIsLabeled: a timeout must be distinguishable from an
+// ordinary failure, otherwise the model just re-runs the same command.
+func TestRunner_TimeoutIsLabeled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip on windows")
+	}
+	r := NewRunner(t.TempDir())
+	r.Timeout = 150 * time.Millisecond
+
+	res := r.Run(context.Background(), "sleep 10")
+	if res.Error == "" {
+		t.Fatal("Error is empty after a timeout: model cannot tell a timeout from a normal failure")
+	}
+	if !strings.Contains(strings.ToLower(res.Error), "timeout") {
+		t.Errorf("Error = %q, want it to name the timeout", res.Error)
+	}
+}
+
+// TestRunner_NoFalseTimeout: a command that fails on its own must not be
+// labelled as a timeout.
+func TestRunner_NoFalseTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip on windows")
+	}
+	r := NewRunner(t.TempDir())
+	res := r.Run(context.Background(), "exit 7")
+	if res.ExitCode != 7 {
+		t.Fatalf("exit = %d, want 7", res.ExitCode)
+	}
+	if res.Error != "" {
+		t.Errorf("Error = %q for a plain non-zero exit, want empty", res.Error)
+	}
+}
+
 func TestRunner_CwdIsHome(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skip on windows")

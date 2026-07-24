@@ -8,10 +8,22 @@ package shellescape
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
+
+// waitDelay bounds how long Wait may block on output pipes that a killed child
+// left open. Killing the process tree normally closes them at once; this is the
+// backstop for the cases it cannot cover - a Job Object that Windows refused to
+// create, or a grandchild that was started in the microseconds between
+// CreateProcess and the job assignment.
+const waitDelay = time.Second
 
 // Result holds the output of a shell escape command.
 type Result struct {
@@ -65,11 +77,12 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Shell selection and, on Windows, the raw command-line handling live in
-	// shell_windows.go / shell_other.go.
+	// shell_windows.go / shell_unix.go.
 	cmd := newShellCmd(ctx, command)
 	if r.Home != "" {
 		cmd.Dir = r.Home
@@ -79,8 +92,36 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// On the deadline, kill the whole process tree rather than just the shell.
+	// exec's default cancel kills the shell only; a grandchild it spawned keeps
+	// the inherited stdout/stderr handles open and Wait blocks on them, so the
+	// timeout was not enforced at all ("ping -n 30" returned after 29 s under a
+	// 200 ms deadline). The scope is published under a mutex because exec starts
+	// its cancel watchdog inside Start, before Start has returned the scope; a
+	// deadline firing in that window falls back to killing the shell, and
+	// WaitDelay still bounds the wait.
+	var mu sync.Mutex
+	var scope *childproc.Scope
+	cmd.Cancel = func() error {
+		mu.Lock()
+		s := scope
+		mu.Unlock()
+		return killShellTree(cmd, s)
+	}
+	cmd.WaitDelay = waitDelay
+
 	start := time.Now()
-	err := cmd.Run()
+	var err error
+	started, startErr := childproc.Start(cmd)
+	if startErr != nil {
+		err = startErr
+	} else {
+		mu.Lock()
+		scope = started
+		mu.Unlock()
+		err = cmd.Wait()
+		_ = started.Close()
+	}
 	duration := time.Since(start)
 
 	res := &Result{
@@ -106,11 +147,36 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	res.Stderr = string(errStr)
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			res.ExitCode = exitErr.ExitCode()
 		} else {
 			res.ExitCode = -1
 			res.Error = err.Error()
+		}
+	}
+
+	// A killed command used to surface as exit code 1 with an empty Error, which
+	// reads exactly like an ordinary failure - so the model re-ran the identical
+	// command and hit the same wall. Say what happened and what to do instead.
+	// Only a real deadline qualifies, and only when the command actually failed:
+	// one that finished cleanly in the same instant the deadline fired was not
+	// killed and must not be labelled as if it had been. A plain non-zero exit is
+	// left untouched.
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		limit := timeout
+		if parent.Err() != nil {
+			// The caller's own deadline fired first; report what was actually
+			// spent rather than this runner's unused limit.
+			limit = duration.Round(10 * time.Millisecond)
+		}
+		res.Error = fmt.Sprintf(
+			"timeout after %s: command and its child processes were killed. "+
+				"Re-running it unchanged will time out again - narrow the work or run it in the background.",
+			limit,
+		)
+		if res.ExitCode == 0 {
+			res.ExitCode = -1
 		}
 	}
 
