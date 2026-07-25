@@ -103,6 +103,13 @@ func isDirectToolEligible(tool tools.Tool) bool {
 
 // isCoreDispatchName lists thin-core mutations/reads that are always-on
 // and must be invokable without tool_search activation.
+//
+// write_file and edit_line are absent on purpose and adding them here would
+// not help: the gate below also requires registry.IsVisible, and they are not
+// in thinCoreTools (see route_map.go — one edit path, one create path). The
+// dispatcher's activation requirement is itself the authorization gate for
+// mutating tools (see Registry.IsActive). Refusals point at the reachable core
+// tool instead; see dispatchRefusal.
 func isCoreDispatchName(name string) bool {
 	switch name {
 	case "patch_file", "create_file", "list_dir", "search_code",
@@ -111,6 +118,46 @@ func isCoreDispatchName(name string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// dispatchRefusal phrases a refused dispatch as the next call the model should
+// make. The previous wording — "call tool_search once to activate X, then retry
+// invoke_tool" — was the single most expensive message in the corpus: the 7
+// refusals it answered carried whole file bodies inside the envelope, 8183
+// tokens and 139-455 s of local generation, and the instruction was to send all
+// of it a second time through the same envelope. The payload is never the cheap
+// part, so never route the model back through the envelope.
+func dispatchRefusal(registry *tools.Registry, target string) string {
+	if alt := coreEditEquivalent(target); alt != "" {
+		return fmt.Sprintf(
+			"invoke_tool cannot dispatch %s. Call %s — always available, no tool_search needed. Do not resend the payload through invoke_tool",
+			target, alt)
+	}
+	if registry.IsVisible(target) {
+		return fmt.Sprintf(
+			"invoke_tool cannot dispatch %s. Call %s directly as a normal tool call with the same arguments; do not resend the payload through invoke_tool",
+			target, target)
+	}
+	return fmt.Sprintf(
+		"invoke_tool: %s is complex or mutating and is not active; call tool_search once to activate %s, then call %s directly instead of through invoke_tool",
+		target, target, target)
+}
+
+// coreEditEquivalent names the always-on tool that does the same job as a
+// legacy file mutator. Those mutators stay registered for workers and tests but
+// are not thin core, so a refusal that only names them is a dead end — the
+// model cannot reach them in the next turn, and the observed answer was to
+// regenerate the file. Naming the reachable tool turns a two-turn detour
+// (tool_search, then a re-sent envelope) into one direct call.
+func coreEditEquivalent(name string) string {
+	switch name {
+	case "write_file":
+		return "create_file directly for a new file, or patch_file for one that already exists (create_file will not overwrite)"
+	case "edit_line", "edit_lines", "insert_after", "delete_lines":
+		return "patch_file directly with the old and new text"
+	default:
+		return ""
 	}
 }
 
@@ -199,7 +246,7 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	// schema-stable and must not require a prior tool_search activation.
 	coreAlwaysOn := registry.IsVisible(target) && !registry.IsActive(target) && isCoreDispatchName(target)
 	if !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
-		return call, fmt.Errorf("invoke_tool: %s is complex or mutating and is not active; call tool_search once to activate %s, then retry invoke_tool", target, target)
+		return call, fmt.Errorf("%s", dispatchRefusal(registry, target))
 	}
 
 	args := make(map[string]json.RawMessage)
@@ -308,14 +355,27 @@ func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	return args, nil
 }
 
+// resolveInvokeToolCalls rewrites dispatcher envelopes to their target calls.
+//
+// A successful rewrite is otherwise INVISIBLE: the call enters history, stats
+// and error attribution under the target's name, so logs show every invoke_tool
+// failure and no successes at all — the dispatcher looks broken whatever its
+// real hit rate is. Count the rewrites so the ratio is measurable.
 func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
+	l.invokeDispatchStep = 0
 	for i := range calls {
 		if calls[i].Name != invokeToolName {
 			continue
 		}
 		if resolved, err := resolveInvokeToolCall(l.registry, calls[i]); err == nil {
 			calls[i] = resolved
+			l.invokeDispatchStep++
+			l.invokeDispatchTotal.Add(1)
 		}
 	}
 	return calls
 }
+
+// InvokeToolDispatches reports how many dispatcher envelopes were successfully
+// rewritten to a target call in this loop's lifetime.
+func (l *Loop) InvokeToolDispatches() int64 { return l.invokeDispatchTotal.Load() }
