@@ -65,37 +65,44 @@ func hashFile(t *testing.T, path string) string {
 
 // --- detector unit tests ---
 
-func TestLooksBinary_Content(t *testing.T) {
+func TestClassify_Content(t *testing.T) {
 	cases := []struct {
 		name string
 		data []byte
-		want bool
+		want verdict
 	}{
-		{"empty", nil, false},
-		{"ascii", []byte("package main\n"), false},
-		{"polish utf8", []byte("Zażółć gęślą jaźń — ćma, łódź, ŚĆĘ\n"), false},
-		{"emoji", []byte("done ✅ 🚀\n"), false},
-		{"nul byte", []byte{'a', 0x00, 'b'}, true},
-		{"invalid utf8", []byte{0xff, 0xfe, 0x41, 0x42}, true},
-		{"zip header", []byte("PK\x03\x04\x14\x00\x06\x00"), true},
+		{"empty", nil, verdictText},
+		{"ascii", []byte("package main\n"), verdictText},
+		{"polish utf8", []byte("Zażółć gęślą jaźń — ćma, łódź, ŚĆĘ\n"), verdictText},
+		{"emoji", []byte("done ✅ 🚀\n"), verdictText},
+		{"nul byte", []byte{'a', 0x00, 'b'}, verdictBinary},
+		{"zip header", []byte("PK\x03\x04\x14\x00\x06\x00"), verdictBinary},
+		// A NUL byte is the binary signal. Bytes that merely fail to be
+		// UTF-8 are text in another encoding — CP1250 "ąęśżół" here —
+		// and calling them binary is what locked the user out of his own
+		// Notepad files.
+		{"cp1250", []byte{0xB9, 0xEA, 0x9C, 0xBF, 0xF3, 0xB3}, verdictLegacy},
+		{"utf16 le bom", []byte{0xff, 0xfe, 0x41, 0x00}, verdictUTF16},
+		{"utf16 be bom", []byte{0xfe, 0xff, 0x00, 0x41}, verdictUTF16},
 	}
 	for _, tc := range cases {
-		if got := looksBinary(tc.data, false); got != tc.want {
-			t.Errorf("%s: looksBinary = %v, want %v", tc.name, got, tc.want)
+		if got := classify(tc.data, false); got != tc.want {
+			t.Errorf("%s: classify = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
 
 // A multi-byte rune cut in half by the 8 KB sniff window must not be
-// read as binary garbage — the user works in Polish.
-func TestLooksBinary_TruncatedRuneIsNotBinary(t *testing.T) {
+// read as binary garbage — the user works in Polish. Either way the file
+// stays usable; the trim only keeps the verdict honest.
+func TestClassify_TruncatedRuneIsText(t *testing.T) {
 	full := []byte("ż")
 	head := append([]byte("tekst "), full[0]) // dangling lead byte
-	if looksBinary(head, true) {
-		t.Error("truncated rune flagged as binary")
+	if got := classify(head, true); got != verdictText {
+		t.Errorf("truncated rune: classify = %v, want verdictText", got)
 	}
-	if !looksBinary(head, false) {
-		t.Error("a complete file ending in a dangling lead byte is invalid UTF-8")
+	if got := classify(head, false); got == verdictBinary {
+		t.Error("a dangling lead byte is not binary — there is no NUL in it")
 	}
 }
 
