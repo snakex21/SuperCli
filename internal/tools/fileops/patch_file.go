@@ -86,7 +86,7 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 			// failure path only — to say what actually differs.
 			return PatchResult{}, fmt.Errorf(
 				"fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written%s",
-				i, want, got, patchFailureHint(content, ch.Old, i, want, got))
+				i, want, got, patchFailureHint(content, changes, i, want, got))
 		}
 		content = strings.Replace(content, ch.Old, ch.New, want)
 		total += want
