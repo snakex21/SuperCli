@@ -3,19 +3,48 @@ package llm
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 )
 
-// providerListTimeout caps how long a /v1/models
-// fetch may take. The endpoint is small (a few KB
-// of JSON) so 10s is generous; we use the same
-// value for probes to keep the constants tidy.
-const providerListTimeout = 10 * time.Second
+// ProviderDiscoveryTimeout caps how long a /v1/models fetch may take.
+// The payload is small (a few KB of JSON), but payload size is not what
+// sets the latency: gateways that queue, cold-start, or fan out to an
+// upstream regularly need 15-30s to answer, and a 10s cap made those
+// providers impossible to add at all. This is a one-off configuration
+// path, not the agent's hot loop, so waiting is cheaper than a false
+// rejection. Callers that wrap discovery in their own context must use
+// this same budget so the two limits cannot disagree.
+const ProviderDiscoveryTimeout = 45 * time.Second
+
+// IsTimeoutError reports whether err is a deadline/timeout rather than a
+// refusal. The distinction matters because a timeout is inconclusive: the
+// provider may be perfectly usable and merely slow, while a 401 or an
+// unresolvable host is a definite answer. Callers use this to decide
+// between rejecting a provider and accepting it with a warning.
+func IsTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// http.Client.Timeout surfaces as an *url.Error whose message carries
+	// "Client.Timeout"; some transports lose the net.Error wrapping.
+	low := strings.ToLower(err.Error())
+	return strings.Contains(low, "deadline exceeded") || strings.Contains(low, "client.timeout") || strings.Contains(low, "timeout awaiting")
+}
 
 // providerListCacheTTL is how long a successful /v1/models
 // response is reused before re-fetching. One hour: long enough
@@ -111,9 +140,15 @@ func ListProviderModelInfos(ctx context.Context, baseURL, apiKey string) ([]Mode
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	client := &http.Client{Timeout: providerListTimeout}
+	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		// "context deadline exceeded" tells the user neither that this was a
+		// timeout nor how long we waited, so it reads like a rejection. Say
+		// what happened and what it implies.
+		if IsTimeoutError(err) {
+			return nil, fmt.Errorf("llm: ListProviderModels: %s did not answer within %s - the provider is slow or does not implement /v1/models: %w", u, ProviderDiscoveryTimeout, err)
+		}
 		return nil, fmt.Errorf("llm: ListProviderModels: %w", err)
 	}
 	defer resp.Body.Close()

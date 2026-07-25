@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 )
 
@@ -34,6 +35,22 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		res := m.ScanProvider(name, s.eng.caps)
 		if res.Err != nil {
+			// A timeout is not a rejection. The provider may be a slow or
+			// queueing gateway, or one that does not implement /v1/models at
+			// all while serving /chat/completions perfectly well — in both
+			// cases the user knows better than our stopwatch does. Rolling
+			// those back left the provider permanently unaddable, so we keep
+			// the entry and say plainly that discovery did not finish.
+			// Definite answers (rejected key, wrong URL, unresolvable host)
+			// still roll back: this must not become "accept anything".
+			if llm.IsTimeoutError(res.Err) {
+				writeJSON(w, map[string]any{
+					"ok":      true,
+					"models":  res.Models,
+					"warning": fmt.Sprintf("%s was added, but it did not finish listing models within %s, so no models are known yet. If it is just slow, press Rescan; the provider works as soon as it answers.", name, llm.ProviderDiscoveryTimeout),
+				})
+				return
+			}
 			// Adding a provider is transactional from the GUI's point of view:
 			// an entry that cannot be verified must not silently remain in the
 			// config. This also makes a non-2xx response mean exactly what the

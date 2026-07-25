@@ -23,7 +23,7 @@ func ListProviderModelContexts(ctx context.Context, baseURL, apiKey string) (map
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	client := &http.Client{Timeout: providerListTimeout}
+	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("llm: ListProviderModelContexts: %w", err)
@@ -205,7 +205,7 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	client := &http.Client{Timeout: providerListTimeout}
+	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
