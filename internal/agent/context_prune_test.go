@@ -265,3 +265,49 @@ func TestPrune_RunsBeforeSummaryFallback(t *testing.T) {
 		t.Errorf("request estimate still above compact threshold: %d > %d", got, threshold)
 	}
 }
+
+// TestPruneFrequency_UnknownRemoteModel replays the shape of the measured live
+// session on the grok-4.5 gateway: one agentic turn that reads eight ~1.3k-token
+// files, one read per step. On the 16k self-hosted fallback that turn crossed the
+// 0.6*window trigger at step 6 and then pruned again roughly every four calls,
+// collapsing the provider's reported cache hit from ~85% to ~49% each time.
+//
+// With the window a hosted model actually has, the same turn must not prune at
+// all — pruning is the last line of defence, not a per-step tax.
+func TestPruneFrequency_UnknownRemoteModel(t *testing.T) {
+	const (
+		steps      = 8
+		resultSize = 5200 // ~1.3k tokens, one full 500-line file read
+	)
+
+	countPrunes := func(window int) int {
+		l := pruneLoop(t, window, 0) // protect 0 => defaultPruneProtectTokens(window)
+		l.Messages = []llm.Message{
+			{Role: llm.RoleSystem, Content: strings.Repeat("s", 8000)},
+			{Role: llm.RoleUser, Content: "read note01..note08, one per step"},
+		}
+		prunes := 0
+		for i := 0; i < steps; i++ {
+			l.Messages = append(l.Messages,
+				llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c", Name: "read_lines", Arguments: `{"path":"note.txt"}`}}},
+				llm.Message{Role: llm.RoleTool, ToolCallID: "c", Name: "read_lines", Content: strings.Repeat("x", resultSize)},
+			)
+			l.invalidateVisibleEstimate()
+			if l.maybePruneToolResults(context.Background(), nil) > 0 {
+				prunes++
+			}
+		}
+		return prunes
+	}
+
+	// The measured regression: the 16k fallback thrashes on an ordinary turn.
+	if got := countPrunes(defaultContextWindow); got < 2 {
+		t.Fatalf("expected the 16k fallback to prune repeatedly on this turn, got %d prunes — "+
+			"the fixture no longer reproduces the measured thrash", got)
+	}
+	// The fix: the window an unknown hosted model is now assumed to have.
+	if got := countPrunes(defaultRemoteContextWindow); got != 0 {
+		t.Fatalf("pruned %d time(s) in an %d-step turn on a %d-token window; "+
+			"pruning must stay rare and batched", got, steps, defaultRemoteContextWindow)
+	}
+}

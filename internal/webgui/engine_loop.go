@@ -227,7 +227,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// blind hide fallback — the model silently loses the whole prior
 	// conversation ("[earlier context cleared]" with no summary).
 	contextWindowFor := func(model string) agent.ContextWindowResolution {
-		return agent.ResolveContextWindow(model, tc.ContextWindow, 0, caps, e.learned)
+		return agent.ResolveContextWindow(model, tc.ContextWindow, 0, caps, e.learned, cfg.BaseURL)
 	}
 	contextProvider, _, _ := e.RuntimeSelection()
 	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {

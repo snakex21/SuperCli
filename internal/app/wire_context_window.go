@@ -65,7 +65,7 @@ func wireContextWindows(
 		provWinMu.Lock()
 		w := provWindows[model]
 		provWinMu.Unlock()
-		return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, w, caps, b.Learned)
+		return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, w, caps, b.Learned, cfg.BaseURL)
 	}
 	b.ScopedContextWindowFor = func(provider, model string) agent.ContextWindowResolution {
 		if tokens, ok := b.ModelContexts.Get(provider, model); ok {

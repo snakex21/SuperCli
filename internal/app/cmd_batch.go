@@ -162,7 +162,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		// intentionally local and latency-free: config > cached model catalog >
 		// learned provider limit > conservative loop fallback.
 		ContextWindowFor: func(model string) agent.ContextWindowResolution {
-			return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, 0, caps, learned)
+			return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, 0, caps, learned, cfg.BaseURL)
 		},
 		ContextProvider: contextProvider,
 		ScopedContextWindowFor: func(provider, model string) agent.ContextWindowResolution {

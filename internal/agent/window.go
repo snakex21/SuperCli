@@ -8,8 +8,37 @@ import (
 
 // defaultContextWindow is the conservative fallback when the
 // model's context window cannot be resolved from config,
-// provider metadata, or learned limits.
+// provider metadata, or learned limits. It is sized for a
+// self-hosted backend (llama.cpp/LM Studio/Ollama), where a
+// genuinely small n_ctx is normal and an overflow is not always
+// reported as a recognizable context-length error.
 const defaultContextWindow = 16384
+
+// defaultRemoteContextWindow is the same last-resort fallback for a
+// model served over a public endpoint. Cloud gateways routinely
+// publish neither `context_length` in /v1/models nor any window in the
+// completion envelope, so a frontier model with a six- or seven-figure
+// window lands on the fallback — and 16384 is then not conservative,
+// it is simply wrong: the prune trigger (0.6 * window) sits at ~9.8k,
+// which one ordinary tool-heavy turn crosses, after which pruning
+// re-fires every few calls and invalidates the provider's prompt cache
+// each time.
+//
+// The two failure directions are not symmetric:
+//   - guessing too LOW is silent and permanent — history is pruned and
+//     summarized away, and the KV cache is re-evaluated from the first
+//     rewritten message on every pass;
+//   - guessing too HIGH surfaces as a provider context-length error,
+//     which handleContextOverflow already turns into a learned limit
+//     plus one emergency compaction — self-correcting after a single
+//     failed call.
+//
+// So the remote fallback is deliberately an over-estimate, pinned to
+// the floor of the hosted class rather than to a guess about any
+// particular model: 128k has been the smallest window of a mainstream
+// hosted chat model since gpt-4o, and it is the most common value in
+// the bundled capability seed.
+const defaultRemoteContextWindow = 128000
 
 // Automatic compaction keeps an explicit generation reserve instead of
 // throwing away a fixed fraction of every context window. A percentage-only
@@ -61,7 +90,10 @@ type ContextWindowResolution struct {
 
 // ResolveContextWindow applies the shared front-end cascade. providerTokens is
 // the optional live /v1/models result; callers that do not have one pass zero.
-func ResolveContextWindow(model string, configured, providerTokens int, caps *llm.CapabilityRegistry, learned *llm.LearnedLimits) ContextWindowResolution {
+// baseURL is the active endpoint: it decides only the last-resort fallback
+// (see defaultRemoteContextWindow), never a resolution that any real source
+// could supply.
+func ResolveContextWindow(model string, configured, providerTokens int, caps *llm.CapabilityRegistry, learned *llm.LearnedLimits, baseURL string) ContextWindowResolution {
 	if configured > 0 {
 		return ContextWindowResolution{Tokens: configured, Source: "config"}
 	}
@@ -103,6 +135,11 @@ func ResolveContextWindow(model string, configured, providerTokens int, caps *ll
 		if tokens := learned.Get(model); tokens > 0 {
 			return ContextWindowResolution{Tokens: tokens, Source: "learned"}
 		}
+	}
+	// Nothing is known about this model. An unknown model behind a public
+	// endpoint is a hosted model, not a 16k local build.
+	if baseURL != "" && !llm.IsLocalBaseURL(baseURL) {
+		return ContextWindowResolution{Tokens: defaultRemoteContextWindow, Source: "fallback-remote"}
 	}
 	return ContextWindowResolution{}
 }
