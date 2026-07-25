@@ -81,7 +81,12 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 		}
 		got := strings.Count(content, ch.Old)
 		if got != want {
-			return PatchResult{}, fmt.Errorf("fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written", i, want, got)
+			// The bare count is unactionable: the model regenerated the whole
+			// patch instead of correcting it. Spend tokens here — on the
+			// failure path only — to say what actually differs.
+			return PatchResult{}, fmt.Errorf(
+				"fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written%s",
+				i, want, got, patchFailureHint(content, ch.Old, i, want, got))
 		}
 		content = strings.Replace(content, ch.Old, ch.New, want)
 		total += want
