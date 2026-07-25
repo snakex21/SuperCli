@@ -20,15 +20,15 @@ func TestDiscoveryProgress_CountsCallsNotBatches(t *testing.T) {
 		{Name: "read_docx", Arguments: `{"path":"a.docx"}`},
 		{Name: "web_lookup", Arguments: `{"q":"x"}`},
 	}
-	if sig := p.observe(batch, 0); sig != discoveryNone {
+	if sig := p.observe(batch, 0, 0); sig != discoveryNone {
 		t.Fatalf("first 6 calls: got %v, want none", sig)
 	}
-	if sig := p.observe(batch, 0); sig != discoveryNudge {
+	if sig := p.observe(batch, 0, 0); sig != discoveryNudge {
 		t.Fatalf("at 12 calls: got %v, want nudge", sig)
 	}
 	p.noteNudge()
 	// After soft nudge, partial streak remains; more discovery forces reply.
-	if sig := p.observe(batch, 0); sig != discoveryForceReply {
+	if sig := p.observe(batch, 0, 0); sig != discoveryForceReply {
 		t.Fatalf("after nudge + 6 more: got %v, want force", sig)
 	}
 }
@@ -42,21 +42,21 @@ func TestDiscoveryProgress_FailedMutationDoesNotReset(t *testing.T) {
 		{Name: "read_pdf", Arguments: `{"path":"a"}`},
 	}
 	// 8 discovery calls
-	p.observe(reads, 0)
-	p.observe(reads, 0)
+	p.observe(reads, 0, 0)
+	p.observe(reads, 0, 0)
 	if p.callStreak != 8 {
 		t.Fatalf("streak=%d want 8", p.callStreak)
 	}
 	// Failed patch must NOT reset streak.
 	patch := []llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"x","changes":[]}`}}
-	if sig := p.observe(patch, 1); sig != discoveryNone {
+	if sig := p.observe(patch, 1, 0); sig != discoveryNone {
 		t.Fatalf("failed patch signal=%v", sig)
 	}
 	if p.callStreak != 9 {
 		t.Fatalf("after failed patch streak=%d want 9 (counted, not reset)", p.callStreak)
 	}
 	// Successful patch resets.
-	if sig := p.observe(patch, 0); sig != discoveryNone {
+	if sig := p.observe(patch, 0, 0); sig != discoveryNone {
 		t.Fatalf("ok patch signal=%v", sig)
 	}
 	if p.callStreak != 0 {
@@ -70,26 +70,26 @@ func TestDiscoveryProgress_UnknownToolIsNotProgress(t *testing.T) {
 	// Vary args so period-1 cycle detection does not fire early.
 	for i := 0; i < discoveryCallSoftLimit-1; i++ {
 		other := []llm.ToolCall{{Name: "mystery_plugin", Arguments: `{"n":` + itoa(i) + `}`}}
-		if sig := p.observe(other, 0); sig != discoveryNone {
+		if sig := p.observe(other, 0, 0); sig != discoveryNone {
 			t.Fatalf("early signal at %d: %v", i+1, sig)
 		}
 	}
 	other := []llm.ToolCall{{Name: "mystery_plugin", Arguments: `{"n":99}`}}
-	if sig := p.observe(other, 0); sig != discoveryNudge {
+	if sig := p.observe(other, 0, 0); sig != discoveryNudge {
 		t.Fatalf("unknown tools still accumulate: got %v", sig)
 	}
 	// Soft step limit must not treat unknown as progress either.
 	var sp stepLimitProgress
-	if sp.observe(other, 0) {
+	if sp.observe(other, 0, 0) {
 		t.Fatal("unknown tool must not extend soft step limit")
 	}
-	if sp.observe([]llm.ToolCall{{Name: "read_pdf", Arguments: `{}`}}, 0) {
+	if sp.observe([]llm.ToolCall{{Name: "read_pdf", Arguments: `{}`}}, 0, 0) {
 		t.Fatal("read_pdf discovery must not extend soft step limit")
 	}
-	if !sp.observe([]llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"f"}`}}, 0) {
+	if !sp.observe([]llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"f"}`}}, 0, 0) {
 		t.Fatal("successful mutation should allow soft progress once")
 	}
-	if sp.observe([]llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"f"}`}}, 1) {
+	if sp.observe([]llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"f"}`}}, 1, 0) {
 		t.Fatal("failed mutation must not extend")
 	}
 }
@@ -99,10 +99,10 @@ func TestDiscoveryProgress_ShortCycleEscalates(t *testing.T) {
 	a := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"a"}`}
 	b := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"b"}`}
 	// A B A B → period-2 cycle → hard force
-	p.observe([]llm.ToolCall{a}, 0)
-	p.observe([]llm.ToolCall{b}, 0)
-	p.observe([]llm.ToolCall{a}, 0)
-	if sig := p.observe([]llm.ToolCall{b}, 0); sig != discoveryForceReply {
+	p.observe([]llm.ToolCall{a}, 0, 0)
+	p.observe([]llm.ToolCall{b}, 0, 0)
+	p.observe([]llm.ToolCall{a}, 0, 0)
+	if sig := p.observe([]llm.ToolCall{b}, 0, 0); sig != discoveryForceReply {
 		t.Fatalf("A-B-A-B should force reply, got %v (streak=%d)", sig, p.callStreak)
 	}
 }
@@ -167,21 +167,21 @@ func TestBatchIsDiscoveryOnly(t *testing.T) {
 }
 
 func TestBatchHasSuccessfulProgress(t *testing.T) {
-	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "patch_file"}}, 1) {
+	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "patch_file"}}, 1, 0) {
 		t.Fatal("failed patch is not progress")
 	}
-	if !batchHasSuccessfulProgress([]llm.ToolCall{{Name: "patch_file"}}, 0) {
+	if !batchHasSuccessfulProgress([]llm.ToolCall{{Name: "patch_file"}}, 0, 0) {
 		t.Fatal("ok patch is progress")
 	}
-	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "read_docx"}, {Name: "list_dir"}}, 0) {
+	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "read_docx"}, {Name: "list_dir"}}, 0, 0) {
 		t.Fatal("reads are not progress")
 	}
 	// Mixed batch with zero failures still counts if mutation present
-	if !batchHasSuccessfulProgress([]llm.ToolCall{{Name: "list_dir"}, {Name: "patch_file"}}, 0) {
+	if !batchHasSuccessfulProgress([]llm.ToolCall{{Name: "list_dir"}, {Name: "patch_file"}}, 0, 0) {
 		t.Fatal("ok patch in mixed batch is progress")
 	}
 	// Mixed batch with any failure is not progress
-	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "list_dir"}, {Name: "patch_file"}}, 1) {
+	if batchHasSuccessfulProgress([]llm.ToolCall{{Name: "list_dir"}, {Name: "patch_file"}}, 1, 0) {
 		t.Fatal("failed call in batch kills progress")
 	}
 }

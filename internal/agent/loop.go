@@ -278,6 +278,10 @@ type Loop struct {
 	// identicalFails blocks a third identical failed tool call in a Run.
 	identicalFails identicalFailureGate
 
+	// identicalWrites blocks an identical successful mutation that has
+	// already been applied repeatedMutationLimit times in a Run.
+	identicalWrites identicalSuccessGate
+
 	// emptyReplyNudgeUsed is set when we already forced one "answer the
 	// user after tools" retry in this Run (avoids an infinite empty loop).
 	emptyReplyNudgeUsed bool
@@ -706,6 +710,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 	var reflectionProgress adaptiveReflectionProgress
 	var discoveryProg discoveryProgress
 	l.identicalFails = identicalFailureGate{}
+	l.identicalWrites = identicalSuccessGate{}
 	// F11: reset the policy's per-Run "drafted" set
 	// at the start of every Run so a ModeBalanced
 	// "draft once" rule applies to THIS Run, not to

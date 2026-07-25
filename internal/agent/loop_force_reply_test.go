@@ -210,9 +210,9 @@ func TestDiscoveryProgress_Period3Cycle(t *testing.T) {
 	b := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"b"}`}
 	c := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"c"}`}
 	for _, call := range []llm.ToolCall{a, b, c, a, b} {
-		p.observe([]llm.ToolCall{call}, 0)
+		p.observe([]llm.ToolCall{call}, 0, 0)
 	}
-	if sig := p.observe([]llm.ToolCall{c}, 0); sig != discoveryForceReply {
+	if sig := p.observe([]llm.ToolCall{c}, 0, 0); sig != discoveryForceReply {
 		t.Fatalf("A-B-C-A-B-C should force, got %v", sig)
 	}
 }

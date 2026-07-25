@@ -23,6 +23,43 @@ type PatchResult struct {
 	BeforeHash   string
 	AfterHash    string
 	Changed      bool
+	// Note is a diagnostic addendum for the success message. Empty for an
+	// ordinary patch; set only when the result is genuinely surprising and
+	// the model cannot see it from hashes (see pureInsertionNote).
+	Note string
+	// Duplicated reports that the patch was a pure insertion of text the
+	// file already contained. The write succeeded, but nothing new exists
+	// because of it, so the agent loop must not bank it as progress.
+	Duplicated bool
+}
+
+// minInsertionNoteLen is the shortest inserted text worth counting. Below it
+// the tail is punctuation or a newline, which occurs everywhere in every file:
+// the count would be noise, and noise on the success path is exactly what this
+// note must not become.
+const minInsertionNoteLen = 8
+
+// pureInsertionNote returns a note when a change appended text to its own
+// anchor (new starts with old) and that appended text now occurs more than once
+// in the file. This is the single fact that distinguishes "I made the edit"
+// from "I made the edit for the 23rd time", and the model never had it: a
+// successful patch reported changed=true plus two hashes it cannot compare.
+// Cost is one substring count, paid only for pure insertions.
+func pureInsertionNote(content string, changes []PatchChange) (string, bool) {
+	for _, ch := range changes {
+		if len(ch.New) <= len(ch.Old) || !strings.HasPrefix(ch.New, ch.Old) {
+			continue
+		}
+		tail := ch.New[len(ch.Old):]
+		if len(strings.TrimSpace(tail)) < minInsertionNoteLen {
+			continue
+		}
+		if n := strings.Count(content, tail); n > 1 {
+			return fmt.Sprintf(
+				"note: pure insertion; the inserted text now occurs %d times in this file", n), true
+		}
+	}
+	return "", false
 }
 
 // FileSHA256 returns the hex-encoded SHA-256 of the file contents.
@@ -107,11 +144,14 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	if err := os.WriteFile(path, afterData, 0o644); err != nil {
 		return PatchResult{}, FileErr(err, path)
 	}
+	note, duplicated := pureInsertionNote(content, changes)
 	return PatchResult{
 		Replacements: total,
 		BeforeHash:   beforeHex,
 		AfterHash:    afterHex,
 		Changed:      true,
+		Note:         note,
+		Duplicated:   duplicated,
 	}, nil
 }
 
