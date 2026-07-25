@@ -20,7 +20,6 @@ package tui
 import (
 	"context"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -234,7 +233,7 @@ func (m onboardModel) startLoadModels() (tea.Model, tea.Cmd) {
 	baseURL, apiKey := m.result.BaseURL, m.result.APIKey
 	m.step = onboardLoadModels
 	return m, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), llm.ProviderDiscoveryTimeout)
 		defer cancel()
 		models, err := llm.ListProviderModels(ctx, baseURL, apiKey)
 		return onboardModelsMsg{models: models, err: err}

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
@@ -131,7 +130,10 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 		res.Err = fmt.Errorf("capability registry is not available")
 		return res
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Share the discovery budget with the HTTP clients underneath. When this
+	// wrapper was shorter than they were, it cancelled mid-request and the
+	// user saw a bare "context deadline exceeded".
+	ctx, cancel := context.WithTimeout(context.Background(), llm.ProviderDiscoveryTimeout)
 	var ids []string
 	var discovered []llm.ModelInfo
 	var err error

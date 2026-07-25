@@ -35,6 +35,28 @@ func TestProvidersAddRollsBackWhenVerificationFails(t *testing.T) {
 	}
 }
 
+// Accepting slow providers must not degrade into accepting every provider.
+// A host that answers "nothing is listening here" is a definite answer, not
+// an inconclusive one, so the entry still has to be rolled back.
+func TestProvidersAddRollsBackWhenHostIsUnreachable(t *testing.T) {
+	srv := newTestServer(t, false)
+	// Port 1 on loopback refuses immediately: a conclusive failure with no
+	// dependency on DNS or network conditions.
+	body := `{"name":"nowhere","type":"openai","base_url":"http://127.0.0.1:1/v1","api_key":"k"}`
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, localProviderJSONRequest(http.MethodPost, "/api/providers", body))
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadGateway, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "provider was not added") {
+		t.Fatalf("response does not explain rollback: %s", rec.Body.String())
+	}
+	if got := srv.eng.providerManager().Names(); len(got) != 0 {
+		t.Fatalf("unreachable provider remained configured: %v", got)
+	}
+}
+
 func TestModelVisibilityBatchEndpoint(t *testing.T) {
 	srv := newTestServer(t, false)
 	rec := httptest.NewRecorder()

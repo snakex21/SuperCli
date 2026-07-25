@@ -93,7 +93,10 @@ func TestHumanizeVerifyError(t *testing.T) {
 		{"status 401: unauthorized", "sk-x", "rejected"},
 		{"status 404: no", "k", "base URL"},
 		{"dial tcp 127.0.0.1:1234: connectex: No connection could be made", "", "is the server running"},
-		{"context deadline exceeded", "", "did not answer in time"},
+		// A timeout must name the budget it blew and say the entry survives,
+		// so the user knows to retry rather than assuming a rejection.
+		{"context deadline exceeded", "", "did not answer within 1m0s"},
+		{"context deadline exceeded", "", "retry the scan"},
 	}
 	for _, c := range cases {
 		err := humanizeVerifyError(c.raw, "http://localhost:1234/v1", c.key)

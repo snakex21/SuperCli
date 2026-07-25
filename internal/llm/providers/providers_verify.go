@@ -10,9 +10,13 @@ import (
 	"supercli/internal/system/config"
 )
 
-// verifyTimeout caps the post-configuration test request. Local
-// servers answer in a second or two; cloud providers within a few.
-const verifyTimeout = 15 * time.Second
+// verifyTimeout caps the post-configuration test request. Local servers
+// answer in a second or two, but this is a real inference call: a queued
+// or cold-starting gateway can take half a minute to emit its first token,
+// and a reasoning model spends that budget before saying anything at all.
+// It is deliberately larger than ProviderDiscoveryTimeout — generating a
+// token is slower than listing models — and it runs once, at setup.
+const verifyTimeout = 60 * time.Second
 
 // VerifyConnection sends a tiny test completion ("Say OK") to the
 // provider and returns nil on success or a human-readable error
@@ -75,7 +79,7 @@ func humanizeVerifyError(raw, baseURL, apiKey string) error {
 	case strings.Contains(low, "connection refused") || strings.Contains(low, "connectex") || strings.Contains(low, "no such host") || strings.Contains(low, "dial tcp"):
 		hint = fmt.Sprintf("nothing is listening at %s — is the server running?", baseURL)
 	case strings.Contains(low, "deadline exceeded") || strings.Contains(low, "timeout"):
-		hint = "the server did not answer in time — it may still be loading a model"
+		hint = fmt.Sprintf("the server did not answer within %s — it may still be loading a model, or it may just be slow; the provider is kept so you can retry the scan", verifyTimeout)
 	}
 	if len(raw) > 200 {
 		raw = raw[:200] + "..."

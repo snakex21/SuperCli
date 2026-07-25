@@ -204,7 +204,10 @@ function renderProviderForm(templates, existing) {
         var res2 = await jpost("/api/providers", {
           name: nameI.value.trim(), type: typeI.value, base_url: urlI.value.trim(), api_key: keyI.value, model: "",
         });
-        toast(t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
+        // A provider kept despite an unfinished scan reports why, so the
+        // empty model list does not look like a silent failure.
+        if (res2.warning) toast(res2.warning);
+        else toast(t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
         await loadModels();
         await renderProvidersList();
       }

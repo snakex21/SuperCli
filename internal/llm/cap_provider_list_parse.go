@@ -140,7 +140,7 @@ func ListLocalNativeModelInfos(ctx context.Context, baseURL, apiKey string) []Mo
 		if key := CleanAPIKey(apiKey); key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
-		resp, err := (&http.Client{Timeout: providerListTimeout}).Do(req)
+		resp, err := (&http.Client{Timeout: ProviderDiscoveryTimeout}).Do(req)
 		if err != nil {
 			continue
 		}
@@ -196,7 +196,7 @@ func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string,
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("x-api-key", key)
 	}
-	client := &http.Client{Timeout: providerListTimeout}
+	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
