@@ -67,7 +67,14 @@ function mdBlocks(text) {
       while (i < lines.length && lines[i].trim().indexOf("|") >= 0) { tbl.push(lines[i].trim()); i++; }
       var sep = tbl.length >= 2 && /^\|[\s\-:|]+\|$/.test(tbl[1]);
       if (sep) { closeList(); out += renderTable(tbl); continue; }
-      for (var tj = tbl.length - 1; tj >= 1; tj--) lines.splice(i - (tbl.length - tj), 0, tbl[tj]);
+      // Not a table: hand the run back to the normal block rules by rewinding
+      // only. Re-inserting the lines with splice() duplicated every one of
+      // them AND grew `lines` faster than `i` advanced, so a run of "|" lines
+      // whose second line is not a separator row looped forever and built a
+      // string until the engine threw. Every streamed table passes through
+      // that state while its separator row is still arriving, which froze the
+      // whole tab mid-answer. Rewinding leaves `i` past `trimmed`, so the
+      // outer loop always makes progress.
       i -= tbl.length - 1;
     }
     closeList();

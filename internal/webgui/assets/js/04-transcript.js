@@ -126,7 +126,19 @@ function renderAssistant(node) {
   node.querySelectorAll("details[data-think-id]:not([open])").forEach(function (d) {
     closed[d.dataset.thinkId] = true;
   });
-  node.innerHTML = renderText(node._raw);
+  // A renderer failure must never end the stream. renderAssistant runs from a
+  // timer and from the SSE handler; letting it throw there stopped every later
+  // chunk from reaching the screen for the rest of the session. Falling back to
+  // plain text keeps the answer readable and lets the next chunk try again.
+  var html;
+  try {
+    html = renderText(node._raw);
+  } catch (renderErr) {
+    node.textContent = node._raw;
+    if (window.console && console.error) console.error("renderAssistant", renderErr);
+    return;
+  }
+  node.innerHTML = html;
   node.querySelectorAll("details[data-think-id]").forEach(function (d) {
     if (closed[d.dataset.thinkId]) d.open = false;
   });
