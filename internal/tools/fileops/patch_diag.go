@@ -35,6 +35,38 @@ const (
 	// whitespace a very short `old` matches by accident.
 	diagMinStripped = 8
 
+	// diagForeignMinOld and diagForeignRatio are the mirror of the two above:
+	// they decide when a prefix is so short that `old` cannot have come from
+	// this file at all. The observed failure had a 4-char prefix (indentation)
+	// against len(old)=453 — the strongest possible evidence that the model
+	// aimed at the wrong path, and exactly what diagMinPrefix threw away as
+	// noise. Below diagForeignMinOld bytes a short prefix is unremarkable, so
+	// the verdict stays quiet; above it, a prefix under len(old)/20 (5%) is
+	// far outside anything a typo produces — a single wrong character leaves a
+	// prefix averaging half of `old`, and even a mistake in the first line
+	// leaves the interior intact, which the probes below check for.
+	diagForeignMinOld = 200
+	diagForeignRatio  = 20
+
+	// diagProbeLen and diagProbes sample the interior of `old` to confirm the
+	// foreign verdict. A block that really belongs to the file leaves whole
+	// windows of itself in it even when its head is wrong; a block from
+	// another file leaves none. Four 32-byte windows cost four strings.Index
+	// scans, roughly a third of the prefix binary search already spent.
+	diagProbeLen = 32
+	diagProbes   = 4
+
+	// diagProbeMinInk is how much non-whitespace a probe must carry to count.
+	// A window of pure indentation matches almost any source file and would
+	// silence the verdict for the wrong reason.
+	diagProbeMinInk = 16
+
+	// diagMaxCrossChanges bounds the whole-call scan, which costs one pass
+	// over the file per change. Patches that miss everywhere are 2-5 changes
+	// in practice; past this the verdict is not worth a linear-in-changes
+	// scan of a file that may be megabytes.
+	diagMaxCrossChanges = 32
+
 	// diagSnippet caps any file text echoed back into the error.
 	diagSnippet = 120
 )
@@ -42,8 +74,12 @@ const (
 // patchFailureHint returns the diagnostic tail appended to a PatchFile
 // occurrence-count failure, already prefixed with "; ", or "" when nothing
 // useful can be said. content is the file as it stands when the change was
-// attempted (earlier changes in the same call already applied in memory).
-func patchFailureHint(content, old string, idx, want, got int) string {
+// attempted (earlier changes in the same call already applied in memory);
+// changes is the whole call, idx the change that failed.
+func patchFailureHint(content string, changes []PatchChange, idx, want, got int) string {
+	if idx < 0 || idx >= len(changes) {
+		return ""
+	}
 	parts := make([]string, 0, 4)
 
 	// Which changes were fine. Lets the model resend the one that missed
@@ -56,7 +92,7 @@ func patchFailureHint(content, old string, idx, want, got int) string {
 
 	switch {
 	case got == 0:
-		parts = append(parts, diagnoseMissingOld(content, old)...)
+		parts = append(parts, diagnoseMissingOld(content, changes, idx)...)
 	case got > want:
 		parts = append(parts, fmt.Sprintf(
 			"old occurs %d times: add surrounding context to make it unique, or set expected_count=%d",
@@ -69,21 +105,38 @@ func patchFailureHint(content, old string, idx, want, got int) string {
 }
 
 // diagnoseMissingOld explains why an `old` that the model believed was in the
-// file was not found verbatim. It reports at most one structural verdict
-// (whitespace vs. tail divergence) plus the single-line fact, in that order of
-// usefulness.
-func diagnoseMissingOld(content, old string) []string {
+// file was not found verbatim. It reports at most one structural verdict plus
+// the single-line fact. The verdicts are mutually exclusive by construction and
+// ordered by how much they narrow the repair:
+//
+//	whitespace   the text is here, only spacing differs — re-copy the bytes
+//	near miss    the block is here and drifted — fix the tail
+//	wrong file   nothing of this patch is here — fix the path
+//
+// The last one has to come last: whitespace and near-miss both prove the model
+// is looking at the right file, and telling it to go check the path then would
+// send a correctable call back to the drawing board.
+func diagnoseMissingOld(content string, changes []PatchChange, idx int) []string {
+	old := changes[idx].Old
 	if len(content) > diagMaxContent || old == "" {
 		return nil
 	}
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 
 	if ws := whitespaceVerdict(content, old); ws != "" {
 		// Whitespace fully explains the miss; a divergence offset on top of
 		// it would just be a second way of saying the same thing.
 		parts = append(parts, ws)
-	} else if pf := prefixVerdict(content, old); pf != "" {
-		parts = append(parts, pf)
+	} else {
+		// One prefix search feeds both remaining verdicts: they read the same
+		// number from opposite ends ("nearly all of old is here" vs. "almost
+		// none of it is"), and it is the most expensive measurement taken.
+		n, pos := longestPrefixMatch(content, old)
+		if pf := prefixVerdict(content, old, n, pos); pf != "" {
+			parts = append(parts, pf)
+		} else if wf := wrongFileVerdicts(content, changes, idx, n); len(wf) > 0 {
+			parts = append(parts, wf...)
+		}
 	}
 
 	if isSingleLine(content) {
@@ -120,9 +173,9 @@ func whitespaceVerdict(content, old string) string {
 
 // prefixVerdict reports the longest literal prefix of `old` present in the
 // file and the exact point where the two diverge, so the model can fix the
-// tail instead of regenerating the block.
-func prefixVerdict(content, old string) string {
-	n, pos := longestPrefixMatch(content, old)
+// tail instead of regenerating the block. n and pos come from
+// longestPrefixMatch.
+func prefixVerdict(content, old string, n, pos int) string {
 	if n < diagMinPrefix || n*diagPrefixRatio < len(old) {
 		return ""
 	}
@@ -131,6 +184,112 @@ func prefixVerdict(content, old string) string {
 	return fmt.Sprintf(
 		"first %d of %d chars of old match at line %d; old diverges at its line %d from file line %d, which reads: %q",
 		n, len(old), startLine, lineOf(old, n), divLine, snippet(lineAt(content, pos+n)))
+}
+
+// wrongFileVerdicts reports that the patch was aimed at the wrong path. It is
+// reached only after whitespace and near-miss have both declined, i.e. nothing
+// suggests the block belongs here.
+//
+// Two independent signals, cheapest first. They complement rather than repeat
+// each other: one is about matching, the other is arithmetic.
+func wrongFileVerdicts(content string, changes []PatchChange, idx, prefix int) []string {
+	out := make([]string, 0, 2)
+
+	// Whole-call signals only make sense while nothing has been applied yet.
+	// Past idx 0 an earlier change matched, which settles that the path is
+	// right, and `content` no longer is the file the caller sent bytes for.
+	if idx == 0 {
+		if len(changes) > 1 && len(changes) <= diagMaxCrossChanges &&
+			noChangeMatches(content, changes, idx) {
+			out = append(out, fmt.Sprintf(
+				"none of the %d changes match this file at all - the path is probably wrong",
+				len(changes)))
+		}
+		// Non-overlapping occurrences cannot exceed the file, so `old` bytes
+		// totalling more than it is a contradiction visible without any
+		// search. expected_count is deliberately ignored: counting it would
+		// only make the check fire more often, and it must never over-claim.
+		total := 0
+		for _, ch := range changes {
+			total += len(ch.Old)
+		}
+		if total > len(content) {
+			if len(changes) == 1 {
+				out = append(out, fmt.Sprintf(
+					"old is %d bytes but the file is only %d bytes: it cannot be in there",
+					total, len(content)))
+			} else {
+				out = append(out, fmt.Sprintf(
+					"changes total %d bytes of old but the file is only %d bytes: they cannot all be in it",
+					total, len(content)))
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if fo := foreignOldVerdict(content, changes[idx].Old, prefix); fo != "" {
+		out = append(out, fo)
+	}
+	return out
+}
+
+// noChangeMatches reports whether every change in the call misses. One block
+// gone astray is drift; the whole patch missing is a statement about the path.
+// Change idx is skipped: it is why we are here, and its count is already known.
+func noChangeMatches(content string, changes []PatchChange, idx int) bool {
+	for i, ch := range changes {
+		if i == idx {
+			continue
+		}
+		if ch.Old == "" || strings.Contains(content, ch.Old) {
+			return false
+		}
+	}
+	return true
+}
+
+// foreignOldVerdict reports a single `old` that has essentially nothing in
+// common with the file. This is the per-change form of the verdict: it carries
+// calls where the whole-call signals cannot speak — a lone change, or a patch
+// that mixes blocks from two files.
+// n is the longest-prefix length already measured for old.
+func foreignOldVerdict(content, old string, n int) string {
+	if len(old) < diagForeignMinOld || n*diagForeignRatio >= len(old) {
+		return ""
+	}
+	if probeHits(content, old) > 0 {
+		// Windows from the middle of `old` are in the file: the block does
+		// belong here and something near its head is wrong. Not a path
+		// problem, and not worth guessing about further.
+		return ""
+	}
+	return fmt.Sprintf(
+		"old shares almost nothing with this file (only %d of %d chars match anywhere) - check that path is the file this block came from",
+		n, len(old))
+}
+
+// probeHits counts how many evenly spaced interior windows of old occur in
+// content. Whitespace-only windows are skipped: they match anything.
+func probeHits(content, old string) int {
+	hits := 0
+	for i := 1; i <= diagProbes; i++ {
+		start := len(old) * i / (diagProbes + 1)
+		if start+diagProbeLen > len(old) {
+			start = len(old) - diagProbeLen
+		}
+		if start < 0 {
+			continue
+		}
+		probe := old[start : start+diagProbeLen]
+		if len(stripSpace(probe)) < diagProbeMinInk {
+			continue
+		}
+		if strings.Contains(content, probe) {
+			hits++
+		}
+	}
+	return hits
 }
 
 // longestPrefixMatch returns the length of the longest prefix of old that

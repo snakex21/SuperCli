@@ -184,6 +184,199 @@ func TestPatchFile_ReportsSingleLineFile(t *testing.T) {
 	}
 }
 
+// --- wrong-file diagnostics ------------------------------------------------
+//
+// Case 5 — session 951feaa30759ab0f (2026-07-25). The model called patch_file
+// with path=scripts.js (4804 B) and three changes, two of which were HTML
+// blocks belonging to index.html. Sum of `old` was 5432 B, 113% of the target
+// file; all three changes matched 0 times. Every existing branch went silent:
+// the HTML does not appear in the JS under any whitespace normalisation, the
+// longest matching prefix was 4 chars (indentation) against len(old)=453 so the
+// near-miss threshold rejected it, and the file is multi-line. The model got a
+// bare "found 0" and regenerated the patch: 3948 tokens, 32.7% of the session.
+
+// htmlBlock builds a chunk of index.html markup of roughly n bytes.
+func htmlBlock(id string, n int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "        <section class=%q>\n", id)
+	for i := 0; sb.Len() < n-60; i++ {
+		fmt.Fprintf(&sb, "          <div class=\"row\" data-idx=\"%d\">\n"+
+			"            <span class=\"label\">Field %d</span>\n"+
+			"            <input type=\"text\" name=\"f%d\" />\n"+
+			"          </div>\n", i, i, i)
+	}
+	sb.WriteString("        </section>")
+	return sb.String()
+}
+
+// jsSource builds a plausible scripts.js of roughly n bytes.
+func jsSource(n int) string {
+	var sb strings.Builder
+	sb.WriteString("(function () {\n  \"use strict\";\n")
+	for i := 0; sb.Len() < n-40; i++ {
+		fmt.Fprintf(&sb, "  function handler%02d(event) {\n"+
+			"    return Number(event.target.value) * %d;\n  }\n", i, i)
+	}
+	sb.WriteString("})();\n")
+	return sb.String()
+}
+
+func TestPatchFile_ReportsPatchAimedAtWrongFile(t *testing.T) {
+	content := jsSource(4804)
+	path := writeTemp(t, "scripts.js", content)
+
+	changes := []PatchChange{
+		{Old: htmlBlock("cart", 2500), New: "<section class=\"cart\"></section>"},
+		{Old: htmlBlock("summary", 2500), New: "<section class=\"summary\"></section>"},
+		{Old: "  <div id=\"checkout-total\" class=\"total\"></div>", New: "  <div id=\"checkout-total\"></div>"},
+	}
+	total := 0
+	for _, ch := range changes {
+		total += len(ch.Old)
+	}
+	// The setup must keep the production shape, or the test proves nothing.
+	if total <= len(content) {
+		t.Fatalf("setup: old totals %d B, file is %d B; the real case had old > file", total, len(content))
+	}
+
+	_, err := PatchFile(path, changes, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "none of the 3 changes match this file at all") {
+		t.Fatalf("message does not say the whole patch missed: %s", msg)
+	}
+	if !strings.Contains(msg, "the path is probably wrong") {
+		t.Fatalf("message does not name the path as the suspect: %s", msg)
+	}
+	if !strings.Contains(msg, "bytes of old but the file is only") {
+		t.Fatalf("message does not report the impossible byte total: %s", msg)
+	}
+	// It must not simultaneously claim the block nearly matched.
+	if strings.Contains(msg, "chars of old match at line") {
+		t.Fatalf("wrong-file failure also reported as a near miss: %s", msg)
+	}
+	if got, _ := os.ReadFile(path); string(got) != content {
+		t.Fatal("file was modified by a failing patch")
+	}
+}
+
+// A single `old` larger than the whole file cannot possibly match; that is
+// arithmetic, available before any search.
+func TestPatchFile_ReportsOldLargerThanFile(t *testing.T) {
+	content := "let a = 1;\nlet b = 2;\n"
+	path := writeTemp(t, "tiny.js", content)
+
+	_, err := PatchFile(path, []PatchChange{{Old: htmlBlock("cart", 600), New: "x"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "but the file is only 22 bytes") {
+		t.Fatalf("message does not compare old against the file size: %s", msg)
+	}
+}
+
+// THE DISCRIMINATING TEST. Same shape as the wrong-file case — several changes,
+// none of them matching, `old` well over the foreign-block threshold — except
+// the blocks really do come from this file and only drifted. The model must be
+// told where it diverged, and must NOT be sent to check the path.
+func TestPatchFile_DriftIsNotReportedAsWrongFile(t *testing.T) {
+	var file strings.Builder
+	for i := 1; i <= 120; i++ {
+		fmt.Fprintf(&file, "  const line%03d = compute(%d, base);\n", i, i)
+	}
+	content := file.String()
+	path := writeTemp(t, "app.js", content)
+
+	// Two blocks copied out of the file, each with one wrong digit in the tail.
+	blockA := content[strings.Index(content, "  const line010"):strings.Index(content, "  const line030")]
+	blockB := content[strings.Index(content, "  const line060"):strings.Index(content, "  const line080")]
+	changes := []PatchChange{
+		{Old: strings.Replace(blockA, "compute(29, base)", "compute(29, bases)", 1), New: "// A\n"},
+		{Old: strings.Replace(blockB, "compute(79, base)", "compute(79, bases)", 1), New: "// B\n"},
+	}
+	for _, ch := range changes {
+		if len(ch.Old) < diagForeignMinOld {
+			t.Fatalf("setup: old is %d B, below the foreign threshold %d", len(ch.Old), diagForeignMinOld)
+		}
+		if strings.Count(content, ch.Old) != 0 {
+			t.Fatal("setup: change was supposed to miss")
+		}
+	}
+
+	_, err := PatchFile(path, changes, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "chars of old match at line") {
+		t.Fatalf("drift not reported as a near miss: %s", msg)
+	}
+	if strings.Contains(msg, "the path is probably wrong") ||
+		strings.Contains(msg, "shares almost nothing") {
+		t.Fatalf("plain drift reported as the wrong file: %s", msg)
+	}
+}
+
+// A block that does come from this file but whose FIRST line is wrong has a
+// tiny prefix too. The interior probes catch that and keep the wrong-file
+// verdict quiet: a false "check the path" would send the model to rewrite a
+// correct call.
+func TestPatchFile_EarlyTypoIsNotReportedAsWrongFile(t *testing.T) {
+	var file strings.Builder
+	for i := 1; i <= 120; i++ {
+		fmt.Fprintf(&file, "  const line%03d = compute(%d, base);\n", i, i)
+	}
+	content := file.String()
+	path := writeTemp(t, "early.js", content)
+
+	block := content[strings.Index(content, "  const line010"):strings.Index(content, "  const line030")]
+	old := strings.Replace(block, "  const line010 = compute(10, base);", "  const line010 = compute(10, BASE);", 1)
+
+	_, err := PatchFile(path, []PatchChange{{Old: old, New: "// x\n"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if msg := err.Error(); strings.Contains(msg, "shares almost nothing") ||
+		strings.Contains(msg, "the path is probably wrong") {
+		t.Fatalf("a block from this file was reported as foreign: %s", msg)
+	}
+}
+
+// Regression: when some changes matched and one did not, the failure stays a
+// per-change drift report. The wrong-file verdict must not appear — changes
+// 0-5 landing proves the path is right.
+func TestPatchFile_PartialMatchNeverBlamesThePath(t *testing.T) {
+	var sb strings.Builder
+	for i := 0; i < 7; i++ {
+		fmt.Fprintf(&sb, "const value%d = %d;\n", i, i)
+	}
+	path := writeTemp(t, "partial.js", sb.String())
+
+	changes := make([]PatchChange, 0, 7)
+	for i := 0; i < 6; i++ {
+		changes = append(changes, PatchChange{
+			Old: fmt.Sprintf("const value%d = %d;", i, i),
+			New: fmt.Sprintf("const value%d = %d;", i, i*10),
+		})
+	}
+	changes = append(changes, PatchChange{Old: htmlBlock("footer", 400), New: "x"})
+
+	_, err := PatchFile(path, changes, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "changes 0-5 matched, change 6 did not") {
+		t.Fatalf("lost the per-change report: %s", msg)
+	}
+	if strings.Contains(msg, "none of the") || strings.Contains(msg, "the path is probably wrong") {
+		t.Fatalf("blamed the path although changes 0-5 matched: %s", msg)
+	}
+}
+
 // Too many occurrences is the mirror failure and gets the count it needs.
 func TestPatchFile_ReportsAmbiguousOld(t *testing.T) {
 	path := writeTemp(t, "dup.txt", "x = 1;\nx = 1;\nx = 1;\n")
@@ -221,7 +414,7 @@ func TestPatchFile_SuccessPathUnchanged(t *testing.T) {
 // bow out rather than allocating copies of a huge file.
 func TestPatchFailureHint_SkipsHugeFiles(t *testing.T) {
 	content := strings.Repeat("a", diagMaxContent+1)
-	if h := patchFailureHint(content, "not-here-at-all", 0, 1, 0); h != "" {
+	if h := patchFailureHint(content, []PatchChange{{Old: "not-here-at-all"}}, 0, 1, 0); h != "" {
 		t.Fatalf("diagnostics ran on an oversized file: %q", h)
 	}
 }
@@ -241,11 +434,31 @@ func BenchmarkPatchFailureHint_100KB(b *testing.B) {
 	// `old` is a 2.5 KB block from the middle whose tail diverges: the most
 	// expensive shape (prefix search runs to full depth).
 	old := content[40000:42500] + "TAIL-THAT-DOES-NOT-EXIST"
+	changes := []PatchChange{{Old: "a"}, {Old: "b"}, {Old: "c"}, {Old: old}}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if h := patchFailureHint(content, old, 3, 1, 0); h == "" {
+		if h := patchFailureHint(content, changes, 3, 1, 0); h == "" {
+			b.Fatal("empty hint")
+		}
+	}
+}
+
+// The wrong-file shape, worst case for the new branches: change 0, so the
+// whole-call scan runs, and every change misses so it runs to the end.
+func BenchmarkPatchFailureHint_WrongFile_100KB(b *testing.B) {
+	content := benchContent100KB()
+	changes := []PatchChange{
+		{Old: htmlBlock("cart", 2500)},
+		{Old: htmlBlock("summary", 2500)},
+		{Old: htmlBlock("footer", 500)},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if h := patchFailureHint(content, changes, 0, 1, 0); h == "" {
 			b.Fatal("empty hint")
 		}
 	}
