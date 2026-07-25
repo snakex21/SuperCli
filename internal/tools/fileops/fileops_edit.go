@@ -98,6 +98,15 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 	if expectedOld == "" {
 		return 0, fmt.Errorf("expectedOld must be non-empty (anchor needs proof content)")
 	}
+	// A multi-line expected_old can never match: this tool compares against
+	// single lines, which never contain "\n". Say so instead of reporting a
+	// generic miss — 4 of 7 observed edit_line failures were this, and the
+	// model resent the identical call because the error looked like drift.
+	if strings.Contains(expectedOld, "\n") {
+		return 0, fmt.Errorf(
+			"expected_old spans %d lines but edit_line replaces exactly one line: use patch_file for a multi-line block, or pass a single line",
+			strings.Count(expectedOld, "\n")+1)
+	}
 	total := len(lines)
 	if total == 0 {
 		return 0, fmt.Errorf("file is empty, cannot anchor %q", expectedOld)
@@ -137,9 +146,16 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 	}
 	switch len(matches) {
 	case 0:
+		if line > total {
+			return 0, fmt.Errorf(
+				"line %d is past the end of the file (%d lines); expected %q",
+				line, total, snippet(expectedOld))
+		}
+		// The repair payload is the text that IS there: without it the model
+		// can only guess, and it re-sends the same anchor.
 		return 0, fmt.Errorf(
-			"expected content not found within %d lines of line %d (expected %q)",
-			AnchorSearchRadius, line, expectedOld)
+			"expected content not found within %d lines of line %d (expected %q); the file actually reads:\n%s",
+			AnchorSearchRadius, line, snippet(expectedOld), nearbyLines(lines, line))
 	case 1:
 		return matches[0], nil
 	default:
@@ -151,6 +167,24 @@ func resolveAnchor(lines []string, line int, expectedOld string) (int, error) {
 			"content is ambiguous near line %d (matches lines %v); provide more context",
 			line, nums)
 	}
+}
+
+// nearbyLines renders the hinted line and one neighbour on each side, so a
+// failed anchor carries the content needed to fix itself.
+func nearbyLines(lines []string, line int) string {
+	from := line - 1
+	if from < 1 {
+		from = 1
+	}
+	to := line + 1
+	if to > len(lines) {
+		to = len(lines)
+	}
+	var b strings.Builder
+	for i := from; i <= to; i++ {
+		fmt.Fprintf(&b, "%4d: %s\n", i, snippet(lines[i-1]))
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func trimIndent(s string) string { return strings.TrimLeft(s, " \t") }
