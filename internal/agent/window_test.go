@@ -110,24 +110,73 @@ func TestResolveContextWindowSharedCascadeAndShortAlias(t *testing.T) {
 	learned := llm.LoadLearnedLimits(t.TempDir())
 	learned.Learn("learned-model", 65_536)
 
-	if got := ResolveContextWindow("gpt-5.6-sol", 32_000, 64_000, caps, learned); got.Tokens != 32_000 || got.Source != "config" {
+	const local = "http://localhost:1234/v1"
+
+	if got := ResolveContextWindow("gpt-5.6-sol", 32_000, 64_000, caps, learned, local); got.Tokens != 32_000 || got.Source != "config" {
 		t.Fatalf("config resolution = %+v", got)
 	}
-	if got := ResolveContextWindow("gpt-5.6-sol", 0, 128_000, caps, learned); got.Tokens != 128_000 || got.Source != "provider" {
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 128_000, caps, learned, local); got.Tokens != 128_000 || got.Source != "provider" {
 		t.Fatalf("provider resolution = %+v", got)
 	}
-	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned); got.Tokens != 1_050_000 || got.Source != "catalog-alias" {
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned, local); got.Tokens != 1_050_000 || got.Source != "catalog-alias" {
 		t.Fatalf("short-id catalog resolution = %+v", got)
 	}
 	caps.Register(llm.ModelInfo{ID: "other/gpt-5.6-sol", ContextLength: 512_000})
-	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned); got.Tokens != 0 {
+	if got := ResolveContextWindow("gpt-5.6-sol", 0, 0, caps, learned, local); got.Tokens != 0 {
 		t.Fatalf("ambiguous short-id resolution = %+v, want unresolved", got)
 	}
-	if got := ResolveContextWindow("learned-model", 0, 0, caps, learned); got.Tokens != 65_536 || got.Source != "learned" {
+	if got := ResolveContextWindow("learned-model", 0, 0, caps, learned, local); got.Tokens != 65_536 || got.Source != "learned" {
 		t.Fatalf("learned resolution = %+v", got)
 	}
-	if got := ResolveContextWindow("unknown", 0, 0, caps, learned); got.Tokens != 0 || got.Source != "" {
+	if got := ResolveContextWindow("unknown", 0, 0, caps, learned, local); got.Tokens != 0 || got.Source != "" {
 		t.Fatalf("unknown resolution = %+v, want unresolved", got)
+	}
+}
+
+// TestResolveContextWindowUnknownRemoteModel pins the measured bug: a cloud
+// gateway that publishes no context_length at all (the grok-4.5 reseller used
+// for the live run) must not leave an unknown frontier model on the 16k
+// self-hosted fallback, where the prune trigger sits at ~9.8k and one ordinary
+// tool-heavy turn re-fires pruning every few calls.
+func TestResolveContextWindowUnknownRemoteModel(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	learned := llm.LoadLearnedLimits(t.TempDir())
+
+	got := ResolveContextWindow("grok-4.5", 0, 0, caps, learned, "https://x.example.invalid/v1")
+	if got.Source != "fallback-remote" {
+		t.Fatalf("unknown remote model resolved %+v, want the remote fallback", got)
+	}
+	if got.Tokens != defaultRemoteContextWindow {
+		t.Fatalf("remote fallback = %d, want %d", got.Tokens, defaultRemoteContextWindow)
+	}
+	if got.Tokens <= defaultContextWindow {
+		t.Fatalf("remote fallback %d must exceed the self-hosted fallback %d", got.Tokens, defaultContextWindow)
+	}
+
+	// Regression: a genuinely small self-hosted model stays protected. Local
+	// backends do report their n_ctx, and when they do not, an overflow there
+	// is not reliably reported as a recognizable context-length error — so the
+	// conservative fallback must survive for them.
+	for _, url := range []string{
+		"http://localhost:1234/v1",
+		"http://127.0.0.1:8080/v1",
+		"http://192.168.0.103:8087/v1",
+		"", // no endpoint known at all
+	} {
+		if got := ResolveContextWindow("some-local.gguf", 0, 0, caps, learned, url); got.Tokens != 0 {
+			t.Fatalf("local endpoint %q resolved %+v, want unresolved (loop applies %d)", url, got, defaultContextWindow)
+		}
+	}
+
+	// A real source still wins over the remote fallback in every direction,
+	// including a small learned limit recovered from a provider overflow.
+	learned.Learn("tiny-hosted", 8192)
+	if got := ResolveContextWindow("tiny-hosted", 0, 0, caps, learned, "https://x.example.invalid/v1"); got.Tokens != 8192 || got.Source != "learned" {
+		t.Fatalf("learned limit lost to the remote fallback: %+v", got)
+	}
+	caps.Register(llm.ModelInfo{ID: "small-hosted", ContextLength: 4096})
+	if got := ResolveContextWindow("small-hosted", 0, 0, caps, learned, "https://x.example.invalid/v1"); got.Tokens != 4096 || got.Source != "catalog" {
+		t.Fatalf("catalog entry lost to the remote fallback: %+v", got)
 	}
 }
 
