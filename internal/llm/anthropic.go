@@ -194,11 +194,11 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 			}
 		}
 		if !isRetryableHTTPStatus(resp.StatusCode) {
-			return nil, fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))
+			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
 		}
 		rateAttempts++
 		if rateAttempts >= maxAttempts {
-			return nil, fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))
+			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
 		}
 		backoff := retryWait(resp.Header, rateAttempts, waitBudget)
 		waitBudget -= backoff

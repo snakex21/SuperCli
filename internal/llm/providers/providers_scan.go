@@ -74,6 +74,10 @@ func (m *Manager) cacheProviderModels(name string, ids []string) {
 		if m.providers[i].Name != name {
 			continue
 		}
+		// Refresh the transport-side inventory even when config.toml needs no
+		// write: a rescan is exactly when a "model not available" error should
+		// start naming an up-to-date list.
+		llm.RememberProviderModels(m.providers[i].BaseURL, normalized)
 		if stringSlicesEqual(m.providers[i].CachedModels, normalized) {
 			return
 		}
