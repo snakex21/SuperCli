@@ -158,7 +158,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 			continue
 		}
-		return nil, fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(respBody), badRequestEffortHint(resp.StatusCode, respBody), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))
+		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BackendURL, p.cfg.Model, resp.StatusCode, respBody))
 	}
 }
 

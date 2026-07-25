@@ -265,7 +265,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			if !isRetryableHTTPStatus(resp.StatusCode) {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))}:
+				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body))}:
 				case <-ctx.Done():
 				}
 				return
@@ -273,7 +273,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			rateAttempts++
 			if rateAttempts >= maxAttempts {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s%s%s", resp.StatusCode, string(body), badRequestEffortHint(resp.StatusCode, body), rateLimitExhaustedHint(p.cfg.Model, resp.StatusCode))}:
+				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body))}:
 				case <-ctx.Done():
 				}
 				return

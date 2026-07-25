@@ -55,6 +55,12 @@ func (m *Manager) Reload() {
 		return
 	}
 	m.providers = tc.Providers
+	// Hand the cached inventory to the transport layer. A provider that
+	// rejects the configured model can then answer with the models it does
+	// serve instead of a bare HTTP status the user cannot act on.
+	for _, p := range m.providers {
+		llm.RememberProviderModels(p.BaseURL, p.CachedModels)
+	}
 	if m.repairUnnamedProvidersLocked() {
 		// Older GUI builds accepted an empty provider name. Preserve the whole
 		// provider (including credentials and selected model), but give it a
