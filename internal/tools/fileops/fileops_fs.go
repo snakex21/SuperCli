@@ -44,7 +44,12 @@ func WriteFile(path, content string) (WriteResult, error) {
 	// Overwriting a binary file with text destroys it irrecoverably (no
 	// backup is taken here), and writing text to a path NAMED like a
 	// binary document produces a file its application cannot open.
-	if err := EnsureTextFile(path); err != nil {
+	//
+	// A file that is merely in the WRONG TEXT ENCODING is the opposite
+	// case: overwriting it with UTF-8 is the repair. This is the only
+	// path that can perform that repair — the line tools and create_file
+	// all refuse such a file — so it must not be blocked here.
+	if err := EnsureOverwritableFile(path); err != nil {
 		return WriteResult{}, err
 	}
 	_, statErr := os.Stat(path)
