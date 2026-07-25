@@ -56,9 +56,25 @@ func (s *OutputStore) Compact(toolName, text string) string {
 			fmt.Sprintf("\n[output preview only: %d bytes; result exceeded the in-memory store limit]", len(text))
 	}
 	preview := HeadTail(text, outputPreviewHead, outputPreviewTail)
+	offset, limit := nextChunkHint(len(text))
 	return fmt.Sprintf("[large tool output: %d bytes; preview follows; handle=%s]\n%s\n"+
-		"[inspect more with read_output {\"handle\":%q,\"offset\":4096,\"limit\":4096}; handle is valid during this run]",
-		len(text), handle, preview, handle)
+		"[inspect more with read_output {\"handle\":%q,\"offset\":%d,\"limit\":%d}; handle is valid during this run]",
+		len(text), handle, preview, handle, offset, limit)
+}
+
+// nextChunkHint picks the offset/limit the model is told to ask for. Models
+// follow this hint literally, so every byte it leaves on the table costs a
+// whole extra round trip. The offset resumes exactly where the preview's head
+// stopped — 4096 used to skip a kilobyte nobody had seen — and the limit is
+// the largest read_output actually accepts, clamped to what is left so the
+// hint never points past the end. It can never exceed outputReadMax, which is
+// what the tool's own schema advertises as the maximum.
+func nextChunkHint(total int) (offset, limit int) {
+	offset = outputPreviewHead
+	if limit = total - offset; limit > outputReadMax {
+		limit = outputReadMax
+	}
+	return offset, limit
 }
 
 func (s *OutputStore) put(text string) (string, bool) {
