@@ -664,6 +664,12 @@ func TestReplay_InvokeTool_SkipsToolSearchTurn(t *testing.T) {
 					}
 				}
 			}
+			// The rewrite above is exactly why successes are invisible: the
+			// dispatcher's name is gone from history and stats. The counter is
+			// the only place a working dispatch can still be observed.
+			if got := l.InvokeToolDispatches(); got != 1 {
+				t.Errorf("successful dispatch not counted: got %d, want 1", got)
+			}
 			assertToolPairing(t, l.Messages)
 		})
 	}

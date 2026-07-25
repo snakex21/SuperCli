@@ -160,6 +160,14 @@ type Loop struct {
 	// the actual tool execution). Populated per
 	// iteration from the verifier's toolCalls slice.
 	upcomingTools []string
+	// invoke_tool dispatch counters. A resolved envelope is rewritten to
+	// its target before anything is recorded, so successes leave no trace
+	// while failures do — the dispatcher's hit rate was unmeasurable.
+	// invokeDispatchStep is the current step's count (loop goroutine only,
+	// reset per step); invokeDispatchTotal is the session total and is read
+	// from outside the loop goroutine.
+	invokeDispatchStep  int
+	invokeDispatchTotal atomic.Int64
 	// Last draft plan we injected, kept so we can
 	// compare to the verifier's first text response
 	// to compute savings / detect overrides.

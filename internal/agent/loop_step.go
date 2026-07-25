@@ -244,7 +244,16 @@ func (l *Loop) runStep(
 	// unique tool names for the per-turn report.
 	if l.stats != nil && len(toolCalls) > 0 {
 		l.stats.RecordToolCalls(len(toolCalls))
-		l.stats.RecordTools(l.upcomingTools)
+		// A dispatched call is recorded under its TARGET name above, which
+		// is what verification and error attribution need — but it also
+		// erases the fact that invoke_tool got it there. Name the
+		// dispatcher too, so the turn log shows both. upcomingTools itself
+		// stays untouched: the draft policy reasons about real tools.
+		names := l.upcomingTools
+		if l.invokeDispatchStep > 0 {
+			names = append(append([]string{}, names...), invokeToolName)
+		}
+		l.stats.RecordTools(names)
 	}
 
 	if len(toolCalls) == 0 {
