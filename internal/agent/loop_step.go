@@ -313,15 +313,15 @@ func (l *Loop) runStep(
 	}
 
 	toolStart := time.Now()
-	toolsOK, toolFailures := l.invokeToolCalls(ctx, toolCalls, out)
+	toolsOK, toolFailures, toolInert := l.invokeToolCalls(ctx, toolCalls, out)
 	l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
 	if !toolsOK {
 		l.statsEndStep(stepStart)
 		return stepAbort
 	}
-	progressing := limitProgress.observe(toolCalls, toolFailures)
+	progressing := limitProgress.observe(toolCalls, toolFailures, toolInert)
 	if discoveryProg != nil {
-		switch discoveryProg.observe(toolCalls, toolFailures) {
+		switch discoveryProg.observe(toolCalls, toolFailures, toolInert) {
 		case discoveryNudge:
 			nudge := llm.Message{
 				Role: llm.RoleSystem,

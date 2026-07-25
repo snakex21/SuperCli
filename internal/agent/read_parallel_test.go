@@ -34,7 +34,7 @@ func TestReadOnlyToolBatchRunsConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := make(chan Event, 16)
-	ok, failures := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
+	ok, failures, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
 		{ID: "1", Name: "read_a", Arguments: `{}`},
 		{ID: "2", Name: "read_b", Arguments: `{}`},
 	}, out)
@@ -65,7 +65,7 @@ func TestMixedToolBatchStaysSequential(t *testing.T) {
 	reg.MustRegister(tools.Tool{Name: "write", Description: "write", Schema: `{}`, Fn: fn})
 	loop, _ := NewLoop(LoopConfig{Provider: echoProvider("ok"), Registry: reg})
 	out := make(chan Event, 16)
-	ok, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
+	ok, _, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
 		{ID: "1", Name: "read", Arguments: `{}`},
 		{ID: "2", Name: "write", Arguments: `{}`},
 	}, out)

@@ -28,25 +28,31 @@ type adaptiveReflectionProgress struct {
 // the previous batch so an exact tool-call loop never earns extra steps.
 // Only a successful mutation or execution batch can extend the soft limit.
 // Discovery, unknown tools, and failed mutations never count as progress.
+// A batch may buy extra budget once per Run: remembering only the previous
+// batch let an A-B-A-B alternation collect a bonus on every single step.
 type stepLimitProgress struct {
-	lastBatch [sha256.Size]byte
-	haveBatch bool
+	granted map[[sha256.Size]byte]bool
 }
 
-func (p *stepLimitProgress) observe(calls []llm.ToolCall, failures int) bool {
+func (p *stepLimitProgress) observe(calls []llm.ToolCall, failures, inert int) bool {
 	if len(calls) == 0 || failures > 0 {
 		return false
 	}
 	// Soft step extension only after a clean mutation/execution batch.
-	// Unknown tools and pure discovery must not buy more budget.
-	if !batchHasSuccessfulProgress(calls, failures) {
+	// Unknown tools, pure discovery and edits that changed nothing new
+	// must not buy more budget.
+	if !batchHasSuccessfulProgress(calls, failures, inert) {
 		return false
 	}
 	fingerprint := toolCallBatchFingerprint(calls)
-	repeated := p.haveBatch && fingerprint == p.lastBatch
-	p.lastBatch = fingerprint
-	p.haveBatch = true
-	return !repeated
+	if p.granted[fingerprint] {
+		return false
+	}
+	if p.granted == nil {
+		p.granted = make(map[[sha256.Size]byte]bool)
+	}
+	p.granted[fingerprint] = true
+	return true
 }
 
 // discoveryCallSoftLimit: after this many non-progress tool calls, inject
@@ -83,12 +89,12 @@ type discoveryProgress struct {
 
 // observe updates counters from a finished tool batch.
 // failures is the number of failed calls in the batch (post-verification).
-func (p *discoveryProgress) observe(calls []llm.ToolCall, failures int) discoverySignal {
+func (p *discoveryProgress) observe(calls []llm.ToolCall, failures, inert int) discoverySignal {
 	if len(calls) == 0 {
 		return discoveryNone
 	}
 	// Successful mutation/execution anywhere in the batch is real progress.
-	if batchHasSuccessfulProgress(calls, failures) {
+	if batchHasSuccessfulProgress(calls, failures, inert) {
 		p.callStreak = 0
 		p.recent = p.recent[:0]
 		return discoveryNone
@@ -214,19 +220,25 @@ func batchIsDiscoveryOnly(calls []llm.ToolCall) bool {
 }
 
 // batchHasSuccessfulProgress is true only when the batch contains at least one
-// mutation or execution call AND the batch had zero failures. A failed patch
-// must not reset discovery counters or extend step budget.
-func batchHasSuccessfulProgress(calls []llm.ToolCall, failures int) bool {
+// productive mutation or execution call AND the batch had zero failures. A
+// failed patch must not reset discovery counters or extend step budget.
+//
+// inert is how many of those calls succeeded without producing anything new —
+// today a patch that only duplicated text the file already contained. Such a
+// call is a write, not progress; counting it as progress is what kept a
+// self-repeating edit loop funded.
+func batchHasSuccessfulProgress(calls []llm.ToolCall, failures, inert int) bool {
 	if failures > 0 || len(calls) == 0 {
 		return false
 	}
+	productive := 0
 	for _, c := range calls {
 		switch toolKind(c.Name) {
 		case "mutation", "execution":
-			return true
+			productive++
 		}
 	}
-	return false
+	return productive > inert
 }
 
 // identicalFailureGate blocks a third identical failed tool call (same
@@ -262,6 +274,39 @@ func (g *identicalFailureGate) recordSuccess(name, args string) {
 	delete(g.counts, g.key(name, args))
 }
 
+// repeatedMutationLimit is how many identical successful mutations one Run may
+// apply before the next one is refused. Two are conceivable (an edit undone in
+// between, a deliberate second identical append); a third is a loop, never a
+// plan. Set against a real session that sent the same successful patch_file 23
+// times because nothing in the loop counted successes.
+const repeatedMutationLimit = 2
+
+// identicalSuccessGate is the mirror of identicalFailureGate for calls that
+// SUCCEED. Only mutations are counted: repeating a read (the same read_lines
+// range after the file changed, a re-listed directory) is ordinary work, while
+// re-applying the identical edit is not. Arguments are fingerprinted, so the
+// gate sees through key reordering and refreshed advisory fields.
+type identicalSuccessGate struct {
+	counts map[[sha256.Size]byte]int
+}
+
+func (g *identicalSuccessGate) shouldBlock(name, args string) bool {
+	if g.counts == nil || toolKind(name) != "mutation" {
+		return false
+	}
+	return g.counts[toolCallFingerprint(name, args)] >= repeatedMutationLimit
+}
+
+func (g *identicalSuccessGate) recordSuccess(name, args string) {
+	if toolKind(name) != "mutation" {
+		return
+	}
+	if g.counts == nil {
+		g.counts = make(map[[sha256.Size]byte]int)
+	}
+	g.counts[toolCallFingerprint(name, args)]++
+}
+
 func (p *adaptiveReflectionProgress) observe(step, maxSteps int, calls []llm.ToolCall, failures int) string {
 	fingerprint := toolCallBatchFingerprint(calls)
 	if p.haveBatch && fingerprint == p.lastBatch {
@@ -295,8 +340,20 @@ func (p *adaptiveReflectionProgress) reset() {
 	p.failedBatchStreak = 0
 }
 
+// advisoryArgKeys are top-level argument fields that carry optimistic
+// concurrency data rather than the identity of the requested action. The model
+// refreshes them between attempts (patch_file's base_hash becomes the previous
+// call's after_hash), so keeping them in the fingerprint made a byte-identical
+// edit look like a brand-new call every time — measured on a real session, 19
+// of 20 consecutive repeats were invisible to every repeat detector. Dropped
+// only at the top level: nested user data with the same key name is content.
+var advisoryArgKeys = map[string]bool{
+	"base_hash": true,
+}
+
 // normalizeToolArgsJSON reorders object keys so semantically identical
-// argument objects hash the same regardless of key order.
+// argument objects hash the same regardless of key order, and drops advisory
+// fields that do not change what the call actually does.
 func normalizeToolArgsJSON(args string) string {
 	args = strings.TrimSpace(args)
 	if args == "" || args == "null" {
@@ -305,6 +362,11 @@ func normalizeToolArgsJSON(args string) string {
 	var v any
 	if err := json.Unmarshal([]byte(args), &v); err != nil {
 		return args
+	}
+	if obj, ok := v.(map[string]any); ok {
+		for k := range advisoryArgKeys {
+			delete(obj, k)
+		}
 	}
 	norm, err := json.Marshal(canonicalizeJSON(v))
 	if err != nil {

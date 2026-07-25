@@ -20,6 +20,12 @@ type Result struct {
 	Text  string
 	Image *ImageContent
 	Err   error
+	// Inert marks a call that succeeded without producing anything new —
+	// a mutation whose write left the world where it already was. The agent
+	// loop excludes such calls from progress accounting so they cannot reset
+	// loop detectors or earn extra step budget. Nothing is sent to the model
+	// because of this field; the explanation, if any, is in Text.
+	Inert bool
 }
 
 // ImageContent holds an image produced by a tool. The agent loop

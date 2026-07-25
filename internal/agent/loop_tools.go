@@ -18,7 +18,11 @@ type toolResult struct {
 	followUps []llm.Message
 	fatal     bool
 	failed    bool
-	err       error
+	// inert: the call succeeded but changed nothing that did not already
+	// exist. Kept apart from failed — the model is told the truth (it
+	// worked) while progress accounting refuses to bank it.
+	inert bool
+	err   error
 }
 
 // invokeToolCalls runs the model's tool-call batch and appends the matching
@@ -29,7 +33,9 @@ type toolResult struct {
 // taskParallel — on a single local GPU the workers serialize on one server
 // slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
 // so local backends default to sequential; cloud backends run parallel.
-func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
+//
+// The third return is how many calls succeeded inertly (see toolResult.inert).
+func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int, int) {
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
@@ -46,11 +52,14 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
 
-	failures := 0
+	failures, inert := 0, 0
 	for _, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
 		if ev.failed {
 			failures++
+		}
+		if ev.inert {
+			inert++
 		}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
@@ -58,10 +67,10 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false, failures
+			return false, failures, inert
 		}
 	}
-	return true, failures
+	return true, failures, inert
 }
 
 func allTaskCalls(toolCalls []llm.ToolCall) bool {
@@ -86,7 +95,7 @@ func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
 	return true
 }
 
-func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int) {
+func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int, int) {
 	type item struct {
 		idx int
 		res toolResult
@@ -112,10 +121,13 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 
 	// Append tool results in the same order as the assistant's tool calls so
 	// provider APIs that expect call/result pairing stay deterministic.
-	failures := 0
+	failures, inert := 0, 0
 	for _, ev := range results {
 		if ev.failed {
 			failures++
+		}
+		if ev.inert {
+			inert++
 		}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
@@ -123,10 +135,10 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false, failures
+			return false, failures, inert
 		}
 	}
-	return true, failures
+	return true, failures, inert
 }
 
 // invoke runs a single tool call, emits the matching events, and
@@ -165,6 +177,27 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		msg := fmt.Sprintf(
 			"blocked: tool %q with these exact arguments already failed twice in this run; change arguments or strategy (do not retry identically)",
 			tc.Name,
+		)
+		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", msg)}
+		return toolResult{
+			failed: true,
+			followUps: []llm.Message{{
+				Role:       llm.RoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Name,
+				Content:    msg,
+			}},
+		}
+	}
+
+	// The mirror case, and the one that cost a whole session: the identical
+	// edit keeps SUCCEEDING. Nothing pushes back on a write that works, so
+	// the same patch was applied 23 times. Repeats of a read are fine and
+	// never reach here; only mutations are counted.
+	if l.identicalWrites.shouldBlock(tc.Name, tc.Arguments) {
+		msg := fmt.Sprintf(
+			"blocked: tool %q with these exact arguments already succeeded %d times in this run; the edit is already applied — verify the file instead of repeating it",
+			tc.Name, repeatedMutationLimit,
 		)
 		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", msg)}
 		return toolResult{
@@ -217,6 +250,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		l.identicalFails.recordFailure(tc.Name, tc.Arguments)
 	} else {
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments)
+		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 	}
 
 	// F4.d: classify any error/verification failure and
@@ -298,7 +332,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			},
 		})
 	}
-	return toolResult{followUps: follow}
+	return toolResult{followUps: follow, inert: res.Inert}
 }
 
 func isPassingGoalVerification(name string, raw json.RawMessage) bool {

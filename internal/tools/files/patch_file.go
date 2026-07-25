@@ -98,5 +98,8 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 		"Patched %s: replacements=%d changed=%s before_hash=%s after_hash=%s",
 		a.Path, res.Replacements, changed, res.BeforeHash, res.AfterHash,
 	)
-	return Result{Text: text}, nil
+	if res.Note != "" {
+		text += " " + res.Note
+	}
+	return Result{Text: text, Inert: res.Duplicated}, nil
 }
