@@ -231,3 +231,30 @@ func TestUIScaleKeepsLayoutInsideEffectiveViewport(t *testing.T) {
 		}
 	}
 }
+
+// A window that has not been laid out yet reports innerWidth/innerHeight of
+// 0. Pinning the root box to that measurement collapses the app to 1px, and
+// because `body { overflow: hidden }` there is no page scrollbar to recover
+// with: the transcript becomes 0px tall and cannot be scrolled at all.
+func TestViewportScaleIgnoresUnmeasuredWindow(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"window.innerWidth > 0 && window.innerHeight > 0",
+		"function scheduleViewportRemeasure()",
+		"scheduleViewportRemeasure();",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("viewport scaling no longer guards an unmeasured window: missing %q", required)
+		}
+	}
+	// The retry must use a timer: an unrendered window never runs animation
+	// frames, so requestAnimationFrame would never recover the layout.
+	remeasure := js[strings.Index(js, "function scheduleViewportRemeasure()"):]
+	remeasure = remeasure[:strings.Index(remeasure, "function applyViewportScale()")]
+	if strings.Contains(remeasure, "requestAnimationFrame") {
+		t.Fatal("viewport re-measure must not depend on requestAnimationFrame; an unrendered window never fires it")
+	}
+	if !strings.Contains(remeasure, "setTimeout") {
+		t.Fatal("viewport re-measure must retry on a timer")
+	}
+}

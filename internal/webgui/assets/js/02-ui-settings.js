@@ -61,12 +61,44 @@ function resolvedUIScale() {
   }
   return scale;
 }
+// A window that has not been laid out yet (a desktop window still being
+// created, a hidden or minimized one) reports a 0-sized viewport.
+var viewportMeasurable = function () { return window.innerWidth > 0 && window.innerHeight > 0; };
+// Poll with a timer, not requestAnimationFrame: an unrendered window (the
+// very case we are waiting out) never runs animation frames.
+var viewportRetryTimer = 0;
+var viewportRetryDelay = 0;
+function scheduleViewportRemeasure() {
+  if (viewportRetryTimer) return;
+  viewportRetryDelay = Math.min(1000, (viewportRetryDelay || 25) * 2);
+  viewportRetryTimer = setTimeout(function () {
+    viewportRetryTimer = 0;
+    applyViewportScale();
+  }, viewportRetryDelay);
+}
 function applyViewportScale() {
+  var root = document.documentElement;
+  root.dataset.uiScale = ui.uiScale || "auto";
+  // Pinning the root box to a 0-sized measurement freezes the whole app at
+  // 1px: .stage ends up 0px tall, so the transcript can never be scrolled,
+  // and `body { overflow: hidden }` leaves no page scrollbar to fall back
+  // on. Stay on the stylesheet's `html, body { height: 100% }` until the
+  // window can actually be measured — `resize` is not guaranteed to fire
+  // for the first real layout.
+  if (!viewportMeasurable()) {
+    root.style.removeProperty("zoom");
+    root.style.removeProperty("width");
+    root.style.removeProperty("height");
+    root.style.setProperty("--app-viewport-width", "100vw");
+    root.style.setProperty("--app-viewport-height", "100vh");
+    root.style.setProperty("--ui-scale", 1);
+    scheduleViewportRemeasure();
+    return;
+  }
+  viewportRetryDelay = 0;
   var scale = resolvedUIScale();
   var width = Math.max(1, window.innerWidth / scale);
   var height = Math.max(1, window.innerHeight / scale);
-  var root = document.documentElement;
-  root.dataset.uiScale = ui.uiScale || "auto";
   root.style.zoom = scale;
   root.style.width = width + "px";
   root.style.height = height + "px";
@@ -89,6 +121,13 @@ function applyUI() {
 window.addEventListener("resize", function () {
   applyViewportScale();
 });
+// Second signal: some embedders (desktop window, restored-from-minimized)
+// resize the page without delivering a window `resize` event.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", function () {
+    applyViewportScale();
+  });
+}
 async function loadUI() {
   try { Object.assign(ui, JSON.parse(localStorage.getItem("supercli-ui") || "{}")); } catch (e) {}
   applyUI();
