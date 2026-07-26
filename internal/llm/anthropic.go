@@ -166,6 +166,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 	waitBudget := rateLimitWaitBudget
 	rateAttempts := 0
 	thinkingRetried := false
+	betaRetried := false
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
@@ -174,6 +175,11 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("anthropic-version", anthropicVersion)
+		// Beta features this endpoint has demanded on an earlier request
+		// (see anthropic_beta.go). Empty for every endpoint that never asked.
+		if beta := endpointBetaHeader(p.cfg.BaseURL); beta != "" {
+			req.Header.Set("anthropic-beta", beta)
+		}
 		if p.cfg.APIKey != "" {
 			req.Header.Set("x-api-key", p.cfg.APIKey)
 		}
@@ -186,6 +192,19 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
+		// The endpoint refused until a beta feature is opted into. The body is
+		// drained and closed above, the request bytes are unchanged and nothing
+		// has been written anywhere, so replaying it is free of side effects —
+		// including for the streaming path, where the stream is only handed to
+		// the caller after do returns. Once per call, and never for a feature
+		// already being sent: a gate that stays shut with the header on is a
+		// real error and must surface as one.
+		if header, ok := looksLikeBetaRequired(resp.StatusCode, respBody); ok &&
+			!betaRetried && !endpointRequiresBeta(p.cfg.BaseURL, header) {
+			rememberEndpointBeta(p.cfg.BaseURL, header)
+			betaRetried = true
+			continue
+		}
 		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody); ok && !thinkingRetried {
 			if patched, patchedOK := patchAnthropicThinking(body, effort); patchedOK {
 				body = patched
