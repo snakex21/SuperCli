@@ -288,12 +288,22 @@ function clearQueueDropState() {
   });
 }
 
+var queueDropCommitRatio = 0.72;
+
+function queuedDropPlacement(event, targetIndex) {
+  var sourceIndex = queuedTaskIndex(promptQueueDragID);
+  if (sourceIndex < 0 || sourceIndex === targetIndex) return "";
+  var rect = event.currentTarget.getBoundingClientRect();
+  var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+  if (sourceIndex < targetIndex) return ratio >= queueDropCommitRatio ? "after" : "before";
+  return ratio <= 1 - queueDropCommitRatio ? "before" : "after";
+}
+
 function queuedDropPosition(event, targetIndex) {
   var sourceIndex = queuedTaskIndex(promptQueueDragID);
   if (sourceIndex < 0) return targetIndex;
-  var rect = event.currentTarget.getBoundingClientRect();
-  var after = event.clientY >= rect.top + rect.height / 2;
-  if (after) return targetIndex + (sourceIndex > targetIndex ? 1 : 0);
+  var placement = queuedDropPlacement(event, targetIndex);
+  if (placement === "after") return targetIndex + (sourceIndex > targetIndex ? 1 : 0);
   return targetIndex - (sourceIndex < targetIndex ? 1 : 0);
 }
 
@@ -314,9 +324,11 @@ function wireQueuedTaskDrag(row, handle, item, index) {
     if (!promptQueueDragID || promptQueueDragID === item.id) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    var rect = row.getBoundingClientRect();
-    row.classList.toggle("queue-drop-before", event.clientY < rect.top + rect.height / 2);
-    row.classList.toggle("queue-drop-after", event.clientY >= rect.top + rect.height / 2);
+    var sourceIndex = queuedTaskIndex(promptQueueDragID);
+    var position = queuedDropPosition(event, index);
+    var placement = position === sourceIndex ? "" : queuedDropPlacement(event, index);
+    row.classList.toggle("queue-drop-before", placement === "before");
+    row.classList.toggle("queue-drop-after", placement === "after");
   });
   row.addEventListener("dragleave", function (event) {
     if (!row.contains(event.relatedTarget)) {
