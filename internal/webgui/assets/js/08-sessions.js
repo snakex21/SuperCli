@@ -319,7 +319,7 @@ async function loadOlderTranscript() {
 async function resumeSession(id, session) {
   if (streaming) {
     toast(t("session.stopRun"));
-    return;
+    return false;
   }
   var resumeSeq = ++sessionResumeSeq;
   var epoch = projectEpoch;
@@ -334,7 +334,7 @@ async function resumeSession(id, session) {
     var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=" + transcriptPageSize,
       { signal: controller.signal });
     var msgs = page.messages || [];
-    if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return;
+    if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
     activeSessionID = id;
     transcriptSessionID = id;
     loadedTranscriptMessages = msgs;
@@ -420,8 +420,10 @@ async function resumeSession(id, session) {
     // restoreSessionRuntime without rolling back the opened transcript.
     runtimeQueued = true;
     restoreSessionRuntime(session).then(releaseRuntimeReady, releaseRuntimeReady);
+    return true;
   } catch (e) {
     if (e.name !== "AbortError") toast(t("common.error") + ": " + e.message);
+    return false;
   } finally {
     if (!runtimeQueued) releaseRuntimeReady();
     streamAppendTarget = null;
@@ -430,4 +432,3 @@ async function resumeSession(id, session) {
   }
 }
 $("#reload-sessions").addEventListener("click", loadSessions);
-
