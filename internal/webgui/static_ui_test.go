@@ -187,6 +187,19 @@ func TestModelContextControlIsDiscoverableInPalette(t *testing.T) {
 	}
 }
 
+func TestModelPaletteExcludesHiddenModels(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"function paletteModels(models)",
+		"filter(function (m) { return !m.hidden; })",
+		"paletteModels(modelCache).forEach",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("model palette no longer excludes hidden models: missing %q", required)
+		}
+	}
+}
+
 func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	content, err := assetsFS.ReadFile("assets/app.css")
 	if err != nil {

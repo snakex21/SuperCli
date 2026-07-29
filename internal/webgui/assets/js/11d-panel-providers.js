@@ -6,6 +6,41 @@ function providerModelCount(models) {
   return Array.isArray(models) ? models.length : (Number(models) || 0);
 }
 
+// providerSlug normalizes a provider name to a filename-safe icon key.
+function providerSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+}
+
+// providerIconEl builds a small provider badge. It renders a colored monogram
+// immediately, then tries to swap in a bundled SVG from icons/providers/.
+// Regional variants (xiaomi-tokenplan-global) fall back to the family icon
+// (xiaomi) after the slug, so one logo covers the whole family. Anything with
+// no bundled icon keeps the monogram — a new provider is never left blank.
+function providerIconEl(name) {
+  var slug = providerSlug(name);
+  var family = slug.split("-")[0];
+  var wrap = el("span", "prov-icon");
+  var letter = (family.charAt(0) || "?").toUpperCase();
+  var mono = el("span", "prov-mono", letter);
+  var h = 0;
+  for (var i = 0; i < slug.length; i++) h = ((h * 31) + slug.charCodeAt(i)) >>> 0;
+  mono.style.background = "hsl(" + (h % 360) + " 52% 42%)";
+  wrap.appendChild(mono);
+  var candidates = [];
+  if (slug) candidates.push("icons/providers/" + slug + ".svg");
+  if (family && family !== slug) candidates.push("icons/providers/" + family + ".svg");
+  if (candidates.length) {
+    var idx = 0;
+    var img = new Image();
+    img.className = "prov-img";
+    img.alt = "";
+    img.addEventListener("load", function () { mono.style.display = "none"; wrap.appendChild(img); });
+    img.addEventListener("error", function () { idx++; if (idx < candidates.length) img.src = candidates[idx]; });
+    img.src = candidates[0];
+  }
+  return wrap;
+}
+
 async function renderProvidersList() {
   var got;
   try { got = await j("/api/providers"); } catch (e) {
@@ -23,6 +58,7 @@ async function renderProvidersList() {
   if (!provs.length) g.appendChild(el("div", "note", t("prov.none")));
   provs.forEach(function (p) {
     var row = el("div", "list-row" + (p.Disabled ? " provider-disabled" : ""));
+    row.appendChild(providerIconEl(p.Name));
     var main = el("div", "lr-main");
     var title = el("div", "lr-title");
     title.innerHTML = "<strong>" + escHtml(p.Name) + "</strong> <span class='note'>" + escHtml(p.Type || "") + "</span>";
@@ -226,8 +262,11 @@ function renderProviderForm(templates, existing) {
     templates.forEach(function (tpl) {
       var b = el("button");
       b.type = "button";
-      b.appendChild(el("span", "tt", tpl.Name));
-      b.appendChild(el("span", "ts", tpl.Desc || tpl.BaseURL || ""));
+      b.appendChild(providerIconEl(tpl.Name));
+      var txt = el("span", "tpl-txt");
+      txt.appendChild(el("span", "tt", tpl.Name));
+      txt.appendChild(el("span", "ts", tpl.Desc || tpl.BaseURL || ""));
+      b.appendChild(txt);
       b.addEventListener("click", function () {
         grid.querySelectorAll("button").forEach(function (x) { x.classList.remove("sel"); });
         b.classList.add("sel");
