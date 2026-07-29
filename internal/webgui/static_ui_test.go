@@ -228,6 +228,20 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 	}
 }
 
+func TestQueuedMessageOpensItsConversationBeforeSending(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"return await resumeSession(item.session_id, sessionByID[item.session_id] || null)",
+		"if (!await prepareQueuedTask(item))",
+		"if (!immediate.id || await removeQueuedTask(immediate.id)) next = immediate",
+		"if (!await prepareQueuedTask(queued))",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("queued message can run outside its visible conversation: missing %q", required)
+		}
+	}
+}
+
 func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	content, err := assetsFS.ReadFile("assets/app.css")
 	if err != nil {

@@ -445,10 +445,20 @@ async function removeQueuedTask(id) {
   catch (e) { toast(e.message); return false; }
 }
 async function runQueuedTask(item, interrupt) {
+  if (interrupt && streaming) {
+    pendingImmediate = item;
+    pauseQueue = false;
+    if (abortCtl) abortCtl.abort();
+    return;
+  }
+  if (!await prepareQueuedTask(item)) {
+    pauseQueue = true;
+    renderPromptQueue();
+    return;
+  }
   if (!await removeQueuedTask(item.id)) return;
   pauseQueue = false;
-  if (interrupt) interruptAndSend(item.text, item, item.attachments || []);
-  else { await prepareQueuedTask(item); sendPrompt(item.text, item.attachments || []); }
+  sendPrompt(item.text, item.attachments || []);
 }
 function renderTaskCenter() {
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
@@ -573,9 +583,12 @@ async function loadSideGoal() {
 $("#reload-tasks").addEventListener("click", function () { loadPromptQueue(); loadWorkers(); });
 $("#manage-side-goal").addEventListener("click", function () { openPanel("goal"); });
 async function prepareQueuedTask(item) {
-  if (!item || !item.session_id) return;
-  activeSessionID = item.session_id;
-  if (sessionByID[item.session_id]) await restoreSessionRuntime(sessionByID[item.session_id]);
+  if (!item || !item.session_id) return true;
+  if (activeSessionID === item.session_id && transcriptSessionID === item.session_id) {
+    if (sessionByID[item.session_id]) await restoreSessionRuntime(sessionByID[item.session_id]);
+    return true;
+  }
+  return await resumeSession(item.session_id, sessionByID[item.session_id] || null);
 }
 function interruptAndSend(text, item, attachments) {
   pendingImmediate = item || { text: text, session_id: activeSessionID, attachments: attachments || [] };
@@ -717,13 +730,21 @@ async function sendPrompt(text, attachments) {
     var immediate = pendingImmediate;
     pendingImmediate = null;
 	var next = null;
-	if (immediate) { await prepareQueuedTask(immediate); next = immediate; }
+	if (immediate) {
+	  if (await prepareQueuedTask(immediate)) {
+	    if (!immediate.id || await removeQueuedTask(immediate.id)) next = immediate;
+	  } else {
+	    pauseQueue = true;
+	  }
+	}
     if (!next && !pauseQueue && promptQueue.length) {
       var queued = promptQueue[0];
-      if (!await removeQueuedTask(queued.id)) queued = null;
-	  if (!queued) { renderPromptQueue(); return; }
-	  await prepareQueuedTask(queued);
-      next = { text: queued.text, attachments: queued.attachments || [] };
+	  if (!await prepareQueuedTask(queued)) {
+	    pauseQueue = true;
+	  } else if (!await removeQueuedTask(queued.id)) {
+	    queued = null;
+	  }
+	  if (queued && !pauseQueue) next = { text: queued.text, attachments: queued.attachments || [] };
     }
     renderPromptQueue();
     if (next) setTimeout(function () { sendPrompt(next.text, next.attachments || []); }, 0);
