@@ -1073,11 +1073,22 @@ a:hover { text-decoration: underline; }
 .tpl-grid button {
   text-align: left; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 7px 9px;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
 }
 .tpl-grid button:hover { border-color: var(--muted); }
 .tpl-grid button.sel { border-color: var(--accent); background: var(--accent-soft); }
-.tpl-grid .tt { font-size: 12px; display: block; }
+.tpl-grid .tpl-txt { min-width: 0; flex: 1; }
+.tpl-grid .tt { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tpl-grid .ts { font-size: 10px; color: var(--faint); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Provider badge: colored monogram, swapped for a bundled SVG when present. */
+.prov-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.prov-icon .prov-mono {
+  width: 20px; height: 20px; border-radius: 4px; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 600 11px var(--sans, sans-serif); line-height: 1;
+}
+.prov-icon .prov-img { width: 20px; height: 20px; border-radius: 4px; object-fit: contain; }
 
 /* Form grid */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -32,6 +32,13 @@ function slimModels(models) {
   });
 }
 
+// The palette is a fast model picker, so it contains only selectable models.
+// Hidden entries remain in modelCache for the active-context control and in
+// Settings > Models, where users can make them visible again.
+function paletteModels(models) {
+  return (models || []).filter(function (m) { return !m.hidden; });
+}
+
 async function loadModels() {
   try {
     var got = await j("/api/models");
@@ -110,12 +117,11 @@ $("#model-context-input").addEventListener("keydown", function (event) {
 function renderModelList(filter) {
   var list = $("#model-list");
   list.innerHTML = "";
-  modelCache.forEach(function (m) {
+  paletteModels(modelCache).forEach(function (m) {
     if (filter && (m.id + " " + m.provider).toLowerCase().indexOf(filter) < 0) return;
     var isActive = m.id === activeModelID && (!activeProviderID || m.provider === activeProviderID);
-    var row = el("div", "prow" + (isActive ? " active" : "") + (m.hidden ? " hidden-model" : ""));
-    // Small state dot: green = visible, red = hidden (information, not lacquer).
-    row.appendChild(el("span", "state-dot " + (m.hidden ? "off" : "on")));
+    var row = el("div", "prow" + (isActive ? " active" : ""));
+    row.appendChild(el("span", "state-dot on"));
     row.appendChild(el("span", "pid", m.id));
     row.appendChild(el("span", "pprov", m.provider || ""));
     if (m.context_length) row.appendChild(el("span", "pbadge", fmtTok(m.context_length)));
@@ -135,7 +141,7 @@ function renderModelList(filter) {
         .catch(function (err) { toast(err.message); });
     });
     act.appendChild(bd);
-    var bh = el("button", "", m.hidden ? t("model.show") : t("model.hide"));
+    var bh = el("button", "", t("model.hide"));
     bh.addEventListener("click", function (e) {
       e.stopPropagation();
       jpost("/api/model/toggle", { provider: m.provider, model: m.id }).then(function () {
@@ -262,4 +268,3 @@ $("#reasoning-menu").addEventListener("keydown", function (e) {
     options[index].focus();
   }
 });
-
