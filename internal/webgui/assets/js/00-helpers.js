@@ -127,11 +127,12 @@ function showAppDialog(options) {
     var input = null;
     var error = null;
     if (options.input) {
-      input = document.createElement("input");
-      input.className = "app-dialog-input";
-      input.type = "text";
+      input = document.createElement(options.multiline ? "textarea" : "input");
+      input.className = "app-dialog-input" + (options.multiline ? " multiline" : "");
+      if (options.multiline) input.rows = options.rows || 6;
+      else input.type = "text";
       input.value = options.value || "";
-      input.maxLength = options.maxLength || 160;
+      input.maxLength = options.maxLength || (options.multiline ? 100000 : 160);
       input.autocomplete = "off";
       input.spellcheck = true;
       input.setAttribute("aria-label", options.title || t("dialog.editTitle"));
@@ -199,4 +200,3 @@ function appPrompt(title, value, options) {
   options = Object.assign({}, options || {}, { title: title, value: value, input: true });
   return showAppDialog(options);
 }
-

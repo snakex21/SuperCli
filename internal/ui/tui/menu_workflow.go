@@ -46,23 +46,37 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.menu.editing = false
 			m.menu.editBuf = ""
+			m.menu.editTaskID = ""
 			return m, nil
 		case "enter":
 			prompt := strings.TrimSpace(m.menu.editBuf)
 			if prompt == "" || m.sessionStore == nil {
 				return m, nil
 			}
-			if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, prompt); err != nil {
-				m.statusOverride = "queue: " + err.Error()
-				return m, nil
+			if m.menu.editTaskID != "" {
+				if err := m.sessionStore.UpdateQueuedTask(context.Background(), m.home, m.menu.editTaskID, prompt); err != nil {
+					m.statusOverride = "queue: " + err.Error()
+					return m, nil
+				}
+			} else {
+				if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, prompt); err != nil {
+					m.statusOverride = "queue: " + err.Error()
+					return m, nil
+				}
 			}
 			m.menu.editing = false
 			m.menu.editBuf = ""
+			m.menu.editTaskID = ""
 			return m.reloadQueue(), nil
 		case "backspace", "ctrl+h":
 			r := []rune(m.menu.editBuf)
 			if len(r) > 0 {
 				m.menu.editBuf = string(r[:len(r)-1])
+			}
+			return m, nil
+		case "ctrl+v":
+			if text, err := clipboard.ReadAll(); err == nil {
+				m.menu.editBuf += strings.TrimSpace(text)
 			}
 			return m, nil
 		}
@@ -78,6 +92,16 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n", "a":
 		m.menu.editing = true
 		m.menu.editBuf = ""
+		m.menu.editTaskID = ""
+		return m, nil
+	case "e":
+		if len(m.menu.tasks) == 0 {
+			return m, nil
+		}
+		row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
+		m.menu.editing = true
+		m.menu.editBuf = row.Prompt
+		m.menu.editTaskID = row.ID
 		return m, nil
 	case "up":
 		if m.menu.cursor > 0 {
@@ -144,7 +168,11 @@ func (m Model) renderQueueMenu() string {
 	b.WriteString(m.palette.PanelTitle.Render(m.tr("Task queue", "Kolejka zada\u0144")) + "\n")
 	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("Saved in this project and preserved after restart.", "Zapisana w tym projekcie i zachowana po ponownym uruchomieniu."), width)) + "\n\n")
 	if m.menu.editing {
-		b.WriteString(m.palette.StatusKey.Render(m.tr("New task", "Nowe zadanie")) + "\n")
+		label := m.tr("New task", "Nowe zadanie")
+		if m.menu.editTaskID != "" {
+			label = m.tr("Edit queued task", "Edytuj zadanie w kolejce")
+		}
+		b.WriteString(m.palette.StatusKey.Render(label) + "\n")
 		b.WriteString(m.palette.InputText.Render(truncateVisible("> "+m.menu.editBuf, width)) + "\n\n")
 		b.WriteString(m.palette.InputHint.Render(m.tr("Enter save \u00b7 Esc cancel", "Enter zapisz \u00b7 Esc anuluj")))
 		return b.String()
@@ -170,7 +198,7 @@ func (m Model) renderQueueMenu() string {
 			b.WriteString(truncateVisible(line, width) + "\n")
 		}
 	}
-	hint := m.tr("N add \u00b7 Enter run \u00b7 Del remove \u00b7 Ctrl+\u2191\u2193 reorder \u00b7 Esc back", "N dodaj \u00b7 Enter uruchom \u00b7 Del usu\u0144 \u00b7 Ctrl+\u2191\u2193 przesu\u0144 \u00b7 Esc wr\u00f3\u0107")
+	hint := m.tr("N add \u00b7 E edit \u00b7 Enter run \u00b7 Del remove \u00b7 Ctrl+\u2191\u2193 reorder \u00b7 Esc back", "N dodaj \u00b7 E edytuj \u00b7 Enter uruchom \u00b7 Del usu\u0144 \u00b7 Ctrl+\u2191\u2193 przesu\u0144 \u00b7 Esc wr\u00f3\u0107")
 	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
 }

@@ -31,8 +31,40 @@ func TestQueuedTasksPersistAndMove(t *testing.T) {
 	if len(got) != 2 || got[0].ID != b.ID {
 		t.Fatalf("queue=%+v", got)
 	}
+	if err := s.UpdateQueuedTask(ctx, "/work", b.ID, "  edited second  "); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.ListQueuedTasks(ctx, "/work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Prompt != "edited second" || got[0].ID != b.ID {
+		t.Fatalf("edited queue=%+v", got)
+	}
 	if err := s.DeleteQueuedTask(ctx, "/work", a.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUpdateQueuedTaskRejectsEmptyAndForeignRows(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	item, err := s.EnqueueTask(ctx, "/work", "", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateQueuedTask(ctx, "/work", item.ID, "  "); err == nil {
+		t.Fatal("empty prompt should be rejected")
+	}
+	if err := s.UpdateQueuedTask(ctx, "/other", item.ID, "changed"); err == nil {
+		t.Fatal("task from another workspace should not be updated")
+	}
+	got, err := s.ListQueuedTasks(ctx, "/work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Prompt != "first" {
+		t.Fatalf("queue=%+v", got)
 	}
 }
 

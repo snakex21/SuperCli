@@ -188,6 +188,17 @@ func TestTaskQueuePersistsAddsMovesAndDeletes(t *testing.T) {
 	if len(mm.menu.tasks) != 2 || mm.menu.tasks[0].Prompt != "first task" {
 		t.Fatalf("tasks=%+v", mm.menu.tasks)
 	}
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm = out.(Model)
+	if !mm.menu.editing || mm.menu.editTaskID == "" || mm.menu.editBuf != "first task" {
+		t.Fatalf("E did not edit selected task: menu=%+v", mm.menu)
+	}
+	mm.menu.editBuf = "edited first task"
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = out.(Model)
+	if mm.menu.editing || mm.menu.tasks[0].Prompt != "edited first task" {
+		t.Fatalf("edit did not persist: %+v", mm.menu.tasks)
+	}
 	mm.menu.cursor = 1
 	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	mm = out.(Model)
@@ -196,11 +207,11 @@ func TestTaskQueuePersistsAddsMovesAndDeletes(t *testing.T) {
 	}
 	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDelete})
 	mm = out.(Model)
-	if len(mm.menu.tasks) != 1 || mm.menu.tasks[0].Prompt != "first task" {
+	if len(mm.menu.tasks) != 1 || mm.menu.tasks[0].Prompt != "edited first task" {
 		t.Fatalf("delete failed: %+v", mm.menu.tasks)
 	}
 	reopened, _ := mm.openQueueMenu()
-	if got := reopened.(Model).menu.tasks; len(got) != 1 || got[0].Prompt != "first task" {
+	if got := reopened.(Model).menu.tasks; len(got) != 1 || got[0].Prompt != "edited first task" {
 		t.Fatalf("queue not durable: %+v", got)
 	}
 }

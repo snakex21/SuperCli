@@ -16,6 +16,51 @@ import (
 	"supercli/internal/tools"
 )
 
+func TestHandleTasksEditsAndReordersQueuedMessages(t *testing.T) {
+	srv := newTestServer(t, false)
+	ctx := context.Background()
+	first, err := srv.eng.enqueueTask(ctx, "", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.eng.enqueueTask(ctx, "", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/tasks", strings.NewReader(fmt.Sprintf(`{"id":%q,"prompt":" edited second "}`, second.ID)))
+	srv.handleTasks(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("edit status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPatch, "/api/tasks", strings.NewReader(fmt.Sprintf(`{"id":%q,"position":0}`, second.ID)))
+	srv.handleTasks(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("move status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	got, err := srv.eng.queuedTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != second.ID || got[0].Prompt != "edited second" || got[1].ID != first.ID {
+		t.Fatalf("queue=%+v", got)
+	}
+}
+
+func TestHandleTasksPatchRequiresAChange(t *testing.T) {
+	srv := newTestServer(t, false)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/tasks", strings.NewReader(`{"id":"task"}`))
+	srv.handleTasks(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
 func createRewindSession(t *testing.T, srv *Server, title string) (session.Session, *session.Store) {
 	t.Helper()
 	store, err := srv.eng.sessionStore()

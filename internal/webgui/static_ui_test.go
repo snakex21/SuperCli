@@ -200,6 +200,32 @@ func TestModelPaletteExcludesHiddenModels(t *testing.T) {
 	}
 }
 
+func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"async function editQueuedTask(item)",
+		"async function moveQueuedTask(item, position)",
+		"function wireQueuedTaskDrag(row, handle, item, index)",
+		`JSON.stringify({ id: item.id, prompt: prompt })`,
+		`JSON.stringify({ id: item.id, position: position })`,
+		`text.addEventListener("click", function () { editQueuedTask(item); })`,
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("queued-message editing/reordering is missing %q", required)
+		}
+	}
+	content, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(content)
+	for _, required := range []string{".queue-drag", ".queue-drop-before", ".queue-drop-after"} {
+		if !strings.Contains(css, required) {
+			t.Fatalf("queue drag styling is missing %q", required)
+		}
+	}
+}
+
 func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	content, err := assetsFS.ReadFile("assets/app.css")
 	if err != nil {

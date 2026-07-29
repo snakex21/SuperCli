@@ -65,6 +65,7 @@ type interactiveMenu struct {
 	settingsCfg *config.TomlConfig
 	editing     bool
 	editBuf     string
+	editTaskID  string
 	checkpoint  *CheckpointPreview
 }
 

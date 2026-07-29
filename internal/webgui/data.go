@@ -191,6 +191,14 @@ func (e *Engine) deleteTask(ctx context.Context, id string) error {
 	return store.DeleteQueuedTask(ctx, e.Home(), id)
 }
 
+func (e *Engine) updateTask(ctx context.Context, id, prompt string) error {
+	store, err := e.sessionStore()
+	if err != nil {
+		return err
+	}
+	return store.UpdateQueuedTask(ctx, e.Home(), id, prompt)
+}
+
 func (e *Engine) moveTask(ctx context.Context, id string, position int) error {
 	store, err := e.sessionStore()
 	if err != nil {
