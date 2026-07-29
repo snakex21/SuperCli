@@ -35,6 +35,7 @@ var I18N = {
     "composer.ph": "Message SuperCli…", "composer.send": "Send", "composer.stop": "Stop",
 	"composer.queue": "Queue", "composer.queued": "Queued", "composer.interrupt": "Interrupt & send",
 	"composer.sendNow": "Send now", "composer.resume": "Resume queue", "composer.remove": "Remove", "composer.moveUp": "Move up",
+	"composer.moveDown": "Move down", "composer.editQueued": "Edit queued message", "composer.editQueuedHint": "Change the message before it runs.", "composer.dragQueue": "Drag to change priority",
 	"composer.attach": "Attach images or files", "composer.attachFailed": "Could not attach files",
 	"composer.attachQueue": "Attachments cannot enter the persistent queue. Wait or use Interrupt & send.",
 	"composer.inspectAttachments": "Inspect the attached files.",
@@ -245,6 +246,7 @@ var I18N = {
     "composer.ph": "Napisz do SuperCli…", "composer.send": "Wyślij", "composer.stop": "Stop",
 	"composer.queue": "Dodaj do kolejki", "composer.queued": "W kolejce", "composer.interrupt": "Przerwij i wyślij",
 	"composer.sendNow": "Wyślij teraz", "composer.resume": "Wznów kolejkę", "composer.remove": "Usuń", "composer.moveUp": "Przesuń wyżej",
+	"composer.moveDown": "Przesuń niżej", "composer.editQueued": "Edytuj wiadomość w kolejce", "composer.editQueuedHint": "Zmień treść, zanim wiadomość zostanie uruchomiona.", "composer.dragQueue": "Przeciągnij, aby zmienić priorytet",
 	"composer.attach": "Dołącz zdjęcia lub pliki", "composer.attachFailed": "Nie udało się dołączyć plików",
 	"composer.attachQueue": "Załączniki nie mogą trafić do trwałej kolejki. Poczekaj albo użyj „Przerwij i wyślij”.",
 	"composer.inspectAttachments": "Przeanalizuj załączone pliki.",
@@ -527,4 +529,3 @@ function applyI18n() {
   $$("[data-i18n-title]").forEach(function (n) { n.title = t(n.dataset.i18nTitle); });
   $$("[data-i18n-aria]").forEach(function (n) { n.setAttribute("aria-label", t(n.dataset.i18nAria)); });
 }
-

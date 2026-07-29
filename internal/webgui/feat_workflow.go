@@ -40,16 +40,30 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, out)
 	case http.MethodPatch:
 		var b struct {
-			ID       string `json:"id"`
-			Position int    `json:"position"`
+			ID       string  `json:"id"`
+			Prompt   *string `json:"prompt"`
+			Position *int    `json:"position"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 			http.Error(w, "bad request: "+err.Error(), 400)
 			return
 		}
-		if err := s.eng.moveTask(r.Context(), b.ID, b.Position); err != nil {
-			writeWorkflowError(w, err)
+		b.ID = strings.TrimSpace(b.ID)
+		if b.ID == "" || (b.Prompt == nil && b.Position == nil) {
+			http.Error(w, "id and prompt or position are required", http.StatusBadRequest)
 			return
+		}
+		if b.Prompt != nil {
+			if err := s.eng.updateTask(r.Context(), b.ID, *b.Prompt); err != nil {
+				writeWorkflowError(w, err)
+				return
+			}
+		}
+		if b.Position != nil {
+			if err := s.eng.moveTask(r.Context(), b.ID, *b.Position); err != nil {
+				writeWorkflowError(w, err)
+				return
+			}
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	case http.MethodDelete:

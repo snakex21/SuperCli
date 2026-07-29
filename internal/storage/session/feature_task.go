@@ -74,6 +74,21 @@ func (s *Store) DeleteQueuedTask(ctx context.Context, cwd, id string) error {
 	return s.normalizeQueue(ctx, cwd)
 }
 
+func (s *Store) UpdateQueuedTask(ctx context.Context, cwd, id, prompt string) error {
+	cwd, id, prompt = strings.TrimSpace(cwd), strings.TrimSpace(id), strings.TrimSpace(prompt)
+	if cwd == "" || id == "" || prompt == "" {
+		return fmt.Errorf("session.Store.UpdateQueuedTask: cwd, id and prompt are required")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE prompt_queue SET prompt=? WHERE id=? AND cwd=?`, prompt, id, cwd)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) MoveQueuedTask(ctx context.Context, cwd, id string, position int) error {
 	items, err := s.ListQueuedTasks(ctx, cwd)
 	if err != nil {

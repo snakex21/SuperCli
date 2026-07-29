@@ -219,6 +219,109 @@ function updateAppBadge() {
   if (window.supercliSetBadge) window.supercliSetBadge(count).catch(function () {});
   document.title = count ? "(" + count + ") SuperCli" : "SuperCli";
 }
+var promptQueueDragID = "";
+
+function queuedTaskIndex(id) {
+  return promptQueue.findIndex(function (item) { return item.id === id; });
+}
+
+async function moveQueuedTask(item, position) {
+  var from = queuedTaskIndex(item.id);
+  if (from < 0 || !promptQueue.length) return;
+  position = Math.max(0, Math.min(promptQueue.length - 1, position));
+  if (from === position) return;
+  try {
+    await j("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id, position: position }),
+    });
+    promptQueue.splice(from, 1);
+    promptQueue.splice(position, 0, item);
+    promptQueue.forEach(function (queued, index) { queued.position = index + 1; });
+    renderPromptQueue();
+  } catch (e) { toast(e.message); }
+}
+
+async function editQueuedTask(item) {
+  var prompt = await appPrompt(t("composer.editQueued"), item.text || item.prompt || "", {
+    message: t("composer.editQueuedHint"),
+    multiline: true,
+    rows: 7,
+  });
+  if (prompt == null) return;
+  try {
+    await j("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id, prompt: prompt }),
+    });
+    item.prompt = prompt.trim();
+    item.text = item.prompt;
+    renderPromptQueue();
+  } catch (e) { toast(e.message); }
+}
+
+function clearQueueDropState() {
+  $$(".queue-row, .task-center-row").forEach(function (row) {
+    row.classList.remove("queue-dragging", "queue-drop-before", "queue-drop-after");
+  });
+}
+
+function queuedDropPosition(event, targetIndex) {
+  var sourceIndex = queuedTaskIndex(promptQueueDragID);
+  if (sourceIndex < 0) return targetIndex;
+  var rect = event.currentTarget.getBoundingClientRect();
+  var after = event.clientY >= rect.top + rect.height / 2;
+  if (after) return targetIndex + (sourceIndex > targetIndex ? 1 : 0);
+  return targetIndex - (sourceIndex < targetIndex ? 1 : 0);
+}
+
+function wireQueuedTaskDrag(row, handle, item, index) {
+  row.dataset.queueId = item.id;
+  handle.draggable = true;
+  handle.addEventListener("dragstart", function (event) {
+    promptQueueDragID = item.id;
+    row.classList.add("queue-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.id);
+  });
+  handle.addEventListener("dragend", function () {
+    promptQueueDragID = "";
+    clearQueueDropState();
+  });
+  row.addEventListener("dragover", function (event) {
+    if (!promptQueueDragID || promptQueueDragID === item.id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    var rect = row.getBoundingClientRect();
+    row.classList.toggle("queue-drop-before", event.clientY < rect.top + rect.height / 2);
+    row.classList.toggle("queue-drop-after", event.clientY >= rect.top + rect.height / 2);
+  });
+  row.addEventListener("dragleave", function (event) {
+    if (!row.contains(event.relatedTarget)) {
+      row.classList.remove("queue-drop-before", "queue-drop-after");
+    }
+  });
+  row.addEventListener("drop", function (event) {
+    if (!promptQueueDragID || promptQueueDragID === item.id) return;
+    event.preventDefault();
+    var source = promptQueue[queuedTaskIndex(promptQueueDragID)];
+    var position = queuedDropPosition(event, index);
+    promptQueueDragID = "";
+    clearQueueDropState();
+    if (source) moveQueuedTask(source, position);
+  });
+}
+
+function queueDragHandle() {
+  var handle = el("button", "queue-drag", "\u2630");
+  handle.type = "button";
+  handle.title = t("composer.dragQueue");
+  handle.setAttribute("aria-label", t("composer.dragQueue"));
+  return handle;
+}
+
 function renderPromptQueue() {
   var host = $("#prompt-queue");
   host.innerHTML = "";
@@ -235,13 +338,21 @@ function renderPromptQueue() {
   }
   promptQueue.forEach(function (item, index) {
     var row = el("div", "queue-row");
+    var drag = queueDragHandle();
+    row.appendChild(drag);
     row.appendChild(el("span", "queue-index", String(index + 1).padStart(2, "0")));
-    row.appendChild(el("span", "queue-text", item.text));
+    var text = el("button", "queue-text", item.text);
+    text.type = "button";
+    text.title = t("composer.editQueued");
+    text.addEventListener("click", function () { editQueuedTask(item); });
+    row.appendChild(text);
     var now = el("button", "queue-action", t("composer.sendNow")); now.type = "button";
     now.addEventListener("click", function () { runQueuedTask(item, true); });
     var remove = el("button", "queue-remove", "×"); remove.type = "button"; remove.title = t("composer.remove");
     remove.addEventListener("click", function () { removeQueuedTask(item.id); });
-    row.appendChild(now); row.appendChild(remove); host.appendChild(row);
+    row.appendChild(now); row.appendChild(remove);
+    wireQueuedTaskDrag(row, drag, item, index);
+    host.appendChild(row);
   });
   updateAppBadge();
   renderTaskCenter();
@@ -314,10 +425,35 @@ function renderTaskCenter() {
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
   if (!promptQueue.length) { host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak oczekujących zadań." : "No queued tasks.")); return; }
   promptQueue.forEach(function (item, i) {
-    var row = el("div", "task-center-row"); row.appendChild(el("span", "task-center-index", String(i + 1).padStart(2, "0")));
-    var copy = el("div", "task-center-copy"); copy.appendChild(el("span", "t", item.text)); copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new"))); row.appendChild(copy);
-    var go = el("button", "queue-action", t("composer.sendNow")); go.addEventListener("click", function () { runQueuedTask(item, true); }); row.appendChild(go); host.appendChild(row);
-	if (i > 0) { var up=el("button","queue-action","↑"); up.title=t("composer.moveUp"); up.addEventListener("click",async function(){try{await j("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:item.id,position:i-1})});await loadPromptQueue();}catch(e){toast(e.message);}}); row.insertBefore(up,go); }
+    var row = el("div", "task-center-row");
+    var drag = queueDragHandle();
+    row.appendChild(drag);
+    row.appendChild(el("span", "task-center-index", String(i + 1).padStart(2, "0")));
+    var copy = el("button", "task-center-copy queue-copy-edit");
+    copy.type = "button";
+    copy.title = t("composer.editQueued");
+    copy.appendChild(el("span", "t", item.text));
+    copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new")));
+    copy.addEventListener("click", function () { editQueuedTask(item); });
+    row.appendChild(copy);
+    var edit = el("button", "queue-action", t("common.edit"));
+    edit.addEventListener("click", function () { editQueuedTask(item); });
+    row.appendChild(edit);
+    var up = el("button", "queue-action queue-order", "\u2191");
+    up.title = t("composer.moveUp");
+    up.disabled = i === 0;
+    up.addEventListener("click", function () { moveQueuedTask(item, i - 1); });
+    row.appendChild(up);
+    var down = el("button", "queue-action queue-order", "\u2193");
+    down.title = t("composer.moveDown");
+    down.disabled = i + 1 === promptQueue.length;
+    down.addEventListener("click", function () { moveQueuedTask(item, i + 1); });
+    row.appendChild(down);
+    var go = el("button", "queue-action", t("composer.sendNow"));
+    go.addEventListener("click", function () { runQueuedTask(item, true); });
+    row.appendChild(go);
+    wireQueuedTaskDrag(row, drag, item, i);
+    host.appendChild(row);
   });
 }
 
@@ -814,4 +950,3 @@ function newSession() {
   promptEl.focus();
 }
 $("#new-session").addEventListener("click", newSession);
-
