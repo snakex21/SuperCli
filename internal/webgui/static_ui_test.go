@@ -205,7 +205,9 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 	for _, required := range []string{
 		"async function editQueuedTask(item)",
 		"async function moveQueuedTask(item, position)",
+		"async function chooseQueuedTaskPosition(item)",
 		"function wireQueuedTaskDrag(row, handle, item, index)",
+		"function queuePositionButton(item, index)",
 		`JSON.stringify({ id: item.id, prompt: prompt })`,
 		`JSON.stringify({ id: item.id, position: position })`,
 		`text.addEventListener("click", function () { editQueuedTask(item); })`,

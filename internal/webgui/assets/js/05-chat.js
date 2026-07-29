@@ -243,6 +243,26 @@ async function moveQueuedTask(item, position) {
   } catch (e) { toast(e.message); }
 }
 
+async function chooseQueuedTaskPosition(item) {
+  var from = queuedTaskIndex(item.id);
+  if (from < 0) return;
+  var value = await appPrompt(t("composer.moveTo"), String(from + 1), {
+    message: t("composer.positionHint").replace("{count}", String(promptQueue.length)),
+    maxLength: String(promptQueue.length).length,
+  });
+  if (value == null) return;
+  if (!/^\d+$/.test(value)) {
+    toast(t("composer.positionInvalid"));
+    return;
+  }
+  var position = Number(value) - 1;
+  if (position < 0 || position >= promptQueue.length) {
+    toast(t("composer.positionInvalid"));
+    return;
+  }
+  await moveQueuedTask(item, position);
+}
+
 async function editQueuedTask(item) {
   var prompt = await appPrompt(t("composer.editQueued"), item.text || item.prompt || "", {
     message: t("composer.editQueuedHint"),
@@ -322,6 +342,15 @@ function queueDragHandle() {
   return handle;
 }
 
+function queuePositionButton(item, index) {
+  var button = el("button", "queue-index queue-index-button", String(index + 1).padStart(2, "0"));
+  button.type = "button";
+  button.title = t("composer.moveTo");
+  button.setAttribute("aria-label", t("composer.moveTo") + ": " + String(index + 1));
+  button.addEventListener("click", function () { chooseQueuedTaskPosition(item); });
+  return button;
+}
+
 function renderPromptQueue() {
   var host = $("#prompt-queue");
   host.innerHTML = "";
@@ -340,7 +369,7 @@ function renderPromptQueue() {
     var row = el("div", "queue-row");
     var drag = queueDragHandle();
     row.appendChild(drag);
-    row.appendChild(el("span", "queue-index", String(index + 1).padStart(2, "0")));
+    row.appendChild(queuePositionButton(item, index));
     var text = el("button", "queue-text", item.text);
     text.type = "button";
     text.title = t("composer.editQueued");
@@ -428,7 +457,9 @@ function renderTaskCenter() {
     var row = el("div", "task-center-row");
     var drag = queueDragHandle();
     row.appendChild(drag);
-    row.appendChild(el("span", "task-center-index", String(i + 1).padStart(2, "0")));
+    var position = queuePositionButton(item, i);
+    position.classList.add("task-center-index");
+    row.appendChild(position);
     var copy = el("button", "task-center-copy queue-copy-edit");
     copy.type = "button";
     copy.title = t("composer.editQueued");

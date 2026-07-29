@@ -205,6 +205,17 @@ func TestTaskQueuePersistsAddsMovesAndDeletes(t *testing.T) {
 	if mm.menu.tasks[0].Prompt != "second task" {
 		t.Fatalf("move did not persist: %+v", mm.menu.tasks)
 	}
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	mm = out.(Model)
+	if !mm.menu.editing || mm.menu.moveTaskID == "" || mm.menu.editBuf != "1" {
+		t.Fatalf("P did not open direct position editor: menu=%+v", mm.menu)
+	}
+	mm.menu.editBuf = "2"
+	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = out.(Model)
+	if mm.menu.editing || mm.menu.cursor != 1 || mm.menu.tasks[1].Prompt != "second task" {
+		t.Fatalf("direct position change did not persist: %+v", mm.menu.tasks)
+	}
 	out, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDelete})
 	mm = out.(Model)
 	if len(mm.menu.tasks) != 1 || mm.menu.tasks[0].Prompt != "edited first task" {
