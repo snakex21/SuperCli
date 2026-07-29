@@ -66,6 +66,7 @@ type interactiveMenu struct {
 	editing     bool
 	editBuf     string
 	editTaskID  string
+	moveTaskID  string
 	checkpoint  *CheckpointPreview
 }
 

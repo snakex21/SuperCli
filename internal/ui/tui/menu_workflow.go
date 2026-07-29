@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/atotto/clipboard"
@@ -47,19 +48,31 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menu.editing = false
 			m.menu.editBuf = ""
 			m.menu.editTaskID = ""
+			m.menu.moveTaskID = ""
 			return m, nil
 		case "enter":
-			prompt := strings.TrimSpace(m.menu.editBuf)
-			if prompt == "" || m.sessionStore == nil {
+			value := strings.TrimSpace(m.menu.editBuf)
+			if value == "" || m.sessionStore == nil {
 				return m, nil
 			}
-			if m.menu.editTaskID != "" {
-				if err := m.sessionStore.UpdateQueuedTask(context.Background(), m.home, m.menu.editTaskID, prompt); err != nil {
+			if m.menu.moveTaskID != "" {
+				position, err := strconv.Atoi(value)
+				if err != nil || position < 1 || position > len(m.menu.tasks) {
+					m.statusOverride = m.tr("queue: enter a valid position", "kolejka: wpisz prawid\u0142ow\u0105 pozycj\u0119")
+					return m, nil
+				}
+				if err := m.sessionStore.MoveQueuedTask(context.Background(), m.home, m.menu.moveTaskID, position-1); err != nil {
+					m.statusOverride = "queue: " + err.Error()
+					return m, nil
+				}
+				m.menu.cursor = position - 1
+			} else if m.menu.editTaskID != "" {
+				if err := m.sessionStore.UpdateQueuedTask(context.Background(), m.home, m.menu.editTaskID, value); err != nil {
 					m.statusOverride = "queue: " + err.Error()
 					return m, nil
 				}
 			} else {
-				if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, prompt); err != nil {
+				if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, value); err != nil {
 					m.statusOverride = "queue: " + err.Error()
 					return m, nil
 				}
@@ -67,6 +80,8 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menu.editing = false
 			m.menu.editBuf = ""
 			m.menu.editTaskID = ""
+			m.menu.moveTaskID = ""
+			m.statusOverride = ""
 			return m.reloadQueue(), nil
 		case "backspace", "ctrl+h":
 			r := []rune(m.menu.editBuf)
@@ -93,6 +108,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.menu.editing = true
 		m.menu.editBuf = ""
 		m.menu.editTaskID = ""
+		m.menu.moveTaskID = ""
 		return m, nil
 	case "e":
 		if len(m.menu.tasks) == 0 {
@@ -102,6 +118,17 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.menu.editing = true
 		m.menu.editBuf = row.Prompt
 		m.menu.editTaskID = row.ID
+		m.menu.moveTaskID = ""
+		return m, nil
+	case "p":
+		if len(m.menu.tasks) == 0 {
+			return m, nil
+		}
+		row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
+		m.menu.editing = true
+		m.menu.editBuf = strconv.Itoa(m.menu.cursor + 1)
+		m.menu.editTaskID = ""
+		m.menu.moveTaskID = row.ID
 		return m, nil
 	case "up":
 		if m.menu.cursor > 0 {
@@ -171,6 +198,8 @@ func (m Model) renderQueueMenu() string {
 		label := m.tr("New task", "Nowe zadanie")
 		if m.menu.editTaskID != "" {
 			label = m.tr("Edit queued task", "Edytuj zadanie w kolejce")
+		} else if m.menu.moveTaskID != "" {
+			label = m.tr("Move queued task (1-"+strconv.Itoa(len(m.menu.tasks))+")", "Przenie\u015b zadanie (1-"+strconv.Itoa(len(m.menu.tasks))+")")
 		}
 		b.WriteString(m.palette.StatusKey.Render(label) + "\n")
 		b.WriteString(m.palette.InputText.Render(truncateVisible("> "+m.menu.editBuf, width)) + "\n\n")
@@ -198,7 +227,7 @@ func (m Model) renderQueueMenu() string {
 			b.WriteString(truncateVisible(line, width) + "\n")
 		}
 	}
-	hint := m.tr("N add \u00b7 E edit \u00b7 Enter run \u00b7 Del remove \u00b7 Ctrl+\u2191\u2193 reorder \u00b7 Esc back", "N dodaj \u00b7 E edytuj \u00b7 Enter uruchom \u00b7 Del usu\u0144 \u00b7 Ctrl+\u2191\u2193 przesu\u0144 \u00b7 Esc wr\u00f3\u0107")
+	hint := m.tr("N add \u00b7 E edit \u00b7 P position \u00b7 Enter run \u00b7 Del remove \u00b7 Ctrl+\u2191\u2193 reorder \u00b7 Esc back", "N dodaj \u00b7 E edytuj \u00b7 P pozycja \u00b7 Enter uruchom \u00b7 Del usu\u0144 \u00b7 Ctrl+\u2191\u2193 przesu\u0144 \u00b7 Esc wr\u00f3\u0107")
 	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
 }
