@@ -208,6 +208,8 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 		"async function chooseQueuedTaskPosition(item)",
 		"function wireQueuedTaskDrag(row, handle, item, index)",
 		"function queuePositionButton(item, index)",
+		"var queueDropCommitRatio = 0.72",
+		`var placement = position === sourceIndex ? "" : queuedDropPlacement(event, index)`,
 		`JSON.stringify({ id: item.id, prompt: prompt })`,
 		`JSON.stringify({ id: item.id, position: position })`,
 		`text.addEventListener("click", function () { editQueuedTask(item); })`,
