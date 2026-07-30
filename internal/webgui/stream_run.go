@@ -170,7 +170,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	var turnFileChanges []checkpoint.FileChange
 	finishCheckpoint := func() (string, []checkpoint.FileChange) {
 		if checkpointTurn == nil {
-			return "", turnFileChanges
+			// A terminal done/error event already received the completed
+			// checkpoint changes. Channel shutdown must not emit them again as
+			// a second standalone file_changes event.
+			return "", nil
 		}
 		turn := checkpointTurn
 		checkpointTurn = nil

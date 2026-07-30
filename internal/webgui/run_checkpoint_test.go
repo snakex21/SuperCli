@@ -58,9 +58,13 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	eng.mu.Unlock()
 	var checkpointID, sessionID string
 	var fileChanges []checkpoint.FileChange
+	fileChangeEvents := 0
 	if err := eng.runStream(context.Background(), "write it", "", "", func(ev wireEvent) {
 		if ev.Type == "session" {
 			sessionID = ev.SessionID
+		}
+		if len(ev.FileChanges) > 0 {
+			fileChangeEvents++
 		}
 		if ev.Type == "done" {
 			checkpointID = ev.CheckpointID
@@ -74,6 +78,9 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	}
 	if len(fileChanges) != 1 || fileChanges[0] != (checkpoint.FileChange{Path: "agent.txt", Kind: "created"}) {
 		t.Fatalf("done event file changes = %+v", fileChanges)
+	}
+	if fileChangeEvents != 1 {
+		t.Fatalf("file changes were delivered %d times, want exactly once", fileChangeEvents)
 	}
 	manager, err := eng.checkpointManager(dir)
 	if err != nil {
