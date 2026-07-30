@@ -240,7 +240,10 @@ async function moveQueuedTask(item, position) {
     promptQueue.splice(position, 0, item);
     promptQueue.forEach(function (queued, index) { queued.position = index + 1; });
     renderPromptQueue();
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+    renderPromptQueue();
+  }
 }
 
 async function chooseQueuedTaskPosition(item) {
@@ -288,61 +291,111 @@ function clearQueueDropState() {
   });
 }
 
-var queueDropCommitRatio = 0.72;
+var promptQueueDragRow = null;
+var promptQueueDragHost = null;
+var promptQueueDragLastY = 0;
+var promptQueueDropAccepted = false;
 
-function queuedDropPlacement(event, targetIndex) {
-  var sourceIndex = queuedTaskIndex(promptQueueDragID);
-  if (sourceIndex < 0 || sourceIndex === targetIndex) return "";
-  var rect = event.currentTarget.getBoundingClientRect();
-  var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
-  if (sourceIndex < targetIndex) return ratio >= queueDropCommitRatio ? "after" : "before";
-  return ratio <= 1 - queueDropCommitRatio ? "before" : "after";
+function queuedTaskRows(host) {
+  return host ? Array.prototype.slice.call(host.children).filter(function (child) {
+    return !!child.dataset.queueId;
+  }) : [];
 }
 
-function queuedDropPosition(event, targetIndex) {
-  var sourceIndex = queuedTaskIndex(promptQueueDragID);
-  if (sourceIndex < 0) return targetIndex;
-  var placement = queuedDropPlacement(event, targetIndex);
-  if (placement === "after") return targetIndex + (sourceIndex > targetIndex ? 1 : 0);
-  return targetIndex - (sourceIndex < targetIndex ? 1 : 0);
+function animateQueuedTaskShift(host, mutate) {
+  var before = {};
+  queuedTaskRows(host).forEach(function (row) {
+    before[row.dataset.queueId] = row.getBoundingClientRect().top;
+  });
+  mutate();
+  queuedTaskRows(host).forEach(function (row) {
+    var previousTop = before[row.dataset.queueId];
+    if (previousTop == null || !row.animate) return;
+    var delta = previousTop - row.getBoundingClientRect().top;
+    if (Math.abs(delta) < 1) return;
+    row.animate([
+      { transform: "translateY(" + delta + "px)" },
+      { transform: "translateY(0)" },
+    ], { duration: 130, easing: "cubic-bezier(.2,.75,.25,1)" });
+  });
 }
 
-function wireQueuedTaskDrag(row, handle, item, index) {
+function reorderQueuedTaskDOM(sourceRow, targetRow, clientY) {
+  if (!sourceRow || !targetRow || sourceRow === targetRow || sourceRow.parentElement !== targetRow.parentElement) return;
+  var host = sourceRow.parentElement;
+  var rows = queuedTaskRows(host);
+  var sourceIndex = rows.indexOf(sourceRow);
+  var targetIndex = rows.indexOf(targetRow);
+  var deltaY = clientY - promptQueueDragLastY;
+  promptQueueDragLastY = clientY;
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  if (sourceIndex < targetIndex && deltaY > 0) {
+    animateQueuedTaskShift(host, function () { host.insertBefore(sourceRow, targetRow.nextSibling); });
+  } else if (sourceIndex > targetIndex && deltaY < 0) {
+    animateQueuedTaskShift(host, function () { host.insertBefore(sourceRow, targetRow); });
+  }
+}
+
+function finishQueuedTaskDrag(commit) {
+  if (!promptQueueDragID) return;
+  var id = promptQueueDragID;
+  var host = promptQueueDragHost;
+  var orderedIDs = queuedTaskRows(host).map(function (row) { return row.dataset.queueId; });
+  var position = orderedIDs.indexOf(id);
+  var item = promptQueue[queuedTaskIndex(id)];
+  promptQueueDragID = "";
+  promptQueueDragRow = null;
+  promptQueueDragHost = null;
+  promptQueueDropAccepted = false;
+  clearQueueDropState();
+  if (!commit || !item || position < 0 || position === queuedTaskIndex(id)) {
+    renderPromptQueue();
+    return;
+  }
+  moveQueuedTask(item, position);
+}
+
+function ensureQueuedTaskDropHost(host) {
+  if (!host || host._queueDropWired) return;
+  host._queueDropWired = true;
+  host.addEventListener("dragover", function (event) {
+    if (promptQueueDragHost === host) event.preventDefault();
+  });
+  host.addEventListener("drop", function (event) {
+    if (promptQueueDragHost !== host) return;
+    event.preventDefault();
+    promptQueueDropAccepted = true;
+    finishQueuedTaskDrag(true);
+  });
+}
+
+function wireQueuedTaskDrag(row, handle, item) {
   row.dataset.queueId = item.id;
+  ensureQueuedTaskDropHost(row.parentElement);
   handle.draggable = true;
   handle.addEventListener("dragstart", function (event) {
     promptQueueDragID = item.id;
-    row.classList.add("queue-dragging");
+    promptQueueDragRow = row;
+    promptQueueDragHost = row.parentElement;
+    promptQueueDragLastY = event.clientY;
+    promptQueueDropAccepted = false;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", item.id);
+    if (event.dataTransfer.setDragImage) {
+      event.dataTransfer.setDragImage(row, Math.min(24, row.offsetWidth / 2), row.offsetHeight / 2);
+    }
+    setTimeout(function () {
+      if (promptQueueDragRow === row) row.classList.add("queue-dragging");
+    }, 0);
   });
   handle.addEventListener("dragend", function () {
-    promptQueueDragID = "";
-    clearQueueDropState();
+    finishQueuedTaskDrag(promptQueueDropAccepted);
   });
   row.addEventListener("dragover", function (event) {
-    if (!promptQueueDragID || promptQueueDragID === item.id) return;
+    if (!promptQueueDragID || promptQueueDragHost !== row.parentElement) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    var sourceIndex = queuedTaskIndex(promptQueueDragID);
-    var position = queuedDropPosition(event, index);
-    var placement = position === sourceIndex ? "" : queuedDropPlacement(event, index);
-    row.classList.toggle("queue-drop-before", placement === "before");
-    row.classList.toggle("queue-drop-after", placement === "after");
-  });
-  row.addEventListener("dragleave", function (event) {
-    if (!row.contains(event.relatedTarget)) {
-      row.classList.remove("queue-drop-before", "queue-drop-after");
-    }
-  });
-  row.addEventListener("drop", function (event) {
-    if (!promptQueueDragID || promptQueueDragID === item.id) return;
-    event.preventDefault();
-    var source = promptQueue[queuedTaskIndex(promptQueueDragID)];
-    var position = queuedDropPosition(event, index);
-    promptQueueDragID = "";
-    clearQueueDropState();
-    if (source) moveQueuedTask(source, position);
+    reorderQueuedTaskDOM(promptQueueDragRow, row, event.clientY);
   });
 }
 
@@ -392,8 +445,8 @@ function renderPromptQueue() {
     var remove = el("button", "queue-remove", "×"); remove.type = "button"; remove.title = t("composer.remove");
     remove.addEventListener("click", function () { removeQueuedTask(item.id); });
     row.appendChild(now); row.appendChild(remove);
-    wireQueuedTaskDrag(row, drag, item, index);
     host.appendChild(row);
+    wireQueuedTaskDrag(row, drag, item);
   });
   updateAppBadge();
   renderTaskCenter();
@@ -505,8 +558,8 @@ function renderTaskCenter() {
     var go = el("button", "queue-action", t("composer.sendNow"));
     go.addEventListener("click", function () { runQueuedTask(item, true); });
     row.appendChild(go);
-    wireQueuedTaskDrag(row, drag, item, i);
     host.appendChild(row);
+    wireQueuedTaskDrag(row, drag, item);
   });
 }
 
