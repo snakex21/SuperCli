@@ -72,14 +72,21 @@ type CodexConfig struct {
 	// (e.g. from the auth manager) — it is not required to match
 	// the live token; it only namespaces the on-disk snapshot.
 	AccountID string
+	// Sampling overrides the process-global sampling settings. Only the
+	// public Responses API dialect (StandardResponsesAPI) receives
+	// temperature/top_p, and only for non-reasoning models; the
+	// ChatGPT-subscription backend exposes no sampling knobs at all and
+	// is left byte-for-byte as it was.
+	Sampling Sampling
 }
 
 // CodexProvider is the Provider implementation backed by a
 // ChatGPT subscription instead of an API key.
 type CodexProvider struct {
-	cfg  CodexConfig
-	http *http.Client
-	caps *CapabilityRegistry
+	cfg      CodexConfig
+	http     *http.Client
+	caps     *CapabilityRegistry
+	sampling Sampling
 
 	// rl holds the most recent rate-limit snapshot parsed from the
 	// HTTP response headers of /responses. The ChatGPT backend
@@ -353,7 +360,12 @@ func NewCodex(cfg CodexConfig) (*CodexProvider, error) {
 	if caps == nil {
 		caps = NewCapabilityRegistry()
 	}
-	p := &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps}
+	sampling := Sampling{}
+	if cfg.StandardResponsesAPI {
+		sampling = resolveSampling(cfg.Sampling).responsesOnly()
+		logSampling("responses", cfg.Model, sampling)
+	}
+	p := &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, sampling: sampling}
 	// Seed the snapshot from disk so the HUD `limit:` tile renders the
 	// last known usage immediately, before any /responses call. This
 	// reads a local file only — it never performs a network request.

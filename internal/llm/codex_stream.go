@@ -31,7 +31,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	if p.cfg.StandardResponsesAPI {
-		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, SupportsReasoningEffort(p.cfg.Model))
+		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, SupportsReasoningEffort(p.cfg.Model), p.sampling)
 		if err != nil {
 			return nil, fmt.Errorf("build standard responses request: %w", err)
 		}

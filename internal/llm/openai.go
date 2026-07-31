@@ -55,6 +55,11 @@ type OpenAIConfig struct {
 	// rejects unknown fields with HTTP 400. Set explicitly to force
 	// the hint on (e.g. a llama.cpp box on a public IP) or off.
 	CachePrompt *bool
+	// Sampling overrides the process-global sampling settings for this
+	// one provider. The zero value (no field set) falls back to
+	// SamplingDefault(), which is where config.toml `[sampling]` lands.
+	// Nothing set anywhere means no sampling fields are sent at all.
+	Sampling Sampling
 }
 
 // OpenAIProvider is the production Provider for the OpenAI-compat
@@ -66,6 +71,9 @@ type OpenAIProvider struct {
 	// cachePrompt: resolved from cfg.CachePrompt (explicit) or
 	// isLocalBaseURL (auto). See OpenAIConfig.CachePrompt.
 	cachePrompt bool
+	// sampling: resolved once, already stripped of the llama.cpp-only
+	// extensions when the backend is not local.
+	sampling Sampling
 }
 
 type openAIReasoningFormat uint8
@@ -118,7 +126,16 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	if cfg.CachePrompt != nil {
 		cachePrompt = *cfg.CachePrompt
 	}
-	return &OpenAIProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, cachePrompt: cachePrompt}, nil
+	// Sampling: explicit per-construction settings win, else the
+	// process-global default from config.toml. top_k/min_p/repeat_penalty
+	// are llama.cpp-family extensions and are dropped for non-local
+	// backends, which reject unknown fields with HTTP 400.
+	sampling := resolveSampling(cfg.Sampling)
+	if !isLocalBaseURL(cfg.BaseURL) {
+		sampling = sampling.withoutLocalExtensions()
+	}
+	logSampling("openai", cfg.Model, sampling)
+	return &OpenAIProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, cachePrompt: cachePrompt, sampling: sampling}, nil
 }
 
 // isLocalBaseURL reports whether baseURL points at a local or
@@ -187,7 +204,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	// Always forward image parts. Provider catalogs are useful as hints for
 	// the UI, but they are incomplete and must never decide what the selected
 	// model is allowed to receive. The upstream API remains authoritative.
-	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, true, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens)
+	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, true, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}

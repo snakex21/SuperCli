@@ -392,6 +392,15 @@ func Main() {
 	// honour it. nil = per-host auto-detection (unchanged behaviour).
 	llm.SetCachePromptDefault(tomlCfg.CachePrompt)
 
+	// Sampling pass-through (config.toml `[sampling]` plus the
+	// SUPERCLI_LLM_TEMPERATURE override). Set process-globally for the
+	// same reason as cache_prompt: providers built later this session —
+	// a /model swap, a task_model worker, a compact_model summarizer, a
+	// failover hop — must honour the user's settings too. Nothing
+	// configured leaves every field nil, and nil fields are never
+	// serialized, so a bare config still sends a bare request.
+	llm.SetSamplingDefault(tomlCfg.Sampling.Resolve(cfg.Temperature))
+
 	// Warm KV cache across sessions (llama.cpp slot save/restore).
 	// nil for cloud endpoints — they are never probed. slot_cache
 	// (config.toml, tri-state) overrides the local-host auto-gate.

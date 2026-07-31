@@ -102,6 +102,7 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.CachePrompt != nil {
 		dst.CachePrompt = src.CachePrompt
 	}
+	mergeSampling(&dst.Sampling, src.Sampling)
 	if src.SlotCache != nil {
 		dst.SlotCache = src.SlotCache
 	}

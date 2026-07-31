@@ -47,13 +47,18 @@ type AnthropicConfig struct {
 	ConnectTimeout time.Duration
 	HTTPClient     *http.Client
 	Capabilities   *CapabilityRegistry
+	// Sampling overrides the process-global sampling settings for this
+	// provider. Only temperature/top_p/top_k reach the Messages API —
+	// Anthropic has no presence/frequency/repeat penalty, min_p or seed.
+	Sampling Sampling
 }
 
 // AnthropicProvider implements Provider using Anthropic's /v1/messages SSE API.
 type AnthropicProvider struct {
-	cfg  AnthropicConfig
-	http *http.Client
-	caps *CapabilityRegistry
+	cfg      AnthropicConfig
+	http     *http.Client
+	caps     *CapabilityRegistry
+	sampling Sampling
 }
 
 func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
@@ -84,7 +89,9 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	if caps == nil {
 		caps = NewCapabilityRegistry()
 	}
-	return &AnthropicProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps}, nil
+	sampling := resolveSampling(cfg.Sampling).anthropicOnly()
+	logSampling("anthropic", cfg.Model, sampling)
+	return &AnthropicProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, sampling: sampling}, nil
 }
 
 func (p *AnthropicProvider) Name() string { return p.cfg.Model }
@@ -111,7 +118,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	// Do not gate attachments on catalog metadata. Anthropic-compatible
 	// gateways frequently expose custom model IDs whose capabilities are not
 	// present in our registry; the provider response is the source of truth.
-	body, err := buildAnthropicRequest(p.cfg.Model, msgs, tools, true, p.cfg.MaxTokens)
+	body, err := buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, true, p.cfg.MaxTokens, p.sampling)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}

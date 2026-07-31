@@ -62,7 +62,7 @@ func TestLoad_EnvOverridesDefaults(t *testing.T) {
 	if c.Model != "gpt-4o" {
 		t.Errorf("Model = %q", c.Model)
 	}
-	if c.Temperature != 0.3 {
+	if c.Temperature == nil || *c.Temperature != 0.3 {
 		t.Errorf("Temperature = %v", c.Temperature)
 	}
 	if c.MaxTokens != 1024 {
@@ -138,7 +138,7 @@ func TestNormalize_TrimsTrailingSlash(t *testing.T) {
 	c := Config{
 		BaseURL:     "http://x/v1/",
 		Model:       "m",
-		Temperature: 0.5,
+		Temperature: floatPtr(0.5),
 		Timeout:     30_000_000_000,
 		APIKey:      "k",
 		Provider:    ProviderOpenAI,
@@ -155,7 +155,7 @@ func TestNormalize_DefaultsTimeout(t *testing.T) {
 	c := Config{
 		BaseURL:     "http://x",
 		Model:       "m",
-		Temperature: 0.5,
+		Temperature: floatPtr(0.5),
 		APIKey:      "k",
 		Provider:    ProviderOpenAI,
 	}
@@ -188,7 +188,7 @@ func TestNormalize_RejectsBadTemperature(t *testing.T) {
 	c := Config{
 		BaseURL:     "http://x",
 		Model:       "m",
-		Temperature: 5,
+		Temperature: floatPtr(5),
 		APIKey:      "k",
 		Provider:    ProviderOpenAI,
 	}
@@ -203,7 +203,7 @@ func TestNormalize_DefaultsEmptyModel(t *testing.T) {
 	// pick a model via /models.
 	c := Config{
 		BaseURL:     "http://x",
-		Temperature: 0.5,
+		Temperature: floatPtr(0.5),
 		APIKey:      "k",
 		Provider:    ProviderOpenAI,
 	}
@@ -218,7 +218,7 @@ func TestNormalize_DefaultsEmptyModel(t *testing.T) {
 func TestNormalize_RejectsEmptyBaseURL(t *testing.T) {
 	c := Config{
 		Model:       "m",
-		Temperature: 0.5,
+		Temperature: floatPtr(0.5),
 		APIKey:      "k",
 		Provider:    ProviderOpenAI,
 	}
@@ -231,7 +231,7 @@ func TestNormalize_RejectsUnknownProvider(t *testing.T) {
 	c := Config{
 		BaseURL:     "http://x",
 		Model:       "m",
-		Temperature: 0.5,
+		Temperature: floatPtr(0.5),
 		APIKey:      "k",
 		Provider:    "unknown-provider",
 	}
@@ -247,10 +247,10 @@ func TestGetEnvInt_InvalidFallsBack(t *testing.T) {
 	}
 }
 
-func TestGetEnvFloat_InvalidFallsBack(t *testing.T) {
+func TestGetEnvFloatPtr_InvalidStaysNil(t *testing.T) {
 	t.Setenv("X", "nope")
-	if got := getEnvFloat("X", 1.5); got != 1.5 {
-		t.Errorf("got %v, want 1.5", got)
+	if got := getEnvFloatPtr("X"); got != nil {
+		t.Errorf("got %v, want nil", *got)
 	}
 }
 
@@ -387,5 +387,24 @@ func TestNormalize_OpencodeTrimsTrailingSlash(t *testing.T) {
 	}
 	if strings.HasSuffix(c.BaseURL, "/") {
 		t.Errorf("trailing slash not stripped: %q", c.BaseURL)
+	}
+}
+
+func floatPtr(v float64) *float64 { return &v }
+
+// TestLoad_TemperatureUnsetStaysNil pins the "empty config = best
+// version" contract: with no SUPERCLI_LLM_TEMPERATURE the field stays
+// nil, so no temperature is ever sent and the server's own default
+// applies. A hard-coded default here would silently override every
+// user's server-side sampling settings.
+func TestLoad_TemperatureUnsetStaysNil(t *testing.T) {
+	t.Setenv("SUPERCLI_LLM_TEMPERATURE", "")
+	t.Setenv("SUPERCLI_LLM_API_KEY", "k")
+	c, err := Load(FlagOverrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Temperature != nil {
+		t.Errorf("Temperature = %v, want nil", *c.Temperature)
 	}
 }

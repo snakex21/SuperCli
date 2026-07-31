@@ -76,7 +76,7 @@ func TestResponsesCompleteUsesAPIKeyWithoutChatGPTHeaders(t *testing.T) {
 }
 
 func TestPrepareStandardResponsesSkipsReasoningFieldsForPlainModel(t *testing.T) {
-	body, err := prepareStandardResponsesRequest([]byte(`{"model":"plain","include":[]}`), "cache", false)
+	body, err := prepareStandardResponsesRequest([]byte(`{"model":"plain","include":[]}`), "cache", false, Sampling{})
 	if err != nil {
 		t.Fatal(err)
 	}
