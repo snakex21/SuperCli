@@ -196,10 +196,20 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 // from the ChatGPT-subscription dialect above. Reasoning-only fields are sent
 // only to model families that support them; a stable non-empty prompt cache
 // key lets the gateway reuse the shared prefix across turns.
-func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoningModel bool) ([]byte, error) {
+func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoningModel bool, sampling Sampling) ([]byte, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
+	}
+	// Sampling is meaningless (and rejected) for reasoning models, so it
+	// is only forwarded to the rest. Unset parameters stay absent.
+	if !reasoningModel {
+		if sampling.Temperature != nil {
+			req["temperature"] = *sampling.Temperature
+		}
+		if sampling.TopP != nil {
+			req["top_p"] = *sampling.TopP
+		}
 	}
 	if reasoningModel {
 		reasoning, _ := req["reasoning"].(map[string]any)

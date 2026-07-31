@@ -233,6 +233,11 @@ func run(crashDataDir *string) {
 				log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
 			}
 		}
+		// Sampling pass-through: config.toml `[sampling]` (plus the
+		// SUPERCLI_LLM_TEMPERATURE override) applies to every provider
+		// this process builds. Nothing configured leaves every field
+		// nil, and nil fields are never sent.
+		llm.SetSamplingDefault(tomlCfg.Sampling.Resolve(cfg.Temperature))
 		// Restore saved reasoning effort
 		if tomlCfg.ReasoningEffort != "" {
 			if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {

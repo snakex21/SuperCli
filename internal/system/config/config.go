@@ -10,7 +10,8 @@
 //	SUPERCLI_LLM_API_KEY   - bearer token; empty = echo mode
 //	SUPERCLI_LLM_BASE_URL  - defaults to https://api.openai.com
 //	SUPERCLI_LLM_MODEL     - model name; default "gpt-4o-mini"
-//	SUPERCLI_LLM_TEMPERATURE - float; default 0.7
+//	SUPERCLI_LLM_TEMPERATURE - float; UNSET means the parameter is not sent
+//	                         at all and the server's own default applies
 //	SUPERCLI_LLM_MAX_TOKENS  - int; 0 = provider default
 //	SUPERCLI_LLM_STREAM    - "1" or "true" to force streaming (default true)
 //	SUPERCLI_LLM_TIMEOUT   - idle/inactivity timeout in seconds (no data
@@ -59,11 +60,16 @@ type Config struct {
 	// Model is the model name sent in each request.
 	Model string `json:"model"`
 
-	// Temperature, MaxTokens, Stream, Timeout, Debug are passed
-	// to the provider; see env docs above for defaults.
-	Temperature float64 `json:"temperature"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	Stream      bool    `json:"stream"`
+	// Temperature is the SUPERCLI_LLM_TEMPERATURE override. It is a
+	// pointer because "unset" and "0" are different requests: nil means
+	// the parameter is omitted from the request body entirely and the
+	// server applies its own default. It overlays the `[sampling]`
+	// table of config.toml (env beats file, per the config hierarchy).
+	Temperature *float64 `json:"temperature,omitempty"`
+	// MaxTokens, Stream, Timeout, Debug are passed to the provider;
+	// see env docs above for defaults.
+	MaxTokens int  `json:"max_tokens,omitempty"`
+	Stream    bool `json:"stream"`
 	// Timeout is the idle/inactivity timeout: the maximum gap with no
 	// data from the server (and the bound on time-to-first-token). It is
 	// NOT a whole-request deadline, so a slow but alive stream is never cut.
@@ -94,7 +100,7 @@ func Load(flags FlagOverrides) (Config, error) {
 		APIKey:         getEnv("SUPERCLI_LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
 		BaseURL:        getEnv("SUPERCLI_LLM_BASE_URL", "https://api.openai.com/v1"),
 		Model:          getEnv("SUPERCLI_LLM_MODEL", ""),
-		Temperature:    getEnvFloat("SUPERCLI_LLM_TEMPERATURE", 0.7),
+		Temperature:    getEnvFloatPtr("SUPERCLI_LLM_TEMPERATURE"),
 		MaxTokens:      getEnvInt("SUPERCLI_LLM_MAX_TOKENS", 0),
 		Stream:         getEnvBool("SUPERCLI_LLM_STREAM", true),
 		Timeout:        time.Duration(getEnvInt("SUPERCLI_LLM_TIMEOUT", 300)) * time.Second,
@@ -132,8 +138,8 @@ func (c *Config) Normalize() error {
 	if c.BaseURL == "" {
 		return fmt.Errorf("config: base URL is empty")
 	}
-	if c.Temperature < 0 || c.Temperature > 2 {
-		return fmt.Errorf("config: temperature %v out of [0,2]", c.Temperature)
+	if c.Temperature != nil && (*c.Temperature < 0 || *c.Temperature > 2) {
+		return fmt.Errorf("config: temperature %v out of [0,2]", *c.Temperature)
 	}
 	if c.Timeout <= 0 {
 		c.Timeout = 300 * time.Second
@@ -264,14 +270,19 @@ func getEnvInt(key string, def int) int {
 	return def
 }
 
-func getEnvFloat(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
-		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		if err == nil {
-			return f
-		}
+// getEnvFloatPtr returns nil when the variable is unset, empty or
+// unparseable, so "the user said nothing" never turns into a value
+// SuperCli invented.
+func getEnvFloatPtr(key string) *float64 {
+	v, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return nil
 	}
-	return def
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return nil
+	}
+	return &f
 }
 
 func getEnvBool(key string, def bool) bool {

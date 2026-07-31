@@ -36,10 +36,26 @@ func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, er
 // --- request body ---
 
 type openaiRequest struct {
-	Model     string         `json:"model"`
-	MaxTokens int            `json:"max_tokens,omitempty"`
-	Messages  []openaiReqMsg `json:"messages"`
-	Stream    bool           `json:"stream"`
+	Model     string `json:"model"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
+	// Sampling parameters. Pointers + omitempty: a parameter the user
+	// never set is absent from the body, so the server applies its own
+	// default exactly as it did before pass-through existed. They sit
+	// ahead of Messages deliberately — they are constant for a whole
+	// session, so they can never shift the volatile part of the body,
+	// and the KV-cached prompt prefix is built from messages/tools
+	// anyway.
+	Temperature      *float64 `json:"temperature,omitempty"`
+	TopP             *float64 `json:"top_p,omitempty"`
+	PresencePenalty  *float64 `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64 `json:"frequency_penalty,omitempty"`
+	Seed             *int64   `json:"seed,omitempty"`
+	// llama.cpp/LM Studio extensions; only emitted for local hosts.
+	TopK          *int           `json:"top_k,omitempty"`
+	MinP          *float64       `json:"min_p,omitempty"`
+	RepeatPenalty *float64       `json:"repeat_penalty,omitempty"`
+	Messages      []openaiReqMsg `json:"messages"`
+	Stream        bool           `json:"stream"`
 	// StreamOptions asks the server to emit a final usage chunk in
 	// streaming mode. Required by the OpenAI spec (and LM Studio,
 	// vLLM, etc.) to get prompt/completion token counts back when
@@ -117,17 +133,25 @@ func buildOpenAIRequest(model string, msgs []Message, tools []ToolDef, vision bo
 }
 
 func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat) ([]byte, error) {
-	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format, 0)
+	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format, 0, Sampling{})
 }
 
-func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int) ([]byte, error) {
+func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int, sampling Sampling) ([]byte, error) {
 	msgs = demoteMidConversationSystemMessages(msgs)
 	req := openaiRequest{
-		Model:         model,
-		MaxTokens:     maxTokens,
-		Stream:        true,
-		StreamOptions: &openaiStreamOptions{IncludeUsage: true},
-		CachePrompt:   cachePrompt,
+		Model:            model,
+		MaxTokens:        maxTokens,
+		Temperature:      sampling.Temperature,
+		TopP:             sampling.TopP,
+		PresencePenalty:  sampling.PresencePenalty,
+		FrequencyPenalty: sampling.FrequencyPenalty,
+		Seed:             sampling.Seed,
+		TopK:             sampling.TopK,
+		MinP:             sampling.MinP,
+		RepeatPenalty:    sampling.RepeatPenalty,
+		Stream:           true,
+		StreamOptions:    &openaiStreamOptions{IncludeUsage: true},
+		CachePrompt:      cachePrompt,
 	}
 	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone); e != "" {
 		if format == openAIReasoningUnified {

@@ -14,6 +14,10 @@ type anthropicRequest struct {
 	Messages  []anthropicMessage `json:"messages"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
 	Thinking  *anthropicThinking `json:"thinking,omitempty"`
+	// Sampling. Pointers + omitempty: unset stays absent from the body.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
+	TopK        *int     `json:"top_k,omitempty"`
 }
 
 type anthropicThinking struct {
@@ -51,12 +55,25 @@ type anthropicTool struct {
 }
 
 func buildAnthropicRequest(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int) ([]byte, error) {
+	return buildAnthropicRequestWithSampling(model, msgs, tools, vision, maxTokens, Sampling{})
+}
+
+func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int, sampling Sampling) ([]byte, error) {
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
 	req := anthropicRequest{Model: model, MaxTokens: maxTokens, Stream: true}
 	if thinking := anthropicThinkingForModel(model, maxTokens); thinking != nil {
 		req.Thinking = thinking
+	}
+	// Extended thinking fixes the sampling: the API rejects top_p/top_k
+	// and any temperature other than 1 while thinking is on. Silently
+	// skipping the parameters is better than turning every request into
+	// a 400 for a setting the user meant for the local models.
+	if req.Thinking == nil {
+		req.Temperature = sampling.Temperature
+		req.TopP = sampling.TopP
+		req.TopK = sampling.TopK
 	}
 	for _, t := range tools {
 		inputSchema, err := normalizeToolSchemaChecked(t.Schema)

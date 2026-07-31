@@ -57,6 +57,11 @@ type TomlConfig struct {
 	// first output is skipped. Zero selects the conservative 30s default.
 	FallbackCooldownSeconds int `toml:"fallback_cooldown_seconds"`
 
+	// Sampling is the `[sampling]` table: temperature, top_p and friends.
+	// Every field is optional; unset parameters are never sent, so the
+	// model server keeps applying its own defaults. See SamplingConf.
+	Sampling SamplingConf `toml:"sampling"`
+
 	// Model price overrides (F28 source="user").
 	ModelPrices []ModelPriceConf `toml:"model_prices"`
 
