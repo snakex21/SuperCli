@@ -390,6 +390,72 @@ func TestPatchFile_ReportsAmbiguousOld(t *testing.T) {
 	}
 }
 
+// "add surrounding context" is advice until the model knows WHERE the
+// duplicates are; the line numbers make it an instruction.
+func TestPatchFile_AmbiguousOldCarriesLineNumbers(t *testing.T) {
+	path := writeTemp(t, "dup2.txt", "head\nx = 1;\nmid\nx = 1;\ntail\n")
+	_, err := PatchFile(path, []PatchChange{{Old: "x = 1;", New: "x = 2;"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "at lines 2,4") {
+		t.Fatalf("no occurrence lines in: %s", msg)
+	}
+}
+
+// A boilerplate string must not paste hundreds of numbers into the error.
+func TestOccurrenceLines_Capped(t *testing.T) {
+	content := strings.Repeat("dup\n", 50)
+	got := occurrenceLines(content, "dup")
+	if strings.Count(got, ",") != diagMaxOccLines || !strings.HasSuffix(got, "...") {
+		t.Fatalf("uncapped or malformed list: %q", got)
+	}
+}
+
+// The one piece of state the tool really holds: it patched this file already,
+// so the model is matching against bytes older than its own edit.
+func TestPatchFile_ReportsItsOwnEarlierWrite(t *testing.T) {
+	path := writeTemp(t, "twice.txt", "alpha\nbeta\n")
+	if _, err := PatchFile(path, []PatchChange{{Old: "alpha", New: "ALPHA"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := PatchFile(path, []PatchChange{{Old: "alpha", New: "gamma"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "patched 1 time(s) earlier in this session") {
+		t.Fatalf("earlier write not reported: %s", msg)
+	}
+}
+
+// With no verdict and no session history there is still one useful sentence.
+func TestPatchFile_UnexplainedMissSaysReRead(t *testing.T) {
+	path := writeTemp(t, "plain.txt", "alpha\nbeta\ngamma\n")
+	_, err := PatchFile(path, []PatchChange{{Old: "delta", New: "x"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "re-read the file before patching") {
+		t.Fatalf("no re-read hint: %s", msg)
+	}
+}
+
+// ...but a call that already got a precise repair is not padded with it.
+func TestPatchFile_PreciseVerdictNotPaddedWithReRead(t *testing.T) {
+	path := writeTemp(t, "ws.txt", "func main() {\n\tprintln(\"hi\")\n}\n")
+	_, err := PatchFile(path, []PatchChange{{Old: "func main() {\n    println(\"hi\")\n}", New: "x"}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "whitespace") {
+		t.Fatalf("expected a whitespace verdict: %s", msg)
+	}
+	if strings.Contains(msg, "re-read the file before patching") {
+		t.Fatalf("generic hint added on top of a precise verdict: %s", msg)
+	}
+}
+
 // Regression: the patch success path is untouched — no diagnostics, no warning,
 // identical result. The median `old` is 6.8% of the file, so a "your old is
 // large" hint on success would only discourage correct calls.
@@ -414,7 +480,7 @@ func TestPatchFile_SuccessPathUnchanged(t *testing.T) {
 // bow out rather than allocating copies of a huge file.
 func TestPatchFailureHint_SkipsHugeFiles(t *testing.T) {
 	content := strings.Repeat("a", diagMaxContent+1)
-	if h := patchFailureHint(content, []PatchChange{{Old: "not-here-at-all"}}, 0, 1, 0); h != "" {
+	if h := patchFailureHint("", content, []PatchChange{{Old: "not-here-at-all"}}, 0, 1, 0); h != "" {
 		t.Fatalf("diagnostics ran on an oversized file: %q", h)
 	}
 }
@@ -439,7 +505,7 @@ func BenchmarkPatchFailureHint_100KB(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if h := patchFailureHint(content, changes, 3, 1, 0); h == "" {
+		if h := patchFailureHint("", content, changes, 3, 1, 0); h == "" {
 			b.Fatal("empty hint")
 		}
 	}
@@ -458,7 +524,7 @@ func BenchmarkPatchFailureHint_WrongFile_100KB(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if h := patchFailureHint(content, changes, 0, 1, 0); h == "" {
+		if h := patchFailureHint("", content, changes, 0, 1, 0); h == "" {
 			b.Fatal("empty hint")
 		}
 	}

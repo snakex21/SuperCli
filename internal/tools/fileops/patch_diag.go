@@ -69,6 +69,11 @@ const (
 
 	// diagSnippet caps any file text echoed back into the error.
 	diagSnippet = 120
+
+	// diagMaxOccLines caps the line list for an ambiguous `old`. Ten numbers
+	// are enough to pick a disambiguating anchor; a boilerplate string that
+	// occurs 400 times must not paste 400 numbers into the error.
+	diagMaxOccLines = 10
 )
 
 // patchFailureHint returns the diagnostic tail appended to a PatchFile
@@ -76,7 +81,7 @@ const (
 // useful can be said. content is the file as it stands when the change was
 // attempted (earlier changes in the same call already applied in memory);
 // changes is the whole call, idx the change that failed.
-func patchFailureHint(content string, changes []PatchChange, idx, want, got int) string {
+func patchFailureHint(path, content string, changes []PatchChange, idx, want, got int) string {
 	if idx < 0 || idx >= len(changes) {
 		return ""
 	}
@@ -92,11 +97,11 @@ func patchFailureHint(content string, changes []PatchChange, idx, want, got int)
 
 	switch {
 	case got == 0:
-		parts = append(parts, diagnoseMissingOld(content, changes, idx)...)
+		parts = append(parts, diagnoseMissingOld(path, content, changes, idx)...)
 	case got > want:
 		parts = append(parts, fmt.Sprintf(
-			"old occurs %d times: add surrounding context to make it unique, or set expected_count=%d",
-			got, got))
+			"old occurs %d times%s: add surrounding context to make it unique, or set expected_count=%d",
+			got, occurrenceLines(content, changes[idx].Old), got))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -116,7 +121,7 @@ func patchFailureHint(content string, changes []PatchChange, idx, want, got int)
 // The last one has to come last: whitespace and near-miss both prove the model
 // is looking at the right file, and telling it to go check the path then would
 // send a correctable call back to the drawing board.
-func diagnoseMissingOld(content string, changes []PatchChange, idx int) []string {
+func diagnoseMissingOld(path, content string, changes []PatchChange, idx int) []string {
 	old := changes[idx].Old
 	if len(content) > diagMaxContent || old == "" {
 		return nil
@@ -144,7 +149,54 @@ func diagnoseMissingOld(content string, changes []PatchChange, idx int) []string
 			"file is a single line of %d chars: old must be an exact byte run inside it",
 			len(strings.TrimSuffix(content, "\n"))))
 	}
-	return parts
+	return append(parts, staleReadVerdict(path, len(parts) == 0)...)
+}
+
+// staleReadVerdict says that the bytes the model matched against are older than
+// the file. When this process has already patched the path, that is a fact, not
+// a guess, and it is the likeliest cause of a miss the verdicts above cannot
+// explain. Otherwise the only honest thing left is the cheapest instruction:
+// look at the file again. It is emitted only when nothing else fired, so a call
+// that already got a precise repair is not padded with generic advice.
+func staleReadVerdict(path string, alone bool) []string {
+	if n := patchWriteCount(path); n > 0 {
+		return []string{fmt.Sprintf(
+			"this file was patched %d time(s) earlier in this session: re-read it, old may predate your own edit", n)}
+	}
+	if alone {
+		return []string{"re-read the file before patching"}
+	}
+	return nil
+}
+
+// occurrenceLines renders ", lines 3, 40, 51" for the matches of old, or "" when
+// there are none to show. Which lines the duplicates are on is what turns "add
+// surrounding context" from advice into an instruction the model can follow
+// without another read. One pass over the file, on the failure path only.
+func occurrenceLines(content, old string) string {
+	if old == "" || len(content) > diagMaxContent {
+		return ""
+	}
+	nums := make([]string, 0, diagMaxOccLines)
+	line, off := 1, 0
+	for off < len(content) {
+		i := strings.Index(content[off:], old)
+		if i < 0 {
+			break
+		}
+		line += strings.Count(content[off:off+i], "\n")
+		if len(nums) == diagMaxOccLines {
+			nums = append(nums, "...")
+			break
+		}
+		nums = append(nums, fmt.Sprint(line))
+		line += strings.Count(old, "\n")
+		off += i + len(old)
+	}
+	if len(nums) == 0 {
+		return ""
+	}
+	return " at lines " + strings.Join(nums, ",")
 }
 
 // whitespaceVerdict reports whether `old` would match if whitespace were

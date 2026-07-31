@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // PatchChange is one exact text replacement in a file.
@@ -60,6 +61,30 @@ func pureInsertionNote(content string, changes []PatchChange) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// patchWrites counts the writes this process has already made to each path.
+// A missed anchor is most often the model patching against bytes it read
+// BEFORE its own earlier edit, and this counter is the only evidence of that
+// the tool actually holds — mtime cannot tell our own writes from anyone
+// else's. Read on the failure path only; one small map, one mutex.
+var patchWrites = struct {
+	sync.Mutex
+	n map[string]int
+}{n: map[string]int{}}
+
+func notePatchWrite(path string) {
+	key := filepath.Clean(path)
+	patchWrites.Lock()
+	patchWrites.n[key]++
+	patchWrites.Unlock()
+}
+
+func patchWriteCount(path string) int {
+	key := filepath.Clean(path)
+	patchWrites.Lock()
+	defer patchWrites.Unlock()
+	return patchWrites.n[key]
 }
 
 // FileSHA256 returns the hex-encoded SHA-256 of the file contents.
@@ -123,7 +148,7 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 			// failure path only — to say what actually differs.
 			return PatchResult{}, fmt.Errorf(
 				"fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written%s",
-				i, want, got, patchFailureHint(content, changes, i, want, got))
+				i, want, got, patchFailureHint(path, content, changes, i, want, got))
 		}
 		content = strings.Replace(content, ch.Old, ch.New, want)
 		total += want
@@ -144,6 +169,7 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	if err := os.WriteFile(path, afterData, 0o644); err != nil {
 		return PatchResult{}, FileErr(err, path)
 	}
+	notePatchWrite(path)
 	note, duplicated := pureInsertionNote(content, changes)
 	return PatchResult{
 		Replacements: total,

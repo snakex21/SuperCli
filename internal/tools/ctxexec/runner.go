@@ -234,7 +234,18 @@ func missingBinaryMessage(file string) string {
 	if isRipgrepCommand(file) {
 		return "executable not found: rg; use the built-in search_code tool for file and content searches (no rg installation required)"
 	}
-	return fmt.Sprintf("executable not found: %s", file)
+	return fmt.Sprintf("executable not found: %s%s", file, WindowsShellHint())
+}
+
+// WindowsShellHint names the host and the one shell it has, for the two
+// failures that are really "the model assumed POSIX": a missing coreutils
+// binary and cmd's 9009. Empty everywhere else, so nothing is paid for it on
+// Linux or macOS, and nothing at all is paid on the success path.
+func WindowsShellHint() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	return "; windows host: no POSIX tools or pipes, run them via powershell -Command \"...\""
 }
 
 // classifyErr maps a non-ExitError to one of our exit

@@ -49,6 +49,39 @@ func TestReadLinesTool_AbsolutePath(t *testing.T) {
 	}
 }
 
+// from=0 is the single most common read_lines failure. It has exactly one
+// possible meaning — start of file — so the tool serves it instead of spending
+// a turn on an error.
+func TestReadLinesTool_CoercesFromZero(t *testing.T) {
+	_, dir := tmpToolFile(t, "alpha\nbeta\ngamma\n")
+	tool := NewReadLines(dir)
+	args, _ := json.Marshal(readLinesArgs{File: "test.txt", From: 0, To: 2})
+	r, err := tool.execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if r.Err != nil {
+		t.Fatalf("from=0 still errors: %v", r.Err)
+	}
+	if !strings.Contains(r.Text, "alpha") || !strings.Contains(r.Text, "beta") {
+		t.Errorf("text = %s", r.Text)
+	}
+}
+
+// The coercion must not swallow a genuinely impossible range.
+func TestReadLinesTool_ToBelowFromStillErrors(t *testing.T) {
+	_, dir := tmpToolFile(t, "alpha\nbeta\n")
+	tool := NewReadLines(dir)
+	args, _ := json.Marshal(readLinesArgs{File: "test.txt", From: 0, To: 0})
+	r, _ := tool.execute(context.Background(), args)
+	if r.Err == nil {
+		t.Fatal("expected error for to < from")
+	}
+	if !strings.Contains(r.Err.Error(), "1-based") {
+		t.Errorf("error does not say lines are 1-based: %v", r.Err)
+	}
+}
+
 func TestReadLinesTool_BadJSON(t *testing.T) {
 	tool := NewReadLines(".")
 	r, _ := tool.execute(context.Background(), []byte("bad"))

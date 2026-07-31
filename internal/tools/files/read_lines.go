@@ -56,6 +56,13 @@ func (t *ReadLines) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("read_lines: bad args: %w", err)}, nil
 	}
+	// from=0 was 10 of the 14 observed read_lines failures: the model means
+	// "start of the file" and lines are 1-based. There is no line 0 to confuse
+	// it with, so clamping is unambiguous and cheaper than an error turn. The
+	// library contract (fileops.ReadLines) stays strict for other callers.
+	if a.From < 1 {
+		a.From = 1
+	}
 	full, err := resolveSandboxed(t.BaseDir, a.File)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_lines: %w", err)}, nil
