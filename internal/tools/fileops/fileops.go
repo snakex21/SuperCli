@@ -131,7 +131,7 @@ func ReadLines(path string, from, to int) ([]LineRange, error) {
 		return nil, fmt.Errorf("fileops.ReadLines: from=%d must be >= 1", from)
 	}
 	if to < from {
-		return nil, fmt.Errorf("fileops.ReadLines: to=%d must be >= from=%d", to, from)
+		return nil, fmt.Errorf("fileops.ReadLines: to=%d must be >= from=%d; lines are 1-based", to, from)
 	}
 	if to-from+1 > MaxLineRange {
 		return nil, fmt.Errorf("fileops.ReadLines: range %d lines exceeds cap %d", to-from+1, MaxLineRange)

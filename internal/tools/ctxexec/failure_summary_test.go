@@ -53,6 +53,18 @@ func TestFailureSummary_RunnerError(t *testing.T) {
 	}
 }
 
+// cmd's 9009 reads as "install this tool" unless the message names the host.
+func TestFailureSummary_WindowsNotFound(t *testing.T) {
+	r := &Result{ExitCode: ExitWindowsNotFound, DurationMS: 40, Stderr: "'wc' is not recognized"}
+	got := r.FailureSummary()
+	if !strings.HasPrefix(got, "command_failed exit=9009 (0.0s): program not found") {
+		t.Errorf("first line = %q", got)
+	}
+	if hint := WindowsShellHint(); hint != "" && !strings.Contains(got, hint) {
+		t.Errorf("windows hint missing:\n%s", got)
+	}
+}
+
 func TestFailureSummary_TailCapped(t *testing.T) {
 	long := strings.Repeat("x", FailTailBytes+500) + "THE_END"
 	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long}

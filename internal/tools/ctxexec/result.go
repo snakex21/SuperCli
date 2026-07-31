@@ -67,6 +67,12 @@ const (
 	ExitNotExecutable   = 126
 	ExitSandboxError    = -1
 	ExitValidationError = -2
+
+	// ExitWindowsNotFound is cmd.exe's code for "'x' is not recognized as an
+	// internal or external command". It reaches us when the model shells out
+	// through cmd (ctxexec itself never does), and it means the same thing as
+	// 127 — with the extra fact that the host is Windows.
+	ExitWindowsNotFound = 9009
 )
 
 // Request is what the model sends. All fields are
@@ -183,6 +189,11 @@ func (r *Result) FailureSummary() string {
 		fmt.Fprintf(&b, "command_failed timeout exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
 	case r.Error != "":
 		fmt.Fprintf(&b, "command_failed exit=%d: %s", r.ExitCode, r.Error)
+	case r.ExitCode == ExitWindowsNotFound:
+		// cmd.exe's "is not recognized". The stderr tail says only that, and
+		// the model reads it as "install the tool" rather than "wrong OS".
+		fmt.Fprintf(&b, "command_failed exit=%d (%s): program not found%s",
+			r.ExitCode, fmtDurMS(r.DurationMS), WindowsShellHint())
 	default:
 		fmt.Fprintf(&b, "command_failed exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
 	}
