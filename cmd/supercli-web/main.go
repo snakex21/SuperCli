@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"supercli/internal/llm"
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
@@ -233,17 +232,13 @@ func run(crashDataDir *string) {
 				log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
 			}
 		}
-		// Sampling pass-through: config.toml `[sampling]` (plus the
-		// SUPERCLI_LLM_TEMPERATURE override) applies to every provider
-		// this process builds. Nothing configured leaves every field
-		// nil, and nil fields are never sent.
-		llm.SetSamplingDefault(tomlCfg.Sampling.Resolve(cfg.Temperature))
-		// Restore saved reasoning effort
-		if tomlCfg.ReasoningEffort != "" {
-			if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {
-				log.Printf("config: reasoning_effort: %v (ignored)", err)
-			}
-		}
+		// Process-global LLM settings from config.toml — cache_prompt,
+		// [sampling], reasoning_effort, thinking — applied to every
+		// provider this process builds. Same call as the TUI and batch
+		// paths; the web GUI used to set only sampling and reasoning
+		// effort, so a configured cache_prompt did nothing until the
+		// user toggled the knob in the UI.
+		config.ApplyLLMGlobals(tomlCfg, cfg.Temperature)
 		if err := cfg.Normalize(); err != nil {
 			fatal("normalize config", err)
 		}

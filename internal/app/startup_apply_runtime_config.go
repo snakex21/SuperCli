@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 
-	"supercli/internal/llm"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
 )
@@ -58,19 +57,12 @@ func applyRuntimeConfig(f *cliFlags, tomlCfg config.TomlConfig, tomlErr error, a
 			log.Printf("project %q: normalize config: %v (ignored)", activeProject.Name, err)
 		}
 	}
-	// Reasoning effort (OpenAI reasoning models): restore the
-	// persisted level; /reasoning changes it at runtime.
-	if tomlCfg.ReasoningEffort != "" {
-		if err := llm.SetReasoningEffort(tomlCfg.ReasoningEffort); err != nil {
-			log.Printf("config: reasoning_effort: %v (ignored)", err)
-		}
-	}
-	// Thinking soft switch (local Qwen /no_think): restore the
-	// persisted state; /think changes it at runtime. Default (nil) is
-	// thinking ON — unchanged from historical behaviour.
-	if tomlCfg.Thinking != nil {
-		llm.SetThinkingEnabled(*tomlCfg.Thinking)
-	}
+	// Process-global LLM settings owned by config.toml (cache_prompt,
+	// [sampling], reasoning_effort, thinking). Installed here — before
+	// any provider is built — because NewOpenAI reads the cache_prompt
+	// and sampling defaults at construction time. Every start path
+	// (batch, web GUI) calls the same function.
+	config.ApplyLLMGlobals(tomlCfg, cfg.Temperature)
 	// Apply draft/credit overrides from TOML if not set by flags.
 	if f.DraftMode == "off" && tomlCfg.DraftMode != "" {
 		f.DraftMode = tomlCfg.DraftMode
