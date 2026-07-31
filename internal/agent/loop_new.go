@@ -2,12 +2,25 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/llm/draft"
 )
+
+// newRunID returns a short opaque identifier for one agent loop. It
+// only has to be unique among the runs sharing a tool_errors.log, so
+// 8 random bytes is ample and no clock or counter is involved.
+func newRunID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b[:])
+}
 
 // NewLoop returns a configured Loop. Provider and Registry are
 // required; an error is returned if either is nil.
@@ -49,6 +62,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		baseDir:               cfg.BaseDir,
 		writer:                cfg.Writer,
 		errorLog:              cfg.ErrorLog,
+		runID:                 newRunID(),
 		reflector:             cfg.Reflector,
 		reflectEvery:          cfg.ReflectEvery,
 		adaptiveReflect:       cfg.AdaptiveReflection,

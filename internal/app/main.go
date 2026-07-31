@@ -273,13 +273,7 @@ func Main() {
 	}
 
 	logsDir := filepath.Join(dataDir, "logs")
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
-		log.Printf("mkdir logs: %v", err)
-	}
-	errorLog, err := tools.NewErrorLog(filepath.Join(logsDir, "tool_errors.log"))
-	if err != nil {
-		log.Printf("open error log: %v", err)
-	}
+	errorLog := openToolErrorLog(dataDir)
 	defer errorLog.Close()
 
 	// F7: open the audit log. A failure here is

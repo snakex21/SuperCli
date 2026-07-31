@@ -348,6 +348,13 @@ func (Policy) Decide(v Verdict, attempt int) Action {
 
 // ErrorRecord is one entry in tool_errors.log. The
 // structure is stable JSON-Lines.
+//
+// RunID, Step and Attempt exist so the log answers the question it
+// was built for: after a given failure, did the model repair itself
+// on the next try? Group by RunID, order by Step, and read Attempt —
+// a failure logged with Attempt 1 and never repeated for the same
+// tool+args was recovered from immediately; Attempt 2+ means the
+// model repeated a call that had already failed identically.
 type ErrorRecord struct {
 	Ts         string  `json:"ts"`
 	Tool       string  `json:"tool"`
@@ -357,6 +364,15 @@ type ErrorRecord struct {
 	Reason     string  `json:"reason"`
 	Suggestion string  `json:"suggestion,omitempty"`
 	SessionID  string  `json:"session_id,omitempty"`
+	// RunID identifies the agent loop that produced the record.
+	RunID string `json:"run_id,omitempty"`
+	// Step is the loop step (turn) number, 1-based.
+	Step int `json:"step,omitempty"`
+	// Attempt counts consecutive failures of this exact tool+args
+	// within the run; 1 is the first failure.
+	Attempt int `json:"attempt,omitempty"`
+	// Action is the policy decision this verdict produced.
+	Action string `json:"action,omitempty"`
 }
 
 // ErrorLog is a thread-safe append-only NDJSON file. The
@@ -368,6 +384,13 @@ type ErrorLog struct {
 	w   *lineWriter
 }
 
+// errorLogMaxBytes caps tool_errors.log. Past this size the file is
+// rotated to tool_errors.log.1 and a fresh one is started, so the
+// pair can never exceed twice the cap. Records average ~300 bytes,
+// so this holds roughly 7000 failures — far more than any analysis
+// window needs.
+const errorLogMaxBytes = 2 << 20
+
 // NewErrorLog opens (or creates) a JSONL file at path. The
 // parent directory must exist. Pass path = "" to disable
 // logging.
@@ -375,7 +398,7 @@ func NewErrorLog(path string) (*ErrorLog, error) {
 	if path == "" {
 		return &ErrorLog{}, nil
 	}
-	w, err := newLineWriter(path)
+	w, err := newLineWriter(path, errorLogMaxBytes)
 	if err != nil {
 		return nil, err
 	}

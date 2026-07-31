@@ -152,6 +152,18 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	if errMsg := HardenToolCall(&tc, l.registry.Names(), l.recentBadCallStreak()); errMsg != "" {
 		out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", errMsg)}
+		// A hallucinated tool name or unrepairable arguments never
+		// reaches Execute, so it used to be invisible to the error
+		// log — silently dropping the single most common model
+		// failure. Record it here. The identical-failure gate is
+		// deliberately NOT touched: this class already has its own
+		// back-pressure in recentBadCallStreak, and feeding it would
+		// change when calls get blocked.
+		l.logToolFailure(
+			tc, json.RawMessage(tc.Arguments),
+			tools.Result{Err: fmt.Errorf("%s", errMsg)},
+			l.identicalFails.attempts(tc.Name, tc.Arguments)+1,
+		)
 		return toolResult{
 			failed: true,
 			followUps: []llm.Message{{
@@ -257,19 +269,16 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// log it to the error log if configured. We log
 	// after the verification rewrite so the log records
 	// the reason the model actually sees.
-	if l.errorLog != nil {
-		cat := tools.Classifier{}.Classify(tc.Name, raw, res)
-		if cat.Category != tools.CategoryUnknown {
-			l.errorLog.Append(tools.ErrorRecord{
-				Tool:       tc.Name,
-				Args:       string(raw),
-				Category:   cat.Category.String(),
-				Confidence: cat.Confidence,
-				Reason:     cat.Reason,
-				Suggestion: cat.Suggestion,
-			})
-		}
+	// Dispatch errors (unknown tool, undecodable arguments) come back
+	// in err, not res.Err, and were classified as "no error" and
+	// dropped. Fold them in so they are attributed too.
+	attributed := res
+	if attributed.Err == nil {
+		attributed.Err = err
 	}
+	// attempt is read after recordFailure above, so it is the number
+	// of the failure just seen (1 = first).
+	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments))
 
 	// Tool not found.
 	if err != nil {
@@ -333,6 +342,36 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		})
 	}
 	return toolResult{followUps: follow, inert: res.Inert}
+}
+
+// logToolFailure classifies one failed tool call and appends it to
+// tool_errors.log. A result without an error is a no-op, so callers
+// can hand it every outcome. attempt is 1 for the first failure of
+// this exact tool+args in the run.
+//
+// RunID + Step + Attempt are what let an analysis answer the question
+// the log exists for: after this failure, did the model repair itself
+// on the next try, or repeat the same broken call?
+func (l *Loop) logToolFailure(tc llm.ToolCall, raw json.RawMessage, res tools.Result, attempt int) {
+	if l.errorLog == nil || res.Err == nil {
+		return
+	}
+	cat := tools.Classifier{}.Classify(tc.Name, raw, res)
+	if cat.Category == tools.CategoryUnknown {
+		return
+	}
+	l.errorLog.Append(tools.ErrorRecord{
+		Tool:       tc.Name,
+		Args:       string(raw),
+		Category:   cat.Category.String(),
+		Confidence: cat.Confidence,
+		Reason:     cat.Reason,
+		Suggestion: cat.Suggestion,
+		RunID:      l.runID,
+		Step:       int(l.curStep.Load()),
+		Attempt:    attempt,
+		Action:     tools.Policy{}.Decide(cat, attempt).String(),
+	})
 }
 
 func isPassingGoalVerification(name string, raw json.RawMessage) bool {

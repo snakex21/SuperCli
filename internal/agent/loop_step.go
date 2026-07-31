@@ -38,6 +38,8 @@ func (l *Loop) runStep(
 		return stepAbort
 	}
 	l.retryDirtyProjection(ctx)
+	// 1-based, matching the step numbers the phase telemetry prints.
+	l.curStep.Store(int64(step + 1))
 
 	// Phase telemetry: one stats turn per step. All timings are
 	// whole-phase time.Since measurements — nothing is measured

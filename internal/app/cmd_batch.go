@@ -144,10 +144,15 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if instructions := prompt.ActiveUserInstructions(dataDir); instructions != "" {
 		systemPrompt += "\n\n" + instructions
 	}
+	// Batch runs share the CLI/GUI tool_errors.log so one-shot
+	// failures land in the same corpus as interactive ones.
+	batchErrorLog := openToolErrorLog(dataDir)
+	defer batchErrorLog.Close()
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider:              p,
 		Registry:              reg,
 		Caps:                  caps,
+		ErrorLog:              batchErrorLog,
 		System:                systemPrompt,
 		MaxSteps:              tomlCfg.MaxStepsOr(25),
 		BaseDir:               home,

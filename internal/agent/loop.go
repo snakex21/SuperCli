@@ -84,8 +84,15 @@ type Loop struct {
 	// persistHealth tracks session-write reliability: sticky
 	// first error, failure counter, in-order retry buffer and
 	// the one-shot UI warning. See persist_health.go.
-	persistHealth   persistHealth
-	errorLog        ErrorLogger
+	persistHealth persistHealth
+	errorLog      ErrorLogger
+	// runID labels every tool_errors.log record this loop writes so
+	// failures can be grouped back into the run that produced them.
+	// curStep is the step index the loop is currently executing; it
+	// orders those records within the run. Written by the loop
+	// goroutine, read by tool goroutines during parallel dispatch.
+	runID           string
+	curStep         atomic.Int64
 	reflector       Reflector
 	reflectEvery    int
 	adaptiveReflect bool
