@@ -54,11 +54,11 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		fatal("load config", err)
 	}
 
-	// Sampling pass-through, same as the TUI path: batch runs are the
-	// scripted/CI surface and must honour `[sampling]` too. Set before
-	// any provider is built. Nothing configured leaves every field nil,
-	// and nil fields are never sent.
-	llm.SetSamplingDefault(tomlCfg.Sampling.Resolve(cfg.Temperature))
+	// Process-global LLM settings from config.toml (cache_prompt,
+	// [sampling], reasoning_effort, thinking), same as the TUI path:
+	// batch runs are the scripted/CI surface and must honour them too.
+	// Installed before any provider is built.
+	config.ApplyLLMGlobals(tomlCfg, cfg.Temperature)
 
 	caps, err := llm.NewCapabilityRegistryFromSources(dataDir, nil)
 	if err != nil {

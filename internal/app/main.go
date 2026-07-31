@@ -387,19 +387,12 @@ func Main() {
 	}
 	taskParallel, taskParallelWarnLocal := execution.Parallel(taskWorkerCfg.BaseURL, tomlCfg.TaskParallel)
 
-	// cache_prompt (config.toml) sets the process-global default so
-	// providers built later this session (e.g. after a /model swap)
-	// honour it. nil = per-host auto-detection (unchanged behaviour).
-	llm.SetCachePromptDefault(tomlCfg.CachePrompt)
-
-	// Sampling pass-through (config.toml `[sampling]` plus the
-	// SUPERCLI_LLM_TEMPERATURE override). Set process-globally for the
-	// same reason as cache_prompt: providers built later this session —
-	// a /model swap, a task_model worker, a compact_model summarizer, a
-	// failover hop — must honour the user's settings too. Nothing
-	// configured leaves every field nil, and nil fields are never
-	// serialized, so a bare config still sends a bare request.
-	llm.SetSamplingDefault(tomlCfg.Sampling.Resolve(cfg.Temperature))
+	// cache_prompt and [sampling] are installed process-globally by
+	// applyRuntimeConfig (config.ApplyLLMGlobals), which runs before
+	// the main provider is built — NewOpenAI reads both at
+	// construction. Providers built later this session (a /model swap,
+	// a task_model worker, a compact_model summarizer, a failover hop)
+	// read the same globals.
 
 	// Warm KV cache across sessions (llama.cpp slot save/restore).
 	// nil for cloud endpoints — they are never probed. slot_cache

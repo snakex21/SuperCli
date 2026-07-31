@@ -59,6 +59,11 @@ var cachePromptDefault atomic.Value
 // Pass nil to clear it (back to per-host auto-detection).
 func SetCachePromptDefault(v *bool) { cachePromptDefault.Store(cachePromptHolder{v}) }
 
+// CachePromptDefault returns the process-global default, or nil when
+// unset (per-host auto-detection). The exported read of what
+// SetCachePromptDefault installed.
+func CachePromptDefault() *bool { return cachePromptDefaultVal() }
+
 // cachePromptDefaultVal returns the current global default, or nil when
 // unset. Consulted by NewOpenAI when no explicit CachePrompt is given.
 func cachePromptDefaultVal() *bool {
