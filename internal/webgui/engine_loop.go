@@ -292,6 +292,11 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		// 0 = scale with the active model window, negative = off.
 		PruneProtectTokens: tc.PruneProtectTokens,
 		Stats:              recorder,
+		// Attributed tool failures go to <dataDir>/logs/tool_errors.log,
+		// exactly as in the CLI. The web front-end shipped without this
+		// wiring, so every failure since the GUI became the primary
+		// front-end was classified and then thrown away.
+		ErrorLog: e.toolErrorLog(),
 	})
 	if err != nil {
 		return nil, err

@@ -53,6 +53,13 @@ pricing_cache.json
 *.pem
 *.key
 *.crt
+# OAuth token stores (codexauth): <dataDir>/auth.json and the
+# per-account <dataDir>/auth-<label>.json. supercli-data/ and
+# .supercli/ already cover the default locations; these patterns keep
+# them out of the repo from ANY directory, including a data dir a user
+# points somewhere else.
+auth.json
+auth-*.json
 
 # OS/editor noise
 .DS_Store

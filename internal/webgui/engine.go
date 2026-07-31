@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -74,6 +75,13 @@ type Engine struct {
 	sessionMu sync.Mutex
 	sessions  *session.Store
 	closed    bool
+	// errorLog is the shared append-only tool_errors.log handle. Web
+	// runs build a fresh loop per request, so the file is opened once
+	// per Engine and every loop appends to it; opening it per run
+	// would mean a new file handle on every chat message.
+	errorLogMu   sync.Mutex
+	errorLog     *tools.ErrorLog
+	errorLogOnce bool
 	// goals is a shared service over the same portable SQLite database used by
 	// the TUI. Keeping one handle per Engine avoids reopening and migrating the
 	// database for every panel refresh and lets web agent tools observe UI edits
@@ -257,6 +265,33 @@ func (e *Engine) sessionStore() (*session.Store, error) {
 	return e.sessions, nil
 }
 
+// toolErrorLog returns the shared tool_errors.log writer, opening it on
+// first use. A failure to open is logged once and then treated as
+// "logging off" — diagnostics must never keep a chat from running.
+func (e *Engine) toolErrorLog() agent.ErrorLogger {
+	e.errorLogMu.Lock()
+	defer e.errorLogMu.Unlock()
+	if e.errorLogOnce {
+		if e.errorLog == nil {
+			return nil
+		}
+		return e.errorLog
+	}
+	e.errorLogOnce = true
+	logsDir := filepath.Join(e.dataDir, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		log.Printf("webgui: mkdir logs: %v", err)
+		return nil
+	}
+	l, err := tools.NewErrorLog(filepath.Join(logsDir, "tool_errors.log"))
+	if err != nil {
+		log.Printf("webgui: open tool error log: %v", err)
+		return nil
+	}
+	e.errorLog = l
+	return l
+}
+
 // goalService returns the Engine-owned goal service, opening and migrating the
 // shared portable database once. Callers that need to observe changes made by
 // another SuperCli process should call Refresh on the returned service.
@@ -363,6 +398,14 @@ func (e *Engine) Close() error {
 	e.processMu.Unlock()
 	for _, tool := range processes {
 		tool.Close()
+	}
+	e.errorLogMu.Lock()
+	errorLog := e.errorLog
+	e.errorLog = nil
+	e.errorLogOnce = true
+	e.errorLogMu.Unlock()
+	if errorLog != nil {
+		_ = errorLog.Close()
 	}
 	e.goalMu.Lock()
 	goalDB := e.goalDB

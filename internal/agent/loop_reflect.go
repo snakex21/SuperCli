@@ -267,6 +267,16 @@ func (g *identicalFailureGate) recordFailure(name, args string) {
 	g.counts[k]++
 }
 
+// attempts returns how many consecutive failures this exact call has
+// accumulated in the current Run (0 = none recorded yet). Read after
+// recordFailure it is the attempt number of the failure just seen.
+func (g *identicalFailureGate) attempts(name, args string) int {
+	if g.counts == nil {
+		return 0
+	}
+	return g.counts[g.key(name, args)]
+}
+
 func (g *identicalFailureGate) recordSuccess(name, args string) {
 	if g.counts == nil {
 		return
