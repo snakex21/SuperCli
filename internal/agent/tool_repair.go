@@ -40,6 +40,9 @@ const badToolCallMarker = "invalid tool call: "
 func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 1. Tool name validation with did-you-mean.
 	if !containsName(known, tc.Name) {
+		if advice := retiredEditToolAdvice(tc.Name); advice != "" {
+			return advice
+		}
 		if containsName(known, "goal") {
 			if advice := goalActionToolAdvice(tc.Name, attempt); advice != "" {
 				return advice
@@ -71,6 +74,22 @@ func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 3. Beyond repair: bounce it back with the correct format.
 	return fmt.Sprintf("%sthe arguments for %q are not valid JSON (possibly truncated).",
 		badToolCallMarker, tc.Name) + retryAdvice(tc.Name, tc.Name, attempt)
+}
+
+// retiredEditToolAdvice answers a call to one of the line editors that used to
+// exist beside patch_file. Models carry those names in their weights, so the
+// names will keep arriving long after the tools are gone; SuggestToolName
+// would answer "did you mean create_file?", which is wrong and destructive.
+// The correction is the whole call, so the next turn is the edit and not
+// another question — the same reason patch_file's own failures explain
+// themselves instead of reporting a count.
+func retiredEditToolAdvice(name string) string {
+	switch name {
+	case "edit_line", "edit_lines", "insert_after", "delete_lines":
+		return badToolCallMarker + name + ` no longer exists; patch_file is the only edit path. Call {"name":"patch_file","arguments":{"path":"...","old":"exact text now in the file","new":"replacement"}} — "new":"" deletes, and several edits go in one call as "changes":[{"old":...,"new":...}].`
+	default:
+		return ""
+	}
 }
 
 // goalActionToolAdvice catches a common local-model mistake: the values of

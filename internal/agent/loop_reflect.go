@@ -215,8 +215,7 @@ func toolKind(name string) string {
 		"invoke_tool", "recall", "code_intel", "process_session", "apply_skill",
 		"scratchpad", "mcp_bridge", "search_history":
 		return "discovery"
-	case "patch_file", "create_file", "edit_line", "edit_lines", "insert_after",
-		"delete_lines", "write_file", "make_dir", "move", "copy", "trash",
+	case "patch_file", "create_file", "write_file", "make_dir", "move", "copy", "trash",
 		"edit_docx", "edit_xlsx":
 		return "mutation"
 	case "ctx_execute":

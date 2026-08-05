@@ -168,11 +168,7 @@ func registerFileWebAndLineTools(
 	// Preferred mutations for the main model (also thin-core).
 	registry.MustRegister(wrap.mut(tools.NewPatchFile(home).Spec()))
 	registry.MustRegister(wrap.mut(tools.NewCreateFile(home).Spec()))
-	// Legacy line editors stay registered for workers/compat; not always-on core.
-	registry.MustRegister(wrap.mut(tools.NewEditLine(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewEditLines(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewInsertAfter(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewDeleteLines(home).Spec()))
+	// write_file overwrites a whole file; discoverable, not always-on core.
 	registry.MustRegister(wrap.mut(tools.NewWriteFile(home).Spec()))
 	registry.MustRegister(wrap.mut(tools.NewMakeDir(home).Spec()))
 	registry.MustRegister(wrap.mut(tools.NewMove(home).Spec()))

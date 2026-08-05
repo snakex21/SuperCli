@@ -129,8 +129,8 @@ func runLiveToolTrial(t *testing.T, trial int, baseURL, model string) liveToolTr
 	registry := tools.NewRegistry()
 	for _, spec := range []tools.Tool{
 		tools.NewReadLines(home).Spec(), tools.NewReadContext(home).Spec(), tools.NewReadMany(home).Spec(),
-		tools.NewListDir(home).Spec(), tools.NewSearchCode(home).Spec(), tools.NewEditLine(home).Spec(),
-		tools.NewEditLines(home).Spec(), tools.NewWriteFile(home).Spec(),
+		tools.NewListDir(home).Spec(), tools.NewSearchCode(home).Spec(),
+		tools.NewPatchFile(home).Spec(), tools.NewCreateFile(home).Spec(), tools.NewWriteFile(home).Spec(),
 		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
 	} {
 		registry.MustRegister(spec)

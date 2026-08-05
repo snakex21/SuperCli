@@ -65,5 +65,5 @@ const ThinToolProtocol = `Calling tools — use this exact format, not JSON:
 path: .
 »
 For a tool with no arguments write «tool_name» on one line. Do not wrap arguments in JSON or braces. One tool call at a time.
-Tools that need arrays/objects (e.g. patch_file changes) use native JSON tool calling, not this sentinel form.
+Tools that need arrays/objects use native JSON tool calling, not this sentinel form; patch_file's old/new shorthand does not.
 Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`

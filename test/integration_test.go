@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -484,14 +483,14 @@ func TestIntegration_CtxExecute_FirstCallSchema(t *testing.T) {
 	}
 }
 
-// TestIntegration_EditLine_FirstCallSchema is the live test for the
-// SLIMMED edit_line schema. edit_line is the most format-sensitive
-// trimmed tool (a malformed call corrupts the file), so the key risk
-// of token-cutting is losing first-shot accuracy on the argument
-// shape. The task is a single concrete line edit; success = edit_line
-// called with a well-formed call (non-empty file + new_content, line
-// >= 1), the file actually changed, and no failure loop.
-func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
+// TestIntegration_PatchFile_OneLineShorthand is the live test for the
+// consolidation: patch_file is now the only edit path, so a single change to
+// a single line has to be as easy to call as a batch of three. Success is the
+// old/new shorthand used on the first call, the file actually changed, and no
+// failure loop. A model reaching for changes:[{...}] here is not a failure of
+// correctness, but a model that needs two attempts is a failure of the
+// ergonomics this test exists to defend.
+func TestIntegration_PatchFile_OneLineShorthand(t *testing.T) {
 	baseURL, ok := lmStudioAvailable(t)
 	if !ok {
 		return
@@ -516,13 +515,13 @@ func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	// edit_line plus the read tools its description points at
+	// patch_file plus the read tools its description points at
 	// (read_context first) — all in the thin core, so they render
 	// with full schema exactly as in production.
-	reg.MustRegister(tools.NewEditLine(home).Spec())
+	reg.MustRegister(tools.NewPatchFile(home).Spec())
 	reg.MustRegister(tools.NewReadContext(home).Spec())
 	reg.MustRegister(tools.NewReadLines(home).Spec())
-	reg.MarkAlwaysOn("edit_line")
+	reg.MarkAlwaysOn("patch_file")
 	reg.MarkAlwaysOn("read_context")
 	reg.MarkAlwaysOn("read_lines")
 	idx, err := tools.NewInMemoryIndex()
@@ -552,7 +551,7 @@ func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	ch, err := loop.Run(ctx, "In the file config.txt, change the line `debug = false` to `debug = true`. Use edit_line.")
+	ch, err := loop.Run(ctx, "In the file config.txt, change the line `debug = false` to `debug = true`.")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -568,32 +567,32 @@ func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
 		switch e := ev.(type) {
 		case agent.ToolCallEvent:
 			t.Logf("tool call #%d: %s %s", editCalls+1, e.Name, e.Args)
-			if e.Name == "edit_line" {
+			if e.Name == "patch_file" {
 				editCalls++
 				if editCalls == 1 {
-					// Args are the model's RAW output (coercion happens
-					// later at Execute), so a small model legitimately
-					// sends line as a stringified int ("3"). Accept both
-					// shapes — the loop coerces it before the tool runs.
+					// Either form is a well-formed call; the shorthand is the
+					// one being defended, so log which arrived.
 					var p struct {
-						File       string          `json:"file"`
-						Line       json.RawMessage `json:"line"`
-						NewContent string          `json:"new_content"`
+						Path    string `json:"path"`
+						Old     string `json:"old"`
+						New     string `json:"new"`
+						Changes []struct {
+							Old string `json:"old"`
+							New string `json:"new"`
+						} `json:"changes"`
 					}
 					err := json.Unmarshal([]byte(e.Args), &p)
-					lineOK := false
-					if err == nil && len(p.Line) > 0 {
-						s := strings.Trim(strings.TrimSpace(string(p.Line)), `"`)
-						if n, e2 := strconv.Atoi(s); e2 == nil && n >= 1 {
-							lineOK = true
-						}
+					old, newText := p.Old, p.New
+					if old == "" && len(p.Changes) == 1 {
+						old, newText = p.Changes[0].Old, p.Changes[0].New
+						t.Logf("model used the changes array for a single edit")
 					}
-					if err == nil && strings.TrimSpace(p.File) != "" && lineOK &&
-						strings.Contains(p.NewContent, "true") {
+					if err == nil && strings.TrimSpace(p.Path) != "" &&
+						strings.Contains(old, "false") && strings.Contains(newText, "true") {
 						firstCallOK = true
 					} else {
 						firstBadShape = true
-						t.Logf("first edit_line call bad shape: %v", err)
+						t.Logf("first patch_file call bad shape: %v", err)
 					}
 				}
 			}
@@ -612,17 +611,17 @@ func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
 
 	after, _ := os.ReadFile(cfgPath)
 	u := loop.SessionUsage()
-	t.Logf("edit_line called %d time(s); provider requests: %d; tokens in=%d out=%d", editCalls, len(rec.calls), u.Input, u.Output)
+	t.Logf("patch_file called %d time(s); provider requests: %d; tokens in=%d out=%d", editCalls, len(rec.calls), u.Input, u.Output)
 	t.Logf("file after: %q", string(after))
 
 	if editCalls == 0 {
-		t.Error("model never called edit_line")
+		t.Error("model never called patch_file")
 	}
 	if firstBadShape {
-		t.Error("first edit_line call had a malformed shape (schema too terse?)")
+		t.Error("first patch_file call had a malformed shape (schema too terse?)")
 	}
 	if !firstCallOK {
-		t.Error("first edit_line call did not carry a valid file/line/new_content")
+		t.Error("first patch_file call did not carry a valid path/old/new")
 	}
 	if !strings.Contains(string(after), "debug = true") || strings.Contains(string(after), "debug = false") {
 		t.Errorf("file not edited correctly; got:\n%s", string(after))
@@ -630,10 +629,10 @@ func TestIntegration_EditLine_FirstCallSchema(t *testing.T) {
 	if !done {
 		t.Error("no DoneEvent — run did not finish cleanly")
 	}
-	// First-shot success target: at most 2 edit_line calls (allow one
+	// First-shot success target: at most 2 patch_file calls (allow one
 	// self-correction). More signals a failure loop.
 	if editCalls > 2 {
-		t.Errorf("edit_line called %d times — first-shot accuracy regressed", editCalls)
+		t.Errorf("patch_file called %d times — first-shot accuracy regressed", editCalls)
 	}
 }
 
@@ -967,12 +966,12 @@ func TestIntegration_TaskDelegation_WorkerReportsBack(t *testing.T) {
 func orchestratorTestSetup(t *testing.T, home string, rec llm.Provider) (*agent.Loop, *agent.AgentTool) {
 	t.Helper()
 	base := tools.NewRegistry()
-	base.MustRegister(tools.NewEditLine(home).Spec())
+	base.MustRegister(tools.NewPatchFile(home).Spec())
 	base.MustRegister(tools.NewReadContext(home).Spec())
 	base.MustRegister(tools.NewReadLines(home).Spec())
 	base.MustRegister(tools.NewListDir(home).Spec())
 	base.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec())
-	for _, n := range []string{"edit_line", "read_context", "read_lines", "list_dir", "ctx_execute"} {
+	for _, n := range []string{"patch_file", "read_context", "read_lines", "list_dir", "ctx_execute"} {
 		base.MarkAlwaysOn(n)
 	}
 	idx, err := tools.NewInMemoryIndex()
@@ -1069,12 +1068,12 @@ func TestIntegration_Orchestrator_ChatNoTools(t *testing.T) {
 }
 
 // TestIntegration_Orchestrator_DelegatesEdit: the crux of orchestrator
-// mode. The main loop has NO edit_line (physically absent from its
+// mode. The main loop has NO patch_file (physically absent from its
 // registry), so a file-edit task can only be done by delegating to a
 // worker. We first give the model the chance to delegate spontaneously
 // (the orchestrator briefing tells it to); if the small model does not,
 // we fall back to forcing the task path (documented as acceptable) to
-// prove the worker — which DOES have edit_line — performs the edit and
+// prove the worker — which DOES have patch_file — performs the edit and
 // reports back, and that the main loop never touched a mutating tool.
 func TestIntegration_Orchestrator_DelegatesEdit(t *testing.T) {
 	baseURL, ok := lmStudioAvailable(t)
@@ -1105,7 +1104,7 @@ func TestIntegration_Orchestrator_DelegatesEdit(t *testing.T) {
 		if !allowed[name] {
 			t.Fatalf("main loop can see non-orchestrator tool %q", name)
 		}
-		if name == "edit_line" || name == "ctx_execute" {
+		if name == "patch_file" || name == "ctx_execute" {
 			t.Fatalf("main loop must not see mutating tool %q", name)
 		}
 	}
@@ -1145,7 +1144,7 @@ func TestIntegration_Orchestrator_DelegatesEdit(t *testing.T) {
 		// task brief — small models rarely delegate spontaneously). This
 		// still exercises the real worker doing the real edit.
 		t.Logf("no spontaneous delegation (task calls=%d, other=%d); forcing task path", taskCalls, otherCalls)
-		args := `{"prompt":"In the file config.txt (in your working directory), change the line 'debug = false' to 'debug = true' using edit_line. Read the file first to find the line number. Confirm the change.","expect":"confirmation that debug is now true"}`
+		args := `{"prompt":"In the file config.txt (in your working directory), change the line 'debug = false' to 'debug = true' using patch_file. Read the file first. Confirm the change.","expect":"confirmation that debug is now true"}`
 		res, ferr := at.Spec().Fn(ctx, json.RawMessage(args))
 		if ferr != nil {
 			t.Fatalf("forced task execute: %v", ferr)

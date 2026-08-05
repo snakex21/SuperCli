@@ -196,26 +196,6 @@ func TestFileops_TextToolsRefuseDocxAndLeaveItIntact(t *testing.T) {
 			_, err := PatchFile(p, []PatchChange{{Old: "3000", New: "4000"}}, "")
 			return err
 		}},
-		{"EditLine", func(p string) error {
-			_, err := EditLine(p, 1, "zmiana")
-			return err
-		}},
-		{"EditLineAnchored", func(p string) error {
-			_, err := EditLineAnchored(p, 1, "PK", "zmiana")
-			return err
-		}},
-		{"EditLinesAnchored", func(p string) error {
-			_, err := EditLinesAnchored(p, []AnchoredEdit{{Line: 1, ExpectedOld: "PK", NewContent: "zmiana"}})
-			return err
-		}},
-		{"InsertAfter", func(p string) error {
-			_, err := InsertAfter(p, 1, "dopisek")
-			return err
-		}},
-		{"DeleteLines", func(p string) error {
-			_, err := DeleteLines(p, 1, 1)
-			return err
-		}},
 		{"ReadLines", func(p string) error {
 			_, err := ReadLines(p, 1, 5)
 			return err
@@ -266,19 +246,7 @@ func TestFileops_TextFilesStillWork(t *testing.T) {
 			if _, err := ReadContext(path, 2, 1); err != nil {
 				t.Fatalf("ReadContext: %v", err)
 			}
-			if _, err := EditLine(path, 1, "ALPHA"); err != nil {
-				t.Fatalf("EditLine: %v", err)
-			}
-			if _, err := EditLineAnchored(path, 2, "beta", "BETA"); err != nil {
-				t.Fatalf("EditLineAnchored: %v", err)
-			}
-			if _, err := InsertAfter(path, 1, "inserted"); err != nil {
-				t.Fatalf("InsertAfter: %v", err)
-			}
-			if _, err := DeleteLines(path, 1, 1); err != nil {
-				t.Fatalf("DeleteLines: %v", err)
-			}
-			if _, err := PatchFile(path, []PatchChange{{Old: "BETA", New: "delta"}}, ""); err != nil {
+			if _, err := PatchFile(path, []PatchChange{{Old: "beta", New: "delta"}}, ""); err != nil {
 				t.Fatalf("PatchFile: %v", err)
 			}
 			if _, err := WriteFile(path, "fresh\n"); err != nil {

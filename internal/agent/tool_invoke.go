@@ -104,9 +104,9 @@ func isDirectToolEligible(tool tools.Tool) bool {
 // isCoreDispatchName lists thin-core mutations/reads that are always-on
 // and must be invokable without tool_search activation.
 //
-// write_file and edit_line are absent on purpose and adding them here would
-// not help: the gate below also requires registry.IsVisible, and they are not
-// in thinCoreTools (see route_map.go — one edit path, one create path). The
+// write_file is absent on purpose and adding it here would not help: the gate
+// below also requires registry.IsVisible, and it is not in thinCoreTools (see
+// route_map.go — one edit path, one create path). The
 // dispatcher's activation requirement is itself the authorization gate for
 // mutating tools (see Registry.IsActive). Refusals point at the reachable core
 // tool instead; see dispatchRefusal.
@@ -144,12 +144,13 @@ func dispatchRefusal(registry *tools.Registry, target string) string {
 		target, target, target)
 }
 
-// coreEditEquivalent names the always-on tool that does the same job as a
-// legacy file mutator. Those mutators stay registered for workers and tests but
-// are not thin core, so a refusal that only names them is a dead end — the
-// model cannot reach them in the next turn, and the observed answer was to
-// regenerate the file. Naming the reachable tool turns a two-turn detour
-// (tool_search, then a re-sent envelope) into one direct call.
+// coreEditEquivalent names the always-on tool that does the same job as a file
+// mutator the model cannot reach: write_file, which stays registered but off
+// the core, and the four line editors, which no longer exist at all. Either way
+// a refusal that only names the target is a dead end — the model cannot reach
+// it in the next turn, and the observed answer was to regenerate the file.
+// Naming the reachable tool turns a two-turn detour (tool_search, then a
+// re-sent envelope) into one direct call.
 func coreEditEquivalent(name string) string {
 	switch name {
 	case "write_file":
@@ -221,6 +222,12 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	target = strings.TrimSpace(target)
 	tool, ok := registry.Get(target)
 	if !ok {
+		// A retired line-editor name arrives here as an unknown tool. "Unknown"
+		// is a dead end the model answers by resending the payload some other
+		// way; the equivalent is the whole repair, so say it.
+		if alt := coreEditEquivalent(target); alt != "" {
+			return call, fmt.Errorf("invoke_tool: %s no longer exists. Call %s", target, alt)
+		}
 		return call, fmt.Errorf("invoke_tool: unknown tool %q", target)
 	}
 	// Some local chat templates wrap every call in invoke_tool, including the

@@ -10,7 +10,7 @@ import (
 )
 
 // PatchFile is the model-facing tool for exact text patches on an
-// existing file. Prefer this over edit_line / write_file for mutations.
+// existing file. It is the only edit path offered to the model.
 type PatchFile struct {
 	BaseDir string
 }
@@ -24,6 +24,14 @@ type patchFileArgs struct {
 	Path     string            `json:"path"`
 	BaseHash string            `json:"base_hash"`
 	Changes  []patchFileChange `json:"changes"`
+	// Old/New/ExpectedCount are the single-change shorthand. patch_file is
+	// the only edit path now, so the commonest edit in the corpus — one
+	// replacement in one line — must not cost the model a nested array. As
+	// flat scalars they are also writable in the thin protocol's «key: value»
+	// form, which arrays are not.
+	Old           string `json:"old"`
+	New           string `json:"new"`
+	ExpectedCount int    `json:"expected_count"`
 }
 
 type patchFileChange struct {
@@ -36,23 +44,26 @@ type patchFileChange struct {
 func (t *PatchFile) Spec() Tool {
 	return Tool{
 		Name: "patch_file",
-		Description: "Apply one or more exact text replacements to an existing file (atomic: all-or-nothing). " +
-			"Prefer this for edits. Do not use tool_search to find an editor — call patch_file directly. " +
-			"Group multiple changes to the same file in one call. old must match exactly; expected_count defaults to 1.",
+		Description: "The edit tool: exact text replacements in an existing file, atomic. " +
+			"One change: old + new. Several: changes, in ONE call. " +
+			"Indentation and line endings need not match the file exactly.",
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"path": {"type": "string", "description": "File path relative to the project folder"},
-				"base_hash": {"type": "string", "description": "Optional SHA-256 of current file contents; rejects stale edits"},
+				"path": {"type": "string", "description": "Path relative to the project folder"},
+				"old": {"type": "string", "description": "Text to replace"},
+				"new": {"type": "string", "description": "Its replacement; empty deletes"},
+				"expected_count": {"type": "integer", "description": "Matches to expect (default 1)", "minimum": 1},
+				"base_hash": {"type": "string", "description": "SHA-256 of current contents; rejects stale edits"},
 				"changes": {
 					"type": "array",
-					"description": "Exact replacements applied in order",
+					"description": "Several replacements instead of old/new",
 					"items": {
 						"type": "object",
 						"properties": {
-							"old": {"type": "string", "description": "Exact text to find (non-empty)"},
-							"new": {"type": "string", "description": "Replacement text"},
-							"expected_count": {"type": "integer", "description": "Exact number of non-overlapping matches (default 1)", "minimum": 1}
+							"old": {"type": "string"},
+							"new": {"type": "string"},
+							"expected_count": {"type": "integer", "minimum": 1}
 						},
 						"required": ["old", "new"],
 						"additionalProperties": false
@@ -60,7 +71,7 @@ func (t *PatchFile) Spec() Tool {
 					"minItems": 1
 				}
 			},
-			"required": ["path", "changes"],
+			"required": ["path"],
 			"additionalProperties": false
 		}`,
 		Fn: t.execute,
@@ -75,8 +86,18 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if a.Path == "" {
 		return Result{Err: fmt.Errorf("patch_file: path is required")}, nil
 	}
-	if len(a.Changes) == 0 {
-		return Result{Err: fmt.Errorf("patch_file: changes is empty")}, nil
+	// The shorthand is one entry of the same list, so everything below —
+	// atomicity, anchoring, diagnostics — is shared, and there is no second
+	// code path to keep in step with the first.
+	switch {
+	case a.Old != "" && len(a.Changes) > 0:
+		return Result{Err: fmt.Errorf("patch_file: old/new and changes are two ways to say the same thing; send one or the other")}, nil
+	case a.Old != "":
+		a.Changes = []patchFileChange{{Old: a.Old, New: a.New, ExpectedCount: a.ExpectedCount}}
+	case len(a.Changes) == 0 && a.New != "":
+		return Result{Err: fmt.Errorf("patch_file: new was given without old; add old, the exact text to replace")}, nil
+	case len(a.Changes) == 0:
+		return Result{Err: fmt.Errorf("patch_file: nothing to change; give old and new for one replacement, or changes for several")}, nil
 	}
 	full, err := sandbox.ResolveSafe(t.BaseDir, a.Path)
 	if err != nil {

@@ -197,9 +197,6 @@ func TestLegacyCodePages_AllToolsWork(t *testing.T) {
 			if _, err := PatchFile(path, []PatchChange{{Old: "const x = 1;", New: "const x = 2;"}}, ""); err != nil {
 				t.Fatalf("PatchFile: %v", err)
 			}
-			if _, err := EditLine(path, 2, "const x = 3;"); err != nil {
-				t.Fatalf("EditLine: %v", err)
-			}
 			if _, err := WriteFile(path, "// przepisane jako UTF-8: zażółć\n"); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
@@ -436,9 +433,6 @@ func TestEveryListedBinaryFormat_StillRefusedAndIntact(t *testing.T) {
 			}
 			if _, err := WriteFile(path, "zwykły tekst"); err == nil {
 				t.Errorf("write_file overwrote %s", ext)
-			}
-			if _, err := EditLine(path, 1, "x"); err == nil {
-				t.Errorf("EditLine accepted %s", ext)
 			}
 			if after := hashFile(t, path); after != before {
 				t.Errorf("%s was modified (%s -> %s)", ext, before[:12], after[:12])

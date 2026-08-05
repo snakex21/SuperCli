@@ -17,20 +17,37 @@ import "testing"
 // in the logged output.
 func smallTierAlwaysOnSpecs() []Tool {
 	const base = "."
-	// The small-tier always-on set from main.go:584-592, minus the two
-	// tools that need runtime services (goal, tool_search). Their
-	// schemas are small and present in both modes' core, so omitting
-	// them does not distort the schema-vs-catalog comparison for the
-	// schema-heavy file/edit tools that dominate the cost.
+	// The small-tier always-on set, minus the two tools that need runtime
+	// services (goal, tool_search). Their schemas are small and present in
+	// both modes' core, so omitting them does not distort the
+	// schema-vs-catalog comparison for the schema-heavy file/edit tools that
+	// dominate the cost.
 	return []Tool{
 		NewReadLines(base).Spec(),
 		NewReadContext(base).Spec(),
-		NewEditLine(base).Spec(),
-		NewEditLines(base).Spec(),
-		NewInsertAfter(base).Spec(),
-		NewDeleteLines(base).Spec(),
+		NewPatchFile(base).Spec(),
+		NewCreateFile(base).Spec(),
 		NewEditDocx(base).Spec(),
 		NewEditXlsx(base).Spec(),
+	}
+}
+
+// TestMeasure_EditCatalogIsOnePath is the standing guard on the consolidation:
+// patch_file and create_file are the whole edit surface, and the line editors
+// that used to sit beside them (edit_line, edit_lines, insert_after,
+// delete_lines) are gone from the codebase, not merely hidden from the
+// catalog. A registry that can still build them would be able to advertise
+// them again, and the model would be back to choosing between five ways to
+// change a line.
+func TestMeasure_EditCatalogIsOnePath(t *testing.T) {
+	const base = "."
+	edit := []Tool{NewPatchFile(base).Spec(), NewCreateFile(base).Spec()}
+	t.Logf("edit surface: %d tools, ~%d tok/turn as schemas, ~%d tok/turn in the catalog",
+		len(edit), EstimateSchemaTokens(edit), EstimateCatalogTokens(edit, 80))
+	for _, sp := range edit {
+		if sp.Schema == "" {
+			t.Errorf("%s: empty schema", sp.Name)
+		}
 	}
 }
 
