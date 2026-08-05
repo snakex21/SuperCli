@@ -139,6 +139,13 @@ type Loop struct {
 	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
 	// disabled.
 	pruneProtect int
+	// pruneRefusedEst memoizes the request estimate at which the last
+	// prune scan decided nothing was worth reclaiming. While the
+	// estimate stays within pruneRecheckGrowFrac of it, the O(history)
+	// scan is skipped — the verdict cannot change without growth.
+	// 0 = no memo (first scan, or the last scan actually pruned).
+	// Run-goroutine only, like the rest of the prune path.
+	pruneRefusedEst int
 
 	// F9 ultrawork wiring. When non-nil, the loop:
 	//   - detects the "ultrawork"/"ulw" keyword in the user
@@ -209,6 +216,15 @@ type Loop struct {
 	// CLI overhead — hidden inference no longer inflates them.
 	// Loop-goroutine only; reset at every statsStartStep.
 	stepAuxWall time.Duration
+	// statsStepOpen tracks whether a telemetry turn is currently
+	// open, so helper inference that runs BETWEEN steps (the
+	// navigator classifies the route before step 1 exists) is not
+	// silently dropped. pendingAux* buffer those calls until
+	// statsStartStep books them onto the turn they delayed.
+	// Loop-goroutine only.
+	statsStepOpen   bool
+	pendingAuxCalls int
+	pendingAuxWall  time.Duration
 
 	// F14 selective context deletion. The hidden
 	// shadow slice has the same length as Messages;

@@ -28,6 +28,16 @@ import (
 // the phase* constants below plus per-tool "tool:<name>" entries.
 // Repeated recordings of the same phase accumulate (e.g. the
 // one-shot retry after a context-overflow compaction).
+//
+// AuxCalls/AuxUs count the HELPER model calls (draft, auto-compact
+// summary, reflection, navigator) charged to this turn and their
+// total wall time in microseconds. They come from the very same
+// time.Since measurements that produce the "model:<purpose>"
+// entries in Phases — never from a second cascade — so
+// AuxUs equals the sum of those phases, plus any pre-step helper
+// call (the navigator runs before step 1 opens) booked onto the
+// turn it delayed. Read them as an overlay on the phase line:
+// "how much of this turn was inference nobody asked for".
 type Turn struct {
 	Step        int              `json:"step"`
 	TokensIn    int              `json:"tokens_in"`
@@ -40,6 +50,8 @@ type Turn struct {
 	DurationMs  int64            `json:"duration_ms"`
 	TokensSaved int              `json:"tokens_saved,omitempty"`
 	Model       string           `json:"model,omitempty"`
+	AuxCalls    int              `json:"aux_calls,omitempty"`
+	AuxUs       int64            `json:"aux_us,omitempty"`
 }
 
 // Canonical phase names for Turn.Phases. The agent loop records
@@ -167,6 +179,8 @@ type Total struct {
 	TokensSaved int
 	ToolCalls   int // raw tool calls across all steps
 	MultiCall   int // steps that emitted MORE than one tool call
+	AuxCalls    int // helper model calls across all steps
+	AuxUs       int64
 }
 
 // Sum returns the cumulative counters across all turns.
@@ -177,6 +191,8 @@ func Sum(turns []Turn) Total {
 		t.TokensOut += u.TokensOut
 		t.TokensSaved += u.TokensSaved
 		t.ToolCalls += u.ToolCalls
+		t.AuxCalls += u.AuxCalls
+		t.AuxUs += u.AuxUs
 		if u.ToolCalls > 1 {
 			t.MultiCall++
 		}
@@ -237,6 +253,11 @@ type Recorder interface {
 	RecordTools(names []string)
 	RecordToolCalls(n int)
 	RecordPhase(name string, d time.Duration)
+	// RecordAux books n HELPER model calls (draft, compact summary,
+	// reflection, navigator) and their combined wall time onto the
+	// current turn. d must be the SAME measurement already fed to
+	// RecordPhase("model:<purpose>") — no second clock, no estimate.
+	RecordAux(n int, d time.Duration)
 	RecordSources(sources map[string]int)
 	RecordSaved(saved int)
 	RecordModel(model string)
@@ -265,6 +286,7 @@ func (Noop) RecordTokens(in, out int)          {}
 func (Noop) RecordTools(names []string)        {}
 func (Noop) RecordToolCalls(n int)             {}
 func (Noop) RecordPhase(string, time.Duration) {}
+func (Noop) RecordAux(int, time.Duration)      {}
 func (Noop) RecordSources(map[string]int)      {}
 func (Noop) RecordSaved(int)                   {}
 func (Noop) RecordModel(string)                {}

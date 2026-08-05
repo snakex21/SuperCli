@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/system/stats"
@@ -184,5 +185,45 @@ func TestLoop_Stats_NilRecorderNoPanic(t *testing.T) {
 		if e, ok := ev.(ErrorEvent); ok {
 			t.Fatalf("unexpected error event: %v", e.Err)
 		}
+	}
+}
+
+// TestLoop_AuxCounter_BuffersPreStepHelpers proves the aux counter uses
+// the SAME measurement as the model:<purpose> phases (one call, one
+// number in both places) and that a helper call made between steps —
+// the navigator classifies the route before step 1 opens — is charged
+// to the turn it delayed instead of being dropped.
+func TestLoop_AuxCounter_BuffersPreStepHelpers(t *testing.T) {
+	rec := stats.NewMemory()
+	l := &Loop{stats: rec}
+
+	// Pre-step: navigator. No turn is open yet.
+	l.recordAuxWall(llm.PurposeNavigator, 40*time.Millisecond)
+
+	l.statsStartStep(1)
+	l.recordAuxWall(llm.PurposeReflect, 10*time.Millisecond)
+	l.statsEndStep(time.Now())
+
+	turns := rec.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("turns = %d, want 1", len(turns))
+	}
+	if turns[0].AuxCalls != 2 {
+		t.Errorf("AuxCalls = %d, want 2 (navigator + reflection)", turns[0].AuxCalls)
+	}
+	if turns[0].AuxUs != 50_000 {
+		t.Errorf("AuxUs = %dµs, want 50000", turns[0].AuxUs)
+	}
+	// The in-step helper is also a phase, with the identical number.
+	if got := turns[0].Phases["model:"+llm.PurposeReflect]; got != 10_000 {
+		t.Errorf("model:reflection phase = %dµs, want 10000 (same measurement as the counter)", got)
+	}
+	// The pre-step helper is counted but deliberately NOT a phase of a
+	// step it did not happen in.
+	if _, ok := turns[0].Phases["model:"+llm.PurposeNavigator]; ok {
+		t.Error("pre-step navigator leaked into the step's disjoint phase pipeline")
+	}
+	if l.pendingAuxCalls != 0 {
+		t.Errorf("pending aux not flushed: %d", l.pendingAuxCalls)
 	}
 }

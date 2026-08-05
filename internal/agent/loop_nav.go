@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"strings"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -20,17 +21,25 @@ func (l *Loop) navigateRoute(ctx context.Context, prompt string) RouteMode {
 	if l.navProvider != nil {
 		prov = l.navProvider
 	}
+	// The route classification is a full helper inference that delays
+	// the user's first token. Book its wall time like every other aux
+	// call (recordAuxWall) — it runs before step 1 opens, so it lands
+	// on that turn's aux counter instead of vanishing.
+	navStart := time.Now()
 	stream, err := prov.Complete(llm.WithPurpose(ctx, llm.PurposeNavigator), msgs, nil)
 	if err != nil {
+		l.recordAuxWall(llm.PurposeNavigator, time.Since(navStart))
 		return fallback
 	}
 	var text strings.Builder
 	for d := range stream {
 		if d.Err != nil {
+			l.recordAuxWall(llm.PurposeNavigator, time.Since(navStart))
 			return fallback
 		}
 		text.WriteString(d.Content)
 	}
+	l.recordAuxWall(llm.PurposeNavigator, time.Since(navStart))
 	mode, ok := parseNavigatorMode(text.String())
 	if !ok {
 		return fallback

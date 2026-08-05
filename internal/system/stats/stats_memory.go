@@ -101,6 +101,25 @@ func (m *Memory) RecordPhase(name string, d time.Duration) {
 	m.cur.Phases[name] += d.Microseconds()
 }
 
+// RecordAux adds n helper model calls and their combined wall
+// time to the current turn (see Turn.AuxCalls/AuxUs). Additive,
+// so several helpers in one step sum up. No-op outside a step or
+// for n <= 0; a negative duration is clamped away.
+func (m *Memory) RecordAux(n int, d time.Duration) {
+	if n <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cur == nil {
+		return
+	}
+	m.cur.AuxCalls += n
+	if d > 0 {
+		m.cur.AuxUs += d.Microseconds()
+	}
+}
+
 // RecordSources replaces the turn's source token map.
 func (m *Memory) RecordSources(src map[string]int) {
 	m.mu.Lock()
