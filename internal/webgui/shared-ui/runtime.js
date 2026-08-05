@@ -98,7 +98,7 @@
     var polish = options.lang === "pl";
     var copy = polish ? {
       title: "Instrukcje użytkownika",
-      description: "Zapisz kilka własnych sposobów pracy i wybieraj, którego agent ma używać.",
+      description: "Zapisz własny sposób pracy. Instrukcje są dołączane do każdej nowej wiadomości, ale nie zastępują nadrzędnych reguł modelu ani dostawcy.",
       enabled: "Używaj instrukcji",
       enabledHint: "Wyłączenie usuwa instrukcje z następnej wiadomości i nie zużywa kontekstu.",
       preset: "Aktywny preset",
@@ -113,13 +113,15 @@
       noPresets: "Brak presetów",
       saved: "Zapisano",
       saving: "Zapisywanie…",
+      applied: "Aktywne — preset zostanie dołączony do następnej wiadomości.",
+      notApplied: "Nieaktywne — wybierz niepusty preset i włącz instrukcje.",
       tokenUnit: "szac. tokenów",
       cost: "Bez twardego limitu. Dłuższe instrukcje zajmują więcej kontekstu i mogą wydłużyć odpowiedź. Nie powodują dodatkowego wywołania modelu.",
       longCost: "To długi preset — będzie dołączany do każdej wiadomości, gdy jest włączony.",
       error: "Nie udało się zapisać: ",
     } : {
       title: "User instructions",
-      description: "Save several ways of working and choose which one the agent should follow.",
+      description: "Save a preferred way of working. Instructions are attached to every new message, but cannot replace higher-priority model or provider rules.",
       enabled: "Use instructions",
       enabledHint: "Turning this off removes the instructions from the next message and costs no context.",
       preset: "Active preset",
@@ -134,6 +136,8 @@
       noPresets: "No presets",
       saved: "Saved",
       saving: "Saving…",
+      applied: "Active — this preset will be attached to the next message.",
+      notApplied: "Inactive — select a non-empty preset and enable instructions.",
       tokenUnit: "est. tokens",
       cost: "No hard limit. Longer instructions use more context and may make responses take longer. They do not trigger an extra model call.",
       longCost: "This is a long preset — it will be attached to every message while enabled.",
@@ -176,6 +180,12 @@
       switchCopy.querySelector("strong").textContent = copy.enabled;
       switchCopy.querySelector("small").textContent = copy.enabledHint;
       switchLabel.append(enabled, switchCopy);
+
+      var effective = document.createElement("div");
+      function renderEffective() {
+        effective.className = "uie-effective " + (state.applied ? "is-applied" : "is-inactive");
+        effective.textContent = state.applied ? copy.applied : copy.notApplied;
+      }
 
       var toolbar = document.createElement("div");
       toolbar.className = "uie-toolbar";
@@ -272,6 +282,7 @@
           });
           state = saved;
           state.presets = Array.isArray(state.presets) ? state.presets : [];
+          renderEffective();
           status.textContent = message || copy.saved;
           status.className = "uie-status is-saved";
           if (typeof options.onSaved === "function") options.onSaved(state);
@@ -284,8 +295,13 @@
       }
 
       enabled.addEventListener("change", async function () {
+        var previous = state.enabled;
         state.enabled = enabled.checked;
-        if (!(await persist())) enabled.checked = !enabled.checked;
+        if (!(await persist())) {
+          state.enabled = previous;
+          enabled.checked = previous;
+          renderEffective();
+        }
       });
       select.addEventListener("change", async function () {
         syncDraft();
@@ -325,7 +341,8 @@
       content.addEventListener("input", updateMeta);
       save.addEventListener("click", function () { persist(); });
 
-      root.replaceChildren(head, switchLabel, toolbar, form);
+      root.replaceChildren(head, switchLabel, effective, toolbar, form);
+      renderEffective();
       renderSelect();
     }).catch(function (error) {
       root.innerHTML = '<div class="uie-error"></div>';

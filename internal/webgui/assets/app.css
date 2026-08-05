@@ -1427,6 +1427,8 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .uie-switch input:checked { background:var(--accent); }
 .uie-switch input:checked::after { transform:translateX(16px); background:#fff; }
 .uie-switch input:disabled { opacity:.35; cursor:default; }
+.uie-effective { padding:7px 9px; border-left:2px solid var(--line); background:var(--surface); color:var(--faint); font-size:10.5px; line-height:1.45; }
+.uie-effective.is-applied { border-left-color:var(--ok); color:var(--ok); }
 .uie-toolbar { display:flex; align-items:end; gap:8px; padding-top:12px; border-top:1px solid var(--line); }
 .uie-toolbar label { display:grid; flex:1; gap:5px; }
 .uie-toolbar label > span, .uie-form label > span { color:var(--faint); font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; }
