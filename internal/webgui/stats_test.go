@@ -17,6 +17,7 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	systats "supercli/internal/system/stats"
 )
 
 func statsFixture(t *testing.T) (*Engine, *session.Store, session.Session, string) {
@@ -153,6 +154,87 @@ func TestSummarizeTelemetryFindsBottleneckWithoutPromptData(t *testing.T) {
 	}
 	if !slices.Contains(got.Signals, "model_bound") || !slices.Contains(got.Signals, "tool_failures") {
 		t.Fatalf("signals = %v", got.Signals)
+	}
+}
+
+// Helper inference is the number that decides whether it should be moved out
+// of the reply, so the panel must report both its count and its share of the
+// wall time the user waited through.
+func TestSummarizeTelemetryReportsHelperInferenceShare(t *testing.T) {
+	turns := []session.TurnSummary{
+		{DurationMS: 1000, Steps: 1, ModelCalls: 2, AuxCalls: 1, AuxUs: 300_000, Phases: map[string]int64{
+			"backend_wait": 600_000, "model:navigator": 300_000, "context_prepare": 20_000,
+		}},
+		{DurationMS: 1000, Steps: 1, ModelCalls: 2, AuxCalls: 2, AuxUs: 100_000, Phases: map[string]int64{
+			"backend_wait": 700_000, "model:reflection": 100_000, "context_prepare": 20_000,
+		}},
+	}
+	got := summarizeTelemetry(turns, statsTokensView{})
+	if got.AuxCalls != 3 || got.AuxMS != 400 {
+		t.Fatalf("aux counters = %d calls / %d ms", got.AuxCalls, got.AuxMS)
+	}
+	if got.AuxShare != 20 {
+		t.Fatalf("aux share = %d%%, want 20%% of 2000 ms", got.AuxShare)
+	}
+	if !slices.Contains(got.Signals, "aux_heavy") {
+		t.Fatalf("signals = %v, want aux_heavy", got.Signals)
+	}
+	// A turn with no helper inference must not invent one.
+	quiet := summarizeTelemetry([]session.TurnSummary{{DurationMS: 1000, Phases: map[string]int64{"backend_wait": 900_000}}}, statsTokensView{})
+	if quiet.AuxCalls != 0 || quiet.AuxMS != 0 || quiet.AuxShare != 0 || slices.Contains(quiet.Signals, "aux_heavy") {
+		t.Fatalf("quiet turn = %+v", quiet)
+	}
+}
+
+// Titles, indexing and vision belong to no turn; they must still be counted,
+// and from the duration llm.Metered already measured.
+func TestOffTurnCallsAreCountedFromTheMeteredDuration(t *testing.T) {
+	eng := &Engine{}
+	if ctx := eng.countOffTurnCalls(context.Background()); ctx == nil {
+		t.Fatal("countOffTurnCalls returned no context")
+	}
+	sink := eng.offTurnSink()
+	sink(llm.CallStat{Purpose: "title", Duration: 250 * time.Millisecond})
+	sink(llm.CallStat{Purpose: "document-index", Duration: 750 * time.Millisecond})
+	calls, us := eng.offTurnSnapshot()
+	if calls != 2 || us != 1_000_000 {
+		t.Fatalf("off-turn snapshot = %d calls / %d µs", calls, us)
+	}
+	if zeroCalls, zeroUs := (*Engine)(nil).offTurnSnapshot(); zeroCalls != 0 || zeroUs != 0 {
+		t.Fatalf("nil engine must not panic or count: %d/%d", zeroCalls, zeroUs)
+	}
+}
+
+// Start-path divergence guard: the GUI builds its own loop, so the stats
+// recorder can silently be left nil there while the CLI keeps measuring.
+// A live recorder on the web path is what makes every turn counter (aux
+// included) real instead of a permanent zero.
+func TestWebLoopRecordsTelemetryLikeTheCLI(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	recorder := systats.NewMemory()
+	loop, err := eng.newLoopWithSessionAtUsageInteractive(nil, nil, eng.Home(), nil, nil, recorder)
+	if err != nil {
+		t.Fatalf("newLoopWithSessionAtUsageInteractive: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	events, err := loop.Run(ctx, "powiedz cokolwiek")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for range events {
+	}
+	turns := recorder.Snapshot()
+	if len(turns) == 0 {
+		t.Fatal("web loop recorded no telemetry turns: the stats recorder is not wired on the GUI path")
+	}
+	if len(turns[0].Phases) == 0 {
+		t.Fatalf("web loop recorded a turn without phases: %+v", turns[0])
 	}
 }
 

@@ -82,7 +82,7 @@ func (s *Server) handleVisionTranscribe(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(s.eng.countOffTurnCalls(r.Context()), 3*time.Minute)
 	defer cancel()
 	stream, err := provider.Complete(llm.WithPurpose(ctx, "vision"), []llm.Message{message}, nil)
 	if err != nil {

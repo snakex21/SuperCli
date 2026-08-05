@@ -10,6 +10,9 @@ import (
 )
 
 func (s *Server) indexFolderPaths(ctx context.Context, paths []string, config folderIndexConfig, progress func(current, total int, path string)) ([]folderScanResult, string, error) {
+	// Indexing is entirely out-of-turn model work (document summaries,
+	// folder notes, image captions); count it so its cost is visible.
+	ctx = s.eng.countOffTurnCalls(ctx)
 	store, err := memory.OpenProjectStore(s.eng.dataDir, s.eng.Home())
 	if err != nil {
 		return nil, "", err

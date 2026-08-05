@@ -92,6 +92,18 @@ type statsTelemetryView struct {
 	PersistMS       int64                 `json:"persist_ms"`
 	ModelCalls      int                   `json:"model_calls"`
 	HelperCalls     int                   `json:"helper_calls"`
+	// Aux* answer one question: how much of a reply is inference the
+	// user never asked for. AuxCalls counts helper model calls charged
+	// to the measured turns, AuxMS their wall time, AuxShare that time
+	// as a percentage of total turn duration.
+	AuxCalls        int                   `json:"aux_calls"`
+	AuxMS           int64                 `json:"aux_ms"`
+	AuxShare        int                   `json:"aux_share"`
+	// OffTurn* are model calls made outside any agent turn (titles, run
+	// summaries, folder/document indexing, vision) since the app started.
+	// They have no turn to be charged to, so they are reported separately.
+	OffTurnCalls    int                   `json:"off_turn_calls"`
+	OffTurnMS       int64                 `json:"off_turn_ms"`
 	FailedCalls     int                   `json:"failed_calls"`
 	CanceledCalls   int                   `json:"canceled_calls"`
 	ToolFailures    int                   `json:"tool_failures"`
@@ -202,6 +214,11 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		sv.Telemetry = summarizeTelemetry(recent, sv.Tokens)
 		sv.Telemetry.Scope = "7d"
 	}
+	// Out-of-turn work is counted in memory for this app run, not read from
+	// session_turns, so it is attached after the turn aggregation.
+	offCalls, offUs := e.offTurnSnapshot()
+	sv.Telemetry.OffTurnCalls = offCalls
+	sv.Telemetry.OffTurnMS = offUs / 1000
 
 	now := time.Now()
 	localMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())

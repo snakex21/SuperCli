@@ -185,6 +185,9 @@ func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt strin
 	if sink := e.usageCallSink(store, sessionID); sink != nil {
 		ctx = llm.WithCallSink(ctx, sink)
 	}
+	// The title is written after the answer finished, so it belongs to no
+	// turn; count it with the rest of the out-of-turn model work.
+	ctx = e.countOffTurnCalls(ctx)
 	title := summarizeHistoryMessageWithProvider(ctx, prompt, 80, prov)
 	if title == "" || strings.HasPrefix(title, "<") || title == initialTitle {
 		// Canceled/failed calls fall back to the local title — the

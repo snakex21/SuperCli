@@ -334,6 +334,14 @@ function renderUsageInspector(stats) {
   return root;
 }
 
+// Titles, run summaries, folder/document indexing and vision run outside
+// any reply, so no turn can carry them. They are counted for this app run.
+function offTurnFact(telemetry) {
+  return usageFact(t("telemetry.offTurn"),
+    fmtInteger(telemetry.offTurnCalls) + " · " + fmtDuration(telemetry.offTurnMS),
+    t("telemetry.offTurnNote"));
+}
+
 function renderPerformanceTelemetry(telemetry) {
   var section = el("section", "usage-section telemetry-section");
   var head = el("div", "usage-section-head");
@@ -346,6 +354,13 @@ function renderPerformanceTelemetry(telemetry) {
   section.appendChild(head);
   if (!telemetry.samples) {
     section.appendChild(el("div", "usage-empty", t("telemetry.empty")));
+    // Model work done outside any reply exists even before the first
+    // measured turn; it must not disappear with the turn statistics.
+    if (telemetry.offTurnCalls) {
+      var offOnly = el("dl", "usage-facts telemetry-facts");
+      offOnly.appendChild(offTurnFact(telemetry));
+      section.appendChild(offOnly);
+    }
     return section;
   }
 
@@ -369,6 +384,14 @@ function renderPerformanceTelemetry(telemetry) {
   facts.appendChild(usageFact(t("telemetry.cli"), fmtDuration(telemetry.cliMS)));
   facts.appendChild(usageFact(t("telemetry.average"), fmtDuration(telemetry.averageMS)));
   facts.appendChild(usageFact(t("telemetry.steps"), fmtInteger(telemetry.steps)));
+  // Helper inference (navigator, draft, reflection, auto-compact summary):
+  // how many calls per reply, and how much of the wait they cost.
+  if (telemetry.auxCalls || telemetry.auxMS) {
+    var perTurn = telemetry.samples > 0 ? telemetry.auxCalls / telemetry.samples : 0;
+    facts.appendChild(usageFact(t("telemetry.aux"), fmtDuration(telemetry.auxMS) + " · " + telemetry.auxShare + "%",
+      fmtInteger(telemetry.auxCalls) + " · " + (Math.round(perTurn * 10) / 10) + " " + t("telemetry.auxPerTurn")));
+  }
+  if (telemetry.offTurnCalls) facts.appendChild(offTurnFact(telemetry));
   if (telemetry.persistMS) facts.appendChild(usageFact(t("telemetry.persist"), fmtDuration(telemetry.persistMS)));
   if (telemetry.tools.length) {
     facts.appendChild(usageFact(t("telemetry.topTools"), telemetry.tools.map(function (tool) {
