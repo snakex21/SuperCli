@@ -90,10 +90,6 @@ var NewScratchpad = scratchpad.New
 type (
 	Copy        = files.Copy
 	CreateFile  = files.CreateFile
-	DeleteLines = files.DeleteLines
-	EditLine    = files.EditLine
-	EditLines   = files.EditLines
-	InsertAfter = files.InsertAfter
 	ListDirTool = files.ListDirTool
 	MakeDir     = files.MakeDir
 	Move        = files.Move
@@ -108,10 +104,6 @@ type (
 var (
 	NewCopy        = files.NewCopy
 	NewCreateFile  = files.NewCreateFile
-	NewDeleteLines = files.NewDeleteLines
-	NewEditLine    = files.NewEditLine
-	NewEditLines   = files.NewEditLines
-	NewInsertAfter = files.NewInsertAfter
 	NewListDir     = files.NewListDir
 	NewMakeDir     = files.NewMakeDir
 	NewMove        = files.NewMove

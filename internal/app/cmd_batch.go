@@ -102,9 +102,6 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		tools.NewListDir(home).Spec(),
 		tools.NewPatchFile(home).Spec(),
 		tools.NewCreateFile(home).Spec(),
-		tools.NewEditLine(home).Spec(),
-		tools.NewInsertAfter(home).Spec(),
-		tools.NewDeleteLines(home).Spec(),
 		tools.NewWriteFile(home).Spec(),
 		tools.NewMakeDir(home).Spec(),
 		tools.NewMove(home).Spec(),
@@ -299,10 +296,6 @@ func buildChildToolRegistry(root string) *tools.Registry {
 	reg.MustRegister(tools.NewScratchpad(root).Spec())
 	reg.MustRegister(tools.NewPatchFile(root).Spec())
 	reg.MustRegister(tools.NewCreateFile(root).Spec())
-	reg.MustRegister(tools.NewEditLine(root).Spec())
-	reg.MustRegister(tools.NewEditLines(root).Spec())
-	reg.MustRegister(tools.NewInsertAfter(root).Spec())
-	reg.MustRegister(tools.NewDeleteLines(root).Spec())
 	reg.MustRegister(tools.NewWriteFile(root).Spec())
 	reg.MustRegister(tools.NewMakeDir(root).Spec())
 	reg.MustRegister(tools.NewMove(root).Spec())

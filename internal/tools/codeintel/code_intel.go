@@ -190,13 +190,11 @@ func (t *Tool) CheckIfWarm(ctx context.Context, path string) string {
 }
 
 var mutationTools = map[string][]string{
-	"edit_line":    {"path"},
-	"edit_lines":   {"path"},
-	"insert_after": {"path"},
-	"delete_lines": {"path"},
-	"write_file":   {"path"},
-	"move":         {"dst", "src"},
-	"copy":         {"dst"},
+	"patch_file":  {"path"},
+	"create_file": {"path"},
+	"write_file":  {"path"},
+	"move":        {"dst", "src"},
+	"copy":        {"dst"},
 }
 
 // WrapMutation appends diagnostics after a successful source-file mutation,

@@ -22,9 +22,10 @@ var chatRouteTools = []string{"web_lookup", "tool_search", "recall"}
 // be here — it is the gateway to the rest.
 // thinCoreTools is the default full-schema set on the coordinator route
 // when thin tools are enabled. Keep this small: one discovery path, one
-// edit path (patch_file), one create path. Legacy edit_line/write_file
-// stay registered for workers/tests but are NOT core — models must not
-// need tool_search to edit ordinary files.
+// edit path (patch_file), one create path. The line editors that used to
+// sit beside them are gone; write_file stays registered for whole-file
+// rewrites but is NOT core — models must not need tool_search to edit
+// ordinary files.
 var thinCoreTools = []string{
 	"tool_search",
 	"web_lookup",

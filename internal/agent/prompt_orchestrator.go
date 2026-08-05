@@ -18,7 +18,7 @@ import "supercli/internal/tools"
 
 // orchestratorTools is the exact set the main loop may hold in
 // orchestrator mode: the delegation trio plus a read-only lookup set.
-// Every mutating/executing tool (edit_line, write_file, ctx_execute,
+// Every mutating/executing tool (patch_file, write_file, ctx_execute,
 // darwin, move/copy/trash, edit_docx, ...) is deliberately absent — the
 // coordinator delegates all of that to workers. remember/goal write only
 // coordinator bookkeeping (memory DB, goal state), never the filesystem,

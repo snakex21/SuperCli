@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 )
 
-// The line-oriented tools (read_lines, read_context, edit_line,
-// edit_lines, insert_after, delete_lines) and the whole-file tools
+// The line-oriented tools (read_lines, read_context) and the
+// whole-file tools
 // (write_file, patch_file) all assume UTF-8 text. Applied to a binary
 // file they do not merely fail — they DESTROY it:
 //

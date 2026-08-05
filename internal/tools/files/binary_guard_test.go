@@ -96,27 +96,6 @@ func TestWriteFile_RefusesDocxAndLeavesItIntact(t *testing.T) {
 	assertDocxIntact(t, path, before)
 }
 
-func TestEditLine_RefusesDocxAndLeavesItIntact(t *testing.T) {
-	dir := t.TempDir()
-	path := writeGuardDocx(t, dir, "raport.docx")
-	before := guardHash(t, path)
-
-	tool := NewEditLine(dir)
-	// The production log shows exactly this: expected_old carrying the
-	// zip magic ("PK\x03\x04...") because the model "read" the archive.
-	res, err := tool.execute(context.Background(), json.RawMessage(`{"file":"raport.docx","line":1,"new_content":"Przychod 4000","expected_old":"PK"}`))
-	if err != nil {
-		t.Fatalf("edit_line go-error: %v", err)
-	}
-	if res.Err == nil {
-		t.Fatalf("edit_line edited a Word document: %q", res.Text)
-	}
-	if !strings.Contains(res.Err.Error(), "edit_docx") {
-		t.Errorf("error %q does not point at edit_docx", res.Err)
-	}
-	assertDocxIntact(t, path, before)
-}
-
 func TestReadLines_RefusesDocxInsteadOfStreamingReplacementChars(t *testing.T) {
 	dir := t.TempDir()
 	writeGuardDocx(t, dir, "raport.docx")
@@ -212,13 +191,13 @@ func TestTextTools_RegressionOnTextFiles(t *testing.T) {
 			if !strings.Contains(readRes.Text, "Zażółć gęślą jaźń") {
 				t.Errorf("Polish text mangled: %q", readRes.Text)
 			}
-			editRes, err := NewEditLine(dir).execute(context.Background(),
-				json.RawMessage(`{"file":"`+name+`","line":2,"new_content":"DRUGA","expected_old":"druga linia"}`))
+			editRes, err := NewPatchFile(dir).execute(context.Background(),
+				json.RawMessage(`{"path":"`+name+`","old":"druga linia","new":"DRUGA"}`))
 			if err != nil {
 				t.Fatal(err)
 			}
 			if editRes.Err != nil {
-				t.Fatalf("edit_line: %v", editRes.Err)
+				t.Fatalf("patch_file shorthand: %v", editRes.Err)
 			}
 			patchRes, err := NewPatchFile(dir).execute(context.Background(),
 				json.RawMessage(`{"path":"`+name+`","changes":[{"old":"trzecia","new":"TRZECIA"}]}`))

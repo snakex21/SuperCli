@@ -133,6 +133,7 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 
 	content := string(data)
 	total := 0
+	var relaxed []string
 	for i, ch := range changes {
 		if ch.Old == "" {
 			return PatchResult{}, fmt.Errorf("fileops.PatchFile: change %d: old is empty; nothing written", i)
@@ -142,16 +143,28 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 			want = 1
 		}
 		got := strings.Count(content, ch.Old)
-		if got != want {
-			// The bare count is unactionable: the model regenerated the whole
-			// patch instead of correcting it. Spend tokens here — on the
-			// failure path only — to say what actually differs.
-			return PatchResult{}, fmt.Errorf(
-				"fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written%s",
-				i, want, got, patchFailureHint(path, content, changes, i, want, got))
+		if got == want {
+			content = strings.Replace(content, ch.Old, ch.New, want)
+			total += want
+			continue
 		}
-		content = strings.Replace(content, ch.Old, ch.New, want)
-		total += want
+		// Relax only a clean miss. A found-too-many is an ambiguity about
+		// WHICH block the model meant, and no amount of whitespace tolerance
+		// answers that — it only risks patching the wrong one.
+		if got == 0 {
+			if spans, mode, ok := relaxedMatch(content, ch.Old, ch.New, want); ok {
+				content = splice(content, spans)
+				total += want
+				relaxed = appendUnique(relaxed, mode)
+				continue
+			}
+		}
+		// The bare count is unactionable: the model regenerated the whole
+		// patch instead of correcting it. Spend tokens here — on the
+		// failure path only — to say what actually differs.
+		return PatchResult{}, fmt.Errorf(
+			"fileops.PatchFile: change %d: expected %d occurrence(s) of old, found %d; nothing written%s",
+			i, want, got, patchFailureHint(path, content, changes, i, want, got))
 	}
 
 	afterData := []byte(content)
@@ -171,6 +184,17 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	}
 	notePatchWrite(path)
 	note, duplicated := pureInsertionNote(content, changes)
+	// A relaxed match changed bytes the model did not literally send, so say
+	// so on the success path. Without it the next patch against the same block
+	// is written from the same wrong bytes again.
+	if len(relaxed) > 0 {
+		matched := "matched " + strings.Join(relaxed, "; ")
+		if note == "" {
+			note = "note: " + matched
+		} else {
+			note += "; " + matched
+		}
+	}
 	return PatchResult{
 		Replacements: total,
 		BeforeHash:   beforeHex,

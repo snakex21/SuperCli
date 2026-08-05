@@ -47,7 +47,7 @@ type writeFileArgs struct {
 func (t *WriteFile) Spec() Tool {
 	return Tool{
 		Name:        "write_file",
-		Description: "Create a new file (or overwrite an existing one) with the given content. Creates parent folders as needed. Use this to make a file from scratch; use edit_line to change a line in an existing file.",
+		Description: "Create a new file (or overwrite an existing one) with the given content. Creates parent folders as needed. Use this to make a file from scratch; use patch_file to change an existing one.",
 		Schema: `{
 			"path":    {"type": "string", "description": "File path, relative to the project folder"},
 			"content": {"type": "string", "description": "Full contents to write to the file"}

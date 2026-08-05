@@ -82,11 +82,9 @@ func TestIntegration_ToolCallPipeline(t *testing.T) {
 	// Register tools.
 	reg := tools.NewRegistry()
 	readLines := tools.NewReadLines(dir)
-	editLine := tools.NewEditLine(dir)
-	deleteLines := tools.NewDeleteLines(dir)
+	patchFile := tools.NewPatchFile(dir)
 	reg.MustRegister(readLines.Spec())
-	reg.MustRegister(editLine.Spec())
-	reg.MustRegister(deleteLines.Spec())
+	reg.MustRegister(patchFile.Spec())
 
 	// Build step sequence: read → edit → verify → delete.
 	prov := &sequenceProvider{
@@ -102,7 +100,7 @@ func TestIntegration_ToolCallPipeline(t *testing.T) {
 			{
 				content: "Now I'll change the text.",
 				toolCalls: []llm.ToolCall{
-					{ID: "call_2", Name: "edit_line", Arguments: `{"file":"lubie_fifticale.txt","line":1,"new_content":"windows is better than linux"}`},
+					{ID: "call_2", Name: "patch_file", Arguments: `{"path":"lubie_fifticale.txt","old":"lubie fifticale","new":"windows is better than linux"}`},
 				},
 			},
 			// Step 3: read again to verify the edit.
@@ -201,7 +199,7 @@ func TestIntegration_ToolCallPipeline_WithVerification(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.NewReadLines(dir).Spec())
-	reg.MustRegister(tools.NewEditLine(dir).Spec())
+	reg.MustRegister(tools.NewPatchFile(dir).Spec())
 
 	prov := &sequenceProvider{
 		steps: []providerStep{
@@ -214,7 +212,7 @@ func TestIntegration_ToolCallPipeline_WithVerification(t *testing.T) {
 			{
 				content: "Editing.",
 				toolCalls: []llm.ToolCall{
-					{ID: "c2", Name: "edit_line", Arguments: `{"file":"lubie_fifticale.txt","line":1,"new_content":"windows is better than linux"}`},
+					{ID: "c2", Name: "patch_file", Arguments: `{"path":"lubie_fifticale.txt","old":"lubie fifticale","new":"windows is better than linux"}`},
 				},
 				finishAfter: true,
 			},
@@ -262,8 +260,8 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// TestIntegration_ToolCallPipeline_DeleteLines tests the
-// delete_lines tool as part of the pipeline.
+// TestIntegration_ToolCallPipeline_DeleteLines tests deleting a line through
+// patch_file — an empty `new` — now that delete_lines is gone.
 func TestIntegration_ToolCallPipeline_DeleteLines(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "multi.txt")
@@ -271,14 +269,15 @@ func TestIntegration_ToolCallPipeline_DeleteLines(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.NewReadLines(dir).Spec())
-	reg.MustRegister(tools.NewDeleteLines(dir).Spec())
+	reg.MustRegister(tools.NewPatchFile(dir).Spec())
 
 	prov := &sequenceProvider{
 		steps: []providerStep{
 			{
 				content: "I'll delete line 2.",
 				toolCalls: []llm.ToolCall{
-					{ID: "d1", Name: "delete_lines", Arguments: `{"file":"multi.txt","from":2,"to":2}`},
+					{ID: "d1", Name: "patch_file", Arguments: `{"path":"multi.txt","old":"line 2
+","new":""}`},
 				},
 				finishAfter: true,
 			},

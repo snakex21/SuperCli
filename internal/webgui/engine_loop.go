@@ -105,8 +105,9 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	reg.MarkAlwaysOn("recall")
 	// One edit path, matching agent.thinCoreTools in the TUI: patch_file
 	// to change a file, create_file to make one. Offering the model seven
-	// interchangeable editors every turn is what made it pick the wrong
-	// one (and reach for write_file on a Word document).
+	// interchangeable editors is what made it pick the wrong one (and reach
+	// for write_file on a Word document); the line editors are gone entirely
+	// now, and patch_file absorbed the ergonomics they were kept for.
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
@@ -130,15 +131,10 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
-	// The legacy line editors stay registered — workers, checkpoints and
-	// tool_search all still reach them — but they no longer spend schema
-	// tokens on every chat turn, and they no longer compete with
-	// patch_file for the model's attention.
+	// write_file overwrites a whole file and stays discoverable rather than
+	// core: patch_file changes a file, create_file makes one, and a full
+	// rewrite is rare enough to be worth a tool_search.
 	for _, sp := range []tools.Tool{
-		tools.NewEditLine(home).Spec(),
-		tools.NewEditLines(home).Spec(),
-		tools.NewInsertAfter(home).Spec(),
-		tools.NewDeleteLines(home).Spec(),
 		tools.NewWriteFile(home).Spec(),
 	} {
 		if turn != nil {

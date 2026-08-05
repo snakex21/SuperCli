@@ -32,11 +32,6 @@ const (
 	// DiffContext is the number of context lines shown
 	// before/after a mutation in the diff output.
 	DiffContext = 3
-
-	// AnchorSearchRadius is the ±N window EditLineAnchored
-	// scans for the expected content when the hinted line
-	// does not match verbatim (tolerates line drift).
-	AnchorSearchRadius = 10
 )
 
 // FileErr maps a Go filesystem error to a short deterministic
@@ -188,7 +183,3 @@ func ReadContext(path string, line, radius int) ([]LineRange, error) {
 	}
 	return out, nil
 }
-
-// EditLine replaces the content of line (1-based) with
-// newContent. Returns a diff-style string showing ±3
-// context lines around the change.

@@ -171,7 +171,7 @@ func runLiveGoalTrial(t *testing.T, trial int, baseURL, model string) liveGoalTr
 	})
 	registry := tools.NewRegistry()
 	for _, spec := range []tools.Tool{
-		tools.NewReadMany(home).Spec(), tools.NewEditLine(home).Spec(),
+		tools.NewReadMany(home).Spec(), tools.NewPatchFile(home).Spec(),
 		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
 	} {
 		registry.MustRegister(spec)
@@ -216,7 +216,7 @@ func runLiveGoalTrial(t *testing.T, trial int, baseURL, model string) liveGoalTr
 				result.ToolSequence = append(result.ToolSequence, e.Name)
 				toolNames[e.ID] = e.Name
 				toolArgs[e.ID] = e.Args
-				if e.Name == "edit_line" {
+				if e.Name == "patch_file" {
 					editSeen = true
 				}
 				if e.Name == "goal" {
@@ -336,7 +336,7 @@ func writeLiveGoalFixture(home string) error {
 }
 
 func liveGoalRequiredOrder(toolsUsed, actions []string) bool {
-	toolOrder := []string{"read_many", "edit_line", "ctx_execute"}
+	toolOrder := []string{"read_many", "patch_file", "ctx_execute"}
 	goalOrder := []string{"complete_task", "verify", "mark_done"}
 	return containsOrdered(toolsUsed, toolOrder) && containsOrdered(actions, goalOrder)
 }
