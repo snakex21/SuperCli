@@ -319,3 +319,35 @@ func TestPhaseLine(t *testing.T) {
 		t.Error("PhaseLine without phases should be empty")
 	}
 }
+
+func TestMemory_RecordAux_AccumulatesAndSums(t *testing.T) {
+	r := NewMemory()
+	r.RecordAux(1, time.Second) // outside a step: dropped, not panicking
+	r.StartStep(1)
+	r.RecordAux(1, 20*time.Millisecond) // reflection
+	r.RecordAux(2, 30*time.Millisecond) // two buffered pre-step helpers
+	r.RecordAux(0, time.Hour)           // no call => no time
+	r.EndStep()
+	turns := r.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("len = %d", len(turns))
+	}
+	if turns[0].AuxCalls != 3 {
+		t.Errorf("AuxCalls = %d, want 3", turns[0].AuxCalls)
+	}
+	if turns[0].AuxUs != 50_000 {
+		t.Errorf("AuxUs = %d, want 50000", turns[0].AuxUs)
+	}
+	if total := Sum(turns); total.AuxCalls != 3 || total.AuxUs != 50_000 {
+		t.Errorf("Sum aux = %dx/%dµs, want 3x/50000µs", total.AuxCalls, total.AuxUs)
+	}
+	if got := FormatAux(turns[0].AuxCalls, turns[0].AuxUs); got != "aux=3x/50ms" {
+		t.Errorf("FormatAux = %q, want %q", got, "aux=3x/50ms")
+	}
+	if got := FormatAux(0, 0); got != "" {
+		t.Errorf("FormatAux(0,0) = %q, want empty", got)
+	}
+	if line := PhaseLine(turns[0]); line != "" {
+		t.Errorf("PhaseLine on a turn with no phases = %q, want empty", line)
+	}
+}

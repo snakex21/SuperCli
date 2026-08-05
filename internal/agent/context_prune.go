@@ -45,6 +45,14 @@ const (
 	pruneMinGainFrac      = 0.25
 	minPruneProtectTokens = 2048
 	maxPruneProtectTokens = 65536
+	// pruneRecheckGrowFrac: after a refusal ("nothing worth
+	// reclaiming yet") the full history scan is not repeated until
+	// the request estimate has grown by this fraction. Above the
+	// 60% trigger the scan is O(history) and ran on EVERY step,
+	// re-deciding the same "no" over and over on a long session.
+	// The verdict can only flip when the context actually grows, so
+	// growth is the only thing worth waking up for.
+	pruneRecheckGrowFrac = 0.1
 )
 
 // defaultPruneProtectTokens scales the verbatim tool-result tail with the
@@ -119,6 +127,15 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	if float64(est) <= pruneTriggerFrac*float64(w) {
 		return 0
 	}
+	// Memoized refusal: the previous scan already decided that too
+	// little is reclaimable, and that verdict cannot change while the
+	// context stays the same size. Skip the whole O(history) walk
+	// until the estimate has grown by pruneRecheckGrowFrac. A SHRINK
+	// (compaction, unhide) re-scans, since the composition changed.
+	if l.pruneRefusedEst > 0 && est >= l.pruneRefusedEst &&
+		float64(est) < float64(l.pruneRefusedEst)*(1+pruneRecheckGrowFrac) {
+		return 0
+	}
 	historyEst := l.EstimateVisibleTokens()
 
 	// The current step's results — everything after the last
@@ -163,8 +180,11 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	}
 
 	if reclaimable < int(pruneMinGainFrac*float64(historyEst)) {
-		return 0 // not worth invalidating the KV cache
+		l.pruneRefusedEst = est // remember: don't re-scan until it grows
+		return 0                // not worth invalidating the KV cache
 	}
+	// A real prune rewrites history; the memo is meaningless now.
+	l.pruneRefusedEst = 0
 
 	for _, i := range victims {
 		m := &l.Messages[i]

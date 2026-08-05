@@ -20,7 +20,7 @@ func Print(w io.Writer, turns []Turn) {
 	for _, t := range turns {
 		fmt.Fprintf(w, "%-4d %-8d %-8d %-9d %-6d %-8d %s\n",
 			t.Step, t.TokensIn, t.TokensOut, t.DurationMs, t.ToolCalls, t.TokensSaved, joinTools(t.Tools))
-		if p := FormatPhases(t.Phases); p != "" {
+		if p := joinParts(FormatAux(t.AuxCalls, t.AuxUs), FormatPhases(t.Phases)); p != "" {
 			fmt.Fprintf(w, "     %s\n", p)
 		}
 	}
@@ -29,9 +29,30 @@ func Print(w io.Writer, turns []Turn) {
 		total.Turns, total.TokensIn, total.TokensOut, total.TokensIn+total.TokensOut, total.TokensSaved)
 	fmt.Fprintf(w, "tool calls: %d total, %.1f avg/step, %d step(s) with >1 call\n",
 		total.ToolCalls, float64(total.ToolCalls)/float64(total.Turns), total.MultiCall)
-	if p := FormatPhases(SumPhases(turns)); p != "" {
+	if p := joinParts(FormatAux(total.AuxCalls, total.AuxUs), FormatPhases(SumPhases(turns))); p != "" {
 		fmt.Fprintf(w, "phase totals: %s\n", p)
 	}
+}
+
+// FormatAux renders the helper-model overlay ("aux=2x/845ms") for a
+// turn or a whole session. Returns "" when no helper call was made,
+// so a lean run prints exactly what it printed before.
+func FormatAux(calls int, us int64) string {
+	if calls <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("aux=%dx/%s", calls, formatUs(us))
+}
+
+// joinParts joins non-empty fragments with a single space.
+func joinParts(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // FormatCallAgg renders one per-purpose aggregate as a compact
@@ -130,7 +151,7 @@ func PhaseLine(t Turn) string {
 		return ""
 	}
 	return fmt.Sprintf("[phase] step=%d calls=%d in=%d out=%d %s",
-		t.Step, t.ToolCalls, t.TokensIn, t.TokensOut, p)
+		t.Step, t.ToolCalls, t.TokensIn, t.TokensOut, joinParts(FormatAux(t.AuxCalls, t.AuxUs), p))
 }
 
 func joinTools(tools []string) string {

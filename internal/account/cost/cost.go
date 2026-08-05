@@ -102,6 +102,9 @@ func Render(d Dashboard) string {
 		b.WriteString("### Phase breakdown\n\n")
 		for _, t := range d.Turns {
 			if p := stats.FormatPhases(t.Phases); p != "" {
+				if aux := stats.FormatAux(t.AuxCalls, t.AuxUs); aux != "" {
+					p = aux + " " + p
+				}
 				b.WriteString(fmt.Sprintf("  %-4d %s\n", t.Step, p))
 			}
 		}
@@ -111,6 +114,15 @@ func Render(d Dashboard) string {
 				d.Total.ToolCalls,
 				float64(d.Total.ToolCalls)/float64(d.Total.Turns),
 				d.Total.MultiCall))
+		}
+		// Helper inference charged to the turns above: the count the
+		// user actually needs to decide whether a helper is worth its
+		// round trip on a single local GPU.
+		if d.Total.AuxCalls > 0 && d.Total.Turns > 0 {
+			b.WriteString(fmt.Sprintf("  helper calls: %d total, %.1f avg/step, %s of turn time\n",
+				d.Total.AuxCalls,
+				float64(d.Total.AuxCalls)/float64(d.Total.Turns),
+				formatUsShort(d.Total.AuxUs)))
 		}
 		b.WriteString("\n")
 	}
