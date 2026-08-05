@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
@@ -135,6 +136,28 @@ func TestHandleSessionRewindEditsCurrentConversationWithoutBranch(t *testing.T) 
 	}
 	if meta.MessageCount != 3 || meta.ParentID != "" {
 		t.Fatalf("session metadata = %+v", meta)
+	}
+}
+
+func TestHandleSessionRewindWaitsForStoppedRunCleanup(t *testing.T) {
+	srv := newTestServer(t, false)
+	source, _ := createRewindSession(t, srv, "rewind after stop")
+	finish := srv.eng.beginActiveRun()
+	go func() {
+		time.Sleep(75 * time.Millisecond)
+		finish()
+	}()
+
+	response := postSessionRewind(t, srv, source.ID, 3, false, "stopped run")
+	if !response.OK || response.Removed != 2 {
+		t.Fatalf("response = %+v", response)
+	}
+	page, err := srv.eng.transcriptPage(context.Background(), source.ID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 3 || page.Messages[2].Role != string(llm.RoleSystem) {
+		t.Fatalf("rewound transcript after stop = %+v", page.Messages)
 	}
 }
 

@@ -709,6 +709,7 @@ async function sendPrompt(text, attachments) {
   var liveUserNode = addUserMsg(text, 0, attachments);
   var current = null;
   var terminalSeen = false;
+  var stopped = false;
   var lastProgressAt = Date.now();
   runStart = Date.now();
   setRunState("running", t("composer.working"));
@@ -763,6 +764,7 @@ async function sendPrompt(text, attachments) {
     }
   } catch (e) {
     if (e.name === "AbortError") {
+      stopped = true;
       addEventLine(t("chat.stopped"), "", "stop");
       setRunState("idle", t("composer.stopped"));
     } else {
@@ -784,10 +786,10 @@ async function sendPrompt(text, attachments) {
     if (runStatus.textContent.indexOf(t("composer.working")) === 0) setRunState("idle", t("composer.ready"));
     $("#status-dot").classList.remove("busy");
     promptEl.focus();
-    loadSessions();
     renderStats();
-    var userSeq = await addLatestMessageRewind(liveUserNode, persistedText);
+    var userSeq = await addLatestMessageRewind(liveUserNode, persistedText, stopped ? 8 : 1);
     if (userSeq) rememberSentAttachments(activeSessionID, userSeq, attachments);
+    await loadSessions();
     // A model may have updated the durable goal through its tool during this
     // turn. Keep an already-open Goal panel in sync without polling.
     if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
