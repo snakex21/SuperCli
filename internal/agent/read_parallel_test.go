@@ -34,11 +34,11 @@ func TestReadOnlyToolBatchRunsConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := make(chan Event, 16)
-	ok, failures, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
+	ok, outcomes := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
 		{ID: "1", Name: "read_a", Arguments: `{}`},
 		{ID: "2", Name: "read_b", Arguments: `{}`},
 	}, out)
-	if !ok || failures != 0 {
+	if failures := countFailures(outcomes); !ok || failures != 0 {
 		t.Fatalf("ok=%v failures=%d", ok, failures)
 	}
 	if got := atomic.LoadInt32(&maxActive); got < 2 {
@@ -65,7 +65,7 @@ func TestMixedToolBatchStaysSequential(t *testing.T) {
 	reg.MustRegister(tools.Tool{Name: "write", Description: "write", Schema: `{}`, Fn: fn})
 	loop, _ := NewLoop(LoopConfig{Provider: echoProvider("ok"), Registry: reg})
 	out := make(chan Event, 16)
-	ok, _, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
+	ok, _ := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
 		{ID: "1", Name: "read", Arguments: `{}`},
 		{ID: "2", Name: "write", Arguments: `{}`},
 	}, out)

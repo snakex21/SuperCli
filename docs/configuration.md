@@ -21,7 +21,7 @@ Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
 | `reasoning_effort` | provider default | steering cloud reasoning models; `/reasoning` |
-| `max_steps` | 0 = per-surface built-in (TUI 10, batch/WebGUI 25) | runaway loops in exotic setups; WebGUI's built-in 25 is a soft baseline that may extend to 50 while successful, non-repeated tool work shows progress; an explicit positive value remains a strict cap |
+| `max_steps` | 0 = built-in 25 (batch: 25 without grace) | runaway loops in exotic setups; the built-in 25 is a soft baseline that may extend to 50 while successful, non-repeated tool work shows progress; an explicit positive value remains a strict cap with no grace |
 | `context_window` | 0 = auto (provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
 | `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
 | `fallback_cooldown_seconds` | 0 = 30 | a remote/local host flaps and should be retried sooner or later |

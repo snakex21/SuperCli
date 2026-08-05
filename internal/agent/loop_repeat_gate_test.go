@@ -111,21 +111,21 @@ func TestStepLimitProgress_RepeatEarnsNoBudget(t *testing.T) {
 	batch := func(hash string) []llm.ToolCall {
 		return []llm.ToolCall{{Name: "patch_file", Arguments: patchArgs(hash)}}
 	}
-	if !sp.observe(batch("h1"), 0, 0) {
+	if !sp.observe(batch("h1"), allOK(1)) {
 		t.Fatal("first successful mutation should extend the budget")
 	}
 	for i := 0; i < 20; i++ {
-		if sp.observe(batch(fmt.Sprintf("h%d", i+2)), 0, 0) {
+		if sp.observe(batch(fmt.Sprintf("h%d", i+2)), allOK(1)) {
 			t.Fatalf("repeat %d bought more step budget", i+1)
 		}
 	}
 	// An A-B-A-B alternation must not collect a bonus on every step either.
 	a := []llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"a.js","changes":[{"old":"1","new":"2"}]}`}}
 	b := []llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"b.js","changes":[{"old":"1","new":"2"}]}`}}
-	if !sp.observe(a, 0, 0) || !sp.observe(b, 0, 0) {
+	if !sp.observe(a, allOK(1)) || !sp.observe(b, allOK(1)) {
 		t.Fatal("two genuinely new batches should each extend once")
 	}
-	if sp.observe(a, 0, 0) || sp.observe(b, 0, 0) {
+	if sp.observe(a, allOK(1)) || sp.observe(b, allOK(1)) {
 		t.Fatal("A-B-A-B must not keep buying budget")
 	}
 }
@@ -134,27 +134,27 @@ func TestStepLimitProgress_RepeatEarnsNoBudget(t *testing.T) {
 // progress: it must neither extend the budget nor reset the discovery streak.
 func TestInertMutationIsNotProgress(t *testing.T) {
 	calls := []llm.ToolCall{{Name: "patch_file", Arguments: patchArgs("h1")}}
-	if batchHasSuccessfulProgress(calls, 0, 1) {
+	if batchHasSuccessfulProgress(calls, verdicts("i")) {
 		t.Fatal("a duplicate-only patch must not count as progress")
 	}
-	if !batchHasSuccessfulProgress(calls, 0, 0) {
+	if !batchHasSuccessfulProgress(calls, allOK(1)) {
 		t.Fatal("a real patch must still count as progress")
 	}
 	mixed := []llm.ToolCall{
 		{Name: "patch_file", Arguments: patchArgs("h1")},
 		{Name: "patch_file", Arguments: `{"path":"b.js","changes":[{"old":"1","new":"2"}]}`},
 	}
-	if !batchHasSuccessfulProgress(mixed, 0, 1) {
+	if !batchHasSuccessfulProgress(mixed, verdicts("io")) {
 		t.Fatal("one inert call must not erase a productive sibling")
 	}
 
 	var sp stepLimitProgress
-	if sp.observe(calls, 0, 1) {
+	if sp.observe(calls, verdicts("i")) {
 		t.Fatal("inert mutation must not extend the step budget")
 	}
 	var dp discoveryProgress
 	dp.callStreak = 9
-	if sig := dp.observe(calls, 0, 1); sig != discoveryNone {
+	if sig := dp.observe(calls, verdicts("i")); sig != discoveryNone {
 		t.Fatalf("unexpected signal %v", sig)
 	}
 	if dp.callStreak == 0 {

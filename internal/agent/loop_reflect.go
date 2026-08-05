@@ -34,14 +34,15 @@ type stepLimitProgress struct {
 	granted map[[sha256.Size]byte]bool
 }
 
-func (p *stepLimitProgress) observe(calls []llm.ToolCall, failures, inert int) bool {
-	if len(calls) == 0 || failures > 0 {
+func (p *stepLimitProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) bool {
+	if len(calls) == 0 {
 		return false
 	}
-	// Soft step extension only after a clean mutation/execution batch.
-	// Unknown tools, pure discovery and edits that changed nothing new
-	// must not buy more budget.
-	if !batchHasSuccessfulProgress(calls, failures, inert) {
+	// Soft step extension only after a batch that landed at least one real
+	// mutation/execution. Unknown tools, pure discovery and edits that changed
+	// nothing new must not buy more budget. A failed sibling no longer voids
+	// the whole batch — the accounting is per call.
+	if !batchHasSuccessfulProgress(calls, outcomes) {
 		return false
 	}
 	fingerprint := toolCallBatchFingerprint(calls)
@@ -77,7 +78,12 @@ const (
 )
 
 // discoveryProgress tracks discovery-without-progress across a Run.
-// Progress = successful mutation or successful execution only.
+//
+// The streak counts calls that bought nothing: failures, and repeats of a call
+// already made in this Run. A call that SUCCEEDS with arguments never seen
+// before in the Run is productive reconnaissance and does not burn the budget —
+// reading an unfamiliar codebase is the job, not a symptom. Genuine loops are
+// still caught, by the repeat counter and by hasShortCycle.
 type discoveryProgress struct {
 	// callStreak counts individual non-progress tool calls (not batches).
 	callStreak int
@@ -85,28 +91,36 @@ type discoveryProgress struct {
 	nudges int
 	// recent holds normalized fingerprints of the last N calls for cycle detect.
 	recent [][sha256.Size]byte
+	// seen holds every call fingerprint made in this Run, so a repeat can be
+	// told apart from a new question.
+	seen map[[sha256.Size]byte]bool
 }
 
 // observe updates counters from a finished tool batch.
-// failures is the number of failed calls in the batch (post-verification).
-func (p *discoveryProgress) observe(calls []llm.ToolCall, failures, inert int) discoverySignal {
+// outcomes carries the per-call verdict (index-aligned with calls).
+func (p *discoveryProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) discoverySignal {
 	if len(calls) == 0 {
 		return discoveryNone
 	}
 	// Successful mutation/execution anywhere in the batch is real progress.
-	if batchHasSuccessfulProgress(calls, failures, inert) {
+	if batchHasSuccessfulProgress(calls, outcomes) {
 		p.callStreak = 0
 		p.recent = p.recent[:0]
 		return discoveryNone
 	}
 
-	// Count every call in a non-progress batch toward the streak.
-	// Mixed batch with failed patch still counts all calls as non-progress.
-	p.callStreak += len(calls)
-
-	// Record fingerprints for cycle detection (A-B-A-B).
-	for _, c := range calls {
+	if p.seen == nil {
+		p.seen = make(map[[sha256.Size]byte]bool)
+	}
+	// Record fingerprints for cycle detection (A-B-A-B) and charge only the
+	// calls that failed or merely repeated earlier work.
+	for i, c := range calls {
 		fp := toolCallFingerprint(c.Name, c.Arguments)
+		novel := !p.seen[fp]
+		p.seen[fp] = true
+		if outcomeAt(outcomes, i).failed || !novel {
+			p.callStreak++
+		}
 		p.recent = append(p.recent, fp)
 		if len(p.recent) > cycleHistorySize {
 			p.recent = p.recent[len(p.recent)-cycleHistorySize:]
@@ -136,9 +150,14 @@ func (p *discoveryProgress) noteNudge() {
 	}
 }
 
+// reset returns the Run to a fresh discovery budget. Called after a forced
+// user-facing answer: whatever the model does next starts from zero, so the
+// step that follows the forced reply is not born already bankrupt.
 func (p *discoveryProgress) reset() {
 	p.callStreak = 0
+	p.nudges = 0
 	p.recent = p.recent[:0]
+	p.seen = nil
 }
 
 // hasShortCycle detects short loops in recent fingerprints:
@@ -219,26 +238,56 @@ func batchIsDiscoveryOnly(calls []llm.ToolCall) bool {
 	return true
 }
 
-// batchHasSuccessfulProgress is true only when the batch contains at least one
-// productive mutation or execution call AND the batch had zero failures. A
-// failed patch must not reset discovery counters or extend step budget.
+// callOutcome is the per-call verdict of a finished tool batch.
 //
-// inert is how many of those calls succeeded without producing anything new —
-// today a patch that only duplicated text the file already contained. Such a
-// call is a write, not progress; counting it as progress is what kept a
-// self-repeating edit loop funded.
-func batchHasSuccessfulProgress(calls []llm.ToolCall, failures, inert int) bool {
-	if failures > 0 || len(calls) == 0 {
-		return false
+// inert means the call succeeded without producing anything new — today a
+// patch that only duplicated text the file already contained. Such a call is a
+// write, not progress; counting it as progress is what kept a self-repeating
+// edit loop funded.
+type callOutcome struct {
+	failed bool
+	inert  bool
+}
+
+// outcomeAt is index-safe: a batch cut short by a fatal call leaves the tail
+// unobserved, which reads as "neither failed nor inert" — but those calls never
+// ran, so they also never match a mutation/execution name that matters.
+func outcomeAt(outcomes []callOutcome, i int) callOutcome {
+	if i >= 0 && i < len(outcomes) {
+		return outcomes[i]
 	}
-	productive := 0
-	for _, c := range calls {
+	return callOutcome{}
+}
+
+// batchHasSuccessfulProgress is true when the batch landed at least one
+// productive mutation or execution — judged PER CALL. A failed sibling in the
+// same batch no longer voids a real edit: the model that fixed the file and
+// mistyped one search still made progress, and telling it otherwise is what
+// starved long tasks of budget.
+func batchHasSuccessfulProgress(calls []llm.ToolCall, outcomes []callOutcome) bool {
+	for i, c := range calls {
+		o := outcomeAt(outcomes, i)
+		if o.failed || o.inert {
+			continue
+		}
 		switch toolKind(c.Name) {
 		case "mutation", "execution":
-			productive++
+			return true
 		}
 	}
-	return productive > inert
+	return false
+}
+
+// countFailures is the batch-wide failure tally the reflection heuristics and
+// the user-facing notices still speak in.
+func countFailures(outcomes []callOutcome) int {
+	n := 0
+	for _, o := range outcomes {
+		if o.failed {
+			n++
+		}
+	}
+	return n
 }
 
 // identicalFailureGate blocks a third identical failed tool call (same

@@ -123,6 +123,21 @@ func TestLoop_ForceReplySendsZeroTools(t *testing.T) {
 			t.Fatalf("turn %d unexpectedly had 0 tools before force", i)
 		}
 	}
+	// The forced answer must not be a dead end: within the SAME Run the loop
+	// hands the tools back once, so work can continue without the user having
+	// to type again.
+	if len(counts) < 6 || counts[5] == 0 {
+		t.Fatalf("tools were not re-armed after the forced answer; counts=%v", counts)
+	}
+	var resumed bool
+	for _, ev := range events {
+		if n, ok := ev.(NoticeEvent); ok && strings.Contains(n.Text, "tools re-enabled") {
+			resumed = true
+		}
+	}
+	if !resumed {
+		t.Fatalf("want a tools-re-enabled notice after the forced answer; events=%#v", events)
+	}
 	done, ok := events[len(events)-1].(DoneEvent)
 	if !ok {
 		t.Fatalf("last = %#v, want DoneEvent", events[len(events)-1])
@@ -210,9 +225,9 @@ func TestDiscoveryProgress_Period3Cycle(t *testing.T) {
 	b := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"b"}`}
 	c := llm.ToolCall{Name: "read_lines", Arguments: `{"file":"c"}`}
 	for _, call := range []llm.ToolCall{a, b, c, a, b} {
-		p.observe([]llm.ToolCall{call}, 0, 0)
+		p.observe([]llm.ToolCall{call}, allOK(1))
 	}
-	if sig := p.observe([]llm.ToolCall{c}, 0, 0); sig != discoveryForceReply {
+	if sig := p.observe([]llm.ToolCall{c}, allOK(1)); sig != discoveryForceReply {
 		t.Fatalf("A-B-C-A-B-C should force, got %v", sig)
 	}
 }
@@ -249,6 +264,12 @@ func TestLoop_ForceReplyDropsHallucinatedToolCalls(t *testing.T) {
 				{Role: llm.RoleAssistant},
 				{ToolCall: &llm.ToolCall{ID: "halluc", Name: "read_lines", Arguments: `{"file":"c"}`}},
 				{FinishReason: "tool_calls"},
+			},
+			// Tools come back after the forced answer; the model has nothing
+			// left to do and finishes with text.
+			{
+				{Role: llm.RoleAssistant, Content: "Zablokowane, kończę."},
+				{FinishReason: "stop"},
 			},
 		},
 	}

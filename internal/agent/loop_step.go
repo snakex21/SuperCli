@@ -284,6 +284,31 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
+		// Forced reply delivered. Do not end the turn on a dead end: the
+		// discovery budget is per Run, so without this the only way back to
+		// tools was for the user to type again — which is exactly what made
+		// long analytical tasks stop half-way. Re-arm tools with a fresh
+		// budget and let the loop carry on; if the model has nothing left to
+		// do it simply answers again and the next pass emits Done. Once per
+		// Run, so a genuine loop cannot buy itself an endless refund, and the
+		// hard step limit stays the final backstop.
+		if forcedNoTools && !l.forcedReplyResumed {
+			l.forcedReplyResumed = true
+			if discoveryProg != nil {
+				discoveryProg.reset()
+			}
+			sys := llm.Message{
+				Role: llm.RoleSystem,
+				Content: "[tools re-enabled] You have answered the user. Tools are available again with a fresh budget. " +
+					"If the task is finished, reply with the final answer and call no tools. " +
+					"If work remains, continue — but change approach: do not repeat calls you already made.",
+			}
+			l.Messages = append(l.Messages, sys)
+			l.persist(ctx, sys)
+			out <- NoticeEvent{Text: "forced answer delivered: tools re-enabled with a fresh discovery budget"}
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
 		// F9 Sisyphus: when ultrawork is on AND
 		// the active /goal still has unfinished
 		// tasks, re-prompt the model instead of
@@ -315,15 +340,16 @@ func (l *Loop) runStep(
 	}
 
 	toolStart := time.Now()
-	toolsOK, toolFailures, toolInert := l.invokeToolCalls(ctx, toolCalls, out)
+	toolsOK, toolOutcomes := l.invokeToolCalls(ctx, toolCalls, out)
 	l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
 	if !toolsOK {
 		l.statsEndStep(stepStart)
 		return stepAbort
 	}
-	progressing := limitProgress.observe(toolCalls, toolFailures, toolInert)
+	toolFailures := countFailures(toolOutcomes)
+	progressing := limitProgress.observe(toolCalls, toolOutcomes)
 	if discoveryProg != nil {
-		switch discoveryProg.observe(toolCalls, toolFailures, toolInert) {
+		switch discoveryProg.observe(toolCalls, toolOutcomes) {
 		case discoveryNudge:
 			nudge := llm.Message{
 				Role: llm.RoleSystem,
