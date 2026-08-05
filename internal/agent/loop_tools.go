@@ -34,8 +34,9 @@ type toolResult struct {
 // slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
 // so local backends default to sequential; cloud backends run parallel.
 //
-// The third return is how many calls succeeded inertly (see toolResult.inert).
-func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int, int) {
+// The second return is the per-call verdict, index-aligned with toolCalls, so
+// progress accounting can judge each call on its own merits.
+func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
@@ -52,25 +53,20 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
 
-	failures, inert := 0, 0
-	for _, tc := range toolCalls {
+	outcomes := make([]callOutcome, len(toolCalls))
+	for i, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
-		if ev.failed {
-			failures++
-		}
-		if ev.inert {
-			inert++
-		}
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false, failures, inert
+			return false, outcomes
 		}
 	}
-	return true, failures, inert
+	return true, outcomes
 }
 
 func allTaskCalls(toolCalls []llm.ToolCall) bool {
@@ -95,7 +91,7 @@ func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
 	return true
 }
 
-func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, int, int) {
+func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
 	type item struct {
 		idx int
 		res toolResult
@@ -121,24 +117,19 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 
 	// Append tool results in the same order as the assistant's tool calls so
 	// provider APIs that expect call/result pairing stay deterministic.
-	failures, inert := 0, 0
-	for _, ev := range results {
-		if ev.failed {
-			failures++
-		}
-		if ev.inert {
-			inert++
-		}
+	outcomes := make([]callOutcome, len(toolCalls))
+	for i, ev := range results {
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
 		}
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
-			return false, failures, inert
+			return false, outcomes
 		}
 	}
-	return true, failures, inert
+	return true, outcomes
 }
 
 // invoke runs a single tool call, emits the matching events, and

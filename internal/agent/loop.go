@@ -298,6 +298,11 @@ type Loop struct {
 	// Cleared after that one Complete, so the following user turn is normal.
 	forceReplyWithoutTools bool
 
+	// forcedReplyResumed is set once per Run, after a forced tool-less answer
+	// has been delivered and the loop handed the tools back. It stops a
+	// pathological model from cycling force→resume→force forever.
+	forcedReplyResumed bool
+
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
 	Messages []llm.Message
@@ -692,6 +697,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 	l.concreteFailure.Store(false)
 	l.emptyReplyNudgeUsed = false
 	l.forceReplyWithoutTools = false
+	l.forcedReplyResumed = false
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.
@@ -741,7 +747,10 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 		}
 	}
 	out <- ErrorEvent{
-		Err:   fmt.Errorf("agent: max steps (%d) reached", stepLimit),
+		Err: fmt.Errorf("agent: max steps (%d) reached — the work so far is kept in this conversation. "+
+			"Say \"continue\" to carry on from here, or split the task into smaller steps. "+
+			"To raise the ceiling permanently set max_steps in config.toml (current: %d)",
+			stepLimit, stepLimit),
 		Usage: totalUsage,
 		Steps: stepLimit,
 	}
