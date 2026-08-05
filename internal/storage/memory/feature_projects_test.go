@@ -59,3 +59,33 @@ func TestOpenProjectStore_CreatesDBAndMapping(t *testing.T) {
 		t.Fatalf("store root should live under projects/: %s", s.Root())
 	}
 }
+
+func TestOpenProjectStoreUsesRelocatedStorageMapping(t *testing.T) {
+	home := t.TempDir()
+	oldPath := filepath.Join(home, "old-drive", "project")
+	newPath := filepath.Join(home, "new-drive", "project")
+	oldKey := ProjectKey(oldPath)
+	if err := SaveProjectsMap(home, map[string]string{newPath: oldKey}); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := OpenProjectStore(home, newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if got := store.Root(); got != filepath.Join(home, "projects", oldKey) {
+		t.Fatalf("relocated store root = %q, want old key root", got)
+	}
+}
+
+func TestProjectStorageKeyRejectsPathTraversalMapping(t *testing.T) {
+	home := t.TempDir()
+	project := filepath.Join(home, "project")
+	if err := SaveProjectsMap(home, map[string]string{project: ".."}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ProjectStorageKey(home, project), ProjectKey(project); got != want {
+		t.Fatalf("storage key = %q, want safe fallback %q", got, want)
+	}
+}

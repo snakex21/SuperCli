@@ -216,6 +216,7 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--line-soft);
 }
 .side-item:hover { background: var(--raise); }
+.project-select { width:100%; display:block; text-align:left; }
 .side-item.active { background: var(--accent-soft); }
 .side-item.active::before {
   content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
@@ -275,6 +276,7 @@ a:hover { text-decoration: underline; }
 .side-item.active .session-actions {
   background: linear-gradient(90deg, transparent, var(--accent-soft) 12px);
 }
+.project-actions { top: 6px; }
 @media (hover: none) {
   .session-actions { opacity: .72; pointer-events: auto; transform: none; }
   .side-item .t, .side-item .s { padding-right: 72px; }

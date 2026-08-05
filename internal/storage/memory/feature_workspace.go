@@ -159,6 +159,27 @@ func (w *Workspace) SetActive(target string) (Project, bool) {
 	return w.Projects[i], true
 }
 
+// Relocate changes only a project's absolute working-directory path while
+// preserving its name and provider/model preferences. This represents the
+// same project appearing at a new mount point, not a new project.
+func (w *Workspace) Relocate(target, newPath string) (Project, Project, bool) {
+	i, ok := w.find(target)
+	if !ok || strings.TrimSpace(newPath) == "" {
+		return Project{}, Project{}, false
+	}
+	for other := range w.Projects {
+		if other != i && w.Projects[other].Path == newPath {
+			return Project{}, Project{}, false
+		}
+	}
+	old := w.Projects[i]
+	w.Projects[i].Path = newPath
+	if w.Active == old.Path {
+		w.Active = newPath
+	}
+	return old, w.Projects[i], true
+}
+
 // ActiveProject returns the active project, if one is set and still exists.
 func (w *Workspace) ActiveProject() (Project, bool) {
 	if w.Active == "" {

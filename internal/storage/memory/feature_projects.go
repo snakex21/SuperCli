@@ -66,6 +66,22 @@ func SaveProjectsMap(home string, m map[string]string) error {
 	return os.WriteFile(projectsFile(home), raw, 0o644)
 }
 
+// ProjectStorageKey returns the registered storage key for projectPath. The
+// mapping is intentionally authoritative: it lets a removable project keep
+// its memory when Windows assigns the drive a different letter. Invalid map
+// values fail closed to the deterministic path-derived key.
+func ProjectStorageKey(home, projectPath string) string {
+	if key := LoadProjectsMap(home)[projectPath]; validProjectStorageKey(key) {
+		return key
+	}
+	return ProjectKey(projectPath)
+}
+
+func validProjectStorageKey(key string) bool {
+	key = strings.TrimSpace(key)
+	return key != "" && key != "." && key != ".." && filepath.Base(key) == key
+}
+
 // repairJSONObject attempts to fix the most common manual-edit
 // damage in a JSON object file: trailing commas before } and
 // truncated content (e.g. a crash mid-write). It returns the
@@ -132,7 +148,7 @@ func OpenProjectStore(home, projectPath string) (*Store, error) {
 	if home == "" || projectPath == "" {
 		return nil, fmt.Errorf("memory.OpenProjectStore: home and projectPath are required")
 	}
-	key := ProjectKey(projectPath)
+	key := ProjectStorageKey(home, projectPath)
 	dir := filepath.Join(home, "projects", key)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("memory.OpenProjectStore: %w", err)

@@ -124,6 +124,26 @@ func (m *scheduleManager) Delete(id string) error {
 	return errors.New("schedule not found")
 }
 
+func (m *scheduleManager) ReassignWorkspace(oldWorkspace, newWorkspace string) error {
+	if m == nil || oldWorkspace == "" || newWorkspace == "" || oldWorkspace == newWorkspace {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	for index := range m.items {
+		if sameSessionWorkspace(m.items[index].Workspace, oldWorkspace) {
+			m.items[index].Workspace = newWorkspace
+			m.items[index].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return m.saveLocked()
+}
+
 func (m *scheduleManager) run() {
 	defer close(m.done)
 	ticker := time.NewTicker(20 * time.Second)
