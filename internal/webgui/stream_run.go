@@ -218,9 +218,12 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		if assistantSeq <= assistantSeqBefore {
 			return
 		}
+		// One aggregation of the loop's own telemetry: token fallback and the
+		// helper-inference counters read from the same snapshot, so the aux
+		// numbers can never come from a second clock.
+		total := systats.Sum(turns)
 		usage := terminalUsage
 		if usage.Input == 0 && usage.Output == 0 {
-			total := systats.Sum(turns)
 			usage.Input = total.TokensIn
 			usage.Output = total.TokensOut
 			usage.Total = usage.Input + usage.Output
@@ -245,6 +248,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			ToolCalls: toolCalls, ToolFailures: toolFailures, Steps: steps,
 			ModelCalls: len(calls), FailedCalls: failedCalls, CanceledCalls: canceledCalls,
 			BackgroundCalls: backgroundCalls, HelperCalls: helperCalls,
+			AuxCalls: total.AuxCalls, AuxUs: total.AuxUs,
 			Phases: systats.SumPhases(turns), FileChanges: storedChanges,
 		}); saveErr != nil {
 			// Telemetry must never fail or delay the user's answer/error.

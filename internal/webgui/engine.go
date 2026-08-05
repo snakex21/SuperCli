@@ -69,6 +69,14 @@ type Engine struct {
 	questions  map[string]tools.AskRequest
 	perfMu     sync.RWMutex
 	perf       map[string]providerCallPerformance
+	// offTurn counts model calls the GUI makes OUTSIDE any agent turn
+	// (titles, run summaries, folder/document indexing, vision). They
+	// belong to no turn, so no turn summary can carry them, but they
+	// still cost the user time and money. Process-lifetime counters,
+	// see run_offturn.go.
+	offTurnMu    sync.Mutex
+	offTurnCalls int
+	offTurnUs    int64
 	// sessions is opened lazily and shared by every web request. Store wraps
 	// sql.DB and is safe for concurrent use; keeping one handle avoids running
 	// SQLite Ping + the complete migration/FTS audit on every endpoint call.

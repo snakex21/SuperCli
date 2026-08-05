@@ -15,7 +15,7 @@ import (
 func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) statsTelemetryView {
 	var out statsTelemetryView
 	toolUS := map[string]int64{}
-	var modelUS, toolsUS, cliUS, persistUS int64
+	var modelUS, toolsUS, cliUS, persistUS, auxUS int64
 	for _, turn := range turns {
 		if len(turn.Phases) == 0 {
 			continue // legacy rows are not false zero-duration samples
@@ -25,6 +25,8 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 		out.DurationMS += turn.DurationMS
 		out.ModelCalls += turn.ModelCalls
 		out.HelperCalls += turn.HelperCalls
+		out.AuxCalls += turn.AuxCalls
+		auxUS += turn.AuxUs
 		out.FailedCalls += turn.FailedCalls
 		out.CanceledCalls += turn.CanceledCalls
 		out.ToolFailures += turn.ToolFailures
@@ -47,7 +49,11 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 		return out
 	}
 	out.ModelMS, out.ToolsMS, out.CLIMS, out.PersistMS = modelUS/1000, toolsUS/1000, cliUS/1000, persistUS/1000
+	out.AuxMS = auxUS / 1000
 	out.AverageMS = out.DurationMS / int64(out.Samples)
+	if out.DurationMS > 0 && out.AuxMS > 0 {
+		out.AuxShare = int(math.Min(100, math.Round(float64(out.AuxMS)*100/float64(out.DurationMS))))
+	}
 	pipeline := out.ModelMS + out.ToolsMS + out.CLIMS
 	type part struct {
 		name string
@@ -76,6 +82,11 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 	}
 	if out.FailedCalls > 0 || out.CanceledCalls > 0 {
 		out.Signals = append(out.Signals, "model_failures")
+	}
+	// Helper inference is worth moving out of the reply only when it costs a
+	// visible share of the wall time the user actually waits through.
+	if out.AuxShare >= 20 {
+		out.Signals = append(out.Signals, "aux_heavy")
 	}
 	if tokens.Input >= 2000 && tokens.HasCached && tokens.CachedInput*2 < tokens.Input {
 		out.Signals = append(out.Signals, "low_cache")

@@ -124,6 +124,8 @@ func (s *Store) migrate() error {
 			canceled_model_calls  INTEGER NOT NULL DEFAULT 0,
 			background_calls      INTEGER NOT NULL DEFAULT 0,
 			helper_calls          INTEGER NOT NULL DEFAULT 0,
+			aux_calls             INTEGER NOT NULL DEFAULT 0,
+			aux_us                INTEGER NOT NULL DEFAULT 0,
 			phases_json           TEXT NOT NULL DEFAULT '{}',
 			file_changes_json     TEXT NOT NULL DEFAULT '[]',
 			created_at            INTEGER NOT NULL,
@@ -162,6 +164,8 @@ func (s *Store) migrate() error {
 		{"canceled_model_calls", "INTEGER NOT NULL DEFAULT 0"},
 		{"background_calls", "INTEGER NOT NULL DEFAULT 0"},
 		{"helper_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"aux_calls", "INTEGER NOT NULL DEFAULT 0"},
+		{"aux_us", "INTEGER NOT NULL DEFAULT 0"},
 		{"phases_json", "TEXT NOT NULL DEFAULT '{}'"},
 		{"file_changes_json", "TEXT NOT NULL DEFAULT '[]'"},
 	} {
