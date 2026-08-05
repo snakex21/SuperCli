@@ -36,7 +36,7 @@ func TestUserInstructionsAPIStoresPresetsWithoutContentLimit(t *testing.T) {
 	if !got.Enabled || got.ActiveID != "polish" || got.Presets[0].Content != content {
 		t.Fatalf("unexpected state: %#v", got.UserInstructionsState)
 	}
-	if got.EstimatedTokens <= 0 || !strings.HasSuffix(got.Path, "user-instructions.json") {
+	if got.EstimatedTokens <= 0 || !got.Applied || !strings.HasSuffix(got.Path, "user-instructions.json") {
 		t.Fatalf("missing metadata: %#v", got)
 	}
 }
