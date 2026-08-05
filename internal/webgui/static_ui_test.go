@@ -246,6 +246,20 @@ func TestQueuedMessageOpensItsConversationBeforeSending(t *testing.T) {
 	}
 }
 
+func TestStoppedRunRecoversMessageRewind(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"async function addLatestMessageRewind(node, text, attempts)",
+		"/api/sessions?limit=6",
+		"stopped ? 8 : 1",
+		"activeSessionID = sessionID",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("stopped-run rewind recovery is missing %q", required)
+		}
+	}
+}
+
 func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	content, err := assetsFS.ReadFile("assets/app.css")
 	if err != nil {

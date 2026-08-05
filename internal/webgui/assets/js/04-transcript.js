@@ -96,20 +96,40 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
   input.focus();
 }
 
-async function addLatestMessageRewind(node, text) {
-  if (!node || !node.isConnected || !activeSessionID) return 0;
-  var sessionID = activeSessionID;
-  try {
-    var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) + "&limit=24");
-    if (sessionID !== activeSessionID || !node.isConnected) return 0;
-    var messages = page.messages || [];
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && messages[i].content === text) {
-        addMessageRewind(node, messages[i].seq, text);
-        return messages[i].seq;
-      }
+async function addLatestMessageRewind(node, text, attempts) {
+  if (!node || !node.isConnected) return 0;
+  attempts = Math.max(1, Number(attempts) || 1);
+  for (var attempt = 0; attempt < attempts; attempt++) {
+    var candidates = activeSessionID ? [activeSessionID] : [];
+    // A very fast Stop can abort the SSE response before its initial session
+    // event reaches the browser. Recover the newly created session from the
+    // recent list, then confirm it by exact user-message content.
+    if (!candidates.length) {
+      try {
+        var recent = await j("/api/sessions?limit=6");
+        candidates = (recent || []).slice(0, 3).map(function (session) { return session.id; });
+      } catch (listError) {}
     }
-  } catch (e) {}
+    for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+      var sessionID = candidates[candidateIndex];
+      try {
+        var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) + "&limit=24");
+        if (!node.isConnected) return 0;
+        var messages = page.messages || [];
+        for (var i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "user" && messages[i].content === text) {
+            activeSessionID = sessionID;
+            transcriptSessionID = sessionID;
+            addMessageRewind(node, messages[i].seq, text);
+            return messages[i].seq;
+          }
+        }
+      } catch (transcriptError) {}
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise(function (resolve) { setTimeout(resolve, 100 + attempt * 75); });
+    }
+  }
   return 0;
 }
 function addAssistantMsg() {
@@ -623,4 +643,3 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	appendStream(line);
   smartScroll();
 }
-

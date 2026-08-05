@@ -94,10 +94,6 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	if s.eng.HasActiveWork() {
-		http.Error(w, "stop the active task before rewinding this conversation", http.StatusConflict)
-		return
-	}
 	var b struct {
 		SessionID   string `json:"session_id"`
 		SelectedSeq int    `json:"selected_seq"`
@@ -112,6 +108,14 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	b.Reason = strings.TrimSpace(truncateRunes(b.Reason, 400))
 	if b.SessionID == "" || b.SelectedSeq <= 0 {
 		http.Error(w, "session_id and positive selected_seq are required", http.StatusBadRequest)
+		return
+	}
+	// Browser AbortController closes the SSE stream immediately, while the
+	// canceled agent goroutine may need a brief moment to flush persistence and
+	// release activeRuns. Let a rewind clicked directly after Stop wait for that
+	// cleanup instead of failing a race the user cannot resolve.
+	if !waitForActiveWorkToFinish(r.Context(), s.eng, 3*time.Second) {
+		http.Error(w, "stop the active task before rewinding this conversation", http.StatusConflict)
 		return
 	}
 	store, err := s.eng.sessionStore()
@@ -209,6 +213,28 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		out.Warning += "rewind marker could not be saved: " + appendErr.Error()
 	}
 	writeJSON(w, out)
+}
+
+func waitForActiveWorkToFinish(ctx context.Context, eng *Engine, timeout time.Duration) bool {
+	if eng == nil || !eng.HasActiveWork() {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return !eng.HasActiveWork()
+		case <-ticker.C:
+			if !eng.HasActiveWork() {
+				return true
+			}
+		}
+	}
 }
 
 func writeWorkflowError(w http.ResponseWriter, err error) {
