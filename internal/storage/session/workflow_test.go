@@ -68,6 +68,37 @@ func TestUpdateQueuedTaskRejectsEmptyAndForeignRows(t *testing.T) {
 	}
 }
 
+func TestReassignCwdMovesSessionsAndAppendsQueuedTasks(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	oldCwd, newCwd := "/usb-old/project", "/usb-new/project"
+	sess, err := s.Create(oldCwd, "m", "moved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnqueueTask(ctx, newCwd, "", "already there"); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := s.EnqueueTask(ctx, oldCwd, sess.ID, "move me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReassignCwd(oldCwd, newCwd); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(sess.ID)
+	if err != nil || got.Cwd != newCwd {
+		t.Fatalf("session after reassignment = %+v, err=%v", got, err)
+	}
+	queue, err := s.ListQueuedTasks(ctx, newCwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queue) != 2 || queue[1].ID != moved.ID || queue[1].Position != 2 {
+		t.Fatalf("merged queue = %+v", queue)
+	}
+}
+
 func TestForkCopiesTranscriptWithoutUsage(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

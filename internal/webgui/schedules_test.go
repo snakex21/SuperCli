@@ -70,3 +70,22 @@ func TestScheduleManagerPersists(t *testing.T) {
 		t.Fatalf("reloaded schedules = %+v", items)
 	}
 }
+
+func TestScheduleManagerReassignsWorkspace(t *testing.T) {
+	dataDir := t.TempDir()
+	oldWorkspace := t.TempDir()
+	newWorkspace := t.TempDir()
+	manager := newScheduleManager(dataDir, nil)
+	defer manager.Close()
+	item, err := manager.Create("0 9 * * *", "Przygotuj raport", oldWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.ReassignWorkspace(oldWorkspace, newWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	items := manager.List(newWorkspace)
+	if len(items) != 1 || items[0].ID != item.ID || items[0].Workspace != newWorkspace {
+		t.Fatalf("reassigned schedules = %+v", items)
+	}
+}

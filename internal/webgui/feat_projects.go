@@ -58,7 +58,7 @@ func (e *Engine) listProjects() []projectView {
 		out = append(out, projectView{
 			Name:   p.Name,
 			Path:   p.Path,
-			Key:    memory.ProjectKey(p.Path),
+			Key:    memory.ProjectStorageKey(e.dataDir, p.Path),
 			Model:  p.Model,
 			Active: p.Path == ws.Active,
 			Cwd:    p.Path == home,
@@ -68,12 +68,12 @@ func (e *Engine) listProjects() []projectView {
 	return out
 }
 
-// projectAction performs use/add/remove on the workspace store. Storage mirrors
+// projectAction performs use/add/relocate/remove on the workspace store. Storage mirrors
 // the CLI /projects command (projects.json + workspace.json + project memory
 // store), while the web GUI additionally hot-swaps Engine.home so future web
 // requests use the selected sandbox immediately. name is an optional display
 // name for "add"; when empty the directory basename is used.
-func (e *Engine) projectAction(action, target, name string) error {
+func (e *Engine) projectAction(action, target, name, newPath string) error {
 	ws := e.loadWorkspaceMerged()
 	switch action {
 	case "use", "select":
@@ -129,6 +129,64 @@ func (e *Engine) projectAction(action, target, name string) error {
 		}
 		_ = store.Close()
 		e.setHome(abs)
+		return nil
+	case "relocate", "edit":
+		project, ok := ws.Get(target)
+		if !ok {
+			return fmt.Errorf("no project matches %q", target)
+		}
+		newPath = strings.TrimSpace(newPath)
+		if newPath == "" {
+			return fmt.Errorf("new project folder is required")
+		}
+		abs, err := filepath.Abs(newPath)
+		if err != nil {
+			return fmt.Errorf("cannot resolve %q: %w", newPath, err)
+		}
+		fi, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("%q does not exist", abs)
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("%q is not a directory", abs)
+		}
+		if sameSessionWorkspace(project.Path, abs) {
+			return nil
+		}
+		for _, existing := range ws.Projects {
+			if existing.Path == abs {
+				return fmt.Errorf("%q is already registered", abs)
+			}
+		}
+
+		// Move the path→key registration without changing its key. The project
+		// memory directory therefore survives drive-letter and mount changes.
+		projects := memory.LoadProjectsMap(e.dataDir)
+		key := memory.ProjectStorageKey(e.dataDir, project.Path)
+		delete(projects, project.Path)
+		projects[abs] = key
+		if err := memory.SaveProjectsMap(e.dataDir, projects); err != nil {
+			return fmt.Errorf("save project map: %w", err)
+		}
+		if _, _, ok := ws.Relocate(project.Path, abs); !ok {
+			return fmt.Errorf("cannot relocate project %q", project.Name)
+		}
+		if err := memory.SaveWorkspace(e.dataDir, ws); err != nil {
+			return fmt.Errorf("save workspace: %w", err)
+		}
+		if sessions, err := e.sessionStore(); err != nil {
+			return fmt.Errorf("open sessions: %w", err)
+		} else if err := sessions.ReassignCwd(project.Path, abs); err != nil {
+			return fmt.Errorf("move project conversations: %w", err)
+		}
+		if e.schedules != nil {
+			if err := e.schedules.ReassignWorkspace(project.Path, abs); err != nil {
+				return fmt.Errorf("move project schedules: %w", err)
+			}
+		}
+		if sameSessionWorkspace(e.Home(), project.Path) {
+			e.setHome(abs)
+		}
 		return nil
 	case "remove", "delete":
 		removed, ok := ws.Remove(target)

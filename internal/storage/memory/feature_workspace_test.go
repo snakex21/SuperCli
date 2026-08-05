@@ -107,3 +107,17 @@ func TestWorkspace_LoadDropsDanglingActive(t *testing.T) {
 		t.Errorf("dangling Active should be dropped, got %q", w.Active)
 	}
 }
+
+func TestWorkspaceRelocatePreservesMetadataAndActiveProject(t *testing.T) {
+	w := &Workspace{Projects: []Project{{Name: "USB", Path: `E:\work`, Model: "m", Provider: "p"}}, Active: `E:\work`}
+	old, moved, ok := w.Relocate(`E:\work`, `F:\work`)
+	if !ok {
+		t.Fatal("Relocate returned false")
+	}
+	if old.Path != `E:\work` || moved.Path != `F:\work` || moved.Name != "USB" || moved.Model != "m" || moved.Provider != "p" {
+		t.Fatalf("relocated project = old:%+v new:%+v", old, moved)
+	}
+	if w.Active != `F:\work` {
+		t.Fatalf("active = %q", w.Active)
+	}
+}

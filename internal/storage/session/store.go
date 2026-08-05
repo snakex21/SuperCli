@@ -266,6 +266,37 @@ func (s *Store) DeleteAll() error {
 	return tx.Commit()
 }
 
+// ReassignCwd moves durable conversation and queue ownership from one
+// workspace path to another. It is used when a project is still the same
+// folder but its absolute path changes, for example after Windows gives a USB
+// drive a different letter.
+func (s *Store) ReassignCwd(oldCwd, newCwd string) error {
+	oldCwd = strings.TrimSpace(oldCwd)
+	newCwd = strings.TrimSpace(newCwd)
+	if oldCwd == "" || newCwd == "" {
+		return fmt.Errorf("session.Store.ReassignCwd: old and new cwd are required")
+	}
+	if oldCwd == newCwd {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var queueOffset int
+	if err := tx.QueryRow(`SELECT IFNULL(MAX(position), 0) FROM prompt_queue WHERE cwd = ?`, newCwd).Scan(&queueOffset); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE prompt_queue SET cwd = ?, position = position + ? WHERE cwd = ?`, newCwd, queueOffset, oldCwd); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET cwd = ? WHERE cwd = ?`, newCwd, oldCwd); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // TruncateFrom permanently removes transcript messages at and after fromSeq
 // from one session. It is the storage primitive behind the WebGUI's simple
 // in-place rewind: the conversation keeps its identity and no branch is

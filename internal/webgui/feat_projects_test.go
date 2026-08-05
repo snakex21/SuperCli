@@ -1,6 +1,7 @@
 package webgui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,7 +19,7 @@ func TestProjectActionAddCreatesStorageAndSwitchesHome(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	if err := eng.projectAction("add", proj, ""); err != nil {
+	if err := eng.projectAction("add", proj, "", ""); err != nil {
 		t.Fatalf("projectAction(add): %v", err)
 	}
 	if got := eng.Home(); got != proj {
@@ -41,6 +42,82 @@ func TestProjectActionAddCreatesStorageAndSwitchesHome(t *testing.T) {
 	}
 }
 
+func TestProjectActionRelocatePreservesProjectState(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	oldPath := t.TempDir()
+	newPath := t.TempDir()
+	eng, err := NewEngine(config.Config{Provider: config.ProviderEcho, Model: "echo"}, home, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer eng.Close()
+	if err := eng.projectAction("add", oldPath, "USB project", ""); err != nil {
+		t.Fatal(err)
+	}
+	oldKey := memory.ProjectStorageKey(dataDir, oldPath)
+	projectStore, err := memory.OpenProjectStore(dataDir, oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projectStore.Put(memory.Entry{ID: "relocate-fact", Scope: memory.ScopeFact, Content: "keep me"}); err != nil {
+		t.Fatal(err)
+	}
+	projectStore.Close()
+	sessions, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessions.Create(oldPath, "echo", "USB chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessions.EnqueueTask(context.Background(), oldPath, sess.ID, "queued"); err != nil {
+		t.Fatal(err)
+	}
+	schedule, err := eng.schedules.Create("0 9 * * *", "scheduled", oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := eng.projectAction("relocate", oldPath, "", newPath); err != nil {
+		t.Fatalf("projectAction(relocate): %v", err)
+	}
+	if eng.Home() != newPath {
+		t.Fatalf("home = %q, want %q", eng.Home(), newPath)
+	}
+	projects := memory.LoadProjectsMap(dataDir)
+	if projects[oldPath] != "" || projects[newPath] != oldKey {
+		t.Fatalf("relocated projects map = %+v", projects)
+	}
+	ws := memory.LoadWorkspace(dataDir)
+	moved, ok := ws.Get(newPath)
+	if !ok || moved.Name != "USB project" || ws.Active != newPath {
+		t.Fatalf("relocated workspace = %+v", ws)
+	}
+	projectStore, err = memory.OpenProjectStore(dataDir, newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, err := projectStore.Recent(memory.ScopeFact, 5)
+	projectStore.Close()
+	if err != nil || len(facts) != 1 || facts[0].Content != "keep me" {
+		t.Fatalf("relocated memory = %+v, err=%v", facts, err)
+	}
+	gotSession, err := sessions.Get(sess.ID)
+	if err != nil || gotSession.Cwd != newPath {
+		t.Fatalf("relocated session = %+v, err=%v", gotSession, err)
+	}
+	queue, err := sessions.ListQueuedTasks(context.Background(), newPath)
+	if err != nil || len(queue) != 1 || queue[0].SessionID != sess.ID {
+		t.Fatalf("relocated queue = %+v, err=%v", queue, err)
+	}
+	schedules := eng.schedules.List(newPath)
+	if len(schedules) != 1 || schedules[0].ID != schedule.ID {
+		t.Fatalf("relocated schedules = %+v", schedules)
+	}
+}
+
 func TestProjectActionUseSwitchesHomeImmediately(t *testing.T) {
 	dataDir := t.TempDir()
 	home := t.TempDir()
@@ -57,7 +134,7 @@ func TestProjectActionUseSwitchesHomeImmediately(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	if err := eng.projectAction("use", "b", ""); err != nil {
+	if err := eng.projectAction("use", "b", "", ""); err != nil {
 		t.Fatalf("projectAction(use): %v", err)
 	}
 	if got := eng.Home(); got != projB {
@@ -77,10 +154,10 @@ func TestProjectActionRemoveDropsLegacyMapEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	if err := eng.projectAction("add", proj, "Temp"); err != nil {
+	if err := eng.projectAction("add", proj, "Temp", ""); err != nil {
 		t.Fatalf("projectAction(add): %v", err)
 	}
-	if err := eng.projectAction("remove", proj, ""); err != nil {
+	if err := eng.projectAction("remove", proj, "", ""); err != nil {
 		t.Fatalf("projectAction(remove): %v", err)
 	}
 	if m := memory.LoadProjectsMap(dataDir); m[proj] != "" {
