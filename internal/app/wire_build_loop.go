@@ -47,22 +47,15 @@ type loopAssembly struct {
 // Construction of reflector/draft/window resolvers stays in Main; this only
 // packages the already-resolved pieces so Main stays free of a 70-line literal.
 func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
-	// Same budget the WebGUI has had: 25 steps plus 25 of grace while the work
-	// is still visibly progressing. The old CLI default of 10 hard steps was
-	// the smaller half of a split-brain default and cut off healthy long tasks.
-	// An explicit max_steps stays a strict user cap, with no grace.
-	maxSteps := a.tomlCfg.MaxStepsOr(25)
-	maxStepGrace := 0
-	if a.tomlCfg.MaxSteps <= 0 {
-		maxStepGrace = maxSteps
-	}
+	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
+	// An explicit max_steps in config.toml stays a strict user cap.
+	maxSteps := a.tomlCfg.MaxStepsOr(agent.DefaultMaxSteps)
 	return agent.LoopConfig{
 		Provider:           a.provider,
 		Registry:           a.registry,
 		System:             buildSystemPrompt(a.goalSvc),
 		Briefing:           a.memoryBriefing,
 		MaxSteps:           maxSteps,
-		MaxStepGrace:       maxStepGrace,
 		ErrorLog:           a.errorLog,
 		Reflector:          a.reflector,
 		ReflectEvery:       a.reflectEvery,

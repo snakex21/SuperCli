@@ -104,63 +104,7 @@ func TestIdenticalSuccessGate_AllowsDistinctEdits(t *testing.T) {
 	}
 }
 
-// The loop must not hand extra step budget to a batch it has already paid for,
-// which is how the 23-patch run grew its budget from 25 to 30 steps.
-func TestStepLimitProgress_RepeatEarnsNoBudget(t *testing.T) {
-	var sp stepLimitProgress
-	batch := func(hash string) []llm.ToolCall {
-		return []llm.ToolCall{{Name: "patch_file", Arguments: patchArgs(hash)}}
-	}
-	if !sp.observe(batch("h1"), allOK(1)) {
-		t.Fatal("first successful mutation should extend the budget")
-	}
-	for i := 0; i < 20; i++ {
-		if sp.observe(batch(fmt.Sprintf("h%d", i+2)), allOK(1)) {
-			t.Fatalf("repeat %d bought more step budget", i+1)
-		}
-	}
-	// An A-B-A-B alternation must not collect a bonus on every step either.
-	a := []llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"a.js","changes":[{"old":"1","new":"2"}]}`}}
-	b := []llm.ToolCall{{Name: "patch_file", Arguments: `{"path":"b.js","changes":[{"old":"1","new":"2"}]}`}}
-	if !sp.observe(a, allOK(1)) || !sp.observe(b, allOK(1)) {
-		t.Fatal("two genuinely new batches should each extend once")
-	}
-	if sp.observe(a, allOK(1)) || sp.observe(b, allOK(1)) {
-		t.Fatal("A-B-A-B must not keep buying budget")
-	}
-}
 
-// An edit that only duplicated text the file already had is a write, not
-// progress: it must neither extend the budget nor reset the discovery streak.
-func TestInertMutationIsNotProgress(t *testing.T) {
-	calls := []llm.ToolCall{{Name: "patch_file", Arguments: patchArgs("h1")}}
-	if batchHasSuccessfulProgress(calls, verdicts("i")) {
-		t.Fatal("a duplicate-only patch must not count as progress")
-	}
-	if !batchHasSuccessfulProgress(calls, allOK(1)) {
-		t.Fatal("a real patch must still count as progress")
-	}
-	mixed := []llm.ToolCall{
-		{Name: "patch_file", Arguments: patchArgs("h1")},
-		{Name: "patch_file", Arguments: `{"path":"b.js","changes":[{"old":"1","new":"2"}]}`},
-	}
-	if !batchHasSuccessfulProgress(mixed, verdicts("io")) {
-		t.Fatal("one inert call must not erase a productive sibling")
-	}
-
-	var sp stepLimitProgress
-	if sp.observe(calls, verdicts("i")) {
-		t.Fatal("inert mutation must not extend the step budget")
-	}
-	var dp discoveryProgress
-	dp.callStreak = 9
-	if sig := dp.observe(calls, verdicts("i")); sig != discoveryNone {
-		t.Fatalf("unexpected signal %v", sig)
-	}
-	if dp.callStreak == 0 {
-		t.Fatal("inert mutation must not reset the discovery streak")
-	}
-}
 
 // The full production scenario end-to-end, on a real file with the real
 // patch_file tool: a pure insertion whose anchor survives the edit, so the

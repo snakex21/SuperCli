@@ -83,8 +83,8 @@ type TomlConfig struct {
 
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
-	// MaxStepsOr (below) is how consumers read it: 0 = per-surface
-	// built-in default (TUI 10, batch and WebGUI 25).
+	// MaxStepsOr (below) is how consumers read it: 0 = the shared
+	// built-in runaway safety net (agent.DefaultMaxSteps).
 
 	// ReflectEvery controls F5.a mid-run reflection. 0 selects the
 	// adaptive signal-driven policy, a positive value forces a fixed

@@ -23,147 +23,87 @@ type adaptiveReflectionProgress struct {
 	failedBatchStreak int
 }
 
-// stepLimitProgress is deliberately separate from reflection tracking.
-// Reflection resets after each checkpoint; soft-limit decisions must retain
-// the previous batch so an exact tool-call loop never earns extra steps.
-// Only a successful mutation or execution batch can extend the soft limit.
-// Discovery, unknown tools, and failed mutations never count as progress.
-// A batch may buy extra budget once per Run: remembering only the previous
-// batch let an A-B-A-B alternation collect a bonus on every single step.
-type stepLimitProgress struct {
-	granted map[[sha256.Size]byte]bool
-}
+// repeatWarnCooldown is how many further calls must pass after a loop warning
+// before another one is injected, so a model that is genuinely re-reading a
+// file does not get a wall of identical warnings.
+const repeatWarnCooldown = 4
 
-func (p *stepLimitProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) bool {
-	if len(calls) == 0 {
-		return false
-	}
-	// Soft step extension only after a batch that landed at least one real
-	// mutation/execution. Unknown tools, pure discovery and edits that changed
-	// nothing new must not buy more budget. A failed sibling no longer voids
-	// the whole batch — the accounting is per call.
-	if !batchHasSuccessfulProgress(calls, outcomes) {
-		return false
-	}
-	fingerprint := toolCallBatchFingerprint(calls)
-	if p.granted[fingerprint] {
-		return false
-	}
-	if p.granted == nil {
-		p.granted = make(map[[sha256.Size]byte]bool)
-	}
-	p.granted[fingerprint] = true
-	return true
-}
-
-// discoveryCallSoftLimit: after this many non-progress tool calls, inject
-// a strategy nudge (no extra model router). Counted per tool call, not per step.
-const discoveryCallSoftLimit = 12
-
-// discoveryCallHardLimit: after this many non-progress tool calls (or a second
-// soft threshold crossing), force a user-facing answer and stop tooling.
-const discoveryCallHardLimit = 20
+// repeatHardLimit is the last-resort stop: the SAME call with the SAME
+// arguments repeated this many times in a row is not work, it is a stuck
+// model burning the user's money. Everything below this only warns.
+const repeatHardLimit = 50
 
 // cycleHistorySize is how many recent call fingerprints we keep to detect
 // short A-B-A-B loops, not only consecutive identical calls.
 const cycleHistorySize = 8
 
-// discoverySignal is what discoveryProgress.observe returns to the step loop.
-type discoverySignal int
+// repeatSignal is what repeatProgress.observe returns to the step loop.
+type repeatSignal int
 
 const (
-	discoveryNone       discoverySignal = iota
-	discoveryNudge                      // first soft threshold: strategy message
-	discoveryForceReply                 // hard threshold / second strike: answer user
+	repeatNone  repeatSignal = iota
+	repeatWarn               // real loop detected: inject an error, keep working
+	repeatAbort              // absurd identical repetition: stop the run
 )
 
-// discoveryProgress tracks discovery-without-progress across a Run.
-//
-// The streak counts calls that bought nothing: failures, and repeats of a call
-// already made in this Run. A call that SUCCEEDS with arguments never seen
-// before in the Run is productive reconnaissance and does not burn the budget —
-// reading an unfamiliar codebase is the job, not a symptom. Genuine loops are
-// still caught, by the repeat counter and by hasShortCycle.
-type discoveryProgress struct {
-	// callStreak counts individual non-progress tool calls (not batches).
-	callStreak int
-	// nudges is how many strategy nudges already fired this Run.
-	nudges int
+// repeatProgress detects a REAL loop — the same tool called with the same
+// arguments over and over — and nothing else. It deliberately does not count
+// "discovery without progress": reading an unfamiliar codebase for fifty calls
+// is the job, not a symptom, and charging for it is what used to cut healthy
+// tasks off mid-work.
+type repeatProgress struct {
+	// identicalStreak counts consecutive calls with the same fingerprint.
+	identicalStreak int
+	last            [sha256.Size]byte
+	haveLast        bool
 	// recent holds normalized fingerprints of the last N calls for cycle detect.
 	recent [][sha256.Size]byte
-	// seen holds every call fingerprint made in this Run, so a repeat can be
-	// told apart from a new question.
-	seen map[[sha256.Size]byte]bool
+	// cooldown counts down calls after a warning was issued.
+	cooldown int
 }
 
-// observe updates counters from a finished tool batch.
-// outcomes carries the per-call verdict (index-aligned with calls).
-func (p *discoveryProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) discoverySignal {
+// observe updates counters from a finished tool batch. outcomes is accepted
+// for symmetry with the rest of the loop; a loop is a loop whether the
+// repeated call succeeds or fails.
+func (p *repeatProgress) observe(calls []llm.ToolCall, _ []callOutcome) repeatSignal {
 	if len(calls) == 0 {
-		return discoveryNone
+		return repeatNone
 	}
-	// Successful mutation/execution anywhere in the batch is real progress.
-	if batchHasSuccessfulProgress(calls, outcomes) {
-		p.callStreak = 0
-		p.recent = p.recent[:0]
-		return discoveryNone
-	}
-
-	if p.seen == nil {
-		p.seen = make(map[[sha256.Size]byte]bool)
-	}
-	// Record fingerprints for cycle detection (A-B-A-B) and charge only the
-	// calls that failed or merely repeated earlier work.
-	for i, c := range calls {
+	for _, c := range calls {
 		fp := toolCallFingerprint(c.Name, c.Arguments)
-		novel := !p.seen[fp]
-		p.seen[fp] = true
-		if outcomeAt(outcomes, i).failed || !novel {
-			p.callStreak++
+		if p.haveLast && fp == p.last {
+			p.identicalStreak++
+		} else {
+			p.identicalStreak = 1
 		}
+		p.last = fp
+		p.haveLast = true
 		p.recent = append(p.recent, fp)
 		if len(p.recent) > cycleHistorySize {
 			p.recent = p.recent[len(p.recent)-cycleHistorySize:]
 		}
+		if p.cooldown > 0 {
+			p.cooldown--
+		}
 	}
-
-	if p.hasShortCycle() {
-		// Cycles are worse than linear discovery: escalate immediately.
-		p.callStreak = discoveryCallHardLimit
+	if p.identicalStreak >= repeatHardLimit {
+		return repeatAbort
 	}
-
-	if p.callStreak >= discoveryCallHardLimit || p.nudges >= 1 && p.callStreak >= discoveryCallSoftLimit {
-		return discoveryForceReply
+	if p.cooldown == 0 && p.hasShortCycle() {
+		p.cooldown = repeatWarnCooldown
+		return repeatWarn
 	}
-	if p.callStreak >= discoveryCallSoftLimit {
-		return discoveryNudge
-	}
-	return discoveryNone
+	return repeatNone
 }
 
-func (p *discoveryProgress) noteNudge() {
-	p.nudges++
-	// After a soft nudge, give a short window before hard force, but keep
-	// partial streak so the model cannot reset by one more list_dir.
-	if p.callStreak > discoveryCallSoftLimit/2 {
-		p.callStreak = discoveryCallSoftLimit / 2
-	}
-}
-
-// reset returns the Run to a fresh discovery budget. Called after a forced
-// user-facing answer: whatever the model does next starts from zero, so the
-// step that follows the forced reply is not born already bankrupt.
-func (p *discoveryProgress) reset() {
-	p.callStreak = 0
-	p.nudges = 0
-	p.recent = p.recent[:0]
-	p.seen = nil
-}
+// repeatCount is how long the current identical-call streak is, for the
+// wording of the injected error.
+func (p *repeatProgress) repeatCount() int { return p.identicalStreak }
 
 // hasShortCycle detects short loops in recent fingerprints:
 // period-1 (A A A), period-2 (A B A B), period-3 (A B C A B C).
 // Fingerprints are name+normalized-args only (no tool_call_id).
-func (p *discoveryProgress) hasShortCycle() bool {
+func (p *repeatProgress) hasShortCycle() bool {
 	n := len(p.recent)
 	if n < 3 {
 		return false
@@ -225,18 +165,6 @@ func toolKind(name string) string {
 	}
 }
 
-func batchIsDiscoveryOnly(calls []llm.ToolCall) bool {
-	if len(calls) == 0 {
-		return false
-	}
-	for _, c := range calls {
-		if toolKind(c.Name) != "discovery" {
-			return false
-		}
-	}
-	return true
-}
-
 // callOutcome is the per-call verdict of a finished tool batch.
 //
 // inert means the call succeeded without producing anything new — today a
@@ -256,25 +184,6 @@ func outcomeAt(outcomes []callOutcome, i int) callOutcome {
 		return outcomes[i]
 	}
 	return callOutcome{}
-}
-
-// batchHasSuccessfulProgress is true when the batch landed at least one
-// productive mutation or execution — judged PER CALL. A failed sibling in the
-// same batch no longer voids a real edit: the model that fixed the file and
-// mistyped one search still made progress, and telling it otherwise is what
-// starved long tasks of budget.
-func batchHasSuccessfulProgress(calls []llm.ToolCall, outcomes []callOutcome) bool {
-	for i, c := range calls {
-		o := outcomeAt(outcomes, i)
-		if o.failed || o.inert {
-			continue
-		}
-		switch toolKind(c.Name) {
-		case "mutation", "execution":
-			return true
-		}
-	}
-	return false
 }
 
 // countFailures is the batch-wide failure tally the reflection heuristics and

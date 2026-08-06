@@ -20,18 +20,15 @@ const (
 )
 
 // runStep executes one agent step: draft → context defense → complete →
-// tools → reflection. Mutates totalUsage, reflectionProgress, limitProgress
-// and *stepLimit in place.
+// tools → reflection. Mutates totalUsage and reflectionProgress in place.
 func (l *Loop) runStep(
 	ctx context.Context,
 	step int,
 	out chan<- Event,
 	totalUsage *Usage,
 	reflectionProgress *adaptiveReflectionProgress,
-	limitProgress *stepLimitProgress,
-	discoveryProg *discoveryProgress,
-	stepLimit *int,
-	hardStepLimit int,
+	repeatProg *repeatProgress,
+	stepLimit int,
 ) stepResult {
 	if err := ctx.Err(); err != nil {
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step}
@@ -77,16 +74,9 @@ func (l *Loop) runStep(
 	// the model can pull in more when needed; the full tool list is the
 	// actual token cost the router avoids.
 	//
-	// forceReplyWithoutTools: one shot with zero tool defs so a local
-	// model cannot ignore a "do not call tools" system line.
-	var toolDefs []llm.ToolDef
-	forcedNoTools := l.forceReplyWithoutTools
-	if forcedNoTools {
-		toolDefs = nil
-		l.forceReplyWithoutTools = false
-	} else {
-		toolDefs = l.buildToolDefs()
-	}
+	// Tools are never taken away from the model mid-run: a counter that
+	// disarmed them ended the turn and made the user type "continue".
+	toolDefs := l.buildToolDefs()
 	// context_prepare part 1: prune/compact/tool defs. Part 2
 	// (provider message assembly) is added inside completeOnce.
 	// The auto-compact SUMMARY MODEL CALL is excluded — it is
@@ -104,17 +94,8 @@ func (l *Loop) runStep(
 		// The learned limit was persisted and the
 		// conversation compacted; retry once. The retry's phase
 		// timings accumulate onto this step's (documented in
-		// stats.Turn.Phases). Keep the same toolDefs (incl. empty
-		// force-reply set) so overflow retry does not re-arm tools.
+		// stats.Turn.Phases).
 		text, toolCalls, usage, err = l.completeOnce(ctx, toolDefs, out)
-	}
-	// Even if the model hallucinates tool_calls without defs, drop them
-	// on a forced-reply turn so we never execute more discovery.
-	if forcedNoTools && len(toolCalls) > 0 {
-		toolCalls = nil
-		if strings.TrimSpace(text) == "" {
-			text = "(forced reply: tools disabled after discovery budget)"
-		}
 	}
 	if err != nil {
 		l.statsEndStep(stepStart)
@@ -284,31 +265,6 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
-		// Forced reply delivered. Do not end the turn on a dead end: the
-		// discovery budget is per Run, so without this the only way back to
-		// tools was for the user to type again — which is exactly what made
-		// long analytical tasks stop half-way. Re-arm tools with a fresh
-		// budget and let the loop carry on; if the model has nothing left to
-		// do it simply answers again and the next pass emits Done. Once per
-		// Run, so a genuine loop cannot buy itself an endless refund, and the
-		// hard step limit stays the final backstop.
-		if forcedNoTools && !l.forcedReplyResumed {
-			l.forcedReplyResumed = true
-			if discoveryProg != nil {
-				discoveryProg.reset()
-			}
-			sys := llm.Message{
-				Role: llm.RoleSystem,
-				Content: "[tools re-enabled] You have answered the user. Tools are available again with a fresh budget. " +
-					"If the task is finished, reply with the final answer and call no tools. " +
-					"If work remains, continue — but change approach: do not repeat calls you already made.",
-			}
-			l.Messages = append(l.Messages, sys)
-			l.persist(ctx, sys)
-			out <- NoticeEvent{Text: "forced answer delivered: tools re-enabled with a fresh discovery budget"}
-			l.statsEndStep(stepStart)
-			return stepContinue
-		}
 		// F9 Sisyphus: when ultrawork is on AND
 		// the active /goal still has unfinished
 		// tasks, re-prompt the model instead of
@@ -347,34 +303,32 @@ func (l *Loop) runStep(
 		return stepAbort
 	}
 	toolFailures := countFailures(toolOutcomes)
-	progressing := limitProgress.observe(toolCalls, toolOutcomes)
-	if discoveryProg != nil {
-		switch discoveryProg.observe(toolCalls, toolOutcomes) {
-		case discoveryNudge:
-			nudge := llm.Message{
+	if repeatProg != nil {
+		switch repeatProg.observe(toolCalls, toolOutcomes) {
+		case repeatWarn:
+			// A real loop: the same call with the same arguments, or a short
+			// A-B-A-B cycle. The fix travels with the error — the model is
+			// told what it is doing and keeps its tools.
+			warn := llm.Message{
 				Role: llm.RoleSystem,
-				Content: "[strategy] Too many tool calls without real progress (successful edit/run). " +
-					"Stop expanding searches and re-reads. Use what you already have: patch_file/create_file, " +
-					"or give a clear blocked answer to the user. Do not call tool_search for listing, reading, or editing files.",
+				Content: fmt.Sprintf("[loop] The same tool call with the same arguments has been repeated %d time(s) in a row. "+
+					"Repeating it again will produce the same result. Change approach: use a different tool or different "+
+					"arguments, act on what you already have, or tell the user what is blocking you.", repeatProg.repeatCount()),
 			}
-			l.Messages = append(l.Messages, nudge)
-			l.persist(ctx, nudge)
-			out <- NoticeEvent{Text: "discovery-without-progress: strategy nudge"}
-			discoveryProg.noteNudge()
-		case discoveryForceReply:
-			// Hard limit: next Complete gets toolDefs=nil (physical), not only
-			// a prompt. emptyReplyNudgeUsed stays false so empty-text still works.
-			force := llm.Message{
-				Role: llm.RoleSystem,
-				Content: "[reply required] Tool budget for discovery is exhausted without a successful mutation or execution. " +
-					"Answer the user now in their language with what you know, what failed, and what is blocked. " +
-					"Tools are disabled for this turn.",
+			l.Messages = append(l.Messages, warn)
+			l.persist(ctx, warn)
+			out <- NoticeEvent{Text: "identical tool call repeated: loop warning injected"}
+		case repeatAbort:
+			// Last resort, and only here: an identical call repeated absurdly
+			// many times is a stuck model spending the user's money.
+			l.statsEndStep(stepStart)
+			out <- ErrorEvent{
+				Err: fmt.Errorf("agent: stopped — the same tool call with the same arguments was repeated %d times in a row. "+
+					"The work so far is kept in this conversation", repeatProg.repeatCount()),
+				Usage: *totalUsage,
+				Steps: step + 1,
 			}
-			l.Messages = append(l.Messages, force)
-			l.persist(ctx, force)
-			l.forceReplyWithoutTools = true
-			out <- NoticeEvent{Text: "discovery-without-progress: forcing user-facing answer (tools off)"}
-			discoveryProg.reset()
+			return stepAbort
 		}
 	}
 	// Tool results have all been appended in deterministic call order. This
@@ -387,22 +341,13 @@ func (l *Loop) runStep(
 	// users who set reflect_every=N.
 	reason := ""
 	if l.adaptiveReflect {
-		reason = reflectionProgress.observe(step+1, *stepLimit, toolCalls, toolFailures)
+		reason = reflectionProgress.observe(step+1, stepLimit, toolCalls, toolFailures)
 	} else if l.reflectEvery > 0 && (step+1)%l.reflectEvery == 0 {
 		reason = "fixed_interval"
 	}
 	if reason != "" {
 		l.runReflection(ctx, step+1, reason, out)
 		reflectionProgress.reset()
-	}
-
-	if step+1 == *stepLimit && *stepLimit < hardStepLimit && progressing {
-		previous := *stepLimit
-		*stepLimit = min(*stepLimit+5, hardStepLimit)
-		out <- NoticeEvent{Text: fmt.Sprintf(
-			"step budget extended from %d to %d because %d/%d tool calls succeeded and work is still progressing",
-			previous, *stepLimit, len(toolCalls)-toolFailures, len(toolCalls),
-		)}
 	}
 
 	l.statsEndStep(stepStart)

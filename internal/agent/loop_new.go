@@ -24,6 +24,13 @@ func newRunID() string {
 
 // NewLoop returns a configured Loop. Provider and Registry are
 // required; an error is returned if either is nil.
+// DefaultMaxSteps is the built-in runaway safety net for one Run, shared by
+// every surface (TUI, WebGUI, batch). It is deliberately far above anything a
+// real task needs: the old 25-step ceiling was a work budget, and it ended the
+// turn mid-task and made the user type "continue". Real loops are caught by
+// repeatProgress, not by this number.
+const DefaultMaxSteps = 300
+
 func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.Provider == nil {
 		return nil, fmt.Errorf("agent.NewLoop: provider is nil")
@@ -33,10 +40,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	}
 	cfg.Registry.EnsureReadOutput()
 	if cfg.MaxSteps == 0 {
-		cfg.MaxSteps = 10
-	}
-	if cfg.MaxStepGrace < 0 {
-		cfg.MaxStepGrace = 0
+		cfg.MaxSteps = DefaultMaxSteps
 	}
 	msgs := make([]llm.Message, 0, len(cfg.InitialMessages)+4)
 	if cfg.System != "" {
@@ -51,7 +55,6 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		system:                cfg.System,
 		briefing:              cfg.Briefing,
 		maxSteps:              cfg.MaxSteps,
-		maxStepGrace:          cfg.MaxStepGrace,
 		thinTools:             cfg.ThinTools,
 		stableToolset:         cfg.StableToolset,
 		catalogHoist:          cfg.CatalogHoist,

@@ -157,7 +157,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		Caps:                  caps,
 		ErrorLog:              batchErrorLog,
 		System:                systemPrompt,
-		MaxSteps:              tomlCfg.MaxStepsOr(25),
+		MaxSteps:              tomlCfg.MaxStepsOr(agent.DefaultMaxSteps),
 		BaseDir:               home,
 		Stats:                 batchStats,
 		EnableNavigator:       execProfile.EnableNavigator,
