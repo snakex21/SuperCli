@@ -53,7 +53,6 @@ type Loop struct {
 	system        string
 	briefing      string
 	maxSteps      int
-	maxStepGrace  int
 	thinTools     bool
 	stableToolset bool
 	catalogHoist  bool
@@ -309,16 +308,6 @@ type Loop struct {
 	// user after tools" retry in this Run (avoids an infinite empty loop).
 	emptyReplyNudgeUsed bool
 
-	// forceReplyWithoutTools: next provider Complete gets toolDefs=nil so
-	// the model physically cannot call tools (prompt-only is not enough).
-	// Cleared after that one Complete, so the following user turn is normal.
-	forceReplyWithoutTools bool
-
-	// forcedReplyResumed is set once per Run, after a forced tool-less answer
-	// has been delivered and the loop handed the tools back. It stops a
-	// pathological model from cycling force→resume→force forever.
-	forcedReplyResumed bool
-
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
 	Messages []llm.Message
@@ -400,13 +389,11 @@ type LoopConfig struct {
 	// a minimal prompt, so the loop re-appends Briefing there — the
 	// model must know durable user facts even in smalltalk.
 	Briefing string
-	// MaxSteps caps the number of model calls in a single Run.
-	// Zero means default (10). Negative means no cap (dangerous).
+	// MaxSteps is the runaway safety net: how many model calls one Run may
+	// make before the loop stops. It is NOT a work budget — a healthy long
+	// task must never reach it. Zero means DefaultMaxSteps. Negative means
+	// no cap (dangerous).
 	MaxSteps int
-	// MaxStepGrace makes MaxSteps a soft limit while successful, non-repeated
-	// tool batches show concrete progress. The loop extends in small chunks up
-	// to MaxSteps+MaxStepGrace. Zero keeps MaxSteps as a strict hard cap.
-	MaxStepGrace int
 	// InitialMessages seeds the conversation. Used for tests and
 	// for resuming a session. The session writer, if any, is
 	// NOT called for these.
@@ -712,8 +699,6 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
 	l.emptyReplyNudgeUsed = false
-	l.forceReplyWithoutTools = false
-	l.forcedReplyResumed = false
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.
@@ -737,7 +722,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 	l.prepareRunRoute(ctx, prompt)
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
-	var discoveryProg discoveryProgress
+	var repeatProg repeatProgress
 	l.identicalFails = identicalFailureGate{}
 	l.identicalWrites = identicalSuccessGate{}
 	// F11: reset the policy's per-Run "drafted" set
@@ -749,13 +734,8 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 		l.draftPolicy.Drafted = &map[int]struct{}{}
 	}
 	stepLimit := l.maxSteps
-	hardStepLimit := l.maxSteps
-	if l.maxSteps > 0 && l.maxStepGrace > 0 {
-		hardStepLimit += l.maxStepGrace
-	}
-	var limitProgress stepLimitProgress
 	for step := 0; step < stepLimit; step++ {
-		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &limitProgress, &discoveryProg, &stepLimit, hardStepLimit) {
+		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &repeatProg, stepLimit) {
 		case stepContinue:
 			continue
 		case stepDone, stepAbort:
@@ -763,9 +743,9 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transie
 		}
 	}
 	out <- ErrorEvent{
-		Err: fmt.Errorf("agent: max steps (%d) reached — the work so far is kept in this conversation. "+
-			"Say \"continue\" to carry on from here, or split the task into smaller steps. "+
-			"To raise the ceiling permanently set max_steps in config.toml (current: %d)",
+		Err: fmt.Errorf("agent: max steps safety net (%d) tripped in a single turn — the work so far is kept in this "+
+			"conversation. This ceiling is a runaway guard, not a work budget; change it with max_steps in "+
+			"config.toml (current: %d)",
 			stepLimit, stepLimit),
 		Usage: totalUsage,
 		Steps: stepLimit,

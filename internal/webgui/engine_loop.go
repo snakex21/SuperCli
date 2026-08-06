@@ -251,13 +251,9 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	} else {
 		systemPrompt += "\n\nDo not proactively save new memory. Only call remember when the user explicitly asks you to remember something."
 	}
-	maxSteps := tc.MaxStepsOr(25)
-	maxStepGrace := 0
-	if tc.MaxSteps <= 0 {
-		// The built-in WebGUI budget is a safety baseline, not a reason to cut
-		// off a healthy long task. Explicit max_steps remains a strict user cap.
-		maxStepGrace = maxSteps
-	}
+	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
+	// An explicit max_steps in config.toml stays a strict user cap.
+	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)
 	compactProv := e.compactProvider(tc)
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:               prov,
@@ -265,7 +261,6 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		Caps:                   caps,
 		System:                 systemPrompt,
 		MaxSteps:               maxSteps,
-		MaxStepGrace:           maxStepGrace,
 		Orchestrator:           orchestrator,
 		TaskParallel:           taskParallel,
 		TaskParallelWarnLocal:  taskParallelWarnLocal,

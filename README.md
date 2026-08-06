@@ -379,7 +379,7 @@ max_credits_per_session = 0
 max_credits_per_day = 0
 no_color = false
 provider = "openai"
-max_steps = 10
+max_steps = 0     # 0 = built-in runaway safety net (300); not a work budget
 debug = false
 
 [[providers]]

@@ -172,10 +172,10 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 }
 
-// MaxStepsOr returns the configured max_steps when positive, otherwise
-// def — the caller's built-in default (TUI 10, batch and WebGUI 25).
-// This keeps the documented `max_steps` knob honoured on every surface
-// while an empty config still gets the tuned per-surface cap.
+// MaxStepsOr returns the configured max_steps when positive, otherwise def —
+// the caller's built-in runaway safety net (agent.DefaultMaxSteps on every
+// surface). This keeps the documented `max_steps` knob honoured while an
+// empty config gets the shared default.
 func (t TomlConfig) MaxStepsOr(def int) int {
 	if t.MaxSteps > 0 {
 		return t.MaxSteps
