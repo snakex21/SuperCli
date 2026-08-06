@@ -108,7 +108,7 @@ func parseSentinelBlock(inner string) []llm.ToolCall {
 
 	args := "{" + strings.Join(pairs, ",") + "}"
 	return []llm.ToolCall{{
-		ID:        "sentinel_" + name,
+		ID:        syntheticToolCallID("sentinel", name),
 		Name:      name,
 		Arguments: args,
 	}}

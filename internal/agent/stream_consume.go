@@ -245,7 +245,7 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 			blob[0] == '{' && blob[len(blob)-1] == '}' &&
 			json.Valid([]byte(blob)) {
 			return []llm.ToolCall{{
-				ID:        "xml_" + name,
+				ID:        syntheticToolCallID("xml", name),
 				Name:      name,
 				Arguments: blob,
 			}}
@@ -254,7 +254,7 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 
 	args := "{" + strings.Join(pairs, ",") + "}"
 	return []llm.ToolCall{{
-		ID:        "xml_" + name,
+		ID:        syntheticToolCallID("xml", name),
 		Name:      name,
 		Arguments: args,
 	}}

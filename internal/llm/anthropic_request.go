@@ -86,7 +86,7 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 	// req.System; later system messages (freshness stamp, reflection
 	// checkpoints, ...) stay in place as <system-reminder> user turns
 	// so the prompt prefix stays append-only for prompt caching.
-	msgs = demoteMidConversationSystemMessages(msgs)
+	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	var system []string
 	for _, m := range msgs {
 		switch m.Role {
