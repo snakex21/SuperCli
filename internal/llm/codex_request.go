@@ -126,7 +126,7 @@ type codexToolDecl struct {
 // invalidate the server-side prompt cache every turn. The demote pass
 // renders them in place as <system-reminder> user turns instead.
 func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
-	msgs = demoteMidConversationSystemMessages(msgs)
+	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	req := codexRequest{
 		Model:      model,
 		ToolChoice: "auto",

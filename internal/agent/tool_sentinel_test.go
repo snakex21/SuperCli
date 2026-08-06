@@ -167,8 +167,36 @@ func TestSentinel_OnlyBlankInsideNoName(t *testing.T) {
 
 func TestSentinel_IDPrefixed(t *testing.T) {
 	tcs, _ := extractSentinelToolCalls("«get_time»")
-	if tcs[0].ID != "sentinel_get_time" {
-		t.Errorf("ID = %q, want sentinel_get_time", tcs[0].ID)
+	if !strings.HasPrefix(tcs[0].ID, "sentinel_get_time_") {
+		t.Errorf("ID = %q, want prefix sentinel_get_time_", tcs[0].ID)
+	}
+}
+
+// TestSentinel_IDUnique guards the HTTP 400 that killed a long
+// session: two calls to the same tool must not share a tool_call_id,
+// or the provider rejects the whole request with "Duplicate value
+// for 'tool_call_id'".
+func TestSentinel_IDUnique(t *testing.T) {
+	a, _ := extractSentinelToolCalls("«ctx_execute\ncmd: ls»")
+	b, _ := extractSentinelToolCalls("«ctx_execute\ncmd: pwd»")
+	if a[0].ID == b[0].ID {
+		t.Fatalf("two sentinel calls share id %q", a[0].ID)
+	}
+}
+
+// TestXML_IDUnique is the same guard for the XML fallback syntax.
+func TestXML_IDUnique(t *testing.T) {
+	xml := func(cmd string) string {
+		return "<tool_call>\n<function=ctx_execute>\n<parameter=cmd>" + cmd +
+			"</parameter>\n</function>\n</tool_call>"
+	}
+	a, _ := extractXMLToolCalls(xml("ls"))
+	b, _ := extractXMLToolCalls(xml("pwd"))
+	if len(a) == 0 || len(b) == 0 {
+		t.Fatalf("xml extractor returned no calls (a=%d b=%d)", len(a), len(b))
+	}
+	if a[0].ID == b[0].ID {
+		t.Fatalf("two xml calls share id %q", a[0].ID)
 	}
 }
 

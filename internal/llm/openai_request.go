@@ -137,7 +137,7 @@ func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolD
 }
 
 func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int, sampling Sampling) ([]byte, error) {
-	msgs = demoteMidConversationSystemMessages(msgs)
+	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	req := openaiRequest{
 		Model:            model,
 		MaxTokens:        maxTokens,
