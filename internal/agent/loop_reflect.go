@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/llm"
@@ -202,6 +203,7 @@ func countFailures(outcomes []callOutcome) int {
 // name+normalized-args) within a Run. Two failures are allowed so the model
 // can see the diagnostic; the third is rejected before Execute.
 type identicalFailureGate struct {
+	mu     sync.Mutex
 	counts map[[sha256.Size]byte]int
 }
 
@@ -210,6 +212,8 @@ func (g *identicalFailureGate) key(name, args string) [sha256.Size]byte {
 }
 
 func (g *identicalFailureGate) shouldBlock(name, args string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil {
 		return false
 	}
@@ -217,6 +221,8 @@ func (g *identicalFailureGate) shouldBlock(name, args string) bool {
 }
 
 func (g *identicalFailureGate) recordFailure(name, args string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil {
 		g.counts = make(map[[sha256.Size]byte]int)
 	}
@@ -228,6 +234,8 @@ func (g *identicalFailureGate) recordFailure(name, args string) {
 // accumulated in the current Run (0 = none recorded yet). Read after
 // recordFailure it is the attempt number of the failure just seen.
 func (g *identicalFailureGate) attempts(name, args string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil {
 		return 0
 	}
@@ -235,6 +243,8 @@ func (g *identicalFailureGate) attempts(name, args string) int {
 }
 
 func (g *identicalFailureGate) recordSuccess(name, args string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil {
 		return
 	}
@@ -254,10 +264,13 @@ const repeatedMutationLimit = 2
 // re-applying the identical edit is not. Arguments are fingerprinted, so the
 // gate sees through key reordering and refreshed advisory fields.
 type identicalSuccessGate struct {
+	mu     sync.Mutex
 	counts map[[sha256.Size]byte]int
 }
 
 func (g *identicalSuccessGate) shouldBlock(name, args string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil || toolKind(name) != "mutation" {
 		return false
 	}
@@ -268,6 +281,8 @@ func (g *identicalSuccessGate) recordSuccess(name, args string) {
 	if toolKind(name) != "mutation" {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.counts == nil {
 		g.counts = make(map[[sha256.Size]byte]int)
 	}
@@ -428,9 +443,26 @@ func (l *Loop) runReflection(ctx context.Context, step int, reason string, out c
 	}
 	refMsg := llm.Message{
 		Role:    llm.RoleSystem,
-		Content: fmt.Sprintf("[reflection checkpoint @ step %d; reason=%s] %s", step, reason, txt),
+		Content: fmt.Sprintf("[reflection checkpoint @ step %d; reason=%s] %s", step, reason, clampReflection(txt)),
 	}
 	l.Messages = append(l.Messages, refMsg)
 	l.persist(ctx, refMsg)
-	out <- ReflectionEvent{Step: step, Text: txt, Reason: reason}
+	out <- ReflectionEvent{Step: step, Text: clampReflection(txt), Reason: reason}
+}
+
+// reflectionMaxChars caps the injected reflection text so a wordy reflector
+// cannot grow the conversation by hundreds of tokens per checkpoint. The
+// model only needs the gist; a stable cap keeps the cost bounded. Mirrors
+// ClampSummary: cuts at the last line boundary before the cap when possible.
+const reflectionMaxChars = 400
+
+func clampReflection(s string) string {
+	if len(s) <= reflectionMaxChars {
+		return s
+	}
+	cut := strings.LastIndexByte(s[:reflectionMaxChars], '\n')
+	if cut < reflectionMaxChars/2 {
+		cut = reflectionMaxChars
+	}
+	return strings.TrimSpace(s[:cut]) + "\n[reflection truncated]"
 }

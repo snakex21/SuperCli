@@ -36,6 +36,7 @@ var thinCoreTools = []string{
 	"read_lines",
 	"read_many",
 	"read_image",
+	"load_session_image",
 	"search_code",
 	"ctx_execute",
 	"ask_user",
