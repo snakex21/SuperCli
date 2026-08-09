@@ -391,6 +391,35 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		return fmt.Sprintf("orchestrator set to %s — takes effect on the next launch (new session). This session keeps its current tool set.", want), nil
 	}
 
+	// /orchestrator-model — which model plays the COORDINATOR (the one
+	// that writes task briefs). Counterpart of task_model (the worker).
+	// Format: "model" or "provider/model". Empty restores the default
+	// (the main model coordinates). Persists to config.toml; takes
+	// effect on the next launch, same KV-cache reason as /orchestrator.
+	cmds["orchestrator-model"] = func(ctx context.Context, args string) (string, error) {
+		args = strings.TrimSpace(args)
+		if args == "" || args == "default" || args == "off" || args == "none" {
+			globalPath, _ := config.FindTomlPaths(d.dataDir, d.cwd)
+			if tc, err := config.LoadToml(globalPath); err == nil {
+				tc.OrchestratorModel = ""
+				if err := config.SaveToml(globalPath, tc); err != nil {
+					log.Printf("orchestrator-model: save config.toml: %v", err)
+					return "orchestrator-model: failed to save config", nil
+				}
+			}
+			return "orchestrator-model cleared — the main model coordinates from the next launch.", nil
+		}
+		globalPath, _ := config.FindTomlPaths(d.dataDir, d.cwd)
+		if tc, err := config.LoadToml(globalPath); err == nil {
+			tc.OrchestratorModel = args
+			if err := config.SaveToml(globalPath, tc); err != nil {
+				log.Printf("orchestrator-model: save config.toml: %v", err)
+				return "orchestrator-model: failed to save config", nil
+			}
+		}
+		return fmt.Sprintf("orchestrator-model set to %q — the coordinator uses it from the next launch (new session). Pair with task_model for a two-model setup.", args), nil
+	}
+
 	// /usage — force a fresh fetch of the ChatGPT-subscription usage
 	// limits (5h rolling + weekly window) from the dedicated usage
 	// endpoint and print them. This is NOT a completion: it hits the

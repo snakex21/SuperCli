@@ -54,6 +54,7 @@ func settingsRowsFor(language string) []settingRow {
 		{"navigator", "Nawigator zadań", "Dobiera tryb rozmowy, porady albo koordynacji przed rozpoczęciem zadania.", setNavigator, true},
 		{"task_parallel", "Równoległe delegacje", "Uruchamia niezależne zadania workerów równocześnie, gdy backend na to pozwala.", setTriState, true},
 		{"task_model", "Model workerów", "Osobny model lub provider/model dla delegowanych zadań; puste oznacza model główny.", setText, true},
+		{"orchestrator_model", "Model orkiestratora", "Osobny model lub provider/model koordynatora; puste oznacza model główny. Z task_model tworzy konfigurację dwumodelową.", setText, true},
 		{"compact_model", "Model kompakcji", "Opcjonalny model lub provider/model do podsumowania kontekstu; puste oznacza model główny.", setText, true},
 		{"task_max_steps", "Limit kroków workera", "Maksymalna liczba tur jednego delegowanego workera.", setInt, true},
 		{"task_max_tokens", "Limit tokenów workera", "Maksymalny łączny budżet tokenów delegowanego workera.", setInt, true},
@@ -86,6 +87,7 @@ func englishSettingsRows() []settingRow {
 		{"navigator", "Task navigator", "Chooses chat, advice or coordination mode before starting a task.", setNavigator, true},
 		{"task_parallel", "Parallel delegation", "Runs independent worker tasks concurrently when the backend allows it.", setTriState, true},
 		{"task_model", "Worker model", "Separate model or provider/model for delegated tasks; empty means the main model.", setText, true},
+		{"orchestrator_model", "Orchestrator model", "Separate model or provider/model for the coordinator; empty means the main model. Pairs with task_model for a two-model setup.", setText, true},
 		{"compact_model", "Compaction model", "Optional model or provider/model for context summaries; empty means the main model.", setText, true},
 		{"task_max_steps", "Worker step limit", "Maximum model turns for one delegated worker.", setInt, true},
 		{"task_max_tokens", "Worker token limit", "Maximum total token budget for one delegated worker.", setInt, true},
@@ -115,7 +117,7 @@ func (m Model) localizedSettingsRows() []settingRow { return settingsRowsFor(m.l
 
 func settingSection(key string) string {
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return "Agent i workery"
 	case "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return "Modele i kontekst"
@@ -129,7 +131,7 @@ func (m Model) localizedSettingSection(key string) string {
 		return settingSection(key)
 	}
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return "Agent and workers"
 	case "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return "Models and context"

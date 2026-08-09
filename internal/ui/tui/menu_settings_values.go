@@ -109,6 +109,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskMaxTokens = 0
 	case "task_model":
 		c.TaskModel = ""
+	case "orchestrator_model":
+		c.OrchestratorModel = ""
 	case "compact_model":
 		c.CompactModel = ""
 	case "fallback_models":
@@ -191,6 +193,11 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return "default (coordinator's model)", "default"
 		}
 		return c.TaskModel, "manual"
+	case "orchestrator_model":
+		if strings.TrimSpace(c.OrchestratorModel) == "" {
+			return "default (main model)", "default"
+		}
+		return c.OrchestratorModel, "manual"
 	case "compact_model":
 		if strings.TrimSpace(c.CompactModel) == "" {
 			return "default (active model)", "default"

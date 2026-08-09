@@ -111,6 +111,16 @@ type TomlConfig struct {
 	// swapping the tool list mid-session would break the KV-cache prefix.
 	Orchestrator *bool `toml:"orchestrator"`
 
+	// OrchestratorModel optionally routes the COORDINATOR (the main loop
+	// that delegates work) to a separate model or provider, mirroring
+	// task_model which routes the workers. Format: "model" or
+	// "provider/model" (OpenRouter-style slashes stay part of the bare
+	// model id unless the prefix names a configured provider). Empty =
+	// the main model also coordinates. In the two-model setup the
+	// orchestrator writes the task brief and the task_model worker
+	// executes it in an isolated context.
+	OrchestratorModel string `toml:"orchestrator_model"`
+
 	// DarwinParallel controls whether Darwin best-of-N spawns its
 	// agents concurrently. Tri-state: nil = auto (parallel for cloud
 	// backends, sequential for local ones, decided by the base URL),

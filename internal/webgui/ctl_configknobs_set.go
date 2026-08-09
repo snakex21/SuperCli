@@ -95,6 +95,9 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 	case "task_model":
 		c.TaskModel = val
 		return nil
+	case "orchestrator_model":
+		c.OrchestratorModel = val
+		return nil
 	case "compact_model":
 		c.CompactModel = val
 		return nil
