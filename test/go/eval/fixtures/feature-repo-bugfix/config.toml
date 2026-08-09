@@ -1,0 +1,21 @@
+# Orchestrator mode: the coordinator (big model) delegates file work to
+# task workers; its own toolset is trimmed to delegation + read-only so
+# the main context stays clean of tool payloads.
+orchestrator = true
+
+# Delegated workers run on the small model (cold, isolated context).
+task_model = "qwen3.6-27b"
+
+# Draft-verify ladder: a file-changing worker draft is sieved by the
+# objective verify_commands, then judged by the COORDINATOR's model on
+# the diff + evidence ("small drafts, big verdict").
+draft_verify = true
+verify_commands = ["go test ./..."]
+draft_verify_max_rounds = 2
+
+# Compact repo-state block rides the first message of every worker
+# briefing (cold contexts benefit most).
+preflight_repo = true
+
+# Worker token budget (safety valve).
+task_max_tokens = 200000

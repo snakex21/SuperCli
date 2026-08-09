@@ -1,0 +1,1403 @@
+record seq=168412 payload=yoeymsinmcan
+metric m7 v=36.1 tag=r16
+metric m8 v=36.38 tag=r7
+record seq=49792 payload=cuwterilarkj
+metric m8 v=52.1 tag=r9
+metric m5 v=0.46 tag=r9
+metric m5 v=24.99 tag=r12
+metric m2 v=59.53 tag=r0
+record seq=505530 payload=xtjxmjbtoqfa
+log w1 t=10056 op=spawn ok
+metric m5 v=41.22 tag=r40
+metric m4 v=75.27 tag=r7
+record seq=580073 payload=mopfxchvnurz
+metric m4 v=14.5 tag=r6
+record seq=45818 payload=jzloyehqefkb
+log w2 t=72365 op=spawn ok
+metric m0 v=82.95 tag=r22
+metric m5 v=55 tag=r46
+metric m4 v=52.32 tag=r20
+metric m2 v=94.94 tag=r33
+log w3 t=70689 op=spawn ok
+record seq=648526 payload=dyplygxckmqc
+metric m0 v=45.41 tag=r15
+record seq=154032 payload=jvbgaktakgoi
+metric m3 v=79.76 tag=r3
+log w0 t=21781 op=spawn ok
+record seq=623315 payload=kqvubwizemik
+metric m2 v=96.48 tag=r29
+record seq=924725 payload=fsxvrnbefhfx
+metric m0 v=67.48 tag=r26
+record seq=171527 payload=flynkbgtfxsc
+record seq=482737 payload=gdahsozhsxra
+record seq=261656 payload=dgtbjujmzrhv
+metric m8 v=33.03 tag=r7
+metric m0 v=46.97 tag=r35
+record seq=228253 payload=ckukexsbwkhz
+record seq=957539 payload=ertbcuejzxzb
+record seq=560975 payload=loobpxeigypl
+record seq=928070 payload=uxophjzuilpw
+log w3 t=41778 op=spawn ok
+record seq=439229 payload=dyephwfjtuvk
+record seq=436973 payload=qagocijtpprg
+log w2 t=74642 op=spawn ok
+record seq=440372 payload=yimmnpinbifo
+metric m1 v=36.18 tag=r24
+record seq=953125 payload=vveipbkjoxbt
+record seq=628409 payload=xjxbizdlxbbz
+log w0 t=1650 op=spawn ok
+metric m2 v=75.16 tag=r6
+metric m8 v=2.49 tag=r13
+metric m6 v=42.64 tag=r3
+log w0 t=44079 op=spawn ok
+metric m2 v=56.99 tag=r30
+record seq=232496 payload=fheavkxdhpyf
+metric m1 v=57.34 tag=r14
+record seq=266915 payload=swciixxzkmpt
+metric m4 v=49.51 tag=r39
+metric m0 v=58.8 tag=r5
+record seq=507009 payload=ddhdmvvxwerh
+record seq=799990 payload=dxygcvzlooek
+record seq=545769 payload=xnsnpftyaekb
+log w2 t=59705 op=spawn ok
+metric m0 v=11.69 tag=r32
+record seq=633681 payload=icizwnrptycc
+metric m0 v=33.45 tag=r23
+log w3 t=66716 op=spawn ok
+log w1 t=86144 op=spawn ok
+record seq=845717 payload=brlvdmbtaxol
+metric m4 v=72.1 tag=r34
+log w1 t=28127 op=spawn ok
+metric m2 v=94.76 tag=r42
+metric m2 v=93.47 tag=r45
+metric m8 v=64.85 tag=r21
+metric m2 v=48.53 tag=r46
+log w0 t=83996 op=spawn ok
+metric m2 v=89.56 tag=r18
+log w1 t=46105 op=spawn ok
+record seq=99702 payload=qazzwpnncvyp
+metric m5 v=67.37 tag=r37
+metric m4 v=6.86 tag=r6
+record seq=597247 payload=oqgxaiywmbjv
+metric m3 v=1.32 tag=r33
+metric m8 v=79.12 tag=r47
+record seq=327830 payload=cggsfqrxktfa
+metric m3 v=74.41 tag=r48
+metric m1 v=60.03 tag=r11
+metric m8 v=20.57 tag=r18
+metric m2 v=72.85 tag=r35
+record seq=169708 payload=iyufnzqhciep
+record seq=606582 payload=qgyrypipjpzf
+log w4 t=42709 op=spawn ok
+record seq=900107 payload=zyflhgfvuihc
+metric m0 v=77.4 tag=r11
+metric m6 v=3.07 tag=r17
+log w3 t=34888 op=spawn ok
+record seq=737849 payload=peghxtwekfql
+log w1 t=99073 op=spawn ok
+record seq=819162 payload=egbnbnfzldkp
+record seq=194165 payload=pjsrcyowpkxw
+record seq=146167 payload=ulkbqgqcugnq
+log w1 t=46069 op=spawn ok
+record seq=474965 payload=poaabmrxthhq
+record seq=598360 payload=erbeatjypomp
+metric m1 v=42.54 tag=r44
+metric m3 v=97.82 tag=r46
+metric m2 v=85.76 tag=r6
+record seq=958818 payload=tdwzimdqjzad
+metric m7 v=11.86 tag=r32
+record seq=438965 payload=nmanmwbxrshw
+record seq=917440 payload=lbafbpgalvul
+record seq=96332 payload=zcvrikphyfqa
+record seq=428075 payload=ukjmecsjwxok
+metric m4 v=2.35 tag=r8
+record seq=47937 payload=zyyoxpokhecu
+metric m0 v=66.79 tag=r40
+metric m0 v=48.58 tag=r14
+metric m6 v=39.3 tag=r29
+metric m8 v=9.41 tag=r46
+metric m1 v=25.17 tag=r39
+metric m5 v=2.16 tag=r49
+metric m2 v=50.9 tag=r36
+record seq=786949 payload=uogchnskgzrl
+record seq=229262 payload=oiiznqeexiiz
+log w3 t=31939 op=spawn ok
+record seq=515765 payload=timzwidqofvw
+metric m0 v=1.48 tag=r40
+record seq=446985 payload=dxnfippqytim
+log w0 t=27009 op=spawn ok
+metric m8 v=10.85 tag=r15
+metric m6 v=0.78 tag=r9
+metric m8 v=42.25 tag=r17
+metric m5 v=22.03 tag=r15
+log w1 t=22474 op=spawn ok
+log w0 t=99942 op=spawn ok
+metric m0 v=86.32 tag=r17
+metric m3 v=39.82 tag=r15
+log w0 t=74048 op=spawn ok
+metric m6 v=17.37 tag=r45
+metric m4 v=74.57 tag=r6
+record seq=139968 payload=gxghzsldgvxe
+metric m3 v=7.33 tag=r22
+record seq=491772 payload=pubwgqtwbkss
+metric m0 v=37.79 tag=r42
+metric m1 v=60.99 tag=r3
+metric m6 v=95.73 tag=r9
+record seq=337587 payload=vkhuvbqgnybk
+record seq=635866 payload=ocralniwuqcy
+record seq=842281 payload=gxvwayuipgoq
+log w1 t=51136 op=spawn ok
+metric m7 v=87.45 tag=r26
+record seq=507689 payload=daxthzzprrxf
+record seq=986759 payload=qcejswgnkmul
+log w1 t=34722 op=spawn ok
+record seq=239204 payload=kwidwxdsyusy
+metric m5 v=44.21 tag=r15
+metric m7 v=36.3 tag=r30
+metric m7 v=11.46 tag=r13
+record seq=628892 payload=lzwwqgvlnilv
+record seq=180679 payload=bqubnovuidwl
+record seq=234562 payload=tptbngldwbdl
+log w0 t=16295 op=spawn ok
+log w4 t=39549 op=spawn ok
+log w0 t=53983 op=spawn ok
+record seq=51301 payload=btbvrqszehpr
+record seq=589917 payload=jinsxusxcmqq
+metric m2 v=48.45 tag=r16
+record seq=694727 payload=xnsimlunebze
+metric m4 v=24.47 tag=r25
+metric m0 v=62.36 tag=r22
+record seq=69092 payload=idrpeaklnwmx
+record seq=385873 payload=xbvcykpryxye
+metric m6 v=80.32 tag=r20
+record seq=346082 payload=bvfprxguctod
+record seq=617753 payload=rwqkgonflret
+record seq=997488 payload=qrqcddvzeiky
+record seq=152545 payload=hwcvfimncjee
+record seq=835150 payload=jnkxggdldlzo
+record seq=711820 payload=riahsjypoini
+metric m0 v=57.57 tag=r11
+record seq=983634 payload=izprxmsoawtr
+record seq=660629 payload=ouwujxllxtyb
+metric m8 v=75.46 tag=r2
+record seq=887857 payload=nzguczknodjc
+record seq=903592 payload=mwusguwbnwcv
+record seq=846508 payload=cuvyzwewktrw
+metric m7 v=31.49 tag=r15
+log w3 t=90398 op=spawn ok
+log w2 t=51784 op=spawn ok
+log w0 t=82144 op=spawn ok
+log w0 t=46486 op=spawn ok
+metric m3 v=68.31 tag=r13
+metric m5 v=43.2 tag=r40
+metric m3 v=10.87 tag=r0
+record seq=592963 payload=labjlbsfuiyr
+metric m5 v=60.58 tag=r38
+log w4 t=83671 op=spawn ok
+record seq=431027 payload=abkpuknzrrxh
+record seq=62219 payload=dzlqztfpjiph
+record seq=197470 payload=oheebelyqtqq
+metric m2 v=13.23 tag=r31
+log w1 t=26714 op=spawn ok
+metric m4 v=78.61 tag=r33
+metric m7 v=95.76 tag=r10
+metric m6 v=5.8 tag=r1
+metric m4 v=31.42 tag=r21
+metric m4 v=71.53 tag=r12
+record seq=633897 payload=fjsainzlthea
+metric m6 v=76 tag=r30
+record seq=304198 payload=cyzgptdcxvtd
+metric m1 v=43.59 tag=r44
+metric m3 v=97.37 tag=r12
+metric m3 v=23.81 tag=r48
+record seq=756436 payload=vmfortpkdwqy
+record seq=956752 payload=xfqesqzbplmi
+record seq=658607 payload=trsahvxqwida
+metric m8 v=99.36 tag=r27
+metric m2 v=67.03 tag=r0
+metric m3 v=82.3 tag=r4
+metric m3 v=78.03 tag=r39
+record seq=786191 payload=cjcyrmeqrybg
+metric m2 v=1.41 tag=r34
+log w0 t=5338 op=spawn ok
+log w0 t=19772 op=spawn ok
+record seq=625833 payload=ikvqtybducgu
+record seq=615859 payload=gmkqqtzcanbp
+metric m6 v=72.84 tag=r40
+metric m7 v=69.52 tag=r24
+record seq=270340 payload=rnwsxxmgaful
+record seq=555321 payload=qooxqfjhoesi
+metric m8 v=49.6 tag=r18
+log w2 t=140 op=spawn ok
+record seq=834779 payload=wtxvbqunwuux
+log w0 t=4400 op=spawn ok
+metric m6 v=83.12 tag=r19
+record seq=368801 payload=zsaonmtrdjlv
+record seq=795489 payload=uqbpppusjxlf
+record seq=451987 payload=bippcmxbxhod
+log w4 t=72258 op=spawn ok
+metric m3 v=7.01 tag=r22
+metric m2 v=66.84 tag=r35
+metric m7 v=31.1 tag=r28
+metric m2 v=11.38 tag=r6
+metric m6 v=28.55 tag=r31
+record seq=794755 payload=wtgxstublnzz
+record seq=549976 payload=julfjqjuuxqt
+record seq=155317 payload=gltfxqmifmny
+record seq=185676 payload=iupgjoungcge
+metric m0 v=98.28 tag=r18
+metric m8 v=93.29 tag=r31
+record seq=6404 payload=utbibapzrlse
+metric m8 v=27.81 tag=r18
+metric m2 v=37.73 tag=r37
+metric m6 v=96.73 tag=r37
+log w2 t=33381 op=spawn ok
+record seq=191074 payload=oahkiaweanty
+metric m3 v=79.46 tag=r23
+metric m5 v=98.81 tag=r4
+record seq=608523 payload=sgaucuiepstu
+log w2 t=42302 op=spawn ok
+record seq=120148 payload=zkfjsqvygehx
+record seq=345761 payload=thyhajnxbwwx
+log w0 t=49249 op=spawn ok
+metric m3 v=4.94 tag=r26
+metric m8 v=66.45 tag=r34
+metric m8 v=61.6 tag=r10
+record seq=842946 payload=qbhtjzmedkkp
+log w1 t=34290 op=spawn ok
+metric m7 v=60.2 tag=r32
+metric m8 v=82.13 tag=r10
+metric m3 v=34.65 tag=r4
+record seq=681815 payload=ikeqbluoerea
+log w1 t=65700 op=spawn ok
+log w4 t=92255 op=spawn ok
+metric m3 v=76.72 tag=r7
+log w2 t=44948 op=spawn ok
+record seq=794384 payload=vxiaxwmuzgya
+record seq=553551 payload=xryllupognlu
+metric m8 v=18.85 tag=r20
+metric m1 v=16.61 tag=r32
+record seq=654236 payload=vrhdqkrxyxku
+record seq=490949 payload=ccacehrvpdqo
+record seq=577199 payload=qtvgpgvgehef
+record seq=353783 payload=pnjlbsimebmr
+record seq=12772 payload=bdmbucgfbefp
+record seq=828310 payload=ysyzkigcufnx
+metric m1 v=55.65 tag=r38
+record seq=939948 payload=hvebvckucjlf
+metric m4 v=3.52 tag=r24
+metric m4 v=11.81 tag=r23
+metric m5 v=77.81 tag=r49
+metric m2 v=55.99 tag=r44
+record seq=82169 payload=qhkghwqwxwpp
+metric m7 v=64.37 tag=r29
+record seq=30643 payload=wupcrhrqaesn
+metric m4 v=94.51 tag=r1
+record seq=138705 payload=uzeevrogwrlx
+metric m6 v=34.46 tag=r26
+log w0 t=48626 op=spawn ok
+metric m5 v=10.2 tag=r29
+record seq=808991 payload=lejicrednuyv
+record seq=942823 payload=xokkafdvyezn
+record seq=545328 payload=ensknjjnexuz
+metric m6 v=84.85 tag=r49
+metric m6 v=31.17 tag=r5
+metric m8 v=23.49 tag=r34
+metric m3 v=68.63 tag=r31
+metric m1 v=34.46 tag=r28
+record seq=636854 payload=zacohiokkmpa
+record seq=351640 payload=zyuifuzegavc
+record seq=758233 payload=hyoffpuvxwjz
+metric m1 v=59.05 tag=r37
+log w2 t=46991 op=spawn ok
+metric m5 v=28.05 tag=r20
+log w1 t=99982 op=spawn ok
+record seq=790932 payload=tcsfquclxkvj
+metric m1 v=5.8 tag=r46
+record seq=197444 payload=fupnyhqjdaon
+record seq=208392 payload=yacvdejtcdvs
+record seq=117843 payload=umfmceuxffek
+metric m2 v=68.31 tag=r4
+record seq=379531 payload=opkoagutvmrl
+record seq=232823 payload=onpqublrlbvw
+record seq=733002 payload=pdbzglddsglz
+record seq=343922 payload=jhftnxwbrbiv
+record seq=881625 payload=ejtdpbeskreg
+log w2 t=80842 op=spawn ok
+metric m1 v=80.03 tag=r18
+log w1 t=14478 op=spawn ok
+record seq=46983 payload=jtwolarlngyi
+metric m2 v=40.27 tag=r31
+log w3 t=87715 op=spawn ok
+metric m5 v=29.91 tag=r41
+metric m2 v=33.93 tag=r45
+metric m3 v=85.51 tag=r29
+log w2 t=69222 op=spawn ok
+record seq=836894 payload=epgkassvmmww
+metric m6 v=90.21 tag=r31
+metric m2 v=46.01 tag=r2
+record seq=464434 payload=hcceaqrxuuno
+metric m5 v=40.57 tag=r23
+metric m7 v=57.03 tag=r0
+record seq=776656 payload=mbdsyytggtys
+metric m1 v=30.71 tag=r42
+record seq=77482 payload=dorbjvhifuup
+metric m7 v=54.32 tag=r26
+record seq=55882 payload=bhsteootqthg
+log w3 t=13286 op=spawn ok
+metric m7 v=34.81 tag=r4
+metric m6 v=28.71 tag=r21
+record seq=725957 payload=ylqhbeuogvkj
+metric m3 v=12.88 tag=r23
+metric m1 v=52.81 tag=r2
+record seq=641940 payload=dmzaflejtwba
+metric m0 v=94.03 tag=r23
+metric m5 v=48.55 tag=r34
+record seq=842357 payload=scmyzzccxpti
+metric m1 v=28.6 tag=r2
+record seq=362140 payload=kxboikfbndpy
+metric m2 v=73.39 tag=r14
+record seq=873450 payload=nglfgrzmgwtu
+log w2 t=61049 op=spawn ok
+log w1 t=1266 op=spawn ok
+record seq=171701 payload=ucsylzmyalpb
+metric m3 v=52.91 tag=r35
+record seq=196592 payload=qkovdihtybil
+log w3 t=50490 op=spawn ok
+metric m0 v=43.07 tag=r26
+metric m6 v=26.51 tag=r9
+log w2 t=81970 op=spawn ok
+metric m6 v=37.66 tag=r38
+log w4 t=21330 op=spawn ok
+log w1 t=38257 op=spawn ok
+record seq=979728 payload=ykqrbkpolwov
+metric m0 v=17.34 tag=r19
+metric m3 v=21.25 tag=r25
+metric m2 v=2.83 tag=r29
+metric m1 v=5.74 tag=r21
+metric m8 v=35.22 tag=r6
+record seq=91454 payload=mdwcfulxjleo
+metric m8 v=72.5 tag=r41
+record seq=990586 payload=ecqqjbhxjein
+metric m3 v=85.13 tag=r12
+record seq=27540 payload=nielclypkvsd
+record seq=403436 payload=gjywlvuvuhlg
+metric m7 v=92.91 tag=r37
+record seq=188640 payload=hsiivtafsuqm
+metric m1 v=46.68 tag=r46
+metric m1 v=46.83 tag=r49
+record seq=784063 payload=groxavwcrrcn
+record seq=13671 payload=cxofvgdaeibf
+record seq=627541 payload=ouhsknlquysf
+metric m5 v=11.45 tag=r48
+metric m6 v=35.66 tag=r22
+record seq=362055 payload=pgenrgnfvubg
+metric m7 v=40.25 tag=r19
+log w1 t=56238 op=spawn ok
+metric m1 v=61.96 tag=r24
+record seq=949391 payload=mxfyjwiufeao
+record seq=853143 payload=fdocydbdgozo
+log w4 t=40676 op=spawn ok
+metric m8 v=75.36 tag=r26
+metric m1 v=34.77 tag=r14
+metric m3 v=93.53 tag=r36
+metric m2 v=70.04 tag=r18
+record seq=249403 payload=mjipnomwjrrz
+record seq=846232 payload=ljzfhahswwhr
+record seq=415491 payload=pvnecinocqme
+log w3 t=77499 op=spawn ok
+record seq=625680 payload=hqchcincwyum
+metric m2 v=82.37 tag=r28
+log w1 t=56476 op=spawn ok
+log w2 t=88870 op=spawn ok
+metric m2 v=89.79 tag=r13
+metric m6 v=8.63 tag=r48
+metric m8 v=17.31 tag=r11
+log w0 t=90262 op=spawn ok
+log w2 t=50124 op=spawn ok
+log w0 t=25231 op=spawn ok
+metric m6 v=5.32 tag=r31
+metric m5 v=60.64 tag=r48
+metric m1 v=56.88 tag=r7
+metric m1 v=76.67 tag=r19
+record seq=954644 payload=uaxjwightryu
+log w0 t=39961 op=spawn ok
+record seq=118622 payload=pvqabmaespbq
+record seq=135901 payload=tqogbjawtkbx
+record seq=13229 payload=pdmttaeofxso
+record seq=162511 payload=eservofdnvih
+log w3 t=10523 op=spawn ok
+metric m8 v=17.75 tag=r27
+record seq=586894 payload=odixxyflqnnm
+record seq=704588 payload=agjbkulqqkmx
+metric m3 v=95.42 tag=r46
+metric m8 v=90.21 tag=r28
+metric m5 v=83.71 tag=r38
+record seq=579453 payload=asxivugabapd
+log w0 t=13328 op=spawn ok
+record seq=491680 payload=xkantnsznohc
+metric m3 v=61.35 tag=r6
+record seq=793095 payload=ttiorrljyikv
+record seq=442335 payload=rcxjxbgfeiif
+record seq=911252 payload=qpzzikjfejtj
+log w1 t=55043 op=spawn ok
+metric m5 v=68.26 tag=r42
+record seq=456765 payload=jmgftoooaglr
+metric m6 v=34.61 tag=r15
+metric m4 v=32.97 tag=r3
+metric m8 v=57.27 tag=r31
+metric m8 v=85.66 tag=r32
+record seq=734777 payload=qjdlhdttpwvq
+log w0 t=29585 op=spawn ok
+record seq=576675 payload=rfbdentzlxqr
+record seq=684137 payload=xthqbnbmforx
+metric m2 v=80.82 tag=r38
+metric m2 v=89.75 tag=r20
+log w2 t=74396 op=spawn ok
+metric m3 v=85.57 tag=r18
+metric m7 v=21.41 tag=r5
+log w4 t=16479 op=spawn ok
+record seq=912467 payload=wmfdnfzmmhbn
+log w3 t=42581 op=spawn ok
+metric m6 v=36.56 tag=r24
+metric m8 v=68.4 tag=r9
+metric m1 v=60.12 tag=r31
+log w2 t=58014 op=spawn ok
+log w1 t=34449 op=spawn ok
+record seq=892636 payload=actwzlgddvwg
+log w3 t=79731 op=spawn ok
+metric m4 v=67.65 tag=r21
+record seq=193513 payload=hazxozawgseh
+record seq=408802 payload=fzmmatoakhil
+metric m6 v=23.95 tag=r29
+record seq=911972 payload=zstbuzkmggxc
+record seq=972701 payload=kjpizekeqgqr
+metric m1 v=75.04 tag=r17
+record seq=636185 payload=cgibrdfnbnnh
+log w1 t=61605 op=spawn ok
+metric m0 v=84.15 tag=r4
+record seq=614323 payload=lmubmlcjhtxp
+metric m0 v=41.96 tag=r32
+metric m6 v=43.63 tag=r6
+metric m1 v=90.22 tag=r33
+metric m1 v=31.99 tag=r3
+metric m0 v=90.89 tag=r12
+record seq=21862 payload=qunaesdduups
+record seq=302343 payload=fsrdrudipdsj
+log w0 t=15989 op=spawn ok
+log w4 t=63184 op=spawn ok
+record seq=254901 payload=jqdintaiidbq
+metric m0 v=86.89 tag=r25
+metric m6 v=60.22 tag=r48
+record seq=295786 payload=ekhvoczpyzvp
+record seq=550228 payload=ojqxtvambccc
+log w3 t=76071 op=spawn ok
+log w0 t=88920 op=spawn ok
+metric m0 v=46 tag=r36
+log w3 t=16853 op=spawn ok
+record seq=351259 payload=tecvrciybdrf
+log w1 t=72026 op=spawn ok
+metric m1 v=74.75 tag=r23
+record seq=332776 payload=vxyyfwcviytv
+metric m2 v=29.49 tag=r48
+metric m3 v=2.27 tag=r42
+record seq=694394 payload=xiriutkvysaa
+record seq=279890 payload=dwmgfctfyjpa
+metric m3 v=94.51 tag=r17
+metric m0 v=63.6 tag=r7
+record seq=608279 payload=gwbjlmabvlja
+record seq=400400 payload=xuqpyskittia
+record seq=583940 payload=gyjthnppewrh
+metric m8 v=53.95 tag=r6
+record seq=410428 payload=oolqlbfhfydi
+log w2 t=59767 op=spawn ok
+metric m6 v=89.57 tag=r3
+record seq=715188 payload=iuiqtxrmntqc
+record seq=468553 payload=idqmioaiqmvv
+metric m6 v=79.12 tag=r6
+record seq=58554 payload=asgtdasdouse
+metric m1 v=13.23 tag=r48
+metric m2 v=14.88 tag=r20
+record seq=91287 payload=szdvuxrzsjdo
+log w1 t=23655 op=spawn ok
+metric m0 v=60.96 tag=r38
+log w4 t=23547 op=spawn ok
+record seq=460080 payload=zqshknzgiyag
+metric m2 v=21.64 tag=r40
+metric m4 v=8.38 tag=r16
+log w4 t=12771 op=spawn ok
+record seq=726467 payload=rgoqocljrwee
+metric m5 v=18.22 tag=r19
+record seq=248098 payload=efzzskysldhk
+log w2 t=78578 op=spawn ok
+metric m6 v=26.74 tag=r22
+metric m6 v=83.61 tag=r27
+record seq=907405 payload=lbqczxyerzst
+record seq=526140 payload=drvqhbhurkvv
+record seq=954958 payload=hmirdchjiqmg
+metric m2 v=36.03 tag=r26
+log w4 t=8022 op=spawn ok
+record seq=294717 payload=xxfgupqjfgdz
+record seq=863458 payload=fqbppgujfebs
+log w2 t=14725 op=spawn ok
+metric m0 v=74.34 tag=r8
+record seq=402959 payload=odlimqzckigk
+metric m1 v=87.72 tag=r0
+metric m4 v=50.12 tag=r24
+metric m6 v=3.04 tag=r8
+log w2 t=18539 op=spawn ok
+metric m7 v=21.92 tag=r20
+record seq=313678 payload=lqnqhcpvgvvu
+metric m6 v=28.58 tag=r13
+metric m7 v=24.67 tag=r33
+log w4 t=87453 op=spawn ok
+log w1 t=23550 op=spawn ok
+record seq=468156 payload=tfexlcxnjkyk
+record seq=675550 payload=hwfkuwxyoked
+log w3 t=75290 op=spawn ok
+metric m3 v=4.76 tag=r9
+log w0 t=2678 op=spawn ok
+record seq=914545 payload=igutxxwwtmoa
+record seq=865782 payload=lbouqttiyhuy
+log w4 t=19435 op=spawn ok
+record seq=607138 payload=hfhbobdarnhj
+record seq=46767 payload=tnnpdohjxdah
+metric m8 v=98.88 tag=r44
+log w3 t=96126 op=spawn ok
+record seq=284617 payload=vqvxaktzgmyg
+metric m0 v=40.21 tag=r25
+metric m0 v=24.66 tag=r16
+record seq=296542 payload=dagoebtnqkut
+record seq=902922 payload=rrddnkrrcbgy
+metric m3 v=71.13 tag=r29
+record seq=543185 payload=knmvrlgsgsvn
+metric m4 v=10.15 tag=r24
+record seq=624593 payload=ydvnqlxfigmk
+record seq=33125 payload=sgjlkwzrwudy
+record seq=605544 payload=otvcncqpsxwb
+record seq=491314 payload=cagwxuugdrcz
+record seq=254516 payload=gajrphqpkjws
+metric m0 v=52.41 tag=r24
+metric m3 v=93.9 tag=r24
+metric m7 v=54.75 tag=r15
+log w0 t=80916 op=spawn ok
+metric m5 v=15.51 tag=r49
+metric m3 v=39.77 tag=r18
+record seq=532655 payload=fmqwnpwzekrs
+record seq=137220 payload=tadrjmbqnmiz
+metric m3 v=28.92 tag=r13
+record seq=747073 payload=vyiwhqchrhwq
+log w2 t=98554 op=spawn ok
+log w1 t=52160 op=spawn ok
+metric m6 v=1.36 tag=r9
+metric m5 v=94.61 tag=r7
+metric m4 v=33.45 tag=r24
+record seq=903452 payload=lywrvwsnobvt
+record seq=889078 payload=jtzgdtzgtqmt
+FACT 9 zeta-3104
+record seq=157753 payload=doyepzfeshfk
+record seq=779985 payload=eyktvbutocjy
+record seq=190759 payload=fgfbyokacqdu
+record seq=173829 payload=braszfbugsxw
+metric m3 v=99.99 tag=r43
+record seq=653947 payload=bazmcdmfkdwt
+record seq=48517 payload=jqswbqzsclzm
+log w0 t=20615 op=spawn ok
+log w0 t=23632 op=spawn ok
+record seq=490258 payload=trfppxgtvxxn
+log w4 t=50586 op=spawn ok
+record seq=633209 payload=duerixompyka
+metric m1 v=62.22 tag=r46
+log w1 t=69480 op=spawn ok
+metric m1 v=27.35 tag=r8
+metric m1 v=89.39 tag=r9
+metric m4 v=37.47 tag=r16
+metric m4 v=40.18 tag=r44
+metric m6 v=80.24 tag=r20
+record seq=643715 payload=cayvtluhpaov
+metric m4 v=85.49 tag=r31
+record seq=479721 payload=lsbafqwoygeg
+metric m8 v=91.57 tag=r38
+log w1 t=23334 op=spawn ok
+metric m4 v=43.28 tag=r20
+metric m7 v=36.43 tag=r39
+record seq=130942 payload=xavxiybpbuhy
+log w2 t=53528 op=spawn ok
+log w1 t=70223 op=spawn ok
+record seq=895399 payload=olpkfaahvdww
+log w2 t=4180 op=spawn ok
+metric m3 v=33.17 tag=r49
+record seq=839849 payload=ezmyphywcord
+record seq=584059 payload=mllshyuuxylv
+record seq=465802 payload=itassbjldlpt
+log w2 t=72588 op=spawn ok
+metric m1 v=70.92 tag=r15
+record seq=563266 payload=uyprzbkbnmun
+metric m4 v=35.08 tag=r27
+record seq=446660 payload=ufbizdowjbit
+record seq=513218 payload=yxoukaszzjpz
+record seq=237717 payload=qwjbggnqnlzm
+log w0 t=70153 op=spawn ok
+metric m6 v=75.85 tag=r36
+metric m5 v=55.69 tag=r0
+metric m1 v=90.86 tag=r37
+record seq=239991 payload=rsziigmrhnmz
+metric m3 v=8.38 tag=r41
+record seq=917912 payload=ohqpwgnrbwvx
+metric m4 v=73.39 tag=r19
+record seq=748290 payload=zduxfrmgghhe
+record seq=714949 payload=gzempbwtureq
+record seq=364470 payload=ezgxnivtdrcy
+log w3 t=98837 op=spawn ok
+metric m3 v=89.27 tag=r46
+log w3 t=34236 op=spawn ok
+metric m2 v=77.4 tag=r38
+record seq=264829 payload=idspvdbhajqp
+record seq=464033 payload=wmkrygtohhss
+record seq=843385 payload=qadtlokzynda
+metric m6 v=21.95 tag=r0
+metric m3 v=23.11 tag=r10
+metric m7 v=83.26 tag=r5
+record seq=628954 payload=nuvlwclfragw
+log w1 t=4136 op=spawn ok
+FACT 1 delta-4450
+record seq=539213 payload=xnxsbihajmmj
+record seq=184432 payload=ayvbqenqapia
+metric m6 v=37.7 tag=r9
+record seq=170092 payload=piypxymlolnp
+record seq=841286 payload=xvfyihksahmi
+metric m0 v=12.88 tag=r26
+record seq=171275 payload=phtlglaxpfqc
+log w2 t=63990 op=spawn ok
+metric m0 v=39.04 tag=r27
+metric m7 v=63.44 tag=r38
+record seq=278570 payload=qcpoliauiaqb
+metric m5 v=79.23 tag=r46
+metric m6 v=20.49 tag=r4
+record seq=161054 payload=bswytzfhyowe
+record seq=316740 payload=lidwphulzlqv
+record seq=488855 payload=lyouimbxsmoa
+metric m0 v=5.84 tag=r5
+log w1 t=95370 op=spawn ok
+metric m4 v=9.82 tag=r27
+metric m4 v=65.52 tag=r19
+record seq=695300 payload=lhxfsvazcwdg
+metric m5 v=66.44 tag=r15
+metric m6 v=73.76 tag=r18
+record seq=241184 payload=jwhzjkghrcle
+metric m1 v=66.26 tag=r40
+record seq=196816 payload=bdclvfzmwayx
+record seq=253749 payload=ueybytmqtuea
+record seq=352816 payload=imqtxoiudybb
+log w4 t=51729 op=spawn ok
+metric m3 v=74.99 tag=r23
+log w1 t=9814 op=spawn ok
+metric m5 v=86.94 tag=r4
+record seq=425596 payload=khgvkpdkjeac
+record seq=28102 payload=aazwsqcnlloq
+record seq=233490 payload=faxvvxjwrgrk
+record seq=110451 payload=wftjgjbgqzjc
+metric m7 v=86.3 tag=r41
+metric m6 v=64.93 tag=r45
+log w1 t=28179 op=spawn ok
+metric m2 v=3.11 tag=r32
+log w1 t=76452 op=spawn ok
+metric m2 v=90.46 tag=r49
+record seq=229445 payload=sfjpezkxltom
+record seq=852747 payload=zxtuxnxncfsw
+record seq=861372 payload=ubeigqdbjbtf
+record seq=384249 payload=tnlefmuiocbc
+metric m1 v=10.64 tag=r8
+record seq=297638 payload=bndkpggjsyns
+log w3 t=57998 op=spawn ok
+metric m7 v=58.38 tag=r38
+metric m6 v=42.26 tag=r3
+metric m4 v=7.24 tag=r13
+log w1 t=95315 op=spawn ok
+record seq=214695 payload=elekgiyfxvtw
+record seq=847615 payload=bjnuknkipqlr
+record seq=508996 payload=zcauzinpoehl
+record seq=549193 payload=qwrfrqaxpool
+record seq=855875 payload=vnypkkguuzwm
+metric m3 v=82.47 tag=r18
+metric m8 v=86.61 tag=r42
+record seq=765961 payload=zgzhmcnmfomr
+record seq=33344 payload=frbgiwbrifip
+log w1 t=4570 op=spawn ok
+record seq=558886 payload=zebosqdydhit
+metric m8 v=63.72 tag=r32
+record seq=136833 payload=vxqnvshxtzxa
+metric m3 v=57.41 tag=r49
+metric m4 v=71.39 tag=r24
+metric m0 v=92.99 tag=r15
+log w2 t=73421 op=spawn ok
+record seq=7029 payload=gryhcftyljjg
+record seq=889511 payload=ebdawfildyhp
+record seq=955425 payload=ijgzjxmhytef
+record seq=63413 payload=cdjgsdugaowt
+record seq=810554 payload=ozzmkupbdjxx
+metric m7 v=9.78 tag=r19
+record seq=643428 payload=jhjaobxrebjr
+log w3 t=22806 op=spawn ok
+record seq=733335 payload=ytsvalaaaivt
+record seq=156136 payload=qtfjklnlxptp
+metric m6 v=43.04 tag=r12
+metric m6 v=71.73 tag=r7
+log w3 t=12288 op=spawn ok
+record seq=339384 payload=viaosbxhxsyx
+metric m7 v=22.8 tag=r10
+metric m7 v=10.45 tag=r3
+metric m8 v=31.52 tag=r28
+record seq=64477 payload=eataaqkapdmw
+log w2 t=83510 op=spawn ok
+metric m5 v=99.86 tag=r24
+metric m0 v=84.08 tag=r24
+record seq=620571 payload=uatxwalvrxxo
+record seq=699201 payload=inggcsrqogci
+metric m0 v=42.29 tag=r2
+metric m4 v=81.55 tag=r19
+metric m5 v=64.07 tag=r4
+record seq=104630 payload=bbnqyushevtp
+metric m1 v=94.68 tag=r6
+metric m4 v=83.18 tag=r28
+record seq=362501 payload=kpojsnmswdna
+record seq=633142 payload=cxhipayphsep
+metric m0 v=14.86 tag=r6
+metric m1 v=40.48 tag=r33
+record seq=936363 payload=bpbevlyqbjni
+log w2 t=23159 op=spawn ok
+metric m8 v=68.25 tag=r21
+record seq=310337 payload=wfcbjptwkpaz
+log w4 t=68993 op=spawn ok
+metric m3 v=18.24 tag=r25
+record seq=669257 payload=qucdcqxtesgw
+record seq=224844 payload=kycmvftruniv
+record seq=541661 payload=gonxeqfkaygy
+record seq=130899 payload=fwtdoqhihsrl
+record seq=958451 payload=zpugyjmqfisz
+log w4 t=92359 op=spawn ok
+log w1 t=88497 op=spawn ok
+metric m5 v=45.94 tag=r45
+record seq=208622 payload=hbgygugssgll
+log w0 t=2138 op=spawn ok
+metric m5 v=60.52 tag=r32
+metric m3 v=56.46 tag=r30
+metric m3 v=13.85 tag=r24
+record seq=73702 payload=imcwpywcnjlb
+record seq=266893 payload=tonaewvzwgiu
+record seq=452656 payload=yochmrktioob
+log w2 t=12921 op=spawn ok
+metric m2 v=35.9 tag=r22
+metric m7 v=74.36 tag=r44
+log w1 t=91468 op=spawn ok
+metric m3 v=64.48 tag=r41
+metric m7 v=23.13 tag=r21
+log w4 t=26156 op=spawn ok
+log w2 t=31749 op=spawn ok
+record seq=14062 payload=fyldslvqayil
+record seq=208932 payload=rzzolbcnbtvs
+metric m1 v=97.28 tag=r4
+record seq=130992 payload=lvnzrefunaup
+metric m7 v=81.54 tag=r46
+metric m2 v=14.18 tag=r1
+record seq=792306 payload=xsxrhaerqyef
+record seq=784975 payload=rshvjqocslha
+record seq=342229 payload=wsytgqxvczwe
+record seq=847098 payload=jwkgvagpzirg
+metric m7 v=0.24 tag=r21
+metric m2 v=10.87 tag=r40
+record seq=952946 payload=zlziwwqhyezs
+record seq=840977 payload=bbfwchsqbzkc
+record seq=652078 payload=qpbvblwyhmej
+record seq=668613 payload=kmhodejibgsn
+metric m3 v=37.89 tag=r49
+record seq=772270 payload=bzricdqhydtt
+record seq=714605 payload=ibfprwzqhhov
+log w2 t=19089 op=spawn ok
+metric m5 v=29.07 tag=r27
+metric m2 v=99.04 tag=r48
+log w1 t=14093 op=spawn ok
+record seq=844087 payload=ffoinafeduib
+record seq=404138 payload=rkthacclomfi
+metric m2 v=7.09 tag=r5
+metric m4 v=98.09 tag=r6
+metric m0 v=72.03 tag=r11
+metric m1 v=34.82 tag=r0
+metric m7 v=98.25 tag=r24
+metric m8 v=30.96 tag=r28
+metric m0 v=11.06 tag=r38
+record seq=766515 payload=rcdfpwcantcr
+record seq=617235 payload=rnzxtcbumssm
+log w2 t=78430 op=spawn ok
+log w2 t=20354 op=spawn ok
+metric m6 v=40.75 tag=r31
+log w0 t=49897 op=spawn ok
+metric m8 v=33.78 tag=r12
+metric m3 v=91.66 tag=r48
+record seq=894595 payload=vdearswpkndv
+record seq=247115 payload=kiwhhfbkxkhe
+record seq=546237 payload=hiunipzagesz
+metric m0 v=69.05 tag=r28
+metric m5 v=27.47 tag=r4
+record seq=892804 payload=nprmvkfutmzi
+metric m0 v=70.14 tag=r31
+metric m0 v=27.5 tag=r17
+log w3 t=60999 op=spawn ok
+metric m6 v=3.2 tag=r36
+metric m0 v=63.76 tag=r45
+record seq=688001 payload=juevvtovmlfa
+metric m6 v=58.58 tag=r43
+record seq=122307 payload=gvnvvakvurxs
+log w2 t=32858 op=spawn ok
+record seq=955355 payload=invrgsnpgkhl
+metric m1 v=46.09 tag=r16
+metric m5 v=82.38 tag=r9
+metric m8 v=18.89 tag=r21
+log w4 t=90428 op=spawn ok
+record seq=760481 payload=jqrpthjxlzdz
+log w2 t=59779 op=spawn ok
+log w1 t=46563 op=spawn ok
+metric m3 v=37.18 tag=r29
+record seq=504804 payload=lkjikqhupwxu
+metric m7 v=60.63 tag=r43
+log w2 t=6653 op=spawn ok
+record seq=707350 payload=fjjphrmjnkts
+log w0 t=34869 op=spawn ok
+record seq=37036 payload=nurijisvnnwr
+metric m8 v=51.82 tag=r12
+record seq=237935 payload=azsczvkcmdbk
+record seq=257634 payload=ybxgzkvartud
+record seq=706563 payload=elgljxiyhlvw
+record seq=268213 payload=wptcvpsgaghk
+metric m8 v=30.72 tag=r48
+metric m7 v=18.93 tag=r35
+record seq=19469 payload=wqauxatmlcmo
+log w0 t=1265 op=spawn ok
+record seq=315463 payload=azxkzeznjqid
+record seq=684048 payload=ejwsdcarsmov
+log w4 t=82024 op=spawn ok
+record seq=213383 payload=yqoetzpwlbho
+metric m3 v=32.29 tag=r24
+metric m2 v=22.53 tag=r14
+metric m7 v=57.92 tag=r14
+metric m2 v=42.3 tag=r41
+log w4 t=4815 op=spawn ok
+record seq=526706 payload=lknknljgvrat
+log w1 t=8652 op=spawn ok
+metric m2 v=78.23 tag=r30
+metric m4 v=82.16 tag=r3
+log w1 t=81580 op=spawn ok
+metric m5 v=77.84 tag=r34
+metric m0 v=59.46 tag=r2
+record seq=15849 payload=vbxwwboeoogx
+metric m5 v=86.53 tag=r9
+metric m0 v=99.39 tag=r30
+metric m4 v=17.48 tag=r35
+record seq=779780 payload=mdfadbkblgxt
+record seq=483742 payload=gxnrpogfvhpm
+log w1 t=69510 op=spawn ok
+metric m8 v=18.47 tag=r43
+log w2 t=45261 op=spawn ok
+record seq=518796 payload=lemgdphrjnjl
+record seq=492546 payload=dkohhxlqacjc
+metric m6 v=89.37 tag=r31
+record seq=796037 payload=xzgkczbfaxdn
+record seq=263533 payload=kkbloiecbudk
+record seq=64407 payload=gputponzgsio
+metric m0 v=87.7 tag=r26
+metric m4 v=9.46 tag=r5
+record seq=954070 payload=qlcpquxmhrcz
+record seq=428885 payload=djylslejczcc
+metric m4 v=26.46 tag=r32
+metric m7 v=38.59 tag=r15
+record seq=329506 payload=raytbtkrmgcl
+metric m1 v=56.08 tag=r33
+metric m2 v=78.57 tag=r14
+metric m0 v=51.16 tag=r26
+metric m3 v=21.26 tag=r31
+metric m2 v=59.71 tag=r32
+metric m7 v=71.64 tag=r45
+metric m8 v=39.65 tag=r20
+record seq=444337 payload=mvzuddcqkdnq
+log w2 t=50227 op=spawn ok
+metric m1 v=65.92 tag=r27
+record seq=308351 payload=eqlypkqekvjj
+record seq=616920 payload=rougcosxldvv
+log w2 t=10948 op=spawn ok
+record seq=737287 payload=wedhfnvoslma
+metric m1 v=29.6 tag=r5
+record seq=830130 payload=vjklgphfictg
+metric m0 v=56.06 tag=r5
+metric m1 v=74.73 tag=r15
+metric m0 v=97.9 tag=r33
+metric m1 v=23.36 tag=r45
+log w4 t=54640 op=spawn ok
+record seq=212951 payload=pgmikxoazfsu
+metric m1 v=42.64 tag=r22
+metric m5 v=9.78 tag=r18
+record seq=351796 payload=vktcdjjbiobb
+record seq=789856 payload=cuchfhmvhwyx
+record seq=454318 payload=yjlipflbpiue
+record seq=942158 payload=wdskoqjkovei
+record seq=14289 payload=cwdfoydzdtmk
+metric m0 v=19.75 tag=r38
+metric m0 v=67.1 tag=r26
+record seq=140773 payload=dojecnuqehjl
+record seq=728500 payload=fpqsvwazydhi
+FACT 5 epsilon-8872
+metric m7 v=35.04 tag=r7
+record seq=331369 payload=bzspwjvpempf
+log w4 t=6050 op=spawn ok
+metric m5 v=88.35 tag=r19
+record seq=713179 payload=bdeqfxuhahaq
+log w1 t=99170 op=spawn ok
+log w3 t=72573 op=spawn ok
+metric m7 v=22.76 tag=r34
+metric m3 v=73.24 tag=r3
+metric m2 v=75.43 tag=r10
+metric m6 v=68.3 tag=r30
+log w4 t=52959 op=spawn ok
+record seq=644343 payload=mbhefpoaoblz
+log w0 t=8104 op=spawn ok
+metric m3 v=60.51 tag=r39
+record seq=147174 payload=nnouvgykidmq
+log w3 t=84586 op=spawn ok
+record seq=529686 payload=huebufigippd
+record seq=240156 payload=tbmzntjkiqqg
+record seq=949159 payload=ibkgovhztcti
+metric m4 v=49.95 tag=r32
+metric m2 v=67.01 tag=r45
+record seq=574212 payload=puieexmnknhj
+record seq=232738 payload=fjovytikffnv
+record seq=667795 payload=hioaftmpxkrk
+metric m1 v=69.29 tag=r10
+log w4 t=61072 op=spawn ok
+metric m3 v=96.93 tag=r35
+record seq=968903 payload=agfodqizvfbz
+metric m1 v=19.32 tag=r37
+metric m4 v=16.96 tag=r8
+metric m2 v=13.06 tag=r34
+log w0 t=66376 op=spawn ok
+metric m5 v=22.47 tag=r16
+record seq=738553 payload=bfnhbuuilszq
+metric m7 v=70.3 tag=r20
+metric m7 v=51.18 tag=r26
+record seq=441838 payload=tcnnzzdipxlf
+metric m8 v=68.69 tag=r22
+metric m6 v=39.54 tag=r42
+log w2 t=15208 op=spawn ok
+log w3 t=35068 op=spawn ok
+record seq=791448 payload=djvcbplkunuv
+log w0 t=10391 op=spawn ok
+log w0 t=1947 op=spawn ok
+metric m6 v=73.06 tag=r4
+metric m7 v=14.19 tag=r41
+metric m1 v=95.43 tag=r21
+record seq=633799 payload=aiffcidpnhqa
+record seq=584551 payload=ralbwttgbabz
+record seq=250921 payload=ggljuevvwxzw
+record seq=980890 payload=flliyoeitwoz
+record seq=771752 payload=hedcjxihvhfs
+record seq=813962 payload=dobaxuaqptak
+log w4 t=50033 op=spawn ok
+metric m7 v=77.59 tag=r14
+log w2 t=68410 op=spawn ok
+record seq=897796 payload=mzqxpecfujfe
+record seq=514543 payload=cctrpkbzvkuh
+metric m4 v=42.83 tag=r36
+metric m4 v=81.38 tag=r8
+metric m8 v=14.58 tag=r6
+log w2 t=67254 op=spawn ok
+record seq=620718 payload=ttitirfhxcjv
+metric m1 v=22.47 tag=r6
+metric m6 v=62.74 tag=r40
+log w0 t=73978 op=spawn ok
+metric m5 v=97.16 tag=r9
+record seq=616472 payload=qdsgjbrmnduf
+metric m3 v=35.5 tag=r23
+metric m0 v=77.4 tag=r46
+record seq=689081 payload=tbapqzydimhr
+metric m8 v=62.98 tag=r28
+log w0 t=54319 op=spawn ok
+record seq=806836 payload=ovpptkxhykaq
+record seq=399027 payload=rgulrnkuhytc
+metric m7 v=78.16 tag=r43
+record seq=377922 payload=jwefkzxpawkc
+metric m0 v=28.75 tag=r28
+record seq=301980 payload=krwdkuoqvqzb
+metric m0 v=71.6 tag=r31
+metric m0 v=22.88 tag=r23
+record seq=789958 payload=ncmnkfrsvvwm
+metric m0 v=52.33 tag=r11
+metric m3 v=65.81 tag=r39
+log w1 t=61638 op=spawn ok
+record seq=351533 payload=ijqufimlpduq
+record seq=379394 payload=iydvefaprcbq
+record seq=815517 payload=bqgmnebwbxpm
+metric m0 v=87.31 tag=r44
+record seq=591073 payload=paivalltisrn
+record seq=593267 payload=nrkywicsimwg
+metric m5 v=79.77 tag=r49
+record seq=788774 payload=jlavmfqvauwi
+log w2 t=15815 op=spawn ok
+log w4 t=73495 op=spawn ok
+record seq=917853 payload=almxswztfuzi
+record seq=891149 payload=dhoreeibhivz
+metric m2 v=7.76 tag=r10
+record seq=62716 payload=jvtyzdcqgwpf
+record seq=517193 payload=ihlwliompzde
+log w3 t=55947 op=spawn ok
+record seq=689847 payload=adxzedfikoox
+metric m3 v=8.14 tag=r26
+metric m5 v=1.61 tag=r43
+metric m6 v=35.98 tag=r25
+record seq=202598 payload=uuucjbpepcxo
+log w0 t=22662 op=spawn ok
+metric m0 v=73.5 tag=r0
+metric m1 v=54.41 tag=r2
+record seq=722193 payload=doumgtkbzikn
+metric m1 v=48.8 tag=r15
+metric m7 v=98.17 tag=r31
+record seq=465876 payload=wqrsqniagtej
+metric m4 v=79.94 tag=r35
+metric m3 v=50.93 tag=r23
+log w4 t=80571 op=spawn ok
+log w3 t=52826 op=spawn ok
+metric m2 v=92.1 tag=r35
+log w0 t=94462 op=spawn ok
+record seq=686714 payload=evodxsycrjyy
+record seq=504467 payload=omqchhavqzcz
+log w0 t=53195 op=spawn ok
+record seq=143499 payload=lpvqxufqtftd
+record seq=787012 payload=ootjglxqjrie
+metric m0 v=89.21 tag=r32
+record seq=551497 payload=afnjdwqrlmoc
+metric m6 v=99.14 tag=r10
+metric m4 v=32.9 tag=r36
+metric m2 v=23.52 tag=r39
+metric m1 v=30.83 tag=r36
+metric m1 v=73.04 tag=r5
+metric m1 v=8.22 tag=r21
+metric m1 v=41.88 tag=r44
+record seq=547269 payload=zkcgjpejnlic
+metric m7 v=98.27 tag=r35
+log w4 t=55833 op=spawn ok
+record seq=446610 payload=htlscqoxiala
+record seq=225807 payload=vszusowrhugy
+metric m4 v=56.63 tag=r3
+metric m2 v=80.25 tag=r5
+record seq=661973 payload=qohzqlekwcnp
+log w0 t=15827 op=spawn ok
+log w4 t=36977 op=spawn ok
+metric m5 v=47.26 tag=r33
+metric m1 v=36.32 tag=r4
+metric m2 v=56.01 tag=r5
+metric m5 v=50.03 tag=r7
+log w2 t=52150 op=spawn ok
+record seq=932567 payload=lmwxdlrhoxim
+metric m4 v=10.91 tag=r9
+record seq=84805 payload=dqncywtxwcay
+record seq=624770 payload=dlddptisruui
+metric m5 v=77.24 tag=r5
+metric m8 v=9.28 tag=r16
+metric m0 v=40.69 tag=r17
+metric m0 v=14.46 tag=r12
+metric m5 v=27.5 tag=r29
+log w3 t=31701 op=spawn ok
+record seq=407629 payload=ypfukyshqqcd
+record seq=694255 payload=bwkgbauqpqbd
+log w2 t=21451 op=spawn ok
+log w2 t=33253 op=spawn ok
+record seq=709516 payload=ljxozerbxkad
+record seq=905272 payload=fsulgzqizpsh
+record seq=187310 payload=bmcujagrzvhx
+metric m6 v=72.24 tag=r9
+metric m8 v=25.74 tag=r8
+metric m4 v=36.65 tag=r3
+log w4 t=7706 op=spawn ok
+log w1 t=30986 op=spawn ok
+record seq=660636 payload=hnzliguvqoty
+log w1 t=62296 op=spawn ok
+record seq=606732 payload=uzubrwpczsny
+log w1 t=66485 op=spawn ok
+record seq=609219 payload=pvshwidknttl
+record seq=682517 payload=edmpibpqqkii
+metric m2 v=89.31 tag=r24
+metric m0 v=94.08 tag=r29
+record seq=781345 payload=fixrqqedvrca
+metric m7 v=65.95 tag=r34
+metric m8 v=99.65 tag=r48
+metric m2 v=95.15 tag=r28
+record seq=899533 payload=nbmrmhxkyerr
+metric m8 v=45.97 tag=r24
+metric m5 v=20.8 tag=r25
+record seq=100879 payload=votzpvoxjjwt
+log w0 t=63883 op=spawn ok
+log w0 t=80437 op=spawn ok
+log w4 t=85215 op=spawn ok
+metric m0 v=69.13 tag=r27
+log w2 t=72799 op=spawn ok
+record seq=293602 payload=jhalfxxmsbwa
+record seq=324769 payload=uqwiwkmkjygi
+metric m0 v=42.75 tag=r28
+metric m7 v=20.68 tag=r3
+record seq=572095 payload=trxsgrcccvrs
+record seq=918984 payload=dewivyybewjw
+log w0 t=73906 op=spawn ok
+log w4 t=73006 op=spawn ok
+metric m1 v=89.25 tag=r10
+metric m1 v=14.59 tag=r38
+metric m2 v=86.02 tag=r20
+record seq=844764 payload=dnleyxgbqsna
+metric m3 v=62.02 tag=r46
+metric m0 v=1.76 tag=r47
+metric m6 v=2.65 tag=r46
+record seq=737048 payload=ebqretfntosp
+log w4 t=47961 op=spawn ok
+metric m5 v=19.41 tag=r35
+metric m7 v=76.81 tag=r7
+metric m8 v=78.18 tag=r19
+record seq=476467 payload=mmnlftfkzntv
+record seq=646529 payload=bgtacmccvfhy
+metric m8 v=25.2 tag=r37
+metric m3 v=48.22 tag=r2
+metric m0 v=18.74 tag=r7
+record seq=185525 payload=hwprzpzdcdet
+metric m2 v=39.69 tag=r18
+record seq=294295 payload=dhiiegcjjtkz
+log w3 t=18608 op=spawn ok
+record seq=189048 payload=fmdgsyhucpqb
+metric m5 v=87.97 tag=r21
+record seq=20110 payload=owzsjppggtdc
+metric m5 v=38.47 tag=r3
+log w4 t=50263 op=spawn ok
+log w2 t=32281 op=spawn ok
+log w2 t=5178 op=spawn ok
+record seq=453039 payload=idcnodpqbfmd
+metric m6 v=48.49 tag=r36
+metric m6 v=0.46 tag=r2
+log w3 t=16582 op=spawn ok
+metric m8 v=92.83 tag=r42
+record seq=233259 payload=ulrsdgddfoyy
+record seq=320077 payload=vsuyjxpnvbpj
+record seq=951303 payload=qnqhzkhtuklk
+metric m5 v=31.39 tag=r4
+log w0 t=12925 op=spawn ok
+metric m2 v=74.04 tag=r10
+record seq=500613 payload=sqgpqdtpensy
+record seq=957542 payload=obcxknyoaftz
+metric m2 v=29 tag=r31
+record seq=309895 payload=quhtadegrufc
+record seq=138333 payload=kdpigvvmodqb
+record seq=634812 payload=qniopkiwruay
+record seq=127655 payload=vdjypppirzkb
+metric m1 v=23.45 tag=r7
+log w4 t=27889 op=spawn ok
+metric m5 v=17.67 tag=r23
+record seq=473753 payload=fvomuhhcsqku
+record seq=464273 payload=gbividoxeqnq
+log w3 t=18961 op=spawn ok
+metric m5 v=66.1 tag=r35
+metric m3 v=79.7 tag=r1
+record seq=872480 payload=sczunvjlmamh
+metric m1 v=50.86 tag=r46
+metric m5 v=92.79 tag=r48
+log w0 t=65025 op=spawn ok
+record seq=180593 payload=ztbgbmamyqbo
+log w3 t=80970 op=spawn ok
+log w1 t=61596 op=spawn ok
+record seq=695559 payload=finfncecwsnl
+log w3 t=51211 op=spawn ok
+log w1 t=19393 op=spawn ok
+metric m4 v=47.54 tag=r41
+metric m4 v=44.71 tag=r18
+log w4 t=11821 op=spawn ok
+record seq=938269 payload=oafyrgwszhxp
+metric m0 v=62.56 tag=r24
+metric m1 v=75.87 tag=r41
+log w1 t=8785 op=spawn ok
+metric m3 v=92.83 tag=r1
+record seq=150411 payload=xfzauzlwqvvl
+metric m3 v=24.95 tag=r28
+metric m1 v=38.25 tag=r41
+record seq=670663 payload=ujaxjyzotfdo
+log w0 t=92637 op=spawn ok
+metric m4 v=14.16 tag=r10
+record seq=862194 payload=iyjouvreuryg
+metric m3 v=62.75 tag=r0
+record seq=620493 payload=nxccqixidqrs
+metric m5 v=28.42 tag=r40
+metric m3 v=63.25 tag=r18
+metric m0 v=32.55 tag=r20
+record seq=538624 payload=fiwshopnssug
+metric m0 v=65.12 tag=r23
+record seq=22404 payload=nckizlyfkmbk
+metric m6 v=10.59 tag=r4
+log w2 t=47568 op=spawn ok
+metric m3 v=12.03 tag=r5
+record seq=919045 payload=oafcosbkhxxd
+record seq=335372 payload=ltceclhdcdfy
+log w0 t=22650 op=spawn ok
+record seq=380624 payload=zskkkscvtaag
+record seq=217731 payload=zggbsgzahqly
+log w4 t=62354 op=spawn ok
+record seq=69688 payload=eqnxlmyabzii
+metric m2 v=87.93 tag=r16
+record seq=263426 payload=svynlkyktzmq
+metric m1 v=10.45 tag=r46
+record seq=647006 payload=ghntiargqrvj
+metric m5 v=14.34 tag=r30
+record seq=834712 payload=dqecyatyokud
+metric m4 v=42.74 tag=r11
+log w3 t=73051 op=spawn ok
+record seq=506020 payload=xweuhpklwnph
+metric m7 v=19.53 tag=r23
+log w1 t=52372 op=spawn ok
+log w1 t=47664 op=spawn ok
+metric m4 v=48.1 tag=r22
+metric m8 v=31.74 tag=r26
+metric m7 v=95.72 tag=r16
+log w3 t=98880 op=spawn ok
+metric m6 v=42.15 tag=r17
+metric m6 v=89.59 tag=r8
+record seq=963026 payload=rgtxhfydlpsi
+record seq=259999 payload=lcjzsiyqkmwr
+log w3 t=83128 op=spawn ok
+record seq=366347 payload=iqmqsoqfrzet
+log w1 t=99178 op=spawn ok
+record seq=161469 payload=xkixloabvhbq
+log w1 t=31400 op=spawn ok
+record seq=237248 payload=ksjqtottaitw
+metric m1 v=85.76 tag=r40
+record seq=768581 payload=kmlwblowhopo
+record seq=869394 payload=cywhmodwpdkf
+metric m1 v=58.33 tag=r3
+metric m7 v=16.37 tag=r26
+record seq=159496 payload=uoqxbwhedlqx
+record seq=294464 payload=ioikqoxhlwfj
+metric m1 v=34.74 tag=r39
+metric m1 v=96.57 tag=r47
+log w1 t=66485 op=spawn ok
+metric m4 v=26.26 tag=r29
+metric m0 v=96.37 tag=r29
+metric m4 v=28.88 tag=r38
+record seq=472263 payload=txjhmdussocv
+metric m0 v=46.54 tag=r46
+record seq=134713 payload=zxtxjymhmgvx
+log w2 t=70601 op=spawn ok
+metric m5 v=26.28 tag=r30
+record seq=681079 payload=fwxusnpqxdlq
+log w3 t=74181 op=spawn ok
+record seq=839339 payload=nkueqnwuoqda
+metric m1 v=31.8 tag=r6
+metric m6 v=1.58 tag=r42
+log w3 t=44667 op=spawn ok
+record seq=653978 payload=odjgwrzpvtfx
+metric m5 v=35.35 tag=r0
+record seq=136961 payload=wlqnydnsasws
+record seq=961492 payload=xncknoszelpm
+log w1 t=94983 op=spawn ok
+metric m5 v=85.37 tag=r8
+metric m5 v=43.33 tag=r1
+log w0 t=22954 op=spawn ok
+record seq=158012 payload=rgsdxgzzlyml
+metric m7 v=29.85 tag=r9
+record seq=463013 payload=ahtubanhjmmb
+metric m2 v=82.36 tag=r27
+metric m8 v=70.31 tag=r23
+metric m7 v=25.1 tag=r48
+record seq=719690 payload=jtcsdvcsflkw
+log w3 t=59648 op=spawn ok
+metric m7 v=51.62 tag=r24
+metric m6 v=19.49 tag=r30
+record seq=544237 payload=jmmxdbuaiquf
+record seq=333925 payload=qzmbkdltzwza
+record seq=478438 payload=jzedfetjqvck
+record seq=839985 payload=vbvkfevkgdft
+log w3 t=49260 op=spawn ok
+metric m8 v=10.28 tag=r15
+metric m5 v=34.71 tag=r23
+record seq=995423 payload=mohjqzznpxyb
+record seq=817357 payload=oqztbylcdway
+record seq=89582 payload=iempekspobpd
+metric m2 v=47.42 tag=r35
+metric m4 v=30.04 tag=r14
+record seq=668259 payload=rpksokllisax
+log w2 t=43420 op=spawn ok
+metric m7 v=20.92 tag=r4
+record seq=83137 payload=yexsepkhmqsi
+record seq=515564 payload=xemviedswdib
+log w1 t=20469 op=spawn ok
+record seq=91149 payload=fupsknzjuadv
+log w1 t=56764 op=spawn ok
+metric m8 v=53.18 tag=r9
+metric m3 v=76.31 tag=r39
+record seq=220103 payload=iukcodcuonnb
+record seq=509343 payload=rnlodzxuvtod
+record seq=17113 payload=islaqnbsphfx
+log w0 t=52870 op=spawn ok
+record seq=37851 payload=ldanwxfqziny
+record seq=555307 payload=lkcmvbnlhlyy
+log w1 t=24941 op=spawn ok
+record seq=856108 payload=gbscasmmufjr
+log w2 t=77495 op=spawn ok
+record seq=718723 payload=umyossnawppy
+record seq=902213 payload=kzmhxymlrpaa
+record seq=134861 payload=ucxezmntahoi
+log w0 t=15172 op=spawn ok
+log w4 t=53783 op=spawn ok
+log w1 t=97162 op=spawn ok
+record seq=701428 payload=gwzgjviorwkf
+record seq=678352 payload=kygjqyesptkh
+metric m6 v=47.23 tag=r48
+metric m1 v=12.53 tag=r19
+record seq=294175 payload=afeyrtxmuwkl
+metric m5 v=79.8 tag=r46
+metric m6 v=52.82 tag=r27
+metric m2 v=86.53 tag=r4
+metric m5 v=7.04 tag=r35
+metric m2 v=9.66 tag=r18
+log w0 t=93841 op=spawn ok
+log w1 t=69187 op=spawn ok
+metric m3 v=81.92 tag=r5
+record seq=531410 payload=wbfweqvkwcau
+metric m0 v=66.82 tag=r1
+record seq=189401 payload=eotaljrtsqld
+record seq=178452 payload=gifflfnrkrmy
+log w0 t=71016 op=spawn ok
+log w0 t=24092 op=spawn ok
+record seq=629843 payload=yluwqwflxezt
+metric m7 v=53.65 tag=r0
+record seq=462017 payload=pmqndcnmfmap
+record seq=191012 payload=kcgvojopzctf
+record seq=743805 payload=ohqshorfzlhr
+metric m1 v=62.97 tag=r35
+metric m2 v=57.4 tag=r39
+metric m2 v=58.18 tag=r36
+metric m4 v=90.21 tag=r49
+metric m4 v=74.54 tag=r46
+metric m7 v=91.72 tag=r46
+record seq=333648 payload=hbnedvnwbkyg
+record seq=442576 payload=qxkhsxgurrsl
+record seq=347235 payload=hngsvbangfdt
+metric m5 v=44.25 tag=r25
+log w1 t=81648 op=spawn ok
+metric m2 v=50.73 tag=r20
+record seq=216856 payload=zcnkwlrdepoe
+metric m3 v=66.1 tag=r21
+log w3 t=19318 op=spawn ok
+log w4 t=68984 op=spawn ok
+record seq=336788 payload=epmqjbucqmwz
+metric m1 v=38 tag=r37
+metric m5 v=3.02 tag=r49
+record seq=338758 payload=uvewewflghke
+metric m2 v=98.12 tag=r2
+record seq=129115 payload=ulnuoryzglri
+record seq=677314 payload=lvvqmnwxxefo
+metric m2 v=88.74 tag=r5
+record seq=417669 payload=wxfmuagmyeqt
+record seq=930314 payload=qttklipggxoj
+metric m8 v=13.07 tag=r32
+log w0 t=68821 op=spawn ok
+metric m4 v=75.85 tag=r24
+record seq=17249 payload=vjaorhdkhyvo
