@@ -163,24 +163,19 @@ func anthropicUserBlocks(m Message, vision bool) ([]anthropicContentBlock, error
 			blocks = append(blocks, anthropicContentBlock{Type: "text", Text: p.Text})
 		case PartTypeImage:
 			if !vision {
+				blocks = append(blocks, anthropicContentBlock{Type: "text", Text: imageInputOmittedPlaceholder})
 				continue
 			}
-			if p.Image == nil {
-				return nil, fmt.Errorf("image part with nil Image")
+			url, err := resolveImageURL(p.Image)
+			if err != nil {
+				return nil, err
 			}
 			src := anthropicImageSource{}
-			if p.Image.URL != "" && !strings.HasPrefix(p.Image.URL, "data:") {
-				src = anthropicImageSource{Type: "url", URL: p.Image.URL}
+			if !strings.HasPrefix(url, "data:") {
+				src = anthropicImageSource{Type: "url", URL: url}
 			} else {
-				data := p.Image.Data
-				mediaType := p.Image.MediaType
-				if data == "" && strings.HasPrefix(p.Image.URL, "data:") {
-					mt, d, ok := parseDataURI(p.Image.URL)
-					if ok {
-						mediaType, data = mt, d
-					}
-				}
-				if mediaType == "" || data == "" {
+				mediaType, data, ok := parseDataURI(url)
+				if !ok || mediaType == "" || data == "" {
 					return nil, fmt.Errorf("image part: incomplete Anthropic image source")
 				}
 				src = anthropicImageSource{Type: "base64", MediaType: mediaType, Data: data}
@@ -210,10 +205,8 @@ func anthropicAssistantBlocks(m Message) ([]anthropicContentBlock, error) {
 	}
 	for _, tc := range m.ToolCalls {
 		input := map[string]any{}
-		if strings.TrimSpace(tc.Arguments) != "" {
-			if err := json.Unmarshal([]byte(tc.Arguments), &input); err != nil {
-				return nil, fmt.Errorf("anthropic tool_use %s args: %w", tc.Name, err)
-			}
+		if err := json.Unmarshal([]byte(providerSafeToolArguments(tc.Arguments)), &input); err != nil {
+			return nil, fmt.Errorf("anthropic tool_use %s args: %w", tc.Name, err)
 		}
 		blocks = append(blocks, anthropicContentBlock{Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: input})
 	}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -87,6 +88,10 @@ type CodexProvider struct {
 	http     *http.Client
 	caps     *CapabilityRegistry
 	sampling Sampling
+
+	// imageRejected is endpoint-local evidence learned from an explicit
+	// upstream rejection. It never mutates the shared model catalog.
+	imageRejected atomic.Bool
 
 	// rl holds the most recent rate-limit snapshot parsed from the
 	// HTTP response headers of /responses. The ChatGPT backend

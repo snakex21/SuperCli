@@ -196,7 +196,7 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			rm.ToolCalls = append(rm.ToolCalls, openaiReqToolRef{
 				ID:       tc.ID,
 				Type:     "function",
-				Function: openaiToolFn{Name: tc.Name, Arguments: tc.Arguments},
+				Function: openaiToolFn{Name: tc.Name, Arguments: providerSafeToolArguments(tc.Arguments)},
 			})
 		}
 		req.Messages = append(req.Messages, rm)
@@ -279,6 +279,17 @@ func (p *OpenAIProvider) hasReasoningCapability() bool {
 	return p.caps.HasReasoning(model)
 }
 
+const imageInputOmittedPlaceholder = "[image omitted: current model has no image input]"
+
+func messagesContainImage(msgs []Message) bool {
+	for _, m := range msgs {
+		if m.HasImage() {
+			return true
+		}
+	}
+	return false
+}
+
 func encodeOpenAIContent(m Message, vision bool) (any, error) {
 	// Most local OpenAI-compatible servers (LM Studio, Ollama,
 	// llama.cpp) are happiest with plain string content for
@@ -297,8 +308,19 @@ func encodeOpenAIContent(m Message, vision bool) (any, error) {
 	if !hasImage {
 		var b strings.Builder
 		for _, p := range m.Parts {
-			if p.Type == PartTypeText {
+			switch p.Type {
+			case PartTypeText:
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
 				b.WriteString(p.Text)
+			case PartTypeImage:
+				if !vision {
+					if b.Len() > 0 {
+						b.WriteByte('\n')
+					}
+					b.WriteString(imageInputOmittedPlaceholder)
+				}
 			}
 		}
 		return b.String(), nil
@@ -319,20 +341,12 @@ func encodeOpenAIParts(m Message, vision bool) ([]openaiPart, error) {
 			out = append(out, openaiPart{Type: "text", Text: p.Text})
 		case PartTypeImage:
 			if !vision {
-				// Drop with a no-op part. The warning is sent
-				// at the channel level in Complete().
+				out = append(out, openaiPart{Type: "text", Text: imageInputOmittedPlaceholder})
 				continue
 			}
-			img := p.Image
-			if img == nil {
-				return nil, fmt.Errorf("image part with nil Image")
-			}
-			url := img.URL
-			if url == "" {
-				if img.MediaType == "" || img.Data == "" {
-					return nil, fmt.Errorf("image part: incomplete (need URL or MediaType+Data)")
-				}
-				url = "data:" + img.MediaType + ";base64," + img.Data
+			url, err := resolveImageURL(p.Image)
+			if err != nil {
+				return nil, err
 			}
 			out = append(out, openaiPart{
 				Type:     "image_url",
@@ -343,6 +357,43 @@ func encodeOpenAIParts(m Message, vision bool) ([]openaiPart, error) {
 		}
 	}
 	return out, nil
+}
+
+// isImageRejection reports whether a non-2xx response indicates the
+// upstream refused the image parts in the request body (e.g. a text-only
+// model behind an OpenAI-compatible gateway, which serde-style parsers
+// reject with "unknown variant `image_url`, expected `text`"). Such a
+// request can be retried once with the images stripped; the rejection is
+// also learned so later turns skip the doomed attempt entirely.
+//
+// The match is deliberately narrow: only unambiguous rejection language
+// counts. A 400 that merely mentions image_url for another reason (a
+// malformed or oversized attachment, a bad media type) must NOT mark a
+// vision-capable model as text-only.
+func isImageRejection(status int, body []byte) bool {
+	switch status {
+	case 400, 415, 422:
+	default:
+		return false
+	}
+	low := strings.ToLower(string(body))
+	// serde-style parsers reject the whole body schema: the image part
+	// variant does not exist for this model.
+	if strings.Contains(low, "unknown variant") && strings.Contains(low, "image_url") {
+		return true
+	}
+	// Gateway language for text-only models. Keep this deliberately
+	// specific: "unsupported image format" or "unsupported media type"
+	// describes a bad attachment, not a blind model.
+	return (strings.Contains(low, "image") || strings.Contains(low, "vision") || strings.Contains(low, "multimodal")) && (strings.Contains(low, "image input is not supported") ||
+		strings.Contains(low, "image inputs are not supported") ||
+		strings.Contains(low, "images are not supported by this model") ||
+		strings.Contains(low, "model does not support image") ||
+		strings.Contains(low, "model doesn't support image") ||
+		strings.Contains(low, "model does not support vision") ||
+		strings.Contains(low, "model doesn't support vision") ||
+		strings.Contains(low, "model does not support multimodal") ||
+		strings.Contains(low, "text-only model"))
 }
 
 // --- response chunk ---

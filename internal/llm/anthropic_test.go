@@ -35,6 +35,92 @@ func TestBuildAnthropicRequest_TextToolsThinking(t *testing.T) {
 	}
 }
 
+func TestBuildAnthropicRequest_VisionDisabledReplacesImage(t *testing.T) {
+	body, err := buildAnthropicRequest("text-only", []Message{{
+		Role: RoleUser,
+		Parts: []ContentPart{
+			{Type: PartTypeText, Text: "look"},
+			{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
+		},
+	}}, nil, false, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req anthropicRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Messages) != 1 || len(req.Messages[0].Content) != 2 {
+		t.Fatalf("unexpected messages: %+v", req.Messages)
+	}
+	if got := req.Messages[0].Content[1]; got.Type != "text" || got.Text != imageInputOmittedPlaceholder {
+		t.Fatalf("image replacement = %+v", got)
+	}
+}
+
+func TestAnthropic_UnknownVisionRejectionRetriesAndLearns(t *testing.T) {
+	var requests []string
+	var captured *string
+	srv, captured := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, *captured)
+		if len(requests) == 1 {
+			w.WriteHeader(422)
+			_, _ = w.Write([]byte(`{"error":{"message":"model does not support image input"}}`))
+			return
+		}
+		sseResponse(w,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+			`{"type":"message_stop"}`,
+		)
+	})
+	p, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "custom-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{
+		{Type: PartTypeText, Text: "look"},
+		{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
+	}}}
+	ch, err := p.Complete(context.Background(), msgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawNotice bool
+	for _, d := range drainDeltas(t, ch) {
+		if d.Err != nil {
+			t.Fatalf("unexpected error: %v", d.Err)
+		}
+		if d.Notice != "" {
+			sawNotice = true
+		}
+	}
+	if !sawNotice || len(requests) != 2 {
+		t.Fatalf("retry notice=%v requests=%d", sawNotice, len(requests))
+	}
+	if !strings.Contains(requests[0], `"type":"image"`) {
+		t.Fatalf("first request did not try image input: %s", requests[0])
+	}
+	if strings.Contains(requests[1], `"type":"image"`) || !strings.Contains(requests[1], imageInputOmittedPlaceholder) {
+		t.Fatalf("fallback request did not replace image: %s", requests[1])
+	}
+
+	// The rejection is remembered only by this provider instance, so the next
+	// turn skips the doomed image attempt and makes exactly one request.
+	ch, err = p.Complete(context.Background(), msgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range drainDeltas(t, ch) {
+		if d.Err != nil {
+			t.Fatalf("unexpected learned-path error: %v", d.Err)
+		}
+	}
+	if len(requests) != 3 || strings.Contains(requests[2], `"type":"image"`) || !strings.Contains(requests[2], imageInputOmittedPlaceholder) {
+		t.Fatalf("learned text-only path wrong: %+v", requests)
+	}
+}
+
 func TestNormalizeAnthropicBaseURL(t *testing.T) {
 	cases := map[string]string{
 		"https://api.anthropic.com/v1":           "https://api.anthropic.com/v1",

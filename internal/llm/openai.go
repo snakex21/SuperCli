@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -68,6 +69,11 @@ type OpenAIProvider struct {
 	cfg  OpenAIConfig
 	http *http.Client
 	caps *CapabilityRegistry
+	// imageRejected is transport-local evidence that this exact provider
+	// instance rejected OpenAI image parts. Keep it out of the shared
+	// capability registry: a broken/mismatched gateway must not globally
+	// mark the same model id as text-only for other providers.
+	imageRejected atomic.Bool
 	// cachePrompt: resolved from cfg.CachePrompt (explicit) or
 	// isLocalBaseURL (auto). See OpenAIConfig.CachePrompt.
 	cachePrompt bool
@@ -176,14 +182,28 @@ func isLocalBaseURL(baseURL string) bool {
 // Name implements Provider. Returns the configured model id.
 func (p *OpenAIProvider) Name() string { return p.cfg.Model }
 
-// SupportsVision returns true when the model is known to handle
-// image inputs.
+// SupportsVision reports whether this configured model is safe to try with
+// image input. A provider-discovered/configured model whose modalities are
+// still unknown remains optimistic; a completely absent model stays false
+// here so capability UIs do not claim support out of thin air. Complete is
+// slightly more permissive and also tries a completely unknown model.
 func (p *OpenAIProvider) SupportsVision() bool {
+	model := p.capabilityModel()
+	if _, ok := p.caps.Get(model); !ok {
+		return false
+	}
+	return p.caps.AllowsVisionAttempt(model)
+}
+
+// capabilityModel returns the model id used as the capability-registry
+// key: an explicit CapabilityModel when set (opencode gateway wrappers
+// register the prefixed id), else the wire model id.
+func (p *OpenAIProvider) capabilityModel() string {
 	model := strings.TrimSpace(p.cfg.CapabilityModel)
 	if model == "" {
 		model = p.cfg.Model
 	}
-	return p.caps.AllowsVisionAttempt(model)
+	return model
 }
 
 // Complete implements Provider.
@@ -201,10 +221,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	}
 
 	reasoningFormat := p.reasoningFormat()
-	// Always forward image parts. Provider catalogs are useful as hints for
-	// the UI, but they are incomplete and must never decide what the selected
-	// model is allowed to receive. The upstream API remains authoritative.
-	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, true, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+	// Known text-only metadata blocks image parts before the request leaves
+	// SuperCli. Unknown capability metadata is tried optimistically; if the
+	// upstream then rejects image input, the transport-local learning below
+	// retries once without images and skips the doomed attempt on later turns.
+	visionAttempt := p.caps.AllowsVisionAttempt(p.capabilityModel()) && !p.imageRejected.Load()
+	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -240,6 +262,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// cancel immediately so no context leaks across the retry loop.
 		var streamCancel func()
 		effortRetried := false
+		visionRetried := false
 		for {
 			reqCtx, cancel := context.WithCancel(ctx)
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(reqBody))
@@ -277,6 +300,24 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				if patched, patchedOK := patchOpenAIReasoning(reqBody, effort, reasoningFormat); patchedOK {
 					reqBody = patched
 					effortRetried = true
+					continue
+				}
+			}
+			// The upstream refused the image parts (text-only model behind
+			// an OpenAI-compatible gateway). Learn the rejection so later
+			// turns skip images entirely, rebuild the request without them
+			// and retry once — the conversation survives instead of dying
+			// on a 400.
+			if visionAttempt && !visionRetried && messagesContainImage(msgs) && isImageRejection(resp.StatusCode, body) {
+				p.imageRejected.Store(true)
+				reqBody, err = buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+				if err == nil {
+					visionRetried = true
+					select {
+					case out <- Delta{Notice: fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model)}:
+					case <-ctx.Done():
+						return
+					}
 					continue
 				}
 			}

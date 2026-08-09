@@ -121,21 +121,25 @@ func (r *CapabilityRegistry) HasVision(id string) bool {
 }
 
 // AllowsVisionAttempt reports whether an image should be sent to the
-// provider. Authoritative text-only metadata blocks it. A dynamically
-// discovered provider model with no modality metadata is tried
-// optimistically, so an incomplete /models response cannot disable real
-// vision support. Curated seed/catalog entries remain strict.
+// provider. Only authoritative text-only metadata blocks the attempt.
+// Missing models and dynamically discovered models without modality
+// metadata are unknown, not text-only, so they are tried optimistically.
+// Curated seed/catalog entries remain strict when they explicitly encode
+// Vision=false (older curated entries predate VisionKnown).
 func (r *CapabilityRegistry) AllowsVisionAttempt(id string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	m, ok := r.models[id]
 	if !ok {
-		return false
+		return true
 	}
 	if m.Vision {
 		return true
 	}
-	return !m.VisionKnown && m.Source == SourceProvider
+	if m.VisionKnown {
+		return false
+	}
+	return m.Source == SourceProvider
 }
 
 // HasToolUse reports whether the model supports

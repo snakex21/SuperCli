@@ -60,8 +60,11 @@ func TestCapabilityRegistry_AllowsVisionAttemptForUnknownProviderMetadata(t *tes
 	if !r.AllowsVisionAttempt("dynamic-vision") {
 		t.Fatal("advertised vision model should accept image input")
 	}
-	if r.AllowsVisionAttempt("curated-text") || r.AllowsVisionAttempt("missing") {
-		t.Fatal("curated text and missing models should remain strict")
+	if r.AllowsVisionAttempt("curated-text") {
+		t.Fatal("curated text-only metadata should remain strict")
+	}
+	if !r.AllowsVisionAttempt("missing") {
+		t.Fatal("missing capability metadata should be tried optimistically")
 	}
 }
 
