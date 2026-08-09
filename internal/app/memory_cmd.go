@@ -28,6 +28,8 @@ func storeOrNil(s *memory.Store) tools.MemoryKeeper {
 //	/memory             — overview (recent entries, DB sizes, embeddings)
 //	/memory search <q>  — hybrid search across project + global stores
 //	/memory forget <id> — delete an entry from whichever store has it
+//	/memory tidy        — remove junk (non-facts) and consolidate
+//	                      near-identical preference/fact entries
 func memoryCommand(ctx context.Context, project, global *memory.Store, briefing, args string) (string, error) {
 	if project == nil && global == nil {
 		return "memory: no store available (open failed at startup — see logs)", nil
@@ -36,6 +38,8 @@ func memoryCommand(ctx context.Context, project, global *memory.Store, briefing,
 	switch {
 	case args == "":
 		return memoryOverview(project, global, briefing), nil
+	case args == "tidy":
+		return memoryTidy(project, global), nil
 	case strings.HasPrefix(args, "search "):
 		q := strings.TrimSpace(strings.TrimPrefix(args, "search "))
 		if q == "" {
@@ -49,8 +53,40 @@ func memoryCommand(ctx context.Context, project, global *memory.Store, briefing,
 		}
 		return memoryForget(project, global, id), nil
 	default:
-		return "usage: /memory | /memory search <query> | /memory forget <id>", nil
+		return "usage: /memory | /memory search <query> | /memory forget <id> | /memory tidy", nil
 	}
+}
+
+// memoryTidy runs DedupSimilar over both stores and reports how
+// many junk/near-duplicate entries were removed.
+func memoryTidy(project, global *memory.Store) string {
+	var b strings.Builder
+	total := 0
+	tidy := func(label string, s *memory.Store) {
+		if s == nil {
+			return
+		}
+		n, err := s.DedupSimilar()
+		if err != nil {
+			fmt.Fprintf(&b, "%s: tidy failed: %v\n", label, err)
+			return
+		}
+		fmt.Fprintf(&b, "%s: removed %d junk/duplicate entr%s\n", label, n, plural(n))
+		total += n
+	}
+	tidy("project", project)
+	tidy("global", global)
+	if total == 0 {
+		return "memory tidy: nothing to remove — store is already clean"
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 func memoryOverview(project, global *memory.Store, briefing string) string {
@@ -96,7 +132,7 @@ func memoryOverview(project, global *memory.Store, briefing string) string {
 			fmt.Fprintf(&b, "\nknown projects: %d\n", len(cards))
 		}
 	}
-	b.WriteString("\n/memory search <query> · /memory forget <id>\n")
+	b.WriteString("\n/memory search <query> · /memory forget <id> · /memory tidy\n")
 	return b.String()
 }
 

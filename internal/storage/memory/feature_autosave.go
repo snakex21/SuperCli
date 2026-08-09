@@ -198,17 +198,19 @@ func splitUserFacts(summary string) (string, []string) {
 
 // saveUserFacts writes durable user facts to the GLOBAL store as
 // preference entries (the briefing always shows global
-// preferences), skipping facts that already have an identical or
-// near-identical entry.
+// preferences), skipping junk facts and facts that already have
+// an identical or semantically near-identical entry.
 func (a *AutoSaver) saveUserFacts(facts []string) {
 	if a == nil || a.Global == nil || len(facts) == 0 {
 		return
 	}
 	existing := map[string]struct{}{}
+	var existingRaw []string
 	for _, scope := range []string{ScopePreference, ScopeFact} {
 		if entries, err := a.Global.Recent(scope, 100); err == nil {
 			for _, e := range entries {
 				existing[normalizeFact(e.Content)] = struct{}{}
+				existingRaw = append(existingRaw, e.Content)
 			}
 		}
 	}
@@ -217,11 +219,14 @@ func (a *AutoSaver) saveUserFacts(facts []string) {
 		if f == "" || len(f) > 500 {
 			continue
 		}
+		if junkFact(f) {
+			continue // "not explicitly stated", gratitude, guesses — never durable
+		}
 		norm := normalizeFact(f)
 		if _, dup := existing[norm]; dup {
 			continue
 		}
-		if containsSimilar(existing, norm) {
+		if containsSimilar(existingRaw, f) {
 			continue
 		}
 		_ = a.Global.Put(Entry{
@@ -231,6 +236,7 @@ func (a *AutoSaver) saveUserFacts(facts []string) {
 			Source:  SourceAgent,
 		})
 		existing[norm] = struct{}{}
+		existingRaw = append(existingRaw, f)
 	}
 }
 
@@ -247,20 +253,98 @@ func normalizeFact(s string) string {
 	return b.String()
 }
 
-// containsSimilar reports whether an existing normalized entry
-// contains (or is contained by) the candidate — a cheap "very
-// similar" check that needs no embeddings.
-func containsSimilar(existing map[string]struct{}, norm string) bool {
-	if len(norm) < 8 {
-		return false
-	}
-	for e := range existing {
-		if len(e) < 8 {
-			continue
-		}
-		if strings.Contains(e, norm) || strings.Contains(norm, e) {
+// containsSimilar reports whether any existing raw fact text is
+// semantically near-identical to the candidate — a cheap
+// token-overlap check that needs no embeddings. Delegates the
+// actual similarity rule to similarFact (feature_tidy.go) so the
+// autosave and the on-demand tidy sweep never drift apart.
+func containsSimilar(existingRaw []string, raw string) bool {
+	for _, e := range existingRaw {
+		if similarFact(e, raw) {
 			return true
 		}
 	}
 	return false
+}
+
+// junkFact reports whether a candidate fact is not durable enough
+// to store: the model explicitly said it does not know, it is a
+// guess, or it is conversational filler (gratitude) rather than a
+// standing fact about the user.
+func junkFact(s string) bool {
+	t := strings.ToLower(strings.TrimSpace(s))
+	for _, frag := range []string{
+		"not explicitly stated", "not stated", "not mentioned",
+		"not provided", "not specified", "not known", "not clear",
+		"unknown", "unable to", "could not determine",
+		"cannot determine", "cannot be determined", "no information",
+		"no mention", "appears to", "seems to", "likely", "probably",
+		"maybe", "perhaps", "possibly", "gratitude", "thanks",
+		"thank you", "dziękuję", "dziekuje", "thx", "welcome",
+	} {
+		if strings.Contains(t, frag) {
+			return true
+		}
+	}
+	// Pure filler like "The user expressed gratitude with ..." or
+	// trailing sign-off phrases are never durable facts.
+	if len(factTokens(t)) == 0 {
+		return true
+	}
+	return false
+}
+
+// factStopwords are the words that carry no identifying meaning
+// for a short fact ("the user prefers Polish" == "user prefers
+// Polish"). Kept deliberately small: over-filtering would merge
+// genuinely distinct facts ("works on SuperCli" vs "works on Go").
+var factStopwords = map[string]bool{
+	"the": true, "a": true, "an": true, "is": true, "are": true,
+	"was": true, "were": true, "be": true, "been": true, "being": true,
+	"has": true, "have": true, "had": true, "does": true, "do": true,
+	"to": true, "in": true, "on": true, "at": true, "of": true,
+	"for": true, "and": true, "or": true, "but": true, "with": true,
+	"from": true, "by": true, "as": true, "it": true, "this": true,
+	"that": true, "their": true, "his": true, "her": true, "they": true,
+	"he": true, "she": true, "we": true, "you": true, "i": true,
+	"my": true, "me": true, "our": true, "us": true, "user": true,
+	"users": true, "name": true, "communicates": true,
+	// Modal / hedge words carry no identifying meaning either:
+	// "prefers to communicate in Polish" == "communicates primarily
+	// in Polish" — only the topic word "polish" identifies the fact.
+	"prefers": true, "preferred": true, "prefer": true,
+	"primarily": true, "mainly": true, "mostly": true,
+	"generally": true, "usually": true,
+	// Polish equivalents of the common-filler set.
+	"użytkownik": true, "uzytkownik": true, "ma": true, "na": true,
+	"imię": true, "imie": true, "w": true, "z": true,
+	"że": true, "ze": true, "się": true, "sie": true,
+	"jest": true, "dla": true, "po": true, "jak": true,
+}
+
+// factTokens splits a normalized fact into its identifying words:
+// lower-cased, non-alphanumeric stripped, stopwords removed,
+// tokens shorter than 3 chars dropped. "theusersnameismaks"
+// becomes [maks].
+func factTokens(norm string) []string {
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		t := strings.TrimSpace(cur.String())
+		cur.Reset()
+		if len(t) < 3 || factStopwords[t] {
+			return
+		}
+		out = append(out, t)
+	}
+	for _, r := range strings.ToLower(norm) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			cur.WriteRune(r)
+		default:
+			flush()
+		}
+	}
+	flush()
+	return out
 }
