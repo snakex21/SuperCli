@@ -29,16 +29,40 @@ var (
 // everything from the tag onward (truncated stream). Returns the input
 // unchanged when no reasoning marker is present (fast path).
 func stripThinking(s string) string {
+	plain, _ := captureThinking(s)
+	return plain
+}
+
+// captureThinking is the single-string core of the strip: it removes
+// reasoning blocks and returns (plain, captured). captured keeps the
+// original tags — closed blocks verbatim, an unclosed opening tag
+// captures the truncated remainder — so the loop can hand the
+// reasoning back to the model on the next request instead of throwing
+// it away (SUPERCLI_KEEP_THINKING).
+func captureThinking(s string) (plain, captured string) {
 	low := strings.ToLower(s)
 	if !strings.Contains(low, "<think") && !strings.Contains(low, "<reasoning") && !strings.Contains(low, "<reflection") {
-		return s
+		return s, ""
 	}
-	s = thinkBlockRe.ReplaceAllString(s, "")
-	s = thinkOpenRe.ReplaceAllString(s, "")
-	for strings.Contains(s, "\n\n\n") {
-		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	var kept, taken strings.Builder
+	last := 0
+	for _, m := range thinkBlockRe.FindAllStringSubmatchIndex(s, -1) {
+		kept.WriteString(s[last:m[0]])
+		taken.WriteString(s[m[0]:m[1]])
+		taken.WriteByte('\n')
+		last = m[1]
 	}
-	return strings.TrimSpace(s)
+	kept.WriteString(s[last:])
+	plain = kept.String()
+	// Unclosed opening tag (truncated stream): capture from the tag on.
+	if open := thinkOpenRe.FindStringIndex(plain); open != nil {
+		taken.WriteString(plain[open[0]:])
+		plain = plain[:open[0]]
+	}
+	for strings.Contains(plain, "\n\n\n") {
+		plain = strings.ReplaceAll(plain, "\n\n\n", "\n\n")
+	}
+	return strings.TrimSpace(plain), strings.TrimSpace(taken.String())
 }
 
 // stripThinkingFromMessage returns a copy of msg with reasoning blocks
@@ -47,8 +71,24 @@ func stripThinking(s string) string {
 // messages carry reasoning, so callers should gate on role; this
 // function is safe to call on any message regardless.
 func stripThinkingFromMessage(msg llm.Message) llm.Message {
+	_, plain := captureThinkingFromMessage(msg)
+	return plain
+}
+
+// captureThinkingFromMessage is stripThinkingFromMessage plus the
+// captured reasoning: it returns the stripped blocks (concatenated
+// across Content and text Parts, in order) and the plain provider-
+// facing copy. The loop stores the captured text on l.lastThinking so
+// the next request can continue from the previous chain of thought.
+func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
+	var buf strings.Builder
+	strip := func(s string) string {
+		plain, captured := captureThinking(s)
+		buf.WriteString(captured)
+		return plain
+	}
 	if msg.Content != "" {
-		msg.Content = stripThinking(msg.Content)
+		msg.Content = strip(msg.Content)
 	}
 	if len(msg.Parts) > 0 {
 		// Strip text parts and drop any that become empty. A turn whose
@@ -59,7 +99,7 @@ func stripThinkingFromMessage(msg llm.Message) llm.Message {
 		parts := make([]llm.ContentPart, 0, len(msg.Parts))
 		for _, p := range msg.Parts {
 			if p.Type == llm.PartTypeText {
-				p.Text = stripThinking(p.Text)
+				p.Text = strip(p.Text)
 				if p.Text == "" {
 					continue
 				}
@@ -77,5 +117,5 @@ func stripThinkingFromMessage(msg llm.Message) llm.Message {
 	if msg.Role == llm.RoleAssistant && msg.Content == "" && len(msg.Parts) == 0 && len(msg.ToolCalls) == 0 {
 		msg.Content = "[no visible answer]"
 	}
-	return msg
+	return buf.String(), msg
 }

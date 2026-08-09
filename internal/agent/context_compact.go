@@ -26,11 +26,18 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 	}
 	// Strip reasoning from resumed assistant turns so the live history
 	// stays consistent with fresh turns (prior chain-of-thought is not
-	// context). The session store still holds the full text.
+	// context). The session store still holds the full text; when
+	// retention is on, the last resumed turn's thinking becomes the
+	// first request's tail so a resumed session continues its reasoning
+	// instead of restarting it.
 	cleaned := make([]llm.Message, len(msgs))
 	for i, m := range msgs {
 		if m.Role == llm.RoleAssistant {
-			cleaned[i] = stripThinkingFromMessage(m)
+			thinking, plain := captureThinkingFromMessage(m)
+			if l.keepThinking && thinking != "" {
+				l.lastThinking = thinking
+			}
+			cleaned[i] = plain
 		} else {
 			cleaned[i] = m
 		}

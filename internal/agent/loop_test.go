@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -24,6 +27,7 @@ type stubProvider struct {
 	scripts  [][]llm.Delta // one script per call
 	calls    int32
 	onCalled func(call int)
+	reqs     [][]llm.Message // every Complete receives this; tests use it to inspect wire requests
 }
 
 func (p *stubProvider) Name() string { return p.name }
@@ -34,6 +38,7 @@ func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, _ []llm
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	p.reqs = append(p.reqs, msgs)
 	if len(p.scripts) == 0 {
 		ch := make(chan llm.Delta, 1)
 		go func() {
@@ -74,7 +79,7 @@ type captureProvider struct {
 	toolCount int
 }
 
-func TestLoop_DirectImageIsAvailableForOneRunOnly(t *testing.T) {
+func TestLoop_DirectImagePixelsAreSentOnceThenBecomeDormant(t *testing.T) {
 	p := &captureProvider{name: "qwen3.5-9b-custom"}
 	l := makeLoop(t, p, tools.NewRegistry(), "system")
 	l.SetNextUserAddon("attachment: scan.png")
@@ -99,11 +104,28 @@ func TestLoop_DirectImageIsAvailableForOneRunOnly(t *testing.T) {
 		t.Fatalf("direct image text = %q", delivered.Parts[0].Text)
 	}
 
-	// After the Run, the live loop retains only lightweight text. A later turn
-	// cannot resend or re-count the old base64 payload.
+	// After the first provider call the image remains addressable in history but
+	// is dormant, so it cannot be resent automatically on later turns.
+	var dormant *llm.ImageRef
 	for _, message := range l.Messages {
+		for _, part := range message.Parts {
+			if part.Type == llm.PartTypeImage && part.Image != nil {
+				dormant = part.Image
+			}
+		}
+	}
+	if dormant == nil || dormant.Active {
+		t.Fatalf("image should remain dormant after first call: %+v", dormant)
+	}
+
+	ch, err = l.Run(context.Background(), "a teraz dalej?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, ch)
+	for _, message := range p.messages {
 		if message.HasImage() {
-			t.Fatalf("image payload survived completed Run: %+v", message)
+			t.Fatalf("old image pixels were resent on later turn: %+v", p.messages)
 		}
 	}
 }
@@ -810,7 +832,178 @@ func (p *uniqueNoopProvider) Complete(ctx context.Context, _ []llm.Message, _ []
 	return ch, nil
 }
 
+type externalizingWriter struct {
+	calls     int
+	path      string
+	id        string
+	persisted []llm.Message
+}
 
+func (w *externalizingWriter) AppendMessage(_ context.Context, msg llm.Message) error {
+	w.persisted = append(w.persisted, msg)
+	return nil
+}
+func (w *externalizingWriter) UpdateUsage(int, int) error { return nil }
+func (w *externalizingWriter) ExternalizeImage(_ context.Context, mediaType string, data []byte) (llm.ImageRef, error) {
+	w.calls++
+	id := w.id
+	if id == "" {
+		id = "img_test000001"
+	}
+	return llm.ImageRef{MediaType: mediaType, Path: w.path, ID: id}, nil
+}
+
+func TestLoop_DormantSessionImageReloadsOnDemandAfterModelSwitch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "car.png")
+	pixels := []byte("fake-car-image-bytes")
+	if err := os.WriteFile(path, pixels, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const imageID = "img_car0000001"
+
+	first := &stubProvider{
+		name: "blind-model",
+		scripts: [][]llm.Delta{{
+			{Role: llm.RoleAssistant, Content: "nie widzę obrazu"},
+			{FinishReason: "stop"},
+		}},
+	}
+	reg := tools.NewRegistry()
+	l := makeLoop(t, first, reg, "")
+	w := &externalizingWriter{path: path, id: imageID}
+	l.writer = w
+	l.SetNextUserImages([]llm.ImageRef{{
+		MediaType: "image/png",
+		Data:      base64.StdEncoding.EncodeToString(pixels),
+		Name:      "car.png",
+	}})
+	ch, err := l.Run(context.Background(), "co jest na zdjęciu?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, ch)
+
+	var stored *llm.ImageRef
+	for _, msg := range l.Messages {
+		for _, part := range msg.Parts {
+			if part.Type == llm.PartTypeImage && part.Image != nil && part.Image.ID == imageID {
+				stored = part.Image
+			}
+		}
+	}
+	if stored == nil || stored.Active || stored.Path != path || stored.Data != "" {
+		t.Fatalf("durable image state = %+v", stored)
+	}
+	for _, msg := range w.persisted {
+		for _, part := range msg.Parts {
+			if part.Type == llm.PartTypeImage && part.Image != nil && part.Image.Active {
+				t.Fatalf("active image persisted to session: %+v", part.Image)
+			}
+		}
+	}
+
+	second := &stubProvider{
+		name: "vision-model",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "load1", Name: sessionImageToolName, Arguments: `{"id":"` + imageID + `"}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "to auto"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	l.SetModel(second)
+	ch, err = l.Run(context.Background(), "wróć do tego zdjęcia")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, ch)
+
+	if len(second.reqs) < 2 {
+		t.Fatalf("vision model requests = %d, want at least 2", len(second.reqs))
+	}
+	if requestHasImage(second.reqs[0]) {
+		t.Fatalf("dormant image was resent before loader request: %+v", second.reqs[0])
+	}
+	if !requestContainsText(second.reqs[0], imageID) || !requestContainsText(second.reqs[0], sessionImageToolName) {
+		t.Fatalf("dormant image marker missing from request: %+v", second.reqs[0])
+	}
+	if !requestHasImage(second.reqs[1]) {
+		t.Fatalf("reloaded image pixels missing from next request: %+v", second.reqs[1])
+	}
+}
+
+func requestHasImage(msgs []llm.Message) bool {
+	for _, msg := range msgs {
+		if msg.HasImage() {
+			return true
+		}
+	}
+	return false
+}
+
+func requestContainsText(msgs []llm.Message, needle string) bool {
+	for _, msg := range msgs {
+		if strings.Contains(msg.Content, needle) {
+			return true
+		}
+		for _, part := range msg.Parts {
+			if part.Type == llm.PartTypeText && strings.Contains(part.Text, needle) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestLoop_ToolImageExternalizedOutOfHistory(t *testing.T) {
+	p := &stubProvider{
+		name: "m",
+		scripts: [][]llm.Delta{
+			{
+				{Role: llm.RoleAssistant},
+				{ToolCall: &llm.ToolCall{ID: "c1", Name: "snap", Arguments: `{}`}},
+				{FinishReason: "tool_calls"},
+			},
+			{
+				{Role: llm.RoleAssistant, Content: "saw it"},
+				{FinishReason: "stop"},
+			},
+		},
+	}
+	reg := tools.NewRegistry()
+	png := []byte{0x89, 'P', 'N', 'G', 1, 2, 3}
+	reg.MustRegister(tools.Tool{
+		Name: "snap", Description: "n", Schema: "{}",
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "captured", Image: &tools.ImageContent{MediaType: "image/png", Data: png}}, nil
+		},
+	})
+	l := makeLoop(t, p, reg, "")
+	w := &externalizingWriter{path: "session-media/tool.png"}
+	l.writer = w
+	ch, _ := l.Run(context.Background(), "snap")
+	drainEvents(t, ch)
+
+	if w.calls != 1 {
+		t.Fatalf("externalizer calls = %d, want 1", w.calls)
+	}
+	for _, m := range l.Messages {
+		if !m.HasImage() {
+			continue
+		}
+		img := m.Parts[len(m.Parts)-1].Image
+		if img == nil || img.Path != w.path || img.Data != "" {
+			t.Fatalf("tool image stayed inline instead of file-backed: %+v", img)
+		}
+		return
+	}
+	t.Fatal("expected file-backed tool image in history")
+}
 
 func TestLoop_ToolImageAttachedAsUserMessage(t *testing.T) {
 	p := &stubProvider{
