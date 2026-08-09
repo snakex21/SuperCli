@@ -86,10 +86,13 @@ func (t *Tracker) DiffOutput() string {
 	if len(t.changes) == 0 {
 		return ""
 	}
+	var totalAdd, totalDel int
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("_[%d file change(s) in session]_\n\n", len(t.changes)))
 	for i, c := range t.changes {
-		header := fmt.Sprintf("--- %s (%s)", c.Path, c.Op)
+		added, removed := countLines(c.New), countLines(c.Old)
+		totalAdd += added
+		totalDel += removed
+		header := fmt.Sprintf("--- %s (%s)%s", c.Path, c.Op, lineStats(added, removed))
 		if i > 0 {
 			b.WriteString("\n")
 		}
@@ -104,7 +107,31 @@ func (t *Tracker) DiffOutput() string {
 			b.WriteString("+ " + l + "\n")
 		}
 	}
-	return b.String()
+	return fmt.Sprintf("_[%d file change(s) in session | %s]_\n\n%s",
+		len(t.changes), lineStats(totalAdd, totalDel), b.String())
+}
+
+// lineStats formats an added/removed line counter, omitting zero sides:
+// "[+12 -3]", "[+5]", "[-2]", or "" when nothing changed.
+func lineStats(added, removed int) string {
+	switch {
+	case added == 0 && removed == 0:
+		return ""
+	case added == 0:
+		return fmt.Sprintf(" [-%d]", removed)
+	case removed == 0:
+		return fmt.Sprintf(" [+%d]", added)
+	default:
+		return fmt.Sprintf(" [+%d -%d]", added, removed)
+	}
+}
+
+// countLines returns the number of lines in text; empty text has 0.
+func countLines(text string) int {
+	if text == "" {
+		return 0
+	}
+	return strings.Count(text, "\n") + 1
 }
 
 // truncateLines returns at most n lines from text.
