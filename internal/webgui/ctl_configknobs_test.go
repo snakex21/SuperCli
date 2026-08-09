@@ -57,7 +57,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		"orchestrator", "allow_all", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin_parallel", "task_parallel",
 		"memory_briefing_tokens", "task_max_steps", "task_max_tokens",
-		"task_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
+		"task_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
 		"noop_gate", "preflight_repo", "draft_verify",
 		"draft_verify_max_rounds", "verify_commands",
 		"default_model", "default_provider",

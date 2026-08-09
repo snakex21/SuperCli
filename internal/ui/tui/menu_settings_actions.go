@@ -181,6 +181,8 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 	switch key {
 	case "task_model":
 		return c.TaskModel
+	case "orchestrator_model":
+		return c.OrchestratorModel
 	case "compact_model":
 		return c.CompactModel
 	case "verify_commands":
@@ -204,6 +206,8 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 		switch r.key {
 		case "task_model":
 			c.TaskModel = buf
+		case "orchestrator_model":
+			c.OrchestratorModel = buf
 		case "compact_model":
 			c.CompactModel = buf
 		case "verify_commands":

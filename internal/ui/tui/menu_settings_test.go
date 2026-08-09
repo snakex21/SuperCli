@@ -185,10 +185,15 @@ func TestSettings_ResetRemovesKey(t *testing.T) {
 	if cfg := loadCfg(t, m); cfg.Orchestrator != nil {
 		t.Fatalf("orchestrator key should be gone after reset, got %v", *cfg.Orchestrator)
 	}
-	// And the raw file must no longer carry the line.
+	// And the raw file must no longer carry an active orchestrator line
+	// (the bool is dropped entirely; orchestrator_model="" stays as the
+	// zero sentinel, exactly like task_model="" after reset).
 	raw, _ := os.ReadFile(m.settingsGlobalPath())
-	if strings.Contains(string(raw), "orchestrator") {
-		t.Errorf("config.toml still mentions orchestrator:\n%s", raw)
+	if strings.Contains(string(raw), "orchestrator =") {
+		t.Errorf("config.toml still mentions orchestrator =\n%s", raw)
+	}
+	if cfg := loadCfg(t, m); cfg.OrchestratorModel != "" {
+		t.Errorf("orchestrator_model should be empty after reset, got %q", cfg.OrchestratorModel)
 	}
 }
 

@@ -71,6 +71,14 @@ func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (conf
 	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.TaskModel), "task_model", tomlCfg, cfg)
 }
 
+// resolveOrchestratorModelConfig maps orchestrator_model onto the provider
+// config used by the COORDINATOR (main loop). Same "model" or
+// "provider/model" contract as task_model; empty or same-as-main returns
+// no override so the main model keeps coordinating.
+func resolveOrchestratorModelConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.OrchestratorModel), "orchestrator_model", tomlCfg, cfg)
+}
+
 func resolveCompactConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
 	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.CompactModel), "compact_model", tomlCfg, cfg)
 }

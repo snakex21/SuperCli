@@ -64,6 +64,7 @@ func knobDefs() []knobDef {
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
+		{"orchestrator_model", "coordinator model/host (\"model\" or \"provider/model\"; empty = the main model coordinates; pair with task_model for a two-model setup)", knobText, true},
 		{"compact_model", "optional model/host for context summaries (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
 		{"fallback_models", "ordered opt-in main-model failover list; semicolon-separated provider/model references", knobText, true},
 		{"fallback_cooldown_seconds", "seconds to skip a backend that failed before first output", knobInt, true},
@@ -131,6 +132,11 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (coordinator's model)", "default", ""
 		}
 		return c.TaskModel, "manual", c.TaskModel
+	case "orchestrator_model":
+		if strings.TrimSpace(c.OrchestratorModel) == "" {
+			return "default (main model)", "default", ""
+		}
+		return c.OrchestratorModel, "manual", c.OrchestratorModel
 	case "compact_model":
 		if strings.TrimSpace(c.CompactModel) == "" {
 			return "default (active model)", "default", ""

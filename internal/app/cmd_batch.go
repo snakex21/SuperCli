@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -76,12 +77,44 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		fatal("build provider", err)
 	}
 	execProfile := execution.Resolve(cfg, tomlCfg, caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
+	// Orchestrator mode (hard delegation): resolved here so the loop is
+	// built with the right contract (task as a schema-carrying core tool)
+	// and the system prompt carries the orchestrator preamble. Same
+	// resolution and env overrides as the TUI path.
+	orchMode := resolveOrchestratorMode(tomlCfg.Orchestrator)
+	if envTruthy("SUPERCLI_ORCHESTRATOR") {
+		orchMode = orchestratorAlways
+	}
+	if envFalsey("SUPERCLI_ORCHESTRATOR") {
+		orchMode = orchestratorNever
+	}
+	orchHard := orchMode.hard()
 	learned := llm.LoadLearnedLimits(dataDir)
 	modelContexts := config.LoadModelContextStore(dataDir)
 	contextProvider := config.RuntimeProviderName(tomlCfg, cfg)
 	var compactProvider llm.Provider
 	if compactCfg, ok := resolveCompactConfig(tomlCfg, cfg); ok {
 		compactProvider, _ = provFactory.Build(compactCfg, llm.PurposeCompact)
+	}
+
+	// orchestrator_model: the coordinator (main loop) may run on a
+	// different model than the chat default — the counterpart of
+	// task_model, which routes the workers. Built before the loop so
+	// the main provider slot carries the orchestrator.
+	orchCfg, orchOverride := resolveOrchestratorModelConfig(tomlCfg, cfg)
+	var orchestratorProvider llm.Provider
+	if orchOverride {
+		op, opErr := provFactory.Build(orchCfg, llm.PurposeMain)
+		if opErr != nil {
+			log.Printf("orchestrator_model: coordinator provider %q build failed: %v — using the main provider", tomlCfg.OrchestratorModel, opErr)
+		} else {
+			orchestratorProvider = op
+			log.Printf("orchestrator_model: coordinator uses %q @ %s", op.Name(), orchCfg.BaseURL)
+		}
+	}
+	mainProvider := p
+	if orchestratorProvider != nil {
+		mainProvider = orchestratorProvider
 	}
 
 	// Build the agent loop.
@@ -147,12 +180,18 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if instructions := prompt.ActiveUserInstructions(dataDir); instructions != "" {
 		systemPrompt += "\n\n" + instructions
 	}
+	// Orchestrator mode: the lean preamble replaces the coordinator
+	// section — the hard "you have no edit/run tools" boundary plus the
+	// delegate-first guidance (same as buildSystemPrompt in the TUI).
+	if orchHard {
+		systemPrompt += agent.OrchestratorPrompt()
+	}
 	// Batch runs share the CLI/GUI tool_errors.log so one-shot
 	// failures land in the same corpus as interactive ones.
 	batchErrorLog := openToolErrorLog(dataDir)
 	defer batchErrorLog.Close()
 	l, err := agent.NewLoop(agent.LoopConfig{
-		Provider:              p,
+		Provider:              mainProvider,
 		Registry:              reg,
 		Caps:                  caps,
 		ErrorLog:              batchErrorLog,
@@ -166,6 +205,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		ThinTools:             execProfile.ThinTools,
 		StableToolset:         execProfile.StableToolset,
 		CatalogHoist:          execProfile.CatalogHoist,
+		Orchestrator:          orchHard,
 		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
 		// intentionally local and latency-free: config > cached model catalog >
 		// learned provider limit > conservative loop fallback.
@@ -200,6 +240,53 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 			l.SetNextCoordinatorAddon(block)
 			fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok (project turn)\n", preflight.EstimateTokens(block))
 		}
+	}
+
+	// Orchestrator wiring — the same contract as the TUI (wireAgentTool):
+	// when delegation is enabled the batch main loop gets the task tool
+	// and can hand work to isolated workers whose tool calls run outside
+	// the coordinator's steps. With `orchestrator = true` (hard mode, see
+	// orchHard above) the main loop is trimmed to delegation + read-only
+	// lookups so the coordinator context stays clean of file-edit
+	// payloads. `task_model` puts workers on a small/cheap backend;
+	// `draft_verify` sieves a file-changing draft with verify_commands
+	// and lets this (big) model judge the diff + evidence ("small drafts,
+	// big verdict").
+	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
+	var taskWorkerProvider llm.Provider
+	if taskWorkerOverride {
+		wp, wpErr := provFactory.Build(taskWorkerCfg, llm.PurposeTask)
+		if wpErr != nil {
+			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
+		} else {
+			taskWorkerProvider = wp
+			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
+		}
+	}
+	at, atErr := wireAgentTool(agentToolWiring{
+		loop:               l,
+		registry:           reg,
+		provider:           mainProvider,
+		caps:               caps,
+		tomlCfg:            tomlCfg,
+		taskWorkerProvider: taskWorkerProvider,
+		taskWorkerCfg:      taskWorkerCfg,
+		home:               home,
+		delegationOff:      !orchMode.delegationEnabled(),
+		coordinatorMode:    orchMode.hard(),
+	})
+	if atErr != nil {
+		fatal("init agent tool", atErr)
+	}
+	// Fresh worker briefings get the same compact repo-state block as the
+	// coordinator's first turn (cold contexts benefit most).
+	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
+		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
+	}
+	if orchMode.hard() {
+		// Coordinator contract: the main loop keeps only delegation +
+		// read-only lookups; workers inherit the full registry.
+		l.SetRegistry(agent.OrchestratorRegistry(reg))
 	}
 
 	ch, err := l.Run(context.Background(), userPrompt)
