@@ -38,7 +38,32 @@ type TurnSummary struct {
 	AuxUs           int64
 	Phases          map[string]int64
 	FileChanges     []FileChange
-	CreatedAt       time.Time
+	// ToolDiag carries the failure diagnostics that aggregate counters
+	// cannot express: WHICH tool failed, how often, with what message,
+	// plus the stall signature (repeated no-match searches) and the
+	// terminal error kind. One JSON column, empty for healthy turns.
+	ToolDiag  TurnToolDiag
+	CreatedAt time.Time
+}
+
+// TurnToolDiag is the per-turn diagnostic payload. Failures maps tool
+// name -> failure count (schema violations, run errors), Messages the
+// LAST failure message per tool (truncated, compact enough to tell
+// "invalid tool arguments for ctx_execute: $.command: expected array,
+// got string" apart from "command_failed exit=128" without opening a
+// transcript). NoOpSearches counts search_code calls that returned no
+// matches — the stall signature of a discovery loop. Terminal is the
+// run's terminal error text, empty on success.
+type TurnToolDiag struct {
+	Failures     map[string]int    `json:"failures,omitempty"`
+	Messages     map[string]string `json:"messages,omitempty"`
+	NoOpSearches int               `json:"noop_searches,omitempty"`
+	Terminal     string            `json:"terminal,omitempty"`
+}
+
+// Empty reports whether the diag carries nothing worth persisting.
+func (d TurnToolDiag) Empty() bool {
+	return len(d.Failures) == 0 && len(d.Messages) == 0 && d.NoOpSearches == 0 && d.Terminal == ""
 }
 
 type FileChange struct {
@@ -79,6 +104,14 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 	if err != nil {
 		return fmt.Errorf("session.Store.AppendTurnSummary file changes: %w", err)
 	}
+	toolDiag := ""
+	if !turn.ToolDiag.Empty() {
+		encoded, err := json.Marshal(turn.ToolDiag)
+		if err != nil {
+			return fmt.Errorf("session.Store.AppendTurnSummary tool diag: %w", err)
+		}
+		toolDiag = string(encoded)
+	}
 	if turn.CreatedAt.IsZero() {
 		turn.CreatedAt = time.Now().UTC()
 	}
@@ -101,8 +134,8 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 		cached_input_tokens, reasoning_tokens, has_cached_input, has_reasoning,
 		tool_calls, tool_failures, steps, model_calls, failed_model_calls,
 		canceled_model_calls, background_calls, helper_calls, aux_calls, aux_us,
-		phases_json, file_changes_json, created_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		phases_json, file_changes_json, tool_diag_json, created_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(session_id, assistant_seq) DO UPDATE SET
 		duration_ms=excluded.duration_ms, input_tokens=excluded.input_tokens,
 		output_tokens=excluded.output_tokens, cached_input_tokens=excluded.cached_input_tokens,
@@ -114,12 +147,13 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 		background_calls=excluded.background_calls, helper_calls=excluded.helper_calls,
 		aux_calls=excluded.aux_calls, aux_us=excluded.aux_us,
 		phases_json=excluded.phases_json, file_changes_json=excluded.file_changes_json,
+		tool_diag_json=excluded.tool_diag_json,
 		created_at=excluded.created_at`,
 		turn.SessionID, turn.AssistantSeq, turn.DurationMS, turn.Input, turn.Output,
 		turn.CachedInput, turn.Reasoning, boolInt(turn.HasCachedInput), boolInt(turn.HasReasoning),
 		turn.ToolCalls, turn.ToolFailures, turn.Steps, turn.ModelCalls, turn.FailedCalls,
 		turn.CanceledCalls, turn.BackgroundCalls, turn.HelperCalls, turn.AuxCalls, turn.AuxUs,
-		string(phases), string(fileChanges),
+		string(phases), string(fileChanges), toolDiag,
 		turn.CreatedAt.UnixNano())
 	if err != nil {
 		return fmt.Errorf("session.Store.AppendTurnSummary insert: %w", err)
@@ -147,7 +181,8 @@ func (s *Store) ReadRecentTurnSummaries(ctx context.Context, since time.Time, li
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
-		helper_calls, aux_calls, aux_us, phases_json, file_changes_json, created_at
+		helper_calls, aux_calls, aux_us, phases_json, file_changes_json,
+		tool_diag_json, created_at
 		FROM session_turns WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?`, since.UnixNano(), limit)
 	if err != nil {
 		return nil, err
@@ -163,7 +198,8 @@ func (s *Store) ReadTurnSummariesRange(ctx context.Context, sessionID string, fr
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
-		helper_calls, aux_calls, aux_us, phases_json, file_changes_json, created_at
+		helper_calls, aux_calls, aux_us, phases_json, file_changes_json,
+		tool_diag_json, created_at
 		FROM session_turns WHERE session_id = ?`
 	args := []any{sessionID}
 	if fromSeq > 0 {
@@ -194,14 +230,14 @@ func scanTurnSummaries(rows rowScanner) ([]TurnSummary, error) {
 	for rows.Next() {
 		var turn TurnSummary
 		var cached, reasoning int
-		var phases, fileChanges string
+		var phases, fileChanges, toolDiag string
 		var created int64
 		if err := rows.Scan(&turn.SessionID, &turn.AssistantSeq, &turn.DurationMS,
 			&turn.Input, &turn.Output, &turn.CachedInput, &turn.Reasoning,
 			&cached, &reasoning, &turn.ToolCalls, &turn.ToolFailures, &turn.Steps,
 			&turn.ModelCalls, &turn.FailedCalls, &turn.CanceledCalls,
 			&turn.BackgroundCalls, &turn.HelperCalls, &turn.AuxCalls, &turn.AuxUs,
-			&phases, &fileChanges, &created); err != nil {
+			&phases, &fileChanges, &toolDiag, &created); err != nil {
 			return nil, err
 		}
 		if phases != "" {
@@ -209,6 +245,9 @@ func scanTurnSummaries(rows rowScanner) ([]TurnSummary, error) {
 		}
 		if fileChanges != "" {
 			_ = json.Unmarshal([]byte(fileChanges), &turn.FileChanges)
+		}
+		if toolDiag != "" {
+			_ = json.Unmarshal([]byte(toolDiag), &turn.ToolDiag)
 		}
 		turn.HasCachedInput = cached != 0
 		turn.HasReasoning = reasoning != 0

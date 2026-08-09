@@ -230,8 +230,89 @@ async function renderStats() {
       });
       row.appendChild(seg);
       box.appendChild(row);
+      // Orchestrator model — which model plays the coordinator. A
+      // compact picker like the model palette: button + dropdown list.
+      var knobM = null;
+      (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator_model") knobM = k; });
+      if (knobM) {
+        var rowM = el("div", "stat-row");
+        rowM.appendChild(el("span", "", t("stats.orchModel")));
+        supercliOrchPicker(rowM, knobM, function (v) {
+          jpost("/api/config", { key: "orchestrator_model", value: v })
+            .then(renderStats)
+            .catch(function (e2) { toast(e2.message); });
+        });
+        box.appendChild(rowM);
+      }
     }
   }
   if (seq === statsRenderSeq) box.setAttribute("aria-busy", "false");
+}
+
+// supercliOrchPicker renders the orchestrator-model selector: a compact
+// button showing the current value plus a dropdown list of known models,
+// mirroring the model palette rows (.prow). Clicking a row calls onSave
+// with the "provider/model" ref (or "" for the main model).
+function supercliOrchPicker(container, knobM, onSave) {
+  var wrap = el("span", "orch-pick");
+  var btn = el("button", "orch-btn", knobM.raw || t("stats.orchModelDef"));
+  btn.type = "button";
+  var pop = el("div", "orch-pop");
+  pop.hidden = true;
+  function fill() {
+    var cur = knobM.raw || "";
+    pop.innerHTML = "";
+    var phead = el("div", "phead");
+    var search = el("input");
+    search.placeholder = t("model.search");
+    search.setAttribute("autocomplete", "off");
+    phead.appendChild(search);
+    var list = el("div", "plist");
+    function renderList(filter) {
+      list.innerHTML = "";
+      var base = el("div", "prow" + (cur === "" ? " active" : ""));
+      base.appendChild(el("span", "state-dot on"));
+      base.appendChild(el("span", "pid", t("stats.orchModelDef")));
+      base.addEventListener("click", function () {
+        pop.hidden = true;
+        if (cur !== "") onSave("");
+      });
+      list.appendChild(base);
+      var shown = 0;
+      (modelCache || []).forEach(function (m) {
+        if (m.hidden) return;
+        if (filter && (m.id + " " + (m.provider || "")).toLowerCase().indexOf(filter) < 0) return;
+        shown++;
+        var ref = (m.provider && m.provider !== activeProviderID) ? m.provider + "/" + m.id : m.id;
+        var rowEl = el("div", "prow" + (ref === cur ? " active" : ""));
+        rowEl.appendChild(el("span", "state-dot on"));
+        rowEl.appendChild(el("span", "pid", m.id));
+        if (m.provider && m.provider !== activeProviderID) rowEl.appendChild(el("span", "pprov", m.provider));
+        rowEl.addEventListener("click", function () {
+          pop.hidden = true;
+          if (ref !== cur) onSave(ref);
+        });
+        list.appendChild(rowEl);
+      });
+      if (!shown) list.appendChild(el("div", "side-empty", "—"));
+    }
+    search.addEventListener("input", function () {
+      renderList(this.value.trim().toLowerCase());
+    });
+    renderList("");
+    pop.appendChild(phead);
+    pop.appendChild(list);
+    search.focus();
+  }
+  btn.addEventListener("click", function () {
+    if (pop.hidden) fill();
+    pop.hidden = !pop.hidden;
+  });
+  document.addEventListener("click", function (e) {
+    if (!wrap.contains(e.target)) pop.hidden = true;
+  });
+  wrap.appendChild(btn);
+  wrap.appendChild(pop);
+  container.appendChild(wrap);
 }
 

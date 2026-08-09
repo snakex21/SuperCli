@@ -107,10 +107,21 @@ type statsTelemetryView struct {
 	FailedCalls     int                   `json:"failed_calls"`
 	CanceledCalls   int                   `json:"canceled_calls"`
 	ToolFailures    int                   `json:"tool_failures"`
-	Bottleneck      string                `json:"bottleneck,omitempty"`
-	BottleneckShare int                   `json:"bottleneck_share"`
-	Signals         []string              `json:"signals,omitempty"`
-	Tools           []statsToolTimingView `json:"tools,omitempty"`
+	// NoOpSearches is the stall signature: search_code calls that returned
+	// nothing. A run full of them is a discovery loop, not diligence.
+	NoOpSearches int                     `json:"noop_searches"`
+	// Failures breaks the aggregate down per tool, so "5 schema-arg
+	// errors from ctx_execute" is visible without opening a transcript.
+	Failures        []statsToolFailureView `json:"tool_failures_by_tool,omitempty"`
+	Bottleneck      string                 `json:"bottleneck,omitempty"`
+	BottleneckShare int                    `json:"bottleneck_share"`
+	Signals         []string               `json:"signals,omitempty"`
+	Tools           []statsToolTimingView  `json:"tools,omitempty"`
+}
+
+type statsToolFailureView struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 type statsToolTimingView struct {

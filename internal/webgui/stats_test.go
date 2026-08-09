@@ -186,6 +186,87 @@ func TestSummarizeTelemetryReportsHelperInferenceShare(t *testing.T) {
 	}
 }
 
+// Tool diagnostics must aggregate across turns: repeated failures of the
+// same tool (arg_failures) and repeated no-match searches (search_stall)
+// are the two signatures that flagged the real production loops.
+func TestSummarizeTelemetryToolDiagSignals(t *testing.T) {
+	turns := []session.TurnSummary{
+		{DurationMS: 500, ToolFailures: 1, Phases: map[string]int64{
+			"backend_wait": 400_000, "context_prepare": 10_000,
+		}, ToolDiag: session.TurnToolDiag{
+			Failures: map[string]int{"ctx_execute": 2},
+			Messages: map[string]string{"ctx_execute": "invalid tool arguments for ctx_execute: $.command: expected array, got string"},
+			NoOpSearches: 2,
+		}},
+		{DurationMS: 500, ToolFailures: 1, Phases: map[string]int64{
+			"backend_wait": 400_000, "context_prepare": 10_000,
+		}, ToolDiag: session.TurnToolDiag{
+			Failures:     map[string]int{"ctx_execute": 1, "search_code": 1},
+			NoOpSearches: 2,
+		}},
+	}
+	got := summarizeTelemetry(turns, statsTokensView{})
+	if got.ToolFailures != 2 {
+		t.Fatalf("tool failures = %d", got.ToolFailures)
+	}
+	if got.NoOpSearches != 4 {
+		t.Fatalf("noop searches = %d", got.NoOpSearches)
+	}
+	if len(got.Failures) != 2 {
+		t.Fatalf("per-tool failures = %+v", got.Failures)
+	}
+	for _, f := range got.Failures {
+		switch f.Name {
+		case "ctx_execute":
+			if f.Count != 3 {
+				t.Errorf("ctx_execute count = %d", f.Count)
+			}
+		case "search_code":
+			if f.Count != 1 {
+				t.Errorf("search_code count = %d", f.Count)
+			}
+		default:
+			t.Errorf("unexpected failure tool %q", f.Name)
+		}
+	}
+	for _, sig := range []string{"search_stall", "arg_failures", "tool_failures"} {
+		if !slices.Contains(got.Signals, sig) {
+			t.Errorf("signals = %v, want %s", got.Signals, sig)
+		}
+	}
+	// A healthy turn must not invent any stall signal.
+	healthy := summarizeTelemetry([]session.TurnSummary{{DurationMS: 1000, Phases: map[string]int64{"backend_wait": 900_000}}}, statsTokensView{})
+	if healthy.NoOpSearches != 0 || len(healthy.Failures) != 0 || slices.Contains(healthy.Signals, "search_stall") || slices.Contains(healthy.Signals, "arg_failures") {
+		t.Fatalf("healthy turn = %+v", healthy)
+	}
+}
+
+// Per-tool wall time was already recorded as tool:<name> phases, but nothing
+// surfaced a single tool eating tens of seconds of a turn. The slow_tool
+// signal names exactly that tool.
+func TestSummarizeTelemetrySlowToolSignal(t *testing.T) {
+	turns := []session.TurnSummary{
+		{DurationMS: 60_000, Phases: map[string]int64{
+			"backend_wait": 10_000_000, "context_prepare": 5_000_000,
+			"tool_execution": 45_000_000, "tool:web_fetch": 45_000_000,
+		}},
+		{DurationMS: 60_000, Phases: map[string]int64{
+			"backend_wait": 50_000_000, "tool_execution": 5_000_000,
+			"tool:search_code": 5_000_000,
+		}},
+	}
+	got := summarizeTelemetry(turns, statsTokensView{})
+	if !slices.Contains(got.Signals, "slow_tool:web_fetch") {
+		t.Fatalf("signals = %v, want slow_tool:web_fetch", got.Signals)
+	}
+	if slices.Contains(got.Signals, "slow_tool:search_code") {
+		t.Fatalf("signals = %v, search_code must stay below the threshold", got.Signals)
+	}
+	if len(got.Tools) != 2 || got.Tools[0].Name != "web_fetch" || got.Tools[0].DurationMS != 45_000 {
+		t.Fatalf("tool timings = %+v", got.Tools)
+	}
+}
+
 // Titles, indexing and vision belong to no turn; they must still be counted,
 // and from the duration llm.Metered already measured.
 func TestOffTurnCallsAreCountedFromTheMeteredDuration(t *testing.T) {

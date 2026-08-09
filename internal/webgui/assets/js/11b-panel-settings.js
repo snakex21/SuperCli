@@ -80,6 +80,11 @@ function knobRow(k) {
     });
     row.appendChild(el("span", "k-val", k.source === "default" ? k.value : ""));
     row.appendChild(seg);
+  } else if (k.key === "orchestrator_model") {
+    // Compact model-palette-style picker — pick, never type a model id.
+    var wrap = el("span", "k-edit-wrap");
+    supercliOrchPicker(wrap, k, function (v) { post(v); });
+    row.appendChild(wrap);
   } else if (k.kind === "int" || k.kind === "text") {
     var input = el("input", "k-edit");
     input.value = k.raw || "";

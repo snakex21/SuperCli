@@ -1,0 +1,84 @@
+/* Session title fade/hover overlay.
+   Keep the title at full width at all times; actions fade over it instead of
+   shrinking the text box. Loaded after app.css so it intentionally overrides
+   the older ellipsis/width rules. */
+
+#session-list .side-item .t {
+  width: 100% !important;
+  min-width: 0;
+  padding-right: 0 !important;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip !important;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  transition: none !important;
+}
+
+#session-list .side-item:hover .t,
+#session-list .side-item:focus-within .t,
+#session-list .side-item:focus-visible .t {
+  width: 100% !important;
+  padding-right: 0 !important;
+}
+
+#session-list .side-item .t-scroll {
+  display: inline-block;
+  min-width: max-content;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+#session-list .side-item.title-overflow:hover .t-scroll {
+  animation: session-title-marquee var(--session-marquee-duration, 4s) linear infinite alternate;
+}
+
+@keyframes session-title-marquee {
+  0%, 2% { transform: translate3d(0, 0, 0); }
+  98%, 100% { transform: translate3d(calc(-1 * var(--session-marquee-distance, 0px)), 0, 0); }
+}
+
+#session-list .side-item .s,
+#session-list .side-item:hover .s,
+#session-list .side-item:focus-within .s {
+  padding-right: 0 !important;
+}
+
+#session-list .session-actions {
+  right: 6px;
+  top: 7px;
+  z-index: 3;
+  padding-left: 38px;
+  background: linear-gradient(90deg, transparent 0, var(--raise) 38px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(10px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+#session-list .side-item:hover .session-actions,
+#session-list .side-item:focus-visible .session-actions,
+#session-list .session-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+#session-list .side-item.active .session-actions,
+#session-list .side-item.opening .session-actions {
+  background: linear-gradient(90deg, transparent 0, var(--accent-soft) 38px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #session-list .side-item.title-overflow:hover .t-scroll {
+    animation: none;
+  }
+}
+
+@media (hover: none) {
+  #session-list .session-actions {
+    opacity: .72;
+    pointer-events: auto;
+    transform: none;
+  }
+}

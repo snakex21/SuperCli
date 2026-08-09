@@ -6,6 +6,7 @@
   <title>SuperCli</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13' fill='%23e8763d'%3E%E2%97%86%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="session-fade.css" />
 </head>
 <body>
   <div class="shell sidebar-hidden" id="shell">
@@ -121,8 +122,8 @@
           <button data-tab="stats" class="active" data-i18n="side.stats">Stats</button>
           <button data-tab="sessions" data-i18n="side.sessions">Sessions</button>
           <button data-tab="projects" data-i18n="side.projects">Projects</button>
-		  <button data-tab="tasks" data-i18n="side.tasks">Tasks</button>
-		  <button data-tab="goal" data-i18n="side.goal">Goal</button>
+          <button data-tab="tasks" data-i18n="side.tasks">Tasks</button>
+          <button data-tab="goal" data-i18n="side.goal">Goal</button>
         </nav>
         <button class="sidebar-close" id="close-sidebar" type="button"
                 data-i18n-title="common.closePanel" data-i18n-aria="common.closePanel">×</button>
@@ -153,32 +154,32 @@
         <div class="side-list projects" id="project-list"></div>
       </div>
 
-	  <div class="side-pane" id="tab-tasks">
-		<div class="side-label"><span data-i18n="side.tasks">Tasks</span><button id="reload-tasks" type="button" data-i18n="common.refresh">refresh</button></div>
-		<div class="side-list task-center" id="task-list"></div>
-		<div class="side-label task-worker-label"><span id="worker-heading">Workers</span></div>
-		<div class="side-list task-center" id="worker-list"></div>
-	  </div>
+      <div class="side-pane" id="tab-tasks">
+        <div class="side-label"><span data-i18n="side.tasks">Tasks</span><button id="reload-tasks" type="button" data-i18n="common.refresh">refresh</button></div>
+        <div class="side-list task-center" id="task-list"></div>
+        <div class="side-label task-worker-label"><span id="worker-heading">Workers</span></div>
+        <div class="side-list task-center" id="worker-list"></div>
+      </div>
 
-	  <div class="side-pane" id="tab-goal">
-		<div class="side-label">
-		  <span data-i18n="side.goal">Goal</span>
-		  <span class="side-goal-head-actions">
-			<span class="side-help-wrap">
-			  <button class="side-help" type="button" aria-describedby="goal-side-help" data-i18n-aria="goal.sideHelpLabel">?</button>
-			  <span class="side-help-tip" id="goal-side-help" role="tooltip">
-				<strong data-i18n="goal.sideHelpTitle">How Goal works</strong>
-				<span data-i18n="goal.sideHelpPurpose">It is a persistent plan for work spanning multiple messages or sessions.</span>
-				<span data-i18n="goal.sideHelpAgent">The agent sees the active goal and open steps in every turn, and can update steps and notes as it works.</span>
-				<span data-i18n="goal.sideHelpFinish">A goal is complete only when you or the agent explicitly marks it done. Completing every step does not close it automatically.</span>
-				<small data-i18n="goal.sideHelpNoBackground">It does not start background work or extra model calls by itself.</small>
-			  </span>
-			</span>
-			<button id="manage-side-goal" type="button" data-i18n="goal.manage">manage</button>
-		  </span>
-		</div>
-		<div class="side-goal" id="side-goal"></div>
-	  </div>
+      <div class="side-pane" id="tab-goal">
+        <div class="side-label">
+          <span data-i18n="side.goal">Goal</span>
+          <span class="side-goal-head-actions">
+            <span class="side-help-wrap">
+              <button class="side-help" type="button" aria-describedby="goal-side-help" data-i18n-aria="goal.sideHelpLabel">?</button>
+              <span class="side-help-tip" id="goal-side-help" role="tooltip">
+                <strong data-i18n="goal.sideHelpTitle">How Goal works</strong>
+                <span data-i18n="goal.sideHelpPurpose">It is a persistent plan for work spanning multiple messages or sessions.</span>
+                <span data-i18n="goal.sideHelpAgent">The agent sees the active goal and open steps in every turn, and can update steps and notes as it works.</span>
+                <span data-i18n="goal.sideHelpFinish">A goal is complete only when you or the agent explicitly marks it done. Completing every step does not close it automatically.</span>
+                <small data-i18n="goal.sideHelpNoBackground">It does not start background work or extra model calls by itself.</small>
+              </span>
+            </span>
+            <button id="manage-side-goal" type="button" data-i18n="goal.manage">manage</button>
+          </span>
+        </div>
+        <div class="side-goal" id="side-goal"></div>
+      </div>
     </aside>
     <button class="sidebar-backdrop" id="sidebar-backdrop" type="button" aria-label="Close side panel"></button>
   </div>
@@ -193,7 +194,7 @@
         <button data-sec="models" data-i18n="panel.models">Models</button>
         <button data-sec="providers" data-i18n="panel.providers">Providers</button>
         <button data-sec="runtime" data-i18n="panel.runtime">Model servers</button>
-		<button data-sec="workflow" data-i18n="panel.workflow">Workflow</button>
+        <button data-sec="workflow" data-i18n="panel.workflow">Workflow</button>
         <button data-sec="accounts" data-i18n="panel.accounts">Accounts</button>
         <button data-sec="mcp" data-i18n="panel.mcp">MCP</button>
         <button data-sec="memory" data-i18n="panel.memory">Memory</button>

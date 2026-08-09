@@ -29,9 +29,29 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 			Content string `json:"content"`
 			Type    string `json:"type"`
 			Target  string `json:"target"`
+			Action  string `json:"action"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Action "dedup" sweeps near-identical preference/fact
+		// entries (and junk from older builds) from both stores.
+		if strings.EqualFold(strings.TrimSpace(body.Action), "dedup") {
+			removed := 0
+			if gs, err := memory.OpenStore(s.eng.DataDir()); err == nil {
+				if n, derr := gs.DedupSimilar(); derr == nil {
+					removed += n
+				}
+				_ = gs.Close()
+			}
+			if ps, err := memory.OpenProjectStore(s.eng.DataDir(), s.eng.Home()); err == nil {
+				if n, derr := ps.DedupSimilar(); derr == nil {
+					removed += n
+				}
+				_ = ps.Close()
+			}
+			writeJSON(w, map[string]any{"ok": true, "removed": removed})
 			return
 		}
 		content := strings.TrimSpace(body.Content)
