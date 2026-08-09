@@ -76,6 +76,54 @@ func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 		badToolCallMarker, tc.Name) + retryAdvice(tc.Name, tc.Name, attempt)
 }
 
+// historySafeToolArguments returns arguments that are always legal to replay
+// as an assistant tool call on the next provider request. Repairable model
+// output is preserved in repaired form; irreparable garbage becomes {}. The
+// original raw arguments are still passed to invoke(), where HardenToolCall
+// records the real failure and gives the model a useful retry message.
+func historySafeToolArguments(raw string) string {
+	args := strings.TrimSpace(raw)
+	if args == "" {
+		return "{}"
+	}
+	if json.Valid([]byte(args)) {
+		return args
+	}
+	if fixed, ok := RepairToolArguments(args); ok {
+		return fixed
+	}
+	return "{}"
+}
+
+// normalizeMalformedToolCalls fixes structural fields that would make the
+// assistant message itself impossible to persist/replay. It does not add any
+// conversation message. Arguments stay raw here so invoke()/HardenToolCall can
+// still diagnose them; the provider-history copy uses historySafeToolArguments.
+func normalizeMalformedToolCalls(calls []llm.ToolCall) []llm.ToolCall {
+	for i := range calls {
+		if strings.TrimSpace(calls[i].ID) == "" {
+			calls[i].ID = syntheticToolCallID("repair", "call")
+		}
+		if !providerSafeToolName(calls[i].Name) {
+			calls[i].Name = "invalid_tool_call"
+		}
+	}
+	return calls
+}
+
+func providerSafeToolName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // retiredEditToolAdvice answers a call to one of the line editors that used to
 // exist beside patch_file. Models carry those names in their weights, so the
 // names will keep arriving long after the tools are gone; SuggestToolName
