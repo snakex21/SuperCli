@@ -252,6 +252,103 @@ func TestLoop_AdaptiveReflectionBeforeStepLimit(t *testing.T) {
 	assertReflectionReason(t, evs, "step_budget_low", 3)
 }
 
+func TestLoop_ReflectionTruncatesLongText(t *testing.T) {
+	// A wordy reflector must not grow the conversation by its full text:
+	// the injected message and the event are clamped to reflectionMaxChars.
+	long := strings.Repeat("line one of the reflection. \n", 60) // > 400 chars
+	prov := &reflectionTestProvider{calls: 6}
+	reflector := &stubReflector{text: long}
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "noop", Description: "no-op", Schema: `{}`,
+		Fn: func(_ context.Context, _ json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil },
+	})
+	loop, err := NewLoop(LoopConfig{
+		Provider: prov, Registry: reg, System: "you are test",
+		MaxSteps: 10, Reflector: reflector, ReflectEvery: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
+	events, err := loop.Run(context.Background(), "start")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	evs := drainEvents(t, events)
+
+	// Event text is clamped.
+	var got *ReflectionEvent
+	for _, e := range evs {
+		if r, ok := e.(ReflectionEvent); ok {
+			got = &r
+		}
+	}
+	if got == nil {
+		t.Fatal("no reflection event emitted")
+	}
+	if !strings.HasSuffix(got.Text, "[reflection truncated]") {
+		t.Errorf("event text not marked truncated: %q", got.Text)
+	}
+	if len(got.Text) > reflectionMaxChars+len("\n[reflection truncated]") {
+		t.Errorf("event text length = %d, want <= %d", len(got.Text), reflectionMaxChars+len("\n[reflection truncated]"))
+	}
+
+	// The persisted system message is clamped the same way.
+	var saw bool
+	for i := len(loop.Messages) - 1; i >= 0; i-- {
+		m := loop.Messages[i]
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "reflection checkpoint @ step 5") {
+			saw = true
+			if !strings.Contains(m.Content, "[reflection truncated]") {
+				t.Errorf("injected reflection not truncated: %.120q...", m.Content)
+			}
+			break
+		}
+	}
+	if !saw {
+		t.Error("no reflection system message found in Messages")
+	}
+}
+
+func TestLoop_LoopWarningSuppressesDuplicateReflection(t *testing.T) {
+	// Two turns of an identical two-call batch: the batch fingerprint repeats
+	// (repeated_tool_batch) in the same step the [loop] warning fires for the
+	// identical calls. The reflection must be suppressed — one system message
+	// about the same event is enough — and the signal consumed.
+	call := llm.ToolCall{ID: "same", Name: "probe", Arguments: `{"n":1}`}
+	prov := &dupBatchProvider{turnBatches: [][]llm.ToolCall{
+		{call, call},
+		{call, call},
+	}}
+	reflector := &stubReflector{text: "change approach"}
+	loop := newAdaptiveReflectionLoop(t, prov, reflector, 10, false)
+	events, _ := loop.Run(context.Background(), "start")
+	evs := drainEvents(t, events)
+
+	var refEvents []ReflectionEvent
+	for _, e := range evs {
+		if r, ok := e.(ReflectionEvent); ok {
+			refEvents = append(refEvents, r)
+		}
+	}
+	if len(refEvents) != 0 {
+		t.Fatalf("reflections = %d, want 0 (suppressed by [loop] warning): %+v", len(refEvents), refEvents)
+	}
+	if got := atomic.LoadInt32(&reflector.calls); got != 0 {
+		t.Errorf("reflector calls = %d, want 0", got)
+	}
+	var sawLoop bool
+	for _, m := range loop.Messages {
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "[loop]") {
+			sawLoop = true
+			break
+		}
+	}
+	if !sawLoop {
+		t.Error("no [loop] warning message injected")
+	}
+}
+
 func newAdaptiveReflectionLoop(t *testing.T, prov llm.Provider, reflector Reflector, maxSteps int, fail bool) *Loop {
 	t.Helper()
 	reg := tools.NewRegistry()
@@ -365,6 +462,35 @@ func (p *adaptiveReflectionProvider) Complete(_ context.Context, _ []llm.Message
 }
 
 type reflectCounter struct{ n int32 }
+
+// dupBatchProvider emits one fixed multi-call batch per turn, then a final
+// text turn. Used to trigger the [loop] warning and repeated_tool_batch in
+// the same step.
+type dupBatchProvider struct {
+	turnBatches [][]llm.ToolCall
+	provider    reflectCounter
+}
+
+func (p *dupBatchProvider) Name() string         { return "test" }
+func (p *dupBatchProvider) SupportsVision() bool { return false }
+func (p *dupBatchProvider) Complete(_ context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	idx := int(atomic.AddInt32(&p.provider.n, 1)) - 1
+	ch := make(chan llm.Delta, 4)
+	go func() {
+		defer close(ch)
+		if idx < len(p.turnBatches) {
+			for _, call := range p.turnBatches[idx] {
+				c := call
+				ch <- llm.Delta{Role: llm.RoleAssistant, ToolCall: &c}
+			}
+			ch <- llm.Delta{FinishReason: "tool_calls"}
+			return
+		}
+		ch <- llm.Delta{Role: llm.RoleAssistant, Content: "done"}
+		ch <- llm.Delta{FinishReason: "stop"}
+	}()
+	return ch, nil
+}
 
 func (p *reflectionTestProvider) Name() string { return "test" }
 func (p *reflectionTestProvider) SupportsVision() bool {
