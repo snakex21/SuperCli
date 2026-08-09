@@ -128,6 +128,39 @@ func TestHardenToolCallEmptyArgs(t *testing.T) {
 	}
 }
 
+func TestHistorySafeToolArguments(t *testing.T) {
+	cases := map[string]string{
+		`{"path":"ok.go"}`:   `{"path":"ok.go"}`,
+		`{"path":"fixed.go"`: `{"path":"fixed.go"}`,
+		`garbage`:            `{}`,
+		`   `:                `{}`,
+	}
+	for in, want := range cases {
+		if got := historySafeToolArguments(in); got != want {
+			t.Errorf("historySafeToolArguments(%q) = %q, want %q", in, got, want)
+		}
+		if !json.Valid([]byte(historySafeToolArguments(in))) {
+			t.Errorf("historySafeToolArguments(%q) produced invalid JSON", in)
+		}
+	}
+}
+
+func TestNormalizeMalformedToolCallsMakesReplayableStructure(t *testing.T) {
+	calls := normalizeMalformedToolCalls([]llm.ToolCall{
+		{ID: "", Name: "", Arguments: `not json`},
+		{ID: "ok", Name: "bad tool name!", Arguments: `{}`},
+	})
+	if calls[0].ID == "" || calls[0].Name != "invalid_tool_call" {
+		t.Fatalf("first call not normalized: %+v", calls[0])
+	}
+	if calls[1].ID != "ok" || calls[1].Name != "invalid_tool_call" {
+		t.Fatalf("second call not normalized: %+v", calls[1])
+	}
+	if calls[0].Arguments != `not json` {
+		t.Fatalf("raw arguments changed before HardenToolCall: %q", calls[0].Arguments)
+	}
+}
+
 func TestHardenToolCallRetryBudget(t *testing.T) {
 	tc := llm.ToolCall{Name: "read_file", Arguments: `garbage`}
 	first := HardenToolCall(&tc, []string{"read_file"}, 0)

@@ -176,6 +176,48 @@ func TestRepairToolCallIDs_HealthyUntouched(t *testing.T) {
 // Synthetic ids minted in different runs of the same process must
 // not collide once the two histories are concatenated (resume,
 // rewind, prune all splice runs together).
+func TestRepairToolCallIDs_ParallelDuplicateIDsRemainPaired(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleUser, Content: "go"},
+		{Role: RoleAssistant, ToolCalls: []ToolCall{
+			{ID: "dup", Name: "read", Arguments: "{}"},
+			{ID: "dup", Name: "read", Arguments: "{}"},
+		}},
+		result("dup"),
+		result("dup"),
+	}
+	out := repairToolCallIDs(msgs)
+	if len(out) != 4 {
+		t.Fatalf("len = %d, want 4", len(out))
+	}
+	if len(out[1].ToolCalls) != 2 {
+		t.Fatalf("tool calls = %d, want 2", len(out[1].ToolCalls))
+	}
+	if out[1].ToolCalls[0].ID == out[1].ToolCalls[1].ID {
+		t.Fatalf("parallel duplicate ids survived: %q", out[1].ToolCalls[0].ID)
+	}
+	if out[2].ToolCallID != out[1].ToolCalls[0].ID || out[3].ToolCallID != out[1].ToolCalls[1].ID {
+		t.Fatalf("results not paired in order: calls=%q,%q results=%q,%q",
+			out[1].ToolCalls[0].ID, out[1].ToolCalls[1].ID, out[2].ToolCallID, out[3].ToolCallID)
+	}
+	assertWellFormed(t, out)
+}
+
+func TestRepairToolCallIDs_ResultBeforeCallIsDroppedWithCall(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleUser, Content: "go"},
+		result("late"),
+		call("late", "read"),
+	}
+	out := repairToolCallIDs(msgs)
+	assertWellFormed(t, out)
+	for _, m := range out {
+		if m.Role == RoleTool || len(m.ToolCalls) > 0 {
+			t.Fatalf("out-of-order call/result survived: %+v", out)
+		}
+	}
+}
+
 func TestRepairToolCallIDs_ManyDuplicatesAllUnique(t *testing.T) {
 	var msgs []Message
 	for i := 0; i < 40; i++ {
