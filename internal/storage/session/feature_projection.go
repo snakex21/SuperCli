@@ -68,7 +68,7 @@ func (s *Store) ReadModelContext(ctx context.Context, sessionID string) ([]llm.M
 		}
 		out = append(out, m)
 	}
-	return out, nil
+	return s.externalizeModelImages(sessionID, out), nil
 }
 
 func (s *Store) readFullModelContext(ctx context.Context, sessionID string) ([]llm.Message, error) {
@@ -84,7 +84,7 @@ func (s *Store) readFullModelContext(ctx context.Context, sessionID string) ([]l
 		}
 		out = append(out, m)
 	}
-	return out, nil
+	return s.externalizeModelImages(sessionID, out), nil
 }
 
 func (s *Store) readMessagesAfter(ctx context.Context, sessionID string, seq int) ([]Encoded, error) {

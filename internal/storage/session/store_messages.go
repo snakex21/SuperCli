@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"supercli/internal/llm"
 	_ "modernc.org/sqlite"
 )
 
@@ -64,6 +66,43 @@ func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int)
 	return int(removed64), nil
 }
 
+// MaxToolContentChars caps how much of a single TOOL message is persisted.
+// Tool results carry raw file contents (read_file, read_output, web fetches)
+// that can run to megabytes; a long session of such reads is what grows the
+// DB and slows resume. The live conversation is unaffected — the loop still
+// holds the full content — but the transcript keeps only the head plus a
+// marker, which is all a resumed session needs to reconstruct the flow.
+const MaxToolContentChars = 100_000
+
+// capToolContent enforces MaxToolContentChars on a tool message, cutting at
+// the last line boundary before the cap when possible and appending a marker
+// so a truncated result is never mistaken for the full one. The marker is
+// budgeted inside the cap: a capped message never exceeds MaxToolContentChars.
+// Rune-boundary-safe for the cut (bytes are fine: we cut at '\n' or the limit).
+const toolContentTruncMarker = "\n[content truncated]"
+
+func capToolContent(content string) string {
+	if len(content) <= MaxToolContentChars {
+		return content
+	}
+	limit := MaxToolContentChars - len(toolContentTruncMarker)
+	cut := strings.LastIndexByte(content[:limit], '\n')
+	if cut < limit/2 {
+		cut = limit
+	}
+	head := strings.TrimSpace(content[:cut])
+	// A byte-level cut can land inside a multi-byte rune; drop any trailing
+	// incomplete sequence so the persisted content is always valid UTF-8.
+	for len(head) > 0 {
+		r, size := utf8.DecodeLastRuneInString(head)
+		if r != utf8.RuneError || size > 1 {
+			break
+		}
+		head = head[:len(head)-size]
+	}
+	return head + toolContentTruncMarker
+}
+
 // AppendMessage adds a message to a session, assigning the next
 // seq number. tokenIn/tokenOut are optional (zero is fine).
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded) error {
@@ -72,6 +111,9 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 	}
 	if err := msg.Validate(); err != nil {
 		return fmt.Errorf("session.Store.AppendMessage: %w", err)
+	}
+	if msg.Role == string(llm.RoleTool) {
+		msg.Content = capToolContent(msg.Content)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {

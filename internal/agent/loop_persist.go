@@ -22,7 +22,7 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) {
 	// step, some from worker goroutines), so statsEndStep keeps it
 	// out of the next_turn_prepare remainder math.
 	t := time.Now()
-	l.persistAppend(ctx, msg)
+	l.persistAppend(ctx, msg.DormantImages())
 	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
 }
 
@@ -43,6 +43,9 @@ func (l *Loop) persistProjection(ctx context.Context) {
 	h.mu.Unlock()
 
 	visible := l.VisibleMessages()
+	for i := range visible {
+		visible[i] = visible[i].DormantImages()
+	}
 	// Base/system-prefix messages are rebuilt from current config when a
 	// loop is resumed. Persist only the conversation body, otherwise Web
 	// GUI would prepend a fresh system prompt to a stale duplicate.

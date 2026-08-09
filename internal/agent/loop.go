@@ -37,6 +37,14 @@ type contextProjectionWriter interface {
 	SaveContextProjection(ctx context.Context, msgs []llm.Message) error
 }
 
+// imageExternalizer is an optional extension implemented by durable session
+// writers. Tool images are moved out of message memory before they enter
+// history; the returned ImageRef points at the durable file and contains no
+// inline base64 payload.
+type imageExternalizer interface {
+	ExternalizeImage(ctx context.Context, mediaType string, data []byte) (llm.ImageRef, error)
+}
+
 // SessionReader is the resume contract. F2.c reads the
 // conversation history back as []llm.Message.
 type SessionReader interface {
@@ -98,6 +106,18 @@ type Loop struct {
 	patternInjector PatternInjector
 	creditTracker   CreditTracker
 	modelID         string
+
+	// Reasoning retention (SUPERCLI_KEEP_THINKING, default on): the
+	// loop strips <thinking> blocks from assistant turns before they
+	// enter l.Messages (deterministic, once — see stream_strip_thinking).
+	// keepThinking gates retention; lastThinking holds the reasoning
+	// stripped from the MOST RECENT assistant turn, which the next
+	// provider request appends at its tail so the model continues from
+	// its own chain of thought instead of re-deriving it. Replaced by
+	// newer reasoning the moment a new turn leaves thinking behind;
+	// cleared by /clear and session loads that replace the body.
+	keepThinking bool
+	lastThinking string
 
 	// sessUsage accumulates provider-reported token usage across
 	// every Run of this loop (the whole TUI session). Guarded by
@@ -398,6 +418,12 @@ type LoopConfig struct {
 	// for resuming a session. The session writer, if any, is
 	// NOT called for these.
 	InitialMessages []llm.Message
+	// KeepThinking overrides SUPERCLI_KEEP_THINKING (default: on).
+	// When true the loop retains the reasoning stripped from the
+	// previous assistant turn and appends it to the next request's
+	// tail, so the model continues from its own chain of thought.
+	// false disables retention for this loop regardless of env.
+	KeepThinking bool
 	// EnableNavigator turns on the cheap pre-request model router that chooses
 	// chat/advisor/coordinator. Main SuperCli enables it; child workers and most
 	// tests leave it off to avoid extra provider calls.
@@ -669,33 +695,34 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.nextUserAddon = ""
 	}
 	userMsg := llm.Message{Role: llm.RoleUser, Content: userText}
-	transientImageIndex := -1
+	persistedUser := llm.Message{Role: llm.RoleUser, Content: prompt}
 	if len(l.nextUserImages) > 0 {
-		userMsg.Content = ""
-		userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: userText})
-		for i := range l.nextUserImages {
-			image := l.nextUserImages[i]
-			userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &image})
-		}
+		images := l.prepareSessionImages(ctx, l.nextUserImages)
 		l.nextUserImages = nil
-		transientImageIndex = len(l.Messages)
+		userMsg.Content = ""
+		persistedUser.Content = ""
+		userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: userText})
+		persistedUser.Parts = append(persistedUser.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: prompt})
+		for i := range images {
+			image := images[i]
+			userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &image})
+			stored := image
+			stored.Active = false
+			persistedUser.Parts = append(persistedUser.Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &stored})
+		}
+		l.enableSessionImageTool()
 	}
 	l.Messages = append(l.Messages, userMsg)
 	// Addons are one-shot provider context, not transcript content. Persist the
-	// user's raw words so reopening a session never exposes internal preflight
-	// or rewind-feedback markers in the conversation UI.
-	l.persist(ctx, llm.Message{Role: llm.RoleUser, Content: prompt})
-	go l.run(ctx, prompt, out, transientImageIndex)
+	// user's raw words plus durable image refs so reopening a session never
+	// exposes internal preflight/rewind markers and never loses attachments.
+	l.persist(ctx, persistedUser)
+	go l.run(ctx, prompt, out)
 	return out, nil
 }
 
-func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event, transientImageIndex int) {
+func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
-	defer func() {
-		if transientImageIndex >= 0 && transientImageIndex < len(l.Messages) {
-			l.Messages[transientImageIndex] = l.Messages[transientImageIndex].TextOnly()
-		}
-	}()
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
 	l.emptyReplyNudgeUsed = false

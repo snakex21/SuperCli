@@ -78,6 +78,7 @@ func buildDirectAttachmentImages(home string, paths []string) ([]llm.ImageRef, e
 		images = append(images, llm.ImageRef{
 			MediaType: mediaType,
 			Data:      base64.StdEncoding.EncodeToString(data),
+			Name:      filepath.Base(resolved),
 		})
 	}
 	return images, nil
