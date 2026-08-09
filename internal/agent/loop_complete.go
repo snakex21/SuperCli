@@ -31,6 +31,10 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
 	}
+	// Provider accepted a request snapshot containing any active images. Mark
+	// the live-history refs dormant immediately so later steps/turns carry only
+	// MediaID handles unless the model explicitly reloads one.
+	l.deactivateActiveImages()
 	text, calls, usage, err := l.consume(ctx, stream, out)
 	if err == nil && usage != nil {
 		l.recordContextBaseline(requestEstimate, usage.Input)
@@ -56,7 +60,7 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.route == RouteCoordinator {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
-		visible := l.VisibleMessages()
+		visible := l.mediaProviderView(l.VisibleMessages())
 		out := make([]llm.Message, 0, len(visible)+2)
 		// Thin tool protocol placement depends on stableToolset:
 		//
@@ -110,10 +114,10 @@ func (l *Loop) providerMessages() []llm.Message {
 				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
 			}
 		}
-		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
+		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
 		return out
 	}
-	visible := l.VisibleMessages()
+	visible := l.mediaProviderView(l.VisibleMessages())
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt
@@ -201,6 +205,22 @@ func (l *Loop) providerMessages() []llm.Message {
 	// and killing the provider-side KV cache. The provider demote pass
 	// renders this trailing system message in place as a
 	// <system-reminder> user turn.
-	out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
+	out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
 	return out
+}
+
+// trailingContext is the per-request tail: the freshness stamp plus,
+// when reasoning retention is on and the previous turn left a chain of
+// thought behind, that thinking. It is appended AFTER the growing
+// history on both routes, so the cacheable prefix is undisturbed —
+// like the stamp, the retained reasoning is append-only and never
+// rewrites earlier bytes. On chat routes the provider demote pass
+// renders it (and the stamp) as a wire-only <system-reminder> user
+// turn; the user's transcript (l.Messages) never contains it.
+func (l *Loop) trailingContext() string {
+	s := l.stampSection()
+	if l.keepThinking && l.lastThinking != "" {
+		s += "\n\n[Retained reasoning from your previous turn — treat it as your own chain of thought and continue from it; do not reveal it to the user:]\n" + l.lastThinking
+	}
+	return s
 }

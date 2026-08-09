@@ -5,11 +5,24 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"strings"
 
 	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/llm/draft"
 )
+
+// keepThinkingEnabled resolves SUPERCLI_KEEP_THINKING: reasoning
+// retention is ON by default (the model keeps its previous chain of
+// thought across turns); "0", "false", "no" or "off" disables it.
+func keepThinkingEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SUPERCLI_KEEP_THINKING"))) {
+	case "0", "false", "no", "off":
+		return false
+	}
+	return true
+}
 
 // newRunID returns a short opaque identifier for one agent loop. It
 // only has to be unique among the runs sharing a tool_errors.log, so
@@ -70,8 +83,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		reflectEvery:          cfg.ReflectEvery,
 		adaptiveReflect:       cfg.AdaptiveReflection,
 		patternInjector:       cfg.PatternInjector,
-		creditTracker:         cfg.CreditTracker,
-		modelID:               cfg.Provider.Name(),
+		creditTracker:       cfg.CreditTracker,
+		modelID:             cfg.Provider.Name(),
+		keepThinking:        cfg.KeepThinking || keepThinkingEnabled(),
 		windowFor:             cfg.WindowFor,
 		contextWindowFor:      cfg.ContextWindowFor,
 		contextProvider:       cfg.ContextProvider,
@@ -131,6 +145,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 			loop.Messages = append(loop.Messages, patMsg)
 			loop.persist(context.Background(), patMsg)
 		}
+	}
+	if loop.hasSessionImages() {
+		loop.enableSessionImageTool()
 	}
 	return loop, nil
 }

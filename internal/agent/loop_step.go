@@ -107,6 +107,7 @@ func (l *Loop) runStep(
 	// ordinary target calls, so verification, error attribution and
 	// telemetry all retain the real tool name.
 	toolCalls = l.resolveInvokeToolCalls(toolCalls)
+	toolCalls = normalizeMalformedToolCalls(toolCalls)
 	if usage != nil {
 		totalUsage.Input += usage.Input
 		totalUsage.Output += usage.Output
@@ -197,11 +198,19 @@ func (l *Loop) runStep(
 	}
 	for _, tc := range toolCalls {
 		assistant.ToolCalls = append(assistant.ToolCalls, llm.ToolCall{
-			ID: tc.ID, Name: tc.Name, Arguments: tc.Arguments,
+			ID: tc.ID, Name: tc.Name, Arguments: historySafeToolArguments(tc.Arguments),
 		})
 	}
 	l.persist(ctx, assistant)
-	l.Messages = append(l.Messages, stripThinkingFromMessage(assistant))
+	// Reasoning retention: keep the stripped chain of thought for the
+	// NEXT provider request instead of discarding it — the persisted
+	// copy (above) keeps the full text for the UI, l.Messages keeps the
+	// deterministic plain view, and l.lastThinking bridges the two.
+	thinking, plain := captureThinkingFromMessage(assistant)
+	if l.keepThinking && thinking != "" {
+		l.lastThinking = thinking
+	}
+	l.Messages = append(l.Messages, plain)
 
 	// F14: budget-based eviction. After every step we
 	// look at the visible token estimate; if it
@@ -303,9 +312,11 @@ func (l *Loop) runStep(
 		return stepAbort
 	}
 	toolFailures := countFailures(toolOutcomes)
+	warnInjected := false
 	if repeatProg != nil {
 		switch repeatProg.observe(toolCalls, toolOutcomes) {
 		case repeatWarn:
+			warnInjected = true
 			// A real loop: the same call with the same arguments, or a short
 			// A-B-A-B cycle. The fix travels with the error — the model is
 			// told what it is doing and keeps its tools.
@@ -346,8 +357,16 @@ func (l *Loop) runStep(
 		reason = "fixed_interval"
 	}
 	if reason != "" {
-		l.runReflection(ctx, step+1, reason, out)
-		reflectionProgress.reset()
+		if warnInjected && reason == "repeated_tool_batch" {
+			// The [loop] warning injected this step already told the model
+			// about the identical repetition; a second system message about
+			// the same event would be pure noise. Consume the signal so a
+			// NEW repetition episode can still trigger a reflection.
+			reflectionProgress.reset()
+		} else {
+			l.runReflection(ctx, step+1, reason, out)
+			reflectionProgress.reset()
+		}
 	}
 
 	l.statsEndStep(stepStart)

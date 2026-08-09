@@ -62,6 +62,9 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 		}
 	}
 	if hidden > 0 {
+		// The turns whose reasoning was retained are gone: stale
+		// thinking must not ride into the fresh conversation.
+		l.lastThinking = ""
 		l.persistProjection(context.Background())
 	}
 	return hidden
