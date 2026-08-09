@@ -34,6 +34,93 @@ func codexSSE(w http.ResponseWriter, events ...string) {
 	}
 }
 
+func TestBuildCodexRequest_VisionDisabledReplacesImage(t *testing.T) {
+	body, err := buildCodexRequest("text-only", []Message{{
+		Role: RoleUser,
+		Parts: []ContentPart{
+			{Type: PartTypeText, Text: "look"},
+			{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
+		},
+	}}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req codexRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Input) != 1 || len(req.Input[0].Content) != 2 {
+		t.Fatalf("unexpected input: %+v", req.Input)
+	}
+	if got := req.Input[0].Content[1]; got.Type != "input_text" || got.Text != imageInputOmittedPlaceholder || got.ImageURL != "" {
+		t.Fatalf("image replacement = %+v", got)
+	}
+}
+
+func TestCodex_UnknownVisionRejectionRetriesAndLearns(t *testing.T) {
+	var requests []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var raw any
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		body, _ := json.Marshal(raw)
+		requests = append(requests, string(body))
+		if len(requests) == 1 {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":{"message":"model does not support image input"}}`))
+			return
+		}
+		codexSSE(w,
+			`{"type":"response.output_text.delta","delta":"ok"}`,
+			`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		)
+	}))
+	defer srv.Close()
+
+	p, err := NewCodex(CodexConfig{BackendURL: srv.URL, Model: "custom-model", Tokens: &fakeTokens{access: "tok", accountID: "acc"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{
+		{Type: PartTypeText, Text: "look"},
+		{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
+	}}}
+	ch, err := p.Complete(context.Background(), msgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawNotice bool
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("unexpected error: %v", d.Err)
+		}
+		if d.Notice != "" {
+			sawNotice = true
+		}
+	}
+	if !sawNotice || len(requests) != 2 {
+		t.Fatalf("retry notice=%v requests=%d", sawNotice, len(requests))
+	}
+	if !strings.Contains(requests[0], `"type":"input_image"`) {
+		t.Fatalf("first request did not try image input: %s", requests[0])
+	}
+	if strings.Contains(requests[1], `"type":"input_image"`) || !strings.Contains(requests[1], imageInputOmittedPlaceholder) {
+		t.Fatalf("fallback request did not replace image: %s", requests[1])
+	}
+
+	ch, err = p.Complete(context.Background(), msgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("unexpected learned-path error: %v", d.Err)
+		}
+	}
+	if len(requests) != 3 || strings.Contains(requests[2], `"type":"input_image"`) || !strings.Contains(requests[2], imageInputOmittedPlaceholder) {
+		t.Fatalf("learned text-only path wrong: %+v", requests)
+	}
+}
+
 func TestCodexCompleteStreamsTextToolsAndUsage(t *testing.T) {
 	var gotReq map[string]any
 	var gotHeaders http.Header

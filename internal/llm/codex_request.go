@@ -173,7 +173,7 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 				req.Input = append(req.Input, codexItem{
 					Type:      "function_call",
 					Name:      tc.Name,
-					Arguments: tc.Arguments,
+					Arguments: providerSafeToolArguments(tc.Arguments),
 					CallID:    tc.ID,
 				})
 			}
@@ -273,7 +273,8 @@ func messageText(m Message) string {
 }
 
 // codexUserParts encodes a user message as input_text/input_image
-// content parts. Images are dropped when vision is off.
+// content parts. Unsupported images become a text placeholder so the model
+// knows context was omitted instead of silently losing it.
 func codexUserParts(m Message, vision bool) ([]codexContentPart, error) {
 	if len(m.Parts) == 0 {
 		return []codexContentPart{{Type: "input_text", Text: m.Content}}, nil
@@ -285,18 +286,12 @@ func codexUserParts(m Message, vision bool) ([]codexContentPart, error) {
 			out = append(out, codexContentPart{Type: "input_text", Text: p.Text})
 		case PartTypeImage:
 			if !vision {
+				out = append(out, codexContentPart{Type: "input_text", Text: imageInputOmittedPlaceholder})
 				continue
 			}
-			img := p.Image
-			if img == nil {
-				return nil, fmt.Errorf("image part with nil Image")
-			}
-			url := img.URL
-			if url == "" {
-				if img.MediaType == "" || img.Data == "" {
-					return nil, fmt.Errorf("image part: incomplete (need URL or MediaType+Data)")
-				}
-				url = "data:" + img.MediaType + ";base64," + img.Data
+			url, err := resolveImageURL(p.Image)
+			if err != nil {
+				return nil, err
 			}
 			out = append(out, codexContentPart{Type: "input_image", ImageURL: url})
 		default:

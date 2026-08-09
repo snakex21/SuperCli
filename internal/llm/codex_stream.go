@@ -24,16 +24,31 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			return nil, fmt.Errorf("Complete: message %d: %w", i, err)
 		}
 	}
-	// Always forward image parts and let the Codex endpoint decide whether the
-	// selected model accepts them. Local capability metadata is advisory only.
-	reqBody, err := buildCodexRequest(p.cfg.Model, msgs, tools, true)
+	// Known text-only metadata blocks image input before the request is sent;
+	// unknown capability metadata remains optimistic.
+	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
+	reqBody, err := buildCodexRequest(p.cfg.Model, msgs, tools, visionAttempt)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+	var imageFallback []byte
+	if visionAttempt && messagesContainImage(msgs) {
+		imageFallback, err = buildCodexRequest(p.cfg.Model, msgs, tools, false)
+		if err != nil {
+			return nil, fmt.Errorf("build image fallback request: %w", err)
+		}
+	}
 	if p.cfg.StandardResponsesAPI {
-		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, SupportsReasoningEffort(p.cfg.Model), p.sampling)
+		reasoningModel := SupportsReasoningEffort(p.cfg.Model)
+		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 		if err != nil {
 			return nil, fmt.Errorf("build standard responses request: %w", err)
+		}
+		if len(imageFallback) > 0 {
+			imageFallback, err = prepareStandardResponsesRequest(imageFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			if err != nil {
+				return nil, fmt.Errorf("build standard image fallback request: %w", err)
+			}
 		}
 	}
 
@@ -60,7 +75,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			case <-ctx.Done():
 			}
 		}
-		resp, err := p.doWithAuth(reqCtx, cancel, reqBody, notify)
+		resp, err := p.doWithAuth(reqCtx, cancel, reqBody, imageFallback, notify)
 		if err != nil {
 			cancel()
 			select {
@@ -78,21 +93,23 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 }
 
 // doWithAuth performs the POST with bearer + ChatGPT headers.
-// Three orthogonal retry paths interleave in one loop:
+// Four orthogonal retry paths interleave in one loop:
 //   - 401: transparent token refresh (once);
 //   - 400 effort-learn: patch reasoning effort from the error (once);
+//   - explicit image-input rejection: retry without images and remember it (once);
 //   - 429/5xx: honour Retry-After (capped by rateLimitWaitBudget),
 //     mirroring openai.go/anthropic.go. Each rate-limit retry emits a
 //     non-terminal Delta.Notice via notify (may be nil), and after the
 //     retries are exhausted the terminal error carries the same
 //     "switch model" hint as the other providers.
-func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFunc, body []byte, notify func(Delta)) (*http.Response, error) {
+func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFunc, body, imageFallback []byte, notify func(Delta)) (*http.Response, error) {
 	access, accountID, err := p.cfg.Tokens.Token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	effortRetried := false
 	refreshed := false
+	visionRetried := false
 	const maxRateLimitAttempts = 3
 	rlAttempt := 0
 	waitBudget := rateLimitWaitBudget
@@ -143,6 +160,16 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 				effortRetried = true
 				continue
 			}
+		}
+		if !visionRetried && len(imageFallback) > 0 && isImageRejection(resp.StatusCode, respBody) {
+			p.imageRejected.Store(true)
+			body = imageFallback
+			imageFallback = nil
+			visionRetried = true
+			if notify != nil {
+				notify(Delta{Notice: fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model)})
+			}
+			continue
 		}
 		if isRetryableHTTPStatus(resp.StatusCode) && rlAttempt < maxRateLimitAttempts-1 {
 			rlAttempt++

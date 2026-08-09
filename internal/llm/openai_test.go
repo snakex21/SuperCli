@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -99,6 +100,34 @@ func TestBuildOpenAIRequest_TextOnly(t *testing.T) {
 	}
 	if sysContent != "you are helpful" {
 		t.Fatalf("system content = %q", sysContent)
+	}
+}
+
+func TestBuildOpenAIRequest_SanitizesInvalidHistoricalToolArguments(t *testing.T) {
+	body, err := buildOpenAIRequest("gpt-4o-mini", []Message{
+		{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call_bad", Name: "read_file", Arguments: `not json`}}},
+		{Role: RoleTool, ToolCallID: "call_bad", Content: "invalid tool call"},
+	}, nil, false, false)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var got struct {
+		Messages []struct {
+			ToolCalls []struct {
+				Function struct {
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Messages) == 0 || len(got.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("missing tool call in request: %s", body)
+	}
+	if args := got.Messages[0].ToolCalls[0].Function.Arguments; args != `{}` {
+		t.Fatalf("arguments = %q, want {}", args)
 	}
 }
 
@@ -315,7 +344,7 @@ func TestBuildOpenAIRequest_Vision(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_VisionDisabledDropsImages(t *testing.T) {
+func TestBuildOpenAIRequest_VisionDisabledReplacesImages(t *testing.T) {
 	body, err := buildOpenAIRequest("gpt-3.5-turbo", []Message{
 		{Role: RoleUser, Parts: []ContentPart{
 			{Type: PartTypeText, Text: "hi"},
@@ -337,8 +366,39 @@ func TestBuildOpenAIRequest_VisionDisabledDropsImages(t *testing.T) {
 	if err := json.Unmarshal(got.Messages[0].Content, &content); err != nil {
 		t.Fatalf("vision-disabled text should be JSON string, got %s", got.Messages[0].Content)
 	}
-	if content != "hi" {
-		t.Fatalf("content = %q, want hi", content)
+	want := "hi\n" + imageInputOmittedPlaceholder
+	if content != want {
+		t.Fatalf("content = %q, want %q", content, want)
+	}
+}
+
+func TestBuildOpenAIRequest_FileBackedImageLoadsOnlyForVision(t *testing.T) {
+	path := t.TempDir() + string(os.PathSeparator) + "tool.png"
+	if err := os.WriteFile(path, []byte("tool-image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	msg := Message{Role: RoleUser, Parts: []ContentPart{
+		{Type: PartTypeText, Text: "look"},
+		{Type: PartTypeImage, Image: &ImageRef{Path: path, MediaType: "image/png"}},
+	}}
+
+	body, err := buildOpenAIRequest("vision-model", []Message{msg}, nil, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "dG9vbC1pbWFnZQ==") {
+		t.Fatalf("file-backed image was not loaded at transport boundary: %s", body)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	body, err = buildOpenAIRequest("text-model", []Message{msg}, nil, false, false)
+	if err != nil {
+		t.Fatalf("text-only request should not touch missing image file: %v", err)
+	}
+	if strings.Contains(string(body), "image_url") || !strings.Contains(string(body), imageInputOmittedPlaceholder) {
+		t.Fatalf("text-only request did not replace file-backed image: %s", body)
 	}
 }
 
@@ -1159,7 +1219,7 @@ func TestOpenAI_SupportsVision(t *testing.T) {
 	}
 }
 
-func TestOpenAI_CapabilityMetadataDoesNotDropImage(t *testing.T) {
+func TestOpenAI_UnknownCapabilityStillAttemptsImage(t *testing.T) {
 	srv, body := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		sseResponse(w, `{"choices":[{"delta":{"content":"hi"}}]}`)
 	})
@@ -1182,6 +1242,202 @@ func TestOpenAI_CapabilityMetadataDoesNotDropImage(t *testing.T) {
 	}
 	if !strings.Contains(*body, "image_url") || !strings.Contains(*body, "data:image/png;base64,AAA") {
 		t.Fatalf("image was not forwarded to provider: %s", *body)
+	}
+}
+
+func TestOpenAI_KnownTextOnlyCapabilityReplacesImage(t *testing.T) {
+	srv, body := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, `{"choices":[{"delta":{"content":"hi"}}]}`)
+	})
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "text-only-model", Vision: false, VisionKnown: true, Source: SourceProvider})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "text-only-model", Capabilities: caps})
+	ch, err := p.Complete(context.Background(), []Message{{
+		Role: RoleUser,
+		Parts: []ContentPart{
+			{Type: PartTypeText, Text: "look"},
+			{Type: PartTypeImage, Image: &ImageRef{Data: "AAA", MediaType: "image/png"}},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	for _, delta := range drainDeltas(t, ch) {
+		if delta.Err != nil {
+			t.Fatalf("unexpected error: %v", delta.Err)
+		}
+	}
+	if strings.Contains(*body, "image_url") || strings.Contains(*body, "data:image/png;base64,AAA") {
+		t.Fatalf("known text-only model received image bytes: %s", *body)
+	}
+	if !strings.Contains(*body, imageInputOmittedPlaceholder) {
+		t.Fatalf("request should preserve an image placeholder: %s", *body)
+	}
+}
+
+// TestOpenAI_RetryWithoutImagesOnRejection verifies the self-healing
+// path: a text-only model behind an OpenAI-compatible gateway rejects
+// the image request with a serde-style 400, and the provider learns the
+// rejection, retries once without the images and completes normally.
+func TestOpenAI_RetryWithoutImagesOnRejection(t *testing.T) {
+	var requests []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(body))
+		if len(requests) == 1 {
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"type":"invalid_request_error","message":"Error from provider (Console): Upstream request failed: [invalid_request_error] Failed to deserialize the JSON body into the target type: messages[0]: unknown variant `+"`image_url`"+`, expected `+"`text`"+` at line 1 column 42"}}`)
+			return
+		}
+		sseResponse(w,
+			`{"choices":[{"index":0,"delta":{"role":"assistant","content":"ok"}}]}`,
+			`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		)
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "text-only-model"})
+	ch, err := p.Complete(context.Background(), []Message{{
+		Role: RoleUser,
+		Parts: []ContentPart{
+			{Type: PartTypeText, Text: "what is this?"},
+			{Type: PartTypeImage, Image: &ImageRef{Data: "BASE64DATA", MediaType: "image/jpeg"}},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	for _, d := range ds {
+		if d.Err != nil {
+			t.Fatalf("unexpected error delta: %v", d.Err)
+		}
+	}
+	if len(requests) != 2 {
+		t.Fatalf("got %d requests, want 2 (rejected + retried)", len(requests))
+	}
+	if !strings.Contains(requests[0], `"image_url"`) {
+		t.Fatalf("first request should carry the image: %s", requests[0])
+	}
+	if strings.Contains(requests[1], `"image_url"`) {
+		t.Fatalf("retry must not carry the image: %s", requests[1])
+	}
+	var sawNotice bool
+	for _, d := range ds {
+		if d.Notice != "" {
+			sawNotice = true
+		}
+	}
+	if !sawNotice {
+		t.Fatal("expected a Notice delta explaining the image retry")
+	}
+}
+
+// TestOpenAI_LearnedRejectionSkipsImagesOnNextTurn verifies that after a
+// rejection is learned, the very next request is built without image
+// parts — no doomed round-trip to the upstream.
+func TestOpenAI_LearnedRejectionSkipsImagesOnNextTurn(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		sseResponse(w,
+			`{"choices":[{"index":0,"delta":{"role":"assistant","content":"ok"}}]}`,
+			`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		)
+	}))
+	t.Cleanup(srv.Close)
+
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "text-only", Source: SourceProvider})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "text-only", Capabilities: caps})
+	p.imageRejected.Store(true)
+
+	// A rejection learned by this exact transport instance makes the next
+	// turn skip image parts without poisoning the shared model registry.
+	ch, err := p.Complete(context.Background(), []Message{{
+		Role: RoleUser,
+		Parts: []ContentPart{
+			{Type: PartTypeText, Text: "look"},
+			{Type: PartTypeImage, Image: &ImageRef{Data: "AAA", MediaType: "image/png"}},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	drainDeltas(t, ch)
+	if len(bodies) != 1 {
+		t.Fatalf("got %d requests, want 1 (learned rejection skips the doomed attempt)", len(bodies))
+	}
+	if strings.Contains(bodies[0], `"image_url"`) {
+		t.Fatalf("learned text-only model must not receive images: %s", bodies[0])
+	}
+}
+
+// TestOpenAI_NonRejectionImage400DoesNotBlindVisionModel verifies the
+// safety property: a 400 that merely mentions image_url for an unrelated
+// reason (malformed attachment, bad media type) is surfaced as an error
+// and does NOT mark the model text-only. A vision-capable model keeps
+// receiving images on the next turn.
+func TestOpenAI_NonRejectionImage400DoesNotBlindVisionModel(t *testing.T) {
+	var requests []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(body))
+		if len(requests) == 1 {
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"message":"image_url data is malformed"}}`)
+			return
+		}
+		sseResponse(w,
+			`{"choices":[{"index":0,"delta":{"role":"assistant","content":"ok"}}]}`,
+			`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		)
+	}))
+	t.Cleanup(srv.Close)
+
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "gpt-4o", Vision: true, VisionKnown: true, Source: SourceSeed})
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o", Capabilities: caps})
+	img := func() []Message {
+		return []Message{{
+			Role: RoleUser,
+			Parts: []ContentPart{
+				{Type: PartTypeText, Text: "look"},
+				{Type: PartTypeImage, Image: &ImageRef{Data: "AAA", MediaType: "image/png"}},
+			},
+		}}
+	}
+
+	// Turn 1: the 400 is an error, not a rejection — no retry, no learning.
+	ch, err := p.Complete(context.Background(), img(), nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	if len(ds) != 1 || ds[0].Err == nil {
+		t.Fatalf("expected a single error delta, got %+v", ds)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("got %d requests, want 1 (no image-retry for a non-rejection 400)", len(requests))
+	}
+	if !strings.Contains(requests[0], `"image_url"`) {
+		t.Fatalf("first request should carry the image: %s", requests[0])
+	}
+
+	// Turn 2: the model was NOT learned as text-only — images still sent.
+	ch, err = p.Complete(context.Background(), img(), nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds = drainDeltas(t, ch)
+	for _, d := range ds {
+		if d.Err != nil {
+			t.Fatalf("unexpected error delta: %v", d.Err)
+		}
+	}
+	if len(requests) != 2 || !strings.Contains(requests[1], `"image_url"`) {
+		t.Fatalf("vision model must keep receiving images after an unrelated 400: %+v", requests)
 	}
 }
 

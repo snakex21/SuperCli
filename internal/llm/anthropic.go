@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,6 +60,10 @@ type AnthropicProvider struct {
 	http     *http.Client
 	caps     *CapabilityRegistry
 	sampling Sampling
+
+	// imageRejected is endpoint-local evidence learned from an explicit
+	// upstream rejection. It never mutates the shared model catalog.
+	imageRejected atomic.Bool
 }
 
 func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
@@ -115,12 +120,20 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 			return nil, fmt.Errorf("Complete: message %d: %w", i, err)
 		}
 	}
-	// Do not gate attachments on catalog metadata. Anthropic-compatible
-	// gateways frequently expose custom model IDs whose capabilities are not
-	// present in our registry; the provider response is the source of truth.
-	body, err := buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, true, p.cfg.MaxTokens, p.sampling)
+	// Only authoritative text-only metadata blocks image input. Missing or
+	// incomplete capability metadata remains optimistic, so custom
+	// Anthropic-compatible gateways can still prove they support vision.
+	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
+	body, err := buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
+	}
+	var imageFallback []byte
+	if visionAttempt && messagesContainImage(msgs) {
+		imageFallback, err = buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, false, p.cfg.MaxTokens, p.sampling)
+		if err != nil {
+			return nil, fmt.Errorf("build image fallback request: %w", err)
+		}
 	}
 	out := make(chan Delta, 16)
 	go func() {
@@ -142,7 +155,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 			case <-ctx.Done():
 			}
 		}
-		resp, err := p.do(reqCtx, cancel, body, notify)
+		resp, err := p.do(reqCtx, cancel, body, imageFallback, notify)
 		if err != nil {
 			cancel()
 			select {
@@ -168,12 +181,13 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 // the OpenAI provider: up to maxAttempts total, Retry-After honoured
 // (clamped by rateLimitWaitBudget), a notify callback per wait so the
 // UI shows the rate-limit pause. notify may be nil.
-func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, body []byte, notify func(string)) (*http.Response, error) {
+func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, body, imageFallback []byte, notify func(string)) (*http.Response, error) {
 	const maxAttempts = 3
 	waitBudget := rateLimitWaitBudget
 	rateAttempts := 0
 	thinkingRetried := false
 	betaRetried := false
+	visionRetried := false
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
@@ -218,6 +232,16 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 				thinkingRetried = true
 				continue
 			}
+		}
+		if !visionRetried && len(imageFallback) > 0 && isImageRejection(resp.StatusCode, respBody) {
+			p.imageRejected.Store(true)
+			body = imageFallback
+			imageFallback = nil
+			visionRetried = true
+			if notify != nil {
+				notify(fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model))
+			}
+			continue
 		}
 		if !isRetryableHTTPStatus(resp.StatusCode) {
 			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
