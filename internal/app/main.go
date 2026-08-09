@@ -45,6 +45,7 @@ import (
 	"supercli/internal/storage"
 	"supercli/internal/storage/freshness"
 	"supercli/internal/storage/goal"
+	"supercli/internal/system/childproc"
 	"supercli/internal/system/execution"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
@@ -88,6 +89,17 @@ func Main() {
 	appLog := initAppLog(dataDir)
 	if appLog != nil {
 		defer appLog.Close()
+	}
+
+	// Orphan-process journal: every long-lived child (MCP/LSP/pty) is
+	// recorded in <dataDir>/processes.jsonl. This startup sweep
+	// terminates children whose owner process is gone — a crash,
+	// taskkill /F or power loss never runs the normal Stop path.
+	// Windows job objects cover clean shutdowns; this covers the rest
+	// (and everything on Unix). Runs before any spawn in this process.
+	childproc.SetJournal(filepath.Join(dataDir, childproc.JournalFile))
+	if n := childproc.Sweep(); n > 0 {
+		log.Printf("orphan sweep: terminated %d leftover subprocess(es) from a previous run", n)
 	}
 
 	db, err := storage.OpenAt(dataDir)
@@ -385,6 +397,27 @@ func Main() {
 			log.Printf("compact_model: summaries use %q @ %s", cp.Name(), compactCfg.BaseURL)
 		}
 	}
+	// orchestrator_model: the coordinator (main loop) may run on a
+	// different model than the chat default — the counterpart of
+	// task_model, which routes the workers. The orchestrator writes the
+	// task brief and the worker executes it in an isolated context.
+	// Built before the loop so the main provider slot carries the
+	// orchestrator when one is configured.
+	orchCfg, orchOverride := resolveOrchestratorModelConfig(tomlCfg, cfg)
+	var orchestratorProvider llm.Provider
+	if orchOverride {
+		op, opErr := provFactory.Build(orchCfg, llm.PurposeMain)
+		if opErr != nil {
+			log.Printf("orchestrator_model: coordinator provider %q build failed: %v — the main model keeps coordinating", tomlCfg.OrchestratorModel, opErr)
+		} else {
+			orchestratorProvider = op
+			log.Printf("orchestrator_model: coordinator uses %q @ %s", op.Name(), orchCfg.BaseURL)
+		}
+	}
+	mainProvider := provider
+	if orchestratorProvider != nil {
+		mainProvider = orchestratorProvider
+	}
 	taskParallel, taskParallelWarnLocal := execution.Parallel(taskWorkerCfg.BaseURL, tomlCfg.TaskParallel)
 
 	// cache_prompt and [sampling] are installed process-globally by
@@ -442,7 +475,7 @@ func Main() {
 
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(buildMainLoopConfig(loopAssembly{
-		provider:               provider,
+		provider:               mainProvider,
 		registry:               registry,
 		goalSvc:                goalSvc,
 		memoryBriefing:         memoryBriefing,
@@ -476,7 +509,7 @@ func Main() {
 	at, err := wireAgentTool(agentToolWiring{
 		loop:               loop,
 		registry:           registry,
-		provider:           provider,
+		provider:           mainProvider,
 		caps:               caps,
 		tomlCfg:            tomlCfg,
 		taskWorkerProvider: taskWorkerProvider,

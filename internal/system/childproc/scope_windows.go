@@ -21,11 +21,15 @@ type Scope struct {
 // Start launches cmd and, where Windows permits it, places it in a kill-on-close
 // Job Object. Job setup is best effort because some managed/older Windows hosts
 // forbid nested jobs; direct process termination remains available as fallback.
+// The spawn is also recorded in the orphan-process journal, which covers the
+// cases a job object cannot: a hard crash never runs Stop, and nested-job hosts
+// never get the job at all.
 func Start(cmd *exec.Cmd) (*Scope, error) {
 	HideWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	journalChild(cmd)
 	s := &Scope{}
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -59,6 +63,7 @@ func Start(cmd *exec.Cmd) (*Scope, error) {
 // Kill terminates cmd and every descendant assigned to its job. It is safe to
 // race with Wait/Close and safe to call more than once.
 func (s *Scope) Kill(cmd *exec.Cmd) error {
+	journalDone(cmd)
 	killedTree := false
 	if s != nil {
 		s.mu.Lock()
