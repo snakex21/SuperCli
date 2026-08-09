@@ -167,6 +167,38 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	toolFailures := 0
 	turnSaved := false
 	terminalUsage := agent.Usage{}
+	// Per-turn tool diagnostics: ToolResultEvent carries no tool name, so
+	// tool call IDs are paired to names as they stream in. The diag lands
+	// in session_turns.tool_diag_json, where a failing run shows its
+	// signature (which tool, how often, last message) without a transcript.
+	toolNames := map[string]string{}
+	var turnDiag session.TurnToolDiag
+	recordToolResult := func(ev agent.ToolResultEvent) {
+		name := toolNames[ev.ID]
+		if ev.Err != nil {
+			toolFailures++
+			if name == "" {
+				name = "?"
+			}
+			if turnDiag.Failures == nil {
+				turnDiag.Failures = map[string]int{}
+			}
+			turnDiag.Failures[name]++
+			if msg := ev.Err.Error(); msg != "" {
+				if turnDiag.Messages == nil {
+					turnDiag.Messages = map[string]string{}
+				}
+				turnDiag.Messages[name] = truncateDiag(msg, 200)
+			}
+			return
+		}
+		// Stall signature: a search that returns nothing is normal once,
+		// a run full of them is a discovery loop (rg-less fallback used to
+		// lie about regex queries — this counter is what surfaces that).
+		if name == "search_code" && strings.TrimSpace(ev.Output) == "no matches" {
+			turnDiag.NoOpSearches++
+		}
+	}
 	var turnFileChanges []checkpoint.FileChange
 	finishCheckpoint := func() (string, []checkpoint.FileChange) {
 		if checkpointTurn == nil {
@@ -250,6 +282,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			BackgroundCalls: backgroundCalls, HelperCalls: helperCalls,
 			AuxCalls: total.AuxCalls, AuxUs: total.AuxUs,
 			Phases: systats.SumPhases(turns), FileChanges: storedChanges,
+			ToolDiag: turnDiag,
 		}); saveErr != nil {
 			// Telemetry must never fail or delay the user's answer/error.
 			log.Printf("web turn summary: session=%q: %v", sid, saveErr)
@@ -304,8 +337,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			if _, ok := ev.(agent.ToolCallEvent); ok {
 				toolCalls++
 			}
-			if result, ok := ev.(agent.ToolResultEvent); ok && result.Err != nil {
-				toolFailures++
+			if call, ok := ev.(agent.ToolCallEvent); ok {
+				toolNames[call.ID] = call.Name
+			}
+			if result, ok := ev.(agent.ToolResultEvent); ok {
+				recordToolResult(result)
 			}
 			checkpointID := ""
 			var fileChanges []checkpoint.FileChange
@@ -321,6 +357,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			}
 			if failed, ok := ev.(agent.ErrorEvent); ok {
 				terminalUsage = failed.Usage
+				if failed.Err != nil {
+					turnDiag.Terminal = truncateDiag(failed.Err.Error(), 300)
+				}
 				saveTurnSummary()
 			}
 			if w, keep := toWireEvent(ev); keep {
@@ -346,3 +385,17 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 // fresh loop per HTTP request, so we infer whether a previous user turn already
 // crossed that boundary from persisted prompts. Ambiguous prompts count as
 // project-like: paying once is safer than starving a real task of repo facts.
+
+// truncateDiag caps a diagnostic string at max runes (with an ellipsis),
+// keeping the per-turn diag column compact: the goal is to distinguish
+// failure KINDS, not to duplicate the transcript.
+func truncateDiag(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "…"
+}

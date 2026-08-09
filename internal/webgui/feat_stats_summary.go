@@ -1,6 +1,7 @@
 package webgui
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) statsTelemetryView {
 	var out statsTelemetryView
 	toolUS := map[string]int64{}
+	toolFails := map[string]int{}
 	var modelUS, toolsUS, cliUS, persistUS, auxUS int64
 	for _, turn := range turns {
 		if len(turn.Phases) == 0 {
@@ -30,6 +32,10 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 		out.FailedCalls += turn.FailedCalls
 		out.CanceledCalls += turn.CanceledCalls
 		out.ToolFailures += turn.ToolFailures
+		out.NoOpSearches += turn.ToolDiag.NoOpSearches
+		for name, n := range turn.ToolDiag.Failures {
+			toolFails[name] += n
+		}
 		for name, us := range turn.Phases {
 			switch {
 			case name == "request_encode", name == "backend_wait", name == "stream_total", strings.HasPrefix(name, "model:"):
@@ -80,6 +86,36 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 	if out.ToolFailures > 0 {
 		out.Signals = append(out.Signals, "tool_failures")
 	}
+	// Search-stall: repeated no-match searches are the signature of a
+	// discovery loop (e.g. the rg-less fallback returning "no matches"
+	// for regex queries). Three or more in the window is worth a signal.
+	if out.NoOpSearches >= 3 {
+		out.Signals = append(out.Signals, "search_stall")
+	}
+	// Repeating the same bad arguments (string instead of array, bad
+	// path) across a run is a repair loop, not bad luck.
+	repeatedArgFailures := false
+	for _, n := range toolFails {
+		if n >= 2 {
+			repeatedArgFailures = true
+			break
+		}
+	}
+	if repeatedArgFailures {
+		out.Signals = append(out.Signals, "arg_failures")
+	}
+	for name, n := range toolFails {
+		out.Failures = append(out.Failures, statsToolFailureView{Name: name, Count: n})
+	}
+	sort.Slice(out.Failures, func(i, j int) bool {
+		if out.Failures[i].Count == out.Failures[j].Count {
+			return out.Failures[i].Name < out.Failures[j].Name
+		}
+		return out.Failures[i].Count > out.Failures[j].Count
+	})
+	if len(out.Failures) > 5 {
+		out.Failures = out.Failures[:5]
+	}
 	if out.FailedCalls > 0 || out.CanceledCalls > 0 {
 		out.Signals = append(out.Signals, "model_failures")
 	}
@@ -103,11 +139,24 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 		}
 		return out.Tools[i].DurationMS > out.Tools[j].DurationMS
 	})
+	// A single tool eating >= slowToolSignalMs of wall time in the window is
+	// a real UX cost (observed: 57s tool_execution on one turn). The phase
+	// data existed; nothing ever pointed at it.
+	for _, tv := range out.Tools {
+		if tv.DurationMS >= slowToolSignalMs {
+			out.Signals = append(out.Signals, fmt.Sprintf("slow_tool:%s", tv.Name))
+		}
+	}
 	if len(out.Tools) > 5 {
 		out.Tools = out.Tools[:5]
 	}
 	return out
 }
+
+// slowToolSignalMs is the per-tool wall-time threshold (ms) above which the
+// slow_tool:<name> signal is emitted. 30s of a single tool call (or many
+// calls of the same tool) is worth a glance, not a diagnosis.
+const slowToolSignalMs = 30_000
 
 func summarizeSession(meta session.Session, messages []llm.Message) statsSessionView {
 	out := statsSessionView{

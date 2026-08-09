@@ -279,3 +279,78 @@ func TestRunStreamPersistsTelemetryForFailedTurn(t *testing.T) {
 		t.Fatalf("failed turn summary = %+v", turns[0])
 	}
 }
+
+// diagProbeProvider reproduces the exact failure mix that made the
+// original loops invisible in telemetry: a no-match search, a broken
+// tool call, then an upstream error.
+type diagProbeProvider struct{ calls int }
+
+func (p *diagProbeProvider) Name() string { return "diag-probe" }
+
+func (p *diagProbeProvider) Complete(_ context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	p.calls++
+	ch := make(chan llm.Delta, 4)
+	switch p.calls {
+	case 1:
+		ch <- llm.Delta{ToolCall: &llm.ToolCall{ID: "s1", Name: "search_code", Arguments: `{"query":"zz9_not_here_42_","max":5}`}}
+		ch <- llm.Delta{FinishReason: "tool_calls"}
+	case 2:
+		ch <- llm.Delta{ToolCall: &llm.ToolCall{ID: "r1", Name: "read_lines", Arguments: `{"path":"C:\\definitely\\not\\here\\ghost.md","start":1,"end":5}`}}
+		ch <- llm.Delta{FinishReason: "tool_calls"}
+	default:
+		ch <- llm.Delta{Err: errors.New("boom after probes")}
+	}
+	close(ch)
+	return ch, nil
+}
+
+// TestRunStreamPersistsToolDiag is the end-to-end guard for the
+// tool_diag_json column: a run that no-match-searches, breaks a tool
+// call and then dies must leave a signature in the DB — without it,
+// every such run looked identical to a healthy one and the loops
+// could only be found by dumping transcripts.
+func TestRunStreamPersistsToolDiag(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.eng.mu.Lock()
+	srv.eng.prov = &diagProbeProvider{}
+	srv.eng.mu.Unlock()
+
+	sessionID := ""
+	err := srv.eng.runStream(context.Background(), "probe the project", "", "", func(ev wireEvent) {
+		if ev.Type == "session" {
+			sessionID = ev.SessionID
+		}
+	})
+	// Provider errors surface as ErrorEvent (channel close returns nil);
+	// the terminal kind is what must land in the diag, not the return value.
+	if err != nil {
+		t.Fatalf("runStream: %v", err)
+	}
+	if sessionID == "" {
+		t.Fatal("missing session id")
+	}
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	turns, err := store.ReadTurnSummaries(context.Background(), sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 {
+		t.Fatalf("turns = %+v", turns)
+	}
+	diag := turns[0].ToolDiag
+	if diag.NoOpSearches != 1 {
+		t.Errorf("noop searches = %d, want 1 (diag=%+v)", diag.NoOpSearches, diag)
+	}
+	if diag.Failures["read_lines"] != 1 {
+		t.Errorf("read_lines failures = %d, want 1 (diag=%+v)", diag.Failures["read_lines"], diag)
+	}
+	if diag.Messages["read_lines"] == "" {
+		t.Errorf("read_lines failure message missing (diag=%+v)", diag)
+	}
+	if !strings.Contains(diag.Terminal, "boom after probes") {
+		t.Errorf("terminal = %q, want boom after probes", diag.Terminal)
+	}
+}

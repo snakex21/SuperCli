@@ -34,6 +34,12 @@ func TestStoreTurnSummarySurvivesReopenAndClampsSubsets(t *testing.T) {
 		HelperCalls: 2, AuxCalls: 2, AuxUs: 50_000,
 		Phases: map[string]int64{"backend_wait": 1234, "tool:read": 456},
 		FileChanges: []FileChange{{Path: "new.txt", Kind: "created"}},
+		ToolDiag: TurnToolDiag{
+			Failures:     map[string]int{"ctx_execute": 3, "read_lines": 1},
+			Messages:     map[string]string{"ctx_execute": "invalid tool arguments for ctx_execute: $.command: expected array, got string"},
+			NoOpSearches: 4,
+			Terminal:     "repeatAbort: same tool call repeated 50 times",
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +68,15 @@ func TestStoreTurnSummarySurvivesReopenAndClampsSubsets(t *testing.T) {
 	}
 	if len(got.FileChanges) != 1 || got.FileChanges[0] != (FileChange{Path: "new.txt", Kind: "created"}) {
 		t.Fatalf("turn file changes = %+v", got.FileChanges)
+	}
+	if got.ToolDiag.Failures["ctx_execute"] != 3 || got.ToolDiag.Failures["read_lines"] != 1 {
+		t.Fatalf("tool diag failures = %+v", got.ToolDiag.Failures)
+	}
+	if got.ToolDiag.Messages["ctx_execute"] != "invalid tool arguments for ctx_execute: $.command: expected array, got string" {
+		t.Fatalf("tool diag message = %+v", got.ToolDiag.Messages)
+	}
+	if got.ToolDiag.NoOpSearches != 4 || got.ToolDiag.Terminal != "repeatAbort: same tool call repeated 50 times" {
+		t.Fatalf("tool diag stall/terminal = %+v", got.ToolDiag)
 	}
 }
 

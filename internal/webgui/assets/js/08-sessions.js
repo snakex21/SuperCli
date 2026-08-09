@@ -60,7 +60,30 @@ async function loadSessions() {
       var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
       b.type = "button";
       b.dataset.sessionId = s.id;
-      b.appendChild(el("span", "t", s.first_user_msg || s.id));
+      var title = el("span", "t");
+      var titleText = el("span", "t-scroll", s.first_user_msg || s.id);
+      title.appendChild(titleText);
+      b.appendChild(title);
+
+      function syncTitleMarquee() {
+        var viewportWidth = title.clientWidth;
+        var textWidth = titleText.scrollWidth;
+        var overflow = textWidth - viewportWidth;
+        if (overflow > 2) {
+          var distance = overflow + 64;
+          var duration = Math.max(2.8, Math.min(8, distance / 50 + 1.6));
+          b.classList.add("title-overflow");
+          title.style.setProperty("--session-marquee-distance", distance.toFixed(1) + "px");
+          title.style.setProperty("--session-marquee-duration", duration.toFixed(2) + "s");
+        } else {
+          b.classList.remove("title-overflow");
+          title.style.removeProperty("--session-marquee-distance");
+          title.style.removeProperty("--session-marquee-duration");
+        }
+      }
+      b.addEventListener("pointerenter", syncTitleMarquee);
+      b.addEventListener("focusin", syncTitleMarquee);
+
       var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
       if (s.model) sessionMeta += " · " + compactSessionModel(s.model);
       var meta = el("span", "s", sessionMeta);

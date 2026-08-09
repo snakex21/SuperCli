@@ -79,6 +79,19 @@ sections.memory = async function () {
   panelContent.innerHTML = "";
   var g = el("div", "group");
   g.appendChild(el("div", "g-label", t("panel.memory")));
+  var tools = el("div", "memory-tools");
+  var dedupBtn = el("button", "btn", t("mem.dedup"));
+  dedupBtn.type = "button";
+  dedupBtn.addEventListener("click", async function () {
+    dedupBtn.disabled = true;
+    try {
+      var res = await jpost("/api/memory", { action: "dedup" });
+      toast((res && res.removed ? res.removed + " " : "") + t("mem.dedupDone"));
+      await sections.memory();
+    } catch (e) { toast(e.message); dedupBtn.disabled = false; }
+  });
+  tools.appendChild(dedupBtn);
+  g.appendChild(tools);
   if (!got || !got.length) g.appendChild(el("div", "note", t("mem.empty")));
   (got || []).forEach(function (m) {
     var row = el("div", "list-row");
@@ -86,8 +99,21 @@ sections.memory = async function () {
     var title = el("div", "lr-title", m.content);
     title.style.whiteSpace = "normal";
     main.appendChild(title);
-    main.appendChild(el("div", "lr-sub", [m.scope, (m.tags || []).join(","), fmtWhen(m.updated_at)].filter(Boolean).join(" · ")));
+    main.appendChild(el("div", "lr-sub", [m.scope, (m.tags || []).join(","), fmtWhen(m.updated_at)].filter(Boolean).join(" \u00b7 ")));
     row.appendChild(main);
+    var delBtn = el("button", "btn danger mem-del", t("mem.delete"));
+    delBtn.type = "button";
+    delBtn.title = t("mem.delete");
+    delBtn.addEventListener("click", async function () {
+      if (!await appConfirm(t("mem.deleteConfirm"), { title: t("mem.delete"), danger: true, confirmLabel: t("common.remove") })) return;
+      delBtn.disabled = true;
+      try {
+        await j("/api/memory?id=" + encodeURIComponent(m.id), { method: "DELETE" });
+        toast(t("mem.deleted"));
+        await sections.memory();
+      } catch (e) { toast(e.message); delBtn.disabled = false; }
+    });
+    row.appendChild(delBtn);
     g.appendChild(row);
   });
   panelContent.appendChild(g);
