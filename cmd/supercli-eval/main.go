@@ -27,7 +27,7 @@ func (s *stringsFlag) Set(value string) error {
 
 func main() {
 	fs := flag.NewFlagSet("supercli-eval", flag.ExitOnError)
-	suitePath := fs.String("suite", filepath.FromSlash("test/eval/suite.json"), "suite JSON path")
+	suitePath := fs.String("suite", filepath.FromSlash("test/go/eval/suite.json"), "suite JSON path")
 	workRoot := fs.String("work-root", filepath.Join(os.TempDir(), "supercli-eval"), "isolated workspace root")
 	taskID := fs.String("task", "", "run only one task id")
 	timeout := fs.Duration("timeout", 10*time.Minute, "timeout per task/model")

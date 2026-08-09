@@ -1,0 +1,59 @@
+{
+  "id": "supercli-features",
+  "name": "SuperCli feature verification: reasoning retention + result truncation",
+  "description": "Two objective tasks whose REAL point is the wire-level behaviour: run this suite through supercli-wireprobe and check the JSONL log for (1) the retained-reasoning tail on 2nd+ requests, (2) omitted_lines markers on large tool results, (3) no <thinking> blocks inside assistant history messages.",
+  "tasks": [
+    {
+      "id": "line-count-truncation",
+      "name": "Count ERROR lines in a 125 KB file",
+      "tags": ["truncation", "paging", "read"],
+      "difficulty": "easy",
+      "prompt": "Read the file data.txt completely - it is large (about 125 KB, 1500 lines), so read it in chunks. Available tools: read_lines (exact line ranges, never truncates - use this for full coverage), read_many (many paths at once, but truncates large content with an omitted_lines marker), search_code (regex search). Read data.txt with read_lines in chunks of 500 lines until you have seen every line. Count how many lines contain the string ERROR. Write exactly that integer and nothing else to answer.txt in this workspace. Do not modify data.txt, go.mod or verify_test.go. The harness will run: go test ./... -run ^TestAnswer$ - it must pass.",
+      "workspaceFixture": "fixtures/feature-line-count",
+      "expectedChangedFiles": ["answer.txt"],
+      "forbiddenChangedFiles": ["go.mod", "verify_test.go", "data.txt"],
+      "verificationCommands": [
+        {"id": "verify-answer", "args": ["go", "test", "./...", "-run", "^TestAnswer$"]}
+      ]
+    },
+    {
+      "id": "multi-step-reasoning",
+      "name": "Three-step arithmetic chain",
+      "tags": ["retention", "multi-step"],
+      "difficulty": "easy",
+      "prompt": "Work step by step, in your own head between tool calls. Read the integer in puzzle.txt. Step 1: multiply it by 7. Step 2: compute the digit sum of that product. Step 3: multiply the digit sum by 3. Write the FINAL integer and nothing else to answer.txt in this workspace. Do not modify puzzle.txt, go.mod or verify_test.go. The harness will run: go test ./... -run ^TestAnswer$ - it must pass.",
+      "workspaceFixture": "fixtures/feature-chain",
+      "expectedChangedFiles": ["answer.txt"],
+      "forbiddenChangedFiles": ["go.mod", "verify_test.go", "puzzle.txt"],
+      "verificationCommands": [
+        {"id": "verify-answer", "args": ["go", "test", "./...", "-run", "^TestAnswer$"]}
+      ]
+    },
+    {
+      "id": "fact-merge",
+      "name": "Merge 9 facts across 3 large files",
+      "tags": ["retention", "truncation", "paging", "memory"],
+      "difficulty": "hard",
+      "prompt": "Three large files are in this workspace: facts_a.txt, facts_b.txt, facts_c.txt (about 45 KB each). Each file contains exactly three lines of the form 'FACT <id> <value>' (a line starting with FACT, followed by an id number and a short value) hidden among many filler lines. Available tools: search_code (regex search - find all lines matching ^FACT to locate the facts fast), read_lines (exact line ranges, never truncates), read_many (truncates large content with an omitted_lines marker). Collect all nine facts. Then merge them into a single line: value of fact id 1, then ';', then value of fact id 2, then ';', and so on up to fact id 9 - exactly 'V1;V2;V3;V4;V5;V6;V7;V8;V9'. Write exactly that merged line and nothing else to answer.txt. Do not modify the facts files, go.mod or verify_test.go. The harness will run: go test ./... -run ^TestAnswer$ - it must pass.",
+      "workspaceFixture": "fixtures/feature-facts",
+      "expectedChangedFiles": ["answer.txt"],
+      "forbiddenChangedFiles": ["go.mod", "verify_test.go", "facts_a.txt", "facts_b.txt", "facts_c.txt"],
+      "verificationCommands": [
+        {"id": "verify-answer", "args": ["go", "test", "./...", "-run", "^TestAnswer$"]}
+      ]
+    },
+    {
+      "id": "repo-bugfix-orchestrated",
+      "name": "Fix a Go bug via the orchestrated task tool",
+      "tags": ["orchestrator", "draft-verify", "delegation", "repo"],
+      "difficulty": "medium",
+      "prompt": "mathx_test.go fails: go test ./... reports TestAdd and TestAddNegative failing. Find the bug in mathx.go and fix it so that go test ./... passes. Do not modify mathx_test.go, go.mod or config.toml. You are running in orchestrator mode: delegate the file edits to a worker via the task tool (your own toolset is delegation + read-only). When the worker reports back, run go test ./... to confirm it is green. The harness will also run: go test ./... -run ^Test - it must pass.",
+      "workspaceFixture": "fixtures/feature-repo-bugfix",
+      "expectedChangedFiles": ["mathx.go"],
+      "forbiddenChangedFiles": ["go.mod", "mathx_test.go", "config.toml"],
+      "verificationCommands": [
+        {"id": "verify-fix", "args": ["go", "test", "./...", "-run", "^Test"]}
+      ]
+    }
+  ]
+}

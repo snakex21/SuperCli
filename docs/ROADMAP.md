@@ -259,7 +259,7 @@ więc sesje nie płacą za niego startem, RAM-em ani tokenami.
 
 ### TODO — live macierz modeli i regresje wydajności
 
-- Uruchomić komplet 10 zadań `test/eval/suite.json` co najmniej na:
+- Uruchomić komplet 10 zadań `test/go/eval/suite.json` co najmniej na:
   Qwen3.5-122B z HP Z6 (thinking), małym modelu lokalnym oraz jednym małym
   i jednym mocnym modelu chmurowym.
 - Dla każdego przebiegu zachować: pass/fail, czas, liczbę wywołań modelu i
