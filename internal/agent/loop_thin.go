@@ -80,6 +80,15 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 			})
 		}
 	}
+	if l.hasSessionImages() {
+		if t, ok := l.registry.Get(sessionImageToolName); ok {
+			toolDefs = append(toolDefs, llm.ToolDef{
+				Name:        t.Name,
+				Description: t.Description,
+				Schema:      t.Schema,
+			})
+		}
+	}
 	return toolDefs
 }
 
