@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -52,6 +54,7 @@ func (s *SearchCode) Spec() Tool {
 		ReadOnly: true,
 		Description: "Search the codebase for lines matching a regex (read-only). " +
 			"Returns file:line:content for each match, up to max results. " +
+			"Regex is Go RE2, case-sensitive like rg (prefix the pattern with (?i) for case-insensitive). " +
 			"Use to find locations, then read_lines/read_many and patch_file — " +
 			"do not keep running alternate searches without a concrete new question. " +
 			"Never invent edits from search hits alone.",
@@ -99,18 +102,51 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
 	}
 
-	if !s.hasRG() {
+	rg := s.rgPath()
+	if rg == "" {
 		return s.fallback(ctx, root, a.Query, a.Max)
 	}
-	return s.ripgrep(ctx, root, a.Query, a.Max)
+	return s.ripgrep(ctx, rg, root, a.Query, a.Max)
 }
 
+// hasRG reports whether a ripgrep binary is reachable: on
+// PATH first, then bundled next to the running executable
+// (the same locations ctxexec resolves for `rg` commands,
+// so dropping rg.exe next to supercli.exe upgrades both
+// paths at once).
 func (s *SearchCode) hasRG() bool {
-	_, err := exec.LookPath("rg")
-	return err == nil
+	return s.rgPath() != ""
 }
 
-func (s *SearchCode) ripgrep(ctx context.Context, root, query string, max int) (Result, error) {
+func (s *SearchCode) rgPath() string {
+	if path, err := exec.LookPath("rg"); err == nil {
+		return path
+	}
+	executable, err := os.Executable()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		return ""
+	}
+	base := filepath.Dir(executable)
+	for _, rel := range []string{
+		"rg.exe", "rg",
+		filepath.Join("bin", "rg.exe"), filepath.Join("bin", "rg"),
+		filepath.Join("tools", "rg.exe"), filepath.Join("tools", "rg"),
+		filepath.Join("bin", "tools", "rg.exe"), filepath.Join("bin", "tools", "rg"),
+	} {
+		candidate := filepath.Join(base, rel)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || !info.Mode().IsRegular() {
+			continue
+		}
+		if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		return candidate
+	}
+	return ""
+}
+
+func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max int) (Result, error) {
 	// rg's --max-count is PER FILE, while the tool contract is a
 	// GLOBAL cap. The pipe reader below enforces the real limit:
 	// it stops after `max` surviving matches and kills rg, so a
@@ -125,7 +161,7 @@ func (s *SearchCode) ripgrep(ctx context.Context, root, query string, max int) (
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, "rg", args...)
+	cmd := exec.CommandContext(runCtx, rg, args...)
 	childproc.HideWindow(cmd)
 	stderr := core.NewHeadTailBuffer(2048, 1024)
 	cmd.Stderr = stderr
@@ -217,11 +253,17 @@ func ripgrepPathIsSkipped(line string) bool {
 	return false
 }
 
-// fallback is a tiny case-insensitive substring search used
-// when rg is unavailable. It walks a list of likely code
-// extensions and bails out at max matches.
+// fallback is the pure-Go search used when rg is unavailable.
+// It walks a list of likely code extensions and bails out at
+// max matches. The query is matched as a Go RE2 regex (the
+// schema promises regex, so results stay consistent with the
+// rg path — including on machines where rg IS installed);
+// when the query does not compile, it degrades to the old
+// case-insensitive literal substring match so plain-word or
+// malformed queries keep working (e.g. "call(" is a broken
+// regex but a meaningful search).
 func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) (Result, error) {
-	lower := strings.ToLower(query)
+	re, reErr := regexp.Compile(query)
 	exts := map[string]bool{
 		".go": true, ".py": true, ".js": true, ".ts": true,
 		".tsx": true, ".jsx": true, ".rs": true, ".java": true,
@@ -256,15 +298,22 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) 
 		for scanner.Scan() {
 			lineNo++
 			line := scanner.Text()
-			if strings.Contains(strings.ToLower(line), lower) {
-				if b.Len() > 0 {
-					b.WriteString("\n")
-				}
-				fmt.Fprintf(&b, "%s:%d:%s", path, lineNo, line)
-				count++
-				if count >= max {
-					return errStopWalk
-				}
+			var hit bool
+			if reErr == nil {
+				hit = re.MatchString(line)
+			} else {
+				hit = matchLine(line, query)
+			}
+			if !hit {
+				continue
+			}
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			fmt.Fprintf(&b, "%s:%d:%s", path, lineNo, line)
+			count++
+			if count >= max {
+				return errStopWalk
 			}
 		}
 		return nil

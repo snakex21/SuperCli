@@ -147,6 +147,43 @@ func TestMatchLine(t *testing.T) {
 	}
 }
 
+// TestSearchCode_RegexFallback guards the rg-less fallback against
+// regression to literal substring matching: a regex alternation
+// like "TODO|FIXME" used to return "no matches" on every file
+// (the query was searched for as literal text), which made models
+// re-search in a loop. The fallback must honor RE2 semantics.
+func TestSearchCode_RegexFallback(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("// TODO: ship this\nfunc ok() {}\n// FIXME: leaks\n"), 0o644)
+	s := NewSearchCode(dir)
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"TODO|FIXME","max":10}`))
+	if res.Err != nil {
+		t.Fatalf("run: %v", res.Err)
+	}
+	if strings.Contains(res.Text, "no matches") {
+		t.Fatalf("regex alternation returned no matches: %q", res.Text)
+	}
+	if !strings.Contains(res.Text, "TODO: ship this") || !strings.Contains(res.Text, "FIXME: leaks") {
+		t.Errorf("expected both alternation branches: %q", res.Text)
+	}
+}
+
+// TestSearchCode_RegexCamelCase: identifier alternations written in
+// the file's actual casing (the historical gunmayhem loop queries
+// like "drawGun|wepnumber|getgun") must match exactly, like rg.
+func TestSearchCode_RegexCamelCase(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "player.js"), []byte("function drawGun() {}\nvar wepnumber = 3;\n"), 0o644)
+	s := NewSearchCode(dir)
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"drawGun|wepnumber","max":10}`))
+	if res.Err != nil {
+		t.Fatalf("run: %v", res.Err)
+	}
+	if !strings.Contains(res.Text, "drawGun()") || !strings.Contains(res.Text, "wepnumber") {
+		t.Errorf("camelCase alternation missed: %q", res.Text)
+	}
+}
+
 func TestSearchRootDirs(t *testing.T) {
 	dirs := searchRootDirs("")
 	if len(dirs) != 1 {

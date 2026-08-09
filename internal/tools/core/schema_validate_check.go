@@ -233,19 +233,51 @@ func coerceCompiledArgs(schema *compiledToolSchema, args json.RawMessage) json.R
 		for typ := range property.types {
 			want = typ
 		}
-		if want != "integer" && want != "number" && want != "boolean" {
-			continue
-		}
 		raw, ok := object[name]
 		if !ok {
 			continue
 		}
-		var text string
-		if json.Unmarshal(raw, &text) != nil {
-			continue
-		}
-		if converted, ok := coerceScalar(text, want); ok {
-			object[name] = converted
+		switch want {
+		case "integer", "number", "boolean":
+			var text string
+			if json.Unmarshal(raw, &text) != nil {
+				continue
+			}
+			if converted, ok := coerceScalar(text, want); ok {
+				object[name] = converted
+				changed = true
+			}
+		case "array":
+			// Lenient coercion for local/small models that serialize a
+			// whole argv array as a string ({"command": "[\"git\",\"status\"]"}).
+			// Only for fields whose items are plain strings (ctx_execute
+			// command/env_extra, future argv-like fields), and only when the
+			// string actually parses as a JSON array — a bare shell string
+			// like "git status" stays untouched and fails schema validation
+			// with a clear message instead of being guessed at.
+			if property.items == nil || len(property.items.types) != 1 {
+				continue
+			}
+			var wantItem string
+			for typ := range property.items.types {
+				wantItem = typ
+			}
+			if wantItem != "string" {
+				continue
+			}
+			var text string
+			if json.Unmarshal(raw, &text) != nil {
+				continue
+			}
+			var arr []string
+			if err := json.Unmarshal([]byte(text), &arr); err != nil || arr == nil {
+				continue
+			}
+			encoded, err := json.Marshal(arr)
+			if err != nil {
+				continue
+			}
+			object[name] = encoded
 			changed = true
 		}
 	}

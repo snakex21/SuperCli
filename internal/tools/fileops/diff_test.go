@@ -86,6 +86,61 @@ func TestDiffOutput_TruncatesLongContent(t *testing.T) {
 	}
 }
 
+func TestDiffOutput_LineStats(t *testing.T) {
+	tr := NewTracker(10)
+	tr.Record("/a.txt", "write", "", "l1\nl2\nl3")          // +3
+	tr.Record("/b.txt", "edit", "old1\nold2", "new1")       // +1 -2
+	tr.Record("/c.txt", "delete", "gone", "")               // -1
+	out := tr.DiffOutput()
+	if !strings.Contains(out, "[+3]") {
+		t.Errorf("missing per-file +3 stats: %q", out)
+	}
+	if !strings.Contains(out, "[+1 -2]") {
+		t.Errorf("missing per-file +1 -2 stats: %q", out)
+	}
+	if !strings.Contains(out, "[-1]") {
+		t.Errorf("missing per-file -1 stats: %q", out)
+	}
+	// Global header sums: +3 +1 = +4, -2 -1 = -3.
+	if !strings.Contains(out, "[+4 -3]") {
+		t.Errorf("missing global +4 -3 stats: %q", out)
+	}
+}
+
+func TestLineStats(t *testing.T) {
+	cases := []struct {
+		add, del int
+		want     string
+	}{
+		{0, 0, ""},
+		{5, 0, " [+5]"},
+		{0, 3, " [-3]"},
+		{12, 3, " [+12 -3]"},
+	}
+	for _, c := range cases {
+		if got := lineStats(c.add, c.del); got != c.want {
+			t.Errorf("lineStats(%d, %d) = %q, want %q", c.add, c.del, got, c.want)
+		}
+	}
+}
+
+func TestCountLines(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"", 0},
+		{"single", 1},
+		{"a\nb", 2},
+		{"a\nb\nc\n", 4},
+	}
+	for _, c := range cases {
+		if got := countLines(c.in); got != c.want {
+			t.Errorf("countLines(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
 func TestTracker_OpTypes(t *testing.T) {
 	tr := NewTracker(10)
 	tr.Record("/a", "write", "", "new")
