@@ -226,6 +226,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		res.Err = fmt.Errorf("goal: passing verification requires a successful concrete check after the latest tool failure")
 	} else if isGoalTaskCompletion(tc.Name, raw) && l.concreteFailure.Load() {
 		res.Err = fmt.Errorf("goal: cannot complete a task after a failed tool result; fix the failure and run a successful concrete check first")
+	} else if tc.Name == sessionImageToolName {
+		res, err = l.loadSessionImage(ctx, raw)
 	} else {
 		res, err = l.registry.Execute(ctx, tc.Name, raw)
 	}
@@ -323,7 +325,20 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		img := &llm.ImageRef{
 			MediaType: res.Image.MediaType,
 			Data:      base64.StdEncoding.EncodeToString(res.Image.Data),
+			Name:      "tool " + tc.Name,
+			Active:    true,
 		}
+		// Durable session writers externalize tool images to disk so history
+		// holds only a lightweight file reference. If storage is unavailable,
+		// keep the legacy inline representation rather than losing the image.
+		if ext, ok := l.writer.(imageExternalizer); ok {
+			if ref, err := ext.ExternalizeImage(ctx, res.Image.MediaType, res.Image.Data); err == nil {
+				ref.Name = img.Name
+				ref.Active = true
+				img = &ref
+			}
+		}
+		l.enableSessionImageTool()
 		follow = append(follow, llm.Message{
 			Role: llm.RoleUser,
 			Parts: []llm.ContentPart{

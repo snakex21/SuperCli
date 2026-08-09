@@ -243,10 +243,13 @@ func (s *Store) SetTitleIfCurrent(id, current, title string) (bool, error) {
 	return n > 0, err
 }
 
-// Delete removes a session and cascades to its messages.
+// Delete removes a session and cascades to its messages. Session-owned media
+// files are removed after the database row is gone.
 func (s *Store) Delete(id string) error {
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
-	return err
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return s.removeSessionMedia(id)
 }
 
 // DeleteAll removes every conversation and its cascaded messages, turns and
@@ -263,7 +266,10 @@ func (s *Store) DeleteAll() error {
 	if _, err := tx.Exec(`DELETE FROM sessions`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.removeAllSessionMedia()
 }
 
 // ReassignCwd moves durable conversation and queue ownership from one

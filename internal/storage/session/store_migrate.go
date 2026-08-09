@@ -168,6 +168,7 @@ func (s *Store) migrate() error {
 		{"aux_us", "INTEGER NOT NULL DEFAULT 0"},
 		{"phases_json", "TEXT NOT NULL DEFAULT '{}'"},
 		{"file_changes_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"tool_diag_json", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureTableColumn("session_turns", column.name, column.def); err != nil {
 			return err

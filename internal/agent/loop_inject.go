@@ -68,8 +68,9 @@ func (l *Loop) SetNextUserAddon(s string) {
 }
 
 // SetNextUserImages queues normalized images for direct multimodal delivery
-// with the next Run. This avoids the legacy path -> read_image -> second model
-// call round trip. Pixels are not persisted and are removed after the Run.
+// with the next Run. Durable session writers snapshot them to session-media;
+// pixels are active for one provider call, while later history keeps only the
+// lightweight MediaID/file reference for explicit reload on demand.
 func (l *Loop) SetNextUserImages(images []llm.ImageRef) {
 	l.nextUserImages = append(l.nextUserImages[:0], images...)
 }

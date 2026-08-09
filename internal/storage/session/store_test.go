@@ -444,6 +444,61 @@ func TestStore_AppendMessage_RejectsToolWithoutID(t *testing.T) {
 	}
 }
 
+// Tool results carry raw file contents that can run to megabytes; the store
+// must persist only the head so long read sessions do not grow the DB without
+// bound. Non-tool messages and short tool results are untouched.
+func TestStore_AppendMessage_CapsLongToolContent(t *testing.T) {
+	s := openTestStore(t)
+	sess, _ := s.Create("/a", "m", "")
+	ctx := context.Background()
+
+	long := strings.Repeat("line of a big file\n", 10_000) // > MaxToolContentChars
+	if len(long) <= MaxToolContentChars {
+		t.Fatalf("test content too small: %d", len(long))
+	}
+	if err := s.AppendMessage(ctx, sess.ID, mustEncoded(t, llm.Message{Role: llm.RoleTool, ToolCallID: "call-big", Content: long})); err != nil {
+		t.Fatalf("AppendMessage(tool big): %v", err)
+	}
+	// A short tool result and a long USER message must pass through untouched.
+	short := "small result"
+	if err := s.AppendMessage(ctx, sess.ID, mustEncoded(t, llm.Message{Role: llm.RoleTool, ToolCallID: "call-small", Content: short})); err != nil {
+		t.Fatalf("AppendMessage(tool small): %v", err)
+	}
+	if err := s.AppendMessage(ctx, sess.ID, mustEncoded(t, llm.Message{Role: llm.RoleUser, Content: long})); err != nil {
+		t.Fatalf("AppendMessage(user long): %v", err)
+	}
+
+	msgs, err := s.ReadMessages(ctx, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("messages = %d, want 3", len(msgs))
+	}
+	big := msgs[0]
+	if big.ToolCallID != "call-big" || len(big.Content) > MaxToolContentChars {
+		t.Fatalf("big tool message len = %d (id=%s)", len(big.Content), big.ToolCallID)
+	}
+	if !strings.HasSuffix(big.Content, "[content truncated]") {
+		t.Errorf("big tool message lacks truncation marker: %.80q...", big.Content)
+	}
+	if msgs[1].Content != short {
+		t.Errorf("short tool message = %.40q, want untouched", msgs[1].Content)
+	}
+	if msgs[2].Content != long {
+		t.Errorf("long user message was modified (len %d != %d)", len(msgs[2].Content), len(long))
+	}
+}
+
+func mustEncoded(t *testing.T, m llm.Message) Encoded {
+	t.Helper()
+	enc, err := FromMessage(m)
+	if err != nil {
+		t.Fatalf("FromMessage: %v", err)
+	}
+	return enc
+}
+
 func TestStore_ReadMessages_Empty(t *testing.T) {
 	s := openTestStore(t)
 	sess, _ := s.Create("/a", "m", "")
