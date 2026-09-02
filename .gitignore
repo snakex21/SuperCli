@@ -34,6 +34,18 @@ memory.db*
 # Local build outputs kept next to build.bat / build_ui.bat for convenience
 # (still ignored — never commit binaries)
 /supercli-web.exe
+# Local staging directory for built binaries. Holds only compiled artifacts
+# plus their own runtime data dir; no source ever lives here.
+/bin/
+
+# Alternate/experimental portable data roots: supercli-data-preview,
+# supercli-data-test, and any future supercli-data-<label>. The plain
+# supercli-data/ is handled above with its builtin-skills.zip exception,
+# so this pattern deliberately matches only the suffixed variants.
+/supercli-data-*/
+
+# Local scratch notes (Polish: "błędy" = bugs)
+błędy.txt
 
 # Logs and crash dumps
 logs/
