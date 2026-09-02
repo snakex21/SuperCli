@@ -75,6 +75,22 @@ func TestBuild_Qwen35VisionWorksBeforeModelDiscovery(t *testing.T) {
 	}
 }
 
+func TestDefault_OpenCodeZenMuseUsesResponsesTransport(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "muse-spark-1.2-contributor-free", Transport: llm.ModelTransportResponses, Reasoning: true, ReasoningKnown: true, Source: llm.SourceExternal})
+	p, err := Default(config.Config{
+		Provider: config.ProviderOpenAI,
+		Model:    "muse-spark-1.2-contributor-free",
+		BaseURL:  "https://opencode.ai/zen/v1",
+	}, t.TempDir(), caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.(*llm.ResponsesProvider); !ok {
+		t.Fatalf("Zen Muse transport = %T, want *llm.ResponsesProvider", p)
+	}
+}
+
 // TestBuild_SinksReceiveCalls: the factory bakes the fan-out sink in,
 // so a call on the built provider reports to every registered sink.
 func TestBuild_SinksReceiveCalls(t *testing.T) {

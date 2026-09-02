@@ -113,6 +113,14 @@ var modelRejectionCodes = []string{
 	"model_unavailable",
 	"model_deprecated",
 	"does_not_exist",
+	// Some reseller gateways wrap an upstream routing miss in a generic
+	// server_error and expose no model id/code at all, e.g. Kilo/OpenRouter:
+	// "Error from provider (Console): Upstream request failed: Model is unavailable."
+	// Keep these phrases narrow so an unrelated 400 is never mistaken for a
+	// model problem.
+	"model is unavailable",
+	"model currently unavailable",
+	"model temporarily unavailable",
 }
 
 // requestParamWords name a request field other than the model. When the body

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -36,6 +37,7 @@ var (
 	setDPIContext      = user32DLL.NewProc("SetProcessDpiAwarenessContext")
 	setDPIAware        = user32DLL.NewProc("SetProcessDPIAware")
 	setDPIShcore       = shcoreDLL.NewProc("SetProcessDpiAwareness")
+	nativeWebViewEnvMu sync.Mutex
 )
 
 const (
@@ -96,7 +98,12 @@ func runNativeAppWindow(url, appName, dataDir, iconPath string, hasActiveWork fu
 	// diagnostyczne" is saved in webgui-settings.json.
 	devtoolsEnv := strings.TrimSpace(strings.ToLower(os.Getenv("SUPERCLI_DEVTOOLS")))
 	devtools := devtoolsEnv == "1" || devtoolsEnv == "true" || devtoolsEnv == "yes" || devtoolsEnv == "on"
-	w, err := glaze.New(devtools)
+	var w glaze.WebView
+	err := withPortableWebViewProfile(dataDir, func() error {
+		var createErr error
+		w, createErr = glaze.New(devtools)
+		return createErr
+	})
 	if err != nil {
 		return fmt.Errorf("native WebView2 unavailable: %w", err)
 	}
@@ -188,6 +195,36 @@ func runNativeAppWindow(url, appName, dataDir, iconPath string, hasActiveWork fu
 	w.Run()
 	runtime.KeepAlive(closeCallback)
 	return nil
+}
+
+// glaze v0.0.31 derives WebView2's user-data directory from APPDATA and the
+// executable name. Scope that lookup to SuperCLI's adjacent data directory,
+// then restore the process environment immediately. This keeps cache, cookies
+// and GPU state portable without redirecting unrelated provider/auth lookups
+// for the lifetime of the engine.
+func withPortableWebViewProfile(dataDir string, open func() error) error {
+	if open == nil {
+		return fmt.Errorf("native WebView2 opener is nil")
+	}
+	profileRoot := filepath.Join(dataDir, "browser-profile")
+	if err := os.MkdirAll(profileRoot, 0o755); err != nil {
+		return fmt.Errorf("create portable WebView2 profile: %w", err)
+	}
+
+	nativeWebViewEnvMu.Lock()
+	defer nativeWebViewEnvMu.Unlock()
+	previous, existed := os.LookupEnv("APPDATA")
+	if err := os.Setenv("APPDATA", profileRoot); err != nil {
+		return fmt.Errorf("set portable WebView2 profile: %w", err)
+	}
+	defer func() {
+		if existed {
+			_ = os.Setenv("APPDATA", previous)
+		} else {
+			_ = os.Unsetenv("APPDATA")
+		}
+	}()
+	return open()
 }
 
 func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName string, hasActiveWork func() bool) (uintptr, error) {

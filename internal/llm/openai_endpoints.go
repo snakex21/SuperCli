@@ -19,6 +19,7 @@ type OpenAIEndpoints struct {
 //   - https://host.example
 //   - https://host.example/v1
 //   - https://host.example/v1/chat/completions
+//   - https://host.example/v1/responses
 //
 // A bare host receives the conventional /v1 API root. Every explicit path is
 // preserved as a custom gateway/deployment root; the resolver never inserts a
@@ -30,6 +31,7 @@ func ResolveOpenAIEndpoints(raw string) OpenAIEndpoints {
 	}
 	explicitTerminal := hasOpenAITerminalPath(base)
 	base = trimOpenAITerminalPath(base, "/chat/completions")
+	base = trimOpenAITerminalPath(base, "/responses")
 	base = trimOpenAITerminalPath(base, "/models")
 
 	if base != "" && !explicitTerminal && openAIEndpointNeedsV1(base) {
@@ -51,6 +53,7 @@ func resolveParsedOpenAIEndpoints(raw string) (OpenAIEndpoints, bool) {
 	path := strings.TrimRight(u.Path, "/")
 	explicitTerminal := hasOpenAITerminalPath(path)
 	path = trimOpenAITerminalPath(path, "/chat/completions")
+	path = trimOpenAITerminalPath(path, "/responses")
 	path = trimOpenAITerminalPath(path, "/models")
 	u.Path = path
 	u.RawPath = ""
@@ -69,7 +72,7 @@ func resolveParsedOpenAIEndpoints(raw string) (OpenAIEndpoints, bool) {
 
 func hasOpenAITerminalPath(value string) bool {
 	value = strings.ToLower(strings.TrimRight(value, "/"))
-	return strings.HasSuffix(value, "/chat/completions") || strings.HasSuffix(value, "/models")
+	return strings.HasSuffix(value, "/chat/completions") || strings.HasSuffix(value, "/responses") || strings.HasSuffix(value, "/models")
 }
 
 func trimOpenAITerminalPath(base, suffix string) string {

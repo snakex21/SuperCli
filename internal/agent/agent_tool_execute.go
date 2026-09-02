@@ -76,14 +76,16 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		system = a.ParentLoop.system
 	}
 
-	// Step budget: the spec value wins when set; otherwise the
-	// tool-wide MaxSteps (from config), otherwise the built-in 10.
+	// Step budget: custom specs may set their own ceiling. Built-in workers
+	// leave it unset so an explicit task_max_steps applies uniformly; with no
+	// explicit worker limit, use the same high runaway safety net as the main
+	// loop. Repeat/cycle detection remains the normal way a broken loop stops.
 	maxSteps := spec.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = a.MaxSteps
 	}
 	if maxSteps <= 0 {
-		maxSteps = 10
+		maxSteps = DefaultMaxSteps
 	}
 
 	// Apply the child timeout. The parent context may also
@@ -119,19 +121,46 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// thin protocol, stable toolset, sandbox, budgets — is inherited
 	// identically).
 	prov := a.workerProvider(ctx)
+	contextProvider := a.WorkerContextProvider
+	prefillProfiles := a.PrefillProfiles
+	var contextWindowFor func(string) ContextWindowResolution
+	var scopedContextWindowFor func(string, string) ContextWindowResolution
+	var summarizer Summarizer
+	var learnLimit func(string, int)
+	pruneProtectTokens := 0
+	if a.ParentLoop != nil {
+		if contextProvider == "" {
+			contextProvider = a.ParentLoop.contextProvider
+		}
+		if prefillProfiles == nil {
+			prefillProfiles = a.ParentLoop.prefillProfiles
+		}
+		contextWindowFor = a.ParentLoop.contextWindowFor
+		scopedContextWindowFor = a.ParentLoop.scopedWindowFor
+		summarizer = a.ParentLoop.summarizer
+		learnLimit = a.ParentLoop.learnLimit
+		pruneProtectTokens = a.ParentLoop.pruneProtect
+	}
 
 	loop, err := a.NewLoop(LoopConfig{
-		Provider:        prov,
-		Caps:            a.Caps,
-		Registry:        childReg,
-		System:          system,
-		MaxSteps:        maxSteps,
-		InitialMessages: seed,
-		ThinTools:       thin,
-		StableToolset:   stable,
-		CatalogHoist:    hoist,
-		BaseDir:         baseDir,
-		CreditTracker:   budget,
+		Provider:               prov,
+		Caps:                   a.Caps,
+		Registry:               childReg,
+		System:                 system,
+		MaxSteps:               maxSteps,
+		InitialMessages:        seed,
+		ThinTools:              thin,
+		StableToolset:          stable,
+		CatalogHoist:           hoist,
+		BaseDir:                baseDir,
+		CreditTracker:          budget,
+		ContextWindowFor:       contextWindowFor,
+		ContextProvider:        contextProvider,
+		ScopedContextWindowFor: scopedContextWindowFor,
+		Summarizer:             summarizer,
+		LearnLimit:             learnLimit,
+		PruneProtectTokens:     pruneProtectTokens,
+		PrefillProfiles:        prefillProfiles,
 		// Workers never route: they run straight on the coordinator
 		// path with their restricted tool set. No navigator round-trip.
 	})

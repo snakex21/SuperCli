@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 )
 
 func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan<- Delta) error {
@@ -20,7 +19,6 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 	toolAcc := make(map[int]*ToolCall)
 	finishReason := ""
 	var lastUsage *Usage
-	reasoningOpen := false
 	sawResponse := false
 	sawStop := false
 	parseErr := parseSSE(r, func(eventName, data string) error {
@@ -58,21 +56,11 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			sawResponse = true
 			switch ev.Delta.Type {
 			case "text_delta":
-				content := ev.Delta.Text
-				if reasoningOpen {
-					content = "</thinking>\n" + strings.TrimLeft(content, "\r\n")
-					reasoningOpen = false
-				}
-				if content != "" && !emit(Delta{Content: content}) {
+				if ev.Delta.Text != "" && !emit(Delta{Content: ev.Delta.Text}) {
 					return ctx.Err()
 				}
 			case "thinking_delta":
-				content := ev.Delta.Thinking
-				if !reasoningOpen {
-					content = "<thinking>" + content
-					reasoningOpen = true
-				}
-				if content != "" && !emit(Delta{Content: content}) {
+				if ev.Delta.Thinking != "" && !emit(Delta{Reasoning: ev.Delta.Thinking}) {
 					return ctx.Err()
 				}
 			case "input_json_delta":
@@ -107,12 +95,6 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 		case "message_stop":
 			sawResponse = true
 			sawStop = true
-			if reasoningOpen {
-				if !emit(Delta{Content: "</thinking>"}) {
-					return ctx.Err()
-				}
-				reasoningOpen = false
-			}
 			if finishReason == "" {
 				finishReason = "stop"
 			}

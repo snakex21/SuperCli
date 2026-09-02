@@ -30,12 +30,16 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	at.Workers = e.workers
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
-	if wp, _ := e.taskWorkerProvider(tc); wp != nil {
+	if wp, workerCfg := e.taskWorkerProvider(tc); wp != nil {
 		// wp is metered by the factory (purpose "task"); the
 		// per-session usage sink rides the run context, so no extra
 		// wrapper is stacked here.
 		at.WorkerProvider = wp
+		if workerCfg != nil {
+			at.WorkerContextProvider = e.providerNameForConfig(*workerCfg)
+		}
 	}
+	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
 		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
 	}

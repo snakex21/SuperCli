@@ -50,6 +50,16 @@ type Store struct {
 	// goroutine at startup.
 	embedMu  sync.RWMutex
 	embedder Embedder
+
+	// Deferred vector indexing. Put writes SQLite/FTS synchronously and only
+	// queues embedding work, so slow local/remote embedding servers never hold
+	// up the caller. Close drains outstanding work before closing the DB.
+	embedQueueMu sync.Mutex
+	embedWorkMu  sync.Mutex
+	embedQueue   []Entry
+	embedWake    chan struct{}
+	embedStop    chan struct{}
+	embedDone    chan struct{}
 }
 
 // OpenStore opens (or creates) a persistent memory store inside
@@ -88,7 +98,14 @@ func OpenStore(home string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("memory.OpenStore: ping: %w", err)
 	}
-	s := &Store{db: db, root: home, mirrorMu: processMirrorLock(home)}
+	s := &Store{
+		db:        db,
+		root:      home,
+		mirrorMu:  processMirrorLock(home),
+		embedWake: make(chan struct{}, 1),
+		embedStop: make(chan struct{}),
+		embedDone: make(chan struct{}),
+	}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("memory.OpenStore: migrate: %w", err)
@@ -97,6 +114,7 @@ func OpenStore(home string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("memory.OpenStore: reconcile markdown: %w", err)
 	}
+	go s.runEmbedWorker()
 	return s, nil
 }
 
@@ -105,6 +123,13 @@ func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	select {
+	case <-s.embedStop:
+		// already stopping/stopped
+	default:
+		close(s.embedStop)
+	}
+	<-s.embedDone
 	return s.db.Close()
 }
 
@@ -224,7 +249,8 @@ func (s *Store) Put(e Entry) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	// Best-effort vector indexing (hybrid.go) — never fails Put.
+	// Best-effort vector indexing is deferred (hybrid.go) — never fails Put and
+	// never blocks the caller on an embedding backend.
 	s.afterPut(e)
 	if err := s.drainMirrorOutboxLocked(); err != nil {
 		return fmt.Errorf("memory.Store.Put(%s): %w", e.ID, err)

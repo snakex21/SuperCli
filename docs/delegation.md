@@ -16,18 +16,20 @@ worker's final report returns.
 `general` worker (full tool set minus delegation). `expect` is folded
 into the briefing ("your final report must contain: ..."). Other builtin
 kinds: `advisor` (read-only), `explore`, `plan`, `review`, `code` — each
-with a short system prompt, a tool allowlist and its own step budget
-(builtin.go).
+with a short system prompt and a tool allowlist (builtin.go).
 
 **Hard limits.**
 - **Depth 1, structurally.** `restrictedRegistry` strips
   `task`/`send_message`/`task_stop` from every worker registry, including
   the inherit-everything case — a worker can never spawn a worker, no
   matter what a spec says.
-- **Step budget**: spec value, else config `task_max_steps`, else 10.
+- **Step safety net**: custom-spec value, else config `task_max_steps`, else
+  the shared 300-step runaway ceiling. Builtin workers do not carry small
+  6/8/12-step work budgets; repeat/cycle detection stops real loops.
 - **Token budget**: config `task_max_tokens` stops the child loop
   mid-flight; the partial report still returns (failed status).
-- **Timeout**: `TimeoutPerStep × MaxSteps` (30 s/step default).
+- **Timeout**: `TimeoutPerStep × MaxSteps` (30 s/step default), additionally
+  bounded by cancellation of the parent task.
 
 **Inheritance.** A worker inherits the coordinator's thin-tools flag,
 stable-toolset flag and sandbox root, so it is exactly as cache-friendly

@@ -366,6 +366,35 @@ func TestResolveProviderConfPrefersResolvedProjectProvider(t *testing.T) {
 	}
 }
 
+func TestResolveConfigMalformedProjectPreservesGlobal(t *testing.T) {
+	dataDir := t.TempDir()
+	workspace := t.TempDir()
+	globalPath, projectPath := FindTomlPaths(dataDir, workspace)
+	if err := SaveToml(globalPath, TomlConfig{
+		DefaultModel:    "real-model",
+		DefaultProvider: "zen",
+		Providers: []ProviderConf{{
+			Name: "zen", Type: ProviderOpenAI, BaseURL: "https://provider.test/v1",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projectPath, []byte("[broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ResolveConfig(dataDir, workspace, "")
+	if err == nil {
+		t.Fatal("malformed project config should still be reported")
+	}
+	if got.DefaultModel != "real-model" || got.DefaultProvider != "zen" || len(got.Providers) != 1 {
+		t.Fatalf("valid global config was discarded: %+v", got)
+	}
+}
+
 func TestFindTomlPaths_SameDir(t *testing.T) {
 	// When the project config would resolve to the same file as the
 	// global one (data dir = <cwd>/.supercli), project must be empty.

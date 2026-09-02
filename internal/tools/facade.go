@@ -262,9 +262,11 @@ var (
 
 // Mail.
 type OutlookMail = mail.OutlookMail
+type ThunderbirdMail = mail.ThunderbirdMail
 type OutlookIndexMessage = mail.OutlookIndexMessage
 
 var (
 	NewOutlookMail       = mail.NewOutlookMail
+	NewThunderbirdMail   = mail.NewThunderbirdMail
 	IndexOutlookMessages = mail.IndexOutlookMessages
 )

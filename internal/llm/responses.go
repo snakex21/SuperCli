@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -45,8 +47,13 @@ func (s staticResponsesTokenSource) Refresh(context.Context) (string, error) {
 // NewResponses builds a provider for POST <base>/responses. APIKey may be
 // empty for local gateways that do not require authentication.
 func NewResponses(cfg ResponsesConfig) (*ResponsesProvider, error) {
+	// Accept either an API root or the full .../responses endpoint pasted from
+	// provider documentation. Unlike Chat Completions, a bare custom host must
+	// stay bare (some gateways intentionally serve POST /responses rather than
+	// /v1/responses), so normalization only removes the terminal path.
+	baseURL := normalizeResponsesBaseURL(cfg.BaseURL)
 	inner, err := NewCodex(CodexConfig{
-		BackendURL:           cfg.BaseURL,
+		BackendURL:           baseURL,
 		Model:                cfg.Model,
 		Tokens:               staticResponsesTokenSource{token: CleanAPIKey(cfg.APIKey)},
 		Timeout:              cfg.Timeout,
@@ -54,12 +61,25 @@ func NewResponses(cfg ResponsesConfig) (*ResponsesProvider, error) {
 		HTTPClient:           cfg.HTTPClient,
 		Capabilities:         cfg.Capabilities,
 		StandardResponsesAPI: true,
-		PromptCacheKey:       responsesPromptCacheKey(cfg.BaseURL, cfg.Model),
+		PromptCacheKey:       responsesPromptCacheKey(baseURL, cfg.Model),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &ResponsesProvider{inner: inner}, nil
+}
+
+func normalizeResponsesBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if u, err := url.Parse(raw); err == nil && u.Scheme != "" && u.Host != "" {
+		u.Fragment = ""
+		path := strings.TrimRight(u.Path, "/")
+		path = trimOpenAITerminalPath(path, "/responses")
+		u.Path = strings.TrimRight(path, "/")
+		u.RawPath = ""
+		return strings.TrimRight(u.String(), "/")
+	}
+	return strings.TrimRight(trimOpenAITerminalPath(strings.TrimRight(raw, "/"), "/responses"), "/")
 }
 
 func responsesPromptCacheKey(baseURL, model string) string {

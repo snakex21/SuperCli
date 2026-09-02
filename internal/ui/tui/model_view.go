@@ -247,8 +247,32 @@ func (m *Model) refreshRuntimeHUD() {
 			parts = append(parts, fmt.Sprintf("cache %d%%", cached*100/(cached+evaluated)))
 		}
 	}
+	// Daily request count for the active endpoint (e.g. the OpenCode
+	// Zen free tier's ~100/day). Keyed by endpoint, never by API key,
+	// so keyless providers report exactly the same way.
+	if baseURL := m.activeProviderBaseURL(); baseURL != "" {
+		if n := llm.ProviderRequestsTodayFlexible(baseURL); n > 0 {
+			parts = append(parts, fmt.Sprintf("%d req today", n))
+		}
+	}
 	m.runtimeHUD = strings.Join(parts, " · ")
 	m.viewport.Height = m.viewportHeight()
+}
+
+// activeProviderBaseURL resolves the configured base URL of the
+// provider the session currently talks to. Empty when the manager is
+// unavailable or the provider is unknown — the HUD simply omits the
+// quota segment then.
+func (m *Model) activeProviderBaseURL() string {
+	if m.providerMgr == nil || m.activeProvider == "" {
+		return ""
+	}
+	for _, p := range m.providerMgr.Configured() {
+		if p.Name == m.activeProvider {
+			return p.BaseURL
+		}
+	}
+	return ""
 }
 
 func compactTokens(n int) string {

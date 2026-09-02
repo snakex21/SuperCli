@@ -42,16 +42,6 @@ func TestBuildAttachmentAddonRejectsOutsideWorkspace(t *testing.T) {
 	}
 }
 
-func TestParsePickerPaths(t *testing.T) {
-	got, err := parsePickerPaths([]byte("\xEF\xBB\xBF[\"C:\\\\docs\\\\a.docx\",\"C:\\\\docs\\\\b.pdf\"]"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[1] != `C:\docs\b.pdf` {
-		t.Fatalf("paths = %#v", got)
-	}
-}
-
 func TestStagePickedAttachmentsCopiesOutsideFileIntoWorkspace(t *testing.T) {
 	sandbox.SetUnsandboxed(false)
 	t.Cleanup(func() { sandbox.SetUnsandboxed(false) })

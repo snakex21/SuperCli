@@ -215,7 +215,7 @@ func TestAskParams_Validate(t *testing.T) {
 		},
 		{
 			"header too long",
-			askParams{Question: "x", Header: "this is way too long", Options: []AskOption{{Label: "A"}, {Label: "B"}}},
+			askParams{Question: "x", Header: "12345678901234567890123456789012345678901234567890123456789012345", Options: []AskOption{{Label: "A"}, {Label: "B"}}},
 			true,
 		},
 		{
@@ -224,8 +224,13 @@ func TestAskParams_Validate(t *testing.T) {
 			true,
 		},
 		{
-			"ok with header 12",
-			askParams{Question: "x", Header: "123456789012", Options: []AskOption{{Label: "A"}, {Label: "B"}}},
+			"ok with header 64",
+			askParams{Question: "x", Header: "1234567890123456789012345678901234567890123456789012345678901234", Options: []AskOption{{Label: "A"}, {Label: "B"}}},
+			false,
+		},
+		{
+			"unicode header counts characters not bytes",
+			askParams{Question: "x", Header: "Usuń wiadomości – potwierdzenie", Options: []AskOption{{Label: "A"}, {Label: "B"}}},
 			false,
 		},
 	}

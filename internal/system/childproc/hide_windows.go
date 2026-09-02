@@ -30,3 +30,17 @@ func HideWindow(cmd *exec.Cmd) *exec.Cmd {
 	cmd.SysProcAttr.CreationFlags |= createNoWindow
 	return cmd
 }
+
+// NoConsoleWindow suppresses a console window without forcing the first GUI
+// window created by the child process into SW_HIDE. Use this for helpers such
+// as native file pickers that intentionally create their own visible window.
+func NoConsoleWindow(cmd *exec.Cmd) *exec.Cmd {
+	if cmd == nil {
+		return cmd
+	}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= createNoWindow
+	return cmd
+}

@@ -145,6 +145,13 @@ func run(crashDataDir *string) {
 	// the process cwd. This keeps web project switching aligned with the file
 	// tools, file browser and displayed workspace.
 	tomlCfg, tomlErr := config.ResolveConfig(dataDir, home, "")
+	if tomlErr != nil {
+		// ResolveConfig preserves any valid lower-priority layer. Keep using it
+		// so one malformed project override cannot silently turn a configured
+		// web app into the test echo provider. The NestCafe runtime additionally
+		// rejects echo chat requests, so internal prompt add-ons can never leak.
+		log.Printf("config: %v (using valid lower-priority settings)", tomlErr)
+	}
 	uiLanguage, languageErr := config.EnsureLanguage(dataDir, home, tomlCfg.Language)
 	if languageErr != nil {
 		log.Printf("language: %v (using %s for this run)", languageErr, uiLanguage)
@@ -160,7 +167,7 @@ func run(crashDataDir *string) {
 	if err != nil {
 		fatal("load config", err)
 	}
-	if tomlErr == nil && !*echoFlag {
+	if !*echoFlag {
 		config.ApplyTomlToConfig(&cfg, tomlCfg)
 		// ApplyTomlToConfig resolves a named TOML provider as one
 		// type/base/key bundle. Restore explicit env and flag values after
@@ -251,6 +258,7 @@ func run(crashDataDir *string) {
 		fatal("build engine", err)
 	}
 	eng.SetAppProfile(appProfile)
+	eng.SetExplicitEcho(*echoFlag)
 	eng.RefreshPricingAsync()
 
 	if *uiDirFlag != "" {

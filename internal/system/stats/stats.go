@@ -101,18 +101,23 @@ var phaseOrder = []string{
 // progress when the call landed, 0 = outside any step (navigator
 // pre-step classification, background memory saves).
 type Call struct {
-	Purpose    string    `json:"purpose"`
-	Model      string    `json:"model,omitempty"`
-	Provider   string    `json:"provider,omitempty"`
-	Background bool      `json:"background,omitempty"`
-	Canceled   bool      `json:"canceled,omitempty"`
-	Failed     bool      `json:"failed,omitempty"`
-	TTFTUs     int64     `json:"ttft_us,omitempty"`
-	DurationUs int64     `json:"duration_us"`
-	TokensIn   int       `json:"tokens_in"`
-	TokensOut  int       `json:"tokens_out"`
-	Step       int       `json:"step,omitempty"`
-	StartedAt  time.Time `json:"started_at"`
+	Purpose                string    `json:"purpose"`
+	Model                  string    `json:"model,omitempty"`
+	Provider               string    `json:"provider,omitempty"`
+	Background             bool      `json:"background,omitempty"`
+	Canceled               bool      `json:"canceled,omitempty"`
+	Failed                 bool      `json:"failed,omitempty"`
+	TTFTUs                 int64     `json:"ttft_us,omitempty"`
+	DurationUs             int64     `json:"duration_us"`
+	TokensIn               int       `json:"tokens_in"`
+	TokensOut              int       `json:"tokens_out"`
+	TokensCached           int       `json:"tokens_cached,omitempty"`
+	PrefillEvaluated       int       `json:"prefill_evaluated_tokens,omitempty"`
+	PrefillTokensPerSecond float64   `json:"prefill_tokens_per_second,omitempty"`
+	PrefillBudget          int       `json:"prefill_budget_tokens,omitempty"`
+	PrefillBudgetSource    string    `json:"prefill_budget_source,omitempty"`
+	Step                   int       `json:"step,omitempty"`
+	StartedAt              time.Time `json:"started_at"`
 }
 
 // CallAgg is the per-purpose aggregate over a set of calls.

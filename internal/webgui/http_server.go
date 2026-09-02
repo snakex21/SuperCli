@@ -136,10 +136,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 // handleHealth reports liveness plus the active model so the front-end
 // can show connection status on load.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	providerType, chatReady := s.eng.ProviderStatus()
 	writeJSON(w, map[string]any{
-		"ok":    true,
-		"model": s.eng.ModelName(),
-		"home":  s.eng.Home(),
+		"ok":            true,
+		"chat_ready":    chatReady,
+		"provider_type": providerType,
+		"model":         s.eng.ModelName(),
+		"home":          s.eng.Home(),
 	})
 }
 

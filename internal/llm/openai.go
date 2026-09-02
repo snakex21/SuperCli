@@ -243,7 +243,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 		}()
 		// HTTP request with bounded retry: 429 and 5xx
-		// responses are retried up to maxAttempts total. The wait
+		// responses are retried with a status-specific bounded attempt count. The wait
 		// honours the Retry-After header when present (seconds or
 		// HTTP-date), falling back to exponential backoff (0.5s,
 		// 1s); total sleep is capped by rateLimitWaitBudget. Each
@@ -251,7 +251,6 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// instead of appearing hung. Other statuses and transport
 		// errors fail immediately.
 		url := ResolveOpenAIEndpoints(p.cfg.BaseURL).ChatCompletions
-		const maxAttempts = 3
 		waitBudget := rateLimitWaitBudget
 		rateAttempts := 0
 		var resp *http.Response
@@ -279,6 +278,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				req.Header.Set("Authorization", "Bearer "+key)
 			}
 			req.Header.Set("Accept", "text/event-stream")
+			ApplyOpenCodeZenHeaders(req, p.cfg.BaseURL)
 
 			resp, err = doWithResponseHeaderTimeout(p.http, req, p.cfg.Timeout, cancel)
 			if err != nil {
@@ -289,6 +289,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 				return
 			}
+			// The server accepted this HTTP request, so it may bill
+			// quota for it regardless of the status code below.
+			// Transport-level failures above never reached the
+			// provider and correctly stay uncounted.
+			noteProviderRequest(p.cfg.BaseURL)
 			if resp.StatusCode/100 == 2 {
 				streamCancel = cancel
 				break
@@ -321,17 +326,31 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					continue
 				}
 			}
-			if !isRetryableHTTPStatus(resp.StatusCode) {
+			responseErr := newHTTPResponseError(resp.StatusCode, body,
+				providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body), resp.Header)
+			if !isRetryableProviderResponse(resp.StatusCode, body) {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body))}:
+				case out <- Delta{Err: responseErr}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			// A long, explicit 429 Retry-After is a quota window, not a
+			// transient burst. Sleeping only our ten-second retry budget and
+			// asking the same backend again cannot succeed; surface it now so
+			// an explicitly configured fallback can take over.
+			if retryAfter, ok := parseRetryAfter(resp.Header); resp.StatusCode == http.StatusTooManyRequests && ok && retryAfter > waitBudget {
+				select {
+				case out <- Delta{Err: responseErr}:
 				case <-ctx.Done():
 				}
 				return
 			}
 			rateAttempts++
+			maxAttempts := providerRetryAttempts(resp.StatusCode)
 			if rateAttempts >= maxAttempts {
 				select {
-				case out <- Delta{Err: fmt.Errorf("http %d: %s%s", resp.StatusCode, string(body), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body))}:
+				case out <- Delta{Err: responseErr}:
 				case <-ctx.Done():
 				}
 				return
@@ -365,8 +384,8 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		toolAcc := make(map[int]*ToolCall)
 		var lastUsage *Usage
 		var lastTimings *llamaTimings
-		reasoningOpen := false
 		sawResponse := false
+		sawPayload := false
 		emittedFinish := false
 		emit := func(d Delta) error {
 			select {
@@ -375,13 +394,6 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-		}
-		closeReasoning := func() error {
-			if !reasoningOpen {
-				return nil
-			}
-			reasoningOpen = false
-			return emit(Delta{Content: "</thinking>"})
 		}
 		flushToolCalls := func() error {
 			indices := make([]int, 0, len(toolAcc))
@@ -458,35 +470,28 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 						return ctx.Err()
 					}
 				}
-				if choice.Delta.Content != "" {
-					content := choice.Delta.Content
-					if reasoningOpen {
-						content = "</thinking>\n" + strings.TrimLeft(content, "\r\n")
-						reasoningOpen = false
-					}
-					select {
-					case out <- Delta{Content: content}:
-					case <-ctx.Done():
-						return ctx.Err()
-					}
-				}
 				reasoning := choice.Delta.ReasoningContent
 				if reasoning == "" && i < len(raw.Choices) {
 					reasoning = extractReasoningText(raw.Choices[i].Delta)
 				}
 				if reasoning != "" {
-					content := reasoning
-					if !reasoningOpen {
-						content = "<thinking>" + content
-						reasoningOpen = true
-					}
+					sawPayload = true
 					select {
-					case out <- Delta{Content: content}:
+					case out <- Delta{Reasoning: reasoning}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				if choice.Delta.Content != "" {
+					sawPayload = true
+					select {
+					case out <- Delta{Content: choice.Delta.Content}:
 					case <-ctx.Done():
 						return ctx.Err()
 					}
 				}
 				for _, tc := range choice.Delta.ToolCalls {
+					sawPayload = true
 					acc, exists := toolAcc[tc.Index]
 					if !exists {
 						acc = &ToolCall{ID: tc.ID, Name: tc.Function.Name}
@@ -509,9 +514,6 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					// frame), and re-flushing would emit every tool
 					// call twice — the agent loop would then really
 					// execute each call twice.
-					if err := closeReasoning(); err != nil {
-						return err
-					}
 					if err := flushToolCalls(); err != nil {
 						return err
 					}
@@ -534,10 +536,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 		} else if !sawResponse {
 			_ = emit(Delta{Err: fmt.Errorf("sse: empty stream")})
-		} else if !sawDone && !emittedFinish {
-			_ = emit(Delta{Err: fmt.Errorf("sse: stream ended before a terminal event")})
 		} else if !emittedFinish {
-			if err := closeReasoning(); err != nil {
+			// A number of OpenAI-compatible gateways close a valid SSE stream
+			// cleanly without sending either [DONE] or a finish_reason chunk.
+			// Treat that as a normal EOF only when we actually received model
+			// payload. Read/transport failures still arrive as parseErr above,
+			// while metadata-only streams remain errors instead of being silently
+			// accepted as an empty assistant answer. Crucially, flush accumulated
+			// tool calls here so ask_user and other tools are not lost just because
+			// the gateway omitted its terminal marker.
+			if !sawDone && !sawPayload {
+				_ = emit(Delta{Err: fmt.Errorf("sse: stream ended before a terminal event")})
 				return
 			}
 			hadTools := len(toolAcc) > 0
@@ -549,8 +558,6 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				reason = "tool_calls"
 			}
 			_ = emit(Delta{FinishReason: reason, Usage: lastUsage})
-		} else if reasoningOpen {
-			_ = closeReasoning()
 		}
 	}()
 	return out, nil

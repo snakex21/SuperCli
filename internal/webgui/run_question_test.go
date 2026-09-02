@@ -91,6 +91,43 @@ func TestQuestionAnswerEndpoint(t *testing.T) {
 	}
 }
 
+func TestRunStreamQuestionPausesProgressTimeout(t *testing.T) {
+	dir := t.TempDir()
+	cfg := echoConfig()
+	cfg.Timeout = 20 * time.Millisecond
+	eng, err := NewEngine(cfg, dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	eng.mu.Lock()
+	eng.prov = &askingProvider{}
+	eng.mu.Unlock()
+
+	answered := make(chan struct{})
+	err = eng.runStream(context.Background(), "ask me", "", "", func(ev wireEvent) {
+		if ev.Type != "question" || ev.Question == nil {
+			return
+		}
+		q := *ev.Question
+		go func() {
+			time.Sleep(60 * time.Millisecond) // deliberately longer than provider watchdog
+			if answerErr := eng.answerQuestion(q.ID, tools.AskAnswer{Selected: []string{"B"}}); answerErr != nil {
+				t.Errorf("answerQuestion: %v", answerErr)
+			}
+			close(answered)
+		}()
+	})
+	if err != nil {
+		t.Fatalf("runStream timed out while waiting for user: %v", err)
+	}
+	select {
+	case <-answered:
+	case <-time.After(time.Second):
+		t.Fatal("question was not answered")
+	}
+}
+
 func TestRunStreamPresentsAndResumesAskUser(t *testing.T) {
 	dir := t.TempDir()
 	eng, err := NewEngine(echoConfig(), dir, dir)

@@ -63,6 +63,8 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	switch e := ev.(type) {
 	case agent.MessageEvent:
 		return wireEvent{Type: "message", Text: e.Text}, true
+	case agent.ReasoningEvent:
+		return wireEvent{Type: "reasoning", Text: e.Text}, true
 	case agent.ToolCallEvent:
 		return wireEvent{Type: "tool_call", Name: e.Name, Args: e.Args, ID: e.ID}, true
 	case agent.ToolResultEvent:
@@ -76,9 +78,9 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	case agent.SisyphusEvent:
 		return wireEvent{Type: "sisyphus", Step: e.Step, Text: e.Text}, true
 	case agent.AutoCompactEvent:
-		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, ~%d/%d tokens, estimate=%s, window=%s", e.Reason, e.Removed, e.Estimated, e.Window, e.EstimateSource, e.WindowSource)}, true
+		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, ~%d/%d tokens, trigger=%d/%s, estimate=%s, window=%s", e.Reason, e.Removed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)}, true
 	case agent.ToolResultsPrunedEvent:
-		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens", e.Pruned, e.Reclaimed)}, true
+		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens (trigger=%d/%s)", e.Pruned, e.Reclaimed, e.Threshold, e.ThresholdSource)}, true
 	case agent.NoticeEvent:
 		return wireEvent{Type: "notice", Text: e.Text}, true
 	case agent.WorkerNotificationEvent:
@@ -146,20 +148,28 @@ const (
 	messageCoalesceBytes = 4 * 1024
 )
 
-// messageCoalescer combines only consecutive assistant text chunks. Every
+// messageCoalescer combines consecutive assistant text or reasoning chunks.
+// The two channels are never merged with one another. Every
 // semantic boundary (tool, worker, question, notice, done, error) first flushes
 // pending text and is then emitted immediately, preserving event order.
 type messageCoalescer struct {
-	emit    func(wireEvent)
-	pending strings.Builder
+	emit        func(wireEvent)
+	pendingType string
+	pending     strings.Builder
 }
 
 func (c *messageCoalescer) Pending() bool { return c.pending.Len() > 0 }
 
 // Push returns true when a new timed batch was started.
 func (c *messageCoalescer) Push(ev wireEvent) (started bool) {
-	if ev.Type == "message" {
+	if ev.Type == "message" || ev.Type == "reasoning" {
+		if c.Pending() && c.pendingType != ev.Type {
+			c.Flush()
+		}
 		started = !c.Pending()
+		if started {
+			c.pendingType = ev.Type
+		}
 		c.pending.WriteString(ev.Text)
 		if c.pending.Len() >= messageCoalesceBytes {
 			c.Flush()
@@ -177,8 +187,17 @@ func (c *messageCoalescer) Flush() {
 		return
 	}
 	text := c.pending.String()
+	typ := c.pendingType
 	c.pending.Reset()
-	c.emit(wireEvent{Type: "message", Text: text})
+	c.pendingType = ""
+	c.emit(wireEvent{Type: typ, Text: text})
+}
+
+func reasoningFallbackText(tokens int) string {
+	if tokens <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("Model wykorzystał %d tokenów rozumowania, ale dostawca nie udostępnił tekstowego podsumowania.", tokens)
 }
 
 // runStream runs one prompt on a fresh loop and forwards every

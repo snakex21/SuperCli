@@ -70,6 +70,8 @@ func TestStore_AppendReadUsage_CallSeqOrderAndRoundTrip(t *testing.T) {
 			SessionID: sess.ID, CallSeq: 1,
 			Provider: "openai", ProviderType: "openai-compatible", EndpointHost: "api.example.test", Model: "first",
 			Input: 10, Output: 1, CachedInput: 3, Reasoning: 1, HasCachedInput: true, HasReasoning: true,
+			TTFTMS: 1234, PrefillEvaluated: 7, PrefillTokensPerSecond: 5.67,
+			PrefillBudget: 20_000, PrefillBudgetSource: "prefill-profile",
 			ContextWindow: 128000, ContextSystem: 2, ContextUser: 3, ContextAssistant: 4, ContextTool: 5, ContextOther: 6,
 			Source: "provider", CreatedAt: base.Add(time.Second),
 		},
@@ -106,6 +108,10 @@ func TestStore_AppendReadUsage_CallSeqOrderAndRoundTrip(t *testing.T) {
 	if first.ContextWindow != 128000 || first.ContextSystem != 2 || first.ContextUser != 3 ||
 		first.ContextAssistant != 4 || first.ContextTool != 5 || first.ContextOther != 6 {
 		t.Errorf("context round trip = %+v", first)
+	}
+	if first.TTFTMS != 1234 || first.PrefillEvaluated != 7 || first.PrefillTokensPerSecond != 5.67 ||
+		first.PrefillBudget != 20_000 || first.PrefillBudgetSource != "prefill-profile" {
+		t.Errorf("prefill telemetry round trip = %+v", first)
 	}
 	if first.Source != "provider" || !first.CreatedAt.Equal(base.Add(time.Second)) {
 		t.Errorf("metadata round trip = %+v", first)

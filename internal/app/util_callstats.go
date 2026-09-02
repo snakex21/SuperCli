@@ -15,17 +15,22 @@ func statsCallSink(rec stats.Recorder) llm.CallSink {
 	}
 	return func(s llm.CallStat) {
 		rec.RecordCall(stats.Call{
-			Purpose:    s.Purpose,
-			Model:      s.Model,
-			Provider:   s.Provider,
-			Background: s.Background,
-			Canceled:   s.Canceled,
-			Failed:     s.Failed,
-			TTFTUs:     s.TTFT.Microseconds(),
-			DurationUs: s.Duration.Microseconds(),
-			TokensIn:   s.TokensIn,
-			TokensOut:  s.TokensOut,
-			StartedAt:  s.StartedAt,
+			Purpose:                s.Purpose,
+			Model:                  s.Model,
+			Provider:               s.Provider,
+			Background:             s.Background,
+			Canceled:               s.Canceled,
+			Failed:                 s.Failed,
+			TTFTUs:                 s.TTFT.Microseconds(),
+			DurationUs:             s.Duration.Microseconds(),
+			TokensIn:               s.TokensIn,
+			TokensOut:              s.TokensOut,
+			TokensCached:           s.TokensCached,
+			PrefillEvaluated:       s.PrefillEvaluated,
+			PrefillTokensPerSecond: s.PrefillTokensPerSecond,
+			PrefillBudget:          s.PrefillBudget,
+			PrefillBudgetSource:    s.PrefillBudgetSource,
+			StartedAt:              s.StartedAt,
 		})
 	}
 }

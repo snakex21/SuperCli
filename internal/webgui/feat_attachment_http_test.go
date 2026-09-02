@@ -63,6 +63,51 @@ func TestAttachmentPreviewRejectsText(t *testing.T) {
 	}
 }
 
+func TestProfileAttachmentDeleteRemovesStoredSource(t *testing.T) {
+	srv := newTestServer(t, false)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "history.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte("\x89PNG\r\n\x1a\nprofile-image"))
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upload := httptest.NewRequest(http.MethodPost, "/api/attachment/upload?scope=profile", &body)
+	upload.Header.Set("Content-Type", writer.FormDataContentType())
+	uploaded := httptest.NewRecorder()
+	srv.handleAttachmentUpload(uploaded, upload)
+	if uploaded.Code != http.StatusOK {
+		t.Fatalf("upload status=%d body=%s", uploaded.Code, uploaded.Body.String())
+	}
+	var result struct {
+		Paths []string `json:"paths"`
+	}
+	if err := json.Unmarshal(uploaded.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Paths) != 1 {
+		t.Fatalf("paths=%#v", result.Paths)
+	}
+	stored := result.Paths[0]
+	if _, err := os.Stat(stored); err != nil {
+		t.Fatalf("stored source missing before delete: %v", err)
+	}
+
+	deleted := httptest.NewRecorder()
+	srv.handleAttachmentPreview(deleted, httptest.NewRequest(
+		http.MethodDelete, "/api/attachment/preview?scope=profile&path="+url.QueryEscape(stored), nil,
+	))
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if _, err := os.Stat(stored); !os.IsNotExist(err) {
+		t.Fatalf("stored source still exists after delete: %v", err)
+	}
+}
+
 func TestProfileAttachmentPreviewSurvivesWorkspaceChange(t *testing.T) {
 	srv := newTestServer(t, false)
 	var body bytes.Buffer

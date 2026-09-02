@@ -164,7 +164,8 @@ func ParseContextBudget(value string) (tokens int, automatic bool, err error) {
 func RuntimeProviderName(tc TomlConfig, cfg Config) string {
 	if tc.DefaultProvider != "" {
 		for _, p := range tc.Providers {
-			if p.Name == tc.DefaultProvider && !p.Disabled {
+			if p.Name == tc.DefaultProvider && !p.Disabled &&
+				p.Type == cfg.Provider && strings.TrimRight(p.BaseURL, "/") == strings.TrimRight(cfg.BaseURL, "/") {
 				return p.Name
 			}
 		}

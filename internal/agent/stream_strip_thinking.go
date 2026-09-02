@@ -7,6 +7,13 @@ import (
 	"supercli/internal/llm"
 )
 
+const noVisibleAnswerPlaceholder = "[no visible answer]"
+
+func hasVisibleUserReply(text string) bool {
+	plain := strings.TrimSpace(stripThinking(text))
+	return plain != "" && plain != noVisibleAnswerPlaceholder
+}
+
 // Reasoning blocks the providers emit into assistant Content:
 //   - internal/llm/openai.go and codex.go wrap streamed
 //     reasoning_content in <thinking>...</thinking>
@@ -115,7 +122,7 @@ func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
 	// only in provider-facing history. The persisted/UI copy is written before
 	// this function runs and therefore retains the original reasoning stream.
 	if msg.Role == llm.RoleAssistant && msg.Content == "" && len(msg.Parts) == 0 && len(msg.ToolCalls) == 0 {
-		msg.Content = "[no visible answer]"
+		msg.Content = noVisibleAnswerPlaceholder
 	}
 	return buf.String(), msg
 }

@@ -89,6 +89,31 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 	if cfg.IsEcho() {
 		return llm.NewEcho(cfg.Model)
 	}
+	zenInfo, zenModel := llm.ResolveOpenCodeZenModelMetadata(dataDir, cfg.BaseURL, cfg.Model, caps)
+	if zenModel && zenInfo.Transport == llm.ModelTransportResponses {
+		return llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
+	if zenModel && zenInfo.Transport == llm.ModelTransportAnthropic {
+		return llm.NewAnthropic(llm.AnthropicConfig{
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			MaxTokens:      cfg.MaxTokens,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
+	if zenModel && zenInfo.Transport == llm.ModelTransportGoogle {
+		return nil, fmt.Errorf("opencode Zen model %q requires Google transport, which this engine does not support yet", cfg.Model)
+	}
 	switch cfg.Provider {
 	case config.ProviderResponses:
 		return llm.NewResponses(llm.ResponsesConfig{

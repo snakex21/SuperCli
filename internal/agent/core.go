@@ -20,6 +20,13 @@ type MessageEvent struct{ Text string }
 
 func (MessageEvent) event() {}
 
+// ReasoningEvent is a provider-exposed reasoning fragment. It remains a
+// separate semantic channel until the presentation boundary, so provider
+// protocol details never have to masquerade as ordinary assistant text.
+type ReasoningEvent struct{ Text string }
+
+func (ReasoningEvent) event() {}
+
 // ToolCallEvent signals that the model wants to invoke a tool.
 type ToolCallEvent struct {
 	Name string
@@ -217,15 +224,16 @@ type DraftOverride struct {
 // ("auto") or because the provider returned a context-length
 // error ("context-limit").
 type AutoCompactEvent struct {
-	Removed        int    // messages removed/hidden
-	Window         int    // resolved context window (tokens)
-	Estimated      int    // effective next-request estimate before compaction
-	RawEstimated   int    // local estimator before provider calibration
-	EstimateSource string // "estimate" | "provider+delta"
-	ExactBase      int    // last provider-reported prompt usage, if used
-	Threshold      int    // automatic trigger in tokens
-	WindowSource   string // config/provider/catalog/learned/fallback
-	Reason         string // "auto" | "context-limit" | "manual"
+	Removed         int    // messages removed/hidden
+	Window          int    // resolved context window (tokens)
+	Estimated       int    // effective next-request estimate before compaction
+	RawEstimated    int    // local estimator before provider calibration
+	EstimateSource  string // "estimate" | "provider+delta"
+	ExactBase       int    // last provider-reported prompt usage, if used
+	Threshold       int    // automatic trigger in tokens
+	ThresholdSource string // window source or "prefill-profile"
+	WindowSource    string // config/provider/catalog/learned/fallback
+	Reason          string // "auto" | "context-limit" | "manual"
 }
 
 func (AutoCompactEvent) event() {}
@@ -236,10 +244,12 @@ func (AutoCompactEvent) event() {}
 // the estimated token gain; Estimated/Window are the visible estimate
 // before pruning and the resolved context window.
 type ToolResultsPrunedEvent struct {
-	Pruned    int // tool results replaced with markers
-	Reclaimed int // estimated tokens reclaimed
-	Estimated int // visible token estimate before the prune
-	Window    int // resolved context window (tokens)
+	Pruned          int    // tool results replaced with markers
+	Reclaimed       int    // estimated tokens reclaimed
+	Threshold       int    // pruning trigger in tokens
+	ThresholdSource string // window source or "prefill-profile"
+	Estimated       int    // visible token estimate before the prune
+	Window          int    // resolved context window (tokens)
 }
 
 func (ToolResultsPrunedEvent) event() {}

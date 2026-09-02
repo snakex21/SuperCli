@@ -54,6 +54,11 @@ type statsContextView struct {
 	Percent          int                   `json:"percent"`
 	CompactThreshold int                   `json:"compact_threshold"`
 	Breakdown        statsContextBreakdown `json:"breakdown"`
+	// RequestsToday is the daily completion-request count for the
+	// active endpoint (request_budget.json). Metered free tiers such
+	// as OpenCode Zen's ~100/day show it next to the context gauge;
+	// zero when the counter is uninitialized or nothing was sent.
+	RequestsToday int `json:"requests_today"`
 }
 
 type statsContextBreakdown struct {
@@ -211,6 +216,14 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		sv.Tokens.Output = fallbackRecord.Output
 		sv.Context = contextFromMessages(messages, fallback.ContextWindow)
 	}
+
+	// Daily request quota for the active endpoint — independent of
+	// which branch filled sv.Context above, and key-free by design
+	// (keyless providers like Zen's public tier count identically).
+	e.mu.RLock()
+	activeBaseURL := e.cfg.BaseURL
+	e.mu.RUnlock()
+	sv.Context.RequestsToday = llm.ProviderRequestsTodayFlexible(activeBaseURL)
 
 	sv.Tokens.Total = sv.Tokens.Input + sv.Tokens.Output
 	sv.Tokens.EvaluatedInput = sv.Tokens.Input - sv.Tokens.CachedInput

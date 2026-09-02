@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"supercli/internal/llm"
@@ -28,6 +27,7 @@ func (l *Loop) runStep(
 	totalUsage *Usage,
 	reflectionProgress *adaptiveReflectionProgress,
 	repeatProg *repeatProgress,
+	economyProg *toolEconomyProgress,
 	stepLimit int,
 ) stepResult {
 	if err := ctx.Err(); err != nil {
@@ -260,8 +260,17 @@ func (l *Loop) runStep(
 		// Empty final reply after tools is a product failure: the user asked
 		// a question, tools ran, and nothing was said. Force one more turn
 		// with a system instruction (no tool_search required). Once per Run.
-		if strings.TrimSpace(text) == "" && !l.emptyReplyNudgeUsed && messagesHaveRecentToolResult(l.Messages) {
-			l.emptyReplyNudgeUsed = true
+		if !hasVisibleUserReply(text) && messagesHaveRecentToolResult(l.Messages) {
+			const maxEmptyReplyNudges = 2
+			if l.emptyReplyNudges >= maxEmptyReplyNudges {
+				l.statsEndStep(stepStart)
+				out <- ErrorEvent{
+					Err:   fmt.Errorf("provider returned an empty user-facing reply after tools %d times", maxEmptyReplyNudges),
+					Usage: *totalUsage, Steps: step + 1,
+				}
+				return stepAbort
+			}
+			l.emptyReplyNudges++
 			sys := llm.Message{
 				Role: llm.RoleSystem,
 				Content: "[reply required] You used tools and returned an empty message. " +
@@ -270,7 +279,7 @@ func (l *Loop) runStep(
 			}
 			l.Messages = append(l.Messages, sys)
 			l.persist(ctx, sys)
-			out <- NoticeEvent{Text: "empty reply after tools: forcing a user-facing answer"}
+			out <- NoticeEvent{Text: fmt.Sprintf("empty reply after tools: forcing a user-facing answer (%d/%d)", l.emptyReplyNudges, maxEmptyReplyNudges)}
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
@@ -298,6 +307,14 @@ func (l *Loop) runStep(
 				l.statsEndStep(stepStart)
 				return stepContinue
 			}
+		}
+		// Once a user-facing answer has resolved the tool chain, persist the
+		// smaller provider projection. The lossless transcript remains intact
+		// and searchable, while reopening this session no longer reloads every
+		// historical tool envelope into the model context.
+		visible := l.VisibleMessages()
+		if len(l.resolvedToolProviderView(visible)) < len(visible) {
+			l.persistProjection(ctx)
 		}
 		l.statsEndStep(stepStart)
 		out <- DoneEvent{Usage: *totalUsage, Steps: step + 1}
@@ -341,6 +358,18 @@ func (l *Loop) runStep(
 			}
 			return stepAbort
 		}
+	}
+	if economyProg != nil && economyProg.observe(toolCalls, toolOutcomes) {
+		warn := llm.Message{
+			Role: llm.RoleSystem,
+			Content: "[tool economy] You have used several provider rounds only to collect one or two read-only facts. " +
+				"Before the next call, identify every independent file/range/search you can already name and request them together. " +
+				"Use one read_many for multiple files/ranges, combine related search_code terms with regex alternation, and emit independent read-only tool calls in one response so SuperCli runs them concurrently. " +
+				"If the evidence is sufficient, stop exploring and act or answer now. Do not skip necessary verification.",
+		}
+		l.Messages = append(l.Messages, warn)
+		l.persist(ctx, warn)
+		out <- NoticeEvent{Text: "serial read-only rounds detected: batching guidance injected"}
 	}
 	// Tool results have all been appended in deterministic call order. This
 	// is the other safe drain point for mid-turn user messages.

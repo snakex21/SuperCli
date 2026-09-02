@@ -27,6 +27,7 @@ import (
 	"supercli/internal/llm/factory"
 	"supercli/internal/storage"
 	"supercli/internal/storage/goal"
+	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/tools"
@@ -49,8 +50,12 @@ type Engine struct {
 	dataDir    string
 	home       string
 	appProfile string
-	caps       *llm.CapabilityRegistry
-	prov       llm.Provider
+	// explicitEcho is enabled only by the command-line --echo flag. It keeps
+	// deterministic bridge/dev tests available while branded apps reject an
+	// accidental echo fallback caused by unreadable configuration.
+	explicitEcho bool
+	caps         *llm.CapabilityRegistry
+	prov         llm.Provider
 	// factory is the single provider-construction funnel: every
 	// provider (main, model switches, task workers) comes out of it
 	// wrapped in llm.Metered, so purpose labels, the background gate
@@ -64,11 +69,12 @@ type Engine struct {
 	// learned holds per-model context limits persisted from past
 	// context-length errors (<dataDir>/context_limits.json), shared
 	// with the CLI so both front-ends size auto-compaction the same.
-	learned    *llm.LearnedLimits
-	questionMu sync.Mutex
-	questions  map[string]tools.AskRequest
-	perfMu     sync.RWMutex
-	perf       map[string]providerCallPerformance
+	learned         *llm.LearnedLimits
+	prefillProfiles *llm.PrefillProfiles
+	questionMu      sync.Mutex
+	questions       map[string]tools.AskRequest
+	perfMu          sync.RWMutex
+	perf            map[string]providerCallPerformance
 	// offTurn counts model calls the GUI makes OUTSIDE any agent turn
 	// (titles, run summaries, folder/document indexing, vision). They
 	// belong to no turn, so no turn summary can carry them, but they
@@ -83,6 +89,14 @@ type Engine struct {
 	sessionMu sync.Mutex
 	sessions  *session.Store
 	closed    bool
+	// Memory stores are likewise long-lived for the Engine. Cross-session
+	// recall runs on every user turn, so reopening a project memory DB there
+	// would waste ~8 ms and hundreds of KB of transient allocations on a local
+	// machine. One shared WAL-backed Store makes the hot path just FTS5.
+	memoryMu      sync.Mutex
+	globalMemory  *memory.Store
+	projectMemory map[string]*memory.Store
+	memoryClosed  bool
 	// errorLog is the shared append-only tool_errors.log handle. Web
 	// runs build a fresh loop per request, so the file is opened once
 	// per Engine and every loop appends to it; opening it per run
@@ -153,26 +167,31 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 	}
 	f := factory.New(nil, dataDir, caps)
 	tc, _ := config.ResolveConfig(dataDir, home, "")
+	// Daily per-endpoint request counter — the web front-end and any
+	// bot embedding it read quota from the same store as the TUI.
+	llm.InitRequestBudget(dataDir)
 	prov, err := f.BuildChain(cfg, tc, llm.PurposeMain)
 	if err != nil {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
 	eng := &Engine{
-		cfg:           cfg,
-		dataDir:       dataDir,
-		home:          home,
-		caps:          caps,
-		prov:          prov,
-		factory:       f,
-		learned:       llm.LoadLearnedLimits(dataDir),
-		modelContexts: config.LoadModelContextStore(dataDir),
-		questions:     make(map[string]tools.AskRequest),
-		perf:          make(map[string]providerCallPerformance),
-		checkpoints:   make(map[string]*checkpoint.Manager),
-		codeIntel:     make(map[string]*tools.CodeIntel),
-		processes:     make(map[string]*tools.ProcessSession),
-		skillCatalog:  make(map[string]*tools.Discoverer),
-		workers:       agent.NewWorkerRegistry(),
+		cfg:             cfg,
+		dataDir:         dataDir,
+		home:            home,
+		caps:            caps,
+		prov:            prov,
+		factory:         f,
+		learned:         llm.LoadLearnedLimits(dataDir),
+		prefillProfiles: llm.LoadPrefillProfiles(dataDir),
+		modelContexts:   config.LoadModelContextStore(dataDir),
+		questions:       make(map[string]tools.AskRequest),
+		perf:            make(map[string]providerCallPerformance),
+		checkpoints:     make(map[string]*checkpoint.Manager),
+		codeIntel:       make(map[string]*tools.CodeIntel),
+		processes:       make(map[string]*tools.ProcessSession),
+		skillCatalog:    make(map[string]*tools.Discoverer),
+		projectMemory:   make(map[string]*memory.Store),
+		workers:         agent.NewWorkerRegistry(),
 	}
 	eng.titles = newTitleScheduler(titleIdleDelay, eng.runSessionTitleLLM)
 	eng.schedules = newScheduleManager(dataDir, func(workspace, prompt string) error {
@@ -424,6 +443,22 @@ func (e *Engine) Close() error {
 	if goalDB != nil {
 		goalErr = goalDB.Close()
 	}
+	e.memoryMu.Lock()
+	globalMemory := e.globalMemory
+	e.globalMemory = nil
+	projectMemory := e.projectMemory
+	e.projectMemory = nil
+	e.memoryClosed = true
+	e.memoryMu.Unlock()
+	if globalMemory != nil {
+		_ = globalMemory.Close()
+	}
+	for _, store := range projectMemory {
+		if store != nil {
+			_ = store.Close()
+		}
+	}
+
 	e.sessionMu.Lock()
 	if e.closed {
 		e.sessionMu.Unlock()

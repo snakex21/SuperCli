@@ -15,6 +15,7 @@ import (
 type contextWindowBundle struct {
 	Learned                *learnedLimits
 	ModelContexts          *config.ModelContextStore
+	PrefillProfiles        *llm.PrefillProfiles
 	InitialContextProvider string
 	ContextWindowFor       func(model string) agent.ContextWindowResolution
 	ScopedContextWindowFor func(provider, model string) agent.ContextWindowResolution
@@ -43,6 +44,7 @@ func wireContextWindows(
 	var b contextWindowBundle
 	b.Learned = loadLearnedLimits(dataDir)
 	b.ModelContexts = config.LoadModelContextStore(dataDir)
+	b.PrefillProfiles = llm.LoadPrefillProfiles(dataDir)
 	b.InitialContextProvider = config.RuntimeProviderName(tomlCfg, cfg)
 
 	var provWinMu sync.Mutex

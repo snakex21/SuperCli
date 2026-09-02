@@ -104,6 +104,57 @@ func TestAgentTool_Spec(t *testing.T) {
 	}
 }
 
+func TestAgentTool_UnsetWorkerStepsUsesSharedSafetyNet(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	reg.MustRegister(SubAgent{Name: "explore", Description: "search"})
+	var gotMaxSteps int
+	factory := func(cfg LoopConfig) (*Loop, error) {
+		gotMaxSteps = cfg.MaxSteps
+		return NewLoop(LoopConfig{
+			Provider: &stubReplyProvider{name: "child", reply: "done"},
+			Registry: cfg.Registry,
+			MaxSteps: cfg.MaxSteps,
+		})
+	}
+	at, err := NewAgentTool(reg, nil, newTestBaseRegistry(), &stubReplyProvider{name: "parent"}, nil, factory)
+	if err != nil {
+		t.Fatalf("NewAgentTool: %v", err)
+	}
+	res, err := at.execute(context.Background(), json.RawMessage(`{"agent":"explore","prompt":"inspect"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resultErr=%v", err, res.Err)
+	}
+	if gotMaxSteps != DefaultMaxSteps {
+		t.Fatalf("worker MaxSteps = %d, want shared safety net %d", gotMaxSteps, DefaultMaxSteps)
+	}
+}
+
+func TestAgentTool_ConfiguredWorkerStepsStillOverridesUnsetSpec(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	reg.MustRegister(SubAgent{Name: "explore", Description: "search"})
+	var gotMaxSteps int
+	factory := func(cfg LoopConfig) (*Loop, error) {
+		gotMaxSteps = cfg.MaxSteps
+		return NewLoop(LoopConfig{
+			Provider: &stubReplyProvider{name: "child", reply: "done"},
+			Registry: cfg.Registry,
+			MaxSteps: cfg.MaxSteps,
+		})
+	}
+	at, err := NewAgentTool(reg, nil, newTestBaseRegistry(), &stubReplyProvider{name: "parent"}, nil, factory)
+	if err != nil {
+		t.Fatalf("NewAgentTool: %v", err)
+	}
+	at.MaxSteps = 37
+	res, err := at.execute(context.Background(), json.RawMessage(`{"agent":"explore","prompt":"inspect"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("execute: err=%v resultErr=%v", err, res.Err)
+	}
+	if gotMaxSteps != 37 {
+		t.Fatalf("worker MaxSteps = %d, want configured 37", gotMaxSteps)
+	}
+}
+
 func TestAgentTool_Spec_NoAgents(t *testing.T) {
 	// Even with no registered sub-agents the spec must build.
 	reg := NewSubAgentRegistry()

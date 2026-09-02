@@ -85,6 +85,7 @@ type transcriptTurn struct {
 type memoryItem struct {
 	ID        string   `json:"id"`
 	Scope     string   `json:"scope"`
+	Target    string   `json:"target"`
 	Content   string   `json:"content"`
 	Tags      []string `json:"tags,omitempty"`
 	Source    string   `json:"source,omitempty"`

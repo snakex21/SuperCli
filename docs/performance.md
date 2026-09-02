@@ -1,8 +1,8 @@
-# Performance — telemetry, caches, turn economy
+﻿# Performance â€” telemetry, caches, turn economy
 
-Design rule behind all of it: **on a local server the costs are, in
+Design rule behind all of it: **on a slow-prefill server the costs are, in
 order: a turn > a prompt-front re-eval > appended tokens.** Optimize in
-that order, and never guess — every mechanism here shipped with a live
+that order, and never guess â€” every mechanism here shipped with a live
 measurement.
 
 ## Telemetry (how the numbers are obtained)
@@ -13,10 +13,10 @@ data on the TUI/web done-event (`cache | eval | gen`, cache-hit %).
 
 **How.** `cache` is the provider-reported cached prompt tokens
 (`usage.prompt_tokens_details.cached_tokens`, which llama.cpp mirrors
-from its `timings.cache_n`); `eval = in − cache` is what the server
+from its `timings.cache_n`); `eval = in â’ cache` is what the server
 actually prefilled. Verified token-exact against server logs during the
 2026-07-05 cache hunt. This line is the ground truth used for every
-number below — if you change prompt construction, watch it.
+number below â€” if you change prompt construction, watch it.
 
 ## Phase telemetry (per-step breakdown, **default ON**)
 
@@ -24,12 +24,12 @@ number below — if you change prompt construction, watch it.
 turn-economy work gets measured, not guessed (`internal/system/stats/`,
 fed by the loop since df8fbca). Per step it records:
 
-- **Phases** — wall time per canonical phase: `context_prepare`,
+- **Phases** â€” wall time per canonical phase: `context_prepare`,
   `request_encode`, `backend_wait` (= TTFT), `stream_total`,
   `tool_execution`, `session_persist`, `next_turn_prepare`
   (remainder), plus a `tool:<name>` entry per executed tool;
-- **ToolCalls** — raw tool-call batch size per step (duplicates
-  count) — THE metric for judging read-only tool parallelism;
+- **ToolCalls** â€” raw tool-call batch size per step (duplicates
+  count) â€” THE metric for judging read-only tool parallelism;
 - tokens in/out per turn (same numbers as the `[tokens]` line).
 
 All timings are whole-phase `time.Since` measurements; TTFT is a single
@@ -38,31 +38,32 @@ allocation-free.
 
 **How to look at it.**
 
-- TUI: `/cost` — per-turn table with a calls column, plus a "Phase
+- TUI: `/cost` â€” per-turn table with a calls column, plus a "Phase
   breakdown" section (per-step lines, phase totals, tool-calls
   distribution: avg/step and steps with >1 call);
-- batch: one greppable stderr line per step —
+- batch: one greppable stderr line per step â€”
   `[phase] step=N calls=N in=N out=N <phase>=<ms> ...`;
 - programmatic: `stats.Save(path, turns, calls)` dumps the snapshot as JSON.
 
-**Why ON.** No new knobs — the recorder was already wired by default;
+**Why ON.** No new knobs â€” the recorder was already wired by default;
 the loop now feeds it every step. Cost is a handful of timestamps per
 step, invisible next to a local-model turn.
 
 ### Purpose-labeled model calls (default ON)
 
-**What.** Every `Provider.Complete` in the process — not just the main
-step call — is metered centrally by the `llm.Metered` decorator on the
+**What.** Every `Provider.Complete` in the process â€” not just the main
+step call â€” is metered centrally by the `llm.Metered` decorator on the
 provider (installed by `internal/llm/factory`; call sites re-label via
 `llm.WithPurpose` / `llm.WithBackground` on the context). Per call it
 records: purpose, model + provider, TTFT, total time, tokens in/out,
+cached/evaluated prefill tokens, estimated prefill tok/s, active prompt budget,
 foreground/background, canceled/failed. Purposes: `main`, `navigator`,
 `compact`, `reflection`, `draft`, `verdict`, `memory` (autosave +
 startup raw-log summarization, background), `goal`, `consult`,
 `judge`, `darwin_judge`, `task` (task_model workers), `title` (webgui).
 
 **Why.** Helper inferences used to be invisible or booked to the wrong
-phase — the audit found a step with `next_turn_prepare=14s` of which
+phase â€” the audit found a step with `next_turn_prepare=14s` of which
 13.9s was a hidden model call. Model-powered aux operations inside a
 step (draft, auto-compact summary, reflection) are now booked as their
 own `model:<purpose>` phases and subtracted from `context_prepare` /
@@ -71,30 +72,48 @@ overhead.
 
 **How to look at it.**
 
-- TUI: `/cost` — "Model calls" section: per purpose count, total time,
+- TUI: `/cost` â€” "Model calls" section: per purpose count, total time,
   average TTFT, tokens, background/canceled/failed markers;
-- batch: one greppable stderr line —
+- batch: one greppable stderr line â€”
   `[calls] <purpose>=<n>x/<time>/in=<tok>/out=<tok> ...`;
 - programmatic: `stats.Save(path, turns, calls)` includes the ledger,
   `stats.SumCalls` aggregates it.
+
+The WebGUI's durable `session_usage` rows persist the same TTFT, evaluated
+tokens, tok/s and budget fields. `/context` shows the latest sample and learned
+budget. No prompt text, endpoint URL, header or credential is stored.
+
+### Adaptive prefill budget (default ON)
+
+The hard model window answers “will this request fit?”, not “will this request
+prefill quickly?”. SuperCli therefore learns a separate target-sized prompt
+per configured connection and model from actual TTFT and cache reuse. The
+target is 15 seconds; a 30-second sample activates protection immediately,
+while less severe slowdowns need repeated evidence. Prune and compaction use
+the learned threshold only when it is lower than the hard safety threshold.
+Fast samples near the edge raise it gradually.
+
+The decision is deliberately transport-neutral. A model added by the user over
+HTTP is neither assumed local nor remote; only its measured behavior matters.
+The portable profile lives at `supercli-data/prefill-profiles.json`.
 
 ### Foreground beats background: idle memory autosave (default ON)
 
 **What.** Background model calls no longer compete with the user's
 turn. The per-turn incremental memory summary used to fire an extra
-inference IMMEDIATELY after every answer — racing the user's next
+inference IMMEDIATELY after every answer â€” racing the user's next
 question for the same local backend (worse TTFT, KV-prefix churn).
 Now:
 
 - **deterministic user facts** (pure string matching, no model) are
-  still saved immediately after each turn — a "nazywam się Maks"
+  still saved immediately after each turn â€” a "nazywam siÄ™ Maks"
   survives even a kill seconds later;
 - the **model-backed summary** waits until the user has been idle for
   15 s (a constant, not a knob). Several turns finishing inside one
   window are batched into ONE summary call;
 - a **new prompt cancels** the in-flight background summary
   (context cancel) and stops the idle timer; the uncovered fragment
-  is retried — batched with newer turns — at the next idle window;
+  is retried â€” batched with newer turns â€” at the next idle window;
 - **startup raw-log summarization** waits for the same idle window,
   so it is never in the way of the user's first question;
 - **exit makes no model call**: the un-summarized conversation tail
@@ -124,11 +143,11 @@ of decorator work even for an unusually fragmented 100k-delta stream.
 
 **Why.** On a single local backend every concurrent request splits
 compute and evicts the KV prefix of the main conversation. The main
-conversation is the product; helper inferences are bookkeeping —
+conversation is the product; helper inferences are bookkeeping â€”
 bookkeeping runs when the user is not looking.
 
 **Batch mode** (`--batch`) is unaffected: it never ran memory
-autosave and still doesn't — one prompt, pure stdout, exit.
+autosave and still doesn't â€” one prompt, pure stdout, exit.
 
 ### Signal-driven reflection (default ON)
 
@@ -189,8 +208,8 @@ before history, verification, error attribution and telemetry, so no subsystem
 sees a fake wrapper tool.
 
 Unknown arguments, nested arrays/objects/unions and every mutating tool are
-rejected with `requires tool_search`. Replay pins the turn win: direct call →
-result → answer in two provider turns, with no intermediate `tool_search`
+rejected with `requires tool_search`. Replay pins the turn win: direct call â†’
+result â†’ answer in two provider turns, with no intermediate `tool_search`
 round-trip. The small-model catalog separates directly callable read-only
 entries from complex load-on-demand entries; cloud models see the same compact
 eligible signatures in the dispatcher's description.
@@ -214,9 +233,9 @@ general-advice turn no longer pays for repository state.
 
 ### Deterministic advisor routing
 
-Navigator auto mode treats strong conceptual prefixes (`wyjaśnij`, `jak
-działa`, `what is`, `explain`, etc.) as a confident advisor route. Project/file
-keywords are checked first, so “wyjaśnij ten kod w pliku” remains coordinator.
+Navigator auto mode treats strong conceptual prefixes (`wyjaĹ›nij`, `jak
+dziaĹ‚a`, `what is`, `explain`, etc.) as a confident advisor route. Project/file
+keywords are checked first, so â€śwyjaĹ›nij ten kod w plikuâ€ť remains coordinator.
 With `navigator = auto`, ambiguity safely falls back to coordinator without a
 model call. If a separate task/draft provider is configured, the TUI may use it
 for ambiguous classification without evicting the main model's KV cache.
@@ -267,14 +286,14 @@ disk.
 ## Structured tool errors (deterministic failure results)
 
 **What.** When a tool fails, the model gets a short, deterministic,
-machine-shaped reason instead of a raw Go/OS error — so a small model
+machine-shaped reason instead of a raw Go/OS error â€” so a small model
 fixes itself in one turn instead of guessing at "exit status 1".
 The CLI states only facts it is certain of (exit code, timeout,
 truncation, path); it never guesses causes.
 
 **Process tools** (`ctx_execute` via `ctxexec.FailureSummary`, user
 tools via `commandFailedErr`): first line is the fact line, then the
-tail of the captured streams — errors live at the end, so tails keep
+tail of the captured streams â€” errors live at the end, so tails keep
 the LAST bytes, capped (2 KB per stream) with an explicit marker:
 
 ```
@@ -288,7 +307,7 @@ FAIL: TestFoo ...
   file not found ...` (raw exec reason, verbatim);
 - over-long streams: `stderr (tail, truncated):` marker, same
   retry-safe convention as the c74e100 read-tool caps. Before this,
-  a failed `ctx_execute` surfaced only `ctx_execute: exit 1` — the
+  a failed `ctx_execute` surfaced only `ctx_execute: exit 1` â€” the
   stderr the model needed was dropped on the error path.
 
 **File tools** (`fileops.FileErr`, used by read_lines/read_context/
@@ -305,21 +324,21 @@ is_directory C:\proj\src
 
 Unknown causes pass through unchanged (no fact, no rewrite). The error
 attribution heuristics (F4.d) recognise the structured forms, so error
--log classification keeps working. Success outputs are untouched —
+-log classification keeps working. Success outputs are untouched â€”
 only the failure path changed.
 
 The office/media readers (`read_pdf`, `read_docx`, `read_xlsx`,
 `read_zip`, `read_image`, `edit_docx`, `edit_xlsx`) route their
 stat/open/read failures through the same `fileops.FileErr` forms.
 
-**Web tools** (`web_fetch`, `web_search` — all engines): a non-200
+**Web tools** (`web_fetch`, `web_search` â€” all engines): a non-200
 response keeps the error body instead of dropping it (API errors
 carry the fix, e.g. `{"code":"missing_api_key",...}`):
 
 ```
 http_failed status=401 host=api.search.brave.com content_type=application/json retry_after=30
 body:
-<first 2 KB + last 2 KB, UTF-8-safe, omitted_bytes marker>
+<first 2 KB + last 2 KB, UTF-8-safe, line-boundary cuts, omitted_bytes/omitted_lines marker>
 ```
 
 Transport failures (no response at all) get a deterministic cause
@@ -327,7 +346,7 @@ token the model can branch on: `request_failed cause=timeout|dns|
 tls|canceled|error host=<h>: <err>`. Request headers (Authorization,
 tokens) are never echoed.
 
-**search_code**: a real ripgrep failure (bad pattern, crash — NOT
+**search_code**: a real ripgrep failure (bad pattern, crash â€” NOT
 exit 1, which means "no matches" and stays a valid result) falls
 back to the Go scanner; if that also fails the model gets a
 structured `search_failed ...` error instead of a fake result text.
@@ -336,14 +355,14 @@ the process is killed once the limit is hit (rg's `--max-count` is
 per file).
 
 **Output caps at the boundary** (all head+tail with an explicit
-`[... omitted_bytes=N ...]` marker, UTF-8-safe cuts,
+`[... omitted_bytes=N, omitted_lines=M ...]` marker, UTF-8-safe and line-boundary cuts,
 `core.HeadTail` / `core.HeadTailBuffer`):
 
 - user tools (shell/script): combined output bounded DURING the run
-  (first 8 KB + last 8 KB) — replaces `CombinedOutput()`, which held
+  (first 8 KB + last 8 KB) â€” replaces `CombinedOutput()`, which held
   arbitrary output in RAM before truncating;
 - MCP tools: external server results capped at 16 KB + 4 KB on
-  success, standard 2 KB error cap on `IsError` — a chatty server
+  success, standard 2 KB error cap on `IsError` â€” a chatty server
   can no longer inject megabytes into one tool result.
 
 ## KV-cache discipline (summary; details in architecture.md)
@@ -353,7 +372,7 @@ The three historical cache-killers and their fixes, all live-measured:
 
 | killer | fix | measured effect |
 |---|---|---|
-| minute-granular time stamp hoisted to prompt front | demote mid-conversation system msgs to tail (`system_demote.go`) | minute tick: eval 2216 → 371 (Qwen3.5-9B) |
+| minute-granular time stamp hoisted to prompt front | demote mid-conversation system msgs to tail (`system_demote.go`) | minute tick: eval 2216 â†’ 371 (Qwen3.5-9B) |
 | tools list changing on tool_search activation | `stable_toolset` ON: activated tools stay in catalog | tools block byte-identical all session |
 | reflection/ultrawork system injections | same demote path | no front re-eval on checkpoints |
 
@@ -367,11 +386,11 @@ history. `internal/llm/slotcache.go`.
 **Gating (twice).** Construction: never even built for cloud/public base
 URLs (they don't implement /slots and must not be probed). First use is
 the probe: any failure (HTTP 501 without `--slot-save-path`, 404, network)
-permanently disables it for the process — zero retries, zero noise.
+permanently disables it for the process â€” zero retries, zero noise.
 
 **Measured (2026-07-05).** Dense model (Ministral-3-3B): resume eval
-1712 → 88 (−95%, cache hit on the order of the whole history). **Hybrid
-models (Qwen3.5 family): a silent no-op** — llama.cpp's slot files store
+1712 â†’ 88 (â’95%, cache hit on the order of the whole history). **Hybrid
+models (Qwen3.5 family): a silent no-op** â€” llama.cpp's slot files store
 no context checkpoints, and recurrent/linear layers cannot roll back to a
 divergence point without one, so restore degrades to a clean full
 re-eval. Safe, just not profitable until llama.cpp persists checkpoints.
@@ -380,7 +399,7 @@ This is an upstream limitation, documented in slotcache.go.
 ## Preflight repo context (`preflight_repo`, **default ON**)
 
 **What.** A compact auto-collected repo-state block (branch/HEAD,
-uncommitted changes, recent commits — or a pure-Go recently-modified-files
+uncommitted changes, recent commits â€” or a pure-Go recently-modified-files
 fallback when git is absent; git is never required) appended to the first
 user message of a session and to every worker briefing. Small worktrees keep
 exact paths; large dirty trees use status counts, hot areas and a 16-path
@@ -388,18 +407,18 @@ sample. Hard token budget: 300 (most-important-first trimming).
 `internal/system/preflight/`.
 
 **Why ON.** Measured 2026-07-09, identical task with/without: the ~73
-token block turned 6 turns into 4 (−33%), eval −36%, total tokens −42%,
-same end result — it deletes the "where am I" discovery turns. It rides
+token block turned 6 turns into 4 (â’33%), eval â’36%, total tokens â’42%,
+same end result â€” it deletes the "where am I" discovery turns. It rides
 the *variable* side of the prompt (user message), never the system
 prefix, so the cacheable front is untouched (asserted by
 loop_preflight_test.go; live cache share stayed comparable).
 
-## Noop-gate (`noop_gate`, **default OFF — deliberately**)
+## Noop-gate (`noop_gate`, **default OFF â€” deliberately**)
 
 **What.** For batch (`--batch`) runs only: if the working-tree
 fingerprint (path+size+mtime manifest, `internal/system/manifest`) is
 identical to the one saved after the last successful run of the *same
-prompt*, skip the run entirely — zero LLM calls, exit 0, a `no-op:` line.
+prompt*, skip the run entirely â€” zero LLM calls, exit 0, a `no-op:` line.
 Strictly fail-open: any doubt (missing manifest, IO error, changed tree)
 means "run normally". Interactive sessions are never gated.
 
@@ -419,7 +438,7 @@ A round-trip on a slow local model costs seconds-to-minutes of wall
 clock; tokens are cheap by comparison. Hence:
 
 - preflight: pay ~73 tokens once, save 2 discovery turns (above);
-- thin protocol keeps *first-call accuracy* a hard requirement — a
+- thin protocol keeps *first-call accuracy* a hard requirement â€” a
   slimmer schema that causes a failed call + retry is a net loss (every
   schema cut was live-tested for 1-call success, e.g. ctx_execute 5/5);
 - soft-budget prompt discipline (commit 2feba19): the model is told that
@@ -490,23 +509,23 @@ BenchmarkEvictForBudget_10kMsgs-16                     486    2483012 ns/op  225
 Reading the baseline:
 
 - **ConsumeLargeStream is the 593a352 regression pin**: ns/op scales
-  ~10× per 10× deltas (288 µs → 2.86 ms → 28.5 ms) — linear, and
-  allocs ≈ 1/delta (the MessageEvent). A superlinear jump between
+  ~10Ă— per 10Ă— deltas (288 Âµs â†’ 2.86 ms â†’ 28.5 ms) â€” linear, and
+  allocs â‰ 1/delta (the MessageEvent). A superlinear jump between
   sizes means the quadratic `text += delta` came back.
 - **HeadTailBuffer is size-independent in memory**: 8 allocs and
-  ~51 KB regardless of 1 MB or 64 MB streamed — the bound-during-run
+  ~51 KB regardless of 1 MB or 64 MB streamed â€” the bound-during-run
   guarantee.
 - **LongSessionPrepare** grows linearly with history (allocs stay
-  ~flat — the cost is the visible-view copy, not churn).
+  ~flat â€” the cost is the visible-view copy, not churn).
 - **WorkerRegistry add_sweep** is the retention sweep (status scan +
   LRU sort) on a registry FULL of finished workers; ~0.5 ms at 1000 is
-  fine because retention caps the real registry at 20 (29194ae) — the
-  benchmark exists to catch accidental O(n²) in the sweep.
+  fine because retention caps the real registry at 20 (29194ae) â€” the
+  benchmark exists to catch accidental O(nÂ˛) in the sweep.
 - **EvictForBudget is the single-pass regression pin** (2026-07-12):
   mass evict of nearly the whole history scales linearly (0.29 ms at
-  1k msgs → 2.5 ms at 10k). The pre-rewrite loop re-ran
-  `EstimateVisibleTokens()` per eviction — O(n²): 75.1 ms at 1k and
-  6.93 s (!) at 10k on the same box (~260× / ~2800× slower). A
+  1k msgs â†’ 2.5 ms at 10k). The pre-rewrite loop re-ran
+  `EstimateVisibleTokens()` per eviction â€” O(nÂ˛): 75.1 ms at 1k and
+  6.93 s (!) at 10k on the same box (~260Ă— / ~2800Ă— slower). A
   superlinear jump between the two sizes means the per-iteration
   recount came back.
 
@@ -518,9 +537,9 @@ Reading the baseline:
   provider request (and the KV-cache prefix stays stable). Hides are
   reset only when their indices die: compaction and /resume.
 - **EvictForBudget single pass**: the eviction loop re-ran the full
-  visible-token estimate per evicted message — O(n²) on a mass
+  visible-token estimate per evicted message â€” O(nÂ˛) on a mass
   evict. Now: price once, subtract per message, one exact final
-  check. 1k msgs 75.1 ms → 0.29 ms, 10k msgs 6.93 s → 2.5 ms
+  check. 1k msgs 75.1 ms â†’ 0.29 ms, 10k msgs 6.93 s â†’ 2.5 ms
   (BenchmarkEvictForBudget baseline above).
 
 ## Web GUI request hot path (2026-07-13)

@@ -124,6 +124,7 @@ func Probe(ctx context.Context, baseURL, apiKey, model string) (ProbeResult, err
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
+	ApplyOpenCodeZenHeaders(req, baseURL)
 	client := &http.Client{Timeout: probeTimeout}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -10,26 +10,31 @@ import (
 // session. CachedInput is a subset of Input; Reasoning is a subset of Output.
 // Context fields are estimates of the request payload and are never prompts.
 type UsageRecord struct {
-	SessionID        string
-	CallSeq          int
-	Provider         string
-	ProviderType     string
-	EndpointHost     string
-	Model            string
-	Input            int64
-	Output           int64
-	CachedInput      int64
-	Reasoning        int64
-	HasCachedInput   bool
-	HasReasoning     bool
-	ContextWindow    int
-	ContextSystem    int
-	ContextUser      int
-	ContextAssistant int
-	ContextTool      int
-	ContextOther     int
-	Source           string
-	CreatedAt        time.Time
+	SessionID              string
+	CallSeq                int
+	Provider               string
+	ProviderType           string
+	EndpointHost           string
+	Model                  string
+	Input                  int64
+	Output                 int64
+	CachedInput            int64
+	Reasoning              int64
+	HasCachedInput         bool
+	HasReasoning           bool
+	TTFTMS                 int64
+	PrefillEvaluated       int64
+	PrefillTokensPerSecond float64
+	PrefillBudget          int
+	PrefillBudgetSource    string
+	ContextWindow          int
+	ContextSystem          int
+	ContextUser            int
+	ContextAssistant       int
+	ContextTool            int
+	ContextOther           int
+	Source                 string
+	CreatedAt              time.Time
 }
 
 // AppendUsage persists one provider-reported usage record. call_seq is
@@ -81,17 +86,21 @@ func (s *Store) AppendUsage(ctx context.Context, u UsageRecord) error {
 	args = append(args,
 		u.Provider, u.ProviderType, u.EndpointHost, u.Model,
 		u.Input, u.Output, u.CachedInput, u.Reasoning,
-		boolInt(u.HasCachedInput), boolInt(u.HasReasoning), u.ContextWindow,
+		boolInt(u.HasCachedInput), boolInt(u.HasReasoning),
+		u.TTFTMS, u.PrefillEvaluated, u.PrefillTokensPerSecond, u.PrefillBudget, u.PrefillBudgetSource,
+		u.ContextWindow,
 		u.ContextSystem, u.ContextUser, u.ContextAssistant, u.ContextTool, u.ContextOther,
 		u.Source, u.CreatedAt.UnixNano(),
 	)
 	query := `INSERT INTO session_usage (
 		session_id, call_seq, provider, provider_type, endpoint_host, model,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
-		has_cached_input, has_reasoning, context_window, ctx_system_tokens,
-		ctx_user_tokens, ctx_assistant_tokens, ctx_tool_tokens, ctx_other_tokens,
+		has_cached_input, has_reasoning,
+		ttft_ms, prefill_evaluated_tokens, prefill_tokens_per_second,
+		prefill_budget_tokens, prefill_budget_source,
+		context_window, ctx_system_tokens, ctx_user_tokens, ctx_assistant_tokens, ctx_tool_tokens, ctx_other_tokens,
 		source, created_at
-	) VALUES (?,` + seqExpr + `,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	) VALUES (?,` + seqExpr + `,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 	_, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("session.Store.AppendUsage insert: %w", err)
@@ -104,7 +113,10 @@ func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord,
 	rows, err := s.db.QueryContext(ctx, `SELECT
 		session_id, call_seq, provider, provider_type, endpoint_host, model,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
-		has_cached_input, has_reasoning, context_window, ctx_system_tokens,
+		has_cached_input, has_reasoning,
+		ttft_ms, prefill_evaluated_tokens, prefill_tokens_per_second,
+		prefill_budget_tokens, prefill_budget_source,
+		context_window, ctx_system_tokens,
 		ctx_user_tokens, ctx_assistant_tokens, ctx_tool_tokens, ctx_other_tokens,
 		source, created_at
 		FROM session_usage WHERE session_id = ? ORDER BY call_seq`, sessionID)
@@ -120,7 +132,10 @@ func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord,
 		if err := rows.Scan(
 			&u.SessionID, &u.CallSeq, &u.Provider, &u.ProviderType, &u.EndpointHost, &u.Model,
 			&u.Input, &u.Output, &u.CachedInput, &u.Reasoning,
-			&cachedKnown, &reasoningKnown, &u.ContextWindow,
+			&cachedKnown, &reasoningKnown,
+			&u.TTFTMS, &u.PrefillEvaluated, &u.PrefillTokensPerSecond,
+			&u.PrefillBudget, &u.PrefillBudgetSource,
+			&u.ContextWindow,
 			&u.ContextSystem, &u.ContextUser, &u.ContextAssistant, &u.ContextTool, &u.ContextOther,
 			&u.Source, &created,
 		); err != nil {

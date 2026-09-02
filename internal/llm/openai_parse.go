@@ -66,7 +66,7 @@ func extractReasoningText(delta map[string]json.RawMessage) string {
 	// every streamed word in the GUI. Pick a single best key instead:
 	// well-known flat keys first, then any remaining reasoning-ish key
 	// in deterministic (sorted) order.
-	for _, key := range []string{"reasoning_content", "reasoning_text", "reasoning", "thinking", "thought"} {
+	for _, key := range []string{"reasoning_content", "reasoning_text", "reasoning_details", "reasoning", "thinking", "thought", "analysis_content", "analysis_text", "analysis"} {
 		if raw, ok := delta[key]; ok {
 			if s := extractStringLeaves(raw); strings.TrimSpace(s) != "" {
 				return s
@@ -94,7 +94,8 @@ func isReasoningJSONKey(key string) bool {
 	if strings.Contains(k, "finish") || strings.Contains(k, "token") || strings.Contains(k, "usage") {
 		return false
 	}
-	return strings.Contains(k, "reasoning") || strings.Contains(k, "thinking") || strings.Contains(k, "thought")
+	return strings.Contains(k, "reasoning") || strings.Contains(k, "thinking") || strings.Contains(k, "thought") ||
+		k == "analysis" || k == "analysis_text" || k == "analysis_content"
 }
 
 func extractStringLeaves(raw json.RawMessage) string {

@@ -29,7 +29,21 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		name := strings.TrimSpace(req.Name)
-		if err := m.Add(name, strings.TrimSpace(req.Type), strings.TrimSpace(req.BaseURL), req.APIKey, strings.TrimSpace(req.Model)); err != nil {
+		typ := strings.TrimSpace(req.Type)
+		detectWarning := ""
+		if typ == "" || strings.EqualFold(typ, "auto") {
+			detected, detectErr := llm.DetectProviderProtocol(r.Context(), strings.TrimSpace(req.BaseURL), req.APIKey)
+			if detectErr != nil {
+				// Generic local/reseller APIs overwhelmingly use OpenAI-compatible
+				// chat. Keep custom providers addable even when /models is slow or
+				// absent, but tell the UI that detection was inconclusive.
+				typ = "openai"
+				detectWarning = "Nie udało się jednoznacznie wykryć typu API; zapisano jako OpenAI-compatible. Możesz zmienić typ podczas edycji."
+			} else {
+				typ = detected
+			}
+		}
+		if err := m.Add(name, typ, strings.TrimSpace(req.BaseURL), req.APIKey, strings.TrimSpace(req.Model)); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -44,10 +58,15 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			// Definite answers (rejected key, wrong URL, unresolvable host)
 			// still roll back: this must not become "accept anything".
 			if llm.IsTimeoutError(res.Err) {
+				warning := fmt.Sprintf("%s was added, but it did not finish listing models within %s, so no models are known yet. If it is just slow, press Rescan; the provider works as soon as it answers.", name, llm.ProviderDiscoveryTimeout)
+				if detectWarning != "" {
+					warning = detectWarning + " " + warning
+				}
 				writeJSON(w, map[string]any{
 					"ok":      true,
+					"type":    typ,
 					"models":  res.Models,
-					"warning": fmt.Sprintf("%s was added, but it did not finish listing models within %s, so no models are known yet. If it is just slow, press Rescan; the provider works as soon as it answers.", name, llm.ProviderDiscoveryTimeout),
+					"warning": warning,
 				})
 				return
 			}
@@ -62,7 +81,11 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("provider verification failed: %v; provider was not added", res.Err), http.StatusBadGateway)
 			return
 		}
-		writeJSON(w, map[string]any{"ok": true, "models": res.Models})
+		response := map[string]any{"ok": true, "type": typ, "models": res.Models}
+		if detectWarning != "" {
+			response["warning"] = detectWarning
+		}
+		writeJSON(w, response)
 	case http.MethodPut:
 		// Partial update: name identifies the provider; only
 		// non-nil fields are applied by Manager.Update. The
@@ -87,6 +110,30 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
+		}
+		if req.Type != nil && (strings.TrimSpace(*req.Type) == "" || strings.EqualFold(strings.TrimSpace(*req.Type), "auto")) {
+			var currentBase, currentKey string
+			for _, configured := range m.Configured() {
+				if configured.Name == name {
+					currentBase = configured.BaseURL
+					break
+				}
+			}
+			if req.BaseURL != nil {
+				currentBase = strings.TrimSpace(*req.BaseURL)
+			}
+			if key, ok := m.APIKey(name); ok {
+				currentKey = key
+			}
+			if req.APIKey != nil {
+				currentKey = *req.APIKey
+			}
+			detected, detectErr := llm.DetectProviderProtocol(r.Context(), currentBase, currentKey)
+			if detectErr != nil {
+				http.Error(w, fmt.Sprintf("nie udało się wykryć typu API: %v", detectErr), http.StatusBadGateway)
+				return
+			}
+			req.Type = &detected
 		}
 		// Capture the active selection before changing the provider config.
 		// RuntimeSelection resolves configured providers by transport + URL, so
@@ -135,7 +182,11 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 				_ = s.eng.SwitchModel(res.Models[0], name)
 			}
 		}
-		writeJSON(w, map[string]any{"ok": true, "name": name, "runtime_refreshed": runtimeRefreshed, "scan_error": errString(res.Err), "models": res.Models})
+		response := map[string]any{"ok": true, "name": name, "runtime_refreshed": runtimeRefreshed, "scan_error": errString(res.Err), "models": res.Models}
+		if req.Type != nil {
+			response["type"] = strings.TrimSpace(*req.Type)
+		}
+		writeJSON(w, response)
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
 		if name == "" {

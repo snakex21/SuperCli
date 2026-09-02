@@ -211,6 +211,23 @@ func TestHandleHealth(t *testing.T) {
 	if body["ok"] != true {
 		t.Errorf("ok = %v, want true", body["ok"])
 	}
+	if body["provider_type"] != "echo" || body["chat_ready"] != true {
+		t.Errorf("provider health = type %v ready %v", body["provider_type"], body["chat_ready"])
+	}
+}
+
+func TestHandleHealthReportsBlockedNestCafeEcho(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.eng.SetAppProfile("nestcafe")
+	rec := httptest.NewRecorder()
+	srv.handleHealth(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ok"] != true || body["provider_type"] != "echo" || body["chat_ready"] != false {
+		t.Fatalf("blocked provider health = %+v", body)
+	}
 }
 
 func TestEmbeddedUIIncludesGoalInspector(t *testing.T) {

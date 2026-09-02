@@ -52,7 +52,28 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		}
 		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
+	if waves, ok := l.toolConflictWaves(toolCalls); ok {
+		outcomes := make([]callOutcome, 0, len(toolCalls))
+		for _, wave := range waves {
+			var waveOK bool
+			var waveOutcomes []callOutcome
+			if len(wave) > 1 {
+				waveOK, waveOutcomes = l.invokeCallsParallel(ctx, wave, out)
+			} else {
+				waveOK, waveOutcomes = l.invokeToolCallsSequential(ctx, wave, out)
+			}
+			outcomes = append(outcomes, waveOutcomes...)
+			if !waveOK {
+				return false, outcomes
+			}
+		}
+		return true, outcomes
+	}
 
+	return l.invokeToolCallsSequential(ctx, toolCalls, out)
+}
+
+func (l *Loop) invokeToolCallsSequential(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)

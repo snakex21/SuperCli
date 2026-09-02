@@ -32,12 +32,11 @@ type AgentTool struct {
 	Workers      *WorkerRegistry
 	// TimeoutPerStep is the budget for one model step in the
 	// child loop. The total child timeout is MaxSteps * this.
-	// Zero means 30s per step (matches the design's "5 min for
-	// MaxSteps=10" default).
+	// Zero means the constructor's 30s-per-step default.
 	TimeoutPerStep time.Duration
 	// MaxSteps caps a worker's model calls. It overrides the
 	// per-spec MaxSteps only when the spec leaves it unset (0).
-	// Zero here falls back to the spec value or the built-in 10.
+	// Zero here falls back to the spec value or DefaultMaxSteps.
 	MaxSteps int
 	// MaxTokens caps a worker's total token spend (input+output,
 	// summed across turns). When >0 a per-worker budget tracker
@@ -50,6 +49,11 @@ type AgentTool struct {
 	// coordinator keeps using Provider; only child loops switch. Nil =
 	// workers inherit Provider (default, byte-identical behaviour).
 	WorkerProvider llm.Provider
+	// WorkerContextProvider scopes learned context and prefill profiles to the
+	// actual configured connection, independent of whether it is local HTTP or
+	// remote HTTP. Empty inherits the parent's connection identity.
+	WorkerContextProvider string
+	PrefillProfiles       *llm.PrefillProfiles
 	// WorkerPing verifies the worker backend, lazily, on the first
 	// delegation only (never on the startup path). Nil = no probe. On
 	// failure every delegation permanently falls back to Provider and

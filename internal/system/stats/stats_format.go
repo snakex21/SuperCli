@@ -91,6 +91,22 @@ func CallsLine(calls []Call) string {
 	return "[calls] " + strings.Join(parts, " ")
 }
 
+// PrefillLine renders one prompt-processing sample without prompt content or
+// endpoint data. It is intentionally per call: summing tok/s or budgets would
+// hide the exact slow request that caused a profile adjustment.
+func PrefillLine(c Call) string {
+	if c.TTFTUs <= 0 || c.PrefillEvaluated <= 0 {
+		return ""
+	}
+	line := fmt.Sprintf("[prefill] purpose=%s provider=%s model=%s input=%d cached=%d evaluated=%d ttft_ms=%d tokens_per_second=%.1f",
+		c.Purpose, c.Provider, c.Model, c.TokensIn, c.TokensCached,
+		c.PrefillEvaluated, c.TTFTUs/1000, c.PrefillTokensPerSecond)
+	if c.PrefillBudget > 0 {
+		line += fmt.Sprintf(" budget=%d budget_source=%s", c.PrefillBudget, c.PrefillBudgetSource)
+	}
+	return line
+}
+
 // FormatPhases renders a phase map (µs) as one compact line:
 // canonical phases first in pipeline order, then any extra keys
 // (per-tool entries) sorted. Zero-valued canonical phases are

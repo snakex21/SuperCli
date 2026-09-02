@@ -114,6 +114,10 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
+		case ReasoningEvent:
+			text.WriteString("<thinking>")
+			text.WriteString(e.Text)
+			text.WriteString("</thinking>\n")
 		case ToolCallEvent:
 			w.setState(func(w *Worker) {
 				if len(w.ToolNames) < 32 {

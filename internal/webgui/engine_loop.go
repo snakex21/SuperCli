@@ -88,6 +88,13 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		return nil, fmt.Errorf("refresh goal: %w", err)
 	}
 	reg := tools.NewRegistry()
+	// Completed tool envelopes are omitted from future provider prompts, while
+	// their full persisted rows remain retrievable on demand through this local
+	// FTS tool. It is discoverable rather than always-on, so it adds no schema
+	// tokens to ordinary turns.
+	if history, historyErr := e.sessionStore(); historyErr == nil {
+		reg.MustRegister(tools.NewSearchHistory(history).Spec())
+	}
 	// Registered but not always-on: thin discovery keeps the LSP schema out of
 	// ordinary chat turns, while the Engine reuses the lazy server per project.
 	codeIntel := e.codeIntelFor(home)
@@ -183,9 +190,11 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	}
 	if askCh != nil {
 		ask := tools.NewAskUser(askCh)
-		// Visual decisions often take longer than a text choice, especially
-		// when the user opens previews. The run context still cancels promptly.
-		ask.Timeout = 10 * time.Minute
+		// A web/desktop question is an explicit pause in the foreground run.
+		// Do not let the coordinator silently continue while the user is away
+		// from the window; the request/run context still cancels immediately on
+		// Stop, interrupt, disconnect or shutdown.
+		ask.Timeout = 24 * time.Hour
 		reg.MustRegister(ask.Spec())
 		reg.MarkAlwaysOn("ask_user")
 	}
@@ -211,6 +220,12 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		reg.MustRegister(mcp.NewBridge(manager).Spec())
 		reg.MarkAlwaysOn("mcp_bridge")
 	}
+	// Desktop Outlook COM is available to NestCafe/WebUI too. Keep it
+	// discoverable rather than always-on so ordinary chats pay no schema cost.
+	reg.MustRegister(tools.NewOutlookMail().Spec())
+	// Direct Thunderbird bridge for Gmail/IMAP verification. Read-only for now;
+	// it is discoverable and therefore costs nothing in unrelated turns.
+	reg.MustRegister(tools.NewThunderbirdMail().Spec())
 	// Web loops are short-lived and have a small registry. Lexical discovery
 	// avoids opening an FTS database per request while preserving the exact
 	// tool_search contract used by TUI and batch.
@@ -236,7 +251,11 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	if instructions := llmprompt.ActiveUserInstructions(e.dataDir); instructions != "" {
 		systemPrompt += "\n\n" + instructions
 	}
-	if briefing := webMemoryBriefing(e.dataDir, home, tc.MemoryBriefingTokens); briefing != "" {
+	currentSessionID := ""
+	if bound, ok := writer.(interface{ SessionID() string }); ok {
+		currentSessionID = bound.SessionID()
+	}
+	if briefing := e.webMemoryBriefingExcludingSession(home, tc.MemoryBriefingTokens, currentSessionID); briefing != "" {
 		systemPrompt += "\n\n" + briefing
 	}
 	if folders := folderIndexPrompt(e.dataDir); folders != "" {
@@ -278,6 +297,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		ScopedContextWindowFor: scopedContextWindowFor,
 		Summarizer:             agent.NewAutoSummarizerWithProvider(compactProv, reg.ActiveNames),
 		LearnLimit:             e.learned.Learn,
+		PrefillProfiles:        e.prefillProfiles,
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = scale with the active model window, negative = off.

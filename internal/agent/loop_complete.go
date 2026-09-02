@@ -21,6 +21,10 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// next turn would manufacture a large delta that was never appended.
 	requestEstimate := estimateRequestTokens(msgs, toolDefs)
 	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
+	window := l.windowResolution()
+	hardThreshold := autoCompactThreshold(window.Tokens)
+	effectiveThreshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)
+	ctx = llm.WithPrefillBudget(ctx, effectiveThreshold, thresholdSource)
 
 	// request_encode: provider.Complete up to the stream handoff —
 	// request serialization plus whatever the provider does before
@@ -38,6 +42,9 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	text, calls, usage, err := l.consume(ctx, stream, out)
 	if err == nil && usage != nil {
 		l.recordContextBaseline(requestEstimate, usage.Input)
+	}
+	if err == nil {
+		l.observePrefillCall(requestEstimate, usage, l.lastCallTTFT)
 	}
 	return text, calls, usage, err
 }
@@ -60,7 +67,7 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.route == RouteCoordinator {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
-		visible := l.mediaProviderView(l.VisibleMessages())
+		visible := l.mediaProviderView(l.resolvedToolProviderView(l.VisibleMessages()))
 		out := make([]llm.Message, 0, len(visible)+2)
 		// Thin tool protocol placement depends on stableToolset:
 		//
@@ -117,7 +124,7 @@ func (l *Loop) providerMessages() []llm.Message {
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
 		return out
 	}
-	visible := l.mediaProviderView(l.VisibleMessages())
+	visible := l.mediaProviderView(l.resolvedToolProviderView(l.VisibleMessages()))
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt

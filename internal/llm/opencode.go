@@ -89,7 +89,11 @@ func NewOpencode(cfg OpencodeConfig) (*OpencodeProvider, error) {
 
 	apiKey := CleanAPIKey(cfg.APIKey)
 	if apiKey == "" {
-		apiKey = "not-needed"
+		if isOpenCodeZenBaseURL(cfg.BaseURL) {
+			apiKey = "public"
+		} else {
+			apiKey = "not-needed"
+		}
 	}
 
 	model := cfg.Model
@@ -194,6 +198,7 @@ func (o *OpencodeProvider) ProbeModels(ctx context.Context) ([]ModelInfo, error)
 	if key := CleanAPIKey(o.inner.cfg.APIKey); key != "" && key != "not-needed" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
+	ApplyOpenCodeZenHeaders(req, o.inner.cfg.BaseURL)
 
 	client := o.inner.http
 	if client == nil {
@@ -257,6 +262,7 @@ func ProbeOpencodeModels(ctx context.Context, baseURL, apiKey string) ([]opencod
 	if key := CleanAPIKey(apiKey); key != "" && key != "not-needed" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
+	ApplyOpenCodeZenHeaders(req, baseURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
