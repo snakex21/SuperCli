@@ -94,6 +94,9 @@ func TestBuildOpenAIRequest_CapabilityUsesUnifiedReasoning(t *testing.T) {
 	if !ok || reasoning["effort"] != "high" {
 		t.Fatalf("reasoning = %#v, want effort high", req["reasoning"])
 	}
+	if exclude, ok := reasoning["exclude"].(bool); !ok || exclude {
+		t.Fatalf("reasoning = %#v, want exclude=false so exposed thinking reaches the UI", req["reasoning"])
+	}
 	if _, ok := req["reasoning_effort"]; ok {
 		t.Fatalf("unified request also contains reasoning_effort: %s", body)
 	}

@@ -13,6 +13,10 @@ are the full reference; this table is the tour).
 Tri-state knobs (`*bool` in Go, plain `true`/`false` in TOML) distinguish
 "unset = built-in/auto" from an explicit override.
 
+Prompt-processing performance needs no knob. SuperCli learns a separate
+prefill budget for each configured provider connection + model from TTFT and
+cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
+
 ## Core
 
 | knob | default | touch when |
@@ -82,7 +86,7 @@ in the instance-local `model-context-windows.json`; the UI manages the file.
 |---|---|---|
 | `orchestrator` | unset = **AUTO** | unset: delegate when useful; `true`: always delegate substantial work; `false`: never expose worker tools; new-session only |
 | `task_model` | empty = workers inherit coordinator | you have a second (smaller/cheaper) host or model for workers |
-| `task_max_steps` / `task_max_tokens` | 0 = spec-or-10 / no cap | runaway or expensive workers |
+| `task_max_steps` / `task_max_tokens` | 0 = shared 300-step safety net / no token cap | set a stricter ceiling for runaway or expensive workers |
 | `task_parallel` | unset = auto (cloud parallel, local sequential) | self-hosted server behind a public address; forcing parallel on one local GPU warns (slot serialization + KV thrash) |
 | `draft_verify` | unset = **OFF** | only with a small `task_model` AND real `verify_commands` — otherwise the cost asymmetry that justifies it disappears |
 | `verify_commands` | empty | set to the project's objective sieve, e.g. `["go build ./...", "go test ./..."]` |

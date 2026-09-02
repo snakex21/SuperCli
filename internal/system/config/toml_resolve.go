@@ -26,7 +26,10 @@ func ResolveConfig(dataDir, cwd, configPath string) (TomlConfig, error) {
 	// Layer 2: project config (overrides global).
 	project, err := LoadToml(projectPath)
 	if err != nil {
-		return TomlConfig{}, err
+		// Keep the already-decoded global layer. A temporarily malformed
+		// workspace file must not erase the configured provider and make a
+		// caller fall back to an unrelated runtime (historically: echo).
+		return global, err
 	}
 	mergeToml(&global, project)
 
@@ -34,7 +37,9 @@ func ResolveConfig(dataDir, cwd, configPath string) (TomlConfig, error) {
 	if configPath != "" {
 		custom, err := LoadToml(configPath)
 		if err != nil {
-			return TomlConfig{}, err
+			// Return every valid lower-priority layer together with the error so
+			// interactive callers can stay operational and surface the bad file.
+			return global, err
 		}
 		mergeToml(&global, custom)
 	}

@@ -39,7 +39,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 		}
 	}
 	if p.cfg.StandardResponsesAPI {
-		reasoningModel := SupportsReasoningEffort(p.cfg.Model)
+		reasoningModel := SupportsReasoningEffort(p.cfg.Model) || (p.caps != nil && p.caps.HasReasoning(p.cfg.Model))
 		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 		if err != nil {
 			return nil, fmt.Errorf("build standard responses request: %w", err)
@@ -124,6 +124,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 		if access != "" {
 			req.Header.Set("Authorization", "Bearer "+access)
 		}
+		ApplyOpenCodeZenHeaders(req, p.cfg.BackendURL)
 		if !p.cfg.StandardResponsesAPI {
 			req.Header.Set("OpenAI-Beta", "responses=experimental")
 			req.Header.Set("originator", "codex_cli_go")
@@ -171,7 +172,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 			continue
 		}
-		if isRetryableHTTPStatus(resp.StatusCode) && rlAttempt < maxRateLimitAttempts-1 {
+		if isRetryableProviderResponse(resp.StatusCode, respBody) && rlAttempt < maxRateLimitAttempts-1 {
 			rlAttempt++
 			wait := retryWait(resp.Header, rlAttempt, waitBudget)
 			waitBudget -= wait
@@ -200,7 +201,6 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 		}
 	}
 	var usage *Usage
-	reasoningOpen := false
 	sentRole := false
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -229,21 +229,11 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				}
 				sentRole = true
 			}
-			content := ev.Delta
-			if reasoningOpen {
-				content = "</thinking>\n" + strings.TrimLeft(content, "\r\n")
-				reasoningOpen = false
-			}
-			if !emit(Delta{Content: content}) {
+			if !emit(Delta{Content: ev.Delta}) {
 				return
 			}
 		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			content := ev.Delta
-			if !reasoningOpen {
-				content = "<thinking>" + content
-				reasoningOpen = true
-			}
-			if !emit(Delta{Content: content}) {
+			if !emit(Delta{Reasoning: ev.Delta}) {
 				return
 			}
 		case "response.output_item.done":
@@ -269,12 +259,6 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				if d := ev.Response.Usage.OutputTokensDetails; d != nil {
 					usage.Reasoning = d.ReasoningTokens
 				}
-			}
-			if reasoningOpen {
-				if !emit(Delta{Content: "</thinking>"}) {
-					return
-				}
-				reasoningOpen = false
 			}
 			d := Delta{FinishReason: "stop"}
 			if usage != nil {

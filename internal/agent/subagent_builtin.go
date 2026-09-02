@@ -16,8 +16,9 @@ import (
 // benchmark data.
 func BuiltinSubAgents() []SubAgent {
 	exploreSystem := "You are the SuperCli explore sub-agent. Your job is to " +
-		"answer a focused question about the codebase. Use search_code " +
-		"to locate files, then read source with read_lines/read_context. " +
+		"answer a focused question about the codebase. Batch independent tool calls " +
+		"in one response. Use one search_code regex for related terms, then read all " +
+		"known files/ranges together with read_many instead of serial read_lines rounds. " +
 		"When the task requires current external documentation, use web_lookup " +
 		"and web_fetch/web_search instead of guessing from model memory. " +
 		"Use read_image only for actual images. Be concise: return only the " +
@@ -25,18 +26,20 @@ func BuiltinSubAgents() []SubAgent {
 
 	planSystem := "You are the SuperCli plan sub-agent. Your job is to " +
 		"analyse a question and produce a numbered plan. Do not modify " +
-		"files; do not call write tools. The plan should fit in 30 lines " +
+		"files; do not call write tools. Batch independent searches and use " +
+		"read_many when several known files or ranges are needed. The plan should fit in 30 lines " +
 		"and explicitly call out unknowns."
 
 	reviewSystem := "You are the SuperCli review sub-agent. Your job is to " +
 		"review code for correctness, performance, and clarity. Read the " +
-		"targeted source with read_lines/read_context and search_code to " +
+		"targeted source with one batched read_many and use a combined search_code regex to " +
 		"find call sites. Return findings as a bulleted list, ordered by " +
 		"severity."
 
 	codeSystem := "You are the SuperCli code sub-agent. Your job is to " +
 		"implement the requested change end-to-end in your isolated context. " +
-		"Read only the files you need, make targeted edits, run relevant " +
+		"Read only the files you need, but batch known files/ranges in one read_many " +
+		"and send independent read/search calls together. Make targeted edits, run relevant " +
 		"verification, and return a concise summary with files changed. " +
 		"The workspace is already your working directory: use relative paths " +
 		"with file/search tools and do not spend turns probing cwd or PATH. " +
@@ -60,7 +63,8 @@ func BuiltinSubAgents() []SubAgent {
 		"sees only this report, not your intermediate steps, so include " +
 		"everything it needs. Be concise. Do not spawn other workers. " +
 		"The workspace is already your working directory; prefer relative " +
-		"paths and file/search tools over cwd or PATH probing. " +
+		"paths and file/search tools over cwd or PATH probing. Batch independent " +
+		"tool calls and use read_many for known files/ranges instead of serial reads. " +
 		"Match effort to scope: touch few files for a small task, and if the " +
 		"task turns out to need no changes, report that no-op instead of " +
 		"making cosmetic or formatting-only edits."
@@ -74,7 +78,7 @@ func BuiltinSubAgents() []SubAgent {
 	advisorSystem := "You are a SuperCli advisor giving a SECOND OPINION. " +
 		"Answer the coordinator's specific question with a clear recommendation " +
 		"and a one-line rationale. You are READ-ONLY: you may search and read " +
-		"files or use web_lookup/web_fetch/web_search for current documentation " +
+		"files (batch known files/ranges with read_many) or use web_lookup/web_fetch/web_search for current documentation " +
 		"to ground your answer, but you never modify anything. Return a " +
 		"single concise opinion as your final message; if the question offers " +
 		"options, name the one you recommend first."
@@ -85,53 +89,47 @@ func BuiltinSubAgents() []SubAgent {
 			Description: "carry out a delegated task end-to-end and report back",
 			System:      generalSystem,
 			// AllowedTools nil = inherit the full set (minus delegation).
-			MaxSteps: 12,
 		},
 		{
 			Name:        "advisor",
 			Description: "give a read-only second opinion on a specific decision",
 			System:      advisorSystem,
 			AllowedTools: allowedTools(
-				"search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad",
+				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad",
 				"web_lookup", "web_fetch", "web_search", "tool_search",
 			),
-			MaxSteps: 6,
 		},
 		{
 			Name:        "explore",
 			Description: "search the codebase and answer a focused question",
 			System:      exploreSystem,
 			AllowedTools: allowedTools(
-				"search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad",
+				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad",
 				"web_lookup", "web_fetch", "web_search", "tool_search",
 			),
-			MaxSteps: 8,
 		},
 		{
 			Name:         "plan",
 			Description:  "analyse a question and return a numbered plan",
 			System:       planSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad"),
-			MaxSteps:     6,
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
 		},
 		{
 			Name:         "review",
 			Description:  "review existing code for correctness and clarity",
 			System:       reviewSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_context", "list_dir", "scratchpad"),
-			MaxSteps:     8,
+			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
 		},
 		{
 			Name:        "code",
 			Description: "implement a code change end-to-end",
 			System:      codeSystem,
 			AllowedTools: allowedTools(
-				"search_code", "read_image", "read_lines", "read_context", "list_dir",
+				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir",
 				"patch_file", "create_file",
 				"write_file", "make_dir", "move", "copy", "trash", "read_docx", "read_xlsx", "read_pdf",
 				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute", "scratchpad",
 			),
-			MaxSteps: 12,
 		},
 	}
 }

@@ -35,6 +35,15 @@ const (
 // small). Either store may be nil; missing data simply shrinks
 // the briefing. An empty string means "nothing worth injecting".
 func BuildBriefing(global, project *Store, projectPath string, tokenCap int) string {
+	return BuildBriefingExcludingTaskLog(global, project, projectPath, tokenCap, "")
+}
+
+// BuildBriefingExcludingTaskLog is BuildBriefing with one task-log entry
+// omitted. A live conversation uses this to exclude its own capsule: the full
+// transcript is already in model context, and reinjecting its just-saved
+// summary would both duplicate context and mutate the cacheable system prefix
+// between turns.
+func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, tokenCap int, excludedTaskLogID string) string {
 	if tokenCap <= 0 {
 		tokenCap = 700
 	}
@@ -124,8 +133,16 @@ func BuildBriefing(global, project *Store, projectPath string, tokenCap int) str
 	// 4. Recent session summaries from the project store.
 	if project != nil {
 		if logs, err := project.Recent(ScopeTaskLog, 3); err == nil && len(logs) > 0 {
-			write("Recent sessions:\n")
-			for _, e := range logs {
+			filtered := logs[:0]
+			for _, entry := range logs {
+				if entry.ID != excludedTaskLogID {
+					filtered = append(filtered, entry)
+				}
+			}
+			if len(filtered) > 0 {
+				write("Recent sessions:\n")
+			}
+			for _, e := range filtered {
 				line := fmt.Sprintf("- [%s] %s\n", e.UpdatedAt.Format("2006-01-02"), oneLine(e.Content))
 				if !write(line) {
 					break

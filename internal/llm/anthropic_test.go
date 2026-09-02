@@ -299,12 +299,13 @@ func TestAnthropic_StreamThinking(t *testing.T) {
 	p, _ := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "claude-sonnet"})
 	ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
 	ds := drainDeltas(t, ch)
-	var body strings.Builder
+	var reasoning, body strings.Builder
 	for _, d := range ds {
+		reasoning.WriteString(d.Reasoning)
 		body.WriteString(d.Content)
 	}
-	if body.String() != "<thinking>Plan</thinking>\nAnswer" {
-		t.Fatalf("body=%q", body.String())
+	if reasoning.String() != "Plan" || body.String() != "\nAnswer" {
+		t.Fatalf("reasoning=%q body=%q", reasoning.String(), body.String())
 	}
 }
 

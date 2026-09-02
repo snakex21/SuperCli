@@ -39,6 +39,15 @@ Parallelism:
   exact research context directly helps the next step. Spawn fresh when the
   previous context would be noisy or anchoring.
 
+Tool-call economy:
+- Every assistant tool turn is a separate provider request. Batch all currently
+  knowable independent reads/searches in one response; SuperCli executes
+  read-only batches concurrently.
+- Prefer one read_many for several files/ranges and regex alternation in one
+  search_code call over serial search_code/read_lines rounds.
+- Once evidence is sufficient, implement or answer instead of continuing
+  exploratory reads one at a time.
+
 Worker prompt rules:
 - Every worker prompt must be self-contained: include task, relevant findings,
   file paths, line numbers, expected output, and what "done" means.

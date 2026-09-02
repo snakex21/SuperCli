@@ -2,6 +2,20 @@ package config
 
 import "testing"
 
+func TestRuntimeProviderNameDoesNotMislabelWorkerAsDefaultProvider(t *testing.T) {
+	tc := TomlConfig{
+		DefaultProvider: "main",
+		Providers: []ProviderConf{
+			{Name: "main", Type: "openai", BaseURL: "https://main.example/v1"},
+			{Name: "worker", Type: "openai", BaseURL: "https://worker.example/v1"},
+		},
+	}
+	got := RuntimeProviderName(tc, Config{Provider: "openai", BaseURL: "https://worker.example/v1", Model: "m"})
+	if got != "worker" {
+		t.Fatalf("RuntimeProviderName = %q, want worker", got)
+	}
+}
+
 func TestModelContextStoreScopesSameModelByProvider(t *testing.T) {
 	dir := t.TempDir()
 	store := LoadModelContextStore(dir)

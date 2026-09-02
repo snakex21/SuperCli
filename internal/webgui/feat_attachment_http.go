@@ -129,11 +129,50 @@ func errorsJoinNonNil(errs ...error) error {
 }
 
 func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(r.URL.Query().Get("path"))
+	if r.Method == http.MethodDelete {
+		if !strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "profile") {
+			http.Error(w, "profile scope is required for source deletion", http.StatusBadRequest)
+			return
+		}
+		if raw == "" {
+			http.Error(w, "missing path", http.StatusBadRequest)
+			return
+		}
+		root := filepath.Join(s.eng.DataDir(), "module-sources")
+		full, err := sandbox.ResolveWithin(root, raw)
+		if err != nil {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		info, err := os.Stat(full)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSON(w, map[string]any{"ok": true, "removed": false})
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !info.Mode().IsRegular() {
+			http.Error(w, "source is not a regular file", http.StatusBadRequest)
+			return
+		}
+		if err := os.Remove(full); err != nil {
+			http.Error(w, "remove source: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		parent := filepath.Dir(full)
+		if filepath.Clean(parent) != filepath.Clean(root) {
+			_ = os.Remove(parent) // succeeds only when the per-upload directory is empty
+		}
+		writeJSON(w, map[string]any{"ok": true, "removed": true})
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	raw := strings.TrimSpace(r.URL.Query().Get("path"))
 	if raw == "" {
 		http.Error(w, "missing path", http.StatusBadRequest)
 		return
@@ -171,15 +210,38 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	mediaType := http.DetectContentType(header[:n])
+	profileScope := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "profile")
 	if !previewableAttachmentMIME(mediaType) {
-		http.Error(w, "preview is available only for images and PDF files", http.StatusUnsupportedMediaType)
-		return
+		if profileScope {
+			if sourceType := profileDocumentSourceMIME(info.Name()); sourceType != "" {
+				mediaType = sourceType
+			} else {
+				http.Error(w, "profile source type is not available", http.StatusUnsupportedMediaType)
+				return
+			}
+		} else {
+			http.Error(w, "preview is available only for images and PDF files", http.StatusUnsupportedMediaType)
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store, private")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": info.Name()}))
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+func profileDocumentSourceMIME(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".txt":
+		return "text/plain; charset=utf-8"
+	default:
+		return ""
+	}
 }
 
 func previewableAttachmentMIME(mediaType string) bool {

@@ -148,6 +148,7 @@ func probeProvider(p config.ProviderConf) (bool, error) {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
+	llm.ApplyOpenCodeZenHeaders(req, p.BaseURL)
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, err

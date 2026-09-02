@@ -639,12 +639,13 @@ func TestOpenAI_StreamReasoningContentIsShown(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 	ds := drainDeltas(t, ch)
-	var body strings.Builder
+	var reasoning, body strings.Builder
 	for _, d := range ds {
+		reasoning.WriteString(d.Reasoning)
 		body.WriteString(d.Content)
 	}
-	if body.String() != "<thinking>Thinking Process</thinking>\nCześć!" {
-		t.Fatalf("body = %q, want reasoning + answer", body.String())
+	if reasoning.String() != "Thinking Process" || body.String() != "\n\nCześć!" {
+		t.Fatalf("reasoning=%q body=%q, want separate reasoning + answer", reasoning.String(), body.String())
 	}
 }
 
@@ -666,12 +667,13 @@ func TestOpenAI_StreamGenericThinkingFieldsAreShown(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 	ds := drainDeltas(t, ch)
-	var body strings.Builder
+	var reasoning, body strings.Builder
 	for _, d := range ds {
+		reasoning.WriteString(d.Reasoning)
 		body.WriteString(d.Content)
 	}
-	if body.String() != "<thinking>Plan A</thinking>\nAnswer" {
-		t.Fatalf("body = %q, want generic thinking + answer", body.String())
+	if reasoning.String() != "Plan A" || body.String() != "\nAnswer" {
+		t.Fatalf("reasoning=%q body=%q, want generic thinking + answer", reasoning.String(), body.String())
 	}
 }
 
@@ -697,12 +699,41 @@ func TestOpenAI_StreamStructuredReasoningMetadataNotShown(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 	ds := drainDeltas(t, ch)
-	var body strings.Builder
+	var reasoning, body strings.Builder
 	for _, d := range ds {
+		reasoning.WriteString(d.Reasoning)
 		body.WriteString(d.Content)
 	}
-	if body.String() != "<thinking>Let me check the file</thinking>\nAnswer" {
-		t.Fatalf("body = %q, want clean reasoning without metadata leakage", body.String())
+	if reasoning.String() != "Let me check the file" || body.String() != "Answer" {
+		t.Fatalf("reasoning=%q body=%q, want clean reasoning without metadata leakage", reasoning.String(), body.String())
+	}
+}
+
+func TestOpenAI_StreamAnalysisFieldIsShownAsThinking(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"index":0,"delta":{"role":"assistant","analysis":"Check"}}]}`,
+		`{"choices":[{"index":0,"delta":{"analysis_content":" this carefully"}}]}`,
+		`{"choices":[{"index":0,"delta":{"content":"Answer"}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+	}
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sseResponse(w, chunks...)
+	})
+	defer srv.Close()
+
+	p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "reasoning-gateway-model"})
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ds := drainDeltas(t, ch)
+	var reasoning, body strings.Builder
+	for _, d := range ds {
+		reasoning.WriteString(d.Reasoning)
+		body.WriteString(d.Content)
+	}
+	if reasoning.String() != "Check this carefully" || body.String() != "Answer" {
+		t.Fatalf("reasoning=%q body=%q, want analysis stream rendered separately", reasoning.String(), body.String())
 	}
 }
 
@@ -1276,9 +1307,9 @@ func TestOpenAI_KnownTextOnlyCapabilityReplacesImage(t *testing.T) {
 }
 
 // TestOpenAI_RetryWithoutImagesOnRejection verifies the self-healing
-// path: a text-only model behind an OpenAI-compatible gateway rejects
-// the image request with a serde-style 400, and the provider learns the
-// rejection, retries once without the images and completes normally.
+// path using the exact nested Console/provider error seen in production:
+// the provider learns the rejection, retries once without images and
+// completes normally instead of surfacing HTTP 400.
 func TestOpenAI_RetryWithoutImagesOnRejection(t *testing.T) {
 	var requests []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1286,7 +1317,7 @@ func TestOpenAI_RetryWithoutImagesOnRejection(t *testing.T) {
 		requests = append(requests, string(body))
 		if len(requests) == 1 {
 			w.WriteHeader(400)
-			_, _ = io.WriteString(w, `{"error":{"type":"invalid_request_error","message":"Error from provider (Console): Upstream request failed: [invalid_request_error] Failed to deserialize the JSON body into the target type: messages[0]: unknown variant `+"`image_url`"+`, expected `+"`text`"+` at line 1 column 42"}}`)
+			_, _ = io.WriteString(w, `{"error":{"param":null,"type":"invalid_request_error","message":"Error from provider (Console): Upstream request failed: [400] Model only supports text input; received unsupported content type 'image_url'."}}`)
 			return
 		}
 		sseResponse(w,
@@ -1330,6 +1361,42 @@ func TestOpenAI_RetryWithoutImagesOnRejection(t *testing.T) {
 	}
 	if !sawNotice {
 		t.Fatal("expected a Notice delta explaining the image retry")
+	}
+}
+
+func TestIsImageRejection_KnownProviderWordings(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "serde text-only schema",
+			body: `{"error":{"message":"unknown variant image_url, expected text"}}`,
+			want: true,
+		},
+		{
+			name: "console wrapped text-only rejection",
+			body: `{"error":{"message":"Model only supports text input; received unsupported content type 'image_url'."}}`,
+			want: true,
+		},
+		{
+			name: "malformed image remains a real error",
+			body: `{"error":{"message":"image_url data is malformed"}}`,
+			want: false,
+		},
+		{
+			name: "unsupported image media type does not disable vision",
+			body: `{"error":{"message":"unsupported content type image/png for image_url"}}`,
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isImageRejection(http.StatusBadRequest, []byte(tt.body)); got != tt.want {
+				t.Fatalf("isImageRejection() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1495,7 +1562,7 @@ func TestOpenAI_StructuredStreamErrorIsAnError(t *testing.T) {
 	}
 }
 
-func TestOpenAI_EmptyAndIncompleteStreamsAreErrors(t *testing.T) {
+func TestOpenAI_EmptyAndIncompleteStreams(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 			sseResponse(w)
@@ -1507,7 +1574,7 @@ func TestOpenAI_EmptyAndIncompleteStreamsAreErrors(t *testing.T) {
 			t.Fatalf("expected empty stream error, got %+v", ds)
 		}
 	})
-	t.Run("incomplete", func(t *testing.T) {
+	t.Run("clean eof after content is an implicit stop", func(t *testing.T) {
 		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
@@ -1515,8 +1582,38 @@ func TestOpenAI_EmptyAndIncompleteStreamsAreErrors(t *testing.T) {
 		p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
 		ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
 		ds := drainDeltas(t, ch)
+		if len(ds) < 2 || ds[len(ds)-1].Err != nil || ds[len(ds)-1].FinishReason != "stop" {
+			t.Fatalf("expected implicit stop after valid content, got %+v", ds)
+		}
+	})
+	t.Run("clean eof flushes tool call", func(t *testing.T) {
+		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"ask-1\",\"type\":\"function\",\"function\":{\"name\":\"ask_user\",\"arguments\":\"{}\"}}]}}]}\n\n")
+		})
+		p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+		ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+		ds := drainDeltas(t, ch)
+		var sawTool bool
+		for _, d := range ds {
+			if d.ToolCall != nil && d.ToolCall.Name == "ask_user" && d.ToolCall.ID == "ask-1" {
+				sawTool = true
+			}
+		}
+		if !sawTool || len(ds) == 0 || ds[len(ds)-1].Err != nil || ds[len(ds)-1].FinishReason != "tool_calls" {
+			t.Fatalf("expected flushed tool call and implicit tool_calls finish, got %+v", ds)
+		}
+	})
+	t.Run("metadata only eof remains an error", func(t *testing.T) {
+		srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-x\",\"object\":\"chat.completion.chunk\",\"choices\":[]}\n\n")
+		})
+		p, _ := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "model"})
+		ch, _ := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "x"}}, nil)
+		ds := drainDeltas(t, ch)
 		if len(ds) == 0 || ds[len(ds)-1].Err == nil || !strings.Contains(ds[len(ds)-1].Err.Error(), "terminal event") {
-			t.Fatalf("expected incomplete stream error, got %+v", ds)
+			t.Fatalf("expected metadata-only incomplete stream error, got %+v", ds)
 		}
 	})
 }
@@ -1608,6 +1705,46 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestOpenCodeZenAnonymousRequestUsesPublicClientHeaders(t *testing.T) {
+	var got http.Header
+	p, err := NewOpenAI(OpenAIConfig{
+		BaseURL: "https://opencode.ai/zen/v1",
+		Model:   "mimo-v2.5-free",
+		HTTPClient: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			got = r.Header.Clone()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n" +
+						"data: [DONE]\n\n")),
+				Request: r,
+			}, nil
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for delta := range stream {
+		if delta.Err != nil {
+			t.Fatal(delta.Err)
+		}
+	}
+	if auth := got.Get("Authorization"); auth != "Bearer public" {
+		t.Fatalf("Authorization = %q, want public OpenCode token", auth)
+	}
+	if client := got.Get("X-OpenCode-Client"); client != "supercli" {
+		t.Fatalf("X-OpenCode-Client = %q", client)
+	}
+	if userAgent := got.Get("User-Agent"); userAgent != "SuperCLI/1.0" {
+		t.Fatalf("User-Agent = %q", userAgent)
+	}
+}
+
 // TestBuildOpenAIRequest_ToolParametersIsObject verifies that
 // tool parameters are serialized as a raw JSON object (not a
 // JSON-escaped string). LM Studio rejects parameters as string.
@@ -1639,6 +1776,38 @@ func TestBuildOpenAIRequest_ToolParametersIsObject(t *testing.T) {
 	}
 	if !strings.Contains(bodyStr, `"type":"object"`) {
 		t.Errorf("parameters missing type field:\n%s", bodyStr)
+	}
+}
+
+func TestBuildOpenAIRequest_AdvertisesParallelToolCallsOnlyWithTools(t *testing.T) {
+	msg := []Message{{Role: RoleUser, Content: "inspect"}}
+	tool := []ToolDef{{
+		Name:   "read_lines",
+		Schema: `{"type":"object","properties":{"path":{"type":"string"}}}`,
+	}}
+
+	withTools, err := buildOpenAIRequest("model", msg, tool, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(withTools, &got); err != nil {
+		t.Fatal(err)
+	}
+	if parallel, ok := got["parallel_tool_calls"].(bool); !ok || !parallel {
+		t.Fatalf("parallel_tool_calls=%#v want true", got["parallel_tool_calls"])
+	}
+
+	withoutTools, err := buildOpenAIRequest("model", msg, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	if err := json.Unmarshal(withoutTools, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := got["parallel_tool_calls"]; exists {
+		t.Fatalf("plain chat request unexpectedly contains parallel_tool_calls: %s", withoutTools)
 	}
 }
 

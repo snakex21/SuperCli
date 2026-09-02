@@ -387,6 +387,22 @@ a:hover { text-decoration: underline; }
 .stage { flex: 1; min-height: 0; overflow-y: auto; }
 .column { max-width: 46rem; margin: 0 auto; padding: 24px 20px 28px; }
 .stream { display: flex; flex-direction: column; gap: 12px; }
+/* Long chats can contain hundreds of thousands of characters. Let Chromium
+   skip layout and paint for transcript blocks far outside the viewport while
+   retaining an intrinsic height so scrolling stays stable. */
+.stream > .msg-user,
+.stream > .msg-assistant,
+.stream > .tool-row,
+.stream > .event-line,
+.stream > .turn-meta,
+.stream > .file-change-summary {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+/* Never virtualize blocks while their turn is still changing. WebView2 can
+   otherwise cull the just-streamed assistant block when tool rows are appended
+   below it, which looks exactly like the tool call replaced the answer. */
+.stream > .transcript-live { content-visibility: visible; }
 .history-older {
   align-self: center; min-height: 28px; padding: 3px 12px;
   border-bottom: 1px solid var(--line); color: var(--faint);
@@ -672,11 +688,40 @@ a:hover { text-decoration: underline; }
   border-left: 2px solid var(--ok);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--ok) 4%, var(--surface));
-  padding: 8px 10px;
+  overflow: hidden;
+}
+.file-change-header {
+  display: flex; align-items: center; gap: 10px; min-height: 34px;
+  padding: 7px 30px 7px 10px; cursor: pointer; position: relative;
+  list-style: none;
+}
+.file-change-header::-webkit-details-marker,
+.file-change-group-header::-webkit-details-marker { display: none; }
+.file-change-header::after,
+.file-change-group-header::after {
+  content: "\203A"; position: absolute; right: 11px; top: 50%;
+  color: var(--faint); font: 18px/1 var(--mono); transform: translateY(-50%);
+  transition: transform 120ms ease;
+}
+.file-change-summary[open] > .file-change-header::after,
+.file-change-group[open] > .file-change-group-header::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+.file-change-header:hover, .file-change-group-header:hover {
+  background: color-mix(in srgb, var(--ok) 7%, transparent);
 }
 .file-change-title {
-  margin-bottom: 6px; color: var(--text); font: 600 11.5px var(--mono);
+  color: var(--text); font: 600 11.5px var(--mono); white-space: nowrap;
 }
+.file-change-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-left: auto; }
+.file-change-count {
+  border: 1px solid var(--line-soft); border-radius: 999px; padding: 1px 6px;
+  color: var(--muted); font: 10px/1.45 var(--mono); white-space: nowrap;
+}
+.file-change-count.created { color: var(--ok); }
+.file-change-count.deleted { color: var(--danger); }
+.file-change-count.modified { color: var(--accent); }
+.file-change-body { display: grid; gap: 5px; padding: 0 10px 9px; }
 .file-change-list { display: grid; gap: 4px; }
 .file-change-item {
   display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px;
@@ -687,6 +732,28 @@ a:hover { text-decoration: underline; }
 .file-change-item.deleted .file-change-kind { color: var(--danger); }
 .file-change-item.modified .file-change-kind { color: var(--accent); }
 .file-change-path { color: var(--text); overflow-wrap: anywhere; }
+.file-change-group { border-top: 1px solid var(--line-soft); }
+.file-change-group-header {
+  display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px;
+  align-items: baseline; min-height: 29px; padding: 5px 26px 5px 2px;
+  cursor: pointer; position: relative; list-style: none; font: 11px/1.4 var(--mono);
+}
+.file-change-group-kind { color: var(--muted); white-space: nowrap; }
+.file-change-group.created .file-change-group-kind { color: var(--ok); }
+.file-change-group.deleted .file-change-group-kind { color: var(--danger); }
+.file-change-group.modified .file-change-group-kind { color: var(--accent); }
+.file-change-root { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-change-group-list {
+  display: grid; gap: 3px; max-height: 320px; overflow: auto;
+  margin: 1px 0 5px 112px; padding: 2px 8px 3px 0; font: 11px/1.4 var(--mono);
+}
+
+@media (max-width: 560px) {
+  .file-change-header { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .file-change-counts { justify-content: flex-start; margin-left: 0; }
+  .file-change-group-header { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .file-change-group-list { margin-left: 2px; }
+}
 
 /* Welcome (designed empty state) */
 .welcome { padding: 18vh 0 0; text-align: center; }
@@ -1123,26 +1190,59 @@ a:hover { text-decoration: underline; }
 }
 
 /* Provider templates grid */
-.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 10px; }
 .tpl-grid button {
   text-align: left; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 7px 9px;
-  display: flex; align-items: center; gap: 8px; min-width: 0;
+  min-height: 68px; padding: 10px 12px;
+  display: flex; align-items: flex-start; gap: 11px; min-width: 0;
 }
 .tpl-grid button:hover { border-color: var(--muted); }
 .tpl-grid button.sel { border-color: var(--accent); background: var(--accent-soft); }
 .tpl-grid .tpl-txt { min-width: 0; flex: 1; }
-.tpl-grid .tt { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tpl-grid .ts { font-size: 10px; color: var(--faint); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-grid .tt { font-size: 13px; font-weight: 600; color: var(--text); display: block; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-grid .ts { font-size: 11px; line-height: 1.35; color: var(--faint); display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+
+.provider-template-search {
+  width: min(620px, 100%);
+  min-height: 38px;
+  margin-bottom: 14px;
+  padding-inline: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.provider-template-filtered { display: none !important; }
+.provider-template-empty { padding: 18px 4px 4px; text-align: center; }
+
+.provider-chooser { min-width: 0; }
+.provider-chooser-head {
+  display: flex; align-items: flex-start; gap: 16px; margin-bottom: 12px;
+}
+.provider-chooser-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.provider-chooser-copy strong { font-size: 14px; font-weight: 600; color: var(--text); }
+.provider-chooser-head .g-act { flex: none; color: var(--faint); font-size: 11px; }
+.provider-chooser-head .g-act:hover { color: var(--text); }
+.provider-chooser-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 1280px) {
+  .provider-chooser-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 880px) {
+  .provider-chooser-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .provider-chooser-grid { grid-template-columns: minmax(0, 1fr); }
+  .provider-chooser-head { align-items: center; }
+}
 
 /* Provider badge: colored monogram, swapped for a bundled SVG when present. */
-.prov-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.prov-icon { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; }
 .prov-icon .prov-mono {
-  width: 20px; height: 20px; border-radius: 4px; color: #fff;
+  width: 28px; height: 28px; border-radius: 7px; color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  font: 600 11px var(--sans, sans-serif); line-height: 1;
+  font: 600 12px var(--sans, sans-serif); line-height: 1;
 }
-.prov-icon .prov-img { width: 20px; height: 20px; border-radius: 4px; object-fit: contain; }
+.prov-icon .prov-img { width: 28px; height: 28px; border-radius: 6px; object-fit: contain; }
 
 /* Form grid */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -1380,7 +1480,16 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   .app-dialog-overlay, .app-dialog-overlay.closing, .app-dialog { animation: none; }
 }
 
-/* ask_user — a decision surface, not another settings dialog. */
+/* ask_user — inline in the transcript; rewind and destructive dialogs keep the overlay. */
+.question-inline {
+  width:min(920px, calc(100% - 24px)); margin:10px auto 22px; padding:0;
+}
+.question-inline .question-panel {
+  width:min(820px,100%); max-height:none; overflow:visible; margin:0;
+  padding:18px; border-left:2px solid var(--accent); box-shadow:none;
+}
+
+/* Modal surface retained for rewind/other dedicated dialogs. */
 .question-overlay {
   position: fixed; inset: 0 auto auto 0; z-index: 110; display: grid; place-items: center;
   width: var(--app-viewport-width); height: var(--app-viewport-height);

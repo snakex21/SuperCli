@@ -14,6 +14,17 @@ var pendingAttachments = [];
 var appFocused = !document.hidden && document.hasFocus();
 var sentAttachmentStorageKey = "supercli-sent-attachments-v1";
 var sentAttachmentIndex = loadSentAttachmentIndex();
+var composerDraftStore = superCliUI.createComposerDraftStore({
+  storageKey: "supercli-composer-drafts-v1",
+  input: promptEl,
+  getScope: function () {
+    return activeSessionID ? "session:" + activeSessionID : "new:" + (activeWorkspacePath || "default");
+  },
+  onRestore: function () {
+    promptEl.style.height = "auto";
+    promptEl.style.height = Math.min(promptEl.scrollHeight, 200) + "px";
+  },
+});
 
 function attachmentName(path) {
   var parts = String(path || "").split(/[\\/]/);
@@ -458,8 +469,9 @@ async function enqueuePrompt(text) {
     promptQueue.push(q);
     pauseQueue = false;
     renderPromptQueue();
-  } catch (e) { toast(e.message); return; }
+  } catch (e) { toast(e.message); return false; }
   setRunState("running", promptQueue.length + " · " + t("composer.queued"));
+  return true;
 }
 async function loadPromptQueue() {
   try { promptQueue = await j("/api/tasks") || []; promptQueue.forEach(function (q) { q.text = q.prompt; }); pauseQueue = promptQueue.length > 0; }
@@ -655,14 +667,14 @@ async function prepareQueuedTask(item) {
   }
   return await resumeSession(item.session_id, sessionByID[item.session_id] || null);
 }
-function interruptAndSend(text, item, attachments) {
-  pendingImmediate = item || { text: text, session_id: activeSessionID, attachments: attachments || [] };
+function interruptAndSend(text, item, attachments, draft) {
+  pendingImmediate = item || { text: text, session_id: activeSessionID, attachments: attachments || [], draft: draft || null };
   if (item && attachments && attachments.length) pendingImmediate.attachments = attachments;
   pauseQueue = false;
   if (abortCtl) abortCtl.abort(); else {
     var next = pendingImmediate;
     pendingImmediate = null;
-    prepareQueuedTask(next).then(function () { sendPrompt(next.text, next.attachments || []); });
+    prepareQueuedTask(next).then(function () { sendPrompt(next.text, next.attachments || [], next.draft || null); });
   }
 }
 
@@ -671,7 +683,7 @@ function setRunState(state, text) {
   $("#status-dot").classList.toggle("busy", state === "running");
 }
 
-async function sendPrompt(text, attachments) {
+async function sendPrompt(text, attachments, draft) {
   if (streaming) return;
   attachments = (attachments || []).slice();
   text = String(text || "").trim();
@@ -697,6 +709,7 @@ async function sendPrompt(text, attachments) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
+  transcriptLiveAppend = true;
   abortCtl = new AbortController();
   runToolCount = 0;
   toolRows = {}; workerRows = {}; openToolOrder = [];
@@ -710,6 +723,7 @@ async function sendPrompt(text, attachments) {
   var current = null;
   var terminalSeen = false;
   var stopped = false;
+  var draftAccepted = false;
   var lastProgressAt = Date.now();
   runStart = Date.now();
   setRunState("running", t("composer.working"));
@@ -735,6 +749,8 @@ async function sendPrompt(text, attachments) {
       addEventLine(t("common.error") + ": " + resp.status, "error");
       return;
     }
+    draftAccepted = true;
+    if (draft) composerDraftStore.clear(draft.scope, draft.text);
     await superCliUI.readSSE(resp.body, function (ev) {
       lastProgressAt = Date.now();
       if (ev.type === "done" || ev.type === "error") terminalSeen = true;
@@ -772,12 +788,16 @@ async function sendPrompt(text, attachments) {
       setRunState("idle", t("chat.connError"));
     }
 	} finally {
-	  flushAssistantRender(current);
+	  if (draft && !draftAccepted && !promptEl.value && composerDraftStore.scope() === draft.scope) {
+	    composerDraftStore.restore(draft.scope);
+	  }
+	  sealAssistantSegment(current);
 	  closeQuestionOverlay();
 	  streaming = false;
     abortCtl = null;
     clearInterval(runTimer);
     settleOpenTools();
+    releaseLiveTranscriptBlocks();
     sendBtn.textContent = t("composer.send");
     sendBtn.classList.remove("queue");
     sendBtn.type = "submit";
@@ -814,7 +834,7 @@ async function sendPrompt(text, attachments) {
 	  if (queued && !pauseQueue) next = { text: queued.text, attachments: queued.attachments || [] };
     }
     renderPromptQueue();
-    if (next) setTimeout(function () { sendPrompt(next.text, next.attachments || []); }, 0);
+    if (next) setTimeout(function () { sendPrompt(next.text, next.attachments || [], next.draft || null); }, 0);
   }
 }
 
@@ -824,12 +844,17 @@ function handleEvent(ev, current) {
       if (ev.session_id) activeSessionID = ev.session_id;
       return current;
     case "message":
-      if (!current) current = addAssistantMsg();
+      if (!current || current._sealed) current = addAssistantMsg();
+      closeAssistantReasoning(current);
       current._raw += ev.text;
       scheduleAssistantRender(current);
       return current;
+    case "reasoning":
+      if (!current || current._sealed) current = addAssistantMsg();
+      appendAssistantReasoning(current, ev.text || "");
+      return current;
     case "tool_call":
-      flushAssistantRender(current);
+      sealAssistantSegment(current);
       addToolCall(ev.name, ev.args, ev.id);
       return null;
     case "tool_result":
@@ -874,6 +899,7 @@ function handleEvent(ev, current) {
       addEventLine(clip(ev.text || "goal continuation", 120), "", "goal");
       return current;
     case "done":
+      closeAssistantReasoning(current);
       flushAssistantRender(current);
       var elapsed = Date.now() - runStart;
       lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount };
@@ -883,6 +909,7 @@ function handleEvent(ev, current) {
       notifyDone(elapsed);
       return null;
     case "error":
+      closeAssistantReasoning(current);
       flushAssistantRender(current);
       addFileChanges(ev.file_changes);
       addEventLine(ev.err || "error", "error", "error");
@@ -900,7 +927,7 @@ function closeQuestionOverlay() {
 
 function showQuestion(q) {
   closeQuestionOverlay();
-  var overlay = el("div", "question-overlay");
+  var overlay = el("div", "question-inline");
   var panel = el("form", "question-panel");
   panel.setAttribute("aria-label", q.header || t("question.title"));
   var head = el("div", "question-head");
@@ -962,7 +989,7 @@ function showQuestion(q) {
   var cancel = el("button", "btn", t("question.cancel")); cancel.type = "button";
   var submit = el("button", "btn primary", t("question.submit")); submit.type = "submit";
   actions.appendChild(cancel); actions.appendChild(submit); panel.appendChild(actions);
-  overlay.appendChild(panel); document.body.appendChild(overlay); activeQuestionOverlay = overlay;
+  overlay.appendChild(panel); appendStream(overlay); activeQuestionOverlay = overlay; smartScroll(true);
 
   function answer(cancelled) {
     var selected = Array.prototype.slice.call(panel.querySelectorAll('input[name="question-choice"]:checked')).map(function (x) { return x.value; });
@@ -978,32 +1005,40 @@ function showQuestion(q) {
   setTimeout(function () { var first = panel.querySelector("input"); if (first) first.focus(); }, 0);
 }
 
-$("#composer").addEventListener("submit", function (e) {
+$("#composer").addEventListener("submit", async function (e) {
   e.preventDefault();
-  var text = promptEl.value.trim();
+  var rawText = promptEl.value;
+  var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
   if (streaming && pendingAttachments.length) {
     toast(t("composer.attachQueue"));
     return;
   }
   var attachments = pendingAttachments.slice();
+  var draft = { scope: composerDraftStore.scope(), text: rawText };
   promptEl.value = "";
   promptEl.style.height = "auto";
-  if (streaming) { enqueuePrompt(text); return; }
+  if (streaming) {
+    if (await enqueuePrompt(text)) composerDraftStore.clear(draft.scope, draft.text);
+    else composerDraftStore.restore(draft.scope);
+    return;
+  }
   clearAttachments();
-  sendPrompt(text, attachments);
+  sendPrompt(text, attachments, draft);
 });
 $("#stop-run-btn").addEventListener("click", function () {
   pauseQueue = true;
   if (abortCtl) abortCtl.abort();
 });
 $("#interrupt-btn").addEventListener("click", function () {
-  var text = promptEl.value.trim();
+  var rawText = promptEl.value;
+  var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
   var attachments = pendingAttachments.slice();
+  var draft = { scope: composerDraftStore.scope(), text: rawText };
   promptEl.value = ""; promptEl.style.height = "auto";
   clearAttachments();
-  interruptAndSend(text, null, attachments);
+  interruptAndSend(text, null, attachments, draft);
 });
 $("#attach-btn").addEventListener("click", pickAttachments);
 $("#attachment-preview-close").addEventListener("click", closeAttachmentPreview);
@@ -1064,6 +1099,7 @@ function newSession() {
   lastTurn = null; workersSeen = [];
   showWelcome();
   setRunState("idle", t("composer.ready"));
+  composerDraftStore.restore();
   loadSessions();
   renderStats();
   promptEl.focus();

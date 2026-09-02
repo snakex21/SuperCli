@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // AskUser is the tool that lets the model ask the user a
@@ -59,7 +60,7 @@ type AskRequest struct {
 	ID string `json:"id"`
 	// Question is the full question the model wants answered.
 	Question string `json:"question"`
-	// Header is a short tab/header label (max 12 chars).
+	// Header is a short tab/header label (max 64 Unicode characters).
 	Header string `json:"header"`
 	// Options is the list of choices (2..4).
 	Options []AskOption `json:"options"`
@@ -122,8 +123,9 @@ func (p askQuestionParams) Validate() error {
 	if p.Question == "" {
 		return fmt.Errorf("ask_user: question is required")
 	}
-	if p.Header != "" && len(p.Header) > 12 {
-		return fmt.Errorf("ask_user: header %q is %d chars, max 12", p.Header, len(p.Header))
+	const maxHeaderRunes = 64
+	if n := utf8.RuneCountInString(p.Header); p.Header != "" && n > maxHeaderRunes {
+		return fmt.Errorf("ask_user: header %q is %d chars, max %d", p.Header, n, maxHeaderRunes)
 	}
 	if n := len(p.Options); n < 2 || n > 4 {
 		return fmt.Errorf("ask_user: options count is %d, must be 2..4", n)
@@ -141,7 +143,7 @@ func (a *AskUser) Spec() Tool {
 	return Tool{
 		Name:        "ask_user",
 		Description: "Ask focused questions with 2-4 choices and a custom-answer fallback instead of guessing. Prefer 1-3; use up to 8 only when one coherent decision genuinely needs it. Default to text only. Add visual fields only when requested or materially useful; use 2-3 focused variants, never whole pages speculatively. image is a project-relative preview path; without a generator use preview plus optional image_prompt.",
-		Schema:      `{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"},"questions":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"}},"required":["question","options"]}}},"anyOf":[{"required":["question","options"]},{"required":["questions"]}]}`,
+		Schema:      `{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":64},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"},"questions":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":64},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"},"preview":{"type":"string"},"image":{"type":"string"},"image_prompt":{"type":"string"}},"required":["label"]}},"multiSelect":{"type":"boolean"}},"required":["question","options"]}}},"anyOf":[{"required":["question","options"]},{"required":["questions"]}]}`,
 		Fn:          a.Execute,
 	}
 }

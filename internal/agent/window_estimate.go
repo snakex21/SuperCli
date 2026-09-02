@@ -11,7 +11,12 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 	if l.route != RouteCoordinator {
 		return l.estimateChatRequestTokensRaw()
 	}
+	visible := l.VisibleMessages()
+	projected := l.resolvedToolProviderView(visible)
 	est := l.EstimateVisibleTokens()
+	if len(projected) != len(visible) {
+		est = llm.EstimateTokens(projected)
+	}
 	if l.registry == nil {
 		return est
 	}
@@ -37,7 +42,7 @@ func estimateRequestTokens(msgs []llm.Message, defs []llm.ToolDef) int {
 // against a much smaller provider-reported prompt, so switching back to the
 // coordinator could turn a 100k request into an apparent 5k request.
 func (l *Loop) estimateChatRequestTokensRaw() int {
-	visible := l.VisibleMessages()
+	visible := l.resolvedToolProviderView(l.VisibleMessages())
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt

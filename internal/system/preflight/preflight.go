@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/llm"
@@ -43,7 +44,20 @@ const (
 	defaultMaxStatusFiles = 16
 	defaultMaxStatusAreas = 6
 	gitTimeout            = 5 * time.Second
+	// Static repo identity changes far less often than working-tree status.
+	// A short cache collapses repeated preflights from coordinator/workers
+	// without hiding fresh file edits: status is deliberately never cached.
+	gitStaticCacheTTL = 2 * time.Second
 )
+
+var gitStaticCache sync.Map
+
+type gitStaticState struct {
+	at     time.Time
+	branch string
+	head   string
+	log    string
+}
 
 // Options configures Build. The zero value uses the real git binary
 // (when present) and the default budget; tests inject LookPath /
@@ -74,6 +88,7 @@ func EstimateTokens(block string) int {
 // token budget. Returns "" when there is nothing useful to say
 // (e.g. an empty directory and no git).
 func Build(root string, o Options) string {
+	cacheStaticGit := o.LookPath == nil && o.RunGit == nil && o.Now.IsZero()
 	budget := o.Budget
 	if budget <= 0 {
 		budget = DefaultBudget
@@ -101,14 +116,17 @@ func Build(root string, o Options) string {
 
 	gitOK := false
 	if _, err := lookPath("git"); err == nil {
-		if branch, err := runGit(root, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && branch != "" {
+		branch, head, lg := loadGitStatic(root, runGit, cacheStaticGit)
+		if branch != "" {
 			gitOK = true
-			head, _ := runGit(root, "log", "-1", "--format=%h %s")
 			id := "branch: " + branch
 			if head != "" {
 				id += "\nHEAD: " + head
 			}
 			secs = append(secs, section{lines: strings.Split(id, "\n")})
+			// Working-tree state is intentionally never cached. Agent edits must
+			// be visible immediately even when several workers share the static
+			// branch/commit snapshot above.
 			if status, err := runGit(root, "status", "--porcelain"); err == nil {
 				if status == "" {
 					secs = append(secs, section{lines: []string{"working tree clean"}})
@@ -116,7 +134,7 @@ func Build(root string, o Options) string {
 					secs = append(secs, section{header: "uncommitted changes:", lines: compactStatus(status)})
 				}
 			}
-			if lg, err := runGit(root, "log", "--oneline", "-"+itoa(defaultMaxCommits)); err == nil && lg != "" {
+			if lg != "" {
 				secs = append(secs, section{header: "recent commits:", lines: splitLines(lg)})
 			}
 		}
@@ -161,6 +179,32 @@ func Build(root string, o Options) string {
 		return ""
 	}
 	return out
+}
+
+func loadGitStatic(root string, runGit func(string, ...string) (string, error), cacheable bool) (branch, head, lg string) {
+	key := filepath.Clean(root)
+	if cacheable {
+		if cached, ok := gitStaticCache.Load(key); ok {
+			state := cached.(gitStaticState)
+			if time.Since(state.at) < gitStaticCacheTTL {
+				return state.branch, state.head, state.log
+			}
+		}
+	}
+	branch, err := runGit(root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || branch == "" {
+		return "", "", ""
+	}
+	// One log call supplies both the HEAD display line and recent commits.
+	// The previous implementation spawned a separate `git log -1` process.
+	lg, _ = runGit(root, "log", "--oneline", "-"+itoa(defaultMaxCommits))
+	if lines := splitLines(lg); len(lines) > 0 {
+		head = lines[0]
+	}
+	if cacheable {
+		gitStaticCache.Store(key, gitStaticState{at: time.Now(), branch: branch, head: head, log: lg})
+	}
+	return branch, head, lg
 }
 
 // realRunGit executes `git -C root args...` with a timeout so a hung

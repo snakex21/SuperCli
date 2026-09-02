@@ -1,10 +1,12 @@
 package llm
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +17,62 @@ import (
 // persists the run fails fast with an actionable error instead of
 // hanging for minutes.
 const rateLimitWaitBudget = 10 * time.Second
+
+// HTTPResponseError preserves response metadata that higher-level routing
+// needs to make a useful decision. In particular, an ordered fallback chain
+// must be able to keep an HTTP-429 backend asleep for the provider's full
+// Retry-After interval instead of probing it again every few seconds.
+// Error intentionally keeps the historical text format because it is shown
+// directly by the TUI/Web GUI and some callers match its actionable hint.
+type HTTPResponseError struct {
+	Status        int
+	Body          string
+	Hint          string
+	RetryAfter    time.Duration
+	HasRetryAfter bool
+}
+
+func (e *HTTPResponseError) Error() string {
+	if e == nil {
+		return "http response error"
+	}
+	body := strings.TrimSpace(e.Body)
+	// Gateway failures often attach several kilobytes of routing diagnostics to
+	// a one-line error. Keep the metadata on the typed error for routing, but do
+	// not dump it into the chat UI.
+	if len(body) > 512 {
+		if message := strings.TrimSpace(errorTextFromBody([]byte(body))); message != "" {
+			body = message
+		}
+	}
+	return fmt.Sprintf("http %d: %s%s", e.Status, body, e.Hint)
+}
+
+func newHTTPResponseError(status int, body []byte, hint string, headers http.Header) error {
+	retryAfter, hasRetryAfter := parseRetryAfter(headers)
+	return &HTTPResponseError{
+		Status:        status,
+		Body:          string(body),
+		Hint:          hint,
+		RetryAfter:    retryAfter,
+		HasRetryAfter: hasRetryAfter,
+	}
+}
+
+// RateLimitRetryAfter reports whether err is an HTTP 429 and, when supplied
+// by the server, how long the backend asked us to wait. The boolean describes
+// the error class; a zero duration can therefore mean a genuine 429 without a
+// usable Retry-After header.
+func RateLimitRetryAfter(err error) (time.Duration, bool) {
+	var responseErr *HTTPResponseError
+	if !errors.As(err, &responseErr) || responseErr.Status != http.StatusTooManyRequests {
+		return 0, false
+	}
+	if !responseErr.HasRetryAfter {
+		return 0, true
+	}
+	return responseErr.RetryAfter, true
+}
 
 // parseRetryAfter reads the Retry-After response header. Both RFC
 // 9110 forms are supported: delta-seconds ("120") and HTTP-date
@@ -85,6 +143,48 @@ func isRetryableHTTPStatus(status int) bool {
 	default:
 		return false
 	}
+}
+
+// providerRetryAttempts keeps normal throttling conservative while giving a
+// genuine 503 a few more chances inside the same ten-second wait budget. A
+// 503 means the selected upstream route is temporarily absent; retrying only
+// twice was too short for gateways that recover after several seconds.
+func providerRetryAttempts(status int) int {
+	if status == http.StatusServiceUnavailable {
+		return 5
+	}
+	return 3
+}
+
+// isRetryableProviderResponse extends the status-only policy for one common
+// reseller failure mode: a gateway returns HTTP 400/422 while its nested
+// upstream says the selected model is temporarily unavailable. Treating that
+// as a permanent client error makes NestCafe die immediately even though the
+// exact same request often succeeds a few hundred milliseconds later.
+//
+// Keep this deliberately narrow. "does not exist", auth failures, bad
+// parameters, malformed payloads, etc. remain non-retryable 4xx errors.
+func isRetryableProviderResponse(status int, body []byte) bool {
+	if isRetryableHTTPStatus(status) {
+		return true
+	}
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		return false
+	}
+	text := strings.ToLower(errorTextFromBody(body))
+	if text == "" {
+		return false
+	}
+	for _, phrase := range []string{
+		"model is unavailable",
+		"model currently unavailable",
+		"model temporarily unavailable",
+	} {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // rateLimitNotice renders the user-visible status line emitted (as

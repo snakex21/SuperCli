@@ -106,6 +106,26 @@ func (e *Engine) SetAppProfile(profile string) {
 	e.mu.Unlock()
 }
 
+// SetExplicitEcho records that echo was deliberately requested on the
+// command line. Branded applications otherwise reject echo because it repeats
+// complete internal model input and must never act as a configuration fallback.
+func (e *Engine) SetExplicitEcho(enabled bool) {
+	e.mu.Lock()
+	e.explicitEcho = enabled
+	e.mu.Unlock()
+}
+
+// ProviderStatus exposes transport-level readiness without revealing any
+// credential or endpoint. It lets health checks distinguish a live HTTP server
+// from a branded app that accidentally started on the echo fallback.
+func (e *Engine) ProviderStatus() (providerType string, chatReady bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	providerType = e.cfg.Provider
+	chatReady = !(e.appProfile == "nestcafe" && providerType == config.ProviderEcho && !e.explicitEcho)
+	return providerType, chatReady
+}
+
 // newLoop builds a fresh agent loop with the standard always-on file
 // tool set. Each web run gets its own loop so concurrent browser tabs
 // do not share mutable conversation state. Mirrors runBatch's

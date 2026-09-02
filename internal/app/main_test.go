@@ -111,6 +111,22 @@ func TestRunBatch_EchoProvider(t *testing.T) {
 	}
 }
 
+func TestBuildProvider_OpenCodeZenMuseUsesResponsesTransport(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.Register(llm.ModelInfo{ID: "muse-spark-1.2-contributor-free", Transport: llm.ModelTransportResponses, Reasoning: true, ReasoningKnown: true, Source: llm.SourceExternal})
+	p, err := buildProvider(config.Config{
+		Provider: config.ProviderOpenAI,
+		Model:    "muse-spark-1.2-contributor-free",
+		BaseURL:  "https://opencode.ai/zen/v1",
+	}, t.TempDir(), caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.(*llm.ResponsesProvider); !ok {
+		t.Fatalf("Zen Muse transport = %T, want *llm.ResponsesProvider", p)
+	}
+}
+
 func TestApplyPricingMetadata_MirrorsOpenRouterProviderModelToDirectProvider(t *testing.T) {
 	caps := llm.NewCapabilityRegistry()
 	caps.Register(llm.ModelInfo{ID: "deepseek-chat", Provider: "deepseek", Source: llm.SourceProvider})

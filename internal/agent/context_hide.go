@@ -46,7 +46,7 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 	// Find indices of user messages in reverse order.
 	userIdx := make([]int, 0, len(l.Messages))
 	for i, m := range l.Messages {
-		if m.Role == llm.RoleUser {
+		if isConversationUserTurn(m) {
 			userIdx = append(userIdx, i)
 		}
 	}

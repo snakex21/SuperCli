@@ -5,8 +5,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"strings"
 )
+
+func isOpenCodeZenBaseURL(baseURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || !strings.EqualFold(u.Hostname(), "opencode.ai") {
+		return false
+	}
+	path := strings.TrimRight(strings.ToLower(u.EscapedPath()), "/")
+	return path == "/zen/v1" || strings.HasPrefix(path, "/zen/v1/")
+}
+
+// ApplyOpenCodeZenHeaders applies the public-client headers used by OpenCode
+// itself. Zen's edge rejects Go's default User-Agent with Cloudflare error
+// 1010, so every Zen request (chat, discovery, and diagnostics) must identify
+// the client explicitly. Other endpoints are left untouched.
+func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
+	if req == nil || !isOpenCodeZenBaseURL(baseURL) {
+		return
+	}
+	if req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer public")
+	}
+	req.Header.Set("X-OpenCode-Client", "supercli")
+	req.Header.Set("User-Agent", "SuperCLI/1.0")
+}
 
 func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, error) {
 	scanner := bufio.NewScanner(r)
@@ -64,6 +90,12 @@ type openaiRequest struct {
 	// which some endpoints reject if the field is present.
 	StreamOptions *openaiStreamOptions `json:"stream_options,omitempty"`
 	Tools         []openaiToolDecl     `json:"tools,omitempty"`
+	// ParallelToolCalls advertises that SuperCli can accept more than one
+	// independent tool call in a single assistant response. The agent runtime
+	// already executes read-only batches concurrently; omitting this hint left
+	// some OpenAI-compatible gateways/models emitting one read per provider
+	// round. Pointer + omitempty keeps plain chat requests unchanged.
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
 	// ReasoningEffort is only set for models known to support
 	// it (see SupportsReasoningEffort); other models never see
 	// the field, so non-OpenAI endpoints cannot reject it.
@@ -80,7 +112,13 @@ type openaiRequest struct {
 }
 
 type openAIReasoning struct {
-	Effort string `json:"effort"`
+	Effort  string `json:"effort"`
+	Exclude *bool  `json:"exclude,omitempty"`
+}
+
+func visibleOpenAIReasoning(effort string) *openAIReasoning {
+	exclude := false
+	return &openAIReasoning{Effort: effort, Exclude: &exclude}
 }
 
 // openaiStreamOptions carries the include_usage flag.
@@ -155,7 +193,11 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 	}
 	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone); e != "" {
 		if format == openAIReasoningUnified {
-			req.Reasoning = &openAIReasoning{Effort: e}
+			// OpenRouter/Kilo-style gateways can return the model's exposed
+			// reasoning stream, but some default to hiding it unless exclude is
+			// explicitly false. SuperCli has native <thinking> rendering, so ask
+			// the gateway to preserve provider-exposed reasoning for the UI.
+			req.Reasoning = visibleOpenAIReasoning(e)
 		} else if format == openAIReasoningEffort {
 			req.ReasoningEffort = e
 		}
@@ -173,6 +215,10 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 				Parameters:  parameters,
 			},
 		})
+	}
+	if len(req.Tools) > 0 {
+		enabled := true
+		req.ParallelToolCalls = &enabled
 	}
 	for _, m := range msgs {
 		rm := openaiReqMsg{
@@ -218,7 +264,7 @@ func patchOpenAIReasoning(body []byte, effort string, format openAIReasoningForm
 		if effort == "" {
 			delete(req, "reasoning")
 		} else {
-			req["reasoning"] = map[string]any{"effort": effort}
+			req["reasoning"] = map[string]any{"effort": effort, "exclude": false}
 		}
 	} else {
 		delete(req, "reasoning")
@@ -380,6 +426,16 @@ func isImageRejection(status int, body []byte) bool {
 	// serde-style parsers reject the whole body schema: the image part
 	// variant does not exist for this model.
 	if strings.Contains(low, "unknown variant") && strings.Contains(low, "image_url") {
+		return true
+	}
+	// Some OpenAI-compatible aggregators wrap the upstream response and use
+	// this wording instead of explicitly calling the model "text-only":
+	// "Model only supports text input; received unsupported content type
+	// 'image_url'." Both clauses are required so an ordinary bad image URL or
+	// media-type error cannot incorrectly disable vision for a capable model.
+	if strings.Contains(low, "only supports text input") &&
+		strings.Contains(low, "unsupported content type") &&
+		strings.Contains(low, "image_url") {
 		return true
 	}
 	// Gateway language for text-only models. Keep this deliberately

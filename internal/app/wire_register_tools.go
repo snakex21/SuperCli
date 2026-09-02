@@ -198,10 +198,15 @@ func registerFileWebAndLineTools(
 	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
 
 	// outlook_mail: Windows-only COM automation of desktop
-	// Outlook (read folders/messages, search, create DRAFTS —
-	// never sends/deletes/moves). Opt-in via tool_search; on
+	// Outlook (read/search, create DRAFTS, recoverable trash moves, and
+	// explicitly confirmed filtered purge from Deleted Items; never sends).
+	// Opt-in via tool_search; on
 	// non-Windows it returns an explanatory error.
 	registry.MustRegister(tools.NewOutlookMail().Spec())
+	// thunderbird_mail: direct read-only bridge into a running Thunderbird
+	// MailExtension. Thunderbird owns the authenticated IMAP/OAuth session,
+	// avoiding Outlook COM/cache ambiguity for Gmail checks.
+	registry.MustRegister(tools.NewThunderbirdMail().Spec())
 
 	// Re-index for tool_search: many tools (ctx_execute, goal,
 	// memory, task, consult, file-line tools, web tools, ...)

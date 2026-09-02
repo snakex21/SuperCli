@@ -98,6 +98,32 @@ func TestMetered_DefaultPurposeAndUsage(t *testing.T) {
 	}
 }
 
+func TestMeteredRecordsPrefillTelemetryAndBudget(t *testing.T) {
+	cap := &sinkCapture{}
+	p := Metered(&meterStub{
+		name:  "m",
+		delay: 2 * time.Millisecond,
+		deltas: []Delta{
+			{Notice: "queued"},
+			{Content: "ok"},
+			{Usage: &Usage{Input: 1000, CachedInput: 750, Output: 1}},
+		},
+	}, "openai", PurposeMain, cap.sink())
+	ctx := WithPrefillBudget(context.Background(), 20_000, "prefill-profile")
+	ch, err := p.Complete(ctx, []Message{{Role: RoleUser, Content: "hello"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainMetered(t, ch)
+	s := cap.all()[0]
+	if s.PrefillEvaluated != 250 || s.PrefillTokensPerSecond <= 0 {
+		t.Fatalf("prefill telemetry = %+v", s)
+	}
+	if s.PrefillBudget != 20_000 || s.PrefillBudgetSource != "prefill-profile" {
+		t.Fatalf("prefill budget telemetry = %+v", s)
+	}
+}
+
 func TestMetered_ContextPurposeOverridesAndBackground(t *testing.T) {
 	cap := &sinkCapture{}
 	p := Metered(&meterStub{name: "m", deltas: []Delta{{Content: "ok"}}}, "t", "draft", cap.sink())

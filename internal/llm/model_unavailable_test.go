@@ -78,6 +78,7 @@ func TestModelUnavailableHintStatusVariants(t *testing.T) {
 		{"404 chinese", 404, "gpt-5.6-sol", `{"error":"当前 API 不支持所选模型 gpt-5.6-sol","type":"error"}`},
 		{"400 chinese retired", 400, "claude-opus-4-6", `{"error":"claude-opus-4-6 已下线，请切换到 claude-opus-4-7 模型","type":"error"}`},
 		{"400 english", 400, "gpt-5.6-sol", `{"error":{"message":"The model gpt-5.6-sol does not exist","type":"invalid_request_error"}}`},
+		{"400 wrapped upstream unavailable", 400, "gpt-5.6-sol", `{"error":{"type":"server_error","message":"Error from provider (Console): Upstream request failed: Model is unavailable."}}`},
 		{"422 english", 422, "gpt-5.6-sol", `{"detail":"unknown_model"}`},
 		{"404 code only", 404, "gpt-5.6-sol", `{"error":{"code":"model_not_found","message":"unavailable"}}`},
 		{"200 with error body", 200, "gpt-5.6-sol", `{"error":"当前 API 不支持所选模型 gpt-5.6-sol"}`},

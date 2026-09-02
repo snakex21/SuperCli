@@ -22,6 +22,14 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		m.viewport.GotoBottom()
 		return m, m.waitForNextEvent()
+	case agent.ReasoningEvent:
+		text := "<thinking>" + e.Text + "</thinking>\n"
+		m.current += text
+		m.responseLen += len(text)
+		m.chat.appendCurrent(text)
+		m.refreshTranscript()
+		m.viewport.GotoBottom()
+		return m, m.waitForNextEvent()
 	case agent.ToolCallEvent:
 		m.lastToolName = e.Name
 		m.toolActivity.call(e.Name, e.Args)
@@ -89,14 +97,14 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLineToTranscript(fmt.Sprintf("[draft: %s → %s, saved %d tokens]", e.DraftModel, e.VerifierModel, e.Savings))
 		return m, m.waitForNextEvent()
 	case agent.AutoCompactEvent:
-		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens, estimate=%s, window=%s)]",
-			e.Removed, e.Reason, e.Estimated, e.Window, e.EstimateSource, e.WindowSource)
+		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens, trigger=%d/%s, estimate=%s, window=%s)]",
+			e.Removed, e.Reason, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()
 	case agent.ToolResultsPrunedEvent:
-		line := fmt.Sprintf("[prune: %d old tool result(s) → reclaimed ~%d tokens (~%d/%d)]",
-			e.Pruned, e.Reclaimed, e.Estimated, e.Window)
+		line := fmt.Sprintf("[prune: %d old tool result(s) → reclaimed ~%d tokens (~%d/%d, trigger=%d/%s)]",
+			e.Pruned, e.Reclaimed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()

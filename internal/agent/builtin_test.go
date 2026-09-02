@@ -70,11 +70,11 @@ func TestBuiltinResearchAgentsCanUseWebTools(t *testing.T) {
 	}
 }
 
-func TestBuiltinSubAgents_MaxStepsDefault(t *testing.T) {
+func TestBuiltinSubAgents_InheritSharedStepSafetyNet(t *testing.T) {
 	agents := BuiltinSubAgents()
 	for _, a := range agents {
-		if a.MaxSteps <= 0 {
-			t.Errorf("%s: MaxSteps = %d, want positive", a.Name, a.MaxSteps)
+		if a.MaxSteps != 0 {
+			t.Errorf("%s: MaxSteps = %d, want 0 (inherit task_max_steps or shared safety net)", a.Name, a.MaxSteps)
 		}
 	}
 }

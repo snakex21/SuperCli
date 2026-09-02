@@ -45,8 +45,9 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 		return nil, err
 	}
 	// Worker resource limits (config `task_max_steps` / `task_max_tokens`,
-	// both optional). Steps only override a spec that leaves its own budget
-	// unset; tokens are a hard runaway-loop cap (0 = no cap).
+	// both optional). Built-in workers leave their step budget unset, so an
+	// explicit task_max_steps applies to every kind; zero uses the shared high
+	// runaway safety net. Tokens remain a hard cap (0 = no cap).
 	at.MaxSteps = w.tomlCfg.TaskMaxSteps
 	at.MaxTokens = w.tomlCfg.TaskMaxTokens
 	// Model-per-task: hand the worker backend (built above from
@@ -56,6 +57,7 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	// model lists need different auth) and just trust the build.
 	if w.taskWorkerProvider != nil {
 		at.WorkerProvider = w.taskWorkerProvider
+		at.WorkerContextProvider = config.RuntimeProviderName(w.tomlCfg, w.taskWorkerCfg)
 		if u := w.taskWorkerCfg.BaseURL; u != "" &&
 			w.taskWorkerCfg.Provider != config.ProviderAnthropic &&
 			w.taskWorkerCfg.Provider != config.ProviderCodex {
@@ -65,6 +67,9 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 				return pingErr
 			}
 		}
+	}
+	if w.loop != nil {
+		at.PrefillProfiles = w.loop.PrefillProfiles()
 	}
 	// Draft-verify ladder (config `draft_verify`, tri-state, default OFF).
 	// When on, a file-changing draft is sieved by verify_commands (free,

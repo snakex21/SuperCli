@@ -92,6 +92,11 @@ func (s *Store) migrate() error {
 			reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
 			has_cached_input      INTEGER NOT NULL DEFAULT 0,
 			has_reasoning         INTEGER NOT NULL DEFAULT 0,
+			ttft_ms               INTEGER NOT NULL DEFAULT 0,
+			prefill_evaluated_tokens INTEGER NOT NULL DEFAULT 0,
+			prefill_tokens_per_second REAL NOT NULL DEFAULT 0,
+			prefill_budget_tokens INTEGER NOT NULL DEFAULT 0,
+			prefill_budget_source TEXT NOT NULL DEFAULT '',
 			context_window        INTEGER NOT NULL DEFAULT 0,
 			ctx_system_tokens     INTEGER NOT NULL DEFAULT 0,
 			ctx_user_tokens       INTEGER NOT NULL DEFAULT 0,
@@ -148,6 +153,20 @@ func (s *Store) migrate() error {
 		{"reasoning_effort", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureSessionColumn(column.name, column.def); err != nil {
+			return err
+		}
+	}
+	for _, column := range []struct {
+		name string
+		def  string
+	}{
+		{"ttft_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"prefill_evaluated_tokens", "INTEGER NOT NULL DEFAULT 0"},
+		{"prefill_tokens_per_second", "REAL NOT NULL DEFAULT 0"},
+		{"prefill_budget_tokens", "INTEGER NOT NULL DEFAULT 0"},
+		{"prefill_budget_source", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := s.ensureTableColumn("session_usage", column.name, column.def); err != nil {
 			return err
 		}
 	}
@@ -251,7 +270,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 }
 
 func (s *Store) ensureTableColumn(table, name, definition string) error {
-	if table != "sessions" && table != "session_turns" {
+	if table != "sessions" && table != "session_turns" && table != "session_usage" {
 		return fmt.Errorf("unsupported migration table %q", table)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)

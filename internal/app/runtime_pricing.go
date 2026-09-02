@@ -41,3 +41,27 @@ func applyPricingStartup(dataDir string, caps *llm.CapabilityRegistry) {
 		applyModelInfoMetadata(caps, updated)
 	}()
 }
+
+// applyPricingStartupBatch is the batch/bot variant of
+// applyPricingStartup. A batch process lives for one turn and exits,
+// so a background refresh can never land in time: when the 24h cache
+// is stale (the common case for a bot that runs all day), the stale
+// entries are still applied synchronously — a context limit learned
+// yesterday beats the generic remote fallback guess today — while
+// the fresh fetch runs in the background for the NEXT run.
+func applyPricingStartupBatch(dataDir string, caps *llm.CapabilityRegistry) {
+	cachedPrices := pricing.LoadCache(dataDir)
+	if len(cachedPrices) == 0 {
+		cachedPrices = pricing.LoadCacheStale(dataDir)
+	}
+	if len(cachedPrices) > 0 {
+		applyPricingMetadata(caps, cachedPrices)
+	}
+	fetcher := pricing.NewFetcher(dataDir)
+	capsSnapshot := caps.All()
+	go func() {
+		defer recoverAndLog(dataDir)()
+		updated := fetcher.FetchAndUpdate(capsSnapshot)
+		applyModelInfoMetadata(caps, updated)
+	}()
+}

@@ -92,6 +92,14 @@ func (a *agentLoopAdapter) Run(ctx context.Context, prompt string) (<-chan LoopE
 				case <-ctx.Done():
 					return
 				}
+			case agent.ReasoningEvent:
+				chunk := "<thinking>" + e.Text + "</thinking>\n"
+				text.WriteString(chunk)
+				select {
+				case out <- LoopMessageEvent{Text: chunk}:
+				case <-ctx.Done():
+					return
+				}
 			case agent.DoneEvent:
 				u := llm.Usage{
 					Input:  e.Usage.Input,

@@ -71,6 +71,13 @@ func TestToWireEvent_Message(t *testing.T) {
 	}
 }
 
+func TestToWireEvent_ReasoningUsesDedicatedChannel(t *testing.T) {
+	w, keep := toWireEvent(agent.ReasoningEvent{Text: "plan"})
+	if !keep || w.Type != "reasoning" || w.Text != "plan" {
+		t.Fatalf("wire reasoning = %+v keep=%v", w, keep)
+	}
+}
+
 func TestToWireEvent_ToolCall(t *testing.T) {
 	w, keep := toWireEvent(agent.ToolCallEvent{Name: "write_file", Args: `{"path":"x"}`, ID: "t1"})
 	if !keep {
@@ -222,9 +229,26 @@ func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("text flushed too early: %+v", got)
 	}
+	if !c.Push(wireEvent{Type: "reasoning", Text: "why"}) {
+		t.Fatal("first reasoning chunk did not start its own batch")
+	}
+	if c.Push(wireEvent{Type: "reasoning", Text: " now"}) {
+		t.Fatal("second reasoning chunk started a second batch")
+	}
 	c.Push(wireEvent{Type: "tool_call", Name: "search_code"})
-	if len(got) != 2 || got[0].Type != "message" || got[0].Text != "one two" || got[1].Type != "tool_call" {
+	if len(got) != 3 || got[0].Type != "message" || got[0].Text != "one two" ||
+		got[1].Type != "reasoning" || got[1].Text != "why now" || got[2].Type != "tool_call" {
 		t.Fatalf("event order changed: %+v", got)
+	}
+}
+
+func TestReasoningFallbackIsTruthfulAndOnlyUsedForReportedTokens(t *testing.T) {
+	if got := reasoningFallbackText(0); got != "" {
+		t.Fatalf("zero-token fallback = %q", got)
+	}
+	got := reasoningFallbackText(1567)
+	if strings.Contains(got, "<thinking>") || !strings.Contains(got, "1567") || !strings.Contains(got, "nie udostępnił") {
+		t.Fatalf("fallback = %q", got)
 	}
 }
 

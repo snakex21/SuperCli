@@ -190,7 +190,7 @@ func (p *promptStabilityProvider) Complete(_ context.Context, msgs []llm.Message
 	return out, nil
 }
 
-func TestWebPromptPrefixIsByteStableAcrossTurns(t *testing.T) {
+func TestHardProtocolWebPromptPrefixIsByteStableAcrossTurns(t *testing.T) {
 	dir := t.TempDir()
 	sandbox.SetUnsandboxed(false)
 	t.Cleanup(func() { sandbox.SetUnsandboxed(false) })
@@ -710,6 +710,39 @@ func TestEngine_TranscriptDecodesAssistantTextParts(t *testing.T) {
 	}
 	if msgs[1].Role != string(llm.RoleAssistant) || msgs[1].Content != "AI answer" {
 		t.Fatalf("assistant transcript = %+v", msgs[1])
+	}
+}
+
+func TestEngine_TranscriptPreservesLegacyThinkingTags(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	store, err := session.OpenStore(dir)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+	sess, err := store.Create(dir, "echo-test", "legacy thinking")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writer := session.NewWriter(store, sess.ID)
+	legacy := "<thinking>old reasoning</thinking>\nVisible answer"
+	if err := writer.AppendMessage(context.Background(), llm.Message{
+		Role:  llm.RoleAssistant,
+		Parts: []llm.ContentPart{{Type: llm.PartTypeText, Text: legacy}},
+	}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	msgs, err := eng.transcript(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("transcript: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != legacy {
+		t.Fatalf("legacy transcript = %+v, want %q", msgs, legacy)
 	}
 }
 

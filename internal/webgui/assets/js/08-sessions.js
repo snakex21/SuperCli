@@ -218,7 +218,9 @@ var loadedTranscriptMessages = [];
 var transcriptHasMore = false;
 var transcriptBeforeSeq = 0;
 var transcriptSessionID = "";
-var transcriptPageSize = 100;
+// Keep the initial DOM bounded. Tool outputs and reasoning can make one
+// persisted message very large; older pages remain available on demand.
+var transcriptPageSize = 60;
 
 function buildHistoryFragment(messages) {
   var historyCalls = {};
@@ -359,6 +361,7 @@ async function resumeSession(id, session) {
     var msgs = page.messages || [];
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
     activeSessionID = id;
+    composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;

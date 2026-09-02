@@ -37,7 +37,8 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "xai", Type: "openai", BaseURL: "https://api.x.ai/v1", Desc: "Grok-3, Grok-2"},
 		{Name: "huggingface", Type: "openai", BaseURL: "https://api-inference.huggingface.co/v1", Desc: "HF Inference API"},
 		{Name: "kilo", Type: "openai", BaseURL: "https://api.kilo.ai/api/openrouter", Desc: "Kilo AI (free models, no key)"},
-		{Name: "opencode", Type: "openai", BaseURL: "https://opencode.ai/zen/v1", Desc: "OpenCode Zen (free models, no key)"},
+		{Name: "zen", Type: "openai", BaseURL: "https://opencode.ai/zen/v1", Desc: "OpenCode Zen (free models, no key)"},
+		{Name: "opencode-go", Type: "openai", BaseURL: "https://opencode.ai/zen/go/v1", Desc: "OpenCode Go (subscription $5-10/mo)"},
 		{Name: "perplexity", Type: "openai", BaseURL: "https://api.perplexity.ai", Desc: "Sonar (online search-augmented)"},
 		{Name: "fireworks", Type: "openai", BaseURL: "https://api.fireworks.ai/inference/v1", Desc: "Fast open-weights inference"},
 		{Name: "cerebras", Type: "openai", BaseURL: "https://api.cerebras.ai/v1", Desc: "Wafer-scale fast inference (Llama, Qwen)"},
@@ -73,7 +74,6 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "sensenova", Type: "openai", BaseURL: "https://token.sensenova.cn/v1", Desc: "SenseTime SenseNova (Token Plan free beta)"},
 		{Name: "lmstudio", Type: "openai", BaseURL: "http://localhost:1234/v1", Desc: "Local models via LM Studio"},
 		{Name: "ollama", Type: "openai", BaseURL: "http://localhost:11434/v1", Desc: "Local models via Ollama"},
-		{Name: "custom", Type: "openai", BaseURL: "", Desc: "Your own OpenAI-compatible endpoint"},
 	}
 }
 

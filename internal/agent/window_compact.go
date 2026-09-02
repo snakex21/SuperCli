@@ -14,7 +14,13 @@ import (
 func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason string) {
 	window := l.windowResolution()
 	w := window.Tokens
-	threshold := autoCompactThreshold(w)
+	hardThreshold := autoCompactThreshold(w)
+	threshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)
+	if reason != "" {
+		// A provider context-limit retry was triggered by the hard window, not
+		// by the learned performance budget.
+		threshold, thresholdSource = hardThreshold, window.Source
+	}
 	estimate := l.nextRequestTokenEstimate()
 	est := estimate.Effective
 	if reason == "" && est <= threshold {
@@ -70,7 +76,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	ev := AutoCompactEvent{
 		Removed: removed, Window: w, Estimated: est, RawEstimated: estimate.Raw,
 		EstimateSource: estimate.Source, ExactBase: estimate.ExactBase,
-		Threshold: threshold, WindowSource: window.Source,
+		Threshold: threshold, ThresholdSource: thresholdSource, WindowSource: window.Source,
 		Reason: reason,
 	}
 	if out != nil {
@@ -85,7 +91,7 @@ func hasFreshCompactablePrefix(all []llm.Message, split int) bool {
 	keep := leadingSystemCount(all)
 	lastUser := -1
 	for i := len(all) - 1; i >= keep; i-- {
-		if all[i].Role == llm.RoleUser {
+		if isConversationUserTurn(all[i]) {
 			lastUser = i
 			break
 		}
@@ -116,7 +122,7 @@ func autoCompactSplit(all []llm.Message) int {
 	keep := leadingSystemCount(all)
 	users := 0
 	for i := len(all) - 1; i >= keep; i-- {
-		if all[i].Role == llm.RoleUser {
+		if isConversationUserTurn(all[i]) {
 			users++
 			if users == 2 {
 				return i
@@ -174,7 +180,7 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	return AutoCompactEvent{
 		Removed: removed, Window: w, Estimated: est, RawEstimated: estimate.Raw,
 		EstimateSource: estimate.Source, ExactBase: estimate.ExactBase,
-		Threshold: autoCompactThreshold(w), WindowSource: window.Source,
+		Threshold: autoCompactThreshold(w), ThresholdSource: window.Source, WindowSource: window.Source,
 		Reason: "manual",
 	}, nil
 }
@@ -200,7 +206,7 @@ func compactSplit(all []llm.Message, window int) int {
 	split := -1
 	users := 0
 	for i := len(all) - 1; i >= keep; i-- {
-		if all[i].Role == llm.RoleUser {
+		if isConversationUserTurn(all[i]) {
 			users++
 			if users == 2 {
 				split = i
@@ -213,7 +219,7 @@ func compactSplit(all []llm.Message, window int) int {
 		// overflow caused by one giant recent turn is handled by the size check
 		// below using the latest user boundary.
 		for i := len(all) - 1; i >= keep; i-- {
-			if all[i].Role == llm.RoleUser {
+			if isConversationUserTurn(all[i]) {
 				split = i
 				break
 			}
@@ -275,11 +281,21 @@ func extractContextLimit(msg string) int {
 // the provider: persist the learned limit (if the message
 // carries a number), compact, and tell the caller to retry
 // once. Returns false when err is not a context-limit error.
+//
+// minLearnedContextLimit guards the persisted value. The learned
+// file has no expiry and is shared by every front-end, so one
+// gateway hiccup that happens to phrase an unrelated 4xx as
+// "context length of only N tokens" would otherwise pin every
+// future session to a nonsense window forever. Real limits below
+// this floor exist only on self-hosted runtimes, and those report
+// through provider metadata, not through error strings.
+const minLearnedContextLimit = 4096
+
 func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- Event) bool {
 	if !isContextLimitErr(err) {
 		return false
 	}
-	if lim := extractContextLimit(err.Error()); lim > 0 && l.learnLimit != nil {
+	if lim := extractContextLimit(err.Error()); lim >= minLearnedContextLimit && l.learnLimit != nil {
 		l.learnLimit(l.modelID, lim)
 	}
 	l.maybeAutoCompact(ctx, out, "context-limit")

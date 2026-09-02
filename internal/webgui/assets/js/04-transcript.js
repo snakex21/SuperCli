@@ -4,15 +4,48 @@
 
 var stage = $("#stage"), stream = $("#stream"), welcome = $("#welcome");
 var streamAppendTarget = null;
+// Off-screen transcript blocks use content-visibility:auto for long-chat
+// performance. Chromium/WebView2 can wrongly cull a freshly changing flex
+// child when later tool rows change the tail geometry, making streamed prose
+// appear to be replaced by the tool call. Keep only this turn's new blocks
+// fully painted; old history remains virtualized.
+var transcriptLiveAppend = false;
+var transcriptFollowTail = true;
+var smartScrollFrame = null;
+var smartScrollForced = false;
 
 function appendStream(node) {
+  if (transcriptLiveAppend && node && node.classList) node.classList.add("transcript-live");
   (streamAppendTarget || stream).appendChild(node);
 }
 
+function releaseLiveTranscriptBlocks() {
+  transcriptLiveAppend = false;
+  stream.querySelectorAll(".transcript-live").forEach(function (node) {
+    node.classList.remove("transcript-live");
+  });
+}
+
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
+stage.addEventListener("scroll", function () {
+  transcriptFollowTail = nearBottom();
+}, { passive: true });
 function smartScroll(force) {
   if (streamAppendTarget) return;
-  if (force || nearBottom()) stage.scrollTop = stage.scrollHeight;
+  if (force) {
+    transcriptFollowTail = true;
+    smartScrollForced = true;
+  }
+  if ((!transcriptFollowTail && !smartScrollForced) || smartScrollFrame !== null) return;
+  // A burst of SSE/tool events used to force a full scrollHeight layout for
+  // every event. On a long NestCafe transcript that can mean dozens of large
+  // WebView2 layouts per second. One tail update per paint is visually
+  // identical while leaving the main thread available for input and Markdown.
+  smartScrollFrame = requestAnimationFrame(function () {
+    smartScrollFrame = null;
+    if (smartScrollForced || transcriptFollowTail) stage.scrollTop = stage.scrollHeight;
+    smartScrollForced = false;
+  });
 }
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
 function showWelcome() { if (welcome) welcome.style.display = ""; }
@@ -136,6 +169,7 @@ function addAssistantMsg() {
   var m = el("div", "msg-assistant");
   m._raw = "";
   m._renderTimer = null;
+  m._reasoningOpen = false;
   appendStream(m);
   return m;
 }
@@ -186,6 +220,33 @@ function flushAssistantRender(node) {
   }
   renderAssistant(node);
   smartScroll();
+}
+
+function closeAssistantReasoning(node) {
+  if (!node || !node._reasoningOpen) return;
+  node._raw += "</thinking>\n";
+  node._reasoningOpen = false;
+}
+
+function appendAssistantReasoning(node, text) {
+  if (!node) return;
+  if (!node._reasoningOpen) {
+    node._raw += "<thinking>";
+    node._reasoningOpen = true;
+  }
+  node._raw += text || "";
+  scheduleAssistantRender(node);
+}
+
+// A provider response may contain visible prose and native tool calls in the
+// same assistant message. Seal that prose before rendering the first tool row
+// so no delayed Markdown paint can visually reuse or overwrite its segment.
+function sealAssistantSegment(node) {
+  if (!node || node._sealed) return;
+  closeAssistantReasoning(node);
+  flushAssistantRender(node);
+  node._sealed = true;
+  node.classList.add("assistant-segment-complete");
 }
 function addEventLine(text, cls, tag) {
   var line = el("div", "event-line" + (cls ? " " + cls : ""));
@@ -549,19 +610,73 @@ function addToolResult(id, output, err) {
 function addFileChanges(changes) {
   changes = superCliUI.normalizeFileChanges(changes);
   if (!changes.length) return;
-  var row = el("div", "file-change-summary");
-  row.appendChild(el("div", "file-change-title", t("change.title") + " · " + changes.length));
-  var list = el("div", "file-change-list");
-  changes.forEach(function (change) {
-    var kind = ["created", "modified", "deleted"].indexOf(change.kind) >= 0 ? change.kind : "modified";
-    var item = el("div", "file-change-item " + kind);
-    item.appendChild(el("span", "file-change-kind", t("change." + kind)));
-    item.appendChild(el("code", "file-change-path", String(change.path)));
-    list.appendChild(item);
+  var kinds = ["created", "modified", "deleted"];
+  var grouped = { created: [], modified: [], deleted: [] };
+  changes.forEach(function (change) { grouped[change.kind].push(change); });
+
+  var row = document.createElement("details");
+  row.className = "file-change-summary";
+  // A handful of changes is useful at a glance. Bulk operations stay compact
+  // instead of adding hundreds of near-identical rows to the transcript.
+  row.open = changes.length <= 8;
+  var header = el("summary", "file-change-header");
+  header.appendChild(el("span", "file-change-title", t("change.title") + " · " + changes.length));
+  var counts = el("span", "file-change-counts");
+  kinds.forEach(function (kind) {
+    if (grouped[kind].length) {
+      counts.appendChild(el("span", "file-change-count " + kind,
+        t("change." + kind) + " " + grouped[kind].length));
+    }
   });
-  row.appendChild(list);
+  header.appendChild(counts);
+  row.appendChild(header);
+
+  var body = el("div", "file-change-body");
+  if (changes.length <= 8) {
+    var list = el("div", "file-change-list");
+    changes.forEach(function (change) {
+      var item = el("div", "file-change-item " + change.kind);
+      item.appendChild(el("span", "file-change-kind", t("change." + change.kind)));
+      item.appendChild(el("code", "file-change-path", String(change.path)));
+      list.appendChild(item);
+    });
+    body.appendChild(list);
+  } else {
+    kinds.forEach(function (kind) {
+      if (!grouped[kind].length) return;
+      var group = document.createElement("details");
+      group.className = "file-change-group " + kind;
+      var groupHeader = el("summary", "file-change-group-header");
+      groupHeader.appendChild(el("span", "file-change-group-kind",
+        t("change." + kind) + " · " + grouped[kind].length));
+      var root = commonFileChangeDirectory(grouped[kind]);
+      if (root) groupHeader.appendChild(el("code", "file-change-root", root));
+      group.appendChild(groupHeader);
+      var groupList = el("div", "file-change-group-list");
+      grouped[kind].forEach(function (change) {
+        var path = String(change.path);
+        if (root && path.indexOf(root + "/") === 0) path = path.slice(root.length + 1);
+        groupList.appendChild(el("code", "file-change-path", path));
+      });
+      group.appendChild(groupList);
+      body.appendChild(group);
+    });
+  }
+  row.appendChild(body);
   appendStream(row);
   smartScroll();
+}
+
+function commonFileChangeDirectory(changes) {
+  if (!changes.length) return "";
+  var common = String(changes[0].path).replace(/\\/g, "/").split("/").slice(0, -1);
+  for (var i = 1; i < changes.length && common.length; i++) {
+    var parts = String(changes[i].path).replace(/\\/g, "/").split("/").slice(0, -1);
+    var keep = 0;
+    while (keep < common.length && keep < parts.length && common[keep] === parts[keep]) keep++;
+    common.length = keep;
+  }
+  return common.join("/");
 }
 function settleOpenTools() {
   openToolOrder.forEach(function (k) {

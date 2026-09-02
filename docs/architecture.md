@@ -106,7 +106,7 @@ previous session. Scratchpad log: cache-hunt-2026-07-05.
 
 ## Context defense: estimator → prune → summary
 
-Three layers, cheapest first. Order matters: each layer exists to keep
+Four layers, cheapest first. Order matters: each layer exists to keep
 the next (more expensive) one from firing.
 
 ### 1. Calibrated token estimator
@@ -121,9 +121,21 @@ it slightly overestimates — the safe direction for a trigger. One
 estimator is shared by the loop, /context, resume and the chat window,
 so a calibration fix lands everywhere at once.
 
-### 2. Zero-LLM tool-result prune
+### 2. Adaptive prefill budget
 
-`internal/agent/prune.go`. Above 60% of the window, old `RoleTool`
+`internal/llm/meter_prefill_profiles.go`. The hard context window remains a
+correctness limit, but it is no longer treated as a performance budget. Each
+configured provider connection + model learns from successful prompt tokens,
+cached tokens and real TTFT. A 30s prefill constrains the next request
+immediately; moderate slowdowns need repeated samples, while sustained fast
+edge calls raise the budget gradually. This does not classify endpoints as
+local or remote: user-added HTTP models get the same measured policy. Profiles
+are portable in `supercli-data/prefill-profiles.json`.
+
+### 3. Zero-LLM tool-result prune
+
+`internal/agent/prune.go`. Above 60% of the hard window, or earlier at an
+active learned prefill budget, old `RoleTool`
 results are replaced in place by a short marker ("re-run X with the same
 arguments if needed"); the assistant's tool call (name+args) is never
 touched, so the model can re-fetch. KV-cache rules baked into the
@@ -138,9 +150,10 @@ after the prunes the history went append-only again — next request hit
 77% cache. The summary fallback never fired. Scratchpad:
 compaction-2026-07-05.
 
-### 3. Summary fallback
+### 4. Summary fallback
 
-`internal/agent/window.go` + `compact.go`. Above 80% of the window
+`internal/agent/window.go` + `compact.go`. Above the lower of 80% of the hard window
+and the learned prefill budget
 (`autoCompactThreshold`) the pre-turn history is summarized by the model
 (template + exact facts) and replaced by one system message. The cut is
 at the **last user turn boundary** (`compactSplit`): the current turn

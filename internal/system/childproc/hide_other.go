@@ -7,3 +7,6 @@ import "os/exec"
 
 // HideWindow is a no-op where child console windows are not a Windows concern.
 func HideWindow(cmd *exec.Cmd) *exec.Cmd { return cmd }
+
+// NoConsoleWindow is a no-op outside Windows.
+func NoConsoleWindow(cmd *exec.Cmd) *exec.Cmd { return cmd }

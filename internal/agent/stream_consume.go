@@ -15,13 +15,24 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	var toolCalls []llm.ToolCall
 	var usage *llm.Usage
 	sc := newToolCallScanner()
+	var transcript strings.Builder
+	reasoningOpen := false
+	closeReasoning := func() {
+		if !reasoningOpen {
+			return
+		}
+		transcript.WriteString("</thinking>\n")
+		reasoningOpen = false
+	}
 	emitTo := func(end int) error {
 		if end <= sc.emitted {
 			return nil
 		}
 		text := sc.buf.String()[sc.emitted:end]
+		closeReasoning()
 		select {
 		case out <- MessageEvent{Text: text}:
+			transcript.WriteString(text)
 			sc.emitted = end
 			return nil
 		case <-ctx.Done():
@@ -34,6 +45,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	// value comparison per delta and no allocations.
 	waitStart := time.Now()
 	var firstDelta time.Time
+	l.lastCallTTFT = 0
 	defer func() {
 		if firstDelta.IsZero() {
 			// The stream ended (or errored) before any delta:
@@ -44,15 +56,20 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		l.recordWallPhase(stats.PhaseStreamTotal, time.Since(firstDelta))
 	}()
 	for d := range stream {
-		if firstDelta.IsZero() {
+		// Provider notices (rate-limit retries, transient routing status) are
+		// not model progress and must not make a long prefill look instant.
+		if firstDelta.IsZero() && d.Notice == "" {
 			firstDelta = time.Now()
+			l.lastCallTTFT = firstDelta.Sub(waitStart)
 			l.recordWallPhase(stats.PhaseBackendWait, firstDelta.Sub(waitStart))
 		}
 		if err := ctx.Err(); err != nil {
-			return sc.buf.String(), toolCalls, usage, err
+			closeReasoning()
+			return transcript.String(), toolCalls, usage, err
 		}
 		if d.Err != nil {
-			return sc.buf.String(), toolCalls, usage, d.Err
+			closeReasoning()
+			return transcript.String(), toolCalls, usage, d.Err
 		}
 		if d.Notice != "" {
 			// Informational status (rate-limit retry etc.) — surface
@@ -60,9 +77,23 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			select {
 			case out <- NoticeEvent{Text: d.Notice}:
 			case <-ctx.Done():
-				return sc.buf.String(), toolCalls, usage, ctx.Err()
+				closeReasoning()
+				return transcript.String(), toolCalls, usage, ctx.Err()
 			}
 			continue
+		}
+		if d.Reasoning != "" {
+			if !reasoningOpen {
+				transcript.WriteString("<thinking>")
+				reasoningOpen = true
+			}
+			select {
+			case out <- ReasoningEvent{Text: d.Reasoning}:
+				transcript.WriteString(d.Reasoning)
+			case <-ctx.Done():
+				closeReasoning()
+				return transcript.String(), toolCalls, usage, ctx.Err()
+			}
 		}
 		if d.Content != "" {
 			sc.append(d.Content)
@@ -76,7 +107,8 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 				if len(tcs) > 0 {
 					// Only emit the not-yet-streamed portion before the block.
 					if err := emitTo(len(remaining)); err != nil {
-						return sc.buf.String(), toolCalls, usage, err
+						closeReasoning()
+						return transcript.String(), toolCalls, usage, err
 					}
 					toolCalls = append(toolCalls, tcs...)
 					// Reset text to just the remaining portion.
@@ -96,7 +128,8 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 				stcs, sbefore := extractSentinelToolCalls(sc.buf.String())
 				if len(stcs) > 0 {
 					if err := emitTo(len(sbefore)); err != nil {
-						return sc.buf.String(), toolCalls, usage, err
+						closeReasoning()
+						return transcript.String(), toolCalls, usage, err
 					}
 					toolCalls = append(toolCalls, stcs...)
 					sc.reset(sbefore)
@@ -107,7 +140,8 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			}
 
 			if err := emitTo(sc.safeEmitEnd()); err != nil {
-				return sc.buf.String(), toolCalls, usage, err
+				closeReasoning()
+				return transcript.String(), toolCalls, usage, err
 			}
 		}
 		if d.ToolCall != nil {
@@ -120,9 +154,11 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	// No complete tool block claimed the retained suffix: surface it as plain
 	// text (including malformed/incomplete markers) rather than losing output.
 	if err := emitTo(sc.buf.Len()); err != nil {
-		return sc.buf.String(), toolCalls, usage, err
+		closeReasoning()
+		return transcript.String(), toolCalls, usage, err
 	}
-	return sc.buf.String(), toolCalls, usage, nil
+	closeReasoning()
+	return transcript.String(), toolCalls, usage, nil
 }
 
 // extractXMLToolCalls scans text for <tool_call>...</tool_call>

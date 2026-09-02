@@ -42,7 +42,7 @@ func (l *Loop) persistProjection(ctx context.Context) {
 	}
 	h.mu.Unlock()
 
-	visible := l.VisibleMessages()
+	visible := l.resolvedToolProviderView(l.VisibleMessages())
 	for i := range visible {
 		visible[i] = visible[i].DormantImages()
 	}

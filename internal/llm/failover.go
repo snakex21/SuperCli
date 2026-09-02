@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ type FailoverProvider struct {
 	cooldown    time.Duration
 	mu          sync.Mutex
 	failedUntil []time.Time
+	failureRuns []int
 	active      int
 }
 
@@ -35,7 +38,13 @@ func NewFailover(cooldown time.Duration, labels []string, providers ...Provider)
 	if cooldown <= 0 {
 		cooldown = 30 * time.Second
 	}
-	return &FailoverProvider{providers: append([]Provider(nil), providers...), labels: append([]string(nil), labels...), cooldown: cooldown, failedUntil: make([]time.Time, len(providers))}, nil
+	return &FailoverProvider{
+		providers:   append([]Provider(nil), providers...),
+		labels:      append([]string(nil), labels...),
+		cooldown:    cooldown,
+		failedUntil: make([]time.Time, len(providers)),
+		failureRuns: make([]int, len(providers)),
+	}, nil
 }
 
 // Name preserves the selected primary model in pickers and session metadata.
@@ -58,15 +67,71 @@ func (f *FailoverProvider) order(now time.Time) []int {
 	return append(ready, cooling...)
 }
 
-func (f *FailoverProvider) markFailure(index int) {
+func (f *FailoverProvider) markFailure(index int, err error) {
 	f.mu.Lock()
-	f.failedUntil[index] = time.Now().Add(f.cooldown)
+	f.failureRuns[index]++
+	run := f.failureRuns[index]
+	cooldown := f.failureCooldown(err, run)
+	f.failedUntil[index] = time.Now().Add(cooldown)
 	f.mu.Unlock()
 }
+
+// failureCooldown is an adaptive circuit breaker. One transient failure gets
+// the configured base pause; repeated failures back off progressively. Typed
+// HTTP failures get class-specific treatment so auth/quota/capacity failures
+// are not probed as aggressively as an ordinary network hiccup.
+func (f *FailoverProvider) failureCooldown(err error, run int) time.Duration {
+	base := f.cooldown
+	if base <= 0 {
+		base = 30 * time.Second
+	}
+	if run < 1 {
+		run = 1
+	}
+	mult := 1 << min(run-1, 4) // 1x,2x,4x,8x,16x; bounded below.
+	cooldown := time.Duration(mult) * base
+	capAt := 5 * time.Minute
+
+	var responseErr *HTTPResponseError
+	if errors.As(err, &responseErr) {
+		switch responseErr.Status {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			// Credentials/permissions rarely heal within seconds. Avoid hammering
+			// a known-bad account while still allowing recovery after a key fix.
+			if cooldown < 5*time.Minute {
+				cooldown = 5 * time.Minute
+			}
+			capAt = 30 * time.Minute
+		case http.StatusTooManyRequests:
+			// An explicit server quota window is authoritative and may be much
+			// longer than our normal breaker cap (for example a daily reset).
+			capAt = 24 * time.Hour
+			if responseErr.HasRetryAfter && responseErr.RetryAfter > cooldown {
+				cooldown = responseErr.RetryAfter
+			}
+		case http.StatusBadRequest, http.StatusNotFound:
+			// Often a model/route mismatch. Retrying the same endpoint every few
+			// seconds is wasted latency; let configured fallbacks carry traffic.
+			if cooldown < 2*time.Minute {
+				cooldown = 2 * time.Minute
+			}
+			capAt = 15 * time.Minute
+		case http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			capAt = 10 * time.Minute
+		}
+	}
+	if cooldown > capAt {
+		cooldown = capAt
+	}
+	return cooldown
+}
+
 func (f *FailoverProvider) markActive(index int) {
 	f.mu.Lock()
 	f.active = index
 	f.failedUntil[index] = time.Time{}
+	f.failureRuns[index] = 0
 	f.mu.Unlock()
 }
 
@@ -100,7 +165,7 @@ func (f *FailoverProvider) Complete(ctx context.Context, msgs []Message, tools [
 		if err == nil {
 			break
 		}
-		f.markFailure(current)
+		f.markFailure(current, err)
 		failures = append(failures, f.describe(current, err))
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -125,7 +190,7 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 				if ctx.Err() != nil {
 					return
 				}
-				f.markFailure(current)
+				f.markFailure(current, delta.Err)
 				failures = append(failures, f.describe(current, delta.Err))
 				for len(remaining) > 0 {
 					current = remaining[0]
@@ -135,7 +200,7 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 						stream = next
 						goto nextProvider
 					}
-					f.markFailure(current)
+					f.markFailure(current, err)
 					failures = append(failures, f.describe(current, err))
 				}
 				delta.Err = fmt.Errorf("llm.Failover: all configured backends failed before output: %s", strings.Join(failures, "; "))
@@ -145,7 +210,7 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 				}
 				return
 			}
-			if delta.Content != "" || delta.ToolCall != nil {
+			if delta.Content != "" || delta.Reasoning != "" || delta.ToolCall != nil {
 				emitted = true
 				f.markActive(current)
 			}

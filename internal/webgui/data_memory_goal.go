@@ -15,25 +15,26 @@ func (e *Engine) memoryList(scope string, limit int) ([]memoryItem, error) {
 	if gs, err := memory.OpenStore(e.dataDir); err == nil {
 		defer gs.Close()
 		if entries, err := gs.List(scope, limit); err == nil {
-			out = append(out, toMemoryItems(entries)...)
+			out = append(out, toMemoryItems(entries, "global")...)
 		}
 	}
 	if ps, err := memory.OpenProjectStore(e.dataDir, e.Home()); err == nil {
 		defer ps.Close()
 		if entries, err := ps.List(scope, limit); err == nil {
-			out = append(out, toMemoryItems(entries)...)
+			out = append(out, toMemoryItems(entries, "project")...)
 		}
 	}
 	return out, nil
 }
 
 // toMemoryItems converts store entries to the wire form.
-func toMemoryItems(entries []memory.Entry) []memoryItem {
+func toMemoryItems(entries []memory.Entry, target string) []memoryItem {
 	out := make([]memoryItem, 0, len(entries))
 	for _, en := range entries {
 		out = append(out, memoryItem{
 			ID:        en.ID,
 			Scope:     en.Scope,
+			Target:    target,
 			Content:   en.Content,
 			Tags:      en.Tags,
 			Source:    en.Source,

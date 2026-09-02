@@ -119,12 +119,22 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		return 0 // disabled via config
 	}
 	w := l.window()
+	hardThreshold := autoCompactThreshold(w)
+	prefillBudget, adaptive := l.adaptivePrefillBudget(hardThreshold)
+	trigger := int(pruneTriggerFrac * float64(w))
+	triggerSource := "context-window"
+	workingWindow := w
+	if adaptive && prefillBudget < trigger {
+		trigger = prefillBudget
+		triggerSource = "prefill-profile"
+		workingWindow = prefillBudget
+	}
 	protect := l.pruneProtect
 	if protect == 0 {
-		protect = defaultPruneProtectTokens(w)
+		protect = defaultPruneProtectTokens(workingWindow)
 	}
 	est := l.EstimateNextRequestTokens()
-	if float64(est) <= pruneTriggerFrac*float64(w) {
+	if est <= trigger {
 		return 0
 	}
 	// Memoized refusal: the previous scan already decided that too
@@ -179,7 +189,15 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		reclaimable += t - marker
 	}
 
-	if reclaimable < int(pruneMinGainFrac*float64(historyEst)) {
+	minGain := int(pruneMinGainFrac * float64(historyEst))
+	if adaptive {
+		// A measured prefill overage is worth reclaiming even when it is
+		// smaller than the generic 25% cache-rewrite gate.
+		if overage := est - prefillBudget; overage > 0 && overage < minGain {
+			minGain = overage
+		}
+	}
+	if reclaimable < minGain {
 		l.pruneRefusedEst = est // remember: don't re-scan until it grows
 		return 0                // not worth invalidating the KV cache
 	}
@@ -195,10 +213,12 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	l.persistProjection(context.Background())
 
 	ev := ToolResultsPrunedEvent{
-		Pruned:    len(victims),
-		Reclaimed: reclaimable,
-		Estimated: est,
-		Window:    w,
+		Pruned:          len(victims),
+		Reclaimed:       reclaimable,
+		Estimated:       est,
+		Window:          w,
+		Threshold:       trigger,
+		ThresholdSource: triggerSource,
 	}
 	if out != nil {
 		select {

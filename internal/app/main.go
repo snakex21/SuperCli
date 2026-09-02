@@ -453,6 +453,11 @@ func Main() {
 
 	applyPricingStartup(dataDir, caps)
 
+	// Daily per-endpoint request counter (request_budget.json) —
+	// feeds "N/100 today" style quota visibility for metered
+	// providers such as the OpenCode Zen free tier.
+	llm.InitRequestBudget(dataDir)
+
 	// F13: session store + optional search_history tool.
 	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry)
 	if sessStore != nil {
@@ -497,6 +502,7 @@ func Main() {
 		scopedContextWindowFor: scopedContextWindowFor,
 		autoSummarizer:         autoSummarizer,
 		learned:                learned,
+		prefillProfiles:        cw.PrefillProfiles,
 		execProfile:            execProfile,
 		taskParallel:           taskParallel,
 		taskParallelWarnLocal:  taskParallelWarnLocal,

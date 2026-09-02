@@ -57,7 +57,7 @@ func TestStripThinkingFromMessage_ReasoningOnlyStaysProviderValid(t *testing.T) 
 	if err := got.Validate(); err != nil {
 		t.Fatalf("reasoning-only assistant became invalid: %+v: %v", got, err)
 	}
-	if got.Content != "[no visible answer]" {
+	if got.Content != noVisibleAnswerPlaceholder {
 		t.Fatalf("placeholder = %q", got.Content)
 	}
 	if strings.Contains(got.Content, "private reasoning") {
@@ -124,6 +124,48 @@ func TestLoop_HistoryStripsThinkingButStorageKeepsIt(t *testing.T) {
 	}
 }
 
+func TestLoop_TypedReasoningIsStreamedAndPersistedSeparately(t *testing.T) {
+	prov := &stubProvider{name: "typed-reasoning", scripts: [][]llm.Delta{{
+		{Reasoning: "check the inputs"},
+		{Content: "Answer"},
+		{FinishReason: "stop", Usage: &llm.Usage{Output: 9, Reasoning: 4}},
+	}}}
+	w := &recordingWriter{}
+	loop, err := NewLoop(LoopConfig{Provider: prov, Registry: emptyRegistry(), Writer: w})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := loop.Run(context.Background(), "question")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reasoning, answer strings.Builder
+	for ev := range events {
+		switch e := ev.(type) {
+		case ReasoningEvent:
+			reasoning.WriteString(e.Text)
+		case MessageEvent:
+			answer.WriteString(e.Text)
+		}
+	}
+	if reasoning.String() != "check the inputs" || answer.String() != "Answer" {
+		t.Fatalf("reasoning=%q answer=%q", reasoning.String(), answer.String())
+	}
+	var persisted string
+	for _, msg := range w.messages {
+		if msg.Role != llm.RoleAssistant {
+			continue
+		}
+		persisted += msg.Content
+		for _, part := range msg.Parts {
+			persisted += part.Text
+		}
+	}
+	if persisted != "<thinking>check the inputs</thinking>\nAnswer" {
+		t.Fatalf("persisted typed stream = %q", persisted)
+	}
+}
+
 // TestLoadConversation_StripsThinking proves resumed assistant turns are
 // stripped so the live prefix stays consistent with fresh turns.
 func TestLoadConversation_StripsThinking(t *testing.T) {
@@ -184,7 +226,7 @@ func TestCaptureThinking_NoMarkersIsFastPath(t *testing.T) {
 
 func TestCaptureThinkingFromMessage_AcrossContentAndParts(t *testing.T) {
 	msg := llm.Message{
-		Role: llm.RoleAssistant,
+		Role:    llm.RoleAssistant,
 		Content: "first <thinking>one</thinking> middle",
 		Parts: []llm.ContentPart{
 			{Type: llm.PartTypeText, Text: "<reasoning>two</reasoning>tail"},

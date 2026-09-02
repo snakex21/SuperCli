@@ -112,7 +112,7 @@ func TestServerSharedUIRuntimeIsAvailableWithCustomUI(t *testing.T) {
 		t.Fatalf("shared runtime response = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, required := range []string{"SuperCliUI", "readSSE", "normalizeFileChanges", "mutationKind"} {
+	for _, required := range []string{"SuperCliUI", "readSSE", "createComposerDraftStore", "normalizeFileChanges", "mutationKind", "terminalSeen"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shared runtime is missing %q", required)
 		}
@@ -260,6 +260,74 @@ func TestStoppedRunRecoversMessageRewind(t *testing.T) {
 	}
 }
 
+func TestHardProtocolLongTranscriptRenderingIsBounded(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"var transcriptPageSize = 60",
+		"var transcriptFollowTail = true",
+		"smartScrollFrame = requestAnimationFrame",
+		"if ((!transcriptFollowTail && !smartScrollForced) || smartScrollFrame !== null) return",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("long-transcript rendering guard is missing %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"content-visibility: auto", "contain-intrinsic-size: auto 72px"} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("offscreen transcript containment is missing %q", required)
+		}
+	}
+}
+
+func TestLiveAssistantSegmentSurvivesFollowingToolCalls(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"var transcriptLiveAppend = false",
+		"function sealAssistantSegment(node)",
+		"sealAssistantSegment(current);",
+		"if (!current || current._sealed) current = addAssistantMsg()",
+		"function releaseLiveTranscriptBlocks()",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("live assistant/tool boundary is missing %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(css), ".stream > .transcript-live { content-visibility: visible; }") {
+		t.Fatal("live transcript blocks can still be culled by content-visibility")
+	}
+}
+
+func TestBulkFileChangesStayGroupedAndCollapsed(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"row.open = changes.length <= 8",
+		"function commonFileChangeDirectory(changes)",
+		"file-change-group-list",
+		"t(\"change.\" + kind) + \" · \" + grouped[kind].length",
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("bulk file-change summary is missing %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{".file-change-counts", ".file-change-group-header", "max-height: 320px; overflow: auto"} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("bulk file-change styles are missing %q", required)
+		}
+	}
+}
+
 func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	content, err := assetsFS.ReadFile("assets/app.css")
 	if err != nil {
@@ -273,6 +341,32 @@ func TestModelPaletteListCanShrinkAndScroll(t *testing.T) {
 	} {
 		if !strings.Contains(css, required) {
 			t.Fatalf("model palette is missing responsive scroll rule %q", required)
+		}
+	}
+}
+
+func TestProviderChooserFiltersVisibleCards(t *testing.T) {
+	js := readEmbeddedAppJS(t)
+	for _, required := range []string{
+		"function renderProviderChooser(templates)",
+		"normalizeProviderSearch",
+		`classList.toggle("provider-template-filtered", !show)`,
+		`renderProviderForm(templates, null, tpl)`,
+	} {
+		if !strings.Contains(js, required) {
+			t.Fatalf("provider chooser is missing %q", required)
+		}
+	}
+	css, err := assetsFS.ReadFile("assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		".provider-template-filtered { display: none !important; }",
+		".provider-chooser-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }",
+	} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("provider chooser styles are missing %q", required)
 		}
 	}
 }

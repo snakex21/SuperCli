@@ -69,16 +69,21 @@ func TestStatsCallSink_Conversion(t *testing.T) {
 	rec := stats.NewMemory()
 	sink := statsCallSink(rec)
 	sink(llm.CallStat{
-		Purpose:    "navigator",
-		Provider:   "openai",
-		Model:      "m",
-		Background: false,
-		Canceled:   true,
-		Failed:     true,
-		TTFT:       1500 * time.Microsecond,
-		Duration:   2 * time.Millisecond,
-		TokensIn:   10,
-		TokensOut:  20,
+		Purpose:                "navigator",
+		Provider:               "openai",
+		Model:                  "m",
+		Background:             false,
+		Canceled:               true,
+		Failed:                 true,
+		TTFT:                   1500 * time.Microsecond,
+		Duration:               2 * time.Millisecond,
+		TokensIn:               10,
+		TokensOut:              20,
+		TokensCached:           4,
+		PrefillEvaluated:       6,
+		PrefillTokensPerSecond: 400,
+		PrefillBudget:          20_000,
+		PrefillBudgetSource:    "prefill-profile",
 	})
 	calls := rec.Calls()
 	if len(calls) != 1 {
@@ -96,6 +101,10 @@ func TestStatsCallSink_Conversion(t *testing.T) {
 	}
 	if c.TokensIn != 10 || c.TokensOut != 20 {
 		t.Errorf("tokens = %d/%d", c.TokensIn, c.TokensOut)
+	}
+	if c.TokensCached != 4 || c.PrefillEvaluated != 6 || c.PrefillTokensPerSecond != 400 ||
+		c.PrefillBudget != 20_000 || c.PrefillBudgetSource != "prefill-profile" {
+		t.Errorf("prefill telemetry = %+v", c)
 	}
 	// Nil recorder disables metering entirely.
 	if statsCallSink(nil) != nil {

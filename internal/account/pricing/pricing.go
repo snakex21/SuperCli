@@ -69,6 +69,11 @@ func NewFetcher(home string) *Fetcher {
 		sources: []Source{
 			&PricePerTokenSource{},
 			&OpenRouterSource{},
+			// Last, not least: the only source that knows
+			// gateway-exclusive ids (OpenCode Zen "-free" tier) and
+			// their real per-tier context windows. mergePriceEntryMetadata
+			// fills its context_length into rows first seen elsewhere.
+			&ModelsDevSource{},
 		},
 	}
 }
@@ -93,6 +98,26 @@ func LoadCache(home string) []PriceEntry {
 	}
 	if time.Since(cache.FetchedAt) > CacheTTL {
 		return nil // stale
+	}
+	return cache.Entries
+}
+
+// LoadCacheStale reads the cache ignoring the TTL. A day-old entry
+// is wrong only where providers changed their numbers overnight —
+// and a slightly stale real limit beats a generic fallback guess,
+// especially for short-lived processes (batch runs, bot turns) that
+// exit before a background refresh could land. Callers should still
+// kick the background refresh; this only decides what is usable
+// RIGHT NOW.
+func LoadCacheStale(home string) []PriceEntry {
+	path := CachePath(home)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var cache Cache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil
 	}
 	return cache.Entries
 }

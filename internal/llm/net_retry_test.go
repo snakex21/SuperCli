@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -87,7 +88,108 @@ func TestRetryableHTTPStatusRejectsPermanentClientErrors(t *testing.T) {
 	}
 }
 
+func TestProviderRetryAttemptsGives503LongerRecoveryWindow(t *testing.T) {
+	if got := providerRetryAttempts(http.StatusServiceUnavailable); got != 5 {
+		t.Fatalf("503 attempts = %d, want 5", got)
+	}
+	if got := providerRetryAttempts(http.StatusTooManyRequests); got != 3 {
+		t.Fatalf("429 attempts = %d, want conservative 3", got)
+	}
+}
+
+func TestHTTPResponseErrorCompactsGatewayRoutingMetadata(t *testing.T) {
+	body := `{"error":{"message":"Service temporarily unavailable. Please try again shortly."},"providerMetadata":{"gateway":{"routing":"` + strings.Repeat("x", 700) + `"}}}`
+	err := (&HTTPResponseError{Status: http.StatusServiceUnavailable, Body: body}).Error()
+	if !strings.Contains(err, "Service temporarily unavailable") || strings.Contains(err, "providerMetadata") || len(err) > 200 {
+		t.Fatalf("compacted error = %q", err)
+	}
+}
+
+func TestRetryableProviderResponseHandlesWrappedModelUnavailable400(t *testing.T) {
+	body := []byte(`{"error":{"type":"server_error","message":"Error from provider (Console): Upstream request failed: Model is unavailable."}}`)
+	if !isRetryableProviderResponse(http.StatusBadRequest, body) {
+		t.Fatal("wrapped model-unavailable 400 should be retried")
+	}
+	if !isRetryableProviderResponse(http.StatusUnprocessableEntity, body) {
+		t.Fatal("wrapped model-unavailable 422 should be retried")
+	}
+	for _, body := range [][]byte{
+		[]byte(`{"error":{"message":"invalid api key"}}`),
+		[]byte(`{"error":{"message":"model does not exist"}}`),
+		[]byte(`{"error":{"message":"unsupported reasoning_effort"}}`),
+	} {
+		if isRetryableProviderResponse(http.StatusBadRequest, body) {
+			t.Fatalf("permanent 400 must not be retried: %s", body)
+		}
+	}
+}
+
 // --- integration: OpenAI provider over httptest ---
+
+func TestOpenAI_503GetsFiveBoundedAttempts(t *testing.T) {
+	var calls int32
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"Service temporarily unavailable"}}`))
+	})
+	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "temporary-route"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltas := drainDeltas(t, ch)
+	if got := atomic.LoadInt32(&calls); got != 5 {
+		t.Fatalf("calls = %d, want 5", got)
+	}
+	var notices int
+	for _, delta := range deltas {
+		if delta.Notice != "" {
+			notices++
+		}
+	}
+	if notices != 4 || deltas[len(deltas)-1].Err == nil {
+		t.Fatalf("notices=%d terminal=%v", notices, deltas[len(deltas)-1].Err)
+	}
+}
+
+func TestOpenAI_WrappedModelUnavailable400Retries(t *testing.T) {
+	var calls int32
+	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"type":"server_error","message":"Error from provider (Console): Upstream request failed: Model is unavailable."}}`))
+			return
+		}
+		sseResponse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, Model: "minimax/minimax-m3:free"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltas := drainDeltas(t, ch)
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("calls = %d, want 2", got)
+	}
+	var text strings.Builder
+	for _, d := range deltas {
+		if d.Err != nil {
+			t.Fatalf("unexpected terminal error after retry: %v", d.Err)
+		}
+		text.WriteString(d.Content)
+	}
+	if text.String() != "ok" {
+		t.Fatalf("text = %q, want ok", text.String())
+	}
+}
 
 // openai429ThenOK returns 429 (with the given Retry-After header, if
 // non-empty) for the first n requests, then a normal SSE completion.
@@ -242,6 +344,43 @@ func TestOpenAI_429_RetryAfterSecondsHonored(t *testing.T) {
 	drainDeltas(t, ch)
 	if elapsed := time.Since(start); elapsed < 900*time.Millisecond {
 		t.Errorf("elapsed = %v, want >= ~1s (Retry-After honoured)", elapsed)
+	}
+}
+
+func TestOpenAI_429LongRetryAfterFailsImmediatelyWithMetadata(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Retry-After", "3600")
+		http.Error(w, `{"error":{"message":"daily limit"}}`, http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", Model: "limited"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	stream, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got error
+	for delta := range stream {
+		if delta.Err != nil {
+			got = delta.Err
+		}
+	}
+	if got == nil {
+		t.Fatal("expected 429 error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("long Retry-After slept for %v", elapsed)
+	}
+	if calls != 1 {
+		t.Fatalf("server calls = %d, want 1", calls)
+	}
+	if retryAfter, ok := RateLimitRetryAfter(got); !ok || retryAfter != time.Hour {
+		t.Fatalf("rate-limit metadata = %v, %v", retryAfter, ok)
 	}
 }
 

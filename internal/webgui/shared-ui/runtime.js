@@ -48,10 +48,15 @@
     var reader = body.getReader();
     var decoder = new TextDecoder();
     var buffer = "";
+    var eventCount = 0;
+    var terminalSeen = false;
 
     function emit(frame) {
       var event = decodeSSEFrame(frame);
-      if (event) onEvent(event);
+      if (!event) return;
+      eventCount++;
+      if (event.type === "done" || event.type === "error") terminalSeen = true;
+      onEvent(event);
     }
 
     for (;;) {
@@ -64,6 +69,146 @@
     }
     buffer += decoder.decode();
     if (buffer.trim()) emit(buffer);
+    // /api/chat promises a terminal frame. A clean HTTP EOF without one used
+    // to look like success to consumers, which made an unfinished answer (or
+    // an ask_user call) simply disappear when the UI unlocked the composer.
+    if (eventCount > 0 && !terminalSeen) {
+      throw new Error("SSE stream ended before a terminal event");
+    }
+  }
+
+  function createComposerDraftStore(options) {
+    options = options || {};
+    var input = options.input;
+    var storageKey = String(options.storageKey || "composer-drafts-v1");
+    var getScope = typeof options.getScope === "function" ? options.getScope : function () { return "new"; };
+    var onRestore = typeof options.onRestore === "function" ? options.onRestore : function () {};
+    var drafts = Object.create(null);
+    var touched = false;
+    var saveTimer = 0;
+    var maxEntries = 40;
+    var maxTotalChars = 300000;
+
+    function scope() {
+      return String(getScope() || "new");
+    }
+    function normalize(raw) {
+      var result = Object.create(null);
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
+      Object.keys(raw).forEach(function (key) {
+        var item = raw[key];
+        if (typeof item === "string") item = { text: item, updated: 0 };
+        if (!item || typeof item.text !== "string" || !item.text) return;
+        result[key] = { text: item.text.slice(0, 100000), updated: Number(item.updated) || 0 };
+      });
+      return compact(result);
+    }
+    function compact(source) {
+      var entries = Object.keys(source).map(function (key) {
+        return { key: key, text: String(source[key].text || ""), updated: Number(source[key].updated) || 0 };
+      }).filter(function (item) { return item.text; });
+      entries.sort(function (a, b) { return b.updated - a.updated; });
+      var result = Object.create(null);
+      var chars = 0;
+      entries.slice(0, maxEntries).forEach(function (item) {
+        if (chars >= maxTotalChars) return;
+        var text = item.text.slice(0, Math.min(100000, maxTotalChars - chars));
+        if (!text) return;
+        result[item.key] = { text: text, updated: item.updated };
+        chars += text.length;
+      });
+      return result;
+    }
+    function merge(base, incoming) {
+      Object.keys(incoming).forEach(function (key) {
+        if (!base[key] || incoming[key].updated >= base[key].updated) base[key] = incoming[key];
+      });
+      return compact(base);
+    }
+    function patchBody() {
+      var patch = {};
+      patch[storageKey] = drafts;
+      return JSON.stringify(patch);
+    }
+    function saveLocal() {
+      try { localStorage.setItem(storageKey, JSON.stringify(drafts)); } catch (error) {}
+    }
+    function persistNow() {
+      clearTimeout(saveTimer);
+      saveTimer = 0;
+      saveLocal();
+      return requestJSON("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: patchBody(),
+        keepalive: true,
+      }).catch(function () {});
+    }
+    function schedulePersist() {
+      saveLocal();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(persistNow, 250);
+    }
+    function capture() {
+      if (!input) return;
+      touched = true;
+      var key = scope();
+      var text = String(input.value || "");
+      if (text) drafts[key] = { text: text, updated: Date.now() };
+      else delete drafts[key];
+      drafts = compact(drafts);
+      schedulePersist();
+    }
+    function restore(key) {
+      if (!input) return "";
+      key = String(key || scope());
+      var text = drafts[key] ? drafts[key].text : "";
+      input.value = text;
+      onRestore(text);
+      return text;
+    }
+    function clear(key, expectedText) {
+      key = String(key || scope());
+      var current = drafts[key];
+      if (!current) return false;
+      if (expectedText !== undefined && current.text !== String(expectedText)) return false;
+      delete drafts[key];
+      schedulePersist();
+      return true;
+    }
+    async function load() {
+      var local = Object.create(null);
+      try { local = normalize(JSON.parse(localStorage.getItem(storageKey) || "{}")); } catch (error) {}
+      drafts = merge(drafts, local);
+      try {
+        var response = await requestJSON("/api/settings", { cache: "no-store" });
+        var server = normalize(response && response.settings ? response.settings[storageKey] : null);
+        drafts = merge(server, drafts);
+      } catch (error) {}
+      saveLocal();
+      if (!touched) restore();
+      return drafts;
+    }
+    function flushForPageHide() {
+      if (input) {
+        var key = scope();
+        var text = String(input.value || "");
+        if (text) drafts[key] = { text: text, updated: Date.now() };
+        else delete drafts[key];
+        drafts = compact(drafts);
+      }
+      saveLocal();
+      if (navigator.sendBeacon) {
+        try {
+          navigator.sendBeacon("/api/settings", new Blob([patchBody()], { type: "application/json" }));
+          return;
+        } catch (error) {}
+      }
+      persistNow();
+    }
+    if (input && typeof input.addEventListener === "function") input.addEventListener("input", capture);
+    if (global && typeof global.addEventListener === "function") global.addEventListener("pagehide", flushForPageHide);
+    return Object.freeze({ load: load, capture: capture, restore: restore, clear: clear, flush: persistNow, scope: scope });
   }
 
   function mutationKind(name, output, isError) {
@@ -357,6 +502,7 @@
     requestJSON: requestJSON,
     decodeSSEFrame: decodeSSEFrame,
     readSSE: readSSE,
+    createComposerDraftStore: createComposerDraftStore,
     mutationKind: mutationKind,
     normalizeFileChanges: normalizeFileChanges,
     createUserInstructionsEditor: createUserInstructionsEditor,

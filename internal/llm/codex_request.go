@@ -219,9 +219,10 @@ func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoni
 		if effort, ok := reasoning["effort"].(string); !ok || strings.TrimSpace(effort) == "" {
 			reasoning["effort"] = "medium"
 		}
-		if summary, ok := reasoning["summary"].(string); !ok || strings.TrimSpace(summary) == "" {
-			reasoning["summary"] = "auto"
-		}
+		// Ask every catalog-advertised reasoning model for the richest summary
+		// the standard Responses API exposes. This is capability-driven; no
+		// model-name allowlist is involved.
+		reasoning["summary"] = "detailed"
 		req["reasoning"] = reasoning
 		req["include"] = []string{"reasoning.encrypted_content"}
 	}

@@ -76,6 +76,26 @@ func TestHandleChat_StreamsEcho(t *testing.T) {
 	}
 }
 
+func TestHandleChat_NestCafeBlocksEchoWithoutLeakingPromptAddons(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.eng.SetAppProfile("nestcafe")
+	secret := "[relevant_previous_sessions]private recall[/relevant_previous_sessions]"
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"prompt":"`+secret+`"}`))
+	rec := httptest.NewRecorder()
+	srv.handleChat(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want SSE 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"error"`) || !strings.Contains(body, "tryb echo") {
+		t.Fatalf("missing safe terminal configuration error: %s", body)
+	}
+	if strings.Contains(body, secret) || strings.Contains(body, `"type":"message"`) || strings.Contains(body, `"type":"done"`) {
+		t.Fatalf("echo leaked model input or reported success: %s", body)
+	}
+}
+
 func TestHandleChat_AttachmentOnlyPromptAndRichReaders(t *testing.T) {
 	srv := newTestServer(t, false)
 	path := filepath.Join(srv.eng.Home(), "scan.png")

@@ -17,7 +17,8 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 	if cfg.IsEcho() {
 		return llm.NewEcho(cfg.Model)
 	}
-	if cfg.Provider == config.ProviderResponses {
+	zenInfo, zenModel := llm.ResolveOpenCodeZenModelMetadata(dataDir, cfg.BaseURL, cfg.Model, caps)
+	if cfg.Provider == config.ProviderResponses || (zenModel && zenInfo.Transport == llm.ModelTransportResponses) {
 		return llm.NewResponses(llm.ResponsesConfig{
 			BaseURL:        cfg.BaseURL,
 			APIKey:         cfg.APIKey,
@@ -26,6 +27,20 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 			ConnectTimeout: cfg.ConnectTimeout,
 			Capabilities:   caps,
 		})
+	}
+	if zenModel && zenInfo.Transport == llm.ModelTransportAnthropic {
+		return llm.NewAnthropic(llm.AnthropicConfig{
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			MaxTokens:      cfg.MaxTokens,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
+	if zenModel && zenInfo.Transport == llm.ModelTransportGoogle {
+		return nil, fmt.Errorf("opencode Zen model %q requires Google transport, which this engine does not support yet", cfg.Model)
 	}
 	if cfg.Provider == config.ProviderOpencode {
 		// F15: opencode headless gateway. The

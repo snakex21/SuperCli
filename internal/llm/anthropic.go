@@ -204,6 +204,10 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		if p.cfg.APIKey != "" {
 			req.Header.Set("x-api-key", p.cfg.APIKey)
 		}
+		if isOpenCodeZenBaseURL(p.cfg.BaseURL) && req.Header.Get("x-api-key") == "" {
+			req.Header.Set("x-api-key", "public")
+		}
+		ApplyOpenCodeZenHeaders(req, p.cfg.BaseURL)
 		resp, err := doWithResponseHeaderTimeout(p.http, req, p.cfg.Timeout, cancel)
 		if err != nil {
 			return nil, fmt.Errorf("http: %w", err)
@@ -243,7 +247,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 			}
 			continue
 		}
-		if !isRetryableHTTPStatus(resp.StatusCode) {
+		if !isRetryableProviderResponse(resp.StatusCode, respBody) {
 			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
 		}
 		rateAttempts++

@@ -154,6 +154,13 @@ type Loop struct {
 	scopedWindowFor  func(provider, model string) ContextWindowResolution
 	summarizer       Summarizer
 	learnLimit       func(model string, limit int)
+	// prefillProfiles learns a latency budget from measured prompt size,
+	// reported cache reuse and TTFT. It is scoped by contextProvider+model and
+	// deliberately independent of whether the endpoint looks local or remote.
+	prefillProfiles *llm.PrefillProfiles
+	// lastCallTTFT is measured by consume from stream handoff to the first
+	// non-notice provider delta. The loop is single-owner while running.
+	lastCallTTFT time.Duration
 	// pruneProtect: tool-result tokens protected from pruning
 	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
 	// disabled.
@@ -324,9 +331,10 @@ type Loop struct {
 	// already been applied repeatedMutationLimit times in a Run.
 	identicalWrites identicalSuccessGate
 
-	// emptyReplyNudgeUsed is set when we already forced one "answer the
-	// user after tools" retry in this Run (avoids an infinite empty loop).
-	emptyReplyNudgeUsed bool
+	// emptyReplyNudges counts forced "answer the user after tools" retries.
+	// A small bounded retry handles providers that need one extra turn without
+	// ever allowing an empty post-tool response to masquerade as Done.
+	emptyReplyNudges int
 
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
@@ -597,6 +605,11 @@ type LoopConfig struct {
 	// can be persisted per model.
 	LearnLimit func(model string, limit int)
 
+	// PrefillProfiles enables endpoint/model-scoped adaptive prompt budgets.
+	// Profiles are persisted by the shared store in the portable data directory.
+	// Nil keeps the historical hard-window-only policy for embedders/tests.
+	PrefillProfiles *llm.PrefillProfiles
+
 	// PruneProtectTokens is the size of the freshest tool-result
 	// tail (estimated tokens) protected from the zero-LLM prune
 	// pass (prune.go). 0 = window-scaled default. Negative
@@ -725,7 +738,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
-	l.emptyReplyNudgeUsed = false
+	l.emptyReplyNudges = 0
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.
@@ -750,6 +763,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
 	var repeatProg repeatProgress
+	var economyProg toolEconomyProgress
 	l.identicalFails = identicalFailureGate{}
 	l.identicalWrites = identicalSuccessGate{}
 	// F11: reset the policy's per-Run "drafted" set
@@ -762,7 +776,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	}
 	stepLimit := l.maxSteps
 	for step := 0; step < stepLimit; step++ {
-		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &repeatProg, stepLimit) {
+		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &repeatProg, &economyProg, stepLimit) {
 		case stepContinue:
 			continue
 		case stepDone, stepAbort:

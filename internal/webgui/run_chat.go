@@ -146,9 +146,22 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err := s.eng.runStreamWithImages(r.Context(), visiblePrompt, req.SessionID, strings.Join(userAddons, "\n\n"), directImages, emit); err != nil {
 		// Surface run-setup failures (provider/loop build) as a final
 		// error frame so the UI can show them instead of a dead stream.
-		emit(wireEvent{Type: "error", Err: err.Error()})
+		if !terminalSeen {
+			emit(wireEvent{Type: "error", Err: err.Error()})
+		}
 		flusher.Flush()
 		log.Printf("web chat ended with error: model=%q session=%q duration=%s events=%d err=%v", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, err)
+		return
+	}
+	// Defensive protocol guarantee: even if an agent/provider channel closes
+	// cleanly without publishing DoneEvent or ErrorEvent, every browser stream
+	// still ends with an explicit terminal frame. The shared UI runtime also
+	// validates this contract so future proxy regressions cannot fail silently.
+	if !terminalSeen {
+		err := fmt.Errorf("agent event stream ended before a terminal event")
+		emit(wireEvent{Type: "error", Err: err.Error()})
+		flusher.Flush()
+		log.Printf("web chat ended without terminal event: model=%q session=%q duration=%s events=%d", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount)
 		return
 	}
 	log.Printf("web chat completed: model=%q session=%q duration=%s events=%d terminal=%t last=%q", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, terminalSeen, lastType)

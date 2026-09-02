@@ -18,19 +18,23 @@ import (
 type ModelInfo struct {
 	ID       string `json:"id"`
 	Provider string `json:"provider,omitempty"`
-	Vision   bool   `json:"vision"`
+	// Transport is the provider SDK/wire protocol advertised by a dynamic
+	// catalog (openai-compatible, responses, anthropic, google).
+	Transport string `json:"transport,omitempty"`
+	Vision    bool   `json:"vision"`
 	// VisionKnown distinguishes an authoritative "text only" result from a
 	// provider that did not publish modality metadata at all.
-	VisionKnown   bool      `json:"vision_known,omitempty"`
-	ToolUse       bool      `json:"tool_use"`
-	Stream        bool      `json:"stream"`
-	Reasoning     bool      `json:"reasoning"`
-	ContextLength int       `json:"context_length,omitempty"`
-	InputCost     float64   `json:"input_cost,omitempty"`
-	OutputCost    float64   `json:"output_cost,omitempty"`
-	Notes         string    `json:"notes,omitempty"`
-	LastVerified  time.Time `json:"last_verified,omitempty"`
-	Source        Source    `json:"-"`
+	VisionKnown    bool      `json:"vision_known,omitempty"`
+	ToolUse        bool      `json:"tool_use"`
+	Stream         bool      `json:"stream"`
+	Reasoning      bool      `json:"reasoning"`
+	ReasoningKnown bool      `json:"reasoning_known,omitempty"`
+	ContextLength  int       `json:"context_length,omitempty"`
+	InputCost      float64   `json:"input_cost,omitempty"`
+	OutputCost     float64   `json:"output_cost,omitempty"`
+	Notes          string    `json:"notes,omitempty"`
+	LastVerified   time.Time `json:"last_verified,omitempty"`
+	Source         Source    `json:"-"`
 }
 
 // ModelCapabilities is the small struct used by the

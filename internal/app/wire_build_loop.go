@@ -37,6 +37,7 @@ type loopAssembly struct {
 	scopedContextWindowFor func(provider, model string) agent.ContextWindowResolution
 	autoSummarizer         agent.Summarizer
 	learned                *learnedLimits
+	prefillProfiles        *llm.PrefillProfiles
 	execProfile            execution.Profile
 	taskParallel           bool
 	taskParallelWarnLocal  bool
@@ -78,6 +79,7 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 		ScopedContextWindowFor: a.scopedContextWindowFor,
 		Summarizer:             a.autoSummarizer,
 		LearnLimit:             a.learned.Learn,
+		PrefillProfiles:        a.prefillProfiles,
 		// Zero-LLM tool-result prune (first line of context defense,
 		// before the summary fallback). Config prune_protect_tokens:
 		// 0 = scale with the active model window, negative = off.

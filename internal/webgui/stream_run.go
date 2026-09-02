@@ -21,6 +21,14 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 }
 
 func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, userAddon string, images []llm.ImageRef, emit func(wireEvent)) error {
+	// Echo is a deliberate CLI/development provider. It repeats the complete
+	// model input verbatim, including private cross-session recall and other
+	// internal add-ons. A branded end-user app must never use it as a silent
+	// fallback when configuration loading fails.
+	_, chatReady := e.ProviderStatus()
+	if !chatReady {
+		return fmt.Errorf("NestCafe nie ma aktywnego dostawcy AI: testowy tryb echo został zablokowany; wybierz ponownie model w Ustawieniach")
+	}
 	runStarted := time.Now()
 	askCh := make(chan tools.AskRequest, 3)
 	activeQuestions := []string{}
@@ -34,6 +42,15 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return err
 	}
+	// Cross-session memory is persisted from the already-written transcript,
+	// with no summarizer/model call. Do it on every exit: the helper skips
+	// empty/meaningless runs, and a local SQLite read+upsert is tiny compared
+	// with provider latency.
+	defer func() {
+		memoryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		e.saveWebSessionCapsule(memoryCtx, sid)
+	}()
 	if strings.TrimSpace(sessionID) == "" {
 		// Fresh session: the LLM title summary runs only after this
 		// answer has fully streamed AND the session sat idle — the
@@ -73,8 +90,19 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
-	if strings.TrimSpace(userAddon) != "" {
-		loop.SetNextUserAddon(userAddon)
+	// Pull only a few relevant capsules from OTHER conversations. This is a
+	// local FTS5 lookup (no model/embedding call), capped to a few hundred
+	// tokens so remembering old work does not add perceptible drag.
+	recallAddon := e.webRelevantSessionMemory(ctx, home, prompt, sid, webSessionRecallTokens)
+	combinedAddon := strings.TrimSpace(userAddon)
+	if recallAddon != "" {
+		if combinedAddon != "" {
+			combinedAddon += "\n\n"
+		}
+		combinedAddon += recallAddon
+	}
+	if combinedAddon != "" {
+		loop.SetNextUserAddon(combinedAddon)
 	}
 	if len(images) > 0 {
 		loop.SetNextUserImages(images)
@@ -127,6 +155,19 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			}
 		}
 		progressTimer.Reset(progressTimeout)
+		progressC = progressTimer.C
+	}
+	pauseProgress := func() {
+		if progressTimer == nil {
+			return
+		}
+		progressC = nil
+		if !progressTimer.Stop() {
+			select {
+			case <-progressTimer.C:
+			default:
+			}
+		}
 	}
 	coalescer := &messageCoalescer{emit: emit}
 	var messageTimer *time.Timer
@@ -165,6 +206,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	defer flushMessages()
 	toolCalls := 0
 	toolFailures := 0
+	sawVisibleReasoning := false
 	turnSaved := false
 	terminalUsage := agent.Usage{}
 	// Per-turn tool diagnostics: ToolResultEvent carries no tool name, so
@@ -334,6 +376,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 				}
 			}
 			resetProgress()
+			if _, ok := ev.(agent.ReasoningEvent); ok {
+				sawVisibleReasoning = true
+			}
 			if _, ok := ev.(agent.ToolCallEvent); ok {
 				toolCalls++
 			}
@@ -353,6 +398,12 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			}
 			if done, ok := ev.(agent.DoneEvent); ok {
 				terminalUsage = done.Usage
+				if !sawVisibleReasoning {
+					if fallback := reasoningFallbackText(done.Usage.Reasoning); fallback != "" {
+						send(wireEvent{Type: "reasoning", Text: fallback, ReasoningTok: done.Usage.Reasoning})
+						sawVisibleReasoning = true
+					}
+				}
 				saveTurnSummary()
 			}
 			if failed, ok := ev.(agent.ErrorEvent); ok {
@@ -373,6 +424,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 				send(w)
 			}
 		case req := <-askCh:
+			// Waiting for a human answer is not provider inactivity. Suspend the
+			// model-progress watchdog until ask_user completes and the agent emits
+			// its tool result / next model event. ask_user has its own much longer
+			// interaction timeout and the request context still cancels promptly.
+			pauseProgress()
 			activeQuestions = append(activeQuestions, req.ID)
 			question := e.registerQuestion(req)
 			send(wireEvent{Type: "question", Question: &question})

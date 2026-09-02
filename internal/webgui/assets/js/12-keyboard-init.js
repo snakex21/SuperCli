@@ -46,6 +46,7 @@ document.addEventListener("keydown", function (e) {
   await loadUI();
   applyI18n();
   var h = await checkHealth();
+  await composerDraftStore.load();
   if (h) {
     if (h.model) loadReasoning();
     loadModels();

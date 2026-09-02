@@ -79,6 +79,28 @@ func TestFailoverDoesNotSwitchAfterContent(t *testing.T) {
 	}
 }
 
+func TestFailoverDoesNotSwitchAfterReasoning(t *testing.T) {
+	primary := &failoverTestProvider{name: "local", complete: func(int) (<-chan Delta, error) {
+		return deltaStream(Delta{Reasoning: "partial plan"}, Delta{Err: errors.New("late")}), nil
+	}}
+	backup := &failoverTestProvider{name: "cloud", complete: func(int) (<-chan Delta, error) {
+		return deltaStream(Delta{Content: "wrong"}), nil
+	}}
+	f, _ := NewFailover(time.Second, nil, primary, backup)
+	ch, err := f.Complete(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawReasoning, sawLate bool
+	for d := range ch {
+		sawReasoning = sawReasoning || d.Reasoning != ""
+		sawLate = sawLate || d.Err != nil
+	}
+	if !sawReasoning || !sawLate || backup.calls != 0 {
+		t.Fatalf("reasoning=%v late=%v backup calls=%d", sawReasoning, sawLate, backup.calls)
+	}
+}
+
 func TestFailoverDoesNotSwitchAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	primary := &failoverTestProvider{name: "local", complete: func(int) (<-chan Delta, error) {
@@ -97,5 +119,32 @@ func TestFailoverDoesNotSwitchAfterCancellation(t *testing.T) {
 	}
 	if backup.calls != 0 {
 		t.Fatalf("cancellation triggered %d backup calls", backup.calls)
+	}
+}
+
+func TestFailoverHonorsRateLimitRetryAfter(t *testing.T) {
+	primary := &failoverTestProvider{name: "limited", complete: func(int) (<-chan Delta, error) {
+		return deltaStream(Delta{Err: &HTTPResponseError{
+			Status:        429,
+			Body:          "daily limit",
+			RetryAfter:    time.Hour,
+			HasRetryAfter: true,
+		}}), nil
+	}}
+	backup := &failoverTestProvider{name: "backup", complete: func(int) (<-chan Delta, error) {
+		return deltaStream(Delta{Content: "ok"}), nil
+	}}
+	f, err := NewFailover(time.Second, nil, primary, backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := f.Complete(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	if remaining := time.Until(f.failedUntil[0]); remaining < 59*time.Minute {
+		t.Fatalf("rate-limited backend cooldown = %v, want approximately one hour", remaining)
 	}
 }

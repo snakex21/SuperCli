@@ -105,12 +105,93 @@ async function renderProvidersList() {
   panelContent.appendChild(g);
 }
 
-function renderProviderForm(templates, existing) {
+function normalizeProviderSearch(value) {
+  var text = String(value || "").toLowerCase();
+  return text.normalize ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : text;
+}
+
+function renderProviderChooser(templates) {
   panelContent.innerHTML = "";
-  var g = el("div", "group");
-  var lbl = el("div", "g-label", existing ? t("prov.save") + ": " + existing.Name : t("prov.addNew"));
+  var chooser = el("div", "provider-chooser");
+  var head = el("div", "provider-chooser-head");
+  var copy = el("div", "provider-chooser-copy");
+  copy.appendChild(el("strong", "", ui.lang === "pl" ? "Wybierz dostawcę" : "Choose a provider"));
+  copy.appendChild(el("span", "note", ui.lang === "pl"
+    ? "Wybierz gotową integrację albo skonfiguruj własny endpoint."
+    : "Choose a ready integration or configure a custom endpoint."));
+  head.appendChild(copy);
   var back = el("button", "g-act", "‹ " + t("common.back"));
   back.addEventListener("click", renderProvidersList);
+  head.appendChild(back);
+  chooser.appendChild(head);
+
+  var templateSearch = document.createElement("input");
+  templateSearch.type = "search";
+  templateSearch.className = "field-input provider-template-search";
+  templateSearch.placeholder = ui.lang === "pl" ? "Szukaj dostawcy, np. OpenAI lub Ollama…" : "Search providers, e.g. OpenAI or Ollama…";
+  templateSearch.setAttribute("aria-label", ui.lang === "pl" ? "Szukaj dostawcy" : "Search providers");
+  templateSearch.autocomplete = "off";
+  templateSearch.spellcheck = false;
+  chooser.appendChild(templateSearch);
+
+  var grid = el("div", "tpl-grid provider-chooser-grid");
+  var choices = [{
+    Name: "custom",
+    DisplayName: ui.lang === "pl" ? "Własny endpoint" : "Custom endpoint",
+    Desc: ui.lang === "pl" ? "OpenAI, Anthropic lub lokalny serwer" : "OpenAI, Anthropic, or a local server",
+    Type: "auto",
+    BaseURL: "",
+    Custom: true,
+  }].concat(templates || []);
+  choices.forEach(function (tpl) {
+    var displayName = tpl.DisplayName || tpl.Name;
+    var b = el("button");
+    b.type = "button";
+    b.dataset.search = normalizeProviderSearch([displayName, tpl.Name, tpl.Desc, tpl.BaseURL].filter(Boolean).join(" "));
+    b.appendChild(providerIconEl(tpl.Name));
+    var txt = el("span", "tpl-txt");
+    txt.appendChild(el("span", "tt", displayName));
+    txt.appendChild(el("span", "ts", tpl.Desc || tpl.BaseURL || ""));
+    b.appendChild(txt);
+    b.addEventListener("click", function () { renderProviderForm(templates, null, tpl); });
+    grid.appendChild(b);
+  });
+  chooser.appendChild(grid);
+
+  var emptySearch = el("div", "note provider-template-empty", ui.lang === "pl" ? "Brak pasujących dostawców." : "No matching providers.");
+  emptySearch.hidden = true;
+  chooser.appendChild(emptySearch);
+  templateSearch.addEventListener("input", function () {
+    var q = normalizeProviderSearch(templateSearch.value.trim());
+    var visible = 0;
+    grid.querySelectorAll("button").forEach(function (button) {
+      var show = !q || button.dataset.search.indexOf(q) >= 0;
+      button.classList.toggle("provider-template-filtered", !show);
+      if (show) visible++;
+    });
+    emptySearch.hidden = visible !== 0;
+  });
+
+  panelContent.appendChild(chooser);
+  templateSearch.focus();
+}
+
+function renderProviderForm(templates, existing, selectedTemplate) {
+  if (!existing && !selectedTemplate) {
+    renderProviderChooser(templates);
+    return;
+  }
+  panelContent.innerHTML = "";
+  var g = el("div", "group");
+  var selectedName = selectedTemplate && !selectedTemplate.Custom ? selectedTemplate.Name : "";
+  var lbl = el("div", "g-label", existing
+    ? t("prov.save") + ": " + existing.Name
+    : (selectedName || (ui.lang === "pl" ? "Własny endpoint" : "Custom endpoint")));
+  var back = el("button", "g-act", "‹ " + t("common.back"));
+  back.addEventListener("click", function () {
+    if (existing) renderProvidersList();
+    else renderProviderChooser(templates);
+  });
   lbl.appendChild(back);
   g.appendChild(lbl);
 
@@ -129,7 +210,7 @@ function renderProviderForm(templates, existing) {
   }
   var nameI = field(t("prov.name"), "name", "text", "my-provider");
   var typeI = field(t("prov.type"), "type", "select");
-  [["openai", "OpenAI Chat Completions"], ["responses", "OpenAI Responses API"], ["anthropic", "Anthropic Messages"], ["opencode", "OpenCode gateway"]].forEach(function (o) {
+  [["auto", ui.lang === "pl" ? "Auto wykryj (OpenAI / Anthropic)" : "Auto detect (OpenAI / Anthropic)"], ["openai", "OpenAI Chat Completions"], ["responses", "OpenAI Responses API"], ["anthropic", "Anthropic Messages"], ["opencode", "OpenCode gateway"]].forEach(function (o) {
     var opt = el("option", "", o[1]); opt.value = o[0]; typeI.appendChild(opt);
   });
   var urlI = field(t("prov.baseUrl"), "base_url", "text", "http://localhost:8080/v1", true);
@@ -164,7 +245,7 @@ function renderProviderForm(templates, existing) {
   });
   keyI.addEventListener("input", syncKeyControls);
 
-  var modelI = existing ? field(t("prov.model"), "model", "text", "") : null;
+  var modelI = field(t("prov.model"), "model", "text", ui.lang === "pl" ? "opcjonalnie — np. nazwa modelu lokalnego" : "optional — e.g. local model id", true);
   var clearI = null;
   if (existing) {
     var lab = el("label", "fw");
@@ -192,7 +273,7 @@ function renderProviderForm(templates, existing) {
     nameI.value = existing.Name; nameI.disabled = true;
     typeI.value = existing.Type || "openai";
     urlI.value = existing.BaseURL || "";
-    if (modelI) modelI.value = existing.Model || "";
+    modelI.value = existing.Model || "";
     keyI.disabled = true;
   }
 
@@ -216,13 +297,27 @@ function renderProviderForm(templates, existing) {
     }
   }
 
+  if (!existing) {
+    if (selectedTemplate) {
+      nameI.value = selectedTemplate.Custom ? "" : (selectedTemplate.Name || "");
+      typeI.value = selectedTemplate.Type || "auto";
+      urlI.value = selectedTemplate.BaseURL || "";
+    } else {
+      typeI.value = "auto";
+    }
+    status.textContent = typeI.value === "auto"
+      ? (ui.lang === "pl"
+        ? "Auto wykryj sprawdza tylko endpoint modeli — bez uruchamiania inferencji. Responses API pozostaje wyborem ręcznym."
+        : "Auto detect probes only the models endpoint — no inference. Responses API remains an explicit choice.")
+      : "";
+  }
+
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     status.textContent = "…";
     try {
       if (existing) {
-        var body = { name: existing.Name, type: typeI.value, base_url: urlI.value.trim() };
-        if (modelI) body.model = modelI.value.trim();
+        var body = { name: existing.Name, type: typeI.value, base_url: urlI.value.trim(), model: modelI.value.trim() };
         if (clearI && clearI.checked) body.api_key = "";
         else if (keyI.value && keyI.value !== initialKey) body.api_key = keyI.value;
         var res = await j("/api/providers", {
@@ -238,12 +333,12 @@ function renderProviderForm(templates, existing) {
         status.textContent = res.scan_error ? "scan: " + res.scan_error : "OK · " + (providerModelCount(res.models) + " " + t("prov.models"));
       } else {
         var res2 = await jpost("/api/providers", {
-          name: nameI.value.trim(), type: typeI.value, base_url: urlI.value.trim(), api_key: keyI.value, model: "",
+          name: nameI.value.trim(), type: typeI.value, base_url: urlI.value.trim(), api_key: keyI.value, model: modelI.value.trim(),
         });
         // A provider kept despite an unfinished scan reports why, so the
         // empty model list does not look like a silent failure.
         if (res2.warning) toast(res2.warning);
-        else toast(t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
+        else toast((res2.type ? res2.type + " · " : "") + t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
         await loadModels();
         await renderProvidersList();
       }
@@ -255,30 +350,6 @@ function renderProviderForm(templates, existing) {
   panelContent.appendChild(g);
   if (existing) loadStoredKey();
 
-  if (!existing && templates.length) {
-    var tg = el("div", "group");
-    tg.appendChild(el("div", "g-label", t("prov.templates")));
-    var grid = el("div", "tpl-grid");
-    templates.forEach(function (tpl) {
-      var b = el("button");
-      b.type = "button";
-      b.appendChild(providerIconEl(tpl.Name));
-      var txt = el("span", "tpl-txt");
-      txt.appendChild(el("span", "tt", tpl.Name));
-      txt.appendChild(el("span", "ts", tpl.Desc || tpl.BaseURL || ""));
-      b.appendChild(txt);
-      b.addEventListener("click", function () {
-        grid.querySelectorAll("button").forEach(function (x) { x.classList.remove("sel"); });
-        b.classList.add("sel");
-        nameI.value = tpl.Name;
-        typeI.value = tpl.Type || "openai";
-        urlI.value = tpl.BaseURL || "";
-      });
-      grid.appendChild(b);
-    });
-    tg.appendChild(grid);
-    panelContent.appendChild(tg);
-  }
 }
 
 /* ── Accounts (Codex) ── */

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -17,13 +18,21 @@ type ContextItem struct {
 // ContextReport is the data behind the /context command: where the
 // input tokens of the current session go.
 type ContextReport struct {
-	Route            string // route of the last Run (chat/advisor/coordinator)
-	Model            string
-	Window           int    // resolved context window (tokens)
-	WindowSource     string // config/provider/catalog/learned/fallback
-	CompactThreshold int    // automatic compaction trigger for this window
-	Visible          int    // messages the model sees
-	Hidden           int    // messages hidden by /clear, compaction, hide_messages
+	Route             string // route of the last Run (chat/advisor/coordinator)
+	Model             string
+	Window            int    // resolved context window (tokens)
+	WindowSource      string // config/provider/catalog/learned/fallback
+	CompactThreshold  int    // automatic compaction trigger for this window
+	ThresholdSource   string // window source or prefill-profile
+	PrefillBudget     int    // learned performance budget, zero when inactive
+	PrefillSamples    int
+	PrefillInput      int
+	PrefillCached     int
+	PrefillEvaluated  int
+	PrefillTTFTMS     int64
+	PrefillTokensPerS float64
+	Visible           int // messages the model sees
+	Hidden            int // messages hidden by /clear, compaction, hide_messages
 
 	EstimatedTokens       int    // chars/4 estimate of the visible conversation
 	RequestTokens         int    // complete next request, including tools/catalog/stamp
@@ -121,18 +130,32 @@ func (l *Loop) Route() RouteMode { return l.route }
 // current visible messages and tool registry.
 func (l *Loop) ContextReport() ContextReport {
 	window := l.windowResolution()
+	hardThreshold := autoCompactThreshold(window.Tokens)
+	threshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)
 	r := ContextReport{
 		Route:            string(l.route),
 		Model:            l.modelID,
 		Window:           window.Tokens,
 		WindowSource:     window.Source,
-		CompactThreshold: autoCompactThreshold(window.Tokens),
+		CompactThreshold: threshold,
+		ThresholdSource:  thresholdSource,
 		Hidden:           l.HiddenCount(),
+	}
+	if profile, ok := l.PrefillProfile(); ok {
+		r.PrefillSamples = profile.Samples
+		r.PrefillInput = profile.LastInputTokens
+		r.PrefillCached = profile.LastCached
+		r.PrefillEvaluated = profile.LastEvaluated
+		r.PrefillTTFTMS = profile.LastTTFTMS
+		r.PrefillTokensPerS = profile.LastTokensPerS
+		if thresholdSource == "prefill-profile" {
+			r.PrefillBudget = threshold
+		}
 	}
 	u := l.SessionUsage()
 	r.UsageIn, r.UsageOut = u.Input, u.Output
 
-	visible := l.VisibleMessages()
+	visible := l.resolvedToolProviderView(l.VisibleMessages())
 	r.Visible = len(visible)
 
 	var items []ContextItem
@@ -234,8 +257,18 @@ func FormatContextReport(r ContextReport) string {
 	fmt.Fprintf(&b, "  messages: %d visible, %d hidden\n", r.Visible, r.Hidden)
 	fmt.Fprintf(&b, "  estimated context: ~%d tok%s [%s]\n", total, pct(total), r.RequestEstimateSource)
 	if r.Window > 0 && r.CompactThreshold > 0 {
-		fmt.Fprintf(&b, "  automatic compaction: %d tok (%.1f%%; window minus reserve)\n",
-			r.CompactThreshold, float64(r.CompactThreshold)*100/float64(r.Window))
+		if r.ThresholdSource == "prefill-profile" {
+			fmt.Fprintf(&b, "  automatic compaction: %d tok (adaptive prefill budget; hard window %d)\n",
+				r.CompactThreshold, r.Window)
+		} else {
+			fmt.Fprintf(&b, "  automatic compaction: %d tok (%.1f%%; window minus reserve)\n",
+				r.CompactThreshold, float64(r.CompactThreshold)*100/float64(r.Window))
+		}
+	}
+	if r.PrefillSamples > 0 {
+		fmt.Fprintf(&b, "  prefill telemetry: %d evaluated / %d input tok, %d cached, TTFT %s, ~%.0f tok/s (%d samples)\n",
+			r.PrefillEvaluated, r.PrefillInput, r.PrefillCached,
+			time.Duration(r.PrefillTTFTMS)*time.Millisecond, r.PrefillTokensPerS, r.PrefillSamples)
 	}
 	if r.RequestEstimateSource == "provider+delta" {
 		fmt.Fprintf(&b, "    exact provider base:      %d tok (raw now ~%d)\n", r.ExactRequestBase, r.RawRequestTokens)

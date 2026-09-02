@@ -7,7 +7,7 @@ import "fmt"
 // expected to accumulate Content and ToolCall fragments into a
 // final message.
 //
-// Exactly one of Content or ToolCall is typically set per Delta;
+// Exactly one of Content, Reasoning, or ToolCall is typically set per Delta;
 // the channel sends a final Delta with FinishReason set and no
 // Content. On error, a single Delta{Err: ...} is sent and the
 // channel is closed.
@@ -19,6 +19,12 @@ type Delta struct {
 	// Content is a text fragment. Empty for deltas that only
 	// carry tool calls or finish_reason.
 	Content string
+
+	// Reasoning is a provider-exposed reasoning/analysis fragment. Providers
+	// normalize their native wire format into this field; consumers must keep
+	// it separate from the user-facing answer. Hidden chain-of-thought that an
+	// upstream does not expose cannot be reconstructed here.
+	Reasoning string
 
 	// ToolCall is a fragment of a tool call. The provider may emit
 	// multiple deltas per call (ID+Name on first, Arguments
@@ -87,8 +93,18 @@ func (d Delta) Validate() error {
 	if d.Err != nil {
 		return nil // error delta is always valid
 	}
-	if d.Content != "" && d.ToolCall != nil {
-		return fmt.Errorf("llm.Delta: Content and ToolCall both set")
+	set := 0
+	if d.Content != "" {
+		set++
+	}
+	if d.Reasoning != "" {
+		set++
+	}
+	if d.ToolCall != nil {
+		set++
+	}
+	if set > 1 {
+		return fmt.Errorf("llm.Delta: Content, Reasoning, and ToolCall are mutually exclusive")
 	}
 	if d.Role != "" {
 		switch d.Role {

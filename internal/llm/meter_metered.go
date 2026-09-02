@@ -46,6 +46,14 @@ type CallStat struct {
 	// TokensOut, both provider-reported (0 when not reported).
 	TokensCached    int
 	TokensReasoning int
+	// PrefillEvaluated is the uncached prompt work (TokensIn -
+	// TokensCached). PrefillTokensPerSecond derives throughput from that work
+	// and TTFT. PrefillBudget/Source describe the context-defense threshold
+	// active when the request was sent.
+	PrefillEvaluated       int
+	PrefillTokensPerSecond float64
+	PrefillBudget          int
+	PrefillBudgetSource    string
 	// Request is a request-shape estimate (tokens by role),
 	// computed locally from the outgoing messages/tools so sinks
 	// can attribute context weight without seeing the prompt.
@@ -85,6 +93,21 @@ func MultiSink(sinks ...CallSink) CallSink {
 type purposeCtxKey struct{}
 type backgroundCtxKey struct{}
 type callSinkCtxKey struct{}
+type prefillBudgetCtxKey struct{}
+
+type prefillBudgetContext struct {
+	Tokens int
+	Source string
+}
+
+// WithPrefillBudget attaches non-sensitive context-defense telemetry to a
+// request. Providers ignore it; Metered copies it into CallStat.
+func WithPrefillBudget(ctx context.Context, tokens int, source string) context.Context {
+	if ctx == nil || tokens <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, prefillBudgetCtxKey{}, prefillBudgetContext{Tokens: tokens, Source: source})
+}
 
 // WithCallSink attaches an ADDITIONAL per-request sink to ctx: every
 // metered Complete call under ctx reports to the wrapper's own sink
@@ -360,10 +383,27 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	if p := PurposeFromContext(ctx); p != "" {
 		stat.Purpose = p
 	}
+	if ctx != nil {
+		if budget, ok := ctx.Value(prefillBudgetCtxKey{}).(prefillBudgetContext); ok {
+			stat.PrefillBudget = budget.Tokens
+			stat.PrefillBudgetSource = budget.Source
+		}
+	}
 	// The wrapper's own sink plus any per-request sinks attached via
 	// WithCallSink (e.g. the web GUI's per-session usage recorder).
 	ctxSinks := callSinksFromContext(ctx)
 	emit := func() {
+		input := stat.TokensIn
+		if input <= 0 {
+			input = stat.Request.System + stat.Request.User + stat.Request.Assistant + stat.Request.Tool + stat.Request.Other
+		}
+		stat.PrefillEvaluated = input - stat.TokensCached
+		if stat.PrefillEvaluated < 0 {
+			stat.PrefillEvaluated = 0
+		}
+		if stat.TTFT > 0 {
+			stat.PrefillTokensPerSecond = float64(stat.PrefillEvaluated) / stat.TTFT.Seconds()
+		}
 		m.sink(stat)
 		for _, s := range ctxSinks {
 			s(stat)
@@ -440,7 +480,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		}()
 		gotFirst := false
 		for d := range in {
-			if !gotFirst {
+			if !gotFirst && d.Notice == "" {
 				stat.TTFT = time.Since(start)
 				gotFirst = true
 			}

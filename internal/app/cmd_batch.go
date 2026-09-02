@@ -65,6 +65,14 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if err != nil {
 		fatal("load capabilities", err)
 	}
+	// Batch shares the TUI's window-resolution sources. Without this
+	// the registry never sees pricing_cache context metadata, so a
+	// gateway-exclusive model (OpenCode Zen "-free" tier) resolves to
+	// the generic remote fallback (128k → compact at 115k) even when
+	// models.dev knows its true 200k limit. The batch variant applies
+	// a stale cache synchronously — this process exits before any
+	// background refresh could land.
+	applyPricingStartupBatch(dataDir, caps)
 
 	// Phase telemetry for batch runs: same recorder as the TUI,
 	// dumped as one [phase] stderr line per step (plus one [calls]
@@ -90,6 +98,8 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	}
 	orchHard := orchMode.hard()
 	learned := llm.LoadLearnedLimits(dataDir)
+	llm.InitRequestBudget(dataDir)
+	prefillProfiles := llm.LoadPrefillProfiles(dataDir)
 	modelContexts := config.LoadModelContextStore(dataDir)
 	contextProvider := config.RuntimeProviderName(tomlCfg, cfg)
 	var compactProvider llm.Provider
@@ -221,6 +231,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		},
 		Summarizer:         agent.NewAutoSummarizerWithProvider(compactProvider, reg.ActiveNames),
 		LearnLimit:         learned.Learn,
+		PrefillProfiles:    prefillProfiles,
 		PruneProtectTokens: tomlCfg.PruneProtectTokens,
 	})
 	if err != nil {
@@ -303,17 +314,20 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		case agent.MessageEvent:
 			fmt.Print(e.Text)
 			printedMessage = true
+		case agent.ReasoningEvent:
+			fmt.Printf("<thinking>%s</thinking>\n", e.Text)
+			printedMessage = true
 		case agent.NoticeEvent:
 			// Provider status (rate-limit retry etc.) — stderr so it
 			// never pollutes the assistant output on stdout.
 			fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
 		case agent.ToolResultsPrunedEvent:
-			fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d window=%d\n",
-				e.Pruned, e.Reclaimed, e.Estimated, e.Window)
+			fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d threshold=%d threshold_source=%s window=%d\n",
+				e.Pruned, e.Reclaimed, e.Estimated, e.Threshold, e.ThresholdSource, e.Window)
 		case agent.AutoCompactEvent:
-			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d raw=%d estimate_source=%s exact_base=%d threshold=%d window=%d window_source=%s\n",
+			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d raw=%d estimate_source=%s exact_base=%d threshold=%d threshold_source=%s window=%d window_source=%s\n",
 				e.Removed, e.Reason, e.Estimated, e.RawEstimated, e.EstimateSource,
-				e.ExactBase, e.Threshold, e.Window, e.WindowSource)
+				e.ExactBase, e.Threshold, e.ThresholdSource, e.Window, e.WindowSource)
 		case agent.DoneEvent:
 			// Real provider-reported token usage for this run
 			// (exact, not an estimate). Printed to stderr so it
@@ -348,6 +362,11 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// run (main + helper inferences), aggregated per purpose.
 	if line := stats.CallsLine(batchStats.Calls()); line != "" {
 		fmt.Fprintln(os.Stderr, line)
+	}
+	for _, call := range batchStats.Calls() {
+		if line := stats.PrefillLine(call); line != "" {
+			fmt.Fprintln(os.Stderr, line)
+		}
 	}
 
 	// Successful run: record the post-run tree fingerprint so the next

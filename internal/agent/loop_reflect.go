@@ -63,6 +63,52 @@ type repeatProgress struct {
 	cooldown int
 }
 
+// toolEconomyProgress spots a common non-loop failure mode: the model keeps
+// asking for one or two read-only facts per provider round even though the
+// runtime can execute a whole read batch concurrently. This is not a reason to
+// stop the task (novel reads may all be legitimate), but it is a reason to
+// remind the model to use read_many and parallel tool calls. The reminder is
+// appended after the current tool results, so it does not create an extra
+// provider request.
+type toolEconomyProgress struct {
+	serialDiscoveryRounds int
+	warnings              int
+}
+
+const (
+	serialDiscoveryWarnAfter = 3
+	maxToolEconomyWarnings   = 2
+)
+
+func (p *toolEconomyProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) bool {
+	if len(calls) == 0 || p.warnings >= maxToolEconomyWarnings {
+		return false
+	}
+	// A failed call needs correction, not an efficiency lecture. A mutation,
+	// command, or a genuinely batched discovery round also breaks the streak.
+	for i, call := range calls {
+		if outcomeAt(outcomes, i).failed || toolKind(call.Name) != "discovery" {
+			p.serialDiscoveryRounds = 0
+			return false
+		}
+		if call.Name == "read_many" {
+			p.serialDiscoveryRounds = 0
+			return false
+		}
+	}
+	if len(calls) >= 3 {
+		p.serialDiscoveryRounds = 0
+		return false
+	}
+	p.serialDiscoveryRounds++
+	if p.serialDiscoveryRounds < serialDiscoveryWarnAfter {
+		return false
+	}
+	p.serialDiscoveryRounds = 0
+	p.warnings++
+	return true
+}
+
 // observe updates counters from a finished tool batch. outcomes is accepted
 // for symmetry with the rest of the loop; a loop is a loop whether the
 // repeated call succeeds or fails.
@@ -418,11 +464,11 @@ func messagesHaveRecentToolResult(msgs []llm.Message) bool {
 		case llm.RoleUser:
 			return false
 		case llm.RoleAssistant:
-			if strings.TrimSpace(msgs[i].Content) != "" || len(msgs[i].Parts) > 0 {
-				if len(msgs[i].ToolCalls) > 0 && strings.TrimSpace(msgs[i].Content) == "" && len(msgs[i].Parts) == 0 {
-					continue
-				}
-				if len(msgs[i].ToolCalls) == 0 {
+			if hasVisibleUserReply(msgs[i].Content) {
+				return false
+			}
+			for _, part := range msgs[i].Parts {
+				if part.Type != llm.PartTypeText || hasVisibleUserReply(part.Text) {
 					return false
 				}
 			}

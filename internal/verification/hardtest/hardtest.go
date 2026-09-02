@@ -39,6 +39,11 @@ type command struct {
 func Detect(root string) []command {
 	out := []command{}
 	if exists(filepath.Join(root, "go.mod")) {
+		if isSuperCLIRepo(root) {
+			out = append(out, command{"SuperCLI protocol invariants", "go", []string{
+				"test", "-count=1", "-run", "^TestHardProtocol", "./internal/llm", "./internal/agent", "./internal/webgui",
+			}})
+		}
 		out = append(out, command{"Go tests", "go", []string{"test", "./..."}}, command{"Go vet", "go", []string{"vet", "./..."}}, command{"Race detector", "go", []string{"test", "-race", "./internal/..."}})
 	}
 	if b, err := os.ReadFile(filepath.Join(root, "package.json")); err == nil {
@@ -64,6 +69,20 @@ func Detect(root string) []command {
 		out = append(out, command{"Python tests", pythonBin(), []string{"-m", "pytest"}})
 	}
 	return out
+}
+
+func isSuperCLIRepo(root string) bool {
+	b, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "module" {
+			return fields[1] == "supercli"
+		}
+	}
+	return false
 }
 
 func Run(ctx context.Context, root string) (Report, error) {

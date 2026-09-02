@@ -14,13 +14,18 @@ import (
 // creates no wrapper or additional providers.
 func (f *Factory) BuildChain(cfg config.Config, tc config.TomlConfig, purpose string) (llm.Provider, error) {
 	primary, err := f.Build(cfg, purpose)
-	if err != nil || len(tc.FallbackModels) == 0 {
+	if err != nil {
 		return primary, err
+	}
+	fallbackModels := append([]string(nil), tc.FallbackModels...)
+	cooldown := time.Duration(tc.FallbackCooldownSeconds) * time.Second
+	if len(fallbackModels) == 0 {
+		return primary, nil
 	}
 	pool := []llm.Provider{primary}
 	labels := []string{cfg.Provider + "/" + cfg.Model}
 	seen := map[string]bool{backendKey(cfg): true}
-	for _, reference := range tc.FallbackModels {
+	for _, reference := range fallbackModels {
 		providerList := tc.Providers
 		if name, _, found := strings.Cut(strings.TrimSpace(reference), "/"); found {
 			if resolved, ok := config.ResolveProviderConf(f.dataDir, tc, name); ok {
@@ -55,7 +60,6 @@ func (f *Factory) BuildChain(cfg config.Config, tc config.TomlConfig, purpose st
 	if len(pool) == 1 {
 		return primary, nil
 	}
-	cooldown := time.Duration(tc.FallbackCooldownSeconds) * time.Second
 	return llm.NewFailover(cooldown, labels, pool...)
 }
 
