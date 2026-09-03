@@ -838,6 +838,15 @@ async function sendPrompt(text, attachments, draft) {
   }
 }
 
+
+// A provider can report reasoning tokens without streaming any thinking text.
+// The server sends the bare count for exactly that case; the sentence is built
+// here so it follows the selected UI language instead of being frozen in Go.
+function reasoningFallbackText(tokens) {
+  if (!tokens || tokens <= 0) return "";
+  return t("reasoning.noSummary").replace("{n}", fmtInteger(tokens));
+}
+
 function handleEvent(ev, current) {
   switch (ev.type) {
     case "session":
@@ -851,7 +860,7 @@ function handleEvent(ev, current) {
       return current;
     case "reasoning":
       if (!current || current._sealed) current = addAssistantMsg();
-      appendAssistantReasoning(current, ev.text || "");
+      appendAssistantReasoning(current, ev.text || reasoningFallbackText(ev.reasoning_tok));
       return current;
     case "tool_call":
       sealAssistantSegment(current);

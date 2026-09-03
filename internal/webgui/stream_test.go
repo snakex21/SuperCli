@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -242,13 +243,28 @@ func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
 	}
 }
 
-func TestReasoningFallbackIsTruthfulAndOnlyUsedForReportedTokens(t *testing.T) {
-	if got := reasoningFallbackText(0); got != "" {
-		t.Fatalf("zero-token fallback = %q", got)
+func TestReasoningFallbackSentenceLivesInTheUILanguageCatalog(t *testing.T) {
+	// The Go layer has no string catalog, so it must never build this
+	// sentence: it announces the token count and the front-end localizes it.
+	// Guard both halves of that contract.
+	for _, name := range []string{"stream.go", "stream_run.go"} {
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if strings.Contains(string(src), "tokens, but the provider") || strings.Contains(string(src), "tokenow rozumowania") {
+			t.Errorf("%s builds the reasoning fallback sentence in Go; it belongs in assets/js/01-i18n.js", name)
+		}
 	}
-	got := reasoningFallbackText(1567)
-	if strings.Contains(got, "<thinking>") || !strings.Contains(got, "1567") || !strings.Contains(got, "nie udostępnił") {
-		t.Fatalf("fallback = %q", got)
+	dict, err := assetsFS.ReadFile("assets/js/01-i18n.js")
+	if err != nil {
+		t.Fatalf("read i18n catalog: %v", err)
+	}
+	if got := strings.Count(string(dict), `"reasoning.noSummary"`); got != 2 {
+		t.Errorf("reasoning.noSummary defined %d times, want 2 (en and pl)", got)
+	}
+	if !strings.Contains(string(dict), "{n} reasoning tokens") {
+		t.Error("English reasoning.noSummary must interpolate the token count as {n}")
 	}
 }
 
