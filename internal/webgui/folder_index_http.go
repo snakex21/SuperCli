@@ -80,7 +80,7 @@ func (s *Server) handleFolderIndexing(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": canceled, "job": job})
 	case "save":
 		if job := s.folderIndexJobSnapshot(); job != nil && job.State == "running" {
-			http.Error(w, "indeksowanie jest w toku; ustawienia źródeł można zmienić po jego zakończeniu", http.StatusConflict)
+			http.Error(w, "indexing is in progress; source settings can be changed once it finishes", http.StatusConflict)
 			return
 		}
 		previousPaths := uniqueCleanPaths(append(append([]string{}, config.SelectedPaths...), config.CustomPaths...))
@@ -156,7 +156,7 @@ func (s *Server) handleFolderIndexing(w http.ResponseWriter, r *http.Request) {
 			config.VisionProvider = strings.TrimSpace(request.VisionProvider)
 		}
 		if strings.TrimSpace(config.VisionModel) == "" {
-			http.Error(w, "wybierz model AI do indeksowania", http.StatusBadRequest)
+			http.Error(w, "select an AI model for indexing", http.StatusBadRequest)
 			return
 		}
 		config.VisualIndex = true

@@ -66,6 +66,7 @@ var I18N = {
     "task.input": "input", "task.output": "output",
     "role.thinking": "Thinking", "chat.stopped": "stopped by user", "chat.connError": "connection error",
     "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
+    "chat.noProvider": "{n} has no active AI provider: the test echo mode was blocked. Pick a model again in Settings.",
     "stats.model": "model", "stats.provider": "provider", "stats.ctx": "context (last turn)", "stats.session": "session tokens",
     "stats.daily": "tokens today", "stats.workers": "Workers", "stats.noWorkers": "No delegations this session.",
     "stats.turn": "Last turn", "stats.orch": "Orchestrator", "stats.orchDesc": "delegation",
@@ -126,6 +127,8 @@ var I18N = {
     "prov.keyLoaded": "Saved key loaded locally.", "prov.keyLoadFailed": "Saved key could not be shown; leaving this field empty will keep it.",
     "prov.key": "key", "prov.noKey": "no key", "prov.models": "models",
     "prov.added": "Provider added.", "prov.addFailed": "Error — provider was not added",
+    "prov.warn.typeUnclear": "The API type could not be determined conclusively; it was saved as OpenAI-compatible. You can change the type while editing.",
+    "prov.warn.scanTimeout": "{n} was added, but it did not finish listing models within {c}, so no models are known yet. If it is just slow, press Rescan; the provider works as soon as it answers.",
     "runtime.title": "Model servers", "runtime.hint": "Passive status check. Refresh never starts an inference or loads a model.",
     "runtime.empty": "No providers configured.", "runtime.checking": "checking", "runtime.online": "online",
     "runtime.offline": "offline", "runtime.disabled": "disabled", "runtime.active": "active",
@@ -285,6 +288,7 @@ var I18N = {
     "task.input": "wej.", "task.output": "wyj.",
     "role.thinking": "Myślenie", "chat.stopped": "zatrzymane przez użytkownika", "chat.connError": "błąd połączenia",
     "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
+    "chat.noProvider": "{n} nie ma aktywnego dostawcy AI: testowy tryb echo został zablokowany. Wybierz ponownie model w Ustawieniach.",
     "stats.model": "model", "stats.provider": "dostawca", "stats.ctx": "kontekst (ostatnia tura)", "stats.session": "tokeny sesji",
     "stats.daily": "tokeny dziś", "stats.workers": "Workerzy", "stats.noWorkers": "Brak delegacji w tej sesji.",
     "stats.turn": "Ostatnia tura", "stats.orch": "Orkiestrator", "stats.orchDesc": "delegowanie",
@@ -345,6 +349,8 @@ var I18N = {
     "prov.keyLoaded": "Zapisany klucz wczytano lokalnie.", "prov.keyLoadFailed": "Nie udało się pokazać klucza; puste pole nadal go zachowa.",
     "prov.key": "klucz", "prov.noKey": "brak klucza", "prov.models": "modeli",
     "prov.added": "Provider został dodany.", "prov.addFailed": "Błąd — provider nie został dodany",
+    "prov.warn.typeUnclear": "Nie udało się jednoznacznie wykryć typu API; zapisano jako OpenAI-compatible. Możesz zmienić typ podczas edycji.",
+    "prov.warn.scanTimeout": "Dostawca {n} został dodany, ale nie zdążył wylistować modeli w ciągu {c}, więc żadne modele nie są jeszcze znane. Jeśli jest po prostu wolny, naciśnij Skanuj ponownie; dostawca działa, gdy tylko odpowie.",
     "runtime.title": "Serwery modeli", "runtime.hint": "Pasywne sprawdzenie stanu. Odświeżenie nie uruchamia inferencji ani nie ładuje modelu.",
     "runtime.empty": "Brak skonfigurowanych providerów.", "runtime.checking": "sprawdzanie", "runtime.online": "online",
     "runtime.offline": "offline", "runtime.disabled": "wyłączony", "runtime.active": "aktywny",
@@ -485,6 +491,14 @@ Object.assign(I18N.pl, {
 function t(key) {
   var lang = ui.lang || "en";
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+
+// Renders server-sent {code, name, count} notices through the catalog. The
+// server names the condition; the sentence and its language live here.
+function uiWarningText(warnings) {
+  return (warnings || []).map(function (warning) {
+    return t(warning.code).replace("{n}", warning.name || "").replace("{c}", warning.count || "");
+  }).join(" ");
 }
 
 // Config keys remain the stable API, but they are implementation details.

@@ -337,7 +337,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
         });
         // A provider kept despite an unfinished scan reports why, so the
         // empty model list does not look like a silent failure.
-        if (res2.warning) toast(res2.warning);
+        if (res2.warnings && res2.warnings.length) toast(uiWarningText(res2.warnings));
         else toast((res2.type ? res2.type + " · " : "") + t("prov.added") + " " + providerModelCount(res2.models) + " " + t("prov.models"));
         await loadModels();
         await renderProvidersList();

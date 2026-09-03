@@ -332,7 +332,7 @@ func TestFolderIndexRequiresSelectedAIModel(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"action": "index", "paths": []string{documents}})
 	recorder := httptest.NewRecorder()
 	server.handleFolderIndexing(recorder, httptest.NewRequest(http.MethodPost, "/api/folder-indexing", bytes.NewReader(body)))
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "wybierz model AI") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "select an AI model") {
 		t.Fatalf("missing model response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }

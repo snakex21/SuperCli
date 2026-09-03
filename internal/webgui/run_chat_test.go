@@ -88,7 +88,7 @@ func TestHandleChat_NestCafeBlocksEchoWithoutLeakingPromptAddons(t *testing.T) {
 		t.Fatalf("status = %d, want SSE 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"type":"error"`) || !strings.Contains(body, "tryb echo") {
+	if !strings.Contains(body, `"type":"error"`) || !strings.Contains(body, `"err_code":"chat.noProvider"`) {
 		t.Fatalf("missing safe terminal configuration error: %s", body)
 	}
 	if strings.Contains(body, secret) || strings.Contains(body, `"type":"message"`) || strings.Contains(body, `"type":"done"`) {

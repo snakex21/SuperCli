@@ -16,6 +16,10 @@ import (
 	"supercli/internal/tools"
 )
 
+// errNoActiveProvider is a sentinel, not a sentence: the browser renders it
+// from the chat.noProvider catalog key so the notice follows the UI language.
+var errNoActiveProvider = errors.New("no active AI provider")
+
 func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon string, emit func(wireEvent)) error {
 	return e.runStreamWithImages(ctx, prompt, sessionID, userAddon, nil, emit)
 }
@@ -27,7 +31,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// fallback when configuration loading fails.
 	_, chatReady := e.ProviderStatus()
 	if !chatReady {
-		return fmt.Errorf("NestCafe nie ma aktywnego dostawcy AI: testowy tryb echo został zablokowany; wybierz ponownie model w Ustawieniach")
+		return errNoActiveProvider
 	}
 	runStarted := time.Now()
 	askCh := make(chan tools.AskRequest, 3)
