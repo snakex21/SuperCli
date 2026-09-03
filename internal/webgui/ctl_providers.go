@@ -59,8 +59,8 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			// still roll back: this must not become "accept anything".
 			if llm.IsTimeoutError(res.Err) {
 				warnings = append(warnings, uiWarning{
-					Code: "prov.warn.scanTimeout",
-					Name: name,
+					Code:  "prov.warn.scanTimeout",
+					Name:  name,
 					Count: llm.ProviderDiscoveryTimeout.String(),
 				})
 				writeJSON(w, map[string]any{
