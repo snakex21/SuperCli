@@ -118,7 +118,7 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 	result.indexPreview = map[string]string{}
 	modelKey := folderIndexModelKey(config)
 	if strings.TrimSpace(config.VisionModel) == "" {
-		result.AnalysisError = "wybierz model AI do indeksowania"
+		result.AnalysisError = "select an AI model for indexing"
 		return
 	}
 	provider, err := s.eng.providerForSelection(config.VisionModel, config.VisionProvider, "document-index")
@@ -126,6 +126,7 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 		result.AnalysisError = err.Error()
 		return
 	}
+	language := s.uiLanguage()
 	pruneFolderIndexCache(cache, result.Path, result.Files)
 	for index, path := range result.Files {
 		if progress != nil {
@@ -138,7 +139,7 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() {
 			result.Unsupported++
-			appendFolderIndexSkipped(result, path, "plik", "nie można odczytać pliku")
+			appendFolderIndexSkipped(result, path, "file", "the file could not be read")
 			continue
 		}
 		key := folderCacheKey(path)
@@ -162,12 +163,12 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 		}
 		if isVisualIndexImage(path) {
 			item.Kind = "image"
-			caption, captionErr := describeIndexedImage(ctx, provider, path)
+			caption, captionErr := describeIndexedImage(ctx, provider, path, language)
 			if captionErr != nil {
 				result.AnalysisFailed++
 				result.VisualSkipped++
 				appendFolderAnalysisError(result, captionErr)
-				appendFolderIndexSkipped(result, path, "obraz", captionErr.Error())
+				appendFolderIndexSkipped(result, path, "image", captionErr.Error())
 				continue
 			}
 			item.Preview = "Obraz: " + caption
@@ -191,21 +192,21 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 		}
 		if !supported {
 			result.Unsupported++
-			appendFolderIndexSkipped(result, path, kind, "format nie jest obsługiwany przez indeksowanie AI")
+			appendFolderIndexSkipped(result, path, kind, "format is not supported by AI indexing")
 			continue
 		}
 		text = normalizeIndexText(text)
 		if text == "" {
 			result.Unsupported++
-			appendFolderIndexSkipped(result, path, kind, "nie udało się wydobyć tekstu dla modelu")
+			appendFolderIndexSkipped(result, path, kind, "no text could be extracted for the model")
 			continue
 		}
 
-		summary, summaryErr := summarizeIndexedDocument(ctx, provider, path, kind, text)
+		summary, summaryErr := summarizeIndexedDocument(ctx, provider, path, kind, text, language)
 		if summaryErr != nil || strings.TrimSpace(summary) == "" {
 			result.AnalysisFailed++
 			if summaryErr == nil {
-				summaryErr = fmt.Errorf("model nie przygotował notatki dla %s", filepath.Base(path))
+				summaryErr = fmt.Errorf("the model returned no note for %s", filepath.Base(path))
 			}
 			appendFolderAnalysisError(result, summaryErr)
 			appendFolderIndexSkipped(result, path, kind, summaryErr.Error())
@@ -225,7 +226,7 @@ func (s *Server) addDocumentIndexPreviews(ctx context.Context, result *folderSca
 	if progress != nil {
 		progress(len(result.Files), len(result.Files), "")
 	}
-	if folderSummary, summaryErr := summarizeIndexedFolder(ctx, provider, result); summaryErr != nil {
+	if folderSummary, summaryErr := summarizeIndexedFolder(ctx, provider, result, language); summaryErr != nil {
 		appendFolderAnalysisError(result, summaryErr)
 	} else {
 		result.FolderSummary = folderSummary

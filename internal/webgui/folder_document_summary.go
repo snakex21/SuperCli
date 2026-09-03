@@ -12,9 +12,9 @@ import (
 	"supercli/internal/storage/memory"
 )
 
-func summarizeIndexedDocument(ctx context.Context, provider llm.Provider, path, kind, text string) (string, error) {
+func summarizeIndexedDocument(ctx context.Context, provider llm.Provider, path, kind, text, language string) (string, error) {
 	input := limitUTF8Bytes(text, folderIndexAIInputBytes)
-	prompt := fmt.Sprintf("Przygotuj zwięzły wpis do indeksu wyszukiwania dla pliku %q (typ: %s). Podaj po polsku temat, ważne osoby, organizacje, daty i słowa kluczowe. Maksymalnie 100 słów. Nie dodawaj informacji, których nie ma w tekście. Zwróć wyłącznie wpis indeksu.\n\nTEKST:\n%s", filepath.Base(path), kind, input)
+	prompt := fmt.Sprintf("Write a concise search-index entry for the file %q (type: %s). State the subject and the important people, organisations, dates and keywords. At most 100 words. Do not add anything that is not present in the text. Return the index entry only. %s\n\nTEXT:\n%s", filepath.Base(path), kind, respondInLanguage(language), input)
 	callCtx, cancel := context.WithTimeout(llm.WithBackground(llm.WithPurpose(ctx, "document-index")), 90*time.Second)
 	defer cancel()
 	stream, err := provider.Complete(callCtx, []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
@@ -31,9 +31,9 @@ func summarizeIndexedDocument(ctx context.Context, provider llm.Provider, path, 
 	return limitUTF8Bytes(normalizeIndexText(memory.StripReasoning(out.String())), 1200), nil
 }
 
-func summarizeIndexedFolder(ctx context.Context, provider llm.Provider, result *folderScanResult) (string, error) {
+func summarizeIndexedFolder(ctx context.Context, provider llm.Provider, result *folderScanResult, language string) (string, error) {
 	if provider == nil || result == nil {
-		return "", fmt.Errorf("brak modelu AI do opisania folderu")
+		return "", fmt.Errorf("no AI model available to describe the folder")
 	}
 	var notes strings.Builder
 	for _, path := range result.Files {
@@ -56,13 +56,13 @@ func summarizeIndexedFolder(ctx context.Context, provider llm.Provider, result *
 			if err != nil {
 				relative = filepath.Base(skipped.Path)
 			}
-			fmt.Fprintf(&notes, "- %s (pominięty: %s)\n", relative, skipped.Reason)
+			fmt.Fprintf(&notes, "- %s (skipped: %s)\n", relative, skipped.Reason)
 			if notes.Len() >= folderIndexAIInputBytes {
 				break
 			}
 		}
 	}
-	prompt := fmt.Sprintf("Przygotuj po polsku krótką notatkę opisującą folder %q na podstawie nazw plików i notatek, które już utworzyło AI. Napisz, do czego folder prawdopodobnie służy, jakie zawiera tematy i jakie typy materiałów. Nie zgaduj ponad podane dane. Maksymalnie 120 słów. Zwróć wyłącznie notatkę o folderze.\n\nPLIKI I NOTATKI:\n%s", result.Path, limitUTF8Bytes(notes.String(), folderIndexAIInputBytes))
+	prompt := fmt.Sprintf("Write a short note describing the folder %q, based on the file names and on the notes the AI has already produced. Say what the folder is probably for, which topics it covers and what kinds of material it holds. Do not guess beyond the given data. At most 120 words. Return the folder note only. %s\n\nFILES AND NOTES:\n%s", result.Path, respondInLanguage(language), limitUTF8Bytes(notes.String(), folderIndexAIInputBytes))
 	callCtx, cancel := context.WithTimeout(llm.WithBackground(llm.WithPurpose(ctx, "folder-index-summary")), 90*time.Second)
 	defer cancel()
 	stream, err := provider.Complete(callCtx, []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
@@ -78,7 +78,7 @@ func summarizeIndexedFolder(ctx context.Context, provider llm.Provider, result *
 	}
 	text := normalizeIndexText(memory.StripReasoning(out.String()))
 	if text == "" {
-		return "", fmt.Errorf("model nie przygotował notatki o folderze")
+		return "", fmt.Errorf("the model returned no folder note")
 	}
 	return limitUTF8Bytes(text, 1600), nil
 }

@@ -28,7 +28,7 @@ func scanIndexedFolderContext(ctx context.Context, root string) folderScanResult
 		return result
 	}
 	if !info.IsDir() {
-		result.Error = "ścieżka nie jest folderem"
+		result.Error = "path is not a folder"
 		return result
 	}
 	var walk func(string, int)
@@ -112,7 +112,7 @@ func (s *Server) addVisualIndexPreviews(ctx context.Context, result *folderScanR
 		return
 	}
 	if strings.TrimSpace(config.VisionModel) == "" {
-		result.VisualError = "wybierz model do analizy obrazów"
+		result.VisualError = "select a model for image analysis"
 		return
 	}
 	provider, err := s.eng.providerForSelection(config.VisionModel, config.VisionProvider, "vision-index")
@@ -127,7 +127,7 @@ func (s *Server) addVisualIndexPreviews(ctx context.Context, result *folderScanR
 			continue
 		}
 		imageCount++
-		caption, captionErr := describeIndexedImage(ctx, provider, path)
+		caption, captionErr := describeIndexedImage(ctx, provider, path, s.uiLanguage())
 		if captionErr != nil {
 			if result.VisualError == "" {
 				result.VisualError = captionErr.Error()
@@ -140,13 +140,13 @@ func (s *Server) addVisualIndexPreviews(ctx context.Context, result *folderScanR
 	result.VisualSkipped = imageCount - result.VisualIndexed
 }
 
-func describeIndexedImage(ctx context.Context, provider llm.Provider, path string) (string, error) {
+func describeIndexedImage(ctx context.Context, provider llm.Provider, path, language string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() || info.Size() > folderVisionMaxBytes {
-		return "", fmt.Errorf("obraz %s jest zbyt duży do analizy", filepath.Base(path))
+		return "", fmt.Errorf("image %s is too large to analyse", filepath.Base(path))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -154,9 +154,9 @@ func describeIndexedImage(ctx context.Context, provider llm.Provider, path strin
 	}
 	mediaType := http.DetectContentType(data)
 	if !allowedVisionMIME(mediaType) {
-		return "", fmt.Errorf("nieobsługiwany format obrazu %s", filepath.Base(path))
+		return "", fmt.Errorf("unsupported image format %s", filepath.Base(path))
 	}
-	prompt := "Opisz zawartość tego obrazu po polsku w maksymalnie 80 słowach. Przepisz istotny widoczny tekst. Nie zgaduj danych, których nie widać. Zwróć wyłącznie opis do indeksu wyszukiwania."
+	prompt := "Describe the contents of this image in at most 80 words. Transcribe any significant visible text. Do not guess at data that is not visible. Return the search-index description only. " + respondInLanguage(language)
 	message := llm.Message{Role: llm.RoleUser, Parts: []llm.ContentPart{
 		{Type: llm.PartTypeText, Text: prompt},
 		{Type: llm.PartTypeImage, Image: &llm.ImageRef{Data: base64.StdEncoding.EncodeToString(data), MediaType: mediaType}},
@@ -176,7 +176,7 @@ func describeIndexedImage(ctx context.Context, provider llm.Provider, path strin
 	}
 	text := strings.Join(strings.Fields(strings.TrimSpace(memory.StripReasoning(caption.String()))), " ")
 	if text == "" {
-		return "", fmt.Errorf("model nie zwrócił opisu obrazu %s", filepath.Base(path))
+		return "", fmt.Errorf("the model returned no description for image %s", filepath.Base(path))
 	}
 	if len([]rune(text)) > 700 {
 		text = string([]rune(text)[:700]) + "…"
