@@ -398,11 +398,14 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			}
 			if done, ok := ev.(agent.DoneEvent); ok {
 				terminalUsage = done.Usage
-				if !sawVisibleReasoning {
-					if fallback := reasoningFallbackText(done.Usage.Reasoning); fallback != "" {
-						send(wireEvent{Type: "reasoning", Text: fallback, ReasoningTok: done.Usage.Reasoning})
-						sawVisibleReasoning = true
-					}
+				// The provider reported reasoning tokens but streamed no
+				// thinking text. Announce the count only; the front-end turns
+				// reasoning_tok into a sentence in the user's UI language.
+				// Building that prose here would hardcode one language into a
+				// layer that has no string catalog.
+				if !sawVisibleReasoning && done.Usage.Reasoning > 0 {
+					send(wireEvent{Type: "reasoning", ReasoningTok: done.Usage.Reasoning})
+					sawVisibleReasoning = true
 				}
 				saveTurnSummary()
 			}

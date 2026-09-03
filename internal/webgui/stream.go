@@ -193,12 +193,7 @@ func (c *messageCoalescer) Flush() {
 	c.emit(wireEvent{Type: typ, Text: text})
 }
 
-func reasoningFallbackText(tokens int) string {
-	if tokens <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("Model wykorzystał %d tokenów rozumowania, ale dostawca nie udostępnił tekstowego podsumowania.", tokens)
-}
+
 
 // runStream runs one prompt on a fresh loop and forwards every
 // translated event to emit. It blocks until the loop's event channel
