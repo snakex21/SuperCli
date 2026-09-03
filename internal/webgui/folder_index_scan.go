@@ -121,13 +121,16 @@ func (s *Server) addVisualIndexPreviews(ctx context.Context, result *folderScanR
 		return
 	}
 	result.visualPreview = map[string]string{}
+	// Resolved once: uiLanguage() re-reads config.toml from disk, and the
+	// language cannot change mid-scan.
+	language := s.uiLanguage()
 	imageCount := 0
 	for _, path := range result.Files {
 		if !isVisualIndexImage(path) {
 			continue
 		}
 		imageCount++
-		caption, captionErr := describeIndexedImage(ctx, provider, path, s.uiLanguage())
+		caption, captionErr := describeIndexedImage(ctx, provider, path, language)
 		if captionErr != nil {
 			if result.VisualError == "" {
 				result.VisualError = captionErr.Error()
