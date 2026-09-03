@@ -26,29 +26,29 @@ func (m Model) openCheckpointMenu(redo bool) (tea.Model, tea.Cmd) {
 func (m Model) renderCheckpointMenu() string {
 	preview := m.menu.checkpoint
 	if preview == nil {
-		return m.palette.Error.Render("Brak danych checkpointu")
+		return m.palette.Error.Render(m.tr("No checkpoint data", "Brak danych checkpointu"))
 	}
 	width := maxInt(24, m.menuWidth())
-	action := "Cofnij ostatnią turę"
-	verb := "przywrócone do stanu sprzed tury"
+	action := m.tr("Undo last turn", "Cofnij ostatnią turę")
+	verb := m.tr("restored to the state before the turn", "przywrócone do stanu sprzed tury")
 	if preview.Redo {
-		action = "Ponów cofniętą turę"
-		verb = "przywrócone do stanu po turze"
+		action = m.tr("Redo reverted turn", "Ponów cofniętą turę")
+		verb = m.tr("restored to the state after the turn", "przywrócone do stanu po turze")
 	}
 	var b strings.Builder
 	b.WriteString(m.palette.PanelTitle.Render(action) + "\n")
-	b.WriteString(m.palette.Dim.Render(truncateText("Checkpoint "+preview.ID+" · pliki zostaną "+verb+". Rozmowa nie jest usuwana.", width)) + "\n\n")
+	b.WriteString(m.palette.Dim.Render(truncateText(fmt.Sprintf(m.tr("Checkpoint %s · files will be %s. The conversation is not deleted.", "Checkpoint %s · pliki zostaną %s. Rozmowa nie jest usuwana."), preview.ID, verb), width)) + "\n\n")
 	if strings.TrimSpace(preview.Prompt) != "" {
-		b.WriteString(m.palette.StatusKey.Render("Tura: ") + m.palette.StatusValue.Render(truncateText(preview.Prompt, width-8)) + "\n\n")
+		b.WriteString(m.palette.StatusKey.Render(m.tr("Turn: ", "Tura: ")) + m.palette.StatusValue.Render(truncateText(preview.Prompt, width-8)) + "\n\n")
 	}
-	b.WriteString(m.palette.StatusKey.Render(fmt.Sprintf("Pliki (%d):", len(preview.Files))) + "\n")
+	b.WriteString(m.palette.StatusKey.Render(fmt.Sprintf(m.tr("Files (%d):", "Pliki (%d):"), len(preview.Files))) + "\n")
 	limit := minInt(len(preview.Files), maxInt(3, m.height-9))
 	for _, file := range preview.Files[:limit] {
 		b.WriteString(m.palette.StatusValue.Render("  • "+truncateText(file, width-4)) + "\n")
 	}
 	if len(preview.Files) > limit {
-		b.WriteString(m.palette.Dim.Render(fmt.Sprintf("  … i %d więcej", len(preview.Files)-limit)) + "\n")
+		b.WriteString(m.palette.Dim.Render(fmt.Sprintf(m.tr("  … and %d more", "  … i %d więcej"), len(preview.Files)-limit)) + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible("Enter potwierdź · Esc anuluj", width)))
+	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(m.tr("Enter confirm · Esc cancel", "Enter potwierdź · Esc anuluj"), width)))
 	return b.String()
 }
