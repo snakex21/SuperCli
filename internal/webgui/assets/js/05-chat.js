@@ -847,6 +847,13 @@ function reasoningFallbackText(tokens) {
   return t("reasoning.noSummary").replace("{n}", fmtInteger(tokens));
 }
 
+// A known failure arrives as a catalog key so the sentence follows the UI
+// language; ev.err stays the fallback for everything still unclassified.
+function chatErrorText(ev) {
+  if (ev.err_code) return t(ev.err_code).replace("{n}", ev.err_name || "");
+  return ev.err || "error";
+}
+
 function handleEvent(ev, current) {
   switch (ev.type) {
     case "session":
@@ -921,7 +928,7 @@ function handleEvent(ev, current) {
       closeAssistantReasoning(current);
       flushAssistantRender(current);
       addFileChanges(ev.file_changes);
-      addEventLine(ev.err || "error", "error", "error");
+      addEventLine(chatErrorText(ev), "error", "error");
       setRunState("idle", t("common.error"));
       return null;
     default:

@@ -30,7 +30,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		}
 		name := strings.TrimSpace(req.Name)
 		typ := strings.TrimSpace(req.Type)
-		detectWarning := ""
+		var warnings []uiWarning
 		if typ == "" || strings.EqualFold(typ, "auto") {
 			detected, detectErr := llm.DetectProviderProtocol(r.Context(), strings.TrimSpace(req.BaseURL), req.APIKey)
 			if detectErr != nil {
@@ -38,7 +38,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 				// chat. Keep custom providers addable even when /models is slow or
 				// absent, but tell the UI that detection was inconclusive.
 				typ = "openai"
-				detectWarning = "Nie udało się jednoznacznie wykryć typu API; zapisano jako OpenAI-compatible. Możesz zmienić typ podczas edycji."
+				warnings = append(warnings, uiWarning{Code: "prov.warn.typeUnclear"})
 			} else {
 				typ = detected
 			}
@@ -58,15 +58,16 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			// Definite answers (rejected key, wrong URL, unresolvable host)
 			// still roll back: this must not become "accept anything".
 			if llm.IsTimeoutError(res.Err) {
-				warning := fmt.Sprintf("%s was added, but it did not finish listing models within %s, so no models are known yet. If it is just slow, press Rescan; the provider works as soon as it answers.", name, llm.ProviderDiscoveryTimeout)
-				if detectWarning != "" {
-					warning = detectWarning + " " + warning
-				}
+				warnings = append(warnings, uiWarning{
+					Code: "prov.warn.scanTimeout",
+					Name: name,
+					Count: llm.ProviderDiscoveryTimeout.String(),
+				})
 				writeJSON(w, map[string]any{
-					"ok":      true,
-					"type":    typ,
-					"models":  res.Models,
-					"warning": warning,
+					"ok":       true,
+					"type":     typ,
+					"models":   res.Models,
+					"warnings": warnings,
 				})
 				return
 			}
@@ -82,8 +83,8 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response := map[string]any{"ok": true, "type": typ, "models": res.Models}
-		if detectWarning != "" {
-			response["warning"] = detectWarning
+		if len(warnings) > 0 {
+			response["warnings"] = warnings
 		}
 		writeJSON(w, response)
 	case http.MethodPut:
@@ -130,7 +131,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			}
 			detected, detectErr := llm.DetectProviderProtocol(r.Context(), currentBase, currentKey)
 			if detectErr != nil {
-				http.Error(w, fmt.Sprintf("nie udało się wykryć typu API: %v", detectErr), http.StatusBadGateway)
+				http.Error(w, fmt.Sprintf("could not detect the API type: %v", detectErr), http.StatusBadGateway)
 				return
 			}
 			req.Type = &detected

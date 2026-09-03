@@ -54,6 +54,11 @@ type wireEvent struct {
 	// prompts in the same persisted conversation.
 	SessionID string        `json:"session_id,omitempty"`
 	Question  *questionWire `json:"question,omitempty"`
+	// ErrCode names a known failure so the browser renders the sentence from
+	// its UI-language catalog instead of showing server-authored prose.
+	ErrCode string `json:"err_code,omitempty"`
+	// ErrName fills the catalog entry's {n} placeholder.
+	ErrName string `json:"err_name,omitempty"`
 }
 
 // toWireEvent maps a typed agent.Event to its JSON wire form. The

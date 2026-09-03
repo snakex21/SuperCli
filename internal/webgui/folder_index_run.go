@@ -78,9 +78,9 @@ func (s *Server) indexFolderPaths(ctx context.Context, paths []string, config fo
 		processed += len(result.Files)
 		if result.ContentIndexed == 0 && strings.TrimSpace(result.FolderSummary) == "" {
 			if strings.TrimSpace(result.AnalysisError) != "" {
-				result.Error = "AI nie utworzyło indeksu: " + result.AnalysisError
+				result.Error = "the AI produced no index: " + result.AnalysisError
 			} else {
-				result.Error = "AI nie utworzyło żadnej notatki dla tego źródła"
+				result.Error = "the AI produced no note for this source"
 			}
 			continue
 		}
@@ -116,9 +116,9 @@ func (s *Server) indexFolderPaths(ctx context.Context, paths []string, config fo
 			processed += len(outlookMessages)
 			if result.ContentIndexed == 0 && strings.TrimSpace(result.FolderSummary) == "" {
 				if strings.TrimSpace(result.AnalysisError) != "" {
-					result.Error = "AI nie utworzyło indeksu: " + result.AnalysisError
+					result.Error = "the AI produced no index: " + result.AnalysisError
 				} else {
-					result.Error = "AI nie utworzyło żadnej notatki dla tego źródła"
+					result.Error = "the AI produced no note for this source"
 				}
 			} else if err := saveFolderManifest(store, *result); err != nil {
 				result.Error = err.Error()

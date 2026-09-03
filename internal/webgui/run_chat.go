@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -147,7 +148,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// Surface run-setup failures (provider/loop build) as a final
 		// error frame so the UI can show them instead of a dead stream.
 		if !terminalSeen {
-			emit(wireEvent{Type: "error", Err: err.Error()})
+			event := wireEvent{Type: "error", Err: err.Error()}
+			if errors.Is(err, errNoActiveProvider) {
+				event.ErrCode = "chat.noProvider"
+				event.ErrName = s.runtimeAppName()
+			}
+			emit(event)
 		}
 		flusher.Flush()
 		log.Printf("web chat ended with error: model=%q session=%q duration=%s events=%d err=%v", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, err)
