@@ -104,7 +104,7 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
     var fileCopy = el("span", "question-option-copy");
     fileCopy.appendChild(el("strong", "", t("workflow.rewindFiles")));
     fileCopy.appendChild(el("span", "question-option-desc",
-      preview.checkpoints + " " + t("workflow.rewindFilesHint").replace("file(s)", (preview.files || []).length + " file(s)").replace("plików", (preview.files || []).length + " plików")));
+      t("workflow.rewindFilesHint").replace("{c}", fmtInteger(preview.checkpoints || 0)).replace("{n}", fmtInteger((preview.files || []).length))));
     fileOption.appendChild(fileCopy);
     panel.appendChild(fileOption);
   }
