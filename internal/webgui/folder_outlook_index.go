@@ -37,6 +37,7 @@ func pruneOutlookIndexCache(cache *folderIndexCache, messages []tools.OutlookInd
 }
 
 func (s *Server) addOutlookIndexPreviews(ctx context.Context, result *folderScanResult, messages []tools.OutlookIndexMessage, config folderIndexConfig, cache *folderIndexCache, progress func(current, total int, path string)) {
+	language := s.uiLanguage()
 	result.indexPreview = map[string]string{}
 	modelKey := folderIndexModelKey(config)
 	if strings.TrimSpace(config.VisionModel) == "" {
@@ -72,14 +73,14 @@ func (s *Server) addOutlookIndexPreviews(ctx context.Context, result *folderScan
 		exact := buildOutlookExactText(message)
 		if strings.TrimSpace(exact) == "" {
 			result.Unsupported++
-			appendFolderIndexSkipped(result, virtualPath, "Outlook", "wiadomość nie zawiera tekstu dla modelu")
+			appendFolderIndexSkipped(result, virtualPath, "Outlook", "the message carries no text for the model")
 			continue
 		}
-		summary, summaryErr := summarizeIndexedDocument(ctx, provider, filepath.Base(virtualPath), "wiadomość Outlook", exact)
+		summary, summaryErr := summarizeIndexedDocument(ctx, provider, filepath.Base(virtualPath), "Outlook message", exact, language)
 		if summaryErr != nil || strings.TrimSpace(summary) == "" {
 			result.AnalysisFailed++
 			if summaryErr == nil {
-				summaryErr = fmt.Errorf("model nie przygotował notatki dla wiadomości %s", message.Subject)
+				summaryErr = fmt.Errorf("the model returned no note for message %s", message.Subject)
 			}
 			appendFolderAnalysisError(result, summaryErr)
 			appendFolderIndexSkipped(result, virtualPath, "Outlook", summaryErr.Error())
@@ -97,7 +98,7 @@ func (s *Server) addOutlookIndexPreviews(ctx context.Context, result *folderScan
 	if progress != nil {
 		progress(len(messages), len(messages), "")
 	}
-	if folderSummary, summaryErr := summarizeIndexedFolder(ctx, provider, result); summaryErr != nil {
+	if folderSummary, summaryErr := summarizeIndexedFolder(ctx, provider, result, language); summaryErr != nil {
 		appendFolderAnalysisError(result, summaryErr)
 	} else {
 		result.FolderSummary = folderSummary
