@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
+
+	"supercli/internal/system/uilang"
 )
 
 const (
@@ -59,13 +61,14 @@ type openFileNameW struct {
 	flagsEx         uint32
 }
 
-func pickDesktopFiles(initialDir string) ([]string, error) {
+func pickDesktopFiles(initialDir, language string) ([]string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
 	fileBuffer := make([]uint16, pickerBufferUTF16Len)
-	filter := pickerFilterUTF16()
-	title, err := syscall.UTF16FromString("Wybierz pliki")
+	polish := uilang.IsPolish(language)
+	filter := pickerFilterUTF16(polish)
+	title, err := syscall.UTF16FromString(pickerLabel(polish, "Select files", "Wybierz pliki"))
 	if err != nil {
 		return nil, err
 	}
@@ -127,16 +130,26 @@ func pickerOwnerWindow() uintptr {
 	return hwnd
 }
 
-func pickerFilterUTF16() []uint16 {
+// pickerLabel picks one of two variants. The common-dialog filter is a raw
+// UTF-16 buffer handed to Windows, so unlike every other GUI string it has no
+// browser to translate it and both wordings have to live here.
+func pickerLabel(polish bool, english, polishText string) string {
+	if polish {
+		return polishText
+	}
+	return english
+}
+
+func pickerFilterUTF16(polish bool) []uint16 {
 	const allSupported = "*.png;*.jpg;*.jpeg;*.webp;*.gif;*.pdf;*.docx;*.xlsx;*.csv;*.zip;*.txt;*.md;*.json;*.yaml;*.yml;*.xml;*.html;*.css;*.js;*.ts;*.tsx;*.go;*.py"
 	const images = "*.png;*.jpg;*.jpeg;*.webp;*.gif"
 	const documents = "*.pdf;*.docx;*.xlsx;*.csv"
 	const textCodeArchives = "*.zip;*.txt;*.md;*.json;*.yaml;*.yml;*.xml;*.html;*.css;*.js;*.ts;*.tsx;*.go;*.py"
-	value := "Obsługiwane pliki\x00" + allSupported + "\x00" +
-		"Obrazy\x00" + images + "\x00" +
-		"Dokumenty i arkusze\x00" + documents + "\x00" +
-		"Tekst, kod i archiwa\x00" + textCodeArchives + "\x00" +
-		"Wszystkie pliki\x00*.*\x00\x00"
+	value := pickerLabel(polish, "Supported files", "Obsługiwane pliki") + "\x00" + allSupported + "\x00" +
+		pickerLabel(polish, "Images", "Obrazy") + "\x00" + images + "\x00" +
+		pickerLabel(polish, "Documents and spreadsheets", "Dokumenty i arkusze") + "\x00" + documents + "\x00" +
+		pickerLabel(polish, "Text, code and archives", "Tekst, kod i archiwa") + "\x00" + textCodeArchives + "\x00" +
+		pickerLabel(polish, "All files", "Wszystkie pliki") + "\x00*.*\x00\x00"
 	return utf16.Encode([]rune(value))
 }
 

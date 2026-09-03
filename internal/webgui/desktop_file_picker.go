@@ -14,7 +14,7 @@ func (s *Server) handleFilePicker(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	paths, err := pickDesktopFiles(s.filePickerHome())
+	paths, err := pickDesktopFiles(s.filePickerHome(), s.uiLanguage())
 	if err != nil {
 		http.Error(w, "dialog failed: "+err.Error(), http.StatusInternalServerError)
 		return

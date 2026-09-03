@@ -4,6 +4,6 @@ package webgui
 
 import "fmt"
 
-func pickDesktopFiles(string) ([]string, error) {
+func pickDesktopFiles(string, string) ([]string, error) {
 	return nil, fmt.Errorf("native file picker is currently available on Windows")
 }
