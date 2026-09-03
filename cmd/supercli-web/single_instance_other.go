@@ -6,4 +6,4 @@ func claimSingleInstance(string) (func(), bool, error) {
 	return func() {}, false, nil
 }
 
-func notifyAlreadyRunning(string) {}
+func notifyAlreadyRunning(string, string) {}

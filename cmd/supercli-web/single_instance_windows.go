@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"supercli/internal/system/uilang"
 )
 
 var singleInstanceMessageBox = windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW")
@@ -55,8 +57,14 @@ func singleInstanceMutexName(profile, executable string) string {
 	return fmt.Sprintf(`Local\SuperCli.Desktop.%s.%x`, profile, sum[:12])
 }
 
-func notifyAlreadyRunning(appName string) {
-	text, textErr := windows.UTF16PtrFromString(fmt.Sprintf("%s jest już uruchomione.", appName))
+// There is no browser here to translate for us, so the two variants live in
+// Go — the only place a native message box can read them from.
+func notifyAlreadyRunning(appName, language string) {
+	notice := fmt.Sprintf("%s is already running.", appName)
+	if uilang.IsPolish(language) {
+		notice = fmt.Sprintf("%s jest już uruchomione.", appName)
+	}
+	text, textErr := windows.UTF16PtrFromString(notice)
 	title, titleErr := windows.UTF16PtrFromString(appName)
 	if textErr != nil || titleErr != nil {
 		return

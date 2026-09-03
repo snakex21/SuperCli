@@ -28,6 +28,7 @@ import (
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 	"supercli/internal/tools/sandbox"
 	"supercli/internal/webgui"
 )
@@ -83,7 +84,7 @@ func run(crashDataDir *string) {
 			fatal("single instance", instanceErr)
 		}
 		if alreadyRunning {
-			notifyAlreadyRunning(appName)
+			notifyAlreadyRunning(appName, startupUILanguage(*homeFlag, *dataDirFlag))
 			return
 		}
 		defer releaseInstance()
@@ -301,6 +302,24 @@ func fatal(ctx string, err error) {
 // boolPtr returns a pointer to b; used for the optional Debug
 // override which must distinguish unset from false.
 func boolPtr(b bool) *bool { return &b }
+
+// startupUILanguage reads the persisted UI language before the data dir is
+// set up, so the single-instance notice — the one message shown before the
+// engine exists — speaks the language the rest of the app does. Every step is
+// read-only and falls back to host detection, because a notice must never be
+// the thing that fails startup.
+func startupUILanguage(homeFlag, dataDirFlag string) string {
+	home, err := storage.ResolveHome(homeFlag)
+	if err != nil {
+		return uilang.Resolve("")
+	}
+	dataDir, _, err := storage.ResolveRuntimeDataRoot(dataDirFlag)
+	if err != nil {
+		return uilang.Resolve("")
+	}
+	resolved, _ := config.ResolveConfig(dataDir, home, "")
+	return uilang.Resolve(resolved.Language)
+}
 
 func validateUIContract(required int) error {
 	if required < 0 || required > webgui.UIContractVersion {
