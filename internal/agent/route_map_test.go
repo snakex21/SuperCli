@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRouteMapClassify(t *testing.T) {
 	m := DefaultRouteMap()
@@ -63,6 +66,22 @@ func TestImplementationVerificationHintOnlyForMutationWork(t *testing.T) {
 	for _, prompt := range []string{"cześć", "co sądzisz o projekcie?", "wyjaśnij jak działa cache"} {
 		if got := implementationVerificationHint(prompt); got != "" {
 			t.Errorf("read-only prompt %q got verification contract %q", prompt, got)
+		}
+	}
+}
+
+// TestToollessPromptsOfferAnExit guards the actionable dead end: when the
+// advisor/chat routes refuse project work, the wording must hand the user a
+// concrete way out instead of naming a mode they cannot reach.
+func TestToollessPromptsOfferAnExit(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"advisor": advisorSystemPrompt,
+		"chat":    chatOnlySystemPrompt,
+	} {
+		for _, want := range []string{"naming the file or repo", `navigator = "off"`} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("%s prompt lost its exit hint %q", name, want)
+			}
 		}
 	}
 }
