@@ -153,6 +153,39 @@ go run ./cmd/supercli-perf --binary ./supercli --output test/perf/latest.json
 - Sub-agent registry and `agent` tool support.
 - Ultrawork gates for goal/credit-driven execution loops.
 
+### Request routing
+
+Before a request goes to the model, SuperCli picks one of four routes. Only the
+coordinator route loads the full tool context, so a short conceptual question
+does not drag the whole tool set (and a repository preflight) into the prompt.
+
+- `coordinator` — the full agent: all tools, repository context, verification contract. Used for anything project-related or ambiguous.
+- `advisor` — conceptual advice with three tools only: `web_lookup`, `tool_search`, `recall`. No file, code, or terminal access, and nothing that can edit.
+- `chat` — greetings and small talk; same three tools.
+- `clarify` — ambiguous request; answers on the advisor context and asks back.
+
+The decision is keyword-first. A coordinator keyword (`plik`/`file`-class words
+such as `repo`, `kod`, `projekt`, `test`, `build`, `napraw`, `terminal`, …) is
+checked first and always wins. Only afterwards, and only for prompts up to 240
+characters, an advisor prefix (`explain`, `what is`, `what does`, `how does`,
+`why does`, `difference between`, `wyjaśnij`, `jak działa`, …) selects the
+advisor route. So `what is a mutex` becomes advice, while `what is in this repo`
+matches `repo` and gets the full agent.
+
+If you land in advisor mode but wanted actual file work, repeat the request and
+name the file, repo, or code — the keyword pass then routes it to the
+coordinator.
+
+| `navigator` | Behaviour |
+| --- | --- |
+| `"auto"` (default) | Keyword decision when it is confident; one small navigator model call only for genuinely ambiguous prompts. |
+| `"on"` | Navigator model runs on every user turn. |
+| `"off"` | No routing at all — always coordinator, full tools (safe for scripted use). |
+
+Set it as `navigator = "auto"` in `config.toml`, or in the TUI under `/settings`
+→ *Task navigator*, or via the `navigator` knob in the web GUI settings. The
+change applies from the next session.
+
 ### Tools
 
 Built-in tool system includes:
