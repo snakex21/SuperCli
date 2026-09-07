@@ -172,6 +172,7 @@ func (s *titleScheduler) fire(sessionID, prompt string) {
 // background gate and is preempted the moment any foreground call
 // starts. Returns true when the LLM title actually landed.
 func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt string) bool {
+	ctx = llm.WithOpenCodeSession(ctx, sessionID)
 	initialTitle := summarizeHistoryMessage(prompt, 80)
 	store, err := e.sessionStore()
 	if err != nil {

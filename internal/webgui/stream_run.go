@@ -67,6 +67,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		e.titles.Cancel(sid)
 	}
 	emit(wireEvent{Type: "session", SessionID: sid})
+	// OpenCode Go requires one stable routing/cache ID for every conversation.
+	// Context propagation keeps this free of extra requests and automatically
+	// covers coordinator, compact, navigator, and delegated model calls.
+	ctx = llm.WithOpenCodeSession(ctx, sid)
 
 	// A separate lightweight store handle records one row per actual model
 	// call. The session writer still owns messages and legacy aggregates.

@@ -121,6 +121,48 @@ func TestResponsesCompleteUsesOpenCodeZenPublicHeaders(t *testing.T) {
 	}
 }
 
+func TestResponsesCompleteUsesOpenCodeGoSessionHeader(t *testing.T) {
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		codexSSE(w, `{"type":"response.completed","response":{}}`)
+	}))
+	defer srv.Close()
+
+	p, err := NewResponses(ResponsesConfig{
+		BaseURL: strings.Replace(srv.URL, "127.0.0.1", "opencode.ai", 1) + "/zen/go/v1",
+		APIKey:  "go-key",
+		Model:   "muse-spark-1.3-contributor",
+		HTTPClient: &http.Client{Transport: responsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = strings.TrimPrefix(srv.URL, "http://")
+			return http.DefaultTransport.RoundTrip(req)
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithOpenCodeSession(context.Background(), "sess-muse-123")
+	ch, err := p.Complete(ctx, []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatal(d.Err)
+		}
+	}
+	if got := gotHeaders.Get("Authorization"); got != "Bearer go-key" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := gotHeaders.Get("User-Agent"); got != "SuperCLI/1.0" {
+		t.Fatalf("User-Agent = %q", got)
+	}
+	if got := gotHeaders.Get("X-OpenCode-Session"); got != "sess-muse-123" {
+		t.Fatalf("X-OpenCode-Session = %q", got)
+	}
+}
+
 func TestResponsesMuseRequestsAndStreamsReasoningSummary(t *testing.T) {
 	var gotReq map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
