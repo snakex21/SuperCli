@@ -1725,7 +1725,7 @@ func TestOpenCodeZenAnonymousRequestUsesPublicClientHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
+	stream, err := p.Complete(WithOpenCodeSession(context.Background(), "sess-chat-123"), []Message{{Role: RoleUser, Content: "hi"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1742,6 +1742,48 @@ func TestOpenCodeZenAnonymousRequestUsesPublicClientHeaders(t *testing.T) {
 	}
 	if userAgent := got.Get("User-Agent"); userAgent != "SuperCLI/1.0" {
 		t.Fatalf("User-Agent = %q", userAgent)
+	}
+	if sessionID := got.Get("X-OpenCode-Session"); sessionID != "sess-chat-123" {
+		t.Fatalf("X-OpenCode-Session = %q", sessionID)
+	}
+}
+
+func TestOpenCodeGoRequestUsesStableSessionHeaders(t *testing.T) {
+	ctx := WithOpenCodeSession(context.Background(), "sess-go-456")
+	for _, baseURL := range []string{
+		"https://opencode.ai/zen/go/v1",
+		"https://opencode.ai/zen/go/v1/responses",
+	} {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ApplyOpenCodeZenHeaders(req, baseURL)
+		if got := req.Header.Get("X-OpenCode-Session"); got != "sess-go-456" {
+			t.Fatalf("%s: X-OpenCode-Session = %q", baseURL, got)
+		}
+		if got := req.Header.Get("User-Agent"); got != "SuperCLI/1.0" {
+			t.Fatalf("%s: User-Agent = %q", baseURL, got)
+		}
+	}
+}
+
+func TestOpenCodeNonConversationRequestsReuseProcessSession(t *testing.T) {
+	var sessionID string
+	for i := 0; i < 2; i++ {
+		req, err := http.NewRequest(http.MethodGet, "https://opencode.ai/zen/go/v1/models", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ApplyOpenCodeZenHeaders(req, "https://opencode.ai/zen/go/v1")
+		got := req.Header.Get("X-OpenCode-Session")
+		if got == "" {
+			t.Fatal("missing fallback X-OpenCode-Session")
+		}
+		if sessionID != "" && got != sessionID {
+			t.Fatalf("fallback session changed: %q -> %q", sessionID, got)
+		}
+		sessionID = got
 	}
 }
 

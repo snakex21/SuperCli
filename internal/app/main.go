@@ -700,6 +700,7 @@ func Main() {
 	var rawSummarized atomic.Bool
 	memIdle := newIdleScheduler(memoryIdleDelay, func(ctx context.Context) {
 		defer recoverAndLog(dataDir)()
+		ctx = llm.WithOpenCodeSession(ctx, sessionID)
 		p := summaryProviderFor()
 		if !usableSummaryProvider(p) {
 			return

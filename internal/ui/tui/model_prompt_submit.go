@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/agent/planmode"
+	"supercli/internal/llm"
 	"supercli/internal/tools/mentions"
 	"supercli/internal/tools/shellescape"
 )
@@ -44,7 +45,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	if m.onRunStart != nil {
 		m.onRunStart()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(llm.WithOpenCodeSession(context.Background(), m.sessionID))
 	m.cancel.Arm(cancelRun, cancel)
 	m.chat.addUser("> " + text)
 	m.appendLineToTranscript("> " + text)

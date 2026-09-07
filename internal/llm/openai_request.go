@@ -2,13 +2,41 @@ package llm
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
+
+type openCodeSessionCtxKey struct{}
+
+// The fallback covers requests that do not belong to a persisted conversation,
+// such as model discovery and diagnostics. It is created once per process and
+// reused, so adding the required header never adds I/O or per-request ID work.
+var openCodeProcessSessionID = "supercli-process-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+// WithOpenCodeSession attaches the stable SuperCli conversation ID used by
+// OpenCode Go for routing and prompt caching. Other providers ignore it.
+func WithOpenCodeSession(ctx context.Context, sessionID string) context.Context {
+	sessionID = strings.TrimSpace(sessionID)
+	if ctx == nil || sessionID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, openCodeSessionCtxKey{}, sessionID)
+}
+
+func openCodeSessionFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	sessionID, _ := ctx.Value(openCodeSessionCtxKey{}).(string)
+	return strings.TrimSpace(sessionID)
+}
 
 func isOpenCodeZenBaseURL(baseURL string) bool {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
@@ -16,7 +44,8 @@ func isOpenCodeZenBaseURL(baseURL string) bool {
 		return false
 	}
 	path := strings.TrimRight(strings.ToLower(u.EscapedPath()), "/")
-	return path == "/zen/v1" || strings.HasPrefix(path, "/zen/v1/")
+	return path == "/zen/v1" || strings.HasPrefix(path, "/zen/v1/") ||
+		path == "/zen/go/v1" || strings.HasPrefix(path, "/zen/go/v1/")
 }
 
 // ApplyOpenCodeZenHeaders applies the public-client headers used by OpenCode
@@ -32,6 +61,11 @@ func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	}
 	req.Header.Set("X-OpenCode-Client", "supercli")
 	req.Header.Set("User-Agent", "SuperCLI/1.0")
+	sessionID := openCodeSessionFromContext(req.Context())
+	if sessionID == "" {
+		sessionID = openCodeProcessSessionID
+	}
+	req.Header.Set("X-OpenCode-Session", sessionID)
 }
 
 func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, error) {
