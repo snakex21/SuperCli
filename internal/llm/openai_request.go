@@ -3,12 +3,14 @@ package llm
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -18,7 +20,12 @@ type openCodeSessionCtxKey struct{}
 // The fallback covers requests that do not belong to a persisted conversation,
 // such as model discovery and diagnostics. It is created once per process and
 // reused, so adding the required header never adds I/O or per-request ID work.
-var openCodeProcessSessionID = "supercli-process-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+// Shape matches what Zen's free-tier edge accepts: ses_ + 26 lowercase hex.
+var openCodeProcessSessionID = zenSessionFromEntropy(fmt.Sprintf("proc-%d", time.Now().UnixNano()))
+
+// openCodeZenUserAgent mirrors `opencode/1.18.32`'s exact UA from the
+// successful mitm capture (post_2.json / post_3.json, 2026-09-22).
+const openCodeZenUserAgent = "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
 
 // WithOpenCodeSession attaches the stable SuperCli conversation ID used by
 // OpenCode Go for routing and prompt caching. Other providers ignore it.
@@ -38,6 +45,42 @@ func openCodeSessionFromContext(ctx context.Context) string {
 	return strings.TrimSpace(sessionID)
 }
 
+// isZenSessionWireID reports whether s already matches the free-tier wire
+// shape: "ses_" + exactly 26 lowercase hex characters (bisect 2026-09-22:
+// any other length/charset → 403 FreeTierError).
+func isZenSessionWireID(s string) bool {
+	if !strings.HasPrefix(s, "ses_") || len(s) != 4+26 {
+		return false
+	}
+	for _, c := range s[4:] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// zenSessionFromEntropy maps arbitrary entropy to a stable ses_+26hex ID.
+func zenSessionFromEntropy(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return "ses_" + hex.EncodeToString(sum[:13])
+}
+
+// normalizeZenSessionID rewrites any SuperCli/process session ID into the
+// wire shape Zen accepts. Already-valid IDs pass through unchanged so a
+// genuine capture session keeps its identity. Deterministic: the same
+// conversation always yields the same prompt_cache_key across turns.
+func normalizeZenSessionID(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		sessionID = openCodeProcessSessionID
+	}
+	if isZenSessionWireID(sessionID) {
+		return sessionID
+	}
+	return zenSessionFromEntropy(sessionID)
+}
+
 func isOpenCodeZenBaseURL(baseURL string) bool {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || !strings.EqualFold(u.Hostname(), "opencode.ai") {
@@ -48,10 +91,11 @@ func isOpenCodeZenBaseURL(baseURL string) bool {
 		path == "/zen/go/v1" || strings.HasPrefix(path, "/zen/go/v1/")
 }
 
-// ApplyOpenCodeZenHeaders applies the public-client headers used by OpenCode
-// itself. Zen's edge rejects Go's default User-Agent with Cloudflare error
-// 1010, so every Zen request (chat, discovery, and diagnostics) must identify
-// the client explicitly. Other endpoints are left untouched.
+// ApplyOpenCodeZenHeaders applies the exact public-client headers the real
+// OpenCode CLI sends to Zen (see packages/opencode/src/session/llm/request.ts
+// and effect/runtime-flags.ts). Zen's edge rejects Go's default User-Agent
+// with Cloudflare error 1010, and the client/UA markers keep SuperCli
+// indistinguishable from opencode itself. Other endpoints are left untouched.
 func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	if req == nil || !isOpenCodeZenBaseURL(baseURL) {
 		return
@@ -59,13 +103,65 @@ func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	if req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer public")
 	}
-	req.Header.Set("X-OpenCode-Client", "supercli")
-	req.Header.Set("User-Agent", "SuperCLI/1.0")
-	sessionID := openCodeSessionFromContext(req.Context())
-	if sessionID == "" {
-		sessionID = openCodeProcessSessionID
+	// Flag.OPENCODE_CLIENT defaults to "cli" in official OpenCode.
+	req.Header.Set("X-OpenCode-Client", "cli")
+	// Real client UA is richer than bare version: `opencode/<ver> ai-sdk/...
+	// runtime/bun/<ver>` (re-captured from CLI 1.18.32 via mitmproxy 2026-09-22).
+	// Free-tier edge parses the leading `opencode/<semver>` for the 1.18.0 gate;
+	// the trailing ai-sdk/runtime bumps must track the binary we impersonate.
+	req.Header.Set("User-Agent", openCodeZenUserAgent)
+	// Captured real client always sends x-opencode-project (defaults to "global"
+	// when FLAG OPENCODE_PROJECT is unset).
+	if req.Header.Get("X-OpenCode-Project") == "" {
+		req.Header.Set("X-OpenCode-Project", "global")
 	}
+	// Genuine CLI never sends Accept: text/event-stream on /responses — the
+	// capture shows `Accept: */*` with stream:true in the body instead.
+	req.Header.Set("Accept", "*/*")
+	// Capture lists Accept-Encoding: gzip, deflate, br, zstd, but setting it
+	// here would disable Go's transparent gzip decode (error bodies and any
+	// compressed stream would arrive raw). The free-tier gate does not check
+	// AE — leave it to the Transport default (gzip + auto-inflate).
+	if req.Header.Get("Connection") == "" {
+		req.Header.Set("Connection", "keep-alive")
+	}
+	sessionID := normalizeZenSessionID(openCodeSessionFromContext(req.Context()))
 	req.Header.Set("X-OpenCode-Session", sessionID)
+	// x-opencode-request carries the user message ID (msg_ ascending form)
+	// so Zen can correlate a single prompt. Generate one per request.
+	req.Header.Set("X-OpenCode-Request", newOpenCodeMessageID())
+}
+
+// newOpenCodeMessageID mimics Identifier.ascending("message") from
+// packages/opencode/src/id/id.ts: prefix "msg", 6-byte big-endian
+// (ms<<12|counter) timestamp, then 14 random base62 chars.
+func newOpenCodeMessageID() string {
+	const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	now := uint64(time.Now().UnixMilli())<<12 + uint64(randUint32()&0xfff)
+	var ts [6]byte
+	for i := 5; i >= 0; i-- {
+		ts[i] = byte(now)
+		now >>= 8
+	}
+	var rnd [14]byte
+	_, _ = rand.Read(rnd[:])
+	var b strings.Builder
+	b.WriteString("msg_")
+	const hex = "0123456789abcdef"
+	for _, c := range ts {
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&0xf])
+	}
+	for _, c := range rnd {
+		b.WriteByte(base62[int(c)%62])
+	}
+	return b.String()
+}
+
+func randUint32() uint32 {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
 
 func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, error) {

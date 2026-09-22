@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"supercli/internal/tools/fileops"
@@ -214,7 +215,12 @@ func (t *ReadDocxTool) renderDocumentSelectors(data []byte, maxParagraphs int, f
 	if len(paragraphs) > maxParagraphs {
 		paragraphs = paragraphs[:maxParagraphs]
 	}
-	var out strings.Builder
+	type selectorLine struct {
+		start    int
+		priority int
+		text     string
+	}
+	items := make([]selectorLine, 0, len(paragraphs))
 	for _, paragraph := range paragraphs {
 		style := paragraph.style
 		if style == "" {
@@ -226,7 +232,48 @@ func (t *ReadDocxTool) renderDocumentSelectors(data []byte, maxParagraphs int, f
 		if formatting {
 			format = docxParagraphFormatSummary(paragraph.frag)
 		}
-		fmt.Fprintf(&out, "%s [style=%s%s] %s\n", paragraph.selector, style, format, text)
+		items = append(items, selectorLine{
+			start: paragraph.start, priority: 2,
+			text: fmt.Sprintf("%s [style=%s%s] %s", paragraph.selector, style, format, text),
+		})
+	}
+	tables, err := collectDocxTableLocations(data)
+	if err != nil {
+		return "", err
+	}
+	for _, table := range tables {
+		columns := 0
+		if len(table.rows) > 0 {
+			columns, err = countTopLevelCells(data[table.rows[0].start:table.rows[0].end])
+			if err != nil {
+				return "", fmt.Errorf("%s: count columns: %w", table.selector, err)
+			}
+		}
+		items = append(items, selectorLine{
+			start: table.start, priority: 0,
+			text: fmt.Sprintf("%s [table rows=%d columns=%d]", table.selector, len(table.rows), columns),
+		})
+		for _, row := range table.rows {
+			cells, countErr := countTopLevelCells(data[row.start:row.end])
+			if countErr != nil {
+				return "", fmt.Errorf("%s: count cells: %w", row.selector, countErr)
+			}
+			items = append(items, selectorLine{
+				start: row.start, priority: 1,
+				text: fmt.Sprintf("%s [row cells=%d]", row.selector, cells),
+			})
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].start == items[j].start {
+			return items[i].priority < items[j].priority
+		}
+		return items[i].start < items[j].start
+	})
+	var out strings.Builder
+	for _, item := range items {
+		out.WriteString(item.text)
+		out.WriteByte('\n')
 		if int64(out.Len()) > t.MaxOutputBytes {
 			return "", fmt.Errorf("rendered selector text exceeds %d bytes", t.MaxOutputBytes)
 		}

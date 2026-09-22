@@ -147,24 +147,24 @@ func (t *EditDocxTool) doAppend(full string, p editDocxArgs) (Result, error) {
 		return Result{Err: err}, err
 	}
 	var paraXML []byte
-	var nParas int
+	var stats docxContentStats
 	if styleMode == "match" {
-		paraXML, nParas = buildParagraphsMatchingDocument(doc, p.Text, p.Style)
+		paraXML, stats = buildDocxBlocksMatchingDocument(doc, p.Text, p.Style)
 	} else {
-		paraXML, nParas = buildParagraphsXML(p.Text, p.Style)
+		paraXML, stats = buildDocxBlocksXML(p.Text, p.Style)
 	}
 	newDoc, err := docxInsertBeforeBodyEnd(doc, paraXML)
 	if err != nil {
 		return Result{Err: fmt.Errorf("edit_docx: %w", err)}, err
 	}
 	if p.DryRun {
-		return Result{Text: fmt.Sprintf("Preview only: would append %d paragraph(s) to %s using style_mode=%s. Nothing was written.", nParas, full, styleMode)}, nil
+		return Result{Text: fmt.Sprintf("Preview only: would append %d paragraph(s) and %d table(s) to %s using style_mode=%s. Nothing was written.", stats.Paragraphs, stats.Tables, full, styleMode)}, nil
 	}
 	backup, err := editZipEntryInPlace(full, docxDocumentEntry, newDoc)
 	if err != nil {
 		return Result{Err: fmt.Errorf("edit_docx: %w", err)}, err
 	}
-	return Result{Text: fmt.Sprintf("Appended %d paragraph(s) to %s. Backup of the original saved as %s.", nParas, full, backup)}, nil
+	return Result{Text: fmt.Sprintf("Appended %d paragraph(s) and %d table(s) to %s. Backup of the original saved as %s.", stats.Paragraphs, stats.Tables, full, backup)}, nil
 }
 
 func (t *EditDocxTool) doClone(full string, p editDocxArgs) (Result, error) {
@@ -228,16 +228,20 @@ func (t *EditDocxTool) doCreate(full string, p editDocxArgs) (Result, error) {
 		err := fmt.Errorf("edit_docx create: %q already exists. Refusing to overwrite — ask the user whether to replace it, pick a different name, or use action 'append'/'replace' to modify it", full)
 		return Result{Err: err}, err
 	}
+	design, err := resolveDocxDesign(p.Design, p.AccentColor, p.Landscape, docxMaxTableColumns(p.Text))
+	if err != nil {
+		err = fmt.Errorf("edit_docx create: %w", err)
+		return Result{Err: err}, err
+	}
+	contentXML, stats := buildDocxBlocksDesigned(p.Text, "", design)
 	if p.DryRun {
-		_, nParas := buildParagraphsXML(p.Text, "")
-		return Result{Text: fmt.Sprintf("Preview only: would create %s with %d paragraph(s). Nothing was written.", full, nParas)}, nil
+		return Result{Text: fmt.Sprintf("Preview only: would create %s with %d paragraph(s), %d table(s), design=%s and landscape=%t. Nothing was written.", full, stats.Paragraphs, stats.Tables, design.Name, design.Landscape)}, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return Result{Err: fmt.Errorf("edit_docx: create parent folder: %w", err)}, err
 	}
-	paraXML, nParas := buildParagraphsXML(p.Text, "")
 	tmp := filepath.Join(filepath.Dir(full), "."+filepath.Base(full)+".tmp")
-	if err := writeMinimalDocx(tmp, paraXML); err != nil {
+	if err := writeDesignedDocx(tmp, contentXML, design); err != nil {
 		os.Remove(tmp)
 		return Result{Err: fmt.Errorf("edit_docx: %w", err)}, err
 	}
@@ -245,7 +249,7 @@ func (t *EditDocxTool) doCreate(full string, p editDocxArgs) (Result, error) {
 		os.Remove(tmp)
 		return Result{Err: fmt.Errorf("edit_docx: %w", err)}, err
 	}
-	return Result{Text: fmt.Sprintf("Created %s with %d paragraph(s).", full, nParas)}, nil
+	return Result{Text: fmt.Sprintf("Created %s with %d paragraph(s), %d table(s), design=%s and landscape=%t. The requested design was applied during creation; do not read or format the file again unless the user explicitly requested verification.", full, stats.Paragraphs, stats.Tables, design.Name, design.Landscape)}, nil
 }
 
 // ---------------------------------------------------------------------------

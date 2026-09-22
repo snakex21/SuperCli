@@ -113,11 +113,17 @@ func TestResponsesCompleteUsesOpenCodeZenPublicHeaders(t *testing.T) {
 	if got := gotHeaders.Get("Authorization"); got != "Bearer public" {
 		t.Fatalf("Authorization = %q", got)
 	}
-	if got := gotHeaders.Get("X-OpenCode-Client"); got != "supercli" {
+	if got := gotHeaders.Get("X-OpenCode-Client"); got != "cli" {
 		t.Fatalf("X-OpenCode-Client = %q", got)
 	}
-	if got := gotHeaders.Get("User-Agent"); got != "SuperCLI/1.0" {
+	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", got)
+	}
+	if got := gotHeaders.Get("Accept"); got != "*/*" {
+		t.Fatalf("Accept = %q, want */* like the genuine capture", got)
+	}
+	if got := gotHeaders.Get("X-OpenCode-Request"); !strings.HasPrefix(got, "msg_") || len(got) != 30 {
+		t.Fatalf("X-OpenCode-Request = %q, want msg_ + 26 chars", got)
 	}
 }
 
@@ -155,11 +161,14 @@ func TestResponsesCompleteUsesOpenCodeGoSessionHeader(t *testing.T) {
 	if got := gotHeaders.Get("Authorization"); got != "Bearer go-key" {
 		t.Fatalf("Authorization = %q", got)
 	}
-	if got := gotHeaders.Get("User-Agent"); got != "SuperCLI/1.0" {
+	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", got)
 	}
-	if got := gotHeaders.Get("X-OpenCode-Session"); got != "sess-muse-123" {
+	if got := gotHeaders.Get("X-OpenCode-Session"); got != normalizeZenSessionID("sess-muse-123") {
 		t.Fatalf("X-OpenCode-Session = %q", got)
+	}
+	if got := gotHeaders.Get("X-OpenCode-Client"); got != "cli" {
+		t.Fatalf("X-OpenCode-Client = %q", got)
 	}
 }
 
@@ -227,6 +236,87 @@ func TestPrepareStandardResponsesSkipsReasoningFieldsForPlainModel(t *testing.T)
 	}
 	if got["prompt_cache_key"] != "cache" {
 		t.Fatalf("prompt_cache_key = %#v", got["prompt_cache_key"])
+	}
+}
+
+func TestPrepareOpenCodeZenResponsesRequestMatchesCapture(t *testing.T) {
+	// Shape of buildCodexRequest output before Zen reshape.
+	raw := `{
+		"model": "muse-spark-1.3-contributor-free",
+		"instructions": "be helpful",
+		"input": [
+			{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}
+		],
+		"tools": [{"type": "function", "name": "bash", "description": "run", "parameters": {"type": "object"}, "strict": false}],
+		"tool_choice": "auto",
+		"parallel_tool_calls": false,
+		"store": false,
+		"stream": true,
+		"include": [],
+		"reasoning": {"effort": "medium", "summary": "detailed"}
+	}`
+	body, err := prepareOpenCodeZenResponsesRequest([]byte(raw), "ses_abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"instructions", "parallel_tool_calls", "temperature", "top_p"} {
+		if _, ok := got[forbidden]; ok {
+			t.Errorf("zen body must omit %q: %#v", forbidden, got[forbidden])
+		}
+	}
+	// Without /reasoning set, field stays absent (capture / user-dial shape).
+	if _, ok := got["reasoning"]; ok {
+		t.Errorf("zen body must omit reasoning when /reasoning is unset: %#v", got["reasoning"])
+	}
+	if got["max_output_tokens"] != float64(32000) {
+		t.Errorf("max_output_tokens = %#v", got["max_output_tokens"])
+	}
+	if got["prompt_cache_key"] != normalizeZenSessionID("ses_abc123") {
+		t.Errorf("prompt_cache_key = %#v", got["prompt_cache_key"])
+	}
+	include, _ := got["include"].([]any)
+	if len(include) != 1 || include[0] != "reasoning.encrypted_content" {
+		t.Errorf("include = %#v", got["include"])
+	}
+	input, _ := got["input"].([]any)
+	if len(input) != 2 {
+		t.Fatalf("input len = %d, want developer+user", len(input))
+	}
+	dev, _ := input[0].(map[string]any)
+	if dev["role"] != "developer" || dev["content"] != "be helpful" {
+		t.Errorf("developer item = %#v", dev)
+	}
+	if _, ok := dev["type"]; ok {
+		t.Errorf("developer item must not have type: %#v", dev)
+	}
+	user, _ := input[1].(map[string]any)
+	if _, ok := user["type"]; ok {
+		t.Errorf("user item must not have type: %#v", user)
+	}
+	if user["role"] != "user" {
+		t.Errorf("user item = %#v", user)
+	}
+}
+
+func TestPrepareOpenCodeZenResponsesRequestOmitsEmptyTools(t *testing.T) {
+	raw := `{"model":"m","input":[],"tools":[],"tool_choice":"auto","stream":true,"store":false,"include":[]}`
+	body, err := prepareOpenCodeZenResponsesRequest([]byte(raw), "ses_x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["tools"]; ok {
+		t.Errorf("empty tools must be omitted: %#v", got["tools"])
+	}
+	if _, ok := got["tool_choice"]; ok {
+		t.Errorf("tool_choice without tools must be omitted: %#v", got["tool_choice"])
 	}
 }
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	"supercli/internal/llm"
 )
@@ -48,6 +49,12 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 		}
 		l.nextCoordinatorAddon = ""
 	}
+	if l.route == RouteCoordinator && l.wordDocumentContext(prompt) {
+		// These are registered but normally invisible. Promote them before the
+		// first provider call so a Word request never spends a round trip on
+		// tool_search and never sees scripting as the only usable route.
+		l.registry.Activate("read_docx", "edit_docx")
+	}
 	// Verification is a variable, one-shot user-message hint, never part of the
 	// cacheable system prefix. It is injected only for explicit mutation work;
 	// project questions and ordinary chat pay zero tokens for it.
@@ -62,4 +69,39 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 			}
 		}
 	}
+}
+
+func (l *Loop) wordDocumentContext(prompt string) bool {
+	if containsWordDocumentReference(prompt) {
+		return true
+	}
+	// Web sessions construct a fresh Loop for each request, so carry the signal
+	// from recent user text or prior native tool calls such as "popraw jeszcze".
+	start := len(l.Messages) - 12
+	if start < 0 {
+		start = 0
+	}
+	for _, message := range l.Messages[start:] {
+		if message.Role == llm.RoleUser && containsWordDocumentReference(message.Content) {
+			return true
+		}
+		if message.Role == llm.RoleAssistant {
+			for _, call := range message.ToolCalls {
+				if call.Name == "read_docx" || call.Name == "edit_docx" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func containsWordDocumentReference(s string) bool {
+	s = " " + strings.ToLower(strings.TrimSpace(s)) + " "
+	for _, marker := range []string{".docx", " word ", " worda", " wordzie", " dokumencie word", " dokument word"} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }

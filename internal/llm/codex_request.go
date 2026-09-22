@@ -237,6 +237,129 @@ func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoni
 	return json.Marshal(req)
 }
 
+// prepareOpenCodeZenResponsesRequest reshapes a standard Responses body into
+// the dialect the real OpenCode CLI posts to /zen/v1/responses (captured
+// from opencode 1.18.32 via mitmproxy, post_2/post_3, 2026-09-22).
+//
+// Deltas vs prepareStandardResponsesRequest:
+//   - no top-level "instructions": leading system text becomes an input item
+//     {"role":"developer","content":"<raw string>"} (string, not content parts)
+//   - no "type" on message input items (user/assistant stay role+content only)
+//   - no "parallel_tool_calls"
+//   - "reasoning": only when /reasoning is set (user dial for quality vs speed);
+//     omitted otherwise (CLI capture shape; edge defaults high)
+//   - "max_output_tokens": 32000
+//   - "include": ["reasoning.encrypted_content"] always
+//   - "prompt_cache_key" = x-opencode-session (ses_… / process fallback)
+//   - empty tools: omit "tools" and "tool_choice" entirely
+//
+// sessionID is normalized to the ses_+26hex wire shape; it must match the
+// x-opencode-session header ApplyOpenCodeZenHeaders sets on the same request.
+func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string) ([]byte, error) {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+	delete(req, "parallel_tool_calls")
+	delete(req, "reasoning")
+	delete(req, "temperature")
+	delete(req, "top_p")
+	req["max_output_tokens"] = 32000
+	req["include"] = []string{"reasoning.encrypted_content"}
+	// /reasoning is the sole control: when set (e.g. xhigh for quality, low
+	// for speed) send it through. When unset, leave the field omitted — same
+	// as the real CLI capture; the edge then applies its own default (high).
+	// Do not force a level here; the dial exists so the user steers tradeoffs.
+	if e := ReasoningEffort(); e != "" && e != "none" {
+		req["reasoning"] = map[string]any{"effort": e, "summary": "auto"}
+	}
+
+	if inst, ok := req["instructions"].(string); ok {
+		delete(req, "instructions")
+		if strings.TrimSpace(inst) != "" {
+			input, _ := req["input"].([]any)
+			if input == nil {
+				input = []any{}
+			}
+			dev := map[string]any{"role": "developer", "content": inst}
+			req["input"] = append([]any{dev}, input...)
+		}
+	}
+	if input, ok := req["input"].([]any); ok {
+		for _, raw := range input {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if t, _ := item["type"].(string); t == "message" {
+				delete(item, "type")
+			}
+		}
+	}
+	tools, hasTools := req["tools"].([]any)
+	if !hasTools || len(tools) == 0 {
+		delete(req, "tools")
+		delete(req, "tool_choice")
+	} else {
+		// Free-tier gate: tools must contain BOTH "bash" AND "read"
+		// (bisect: either alone → 403; pair → 200). Inject minimal
+		// placeholders matching exp_S4_sc_bash_sc_read.json; returned
+		// calls are rewritten to SuperCli's real tools in the agent.
+		tools = ensureZenGateTools(tools)
+		req["tools"] = tools
+		req["tool_choice"] = "auto"
+	}
+	sessionID = normalizeZenSessionID(sessionID)
+	req["prompt_cache_key"] = sessionID
+	return json.Marshal(req)
+}
+
+// ensureZenGateTools appends the OpenCode Zen free-tier gate pair
+// (bash, read) when absent. Schemas match the minimal accepted capture
+// exp_S4_sc_bash_sc_read.json (672 B). Idempotent.
+func ensureZenGateTools(tools []any) []any {
+	var hasBash, hasRead bool
+	for _, t := range tools {
+		m, ok := t.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch name, _ := m["name"].(string); name {
+		case "bash":
+			hasBash = true
+		case "read":
+			hasRead = true
+		}
+	}
+	if !hasBash {
+		tools = append(tools, map[string]any{
+			"type":        "function",
+			"name":        "bash",
+			"description": "run a command",
+			"strict":      false,
+			"parameters": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"command": map[string]any{"type": "string"}},
+				"required":   []string{"command"},
+			},
+		})
+	}
+	if !hasRead {
+		tools = append(tools, map[string]any{
+			"type":        "function",
+			"name":        "read",
+			"description": "Read a file",
+			"strict":      false,
+			"parameters": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"filePath": map[string]any{"type": "string"}},
+				"required":   []string{"filePath"},
+			},
+		})
+	}
+	return tools
+}
+
 func patchCodexReasoningEffort(body []byte, effort string) ([]byte, bool) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {

@@ -39,15 +39,38 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 		}
 	}
 	if p.cfg.StandardResponsesAPI {
-		reasoningModel := SupportsReasoningEffort(p.cfg.Model) || (p.caps != nil && p.caps.HasReasoning(p.cfg.Model))
-		reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
-		if err != nil {
-			return nil, fmt.Errorf("build standard responses request: %w", err)
-		}
-		if len(imageFallback) > 0 {
-			imageFallback, err = prepareStandardResponsesRequest(imageFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+		if isOpenCodeZenBaseURL(p.cfg.BackendURL) {
+			// Zen free-tier dialect: byte-shape the body the way the real
+			// CLI does (no instructions/parallel/reasoning, session-scoped
+			// prompt_cache_key, max_output_tokens=32000).
+			zenSession := openCodeSessionFromContext(ctx)
+			if zenSession == "" {
+				zenSession = openCodeProcessSessionID
+			}
+			// Zen free-tier edge accepts only ses_+26hex; normalizeZenSessionID
+			// inside prepare keeps header (ApplyOpenCodeZenHeaders) and body
+			// prompt_cache_key identical.
+			reqBody, err = prepareOpenCodeZenResponsesRequest(reqBody, zenSession)
 			if err != nil {
-				return nil, fmt.Errorf("build standard image fallback request: %w", err)
+				return nil, fmt.Errorf("build zen responses request: %w", err)
+			}
+			if len(imageFallback) > 0 {
+				imageFallback, err = prepareOpenCodeZenResponsesRequest(imageFallback, zenSession)
+				if err != nil {
+					return nil, fmt.Errorf("build zen image fallback request: %w", err)
+				}
+			}
+		} else {
+			reasoningModel := SupportsReasoningEffort(p.cfg.Model) || (p.caps != nil && p.caps.HasReasoning(p.cfg.Model))
+			reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			if err != nil {
+				return nil, fmt.Errorf("build standard responses request: %w", err)
+			}
+			if len(imageFallback) > 0 {
+				imageFallback, err = prepareStandardResponsesRequest(imageFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+				if err != nil {
+					return nil, fmt.Errorf("build standard image fallback request: %w", err)
+				}
 			}
 		}
 	}

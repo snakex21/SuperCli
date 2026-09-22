@@ -114,7 +114,7 @@ func isCoreDispatchName(name string) bool {
 	switch name {
 	case "patch_file", "create_file", "list_dir", "search_code",
 		"read_lines", "read_many", "read_context", "ctx_execute",
-		"web_lookup", "recall", "ask_user":
+		"read_docx", "edit_docx", "web_lookup", "recall", "ask_user":
 		return true
 	default:
 		return false

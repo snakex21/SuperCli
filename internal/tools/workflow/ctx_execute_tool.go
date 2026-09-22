@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	core "supercli/internal/tools/core"
@@ -26,6 +28,9 @@ import (
 type CtxExecuteTool struct {
 	Runner *ctxexec.Runner
 	Home   string
+	// NativeOfficeOnly is enabled by the NestCafe profile. It prevents a model
+	// from bypassing the native DOCX tools with ad-hoc interpreter scripts.
+	NativeOfficeOnly bool
 }
 
 // NewCtxExecuteTool returns a CtxExecuteTool bound to a
@@ -38,7 +43,7 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one command in a sandbox and return ONLY its bounded stdout. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH (bundled rg is also supported). The workspace is already the default workdir. On Windows, shell built-ins such as dir/set/copy require [\"cmd\",\"/c\",...]; on Unix, shell syntax requires [\"sh\",\"-c\",...]. Prefer file/search tools for source discovery; use search_code when rg is unavailable. Use this for tests, installed project commands, scripts, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Never use it to read, create, edit, convert, or unpack DOCX; use read_docx/edit_docx directly. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH. The workspace is the default workdir. Use for project tests, installed commands, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
 		Schema: `{
 			"type": "object",
 			"properties": {
@@ -93,6 +98,10 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	if err := p.Validate(); err != nil {
 		return Result{Err: err}, err
 	}
+	if c.NativeOfficeOnly && c.isOfficeScript(p) {
+		err := errors.New("ctx_execute: DOCX scripting is disabled in NestCafe. Use read_docx once, then edit_docx action=batch with all Word changes; no command was run")
+		return Result{Err: err}, nil
+	}
 	req := &ctxexec.Request{
 		Command:     p.Command,
 		Workdir:     p.Workdir,
@@ -125,6 +134,63 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		return Result{Text: string(jb), Err: core.SelfContainedErr(errors.New(res.FailureSummary()))}, nil
 	}
 	return Result{Text: string(jb)}, nil
+}
+
+var officeScriptMarkers = []string{
+	".docx", "python-docx", "from docx", "import docx", "wordprocessingml",
+	"documentformat.openxml", "word.application", "winword", "document.xml",
+	"[content_types].xml", "officeopenxml",
+}
+
+func (c *CtxExecuteTool) isOfficeScript(p ctxExecParams) bool {
+	if len(p.Command) == 0 || !isScriptInterpreter(p.Command[0]) {
+		return false
+	}
+	if containsOfficeScriptMarker(strings.Join(p.Command[1:], "\n")) {
+		return true
+	}
+	// Catch the common two-step workaround: create helper.py/helper.ps1, then
+	// execute only its filename. Read solely local, bounded script sources.
+	base := c.Home
+	if strings.TrimSpace(p.Workdir) != "" {
+		base = filepath.Join(base, p.Workdir)
+	}
+	for _, arg := range p.Command[1:] {
+		ext := strings.ToLower(filepath.Ext(strings.Trim(arg, "\"'")))
+		if ext != ".py" && ext != ".ps1" && ext != ".js" && ext != ".mjs" && ext != ".cjs" {
+			continue
+		}
+		path := strings.Trim(arg, "\"'")
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(base, path)
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) <= 512*1024 && containsOfficeScriptMarker(string(data)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isScriptInterpreter(command string) bool {
+	name := strings.ToLower(filepath.Base(strings.TrimSpace(command)))
+	name = strings.TrimSuffix(name, ".exe")
+	switch name {
+	case "python", "python3", "py", "powershell", "pwsh", "cmd", "sh", "bash", "node", "deno", "bun":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsOfficeScriptMarker(s string) bool {
+	s = strings.ToLower(s)
+	for _, marker := range officeScriptMarkers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // formatCtxExecForTUI is a tiny pretty-printer used by

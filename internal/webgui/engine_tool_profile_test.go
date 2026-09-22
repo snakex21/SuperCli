@@ -123,3 +123,32 @@ func TestEngine_WebEditorProfileMatchesTUI(t *testing.T) {
 		t.Fatalf("tool_search did not discover/activate thunderbird_mail: %s", res.Text)
 	}
 }
+
+func TestEngine_NestCafeCtxExecuteRefusesDocxAutomation(t *testing.T) {
+	dataDir := t.TempDir()
+	home := t.TempDir()
+	eng, err := NewEngine(echoConfig(), home, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	eng.SetAppProfile("nestcafe")
+	if _, err := eng.newLoop(); err != nil {
+		t.Fatal(err)
+	}
+	reg := eng.diagnosticRegistry
+	if reg == nil {
+		t.Fatal("diagnostic registry not captured")
+	}
+	ctxTool, ok := reg.Get("ctx_execute")
+	if !ok {
+		t.Fatal("ctx_execute missing")
+	}
+	res, err := ctxTool.Fn(context.Background(), json.RawMessage(`{"command":["powershell","-Command","$w = New-Object -ComObject Word.Application; $w.Documents.Open('raport.docx')"]}`))
+	if err != nil {
+		t.Fatalf("policy refusal should be recoverable: %v", err)
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "edit_docx action=batch") {
+		t.Fatalf("NestCafe allowed DOCX automation fallback: %+v", res)
+	}
+}
