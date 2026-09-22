@@ -58,8 +58,9 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	cfg := e.cfg
 	appProfile := e.appProfile
 	e.mu.RUnlock()
+	officeProfile := strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe")
 	tc := e.tomlConfigAt(home)
-	if strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe") {
+	if officeProfile {
 		// Repository preflight is useful in SuperCli, but it primes an office
 		// assistant to treat every folder as a source-code project. NestCafe
 		// keeps a technical working directory internally, without exposing its
@@ -115,6 +116,8 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// interchangeable editors is what made it pick the wrong one (and reach
 	// for write_file on a Word document); the line editors are gone entirely
 	// now, and patch_file absorbed the ergonomics they were kept for.
+	ctxTool := tools.NewCtxExecuteTool(ctxexec.New(home), home)
+	ctxTool.NativeOfficeOnly = officeProfile
 	for _, sp := range []tools.Tool{
 		tools.NewReadLines(home).Spec(),
 		tools.NewReadContext(home).Spec(),
@@ -128,7 +131,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		tools.NewCopy(home).Spec(),
 		tools.NewTrash(home).Spec(),
 		tools.NewSearchCode(home).Spec(),
-		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
+		ctxTool.Spec(),
 		tools.NewScratchpad(home).Spec(),
 	} {
 		if turn != nil {

@@ -62,42 +62,44 @@ func NewEditDocx(baseDir string) *EditDocxTool {
 func (t *EditDocxTool) Spec() Tool {
 	return Tool{
 		Name: "edit_docx",
-		Description: "Edit or create a Word .docx file. Pure Go, no Word required. " +
-			"Use this when the user wants to change a Word document: fix wording, do a find-and-replace, " +
-			"add paragraphs or headings at the end, or create a brand-new document from text. " +
-			"Actions: 'replace' (find/replace across the whole document; finds text even when Word split it " +
-			"across formatting runs; optional header/footer inclusion), 'append' (add paragraphs at the end, optional style: Heading1-3 or bold; " +
-			"by default new paragraphs match an existing paragraph of the same role), " +
-			"'clone' (copy a paragraph selected as /body/p[N], optionally replace its text, and insert it after " +
-			"another paragraph while preserving its formatting), " +
-			"'replace_at' (replace exactly one selected paragraph while preserving its style), " +
-			"'suggest_at' (the same precise edit as a minimal Word tracked change), " +
-			"'comment_at' (attach a review comment to one selected paragraph without changing its text), " +
-			"'create' (new .docx from text; lines starting with '# ', '## ', '### ' become headings). " +
-			"Safety: before an existing file is changed, a backup copy is saved next to it as '<name>.bak', " +
-			"and the write is atomic — tell the user the backup exists if they want to undo. " +
-			"Everything not edited (images, styles, headers, tables) is preserved byte-for-byte. Mixed " +
-			"per-word formatting is retained; replacement text inherits the first affected run's formatting. " +
-			"Set style_mode='plain' only when document-style matching is not wanted. " +
-			"Do NOT use this for spreadsheets (use edit_xlsx), " +
-			"PDFs (cannot be edited), or plain text files (use the line-edit tools). " +
-			"Set dry_run=true to validate and preview an edit without writing or creating a backup. " +
-			"Do NOT use 'create' to overwrite an existing file the user did not ask to replace.",
+		Description: "Primary native editor for Word .docx files. Use it directly; never use Python, PowerShell, shell, Word COM, or unpacked OOXML for a supported Word edit. " +
+			"For any non-trivial change use action='batch' and send every operation in operations[] in one call; the whole batch is transactional, writes the DOCX once, and creates one .bak. " +
+			"Read once with read_docx selectors=true, then batch precise edits. Operations run in array order. Text is UTF-8/Unicode and preserves ąćęłńóśźż and other scripts. " +
+			"Available operations: replace/replace_many, replace_at, suggest_at, comment_at, append, insert_after, insert_table, table_add_row/table_add_rows, insert_image, format_at, insert_page_break, insert_link, delete_at, and clone. " +
+			"Selectors come from read_docx. Pipe or tab text creates native editable tables; Markdown headings/lists/tables become native Word structures. PNG/JPEG images are embedded with aspect ratio and alt text. " +
+			"For a new file use create exactly once. create applies a complete engine-side design in the same call: polished (default), botanical, business, minimal, or plain. Wide tables automatically use landscape. " +
+			"Unedited styles, media, headers and document parts are preserved. Mixed per-word formatting is retained; replacement text inherits the first affected run. dry_run validates without changing the original.",
 		Schema: `{
   "type": "object",
   "properties": {
     "path":    {"type": "string", "description": "Path to the .docx file (relative paths resolve against the working directory)."},
-    "action":  {"type": "string", "enum": ["replace", "replace_at", "suggest_at", "comment_at", "append", "clone", "create"], "description": "What to do."},
+    "action":  {"type": "string", "enum": ["batch", "replace", "replace_many", "replace_at", "suggest_at", "comment_at", "append", "insert_after", "insert_table", "table_add_row", "table_add_rows", "insert_image", "format_at", "insert_page_break", "insert_link", "delete_at", "clone", "create"], "description": "Use batch for more than one change."},
+    "operations": {"type": "array", "minItems": 1, "maxItems": 100, "description": "batch: all operations executed in order as one atomic edit. Each item repeats the same action-specific fields listed below, but never path, dry_run, operations, batch or create.", "items": {"type": "object", "description": "One normal edit_docx operation with action plus its fields.", "additionalProperties": true}},
     "find":    {"type": "string", "description": "replace: the exact text to find (case-sensitive)."},
     "replace": {"type": "string", "description": "replace: the replacement text (may be empty to delete)."},
-    "text":    {"type": "string", "description": "replace_at/clone/append/create: replacement or new content. Append/create use one paragraph per line; '# ', '## ', '### ' prefixes become headings."},
-    "style":   {"type": "string", "description": "append: optional semantic style for all appended paragraphs: 'Heading1', 'Heading2', 'Heading3', 'bold', or 'normal'."},
+    "replacements": {"type": "array", "description": "replace_many: exact replacements applied atomically in order.", "minItems": 1, "items": {"type": "object", "properties": {"find": {"type": "string"}, "replace": {"type": "string"}, "expected_count": {"type": "integer", "minimum": 1}}, "required": ["find", "replace"], "additionalProperties": false}},
+    "text":    {"type": "string", "description": "Replacement/new content. Paragraph input supports headings, lists and Markdown tables. insert_table/table_add_row accept pipe- or tab-separated cells. Unicode is preserved."},
+    "style":   {"type": "string", "description": "append: semantic style for appended paragraphs; format_at: Word paragraph style id."},
     "style_mode": {"type": "string", "enum": ["match", "plain"], "description": "append: 'match' (default) clones paragraph/run formatting from a similar existing paragraph; 'plain' uses only the requested built-in style."},
-    "source": {"type": "string", "description": "replace_at/suggest_at/comment_at/clone: selector from read_docx selectors=true."},
+    "source": {"type": "string", "description": "Selector from read_docx selectors=true. table_add_row uses /body/tbl[N]; delete_at also accepts /body/tbl[N]/tr[N]."},
     "comment": {"type": "string", "description": "comment_at: review comment text."},
     "author": {"type": "string", "description": "suggest_at/comment_at: reviewer name (default SuperCli)."},
     "initials": {"type": "string", "description": "comment_at: reviewer initials (derived from author when omitted)."},
-    "after": {"type": "string", "description": "clone: insert after /body/p[N]; defaults to source. Use 'end' to append before section properties."},
+    "after": {"type": "string", "description": "Insertion point: /body/p[N] or /body/tbl[N]. Use 'end' (default for insert_table) to append before section properties."},
+    "header_row": {"type": "boolean", "description": "insert_table: style the first row as a repeating header (default true)."},
+    "image_path": {"type": "string", "description": "insert_image: PNG or JPEG path inside the workspace."},
+    "width_cm": {"type": "number", "description": "insert_image: displayed width in centimeters (default 14.5, range 0.5..30); aspect ratio is preserved."},
+    "alt_text": {"type": "string", "description": "insert_image: accessibility description; defaults to the image filename."},
+    "design": {"type": "string", "enum": ["polished", "botanical", "business", "minimal", "plain"], "description": "create: complete visual preset applied during creation; default polished. Use botanical for green/natural references."},
+    "accent_color": {"type": "string", "description": "create: optional six-digit RGB accent override; the engine derives coordinated tints automatically."},
+    "landscape": {"type": "boolean", "description": "create: optional page orientation override; omitted means automatic landscape for tables with 4+ columns."},
+    "bold": {"type": "boolean", "description": "format_at: enable or disable bold for text runs."},
+    "italic": {"type": "boolean", "description": "format_at: enable or disable italic for text runs."},
+    "underline": {"type": "boolean", "description": "format_at: enable or disable underline for text runs."},
+    "font_size_pt": {"type": "number", "description": "format_at: font size in points, range 6..96."},
+    "color": {"type": "string", "description": "format_at: six-digit RGB text color, for example 1F4E78."},
+    "alignment": {"type": "string", "enum": ["left", "center", "right", "justify"], "description": "format_at: paragraph or table-cell paragraph alignment."},
+    "url": {"type": "string", "description": "insert_link: absolute http, https or mailto URL. text is the visible link label."},
     "dry_run": {"type": "boolean", "description": "Validate and describe the change without writing the document."},
     "include_headers": {"type": "boolean", "description": "replace: also replace matching text in word/header*.xml."},
     "include_footers": {"type": "boolean", "description": "replace: also replace matching text in word/footer*.xml."}
@@ -109,21 +111,81 @@ func (t *EditDocxTool) Spec() Tool {
 }
 
 type editDocxArgs struct {
-	Path           string `json:"path"`
-	Action         string `json:"action"`
-	Find           string `json:"find"`
-	Replace        string `json:"replace"`
-	Text           string `json:"text"`
-	Style          string `json:"style"`
-	StyleMode      string `json:"style_mode"`
-	Source         string `json:"source"`
-	After          string `json:"after"`
-	DryRun         bool   `json:"dry_run"`
-	IncludeHeaders bool   `json:"include_headers"`
-	IncludeFooters bool   `json:"include_footers"`
-	Comment        string `json:"comment"`
-	Author         string `json:"author"`
-	Initials       string `json:"initials"`
+	Path           string                `json:"path"`
+	Action         string                `json:"action"`
+	Find           string                `json:"find"`
+	Replace        string                `json:"replace"`
+	Replacements   []editDocxReplacement `json:"replacements"`
+	Text           string                `json:"text"`
+	Style          string                `json:"style"`
+	StyleMode      string                `json:"style_mode"`
+	Source         string                `json:"source"`
+	After          string                `json:"after"`
+	DryRun         bool                  `json:"dry_run"`
+	IncludeHeaders bool                  `json:"include_headers"`
+	IncludeFooters bool                  `json:"include_footers"`
+	Comment        string                `json:"comment"`
+	Author         string                `json:"author"`
+	Initials       string                `json:"initials"`
+	HeaderRow      *bool                 `json:"header_row"`
+	ImagePath      string                `json:"image_path"`
+	WidthCM        float64               `json:"width_cm"`
+	AltText        string                `json:"alt_text"`
+	Design         string                `json:"design"`
+	AccentColor    string                `json:"accent_color"`
+	Landscape      *bool                 `json:"landscape"`
+	Bold           *bool                 `json:"bold"`
+	Italic         *bool                 `json:"italic"`
+	Underline      *bool                 `json:"underline"`
+	FontSizePT     float64               `json:"font_size_pt"`
+	Color          string                `json:"color"`
+	Alignment      string                `json:"alignment"`
+	URL            string                `json:"url"`
+	Operations     []editDocxOperation   `json:"operations"`
+}
+
+type editDocxOperation struct {
+	Action         string                `json:"action"`
+	Find           string                `json:"find"`
+	Replace        string                `json:"replace"`
+	Replacements   []editDocxReplacement `json:"replacements"`
+	Text           string                `json:"text"`
+	Style          string                `json:"style"`
+	StyleMode      string                `json:"style_mode"`
+	Source         string                `json:"source"`
+	After          string                `json:"after"`
+	IncludeHeaders bool                  `json:"include_headers"`
+	IncludeFooters bool                  `json:"include_footers"`
+	Comment        string                `json:"comment"`
+	Author         string                `json:"author"`
+	Initials       string                `json:"initials"`
+	HeaderRow      *bool                 `json:"header_row"`
+	ImagePath      string                `json:"image_path"`
+	WidthCM        float64               `json:"width_cm"`
+	AltText        string                `json:"alt_text"`
+	Design         string                `json:"design"`
+	AccentColor    string                `json:"accent_color"`
+	Landscape      *bool                 `json:"landscape"`
+	Bold           *bool                 `json:"bold"`
+	Italic         *bool                 `json:"italic"`
+	Underline      *bool                 `json:"underline"`
+	FontSizePT     float64               `json:"font_size_pt"`
+	Color          string                `json:"color"`
+	Alignment      string                `json:"alignment"`
+	URL            string                `json:"url"`
+}
+
+func (op editDocxOperation) args() editDocxArgs {
+	return editDocxArgs{
+		Action: op.Action, Find: op.Find, Replace: op.Replace, Replacements: op.Replacements,
+		Text: op.Text, Style: op.Style, StyleMode: op.StyleMode, Source: op.Source, After: op.After,
+		IncludeHeaders: op.IncludeHeaders, IncludeFooters: op.IncludeFooters,
+		Comment: op.Comment, Author: op.Author, Initials: op.Initials, HeaderRow: op.HeaderRow,
+		ImagePath: op.ImagePath, WidthCM: op.WidthCM, AltText: op.AltText,
+		Design: op.Design, AccentColor: op.AccentColor, Landscape: op.Landscape,
+		Bold: op.Bold, Italic: op.Italic, Underline: op.Underline, FontSizePT: op.FontSizePT,
+		Color: op.Color, Alignment: op.Alignment, URL: op.URL,
+	}
 }
 
 // Execute dispatches on action.
@@ -142,9 +204,17 @@ func (t *EditDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	}
 	release := fileops.LockMutationPaths(full)
 	defer release()
+	return t.executeResolved(full, p)
+}
+
+func (t *EditDocxTool) executeResolved(full string, p editDocxArgs) (Result, error) {
 	switch p.Action {
+	case "batch":
+		return t.doBatch(full, p)
 	case "replace":
 		return t.doReplace(full, p)
+	case "replace_many":
+		return t.doReplaceMany(full, p)
 	case "replace_at":
 		return t.doReplaceAt(full, p)
 	case "suggest_at":
@@ -153,14 +223,38 @@ func (t *EditDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		return t.doCommentAt(full, p)
 	case "append":
 		return t.doAppend(full, p)
+	case "insert_after":
+		return t.doInsertAfter(full, p)
+	case "insert_table":
+		return t.doInsertTable(full, p)
+	case "table_add_row":
+		return t.doTableAddRow(full, p)
+	case "table_add_rows":
+		return t.doTableAddRow(full, p)
+	case "insert_image":
+		return t.doInsertImage(full, p)
+	case "format_at":
+		return t.doFormatAt(full, p)
+	case "insert_page_break":
+		return t.doInsertPageBreak(full, p)
+	case "insert_link":
+		return t.doInsertLink(full, p)
+	case "delete_at":
+		return t.doDeleteAt(full, p)
 	case "clone":
 		return t.doClone(full, p)
 	case "create":
 		return t.doCreate(full, p)
 	default:
-		err := fmt.Errorf("edit_docx: unknown action %q (want replace|replace_at|suggest_at|comment_at|append|clone|create)", p.Action)
+		err := fmt.Errorf("edit_docx: unknown action %q", p.Action)
 		return Result{Err: err}, err
 	}
+}
+
+type editDocxReplacement struct {
+	Find          string `json:"find"`
+	Replace       string `json:"replace"`
+	ExpectedCount int    `json:"expected_count"`
 }
 
 func (t *EditDocxTool) loadDocumentXML(full string) ([]byte, error) {

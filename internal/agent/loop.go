@@ -336,6 +336,16 @@ type Loop struct {
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
 
+	// finalReplyOnly is a one-step, model-independent guard used after a
+	// complete standalone document mutation. The next provider request carries
+	// no tool schemas and may only turn the successful result into a short
+	// user-facing answer. This prevents both small models and over-eager large
+	// models from recreating, rereading, or re-rendering an already finished
+	// Word file. finalReplyFallback is used only for a provider that still emits
+	// an empty response or an unsolicited tool call without schemas.
+	finalReplyOnly     bool
+	finalReplyFallback string
+
 	// Messages is the running conversation. The loop appends to
 	// it on every turn so the model sees the full history.
 	Messages []llm.Message
@@ -739,6 +749,8 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
 	l.emptyReplyNudges = 0
+	l.finalReplyOnly = false
+	l.finalReplyFallback = ""
 	// A final run-goroutine retry covers recovery on the last step. The
 	// projection is rebuilt from current Messages, never from a stale snapshot.
 	// Bound it so a locked database can never delay shutdown indefinitely.

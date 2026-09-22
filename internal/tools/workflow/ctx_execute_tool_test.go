@@ -3,7 +3,9 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -271,6 +273,39 @@ func TestCtxExecute_Execute_RunnerRejectsEscape(t *testing.T) {
 	})))
 	if res.Err == nil {
 		t.Error("expected Err for absolute escape")
+	}
+}
+
+func TestCtxExecute_NestCafeBlocksInlineDocxScript(t *testing.T) {
+	tool := NewCtxExecuteTool(newCtxTestRunner(t), ".")
+	tool.NativeOfficeOnly = true
+	res, err := tool.Execute(context.Background(), mustJSON(t, `{"command":["python","-c","from docx import Document; Document('raport.docx')"]}`))
+	if err != nil {
+		t.Fatalf("policy refusal should be a model-correctable result, got %v", err)
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "edit_docx action=batch") {
+		t.Fatalf("missing native Word repair instruction: %+v", res)
+	}
+}
+
+func TestCtxExecute_NestCafeBlocksSavedDocxHelper(t *testing.T) {
+	home := t.TempDir()
+	script := filepath.Join(home, "helper.py")
+	if err := os.WriteFile(script, []byte("from docx import Document\nDocument('raport.docx')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewCtxExecuteTool(ctxexec.New(home), home)
+	tool.NativeOfficeOnly = true
+	if !tool.isOfficeScript(ctxExecParams{Command: []string{"python", "helper.py"}}) {
+		t.Fatal("saved DOCX helper bypassed the native-office guard")
+	}
+}
+
+func TestCtxExecute_NestCafeAllowsUnrelatedInterpreterCommand(t *testing.T) {
+	tool := NewCtxExecuteTool(newCtxTestRunner(t), ".")
+	tool.NativeOfficeOnly = true
+	if tool.isOfficeScript(ctxExecParams{Command: []string{"python", "-c", "print(2 + 2)"}}) {
+		t.Fatal("unrelated interpreter command was mistaken for Office automation")
 	}
 }
 

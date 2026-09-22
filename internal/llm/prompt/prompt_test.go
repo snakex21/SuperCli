@@ -50,3 +50,16 @@ func TestCoreKeepsOfficeHints(t *testing.T) {
 		t.Error("Core must require stating what file changed")
 	}
 }
+
+func TestCoreWordContractIsCompactAndDeterministic(t *testing.T) {
+	for _, want := range []string{
+		"NEW = exactly one edit_docx(create)",
+		"EXISTING = read_docx once",
+		"Success means stop tools and answer",
+		"Never script or unpack DOCX",
+	} {
+		if !strings.Contains(Core, want) {
+			t.Errorf("Core missing Word contract %q", want)
+		}
+	}
+}

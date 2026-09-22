@@ -28,17 +28,19 @@ type stubProvider struct {
 	calls    int32
 	onCalled func(call int)
 	reqs     [][]llm.Message // every Complete receives this; tests use it to inspect wire requests
+	toolReqs []int           // schema count per Complete call
 }
 
 func (p *stubProvider) Name() string { return p.name }
 
 func (p *stubProvider) SupportsVision() bool { return true }
 
-func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, toolDefs []llm.ToolDef) (<-chan llm.Delta, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	p.reqs = append(p.reqs, msgs)
+	p.toolReqs = append(p.toolReqs, len(toolDefs))
 	if len(p.scripts) == 0 {
 		ch := make(chan llm.Delta, 1)
 		go func() {

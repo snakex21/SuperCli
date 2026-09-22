@@ -59,6 +59,9 @@ func (l *Loop) VisibleToolNames() []string { return l.registry.VisibleNames() }
 // advertised in the catalog (see toolCatalog). This is the thin
 // tool protocol's token win.
 func (l *Loop) buildToolDefs() []llm.ToolDef {
+	if l.finalReplyOnly {
+		return nil
+	}
 	var toolDefs []llm.ToolDef
 	if l.route == RouteCoordinator {
 		schema, _ := l.thinPartition()
@@ -120,7 +123,11 @@ func (l *Loop) isActivated(name string) bool {
 func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
 	for _, t := range l.registry.Visible() {
 		if l.thinTools && !l.isSchemaCore(t.Name) {
-			if l.stableToolset || !l.isActivated(t.Name) {
+			// Word tools are promoted only for document turns. Paying their full
+			// schema then avoids tool_search and script fallbacks; keeping them
+			// dormant otherwise preserves the small cached prefix.
+			wordTurnTool := (t.Name == "read_docx" || t.Name == "edit_docx") && l.isActivated(t.Name)
+			if !wordTurnTool && (l.stableToolset || !l.isActivated(t.Name)) {
 				tail = append(tail, t)
 				continue
 			}

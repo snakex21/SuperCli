@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,10 @@ type toolResult struct {
 // The second return is the per-call verdict, index-aligned with toolCalls, so
 // progress accounting can judge each call on its own merits.
 func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+	// Rewrite Zen-gate placeholders (bash/read) to SuperCli's real tools
+	// BEFORE any registry lookup, so allReadOnlyCalls / toolConflictWaves
+	// / dispatch all see names that actually exist.
+	toolCalls = rewritePlaceholderToolCalls(toolCalls)
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
@@ -88,6 +93,131 @@ func (l *Loop) invokeToolCallsSequential(ctx context.Context, toolCalls []llm.To
 		}
 	}
 	return true, outcomes
+}
+
+// rewritePlaceholderToolCalls maps every Zen-gate placeholder call in the
+// batch onto SuperCli's real tool (and adapted args). Idempotent.
+func rewritePlaceholderToolCalls(toolCalls []llm.ToolCall) []llm.ToolCall {
+	for i := range toolCalls {
+		toolCalls[i] = rewritePlaceholderToolCall(toolCalls[i])
+	}
+	return toolCalls
+}
+
+// rewritePlaceholderToolCall converts a wire-level placeholder tool call
+// (bash / read, injected only to satisfy the OpenCode Zen free-tier gate)
+// into the equivalent SuperCli tool call with adapted arguments.
+func rewritePlaceholderToolCall(tc llm.ToolCall) llm.ToolCall {
+	switch tc.Name {
+	case "bash":
+		tc.Name = "ctx_execute"
+		tc.Arguments = adaptBashArgs(tc.Arguments)
+	case "read":
+		tc.Name = "read_lines"
+		tc.Arguments = adaptReadArgs(tc.Arguments)
+	}
+	return tc
+}
+
+// adaptBashArgs converts placeholder bash arguments ({"command":"shell
+// string", ...}) into ctx_execute argv form. Accepts an argv array too
+// if the model sent one. Extra fields (workdir, timeout / timeout_ms)
+// are forwarded when present.
+func adaptBashArgs(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return raw
+	}
+	cmdVal, ok := m["command"]
+	if !ok {
+		return raw
+	}
+	var argv []string
+	switch c := cmdVal.(type) {
+	case string:
+		argv = shellWrap(c)
+	case []any:
+		for _, e := range c {
+			if s, ok := e.(string); ok && s != "" {
+				argv = append(argv, s)
+			}
+		}
+	}
+	if len(argv) == 0 {
+		return raw
+	}
+	out := map[string]any{"command": argv}
+	if w, ok := m["workdir"].(string); ok && w != "" {
+		out["workdir"] = w
+	}
+	if t, ok := m["timeout_ms"].(float64); ok && t > 0 {
+		out["timeout_ms"] = int(t)
+	} else if t, ok := m["timeout"].(float64); ok && t > 0 {
+		out["timeout_ms"] = int(t * 1000)
+	}
+	jb, err := json.Marshal(out)
+	if err != nil {
+		return raw
+	}
+	return string(jb)
+}
+
+// shellWrap wraps a shell string for ctx_execute, which takes argv.
+func shellWrap(command string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd", "/c", command}
+	}
+	return []string{"sh", "-c", command}
+}
+
+// adaptReadArgs converts placeholder read arguments ({"filePath":...,
+// "offset":...,"limit":...}) into read_lines {file,from,to} (1-based,
+// max 500-line window).
+func adaptReadArgs(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return raw
+	}
+	file, _ := m["filePath"].(string)
+	if file == "" {
+		file, _ = m["file"].(string)
+	}
+	if file == "" {
+		return raw
+	}
+	from := 1
+	if v, ok := m["offset"].(float64); ok && v > 0 {
+		from = int(v)
+	} else if v, ok := m["from"].(float64); ok && v > 0 {
+		from = int(v)
+	}
+	if from < 1 {
+		from = 1
+	}
+	to := from + 499
+	if v, ok := m["limit"].(float64); ok && v > 0 {
+		to = from + int(v) - 1
+	} else if v, ok := m["to"].(float64); ok && v > 0 {
+		to = int(v)
+	}
+	if to < from {
+		to = from
+	}
+	if to > from+499 {
+		to = from + 499
+	}
+	out := map[string]any{"file": file, "from": from, "to": to}
+	jb, err := json.Marshal(out)
+	if err != nil {
+		return raw
+	}
+	return string(jb)
 }
 
 func allTaskCalls(toolCalls []llm.ToolCall) bool {
@@ -156,6 +286,10 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 // invoke runs a single tool call, emits the matching events, and
 // returns the messages to append to history.
 func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) toolResult {
+	// Defense-in-depth: map Zen-gate placeholders before HardenToolCall
+	// so the name gate sees registry names (idempotent with the batch
+	// rewrite at the top of invokeToolCalls).
+	tc = rewritePlaceholderToolCall(tc)
 	// Wave 1 hardening for small models: validate the tool name
 	// (with a did-you-mean suggestion) and repair truncated or
 	// unbalanced JSON arguments before execution. An unrepairable

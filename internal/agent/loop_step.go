@@ -55,9 +55,11 @@ func (l *Loop) runStep(
 	// tool calls from the PREVIOUS step
 	// (zero on step 0). The policy uses it to
 	// decide CriticalOnly drafts.
-	ok, _ := l.draftPolicy.ShouldDraft(step, l.upcomingTools)
-	if l.draftBridge != nil && ok {
-		l.invokeDraft(ctx, step, out)
+	if !l.finalReplyOnly {
+		ok, _ := l.draftPolicy.ShouldDraft(step, l.upcomingTools)
+		if l.draftBridge != nil && ok {
+			l.invokeDraft(ctx, step, out)
+		}
 	}
 
 	// Context defense before the provider call, cheap first:
@@ -108,6 +110,20 @@ func (l *Loop) runStep(
 	// telemetry all retain the real tool name.
 	toolCalls = l.resolveInvokeToolCalls(toolCalls)
 	toolCalls = normalizeMalformedToolCalls(toolCalls)
+	if l.finalReplyOnly {
+		// Some weak/local providers may print a tool call even when the request
+		// exposes no tools. Never execute it after a completed document create.
+		// A deterministic, language-neutral fallback also prevents a third model
+		// round when such a provider emitted no user-facing text at all.
+		toolCalls = nil
+		if !hasVisibleUserReply(text) {
+			text = l.finalReplyFallback
+			if text == "" {
+				text = "✓ Word document ready."
+			}
+			out <- MessageEvent{Text: text}
+		}
+	}
 	if usage != nil {
 		totalUsage.Input += usage.Input
 		totalUsage.Output += usage.Output
@@ -373,7 +389,17 @@ func (l *Loop) runStep(
 	}
 	// Tool results have all been appended in deterministic call order. This
 	// is the other safe drain point for mid-turn user messages.
-	l.drainInterjections(ctx)
+	interjections := l.drainInterjections(ctx)
+	if interjections == 0 {
+		if fallback, ok := standaloneDocxMutationFinalReply(toolCalls, toolOutcomes); ok {
+			l.finalReplyOnly = true
+			l.finalReplyFallback = fallback
+			// This create already fulfilled the request. Reflection here would add
+			// another hidden model call and can only tempt the model to redo work.
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
+	}
 
 	// F5.a: default to signal-driven reflection. A healthy run pays no
 	// auxiliary inference merely because it crossed an arbitrary step

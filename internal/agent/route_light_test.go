@@ -326,6 +326,51 @@ func TestThinTools_DisabledPreservesHistoricalBehaviour(t *testing.T) {
 	}
 }
 
+func TestWordRequestPromotesNativeToolsOnlyForDocumentContext(t *testing.T) {
+	reg := tools.NewRegistry()
+	noop := func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil }
+	for _, name := range []string{"read_docx", "edit_docx"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: name, Schema: `{"type":"object"}`, Fn: noop})
+	}
+	l, err := NewLoop(LoopConfig{
+		Provider: &stubProvider{name: "stub"}, Registry: reg,
+		ThinTools: true, StableToolset: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "Popraw raport.docx"})
+	l.prepareRunRoute(context.Background(), "Popraw raport.docx")
+	defs := l.buildToolDefs()
+	got := map[string]bool{}
+	for _, def := range defs {
+		got[def.Name] = true
+	}
+	for _, name := range []string{"read_docx", "edit_docx"} {
+		if !reg.IsActive(name) || !got[name] {
+			t.Errorf("Word request did not promote %s to a direct full-schema tool", name)
+		}
+	}
+}
+
+func TestNonWordRequestDoesNotPayDocxSchemaCost(t *testing.T) {
+	reg := tools.NewRegistry()
+	noop := func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil }
+	for _, name := range []string{"read_docx", "edit_docx"} {
+		reg.MustRegister(tools.Tool{Name: name, Description: name, Schema: `{"type":"object"}`, Fn: noop})
+	}
+	l, err := NewLoop(LoopConfig{Provider: &stubProvider{name: "stub"}, Registry: reg, ThinTools: true, StableToolset: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.prepareRunRoute(context.Background(), "Policz testy w projekcie Go")
+	for _, def := range l.buildToolDefs() {
+		if def.Name == "read_docx" || def.Name == "edit_docx" {
+			t.Fatalf("non-Word turn leaked DOCX schema: %s", def.Name)
+		}
+	}
+}
+
 // TestThinTools_CatalogInjectedBeforeTimestamp: the catalog must be
 // a system message and the freshness stamp must remain last (so the
 // cacheable prefix is preserved).

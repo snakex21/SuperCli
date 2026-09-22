@@ -465,6 +465,11 @@ func buildParagraphsXML(text, style string) ([]byte, int) {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	n := 0
 	for _, line := range lines {
+		if prefix, body, ok := docxListLine(line); ok {
+			out.Write(buildDocxListParagraphXML(prefix, body))
+			n++
+			continue
+		}
 		heading := ""
 		body := line
 		switch {

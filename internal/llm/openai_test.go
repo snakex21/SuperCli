@@ -1737,14 +1737,22 @@ func TestOpenCodeZenAnonymousRequestUsesPublicClientHeaders(t *testing.T) {
 	if auth := got.Get("Authorization"); auth != "Bearer public" {
 		t.Fatalf("Authorization = %q, want public OpenCode token", auth)
 	}
-	if client := got.Get("X-OpenCode-Client"); client != "supercli" {
+	if client := got.Get("X-OpenCode-Client"); client != "cli" {
 		t.Fatalf("X-OpenCode-Client = %q", client)
 	}
-	if userAgent := got.Get("User-Agent"); userAgent != "SuperCLI/1.0" {
+	if userAgent := got.Get("User-Agent"); userAgent != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", userAgent)
 	}
-	if sessionID := got.Get("X-OpenCode-Session"); sessionID != "sess-chat-123" {
+	if project := got.Get("X-OpenCode-Project"); project != "global" {
+		t.Fatalf("X-OpenCode-Project = %q", project)
+	}
+	if sessionID := got.Get("X-OpenCode-Session"); sessionID != normalizeZenSessionID("sess-chat-123") {
 		t.Fatalf("X-OpenCode-Session = %q", sessionID)
+	} else if !isZenSessionWireID(sessionID) {
+		t.Fatalf("X-OpenCode-Session not wire-shaped: %q", sessionID)
+	}
+	if requestID := got.Get("X-OpenCode-Request"); !strings.HasPrefix(requestID, "msg_") || len(requestID) != 30 {
+		t.Fatalf("X-OpenCode-Request = %q, want msg_ + 26 chars", requestID)
 	}
 }
 
@@ -1759,11 +1767,15 @@ func TestOpenCodeGoRequestUsesStableSessionHeaders(t *testing.T) {
 			t.Fatal(err)
 		}
 		ApplyOpenCodeZenHeaders(req, baseURL)
-		if got := req.Header.Get("X-OpenCode-Session"); got != "sess-go-456" {
-			t.Fatalf("%s: X-OpenCode-Session = %q", baseURL, got)
+		want := normalizeZenSessionID("sess-go-456")
+		if got := req.Header.Get("X-OpenCode-Session"); got != want {
+			t.Fatalf("%s: X-OpenCode-Session = %q, want %q", baseURL, got, want)
 		}
-		if got := req.Header.Get("User-Agent"); got != "SuperCLI/1.0" {
+		if got := req.Header.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
 			t.Fatalf("%s: User-Agent = %q", baseURL, got)
+		}
+		if got := req.Header.Get("X-OpenCode-Client"); got != "cli" {
+			t.Fatalf("%s: X-OpenCode-Client = %q", baseURL, got)
 		}
 	}
 }

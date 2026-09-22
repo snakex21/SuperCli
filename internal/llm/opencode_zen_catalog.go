@@ -171,7 +171,9 @@ func fetchOpenCodeZenCatalog() (openCodeZenCatalog, error) {
 	if err != nil {
 		return openCodeZenCatalog{}, err
 	}
-	req.Header.Set("User-Agent", "SuperCLI/1.0")
+	// models.dev fetch in OpenCode uses
+	// opencode/${InstallationChannel}/${InstallationVersion}/${OPENCODE_CLIENT}.
+	req.Header.Set("User-Agent", "opencode/latest/1.18.32/cli")
 	resp, err := client.Do(req)
 	if err != nil {
 		return openCodeZenCatalog{}, err

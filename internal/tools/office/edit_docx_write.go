@@ -60,6 +60,10 @@ func buildParagraphsMatchingDocument(doc []byte, text, style string) ([]byte, in
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	var out bytes.Buffer
 	for _, line := range lines {
+		if prefix, body, ok := docxListLine(line); ok {
+			out.Write(buildDocxListParagraphXML(prefix, body))
+			continue
+		}
 		body, wantedStyle, forcePlain := docxLineIntent(line, style)
 		if !forcePlain {
 			if template := findDocxParagraphTemplate(templates, wantedStyle); template != nil {
@@ -107,6 +111,36 @@ func collectDocxParagraphTemplates(doc []byte) []docxParagraphTemplate {
 }
 
 var docxParagraphSelectorRe = regexp.MustCompile(`(?i)^(?:/body/)?p\[([1-9][0-9]*)\]$`)
+var docxNumberedListRe = regexp.MustCompile(`^([0-9]+[.)])\s+(.+)$`)
+
+func docxListLine(line string) (prefix, body string, ok bool) {
+	trimmed := strings.TrimSpace(line)
+	for _, bullet := range []string{"- ", "* ", "+ "} {
+		if strings.HasPrefix(trimmed, bullet) {
+			body = strings.TrimSpace(strings.TrimPrefix(trimmed, bullet))
+			switch {
+			case strings.HasPrefix(strings.ToLower(body), "[x]"):
+				return "☒", strings.TrimSpace(body[3:]), true
+			case strings.HasPrefix(body, "[ ]"):
+				return "☐", strings.TrimSpace(body[3:]), true
+			default:
+				return "•", body, true
+			}
+		}
+	}
+	if match := docxNumberedListRe.FindStringSubmatch(trimmed); match != nil {
+		return match[1], match[2], true
+	}
+	return "", "", false
+}
+
+func buildDocxListParagraphXML(prefix, body string) []byte {
+	var out bytes.Buffer
+	out.WriteString(`<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/><w:spacing w:after="60"/></w:pPr><w:r>`)
+	writeRunText(&out, prefix+"\t"+body)
+	out.WriteString(`</w:r></w:p>`)
+	return out.Bytes()
+}
 
 func parseDocxParagraphSelector(selector string, count int) (int, error) {
 	selector = strings.TrimSpace(selector)
@@ -198,6 +232,28 @@ func docxParagraphFormatSummary(frag []byte) string {
 	}
 	if v := docxElementAttr(pPr, "w:spacing", "w:line"); v != "" {
 		hints = append(hints, "line="+v)
+	}
+	if bytes.Contains(frag, []byte("<w:drawing")) {
+		imageHint := "image"
+		if rel := docxElementAttr(frag, "a:blip", "r:embed"); rel != "" {
+			imageHint += " rel=" + rel
+		}
+		if width := docxElementAttr(frag, "wp:extent", "cx"); width != "" {
+			if emu, err := strconv.ParseInt(width, 10, 64); err == nil && emu > 0 {
+				imageHint += fmt.Sprintf(" width=%.2fcm", float64(emu)/360000)
+			}
+		}
+		if alt := docxElementAttr(frag, "wp:docPr", "descr"); alt != "" {
+			imageHint += " alt=" + strconv.Quote(alt)
+		}
+		hints = append(hints, imageHint)
+	}
+	if bytes.Contains(frag, []byte("<w:hyperlink")) {
+		linkHint := "link"
+		if rel := docxElementAttr(frag, "w:hyperlink", "r:id"); rel != "" {
+			linkHint += " rel=" + rel
+		}
+		hints = append(hints, linkHint)
 	}
 	if len(hints) == 0 {
 		return ""
@@ -351,8 +407,8 @@ func writeMinimalDocx(path string, paraXML []byte) error {
 // text. It is shared by the edit_docx tool and lightweight UI exports, so a
 // downloaded .docx is a real OOXML package rather than HTML with a .doc name.
 func WriteSimpleDocx(w io.Writer, text string) error {
-	paraXML, _ := buildParagraphsXML(text, "")
-	return writeMinimalDocxTo(w, paraXML)
+	contentXML, _ := buildDocxBlocksXML(text, "")
+	return writeMinimalDocxTo(w, contentXML)
 }
 
 func writeMinimalDocxTo(dst io.Writer, paraXML []byte) error {
@@ -360,6 +416,7 @@ func writeMinimalDocxTo(dst io.Writer, paraXML []byte) error {
 	body := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
 		`<w:document xmlns:w="` + wordProcessingNS + `"><w:body>` +
 		string(paraXML) +
+		`<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>` +
 		`</w:body></w:document>`
 	entries := []struct{ name, data string }{
 		{"[Content_Types].xml", docxContentTypes},

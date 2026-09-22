@@ -226,6 +226,10 @@ func (l *Loop) providerMessages() []llm.Message {
 // turn; the user's transcript (l.Messages) never contains it.
 func (l *Loop) trailingContext() string {
 	s := l.stampSection()
+	if l.finalReplyOnly {
+		return s + "\n\n[final reply only] The requested Word operation succeeded. " +
+			"Do not call or describe another tool. Briefly tell the user that the document is ready, include its path, and stop."
+	}
 	if l.keepThinking && l.lastThinking != "" {
 		s += "\n\n[Retained reasoning from your previous turn — treat it as your own chain of thought and continue from it; do not reveal it to the user:]\n" + l.lastThinking
 	}
