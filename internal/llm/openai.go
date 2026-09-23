@@ -221,6 +221,14 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	}
 
 	reasoningFormat := p.reasoningFormat()
+	// OpenCode Zen free tier: /chat/completions rejects any tool list without
+	// BOTH "bash" AND "read" (nested OpenAI function shape). SuperCli's real
+	// tool set almost never carries that exact pair, so inject the gate pair
+	// here — same rule as prepareOpenCodeZenResponsesRequest. Wire-level
+	// bash/read calls are rewritten to SuperCli tools in the agent.
+	if isOpenCodeZenBaseURL(p.cfg.BaseURL) {
+		tools = ensureOpenCodeZenGateToolDefs(tools)
+	}
 	// Known text-only metadata blocks image parts before the request leaves
 	// SuperCli. Unknown capability metadata is tried optimistically; if the
 	// upstream then rejects image input, the transport-local learning below
@@ -381,7 +389,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// llama.cpp variants) emit `data: {...}\n` chunks without a
 		// following empty line; waiting for blank lines makes the TUI
 		// appear stuck on "working".
-		toolAcc := make(map[int]*ToolCall)
+		toolAcc := make(map[int]*streamedToolCall)
 		var lastUsage *Usage
 		var lastTimings *llamaTimings
 		sawResponse := false
@@ -402,12 +410,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			sort.Ints(indices)
 			for _, index := range indices {
-				tcCopy := *toolAcc[index]
+				tcCopy := toolAcc[index].snapshot()
 				if err := emit(Delta{ToolCall: &tcCopy}); err != nil {
 					return err
 				}
 			}
-			toolAcc = make(map[int]*ToolCall)
+			toolAcc = make(map[int]*streamedToolCall)
 			return nil
 		}
 		sawDone, parseErr := parseOpenAIDataLines(body, func(data string) error {
@@ -453,8 +461,10 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				// chunk whose choices array is EMPTY. The per-choice
 				// emit below would miss it, so surface it here as a
 				// standalone usage delta. Without this, streamed runs
-				// always report 0 tokens.
-				if len(chunk.Choices) == 0 {
+				// always report 0 tokens. Some gateways keep choices on a
+				// later usage/duplicate-finish frame; that frame also needs
+				// accounting even though its finish/tools are not re-emitted.
+				if len(chunk.Choices) == 0 || emittedFinish {
 					select {
 					case out <- Delta{Usage: lastUsage}:
 					case <-ctx.Done():
@@ -494,7 +504,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					sawPayload = true
 					acc, exists := toolAcc[tc.Index]
 					if !exists {
-						acc = &ToolCall{ID: tc.ID, Name: tc.Function.Name}
+						acc = &streamedToolCall{ID: tc.ID, Name: tc.Function.Name}
 						toolAcc[tc.Index] = acc
 					}
 					if tc.Function.Name != "" {
@@ -503,7 +513,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					if tc.ID != "" {
 						acc.ID = tc.ID
 					}
-					acc.Arguments += tc.Function.Arguments
+					acc.arguments.WriteString(tc.Function.Arguments)
 				}
 				if choice.FinishReason != "" && !emittedFinish {
 					// Flush accumulated tool calls BEFORE the
