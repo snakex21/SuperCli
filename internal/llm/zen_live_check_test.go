@@ -2,7 +2,6 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -11,11 +10,12 @@ import (
 	"time"
 )
 
-// TestZenLiveChatCompletion documents that free-tier Zen rejects
-// /chat/completions outright (403 FreeTierError even with bash+read tools
-// and a wire-shaped session — live probe 2026-09-22). SuperCli's production
-// path is /responses (TestZenLiveResponsesMuse); this test only records the
-// endpoint's status so a future gate change is visible.
+// TestZenLiveChatCompletion drives the real OpenAI provider against
+// production /chat/completions with the free-tier gate (nested bash+read
+// tools, wire session). Live probe 2026-09-23: the body gate is tools-based
+// (both bash and read, nested function shape, stream:true) — any
+// openai-compatible free model opens the same way. SuperCli injects that
+// pair in Complete via ensureOpenCodeZenGateToolDefs; this test pins it.
 func TestZenLiveChatCompletion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")
@@ -24,47 +24,40 @@ func TestZenLiveChatCompletion(t *testing.T) {
 		t.Skip("set ZEN_LIVE=1 to run live Zen smoke")
 	}
 
-	base := "https://opencode.ai/zen/v1"
-	model := envOr("ZEN_MODEL", "mimo-v2.5-free")
-
-	body, err := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": "Reply with exactly: OK"},
-		},
-		"max_tokens": 32,
-		"stream":     false,
+	p, err := NewOpenAI(OpenAIConfig{
+		BaseURL:   "https://opencode.ai/zen/v1",
+		APIKey:    "public",
+		Model:     envOr("ZEN_MODEL", "mimo-v2.6-flash-free"),
+		MaxTokens: 64,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", strings.NewReader(string(body)))
-	if err != nil {
-		t.Fatal(err)
+	ctx := WithOpenCodeSession(context.Background(), "ses_0123456789abcdef0123456789")
+	// SuperCli's real tools — no bash/read names. Complete must inject the gate pair.
+	tools := []ToolDef{
+		{Name: "web_lookup", Description: "web", Schema: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`},
+		{Name: "tool_search", Description: "search", Schema: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`},
+		{Name: "recall", Description: "memory", Schema: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`},
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(WithOpenCodeSession(ctx, "ses_0123456789abcdef0123456789"))
-	ApplyOpenCodeZenHeaders(req, base)
-
-	resp, err := http.DefaultClient.Do(req)
+	ch, err := p.Complete(ctx, []Message{{Role: RoleUser, Content: "Reply with exactly: OK"}}, tools)
 	if err != nil {
-		t.Fatalf("do: %v", err)
+		t.Fatalf("Complete: %v", err)
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	t.Logf("status=%d body=%s", resp.StatusCode, string(raw))
-
-	switch {
-	case resp.StatusCode == http.StatusForbidden:
-		// Expected on free tier: only /responses is open (bash+read + session).
-		t.Log("chat/completions still FreeTierError — production uses /responses")
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		t.Log("chat/completions unexpectedly open — gate may have changed")
-	default:
-		t.Fatalf("live Zen chat unexpected status=%d body=%s", resp.StatusCode, string(raw))
+	var text strings.Builder
+	var gotErr error
+	for d := range ch {
+		if d.Err != nil {
+			gotErr = d.Err
+		}
+		text.WriteString(d.Content)
+	}
+	if gotErr != nil {
+		t.Fatalf("live Zen chat: %v", gotErr)
+	}
+	t.Logf("text=%q", text.String())
+	if text.Len() == 0 {
+		t.Fatal("empty completion")
 	}
 }
 

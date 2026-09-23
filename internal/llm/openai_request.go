@@ -81,6 +81,13 @@ func normalizeZenSessionID(sessionID string) string {
 	return zenSessionFromEntropy(sessionID)
 }
 
+// IsOpenCodeZenBaseURL reports whether baseURL points at an OpenCode Zen
+// free-tier endpoint. Exported so the factory can route by catalog transport
+// (or the OpenAI-chat default for unknown models) without a per-model switch.
+func IsOpenCodeZenBaseURL(baseURL string) bool {
+	return isOpenCodeZenBaseURL(baseURL)
+}
+
 func isOpenCodeZenBaseURL(baseURL string) bool {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || !strings.EqualFold(u.Hostname(), "opencode.ai") {
@@ -89,6 +96,39 @@ func isOpenCodeZenBaseURL(baseURL string) bool {
 	path := strings.TrimRight(strings.ToLower(u.EscapedPath()), "/")
 	return path == "/zen/v1" || strings.HasPrefix(path, "/zen/v1/") ||
 		path == "/zen/go/v1" || strings.HasPrefix(path, "/zen/go/v1/")
+}
+
+// ensureOpenCodeZenGateToolDefs appends the free-tier gate pair (bash, read)
+// when absent, in the nested OpenAI function shape Zen expects on
+// /chat/completions. Either tool alone → 403; the pair opens any
+// openai-compatible free model. Idempotent. SuperCli never advertises these
+// names as its own tools — the agent rewrites returned bash/read calls onto
+// SuperCli's real tools (rewritePlaceholderToolCall).
+func ensureOpenCodeZenGateToolDefs(tools []ToolDef) []ToolDef {
+	var hasBash, hasRead bool
+	for _, t := range tools {
+		switch t.Name {
+		case "bash":
+			hasBash = true
+		case "read":
+			hasRead = true
+		}
+	}
+	if !hasBash {
+		tools = append(tools, ToolDef{
+			Name:        "bash",
+			Description: "run a command",
+			Schema:      `{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}`,
+		})
+	}
+	if !hasRead {
+		tools = append(tools, ToolDef{
+			Name:        "read",
+			Description: "Read a file",
+			Schema:      `{"type":"object","properties":{"filePath":{"type":"string"}},"required":["filePath"]}`,
+		})
+	}
+	return tools
 }
 
 // ApplyOpenCodeZenHeaders applies the exact public-client headers the real
@@ -420,6 +460,12 @@ func (p *OpenAIProvider) reasoningFormat() openAIReasoningFormat {
 	}
 	if gateway {
 		return openAIReasoningUnified
+	}
+	// Local Chat Completions uses the standard flat control. LM Studio and
+	// llama.cpp can silently ignore a gateway's nested reasoning object.
+	// CapabilityModel marks the Opencode gateway wrapper, including local ones.
+	if isLocalBaseURL(p.cfg.BaseURL) && p.cfg.CapabilityModel == "" {
+		return openAIReasoningEffort
 	}
 	// Unknown reasoning families discovered from provider metadata generally
 	// sit behind normalizing gateways, where the unified object is portable.
