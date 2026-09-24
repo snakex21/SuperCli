@@ -5,6 +5,7 @@
 var streaming = false, abortCtl = null, activeSessionID = "", projectEpoch = 0;
 var sessionRuntimeReady = Promise.resolve();
 var activeQuestionOverlay = null;
+var questionOverlays = Object.create(null);
 var runStart = 0, runTimer = null, runToolCount = 0;
 var lastTurn = null;    // last done-event payload + elapsed (stats pane)
 var workersSeen = [];   // worker notifications this browser session
@@ -451,7 +452,7 @@ function renderPromptQueue() {
     text.title = t("composer.editQueued");
     text.addEventListener("click", function () { editQueuedTask(item); });
     row.appendChild(text);
-    var now = el("button", "queue-action", t("composer.sendNow")); now.type = "button";
+    var now = i18nEl("button", "queue-action", "composer.sendNow"); now.type = "button";
     now.addEventListener("click", function () { runQueuedTask(item, true); });
     var remove = el("button", "queue-remove", "×"); remove.type = "button"; remove.title = t("composer.remove");
     remove.addEventListener("click", function () { removeQueuedTask(item.id); });
@@ -481,7 +482,7 @@ async function loadPromptQueue() {
 
 async function loadWorkers() {
   var host = $("#worker-list"); if (!host) return;
-  $("#worker-heading").textContent = ui.lang === "pl" ? "Agenci pomocniczy" : "Workers";
+  $("#worker-heading").textContent = t("task.workers");
   try {
     var got = await j("/api/workers");
     renderWorkers(got && got.workers ? got.workers : []);
@@ -493,7 +494,7 @@ async function loadWorkers() {
 function renderWorkers(workers) {
   var host = $("#worker-list"); if (!host) return; host.innerHTML = "";
   if (!workers.length) {
-    host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak agentów w tym procesie." : "No workers in this process."));
+    host.appendChild(i18nEl("div", "side-empty", "task.noWorkersProcess"));
     return;
   }
   workers.slice().reverse().forEach(function (worker) {
@@ -502,12 +503,15 @@ function renderWorkers(workers) {
     row.appendChild(el("span", "task-center-index worker-state " + state, state === "running" || state === "created" ? "●" : "✓"));
     var copy = el("div", "task-center-copy");
     copy.appendChild(el("span", "t", worker.id + " · " + (worker.agent || "worker")));
-    var meta = state + " · " + (worker.steps || 0) + " " + (ui.lang === "pl" ? "kroków" : "steps") + " · " + ((worker.tokens_in || 0) + (worker.tokens_out || 0)) + " tok";
-    copy.appendChild(el("span", "s", meta));
+    var meta = el("span", "s");
+    meta.appendChild(el("span", "", state + " · " + (worker.steps || 0) + " "));
+    meta.appendChild(i18nEl("span", "", "task.steps"));
+    meta.appendChild(el("span", "", " · " + ((worker.tokens_in || 0) + (worker.tokens_out || 0)) + " tok"));
+    copy.appendChild(meta);
     if (worker.description) copy.title = worker.description;
     row.appendChild(copy);
     if (state === "running" || state === "created") {
-      var stop = el("button", "queue-action", ui.lang === "pl" ? "zatrzymaj" : "stop");
+      var stop = i18nEl("button", "queue-action", "composer.stop");
       stop.addEventListener("click", async function () {
         try { await jpost("/api/workers", { id: worker.id, action: "stop" }); await loadWorkers(); }
         catch (e) { toast(e.message); }
@@ -539,7 +543,7 @@ async function runQueuedTask(item, interrupt) {
 }
 function renderTaskCenter() {
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
-  if (!promptQueue.length) { host.appendChild(el("div", "side-empty", ui.lang === "pl" ? "Brak oczekujących zadań." : "No queued tasks.")); return; }
+  if (!promptQueue.length) { host.appendChild(i18nEl("div", "side-empty", "composer.queueEmpty")); return; }
   promptQueue.forEach(function (item, i) {
     var row = el("div", "task-center-row");
     var drag = queueDragHandle();
@@ -554,7 +558,7 @@ function renderTaskCenter() {
     copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new")));
     copy.addEventListener("click", function () { editQueuedTask(item); });
     row.appendChild(copy);
-    var edit = el("button", "queue-action", t("common.edit"));
+    var edit = i18nEl("button", "queue-action", "common.edit");
     edit.addEventListener("click", function () { editQueuedTask(item); });
     row.appendChild(edit);
     var up = el("button", "queue-action queue-order", "\u2191");
@@ -567,7 +571,7 @@ function renderTaskCenter() {
     down.disabled = i + 1 === promptQueue.length;
     down.addEventListener("click", function () { moveQueuedTask(item, i + 1); });
     row.appendChild(down);
-    var go = el("button", "queue-action", t("composer.sendNow"));
+    var go = i18nEl("button", "queue-action", "composer.sendNow");
     go.addEventListener("click", function () { runQueuedTask(item, true); });
     row.appendChild(go);
     host.appendChild(row);
@@ -583,9 +587,9 @@ function renderSideGoal(got) {
   host.removeAttribute("aria-busy");
   if (!got) {
     var empty = el("div", "side-goal-empty");
-    empty.appendChild(el("div", "side-goal-empty-title", t("goal.sideEmpty")));
-    empty.appendChild(el("div", "side-goal-empty-copy", t("goal.sideEmptyHint")));
-    var create = el("button", "side-goal-manage", t("goal.create"));
+    empty.appendChild(i18nEl("div", "side-goal-empty-title", "goal.sideEmpty"));
+    empty.appendChild(i18nEl("div", "side-goal-empty-copy", "goal.sideEmptyHint"));
+    var create = i18nEl("button", "side-goal-manage", "goal.create");
     create.type = "button";
     create.addEventListener("click", function () { openPanel("goal"); });
     empty.appendChild(create);
@@ -605,7 +609,7 @@ function renderSideGoal(got) {
   host.appendChild(intro);
 
   var progressMeta = el("div", "side-goal-progress-meta");
-  progressMeta.appendChild(el("span", "", t("goal.progress")));
+  progressMeta.appendChild(i18nEl("span", "", "goal.progress"));
   progressMeta.appendChild(el("span", "", terminal + " / " + tasks.length));
   host.appendChild(progressMeta);
   var progress = el("div", "side-goal-progress");
@@ -712,7 +716,8 @@ async function sendPrompt(text, attachments, draft) {
   transcriptLiveAppend = true;
   abortCtl = new AbortController();
   runToolCount = 0;
-  toolRows = {}; workerRows = {}; openToolOrder = [];
+  // Keep worker identity and previous cards across coordinator turns.
+  toolRows = {}; openToolOrder = [];
   sendBtn.textContent = t("composer.queue");
   sendBtn.classList.add("queue");
   sendBtn.type = "submit";
@@ -859,6 +864,9 @@ function handleEvent(ev, current) {
     case "session":
       if (ev.session_id) activeSessionID = ev.session_id;
       return current;
+    case "session_activity":
+      if (ev.session_id === activeSessionID) loadSessions();
+      return current;
     case "message":
       if (!current || current._sealed) current = addAssistantMsg();
       closeAssistantReasoning(current);
@@ -888,6 +896,9 @@ function handleEvent(ev, current) {
 	case "worker_progress":
       addWorkerProgress(ev);
 	  return current;
+	case "question_closed":
+      closeQuestionOverlay(ev.id);
+      return current;
 	case "question":
 	  if (ev.question) showQuestion(ev.question);
 	  setRunState("running", t("question.waiting"));
@@ -936,13 +947,18 @@ function handleEvent(ev, current) {
   }
 }
 
-function closeQuestionOverlay() {
-  if (activeQuestionOverlay) activeQuestionOverlay.remove();
-  activeQuestionOverlay = null;
+function closeQuestionOverlay(id) {
+  var ids = id ? [id] : Object.keys(questionOverlays);
+  ids.forEach(function (key) {
+    if (questionOverlays[key]) questionOverlays[key].remove();
+    delete questionOverlays[key];
+  });
+  var remaining = Object.keys(questionOverlays);
+  activeQuestionOverlay = remaining.length ? questionOverlays[remaining[remaining.length - 1]] : null;
 }
 
 function showQuestion(q) {
-  closeQuestionOverlay();
+  closeQuestionOverlay(q.id);
   var overlay = el("div", "question-inline");
   var panel = el("form", "question-panel");
   panel.setAttribute("aria-label", q.header || t("question.title"));
@@ -986,7 +1002,7 @@ function showQuestion(q) {
       var summary = document.createElement("summary"); summary.textContent = t("question.prompt");
       details.appendChild(summary);
       details.appendChild(el("code", "", opt.image_prompt));
-      var copyBtn = el("button", "question-copy", t("question.copy")); copyBtn.type = "button";
+      var copyBtn = i18nEl("button", "question-copy", "question.copy"); copyBtn.type = "button";
       copyBtn.addEventListener("click", function (e) {
         e.preventDefault();
         navigator.clipboard.writeText(opt.image_prompt).then(function () { toast(t("question.copied")); });
@@ -1002,10 +1018,11 @@ function showQuestion(q) {
   if (q.allow_custom !== false) panel.appendChild(custom);
   var error = el("div", "question-error"); panel.appendChild(error);
   var actions = el("div", "question-actions");
-  var cancel = el("button", "btn", t("question.cancel")); cancel.type = "button";
-  var submit = el("button", "btn primary", t("question.submit")); submit.type = "submit";
+  var cancel = i18nEl("button", "btn", "question.cancel"); cancel.type = "button";
+  var submit = i18nEl("button", "btn primary", "question.submit"); submit.type = "submit";
   actions.appendChild(cancel); actions.appendChild(submit); panel.appendChild(actions);
-  overlay.appendChild(panel); appendStream(overlay); activeQuestionOverlay = overlay; smartScroll(true);
+  overlay.appendChild(panel); appendStream(overlay);
+  questionOverlays[q.id] = overlay; activeQuestionOverlay = overlay; smartScroll(true);
 
   function answer(cancelled) {
     var selected = Array.prototype.slice.call(panel.querySelectorAll('input[name="question-choice"]:checked')).map(function (x) { return x.value; });
@@ -1013,7 +1030,7 @@ function showQuestion(q) {
     if (!cancelled && !selected.length && !own) { error.textContent = t("question.pick"); return; }
     submit.disabled = true; cancel.disabled = true;
     jpost("/api/question/answer", { id: q.id, selected: selected, custom: own, cancelled: !!cancelled })
-      .then(function () { closeQuestionOverlay(); setRunState("running", t("composer.working")); })
+      .then(function () { closeQuestionOverlay(q.id); setRunState("running", t(activeQuestionOverlay ? "question.waiting" : "composer.working")); })
       .catch(function (e) { error.textContent = e.message; submit.disabled = false; cancel.disabled = false; });
   }
   panel.addEventListener("submit", function (e) { e.preventDefault(); answer(false); });
@@ -1112,6 +1129,7 @@ function newSession() {
   activeSessionID = "";
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
+  resetWorkerOverview();
   lastTurn = null; workersSeen = [];
   showWelcome();
   setRunState("idle", t("composer.ready"));

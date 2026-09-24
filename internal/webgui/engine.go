@@ -53,9 +53,10 @@ type Engine struct {
 	// explicitEcho is enabled only by the command-line --echo flag. It keeps
 	// deterministic bridge/dev tests available while branded apps reject an
 	// accidental echo fallback caused by unreadable configuration.
-	explicitEcho bool
-	caps         *llm.CapabilityRegistry
-	prov         llm.Provider
+	explicitEcho            bool
+	caps                    *llm.CapabilityRegistry
+	prov                    llm.Provider
+	localReasoningDiscovery sync.Map // endpoint+credential fingerprint -> *sync.Once
 	// factory is the single provider-construction funnel: every
 	// provider (main, model switches, task workers) comes out of it
 	// wrapped in llm.Metered, so purpose labels, the background gate

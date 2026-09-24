@@ -1,7 +1,7 @@
 // Package processsession provides bounded, workspace-scoped long-running
 // command sessions. It complements ctx_execute: short commands remain cheaper
 // there, while servers, watchers and interactive programs can be started once
-// and polled without blocking an agent turn.
+// and awaited on completion or inspected without restarting them.
 package processsession
 
 import (

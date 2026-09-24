@@ -77,7 +77,7 @@ func TestDedupSimilar(t *testing.T) {
 	for i, content := range []string{
 		"The user prefers to communicate in Polish.",
 		"The user communicates primarily in Polish.", // duplicate
-		"The user's name is not explicitly stated.",   // junk
+		"The user's name is not explicitly stated.",  // junk
 		"The user's name is Maks.",
 	} {
 		if err := s.Put(Entry{
@@ -85,12 +85,15 @@ func TestDedupSimilar(t *testing.T) {
 			Scope:   ScopePreference,
 			Content: content,
 			Source:  SourceAgent,
-			// CreatedAt backdated so List ordering is deterministic
-			// enough for the keep-newest rule.
 		}); err != nil {
 			t.Fatalf("Put: %v", err)
 		}
-		_ = base
+		// Put assigns wall-clock UpdatedAt with second precision. Pin both
+		// timestamps so crossing a second boundary cannot change the winner.
+		ts := base.Add(time.Duration(i) * time.Minute).Unix()
+		if _, err := s.db.Exec("UPDATE memory_entries SET created_at = ?, updated_at = ? WHERE id = ?", ts, ts, "t-"+string(rune('a'+i))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	removed, err := s.DedupSimilar()
 	if err != nil {
@@ -107,7 +110,7 @@ func TestDedupSimilar(t *testing.T) {
 		t.Fatalf("after dedup %d entries remain, want 2", len(entries))
 	}
 	for _, e := range entries {
-		if strings.Contains(e.Content, "explicitly stated") || strings.Contains(e.Content, "primarily") {
+		if strings.Contains(e.Content, "explicitly stated") || strings.Contains(e.Content, "prefers to communicate") {
 			t.Fatalf("junk/duplicate survived: %q", e.Content)
 		}
 	}

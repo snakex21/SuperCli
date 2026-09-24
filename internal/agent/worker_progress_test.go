@@ -41,10 +41,10 @@ func TestRunWorkerLoopReportsToolActivity(t *testing.T) {
 	if err != nil || text != "report" {
 		t.Fatalf("run = %q, %v", text, err)
 	}
-	if len(progress) != 2 || progress[0].Kind != "tool_call" || progress[1].Kind != "tool_result" {
+	if len(progress) != 4 || progress[0].Kind != "started" || progress[1].Kind != "tool_call" || progress[2].Kind != "tool_result" || progress[3].Kind != "finished" {
 		t.Fatalf("progress = %+v", progress)
 	}
-	if progress[0].TaskID != "worker-1" || progress[0].Tool != "search_code" || progress[1].Output != "match" {
+	if progress[0].TaskID != "worker-1" || progress[1].Tool != "search_code" || progress[2].Output != "match" {
 		t.Errorf("progress fields = %+v", progress)
 	}
 	snapshot := w.Snapshot()

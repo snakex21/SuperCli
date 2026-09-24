@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 )
 
@@ -121,6 +122,13 @@ func TestSessionsMenuSelectsWithoutSlashBubble(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	encoded, err := session.FromMessage(llm.Message{Role: llm.RoleUser, Content: "Earlier prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.AppendMessage(context.Background(), old.ID, encoded); err != nil {
+		t.Fatal(err)
+	}
 	var resumed string
 	m := New(Options{
 		Home:         home,
@@ -144,11 +152,13 @@ func TestSessionsMenuSelectsWithoutSlashBubble(t *testing.T) {
 		t.Fatal("session selection should dispatch resume")
 	}
 	msg := cmd()
+	out, _ = mm.Update(msg)
+	mm = out.(Model)
 	if resumed != old.ID {
 		t.Fatalf("resumed=%q want %q", resumed, old.ID)
 	}
-	if _, ok := msg.(slashResultMsg); !ok {
-		t.Fatalf("message=%T, want slashResultMsg", msg)
+	if _, ok := msg.(resumeLoadedMsg); !ok {
+		t.Fatalf("message=%T, want resumeLoadedMsg", msg)
 	}
 	if strings.Contains(mm.transcript.String(), "/resume") {
 		t.Fatalf("visual selection leaked slash command: %q", mm.transcript.String())

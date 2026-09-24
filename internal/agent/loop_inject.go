@@ -127,6 +127,13 @@ func (l *Loop) CurrentModel() string {
 // Used by /model hot-swap (F26.5). The capability
 // check is the caller's responsibility.
 func (l *Loop) SetModel(p llm.Provider) {
+	if l.modelID != p.Name() {
+		l.needsModelHandoff(context.Background())
+		if l.contextModel.model == "" {
+			l.contextModel.provider, l.contextModel.model = l.prefillScope(), l.modelID
+		}
+		l.resetModelContextBaseline()
+	}
 	l.provider = p
 	l.modelID = p.Name()
 }
@@ -135,7 +142,15 @@ func (l *Loop) SetModel(p llm.Provider) {
 // hot-swap. It is separate from SetModel because llm.Provider.Name returns the
 // model ID, not the user-defined connection/profile name.
 func (l *Loop) SetContextProvider(provider string) {
-	l.contextProvider = strings.TrimSpace(provider)
+	provider = strings.TrimSpace(provider)
+	if l.contextProvider != provider {
+		l.needsModelHandoff(context.Background())
+		if l.contextModel.model == "" {
+			l.contextModel.provider, l.contextModel.model = l.prefillScope(), l.modelID
+		}
+		l.resetModelContextBaseline()
+	}
+	l.contextProvider = provider
 }
 
 // ListModels returns all models from the capability registry.

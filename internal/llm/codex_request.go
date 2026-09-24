@@ -86,7 +86,8 @@ type codexReasoning struct {
 }
 
 type codexItem struct {
-	Type string `json:"type"`
+	Raw  json.RawMessage `json:"-"`
+	Type string          `json:"type"`
 	// message items
 	Role    string             `json:"role,omitempty"`
 	Content []codexContentPart `json:"content,omitempty"`
@@ -126,6 +127,14 @@ type codexToolDecl struct {
 // invalidate the server-side prompt cache every turn. The demote pass
 // renders them in place as <system-reminder> user turns instead.
 func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision bool) ([]byte, error) {
+	effort := ReasoningEffortForModel(model)
+	if effort == "none" {
+		effort = ""
+	}
+	return buildCodexRequestWithEffort(model, msgs, tools, vision, effort)
+}
+
+func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, vision bool, effort string) ([]byte, error) {
 	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	req := codexRequest{
 		Model:      model,
@@ -134,10 +143,11 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 		Stream:     true,
 		Include:    []string{},
 	}
-	// The ChatGPT backend rejects "none"; the Codex CLI never
-	// sends it either — skip the field in that case.
-	if e := ReasoningEffortForModel(model); e != "" && e != "none" {
-		req.Reasoning = &codexReasoning{Effort: e, Summary: "auto"}
+	if effort != "" {
+		req.Reasoning = &codexReasoning{Effort: effort}
+		if effort != "none" {
+			req.Reasoning.Summary = "auto"
+		}
 	}
 	for _, t := range tools {
 		parameters, err := normalizeToolSchemaChecked(t.Schema)
@@ -163,6 +173,9 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 				Output: m.Content,
 			})
 		case RoleAssistant:
+			for _, raw := range nativePayloads(m, ReasoningResponses, model) {
+				req.Input = append(req.Input, codexItem{Raw: raw})
+			}
 			if text := messageText(m); text != "" {
 				req.Input = append(req.Input, codexItem{
 					Type: "message", Role: "assistant",
@@ -216,13 +229,14 @@ func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoni
 		if reasoning == nil {
 			reasoning = make(map[string]any)
 		}
-		if effort, ok := reasoning["effort"].(string); !ok || strings.TrimSpace(effort) == "" {
-			reasoning["effort"] = "medium"
-		}
+		// Missing effort means provider default. Never replace an unset dial
+		// (or a model absent from a name heuristic) with a fixed medium.
 		// Ask every catalog-advertised reasoning model for the richest summary
 		// the standard Responses API exposes. This is capability-driven; no
 		// model-name allowlist is involved.
-		reasoning["summary"] = "detailed"
+		if reasoning["effort"] != "none" {
+			reasoning["summary"] = "detailed"
+		}
 		req["reasoning"] = reasoning
 		req["include"] = []string{"reasoning.encrypted_content"}
 	}
@@ -361,11 +375,18 @@ func ensureZenGateTools(tools []any) []any {
 }
 
 func patchCodexReasoningEffort(body []byte, effort string) ([]byte, bool) {
+	if effort == "none" {
+		effort = ""
+	}
+	return patchResponsesReasoningEffort(body, effort)
+}
+
+func patchResponsesReasoningEffort(body []byte, effort string) ([]byte, bool) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, false
 	}
-	if effort == "" || effort == "none" {
+	if effort == "" {
 		delete(req, "reasoning")
 	} else {
 		reasoning, _ := req["reasoning"].(map[string]any)
@@ -373,7 +394,9 @@ func patchCodexReasoningEffort(body []byte, effort string) ([]byte, bool) {
 			reasoning = make(map[string]any)
 		}
 		reasoning["effort"] = effort
-		if _, ok := reasoning["summary"]; !ok {
+		if effort == "none" {
+			delete(reasoning, "summary")
+		} else if _, ok := reasoning["summary"]; !ok {
 			reasoning["summary"] = "auto"
 		}
 		req["reasoning"] = reasoning
@@ -387,7 +410,22 @@ func messageText(m Message) string {
 	if len(m.Parts) == 0 {
 		return m.Content
 	}
+	var first string
+	size := 0
+	for _, p := range m.Parts {
+		if p.Type == PartTypeText {
+			if size == 0 {
+				first = p.Text
+			}
+			size += len(p.Text)
+		}
+	}
+	// A single nonempty text part is already the final immutable string.
+	if size == len(first) {
+		return first
+	}
 	var b strings.Builder
+	b.Grow(size)
 	for _, p := range m.Parts {
 		if p.Type == PartTypeText {
 			b.WriteString(p.Text)

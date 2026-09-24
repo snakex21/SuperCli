@@ -1,6 +1,8 @@
 package webgui
 
 import (
+	"fmt"
+	"path/filepath"
 	"supercli/internal/system/config"
 	"supercli/internal/system/uilang"
 )
@@ -24,4 +26,14 @@ func respondInLanguage(language string) string {
 		return "Respond in Polish."
 	}
 	return "Respond in English."
+}
+
+// Native dialogs cannot use the browser dictionary. Read the current portable
+// preference on each close request, including changes made while the app runs.
+func nativeCloseText(dataDir, appName string) string {
+	cfg, _ := config.LoadToml(filepath.Join(dataDir, "config.toml"))
+	if uilang.IsPolish(uilang.Resolve(cfg.Language)) {
+		return fmt.Sprintf("Zamknąć %s?\n\nTrwające zadanie zostanie zatrzymane.", appName)
+	}
+	return fmt.Sprintf("Close %s?\n\nThe active task will be stopped.", appName)
 }

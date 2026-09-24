@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // role identifies who produced a chat message. The role
@@ -14,15 +15,17 @@ const (
 	roleUser      role = iota // user prompt input
 	roleAssistant             // assistant text (streamed)
 	roleSystem                // system markers, errors, events
+	roleDocument
 )
 
 // msg is a single rendered line in the chat transcript.
 // The role drives the color; the body is the raw text
 // (no ANSI codes — styling is applied at render time).
 type msg struct {
-	role      role
-	text      string
-	collapsed bool
+	role                role
+	text                string
+	collapsed           bool
+	toolName, toolError string
 }
 
 // chat holds the ordered message history and the current
@@ -30,10 +33,11 @@ type msg struct {
 // transcript strings.Builder approach with structured
 // messages that can be colored per-role.
 type chat struct {
-	msgs     []msg
-	current  string // streaming assistant text (flushed on DoneEvent)
-	width    int    // terminal width for word-wrapping
-	language string
+	msgs          []msg
+	current       string // streaming assistant text (flushed on DoneEvent)
+	width         int    // terminal width for word-wrapping
+	language      string
+	legacySymbols bool
 
 	// completedCache is the rendered, immutable prefix of completed messages.
 	// Streaming used to run Markdown/ANSI rendering over the entire conversation
@@ -45,6 +49,7 @@ type chat struct {
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
 	thinkingCollapsed bool
+	toolsExpanded     bool
 }
 
 // newChat creates an empty chat with the given terminal width.
@@ -53,7 +58,7 @@ func newChat(width int, language ...string) chat {
 	if len(language) > 0 {
 		lang = normalizeLanguage(language[0])
 	}
-	return chat{width: width, language: lang}
+	return chat{width: width, language: lang, legacySymbols: legacyTerminalSymbols()}
 }
 
 // addUser appends a user prompt.
@@ -131,7 +136,7 @@ func (c *chat) render(p Palette) string {
 		if len(c.msgs) > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(renderAssistantMarkdown(c.current, p, c.thinkingCollapsed, c.language))
+		b.WriteString(renderAssistantMarkdown(terminalText(c.current, c.legacySymbols), p, c.thinkingCollapsed, c.language))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -139,6 +144,7 @@ func (c *chat) render(p Palette) string {
 
 // renderMsg renders a single message with role-based color.
 func (c *chat) renderMsg(m msg, p Palette) string {
+	m.text = terminalText(m.text, c.legacySymbols)
 	if m.collapsed {
 		first := strings.TrimSpace(strings.SplitN(m.text, "\n", 2)[0])
 		if first == "" {
@@ -151,10 +157,19 @@ func (c *chat) renderMsg(m msg, p Palette) string {
 		// The plain transcript keeps a "> " prefix for compatibility; the
 		// colored gutter already communicates the role visually.
 		body := strings.TrimPrefix(m.text, "> ")
-		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "You", "Ty")), p.User.Render(body), p.UserGutter)
+		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "You", "Ty")), p.User.Render(body), p.UserGutter, c.width)
 	case roleAssistant:
-		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language), p.AssistGutter)
+		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language), p.AssistGutter, c.width)
+	case roleDocument:
+		return renderCommandDocument(m.text, p, c.width)
 	case roleSystem:
+		if m.toolName != "" {
+			marker := NewMarker(p, c.language)
+			if m.toolError != "" {
+				return marker.ToolResultErr(m.toolName, m.toolError)
+			}
+			return marker.ToolResultFull(m.toolName, m.text, c.toolsExpanded)
+		}
 		// System messages already carry ANSI styling from
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
 		// etc.). Wrapping them in p.System.Render() would
@@ -168,7 +183,10 @@ func (c *chat) renderMsg(m msg, p Palette) string {
 // renderRoleBlock renders a labeled message with a colored
 // left-border gutter ("▌") instead of a heavy box — the gutter
 // color identifies the speaker at a glance.
-func renderRoleBlock(label, body string, gutter lipgloss.Style) string {
+func renderRoleBlock(label, body string, gutter lipgloss.Style, widths ...int) string {
+	if len(widths) > 0 && widths[0] > 2 {
+		body = ansi.Wrap(body, widths[0]-2, "")
+	}
 	body = strings.TrimRight(body, "\n")
 	if body == "" {
 		return label
@@ -196,7 +214,7 @@ func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 		if len(c.msgs) > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(c.current, p, c.thinkingCollapsed, c.language), p.AssistGutter))
+		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(terminalText(c.current, c.legacySymbols), p, c.thinkingCollapsed, c.language), p.AssistGutter, c.width))
 		b.WriteString(" ")
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
@@ -220,7 +238,7 @@ func (c *chat) renderCompleted(p Palette) string {
 		if i > 0 && (m.role == roleUser || m.role == roleAssistant) {
 			b.WriteByte('\n')
 		}
-		b.WriteString(c.renderMsg(m, p))
+		b.WriteString(ansi.Wrap(c.renderMsg(m, p), max(1, c.width), ""))
 		b.WriteByte('\n')
 	}
 	c.completedCache = b.String()
@@ -309,4 +327,9 @@ func (c *chat) renderedLineForMessage(index int, p Palette) int {
 		lines += strings.Count(rendered, "\n") + 1
 	}
 	return lines
+}
+
+func (c *chat) addToolResult(name, output, errText string) {
+	c.msgs = append(c.msgs, msg{role: roleSystem, text: output, toolName: name, toolError: errText})
+	c.completedDirty = true
 }

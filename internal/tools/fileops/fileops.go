@@ -51,9 +51,9 @@ func FileErr(err error, path string) error {
 	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("not_found %s", path)
+		return &fileError{message: "not_found " + path, cause: err}
 	case errors.Is(err, fs.ErrPermission):
-		return fmt.Errorf("permission %s", path)
+		return &fileError{message: "permission " + path, cause: err}
 	}
 	// A read/open that failed on an existing directory: state
 	// the shape fact instead of the OS-specific error text.
@@ -62,6 +62,16 @@ func FileErr(err error, path string) error {
 	}
 	return err
 }
+
+// fileError keeps concise model-facing text and the original cause for callers
+// that distinguish missing files from other failures without another stat.
+type fileError struct {
+	message string
+	cause   error
+}
+
+func (e *fileError) Error() string { return e.message }
+func (e *fileError) Unwrap() error { return e.cause }
 
 // readLines reads all lines from path. Returns the lines
 // slice (0-indexed) and nil error on success. Lines do
@@ -116,70 +126,4 @@ func writeLines(path string, lines []string) error {
 type LineRange struct {
 	Number  int    `json:"number"`
 	Content string `json:"content"`
-}
-
-// ReadLines reads lines from..to (inclusive, 1-based) from
-// path. Returns the lines with their numbers. Capped at
-// MaxLineRange lines per call.
-func ReadLines(path string, from, to int) ([]LineRange, error) {
-	if from < 1 {
-		return nil, fmt.Errorf("fileops.ReadLines: from=%d must be >= 1", from)
-	}
-	if to < from {
-		return nil, fmt.Errorf("fileops.ReadLines: to=%d must be >= from=%d; lines are 1-based", to, from)
-	}
-	if to-from+1 > MaxLineRange {
-		return nil, fmt.Errorf("fileops.ReadLines: range %d lines exceeds cap %d", to-from+1, MaxLineRange)
-	}
-	lines, err := readLines(path)
-	if err != nil {
-		return nil, err
-	}
-	total := len(lines)
-	if from > total {
-		return nil, fmt.Errorf("fileops.ReadLines: from=%d exceeds file length %d", from, total)
-	}
-	if to > total {
-		to = total
-	}
-	out := make([]LineRange, 0, to-from+1)
-	for i := from - 1; i < to; i++ {
-		out = append(out, LineRange{Number: i + 1, Content: lines[i]})
-	}
-	return out, nil
-}
-
-// ReadContext reads radius lines around line (1-based).
-// DefaultContextRadius is used when radius <= 0.
-func ReadContext(path string, line, radius int) ([]LineRange, error) {
-	if line < 1 {
-		return nil, fmt.Errorf("fileops.ReadContext: line=%d must be >= 1", line)
-	}
-	if radius <= 0 {
-		radius = DefaultContextRadius
-	}
-	if radius > MaxContextRadius {
-		radius = MaxContextRadius
-	}
-	lines, err := readLines(path)
-	if err != nil {
-		return nil, err
-	}
-	total := len(lines)
-	if line > total {
-		return nil, fmt.Errorf("fileops.ReadContext: line=%d exceeds file length %d", line, total)
-	}
-	from := line - radius
-	if from < 1 {
-		from = 1
-	}
-	to := line + radius
-	if to > total {
-		to = total
-	}
-	out := make([]LineRange, 0, to-from+1)
-	for i := from - 1; i < to; i++ {
-		out = append(out, LineRange{Number: i + 1, Content: lines[i]})
-	}
-	return out, nil
 }

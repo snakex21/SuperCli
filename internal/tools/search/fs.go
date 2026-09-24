@@ -14,6 +14,14 @@ var skippedDirs = map[string]bool{
 	"target": true, "dist": true, "build": true,
 	".next": true, ".cache": true, "__pycache__": true,
 	".venv": true, "venv": true, ".supercli": true,
+	".zig-cache": true, "zig-cache": true, "zig-out": true,
+	".tmp": true, "supercli-data": true,
+}
+
+// IsSkippedDirectory shares the search ignore policy with bounded repo listings.
+// It applies to descendants only; callers may explicitly select any safe root.
+func IsSkippedDirectory(name string) bool {
+	return skippedDirs[strings.ToLower(name)]
 }
 
 // openFile is os.Open under a tools-package alias.
@@ -26,7 +34,20 @@ func openFile(path string) (io.ReadCloser, error) { return os.Open(path) }
 // search_code's rg fallback and the manifest noop-gate both use
 // it, so the ignore set cannot drift between them.
 func WalkFiles(root string, fn func(path string) error) error {
+	return walkFilesContext(context.Background(), root, fn)
+}
+
+func walkFilesContext(ctx context.Context, root string, fn func(path string) error) error {
+	return walkFilesFiltered(ctx, root, nil, fn)
+}
+
+// descend can reject a whole subtree before its directory entries are read.
+// A nil predicate preserves the shared walk used by non-search callers.
+func walkFilesFiltered(ctx context.Context, root string, descend func(string) bool, fn func(path string) error) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
 			// Permission errors and files removed concurrently are not fatal.
 			// Editors and security scanners commonly replace config files while
@@ -38,9 +59,12 @@ func WalkFiles(root string, fn func(path string) error) error {
 			return err
 		}
 		if d.IsDir() {
-			if skippedDirs[d.Name()] {
+			if path != root && (IsSkippedSubtree(root, path) || (descend != nil && !descend(path))) {
 				return fs.SkipDir
 			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		return fn(path)

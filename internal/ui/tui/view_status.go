@@ -9,14 +9,14 @@ import (
 // It shows: model | credits | goal | draft | session — each section
 // separated by a dim pipe. Empty sections are skipped.
 type StatusBar struct {
-	Model      string // e.g. "gpt-4o"
-	Credits    string // e.g. "1.2k/10k (12%)"
-	Goal       string // e.g. "3/5 tasks"
-	DraftMode  string // e.g. "draft: on"
-	Session    string // e.g. "abc123"
-	Tokens     string // F34: e.g. "1.2k"
-	Cost       string // F34: e.g. "$0.003"
-	Width      int
+	Model     string // e.g. "gpt-4o"
+	Credits   string // e.g. "1.2k/10k (12%)"
+	Goal      string // e.g. "3/5 tasks"
+	DraftMode string // e.g. "draft: on"
+	Session   string // e.g. "abc123"
+	Tokens    string // F34: e.g. "1.2k"
+	Cost      string // F34: e.g. "$0.003"
+	Width     int
 }
 
 // Render produces the status line. Sections flow left-to-right;
@@ -56,8 +56,8 @@ func (s StatusBar) Render(p Palette) string {
 	line := strings.Join(parts, sep)
 
 	// Truncate if wider than terminal.
-	if s.Width > 0 && len([]rune(line)) > s.Width {
-		line = string([]rune(line)[:s.Width-1]) + "…"
+	if s.Width > 0 {
+		line = truncateVisible(line, s.Width)
 	}
 	return line
 }

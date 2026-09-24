@@ -74,3 +74,10 @@ func nil_to_ctx() context.Context { return context.Background() }
 // dispatchSlashCommand runs a slash command handler in a
 // goroutine and returns a tea.Cmd that emits a
 // slashResultMsg when the handler is done.
+
+func (m *Model) waitForRunClose() tea.Cmd {
+	if m.eventCh == nil {
+		return func() tea.Msg { return runEndMsg{} }
+	}
+	return m.waitForNextEvent()
+}

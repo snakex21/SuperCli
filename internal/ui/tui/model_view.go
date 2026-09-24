@@ -1,7 +1,7 @@
 // Package tui is the Bubble Tea presentation layer. F25 replaces
 // the raw transcript with a structured chat view (role-based
 // colors), adds a status bar, inline event markers, a tool-
-// name spinner, Ctrl+C run cancellation, and PgUp/PgDn scrolling.
+// name spinner, Ctrl+C run cancellation, and Wheel/PgUp/PgDn scrolling.
 package tui
 
 import (
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
@@ -36,6 +37,10 @@ func (m Model) View() string {
 	// 2. Chat area (scrollable)
 	b.WriteString(m.viewport.View())
 
+	if lines := m.workerPanelLines(); len(lines) > 0 {
+		b.WriteString("\n" + strings.Join(lines, "\n"))
+	}
+
 	// 3. Separator line
 	sep := m.rule()
 	b.WriteString("\n")
@@ -43,17 +48,17 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// 4. Status bar
-	if m.statusOverride != "" {
-		fmt.Fprintf(&b, "%s\n", m.palette.Error.Render(m.statusOverride))
-	} else if m.busy {
+	if m.busy {
 		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render(m.tr("working · Ctrl+C interrupt · Esc cancel", "praca · Ctrl+C przerwij · Esc anuluj")))
 	}
-	if m.statusFn != nil {
+	if m.dashboardFn != nil {
+		b.WriteString(m.renderDashboard() + "\n")
+	} else if m.statusFn != nil {
 		if line := m.statusFn(); line != "" {
 			fmt.Fprintf(&b, "%s\n", line)
 		}
 	}
-	if m.runtimeHUD != "" {
+	if m.dashboardFn == nil && m.runtimeHUD != "" {
 		fmt.Fprintf(&b, "%s\n", m.palette.InputHint.Render(truncateVisible(m.runtimeHUD, m.width)))
 	}
 
@@ -64,6 +69,9 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
+	if len(m.pendingAttachments) > 0 {
+		b.WriteString(m.palette.InputHint.Render(truncateVisible(attachmentDisplay(m.pendingAttachments)+m.tr(" · Ctrl+O add · Ctrl+K → Attachments: remove", " · Ctrl+O dodaj · Ctrl+K → Załączniki: usuń"), m.width)) + "\n")
+	}
 	// 6. Input box + persistent key hints
 	b.WriteString(m.renderInputBox())
 	b.WriteString("\n")
@@ -73,7 +81,7 @@ func (m Model) View() string {
 
 // renderHeader draws the slim top bar:
 //
-//	✻ SuperCli 0.6.0 · <model> · <tier>                    <mode>
+//	✻ SuperCli 0.6.0 · <model>                    <mode>
 func (m Model) renderHeader() string {
 	width := m.width
 	if width <= 0 {
@@ -97,8 +105,8 @@ func (m Model) renderHeader() string {
 		// default → show nothing). Read at render time, so it
 		// refreshes immediately after /reasoning, Ctrl+R, or a
 		// model switch.
-		if eff := llm.ReasoningEffort(); eff != "" && llm.SupportsReasoningEffort(model) {
-			model += " (" + eff + ")"
+		if state := llm.ProviderReasoningState(m.llm); state.Effective != "" {
+			model += " (" + m.reasoningLabel(state.Effective, state.ToggleOnly) + ")"
 		}
 	}
 	name := "> SuperCli"
@@ -107,9 +115,6 @@ func (m Model) renderHeader() string {
 	}
 	sep := m.palette.StatusSep.Render(" · ")
 	left := m.palette.Header.Render(name) + sep + m.palette.HeaderDim.Render(model)
-	if m.tierName != "" {
-		left += sep + m.palette.HeaderDim.Render(m.tierName)
-	}
 	right := m.palette.Success.Render(mode)
 	if m.busy || m.mode == modeAsking || m.planMode {
 		right = m.palette.HeaderMode.Render(mode)
@@ -148,21 +153,27 @@ func (m Model) rule() string {
 }
 
 func (m Model) renderHintLine() string {
+	if m.statusOverride != "" {
+		return m.renderNotice(m.menuWidth())
+	}
+	if !m.viewport.AtBottom() {
+		return m.palette.HeaderMode.Render(truncateVisible(m.tr("Reading history · End: follow latest · Wheel/PgUp/PgDn scroll", "Czytasz historię · End: śledź odpowiedź · Kółko/PgUp/PgDn przewiń"), m.width))
+	}
 	hints := []string{
 		m.tr("While working: type + Enter queues", "Podczas pracy: wpisz + Enter dodaje do kolejki"),
-		m.tr("Tab actions", "Tab działania"), m.tr("Enter send", "Enter wyślij"),
+		m.tr("Tab actions", "Tab działania"), m.tr("Enter send", "Enter wyślij"), m.tr("Ctrl+O files", "Ctrl+O pliki"),
 		m.tr("Alt+Enter newline", "Alt+Enter nowa linia"), m.tr("Ctrl+Y copy reply", "Ctrl+Y kopiuj odpowiedź"),
 		m.tr("Ctrl+R reasoning menu", "Ctrl+R poziom myślenia"), m.tr("Esc clear", "Esc wyczyść"),
-		m.tr("Ctrl+C interrupt", "Ctrl+C przerwij"), m.tr("PgUp/PgDn scroll", "PgUp/PgDn przewiń"),
+		m.tr("Ctrl+C interrupt", "Ctrl+C przerwij"), m.tr("Wheel/PgUp/PgDn scroll", "Kółko/PgUp/PgDn przewiń"),
 		m.tr("Shift+T thinking", "Shift+T myślenie"), m.tr("Shift+E expand", "Shift+E rozwiń"),
 		m.tr("/ advanced", "/ zaawansowane"),
 	}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = m.tr("Tab actions · Enter send · Alt+Enter newline · Esc clear · Ctrl+C interrupt · / advanced", "Tab działania · Enter wyślij · Alt+Enter nowa linia · Esc wyczyść · Ctrl+C przerwij · / zaawansowane")
+		line = m.tr("Tab actions · Enter send · Ctrl+O files · Alt+Enter newline · Esc clear · Ctrl+C interrupt", "Tab działania · Enter wyślij · Ctrl+O pliki · Alt+Enter nowa linia · Esc wyczyść · Ctrl+C przerwij")
 	}
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = m.tr("Tab actions · Enter send · Esc clear · Ctrl+C stop", "Tab działania · Enter wyślij · Esc wyczyść · Ctrl+C stop")
+		line = m.tr("Tab actions · Enter send · Ctrl+O files · Ctrl+C stop", "Tab działania · Enter wyślij · Ctrl+O pliki · Ctrl+C stop")
 	}
 	if m.width > 0 {
 		line = truncateVisible(line, m.width)
@@ -171,14 +182,10 @@ func (m Model) renderHintLine() string {
 }
 
 func truncateVisible(s string, width int) string {
-	if width <= 0 || lipgloss.Width(s) <= width {
-		return s
+	if width <= 0 {
+		return ""
 	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r)+"…") > width {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
+	return ansi.Truncate(s, width, "…")
 }
 
 func (m Model) viewportHeight() int {
@@ -187,7 +194,10 @@ func (m Model) viewportHeight() int {
 	}
 	// Header + separator + input (+2 border rows) + key-hints
 	// + at least one status line.
-	reserved := 8
+	reserved := 8 + len(m.workerPanelLines())
+	if len(m.pendingAttachments) > 0 {
+		reserved++
+	}
 	// Multi-line input box: account for the extra rows.
 	if ih := m.input.Height(); ih > 1 {
 		reserved += ih - 1
@@ -196,12 +206,14 @@ func (m Model) viewportHeight() int {
 	if m.busy {
 		reserved++
 	}
-	if m.statusFn != nil {
+	if m.dashboardFn != nil {
+		reserved += m.dashboardHeight()
+	} else if m.statusFn != nil {
 		if s := m.statusFn(); s != "" {
 			reserved += visualLineCount(s, m.width)
 		}
 	}
-	if m.runtimeHUD != "" {
+	if m.dashboardFn == nil && m.runtimeHUD != "" {
 		reserved++
 	}
 	h := m.height - reserved
@@ -231,6 +243,7 @@ func (m *Model) refreshRuntimeHUD() {
 	if used <= 0 {
 		used = report.EstimatedTokens + report.ToolSchemaTokens + report.CatalogTokens
 	}
+	m.runtimeContext = contextSnapshot{Used: used, Window: report.Window}
 	parts := make([]string, 0, 3)
 	if report.Window > 0 {
 		pct := used * 100 / report.Window
@@ -239,11 +252,14 @@ func (m *Model) refreshRuntimeHUD() {
 		if threshold <= 0 {
 			threshold = agent.AutoCompactThreshold(report.Window)
 		}
-		parts = append(parts, fmt.Sprintf("compact %d%%", (threshold*100+report.Window/2)/report.Window))
+		m.runtimeContext.CompactAt = (threshold*100 + report.Window/2) / report.Window
+		parts = append(parts, fmt.Sprintf("compact %d%%", m.runtimeContext.CompactAt))
 	}
 	if breakdown, ok := m.agent.(turnBreakdownReporter); ok {
 		cached, evaluated, _, set := breakdown.LastTurnBreakdown()
 		if set && cached+evaluated > 0 {
+			m.runtimeContext.Cached, m.runtimeContext.Evaluated = cached, evaluated
+			m.runtimeContext.HasCache = true
 			parts = append(parts, fmt.Sprintf("cache %d%%", cached*100/(cached+evaluated)))
 		}
 	}
@@ -252,11 +268,12 @@ func (m *Model) refreshRuntimeHUD() {
 	// so keyless providers report exactly the same way.
 	if baseURL := m.activeProviderBaseURL(); baseURL != "" {
 		if n := llm.ProviderRequestsTodayFlexible(baseURL); n > 0 {
+			m.runtimeContext.Requests = n
 			parts = append(parts, fmt.Sprintf("%d req today", n))
 		}
 	}
 	m.runtimeHUD = strings.Join(parts, " · ")
-	m.viewport.Height = m.viewportHeight()
+	m.resizeViewport()
 }
 
 // activeProviderBaseURL resolves the configured base URL of the

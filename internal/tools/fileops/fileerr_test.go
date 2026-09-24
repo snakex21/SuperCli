@@ -71,3 +71,23 @@ func TestMove_MissingSource_StructuredError(t *testing.T) {
 		t.Errorf("err = %q, want not_found prefix", err)
 	}
 }
+
+func TestFileErrPreservesCauseWithoutExpandingMessage(t *testing.T) {
+	for _, tc := range []struct {
+		cause error
+		kind  string
+	}{{os.ErrNotExist, "not_found"}, {os.ErrPermission, "permission"}} {
+		source := &os.PathError{Op: "open", Path: "example.go", Err: tc.cause}
+		got := FileErr(source, "example.go")
+		if got.Error() != tc.kind+" example.go" {
+			t.Fatalf("changed short message: %v", got)
+		}
+		if !errors.Is(got, tc.cause) {
+			t.Fatalf("lost cause: %v", got)
+		}
+		var pathErr *os.PathError
+		if !errors.As(got, &pathErr) || pathErr != source {
+			t.Fatal("lost original path error")
+		}
+	}
+}

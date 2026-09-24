@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 )
@@ -14,75 +12,38 @@ import (
 func (m Model) renderProvidersMenu() string {
 	rows := m.providerRows()
 	active := m.activeProviderName()
-	width := m.menuWidth()
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(fmt.Sprintf(m.tr("Providers · %d", "Dostawcy · %d"), len(rows))) + "\n")
-	b.WriteString(m.palette.InputHint.Render(m.tr("Connection status and active model", "Stan połączenia i aktywny model")) + "\n\n")
-	start, end := 0, len(rows)
-	if m.height > 0 {
-		available := (m.height - 5) / 2
-		start, end = menuWindow(len(rows), m.menu.cursor, available)
-	}
-	for i := start; i < end; i++ {
-		p := rows[i]
-		prefix := "  "
-		if i == m.menu.cursor {
-			prefix = "> "
-		}
-		activeText := ""
-		if p.Name == active {
-			activeText = m.tr(" [active]", " [aktywny]")
-		}
-		model := p.Model
-		if model == "" {
-			model = "-"
-		}
+	page := menuPage{title: m.tr("Providers", "Dostawcy"), subtitle: m.tr("Connection status and active model", "Stan połączenia i aktywny model"),
+		footer: m.tr("Enter models · A add · E edit · Space pause", "Enter modele · A dodaj · E edytuj · Space wstrzymaj"),
+		empty:  m.tr("No providers configured — press A to add one.", "Brak dostawców — naciśnij A, aby dodać.")}
+	for i, p := range rows {
 		name, typ := displayProvider(p.Name, p.Type)
-		statusText, statusStyled := m.providerStatusCell(p.Name)
+		status, _ := m.providerStatusCell(p.Name)
 		if p.Disabled {
-			statusText = m.tr("paused", "wstrzymany")
-			statusStyled = m.palette.InputHint.Render(statusText)
+			status = m.tr("paused", "wstrzymany")
 		}
-		plainLine := truncateText(prefix+name+activeText+" · "+statusText, width)
-		line := prefix + name + activeText + " · " + statusStyled
+		badge := ""
+		if p.Name == active {
+			badge = m.tr("● active", "● aktywny")
+		}
+		page.items = append(page.items, menuListItem{label: name, meta: status, badge: badge})
 		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(plainLine)
-		} else {
-			plainPrefix := truncateText(prefix+name+activeText+" · ", maxInt(4, width-lipgloss.Width(statusText)))
-			line = m.palette.Bold.Render(plainPrefix) + statusStyled
+			enabled, total := m.providerModelCounts(p)
+			keyState := m.tr("public/no key", "publiczny/bez klucza")
+			if p.HasKey {
+				keyState = m.tr("key configured", "klucz skonfigurowany")
+			}
+			page.detailTitle = name
+			page.detail = []string{status, "", typ + " · " + keyState, fmt.Sprintf(m.tr("models %d/%d on", "modele włączone %d/%d"), enabled, total), p.Model, p.BaseURL, "",
+				m.tr("R  Scan models", "R  Skanuj modele"), m.tr("D  Remove provider", "D  Usuń dostawcę")}
+			if m.cursorOnOpenAIRow() {
+				page.detail = append(page.detail, m.tr("C  ChatGPT accounts", "C  Konta ChatGPT"))
+			}
+			if st, ok := m.providerStatuses[p.Name]; ok && st.checked && !st.online && !p.Disabled {
+				page.detail = append(page.detail, "", st.err)
+			}
 		}
-		b.WriteString(line + "\n")
-		enabled, total := m.providerModelCounts(p)
-		modelState := m.tr("models not scanned", "modele nieskanowane")
-		if total > 0 {
-			modelState = fmt.Sprintf(m.tr("models %d/%d on", "modele włączone %d/%d"), enabled, total)
-		}
-		keyState := m.tr("public/no key", "publiczny/bez klucza")
-		if p.HasKey {
-			keyState = m.tr("key configured", "klucz skonfigurowany")
-		}
-		meta := "    " + typ + " · " + modelState + " · " + keyState
-		if model != "-" {
-			meta += m.tr(" · default ", " · domyślny ") + model
-		}
-		if p.BaseURL != "" {
-			meta += " · " + p.BaseURL
-		}
-		if st, ok := m.providerStatuses[p.Name]; ok && !p.Disabled && st.checked && !st.online && st.err != "" {
-			meta += " · " + st.err
-		}
-		b.WriteString(m.palette.Dim.Render(truncateText(meta, width)) + "\n")
 	}
-	if len(rows) == 0 {
-		b.WriteString("  " + m.tr("no providers configured — press A to add one", "brak dostawców — naciśnij A, aby dodać") + "\n")
-	}
-	hint := m.tr("↑↓ select · Enter models · Space pause/resume · A add · E edit · D delete · R scan", "↑↓ wybierz · Enter modele · Space wstrzymaj/wznów · A dodaj · E edytuj · D usuń · R skanuj")
-	if m.cursorOnOpenAIRow() {
-		hint += m.tr(" · C ChatGPT accounts", " · C konta ChatGPT")
-	}
-	hint += m.tr(" · Esc back", " · Esc wróć")
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
-	return b.String()
+	return m.renderMenuPage(page)
 }
 
 func (m Model) providerModelCounts(p providers.ProviderInfo) (enabled, total int) {
@@ -200,54 +161,37 @@ func (m Model) activeProviderName() string {
 }
 
 func (m Model) renderProviderForm() string {
-	labels := []string{m.tr("name", "nazwa"), m.tr("type", "typ"), "base URL", m.tr("API key", "klucz API"), m.tr("default model", "domyślny model")}
-	width := m.menuWidth()
-	var b strings.Builder
+	labels := []string{m.tr("Name", "Nazwa"), m.tr("Type", "Typ"), "Base URL", m.tr("API key", "Klucz API"), m.tr("Default model", "Domyślny model")}
 	title := m.tr("Add provider", "Dodaj dostawcę")
 	if m.menu.editName != "" {
 		title = m.tr("Edit provider: ", "Edytuj dostawcę: ") + m.menu.editName
 	}
-	b.WriteString(m.palette.PanelTitle.Render(title) + "\n\n")
-	if m.menu.formErr != "" {
-		for _, line := range wrap(m.menu.formErr, maxInt(24, width-2)) {
-			b.WriteString(m.palette.Error.Render(truncateText("! "+line, width)) + "\n")
-		}
-		b.WriteString("\n")
-	}
+	page := menuPage{title: title, footer: m.tr("↑↓ fields · Enter next/save · Ctrl+V paste", "↑↓ pola · Enter dalej/zapisz · Ctrl+V wklej")}
 	for i, label := range labels {
-		prefix := "  "
-		if i == m.menu.formAt {
-			prefix = "> "
-		}
 		value := ""
 		if i < len(m.menu.form) {
 			value = m.menu.form[i]
 		}
-		if label == "API key" && value != "" {
-			if m.menu.formAt == 3 && m.menu.keyRevealed {
-				// On API key field + right arrow pressed → show real key.
-			} else {
-				value = strings.Repeat("*", len([]rune(value)))
-			}
+		// Use the field index, never its translated label, to mask credentials.
+		if i == 3 && !(m.menu.formAt == 3 && m.menu.keyRevealed) {
+			value = strings.Repeat("*", minInt(24, len([]rune(value))))
 		}
-		line := truncateText(fmt.Sprintf("%s%-9s %s", prefix, label+":", value), width)
 		if i == m.menu.formAt {
-			line = m.palette.HeaderMode.Render(line)
+			page.detailTitle = label
+			page.detail = []string{value}
+			if i == 3 {
+				page.detail = []string{m.tr("The key stays hidden until you press →.", "Klucz pozostaje ukryty, dopóki nie naciśniesz →.")}
+				if m.menu.keyRevealed {
+					page.detail = []string{m.tr("← hides the key again.", "← ponownie ukrywa klucz.")}
+				}
+				page.footer = m.tr("← hide · → reveal · Enter next", "← ukryj · → pokaż · Enter dalej")
+			}
+			value += "▏"
 		}
-		b.WriteString(line + "\n")
+		page.items = append(page.items, menuListItem{label: label + ": " + value})
 	}
-	hint := m.tr("type/paste · Ctrl+V paste · Enter next/save · ↑↓ fields · Esc back", "pisz/wklej · Ctrl+V wklej · Enter dalej/zapisz · ↑↓ pola · Esc wróć")
-	if m.menu.formAt == 3 {
-		if m.menu.keyRevealed {
-			hint = m.tr("← hide key · type/paste · Ctrl+V paste · Enter save · Esc back", "← ukryj klucz · pisz/wklej · Ctrl+V wklej · Enter zapisz · Esc wróć")
-		} else {
-			hint = m.tr("→ reveal key · type/paste · Ctrl+V paste · Enter save · Esc back", "→ pokaż klucz · pisz/wklej · Ctrl+V wklej · Enter zapisz · Esc wróć")
-		}
-	} else if m.menu.formAt == 4 {
-		hint = m.tr("optional · keeps an offline model in /model · Enter save · Esc back", "opcjonalne · zachowuje model offline na liście · Enter zapisz · Esc wróć")
-	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
-	return b.String()
+	m.menu.cursor = m.menu.formAt
+	return m.renderMenuPage(page)
 }
 
 // compactProviderError preserves the useful HTTP status/body while keeping a
@@ -266,55 +210,28 @@ func compactProviderError(err error) string {
 }
 
 func (m Model) renderPredefinedMenu() string {
-	pres := providers.PredefinedProviders()
-	width := m.menuWidth()
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Add provider — pick a template", "Dodaj dostawcę — wybierz szablon")) + "\n\n")
-	start, end := 0, len(pres)
-	if m.height > 0 {
-		start, end = menuWindow(len(pres), m.menu.cursor, (m.height-5)/2)
-	}
-	for i := start; i < end; i++ {
-		p := pres[i]
-		prefix := "  "
+	rows := providers.PredefinedProviders()
+	page := menuPage{title: m.tr("Add provider — pick a template", "Dodaj dostawcę — wybierz szablon"),
+		footer: m.tr("↑↓ choose · Enter pick", "↑↓ wybierz · Enter zatwierdź")}
+	for i, row := range rows {
+		page.items = append(page.items, menuListItem{label: row.Name})
 		if i == m.menu.cursor {
-			prefix = "> "
+			page.detailTitle = row.Name
+			page.detail = []string{row.Desc, "", row.BaseURL}
 		}
-		line := truncateText(p.Name+" · "+p.Desc, width-2)
-		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(prefix + line)
-		} else {
-			line = prefix + m.palette.Bold.Render(line)
-		}
-		b.WriteString(line + "\n")
-		b.WriteString(m.palette.Dim.Render(truncateText("    "+p.BaseURL, width)) + "\n")
 	}
-	if len(pres) == 0 {
-		b.WriteString("  " + m.tr("no predefined providers", "brak gotowych dostawców") + "\n")
-	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter pick · Esc back", "↑↓ wybierz · Enter zatwierdź · Esc wróć"), width)))
-	return b.String()
+	return m.renderMenuPage(page)
 }
 
 func (m Model) renderOpenAIAuthMenu() string {
-	width := m.menuWidth()
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("OpenAI — choose how to sign in", "OpenAI — wybierz sposób logowania")) + "\n\n")
-	opts := []string{
-		m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (korzysta z limitów subskrypcji)"),
-		m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (płatność za użycie w platform.openai.com)"),
+	page := menuPage{title: m.tr("OpenAI — choose how to sign in", "OpenAI — wybierz sposób logowania"),
+		footer: m.tr("↑↓ choose · Enter pick", "↑↓ wybierz · Enter zatwierdź")}
+	page.items = []menuListItem{{label: m.tr("ChatGPT account", "Konto ChatGPT")}, {label: m.tr("API key", "Klucz API")}}
+	page.detailTitle = page.items[minInt(m.menu.cursor, 1)].label
+	if m.menu.cursor == 0 {
+		page.detail = []string{m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (korzysta z limitów subskrypcji)")}
+	} else {
+		page.detail = []string{m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (płatność za użycie w platform.openai.com)")}
 	}
-	for i, o := range opts {
-		prefix := "  "
-		line := truncateText(o, width-2)
-		if i == m.menu.cursor {
-			prefix = "> "
-			line = m.palette.HeaderMode.Render(line)
-		} else {
-			line = m.palette.Dim.Render(line)
-		}
-		b.WriteString(prefix + line + "\n")
-	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter pick · Esc back", "↑↓ wybierz · Enter zatwierdź · Esc wróć"), width)))
-	return b.String()
+	return m.renderMenuPage(page)
 }

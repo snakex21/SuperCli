@@ -258,11 +258,14 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	if bound, ok := writer.(interface{ SessionID() string }); ok {
 		currentSessionID = bound.SessionID()
 	}
-	if briefing := e.webMemoryBriefingExcludingSession(home, tc.MemoryBriefingTokens, currentSessionID); briefing != "" {
-		systemPrompt += "\n\n" + briefing
-	}
+	// These snapshots may change after any turn. Keep the latest values
+	// available without rewriting the beginning of the conversation.
+	liveContext := e.webMemoryBriefingExcludingSession(home, tc.MemoryBriefingTokens, currentSessionID)
 	if folders := folderIndexPrompt(e.dataDir); folders != "" {
-		systemPrompt += "\n\n" + folders
+		if liveContext != "" {
+			liveContext += "\n\n"
+		}
+		liveContext += folders
 	}
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
@@ -282,6 +285,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		Registry:               reg,
 		Caps:                   caps,
 		System:                 systemPrompt,
+		LiveContext:            liveContext,
 		MaxSteps:               maxSteps,
 		Orchestrator:           orchestrator,
 		TaskParallel:           taskParallel,

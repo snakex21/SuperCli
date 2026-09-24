@@ -33,6 +33,7 @@ func (l *Loop) SetRegistry(r *tools.Registry) {
 	}
 	r.EnsureReadOutput()
 	l.registry = r
+	l.toolDiscovery = toolDiscoveryState{}
 	// The hoisted thin-tools preamble (stableToolset) renders from the
 	// registry; a swap before the first Run must re-render it, not
 	// serve a stale frozen copy.
@@ -64,13 +65,22 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 	}
 	var toolDefs []llm.ToolDef
 	if l.route == RouteCoordinator {
-		schema, _ := l.thinPartition()
-		for _, t := range schema {
+		visible := l.registry.Visible()
+		// Build the wire definitions directly. The catalog tail is unused here;
+		// materializing both partitions copied tools repeatedly on every estimate.
+		toolDefs = make([]llm.ToolDef, 0, len(visible))
+		for _, t := range visible {
+			if !l.carriesToolSchema(t.Name) {
+				continue
+			}
 			toolDefs = append(toolDefs, llm.ToolDef{
 				Name:        t.Name,
 				Description: t.Description,
 				Schema:      t.Schema,
 			})
+		}
+		if len(toolDefs) == 0 {
+			return nil
 		}
 		return toolDefs
 	}
@@ -122,19 +132,27 @@ func (l *Loop) isActivated(name string) bool {
 // text and Registry.Execute dispatches by name, not by promotion.
 func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
 	for _, t := range l.registry.Visible() {
-		if l.thinTools && !l.isSchemaCore(t.Name) {
-			// Word tools are promoted only for document turns. Paying their full
-			// schema then avoids tool_search and script fallbacks; keeping them
-			// dormant otherwise preserves the small cached prefix.
-			wordTurnTool := (t.Name == "read_docx" || t.Name == "edit_docx") && l.isActivated(t.Name)
-			if !wordTurnTool && (l.stableToolset || !l.isActivated(t.Name)) {
-				tail = append(tail, t)
-				continue
-			}
+		if l.carriesToolSchema(t.Name) {
+			schema = append(schema, t)
+		} else {
+			tail = append(tail, t)
 		}
-		schema = append(schema, t)
 	}
 	return schema, tail
+}
+
+// Shared by the wire definitions and the catalog partition so visibility and
+// schema promotion keep the same policy without constructing unused slices.
+func (l *Loop) carriesToolSchema(name string) bool {
+	if !l.thinTools || l.isSchemaCore(name) {
+		return true
+	}
+	// Word tools retain their existing per-document-turn promotion, including
+	// stable-toolset mode. Other activated tools carry schemas only in dynamic mode.
+	if name == "read_docx" || name == "edit_docx" {
+		return l.isActivated(name)
+	}
+	return !l.stableToolset && l.isActivated(name)
 }
 
 // isSchemaCore reports whether name belongs to the always-full-schema
@@ -161,6 +179,13 @@ func (l *Loop) isSchemaCore(name string) bool {
 func (l *Loop) thinToolsPreamble() string {
 	if !l.thinTools || l.route != RouteCoordinator {
 		return ""
+	}
+	// The provider already freezes this catalog on its first request. Reuse
+	// those exact bytes for budget checks too: rebuilding the catalog twice
+	// per step wasted work and could count late tools absent from the prompt.
+	// SetRegistry invalidates the frozen copy when the registry is replaced.
+	if l.stableToolset && l.catalogHoist && l.hoistedPreSet {
+		return l.hoistedPre
 	}
 	out := prompt.ThinToolProtocol
 
@@ -191,4 +216,12 @@ func (l *Loop) thinToolsPreamble() string {
 		}
 	}
 	return out
+}
+
+// SetTaskParallelPolicy configures delegation before Run starts. Embedders that
+// resolve a separate worker backend after constructing the loop must use that
+// backend's policy, not the coordinator's host.
+func (l *Loop) SetTaskParallelPolicy(parallel, warnLocal bool) {
+	l.taskParallel = parallel
+	l.taskParallelWarnLocal = warnLocal
 }

@@ -35,7 +35,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	}
 	runStarted := time.Now()
 	askCh := make(chan tools.AskRequest, 3)
+	ctx = tools.WithAskChannel(ctx, askCh)
 	activeQuestions := []string{}
+	questionDone := make(chan string)
+	questionWatchDone := make(chan struct{})
+	defer close(questionWatchDone)
 	defer func() {
 		for _, id := range activeQuestions {
 			e.cancelQuestion(id)
@@ -127,7 +131,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// conversations already paid for it. The notice makes the cost
 	// visible in the transcript, mirroring the CLI's startup log line.
 	if shouldAttachPreflight(initial, prompt) {
-		if block, tokens := e.preflightBlockAt(home); block != "" {
+		if block, tokens := e.preflightBlockAtContext(ctx, home); block != "" {
 			loop.SetNextCoordinatorAddon(block)
 			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (next project turn)", tokens)})
 		}
@@ -136,6 +140,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	// Run persists the user message synchronously. Refresh the sidebar now,
+	// while the model is working, rather than before the write or after its reply.
+	emit(wireEvent{Type: "session_activity", SessionID: sid})
 	// Provider transports may keep an HTTP connection alive with comment-only
 	// heartbeats while producing no model/tool progress. The transport-level
 	// idle reader sees those bytes and cannot distinguish that state from a
@@ -153,7 +160,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		defer progressTimer.Stop()
 	}
 	resetProgress := func() {
-		if progressTimer == nil {
+		if progressTimer == nil || len(activeQuestions) > 0 {
 			return
 		}
 		if !progressTimer.Stop() {
@@ -434,7 +441,34 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			if w, keep := toWireEvent(ev); keep {
 				send(w)
 			}
+		case id := <-questionDone:
+			e.cancelQuestion(id)
+			for i, active := range activeQuestions {
+				if active == id {
+					activeQuestions = append(activeQuestions[:i], activeQuestions[i+1:]...)
+					break
+				}
+			}
+			send(wireEvent{Type: "question_closed", ID: id})
+			resetProgress()
 		case req := <-askCh:
+			select {
+			case <-req.Done:
+				continue // expired while queued
+			default:
+			}
+			if req.Done != nil {
+				go func() {
+					select {
+					case <-req.Done:
+						select {
+						case questionDone <- req.ID:
+						case <-questionWatchDone:
+						}
+					case <-questionWatchDone:
+					}
+				}()
+			}
 			// Waiting for a human answer is not provider inactivity. Suspend the
 			// model-progress watchdog until ask_user completes and the agent emits
 			// its tool result / next model event. ask_user has its own much longer

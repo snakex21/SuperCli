@@ -1,17 +1,8 @@
 package tui
 
 import (
-	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-
 	"supercli/internal/system/config"
 )
-
-// statusClearCmd clears a transient status override after a short delay.
-func statusClearCmd() tea.Cmd {
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusOverrideClearMsg{} })
-}
 
 // settingKind classifies how a /settings row is edited.
 type settingKind int
@@ -62,6 +53,7 @@ func settingsRowsFor(language string) []settingRow {
 		{"draft_verify", "Draft i weryfikacja", "Worker przygotowuje zmianę, a sito i większy model ją weryfikują.", setTriState, true},
 		{"draft_verify_max_rounds", "Rundy poprawek draftu", "Limit rund REVISE zanim zadanie przejmie większy model.", setInt, true},
 		{"verify_commands", "Komendy weryfikacji", "Polecenia sprawdzające oddzielone średnikami, np. go build ./... ; go test ./....", setText, true},
+		{"discard_previous_reasoning", "Usuwaj wcześniejsze myślenie", "Od następnej tury pomija myślenie zakończonych odpowiedzi w kontekście modelu. Zapis rozmowy i wymagane bloki narzędzi pozostają. Domyślnie wyłączone.", setTriState, false},
 		{"thinking", "Tryb myślenia", "Miękkie przełączanie myślenia w lokalnych modelach, np. Qwen /no_think.", setTriState, false},
 		{"stable_toolset", "Stały zestaw narzędzi", "Nie zmienia listy narzędzi w sesji, co sprzyja pamięci KV.", setTriState, true},
 		{"cache_prompt", "Pamięć promptu", "Prosi lokalne serwery llama.cpp o ponowne użycie cache promptu.", setTriState, true},
@@ -95,6 +87,7 @@ func englishSettingsRows() []settingRow {
 		{"draft_verify", "Draft verification", "A worker prepares a change and a verifier or larger model checks it.", setTriState, true},
 		{"draft_verify_max_rounds", "Draft revision rounds", "Maximum REVISE rounds before the larger model takes over.", setInt, true},
 		{"verify_commands", "Verification commands", "Commands separated by semicolons, e.g. go build ./... ; go test ./....", setText, true},
+		{"discard_previous_reasoning", "Discard previous reasoning", "From the next turn, omit reasoning from completed replies. Keep the transcript and required tool-call blocks. Off by default.", setTriState, false},
 		{"thinking", "Thinking mode", "Soft thinking switch for local models such as Qwen /no_think.", setTriState, false},
 		{"stable_toolset", "Stable tool set", "Keeps the tool list fixed during a session to preserve KV cache.", setTriState, true},
 		{"cache_prompt", "Prompt cache", "Asks local llama.cpp servers to reuse the prompt KV cache.", setTriState, true},
@@ -113,13 +106,39 @@ func englishSettingsRows() []settingRow {
 	}
 }
 
-func (m Model) localizedSettingsRows() []settingRow { return settingsRowsFor(m.language) }
+func settingCategory(key string) int {
+	switch key {
+	case "orchestrator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
+		return 1
+	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
+		return 2
+	case "language", "default_model", "default_provider", "allow_all", "":
+		return 0
+	default:
+		return 3
+	}
+}
+func (m Model) settingsCategories() []string {
+	if m.language == "pl" {
+		return []string{"Ogólne", "Agenci", "Kontekst", "Zaawansowane"}
+	}
+	return []string{"General", "Agents", "Context", "Advanced"}
+}
+func (m Model) localizedSettingsRows() []settingRow {
+	var rows []settingRow
+	for _, row := range settingsRowsFor(m.language) {
+		if settingCategory(row.key) == m.menu.category {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
 
 func settingSection(key string) string {
 	switch key {
 	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return "Agent i workery"
-	case "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
+	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return "Modele i kontekst"
 	default:
 		return "System"
@@ -133,7 +152,7 @@ func (m Model) localizedSettingSection(key string) string {
 	switch key {
 	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return "Agent and workers"
-	case "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
+	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return "Models and context"
 	default:
 		return "System"

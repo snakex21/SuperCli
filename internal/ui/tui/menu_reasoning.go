@@ -1,10 +1,6 @@
 package tui
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/llm"
@@ -18,7 +14,7 @@ type reasoningMenuOption struct {
 
 func reasoningMenuOptions() []reasoningMenuOption {
 	return []reasoningMenuOption{
-		{Label: "off / provider default", Value: "", Desc: "do not send a reasoning/thinking budget"},
+		{Label: "provider default", Value: "", Desc: "let the provider choose its default"},
 		{Label: "none", Value: "none", Desc: "explicitly disable when the provider supports a none value"},
 		{Label: "minimal", Value: "minimal", Desc: "smallest thinking budget if accepted by the backend"},
 		{Label: "low", Value: "low", Desc: "low thinking budget"},
@@ -28,12 +24,12 @@ func reasoningMenuOptions() []reasoningMenuOption {
 	}
 }
 
-func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
+func (m Model) allLocalizedReasoningMenuOptions() []reasoningMenuOption {
 	if m.language != "pl" {
 		return reasoningMenuOptions()
 	}
 	return []reasoningMenuOption{
-		{Label: "wyłączone / domyślne dostawcy", Value: "", Desc: "nie wysyłaj budżetu myślenia"},
+		{Label: "domyślne dostawcy", Value: "", Desc: "pozostaw wybór dostawcy"},
 		{Label: "brak", Value: "none", Desc: "wyłącz jawnie, jeśli dostawca obsługuje tę wartość"},
 		{Label: "minimalne", Value: "minimal", Desc: "najmniejszy budżet myślenia akceptowany przez backend"},
 		{Label: "niskie", Value: "low", Desc: "niski budżet myślenia"},
@@ -43,13 +39,47 @@ func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
 	}
 }
 
-func reasoningOptionIndex(value string) int {
-	for i, opt := range reasoningMenuOptions() {
+func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
+	state := llm.ProviderReasoningState(m.llm)
+	all := m.allLocalizedReasoningMenuOptions()
+	options := []reasoningMenuOption{all[0]}
+	for _, opt := range all[1:] {
+		if !containsString(state.Levels, opt.Value) {
+			continue
+		}
+		if state.ToggleOnly {
+			if opt.Value == "none" {
+				opt.Label = m.tr("Off", "Wyłączone")
+				opt.Desc = m.tr("disable thinking", "wyłącz myślenie")
+			} else {
+				opt.Label = m.tr("On", "Włączone")
+				opt.Desc = m.tr("enable thinking", "włącz myślenie")
+			}
+		}
+		options = append(options, opt)
+	}
+	return options
+}
+
+func (m Model) reasoningOptionIndex(value string) int {
+	for i, opt := range m.localizedReasoningMenuOptions() {
 		if opt.Value == value {
 			return i
 		}
 	}
 	return 0
+}
+
+func (m Model) reasoningLabel(value string, toggleOnly bool) string {
+	if toggleOnly {
+		if value == "none" {
+			return m.tr("Off", "Wyłączone")
+		}
+		if value != "" {
+			return m.tr("On", "Włączone")
+		}
+	}
+	return value
 }
 
 func (m Model) reasoningModelName() string {
@@ -63,80 +93,60 @@ func (m Model) reasoningModelName() string {
 }
 
 func (m Model) selectReasoningEffort() (tea.Model, tea.Cmd) {
-	opts := reasoningMenuOptions()
+	opts := m.localizedReasoningMenuOptions()
 	if len(opts) == 0 {
 		return m.closeMenu()
 	}
 	opt := opts[minInt(m.menu.cursor, len(opts)-1)]
 	if err := llm.SetReasoningEffort(opt.Value); err != nil {
-		m.statusOverride = fmt.Sprintf("reasoning: %v", err)
+		m.setStatus(m.tr("Reasoning: ", "Myślenie: ")+err.Error(), false)
 	} else {
+		state := llm.ProviderReasoningState(m.llm)
+		label := m.reasoningLabel(state.Effective, state.ToggleOnly)
 		if opt.Value == "" {
-			m.statusOverride = "reasoning: off (provider default)"
-		} else {
-			model := m.reasoningModelName()
-			_, effective, adjusted := llm.ReasoningEffortAdjustment(model)
-			if adjusted {
-				m.statusOverride = fmt.Sprintf("reasoning: %s (effective %s for %s)", opt.Value, effective, model)
-			} else {
-				m.statusOverride = "reasoning: " + opt.Value
-			}
+			label = m.tr("provider default", "domyślne dostawcy")
+		} else if label == "" {
+			label = m.tr("provider default (parameter not sent)", "domyślne dostawcy (parametr niewysyłany)")
 		}
+		m.setStatus(m.tr("Thinking: ", "Myślenie: ")+label, true)
 		m.persistReasoningEffort(opt.Value)
 	}
-	m.mode = modeNormal
-	m.menu = interactiveMenu{}
-	m.input.Focus()
-	return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusOverrideClearMsg{} })
+	next, _ := m.backMenu()
+	return next, m.statusClearCmd()
 }
 
 func (m Model) renderReasoningMenu() string {
-	width := m.menuWidth()
-	model := m.reasoningModelName()
-	configured, effective, adjusted := llm.ReasoningEffortAdjustment(model)
+	state := llm.ProviderReasoningState(m.llm)
+	configured := m.reasoningLabel(state.Configured, state.ToggleOnly)
+	effective := m.reasoningLabel(state.Effective, state.ToggleOnly)
 	if configured == "" {
-		configured = m.tr("off / provider default", "wyłączone / domyślne dostawcy")
+		configured = m.tr("provider default", "domyślne dostawcy")
 	}
 	if effective == "" {
 		effective = m.tr("not sent", "niewysyłane")
 	}
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Reasoning effort", "Poziom myślenia")) + "\n\n")
-	b.WriteString(truncateText(fmt.Sprintf("model:      %s", model), width) + "\n")
-	b.WriteString(truncateVisible(fmt.Sprintf(m.tr("configured: %s", "ustawione:   %s"), configured), width) + "\n")
-	if adjusted {
-		b.WriteString(truncateVisible(fmt.Sprintf(m.tr("effective:  %s (adjusted from backend evidence)", "efektywne:   %s (dopasowane na podstawie backendu)"), effective), width) + "\n")
-	} else {
-		b.WriteString(truncateVisible(fmt.Sprintf(m.tr("effective:  %s", "efektywne:   %s"), effective), width) + "\n")
-	}
-	if supported, ok := llm.SupportedReasoningEfforts(model); ok {
-		b.WriteString(truncateVisible("backend:    "+strings.Join(supported, " | "), width) + "\n")
-	} else if llm.SupportsReasoningEffort(model) {
-		b.WriteString(truncateVisible(m.tr("backend:    unknown yet — will learn from API errors", "backend:    jeszcze nieznany — zostanie rozpoznany z błędów API"), width) + "\n")
-	} else {
-		b.WriteString(truncateVisible(m.tr("backend:    model family does not advertise reasoning effort", "backend:    rodzina modelu nie zgłasza obsługi poziomu myślenia"), width) + "\n")
-	}
-	b.WriteString("\n")
-	opts := m.localizedReasoningMenuOptions()
-	supported, learned := llm.SupportedReasoningEfforts(model)
-	for i, opt := range opts {
-		prefix := "  "
-		if i == m.menu.cursor {
-			prefix = "> "
+	page := menuPage{title: m.tr("Reasoning effort", "Poziom myślenia"),
+		subtitle: m.reasoningModelName() + " · " + m.tr("effective: ", "aktywne: ") + effective,
+		footer:   m.tr("↑↓ choose · Enter apply", "↑↓ wybierz · Enter zastosuj")}
+	options := m.localizedReasoningMenuOptions()
+	for _, opt := range options {
+		badge := ""
+		if opt.Value == state.Configured || (state.ToggleOnly && opt.Value == state.Effective && state.Configured != "") {
+			badge = m.tr("● active", "● aktywne")
 		}
-		label := opt.Label
-		if opt.Value != "" && learned && !containsString(supported, opt.Value) {
-			label += m.tr(" (not in learned backend list)", " (brak na wykrytej liście backendu)")
-		}
-		plain := truncateText(fmt.Sprintf("%-34s %s", label, opt.Desc), width-2)
-		line := plain
-		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(prefix + line)
-		} else {
-			line = prefix + m.palette.Dim.Render(line)
-		}
-		b.WriteString(line + "\n")
+		page.items = append(page.items, menuListItem{label: opt.Label, badge: badge})
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateText(m.tr("↑↓ move · Enter apply · Esc back", "↑↓ wybierz · Enter zastosuj · Esc wróć"), width)))
-	return b.String()
+	if len(options) > 0 {
+		opt := options[minInt(m.menu.cursor, len(options)-1)]
+		page.detailTitle = opt.Label
+		page.detail = []string{opt.Desc, "", m.tr("Configured: ", "Ustawione: ") + configured, m.tr("Effective: ", "Efektywne: ") + effective}
+	}
+	if state.ToggleOnly {
+		page.detail = append(page.detail, "", m.tr("This model supports on/off only.", "Ten model obsługuje tylko włączanie i wyłączanie myślenia."))
+	} else if state.Adjusted {
+		page.detail = append(page.detail, "", m.tr("Adjusted to levels accepted by this provider.", "Dopasowano do poziomów obsługiwanych przez dostawcę."))
+	} else if !state.Supported {
+		page.detail = append(page.detail, "", m.tr("This model does not advertise reasoning controls.", "Ten model nie zgłasza obsługi zmiany myślenia."))
+	}
+	return m.renderMenuPage(page)
 }

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,8 +15,8 @@ import (
 // When the visible token estimate crosses pruneTriggerFrac of the
 // model's window, old RoleTool results are replaced in place with a
 // short marker. The paired assistant message (tool name + arguments)
-// is never touched, so the model can re-run the tool if it really
-// needs the data again; the original result also stays in the F13
+// is never touched. The marker preserves command exit status when available;
+// it does not suggest repeating completed work. The original result stays in the F13
 // session store (prune mutates only the in-memory copy, persisted
 // rows are not rewritten).
 //
@@ -81,11 +82,21 @@ const pruneMarkerPrefix = "[tool result pruned"
 
 // pruneMarker is the replacement body. The tool call itself (name +
 // arguments) sits untouched on the preceding assistant message.
-func pruneMarker(tool string) string {
-	if tool == "" {
-		tool = "the tool"
+func pruneMarker(m llm.Message) string {
+	name := m.Name
+	if name == "" {
+		name = "tool"
 	}
-	return fmt.Sprintf("%s to save context — re-run %s with the same arguments if needed]", pruneMarkerPrefix, tool)
+	status := ""
+	if m.Name == "ctx_execute" {
+		var result struct {
+			ExitCode *int `json:"exit_code"`
+		}
+		if json.Unmarshal([]byte(m.Content), &result) == nil && result.ExitCode != nil {
+			status = fmt.Sprintf(", exit_code=%d", *result.ExitCode)
+		}
+	}
+	return fmt.Sprintf("%s: %s%s; details omitted]", pruneMarkerPrefix, name, status)
 }
 
 // prunable reports whether l.Messages[i] is a tool result that MAY be
@@ -107,7 +118,7 @@ func (l *Loop) prunable(i int) bool {
 	if strings.HasPrefix(m.Content, pruneMarkerPrefix) {
 		return false
 	}
-	marker := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleTool, Content: pruneMarker(m.Name)})
+	marker := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleTool, Content: pruneMarker(m)})
 	return llm.EstimateMessageTokens(m) > 2*marker
 }
 
@@ -184,7 +195,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		if !l.prunable(i) {
 			continue
 		}
-		marker := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleTool, Content: pruneMarker(m.Name)})
+		marker := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleTool, Content: pruneMarker(m)})
 		victims = append(victims, i)
 		reclaimable += t - marker
 	}
@@ -206,7 +217,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 
 	for _, i := range victims {
 		m := &l.Messages[i]
-		m.Content = pruneMarker(m.Name)
+		m.Content = pruneMarker(*m)
 		m.Parts = nil
 	}
 	l.invalidateVisibleEstimate()

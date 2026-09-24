@@ -40,16 +40,18 @@ var (
 // them without hardcoding values.
 type Palette struct {
 	// Chrome
-	Header      lipgloss.Style
-	HeaderDim   lipgloss.Style
-	HeaderMode  lipgloss.Style
-	InputHint   lipgloss.Style
-	InputPrompt lipgloss.Style
-	InputText   lipgloss.Style
-	Rule        lipgloss.Style
-	Panel       lipgloss.Style
-	PanelTitle  lipgloss.Style
-	PanelMuted  lipgloss.Style
+	Header       lipgloss.Style
+	HeaderDim    lipgloss.Style
+	HeaderMode   lipgloss.Style
+	InputHint    lipgloss.Style
+	InputPrompt  lipgloss.Style
+	InputText    lipgloss.Style
+	Rule         lipgloss.Style
+	Panel        lipgloss.Style
+	PanelTitle   lipgloss.Style
+	PanelMuted   lipgloss.Style
+	MenuSelected lipgloss.Style
+	MenuTab      lipgloss.Style
 
 	// Input area border: accent when focused, faint when not.
 	InputBorderFocused lipgloss.Style
@@ -101,16 +103,18 @@ type Palette struct {
 func NewPalette(r *lipgloss.Renderer) Palette {
 	return Palette{
 		// Chrome
-		Header:      r.NewStyle().Foreground(colorAccent).Bold(true),
-		HeaderDim:   r.NewStyle().Foreground(colorMuted),
-		HeaderMode:  r.NewStyle().Foreground(colorAccentSoft).Bold(true),
-		InputHint:   r.NewStyle().Foreground(colorMuted),
-		InputPrompt: r.NewStyle().Foreground(colorAccent).Bold(true),
-		InputText:   r.NewStyle().Foreground(colorText),
-		Rule:        r.NewStyle().Foreground(colorFaint),
-		Panel:       r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorFaint).Padding(1, 2),
-		PanelTitle:  r.NewStyle().Foreground(colorAccent).Bold(true),
-		PanelMuted:  r.NewStyle().Foreground(colorMuted),
+		Header:       r.NewStyle().Foreground(colorAccent).Bold(true),
+		HeaderDim:    r.NewStyle().Foreground(colorMuted),
+		HeaderMode:   r.NewStyle().Foreground(colorAccentSoft).Bold(true),
+		InputHint:    r.NewStyle().Foreground(colorMuted),
+		InputPrompt:  r.NewStyle().Foreground(colorAccent).Bold(true),
+		InputText:    r.NewStyle().Foreground(colorText),
+		Rule:         r.NewStyle().Foreground(colorFaint),
+		Panel:        r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorFaint).Padding(1, 2),
+		PanelTitle:   r.NewStyle().Foreground(colorAccent).Bold(true),
+		PanelMuted:   r.NewStyle().Foreground(colorMuted),
+		MenuSelected: r.NewStyle().Foreground(colorAccentSoft).Background(lipgloss.AdaptiveColor{Light: "255", Dark: "236"}).Bold(true),
+		MenuTab:      r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "255", Dark: "232"}).Background(colorAccent).Bold(true),
 
 		// Input area border
 		InputBorderFocused: r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1),
@@ -152,8 +156,8 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		MdCode: r.NewStyle().Foreground(colorSuccess),
 
 		// Thinking blocks
-		MdThinking:       r.NewStyle().Foreground(colorMuted),
-		MdThinkingHeader: r.NewStyle().Foreground(colorMuted).Italic(true),
+		MdThinking:       r.NewStyle().Foreground(colorMuted).Italic(true),
+		MdThinkingHeader: r.NewStyle().Foreground(colorMuted).Bold(true),
 	}
 }
 
@@ -167,5 +171,6 @@ func DefaultPalette() Palette {
 // text — no ANSI escape codes. Used with --no-color flag.
 func NoColorPalette() Palette {
 	r := lipgloss.NewRenderer(os.Stderr, termenv.WithProfile(termenv.Ascii))
+	r.SetColorProfile(termenv.Ascii)
 	return NewPalette(r)
 }

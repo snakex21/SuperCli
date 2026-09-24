@@ -120,12 +120,10 @@ func (c *Consult) run(ctx context.Context, args json.RawMessage) (Result, error)
 			n = 3
 		}
 	}
-	max := c.MaxN
-	if max <= 0 {
-		max = len(c.Council.Samples)
-	}
-	if n > max {
-		n = max
+	// Council clamps to the resolved pool. Inspecting Samples here would
+	// turn n=1 into n=0 (all samples) before a lazy pool has loaded.
+	if c.MaxN > 0 && n > c.MaxN {
+		n = c.MaxN
 	}
 	res, err := c.Council.Consult(ctx, consult.Request{
 		Question: a.Question,

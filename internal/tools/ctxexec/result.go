@@ -27,10 +27,13 @@
 package ctxexec
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"supercli/internal/tools/core"
 )
 
 // MaxCommandLen caps the size of the command string. A
@@ -114,6 +117,20 @@ type Result struct {
 	// (path escape, nil binary, etc.). The ExitCode
 	// mirrors the error class so the model can react.
 	Error string `json:"error,omitempty"`
+
+	// retained contains the bounded capture before the smaller UI/model
+	// preview cap. It is deliberately excluded from JSON and session history.
+	retained *Result
+}
+
+// RetainedJSON returns additional evidence only when the preview omitted it.
+// Truncation flags here describe the capture limit, not the preview limit.
+func (r *Result) RetainedJSON() string {
+	if r == nil || r.retained == nil {
+		return ""
+	}
+	b, _ := json.Marshal(r.retained)
+	return string(b)
 }
 
 // Error sentinels. Use errors.Is.
@@ -166,14 +183,14 @@ func (r *Result) FormatError() string {
 // FailTailBytes caps how much of each captured stream is
 // inlined into FailureSummary. The runner already caps the
 // streams (MaxStderrKB / MaxStdoutKB); this tighter cap
-// keeps the ERROR message itself lean — the model usually
-// only needs the last error lines to self-correct.
+// keeps the ERROR message itself lean. When a larger capture is available,
+// split this budget between the first diagnostic and the final status.
 const FailTailBytes = 2048
 
 // FailureSummary renders a failed run as a compact,
 // deterministic message for the model. First line carries
 // only facts the CLI is sure of (exit code, wallclock,
-// timeout); then the stderr/stdout tails so the model can
+// timeout); then bounded stderr/stdout evidence so the model can
 // fix the command in one turn instead of guessing:
 //
 //	command_failed exit=1 (1.3s)
@@ -197,9 +214,33 @@ func (r *Result) FailureSummary() string {
 	default:
 		fmt.Fprintf(&b, "command_failed exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
 	}
-	appendTail(&b, "stderr", r.Stderr, r.TruncatedStderr)
-	appendTail(&b, "stdout", r.Stdout, r.TruncatedStdout)
+	if r.retained != nil {
+		appendCaptured(&b, "stderr", r.retained.Stderr, r.retained.TruncatedStderr)
+		appendCaptured(&b, "stdout", r.retained.Stdout, r.retained.TruncatedStdout)
+	} else {
+		appendTail(&b, "stderr", r.Stderr, r.TruncatedStderr)
+		appendTail(&b, "stdout", r.Stdout, r.TruncatedStdout)
+	}
 	return b.String()
+}
+
+// appendCaptured uses the same per-stream budget as the legacy tail, reserving
+// space for the omission marker. Early compiler errors stay visible without
+// a read_output round trip, while the final status is still present.
+func appendCaptured(b *strings.Builder, label, text string, truncated bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if len(text) > FailTailBytes {
+		const half = (FailTailBytes - 96) / 2
+		text = core.HeadTail(text, half, half)
+		truncated = true
+	}
+	if truncated {
+		label += " (head/tail, truncated)"
+	}
+	fmt.Fprintf(b, "\n%s:\n%s", label, text)
 }
 
 // appendTail writes a labelled stream tail, capped at

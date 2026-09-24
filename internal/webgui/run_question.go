@@ -75,6 +75,12 @@ func (e *Engine) answerQuestion(id string, answer tools.AskAnswer) error {
 	if !ok {
 		return errQuestionNotFound
 	}
+	select {
+	case <-req.Done:
+		e.cancelQuestion(id)
+		return errQuestionNotFound
+	default:
+	}
 	allowed := make(map[string]bool, len(req.Options))
 	for _, option := range req.Options {
 		allowed[option.Label] = true

@@ -105,3 +105,24 @@ func containsWordDocumentReference(s string) bool {
 	}
 	return false
 }
+
+// continueWithDiscoveredTools restores project instructions and normal tools
+// after a lightweight turn discovers a capability. This uses the already
+// required tool-result continuation; no router call or repeated user prompt.
+func (l *Loop) continueWithDiscoveredTools(calls []llm.ToolCall, outcomes []callOutcome) {
+	if l.route == RouteCoordinator || len(l.registry.DiscoveredNames()) == 0 {
+		return
+	}
+	for i, call := range calls {
+		if call.Name != "tool_search" || i >= len(outcomes) || outcomes[i].failed {
+			continue
+		}
+		l.route = RouteCoordinator
+		if l.nextCoordinatorAddon != "" {
+			l.Messages = append(l.Messages, llm.Message{Role: llm.RoleSystem, Content: l.nextCoordinatorAddon})
+			l.nextCoordinatorAddon = ""
+			l.invalidateVisibleEstimate()
+		}
+		return
+	}
+}

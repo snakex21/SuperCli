@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // renderAskView produces the full-screen overlay shown when the
@@ -13,130 +15,80 @@ func renderAskView(a *pendingAsk, width, height int, languages ...string) string
 	if len(languages) > 0 {
 		language = normalizeLanguage(languages[0])
 	}
-	if width < 40 {
+	if width <= 0 {
 		width = 80
 	}
-	if height < 10 {
+	if height <= 0 {
 		height = 24
 	}
-
-	// Center the box horizontally.
-	boxW := width - 4
-	if boxW > 90 {
-		boxW = 90
+	if width < 5 || height < 5 {
+		return padTo(headerLine(a), width)
 	}
-	leftPad := (width - boxW) / 2
-	if leftPad < 0 {
-		leftPad = 0
+	boxW := min(width, 92)
+	inner := boxW - 4
+	pad := strings.Repeat(" ", (width-boxW)/2)
+	rows := wrap(a.Question, inner)
+	if len(rows) > 3 {
+		rows = append(rows[:2], "…")
 	}
-	pad := strings.Repeat(" ", leftPad)
-	hr := strings.Repeat("─", boxW)
-
-	var b strings.Builder
-
-	// Top border.
-	b.WriteString(pad)
-	b.WriteString("┌")
-	b.WriteString(hr)
-	b.WriteString("┐\n")
-
-	// Header / question.
-	b.WriteString(pad)
-	b.WriteString("│ ")
-	writeCentered(&b, headerLine(a), boxW-2)
-	b.WriteString(" │\n")
-
-	b.WriteString(pad)
-	b.WriteString("│ ")
-	writeCentered(&b, "", boxW-2)
-	b.WriteString(" │\n")
-
-	// Question, word-wrapped.
-	for _, line := range wrap(a.Question, boxW-4) {
-		b.WriteString(pad)
-		b.WriteString("│   ")
-		b.WriteString(padTo(line, boxW-4))
-		b.WriteString("   │\n")
-	}
-
-	// Options label.
-	b.WriteString(pad)
-	b.WriteString("│ ")
-	writeCentered(&b, "", boxW-2)
-	b.WriteString(" │\n")
-
-	// Options list.
+	rows = append(rows, "")
+	focus := 0
 	for i, opt := range a.Options {
-		b.WriteString(pad)
-		b.WriteString("│  ")
 		marker := "  "
-		isFocused := i == a.cursor
-		checked := a.MultiSelect && a.toggled[i]
-		switch {
-		case a.MultiSelect && checked && isFocused:
-			marker = "▶☑"
-		case a.MultiSelect && checked:
-			marker = " ☑"
-		case a.MultiSelect && isFocused:
-			marker = "▶☐"
-		case isFocused:
-			marker = "▶ "
+		if i == a.cursor {
+			marker = "> "
+			focus = len(rows)
 		}
-		label := fmt.Sprintf("%d. %s %s", i+1, marker, opt.Label)
-		b.WriteString(padTo(label, boxW-4))
-		b.WriteString("  │\n")
-		if opt.Description != "" {
-			b.WriteString(pad)
-			b.WriteString("│    ")
-			b.WriteString(padTo(opt.Description, boxW-6))
-			b.WriteString("    │\n")
+		check := ""
+		if a.MultiSelect {
+			check = "[ ] "
+			if a.toggled[i] {
+				check = "[x] "
+			}
 		}
-		if opt.Preview != "" {
-			b.WriteString(pad)
-			b.WriteString("│    ")
-			b.WriteString(padTo(textFor(language, "preview: ", "podgląd: ")+opt.Preview, boxW-6))
-			b.WriteString("    │\n")
-		}
-		if opt.Image != "" {
-			b.WriteString(pad)
-			b.WriteString("│    ")
-			b.WriteString(padTo(textFor(language, "image: ", "obraz: ")+opt.Image, boxW-6))
-			b.WriteString("    │\n")
-		}
-		if opt.ImagePrompt != "" && opt.Image == "" {
-			b.WriteString(pad)
-			b.WriteString("│    ")
-			b.WriteString(padTo(textFor(language, "prompt: ", "opis obrazu: ")+opt.ImagePrompt, boxW-6))
-			b.WriteString("    │\n")
+		rows = append(rows, wrap(fmt.Sprintf("%s%d. %s%s", marker, i+1, check, opt.Label), inner)...)
+		for _, detail := range []string{opt.Description, opt.Preview, opt.Image, opt.ImagePrompt} {
+			if detail == "" {
+				continue
+			}
+			lines := wrap(detail, max(1, inner-2))
+			if len(lines) > 2 {
+				lines = []string{lines[0], padTo(lines[1], max(1, inner-3)) + "…"}
+			}
+			for _, line := range lines {
+				rows = append(rows, "  "+line)
+			}
 		}
 	}
 	if a.customMode {
-		b.WriteString(pad)
-		b.WriteString("│  ")
-		b.WriteString(padTo(textFor(language, "Your answer: ", "Twoja odpowiedź: ")+a.custom+"_", boxW-4))
-		b.WriteString("  │\n")
+		focus = len(rows)
+		rows = append(rows, textFor(language, "Your answer:", "Twoja odpowiedź:"))
+		rows = append(rows, wrap(a.custom+"_", inner)...)
+		focus = len(rows) - 1
 	}
-
-	// Bottom padding.
-	b.WriteString(pad)
-	b.WriteString("│ ")
-	writeCentered(&b, "", boxW-2)
-	b.WriteString(" │\n")
-
-	// Help line.
+	slots := height - 4
+	start := 0
+	if focus >= slots {
+		start = focus - slots + 1
+	}
+	end := min(len(rows), start+slots)
+	var lines []string
+	lines = append(lines, pad+"┌"+strings.Repeat("─", inner+2)+"┐")
+	row := func(text string) { lines = append(lines, pad+"│ "+padTo(text, inner)+" │") }
+	row(headerLine(a))
+	for _, text := range rows[start:end] {
+		row(text)
+	}
 	help := helpLine(a, language)
-	b.WriteString(pad)
-	b.WriteString("│ ")
-	writeCentered(&b, help, boxW-2)
-	b.WriteString(" │\n")
-
-	// Bottom border.
-	b.WriteString(pad)
-	b.WriteString("└")
-	b.WriteString(hr)
-	b.WriteString("┘\n")
-
-	return b.String()
+	if ansi.StringWidth(help) > inner {
+		help = "↑↓ · 1-4 · Enter · Esc"
+		if a.AllowCustom {
+			help += " · c"
+		}
+	}
+	row(help)
+	lines = append(lines, pad+"└"+strings.Repeat("─", inner+2)+"┘")
+	return strings.Join(lines, "\n")
 }
 
 func headerLine(a *pendingAsk) string {
@@ -167,46 +119,26 @@ func helpLine(a *pendingAsk, languages ...string) string {
 // writeCentered writes s centered in width characters, padding
 // with spaces. If s is longer than width, it is left as-is.
 func writeCentered(b *strings.Builder, s string, width int) {
-	if len(s) >= width {
-		b.WriteString(s[:width])
+	if width <= 0 {
 		return
 	}
-	left := (width - len(s)) / 2
-	right := width - len(s) - left
+	s = ansi.Truncate(s, width, "")
+	left := (width - ansi.StringWidth(s)) / 2
 	b.WriteString(strings.Repeat(" ", left))
-	b.WriteString(s)
-	b.WriteString(strings.Repeat(" ", right))
+	b.WriteString(padTo(s, width-left))
 }
 
-// padTo right-pads s with spaces to width. If s is longer, it
-// is truncated to width.
 func padTo(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	if width <= 0 {
+		return ""
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	s = ansi.Truncate(s, width, "")
+	return s + strings.Repeat(" ", max(0, width-ansi.StringWidth(s)))
 }
 
-// wrap word-wraps s to width, splitting on spaces. It is
-// intentionally simple (no hyphenation, no zero-width chars).
 func wrap(s string, width int) []string {
 	if width <= 0 {
 		return []string{s}
 	}
-	words := strings.Fields(s)
-	if len(words) == 0 {
-		return []string{""}
-	}
-	var out []string
-	line := words[0]
-	for _, w := range words[1:] {
-		if len(line)+1+len(w) > width {
-			out = append(out, line)
-			line = w
-		} else {
-			line += " " + w
-		}
-	}
-	out = append(out, line)
-	return out
+	return strings.Split(ansi.Wrap(s, width, ""), "\n")
 }

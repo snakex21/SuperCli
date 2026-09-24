@@ -55,17 +55,16 @@ func TestBeginAsk_SwitchesMode(t *testing.T) {
 	}
 }
 
-func TestBeginAsk_OverridesPrevious(t *testing.T) {
+func TestBeginAsk_QueuesBehindPrevious(t *testing.T) {
 	m := New(Options{Home: "/x"})
-	// First ask
-	m.Update(askRequestMsg{req: sampleRequest()})
-	// Second ask should cancel the first.
+	out, _ := m.Update(askRequestMsg{req: sampleRequest()})
+	m = out.(Model)
 	second := sampleRequest()
 	second.Question = "Second?"
-	out, _ := m.Update(askRequestMsg{req: second})
+	out, _ = m.Update(askRequestMsg{req: second})
 	mm := out.(Model)
-	if mm.pendingAsk.Question != "Second?" {
-		t.Fatalf("Question = %q, want Second?", mm.pendingAsk.Question)
+	if mm.pendingAsk.Question != "Which database?" || len(mm.askQueue) != 1 {
+		t.Fatalf("active=%q queued=%d", mm.pendingAsk.Question, len(mm.askQueue))
 	}
 }
 
@@ -325,10 +324,15 @@ func TestWrap_Empty(t *testing.T) {
 }
 
 func TestWrap_SingleLongWord(t *testing.T) {
-	// A word longer than width is left as a single line.
+	// Long words must wrap without widening the question panel.
 	got := wrap("supercalifragilisticexpialidocious", 10)
-	if len(got) != 1 {
-		t.Fatalf("got %d lines, want 1", len(got))
+	if len(got) != 4 {
+		t.Fatalf("got %d lines, want 4", len(got))
+	}
+	for _, line := range got {
+		if len(line) > 10 {
+			t.Fatalf("line overflow: %q", line)
+		}
 	}
 }
 

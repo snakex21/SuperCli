@@ -14,10 +14,6 @@ import (
 	"supercli/internal/storage/session"
 )
 
-// resumeKeepRecent is how many trailing messages are kept
-// verbatim when an oversized session is summarized.
-const resumeKeepRecent = 20
-
 // listResumableSessions renders the /resume picker text. By default it
 // shows sessions from the current project (cwd); when all is true it
 // shows every project's sessions. An empty cwd falls back to showing all
@@ -62,10 +58,8 @@ func listResumableSessions(ctx context.Context, store *session.Store, currentSes
 		n, scope, b.String()), nil
 }
 
-// resumeSession loads session id from store into loop. When the
-// decoded conversation is too large for the model's window, the
-// older part is summarized (via the loop's active provider) and
-// only the last resumeKeepRecent messages are kept verbatim.
+// resumeSession loads the saved model projection into the loop. Context
+// preparation is shared with normal turns and runs only before inference.
 // Returns a human-readable result line.
 func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, windowFor func(string) int, id string) (string, error) {
 	id = strings.TrimSpace(id)
@@ -74,7 +68,7 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		return "", fmt.Errorf("resume: read %s: %w", id, err)
 	}
 	if len(loaded) == 0 {
-		return fmt.Sprintf("resume: session %q not found or empty", id), nil
+		return "", fmt.Errorf("resume: session %q not found or empty", id)
 	}
 	// Decode, dropping the leading system run (the old base
 	// prompt / pattern injection — the live loop has its own).
@@ -90,46 +84,20 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		msgs = append(msgs, m)
 	}
 	if len(msgs) == 0 {
-		return fmt.Sprintf("resume: session %q has no loadable messages", id), nil
+		return "", fmt.Errorf("resume: session %q has no loadable messages", id)
 	}
 
-	// Size gate: if the resumed conversation alone would eat
-	// more than 60% of the window, summarize the old part.
-	window := 16384
-	if windowFor != nil {
-		if w := windowFor(loop.CurrentModel()); w > 0 {
-			window = w
-		}
-	}
-	summarized := 0
-	if llm.EstimateTokens(msgs) > window*6/10 && len(msgs) > resumeKeepRecent {
-		cut := len(msgs) - resumeKeepRecent
-		// Don't start the verbatim tail on an orphan tool
-		// result: advance past consecutive tool messages.
-		for cut < len(msgs) && msgs[cut].Role == llm.RoleTool {
-			cut++
-		}
-		older, recent := msgs[:cut], msgs[cut:]
-		if summary, err := summarizeForCompaction(ctx, loop.Provider(), older); err == nil {
-			msgs = append([]llm.Message{{
-				Role:    llm.RoleSystem,
-				Content: wrapCompactSummary(summary),
-			}}, recent...)
-			summarized = len(older)
-		} else {
-			// Summarization failed; keep only the recent
-			// tail rather than overflowing the window.
-			msgs = recent
-		}
-	}
+	// The shared loop prepares long context at the next Run, after the new
+	// user instruction is present. Loading a session itself makes no model
+	// call and never drops history after a failed summary.
 
 	loop.LoadConversation(msgs)
+	if discovered, err := store.ReadDiscoveredTools(ctx, id); err == nil {
+		loop.RestoreDiscoveredTools(discovered)
+	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "resumed session %s: %d message(s) loaded", id, len(msgs))
-	if summarized > 0 {
-		fmt.Fprintf(&b, " (%d older message(s) summarized)", summarized)
-	}
 	// Show the tail so the user sees where the conversation
 	// left off.
 	tail := msgs

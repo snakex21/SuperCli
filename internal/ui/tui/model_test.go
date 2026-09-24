@@ -864,17 +864,18 @@ func TestCostCommand_RendersDashboard(t *testing.T) {
 		t.Fatal("/cost should return a command")
 	}
 	msg := cmd()
-	res, ok := msg.(slashResultMsg)
-	if !ok {
-		t.Fatalf("/cost cmd() = %T, want slashResultMsg", msg)
+	res, ok := msg.(usageLoadedMsg)
+	if !ok || res.err != nil {
+		t.Fatalf("cost load: %T %+v", msg, msg)
 	}
-	if res.Err != nil {
-		t.Fatalf("/cost error: %v", res.Err)
+	next, _ := mm.Update(res)
+	mm = next.(Model)
+	if mm.menu.kind != menuUsage || mm.menu.usage.input != 800 || mm.menu.usage.output != 350 {
+		t.Fatalf("usage: %+v", mm.menu.usage)
 	}
-	if !strings.Contains(res.Body, "Cost Dashboard") {
-		t.Fatalf("/cost output missing 'Cost Dashboard': %q", res.Body)
+	if !strings.Contains(mm.View(), "Usage and costs") {
+		t.Fatal("missing cost panel")
 	}
-	_ = mm
 }
 
 // F28: /cost without stats recorder returns "not available".
@@ -890,12 +891,9 @@ func TestCostCommand_NoRecorder(t *testing.T) {
 		t.Fatal("/cost should return a command")
 	}
 	msg := cmd()
-	res, ok := msg.(slashResultMsg)
-	if !ok {
-		t.Fatalf("/cost cmd() = %T, want slashResultMsg", msg)
-	}
-	if !strings.Contains(res.Body, "stats not available") {
-		t.Fatalf("/cost should report unavailable: %q", res.Body)
+	res, ok := msg.(usageLoadedMsg)
+	if !ok || res.err == nil {
+		t.Fatalf("expected unavailable usage: %T %+v", msg, msg)
 	}
 	_ = mm
 }

@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/account/tier"
 	"supercli/internal/agent"
+	"supercli/internal/agent/darwin"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
@@ -28,11 +29,16 @@ import (
 // tuiLaunchDeps is the closed-over state for building TUI Options.
 type tuiLaunchDeps struct {
 	home, dataDir, sessionID, version, uiLanguage string
+	resumeID                                      string
+	slotCache                                     *llm.SlotCache
+	drafts                                        *tui.DraftRecovery
+	workers                                       *agent.WorkerRegistry
 	modelTier                                     tier.Tier
 	loop                                          *agent.Loop
 	provider                                      llm.Provider
 	mergedCommands                                map[string]tui.SlashHandler
-	statusFn                                      func() string
+	dashboardFn                                   func() tui.DashboardSnapshot
+	darwinTool                                    *darwin.DarwinTool
 	checkpointCtrl                                *checkpoint.Controller
 	memAutoSaver                                  *memory.AutoSaver
 	memProg                                       *memProgress
@@ -57,13 +63,48 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 		Home:      d.home,
 		DataDir:   d.dataDir,
 		SessionID: d.sessionID,
-		Version:   d.version,
-		Tier:      string(d.modelTier),
-		Language:  d.uiLanguage,
-		Agent:     d.loop,
-		LLM:       d.provider,
-		Commands:  d.mergedCommands,
-		StatusFn:  d.statusFn,
+		ResumeID:  d.resumeID,
+		PrepareResume: func(ctx context.Context, id string) error {
+			if d.memIdle != nil {
+				d.memIdle.Activity()
+			}
+			if d.slotCache != nil {
+				if _, err := d.slotCache.Restore(ctx, id); err != nil {
+					log.Printf("slotcache restore %s: %v", id, err)
+				}
+			}
+			return ctx.Err()
+		},
+		DraftRecovery: d.drafts,
+		ResumeSession: func(ctx context.Context, id string, msgs []llm.Message, discovered []string) error {
+			if d.workers != nil {
+				for _, w := range d.workers.List() {
+					if w.Snapshot().Status == "running" {
+						return fmt.Errorf("wait for active workers before switching sessions")
+					}
+				}
+			}
+			if d.memIdle != nil {
+				d.memIdle.Activity()
+			}
+			if err := d.loop.ResumeConversation(ctx, session.NewWriter(d.sessStore, id), msgs, discovered); err != nil {
+				return err
+			}
+			if d.memProg != nil {
+				d.memProg.resumeBaseline.Store(int64(len(d.loop.Messages)) + 1)
+			}
+			if d.checkpointCtrl != nil {
+				d.checkpointCtrl.SetSession(id)
+			}
+			return nil
+		},
+		Version:     d.version,
+		Tier:        string(d.modelTier),
+		Language:    d.uiLanguage,
+		Agent:       d.loop,
+		LLM:         d.provider,
+		Commands:    d.mergedCommands,
+		DashboardFn: d.dashboardFn,
 		// Incremental memory: after every finished agent turn,
 		// deterministic user facts are saved immediately (no model
 		// call) and the model-backed summary is scheduled for the
@@ -154,6 +195,13 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			// The factory keeps the model-call metering across /model swaps.
 			np, err := d.provFactory.BuildChain(swapCfg, swapToml, llm.PurposeMain)
 			if err == nil {
+				if d.darwinTool != nil {
+					sequential := llm.IsLocalBaseURL(swapCfg.BaseURL)
+					if swapToml.DarwinParallel != nil {
+						sequential = !*swapToml.DarwinParallel
+					}
+					d.darwinTool.SetSequential(sequential)
+				}
 				// Just switched models — if the new provider is Codex,
 				// refresh its usage snapshot in the background so the HUD
 				// reflects the newly selected model's limits promptly.

@@ -161,3 +161,67 @@ dissenting opinion on a *specific decision* is the useful unit. (A
 separate `/council` command exists for the times you really want the
 roster.) Live: advisor answered a design question in 1 step / ~500
 tokens, sentinel file untouched (read-only asserted by test).
+
+## Reliable continuation and live worker view
+
+A retained worker's `send_message` invocation uses the current parent tool-call
+ID and question channel. Its progress belongs to the new continuation card;
+earlier reports stay intact, with a link back to the previous delegation.
+Parallel workers of the same agent type are matched by call ID.
+
+The GUI shows a compact, collapsible worker overview above the composer:
+stable Worker 1/2/... labels, current tool/activity, and running/done/error states.
+Click a worker to open its latest card. The TUI keeps a bounded worker panel
+above the input; very small terminals use the transcript and `/workers`.
+Both views use existing events, with no additional model calls or polling.
+
+Independent `send_message` calls share the task parallelism policy; two calls
+to the same worker remain ordered. Local/cloud defaults are based on the
+resolved worker backend. Explicit `task_parallel` settings still apply.
+Worker tool search/invocation uses the child's own restricted registry, with
+stable tool ordering. Thin workers always receive discovery and dispatch tools,
+even when a specialized role's functional allowlist omits them. These gateways
+can reach only that worker's allowed tools. Only the last assistant report
+returns to the coordinator, without intermediate commentary or reasoning.
+
+For a separate `task_model`, CLI/TUI and GUI resolve the tool protocol, stable
+schema setting and catalog placement from the worker's actual model/backend.
+A failed CLI worker probe falls back to both the coordinator's provider and its
+tool/context settings. Existing `small_full_tools`, `stable_toolset` and catalog
+overrides still apply; a resumed worker keeps its established profile.
+
+General workers with tool discovery inherit common and already-visible schemas,
+while optional tools remain registered and are exposed on demand. Registries
+without discovery retain their complete visible set. This avoids sending every
+optional tool schema to a native-tool worker just because it was delegated.
+
+Continuing an in-memory worker retains its earlier tool calls and results in
+the model context. Inheriting search_history does not make the worker's own
+transcript retrievable: that tool may search only the parent/global store.
+Completed tool envelopes are omitted only with a configured session writer,
+history search, and no pending/lost transcript writes. Context-budget pruning
+and compaction still bound long conversations; no extra prompt or model call
+is added. Regression tests reproduce the lost evidence in both thin and native
+tool modes and verify that the existing conversation prefix survives resume.
+
+Concurrent user questions are queued in TUI and presented separately in the
+GUI. Answer, cancellation, and expiry close only the matching question.
+Question delivery itself is bounded by its timeout.
+
+Regression coverage: `go test ./...` includes worker continuation across two
+web runs, isolated tool discovery, sequential/parallel continuations, concurrent
+questions, Unicode layouts, and scroll preservation. Run
+`node scripts/test-delegation-ui.cjs` with Playwright available to check real
+browser cards, worker overview, continuation links, and narrow layout; set
+`PLAYWRIGHT_BROWSER_PATH` for an existing Chrome/Chromium installation.
+Browser profile and screenshots stay under `.tmp/delegation-ui`.
+
+These changes do not add model instructions, change OpenCode Zen's special
+transport/tool gate, or move application data out of its portable directory.
+
+
+Within a mixed tool-call response, adjacent independent delegations retain the
+same backend parallelism policy as an all-delegation response. A following read
+waits for those workers to finish. Two messages to the same worker split groups,
+so its continuation cannot race its earlier instruction; completed results stay
+in the original call order. This adds no automatic worker creation.

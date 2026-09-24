@@ -93,28 +93,35 @@ func (l *Loop) prepareSessionImages(ctx context.Context, images []llm.ImageRef) 
 	return out
 }
 
-// mediaProviderView replaces dormant image parts with tiny text handles. Active
-// refs are deep-copied and remain real image parts for exactly one call.
+// mediaProviderView returns a read-only view, copying only when it encounters
+// an image to project. Text/reasoning-only parts are immutable here and can be
+// shared. Active image refs still need independent snapshots: accepting the
+// request deactivates the original refs before the provider stream completes.
 func (l *Loop) mediaProviderView(msgs []llm.Message) []llm.Message {
-	out := make([]llm.Message, len(msgs))
+	var out []llm.Message
 	for i, msg := range msgs {
-		out[i] = msg
-		if len(msg.Parts) == 0 {
-			continue
-		}
-		out[i].Parts = make([]llm.ContentPart, 0, len(msg.Parts))
-		for _, part := range msg.Parts {
+		var parts []llm.ContentPart
+		for j, part := range msg.Parts {
 			if part.Type != llm.PartTypeImage || part.Image == nil {
-				out[i].Parts = append(out[i].Parts, part)
 				continue
 			}
-			img := *part.Image
-			if img.Active {
-				out[i].Parts = append(out[i].Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &img})
-				continue
+			if out == nil {
+				out = append([]llm.Message(nil), msgs...)
 			}
-			out[i].Parts = append(out[i].Parts, llm.ContentPart{Type: llm.PartTypeText, Text: sessionImageMarker(img)})
+			if parts == nil {
+				parts = append([]llm.ContentPart(nil), msg.Parts...)
+				out[i].Parts = parts
+			}
+			if part.Image.Active {
+				img := *part.Image
+				parts[j] = llm.ContentPart{Type: llm.PartTypeImage, Image: &img}
+			} else {
+				parts[j] = llm.ContentPart{Type: llm.PartTypeText, Text: sessionImageMarker(*part.Image)}
+			}
 		}
+	}
+	if out == nil {
+		return msgs
 	}
 	return out
 }

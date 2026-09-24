@@ -53,6 +53,7 @@ const (
 // is the job, not a symptom, and charging for it is what used to cut healthy
 // tasks off mid-work.
 type repeatProgress struct {
+	unchanged unchangedProgress
 	// identicalStreak counts consecutive calls with the same fingerprint.
 	identicalStreak int
 	last            [sha256.Size]byte
@@ -63,61 +64,24 @@ type repeatProgress struct {
 	cooldown int
 }
 
-// toolEconomyProgress spots a common non-loop failure mode: the model keeps
-// asking for one or two read-only facts per provider round even though the
-// runtime can execute a whole read batch concurrently. This is not a reason to
-// stop the task (novel reads may all be legitimate), but it is a reason to
-// remind the model to use read_many and parallel tool calls. The reminder is
-// appended after the current tool results, so it does not create an extra
-// provider request.
-type toolEconomyProgress struct {
-	serialDiscoveryRounds int
-	warnings              int
-}
-
-const (
-	serialDiscoveryWarnAfter = 3
-	maxToolEconomyWarnings   = 2
-)
-
-func (p *toolEconomyProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) bool {
-	if len(calls) == 0 || p.warnings >= maxToolEconomyWarnings {
-		return false
-	}
-	// A failed call needs correction, not an efficiency lecture. A mutation,
-	// command, or a genuinely batched discovery round also breaks the streak.
-	for i, call := range calls {
-		if outcomeAt(outcomes, i).failed || toolKind(call.Name) != "discovery" {
-			p.serialDiscoveryRounds = 0
-			return false
-		}
-		if call.Name == "read_many" {
-			p.serialDiscoveryRounds = 0
-			return false
-		}
-	}
-	if len(calls) >= 3 {
-		p.serialDiscoveryRounds = 0
-		return false
-	}
-	p.serialDiscoveryRounds++
-	if p.serialDiscoveryRounds < serialDiscoveryWarnAfter {
-		return false
-	}
-	p.serialDiscoveryRounds = 0
-	p.warnings++
-	return true
-}
-
-// observe updates counters from a finished tool batch. outcomes is accepted
-// for symmetry with the rest of the loop; a loop is a loop whether the
-// repeated call succeeds or fails.
-func (p *repeatProgress) observe(calls []llm.ToolCall, _ []callOutcome) repeatSignal {
+// observe combines argument-based failure/cycle detection with fresh output
+// evidence. A changing read result is progress even when its arguments match.
+func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) repeatSignal {
 	if len(calls) == 0 {
 		return repeatNone
 	}
-	for _, c := range calls {
-		fp := toolCallFingerprint(c.Name, c.Arguments)
+	p.unchanged.observe(calls, outcomes)
+	for i, c := range calls {
+		ob := outcomeAt(outcomes, i).observation
+		var fp [sha256.Size]byte
+		if ob.valid {
+			var evidence [2 * sha256.Size]byte
+			copy(evidence[:sha256.Size], ob.key[:])
+			copy(evidence[sha256.Size:], ob.result[:])
+			fp = sha256.Sum256(evidence[:])
+		} else {
+			fp = toolCallFingerprint(c.Name, c.Arguments)
+		}
 		if p.haveLast && fp == p.last {
 			p.identicalStreak++
 		} else {
@@ -136,7 +100,7 @@ func (p *repeatProgress) observe(calls []llm.ToolCall, _ []callOutcome) repeatSi
 	if p.identicalStreak >= repeatHardLimit {
 		return repeatAbort
 	}
-	if p.cooldown == 0 && p.hasShortCycle() {
+	if p.cooldown == 0 && ((p.unchanged.seen == nil && p.hasShortCycle()) || p.unchanged.repeats >= 3 || p.unchanged.rounds >= 2) {
 		p.cooldown = repeatWarnCooldown
 		return repeatWarn
 	}
@@ -219,8 +183,9 @@ func toolKind(name string) string {
 // write, not progress; counting it as progress is what kept a self-repeating
 // edit loop funded.
 type callOutcome struct {
-	failed bool
-	inert  bool
+	failed      bool
+	inert       bool
+	observation toolObservation
 }
 
 // outcomeAt is index-safe: a batch cut short by a fatal call leaves the tail
@@ -468,6 +433,9 @@ func messagesHaveRecentToolResult(msgs []llm.Message) bool {
 				return false
 			}
 			for _, part := range msgs[i].Parts {
+				if part.Type == llm.PartTypeReasoning {
+					continue
+				}
 				if part.Type != llm.PartTypeText || hasVisibleUserReply(part.Text) {
 					return false
 				}
@@ -511,4 +479,14 @@ func clampReflection(s string) string {
 		cut = reflectionMaxChars
 	}
 	return strings.TrimSpace(s[:cut]) + "\n[reflection truncated]"
+}
+
+func (p *repeatProgress) warningText() string {
+	if p.unchanged.repeats >= 3 {
+		return fmt.Sprintf("[loop] %s returned the same result %d times. Use the existing evidence or change the approach.", p.unchanged.tool, p.unchanged.repeats)
+	}
+	if p.unchanged.rounds >= 2 {
+		return fmt.Sprintf("[loop] The last %d rounds returned only previously seen results. Use existing evidence or change the approach.", p.unchanged.rounds)
+	}
+	return "[loop] Repeated tool-call cycle. Change the approach or explain the blocker."
 }

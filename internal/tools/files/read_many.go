@@ -1,19 +1,14 @@
 package files
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
-	core "supercli/internal/tools/core"
 	"supercli/internal/tools/fileops"
 )
 
@@ -22,7 +17,6 @@ const (
 	maxReadManyRange    = 300
 	maxReadManyBytes    = 32 * 1024
 	maxReadManyItem     = 8 * 1024
-	maxReadManyLineKeep = 1800
 )
 
 // ReadMany reads independent line ranges in one tool call. It is useful on
@@ -81,12 +75,7 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("read_many: glob expansion produced %d reads, exceeds cap %d", len(work), maxReadManyRequests)}, nil
 	}
 
-	type outcome struct {
-		request readManyRequest
-		text    string
-		err     error
-	}
-	outcomes := make([]outcome, len(work))
+	outcomes := make([]readManyOutcome, len(work))
 	var wg sync.WaitGroup
 	for i, item := range work {
 		i, item := i, item
@@ -112,39 +101,27 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 				outcomes[i].err = err
 				return
 			}
-			lines, err := readManyLinesStreaming(path, request.From, request.To)
+			lines, eof, err := fileops.ReadLinesBoundedWithEOF(ctx, path, request.From, request.To, maxReadLineKeep)
 			if err != nil {
-				outcomes[i].err = err
+				outcomes[i].err = suggestReadFile(ctx, path, err)
 				return
 			}
-			outcomes[i].text = renderLines(lines)
+			// Match the existing batch rendering of CRLF files.
+			for j := range lines {
+				lines[j].Content = strings.TrimSuffix(lines[j].Content, "\r")
+			}
+			outcomes[i].text = renderLinesWithEOF(lines, eof)
 		}()
 	}
 	wg.Wait()
 
-	perItem := maxReadManyBytes / len(outcomes)
-	if perItem > maxReadManyItem {
-		perItem = maxReadManyItem
-	}
-	var b strings.Builder
-	okCount, failedCount := 0, 0
-	for i, outcome := range outcomes {
-		fmt.Fprintf(&b, "== [%d] %s:%d-%d ==\n", i+1, outcome.request.File, outcome.request.From, outcome.request.To)
-		if outcome.err != nil {
-			failedCount++
-			fmt.Fprintf(&b, "error: %v\n", outcome.err)
-			continue
-		}
-		okCount++
-		head := perItem * 3 / 4
-		tail := perItem - head
-		b.WriteString(core.HeadTail(outcome.text, head, tail))
-		if !strings.HasSuffix(outcome.text, "\n") {
-			b.WriteByte('\n')
-		}
-	}
-	fmt.Fprintf(&b, "[read_many: %d ok, %d failed]", okCount, failedCount)
-	return Result{Text: core.HeadTail(b.String(), maxReadManyBytes*3/4, maxReadManyBytes/4)}, nil
+	return renderReadMany(outcomes), nil
+}
+
+type readManyOutcome struct {
+	request readManyRequest
+	text    string
+	err     error
 }
 
 type readManyWork struct {
@@ -211,79 +188,6 @@ func displayGlobMatch(baseDir, pattern, match string) string {
 		return match
 	}
 	return filepath.ToSlash(rel)
-}
-
-// readManyLinesStreaming reads only through the requested final line and
-// retains at most maxReadLineChars bytes per line. Unlike fileops.ReadLines it
-// never loads the whole file, which matters when several large files are read
-// concurrently. ReadSlice lets us consume arbitrarily long lines in bounded
-// chunks instead of raising Scanner's token-too-long error.
-func readManyLinesStreaming(path string, from, to int) ([]fileops.LineRange, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fileops.FileErr(err, path)
-	}
-	defer f.Close()
-
-	r := bufio.NewReaderSize(f, 32*1024)
-	lineNo := 1
-	completed := 0
-	var content strings.Builder
-	omitted := 0
-	finishLine := func() {
-		completed = lineNo
-		lineNo++
-	}
-	var out []fileops.LineRange
-	for {
-		fragment, readErr := r.ReadSlice('\n')
-		lineDone := !errors.Is(readErr, bufio.ErrBufferFull)
-		if lineDone && len(fragment) > 0 && fragment[len(fragment)-1] == '\n' {
-			fragment = fragment[:len(fragment)-1]
-			if len(fragment) > 0 && fragment[len(fragment)-1] == '\r' {
-				fragment = fragment[:len(fragment)-1]
-			}
-		}
-		if lineNo >= from && lineNo <= to {
-			keep := maxReadManyLineKeep - content.Len()
-			if keep < 0 {
-				keep = 0
-			}
-			if keep > len(fragment) {
-				keep = len(fragment)
-			}
-			content.Write(fragment[:keep])
-			omitted += len(fragment) - keep
-		}
-
-		if lineDone && (len(fragment) > 0 || readErr == nil) {
-			if lineNo >= from && lineNo <= to {
-				text := strings.TrimSuffix(strings.ToValidUTF8(content.String(), ""), "\r")
-				if omitted > 0 {
-					text += fmt.Sprintf(" …[+%d bytes on this line truncated]", omitted)
-				}
-				out = append(out, fileops.LineRange{Number: lineNo, Content: text})
-			}
-			finishLine()
-			content.Reset()
-			omitted = 0
-			if completed >= to {
-				return out, nil
-			}
-		}
-
-		switch {
-		case readErr == nil, errors.Is(readErr, bufio.ErrBufferFull):
-			continue
-		case errors.Is(readErr, io.EOF):
-			if from > completed {
-				return nil, fmt.Errorf("fileops.ReadLines: from=%d exceeds file length %d", from, completed)
-			}
-			return out, nil
-		default:
-			return nil, fileops.FileErr(readErr, path)
-		}
-	}
 }
 
 func validateReadManyRequest(r readManyRequest) error {

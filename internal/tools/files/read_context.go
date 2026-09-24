@@ -58,9 +58,9 @@ func (t *ReadContext) execute(ctx context.Context, args json.RawMessage) (Result
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_context: %w", err)}, nil
 	}
-	lines, err := fileops.ReadContext(full, a.Line, a.Radius)
+	lines, eof, err := fileops.ReadContextBoundedWithEOF(ctx, full, a.Line, a.Radius, maxReadLineKeep)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_context: %w", err)}, nil
+		return Result{Err: fmt.Errorf("read_context: %w", suggestReadFile(ctx, full, err))}, nil
 	}
-	return Result{Text: renderLines(lines)}, nil
+	return Result{Text: renderLinesWithEOF(lines, eof)}, nil
 }

@@ -26,6 +26,9 @@ type Delta struct {
 	// upstream does not expose cannot be reconstructed here.
 	Reasoning string
 
+	// NativeReasoning is a complete replayable block, not UI text.
+	NativeReasoning *ReasoningBlock
+
 	// ToolCall is a fragment of a tool call. The provider may emit
 	// multiple deltas per call (ID+Name on first, Arguments
 	// accumulating on subsequent ones). The consumer is expected
@@ -103,8 +106,14 @@ func (d Delta) Validate() error {
 	if d.ToolCall != nil {
 		set++
 	}
+	if d.NativeReasoning != nil {
+		set++
+		if err := d.NativeReasoning.Validate(); err != nil {
+			return err
+		}
+	}
 	if set > 1 {
-		return fmt.Errorf("llm.Delta: Content, Reasoning, and ToolCall are mutually exclusive")
+		return fmt.Errorf("llm.Delta: Content, Reasoning, NativeReasoning, and ToolCall are mutually exclusive")
 	}
 	if d.Role != "" {
 		switch d.Role {

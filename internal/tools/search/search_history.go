@@ -133,7 +133,7 @@ func (s *SearchHistory) run(ctx context.Context, args json.RawMessage) (Result, 
 			return Result{Err: fmt.Errorf("search_history: invalid role %q (want system|user|assistant|tool)", a.Role)}, nil
 		}
 	}
-	hits, err := s.Store.SearchHistory(ctx, a.Query, a.SessionID, a.Role, since, until, limit)
+	hits, err := s.Store.SearchHistory(ctx, historyQueryTerms(a.Query), a.SessionID, a.Role, since, until, limit)
 	if err != nil {
 		return Result{Err: fmt.Errorf("search_history: %w", err)}, nil
 	}

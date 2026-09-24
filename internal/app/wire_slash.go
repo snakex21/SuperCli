@@ -54,6 +54,7 @@ type slashWireDeps struct {
 // wireSlashEarly registers slash handlers that do not need the provider
 // manager or council. MCP is registered separately in Main after initMcp.
 func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
+	cmds["reasoning-history"] = reasoningHistoryCommand(d.dataDir, d.cwd)
 	// Fala 3: /workers — coordinator visibility. Lists workers from the
 	// task registry; "/workers stop <id>" cancels a running one.
 	cmds["workers"] = func(ctx context.Context, args string) (string, error) {
@@ -132,7 +133,7 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		}
 		out, err := resumeSession(ctx, d.loop, d.sessStore, d.windowFor, args)
 		if err != nil {
-			return fmt.Sprintf("resume: %v", err), nil
+			return "", err
 		}
 		// Warm the server-side KV BEFORE the first request of the
 		// resumed conversation. Restore is always safe: llama.cpp
@@ -252,15 +253,16 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		args = strings.ToLower(strings.TrimSpace(args))
 		modelName := d.loop.Provider().Name()
 		if args == "" {
-			cur, effective, adjusted := llm.ReasoningEffortAdjustment(modelName)
+			state := llm.ProviderReasoningState(d.loop.Provider())
+			cur, effective, adjusted := state.Configured, state.Effective, state.Adjusted
 			if cur == "" {
 				cur = "(not set — provider default)"
 			}
 			note := ""
-			if !llm.SupportsReasoningEffort(modelName) {
+			if !state.Supported {
 				note = fmt.Sprintf("\nnote: current model %q does not support reasoning effort; the parameter is not sent", modelName)
 			}
-			if supported, ok := llm.SupportedReasoningEfforts(modelName); ok {
+			if supported, ok := llm.SupportedReasoningEfforts(state.SupportKey); ok {
 				note += fmt.Sprintf("\nbackend-supported for %s: %s", modelName, strings.Join(supported, "|"))
 			}
 			if adjusted {
@@ -288,10 +290,13 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 			return "reasoning effort cleared (provider default)", nil
 		}
 		out := fmt.Sprintf("reasoning effort set to %s", args)
-		if !llm.SupportsReasoningEffort(modelName) {
-			out += fmt.Sprintf("\nnote: current model %q does not support it; the parameter will apply when you switch to an OpenAI reasoning model", modelName)
-		} else if configured, effective, adjusted := llm.ReasoningEffortAdjustment(modelName); adjusted {
-			out += fmt.Sprintf("\nnote: current backend evidence adjusts %s -> %s for %s", configured, effective, modelName)
+		state := llm.ProviderReasoningState(d.loop.Provider())
+		if !state.Supported {
+			out += fmt.Sprintf("\nnote: current backend rejected this control for %s; the preference is saved but not sent", modelName)
+		} else if state.ToggleOnly {
+			out += "\nnote: this model exposes on/off only; none disables thinking, the other levels enable it"
+		} else if state.Adjusted {
+			out += fmt.Sprintf("\nnote: current backend evidence adjusts %s -> %s for %s", state.Configured, state.Effective, modelName)
 		}
 		return out, nil
 	}
@@ -558,7 +563,7 @@ func wireSlashLate(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		}
 		if len(roster) == 0 {
 			// Fallback: auto cheapest-N council with judge pick.
-			if len(d.council.Samples) == 0 {
+			if d.council.LoadSamples == nil && len(d.council.Samples) == 0 {
 				return "council: no roster picked yet — run /council (no args) to choose models", nil
 			}
 			res, err := d.council.Consult(ctx, consult.Request{Question: q, N: n})

@@ -90,7 +90,7 @@ func TestHardProtocolResolvedToolsLeavePromptButStayInTranscript(t *testing.T) {
 	}
 }
 
-func TestHardProtocolResolvedToolsAreSentOnceThenRetrievedOnDemand(t *testing.T) {
+func TestHardProtocolRecentSmallToolsRemainAvailableForFollowup(t *testing.T) {
 	provider := &stubProvider{name: "hard-resolved-context", scripts: [][]llm.Delta{
 		{echoCall("resolved-1"), {FinishReason: "tool_calls"}},
 		{{Content: "Pierwsza praca zakonczona."}, {FinishReason: "stop"}},
@@ -103,7 +103,7 @@ func TestHardProtocolResolvedToolsAreSentOnceThenRetrievedOnDemand(t *testing.T)
 			return tools.Result{Text: "history"}, nil
 		},
 	})
-	loop, err := NewLoop(LoopConfig{Provider: provider, Registry: registry, MaxSteps: 5})
+	loop, err := NewLoop(LoopConfig{Provider: provider, Registry: registry, Writer: &recordingWriter{}, MaxSteps: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +124,8 @@ func TestHardProtocolResolvedToolsAreSentOnceThenRetrievedOnDemand(t *testing.T)
 	if !requestContainsToolProtocol(provider.reqs[1]) {
 		t.Fatal("live tool result was removed before the model could summarize it")
 	}
-	if requestContainsToolProtocol(provider.reqs[2]) {
-		t.Fatalf("resolved tool protocol returned in follow-up prompt: %+v", provider.reqs[2])
+	if !requestContainsToolProtocol(provider.reqs[2]) {
+		t.Fatal("recent small evidence vanished before the follow-up")
 	}
 	if !requestContainsToolProtocol(loop.Messages) {
 		t.Fatal("canonical transcript lost tool details needed by UI/search_history")

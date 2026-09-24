@@ -86,9 +86,9 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
   if (trigger) trigger.disabled = false;
   var overlay = el("div", "question-overlay rewind-dialog");
   var panel = el("div", "question-panel compact");
-  panel.appendChild(el("div", "question-kicker", t("workflow.rewindWhy")));
-  panel.appendChild(el("div", "question-option-desc", t("workflow.rewindWhyHint")));
-	panel.appendChild(el("div", "question-option-desc rewind-warning", t("workflow.rewindPermanent")));
+  panel.appendChild(i18nEl("div", "question-kicker", "workflow.rewindWhy"));
+  panel.appendChild(i18nEl("div", "question-option-desc", "workflow.rewindWhyHint"));
+	panel.appendChild(i18nEl("div", "question-option-desc rewind-warning", "workflow.rewindPermanent"));
   var input = el("textarea", "question-custom");
   input.rows = 3;
   input.maxLength = 400;
@@ -102,15 +102,15 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
 		rewindFiles.checked = true;
     fileOption.appendChild(rewindFiles);
     var fileCopy = el("span", "question-option-copy");
-    fileCopy.appendChild(el("strong", "", t("workflow.rewindFiles")));
+    fileCopy.appendChild(i18nEl("strong", "", "workflow.rewindFiles"));
     fileCopy.appendChild(el("span", "question-option-desc",
       t("workflow.rewindFilesHint").replace("{c}", fmtInteger(preview.checkpoints || 0)).replace("{n}", fmtInteger((preview.files || []).length))));
     fileOption.appendChild(fileCopy);
     panel.appendChild(fileOption);
   }
   var actions = el("div", "question-actions");
-  var cancel = el("button", "btn", t("common.cancel"));
-  var confirm = el("button", "btn primary", t("workflow.rewindContinue"));
+  var cancel = i18nEl("button", "btn", "common.cancel");
+  var confirm = i18nEl("button", "btn primary", "workflow.rewindContinue");
   cancel.type = confirm.type = "button";
   function close() { overlay.remove(); }
   cancel.addEventListener("click", close);
@@ -203,6 +203,13 @@ function renderAssistant(node) {
 // can freeze the WebView UI. Batch chunks and render at an adaptive cadence.
 function scheduleAssistantRender(node) {
   if (!node || node._renderTimer !== null) return;
+  // Paint the first fragment now; only subsequent Markdown updates are batched.
+  if (!node._firstPainted && node._raw) {
+    node._firstPainted = true;
+    renderAssistant(node);
+    smartScroll();
+    return;
+  }
   var n = node._raw.length;
   var delay = n > 48000 ? 250 : (n > 16000 ? 120 : (n > 4000 ? 60 : 40));
   node._renderTimer = setTimeout(function () {
@@ -273,7 +280,62 @@ function noticeTag(text) {
 
 /* Tool rows */
 var toolRows = {}; // provider tool-call id -> row
-var workerRows = {}; // worker task id -> delegated-task row
+var workerRows = {}; // worker task id -> latest delegated-task row
+
+// This overview is fed by the existing event stream; it never polls the backend.
+var workerOverview = {};
+function workerLabel(id) { return String(id || "Worker").replace(/^worker-(\d+)$/, "Worker $1"); }
+function resetWorkerOverview() {
+  workerOverview = {};
+  var panel = $("#worker-overview");
+  if (panel) panel.hidden = true;
+  var list = $("#worker-overview-list");
+  if (list) list.replaceChildren();
+}
+function updateWorkerOverview(id, agentName, status, activity, row) {
+  if (!id) return;
+  var item = workerOverview[id];
+  if (!item) {
+    item = workerOverview[id] = { id: id };
+    item.button = el("button", "worker-overview-item");
+    item.button.type = "button";
+    item.button.addEventListener("click", function () {
+      if (!item.row || !item.row.isConnected) return;
+      item.row.open = true;
+      item.row._body.hidden = false;
+      item.row.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    item.button.appendChild(el("span", "worker-overview-dot"));
+    item.label = el("span", "worker-overview-name");
+    item.detail = el("span", "worker-overview-activity");
+    item.state = el("span", "worker-overview-status");
+    item.button.append(item.label, item.detail, item.state);
+    $("#worker-overview-list").appendChild(item.button);
+  }
+  item.agent = agentName || item.agent || "";
+  item.status = status || item.status || "running";
+  if (activity != null) item.activity = activity;
+  if (row) item.row = row;
+  item.button.dataset.state = item.status;
+  item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
+  item.detail.textContent = item.activity || "";
+  item.state.textContent = taskStatusLabel(item.status);
+  item.button.title = [id, item.activity].filter(Boolean).join(" · ");
+  var items = Object.values(workerOverview).sort(function (a, b) {
+    return a.id.localeCompare(b.id, undefined, { numeric: true });
+  });
+  items.forEach(function (w) { $("#worker-overview-list").appendChild(w.button); });
+  var active = items.filter(function (w) { return w.status === "running"; }).length;
+  $("#worker-overview-summary").textContent = t("task.workers") + " · " +
+    t("task.active") + ": " + active + " / " + items.length;
+  $("#worker-overview").hidden = false;
+}
+function taskRowTitle(row, agentName, id) {
+  return (id ? workerLabel(id) : t("task.delegation")) +
+    (agentName ? " · " + agentName : "") +
+    (row._toolName === "send_message" ? " · " + t("task.continue") : "");
+}
+
 var openToolOrder = []; // ids without results yet
 
 function toolDisplayName(name) {
@@ -299,6 +361,10 @@ function toolHint(name, args) {
         name: t("task.delegation") + " · " + kind + (a.advise ? " (advise)" : ""),
         hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
       };
+    }
+    if (name === "send_message") {
+      return { name: t("task.continue") + " · " + (a.to || "worker"),
+        hint: clip(a.message || "", 90), agent: "", prompt: a.message || "", workerID: a.to || "" };
     }
     var display = toolDisplayName(name);
     if (a.command) {
@@ -481,34 +547,37 @@ function renderTaskResult(row, note, elapsed, prompt, err) {
   row.classList.add("task-row");
   row.classList.remove("running", "done", "failed");
   row.classList.add(err || note.status === "failed" ? "failed" : (note.status === "running" ? "running" : "done"));
-  row._tname.textContent = t("task.delegation") + " · " + note.agent;
+  row._tname.textContent = taskRowTitle(row, note.agent, note.id);
+  row._tname.title = note.id || "";
+  if (row._t0 != null) updateWorkerOverview(note.id, note.agent, err ? "failed" : note.status, row._taskPrompt, row);
   row._thint.textContent = taskMetrics(note);
   row._stat.textContent = taskStatusLabel(err ? "failed" : note.status) + (elapsed != null ? " · " + fmtDuration(elapsed) : "");
   row._stat.classList.toggle("err", !!err || note.status === "failed");
   row._body.innerHTML = "";
+  appendTaskBacklink(row);
   if (prompt) {
-    row._body.appendChild(el("div", "lbl", t("task.brief")));
+    row._body.appendChild(i18nEl("div", "lbl", "task.brief"));
     row._body.appendChild(el("div", "task-brief", prompt));
   }
   if (activity && activity.childNodes.length) {
-    row._body.appendChild(el("div", "lbl", t("task.activity")));
+    row._body.appendChild(i18nEl("div", "lbl", "task.activity"));
     row._body.appendChild(activity);
   } else if (note.tools) {
-    row._body.appendChild(el("div", "lbl", t("task.activity")));
+    row._body.appendChild(i18nEl("div", "lbl", "task.activity"));
     activity = el("div", "task-activity");
     String(note.tools).split(/,\s*/).filter(Boolean).forEach(function (name) {
       var item = el("div", "task-activity-item done");
       item.appendChild(el("span", "activity-dot"));
       item.appendChild(el("span", "activity-name", name));
       item.appendChild(el("span", "activity-hint", ""));
-      item.appendChild(el("span", "activity-status", t("task.done")));
+      item.appendChild(i18nEl("span", "activity-status", "task.done"));
       activity.appendChild(item);
     });
     row._activity = activity;
     row._body.appendChild(activity);
   }
   if (note.result) {
-    row._body.appendChild(el("div", "lbl", t("task.report")));
+    row._body.appendChild(i18nEl("div", "lbl", "task.report"));
     var report = el("div", "task-report msg-assistant");
     report.innerHTML = renderText(note.result);
     row._body.appendChild(report);
@@ -526,6 +595,7 @@ function addHistoryTask(note) {
   row.appendChild(sum);
   row._body = el("div", "tbody");
   row.appendChild(row._body);
+  if (note.id) { row._taskID = note.id; workerRows[note.id] = row; }
   renderTaskResult(row, note, null, "", note.status === "failed");
   row.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
   appendStream(row);
@@ -547,7 +617,7 @@ function addToolCall(name, args, id) {
   var body = el("div", "tbody");
   body.hidden = true;
   if (!FILE_READ_TOOLS[name]) {
-    var lblA = el("div", "lbl", t("tool.input"));
+    var lblA = i18nEl("div", "lbl", "tool.input");
     body.appendChild(lblA);
     body.appendChild(el("pre", "", prettyJSON(args)));
   }
@@ -556,12 +626,18 @@ function addToolCall(name, args, id) {
   row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
   row._toolName = name; row._toolArgs = args || "{}"; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
   row._t0 = performance.now();
-  if (name === "task") {
+  if (name === "task" || name === "send_message") {
     row.classList.add("task-row");
+    if (info.workerID) {
+      row._taskID = info.workerID;
+      row._previousTaskRow = workerRows[info.workerID] || null;
+      workerRows[info.workerID] = row;
+    }
     body.innerHTML = "";
-    body.appendChild(el("div", "lbl", t("task.brief")));
+    appendTaskBacklink(row);
+    body.appendChild(i18nEl("div", "lbl", "task.brief"));
     body.appendChild(el("div", "task-brief", info.prompt || ""));
-    body.appendChild(el("div", "lbl", t("task.activity")));
+    body.appendChild(i18nEl("div", "lbl", "task.activity"));
     row._activity = el("div", "task-activity");
     row._workerCalls = {};
     body.appendChild(row._activity);
@@ -589,13 +665,14 @@ function addToolResult(id, output, err) {
   row.classList.remove("running");
   row.classList.add(err ? "failed" : "done");
   var ms = performance.now() - row._t0;
-  var task = row._toolName === "task" ? parseTaskNotification(output || err) : null;
+  var task = (row._toolName === "task" || row._toolName === "send_message") ? parseTaskNotification(output || err) : null;
   if (task) {
     if (task.id) workerRows[task.id] = row;
     renderTaskResult(row, task, ms, row._taskPrompt, err);
     smartScroll();
     return;
   }
+  if (row._taskID) updateWorkerOverview(row._taskID, row._taskAgent, err ? "failed" : "done", row._taskPrompt, row);
   var payload = err || output || "";
   var changes = toolChangeStats(row._toolName, payload);
   var mutationLabel = mutationOutcomeLabel(row._toolName, payload, !!err);
@@ -686,6 +763,7 @@ function settleOpenTools() {
       row._clock = null;
       row.classList.remove("running");
       row._stat.textContent = "—";
+      if (row._taskID) updateWorkerOverview(row._taskID, row._taskAgent, "stopped", row._taskPrompt, row);
     }
   });
   openToolOrder = [];
@@ -694,30 +772,59 @@ function prettyJSON(s) {
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s || ""; }
 }
 
-function findTaskRow(taskID, agentName) {
+function appendTaskBacklink(row) {
+  if (!row._previousTaskRow) return;
+  var link = i18nEl("button", "task-backlink", "task.previous");
+  link.type = "button";
+  link.addEventListener("click", function () {
+    row._previousTaskRow.open = true;
+    row._previousTaskRow.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+  row._body.appendChild(link);
+}
+
+function findTaskRow(taskID, agentName, parentCallID) {
+  if (parentCallID) return toolRows[parentCallID] || null;
   if (taskID && workerRows[taskID]) return workerRows[taskID];
   for (var i = openToolOrder.length - 1; i >= 0; i--) {
     var candidate = toolRows[openToolOrder[i]];
-    if (candidate && candidate._toolName === "task" &&
+    if (candidate && !candidate._taskID && candidate._toolName === "task" &&
       (!agentName || candidate._taskAgent === agentName)) return candidate;
   }
   return null;
 }
 
 function addWorkerProgress(ev) {
-  var row = findTaskRow(ev.id, ev.name);
+  var row = findTaskRow(ev.id, ev.name, ev.parent_call_id);
   if (!row) return false;
-  if (ev.id) workerRows[ev.id] = row;
+  if (ev.id) { workerRows[ev.id] = row; row._taskID = ev.id; }
+  if (ev.kind === "started") {
+    row._taskAgent = ev.name || row._taskAgent;
+    row._taskRun = ev.run || 1;
+    row._tname.textContent = taskRowTitle(row, row._taskAgent, ev.id);
+    row._tname.title = ev.id;
+    updateWorkerOverview(ev.id, row._taskAgent, "running", row._taskPrompt || ev.prompt, row);
+    row._thint.textContent = clip(row._taskPrompt || ev.prompt || "", 90);
+    return true;
+  }
+  if (ev.kind === "finished") {
+    clearInterval(row._clock);
+    row._clock = null;
+    row._stat.textContent = taskStatusLabel(ev.status);
+    updateWorkerOverview(ev.id, ev.name, ev.status, row._taskPrompt, row);
+    return true;
+  }
   if (!row._activity) row._activity = el("div", "task-activity");
   if (!row._workerCalls) row._workerCalls = {};
   var item = ev.call_id ? row._workerCalls[ev.call_id] : null;
   if (ev.kind === "tool_call") {
     var info = toolHint(ev.tool || "tool", ev.args || "{}");
+    updateWorkerOverview(ev.id, ev.name, "running", (info.name || ev.tool) + (info.hint ? " · " + info.hint : ""), row);
     item = el("div", "task-activity-item running");
     item.appendChild(el("span", "activity-dot"));
     item.appendChild(el("span", "activity-name", ev.tool || "tool"));
     item.appendChild(el("span", "activity-hint", info.hint || ""));
-    item.appendChild(el("span", "activity-status", t("tool.running")));
+    item.appendChild(i18nEl("span", "activity-status", "tool.running"));
     row._activity.appendChild(item);
     if (ev.call_id) row._workerCalls[ev.call_id] = item;
   } else if (ev.kind === "tool_result") {
@@ -733,9 +840,9 @@ function addWorkerProgress(ev) {
     item.classList.add(ev.err ? "failed" : "done");
     item.querySelector(".activity-status").textContent = ev.err ? t("task.failed") : t("task.done");
     if (ev.err || ev.output) item.title = ev.err || ev.output;
+    updateWorkerOverview(ev.id, ev.name, "running", row._taskPrompt, row);
   }
-  if (!row.open) row.open = true;
-  row._body.hidden = false;
+  row._body.hidden = !row.open;
   smartScroll();
   return true;
 }

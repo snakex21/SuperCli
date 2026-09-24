@@ -26,6 +26,9 @@ func TestProcessSessionHelper(t *testing.T) {
 	case "stdin":
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		fmt.Print("got:" + line)
+	case "fail":
+		fmt.Fprintln(os.Stderr, "specific failing assertion")
+		os.Exit(7)
 	case "sleep":
 		time.Sleep(30 * time.Second)
 	default:
@@ -59,53 +62,34 @@ func execute(t *testing.T, tool *Tool, value any) (snapshot, error) {
 func TestStartCapturesBoundedOutputAndCompletion(t *testing.T) {
 	tool := New(t.TempDir())
 	defer tool.Close()
-	snap, err := execute(t, tool, map[string]any{"action": "start", "command": helperCommand("echo"), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 1000})
+	start, err := execute(t, tool, map[string]any{"action": "start", "command": helperCommand("echo"), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr strings.Builder
-	stdout.WriteString(snap.Stdout)
-	stderr.WriteString(snap.Stderr)
-	deadline := time.Now().Add(5 * time.Second)
-	for snap.Status == "running" && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-		snap, err = execute(t, tool, map[string]any{"action": "poll", "id": snap.ID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		stdout.WriteString(snap.Stdout)
-		stderr.WriteString(snap.Stderr)
+	final := waitCompletion(t, tool, start.ID)
+	if final.Status != "done" || final.ExitCode == nil || *final.ExitCode != 0 {
+		t.Fatalf("snapshot = %+v", final)
 	}
-	if snap.Status != "done" || snap.ExitCode == nil || *snap.ExitCode != 0 {
-		t.Fatalf("snapshot = %+v", snap)
-	}
-	if !strings.Contains(stdout.String(), "hello-out") || !strings.Contains(stderr.String(), "hello-err") {
-		t.Fatalf("missing streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	if !strings.Contains(start.Stdout+final.Stdout, "hello-out") || !strings.Contains(start.Stderr+final.Stderr, "hello-err") {
+		t.Fatalf("missing streams: start=%+v final=%+v", start, final)
 	}
 }
 
-func TestWriteAndPollInteractiveProcess(t *testing.T) {
+func TestWriteAndWaitInteractiveProcess(t *testing.T) {
 	tool := New(t.TempDir())
 	defer tool.Close()
 	start, err := execute(t, tool, map[string]any{"action": "start", "command": helperCommand("stdin"), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(t, tool, map[string]any{"action": "write", "id": start.ID, "input": "ping"}); err != nil {
+	written, err := execute(t, tool, map[string]any{"action": "write", "id": start.ID, "input": "ping"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		snap, err := execute(t, tool, map[string]any{"action": "poll", "id": start.ID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(snap.Stdout, "got:ping") {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	final := waitCompletion(t, tool, start.ID)
+	if final.Status != "done" || !strings.Contains(start.Stdout+written.Stdout+final.Stdout, "got:ping") {
+		t.Fatalf("interactive output missing: %+v %+v %+v", start, written, final)
 	}
-	t.Fatal("interactive output did not arrive")
 }
 
 func TestStopCancelsProcess(t *testing.T) {
@@ -124,79 +108,46 @@ func TestStopCancelsProcess(t *testing.T) {
 	}
 }
 
-func TestPTYCapturesMergedOutputAndResizes(t *testing.T) {
+func TestPTYCapturesMergedOutputAndCompletion(t *testing.T) {
 	tool := New(t.TempDir())
 	defer tool.Close()
-	snap, err := execute(t, tool, map[string]any{
-		"action": "start", "command": helperCommand("echo"),
-		"env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 1000,
-		"pty": true, "columns": 90, "rows": 24,
-	})
+	start, err := execute(t, tool, map[string]any{"action": "start", "command": helperCommand("echo"), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 0, "pty": true, "columns": 90, "rows": 24})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snap.PTY {
-		t.Fatalf("PTY marker missing: %+v", snap)
+	final := waitCompletion(t, tool, start.ID)
+	if !final.PTY || final.Status != "done" || final.ExitCode == nil || *final.ExitCode != 0 {
+		t.Fatalf("snapshot = %+v", final)
 	}
-	var output strings.Builder
-	output.WriteString(snap.Stdout)
-	deadline := time.Now().Add(5 * time.Second)
-	for snap.Status == "running" && time.Now().Before(deadline) {
-		if _, err := execute(t, tool, map[string]any{"action": "resize", "id": snap.ID, "columns": 110, "rows": 35}); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(20 * time.Millisecond)
-		snap, err = execute(t, tool, map[string]any{"action": "poll", "id": snap.ID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		output.WriteString(snap.Stdout)
+	output := start.Stdout + final.Stdout
+	if !strings.Contains(output, "hello-out") || !strings.Contains(output, "hello-err") {
+		t.Fatalf("PTY did not merge both streams: %q", output)
 	}
-	if snap.Status != "done" || snap.ExitCode == nil || *snap.ExitCode != 0 {
-		t.Fatalf("snapshot = %+v", snap)
-	}
-	if !strings.Contains(output.String(), "hello-out") || !strings.Contains(output.String(), "hello-err") {
-		t.Fatalf("PTY did not merge both streams: %q", output.String())
-	}
-	if strings.Contains(output.String(), "\x1b") || strings.Contains(output.String(), "\r") {
-		t.Fatalf("terminal control bytes leaked: %q", output.String())
+	if strings.ContainsAny(output, "\x1b\r") {
+		t.Fatalf("terminal control bytes leaked: %q", output)
 	}
 }
 
 func TestPTYInteractiveWriteAndResize(t *testing.T) {
 	tool := New(t.TempDir())
 	defer tool.Close()
-	start, err := execute(t, tool, map[string]any{
-		"action": "start", "command": helperCommand("stdin"),
-		"env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 0,
-		"pty": true, "columns": 80, "rows": 24,
-	})
+	start, err := execute(t, tool, map[string]any{"action": "start", "command": helperCommand("stdin"), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}, "yield_ms": 0, "pty": true, "columns": 80, "rows": 24})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(t, tool, map[string]any{"action": "resize", "id": start.ID, "columns": 120, "rows": 40}); err != nil {
+	resized, err := execute(t, tool, map[string]any{"action": "resize", "id": start.ID, "columns": 120, "rows": 40})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(t, tool, map[string]any{"action": "write", "id": start.ID, "input": "ping"}); err != nil {
+	written, err := execute(t, tool, map[string]any{"action": "write", "id": start.ID, "input": "ping"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	var output strings.Builder
-	for time.Now().Before(deadline) {
-		snap, err := execute(t, tool, map[string]any{"action": "poll", "id": start.ID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		output.WriteString(snap.Stdout)
-		if strings.Contains(output.String(), "got:ping") {
-			return
-		}
-		if snap.Status != "running" {
-			t.Fatalf("PTY exited before reading input: %+v output=%q", snap, output.String())
-		}
-		time.Sleep(20 * time.Millisecond)
+	final := waitCompletion(t, tool, start.ID)
+	output := start.Stdout + resized.Stdout + written.Stdout + final.Stdout
+	if final.Status != "done" || !strings.Contains(output, "got:ping") {
+		t.Fatalf("interactive PTY output missing: %+v output=%q", final, output)
 	}
-	t.Fatalf("interactive PTY output did not arrive: %q", output.String())
 }
 
 func TestResizeRequiresPTY(t *testing.T) {
@@ -226,4 +177,20 @@ func TestStreamBufferReportsDroppedBytes(t *testing.T) {
 	if string(got) != "45678" || cursor != 8 || omitted != 3 {
 		t.Fatalf("got=%q cursor=%d omitted=%d", got, cursor, omitted)
 	}
+}
+
+func waitCompletion(t *testing.T, tool *Tool, id string) snapshot {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	raw, _ := json.Marshal(map[string]string{"action": "wait", "id": id})
+	result, err := tool.Execute(ctx, raw)
+	if err != nil || result.Err != nil {
+		t.Fatalf("wait: %+v %v", result, err)
+	}
+	var snap snapshot
+	if err := json.Unmarshal([]byte(result.Text), &snap); err != nil {
+		t.Fatal(err)
+	}
+	return snap
 }

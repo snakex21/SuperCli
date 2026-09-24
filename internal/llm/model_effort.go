@@ -26,15 +26,23 @@ var reasoningEffortSupport = struct {
 	byModel map[string][]string
 }{byModel: make(map[string][]string)}
 
-// SetReasoningEffort sets the process-global configured effort level.
-// Empty string clears it (provider default). Returns an error for unknown levels.
-func SetReasoningEffort(level string) error {
+// ValidateReasoningEffort checks a preference without changing process state.
+// Empty string means provider default.
+func ValidateReasoningEffort(level string) error {
 	level = strings.ToLower(strings.TrimSpace(level))
 	if level != "" && !isValidReasoningEffort(level) {
 		return fmt.Errorf("unknown reasoning effort %q (want %s)",
 			level, strings.Join(ReasoningEffortLevels, "|"))
 	}
-	reasoningEffortLevel.Store(level)
+	return nil
+}
+
+// SetReasoningEffort applies a validated preference to subsequent requests.
+func SetReasoningEffort(level string) error {
+	if err := ValidateReasoningEffort(level); err != nil {
+		return err
+	}
+	reasoningEffortLevel.Store(strings.ToLower(strings.TrimSpace(level)))
 	return nil
 }
 
@@ -399,7 +407,8 @@ func SupportsReasoningEffortWithCapability(model string, capability bool) bool {
 func supportsReasoningEffortByName(model string) bool {
 	m := reasoningModelFamily(model)
 	switch {
-	case strings.HasPrefix(m, "gpt-5"):
+	case strings.HasPrefix(m, "gpt-5"), strings.HasPrefix(m, "gpt-6"):
+
 		return true
 	case strings.HasPrefix(m, "codex-") || m == "codex":
 		return true

@@ -39,6 +39,7 @@ type sessionMeta struct {
 	FirstUserMsg    string `json:"first_user_msg"`
 	MessageCount    int    `json:"message_count"`
 	StartedAt       string `json:"started_at"`
+	UpdatedAt       string `json:"updated_at"`
 	Model           string `json:"model,omitempty"`
 	Provider        string `json:"provider,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
@@ -152,6 +153,7 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 			FirstUserMsg:    title,
 			MessageCount:    r.MessageCount,
 			StartedAt:       r.StartedAt.Format(time.RFC3339),
+			UpdatedAt:       r.UpdatedAt.Format(time.RFC3339Nano),
 			Model:           r.Model,
 			Provider:        r.Provider,
 			ReasoningEffort: r.ReasoningEffort,

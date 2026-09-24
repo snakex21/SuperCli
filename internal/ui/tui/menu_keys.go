@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +9,21 @@ import (
 )
 
 func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+k" {
+		return m.closeMenu()
+	}
+	if m.menu.kind == menuUsage {
+		return m.handleUsageKey(msg)
+	}
+	if m.menu.kind == menuAttachments {
+		return m.handleAttachmentsKey(msg)
+	}
+	if m.menu.kind == menuGoal {
+		return m.handleGoalKey(msg)
+	}
+	if m.menu.kind == menuContextLimit {
+		return m.handleContextLimitKey(msg)
+	}
 	if m.menu.kind == menuActions {
 		return m.handleActionsKey(msg)
 	}
@@ -28,7 +42,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.menu.kind == menuCheckpoint {
 		switch msg.String() {
 		case "esc", "n":
-			return m.closeMenu()
+			return m.backMenu()
 		case "enter", "y":
 			name := "undo"
 			if m.menu.checkpoint != nil && m.menu.checkpoint.Redo {
@@ -40,7 +54,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	// In the provider form, most keys are text input — handle only
 	// navigation/special keys here, everything else falls to rune handler.
-	if m.menu.kind == menuProviderForm {
+	if m.menu.kind == menuProviderForm || m.menu.kind == menuGoalForm {
 		return m.handleFormKey(msg)
 	}
 
@@ -58,6 +72,19 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.settingsEditKey(msg)
 	}
 
+	if m.menu.kind == menuSettings {
+		switch msg.String() {
+		case "left", "shift+tab", "right", "tab":
+			delta := 1
+			if msg.String() == "left" || msg.String() == "shift+tab" {
+				delta = -1
+			}
+			m.menu.category = (m.menu.category + delta + len(m.settingsCategories())) % len(m.settingsCategories())
+			m.menu.cursor = 0
+			m.menu.formErr = ""
+			return m, nil
+		}
+	}
 	key := msg.String()
 	lowerKey := strings.ToLower(key)
 	if (m.menu.kind == menuModelCatalog || m.menu.kind == menuProviderModels) && m.providerMgr != nil && (key == "A" || key == "X") {
@@ -71,11 +98,10 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch lowerKey {
 	case "esc":
-		return m.closeMenu()
+		return m.backMenu()
 	case "up", "k":
-		// Only navigate if no filter is active. When filtering,
-		// 'k'/'j' are regular characters.
-		if m.menu.filter != "" && (lowerKey == "k" || lowerKey == "j") {
+		// In model pickers letters always filter, including the first one.
+		if isModelMenu(m.menu.kind) && lowerKey == "k" {
 			break // fall through to rune handler
 		}
 		if m.menu.cursor > 0 {
@@ -83,10 +109,24 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down", "j":
-		if m.menu.filter != "" && lowerKey == "j" {
+		if isModelMenu(m.menu.kind) && lowerKey == "j" {
 			break
 		}
 		m.menu.cursor++
+		m.clampMenuCursor()
+		return m, nil
+	case "home":
+		m.menu.cursor = 0
+		return m, nil
+	case "end":
+		m.menu.cursor = int(^uint(0) >> 1)
+		m.clampMenuCursor()
+		return m, nil
+	case "pgup":
+		m.menu.cursor = maxInt(0, m.menu.cursor-8)
+		return m, nil
+	case "pgdown":
+		m.menu.cursor += 8
 		m.clampMenuCursor()
 		return m, nil
 	case "backspace", "ctrl+h":
@@ -122,8 +162,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "a":
 		if m.menu.kind == menuProviders {
-			m.menu = interactiveMenu{kind: menuProviderPredefined}
-			m.input.Blur()
+			m.enterMenu(interactiveMenu{kind: menuProviderPredefined})
 			return m, nil
 		}
 		// Projects menu: 'a' adds the current directory (same as
@@ -133,12 +172,6 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menu.kind == menuProjects {
 			if mm, cmd, handled := m.projectsMenuKey(key); handled {
 				return mm, cmd
-			}
-		}
-		if m.menu.kind == menuGoal && m.goalSvc != nil {
-			_, err := m.goalSvc.AddTask(context.Background(), "", "new task")
-			if err != nil {
-				m.appendLine(m.marker.Error(err))
 			}
 		}
 		// In model menus ordinary lowercase letters belong to the filter.
@@ -163,8 +196,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// default and the user can reveal it explicitly with Right Arrow.
 				// An empty fourth field used to be submitted as an explicit clear,
 				// silently deleting a working key on unrelated edits.
-				m.menu = interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, apiKey, p.Model}}
-				m.input.Blur()
+				m.enterMenu(interactiveMenu{kind: menuProviderForm, editName: p.Name, form: []string{p.Name, p.Type, p.BaseURL, apiKey, p.Model}})
 			}
 		}
 		if !isModelMenu(m.menu.kind) {
@@ -231,7 +263,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Shortcut to the ChatGPT accounts screen — only on an
 		// OpenAI/ChatGPT row (contextual, like [M]/[E]).
 		if m.menu.kind == menuProviders && m.cursorOnOpenAIRow() {
-			m.menu = interactiveMenu{kind: menuAccounts}
+			m.enterMenu(interactiveMenu{kind: menuAccounts})
 			return m, nil
 		}
 		if !isModelMenu(m.menu.kind) {
@@ -265,10 +297,10 @@ func (m Model) openProviderModelsAtCursor() (tea.Model, tea.Cmd) {
 	}
 	p := rows[minInt(m.menu.cursor, len(rows)-1)]
 	if p.Disabled {
-		m.statusOverride = "provider " + p.Name + " is paused; press Space to enable it"
-		return m, statusClearCmd()
+		m.setStatus("provider "+p.Name+" is paused; press Space to enable it", false)
+		return m, m.statusClearCmd()
 	}
-	m.menu = interactiveMenu{kind: menuProviderModels, provider: p.Name}
+	m.enterMenu(interactiveMenu{kind: menuProviderModels, provider: p.Name})
 	if mgr, caps := m.providerMgr, m.caps; mgr != nil && caps != nil {
 		name := p.Name
 		return m, func() tea.Msg {

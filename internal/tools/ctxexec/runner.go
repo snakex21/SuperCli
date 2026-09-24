@@ -1,11 +1,9 @@
 package ctxexec
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/tools/core"
 	"supercli/internal/tools/sandbox"
 )
 
@@ -124,31 +123,19 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, binary, req.Command[1:]...)
 	childproc.HideWindow(cmd)
+	configureCommandLine(cmd, req.Command[1:])
 	cmd.Dir = wd
 	cmd.Env = buildEnv(req.EnvExtra)
 
-	// Capture stdout/stderr to temp files so a 1 GB
-	// writer cannot deadlock on a 64 KB pipe buffer.
-	stdoutFile, err := os.CreateTemp("", "ctxexec-out-*.txt")
-	if err != nil {
-		return &Result{ExitCode: ExitSandboxError, Command: req.String(), Workdir: wd,
-			Error: "create stdout temp: " + err.Error()}, err
-	}
-	defer func() {
-		stdoutFile.Close()
-		os.Remove(stdoutFile.Name())
-	}()
-	stderrFile, err := os.CreateTemp("", "ctxexec-err-*.txt")
-	if err != nil {
-		return &Result{ExitCode: ExitSandboxError, Command: req.String(), Workdir: wd,
-			Error: "create stderr temp: " + err.Error()}, err
-	}
-	defer func() {
-		stderrFile.Close()
-		os.Remove(stderrFile.Name())
-	}()
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
+	// Drain both streams while the process runs. Retention is bounded in RAM
+	// (including for noisy commands), with no temporary files or disk writes.
+	stdout := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
+	stderr := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	// A detached descendant may inherit a pipe after the command exits.
+	// Bound that wait and report incomplete capture instead of hanging.
+	cmd.WaitDelay = time.Second
 
 	start := r.Now()
 	runErr := cmd.Run()
@@ -167,22 +154,30 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}
 	}
 
-	// Drain captured files. Truncation is applied after
-	// the process exits, so we always read what was
-	// produced up to kill/exit.
-	stdoutBytes, outTrunc := readCapped(stdoutFile.Name(), maxOut*1024)
-	stderrBytes, errTrunc := readCapped(stderrFile.Name(), maxErr*1024)
-
-	return &Result{
-		Stdout:          string(stdoutBytes),
-		Stderr:          string(stderrBytes),
-		ExitCode:        exit,
-		TruncatedStdout: outTrunc,
-		TruncatedStderr: errTrunc,
-		DurationMS:      dur,
-		Command:         req.String(),
-		Workdir:         wd,
-	}, nil
+	result := &Result{
+		Stdout: stdout.String(), Stderr: stderr.String(),
+		ExitCode: exit, DurationMS: dur, Command: req.String(), Workdir: wd,
+		TruncatedStdout: stdout.Truncated(), TruncatedStderr: stderr.Truncated(),
+	}
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(runErr, &exitErr) {
+			result.Error = runErr.Error()
+		}
+	}
+	if len(result.Stdout) > maxOut*1024 || len(result.Stderr) > maxErr*1024 {
+		retained := *result
+		result.retained = &retained
+		if len(result.Stdout) > maxOut*1024 {
+			result.Stdout = tailUTF8(result.Stdout, maxOut*1024)
+			result.TruncatedStdout = true
+		}
+		if len(result.Stderr) > maxErr*1024 {
+			result.Stderr = tailUTF8(result.Stderr, maxErr*1024)
+			result.TruncatedStderr = true
+		}
+	}
+	return result, nil
 }
 
 func (r *Runner) resolveBinary(file string) (string, error) {
@@ -260,36 +255,10 @@ func classifyErr(err error, ctxErr error) int {
 	return ExitSandboxError
 }
 
-// readCapped reads up to cap bytes from path. If the
-// file is longer, the trailing bytes are kept and a
-// truncation flag is returned. The file is closed by
-// the caller.
-func readCapped(path string, cap int) ([]byte, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, false
-	}
-	if st.Size() <= int64(cap) {
-		b := make([]byte, st.Size())
-		_, _ = io.ReadFull(f, b)
-		return b, false
-	}
-	// Keep the last `cap` bytes — usually what the
-	// model wants (errors, end-of-pipe output).
-	buf := make([]byte, cap)
-	_, err = f.ReadAt(buf, st.Size()-int64(cap))
-	if err != nil && err != io.EOF {
-		// Fall back to reading from the start.
-		_, _ = f.Seek(0, io.SeekStart)
-		_, _ = io.ReadFull(f, buf)
-	}
-	return buf, true
-}
+// Each stream retains up to 1 MiB of content. Above that, keep the first
+// and last halves with an explicit omitted-bytes/lines marker. read_output
+// can inspect this capture, while the usual small tail remains inline.
+const captureStreamBytes = 1024 * 1024
 
 // buildEnv composes the scrubbed env with the extras.
 // The scrub drops any var matching the F7 patterns
@@ -342,9 +311,3 @@ func envNamesEqual(a, b string) bool {
 	}
 	return a == b
 }
-
-// ensureCompileTimeInterfaceCheck keeps a few stdlib
-// imports live even when this file is the only one
-// in the package.
-var _ = bytes.NewBuffer
-var _ = filepath.Join

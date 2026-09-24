@@ -66,7 +66,7 @@ func TestResponsesCompleteUsesAPIKeyWithoutChatGPTHeaders(t *testing.T) {
 		t.Fatalf("request = %#v", gotReq)
 	}
 	reasoning, _ := gotReq["reasoning"].(map[string]any)
-	if reasoning["effort"] != "medium" || reasoning["summary"] != "detailed" {
+	if reasoning["effort"] != nil || reasoning["summary"] != "detailed" {
 		t.Fatalf("reasoning = %#v", reasoning)
 	}
 	include, _ := gotReq["include"].([]any)
@@ -213,7 +213,7 @@ func TestResponsesMuseRequestsAndStreamsReasoningSummary(t *testing.T) {
 		t.Fatalf("reasoning=%q text=%q", reasoningText.String(), text.String())
 	}
 	reasoning, _ := gotReq["reasoning"].(map[string]any)
-	if reasoning["effort"] != "medium" || reasoning["summary"] != "detailed" {
+	if reasoning["effort"] != nil || reasoning["summary"] != "detailed" {
 		t.Fatalf("Muse reasoning request = %#v", reasoning)
 	}
 }

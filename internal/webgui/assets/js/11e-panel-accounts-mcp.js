@@ -9,7 +9,7 @@ sections.accounts = async function () {
   }
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  g.appendChild(el("div", "g-label", t("acct.title")));
+  g.appendChild(i18nEl("div", "g-label", "acct.title"));
   var anyInProgress = (got.pending_logins || []).length > 0;
   (got.accounts || []).forEach(function (a) {
     if (a.login_in_progress) anyInProgress = true;
@@ -30,20 +30,20 @@ sections.accounts = async function () {
     row.appendChild(main);
     var act = el("div", "lr-act");
     if (a.logged_in) {
-      var br = el("button", "", t("acct.refreshTok"));
+      var br = i18nEl("button", "", "acct.refreshTok");
       br.addEventListener("click", async function () {
         try { await jpost("/api/codex/refresh", { label: a.label }); toast("OK"); } catch (e) { toast(e.message); }
         sections.accounts();
       });
       act.appendChild(br);
-      var bo = el("button", "danger", t("acct.logout"));
+      var bo = i18nEl("button", "danger", "acct.logout");
       bo.addEventListener("click", async function () {
         try { await jpost("/api/codex/logout", { label: a.label }); } catch (e) { toast(e.message); }
         sections.accounts();
       });
       act.appendChild(bo);
     } else if (!a.login_in_progress) {
-      var bl = el("button", "", t("acct.login"));
+      var bl = i18nEl("button", "", "acct.login");
       bl.addEventListener("click", async function () {
         try { await jpost("/api/codex/login", { label: a.label }); } catch (e) { toast(e.message); }
         sections.accounts();
@@ -71,17 +71,17 @@ async function renderMcpList() {
   }
   panelContent.innerHTML = "";
   var portable = el("div", "group");
-  var portableLabel = el("div", "g-label", t("mcp.portable"));
-  var openPackages = el("button", "g-act", t("mcp.openPackages"));
+  var portableLabel = i18nEl("div", "g-label", "mcp.portable");
+  var openPackages = i18nEl("button", "g-act", "mcp.openPackages");
   openPackages.addEventListener("click", async function () {
     try { await jpost("/api/mcp/folder", {}); }
     catch (e) { toast(e.message); }
   });
   portableLabel.appendChild(openPackages);
   portable.appendChild(portableLabel);
-  portable.appendChild(el("div", "note mcp-portable-hint", t("mcp.portableHint")));
+  portable.appendChild(i18nEl("div", "note mcp-portable-hint", "mcp.portableHint"));
   var packages = got.packages || [];
-  if (!packages.length) portable.appendChild(el("div", "note", t("mcp.noPackages")));
+  if (!packages.length) portable.appendChild(i18nEl("div", "note", "mcp.noPackages"));
   packages.forEach(function (p) {
     var row = el("div", "list-row mcp-package-row");
     var main = el("div", "lr-main");
@@ -102,13 +102,13 @@ async function renderMcpList() {
   panelContent.appendChild(portable);
 
   var g = el("div", "group");
-  var lbl = el("div", "g-label", t("mcp.servers"));
-  var jb = el("button", "g-act", t("mcp.editJson"));
+  var lbl = i18nEl("div", "g-label", "mcp.servers");
+  var jb = i18nEl("button", "g-act", "mcp.editJson");
   jb.addEventListener("click", function () { renderMcpJSON(got.servers || []); });
   lbl.appendChild(jb);
   g.appendChild(lbl);
   var servers = got.servers || [];
-  if (!servers.length) g.appendChild(el("div", "note", t("mcp.none")));
+  if (!servers.length) g.appendChild(i18nEl("div", "note", "mcp.none"));
   servers.forEach(function (s) {
     var row = el("div", "list-row");
     var main = el("div", "lr-main");
@@ -118,7 +118,7 @@ async function renderMcpList() {
     main.appendChild(el("div", "lr-sub", s.command + " " + (s.args || []).join(" ")));
     row.appendChild(main);
     var act = el("div", "lr-act");
-    var bx = el("button", "danger", t("common.remove"));
+    var bx = i18nEl("button", "danger", "common.remove");
     bx.addEventListener("click", async function () {
       try { await jpost("/api/mcp/remove", { name: s.name }); } catch (e) { toast(e.message); }
       renderMcpList();
@@ -130,7 +130,7 @@ async function renderMcpList() {
   panelContent.appendChild(g);
 
   var ga = el("div", "group");
-  ga.appendChild(el("div", "g-label", t("mcp.addServer")));
+  ga.appendChild(i18nEl("div", "g-label", "mcp.addServer"));
   var form = el("form", "form-grid");
   form.autocomplete = "off";
   function fld(labelText, ph, full, tag) {
@@ -148,7 +148,7 @@ async function renderMcpList() {
   var cmdI = fld(t("mcp.command"), "npx");
   var argsI = fld(t("mcp.args"), "-y, @upstash/context7-mcp", true);
   var envI = fld(t("mcp.env"), "KEY=value", true, "textarea");
-  var submit = el("button", "btn primary fw", t("common.add"));
+  var submit = i18nEl("button", "btn primary fw", "common.add");
   submit.type = "submit";
   form.appendChild(submit);
   form.addEventListener("submit", async function (e) {
@@ -175,7 +175,7 @@ async function renderMcpList() {
 function renderMcpJSON(servers) {
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  var lbl = el("div", "g-label", t("mcp.editJson"));
+  var lbl = i18nEl("div", "g-label", "mcp.editJson");
   var back = el("button", "g-act", "‹ " + t("mcp.backToList"));
   back.addEventListener("click", renderMcpList);
   lbl.appendChild(back);
@@ -186,7 +186,7 @@ function renderMcpJSON(servers) {
   ta.spellcheck = false;
   ta.value = JSON.stringify(obj, null, 2);
   g.appendChild(ta);
-  var save = el("button", "btn primary", t("mcp.saveJson"));
+  var save = i18nEl("button", "btn primary", "mcp.saveJson");
   save.style.marginTop = "8px";
   var status = el("span", "note");
   status.style.marginLeft = "10px";

@@ -31,6 +31,8 @@ type anthropicMessage struct {
 }
 
 type anthropicContentBlock struct {
+	Prefix    string                `json:"-"`
+	Raw       json.RawMessage       `json:"-"`
 	Type      string                `json:"type"`
 	Text      string                `json:"text,omitempty"`
 	Source    *anthropicImageSource `json:"source,omitempty"`
@@ -94,6 +96,9 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 			system = append(system, messageText(m))
 		case RoleAssistant:
 			blocks, err := anthropicAssistantBlocks(m)
+			if native, ok := anthropicNativeContent(m, model); ok {
+				blocks = native
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -113,6 +118,7 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 		}
 	}
 	req.System = strings.Join(system, "\n\n")
+	protectAnthropicPrefixes(&req)
 	return json.Marshal(req)
 }
 

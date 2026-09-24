@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
@@ -16,12 +17,14 @@ import (
 // LoopFactory (set by main.go with
 // darwin.AgentLoopAdapter()).
 type DarwinTool struct {
-	provider   llm.Provider
-	registry   *tools.Registry
-	home       string
-	system     string
-	loopFact   LoopFactory
-	sequential bool
+	provider         llm.Provider
+	providerResolver func() llm.Provider
+	mu               sync.RWMutex
+	registry         *tools.Registry
+	home             string
+	system           string
+	loopFact         LoopFactory
+	sequential       bool
 }
 
 // NewDarwinTool returns a DarwinTool ready to
@@ -49,11 +52,16 @@ func (d *DarwinTool) SetLoopFactory(f LoopFactory) {
 // other's KV cache anyway. When sequential, the rendered result carries
 // a "~N× time" note so the user understands the wall-clock cost.
 func (d *DarwinTool) SetSequential(seq bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.sequential = seq
 }
 
 // Sequential reports whether the tool runs agents sequentially.
-func (d *DarwinTool) Sequential() bool { return d.sequential }
+func (d *DarwinTool) Sequential() bool { d.mu.RLock(); defer d.mu.RUnlock(); return d.sequential }
+
+// SetProviderResolver selects the active model at invocation time. Configure before use.
+func (d *DarwinTool) SetProviderResolver(f func() llm.Provider) { d.providerResolver = f }
 
 // Spec returns the tool spec for registration in
 // the tools.Registry.
@@ -110,15 +118,20 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	if args.PoolSize < 0 || args.PoolSize > 10 {
 		return tools.Result{}, fmt.Errorf("darwin: pool_size must be in [1, 10]")
 	}
+	provider := d.provider
+	if d.providerResolver != nil {
+		provider = d.providerResolver()
+	}
+	sequential := d.Sequential()
 	var judge Judge
 	switch args.Judge {
 	case "", "composite":
 		judge = &CompositeJudge{
-			Primary:  &LLMJudge{Provider: d.provider},
+			Primary:  &LLMJudge{Provider: provider},
 			Fallback: NewHeuristicJudge(),
 		}
 	case "llm":
-		judge = &LLMJudge{Provider: d.provider}
+		judge = &LLMJudge{Provider: provider}
 	case "heuristic":
 		judge = NewHeuristicJudge()
 	default:
@@ -126,12 +139,12 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	}
 	dw, err := NewDarwin(Config{
 		PoolConfig: PoolConfig{
-			Provider:   d.provider,
+			Provider:   provider,
 			System:     d.system,
 			Home:       d.home,
 			Factory:    d.loopFact,
 			PoolSize:   args.PoolSize,
-			Sequential: d.sequential,
+			Sequential: sequential,
 		},
 		Judge:       judge,
 		AutoMerge:   args.AutoMerge,
@@ -161,7 +174,7 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 		return tools.Result{}, fmt.Errorf("darwin: run closed without DoneEvent")
 	}
 	text := renderDarwinResult(*final)
-	if d.sequential {
+	if sequential {
 		n := len(final.Candidates)
 		text = fmt.Sprintf("_local backend: sequential best-of-%d, expect ~%d× time_\n\n%s", n, n, text)
 	}

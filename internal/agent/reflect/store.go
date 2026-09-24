@@ -97,7 +97,7 @@ func (s *Store) List(ctx context.Context, limit int) ([]Pattern, error) {
 	}
 	out := make([]Pattern, 0, len(entries))
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Scope, "pattern:") {
+		if !strings.HasPrefix(e.Scope, "pattern:") || memory.IsDiagnosticNoise(e) {
 			continue
 		}
 		out = append(out, s.fromEntry(e))

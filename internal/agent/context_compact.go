@@ -20,29 +20,16 @@ func (l *Loop) Provider() llm.Provider {
 // (they already live in the session store under their original
 // session id). Hidden flags are reset.
 func (l *Loop) LoadConversation(msgs []llm.Message) {
+	l.resetModelContextBaseline()
 	keep := 0
 	for keep < len(l.Messages) && l.Messages[keep].Role == llm.RoleSystem {
 		keep++
 	}
-	// Strip reasoning from resumed assistant turns so the live history
-	// stays consistent with fresh turns (prior chain-of-thought is not
-	// context). The session store still holds the full text; when
-	// retention is on, the last resumed turn's thinking becomes the
-	// first request's tail so a resumed session continues its reasoning
-	// instead of restarting it.
-	cleaned := make([]llm.Message, len(msgs))
-	for i, m := range msgs {
-		if m.Role == llm.RoleAssistant {
-			thinking, plain := captureThinkingFromMessage(m)
-			if l.keepThinking && thinking != "" {
-				l.lastThinking = thinking
-			}
-			cleaned[i] = plain
-		} else {
-			cleaned[i] = m
-		}
-	}
+	cleaned := l.cleanModelHistory(msgs)
 	l.Messages = append(l.Messages[:keep], cleaned...)
+	// The loaded body may come from a different session than this loop's
+	// writer (/resume); its model identity is unknown until the next call.
+	l.contextModel = contextModelState{loaded: true}
 	l.resetHidden()
 	l.chatWindowStart = 0
 }

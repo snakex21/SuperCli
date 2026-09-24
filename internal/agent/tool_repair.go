@@ -40,7 +40,7 @@ const badToolCallMarker = "invalid tool call: "
 func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 1. Tool name validation with did-you-mean.
 	if !containsName(known, tc.Name) {
-		if advice := retiredEditToolAdvice(tc.Name); advice != "" {
+		if advice := retiredEditToolAdvice(tc.Name); advice != "" && containsName(known, "patch_file") {
 			return advice
 		}
 		if containsName(known, "goal") {
@@ -50,10 +50,21 @@ func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 		}
 		suggestion := SuggestToolName(tc.Name, known)
 		msg := fmt.Sprintf("%sunknown tool %q.", badToolCallMarker, tc.Name)
+		// A missing tool is not a JSON-format problem. Repeating the same call
+		// with repaired braces cannot help, especially in a restricted worker.
 		if suggestion != "" {
-			msg += fmt.Sprintf(" Did you mean %q?", suggestion)
+			return msg + fmt.Sprintf(" Did you mean %q? Use its declared parameters.", suggestion)
 		}
-		return msg + retryAdvice(tc.Name, suggestion, attempt)
+		if len(known) == 0 {
+			return msg + " No tools are available."
+		}
+		if containsName(known, "tool_search") {
+			return msg + " Use tool_search to find an available tool."
+		}
+		if len(known) <= 8 {
+			return msg + " Available tools: " + strings.Join(known, ", ") + "."
+		}
+		return msg + " Choose a tool from the provided tool definitions."
 	}
 
 	// 2. Argument repair. Empty arguments mean "{}".

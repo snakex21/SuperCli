@@ -1043,3 +1043,28 @@ func TestMergeDiscoveredContextLengthsDoesNotCopyCapabilityFlags(t *testing.T) {
 		t.Fatalf("capability flags leaked from native metadata: %+v", merged[0])
 	}
 }
+
+func TestMergeNativeReasoningToggleWithoutContextSize(t *testing.T) {
+	base := []llm.ModelInfo{{ID: "qwen"}}
+	native := []llm.ModelInfo{{ID: "qwen", Reasoning: true, ReasoningKnown: true, ReasoningToggleOnly: true}}
+	got := mergeDiscoveredContextLengths(base, native)
+	if !got[0].ReasoningKnown || !got[0].ReasoningToggleOnly || !got[0].Reasoning {
+		t.Fatalf("native control metadata lost: %+v", got[0])
+	}
+}
+
+func TestSaveReasoningEffortPreservesMalformedConfig(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "config.toml")
+	original := []byte("default_model = \"keep-me\"\n[unfinished\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewManager(home).SaveReasoningEffort("high"); err == nil {
+		t.Fatal("malformed config must report a persistence error")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("config was replaced after parse failure: error=%v", err)
+	}
+}

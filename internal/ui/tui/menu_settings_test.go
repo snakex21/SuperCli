@@ -42,13 +42,14 @@ func newSettingsModel(t *testing.T, toml string) Model {
 
 // cursorForKey positions the menu cursor on the row with the given key.
 func cursorForKey(m Model, key string) Model {
-	for i, r := range settingsRows() {
+	m.menu.category = settingCategory(key)
+	for i, r := range m.localizedSettingsRows() {
 		if r.key == key {
 			m.menu.cursor = i
-			break
+			return m
 		}
 	}
-	return m
+	panic("missing setting: " + key)
 }
 
 func loadCfg(t *testing.T, m Model) config.TomlConfig {
@@ -64,18 +65,22 @@ func loadCfg(t *testing.T, m Model) config.TomlConfig {
 // the reset-all row, and the next-session marker.
 func TestSettings_RenderListsKnobs(t *testing.T) {
 	m := newSettingsModel(t, "")
-	out := m.renderSettingsMenu()
-	for _, want := range []string{
-		"Ustawienia", "orchestrator", "thinking", "navigator", "stable_toolset",
-		"cache_prompt", "darwin_parallel", "task_parallel", "memory_briefing_tokens",
-		"context_policy", "context_window", "prune_protect_tokens",
-		"task_model", "compact_model", "task_max_steps", "task_max_tokens", "fallback_models", "fallback_cooldown_seconds",
-		"default_model", "default_provider",
-		"Przywróć ustawienia domyślne", "(następna sesja)",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("settings render missing %q\n%s", want, out)
+	// Every managed setting remains reachable; the normal tab excludes specialty
+	// modes. Selecting a row reveals its config key and full description.
+	for _, row := range settingsRowsFor(m.language) {
+		m = cursorForKey(m, row.key)
+		out := m.renderSettingsMenu()
+		if !strings.Contains(out, row.label) || (row.key != "" && !strings.Contains(out, row.key)) {
+			t.Fatalf("setting %q is not reachable in its category:\n%s", row.key, out)
 		}
+		if row.nextSession && !strings.Contains(out, "(następna sesja)") {
+			t.Fatalf("restart requirement missing for %s", row.key)
+		}
+	}
+	m.menu.category = 0
+	m.menu.cursor = 0
+	if strings.Contains(m.renderSettingsMenu(), "Darwin") {
+		t.Fatal("specialty mode leaked into general settings")
 	}
 }
 
@@ -83,9 +88,9 @@ func TestSettings_RenderListsKnobs(t *testing.T) {
 // tri-state with an auto default shows "auto", a fixed-default one shows
 // its default, and an int shows the default sentinel.
 func TestSettings_RenderShowsSourceAndDefaults(t *testing.T) {
-	m := newSettingsModel(t, "")
+	m := cursorForKey(newSettingsModel(t, ""), "orchestrator")
 	out := m.renderSettingsMenu()
-	for _, want := range []string{"auto", "default"} {
+	for _, want := range []string{"auto", "domyślne"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in render\n%s", want, out)
 		}

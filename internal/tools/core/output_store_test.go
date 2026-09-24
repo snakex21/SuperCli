@@ -25,14 +25,14 @@ func TestOutputStore_LargeResultPreviewAndRead(t *testing.T) {
 	if len(preview) >= len(original)/2 {
 		t.Fatalf("preview too large: %d vs %d", len(preview), len(original))
 	}
-	for _, want := range []string{"handle=out_000001", "BEGIN", "END", "read_output"} {
+	for _, want := range []string{"handle=" + onlyOutputHandle(t, s), "BEGIN", "END", "read_output"} {
 		if !strings.Contains(preview, want) {
 			t.Errorf("preview missing %q", want)
 		}
 	}
 
 	tool := s.ReadOutputTool()
-	res, err := tool.Fn(context.Background(), json.RawMessage(`{"handle":"out_000001","offset":4096,"limit":4096}`))
+	res, err := tool.Fn(context.Background(), json.RawMessage(`{"handle":"`+onlyOutputHandle(t, s)+`","offset":4096,"limit":4096}`))
 	if err != nil || res.Err != nil {
 		t.Fatalf("read_output: result=%+v err=%v", res, err)
 	}
@@ -48,7 +48,7 @@ func TestOutputStore_UTF8ChunkBoundaries(t *testing.T) {
 	if !utf8.ValidString(preview) {
 		t.Fatal("preview is not valid UTF-8")
 	}
-	chunk, start, _, err := s.read("out_000001", 1, 101)
+	chunk, start, _, err := s.read(onlyOutputHandle(t, s), 1, 101)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,11 +90,12 @@ func parseHint(t *testing.T, preview string) (offset, limit int) {
 // the number of read_output calls and the concatenated bytes.
 func walkOutput(t *testing.T, s *OutputStore, handle string, offset, limit int) (calls int, got string) {
 	t.Helper()
-	tool := s.ReadOutputTool()
+	reg := NewRegistry()
+	reg.MustRegister(s.ReadOutputTool())
 	nextRe := regexp.MustCompile(`\[next offset: (\d+)\]`)
 	for i := 0; i < 64; i++ {
 		args := fmt.Sprintf(`{"handle":%q,"offset":%d,"limit":%d}`, handle, offset, limit)
-		res, err := tool.Fn(context.Background(), json.RawMessage(args))
+		res, err := reg.Execute(context.Background(), "read_output", json.RawMessage(args))
 		if err != nil || res.Err != nil {
 			t.Fatalf("read_output(offset=%d limit=%d): result=%+v err=%v", offset, limit, res, err)
 		}
@@ -118,7 +119,7 @@ func walkOutput(t *testing.T, s *OutputStore, handle string, offset, limit int) 
 }
 
 // The regression this guards: the hint used to hardcode limit 4096 while the
-// read_output schema allows 8192, so a 24 KB result cost twice the model round
+// read_output returns up to 8192, so a 24 KB result cost twice the model round
 // trips it needed. Each of those round trips is a full generation.
 func TestOutputStore_HintPagesLargeResultInFewCalls(t *testing.T) {
 	s := NewOutputStore()
@@ -129,7 +130,7 @@ func TestOutputStore_HintPagesLargeResultInFewCalls(t *testing.T) {
 	preview := s.Compact("read_many", original)
 	offset, limit := parseHint(t, preview)
 
-	calls, got := walkOutput(t, s, "out_000001", offset, limit)
+	calls, got := walkOutput(t, s, onlyOutputHandle(t, s), offset, limit)
 	if calls > 3 {
 		t.Errorf("paging a %d byte result took %d read_output calls, want <= 3", len(original), calls)
 	}
@@ -137,7 +138,7 @@ func TestOutputStore_HintPagesLargeResultInFewCalls(t *testing.T) {
 		t.Errorf("paged content mismatch: got %d bytes, want %d", len(got), len(want))
 	}
 
-	oldCalls, _ := walkOutput(t, s, "out_000001", 4096, 4096)
+	oldCalls, _ := walkOutput(t, s, onlyOutputHandle(t, s), 4096, 4096)
 	if oldCalls <= calls {
 		t.Errorf("old hint took %d calls, new hint %d — no improvement", oldCalls, calls)
 	}
@@ -145,12 +146,11 @@ func TestOutputStore_HintPagesLargeResultInFewCalls(t *testing.T) {
 		oldCalls, offset, limit, calls)
 }
 
-// A hint above the schema's maximum would be rejected as invalid args — the
-// exact failure class this change exists to avoid.
-func TestOutputStore_HintNeverExceedsSchemaMaximum(t *testing.T) {
+// Hints describe the chunk actually returned, including the output cap.
+func TestOutputStore_HintNeverExceedsOutputCap(t *testing.T) {
 	for _, total := range []int{outputInlineBytes + 1, 10000, 12287, 12288, 24329, 512 * 1024} {
 		s := NewOutputStore()
-		preview := s.Compact("read_many", strings.Repeat("x", total))
+		preview := s.Compact("read_lines", strings.Repeat("x", total))
 		offset, limit := parseHint(t, preview)
 		if limit > outputReadMax {
 			t.Errorf("total=%d: hint limit %d exceeds outputReadMax %d", total, limit, outputReadMax)
@@ -169,12 +169,12 @@ func TestOutputStore_HintNeverExceedsSchemaMaximum(t *testing.T) {
 func TestOutputStore_HintFinishesShortRemainderInOneCall(t *testing.T) {
 	s := NewOutputStore()
 	original := strings.Repeat("y", 10000)
-	preview := s.Compact("read_many", original)
+	preview := s.Compact("read_lines", original)
 	offset, limit := parseHint(t, preview)
 	if offset+limit != len(original) {
 		t.Errorf("hint reads %d:%d, want it to end exactly at %d", offset, offset+limit, len(original))
 	}
-	calls, got := walkOutput(t, s, "out_000001", offset, limit)
+	calls, got := walkOutput(t, s, onlyOutputHandle(t, s), offset, limit)
 	if calls != 1 {
 		t.Errorf("remainder took %d calls, want 1", calls)
 	}
@@ -201,15 +201,18 @@ func TestOutputStore_SmallResultHasNoPagingHint(t *testing.T) {
 
 func TestOutputStore_EvictsLeastRecentlyUsed(t *testing.T) {
 	s := NewOutputStore()
+	var handles []string
 	for i := 0; i < outputStoreItems+1; i++ {
-		if _, ok := s.put(strings.Repeat("x", 16)); !ok {
+		handle, ok := s.put(strings.Repeat("x", 16))
+		handles = append(handles, handle)
+		if !ok {
 			t.Fatal("small output was not stored")
 		}
 	}
-	if _, _, _, err := s.read("out_000001", 0, 1); err == nil {
+	if _, _, _, err := s.read(handles[0], 0, 1); err == nil {
 		t.Fatal("oldest output survived the entry cap")
 	}
-	if got, _, _, err := s.read("out_000033", 0, 1); err != nil || got != "x" {
+	if got, _, _, err := s.read(handles[len(handles)-1], 0, 1); err != nil || got != "x" {
 		t.Fatalf("newest output missing: got=%q err=%v", got, err)
 	}
 }

@@ -220,6 +220,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		}
 	}
 
+	msgs = filterNativeReasoning(msgs, ReasoningChat, p.cfg.Model, p.cfg.BaseURL)
 	reasoningFormat := p.reasoningFormat()
 	// OpenCode Zen free tier: /chat/completions rejects any tool list without
 	// BOTH "bash" AND "read" (nested OpenAI function shape). SuperCli's real
@@ -403,7 +404,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				return ctx.Err()
 			}
 		}
+		var replay chatReasoningAccumulator
 		flushToolCalls := func() error {
+			if block := replay.block(p.cfg.Model, p.cfg.BaseURL); block != nil {
+				if err := emit(Delta{NativeReasoning: block}); err != nil {
+					return err
+				}
+			}
 			indices := make([]int, 0, len(toolAcc))
 			for index := range toolAcc {
 				indices = append(indices, index)
@@ -473,6 +480,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 			}
 			for i, choice := range chunk.Choices {
+				if !emittedFinish && i < len(raw.Choices) {
+					replay.add(raw.Choices[i].Delta)
+				}
 				if choice.Delta.Role != "" {
 					select {
 					case out <- Delta{Role: Role(choice.Delta.Role)}:

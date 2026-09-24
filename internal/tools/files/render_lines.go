@@ -22,6 +22,8 @@ const (
 	// maxReadLineChars caps a single rendered line so one giant
 	// line can't dominate the budget or hide which line it was.
 	maxReadLineChars = 2000
+	// Leave room for a streaming reader's explicit omission marker.
+	maxReadLineKeep = 1800
 )
 
 // renderLines formats numbered file lines with hard byte and
@@ -31,6 +33,10 @@ const (
 // the model to narrow its range (or use ctx_execute for the raw
 // bytes).
 func renderLines(lines []fileops.LineRange) string {
+	return renderLinesWithEOF(lines, false)
+}
+
+func renderLinesWithEOF(lines []fileops.LineRange, eof bool) string {
 	var b strings.Builder
 	for i, l := range lines {
 		content := l.Content
@@ -45,9 +51,13 @@ func renderLines(lines []fileops.LineRange) string {
 			remaining := len(lines) - i
 			fmt.Fprintf(&b, "... (output truncated at %d KB; %d more line(s) not shown — request line %d onward, or a smaller range)\n",
 				maxReadOutputBytes/1024, remaining, l.Number)
+			eof = false // do not suggest completeness when later lines were omitted
 			break
 		}
 		b.WriteString(row)
+	}
+	if eof && len(lines) > 0 {
+		fmt.Fprintf(&b, "[end of file at line %d]\n", lines[len(lines)-1].Number)
 	}
 	return b.String()
 }

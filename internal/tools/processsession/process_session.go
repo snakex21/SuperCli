@@ -1,7 +1,7 @@
 // Package processsession provides bounded, workspace-scoped long-running
 // command sessions. It complements ctx_execute: short commands remain cheaper
 // there, while servers, watchers and interactive programs can be started once
-// and polled without blocking an agent turn.
+// and awaited on completion or inspected without restarting them.
 package processsession
 
 import (
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"supercli/internal/tools/core"
+	"supercli/internal/tools/ctxexec"
 )
 
 const (
@@ -41,8 +42,8 @@ func New(baseDir string) *Tool {
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
-		Description: "Manage a bounded long-running command without blocking the agent. Actions: start, poll, write, resize, stop, list. Use ctx_execute for ordinary commands. Set pty=true only for programs that require a real terminal; PTY output is merged and cleaned of terminal control codes. At most 3 active sessions; output and lifetime are capped.",
-		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","poll","write","resize","stop","list"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000,"default":600000},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30}},"required":["action"]}`,
+		Description: "Start a long-running command; wait for its exit, poll for diagnostics, write input, resize PTY, stop, or list sessions. Use ctx_execute for short commands. pty=true gives a real terminal with merged output. At most 3 active sessions; output and lifetime are capped.",
+		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000,"default":600000},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30}},"required":["action"]}`,
 		Fn:          t.Execute,
 	}
 }
@@ -78,6 +79,8 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	switch p.Action {
 	case "start":
 		out, err = t.Manager.Start(p)
+	case "wait":
+		out, err = t.Manager.Wait(ctx, strings.TrimSpace(p.ID))
 	case "poll":
 		out, err = t.Manager.Poll(strings.TrimSpace(p.ID))
 	case "write":
@@ -102,7 +105,11 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	if marshalErr != nil {
 		return core.Result{Err: fmt.Errorf("process_session: marshal: %w", marshalErr)}, nil
 	}
-	return core.Result{Text: string(data)}, nil
+	result := core.Result{Text: string(data)}
+	if snap, ok := out.(snapshot); ok && p.Action != "stop" {
+		result.Err = snap.commandFailure()
+	}
+	return result, nil
 }
 
 func (t *Tool) Close() {
@@ -162,4 +169,22 @@ type snapshot struct {
 	OmittedErr int64    `json:"omitted_stderr_bytes,omitempty"`
 	Error      string   `json:"error,omitempty"`
 	PTY        bool     `json:"pty,omitempty"`
+}
+
+// Managing a process successfully is not evidence that its command succeeded.
+// Keep the structured snapshot for the UI and expose failed exits through the
+// same concise diagnostic path as ctx_execute. Listing/stopping is management.
+func (s snapshot) commandFailure() error {
+	if s.Status != "failed" && s.Status != "timeout" && !(s.Status == "done" && s.ExitCode != nil && *s.ExitCode != 0) {
+		return nil
+	}
+	code := -1
+	if s.ExitCode != nil {
+		code = *s.ExitCode
+	}
+	if s.Status == "timeout" {
+		code = ctxexec.ExitTimeout
+	}
+	result := ctxexec.Result{ExitCode: code, Error: s.Error, DurationMS: s.DurationMS, Stdout: s.Stdout, Stderr: s.Stderr, TruncatedStdout: s.OmittedOut > 0, TruncatedStderr: s.OmittedErr > 0}
+	return core.SelfContainedErr(fmt.Errorf("process_session %s: %s", s.ID, result.FailureSummary()))
 }

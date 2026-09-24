@@ -1,7 +1,7 @@
 // Package processsession provides bounded, workspace-scoped long-running
 // command sessions. It complements ctx_execute: short commands remain cheaper
 // there, while servers, watchers and interactive programs can be started once
-// and polled without blocking an agent turn.
+// and awaited on completion or inspected without restarting them.
 package processsession
 
 import (
@@ -194,6 +194,28 @@ func (p *process) wait(procCtx context.Context) {
 	close(p.done)
 }
 
+// Wait uses the existing completion channel, without timers or periodic reads.
+// Cancelling the wait leaves the process and its unread output available to a
+// later call. The process lifetime and explicit stop still control termination.
+func (m *Manager) Wait(ctx context.Context, id string) (snapshot, error) {
+	item, err := m.get(id)
+	if err != nil {
+		return snapshot{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return snapshot{}, err
+	}
+	select {
+	case <-ctx.Done():
+		return snapshot{}, ctx.Err()
+	case <-item.done:
+		// Return all still-retained output, not just the first poll-sized chunk:
+		// that chunk can omit the final diagnostic. The agent's existing output
+		// store bounds the model view and makes a larger result retrievable.
+		return item.snapshot(maxBufferBytes), nil
+	}
+}
+
 func (m *Manager) Poll(id string) (snapshot, error) {
 	item, err := m.get(id)
 	if err != nil {
@@ -203,9 +225,13 @@ func (m *Manager) Poll(id string) (snapshot, error) {
 }
 
 func (p *process) poll() snapshot {
+	return p.snapshot(maxPollBytes)
+}
+
+func (p *process) snapshot(maxBytes int) snapshot {
 	p.mu.Lock()
-	out, nextOut, omittedOut := p.stdout.readFrom(p.stdoutCursor, maxPollBytes)
-	errOut, nextErr, omittedErr := p.stderr.readFrom(p.stderrCursor, maxPollBytes)
+	out, nextOut, omittedOut := p.stdout.readFrom(p.stdoutCursor, maxBytes)
+	errOut, nextErr, omittedErr := p.stderr.readFrom(p.stderrCursor, maxBytes)
 	p.stdoutCursor, p.stderrCursor = nextOut, nextErr
 	status, code, errText := p.status, p.exitCode, p.errText
 	started, ended := p.started, p.ended

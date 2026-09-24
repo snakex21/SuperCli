@@ -36,20 +36,33 @@ func renderAssistantMarkdown(text string, p Palette, collapsed bool, languages .
 	text = reXMLToolCall.ReplaceAllString(text, "")
 
 	segments := splitThinking(text)
-	if len(segments) <= 1 && !segments[0].thinking {
-		// No <thinking> tags. Run heuristic detection.
+	if len(segments) == 0 {
+		return ""
+	}
+	if len(segments) == 1 && !segments[0].thinking {
 		return renderWithHeuristicThinking(text, p, collapsed, language)
 	}
 	var b strings.Builder
+	afterThinking := false
 	for _, seg := range segments {
 		if seg.thinking {
 			b.WriteString(renderThinkingBlock(seg.text, p, collapsed, language))
+			afterThinking = afterThinking || strings.TrimSpace(seg.text) != ""
 		} else {
-			// Apply heuristic to non-thinking segments too.
-			b.WriteString(renderWithHeuristicThinking(seg.text, p, collapsed, language))
+			if afterThinking {
+				if strings.TrimSpace(seg.text) == "" {
+					continue
+				}
+				b.WriteString(renderAnswerHeading(p, language))
+				afterThinking = false
+			}
+			// Explicit reasoning boundaries are authoritative. A real answer
+			// starting "I think" must not be reclassified as hidden reasoning.
+			b.WriteString(renderMarkdownBody(strings.TrimLeft(seg.text, "\r\n"), p))
 		}
 	}
 	return b.String()
+
 }
 
 // renderWithHeuristicThinking scans lines for thinking-like
@@ -67,12 +80,14 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languag
 	var b strings.Builder
 	inThinking := false
 	var thinkBuf []string
+	afterThinking := false
 
 	flushThinking := func() {
 		if len(thinkBuf) > 0 {
 			block := strings.Join(thinkBuf, "\n")
 			b.WriteString(renderThinkingBlock(block, p, collapsed, language))
 			thinkBuf = nil
+			afterThinking = true
 		}
 		inThinking = false
 	}
@@ -95,6 +110,10 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languag
 				if b.Len() > 0 {
 					b.WriteByte('\n')
 				}
+			}
+			if afterThinking && strings.TrimSpace(line) != "" {
+				b.WriteString(renderAnswerHeading(p, language))
+				afterThinking = false
 			}
 			b.WriteString(renderMarkdownLine(line, p))
 		}
@@ -188,13 +207,19 @@ func renderThinkingBlock(text string, p Palette, collapsed bool, languages ...st
 		return p.MdThinkingHeader.Render(textFor(language, "Thinking (hidden — T to expand)", "Myślenie (ukryte — T rozwija)")) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(p.MdThinkingHeader.Render(textFor(language, "Thinking:", "Myślenie:")))
+	b.WriteString(p.MdThinkingHeader.Render("── " + textFor(language, "Thinking:", "Myślenie:") + " ──"))
 	b.WriteByte('\n')
 	for _, line := range strings.Split(text, "\n") {
 		b.WriteString(p.MdThinking.Render("  " + line))
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// renderAnswerHeading marks the first visible answer after a thinking block.
+// Text and a rule keep the boundary clear even with --no-color.
+func renderAnswerHeading(p Palette, language string) string {
+	return "\n" + p.AssistantLabel.Render("── "+textFor(language, "Answer", "Odpowiedź")+" ──") + "\n\n"
 }
 
 // renderMarkdownBody renders a non-thinking text segment with

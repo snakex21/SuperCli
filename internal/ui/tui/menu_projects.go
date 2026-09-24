@@ -5,10 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/storage/memory"
 )
@@ -95,9 +93,7 @@ func (m Model) projectRows() []projectRow {
 // openProjectsMenu opens the interactive projects menu, mirroring
 // openModelsMenu / openProvidersMenu.
 func (m Model) openProjectsMenu() (tea.Model, tea.Cmd) {
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuProjects, cursor: 0}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuProjects, cursor: 0})
 	return m, nil
 }
 
@@ -171,87 +167,34 @@ func (m Model) projectsMenuKey(key string) (tea.Model, tea.Cmd, bool) {
 // action row in accent.
 func (m Model) renderProjectsMenu() string {
 	rows := m.projectRows()
-	nReal := len(rows) - 1 // minus the add row
-	width := maxInt(24, m.menuWidth()-6)
-
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Projects", "Projekty")) + "\n")
-	switch {
-	case nReal == 0:
-		b.WriteString(m.palette.Dim.Render(truncateText(m.tr("no projects registered — add one to start its memory", "brak projektów — dodaj projekt, aby uruchomić jego pamięć"), width)) + "\n")
-	default:
-		desc := m.tr(fmt.Sprintf("%d project(s) registered · per-project memory under %%USERPROFILE%%\\supercli-data\\projects\\", nReal), fmt.Sprintf("Zarejestrowane projekty: %d · pamięć w %%USERPROFILE%%\\supercli-data\\projects\\", nReal))
-		b.WriteString(m.palette.Dim.Render(truncateText(desc, width)) + "\n")
-	}
-	b.WriteString("\n")
-
-	start, end := 0, len(rows)
-	if m.height > 0 {
-		start, end = menuWindow(len(rows), m.menu.cursor, m.height-7)
-	}
-	for i := start; i < end; i++ {
-		r := rows[i]
-		selected := i == m.menu.cursor
-		cursor := "  "
-		if selected {
-			cursor = m.palette.HeaderMode.Render("> ")
+	page := menuPage{title: m.tr("Projects", "Projekty"), subtitle: m.tr("Project memory travels with the application data.", "Pamięć projektów jest przechowywana razem z danymi aplikacji."),
+		footer: m.tr("Enter use · A add · I details · D remove", "Enter użyj · A dodaj · I szczegóły · D usuń")}
+	for i, row := range rows {
+		label, badge := row.name, ""
+		if row.isAdd {
+			label = m.tr("+  add current directory", "+  dodaj bieżący folder")
 		}
-
-		var line string
-		if r.isAdd {
-			label := m.tr("+  add current directory", "+  dodaj bieżący folder")
-			if selected {
-				line = m.palette.HeaderMode.Render(label)
-			} else {
-				line = m.palette.Marker.Render(label)
+		if row.isActive {
+			badge = m.tr("[active]", "[aktywny]")
+		}
+		page.items = append(page.items, menuListItem{label: label, badge: badge})
+		if i == m.menu.cursor {
+			page.detailTitle = label
+			if row.isAdd {
+				page.detail = []string{m.tr("Register the current folder as a project.", "Zarejestruj bieżący folder jako projekt."), m.home}
+				continue
 			}
-		} else {
-			name := r.name
-			if name == "" {
-				name = filepath.Base(r.path)
-			}
-			// Memory size on disk (best-effort stat)
 			size := m.tr("(no memory yet)", "(jeszcze bez pamięci)")
-			if r.key != "" && m.dataDir != "" {
-				if fi, err := os.Stat(filepath.Join(m.dataDir, "projects", r.key, "memory.db")); err == nil {
+			if row.key != "" && m.dataDir != "" {
+				if fi, err := os.Stat(filepath.Join(m.dataDir, "projects", row.key, "memory.db")); err == nil {
 					size = fmt.Sprintf("%.1f KB", float64(fi.Size())/1024)
 				}
 			}
-			// ASCII markers stay readable in legacy Windows terminal fonts.
-			marker := "[on]"
-			if r.isActive {
-				marker = m.tr("[active]", "[aktywny]")
-			}
-			parts := []string{marker}
-			nameParts := []string{name}
-			if r.isActive {
-				nameParts = append(nameParts, m.tr("(active)", "(aktywny)"))
-			}
-			if r.isCwd {
-				nameParts = append(nameParts, m.tr("(cwd)", "(bieżący folder)"))
-			}
-			parts = append(parts, nameParts...)
-			meta := "  " + size + " · " + r.key
-			if r.model != "" {
-				meta += " · " + r.model
-			}
-			parts = append(parts, meta)
-			line = truncateText(strings.Join(parts, " "), width-2)
-			if selected {
-				line = m.palette.HeaderMode.Render(line)
-			} else {
-				line = m.palette.Bold.Render(line)
+			page.detail = []string{row.path, "", size, row.key, row.model}
+			if row.isCwd {
+				page.detail = append(page.detail, m.tr("(cwd)", "(bieżący folder)"))
 			}
 		}
-		b.WriteString(cursor + line + "\n")
 	}
-
-	panel := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorFaint).
-		Padding(0, 2).
-		Render(b.String())
-
-	hint := m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter use · i info · a add · d remove · Esc back", "↑↓ wybierz · Enter użyj · i informacje · a dodaj · d usuń · Esc wróć"), m.menuWidth()))
-	return panel + "\n" + hint
+	return m.renderMenuPage(page)
 }

@@ -6,14 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
 
 func (m Model) openSettingsMenu() (tea.Model, tea.Cmd) {
 	cfg, _ := config.LoadToml(m.settingsGlobalPath())
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuSettings, settingsCfg: &cfg}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuSettings, settingsCfg: &cfg})
 	return m, nil
 }
 
@@ -26,15 +25,17 @@ func (m Model) settingsApply(mutate func(*config.TomlConfig)) (tea.Model, tea.Cm
 	path := m.settingsGlobalPath()
 	cfg, err := config.LoadToml(path)
 	if err != nil {
-		m.statusOverride = "settings: " + err.Error()
-		return m, statusClearCmd()
+		m.menu.formErr = err.Error()
+		return m, nil
 	}
 	mutate(&cfg)
 	if err := config.SaveToml(path, cfg); err != nil {
-		m.statusOverride = "settings: save: " + err.Error()
-		return m, statusClearCmd()
+		m.menu.formErr = err.Error()
+		return m, nil
 	}
+	llm.SetDiscardPreviousReasoning(cfg.DiscardPreviousReasoning != nil && *cfg.DiscardPreviousReasoning)
 	m.menu.settingsCfg = &cfg
+	m.menu.formErr = ""
 	return m, nil
 }
 
@@ -45,10 +46,18 @@ func (m Model) settingsEnter() (tea.Model, tea.Cmd) {
 	r := rows[minInt(m.menu.cursor, len(rows)-1)]
 	switch r.kind {
 	case setReadonly:
+		switch r.key {
+		case "default_model":
+			return m.openModelsMenu()
+		case "default_provider":
+			return m.openProvidersMenu()
+		case "context_policy":
+			return m.dispatchVisualCommand("context", "")
+		}
 		return m, nil
 	case setResetAll:
 		return m.settingsApply(func(c *config.TomlConfig) {
-			for _, rr := range rows {
+			for _, rr := range settingsRowsFor(m.language) {
 				settingResetKey(c, rr.key)
 			}
 		})
@@ -90,7 +99,7 @@ func (m Model) settingsResetCurrent() (tea.Model, tea.Cmd) {
 	r := rows[minInt(m.menu.cursor, len(rows)-1)]
 	if r.kind == setResetAll {
 		return m.settingsApply(func(c *config.TomlConfig) {
-			for _, rr := range rows {
+			for _, rr := range settingsRowsFor(m.language) {
 				settingResetKey(c, rr.key)
 			}
 		})

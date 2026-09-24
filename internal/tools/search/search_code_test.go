@@ -46,7 +46,7 @@ func TestSearchCode_FindsMatchInFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewSearchCode(dir)
-	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"find me"}`))
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"find me","context":0}`))
 	if res.Err != nil {
 		t.Fatalf("run: %v", res.Err)
 	}
@@ -77,7 +77,7 @@ func TestSearchCode_SkipsDirectories(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "node_modules", "bad.txt"), []byte("find me"), 0o644)
 	os.WriteFile(filepath.Join(dir, "good.txt"), []byte("find me too"), 0o644)
 	s := NewSearchCode(dir)
-	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"find me"}`))
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"find me","context":0}`))
 	if res.Text == "no matches" {
 		t.Fatal("expected to find match in good.txt")
 	}
@@ -99,8 +99,8 @@ func TestSearchCode_MaxLimit(t *testing.T) {
 		t.Fatalf("run: %v", res.Err)
 	}
 	lines := strings.Split(strings.TrimSpace(res.Text), "\n")
-	if len(lines) != 2 {
-		t.Errorf("got %d lines, want 2", len(lines))
+	if len(lines) != 3 || !strings.Contains(lines[2], "search limit reached: 2") {
+		t.Errorf("want 2 matches and an honest limit notice: %q", res.Text)
 	}
 }
 
@@ -113,8 +113,8 @@ func TestSearchCode_GlobalCapWithinOneFile(t *testing.T) {
 		t.Fatalf("run: %v", res.Err)
 	}
 	lines := strings.Split(strings.TrimSpace(res.Text), "\n")
-	if len(lines) != 3 {
-		t.Errorf("got %d lines, want 3", len(lines))
+	if len(lines) != 4 || !strings.Contains(lines[3], "search limit reached: 3") {
+		t.Errorf("want 3 matches and an honest limit notice: %q", res.Text)
 	}
 }
 

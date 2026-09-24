@@ -117,7 +117,7 @@ func (m *Manager) SaveReasoningEffort(level string) error {
 func writeReasoningEffort(path, level string) error {
 	tc, err := config.LoadToml(path)
 	if err != nil {
-		tc = config.TomlConfig{}
+		return err
 	}
 	tc.ReasoningEffort = level
 	return config.SaveToml(path, tc)

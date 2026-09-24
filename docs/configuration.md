@@ -25,6 +25,7 @@ cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
 | `reasoning_effort` | provider default | steering cloud reasoning models; `/reasoning` |
+| `discard_previous_reasoning` | unset = **OFF** (keep history) | optionally omit completed replies' reasoning from future requests; `/reasoning-history keep/drop/default` |
 | `max_steps` | 0 = built-in 300 on every surface | a runaway guard, not a work budget: normal work never reaches it, and the loop no longer ends a turn on a step count. A real loop (the same call with the same arguments) is answered with an injected error and work continues; only ~50 identical repeats in a row stop the run. An explicit positive value is a strict cap. |
 | `context_window` | 0 = auto (provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
 | `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
@@ -160,3 +161,35 @@ documents, and ZIP extraction targets.
 3. Host-gated autos (`cache_prompt`, `slot_cache`, `*_parallel`) must
    stay `nil` by default: the decision is per base URL, and cloud
    endpoints must never be probed with local-only features.
+
+## Previous reasoning in conversation history
+
+The default keeps native reasoning from completed replies. To experiment with
+smaller requests, use **Discard previous reasoning** / **Usuwaj wcześniejsze
+myślenie** in GUI settings or TUI /settings → Models and context.
+
+Interactive CLI commands:
+
+    /reasoning-history drop
+    /reasoning-history keep
+    /reasoning-history default
+
+With no argument, the command shows the current preference. The equivalent
+top-level setting in the portable config.toml is:
+
+    discard_previous_reasoning = true
+
+Unset/false keeps reasoning. The preference is sampled at the beginning of each
+user turn, including resumed worker turns; a setting change does not rewrite an
+in-progress request sequence. It adds no model call or prompt instruction.
+
+DROP omits native reasoning from completed assistant replies in future model
+requests. Visible answers, the saved transcript and GUI/TUI thinking remain.
+Turning KEEP back on makes retained history available again. Reasoning attached
+to tool calls is retained because some provider protocols require it even in old
+turns; active or interrupted tool exchanges are protected as well. Normal context
+compaction still applies, so KEEP cannot recreate history already compacted away.
+
+This setting does not disable generation of new thinking. Smaller input does not
+guarantee a faster or cheaper whole task; the model can generate more reasoning
+or repeat work. See the [paired evaluation](evals/2026-09-23-native-reasoning.md).

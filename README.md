@@ -126,8 +126,17 @@ go run ./cmd/supercli-perf --binary ./supercli --output test/perf/latest.json
 - Expand/collapse tool output with `Shift+E`.
 - Compact tool activity rows (safe argument summaries and four-line previews by default).
 - Command palette for `/` commands.
-- GUI-like action centre on `Tab` / `Ctrl+K`, with common tasks and a
-  searchable recent-session picker that do not require command names.
+- GUI-like action centre on `Tab` / `Ctrl+K`: left/right arrows switch
+  categories, up/down select an action, and Enter opens it. Type to filter
+  the current category. Esc returns one screen, preserving the filter,
+  selection and conversation draft; Ctrl+K returns straight to the conversation.
+- Searchable recent sessions and model pickers do not require command names.
+  Cold model discovery runs in the background without blocking navigation.
+- Goal forms support named steps, notes, pause/resume and verified completion.
+  The action centre also exposes context inspection/compaction, per-model context
+  budgets, project memory, accounts and conversation export.
+- Polish and English share the same portable language preference in TUI and GUI.
+  Existing GUI labels change language in place, without replacing nested controls.
 - Prompts typed while a run is active are queued for the next safe model step
   instead of being discarded or splitting a tool call from its result.
 - `@file` mention autocomplete.
@@ -437,7 +446,10 @@ output_cost = 0.60
 | `Ctrl+F` | Search the current transcript and fold/unfold one matching block. |
 | `/` | Open command palette. |
 | `@` | Open file mention autocomplete. |
-| `Esc` | Clear input, close autocomplete/modal, or cancel run. |
+| `Esc` | Return one menu screen (cancel an unfinished field first); in chat, clear input, close autocomplete, or cancel run. |
+| `Ctrl+K` in a menu | Return directly to the conversation, keeping its draft. |
+| `←` / `→` or `Tab` / `Shift+Tab` in the action centre | Change category. |
+| `Home` / `End`, `PgUp` / `PgDn` in pickers | Jump to the first/last item or move by a page. |
 | `Ctrl+C` | Interrupt current run or quit. |
 | `PgUp` / `PgDn` | Scroll transcript. |
 | `Shift+T` | Toggle thinking block visibility. |

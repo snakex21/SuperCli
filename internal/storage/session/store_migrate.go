@@ -71,6 +71,26 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (session_id, user_seq),
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS tool_outputs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			handle TEXT NOT NULL UNIQUE,
+			session_id TEXT NOT NULL,
+			content BLOB NOT NULL,
+			bytes INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_outputs_session ON tool_outputs(session_id)`,
+		`CREATE TABLE IF NOT EXISTS session_tool_discovery (
+			session_id TEXT PRIMARY KEY,
+			names_json BLOB NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_context_models (
+			session_id TEXT PRIMARY KEY,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS session_context_projections (
 			session_id    TEXT PRIMARY KEY,
 			through_seq   INTEGER NOT NULL,

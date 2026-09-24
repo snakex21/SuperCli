@@ -87,12 +87,15 @@ func patchFailureHint(path, content string, changes []PatchChange, idx, want, go
 	}
 	parts := make([]string, 0, 4)
 
-	// Which changes were fine. Lets the model resend the one that missed
-	// instead of regenerating the whole patch.
+	// Matching is only a dry run: PatchFile writes nothing unless the whole
+	// batch succeeds. Retrying just the failed change would silently omit
+	// earlier edits, or miss anchors those edits were meant to create.
 	if idx > 0 {
 		parts = append(parts, fmt.Sprintf(
-			"changes 0-%d matched, change %d did not: resend change %d alone",
-			idx-1, idx, idx))
+			"changes 0-%d matched only in memory; fix change %d and resend all %d changes",
+			idx-1, idx, len(changes)))
+	} else if len(changes) > 1 {
+		parts = append(parts, fmt.Sprintf("fix change 0 and resend all %d changes", len(changes)))
 	}
 
 	switch {

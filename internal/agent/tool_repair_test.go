@@ -81,8 +81,8 @@ func TestHardenToolCallUnknownName(t *testing.T) {
 	if !strings.Contains(msg, `"read_file"`) {
 		t.Errorf("message should suggest read_file: %q", msg)
 	}
-	if !strings.Contains(msg, "again") {
-		t.Errorf("first attempt should invite a retry: %q", msg)
+	if strings.Contains(msg, "valid JSON") || strings.Contains(msg, "tool_name") {
+		t.Errorf("name error should not be diagnosed as malformed arguments: %q", msg)
 	}
 }
 
@@ -188,5 +188,42 @@ func TestRecentBadCallStreak(t *testing.T) {
 	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleTool, Content: "file contents"})
 	if got := l.recentBadCallStreak(); got != 0 {
 		t.Errorf("streak after success = %d, want 0", got)
+	}
+}
+
+func TestUnknownToolAdviceMatchesAvailableTools(t *testing.T) {
+	for _, attempt := range []int{0, maxToolFormatRetries, maxToolFormatRetries + 1} {
+		call := llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["find"]}`}
+		msg := HardenToolCall(&call, []string{"list_dir", "read_lines", "search_code"}, attempt)
+		if !strings.Contains(msg, "Available tools: list_dir, read_lines, search_code.") {
+			t.Fatalf("missing available alternatives: %q", msg)
+		}
+		for _, wrong := range []string{"valid JSON", "Call the tool again", "tool_name", "plain text instead"} {
+			if strings.Contains(msg, wrong) {
+				t.Fatalf("misleading %q in %q", wrong, msg)
+			}
+		}
+		if call.Name != "ctx_execute" || call.Arguments != `{"command":["find"]}` {
+			t.Fatal("unknown call silently rerouted")
+		}
+	}
+	call := llm.ToolCall{Name: "missing_backend", Arguments: "{}"}
+	if msg := HardenToolCall(&call, []string{"list_dir", "tool_search"}, 0); !strings.Contains(msg, "Use tool_search") {
+		t.Fatal(msg)
+	}
+	if msg := HardenToolCall(&call, nil, 0); !strings.Contains(msg, "No tools are available") {
+		t.Fatal(msg)
+	}
+	many := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
+	if msg := HardenToolCall(&call, many, 0); strings.Contains(msg, "Available tools:") || !strings.Contains(msg, "provided tool definitions") {
+		t.Fatalf("large catalogue should not be repeated: %q", msg)
+	}
+}
+
+func TestRetiredToolDoesNotRecommendUnavailableEdit(t *testing.T) {
+	call := llm.ToolCall{Name: "edit_line", Arguments: "{}"}
+	msg := HardenToolCall(&call, []string{"list_dir", "read_lines", "search_code"}, 0)
+	if strings.Contains(msg, "patch_file") {
+		t.Fatalf("read-only worker was sent to an unavailable editor: %q", msg)
 	}
 }

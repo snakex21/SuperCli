@@ -19,7 +19,7 @@ func orchestratorBaseRegistry() *tools.Registry {
 	all := []string{
 		// orchestrator set
 		"task", "send_message", "task_stop",
-		"tool_search", "web_lookup", "read_lines", "read_context", "list_dir", "recall",
+		"tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "list_dir", "recall", "search_history",
 		"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 		// mutating / executing tools that must be stripped
 		"edit_line", "edit_lines", "insert_after", "delete_lines",

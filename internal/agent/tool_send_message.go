@@ -70,20 +70,32 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 	}
 
 	text, err := runWorkerLoop(ctx, w, args.Message)
-	if err != nil {
-		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
-	}
-	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
+	return workerResult(w, text, err), nil
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
-	w.runMu.Lock()
+	if !w.runMu.TryLock() {
+		return "", fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
+	}
 	defer w.runMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	w.setState(func(w *Worker) {
 		w.Status = "running"
 		w.UpdatedAt = time.Now()
 		w.LastError = ""
+		w.LastResult = ""
+		w.lastEvidence = ""
+		w.ToolNames = nil
+		w.Runs++
 	})
+	emit := workerProgressSink(ctx, w, w.Runs)
+	emit(WorkerProgressEvent{Kind: "started", Prompt: prompt, Status: "running"})
+	defer func() {
+		s := w.Snapshot()
+		emit(WorkerProgressEvent{Kind: "finished", Status: s.Status, Err: s.LastError})
+	}()
 
 	if w.Loop == nil {
 		w.setState(func(w *Worker) {
@@ -110,33 +122,38 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 	}
 
 	var text strings.Builder
+	toolCalls := make(map[string]ToolCallEvent)
+	var evidence workerEvidenceLog
+	defer func() { w.setState(func(w *Worker) { w.lastEvidence = evidence.text() }) }()
 	for ev := range events {
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
-		case ReasoningEvent:
-			text.WriteString("<thinking>")
-			text.WriteString(e.Text)
-			text.WriteString("</thinking>\n")
 		case ToolCallEvent:
+			// Commentary before a tool call is not the worker's final report.
+			// Keep only the final assistant turn; reasoning stays in its own loop.
+			text.Reset()
+			toolCalls[e.ID] = e
 			w.setState(func(w *Worker) {
 				if len(w.ToolNames) < 32 {
 					w.ToolNames = append(w.ToolNames, e.Name)
 				}
 			})
-			w.emitProgress(WorkerProgressEvent{
+			emit(WorkerProgressEvent{
 				Kind: "tool_call", CallID: e.ID, Tool: e.Name,
 				Args: toolcore.HeadTail(e.Args, 180, 60),
 			})
 		case ToolResultEvent:
+			evidence.add(toolCalls[e.ID], e)
 			progress := WorkerProgressEvent{
-				Kind: "tool_result", CallID: e.ID,
+				Kind: "tool_result", CallID: e.ID, Tool: toolCalls[e.ID].Name,
 				Output: toolcore.HeadTail(e.Output, 220, 80),
 			}
 			if e.Err != nil {
 				progress.Err = toolcore.HeadTail(e.Err.Error(), 180, 60)
 			}
-			w.emitProgress(progress)
+			emit(progress)
+			delete(toolCalls, e.ID)
 		case DoneEvent:
 			w.setState(func(w *Worker) {
 				w.TokensIn += e.Usage.Input

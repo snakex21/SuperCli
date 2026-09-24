@@ -147,6 +147,7 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 .reasoning-menu[hidden] { display: none; }
+.reasoning-note { padding: 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .reasoning-title {
   padding: 4px 7px 6px; border-bottom: 1px solid var(--line-soft);
   color: var(--faint); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
@@ -1819,3 +1820,32 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 	.compare-col + .compare-col { border-left:0; border-top:1px solid var(--line); }
 }
 .task-worker-label{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}.worker-state{font-size:10px}.worker-state.running,.worker-state.created{color:var(--accent)}.doctor-report{display:grid;gap:2px}.doctor-row .note{max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doctor-row.fail>span:first-child{color:var(--danger)}.doctor-row.warn>span:first-child{color:var(--accent)}
+
+/* Keep long worker runs readable without growing a screen-sized activity wall. */
+.task-activity { max-height: 18rem; overflow-y: auto; overscroll-behavior: contain; }
+.task-backlink { display: block; margin: 0 0 12px; padding: 6px 0; border: 0; background: transparent; color: var(--accent, #d99a66); cursor: pointer; text-align: left; font: inherit; }
+.task-backlink:hover { text-decoration: underline; }
+.task-backlink:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+/* A bounded, event-driven overview stays reachable while reading the transcript. */
+.worker-overview { max-width: calc(46rem - 40px); width: calc(100% - 40px); margin: 0 auto 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel, var(--bg)); overflow: hidden; }
+.worker-overview[hidden] { display: none; }
+.worker-overview > summary { cursor: pointer; padding: 9px 12px; color: var(--muted); font: 11px var(--mono); }
+.worker-overview-list { max-height: min(170px, 23vh); overflow-y: auto; padding: 0 6px 6px; }
+.worker-overview-item { display: grid; grid-template-columns: 7px minmax(100px, 150px) minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; text-align: left; border: 0; border-radius: 5px; background: transparent; color: var(--text); padding: 7px 6px; cursor: pointer; font: 11.5px var(--sans); }
+.worker-overview-item:hover, .worker-overview-item:focus-visible { background: var(--line-soft); }
+.worker-overview-item:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.worker-overview-name { font-weight: 600; }
+.worker-overview-name, .worker-overview-activity { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.worker-overview-activity { color: var(--muted); }
+.worker-overview-status { color: var(--muted); white-space: nowrap; font: 10.5px var(--mono); }
+.worker-overview-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.worker-overview-item[data-state="running"] .worker-overview-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.worker-overview-item[data-state="running"] .worker-overview-status { color: var(--accent); }
+.worker-overview-item[data-state="done"] .worker-overview-dot { background: var(--ok); }
+.worker-overview-item[data-state="failed"] .worker-overview-dot { background: var(--danger); }
+.worker-overview-item[data-state="failed"] .worker-overview-status { color: var(--danger); }
+@media (max-width: 760px) {
+  .worker-overview-item { grid-template-columns: 7px minmax(85px, 115px) minmax(0, 1fr) auto; gap: 6px; }
+  .worker-overview { margin-bottom: 6px; }
+}

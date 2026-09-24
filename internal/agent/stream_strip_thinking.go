@@ -43,9 +43,9 @@ func stripThinking(s string) string {
 // captureThinking is the single-string core of the strip: it removes
 // reasoning blocks and returns (plain, captured). captured keeps the
 // original tags — closed blocks verbatim, an unclosed opening tag
-// captures the truncated remainder — so the loop can hand the
-// reasoning back to the model on the next request instead of throwing
-// it away (SUPERCLI_KEEP_THINKING).
+// captures the truncated remainder. Explicit legacy opt-in can replay
+// this separate block (SUPERCLI_KEEP_THINKING); the default discards it
+// from model context, while the original stream remains in the archive.
 func captureThinking(s string) (plain, captured string) {
 	low := strings.ToLower(s)
 	if !strings.Contains(low, "<think") && !strings.Contains(low, "<reasoning") && !strings.Contains(low, "<reflection") {
@@ -85,8 +85,8 @@ func stripThinkingFromMessage(msg llm.Message) llm.Message {
 // captureThinkingFromMessage is stripThinkingFromMessage plus the
 // captured reasoning: it returns the stripped blocks (concatenated
 // across Content and text Parts, in order) and the plain provider-
-// facing copy. The loop stores the captured text on l.lastThinking so
-// the next request can continue from the previous chain of thought.
+// facing copy. The loop stores captured text on l.lastThinking only
+// when legacy reasoning replay has been explicitly enabled.
 func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
 	var buf strings.Builder
 	strip := func(s string) string {
@@ -125,4 +125,25 @@ func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
 		msg.Content = noVisibleAnswerPlaceholder
 	}
 	return buf.String(), msg
+}
+
+// cleanModelHistory normalizes both constructor and /resume input. Copy the
+// messages and text parts so the UI/archive keeps the original reasoning.
+// User text, tool results, call IDs and images are not reasoning to discard.
+func (l *Loop) cleanModelHistory(msgs []llm.Message) []llm.Message {
+	out := make([]llm.Message, len(msgs))
+	for i, msg := range msgs {
+		if msg.Role == llm.RoleAssistant {
+			thinking, plain := captureThinkingFromMessage(msg)
+			if msg.HasNativeReasoning() {
+				l.lastThinking = ""
+			} else if l.keepThinking && thinking != "" {
+				l.lastThinking = thinking
+			}
+			out[i] = plain
+		} else {
+			out[i] = msg
+		}
+	}
+	return out
 }

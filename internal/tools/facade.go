@@ -37,23 +37,24 @@ var NewProcessSession = processsession.New
 
 // Core contracts and registry.
 type (
-	Tool            = core.Tool
-	Result          = core.Result
-	ImageContent    = core.ImageContent
-	Registry        = core.Registry
-	CatalogEntry    = core.CatalogEntry
-	Check           = core.Check
-	VerifyVerdict   = core.VerifyVerdict
-	Verifier        = core.Verifier
-	VerifyFn        = core.VerifyFn
-	DefaultVerifier = core.DefaultVerifier
-	Category        = core.Category
-	Verdict         = core.Verdict
-	Action          = core.Action
-	Policy          = core.Policy
-	Classifier      = core.Classifier
-	ErrorRecord     = core.ErrorRecord
-	ErrorLog        = core.ErrorLog
+	Tool              = core.Tool
+	Result            = core.Result
+	ImageContent      = core.ImageContent
+	OutputPersistence = core.OutputPersistence
+	Registry          = core.Registry
+	CatalogEntry      = core.CatalogEntry
+	Check             = core.Check
+	VerifyVerdict     = core.VerifyVerdict
+	Verifier          = core.Verifier
+	VerifyFn          = core.VerifyFn
+	DefaultVerifier   = core.DefaultVerifier
+	Category          = core.Category
+	Verdict           = core.Verdict
+	Action            = core.Action
+	Policy            = core.Policy
+	Classifier        = core.Classifier
+	ErrorRecord       = core.ErrorRecord
+	ErrorLog          = core.ErrorLog
 )
 
 const (
@@ -73,6 +74,7 @@ const (
 var (
 	ErrUnknownTool        = core.ErrUnknownTool
 	NewRegistry           = core.NewRegistry
+	WithOutputPersistence = core.WithOutputPersistence
 	CoerceArgs            = core.CoerceArgs
 	ApplyVerification     = core.ApplyVerification
 	NewErrorLog           = core.NewErrorLog
@@ -240,6 +242,7 @@ var (
 	SupportedImageMIMEs = media.SupportedImageMIMEs
 	NewSendScreenshot   = media.NewSendScreenshot
 	NewAskUser          = interactive.NewAskUser
+	WithAskChannel      = interactive.WithAskChannel
 )
 
 // Workflow / agent-facing tools.

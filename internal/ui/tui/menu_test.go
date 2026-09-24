@@ -70,7 +70,7 @@ func TestReasoningMenu_EnterPersistsSelection(t *testing.T) {
 	m := New(Options{Home: t.TempDir(), DataDir: t.TempDir(), LLM: llmProvider})
 	mm, _ := m.openReasoningMenu()
 	m = mm.(Model)
-	m.menu.cursor = reasoningOptionIndex("low")
+	m.menu.cursor = m.reasoningOptionIndex("low")
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := out.(Model)
 	if got.mode != modeNormal {
@@ -649,6 +649,9 @@ func TestProviderFormSaveScansProviderInBackground(t *testing.T) {
 				t.Errorf("auth = %q, want Bearer test-key", r.Header.Get("Authorization"))
 			}
 			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "deepseek-chat"}}})
+		case "/api/v1/models", "/api/v0/models":
+			// Optional native metadata discovery on a loopback endpoint.
+			http.NotFound(w, r)
 		case "/v1/chat/completions":
 			// The post-save verification test request ("Say OK").
 			json.NewEncoder(w).Encode(map[string]any{

@@ -11,6 +11,7 @@ import (
 )
 
 func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
+	l.nativeReasoning = nil
 	// context_prepare part 2: provider message assembly (visible
 	// view, thin preamble placement, freshness stamp).
 	msgStart := time.Now()
@@ -44,6 +45,11 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 		l.recordContextBaseline(requestEstimate, usage.Input)
 	}
 	if err == nil {
+		// Light chat routes send only a small view. They must not mark the
+		// full coordinator history as consumed by the new model.
+		if l.route == RouteCoordinator {
+			l.rememberContextModel(ctx)
+		}
 		l.observePrefillCall(requestEstimate, usage, l.lastCallTTFT)
 	}
 	return text, calls, usage, err
@@ -67,7 +73,7 @@ func (l *Loop) providerMessages() []llm.Message {
 	if l.route == RouteCoordinator {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
-		visible := l.mediaProviderView(l.resolvedToolProviderView(l.VisibleMessages()))
+		visible := l.mediaProviderView(l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages()))))
 		out := make([]llm.Message, 0, len(visible)+2)
 		// Thin tool protocol placement depends on stableToolset:
 		//
@@ -124,7 +130,7 @@ func (l *Loop) providerMessages() []llm.Message {
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
 		return out
 	}
-	visible := l.mediaProviderView(l.resolvedToolProviderView(l.VisibleMessages()))
+	visible := l.mediaProviderView(l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages()))))
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt
@@ -216,16 +222,11 @@ func (l *Loop) providerMessages() []llm.Message {
 	return out
 }
 
-// trailingContext is the per-request tail: the freshness stamp plus,
-// when reasoning retention is on and the previous turn left a chain of
-// thought behind, that thinking. It is appended AFTER the growing
-// history on both routes, so the cacheable prefix is undisturbed —
-// like the stamp, the retained reasoning is append-only and never
-// rewrites earlier bytes. On chat routes the provider demote pass
-// renders it (and the stamp) as a wire-only <system-reminder> user
-// turn; the user's transcript (l.Messages) never contains it.
+// trailingContext appends live context and freshness after the conversation.
+// Reasoning is included only with explicit legacy opt-in. This request-only
+// tail is never persisted as part of the user's transcript.
 func (l *Loop) trailingContext() string {
-	s := l.stampSection()
+	s := l.contextTail()
 	if l.finalReplyOnly {
 		return s + "\n\n[final reply only] The requested Word operation succeeded. " +
 			"Do not call or describe another tool. Briefly tell the user that the document is ready, include its path, and stop."
@@ -234,4 +235,14 @@ func (l *Loop) trailingContext() string {
 		s += "\n\n[Retained reasoning from your previous turn — treat it as your own chain of thought and continue from it; do not reveal it to the user:]\n" + l.lastThinking
 	}
 	return s
+}
+
+// contextTail keeps refreshed snapshots behind the conversation. Updating a
+// remembered fact must not invalidate the entire conversation prefix. Reuse
+// the existing trailing message so this adds no message or instruction wrapper.
+func (l *Loop) contextTail() string {
+	if l.liveContext == "" {
+		return l.stampSection()
+	}
+	return l.liveContext + "\n\n" + l.stampSection()
 }

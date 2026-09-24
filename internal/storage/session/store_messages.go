@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"supercli/internal/llm"
 	_ "modernc.org/sqlite"
+	"supercli/internal/llm"
 )
 
 func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int) (int, error) {
@@ -54,6 +54,12 @@ func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM session_context_projections WHERE session_id = ?`, sessionID); err != nil {
 		return 0, fmt.Errorf("invalidate context projection: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session_tool_discovery WHERE session_id = ?`, sessionID); err != nil {
+		return 0, fmt.Errorf("invalidate tool discovery: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session_context_models WHERE session_id = ?`, sessionID); err != nil {
+		return 0, fmt.Errorf("invalidate context model: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE sessions SET
 		message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?),
@@ -161,13 +167,12 @@ func (s *Store) LatestMessageSeq(ctx context.Context, sessionID, role string) (i
 	return seq, err
 }
 
-// RecentSession is a /resume listing entry. It is derived from
-// the messages table directly (GROUP BY session_id) so sessions
-// written by the F13 writer — which never created a sessions
-// row — still show up.
+// RecentSession is a /resume listing entry ordered by latest activity.
+// The unfiltered view also retains legacy message-only sessions.
 type RecentSession struct {
 	ID              string
 	StartedAt       time.Time
+	UpdatedAt       time.Time
 	FirstUserMsg    string
 	MessageCount    int
 	Title           string
@@ -177,8 +182,7 @@ type RecentSession struct {
 	ParentID        string
 	// Cwd is the working directory recorded for the session (from the
 	// sessions row), or "" when no sessions row exists (F13 writer
-	// sessions are message-only). Populated via a LEFT JOIN so the
-	// listing can attribute a session to a project.
+	// sessions are message-only).
 	Cwd string
 }
 
@@ -199,6 +203,22 @@ func (s *Store) ListRecentByCwd(ctx context.Context, cwd string, limit int) ([]R
 	return s.listRecent(ctx, cwd, limit)
 }
 
+// Project lists start with the session activity index. Only the requested
+// rows need message lookups; unrelated conversations never have their whole
+// histories grouped. EXISTS retains old rows with stale message_count values.
+const recentProjectQuery = `
+ SELECT s.id,
+        (SELECT created_at FROM messages WHERE session_id=s.id ORDER BY seq LIMIT 1),
+        s.updated_at,
+        (SELECT COUNT(*) FROM messages WHERE session_id=s.id),
+        IFNULL((SELECT content FROM messages WHERE session_id=s.id AND role='user'
+                AND content IS NOT NULL AND content<>'' ORDER BY seq LIMIT 1),''),
+        s.cwd,s.title,s.model,s.provider,s.reasoning_effort,IFNULL(s.parent_id,'')
+ FROM sessions s
+ WHERE s.cwd=? AND EXISTS (SELECT 1 FROM messages WHERE session_id=s.id)
+ ORDER BY s.updated_at DESC,s.created_at DESC,s.id DESC
+ LIMIT ?`
+
 func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]RecentSession, error) {
 	if limit <= 0 {
 		limit = 10
@@ -209,6 +229,7 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 	query := `
 		SELECT m.session_id,
 		       MIN(m.created_at) AS started,
+               COALESCE(s.updated_at,MAX(m.created_at)) AS updated,
 		       COUNT(*) AS n,
 		       IFNULL((SELECT content FROM messages
 		               WHERE session_id = m.session_id AND role = 'user'
@@ -219,17 +240,15 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 		       IFNULL(s.parent_id, '')
 		FROM messages m
 		LEFT JOIN sessions s ON s.id = m.session_id`
-	args := []any{}
-	if cwd != "" {
-		query += `
-		WHERE s.cwd = ?`
-		args = append(args, cwd)
-	}
 	query += `
-		GROUP BY m.session_id
-		ORDER BY started DESC
-		LIMIT ?`
-	args = append(args, limit)
+        GROUP BY m.session_id
+        ORDER BY updated DESC,started DESC,m.session_id DESC
+        LIMIT ?`
+	args := []any{limit}
+	if cwd != "" {
+		query = recentProjectQuery
+		args = []any{cwd, limit}
+	}
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("session.Store.ListRecent: %w", err)
@@ -238,12 +257,13 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 	var out []RecentSession
 	for rows.Next() {
 		var r RecentSession
-		var startedNanos int64
-		if err := rows.Scan(&r.ID, &startedNanos, &r.MessageCount, &r.FirstUserMsg,
+		var startedNanos, updatedNanos int64
+		if err := rows.Scan(&r.ID, &startedNanos, &updatedNanos, &r.MessageCount, &r.FirstUserMsg,
 			&r.Cwd, &r.Title, &r.Model, &r.Provider, &r.ReasoningEffort, &r.ParentID); err != nil {
 			return nil, fmt.Errorf("session.Store.ListRecent: scan: %w", err)
 		}
 		r.StartedAt = time.Unix(0, startedNanos).UTC()
+		r.UpdatedAt = time.Unix(0, updatedNanos).UTC()
 		out = append(out, r)
 	}
 	return out, rows.Err()

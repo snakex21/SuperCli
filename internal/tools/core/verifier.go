@@ -151,10 +151,9 @@ func verifyBash(c Check) VerifyVerdict {
 	return VerifyVerdict{OK: true}
 }
 
-// verifySearch requires non-empty result text that does not
-// look like an error message. A search miss is still a
-// failure per the F4.e doc: the model should not declare
-// "done" if the search returned nothing.
+// verifySearch requires a reported outcome. No matches is useful evidence,
+// not a tool failure. The tool reports backend errors through Result.Err;
+// interpreting prose prefixes also misclassifies paths such as "not found.go".
 func verifySearch(c Check) VerifyVerdict {
 	if c.Result.Err != nil {
 		return VerifyVerdict{OK: true}
@@ -162,10 +161,6 @@ func verifySearch(c Check) VerifyVerdict {
 	t := strings.TrimSpace(c.Result.Text)
 	if t == "" {
 		return VerifyVerdict{OK: false, Reason: "verification failed: search returned no results"}
-	}
-	low := strings.ToLower(t)
-	if strings.HasPrefix(low, "no results") || strings.HasPrefix(low, "not found") {
-		return VerifyVerdict{OK: false, Reason: "verification failed: search returned no matches"}
 	}
 	return VerifyVerdict{OK: true}
 }

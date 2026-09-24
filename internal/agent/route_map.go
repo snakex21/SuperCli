@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // chatRouteTools is the minimal tool set sent on the chat/advisor
@@ -143,6 +144,9 @@ func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bo
 		}
 	}
 	if len([]rune(p)) <= 80 {
+		if undecidedChat(p) {
+			return RouteChatOnly, true
+		}
 		for _, prefix := range m.ChatPrefixes {
 			if strings.HasPrefix(p, prefix) {
 				return RouteChatOnly, true
@@ -171,9 +175,9 @@ Modes:
 
 Do not use keyword matching blindly. Read the recent context and infer intent. Prefer coordinator when project-specific evidence is needed. Prefer advisor when general reasoning is enough.`
 
-const chatOnlySystemPrompt = `You are SuperCli in chat-only mode. Answer directly and briefly in the user's language. Use web_lookup to verify current facts, recall for remembered user facts, and tool_search only to find other capabilities. Do not use tools for plain conversation. If the user asks for project/file/code/terminal/document work, ask them to repeat the request naming the file or repo, or to set navigator = "off" in config.toml.`
+const chatOnlySystemPrompt = `You are SuperCli. Answer directly in the user's language. For plain conversation, reply briefly without tools. Use web_lookup for current facts, recall for remembered facts, and tool_search to obtain any other tools needed to fulfill the request.`
 
-const advisorSystemPrompt = `You are SuperCli in advisor mode. Give thoughtful conceptual advice in the user's language, but do not claim to have inspected files, code, terminal output, or project state. Use web_lookup for current facts, recall for remembered facts, and tool_search for other capabilities. If project-specific evidence is needed, tell the user to repeat the request naming the file or repo, or to set navigator = "off" in config.toml.`
+const advisorSystemPrompt = `You are SuperCli. Give thoughtful advice in the user's language. Use web_lookup for current facts, recall for remembered facts, and tool_search when the answer requires other tools or project evidence. Only claim to have inspected what you actually checked.`
 
 const implementationVerificationInstruction = `Completion contract: continue past discovery and make the requested change unless blocked. Each assistant tool turn is another provider request: batch independent reads/searches, use read_many for multiple files/ranges, combine related search_code terms with regex alternation, and send several independent read-only tool calls together. Once evidence is sufficient, edit instead of exploring one file per round. If a tool call fails, correct it or report the blocker. After changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Do not claim completion before a concrete check succeeds; report exactly what passed and what was not verified.`
 
@@ -192,4 +196,33 @@ func implementationVerificationHint(prompt string) string {
 		}
 	}
 	return ""
+}
+
+// undecidedChat accepts only complete short statements of indecision. A
+// prefix such as "nie wiem" alone is not enough: any unrecognized remainder
+// (e.g. "sprawdź" or "kontynuuj") leaves the coordinator available.
+func undecidedChat(p string) bool {
+	p = strings.Join(strings.FieldsFunc(p, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune(",.!?…", r)
+	}), " ")
+	clauses := [...]string{
+		"nie wiem", "zastanawiam się", "zastanawiam sie", "się zastanawiam", "sie zastanawiam",
+		"na razie", "narazie", "jeszcze", "właśnie", "wlasnie",
+	}
+	hasStatement := false
+	for p != "" {
+		matched := false
+		for i, clause := range clauses {
+			if p == clause || strings.HasPrefix(p, clause+" ") {
+				hasStatement = hasStatement || i < 5
+				p = strings.TrimSpace(strings.TrimPrefix(p, clause))
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return hasStatement
 }

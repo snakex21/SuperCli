@@ -424,17 +424,23 @@ func TestAgentTool_AsyncInjectsNotificationIntoParent(t *testing.T) {
 		t.Fatalf("initial async response = %q", res.Text)
 	}
 
-	select {
-	case ev := <-ext:
-		n, ok := ev.(WorkerNotificationEvent)
-		if !ok {
-			t.Fatalf("event = %T, want WorkerNotificationEvent", ev)
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+awaitNotification:
+	for {
+		select {
+		case ev := <-ext:
+			n, ok := ev.(WorkerNotificationEvent)
+			if !ok {
+				continue
+			}
+			if n.TaskID != "worker-1" || n.Status != "done" || !strings.Contains(n.Text, "async done") {
+				t.Fatalf("notification = %+v", n)
+			}
+			break awaitNotification
+		case <-timer.C:
+			t.Fatal("timeout waiting for worker notification")
 		}
-		if n.TaskID != "worker-1" || n.Status != "done" || !strings.Contains(n.Text, "async done") {
-			t.Fatalf("notification = %+v", n)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for worker notification")
 	}
 
 	msgs := parent.AllMessages()

@@ -27,13 +27,15 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	// Known text-only metadata blocks image input before the request is sent;
 	// unknown capability metadata remains optimistic.
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
-	reqBody, err := buildCodexRequest(p.cfg.Model, msgs, tools, visionAttempt)
+	msgs = filterNativeReasoning(msgs, ReasoningResponses, p.cfg.Model, p.cfg.BackendURL)
+	effort := p.reasoningEffort()
+	reqBody, err := buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	var imageFallback []byte
 	if visionAttempt && messagesContainImage(msgs) {
-		imageFallback, err = buildCodexRequest(p.cfg.Model, msgs, tools, false)
+		imageFallback, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
 		if err != nil {
 			return nil, fmt.Errorf("build image fallback request: %w", err)
 		}
@@ -61,7 +63,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 				}
 			}
 		} else {
-			reasoningModel := SupportsReasoningEffort(p.cfg.Model) || (p.caps != nil && p.caps.HasReasoning(p.cfg.Model))
+			reasoningModel := p.supportsReasoningControl()
 			reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 			if err != nil {
 				return nil, fmt.Errorf("build standard responses request: %w", err)
@@ -178,9 +180,16 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 			continue
 		}
-		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody); ok && !effortRetried {
-			if patched, patchedOK := patchCodexReasoningEffort(body, effort); patchedOK {
+		if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, respBody); ok && !effortRetried {
+			patch := patchCodexReasoningEffort
+			if p.cfg.StandardResponsesAPI && !isOpenCodeZenBaseURL(p.cfg.BackendURL) {
+				patch = patchResponsesReasoningEffort
+			}
+			if patched, patchedOK := patch(body, effort); patchedOK {
 				body = patched
+				if len(imageFallback) > 0 {
+					imageFallback, _ = patch(imageFallback, effort)
+				}
 				effortRetried = true
 				continue
 			}
@@ -260,6 +269,16 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				return
 			}
 		case "response.output_item.done":
+			if ev.Item != nil && ev.Item.Type == "reasoning" {
+				var raw struct {
+					Item json.RawMessage `json:"item"`
+				}
+				if json.Unmarshal([]byte(data), &raw) == nil {
+					if !emit(Delta{NativeReasoning: nativeReasoning(ReasoningResponses, p.cfg.Model, p.cfg.BackendURL, raw.Item)}) {
+						return
+					}
+				}
+			}
 			if ev.Item != nil && ev.Item.Type == "function_call" {
 				if !emit(Delta{ToolCall: &ToolCall{
 					ID:        ev.Item.CallID,

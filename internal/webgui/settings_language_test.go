@@ -76,3 +76,15 @@ func TestUISettingsPersistsPortableComposerDrafts(t *testing.T) {
 		t.Fatalf("draft=%+v", got)
 	}
 }
+
+func TestNativeCloseDialogFollowsCurrentSharedLanguage(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct{ lang, want string }{{"en", "Close SuperCli?"}, {"pl", "Zamknąć SuperCli?"}, {"en", "Close SuperCli?"}} {
+		if err := config.SaveToml(dir+"/config.toml", config.TomlConfig{Language: tc.lang}); err != nil {
+			t.Fatal(err)
+		}
+		if got := nativeCloseText(dir, "SuperCli"); !strings.HasPrefix(got, tc.want) {
+			t.Fatalf("%s: %q", tc.lang, got)
+		}
+	}
+}

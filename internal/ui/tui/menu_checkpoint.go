@@ -13,13 +13,11 @@ func (m Model) openCheckpointMenu(redo bool) (tea.Model, tea.Cmd) {
 	}
 	preview, err := m.checkpointPreview(redo)
 	if err != nil {
-		m.statusOverride = err.Error()
+		m.setStatus(err.Error(), false)
 		return m.closeMenu()
 	}
 	preview.Redo = redo
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuCheckpoint, checkpoint: &preview}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuCheckpoint, checkpoint: &preview})
 	return m, nil
 }
 

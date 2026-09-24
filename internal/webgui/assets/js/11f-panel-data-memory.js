@@ -2,7 +2,7 @@
 
 sections.data = async function () {
   panelContent.innerHTML = "";
-  panelContent.appendChild(el("div", "note", t("data.hint")));
+  panelContent.appendChild(i18nEl("div", "note", "data.hint"));
   var status;
   try { status = await j("/api/data/status"); }
   catch (e) { panelContent.appendChild(el("div", "note", e.message)); return; }
@@ -14,27 +14,27 @@ sections.data = async function () {
     facts.appendChild(fact);
   });
   panelContent.appendChild(facts);
-  if (status.import_pending) panelContent.appendChild(el("div", "data-pending", t("data.importPending")));
+  if (status.import_pending) panelContent.appendChild(i18nEl("div", "data-pending", "data.importPending"));
 
   function dataAction(title, hint, button) {
     var row = el("div", "data-action"), copy = el("div", "data-action-copy");
     copy.appendChild(el("strong", "", title)); copy.appendChild(el("span", "", hint));
     row.appendChild(copy); row.appendChild(button); return row;
   }
-  var backup = el("div", "group data-group"); backup.appendChild(el("div", "g-label", t("data.backup")));
-  var exportBtn = el("button", "btn", t("data.export")); exportBtn.type = "button";
+  var backup = el("div", "group data-group"); backup.appendChild(i18nEl("div", "g-label", "data.backup"));
+  var exportBtn = i18nEl("button", "btn", "data.export"); exportBtn.type = "button";
   exportBtn.addEventListener("click", function () {
     var link = document.createElement("a"); link.href = "/api/data/export"; link.download = "";
     document.body.appendChild(link); link.click(); link.remove();
   });
   backup.appendChild(dataAction(t("data.export"), t("data.exportHint"), exportBtn));
-  var fullExportBtn = el("button", "btn", t("data.exportFull")); fullExportBtn.type = "button";
+  var fullExportBtn = i18nEl("button", "btn", "data.exportFull"); fullExportBtn.type = "button";
   fullExportBtn.addEventListener("click", function () {
     var link = document.createElement("a"); link.href = "/api/data/export/full"; link.download = "";
     document.body.appendChild(link); link.click(); link.remove();
   });
   backup.appendChild(dataAction(t("data.exportFull"), t("data.exportFullHint"), fullExportBtn));
-  var importBtn = el("button", "btn", t("data.import")); importBtn.type = "button";
+  var importBtn = i18nEl("button", "btn", "data.import"); importBtn.type = "button";
   var importInput = document.createElement("input"); importInput.type = "file"; importInput.accept = ".zip,application/zip"; importInput.hidden = true;
   importBtn.addEventListener("click", function () { importInput.click(); });
   importInput.addEventListener("change", async function () {
@@ -52,7 +52,7 @@ sections.data = async function () {
   var importRow = dataAction(t("data.import"), t("data.importHint"), importBtn); importRow.appendChild(importInput); backup.appendChild(importRow);
   panelContent.appendChild(backup);
 
-  var danger = el("div", "group data-group danger-zone"); danger.appendChild(el("div", "g-label", t("data.danger")));
+  var danger = el("div", "group data-group danger-zone"); danger.appendChild(i18nEl("div", "g-label", "data.danger"));
   function destructiveAction(labelKey, hintKey, action, after) {
     var button = el("button", "btn danger", t(labelKey)); button.type = "button"; button.disabled = streaming;
     button.addEventListener("click", async function () {
@@ -78,9 +78,9 @@ sections.memory = async function () {
   }
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  g.appendChild(el("div", "g-label", t("panel.memory")));
+  g.appendChild(i18nEl("div", "g-label", "panel.memory"));
   var tools = el("div", "memory-tools");
-  var dedupBtn = el("button", "btn", t("mem.dedup"));
+  var dedupBtn = i18nEl("button", "btn", "mem.dedup");
   dedupBtn.type = "button";
   dedupBtn.addEventListener("click", async function () {
     dedupBtn.disabled = true;
@@ -92,7 +92,7 @@ sections.memory = async function () {
   });
   tools.appendChild(dedupBtn);
   g.appendChild(tools);
-  if (!got || !got.length) g.appendChild(el("div", "note", t("mem.empty")));
+  if (!got || !got.length) g.appendChild(i18nEl("div", "note", "mem.empty"));
   (got || []).forEach(function (m) {
     var row = el("div", "list-row");
     var main = el("div", "lr-main");
@@ -101,7 +101,7 @@ sections.memory = async function () {
     main.appendChild(title);
     main.appendChild(el("div", "lr-sub", [m.scope, (m.tags || []).join(","), fmtWhen(m.updated_at)].filter(Boolean).join(" \u00b7 ")));
     row.appendChild(main);
-    var delBtn = el("button", "btn danger mem-del", t("mem.delete"));
+    var delBtn = i18nEl("button", "btn danger mem-del", "mem.delete");
     delBtn.type = "button";
     delBtn.title = t("mem.delete");
     delBtn.addEventListener("click", async function () {
@@ -145,14 +145,14 @@ function goalInput(placeholder, multiline) {
 
 function renderGoalCreate() {
   var empty = el("div", "goal-empty");
-  empty.appendChild(el("div", "goal-empty-title", t("goal.none")));
-  empty.appendChild(el("div", "note", t("goal.noneHint")));
+  empty.appendChild(i18nEl("div", "goal-empty-title", "goal.none"));
+  empty.appendChild(i18nEl("div", "note", "goal.noneHint"));
   var form = el("form", "goal-create-form");
   var title = goalInput(t("goal.title"), false);
   title.required = true;
   var description = goalInput(t("goal.description"), true);
   var criteria = goalInput(t("goal.criteria"), true);
-  var submit = el("button", "btn primary", t("goal.create"));
+  var submit = i18nEl("button", "btn primary", "goal.create");
   submit.type = "submit";
   form.appendChild(title);
   form.appendChild(description);
@@ -181,23 +181,23 @@ function goalTaskAction(label, task, status) {
 
 function renderGoalVerification(got) {
   var section = el("section", "group goal-verification status-" + (got.verification_status || "pending"));
-  section.appendChild(el("div", "g-label", t("goal.verification")));
+  section.appendChild(i18nEl("div", "g-label", "goal.verification"));
   var state = el("div", "goal-verification-state");
   var mark = el("span", "goal-verification-mark");
   state.appendChild(mark);
   var copy = el("div", "goal-verification-copy");
   if (!got.ready_for_verification) {
-    copy.appendChild(el("div", "goal-verification-title", t("goal.verificationWaiting")));
-    copy.appendChild(el("div", "goal-verification-hint", t("goal.finishBlocked")));
+    copy.appendChild(i18nEl("div", "goal-verification-title", "goal.verificationWaiting"));
+    copy.appendChild(i18nEl("div", "goal-verification-hint", "goal.finishBlocked"));
   } else if (got.verification_status === "passed") {
-    copy.appendChild(el("div", "goal-verification-title", t("goal.verificationPassed")));
+    copy.appendChild(i18nEl("div", "goal-verification-title", "goal.verificationPassed"));
     if (got.verification_evidence) {
       copy.appendChild(el("div", "goal-verification-evidence", got.verification_evidence));
     }
   } else {
     copy.appendChild(el("div", "goal-verification-title",
       got.verification_status === "failed" ? t("goal.verificationFailed") : t("goal.awaitingVerification")));
-    copy.appendChild(el("div", "goal-verification-hint", t("goal.verificationReady")));
+    copy.appendChild(i18nEl("div", "goal-verification-hint", "goal.verificationReady"));
     if (got.verification_evidence) {
       copy.appendChild(el("div", "goal-verification-evidence", got.verification_evidence));
     }
@@ -210,9 +210,9 @@ function renderGoalVerification(got) {
     var evidence = goalInput(t("goal.verifyPlaceholder"), true);
     evidence.required = true;
     var actions = el("div", "goal-verify-actions");
-    var pass = el("button", "btn primary", t("goal.verifyPass"));
+    var pass = i18nEl("button", "btn primary", "goal.verifyPass");
     pass.type = "submit";
-    var fail = el("button", "btn", t("goal.verifyFail"));
+    var fail = i18nEl("button", "btn", "goal.verifyFail");
     fail.type = "button";
     actions.appendChild(pass);
     actions.appendChild(fail);
@@ -246,19 +246,19 @@ function renderGoalPanel(got) {
   copy.appendChild(el("h3", "goal-title", got.title));
   if (got.description) {
     var desc = el("div", "goal-detail");
-    desc.appendChild(el("span", "goal-detail-label", t("goal.descriptionLabel")));
+    desc.appendChild(i18nEl("span", "goal-detail-label", "goal.descriptionLabel"));
     desc.appendChild(el("span", "", got.description));
     copy.appendChild(desc);
   }
   if (got.success_criteria) {
     var criteria = el("div", "goal-detail");
-    criteria.appendChild(el("span", "goal-detail-label", t("goal.criteriaLabel")));
+    criteria.appendChild(i18nEl("span", "goal-detail-label", "goal.criteriaLabel"));
     criteria.appendChild(el("span", "", got.success_criteria));
     copy.appendChild(criteria);
   }
   head.appendChild(copy);
   var goalActions = el("div", "goal-head-actions");
-  var finish = el("button", "btn primary", t("goal.finish"));
+  var finish = i18nEl("button", "btn primary", "goal.finish");
 	finish.disabled = !got.can_finish;
 	if (!got.can_finish) finish.title = t("goal.finishBlocked");
   finish.addEventListener("click", async function () {
@@ -266,7 +266,7 @@ function renderGoalPanel(got) {
       title: t("goal.finish"), confirmLabel: t("goal.finish"),
     })) goalMutate(finish, { action: "set_status", status: "done" });
   });
-  var abandon = el("button", "btn danger", t("goal.abandon"));
+  var abandon = i18nEl("button", "btn danger", "goal.abandon");
   abandon.addEventListener("click", async function () {
     if (await appConfirm(t("goal.abandonConfirm"), {
       title: t("goal.abandon"), danger: true, confirmLabel: t("goal.abandon"),
@@ -280,7 +280,7 @@ function renderGoalPanel(got) {
   var tasks = got.tasks || [];
   var terminal = tasks.filter(function (task) { return task.status === "done" || task.status === "skipped"; }).length;
   var group = el("section", "group goal-task-group");
-  var label = el("div", "g-label", t("goal.tasks"));
+  var label = i18nEl("div", "g-label", "goal.tasks");
   label.appendChild(el("span", "g-act", tasks.length ? terminal + " / " + tasks.length : ""));
   group.appendChild(label);
   if (tasks.length) {
@@ -291,7 +291,7 @@ function renderGoalPanel(got) {
     progress.setAttribute("aria-label", t("goal.progress") + ": " + terminal + " / " + tasks.length);
     group.appendChild(progress);
   }
-  if (!tasks.length) group.appendChild(el("div", "goal-no-tasks", t("goal.noTasks")));
+  if (!tasks.length) group.appendChild(i18nEl("div", "goal-no-tasks", "goal.noTasks"));
   tasks.forEach(function (task) {
     var row = el("div", "goal-task status-" + task.status);
     var mark = task.status === "done" ? "✓" : (task.status === "skipped" ? "—" : (task.status === "in_progress" ? "●" : "○"));
@@ -313,7 +313,7 @@ function renderGoalPanel(got) {
   });
   var addForm = el("form", "goal-inline-form");
   var taskInput = goalInput(t("goal.taskPlaceholder"), false);
-  var add = el("button", "btn", t("goal.addTask"));
+  var add = i18nEl("button", "btn", "goal.addTask");
   add.type = "submit";
   addForm.appendChild(taskInput);
   addForm.appendChild(add);
@@ -328,11 +328,11 @@ function renderGoalPanel(got) {
 	panelContent.appendChild(renderGoalVerification(got));
 
   var notes = el("section", "group goal-notes");
-  notes.appendChild(el("div", "g-label", t("goal.notes")));
+  notes.appendChild(i18nEl("div", "g-label", "goal.notes"));
   if (got.notes) notes.appendChild(el("div", "goal-notes-history", got.notes));
   var noteForm = el("form", "goal-inline-form");
   var noteInput = goalInput(t("goal.notePlaceholder"), false);
-  var addNote = el("button", "btn", t("goal.addNote"));
+  var addNote = i18nEl("button", "btn", "goal.addNote");
   addNote.type = "submit";
   noteForm.appendChild(noteInput);
   noteForm.appendChild(addNote);

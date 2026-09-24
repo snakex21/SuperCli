@@ -11,17 +11,18 @@ import (
 	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/llm/draft"
+	"supercli/internal/tools"
 )
 
-// keepThinkingEnabled resolves SUPERCLI_KEEP_THINKING: reasoning
-// retention is ON by default (the model keeps its previous chain of
-// thought across turns); "0", "false", "no" or "off" disables it.
+// keepThinkingEnabled permits explicit legacy reasoning replay. By default
+// display text stays in the UI/archive. Provider-native continuation state
+// is preserved independently; this switch only controls the legacy text tail.
 func keepThinkingEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("SUPERCLI_KEEP_THINKING"))) {
-	case "0", "false", "no", "off":
-		return false
+	case "1", "true", "yes", "on":
+		return true
 	}
-	return true
+	return false
 }
 
 // newRunID returns a short opaque identifier for one agent loop. It
@@ -52,6 +53,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		return nil, fmt.Errorf("agent.NewLoop: registry is nil")
 	}
 	cfg.Registry.EnsureReadOutput()
+	if cfg.ToolOutputs == nil {
+		cfg.ToolOutputs, _ = cfg.Writer.(tools.OutputPersistence)
+	}
 	if cfg.MaxSteps == 0 {
 		cfg.MaxSteps = DefaultMaxSteps
 	}
@@ -59,53 +63,59 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.System != "" {
 		msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: cfg.System})
 	}
-	msgs = append(msgs, cfg.InitialMessages...)
 
 	loop := &Loop{
-		provider:              cfg.Provider,
-		registry:              cfg.Registry,
-		caps:                  cfg.Caps,
-		system:                cfg.System,
-		briefing:              cfg.Briefing,
-		maxSteps:              cfg.MaxSteps,
-		thinTools:             cfg.ThinTools,
-		stableToolset:         cfg.StableToolset,
-		catalogHoist:          cfg.CatalogHoist,
-		orchestrator:          cfg.Orchestrator,
-		taskParallel:          cfg.TaskParallel,
-		taskParallelWarnLocal: cfg.TaskParallelWarnLocal,
-		thinHintMax:           cfg.ThinHintMax,
-		baseDir:               cfg.BaseDir,
-		writer:                cfg.Writer,
-		errorLog:              cfg.ErrorLog,
-		runID:                 newRunID(),
-		reflector:             cfg.Reflector,
-		reflectEvery:          cfg.ReflectEvery,
-		adaptiveReflect:       cfg.AdaptiveReflection,
-		patternInjector:       cfg.PatternInjector,
-		creditTracker:         cfg.CreditTracker,
-		modelID:               cfg.Provider.Name(),
-		keepThinking:          cfg.KeepThinking || keepThinkingEnabled(),
-		windowFor:             cfg.WindowFor,
-		contextWindowFor:      cfg.ContextWindowFor,
-		contextProvider:       cfg.ContextProvider,
-		scopedWindowFor:       cfg.ScopedContextWindowFor,
-		summarizer:            cfg.Summarizer,
-		learnLimit:            cfg.LearnLimit,
-		prefillProfiles:       cfg.PrefillProfiles,
-		pruneProtect:          cfg.PruneProtectTokens,
-		Messages:              msgs,
-		routeMap:              DefaultRouteMap(),
-		route:                 RouteCoordinator,
-		navigate:              cfg.EnableNavigator,
-		navAuto:               cfg.NavigatorAuto,
-		navKeywordsOnly:       cfg.NavigatorKeywordsOnly,
-		navProvider:           cfg.NavigatorProvider,
+		provider:                 cfg.Provider,
+		registry:                 cfg.Registry,
+		caps:                     cfg.Caps,
+		system:                   cfg.System,
+		briefing:                 cfg.Briefing,
+		liveContext:              strings.TrimSpace(cfg.LiveContext),
+		maxSteps:                 cfg.MaxSteps,
+		thinTools:                cfg.ThinTools,
+		stableToolset:            cfg.StableToolset,
+		catalogHoist:             cfg.CatalogHoist,
+		orchestrator:             cfg.Orchestrator,
+		taskParallel:             cfg.TaskParallel,
+		taskParallelWarnLocal:    cfg.TaskParallelWarnLocal,
+		thinHintMax:              cfg.ThinHintMax,
+		baseDir:                  cfg.BaseDir,
+		writer:                   cfg.Writer,
+		toolOutputs:              cfg.ToolOutputs,
+		errorLog:                 cfg.ErrorLog,
+		runID:                    newRunID(),
+		reflector:                cfg.Reflector,
+		reflectEvery:             cfg.ReflectEvery,
+		adaptiveReflect:          cfg.AdaptiveReflection,
+		patternInjector:          cfg.PatternInjector,
+		creditTracker:            cfg.CreditTracker,
+		modelID:                  cfg.Provider.Name(),
+		keepThinking:             cfg.KeepThinking || keepThinkingEnabled(),
+		discardPreviousReasoning: llm.DiscardPreviousReasoning(),
+		windowFor:                cfg.WindowFor,
+		contextWindowFor:         cfg.ContextWindowFor,
+		contextProvider:          cfg.ContextProvider,
+		scopedWindowFor:          cfg.ScopedContextWindowFor,
+		summarizer:               cfg.Summarizer,
+		learnLimit:               cfg.LearnLimit,
+		prefillProfiles:          cfg.PrefillProfiles,
+		pruneProtect:             cfg.PruneProtectTokens,
+		Messages:                 msgs,
+		routeMap:                 DefaultRouteMap(),
+		route:                    RouteCoordinator,
+		navigate:                 cfg.EnableNavigator,
+		navAuto:                  cfg.NavigatorAuto,
+		navKeywordsOnly:          cfg.NavigatorKeywordsOnly,
+		navProvider:              cfg.NavigatorProvider,
 		// Phase telemetry rides the same recorder (and the same
 		// default-on wiring) as the historical per-turn stats — it is
 		// no longer gated on the F11 draft bridge being configured.
 		stats: cfg.Stats,
 	}
+
+	// GUI continuations enter through InitialMessages; TUI /resume uses
+	// LoadConversation. Both must restore the same clean model history.
+	loop.Messages = append(loop.Messages, loop.cleanModelHistory(cfg.InitialMessages)...)
 
 	// F9 ultrawork wiring. We build the Sisyphus enforcer
 	// once at construction time and Reset() it at the

@@ -297,11 +297,14 @@ type openaiStreamOptions struct {
 }
 
 type openaiReqMsg struct {
-	Role       string             `json:"role"`
-	Content    any                `json:"content,omitempty"`
-	Name       string             `json:"name,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
-	ToolCalls  []openaiReqToolRef `json:"tool_calls,omitempty"`
+	Role             string             `json:"role"`
+	Content          any                `json:"content,omitempty"`
+	Name             string             `json:"name,omitempty"`
+	ToolCallID       string             `json:"tool_call_id,omitempty"`
+	ToolCalls        []openaiReqToolRef `json:"tool_calls,omitempty"`
+	ReasoningContent *string            `json:"reasoning_content,omitempty"`
+	Reasoning        *string            `json:"reasoning,omitempty"`
+	ReasoningText    *string            `json:"reasoning_text,omitempty"`
 }
 
 type openaiReqToolRef struct {
@@ -396,6 +399,7 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			Name:       m.Name,
 			ToolCallID: m.ToolCallID,
 		}
+		applyChatReasoning(&rm, m, model)
 		// Tool result messages carry plain string content; OpenAI
 		// expects {"role":"tool","tool_call_id":"...","content":"..."}.
 		if m.Role == RoleTool {
@@ -520,34 +524,51 @@ func encodeOpenAIContent(m Message, vision bool) (any, error) {
 	if len(m.Parts) == 0 {
 		return m.Content, nil
 	}
-	hasImage := false
+	var first string
+	size := 0
 	for _, p := range m.Parts {
-		if p.Type == PartTypeImage && vision {
-			hasImage = true
-			break
-		}
-	}
-	if !hasImage {
-		var b strings.Builder
-		for _, p := range m.Parts {
-			switch p.Type {
-			case PartTypeText:
-				if b.Len() > 0 {
-					b.WriteByte('\n')
-				}
-				b.WriteString(p.Text)
-			case PartTypeImage:
-				if !vision {
-					if b.Len() > 0 {
-						b.WriteByte('\n')
-					}
-					b.WriteString(imageInputOmittedPlaceholder)
-				}
+		var text string
+		switch p.Type {
+		case PartTypeText:
+			text = p.Text
+		case PartTypeImage:
+			if vision {
+				return encodeOpenAIParts(m, vision)
 			}
+			text = imageInputOmittedPlaceholder
+		default:
+			continue
 		}
-		return b.String(), nil
+		// Preserve historical separators exactly: leading empty text is
+		// ignored, but an empty part after visible text adds a newline.
+		if size > 0 {
+			size++
+		} else {
+			first = text
+		}
+		size += len(text)
 	}
-	return encodeOpenAIParts(m, vision)
+	if size == len(first) {
+		return first, nil
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for _, p := range m.Parts {
+		var text string
+		switch p.Type {
+		case PartTypeText:
+			text = p.Text
+		case PartTypeImage:
+			text = imageInputOmittedPlaceholder
+		default:
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(text)
+	}
+	return b.String(), nil
 }
 
 func encodeOpenAIParts(m Message, vision bool) ([]openaiPart, error) {
@@ -574,6 +595,8 @@ func encodeOpenAIParts(m Message, vision bool) ([]openaiPart, error) {
 				Type:     "image_url",
 				ImageURL: &openaiImgURL{URL: url},
 			})
+		case PartTypeReasoning:
+			// Serialized separately as native assistant reasoning.
 		default:
 			return nil, fmt.Errorf("unknown part type %q", p.Type)
 		}

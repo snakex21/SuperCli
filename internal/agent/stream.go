@@ -40,8 +40,7 @@ func (sc *toolCallScanner) append(delta string) {
 }
 
 // reset replaces the buffer with the text remaining after an
-// extraction and recomputes marker state from scratch (the
-// remainder is short: it is only the prose before the block).
+// extraction and recomputes marker state for the unconsumed suffix.
 func (sc *toolCallScanner) reset(remaining string) {
 	sc.buf.Reset()
 	sc.emitted = 0

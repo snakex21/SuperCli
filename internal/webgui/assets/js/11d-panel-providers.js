@@ -49,13 +49,13 @@ async function renderProvidersList() {
   }
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  var lbl = el("div", "g-label", t("prov.configured"));
+  var lbl = i18nEl("div", "g-label", "prov.configured");
   var addB = el("button", "g-act", "＋ " + t("prov.addNew"));
   addB.addEventListener("click", function () { renderProviderForm(got.templates || [], null); });
   lbl.appendChild(addB);
   g.appendChild(lbl);
   var provs = got.providers || [];
-  if (!provs.length) g.appendChild(el("div", "note", t("prov.none")));
+  if (!provs.length) g.appendChild(i18nEl("div", "note", "prov.none"));
   provs.forEach(function (p) {
     var row = el("div", "list-row" + (p.Disabled ? " provider-disabled" : ""));
     row.appendChild(providerIconEl(p.Name));
@@ -77,7 +77,7 @@ async function renderProvidersList() {
       } catch (e) { toast(e.message); }
     });
     act.appendChild(bt);
-    var bs = el("button", "", t("common.scan"));
+    var bs = i18nEl("button", "", "common.scan");
     bs.disabled = !!p.Disabled;
     bs.addEventListener("click", async function () {
       bs.textContent = "…";
@@ -88,10 +88,10 @@ async function renderProvidersList() {
       renderProvidersList();
     });
     act.appendChild(bs);
-    var be = el("button", "", t("common.edit"));
+    var be = i18nEl("button", "", "common.edit");
     be.addEventListener("click", function () { renderProviderForm(got.templates || [], p); });
     act.appendChild(be);
-    var bx = el("button", "danger", t("common.remove"));
+    var bx = i18nEl("button", "danger", "common.remove");
     bx.addEventListener("click", async function () {
       try {
         await fetch("/api/providers?name=" + encodeURIComponent(p.Name), { method: "DELETE" });
@@ -222,7 +222,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
   var keyWrap = el("div", "secret-field");
   keyLabel.insertBefore(keyWrap, keyI);
   keyWrap.appendChild(keyI);
-  var keyToggle = el("button", "secret-toggle", t("prov.showKey"));
+  var keyToggle = i18nEl("button", "secret-toggle", "prov.showKey");
   keyToggle.type = "button";
   keyToggle.disabled = true;
   keyToggle.setAttribute("aria-pressed", "false");
@@ -255,7 +255,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
     clearI = document.createElement("input");
     clearI.type = "checkbox";
     lab.appendChild(clearI);
-    lab.appendChild(el("span", "", t("prov.clearKey")));
+    lab.appendChild(i18nEl("span", "", "prov.clearKey"));
     form.appendChild(lab);
     clearI.addEventListener("change", function () {
       keyI.disabled = clearI.checked;

@@ -101,20 +101,15 @@ func isDirectToolEligible(tool tools.Tool) bool {
 	return ok
 }
 
-// isCoreDispatchName lists thin-core mutations/reads that are always-on
-// and must be invokable without tool_search activation.
-//
-// write_file is absent on purpose and adding it here would not help: the gate
-// below also requires registry.IsVisible, and it is not in thinCoreTools (see
-// route_map.go — one edit path, one create path). The
-// dispatcher's activation requirement is itself the authorization gate for
-// mutating tools (see Registry.IsActive). Refusals point at the reachable core
-// tool instead; see dispatchRefusal.
+// isCoreDispatchName follows the built-in full-schema sets, plus explicitly
+// supported memory/document helpers. Visibility is checked separately: hidden
+// mutations and arbitrary always-on extension tools still need activation.
 func isCoreDispatchName(name string) bool {
+	if isThinCore(name) || isOrchestratorCore(name) {
+		return true
+	}
 	switch name {
-	case "patch_file", "create_file", "list_dir", "search_code",
-		"read_lines", "read_many", "read_context", "ctx_execute",
-		"read_docx", "edit_docx", "web_lookup", "recall", "ask_user":
+	case "remember", "read_context", "read_docx", "edit_docx":
 		return true
 	default:
 		return false
@@ -230,54 +225,27 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 		}
 		return call, fmt.Errorf("invoke_tool: unknown tool %q", target)
 	}
-	// Some local chat templates wrap every call in invoke_tool, including the
-	// Goal control plane. Goal is not advertised in the direct read-only catalog,
-	// but accepting this exact envelope is safe: it resolves back to the normal
-	// goal tool and its schema/service still validate every action. Filesystem
-	// and process mutations remain ineligible below.
-	if target == "goal" {
-		goalArgs, err := decodeGoalInvokeEnvelope(envelope)
-		if err != nil {
-			return call, err
-		}
-		call.Name = target
-		call.Arguments = string(goalArgs)
-		return call, nil
-	}
-	if target == invokeToolName || target == "tool_search" {
+	if target == invokeToolName {
 		return call, fmt.Errorf("invoke_tool cannot dispatch meta-tool %s", target)
 	}
 	allowed, flatScalar := flatScalarSchemaProperties(tool.Schema)
 	directReadOnly := flatScalar && tool.ReadOnly
-	// Always-on core tools (patch_file, create_file, list_dir, …) are
-	// schema-stable and must not require a prior tool_search activation.
-	coreAlwaysOn := registry.IsVisible(target) && !registry.IsActive(target) && isCoreDispatchName(target)
-	if !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
+	// The same full-schema core is callable directly or through an envelope.
+	// Goal retains its existing control-plane exception; its service validates
+	// every action. All other dormant mutations still require tool_search.
+	coreAlwaysOn := registry.IsVisible(target) && isCoreDispatchName(target)
+	if target != "goal" && !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
 		return call, fmt.Errorf("%s", dispatchRefusal(registry, target))
 	}
 
-	args := make(map[string]json.RawMessage)
-	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
-		var err error
-		args, err = decodeInvokeArgs(raw)
-		if err != nil {
-			return call, fmt.Errorf("invoke_tool: %w", err)
-		}
-	}
-	for key, value := range envelope {
-		if !strings.HasPrefix(key, "arg.") {
-			continue
-		}
-		name := strings.TrimPrefix(key, "arg.")
-		if _, exists := args[name]; exists {
-			return call, fmt.Errorf("invoke_tool: duplicate argument %q", name)
-		}
-		args[name] = value
+	args, err := decodeInvokeEnvelope(envelope)
+	if err != nil {
+		return call, fmt.Errorf("invoke_tool: %s %w", target, err)
 	}
 	// For flat schemas we can cheaply reject misspelled fields here. Complex
 	// schemas remain untouched and are validated/coerced by the target's normal
 	// Registry.Execute path after this call is rewritten to the real tool name.
-	if flatScalar {
+	if flatScalar && target != "goal" {
 		for name := range args {
 			if _, ok := allowed[name]; !ok {
 				return call, fmt.Errorf("invoke_tool: argument %q is not valid for %s", name, target)
@@ -293,16 +261,18 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	return call, nil
 }
 
-func decodeGoalInvokeEnvelope(envelope map[string]json.RawMessage) (json.RawMessage, error) {
+// decodeInvokeEnvelope accepts the observed envelope shapes without guessing
+// values: native args, arg.<name> fields, or target fields at the top level.
+// Duplicate fields are ambiguous and rejected, even when their values match.
+// The resolved target still performs its normal schema validation.
+func decodeInvokeEnvelope(envelope map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	args := make(map[string]json.RawMessage)
 	if raw := envelope["args"]; len(raw) > 0 && string(raw) != "null" {
 		decoded, err := decodeInvokeArgs(raw)
 		if err != nil {
-			return nil, fmt.Errorf("invoke_tool: goal %w", err)
+			return nil, err
 		}
-		for key, value := range decoded {
-			args[key] = value
-		}
+		args = decoded
 	}
 	for key, value := range envelope {
 		switch {
@@ -312,15 +282,11 @@ func decodeGoalInvokeEnvelope(envelope map[string]json.RawMessage) (json.RawMess
 			key = strings.TrimPrefix(key, "arg.")
 		}
 		if _, exists := args[key]; exists {
-			return nil, fmt.Errorf("invoke_tool: goal duplicate argument %q", key)
+			return nil, fmt.Errorf("duplicate argument %q", key)
 		}
 		args[key] = value
 	}
-	encoded, err := json.Marshal(args)
-	if err != nil {
-		return nil, fmt.Errorf("invoke_tool: encode goal args: %w", err)
-	}
-	return encoded, nil
+	return args, nil
 }
 
 // decodeInvokeArgs tolerates the three shapes real chat templates emit for an

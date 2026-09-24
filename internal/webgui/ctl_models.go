@@ -35,13 +35,7 @@ type modelsResponse struct {
 	Models    []modelView   `json:"models"`
 }
 
-type reasoningView struct {
-	Configured string   `json:"configured"`
-	Effective  string   `json:"effective"`
-	Adjusted   bool     `json:"adjusted"`
-	Supported  bool     `json:"supported"`
-	Levels     []string `json:"levels"`
-}
+type reasoningView = llm.ReasoningState
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	m := s.eng.providerManager()
@@ -49,6 +43,8 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	m.LoadHiddenState()
 	active := s.eng.ModelName()
 	provider, _, _ := s.eng.RuntimeSelection()
+
+	s.eng.ensureLocalReasoningMetadata(r.Context())
 
 	// Auto-scan if no models cached yet (first request after startup)
 	if total := cachedModelCount(m, s.eng.caps); total == 0 {

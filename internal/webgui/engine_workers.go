@@ -8,13 +8,16 @@
 package webgui
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/system/config"
+	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
 )
@@ -37,6 +40,11 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		at.WorkerProvider = wp
 		if workerCfg != nil {
 			at.WorkerContextProvider = e.providerNameForConfig(*workerCfg)
+			hoist := strings.EqualFold(strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")), "true") || strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")) == "1"
+			profile := execution.Resolve(*workerCfg, tc, caps, hoist)
+			at.WorkerProfile = &profile
+			parallel, warnLocal := execution.Parallel(workerCfg.BaseURL, tc.TaskParallel)
+			loop.SetTaskParallelPolicy(parallel, warnLocal)
 		}
 	}
 	at.PrefillProfiles = e.prefillProfiles
@@ -73,6 +81,10 @@ func (e *Engine) preflightBlock() (string, int) {
 }
 
 func (e *Engine) preflightBlockAt(home string) (string, int) {
+	return e.preflightBlockAtContext(context.Background(), home)
+}
+
+func (e *Engine) preflightBlockAtContext(ctx context.Context, home string) (string, int) {
 	e.mu.RLock()
 	officeProfile := strings.EqualFold(strings.TrimSpace(e.appProfile), "nestcafe")
 	e.mu.RUnlock()
@@ -83,7 +95,7 @@ func (e *Engine) preflightBlockAt(home string) (string, int) {
 	if tc.PreflightRepo != nil && !*tc.PreflightRepo {
 		return "", 0
 	}
-	block := preflight.Build(home, preflight.Options{})
+	block := preflight.BuildContext(ctx, home, preflight.Options{})
 	if block == "" {
 		return "", 0
 	}
