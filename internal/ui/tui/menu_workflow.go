@@ -11,15 +11,13 @@ import (
 )
 
 func (m Model) openQueueMenu() (tea.Model, tea.Cmd) {
-	m.mode = modeMenu
-	m.input.Blur()
-	m.menu = interactiveMenu{kind: menuQueue}
+	m.enterMenu(interactiveMenu{kind: menuQueue})
 	if m.sessionStore == nil {
 		return m, nil
 	}
 	rows, err := m.sessionStore.ListQueuedTasks(context.Background(), m.home)
 	if err != nil {
-		m.statusOverride = "queue: " + err.Error()
+		m.setStatus("queue: "+err.Error(), false)
 		return m, nil
 	}
 	m.menu.tasks = rows
@@ -33,7 +31,7 @@ func (m Model) reloadQueue() Model {
 	}
 	rows, err := m.sessionStore.ListQueuedTasks(context.Background(), m.home)
 	if err != nil {
-		m.statusOverride = "queue: " + err.Error()
+		m.setStatus("queue: "+err.Error(), false)
 		return m
 	}
 	m.menu.tasks = rows
@@ -58,22 +56,22 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.menu.moveTaskID != "" {
 				position, err := strconv.Atoi(value)
 				if err != nil || position < 1 || position > len(m.menu.tasks) {
-					m.statusOverride = m.tr("queue: enter a valid position", "kolejka: wpisz prawid\u0142ow\u0105 pozycj\u0119")
+					m.setStatus(m.tr("queue: enter a valid position", "kolejka: wpisz prawid\u0142ow\u0105 pozycj\u0119"), false)
 					return m, nil
 				}
 				if err := m.sessionStore.MoveQueuedTask(context.Background(), m.home, m.menu.moveTaskID, position-1); err != nil {
-					m.statusOverride = "queue: " + err.Error()
+					m.setStatus("queue: "+err.Error(), false)
 					return m, nil
 				}
 				m.menu.cursor = position - 1
 			} else if m.menu.editTaskID != "" {
 				if err := m.sessionStore.UpdateQueuedTask(context.Background(), m.home, m.menu.editTaskID, value); err != nil {
-					m.statusOverride = "queue: " + err.Error()
+					m.setStatus("queue: "+err.Error(), false)
 					return m, nil
 				}
 			} else {
 				if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, value); err != nil {
-					m.statusOverride = "queue: " + err.Error()
+					m.setStatus("queue: "+err.Error(), false)
 					return m, nil
 				}
 			}
@@ -81,7 +79,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menu.editBuf = ""
 			m.menu.editTaskID = ""
 			m.menu.moveTaskID = ""
-			m.statusOverride = ""
+			m.setStatus("", false)
 			return m.reloadQueue(), nil
 		case "backspace", "ctrl+h":
 			r := []rune(m.menu.editBuf)
@@ -103,7 +101,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc":
-		return m.closeMenu()
+		return m.backMenu()
 	case "n", "a":
 		m.menu.editing = true
 		m.menu.editBuf = ""
@@ -154,7 +152,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		row := m.menu.tasks[m.menu.cursor]
 		if err := m.sessionStore.MoveQueuedTask(context.Background(), m.home, row.ID, to); err != nil {
-			m.statusOverride = "queue: " + err.Error()
+			m.setStatus("queue: "+err.Error(), false)
 			return m, nil
 		}
 		m.menu.cursor = to
@@ -165,7 +163,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		row := m.menu.tasks[m.menu.cursor]
 		if err := m.sessionStore.DeleteQueuedTask(context.Background(), m.home, row.ID); err != nil {
-			m.statusOverride = "queue: " + err.Error()
+			m.setStatus("queue: "+err.Error(), false)
 			return m, nil
 		}
 		return m.reloadQueue(), nil
@@ -181,7 +179,7 @@ func (m Model) runQueuedTask() (tea.Model, tea.Cmd) {
 	}
 	row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
 	if err := m.sessionStore.DeleteQueuedTask(context.Background(), m.home, row.ID); err != nil {
-		m.statusOverride = "queue: " + err.Error()
+		m.setStatus("queue: "+err.Error(), false)
 		return m, nil
 	}
 	m.mode = modeNormal
@@ -233,9 +231,7 @@ func (m Model) renderQueueMenu() string {
 }
 
 func (m Model) openDataMenu() (tea.Model, tea.Cmd) {
-	m.mode = modeMenu
-	m.input.Blur()
-	m.menu = interactiveMenu{kind: menuData}
+	m.enterMenu(interactiveMenu{kind: menuData})
 	return m, nil
 }
 
@@ -251,7 +247,7 @@ func (m Model) handleDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if path == "" || m.dataImport == nil {
 				return m, nil
 			}
-			m.statusOverride = m.tr("validating backup...", "sprawdzanie kopii...")
+			m.setStatus(m.tr("validating backup...", "sprawdzanie kopii..."), false)
 			fn := m.dataImport
 			return m, func() tea.Msg {
 				full, err := fn(context.Background(), path)
@@ -276,7 +272,7 @@ func (m Model) handleDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
-		return m.closeMenu()
+		return m.backMenu()
 	case "up":
 		if m.menu.cursor > 0 {
 			m.menu.cursor--
@@ -296,7 +292,7 @@ func (m Model) handleDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) runDataAction() (tea.Model, tea.Cmd) {
 	if m.menu.cursor == 2 {
 		if m.dataImport == nil {
-			m.statusOverride = m.tr("import is unavailable", "import jest niedostępny")
+			m.setStatus(m.tr("import is unavailable", "import jest niedostępny"), false)
 			return m, nil
 		}
 		m.menu.editing = true
@@ -304,11 +300,11 @@ func (m Model) runDataAction() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.dataExport == nil {
-		m.statusOverride = m.tr("backup is unavailable", "tworzenie kopii jest niedostępne")
+		m.setStatus(m.tr("backup is unavailable", "tworzenie kopii jest niedostępne"), false)
 		return m, nil
 	}
 	full := m.menu.cursor == 1
-	m.statusOverride = m.tr("creating backup...", "tworzenie kopii...")
+	m.setStatus(m.tr("creating backup...", "tworzenie kopii..."), false)
 	fn := m.dataExport
 	return m, func() tea.Msg {
 		path, err := fn(context.Background(), full)

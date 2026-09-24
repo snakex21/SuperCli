@@ -118,22 +118,25 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// structured payload (and can be re-fed it
 	// verbatim if it wants to inspect details).
 	jb, _ := json.Marshal(res)
+	result := Result{Text: string(jb), RetainedText: res.RetainedJSON()}
 	if runErr != nil {
-		return Result{Text: string(jb), Err: runErr}, runErr
+		result.Err = runErr
+		return result, runErr
 	}
 	// If the underlying run failed (non-zero exit),
 	// surface the structured failure summary in Err —
 	// first line "command_failed exit=N (D)" plus the
-	// capped stderr/stdout tails — so the model can
+	// bounded stderr/stdout evidence — so the model can
 	// self-correct in one turn. The JSON text is still
 	// returned for UIs that show tool output; the error
 	// is marked self-contained so Result.ModelContent
 	// does not append the JSON (same streams) a second
 	// time for the model.
 	if res.ExitCode != 0 {
-		return Result{Text: string(jb), Err: core.SelfContainedErr(errors.New(res.FailureSummary()))}, nil
+		result.Err = core.SelfContainedErr(errors.New(res.FailureSummary()))
+		return result, nil
 	}
-	return Result{Text: string(jb)}, nil
+	return result, nil
 }
 
 var officeScriptMarkers = []string{

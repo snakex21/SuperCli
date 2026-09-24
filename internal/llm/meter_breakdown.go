@@ -1,6 +1,9 @@
 package llm
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // RequestBreakdown is a local, estimator-based split of one request's
 // prompt tokens by role. It is attached to every CallStat so per-call
@@ -48,10 +51,34 @@ func EstimateRequestBreakdown(msgs []Message, tools []ToolDef) RequestBreakdown 
 		}
 	}
 	for _, tool := range tools {
-		text := strings.TrimSpace(tool.Name + " " + tool.Description + " " + tool.Schema)
-		if text != "" {
-			out.Tool += EstimateMessageTokens(Message{Role: RoleSystem, Content: text})
-		}
+		out.Tool += estimateToolDefinitionTokens(tool)
 	}
 	return out
+}
+
+// Count the same text as TrimSpace(name + " " + description + " " + schema)
+// without allocating a combined string for every definition on every estimate.
+// Trimming only the outer edges preserves interior Unicode whitespace exactly.
+func estimateToolDefinitionTokens(tool ToolDef) int {
+	parts := [3]string{tool.Name, tool.Description, tool.Schema}
+	for i := 0; i < len(parts); i++ {
+		parts[i] = strings.TrimLeftFunc(parts[i], unicode.IsSpace)
+		if parts[i] != "" {
+			break
+		}
+	}
+	for i := len(parts) - 1; i >= 0; i-- {
+		parts[i] = strings.TrimRightFunc(parts[i], unicode.IsSpace)
+		if parts[i] != "" {
+			break
+		}
+	}
+	if parts[0] == "" && parts[1] == "" && parts[2] == "" {
+		return 0
+	}
+	bytes := 0
+	for _, part := range parts {
+		bytes += nonWhitespaceLen(part)
+	}
+	return bytes/estBytesPerToken + estPerMessageCost
 }

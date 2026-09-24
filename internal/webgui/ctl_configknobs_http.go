@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
 
@@ -40,6 +41,7 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		llm.SetDiscardPreviousReasoning(tc.DiscardPreviousReasoning != nil && *tc.DiscardPreviousReasoning)
 	}
 
 	tc, err := config.LoadToml(global)

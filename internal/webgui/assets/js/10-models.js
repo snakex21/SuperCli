@@ -3,6 +3,8 @@
 /* ═══ model palette ═══ */
 
 var palette = $("#palette"), modelCache = [];
+var reasoningRevision = 0;
+var lastReasoningState = null;
 function togglePalette(show) {
   var want = show !== undefined ? show : palette.hidden;
   palette.hidden = !want;
@@ -40,6 +42,7 @@ function paletteModels(models) {
 }
 
 async function loadModels() {
+  var revision = reasoningRevision;
   try {
     var got = await j("/api/models");
     if (got.active) {
@@ -53,7 +56,7 @@ async function loadModels() {
     modelCache = slimModels(got.models || []);
     saveBlobKey("supercli-model-cache", modelCache);
     renderModelList($("#model-search").value.trim().toLowerCase());
-    renderReasoning(got.reasoning);
+    if (revision === reasoningRevision) renderReasoning(got.reasoning);
     return got;
   } catch (e) {
     if (!modelCache.length) $("#model-list").innerHTML = '<div class="side-empty">' + escHtml(e.message) + "</div>";
@@ -132,7 +135,7 @@ function renderModelList(filter) {
     }
     if (m.reasoning) row.appendChild(el("span", "pbadge", "think"));
     var act = el("span", "pact");
-    var bd = el("button", "", t("model.setDefault"));
+    var bd = i18nEl("button", "", "model.setDefault");
     bd.title = "Set as CLI default (config.toml)";
     bd.addEventListener("click", function (e) {
       e.stopPropagation();
@@ -141,7 +144,7 @@ function renderModelList(filter) {
         .catch(function (err) { toast(err.message); });
     });
     act.appendChild(bd);
-    var bh = el("button", "", t("model.hide"));
+    var bh = i18nEl("button", "", "model.hide");
     bh.addEventListener("click", function (e) {
       e.stopPropagation();
       jpost("/api/model/toggle", { provider: m.provider, model: m.id }).then(function () {
@@ -171,31 +174,45 @@ $("#model-scan").addEventListener("click", async function () {
   this.textContent = t("common.scan");
   loadModels();
 });
+function reasoningLevelLabel(level, toggleOnly) {
+  if (toggleOnly) {
+    if (level === "none") return t("model.reasoningOff");
+    if (level) return t("model.reasoningOn");
+  }
+  return level || t("model.auto");
+}
+
 function renderReasoning(r) {
+  lastReasoningState = r;
   var control = $("#reasoning-control");
   var btn = $("#reasoning-btn");
   var configured = (r && r.configured) || "";
+  var selected = r && typeof r.selected === "string" ? r.selected : configured;
+  if (r && r.toggle_only && selected && selected !== "none") selected = "high";
   // The control is a stable part of the model cluster. Do not hide it while
   // model discovery is pending (or when a provider omitted capability
   // metadata); the backend negotiates/omits unsupported parameters safely.
   control.hidden = false;
 
-  $("#reasoning-level").textContent = configured || t("model.auto");
+  $("#reasoning-level").textContent = configured ?
+    (r && r.effective ? reasoningLevelLabel(r.effective, r.toggle_only) : t("model.reasoningNotSent")) : t("model.auto");
   btn.classList.toggle("active", !!configured);
-  btn.title = t("model.reasoning") + ": " + (configured || t("model.default")) +
-    (r && r.adjusted ? " (effective: " + r.effective + ")" : "");
+  btn.title = t("model.reasoning") + ": " + (configured ? reasoningLevelLabel(configured, r && r.toggle_only) : t("model.default")) +
+    (r && r.adjusted && !r.toggle_only ? " → " + r.effective : "");
 
   var options = $("#reasoning-options");
   options.innerHTML = "";
+  if (r && r.supported === false) options.appendChild(i18nEl("div", "reasoning-note", "model.reasoningUnsupported"));
+  else if (r && r.toggle_only) options.appendChild(i18nEl("div", "reasoning-note", "model.reasoningToggleOnly"));
   [{ value: "", label: t("model.default") }].concat((r && r.levels ? r.levels : []).map(function (lv) {
-    return { value: lv, label: lv };
+    return { value: lv, label: reasoningLevelLabel(lv, r && r.toggle_only) };
   })).forEach(function (item) {
-    var option = el("button", "reasoning-option" + (item.value === configured ? " selected" : ""));
+    var option = el("button", "reasoning-option" + (item.value === selected ? " selected" : ""));
     option.type = "button";
     option.dataset.level = item.value;
     option.setAttribute("role", "menuitemradio");
-    option.setAttribute("aria-checked", item.value === configured ? "true" : "false");
-    option.tabIndex = item.value === configured ? 0 : -1;
+    option.setAttribute("aria-checked", item.value === selected ? "true" : "false");
+    option.tabIndex = item.value === selected ? 0 : -1;
     option.appendChild(el("span", "reasoning-check", "◆"));
     option.appendChild(el("span", "", item.label));
     options.appendChild(option);
@@ -203,8 +220,10 @@ function renderReasoning(r) {
 }
 
 async function loadReasoning() {
+  var revision = reasoningRevision;
   try {
-    renderReasoning(await j("/api/reasoning"));
+    var got = await j("/api/reasoning");
+    if (revision === reasoningRevision) renderReasoning(got);
   } catch (e) {
     // Keep the always-visible default control; health status already reports
     // connectivity and a transient request failure must not move the toolbar.
@@ -234,12 +253,29 @@ $("#reasoning-options").addEventListener("click", async function (e) {
   if (!option || reasoningSaving) return;
   var btn = $("#reasoning-btn");
   reasoningSaving = true;
+  reasoningRevision++;
   toggleReasoningMenu(false);
   btn.setAttribute("aria-busy", "true");
   btn.focus();
+  var sessionID = activeSessionID;
+  var epoch = projectEpoch;
+  var ready = sessionRuntimeReady;
+  var saving = Promise.resolve(ready).then(async function () {
+    if (epoch !== projectEpoch || sessionID !== activeSessionID) return;
+    var got = await jpost("/api/reasoning", { level: option.dataset.level || "default", session_id: sessionID || "" });
+    if (got.session) {
+      sessionRuntimeRevision++;
+      var saved = sessionByID[got.session.id];
+      if (saved) Object.assign(saved, got.session);
+    }
+    if (epoch === projectEpoch && sessionID === activeSessionID) renderReasoning(got);
+    if (got.warning) toast(got.warning);
+  });
+  // Sending a prompt or restoring another session waits for this mutation;
+  // it must not use the previous effort while the click is still being saved.
+  sessionRuntimeReady = saving.catch(function () {});
   try {
-    var got = await jpost("/api/reasoning", { level: option.dataset.level || "default" });
-    renderReasoning(got);
+    await saving;
   } catch (err) {
     toast(err.message);
     await loadModels();

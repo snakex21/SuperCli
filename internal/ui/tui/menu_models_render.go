@@ -1,10 +1,7 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/account/credits"
 	"supercli/internal/llm"
@@ -21,74 +18,40 @@ func isModelVisibilityMenu(kind menuKind) bool {
 
 func (m Model) renderModelsMenu(title, footer string) string {
 	rows := m.filteredModelRows()
-	width := m.menuWidth()
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(fmt.Sprintf("%s · %d", title, len(rows))) + "\n")
-	filter := m.menu.filter
-	if filter == "" {
-		filter = m.tr("start typing", "zacznij pisać")
+	page := menuPage{title: title, searchable: true, footer: footer,
+		empty: m.tr("No matching models.", "Brak pasujących modeli.")}
+	if m.modelPickerScanning {
+		page.empty = m.tr("scanning providers for models…", "Wykrywanie modeli dostawców…")
 	}
-	b.WriteString(m.palette.InputHint.Render(m.tr("Search: ", "Szukaj: ")+filter) + "\n\n")
-	start, end := 0, len(rows)
-	if m.height > 0 {
-		available := (m.height - 5) / 2
-		start, end = menuWindow(len(rows), m.menu.cursor, available)
-	}
-	for i := start; i < end; i++ {
-		row := rows[i]
-		row = m.enrichModelRow(row)
-		prefix := "  "
-		if i == m.menu.cursor {
-			prefix = "> "
-		}
+	for i, row := range rows {
 		state := ""
 		if m.menu.kind == menuModels {
-			if row.ID == m.reasoningModelName() {
-				state = m.tr("[active]", "[aktywny]")
+			if row.ID == m.reasoningModelName() && (m.activeProvider == "" || row.Provider == m.activeProvider) {
+				state = m.tr("● active", "● aktywny")
 			}
 		} else {
-			state = "[on]"
+			state = m.tr("[on]", "[włączony]")
 			if m.providerMgr != nil && m.providerMgr.IsHiddenFor(row.Provider, row.ID) {
-				state = "[off]"
+				state = m.tr("[off]", "[wyłączony]")
 			}
 		}
-		nameWidth := width - lipgloss.Width(prefix)
-		if state != "" {
-			nameWidth -= lipgloss.Width(state) + 1
-		}
-		if nameWidth < 18 {
-			nameWidth = 18
-		}
-		line := prefix + truncateText(row.ID, nameWidth)
-		if state != "" {
-			line += " " + state
-		}
-		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(line)
-		} else {
-			line = m.palette.Bold.Render(line)
-		}
-		b.WriteString(line + "\n")
-
-		meta := row.Provider + " · ctx " + ctxLen(row.ContextLength) +
-			" · in " + m.modelPrice(row, true) + " · out " + m.modelPrice(row, false)
-		if c := caps(row); c != "" {
-			meta += " · " + c
+		meta := row.Provider
+		if row.ContextLength > 0 {
+			meta += " · ctx " + ctxLen(row.ContextLength)
 		}
 		if providerState := m.modelProviderState(row.Provider); providerState != "" {
 			meta += " · " + providerState
 		}
-		b.WriteString(m.palette.Dim.Render(truncateText("    "+meta, width)) + "\n")
-	}
-	if len(rows) == 0 {
-		if m.caps != nil && len(m.caps.All()) == 0 {
-			b.WriteString("  " + m.tr("scanning providers for models...", "skanowanie modeli dostawców...") + "\n")
-		} else {
-			b.WriteString("  " + m.tr("no matching models", "brak pasujących modeli") + "\n")
+		page.items = append(page.items, menuListItem{label: row.ID, meta: meta, badge: state})
+		if i == m.menu.cursor {
+			row = m.enrichModelRow(row)
+			page.detailTitle = row.ID
+			page.detail = []string{m.tr("Provider: ", "Dostawca: ") + row.Provider,
+				m.tr("Context: ", "Kontekst: ") + ctxLen(row.ContextLength), "",
+				"in " + m.modelPrice(row, true) + " · out " + m.modelPrice(row, false), caps(row)}
 		}
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(footer, width)))
-	return b.String()
+	return m.renderMenuPage(page)
 }
 
 func (m Model) modelProviderState(provider string) string {

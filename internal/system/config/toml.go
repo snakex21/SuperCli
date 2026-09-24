@@ -81,6 +81,10 @@ type TomlConfig struct {
 	// (which steers cloud reasoning models).
 	Thinking *bool `toml:"thinking"`
 
+	// DiscardPreviousReasoning omits native reasoning from completed replies.
+	// nil/false keeps it; true omits it from future requests, never the archive.
+	DiscardPreviousReasoning *bool `toml:"discard_previous_reasoning"`
+
 	// Agent.
 	MaxSteps int `toml:"max_steps"`
 	// MaxStepsOr (below) is how consumers read it: 0 = the shared

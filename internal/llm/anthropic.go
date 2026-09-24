@@ -120,6 +120,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 			return nil, fmt.Errorf("Complete: message %d: %w", i, err)
 		}
 	}
+	msgs = filterNativeReasoning(msgs, ReasoningAnthropic, p.cfg.Model, p.cfg.BaseURL)
 	// Only authoritative text-only metadata blocks image input. Missing or
 	// incomplete capability metadata remains optimistic, so custom
 	// Anthropic-compatible gateways can still prove they support vision.
@@ -167,7 +168,19 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 		defer cancel()
 		respBody := newIdleTimeoutReader(resp.Body, p.cfg.Timeout, cancel)
 		defer respBody.Close()
-		if err := p.streamSSE(ctx, respBody, out); err != nil {
+		// Capture the actual request, including a negotiated image fallback.
+		// The hash is local metadata, never an instruction or API field.
+		actual := body
+		if resp.Request != nil && resp.Request.GetBody != nil {
+			if reader, e := resp.Request.GetBody(); e == nil {
+				if raw, e := io.ReadAll(reader); e == nil {
+					actual = raw
+				}
+				_ = reader.Close()
+			}
+		}
+		streamCtx := context.WithValue(ctx, anthropicPrefixKey{}, anthropicRequestPrefix(actual))
+		if err := p.streamSSE(streamCtx, respBody, out); err != nil {
 			select {
 			case out <- Delta{Err: err}:
 			case <-ctx.Done():

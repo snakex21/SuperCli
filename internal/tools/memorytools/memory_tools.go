@@ -254,7 +254,7 @@ func recentOne(s MemoryKeeper, k int) ([]memory.Entry, error) {
 		return nil, nil
 	}
 	if recent, ok := s.(RecentKeeper); ok {
-		return recent.Recent("", k)
+		return recent.Recent("", min(maxRecallLimit*4, k*4))
 	}
 	return nil, nil
 }
@@ -295,6 +295,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 			return Result{Err: fmt.Errorf("recall: %w", err)}, nil
 		}
 		for _, e := range es {
+			if memory.IsDiagnosticNoise(e) {
+				continue
+			}
 			hits = append(hits, hit{e, "project"})
 		}
 	}
@@ -304,6 +307,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 			return Result{Err: fmt.Errorf("recall: %w", err)}, nil
 		}
 		for _, e := range es {
+			if memory.IsDiagnosticNoise(e) {
+				continue
+			}
 			hits = append(hits, hit{e, "global"})
 		}
 	}
@@ -317,6 +323,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 				return Result{Err: fmt.Errorf("recall fallback: %w", err)}, nil
 			}
 			for _, e := range es {
+				if strings.HasPrefix(e.Scope, "pattern:") {
+					continue
+				}
 				recentHits = append(recentHits, hit{e, "project"})
 			}
 		}
@@ -326,6 +335,9 @@ func (r *Recall) run(ctx context.Context, args json.RawMessage) (Result, error) 
 				return Result{Err: fmt.Errorf("recall fallback: %w", err)}, nil
 			}
 			for _, e := range es {
+				if strings.HasPrefix(e.Scope, "pattern:") {
+					continue
+				}
 				recentHits = append(recentHits, hit{e, "global"})
 			}
 		}

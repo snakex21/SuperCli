@@ -82,7 +82,20 @@ func (l *Loop) VisibleMessages() []llm.Message {
 	if l.hidden == nil {
 		return l.Messages
 	}
-	out := make([]llm.Message, 0, len(l.Messages))
+	// Count visible entries from the flags before reserving the output. After
+	// hiding an old prefix, the canonical transcript can be much larger than
+	// its provider view; allocating for that transcript wastes memory on every
+	// estimate and request. One hidden run occupies one placeholder.
+	flagged := min(len(l.hidden), len(l.Messages))
+	count := len(l.Messages) - flagged
+	wasHidden := false
+	for _, hidden := range l.hidden[:flagged] {
+		if !hidden || !wasHidden {
+			count++
+		}
+		wasHidden = hidden
+	}
+	out := make([]llm.Message, 0, count)
 	runStart := -1
 	flush := func(end int) {
 		if runStart < 0 {
@@ -100,7 +113,7 @@ func (l *Loop) VisibleMessages() []llm.Message {
 		})
 		runStart = -1
 	}
-	for i, m := range l.Messages {
+	for i := range l.Messages {
 		hidden := i < len(l.hidden) && l.hidden[i]
 		if hidden {
 			if runStart < 0 {
@@ -109,7 +122,7 @@ func (l *Loop) VisibleMessages() []llm.Message {
 			continue
 		}
 		flush(i)
-		out = append(out, m)
+		out = append(out, l.Messages[i])
 	}
 	flush(len(l.Messages))
 	return out

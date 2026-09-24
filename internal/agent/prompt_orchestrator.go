@@ -26,7 +26,7 @@ import "supercli/internal/tools"
 // pure interaction. Anything doubtful is left out (worker territory).
 var orchestratorTools = []string{
 	"task", "send_message", "task_stop",
-	"tool_search", "web_lookup", "read_lines", "read_context", "list_dir", "recall",
+	"tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "list_dir", "recall", "search_history",
 	"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 }
 
@@ -37,7 +37,7 @@ var orchestratorTools = []string{
 // loop's primary action, so (list_dir lesson) it has to be directly
 // callable with a full schema from turn 1, never buried in the tail.
 var orchestratorCoreTools = []string{
-	"task", "tool_search", "web_lookup", "read_lines", "read_context", "read_output", "list_dir", "recall",
+	"task", "tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "read_output", "list_dir", "recall",
 }
 
 // isOrchestratorCore reports whether name is in the orchestrator thin-core.
@@ -64,6 +64,9 @@ func OrchestratorRegistry(base *tools.Registry) *tools.Registry {
 		if !ok {
 			continue
 		}
+		if name == "tool_search" {
+			t = tools.NewToolSearcher(out, nil).Spec()
+		}
 		if err := out.Register(t); err != nil {
 			continue
 		}
@@ -81,17 +84,14 @@ func OrchestratorPrompt() string {
 
 ## Orchestrator mode
 
-You are the orchestrator. You have NO tools to edit files, run commands, or
-change anything — only read tools (read_lines, read_context, list_dir, recall)
-and delegation. For ANY change, code execution, test run, or deeper
-investigation, delegate to a worker with the task tool. Write each task prompt
-self-contained: goal, relevant file paths/lines, expected result, and what
-"done" means — the worker does not see this conversation.
+Use direct search/read tools for targeted lookups and explanations. You cannot
+edit files or run commands: delegate changes and tests with task. Delegate
+independent work together; avoid overlapping writes. For substantial
+exploration, use a worker when isolation helps.
 
-Use your read tools only for quick lookups to plan the delegation. Answer
-simple conversational or explanatory questions directly, without tools. After a
-worker reports back, summarize the outcome for the user and keep only the
-decisions, changed files, and verification status in the main chat. Use
-scratchpad for detailed worker evidence that should survive without bloating
-the conversation.`
+Brief workers with goal, relevant paths/findings, expected result and completion
+criteria; they cannot see this chat. Reuse their evidence and continue with
+send_message when their context helps. Repeat reads/checks only for missing
+details, failures or relevant changes. Report changes, checks and blockers.
+Use scratchpad for detailed evidence that should survive outside the chat.`
 }

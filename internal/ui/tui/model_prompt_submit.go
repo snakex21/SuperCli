@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"supercli/internal/ui/attachments"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,7 +20,10 @@ import (
 func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return m, nil
+		if len(m.pendingAttachments) == 0 {
+			return m, nil
+		}
+		text = m.tr("Inspect the attached files.", "Przeanalizuj załączone pliki.")
 	}
 	if isQuitCommand(text) {
 		m.quitting = true
@@ -46,12 +51,23 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 		m.onRunStart()
 	}
 	ctx, cancel := context.WithCancel(llm.WithOpenCodeSession(context.Background(), m.sessionID))
+	ctx = llm.WithCallSink(ctx, m.sessionUsageSink())
 	m.cancel.Arm(cancelRun, cancel)
-	m.chat.addUser("> " + text)
-	m.appendLineToTranscript("> " + text)
+	selected := append([]string(nil), m.pendingAttachments...)
+	visible := text
+	if len(selected) > 0 {
+		visible += "\n\n" + attachmentDisplay(selected)
+	}
+	m.chat.addUser("> " + visible)
+	m.appendLineToTranscript("> " + visible)
 	m.busy = true
-	m.current = ""
+	m.submittingDraft = text
+	if m.drafts != nil {
+		m.drafts.Update(DraftSnapshot{SessionID: m.sessionID, Text: text, Attachments: selected})
+	}
+	m.resetCurrent()
 	m.refreshTranscript()
+	m.viewport.GotoBottom()
 	home, planMode, ag := m.home, m.planMode, m.agent
 	return m, func() tea.Msg {
 		prompt := text
@@ -63,15 +79,68 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 			mentionCount = len(mentionPaths)
 			mentionTokens = mentions.TotalTokens(ments)
 		}
+		if len(selected) > 0 {
+			target, ok := ag.(interface {
+				SetNextUserAddon(string)
+				SetNextUserImages([]llm.ImageRef)
+			})
+			if !ok {
+				cancel()
+				return runStartMsg{err: fmt.Errorf("agent does not support attachments"), draft: text}
+			}
+			staged, err := attachments.StagePicked(home, selected)
+			if err != nil {
+				cancel()
+				return runStartMsg{err: err, draft: text}
+			}
+			addon, err := attachments.BuildAddon(home, staged)
+			if err != nil {
+				cancel()
+				return runStartMsg{err: err, draft: text}
+			}
+			images, err := attachments.BuildImages(home, staged)
+			if err != nil {
+				cancel()
+				return runStartMsg{err: err, draft: text}
+			}
+			if ctx.Err() != nil {
+				return runStartMsg{err: ctx.Err(), draft: text}
+			}
+			target.SetNextUserAddon(addon)
+			target.SetNextUserImages(images)
+			defer func() { target.SetNextUserAddon(""); target.SetNextUserImages(nil) }()
+			selected = staged
+			prompt += "\n\n" + attachmentDisplay(staged)
+		}
 		runPrompt := prompt
 		if planMode {
 			runPrompt = planmode.WrapPrompt(prompt)
 		}
+		previousSeq := 0
+		if len(selected) > 0 && m.sessionStore != nil {
+			previousSeq, _ = m.sessionStore.LatestMessageSeq(ctx, m.sessionID, "user")
+		}
+		if err := ctx.Err(); err != nil {
+			cancel()
+			return runStartMsg{err: err, draft: text}
+		}
 		ch, err := ag.Run(ctx, runPrompt)
 		if err != nil {
 			cancel()
-			return runStartMsg{err: err}
+			return runStartMsg{err: err, draft: text}
 		}
-		return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens}
+		warning := ""
+		if len(selected) > 0 && m.sessionStore != nil {
+			seq, e := m.sessionStore.LatestMessageSeq(ctx, m.sessionID, "user")
+			if e == nil && seq > previousSeq {
+				e = m.sessionStore.SaveMessageAttachments(ctx, m.sessionID, seq, selected)
+			} else if e == nil {
+				e = fmt.Errorf("no persisted user message for attachment history")
+			}
+			if e != nil {
+				warning = e.Error()
+			}
+		}
+		return runStartMsg{ch: ch, mentionCount: mentionCount, mentionTokens: mentionTokens, attachmentsSent: len(selected) > 0, attachmentWarning: warning}
 	}
 }

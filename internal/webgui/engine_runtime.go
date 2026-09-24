@@ -54,14 +54,7 @@ func (e *Engine) RuntimeSelection() (provider, model, reasoning string) {
 func (e *Engine) ReasoningSupportKey() string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	if e.cfg.Provider == config.ProviderOpenAI || e.cfg.Provider == config.ProviderResponses || e.cfg.Provider == config.ProviderOpencode {
-		model := e.cfg.Model
-		if e.cfg.Provider == config.ProviderOpencode {
-			model = strings.TrimPrefix(model, "opencode/")
-		}
-		return llm.ReasoningSupportKey(e.cfg.BaseURL, model)
-	}
-	return e.cfg.Model
+	return llm.ProviderReasoningState(e.prov).SupportKey
 }
 
 // SupportsUnifiedReasoningGateway reports whether the active OpenAI-compatible

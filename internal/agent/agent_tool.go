@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/system/execution"
 	"supercli/internal/tools"
 )
 
@@ -49,6 +50,9 @@ type AgentTool struct {
 	// coordinator keeps using Provider; only child loops switch. Nil =
 	// workers inherit Provider (default, byte-identical behaviour).
 	WorkerProvider llm.Provider
+	// WorkerProfile is resolved for WorkerProvider, not the coordinator. Only
+	// its tool protocol/cache fields apply; nil preserves inherited settings.
+	WorkerProfile *execution.Profile
 	// WorkerContextProvider scopes learned context and prefill profiles to the
 	// actual configured connection, independent of whether it is local HTTP or
 	// remote HTTP. Empty inherits the parent's connection identity.
@@ -117,11 +121,10 @@ func (a *AgentTool) Spec() tools.Tool {
 	enumJSON, _ := json.Marshal(names)
 	return tools.Tool{
 		Name: "task",
-		Description: "Delegate a self-contained subtask to a fresh worker with " +
-			"its own isolated context and tools. Only its final report returns " +
-			"to you, so your context stays lean. Give a complete briefing in " +
-			"prompt (the worker cannot see this conversation). Workers cannot " +
-			"delegate further.",
+		Description: "Delegate independent work or substantial exploration to an isolated worker. " +
+			"Use direct tools for targeted lookups; send_message to reuse a worker. " +
+			"Provide goal, paths/findings and expected result: it cannot see this chat. " +
+			"Returns a report and evidence. Workers cannot delegate.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {

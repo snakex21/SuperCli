@@ -33,7 +33,7 @@ func TestLoopInvoke_LargeSuccessUsesRetrievablePreview(t *testing.T) {
 		t.Fatalf("invoke result = %+v", result)
 	}
 	preview := result.followUps[0].Content
-	if len(preview) >= len(large)/2 || !strings.Contains(preview, "handle=out_000001") {
+	if len(preview) >= len(large)/2 || !strings.Contains(preview, "handle=out_") {
 		t.Fatalf("large result not compacted: preview=%d full=%d\n%s", len(preview), len(large), preview)
 	}
 	if !strings.Contains(preview, "FULL_OUTPUT_BEGIN") || !strings.Contains(preview, full) {
@@ -44,7 +44,7 @@ func TestLoopInvoke_LargeSuccessUsesRetrievablePreview(t *testing.T) {
 	if !ok {
 		t.Fatal("read_output not registered")
 	}
-	chunk, callErr := read.Fn(context.Background(), json.RawMessage(`{"handle":"out_000001","offset":0,"limit":8192}`))
+	chunk, callErr := read.Fn(context.Background(), json.RawMessage(`{"handle":"`+handleInOutput(preview)+`","offset":0,"limit":8192}`))
 	if callErr != nil || chunk.Err != nil || !strings.Contains(chunk.Text, "FULL_OUTPUT_BEGIN") {
 		t.Fatalf("stored output not retrievable: result=%+v err=%v", chunk, callErr)
 	}

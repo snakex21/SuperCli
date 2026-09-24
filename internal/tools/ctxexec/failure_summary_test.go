@@ -119,3 +119,16 @@ func TestFailureSummary_NoStreams(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestFailureSummaryRetainedHeadTailFitsExistingBudget(t *testing.T) {
+	full := "FIRST_COMPILER_ERROR\n" + strings.Repeat("zażółć gęślą jaźń\n", 10000) + "FINAL_FAILURE_STATUS"
+	result := &Result{ExitCode: 7, Stdout: "tail", Stderr: "tail", TruncatedStdout: true, TruncatedStderr: true,
+		retained: &Result{Stdout: full, Stderr: full}}
+	got := result.FailureSummary()
+	if !strings.HasPrefix(got, "command_failed exit=7") || !utf8.ValidString(got) || len(got) > 2*FailTailBytes+200 {
+		t.Fatalf("invalid summary: len=%d", len(got))
+	}
+	if strings.Count(got, "FIRST_COMPILER_ERROR") != 2 || strings.Count(got, "FINAL_FAILURE_STATUS") != 2 || strings.Count(got, "omitted_bytes=") != 2 {
+		t.Fatalf("summary lost early/final evidence: %s", got)
+	}
+}

@@ -16,6 +16,8 @@
 package preflight
 
 import (
+	"context"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +46,8 @@ const (
 	defaultMaxStatusFiles = 16
 	defaultMaxStatusAreas = 6
 	gitTimeout            = 5 * time.Second
+	defaultMaxScanEntries = 2048
+	fallbackTimeout       = 200 * time.Millisecond
 	// Static repo identity changes far less often than working-tree status.
 	// A short cache collapses repeated preflights from coordinator/workers
 	// without hiding fresh file edits: status is deliberately never cached.
@@ -68,7 +72,8 @@ type Options struct {
 	// LookPath resolves the git binary. nil = exec.LookPath.
 	LookPath func(file string) (string, error)
 	// RunGit runs `git -C root args...` and returns trimmed stdout.
-	// nil = the real subprocess (with a timeout). Any error from a
+	// Calls may run concurrently. nil = the real subprocess (with a shared
+	// deadline). Any error from a
 	// git call just drops that section — never fails the build.
 	RunGit func(root string, args ...string) (string, error)
 	// Now anchors the "recently modified" fallback. Zero = time.Now.
@@ -88,6 +93,17 @@ func EstimateTokens(block string) int {
 // token budget. Returns "" when there is nothing useful to say
 // (e.g. an empty directory and no git).
 func Build(root string, o Options) string {
+	return BuildContext(context.Background(), root, o)
+}
+
+// BuildContext lets an interrupted foreground turn cancel optional startup
+// work. Real Git calls share one deadline instead of each spending five seconds.
+func BuildContext(ctx context.Context, root string, o Options) string {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	if ctx.Err() != nil {
+		return ""
+	}
 	cacheStaticGit := o.LookPath == nil && o.RunGit == nil && o.Now.IsZero()
 	budget := o.Budget
 	if budget <= 0 {
@@ -99,7 +115,7 @@ func Build(root string, o Options) string {
 	}
 	runGit := o.RunGit
 	if runGit == nil {
-		runGit = realRunGit
+		runGit = func(root string, args ...string) (string, error) { return realRunGit(ctx, root, args...) }
 	}
 	now := o.Now
 	if now.IsZero() {
@@ -116,7 +132,17 @@ func Build(root string, o Options) string {
 
 	gitOK := false
 	if _, err := lookPath("git"); err == nil {
+		// Status is independent of branch/log lookup. Keep it fresh while the
+		// identity is collected, without another serial subprocess wait.
+		var status string
+		var statusErr error
+		statusDone := make(chan struct{})
+		go func() {
+			defer close(statusDone)
+			status, statusErr = runGit(root, "status", "--porcelain")
+		}()
 		branch, head, lg := loadGitStatic(root, runGit, cacheStaticGit)
+		<-statusDone
 		if branch != "" {
 			gitOK = true
 			id := "branch: " + branch
@@ -127,7 +153,7 @@ func Build(root string, o Options) string {
 			// Working-tree state is intentionally never cached. Agent edits must
 			// be visible immediately even when several workers share the static
 			// branch/commit snapshot above.
-			if status, err := runGit(root, "status", "--porcelain"); err == nil {
+			if statusErr == nil {
 				if status == "" {
 					secs = append(secs, section{lines: []string{"working tree clean"}})
 				} else {
@@ -140,9 +166,17 @@ func Build(root string, o Options) string {
 		}
 	}
 	if !gitOK {
-		// Pure-Go fallback: most recently modified files by mtime.
-		if files := recentFiles(root, defaultMaxFiles, now); len(files) > 0 {
-			secs = append(secs, section{header: "recently modified files:", lines: files})
+		// This is a startup hint, not an exhaustive index. Large directories
+		// must not delay the first answer just to find ten recent filenames.
+		scanCtx, cancel := context.WithTimeout(ctx, fallbackTimeout)
+		files, complete := recentFiles(scanCtx, root, defaultMaxFiles, now)
+		cancel()
+		if len(files) > 0 {
+			header := "recently modified files:"
+			if !complete {
+				header = "recent files (partial scan):"
+			}
+			secs = append(secs, section{header: header, lines: files})
 		}
 	}
 	if len(secs) == 0 {
@@ -207,39 +241,28 @@ func loadGitStatic(root string, runGit func(string, ...string) (string, error), 
 	return branch, head, lg
 }
 
-// realRunGit executes `git -C root args...` with a timeout so a hung
-// git (e.g. a dead network filesystem) cannot stall session start.
-func realRunGit(root string, args ...string) (string, error) {
+// realRunGit observes the shared build deadline and always waits for process
+// completion. CommandContext also handles cancellation before Start safely.
+func realRunGit(ctx context.Context, root string, args ...string) (string, error) {
 	full := append([]string{"-C", root}, args...)
-	cmd := exec.Command("git", full...)
+	cmd := exec.CommandContext(ctx, "git", full...)
 	childproc.HideWindow(cmd)
-	done := make(chan struct{})
-	var out []byte
-	var err error
-	go func() {
-		out, err = cmd.Output()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(gitTimeout):
-		_ = cmd.Process.Kill()
-		<-done
-	}
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.WaitDelay = 100 * time.Millisecond
+	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
 
-// recentFiles returns the top-n most recently modified files under
-// root (ignore-aware walk shared with search_code), newest first,
-// as "relpath (age)" lines.
-func recentFiles(root string, n int, now time.Time) []string {
+// recentFiles retains only the newest n entries in a bounded workspace sample.
+// DirEntry.Info reuses enumeration metadata on Windows instead of a second stat.
+func recentFiles(ctx context.Context, root string, n int, now time.Time) ([]string, bool) {
 	type entry struct {
 		rel string
 		mod time.Time
 	}
-	var all []entry
-	_ = search.WalkFiles(root, func(path string) error {
-		fi, err := os.Stat(path)
+	top := make([]entry, 0, n)
+	complete, err := search.WalkFileEntriesBounded(ctx, root, defaultMaxScanEntries, func(path string, d fs.DirEntry) error {
+		fi, err := d.Info()
 		if err != nil || !fi.Mode().IsRegular() {
 			return nil
 		}
@@ -247,21 +270,25 @@ func recentFiles(root string, n int, now time.Time) []string {
 		if err != nil {
 			rel = path
 		}
-		all = append(all, entry{rel: filepath.ToSlash(rel), mod: fi.ModTime()})
+		e := entry{rel: filepath.ToSlash(rel), mod: fi.ModTime()}
+		pos := sort.Search(len(top), func(i int) bool {
+			return e.mod.After(top[i].mod) || (e.mod.Equal(top[i].mod) && e.rel < top[i].rel)
+		})
+		if pos >= n {
+			return nil
+		}
+		if len(top) < n {
+			top = append(top, entry{})
+		}
+		copy(top[pos+1:], top[pos:len(top)-1])
+		top[pos] = e
 		return nil
 	})
-	if len(all) == 0 {
-		return nil
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].mod.After(all[j].mod) })
-	if len(all) > n {
-		all = all[:n]
-	}
-	out := make([]string, 0, len(all))
-	for _, e := range all {
+	out := make([]string, 0, len(top))
+	for _, e := range top {
 		out = append(out, e.rel+" ("+age(now.Sub(e.mod))+")")
 	}
-	return out
+	return out, complete && err == nil
 }
 
 // age renders a duration compactly: 45s, 12m, 3h, 5d.

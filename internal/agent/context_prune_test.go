@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -309,5 +310,24 @@ func TestPruneFrequency_UnknownRemoteModel(t *testing.T) {
 	if got := countPrunes(defaultRemoteContextWindow); got != 0 {
 		t.Fatalf("pruned %d time(s) in an %d-step turn on a %d-token window; "+
 			"pruning must stay rare and batched", got, steps, defaultRemoteContextWindow)
+	}
+}
+
+func TestPruneMarkerPreservesCommandOutcomeWithoutReexecutionAdvice(t *testing.T) {
+	for _, exit := range []int{0, 1} {
+		content := fmt.Sprintf("{\"exit_code\":%d,\"stdout\":%q}", exit, strings.Repeat("test output ", 500))
+		marker := pruneMarker(llm.Message{Name: "ctx_execute", Content: content})
+		if !strings.Contains(marker, fmt.Sprintf("exit_code=%d", exit)) {
+			t.Fatalf("outcome lost: %s", marker)
+		}
+		if strings.Contains(marker, "re-run") || len(marker) > 120 {
+			t.Fatalf("bad marker: %s", marker)
+		}
+	}
+	for _, body := range []string{"invalid JSON", "{}", "{\"exit_code\":null}"} {
+		marker := pruneMarker(llm.Message{Name: "ctx_execute", Content: body})
+		if strings.Contains(marker, "exit_code=") {
+			t.Fatalf("invented command outcome: %s", marker)
+		}
 	}
 }

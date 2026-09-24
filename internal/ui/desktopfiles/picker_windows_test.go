@@ -1,6 +1,6 @@
 //go:build windows
 
-package webgui
+package desktopfiles
 
 import (
 	"path/filepath"

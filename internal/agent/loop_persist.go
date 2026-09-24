@@ -43,8 +43,16 @@ func (l *Loop) persistProjection(ctx context.Context) {
 	h.mu.Unlock()
 
 	visible := l.resolvedToolProviderView(l.VisibleMessages())
-	for i := range visible {
-		visible[i] = visible[i].DormantImages()
+	copied := false
+	for i, msg := range visible {
+		if !msg.HasImage() {
+			continue
+		}
+		if !copied {
+			visible = append([]llm.Message(nil), visible...)
+			copied = true
+		}
+		visible[i] = msg.DormantImages()
 	}
 	// Base/system-prefix messages are rebuilt from current config when a
 	// loop is resumed. Persist only the conversation body, otherwise Web

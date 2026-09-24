@@ -13,10 +13,17 @@ import (
 )
 
 func (m Model) beginAsk(req tools.AskRequest) (tea.Model, tea.Cmd) {
+	select {
+	case <-req.Done:
+		return m, nil
+	default:
+	}
 	if m.mode == modeAsking && m.pendingAsk != nil {
-		safeRespond(m.pendingAsk.respond, tools.AskAnswer{Cancelled: true})
+		m.askQueue = append(m.askQueue, req)
+		return m, waitForAskClose(req)
 	}
 	m.pendingAsk = &pendingAsk{
+		ID: req.ID, done: req.Done,
 		Question:    req.Question,
 		Header:      req.Header,
 		Options:     req.Options,
@@ -28,7 +35,7 @@ func (m Model) beginAsk(req tools.AskRequest) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeAsking
 	m.input.Blur()
-	return m, nil
+	return m, waitForAskClose(req)
 }
 
 // handleAskKey handles key events while mode == modeAsking.
@@ -138,6 +145,22 @@ func (m Model) handleAskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) endAsk() {
 	m.pendingAsk = nil
 	m.mode = modeNormal
+	for len(m.askQueue) > 0 {
+		req := m.askQueue[0]
+		m.askQueue = m.askQueue[1:]
+		select {
+		case <-req.Done:
+			continue
+		default:
+		}
+		// The queued request already has a completion subscription.
+		m.pendingAsk = &pendingAsk{ID: req.ID, done: req.Done, Question: req.Question,
+			Header: req.Header, Options: req.Options, MultiSelect: req.MultiSelect,
+			AllowCustom: req.AllowCustom, toggled: make(map[int]bool), respond: req.Respond}
+		m.mode = modeAsking
+		m.input.Blur()
+		return
+	}
 	m.input.Focus()
 }
 
@@ -146,5 +169,18 @@ func safeRespond(ch chan<- tools.AskAnswer, ans tools.AskAnswer) {
 	select {
 	case ch <- ans:
 	default:
+	}
+}
+
+// Completion-driven cleanup, including timeouts while another question is open.
+type askClosedMsg string
+
+func waitForAskClose(req tools.AskRequest) tea.Cmd {
+	if req.Done == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		<-req.Done
+		return askClosedMsg(req.ID)
 	}
 }

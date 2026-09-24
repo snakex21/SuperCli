@@ -254,8 +254,21 @@ func TestStore_ListByCwd(t *testing.T) {
 
 func TestStore_LastForCwd(t *testing.T) {
 	s := openTestStore(t)
-	s.Create("/a", "m", "")
-	sess, _ := s.Create("/a", "m", "")
+	first, err := s.Create("/a", "m", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.Create("/a", "m", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Back-to-back inserts can share one wall-clock tick on Windows.
+	// Test latest activity explicitly instead of depending on random ID ties.
+	for i, id := range []string{first.ID, sess.ID} {
+		if _, err := s.db.Exec("UPDATE sessions SET updated_at = ? WHERE id = ?", int64(i+1), id); err != nil {
+			t.Fatal(err)
+		}
+	}
 	got, err := s.LastForCwd("/a")
 	if err != nil {
 		t.Fatalf("LastForCwd: %v", err)

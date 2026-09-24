@@ -19,6 +19,7 @@ type Service struct {
 	storage *Storage
 
 	mu        sync.RWMutex
+	progress  ProgressSnapshot
 	active    *Goal
 	activeID  string // last-known active id; used to detect drift
 	loadedAt  time.Time
@@ -41,7 +42,17 @@ func (s *Service) Refresh(ctx context.Context) (*Goal, error) {
 		return nil, fmt.Errorf("goal: Service.Refresh: nil storage")
 	}
 	g, err := s.storage.ActiveGoal(ctx)
+	progress := ProgressSnapshot{}
+	if g != nil {
+		progress.Title = g.Title
+		progress.Verification = string(g.VerificationStatus)
+		total, terminal, _, progressErr := s.storage.TaskProgress(ctx, g.ID)
+		if progressErr == nil {
+			progress.Total, progress.Done = total, terminal
+		}
+	}
 	s.mu.Lock()
+	s.progress = progress
 	s.active = g
 	s.loadedAt = time.Now()
 	s.loadedErr = err
@@ -97,6 +108,7 @@ func (s *Service) Set(ctx context.Context, title, description, criteria, parentS
 	s.mu.Lock()
 	s.active = g
 	s.activeID = g.ID
+	s.progress = ProgressSnapshot{Title: g.Title}
 	s.loadedAt = time.Now()
 	s.mu.Unlock()
 	return g, nil
@@ -199,6 +211,7 @@ func (s *Service) SetStatus(ctx context.Context, goalID string, status Status) e
 		if s.active != nil && s.active.ID == goalID {
 			s.active = nil
 			s.activeID = ""
+			s.progress = ProgressSnapshot{}
 		}
 		s.mu.Unlock()
 	}
@@ -377,4 +390,20 @@ func (s *Service) StatusLine(ctx context.Context) string {
 		}
 	}
 	return fmt.Sprintf("goal: %s (%d/%d tasks)", g.Title, terminal, total)
+}
+
+// ProgressSnapshot is refreshed with the active goal, never while drawing a frame.
+type ProgressSnapshot struct {
+	Title, Verification string
+	Done, Total         int
+}
+
+// Progress returns the cached display state without accessing storage.
+func (s *Service) Progress() ProgressSnapshot {
+	if s == nil {
+		return ProgressSnapshot{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.progress
 }

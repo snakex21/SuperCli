@@ -20,6 +20,12 @@ type Result struct {
 	Text  string
 	Image *ImageContent
 	Err   error
+	// RetainedText optionally holds a larger, bounded result behind Text's
+	// preview. Only OutputStore consumes it; it never enters history or UI JSON.
+	RetainedText string `json:"-"`
+	// ModelPreview optionally preserves the structure of a large successful
+	// result within the usual preview budget. Text remains the UI result.
+	ModelPreview string `json:"-"`
 	// Inert marks a call that succeeded without producing anything new —
 	// a mutation whose write left the world where it already was. The agent
 	// loop excludes such calls from progress accounting so they cannot reset
@@ -84,13 +90,14 @@ func (t Tool) Validate() error {
 // Activate / Deactivate control what the model sees at any given
 // turn; MarkAlwaysOn / ResetVisibility manage the meta set.
 type Registry struct {
-	mu       sync.RWMutex
-	tools    map[string]Tool
-	schemas  map[string]*compiledToolSchema // normalized once at Register; nil means fail-open
-	visible  map[string]struct{}            // subset of tools visible to the model
-	order    []string                       // insertion order, for stable Visible()
-	alwaysOn map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
-	outputs  *OutputStore                   // bounded large-result store owned by this registry/loop
+	mu         sync.RWMutex
+	tools      map[string]Tool
+	schemas    map[string]*compiledToolSchema // normalized once at Register; nil means fail-open
+	discovered map[string]struct{}            // explicit tool_search discoveries; separate from automatic promotions
+	visible    map[string]struct{}            // subset of tools visible to the model
+	order      []string                       // insertion order, for stable Visible()
+	alwaysOn   map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
+	outputs    *OutputStore                   // bounded large-result store owned by this registry/loop
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
@@ -138,6 +145,19 @@ func (r *Registry) CompactModelOutput(toolName, text string) string {
 		return text
 	}
 	return store.Compact(toolName, text)
+}
+
+// ModelResultContent keeps failures compact while retaining diagnostics omitted
+// by Result.ModelContent. Each registry owns the handle used to retrieve them.
+func (r *Registry) ModelResultContent(toolName string, result Result) string {
+	return r.ModelResultContentContext(context.Background(), toolName, result)
+}
+
+func (r *Registry) ModelResultContentContext(ctx context.Context, toolName string, result Result) string {
+	r.mu.RLock()
+	store := r.outputs
+	r.mu.RUnlock()
+	return store.ModelContentContext(ctx, toolName, result)
 }
 
 // Register adds t. If a tool with the same name exists, Register
@@ -201,6 +221,7 @@ func (r *Registry) Deactivate(names ...string) {
 	defer r.mu.Unlock()
 	for _, n := range names {
 		delete(r.visible, n)
+		delete(r.discovered, n)
 	}
 }
 
@@ -210,6 +231,7 @@ func (r *Registry) ResetVisibility() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.visible = make(map[string]struct{})
+	r.discovered = nil
 }
 
 // Get returns the tool and a found flag.
@@ -362,3 +384,34 @@ var ErrUnknownTool = fmt.Errorf("unknown tool")
 // ErrInvalidToolArgs marks a local JSON-Schema violation produced by the
 // model. It is returned in Result.Err (not as a Go-level execution error).
 var ErrInvalidToolArgs = fmt.Errorf("invalid tool arguments")
+
+// ActivateDiscovered remembers explicit discovery separately from automatic
+// per-turn promotions (for example Word tools). Restoration never registers
+// missing tools and cannot bypass a restricted registry.
+func (r *Registry) ActivateDiscovered(names ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, name := range names {
+		if _, ok := r.tools[name]; !ok {
+			continue
+		}
+		if r.discovered == nil {
+			r.discovered = make(map[string]struct{})
+		}
+		r.visible[name] = struct{}{}
+		r.discovered[name] = struct{}{}
+	}
+}
+
+// DiscoveredNames reports explicit discovery, excluding implicit activations.
+func (r *Registry) DiscoveredNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var names []string
+	for _, name := range r.order {
+		if _, ok := r.discovered[name]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}

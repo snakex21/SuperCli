@@ -1,5 +1,7 @@
 package llm
 
+import "strings"
+
 // Cheap, calibrated prompt-token estimator for compaction decisions.
 // This is THE message-slice estimator — the agent loop, the /context
 // report, resume and the light-route chat window all use it, so a
@@ -28,6 +30,11 @@ const (
 // compress to almost nothing in BPE vocabularies, so counting them
 // would overestimate indented code relative to prose.
 func nonWhitespaceLen(s string) int {
+	// Count uses the standard library byte scan without allocating.
+	// Keep the scalar path for short names where four calls cost more than a loop.
+	if len(s) >= 64 {
+		return len(s) - strings.Count(s, " ") - strings.Count(s, "\t") - strings.Count(s, "\n") - strings.Count(s, "\r")
+	}
 	n := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
@@ -45,15 +52,18 @@ func nonWhitespaceLen(s string) int {
 // was invisible to the compaction trigger.
 func EstimateMessageTokens(m Message) int {
 	b := nonWhitespaceLen(m.Content)
+	reasoning := 0
 	for _, p := range m.Parts {
 		if p.Type == PartTypeText {
 			b += nonWhitespaceLen(p.Text)
+		} else if p.Type == PartTypeReasoning {
+			reasoning += p.Reasoning.EstimateTokens()
 		}
 	}
 	for _, tc := range m.ToolCalls {
 		b += nonWhitespaceLen(tc.Name) + nonWhitespaceLen(tc.Arguments)
 	}
-	return b/estBytesPerToken + estPerMessageCost
+	return b/estBytesPerToken + estPerMessageCost + reasoning
 }
 
 // EstimateTokens sums EstimateMessageTokens over msgs.

@@ -74,6 +74,8 @@ type AskRequest struct {
 	// tool's goroutine is blocked reading from this channel;
 	// the TUI is the only writer.
 	Respond chan AskAnswer `json:"-"`
+	// Done closes when this request is answered, cancelled, or expires.
+	Done <-chan struct{} `json:"-"`
 }
 
 // AskAnswer is what the TUI sends back. Cancelled takes
@@ -175,31 +177,49 @@ func (a *AskUser) Execute(ctx context.Context, args json.RawMessage) (Result, er
 		timeout = 60 * time.Second
 	}
 
+	in := a.In
+	if current, ok := ctx.Value(askChannelKey{}).(chan<- AskRequest); ok {
+		in = current
+	}
+	if in == nil {
+		err := fmt.Errorf("ask_user: no interactive UI is connected")
+		return Result{Err: err}, err
+	}
 	answers := make([]string, 0, len(questions))
 	for i, question := range questions {
 		respond := make(chan AskAnswer, 1)
+		done := make(chan struct{})
 		req := AskRequest{
 			ID: newAskID(), Question: question.Question, Header: question.Header,
 			Options: question.Options, MultiSelect: question.MultiSelect,
-			AllowCustom: true, Respond: respond,
-		}
-		select {
-		case a.In <- req:
-		case <-ctx.Done():
-			return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
+			AllowCustom: true, Respond: respond, Done: done,
 		}
 		timer := time.NewTimer(timeout)
 		select {
+		case in <- req:
+		case <-ctx.Done():
+			timer.Stop()
+			close(done)
+			return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
+		case <-timer.C:
+			close(done)
+			err := fmt.Errorf("ask_user: UI did not receive question %d within %v", i+1, timeout)
+			return Result{Err: err}, err
+		}
+		select {
 		case ans := <-respond:
 			timer.Stop()
+			close(done)
 			if ans.Cancelled {
 				return Result{Text: fmt.Sprintf("question %d: user cancelled", i+1)}, nil
 			}
 			answers = append(answers, fmt.Sprintf("question %d (%s): %s", i+1, question.Question, formatAskAnswer(ans)))
 		case <-ctx.Done():
 			timer.Stop()
+			close(done)
 			return Result{Err: fmt.Errorf("ask_user: %w", ctx.Err())}, ctx.Err()
 		case <-timer.C:
+			close(done)
 			err := fmt.Errorf("ask_user: user did not answer question %d within %v", i+1, timeout)
 			return Result{Err: err}, err
 		}

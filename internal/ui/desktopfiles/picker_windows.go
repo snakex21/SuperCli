@@ -1,6 +1,6 @@
 //go:build windows
 
-package webgui
+package desktopfiles
 
 import (
 	"fmt"
@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"supercli/internal/system/uilang"
 )
 
@@ -27,12 +28,13 @@ const (
 )
 
 var (
-	comdlg32                     = syscall.NewLazyDLL("comdlg32.dll")
+	comdlg32                     = windows.NewLazySystemDLL("comdlg32.dll")
 	procGetOpenFileNameW         = comdlg32.NewProc("GetOpenFileNameW")
 	procCommDlgExtendedError     = comdlg32.NewProc("CommDlgExtendedError")
-	user32Picker                 = syscall.NewLazyDLL("user32.dll")
+	user32Picker                 = windows.NewLazySystemDLL("user32.dll")
 	procGetForegroundWindow      = user32Picker.NewProc("GetForegroundWindow")
 	procGetWindowThreadProcessID = user32Picker.NewProc("GetWindowThreadProcessId")
+	procGetConsoleWindow         = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow")
 )
 
 type openFileNameW struct {
@@ -61,7 +63,7 @@ type openFileNameW struct {
 	flagsEx         uint32
 }
 
-func pickDesktopFiles(initialDir, language string) ([]string, error) {
+func Pick(initialDir, language string) ([]string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -117,16 +119,20 @@ func pickDesktopFiles(initialDir, language string) ([]string, error) {
 	return parseOpenFileNameBuffer(fileBuffer), nil
 }
 
+func Available() bool { return true }
+
 func pickerOwnerWindow() uintptr {
 	hwnd, _, _ := procGetForegroundWindow.Call()
-	if hwnd == 0 {
-		return 0
+	if hwnd != 0 {
+		var pid uint32
+		procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+		if pid == uint32(os.Getpid()) {
+			return hwnd
+		}
 	}
-	var pid uint32
-	procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	if pid != uint32(os.Getpid()) {
-		return 0
-	}
+	// Classic conhost belongs to a different process. Own only this app's
+	// console, never an unrelated foreground window.
+	hwnd, _, _ = procGetConsoleWindow.Call()
 	return hwnd
 }
 

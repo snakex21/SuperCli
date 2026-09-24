@@ -27,7 +27,6 @@ func (l *Loop) runStep(
 	totalUsage *Usage,
 	reflectionProgress *adaptiveReflectionProgress,
 	repeatProg *repeatProgress,
-	economyProg *toolEconomyProgress,
 	stepLimit int,
 ) stepResult {
 	if err := ctx.Err(); err != nil {
@@ -69,7 +68,9 @@ func (l *Loop) runStep(
 	prepStart := time.Now()
 	l.maybePruneToolResults(ctx, out)
 	auxBefore := l.stepAuxWall
-	l.maybeAutoCompact(ctx, out, "")
+	if !l.maybeModelHandoff(ctx, out) {
+		l.maybeAutoCompact(ctx, out, "")
+	}
 
 	// Build tool definitions from visible tools. Non-coordinator routes
 	// get only the minimal chatRouteTools set (tool_search + recall) so
@@ -209,6 +210,16 @@ func (l *Loop) runStep(
 	// (at append time), not in-flight, keeps the cacheable prefix
 	// deterministic: the history bytes never change afterwards.
 	assistant := llm.Message{Role: llm.RoleAssistant}
+	for i, block := range l.nativeReasoning {
+		copy := *block
+		if usage != nil && usage.Reasoning > 0 {
+			copy.Tokens = usage.Reasoning / len(l.nativeReasoning)
+			if i == 0 {
+				copy.Tokens += usage.Reasoning % len(l.nativeReasoning)
+			}
+		}
+		assistant.Parts = append(assistant.Parts, llm.ContentPart{Type: llm.PartTypeReasoning, Reasoning: &copy})
+	}
 	if text != "" {
 		assistant.Parts = append(assistant.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: text})
 	}
@@ -218,12 +229,12 @@ func (l *Loop) runStep(
 		})
 	}
 	l.persist(ctx, assistant)
-	// Reasoning retention: keep the stripped chain of thought for the
-	// NEXT provider request instead of discarding it — the persisted
-	// copy (above) keeps the full text for the UI, l.Messages keeps the
-	// deterministic plain view, and l.lastThinking bridges the two.
+	// The full UI copy is already persisted. Only explicit legacy opt-in
+	// retains reasoning separately for the next request tail.
 	thinking, plain := captureThinkingFromMessage(assistant)
-	if l.keepThinking && thinking != "" {
+	if len(l.nativeReasoning) > 0 {
+		l.lastThinking = "" // never duplicate native state as a prompt instruction
+	} else if l.keepThinking && thinking != "" {
 		l.lastThinking = thinking
 	}
 	l.Messages = append(l.Messages, plain)
@@ -344,7 +355,25 @@ func (l *Loop) runStep(
 		l.statsEndStep(stepStart)
 		return stepAbort
 	}
+	// The entire batch now has results, including calls skipped after cancel.
+	// Stop before reflection, steering or another provider request.
+	if err := ctx.Err(); err != nil {
+		l.statsEndStep(stepStart)
+		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
+		return stepAbort
+	}
+	l.continueWithDiscoveredTools(toolCalls, toolOutcomes)
 	toolFailures := countFailures(toolOutcomes)
+	// User steering starts fresh progress accounting before any loop verdict.
+	interjections := l.drainInterjections(ctx)
+	if interjections > 0 {
+		if repeatProg != nil {
+			*repeatProg = repeatProgress{}
+		}
+		if reflectionProgress != nil {
+			*reflectionProgress = adaptiveReflectionProgress{}
+		}
+	}
 	warnInjected := false
 	if repeatProg != nil {
 		switch repeatProg.observe(toolCalls, toolOutcomes) {
@@ -354,10 +383,8 @@ func (l *Loop) runStep(
 			// A-B-A-B cycle. The fix travels with the error — the model is
 			// told what it is doing and keeps its tools.
 			warn := llm.Message{
-				Role: llm.RoleSystem,
-				Content: fmt.Sprintf("[loop] The same tool call with the same arguments has been repeated %d time(s) in a row. "+
-					"Repeating it again will produce the same result. Change approach: use a different tool or different "+
-					"arguments, act on what you already have, or tell the user what is blocking you.", repeatProg.repeatCount()),
+				Role:    llm.RoleSystem,
+				Content: repeatProg.warningText(),
 			}
 			l.Messages = append(l.Messages, warn)
 			l.persist(ctx, warn)
@@ -375,21 +402,6 @@ func (l *Loop) runStep(
 			return stepAbort
 		}
 	}
-	if economyProg != nil && economyProg.observe(toolCalls, toolOutcomes) {
-		warn := llm.Message{
-			Role: llm.RoleSystem,
-			Content: "[tool economy] You have used several provider rounds only to collect one or two read-only facts. " +
-				"Before the next call, identify every independent file/range/search you can already name and request them together. " +
-				"Use one read_many for multiple files/ranges, combine related search_code terms with regex alternation, and emit independent read-only tool calls in one response so SuperCli runs them concurrently. " +
-				"If the evidence is sufficient, stop exploring and act or answer now. Do not skip necessary verification.",
-		}
-		l.Messages = append(l.Messages, warn)
-		l.persist(ctx, warn)
-		out <- NoticeEvent{Text: "serial read-only rounds detected: batching guidance injected"}
-	}
-	// Tool results have all been appended in deterministic call order. This
-	// is the other safe drain point for mid-turn user messages.
-	interjections := l.drainInterjections(ctx)
 	if interjections == 0 {
 		if fallback, ok := standaloneDocxMutationFinalReply(toolCalls, toolOutcomes); ok {
 			l.finalReplyOnly = true
@@ -412,11 +424,11 @@ func (l *Loop) runStep(
 		reason = "fixed_interval"
 	}
 	if reason != "" {
-		if warnInjected && reason == "repeated_tool_batch" {
-			// The [loop] warning injected this step already told the model
-			// about the identical repetition; a second system message about
-			// the same event would be pure noise. Consume the signal so a
-			// NEW repetition episode can still trigger a reflection.
+		if reason == "repeated_tool_batch" && (warnInjected || (repeatProg != nil && repeatProg.unchanged.seen != nil)) {
+			// Known read/check outputs already have deterministic comparison:
+			// changed output is progress, unchanged output gets a factual loop
+			// hint. Neither needs an extra model call to inspect the same data.
+			// Failure and explicit fixed-interval reflection remain unchanged.
 			reflectionProgress.reset()
 		} else {
 			l.runReflection(ctx, step+1, reason, out)

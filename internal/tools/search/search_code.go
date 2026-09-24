@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	"supercli/internal/system/childproc"
@@ -19,15 +19,12 @@ import (
 
 // SearchCode is a simple code-search tool used by the explore
 // and review sub-agents. It uses ripgrep (`rg`) when available
-// and falls back to filepath.Glob + os.ReadFile on Windows or
-// when rg is missing. F4 will replace this with a sembledown
-// integration; for F3 the plain grep is enough to validate the
-// sub-agent wiring.
+// and a bounded Go text scanner otherwise.
 //
 // Schema:
 //
 //	{
-//	  "query":   string (regex, required),
+//	  "query":   string (regex; omit with include to find file paths),
 //	  "path":    string (default: cwd, search root),
 //	  "max":     int    (default: 50, max results)
 //	}
@@ -52,29 +49,28 @@ func (s *SearchCode) Spec() Tool {
 	return Tool{
 		Name:     "search_code",
 		ReadOnly: true,
-		Description: "Search the codebase for lines matching a regex (read-only). " +
-			"Returns file:line:content for each match, up to max results. " +
-			"Regex is Go RE2, case-sensitive like rg (prefix the pattern with (?i) for case-insensitive). " +
-			"Use to find locations, then read_lines/read_many and patch_file — " +
-			"do not keep running alternate searches without a concrete new question. " +
-			"Never invent edits from search hits alone.",
+		Description: "Search code (RE2; (?i) ignores case) with file/line references. " +
+			"With include and no query, list paths without reading files. Skips build/dependency dirs.",
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"query": {"type": "string", "description": "regex pattern (Go RE2)"},
+				"query": {"type": "string", "description": "content regex; omit to find files"},
 				"path":  {"type": "string", "description": "search root, default: cwd"},
-				"max":   {"type": "integer", "description": "max results, default 50"}
-			},
-			"required": ["query"]
+                "include": {"type": "string", "description": "glob relative to path: *.go, src/**/*.ts, *.{zig,go}; ** spans 0+ dirs"},
+				"max":   {"type": "integer", "description": "max results, default 50"},
+				"context": {"type": "integer", "minimum": 0, "maximum": 20, "description": "surrounding lines; default auto for up to 3 hits, 0 = locations"}
+			}
 		}`,
 		Fn: s.run,
 	}
 }
 
 type searchCodeArgs struct {
-	Query string `json:"query"`
-	Path  string `json:"path"`
-	Max   int    `json:"max"`
+	Query   string `json:"query"`
+	Path    string `json:"path"`
+	Max     int    `json:"max"`
+	Context *int   `json:"context"`
+	Include string `json:"include"`
 }
 
 func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, error) {
@@ -82,31 +78,63 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("search_code: bad args: %w", err)}, nil
 	}
-	if a.Query == "" {
-		return Result{Err: fmt.Errorf("search_code: query is empty")}, nil
+	if a.Query == "" && a.Include == "" {
+		return Result{Err: fmt.Errorf("search_code: provide query for content or include for file paths")}, nil
 	}
 	if a.Max <= 0 {
 		a.Max = 50
 	}
-	root := a.Path
-	if root == "" {
-		root = s.WorkDir
-	}
-	if !filepath.IsAbs(root) {
-		// Best-effort: join with WorkDir so relative
-		// paths from the model resolve correctly.
-		root = filepath.Join(s.WorkDir, root)
-	}
-	root, err := sandbox.ResolveSafe(s.WorkDir, root)
+	root, err := sandbox.ResolveSafe(s.WorkDir, a.Path)
 	if err != nil {
 		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
 	}
 
+	radius := 0
+	if a.Context != nil {
+		radius = *a.Context
+	}
+	if radius < 0 || radius > maxSearchContextRadius {
+		return Result{Err: fmt.Errorf("search_code: context must be between 0 and %d", maxSearchContextRadius)}, nil
+	}
+	include, err := compileSearchGlob(a.Include)
+	if err != nil {
+		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
+	}
+	if a.Query == "" {
+		if radius != 0 {
+			return Result{Err: fmt.Errorf("search_code: context requires a content query")}, nil
+		}
+		return s.findFiles(ctx, root, include, a.Max)
+	}
+	autoContext := a.Context == nil
+	if autoContext {
+		radius = 4
+	}
+	preview := &searchContext{radius: radius, include: include, query: a.Query}
+	var result Result
 	rg := s.rgPath()
 	if rg == "" {
-		return s.fallback(ctx, root, a.Query, a.Max)
+		result, err = s.fallback(ctx, root, a.Query, a.Max, preview)
+	} else {
+		result, err = s.ripgrep(ctx, rg, root, a.Query, a.Max, preview)
 	}
-	return s.ripgrep(ctx, rg, root, a.Query, a.Max)
+	if err == nil {
+		result = s.previewSearchHits(result, preview, a.Query)
+	}
+	if err == nil && result.Err == nil && radius > 0 {
+		// Sparse searches often locate a declaration without the body that
+		// answers the question. Offer a small neighborhood in the same call;
+		// broad/limited searches retain the compact location-only output. A long
+		// matching line already exceeds the auto byte cap, so skip a context
+		// reread whose result would be discarded.
+		if !autoContext || (len(preview.hits) <= 3 && preview.limit == 0 && len(preview.longLines) == 0) {
+			expanded := s.renderSearchContext(ctx, preview, result)
+			if !autoContext || len(expanded.Text) <= 2048 || expanded.Err != nil {
+				result = expanded
+			}
+		}
+	}
+	return result, err
 }
 
 // hasRG reports whether a ripgrep binary is reachable: on
@@ -146,16 +174,30 @@ func (s *SearchCode) rgPath() string {
 	return ""
 }
 
-func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max int) (Result, error) {
+func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max int, previews ...*searchContext) (Result, error) {
 	// rg's --max-count is PER FILE, while the tool contract is a
 	// GLOBAL cap. The pipe reader below enforces the real limit:
 	// it stops after `max` surviving matches and kills rg, so a
 	// query hitting thousands of files never buffers the full
 	// output in RAM (cmd.Output() used to load everything before
 	// trimming to `max` lines).
-	args := []string{"--no-heading", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
-	for _, dir := range []string{".git", "node_modules", "vendor", "target", "dist", "build", ".next", ".cache", "__pycache__", ".venv", "venv", ".supercli"} {
+	args := []string{"--no-heading", "--with-filename", "--color=never", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
+	if len(previews) > 0 && previews[0] != nil {
+		args = append(args, "--null")
+	}
+	if len(previews) > 0 && previews[0] != nil && previews[0].include != nil {
+		args = append(args, "--glob", previews[0].include.pattern)
+	}
+	dirs := make([]string, 0, len(skippedDirs))
+	for dir := range skippedDirs {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
 		args = append(args, "-g", "!"+dir+"/**")
+	}
+	if !pathContainsAgentWorktree(root) {
+		args = append(args, "--iglob", "!**/.claude/worktrees/**")
 	}
 	args = append(args, "--", query, root)
 
@@ -163,46 +205,71 @@ func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max in
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, rg, args...)
 	childproc.HideWindow(cmd)
+	if len(previews) > 0 && previews[0] != nil && previews[0].include != nil {
+		cmd.Dir = root
+		if info, e := os.Stat(root); e == nil && !info.IsDir() {
+			cmd.Dir = filepath.Dir(root)
+		}
+	}
 	stderr := core.NewHeadTailBuffer(2048, 1024)
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return s.rgFailed(ctx, root, query, max, err, stderr)
+		return s.rgFailed(ctx, root, query, max, err, stderr, previews...)
 	}
 	if err := cmd.Start(); err != nil {
-		return s.rgFailed(ctx, root, query, max, err, stderr)
+		return s.rgFailed(ctx, root, query, max, err, stderr, previews...)
 	}
 
-	lines := make([]string, 0, max)
+	lines := make([]string, 0, min(max, 50))
 	hitLimit := false
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if ripgrepPathIsSkipped(line) {
-			continue
+		if len(previews) > 0 && previews[0] != nil {
+			path, number, content, ok := parseContextSearchHit(line)
+			if !ok {
+				cancel()
+				_ = cmd.Wait()
+				return s.rgFailed(ctx, root, query, max, fmt.Errorf("invalid context search record"), stderr, previews...)
+			}
+			if searchPathIsSkipped(root, path) || !searchFileIncluded(previews, root, path) {
+				continue
+			}
+			captureSearchHit(previews, path, number, content)
+			lines = append(lines, fmt.Sprintf("%s:%d:%s", s.displayPath(path), number, content))
+		} else {
+			if ripgrepPathIsSkipped(root, line) {
+				continue
+			}
+			lines = append(lines, s.displaySearchLine(line))
 		}
-		lines = append(lines, line)
 		if len(lines) == max {
 			hitLimit = true
 			break
 		}
 	}
-	if hitLimit {
-		cancel() // global limit reached: kill rg, drop the rest
+	scanErr := scanner.Err()
+	if hitLimit || scanErr != nil {
+		cancel() // Stop before Wait: an unread pipe may otherwise block rg.
 	}
 	waitErr := cmd.Wait()
 	switch {
+	case ctx.Err() != nil:
+		return Result{Err: ctx.Err()}, nil
+	case scanErr != nil:
+		return s.rgFailed(ctx, root, query, max, scanErr, stderr, previews...)
 	case hitLimit:
 		// Kill-induced Wait errors are expected here.
-		return Result{Text: strings.Join(lines, "\n")}, nil
+		return searchLimitedResult(strings.Join(lines, "\n"), max, previews), nil
 	case waitErr != nil:
 		// rg exits 1 when there are no matches — a valid result,
 		// NOT a failure.
 		if ee, ok := waitErr.(*exec.ExitError); ok && ee.ExitCode() == 1 {
 			break
 		}
-		return s.rgFailed(ctx, root, query, max, waitErr, stderr)
+		return s.rgFailed(ctx, root, query, max, waitErr, stderr, previews...)
 	}
 	if len(lines) == 0 {
 		return Result{Text: "no matches"}, nil
@@ -214,8 +281,17 @@ func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max in
 // not "no matches"). The failure must never be presented as a
 // successful search result: try the Go fallback scanner, and if
 // that also fails return a structured search_failed error.
-func (s *SearchCode) rgFailed(ctx context.Context, root, query string, max int, rgErr error, stderr *core.HeadTailBuffer) (Result, error) {
-	res, err := s.fallback(ctx, root, query, max)
+func (s *SearchCode) rgFailed(ctx context.Context, root, query string, max int, rgErr error, stderr *core.HeadTailBuffer, previews ...*searchContext) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{Err: err}, nil
+	}
+	if len(previews) > 0 && previews[0] != nil {
+		previews[0].records = nil
+		previews[0].hits = nil // discard partial rg output before fallback
+		previews[0].longLines = nil
+		previews[0].limit = 0
+	}
+	res, err := s.fallback(ctx, root, query, max, previews...)
 	if err == nil && res.Err == nil {
 		return res, nil
 	}
@@ -229,7 +305,7 @@ func (s *SearchCode) rgFailed(ctx context.Context, root, query string, max int, 
 	return Result{Err: core.SelfContainedErr(fmt.Errorf("%s", msg))}, nil
 }
 
-func ripgrepPathIsSkipped(line string) bool {
+func ripgrepPathIsSkipped(root, line string) bool {
 	path := line
 	for i := 0; i < len(line); i++ {
 		if line[i] != ':' {
@@ -244,88 +320,25 @@ func ripgrepPathIsSkipped(line string) bool {
 			break
 		}
 	}
-	path = strings.ReplaceAll(path, "\\", "/")
-	for _, part := range strings.Split(path, "/") {
-		if skippedDirs[strings.ToLower(part)] {
-			return true
-		}
-	}
-	return false
+	return searchPathIsSkipped(root, path)
 }
 
-// fallback is the pure-Go search used when rg is unavailable.
-// It walks a list of likely code extensions and bails out at
-// max matches. The query is matched as a Go RE2 regex (the
-// schema promises regex, so results stay consistent with the
-// rg path — including on machines where rg IS installed);
-// when the query does not compile, it degrades to the old
-// case-insensitive literal substring match so plain-word or
-// malformed queries keep working (e.g. "call(" is a broken
-// regex but a meaningful search).
-func (s *SearchCode) fallback(ctx context.Context, root, query string, max int) (Result, error) {
-	re, reErr := regexp.Compile(query)
-	exts := map[string]bool{
-		".go": true, ".py": true, ".js": true, ".ts": true,
-		".tsx": true, ".jsx": true, ".rs": true, ".java": true,
-		".c": true, ".h": true, ".cpp": true, ".hpp": true,
-		".md": true, ".txt": true, ".toml": true, ".json": true,
-		".yaml": true, ".yml": true, ".sh": true,
+func searchPathIsSkipped(root, path string) bool {
+	// Ignore directories inside the requested root, not its ancestors.
+	// A workspace can itself live under a folder named .tmp or build.
+	previous := ""
+	if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		path = rel
+		previous = filepath.Base(root)
 	}
-	count := 0
-	var b strings.Builder
-	walk := func(path string) error {
-		if count >= max {
-			return errStopWalk
+	path = strings.ReplaceAll(path, "\\", "/")
+	for _, part := range strings.Split(path, "/") {
+		if skippedDirs[strings.ToLower(part)] || isAgentWorktreeDir(previous, part) {
+			return true
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if !exts[ext] {
-			return nil
-		}
-		// Scan the file line-by-line instead of materializing a
-		// []string of the whole file: constant memory, and the
-		// scan stops as soon as the global limit is reached.
-		f, err := openFile(path)
-		if err != nil {
-			return nil
-		}
-		defer f.Close()
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		lineNo := 0
-		for scanner.Scan() {
-			lineNo++
-			line := scanner.Text()
-			var hit bool
-			if reErr == nil {
-				hit = re.MatchString(line)
-			} else {
-				hit = matchLine(line, query)
-			}
-			if !hit {
-				continue
-			}
-			if b.Len() > 0 {
-				b.WriteString("\n")
-			}
-			fmt.Fprintf(&b, "%s:%d:%s", path, lineNo, line)
-			count++
-			if count >= max {
-				return errStopWalk
-			}
-		}
-		return nil
+		previous = part
 	}
-	if err := WalkFiles(root, walk); err != nil && err != errStopWalk {
-		// A failed scan is an error, not a search result.
-		return Result{Err: fmt.Errorf("search_failed walk: %w", err)}, nil
-	}
-	if b.Len() == 0 {
-		return Result{Text: "no matches"}, nil
-	}
-	return Result{Text: b.String()}, nil
+	return false
 }
 
 var errStopWalk = fmt.Errorf("stop")

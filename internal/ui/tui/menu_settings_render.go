@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"supercli/internal/system/config"
@@ -14,70 +13,40 @@ func (m Model) renderSettingsMenu() string {
 		cfg = &c
 	}
 	rows := m.localizedSettingsRows()
-	width := m.menuWidth()
-	sel := rows[minInt(m.menu.cursor, len(rows)-1)]
-	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(truncateVisible(m.tr("Settings · ", "Ustawienia · ")+m.localizedSettingSection(sel.key), width)) + "\n")
-	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("Enter changes · R restores defaults · (next session) after restart", "Enter zmienia · R przywraca domyślne · (następna sesja) po ponownym uruchomieniu"), width)) + "\n\n")
-	start, end := 0, len(rows)
-	if m.height > 0 {
-		start, end = menuWindow(len(rows), m.menu.cursor, m.height-7)
-	}
-	for i := start; i < end; i++ {
-		r := rows[i]
-		prefix := "  "
-		if i == m.menu.cursor {
-			prefix = "> "
-		}
-		if r.kind == setResetAll {
-			line := r.label
-			if i == m.menu.cursor {
-				line = m.palette.HeaderMode.Render(line)
-			} else {
-				line = m.palette.Bold.Render(line)
-			}
-			b.WriteString("\n" + prefix + line + "\n")
-			continue
-		}
-		value, source := m.settingValueSource(r, cfg)
+	page := menuPage{title: m.tr("Settings", "Ustawienia"), tabs: m.menuTabs(m.settingsCategories(), m.menu.category),
+		footer: m.tr("↑↓ choose · ←→ category · Enter change · R reset", "↑↓ wybierz · ←→ kategoria · Enter zmień · R reset")}
+	for i, row := range rows {
+		value, source := m.settingValueSource(row, cfg)
 		value, source = m.localizeSettingDisplay(value, source)
-		if (r.kind == setInt || r.kind == setText) && m.menu.editing && i == m.menu.cursor {
-			value = m.menu.editBuf + "_"
-			source = "editing"
+		if row.kind == setResetAll {
+			value = ""
 		}
-		marker := ""
-		if r.nextSession {
-			marker = m.tr(" (next session)", " (następna sesja)")
+		if m.menu.editing && i == m.menu.cursor {
+			value = m.menu.editBuf + "▏"
 		}
-		labelWidth := 28
-		valueWidth := 22
-		if width < 72 {
-			labelWidth = maxInt(12, width/3)
-			valueWidth = maxInt(10, width-labelWidth-18)
+		badge := value
+		if strings.HasPrefix(value, "default (") || strings.HasPrefix(value, "domyśln") {
+			badge = m.tr("default", "domyślne")
 		}
-		head := fmt.Sprintf("%-*s %-*s", labelWidth, truncateText(r.label, labelWidth), valueWidth, truncateText(value, valueWidth))
-		line := truncateText(prefix+head+" ["+source+"] · "+r.key+marker, width)
+		page.items = append(page.items, menuListItem{label: row.label, badge: badge})
 		if i == m.menu.cursor {
-			line = m.palette.HeaderMode.Render(line)
-		} else {
-			line = m.palette.Dim.Render(line)
+			page.detailTitle = row.label
+			page.detail = []string{row.desc}
+			if row.key != "" {
+				page.detail = append(page.detail, "", m.tr("Value: ", "Wartość: ")+value, m.tr("Source: ", "Źródło: ")+source, "", row.key)
+			}
+			if row.nextSession {
+				page.detail = append(page.detail, "", m.tr("Applies after restart (next session).", "Zadziała po restarcie (następna sesja)."))
+			}
 		}
-		b.WriteString(line + "\n")
 	}
-	detail := sel.desc
-	if sel.key != "" {
-		detail = sel.key + " · " + detail
-	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(detail, width)) + "\n")
-	footer := m.tr("↑↓ select · Enter change · R reset · Esc back", "↑↓ wybierz · Enter zmień · R resetuj · Esc wróć")
 	if m.menu.editing {
-		footer = m.tr("type digits · Enter save · Backspace delete · Esc cancel", "wpisz cyfry · Enter zapisz · Backspace usuń · Esc anuluj")
-		if sel.kind == setText {
-			footer = m.tr("type text · Enter save · Backspace delete · Esc cancel (empty = default)", "wpisz tekst · Enter zapisz · Backspace usuń · Esc anuluj (puste = domyślne)")
-		}
+		page.footer = m.tr("Type value · Enter save · Esc cancel", "Wpisz wartość · Enter zapisz · Esc anuluj")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(footer, width)))
-	return b.String()
+	if m.menu.formErr != "" {
+		page.detail = append([]string{m.menu.formErr, ""}, page.detail...)
+	}
+	return m.renderMenuPage(page)
 }
 
 func (m Model) localizeSettingDisplay(value, source string) (string, string) {
@@ -90,6 +59,12 @@ func (m Model) localizeSettingDisplay(value, source string) (string, string) {
 		return value, source
 	}
 	replacements := map[string]string{
+		"default (main model)":          "domyślny (model główny)",
+		"default (active model)":        "domyślny (aktywny model)",
+		"default (spec or 10)":          "domyślnie (profil lub 10)",
+		"default (no cap)":              "domyślnie (bez limitu)",
+		"default (scaled)":              "domyślnie (skalowane)",
+		"default (700/300 by tier)":     "domyślnie (700/300 wg profilu)",
 		"English":                       "Angielski",
 		"on":                            "włączone",
 		"off":                           "wyłączone",

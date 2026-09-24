@@ -237,7 +237,7 @@ func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName stri
 		if message == wmClose {
 			if shouldConfirmClose(dataDir, hasActiveWork) {
 				text, textErr := windows.UTF16PtrFromString(
-					fmt.Sprintf("Zamknąć %s?\n\nTrwające zadanie zostanie zatrzymane.", appName),
+					nativeCloseText(dataDir, appName),
 				)
 				title, titleErr := windows.UTF16PtrFromString(appName)
 				if textErr == nil && titleErr == nil {

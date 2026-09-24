@@ -11,7 +11,7 @@ async function renderFiles(dir) {
   filesCwd = got.dir;
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  var lbl = el("div", "g-label", t("panel.files"));
+  var lbl = i18nEl("div", "g-label", "panel.files");
   var up = el("button", "g-act", "↑ " + t("files.up"));
   up.addEventListener("click", function () {
     var parent = filesCwd.replace(/[\\/][^\\/]+$/, "");
@@ -58,7 +58,7 @@ async function openEditor(path) {
   ta.spellcheck = false;
   ta.value = got.content;
   g.appendChild(ta);
-  var save = el("button", "btn primary", t("files.save"));
+  var save = i18nEl("button", "btn primary", "files.save");
   save.style.marginTop = "8px";
   var status = el("span", "note");
   status.style.marginLeft = "10px";
@@ -79,7 +79,7 @@ sections.about = async function () {
   panelContent.innerHTML = "";
   var g = el("div", "group");
   g.appendChild(el("div", "g-label", "SuperCli"));
-  g.appendChild(el("div", "note", t("about.desc")));
+  g.appendChild(i18nEl("div", "note", "about.desc"));
   panelContent.appendChild(g);
 
   var gi = el("div", "group");
@@ -123,8 +123,8 @@ sections.about = async function () {
   runDoctor();
 
   var gk = el("div", "group");
-  gk.appendChild(el("div", "g-label", t("about.shortcuts")));
-  gk.appendChild(el("div", "note", t("about.rebindHint")));
+  gk.appendChild(i18nEl("div", "g-label", "about.shortcuts"));
+  gk.appendChild(i18nEl("div", "note", "about.rebindHint"));
   var fixed = [["Enter", t("kb.send")], ["Shift+Enter", t("kb.newline")], ["Esc", t("kb.close")]];
   fixed.forEach(function (pair) {
     var row = el("div", "toggle-row");

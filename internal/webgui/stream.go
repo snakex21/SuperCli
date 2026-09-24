@@ -27,10 +27,13 @@ type wireEvent struct {
 	Output string `json:"output,omitempty"`
 	Err    string `json:"err,omitempty"`
 	// Status carries the worker outcome on type "worker".
-	Status string `json:"status,omitempty"`
-	Kind   string `json:"kind,omitempty"`
-	CallID string `json:"call_id,omitempty"`
-	Tool   string `json:"tool,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Kind         string `json:"kind,omitempty"`
+	CallID       string `json:"call_id,omitempty"`
+	Tool         string `json:"tool,omitempty"`
+	ParentCallID string `json:"parent_call_id,omitempty"`
+	Run          int    `json:"run,omitempty"`
+	Prompt       string `json:"prompt,omitempty"`
 	// Usage fields (type "done").
 	TokIn    int `json:"tok_in,omitempty"`
 	TokOut   int `json:"tok_out,omitempty"`
@@ -94,7 +97,8 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "worker", ID: e.TaskID, Name: e.Agent, Status: e.Status, Output: e.Summary, Text: e.Text}, true
 	case agent.WorkerProgressEvent:
 		return wireEvent{Type: "worker_progress", ID: e.TaskID, Name: e.Agent, Kind: e.Kind,
-			CallID: e.CallID, Tool: e.Tool, Args: e.Args, Output: e.Output, Err: e.Err}, true
+			CallID: e.CallID, Tool: e.Tool, Args: e.Args, Output: e.Output, Err: e.Err,
+			ParentCallID: e.ParentCallID, Run: e.Run, Prompt: e.Prompt, Status: e.Status}, true
 	case agent.DraftUsedEvent:
 		return wireEvent{Type: "notice", Text: fmt.Sprintf(
 			"draft-verify: %s · draft %s → verdict %s · saved ~%d tok",
@@ -159,6 +163,7 @@ const (
 // pending text and is then emitted immediately, preserving event order.
 type messageCoalescer struct {
 	emit        func(wireEvent)
+	visibleType string // first chunk after each semantic/channel boundary is immediate
 	pendingType string
 	pending     strings.Builder
 }
@@ -168,6 +173,15 @@ func (c *messageCoalescer) Pending() bool { return c.pending.Len() > 0 }
 // Push returns true when a new timed batch was started.
 func (c *messageCoalescer) Push(ev wireEvent) (started bool) {
 	if ev.Type == "message" || ev.Type == "reasoning" {
+		if ev.Text == "" {
+			return false
+		}
+		if c.visibleType != ev.Type {
+			c.Flush()
+			c.visibleType = ev.Type
+			c.emit(ev)
+			return false
+		}
 		if c.Pending() && c.pendingType != ev.Type {
 			c.Flush()
 		}
@@ -183,6 +197,7 @@ func (c *messageCoalescer) Push(ev wireEvent) (started bool) {
 		return started && c.Pending()
 	}
 	c.Flush()
+	c.visibleType = ""
 	c.emit(ev)
 	return false
 }
@@ -197,8 +212,6 @@ func (c *messageCoalescer) Flush() {
 	c.pendingType = ""
 	c.emit(wireEvent{Type: typ, Text: text})
 }
-
-
 
 // runStream runs one prompt on a fresh loop and forwards every
 // translated event to emit. It blocks until the loop's event channel

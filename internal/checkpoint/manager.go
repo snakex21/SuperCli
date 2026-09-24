@@ -112,6 +112,18 @@ func NewController(manager *Manager, sessionID string) *Controller {
 	return &Controller{manager: manager, sessionID: sessionID}
 }
 
+func (c *Controller) SetSession(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sessionID = id
+}
+
+func (c *Controller) currentSession() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessionID
+}
+
 func (c *Controller) Start(prompt string) {
 	c.mu.Lock()
 	c.turns = append(c.turns, c.manager.NewTurn(c.sessionID, prompt))
@@ -154,14 +166,14 @@ func (c *Controller) Complete(ctx context.Context) (*Record, error) {
 	return turn.Complete(ctx)
 }
 func (c *Controller) Undo(ctx context.Context) (Result, error) {
-	r := c.manager.Latest(c.sessionID)
+	r := c.manager.Latest(c.currentSession())
 	if r == nil {
 		return Result{}, os.ErrNotExist
 	}
 	return c.manager.Undo(ctx, r.ID)
 }
 func (c *Controller) Redo(ctx context.Context) (Result, error) {
-	r := c.manager.Latest(c.sessionID)
+	r := c.manager.Latest(c.currentSession())
 	if r == nil {
 		return Result{}, os.ErrNotExist
 	}
@@ -172,7 +184,7 @@ func (c *Controller) Redo(ctx context.Context) (Result, error) {
 // the workspace. UI layers use it to show the exact file scope before asking
 // for confirmation.
 func (c *Controller) Preview(redo bool) (*Record, error) {
-	r := c.manager.Latest(c.sessionID)
+	r := c.manager.Latest(c.currentSession())
 	if r == nil {
 		return nil, os.ErrNotExist
 	}

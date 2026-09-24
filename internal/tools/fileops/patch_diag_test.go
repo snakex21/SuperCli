@@ -26,7 +26,7 @@ func writeTemp(t *testing.T, name, content string) string {
 }
 
 // Case 1 — a 7-change patch where change 6 misses. The model must learn that
-// changes 0-5 were fine so it can resend only the one that failed.
+// changes 0-5 matched in memory, but the complete corrected batch must be retried.
 func TestPatchFile_ReportsWhichChangesMatched(t *testing.T) {
 	var sb strings.Builder
 	for i := 0; i < 7; i++ {
@@ -49,10 +49,10 @@ func TestPatchFile_ReportsWhichChangesMatched(t *testing.T) {
 		t.Fatal("expected failure")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "changes 0-5 matched, change 6 did not") {
+	if !strings.Contains(msg, "changes 0-5 matched only in memory") {
 		t.Fatalf("message does not say which changes matched: %s", msg)
 	}
-	if !strings.Contains(msg, "resend change 6 alone") {
+	if !strings.Contains(msg, "fix change 6 and resend all 7 changes") {
 		t.Fatalf("message does not tell the model what to resend: %s", msg)
 	}
 	// Atomicity is unchanged: nothing was written.
@@ -369,7 +369,7 @@ func TestPatchFile_PartialMatchNeverBlamesThePath(t *testing.T) {
 		t.Fatal("expected failure")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "changes 0-5 matched, change 6 did not") {
+	if !strings.Contains(msg, "changes 0-5 matched only in memory") {
 		t.Fatalf("lost the per-change report: %s", msg)
 	}
 	if strings.Contains(msg, "none of the") || strings.Contains(msg, "the path is probably wrong") {

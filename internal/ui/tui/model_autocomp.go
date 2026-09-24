@@ -18,7 +18,7 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		// Close popup, clear input back to just the trigger or empty.
 		m.autocomp = autocomplete{}
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 		return m, nil
 
 	case "up", "k":
@@ -37,12 +37,12 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Enter in autocomplete: fill AND execute immediately.
 		if len(filtered) == 0 {
 			m.autocomp = autocomplete{}
-			m.viewport.Height = m.viewportHeight()
+			m.resizeViewport()
 			return m, nil
 		}
 		it := filtered[minInt(m.autocomp.cursor, len(filtered)-1)]
 		m.autocomp = autocomplete{}
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 		m.input.SetValue(it.Value)
 		m.input.CursorEnd()
 		// Dispatch the command right away.
@@ -56,12 +56,12 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Tab in autocomplete: fill but let user keep typing (add args).
 		if len(filtered) == 0 {
 			m.autocomp = autocomplete{}
-			m.viewport.Height = m.viewportHeight()
+			m.resizeViewport()
 			return m, nil
 		}
 		it := filtered[minInt(m.autocomp.cursor, len(filtered)-1)]
 		m.autocomp = autocomplete{}
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 		m.input.SetValue(it.Value)
 		m.input.CursorEnd()
 		return m, nil
@@ -89,7 +89,7 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	kind, query := splitAutocompleteTrigger(m.input.Value())
 	if kind == autocompNone {
 		m.autocomp = autocomplete{}
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 		return m, cmd
 	}
 
@@ -102,7 +102,7 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(filterItems(m.autocomp.items, m.autocomp.query)) == 0 {
 		m.autocomp = autocomplete{}
 	}
-	m.viewport.Height = m.viewportHeight()
+	m.resizeViewport()
 
 	return m, cmd
 }
@@ -111,7 +111,7 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // the autocomplete popup accordingly. Called after every textinput update.
 func (m *Model) updateAutocompleteState() {
 	defer func() {
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 	}()
 	text := m.input.Value()
 	kind, query := splitAutocompleteTrigger(text)

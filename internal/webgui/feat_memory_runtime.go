@@ -134,7 +134,9 @@ func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string) {
 	if err != nil {
 		return
 	}
-	messages, err := sessions.ReadMessages(ctx, sessionID)
+	messages, err := sessions.ReadDialogueExcerpt(ctx, sessionID, 8, func(message session.Encoded) bool {
+		return webCapsuleText(message) != ""
+	})
 	if err != nil || len(messages) == 0 {
 		return
 	}
@@ -165,6 +167,19 @@ func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string) {
 	}
 }
 
+// webCapsuleText accepts the same text and parts representations as the archive.
+// The excerpt reader uses it to skip unusable rows before choosing its tail.
+func webCapsuleText(message session.Encoded) string {
+	if message.Role != "user" && message.Role != "assistant" {
+		return ""
+	}
+	decoded, err := message.ToMessage()
+	if err != nil {
+		return ""
+	}
+	return compactMemoryText(memory.StripReasoning(decoded.TextOnly().Content), 900)
+}
+
 func buildWebSessionCapsule(sessionID string, messages []session.Encoded) string {
 	type line struct {
 		role string
@@ -175,16 +190,7 @@ func buildWebSessionCapsule(sessionID string, messages []session.Encoded) string
 		if message.Role != "user" && message.Role != "assistant" {
 			continue
 		}
-		// Assistant replies produced by the live agent are stored losslessly in
-		// PartsJSON (so text and image parts can coexist); older/manual rows often
-		// use Content. Decode both representations before building the capsule.
-		// Reading only Content made normal WebGUI conversations look like a
-		// one-message session and silently skipped cross-session memory.
-		decoded, err := message.ToMessage()
-		if err != nil {
-			continue
-		}
-		text := compactMemoryText(memory.StripReasoning(decoded.TextOnly().Content), 900)
+		text := webCapsuleText(message)
 		if text == "" {
 			continue
 		}

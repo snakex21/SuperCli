@@ -67,6 +67,9 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			closeReasoning()
 			return transcript.String(), toolCalls, usage, err
 		}
+		if d.NativeReasoning != nil {
+			l.nativeReasoning = append(l.nativeReasoning, d.NativeReasoning)
+		}
 		if d.Err != nil {
 			closeReasoning()
 			return transcript.String(), toolCalls, usage, d.Err
@@ -98,45 +101,36 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		if d.Content != "" {
 			sc.append(d.Content)
 
-			// XML tool call fallback: detect <tool_call> blocks
-			// in the accumulated text and convert to real tool calls.
-			// Gated by the incremental scanner so the O(buffer) pass
-			// runs only when a complete block is actually present.
-			if sc.xmlReady() {
-				tcs, remaining := extractXMLToolCalls(sc.buf.String())
-				if len(tcs) > 0 {
-					// Only emit the not-yet-streamed portion before the block.
-					if err := emitTo(len(remaining)); err != nil {
-						closeReasoning()
-						return transcript.String(), toolCalls, usage, err
+			// Drain every complete block, including multiple calls delivered in
+			// one delta. Retain the suffix: it may contain another complete call,
+			// a partial marker, or prose. Previously reset(before) dropped it.
+			for sc.xmlReady() || sc.sentReady() {
+				var calls []llm.ToolCall
+				var before, closeTag string
+				if sc.xmlReady() && (!sc.sentReady() || sc.xmlOpen < sc.sentOpen) {
+					calls, before = extractXMLToolCalls(sc.buf.String())
+					closeTag = "</tool_call>"
+					if len(calls) == 0 {
+						sc.xmlFailed = true
+						continue
 					}
-					toolCalls = append(toolCalls, tcs...)
-					// Reset text to just the remaining portion.
-					sc.reset(remaining)
-					sc.emitted = len(remaining)
-					continue
-				}
-				// The first complete block is fixed once seen and the
-				// parse is deterministic — never retry it.
-				sc.xmlFailed = true
-			}
-
-			// Sentinel tool call (thin protocol B3): detect «...»
-			// blocks. Same streaming contract as the XML fallback —
-			// checked after XML so the historical path is untouched.
-			if sc.sentReady() {
-				stcs, sbefore := extractSentinelToolCalls(sc.buf.String())
-				if len(stcs) > 0 {
-					if err := emitTo(len(sbefore)); err != nil {
-						closeReasoning()
-						return transcript.String(), toolCalls, usage, err
+				} else {
+					calls, before = extractSentinelToolCalls(sc.buf.String())
+					closeTag = sentinelClose
+					if len(calls) == 0 {
+						sc.sentFailed = true
+						continue
 					}
-					toolCalls = append(toolCalls, stcs...)
-					sc.reset(sbefore)
-					sc.emitted = len(sbefore)
-					continue
 				}
-				sc.sentFailed = true
+				if err := emitTo(len(before)); err != nil {
+					closeReasoning()
+					return transcript.String(), toolCalls, usage, err
+				}
+				toolCalls = append(toolCalls, calls...)
+				text := sc.buf.String()
+				end := len(before) + strings.Index(text[len(before):], closeTag) + len(closeTag)
+				// Leading prose was emitted above; retain only the unconsumed tail.
+				sc.reset(text[end:])
 			}
 
 			if err := emitTo(sc.safeEmitEnd()); err != nil {

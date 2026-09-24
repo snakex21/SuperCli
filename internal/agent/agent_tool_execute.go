@@ -107,25 +107,22 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		budget = newTokenBudget(a.MaxTokens)
 	}
 
-	// A worker inherits the parent's KV-cache-relevant loop settings
-	// (thin tool protocol, stable toolset) and its sandbox root so it
-	// behaves like the main session: same small-model reliability and
-	// the same append-only, cache-friendly prefix. The worker builds
-	// its own prefix from scratch (cold prefill is the accepted cost),
-	// but per-turn it stays as cache-friendly as the coordinator.
-	thin, stable, hoist, baseDir := a.childLoopSettings()
-
-	// Model-per-task: pick the worker backend. Defaults to the
-	// coordinator's provider; a configured WorkerProvider switches the
-	// child loop to a different model/host (everything else — tools,
-	// thin protocol, stable toolset, sandbox, budgets — is inherited
-	// identically).
+	// Resolve the backend before choosing its tool protocol and context scope.
+	// Mixed local/cloud setups must not inherit the coordinator's model profile.
 	prov := a.workerProvider(ctx)
-	contextProvider := a.WorkerContextProvider
+	thin, stable, hoist, baseDir := a.childLoopSettings(prov)
+	if thin {
+		ensureWorkerDiscovery(childReg)
+	}
+	contextProvider := ""
+	if a.WorkerProvider != nil && prov == a.WorkerProvider {
+		contextProvider = a.WorkerContextProvider
+	}
 	prefillProfiles := a.PrefillProfiles
 	var contextWindowFor func(string) ContextWindowResolution
 	var scopedContextWindowFor func(string, string) ContextWindowResolution
 	var summarizer Summarizer
+	var toolOutputs tools.OutputPersistence
 	var learnLimit func(string, int)
 	pruneProtectTokens := 0
 	if a.ParentLoop != nil {
@@ -138,6 +135,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		contextWindowFor = a.ParentLoop.contextWindowFor
 		scopedContextWindowFor = a.ParentLoop.scopedWindowFor
 		summarizer = a.ParentLoop.summarizer
+		toolOutputs = a.ParentLoop.toolOutputs
 		learnLimit = a.ParentLoop.learnLimit
 		pruneProtectTokens = a.ParentLoop.pruneProtect
 	}
@@ -146,6 +144,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		Provider:               prov,
 		Caps:                   a.Caps,
 		Registry:               childReg,
+		ToolOutputs:            toolOutputs,
 		System:                 system,
 		MaxSteps:               maxSteps,
 		InitialMessages:        seed,
@@ -204,7 +203,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	text, err := runWorkerLoop(childCtx, w, workerPrompt)
 	if err != nil {
 		a.emitWorkerNotification(w, text)
-		return tools.Result{Text: renderWorkerNotification(w, text), Err: err}, nil
+		return workerResult(w, text, err), nil
 	}
 	// Draft-verify ladder: when enabled, the completed worker run above was
 	// the DRAFT. The objective sieve + big-model verdict now decide its
@@ -216,7 +215,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		text = a.runDraftVerify(childCtx, w, ar, workerPrompt, text, maxSteps)
 	}
 	a.emitWorkerNotification(w, text)
-	return tools.Result{Text: renderWorkerNotification(w, text)}, nil
+	return workerResult(w, text, nil), nil
 }
 
 // draftVerifyEnabled reports whether the ladder is switched on. Guards every

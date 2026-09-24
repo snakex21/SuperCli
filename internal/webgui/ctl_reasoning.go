@@ -8,10 +8,30 @@ import (
 	"supercli/internal/llm"
 )
 
+type reasoningSession struct {
+	ID              string `json:"id"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	RuntimeKnown    bool   `json:"runtime_known"`
+}
+
+type reasoningResponse struct {
+	reasoningView
+	Session *reasoningSession `json:"session,omitempty"`
+	Warning string            `json:"warning,omitempty"`
+}
+
 func (s *Server) handleReasoning(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var response reasoningResponse
 	if r.Method == http.MethodPost {
 		var req struct {
-			Level string `json:"level"`
+			Level     string `json:"level"`
+			SessionID string `json:"session_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -21,32 +41,43 @@ func (s *Server) handleReasoning(w http.ResponseWriter, r *http.Request) {
 		if level == "off" || level == "default" {
 			level = ""
 		}
-		if err := llm.SetReasoningEffort(level); err != nil {
+		if err := llm.ValidateReasoningEffort(level); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// Persist to config.toml so it survives restart
-		m := s.eng.providerManager()
-		if err := m.SaveReasoningEffort(level); err != nil {
-			// Non-fatal — the in-memory value is already set
-			_ = err
+		if id := strings.TrimSpace(req.SessionID); id != "" {
+			store, err := s.eng.sessionStore()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			meta, err := store.Get(id)
+			if err != nil || !sameSessionWorkspace(meta.Cwd, s.eng.Home()) {
+				http.Error(w, "session not found in active project", http.StatusNotFound)
+				return
+			}
+			provider, model, _ := s.eng.RuntimeSelection()
+			if err := store.SetRuntime(id, provider, model, level); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			response.Session = &reasoningSession{ID: id, Provider: provider, Model: model, ReasoningEffort: level, RuntimeKnown: true}
+		}
+		_ = llm.SetReasoningEffort(level) // validated before changing session or runtime
+		if err := s.eng.providerManager().SaveReasoningEffort(level); err != nil {
+			// The selection is already applied; report persistence failure
+			// without presenting a failed request that did nothing.
+			response.Warning = "Reasoning applied, but config.toml could not be saved: " + err.Error()
 		}
 	}
-	writeJSON(w, s.reasoningView(s.eng.ModelName()))
+	s.eng.ensureLocalReasoningMetadata(r.Context())
+	response.reasoningView = s.reasoningView(s.eng.ModelName())
+	writeJSON(w, response)
 }
 
 func (s *Server) reasoningView(model string) reasoningView {
-	// Reasoning is an always-present user preference. Providers negotiate the
-	// actual wire parameter and learn rejection per endpoint/model, so model
-	// discovery (and its optional scan) must never gate this control.
-	capability := true
-	key := s.eng.ReasoningSupportKey()
-	configured, effective, adjusted := llm.ReasoningEffortAdjustmentWithCapability(key, capability)
-	return reasoningView{
-		Configured: configured,
-		Effective:  effective,
-		Adjusted:   adjusted,
-		Supported:  true,
-		Levels:     llm.ReasoningEffortLevels,
-	}
+	s.eng.mu.RLock()
+	provider := s.eng.prov
+	s.eng.mu.RUnlock()
+	return llm.ProviderReasoningState(provider)
 }

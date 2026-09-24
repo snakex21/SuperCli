@@ -3,7 +3,10 @@
 /* ═══ sessions ═══ */
 
 var sessionByID = {};
+var sessionRuntimeRevision = 0;
 var sessionResumeSeq = 0;
+var sessionListSeq = 0;
+var sessionListAbortCtl = null;
 
 function setSessionOpening(id) {
   $$("#session-list .side-item").forEach(function (item) {
@@ -42,17 +45,28 @@ function sessionDateGroup(iso) {
 
 async function loadSessions() {
   var list = $("#session-list");
+  var runtimeRevision = sessionRuntimeRevision;
+  var epoch = projectEpoch;
+  var seq = ++sessionListSeq;
+  if (sessionListAbortCtl) sessionListAbortCtl.abort();
+  var controller = new AbortController();
+  sessionListAbortCtl = controller;
+  function stale() {
+    return seq !== sessionListSeq || epoch !== projectEpoch || runtimeRevision !== sessionRuntimeRevision;
+  }
   try {
-    var rows = await j("/api/sessions?limit=40");
+    var rows = await j("/api/sessions?limit=40", { signal: controller.signal });
+    if (stale()) return;
 	sessionByID = {}; (rows || []).forEach(function(s){sessionByID[s.id]=s;});
     list.innerHTML = "";
     if (!rows || !rows.length) {
-      list.appendChild(el("div", "side-empty", t("side.noSessions")));
+      list.appendChild(i18nEl("div", "side-empty", "side.noSessions"));
       return;
     }
     var currentDateGroup = "";
     rows.forEach(function (s) {
-      var dateGroup = sessionDateGroup(s.started_at);
+      var activityAt = s.updated_at || s.started_at;
+      var dateGroup = sessionDateGroup(activityAt);
       if (dateGroup.key !== currentDateGroup) {
         currentDateGroup = dateGroup.key;
         if (dateGroup.label) list.appendChild(el("div", "session-date", dateGroup.label));
@@ -84,7 +98,7 @@ async function loadSessions() {
       b.addEventListener("pointerenter", syncTitleMarquee);
       b.addEventListener("focusin", syncTitleMarquee);
 
-      var sessionMeta = fmtWhen(s.started_at) + " · " + s.message_count;
+      var sessionMeta = fmtWhen(activityAt) + " · " + s.message_count;
       if (s.model) sessionMeta += " · " + compactSessionModel(s.model);
       var meta = el("span", "s", sessionMeta);
       meta.title = s.model || "";
@@ -123,8 +137,11 @@ async function loadSessions() {
       list.appendChild(b);
     });
   } catch (e) {
+    if (e.name === "AbortError" || stale()) return;
     list.innerHTML = "";
-    list.appendChild(el("div", "side-empty", t("common.error")));
+    list.appendChild(i18nEl("div", "side-empty", "common.error"));
+  } finally {
+    if (sessionListAbortCtl === controller) sessionListAbortCtl = null;
   }
 }
 
@@ -274,7 +291,7 @@ function buildHistoryFragment(messages) {
         row.appendChild(sum);
         var body = el("div", "tbody");
         if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
-          body.appendChild(el("div", "lbl", t("tool.input")));
+          body.appendChild(i18nEl("div", "lbl", "tool.input"));
           body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
         }
         appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
@@ -293,10 +310,11 @@ function renderLoadedTranscript(preserveScroll) {
   var oldTop = stage.scrollTop;
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
+  resetWorkerOverview();
   lastTurn = null; workersSeen = [];
   hideWelcome();
   if (transcriptHasMore) {
-    var older = el("button", "history-older", t("session.older"));
+    var older = i18nEl("button", "history-older", "session.older");
     older.type = "button";
     older.addEventListener("click", loadOlderTranscript);
     stream.appendChild(older);
@@ -349,6 +367,7 @@ async function resumeSession(id, session) {
   var resumeSeq = ++sessionResumeSeq;
   var epoch = projectEpoch;
   var releaseRuntimeReady;
+  var previousRuntimeReady = sessionRuntimeReady;
   var runtimeQueued = false;
   sessionRuntimeReady = new Promise(function (resolve) { releaseRuntimeReady = resolve; });
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
@@ -368,12 +387,13 @@ async function resumeSession(id, session) {
     transcriptBeforeSeq = page.before_seq || 0;
     stream.innerHTML = "";
     toolRows = {}; workerRows = {}; openToolOrder = [];
+  resetWorkerOverview();
     lastTurn = null; workersSeen = [];
     hideWelcome();
     var historyCalls = {};
 	var historyFragment = document.createDocumentFragment();
 	if (transcriptHasMore) {
-	  var older = el("button", "history-older", t("session.older"));
+	  var older = i18nEl("button", "history-older", "session.older");
 	  older.type = "button";
 	  older.addEventListener("click", loadOlderTranscript);
 	  historyFragment.appendChild(older);
@@ -427,7 +447,7 @@ async function resumeSession(id, session) {
         row.appendChild(sum);
         var body = el("div", "tbody");
         if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
-          body.appendChild(el("div", "lbl", t("tool.input")));
+          body.appendChild(i18nEl("div", "lbl", "tool.input"));
           body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
         }
         appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
@@ -445,7 +465,10 @@ async function resumeSession(id, session) {
     // is already usable. Errors retain the current model and are surfaced by
     // restoreSessionRuntime without rolling back the opened transcript.
     runtimeQueued = true;
-    restoreSessionRuntime(session).then(releaseRuntimeReady, releaseRuntimeReady);
+    Promise.resolve(previousRuntimeReady).then(function () {
+      if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return;
+      return restoreSessionRuntime(sessionByID[id] || session);
+    }).then(releaseRuntimeReady, releaseRuntimeReady);
     return true;
   } catch (e) {
     if (e.name !== "AbortError") toast(t("common.error") + ": " + e.message);

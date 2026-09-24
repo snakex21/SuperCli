@@ -32,6 +32,7 @@ import (
 // (internal/llm imports no other internal package, so depending on it
 // from here cannot introduce an import cycle — see sampling_llm.go.)
 func ApplyLLMGlobals(t TomlConfig, envTemperature *float64) {
+	llm.SetDiscardPreviousReasoning(t.DiscardPreviousReasoning != nil && *t.DiscardPreviousReasoning)
 	// cache_prompt: nil = per-host auto-detection (local backends get
 	// the llama.cpp KV-cache hint, cloud endpoints never do). A
 	// non-nil value forces the hint in either direction.

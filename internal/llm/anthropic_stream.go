@@ -16,7 +16,9 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			return false
 		}
 	}
-	toolAcc := make(map[int]*ToolCall)
+	toolAcc := make(map[int]*streamedToolCall)
+	reasoningAcc := make(map[int]*anthropicReasoningAccumulator)
+	completed := make(map[int]json.RawMessage)
 	finishReason := ""
 	var lastUsage *Usage
 	sawResponse := false
@@ -45,36 +47,63 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			}
 		case "content_block_start":
 			sawResponse = true
+			{
+				var raw struct {
+					Block json.RawMessage `json:"content_block"`
+				}
+				if json.Unmarshal([]byte(data), &raw) == nil {
+					reasoningAcc[ev.Index] = newAnthropicReasoning(raw.Block)
+				}
+			}
 			if ev.ContentBlock.Type == "tool_use" {
 				args := "{}"
 				if len(ev.ContentBlock.Input) > 0 {
 					args = string(ev.ContentBlock.Input)
 				}
-				toolAcc[ev.Index] = &ToolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name, Arguments: args}
+				call := &streamedToolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}
+				call.arguments.WriteString(args)
+				toolAcc[ev.Index] = call
 			}
 		case "content_block_delta":
 			sawResponse = true
 			switch ev.Delta.Type {
 			case "text_delta":
+				if acc := reasoningAcc[ev.Index]; acc != nil {
+					acc.text.WriteString(ev.Delta.Text)
+				}
 				if ev.Delta.Text != "" && !emit(Delta{Content: ev.Delta.Text}) {
 					return ctx.Err()
 				}
 			case "thinking_delta":
+				if acc := reasoningAcc[ev.Index]; acc != nil {
+					acc.thinking.WriteString(ev.Delta.Thinking)
+				}
 				if ev.Delta.Thinking != "" && !emit(Delta{Reasoning: ev.Delta.Thinking}) {
 					return ctx.Err()
 				}
+			case "signature_delta":
+				if acc := reasoningAcc[ev.Index]; acc != nil {
+					acc.signature.WriteString(ev.Delta.Signature)
+				}
 			case "input_json_delta":
 				if tc := toolAcc[ev.Index]; tc != nil {
-					if tc.Arguments == "{}" {
-						tc.Arguments = ""
+					if tc.arguments.String() == "{}" {
+						tc.arguments.Reset()
 					}
-					tc.Arguments += ev.Delta.PartialJSON
+					tc.arguments.WriteString(ev.Delta.PartialJSON)
 				}
 			}
 		case "content_block_stop":
 			sawResponse = true
+			if acc := reasoningAcc[ev.Index]; acc != nil {
+				if tc := toolAcc[ev.Index]; tc != nil {
+					acc.fields["input"] = json.RawMessage(tc.arguments.String())
+				}
+				completed[ev.Index] = acc.block(p.cfg.Model, p.cfg.BaseURL).Data
+				delete(reasoningAcc, ev.Index)
+			}
 			if tc := toolAcc[ev.Index]; tc != nil {
-				tcCopy := *tc
+				tcCopy := tc.snapshot()
 				if !emit(Delta{ToolCall: &tcCopy}) {
 					return ctx.Err()
 				}
@@ -95,6 +124,11 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 		case "message_stop":
 			sawResponse = true
 			sawStop = true
+			if block := finishAnthropicReasoning(ctx, completed, p.cfg.Model, p.cfg.BaseURL); block != nil {
+				if !emit(Delta{NativeReasoning: block}) {
+					return ctx.Err()
+				}
+			}
 			if finishReason == "" {
 				finishReason = "stop"
 			}
@@ -148,6 +182,7 @@ type anthropicEvent struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
 		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`

@@ -54,7 +54,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 
 	// Same keys, same order as the TUI settingsRows() (minus reset-all).
 	wantOrder := []string{
-		"orchestrator", "allow_all", "thinking", "navigator", "stable_toolset",
+		"orchestrator", "allow_all", "discard_previous_reasoning", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin_parallel", "task_parallel",
 		"memory_briefing_tokens", "task_max_steps", "task_max_tokens",
 		"task_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",

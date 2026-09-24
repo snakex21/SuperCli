@@ -50,9 +50,13 @@ func CountTokensEstimate(text, model string) (int, bool) {
 	if text == "" {
 		return 0, true
 	}
-	tk, err := getGPTTokenizer()
-	if err == nil && isGPTFamily(model) {
-		return len(tk.Encode(text, nil, nil)), false // exact count
+	// Approximate local-model counts do not use this tokenizer. Avoid loading
+	// its vocabulary (and potentially fetching it) merely to discard it.
+	if isGPTFamily(model) {
+		tk, err := getGPTTokenizer()
+		if err == nil {
+			return len(tk.Encode(text, nil, nil)), false // exact count
+		}
 	}
 	// Fallback estimation.
 	ratio := 4

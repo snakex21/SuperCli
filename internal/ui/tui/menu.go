@@ -35,6 +35,10 @@ const (
 	menuTranscript
 	menuQueue
 	menuData
+	menuGoalForm
+	menuContextLimit
+	menuUsage
+	menuAttachments
 )
 
 // CheckpointPreview is intentionally presentation-sized metadata. It contains
@@ -47,6 +51,8 @@ type CheckpointPreview struct {
 }
 
 type interactiveMenu struct {
+	parent      *interactiveMenu // previous screen, including its selection and filter
+	category    int              // action centre tab
 	kind        menuKind
 	cursor      int
 	filter      string
@@ -62,39 +68,44 @@ type interactiveMenu struct {
 	// /settings panel state. settingsCfg holds the last loaded/saved
 	// global config so the panel renders live values; editing/editBuf
 	// drive inline integer editing of a numeric knob.
-	settingsCfg *config.TomlConfig
-	editing     bool
-	editBuf     string
-	editTaskID  string
-	moveTaskID  string
-	checkpoint  *CheckpointPreview
+	settingsCfg       *config.TomlConfig
+	editing           bool
+	editBuf           string
+	editTaskID        string
+	moveTaskID        string
+	checkpoint        *CheckpointPreview
+	usage             *usageSnapshot
+	attachmentDir     string
+	attachmentEntries []attachmentEntry
+	attachmentLoading bool
 }
 
 func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {
-	// Scan providers only if the registry is empty
-	// (models haven't been fetched yet, e.g. before the
-	// background startup scan completes). Otherwise the
-	// background scan keeps the registry up to date.
-	if m.providerMgr != nil && m.caps != nil && len(m.caps.All()) == 0 {
-		m.providerMgr.ScanModels(m.caps)
-	}
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuModels}
-	m.input.Blur()
-	return m, nil
+	m.enterMenu(interactiveMenu{kind: menuModels})
+	cmd := m.scanEmptyModelCatalog()
+	return m, cmd
 }
 
-// openModelCatalogMenu opens the complete catalog, including models hidden
-// from the fast /model picker. Visibility changes are local and persisted;
-// opening the catalog never calls an LLM.
+// openModelCatalogMenu includes hidden models. Discovery runs in a command so
+// an offline provider never blocks navigation, typing or Esc.
 func (m Model) openModelCatalogMenu() (tea.Model, tea.Cmd) {
-	if m.providerMgr != nil && m.caps != nil && len(m.caps.All()) == 0 {
-		m.providerMgr.ScanModels(m.caps)
+	m.enterMenu(interactiveMenu{kind: menuModelCatalog})
+	cmd := m.scanEmptyModelCatalog()
+	return m, cmd
+}
+
+type modelPickerScanDoneMsg struct{}
+
+func (m *Model) scanEmptyModelCatalog() tea.Cmd {
+	if m.modelPickerScanning || m.providerMgr == nil || m.caps == nil || len(m.caps.All()) > 0 {
+		return nil
 	}
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuModelCatalog}
-	m.input.Blur()
-	return m, nil
+	m.modelPickerScanning = true
+	mgr, caps := m.providerMgr, m.caps
+	return func() tea.Msg {
+		mgr.ScanModels(caps)
+		return modelPickerScanDoneMsg{}
+	}
 }
 
 // providerStatus is the cached result of one async connectivity
@@ -137,9 +148,7 @@ func (m Model) openProvidersMenu() (tea.Model, tea.Cmd) {
 	if m.providerMgr != nil {
 		m.providerMgr.Reload()
 	}
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuProviders}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuProviders})
 	// Render instantly; probe connectivity in the background.
 	return m, m.probeProvidersCmd()
 }
@@ -187,16 +196,18 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 }
 
 func (m Model) openGoalMenu() (tea.Model, tea.Cmd) {
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuGoal}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuGoal})
+	for i, row := range m.goalMenuRows() {
+		if row.id == "toggle" {
+			m.menu.cursor = i
+			break
+		}
+	}
 	return m, nil
 }
 
 func (m Model) openReasoningMenu() (tea.Model, tea.Cmd) {
-	m.mode = modeMenu
-	m.menu = interactiveMenu{kind: menuReasoning, cursor: reasoningOptionIndex(llm.ReasoningEffort())}
-	m.input.Blur()
+	m.enterMenu(interactiveMenu{kind: menuReasoning, cursor: m.reasoningOptionIndex(llm.ProviderReasoningState(m.llm).Selected)})
 	return m, nil
 }
 

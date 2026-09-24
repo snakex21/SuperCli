@@ -21,9 +21,8 @@ type providerModelWire struct {
 	ContextWindow    json.RawMessage `json:"context_window"`
 	Capabilities     json.RawMessage `json:"capabilities"`
 	InputModalities  []string        `json:"input_modalities"`
-	Architecture     struct {
-		InputModalities []string `json:"input_modalities"`
-	} `json:"architecture"`
+	// Routers publish an object; LM Studio publishes a string such as qwen35.
+	Architecture json.RawMessage `json:"architecture"`
 }
 
 func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
@@ -49,7 +48,11 @@ func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
 		}
 		model := HeuristicCapabilities(id)
 		model.ContextLength = firstPositiveInt(wire.ContextLength, wire.MaxContextLength, wire.ContextWindow)
-		if modalities := firstNonEmptyStrings(wire.Architecture.InputModalities, wire.InputModalities); len(modalities) > 0 {
+		var architecture struct {
+			InputModalities []string `json:"input_modalities"`
+		}
+		_ = json.Unmarshal(wire.Architecture, &architecture)
+		if modalities := firstNonEmptyStrings(architecture.InputModalities, wire.InputModalities); len(modalities) > 0 {
 			model.VisionKnown = true
 			model.Vision = containsFold(modalities, "image")
 		}
@@ -79,6 +82,21 @@ func applyCapabilityMetadata(model *ModelInfo, raw json.RawMessage) {
 		}
 		if value, ok := object["trained_for_tool_use"]; ok {
 			_ = json.Unmarshal(value, &model.ToolUse)
+		}
+		if value, ok := object["reasoning"]; ok {
+			var supported bool
+			if json.Unmarshal(value, &supported) == nil {
+				model.Reasoning, model.ReasoningKnown = supported, true
+			} else {
+				var control struct {
+					AllowedOptions []string `json:"allowed_options"`
+				}
+				if json.Unmarshal(value, &control) == nil && len(control.AllowedOptions) > 0 {
+					model.Reasoning, model.ReasoningKnown = true, true
+					model.ReasoningToggleOnly = len(control.AllowedOptions) == 2 &&
+						containsFold(control.AllowedOptions, "on") && containsFold(control.AllowedOptions, "off")
+				}
+			}
 		}
 		return
 	}
@@ -160,10 +178,7 @@ func isLocalDiscoveryHost(host string) bool {
 		return true
 	}
 	ip := net.ParseIP(host)
-	// Loopback IPs are deliberately not probed: localhost is the normal
-	// desktop configuration, while 127.0.0.1 is also heavily used by generic
-	// OpenAI-compatible test/proxy servers that need not expose native routes.
-	return ip != nil && !ip.IsLoopback() && (ip.IsPrivate() || ip.IsLinkLocalUnicast())
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
 }
 
 // ListAnthropicModels returns model ids from Anthropic's native /v1/models
@@ -193,21 +208,41 @@ func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string,
 		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
 	}
 	req.Header.Set("anthropic-version", anthropicVersion)
-	if key := CleanAPIKey(apiKey); key != "" {
-		req.Header.Set("x-api-key", key)
+	cleanKey := CleanAPIKey(apiKey)
+	if cleanKey != "" {
+		req.Header.Set("x-api-key", cleanKey)
 	}
 	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
 	}
-	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	status := resp.StatusCode
+	resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("llm: ListAnthropicModels: %w", err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("llm: ListAnthropicModels: status %d: %s", resp.StatusCode, body)
+	// AnyRouter-style gateways expect OpenAI-style Bearer auth on GET /v1/models
+	// while still requiring x-api-key on POST /v1/messages. Retry once with Bearer
+	// on 401/403 so scan works without a separate provider type.
+	if (status == 401 || status == 403) && cleanKey != "" {
+		if req2, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil); err == nil {
+			req2.Header.Set("anthropic-version", anthropicVersion)
+			req2.Header.Set("Authorization", "Bearer "+cleanKey)
+			if resp2, err := client.Do(req2); err == nil {
+				body2, err2 := io.ReadAll(io.LimitReader(resp2.Body, 4<<20))
+				status2 := resp2.StatusCode
+				resp2.Body.Close()
+				if err2 == nil {
+					body = body2
+					status = status2
+				}
+			}
+		}
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("llm: ListAnthropicModels: status %d: %s", status, body)
 	}
 	var payload struct {
 		Data []struct {

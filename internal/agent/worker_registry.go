@@ -29,14 +29,16 @@ type Worker struct {
 	// these mid-run while the TUI status bar and "/workers" read them via
 	// Snapshot/Counts, so every access outside single-threaded setup code
 	// must hold stateMu.
-	UpdatedAt  time.Time
-	Status     string
-	LastResult string
-	LastError  string
-	TokensIn   int
-	TokensOut  int
-	Steps      int // model turns consumed across all runs
-	ToolNames  []string
+	UpdatedAt    time.Time
+	Status       string
+	LastResult   string
+	LastError    string
+	TokensIn     int
+	TokensOut    int
+	Steps        int // model turns consumed across all runs
+	ToolNames    []string
+	Runs         int
+	lastEvidence string // bounded latest-run observations; guarded by stateMu
 
 	// progress is installed by AgentTool before the first run. It is immutable
 	// afterwards and emits best-effort UI events through the parent loop.

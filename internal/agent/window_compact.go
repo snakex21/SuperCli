@@ -53,9 +53,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// time as model:compact, so context_prepare (which wraps
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
-		sumStart := time.Now()
-		summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, all[:split])
-		l.recordAuxWall(llm.PurposeCompact, time.Since(sumStart))
+		summary, err := l.summarizePrefix(ctx, all[:split])
 		if err == nil && summary != "" && compactionReduces(all[:split], summary) {
 			removed = l.CompactPrefixWithSummary(summary, split)
 		}
@@ -300,4 +298,12 @@ func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- 
 	}
 	l.maybeAutoCompact(ctx, out, "context-limit")
 	return true
+}
+
+// summarizePrefix measures helper inference separately from local context work.
+func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (string, error) {
+	start := time.Now()
+	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, prefix)
+	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
+	return summary, err
 }

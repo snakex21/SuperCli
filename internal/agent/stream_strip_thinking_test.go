@@ -351,19 +351,17 @@ func TestLoadConversation_RestoresRetainedThinking(t *testing.T) {
 }
 
 func TestKeepThinkingEnabled_EnvParsing(t *testing.T) {
-	for _, v := range []string{"0", "false", "no", "off", "OFF"} {
+	for _, v := range []string{"", "0", "false", "no", "off", "OFF", "invalid"} {
 		t.Setenv("SUPERCLI_KEEP_THINKING", v)
 		if keepThinkingEnabled() {
 			t.Errorf("SUPERCLI_KEEP_THINKING=%s: enabled, want disabled", v)
 		}
 	}
-	t.Setenv("SUPERCLI_KEEP_THINKING", "1")
-	if !keepThinkingEnabled() {
-		t.Error("SUPERCLI_KEEP_THINKING=1: disabled, want enabled")
-	}
-	t.Setenv("SUPERCLI_KEEP_THINKING", "")
-	if !keepThinkingEnabled() {
-		t.Error("unset: disabled, want enabled (default on)")
+	for _, v := range []string{"1", "true", "yes", "on", " ON "} {
+		t.Setenv("SUPERCLI_KEEP_THINKING", v)
+		if !keepThinkingEnabled() {
+			t.Errorf("SUPERCLI_KEEP_THINKING=%s: disabled, want enabled", v)
+		}
 	}
 }
 

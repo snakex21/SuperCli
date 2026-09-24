@@ -24,17 +24,19 @@ type ModelInfo struct {
 	Vision    bool   `json:"vision"`
 	// VisionKnown distinguishes an authoritative "text only" result from a
 	// provider that did not publish modality metadata at all.
-	VisionKnown    bool      `json:"vision_known,omitempty"`
-	ToolUse        bool      `json:"tool_use"`
-	Stream         bool      `json:"stream"`
-	Reasoning      bool      `json:"reasoning"`
-	ReasoningKnown bool      `json:"reasoning_known,omitempty"`
-	ContextLength  int       `json:"context_length,omitempty"`
-	InputCost      float64   `json:"input_cost,omitempty"`
-	OutputCost     float64   `json:"output_cost,omitempty"`
-	Notes          string    `json:"notes,omitempty"`
-	LastVerified   time.Time `json:"last_verified,omitempty"`
-	Source         Source    `json:"-"`
+	VisionKnown    bool `json:"vision_known,omitempty"`
+	ToolUse        bool `json:"tool_use"`
+	Stream         bool `json:"stream"`
+	Reasoning      bool `json:"reasoning"`
+	ReasoningKnown bool `json:"reasoning_known,omitempty"`
+	// ReasoningToggleOnly records native metadata advertising only on/off.
+	ReasoningToggleOnly bool      `json:"reasoning_toggle_only,omitempty"`
+	ContextLength       int       `json:"context_length,omitempty"`
+	InputCost           float64   `json:"input_cost,omitempty"`
+	OutputCost          float64   `json:"output_cost,omitempty"`
+	Notes               string    `json:"notes,omitempty"`
+	LastVerified        time.Time `json:"last_verified,omitempty"`
+	Source              Source    `json:"-"`
 }
 
 // ModelCapabilities is the small struct used by the

@@ -6,7 +6,7 @@ import "strconv"
 // into a provider request. Providers reject the whole request when
 // tool-call/result structure is malformed, so this repair happens in
 // the provider view only: the stored conversation is left untouched
-// and healthy histories stay allocation-free.
+// and healthy histories avoid copying messages.
 //
 // Repaired defects:
 //
@@ -138,6 +138,9 @@ func messageHasSendableContent(m Message) bool {
 // the exact wire invariant rather than merely checking that a matching id
 // exists somewhere in history.
 func toolCallHistoryNeedsRepair(msgs []Message) bool {
+	// Presence reserves an ID across the entire request. The value is true
+	// until its result is consumed, then false. One table handles both
+	// duplicate detection and pending results without a map per batch.
 	seen := make(map[string]bool)
 	for i := 0; i < len(msgs); i++ {
 		m := msgs[i]
@@ -155,34 +158,29 @@ func toolCallHistoryNeedsRepair(msgs []Message) bool {
 			continue
 		}
 
-		need := make(map[string]int, len(m.ToolCalls))
 		for _, tc := range m.ToolCalls {
-			if tc.ID == "" || seen[tc.ID] {
+			if _, exists := seen[tc.ID]; tc.ID == "" || exists {
 				return true
 			}
 			seen[tc.ID] = true
-			need[tc.ID]++
 		}
 
 		j := i + 1
 		got := 0
 		for j < len(msgs) && msgs[j].Role == RoleTool {
 			r := msgs[j]
-			if r.ToolCallID == "" || len(r.ToolCalls) > 0 || need[r.ToolCallID] == 0 {
+			if r.ToolCallID == "" || len(r.ToolCalls) > 0 || !seen[r.ToolCallID] {
 				return true
 			}
-			need[r.ToolCallID]--
+			seen[r.ToolCallID] = false
 			got++
 			j++
 		}
 		if got != len(m.ToolCalls) {
 			return true
 		}
-		for _, n := range need {
-			if n != 0 {
-				return true
-			}
-		}
+		// IDs are unique, and each result consumes one pending ID. Equal
+		// counts therefore prove that this batch has no missing results.
 		i = j - 1
 	}
 	return false

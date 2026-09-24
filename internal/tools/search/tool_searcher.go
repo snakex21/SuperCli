@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -41,11 +42,8 @@ func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 func (s *ToolSearcher) Spec() Tool {
 	return Tool{
 		Name: "tool_search",
-		Description: "Find a rare tool, plugin, MCP bridge, or optional capability by name/intent. " +
-			"Returns its full schema and activates it. " +
-			"Do not use for listing directories, reading files, searching code, or editing files — " +
-			"use list_dir, read_lines/read_many, search_code, patch_file, or create_file directly. " +
-			"Call only when a needed tool is absent from the core set or its arguments are unknown.",
+		Description: "Find a tool, plugin, or MCP capability absent from the current tool set, by name or intent. " +
+			"Returns its full schema and activates it. Use already available tools directly.",
 		Schema: `{"type":"object","properties":{
 "query":{"type":"string","description":"Natural-language search, e.g. 'find files by name'"},
 "limit":{"type":"integer","default":3,"maximum":8}
@@ -134,7 +132,7 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		if !ok {
 			continue
 		}
-		s.Registry.Activate(h.Name)
+		s.Registry.ActivateDiscovered(h.Name)
 		resp.Matches = append(resp.Matches, match{
 			Name:      h.Name,
 			Server:    h.Server,
@@ -205,8 +203,22 @@ func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
 		server string
 		score  int
 	}
+	// Query weights preserve repeated query words without rebuilding a word
+	// set for every tool. The per-call seen map deduplicates each tool's text.
+	weights := make(map[string]int)
+	for _, word := range qTokens {
+		weights[word]++
+	}
+	seen := make(map[string]int, len(weights))
+	overlap, document := 0, 0
+	countMatch := func(word string) {
+		if weight := weights[word]; weight > 0 && seen[word] != document {
+			overlap += weight
+			seen[word] = document
+		}
+	}
 	var ranked []scored
-	for _, name := range s.Registry.Names() {
+	for index, name := range s.Registry.Names() {
 		// Meta-tools are gateways, never useful search answers.
 		if name == "tool_search" || name == "invoke_tool" {
 			continue
@@ -215,27 +227,25 @@ func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
 		if !ok {
 			continue
 		}
-		haystack := make(map[string]struct{})
-		for _, w := range lexTokens(t.Name + " " + t.Description) {
-			haystack[w] = struct{}{}
-		}
-		overlap := 0
-		for _, q := range qTokens {
-			if _, ok := haystack[q]; ok {
-				overlap++
-			}
-		}
+		overlap, document = 0, index+1
+		// Name and description were separated by a space, so scanning them
+		// separately preserves token boundaries without allocating a joined string.
+		forEachLexToken(t.Name, countMatch)
+		forEachLexToken(t.Description, countMatch)
 		if overlap > 0 {
 			ranked = append(ranked, scored{name: name, server: classifyServer(name), score: overlap})
 		}
 	}
-	// Sort by descending overlap, then name for determinism.
-	for i := 1; i < len(ranked); i++ {
-		for j := i; j > 0 && (ranked[j].score > ranked[j-1].score ||
-			(ranked[j].score == ranked[j-1].score && ranked[j].name < ranked[j-1].name)); j-- {
-			ranked[j], ranked[j-1] = ranked[j-1], ranked[j]
+	// Total order preserves deterministic ties without quadratic insertion sort.
+	slices.SortFunc(ranked, func(a, b scored) int {
+		if a.score > b.score {
+			return -1
 		}
-	}
+		if a.score < b.score {
+			return 1
+		}
+		return strings.Compare(a.name, b.name)
+	})
 	if limit > 0 && len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
@@ -257,19 +267,30 @@ func (s *ToolSearcher) lexicalFallback(query string, limit int) []SearchResult {
 // a tool query. Used only by the lexical fallback.
 func lexTokens(s string) []string {
 	var out []string
-	for _, f := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
-	}) {
-		if len(f) < 3 {
-			continue
-		}
-		switch f {
-		case "the", "and", "for", "with", "into", "from", "use", "all":
-			continue
-		}
-		out = append(out, f)
-	}
+	forEachLexToken(s, func(word string) { out = append(out, word) })
 	return out
+}
+
+// Visit the same ASCII words as FieldsFunc after Unicode-aware lowercasing.
+// Byte scanning needs no slice of all description words. Non-ASCII bytes are
+// delimiters, including invalid UTF-8, just as in the original predicate.
+func forEachLexToken(s string, visit func(string)) {
+	s = strings.ToLower(s)
+	start := 0
+	for end := 0; end <= len(s); end++ {
+		if end < len(s) && ((s[end] >= 'a' && s[end] <= 'z') || (s[end] >= '0' && s[end] <= '9')) {
+			continue
+		}
+		if end-start >= 3 {
+			word := s[start:end]
+			switch word {
+			case "the", "and", "for", "with", "into", "from", "use", "all":
+			default:
+				visit(word)
+			}
+		}
+		start = end + 1
+	}
 }
 
 // RebuildIndex re-indexes every tool in the registry. Call

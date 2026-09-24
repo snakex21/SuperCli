@@ -53,6 +53,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		}
 		sandbox.SetUnsandboxed(c.AllowAll)
 		return nil
+	case "discard_previous_reasoning":
+		return setTri(&c.DiscardPreviousReasoning)
 	case "thinking":
 		if err := setTri(&c.Thinking); err != nil {
 			return err

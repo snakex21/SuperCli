@@ -9,13 +9,11 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"supercli/internal/account/cost"
 	"supercli/internal/buildinfo"
 	"supercli/internal/llm"
 	"supercli/internal/llm/shuffler"
 	"supercli/internal/system/config"
 	"supercli/internal/system/doctor"
-	"supercli/internal/system/stats"
 	"supercli/internal/ui/export"
 )
 
@@ -200,16 +198,22 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	store := m.sessionStore
 	dm := m.marker
 	home := m.home
+	if m.dataDir != "" {
+		home = m.dataDir
+	}
+	sessionID := m.sessionID
 	args := cmd.Args
 	return m, func() tea.Msg {
 		if store == nil {
 			return slashResultMsg{Body: dm.Diff("/export: session store not available")}
 		}
-		sessions, err := store.List(1)
-		if err != nil || len(sessions) == 0 {
-			return slashResultMsg{Body: dm.Diff("No active session to export.")}
+		if sessionID == "" {
+			return slashResultMsg{Body: dm.Diff(m.tr("No active session to export.", "Brak aktywnej rozmowy do eksportu."))}
 		}
-		sess := sessions[0]
+		sess, err := store.Get(sessionID)
+		if err != nil {
+			return slashResultMsg{Err: err}
+		}
 		msgs, err := store.ReadMessages(context.Background(), sess.ID)
 		if err != nil {
 			return slashResultMsg{Err: fmt.Errorf("export read: %w", err)}
@@ -433,38 +437,4 @@ func (m Model) handleSlashDoctor(_ SlashCommand) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) handleSlashCost(_ SlashCommand) (tea.Model, tea.Cmd) {
-	rec := m.statsRecorder
-	swapper := m.modelSwapper
-	dm := m.marker
-	store := m.sessionStore
-	providerName := m.activeProviderName()
-	billable := !m.isSubscriptionProviderName(providerName)
-	return m, func() tea.Msg {
-		if rec == nil {
-			return slashResultMsg{Body: dm.Diff("/cost: stats not available")}
-		}
-		turns := rec.Snapshot()
-		total := stats.Sum(turns)
-		model := ""
-		if swapper != nil {
-			model = swapper.CurrentModel()
-		}
-		sessionID := "current"
-		if store != nil {
-			if sessions, err := store.List(1); err == nil && len(sessions) > 0 {
-				sessionID = sessions[0].ID
-			}
-		}
-		d := cost.Dashboard{
-			Turns:     turns,
-			Calls:     rec.Calls(),
-			Total:     total,
-			SessionID: sessionID,
-			Model:     model,
-			Provider:  providerName,
-			Billable:  billable,
-		}
-		return slashResultMsg{Body: dm.Diff(cost.Render(d))}
-	}
-}
+func (m Model) handleSlashCost(_ SlashCommand) (tea.Model, tea.Cmd) { return m.openUsageMenu() }

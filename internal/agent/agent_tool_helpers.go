@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,16 +61,30 @@ func (a *AgentTool) emitDraftVerify(tel draftVerifyTelemetry) {
 	}
 }
 
-// childLoopSettings returns the KV-cache-relevant loop settings a
-// worker inherits from the parent loop: the thin tool protocol flag,
-// the stable-toolset flag, and the sandbox root (BaseDir). When there
-// is no parent (unit tests build the tool without one) it returns
-// zero values, i.e. the historical worker behaviour.
-func (a *AgentTool) childLoopSettings() (thin, stable, hoist bool, baseDir string) {
-	if a.ParentLoop == nil {
-		return false, false, false, ""
+// childLoopSettings freezes tool/cache settings for the backend actually selected.
+// A failed worker probe must fall back to the parent's settings and workspace.
+func (a *AgentTool) childLoopSettings(prov llm.Provider) (thin, stable, hoist bool, baseDir string) {
+	if a.ParentLoop != nil {
+		thin, stable, hoist, baseDir = a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.catalogHoist, a.ParentLoop.baseDir
 	}
-	return a.ParentLoop.thinTools, a.ParentLoop.stableToolset, a.ParentLoop.catalogHoist, a.ParentLoop.baseDir
+	if a.WorkerProfile != nil && a.WorkerProvider != nil && prov == a.WorkerProvider {
+		thin, stable, hoist = a.WorkerProfile.ThinTools, a.WorkerProfile.StableToolset, a.WorkerProfile.CatalogHoist
+	}
+	return
+}
+
+// ensureWorkerDiscovery exposes only the already-restricted registry. Thin
+// workers need both schema discovery and dispatch even when their functional
+// allowlist omits these plumbing tools (e.g. the built-in code worker).
+func ensureWorkerDiscovery(reg *tools.Registry) {
+	if _, ok := reg.Get("tool_search"); !ok {
+		reg.MustRegister(tools.NewToolSearcher(reg, nil).Spec())
+	}
+	reg.MarkAlwaysOn("tool_search")
+	if _, ok := reg.Get(invokeToolName); !ok {
+		reg.MustRegister(NewInvokeTool(reg).Spec())
+	}
+	reg.MarkAlwaysOn(invokeToolName)
 }
 
 // workerProvider picks the LLM backend for a new worker: the
@@ -126,9 +141,13 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 		if err != nil && text == "" {
 			text = err.Error()
 		}
-		notification := renderWorkerNotification(w, text)
 		if a.ParentLoop != nil {
-			a.ParentLoop.InjectUserMessage(context.Background(), notification)
+			noticeCtx := context.Background()
+			if a.ParentLoop.toolOutputs != nil {
+				noticeCtx = tools.WithOutputPersistence(noticeCtx, a.ParentLoop.toolOutputs)
+			}
+			notification := a.ParentLoop.registry.ModelResultContentContext(noticeCtx, "task", workerResult(w, text, err))
+			a.ParentLoop.InjectUserMessage(noticeCtx, notification)
 		}
 		a.emitWorkerNotification(w, text)
 	}()
@@ -171,43 +190,47 @@ var delegationTools = map[string]struct{}{
 // tool that is not in `allowed`.
 func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry {
 	out := tools.NewRegistry()
-	if len(allowed) == 0 {
-		for _, name := range base.Names() {
-			if _, blocked := delegationTools[name]; blocked {
-				continue
-			}
-			// read_output closes over its registry-owned OutputStore. Copying
-			// the Tool value would make the child read from the parent's store
-			// while compacting into its own. NewLoop installs a fresh closure
-			// for the child registry instead.
-			if name == "read_output" {
-				continue
-			}
-			t, ok := base.Get(name)
-			if !ok {
-				continue
-			}
-			_ = out.Register(t)
-			out.MarkAlwaysOn(t.Name)
-		}
-		return out
+	inherit := len(allowed) == 0
+	_, discoverable := base.Get("tool_search")
+	names := append([]string(nil), allowed...)
+	if len(names) == 0 {
+		names = base.Names()
 	}
-	for _, name := range allowed {
-		if _, blocked := delegationTools[name]; blocked {
+	sort.Strings(names) // stable prefixes across workers, independent of map order
+	search, invoke := false, false
+	for _, name := range names {
+		if _, blocked := delegationTools[name]; blocked || name == "read_output" {
 			continue
-		}
-		if name == "read_output" {
-			continue // NewLoop installs the child registry's own store closure.
 		}
 		t, ok := base.Get(name)
 		if !ok {
-			// unknown tool in spec — skip silently; the
-			// spec author will see the empty registry at
-			// integration time.
+			continue
+		}
+		switch name {
+		case "tool_search":
+			search = true
+			continue
+		case invokeToolName:
+			invoke = true
 			continue
 		}
 		_ = out.Register(t)
-		out.MarkAlwaysOn(t.Name)
+		// General workers inherit availability, not every full schema. Keep
+		// common tools immediately usable and discover optional tools locally.
+		// Without discovery, retain the historical eager set to avoid stranding tools.
+		if !inherit || !discoverable || isThinCore(name) || base.IsVisible(name) {
+			out.MarkAlwaysOn(name)
+		}
+	}
+	// These tools close over registry state: copying their callbacks would
+	// activate the parent, leak forbidden schemas and strand the child.
+	if search {
+		out.MustRegister(tools.NewToolSearcher(out, nil).Spec())
+		out.MarkAlwaysOn("tool_search")
+	}
+	if invoke {
+		out.MustRegister(NewInvokeTool(out).Spec())
+		out.MarkAlwaysOn(invokeToolName)
 	}
 	return out
 }

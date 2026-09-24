@@ -114,13 +114,7 @@ func wireConsultTool(
 	// The auto council (cheapest-N pool) stays as the fallback
 	// for the consult tool and for /council when the user never
 	// picked a roster.
-	council := buildConsultCouncil(3, provider, caps, cfg, provFactory)
-	if council == nil {
-		// No cheap pool available — keep a judge-only council
-		// so explicit model selection (tool `models` param and
-		// the /council roster) still works.
-		council = &consult.Council{Judge: provider}
-	}
+	council := newConsultCouncil(3, provider, caps, cfg, provFactory)
 	consultTool := tools.NewConsult(council)
 	consultTool.BuildProvider = buildMember
 	consultTool.OnResult = func(r consult.Result) {

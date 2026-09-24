@@ -9,8 +9,8 @@ sections.models = async function () {
   panelContent.innerHTML = "";
   panelContent.appendChild(sessionRuntimePreferenceGroup());
   var g = el("div", "group");
-  var lbl = el("div", "g-label", t("panel.models"));
-  var scan = el("button", "g-act", t("common.scan"));
+  var lbl = i18nEl("div", "g-label", "panel.models");
+  var scan = i18nEl("button", "g-act", "common.scan");
   scan.addEventListener("click", async function () {
     scan.textContent = "…";
     try { await jpost("/api/provider/scan", {}); } catch (e) {}
@@ -101,7 +101,7 @@ sections.models = async function () {
     bulkButtons.forEach(function (item) {
       item.button.disabled = !filtered.length || filtered.every(function (m) { return !!m.hidden === item.hidden; });
     });
-    if (!filtered.length) rows.appendChild(el("div", "note model-no-matches", t("model.noMatches")));
+    if (!filtered.length) rows.appendChild(i18nEl("div", "note model-no-matches", "model.noMatches"));
     filtered.forEach(function (m) {
       var row = el("div", "list-row");
       row.appendChild(el("span", "state-dot " + (m.hidden ? "off" : "on")));
@@ -120,7 +120,7 @@ sections.models = async function () {
         jpost("/api/model/toggle", { provider: m.provider, model: m.id }).then(sections.models);
       });
       act.appendChild(bh);
-      var bd = el("button", "", t("model.setDefault"));
+      var bd = i18nEl("button", "", "model.setDefault");
       bd.addEventListener("click", function () {
         jpost("/api/model/default", { model: m.id, provider: m.provider })
           .then(function () { toast("CLI default: " + m.id); })
@@ -155,10 +155,10 @@ sections.runtime = async function () {
   panelContent.innerHTML = "";
   var intro = el("div", "runtime-intro");
   var introCopy = el("div");
-  introCopy.appendChild(el("div", "runtime-title", t("runtime.title")));
-  introCopy.appendChild(el("div", "note", t("runtime.hint")));
+  introCopy.appendChild(i18nEl("div", "runtime-title", "runtime.title"));
+  introCopy.appendChild(i18nEl("div", "note", "runtime.hint"));
   intro.appendChild(introCopy);
-  var refreshAll = el("button", "btn", t("common.refresh")); refreshAll.type = "button";
+  var refreshAll = i18nEl("button", "btn", "common.refresh"); refreshAll.type = "button";
   refreshAll.addEventListener("click", function () { sections.runtime(); });
   intro.appendChild(refreshAll); panelContent.appendChild(intro);
 
@@ -170,7 +170,7 @@ sections.runtime = async function () {
   if (seq !== runtimeRenderSeq || currentSection !== "runtime") return;
   var providers = got.providers || [];
   if (!providers.length) {
-    panelContent.appendChild(el("div", "runtime-empty", t("runtime.empty")));
+    panelContent.appendChild(i18nEl("div", "runtime-empty", "runtime.empty"));
     return;
   }
   var list = el("div", "runtime-list"); panelContent.appendChild(list);
@@ -188,10 +188,10 @@ sections.runtime = async function () {
     var facts = el("div", "runtime-facts"); row.appendChild(facts);
     var details = document.createElement("details"); details.className = "runtime-details";
     var summary = document.createElement("summary"); summary.textContent = t("runtime.details");
-    details.appendChild(summary); details.appendChild(el("div", "runtime-detail-body", t("common.loading")));
+    details.appendChild(summary); details.appendChild(i18nEl("div", "runtime-detail-body", "common.loading"));
     row.appendChild(details);
     var actions = el("div", "runtime-actions");
-    var refresh = el("button", "", t("common.refresh")); refresh.type = "button";
+    var refresh = i18nEl("button", "", "common.refresh"); refresh.type = "button";
     var toggle = el("button", "", p.Disabled ? t("runtime.enable") : t("runtime.disable")); toggle.type = "button";
     actions.appendChild(refresh); actions.appendChild(toggle); row.appendChild(actions); list.appendChild(row);
 
@@ -267,8 +267,8 @@ function renderRuntimeDiagnostic(row, facts, details, endpoint, state, d) {
     body.appendChild(models);
   }
   var limits = el("div", "runtime-limits");
-  limits.appendChild(el("div", "runtime-limit-title", t("runtime.limits")));
-  limits.appendChild(el("span", "", t("runtime.hardware")));
-  limits.appendChild(el("span", "", t("runtime.backendQueue")));
+  limits.appendChild(i18nEl("div", "runtime-limit-title", "runtime.limits"));
+  limits.appendChild(i18nEl("span", "", "runtime.hardware"));
+  limits.appendChild(i18nEl("span", "", "runtime.backendQueue"));
   body.appendChild(limits);
 }

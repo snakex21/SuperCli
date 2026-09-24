@@ -63,13 +63,25 @@ func (t *ReadLines) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if a.From < 1 {
 		a.From = 1
 	}
+	// Keep useful bounded evidence when a model overestimates the range (often
+	// by one inclusive line). The library stays strict, and unread requested
+	// lines are reported below instead of silently disappearing.
+	requestedTo := a.To
+	if a.To >= a.From && a.To-a.From >= fileops.MaxLineRange {
+		a.To = a.From + fileops.MaxLineRange - 1
+	}
 	full, err := resolveSandboxed(t.BaseDir, a.File)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_lines: %w", err)}, nil
 	}
-	lines, err := fileops.ReadLines(full, a.From, a.To)
+	lines, eof, err := fileops.ReadLinesBoundedWithEOF(ctx, full, a.From, a.To, maxReadLineKeep)
 	if err != nil {
-		return Result{Err: fmt.Errorf("read_lines: %w", err)}, nil
+		return Result{Err: fmt.Errorf("read_lines: %w", suggestReadFile(ctx, full, err))}, nil
 	}
-	return Result{Text: renderLines(lines)}, nil
+	text := renderLinesWithEOF(lines, eof)
+	if a.To < requestedTo && !eof {
+		text += fmt.Sprintf("[range capped at %d lines; requested lines %d-%d not read]\n",
+			fileops.MaxLineRange, a.To+1, requestedTo)
+	}
+	return Result{Text: text}, nil
 }

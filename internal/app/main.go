@@ -464,6 +464,13 @@ func Main() {
 		defer sessStore.Close()
 	}
 
+	drafts, draftErr := tui.OpenDraftRecovery(dataDir, home)
+	if draftErr != nil {
+		log.Printf("draft recovery: %v", draftErr)
+	}
+	if drafts != nil {
+		defer drafts.Flush()
+	}
 	// F11 draft + F5.a reflection + Wave 4 context windows.
 	dr := wireDraftAndReflection(flags.DraftMode, flags.DraftModel, provider, provFactory, cfg, tierRules, tomlCfg, dataDir)
 	draftPolicy, draftProvider, draftSink := dr.Policy, dr.Provider, dr.Sink
@@ -571,24 +578,15 @@ func Main() {
 	}
 	mergedCommands["mcp"] = mcpCommand(mcpManager)
 
-	// --resume: load the most recent prior session at startup.
+	// --resume uses the same TUI restore path, including transcript and writer.
+	resumeID := ""
 	if flags.Resume && sessStore != nil {
-		if recent, err := sessStore.ListRecent(context.Background(), 2); err == nil {
+		if recent, err := sessStore.ListRecentByCwd(context.Background(), home, 10); err == nil {
 			for _, r := range recent {
-				if r.ID == sessionID {
-					continue
+				if r.ID != sessionID && r.MessageCount > 0 {
+					resumeID = r.ID
+					break
 				}
-				if msg, err := resumeSession(context.Background(), loop, sessStore, windowFor, r.ID); err == nil {
-					log.Printf("--resume: %s", msg)
-					if n, rerr := slotCache.Restore(context.Background(), r.ID); rerr != nil {
-						log.Printf("slotcache: restore %s: %v (disabled for this session)", r.ID, rerr)
-					} else if n > 0 {
-						log.Printf("slotcache: restored %d cached token(s) for %s", n, r.ID)
-					}
-				} else {
-					log.Printf("--resume failed: %v", err)
-				}
-				break
 			}
 		}
 	}
@@ -636,22 +634,20 @@ func Main() {
 
 	registerFileWebAndLineTools(registry, home, tomlCfg, wrap, toolSearcher)
 
-	// F7 + F8 status bar (goal, credits, tokens, ctx, codex limits, workers).
+	darwinTool.SetProviderResolver(loop.Provider)
+
+	// Compact dashboard (project, goal, usage, context, provider limits).
 	projName := ""
 	if hasActiveProject {
 		projName = activeProject.Name
 	}
-	statusFn := buildStatusFn(statusBarDeps{
+	dashboardFn := buildDashboardFn(statusBarDeps{
 		goalSvc:          goalSvc,
 		loop:             loop,
 		tracker:          tracker,
-		draftStats:       draftStats,
-		caps:             caps,
 		home:             home,
 		hasActiveProject: hasActiveProject,
 		projectName:      projName,
-		windowFor:        windowFor,
-		agentTool:        at,
 	})
 
 	// F12: external event sink. The consult
@@ -685,6 +681,9 @@ func Main() {
 	// Windows) and summarized at the next startup (below).
 	installCloseHandler(func() {
 		defer recoverAndLog(dataDir)()
+		if drafts != nil {
+			_ = drafts.Flush()
+		}
 		dumpRawMemoryTail(memAutoSaver, loop, memProg)
 	})
 
@@ -749,6 +748,10 @@ func Main() {
 	}
 
 	model := tui.New(buildTUIOptions(tuiLaunchDeps{
+		resumeID:               resumeID,
+		slotCache:              slotCache,
+		drafts:                 drafts,
+		workers:                at.Workers,
 		home:                   home,
 		dataDir:                dataDir,
 		sessionID:              sessionID,
@@ -758,7 +761,8 @@ func Main() {
 		loop:                   loop,
 		provider:               provider,
 		mergedCommands:         mergedCommands,
-		statusFn:               statusFn,
+		dashboardFn:            dashboardFn,
+		darwinTool:             darwinTool,
 		checkpointCtrl:         checkpointCtrl,
 		memAutoSaver:           memAutoSaver,
 		memProg:                memProg,
@@ -782,7 +786,7 @@ func Main() {
 	// the log for what got added to the hot path.
 	log.Printf("startup: TUI ready in %s", time.Since(startupT).Round(time.Millisecond))
 
-	program = tea.NewProgram(model, tea.WithAltScreen())
+	program = tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	pumpDone := make(chan struct{})
 	go func() {
@@ -798,5 +802,5 @@ func Main() {
 		fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
 		os.Exit(1)
 	}
-	afterTUIShutdown(slotCache, loop, sessionID, memIdle, memAutoSaver, memProg, dataDir, askCh, pumpDone)
+	afterTUIShutdown(slotCache, loop, loop.SessionID(), memIdle, memAutoSaver, memProg, dataDir, askCh, pumpDone)
 }

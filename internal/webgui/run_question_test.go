@@ -94,7 +94,8 @@ func TestQuestionAnswerEndpoint(t *testing.T) {
 func TestRunStreamQuestionPausesProgressTimeout(t *testing.T) {
 	dir := t.TempDir()
 	cfg := echoConfig()
-	cfg.Timeout = 20 * time.Millisecond
+	// Leave scheduling headroom when the full suite compiles other packages.
+	cfg.Timeout = 200 * time.Millisecond
 	eng, err := NewEngine(cfg, dir, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +112,7 @@ func TestRunStreamQuestionPausesProgressTimeout(t *testing.T) {
 		}
 		q := *ev.Question
 		go func() {
-			time.Sleep(60 * time.Millisecond) // deliberately longer than provider watchdog
+			time.Sleep(3 * cfg.Timeout) // deliberately longer than provider watchdog
 			if answerErr := eng.answerQuestion(q.ID, tools.AskAnswer{Selected: []string{"B"}}); answerErr != nil {
 				t.Errorf("answerQuestion: %v", answerErr)
 			}

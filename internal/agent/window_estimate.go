@@ -12,9 +12,10 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 		return l.estimateChatRequestTokensRaw()
 	}
 	visible := l.VisibleMessages()
-	projected := l.resolvedToolProviderView(visible)
+	projected := l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(visible)))
 	est := l.EstimateVisibleTokens()
-	if len(projected) != len(visible) {
+	// Scope filtering can change parts without changing the message count.
+	if len(projected) != len(visible) || (len(projected) > 0 && &projected[0] != &visible[0]) {
 		est = llm.EstimateTokens(projected)
 	}
 	if l.registry == nil {
@@ -27,7 +28,7 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 		if pre := l.thinToolsPreamble(); pre != "" {
 			est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: pre})
 		}
-		est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
+		est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: l.contextTail()})
 	}
 	return est
 }
@@ -42,7 +43,7 @@ func estimateRequestTokens(msgs []llm.Message, defs []llm.ToolDef) int {
 // against a much smaller provider-reported prompt, so switching back to the
 // coordinator could turn a 100k request into an apparent 5k request.
 func (l *Loop) estimateChatRequestTokensRaw() int {
-	visible := l.resolvedToolProviderView(l.VisibleMessages())
+	visible := l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages())))
 	system := chatOnlySystemPrompt
 	if l.route == RouteAdvisor || l.route == RouteClarify {
 		system = advisorSystemPrompt
@@ -91,7 +92,7 @@ func (l *Loop) estimateChatRequestTokensRaw() int {
 			}
 		}
 	}
-	msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: l.stampSection()})
+	msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: l.contextTail()})
 	var defs []llm.ToolDef
 	if l.registry != nil {
 		defs = l.buildToolDefs()

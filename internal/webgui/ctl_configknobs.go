@@ -54,6 +54,7 @@ func knobDefs() []knobDef {
 	return []knobDef{
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
+		{"discard_previous_reasoning", "omit completed replies' reasoning from the next turn; preserve the transcript and required tool-call blocks; default off", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
 		{"navigator", "pre-request route (chat/advisor/coordinator) decision mode", knobNav, true},
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
@@ -95,6 +96,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "on", "manual", ""
 		}
 		return "off", "default", ""
+	case "discard_previous_reasoning":
+		v, source := triKnob(c.DiscardPreviousReasoning, "off")
+		return v, source, ""
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {
@@ -223,6 +227,8 @@ func knobState(c *config.TomlConfig, key string) string {
 			return "on"
 		}
 		return "off"
+	case "discard_previous_reasoning":
+		return tri(c.DiscardPreviousReasoning)
 	case "thinking":
 		return tri(c.Thinking)
 	case "navigator":
@@ -257,7 +263,7 @@ func knobDefault(key string) string {
 		return "auto"
 	case "thinking", "stable_toolset", "preflight_repo":
 		return "on"
-	case "allow_all", "noop_gate", "draft_verify":
+	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning":
 		return "off"
 	default:
 		return ""

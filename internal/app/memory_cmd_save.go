@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"supercli/internal/agent"
@@ -14,8 +15,9 @@ import (
 )
 
 type memProgress struct {
-	mu      sync.Mutex
-	covered int // number of loop messages already summarized
+	resumeBaseline atomic.Int64
+	mu             sync.Mutex
+	covered        int // number of loop messages already summarized
 	// factsCovered tracks the deterministic user-fact extractor
 	// separately: facts are saved IMMEDIATELY after each turn (no
 	// model call), while the summary waits for the idle window.
@@ -119,6 +121,9 @@ func saveDeterministicMemoryFacts(saver *memory.AutoSaver, loop *agent.Loop, pro
 	}
 	prog.mu.Lock()
 	defer prog.mu.Unlock()
+	if prog != nil {
+		prog.applyResumeBaseline()
+	}
 	msgs := loop.AllMessages()
 	if len(msgs) > prog.factsCovered {
 		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.factsCovered:]))
@@ -141,6 +146,9 @@ func incrementalMemorySave(ctx context.Context, saver *memory.AutoSaver, loop *a
 	}
 	prog.mu.Lock()
 	defer prog.mu.Unlock()
+	if prog != nil {
+		prog.applyResumeBaseline()
+	}
 	msgs := loop.AllMessages()
 	// Deterministic safety net: normally already done right after
 	// the turn (saveDeterministicMemoryFacts), repeated here for
@@ -199,6 +207,9 @@ func dumpRawMemoryTail(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgr
 		}
 		defer prog.mu.Unlock()
 	}
+	if prog != nil {
+		prog.applyResumeBaseline()
+	}
 	msgs := loop.AllMessages()
 	uncovered := msgs
 	if prog != nil && prog.covered > 0 && prog.covered <= len(msgs) {
@@ -237,6 +248,9 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 		return
 	}
 	defer prog.mu.Unlock()
+	if prog != nil {
+		prog.applyResumeBaseline()
+	}
 	msgs := loop.AllMessages()
 	uncovered := msgs
 	if prog.covered > 0 && prog.covered <= len(msgs) {
@@ -256,4 +270,13 @@ func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memP
 		return // the model saved its own notes this session
 	}
 	saver.StoreRawTail(compactFragment(uncovered))
+}
+
+// Rebase after a session switch under the existing memory lock. A cancelled
+// background save may still unwind; the next job applies this boundary once.
+func (p *memProgress) applyResumeBaseline() {
+	if value := p.resumeBaseline.Swap(0); value > 0 {
+		p.covered = int(value - 1)
+		p.factsCovered = int(value - 1)
+	}
 }

@@ -22,6 +22,8 @@ func TestCoreSurfaceParity(t *testing.T) {
 		name, action, route string
 	}{
 		{"models", "models", "/api/models"},
+		{"model context budget", "context-limit", "/api/models"},
+		{"project memory", "memory", "/api/memory"},
 		{"providers", "providers", "/api/providers"},
 		{"sessions", "sessions", "/api/sessions"},
 		{"task queue", "queue", "/api/tasks"},

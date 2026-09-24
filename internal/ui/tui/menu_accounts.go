@@ -81,15 +81,13 @@ func (m Model) accountsMenuEnter() (tea.Model, tea.Cmd) {
 	}
 	// Add account: first account uses the default (bare /login);
 	// subsequent ones go through the labelled login form.
-	next, _ := m.closeMenu()
-	mm := next.(Model)
 	if len(m.loggedInAccounts()) == 0 {
-		return mm.dispatchSlashCommand(SlashCommand{Name: "login"})
+		next, _ := m.closeMenu()
+		return next.(Model).dispatchSlashCommand(SlashCommand{Name: "login"})
 	}
 	// Reuse the provider form as a single-field label prompt.
-	mm.mode = modeMenu
-	mm.menu = interactiveMenu{kind: menuAccountLabel, form: []string{""}, formAt: 0}
-	return mm, nil
+	m.enterMenu(interactiveMenu{kind: menuAccountLabel, form: []string{""}, formAt: 0})
+	return m, nil
 }
 
 // menuAccountsKey handles non-Enter keys in the accounts menu.

@@ -221,24 +221,25 @@ func TestWireEvent_Marshal(t *testing.T) {
 func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
 	var got []wireEvent
 	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
-	if !c.Push(wireEvent{Type: "message", Text: "one"}) {
-		t.Fatal("first text chunk did not start a batch")
+	if c.Push(wireEvent{Type: "message", Text: "one"}) || len(got) != 1 || c.Pending() {
+		t.Fatal("first chunk must be emitted without a timer")
 	}
-	if c.Push(wireEvent{Type: "message", Text: " two"}) {
-		t.Fatal("second text chunk started a second batch")
+	if !c.Push(wireEvent{Type: "message", Text: " two"}) {
+		t.Fatal("following chunk must start batch")
 	}
-	if len(got) != 0 {
-		t.Fatalf("text flushed too early: %+v", got)
+	if c.Push(wireEvent{Type: "message", Text: " three"}) || len(got) != 1 {
+		t.Fatal("following chunks should coalesce")
 	}
-	if !c.Push(wireEvent{Type: "reasoning", Text: "why"}) {
-		t.Fatal("first reasoning chunk did not start its own batch")
+	if c.Push(wireEvent{Type: "reasoning", Text: "why"}) {
+		t.Fatal("first reasoning chunk must be immediate")
 	}
-	if c.Push(wireEvent{Type: "reasoning", Text: " now"}) {
-		t.Fatal("second reasoning chunk started a second batch")
+	if len(got) != 3 || got[1].Text != " two three" || got[2].Text != "why" {
+		t.Fatalf("%+v", got)
 	}
+	c.Push(wireEvent{Type: "reasoning", Text: " now"})
 	c.Push(wireEvent{Type: "tool_call", Name: "search_code"})
-	if len(got) != 3 || got[0].Type != "message" || got[0].Text != "one two" ||
-		got[1].Type != "reasoning" || got[1].Text != "why now" || got[2].Type != "tool_call" {
+	c.Push(wireEvent{Type: "message", Text: "answer"})
+	if len(got) != 6 || got[3].Text != " now" || got[4].Type != "tool_call" || got[5].Text != "answer" || c.Pending() {
 		t.Fatalf("event order changed: %+v", got)
 	}
 }

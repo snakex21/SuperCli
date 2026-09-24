@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"supercli/internal/account/credits"
+	"supercli/internal/account/usagecost"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 )
@@ -68,53 +69,38 @@ type statsContextBreakdown struct {
 	Other     int `json:"other"`
 }
 
-type statsCostView struct {
-	State                 string   `json:"state"`
-	Amount                *float64 `json:"amount"`
-	Currency              string   `json:"currency"`
-	Source                string   `json:"source,omitempty"`
-	Estimated             bool     `json:"estimated"`
-	Partial               bool     `json:"partial"`
-	Calls                 int      `json:"calls"`
-	UnknownCalls          int      `json:"unknown_calls"`
-	IncludedCalls         int      `json:"included_calls"`
-	InputPerMillion       *float64 `json:"input_per_million,omitempty"`
-	CachedInputPerMillion *float64 `json:"cached_input_per_million,omitempty"`
-	OutputPerMillion      *float64 `json:"output_per_million,omitempty"`
-	CacheDiscountKnown    bool     `json:"cache_discount_known"`
-	Manual                bool     `json:"manual"`
-}
+type statsCostView = usagecost.Summary
 
 type statsTelemetryView struct {
-	Scope           string                `json:"scope,omitempty"`
-	Samples         int                   `json:"samples"`
-	Steps           int                   `json:"steps"`
-	DurationMS      int64                 `json:"duration_ms"`
-	AverageMS       int64                 `json:"average_ms"`
-	ModelMS         int64                 `json:"model_ms"`
-	ToolsMS         int64                 `json:"tools_ms"`
-	CLIMS           int64                 `json:"cli_ms"`
-	PersistMS       int64                 `json:"persist_ms"`
-	ModelCalls      int                   `json:"model_calls"`
-	HelperCalls     int                   `json:"helper_calls"`
+	Scope       string `json:"scope,omitempty"`
+	Samples     int    `json:"samples"`
+	Steps       int    `json:"steps"`
+	DurationMS  int64  `json:"duration_ms"`
+	AverageMS   int64  `json:"average_ms"`
+	ModelMS     int64  `json:"model_ms"`
+	ToolsMS     int64  `json:"tools_ms"`
+	CLIMS       int64  `json:"cli_ms"`
+	PersistMS   int64  `json:"persist_ms"`
+	ModelCalls  int    `json:"model_calls"`
+	HelperCalls int    `json:"helper_calls"`
 	// Aux* answer one question: how much of a reply is inference the
 	// user never asked for. AuxCalls counts helper model calls charged
 	// to the measured turns, AuxMS their wall time, AuxShare that time
 	// as a percentage of total turn duration.
-	AuxCalls        int                   `json:"aux_calls"`
-	AuxMS           int64                 `json:"aux_ms"`
-	AuxShare        int                   `json:"aux_share"`
+	AuxCalls int   `json:"aux_calls"`
+	AuxMS    int64 `json:"aux_ms"`
+	AuxShare int   `json:"aux_share"`
 	// OffTurn* are model calls made outside any agent turn (titles, run
 	// summaries, folder/document indexing, vision) since the app started.
 	// They have no turn to be charged to, so they are reported separately.
-	OffTurnCalls    int                   `json:"off_turn_calls"`
-	OffTurnMS       int64                 `json:"off_turn_ms"`
-	FailedCalls     int                   `json:"failed_calls"`
-	CanceledCalls   int                   `json:"canceled_calls"`
-	ToolFailures    int                   `json:"tool_failures"`
+	OffTurnCalls  int   `json:"off_turn_calls"`
+	OffTurnMS     int64 `json:"off_turn_ms"`
+	FailedCalls   int   `json:"failed_calls"`
+	CanceledCalls int   `json:"canceled_calls"`
+	ToolFailures  int   `json:"tool_failures"`
 	// NoOpSearches is the stall signature: search_code calls that returned
 	// nothing. A run full of them is a discovery loop, not diligence.
-	NoOpSearches int                     `json:"noop_searches"`
+	NoOpSearches int `json:"noop_searches"`
 	// Failures breaks the aggregate down per tool, so "5 schema-arg
 	// errors from ctx_execute" is visible without opening a transcript.
 	Failures        []statsToolFailureView `json:"tool_failures_by_tool,omitempty"`
@@ -165,22 +151,36 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 			return sv, errSessionOutsideWorkspace
 		}
-		rows, readErr := store.ReadMessages(ctx, sessionID)
-		if readErr != nil {
-			return sv, readErr
+		usage, err = store.ReadUsage(ctx, sessionID)
+		if err != nil {
+			return sv, err
 		}
-		messages = make([]llm.Message, 0, len(rows))
-		for _, row := range rows {
-			msg, decodeErr := row.ToMessage()
-			if decodeErr == nil {
-				messages = append(messages, msg)
+		if len(usage) > 0 {
+			counts, readErr := store.ReadMessageCounts(ctx, sessionID)
+			if readErr != nil {
+				return sv, readErr
 			}
+			sv.Session = summarizeSession(meta, nil)
+			sv.Session.UserMessages = counts.User
+			sv.Session.AssistantMsgs = counts.Assistant
+			sv.Session.ToolMessages = counts.Tool
+			sv.Session.ToolCalls = counts.ToolCalls
+		} else {
+			// Legacy sessions need their text to estimate context usage. Modern
+			// sessions already persist that breakdown with each provider call.
+			rows, readErr := store.ReadMessages(ctx, sessionID)
+			if readErr != nil {
+				return sv, readErr
+			}
+			messages = make([]llm.Message, 0, len(rows))
+			for _, row := range rows {
+				msg, decodeErr := row.ToMessage()
+				if decodeErr == nil {
+					messages = append(messages, msg)
+				}
+			}
+			sv.Session = summarizeSession(meta, messages)
 		}
-		usage, readErr = store.ReadUsage(ctx, sessionID)
-		if readErr != nil {
-			return sv, readErr
-		}
-		sv.Session = summarizeSession(meta, messages)
 	}
 
 	if len(usage) > 0 {

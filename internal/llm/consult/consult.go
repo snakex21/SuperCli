@@ -102,6 +102,11 @@ type Council struct {
 	// requested.
 	Samples []llm.Provider
 
+	// LoadSamples optionally resolves the default pool on first use. Explicit
+	// selections bypass it. The loader must be safe for concurrent calls and
+	// return an immutable slice; Samples remains the fallback when it is nil.
+	LoadSamples func() []llm.Provider
+
 	// Judge is the running main provider. It
 	// reads the question + all candidate
 	// responses and returns a JSON verdict.
@@ -155,15 +160,25 @@ func (c *Council) Consult(ctx context.Context, req Request) (Result, error) {
 	if c.Judge == nil {
 		return Result{}, fmt.Errorf("consult: no judge")
 	}
-	if len(c.Samples) == 0 {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	samples := c.Samples
+	if c.LoadSamples != nil {
+		samples = c.LoadSamples()
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if len(samples) == 0 {
 		return Result{}, fmt.Errorf("consult: no sample providers")
 	}
 	// Resolve N. n <= 0 means "all".
 	n := req.N
-	if n <= 0 || n > len(c.Samples) {
-		n = len(c.Samples)
+	if n <= 0 || n > len(samples) {
+		n = len(samples)
 	}
-	providers := c.Samples[:n]
+	providers := samples[:n]
 	if c.Logger != nil {
 		c.Logger("consult: %d sample(s), %d candidate(s) expected", n, n)
 	}
@@ -197,7 +212,7 @@ func (c *Council) Consult(ctx context.Context, req Request) (Result, error) {
 			c.Logger("consult: only 1 candidate, skipping judge")
 		}
 		return Result{
-			Question: req.Question,
+			Question:   req.Question,
 			Candidates: good,
 			Verdict: Verdict{
 				WinnerIndex: 0,

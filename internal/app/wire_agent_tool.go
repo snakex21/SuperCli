@@ -7,6 +7,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
+	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
 	"supercli/internal/tools"
 )
@@ -58,6 +59,8 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	if w.taskWorkerProvider != nil {
 		at.WorkerProvider = w.taskWorkerProvider
 		at.WorkerContextProvider = config.RuntimeProviderName(w.tomlCfg, w.taskWorkerCfg)
+		profile := execution.Resolve(w.taskWorkerCfg, w.tomlCfg, w.caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
+		at.WorkerProfile = &profile
 		if u := w.taskWorkerCfg.BaseURL; u != "" &&
 			w.taskWorkerCfg.Provider != config.ProviderAnthropic &&
 			w.taskWorkerCfg.Provider != config.ProviderCodex {

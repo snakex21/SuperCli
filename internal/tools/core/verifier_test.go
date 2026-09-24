@@ -228,7 +228,7 @@ func TestVerify_Search_EmptyResult_Fails(t *testing.T) {
 	}
 }
 
-func TestVerify_Search_NoResultsPrefix_Fails(t *testing.T) {
+func TestVerify_Search_NoResultsPrefix_Passes(t *testing.T) {
 	c := Check{
 		Family: "search",
 		Tool:   "search_code",
@@ -236,8 +236,8 @@ func TestVerify_Search_NoResultsPrefix_Fails(t *testing.T) {
 		Result: Result{Text: "no results found"},
 	}
 	v := DefaultVerifier{}.Verify(c)
-	if v.OK {
-		t.Error("expected fail for 'no results' prefix")
+	if !v.OK {
+		t.Errorf("valid search miss was rejected: %s", v.Reason)
 	}
 }
 

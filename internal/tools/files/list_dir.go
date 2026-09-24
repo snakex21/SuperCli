@@ -23,7 +23,7 @@ import (
 	"supercli/internal/tools/fileops"
 )
 
-// ListDirTool lists the entries of a single directory.
+// ListDirTool lists directory entries, optionally across several levels.
 type ListDirTool struct {
 	BaseDir string
 	// MaxEntries caps output so a huge directory can't flood
@@ -42,15 +42,14 @@ func NewListDir(baseDir string) *ListDirTool {
 // Spec returns the Tool descriptor.
 func (t *ListDirTool) Spec() Tool {
 	return Tool{
-		Name:     "list_dir",
-		ReadOnly: true,
-		Description: "List a folder's contents — the 'ls'/'dir' for SuperCli. " +
-			"Use this (not file_ops) for \"what's in this folder?\". " +
-			"Empty 'path' lists the working directory; one level, not recursive.",
+		Name:        "list_dir",
+		ReadOnly:    true,
+		Description: "List files and folders. Use depth for a bounded repo overview; skips build/cache subtrees.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Folder to list. Empty or omitted = current working directory."}
+    "path": {"type": "string", "description": "Folder; default working directory."},
+    "depth": {"type": "integer", "minimum": 1, "maximum": 4, "description": "Levels; default 1."}
   }
 }`,
 		Fn: t.Execute,
@@ -58,7 +57,8 @@ func (t *ListDirTool) Spec() Tool {
 }
 
 type listDirArgs struct {
-	Path string `json:"path"`
+	Path  string `json:"path"`
+	Depth *int   `json:"depth"`
 }
 
 // Execute lists the directory named by args.Path (default: the
@@ -72,6 +72,14 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		if err := json.Unmarshal(args, &p); err != nil {
 			return Result{Err: fmt.Errorf("list_dir: bad args: %w", err)}, err
 		}
+	}
+	depth := 1
+	if p.Depth != nil {
+		depth = *p.Depth
+	}
+	if depth < 1 || depth > 4 {
+		err := fmt.Errorf("list_dir: depth must be between 1 and 4")
+		return Result{Err: err}, err
 	}
 	path := strings.TrimSpace(p.Path)
 	// Some local models serialize an empty path twice and produce a JSON
@@ -102,6 +110,10 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 	if !info.IsDir() {
 		return Result{Text: fmt.Sprintf("%s is a file (%d bytes), not a folder.", dir, info.Size())}, nil
+	}
+
+	if depth > 1 {
+		return t.listTree(ctx, dir, depth)
 	}
 
 	entries, err := os.ReadDir(dir)

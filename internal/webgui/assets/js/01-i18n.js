@@ -23,6 +23,10 @@ var I18N = {
     "dialog.action": "SuperCli", "dialog.caution": "Confirmation required", "dialog.confirmTitle": "Confirm action",
     "dialog.editTitle": "Edit", "dialog.confirm": "Continue", "dialog.required": "Enter a value to continue.",
     "model.none": "no model", "model.search": "Search models…", "model.noMatches": "No models match this search.", "model.reasoning": "Reasoning effort",
+    "model.reasoningNotSent": "not sent",
+    "model.reasoningOn": "On", "model.reasoningOff": "Off",
+    "model.reasoningToggleOnly": "This model supports turning thinking on or off.",
+    "model.reasoningUnsupported": "This backend rejected the reasoning control. The preference is saved but is not sent.",
     "model.think": "think", "model.auto": "auto", "model.default": "default",
     "model.hide": "hide", "model.show": "show", "model.setDefault": "CLI default",
     "model.allProviders": "All", "model.hideAll": "Hide all", "model.showAll": "Show all",
@@ -61,6 +65,8 @@ var I18N = {
     "change.title": "File changes", "change.created": "Created", "change.modified": "Modified", "change.deleted": "Deleted",
     "change.fileCreated": "Created file", "change.fileModified": "Modified file", "change.fileDeleted": "Removed file",
     "change.folderCreated": "Created folder", "change.fileMoved": "Moved file", "change.fileCopied": "Copied file",
+    "task.workers": "Workers", "task.active": "active",
+    "task.continue": "Continue worker", "task.previous": "Open previous delegation",
     "task.delegation": "Delegation", "task.done": "done", "task.failed": "failed", "task.stopped": "stopped",
     "task.brief": "Task", "task.activity": "Activity", "task.report": "Worker report", "task.step": "step", "task.steps": "steps",
     "task.input": "input", "task.output": "output",
@@ -245,6 +251,10 @@ var I18N = {
     "dialog.action": "SuperCli", "dialog.caution": "Wymagane potwierdzenie", "dialog.confirmTitle": "Potwierdź działanie",
     "dialog.editTitle": "Edycja", "dialog.confirm": "Kontynuuj", "dialog.required": "Wpisz wartość, aby kontynuować.",
     "model.none": "brak modelu", "model.search": "Szukaj modeli…", "model.noMatches": "Żaden model nie pasuje do wyszukiwania.", "model.reasoning": "Wysiłek rozumowania",
+    "model.reasoningNotSent": "niewysyłane",
+    "model.reasoningOn": "Włączone", "model.reasoningOff": "Wyłączone",
+    "model.reasoningToggleOnly": "Ten model obsługuje włączanie i wyłączanie myślenia.",
+    "model.reasoningUnsupported": "Ten dostawca odrzucił sterowanie myśleniem. Wybór jest zapisany, ale nie jest wysyłany.",
     "model.think": "think", "model.auto": "auto", "model.default": "domyślny",
     "model.hide": "ukryj", "model.show": "pokaż", "model.setDefault": "domyślny CLI",
     "model.allProviders": "Wszystkie", "model.hideAll": "Ukryj wszystkie", "model.showAll": "Pokaż wszystkie",
@@ -283,6 +293,8 @@ var I18N = {
     "change.title": "Zmiany w plikach", "change.created": "Utworzono", "change.modified": "Zmodyfikowano", "change.deleted": "Usunięto",
     "change.fileCreated": "Utworzono plik", "change.fileModified": "Zmodyfikowano plik", "change.fileDeleted": "Usunięto plik",
     "change.folderCreated": "Utworzono folder", "change.fileMoved": "Przeniesiono plik", "change.fileCopied": "Skopiowano plik",
+    "task.workers": "Workerzy", "task.active": "pracuje",
+    "task.continue": "Kontynuacja", "task.previous": "Wróć do poprzedniej delegacji",
     "task.delegation": "Delegacja", "task.done": "gotowe", "task.failed": "błąd", "task.stopped": "zatrzymano",
     "task.brief": "Zadanie", "task.activity": "Aktywność", "task.report": "Raport agenta", "task.step": "krok", "task.steps": "kroków",
     "task.input": "wej.", "task.output": "wyj.",
@@ -488,6 +500,16 @@ Object.assign(I18N.pl, {
   "context.selectSession": "Otw\u00f3rz rozmow\u0119, zanim skompaktujesz jej kontekst.",
   "context.busy": "Poczekaj na zako\u0144czenie bie\u017c\u0105cej odpowiedzi."
 });
+// Keep the translated text node separate from icons, controls and user content.
+// Changing language updates labels in place, even during an active response.
+Object.assign(I18N.en, {"task.noWorkersProcess": "No workers in this process.", "composer.queueEmpty": "No queued tasks."});
+Object.assign(I18N.pl, {"task.noWorkersProcess": "Brak agentów w tym procesie.", "composer.queueEmpty": "Brak oczekujących zadań."});
+function i18nEl(tag, className, key) {
+  var node = el(tag, className, t(key));
+  node.dataset.i18nText = key;
+  node.i18nTextNode = node.firstChild;
+  return node;
+}
 function t(key) {
   var lang = ui.lang || "en";
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
@@ -507,6 +529,7 @@ var SETTING_COPY = {
   en: {
     orchestrator: ["Orchestrator", "Delegate substantial work adaptively, always, or never."],
     allow_all: ["Access outside the project", "Allow file operations beyond the active project; sensitive system folders remain blocked."],
+    discard_previous_reasoning: ["Discard previous reasoning", "From the next turn, omit reasoning from completed replies. The transcript and required tool-call blocks remain. Off by default."],
     thinking: ["Thinking mode", "Enable explicit thinking for local models that support a soft switch."],
     navigator: ["Task navigator", "Choose whether requests are routed as chat, advice, or coordinated work."],
     stable_toolset: ["Stable tool set", "Keep the tool catalog unchanged during a session to preserve the KV cache."],
@@ -529,6 +552,7 @@ var SETTING_COPY = {
   pl: {
     orchestrator: ["Orkiestrator", "Deleguj większe zadania automatycznie, zawsze albo nigdy."],
     allow_all: ["Dostęp poza projektem", "Pozwala działać na plikach poza aktywnym projektem; wrażliwe foldery systemowe pozostają zablokowane."],
+    discard_previous_reasoning: ["Usuwaj wcześniejsze myślenie", "Od następnej tury pomija myślenie zakończonych odpowiedzi w kontekście modelu. Zapis rozmowy i wymagane bloki narzędzi pozostają. Domyślnie wyłączone."],
     thinking: ["Tryb myślenia", "Włącza jawne myślenie w lokalnych modelach obsługujących miękkie przełączanie."],
     navigator: ["Nawigator zadań", "Rozpoznaje, czy prośba jest rozmową, poradą czy pracą wymagającą koordynacji."],
     stable_toolset: ["Stały zestaw narzędzi", "Nie zmienia katalogu narzędzi w trakcie sesji, aby zachować cache KV."],
@@ -554,6 +578,10 @@ function settingCopy(k) {
   return lang[k.key] || SETTING_COPY.en[k.key] || [k.label || k.key, k.desc || ""];
 }
 function applyI18n() {
+  document.documentElement.lang = ui.lang || "en";
+  $$("[data-i18n-text]").forEach(function (n) {
+    if (n.i18nTextNode && n.i18nTextNode.parentNode === n) n.i18nTextNode.nodeValue = t(n.dataset.i18nText);
+  });
   $$("[data-i18n]").forEach(function (n) { n.textContent = t(n.dataset.i18n); });
   $$("[data-i18n-ph]").forEach(function (n) { n.placeholder = t(n.dataset.i18nPh); });
   $$("[data-i18n-title]").forEach(function (n) { n.title = t(n.dataset.i18nTitle); });

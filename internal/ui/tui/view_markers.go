@@ -28,16 +28,16 @@ func (m Marker) tr(english, polish string) string { return textFor(m.language, e
 // Draft renders: [draft: model→model, saved N tokens]
 func (m Marker) Draft(draftModel, verifierModel string, savings int, decision string) string {
 	if savings > 0 {
-		text := fmt.Sprintf(m.tr("✻ draft · %s → %s · saved %d tokens", "✻ szkic · %s → %s · oszczędzono %d tokenów"), draftModel, verifierModel, savings)
+		text := fmt.Sprintf(m.tr("· draft · %s → %s · saved %d tokens", "· szkic · %s → %s · oszczędzono %d tokenów"), draftModel, verifierModel, savings)
 		return m.p.Marker.Render(text)
 	}
-	text := fmt.Sprintf(m.tr("✻ draft · %s → %s · %s", "✻ szkic · %s → %s · %s"), draftModel, verifierModel, decision)
+	text := fmt.Sprintf(m.tr("· draft · %s → %s · %s", "· szkic · %s → %s · %s"), draftModel, verifierModel, decision)
 	return m.p.MarkerDim.Render(text)
 }
 
 // Council renders: [council: N candidate(s) → winner=X, "reason"]
 func (m Marker) Council(candidateCount int, winnerProvider, reason string) string {
-	text := fmt.Sprintf(m.tr("✻ council · %d candidate(s) → winner=%s · %q", "✻ rada · %d kandydatów → wybrany=%s · %q"), candidateCount, winnerProvider, reason)
+	text := fmt.Sprintf(m.tr("· council · %d candidate(s) → winner=%s · %q", "· rada · %d kandydatów → wybrany=%s · %q"), candidateCount, winnerProvider, reason)
 	return m.p.Marker.Render(text)
 }
 
@@ -51,7 +51,7 @@ func (m Marker) CouncilQuestion(q string) string {
 
 // CouncilAllFailed renders: [council: all samples failed]
 func (m Marker) CouncilAllFailed() string {
-	return m.p.MarkerDim.Render(m.tr("✻ council · all samples failed", "✻ rada · wszystkie próby nieudane"))
+	return m.p.MarkerDim.Render(m.tr("· council · all samples failed", "· rada · wszystkie próby nieudane"))
 }
 
 // ContextHid renders: [context: hid N message(s) (reason)]
@@ -59,25 +59,25 @@ func (m Marker) ContextHid(count int, reason string) string {
 	if reason == "" {
 		reason = m.tr("manual", "ręcznie")
 	}
-	text := fmt.Sprintf(m.tr("✻ context · hid %d message(s) · %s", "✻ kontekst · ukryto %d wiadomości · %s"), count, reason)
+	text := fmt.Sprintf(m.tr("· context · hid %d message(s) · %s", "· kontekst · ukryto %d wiadomości · %s"), count, reason)
 	return m.p.MarkerDim.Render(text)
 }
 
 // Reflection renders: [reflection: step N]
 func (m Marker) Reflection(step int) string {
-	text := fmt.Sprintf(m.tr("✻ reflection · step %d", "✻ refleksja · krok %d"), step)
+	text := fmt.Sprintf(m.tr("· reflection · step %d", "· refleksja · krok %d"), step)
 	return m.p.Marker.Render(text)
 }
 
 // Goal renders: [goal: N/M tasks]
 func (m Marker) Goal(done, total int) string {
-	text := fmt.Sprintf(m.tr("✻ goal · %d/%d tasks", "✻ cel · %d/%d zadań"), done, total)
+	text := fmt.Sprintf(m.tr("· goal · %d/%d tasks", "· cel · %d/%d zadań"), done, total)
 	return m.p.Marker.Render(text)
 }
 
 // Done renders: (done · N in / N out)
 func (m Marker) Done(input, output int) string {
-	text := fmt.Sprintf(m.tr("✓ done · %d in / %d out", "✓ gotowe · %d wej. / %d wyj."), input, output)
+	text := fmt.Sprintf(m.tr("+ done · %d in / %d out", "+ gotowe · %d wej. / %d wyj."), input, output)
 	return m.p.Dim.Render(text)
 }
 
@@ -88,7 +88,7 @@ func (m Marker) DoneEst(input, output int, estimated bool) string {
 	if estimated {
 		suffix = m.tr(" · est.", " · szac.")
 	}
-	text := fmt.Sprintf(m.tr("✓ done · %d in / %d out%s", "✓ gotowe · %d wej. / %d wyj.%s"), input, output, suffix)
+	text := fmt.Sprintf(m.tr("+ done · %d in / %d out%s", "+ gotowe · %d wej. / %d wyj.%s"), input, output, suffix)
 	return m.p.Dim.Render(text)
 }
 
@@ -102,6 +102,9 @@ func (m Marker) Error(err error) string {
 // (collapsible — Shift+E expands the matching result block).
 func (m Marker) ToolCall(name, args string) string {
 	summary := summarizeToolArgs(args)
+	if summary == "details hidden" {
+		summary = m.tr("details hidden", "szczegóły ukryte")
+	}
 	prefix := m.p.ToolName.Render("> " + name)
 	if summary == "" {
 		return prefix
@@ -115,9 +118,9 @@ func (m Marker) ToolResult(output string, isErr bool) string {
 		output = output[:200] + "…"
 	}
 	if isErr {
-		return m.p.ToolErr.Render(m.tr("  ⎿ error · ", "  ⎿ błąd · ") + output)
+		return m.p.ToolErr.Render(m.tr("  └ error · ", "  └ błąd · ") + output)
 	}
-	return m.p.ToolOutput.Render("  ⎿ " + output)
+	return m.p.ToolOutput.Render("  └ " + output)
 }
 
 // ToolResultFull renders tool output with the tool name header
@@ -127,7 +130,7 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 	if expanded {
 		maxLines = 40
 	}
-	clean := strings.TrimRight(output, "\n")
+	clean := strings.TrimRight(toolDisplayOutput(output), "\n")
 	if clean == "" {
 		clean = m.tr("(no output)", "(brak wyniku)")
 	}
@@ -143,13 +146,20 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 		meta = fmt.Sprintf(m.tr("done · %d lines", "gotowe · %d linii"), totalLines)
 	}
 	meta += " · " + humanSize(int64(len(output)))
-	b.WriteString(m.p.Success.Render("  ✓ ") + m.p.ToolName.Render(toolName) + m.p.Dim.Render(" · "+meta))
+	b.WriteString(m.p.Success.Render("  + ") + m.p.ToolName.Render(toolName) + m.p.Dim.Render(" · "+meta))
+	shortened := false
 	for _, line := range lines {
+		if !expanded {
+			shortened = shortened || len([]rune(line)) > 180
+			line = compactWorkerText(line, 180)
+		}
 		b.WriteByte('\n')
 		b.WriteString(m.p.ToolOutput.Render("    │ " + line))
 	}
 	if truncated {
 		b.WriteString(m.p.Dim.Render(fmt.Sprintf(m.tr("\n    └ … %d more · Shift+E to expand", "\n    └ … jeszcze %d · Shift+E rozwija"), totalLines-len(lines))))
+	} else if shortened {
+		b.WriteString(m.p.Dim.Render(m.tr("\n    └ … Shift+E to expand", "\n    └ … Shift+E rozwija")))
 	}
 	return b.String()
 }
@@ -157,7 +167,7 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 // ToolResultErr renders a tool error with the tool name.
 func (m Marker) ToolResultErr(toolName, errMsg string) string {
 	var b strings.Builder
-	b.WriteString(m.p.ToolErr.Render("  ⎿ " + toolName + m.tr(" error", " błąd")))
+	b.WriteString(m.p.ToolErr.Render("  └ " + toolName + m.tr(" error", " błąd")))
 	b.WriteByte('\n')
 	b.WriteString(m.p.ToolErr.Render("    " + errMsg))
 	return b.String()
@@ -192,7 +202,7 @@ func (m Marker) ToolActivity(calls, errors, repeats int, byName map[string]int) 
 		}
 		names = append(names, label)
 	}
-	text := fmt.Sprintf(m.tr("✓ tools · %d calls", "✓ narzędzia · %d wywołań"), calls)
+	text := fmt.Sprintf(m.tr("+ tools · %d calls", "+ narzędzia · %d wywołań"), calls)
 	if errors > 0 {
 		text += fmt.Sprintf(m.tr(" · %d errors", " · %d błędów"), errors)
 	}
@@ -257,6 +267,17 @@ func summarizeToolArgs(args string) string {
 		parts = append(parts, task)
 	}
 	if len(parts) == 0 {
+		if args, ok := values["command"].([]any); ok {
+			var command []string
+			for _, arg := range args {
+				if s, ok := arg.(string); ok {
+					command = append(command, s)
+				}
+			}
+			if len(command) > 0 {
+				return truncateToolText("$ "+strings.Join(command, " "), 88)
+			}
+		}
 		return "details hidden"
 	}
 	return truncateToolText(strings.Join(parts, " · "), 88)
@@ -293,16 +314,16 @@ func (m Marker) NoAgent() string {
 
 // Mention renders: [mentions: N file(s), ~T tokens]
 func (m Marker) Mention(count, tokens int) string {
-	text := fmt.Sprintf(m.tr("✻ mentions · %d file(s) · ~%d tokens", "✻ wzmianki · %d plików · ~%d tokenów"), count, tokens)
+	text := fmt.Sprintf(m.tr("· mentions · %d file(s) · ~%d tokens", "· wzmianki · %d plików · ~%d tokenów"), count, tokens)
 	return m.p.MarkerDim.Render(text)
 }
 
 // PlanMode renders: [plan: mode ON] or [plan: mode OFF]
 func (m Marker) PlanMode(on bool) string {
 	if on {
-		return m.p.Marker.Render(m.tr("✻ plan · ON · read-only analysis, structured output", "✻ plan · WŁ. · analiza tylko do odczytu, wynik strukturalny"))
+		return m.p.Marker.Render(m.tr("· plan · ON · read-only analysis, structured output", "· plan · WŁ. · analiza tylko do odczytu, wynik strukturalny"))
 	}
-	return m.p.Dim.Render(m.tr("✻ plan · OFF · normal execution", "✻ plan · WYŁ. · normalne wykonanie"))
+	return m.p.Dim.Render(m.tr("· plan · OFF · normal execution", "· plan · WYŁ. · normalne wykonanie"))
 }
 
 // Diff renders the /diff output with markers.
@@ -312,5 +333,22 @@ func (m Marker) Diff(text string) string {
 
 // ModelInfo renders: [model: ...]
 func (m Marker) ModelInfo(text string) string {
-	return m.p.Marker.Render("✻ model · " + text)
+	return m.p.Marker.Render("· model · " + text)
+}
+
+// toolDisplayOutput unwraps structured process results for the transcript.
+// The original JSON is kept in the stored tool result and model history.
+func toolDisplayOutput(output string) string {
+	var result struct {
+		Stdout *string `json:"stdout"`
+		Stderr string  `json:"stderr"`
+	}
+	if json.Unmarshal([]byte(output), &result) != nil || result.Stdout == nil {
+		return output
+	}
+	text := strings.TrimRight(*result.Stdout, "\r\n")
+	if result.Stderr != "" {
+		text += "\nstderr:\n" + strings.TrimRight(result.Stderr, "\r\n")
+	}
+	return strings.TrimSpace(text)
 }

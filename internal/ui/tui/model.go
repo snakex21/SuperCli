@@ -42,14 +42,16 @@ const (
 // Model is the root Bubble Tea model. F25 adds Palette, Marker,
 // structured chat, CancelState, and ScrollConfig.
 type Model struct {
-	home      string
-	dataDir   string
-	sessionID string
+	home                 string
+	dataDir              string
+	sessionID            string
+	loadedSessionID      string
+	pendingAttachments   []string
+	attachmentPickerOpen bool
 
-	// version and tierName feed the slim header bar
+	// version feeds the slim header bar
 	// ("✻ SuperCli 0.6.0 · model · tier").
 	version  string
-	tierName string
 	language string
 	agent    agent.Agent
 	llm      llm.Provider
@@ -61,7 +63,8 @@ type Model struct {
 
 	// statusFn returns the footer status line. nil
 	// disables the status line entirely. F7.
-	statusFn func() string
+	statusFn    func() string
+	dashboardFn func() DashboardSnapshot
 
 	// F25: theme and styled markers
 	palette Palette
@@ -89,7 +92,10 @@ type Model struct {
 	scroll ScrollConfig
 
 	// AskUser state. Set when mode == modeAsking; nil otherwise.
-	pendingAsk *pendingAsk
+	pendingAsk  *pendingAsk
+	askQueue    []tools.AskRequest
+	toolNames   map[string]string
+	workerViews []workerView
 
 	// F26.2: shellRunner handles "!command" shell escapes.
 	// nil = shell escapes disabled.
@@ -102,25 +108,34 @@ type Model struct {
 	tracker *fileops.Tracker
 
 	// F26.5: modelSwapper for /model hot-swap.
-	modelSwapper   ModelSwapper
-	modelLister    ModelLister
-	modelSwapFn    ModelSwapFunc
-	sessionStore   *session.Store
-	statsRecorder  stats.Recorder     // F28: per-turn metrics for /cost
-	providerMgr    *providers.Manager // F30: provider management
-	activeProvider string
-	modelContexts  *config.ModelContextStore
-	caps           *llm.CapabilityRegistry
-	goalSvc        *goal.Service
-	toolRegistry   *tools.Registry
-	doctorReport   *doctor.Report
-	menu           interactiveMenu
-	autocomp       autocomplete // autocomplete popup state
+	modelSwapper     ModelSwapper
+	modelLister      ModelLister
+	modelSwapFn      ModelSwapFunc
+	resumeSession    func(context.Context, string, []llm.Message, []string) error
+	resumeContext    context.Context
+	prepareResume    func(context.Context, string) error
+	initialResumeCmd tea.Cmd
+	drafts           *DraftRecovery
+	submittingDraft  string
+	cancelling       bool
+	draftErrorShown  string
+	sessionStore     *session.Store
+	statsRecorder    stats.Recorder     // F28: per-turn metrics for /cost
+	providerMgr      *providers.Manager // F30: provider management
+	activeProvider   string
+	modelContexts    *config.ModelContextStore
+	caps             *llm.CapabilityRegistry
+	goalSvc          *goal.Service
+	toolRegistry     *tools.Registry
+	doctorReport     *doctor.Report
+	menu             interactiveMenu
+	autocomp         autocomplete // autocomplete popup state
 	// providerStatuses caches async connectivity probe results for
 	// the /providers menu (key: provider name). The menu renders
 	// instantly with "checking..." and statuses pop in as the
 	// background pings finish.
-	providerStatuses map[string]providerStatus
+	providerStatuses    map[string]providerStatus
+	modelPickerScanning bool
 
 	// onRunEnd is invoked (in a goroutine) after each agent run
 	// finishes. See Options.OnRunEnd.
@@ -138,6 +153,8 @@ type Model struct {
 	// "cancelled") that replaces the normal status bar for
 	// a few seconds. Cleared by statusOverrideClearMsg.
 	statusOverride string
+	statusSuccess  bool
+	statusRevision uint64
 
 	// extCh is the channel the loop emits non-Run events on
 	// (F12 ConsultEvent). nil = no external sink.
@@ -153,6 +170,11 @@ type Model struct {
 	// chunk is appended here and rendered in-place until
 	// DoneEvent flushes it into chat.
 	current string
+	// Pointer ownership keeps Builder safe when Bubble Tea copies Model values.
+	currentBuffer *strings.Builder
+	// The last painted inputs let timer ticks skip unchanged Markdown/layout.
+	renderedCurrent string
+	renderedSpinner string
 
 	// responseLen tracks the total character count of the
 	// current assistant response. Used for chars/4 token
@@ -167,7 +189,9 @@ type Model struct {
 	// runtimeHUD is refreshed once after a completed turn. It is deliberately
 	// not recomputed from the full conversation in View(), keeping redraws and
 	// token streaming free of context-estimation work.
-	runtimeHUD string
+	runtimeHUD     string
+	runtimeContext contextSnapshot
+	reasoningOpen  bool
 
 	// toolExpanded: when true, tool results are shown in
 	// full (max 50 lines). Toggled with 'E' key.
@@ -232,6 +256,8 @@ type SlashHandler func(ctx context.Context, args string) (string, error)
 
 // pendingAsk is the live state of an active ask_user interaction.
 type pendingAsk struct {
+	ID          string
+	done        <-chan struct{}
 	Question    string
 	Header      string
 	Options     []tools.AskOption
@@ -258,15 +284,21 @@ type Options struct {
 	Language string
 	// SessionID identifies the live conversation so the interactive
 	// session picker can omit it from the "continue session" list.
-	SessionID string
-	Agent     agent.Agent
-	LLM       llm.Provider
-	Commands  map[string]SlashHandler
+	SessionID     string
+	ResumeID      string
+	DraftRecovery *DraftRecovery
+	PrepareResume func(context.Context, string) error
+	ResumeSession func(context.Context, string, []llm.Message, []string) error
+	Agent         agent.Agent
+	LLM           llm.Provider
+	Commands      map[string]SlashHandler
 	// StatusFn, if non-nil, is called from View() to
 	// render the footer status line (typically
 	// "credits: 1.2k/10k (12%)"). The TUI does not own
 	// the credit state; main.go does.
 	StatusFn func() string
+	// DashboardFn supplies cheap, structured footer data.
+	DashboardFn func() DashboardSnapshot
 	// ExtCh is the loop's external event channel
 	// (F12 ConsultEvent). When non-nil, the TUI
 	// starts a read pump in Init() and routes
@@ -406,17 +438,17 @@ func New(opts Options) Model {
 
 	vp.SetContent(welcome(opts, p))
 
-	return Model{
+	m := Model{
 		home:              opts.Home,
 		dataDir:           opts.DataDir,
 		sessionID:         opts.SessionID,
 		version:           opts.Version,
-		tierName:          opts.Tier,
 		language:          opts.Language,
 		agent:             opts.Agent,
 		llm:               opts.LLM,
 		commands:          opts.Commands,
 		statusFn:          opts.StatusFn,
+		dashboardFn:       opts.DashboardFn,
 		palette:           p,
 		marker:            mkr,
 		extCh:             opts.ExtCh,
@@ -431,6 +463,9 @@ func New(opts Options) Model {
 		modelSwapper:      opts.ModelSwapper,
 		modelLister:       opts.ModelLister,
 		modelSwapFn:       opts.ModelSwapFn,
+		resumeSession:     opts.ResumeSession,
+		prepareResume:     opts.PrepareResume,
+		drafts:            opts.DraftRecovery,
 		sessionStore:      opts.SessionStore,
 		statsRecorder:     opts.StatsRecorder,
 		providerMgr:       opts.ProviderMgr,
@@ -446,6 +481,26 @@ func New(opts Options) Model {
 		dataExport:        opts.DataExport,
 		dataImport:        opts.DataImport,
 	}
+	if m.drafts != nil {
+		saved := m.drafts.Snapshot()
+		m.input.SetValue(saved.Text)
+		m.pendingAttachments = saved.Attachments
+		m.syncInputHeight()
+		if saved.Text != "" || len(saved.Attachments) > 0 {
+			m.setStatus(m.tr("Unsent draft restored", "Przywrócono niewysłany szkic"), true)
+			if opts.ResumeID == "" && m.sessionStore != nil && saved.SessionID != "" {
+				if sess, err := m.sessionStore.Get(saved.SessionID); err == nil && sess.MessageCount > 0 {
+					opts.ResumeID = saved.SessionID
+				}
+			}
+		}
+	}
+	if opts.ResumeID != "" {
+		next, cmd := m.resumeConversation(opts.ResumeID)
+		m = next.(Model)
+		m.initialResumeCmd = cmd
+	}
+	return m
 }
 
 // maxInputLines caps how tall the multi-line input box
@@ -489,13 +544,13 @@ func (m *Model) syncInputHeight() {
 	if m.input.Height() != h {
 		m.input.SetHeight(h)
 	}
-	m.viewport.Height = m.viewportHeight()
+	m.resizeViewport()
 }
 
 // Init satisfies tea.Model. The spinner ticks while the agent
 // is running; the text input cursor blinks.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick, textarea.Blink}
+	cmds := []tea.Cmd{m.spinner.Tick, textarea.Blink, m.initialResumeCmd}
 	// Start the external-sink pump (F12 ConsultEvent).
 	if m.extCh != nil {
 		cmds = append(cmds, waitForExternalEvent(m.extCh))
@@ -511,8 +566,11 @@ type runStartMsg struct {
 	err error
 	// mentionCount/mentionTokens describe @file mentions that
 	// were resolved in the background before the run started.
-	mentionCount  int
-	mentionTokens int
+	mentionCount      int
+	mentionTokens     int
+	draft             string
+	attachmentsSent   bool
+	attachmentWarning string
 }
 
 type runEventMsg struct {
@@ -530,7 +588,7 @@ type dataOperationMsg struct {
 
 // statusOverrideClearMsg clears the temporary status override
 // (e.g. "cancelled" → normal status).
-type statusOverrideClearMsg struct{}
+type statusOverrideClearMsg struct{ revision uint64 }
 
 // streamFlushMsg forces a View() render during active streaming.
 // Emitted by streamFlushCmd every 16ms while m.eventCh != nil.
@@ -544,8 +602,11 @@ type runExtEventMsg struct {
 // slashResultMsg is delivered to the TUI when a slash
 // command handler returns.
 type slashResultMsg struct {
-	Body string
-	Err  error
+	Body     string
+	Err      error
+	History  *resumedTranscript
+	Document bool
+	Local    bool
 }
 
 // askRequestMsg is delivered to the TUI by main.go's pump
@@ -579,24 +640,33 @@ type StatusRefreshMsg = statusRefreshMsg
 func StatusRefreshMsgValue() tea.Msg { return statusRefreshMsg{} }
 
 // Update handles messages.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = m.viewportHeight()
+		m.resizeViewport()
 		m.chat.width = msg.Width
+		m.chat.completedDirty = true
 		m.input.SetWidth(msg.Width)
 		// Keep the empty-state welcome responsive. Once a conversation has
 		// started refreshTranscript owns the viewport and resize must never
 		// replace the chat with the welcome screen.
 		if m.transcript.String() == "" && m.current == "" {
 			m.viewport.SetContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
+		} else {
+			m.refreshTranscript()
 		}
 		return m, nil
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case tea.KeyMsg:
+		if m.attachmentPickerOpen {
+			return m, nil
+		}
 		// Ignore Alt shortcuts so Alt+A/Alt+K do not activate menu
 		// actions or insert stray ASCII. Keep non-ASCII AltGr input
 		// (Polish chars like ą/ć/ł/ń/ó/ś/ż/ź) working.
@@ -605,6 +675,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+c" {
 			return m.handleCtrlC()
+		}
+		if m.resumeContext != nil {
+			if msg.String() == "esc" {
+				return m.handleEscCancel()
+			}
+			if msg.String() == "enter" {
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			m.syncInputHeight()
+			return m, cmd
 		}
 		if m.mode == modeAsking {
 			return m.handleAskKey(msg)
@@ -646,22 +728,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case runStartMsg:
+		m.submittingDraft = ""
 		if msg.err != nil {
+			m.cancelling = false
 			// agent.Run failed before the run started.
 			m.cancel.Disarm()
 			m.busy = false
-			m.appendLine(fmt.Sprintf("(error: %v)", msg.err))
+			if m.input.Value() == "" && msg.draft != "" {
+				m.input.SetValue(msg.draft)
+				m.syncInputHeight()
+			}
+			m.appendLine(m.marker.Error(msg.err))
 			m.refreshTranscript()
 			return m, nil
+		}
+		if msg.attachmentsSent {
+			m.pendingAttachments = nil
+			m.syncInputHeight()
+		}
+		if msg.attachmentWarning != "" {
+			m.appendLine(m.marker.Error(fmt.Errorf("attachment history: %s", msg.attachmentWarning)))
 		}
 		if msg.mentionCount > 0 && msg.mentionTokens > 0 {
 			m.appendLine(m.marker.Mention(msg.mentionCount, msg.mentionTokens))
 			m.refreshTranscript()
 		}
 		m.busy = true
-		m.current = ""
+		m.resetCurrent()
 		m.responseLen = 0
 		m.toolActivity.reset()
+		m.toolNames = make(map[string]string)
 		m.eventCh = msg.ch
 		return m, tea.Batch(waitForEvent(msg.ch), streamFlushCmd())
 
@@ -669,13 +765,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleAgentEvent(msg.ev)
 
 	case runExtEventMsg:
-		newM, cmd := m.handleAgentEvent(msg.ev)
-		if m.extCh != nil {
-			cmd = tea.Batch(cmd, waitForExternalEvent(m.extCh))
-		}
-		return newM, cmd
+		newM, _ := m.handleAgentEvent(msg.ev)
+		return newM, waitForExternalEvent(m.extCh)
 
 	case runEndMsg:
+		m.cancelling = false
 		m.busy = false
 		m.cancel.Disarm()
 		m.eventCh = nil
@@ -692,17 +786,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dataOperationMsg:
 		if msg.err != nil {
-			m.statusOverride = "data: " + msg.err.Error()
+			m.setStatus("data: "+msg.err.Error(), false)
 			return m, nil
 		}
 		m.mode = modeNormal
 		m.menu = interactiveMenu{}
 		m.input.Focus()
 		if msg.kind == "import" {
-			m.statusOverride = m.tr("backup ready; restart SuperCli to apply it", "kopia przygotowana; uruchom SuperCli ponownie, aby ją zastosować")
+			m.setStatus(m.tr("backup ready; restart SuperCli to apply it", "kopia przygotowana; uruchom SuperCli ponownie, aby ją zastosować"), true)
 			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
 		} else {
-			m.statusOverride = m.tr("backup saved: ", "kopia zapisana: ") + msg.path
+			m.setStatus(m.tr("backup saved: ", "kopia zapisana: ")+msg.path, true)
 			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
 		}
 		m.refreshTranscript()
@@ -710,7 +804,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case askRequestMsg:
 		return m.beginAsk(msg.req)
+	case askClosedMsg:
+		if m.pendingAsk != nil && m.pendingAsk.ID == string(msg) {
+			m.endAsk()
+		}
+		return m, nil
 
+	case resumeLoadedMsg:
+		return m.finishResume(msg)
+	case clipboardImageMsg:
+		return m.finishClipboardImage(msg)
+	case nativeAttachmentsMsg:
+		return m.applyNativeAttachments(msg)
+
+	case attachmentDirectoryMsg:
+		if m.menu.kind == menuAttachments && m.menu.attachmentDir == msg.path {
+			m.menu.attachmentLoading = false
+			m.menu.attachmentEntries = msg.entries
+			if msg.err != nil {
+				m.menu.formErr = msg.err.Error()
+			}
+		}
+		return m, nil
+	case usageLoadedMsg:
+		if m.menu.kind == menuUsage && m.menu.category == msg.scope {
+			if msg.err != nil {
+				m.menu.formErr = msg.err.Error()
+			} else {
+				m.menu.usage = msg.data
+				m.menu.formErr = ""
+			}
+		}
+		return m, nil
 	case providerStatusMsg:
 		if m.providerStatuses == nil {
 			m.providerStatuses = make(map[string]providerStatus)
@@ -740,15 +865,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				formErr += "The edited provider remains saved; correct its settings and try again. "
 			}
 			formErr += compactProviderError(msg.err)
-			m.mode = modeMenu
-			m.menu = interactiveMenu{
+			m.enterMenu(interactiveMenu{
 				kind:     menuProviderForm,
 				form:     append([]string(nil), msg.form...),
 				formAt:   formAt,
 				formErr:  formErr,
 				editName: formEditName,
-			}
-			m.input.Blur()
+			})
 			if m.providerStatuses != nil && msg.rolledBack {
 				delete(m.providerStatuses, msg.name)
 			}
@@ -759,7 +882,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		return m, nil
 
+	case modelPickerScanDoneMsg:
+		m.modelPickerScanning = false
+		if m.mode == modeMenu {
+			m.clampMenuCursor()
+		}
+		return m, nil
+
 	case providerScanDoneMsg:
+		if m.mode == modeMenu {
+			m.clampMenuCursor()
+		}
 		return m, nil
 
 	case doctorReportMsg:
@@ -769,16 +902,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case slashResultMsg:
-		m.busy = false
-		m.cancel.Disarm()
-		m.chat.removeLastSystem(m.marker.Running())
+		if !msg.Local {
+			m.busy = false
+			m.cancel.Disarm()
+			m.chat.removeLastSystem(m.marker.Running())
+		}
 		if msg.Err != nil {
-			m.appendLine(fmt.Sprintf("_(error: %v)_", msg.Err))
+			m.appendLine(m.marker.Error(msg.Err))
+		} else if msg.History != nil {
+			m.applyResumedTranscript(msg.History)
+		} else if msg.Document {
+			m.chat.addDocument(msg.Body)
+			m.appendLineToTranscript(msg.Body)
 		} else {
 			m.appendLine(msg.Body)
 		}
 		m.refreshTranscript()
-		m.input.Reset()
 		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
@@ -808,16 +947,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					r.Command, r.Duration.Round(1e6), out), false))
 		}
 		m.refreshTranscript()
-		m.input.Reset()
 		m.syncInputHeight()
 		m.input.Focus()
 		return m, nil
 
 	case statusOverrideClearMsg:
-		m.statusOverride = ""
+		if msg.revision != 0 && msg.revision != m.statusRevision {
+			return m, nil
+		}
+		m.setStatus("", false)
 		return m, nil
 
 	case statusRefreshMsg:
+		m.resizeViewport()
 		// Background data (e.g. an async Codex usage snapshot)
 		// arrived. Returning triggers a View() re-render so the
 		// pull-based footer picks it up without a keystroke.
@@ -827,7 +969,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Force a View() render during active streaming.
 		// The tick stops when eventCh becomes nil (run ends).
 		if m.eventCh != nil {
-			m.refreshTranscript()
+			if m.chat.completedDirty || m.current != m.renderedCurrent || m.streamSpinner() != m.renderedSpinner {
+				m.refreshTranscript()
+			}
 			return m, streamFlushCmd()
 		}
 		return m, nil
@@ -875,6 +1019,7 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	}
 	m.activeProvider = provider
 	m.llm = newProv // update header display
+	m.refreshRuntimeHUD()
 	// Show the model the user picked, not the provider's internal
 	// Name() (a multi-account router reports "router(N providers)",
 	// which would leak here). modelID is what the user chose.
@@ -882,7 +1027,7 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	if swapLabel == "" {
 		swapLabel = newProv.Name()
 	}
-	m.appendLine(m.marker.ModelInfo(fmt.Sprintf("swapped to %s", swapLabel)))
+	m.appendLine(m.marker.ModelInfo(fmt.Sprintf(m.tr("switched to %s", "wybrano %s"), swapLabel)))
 	// Persist active model + provider for next startup. Done here
 	// (at confirm time) rather than lazily at the next send, so
 	// closing the CLI immediately after picking keeps the choice.

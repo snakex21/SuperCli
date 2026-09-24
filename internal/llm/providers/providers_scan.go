@@ -169,9 +169,8 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 			ids = append(ids, model.ID)
 		}
 	}
-	// Native local endpoints are consulted only for context-window sizes. Their
-	// vision/tool flags are deliberately ignored: those hints must not become a
-	// second permission layer in front of the selected model.
+	// Native local endpoints supply context sizes and reasoning controls.
+	// Vision/tool flags remain independent of this metadata merge.
 	if err == nil && p.Type != config.ProviderAnthropic {
 		discovered = mergeDiscoveredContextLengths(discovered, llm.ListLocalNativeModelInfos(ctx, p.BaseURL, apiKey))
 	}
@@ -202,11 +201,15 @@ func mergeDiscoveredContextLengths(base, native []llm.ModelInfo) []llm.ModelInfo
 		byID[model.ID] = index
 	}
 	for _, model := range native {
-		if model.ContextLength <= 0 {
-			continue
-		}
 		if index, ok := byID[model.ID]; ok {
-			base[index].ContextLength = model.ContextLength
+			if model.ContextLength > 0 {
+				base[index].ContextLength = model.ContextLength
+			}
+			if model.ReasoningKnown {
+				base[index].Reasoning = model.Reasoning
+				base[index].ReasoningKnown = true
+				base[index].ReasoningToggleOnly = model.ReasoningToggleOnly
+			}
 		}
 	}
 	return base

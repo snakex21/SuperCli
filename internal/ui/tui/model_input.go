@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,14 +18,18 @@ import (
 
 func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "enter" {
+		if m.cancelling {
+			m.setStatus(m.tr("Stopping the previous run; your draft is kept", "Kończenie poprzedniej pracy; szkic jest zachowany"), false)
+			return m, m.statusClearCmd()
+		}
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
 			return m, nil
 		}
 		q, ok := m.agent.(interjectionQueuer)
 		if !ok || !q.QueueInterjection(text) {
-			m.statusOverride = m.tr("message queue is full", "kolejka wiadomo\u015bci jest pe\u0142na")
-			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusOverrideClearMsg{} })
+			m.setStatus(m.tr("message queue is full", "kolejka wiadomo\u015bci jest pe\u0142na"), false)
+			return m, m.statusClearCmd()
 		}
 		m.chat.addUser("> " + text)
 		m.appendLineToTranscript("> " + text)
@@ -37,11 +40,7 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.String() == "ctrl+v" {
-		if text, err := clipboard.ReadAll(); err == nil && text != "" {
-			m.input.InsertString(normalizePastedText(text))
-			m.syncInputHeight()
-		}
-		return m, nil
+		return m.pasteClipboard()
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -54,26 +53,33 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // - If asking: cancel the ask.
 // - If idle: quit the program. Single-letter keys like q do not quit.
 func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
-	if m.busy {
-		// Cancel the active run. (This used to append the
-		// "running" marker, which read as if the run was
-		// still in progress after cancelling.)
-		m.cancel.Cancel()
-		m.busy = false
-		m.cancel.Disarm()
-		m.statusOverride = "cancelled"
-		m.appendLine(m.palette.InputHint.Render("[Ctrl+C] run cancelled"))
-		m.refreshTranscript()
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return statusOverrideClearMsg{}
-		})
-	}
 	if m.mode == modeAsking {
 		if m.pendingAsk != nil {
 			safeRespond(m.pendingAsk.respond, tools.AskAnswer{Cancelled: true})
 		}
 		m.endAsk()
 		return m, nil
+	}
+	if m.cancelling {
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if m.busy {
+		// Cancel the active run. (This used to append the
+		// "running" marker, which read as if the run was
+		// still in progress after cancelling.)
+		m.cancel.Cancel()
+		m.resumeContext = nil
+		m.cancelling = m.eventCh != nil || m.submittingDraft != ""
+		m.busy = m.cancelling
+		m.cancel.Disarm()
+		m.setStatus("cancelled", true)
+		if m.cancelling {
+			m.setStatus(m.tr("Stopping…", "Kończenie pracy…"), true)
+		}
+		m.appendLine(m.palette.InputHint.Render("[Ctrl+C] run cancelled"))
+		m.refreshTranscript()
+		return m, m.statusClearCmd()
 	}
 	// Idle → quit.
 	m.quitting = true
@@ -88,19 +94,30 @@ func (m Model) handleEscCancel() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cancel.Cancel()
-	m.busy = false
+	m.resumeContext = nil
+	m.cancelling = m.eventCh != nil || m.submittingDraft != ""
+	m.busy = m.cancelling
 	m.cancel.Disarm()
-	m.statusOverride = "cancelled"
+	m.setStatus("cancelled", true)
+	if m.cancelling {
+		m.setStatus(m.tr("Stopping…", "Kończenie pracy…"), true)
+	}
 	m.appendLine(m.palette.InputHint.Render("[ESC] run cancelled"))
 	m.refreshTranscript()
 	// Clear the override after 2 seconds.
-	return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-		return statusOverrideClearMsg{}
-	})
+	return m, m.statusClearCmd()
 }
 
 // handleKey processes key events when the TUI is idle.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+k":
+		return m.openActionsMenu()
+	case "ctrl+o":
+		return m.openNativeAttachments()
+	case "ctrl+v":
+		return m.pasteClipboard()
+	}
 	// Autocomplete popup navigation — intercept keys BEFORE scroll.
 	if m.autocomp.kind != autocompNone {
 		return m.handleAutocompleteKey(msg)
@@ -138,21 +155,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		m.syncInputHeight()
 		return m.startPrompt(text)
-	case "ctrl+v":
-		if text, err := clipboard.ReadAll(); err == nil && text != "" {
-			// Multi-line pastes keep their newlines (code,
-			// logs, ...). Control chars are still stripped.
-			m.input.InsertString(normalizePastedText(text))
-			m.syncInputHeight()
-			m.updateAutocompleteState()
-		}
-		return m, nil
 	case "ctrl+r":
 		return m.openReasoningMenu()
 	case "ctrl+f":
 		return m.openTranscriptSearchMenu()
-	case "ctrl+k":
-		return m.openActionsMenu()
 	case "tab":
 		// Empty-input Tab is the discoverable, GUI-like entry point to
 		// common actions. A non-empty input keeps the textarea's normal
@@ -166,15 +172,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Copy the last assistant response to the clipboard.
 		last := m.chat.lastAssistant()
 		if last == "" {
-			m.statusOverride = "nothing to copy"
+			m.setStatus("nothing to copy", false)
 		} else if err := clipboard.WriteAll(last); err != nil {
-			m.statusOverride = fmt.Sprintf("copy failed: %v", err)
+			m.setStatus(fmt.Sprintf("copy failed: %v", err), false)
 		} else {
-			m.statusOverride = "copied last response"
+			m.setStatus(m.tr("Copied last response", "Skopiowano ostatnią odpowiedź"), true)
 		}
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return statusOverrideClearMsg{}
-		})
+		return m, m.statusClearCmd()
 	}
 
 	var cmd tea.Cmd
@@ -184,17 +188,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// persistReasoningEffort writes the level to the GLOBAL
-// config.toml — the same file the /reasoning slash command
-// writes — so Ctrl+R changes survive a restart. Best-effort:
-// the in-process level is already set even if the save fails.
+// persistReasoningEffort updates the active configuration as well as the
+// global default. A project override must not restore an older level on restart.
 func (m *Model) persistReasoningEffort(level string) {
+	if m.providerMgr != nil {
+		if err := m.providerMgr.SaveReasoningEffort(level); err != nil {
+			m.setStatus(fmt.Sprintf("reasoning: save config.toml: %v", err), false)
+		}
+		return
+	}
 	cwd, _ := os.Getwd()
 	globalPath, _ := config.FindTomlPaths(m.dataDir, cwd)
 	if tc, err := config.LoadToml(globalPath); err == nil {
 		tc.ReasoningEffort = level
 		if err := config.SaveToml(globalPath, tc); err != nil {
-			m.statusOverride = fmt.Sprintf("reasoning: save config.toml: %v", err)
+			m.setStatus(fmt.Sprintf("reasoning: save config.toml: %v", err), false)
 		}
 	}
 }

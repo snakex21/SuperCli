@@ -10,7 +10,7 @@ import (
 func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		return m.closeMenu()
+		return m.backMenu()
 	case "up":
 		m.menu.keyRevealed = false
 		if m.menu.formAt > 0 {
@@ -82,11 +82,13 @@ func (m *Model) clampMenuCursor() {
 		max = len(m.menu.tasks) - 1
 	case menuData:
 		max = 2
+	case menuContextLimit:
+		max = len(contextMenuValues) - 1
 	case menuModels, menuModelCatalog, menuProviderModels:
 		max = len(m.filteredModelRows()) - 1
 	case menuProviders:
 		max = len(m.providerRows()) - 1
-	case menuProviderForm:
+	case menuProviderForm, menuGoalForm:
 		// form uses formAt, not cursor
 		max = len(m.menu.form) - 1
 		if max < 0 {
@@ -105,9 +107,9 @@ func (m *Model) clampMenuCursor() {
 	case menuProjects:
 		max = len(m.projectRows()) - 1
 	case menuGoal:
-		max = len(m.goalTaskRows()) - 1
+		max = len(m.goalMenuRows()) - 1
 	case menuReasoning:
-		max = len(reasoningMenuOptions()) - 1
+		max = len(m.localizedReasoningMenuOptions()) - 1
 	case menuSettings:
 		max = len(m.localizedSettingsRows()) - 1
 	}

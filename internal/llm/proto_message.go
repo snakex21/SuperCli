@@ -68,16 +68,18 @@ type Message struct {
 type PartType string
 
 const (
-	PartTypeText  PartType = "text"
-	PartTypeImage PartType = "image"
+	PartTypeText      PartType = "text"
+	PartTypeImage     PartType = "image"
+	PartTypeReasoning PartType = "reasoning"
 )
 
 // ContentPart is one chunk of a multimodal message. Exactly one of
 // Text or Image is meaningful, based on Type.
 type ContentPart struct {
-	Type  PartType
-	Text  string
-	Image *ImageRef
+	Type      PartType
+	Text      string
+	Image     *ImageRef
+	Reasoning *ReasoningBlock `json:",omitempty"`
 }
 
 // ImageRef references an image by remote/data URL, inline base64, or a local
@@ -153,6 +155,9 @@ func (m Message) Validate() error {
 		return fmt.Errorf("llm.Message(%s): empty content, no parts, and no tool calls", m.Role)
 	}
 	for i, p := range m.Parts {
+		if p.Type == PartTypeReasoning && m.Role != RoleAssistant {
+			return fmt.Errorf("reasoning part requires assistant role")
+		}
 		if err := p.Validate(); err != nil {
 			return fmt.Errorf("llm.Message part %d: %w", i, err)
 		}
@@ -177,6 +182,8 @@ func (p ContentPart) Validate() error {
 		if p.Image.URL == "" && p.Image.MediaType == "" {
 			return fmt.Errorf("image part: MediaType required when Data or Path is set")
 		}
+	case PartTypeReasoning:
+		return p.Reasoning.Validate()
 	case "":
 		return fmt.Errorf("part: empty type")
 	default:

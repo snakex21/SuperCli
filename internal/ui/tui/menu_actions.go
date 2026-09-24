@@ -9,7 +9,6 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
-	"supercli/internal/storage/goal"
 	"supercli/internal/system/config"
 )
 
@@ -23,6 +22,10 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		return m.selectTranscriptMatch()
 	case menuQueue:
 		return m.runQueuedTask()
+	case menuGoal:
+		return m.selectGoalAction()
+	case menuGoalForm:
+		return m.submitGoalForm()
 	case menuData:
 		return m.runDataAction()
 	case menuModels:
@@ -93,7 +96,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			}
 			m.providerMgr.Reload()
 		}
-		m.menu = interactiveMenu{kind: menuProviders}
+		m.returnToProvidersMenu()
 		if savedName == "" || m.caps == nil {
 			return m, m.probeProvidersCmd()
 		}
@@ -169,15 +172,15 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		// OpenAI is one provider with two auth methods: ChatGPT
 		// account (OAuth) or API key. Ask which one to use.
 		if p.Name == "openai" {
-			m.menu = interactiveMenu{kind: menuOpenAIAuth}
+			m.enterMenu(interactiveMenu{kind: menuOpenAIAuth})
 			return m, nil
 		}
-		m.menu = interactiveMenu{
+		m.enterMenu(interactiveMenu{
 			kind:     menuProviderForm,
 			form:     []string{p.Name, p.Type, p.BaseURL, "", ""},
 			formAt:   0,
 			editName: "",
-		}
+		})
 		return m, nil
 	case menuOpenAIAuth:
 		if m.menu.cursor == 0 {
@@ -185,15 +188,15 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			// lists logged-in accounts and lets the user add/remove
 			// them (round-robin pool). First-time users see an empty
 			// list with a single "add account" action.
-			m.menu = interactiveMenu{kind: menuAccounts}
+			m.enterMenu(interactiveMenu{kind: menuAccounts})
 			return m, nil
 		}
 		// API key: prefill the regular provider form.
-		m.menu = interactiveMenu{
+		m.enterMenu(interactiveMenu{
 			kind:   menuProviderForm,
 			form:   []string{"openai", "openai", "https://api.openai.com/v1", "", ""},
 			formAt: 3,
-		}
+		})
 		return m, nil
 	case menuAccounts:
 		return m.accountsMenuEnter()
@@ -215,8 +218,8 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 		}
 		p := rows[minInt(m.menu.cursor, len(rows)-1)]
 		if err := m.providerMgr.SetDisabled(p.Name, !p.Disabled); err != nil {
-			m.statusOverride = "provider: " + err.Error()
-			return m, statusClearCmd()
+			m.setStatus("provider: "+err.Error(), false)
+			return m, m.statusClearCmd()
 		}
 		m.providerMgr.Reload()
 		if p.Disabled && m.caps != nil {
@@ -229,25 +232,18 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 		}
 		return m, m.probeProvidersCmd()
 	}
-	if m.menu.kind == menuGoal && m.goalSvc != nil {
-		rows := m.goalTaskRows()
-		if len(rows) == 0 {
-			return m, nil
-		}
-		t := rows[minInt(m.menu.cursor, len(rows)-1)]
-		newStatus := goal.TaskDone
-		if t.Status == goal.TaskDone {
-			newStatus = goal.TaskPending
-		}
-		if err := m.goalSvc.SetTaskStatus(context.Background(), "", t.Seq, newStatus); err != nil {
-			m.appendLine(m.marker.Error(err))
-		}
+	if m.menu.kind == menuGoal {
+		return m.selectGoalAction()
 	}
 	return m, nil
 }
 
-func (m Model) renderMenuView() string {
+func (m Model) renderMenuContent() string {
 	switch m.menu.kind {
+	case menuUsage:
+		return m.renderUsageMenu()
+	case menuAttachments:
+		return m.renderAttachmentsMenu()
 	case menuActions:
 		return m.renderActionsMenu()
 	case menuSessions:
@@ -280,6 +276,10 @@ func (m Model) renderMenuView() string {
 		return m.renderProjectsMenu()
 	case menuGoal:
 		return m.renderGoalMenu()
+	case menuGoalForm:
+		return m.renderGoalForm()
+	case menuContextLimit:
+		return m.renderContextLimitMenu()
 	case menuReasoning:
 		return m.renderReasoningMenu()
 	case menuSettings:

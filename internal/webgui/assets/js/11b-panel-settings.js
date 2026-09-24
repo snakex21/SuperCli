@@ -3,17 +3,17 @@
 sections.workflow = async function () {
   panelContent.innerHTML = "";
   panelContent.appendChild(SuperCliUI.createUserInstructionsEditor({ lang: ui.lang, className: "group" }));
-  var queue = el("div", "group"); queue.appendChild(el("div", "g-label", t("workflow.queue")));
+  var queue = el("div", "group"); queue.appendChild(i18nEl("div", "g-label", "workflow.queue"));
   queue.appendChild(el("div", "workflow-lead", String(promptQueue.length).padStart(2,"0") + " · " + t("composer.queued")));
   queue.appendChild(el("div", "note", ui.lang === "pl" ? "Kolejka przeżywa restart aplikacji i czeka na wznowienie." : "The queue survives app restarts and waits for you to resume it.")); panelContent.appendChild(queue);
 
-  var profile=el("div","group");profile.appendChild(el("div","g-label",t("workflow.profile")));
-  try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=el("button","btn",t("common.openFolder"));openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=ui.lang==="pl"?"Np. preferuj krótkie wywołania narzędzi.":"Example: prefer short tool calls.";profile.appendChild(ta);var save=el("button","btn primary",t("common.save"));save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(el("div","note",t("workflow.profileHint")));}catch(e){profile.appendChild(el("div","note",e.message));}
+  var profile=el("div","group");profile.appendChild(i18nEl("div", "g-label", "workflow.profile"));
+  try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=i18nEl("button", "btn", "common.openFolder");openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=ui.lang==="pl"?"Np. preferuj krótkie wywołania narzędzi.":"Example: prefer short tool calls.";profile.appendChild(ta);var save=i18nEl("button", "btn primary", "common.save");save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(i18nEl("div", "note", "workflow.profileHint"));}catch(e){profile.appendChild(el("div","note",e.message));}
   panelContent.appendChild(profile);
 
-  var scratch=el("div","group");scratch.appendChild(el("div","g-label",t("workflow.scratch")));try{var sc=await j("/api/scratchpad");scratch.appendChild(el("div","file-path",sc.path));var openScratch=el("button","btn",t("common.openFolder"));openScratch.addEventListener("click",function(){openWorkspaceFolder(sc.path);});scratch.appendChild(openScratch);scratch.appendChild(el("div","note",sc.notes.length?sc.notes.join(" · "):(ui.lang==="pl"?"Notatnik jest pusty.":"Scratchpad is empty.")));}catch(e){scratch.appendChild(el("div","note",e.message));}panelContent.appendChild(scratch);
+  var scratch=el("div","group");scratch.appendChild(i18nEl("div", "g-label", "workflow.scratch"));try{var sc=await j("/api/scratchpad");scratch.appendChild(el("div","file-path",sc.path));var openScratch=i18nEl("button", "btn", "common.openFolder");openScratch.addEventListener("click",function(){openWorkspaceFolder(sc.path);});scratch.appendChild(openScratch);scratch.appendChild(el("div","note",sc.notes.length?sc.notes.join(" · "):(ui.lang==="pl"?"Notatnik jest pusty.":"Scratchpad is empty.")));}catch(e){scratch.appendChild(el("div","note",e.message));}panelContent.appendChild(scratch);
 
-  var hard=el("div","group");hard.appendChild(el("div","g-label",t("workflow.hard")));var run=el("button","btn primary",t("workflow.runHard")),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=(report.ok?"PASS":"FAIL")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
+  var hard=el("div","group");hard.appendChild(i18nEl("div", "g-label", "workflow.hard"));var run=i18nEl("button", "btn primary", "workflow.runHard"),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=(report.ok?"PASS":"FAIL")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
 };
 
 async function openWorkspaceFolder(path) {
@@ -28,19 +28,19 @@ sections.settings = async function () {
     return;
   }
   panelContent.innerHTML = "";
-  panelContent.appendChild(el("div", "note", t("set.hint")));
+  panelContent.appendChild(i18nEl("div", "note", "set.hint"));
   var wrap = el("div", "group");
   wrap.style.marginTop = "10px";
   (got.knobs || []).forEach(function (k) { wrap.appendChild(knobRow(k)); });
   panelContent.appendChild(wrap);
-  var reset = el("button", "btn danger", t("set.resetAll"));
+  var reset = i18nEl("button", "btn danger", "set.resetAll");
   reset.addEventListener("click", async function () {
     await jpost("/api/config", { reset_all: true }).catch(function (e) { toast(e.message); });
     sections.settings();
   });
   panelContent.appendChild(reset);
   panelContent.appendChild(el("div", "note", " "));
-  panelContent.appendChild(el("div", "note", t("set.resetAllHint")));
+  panelContent.appendChild(i18nEl("div", "note", "set.resetAllHint"));
 };
 
 function knobRow(k) {
@@ -110,7 +110,7 @@ function knobRow(k) {
 sections.appearance = function () {
   panelContent.innerHTML = "";
   var g = el("div", "group");
-  g.appendChild(el("div", "g-label", t("app.theme")));
+  g.appendChild(i18nEl("div", "g-label", "app.theme"));
   var seg = el("span", "seg");
   [["dark", t("app.dark")], ["midnight", t("app.midnight")], ["light", t("app.light")]].forEach(function (pair) {
     var b = el("button", ui.theme === pair[0] ? "on" : "", pair[1]);
@@ -141,6 +141,9 @@ sections.appearance = function () {
       if (key === "lang") {
         $("#panel-title").textContent = t("panel." + currentSection);
         renderStats();
+        loadSessions();
+        renderActiveContextControl();
+        if (lastReasoningState) renderReasoning(lastReasoningState);
         sections.appearance();
       }
     });
@@ -156,7 +159,7 @@ sections.appearance = function () {
   panelContent.appendChild(selectRow(t("app.scale"), "uiScale", [["auto", t("app.auto")], ["compact", "90%"], ["normal", "100%"], ["large", "110%"], ["xlarge", "125%"], ["huge", "140%"]]));
 
   var gn = el("div", "group");
-  gn.appendChild(el("div", "g-label", t("app.notify")));
+  gn.appendChild(i18nEl("div", "g-label", "app.notify"));
   [["notifySound", t("app.sound")], ["notifyDesktop", t("app.desktop")], ["appBadge", t("app.badge")]].forEach(function (pair) {
     var tr = el("label", "toggle-row");
     tr.appendChild(el("span", "", pair[1]));
@@ -179,11 +182,11 @@ sections.appearance = function () {
 
 function sessionRuntimePreferenceGroup() {
   var gs = el("div", "group");
-  gs.appendChild(el("div", "g-label", t("session.runtime")));
+  gs.appendChild(i18nEl("div", "g-label", "session.runtime"));
   var sr = el("label", "toggle-row");
   var sc = el("span");
-  sc.appendChild(el("span", "", t("session.runtime")));
-  sc.appendChild(el("span", "toggle-hint", t("session.runtimeHint")));
+  sc.appendChild(i18nEl("span", "", "session.runtime"));
+  sc.appendChild(i18nEl("span", "toggle-hint", "session.runtimeHint"));
   sr.appendChild(sc);
   var sessionRuntime = document.createElement("input");
   sessionRuntime.type = "checkbox";

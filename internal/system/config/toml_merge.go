@@ -84,6 +84,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.DraftVerifyMaxRounds != 0 {
 		dst.DraftVerifyMaxRounds = src.DraftVerifyMaxRounds
 	}
+	if src.DiscardPreviousReasoning != nil {
+		dst.DiscardPreviousReasoning = src.DiscardPreviousReasoning
+	}
 	if src.Thinking != nil {
 		dst.Thinking = src.Thinking
 	}

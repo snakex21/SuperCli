@@ -92,6 +92,11 @@ func TestLoop_LongSuccessfulRunKeepsToolsAndFinishesNormally(t *testing.T) {
 			t.Fatalf("unexpected ErrorEvent after %d successful calls: %v", n, e.Err)
 		}
 	}
+	for _, m := range l.Messages {
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "[tool economy]") {
+			t.Fatal("novel reads appended generic efficiency instructions")
+		}
+	}
 	done, ok := events[len(events)-1].(DoneEvent)
 	if !ok {
 		t.Fatalf("last = %#v, want DoneEvent", events[len(events)-1])

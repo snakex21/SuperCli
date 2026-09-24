@@ -66,7 +66,7 @@ function contextState(percent, compactPercent) {
 function renderContextInspector(context) {
   var section = el("section", "usage-section usage-context");
   var head = el("div", "usage-section-head");
-  head.appendChild(el("h3", "usage-section-title", t("stats.currentContext")));
+  head.appendChild(i18nEl("h3", "usage-section-title", "stats.currentContext"));
   if (context.window > 0) {
     head.appendChild(el("div", "usage-section-value", context.percent + "% · " +
       fmtInteger(context.estimatedUsed) + " / " + fmtInteger(context.window)));
@@ -76,7 +76,7 @@ function renderContextInspector(context) {
   var items = contextItems(context);
   var total = items.reduce(function (sum, item) { return sum + item.value; }, 0);
   if (total <= 0) {
-    section.appendChild(el("div", "usage-empty", t("usage.contextEmpty")));
+    section.appendChild(i18nEl("div", "usage-empty", "usage.contextEmpty"));
     return section;
   }
 
@@ -128,8 +128,8 @@ function renderContextInspector(context) {
   });
   section.appendChild(legend);
   var footer = el("div", "context-actions");
-  footer.appendChild(el("div", "usage-caption", t("context.compactHint")));
-  var compact = el("button", "btn context-compact", t("context.compactNow"));
+  footer.appendChild(i18nEl("div", "usage-caption", "context.compactHint"));
+  var compact = i18nEl("button", "btn context-compact", "context.compactNow");
   compact.type = "button";
   compact.disabled = !activeSessionID;
   compact.title = t("context.compactHint");
@@ -185,7 +185,7 @@ function renderPriceDetails(stats) {
   var state = normalizedCostState(cost);
   var details = el("details", "usage-rates");
   details.open = state === "unknown" || state === "partial";
-  details.appendChild(el("summary", "usage-rates-summary", t("price.title")));
+  details.appendChild(i18nEl("summary", "usage-rates-summary", "price.title"));
   var body = el("div", "usage-rates-body");
 
   var rates = el("dl", "price-rates");
@@ -197,12 +197,12 @@ function renderPriceDetails(stats) {
   var coverage = costCoverage(cost);
   if (coverage) body.appendChild(el("div", "price-note", coverage));
   if (stats.tokens.cachedInput > 0 && !cost.cacheDiscountKnown && ["estimated", "manual", "partial"].indexOf(state) >= 0) {
-    body.appendChild(el("div", "price-note warning", t("cost.cacheUnknown")));
+    body.appendChild(i18nEl("div", "price-note warning", "cost.cacheUnknown"));
   }
 
   var form = el("form", "manual-price-form");
   form.setAttribute("aria-label", t("price.title"));
-  form.appendChild(el("p", "price-hint", t("price.hint")));
+  form.appendChild(i18nEl("p", "price-hint", "price.hint"));
   var identity = el("div", "price-identity");
   identity.appendChild(el("code", "", (stats.session.provider || "—") + " / " + (stats.session.model || stats.model || "—")));
   form.appendChild(identity);
@@ -216,12 +216,12 @@ function renderPriceDetails(stats) {
   form.appendChild(fields);
 
   var actions = el("div", "price-actions");
-  var save = el("button", "btn primary", t("price.save"));
+  var save = i18nEl("button", "btn primary", "price.save");
   save.type = "submit";
   actions.appendChild(save);
   var remove = null;
   if (cost.manual || cost.state === "manual") {
-    remove = el("button", "btn danger", t("price.remove"));
+    remove = i18nEl("button", "btn danger", "price.remove");
     remove.type = "button";
     actions.appendChild(remove);
   }
@@ -294,7 +294,7 @@ function renderUsageInspector(stats) {
   var root = el("div", "usage-inspector");
   root.setAttribute("role", "region");
   root.setAttribute("aria-label", t("panel.usage"));
-  if (!stats.session.id) root.appendChild(el("div", "usage-empty top", t("usage.noSession")));
+  if (!stats.session.id) root.appendChild(i18nEl("div", "usage-empty top", "usage.noSession"));
 
   var lead = el("div", "usage-lead");
   lead.appendChild(usageLeadMetric(t("stats.totalTokens"), fmtInteger(stats.tokens.total), t("usage.session"), "tokens"));
@@ -308,7 +308,7 @@ function renderUsageInspector(stats) {
   root.appendChild(renderPerformanceTelemetry(stats.telemetry));
 
   var factsSection = el("section", "usage-section");
-  factsSection.appendChild(el("h3", "usage-section-title", t("usage.details")));
+  factsSection.appendChild(i18nEl("h3", "usage-section-title", "usage.details"));
   var facts = el("dl", "usage-facts");
   facts.appendChild(usageFact(t("stats.provider"), stats.session.provider || "—", stats.session.providerType));
   facts.appendChild(usageFact(t("stats.model"), stats.session.model || stats.model || "—"));
@@ -345,7 +345,7 @@ function offTurnFact(telemetry) {
 function renderPerformanceTelemetry(telemetry) {
   var section = el("section", "usage-section telemetry-section");
   var head = el("div", "usage-section-head");
-  head.appendChild(el("h3", "usage-section-title", t("telemetry.title")));
+  head.appendChild(i18nEl("h3", "usage-section-title", "telemetry.title"));
   if (telemetry.samples) {
     var sampleLabel = fmtInteger(telemetry.samples) + " " + t("telemetry.samples");
     if (telemetry.scope) sampleLabel += " · " + t("telemetry.scope." + telemetry.scope);
@@ -353,7 +353,7 @@ function renderPerformanceTelemetry(telemetry) {
   }
   section.appendChild(head);
   if (!telemetry.samples) {
-    section.appendChild(el("div", "usage-empty", t("telemetry.empty")));
+    section.appendChild(i18nEl("div", "usage-empty", "telemetry.empty"));
     // Model work done outside any reply exists even before the first
     // measured turn; it must not disappear with the turn statistics.
     if (telemetry.offTurnCalls) {
@@ -416,7 +416,7 @@ sections.usage = async function () {
   var requestSession = activeSessionID;
   panelContent.innerHTML = "";
   panelContent.setAttribute("aria-busy", "true");
-  panelContent.appendChild(el("div", "usage-loading", t("common.loading")));
+  panelContent.appendChild(i18nEl("div", "usage-loading", "common.loading"));
   try {
     var stats = normalizeStats(await j(statsURL()));
     if (seq !== usageRenderSeq || currentSection !== "usage" || requestSession !== activeSessionID) return;

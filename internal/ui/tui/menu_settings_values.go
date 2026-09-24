@@ -57,6 +57,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 	case "cache_prompt":
 		c.CachePrompt = cycleTri(c.CachePrompt)
 		llm.SetCachePromptDefault(c.CachePrompt)
+	case "discard_previous_reasoning":
+		c.DiscardPreviousReasoning = cycleTri(c.DiscardPreviousReasoning)
 	case "thinking":
 		c.Thinking = cycleTri(c.Thinking)
 		llm.SetThinkingEnabled(c.Thinking == nil || *c.Thinking)
@@ -92,6 +94,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 	case "cache_prompt":
 		c.CachePrompt = nil
 		llm.SetCachePromptDefault(nil)
+	case "discard_previous_reasoning":
+		c.DiscardPreviousReasoning = nil
 	case "thinking":
 		c.Thinking = nil
 		llm.SetThinkingEnabled(true) // built-in default is ON
@@ -137,7 +141,7 @@ func settingResetKey(c *config.TomlConfig, key string) {
 func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, source string) {
 	switch r.key {
 	case "language":
-		if c.Language == "pl" {
+		if c.Language == "pl" || (c.Language == "" && m.language == "pl") {
 			return "Polski", "manual"
 		}
 		return "English", "manual"
@@ -156,6 +160,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return "off", "default"
 	case "stable_toolset":
 		return triDisplay(c.StableToolset, "on")
+	case "discard_previous_reasoning":
+		return triDisplay(c.DiscardPreviousReasoning, "off")
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {

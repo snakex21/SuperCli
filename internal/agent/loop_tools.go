@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -22,15 +23,16 @@ type toolResult struct {
 	// inert: the call succeeded but changed nothing that did not already
 	// exist. Kept apart from failed — the model is told the truth (it
 	// worked) while progress accounting refuses to bank it.
-	inert bool
-	err   error
+	inert       bool
+	err         error
+	observation toolObservation
 }
 
 // invokeToolCalls runs the model's tool-call batch and appends the matching
 // tool-result messages to history. Most tools are executed sequentially to
 // avoid surprising write conflicts. A batch made only of the coordinator's
-// `task` calls can be run concurrently: each task owns an isolated child
-// loop/context. Whether it actually runs in parallel is gated by
+// task calls and send_message calls to distinct workers can run concurrently:
+// each worker owns an isolated loop/context. Parallel execution is gated by
 // taskParallel — on a single local GPU the workers serialize on one server
 // slot anyway (N× wall time) and interleaved contexts thrash the KV cache,
 // so local backends default to sequential; cloud backends run parallel.
@@ -75,14 +77,14 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return true, outcomes
 	}
 
-	return l.invokeToolCallsSequential(ctx, toolCalls, out)
+	return l.invokeToolCallRuns(ctx, toolCalls, out)
 }
 
 func (l *Loop) invokeToolCallsSequential(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
-		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert}
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
@@ -221,12 +223,64 @@ func adaptReadArgs(raw string) string {
 }
 
 func allTaskCalls(toolCalls []llm.ToolCall) bool {
-	for _, tc := range toolCalls {
-		if tc.Name != "task" {
-			return false
+	return len(toolCalls) > 0 && delegationRunEnd(toolCalls, 0) == len(toolCalls)
+}
+
+// delegationRunEnd scans once: repeated prefixes would parse the same worker
+// arguments quadratically in a large batch. Two calls to one worker split runs.
+func delegationRunEnd(calls []llm.ToolCall, start int) int {
+	seen := make(map[string]bool)
+	for i := start; i < len(calls); i++ {
+		switch calls[i].Name {
+		case "task":
+		case "send_message":
+			var args sendMessageArgs
+			if json.Unmarshal([]byte(calls[i].Arguments), &args) != nil {
+				return i
+			}
+			id := strings.TrimSpace(args.To)
+			if id == "" || seen[id] {
+				return i
+			}
+			seen[id] = true
+		default:
+			return i
 		}
 	}
-	return len(toolCalls) > 0
+	return len(calls)
+}
+
+// invokeToolCallRuns preserves barriers but batches independent reads or worker
+// calls on either side. An unknown command does not serialize the whole reply.
+// Recursion only receives a read-only or delegation batch, so it takes one of
+// invokeToolCalls' two parallel fast paths and never reaches this fallback.
+func (l *Loop) invokeToolCallRuns(ctx context.Context, calls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+	outcomes := make([]callOutcome, 0, len(calls))
+	for start := 0; start < len(calls); {
+		end := start + 1
+		if l.allReadOnlyCalls(calls[start:end]) {
+			for end < len(calls) && l.allReadOnlyCalls(calls[end:end+1]) {
+				end++
+			}
+		} else if l.taskParallel {
+			if stop := delegationRunEnd(calls, start); stop > start {
+				end = stop
+			}
+		}
+		var ok bool
+		var result []callOutcome
+		if end-start > 1 {
+			ok, result = l.invokeToolCalls(ctx, calls[start:end], out)
+		} else {
+			ok, result = l.invokeToolCallsSequential(ctx, calls[start:end], out)
+		}
+		outcomes = append(outcomes, result...)
+		if !ok {
+			return false, outcomes
+		}
+		start = end
+	}
+	return true, outcomes
 }
 
 func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
@@ -270,7 +324,7 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 	// provider APIs that expect call/result pairing stay deterministic.
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, ev := range results {
-		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert}
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
@@ -286,6 +340,9 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 // invoke runs a single tool call, emits the matching events, and
 // returns the messages to append to history.
 func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) toolResult {
+	if l.toolOutputs != nil {
+		ctx = tools.WithOutputPersistence(ctx, l.toolOutputs)
+	}
 	// Defense-in-depth: map Zen-gate placeholders before HardenToolCall
 	// so the name gate sees registry names (idempotent with the batch
 	// rewrite at the top of invokeToolCalls).
@@ -321,6 +378,23 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		}
 	}
 
+	// A preceding tool_search in this same response may have activated the
+	// target after the initial rewrite. Resolve again at its execution barrier,
+	// using the current registry; never pre-activate or bypass the target gate.
+	if tc.Name == invokeToolName {
+		if resolved, err := resolveInvokeToolCall(l.registry, tc); err == nil {
+			l.invokeDispatchTotal.Add(1)
+			result := l.invoke(ctx, resolved, out)
+			// This assistant message was already recorded as invoke_tool. Keep that
+			// call/result protocol pair intact; UI events and checks use the target.
+			for i := range result.followUps {
+				if result.followUps[i].Role == llm.RoleTool && result.followUps[i].ToolCallID == tc.ID {
+					result.followUps[i].Name = invokeToolName
+				}
+			}
+			return result
+		}
+	}
 	raw := json.RawMessage(tc.Arguments)
 	// Announce the call before execution. Long-running tools (most notably a
 	// synchronous task worker) must become visible to TUI/WebGUI while they are
@@ -369,6 +443,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		}
 	}
 
+	// Check at the dispatch boundary. Tools (including extensions) may ignore
+	// context cancellation, so an ended turn must never start the next call.
+	// Still close its protocol/UI pair; later calls in the batch do the same.
+	if cause := ctx.Err(); cause != nil {
+		return l.cancelledToolResult(tc, tools.Result{}, cause, false, out)
+	}
+
 	// Per-tool timing under a "tool:<name>" phase key. Repeated calls
 	// of the same tool in one step accumulate; the recorder is
 	// mutex-guarded so parallel task batches are safe. Goes straight
@@ -377,16 +458,27 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	execStart := time.Now()
 	var res tools.Result
 	var err error
-	if isPassingGoalVerification(tc.Name, raw) && (!l.toolEvidence.Load() || l.concreteFailure.Load()) {
+	if (isPassingGoalVerification(tc.Name, raw) || isGoalTaskCompletion(tc.Name, raw)) && l.failedChecks.unresolved() {
+		res.Err = fmt.Errorf("goal: a verification command failed and has no successful rerun; fix and rerun it before marking the work complete")
+	} else if isPassingGoalVerification(tc.Name, raw) && (!l.toolEvidence.Load() || l.concreteFailure.Load()) {
 		res.Err = fmt.Errorf("goal: passing verification requires a successful concrete check after the latest tool failure")
 	} else if isGoalTaskCompletion(tc.Name, raw) && l.concreteFailure.Load() {
 		res.Err = fmt.Errorf("goal: cannot complete a task after a failed tool result; fix the failure and run a successful concrete check first")
 	} else if tc.Name == sessionImageToolName {
 		res, err = l.loadSessionImage(ctx, raw)
 	} else {
-		res, err = l.registry.Execute(ctx, tc.Name, raw)
+		res, err = l.registry.Execute(withWorkerInvocation(ctx, tc.ID, out), tc.Name, raw)
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
+
+	// Cancellation after dispatch cannot prove that a mutation did not happen.
+	// Preserve successful results even if cancellation raced with completion;
+	// only interrupted errors have an unknown outcome. They are not model
+	// failures and must not feed the repeated-failure gate or verifier.
+	if cause := ctx.Err(); cause != nil &&
+		(errors.Is(err, cause) || errors.Is(res.Err, cause)) {
+		return l.cancelledToolResult(tc, res, cause, true, out)
+	}
 
 	// F4.e: tool result verification. After a successful
 	// (no Go-level error) execution, ask the per-tool
@@ -424,6 +516,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	if attributed.Err == nil {
 		attributed.Err = err
 	}
+	l.recordCheckResult(tc, attributed)
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
 	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments))
@@ -433,14 +526,14 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		if isConcreteEvidenceTool(tc.Name) {
 			l.concreteFailure.Store(true)
 		}
-		out <- ToolResultEvent{ID: tc.ID, Err: err}
+		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: err}
 		return toolResult{
 			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
-				Content:    "error: " + err.Error(),
+				Content:    l.registry.ModelResultContentContext(ctx, tc.Name, attributed),
 			}},
 		}
 	}
@@ -455,11 +548,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
-				// ModelContent is the single contract point for
-				// what the model sees: the error PLUS a capped
-				// tail of res.Text (deduplicated), so diagnostics
-				// a tool returns next to its error are not lost.
-				Content: res.ModelContent(),
+				// Keep the failure summary inline and make omitted
+				// diagnostics retrievable through this loop's output store.
+				Content: l.registry.ModelResultContentContext(ctx, tc.Name, res),
 			}},
 		}
 	}
@@ -469,7 +560,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text}
-	modelContent := l.registry.CompactModelOutput(tc.Name, res.ModelContent())
+	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, res)
 	follow := []llm.Message{{
 		Role:       llm.RoleTool,
 		ToolCallID: tc.ID,
@@ -502,7 +593,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			},
 		})
 	}
-	return toolResult{followUps: follow, inert: res.Inert}
+	return toolResult{followUps: follow, inert: res.Inert, observation: observeToolResult(tc, res)}
 }
 
 // logToolFailure classifies one failed tool call and appends it to

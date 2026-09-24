@@ -11,12 +11,16 @@ import (
 
 func (m Model) filteredActionRows() []actionRow {
 	q := strings.ToLower(strings.TrimSpace(m.menu.filter))
-	if q == "" {
+	if q == "" && m.menu.category == 0 {
 		return m.actionRows()
 	}
 	all := m.actionRows()
+	category := m.actionCategories()[m.menu.category]
 	rows := make([]actionRow, 0, len(all))
 	for _, row := range all {
+		if m.menu.category > 0 && row.group != category {
+			continue
+		}
 		haystack := strings.ToLower(row.group + " " + row.title + " " + row.desc)
 		if strings.Contains(haystack, q) {
 			rows = append(rows, row)
@@ -50,6 +54,13 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch rows[minInt(m.menu.cursor, len(rows)-1)].id {
+	case "context-limit":
+		return m.openContextLimitMenu()
+	case "accounts":
+		m.enterMenu(interactiveMenu{kind: menuAccounts})
+		return m, nil
+	case "context", "compact", "memory", "export":
+		return m.dispatchVisualCommand(rows[minInt(m.menu.cursor, len(rows)-1)].id, "")
 	case "model":
 		return m.openModelsMenu()
 	case "models":
@@ -58,6 +69,13 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 		return m.openReasoningMenu()
 	case "providers":
 		return m.openProvidersMenu()
+	case "paste-image":
+		next, _ := m.closeMenu()
+		return next.(Model).pasteClipboardAttachments()
+	case "attach":
+		return m.openAttachmentsMenu()
+	case "cost":
+		return m.openUsageMenu()
 	case "sessions":
 		return m.openSessionsMenu()
 	case "transcript":
@@ -76,7 +94,7 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 		return m.openCheckpointMenu(false)
 	case "redo":
 		return m.openCheckpointMenu(true)
-	case "diff", "plan", "cost", "mcp", "doctor", "workers", "help":
+	case "diff", "plan", "mcp", "doctor", "workers", "help":
 		return m.dispatchVisualCommand(rows[minInt(m.menu.cursor, len(rows)-1)].id, "")
 	default:
 		return m, nil

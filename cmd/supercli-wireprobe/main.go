@@ -4,10 +4,10 @@
 // JSONL file before forwarding.
 //
 // That recording is what makes the practical checks possible:
-//   - reasoning retention (SUPERCLI_KEEP_THINKING): the wire log must
-//     contain the "[Retained reasoning ...]" tail on the 2nd+ request
-//     of a run, and the assistant history messages must NOT contain
-//     <thinking> blocks;
+//   - reasoning stays in the UI/archive by default: subsequent wire
+//     requests must NOT contain earlier <thinking> blocks or a retained
+//     reasoning tail. SUPERCLI_KEEP_THINKING=1 explicitly enables the
+//     legacy tail; assistant history remains stripped in either mode;
 //   - result truncation metadata: tool results that overflow the
 //     inline budget must carry "omitted_lines=" in their content;
 //   - token/cache sanity: the recorded prompts let us eyeball how the

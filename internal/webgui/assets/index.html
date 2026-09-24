@@ -88,6 +88,10 @@
       </main>
 
       <div class="composer-wrap">
+        <details class="worker-overview" id="worker-overview" hidden open>
+          <summary id="worker-overview-summary">Workers</summary>
+          <div class="worker-overview-list" id="worker-overview-list"></div>
+        </details>
         <div class="prompt-queue" id="prompt-queue" hidden></div>
         <form class="composer" id="composer">
           <div class="box">
@@ -157,7 +161,7 @@
       <div class="side-pane" id="tab-tasks">
         <div class="side-label"><span data-i18n="side.tasks">Tasks</span><button id="reload-tasks" type="button" data-i18n="common.refresh">refresh</button></div>
         <div class="side-list task-center" id="task-list"></div>
-        <div class="side-label task-worker-label"><span id="worker-heading">Workers</span></div>
+        <div class="side-label task-worker-label"><span id="worker-heading" data-i18n="task.workers">Workers</span></div>
         <div class="side-list task-center" id="worker-list"></div>
       </div>
 

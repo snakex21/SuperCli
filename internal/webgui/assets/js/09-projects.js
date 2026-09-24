@@ -9,7 +9,7 @@ async function loadProjects() {
     list.innerHTML = "";
     var projects = got.projects || [];
     if (!projects.length) {
-      list.appendChild(el("div", "side-empty", t("side.noProjects")));
+      list.appendChild(i18nEl("div", "side-empty", "side.noProjects"));
       return;
     }
     projects.forEach(function (p) {
@@ -52,7 +52,7 @@ async function loadProjects() {
     });
   } catch (e) {
     list.innerHTML = "";
-    list.appendChild(el("div", "side-empty", t("common.error")));
+    list.appendChild(i18nEl("div", "side-empty", "common.error"));
   }
 }
 async function projectAction(action, target, name, newPath) {

@@ -93,6 +93,9 @@ func (e *Extractor) Extract(ctx context.Context) ([]Pattern, error) {
 	}
 	groups := make(map[key][]ErrorRecord)
 	for _, r := range records {
+		if strings.Contains(strings.ToLower(r.Reason), "no heuristic matched") {
+			continue
+		}
 		groups[key{r.Tool, r.Category, normalizeReason(r.Reason)}] = append(groups[key{r.Tool, r.Category, normalizeReason(r.Reason)}], r)
 	}
 
@@ -225,7 +228,8 @@ func buildTitle(tool, category, reason string) string {
 
 // buildDescription produces a one-sentence body the model
 // sees in its system prompt. Example output:
-//   "search_code errors with 'rg not found' (env). Try installing ripgrep or using grep fallback."
+//
+//	"search_code errors with 'rg not found' (env). Try installing ripgrep or using grep fallback."
 func buildDescription(tool, category, reason, suggestion string) string {
 	r := reason
 	if len(r) > 80 {

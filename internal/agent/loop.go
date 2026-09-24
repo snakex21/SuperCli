@@ -55,11 +55,13 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
+	sessionBusy   atomic.Bool
 	provider      llm.Provider
 	registry      *tools.Registry
 	caps          *llm.CapabilityRegistry
 	system        string
 	briefing      string
+	liveContext   string
 	maxSteps      int
 	thinTools     bool
 	stableToolset bool
@@ -88,6 +90,7 @@ type Loop struct {
 	hoistedPreSet bool
 	baseDir       string
 	writer        SessionWriter
+	toolOutputs   tools.OutputPersistence
 	// persistHealth tracks session-write reliability: sticky
 	// first error, failure counter, in-order retry buffer and
 	// the one-shot UI warning. See persist_health.go.
@@ -106,18 +109,20 @@ type Loop struct {
 	patternInjector PatternInjector
 	creditTracker   CreditTracker
 	modelID         string
+	contextModel    contextModelState
+	toolDiscovery   toolDiscoveryState
 
-	// Reasoning retention (SUPERCLI_KEEP_THINKING, default on): the
-	// loop strips <thinking> blocks from assistant turns before they
-	// enter l.Messages (deterministic, once — see stream_strip_thinking).
-	// keepThinking gates retention; lastThinking holds the reasoning
-	// stripped from the MOST RECENT assistant turn, which the next
-	// provider request appends at its tail so the model continues from
-	// its own chain of thought instead of re-deriving it. Replaced by
-	// newer reasoning the moment a new turn leaves thinking behind;
-	// cleared by /clear and session loads that replace the body.
-	keepThinking bool
-	lastThinking string
+	// Optional legacy reasoning replay (SUPERCLI_KEEP_THINKING, default off).
+	// Assistant reasoning is stripped before entering Messages, while the
+	// full stream remains persisted for the UI. Explicit opt-in retains a
+	// separate block for the request tail; /clear and session loads reset it.
+	// Snapshot at the start of Run so a UI change cannot alter an active turn.
+	discardPreviousReasoning bool
+	keepThinking             bool
+	lastThinking             string
+	// Complete native blocks from the current response, persisted separately
+	// from the reasoning text rendered by GUI/TUI.
+	nativeReasoning []*llm.ReasoningBlock
 
 	// sessUsage accumulates provider-reported token usage across
 	// every Run of this loop (the whole TUI session). Guarded by
@@ -224,6 +229,7 @@ type Loop struct {
 	// performs another successful concrete action. This prevents a red test or
 	// failed write from being immediately declared complete.
 	concreteFailure atomic.Bool
+	failedChecks    failedChecks
 
 	// stepPhaseWall accumulates the DISJOINT wall-clock phases of the
 	// current step (context_prepare, request_encode, backend_wait,
@@ -427,6 +433,10 @@ type LoopConfig struct {
 	// a minimal prompt, so the loop re-appends Briefing there — the
 	// model must know durable user facts even in smalltalk.
 	Briefing string
+	// LiveContext holds current snapshots (memory, indexes) rebuilt between
+	// turns. It is sent once at the request tail on every route, never inserted
+	// into the stable system prefix or accumulated in persisted history.
+	LiveContext string
 	// MaxSteps is the runaway safety net: how many model calls one Run may
 	// make before the loop stops. It is NOT a work budget — a healthy long
 	// task must never reach it. Zero means DefaultMaxSteps. Negative means
@@ -436,11 +446,9 @@ type LoopConfig struct {
 	// for resuming a session. The session writer, if any, is
 	// NOT called for these.
 	InitialMessages []llm.Message
-	// KeepThinking overrides SUPERCLI_KEEP_THINKING (default: on).
-	// When true the loop retains the reasoning stripped from the
-	// previous assistant turn and appends it to the next request's
-	// tail, so the model continues from its own chain of thought.
-	// false disables retention for this loop regardless of env.
+	// KeepThinking opts into replaying the previous assistant reasoning in
+	// the request tail. Default false: reasoning remains UI/archive-only.
+	// SUPERCLI_KEEP_THINKING=1 can also explicitly enable this legacy mode.
 	KeepThinking bool
 	// EnableNavigator turns on the cheap pre-request model router that chooses
 	// chat/advisor/coordinator. Main SuperCli enables it; child workers and most
@@ -516,6 +524,9 @@ type LoopConfig struct {
 	// Writer, when non-nil, is invoked once per message the loop
 	// appends to Messages. Use session.Store from F2.c.
 	Writer SessionWriter
+	// ToolOutputs optionally inherits durable output references without giving
+	// a worker ownership of the parent conversation writer. Nil uses Writer.
+	ToolOutputs tools.OutputPersistence
 	// ErrorLog, when non-nil, receives one F4.d-classified
 	// record per failed tool call. The loop does not block
 	// on this write; failures are silent.
@@ -661,6 +672,9 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	if prompt == "" {
 		return nil, fmt.Errorf("agent.Loop.Run: prompt is empty")
 	}
+	if !l.sessionBusy.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("agent is still finishing the previous run")
+	}
 	// F14: hidden flags deliberately SURVIVE across Runs. /clear,
 	// hide_messages and budget eviction all fire between or during
 	// Runs and express durable intent ("this content is out of the
@@ -688,6 +702,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		if !res.OK {
 			errEvent := ErrorEvent{Err: fmt.Errorf("ultrawork gate failed: %s", res.Reason)}
 			out <- errEvent
+			l.sessionBusy.Store(false)
 			close(out)
 			return out, nil
 		}
@@ -746,8 +761,14 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
+	defer l.sessionBusy.Store(false)
+	l.discardPreviousReasoning = llm.DiscardPreviousReasoning()
+	if l.discardPreviousReasoning {
+		l.lastThinking = ""
+	}
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
+	l.failedChecks.reset()
 	l.emptyReplyNudges = 0
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
@@ -758,6 +779,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 		retryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		l.retryDirtyProjection(retryCtx)
+		l.persistDiscoveredTools(retryCtx)
 	}()
 	defer func() {
 		if r := recover(); r != nil {
@@ -771,11 +793,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	}()
 	// A1: navigator + one-shot coordinator addons (preflight, verification).
 	// Runs inside the background goroutine so Run() returns immediately.
+	l.restoreDiscoveredTools(ctx)
 	l.prepareRunRoute(ctx, prompt)
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
 	var repeatProg repeatProgress
-	var economyProg toolEconomyProgress
 	l.identicalFails = identicalFailureGate{}
 	l.identicalWrites = identicalSuccessGate{}
 	// F11: reset the policy's per-Run "drafted" set
@@ -788,7 +810,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	}
 	stepLimit := l.maxSteps
 	for step := 0; step < stepLimit; step++ {
-		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &repeatProg, &economyProg, stepLimit) {
+		switch l.runStep(ctx, step, out, &totalUsage, &reflectionProgress, &repeatProg, stepLimit) {
 		case stepContinue:
 			continue
 		case stepDone, stepAbort:

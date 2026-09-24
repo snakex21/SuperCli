@@ -150,7 +150,7 @@ function appendCompactContext(parent, context) {
 function appendSidebarCost(parent, cost) {
   var state = normalizedCostState(cost);
   var block = el("div", "side-cost cost-state-" + state);
-  block.appendChild(el("div", "side-cost-label", t("stats.totalCost")));
+  block.appendChild(i18nEl("div", "side-cost-label", "stats.totalCost"));
   block.appendChild(el("div", "side-cost-value" + (cost.amount === null ? " text" : ""), costPrimary(cost)));
   block.appendChild(el("div", "side-cost-meta", costMeta(cost)));
   var coverage = costCoverage(cost);
@@ -171,7 +171,7 @@ async function renderStats() {
   box.setAttribute("aria-busy", "true");
 
   if (lastTurn) {
-    box.appendChild(el("div", "stats-head", t("stats.turn")));
+    box.appendChild(i18nEl("div", "stats-head", "stats.turn"));
     box.appendChild(statRow(t("stats.model"), activeModelID || "—"));
     var ev = lastTurn.ev;
     var evalTok = (ev.tok_in || 0) - (ev.tok_cached || 0);
@@ -186,7 +186,7 @@ async function renderStats() {
   try {
     var stats = normalizeStats(await j(statsURL()));
     if (seq !== statsRenderSeq || requestSession !== activeSessionID) return;
-    box.appendChild(el("div", "stats-head", t("stats.sessionSection")));
+    box.appendChild(i18nEl("div", "stats-head", "stats.sessionSection"));
     if (stats.session.provider) box.appendChild(statRow(t("stats.provider"), stats.session.provider));
     box.appendChild(statRow(t("stats.model"), stats.session.model || stats.model || "—"));
     box.appendChild(statRow(t("stats.totalTokens"), fmtCompactNumber(stats.tokens.total)));
@@ -201,7 +201,7 @@ async function renderStats() {
   // Delegations stay visible when present, but an empty section would make the
   // narrow inspector feel like a dashboard rather than a compact HUD.
   if (workersSeen.length) {
-    box.appendChild(el("div", "stats-head", t("stats.workers")));
+    box.appendChild(i18nEl("div", "stats-head", "stats.workers"));
     workersSeen.slice(-8).forEach(function (wk) {
       box.appendChild(statRow(wk.name + (wk.status ? " · " + wk.status : ""), clip(wk.summary, 40) || "—"));
     });
@@ -213,9 +213,9 @@ async function renderStats() {
     var knob = null;
     (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator") knob = k; });
     if (knob) {
-      box.appendChild(el("div", "stats-head", t("stats.orch")));
+      box.appendChild(i18nEl("div", "stats-head", "stats.orch"));
       var row = el("div", "stat-row");
-      row.appendChild(el("span", "", t("stats.orchDesc")));
+      row.appendChild(i18nEl("span", "", "stats.orchDesc"));
       var seg = el("span", "seg");
       ["default", "on", "off"].forEach(function (st) {
         var label = st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff"));
@@ -236,7 +236,7 @@ async function renderStats() {
       (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator_model") knobM = k; });
       if (knobM) {
         var rowM = el("div", "stat-row");
-        rowM.appendChild(el("span", "", t("stats.orchModel")));
+        rowM.appendChild(i18nEl("span", "", "stats.orchModel"));
         supercliOrchPicker(rowM, knobM, function (v) {
           jpost("/api/config", { key: "orchestrator_model", value: v })
             .then(renderStats)
@@ -272,7 +272,7 @@ function supercliOrchPicker(container, knobM, onSave) {
       list.innerHTML = "";
       var base = el("div", "prow" + (cur === "" ? " active" : ""));
       base.appendChild(el("span", "state-dot on"));
-      base.appendChild(el("span", "pid", t("stats.orchModelDef")));
+      base.appendChild(i18nEl("span", "pid", "stats.orchModelDef"));
       base.addEventListener("click", function () {
         pop.hidden = true;
         if (cur !== "") onSave("");

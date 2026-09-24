@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 )
@@ -81,10 +82,10 @@ func RenderCompactTranscript(msgs []llm.Message) string {
 			}
 		}
 		for _, tc := range m.ToolCalls {
-			content += fmt.Sprintf("\n[tool call: %s %s]", tc.Name, tc.Arguments)
+			content += fmt.Sprintf("\n[tool call: %s %s]", tc.Name, compactExcerpt(string(tc.Arguments), toolResultCap))
 		}
-		if m.Role == llm.RoleTool && len(content) > toolResultCap {
-			content = content[:toolResultCap] + "… [truncated]"
+		if m.Role == llm.RoleTool {
+			content = compactExcerpt(content, toolResultCap)
 		}
 		if strings.TrimSpace(content) == "" {
 			continue
@@ -237,4 +238,22 @@ func NewAutoSummarizerWithProvider(provider llm.Provider, activeTools func() []s
 		summary += CompactFacts(msgs, loaded)
 		return WrapCompactSummary(summary), nil
 	}
+}
+
+// Keep both the command/header and its terminal status; large patches and file
+// bodies must not be replayed in full just to summarize completed work.
+func compactExcerpt(s string, budget int) string {
+	if len(s) <= budget {
+		return s
+	}
+	const marker = "\n… [middle omitted] …\n"
+	room := budget - len(marker)
+	head, tail := room/2, len(s)-(room-room/2)
+	for head > 0 && !utf8.RuneStart(s[head]) {
+		head--
+	}
+	for tail < len(s) && !utf8.RuneStart(s[tail]) {
+		tail++
+	}
+	return s[:head] + marker + s[tail:]
 }
