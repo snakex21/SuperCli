@@ -65,7 +65,7 @@ func TestIndependentFileWritesRunConcurrently(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{Name: "write_file", Description: "write", Schema: `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`, Fn: fn, Verify: func(tools.Result) tools.VerifyVerdict { return tools.VerifyVerdict{OK: true} }})
-	loop, _ := NewLoop(LoopConfig{Provider: echoProvider("ok"), Registry: reg})
+	loop, _ := NewLoop(LoopConfig{Provider: echoProvider("ok"), Registry: reg, BaseDir: t.TempDir()})
 	out := make(chan Event, 16)
 	ok, outcomes := loop.invokeToolCalls(context.Background(), []llm.ToolCall{
 		{ID: "1", Name: "write_file", Arguments: `{"path":"a.txt"}`},

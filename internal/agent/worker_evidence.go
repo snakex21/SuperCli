@@ -27,7 +27,7 @@ func (e *workerEvidenceLog) add(call ToolCallEvent, result ToolResultEvent) {
 	if call.Name == "" || call.Name == "tool_search" || call.Name == "ask_user" {
 		return
 	}
-	if result.Output == "" && result.Err == nil {
+	if result.Output == "" && result.Err == nil && result.OutputHandle == "" {
 		return // image-only or empty result; there is no textual evidence to expose
 	}
 	var b strings.Builder
@@ -36,6 +36,9 @@ func (e *workerEvidenceLog) add(call ToolCallEvent, result ToolResultEvent) {
 		fmt.Fprintf(&b, "ERROR: %s\n", core.HeadTail(result.Err.Error(), 768, 256))
 	}
 	b.WriteString(core.HeadTail(result.Output, workerEvidenceOutputBytes*3/4, workerEvidenceOutputBytes/4))
+	if result.OutputHandle != "" {
+		fmt.Fprintf(&b, "\n[Full tool output: handle=%s; read_output {\"handle\":%q}]", result.OutputHandle, result.OutputHandle)
+	}
 	entry := b.String()
 	e.entries = append(e.entries, entry)
 	e.bytes += len(entry)
@@ -62,8 +65,19 @@ func (e *workerEvidenceLog) text() string {
 // workerResult returns tiny observations inline and hands larger ones to the
 // parent's existing output store for read_output retrieval. The parent LRU also
 // supports attachments without a session writer.
-func workerResult(w *Worker, report string, err error) tools.Result {
-	result := tools.Result{Text: renderWorkerNotification(w, report), Err: err}
+func workerResult(w *Worker, report string, err error) (result tools.Result) {
+	notification := renderWorkerNotification(w, report)
+	result = tools.Result{Text: notification, Err: err}
+	var inlineObservation string
+	if err != nil {
+		defer func() { result.Err = workerFailureHandoff(w, report, err, inlineObservation) }()
+	} else {
+		defer func() {
+			if len(result.Text) > core.ModelOutputInlineBytes {
+				result.ModelPreview = workerReportPreview(w, report, result.Text[len(notification):])
+			}
+		}()
+	}
 	w.stateMu.RLock()
 	evidence, run, updated, status := w.lastEvidence, w.Runs, w.UpdatedAt, w.Status
 	w.stateMu.RUnlock()
@@ -76,6 +90,7 @@ func workerResult(w *Worker, report string, err error) tools.Result {
 	// Tiny observations cost less than another retrieval round. Larger ones
 	// stay off-context; neither case needs another worker inference.
 	if len(observation) <= workerEvidenceInlineBytes {
+		inlineObservation = observation
 		result.Text += observation
 		return result
 	}

@@ -32,8 +32,8 @@ type CallStat struct {
 	// Failed reports that the call could not even start or the
 	// stream delivered an error delta.
 	Failed bool
-	// TTFT is the time from Complete() to the first delta.
-	// Zero when no delta ever arrived.
+	// TTFT is the time from Complete() to the first model output.
+	// Zero when the stream contains no model output.
 	TTFT time.Duration
 	// Duration is Complete() to stream close (or error).
 	Duration time.Duration
@@ -480,7 +480,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		}()
 		gotFirst := false
 		for d := range in {
-			if !gotFirst && d.Notice == "" {
+			if !gotFirst && d.HasModelOutput() {
 				stat.TTFT = time.Since(start)
 				gotFirst = true
 			}

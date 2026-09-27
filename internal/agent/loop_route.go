@@ -21,6 +21,10 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 		// Navigator off: everything is coordinator (safe default for
 		// scripted/worker use, which must keep the full tool context).
 		l.route = RouteCoordinator
+	case len(l.Messages) > 0 && l.Messages[len(l.Messages)-1].HasImage():
+		// A new attachment needs the main model and project capabilities. Do not
+		// upload it to a classifier first or route a caption-only greeting to chat.
+		l.route = RouteCoordinator
 	case l.navAuto:
 		// Auto: take the cheap keyword decision on obvious turns and
 		// only pay for the navigator model on ambiguous ones. Saves a
@@ -40,13 +44,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// immediately before the first coordinator provider call. Routing above saw
 	// only the user's raw prompt, and the session store keeps that raw prompt.
 	if l.route == RouteCoordinator && l.nextCoordinatorAddon != "" {
-		for i := len(l.Messages) - 1; i >= 0; i-- {
-			if l.Messages[i].Role == llm.RoleUser {
-				l.Messages[i].Content += "\n\n" + l.nextCoordinatorAddon
-				l.invalidateVisibleEstimate()
-				break
-			}
-		}
+		l.appendCurrentUserContext(l.nextCoordinatorAddon)
 		l.nextCoordinatorAddon = ""
 	}
 	if l.route == RouteCoordinator && l.wordDocumentContext(prompt) {
@@ -58,16 +56,31 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// Verification is a variable, one-shot user-message hint, never part of the
 	// cacheable system prefix. It is injected only for explicit mutation work;
 	// project questions and ordinary chat pay zero tokens for it.
-	if l.route == RouteCoordinator {
+	if l.route == RouteCoordinator && !l.skipImplementationHint {
 		if hint := implementationVerificationHint(prompt); hint != "" {
-			for i := len(l.Messages) - 1; i >= 0; i-- {
-				if l.Messages[i].Role == llm.RoleUser {
-					l.Messages[i].Content += "\n\n" + hint
-					l.invalidateVisibleEstimate()
-					break
-				}
-			}
+			l.appendCurrentUserContext(hint)
 		}
+	}
+}
+
+// The provider uses Parts instead of Content for multimodal messages. Put
+// one-shot context in that same representation, copying the slice so a saved
+// user message or an earlier request cannot acquire these additions.
+func (l *Loop) appendCurrentUserContext(text string) {
+	for i := len(l.Messages) - 1; i >= 0; i-- {
+		msg := &l.Messages[i]
+		if msg.Role != llm.RoleUser {
+			continue
+		}
+		if len(msg.Parts) == 0 {
+			msg.Content += "\n\n" + text
+		} else {
+			parts := make([]llm.ContentPart, len(msg.Parts), len(msg.Parts)+1)
+			copy(parts, msg.Parts)
+			msg.Parts = append(parts, llm.ContentPart{Type: llm.PartTypeText, Text: "\n\n" + text})
+		}
+		l.invalidateVisibleEstimate()
+		return
 	}
 }
 

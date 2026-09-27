@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // chatRouteTools is the minimal tool set sent on the chat/advisor
@@ -189,13 +190,44 @@ func implementationVerificationHint(prompt string) string {
 	for _, hit := range []string{
 		"napraw", "zaimplement", "dodaj", "usuń", "usun", "zmień", "zmien", "edytuj",
 		"przerób", "przerob", "popraw", "zbuduj", "stwórz", "stworz", "zrób", "zrob",
-		"implement", "fix ", "fix:", "add ", "remove ", "change ", "edit ", "refactor", "build ",
+		"implement", "fix ", "fix:", "add ", "remove ", "change ", "edit ", "refactor", "build ", "rebuild ", "reimplement",
 	} {
-		if strings.Contains(p, hit) {
+		if hasUnnegatedActionWord(p, hit) {
 			return implementationVerificationInstruction
 		}
 	}
 	return ""
+}
+
+// hasUnnegatedActionWord guards the cheap hint classifier, not routing or tool
+// permissions. Stems still recognize Polish inflections, but embedded fragments
+// (prefix, credit, identifiers) and directly negated verbs are not edit requests.
+func hasUnnegatedActionWord(prompt, fragment string) bool {
+	if fragment == "" {
+		return false
+	}
+	for offset := 0; offset < len(prompt); {
+		relative := strings.Index(prompt[offset:], fragment)
+		if relative < 0 {
+			return false
+		}
+		at := offset + relative
+		offset = at + len(fragment)
+		if at > 0 {
+			previous, _ := utf8.DecodeLastRuneInString(prompt[:at])
+			if unicode.IsLetter(previous) || unicode.IsDigit(previous) || unicode.IsMark(previous) || previous == '_' {
+				continue
+			}
+		}
+		before := strings.TrimRightFunc(prompt[:at], unicode.IsSpace)
+		previousWord := before[strings.LastIndexFunc(before, unicode.IsSpace)+1:]
+		switch previousWord {
+		case "not", "never", "don't", "don’t", "cannot", "can't", "can’t", "nie", "bez":
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // undecidedChat accepts only complete short statements of indecision. A

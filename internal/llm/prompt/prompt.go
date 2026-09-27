@@ -46,11 +46,12 @@ func Build(small bool) string {
 
 // ThinToolProtocol explains the sentinel tool-call syntax used by
 // the thin tool protocol (B3/B4). It is injected at request time
-// ONLY when thin tools are active (small-tier models), never baked
+// ONLY when thin tools are active, never baked
 // into Core — so it does not count against the Core budget and big
 // models keep native JSON tool calling untouched.
 //
-// The format is deliberately JSON-free to save tokens and to avoid
+// Native calls remain preferred when available. The text fallback is
+// deliberately JSON-free to save tokens and to avoid
 // the truncated-JSON failures small models produce. One field per
 // line, value runs to end of line:
 //
@@ -58,11 +59,10 @@ func Build(small bool) string {
 //	«tool_name
 //	key: value
 //	other_key: value»
-const ThinToolProtocol = `Calling tools — use this exact format, not JSON:
-« then the tool name on its own line, then one "key: value" per line, then ». Example:
-«list_dir
-path: .
+const ThinToolProtocol = `Use native tool calls when available. Text fallback:
+«tool_name
+key: value
 »
-For a tool with no arguments write «tool_name» on one line. Do not wrap arguments in JSON or braces. Use separate blocks for independent calls in one response.
-Tools that need arrays/objects use native JSON tool calling, not this sentinel form; patch_file's old/new shorthand does not.
+One block per call; separate blocks for independent calls. For no arguments: «tool_name».
+Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
 Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`

@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/core"
 )
 
 // Retain only identities of failed verification commands. An unrelated read,
@@ -27,24 +28,30 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 		return
 	}
 	var args struct {
-		Command []string `json:"command"`
-		Workdir string   `json:"workdir"`
-		Env     []string `json:"env_extra"`
+		Command    []string `json:"command"`
+		Workdir    string   `json:"workdir"`
+		Env        []string `json:"env_extra"`
+		Action     string   `json:"action"`
+		ID         string   `json:"id"`
+		ProcessEnv []string `json:"env"`
 	}
 	if json.Unmarshal([]byte(tc.Arguments), &args) != nil {
-		return
-	}
-	if tc.Name == "process_session" {
-		var operation struct {
-			Action string `json:"action"`
+		// Execute already accepts JSON-encoded argv/env arrays. A passing
+		// rerun must not stay unresolved just because its wire format changed.
+		if l.registry == nil || json.Unmarshal(l.registry.CoerceArgs(tc.Name, json.RawMessage(tc.Arguments)), &args) != nil {
+			return
 		}
-		_ = json.Unmarshal([]byte(tc.Arguments), &operation)
-		switch strings.ToLower(strings.TrimSpace(operation.Action)) {
+	}
+	var unknownProcess string
+	if tc.Name == "process_session" {
+		action := strings.ToLower(strings.TrimSpace(args.Action))
+		switch action {
 		case "stop", "list", "resize":
 			return // management success cannot resolve a failed command
 		}
 		// wait/poll/write may reveal the exit of a command started on a previous step.
 		var snap struct {
+			ID      string   `json:"id"`
 			Command []string `json:"command"`
 			Workdir string   `json:"workdir"`
 			Status  string   `json:"status"`
@@ -53,6 +60,19 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 			return
 		}
 		args.Command, args.Workdir = snap.Command, snap.Workdir
+		args.Env = args.ProcessEnv
+		if result.CommandKey == nil && action != "start" {
+			// A legacy/custom snapshot without execution metadata cannot prove
+			// its environment matches a different process or foreground check.
+			unknownProcess = snap.ID
+			if unknownProcess == "" {
+				unknownProcess = args.ID
+			}
+			if unknownProcess == "" {
+				unknownProcess = tc.ID
+			}
+			unknownProcess = "unknown-process-environment:" + unknownProcess
+		}
 	}
 	if !isVerificationCommand(args.Command) {
 		return
@@ -60,14 +80,21 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 	if !filepath.IsAbs(args.Workdir) {
 		args.Workdir = filepath.Join(l.baseDir, args.Workdir)
 	}
-	args.Workdir = filepath.Clean(args.Workdir)
-	if len(args.Env) == 0 {
-		args.Env = nil // omitted and explicitly empty environment additions match
+	// Environment order is immaterial and repeated keys use their last value.
+	// timeout and output caps are transport options, not a different test.
+	var key [sha256.Size]byte
+	if result.CommandKey != nil {
+		key = *result.CommandKey
+	} else {
+		key = core.VerificationCommandKey(args.Command, args.Workdir, args.Env)
 	}
-	// timeout and output caps are transport options: correcting them must allow
-	// a successful rerun of the same command to resolve its earlier failure.
-	encoded, _ := json.Marshal(args)
-	key := sha256.Sum256(encoded)
+	if unknownProcess != "" {
+		encoded, _ := json.Marshal(struct {
+			Process string
+			Command [sha256.Size]byte
+		}{unknownProcess, key})
+		key = sha256.Sum256(encoded)
+	}
 	f := &l.failedChecks
 	f.mu.Lock()
 	defer f.mu.Unlock()

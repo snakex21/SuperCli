@@ -105,8 +105,8 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	skillApplier := tools.NewSkillApplier(discoverer)
 	reg.MustRegister(skillApplier.Spec())
 	reg.MarkAlwaysOn("apply_skill")
-	projectMemory := webMemoryKeeper{dataDir: e.dataDir, home: home}
-	globalMemory := webMemoryKeeper{dataDir: e.dataDir, home: home, global: true}
+	projectMemory := webMemoryKeeper{engine: e, home: home}
+	globalMemory := webMemoryKeeper{engine: e, home: home, global: true}
 	reg.MustRegister(tools.NewRememberDual(projectMemory, globalMemory).Spec())
 	reg.MustRegister(tools.NewRecallDual(projectMemory, globalMemory).Spec())
 	reg.MarkAlwaysOn("remember")

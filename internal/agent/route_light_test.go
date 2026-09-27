@@ -390,16 +390,18 @@ func TestThinTools_CatalogInjectedBeforeTimestamp(t *testing.T) {
 }
 
 // TestThinTools_PreambleTeachesSentinelFormat: under thin tools the
-// preamble MUST instruct the model to call tools with the « » format,
-// otherwise the wired parser waits on syntax the model never emits.
+// preamble teaches the « » fallback without discouraging native calls.
 func TestThinTools_PreambleTeachesSentinelFormat(t *testing.T) {
 	l := thinLoop(t)
 	pre := l.thinToolsPreamble()
 	if !strings.Contains(pre, "\u00AB") || !strings.Contains(pre, "\u00BB") {
 		t.Errorf("preamble must show the « » sentinels, got:\n%s", pre)
 	}
-	if !strings.Contains(pre, "not JSON") {
-		t.Errorf("preamble must tell the model not to use JSON, got:\n%s", pre)
+	if !strings.Contains(pre, "Use native tool calls when available") || !strings.Contains(pre, "Text fallback:") {
+		t.Errorf("preamble must distinguish native calls from the text fallback, got:\n%s", pre)
+	}
+	if !strings.Contains(pre, "Text arguments have no JSON braces") {
+		t.Errorf("text fallback argument format missing, got:\n%s", pre)
 	}
 }
 

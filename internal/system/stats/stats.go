@@ -62,8 +62,8 @@ type Turn struct {
 //	                      request leaves the client)
 //	PhaseRequestEncode  — provider.Complete up to stream handoff
 //	                      (request serialization + connection setup)
-//	PhaseBackendWait    — time to FIRST delta from the backend (TTFT)
-//	PhaseStreamTotal    — first delta → stream closed
+//	PhaseBackendWait    — time to FIRST model output from the backend (TTFT)
+//	PhaseStreamTotal    — first model output → stream closed
 //	PhaseToolExecution  — the step's whole tool-call batch
 //	PhaseSessionPersist — session writes (overlaps other phases:
 //	                      persisting happens inside the step, so it

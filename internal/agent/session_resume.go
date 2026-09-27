@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"supercli/internal/llm"
+	"supercli/internal/tools"
 )
 
 // ResumeConversation switches history and its writer together while idle.
@@ -32,6 +33,9 @@ func (l *Loop) ResumeConversation(ctx context.Context, writer SessionWriter, msg
 	}
 	l.LoadConversation(msgs)
 	l.writer = writer
+	if l.toolOutputsFollowWriter {
+		l.toolOutputs, _ = writer.(tools.OutputPersistence)
+	}
 	l.contextModel = contextModelState{} // Read the resumed session's model identity.
 	l.toolDiscovery = toolDiscoveryState{}
 	if l.registry != nil {

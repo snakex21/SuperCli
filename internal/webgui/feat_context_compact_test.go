@@ -57,7 +57,9 @@ func TestWebLoop_AutoCompactUsesSummary(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 	t.Cleanup(func() { _ = eng.Close() })
-	loop, err := eng.newLoopWithSession(fatTurns(4, 700), nil)
+	// Echo mirrors the transcript; the bounded summary must actually be
+	// smaller than the replaced turns, excluding the retained system prompt.
+	loop, err := eng.newLoopWithSession(fatTurns(4, 2000), nil)
 	if err != nil {
 		t.Fatalf("newLoopWithSession: %v", err)
 	}

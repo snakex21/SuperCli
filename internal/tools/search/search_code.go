@@ -58,7 +58,7 @@ func (s *SearchCode) Spec() Tool {
 				"path":  {"type": "string", "description": "search root, default: cwd"},
                 "include": {"type": "string", "description": "glob relative to path: *.go, src/**/*.ts, *.{zig,go}; ** spans 0+ dirs"},
 				"max":   {"type": "integer", "description": "max results, default 50"},
-				"context": {"type": "integer", "minimum": 0, "maximum": 20, "description": "surrounding lines; default auto for up to 3 hits, 0 = locations"}
+				"context": {"type": "integer", "minimum": 0, "description": "surrounding lines, capped at 20; default auto for up to 3 hits, 0 = locations"}
 			}
 		}`,
 		Fn: s.run,
@@ -93,9 +93,13 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 	if a.Context != nil {
 		radius = *a.Context
 	}
-	if radius < 0 || radius > maxSearchContextRadius {
-		return Result{Err: fmt.Errorf("search_code: context must be between 0 and %d", maxSearchContextRadius)}, nil
+	if radius < 0 {
+		return Result{Err: fmt.Errorf("search_code: context must be non-negative")}, nil
 	}
+	// Context width is a display budget. Serve a bounded result even when the
+	// requested radius is too large, instead of forcing another model turn.
+	clampedContext := radius > maxSearchContextRadius
+	radius = min(radius, maxSearchContextRadius)
 	include, err := compileSearchGlob(a.Include)
 	if err != nil {
 		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
@@ -133,6 +137,9 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 				result = expanded
 			}
 		}
+	}
+	if clampedContext && err == nil && result.Err == nil {
+		result.Text += fmt.Sprintf("\n[context limited to %d lines per match]", maxSearchContextRadius)
 	}
 	return result, err
 }

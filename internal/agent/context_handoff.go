@@ -103,12 +103,13 @@ func (l *Loop) maybeModelHandoff(ctx context.Context, out chan<- Event) bool {
 	if estimate.Effective <= threshold {
 		return false
 	}
-	all := l.AllMessages()
-	split := autoCompactSplit(all)
+	history := l.compactionHistory()
+	all := history.messages
+	split := history.autoCompactSplit()
 	if split <= leadingSystemCount(all) || !hasFreshCompactablePrefix(all, split) {
 		return false
 	}
-	prefix := l.handoffPrefix(split)
+	prefix := all[:split]
 	if !hasFreshCompactablePrefix(prefix, len(prefix)) {
 		return false
 	}
@@ -121,10 +122,10 @@ func (l *Loop) maybeModelHandoff(ctx context.Context, out chan<- Event) bool {
 		}
 	}
 	summary, err := l.summarizePrefix(ctx, prefix)
-	if err != nil || strings.TrimSpace(summary) == "" || !compactionReduces(prefix, summary) {
+	if err != nil || strings.TrimSpace(summary) == "" || !compactionReduces(history.requestPrefix(split), summary) {
 		return true
 	}
-	removed := l.CompactPrefixWithSummary(summary, split)
+	removed := l.CompactPrefixWithSummary(summary, history.originalSplit(split))
 	if removed == 0 {
 		return true
 	}
@@ -140,19 +141,4 @@ func (l *Loop) maybeModelHandoff(ctx context.Context, out chan<- Event) bool {
 		}
 	}
 	return true
-}
-
-// Exclude explicitly hidden history from summary input as well as main input.
-func (l *Loop) handoffPrefix(split int) []llm.Message {
-	if l.hidden == nil {
-		return l.Messages[:split]
-	}
-	out := make([]llm.Message, 0, split)
-	for i, msg := range l.Messages[:split] {
-		if i < len(l.hidden) && l.hidden[i] {
-			continue
-		}
-		out = append(out, msg)
-	}
-	return out
 }

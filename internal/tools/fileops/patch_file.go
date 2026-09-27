@@ -24,6 +24,8 @@ type PatchResult struct {
 	BeforeHash   string
 	AfterHash    string
 	Changed      bool
+	// Empty records the computed post-patch state, including chained changes.
+	Empty bool
 	// Note is a diagnostic addendum for the success message. Empty for an
 	// ordinary patch; set only when the result is genuinely surprising and
 	// the model cannot see it from hashes (see pureInsertionNote).
@@ -32,6 +34,8 @@ type PatchResult struct {
 	// file already contained. The write succeeded, but nothing new exists
 	// because of it, so the agent loop must not bank it as progress.
 	Duplicated bool
+	// WrittenPreview is a bounded snapshot of the bytes successfully written.
+	WrittenPreview string
 }
 
 // minInsertionNoteLen is the shortest inserted text worth counting. Below it
@@ -128,10 +132,14 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	beforeHash := sha256.Sum256(data)
 	beforeHex := hex.EncodeToString(beforeHash[:])
 	if baseHash != "" && !strings.EqualFold(baseHash, beforeHex) {
-		return PatchResult{}, fmt.Errorf("fileops.PatchFile: base_hash mismatch (file changed); nothing written")
+		// The digest was already computed for this guard. Return it with the
+		// rejection so reviewing the changed source needs no separate hash
+		// command. A retry still checks its hash against the file again.
+		return PatchResult{}, fmt.Errorf("fileops.PatchFile: base_hash mismatch (file changed); nothing written; current_hash=%s; review current contents before retrying with this hash", beforeHex)
 	}
 
-	content := string(data)
+	before := string(data)
+	content := before
 	total := 0
 	var relaxed []string
 	for i, ch := range changes {
@@ -170,13 +178,14 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 	afterData := []byte(content)
 	afterHash := sha256.Sum256(afterData)
 	afterHex := hex.EncodeToString(afterHash[:])
-	changed := content != string(data)
+	changed := content != before
 	if !changed {
 		return PatchResult{
 			Replacements: total,
 			BeforeHash:   beforeHex,
 			AfterHash:    afterHex,
 			Changed:      false,
+			Empty:        len(afterData) == 0,
 		}, nil
 	}
 	if err := os.WriteFile(path, afterData, 0o644); err != nil {
@@ -196,12 +205,14 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 		}
 	}
 	return PatchResult{
-		Replacements: total,
-		BeforeHash:   beforeHex,
-		AfterHash:    afterHex,
-		Changed:      true,
-		Note:         note,
-		Duplicated:   duplicated,
+		Replacements:   total,
+		BeforeHash:     beforeHex,
+		AfterHash:      afterHex,
+		Changed:        true,
+		Empty:          len(afterData) == 0,
+		Note:           note,
+		Duplicated:     duplicated,
+		WrittenPreview: patchWrittenSnapshot(before, content),
 	}, nil
 }
 

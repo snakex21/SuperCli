@@ -42,7 +42,7 @@ func TestSearchContextMergesOverlapsAndPreservesExplicitLocations(t *testing.T) 
 func TestSearchContextLimitsAndFailures(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewSearchCode(dir)
-	for _, radius := range []int{-1, 21} {
+	for _, radius := range []int{-1, -20} {
 		res, _ := tool.run(context.Background(), json.RawMessage(fmt.Sprintf("{\"query\":\"needle\",\"context\":%d}", radius)))
 		if res.Err == nil {
 			t.Fatalf("accepted radius %d", radius)

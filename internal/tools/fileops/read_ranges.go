@@ -15,15 +15,33 @@ type LineSpan struct{ From, To int }
 type LineReadResult struct {
 	Lines []LineRange
 	Err   error
+	EOF   bool
 }
 
 // ReadRangesBounded reads one file once, retaining only the union of requested
 // lines. Results preserve request order and independent validation/EOF errors.
 // There is no state shared between calls, so subsequent calls see file edits.
 func ReadRangesBounded(ctx context.Context, path string, spans []LineSpan, maxLineBytes int) []LineReadResult {
+	return readRangesBounded(ctx, path, spans, maxLineBytes, false)
+}
+
+// ReadRangesBoundedWithEOF also reports EOF for ranges that reach the observed
+// end of the file. Earlier ranges are not marked complete merely because another
+// requested range reached EOF. It never scans beyond the final requested range.
+func ReadRangesBoundedWithEOF(ctx context.Context, path string, spans []LineSpan, maxLineBytes int) []LineReadResult {
+	return readRangesBounded(ctx, path, spans, maxLineBytes, true)
+}
+
+func readRangesBounded(ctx context.Context, path string, spans []LineSpan, maxLineBytes int, wantEOF bool) []LineReadResult {
 	results := make([]LineReadResult, len(spans))
+	var eof bool
+	var eofOut *bool
+	if wantEOF {
+		eofOut = &eof
+	}
 	if len(spans) == 1 {
-		results[0].Lines, results[0].Err = ReadLinesBounded(ctx, path, spans[0].From, spans[0].To, maxLineBytes)
+		results[0].Lines, results[0].Err = readLinesBounded(ctx, path, spans[0].From, spans[0].To, maxLineBytes, eofOut)
+		results[0].EOF = eof
 		return results
 	}
 	windows := make([]LineSpan, 0, len(spans))
@@ -54,11 +72,12 @@ func ReadRangesBounded(ctx context.Context, path string, spans []LineSpan, maxLi
 			merged = append(merged, span)
 		}
 	}
-	lines, completed, readErr := readRanges(ctx, path, merged, maxLineBytes)
+	lines, completed, readErr := readRanges(ctx, path, merged, maxLineBytes, eofOut)
 	for i, span := range spans {
 		if results[i].Err != nil {
 			continue
 		}
+		results[i].EOF = eof && span.To >= completed
 		switch {
 		case readErr != nil && completed < span.To:
 			results[i].Err = readErr
@@ -75,7 +94,7 @@ func ReadRangesBounded(ctx context.Context, path string, spans []LineSpan, maxLi
 	return results
 }
 
-func readRanges(ctx context.Context, path string, windows []LineSpan, maxLineBytes int) ([]LineRange, int, error) {
+func readRanges(ctx context.Context, path string, windows []LineSpan, maxLineBytes int, eof *bool) ([]LineRange, int, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err
 	}
@@ -84,7 +103,7 @@ func readRanges(ctx context.Context, path string, windows []LineSpan, maxLineByt
 		return nil, 0, FileErr(err, path)
 	}
 	defer f.Close()
-	lines, completed, err := readLineWindows(ctx, f, path, windows[0].From, windows[len(windows)-1].To, maxLineBytes, windows)
+	lines, completed, err := readLineWindowsEOF(ctx, f, path, windows[0].From, windows[len(windows)-1].To, maxLineBytes, windows, eof)
 	if err != nil {
 		err = FileErr(err, path)
 	}

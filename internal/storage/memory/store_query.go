@@ -12,12 +12,15 @@ import (
 )
 
 func (s *Store) List(scope string, limit int) ([]Entry, error) {
+	if limit <= 0 {
+		limit = -1 // SQLite: retain the public unlimited-read behavior.
+	}
 	var rows *sql.Rows
 	var err error
 	if scope == "" {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY updated_at DESC, created_at DESC, id`)
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY updated_at DESC, created_at DESC, id LIMIT ?`, limit)
 	} else {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY updated_at DESC, created_at DESC, id`, scope)
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY updated_at DESC, created_at DESC, id LIMIT ?`, scope, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -30,8 +33,16 @@ func (s *Store) List(scope string, limit int) ([]Entry, error) {
 // query is empty or contains no FTS5 operators. Results are
 // ranked by FTS5 rank (best match first) and capped at k.
 func (s *Store) Search(query string, k int) ([]Entry, error) {
+	return s.search(query, k, false)
+}
+
+func (s *Store) search(query string, k int, recall bool) ([]Entry, error) {
 	if query == "" {
 		return nil, nil
+	}
+	filter := ""
+	if recall {
+		filter = recallNoiseFilter
 	}
 	// FTS5 wants the query as-is. Escape embedded quotes by
 	// switching to a phrase search if needed.
@@ -39,7 +50,7 @@ func (s *Store) Search(query string, k int) ([]Entry, error) {
 		`SELECT e.id, e.scope, e.file_path, e.line_start, e.line_end, e.content, e.tags, e.source, e.created_at, e.updated_at
 		 FROM memory_fts f
 		 JOIN memory_entries e ON e.id = f.id
-		 WHERE memory_fts MATCH ?
+		 WHERE memory_fts MATCH ?`+filter+`
 		 ORDER BY rank
 		 LIMIT ?`,
 		query, k,
@@ -47,7 +58,7 @@ func (s *Store) Search(query string, k int) ([]Entry, error) {
 	if err != nil {
 		// Fall back to LIKE for queries that are not valid FTS5.
 		rows, err = s.db.Query(
-			`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE content LIKE ? ORDER BY updated_at DESC LIMIT ?`,
+			`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries e WHERE content LIKE ?`+filter+` ORDER BY updated_at DESC LIMIT ?`,
 			"%"+query+"%", k,
 		)
 		if err != nil {
@@ -102,12 +113,15 @@ func (s *Store) RecentBudgeted(scope string, tokenCap int) (string, error) {
 // updated_at values and reorder unpredictably. RecentBudgeted needs
 // "newest authored", and a deterministic order, so it uses this.
 func (s *Store) recentByCreated(scope string, limit int) ([]Entry, error) {
+	if limit <= 0 {
+		limit = -1
+	}
 	var rows *sql.Rows
 	var err error
 	if scope == "" {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY created_at DESC, id`)
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries ORDER BY created_at DESC, id LIMIT ?`, limit)
 	} else {
-		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY created_at DESC, id`, scope)
+		rows, err = s.db.Query(`SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at FROM memory_entries WHERE scope = ? ORDER BY created_at DESC, id LIMIT ?`, scope, limit)
 	}
 	if err != nil {
 		return nil, err

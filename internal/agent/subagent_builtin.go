@@ -4,21 +4,14 @@ import (
 	"supercli/internal/llm"
 )
 
-// BuiltinSubAgents returns the four default sub-agent specs
-// promised by the F2 design (see §4.5). The system prompts
-// are intentionally short: the model only needs to know
-// "what kind of work am I doing", not a full persona.
-//
-// All four inherit the parent's model and tool restrictions
-// (Model = "" means inherit; AllowedTools = nil means inherit
-// the full set). The defaults are good for a 32k-context
-// model; F5 will tune them per-model once we have real
-// benchmark data.
+// BuiltinSubAgents returns the default worker roles. Keep each briefing short
+// and consistent with its tool allowlist; workers cannot delegate further.
 func BuiltinSubAgents() []SubAgent {
 	const evidence = " Batch independent calls; read_many for files/ranges. Reuse evidence. Fix errors and recheck, or report the blocker; never end with promised work."
-	exploreSystem := "You are the SuperCli explore worker. Answer the focused codebase question with precise paths/lines. Use web_lookup/web_fetch/web_search for current external documentation, read_image only for images. Return a concise answer." + evidence
-	planSystem := "You are the SuperCli plan worker. Read-only: produce a numbered plan within 30 lines, including unknowns." + evidence
-	reviewSystem := "You are the SuperCli review worker. Read-only: inspect targeted code and call sites for correctness, performance, and clarity. Report findings by severity with paths/lines." + evidence
+	const readOnlyEvidence = " Batch independent calls; read_many for files/ranges. Reuse evidence. No shell or edits; report findings, suggested checks and blockers."
+	exploreSystem := "You are the SuperCli explore worker. Answer the focused codebase question with precise paths/lines. Use web_lookup/web_fetch/web_search for current external documentation, read_image only for images. Return a concise answer." + readOnlyEvidence
+	planSystem := "You are the SuperCli plan worker. Read-only: produce a numbered plan within 30 lines, including unknowns." + readOnlyEvidence
+	reviewSystem := "You are the SuperCli review worker. Read-only: inspect targeted code and call sites for correctness, performance, and clarity. Report findings by severity with paths/lines." + readOnlyEvidence
 	codeSystem := "You are the SuperCli code worker. Implement the requested change, run relevant checks, then report changed files and results. Match effort to scope; no-op is valid, no formatting-only edits. The workspace is your cwd; use relative paths and file/search tools. ctx_execute takes an argv list, not shell syntax. Do not spawn workers." + evidence
 
 	// The default worker inherits tools, excluding delegation. Its final report
@@ -26,7 +19,7 @@ func BuiltinSubAgents() []SubAgent {
 	generalSystem := "You are a SuperCli worker. Finish the delegated task using tools. Return one concise, self-contained report: findings, changed files, checks/results, and unresolved issues. The coordinator sees only this report. The workspace is your cwd; use relative paths and file/search tools. Match effort to scope; no-op is valid, no formatting-only edits. Do not spawn workers." + evidence
 
 	// Selected explicitly by task's advise flag; the registry enforces read-only.
-	advisorSystem := "You are a read-only SuperCli advisor. Answer the specific question: recommendation first, then a brief rationale. Use web_lookup/web_fetch/web_search for current external documentation when needed." + evidence
+	advisorSystem := "You are a read-only SuperCli advisor. Answer the specific question: recommendation first, then a brief rationale. Use web_lookup/web_fetch/web_search for current external documentation when needed." + readOnlyEvidence
 
 	return []SubAgent{
 		{
@@ -36,34 +29,38 @@ func BuiltinSubAgents() []SubAgent {
 			// AllowedTools nil = inherit the full set (minus delegation).
 		},
 		{
-			Name:        "advisor",
-			Description: "give a read-only second opinion on a specific decision",
-			System:      advisorSystem,
+			Name:                   "advisor",
+			Description:            "give a read-only second opinion on a specific decision",
+			System:                 advisorSystem,
+			SkipImplementationHint: true,
 			AllowedTools: allowedTools(
 				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad",
 				"web_lookup", "web_fetch", "web_search", "tool_search",
 			),
 		},
 		{
-			Name:        "explore",
-			Description: "search the codebase and answer a focused question",
-			System:      exploreSystem,
+			Name:                   "explore",
+			Description:            "search the codebase and answer a focused question",
+			System:                 exploreSystem,
+			SkipImplementationHint: true,
 			AllowedTools: allowedTools(
 				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad",
 				"web_lookup", "web_fetch", "web_search", "tool_search",
 			),
 		},
 		{
-			Name:         "plan",
-			Description:  "analyse a question and return a numbered plan",
-			System:       planSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
+			Name:                   "plan",
+			Description:            "analyse a question and return a numbered plan",
+			System:                 planSystem,
+			SkipImplementationHint: true,
+			AllowedTools:           allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
 		},
 		{
-			Name:         "review",
-			Description:  "review existing code for correctness and clarity",
-			System:       reviewSystem,
-			AllowedTools: allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
+			Name:                   "review",
+			Description:            "review existing code for correctness and clarity",
+			System:                 reviewSystem,
+			SkipImplementationHint: true,
+			AllowedTools:           allowedTools("search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir", "scratchpad"),
 		},
 		{
 			Name:        "code",
@@ -73,8 +70,9 @@ func BuiltinSubAgents() []SubAgent {
 				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir",
 				"patch_file", "create_file",
 				"write_file", "make_dir", "move", "copy", "trash", "read_docx", "read_xlsx", "read_pdf",
-				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute", "scratchpad",
+				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute", "process_session", "scratchpad",
 			),
+			DeferredTools: allowedTools("read_docx", "edit_docx", "read_xlsx", "edit_xlsx", "read_pdf", "read_zip", "process_session"),
 		},
 	}
 }

@@ -32,6 +32,12 @@ type Result struct {
 	// loop detectors or earn extra step budget. Nothing is sent to the model
 	// because of this field; the explanation, if any, is in Text.
 	Inert bool
+	// EmptyFileExpected is set by file tools when their computed result is an
+	// intentionally empty file. Internal evidence only, never model/UI JSON.
+	EmptyFileExpected bool `json:"-"`
+	// CommandKey carries verification/workdir/environment identity across process
+	// start and wait calls. It never adds environment values to model/UI output.
+	CommandKey *[32]byte `json:"-"`
 }
 
 // ImageContent holds an image produced by a tool. The agent loop
@@ -56,7 +62,11 @@ type Tool struct {
 	// F4 will parse and validate against it. For F1 it is passed
 	// through to the provider as a hint.
 	Schema string
-	// Fn executes the tool. args is the raw JSON the model sent.
+	// RepairArgs optionally removes a tool-specific, unambiguous formatting error.
+	// It runs only after schema rejection, must not mutate input or perform I/O,
+	// and its candidate must pass the original schema before execution.
+	RepairArgs func(json.RawMessage) (json.RawMessage, bool)
+	// Fn executes the tool with validated, possibly normalized JSON arguments.
 	// The function returns a Result whose Err field is the
 	// user-visible tool error; the second return is for Go-level
 	// exceptions (panic recovery, ...).
@@ -97,18 +107,38 @@ type Registry struct {
 	visible    map[string]struct{}            // subset of tools visible to the model
 	order      []string                       // insertion order, for stable Visible()
 	alwaysOn   map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
-	outputs    *OutputStore                   // bounded large-result store owned by this registry/loop
+	outputs    *OutputStore                   // bounded large-result store; may be shared by one loop family
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
 // until Activate or MarkAlwaysOn is called.
 func NewRegistry() *Registry {
+	return newRegistryWithOutputs(NewOutputStore())
+}
+
+// NewRegistrySharingOutputs creates an empty, independent tool registry while
+// preserving immutable output handles within a parent/worker family. It shares
+// only the bounded output LRU, never tool permissions, discovery or session state.
+func NewRegistrySharingOutputs(parent *Registry) *Registry {
+	if parent == nil {
+		return NewRegistry()
+	}
+	parent.mu.RLock()
+	outputs := parent.outputs
+	parent.mu.RUnlock()
+	if outputs == nil {
+		outputs = NewOutputStore()
+	}
+	return newRegistryWithOutputs(outputs)
+}
+
+func newRegistryWithOutputs(outputs *OutputStore) *Registry {
 	return &Registry{
 		tools:    make(map[string]Tool),
 		schemas:  make(map[string]*compiledToolSchema),
 		visible:  make(map[string]struct{}),
 		alwaysOn: make(map[string]struct{}),
-		outputs:  NewOutputStore(),
+		outputs:  outputs,
 	}
 }
 
@@ -148,7 +178,7 @@ func (r *Registry) CompactModelOutput(toolName, text string) string {
 }
 
 // ModelResultContent keeps failures compact while retaining diagnostics omitted
-// by Result.ModelContent. Each registry owns the handle used to retrieve them.
+// by Result.ModelContent. Related registries may share their output handles.
 func (r *Registry) ModelResultContent(toolName string, result Result) string {
 	return r.ModelResultContentContext(context.Background(), toolName, result)
 }
@@ -171,6 +201,27 @@ func (r *Registry) Register(t Tool) error {
 	if err != nil {
 		return fmt.Errorf("register %q: %w", t.Name, err)
 	}
+	return r.registerCompiled(t, compiled)
+}
+
+// RegisterFrom copies one registered tool and reuses its immutable validator.
+// Visibility, activation and other tools remain local to each registry. Tools
+// whose callbacks close over a registry must still be rebuilt by the caller.
+func (r *Registry) RegisterFrom(source *Registry, name string) error {
+	if source == nil {
+		return fmt.Errorf("register %q: source registry is nil", name)
+	}
+	source.mu.RLock()
+	t, ok := source.tools[name]
+	compiled := source.schemas[name]
+	source.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("register %q: %w", name, ErrUnknownTool)
+	}
+	return r.registerCompiled(t, compiled)
+}
+
+func (r *Registry) registerCompiled(t Tool, compiled *compiledToolSchema) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.tools[t.Name]; exists {
@@ -339,6 +390,16 @@ func (r *Registry) IsVisible(name string) bool {
 	return ok
 }
 
+// CoerceArgs applies the registered execution schema without running the tool.
+// Result bookkeeping can use this on a typed decode failure to interpret the
+// same accepted argument forms as Execute; this does not replace validation.
+func (r *Registry) CoerceArgs(name string, args json.RawMessage) json.RawMessage {
+	r.mu.RLock()
+	schema := r.schemas[name]
+	r.mu.RUnlock()
+	return coerceCompiledArgs(schema, args)
+}
+
 // Execute looks up the tool by name and invokes it. Unknown tools
 // return ErrUnknownTool. Visibility is NOT checked here: the
 // agent loop is responsible for filtering what the model can
@@ -357,9 +418,18 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	// conservative: only fields the tool's schema types as
 	// int/number/bool are touched, and only when the string is a
 	// valid literal. See coerce_args.go.
+	originalArgs := args
 	args = coerceCompiledArgs(schema, args)
 	if schema != nil {
 		if err := schema.validateJSON(args); err != nil {
+			if t.RepairArgs != nil {
+				if repaired, ok := t.RepairArgs(originalArgs); ok {
+					repaired = coerceCompiledArgs(schema, repaired)
+					if schema.validateJSON(repaired) == nil {
+						return t.Fn(ctx, repaired)
+					}
+				}
+			}
 			// An unknown argument names the tool inside its own list of valid
 			// arguments, so the model reads one repair instruction instead of a
 			// prefix plus a detail. See unknownArgumentError.

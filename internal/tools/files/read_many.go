@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -76,41 +77,83 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 
 	outcomes := make([]readManyOutcome, len(work))
-	var wg sync.WaitGroup
+	type readGroup struct {
+		file    string
+		indices []int
+	}
+	var groups []readGroup
+	groupForFile := make(map[string]int, len(work))
 	for i, item := range work {
-		i, item := i, item
 		request := item.request
 		outcomes[i].request = request
+		if item.err != nil {
+			outcomes[i].err = item.err
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			outcomes[i].err = err
+			continue
+		}
+		if err := validateReadManyRequest(request); err != nil {
+			outcomes[i].err = err
+			continue
+		}
+		// Cap before grouping; every returned range still has its own bound.
+		if request.To-request.From >= maxReadManyRange {
+			request.To = request.From + maxReadManyRange - 1
+			outcomes[i].request = request
+		}
+		group, found := groupForFile[request.File]
+		if !found {
+			group = len(groups)
+			groupForFile[request.File] = group
+			groups = append(groups, readGroup{file: request.File})
+		}
+		groups[group].indices = append(groups[group].indices, i)
+	}
+
+	finish := func(i int, path string, lines []fileops.LineRange, eof bool, err error) {
+		if err != nil {
+			outcomes[i].err = suggestReadFile(ctx, path, err)
+			return
+		}
+		for j := range lines {
+			lines[j].Content = strings.TrimSuffix(lines[j].Content, "\r")
+		}
+		outcomes[i].text = renderLinesWithEOF(lines, eof)
+		request, requestedTo := outcomes[i].request, work[i].request.To
+		if request.To < requestedTo && !eof {
+			outcomes[i].text += fmt.Sprintf("[range capped at %d lines; requested lines %d-%d not read]\n",
+				maxReadManyRange, request.To+1, requestedTo)
+		}
+	}
+	var wg sync.WaitGroup
+	for _, group := range groups {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if item.err != nil {
-				outcomes[i].err = item.err
-				return
-			}
-			if err := ctx.Err(); err != nil {
-				outcomes[i].err = err
-				return
-			}
-			if err := validateReadManyRequest(request); err != nil {
-				outcomes[i].err = err
-				return
-			}
-			path, err := resolveSandboxed(t.BaseDir, request.File)
+			path, err := resolveSandboxed(t.BaseDir, group.file)
 			if err != nil {
-				outcomes[i].err = err
+				for _, i := range group.indices {
+					outcomes[i].err = err
+				}
 				return
 			}
-			lines, eof, err := fileops.ReadLinesBoundedWithEOF(ctx, path, request.From, request.To, maxReadLineKeep)
-			if err != nil {
-				outcomes[i].err = suggestReadFile(ctx, path, err)
+			if len(group.indices) == 1 {
+				i := group.indices[0]
+				request := outcomes[i].request
+				lines, eof, err := fileops.ReadLinesBoundedWithEOF(ctx, path, request.From, request.To, maxReadLineKeep)
+				finish(i, path, lines, eof, err)
 				return
 			}
-			// Match the existing batch rendering of CRLF files.
-			for j := range lines {
-				lines[j].Content = strings.TrimSuffix(lines[j].Content, "\r")
+			spans := make([]fileops.LineSpan, len(group.indices))
+			for j, i := range group.indices {
+				spans[j] = fileops.LineSpan{From: outcomes[i].request.From, To: outcomes[i].request.To}
 			}
-			outcomes[i].text = renderLinesWithEOF(lines, eof)
+			// One open/scan per repeated file, with no cache across tool calls.
+			for j, result := range fileops.ReadRangesBoundedWithEOF(ctx, path, spans, maxReadLineKeep) {
+				finish(group.indices[j], path, result.Lines, result.EOF, result.Err)
+			}
 		}()
 	}
 	wg.Wait()
@@ -200,9 +243,6 @@ func validateReadManyRequest(r readManyRequest) error {
 	if r.From < 1 || r.To < r.From {
 		return fmt.Errorf("invalid range %d-%d", r.From, r.To)
 	}
-	if r.To-r.From+1 > maxReadManyRange {
-		return fmt.Errorf("range %d lines exceeds cap %d", r.To-r.From+1, maxReadManyRange)
-	}
 	return nil
 }
 
@@ -251,6 +291,9 @@ func defaultReadManyRange(request *readManyRequest) {
 		request.From = 1
 		request.To = maxReadManyRange
 	} else if request.From > 0 && request.To == 0 {
-		request.To = request.From + maxReadManyRange - 1
+		request.To = math.MaxInt
+		if request.From <= math.MaxInt-maxReadManyRange+1 {
+			request.To = request.From + maxReadManyRange - 1
+		}
 	}
 }

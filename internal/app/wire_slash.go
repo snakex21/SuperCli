@@ -171,30 +171,14 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		return suffix, nil
 	}
 
-	// F25a: /compact — real context compaction. The active
-	// model summarizes the conversation (9-section prompt),
-	// then every non-system message is replaced by a single
-	// system message containing the summary plus a resume
-	// wrapper. The dropped messages stay in the F13 session
-	// store and remain searchable via search_history.
+	// /compact uses the same configured summarizer, visibility rules, recent
+	// turn protection and reduction guard as automatic compaction and WebGUI.
 	cmds["compact"] = func(ctx context.Context, args string) (string, error) {
-		msgs := d.loop.AllMessages()
-		nonSystem := 0
-		for _, m := range msgs {
-			if m.Role != llm.RoleSystem {
-				nonSystem++
-			}
-		}
-		if nonSystem == 0 {
-			return "compact: nothing to compact (already minimal)", nil
-		}
-		summary, err := summarizeForCompaction(ctx, d.loop.Provider(), msgs)
+		event, err := d.loop.CompactNow(ctx)
 		if err != nil {
-			return fmt.Sprintf("compact: summarization failed: %v (context unchanged)", err), nil
+			return fmt.Sprintf("compact: %v (context unchanged)", err), nil
 		}
-		summary += compactFacts(msgs, d.registry.ActiveNames())
-		removed := d.loop.CompactWithSummary(wrapCompactSummary(summary))
-		return fmt.Sprintf("compact: replaced %d message(s) with a %d-char summary", removed, len(summary)), nil
+		return fmt.Sprintf("compact: replaced %d message(s) with a summary", event.Removed), nil
 	}
 
 	// F25a: /status — show credits and session info.

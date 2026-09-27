@@ -46,7 +46,7 @@ constraints:
   memory, sessions and credentials with you.
 - **No user-profile writes** — nothing goes to `%APPDATA%`, `~/.config`,
   or `~/.supercli` (legacy `~/.supercli` data is migrated automatically
-  on first start; the original is kept with a `MOVED.txt` marker).
+  on first start; the original is kept unchanged).
 - **Pure Go runtime** — no Node/Python/Docker dependency for normal operation.
 - **Provider-flexible** — native Anthropic, OpenAI-compatible providers,
   ChatGPT/Codex OAuth, opencode gateway, echo mode, and configurable provider

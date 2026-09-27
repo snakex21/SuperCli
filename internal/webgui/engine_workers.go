@@ -55,6 +55,11 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
+	// The engine retains workers across fresh parent loops; their continuation
+	// must remain callable through the stable dispatcher on later user turns.
+	if len(at.Workers.List()) > 0 {
+		reg.ActivateDiscovered("send_message")
+	}
 	return nil
 }
 

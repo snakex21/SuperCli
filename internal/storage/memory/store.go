@@ -153,8 +153,15 @@ func (s *Store) migrate() error {
 			created_at  INTEGER NOT NULL,
 			updated_at  INTEGER NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_memory_scope ON memory_entries(scope)`,
-		`CREATE INDEX IF NOT EXISTS idx_memory_updated ON memory_entries(updated_at DESC)`,
+		// Match both stable recency orders so bounded reads need no temporary
+		// sort of large content rows. Scoped prefixes also cover scope lookups.
+		`CREATE INDEX IF NOT EXISTS idx_memory_recent ON memory_entries(updated_at DESC, created_at DESC, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_scope_recent ON memory_entries(scope, updated_at DESC, created_at DESC, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_created ON memory_entries(created_at DESC, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_scope_created ON memory_entries(scope, created_at DESC, id)`,
+		// The new indexes cover these older prefixes; avoid duplicate write work.
+		`DROP INDEX IF EXISTS idx_memory_scope`,
+		`DROP INDEX IF EXISTS idx_memory_updated`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 			id UNINDEXED,
 			scope UNINDEXED,

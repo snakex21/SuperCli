@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -211,15 +211,21 @@ func countFailures(outcomes []callOutcome) int {
 }
 
 // identicalFailureGate blocks a third identical failed tool call (same
-// name+normalized-args) within a Run. Two failures are allowed so the model
-// can see the diagnostic; the third is rejected before Execute.
+// name+normalized-args) within a Run. Command failures expire after a real
+// file mutation: the same test must be able to verify repaired code. Other
+// failures retain their original scope.
 type identicalFailureGate struct {
 	mu     sync.Mutex
-	counts map[[sha256.Size]byte]int
+	counts map[failedCallKey]int
 }
 
-func (g *identicalFailureGate) key(name, args string) [sha256.Size]byte {
-	return toolCallFingerprint(name, args)
+type failedCallKey struct {
+	fingerprint [sha256.Size]byte
+	execution   bool
+}
+
+func (g *identicalFailureGate) key(name, args string) failedCallKey {
+	return failedCallKey{fingerprint: toolCallFingerprint(name, args), execution: name == "ctx_execute"}
 }
 
 func (g *identicalFailureGate) shouldBlock(name, args string) bool {
@@ -235,7 +241,7 @@ func (g *identicalFailureGate) recordFailure(name, args string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.counts == nil {
-		g.counts = make(map[[sha256.Size]byte]int)
+		g.counts = make(map[failedCallKey]int)
 	}
 	k := g.key(name, args)
 	g.counts[k]++
@@ -260,6 +266,18 @@ func (g *identicalFailureGate) recordSuccess(name, args string) {
 		return
 	}
 	delete(g.counts, g.key(name, args))
+}
+
+// workspaceChanged expires only command failures. It does not turn an edit
+// into a passing check, nor forgive malformed calls or repeated writes.
+func (g *identicalFailureGate) workspaceChanged() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for key := range g.counts {
+		if key.execution {
+			delete(g.counts, key)
+		}
+	}
 }
 
 // repeatedMutationLimit is how many identical successful mutations one Run may
@@ -353,7 +371,16 @@ func normalizeToolArgsJSON(args string) string {
 		return "{}"
 	}
 	var v any
-	if err := json.Unmarshal([]byte(args), &v); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(args))
+	// Keep exact numbers: float64 would collapse distinct large IDs or decimals.
+	decoder.UseNumber()
+	if err := decoder.Decode(&v); err != nil {
+		return args
+	}
+	// Decode alone accepts a valid prefix; malformed/trailing input must retain
+	// its own identity until normal argument validation can report the error.
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return args
 	}
 	if obj, ok := v.(map[string]any); ok {
@@ -361,39 +388,13 @@ func normalizeToolArgsJSON(args string) string {
 			delete(obj, k)
 		}
 	}
-	norm, err := json.Marshal(canonicalizeJSON(v))
+	// encoding/json sorts object keys recursively. Keep objects as objects:
+	// converting them to key/value arrays aliases malformed and repaired calls.
+	norm, err := json.Marshal(v)
 	if err != nil {
 		return args
 	}
 	return string(norm)
-}
-
-func canonicalizeJSON(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		// Encode as ordered array of [key, value] pairs so Marshal is stable.
-		// Using a sorted-key object via json.Marshal of map is NOT stable in
-		// all Go versions for nested maps; we re-build via sorted keys string.
-		// Simpler: rebuild map iteration is random — so produce ordered slice.
-		pairs := make([]any, 0, len(keys))
-		for _, k := range keys {
-			pairs = append(pairs, []any{k, canonicalizeJSON(t[k])})
-		}
-		return pairs
-	case []any:
-		out := make([]any, len(t))
-		for i := range t {
-			out[i] = canonicalizeJSON(t[i])
-		}
-		return out
-	default:
-		return v
-	}
 }
 
 func toolCallFingerprint(name, args string) [sha256.Size]byte {

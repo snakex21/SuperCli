@@ -39,13 +39,16 @@ func TestCaptureHelper(t *testing.T) {
 	if mode == "small" {
 		count = 1
 	}
+	if mode == "medium_failure" {
+		count = 200
+	}
 	for _, stream := range []*os.File{os.Stdout, os.Stderr} {
 		fmt.Fprint(stream, "EARLY_EVIDENCE\n", strings.Repeat("zażółć gęślą jaźń\n", count), "FINAL_EVIDENCE\n")
 	}
 	if mode == "timeout" {
 		time.Sleep(5 * time.Second)
 	}
-	if mode == "failure" {
+	if mode == "failure" || mode == "medium_failure" {
 		os.Exit(7)
 	}
 	os.Exit(0)

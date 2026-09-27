@@ -10,7 +10,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -145,61 +144,6 @@ func ClampSummary(s string) string {
 	return strings.TrimSpace(s[:cut]) + "\n[summary truncated]"
 }
 
-// fileToolModifies classifies a tool call as writing to the file it
-// names (vs merely reading it).
-func fileToolModifies(name string) bool {
-	for _, p := range []string{"write", "edit", "insert", "delete", "move", "copy", "make", "trash"} {
-		if strings.Contains(name, p) {
-			return true
-		}
-	}
-	return false
-}
-
-// CompactFacts derives cheap EXACT context lines from the compacted
-// messages, appended below the model-written summary: bare paths of
-// files read and modified (from tool-call arguments) and the tools
-// loaded via tool_search (registry state survives compaction, so the
-// model must know it doesn't need to search for them again). Costs a
-// handful of tokens and spares re-reading after compaction.
-func CompactFacts(msgs []llm.Message, loadedTools []string) string {
-	const maxList = 20
-	seen := map[string]bool{}
-	var read, modified []string
-	for _, m := range msgs {
-		for _, tc := range m.ToolCalls {
-			var args map[string]any
-			if json.Unmarshal([]byte(tc.Arguments), &args) != nil {
-				continue
-			}
-			path, _ := args["path"].(string)
-			if path == "" || seen[path] {
-				continue
-			}
-			seen[path] = true
-			if fileToolModifies(tc.Name) {
-				modified = append(modified, path)
-			} else {
-				read = append(read, path)
-			}
-		}
-	}
-	var b strings.Builder
-	writeList := func(label string, list []string) {
-		if len(list) == 0 {
-			return
-		}
-		if len(list) > maxList {
-			list = list[len(list)-maxList:] // freshest entries win
-		}
-		fmt.Fprintf(&b, "\n%s: %s", label, strings.Join(list, ", "))
-	}
-	writeList("files_read", read)
-	writeList("files_modified", modified)
-	writeList("loaded_tools", loadedTools)
-	return b.String()
-}
-
 // NewAutoSummarizer builds the standard Summarizer wiring: model
 // summary + exact facts + resume framing. activeTools is called at
 // compaction time so the facts reflect the registry's CURRENT
@@ -211,6 +155,11 @@ func NewAutoSummarizer(activeTools func() []string) Summarizer {
 // NewAutoSummarizerWithProvider optionally pins compaction to a side provider.
 // Nil preserves the active-model behaviour. A dedicated local/cloud model
 // avoids evicting the coordinator's KV slot and can make summaries cheaper.
+// A summarizer may be inherited by a worker. Its owning loop supplies the
+// current registry per call instead of using the coordinator's closed-over one.
+type compactToolScopeKey struct{}
+type compactToolScope struct{ activeTools func() []string }
+
 func NewAutoSummarizerWithProvider(provider llm.Provider, activeTools func() []string) Summarizer {
 	return func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
 		mainProvider := p
@@ -231,9 +180,13 @@ func NewAutoSummarizerWithProvider(provider llm.Provider, activeTools func() []s
 		if err != nil {
 			return "", err
 		}
+		toolNames := activeTools
+		if scope, ok := ctx.Value(compactToolScopeKey{}).(compactToolScope); ok {
+			toolNames = scope.activeTools // nil is an explicit empty loop scope
+		}
 		var loaded []string
-		if activeTools != nil {
-			loaded = activeTools()
+		if toolNames != nil {
+			loaded = toolNames()
 		}
 		summary += CompactFacts(msgs, loaded)
 		return WrapCompactSummary(summary), nil

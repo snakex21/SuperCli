@@ -47,9 +47,9 @@ const MaxCommandLen = 4 * 1024
 const MaxStdoutKBHard = 64
 
 // MaxTimeoutMSHard is the hard ceiling for TimeoutMS.
-// 30 s is a long time for a single command; longer
-// workloads belong in the F10+1 background pool.
-const MaxTimeoutMSHard = 30_000
+// Explicit timeouts allow ordinary builds/tests to finish without a restart.
+// Foreground commands remain bounded; the default stays short.
+const MaxTimeoutMSHard = 300_000
 
 // DefaultTimeoutMS is used when TimeoutMS is zero.
 const DefaultTimeoutMS = 10_000
@@ -197,7 +197,7 @@ const FailTailBytes = 2048
 //	stderr:
 //	FAIL: TestFoo ...
 //
-// Timeouts are marked explicitly; truncated tails carry a
+// Timeouts are marked explicitly; truncated streams carry a
 // marker. No cause guessing — streams are quoted verbatim.
 func (r *Result) FailureSummary() string {
 	var b strings.Builder
@@ -218,8 +218,19 @@ func (r *Result) FailureSummary() string {
 		appendCaptured(&b, "stderr", r.retained.Stderr, r.retained.TruncatedStderr)
 		appendCaptured(&b, "stdout", r.retained.Stdout, r.retained.TruncatedStdout)
 	} else {
-		appendTail(&b, "stderr", r.Stderr, r.TruncatedStderr)
-		appendTail(&b, "stdout", r.Stdout, r.TruncatedStdout)
+		// A capture below the requested preview cap is still complete. Preserve
+		// its head too; increasing that cap must not hide early diagnostics.
+		// Legacy/partial snapshots may contain only a tail, so honor their flags.
+		if r.TruncatedStderr {
+			appendTail(&b, "stderr", r.Stderr, true)
+		} else {
+			appendCaptured(&b, "stderr", r.Stderr, false)
+		}
+		if r.TruncatedStdout {
+			appendTail(&b, "stdout", r.Stdout, true)
+		} else {
+			appendCaptured(&b, "stdout", r.Stdout, false)
+		}
 	}
 	return b.String()
 }

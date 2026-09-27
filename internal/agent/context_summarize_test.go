@@ -46,20 +46,22 @@ func TestClampSummary_CutsAtLineBoundary(t *testing.T) {
 func TestCompactFacts_PathsAndTools(t *testing.T) {
 	msgs := []llm.Message{
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			{ID: "1", Name: "read_lines", Arguments: `{"path":"internal/agent/loop.go","from":1}`},
+			{ID: "1", Name: "read_lines", Arguments: `{"file":"internal/agent/loop.go","from":1}`},
 			{ID: "2", Name: "write_file", Arguments: `{"path":"internal/agent/prune.go","content":"x"}`},
 		}},
-		{Role: llm.RoleTool, ToolCallID: "1", Name: "read_lines", Content: "..."},
+		{Role: llm.RoleTool, ToolCallID: "1", Name: "read_lines", Content: "   1 | package agent"},
+		{Role: llm.RoleTool, ToolCallID: "2", Name: "write_file", Content: "Created internal/agent/prune.go (1 bytes)"},
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 			{ID: "3", Name: "edit_line", Arguments: `{"path":"main.go","line":3}`},
 			{ID: "4", Name: "search_code", Arguments: `{"query":"foo"}`}, // no path: skipped
 			{ID: "5", Name: "read_lines", Arguments: `not json`},         // ignored
 		}},
+		{Role: llm.RoleTool, ToolCallID: "3", Name: "edit_line", Content: "Edited main.go"},
 	}
 	got := CompactFacts(msgs, []string{"edit_line", "search_code"})
 	for _, want := range []string{
 		"files_read: internal/agent/loop.go",
-		"files_modified: internal/agent/prune.go, main.go",
+		"files_modified: main.go, internal/agent/prune.go",
 		"loaded_tools: edit_line, search_code",
 	} {
 		if !strings.Contains(got, want) {

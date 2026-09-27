@@ -3,6 +3,7 @@ package fileops
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Failure diagnostics for patch_file.
@@ -208,20 +209,24 @@ func occurrenceLines(content, old string) string {
 func whitespaceVerdict(content, old string) string {
 	squeezedOld := squeezeSpace(old)
 	if len(squeezedOld) >= diagMinStripped {
-		if n := strings.Count(squeezeSpace(content), squeezedOld); n > 0 {
+		normalized := squeezeSpace(content)
+		if n := strings.Count(normalized, squeezedOld); n > 0 {
 			return fmt.Sprintf(
 				"old matches %d time(s) once whitespace runs are collapsed: your indentation or line breaks differ from the file",
-				n)
+				n) + whitespaceMatchEvidence(content, old, normalized, squeezedOld, true, n)
 		}
 	}
 	strippedOld := stripSpace(old)
 	if len(strippedOld) < diagMinStripped {
 		return ""
 	}
-	if n := strings.Count(stripSpace(content), strippedOld); n > 0 {
-		return fmt.Sprintf(
-			"old matches %d time(s) with all whitespace removed: only whitespace differs, copy the exact bytes from read_lines",
-			n)
+	normalized := stripSpace(content)
+	if n := strings.Count(normalized, strippedOld); n > 0 {
+		evidence := whitespaceMatchEvidence(content, old, normalized, strippedOld, false, n)
+		if evidence == "" {
+			evidence = ", copy the exact bytes from read_lines"
+		}
+		return fmt.Sprintf("old matches %d time(s) with all whitespace removed: only whitespace differs", n) + evidence
 	}
 	return ""
 }
@@ -238,7 +243,7 @@ func prefixVerdict(content, old string, n, pos int) string {
 	divLine := lineOf(content, pos+n)
 	return fmt.Sprintf(
 		"first %d of %d chars of old match at line %d; old diverges at its line %d from file line %d, which reads: %q",
-		n, len(old), startLine, lineOf(old, n), divLine, snippet(lineAt(content, pos+n)))
+		n, len(old), startLine, lineOf(old, n), divLine, lineSnippetAt(content, pos+n))
 }
 
 // wrongFileVerdicts reports that the patch was aimed at the wrong path. It is
@@ -382,27 +387,45 @@ func lineOf(s string, off int) int {
 	return 1 + strings.Count(s[:off], "\n")
 }
 
-// lineAt returns the whole line of s containing byte offset off.
-func lineAt(s string, off int) string {
-	if off >= len(s) {
-		off = len(s) - 1
+// lineSnippetAt returns a bounded excerpt around the mismatch byte, not
+// necessarily the beginning of a long line. Newline belongs to the line it
+// terminates, matching lineOf; an empty line after EOF is marked explicitly.
+func lineSnippetAt(s string, off int) string {
+	off = max(0, min(off, len(s)))
+	start := strings.LastIndexByte(s[:off], '\n') + 1
+	end := len(s)
+	if n := strings.IndexByte(s[off:], '\n'); n >= 0 {
+		end = off + n
 	}
-	if off < 0 || len(s) == 0 {
-		return ""
+	if end > start && s[end-1] == '\r' {
+		end--
 	}
-	start := strings.LastIndexByte(s[:off+1], '\n') + 1
-	end := strings.IndexByte(s[start:], '\n')
-	if end < 0 {
-		return s[start:]
+	if start == len(s) {
+		return "<end of file>"
 	}
-	return s[start : start+end]
-}
+	if end-start <= diagSnippet {
+		return s[start:end]
+	}
 
-func snippet(s string) string {
-	if len(s) <= diagSnippet {
-		return s
+	// Reserve most of the budget for the bytes the caller did not match.
+	// Near EOL, slide left to use the otherwise empty trailing budget.
+	begin := max(start, min(off, end)-diagSnippet/3)
+	begin = min(begin, max(start, end-diagSnippet))
+	for begin < end && !utf8.RuneStart(s[begin]) {
+		begin++
 	}
-	return s[:diagSnippet] + "..."
+	stop := min(end, begin+diagSnippet)
+	for stop > begin && stop < end && !utf8.RuneStart(s[stop]) {
+		stop--
+	}
+	text := s[begin:stop]
+	if begin > start {
+		text = "..." + text
+	}
+	if stop < end {
+		text += "..."
+	}
+	return text
 }
 
 // isSingleLine reports whether the file holds exactly one line (optionally

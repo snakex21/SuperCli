@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"supercli/internal/tools/search"
@@ -87,7 +86,9 @@ func (t *ListDirTool) listTree(ctx context.Context, root string, depth int) (Res
 	if len(lines) == 0 {
 		return Result{Text: fmt.Sprintf("%s is empty.", root)}, nil
 	}
-	sort.Strings(lines)
+	// Keep traversal order: roots first, then deeper entries. Each directory is
+	// already sorted by os.ReadDir. A global path sort would put one expanded
+	// log/cache tree before other roots and hide them in the bounded model preview.
 	scope := fmt.Sprintf("within depth %d; deeper folders marked", depth)
 	if !depthLimited && !truncated {
 		scope = "complete tree; excluded entries marked"

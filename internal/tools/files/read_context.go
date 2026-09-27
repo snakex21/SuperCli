@@ -16,7 +16,7 @@ import (
 //
 //	{
 //	  "file":   string (required) — file path
-//	  "line":   int    (required) — target line (1-based)
+//	  "line":   int    (optional) — target line (1-based, default 1)
 //	  "radius": int    (optional) — ±N lines, default 10
 //	}
 //
@@ -42,7 +42,7 @@ func (t *ReadContext) Spec() Tool {
 		ReadOnly:    true,
 		Schema: `{
 			"file":   {"type": "string", "description": "File path"},
-			"line":   {"type": "integer", "description": "Target line (1-based)"},
+			"line":   {"type": "integer", "description": "Line (default 1)"},
 			"radius": {"type": "integer", "description": "±N lines (default 10)"}
 		}`,
 		Fn: t.execute,
@@ -50,7 +50,9 @@ func (t *ReadContext) Spec() Tool {
 }
 
 func (t *ReadContext) execute(ctx context.Context, args json.RawMessage) (Result, error) {
-	var a readContextArgs
+	// Omitted centers read the bounded beginning; explicit invalid centers
+	// still reach the strict fileops validation instead of being guessed.
+	a := readContextArgs{Line: 1}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("read_context: bad args: %w", err)}, nil
 	}

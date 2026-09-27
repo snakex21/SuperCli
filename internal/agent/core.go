@@ -42,6 +42,9 @@ type ToolResultEvent struct {
 	ID     string
 	Output string
 	Err    error
+	// OutputHandle links worker observations to already-retained full output.
+	// It is internal metadata; UI text and event JSON stay unchanged.
+	OutputHandle string `json:"-"`
 }
 
 func (ToolResultEvent) event() {}

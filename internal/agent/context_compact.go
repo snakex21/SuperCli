@@ -35,13 +35,13 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 }
 
 // CompactWithSummary replaces every non-system message with a
-// single system message containing summary. Leading system
+// single user message containing summary. Leading system
 // messages (the base prompt, the F5.d pattern injection) are
 // kept so the model's standing instructions survive compaction.
 // The summary message is persisted like any other; the dropped
 // messages remain in the F13 session store and stay searchable
-// via search_history. Hidden flags are reset because the
-// indices they referred to no longer exist.
+// via search_history. Hidden flags for retained messages are remapped;
+// flags for replaced messages disappear.
 //
 // Returns the number of messages removed.
 func (l *Loop) CompactWithSummary(summary string) int {
@@ -52,7 +52,8 @@ func (l *Loop) CompactWithSummary(summary string) int {
 // boundary: only the non-system messages BEFORE upto are replaced by
 // the summary; the tail [upto:) — typically the last user turn —
 // survives verbatim, so the model never resumes from a summary of
-// its own half-finished turn. upto is clamped to the message range.
+// its own half-finished turn. Their hidden flags survive as well. upto is
+// clamped to the message range; an empty replacement is a no-op.
 //
 // Returns the number of messages removed.
 func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
@@ -67,6 +68,10 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 		upto = keep
 	}
 	removed := upto - keep
+	if removed == 0 {
+		return 0
+	}
+	oldHidden := l.hidden
 	tail := append([]llm.Message(nil), l.Messages[upto:]...)
 	l.Messages = l.Messages[:keep]
 	// The summary rides as a USER message, not system: several chat
@@ -80,6 +85,20 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	l.Messages = append(l.Messages, tail...)
 	l.persist(context.Background(), sum)
 	l.resetHidden()
+	// Only the replaced prefix disappears. Preserve visibility for surviving
+	// system messages and the untouched tail after their indices shift.
+	keepHidden := func(oldIndex, newIndex int) {
+		if oldIndex < len(oldHidden) && oldHidden[oldIndex] {
+			l.ensureHidden(len(l.Messages))
+			l.hidden[newIndex] = true
+		}
+	}
+	for i := 0; i < keep; i++ {
+		keepHidden(i, i)
+	}
+	for i := range tail {
+		keepHidden(upto+i, keep+1+i)
+	}
 	l.chatWindowStart = 0
 	l.persistProjection(context.Background())
 	return removed

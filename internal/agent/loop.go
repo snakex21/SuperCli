@@ -91,6 +91,8 @@ type Loop struct {
 	baseDir       string
 	writer        SessionWriter
 	toolOutputs   tools.OutputPersistence
+	// Derived stores follow session changes; explicit worker/embedder stores do not.
+	toolOutputsFollowWriter bool
 	// persistHealth tracks session-write reliability: sticky
 	// first error, failure counter, in-order retry buffer and
 	// the one-shot UI warning. See persist_health.go.
@@ -164,7 +166,7 @@ type Loop struct {
 	// deliberately independent of whether the endpoint looks local or remote.
 	prefillProfiles *llm.PrefillProfiles
 	// lastCallTTFT is measured by consume from stream handoff to the first
-	// non-notice provider delta. The loop is single-owner while running.
+	// model output (including buffered tool progress). Single-owner while running.
 	lastCallTTFT time.Duration
 	// pruneProtect: tool-result tokens protected from pruning
 	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
@@ -280,6 +282,8 @@ type Loop struct {
 	routeMap RouteMap
 	route    RouteMode
 	navigate bool
+	// Role policy: analysis workers must not be instructed to implement edits.
+	skipImplementationHint bool
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
@@ -427,6 +431,9 @@ type LoopConfig struct {
 	// System is the system prompt prepended on every run. Empty
 	// is fine.
 	System string
+	// SkipImplementationHint omits the automatic implementation contract.
+	// Read-only workers opt in; ordinary coordinator/implementation loops keep it.
+	SkipImplementationHint bool
 	// Briefing is the code-built memory briefing (user preferences,
 	// project card, recent sessions). The coordinator route already
 	// sees it inside System; chat/advisor routes replace System with
@@ -525,7 +532,8 @@ type LoopConfig struct {
 	// appends to Messages. Use session.Store from F2.c.
 	Writer SessionWriter
 	// ToolOutputs optionally inherits durable output references without giving
-	// a worker ownership of the parent conversation writer. Nil uses Writer.
+	// a worker ownership of the parent conversation writer. Nil follows Writer,
+	// including session switches; an explicit store keeps its configured owner.
 	ToolOutputs tools.OutputPersistence
 	// ErrorLog, when non-nil, receives one F4.d-classified
 	// record per failed tool call. The loop does not block

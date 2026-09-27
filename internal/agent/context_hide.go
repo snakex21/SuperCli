@@ -35,17 +35,19 @@ func (l *Loop) HideRange(from, to int) error {
 	return nil
 }
 
-// HideLastUserTurns hides all but the last `keep` user
-// messages plus their directly-paired assistant / tool
-// messages. Used by the /clear slash command to drop
-// everything except the most recent turn pair.
+// HideLastUserTurns hides all but the last `keep` visible user
+// turns and their assistant/tool messages. Standing system instructions remain.
+// Used by /clear and the fallback when a compaction summary is unavailable.
 func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 	if keep < 0 {
 		keep = 0
 	}
-	// Find indices of user messages in reverse order.
+	// Already hidden user messages cannot displace a visible correction.
 	userIdx := make([]int, 0, len(l.Messages))
 	for i, m := range l.Messages {
+		if i < len(l.hidden) && l.hidden[i] {
+			continue
+		}
 		if isConversationUserTurn(m) {
 			userIdx = append(userIdx, i)
 		}
@@ -53,9 +55,12 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 	if len(userIdx) <= keep {
 		return 0 // nothing to hide
 	}
-	cutoff := userIdx[len(userIdx)-keep] // hide everything before
+	cutoff := len(l.Messages)
+	if keep > 0 {
+		cutoff = userIdx[len(userIdx)-keep]
+	}
 	l.ensureHidden(len(l.Messages))
-	for i := 0; i < cutoff; i++ {
+	for i := leadingSystemCount(l.Messages); i < cutoff; i++ {
 		if !l.hidden[i] {
 			l.hidden[i] = true
 			hidden++

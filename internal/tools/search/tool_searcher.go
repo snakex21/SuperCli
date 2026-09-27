@@ -103,7 +103,17 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	// fall back to a lexical token-overlap match so a sane query
 	// still surfaces the relevant tool(s).
 	if len(hits) == 0 {
-		hits = s.lexicalFallback(a.Query, limit)
+		candidates := limit
+		if a.Limit <= 0 {
+			candidates = max(limit, s.MaxLimit)
+		}
+		hits = s.lexicalFallback(a.Query, candidates)
+		if a.Limit <= 0 {
+			hits = s.focusLexicalHits(a.Query, hits)
+			if limit > 0 && len(hits) > limit {
+				hits = hits[:limit]
+			}
+		}
 	}
 	// Build the response: array of {name, server, score,
 	// signature, schema}. Activate each match in the registry so
@@ -285,6 +295,12 @@ func forEachLexToken(s string, visit func(string)) {
 			word := s[start:end]
 			switch word {
 			case "the", "and", "for", "with", "into", "from", "use", "all":
+			// Command discovery must match "run go test build" to descriptions
+			// mentioning "builds/tests". Keep unrelated words literal.
+			case "tests":
+				visit("test")
+			case "builds":
+				visit("build")
 			default:
 				visit(word)
 			}
@@ -361,4 +377,48 @@ func extractTags(desc string) []string {
 		}
 	}
 	return out
+}
+
+// focusLexicalHits removes a weaker match only when every query word it
+// matches is already covered by a stronger result. Ties and complementary
+// intents survive. This is only a default lexical-search policy: explicit
+// limits and FTS/exact-name results keep their existing behavior.
+func (s *ToolSearcher) focusLexicalHits(query string, hits []SearchResult) []SearchResult {
+	terms := make(map[string]uint64)
+	for _, word := range lexTokens(query) {
+		if _, ok := terms[word]; ok {
+			continue
+		}
+		if len(terms) == 64 {
+			return hits
+		}
+		terms[word] = uint64(1) << len(terms)
+	}
+	if len(terms) < 2 || len(hits) < 2 {
+		return hits
+	}
+	coverage := make([]uint64, len(hits))
+	for i, hit := range hits {
+		if tool, ok := s.Registry.Get(hit.Name); ok {
+			match := func(word string) { coverage[i] |= terms[word] }
+			forEachLexToken(tool.Name, match)
+			forEachLexToken(tool.Description, match)
+		}
+	}
+	selected := make([]SearchResult, 0, len(hits))
+	for i, hit := range hits {
+		dominated := false
+		if mask := coverage[i]; mask != 0 {
+			for _, stronger := range coverage[:i] {
+				if stronger != mask && mask&stronger == mask {
+					dominated = true
+					break
+				}
+			}
+		}
+		if !dominated {
+			selected = append(selected, hit)
+		}
+	}
+	return selected
 }

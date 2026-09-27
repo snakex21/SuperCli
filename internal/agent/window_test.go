@@ -300,6 +300,8 @@ func TestCompactNowRejectsSummaryThatDoesNotReduceContext(t *testing.T) {
 		{Role: llm.RoleUser, Content: strings.Repeat("old context ", 100)},
 		{Role: llm.RoleAssistant, Content: "answer"},
 		{Role: llm.RoleUser, Content: "recent turn kept verbatim"},
+		{Role: llm.RoleAssistant, Content: "recent response"},
+		{Role: llm.RoleUser, Content: "current request kept verbatim"},
 	}
 	before := append([]llm.Message(nil), l.Messages...)
 	if _, err := l.CompactNow(context.Background()); err == nil || !strings.Contains(err.Error(), "insufficient reduction") {

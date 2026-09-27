@@ -30,8 +30,15 @@ const lineCutSlack = 1024
 // cuts. Strings that already fit are returned unchanged. Same
 // convention as the c74e100 read caps.
 func HeadTail(s string, head, tail int) string {
+	preview, _ := headTailWithHeadEnd(s, head, tail)
+	return preview
+}
+
+// Return the actual head boundary with the preview so pagination can resume
+// without skipping a partial line or rune, or rescanning to find the cut.
+func headTailWithHeadEnd(s string, head, tail int) (string, int) {
 	if len(s) <= head+tail {
-		return s
+		return s, len(s)
 	}
 	h := head
 	for h > 0 && !utf8.RuneStart(s[h]) {
@@ -52,7 +59,7 @@ func HeadTail(s string, head, tail int) string {
 	}
 	omitted := int64(i - h)
 	lines := int64(bytes.Count([]byte(s[h:i]), []byte{'\n'}))
-	return s[:h] + omissionMarker(omitted, lines) + s[i:]
+	return s[:h] + omissionMarker(omitted, lines) + s[i:], h
 }
 
 func omissionMarker(omittedBytes, omittedLines int64) string {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -13,20 +12,16 @@ import (
 	"supercli/internal/storage/session"
 )
 
-// webMemoryKeeper opens the appropriate SQLite memory store for one operation.
-// Web runs are short-lived and created per request, so keeping a raw *Store on
-// the tool would either leak handles or close it before the model can call it.
+// webMemoryKeeper borrows the engine-owned store for the run's fixed workspace.
+// The engine keeps connections across requests and closes them after HTTP drain.
 type webMemoryKeeper struct {
-	dataDir string
-	home    string
-	global  bool
+	engine *Engine
+	home   string
+	global bool
 }
 
 func (k webMemoryKeeper) open() (*memory.Store, error) {
-	if k.global {
-		return memory.OpenStore(k.dataDir)
-	}
-	return memory.OpenProjectStore(k.dataDir, k.home)
+	return k.engine.webMemoryStore(k.home, k.global)
 }
 
 func (k webMemoryKeeper) Put(entry memory.Entry) error {
@@ -34,7 +29,6 @@ func (k webMemoryKeeper) Put(entry memory.Entry) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 	return store.Put(entry)
 }
 
@@ -43,7 +37,6 @@ func (k webMemoryKeeper) Search(query string, limit int) ([]memory.Entry, error)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.Search(query, limit)
 }
 
@@ -52,7 +45,6 @@ func (k webMemoryKeeper) Recent(scope string, limit int) ([]memory.Entry, error)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.Recent(scope, limit)
 }
 
@@ -61,34 +53,65 @@ func (k webMemoryKeeper) HybridSearch(ctx context.Context, query string, limit i
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.HybridSearch(ctx, query, limit)
 }
 
-func (e *Engine) webMemoryStores(home string) (globalStore, projectStore *memory.Store) {
-	if e == nil {
-		return nil, nil
+func (k webMemoryKeeper) RecallSearch(ctx context.Context, query string, limit int) ([]memory.Entry, error) {
+	store, err := k.open()
+	if err != nil {
+		return nil, err
 	}
-	home = filepath.Clean(strings.TrimSpace(home))
+	return store.RecallSearch(ctx, query, limit)
+}
+
+func (k webMemoryKeeper) RecallRecent(limit int) ([]memory.Entry, error) {
+	store, err := k.open()
+	if err != nil {
+		return nil, err
+	}
+	return store.RecallRecent(limit)
+}
+
+// webMemoryStore opens each store lazily once. Failed opens are not cached, so a
+// repaired directory can be retried; a closed engine must never reopen a store.
+func (e *Engine) webMemoryStore(home string, global bool) (*memory.Store, error) {
+	if e == nil {
+		return nil, fmt.Errorf("memory store: engine unavailable")
+	}
 	e.memoryMu.Lock()
 	defer e.memoryMu.Unlock()
 	if e.memoryClosed {
-		return nil, nil
+		return nil, fmt.Errorf("memory store: engine closed")
 	}
-	if e.globalMemory == nil {
-		if store, err := memory.OpenStore(e.dataDir); err == nil {
+	if global {
+		if e.globalMemory == nil {
+			store, err := memory.OpenStore(e.dataDir)
+			if err != nil {
+				return nil, err
+			}
 			e.globalMemory = store
 		}
+		return e.globalMemory, nil
 	}
+	home = filepath.Clean(strings.TrimSpace(home))
 	if e.projectMemory == nil {
 		e.projectMemory = make(map[string]*memory.Store)
 	}
-	if home != "" && e.projectMemory[home] == nil {
-		if store, err := memory.OpenProjectStore(e.dataDir, home); err == nil {
-			e.projectMemory[home] = store
-		}
+	if store := e.projectMemory[home]; store != nil {
+		return store, nil
 	}
-	return e.globalMemory, e.projectMemory[home]
+	store, err := memory.OpenProjectStore(e.dataDir, home)
+	if err != nil {
+		return nil, err
+	}
+	e.projectMemory[home] = store
+	return store, nil
+}
+
+func (e *Engine) webMemoryStores(home string) (globalStore, projectStore *memory.Store) {
+	globalStore, _ = e.webMemoryStore(home, true)
+	projectStore, _ = e.webMemoryStore(home, false)
+	return globalStore, projectStore
 }
 
 func (e *Engine) webMemoryBriefing(home string, tokenCap int) string {
@@ -110,12 +133,11 @@ func (e *Engine) webMemoryBriefingExcludingSession(home string, tokenCap int, se
 	return memory.BuildBriefingExcludingTaskLog(globalStore, projectStore, home, tokenCap, excludedID)
 }
 
-func saveWebUserFacts(dataDir, prompt string) {
-	globalStore, err := memory.OpenStore(dataDir)
+func (e *Engine) saveWebUserFacts(prompt string) {
+	globalStore, err := e.webMemoryStore("", true)
 	if err != nil {
 		return
 	}
-	defer globalStore.Close()
 	saver := &memory.AutoSaver{Global: globalStore}
 	saver.SaveDeterministicUserFacts([]string{prompt})
 }
@@ -312,20 +334,19 @@ func (e *Engine) relevantLegacySessions(ctx context.Context, home, prompt, curre
 	seen := map[string]bool{}
 	query := sessionRecallFTSQuery(prompt)
 	if query != "" {
-		hits, searchErr := sessions.SearchHistory(ctx, query, "", "", time.Time{}, time.Time{}, 32)
-		if searchErr == nil {
-			for _, hit := range hits {
-				if hit.SessionID == currentSessionID || seen[hit.SessionID] {
-					continue
+		workspaces, workspaceErr := sessions.HistoryWorkspaces(ctx)
+		if workspaceErr == nil {
+			allowed := make([]string, 0, 1)
+			for _, workspace := range workspaces {
+				if sameSessionWorkspace(workspace, home) {
+					allowed = append(allowed, workspace)
 				}
-				meta, getErr := sessions.Get(hit.SessionID)
-				if getErr != nil || !sameSessionWorkspace(meta.Cwd, home) {
-					continue
-				}
-				seen[hit.SessionID] = true
-				candidates = append(candidates, candidate{id: hit.SessionID, match: stripFTSMarks(hit.Snippet)})
-				if len(candidates) == 4 {
-					break
+			}
+			hits, searchErr := sessions.SearchSessionMatches(ctx, query, allowed, currentSessionID, 4)
+			if searchErr == nil {
+				for _, hit := range hits {
+					seen[hit.SessionID] = true
+					candidates = append(candidates, candidate{id: hit.SessionID, match: stripFTSMarks(hit.Snippet)})
 				}
 			}
 		}
@@ -350,7 +371,9 @@ func (e *Engine) relevantLegacySessions(ctx context.Context, home, prompt, curre
 	}
 	texts := make([]string, 0, len(candidates))
 	for _, item := range candidates {
-		messages, _, readErr := sessions.ReadMessagesBefore(ctx, item.id, 0, 16)
+		messages, readErr := sessions.ReadDialogueExcerpt(ctx, item.id, 8, func(message session.Encoded) bool {
+			return webCapsuleText(message) != ""
+		})
 		if readErr != nil {
 			continue
 		}
@@ -378,7 +401,7 @@ func renderSessionRecallTexts(texts []string, tokenCap int) string {
 	used := memory.EstimateTokens(header)
 	added := 0
 	for _, text := range texts {
-		line := "- " + compactMemoryText(text, 720) + "\n"
+		line := "- " + compactSessionRecallText(text) + "\n"
 		cost := memory.EstimateTokens(line)
 		if used+cost > tokenCap {
 			continue
@@ -395,6 +418,26 @@ func renderSessionRecallTexts(texts []string, tokenCap int) string {
 	}
 	b.WriteString("[/relevant_previous_sessions]")
 	return b.String()
+}
+
+// Keep both the task/match at the beginning and the latest dialogue at the end.
+// A long opening message must not consume the entire prior-session preview.
+func compactSessionRecallText(text string) string {
+	const maxBytes = 720
+	const omission = " … "
+	text = compactMemoryText(text, 0)
+	if len(text) <= maxBytes {
+		return text
+	}
+	head := (maxBytes - len(omission)) / 2
+	tail := len(text) - (maxBytes - len(omission) - head)
+	for head > 0 && !utf8.RuneStart(text[head]) {
+		head--
+	}
+	for tail < len(text) && !utf8.RuneStart(text[tail]) {
+		tail++
+	}
+	return strings.TrimSpace(text[:head]) + omission + strings.TrimSpace(text[tail:])
 }
 
 func stripFTSMarks(s string) string {

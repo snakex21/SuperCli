@@ -180,6 +180,10 @@ func (s *Store) afterDelete(id string) {
 // degrades to plain FTS5 — hybrid search never fails harder than
 // keyword search.
 func (s *Store) HybridSearch(ctx context.Context, query string, k int) ([]Entry, error) {
+	return s.hybridSearch(ctx, query, k, false)
+}
+
+func (s *Store) hybridSearch(ctx context.Context, query string, k int, recall bool) ([]Entry, error) {
 	if k <= 0 {
 		k = 5
 	}
@@ -190,7 +194,7 @@ func (s *Store) HybridSearch(ctx context.Context, query string, k int) ([]Entry,
 	s.flushEmbedQueue()
 	emb := s.getEmbedder()
 	if emb == nil {
-		ftsResults, err := s.Search(query, k*2)
+		ftsResults, err := s.search(query, k*2, recall)
 		return capEntries(ftsResults, k), err
 	}
 
@@ -208,7 +212,7 @@ func (s *Store) HybridSearch(ctx context.Context, query string, k int) ([]Entry,
 	ftsCh := make(chan ftsResult, 1)
 	embCh := make(chan embedResult, 1)
 	go func() {
-		entries, err := s.Search(query, k*2)
+		entries, err := s.search(query, k*2, recall)
 		ftsCh <- ftsResult{entries: entries, err: err}
 	}()
 	go func() {
@@ -225,7 +229,7 @@ func (s *Store) HybridSearch(ctx context.Context, query string, k int) ([]Entry,
 		return capEntries(ftsResults, k), nil
 	}
 	qvec := er.vec
-	vecIDs, vecErr := s.nearestIDs(qvec, k*2)
+	vecIDs, vecErr := s.nearestIDs(qvec, k*2, recall)
 	if vecErr != nil || len(vecIDs) == 0 {
 		return capEntries(ftsResults, k), nil
 	}
@@ -270,8 +274,12 @@ func (s *Store) HybridSearch(ctx context.Context, query string, k int) ([]Entry,
 
 // nearestIDs scans all stored vectors and returns the k IDs with
 // the highest cosine similarity to q.
-func (s *Store) nearestIDs(q []float32, k int) ([]string, error) {
-	rows, err := s.db.Query(`SELECT id, dim, vec FROM memory_vectors`)
+func (s *Store) nearestIDs(q []float32, k int, recall bool) ([]string, error) {
+	query := `SELECT id, dim, vec FROM memory_vectors`
+	if recall {
+		query = `SELECT v.id, v.dim, v.vec FROM memory_vectors v JOIN memory_entries e ON e.id = v.id WHERE 1=1` + recallNoiseFilter
+	}
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}

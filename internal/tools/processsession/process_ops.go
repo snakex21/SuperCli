@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/tools/core"
 	"supercli/internal/tools/sandbox"
 )
 
@@ -73,7 +74,8 @@ func (m *Manager) Start(p params) (snapshot, error) {
 	}
 	id := fmt.Sprintf("proc-%d", m.nextID.Add(1))
 	procCtx, cancel := context.WithTimeout(context.Background(), lifetime)
-	item := &process{id: id, command: append([]string(nil), p.Command...), workdir: workdir, stdout: newStreamBuffer(maxBufferBytes), stderr: newStreamBuffer(maxBufferBytes), done: make(chan struct{}), cancel: cancel, started: time.Now(), exitCode: -1, status: "running", pty: p.PTY}
+	commandKey := core.VerificationCommandKey(p.Command, workdir, env)
+	item := &process{commandKey: &commandKey, id: id, command: append([]string(nil), p.Command...), workdir: workdir, stdout: newStreamBuffer(maxBufferBytes), stderr: newStreamBuffer(maxBufferBytes), done: make(chan struct{}), cancel: cancel, started: time.Now(), exitCode: -1, status: "running", pty: p.PTY}
 	if p.PTY {
 		columns, rows := terminalSize(p.Columns, p.Rows)
 		terminal, startErr := startPTY(p.Command, workdir, append(os.Environ(), env...), columns, rows)
@@ -243,7 +245,7 @@ func (p *process) snapshot(maxBytes int) snapshot {
 	if p.pty {
 		out = stripTerminalControl(out)
 	}
-	s := snapshot{ID: p.id, Status: status, Command: append([]string(nil), p.command...), Workdir: p.workdir, DurationMS: duration.Milliseconds(), Stdout: strings.ToValidUTF8(string(out), "?"), Stderr: strings.ToValidUTF8(string(errOut), "?"), OmittedOut: omittedOut, OmittedErr: omittedErr, Error: errText, PTY: p.pty}
+	s := snapshot{CommandKey: p.commandKey, ID: p.id, Status: status, Command: append([]string(nil), p.command...), Workdir: p.workdir, DurationMS: duration.Milliseconds(), Stdout: strings.ToValidUTF8(string(out), "?"), Stderr: strings.ToValidUTF8(string(errOut), "?"), OmittedOut: omittedOut, OmittedErr: omittedErr, Error: errText, PTY: p.pty}
 	if status != "running" && code >= 0 {
 		s.ExitCode = &code
 	}

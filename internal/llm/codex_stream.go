@@ -234,6 +234,7 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 	}
 	var usage *Usage
 	sentRole := false
+	toolOutputStarted := false
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -254,6 +255,17 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 			return
 		}
 		switch ev.Type {
+		case "response.output_item.added", "response.function_call_arguments.delta":
+			started := ev.Type == "response.function_call_arguments.delta" && ev.Delta != ""
+			if ev.Item != nil && ev.Item.Type == "function_call" && ev.Item.Name != "" {
+				started = true
+			}
+			if started && !toolOutputStarted {
+				if !emit(Delta{OutputStarted: true}) {
+					return
+				}
+				toolOutputStarted = true
+			}
 		case "response.output_text.delta":
 			if !sentRole {
 				if !emit(Delta{Role: RoleAssistant}) {

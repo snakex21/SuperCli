@@ -143,75 +143,9 @@ func (l *Loop) providerMessages() []llm.Message {
 	}
 	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 
-	// The current turn (everything from the last user message on) is sent
-	// verbatim so tool_call/tool_result pairing stays intact when the model
-	// uses tool_search or recall on this route.
-	lastUser := -1
-	for i := len(visible) - 1; i >= 0; i-- {
-		if visible[i].Role == llm.RoleUser && !strings.Contains(visible[i].Content, "<task-notification>") {
-			lastUser = i
-			break
-		}
-	}
-	// Conversational history before the current turn: a GROWING
-	// (append-only) window, not a sliding one. A per-turn "last 8" tail
-	// rewrote the prompt front every turn, so the provider-side KV
-	// cache could never reuse more than the leading system prompt —
-	// a construction-level cache killer on these light routes. Instead
-	// the window start is sticky (l.chatWindowStart): below the token
-	// threshold each turn strictly appends to the previous prompt (full
-	// prefix cache hit); once the window outgrows the threshold, the
-	// start jumps forward in ONE big leap, keeping only the last
-	// chatWindowKeepMsgs messages — the re-eval is paid once per many
-	// turns, not every turn ("cut rarely, in big chunks").
-	//
-	// Eligibility (user/assistant only, no task notifications, no tool
-	// calls) is unchanged from the sliding tail: background agent work
-	// must not leak into smalltalk. A current turn that used tools is
-	// therefore trimmed from history on the NEXT turn — that single
-	// divergence point costs one partial re-eval, which is fine (rare
-	// on chat routes) and always safe (the server re-evals from the
-	// divergence).
-	end := len(visible)
-	if lastUser >= 0 {
-		end = lastUser
-	}
-	start := l.chatWindowStart
-	if start > end {
-		// The visible view shrank under us (compaction, /clear).
-		// Restart the window; correctness never depends on it.
-		start = 0
-		l.chatWindowStart = 0
-	}
-	window := make([]llm.Message, 0, end-start)
-	for i := start; i < end; i++ {
-		if chatWindowEligible(visible[i]) {
-			window = append(window, visible[i])
-		}
-	}
-	if llm.EstimateTokens(window) > chatWindowMaxTokens {
-		// One big jump: advance the sticky start so only the last
-		// chatWindowKeepMsgs eligible messages stay in the window.
-		kept := 0
-		ns := end
-		for i := end - 1; i >= start && kept < chatWindowKeepMsgs; i-- {
-			if chatWindowEligible(visible[i]) {
-				kept++
-				ns = i
-			}
-		}
-		l.chatWindowStart = ns
-		window = window[len(window)-kept:]
-	}
+	window, _, nextStart := chatHistoryProjection(visible, l.chatWindowStart, false)
+	l.chatWindowStart = nextStart
 	out = append(out, window...)
-	if lastUser >= 0 {
-		for _, m := range visible[lastUser:] {
-			if m.Role == llm.RoleSystem {
-				continue
-			}
-			out = append(out, m)
-		}
-	}
 	// Per-request freshness stamp at the very END, same pattern as the
 	// coordinator route: the minute-granular stamp used to be baked into
 	// the leading system prompt, rewriting the prompt front every minute

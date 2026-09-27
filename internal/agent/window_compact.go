@@ -26,8 +26,9 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	if reason == "" && est <= threshold {
 		return
 	}
-	all := l.AllMessages()
-	split := compactSplit(all, w)
+	history := l.compactionHistory()
+	all := history.messages
+	split := history.compactSplit(w)
 	if reason == "" {
 		// Speculative auto-compaction must never summarize the user turn that
 		// is still running. A conservative/unknown window (the 16k fallback)
@@ -35,13 +36,17 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// make the agent resume from its own lossy summary. Only a real
 		// provider context-limit error is allowed to use the full-history
 		// "big hammer" selected by compactSplit.
-		split = autoCompactSplit(all)
+		split = history.autoCompactSplit()
 	}
 	keep := leadingSystemCount(all)
 	if split <= keep {
 		return
 	}
-	if reason == "" && !hasFreshCompactablePrefix(all, split) {
+	prefix := all[:split]
+	if len(prefix) <= leadingSystemCount(prefix) {
+		return
+	}
+	if reason == "" && !hasFreshCompactablePrefix(prefix, len(prefix)) {
 		// Fixed request overhead (system prompt/tool schemas) can itself sit
 		// above the reserve boundary. Re-summarizing an existing summary cannot reduce that
 		// overhead and would otherwise spend one model call every step.
@@ -53,9 +58,9 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// time as model:compact, so context_prepare (which wraps
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
-		summary, err := l.summarizePrefix(ctx, all[:split])
-		if err == nil && summary != "" && compactionReduces(all[:split], summary) {
-			removed = l.CompactPrefixWithSummary(summary, split)
+		summary, err := l.summarizePrefix(ctx, prefix)
+		if err == nil && summary != "" && compactionReduces(history.requestPrefix(split), summary) {
+			removed = l.CompactPrefixWithSummary(summary, history.originalSplit(split))
 		}
 	}
 	if removed == 0 {
@@ -150,8 +155,9 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	if l.summarizer == nil {
 		return AutoCompactEvent{}, fmt.Errorf("manual compaction is unavailable: no summarizer")
 	}
-	all := l.AllMessages()
-	split := compactSplit(all, w)
+	history := l.compactionHistory()
+	all := history.messages
+	split := history.compactSplit(w)
 	keep := 0
 	for keep < len(all) && all[keep].Role == llm.RoleSystem {
 		keep++
@@ -159,19 +165,23 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	if split <= keep {
 		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
 	}
-	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, all[:split])
+	prefix := all[:split]
+	if len(prefix) <= leadingSystemCount(prefix) {
+		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
+	}
+	summary, err := l.summarizePrefix(ctx, prefix)
 	if err != nil {
 		return AutoCompactEvent{}, fmt.Errorf("summarize context: %w", err)
 	}
 	if strings.TrimSpace(summary) == "" {
 		return AutoCompactEvent{}, fmt.Errorf("summarize context: empty summary")
 	}
-	if !compactionReduces(all[:split], summary) {
-		before := llm.EstimateTokens(all[:split])
+	if !compactionReduces(history.requestPrefix(split), summary) {
+		before := compactablePrefixTokens(history.requestPrefix(split))
 		after := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleUser, Content: summary})
 		return AutoCompactEvent{}, fmt.Errorf("summarize context: insufficient reduction (%d -> %d tokens)", before, after)
 	}
-	removed := l.CompactPrefixWithSummary(summary, split)
+	removed := l.CompactPrefixWithSummary(summary, history.originalSplit(split))
 	if removed == 0 {
 		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
 	}
@@ -183,8 +193,14 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	}, nil
 }
 
+// Leading system messages survive compaction; counting them as savings could
+// accept a summary larger than the conversation it actually replaces.
+func compactablePrefixTokens(prefix []llm.Message) int {
+	return llm.EstimateTokens(prefix[leadingSystemCount(prefix):])
+}
+
 func compactionReduces(prefix []llm.Message, summary string) bool {
-	before := llm.EstimateTokens(prefix)
+	before := compactablePrefixTokens(prefix)
 	if before <= 0 {
 		return false
 	}
@@ -196,9 +212,16 @@ func compactionReduces(prefix []llm.Message, summary string) bool {
 // second-newest user turn, so two recent turns survive verbatim
 // (a small model resumes far better from its own recent messages than
 // from a summary of them). Falls back to the full length — the old
-// replace-everything behaviour — when there is nothing meaningful
-// before the last turn, or when the last turn alone would still eat
-// more than half the window (a single huge turn needs the big hammer).
+// replace-everything behaviour — only when the visible recent tail
+// itself eats more than half the window. Two short visible turns stay
+// protected even when hidden turns were removed from the archive view.
+// A manual compaction of two turns may still be worthwhile when the history
+// exceeds even the largest standard summary. Compute this fixed estimate once.
+var compactSmallHistoryTokens = llm.EstimateMessageTokens(llm.Message{
+	Role:    llm.RoleUser,
+	Content: WrapCompactSummary(strings.Repeat("x", compactSummaryMaxChars+compactFactsMaxBytes)),
+})
+
 func compactSplit(all []llm.Message, window int) int {
 	keep := leadingSystemCount(all)
 	split := -1
@@ -213,9 +236,13 @@ func compactSplit(all []llm.Message, window int) int {
 		}
 	}
 	if split <= keep {
-		// With too little history there is nothing safe to summarize. A real
-		// overflow caused by one giant recent turn is handled by the size check
-		// below using the latest user boundary.
+		// Two short visible turns are the protected tail, not an older prefix
+		// merely because hidden user messages existed in the archive. Relax
+		// that protection when the visible history needs space or is already
+		// larger than the capped summary, so useful manual compaction remains.
+		if llm.EstimateTokens(all[keep:]) <= min(window/2, compactSmallHistoryTokens) {
+			return keep
+		}
 		for i := len(all) - 1; i >= keep; i-- {
 			if isConversationUserTurn(all[i]) {
 				split = i
@@ -223,7 +250,7 @@ func compactSplit(all []llm.Message, window int) int {
 			}
 		}
 		if split <= keep {
-			return keep
+			return len(all) // one genuinely oversized visible turn
 		}
 	}
 	if llm.EstimateTokens(all[split:]) > window/2 {
@@ -303,6 +330,11 @@ func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- 
 // summarizePrefix measures helper inference separately from local context work.
 func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (string, error) {
 	start := time.Now()
+	var scope compactToolScope
+	if l.registry != nil {
+		scope.activeTools = l.registry.ActiveNames
+	}
+	ctx = context.WithValue(ctx, compactToolScopeKey{}, scope)
 	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, prefix)
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	return summary, err

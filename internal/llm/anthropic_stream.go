@@ -23,6 +23,7 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 	var lastUsage *Usage
 	sawResponse := false
 	sawStop := false
+	toolOutputStarted := false
 	parseErr := parseSSE(r, func(eventName, data string) error {
 		if isDone(data) || isSSEHeartbeatData(data) {
 			return nil
@@ -56,6 +57,12 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 				}
 			}
 			if ev.ContentBlock.Type == "tool_use" {
+				if !toolOutputStarted && ev.ContentBlock.Name != "" {
+					if !emit(Delta{OutputStarted: true}) {
+						return ctx.Err()
+					}
+					toolOutputStarted = true
+				}
 				args := "{}"
 				if len(ev.ContentBlock.Input) > 0 {
 					args = string(ev.ContentBlock.Input)
@@ -87,6 +94,12 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 				}
 			case "input_json_delta":
 				if tc := toolAcc[ev.Index]; tc != nil {
+					if !toolOutputStarted && ev.Delta.PartialJSON != "" {
+						if !emit(Delta{OutputStarted: true}) {
+							return ctx.Err()
+						}
+						toolOutputStarted = true
+					}
 					if tc.arguments.String() == "{}" {
 						tc.arguments.Reset()
 					}

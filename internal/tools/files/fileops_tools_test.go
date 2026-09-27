@@ -25,7 +25,7 @@ func tmpToolFile(t *testing.T, content string) (basePath, baseDir string) {
 func TestReadLinesTool_Basic(t *testing.T) {
 	path, dir := tmpToolFile(t, "alpha\nbeta\ngamma\n")
 	tool := NewReadLines(dir)
-	args, _ := json.Marshal(readLinesArgs{File: "test.txt", From: 1, To: 2})
+	args, _ := json.Marshal(map[string]any{"file": "test.txt", "from": 1, "to": 2})
 	r, err := tool.execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -39,7 +39,7 @@ func TestReadLinesTool_Basic(t *testing.T) {
 func TestReadLinesTool_AbsolutePath(t *testing.T) {
 	path, dir := tmpToolFile(t, "line1\nline2\n")
 	tool := NewReadLines(dir)
-	args, _ := json.Marshal(readLinesArgs{File: path, From: 1, To: 1})
+	args, _ := json.Marshal(map[string]any{"file": path, "from": 1, "to": 1})
 	r, err := tool.execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -55,7 +55,7 @@ func TestReadLinesTool_AbsolutePath(t *testing.T) {
 func TestReadLinesTool_CoercesFromZero(t *testing.T) {
 	_, dir := tmpToolFile(t, "alpha\nbeta\ngamma\n")
 	tool := NewReadLines(dir)
-	args, _ := json.Marshal(readLinesArgs{File: "test.txt", From: 0, To: 2})
+	args, _ := json.Marshal(map[string]any{"file": "test.txt", "from": 0, "to": 2})
 	r, err := tool.execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -72,7 +72,7 @@ func TestReadLinesTool_CoercesFromZero(t *testing.T) {
 func TestReadLinesTool_ToBelowFromStillErrors(t *testing.T) {
 	_, dir := tmpToolFile(t, "alpha\nbeta\n")
 	tool := NewReadLines(dir)
-	args, _ := json.Marshal(readLinesArgs{File: "test.txt", From: 0, To: 0})
+	args, _ := json.Marshal(map[string]any{"file": "test.txt", "from": 0, "to": 0})
 	r, _ := tool.execute(context.Background(), args)
 	if r.Err == nil {
 		t.Fatal("expected error for to < from")
@@ -92,7 +92,7 @@ func TestReadLinesTool_BadJSON(t *testing.T) {
 
 func TestReadLinesTool_FileNotFound(t *testing.T) {
 	tool := NewReadLines(t.TempDir())
-	args, _ := json.Marshal(readLinesArgs{File: "nonexistent.txt", From: 1, To: 5})
+	args, _ := json.Marshal(map[string]any{"file": "nonexistent.txt", "from": 1, "to": 5})
 	r, _ := tool.execute(context.Background(), args)
 	if r.Err == nil {
 		t.Error("expected error for missing file")

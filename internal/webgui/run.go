@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -112,15 +111,9 @@ func Run(eng *Engine, opts RunOptions) error {
 			log.Printf("native app window unavailable (%v); trying browser app mode", nativeErr)
 		}
 		profileDir := filepath.Join(eng.DataDir(), "browser-profile")
-		if mkErr := os.MkdirAll(profileDir, 0o700); mkErr != nil {
-			log.Printf("could not prepare isolated app profile: %v", mkErr)
-			profileDir = ""
-		}
 		if appCmd, werr := OpenAppWindow(url, profileDir); werr != nil {
-			log.Printf("app-mode window unavailable (%v); opening default browser", werr)
-			if berr := OpenInBrowser(url); berr != nil {
-				log.Printf("could not open a browser automatically: %v — open %s manually", berr, url)
-			}
+			_ = srv.Close()
+			return fmt.Errorf("could not open a portable GUI window: %w; choose a writable --data-dir or use --no-window to choose a browser manually", werr)
 		} else if appCmd != nil {
 			go func() {
 				_ = appCmd.Wait()
