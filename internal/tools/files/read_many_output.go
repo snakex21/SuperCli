@@ -57,8 +57,33 @@ func renderReadMany(outcomes []readManyOutcome) Result {
 	if len(result.Text) > inlineLimit {
 		result.ModelPreview = readManyPreview(outcomes, summary)
 	}
+	if okCount == 0 && failedCount > 0 {
+		// Preserve each failed item without reporting useful read progress.
+		// The shared result renderer must not reduce twelve diagnostics to its
+		// generic error tail; keep the same bounded per-item preview instead.
+		detail := result.Text
+		if len(detail) > core.ModelOutputPreviewBytes {
+			detail = readManyPreview(outcomes, summary)
+		}
+		causes := make([]error, 0, failedCount)
+		for _, outcome := range outcomes {
+			causes = append(causes, outcome.err)
+		}
+		result.Err = core.SelfContainedErr(readManyBatchError{detail: detail, causes: causes})
+		result.ModelPreview = ""
+	}
 	return result
 }
+
+// Error text stays bounded while errors.Is can still recognize cancellation or
+// the individual I/O causes; converting diagnostics to one string would lose them.
+type readManyBatchError struct {
+	detail string
+	causes []error
+}
+
+func (e readManyBatchError) Error() string   { return e.detail }
+func (e readManyBatchError) Unwrap() []error { return e.causes }
 
 // Reserve each header first, then divide the existing model preview budget
 // among file bodies. Small sections release their unused share to larger ones.

@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,13 +78,9 @@ func (s *SearchCode) renderSearchContext(ctx context.Context, preview *searchCon
 	if preview == nil || len(preview.hits) == 0 {
 		return locations
 	}
-	var matchPattern *regexp.Regexp
+	var matcher searchExcerptMatcher
 	if len(preview.longLines) > 0 {
-		matchPattern, _ = regexp.Compile(preview.query)
-		if matchPattern == nil {
-			// Match the fallback scanner's handling of an invalid regexp.
-			matchPattern = regexp.MustCompile("(?i)" + regexp.QuoteMeta(preview.query))
-		}
+		matcher = newSearchExcerptMatcher(preview.query)
 	}
 	var retained string
 	var paths []string
@@ -131,8 +126,11 @@ func (s *SearchCode) renderSearchContext(ctx context.Context, preview *searchCon
 				return Result{Text: b.String(), Err: err}
 			}
 			if i >= len(reads) {
-				b.WriteString("[search context capped at 500 lines; narrow query/path or use context=0 for locations]\n")
-				return Result{Text: b.String(), RetainedText: retained}
+				b.WriteString("[search context capped at 500 lines; captured locations attached for read_output]\n")
+				text := b.String()
+				// Search already collected these locations. Keep them ahead of the
+				// bounded context so retrieval need not repeat the repository scan.
+				return Result{Text: text, RetainedText: "[Captured search locations]\n" + locations.Text + "\n\n[Context preview]\n" + text}
 			}
 			lines, err := reads[i].Lines, reads[i].Err
 			if err != nil {
@@ -154,8 +152,8 @@ func (s *SearchCode) renderSearchContext(ctx context.Context, preview *searchCon
 				if captured, ok := preview.longLines[searchHit{path: path, line: line.Number}]; ok {
 					// Leave an already visible match byte-identical. Only repair a
 					// match that the bounded head would actually cut or omit.
-					if match := matchPattern.FindStringIndex(captured); match != nil && match[1] > maxSearchContextBytes {
-						content = searchLineExcerpt(strings.TrimSuffix(captured, "\r"), matchPattern, maxSearchContextBytes)
+					if match := matcher.find(captured); match != nil && match[1] > maxSearchContextBytes {
+						content = searchLineExcerptMatch(strings.TrimSuffix(captured, "\r"), match, maxSearchContextBytes)
 						retained = locations.Text
 					}
 				}

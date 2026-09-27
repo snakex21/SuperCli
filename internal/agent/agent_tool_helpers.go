@@ -10,6 +10,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/core"
 )
 
 func reviseInstruction(instruction string, sieve sieveResult) string {
@@ -97,25 +98,69 @@ func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
 	if a.WorkerProvider == nil {
 		return a.Provider
 	}
-	a.workerProbe.Do(func() {
-		if a.WorkerPing == nil {
-			return
+	if a.WorkerPing == nil {
+		return a.WorkerProvider
+	}
+	for {
+		if ctx.Err() != nil {
+			return a.WorkerProvider
 		}
-		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := a.WorkerPing(pctx); err != nil {
-			a.workerDown = true
+		a.workerProbeMu.Lock()
+		if a.workerProbed {
+			down := a.workerDown
+			a.workerProbeMu.Unlock()
+			if down {
+				return a.Provider
+			}
+			return a.WorkerProvider
+		}
+		if done := a.workerProbeDone; done != nil {
+			a.workerProbeMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return a.WorkerProvider
+			case <-done:
+				continue
+			}
+		}
+		done := make(chan struct{})
+		a.workerProbeDone = done
+		a.workerProbeMu.Unlock()
+
+		err, canceled := a.probeWorkerBackend(ctx, done)
+		if !canceled && err != nil {
 			if a.ParentLoop != nil {
 				a.ParentLoop.Emit(NoticeEvent{Text: fmt.Sprintf(
 					"task: worker model %q unreachable (%v) — falling back to %q",
 					a.WorkerProvider.Name(), err, a.Provider.Name())})
 			}
+			return a.Provider
 		}
-	})
-	if a.workerDown {
-		return a.Provider
+		return a.WorkerProvider
 	}
-	return a.WorkerProvider
+}
+
+// probeWorkerBackend publishes a result only after a completed, uncanceled
+// check. Always release waiters, including if a custom probe panics and its
+// caller recovers it; otherwise the next delegation could wait forever.
+func (a *AgentTool) probeWorkerBackend(ctx context.Context, done chan struct{}) (err error, canceled bool) {
+	completed := false
+	defer func() {
+		canceled = !completed || ctx.Err() != nil
+		a.workerProbeMu.Lock()
+		if !canceled {
+			a.workerProbed = true
+			a.workerDown = err != nil
+		}
+		a.workerProbeDone = nil
+		close(done)
+		a.workerProbeMu.Unlock()
+	}()
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err = a.WorkerPing(pctx)
+	completed = true
+	return
 }
 
 // defaultAgentKind is the worker used when task is called without an
@@ -186,10 +231,14 @@ var delegationTools = map[string]struct{}{
 // spawn another worker (depth limit 1).
 //
 // The result is a brand-new *tools.Registry so the parent and
-// child have independent state and the child can never see a
-// tool that is not in `allowed`.
-func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry {
-	out := tools.NewRegistry()
+// child have independent tool/discovery state. Functional tools stay inside
+// `allowed`; only the bounded immutable output store is shared with the parent.
+func restrictedRegistry(base *tools.Registry, allowed []string, deferred ...string) *tools.Registry {
+	return restrictedRegistrySharingOutputs(base, base, allowed, deferred...)
+}
+
+func restrictedRegistrySharingOutputs(base, outputSource *tools.Registry, allowed []string, deferred ...string) *tools.Registry {
+	out := core.NewRegistrySharingOutputs(outputSource)
 	inherit := len(allowed) == 0
 	_, discoverable := base.Get("tool_search")
 	names := append([]string(nil), allowed...)
@@ -197,12 +246,18 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 		names = base.Names()
 	}
 	sort.Strings(names) // stable prefixes across workers, independent of map order
+	lazy := make(map[string]bool, len(deferred))
+	for _, name := range deferred {
+		lazy[name] = true
+	}
+	// The loader is scoped to the child registry; adding it never makes a
+	// forbidden tool executable or exposes the parent's discovery callbacks.
 	search, invoke := false, false
 	for _, name := range names {
 		if _, blocked := delegationTools[name]; blocked || name == "read_output" {
 			continue
 		}
-		t, ok := base.Get(name)
+		_, ok := base.Get(name)
 		if !ok {
 			continue
 		}
@@ -214,11 +269,16 @@ func restrictedRegistry(base *tools.Registry, allowed []string) *tools.Registry 
 			invoke = true
 			continue
 		}
-		_ = out.Register(t)
+		if err := out.RegisterFrom(base, name); err != nil {
+			continue
+		}
+		if lazy[name] {
+			search = true
+		}
 		// General workers inherit availability, not every full schema. Keep
 		// common tools immediately usable and discover optional tools locally.
 		// Without discovery, retain the historical eager set to avoid stranding tools.
-		if !inherit || !discoverable || isThinCore(name) || base.IsVisible(name) {
+		if !lazy[name] && (!inherit || !discoverable || isThinCore(name) || base.IsVisible(name)) {
 			out.MarkAlwaysOn(name)
 		}
 	}

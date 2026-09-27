@@ -1,8 +1,7 @@
 // Portable-mode data migration: SuperCli stores ALL of its data in
 // a supercli-data/ directory next to the executable. Older builds
 // kept global state in ~/.supercli; on first portable start the old
-// tree is copied over (the original is left in place with a
-// MOVED.txt marker, never deleted automatically).
+// tree is copied over; the original is read-only and remains untouched.
 package app
 
 import (
@@ -12,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // legacyDataDir returns the old ~/.supercli directory, or "" when
@@ -34,18 +32,18 @@ func legacyDataDir() string {
 //   - ~/.supercli missing     → do nothing (fresh install).
 //   - otherwise               → copy everything, fix any absolute
 //     references to the old directory inside projects.json, and
-//     drop a MOVED.txt marker in the old directory. The original
-//     data is NOT deleted.
+//     leave the original directory completely unchanged.
 func migrateLegacyData(dataDir string) (string, error) {
+	// Normal portable startup does not need to inspect the old user profile.
+	if _, err := os.Stat(dataDir); err == nil {
+		return "", nil
+	}
 	old := legacyDataDir()
 	if old == "" {
 		return "", nil
 	}
 	if fi, err := os.Stat(old); err != nil || !fi.IsDir() {
 		return "", nil
-	}
-	if _, err := os.Stat(dataDir); err == nil {
-		return "", nil // both exist: keep using supercli-data
 	}
 	if same, _ := samePath(old, dataDir); same {
 		return "", nil
@@ -57,11 +55,7 @@ func migrateLegacyData(dataDir string) (string, error) {
 		return "", fmt.Errorf("migrate %s -> %s: %w", old, dataDir, err)
 	}
 	fixLegacyReferences(dataDir, old)
-	marker := fmt.Sprintf(
-		"SuperCli data moved on %s.\n\nNew location:\n  %s\n\nThis directory was left untouched as a backup. You can delete it\nonce you have verified the new location works.\n",
-		time.Now().Format("2006-01-02 15:04:05"), dataDir)
-	_ = os.WriteFile(filepath.Join(old, "MOVED.txt"), []byte(marker), 0o644)
-	return fmt.Sprintf("migrated data to %s (original kept at %s — see MOVED.txt)", dataDir, old), nil
+	return fmt.Sprintf("migrated data to %s (original kept unchanged at %s)", dataDir, old), nil
 }
 
 // samePath reports whether two paths point at the same location.

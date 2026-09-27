@@ -53,7 +53,8 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		return nil, fmt.Errorf("agent.NewLoop: registry is nil")
 	}
 	cfg.Registry.EnsureReadOutput()
-	if cfg.ToolOutputs == nil {
+	toolOutputsFollowWriter := cfg.ToolOutputs == nil
+	if toolOutputsFollowWriter {
 		cfg.ToolOutputs, _ = cfg.Writer.(tools.OutputPersistence)
 	}
 	if cfg.MaxSteps == 0 {
@@ -82,6 +83,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		baseDir:                  cfg.BaseDir,
 		writer:                   cfg.Writer,
 		toolOutputs:              cfg.ToolOutputs,
+		toolOutputsFollowWriter:  toolOutputsFollowWriter,
 		errorLog:                 cfg.ErrorLog,
 		runID:                    newRunID(),
 		reflector:                cfg.Reflector,
@@ -104,6 +106,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		routeMap:                 DefaultRouteMap(),
 		route:                    RouteCoordinator,
 		navigate:                 cfg.EnableNavigator,
+		skipImplementationHint:   cfg.SkipImplementationHint,
 		navAuto:                  cfg.NavigatorAuto,
 		navKeywordsOnly:          cfg.NavigatorKeywordsOnly,
 		navProvider:              cfg.NavigatorProvider,

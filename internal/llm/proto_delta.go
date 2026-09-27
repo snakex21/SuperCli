@@ -16,6 +16,12 @@ type Delta struct {
 	// on the FIRST delta of a turn and empty on subsequent deltas.
 	Role Role
 
+	// OutputStarted marks the first generated tool fragment when a provider
+	// buffers tool arguments until completion. It carries no executable call
+	// or conversation text; timing consumers use it to exclude generation
+	// time from backend wait. Role/usage/status frames must not set it.
+	OutputStarted bool
+
 	// Content is a text fragment. Empty for deltas that only
 	// carry tool calls or finish_reason.
 	Content string
@@ -128,4 +134,10 @@ func (d Delta) Validate() error {
 // IsTerminal reports whether the delta ends the stream.
 func (d Delta) IsTerminal() bool {
 	return d.FinishReason != "" || d.Err != nil
+}
+
+// HasModelOutput distinguishes generated output from stream metadata. Buffered
+// tool calls can announce output before their complete, executable ToolCall.
+func (d Delta) HasModelOutput() bool {
+	return d.Notice == "" && d.Err == nil && (d.OutputStarted || d.Content != "" || d.Reasoning != "" || d.NativeReasoning != nil || d.ToolCall != nil)
 }

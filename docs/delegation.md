@@ -183,6 +183,10 @@ stable tool ordering. Thin workers always receive discovery and dispatch tools,
 even when a specialized role's functional allowlist omits them. These gateways
 can reach only that worker's allowed tools. Only the last assistant report
 returns to the coordinator, without intermediate commentary or reasoning.
+Long structured reports use the existing bounded output preview to preserve a
+heading outline alongside beginning/end excerpts. The full report and tool
+observations remain accessible through `read_output`; omission markers make
+clear that heading titles do not replace the detailed evidence.
 
 For a separate `task_model`, CLI/TUI and GUI resolve the tool protocol, stable
 schema setting and catalog placement from the worker's actual model/backend.
@@ -195,13 +199,23 @@ while optional tools remain registered and are exposed on demand. Registries
 without discovery retain their complete visible set. This avoids sending every
 optional tool schema to a native-tool worker just because it was delegated.
 
+Code workers also keep document/archive schemas and process_session available
+on demand in native mode. Their tool_search is rebuilt against the child
+allowlist; ordinary code tools stay ready immediately. Thin workers retain
+these capabilities in the compact catalog, and Word tasks retain automatic
+Word-tool activation. The code role can start and await managed processes;
+read-only roles still cannot execute commands.
+
 Continuing an in-memory worker retains its earlier tool calls and results in
 the model context. Inheriting search_history does not make the worker's own
 transcript retrievable: that tool may search only the parent/global store.
 Completed tool envelopes are omitted only with a configured session writer,
 history search, and no pending/lost transcript writes. Context-budget pruning
 and compaction still bound long conversations; no extra prompt or model call
-is added. Regression tests reproduce the lost evidence in both thin and native
+is added. When budget-driven pruning removes an older large-result preview,
+its existing read_output reference survives in the marker; the retained result
+can be inspected without repeating the original operation, subject to the
+existing bounded retention. Regression tests reproduce the lost evidence in both thin and native
 tool modes and verify that the existing conversation prefix survives resume.
 
 Concurrent user questions are queued in TUI and presented separately in the
@@ -225,3 +239,13 @@ same backend parallelism policy as an all-delegation response. A following read
 waits for those workers to finish. Two messages to the same worker split groups,
 so its continuation cannot race its earlier instruction; completed results stay
 in the original call order. This adds no automatic worker creation.
+
+
+Failed delegations keep their worker ID/status and a bounded, explicitly partial
+report in the coordinator-visible error. Full report/evidence retrieval remains
+available. A retained failed worker can be continued with `send_message`; stopped,
+canceled and exhausted-budget cases do not receive retry guidance. Creating a
+worker activates continuation for the stable dispatcher, and fresh GUI parent
+loops restore it while workers remain in memory. No helper inference or automatic
+restart is performed; worker retention and tool restrictions still apply.
+See [recovery regressions](evals/2026-09-25-worker-recovery.md).

@@ -30,14 +30,6 @@ func verdicts(spec string) []callOutcome {
 	return out
 }
 
-
-
-
-
-
-
-
-
 func TestNormalizeToolArgsJSON_KeyOrder(t *testing.T) {
 	a := normalizeToolArgsJSON(`{"path":"a","start":1}`)
 	b := normalizeToolArgsJSON(`{"start":1,"path":"a"}`)
@@ -87,8 +79,6 @@ func TestIdenticalFailureGate_NormalizedArgs(t *testing.T) {
 		t.Fatal("reordered keys should share failure count")
 	}
 }
-
-
 
 func TestMessagesHaveRecentToolResult(t *testing.T) {
 	msgs := []llm.Message{

@@ -13,6 +13,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/core"
 )
 
 // toolResult is the internal envelope for a single tool execution.
@@ -60,12 +61,19 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
 	if waves, ok := l.toolConflictWaves(toolCalls); ok {
+		if len(waves) == 1 {
+			return l.invokeCallsParallel(ctx, toolCalls, out)
+		}
 		outcomes := make([]callOutcome, 0, len(toolCalls))
-		for _, wave := range waves {
+		for index, wave := range waves {
 			var waveOK bool
 			var waveOutcomes []callOutcome
-			if len(wave) > 1 {
+			if len(wave) > 1 && index == 0 {
 				waveOK, waveOutcomes = l.invokeCallsParallel(ctx, wave, out)
+			} else if len(wave) > 1 {
+				// Earlier waves may move files or change link targets. Recheck the
+				// smaller batch against the current filesystem before parallel work.
+				waveOK, waveOutcomes = l.invokeToolCalls(ctx, wave, out)
 			} else {
 				waveOK, waveOutcomes = l.invokeToolCallsSequential(ctx, wave, out)
 			}
@@ -403,12 +411,16 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// time without a separate worker-specific protocol.
 	out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 
-	// Two identical failures already taught the model; block a third
-	// identical attempt before Execute (no extra LLM call).
+	// Refuse repeated failures with no intervening repair. A successful file
+	// mutation below expires command failures so the same check can run again.
 	if l.identicalFails.shouldBlock(tc.Name, tc.Arguments) {
+		scope := "in this run"
+		if tc.Name == "ctx_execute" {
+			scope = "since the last successful file edit"
+		}
 		msg := fmt.Sprintf(
-			"blocked: tool %q with these exact arguments already failed twice in this run; change arguments or strategy (do not retry identically)",
-			tc.Name,
+			"blocked: tool %q with these exact arguments already failed twice %s; change arguments or strategy (do not retry identically)",
+			tc.Name, scope,
 		)
 		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", msg)}
 		return toolResult{
@@ -503,6 +515,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	} else {
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments)
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
+		if toolKind(tc.Name) == "mutation" && !res.Inert {
+			l.identicalFails.workspaceChanged()
+		}
 	}
 
 	// F4.d: classify any error/verification failure and
@@ -520,20 +535,22 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
 	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments))
+	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, attributed)
+	outputHandle := retainedToolOutputHandle(tc.Name, attributed, modelContent)
 
 	// Tool not found.
 	if err != nil {
 		if isConcreteEvidenceTool(tc.Name) {
 			l.concreteFailure.Store(true)
 		}
-		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: err}
+		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: err, OutputHandle: outputHandle}
 		return toolResult{
 			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
-				Content:    l.registry.ModelResultContentContext(ctx, tc.Name, attributed),
+				Content:    modelContent,
 			}},
 		}
 	}
@@ -541,7 +558,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		if isConcreteEvidenceTool(tc.Name) {
 			l.concreteFailure.Store(true)
 		}
-		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err}
+		out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err, OutputHandle: outputHandle}
 		return toolResult{
 			failed: true,
 			followUps: []llm.Message{{
@@ -550,7 +567,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 				Name:       tc.Name,
 				// Keep the failure summary inline and make omitted
 				// diagnostics retrievable through this loop's output store.
-				Content: l.registry.ModelResultContentContext(ctx, tc.Name, res),
+				Content: modelContent,
 			}},
 		}
 	}
@@ -559,8 +576,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		l.concreteFailure.Store(false)
 	}
 
-	out <- ToolResultEvent{ID: tc.ID, Output: res.Text}
-	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, res)
+	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, OutputHandle: outputHandle}
 	follow := []llm.Message{{
 		Role:       llm.RoleTool,
 		ToolCallID: tc.ID,
@@ -683,4 +699,17 @@ func sisyphusHitFromMessage(msg string) int {
 		return 1
 	}
 	return n
+}
+
+// Only forward a reference added by the output store. A tool/file may contain
+// lookalike footer text; unchanged content and read_output are not new handles.
+func retainedToolOutputHandle(name string, result tools.Result, content string) string {
+	if name == "read_output" {
+		return ""
+	}
+	handle := core.StoredOutputHandle(content)
+	if handle != "" && content == result.ModelContent() {
+		return ""
+	}
+	return handle
 }

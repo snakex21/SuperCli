@@ -16,14 +16,15 @@ func (l *Loop) cancelledToolResult(tc llm.ToolCall, res tools.Result, cause erro
 	} else {
 		res.Err = fmt.Errorf("TOOL_NOT_STARTED: turn ended before dispatch; tool was not run (%w)", cause)
 	}
-	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err}
+	content := l.registry.ModelResultContent(tc.Name, res)
+	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err, OutputHandle: retainedToolOutputHandle(tc.Name, res, content)}
 	return toolResult{
 		failed: true,
 		followUps: []llm.Message{{
 			Role:       llm.RoleTool,
 			ToolCallID: tc.ID,
 			Name:       tc.Name,
-			Content:    l.registry.ModelResultContent(tc.Name, res),
+			Content:    content,
 		}},
 	}
 }

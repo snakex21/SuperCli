@@ -137,13 +137,13 @@ func readLineWindowsEOF(ctx context.Context, input io.Reader, path string, from,
 	for _, window := range windows {
 		// Continue from the existing buffer, including prefetched bytes.
 		// The hot scan loop stays identical for single and multiple ranges.
-		lines, count, err := consumeLineWindow(ctx, r, window.From-completed, window.To-completed, maxLineBytes, utf8Text, nil)
+		lines, count, err := consumeLineWindow(ctx, r, window.From-completed, window.To-completed, maxLineBytes, utf8Text, eof)
 		for i := range lines {
 			lines[i].Number += completed
 		}
 		completed += count
 		out = append(out, lines...)
-		if err != nil || completed < window.To {
+		if err != nil || completed < window.To || (eof != nil && *eof) {
 			return out, completed, err
 		}
 	}

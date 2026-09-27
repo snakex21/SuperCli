@@ -104,8 +104,6 @@ func TestIdenticalSuccessGate_AllowsDistinctEdits(t *testing.T) {
 	}
 }
 
-
-
 // The full production scenario end-to-end, on a real file with the real
 // patch_file tool: a pure insertion whose anchor survives the edit, so the
 // identical patch keeps SUCCEEDING and keeps appending the same comment. This

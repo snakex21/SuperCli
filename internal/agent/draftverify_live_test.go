@@ -106,7 +106,7 @@ func TestLive_DraftVerify_FileChange(t *testing.T) {
 	// The tool has no ParentLoop, so sandboxRoot() falls back to CWD. Force
 	// the sieve + diff to run in our temp repo by overriding the runners to
 	// bind dir explicitly (the production path uses ParentLoop.baseDir).
-	at.DraftVerify.runCommand = func(ctx context.Context, _ , command string, timeout time.Duration) (int, string) {
+	at.DraftVerify.runCommand = func(ctx context.Context, _, command string, timeout time.Duration) (int, string) {
 		return runSieveCommand(ctx, dir, command, timeout)
 	}
 	at.DraftVerify.gitDiff = func(ctx context.Context, _ string) string {

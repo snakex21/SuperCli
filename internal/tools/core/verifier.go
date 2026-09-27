@@ -115,15 +115,18 @@ func verifyFileWrite(c Check) VerifyVerdict {
 		return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file does not exist: %s", path)}
 	}
 	if info.Size() == 0 {
-		// An explicitly empty write_file payload means truncation was the
-		// requested result. Treating that successful write as a failure makes
-		// the agent retry an operation that already completed.
+		// File tools know the exact computed post-write content, even for a
+		// batch that creates and then removes text. A requested empty result
+		// is useful evidence, not a failed mutation requiring another edit.
+		expectedEmpty := c.Result.EmptyFileExpected
 		if strings.EqualFold(c.Tool, "write_file") {
 			if content, present := extractStringArg(c.Args, "content"); present && content == "" {
-				return VerifyVerdict{OK: true}
+				expectedEmpty = true // compatibility for older/custom write tools
 			}
 		}
-		return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file %s is empty", path)}
+		if !expectedEmpty {
+			return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file %s is empty", path)}
+		}
 	}
 	if want, ok := extractExpectedContent(c.Args); ok && want != "" {
 		data, err := os.ReadFile(path)

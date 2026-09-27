@@ -13,6 +13,7 @@ import (
 
 func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
 	var toolCalls []llm.ToolCall
+	var textCallIndexes []int
 	var usage *llm.Usage
 	sc := newToolCallScanner()
 	var transcript strings.Builder
@@ -39,7 +40,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			return ctx.Err()
 		}
 	}
-	// backend_wait (TTFT) is ONE timestamp taken at the first delta;
+	// backend_wait (TTFT) is ONE timestamp taken at the first model output;
 	// stream_total is one measurement at stream close. Nothing is
 	// timed per-delta — the streaming hot path pays a single zero-
 	// value comparison per delta and no allocations.
@@ -48,7 +49,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	l.lastCallTTFT = 0
 	defer func() {
 		if firstDelta.IsZero() {
-			// The stream ended (or errored) before any delta:
+			// The stream ended (or errored) before any model output:
 			// the whole wait was backend time.
 			l.recordWallPhase(stats.PhaseBackendWait, time.Since(waitStart))
 			return
@@ -56,9 +57,9 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		l.recordWallPhase(stats.PhaseStreamTotal, time.Since(firstDelta))
 	}()
 	for d := range stream {
-		// Provider notices (rate-limit retries, transient routing status) are
-		// not model progress and must not make a long prefill look instant.
-		if firstDelta.IsZero() && d.Notice == "" {
+		// Role, usage, retry notices and terminal frames are not generated
+		// output and must not make a long backend wait look instant.
+		if firstDelta.IsZero() && d.HasModelOutput() {
 			firstDelta = time.Now()
 			l.lastCallTTFT = firstDelta.Sub(waitStart)
 			l.recordWallPhase(stats.PhaseBackendWait, firstDelta.Sub(waitStart))
@@ -126,6 +127,9 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 					closeReasoning()
 					return transcript.String(), toolCalls, usage, err
 				}
+				for i := range calls {
+					textCallIndexes = append(textCallIndexes, len(toolCalls)+i)
+				}
 				toolCalls = append(toolCalls, calls...)
 				text := sc.buf.String()
 				end := len(before) + strings.Index(text[len(before):], closeTag) + len(closeTag)
@@ -152,7 +156,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		return transcript.String(), toolCalls, usage, err
 	}
 	closeReasoning()
-	return transcript.String(), toolCalls, usage, nil
+	return transcript.String(), l.coalesceMirroredReads(toolCalls, textCallIndexes), usage, nil
 }
 
 // extractXMLToolCalls scans text for <tool_call>...</tool_call>

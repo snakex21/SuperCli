@@ -67,8 +67,8 @@ func (s *OutputStore) CompactContext(ctx context.Context, toolName, text string)
 		return HeadTail(text, outputPreviewHead, outputPreviewTail) +
 			fmt.Sprintf("\n[output preview only: %d bytes; result could not be retained within the store limit]", len(text))
 	}
-	preview := HeadTail(text, outputPreviewHead, outputPreviewTail)
-	offset, limit := nextChunkHint(len(text))
+	preview, headEnd := headTailWithHeadEnd(text, outputPreviewHead, outputPreviewTail)
+	offset, limit := nextChunkHint(len(text), headEnd)
 	return fmt.Sprintf("[large tool output: %d bytes; preview follows; handle=%s]\n%s\n"+
 		"[inspect more with read_output {\"handle\":%q,\"offset\":%d,\"limit\":%d}; %s]",
 		len(text), handle, preview, handle, offset, limit, outputLifetime(saved))
@@ -122,11 +122,11 @@ func (s *OutputStore) retainBehind(ctx context.Context, content, text string) st
 // nextChunkHint picks the offset/limit the model is told to ask for. Models
 // follow this hint literally, so every byte it leaves on the table costs a
 // whole extra round trip. The offset resumes exactly where the preview's head
-// stopped — 4096 used to skip a kilobyte nobody had seen — and the limit is
+// actually stopped after line/UTF-8 alignment, and the limit is
 // the largest chunk read_output returns, clamped to what is left so the
 // hint never points past the end. Larger requests use the same output cap.
-func nextChunkHint(total int) (offset, limit int) {
-	offset = outputPreviewHead
+func nextChunkHint(total, headEnd int) (offset, limit int) {
+	offset = headEnd
 	if limit = total - offset; limit > outputReadMax {
 		limit = outputReadMax
 	}
@@ -195,6 +195,12 @@ func (s *OutputStore) readContext(ctx context.Context, handle string, offset, li
 		end = len(text)
 	} else {
 		end = runeStartBackward(text, end)
+	}
+	if end == start && start < len(text) {
+		// A 1–3 byte limit may not fit the first rune. Return that rune so the
+		// advertised next offset advances instead of creating an empty-page loop.
+		_, width := utf8.DecodeRuneInString(text[start:])
+		end = start + width
 	}
 	return text[start:end], start, len(text), nil
 }

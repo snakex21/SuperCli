@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"path/filepath"
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/core"
 )
 
 func TestUnrelatedSuccessDoesNotResolveFailedCheck(t *testing.T) {
@@ -66,8 +68,9 @@ func TestFailedCheckIdentityAndProcessCompletion(t *testing.T) {
 	if l.failedChecks.unresolved() {
 		t.Fatal("same check did not recover")
 	}
+	processKey := core.CommandKey([]string{"go", "test", "./..."}, filepath.Join(l.baseDir, "pkg"), nil)
 	commandFailure := `{"command":["go","test","./..."],"workdir":"pkg","status":"failed","exit_code":1}`
-	l.recordCheckResult(llm.ToolCall{Name: "process_session", Arguments: `{"action":"poll","id":"proc-1"}`}, tools.Result{Text: commandFailure, Err: errors.New("tests failed")})
+	l.recordCheckResult(llm.ToolCall{Name: "process_session", Arguments: `{"action":"poll","id":"proc-1"}`}, tools.Result{Text: commandFailure, CommandKey: &processKey, Err: errors.New("tests failed")})
 	if !l.failedChecks.unresolved() {
 		t.Fatal("background failure was not retained")
 	}
@@ -100,5 +103,94 @@ func TestVerificationCommandDetection(t *testing.T) {
 		if isVerificationCommand(command) {
 			t.Errorf("non-check inferred as verification: %q", command)
 		}
+	}
+}
+
+func TestFailedCheckEquivalentEnvironmentRerun(t *testing.T) {
+	for _, env := range [][]string{
+		{"SECOND=2", "FIRST=1"},
+		{"FIRST=obsolete", "SECOND=2", "FIRST=1"},
+	} {
+		l := &Loop{baseDir: t.TempDir()}
+		call := func(values []string) llm.ToolCall {
+			args, _ := json.Marshal(map[string]any{"command": []string{"go", "test", "./..."}, "env_extra": values})
+			return llm.ToolCall{Name: "ctx_execute", Arguments: string(args)}
+		}
+		l.recordCheckResult(call([]string{"FIRST=1", "SECOND=2"}), tools.Result{Err: errors.New("failed")})
+		l.recordCheckResult(call(env), tools.Result{Text: "passed"})
+		if l.failedChecks.unresolved() {
+			t.Fatalf("equivalent environment did not resolve a passing rerun: %v", env)
+		}
+	}
+}
+
+func TestFailedCheckProcessEnvironmentCannotClearAnotherVariant(t *testing.T) {
+	l := &Loop{baseDir: t.TempDir()}
+	start := func(mode, status string) {
+		args, _ := json.Marshal(map[string]any{"action": "start", "command": []string{"go", "test", "./..."}, "env": []string{"TEST_MODE=" + mode}})
+		result, _ := json.Marshal(map[string]any{"id": "proc-" + mode, "command": []string{"go", "test", "./..."}, "workdir": l.baseDir, "status": status})
+		r := tools.Result{Text: string(result)}
+		if status == "failed" {
+			r.Err = errors.New("failed")
+		}
+		l.recordCheckResult(llm.ToolCall{Name: "process_session", Arguments: string(args)}, r)
+	}
+	start("full", "failed")
+	start("quick", "done")
+	if !l.failedChecks.unresolved() {
+		t.Fatal("a different process environment hid the failed full check")
+	}
+}
+
+func TestFailedCheckEnvironmentSurvivesBackgroundWait(t *testing.T) {
+	l := &Loop{baseDir: t.TempDir()}
+	command := []string{"go", "test", "./..."}
+	fullEnv := []string{"TEST_MODE=full", "OTHER=1"}
+	wait := llm.ToolCall{Name: "process_session", Arguments: "{\"action\":\"wait\",\"id\":\"proc-1\"}"}
+	outcome := func(env []string, failed bool) tools.Result {
+		key := core.CommandKey(command, l.baseDir, env)
+		status := "done"
+		var err error
+		if failed {
+			status, err = "failed", errors.New("tests failed")
+		}
+		snap, _ := json.Marshal(map[string]any{"id": "proc-1", "command": command, "workdir": l.baseDir, "status": status})
+		return tools.Result{Text: string(snap), Err: err, CommandKey: &key}
+	}
+	args, _ := json.Marshal(map[string]any{"command": command, "env_extra": []string{"OTHER=1", "TEST_MODE=full"}})
+	foreground := llm.ToolCall{Name: "ctx_execute", Arguments: string(args)}
+
+	l.recordCheckResult(wait, outcome(fullEnv, true))
+	l.recordCheckResult(wait, outcome([]string{"TEST_MODE=quick", "OTHER=1"}, false))
+	if !l.failedChecks.unresolved() {
+		t.Fatal("a different background environment cleared failure")
+	}
+	l.recordCheckResult(foreground, tools.Result{Text: "passed"})
+	if l.failedChecks.unresolved() {
+		t.Fatal("equivalent foreground retry did not clear background failure")
+	}
+
+	l.recordCheckResult(foreground, tools.Result{Err: errors.New("failed")})
+	l.recordCheckResult(wait, outcome(fullEnv, false))
+	if l.failedChecks.unresolved() {
+		t.Fatal("equivalent background retry did not clear foreground failure")
+	}
+}
+
+func TestFailedCheckUnknownProcessEnvironmentIsNotPassingEvidence(t *testing.T) {
+	l := &Loop{baseDir: t.TempDir()}
+	foreground := llm.ToolCall{Name: "ctx_execute", Arguments: "{\"command\":[\"go\",\"test\",\"./...\"]}"}
+	wait := llm.ToolCall{Name: "process_session", Arguments: "{\"action\":\"wait\",\"id\":\"proc-legacy\"}"}
+	snap, _ := json.Marshal(map[string]any{"id": "proc-legacy", "command": []string{"go", "test", "./..."}, "workdir": l.baseDir, "status": "done"})
+	l.recordCheckResult(foreground, tools.Result{Err: errors.New("failed")})
+	l.recordCheckResult(wait, tools.Result{Text: string(snap)})
+	if !l.failedChecks.unresolved() {
+		t.Fatal("unknown process environment cleared known foreground failure")
+	}
+	l.failedChecks.reset()
+	l.recordCheckResult(wait, tools.Result{Text: strings.Replace(string(snap), "done", "failed", 1), Err: errors.New("failed")})
+	l.recordCheckResult(foreground, tools.Result{Text: "passed"})
+	if !l.failedChecks.unresolved() {
+		t.Fatal("foreground success cleared unattributed process failure")
 	}
 }

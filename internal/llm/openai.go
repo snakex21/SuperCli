@@ -395,6 +395,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		var lastTimings *llamaTimings
 		sawResponse := false
 		sawPayload := false
+		toolOutputStarted := false
 		emittedFinish := false
 		emit := func(d Delta) error {
 			select {
@@ -511,6 +512,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					}
 				}
 				for _, tc := range choice.Delta.ToolCalls {
+					if !toolOutputStarted && (tc.Function.Name != "" || tc.Function.Arguments != "") {
+						if err := emit(Delta{OutputStarted: true}); err != nil {
+							return err
+						}
+						toolOutputStarted = true
+					}
 					sawPayload = true
 					acc, exists := toolAcc[tc.Index]
 					if !exists {

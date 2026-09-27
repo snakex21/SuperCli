@@ -15,11 +15,19 @@ import (
 // result has been consumed would break provider protocol and prevent the next
 // model step from completing the work.
 func (l *Loop) resolvedToolProviderView(messages []llm.Message) []llm.Message {
+	view, _ := l.resolvedToolProviderProjection(messages, false)
+	return view
+}
+
+// Index tracking is needed only by compaction, which prices the request view
+// while still passing original tool evidence to its summarizer. Ordinary model
+// requests do not allocate an index map.
+func (l *Loop) resolvedToolProviderProjection(messages []llm.Message, trackIndices bool) ([]llm.Message, []int) {
 	if l == nil || l.registry == nil || l.writer == nil {
-		return messages
+		return messages, nil
 	}
 	if _, ok := l.registry.Get("search_history"); !ok {
-		return messages
+		return messages, nil
 	}
 	// A history tool may point at a parent/global store. Its presence does
 	// not mean this loop's own tool results were saved there. In-memory
@@ -30,14 +38,19 @@ func (l *Loop) resolvedToolProviderView(messages []llm.Message) []llm.Message {
 	retrievable := !h.outage && len(h.pending) == 0 && h.dropped == 0
 	h.mu.Unlock()
 	if !retrievable {
-		return messages
+		return messages, nil
 	}
-	return omitResolvedToolHistory(messages)
+	return resolvedToolHistoryProjection(messages, trackIndices)
 }
 
 func omitResolvedToolHistory(messages []llm.Message) []llm.Message {
+	view, _ := resolvedToolHistoryProjection(messages, false)
+	return view
+}
+
+func resolvedToolHistoryProjection(messages []llm.Message, trackIndices bool) ([]llm.Message, []int) {
 	if len(messages) == 0 {
-		return messages
+		return messages, nil
 	}
 
 	// Native continuation state can depend on earlier tool evidence. Keep
@@ -45,7 +58,7 @@ func omitResolvedToolHistory(messages []llm.Message) []llm.Message {
 	// of deleting it immediately after the final answer.
 	for _, message := range messages {
 		if message.HasNativeReasoning() {
-			return messages
+			return messages, nil
 		}
 	}
 
@@ -142,18 +155,25 @@ func omitResolvedToolHistory(messages []llm.Message) []llm.Message {
 		}
 	}
 	if dropped == 0 {
-		return messages
+		return messages, nil
 	}
 	out := make([]llm.Message, 0, len(messages)-dropped)
+	var indices []int
+	if trackIndices {
+		indices = make([]int, 0, len(messages)-dropped)
+	}
 	for index, message := range messages {
 		if !drop[index] {
 			if calls, ok := trimmedCalls[index]; ok {
 				message.ToolCalls = calls
 			}
 			out = append(out, message)
+			if trackIndices {
+				indices = append(indices, index)
+			}
 		}
 	}
-	return out
+	return out, indices
 }
 
 func messageHasVisibleReply(message llm.Message) bool {

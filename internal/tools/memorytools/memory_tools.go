@@ -41,6 +41,13 @@ type HybridSearcher interface {
 	HybridSearch(ctx context.Context, query string, k int) ([]memory.Entry, error)
 }
 
+// RecallKeeper filters excluded entries before applying search and recency
+// limits. Persistent stores provide it; simple keepers retain the fallback APIs.
+type RecallKeeper interface {
+	RecallSearch(ctx context.Context, query string, k int) ([]memory.Entry, error)
+	RecallRecent(n int) ([]memory.Entry, error)
+}
+
 // Remember is the always-on tool that saves a fact to the
 // persistent memory store (SQLite + FTS5 + markdown mirror).
 // The fact survives across sessions and is searchable via the
@@ -243,6 +250,9 @@ func searchOne(ctx context.Context, s MemoryKeeper, query string, k int) ([]memo
 	if s == nil {
 		return nil, nil
 	}
+	if recall, ok := s.(RecallKeeper); ok {
+		return recall.RecallSearch(ctx, query, k)
+	}
 	if h, ok := s.(HybridSearcher); ok {
 		return h.HybridSearch(ctx, query, k)
 	}
@@ -252,6 +262,9 @@ func searchOne(ctx context.Context, s MemoryKeeper, query string, k int) ([]memo
 func recentOne(s MemoryKeeper, k int) ([]memory.Entry, error) {
 	if s == nil {
 		return nil, nil
+	}
+	if recall, ok := s.(RecallKeeper); ok {
+		return recall.RecallRecent(min(maxRecallLimit*4, k*4))
 	}
 	if recent, ok := s.(RecentKeeper); ok {
 		return recent.Recent("", min(maxRecallLimit*4, k*4))

@@ -2,23 +2,26 @@ package agent
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"supercli/internal/llm"
+	"supercli/internal/tools/sandbox"
 )
 
 type toolFileAccess struct {
 	path  string
 	write bool
+	info  os.FileInfo
 }
 
 // toolConflictWaves returns contiguous waves that may execute concurrently.
 // The boolean is false when any call has an unknown mutation/resource shape;
 // callers then keep the conservative sequential behavior.
 func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bool) {
-	if len(toolCalls) < 2 {
+	if len(toolCalls) < 2 || l.baseDir == "" {
 		return nil, false
 	}
 	accesses := make([][]toolFileAccess, len(toolCalls))
@@ -57,6 +60,27 @@ func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bo
 		}
 	}
 
+	// Compare actual tool targets, not argument spelling: relative/absolute
+	// paths and symlink parents may point to the same file. Scope reuse to this
+	// batch so renames or link changes cannot leave a stale identity cache.
+	resolved := make(map[string]toolFileAccess)
+	parents := make(map[string]string)
+	for i, acc := range accesses {
+		for j, access := range acc {
+			target, found := resolved[access.path]
+			if !found {
+				var err error
+				target, err = l.resolveToolFileAccess(access.path, parents)
+				if err != nil {
+					return nil, false
+				}
+				resolved[access.path] = target
+			}
+			target.write = access.write
+			accesses[i][j] = target
+		}
+	}
+
 	var waves [][]llm.ToolCall
 	var current []llm.ToolCall
 	var currentAccess []toolFileAccess
@@ -76,6 +100,42 @@ func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bo
 	return waves, true
 }
 
+// Resolve a shared parent once per batch rather than walking the whole project
+// path for every sibling. Lstat still checks the final component: a file symlink
+// must be resolved too, while a nonexistent target keeps its canonical parent.
+func (l *Loop) resolveToolFileAccess(path string, parents map[string]string) (toolFileAccess, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(l.baseDir, path)
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return toolFileAccess{}, err
+	}
+	parent := filepath.Dir(path)
+	resolved, ok := parents[parent]
+	if !ok {
+		var err error
+		resolved, err = sandbox.ResolveSafe(l.baseDir, parent)
+		if err != nil {
+			return toolFileAccess{}, err
+		}
+		parents[parent] = resolved
+	}
+	full := filepath.Join(resolved, filepath.Base(path))
+	info, err := os.Lstat(full)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		full, err = sandbox.ResolveSafe(l.baseDir, path)
+		if err != nil {
+			return toolFileAccess{}, err
+		}
+		info, err = os.Stat(full)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return toolFileAccess{}, err
+	}
+	return toolFileAccess{path: normalizeToolPath(full), info: info}, nil
+}
+
 func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 	var args map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
@@ -90,7 +150,7 @@ func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 		if err := json.Unmarshal(raw, &s); err != nil || strings.TrimSpace(s) == "" {
 			return "", false
 		}
-		return normalizeToolPath(s), true
+		return s, true
 	}
 	one := func(key string, write bool) ([]toolFileAccess, bool) {
 		p, ok := get(key)
@@ -132,7 +192,7 @@ func accessesConflict(a, b []toolFileAccess) bool {
 			if !(x.write || y.write) {
 				continue
 			}
-			if toolPathsOverlap(x.path, y.path) {
+			if toolPathsOverlap(x.path, y.path) || (x.info != nil && y.info != nil && os.SameFile(x.info, y.info)) {
 				return true
 			}
 		}
@@ -141,7 +201,7 @@ func accessesConflict(a, b []toolFileAccess) bool {
 }
 
 func normalizeToolPath(p string) string {
-	p = filepath.ToSlash(filepath.Clean(strings.TrimSpace(p)))
+	p = filepath.ToSlash(filepath.Clean(p))
 	if runtime.GOOS == "windows" {
 		p = strings.ToLower(p)
 	}

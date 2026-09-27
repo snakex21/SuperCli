@@ -15,17 +15,16 @@ const invokeToolName = "invoke_tool"
 
 const maxDirectCatalogEntries = 16
 
-// InvokeTool is a schema-stable dispatcher. Simple read-only tools can be used
-// immediately. Complex or mutating tools can be dispatched only after
-// tool_search explicitly activates them, so discovering a schema is also the
-// authorization gate for the broader dispatcher path.
+// InvokeTool is a schema-stable dispatcher. Visible core, active and simple
+// read-only tools can be used immediately. Other tools require tool_search
+// activation; target validation and safety controls still apply.
 type InvokeTool struct{ registry *tools.Registry }
 
 func NewInvokeTool(registry *tools.Registry) *InvokeTool { return &InvokeTool{registry: registry} }
 
 func (t *InvokeTool) Spec() tools.Tool {
 	eligible := directToolCatalog(t.registry)
-	description := "Schema-stable tool dispatcher. Simple read-only tools work immediately. For a complex or mutating tool, call tool_search once to activate it, then use invoke_tool with target arguments in args (or arg.<name> fields); target execution still uses its normal validation and safety controls."
+	description := "Call a tool with target arguments in args (or arg.<name> fields). Visible core tools, active tools and simple read-only tools work immediately; use tool_search for other tools. Normal target validation and safety controls apply."
 	if eligible != "" {
 		description += " Eligible: " + eligible
 	}
@@ -313,14 +312,19 @@ func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
 		}
 	}
 	args = make(map[string]json.RawMessage)
-	parts := strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == ',' || r == ';' })
+	parts := splitInvokeArgText(text)
 	for _, part := range parts {
 		key, value, ok := strings.Cut(part, ":")
 		if !ok || strings.TrimSpace(key) == "" {
 			return nil, fmt.Errorf("invalid args text %q; want key: value", part)
 		}
-		encoded, _ := json.Marshal(strings.TrimSpace(value))
-		args[strings.TrimSpace(key)] = encoded
+		key = strings.TrimSpace(key)
+		if _, exists := args[key]; exists {
+			return nil, fmt.Errorf("duplicate argument %q", key)
+		}
+		value = strings.TrimSpace(value)
+		encoded, _ := json.Marshal(value)
+		args[key] = encoded
 	}
 	if len(args) == 0 && text != "" {
 		return nil, fmt.Errorf("invalid args text; want key: value")

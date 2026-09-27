@@ -67,7 +67,7 @@ func TestFailureSummary_WindowsNotFound(t *testing.T) {
 
 func TestFailureSummary_TailCapped(t *testing.T) {
 	long := strings.Repeat("x", FailTailBytes+500) + "THE_END"
-	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long}
+	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long, TruncatedStderr: true}
 	got := r.FailureSummary()
 	if !strings.Contains(got, "stderr (tail, truncated):") {
 		t.Errorf("missing truncation marker:\n%s", got[:200])
@@ -96,7 +96,7 @@ func TestFailureSummary_TailCutIsUTF8Safe(t *testing.T) {
 	// run of them with one leading ASCII byte guarantees a
 	// misaligned byte cut somewhere.
 	long := "x" + strings.Repeat("ż", FailTailBytes)
-	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long}
+	r := &Result{ExitCode: 1, DurationMS: 5, Stderr: long, TruncatedStderr: true}
 	got := r.FailureSummary()
 	if !utf8.ValidString(got) {
 		t.Fatalf("summary is not valid UTF-8:\n%q", got[:120])

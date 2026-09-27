@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"strings"
 
 	"supercli/internal/llm"
 )
@@ -13,9 +12,14 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 	}
 	visible := l.VisibleMessages()
 	projected := l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(visible)))
-	est := l.EstimateVisibleTokens()
-	// Scope filtering can change parts without changing the message count.
-	if len(projected) != len(visible) || (len(projected) > 0 && &projected[0] != &visible[0]) {
+	var est int
+	// Reuse the append-only cache only for unchanged history. Otherwise price
+	// the prepared view directly, without rebuilding a hidden view or counting
+	// reasoning/tool evidence that the request projection has removed.
+	if l.hidden == nil && len(projected) == len(visible) &&
+		(len(projected) == 0 || &projected[0] == &visible[0]) {
+		est = l.EstimateVisibleTokens()
+	} else {
 		est = llm.EstimateTokens(projected)
 	}
 	if l.registry == nil {
@@ -51,53 +55,14 @@ func (l *Loop) estimateChatRequestTokensRaw() int {
 	if l.briefing != "" {
 		system += "\n\n" + l.briefing
 	}
-	msgs := []llm.Message{{Role: llm.RoleSystem, Content: system}}
-	lastUser := -1
-	for i := len(visible) - 1; i >= 0; i-- {
-		if visible[i].Role == llm.RoleUser && !strings.Contains(visible[i].Content, "<task-notification>") {
-			lastUser = i
-			break
-		}
-	}
-	end := len(visible)
-	if lastUser >= 0 {
-		end = lastUser
-	}
-	start := l.chatWindowStart
-	if start < 0 || start > end {
-		start = 0
-	}
-	window := make([]llm.Message, 0, end-start)
-	for i := start; i < end; i++ {
-		if chatWindowEligible(visible[i]) {
-			window = append(window, visible[i])
-		}
-	}
-	if llm.EstimateTokens(window) > chatWindowMaxTokens {
-		kept := 0
-		for i := end - 1; i >= start && kept < chatWindowKeepMsgs; i-- {
-			if chatWindowEligible(visible[i]) {
-				kept++
-			}
-		}
-		if kept < len(window) {
-			window = window[len(window)-kept:]
-		}
-	}
-	msgs = append(msgs, window...)
-	if lastUser >= 0 {
-		for _, msg := range visible[lastUser:] {
-			if msg.Role != llm.RoleSystem {
-				msgs = append(msgs, msg)
-			}
-		}
-	}
-	msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: l.contextTail()})
-	var defs []llm.ToolDef
+	history, _, _ := chatHistoryProjection(visible, l.chatWindowStart, false)
+	est := llm.EstimateTokens(history)
+	est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: system})
+	est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: l.contextTail()})
 	if l.registry != nil {
-		defs = l.buildToolDefs()
+		est += estimateRequestTokens(nil, l.buildToolDefs())
 	}
-	return estimateRequestTokens(msgs, defs)
+	return est
 }
 
 type requestTokenEstimate struct {

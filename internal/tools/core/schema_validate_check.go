@@ -30,14 +30,18 @@ func (n *schemaNode) validate(value any, path string) error {
 		}
 		return fmt.Errorf("%s: value is not allowed", path)
 	}
-	key := canonicalValue(value)
-	if len(n.enumKeys) > 0 {
-		if _, ok := n.enumKeys[key]; !ok {
-			return fmt.Errorf("%s: value is not in enum", path)
+	// Canonical equality is needed only for enum/const. Serializing every
+	// object and string again here duplicated large patch bodies at each node.
+	if len(n.enumKeys) > 0 || n.hasConst {
+		key := canonicalValue(value)
+		if len(n.enumKeys) > 0 {
+			if _, ok := n.enumKeys[key]; !ok {
+				return fmt.Errorf("%s: value is not in enum%s", path, n.enumHint)
+			}
 		}
-	}
-	if n.hasConst && key != n.constKey {
-		return fmt.Errorf("%s: value does not match const", path)
+		if n.hasConst && key != n.constKey {
+			return fmt.Errorf("%s: value does not match const", path)
+		}
 	}
 	if len(n.types) > 0 && !n.acceptsType(value) {
 		return fmt.Errorf("%s: expected %s, got %s", path, n.typeLabel(), valueType(value))

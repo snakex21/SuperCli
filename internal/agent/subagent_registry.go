@@ -16,8 +16,14 @@ type SubAgent struct {
 	Description  string
 	System       string
 	AllowedTools []string // empty = inherit
-	Model        string   // empty = inherit
-	MaxSteps     int      // 0 = inherit
+	// SkipImplementationHint omits the automatic edit/test contract for roles
+	// whose own briefing defines a read-only task. Tool permissions stay separate.
+	SkipImplementationHint bool
+	// DeferredTools stay permitted but native workers discover their schemas
+	// on demand. Thin workers already use the compact catalog for these tools.
+	DeferredTools []string
+	Model         string // empty = inherit
+	MaxSteps      int    // 0 = inherit
 }
 
 // Validate returns nil if the spec is well-formed.

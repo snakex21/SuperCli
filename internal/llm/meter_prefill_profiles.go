@@ -23,7 +23,7 @@ import (
 const (
 	prefillProfilesFile = "prefill-profiles.json"
 
-	// Fifteen seconds is the latency objective for the first model delta. It is
+	// Fifteen seconds is the latency objective for the first model output. It is
 	// deliberately not a context limit: fast/cache-effective backends never
 	// activate a smaller budget, while slow backends learn one from throughput.
 	prefillTargetTTFT = 15 * time.Second

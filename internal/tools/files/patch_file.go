@@ -74,7 +74,8 @@ func (t *PatchFile) Spec() Tool {
 			"required": ["path"],
 			"additionalProperties": false
 		}`,
-		Fn: t.execute,
+		Fn:         t.execute,
+		RepairArgs: repairRedundantPatchPaths,
 	}
 }
 
@@ -122,5 +123,8 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if res.Note != "" {
 		text += " " + res.Note
 	}
-	return Result{Text: text, Inert: res.Duplicated}, nil
+	if res.WrittenPreview != "" {
+		text += "\n" + res.WrittenPreview
+	}
+	return Result{Text: text, Inert: !res.Changed || res.Duplicated, EmptyFileExpected: res.Empty}, nil
 }

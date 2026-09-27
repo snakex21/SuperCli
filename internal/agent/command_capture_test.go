@@ -23,10 +23,14 @@ func TestCommandCaptureHelper(t *testing.T) {
 	if mode == "" {
 		return
 	}
-	for _, stream := range []*os.File{os.Stdout, os.Stderr} {
-		fmt.Fprint(stream, "source.go:731:19: undefined: missingSymbol\n", strings.Repeat("later build output\n", 10000), "final build status\n")
+	count := 10000
+	if mode == "medium_failure" {
+		count = 200
 	}
-	if mode == "failure" {
+	for _, stream := range []*os.File{os.Stdout, os.Stderr} {
+		fmt.Fprint(stream, "source.go:731:19: undefined: missingSymbol\n", strings.Repeat("later build output\n", count), "final build status\n")
+	}
+	if mode == "failure" || mode == "medium_failure" {
 		os.Exit(7)
 	}
 	os.Exit(0)

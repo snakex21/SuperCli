@@ -1,8 +1,12 @@
 package webgui
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"supercli/internal/system/childproc"
 )
@@ -17,6 +21,10 @@ import (
 // error when no suitable browser was found. A nil error with a nil
 // Cmd never happens: either a browser launched or err is set.
 func OpenAppWindow(url, profileDir string) (*exec.Cmd, error) {
+	profileDir, err := prepareAppWindowProfile(profileDir)
+	if err != nil {
+		return nil, err
+	}
 	browsers := chromiumCandidates()
 	args := appWindowArgs(url, profileDir)
 	for _, b := range browsers {
@@ -34,8 +42,8 @@ func OpenAppWindow(url, profileDir string) (*exec.Cmd, error) {
 }
 
 // OpenInBrowser opens url in the user's default browser as a normal
-// tab. It is the fallback when no Chromium app-mode browser is found,
-// so the GUI is still reachable.
+// tab. This uses the browser's own profile; portable GUI startup must not
+// invoke it automatically.
 func OpenInBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -48,6 +56,22 @@ func OpenInBrowser(url string) error {
 		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
+}
+
+// prepareAppWindowProfile must succeed before any browser process is started.
+// An empty profile would silently use the browser's user-profile directory.
+func prepareAppWindowProfile(profileDir string) (string, error) {
+	if strings.TrimSpace(profileDir) == "" {
+		return "", fmt.Errorf("portable browser profile directory is required")
+	}
+	profileDir, err := filepath.Abs(profileDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve portable browser profile: %w", err)
+	}
+	if err := os.MkdirAll(profileDir, 0o700); err != nil {
+		return "", fmt.Errorf("create portable browser profile: %w", err)
+	}
+	return profileDir, nil
 }
 
 func appWindowArgs(url, profileDir string) []string {

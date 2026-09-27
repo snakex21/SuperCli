@@ -55,6 +55,7 @@ type schemaNode struct {
 	maximum *big.Rat
 
 	enumKeys map[string]struct{}
+	enumHint string
 	hasConst bool
 	constKey string
 
@@ -356,6 +357,7 @@ func compileSchemaNode(value any, at string) (*schemaNode, error) {
 			}
 			n.enumKeys[key] = struct{}{}
 		}
+		n.enumHint = compileEnumHint(values)
 	}
 	if value, exists := obj["const"]; exists {
 		n.hasConst = true

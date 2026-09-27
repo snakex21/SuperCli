@@ -43,11 +43,11 @@ func (s *SearchCode) previewSearchHits(result Result, preview *searchContext, qu
 	if remaining < len(bodies)*64 {
 		return result
 	}
-	re, _ := regexp.Compile(query)
+	matcher := newSearchExcerptMatcher(query)
 	sort.SliceStable(order, func(i, j int) bool { return len(bodies[order[i]]) < len(bodies[order[j]]) })
 	for position, i := range order {
 		share := remaining / (len(order) - position)
-		bodies[i] = searchLineExcerpt(bodies[i], re, min(share, 512))
+		bodies[i] = matcher.excerpt(bodies[i], min(share, 512))
 		remaining -= len(bodies[i])
 	}
 	var b strings.Builder
@@ -62,6 +62,10 @@ func (s *SearchCode) previewSearchHits(result Result, preview *searchContext, qu
 }
 
 func searchLineExcerpt(text string, re *regexp.Regexp, budget int) string {
+	return (searchExcerptMatcher{pattern: re}).excerpt(text, budget)
+}
+
+func searchLineExcerptMatch(text string, match []int, budget int) string {
 	if len(text) <= budget {
 		return text
 	}
@@ -69,10 +73,8 @@ func searchLineExcerpt(text string, re *regexp.Regexp, budget int) string {
 	// line, so a match late in minified code remains visible.
 	width := budget - 6
 	start := 0
-	if re != nil {
-		if match := re.FindStringIndex(text); match != nil {
-			start = max(0, match[0]-min(96, max(0, (width-(match[1]-match[0]))/2)))
-		}
+	if match != nil {
+		start = max(0, match[0]-min(96, max(0, (width-(match[1]-match[0]))/2)))
 	}
 	start = min(start, max(0, len(text)-width))
 	for start < len(text) && !utf8.RuneStart(text[start]) {

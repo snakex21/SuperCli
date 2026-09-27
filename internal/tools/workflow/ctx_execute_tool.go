@@ -39,23 +39,25 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 	return &CtxExecuteTool{Runner: runner, Home: home}
 }
 
-// Spec returns the Tool descriptor.
+// Spec returns the Tool descriptor. Output caps are clamped by the runner,
+// not rejected by schema validation: an oversized preview request must not
+// turn an otherwise valid command into a repair round.
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Never use it to read, create, edit, convert, or unpack DOCX; use read_docx/edit_docx directly. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH. The workspace is the default workdir. Use for project tests, installed commands, and bounded data slicing. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
-		Schema: `{
+		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Never use it to read, create, edit, convert, or unpack DOCX; use read_docx/edit_docx directly. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH. The workspace is the default workdir. Use explicit timeouts for long builds/tests; default 10s, max 5min. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
 				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "Executable + arguments, e.g. [\"git\",\"status\",\"--short\"]. A JSON-encoded argv array passed as a string (\"[\\\"git\\\",\\\"status\\\"]\") is also accepted. Use only binaries actually on PATH. Use search_code instead of assuming rg is installed. Windows built-ins need [\"cmd\",\"/c\",...]."},
 				"workdir": {"type": "string", "description": "Working dir relative to home. Default: home root."},
-				"timeout_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "default": 10000, "description": "Timeout (ms)."},
-				"max_stdout_kb": {"type": "integer", "minimum": 1, "maximum": 64, "default": 16, "description": "stdout cap (KB); truncated from front when exceeded."},
-				"max_stderr_kb": {"type": "integer", "minimum": 1, "maximum": 64, "default": 4, "description": "stderr cap (KB)."},
+				"timeout_ms": {"type": "integer", "minimum": 100, "maximum": %d, "default": 10000, "description": "Timeout (ms)."},
+				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "stdout cap in KB, clamped to 64; keeps tail."},
+				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "stderr cap in KB, clamped to 64; keeps tail."},
 				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "Optional KEY=VALUE env vars. Rarely needed."}
 			},
 			"required": ["command"]
-		}`,
+		}`, ctxexec.MaxTimeoutMSHard),
 		Fn: c.Execute,
 	}
 }
@@ -133,8 +135,18 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// does not append the JSON (same streams) a second
 	// time for the model.
 	if res.ExitCode != 0 {
-		result.Err = core.SelfContainedErr(errors.New(res.FailureSummary()))
+		failure := errors.New(res.FailureSummary())
+		// Preserve caller cancellation for the loop, which records an interrupted
+		// operation without teaching the repeated-failure gate a false error.
+		// A command reaching its own timeout remains an ordinary tool failure.
+		if cause := ctx.Err(); cause != nil && (res.ExitCode == ctxexec.ExitTimeout || res.Error == cause.Error()) {
+			failure = fmt.Errorf("%s: %w", res.FailureSummary(), cause)
+		}
+		result.Err = core.SelfContainedErr(failure)
 		return result, nil
+	}
+	if len(result.Text) > core.ModelOutputInlineBytes {
+		result.ModelPreview = res.SuccessPreview()
 	}
 	return result, nil
 }

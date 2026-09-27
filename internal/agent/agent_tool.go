@@ -60,8 +60,8 @@ type AgentTool struct {
 	PrefillProfiles       *llm.PrefillProfiles
 	// WorkerPing verifies the worker backend, lazily, on the first
 	// delegation only (never on the startup path). Nil = no probe. On
-	// failure every delegation permanently falls back to Provider and
-	// a single warning NoticeEvent is emitted on the parent loop.
+	// backend failure every delegation falls back to Provider and a single
+	// warning NoticeEvent is emitted. Caller cancellation is not a failed probe.
 	WorkerPing func(context.Context) error
 
 	// Preflight, when non-nil, returns a compact repo-state block
@@ -79,10 +79,12 @@ type AgentTool struct {
 	// the diff + evidence (see draftverify.go).
 	DraftVerify *DraftVerifyConfig
 
-	// workerProbe gates the one-time WorkerPing; workerDown records a
-	// failed probe so later delegations skip straight to the fallback.
-	workerProbe sync.Once
-	workerDown  bool
+	// A completed probe is cached; caller cancellation leaves it untested.
+	// Concurrent delegations share one probe and can cancel their own wait.
+	workerProbeMu   sync.Mutex
+	workerProbeDone chan struct{}
+	workerProbed    bool
+	workerDown      bool
 }
 
 // NewAgentTool returns the tool. reg, base, factory, and

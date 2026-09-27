@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,7 +13,10 @@ import (
 	"strings"
 )
 
-const maxSuggestionEntries = 512
+const (
+	maxSuggestionEntries = 512
+	maxReadSuggestions   = 3
+)
 
 // suggestReadFile is best-effort recovery context for a missing, already
 // sandbox-resolved path. Inspect only its parent, never recurse or read an
@@ -34,8 +38,9 @@ func suggestReadFile(ctx context.Context, path string, readErr error) error {
 	defer dir.Close()
 	// A bounded read avoids sorting/loading a whole large directory. Suggestions
 	// may be incomplete there; the original missing-file error remains authoritative.
-	entries, _ := dir.ReadDir(maxSuggestionEntries)
-	var names []string
+	entries, listErr := dir.ReadDir(maxSuggestionEntries)
+	var names, alternatives []string
+	alternativeCount := 0
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return readErr
@@ -47,6 +52,10 @@ func suggestReadFile(ctx context.Context, path string, readErr error) error {
 		if filepath.Ext(candidate) != ext {
 			continue
 		}
+		alternativeCount++
+		if alternativeCount <= maxReadSuggestions {
+			alternatives = append(alternatives, entry.Name())
+		}
 		candidateStem := strings.TrimSuffix(candidate, ext)
 		if len(candidateStem) < 3 {
 			continue
@@ -55,30 +64,40 @@ func suggestReadFile(ctx context.Context, path string, readErr error) error {
 			names = append(names, entry.Name())
 		}
 	}
+	label := "Similar files (same directory)"
 	if len(names) == 0 {
-		return readErr
-	}
-	// Prefer the closest length, with a stable tie-break, so a short base name
-	// beats unrelated long variants when only three suggestions fit.
-	distance := func(s string) int {
-		n := len(s) - len(name)
-		if n < 0 {
-			return -n
+		// If the same-extension choices fit completely, an exact directory hint
+		// saves a separate listing even when the guessed basename has no match.
+		// Never present an incomplete scan as a small set of alternatives.
+		if alternativeCount == 0 || alternativeCount > maxReadSuggestions || len(entries) >= maxSuggestionEntries || (listErr != nil && !errors.Is(listErr, io.EOF)) {
+			return readErr
 		}
-		return n
-	}
-	sort.Slice(names, func(i, j int) bool {
-		di, dj := distance(names[i]), distance(names[j])
-		if di != dj {
-			return di < dj
+		names = alternatives
+		sort.Strings(names)
+		label = "Files with the same extension (same directory)"
+	} else {
+		// Prefer the closest length, with a stable tie-break, so a short base name
+		// beats unrelated long variants when only three suggestions fit.
+		distance := func(s string) int {
+			n := len(s) - len(name)
+			if n < 0 {
+				n = -n
+			}
+			return n
 		}
-		return names[i] < names[j]
-	})
-	if len(names) > 3 {
-		names = names[:3]
+		sort.Slice(names, func(i, j int) bool {
+			di, dj := distance(names[i]), distance(names[j])
+			if di != dj {
+				return di < dj
+			}
+			return names[i] < names[j]
+		})
+		if len(names) > maxReadSuggestions {
+			names = names[:maxReadSuggestions]
+		}
 	}
 	for i := range names {
 		names[i] = strconv.Quote(names[i])
 	}
-	return fmt.Errorf("%w\nSimilar files (same directory): %s", readErr, strings.Join(names, ", "))
+	return fmt.Errorf("%w\n%s: %s", readErr, label, strings.Join(names, ", "))
 }

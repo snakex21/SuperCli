@@ -18,7 +18,7 @@ func readSuggestionTools(base, path string) []struct {
 	tool Tool
 	args json.RawMessage
 } {
-	lineArgs, _ := json.Marshal(readLinesArgs{File: path, From: 1, To: 1})
+	lineArgs, _ := json.Marshal(map[string]any{"file": path, "from": 1, "to": 1})
 	contextArgs, _ := json.Marshal(readContextArgs{File: path, Line: 1, Radius: 1})
 	manyArgs, _ := json.Marshal(map[string]string{"reads": path + ":1-1"})
 	return []struct {

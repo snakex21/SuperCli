@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -50,30 +51,71 @@ func (l *Loop) navigateRoute(ctx context.Context, prompt string) RouteMode {
 func (l *Loop) navigatorMessages(prompt string) []llm.Message {
 	visible := l.VisibleMessages()
 	out := []llm.Message{{Role: llm.RoleSystem, Content: navigatorSystemPrompt}}
-	tail := make([]llm.Message, 0, 4)
-	for i := len(visible) - 1; i >= 0 && len(tail) < 4; i-- {
+	end, limit := len(visible), 4
+	// Run has already appended the current user message. Send its raw prompt
+	// once below, without replaying its truncated copy or one-shot addons.
+	if end > 0 && isConversationUserTurn(visible[end-1]) {
+		end--
+		limit--
+	}
+	tail := make([]llm.Message, 0, limit)
+	for i := end - 1; i >= 0 && len(tail) < limit; i-- {
 		m := visible[i]
-		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
+		if m.Role != llm.RoleAssistant && !isConversationUserTurn(m) {
 			continue
 		}
 		if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
 			continue
 		}
-		m.Content = truncateForNavigator(m.Content)
-		// Message is copied by value, but Parts is a slice. Clone it before
-		// truncating so navigator preparation never rewrites conversation
-		// history (and never invalidates append-only token accounting).
-		m.Parts = append([]llm.ContentPart(nil), m.Parts...)
-		for i := range m.Parts {
-			m.Parts[i].Text = truncateForNavigator(m.Parts[i].Text)
+		text := navigatorHistoryText(m)
+		if text != "" {
+			tail = append(tail, llm.Message{Role: m.Role, Content: text})
 		}
-		tail = append(tail, m)
 	}
 	for i := len(tail) - 1; i >= 0; i-- {
 		out = append(out, tail[i])
 	}
 	out = append(out, llm.Message{Role: llm.RoleUser, Content: prompt})
 	return out
+}
+
+// Classification needs dialogue and attachment labels, not pixels or another
+// model's continuation state. Bound the whole message, not each part separately;
+// keep the canonical transcript and image activation flags untouched.
+func navigatorHistoryText(m llm.Message) string {
+	text := m.Content
+	if len(m.Parts) > 0 {
+		var b strings.Builder
+		for _, part := range m.Parts {
+			var s string
+			switch part.Type {
+			case llm.PartTypeText:
+				s = part.Text
+			case llm.PartTypeImage:
+				s = "[image]"
+				if part.Image != nil {
+					name := part.Image.Name
+					if name == "" && part.Image.Path != "" {
+						name = filepath.Base(part.Image.Path)
+					}
+					if name != "" {
+						s = "[image: " + name + "]"
+					}
+				}
+			}
+			if s != "" {
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(s)
+			}
+		}
+		text = b.String()
+	}
+	if m.Role == llm.RoleAssistant {
+		text = stripThinking(text)
+	}
+	return truncateForNavigator(strings.TrimSpace(text))
 }
 
 func truncateForNavigator(s string) string {

@@ -106,8 +106,14 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		return core.Result{Err: fmt.Errorf("process_session: marshal: %w", marshalErr)}, nil
 	}
 	result := core.Result{Text: string(data)}
-	if snap, ok := out.(snapshot); ok && p.Action != "stop" {
-		result.Err = snap.commandFailure()
+	if snap, ok := out.(snapshot); ok {
+		result.CommandKey = snap.CommandKey
+		if p.Action != "stop" {
+			result.Err = snap.commandFailure()
+		}
+		if result.Err == nil && len(data) > core.ModelOutputInlineBytes {
+			result.ModelPreview = snap.modelPreview()
+		}
 	}
 	return result, nil
 }
@@ -131,19 +137,20 @@ func NewManager(baseDir string) *Manager {
 }
 
 type process struct {
-	id       string
-	command  []string
-	workdir  string
-	stdin    io.WriteCloser
-	stdout   *streamBuffer
-	stderr   *streamBuffer
-	streams  sync.WaitGroup
-	done     chan struct{}
-	cancel   context.CancelFunc
-	waitFn   func() (int, error)
-	killFn   func() error
-	resizeFn func(int, int) error
-	pty      bool
+	id         string
+	command    []string
+	commandKey *[32]byte
+	workdir    string
+	stdin      io.WriteCloser
+	stdout     *streamBuffer
+	stderr     *streamBuffer
+	streams    sync.WaitGroup
+	done       chan struct{}
+	cancel     context.CancelFunc
+	waitFn     func() (int, error)
+	killFn     func() error
+	resizeFn   func(int, int) error
+	pty        bool
 
 	mu            sync.Mutex
 	started       time.Time
@@ -157,18 +164,19 @@ type process struct {
 }
 
 type snapshot struct {
-	ID         string   `json:"id"`
-	Status     string   `json:"status"`
-	Command    []string `json:"command,omitempty"`
-	Workdir    string   `json:"workdir,omitempty"`
-	ExitCode   *int     `json:"exit_code,omitempty"`
-	DurationMS int64    `json:"duration_ms"`
-	Stdout     string   `json:"stdout,omitempty"`
-	Stderr     string   `json:"stderr,omitempty"`
-	OmittedOut int64    `json:"omitted_stdout_bytes,omitempty"`
-	OmittedErr int64    `json:"omitted_stderr_bytes,omitempty"`
-	Error      string   `json:"error,omitempty"`
-	PTY        bool     `json:"pty,omitempty"`
+	CommandKey *[32]byte `json:"-"`
+	ID         string    `json:"id"`
+	Status     string    `json:"status"`
+	Command    []string  `json:"command,omitempty"`
+	Workdir    string    `json:"workdir,omitempty"`
+	ExitCode   *int      `json:"exit_code,omitempty"`
+	DurationMS int64     `json:"duration_ms"`
+	Stdout     string    `json:"stdout,omitempty"`
+	Stderr     string    `json:"stderr,omitempty"`
+	OmittedOut int64     `json:"omitted_stdout_bytes,omitempty"`
+	OmittedErr int64     `json:"omitted_stderr_bytes,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	PTY        bool      `json:"pty,omitempty"`
 }
 
 // Managing a process successfully is not evidence that its command succeeded.

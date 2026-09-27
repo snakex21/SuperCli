@@ -81,3 +81,28 @@ func TestProcessFailedExitReachesModel(t *testing.T) {
 		t.Fatal("diagnostic lost")
 	}
 }
+
+func TestProcessFailureUsesCompleteOrPartialCaptureCorrectly(t *testing.T) {
+	code := 7
+	for _, omitted := range []int64{0, 5000} {
+		s := snapshot{ID: "proc-complete", Status: "failed", ExitCode: &code, Stderr: "EARLY_DIAGNOSTIC\n" + strings.Repeat("later output\n", 400) + "FINAL_STATUS", OmittedErr: omitted}
+		err := s.commandFailure()
+		if err == nil {
+			t.Fatal("failure disappeared")
+		}
+		got := err.Error()
+		if !strings.Contains(got, "FINAL_STATUS") || !strings.Contains(got, "command_failed exit=7") {
+			t.Fatalf("status lost: %s", got)
+		}
+		if (omitted == 0) != strings.Contains(got, "EARLY_DIAGNOSTIC") {
+			t.Fatalf("complete/partial evidence mismatch: omitted=%d", omitted)
+		}
+		label := "stderr (head/tail, truncated)"
+		if omitted > 0 {
+			label = "stderr (tail, truncated)"
+		}
+		if !strings.Contains(got, label) {
+			t.Fatalf("misleading capture label: %s", got)
+		}
+	}
+}

@@ -12,6 +12,9 @@ import (
 )
 
 func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tools.Result{Err: err}, nil
+	}
 	var ar agentArgs
 	if err := json.Unmarshal(args, &ar); err != nil {
 		return tools.Result{Err: fmt.Errorf("task: bad args: %w", err)}, nil
@@ -35,6 +38,13 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		return tools.Result{Err: fmt.Errorf("task: unknown agent %q (known: %s)", ar.Agent, strings.Join(a.Registry.Names(), ", "))}, nil
 	}
 
+	// Avoid repository preflight, backend probes and loop/schema setup for a
+	// task that cannot start. TryAdd still checks atomically after preparation,
+	// since another concurrent delegation may take a slot in the meantime.
+	if err := a.Workers.checkActiveLimit(); err != nil {
+		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
+	}
+
 	// Fold the optional `expect` into the worker's briefing so its
 	// final report is shaped by what the coordinator asked for.
 	workerPrompt := ar.Prompt
@@ -51,16 +61,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		}
 	}
 
-	// Build the child's tool registry: only the tools the
-	// spec allows, or the full set when the spec inherits.
-	childReg := restrictedRegistry(a.BaseRegistry, spec.AllowedTools)
-
 	// Decide on the seed messages. When share_context is
-	// true and we have a parent loop, copy its messages
-	// (minus the system prompt, which we re-derive).
+	// true and we have a parent loop, copy its visible context
+	// (minus the system prompt). Never resurrect cleared/compacted archive rows.
 	seed := []llm.Message(nil)
 	if ar.ShareContext && a.ParentLoop != nil {
-		for _, m := range a.ParentLoop.Messages {
+		for _, m := range a.ParentLoop.VisibleMessages() {
 			if m.Role == llm.RoleSystem {
 				continue
 			}
@@ -109,8 +115,24 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 
 	// Resolve the backend before choosing its tool protocol and context scope.
 	// Mixed local/cloud setups must not inherit the coordinator's model profile.
-	prov := a.workerProvider(ctx)
+	prov := a.workerProvider(childCtx)
+	if err := childCtx.Err(); err != nil {
+		return tools.Result{Err: err}, nil
+	}
 	thin, stable, hoist, baseDir := a.childLoopSettings(prov)
+	// Keep optional native schemas out of every code-worker request. Thin
+	// workers already advertise them through their existing compact catalog.
+	var deferred []string
+	if !thin {
+		deferred = spec.DeferredTools
+	}
+	// Worker references must remain readable even without output persistence.
+	// The active parent owns the evidence; BaseRegistry may only supply tools.
+	outputSource := a.BaseRegistry
+	if a.ParentLoop != nil && a.ParentLoop.registry != nil {
+		outputSource = a.ParentLoop.registry
+	}
+	childReg := restrictedRegistrySharingOutputs(a.BaseRegistry, outputSource, spec.AllowedTools, deferred...)
 	if thin {
 		ensureWorkerDiscovery(childReg)
 	}
@@ -119,6 +141,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		contextProvider = a.WorkerContextProvider
 	}
 	prefillProfiles := a.PrefillProfiles
+	var windowFor func(string) int
 	var contextWindowFor func(string) ContextWindowResolution
 	var scopedContextWindowFor func(string, string) ContextWindowResolution
 	var summarizer Summarizer
@@ -132,6 +155,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		if prefillProfiles == nil {
 			prefillProfiles = a.ParentLoop.prefillProfiles
 		}
+		windowFor = a.ParentLoop.windowFor
 		contextWindowFor = a.ParentLoop.contextWindowFor
 		scopedContextWindowFor = a.ParentLoop.scopedWindowFor
 		summarizer = a.ParentLoop.summarizer
@@ -146,6 +170,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		Registry:               childReg,
 		ToolOutputs:            toolOutputs,
 		System:                 system,
+		SkipImplementationHint: spec.SkipImplementationHint,
 		MaxSteps:               maxSteps,
 		InitialMessages:        seed,
 		ThinTools:              thin,
@@ -153,6 +178,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		CatalogHoist:           hoist,
 		BaseDir:                baseDir,
 		CreditTracker:          budget,
+		WindowFor:              windowFor,
 		ContextWindowFor:       contextWindowFor,
 		ContextProvider:        contextProvider,
 		ScopedContextWindowFor: scopedContextWindowFor,
@@ -180,6 +206,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 	if a.ParentLoop != nil {
 		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
+	}
+	// A created worker makes continuation immediately usable, including through
+	// the stable dispatcher. Do not spend a discovery round to resume known work.
+	a.BaseRegistry.ActivateDiscovered("send_message")
+	if a.ParentLoop != nil && a.ParentLoop.registry != nil && a.ParentLoop.registry != a.BaseRegistry {
+		a.ParentLoop.registry.ActivateDiscovered("send_message")
 	}
 	// Telemetry: record the worker's model only when it differs from
 	// the coordinator's, so the default single-model summary line is

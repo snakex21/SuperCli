@@ -53,14 +53,35 @@ func (r *WorkerRegistry) TryAdd(agentName, description string, loop *Loop) (*Wor
 	return r.add(agentName, description, loop, true)
 }
 
+// checkActiveLimit is an early observation, not a slot reservation. A nil
+// registry has no workers yet; AgentTool creates it when registering the loop.
+func (r *WorkerRegistry) checkActiveLimit() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.checkActiveLimitLocked()
+}
+
+// Caller holds the registry read or write lock.
+func (r *WorkerRegistry) checkActiveLimitLocked() error {
+	if r.maxActive > 0 {
+		if active := r.activeCountLocked(); active >= r.maxActive {
+			return fmt.Errorf(
+				"worker limit reached: %d workers active (max %d) — wait for one to finish, stop one with task_stop, or continue an existing worker with send_message",
+				active, r.maxActive)
+		}
+	}
+	return nil
+}
+
 func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceLimit bool) (*Worker, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if enforceLimit && r.maxActive > 0 {
-		if active := r.activeCountLocked(); active >= r.maxActive {
-			return nil, fmt.Errorf(
-				"worker limit reached: %d workers active (max %d) — wait for one to finish, stop one with task_stop, or continue an existing worker with send_message",
-				active, r.maxActive)
+	if enforceLimit {
+		if err := r.checkActiveLimitLocked(); err != nil {
+			return nil, err
 		}
 	}
 	id := fmt.Sprintf("worker-%d", r.seq.Add(1))
