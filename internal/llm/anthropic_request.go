@@ -148,6 +148,10 @@ func reasoningBudgetTokens(effort string, maxTokens int) int {
 		budget = (maxTokens * 3) / 4
 	case "xhigh":
 		budget = maxTokens - 1024
+	case "max":
+		// Manual thinking requires budget_tokens < max_tokens. This is
+		// a ceiling, not a reservation; unused thinking tokens remain for text.
+		budget = maxTokens - 1
 	}
 	if budget < 1024 {
 		budget = 1024

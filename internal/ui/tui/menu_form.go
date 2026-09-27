@@ -3,11 +3,30 @@ package tui
 import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"supercli/internal/llm/providers"
 )
 
 func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.menu.providerDetection != nil {
+		if msg.String() == "esc" {
+			return m.backMenu()
+		}
+		return m, nil
+	}
+	if m.menu.kind == menuProviderForm && m.menu.formAt == 1 && len(m.menu.form) > 1 {
+		switch msg.String() {
+		case "left":
+			m.cycleProviderProtocol(-1)
+			return m, nil
+		case "right":
+			m.cycleProviderProtocol(1)
+			return m, nil
+		case "backspace", "ctrl+h", "ctrl+v":
+			return m, nil
+		}
+		if len(msg.Runes) > 0 {
+			return m, nil
+		}
+	}
 	switch msg.String() {
 	case "esc":
 		return m.backMenu()
@@ -87,7 +106,7 @@ func (m *Model) clampMenuCursor() {
 	case menuModels, menuModelCatalog, menuProviderModels:
 		max = len(m.filteredModelRows()) - 1
 	case menuProviders:
-		max = len(m.providerRows()) - 1
+		max = len(m.providerRows()) // trailing Add provider action
 	case menuProviderForm, menuGoalForm:
 		// form uses formAt, not cursor
 		max = len(m.menu.form) - 1
@@ -99,7 +118,7 @@ func (m *Model) clampMenuCursor() {
 		}
 		return
 	case menuProviderPredefined:
-		max = len(providers.PredefinedProviders()) - 1
+		max = len(m.providerTemplateRows()) - 1
 	case menuOpenAIAuth:
 		max = 1
 	case menuAccounts:

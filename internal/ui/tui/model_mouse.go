@@ -9,7 +9,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		(msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown) {
 		return m, nil
 	}
-	if m.mode == modeMenu && (m.menu.kind == menuUsage || m.menu.kind == menuAttachments) {
+	if m.mode == modeMenu && (m.menu.kind == menuUsage || m.menu.kind == menuAttachments || m.menu.kind == menuProviders || m.menu.kind == menuProviderPredefined) {
 		key := tea.KeyMsg{Type: tea.KeyDown}
 		if msg.Button == tea.MouseButtonWheelUp {
 			key.Type = tea.KeyUp

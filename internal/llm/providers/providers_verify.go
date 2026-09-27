@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/llm/factory"
+	"supercli/internal/storage"
 	"supercli/internal/system/config"
 )
 
@@ -29,11 +31,29 @@ func VerifyConnection(ctx context.Context, baseURL, apiKey, model string) error 
 // VerifyConnectionForProvider uses the provider's actual wire API for the
 // post-configuration smoke test. In particular, Responses providers must not
 // be falsely rejected by probing /chat/completions.
-func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, apiKey, model string) error {
+func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, apiKey, model string, dataDirs ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, verifyTimeout)
 	defer cancel()
-	if providerType == config.ProviderResponses {
-		p, err := llm.NewResponses(llm.ResponsesConfig{BaseURL: baseURL, APIKey: apiKey, Model: model})
+	if llm.IsOpenCodeZenBaseURL(baseURL) || providerType == config.ProviderResponses || providerType == config.ProviderAnthropic {
+		var p llm.Provider
+		var err error
+		if llm.IsOpenCodeZenBaseURL(baseURL) {
+			dataDir := storage.PortableDataRoot()
+			if len(dataDirs) > 0 && dataDirs[0] != "" {
+				dataDir = dataDirs[0]
+			}
+			// Use the existing catalog routing and mandatory Zen wire payload.
+			// A bare /chat/completions probe rejects valid Responses models and
+			// omits the compatibility fields supplied by the production client.
+			p, err = factory.New(nil, dataDir, nil).Build(config.Config{
+				Provider: providerType, BaseURL: baseURL,
+				APIKey: llm.KiloDefaultKey(baseURL, apiKey), Model: model, MaxTokens: 8,
+			}, "provider-verify")
+		} else if providerType == config.ProviderAnthropic {
+			p, err = llm.NewAnthropic(llm.AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, Model: model, MaxTokens: 8})
+		} else {
+			p, err = llm.NewResponses(llm.ResponsesConfig{BaseURL: baseURL, APIKey: apiKey, Model: model})
+		}
 		if err != nil {
 			return humanizeVerifyError(err.Error(), baseURL, apiKey)
 		}

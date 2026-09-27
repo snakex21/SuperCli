@@ -1,63 +1,34 @@
 package tui
 
-// First-run onboarding wizard. When SuperCli starts with no
-// provider configured at all, this flow:
-//
-//  1. probes Ollama (localhost:11434) and LM Studio
-//     (localhost:1234) in parallel with short timeouts,
-//  2. shows detected local servers as the FIRST menu options,
-//     each expanding into an arrow-key model picker,
-//  3. still offers OpenAI (API key or ChatGPT account),
-//     any OpenAI-compatible endpoint, and offline echo,
-//  4. verifies the chosen provider+model with a tiny test
-//     request ("Say OK") and only finishes on success —
-//     failures show a human-readable hint and return to the
-//     menu.
-//
-// main.go writes the result to config.toml and drops the user
-// straight into chat.
+// First-run setup shares the provider catalog used by the GUI and TUI.
+// Only local servers are probed before selection. Model discovery and the
+// existing connection test run for the selected provider, then main.go
+// persists the result in the portable data directory.
 
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/llm/providers"
 )
 
-// Auth methods for the OpenAI provider.
 const (
 	AuthAPIKey  = "api-key"
 	AuthChatGPT = "chatgpt"
 )
 
-// OnboardResult is what the wizard hands back to main.go.
 type OnboardResult struct {
-	// Skipped is true when the user aborted (Ctrl+C / Esc on
-	// the menu) — nothing should be written.
-	Skipped bool
-	// Name is the [[providers]] entry name ("ollama",
-	// "lmstudio", "openai", "custom", "echo").
-	Name string
-	// Type is the provider type ("openai", "anthropic", "codex" or "echo").
-	Type string
-	// AuthMethod is set for the OpenAI provider: AuthAPIKey or
-	// AuthChatGPT. AuthChatGPT means main.go must run the OAuth
-	// login flow (the wizard cannot open a browser itself).
-	AuthMethod string
+	Skipped    bool
+	Name       string
+	Type       string
+	AuthMethod string // main.go handles the ChatGPT OAuth browser flow
 	BaseURL    string
 	APIKey     string
-	// Model is the model the user picked (may be empty when the
-	// server reported none).
-	Model string
+	Model      string
 }
-
-const (
-	lmStudioDefaultURL = "http://localhost:1234/v1"
-	ollamaDefaultURL   = "http://localhost:11434/v1"
-	openaiDefaultURL   = "https://api.openai.com/v1"
-)
 
 type onboardStep int
 
@@ -73,33 +44,42 @@ const (
 	onboardDone
 )
 
-// onboardChoice is one selectable row in the main menu.
 type onboardChoice struct {
-	label string
-	desc  string
-	local *providers.LocalServer // non-nil for detected servers
-	kind  string                 // "local", "openai", "custom", "lmstudio-manual", "ollama-manual", "echo"
+	label    string
+	desc     string
+	local    *providers.LocalServer
+	kind     string
+	provider providers.PredefinedProvider
 }
 
+type onboardRequest struct{ cancel context.CancelFunc }
 type onboardDetectedMsg struct{ servers []providers.LocalServer }
 type onboardModelsMsg struct {
-	models []string
-	err    error
+	request *onboardRequest
+	models  []string
+	typ     string
+	err     error
 }
-type onboardVerifyMsg struct{ err error }
+type onboardVerifyMsg struct {
+	request *onboardRequest
+	err     error
+}
 
 type onboardModel struct {
-	step    onboardStep
-	cursor  int
-	input   string
-	result  OnboardResult
-	aborted bool
+	step          onboardStep
+	cursor        int
+	input, filter string
+	result        OnboardResult
+	aborted       bool
+	width, height int
+	request       *onboardRequest
 
 	detected []providers.LocalServer
 	choices  []onboardChoice
 	models   []string
-	errMsg   string // last verification/load error shown above the menu
+	errMsg   string
 	language string
+	dataDir  string
 }
 
 func (m onboardModel) tr(english, polish string) string { return textFor(m.language, english, polish) }
@@ -110,37 +90,71 @@ func (m onboardModel) Init() tea.Cmd {
 	}
 }
 
-// buildChoices assembles the menu: detected local servers first,
-// then the static options.
+// Detected local servers stay first. Every other entry comes from the same
+// catalog as the normal provider chooser; there is no second endpoint list.
 func buildChoices(detected []providers.LocalServer, languages ...string) []onboardChoice {
 	language := "en"
 	if len(languages) > 0 {
 		language = normalizeLanguage(languages[0])
 	}
-	tr := func(en, pl string) string { return textFor(language, en, pl) }
+	presentation := Model{language: language}
+	templates := presentation.providerTemplateRows()
+	byName := make(map[string]providers.PredefinedProvider, len(templates))
+	for _, template := range templates {
+		byName[template.Name] = template
+	}
 	var out []onboardChoice
-	haveOllama, haveLMStudio := false, false
+	seen := make(map[string]bool)
 	for i := range detected {
-		s := detected[i]
-		switch s.Name {
-		case "ollama":
-			haveOllama = true
-		case "lmstudio":
-			haveLMStudio = true
+		server := &detected[i]
+		if seen[server.Name] {
+			continue
 		}
-		desc := fmt.Sprintf(tr("detected · %d model(s) · %s", "wykryto · %d modeli · %s"), len(s.Models), s.BaseURL)
-		out = append(out, onboardChoice{label: s.Label, desc: desc, local: &detected[i], kind: "local"})
+		seen[server.Name] = true
+		out = append(out, onboardChoice{
+			label: presentation.providerTemplateLabel(server.Name),
+			desc: fmt.Sprintf(presentation.tr("detected · %d model(s) · %s", "wykryto · %d modeli · %s"),
+				len(server.Models), server.BaseURL),
+			local: server, kind: "local", provider: byName[server.Name],
+		})
 	}
-	if !haveOllama {
-		out = append(out, onboardChoice{label: "Ollama", desc: tr("not detected · ", "nie wykryto · ") + ollamaDefaultURL, kind: "ollama-manual"})
+	for _, template := range templates {
+		if seen[template.Name] {
+			continue
+		}
+		choice := onboardChoice{label: presentation.providerTemplateLabel(template.Name),
+			desc: template.Desc, kind: "template", provider: template}
+		switch template.Name {
+		case "openai", "custom":
+			choice.kind = template.Name
+		case "ollama", "lmstudio":
+			choice.kind = "local-manual"
+			choice.desc = presentation.tr("not detected · ", "nie wykryto · ") + template.BaseURL
+		}
+		out = append(out, choice)
 	}
-	if !haveLMStudio {
-		out = append(out, onboardChoice{label: "LM Studio", desc: tr("not detected · ", "nie wykryto · ") + lmStudioDefaultURL, kind: "lmstudio-manual"})
+	return append(out, onboardChoice{label: "Offline / echo",
+		desc: presentation.tr("no LLM, just try the UI", "bez LLM, tylko test interfejsu"), kind: "echo"})
+}
+
+func (m onboardModel) filteredChoices() []onboardChoice {
+	query := normalizeProviderSearch(m.filter)
+	if query == "" {
+		return m.choices
 	}
-	out = append(out,
-		onboardChoice{label: "OpenAI", desc: tr("ChatGPT account or API key", "konto ChatGPT lub klucz API"), kind: "openai"},
-		onboardChoice{label: tr("OpenAI-compatible API", "API zgodne z OpenAI"), desc: tr("any endpoint · URL + key", "dowolny endpoint · URL + klucz"), kind: "custom"},
-		onboardChoice{label: "Offline / echo", desc: tr("no LLM, just try the UI", "bez LLM, tylko test interfejsu"), kind: "echo"},
-	)
-	return out
+	var rows []onboardChoice
+	for _, choice := range m.choices {
+		search := strings.Join([]string{choice.label, choice.desc, choice.provider.Name, choice.provider.BaseURL}, " ")
+		if strings.Contains(normalizeProviderSearch(search), query) {
+			rows = append(rows, choice)
+		}
+	}
+	return rows
+}
+
+func (m *onboardModel) cancelRequest() {
+	if m.request != nil {
+		m.request.cancel()
+		m.request = nil
+	}
 }

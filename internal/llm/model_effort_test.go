@@ -407,3 +407,23 @@ func TestPatchCodexReasoningEffort(t *testing.T) {
 		t.Fatalf("reasoning should be removed for none: %s", out)
 	}
 }
+
+func TestMaxReasoningFallsBackToHighestAcceptedLevel(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort(" MAX "); err != nil {
+		t.Fatal(err)
+	}
+	key := ReasoningSupportKey("https://max.example/v1", "custom-thinker")
+	SetReasoningEffortSupport(key, []string{"medium", "xhigh", "none", "high", "low"})
+	if got := ReasoningEffortForModel(key); got != "xhigh" {
+		t.Fatalf("max fallback = %q, want xhigh", got)
+	}
+	SetReasoningEffortSupport(key, []string{"low", "max", "high"})
+	if got := ReasoningEffortForModel(key); got != "max" {
+		t.Fatalf("accepted max changed to %q", got)
+	}
+	info, ok := ParseReasoningEffortError(`{"error":{"message":"Unsupported value: 'minimal'. Supported values are: 'low', 'high', 'max'.","param":"reasoning.effort"}}`)
+	if !ok || !hasEffort(info.Supported, "max") {
+		t.Fatalf("lost backend max support: %+v", info)
+	}
+}

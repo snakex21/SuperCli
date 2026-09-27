@@ -137,7 +137,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "diff", Desc: "show file changes from current session"},
 		{Name: "model", Desc: "choose from enabled models", Args: "[model_id]"},
 		{Name: "models", Desc: "manage the complete model catalog"},
-		{Name: "reasoning", Desc: "show or set reasoning effort (OpenAI reasoning models)", Args: "[none|minimal|low|medium|high|xhigh|off]"},
+		{Name: "reasoning", Desc: "show or set reasoning effort (OpenAI reasoning models)", Args: "[none|minimal|low|medium|high|xhigh|max|off]"},
 		{Name: "resume", Desc: "resume a previous session", Args: "[session_id]"},
 		{Name: "export", Desc: "export session to Markdown (arg 'clip' copies to clipboard)", Args: "[filename.md|clip]"},
 		{Name: "cost", Desc: "show cost dashboard with per-turn breakdown"},

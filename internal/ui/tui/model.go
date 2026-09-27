@@ -843,6 +843,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.providerStatuses[msg.name] = providerStatus{checked: true, online: msg.online, err: msg.err, latency: msg.latency, checkedAt: msg.checkedAt}
 		return m, nil
 
+	case providerProtocolDetectedMsg:
+		return m.finishProviderDetection(msg)
+
 	case providerSavedMsg:
 		if msg.err != nil {
 			formAt := 0

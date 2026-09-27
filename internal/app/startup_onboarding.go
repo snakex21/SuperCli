@@ -25,7 +25,7 @@ func maybeRunOnboarding(echo bool, cfg *config.Config, tomlCfg *config.TomlConfi
 		len(tomlCfg.Providers) > 0 || tomlCfg.Provider != "" || tomlCfg.DefaultProvider != "" {
 		return
 	}
-	res := tui.RunOnboarding(uiLanguage)
+	res := tui.RunOnboarding(uiLanguage, dataDir)
 	if res.Skipped {
 		return
 	}

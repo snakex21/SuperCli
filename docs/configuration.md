@@ -24,7 +24,7 @@ cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
 | `language` | detected once from the OS (`en` fallback) | switch the desktop app and TUI together between `en` and `pl` |
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
-| `reasoning_effort` | provider default | steering cloud reasoning models; `/reasoning` |
+| `reasoning_effort` | provider default | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `/reasoning max` or GUI/TUI model controls |
 | `discard_previous_reasoning` | unset = **OFF** (keep history) | optionally omit completed replies' reasoning from future requests; `/reasoning-history keep/drop/default` |
 | `max_steps` | 0 = built-in 300 on every surface | a runaway guard, not a work budget: normal work never reaches it, and the loop no longer ends a turn on a step count. A real loop (the same call with the same arguments) is answered with an injected error and work continues; only ~50 identical repeats in a row stop the run. An explicit positive value is a strict cap. |
 | `context_window` | 0 = auto (provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |

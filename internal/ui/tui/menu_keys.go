@@ -12,6 +12,9 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+k" {
 		return m.closeMenu()
 	}
+	if m.menu.kind == menuProviderPredefined {
+		return m.handleSearchMenuKey(msg, func() int { return len(m.providerTemplateRows()) }, m.menuEnter)
+	}
 	if m.menu.kind == menuUsage {
 		return m.handleUsageKey(msg)
 	}
@@ -180,9 +183,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		if m.menu.kind == menuProviders {
-			rows := m.providerRows()
-			if len(rows) > 0 {
-				p := rows[minInt(m.menu.cursor, len(rows)-1)]
+			if p, ok := m.selectedConfiguredProvider(); ok {
 				apiKey := ""
 				if m.providerMgr != nil {
 					for _, configured := range m.providerMgr.Configured() {
@@ -216,9 +217,8 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.menu.kind == menuProviders && m.providerMgr != nil {
-			rows := m.providerRows()
-			if len(rows) > 0 {
-				_ = m.providerMgr.Remove(rows[minInt(m.menu.cursor, len(rows)-1)].Name)
+			if p, ok := m.selectedConfiguredProvider(); ok {
+				_ = m.providerMgr.Remove(p.Name)
 				m.providerMgr.Reload()
 				m.menu.cursor = 0
 			}
@@ -291,11 +291,11 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) openProviderModelsAtCursor() (tea.Model, tea.Cmd) {
-	rows := m.providerRows()
-	if len(rows) == 0 {
+	p, ok := m.selectedConfiguredProvider()
+	if !ok {
+		m.enterMenu(interactiveMenu{kind: menuProviderPredefined})
 		return m, nil
 	}
-	p := rows[minInt(m.menu.cursor, len(rows)-1)]
 	if p.Disabled {
 		m.setStatus("provider "+p.Name+" is paused; press Space to enable it", false)
 		return m, m.statusClearCmd()

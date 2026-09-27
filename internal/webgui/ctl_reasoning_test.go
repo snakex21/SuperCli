@@ -45,7 +45,7 @@ func TestHandleReasoning_ReturnsUpdatedState(t *testing.T) {
 		Source:    llm.SourceProvider,
 	})
 
-	for _, level := range []string{"low", "default"} {
+	for _, level := range []string{"low", "max", "default"} {
 		req := httptest.NewRequest(http.MethodPost, "/api/reasoning", strings.NewReader(`{"level":"`+level+`"}`))
 		rec := httptest.NewRecorder()
 		srv.handleReasoning(rec, req)
@@ -60,8 +60,11 @@ func TestHandleReasoning_ReturnsUpdatedState(t *testing.T) {
 		if level == "default" {
 			want = ""
 		}
-		if got.Configured != want {
-			t.Fatalf("level %s: configured = %q, want %q", level, got.Configured, want)
+		if got.Configured != want || got.Effective != want || got.Selected != want {
+			t.Fatalf("level %s: state = %+v, want %q", level, got, want)
+		}
+		if !strings.Contains(strings.Join(got.Levels, "|"), "max") {
+			t.Fatal("GUI options must include max")
 		}
 	}
 }

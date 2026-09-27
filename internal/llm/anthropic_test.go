@@ -373,3 +373,21 @@ func TestAnthropicMalformedAndIncompleteStreamsAreErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestAnthropicMaxThinkingBudgetRespectsOutputLimit(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("max"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := buildAnthropicRequest("claude-sonnet-4-5", []Message{{Role: RoleUser, Content: "hi"}}, nil, false, 8192)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req anthropicRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.MaxTokens != 8192 || req.Thinking == nil || req.Thinking.BudgetTokens != 8191 {
+		t.Fatalf("max thinking = %+v; output limit = %d", req.Thinking, req.MaxTokens)
+	}
+}
