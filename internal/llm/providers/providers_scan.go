@@ -143,13 +143,13 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	var err error
 	apiKey := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
 	if p.Type == config.ProviderAnthropic {
-		ids, err = llm.ListAnthropicModels(ctx, p.BaseURL, apiKey)
+		ids, err = DiscoverModelIDs(ctx, p)
 	} else if freeOnlyProvider(p) {
 		// Public OpenCode/Kilo catalogs contain paid entries as well. Their
 		// metadata (Kilo isFree / zero pricing, OpenCode's explicit free IDs) is
 		// the authority; downloading every ID and guessing later leaked hundreds
 		// of unusable models into the picker.
-		ids, err = llm.ListFreeModels(ctx, p.BaseURL, apiKey)
+		ids, err = DiscoverModelIDs(ctx, p)
 		if err == nil {
 			if all, listErr := llm.ListProviderModelInfos(ctx, p.BaseURL, apiKey); listErr == nil {
 				allowed := make(map[string]struct{}, len(ids))
@@ -213,4 +213,17 @@ func mergeDiscoveredContextLengths(base, native []llm.ModelInfo) []llm.ModelInfo
 		}
 	}
 	return base
+}
+
+// DiscoverModelIDs lists a selected provider without persisting configuration.
+// First-run setup uses the same native API and free-catalog rules as GUI/TUI scans.
+func DiscoverModelIDs(ctx context.Context, p config.ProviderConf) ([]string, error) {
+	key := llm.KiloDefaultKey(p.BaseURL, p.APIKey)
+	if p.Type == config.ProviderAnthropic {
+		return llm.ListAnthropicModels(ctx, p.BaseURL, key)
+	}
+	if freeOnlyProvider(p) {
+		return llm.ListFreeModels(ctx, p.BaseURL, key)
+	}
+	return llm.ListProviderModels(ctx, p.BaseURL, key)
 }

@@ -43,6 +43,17 @@ func (m Model) renderProvidersMenu() string {
 			}
 		}
 	}
+	page.items = append(page.items, menuListItem{
+		label: m.tr("+ Add provider", "+ Dodaj dostawcę"),
+		meta:  m.tr("Ready integrations or a custom endpoint", "Gotowe integracje lub własny endpoint"),
+	})
+	if m.menu.cursor >= len(rows) {
+		page.detailTitle = m.tr("Choose a provider", "Wybierz dostawcę")
+		page.detail = []string{m.tr("Search the same integrations available in the GUI.", "Przeszukaj te same integracje, które są dostępne w GUI."),
+			"", "OpenAI · Anthropic · OpenCode Zen", "LM Studio · Ollama",
+			"", m.tr("Or connect your own endpoint.", "Możesz też podłączyć własny endpoint.")}
+		page.footer = m.tr("↑↓ choose · Enter add", "↑↓ wybierz · Enter dodaj")
+	}
 	return m.renderMenuPage(page)
 }
 
@@ -94,12 +105,8 @@ func (m Model) cursorOnOpenAIRow() bool {
 	if m.menu.kind != menuProviders {
 		return false
 	}
-	rows := m.providerRows()
-	if len(rows) == 0 {
-		return false
-	}
-	p := rows[minInt(m.menu.cursor, len(rows)-1)]
-	return p.Name == "openai" || p.Type == "codex"
+	p, ok := m.selectedConfiguredProvider()
+	return ok && (p.Name == "openai" || p.Type == "codex")
 }
 
 // providerStatusCell returns the plain text and the styled text
@@ -172,6 +179,9 @@ func (m Model) renderProviderForm() string {
 		if i < len(m.menu.form) {
 			value = m.menu.form[i]
 		}
+		if i == 1 {
+			value = "‹ " + m.providerProtocolLabel(value) + " ›"
+		}
 		// Use the field index, never its translated label, to mask credentials.
 		if i == 3 && !(m.menu.formAt == 3 && m.menu.keyRevealed) {
 			value = strings.Repeat("*", minInt(24, len([]rune(value))))
@@ -179,6 +189,11 @@ func (m Model) renderProviderForm() string {
 		if i == m.menu.formAt {
 			page.detailTitle = label
 			page.detail = []string{value}
+			if i == 1 {
+				page.detail = []string{m.tr("← → choose the connection type.", "← → wybierz typ połączenia."),
+					"", m.tr("Auto detection checks the endpoint when you save.", "Automatyczne wykrywanie sprawdzi endpoint przy zapisie.")}
+				page.footer = m.tr("← → type · ↑↓ fields · Enter next", "← → typ · ↑↓ pola · Enter dalej")
+			}
 			if i == 3 {
 				page.detail = []string{m.tr("The key stays hidden until you press →.", "Klucz pozostaje ukryty, dopóki nie naciśniesz →.")}
 				if m.menu.keyRevealed {
@@ -189,6 +204,9 @@ func (m Model) renderProviderForm() string {
 			value += "▏"
 		}
 		page.items = append(page.items, menuListItem{label: label + ": " + value})
+	}
+	if m.menu.providerDetection != nil {
+		page.footer = m.tr("Detecting connection type… · Esc cancel", "Wykrywanie typu połączenia… · Esc anuluj")
 	}
 	m.menu.cursor = m.menu.formAt
 	return m.renderMenuPage(page)
@@ -210,14 +228,16 @@ func compactProviderError(err error) string {
 }
 
 func (m Model) renderPredefinedMenu() string {
-	rows := providers.PredefinedProviders()
-	page := menuPage{title: m.tr("Add provider — pick a template", "Dodaj dostawcę — wybierz szablon"),
-		footer: m.tr("↑↓ choose · Enter pick", "↑↓ wybierz · Enter zatwierdź")}
+	rows := m.providerTemplateRows()
+	page := menuPage{title: m.tr("Choose a provider", "Wybierz dostawcę"),
+		subtitle:   m.tr("Ready integrations or your own endpoint", "Gotowe integracje lub własny endpoint"),
+		searchable: true, footer: m.tr("Type to search · ↑↓ choose · Enter pick", "Pisz, aby szukać · ↑↓ wybierz · Enter zatwierdź")}
 	for i, row := range rows {
-		page.items = append(page.items, menuListItem{label: row.Name})
+		label := m.providerTemplateLabel(row.Name)
+		page.items = append(page.items, menuListItem{label: label, meta: row.Desc})
 		if i == m.menu.cursor {
-			page.detailTitle = row.Name
-			page.detail = []string{row.Desc, "", row.BaseURL}
+			page.detailTitle = label
+			page.detail = []string{row.Desc, "", row.BaseURL, "", m.providerProtocolLabel(row.Type)}
 		}
 	}
 	return m.renderMenuPage(page)

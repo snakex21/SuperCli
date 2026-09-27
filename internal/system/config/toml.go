@@ -71,7 +71,7 @@ type TomlConfig struct {
 
 	// ReasoningEffort is the default reasoning-effort level for
 	// OpenAI-family reasoning models (none|minimal|low|medium|
-	// high|xhigh). Empty = provider default. Set via /reasoning.
+	// high|xhigh|max). Empty = provider default. Set via /reasoning.
 	ReasoningEffort string `toml:"reasoning_effort"`
 
 	// Thinking toggles chain-of-thought for LOCAL models that honour

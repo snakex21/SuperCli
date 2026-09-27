@@ -65,7 +65,7 @@ func TestReasoningDialChangesRequestsWithoutRebuildingProvider(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, level := range []string{"low", "high", "xhigh", "none", ""} {
+			for _, level := range []string{"low", "high", "xhigh", "max", "none", ""} {
 				if err := SetReasoningEffort(level); err != nil {
 					t.Fatal(err)
 				}
@@ -87,8 +87,8 @@ func TestReasoningDialChangesRequestsWithoutRebuildingProvider(t *testing.T) {
 					t.Errorf("dial=%q wire=%q", level, got)
 				}
 			}
-			if calls != 5 {
-				t.Fatalf("requests=%d, want 5 (no probes or retries)", calls)
+			if calls != 6 {
+				t.Fatalf("requests=%d, want 6 (no probes or retries)", calls)
 			}
 		})
 	}
@@ -110,7 +110,7 @@ func TestResponsesReasoningEvidenceSurvivesNextTurnAndStaysScoped(t *testing.T) 
 					if rejectAll {
 						_, _ = w.Write([]byte(`{"error":{"message":"reasoning is not supported","param":"reasoning"}}`))
 					} else {
-						_, _ = w.Write([]byte(`{"error":{"message":"Unsupported value: 'xhigh'. Supported values are: 'low', 'medium', 'high'.","param":"reasoning.effort"}}`))
+						_, _ = w.Write([]byte(`{"error":{"message":"Unsupported value: 'max'. Supported values are: 'low', 'medium', 'high'.","param":"reasoning.effort"}}`))
 					}
 					return
 				}
@@ -118,18 +118,18 @@ func TestResponsesReasoningEvidenceSurvivesNextTurnAndStaysScoped(t *testing.T) 
 			}))
 			defer srv.Close()
 			p, _ := NewResponses(ResponsesConfig{BaseURL: srv.URL, Model: "gpt-6-astra"})
-			_ = SetReasoningEffort("xhigh")
+			_ = SetReasoningEffort("max")
 			drainReasoningTest(t, p)
 			drainReasoningTest(t, p)
-			want := "xhigh|high|high"
+			want := "max|high|high"
 			if rejectAll {
-				want = "xhigh||"
+				want = "max||"
 			}
 			if strings.Join(efforts, "|") != want {
 				t.Fatalf("efforts=%v want %s", efforts, want)
 			}
 			other, _ := NewResponses(ResponsesConfig{BaseURL: "https://other.example/v1", Model: "gpt-6-astra"})
-			if got := ProviderReasoningState(other).Effective; got != "xhigh" {
+			if got := ProviderReasoningState(other).Effective; got != "max" {
 				t.Fatalf("evidence leaked: %q", got)
 			}
 			state := ProviderReasoningState(p)
@@ -163,7 +163,7 @@ func TestZenReasoningDialPreservesSpecialRequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, level := range []string{"low", "high", "xhigh", ""} {
+	for _, level := range []string{"low", "high", "xhigh", "max", ""} {
 		_ = SetReasoningEffort(level)
 		drainReasoningTest(t, p)
 		req := bodies[len(bodies)-1]
@@ -193,11 +193,11 @@ func TestLocalNativeReasoningToggleMetadata(t *testing.T) {
 	caps := NewCapabilityRegistry()
 	caps.Register(models[0])
 	p, _ := NewOpenAI(OpenAIConfig{BaseURL: "http://127.0.0.1:1234/v1", Model: "qwen", Capabilities: caps})
-	for _, level := range []string{"low", "high", "none", ""} {
+	for _, level := range []string{"low", "high", "max", "none", ""} {
 		_ = SetReasoningEffort(level)
 		state := ProviderReasoningState(p)
 		want := level
-		if level == "low" || level == "high" {
+		if level != "" && level != "none" {
 			want = "on"
 		}
 		if !state.ToggleOnly || state.Effective != want || state.Configured != level {
@@ -243,5 +243,53 @@ func TestReasoningMenuReflectsSupportedLevels(t *testing.T) {
 	state = ProviderReasoningState(p)
 	if len(state.Levels) != 0 || state.Selected != "" || state.Supported {
 		t.Fatalf("unsupported state=%+v", state)
+	}
+}
+
+func TestZenMaxRemembersAcceptedEffortOnNextTurn(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	clearReasoningEffortSupport()
+	var efforts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		reasoning, _ := req["reasoning"].(map[string]any)
+		effort, _ := reasoning["effort"].(string)
+		efforts = append(efforts, effort)
+		if req["instructions"] != nil || req["parallel_tool_calls"] != nil || req["max_output_tokens"] != float64(32000) || req["prompt_cache_key"] != r.Header.Get("X-OpenCode-Session") {
+			t.Error("Zen dialect changed")
+		}
+		if effort == "max" {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte("{\"error\":{\"message\":\"Unsupported value: 'max'. Supported values are: 'medium', 'xhigh', 'low', 'high'.\",\"param\":\"reasoning.effort\"}}"))
+			return
+		}
+		codexSSE(w, `{"type":"response.completed","response":{}}`)
+	}))
+	defer srv.Close()
+	p, err := NewResponses(ResponsesConfig{
+		BaseURL: "https://opencode.ai/zen/v1", Model: "zen-max-fixture",
+		HTTPClient: &http.Client{Transport: responsesRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL.Scheme = "http"
+			r.URL.Host = strings.TrimPrefix(srv.URL, "http://")
+			return http.DefaultTransport.RoundTrip(r)
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetReasoningEffort("max"); err != nil {
+		t.Fatal(err)
+	}
+	drainReasoningTest(t, p)
+	drainReasoningTest(t, p)
+	if got := strings.Join(efforts, "|"); got != "max|xhigh|xhigh" {
+		t.Fatalf("efforts = %s", got)
+	}
+	state := ProviderReasoningState(p)
+	if state.Configured != "max" || state.Effective != "xhigh" || state.Selected != "xhigh" || !state.Adjusted {
+		t.Fatalf("state = %+v", state)
 	}
 }

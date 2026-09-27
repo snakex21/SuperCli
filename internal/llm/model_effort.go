@@ -19,7 +19,7 @@ import (
 var reasoningEffortLevel atomic.Value
 
 // ReasoningEffortLevels are the accepted /reasoning arguments.
-var ReasoningEffortLevels = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+var ReasoningEffortLevels = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 
 var reasoningEffortSupport = struct {
 	sync.RWMutex
@@ -165,6 +165,8 @@ func effortRank(level string) int {
 		return 4
 	case "xhigh":
 		return 5
+	case "max":
+		return 6
 	default:
 		return -1
 	}

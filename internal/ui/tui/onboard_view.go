@@ -1,22 +1,5 @@
 package tui
 
-// First-run onboarding wizard. When SuperCli starts with no
-// provider configured at all, this flow:
-//
-//  1. probes Ollama (localhost:11434) and LM Studio
-//     (localhost:1234) in parallel with short timeouts,
-//  2. shows detected local servers as the FIRST menu options,
-//     each expanding into an arrow-key model picker,
-//  3. still offers OpenAI (API key or ChatGPT account),
-//     any OpenAI-compatible endpoint, and offline echo,
-//  4. verifies the chosen provider+model with a tiny test
-//     request ("Say OK") and only finishes on success —
-//     failures show a human-readable hint and return to the
-//     menu.
-//
-// main.go writes the result to config.toml and drops the user
-// straight into chat.
-
 import (
 	"fmt"
 	"strings"
@@ -27,25 +10,16 @@ import (
 func (m onboardModel) View() string {
 	p := DefaultPalette()
 	var b strings.Builder
-	b.WriteString(p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr(" — first-run setup", " — pierwsze uruchomienie")) + "\n")
+	header := p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr(" — first-run setup", " — pierwsze uruchomienie"))
+	if m.width > 0 {
+		header = truncateVisible(header, m.width)
+	}
+	b.WriteString(header + "\n")
 	switch m.step {
 	case onboardDetect:
 		b.WriteString(p.PanelMuted.Render(m.tr("Looking for local LLM servers (Ollama, LM Studio)...", "Szukam lokalnych serwerów LLM (Ollama, LM Studio)...")) + "\n")
 	case onboardMenu:
-		b.WriteString(p.PanelMuted.Render(m.tr("No provider is configured yet. Pick one (saved to config.toml in the data dir):", "Nie skonfigurowano jeszcze dostawcy. Wybierz jednego (zapis w config.toml):")) + "\n")
-		if m.errMsg != "" {
-			b.WriteString(p.Error.Render("✗ "+m.errMsg) + "\n")
-		}
-		b.WriteString("\n")
-		for i, c := range m.choices {
-			line := fmt.Sprintf("%d. %-22s %s", i+1, c.label, c.desc)
-			if i == m.cursor {
-				fmt.Fprintf(&b, "%s\n", p.Header.Render("> "+line))
-			} else {
-				fmt.Fprintf(&b, "%s\n", p.Dim.Render("  "+line))
-			}
-		}
-		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter (or number) · Esc to skip", "↑↓ + Enter (lub numer) · Esc pomiń")) + "\n")
+		return b.String() + m.renderProviderChoices()
 	case onboardAuthMethod:
 		b.WriteString("\n" + m.tr("How do you want to use OpenAI?", "Jak chcesz korzystać z OpenAI?") + "\n\n")
 		opts := []string{
@@ -62,10 +36,11 @@ func (m onboardModel) View() string {
 		}
 		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter · Esc back", "↑↓ + Enter · Esc wróć")) + "\n")
 	case onboardURL:
-		b.WriteString("\n" + m.tr("Base URL of the OpenAI-compatible server:", "Bazowy URL serwera zgodnego z OpenAI:") + "\n")
+		b.WriteString("\n" + m.tr("Provider base URL (connection type will be detected):", "Bazowy URL dostawcy (typ połączenia zostanie wykryty):") + "\n")
 		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), m.input)
 		b.WriteString("\n" + p.InputHint.Render(m.tr("Enter to confirm · Esc back", "Enter potwierdź · Esc wróć")) + "\n")
 	case onboardKey:
+		b.WriteString("\n" + p.PanelTitle.Render(m.result.Name) + p.PanelMuted.Render(" · "+m.result.BaseURL) + "\n")
 		masked := strings.Repeat("*", len([]rune(m.input)))
 		b.WriteString("\n" + m.tr("API key (Enter to skip if the server needs none):", "Klucz API (Enter pomija, jeśli serwer go nie wymaga):") + "\n")
 		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), masked)
@@ -102,8 +77,12 @@ func (m onboardModel) View() string {
 // RunOnboarding runs the wizard in its own bubbletea program
 // and returns the user's choice. A TTY error or abort returns
 // Skipped=true so the caller falls back to echo mode.
-func RunOnboarding(language string) OnboardResult {
-	p := tea.NewProgram(onboardModel{language: normalizeLanguage(language)})
+func RunOnboarding(language string, dataDirs ...string) OnboardResult {
+	initial := onboardModel{language: normalizeLanguage(language)}
+	if len(dataDirs) > 0 {
+		initial.dataDir = dataDirs[0]
+	}
+	p := tea.NewProgram(initial, tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return OnboardResult{Skipped: true}
@@ -113,4 +92,40 @@ func RunOnboarding(language string) OnboardResult {
 		return OnboardResult{Skipped: true}
 	}
 	return m.result
+}
+
+func (m onboardModel) renderProviderChoices() string {
+	width, height := m.width, m.height
+	if width <= 0 {
+		width = 100
+	}
+	if height <= 0 {
+		height = 28
+	}
+	if width < 24 || height < 8 {
+		return truncateVisible(m.tr("Resize terminal · Esc skip", "Powiększ okno · Esc pomiń"), width)
+	}
+	presentation := Model{
+		language: m.language, palette: DefaultPalette(),
+		width: minInt(width, 120), height: height - 1,
+		menu: interactiveMenu{kind: menuProviderPredefined, cursor: m.cursor, filter: m.filter, formErr: m.errMsg},
+	}
+	page := menuPage{
+		title: m.tr("Choose a provider", "Wybierz dostawcę"),
+		subtitle: m.tr("Ready integrations or your own endpoint · saved in the portable data folder",
+			"Gotowe integracje lub własny endpoint · zapis w przenośnym folderze danych"),
+		searchable: true,
+		footer:     m.tr("↑↓ choose · Enter confirm · Esc skip", "↑↓ wybierz · Enter potwierdź · Esc pomiń"),
+	}
+	for i, row := range m.filteredChoices() {
+		page.items = append(page.items, menuListItem{label: row.label, meta: row.desc})
+		if i == m.cursor {
+			page.detailTitle = row.label
+			page.detail = []string{row.desc, "", row.provider.BaseURL}
+			if row.provider.Type != "" {
+				page.detail = append(page.detail, "", presentation.providerProtocolLabel(row.provider.Type))
+			}
+		}
+	}
+	return presentation.renderMenuPage(page)
 }

@@ -23,7 +23,7 @@ type PredefinedProvider struct {
 
 // PredefinedProviders returns a list of well-known providers
 // that the user can pick from when adding a new provider.
-// The last entry is always "custom" for manual configuration.
+// Both GUI and TUI use this catalog, adding their own custom-endpoint action.
 func PredefinedProviders() []PredefinedProvider {
 	return []PredefinedProvider{
 		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "ChatGPT account or API key"},

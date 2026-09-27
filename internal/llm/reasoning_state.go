@@ -42,8 +42,8 @@ func ProviderReasoningState(provider Provider) ReasoningState {
 		state.Effective = p.reasoningEffort()
 		omitNone = !p.cfg.StandardResponsesAPI || isOpenCodeZenBaseURL(p.cfg.BackendURL)
 		if p.cfg.StandardResponsesAPI && isOpenCodeZenBaseURL(p.cfg.BackendURL) {
-			// This special serializer intentionally sends the user dial directly.
-			state.Effective = state.Configured
+			// Match the special serializer, including learned effort limits.
+			state.Effective = ReasoningEffortForModelWithCapability(state.SupportKey, true)
 			if state.Effective == "none" {
 				state.Effective = ""
 			}

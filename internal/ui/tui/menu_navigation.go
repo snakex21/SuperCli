@@ -23,6 +23,7 @@ func (m *Model) enterMenu(next interactiveMenu) {
 }
 
 func (m Model) backMenu() (tea.Model, tea.Cmd) {
+	m.cancelProviderDetection()
 	if m.menu.parent == nil {
 		return m.closeMenu()
 	}

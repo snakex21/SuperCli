@@ -66,6 +66,14 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			m.menu.formAt++
 			return m, nil
 		}
+		if m.providerMgr != nil && m.menu.editName == "" && len(m.menu.form) >= 4 && strings.TrimSpace(m.menu.form[0]) == "" {
+			m.menu.formAt = 0
+			m.menu.formErr = m.tr("Enter a name for this provider.", "Podaj nazwę dostawcy.")
+			return m, nil
+		}
+		if m.providerMgr != nil && len(m.menu.form) >= 4 && strings.EqualFold(strings.TrimSpace(m.menu.form[1]), "auto") {
+			return m.detectProviderProtocol()
+		}
 		m.menu.formErr = ""
 		formSnapshot := append([]string(nil), m.menu.form...)
 		editName := m.menu.editName
@@ -102,7 +110,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		}
 		// Scan the provider's models and run a tiny test request
 		// ("Say OK") in the background, then report the outcome.
-		mgr, caps := m.providerMgr, m.caps
+		mgr, caps, dataDir := m.providerMgr, m.caps, m.dataDir
 		verifyCmd := func() tea.Msg {
 			baseMsg := providerSavedMsg{
 				name:     savedName,
@@ -155,7 +163,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			if model == "" {
 				model = res.Models[0]
 			}
-			if err := providers.VerifyConnectionForProvider(context.Background(), conf.Type, conf.BaseURL, conf.APIKey, model); err != nil {
+			if err := providers.VerifyConnectionForProvider(context.Background(), conf.Type, conf.BaseURL, conf.APIKey, model, dataDir); err != nil {
 				return failed(err)
 			}
 			caps.RegisterAll(probeCaps.All())
@@ -164,11 +172,15 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.probeProvidersCmd(), verifyCmd)
 	case menuProviderPredefined:
-		pres := providers.PredefinedProviders()
+		pres := m.providerTemplateRows()
 		if len(pres) == 0 {
 			return m, nil
 		}
 		p := pres[minInt(m.menu.cursor, len(pres)-1)]
+		if p.Name == "custom" {
+			m.enterMenu(interactiveMenu{kind: menuProviderForm, form: []string{"", "auto", "", "", ""}})
+			return m, nil
+		}
 		// OpenAI is one provider with two auth methods: ChatGPT
 		// account (OAuth) or API key. Ask which one to use.
 		if p.Name == "openai" {
@@ -212,11 +224,10 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 
 func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 	if m.menu.kind == menuProviders && m.providerMgr != nil {
-		rows := m.providerRows()
-		if len(rows) == 0 {
+		p, ok := m.selectedConfiguredProvider()
+		if !ok {
 			return m, nil
 		}
-		p := rows[minInt(m.menu.cursor, len(rows)-1)]
 		if err := m.providerMgr.SetDisabled(p.Name, !p.Disabled); err != nil {
 			m.setStatus("provider: "+err.Error(), false)
 			return m, m.statusClearCmd()

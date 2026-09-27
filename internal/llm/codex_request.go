@@ -280,11 +280,11 @@ func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string) ([]byte, 
 	delete(req, "top_p")
 	req["max_output_tokens"] = 32000
 	req["include"] = []string{"reasoning.encrypted_content"}
-	// /reasoning is the sole control: when set (e.g. xhigh for quality, low
-	// for speed) send it through. When unset, leave the field omitted — same
-	// as the real CLI capture; the edge then applies its own default (high).
-	// Do not force a level here; the dial exists so the user steers tradeoffs.
-	if e := ReasoningEffort(); e != "" && e != "none" {
+	// /reasoning controls the effort. Honor learned backend levels so a
+	// rejected max does not trigger the same failed request every turn.
+	// Without a selection, preserve the existing omitted-field dialect.
+	model, _ := req["model"].(string)
+	if e := ReasoningEffortForModelWithCapability(model, true); e != "" && e != "none" {
 		req["reasoning"] = map[string]any{"effort": e, "summary": "auto"}
 	}
 

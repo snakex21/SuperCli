@@ -20,7 +20,8 @@ func reasoningMenuOptions() []reasoningMenuOption {
 		{Label: "low", Value: "low", Desc: "low thinking budget"},
 		{Label: "medium", Value: "medium", Desc: "balanced thinking budget"},
 		{Label: "high", Value: "high", Desc: "larger thinking budget"},
-		{Label: "xhigh", Value: "xhigh", Desc: "maximum thinking budget where supported"},
+		{Label: "xhigh", Value: "xhigh", Desc: "extra-high thinking effort where supported"},
+		{Label: "max", Value: "max", Desc: "maximum thinking effort where supported"},
 	}
 }
 
@@ -35,7 +36,8 @@ func (m Model) allLocalizedReasoningMenuOptions() []reasoningMenuOption {
 		{Label: "niskie", Value: "low", Desc: "niski budżet myślenia"},
 		{Label: "średnie", Value: "medium", Desc: "zrównoważony budżet myślenia"},
 		{Label: "wysokie", Value: "high", Desc: "większy budżet myślenia"},
-		{Label: "maksymalne", Value: "xhigh", Desc: "największy obsługiwany budżet myślenia"},
+		{Label: "bardzo wysokie (xhigh)", Value: "xhigh", Desc: "bardzo wysoki poziom myślenia"},
+		{Label: "maksymalne (max)", Value: "max", Desc: "maksymalny poziom myślenia, jeśli obsługiwany"},
 	}
 }
 
@@ -131,7 +133,7 @@ func (m Model) renderReasoningMenu() string {
 	options := m.localizedReasoningMenuOptions()
 	for _, opt := range options {
 		badge := ""
-		if opt.Value == state.Configured || (state.ToggleOnly && opt.Value == state.Effective && state.Configured != "") {
+		if opt.Value == state.Configured || (state.Configured != "" && state.Selected != "" && opt.Value == state.Selected) {
 			badge = m.tr("● active", "● aktywne")
 		}
 		page.items = append(page.items, menuListItem{label: opt.Label, badge: badge})

@@ -51,19 +51,20 @@ type CheckpointPreview struct {
 }
 
 type interactiveMenu struct {
-	parent      *interactiveMenu // previous screen, including its selection and filter
-	category    int              // action centre tab
-	kind        menuKind
-	cursor      int
-	filter      string
-	provider    string
-	form        []string
-	formAt      int
-	formErr     string
-	editName    string
-	keyRevealed bool // true = API key shown in plain text
-	sessions    []session.Session
-	tasks       []session.QueuedTask
+	parent            *interactiveMenu // previous screen, including its selection and filter
+	category          int              // action centre tab
+	kind              menuKind
+	cursor            int
+	filter            string
+	provider          string
+	form              []string
+	formAt            int
+	formErr           string
+	editName          string
+	keyRevealed       bool // true = API key shown in plain text
+	providerDetection *providerProtocolRequest
+	sessions          []session.Session
+	tasks             []session.QueuedTask
 
 	// /settings panel state. settingsCfg holds the last loaded/saved
 	// global config so the panel renders live values; editing/editBuf
@@ -212,6 +213,7 @@ func (m Model) openReasoningMenu() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) closeMenu() (tea.Model, tea.Cmd) {
+	m.cancelProviderDetection()
 	m.mode = modeNormal
 	m.menu = interactiveMenu{}
 	m.input.Focus()

@@ -67,7 +67,7 @@ func TestProviderFormBackTracksActualPathWithoutProbes(t *testing.T) {
 		t.Fatal("providers not opened")
 	}
 	m = navigateKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	for i, p := range providers.PredefinedProviders() {
+	for i, p := range m.providerTemplateRows() {
 		if p.Name == "openai" {
 			m.menu.cursor = i
 			break
@@ -260,7 +260,7 @@ func TestProviderSaveReturnsPastCompletedForms(t *testing.T) {
 	m = navigateKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Providers")})
 	m = navigateKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = navigateKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	for i, p := range providers.PredefinedProviders() {
+	for i, p := range m.providerTemplateRows() {
 		if p.Name != "openai" {
 			m.menu.cursor = i
 			break
