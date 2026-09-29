@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"supercli/internal/account/credits"
 	"supercli/internal/account/pricing"
 	"supercli/internal/agent"
 	"supercli/internal/checkpoint"
@@ -112,6 +113,12 @@ type Engine struct {
 	goalMu sync.Mutex
 	goalDB *sql.DB
 	goals  *goal.Service
+	// Daily totals reuse one lazy ledger connection. Refreshing statistics must
+	// not reopen SQLite or run schema migrations, nor cache totals from the TUI.
+	creditMu     sync.Mutex
+	creditDB     *sql.DB
+	creditLedger *credits.Storage
+	creditClosed bool
 	// Checkpoint metadata is workspace-specific. The GUI can hot-switch
 	// projects, so cache one manager per canonical workspace rather than one
 	// process-global manager.
@@ -446,6 +453,16 @@ func (e *Engine) Close() error {
 	if goalDB != nil {
 		goalErr = goalDB.Close()
 	}
+	e.creditMu.Lock()
+	creditDB := e.creditDB
+	e.creditDB = nil
+	e.creditLedger = nil
+	e.creditClosed = true
+	e.creditMu.Unlock()
+	var creditErr error
+	if creditDB != nil {
+		creditErr = creditDB.Close()
+	}
 	e.memoryMu.Lock()
 	globalMemory := e.globalMemory
 	e.globalMemory = nil
@@ -473,8 +490,8 @@ func (e *Engine) Close() error {
 	e.sessionMu.Unlock()
 	if store != nil {
 		if err := store.Close(); err != nil {
-			return err
+			return errors.Join(err, goalErr, creditErr)
 		}
 	}
-	return goalErr
+	return errors.Join(goalErr, creditErr)
 }

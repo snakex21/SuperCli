@@ -17,7 +17,7 @@ Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsa
 ![SuperCli žiniatinklio sąsaja (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperCli terminalo veiksmų centras (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperCli terminalo veiksmų centras (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI vaizdas yra ekrano nuotrauka; TUI vaizdas yra atvaizduotas tikrasis programos terminalo išdėstymas. [Daugiau ekrano nuotraukų](../screenshots/1.0.0/README.md).

@@ -17,7 +17,7 @@ Ez a README az `1.0.0` verziót ismerteti. A hordozható kiadási csomagok a [Gi
 ![A SuperCli webes felülete (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![A SuperCli terminálos műveletközpontja (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![A SuperCli terminálos műveletközpontja (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 A GUI képe képernyőkép; a TUI képe az alkalmazás tényleges terminálelrendezésének megjelenítése. [További képernyőképek](../screenshots/1.0.0/README.md).

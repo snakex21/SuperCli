@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"supercli/internal/account/credits"
 	"supercli/internal/account/usagecost"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
@@ -251,14 +250,10 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 	}
 	// TUI/CLI usage still lives in credit_ledger. Web usage is recorded only in
 	// session_usage, so the two totals are disjoint and can be combined.
-	if db, dbErr := openDataDB(e.dataDir); dbErr == nil {
-		cs := credits.NewStorage(db)
-		if cs.Migrate(ctx) == nil {
-			if total, totalErr := cs.TotalSince(ctx, localMidnight); totalErr == nil {
-				sv.DailyToken += total
-			}
+	if ledger, ledgerErr := e.creditStorage(ctx); ledgerErr == nil {
+		if total, totalErr := ledger.TotalSince(ctx, localMidnight); totalErr == nil {
+			sv.DailyToken += total
 		}
-		_ = db.Close()
 	}
 
 	tc := e.tomlConfig()

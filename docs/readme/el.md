@@ -17,7 +17,7 @@
 ![Διαδικτυακό περιβάλλον του SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Κέντρο ενεργειών τερματικού του SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Κέντρο ενεργειών τερματικού του SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Η εικόνα του GUI είναι στιγμιότυπο οθόνης· η εικόνα του TUI είναι απόδοση της πραγματικής διάταξης τερματικού της εφαρμογής. [Περισσότερα στιγμιότυπα](../screenshots/1.0.0/README.md).

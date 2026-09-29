@@ -6,7 +6,7 @@
     "releases": "https://github.com/snakex21/SuperCli/releases",
     "releasing": "docs/releasing.md",
     "guishot": "docs/screenshots/1.0.0/gui-en.jpg",
-    "tuishot": "docs/screenshots/1.0.0/tui-actions-pl.jpg",
+    "tuishot": "docs/screenshots/1.0.0/tui-actions-en.jpg",
     "gallery": "docs/screenshots/1.0.0/README.md",
     "index": "docs/README.md", "quickstart": "docs/quickstart.md", "data": "docs/data-layout.md", "config": "docs/configuration.md", "architecture": "docs/architecture.md", "delegation": "docs/delegation.md", "performance": "docs/performance.md", "webgui": "docs/webgui.md", "structure": "docs/project-structure.md", "mcp": "docs/portable-mcp.md", "skills": "docs/builtin-skills.md", "telemetry": "docs/telemetry.md", "plan": "docs/PLAN.md", "roadmap": "docs/ROADMAP.md", "reference": "docs/readme-reference.md", "license": "LICENSE", "notices": "THIRD_PARTY_NOTICES.md"
   },

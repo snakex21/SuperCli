@@ -17,7 +17,7 @@ Ce README décrit la version `1.0.0`. Les paquets portables sont distribués via
 ![Interface web de SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Centre d’actions du terminal de SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Centre d’actions du terminal de SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 L’image de la GUI est une capture d’écran ; l’image de la TUI est un rendu de la disposition réelle du terminal de l’application. [Autres captures d’écran](../screenshots/1.0.0/README.md).

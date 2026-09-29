@@ -17,7 +17,7 @@ Tämä README kuvaa versiota `1.0.0`. Siirrettävät julkaisupaketit jaetaan [Gi
 ![SuperClin verkkokäyttöliittymä (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperClin päätteen toimintokeskus (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperClin päätteen toimintokeskus (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI-kuva on kuvakaappaus; TUI-kuva on sovelluksen todellisen päätenäkymän renderöinti. [Lisää kuvakaappauksia](../screenshots/1.0.0/README.md).
