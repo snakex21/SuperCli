@@ -108,20 +108,25 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			for sc.xmlReady() || sc.sentReady() {
 				var calls []llm.ToolCall
 				var before, closeTag string
+				var openAt int
 				if sc.xmlReady() && (!sc.sentReady() || sc.xmlOpen < sc.sentOpen) {
 					calls, before = extractXMLToolCalls(sc.buf.String())
-					closeTag = "</tool_call>"
-					if len(calls) == 0 {
-						sc.xmlFailed = true
-						continue
-					}
+					openAt, closeTag = sc.xmlOpen, "</tool_call>"
 				} else {
 					calls, before = extractSentinelToolCalls(sc.buf.String())
-					closeTag = sentinelClose
-					if len(calls) == 0 {
-						sc.sentFailed = true
-						continue
+					openAt, closeTag = sc.sentOpen, sentinelClose
+				}
+				text := sc.buf.String()
+				end := openAt + strings.Index(text[openAt:], closeTag) + len(closeTag)
+				if len(calls) == 0 {
+					// Preserve malformed output as text, then inspect the remaining
+					// suffix. A bad block must not disable this protocol for the turn.
+					if err := emitTo(end); err != nil {
+						closeReasoning()
+						return transcript.String(), toolCalls, usage, err
 					}
+					sc.reset(text[end:])
+					continue
 				}
 				if err := emitTo(len(before)); err != nil {
 					closeReasoning()
@@ -131,8 +136,6 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 					textCallIndexes = append(textCallIndexes, len(toolCalls)+i)
 				}
 				toolCalls = append(toolCalls, calls...)
-				text := sc.buf.String()
-				end := len(before) + strings.Index(text[len(before):], closeTag) + len(closeTag)
 				// Leading prose was emitted above; retain only the unconsumed tail.
 				sc.reset(text[end:])
 			}

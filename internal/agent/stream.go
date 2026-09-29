@@ -19,13 +19,11 @@ type toolCallScanner struct {
 	// in streaming UIs and prose before a call is never emitted twice.
 	emitted int
 
-	xmlOpen   int  // index of first "<tool_call>", -1 if none
-	xmlClose  bool // "</tool_call>" seen after xmlOpen
-	xmlFailed bool // complete block parsed to zero calls (deterministic → skip)
+	xmlOpen  int  // index of first "<tool_call>", -1 if none
+	xmlClose bool // "</tool_call>" seen after xmlOpen
 
-	sentOpen   int // index of first «, -1 if none
-	sentClose  bool
-	sentFailed bool
+	sentOpen  int // index of first «, -1 if none
+	sentClose bool
 }
 
 func newToolCallScanner() *toolCallScanner {
@@ -44,8 +42,8 @@ func (sc *toolCallScanner) append(delta string) {
 func (sc *toolCallScanner) reset(remaining string) {
 	sc.buf.Reset()
 	sc.emitted = 0
-	sc.xmlOpen, sc.xmlClose, sc.xmlFailed = -1, false, false
-	sc.sentOpen, sc.sentClose, sc.sentFailed = -1, false, false
+	sc.xmlOpen, sc.xmlClose = -1, false
+	sc.sentOpen, sc.sentClose = -1, false
 	sc.buf.WriteString(remaining)
 	sc.scanFrom(0)
 }
@@ -56,10 +54,10 @@ func (sc *toolCallScanner) reset(remaining string) {
 func (sc *toolCallScanner) safeEmitEnd() int {
 	s := sc.buf.String()
 	end := len(s)
-	if sc.xmlOpen >= 0 && !sc.xmlFailed && sc.xmlOpen < end {
+	if sc.xmlOpen >= 0 && sc.xmlOpen < end {
 		end = sc.xmlOpen
 	}
-	if sc.sentOpen >= 0 && !sc.sentFailed && sc.sentOpen < end {
+	if sc.sentOpen >= 0 && sc.sentOpen < end {
 		end = sc.sentOpen
 	}
 	if end < len(s) {
@@ -120,13 +118,13 @@ func (sc *toolCallScanner) scanFrom(prev int) {
 	scanClose(sentinelOpen, sentinelClose, sc.sentOpen, &sc.sentClose)
 }
 
-// xmlReady/sentReady report whether the corresponding extract
-// function could return a non-empty result for the buffer.
+// xmlReady/sentReady report whether the corresponding parser has a complete
+// block to inspect. A malformed block is still complete.
 func (sc *toolCallScanner) xmlReady() bool {
-	return sc.xmlOpen >= 0 && sc.xmlClose && !sc.xmlFailed
+	return sc.xmlOpen >= 0 && sc.xmlClose
 }
 func (sc *toolCallScanner) sentReady() bool {
-	return sc.sentOpen >= 0 && sc.sentClose && !sc.sentFailed
+	return sc.sentOpen >= 0 && sc.sentClose
 }
 
 // consume drains the provider channel, emitting MessageEvents and
