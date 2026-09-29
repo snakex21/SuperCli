@@ -72,7 +72,7 @@ func TestSourceSearchAndReadWorkThroughBothModelRoutes(t *testing.T) {
 					read = message.Content
 				}
 			}
-			if !strings.HasPrefix(search, "src/catalog/detected_system.zig:1:"+strings.TrimSpace(source)+"\n[search limit reached: 1") || !strings.Contains(read, source) {
+			if (!strings.Contains(search, "== src/catalog/detected_system.zig:1-1 ==") || !strings.Contains(search, strings.TrimSpace(source)) || !strings.Contains(search, "[search limit reached: 1")) || !strings.Contains(read, source) {
 				t.Fatalf("search=%q read=%q", search, read)
 			}
 		})
@@ -123,6 +123,53 @@ func TestFileDiscoveryWorksThroughBothModelRoutes(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("missing file discovery result")
+			}
+		})
+	}
+}
+
+func TestLimitedSearchDeliversBodyThroughBothModelRoutes(t *testing.T) {
+	for _, thin := range []bool{false, true} {
+		name := "native"
+		if thin {
+			name = "sentinel"
+		}
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, "retry.go"), []byte("func RetryDelay() int {\n return 235\n}\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			reg := tools.NewRegistry()
+			reg.MustRegister(tools.NewSearchCode(home).Spec())
+			reg.MarkAlwaysOn("search_code")
+			first := []llm.Delta{{ToolCall: &llm.ToolCall{ID: "search", Name: "search_code", Arguments: `{"query":"func RetryDelay","max":1}`}}}
+			if thin {
+				first = []llm.Delta{{Content: "«search_code\nquery: func RetryDelay\nmax: 1»", FinishReason: "stop"}}
+			}
+			provider := &stubProvider{name: "limited-search", scripts: [][]llm.Delta{first, {{Content: "retry.go returns 235.", FinishReason: "stop"}}}}
+			loop, err := NewLoop(LoopConfig{Provider: provider, Registry: reg, ThinTools: thin, MaxSteps: 3})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range drainEvents(t, mustRun(t, loop, "What does RetryDelay return?")) {
+				if failure, ok := event.(ErrorEvent); ok {
+					t.Fatal(failure.Err)
+				}
+			}
+			if provider.calls != 2 {
+				t.Fatalf("calls=%d", provider.calls)
+			}
+			found := false
+			for _, m := range provider.reqs[1] {
+				if m.Role == llm.RoleTool && m.Name == "search_code" {
+					found = true
+					if !strings.Contains(m.Content, "return 235") || !strings.Contains(m.Content, "[search limit reached: 1") {
+						t.Fatalf("result=%q", m.Content)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("missing search result")
 			}
 		})
 	}

@@ -94,7 +94,7 @@ func TestSearchCode_MaxLimit(t *testing.T) {
 		os.WriteFile(name, []byte("match"), 0o644)
 	}
 	s := NewSearchCode(dir)
-	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"match","max":2}`))
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"match","max":2,"context":0}`))
 	if res.Err != nil {
 		t.Fatalf("run: %v", res.Err)
 	}
@@ -108,7 +108,7 @@ func TestSearchCode_GlobalCapWithinOneFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte(strings.Repeat("match\n", 100)), 0o644)
 	s := NewSearchCode(dir)
-	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"match","max":3}`))
+	res, _ := s.run(context.Background(), json.RawMessage(`{"query":"match","max":3,"context":0}`))
 	if res.Err != nil {
 		t.Fatalf("run: %v", res.Err)
 	}

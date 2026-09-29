@@ -128,10 +128,11 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 	if err == nil && result.Err == nil && radius > 0 {
 		// Sparse searches often locate a declaration without the body that
 		// answers the question. Offer a small neighborhood in the same call;
-		// broad/limited searches retain the compact location-only output. A long
+		// broad searches retain the compact location-only output. The match cap
+		// still applies, and expanded results preserve its notice. A long
 		// matching line already exceeds the auto byte cap, so skip a context
 		// reread whose result would be discarded.
-		if !autoContext || (len(preview.hits) <= 3 && preview.limit == 0 && len(preview.longLines) == 0) {
+		if !autoContext || (len(preview.hits) <= 3 && len(preview.longLines) == 0) {
 			expanded := s.renderSearchContext(ctx, preview, result)
 			if !autoContext || len(expanded.Text) <= 2048 || expanded.Err != nil {
 				result = expanded
