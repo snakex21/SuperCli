@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,7 @@ func TestSearchAutomaticContextProvidesAnswerWithoutAnotherRead(t *testing.T) {
 func TestSearchAutomaticContextBoundsExtraText(t *testing.T) {
 	for _, test := range []struct{ name, body, args string }{
 		{"broad", strings.Repeat("needle\n", 4), "{\"query\":\"needle\"}"},
-		{"limited", "needle\nbody\n", "{\"query\":\"needle\",\"max\":1}"},
+		{"limited large", "needle\n" + strings.Repeat("x", 4000) + "\n", "{\"query\":\"needle\",\"max\":1}"},
 		{"large", "needle\n" + strings.Repeat("x", 4000) + "\n", "{\"query\":\"needle\"}"},
 		{"explicit zero", "needle\nbody\n", "{\"query\":\"needle\",\"context\":0}"},
 	} {
@@ -38,6 +39,45 @@ func TestSearchAutomaticContextBoundsExtraText(t *testing.T) {
 			got, err := NewSearchCode(dir).run(context.Background(), json.RawMessage(test.args))
 			if err != nil || got.Err != nil || strings.Contains(got.Text, "== a.txt:") || !strings.Contains(got.Text, "a.txt:1:needle") {
 				t.Fatalf("%+v %v", got, err)
+			}
+		})
+	}
+}
+
+func TestSearchAutomaticContextPreservesAnswersAtMatchLimit(t *testing.T) {
+	for _, useRG := range []bool{false, true} {
+		t.Run(map[bool]string{false: "fallback", true: "ripgrep"}[useRG], func(t *testing.T) {
+			if !useRG {
+				t.Setenv("PATH", t.TempDir())
+			} else if !NewSearchCode(".").hasRG() {
+				t.Skip("rg unavailable")
+			}
+			for limit := 1; limit <= 3; limit++ {
+				t.Run(fmt.Sprint(limit), func(t *testing.T) {
+					dir := t.TempDir()
+					var body strings.Builder
+					for i := 0; i <= limit; i++ {
+						fmt.Fprintf(&body, "func RetryDelay%d() int {\n return %d\n}\n\n\n\n\n\n\n\n", i, 235+i)
+					}
+					writeSearchFixture(t, dir, "src/retry.go", body.String())
+					args := fmt.Sprintf(`{"query":"func RetryDelay","max":%d}`, limit)
+					got, err := NewSearchCode(dir).run(context.Background(), json.RawMessage(args))
+					if err != nil || got.Err != nil || !strings.Contains(got.Text, "return 235") || !strings.Contains(got.Text, "== src/retry.go:") {
+						t.Fatalf("%+v %v", got, err)
+					}
+					if !strings.Contains(got.Text, searchLimitNotice(limit)) {
+						t.Fatalf("missing limit notice: %s", got.Text)
+					}
+					hits := 0
+					for _, line := range strings.Split(got.Text, "\n") {
+						if strings.HasPrefix(line, "> ") {
+							hits++
+						}
+					}
+					if hits != limit || len(got.Text) > 2048 {
+						t.Fatalf("hits=%d limit=%d bytes=%d: %s", hits, limit, len(got.Text), got.Text)
+					}
+				})
 			}
 		})
 	}
