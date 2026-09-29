@@ -12,31 +12,31 @@ import (
 func (m Model) renderProvidersMenu() string {
 	rows := m.providerRows()
 	active := m.activeProviderName()
-	page := menuPage{title: m.tr("Providers", "Dostawcy"), subtitle: m.tr("Connection status and active model", "Stan połączenia i aktywny model"),
-		footer: m.tr("Enter models · A add · E edit · Space pause", "Enter modele · A dodaj · E edytuj · Space wstrzymaj"),
-		empty:  m.tr("No providers configured — press A to add one.", "Brak dostawców — naciśnij A, aby dodać.")}
+	page := menuPage{title: m.tr("tui.menu_navigation.996c32b35f"), subtitle: m.tr("tui.menu_providers_render.7b5e636c3a"),
+		footer: m.tr("tui.menu_providers_render.62a0abe49b"),
+		empty:  m.tr("tui.menu_providers_render.a9e11383f5")}
 	for i, p := range rows {
 		name, typ := displayProvider(p.Name, p.Type)
 		status, _ := m.providerStatusCell(p.Name)
 		if p.Disabled {
-			status = m.tr("paused", "wstrzymany")
+			status = m.tr("tui.menu_providers_render.a7a9dc5bcf")
 		}
 		badge := ""
 		if p.Name == active {
-			badge = m.tr("● active", "● aktywny")
+			badge = m.tr("tui.menu_models_render.a1922b55b9")
 		}
 		page.items = append(page.items, menuListItem{label: name, meta: status, badge: badge})
 		if i == m.menu.cursor {
 			enabled, total := m.providerModelCounts(p)
-			keyState := m.tr("public/no key", "publiczny/bez klucza")
+			keyState := m.tr("tui.menu_providers_render.b50f269f59")
 			if p.HasKey {
-				keyState = m.tr("key configured", "klucz skonfigurowany")
+				keyState = m.tr("tui.menu_providers_render.ea6e7dc79d")
 			}
 			page.detailTitle = name
-			page.detail = []string{status, "", typ + " · " + keyState, fmt.Sprintf(m.tr("models %d/%d on", "modele włączone %d/%d"), enabled, total), p.Model, p.BaseURL, "",
-				m.tr("R  Scan models", "R  Skanuj modele"), m.tr("D  Remove provider", "D  Usuń dostawcę")}
+			page.detail = []string{status, "", typ + " · " + keyState, fmt.Sprintf(m.tr("tui.menu_providers_render.ac6d2a2615"), enabled, total), p.Model, p.BaseURL, "",
+				m.tr("tui.menu_providers_render.9d2559b425"), m.tr("tui.menu_providers_render.e15e3c0de1")}
 			if m.cursorOnOpenAIRow() {
-				page.detail = append(page.detail, m.tr("C  ChatGPT accounts", "C  Konta ChatGPT"))
+				page.detail = append(page.detail, m.tr("tui.menu_providers_render.4de8777abc"))
 			}
 			if st, ok := m.providerStatuses[p.Name]; ok && st.checked && !st.online && !p.Disabled {
 				page.detail = append(page.detail, "", st.err)
@@ -44,15 +44,15 @@ func (m Model) renderProvidersMenu() string {
 		}
 	}
 	page.items = append(page.items, menuListItem{
-		label: m.tr("+ Add provider", "+ Dodaj dostawcę"),
-		meta:  m.tr("Ready integrations or a custom endpoint", "Gotowe integracje lub własny endpoint"),
+		label: m.tr("tui.menu_providers_render.b79ce9f971"),
+		meta:  m.tr("tui.menu_providers_render.fd9fb8d616"),
 	})
 	if m.menu.cursor >= len(rows) {
-		page.detailTitle = m.tr("Choose a provider", "Wybierz dostawcę")
-		page.detail = []string{m.tr("Search the same integrations available in the GUI.", "Przeszukaj te same integracje, które są dostępne w GUI."),
+		page.detailTitle = m.tr("tui.menu_providers_render.e1d36c3ade")
+		page.detail = []string{m.tr("tui.menu_providers_render.af90f60a76"),
 			"", "OpenAI · Anthropic · OpenCode Zen", "LM Studio · Ollama",
-			"", m.tr("Or connect your own endpoint.", "Możesz też podłączyć własny endpoint.")}
-		page.footer = m.tr("↑↓ choose · Enter add", "↑↓ wybierz · Enter dodaj")
+			"", m.tr("tui.menu_providers_render.b9d779bc3a")}
+		page.footer = m.tr("tui.menu_providers_render.97662a7e11")
 	}
 	return m.renderMenuPage(page)
 }
@@ -115,16 +115,16 @@ func (m Model) providerStatusCell(name string) (plain, styled string) {
 	st, ok := m.providerStatuses[name]
 	switch {
 	case !ok || !st.checked:
-		plain = m.tr("checking", "sprawdzanie")
+		plain = m.tr("tui.menu_providers_render.7f98506ac7")
 		styled = m.palette.InputHint.Render(plain)
 	case st.online:
-		plain = m.tr("online", "online")
+		plain = m.tr("tui.menu_providers_render.f6fc84c9f2")
 		if st.latency > 0 {
 			plain += " · " + formatProbeLatency(st.latency)
 		}
 		styled = m.palette.Success.Render(plain)
 	default:
-		plain = m.tr("offline", "offline")
+		plain = m.tr("tui.menu_providers_render.8e2c7ac508")
 		styled = m.palette.Error.Render(plain)
 	}
 	return plain, styled
@@ -168,12 +168,12 @@ func (m Model) activeProviderName() string {
 }
 
 func (m Model) renderProviderForm() string {
-	labels := []string{m.tr("Name", "Nazwa"), m.tr("Type", "Typ"), "Base URL", m.tr("API key", "Klucz API"), m.tr("Default model", "Domyślny model")}
-	title := m.tr("Add provider", "Dodaj dostawcę")
+	labels := []string{m.tr("tui.menu_providers_render.dcd1d5223f"), m.tr("tui.menu_providers_render.baaddf70fb"), m.tr("tui.other.70589413a3"), m.tr("tui.menu_providers_render.16f0ee47f9"), m.tr("tui.menu_providers_render.3840d9d294")}
+	title := m.tr("tui.menu_navigation.8cd1856b03")
 	if m.menu.editName != "" {
-		title = m.tr("Edit provider: ", "Edytuj dostawcę: ") + m.menu.editName
+		title = m.tr("tui.menu_providers_render.ba3a9d455b") + m.menu.editName
 	}
-	page := menuPage{title: title, footer: m.tr("↑↓ fields · Enter next/save · Ctrl+V paste", "↑↓ pola · Enter dalej/zapisz · Ctrl+V wklej")}
+	page := menuPage{title: title, footer: m.tr("tui.menu_providers_render.500226d704")}
 	for i, label := range labels {
 		value := ""
 		if i < len(m.menu.form) {
@@ -190,23 +190,23 @@ func (m Model) renderProviderForm() string {
 			page.detailTitle = label
 			page.detail = []string{value}
 			if i == 1 {
-				page.detail = []string{m.tr("← → choose the connection type.", "← → wybierz typ połączenia."),
-					"", m.tr("Auto detection checks the endpoint when you save.", "Automatyczne wykrywanie sprawdzi endpoint przy zapisie.")}
-				page.footer = m.tr("← → type · ↑↓ fields · Enter next", "← → typ · ↑↓ pola · Enter dalej")
+				page.detail = []string{m.tr("tui.menu_providers_render.7b79076801"),
+					"", m.tr("tui.menu_providers_render.fe86b310ec")}
+				page.footer = m.tr("tui.menu_providers_render.0f8b44ba64")
 			}
 			if i == 3 {
-				page.detail = []string{m.tr("The key stays hidden until you press →.", "Klucz pozostaje ukryty, dopóki nie naciśniesz →.")}
+				page.detail = []string{m.tr("tui.menu_providers_render.d0f000769b")}
 				if m.menu.keyRevealed {
-					page.detail = []string{m.tr("← hides the key again.", "← ponownie ukrywa klucz.")}
+					page.detail = []string{m.tr("tui.menu_providers_render.e2900f3458")}
 				}
-				page.footer = m.tr("← hide · → reveal · Enter next", "← ukryj · → pokaż · Enter dalej")
+				page.footer = m.tr("tui.menu_providers_render.e76f61a13c")
 			}
 			value += "▏"
 		}
 		page.items = append(page.items, menuListItem{label: label + ": " + value})
 	}
 	if m.menu.providerDetection != nil {
-		page.footer = m.tr("Detecting connection type… · Esc cancel", "Wykrywanie typu połączenia… · Esc anuluj")
+		page.footer = m.tr("tui.menu_providers_render.29735638e6")
 	}
 	m.menu.cursor = m.menu.formAt
 	return m.renderMenuPage(page)
@@ -229,9 +229,9 @@ func compactProviderError(err error) string {
 
 func (m Model) renderPredefinedMenu() string {
 	rows := m.providerTemplateRows()
-	page := menuPage{title: m.tr("Choose a provider", "Wybierz dostawcę"),
-		subtitle:   m.tr("Ready integrations or your own endpoint", "Gotowe integracje lub własny endpoint"),
-		searchable: true, footer: m.tr("Type to search · ↑↓ choose · Enter pick", "Pisz, aby szukać · ↑↓ wybierz · Enter zatwierdź")}
+	page := menuPage{title: m.tr("tui.menu_providers_render.e1d36c3ade"),
+		subtitle:   m.tr("tui.menu_providers_render.ecb840d6e5"),
+		searchable: true, footer: m.tr("tui.menu_providers_render.32112ffe0b")}
 	for i, row := range rows {
 		label := m.providerTemplateLabel(row.Name)
 		page.items = append(page.items, menuListItem{label: label, meta: row.Desc})
@@ -244,14 +244,14 @@ func (m Model) renderPredefinedMenu() string {
 }
 
 func (m Model) renderOpenAIAuthMenu() string {
-	page := menuPage{title: m.tr("OpenAI — choose how to sign in", "OpenAI — wybierz sposób logowania"),
-		footer: m.tr("↑↓ choose · Enter pick", "↑↓ wybierz · Enter zatwierdź")}
-	page.items = []menuListItem{{label: m.tr("ChatGPT account", "Konto ChatGPT")}, {label: m.tr("API key", "Klucz API")}}
+	page := menuPage{title: m.tr("tui.menu_providers_render.443b281cba"),
+		footer: m.tr("tui.menu_providers_render.1a87e1edee")}
+	page.items = []menuListItem{{label: m.tr("tui.menu_providers_render.3a477ce50c")}, {label: m.tr("tui.menu_providers_render.16f0ee47f9")}}
 	page.detailTitle = page.items[minInt(m.menu.cursor, 1)].label
 	if m.menu.cursor == 0 {
-		page.detail = []string{m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (korzysta z limitów subskrypcji)")}
+		page.detail = []string{m.tr("tui.menu_providers_render.eaec73252e")}
 	} else {
-		page.detail = []string{m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (płatność za użycie w platform.openai.com)")}
+		page.detail = []string{m.tr("tui.menu_providers_render.9c1a934db0")}
 	}
 	return m.renderMenuPage(page)
 }

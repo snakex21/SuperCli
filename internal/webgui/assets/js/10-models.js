@@ -45,10 +45,8 @@ async function loadModels() {
   var revision = reasoningRevision;
   try {
     var got = await j("/api/models");
-    if (got.active) {
-      activeModelID = got.active;
-      $("#model-name").textContent = got.active;
-    }
+    activeModelID = selectedModelID(got.active);
+    $("#model-name").textContent = modelDisplayName(activeModelID);
     activeProviderID = got.provider || "";
     $("#model-prov").textContent = got.provider || "";
     // A successful response is authoritative, including an empty list. This
@@ -133,14 +131,14 @@ function renderModelList(filter) {
       manualBadge.title = t("model.contextBudget");
       row.appendChild(manualBadge);
     }
-    if (m.reasoning) row.appendChild(el("span", "pbadge", "think"));
+    if (m.reasoning) row.appendChild(el("span", "pbadge", t("model.think")));
     var act = el("span", "pact");
     var bd = i18nEl("button", "", "model.setDefault");
-    bd.title = "Set as CLI default (config.toml)";
+    bd.title = t("model.setDefaultHint");
     bd.addEventListener("click", function (e) {
       e.stopPropagation();
       jpost("/api/model/default", { model: m.id, provider: m.provider })
-        .then(function () { toast("CLI default: " + m.id); })
+        .then(function () { toast(t("model.defaultSaved").replace("{model}", m.id)); })
         .catch(function (err) { toast(err.message); });
     });
     act.appendChild(bd);

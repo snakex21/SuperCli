@@ -32,7 +32,7 @@ sections.accounts = async function () {
     if (a.logged_in) {
       var br = i18nEl("button", "", "acct.refreshTok");
       br.addEventListener("click", async function () {
-        try { await jpost("/api/codex/refresh", { label: a.label }); toast("OK"); } catch (e) { toast(e.message); }
+        try { await jpost("/api/codex/refresh", { label: a.label }); toast(t("common.ok")); } catch (e) { toast(e.message); }
         sections.accounts();
       });
       act.appendChild(br);
@@ -203,7 +203,7 @@ function renderMcpJSON(servers) {
         var sc = parsed[names[n]] || {};
         await jpost("/api/mcp/add", { name: names[n], command: sc.command || "", args: sc.args || [], env: sc.env || {} });
       }
-      status.textContent = "OK";
+      status.textContent = t("common.ok");
       renderMcpList();
     } catch (e) { status.textContent = e.message; }
   });

@@ -30,6 +30,8 @@ Flags:
   --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default off; opt-in)
   --draft-model ID                F11 draft model id (required to enable F11; no auto-pick)
   --resume                        resume the most recent session on startup (also: /resume in the TUI)
+  --check-update                  check for a newer stable release and exit
+  --update                        download and install a verified update, then exit
   --version                       print version and exit
   -h, --help                      show this help
 

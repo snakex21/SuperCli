@@ -33,9 +33,9 @@ func (m Model) openUsageMenu() (tea.Model, tea.Cmd) {
 func (m Model) loadUsage() tea.Cmd {
 	selected := m.menu.category
 	return func() tea.Msg {
-		d := &usageSnapshot{sessionID: m.sessionID, scope: m.tr("Current CLI run", "Bieżące uruchomienie CLI")}
+		d := &usageSnapshot{sessionID: m.sessionID, scope: m.tr("tui.menu_usage.fd8cbf3c80")}
 		if selected == 0 && m.statsRecorder == nil {
-			return usageLoadedMsg{err: fmt.Errorf("%s", m.tr("Usage recording unavailable", "Statystyki są niedostępne")), scope: selected}
+			return usageLoadedMsg{err: fmt.Errorf("%s", m.tr("tui.menu_usage.864213086a")), scope: selected}
 		}
 		tc, _ := config.ResolveConfig(m.dataDir, m.home, "")
 		identity := func(provider, model string) session.UsageRecord {
@@ -58,7 +58,7 @@ func (m Model) loadUsage() tea.Cmd {
 		var records []session.UsageRecord
 		if selected == 1 && m.loadedSessionID != "" && m.sessionStore != nil {
 			d.sessionID = m.loadedSessionID
-			d.scope = m.tr("Saved conversation", "Zapisana rozmowa")
+			d.scope = m.tr("tui.menu_usage.20844222e7")
 			sess, err := m.sessionStore.Get(d.sessionID)
 			if err != nil {
 				return usageLoadedMsg{err: err, scope: selected}
@@ -132,21 +132,21 @@ func (m Model) handleUsageKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) costLabel(c usagecost.Summary) string {
 	switch c.State {
 	case "free":
-		return m.tr("Free", "Bezpłatnie")
+		return m.tr("tui.menu_usage.f411a1fb62")
 	case "local":
-		return m.tr("Local model", "Model lokalny")
+		return m.tr("tui.menu_usage.ea815782df")
 	case "subscription":
-		return m.tr("Included in subscription", "W abonamencie")
+		return m.tr("tui.menu_usage.8c7eadf499")
 	}
 	if c.Amount == nil {
-		return m.tr("Unknown price", "Brak ceny")
+		return m.tr("tui.menu_usage.7311518410")
 	}
 	label := fmt.Sprintf("$%.6f", *c.Amount)
 	if c.Estimated {
 		label = "~" + label
 	}
 	if c.Partial {
-		label += " " + m.tr("(partial)", "(częściowo)")
+		label += " " + m.tr("tui.menu_usage.d0ffde3448")
 	}
 	return label
 }
@@ -156,46 +156,57 @@ func (m Model) usageItems() []menuListItem {
 		return nil
 	}
 	rows := []menuListItem{
-		{label: m.tr("Total tokens", "Wszystkie tokeny"), badge: compactTokens(int(d.input + d.output)), meta: fmt.Sprintf("%d", d.input+d.output)},
-		{label: m.tr("Input", "Wejście"), badge: compactTokens(int(d.input)), meta: fmt.Sprintf("%d", d.input)},
-		{label: m.tr("Output", "Wyjście"), badge: compactTokens(int(d.output)), meta: fmt.Sprintf("%d", d.output)},
-		{label: m.tr("Cached input (part of input)", "Cache (część wejścia)"), badge: compactTokens(int(d.cached)), meta: fmt.Sprintf("%d", d.cached)},
-		{label: m.tr("Cost", "Koszt"), badge: m.costLabel(d.cost), meta: m.tr("Source: ", "Źródło: ") + d.cost.Source},
+		{label: m.tr("tui.menu_usage.e7601ca117"), badge: compactTokens(int(d.input + d.output)), meta: fmt.Sprintf("%d", d.input+d.output)},
+		{label: m.tr("tui.menu_usage.36ecb4f866"), badge: compactTokens(int(d.input)), meta: fmt.Sprintf("%d", d.input)},
+		{label: m.tr("tui.menu_usage.b2439bcb8d"), badge: compactTokens(int(d.output)), meta: fmt.Sprintf("%d", d.output)},
+		{label: m.tr("tui.menu_usage.c782217680"), badge: compactTokens(int(d.cached)), meta: fmt.Sprintf("%d", d.cached)},
+		{label: m.tr("tui.menu_usage.204a5eb2cd"), badge: m.costLabel(d.cost), meta: m.tr("tui.menu_settings_render.1a5ac0bd0b") + m.costSourceLabel(d.cost.Source)},
 	}
 	if d.reasoning > 0 {
-		rows = append(rows, menuListItem{label: m.tr("Reasoning (part of output)", "Myślenie (część wyjścia)"), badge: compactTokens(int(d.reasoning))})
+		rows = append(rows, menuListItem{label: m.tr("tui.menu_usage.dea938851c"), badge: compactTokens(int(d.reasoning))})
 	}
 	for _, c := range stats.SumCalls(d.calls) {
-		meta := fmt.Sprintf(m.tr("%d in · %d out · %.2fs · errors %d", "%d wej. · %d wyj. · %.2fs · błędy %d"), c.TokensIn, c.TokensOut, float64(c.TotalUs)/1e6, c.Failed)
+		meta := fmt.Sprintf(m.tr("tui.menu_usage.f176686d37"), c.TokensIn, c.TokensOut, float64(c.TotalUs)/1e6, c.Failed)
 		if c.TTFTCount > 0 {
-			meta += fmt.Sprintf(" · TTFT %.2fs", float64(c.TTFTUs)/float64(c.TTFTCount)/1e6)
+			meta += fmt.Sprintf(m.tr("tui.menu_usage.3689bd94c8"), float64(c.TTFTUs)/float64(c.TTFTCount)/1e6)
 		}
-		rows = append(rows, menuListItem{label: m.tr("Model calls · ", "Wywołania · ") + c.Purpose, badge: fmt.Sprint(c.Count), meta: meta})
+		rows = append(rows, menuListItem{label: m.tr("tui.menu_usage.4148e8f65d") + c.Purpose, badge: fmt.Sprint(c.Count), meta: meta})
 	}
 	for _, t := range d.turns {
-		rows = append(rows, menuListItem{label: fmt.Sprintf(m.tr("Step %d", "Krok %d"), t.Step), badge: fmt.Sprintf("%.2fs", float64(t.DurationMs)/1000), meta: fmt.Sprintf("%s · %d → %d · %s", t.Model, t.TokensIn, t.TokensOut, strings.Join(t.Tools, ", "))})
+		rows = append(rows, menuListItem{label: fmt.Sprintf(m.tr("tui.menu_usage.10151a408b"), t.Step), badge: fmt.Sprintf("%.2fs", float64(t.DurationMs)/1000), meta: fmt.Sprintf("%s · %d → %d · %s", t.Model, t.TokensIn, t.TokensOut, strings.Join(t.Tools, ", "))})
 	}
 	return rows
 }
+
+func (m Model) costSourceLabel(source string) string {
+	switch source {
+	case "manual", "free", "local", "subscription", "provider", "official", "catalog", "mixed":
+		return m.tr("tui.cost_source." + source)
+	case "":
+		return m.tr("tui.menu_usage.7311518410")
+	default:
+		return source
+	}
+}
 func (m Model) renderUsageMenu() string {
-	p := menuPage{title: m.tr("Usage and costs", "Zużycie i koszty"), footer: m.tr("↑↓ details · R refresh", "↑↓ szczegóły · R odśwież"), empty: m.tr("Loading usage…", "Wczytywanie zużycia…")}
-	p.tabs = m.menuTabs([]string{m.tr("Current run", "Bieżąca praca"), m.tr("Saved conversation", "Zapisana rozmowa")}, m.menu.category)
+	p := menuPage{title: m.tr("tui.menu_usage.6ed5b1520e"), footer: m.tr("tui.menu_usage.6dc0164c79"), empty: m.tr("tui.menu_usage.0134e99d31")}
+	p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc"), m.tr("tui.menu_usage.20844222e7")}, m.menu.category)
 	if m.loadedSessionID == "" {
-		p.tabs = m.menuTabs([]string{m.tr("Current run", "Bieżąca praca")}, 0)
+		p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc")}, 0)
 	} else {
-		p.footer += " · ←→ " + m.tr("scope", "zakres")
+		p.footer += " · ←→ " + m.tr("tui.menu_usage.5f161c9149")
 	}
 	p.items = m.usageItems()
 	if d := m.menu.usage; d != nil {
 		p.subtitle = d.scope + " · " + d.model
 		p.detailTitle = m.costLabel(d.cost)
-		p.detail = []string{m.tr("Session: ", "Sesja: ") + d.sessionID, "", d.scope, m.tr("Model: ", "Model: ") + d.model, "", m.tr("Counts include recorded helper calls. Cache belongs to input; reasoning belongs to output.", "Liczby uwzględniają zarejestrowane wywołania pomocnicze. Cache jest częścią wejścia, a myślenie częścią wyjścia.")}
+		p.detail = []string{m.tr("tui.menu_usage.75cccf69c1") + d.sessionID, "", d.scope, m.tr("tui.actions_render.33f4e5313c") + d.model, "", m.tr("tui.menu_usage.d1b25c7a2e")}
 		if len(p.items) > 0 {
 			row := p.items[minInt(m.menu.cursor, len(p.items)-1)]
 			p.detail = append(p.detail, "", row.label, row.meta)
 		}
 		if d.cost.UnknownCalls > 0 {
-			p.detail = append(p.detail, fmt.Sprintf(m.tr("Calls without a price: %d", "Wywołania bez znanej ceny: %d"), d.cost.UnknownCalls))
+			p.detail = append(p.detail, fmt.Sprintf(m.tr("tui.menu_usage.000bbe6c92"), d.cost.UnknownCalls))
 		}
 	}
 	return m.renderMenuPage(p)

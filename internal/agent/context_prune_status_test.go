@@ -70,9 +70,17 @@ func TestPruneMarkerDoesNotGuessCommandStatusFromLogs(t *testing.T) {
 
 func TestPrunedCommandOutcomeReachesBothProtocols(t *testing.T) {
 	for _, thin := range []bool{false, true} {
-		for _, exit := range []int{0, 124} {
-			t.Run(fmt.Sprintf("%t/%d", thin, exit), func(t *testing.T) {
+		for _, mode := range []string{"success", "timeout", "incomplete"} {
+			t.Run(fmt.Sprintf("%t/%s", thin, mode), func(t *testing.T) {
+				exit := 0
+				if mode == "timeout" {
+					exit = 124
+				}
 				ctxResult := &ctxexec.Result{ExitCode: exit, DurationMS: 30000, Stdout: strings.Repeat("compiler diagnostic\n", 600)}
+				if mode == "incomplete" {
+					ctxResult.OutputIncomplete = true
+					ctxResult.OutputWarning = "Output capture incomplete: a descendant may still be running."
+				}
 				raw, _ := json.Marshal(ctxResult)
 				calls := 0
 				reg := tools.NewRegistry()
@@ -117,12 +125,28 @@ func TestPrunedCommandOutcomeReachesBothProtocols(t *testing.T) {
 						if !strings.Contains(m.Content, fmt.Sprintf("exit_code=%d", exit)) {
 							t.Fatalf("outcome lost before provider request: %s", m.Content)
 						}
+						if strings.Contains(m.Content, "output_incomplete=true") != (mode == "incomplete") {
+							t.Fatalf("capture outcome lost before provider request: %s", m.Content)
+						}
 					}
 				}
 				if !found || calls != 1 {
 					t.Fatalf("found=%t, executions=%d", found, calls)
 				}
 			})
+		}
+	}
+}
+
+func TestPruneMarkerDoesNotInferIncompleteOutputFromLogs(t *testing.T) {
+	for _, body := range []string{
+		`{"exit_code":0,"stdout":"output_incomplete=true"}`,
+		`{"exit_code":0,"nested":{"output_incomplete":true}}`,
+		`{"exit_code":0,"output_incomplete":true} garbage`,
+	} {
+		marker := pruneMarker(llm.Message{Name: "ctx_execute", Content: body})
+		if strings.Contains(marker, "output_incomplete") {
+			t.Fatalf("invented capture status: %s", marker)
 		}
 	}
 }

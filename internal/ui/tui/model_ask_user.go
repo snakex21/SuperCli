@@ -62,7 +62,7 @@ func renderAskView(a *pendingAsk, width, height int, languages ...string) string
 	}
 	if a.customMode {
 		focus = len(rows)
-		rows = append(rows, textFor(language, "Your answer:", "Twoja odpowiedź:"))
+		rows = append(rows, textFor(language, "tui.model_ask_user.adceb15c66"))
 		rows = append(rows, wrap(a.custom+"_", inner)...)
 		focus = len(rows) - 1
 	}
@@ -104,16 +104,16 @@ func helpLine(a *pendingAsk, languages ...string) string {
 		language = normalizeLanguage(languages[0])
 	}
 	if a.customMode {
-		return textFor(language, "type answer · ⏎ submit · Esc options", "wpisz odpowiedź · ⏎ wyślij · Esc opcje")
+		return textFor(language, "tui.model_ask_user.989c1f6de0")
 	}
 	custom := ""
 	if a.AllowCustom {
-		custom = textFor(language, " · c custom", " · c własna")
+		custom = textFor(language, "tui.model_ask_user.63a72d05fd")
 	}
 	if a.MultiSelect {
-		return textFor(language, "1-4 toggle · ↑↓ move · ⏎ confirm", "1-4 przełącz · ↑↓ wybierz · ⏎ potwierdź") + custom + textFor(language, " · Esc cancel", " · Esc anuluj")
+		return textFor(language, "tui.model_ask_user.1b26d0cd22") + custom + textFor(language, "tui.model_ask_user.535083f66f")
 	}
-	return textFor(language, "1-4 quick pick · ↑↓ move · ⏎ confirm", "1-4 szybki wybór · ↑↓ wybierz · ⏎ potwierdź") + custom + textFor(language, " · Esc cancel", " · Esc anuluj")
+	return textFor(language, "tui.model_ask_user.6e61061f0e") + custom + textFor(language, "tui.model_ask_user.535083f66f")
 }
 
 // writeCentered writes s centered in width characters, padding

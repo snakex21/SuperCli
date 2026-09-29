@@ -39,6 +39,8 @@ const (
 	menuContextLimit
 	menuUsage
 	menuAttachments
+	menuLanguage
+	menuUpdate
 )
 
 // CheckpointPreview is intentionally presentation-sized metadata. It contains
@@ -168,7 +170,7 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 	for _, p := range confs {
 		p := p
 		if p.Disabled {
-			m.providerStatuses[p.Name] = providerStatus{checked: true, err: "disabled (saved, not contacted)"}
+			m.providerStatuses[p.Name] = providerStatus{checked: true, err: m.tr("tui.menu.f52915763f")}
 			continue
 		}
 		// Echo and ChatGPT-OAuth (codex) providers have no

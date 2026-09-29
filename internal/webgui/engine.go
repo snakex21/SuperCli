@@ -147,6 +147,7 @@ type Engine struct {
 	// native close handler combines it with active delegated workers so an
 	// idle window closes immediately and only real work triggers a warning.
 	activeRuns atomic.Int32
+	updateGate sync.RWMutex
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -215,10 +216,11 @@ func (e *Engine) beginActiveRun() func() {
 	if e == nil {
 		return func() {}
 	}
+	e.updateGate.RLock()
 	e.activeRuns.Add(1)
 	var once sync.Once
 	return func() {
-		once.Do(func() { e.activeRuns.Add(-1) })
+		once.Do(func() { e.activeRuns.Add(-1); e.updateGate.RUnlock() })
 	}
 }
 

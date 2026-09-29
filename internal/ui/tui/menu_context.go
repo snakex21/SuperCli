@@ -27,7 +27,7 @@ func (m Model) handleContextLimitKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			if _, _, err := config.ParseContextBudget(m.menu.editBuf); err != nil {
-				m.menu.formErr = m.tr("Use a value such as 100k, 1m or auto.", "Podaj np. 100k, 1m lub auto.")
+				m.menu.formErr = m.tr("tui.menu_context.eba106b358")
 				return m, nil
 			}
 			return m.dispatchVisualCommand("context-limit", m.menu.editBuf)
@@ -70,15 +70,15 @@ func (m Model) renderContextLimitMenu() string {
 			current = fmt.Sprint(tokens)
 		}
 	}
-	page := menuPage{title: m.tr("Model context", "Kontekst modelu"), subtitle: m.reasoningModelName() + " · " + current,
-		detailTitle: m.tr("Context budget", "Budżet kontekstu"),
-		detail: []string{m.tr("Set the context limit for this provider and model.", "Ustaw limit kontekstu dla tego dostawcy i modelu."), "",
-			m.activeProviderName(), m.reasoningModelName(), "", m.tr("Current: ", "Aktualnie: ") + current},
-		footer: m.tr("↑↓ choose · Enter save", "↑↓ wybierz · Enter zapisz")}
+	page := menuPage{title: m.tr("tui.menu_context.2b7f5a0974"), subtitle: m.reasoningModelName() + " · " + current,
+		detailTitle: m.tr("tui.menu_context.54a9d031cd"),
+		detail: []string{m.tr("tui.menu_context.a936ab3e43"), "",
+			m.activeProviderName(), m.reasoningModelName(), "", m.tr("tui.menu_context.f156069983") + current},
+		footer: m.tr("tui.menu_context.87709f561c")}
 	for _, value := range contextMenuValues {
 		label := value
 		if value == "custom" {
-			label = m.tr("Custom value…", "Własna wartość…")
+			label = m.tr("tui.menu_context.b72813b729")
 			if m.menu.editing {
 				label = m.menu.editBuf + "▏"
 			}
@@ -86,7 +86,7 @@ func (m Model) renderContextLimitMenu() string {
 		page.items = append(page.items, menuListItem{label: label})
 	}
 	if m.menu.editing {
-		page.footer = m.tr("Enter save · Esc cancel", "Enter zapisz · Esc anuluj")
+		page.footer = m.tr("tui.menu_context.cf88b00a0e")
 	}
 	if m.menu.formErr != "" {
 		page.detail = append([]string{m.menu.formErr, ""}, page.detail...)

@@ -14,6 +14,10 @@ import (
 
 func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 	switch m.menu.kind {
+	case menuUpdate:
+		return m.selectUpdateAction()
+	case menuLanguage:
+		return m.selectLanguage()
 	case menuActions:
 		return m.selectAction()
 	case menuSessions:
@@ -35,7 +39,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		}
 		selected := rows[minInt(m.menu.cursor, len(rows)-1)]
 		if m.modelSwapFn == nil || m.modelSwapper == nil {
-			m.appendLine(m.marker.ModelInfo("selected " + selected.ID + " (model swap not wired)"))
+			m.appendLine(m.marker.ModelInfo(m.tr("tui.menu_actions.7384cc6f48") + selected.ID + m.tr("tui.menu_actions.48be39c342")))
 			return m.closeMenu()
 		}
 		// Apply the swap RIGHT NOW (synchronously) on confirm:
@@ -68,7 +72,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 		}
 		if m.providerMgr != nil && m.menu.editName == "" && len(m.menu.form) >= 4 && strings.TrimSpace(m.menu.form[0]) == "" {
 			m.menu.formAt = 0
-			m.menu.formErr = m.tr("Enter a name for this provider.", "Podaj nazwę dostawcy.")
+			m.menu.formErr = m.tr("tui.menu_actions.202d338320")
 			return m, nil
 		}
 		if m.providerMgr != nil && len(m.menu.form) >= 4 && strings.EqualFold(strings.TrimSpace(m.menu.form[1]), "auto") {
@@ -143,7 +147,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 				return failed(res.Err)
 			}
 			if len(res.Models) == 0 {
-				baseMsg.body = "endpoint reachable, but it returned 0 models — load/pull a model first"
+				baseMsg.body = m.tr("tui.menu_actions.d05b36cf22")
 				return baseMsg
 			}
 			// Test request against the first model.
@@ -156,7 +160,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 				}
 			}
 			if conf == nil {
-				baseMsg.body = fmt.Sprintf("found %d model(s)", len(res.Models))
+				baseMsg.body = fmt.Sprintf(m.tr("tui.menu_actions.6a960a1a5b"), len(res.Models))
 				return baseMsg
 			}
 			model := conf.Model
@@ -167,7 +171,7 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 				return failed(err)
 			}
 			caps.RegisterAll(probeCaps.All())
-			baseMsg.body = fmt.Sprintf("✓ connected — %d model(s), test request OK (%s)", len(res.Models), model)
+			baseMsg.body = fmt.Sprintf(m.tr("tui.menu_actions.460b558585"), len(res.Models), model)
 			return baseMsg
 		}
 		return m, tea.Batch(m.probeProvidersCmd(), verifyCmd)
@@ -229,7 +233,7 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.providerMgr.SetDisabled(p.Name, !p.Disabled); err != nil {
-			m.setStatus("provider: "+err.Error(), false)
+			m.setStatus(m.tr("tui.menu_actions.a3ccb1260b")+err.Error(), false)
 			return m, m.statusClearCmd()
 		}
 		m.providerMgr.Reload()
@@ -251,6 +255,10 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 
 func (m Model) renderMenuContent() string {
 	switch m.menu.kind {
+	case menuUpdate:
+		return m.renderUpdateMenu()
+	case menuLanguage:
+		return m.renderLanguageMenu()
 	case menuUsage:
 		return m.renderUsageMenu()
 	case menuAttachments:
@@ -266,11 +274,11 @@ func (m Model) renderMenuContent() string {
 	case menuData:
 		return m.renderDataMenu()
 	case menuModels:
-		return m.renderModelsMenu(m.tr("Enabled models", "Włączone modele"), m.tr("↑↓ select · type to filter · Enter use · R reasoning · Esc back", "↑↓ wybierz · pisz aby filtrować · Enter użyj · R myślenie · Esc wróć"))
+		return m.renderModelsMenu(m.tr("tui.menu_actions.f45b18a69c"), m.tr("tui.menu_actions.10c6f6b4d6"))
 	case menuModelCatalog:
-		return m.renderModelsMenu(m.tr("Model catalog", "Katalog modeli"), m.tr("↑↓ select · type filter · Enter toggle · A enable visible · X disable visible · R refresh · Esc back", "↑↓ wybierz · pisz filtr · Enter przełącz · A włącz widoczne · X wyłącz widoczne · R odśwież · Esc wróć"))
+		return m.renderModelsMenu(m.tr("tui.menu_actions.1b43e2d030"), m.tr("tui.menu_actions.55e4764d6f"))
 	case menuProviderModels:
-		return m.renderModelsMenu(m.tr("Models · ", "Modele · ")+m.menu.provider, m.tr("↑↓ select · Enter toggle · A enable visible · X disable visible · R refresh · Esc back", "↑↓ wybierz · Enter przełącz · A włącz widoczne · X wyłącz widoczne · R odśwież · Esc wróć"))
+		return m.renderModelsMenu(m.tr("tui.menu_actions.9ed5886a9a")+m.menu.provider, m.tr("tui.menu_actions.889faa3394"))
 	case menuProviders:
 		return m.renderProvidersMenu()
 	case menuProviderForm:

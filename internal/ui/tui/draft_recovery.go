@@ -164,7 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if err := n.drafts.Err(); err != nil && n.draftErrorShown != err.Error() {
 		n.draftErrorShown = err.Error()
-		n.setStatus(fmt.Sprintf(n.tr("Draft save failed: %v", "Nie udało się zapisać szkicu: %v"), err), false)
+		n.setStatus(fmt.Sprintf(n.tr("tui.draft_recovery.e540a23fbb"), err), false)
 		cmd = tea.Batch(cmd, n.statusClearCmd())
 	}
 	return n, cmd

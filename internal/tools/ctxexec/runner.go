@@ -82,7 +82,14 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	// Resolve the binary directly, never through cmd/PowerShell. In addition to
 	// PATH, rg may be bundled beside the GUI executable because desktop apps do
 	// not always inherit the user's terminal PATH.
-	binary, err := r.resolveBinary(req.Command[0])
+	file := req.Command[0]
+	if !filepath.IsAbs(file) && filepath.VolumeName(file) == "" &&
+		(strings.ContainsRune(file, filepath.Separator) || strings.ContainsRune(file, '/')) {
+		// Explicit relative paths belong to the requested project directory,
+		// not the GUI/CLI process cwd. Bare names still use PATH as before.
+		file = filepath.Join(wd, file)
+	}
+	binary, err := r.resolveBinary(file)
 	if err != nil {
 		return &Result{
 			ExitCode: ExitNotFound,
@@ -141,12 +148,20 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	runErr := cmd.Run()
 	dur := r.Now().Sub(start).Milliseconds()
 
+	// ErrWaitDelay specifically means a successful process exit followed by
+	// an inherited pipe that never closed. Do not report a failed command or
+	// encourage a second launch; the descendant may still be doing its work.
+	outputWarning := ""
+	if errors.Is(runErr, exec.ErrWaitDelay) && runCtx.Err() == nil {
+		outputWarning = "Output capture incomplete: process exited with code 0, but inherited output pipes stayed open. A descendant may still be running; check its status before rerunning the command."
+		runErr = nil
+	}
+
 	exit := ExitOK
 	if runErr != nil {
 		exit = classifyErr(runErr, runCtx.Err())
 	}
-	// We need the WaitDelay/ExitCode. exec.ExitError
-	// exposes it.
+	// Preserve the actual process exit code, except for timeout/cancellation.
 	if ee, ok := runErr.(*exec.ExitError); ok {
 		exit = ee.ExitCode()
 		if runCtx.Err() != nil {
@@ -157,6 +172,7 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	result := &Result{
 		Stdout: stdout.String(), Stderr: stderr.String(),
 		ExitCode: exit, DurationMS: dur, Command: req.String(), Workdir: wd,
+		OutputWarning: outputWarning, OutputIncomplete: outputWarning != "",
 		TruncatedStdout: stdout.Truncated(), TruncatedStderr: stderr.Truncated(),
 	}
 	if runErr != nil {
@@ -228,6 +244,9 @@ func isRipgrepCommand(file string) bool {
 func missingBinaryMessage(file string) string {
 	if isRipgrepCommand(file) {
 		return "executable not found: rg; use the built-in search_code tool for file and content searches (no rg installation required)"
+	}
+	if strings.ContainsRune(file, filepath.Separator) || strings.ContainsRune(file, '/') {
+		return fmt.Sprintf("executable not found: %s; check the path against workdir", file)
 	}
 	return fmt.Sprintf("executable not found: %s%s", file, WindowsShellHint())
 }

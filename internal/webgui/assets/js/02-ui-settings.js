@@ -3,7 +3,7 @@
 /* ═══ UI settings (server-persisted blob) ═══ */
 
 var ui = {
-  theme: "dark", lang: /^pl(?:-|_|$)/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "pl" : "en", uiFont: "system", codeFont: "system", uiScale: "auto",
+  theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
@@ -44,7 +44,6 @@ function saveUI() {
   pushTimer = setTimeout(function () {
     jpost("/api/settings", patch).catch(function () {});
   }, 300);
-  try { localStorage.setItem("supercli-ui", JSON.stringify(ui)); } catch (e) {}
 }
 function saveBlobKey(key, value) {
   var patch = {};
@@ -116,6 +115,7 @@ function applyUI() {
   applyViewportScale();
   $("#shell").classList.toggle("sidebar-hidden", !!ui.sidebarHidden);
   applyI18n();
+  if (typeof activeModelID !== "undefined" && !activeModelID) $("#model-name").textContent = t("model.none");
   if (typeof promptQueue !== "undefined") renderPromptQueue();
 }
 window.addEventListener("resize", function () {
@@ -129,22 +129,35 @@ if (window.visualViewport) {
   });
 }
 async function loadUI() {
-  try { Object.assign(ui, JSON.parse(localStorage.getItem("supercli-ui") || "{}")); } catch (e) {}
+  var settingsSnapshot;
+  var legacyUI = {};
+  try { legacyUI = JSON.parse(localStorage.getItem("supercli-ui") || "{}"); Object.assign(ui, legacyUI); } catch (e) {}
   applyUI();
   try {
     var got = await j("/api/settings");
     if (got && got.settings) {
       uiBlob = got.settings;
+      settingsSnapshot = uiBlob;
       Object.keys(ui).forEach(function (k) {
         if (uiBlob["ui." + k] !== undefined) ui[k] = uiBlob["ui." + k];
       });
       if (Array.isArray(uiBlob["supercli-model-cache"])) modelCache = uiBlob["supercli-model-cache"];
       if (Array.isArray(uiBlob[sentAttachmentStorageKey])) sentAttachmentIndex = uiBlob[sentAttachmentStorageKey];
+      // Read old browser data only to migrate it into the portable settings.
+      var migration = {};
+      Object.keys(legacyUI).forEach(function (key) {
+        if (key !== "lang" && Object.prototype.hasOwnProperty.call(ui, key) && uiBlob["ui." + key] === undefined) migration["ui." + key] = ui[key];
+      });
+      if (uiBlob[sentAttachmentStorageKey] === undefined && sentAttachmentIndex.length) migration[sentAttachmentStorageKey] = sentAttachmentIndex;
+      if (Object.keys(migration).length) await jpost("/api/settings", migration);
     }
   } catch (e) {}
+  ui.lang = normalizeLanguage(ui.lang) || detectedLanguage();
+  try { await loadLanguage(ui.lang); } catch (e) {}
   // A persisted desktop-open inspector must not cover the conversation when
   // the app is reopened on a smaller monitor or in a narrow window.
   if (sidebarCompactMQ.matches || document.documentElement.classList.contains("ui-scale-compact")) ui.sidebarHidden = true;
   applyUI();
+  return settingsSnapshot;
 }
 

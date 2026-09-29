@@ -358,7 +358,7 @@ function toolHint(name, args) {
     if (name === "task") {
       var kind = a.agent || "general";
       return {
-        name: t("task.delegation") + " · " + kind + (a.advise ? " (advise)" : ""),
+        name: t("task.delegation") + " · " + kind + (a.advise ? " (" + t("task.advice") + ")" : ""),
         hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
       };
     }
@@ -463,20 +463,20 @@ function appendToolPayload(body, label, text, name, isError) {
       var execution = JSON.parse(raw);
       if (execution && Object.prototype.hasOwnProperty.call(execution, "exit_code")) {
         var meta = el("div", "tool-exec-meta");
-        meta.appendChild(el("span", execution.exit_code === 0 ? "ok" : "err", "exit " + execution.exit_code));
+        meta.appendChild(el("span", execution.exit_code === 0 ? "ok" : "err", t("tool.exit").replace("{code}", execution.exit_code)));
         if (execution.duration_ms != null) meta.appendChild(el("span", "", fmtDuration(Number(execution.duration_ms))));
         if (execution.workdir) meta.appendChild(el("span", "", execution.workdir));
         body.appendChild(meta);
         if (execution.stdout) appendToolPayload(body, t("tool.stdout"), execution.stdout, "", false);
         if (execution.stderr) appendToolPayload(body, t("tool.stderr"), execution.stderr, "", true);
-        if (!execution.stdout && !execution.stderr) body.appendChild(el("pre", "tool-output", "(empty)"));
+        if (!execution.stdout && !execution.stderr) body.appendChild(el("pre", "tool-output", t("tool.empty")));
         return;
       }
     } catch (e) {}
   }
   var changes = toolChangeStats(name, raw);
   if (!changes.diff) {
-    body.appendChild(el("pre", "tool-output" + (isError ? " error" : ""), raw || "(empty)"));
+    body.appendChild(el("pre", "tool-output" + (isError ? " error" : ""), raw || t("tool.empty")));
     return;
   }
   var diff = el("div", "tool-diff");

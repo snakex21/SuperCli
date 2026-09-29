@@ -245,28 +245,26 @@ func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
 }
 
 func TestReasoningFallbackSentenceLivesInTheUILanguageCatalog(t *testing.T) {
-	// The Go layer has no string catalog, so it must never build this
-	// sentence: it announces the token count and the front-end localizes it.
-	// Guard both halves of that contract.
+	// The server announces the token count; the browser localizes this
+	// sentence. Guard both halves of that contract.
 	for _, name := range []string{"stream.go", "stream_run.go"} {
 		src, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		if strings.Contains(string(src), "tokens, but the provider") || strings.Contains(string(src), "tokenow rozumowania") {
-			t.Errorf("%s builds the reasoning fallback sentence in Go; it belongs in assets/js/01-i18n.js", name)
+			t.Errorf("%s builds the reasoning fallback sentence in Go; it belongs in assets/locales", name)
 		}
 	}
-	dict, err := assetsFS.ReadFile("assets/js/01-i18n.js")
-	if err != nil {
-		t.Fatalf("read i18n catalog: %v", err)
-	}
-	if got := strings.Count(string(dict), `"reasoning.noSummary"`); got != 2 {
-		t.Errorf("reasoning.noSummary defined %d times, want 2 (en and pl)", got)
-	}
-	if !strings.Contains(string(dict), "{n} reasoning tokens") {
-		t.Error("English reasoning.noSummary must interpolate the token count as {n}")
-	}
+	forEachEmbeddedGUILanguageCatalog(t, func(t *testing.T, catalog map[string]string) {
+		value := catalog["reasoning.noSummary"]
+		if strings.TrimSpace(value) == "" {
+			t.Fatal("missing reasoning.noSummary")
+		}
+		if !strings.Contains(value, "{n}") {
+			t.Error("reasoning.noSummary must interpolate the token count as {n}")
+		}
+	})
 }
 
 func TestRunStreamStopsAfterSemanticProgressTimeout(t *testing.T) {

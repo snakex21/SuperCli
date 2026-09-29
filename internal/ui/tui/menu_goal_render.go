@@ -18,9 +18,9 @@ func (m Model) goalMenuRows() []goalMenuRow {
 	if m.goalSvc == nil {
 		return nil
 	}
-	rows := []goalMenuRow{{id: "new", label: m.tr("+ New goal", "+ Nowy cel")}}
+	rows := []goalMenuRow{{id: "new", label: m.tr("tui.menu_goal_render.3c3424ee34")}}
 	if g := m.goalSvc.Active(); g != nil {
-		rows = append(rows, goalMenuRow{id: "task", label: m.tr("+ Add step", "+ Dodaj krok")})
+		rows = append(rows, goalMenuRow{id: "task", label: m.tr("tui.menu_goal_render.b86897c127")})
 		for _, task := range m.goalTaskRows() {
 			mark := "[ ]"
 			if task.Status == goal.TaskDone {
@@ -29,14 +29,14 @@ func (m Model) goalMenuRows() []goalMenuRow {
 			rows = append(rows, goalMenuRow{id: "toggle", seq: task.Seq, label: fmt.Sprintf("%s %d. %s", mark, task.Seq, task.Title)})
 		}
 		rows = append(rows,
-			goalMenuRow{id: "note", label: m.tr("Add note", "Dodaj notatkę")},
-			goalMenuRow{id: "verify", label: m.tr("Record passed verification", "Potwierdź weryfikację")},
-			goalMenuRow{id: "done", label: m.tr("Complete verified goal", "Zakończ zweryfikowany cel")},
-			goalMenuRow{id: "pause", label: m.tr("Pause goal", "Wstrzymaj cel")})
+			goalMenuRow{id: "note", label: m.tr("tui.menu_goal_render.63565c0485")},
+			goalMenuRow{id: "verify", label: m.tr("tui.menu_goal_render.274e155e69")},
+			goalMenuRow{id: "done", label: m.tr("tui.menu_goal_render.b0d19d16b6")},
+			goalMenuRow{id: "pause", label: m.tr("tui.menu_goal_render.27aa9fe4bc")})
 	} else if goals, err := m.goalSvc.List(context.Background()); err == nil {
 		for _, g := range goals {
 			if g.Status == goal.StatusPaused {
-				rows = append(rows, goalMenuRow{id: "resume", goalID: g.ID, label: m.tr("Resume: ", "Wznów: ") + g.Title})
+				rows = append(rows, goalMenuRow{id: "resume", goalID: g.ID, label: m.tr("tui.menu_goal_render.5ca7346671") + g.Title})
 			}
 		}
 	}
@@ -127,7 +127,7 @@ func (m Model) submitGoalForm() (tea.Model, tea.Cmd) {
 	}
 	if strings.TrimSpace(m.menu.form[0]) == "" {
 		m.menu.formAt = 0
-		m.menu.formErr = m.tr("Enter a title or text.", "Wpisz tytuł lub treść.")
+		m.menu.formErr = m.tr("tui.menu_goal_render.b103152138")
 		return m, nil
 	}
 	if m.menu.formAt < len(m.menu.form)-1 {
@@ -158,14 +158,14 @@ func (m Model) submitGoalForm() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderGoalMenu() string {
-	title := m.tr("No active goal", "Brak aktywnego celu")
+	title := m.tr("tui.menu_goal_render.3f87b02f0d")
 	if m.goalSvc != nil && m.goalSvc.Active() != nil {
 		title = m.goalSvc.Active().Title
 	}
-	page := menuPage{title: m.tr("Goal", "Cel"), subtitle: title, detailTitle: title,
-		detail: []string{m.tr("Track steps, notes and completed checks. All changes stay in project storage.", "Zapisuj kroki, notatki i wykonane sprawdzenia. Zmiany pozostają w danych projektu.")},
-		footer: m.tr("↑↓ choose · Enter apply · A add step", "↑↓ wybierz · Enter zatwierdź · A dodaj krok"),
-		empty:  m.tr("Goal storage is unavailable.", "Magazyn celów jest niedostępny.")}
+	page := menuPage{title: m.tr("tui.menu_goal_render.cdbf6975e8"), subtitle: title, detailTitle: title,
+		detail: []string{m.tr("tui.menu_goal_render.af476ecc74")},
+		footer: m.tr("tui.menu_goal_render.e2ee2eb5af"),
+		empty:  m.tr("tui.menu_goal_render.5c9828b271")}
 	for _, row := range m.goalMenuRows() {
 		page.items = append(page.items, menuListItem{label: row.label})
 	}
@@ -177,22 +177,22 @@ func (m Model) renderGoalMenu() string {
 
 func (m Model) renderGoalForm() string {
 	width := m.menuWidth()
-	title := m.tr("New goal", "Nowy cel")
-	labels := []string{m.tr("Title", "Tytuł"), m.tr("Context (optional)", "Kontekst (opcjonalnie)"), m.tr("Definition of done (optional)", "Warunki ukończenia (opcjonalnie)")}
-	hint := m.tr("Creating a goal pauses the previous active goal.", "Utworzenie celu wstrzyma poprzedni aktywny cel.")
+	title := m.tr("tui.menu_goal_render.f326ad6eff")
+	labels := []string{m.tr("tui.menu_goal_render.7e8cd2056d"), m.tr("tui.menu_goal_render.a163618396"), m.tr("tui.menu_goal_render.0878d10bc0")}
+	hint := m.tr("tui.menu_goal_render.2c1eb8a708")
 	switch m.menu.editName {
 	case "task":
-		title = m.tr("Add step", "Dodaj krok")
-		labels = []string{m.tr("Step title", "Tytuł kroku")}
+		title = m.tr("tui.menu_goal_render.839bd5e01e")
+		labels = []string{m.tr("tui.menu_goal_render.2e9af9d4e7")}
 		hint = ""
 	case "note":
-		title = m.tr("Add note", "Dodaj notatkę")
-		labels = []string{m.tr("Note", "Notatka")}
+		title = m.tr("tui.menu_goal_render.63565c0485")
+		labels = []string{m.tr("tui.menu_goal_render.d8da2c49df")}
 		hint = ""
 	case "verify":
-		title = m.tr("Record passed verification", "Potwierdź weryfikację")
-		labels = []string{m.tr("Evidence", "Dowód weryfikacji")}
-		hint = m.tr("Describe the completed checks and their results.", "Opisz wykonane sprawdzenia i ich wyniki.")
+		title = m.tr("tui.menu_goal_render.274e155e69")
+		labels = []string{m.tr("tui.menu_goal_render.03867aea70")}
+		hint = m.tr("tui.menu_goal_render.c71f87054c")
 	}
 	var b strings.Builder
 	b.WriteString(m.palette.PanelTitle.Render(truncateVisible(title, width)) + "\n")
@@ -209,6 +209,6 @@ func (m Model) renderGoalForm() string {
 		b.WriteString(truncateVisible(line, width) + "\n")
 	}
 	b.WriteString(m.palette.Error.Render(truncateVisible(m.menu.formErr, width)) + "\n")
-	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("↑↓ fields · Enter next/save · Esc cancel", "↑↓ pola · Enter dalej/zapisz · Esc anuluj"), width)))
+	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("tui.menu_goal_render.53217ca92b"), width)))
 	return b.String()
 }

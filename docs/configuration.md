@@ -21,7 +21,7 @@ cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
 
 | knob | default | touch when |
 |---|---|---|
-| `language` | detected once from the OS (`en` fallback) | switch the desktop app and TUI together between `en` and `pl` |
+| `language` | detected once from the OS (`en` fallback) | switch the desktop app and TUI together among the 27 [interface languages](../README.md) |
 | `default_model`, `default_provider`, `[[providers]]` | — | initial setup; usually written by the TUI menus |
 | `thinking` | unset = **ON** | never as an "optimization" — models without chain-of-thought are worse; `/think off` is a conscious opt-out for local soft-switch models (Qwen `/no_think`) |
 | `reasoning_effort` | provider default | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `/reasoning max` or GUI/TUI model controls |

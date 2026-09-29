@@ -64,7 +64,7 @@ func (m Model) handleSlashContextLimit(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		model = m.llm.Name()
 	}
 	if m.modelContexts == nil || provider == "" || model == "" {
-		msg := m.tr("context limit: active provider/model is unavailable", "limit kontekstu: brak aktywnego dostawcy/modelu")
+		msg := m.tr("tui.cmd_slash_handlers.063f295193")
 		return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Diff(msg)} }
 	}
 	if strings.TrimSpace(cmd.Args) == "" {
@@ -89,7 +89,7 @@ func (m Model) handleSlashContextLimit(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	}
 	value := "auto"
 	if !automatic {
-		value = fmt.Sprintf("%d (compact ~%d)", tokens, tokens*80/100)
+		value = fmt.Sprintf(m.tr("tui.slash.f01d4b5d68"), tokens, tokens*80/100)
 	}
 	msg := fmt.Sprintf("%s / %s: %s", provider, model, value)
 	return m, func() tea.Msg { return slashResultMsg{Body: m.marker.Diff(msg)} }
@@ -123,27 +123,27 @@ func (m Model) handleSlashShuffle(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			return slashResultMsg{Body: dm.Diff(shuffler.Global.Status())}
 		case "add":
 			if len(parts) < 2 {
-				return slashResultMsg{Body: dm.Diff("/shuffle add <proxy_url>\n  e.g. /shuffle add http://1.2.3.4:8080\n  e.g. /shuffle add socks5://1.2.3.4:1080")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.8a5f671483"))}
 			}
 			if err := shuffler.Global.AddProxy(parts[1]); err != nil {
 				return slashResultMsg{Err: err}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("proxy added: %s\n%s", parts[1], shuffler.Global.Status()))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.55c30b2413"), parts[1], shuffler.Global.Status()))}
 		case "load":
 			if len(parts) < 2 {
-				return slashResultMsg{Body: dm.Diff("/shuffle load <url>\n  e.g. /shuffle load https://example.com/proxies.txt")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.0b45a51e8a"))}
 			}
 			if err := shuffler.Global.LoadFromURL(context.Background(), parts[1]); err != nil {
 				return slashResultMsg{Err: err}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("proxies loaded from %s\n%s", parts[1], shuffler.Global.Status()))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.81dbcab7e2"), parts[1], shuffler.Global.Status()))}
 		case "list":
 			proxies := shuffler.Global.List()
 			if len(proxies) == 0 {
-				return slashResultMsg{Body: dm.Diff("No proxies configured.\n\nAdd one:\n  /shuffle add http://ip:port\n  /shuffle load https://...")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.d97d31da9b"))}
 			}
 			var b strings.Builder
-			b.WriteString("Configured proxies:\n")
+			b.WriteString(m.tr("tui.slash.2b94e29bf3"))
 			for _, p := range proxies {
 				marker := " "
 				if shuffler.Global.IsEnabled() {
@@ -161,7 +161,7 @@ func (m Model) handleSlashShuffle(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		case "check":
 			statuses := shuffler.Global.CheckProxies(context.Background(), "")
 			var b strings.Builder
-			b.WriteString("Proxy check results:\n")
+			b.WriteString(m.tr("tui.slash.e3b628476d"))
 			for _, st := range statuses {
 				icon := "OK"
 				if !st.OK {
@@ -177,19 +177,19 @@ func (m Model) handleSlashShuffle(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		case "now":
 			newProxy := shuffler.Global.Rotate()
 			if newProxy == "" {
-				return slashResultMsg{Body: dm.Diff("No proxies configured to rotate.")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.5a811e5c4f"))}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("rotated to: %s\n%s", newProxy, shuffler.Global.Status()))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.c578e79a15"), newProxy, shuffler.Global.Status()))}
 		case "interval":
 			if len(parts) < 2 {
-				return slashResultMsg{Body: dm.Diff("/shuffle interval <seconds>\n  min 60s  e.g. /shuffle interval 300")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.97d08a8086"))}
 			}
 			var secs int
 			fmt.Sscanf(parts[1], "%d", &secs)
 			shuffler.Global.SetInterval(time.Duration(secs) * time.Second)
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("rotation interval set to %ds\n%s", secs, shuffler.Global.Status()))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.525d2333ba"), secs, shuffler.Global.Status()))}
 		default:
-			return slashResultMsg{Body: dm.Diff("unknown /shuffle subcommand: " + parts[0] + "\n\n/shuffle auto|on|off|add|load|list|status|check|now|interval")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.414c5b4cf0") + parts[0] + "\n\n/shuffle auto|on|off|add|load|list|status|check|now|interval")}
 		}
 	}
 }
@@ -205,10 +205,10 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	args := cmd.Args
 	return m, func() tea.Msg {
 		if store == nil {
-			return slashResultMsg{Body: dm.Diff("/export: session store not available")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.11acbac2d2"))}
 		}
 		if sessionID == "" {
-			return slashResultMsg{Body: dm.Diff(m.tr("No active session to export.", "Brak aktywnej rozmowy do eksportu."))}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.cmd_slash_handlers.3e78b47f2f"))}
 		}
 		sess, err := store.Get(sessionID)
 		if err != nil {
@@ -216,7 +216,7 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 		msgs, err := store.ReadMessages(context.Background(), sess.ID)
 		if err != nil {
-			return slashResultMsg{Err: fmt.Errorf("export read: %w", err)}
+			return slashResultMsg{Err: fmt.Errorf(m.tr("tui.slash.88d8c382f3"), err)}
 		}
 		opts := export.Options{
 			ID:        sess.ID,
@@ -232,9 +232,9 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		content := export.RenderMarkdown(opts)
 		if a := strings.TrimSpace(args); a == "clip" || a == "clipboard" {
 			if err := clipboard.WriteAll(content); err != nil {
-				return slashResultMsg{Err: fmt.Errorf("export clipboard: %w", err)}
+				return slashResultMsg{Err: fmt.Errorf(m.tr("tui.slash.8e0d97abc6"), err)}
 			}
-			return slashResultMsg{Body: dm.ModelInfo(fmt.Sprintf("copied %d messages to clipboard", len(msgs)))}
+			return slashResultMsg{Body: dm.ModelInfo(fmt.Sprintf(m.tr("tui.slash.49aed96c7c"), len(msgs)))}
 		}
 		filename := export.DefaultFilename(opts)
 		if args != "" {
@@ -242,9 +242,9 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 		path := home + "/" + filename
 		if err := writeExportFile(path, content); err != nil {
-			return slashResultMsg{Err: fmt.Errorf("export write: %w", err)}
+			return slashResultMsg{Err: fmt.Errorf(m.tr("tui.slash.127b72ef9e"), err)}
 		}
-		return slashResultMsg{Body: dm.ModelInfo(fmt.Sprintf("exported %d messages to %s", len(msgs), path))}
+		return slashResultMsg{Body: dm.ModelInfo(fmt.Sprintf(m.tr("tui.slash.797e916342"), len(msgs), path))}
 	}
 }
 
@@ -253,7 +253,7 @@ func (m Model) handleSlashDiff(_ SlashCommand) (tea.Model, tea.Cmd) {
 	dm := m.marker
 	return m, func() tea.Msg {
 		if tracker == nil || tracker.Count() == 0 {
-			return slashResultMsg{Body: dm.Diff("No file changes recorded in this session.")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.807564bac8"))}
 		}
 		return slashResultMsg{Body: dm.Diff(tracker.DiffOutput())}
 	}
@@ -265,12 +265,12 @@ func (m Model) handleSlashModel(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	}
 	if m.modelSwapper == nil {
 		return m, func() tea.Msg {
-			return slashResultMsg{Body: m.marker.Diff("/model not available")}
+			return slashResultMsg{Body: m.marker.Diff(m.tr("tui.slash.76296fd689"))}
 		}
 	}
 	if m.modelLister == nil {
 		return m, func() tea.Msg {
-			return slashResultMsg{Body: m.marker.Diff("/model: listing not available")}
+			return slashResultMsg{Body: m.marker.Diff(m.tr("tui.slash.43d66da64e"))}
 		}
 	}
 	previousMenu := m.menu
@@ -291,7 +291,7 @@ func (m Model) handleSlashModel(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 	}
 	if found == nil {
-		errMsg := fmt.Sprintf("/model: %q is unavailable or disabled; enable it in /models", target)
+		errMsg := fmt.Sprintf(m.tr("tui.slash.d9a6438d82"), target)
 		return m, func() tea.Msg {
 			return slashResultMsg{Body: m.marker.Diff(errMsg)}
 		}
@@ -316,7 +316,7 @@ func (m Model) handleSlashUndo(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	args := cmd.Args
 	return m, func() tea.Msg {
 		if trk == nil {
-			return slashResultMsg{Body: dm.Diff("/undo: tracker not wired")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.5513721fb3"))}
 		}
 		n := 1
 		if args != "" {
@@ -327,10 +327,10 @@ func (m Model) handleSlashUndo(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			return slashResultMsg{Err: err}
 		}
 		if len(results) == 0 {
-			return slashResultMsg{Body: dm.Diff("/undo: nothing to undo")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.7d1429d9b1"))}
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "reverted %d operation(s):\n", len(results))
+		fmt.Fprintf(&b, m.tr("tui.slash.837e6b2747"), len(results))
 		for _, r := range results {
 			fmt.Fprintf(&b, "  %s (%s)\n", r.Path, r.Op)
 		}
@@ -340,7 +340,7 @@ func (m Model) handleSlashUndo(cmd SlashCommand) (tea.Model, tea.Cmd) {
 
 func (m Model) handleSlashRedo(_ SlashCommand) (tea.Model, tea.Cmd) {
 	if m.checkpointUndo == nil {
-		return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("/redo: checkpoint undo not wired")} }
+		return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("%s", m.tr("tui.slash.2eaece8ebf"))} }
 	}
 	redo := m.checkpointUndo
 	return m, func() tea.Msg {
@@ -358,12 +358,12 @@ func (m Model) handleSlashProviders(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	args := cmd.Args
 	return m, func() tea.Msg {
 		if mgr == nil {
-			return slashResultMsg{Body: dm.Diff("/providers: provider manager not wired")}
+			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.77ae580bb6"))}
 		}
 		mgr.Reload()
 		parts := strings.Fields(args)
 		if len(parts) == 0 {
-			return slashResultMsg{Body: dm.Diff(renderProvidersList(mgr, nil))}
+			return slashResultMsg{Body: dm.Diff(renderProvidersList(mgr, nil, m.language))}
 		}
 		switch parts[0] {
 		case "add":
@@ -378,7 +378,7 @@ func (m Model) handleSlashProviders(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return slashResultMsg{Err: err}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("provider %q added", parts[1]))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.0680f927c9"), parts[1]))}
 		case "remove", "rm":
 			if len(parts) < 2 {
 				return slashResultMsg{Body: dm.Diff("/providers remove <name>")}
@@ -387,7 +387,7 @@ func (m Model) handleSlashProviders(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return slashResultMsg{Err: err}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("provider %q removed", parts[1]))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.a2d43dde8d"), parts[1]))}
 		case "price":
 			if len(parts) < 4 {
 				return slashResultMsg{Body: dm.Diff("/providers price <model_id> <input_cost_per_1M> <output_cost_per_1M>")}
@@ -399,21 +399,21 @@ func (m Model) handleSlashProviders(cmd SlashCommand) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return slashResultMsg{Err: err}
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("price set for %s: $%.2f/$%.2f per 1M tokens", parts[1], inputCost, outputCost))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.6963013366"), parts[1], inputCost, outputCost))}
 		case "toggle":
 			ref := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(args), "toggle"))
 			provider, modelID, ok := strings.Cut(ref, "::")
 			if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(modelID) == "" {
-				return slashResultMsg{Body: dm.Diff("/providers toggle <provider>::<model_id>\nUse the interactive /models menu for names containing unusual separators.")}
+				return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.1d6b6af383"))}
 			}
 			hidden := mgr.ToggleHiddenFor(strings.TrimSpace(provider), strings.TrimSpace(modelID))
-			state := "visible"
+			state := m.tr("tui.menu_models_render.37f4a09472")
 			if hidden {
-				state = "hidden"
+				state = m.tr("tui.menu_models_render.5ad9cfa728")
 			}
-			return slashResultMsg{Body: dm.Diff(fmt.Sprintf("%s/%s is now %s", provider, modelID, state))}
+			return slashResultMsg{Body: dm.Diff(fmt.Sprintf(m.tr("tui.slash.c9511a2999"), provider, modelID, state))}
 		default:
-			return slashResultMsg{Body: dm.Diff(renderProvidersList(mgr, nil))}
+			return slashResultMsg{Body: dm.Diff(renderProvidersList(mgr, nil, m.language))}
 		}
 	}
 }

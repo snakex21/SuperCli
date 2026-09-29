@@ -2,18 +2,18 @@
 
 sections.workflow = async function () {
   panelContent.innerHTML = "";
-  panelContent.appendChild(SuperCliUI.createUserInstructionsEditor({ lang: ui.lang, className: "group" }));
+  panelContent.appendChild(SuperCliUI.createUserInstructionsEditor({ lang: ui.lang, className: "group", copy: instructionsCopy(), loadingText: t("common.loading") }));
   var queue = el("div", "group"); queue.appendChild(i18nEl("div", "g-label", "workflow.queue"));
   queue.appendChild(el("div", "workflow-lead", String(promptQueue.length).padStart(2,"0") + " · " + t("composer.queued")));
-  queue.appendChild(el("div", "note", ui.lang === "pl" ? "Kolejka przeżywa restart aplikacji i czeka na wznowienie." : "The queue survives app restarts and waits for you to resume it.")); panelContent.appendChild(queue);
+  queue.appendChild(el("div", "note", t("workflow.queueHint"))); panelContent.appendChild(queue);
 
   var profile=el("div","group");profile.appendChild(i18nEl("div", "g-label", "workflow.profile"));
-  try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=i18nEl("button", "btn", "common.openFolder");openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=ui.lang==="pl"?"Np. preferuj krótkie wywołania narzędzi.":"Example: prefer short tool calls.";profile.appendChild(ta);var save=i18nEl("button", "btn primary", "common.save");save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(i18nEl("div", "note", "workflow.profileHint"));}catch(e){profile.appendChild(el("div","note",e.message));}
+  try{var p=await j("/api/prompt/profile");profile.appendChild(el("div","file-path",p.path));var openProfiles=i18nEl("button", "btn", "common.openFolder");openProfiles.addEventListener("click",function(){openWorkspaceFolder(p.path.replace(/[\\\/][^\\\/]+$/, ""));});profile.appendChild(openProfiles);var ta=el("textarea","editor-area profile-editor");ta.value=p.content||"";ta.placeholder=t("workflow.profilePlaceholder");profile.appendChild(ta);var save=i18nEl("button", "btn primary", "common.save");save.addEventListener("click",async function(){try{await jpost("/api/prompt/profile",{content:ta.value});toast(t("common.save")+" ✓");}catch(e){toast(e.message);}});profile.appendChild(save);profile.appendChild(i18nEl("div", "note", "workflow.profileHint"));}catch(e){profile.appendChild(el("div","note",e.message));}
   panelContent.appendChild(profile);
 
-  var scratch=el("div","group");scratch.appendChild(i18nEl("div", "g-label", "workflow.scratch"));try{var sc=await j("/api/scratchpad");scratch.appendChild(el("div","file-path",sc.path));var openScratch=i18nEl("button", "btn", "common.openFolder");openScratch.addEventListener("click",function(){openWorkspaceFolder(sc.path);});scratch.appendChild(openScratch);scratch.appendChild(el("div","note",sc.notes.length?sc.notes.join(" · "):(ui.lang==="pl"?"Notatnik jest pusty.":"Scratchpad is empty.")));}catch(e){scratch.appendChild(el("div","note",e.message));}panelContent.appendChild(scratch);
+  var scratch=el("div","group");scratch.appendChild(i18nEl("div", "g-label", "workflow.scratch"));try{var sc=await j("/api/scratchpad");scratch.appendChild(el("div","file-path",sc.path));var openScratch=i18nEl("button", "btn", "common.openFolder");openScratch.addEventListener("click",function(){openWorkspaceFolder(sc.path);});scratch.appendChild(openScratch);scratch.appendChild(el("div","note",sc.notes.length?sc.notes.join(" · "):(t("workflow.scratchEmpty"))));}catch(e){scratch.appendChild(el("div","note",e.message));}panelContent.appendChild(scratch);
 
-  var hard=el("div","group");hard.appendChild(i18nEl("div", "g-label", "workflow.hard"));var run=i18nEl("button", "btn primary", "workflow.runHard"),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=(report.ok?"PASS":"FAIL")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
+  var hard=el("div","group");hard.appendChild(i18nEl("div", "g-label", "workflow.hard"));var run=i18nEl("button", "btn primary", "workflow.runHard"),output=el("pre","pre-block","");run.addEventListener("click",async function(){run.disabled=true;run.textContent=t("common.loading");output.textContent="";try{var report=await jpost("/api/test/hard",{});output.textContent=t(report.ok ? "common.pass" : "common.fail")+" · "+fmtDuration(report.duration_ms)+"\n"+(report.checks||[]).map(function(c){return(c.ok?"✓ ":"× ")+c.name+" · "+fmtDuration(c.duration_ms)+(c.ok?"":"\n"+c.output);}).join("\n");}catch(e){output.textContent=e.message;}finally{run.disabled=false;run.textContent=t("workflow.runHard");}});hard.appendChild(run);hard.appendChild(output);panelContent.appendChild(hard);
 };
 
 async function openWorkspaceFolder(path) {
@@ -42,6 +42,21 @@ sections.settings = async function () {
   panelContent.appendChild(el("div", "note", " "));
   panelContent.appendChild(i18nEl("div", "note", "set.resetAllHint"));
 };
+
+
+function knobDisplayValue(k) {
+  var key = ({on:"set.state.on", off:"set.state.off", auto:"set.state.auto", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
+    "default (700/300 by tier)":"setting.value.memoryBudget", "default (spec or 10)":"setting.value.workerSteps", "default (no cap)":"setting.value.noCap",
+    "default (coordinator's model)":"setting.value.coordinator", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active",
+    "off (no automatic paid fallback)":"setting.value.noFallback", "none (diff-only verdict)":"setting.value.diffOnly"})[k.value];
+  if (key) return t(key);
+  var number = String(k.value || "").match(/^default \((\d+)\)$/);
+  return number ? t("setting.value.number").replace("{n}", number[1]) : k.value;
+}
+function knobSourceLabel(k) {
+  var key = ({"set via model picker":"set.source.modelPicker", "set via providers":"set.source.providers"})[k.source];
+  return t(key || "set.source." + k.source);
+}
 
 function knobRow(k) {
   var row = el("div", "knob-row");
@@ -78,7 +93,7 @@ function knobRow(k) {
       b.addEventListener("click", function () { post(st === "auto" ? "default" : st); });
       seg.appendChild(b);
     });
-    row.appendChild(el("span", "k-val", k.source === "default" ? k.value : ""));
+    row.appendChild(el("span", "k-val", k.source === "default" ? knobDisplayValue(k) : ""));
     row.appendChild(seg);
   } else if (k.key === "orchestrator_model") {
     // Compact model-palette-style picker — pick, never type a model id.
@@ -88,7 +103,7 @@ function knobRow(k) {
   } else if (k.kind === "int" || k.kind === "text") {
     var input = el("input", "k-edit");
     input.value = k.raw || "";
-    input.placeholder = k.source === "default" ? k.value : "";
+    input.placeholder = k.source === "default" ? knobDisplayValue(k) : "";
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); post(input.value.trim()); }
       if (e.key === "Escape") { input.value = k.raw || ""; input.blur(); }
@@ -98,9 +113,9 @@ function knobRow(k) {
     });
     row.appendChild(input);
   } else {
-    row.appendChild(el("span", "k-val", k.value));
+    row.appendChild(el("span", "k-val", knobDisplayValue(k)));
   }
-  var src = el("span", "k-src" + (k.source !== "default" ? " manual" : ""), t("set.source." + k.source));
+  var src = el("span", "k-src" + (k.source !== "default" ? " manual" : ""), knobSourceLabel(k));
   row.appendChild(src);
   return row;
 }
@@ -134,8 +149,13 @@ sections.appearance = function () {
       sel.appendChild(opt);
     });
     sel.value = ui[key];
-    sel.addEventListener("change", function () {
+    sel.addEventListener("change", async function () {
       ui[key] = sel.value;
+      if (key === "lang") {
+        var selectedLanguage = ui.lang;
+        try { await loadLanguage(selectedLanguage); } catch (e) { toast(t("common.error")); }
+        if (ui.lang !== selectedLanguage) return;
+      }
       applyUI();
       saveUI();
       if (key === "lang") {
@@ -151,11 +171,11 @@ sections.appearance = function () {
     gg.appendChild(tr);
     return gg;
   }
-  panelContent.appendChild(selectRow(t("app.lang"), "lang", [["en", "English"], ["pl", "Polski"]]));
+  panelContent.appendChild(selectRow(t("app.lang"), "lang", UI_LANGUAGES.map(function (language) { return [language.code, language.name]; })));
   panelContent.appendChild(selectRow(t("app.uiFont"), "uiFont",
-    [["system", "System"], ["segoe", "Segoe UI"], ["aptos", "Aptos"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["verdana", "Verdana"], ["trebuchet", "Trebuchet MS"], ["georgia", "Georgia"]]));
+    [["system", t("app.systemFont")], ["segoe", "Segoe UI"], ["aptos", "Aptos"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["verdana", "Verdana"], ["trebuchet", "Trebuchet MS"], ["georgia", "Georgia"]]));
   panelContent.appendChild(selectRow(t("app.codeFont"), "codeFont",
-    [["system", "System monospace"], ["cascadia", "Cascadia Mono"], ["jetbrains", "JetBrains Mono"], ["fira", "Fira Code"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
+    [["system", t("app.systemCodeFont")], ["cascadia", "Cascadia Mono"], ["jetbrains", "JetBrains Mono"], ["fira", "Fira Code"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
   panelContent.appendChild(selectRow(t("app.scale"), "uiScale", [["auto", t("app.auto")], ["compact", "90%"], ["normal", "100%"], ["large", "110%"], ["xlarge", "125%"], ["huge", "140%"]]));
 
   var gn = el("div", "group");

@@ -45,12 +45,15 @@ func TestResumeLoadsLongHistoryWithoutInferenceOrTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = resumeSession(ctx, loop, store, func(string) int { return 1000 }, sess.ID)
+	out, err := resumeSession(ctx, loop, store, func(string) int { return 1000 }, sess.ID, "pl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(loop.VisibleMessages(), history) {
 		t.Fatal("resume rewrote or dropped original history")
+	}
+	if !strings.Contains(out, "wznowiono sesję "+sess.ID) || !strings.Contains(out, "verified result") || !strings.Contains(out, "ostatnie wiadomości") {
+		t.Fatalf("localized resume lost the session identity or source message: %s", out)
 	}
 }
 

@@ -38,7 +38,7 @@ type modelSwapRequestMsg struct {
 // returns a tea.Cmd that emits a shellResultMsg.
 func (m Model) dispatchShellEscape(text string) (tea.Model, tea.Cmd) {
 	if m.shellRunner == nil {
-		m.appendLine(m.marker.Error(fmt.Errorf("shell escape: runner not configured")))
+		m.appendLine(m.marker.Error(fmt.Errorf("%s", m.tr("tui.other.c116f8a729"))))
 		m.refreshTranscript()
 		return m, nil
 	}
@@ -61,28 +61,33 @@ func writeExportFile(path, content string) error {
 
 // renderProvidersList renders the provider list with connectivity
 // status, model counts, and visibility indicators.
-func renderProvidersList(mgr *providers.Manager, caps *llm.CapabilityRegistry) string {
+func renderProvidersList(mgr *providers.Manager, caps *llm.CapabilityRegistry, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = languages[0]
+	}
+	tr := func(key string) string { return textFor(language, key) }
 	var b strings.Builder
 	infos := mgr.List(caps)
 	if len(infos) == 0 {
-		return "No providers configured.\n\nAdd one:\n  /providers add <name> <type> <base_url> [api_key]\n\nTypes: openai, anthropic, codex, opencode, echo"
+		return tr("tui.other.b89ccec37a")
 	}
 	for _, pi := range infos {
-		status := "✗ disconnected"
+		status := tr("tui.other.bf10f597cc")
 		if pi.Connected {
-			status = "✓ connected"
+			status = tr("tui.other.225c9957ac")
 		}
 		modelCount := len(pi.Models)
-		fmt.Fprintf(&b, "%s (%s) — %s | %d model(s)\n",
+		fmt.Fprintf(&b, tr("tui.other.04d53f5dcb"),
 			pi.Name, pi.Type, status, modelCount)
 		if pi.Error != "" {
-			fmt.Fprintf(&b, "  error: %s\n", pi.Error)
+			fmt.Fprintf(&b, tr("tui.other.f053e079ad"), pi.Error)
 		}
 		if pi.BaseURL != "" {
 			fmt.Fprintf(&b, "  base_url: %s\n", pi.BaseURL)
 		}
 	}
-	b.WriteString("\nSubcommands:\n")
+	b.WriteString("\n" + tr("tui.providers.subcommands") + "\n")
 	b.WriteString("  /providers add <name> <type> <url> [key]\n")
 	b.WriteString("  /providers remove <name>\n")
 	b.WriteString("  /providers price <model> <in> <out>\n")

@@ -91,8 +91,11 @@ func pruneMarker(m llm.Message) string {
 	status := ""
 	handle := core.StoredOutputHandle(m.Content)
 	if m.Name == "ctx_execute" {
-		if exit, ok := commandExitForPrune(m.Content, handle); ok {
+		if exit, incomplete, ok := commandOutcomeForPrune(m.Content, handle); ok {
 			status = fmt.Sprintf(", exit_code=%d", exit)
+			if incomplete {
+				status += ", output_incomplete=true"
+			}
 		}
 	} else if m.Name == "read_many" {
 		status = readManyStatusForPrune(m.Content, handle)

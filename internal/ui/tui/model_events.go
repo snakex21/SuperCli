@@ -84,7 +84,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 		m.chat.addSystem(m.marker.DoneEst(in, out, estimated))
 		m.refreshRuntimeHUD()
-		m.appendLineToTranscript(fmt.Sprintf("(done · %d in / %d out)", in, out))
+		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.5a658d3ae8"), in, out))
 		return m, m.waitForRunClose()
 	case agent.ErrorEvent:
 		m.flushCurrent()
@@ -97,28 +97,28 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		// and never touch the model registry, so the /model
 		// picker keeps working after the failure.
 		if isModelUnavailableErr(err) {
-			name := "current model"
+			name := m.tr("tui.model_events.18be318fc4")
 			if m.llm != nil {
 				name = m.llm.Name()
 			}
-			err = fmt.Errorf("model %q is unavailable on this provider — pick another with /model (%v)", name, e.Err)
+			err = fmt.Errorf(m.tr("tui.model_events.cf8461d7e0"), name, e.Err)
 		}
 		m.chat.addSystem(m.marker.Error(err))
-		m.appendLineToTranscript(fmt.Sprintf("(error: %v)", err))
+		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.b577809eab"), err))
 		return m, m.waitForRunClose()
 	case agent.DraftUsedEvent:
 		line := m.marker.Draft(e.DraftModel, e.VerifierModel, e.Savings, e.Decision)
 		m.appendLine(line)
-		m.appendLineToTranscript(fmt.Sprintf("[draft: %s → %s, saved %d tokens]", e.DraftModel, e.VerifierModel, e.Savings))
+		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.4267fabff4"), e.DraftModel, e.VerifierModel, e.Savings))
 		return m, m.waitForNextEvent()
 	case agent.AutoCompactEvent:
-		line := fmt.Sprintf("[auto-compact: %d message(s) compacted (%s, ~%d/%d tokens, trigger=%d/%s, estimate=%s, window=%s)]",
+		line := fmt.Sprintf(m.tr("tui.model_events.b27e411e40"),
 			e.Removed, e.Reason, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()
 	case agent.ToolResultsPrunedEvent:
-		line := fmt.Sprintf("[prune: %d old tool result(s) → reclaimed ~%d tokens (~%d/%d, trigger=%d/%s)]",
+		line := fmt.Sprintf(m.tr("tui.model_events.a1e963e2a3"),
 			e.Pruned, e.Reclaimed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
@@ -126,7 +126,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	case agent.MessagesHiddenEvent:
 		line := m.marker.ContextHid(e.Count, e.Reason)
 		m.appendLine(line)
-		m.appendLineToTranscript(fmt.Sprintf("[context: hid %d message(s)]", e.Count))
+		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.764f3e9b33"), e.Count))
 		return m, m.waitForNextEvent()
 	case agent.ConsultEvent:
 		if e.AllFailed {
@@ -138,12 +138,12 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		return m, m.waitForNextEvent()
 	case agent.WorkerProgressEvent:
 		m.updateWorkerView(e)
-		prefix := fmt.Sprintf("[%s · %s] ", workerDisplayName(e.TaskID), e.Agent)
+		prefix := fmt.Sprintf("[%s · %s] ", workerDisplayName(e.TaskID, m.language), e.Agent)
 		switch e.Kind {
 		case "started":
-			label := m.tr("delegated", "delegacja")
+			label := m.tr("tui.model_events.cb04073e57")
 			if e.Run > 1 {
-				label = m.tr("continued", "kontynuacja")
+				label = m.tr("tui.model_events.0dec6069d5")
 			}
 			m.appendLine(prefix + label + ": " + compactWorkerText(e.Prompt, 160))
 		case "tool_call":
@@ -159,7 +159,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		return m, m.waitForNextEvent()
 	case agent.WorkerNotificationEvent:
 		m.updateWorkerView(agent.WorkerProgressEvent{TaskID: e.TaskID, Agent: e.Agent, Kind: "finished", Status: e.Status})
-		line := fmt.Sprintf("[worker %s: %s] %s", e.TaskID, e.Status, e.Summary)
+		line := fmt.Sprintf(m.tr("tui.model_events.0169a72b57"), e.TaskID, e.Status, e.Summary)
 		m.appendLine(line)
 		m.appendLineToTranscript(line)
 		return m, m.waitForNextEvent()

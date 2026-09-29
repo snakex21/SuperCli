@@ -9,13 +9,18 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
+	"supercli/internal/system/uilang"
 )
 
 func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	m := s.eng.providerManager()
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, map[string]any{"providers": m.ListConfigured(s.eng.caps), "templates": providers.PredefinedProviders()})
+		templates := providers.PredefinedProviders()
+		for i := range templates {
+			templates[i].Desc = uilang.ProviderDescription(r.URL.Query().Get("lang"), templates[i].Name, templates[i].Desc)
+		}
+		writeJSON(w, map[string]any{"providers": m.ListConfigured(s.eng.caps), "templates": templates})
 	case http.MethodPost:
 		var req struct {
 			Name    string `json:"name"`

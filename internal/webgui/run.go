@@ -98,6 +98,11 @@ func Run(eng *Engine, opts RunOptions) error {
 	}()
 
 	log.Printf("%s web GUI: %s", appName, url)
+	if opts.NoWindow {
+		// Server-only launches must report the URL even though normal GUI logs
+		// are redirected to the portable log file.
+		fmt.Printf("%s web GUI: %s\n", appName, url)
+	}
 	windowClosedCh := make(chan struct{}, 1)
 	if !opts.NoWindow {
 		// Prefer a true native WebView2 host. Besides giving the program its own

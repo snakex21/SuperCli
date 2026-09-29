@@ -156,18 +156,38 @@ func lineBlockMatch(content, old, new string, want int) ([]patchSpan, string, bo
 	}
 
 	lines := splitFileLines(content)
-	fileEOL := dominantEOL(content)
-	spans := make([]patchSpan, 0, want)
-	reindented := false
-
+	type blockAnchor struct {
+		line   int
+		indent string
+	}
+	// Count locations independently of whether the replacement can be
+	// re-indented there. Skipping an incompatible location can make an
+	// ambiguous old block appear unique and select the wrong occurrence.
+	// Bound capacity by the file, not the caller's expected_count.
+	anchors := make([]blockAnchor, 0, min(want, len(lines)/len(oldCore)))
 	for s := 0; s+len(oldCore) <= len(lines); s++ {
 		candIndent, ok := blockMatchesAt(content, lines, s, oldCore)
 		if !ok {
 			continue
 		}
-		body, shifted, ok := reindentNew(new, oldIndent, candIndent, blockEOL(lines, s, fileEOL))
+		anchors = append(anchors, blockAnchor{line: s, indent: candIndent})
+		if len(anchors) > want {
+			return nil, "", false
+		}
+		s += len(oldCore) - 1
+	}
+	if len(anchors) != want {
+		return nil, "", false
+	}
+
+	fileEOL := dominantEOL(content)
+	spans := make([]patchSpan, 0, len(anchors))
+	reindented := false
+	for _, anchor := range anchors {
+		s := anchor.line
+		body, shifted, ok := reindentNew(new, oldIndent, anchor.indent, blockEOL(lines, s, fileEOL))
 		if !ok {
-			continue
+			return nil, "", false
 		}
 		if shifted {
 			reindented = true
@@ -181,13 +201,6 @@ func lineBlockMatch(content, old, new string, want int) ([]patchSpan, string, bo
 			}
 		}
 		spans = append(spans, patchSpan{start: lines[s].start, end: end, text: body})
-		if len(spans) > want {
-			return nil, "", false
-		}
-		s += len(oldCore) - 1
-	}
-	if len(spans) != want {
-		return nil, "", false
 	}
 	note := "whitespace normalised"
 	if reindented {

@@ -12,13 +12,10 @@ func normalizeLanguage(language string) string {
 	return uilang.English
 }
 
-func textFor(language, english, polish string) string {
-	if uilang.IsPolish(language) {
-		return polish
-	}
-	return english
+func textFor(language, key string) string {
+	return uilang.Text(language, key)
 }
 
-func (m Model) tr(english, polish string) string {
-	return textFor(m.language, english, polish)
+func (m Model) tr(key string) string {
+	return textFor(m.language, key)
 }

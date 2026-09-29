@@ -13,6 +13,7 @@ type cliFlags struct {
 	Home, DataDir, Config                    string
 	ShowVersion, Status, Doctor, ListModels  bool
 	Refresh                                  bool
+	CheckUpdate, Update                      bool
 	ModelInfo, Provider, Model, Key, BaseURL string
 	Echo, Debug, Resume                      bool
 	MaxSession, MaxDay                       int64
@@ -27,6 +28,8 @@ func parseCLIFlags() cliFlags {
 	flag.StringVar(&f.Home, "home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
 	flag.StringVar(&f.DataDir, "data-dir", "", "runtime data directory (overrides $SUPERCLI_DATA_DIR; default: supercli-data beside this executable)")
 	flag.BoolVar(&f.ShowVersion, "version", false, "print version and exit")
+	flag.BoolVar(&f.CheckUpdate, "check-update", false, "check for a newer stable SuperCli release and exit")
+	flag.BoolVar(&f.Update, "update", false, "download and install a verified update beside this executable, then exit")
 	flag.BoolVar(&f.Status, "status", false, "print session/credit usage + audit tail and exit")
 	flag.BoolVar(&f.Doctor, "doctor", false, "run environment checks and exit")
 	flag.BoolVar(&f.ListModels, "list-models", false, "print known model capabilities (with --refresh, re-fetch from the provider)")

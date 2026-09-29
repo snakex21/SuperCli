@@ -50,7 +50,7 @@ function fmtWhen(iso) {
   return d.toLocaleDateString();
 }
 function statsLocale() {
-  return typeof ui !== "undefined" && ui.lang === "pl" ? "pl-PL" : "en-US";
+  return typeof ui !== "undefined" ? (normalizeLanguage(ui.lang) || "en") : "en";
 }
 function fmtInteger(n) {
   n = Number(n);

@@ -5,6 +5,7 @@
 package tui
 
 var localSlashCommands = map[string]bool{
+	"update":    true,
 	"help":      true,
 	"memory":    true,
 	"status":    true,

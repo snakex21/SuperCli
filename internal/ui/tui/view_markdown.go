@@ -204,10 +204,10 @@ func renderThinkingBlock(text string, p Palette, collapsed bool, languages ...st
 		return ""
 	}
 	if collapsed {
-		return p.MdThinkingHeader.Render(textFor(language, "Thinking (hidden — T to expand)", "Myślenie (ukryte — T rozwija)")) + "\n"
+		return p.MdThinkingHeader.Render(textFor(language, "tui.view_markdown.28e2fa7107")) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(p.MdThinkingHeader.Render("── " + textFor(language, "Thinking:", "Myślenie:") + " ──"))
+	b.WriteString(p.MdThinkingHeader.Render("── " + textFor(language, "tui.view_markdown.3c59f26d9a") + " ──"))
 	b.WriteByte('\n')
 	for _, line := range strings.Split(text, "\n") {
 		b.WriteString(p.MdThinking.Render("  " + line))
@@ -219,7 +219,7 @@ func renderThinkingBlock(text string, p Palette, collapsed bool, languages ...st
 // renderAnswerHeading marks the first visible answer after a thinking block.
 // Text and a rule keep the boundary clear even with --no-color.
 func renderAnswerHeading(p Palette, language string) string {
-	return "\n" + p.AssistantLabel.Render("── "+textFor(language, "Answer", "Odpowiedź")+" ──") + "\n\n"
+	return "\n" + p.AssistantLabel.Render("── "+textFor(language, "tui.view_markdown.b2a3aa6027")+" ──") + "\n\n"
 }
 
 // renderMarkdownBody renders a non-thinking text segment with

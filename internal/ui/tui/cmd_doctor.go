@@ -19,9 +19,9 @@ func (m Model) renderDoctorView() string {
 	var b strings.Builder
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n")
-	b.WriteString(renderDoctorReport(*m.doctorReport, m.palette, width))
+	b.WriteString(renderDoctorReport(*m.doctorReport, m.palette, width, m.language))
 	b.WriteString("\n")
-	b.WriteString(m.palette.InputHint.Render("Enter/Esc/q close · r refresh · Ctrl+C quit"))
+	b.WriteString(m.palette.InputHint.Render(m.tr("tui.doctor.15f658f25b")))
 	return b.String()
 }
 
@@ -48,7 +48,12 @@ func (m Model) handleDoctorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func renderDoctorReport(rep doctor.Report, p Palette, width int) string {
+func renderDoctorReport(rep doctor.Report, p Palette, width int, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = languages[0]
+	}
+	tr := func(key string) string { return textFor(language, key) }
 	if width <= 0 {
 		width = 80
 	}
@@ -62,12 +67,12 @@ func renderDoctorReport(rep doctor.Report, p Palette, width int) string {
 	inner := boxWidth - 2
 	ok, warn, fail, skip := rep.Summary()
 	var b strings.Builder
-	title := fmt.Sprintf("Doctor · %s", rep.Version)
+	title := fmt.Sprintf(tr("tui.doctor.1fbd060343"), rep.Version)
 	b.WriteString(p.Rule.Render("╭─ "))
 	b.WriteString(p.PanelTitle.Render(title))
 	b.WriteString(p.Rule.Render(strings.Repeat("─", maxInt(0, boxWidth-len([]rune(title))-4)) + "╮"))
 	b.WriteByte('\n')
-	summary := fmt.Sprintf("  %d ok · %d warn · %d fail · %d skip", ok, warn, fail, skip)
+	summary := fmt.Sprintf(tr("tui.doctor.67af8e319f"), ok, warn, fail, skip)
 	b.WriteString(p.Rule.Render("│"))
 	b.WriteString(p.InputHint.Render(padRight(truncateText(summary, inner), inner)))
 	b.WriteString(p.Rule.Render("│\n"))
@@ -88,7 +93,7 @@ func renderDoctorReport(rep doctor.Report, p Palette, width int) string {
 		}
 		b.WriteString(p.Rule.Render("│\n"))
 		if c.Remediation != "" {
-			fix := "     fix: " + truncateMiddle(c.Remediation, inner-10)
+			fix := tr("tui.doctor.c62e8e8bf9") + truncateMiddle(c.Remediation, inner-10)
 			b.WriteString(p.Rule.Render("│"))
 			fixLine := p.InputHint.Render(padRight(truncateText(fix, inner), inner))
 			b.WriteString(fixLine)
@@ -96,7 +101,7 @@ func renderDoctorReport(rep doctor.Report, p Palette, width int) string {
 		}
 	}
 	b.WriteString(p.Rule.Render("├" + strings.Repeat("─", inner) + "┤\n"))
-	footer := "  /doctor refreshes · use --doctor for plain output"
+	footer := tr("tui.doctor.65705f0bdc")
 	b.WriteString(p.Rule.Render("│"))
 	b.WriteString(p.InputHint.Render(padRight(truncateText(footer, inner), inner)))
 	b.WriteString(p.Rule.Render("│\n"))

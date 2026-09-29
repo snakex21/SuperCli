@@ -71,7 +71,7 @@ func TestPatchPathRepairPreservesLiteralPayload(t *testing.T) {
 	if err := json.Unmarshal(fixed, &args); err != nil {
 		t.Fatal(err)
 	}
-	if args.Path != "ą.txt" || args.Changes[0].Old != old || args.Changes[0].New != newText || args.Changes[0].ExpectedCount != 1 {
+	if args.Path != "ą.txt" || args.Changes[0].Old == nil || *args.Changes[0].Old != old || args.Changes[0].New == nil || *args.Changes[0].New != newText || args.Changes[0].ExpectedCount != 1 {
 		t.Fatal("literal payload changed")
 	}
 	if _, ok := repairRedundantPatchPaths(fixed); ok {

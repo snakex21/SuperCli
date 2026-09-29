@@ -43,12 +43,13 @@ document.addEventListener("keydown", function (e) {
 /* ═══ init ═══ */
 
 (async function init() {
-  await loadUI();
+  var settingsSnapshot = await loadUI();
   applyI18n();
-  var h = await checkHealth();
-  await composerDraftStore.load();
+  var healthReady = checkHealth();
+  await composerDraftStore.load(settingsSnapshot);
+  var h = await healthReady;
   if (h) {
-    if (h.model) loadReasoning();
+    if (selectedModelID(h.model)) loadReasoning();
     loadModels();
   }
   loadSessions();

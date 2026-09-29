@@ -89,3 +89,8 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Portable release and update artifacts
+/dist/
+/supercli-updates/
+/.tmp/

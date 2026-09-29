@@ -151,7 +151,7 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 		if raw, ok := v["ui.lang"]; ok {
 			language, ok := raw.(string)
 			if !ok || uilang.Normalize(language) == "" {
-				http.Error(w, "ui.lang must be en or pl", http.StatusBadRequest)
+				http.Error(w, "ui.lang must be a supported interface language", http.StatusBadRequest)
 				return
 			}
 			if err := config.SetLanguage(s.eng.DataDir(), s.eng.Home(), language); err != nil {

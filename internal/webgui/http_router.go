@@ -85,6 +85,8 @@ func (s *Server) Handler() http.Handler {
 	// would otherwise reset browser localStorage.
 	mux.HandleFunc("/api/settings", s.handleUISettings)
 	mux.HandleFunc("/api/runtime", s.handleRuntime)
+	mux.Handle("/api/update", s.withSecretLocalOnly(http.HandlerFunc(s.handleUpdate)))
+	mux.HandleFunc("/locales/en.js", s.handleLocaleBootstrap)
 	mux.HandleFunc("/api/runtime/logs", s.handleRuntimeLogs)
 	mux.HandleFunc("/api/nestcafe/update", s.handleNestCafeUpdate)
 	mux.HandleFunc("/api/integrations/thunderbird", s.handleThunderbirdIntegration)

@@ -111,7 +111,7 @@ sections.models = async function () {
       main.appendChild(title);
       var caps = [];
       if (m.context_length) caps.push("ctx " + fmtTok(m.context_length));
-      if (m.reasoning) caps.push("think");
+      if (m.reasoning) caps.push(t("model.think"));
       main.appendChild(el("div", "lr-sub", (m.provider || "") + (caps.length ? " · " + caps.join(" · ") : "")));
       row.appendChild(main);
       var act = el("div", "lr-act");
@@ -123,7 +123,7 @@ sections.models = async function () {
       var bd = i18nEl("button", "", "model.setDefault");
       bd.addEventListener("click", function () {
         jpost("/api/model/default", { model: m.id, provider: m.provider })
-          .then(function () { toast("CLI default: " + m.id); })
+          .then(function () { toast(t("model.defaultSaved").replace("{model}", m.id)); })
           .catch(function (e) { toast(e.message); });
       });
       act.appendChild(bd);

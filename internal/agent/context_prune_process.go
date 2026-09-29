@@ -15,7 +15,7 @@ func processStatusForPrune(content, storedHandle string) string {
 		if !ok || !validPrunedSequenceID(id, "proc-") {
 			return ""
 		}
-		exit, ok := commandExitForPrune("error: "+diagnostic, "")
+		exit, _, ok := commandOutcomeForPrune("error: "+diagnostic, "")
 		if !ok {
 			return ""
 		}

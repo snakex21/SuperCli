@@ -14,8 +14,15 @@ type workerView struct {
 	id, agent, status, activity string
 }
 
-func workerDisplayName(id string) string {
-	return strings.Replace(id, "worker-", "Worker ", 1)
+func workerDisplayName(id string, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = languages[0]
+	}
+	if strings.HasPrefix(id, "worker-") {
+		return fmt.Sprintf(textFor(language, "tui.worker.name"), strings.TrimPrefix(id, "worker-"))
+	}
+	return id
 }
 
 // Updates arrive on Bubble Tea's event loop. Rendering never queries a worker
@@ -55,7 +62,7 @@ func (m *Model) updateWorkerView(e agent.WorkerProgressEvent) {
 		w.status = "running"
 		w.activity = e.Tool
 	case "tool_result":
-		w.activity = m.tr("preparing response", "przygotowuje odpowiedź")
+		w.activity = m.tr("tui.model_workers.f048140d0f")
 		if e.Err != "" {
 			w.activity = compactWorkerText(e.Err, 140)
 		}
@@ -95,8 +102,8 @@ func (m Model) workerPanelLines() []string {
 		width = 80
 	}
 	lines := []string{m.palette.InputHint.Render(ansi.Truncate(
-		fmt.Sprintf("%s · %s: %d / %d", m.tr("Workers", "Workerzy"),
-			m.tr("active", "pracuje"), active, len(workers)), width, "…"))}
+		fmt.Sprintf("%s · %s: %d / %d", m.tr("tui.model_workers.7a1ec9fe6c"),
+			m.tr("tui.model_workers.9687961165"), active, len(workers)), width, "…"))}
 	slots := limit - 1
 	if len(workers) > slots {
 		slots--
@@ -105,17 +112,17 @@ func (m Model) workerPanelLines() []string {
 		if i >= slots {
 			break
 		}
-		state, icon := m.tr("working", "pracuje"), "●"
+		state, icon := m.tr("tui.model_workers.dd5ace9e01"), "●"
 		style := m.palette.HeaderMode
 		switch w.status {
 		case "done":
-			state, icon, style = m.tr("done", "gotowe"), "✓", m.palette.Success
+			state, icon, style = m.tr("tui.model_workers.a4c3ed04a9"), "✓", m.palette.Success
 		case "failed":
-			state, icon, style = m.tr("failed", "błąd"), "×", m.palette.Error
+			state, icon, style = m.tr("tui.model_workers.5d28a90f44"), "×", m.palette.Error
 		case "stopped":
-			state, icon, style = m.tr("stopped", "zatrzymano"), "–", m.palette.InputHint
+			state, icon, style = m.tr("tui.model_workers.8322e87d24"), "–", m.palette.InputHint
 		}
-		line := fmt.Sprintf("%s %s · %s · %s", icon, workerDisplayName(w.id), w.agent, state)
+		line := fmt.Sprintf("%s %s · %s · %s", icon, workerDisplayName(w.id, m.language), w.agent, state)
 		if w.activity != "" {
 			line += " · " + w.activity
 		}

@@ -82,6 +82,16 @@ func Main() {
 	ws := resolveWorkspace(flags)
 	home, dataDir := ws.Home, ws.DataDir
 	cwd, uiLanguage := ws.Cwd, ws.UILanguage
+	if flags.CheckUpdate || flags.Update {
+		action := "check"
+		if flags.Update {
+			action = "install"
+		}
+		if err := runUpdateCLI(action, dataDir, home); err != nil {
+			fatal("update", err)
+		}
+		return
+	}
 	tomlCfg, tomlErr := ws.Toml, ws.TomlErr
 	activeProject, hasActiveProject := ws.ActiveProject, ws.HasActiveProject
 

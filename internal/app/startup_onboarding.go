@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 	"supercli/internal/ui/tui"
 )
 
@@ -35,7 +36,7 @@ func maybeRunOnboarding(echo bool, cfg *config.Config, tomlCfg *config.TomlConfi
 	if res.AuthMethod == tui.AuthChatGPT {
 		initCodexAuth(dataDir, *tomlCfg)
 		if _, err := codexAuthMgr.Login(context.Background(), os.Stdout); err != nil {
-			fmt.Fprintf(os.Stderr, "ChatGPT login failed: %v\nFalling back to setup-free start — run /login inside SuperCli to retry.\n", err)
+			fmt.Fprintf(os.Stderr, uilang.Text(uiLanguage, "app.onboarding.login_failed"), err)
 		} else {
 			res.BaseURL = codexAuthMgr.Options().BackendURL
 		}

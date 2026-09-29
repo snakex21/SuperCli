@@ -83,14 +83,21 @@ code, paths, telemetry. Base 14px; chat 14.5px/1.65.
 
 ## Persistence
 
-UI preferences (theme, fonts, keybinds, notifications) live in the
-server-side blob (`/api/settings` → `webgui-settings.json`)
-because the app-mode window gets a fresh port — and thus a fresh
-localStorage — on every launch. The UI language is the one deliberate
-exception: first launch detects the operating-system UI language and stores
-`language = "en"` or `"pl"` in global `config.toml`. The desktop app and TUI
-then read and update that same value. Backend knobs also live in `config.toml`
-via `/api/config`, shared with the TUI settings panel.
+UI preferences, composer drafts and the sent-attachment index live in the
+portable server-side blob (`/api/settings` → `webgui-settings.json`).
+Legacy browser preferences are read for migration, with no new localStorage
+or IndexedDB writes. Startup shares the fetched settings snapshot with draft
+recovery rather than requesting it twice.
+
+The shared UI language is detected once and stored in global `config.toml`.
+GUI and TUI use the same 27 native-name choices; see the navigation in the
+[main README](../README.md). The GUI embeds an immediate English bootstrap
+and fetches only the selected additional catalog. Backend knobs also live in
+`config.toml` via `/api/config`, shared with the TUI settings panel.
+
+The About screen offers explicit update check, download and install actions.
+Opening it does not check for updates automatically. See
+[release/update mechanics](releasing.md).
 
 ## Data backup
 

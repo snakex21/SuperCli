@@ -148,16 +148,16 @@ func (c *chat) renderMsg(m msg, p Palette) string {
 	if m.collapsed {
 		first := strings.TrimSpace(strings.SplitN(m.text, "\n", 2)[0])
 		if first == "" {
-			first = textFor(c.language, "(collapsed block)", "(zwini\u0119ty blok)")
+			first = textFor(c.language, "tui.view_chat.d3915a1179")
 		}
-		return p.Dim.Render(first + textFor(c.language, "  \u2026 collapsed", "  \u2026 zwini\u0119te"))
+		return p.Dim.Render(first + textFor(c.language, "tui.view_chat.1df2bf9533"))
 	}
 	switch m.role {
 	case roleUser:
 		// The plain transcript keeps a "> " prefix for compatibility; the
 		// colored gutter already communicates the role visually.
 		body := strings.TrimPrefix(m.text, "> ")
-		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "You", "Ty")), p.User.Render(body), p.UserGutter, c.width)
+		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "tui.actions_select.08b0419357")), p.User.Render(body), p.UserGutter, c.width)
 	case roleAssistant:
 		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language), p.AssistGutter, c.width)
 	case roleDocument:

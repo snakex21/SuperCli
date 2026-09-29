@@ -19,25 +19,25 @@ func isModelVisibilityMenu(kind menuKind) bool {
 func (m Model) renderModelsMenu(title, footer string) string {
 	rows := m.filteredModelRows()
 	page := menuPage{title: title, searchable: true, footer: footer,
-		empty: m.tr("No matching models.", "Brak pasujących modeli.")}
+		empty: m.tr("tui.menu_models_render.0ac83d1725")}
 	if m.modelPickerScanning {
-		page.empty = m.tr("scanning providers for models…", "Wykrywanie modeli dostawców…")
+		page.empty = m.tr("tui.menu_models_render.c4005b84fa")
 	}
 	for i, row := range rows {
 		state := ""
 		if m.menu.kind == menuModels {
 			if row.ID == m.reasoningModelName() && (m.activeProvider == "" || row.Provider == m.activeProvider) {
-				state = m.tr("● active", "● aktywny")
+				state = m.tr("tui.menu_models_render.a1922b55b9")
 			}
 		} else {
-			state = m.tr("[on]", "[włączony]")
+			state = m.tr("tui.menu_models_render.37f4a09472")
 			if m.providerMgr != nil && m.providerMgr.IsHiddenFor(row.Provider, row.ID) {
-				state = m.tr("[off]", "[wyłączony]")
+				state = m.tr("tui.menu_models_render.5ad9cfa728")
 			}
 		}
 		meta := row.Provider
 		if row.ContextLength > 0 {
-			meta += " · ctx " + ctxLen(row.ContextLength)
+			meta += m.tr("tui.menu_models_render.a4ef0fd5d2") + ctxLen(row.ContextLength)
 		}
 		if providerState := m.modelProviderState(row.Provider); providerState != "" {
 			meta += " · " + providerState
@@ -46,9 +46,9 @@ func (m Model) renderModelsMenu(title, footer string) string {
 		if i == m.menu.cursor {
 			row = m.enrichModelRow(row)
 			page.detailTitle = row.ID
-			page.detail = []string{m.tr("Provider: ", "Dostawca: ") + row.Provider,
-				m.tr("Context: ", "Kontekst: ") + ctxLen(row.ContextLength), "",
-				"in " + m.modelPrice(row, true) + " · out " + m.modelPrice(row, false), caps(row)}
+			page.detail = []string{m.tr("tui.actions_render.e0f3fde9df") + row.Provider,
+				m.tr("tui.menu_models_render.eada78d2ec") + ctxLen(row.ContextLength), "",
+				m.tr("tui.menu_models_render.74241f65e5") + m.modelPrice(row, true) + m.tr("tui.menu_models_render.fc9a42258f") + m.modelPrice(row, false), caps(row)}
 		}
 	}
 	return m.renderMenuPage(page)
@@ -56,10 +56,10 @@ func (m Model) renderModelsMenu(title, footer string) string {
 
 func (m Model) modelProviderState(provider string) string {
 	if m.providerMgr != nil && m.providerMgr.IsDisabled(provider) {
-		return m.tr("provider paused", "dostawca wstrzymany")
+		return m.tr("tui.menu_models_render.3f22e67f59")
 	}
 	if status, ok := m.providerStatuses[provider]; ok && status.checked && !status.online {
-		return "offline"
+		return m.tr("tui.menu_providers_render.8e2c7ac508")
 	}
 	return ""
 }
@@ -134,7 +134,7 @@ func modelIDSuffix(id string) string {
 
 func (m Model) modelPrice(row llm.ModelInfo, input bool) string {
 	if m.isSubscriptionProviderName(row.Provider) {
-		return "sub"
+		return m.tr("tui.cost_source.subscription")
 	}
 	if input {
 		return price(row.InputCost)

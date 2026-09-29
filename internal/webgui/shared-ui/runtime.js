@@ -81,6 +81,7 @@
     options = options || {};
     var input = options.input;
     var storageKey = String(options.storageKey || "composer-drafts-v1");
+    var legacyMigrationKey = storageKey + ".legacy-migrated";
     var getScope = typeof options.getScope === "function" ? options.getScope : function () { return "new"; };
     var onRestore = typeof options.onRestore === "function" ? options.onRestore : function () {};
     var drafts = Object.create(null);
@@ -128,15 +129,12 @@
     function patchBody() {
       var patch = {};
       patch[storageKey] = drafts;
+      patch[legacyMigrationKey] = true;
       return JSON.stringify(patch);
-    }
-    function saveLocal() {
-      try { localStorage.setItem(storageKey, JSON.stringify(drafts)); } catch (error) {}
     }
     function persistNow() {
       clearTimeout(saveTimer);
       saveTimer = 0;
-      saveLocal();
       return requestJSON("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,7 +143,6 @@
       }).catch(function () {});
     }
     function schedulePersist() {
-      saveLocal();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(persistNow, 250);
     }
@@ -176,16 +173,28 @@
       schedulePersist();
       return true;
     }
-    async function load() {
+    async function load(settingsSnapshot) {
       var local = Object.create(null);
-      try { local = normalize(JSON.parse(localStorage.getItem(storageKey) || "{}")); } catch (error) {}
-      drafts = merge(drafts, local);
+      var migrated = false;
       try {
-        var response = await requestJSON("/api/settings", { cache: "no-store" });
-        var server = normalize(response && response.settings ? response.settings[storageKey] : null);
+        // The full GUI already fetched this blob for appearance and language.
+        // Standalone consumers retain their independent fetch path.
+        var settings = settingsSnapshot;
+        if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+          var response = await requestJSON("/api/settings", { cache: "no-store" });
+          settings = response && response.settings ? response.settings : {};
+        }
+        var server = normalize(settings[storageKey]);
         drafts = merge(server, drafts);
+        migrated = settings[legacyMigrationKey] === true;
       } catch (error) {}
-      saveLocal();
+      // Legacy browser data is read once. The portable marker prevents an
+      // old local draft from reappearing after it has been sent or cleared.
+      if (!migrated) {
+        try { local = normalize(JSON.parse(localStorage.getItem(storageKey) || "{}")); } catch (error) {}
+        drafts = merge(drafts, local);
+        if (Object.keys(local).length) await persistNow();
+      }
       if (!touched) restore();
       return drafts;
     }
@@ -197,7 +206,6 @@
         else delete drafts[key];
         drafts = compact(drafts);
       }
-      saveLocal();
       if (navigator.sendBeacon) {
         try {
           navigator.sendBeacon("/api/settings", new Blob([patchBody()], { type: "application/json" }));
@@ -288,10 +296,11 @@
       longCost: "This is a long preset — it will be attached to every message while enabled.",
       error: "Could not save: ",
     };
+    if (options.copy) Object.assign(copy, options.copy);
 
     var root = document.createElement("section");
     root.className = "user-instructions-editor " + (options.className || "");
-    root.innerHTML = '<div class="uie-loading">' + (polish ? "Ładowanie…" : "Loading…") + "</div>";
+    root.innerHTML = '<div class="uie-loading">' + (options.loadingText || (polish ? "Ładowanie…" : "Loading…")) + "</div>";
 
     function makeID() {
       return "preset-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
@@ -383,7 +392,7 @@
       }
       function updateMeta() {
         var tokens = estimate(content.value);
-        count.textContent = tokens.toLocaleString(polish ? "pl-PL" : "en-US") + " " + copy.tokenUnit;
+        count.textContent = tokens.toLocaleString(options.lang || (polish ? "pl-PL" : "en-US")) + " " + copy.tokenUnit;
         cost.textContent = tokens >= 2000 ? copy.longCost + " " + copy.cost : copy.cost;
         meta.classList.toggle("is-long", tokens >= 2000);
       }
@@ -456,7 +465,7 @@
       });
       add.addEventListener("click", async function () {
         syncDraft();
-        var preset = { id: makeID(), name: polish ? "Nowy preset" : "New preset", content: "" };
+        var preset = { id: makeID(), name: copy.newPreset || (polish ? "Nowy preset" : "New preset"), content: "" };
         state.presets.push(preset);
         state.active_id = preset.id;
         renderSelect();

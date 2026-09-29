@@ -114,9 +114,13 @@ func SafeWrap(name string, h SlashHandler) SlashHandler {
 
 // FormatHelp produces a formatted help view listing all
 // registered slash commands. Simple text — no box-drawing.
-func FormatHelp(entries []SlashEntry) string {
+func FormatHelp(entries []SlashEntry, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = languages[0]
+	}
 	var b strings.Builder
-	b.WriteString("Commands:\n")
+	b.WriteString(textFor(language, "tui.cmd_slash.4c5db90a15"))
 	for _, e := range entries {
 		if e.Args != "" {
 			fmt.Fprintf(&b, "  /%-14s %s  (%s)\n", e.Name, e.Desc, e.Args)
@@ -124,7 +128,7 @@ func FormatHelp(entries []SlashEntry) string {
 			fmt.Fprintf(&b, "  /%-14s %s\n", e.Name, e.Desc)
 		}
 	}
-	b.WriteString(helpKeys())
+	b.WriteString(helpKeysFor(language))
 	return b.String()
 }
 
@@ -152,19 +156,15 @@ func HelpContent() string {
 func HelpContentFor(language string) string {
 	byName := make(map[string]SlashEntry)
 	for _, e := range HelpContentEntries() {
-		if normalizeLanguage(language) == "pl" {
-			e.Desc = polishCommandDescription(e.Name, e.Desc)
-		}
+		e.Desc = localizedCommandDescription(language, e.Name, e.Desc)
 		byName[e.Name] = e
 	}
 	shown := make(map[string]struct{})
 	var b strings.Builder
-	b.WriteString(textFor(language, "Commands:\n", "Polecenia:\n"))
+	b.WriteString(textFor(language, "tui.cmd_slash.4c5db90a15"))
 	for _, g := range helpEssentials {
 		group := g.group
-		if normalizeLanguage(language) == "pl" {
-			group = map[string]string{"models & providers": "modele i dostawcy", "session": "sesja", "agents": "agenci", "system": "system"}[group]
-		}
+		group = textFor(language, "tui.help_group."+group)
 		b.WriteString("\n " + group + "\n")
 		for _, name := range g.names {
 			e, ok := byName[name]
@@ -186,9 +186,9 @@ func HelpContentFor(language string) string {
 		}
 	}
 	if len(rest) > 0 {
-		b.WriteString("\n " + textFor(language, "more: ", "więcej: ") + strings.Join(rest, " ") + "\n")
+		b.WriteString("\n " + textFor(language, "tui.cmd_slash.8c5c19fb39") + strings.Join(rest, " ") + "\n")
 	}
-	b.WriteString(textFor(language, " type /help all for every command with its description\n", " wpisz /help all, aby zobaczyć opisy wszystkich poleceń\n"))
+	b.WriteString(textFor(language, "tui.cmd_slash.7f6f6a00ed"))
 	b.WriteString(helpKeysFor(language))
 	return b.String()
 }
@@ -200,18 +200,10 @@ func HelpContentAll() string {
 
 // HelpContentAllFor returns full command help in the selected language.
 func HelpContentAllFor(language string) string {
-	entries := HelpContentEntries()
-	if normalizeLanguage(language) == "pl" {
-		for i := range entries {
-			entries[i].Desc = polishCommandDescription(entries[i].Name, entries[i].Desc)
-		}
-	}
-	if normalizeLanguage(language) != "pl" {
-		return FormatHelp(entries)
-	}
 	var b strings.Builder
-	b.WriteString("Polecenia:\n")
-	for _, e := range entries {
+	b.WriteString(textFor(language, "tui.cmd_slash.4c5db90a15"))
+	for _, e := range HelpContentEntries() {
+		e.Desc = localizedCommandDescription(language, e.Name, e.Desc)
 		if e.Args != "" {
 			fmt.Fprintf(&b, "  /%-14s %s  (%s)\n", e.Name, e.Desc, e.Args)
 		} else {
@@ -226,17 +218,7 @@ func helpKeys() string {
 	return helpKeysFor("en")
 }
 
-func helpKeysFor(language string) string {
-	if normalizeLanguage(language) == "pl" {
-		return "\nKlawisze: PgUp/PgDn przewijanie · Ctrl+C wyjście/przerwanie · Esc wyczyść pole\n" +
-			"          Alt+Enter (lub Ctrl+J) nowa linia · Ctrl+Y kopiuj ostatnią odpowiedź · Ctrl+V wklej\n" +
-			"          Ctrl+R poziom myślenia · Shift+T pokaż/ukryj myślenie · Shift+E rozwiń wynik narzędzia"
-	}
-	return "\nKeys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q\n" +
-		"      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V paste (keeps newlines)\n" +
-		"      Ctrl+R open reasoning effort menu\n" +
-		"      Shift+T toggle thinking · Shift+E expand tool output"
-}
+func helpKeysFor(language string) string { return textFor(language, "tui.help.keys") }
 
 // formatSlashResult formats a command result for the transcript.
 func formatSlashResult(name, body string) string {

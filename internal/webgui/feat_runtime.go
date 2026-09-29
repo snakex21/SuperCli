@@ -40,7 +40,7 @@ func (s *Server) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"uptime_seconds":         int64(now.Sub(s.startedAt).Seconds()),
 		"status":                 "running",
 		"full_filesystem_access": sandbox.IsUnsandboxed(),
-		"update_supported":       false,
+		"update_supported":       appName == "SuperCli",
 	})
 }
 

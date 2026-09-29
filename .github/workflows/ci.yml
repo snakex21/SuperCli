@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [public-main]
+    branches: [main, public-main]
   pull_request:
 
 permissions:
@@ -24,6 +24,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: UI and documentation checks
+        run: |
+          node scripts/test-ui.cjs
+          node docs/readme/check.cjs
       - name: Test
         run: go test ./...
       - name: Vet

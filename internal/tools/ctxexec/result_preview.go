@@ -14,14 +14,16 @@ func (r *Result) SuccessPreview() string {
 		return ""
 	}
 	preview := struct {
-		ExitCode        int             `json:"exit_code"`
-		DurationMS      int64           `json:"duration_ms"`
-		Preview         bool            `json:"preview"`
-		Stdout          json.RawMessage `json:"stdout"`
-		Stderr          json.RawMessage `json:"stderr"`
-		TruncatedStdout bool            `json:"truncated_stdout"`
-		TruncatedStderr bool            `json:"truncated_stderr"`
-	}{ExitCode: r.ExitCode, DurationMS: r.DurationMS, Preview: true, Stdout: json.RawMessage(`""`), Stderr: json.RawMessage(`""`)}
+		ExitCode         int             `json:"exit_code"`
+		DurationMS       int64           `json:"duration_ms"`
+		Preview          bool            `json:"preview"`
+		OutputWarning    string          `json:"output_warning,omitempty"`
+		OutputIncomplete bool            `json:"output_incomplete,omitempty"`
+		Stdout           json.RawMessage `json:"stdout"`
+		Stderr           json.RawMessage `json:"stderr"`
+		TruncatedStdout  bool            `json:"truncated_stdout"`
+		TruncatedStderr  bool            `json:"truncated_stderr"`
+	}{ExitCode: r.ExitCode, DurationMS: r.DurationMS, Preview: true, OutputWarning: r.OutputWarning, OutputIncomplete: r.OutputIncomplete, Stdout: json.RawMessage(`""`), Stderr: json.RawMessage(`""`)}
 	// Empty-string quotes are part of the per-stream budget; false is one byte
 	// longer than true, so subsequent truncation flags cannot overflow the cap.
 	empty, _ := json.Marshal(preview)

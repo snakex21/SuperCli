@@ -16,6 +16,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
+	"supercli/internal/system/uilang"
 )
 
 func TestProviderChooserSharesGUICatalogAndFiltersWithoutCommands(t *testing.T) {
@@ -29,7 +30,11 @@ func TestProviderChooserSharesGUICatalogAndFiltersWithoutCommands(t *testing.T) 
 				t.Fatal("empty provider list needs a visible Enter action")
 			}
 			rows := m.providerTemplateRows()
-			if rows[0].Name != "custom" || !reflect.DeepEqual(rows[1:], providers.PredefinedProviders()) {
+			templates := providers.PredefinedProviders()
+			for i := range templates {
+				templates[i].Desc = uilang.ProviderDescription(language, templates[i].Name, templates[i].Desc)
+			}
+			if rows[0].Name != "custom" || !reflect.DeepEqual(rows[1:], templates) {
 				t.Fatal("TUI templates diverged from the catalog returned by the GUI")
 			}
 			m = navigateKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("LM Studio")})

@@ -43,7 +43,7 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.errMsg = msg.err.Error()
 			} else {
-				m.errMsg = m.tr("the server returned no models — load/pull a model first", "serwer nie zwrócił modeli — najpierw załaduj model")
+				m.errMsg = m.tr("tui.onboard_update.cbcb87d11b")
 			}
 			m.step = onboardMenu
 			m.cursor = 0

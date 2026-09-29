@@ -8,13 +8,20 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
+	"supercli/internal/system/uilang"
 )
 
 func (m Model) providerTemplateRows() []providers.PredefinedProvider {
 	rows := append([]providers.PredefinedProvider{{
 		Name: "custom", Type: "auto",
-		Desc: m.tr("OpenAI, Anthropic, or a local server", "OpenAI, Anthropic lub lokalny serwer"),
+		Desc: m.tr("tui.menu_provider_choices.eab17c432f"),
 	}}, providers.PredefinedProviders()...)
+	for i := range rows {
+		if rows[i].Name == "custom" {
+			continue
+		}
+		rows[i].Desc = uilang.ProviderDescription(m.language, rows[i].Name, rows[i].Desc)
+	}
 	query := normalizeProviderSearch(m.menu.filter)
 	if query == "" {
 		return rows
@@ -41,7 +48,7 @@ func normalizeProviderSearch(value string) string {
 func (m Model) providerTemplateLabel(name string) string {
 	switch name {
 	case "custom":
-		return m.tr("Custom endpoint", "Własny endpoint")
+		return m.tr("tui.menu_provider_choices.5fb0795eaf")
 	case "openai":
 		return "OpenAI"
 	case "anthropic":
@@ -71,7 +78,7 @@ type providerProtocolOption struct{ value, label string }
 
 func (m Model) providerProtocolOptions() []providerProtocolOption {
 	return []providerProtocolOption{
-		{"auto", m.tr("Auto detect", "Wykryj automatycznie")},
+		{"auto", m.tr("tui.menu_provider_choices.04a4542a50")},
 		{"openai", "OpenAI Chat Completions"},
 		{"responses", "OpenAI Responses API"},
 		{"anthropic", "Anthropic Messages"},
@@ -116,7 +123,7 @@ func (m Model) detectProviderProtocol() (tea.Model, tea.Cmd) {
 	baseURL, key := strings.TrimSpace(m.menu.form[2]), m.menu.form[3]
 	if baseURL == "" {
 		m.menu.formAt = 2
-		m.menu.formErr = m.tr("Enter the provider's base URL.", "Podaj adres bazowy dostawcy.")
+		m.menu.formErr = m.tr("tui.menu_provider_choices.53f816d891")
 		return m, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), llm.ProviderDiscoveryTimeout)
@@ -147,7 +154,7 @@ func (m Model) finishProviderDetection(msg providerProtocolDetectedMsg) (tea.Mod
 		// Match the GUI: an inconclusive passive probe uses OpenAI-compatible
 		// chat, and normal provider verification still checks the connection.
 		m.menu.form[1] = "openai"
-		m.setStatus(m.tr("Protocol detection was inconclusive; trying OpenAI-compatible chat.", "Nie udało się wykryć protokołu; próba połączenia zgodnego z OpenAI."), false)
+		m.setStatus(m.tr("tui.menu_provider_choices.75a25cd7f9"), false)
 	}
 	return m.menuEnter()
 }

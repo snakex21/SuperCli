@@ -122,9 +122,9 @@ func (m Model) renderAccountsMenu() string {
 	width := maxInt(24, m.menuWidth()-6)
 
 	var body strings.Builder
-	title := m.palette.PanelTitle.Render(m.tr("ChatGPT accounts", "Konta ChatGPT"))
+	title := m.palette.PanelTitle.Render(m.tr("tui.menu_accounts.4c505d7ed8"))
 	body.WriteString(title + "\n")
-	body.WriteString(m.palette.Dim.Render(m.tr("sign in to one or more ChatGPT accounts", "zaloguj jedno lub kilka kont ChatGPT")) + "\n\n")
+	body.WriteString(m.palette.Dim.Render(m.tr("tui.menu_accounts.29e4706912")) + "\n\n")
 
 	start, end := 0, len(rows)
 	if m.height > 0 {
@@ -140,7 +140,7 @@ func (m Model) renderAccountsMenu() string {
 
 		var line string
 		if r.isAdd {
-			label := m.tr("+  add account", "+  dodaj konto")
+			label := m.tr("tui.menu_accounts.762b022ef6")
 			if selected {
 				line = m.palette.HeaderMode.Render(label)
 			} else {
@@ -178,11 +178,11 @@ func (m Model) renderAccountsMenu() string {
 	body.WriteString("\n")
 	switch {
 	case nAccts >= 2:
-		body.WriteString(m.palette.Success.Render(truncateText(m.tr(fmt.Sprintf("%d accounts — requests round-robin across them", nAccts), fmt.Sprintf("%d konta — żądania są rozdzielane między nimi", nAccts)), width)))
+		body.WriteString(m.palette.Success.Render(truncateText(fmt.Sprintf(m.tr("tui.accounts.9655052ff3"), nAccts), width)))
 	case nAccts == 1:
-		body.WriteString(m.palette.Dim.Render(truncateText(m.tr("add a second account to spread load (round-robin)", "dodaj drugie konto, aby rozłożyć obciążenie"), width)))
+		body.WriteString(m.palette.Dim.Render(truncateText(m.tr("tui.menu_accounts.f7a697ac2d"), width)))
 	default:
-		body.WriteString(m.palette.Dim.Render(m.tr("no accounts yet — add one to sign in", "brak kont — dodaj konto, aby się zalogować")))
+		body.WriteString(m.palette.Dim.Render(m.tr("tui.menu_accounts.ea033c0bc1")))
 	}
 
 	panel := lipgloss.NewStyle().
@@ -191,7 +191,7 @@ func (m Model) renderAccountsMenu() string {
 		Padding(0, 2).
 		Render(body.String())
 
-	hint := m.palette.InputHint.Render(truncateText(m.tr("↑↓ select · Enter add · d log out · Esc back", "↑↓ wybierz · Enter dodaj · d wyloguj · Esc wróć"), m.menuWidth()))
+	hint := m.palette.InputHint.Render(truncateText(m.tr("tui.menu_accounts.436e0aaae1"), m.menuWidth()))
 	return panel + "\n" + hint
 }
 
@@ -203,10 +203,10 @@ func (m Model) renderAccountLabelMenu() string {
 		label = m.menu.form[0]
 	}
 	var body strings.Builder
-	body.WriteString(m.palette.PanelTitle.Render(m.tr("Name the new account", "Nazwij nowe konto")) + "\n\n")
+	body.WriteString(m.palette.PanelTitle.Render(m.tr("tui.menu_accounts.d5fc89e4cb")) + "\n\n")
 	field := m.palette.HeaderMode.Render(" " + label + "▌ ")
-	body.WriteString(m.tr("label", "nazwa") + "  " + field + "\n\n")
-	body.WriteString(m.palette.Dim.Render(m.tr("e.g. work, private — saved as auth-<label>.json", "np. praca, prywatne — zapisane jako auth-<nazwa>.json")))
+	body.WriteString(m.tr("tui.menu_accounts.1aca80e8b5") + "  " + field + "\n\n")
+	body.WriteString(m.palette.Dim.Render(m.tr("tui.menu_accounts.393e7ffde5")))
 
 	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -214,7 +214,7 @@ func (m Model) renderAccountLabelMenu() string {
 		Padding(0, 2).
 		Render(body.String())
 
-	hint := m.palette.InputHint.Render(m.tr("type · Enter sign in · Esc cancel", "pisz · Enter zaloguj · Esc anuluj"))
+	hint := m.palette.InputHint.Render(m.tr("tui.menu_accounts.4d8bddecc0"))
 	return panel + "\n" + hint
 }
 

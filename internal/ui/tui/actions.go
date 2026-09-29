@@ -15,73 +15,49 @@ type actionRow struct {
 	shortcut string
 }
 
-var commonActions = []actionRow{
-	{id: "paste-image", group: "Pliki", title: "Obraz ze schowka", desc: "Wklej zrzut ekranu lub pliki skopiowane w Eksploratorze"},
-	{id: "attach", group: "Pliki", title: "Załączniki", desc: "Wybierz obrazy, dokumenty lub kod do następnej wiadomości", shortcut: "Ctrl+O"},
-	{id: "transcript", group: "Praca", title: "Przeszukaj rozmow\u0119", desc: "Znajd\u017a i zwi\u0144 pojedynczy blok", shortcut: "Ctrl+F"},
-	{id: "queue", group: "Praca", title: "Kolejka zada\u0144", desc: "Zapisz zadania na p\u00f3\u017aniej i ustaw ich kolejno\u015b\u0107"},
-	{id: "model", group: "Model", title: "Wybierz model", desc: "Zmień aktywny model i dostawcę"},
-	{id: "models", group: "Model", title: "Katalog modeli", desc: "Włączaj i wyłączaj wszystkie wykryte modele"},
-	{id: "reasoning", group: "Model", title: "Poziom myślenia", desc: "Ustaw wysiłek rozumowania modelu", shortcut: "Ctrl+R"},
-	{id: "providers", group: "Model", title: "Dostawcy", desc: "Dodaj, edytuj lub sprawdź połączenie"},
-	{id: "sessions", group: "Praca", title: "Ostatnie sesje", desc: "Kontynuuj wcześniejszą rozmowę"},
-	{id: "projects", group: "Praca", title: "Projekty", desc: "Przełącz projekt i jego pamięć", shortcut: "Ctrl+P"},
-	{id: "goal", group: "Praca", title: "Cel", desc: "Zobacz i aktualizuj trwały cel"},
-	{id: "diff", group: "Pliki", title: "Zmiany w plikach", desc: "Pokaż zmiany z bieżącej sesji"},
-	{id: "undo", group: "Pliki", title: "Cofnij ostatnią turę", desc: "Bezpiecznie przywróć pliki sprzed zmiany"},
-	{id: "redo", group: "Pliki", title: "Ponów cofniętą turę", desc: "Przywróć ostatnio cofnięte zmiany"},
-	{id: "plan", group: "Agent", title: "Tryb planowania", desc: "Przełącz analizę tylko do odczytu"},
-	{id: "cost", group: "System", title: "Zużycie", desc: "Tokeny, koszt i wywołania modeli"},
-	{id: "settings", group: "System", title: "Ustawienia", desc: "Zmień zachowanie CLI bez edycji TOML"},
-	{id: "data", group: "System", title: "Kopie i import", desc: "Eksportuj dane lub odtwórz kopię po restarcie"},
-	{id: "mcp", group: "System", title: "Serwery MCP", desc: "Pokaż wbudowane i zewnętrzne narzędzia MCP"},
-	{id: "doctor", group: "System", title: "Diagnostyka", desc: "Sprawdź konfigurację i połączenia"},
-	{id: "workers", group: "Agent", title: "Agenci pomocniczy", desc: "Pokaż delegowane zadania i ich stan"},
-	{id: "help", group: "System", title: "Pomoc i skróty", desc: "Pokaż pełną pomoc klawiatury"},
-	{id: "context-limit", group: "Model", title: "Limit kontekstu", desc: "Ustaw budżet dla aktywnego dostawcy i modelu"},
-	{id: "context", group: "Praca", title: "Zawartość kontekstu", desc: "Zobacz, co zajmuje miejsce w rozmowie"},
-	{id: "compact", group: "Praca", title: "Skompaktuj kontekst", desc: "Streść starszy kontekst wywołaniem modelu; zachowaj zapis rozmowy"},
-	{id: "memory", group: "Praca", title: "Pamięć projektu", desc: "Przejrzyj zapisane informacje i podsumowania"},
-	{id: "accounts", group: "Model", title: "Konta", desc: "Zarządzaj logowaniem i kontami ChatGPT"},
-	{id: "export", group: "Pliki", title: "Eksportuj rozmowę", desc: "Zapisz rozmowę w pliku Markdown"},
+var commonActionsEN = []actionRow{
+	{id: "paste-image", group: "tui.autocomplete_render.abc7e98928", title: "tui.action_paste-image.bb68ddb623", desc: "tui.action_paste-image.293a526293"},
+	{id: "attach", group: "tui.autocomplete_render.abc7e98928", title: "tui.menu_navigation.634de11477", desc: "tui.action_attach.93e8551b68", shortcut: "Ctrl+O"},
+	{id: "transcript", group: "tui.action_transcript.104ab9213e", title: "tui.actions_select.42c60071a9", desc: "tui.action_transcript.fcb51b069e", shortcut: "Ctrl+F"},
+	{id: "queue", group: "tui.action_transcript.104ab9213e", title: "tui.menu_workflow.6daed5b2ef", desc: "tui.action_queue.37382a2c5a"},
+	{id: "model", group: "tui.action_model.5e2c614c23", title: "tui.menu_navigation.f6e05dcfcf", desc: "tui.action_model.a6f9861849"},
+	{id: "models", group: "tui.action_model.5e2c614c23", title: "tui.menu_actions.1b43e2d030", desc: "tui.action_models.407e5fa48d"},
+	{id: "reasoning", group: "tui.action_model.5e2c614c23", title: "tui.menu_reasoning.3236aeec43", desc: "tui.action_reasoning.67b357fe11", shortcut: "Ctrl+R"},
+	{id: "providers", group: "tui.action_model.5e2c614c23", title: "tui.menu_navigation.996c32b35f", desc: "tui.action_providers.f05de39da7"},
+	{id: "sessions", group: "tui.action_transcript.104ab9213e", title: "tui.actions_render.8c4f3d1307", desc: "tui.action_sessions.13c74ffd63"},
+	{id: "projects", group: "tui.action_transcript.104ab9213e", title: "tui.menu_projects.04e2a9728a", desc: "tui.action_projects.0933b5bd25", shortcut: "Ctrl+P"},
+	{id: "goal", group: "tui.action_transcript.104ab9213e", title: "tui.menu_goal_render.cdbf6975e8", desc: "tui.action_goal.4ffe6e0787"},
+	{id: "diff", group: "tui.autocomplete_render.abc7e98928", title: "tui.action_diff.6493269cd6", desc: "tui.action_diff.47ffda45f9"},
+	{id: "undo", group: "tui.autocomplete_render.abc7e98928", title: "tui.menu_checkpoint.dd8395c0e8", desc: "tui.action_undo.bceb088cc2"},
+	{id: "redo", group: "tui.autocomplete_render.abc7e98928", title: "tui.menu_checkpoint.8e0f3455fe", desc: "tui.action_redo.6a8c82847b"},
+	{id: "plan", group: "tui.action_plan.11b39c9377", title: "tui.action_plan.3ca7d842d1", desc: "tui.action_plan.4c667e6263"},
+	{id: "cost", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_navigation.8d59829c1e", desc: "tui.action_cost.39a1a28b29"},
+	{id: "settings", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_navigation.74a883a037", desc: "tui.action_settings.89c407b7a4"},
+	{id: "data", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_workflow.87e699b6c8", desc: "tui.action_data.cf37dc4a60"},
+	{id: "mcp", group: "tui.action_cost.6725e7bbcd", title: "tui.action_mcp.22a7559f09", desc: "tui.action_mcp.c745084f81"},
+	{id: "doctor", group: "tui.action_cost.6725e7bbcd", title: "tui.action_doctor.268f14bbfe", desc: "tui.action_doctor.67a0502d91"},
+	{id: "workers", group: "tui.action_plan.11b39c9377", title: "tui.action_workers.title", desc: "tui.action_workers.7276570fb8"},
+	{id: "help", group: "tui.action_cost.6725e7bbcd", title: "tui.action_help.7b145a5d2b", desc: "tui.action_help.57754ef849"},
+	{id: "context-limit", group: "tui.action_model.5e2c614c23", title: "tui.action_context-limit.284d7b18b4", desc: "tui.action_context-limit.ca3ca79f01"},
+	{id: "context", group: "tui.action_transcript.104ab9213e", title: "tui.action_context.81058d751b", desc: "tui.action_context.854bda7d21"},
+	{id: "compact", group: "tui.action_transcript.104ab9213e", title: "tui.action_compact.afbbb87c2c", desc: "tui.action_compact.071e7593fb"},
+	{id: "memory", group: "tui.action_transcript.104ab9213e", title: "tui.action_memory.dff2af70f8", desc: "tui.action_memory.f15168fc67"},
+	{id: "accounts", group: "tui.action_model.5e2c614c23", title: "tui.menu_navigation.8a7c8b67fe", desc: "tui.action_accounts.90bae4f508"},
+	{id: "export", group: "tui.autocomplete_render.abc7e98928", title: "tui.action_export.5d974f9e80", desc: "tui.action_export.9c89437499"},
+	{id: "update", group: "tui.action_update.group", title: "update.check", desc: "tui.action_update.desc"},
 }
 
-var commonActionsEN = []actionRow{
-	{id: "paste-image", group: "Files", title: "Image from clipboard", desc: "Paste a screenshot or files copied in Explorer"},
-	{id: "attach", group: "Files", title: "Attachments", desc: "Choose images, documents or code for the next message", shortcut: "Ctrl+O"},
-	{id: "transcript", group: "Work", title: "Search conversation", desc: "Find or fold an individual block", shortcut: "Ctrl+F"},
-	{id: "queue", group: "Work", title: "Task queue", desc: "Save work for later and choose its order"},
-	{id: "model", group: "Model", title: "Choose model", desc: "Change the active model and provider"},
-	{id: "models", group: "Model", title: "Model catalog", desc: "Enable or disable every discovered model"},
-	{id: "reasoning", group: "Model", title: "Reasoning effort", desc: "Set the model reasoning level", shortcut: "Ctrl+R"},
-	{id: "providers", group: "Model", title: "Providers", desc: "Add, edit or test a connection"},
-	{id: "sessions", group: "Work", title: "Recent sessions", desc: "Continue an earlier conversation"},
-	{id: "projects", group: "Work", title: "Projects", desc: "Switch project and its memory", shortcut: "Ctrl+P"},
-	{id: "goal", group: "Work", title: "Goal", desc: "View and update the durable goal"},
-	{id: "diff", group: "Files", title: "File changes", desc: "Show changes from this session"},
-	{id: "undo", group: "Files", title: "Undo last turn", desc: "Safely restore files from before the change"},
-	{id: "redo", group: "Files", title: "Redo reverted turn", desc: "Restore the last undone file changes"},
-	{id: "plan", group: "Agent", title: "Plan mode", desc: "Toggle read-only analysis"},
-	{id: "cost", group: "System", title: "Usage", desc: "Tokens, cost and model calls"},
-	{id: "settings", group: "System", title: "Settings", desc: "Change CLI behavior without editing TOML"},
-	{id: "data", group: "System", title: "Backup and import", desc: "Export data or restore a backup after restart"},
-	{id: "mcp", group: "System", title: "MCP servers", desc: "Show built-in and external MCP tools"},
-	{id: "doctor", group: "System", title: "Diagnostics", desc: "Check configuration and connections"},
-	{id: "workers", group: "Agent", title: "Workers", desc: "Show delegated tasks and their state"},
-	{id: "help", group: "System", title: "Help and shortcuts", desc: "Show the complete keyboard help"},
-	{id: "context-limit", group: "Model", title: "Context limit", desc: "Set the active provider and model context budget"},
-	{id: "context", group: "Work", title: "Inspect context", desc: "See what takes space in the conversation"},
-	{id: "compact", group: "Work", title: "Compact context", desc: "Summarize older context with a model call; keep the saved conversation"},
-	{id: "memory", group: "Work", title: "Project memory", desc: "Browse saved facts and summaries"},
-	{id: "accounts", group: "Model", title: "Accounts", desc: "Manage ChatGPT sign-in and accounts"},
-	{id: "export", group: "Files", title: "Export conversation", desc: "Save this conversation to a Markdown file"},
-}
+// The legacy name is retained for package tests; rows store catalog keys.
+var commonActions = commonActionsEN
 
 func (m Model) actionRows() []actionRow {
-	if m.language == "pl" {
-		return commonActions
+	rows := append([]actionRow(nil), commonActionsEN...)
+	for i := range rows {
+		rows[i].group = m.tr(rows[i].group)
+		rows[i].title = m.tr(rows[i].title)
+		rows[i].desc = m.tr(rows[i].desc)
 	}
-	return commonActionsEN
+	return rows
 }
 
 // ActionIDs returns the discoverable intent-first actions. It is used by the
@@ -106,7 +82,7 @@ func (m Model) openSessionsMenu() (tea.Model, tea.Cmd) {
 	}
 	rows, err := m.sessionStore.ListByCwd(m.home, 60)
 	if err != nil {
-		m.setStatus("sessions: "+err.Error(), false)
+		m.setStatus(m.tr("tui.actions.25792445a5")+err.Error(), false)
 		return m, nil
 	}
 	filtered := rows[:0]
@@ -120,10 +96,7 @@ func (m Model) openSessionsMenu() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) actionCategories() []string {
-	if m.language == "pl" {
-		return []string{"Wszystkie", "Praca", "Model", "Pliki", "Agent", "System"}
-	}
-	return []string{"All", "Work", "Model", "Files", "Agent", "System"}
+	return []string{m.tr("tui.categories.a52ace420f"), m.tr("tui.action_transcript.104ab9213e"), m.tr("tui.action_model.5e2c614c23"), m.tr("tui.autocomplete_render.abc7e98928"), m.tr("tui.action_plan.11b39c9377"), m.tr("tui.action_cost.6725e7bbcd")}
 }
 
 func (m Model) handleActionsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
