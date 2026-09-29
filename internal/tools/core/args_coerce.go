@@ -155,3 +155,37 @@ func schemaPropTypes(schema string) map[string]string {
 	}
 	return out
 }
+
+type argumentCoercion struct {
+	name, want string
+}
+
+// compileArgumentCoercions preserves the top-level, single-type conversion
+// rules. Union types, nested objects and arrays of non-strings are not guessed.
+func compileArgumentCoercions(root *schemaNode) []argumentCoercion {
+	var fields []argumentCoercion
+	for _, name := range root.propertyOrder {
+		property := root.properties[name]
+		if len(property.types) != 1 {
+			continue
+		}
+		var want string
+		for typ := range property.types {
+			want = typ
+		}
+		switch want {
+		case "integer", "number", "boolean":
+		case "array":
+			if property.items == nil || len(property.items.types) != 1 {
+				continue
+			}
+			if _, ok := property.items.types["string"]; !ok {
+				continue
+			}
+		default:
+			continue
+		}
+		fields = append(fields, argumentCoercion{name: name, want: want})
+	}
+	return fields
+}

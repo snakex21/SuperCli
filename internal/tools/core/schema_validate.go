@@ -20,6 +20,9 @@ const maxJSONNumberExponent = 10_000
 // so concurrent Execute calls only walk immutable Go values.
 type compiledToolSchema struct {
 	root *schemaNode
+	// Only fields this coercer can change. Compute once at registration so
+	// text-only payloads never pay for a redundant full-object decode.
+	coercions []argumentCoercion
 }
 
 type schemaNode struct {
@@ -88,7 +91,7 @@ func compileToolSchema(raw string) (*compiledToolSchema, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &compiledToolSchema{root: node}, nil
+		return &compiledToolSchema{root: node, coercions: compileArgumentCoercions(node)}, nil
 	case map[string]any:
 		root = normalizeToolSchemaRoot(root)
 		node, err := compileSchemaNode(root, "$schema")
@@ -96,7 +99,7 @@ func compileToolSchema(raw string) (*compiledToolSchema, error) {
 			return nil, err
 		}
 		sealToolSchemaRoot(node)
-		return &compiledToolSchema{root: node}, nil
+		return &compiledToolSchema{root: node, coercions: compileArgumentCoercions(node)}, nil
 	default:
 		return nil, fmt.Errorf("invalid JSON schema: root must be an object or boolean")
 	}

@@ -228,7 +228,7 @@ func valueType(value any) string {
 }
 
 func coerceCompiledArgs(schema *compiledToolSchema, args json.RawMessage) json.RawMessage {
-	if schema == nil || schema.root == nil || len(args) == 0 || len(schema.root.properties) == 0 {
+	if schema == nil || len(args) == 0 || len(schema.coercions) == 0 {
 		return args
 	}
 	var object map[string]json.RawMessage
@@ -236,16 +236,12 @@ func coerceCompiledArgs(schema *compiledToolSchema, args json.RawMessage) json.R
 		return args
 	}
 	changed := false
-	for name, property := range schema.root.properties {
-		if len(property.types) != 1 {
-			continue
-		}
-		var want string
-		for typ := range property.types {
-			want = typ
-		}
-		raw, ok := object[name]
-		if !ok {
+	for _, field := range schema.coercions {
+		name, want := field.name, field.want
+		raw := bytes.TrimSpace(object[name])
+		// Already typed values and absent fields cannot need coercion. Avoid
+		// allocating UnmarshalTypeErrors for ordinary numeric/argv arguments.
+		if len(raw) == 0 || raw[0] != '"' {
 			continue
 		}
 		switch want {
@@ -266,16 +262,6 @@ func coerceCompiledArgs(schema *compiledToolSchema, args json.RawMessage) json.R
 			// string actually parses as a JSON array — a bare shell string
 			// like "git status" stays untouched and fails schema validation
 			// with a clear message instead of being guessed at.
-			if property.items == nil || len(property.items.types) != 1 {
-				continue
-			}
-			var wantItem string
-			for typ := range property.items.types {
-				wantItem = typ
-			}
-			if wantItem != "string" {
-				continue
-			}
 			var text string
 			if json.Unmarshal(raw, &text) != nil {
 				continue
