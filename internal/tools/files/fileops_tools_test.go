@@ -213,12 +213,12 @@ func TestEditTools_SandboxEscape(t *testing.T) {
 		run  func(rel string) Result
 	}{
 		{"patch_file", func(p string) Result {
-			args, _ := json.Marshal(patchFileArgs{Path: p, Old: "original", New: "HACKED"})
+			args, _ := json.Marshal(map[string]any{"path": p, "old": "original", "new": "HACKED"})
 			r, _ := NewPatchFile(dir).execute(context.Background(), args)
 			return r
 		}},
 		{"patch_file_changes", func(p string) Result {
-			args, _ := json.Marshal(patchFileArgs{Path: p, Changes: []patchFileChange{{Old: "original", New: "HACKED"}}})
+			args, _ := json.Marshal(map[string]any{"path": p, "changes": []any{map[string]any{"old": "original", "new": "HACKED"}}})
 			r, _ := NewPatchFile(dir).execute(context.Background(), args)
 			return r
 		}},

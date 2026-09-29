@@ -48,31 +48,35 @@ func (m *Model) returnToProvidersMenu() {
 func (m Model) menuLabel(kind menuKind) string {
 	switch kind {
 	case menuUsage:
-		return m.tr("Usage", "Zużycie")
+		return m.tr("tui.menu_navigation.8d59829c1e")
 	case menuAttachments:
-		return m.tr("Attachments", "Załączniki")
+		return m.tr("tui.menu_navigation.634de11477")
 	case menuSessions:
-		return m.tr("Sessions", "Sesje")
+		return m.tr("tui.menu_navigation.6fa3cbf451")
 	case menuActions:
-		return m.tr("Actions", "Działania")
+		return m.tr("tui.menu_navigation.ff8059dc67")
 	case menuModels:
-		return m.tr("Choose model", "Wybierz model")
+		return m.tr("tui.menu_navigation.f6e05dcfcf")
 	case menuModelCatalog:
-		return m.tr("Model catalog", "Katalog modeli")
+		return m.tr("tui.menu_actions.1b43e2d030")
 	case menuProviders:
-		return m.tr("Providers", "Dostawcy")
+		return m.tr("tui.menu_navigation.996c32b35f")
 	case menuProviderPredefined:
-		return m.tr("Add provider", "Dodaj dostawcę")
+		return m.tr("tui.menu_navigation.8cd1856b03")
 	case menuOpenAIAuth:
-		return m.tr("Sign in", "Logowanie")
+		return m.tr("tui.menu_navigation.bfd402b2f6")
 	case menuAccounts:
-		return m.tr("Accounts", "Konta")
+		return m.tr("tui.menu_navigation.8a7c8b67fe")
 	case menuGoal:
-		return m.tr("Goal", "Cel")
+		return m.tr("tui.menu_goal_render.cdbf6975e8")
 	case menuSettings:
-		return m.tr("Settings", "Ustawienia")
+		return m.tr("tui.menu_navigation.74a883a037")
+	case menuLanguage:
+		return m.tr("tui.language.title")
+	case menuUpdate:
+		return m.tr("update.check")
 	default:
-		return m.tr("Back", "Wróć")
+		return m.tr("tui.menu_navigation.76900f1bfd")
 	}
 }
 
@@ -87,14 +91,14 @@ func (m Model) renderMenuView() string {
 		screenHeight = 32
 	}
 	if screenWidth < 16 || screenHeight < 8 {
-		return truncateVisible(m.tr("Resize terminal · Esc back", "Powiększ okno · Esc wróć"), screenWidth)
+		return truncateVisible(m.tr("tui.menu_navigation.23ef7dadd9"), screenWidth)
 	}
 	width := minInt(screenWidth, 120)
 	inset := (screenWidth - width) / 2
 	innerWidth := width - 4
 	m.width, m.height = innerWidth, screenHeight-4
 	content := strings.Split(m.renderMenuContent(), "\n")
-	header := m.palette.Header.Render("SuperCli") + m.palette.Dim.Render("  /  "+m.tr("Control centre", "Centrum sterowania"))
+	header := m.palette.Header.Render("SuperCli") + m.palette.Dim.Render("  /  "+m.tr("tui.menu_navigation.c75923d3b8"))
 	lines := []string{truncateVisible(header, width), m.palette.Rule.Render("╭" + strings.Repeat("─", width-2) + "╮")}
 	for i := 0; i < m.height; i++ {
 		line := ""
@@ -104,11 +108,11 @@ func (m Model) renderMenuView() string {
 		lines = append(lines, m.palette.Rule.Render("│ ")+fitMenuLine(line, innerWidth)+m.palette.Rule.Render(" │"))
 	}
 	lines = append(lines, m.palette.Rule.Render("╰"+strings.Repeat("─", width-2)+"╯"))
-	back := m.tr("Esc conversation", "Esc rozmowa")
+	back := m.tr("tui.menu_navigation.25ba330f4e")
 	if m.menu.parent != nil {
 		back = "Esc ← " + m.menuLabel(m.menu.parent.kind)
 	}
-	nav := back + "   ·   " + m.tr("Ctrl+K conversation", "Ctrl+K rozmowa")
+	nav := back + "   ·   " + m.tr("tui.menu_navigation.e4b2784215")
 	if m.statusOverride != "" {
 		nav = m.renderNotice(width)
 	}

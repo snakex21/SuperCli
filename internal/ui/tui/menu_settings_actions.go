@@ -62,22 +62,7 @@ func (m Model) settingsEnter() (tea.Model, tea.Cmd) {
 			}
 		})
 	case setLanguage:
-		language := "pl"
-		if m.language == "pl" {
-			language = "en"
-		}
-		next, cmd := m.settingsApply(func(c *config.TomlConfig) { c.Language = language })
-		mm := next.(Model)
-		mm.language = language
-		mm.marker = NewMarker(mm.palette, language)
-		mm.chat.language = language
-		mm.input.Placeholder = textFor(language, "Message SuperCli · Tab opens actions", "Napisz do SuperCli · Tab otwiera działania")
-		if len(mm.chat.msgs) > 0 {
-			mm.refreshTranscript()
-		} else {
-			mm.viewport.SetContent(welcomeAtSize(Options{Language: language, LLM: mm.llm}, mm.palette, mm.width, mm.height))
-		}
-		return mm, cmd
+		return m.openLanguageMenu()
 	case setInt:
 		m.menu.editing = true
 		m.menu.editBuf = ""

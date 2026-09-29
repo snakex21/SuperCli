@@ -19,7 +19,7 @@ import (
 func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "enter" {
 		if m.cancelling {
-			m.setStatus(m.tr("Stopping the previous run; your draft is kept", "Kończenie poprzedniej pracy; szkic jest zachowany"), false)
+			m.setStatus(m.tr("tui.model_input.c29bf4d47d"), false)
 			return m, m.statusClearCmd()
 		}
 		text := strings.TrimSpace(m.input.Value())
@@ -28,12 +28,12 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		q, ok := m.agent.(interjectionQueuer)
 		if !ok || !q.QueueInterjection(text) {
-			m.setStatus(m.tr("message queue is full", "kolejka wiadomo\u015bci jest pe\u0142na"), false)
+			m.setStatus(m.tr("tui.model_input.9882c2b0ed"), false)
 			return m, m.statusClearCmd()
 		}
 		m.chat.addUser("> " + text)
 		m.appendLineToTranscript("> " + text)
-		m.appendLine(m.palette.InputHint.Render(m.tr("queued for the next safe step", "dodano do najbli\u017cszego bezpiecznego kroku")))
+		m.appendLine(m.palette.InputHint.Render(m.tr("tui.model_input.d5f42b0f2b")))
 		m.input.Reset()
 		m.syncInputHeight()
 		m.refreshTranscript()
@@ -75,9 +75,9 @@ func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
 		m.cancel.Disarm()
 		m.setStatus("cancelled", true)
 		if m.cancelling {
-			m.setStatus(m.tr("Stopping…", "Kończenie pracy…"), true)
+			m.setStatus(m.tr("tui.model_input.bbe8574175"), true)
 		}
-		m.appendLine(m.palette.InputHint.Render("[Ctrl+C] run cancelled"))
+		m.appendLine(m.palette.InputHint.Render(m.tr("tui.model_input.875d9607de")))
 		m.refreshTranscript()
 		return m, m.statusClearCmd()
 	}
@@ -100,9 +100,9 @@ func (m Model) handleEscCancel() (tea.Model, tea.Cmd) {
 	m.cancel.Disarm()
 	m.setStatus("cancelled", true)
 	if m.cancelling {
-		m.setStatus(m.tr("Stopping…", "Kończenie pracy…"), true)
+		m.setStatus(m.tr("tui.model_input.bbe8574175"), true)
 	}
-	m.appendLine(m.palette.InputHint.Render("[ESC] run cancelled"))
+	m.appendLine(m.palette.InputHint.Render(m.tr("tui.model_input.5d38ad7b5a")))
 	m.refreshTranscript()
 	// Clear the override after 2 seconds.
 	return m, m.statusClearCmd()
@@ -172,11 +172,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Copy the last assistant response to the clipboard.
 		last := m.chat.lastAssistant()
 		if last == "" {
-			m.setStatus("nothing to copy", false)
+			m.setStatus(m.tr("tui.model_input.afd6f64e92"), false)
 		} else if err := clipboard.WriteAll(last); err != nil {
-			m.setStatus(fmt.Sprintf("copy failed: %v", err), false)
+			m.setStatus(fmt.Sprintf(m.tr("tui.model_input.7e6196ef1a"), err), false)
 		} else {
-			m.setStatus(m.tr("Copied last response", "Skopiowano ostatnią odpowiedź"), true)
+			m.setStatus(m.tr("tui.model_input.15d4a01b74"), true)
 		}
 		return m, m.statusClearCmd()
 	}
@@ -193,7 +193,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) persistReasoningEffort(level string) {
 	if m.providerMgr != nil {
 		if err := m.providerMgr.SaveReasoningEffort(level); err != nil {
-			m.setStatus(fmt.Sprintf("reasoning: save config.toml: %v", err), false)
+			m.setStatus(fmt.Sprintf(m.tr("tui.model_input.fc719769ad"), err), false)
 		}
 		return
 	}
@@ -202,7 +202,7 @@ func (m *Model) persistReasoningEffort(level string) {
 	if tc, err := config.LoadToml(globalPath); err == nil {
 		tc.ReasoningEffort = level
 		if err := config.SaveToml(globalPath, tc); err != nil {
-			m.setStatus(fmt.Sprintf("reasoning: save config.toml: %v", err), false)
+			m.setStatus(fmt.Sprintf(m.tr("tui.model_input.fc719769ad"), err), false)
 		}
 	}
 }

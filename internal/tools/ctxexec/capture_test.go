@@ -22,7 +22,7 @@ func TestCaptureHelper(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}
-	if mode == "inherited" {
+	if mode == "inherited" || mode == "inherited_failure" {
 		child := exec.Command(os.Args[0], "-test.run=^TestCaptureHelper$")
 		child.Env = append(os.Environ(), "SUPERCLI_CAPTURE_HELPER=descendant")
 		child.Stdout, child.Stderr = os.Stdout, os.Stderr
@@ -30,6 +30,9 @@ func TestCaptureHelper(t *testing.T) {
 			panic(err)
 		}
 		fmt.Println(child.Process.Pid)
+		if mode == "inherited_failure" {
+			os.Exit(7)
+		}
 		os.Exit(0)
 	}
 	count := 6000
@@ -123,22 +126,51 @@ func TestRunnerRetainsEvidenceBeforePreview(t *testing.T) {
 }
 
 func TestRunnerBoundsInheritedOutputPipeWait(t *testing.T) {
-	result, err := New(t.TempDir()).Run(context.Background(), &Request{
-		Command:  []string{os.Args[0], "-test.run=^TestCaptureHelper$"},
-		EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=inherited"}, TimeoutMS: 5000,
-	})
+	for _, mode := range []string{"inherited", "inherited_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			result, err := New(t.TempDir()).Run(context.Background(), &Request{
+				Command:  []string{os.Args[0], "-test.run=^TestCaptureHelper$"},
+				EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=" + mode}, TimeoutMS: 5000,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pid, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
+			if err != nil {
+				t.Fatalf("descendant PID: %v; output=%q", err, result.Stdout)
+			}
+			if child, err := os.FindProcess(pid); err == nil {
+				defer child.Release()
+				defer child.Kill()
+			}
+			if mode == "inherited_failure" {
+				if result.ExitCode != 7 {
+					t.Fatalf("actual process failure lost: %+v", result)
+				}
+				return
+			}
+			if result.ExitCode != 0 || result.Error != "" {
+				t.Fatalf("completed launcher reported as failed: exit=%d error=%q", result.ExitCode, result.Error)
+			}
+			for _, body := range []string{result.SuccessPreview(), mustResultJSON(t, result)} {
+				var got map[string]any
+				if err := json.Unmarshal([]byte(body), &got); err != nil {
+					t.Fatal(err)
+				}
+				warning, _ := got["output_warning"].(string)
+				if got["output_incomplete"] != true || !strings.Contains(warning, "incomplete") || !strings.Contains(warning, "descendant") || !strings.Contains(warning, "rerunning") {
+					t.Fatalf("missing incomplete capture / descendant status warning: %s", body)
+				}
+			}
+		})
+	}
+}
+
+func mustResultJSON(t *testing.T, result *Result) string {
+	t.Helper()
+	body, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
-	if err != nil {
-		t.Fatalf("descendant PID: %v; output=%q", err, result.Stdout)
-	}
-	if child, err := os.FindProcess(pid); err == nil {
-		defer child.Release()
-		defer child.Kill()
-	}
-	if result.ExitCode == 0 || !strings.Contains(result.Error, "WaitDelay") {
-		t.Fatalf("incomplete capture must surface as failure: exit=%d error=%q", result.ExitCode, result.Error)
-	}
+	return string(body)
 }

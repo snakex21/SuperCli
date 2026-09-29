@@ -3,12 +3,15 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"supercli/internal/system/uilang"
 )
 
 // StatusBar renders the single-line status footer below the viewport.
 // It shows: model | credits | goal | draft | session — each section
 // separated by a dim pipe. Empty sections are skipped.
 type StatusBar struct {
+	Language  string
 	Model     string // e.g. "gpt-4o"
 	Credits   string // e.g. "1.2k/10k (12%)"
 	Goal      string // e.g. "3/5 tasks"
@@ -25,19 +28,19 @@ func (s StatusBar) Render(p Palette) string {
 	var parts []string
 
 	if s.Model != "" {
-		parts = append(parts, s.renderSection("model", s.Model, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.model"), s.Model, p))
 	}
 	if s.Credits != "" {
-		parts = append(parts, s.renderSection("cr", s.Credits, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.credits"), s.Credits, p))
 	}
 	if s.Goal != "" {
-		parts = append(parts, s.renderSection("goal", s.Goal, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.goal"), s.Goal, p))
 	}
 	if s.DraftMode != "" {
-		parts = append(parts, s.renderSection("draft", s.DraftMode, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.draft"), s.DraftMode, p))
 	}
 	if s.Session != "" {
-		parts = append(parts, s.renderSection("sess", s.Session, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.session"), s.Session, p))
 	}
 	// F34: live token counter and cost.
 	if s.Tokens != "" || s.Cost != "" {
@@ -49,7 +52,7 @@ func (s StatusBar) Render(p Palette) string {
 		} else {
 			val = s.Cost
 		}
-		parts = append(parts, s.renderSection("tok", val, p))
+		parts = append(parts, s.renderSection(uilang.Text(s.Language, "tui.status.tokens"), val, p))
 	}
 
 	sep := p.StatusSep.Render(" │ ")
@@ -70,8 +73,13 @@ func (s StatusBar) renderSection(key, value string, p Palette) string {
 
 // StatusFn builds a StatusBar from the given fields and renders it.
 // This is a convenience for main.go's statusFn wiring.
-func StatusFn(model, credits, goal, draftMode, session, tokens, cost string, width int, p Palette) string {
+func StatusFn(model, credits, goal, draftMode, session, tokens, cost string, width int, p Palette, languages ...string) string {
+	language := uilang.English
+	if len(languages) > 0 {
+		language = languages[0]
+	}
 	sb := StatusBar{
+		Language:  language,
 		Model:     model,
 		Credits:   credits,
 		Goal:      goal,

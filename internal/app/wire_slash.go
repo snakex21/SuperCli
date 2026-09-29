@@ -18,6 +18,7 @@ import (
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 	"supercli/internal/tools"
 	"supercli/internal/tools/sandbox"
 	"supercli/internal/ui/tui"
@@ -54,6 +55,7 @@ type slashWireDeps struct {
 // wireSlashEarly registers slash handlers that do not need the provider
 // manager or council. MCP is registered separately in Main after initMcp.
 func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
+	cmds["update"] = updateCommand(d.dataDir, d.home)
 	cmds["reasoning-history"] = reasoningHistoryCommand(d.dataDir, d.cwd)
 	// Fala 3: /workers — coordinator visibility. Lists workers from the
 	// task registry; "/workers stop <id>" cancels a running one.
@@ -124,14 +126,15 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	// the NEW session id (sessWriter keeps writing here); the
 	// original session stays intact and searchable.
 	cmds["resume"] = func(ctx context.Context, args string) (string, error) {
+		language := updateLanguage(d.dataDir, d.home)
 		if d.sessStore == nil {
-			return "resume: session store unavailable", nil
+			return uilang.Text(language, "app.resume.unavailable"), nil
 		}
 		args = strings.TrimSpace(args)
 		if args == "" || strings.EqualFold(args, "all") {
-			return listResumableSessions(ctx, d.sessStore, d.sessionID, d.home, strings.EqualFold(args, "all"))
+			return listResumableSessions(ctx, d.sessStore, d.sessionID, d.home, strings.EqualFold(args, "all"), language)
 		}
-		out, err := resumeSession(ctx, d.loop, d.sessStore, d.windowFor, args)
+		out, err := resumeSession(ctx, d.loop, d.sessStore, d.windowFor, args, language)
 		if err != nil {
 			return "", err
 		}
@@ -151,9 +154,9 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	cmds["help"] = func(ctx context.Context, args string) (string, error) {
 		// Short grouped list by default; /help all shows everything.
 		if strings.TrimSpace(strings.ToLower(args)) == "all" {
-			return tui.HelpContentAllFor(d.uiLanguage), nil
+			return tui.HelpContentAllFor(updateLanguage(d.dataDir, d.home)), nil
 		}
-		return tui.HelpContentFor(d.uiLanguage), nil
+		return tui.HelpContentFor(updateLanguage(d.dataDir, d.home)), nil
 	}
 
 	// F25a: /reflect — show learned patterns from reflection.
@@ -183,22 +186,23 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 
 	// F25a: /status — show credits and session info.
 	cmds["status"] = func(ctx context.Context, args string) (string, error) {
+		language := updateLanguage(d.dataDir, d.home)
 		sessUsed, dayUsed := d.tracker.Used()
 		budget := d.tracker.Budget()
 		name := d.provider.Name()
 		var b strings.Builder
-		fmt.Fprintf(&b, "model: %s\n", name)
+		fmt.Fprintf(&b, uilang.Text(language, "app.status.model"), name)
 		if budget.PerSession > 0 {
-			fmt.Fprintf(&b, "session: %d / %d tokens (%.0f%%)\n",
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.session_capped"),
 				sessUsed, budget.PerSession, float64(sessUsed)/float64(budget.PerSession)*100)
 		} else {
-			fmt.Fprintf(&b, "session: %d tokens (no cap)\n", sessUsed)
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.session_uncapped"), sessUsed)
 		}
 		if budget.PerDay > 0 {
-			fmt.Fprintf(&b, "daily: %d / %d tokens (%.0f%%)\n",
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.daily_capped"),
 				dayUsed, budget.PerDay, float64(dayUsed)/float64(budget.PerDay)*100)
 		} else {
-			fmt.Fprintf(&b, "daily: %d tokens (no cap)\n", dayUsed)
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.daily_uncapped"), dayUsed)
 		}
 		// Session-write health: silent-loss protection. One line
 		// when everything is fine; the sticky first error, the
@@ -206,25 +210,25 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		ps := d.loop.PersistStatus()
 		switch {
 		case ps.Failures == 0:
-			fmt.Fprintf(&b, "persistence: ok\n")
+			b.WriteString(uilang.Text(language, "app.status.persistence_ok"))
 		default:
-			state := "recovered (last write ok)"
+			state := uilang.Text(language, "app.status.recovered")
 			if !ps.LastWriteOK {
-				state = "FAILING (last write failed)"
+				state = uilang.Text(language, "app.status.failing")
 			}
-			fmt.Fprintf(&b, "persistence: %s\n", state)
-			fmt.Fprintf(&b, "  failures: %d (first: %s at %s — %s)\n",
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.persistence"), state)
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.failures"),
 				ps.Failures, ps.FirstOp, ps.FirstAt.Format("15:04:05"), ps.FirstErr)
-			fmt.Fprintf(&b, "  last: %s at %s — %s\n",
+			fmt.Fprintf(&b, uilang.Text(language, "app.status.last"),
 				ps.LastOp, ps.LastAt.Format("15:04:05"), ps.LastErr)
 			if ps.Pending > 0 {
-				fmt.Fprintf(&b, "  buffered for retry: %d message(s)\n", ps.Pending)
+				fmt.Fprintf(&b, uilang.Text(language, "app.status.pending"), ps.Pending)
 			}
 			if ps.ProjectionDirty {
-				fmt.Fprintf(&b, "  context projection: dirty (retry pending)\n")
+				b.WriteString(uilang.Text(language, "app.status.dirty"))
 			}
 			if ps.Dropped > 0 {
-				fmt.Fprintf(&b, "  LOST to buffer overflow: %d message(s)\n", ps.Dropped)
+				fmt.Fprintf(&b, uilang.Text(language, "app.status.dropped"), ps.Dropped)
 			}
 		}
 		return b.String(), nil
@@ -416,11 +420,12 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	// active provider is not Codex (or has no auth) it prints a clear
 	// message instead of an error.
 	cmds["usage"] = func(ctx context.Context, args string) (string, error) {
+		language := updateLanguage(d.dataDir, d.home)
 		prov := llm.Unwrap(d.loop.Provider())
 		_, single := prov.(codexUsageFetcher)
 		_, all := prov.(codexUsageAllFetcher)
 		if !single && !all {
-			return "the active model is not a ChatGPT-subscription (Codex) model — usage limits are only available there.\nRun /login and /model gpt-5.5 to switch.", nil
+			return uilang.Text(language, "app.usage.unsupported"), nil
 		}
 
 		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -434,21 +439,21 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		// from each account's last-known snapshot AFTER the refresh, so
 		// it shows the freshly-fetched numbers; it stays useful even
 		// when some accounts failed to refresh (expired token, offline).
-		pool := codexPoolUsageDetail(prov)
+		pool := codexPoolUsageDetail(prov, language)
 		// Partial success (multi-account): the active account refreshed
 		// fine but another account's token failed. Don't treat that as a
 		// total failure — show the fresh active numbers and pool table,
 		// noting which account(s) could not refresh.
 		if err != nil && rl.OK {
-			return fmt.Sprintf("Codex usage (just refreshed; some accounts failed: %v):\n%s%s",
-				err, rl.FormatDetail(), pool), nil
+			return fmt.Sprintf(uilang.Text(language, "app.usage.partial"),
+				err, rl.FormatDetailFor(language), pool), nil
 		}
 		if err != nil {
 			if rp, ok := prov.(interface {
 				RateLimits() (llm.CodexRateLimits, bool)
 			}); ok {
 				if cached, ok := rp.RateLimits(); ok {
-					return "could not refresh (showing last known):\n" + cached.FormatDetail() + pool, nil
+					return uilang.Text(language, "app.usage.cached") + cached.FormatDetailFor(language) + pool, nil
 				}
 			}
 			// No snapshot for the active account, but the pool may
@@ -457,11 +462,11 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 			// dropping err here is what made /usage print a bare
 			// "could not refresh the active account:" with nothing after.
 			if pool != "" {
-				return fmt.Sprintf("could not refresh the active account: %v%s", err, pool), nil
+				return fmt.Sprintf(uilang.Text(language, "app.usage.account_error"), err, pool), nil
 			}
-			return fmt.Sprintf("could not fetch Codex usage: %v", err), nil
+			return fmt.Sprintf(uilang.Text(language, "app.usage.fetch_error"), err), nil
 		}
-		return "Codex usage (just refreshed):\n" + rl.FormatDetail() + pool, nil
+		return uilang.Text(language, "app.usage.refreshed") + rl.FormatDetailFor(language) + pool, nil
 	}
 
 	// Wave 2 B6: /memory — inspect persistent memory. No args:

@@ -10,21 +10,21 @@ import (
 func (m onboardModel) View() string {
 	p := DefaultPalette()
 	var b strings.Builder
-	header := p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr(" — first-run setup", " — pierwsze uruchomienie"))
+	header := p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr("tui.onboard_view.59570f1941"))
 	if m.width > 0 {
 		header = truncateVisible(header, m.width)
 	}
 	b.WriteString(header + "\n")
 	switch m.step {
 	case onboardDetect:
-		b.WriteString(p.PanelMuted.Render(m.tr("Looking for local LLM servers (Ollama, LM Studio)...", "Szukam lokalnych serwerów LLM (Ollama, LM Studio)...")) + "\n")
+		b.WriteString(p.PanelMuted.Render(m.tr("tui.onboard_view.09e85e2c68")) + "\n")
 	case onboardMenu:
 		return b.String() + m.renderProviderChoices()
 	case onboardAuthMethod:
-		b.WriteString("\n" + m.tr("How do you want to use OpenAI?", "Jak chcesz korzystać z OpenAI?") + "\n\n")
+		b.WriteString("\n" + m.tr("tui.onboard_view.dd924e808c") + "\n\n")
 		opts := []string{
-			m.tr("Sign in with your ChatGPT account (uses your subscription limits)", "Zaloguj konto ChatGPT (używa limitów subskrypcji)"),
-			m.tr("API key (pay-as-you-go platform.openai.com key)", "Klucz API (rozliczenie za użycie z platform.openai.com)"),
+			m.tr("tui.menu_providers_render.eaec73252e"),
+			m.tr("tui.menu_providers_render.9c1a934db0"),
 		}
 		for i, o := range opts {
 			line := fmt.Sprintf("%d. %s", i+1, o)
@@ -34,21 +34,21 @@ func (m onboardModel) View() string {
 				fmt.Fprintf(&b, "%s\n", p.Dim.Render("  "+line))
 			}
 		}
-		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter · Esc back", "↑↓ + Enter · Esc wróć")) + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("tui.onboard_view.ded543f5b1")) + "\n")
 	case onboardURL:
-		b.WriteString("\n" + m.tr("Provider base URL (connection type will be detected):", "Bazowy URL dostawcy (typ połączenia zostanie wykryty):") + "\n")
+		b.WriteString("\n" + m.tr("tui.onboard_view.4815f25033") + "\n")
 		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), m.input)
-		b.WriteString("\n" + p.InputHint.Render(m.tr("Enter to confirm · Esc back", "Enter potwierdź · Esc wróć")) + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("tui.onboard_view.d604cf98d9")) + "\n")
 	case onboardKey:
 		b.WriteString("\n" + p.PanelTitle.Render(m.result.Name) + p.PanelMuted.Render(" · "+m.result.BaseURL) + "\n")
 		masked := strings.Repeat("*", len([]rune(m.input)))
-		b.WriteString("\n" + m.tr("API key (Enter to skip if the server needs none):", "Klucz API (Enter pomija, jeśli serwer go nie wymaga):") + "\n")
+		b.WriteString("\n" + m.tr("tui.onboard_view.4ed6b45b27") + "\n")
 		fmt.Fprintf(&b, "%s %s_\n", p.InputPrompt.Render(">"), masked)
-		b.WriteString("\n" + p.InputHint.Render(m.tr("Enter to confirm · Esc back", "Enter potwierdź · Esc wróć")) + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("tui.onboard_view.d604cf98d9")) + "\n")
 	case onboardLoadModels:
-		b.WriteString(p.PanelMuted.Render("\n"+m.tr("Fetching the model list from ", "Pobieram listę modeli z ")+m.result.BaseURL+"...") + "\n")
+		b.WriteString(p.PanelMuted.Render("\n"+m.tr("tui.onboard_view.25c820a8be")+m.result.BaseURL+"...") + "\n")
 	case onboardModels:
-		b.WriteString(p.PanelMuted.Render(m.tr("Pick a model (", "Wybierz model (")+m.result.Name+"):") + "\n\n")
+		b.WriteString(p.PanelMuted.Render(m.tr("tui.onboard_view.ab8f3519ba")+m.result.Name+"):") + "\n\n")
 		// Show a window of up to 10 models around the cursor.
 		start := 0
 		if m.cursor > 9 {
@@ -63,13 +63,13 @@ func (m onboardModel) View() string {
 			}
 		}
 		if end < len(m.models) {
-			fmt.Fprintf(&b, "%s\n", p.Dim.Render(fmt.Sprintf(m.tr("  ... %d more", "  ... i jeszcze %d"), len(m.models)-end)))
+			fmt.Fprintf(&b, "%s\n", p.Dim.Render(fmt.Sprintf(m.tr("tui.onboard_view.7d0103f3b6"), len(m.models)-end)))
 		}
-		b.WriteString("\n" + p.InputHint.Render(m.tr("↑↓ + Enter · Esc back", "↑↓ + Enter · Esc wróć")) + "\n")
+		b.WriteString("\n" + p.InputHint.Render(m.tr("tui.onboard_view.ded543f5b1")) + "\n")
 	case onboardVerify:
-		b.WriteString(p.PanelMuted.Render("\n"+m.tr("Testing the connection (asking the model to say OK)...", "Testuję połączenie (proszę model o odpowiedź OK)...")) + "\n")
+		b.WriteString(p.PanelMuted.Render("\n"+m.tr("tui.onboard_view.d98c0fdf2a")) + "\n")
 	case onboardDone:
-		b.WriteString(p.Success.Render(m.tr("✓ connected — saved. Starting chat...", "✓ połączono — zapisano. Uruchamiam czat...")) + "\n")
+		b.WriteString(p.Success.Render(m.tr("tui.onboard_view.14db0f4517")) + "\n")
 	}
 	return b.String()
 }
@@ -103,7 +103,7 @@ func (m onboardModel) renderProviderChoices() string {
 		height = 28
 	}
 	if width < 24 || height < 8 {
-		return truncateVisible(m.tr("Resize terminal · Esc skip", "Powiększ okno · Esc pomiń"), width)
+		return truncateVisible(m.tr("tui.onboard_view.6fd3e6609a"), width)
 	}
 	presentation := Model{
 		language: m.language, palette: DefaultPalette(),
@@ -111,11 +111,10 @@ func (m onboardModel) renderProviderChoices() string {
 		menu: interactiveMenu{kind: menuProviderPredefined, cursor: m.cursor, filter: m.filter, formErr: m.errMsg},
 	}
 	page := menuPage{
-		title: m.tr("Choose a provider", "Wybierz dostawcę"),
-		subtitle: m.tr("Ready integrations or your own endpoint · saved in the portable data folder",
-			"Gotowe integracje lub własny endpoint · zapis w przenośnym folderze danych"),
+		title:      m.tr("tui.menu_providers_render.e1d36c3ade"),
+		subtitle:   m.tr("tui.onboard_view.188a6da089"),
 		searchable: true,
-		footer:     m.tr("↑↓ choose · Enter confirm · Esc skip", "↑↓ wybierz · Enter potwierdź · Esc pomiń"),
+		footer:     m.tr("tui.onboard_view.fc64b84595"),
 	}
 	for i, row := range m.filteredChoices() {
 		page.items = append(page.items, menuListItem{label: row.label, meta: row.desc})

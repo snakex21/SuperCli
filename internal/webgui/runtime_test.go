@@ -29,7 +29,7 @@ func TestRuntimeStatusAndLogExport(t *testing.T) {
 	if err := json.Unmarshal(status.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.App != "SuperCli" || payload.Status != "running" || payload.Engine != "SuperCli" || payload.UIContract != UIContractVersion || payload.UpdateSupported {
+	if payload.App != "SuperCli" || payload.Status != "running" || payload.Engine != "SuperCli" || payload.UIContract != UIContractVersion || !payload.UpdateSupported {
 		t.Fatalf("runtime payload=%+v", payload)
 	}
 

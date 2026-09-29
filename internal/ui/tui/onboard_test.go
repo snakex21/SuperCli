@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"supercli/internal/llm/providers"
+	"supercli/internal/system/uilang"
 )
 
 func firstRunChoice(t *testing.T, m onboardModel, name string) (onboardModel, tea.Cmd) {
@@ -51,6 +52,7 @@ func TestOnboardingSharesAllProviderTemplatesWithoutDuplicates(t *testing.T) {
 				byName[name] = choice
 			}
 			for _, template := range providers.PredefinedProviders() {
+				template.Desc = uilang.ProviderDescription(language, template.Name, template.Desc)
 				choice, ok := byName[template.Name]
 				if !ok || choice.provider != template {
 					t.Fatalf("first-run diverged from GUI catalog for %s", template.Name)

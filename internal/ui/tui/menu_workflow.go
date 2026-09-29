@@ -17,7 +17,7 @@ func (m Model) openQueueMenu() (tea.Model, tea.Cmd) {
 	}
 	rows, err := m.sessionStore.ListQueuedTasks(context.Background(), m.home)
 	if err != nil {
-		m.setStatus("queue: "+err.Error(), false)
+		m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 		return m, nil
 	}
 	m.menu.tasks = rows
@@ -31,7 +31,7 @@ func (m Model) reloadQueue() Model {
 	}
 	rows, err := m.sessionStore.ListQueuedTasks(context.Background(), m.home)
 	if err != nil {
-		m.setStatus("queue: "+err.Error(), false)
+		m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 		return m
 	}
 	m.menu.tasks = rows
@@ -56,22 +56,22 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.menu.moveTaskID != "" {
 				position, err := strconv.Atoi(value)
 				if err != nil || position < 1 || position > len(m.menu.tasks) {
-					m.setStatus(m.tr("queue: enter a valid position", "kolejka: wpisz prawid\u0142ow\u0105 pozycj\u0119"), false)
+					m.setStatus(m.tr("tui.menu_workflow.d706a7d18b"), false)
 					return m, nil
 				}
 				if err := m.sessionStore.MoveQueuedTask(context.Background(), m.home, m.menu.moveTaskID, position-1); err != nil {
-					m.setStatus("queue: "+err.Error(), false)
+					m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 					return m, nil
 				}
 				m.menu.cursor = position - 1
 			} else if m.menu.editTaskID != "" {
 				if err := m.sessionStore.UpdateQueuedTask(context.Background(), m.home, m.menu.editTaskID, value); err != nil {
-					m.setStatus("queue: "+err.Error(), false)
+					m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 					return m, nil
 				}
 			} else {
 				if _, err := m.sessionStore.EnqueueTask(context.Background(), m.home, m.sessionID, value); err != nil {
-					m.setStatus("queue: "+err.Error(), false)
+					m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 					return m, nil
 				}
 			}
@@ -152,7 +152,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		row := m.menu.tasks[m.menu.cursor]
 		if err := m.sessionStore.MoveQueuedTask(context.Background(), m.home, row.ID, to); err != nil {
-			m.setStatus("queue: "+err.Error(), false)
+			m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 			return m, nil
 		}
 		m.menu.cursor = to
@@ -163,7 +163,7 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		row := m.menu.tasks[m.menu.cursor]
 		if err := m.sessionStore.DeleteQueuedTask(context.Background(), m.home, row.ID); err != nil {
-			m.setStatus("queue: "+err.Error(), false)
+			m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 			return m, nil
 		}
 		return m.reloadQueue(), nil
@@ -179,7 +179,7 @@ func (m Model) runQueuedTask() (tea.Model, tea.Cmd) {
 	}
 	row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
 	if err := m.sessionStore.DeleteQueuedTask(context.Background(), m.home, row.ID); err != nil {
-		m.setStatus("queue: "+err.Error(), false)
+		m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 		return m, nil
 	}
 	m.mode = modeNormal
@@ -190,24 +190,24 @@ func (m Model) runQueuedTask() (tea.Model, tea.Cmd) {
 func (m Model) renderQueueMenu() string {
 	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Task queue", "Kolejka zada\u0144")) + "\n")
-	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("Saved in this project and preserved after restart.", "Zapisana w tym projekcie i zachowana po ponownym uruchomieniu."), width)) + "\n\n")
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("tui.menu_workflow.6daed5b2ef")) + "\n")
+	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("tui.menu_workflow.88b47b68bf"), width)) + "\n\n")
 	if m.menu.editing {
-		label := m.tr("New task", "Nowe zadanie")
+		label := m.tr("tui.menu_workflow.3e992276b2")
 		if m.menu.editTaskID != "" {
-			label = m.tr("Edit queued task", "Edytuj zadanie w kolejce")
+			label = m.tr("tui.menu_workflow.863e597d29")
 		} else if m.menu.moveTaskID != "" {
-			label = m.tr("Move queued task (1-"+strconv.Itoa(len(m.menu.tasks))+")", "Przenie\u015b zadanie (1-"+strconv.Itoa(len(m.menu.tasks))+")")
+			label = fmt.Sprintf(m.tr("tui.queue.cf3f9941f1"), len(m.menu.tasks))
 		}
 		b.WriteString(m.palette.StatusKey.Render(label) + "\n")
 		b.WriteString(m.palette.InputText.Render(truncateVisible("> "+m.menu.editBuf, width)) + "\n\n")
-		b.WriteString(m.palette.InputHint.Render(m.tr("Enter save \u00b7 Esc cancel", "Enter zapisz \u00b7 Esc anuluj")))
+		b.WriteString(m.palette.InputHint.Render(m.tr("tui.menu_context.cf88b00a0e")))
 		return b.String()
 	}
 	if m.sessionStore == nil {
-		b.WriteString(m.palette.Dim.Render(m.tr("Queue storage is unavailable.", "Magazyn kolejki jest niedost\u0119pny.")) + "\n")
+		b.WriteString(m.palette.Dim.Render(m.tr("tui.menu_workflow.48916ed9b1")) + "\n")
 	} else if len(m.menu.tasks) == 0 {
-		b.WriteString(m.palette.Dim.Render(m.tr("No queued tasks. Press N to add one.", "Brak zada\u0144. N dodaje pierwsze.")) + "\n")
+		b.WriteString(m.palette.Dim.Render(m.tr("tui.menu_workflow.6f60e55100")) + "\n")
 	} else {
 		start, end := menuWindow(len(m.menu.tasks), m.menu.cursor, m.height-7)
 		for i := start; i < end; i++ {
@@ -225,7 +225,7 @@ func (m Model) renderQueueMenu() string {
 			b.WriteString(truncateVisible(line, width) + "\n")
 		}
 	}
-	hint := m.tr("N add \u00b7 E edit \u00b7 P position \u00b7 Enter run \u00b7 Del remove \u00b7 Ctrl+\u2191\u2193 reorder \u00b7 Esc back", "N dodaj \u00b7 E edytuj \u00b7 P pozycja \u00b7 Enter uruchom \u00b7 Del usu\u0144 \u00b7 Ctrl+\u2191\u2193 przesu\u0144 \u00b7 Esc wr\u00f3\u0107")
+	hint := m.tr("tui.menu_workflow.6d0fa5913c")
 	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
 }
@@ -247,7 +247,7 @@ func (m Model) handleDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if path == "" || m.dataImport == nil {
 				return m, nil
 			}
-			m.setStatus(m.tr("validating backup...", "sprawdzanie kopii..."), false)
+			m.setStatus(m.tr("tui.menu_workflow.dff6f01e1e"), false)
 			fn := m.dataImport
 			return m, func() tea.Msg {
 				full, err := fn(context.Background(), path)
@@ -292,7 +292,7 @@ func (m Model) handleDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) runDataAction() (tea.Model, tea.Cmd) {
 	if m.menu.cursor == 2 {
 		if m.dataImport == nil {
-			m.setStatus(m.tr("import is unavailable", "import jest niedostępny"), false)
+			m.setStatus(m.tr("tui.menu_workflow.c6be18b8a9"), false)
 			return m, nil
 		}
 		m.menu.editing = true
@@ -300,11 +300,11 @@ func (m Model) runDataAction() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.dataExport == nil {
-		m.setStatus(m.tr("backup is unavailable", "tworzenie kopii jest niedostępne"), false)
+		m.setStatus(m.tr("tui.menu_workflow.23e0a3e4e3"), false)
 		return m, nil
 	}
 	full := m.menu.cursor == 1
-	m.setStatus(m.tr("creating backup...", "tworzenie kopii..."), false)
+	m.setStatus(m.tr("tui.menu_workflow.a23f377d51"), false)
 	fn := m.dataExport
 	return m, func() tea.Msg {
 		path, err := fn(context.Background(), full)
@@ -315,27 +315,18 @@ func (m Model) runDataAction() (tea.Model, tea.Cmd) {
 func (m Model) renderDataMenu() string {
 	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Backup and import", "Kopie i import")) + "\n")
-	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("Operations run locally and never call a model.", "Operacje działają lokalnie i nie wywołują modelu."), width)) + "\n\n")
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("tui.menu_workflow.87e699b6c8")) + "\n")
+	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("tui.menu_workflow.8c1bca317a"), width)) + "\n\n")
 	if m.menu.editing {
-		b.WriteString(m.palette.StatusKey.Render(m.tr("Backup ZIP path", "Ścieżka do kopii ZIP")) + "\n")
+		b.WriteString(m.palette.StatusKey.Render(m.tr("tui.menu_workflow.0f1f10ed43")) + "\n")
 		b.WriteString(m.palette.InputText.Render(truncateVisible("> "+m.menu.editBuf, width)) + "\n\n")
-		b.WriteString(m.palette.InputHint.Render(m.tr("Enter validate and stage · Esc cancel", "Enter sprawdź i przygotuj · Esc anuluj")))
+		b.WriteString(m.palette.InputHint.Render(m.tr("tui.menu_workflow.b24333bc33")))
 		return b.String()
 	}
-	rowsPL := [][2]string{
-		{"Bezpieczna kopia", "sesje, pamięć, cele i ustawienia interfejsu"},
-		{"Pełna kopia portable", "także klucze, modele, MCP i umiejętności"},
-		{"Importuj kopię", "sprawdź ZIP; dane zostaną podmienione przy restarcie"},
-	}
-	rowsEN := [][2]string{
-		{"Safe backup", "sessions, memory, goals and interface settings"},
-		{"Full portable backup", "also keys, models, MCP and skills"},
-		{"Import backup", "validate ZIP; data is replaced after restart"},
-	}
-	rows := rowsEN
-	if m.language == "pl" {
-		rows = rowsPL
+	rows := [][2]string{
+		{m.tr("tui.backup.1d7baeb78a"), m.tr("tui.backup.c5e1541efb")},
+		{m.tr("tui.backup.7f043ef8e1"), m.tr("tui.backup.a3cf64c58f")},
+		{m.tr("tui.backup.a4c8f47c4d"), m.tr("tui.backup.0604b24628")},
 	}
 	for i, row := range rows {
 		prefix := "  "
@@ -350,6 +341,6 @@ func (m Model) renderDataMenu() string {
 		}
 		b.WriteString(truncateVisible(line, width) + "\n")
 	}
-	b.WriteString("\n" + m.palette.InputHint.Render(m.tr("↑↓ select · Enter start · Esc back", "↑↓ wybierz · Enter rozpocznij · Esc wróć")))
+	b.WriteString("\n" + m.palette.InputHint.Render(m.tr("tui.menu_workflow.ac888d2402")))
 	return b.String()
 }

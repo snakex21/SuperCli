@@ -67,9 +67,9 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette, languages 
 	}
 
 	var b strings.Builder
-	title := textFor(language, "Commands", "Polecenia")
+	title := textFor(language, "tui.autocomplete_render.b269dc4e81")
 	if ac.kind == autocompMention {
-		title = textFor(language, "Files", "Pliki")
+		title = textFor(language, "tui.autocomplete_render.abc7e98928")
 	}
 	if ac.query != "" {
 		title += " · " + ac.triggerChar() + ac.query
@@ -124,9 +124,9 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette, languages 
 		b.WriteString(palette.Rule.Render("│"))
 		b.WriteString("\n")
 	}
-	footer := textFor(language, "  ↑/↓ select · Tab insert · Enter run · Esc close", "  ↑/↓ wybierz · Tab wstaw · Enter uruchom · Esc zamknij")
+	footer := textFor(language, "tui.autocomplete_render.6b1db814c4")
 	if ac.kind == autocompMention {
-		footer = textFor(language, "  ↑/↓ select · Tab insert · Enter insert · Esc close", "  ↑/↓ wybierz · Tab wstaw · Enter wstaw · Esc zamknij")
+		footer = textFor(language, "tui.autocomplete_render.c25e78bf24")
 	}
 	b.WriteString(palette.Rule.Render("├" + strings.Repeat("─", boxWidth-2) + "┤"))
 	b.WriteString("\n")

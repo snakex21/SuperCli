@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"supercli/internal/system/uilang"
 )
 
 // usageEndpointURL derives the dedicated rate-limit ("usage") endpoint
@@ -104,25 +106,34 @@ func parseCodexUsageBody(body []byte) CodexRateLimits {
 // same way as FormatHUD (a rolled-over window shows ~0%). Returns a
 // short placeholder when the snapshot is empty.
 func (rl CodexRateLimits) FormatDetail() string {
-	return rl.formatDetailAt(time.Now())
+	return rl.FormatDetailFor(uilang.English)
+}
+
+// FormatDetailFor localizes presentation without changing quota data or protocol fields.
+func (rl CodexRateLimits) FormatDetailFor(language string) string {
+	return rl.formatDetailAtFor(time.Now(), language)
 }
 
 func (rl CodexRateLimits) formatDetailAt(now time.Time) string {
+	return rl.formatDetailAtFor(now, uilang.English)
+}
+
+func (rl CodexRateLimits) formatDetailAtFor(now time.Time, language string) string {
 	if !rl.OK {
-		return "no Codex usage data yet."
+		return uilang.Text(language, "app.usage_detail.none")
 	}
 	var b strings.Builder
 	pPct, pReset := effectiveUsedPct(rl.PrimaryUsedPct, rl.PrimaryResetAt, now)
-	fmt.Fprintf(&b, "%s window: %s used",
+	fmt.Fprintf(&b, uilang.Text(language, "app.usage_detail.window"),
 		windowLabel(rl.PrimaryWindowMin, "5h"), formatPct(pPct, pReset))
 	if d := rl.primaryResetDuration(now, pReset); d > 0 {
-		fmt.Fprintf(&b, " · resets in %s", shortDuration(d))
+		fmt.Fprintf(&b, uilang.Text(language, "app.usage_detail.reset"), shortDuration(d))
 	}
 	sPct, sReset := effectiveUsedPct(rl.SecondaryUsedPct, rl.SecondaryResetAt, now)
-	fmt.Fprintf(&b, "\n%s window: %s used",
+	fmt.Fprintf(&b, "\n"+uilang.Text(language, "app.usage_detail.window"),
 		windowLabel(rl.SecondaryWindowMin, "7d"), formatPct(sPct, sReset))
 	if d := windowResetDuration(rl.SecondaryResetAt, rl.SecondaryWindowMin, now, sReset); d > 0 {
-		fmt.Fprintf(&b, " · resets in %s", shortDuration(d))
+		fmt.Fprintf(&b, uilang.Text(language, "app.usage_detail.reset"), shortDuration(d))
 	}
 	return b.String()
 }

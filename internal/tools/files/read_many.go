@@ -52,7 +52,8 @@ func (t *ReadMany) Spec() Tool {
   },
   "required": ["reads"]
 }`,
-		Fn: t.execute,
+		Fn:         t.execute,
+		RepairArgs: repairReadManyRangeList,
 	}
 }
 

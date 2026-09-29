@@ -12,9 +12,10 @@ import "strings"
 // of all moves after a tool error were blind repeats of the same call, which is
 // what a message that only says "not allowed" invites.
 type unknownArgumentError struct {
-	path  string   // JSON path of the offending key, e.g. $.file
-	valid []string // argument names this schema declares
-	hint  string   // nearest declared name when the key is an obvious typo
+	path    string   // JSON path of the offending key, e.g. $.file
+	valid   []string // argument names this schema declares
+	hint    string   // nearest declared name when the key is an obvious typo
+	missing []string // required JSON paths absent from the same object
 }
 
 // Error renders the message without a tool name, for callers that validate
@@ -32,16 +33,19 @@ func (e *unknownArgumentError) messageFor(tool string) string {
 		out.WriteString(e.hint)
 		out.WriteString(`"?)`)
 	}
-	if len(e.valid) == 0 {
-		return out.String()
+	if len(e.valid) > 0 {
+		out.WriteString("; valid arguments")
+		if tool != "" {
+			out.WriteString(" for ")
+			out.WriteString(tool)
+		}
+		out.WriteString(": ")
+		out.WriteString(strings.Join(e.valid, ", "))
 	}
-	out.WriteString("; valid arguments")
-	if tool != "" {
-		out.WriteString(" for ")
-		out.WriteString(tool)
+	if len(e.missing) > 0 {
+		out.WriteString("; missing required: ")
+		out.WriteString(strings.Join(e.missing, ", "))
 	}
-	out.WriteString(": ")
-	out.WriteString(strings.Join(e.valid, ", "))
 	return out.String()
 }
 

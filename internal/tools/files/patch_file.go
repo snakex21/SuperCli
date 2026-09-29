@@ -29,15 +29,17 @@ type patchFileArgs struct {
 	// replacement in one line — must not cost the model a nested array. As
 	// flat scalars they are also writable in the thin protocol's «key: value»
 	// form, which arrays are not.
-	Old           string `json:"old"`
-	New           string `json:"new"`
-	ExpectedCount int    `json:"expected_count"`
+	// A missing/null new is invalid; an explicit empty string deletes.
+	Old           *string `json:"old"`
+	New           *string `json:"new"`
+	ExpectedCount int     `json:"expected_count"`
 }
 
 type patchFileChange struct {
-	Old           string `json:"old"`
-	New           string `json:"new"`
-	ExpectedCount int    `json:"expected_count"`
+	// A missing/null new is invalid; an explicit empty string deletes.
+	Old           *string `json:"old"`
+	New           *string `json:"new"`
+	ExpectedCount int     `json:"expected_count"`
 }
 
 // Spec returns the tool definition (full JSON Schema).
@@ -91,11 +93,14 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 	// atomicity, anchoring, diagnostics — is shared, and there is no second
 	// code path to keep in step with the first.
 	switch {
-	case a.Old != "" && len(a.Changes) > 0:
+	case (a.Old != nil || a.New != nil) && len(a.Changes) > 0:
 		return Result{Err: fmt.Errorf("patch_file: old/new and changes are two ways to say the same thing; send one or the other")}, nil
-	case a.Old != "":
+	case a.Old != nil:
+		if a.New == nil {
+			return Result{Err: fmt.Errorf("patch_file: new is required; use an explicit empty string only for deletion")}, nil
+		}
 		a.Changes = []patchFileChange{{Old: a.Old, New: a.New, ExpectedCount: a.ExpectedCount}}
-	case len(a.Changes) == 0 && a.New != "":
+	case len(a.Changes) == 0 && a.New != nil:
 		return Result{Err: fmt.Errorf("patch_file: new was given without old; add old, the exact text to replace")}, nil
 	case len(a.Changes) == 0:
 		return Result{Err: fmt.Errorf("patch_file: nothing to change; give old and new for one replacement, or changes for several")}, nil
@@ -106,7 +111,13 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 	}
 	chs := make([]fileops.PatchChange, len(a.Changes))
 	for i, c := range a.Changes {
-		chs[i] = fileops.PatchChange{Old: c.Old, New: c.New, ExpectedCount: c.ExpectedCount}
+		if c.Old == nil {
+			return Result{Err: fmt.Errorf("patch_file: changes[%d].old is required; nothing written", i)}, nil
+		}
+		if c.New == nil {
+			return Result{Err: fmt.Errorf("patch_file: changes[%d].new is required; use an explicit empty string only for deletion; nothing written", i)}, nil
+		}
+		chs[i] = fileops.PatchChange{Old: *c.Old, New: *c.New, ExpectedCount: c.ExpectedCount}
 	}
 	res, err := fileops.PatchFile(full, chs, a.BaseHash)
 	if err != nil {

@@ -1,4 +1,5 @@
 "use strict";
+const {serveFixtureLocale}=require("./ui-fixture-locales.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const http = require("node:http");
@@ -33,9 +34,10 @@ const { chromium } = require("playwright");
   const server = http.createServer(async (req,res) => {
     try {
       const pathname = new URL(req.url,"http://localhost").pathname;
+      if (serveFixtureLocale(res,pathname)) return;
       if (pathname.startsWith("/api/")) {
         res.setHeader("Content-Type","application/json");
-        let result = { sessions:[], projects:[], providers:[], models:[], workers:[], tasks:[], settings:{}, ui:{lang:"pl"} };
+        let result = { sessions:[], projects:[], providers:[], models:[], workers:[], tasks:[], settings:{"ui.lang":"pl"}, ui:{lang:"pl"} };
         if (pathname === "/api/sessions") result=sessions;
         if (pathname === "/api/transcript") result={messages:[],has_more:false};
         if (pathname === "/api/models") {

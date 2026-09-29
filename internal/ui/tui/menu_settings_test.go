@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 )
 
 // typeRunes feeds each rune of s through the text-edit key handler, as if
@@ -97,10 +98,33 @@ func TestSettings_RenderShowsSourceAndDefaults(t *testing.T) {
 	}
 }
 
-func TestSettingsLanguageToggleUpdatesTUIAndPersists(t *testing.T) {
+func TestSettingsLocalizationPreservesUserValues(t *testing.T) {
+	m := newSettingsModel(t, "")
+	for _, language := range []string{"en", "pl", "de"} {
+		m.language = language
+		for _, literal := range []string{"on", "off", "parallel", "default (main model)"} {
+			cfg := config.TomlConfig{DefaultModel: literal, DefaultProvider: literal, TaskModel: literal,
+				OrchestratorModel: literal, CompactModel: literal, VerifyCommands: []string{literal}, FallbackModels: []string{literal}}
+			for _, key := range []string{"default_model", "default_provider", "task_model", "orchestrator_model", "compact_model", "verify_commands", "fallback_models"} {
+				value, _ := m.settingValueSource(settingRow{key: key}, &cfg)
+				if value != literal {
+					t.Fatalf("language %s changed user value for %s: %q -> %q", language, key, literal, value)
+				}
+			}
+		}
+	}
+}
+
+func TestSettingsLanguagePickerUpdatesTUIAndPersists(t *testing.T) {
 	m := newSettingsModel(t, "language = \"pl\"\n")
 	m = cursorForKey(m, "language")
 	mm, _ := m.settingsEnter()
+	m = mm.(Model)
+	if m.menu.kind != menuLanguage || len(m.languageRows()) != 27 {
+		t.Fatalf("language picker did not expose all supported languages: %+v", m.menu)
+	}
+	m.menu.cursor = 0 // English is the main language and first picker entry.
+	mm, _ = m.selectLanguage()
 	m = mm.(Model)
 	if m.language != "en" || m.chat.language != "en" {
 		t.Fatalf("language not applied live: model=%q chat=%q", m.language, m.chat.language)
@@ -110,6 +134,60 @@ func TestSettingsLanguageToggleUpdatesTUIAndPersists(t *testing.T) {
 	}
 	if cfg := loadCfg(t, m); cfg.Language != "en" {
 		t.Fatalf("persisted language=%q, want en", cfg.Language)
+	}
+}
+
+func TestSettingsLanguagePickerPersistsEverySupportedLocale(t *testing.T) {
+	for _, language := range uilang.Languages() {
+		t.Run(language.Code, func(t *testing.T) {
+			m := cursorForKey(newSettingsModel(t, "language = \"pl\"\n"), "language")
+			next, _ := m.settingsEnter()
+			m = next.(Model)
+			m.menu.filter = language.Code
+			for i, row := range m.languageRows() {
+				if row.Code == language.Code {
+					m.menu.cursor = i
+					break
+				}
+			}
+			next, _ = m.selectLanguage()
+			m = next.(Model)
+			if m.language != language.Code || m.chat.language != language.Code || m.marker.language != language.Code {
+				t.Fatalf("language was not applied to every surface: %s/%s/%s", m.language, m.chat.language, m.marker.language)
+			}
+			if m.menu.kind != menuSettings || loadCfg(t, m).Language != language.Code || m.menu.settingsCfg.Language != language.Code {
+				t.Fatal("return to settings or shared persistence failed")
+			}
+		})
+	}
+}
+
+func TestSettingsLanguagePickerCancelPreservesSelection(t *testing.T) {
+	m := cursorForKey(newSettingsModel(t, "language = \"pl\"\n"), "language")
+	next, _ := m.settingsEnter()
+	m = next.(Model)
+	next, _ = m.handleMenuKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.menu.kind != menuSettings || m.language != "pl" || loadCfg(t, m).Language != "pl" {
+		t.Fatal("cancel changed the persisted or active language")
+	}
+}
+
+func TestLanguagePickerRefreshesCachedTranscriptLabels(t *testing.T) {
+	m := New(Options{Language: "en", Home: t.TempDir(), DataDir: t.TempDir(), NoColor: true})
+	m.chat.addUser("original user content")
+	m.chat.renderCompleted(m.palette)
+	if m.chat.completedDirty {
+		t.Fatal("fixture did not prime the transcript cache")
+	}
+	next, _ := m.openLanguageMenu()
+	m = next.(Model)
+	m.menu.filter = "pl"
+	next, _ = m.selectLanguage()
+	m = next.(Model)
+	rendered := m.chat.renderCompleted(m.palette)
+	if !strings.Contains(rendered, textFor("pl", "tui.actions_select.08b0419357")) || !strings.Contains(rendered, "original user content") {
+		t.Fatalf("language change kept stale labels or changed user content: %q", rendered)
 	}
 }
 

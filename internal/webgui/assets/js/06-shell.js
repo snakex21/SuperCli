@@ -40,17 +40,16 @@ async function checkHealth() {
   try {
     var h = await j("/api/health");
     dot.className = "status-dot ok" + (streaming ? " busy" : "");
-    dot.title = t("status.connected") + " · " + (h.model || "");
+    dot.title = t("status.connected") + " · " + modelDisplayName(h.model);
     activeWorkspacePath = h.home || "";
     $("#workspace").textContent = workspaceDisplayName(activeWorkspacePath);
     $("#workspace").title = activeWorkspacePath;
     $("#open-project-folder").disabled = !activeWorkspacePath;
-    if (h.model) {
-      var modelChanged = h.model !== activeModelID;
-      activeModelID = h.model;
-      $("#model-name").textContent = h.model;
-      if (modelChanged) loadReasoning();
-    }
+    var model = selectedModelID(h.model);
+    var modelChanged = model !== activeModelID;
+    activeModelID = model;
+    $("#model-name").textContent = modelDisplayName(model);
+    if (modelChanged && model) loadReasoning();
     return h;
   } catch (e) {
     dot.className = "status-dot err";

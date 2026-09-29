@@ -33,14 +33,14 @@ func (m Model) renderDashboard() string {
 	sep := m.palette.StatusSep.Render(" · ")
 	workspace := d.Project
 	if workspace == "" {
-		workspace = m.tr("Workspace", "Katalog roboczy")
+		workspace = m.tr("tui.view_dashboard.87bb59ba2f")
 	}
 	head := m.palette.StatusKey.Render(workspace)
 	if d.Directory != "" {
 		head += sep + m.palette.StatusDim.Render(d.Directory)
 	}
 	if d.Orchestrator {
-		head += sep + m.palette.HeaderMode.Render(m.tr("coordinator", "koordynator"))
+		head += sep + m.palette.HeaderMode.Render(m.tr("tui.view_dashboard.bf24385098"))
 	}
 	lines := []string{truncateVisible(head, width)}
 	if d.Goal.Title != "" {
@@ -53,15 +53,15 @@ func (m Model) renderDashboard() string {
 		}
 		switch d.Goal.Verification {
 		case "passed":
-			progress += m.tr(" verified", " sprawdzono")
+			progress += m.tr("tui.view_dashboard.fff41e4a7f")
 		case "failed":
-			progress += m.tr(" check failed", " błąd weryfikacji")
+			progress += m.tr("tui.view_dashboard.af79559924")
 		default:
 			if d.Goal.Total > 0 && d.Goal.Done == d.Goal.Total {
-				progress += m.tr(" verify", " do weryfikacji")
+				progress += m.tr("tui.view_dashboard.befa71bc8c")
 			}
 		}
-		label := m.palette.StatusDim.Render(m.tr("Goal  ", "Cel  "))
+		label := m.palette.StatusDim.Render(m.tr("tui.view_dashboard.a507c063ae"))
 		right := m.palette.Success.Render(strings.TrimSpace(progress))
 		if d.Goal.Verification == "failed" {
 			right = m.palette.Error.Render(strings.TrimSpace(progress))
@@ -77,34 +77,34 @@ func (m Model) renderDashboard() string {
 	c := m.runtimeContext
 	usage := dashboardTokens(d.SessionTokens, d.SessionCap)
 	day := dashboardTokens(d.DailyTokens, d.DailyCap)
-	ctxValue, ctxHint := m.tr("waiting", "oczekiwanie"), m.tr("after the first turn", "po pierwszej turze")
+	ctxValue, ctxHint := m.tr("tui.view_dashboard.80cfa3e7f2"), m.tr("tui.view_dashboard.af47c586fc")
 	if c.Window > 0 {
 		pct := c.Used * 100 / c.Window
 		ctxValue = fmt.Sprintf("%d%%  %s/%s", pct, compactTokens(c.Used), compactTokens(c.Window))
-		ctxHint = m.dashboardBar(c.Used, c.Window, 10) + fmt.Sprintf(m.tr("  compact at %d%%", "  skracanie przy %d%%"), c.CompactAt)
+		ctxHint = m.dashboardBar(c.Used, c.Window, 10) + fmt.Sprintf(m.tr("tui.view_dashboard.7a9d492b82"), c.CompactAt)
 	}
-	cacheValue, cacheHint := m.tr("not reported", "brak danych"), m.tr("cached input", "wejście z cache")
+	cacheValue, cacheHint := m.tr("tui.view_dashboard.2087cb5f8b"), m.tr("tui.view_dashboard.e11d5bcbd3")
 	if c.HasCache {
 		cacheValue = fmt.Sprintf("%d%%", c.Cached*100/max(1, c.Cached+c.Evaluated))
-		cacheHint = fmt.Sprintf(m.tr("%s reused · %s evaluated", "%s z cache · %s przeliczone"), compactTokens(c.Cached), compactTokens(c.Evaluated))
+		cacheHint = fmt.Sprintf(m.tr("tui.view_dashboard.0bb010975d"), compactTokens(c.Cached), compactTokens(c.Evaluated))
 	}
 	if c.Requests > 0 {
-		cacheValue += fmt.Sprintf(m.tr(" · %d requests today", " · %d żądań dziś"), c.Requests)
+		cacheValue += fmt.Sprintf(m.tr("tui.view_dashboard.a879058ffb"), c.Requests)
 	}
 	if width >= 90 && m.height >= 22 {
 		w := (width - 2) / 3
 		cards := []string{
-			m.dashboardCard(m.tr("TOKENS", "TOKENY"), usage+m.tr(" session", " sesja"), day+m.tr(" today", " dziś"), w),
-			m.dashboardCard(m.tr("CONTEXT", "KONTEKST"), ctxValue, ctxHint, w),
-			m.dashboardCard("CACHE", cacheValue, cacheHint, width-2*w-2),
+			m.dashboardCard(m.tr("tui.view_dashboard.a0dd543626"), usage+m.tr("tui.view_dashboard.e916532aff"), day+m.tr("tui.view_dashboard.c514d734bf"), w),
+			m.dashboardCard(m.tr("tui.view_dashboard.a8bf80b5eb"), ctxValue, ctxHint, w),
+			m.dashboardCard(strings.ToUpper(strings.TrimSpace(m.tr("tui.view_dashboard.beca2fd536"))), cacheValue, cacheHint, width-2*w-2),
 		}
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, cards[0], " ", cards[1], " ", cards[2]))
 	} else {
-		lines = append(lines, truncateVisible(m.palette.StatusKey.Render(m.tr("Tokens ", "Tokeny "))+usage+sep+m.palette.StatusDim.Render(day+m.tr(" today", " dziś")), width))
-		lines = append(lines, truncateVisible(m.palette.StatusKey.Render(m.tr("Context ", "Kontekst "))+ctxValue+sep+m.palette.StatusDim.Render("cache "+cacheValue), width))
+		lines = append(lines, truncateVisible(m.palette.StatusKey.Render(m.tr("tui.view_dashboard.4c1286c23c"))+usage+sep+m.palette.StatusDim.Render(day+m.tr("tui.view_dashboard.c514d734bf")), width))
+		lines = append(lines, truncateVisible(m.palette.StatusKey.Render(m.tr("tui.view_dashboard.a61adb68ca"))+ctxValue+sep+m.palette.StatusDim.Render(m.tr("tui.view_dashboard.beca2fd536")+cacheValue), width))
 	}
 	if d.Limits != "" || d.Account != "" {
-		lines = append(lines, truncateVisible(m.palette.StatusDim.Render(m.tr("Limits  ", "Limity  ")+strings.TrimSpace(d.Limits+" "+d.Account)), width))
+		lines = append(lines, truncateVisible(m.palette.StatusDim.Render(m.tr("tui.view_dashboard.3c3650a827")+strings.TrimSpace(d.Limits+" "+d.Account)), width))
 	}
 	return strings.Join(lines, "\n")
 }

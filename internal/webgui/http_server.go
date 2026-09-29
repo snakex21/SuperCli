@@ -42,6 +42,7 @@ type Server struct {
 	folderJobMu     sync.Mutex
 	folderJob       *folderIndexJob
 	folderJobCancel context.CancelFunc
+	updateFactory   func() (applicationUpdater, error)
 }
 
 // codexLoginState is the per-account (by label) tracking record for
@@ -139,6 +140,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	providerType, chatReady := s.eng.ProviderStatus()
 	writeJSON(w, map[string]any{
 		"ok":            true,
+		"version":       NativeAppVersion,
 		"chat_ready":    chatReady,
 		"provider_type": providerType,
 		"model":         s.eng.ModelName(),

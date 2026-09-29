@@ -8,9 +8,9 @@ import (
 type cancelScope int
 
 const (
-	cancelNothing cancelScope = iota // not running
-	cancelToolCall                  // running a tool → cancel current tool
-	cancelRun                       // running agent → cancel entire run
+	cancelNothing  cancelScope = iota // not running
+	cancelToolCall                    // running a tool → cancel current tool
+	cancelRun                         // running agent → cancel entire run
 )
 
 // CancelState manages the Ctrl+C context for an active agent run.

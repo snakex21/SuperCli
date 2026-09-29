@@ -66,7 +66,7 @@ func (m Model) renderMenuPage(page menuPage) string {
 	if page.searchable {
 		filter := m.menu.filter
 		if filter == "" {
-			filter = m.tr("type to search…", "pisz, aby wyszukać…")
+			filter = m.tr("tui.menu_layout.1d3b29b8e0")
 		}
 		lines = append(lines, m.palette.InputHint.Render(truncateVisible("/ "+filter, width)))
 	}
@@ -126,7 +126,7 @@ func (m Model) renderMenuPage(page menuPage) string {
 	if len(page.items) == 0 {
 		empty := page.empty
 		if empty == "" {
-			empty = m.tr("No matches. Clear the search to try again.", "Brak wyników. Wyczyść wyszukiwanie i spróbuj ponownie.")
+			empty = m.tr("tui.menu_layout.c59279f326")
 		}
 		body = append(body, m.palette.Dim.Render(truncateVisible(empty, listWidth)))
 	}
@@ -157,7 +157,7 @@ func (m Model) renderMenuPage(page menuPage) string {
 	}
 	footer := page.footer
 	if (start > 0 || end < len(page.items)) && !m.menu.editing && m.menu.kind != menuProviderForm && m.menu.kind != menuGoalForm {
-		footer += " · " + m.tr("PgUp/PgDn more", "PgUp/PgDn dalej")
+		footer += " · " + m.tr("tui.menu_layout.fa12815ae5")
 	}
 	lines = append(lines, m.palette.InputHint.Render(truncateVisible(footer, width)))
 	return strings.Join(lines, "\n")

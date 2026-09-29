@@ -19,11 +19,13 @@ import (
 // identical cancellation, mentions, plan-mode and persistence semantics.
 func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	text = strings.TrimSpace(text)
+	attachmentOnly := text == ""
 	if text == "" {
 		if len(m.pendingAttachments) == 0 {
 			return m, nil
 		}
-		text = m.tr("Inspect the attached files.", "Przeanalizuj załączone pliki.")
+		// UI language must not alter an automatically generated model prompt.
+		text = textFor("en", "tui.model_prompt_submit.c0c3578958")
 	}
 	if isQuitCommand(text) {
 		m.quitting = true
@@ -33,7 +35,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	// once, then treat further occurrences as regular input.
 	if low := strings.ToLower(text); (low == "q" || low == "quit" || low == "exit") && !m.tipShown {
 		m.tipShown = true
-		m.appendLine(m.palette.InputHint.Render("tip: use Ctrl+C or /quit to exit; q is regular input"))
+		m.appendLine(m.palette.InputHint.Render(m.tr("tui.model_prompt_submit.9fda47968f")))
 		m.refreshTranscript()
 		return m, nil
 	}
@@ -55,8 +57,11 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	m.cancel.Arm(cancelRun, cancel)
 	selected := append([]string(nil), m.pendingAttachments...)
 	visible := text
+	if attachmentOnly {
+		visible = m.tr("tui.model_prompt_submit.c0c3578958")
+	}
 	if len(selected) > 0 {
-		visible += "\n\n" + attachmentDisplay(selected)
+		visible += "\n\n" + attachmentDisplay(selected, m.language)
 	}
 	m.chat.addUser("> " + visible)
 	m.appendLineToTranscript("> " + visible)
@@ -86,7 +91,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 			})
 			if !ok {
 				cancel()
-				return runStartMsg{err: fmt.Errorf("agent does not support attachments"), draft: text}
+				return runStartMsg{err: fmt.Errorf("%s", m.tr("tui.model_prompt_submit.ebdb3945cc")), draft: text}
 			}
 			staged, err := attachments.StagePicked(home, selected)
 			if err != nil {
@@ -135,7 +140,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 			if e == nil && seq > previousSeq {
 				e = m.sessionStore.SaveMessageAttachments(ctx, m.sessionID, seq, selected)
 			} else if e == nil {
-				e = fmt.Errorf("no persisted user message for attachment history")
+				e = fmt.Errorf("%s", m.tr("tui.model_prompt_submit.f320190a7d"))
 			}
 			if e != nil {
 				warning = e.Error()

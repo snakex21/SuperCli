@@ -86,7 +86,7 @@ func TestMouseDoesNotScrollThroughModalOrComposer(t *testing.T) {
 
 func TestAnswerBoundaryKeepsExplicitFinalTextVisible(t *testing.T) {
 	for _, lang := range []string{"pl", "en"} {
-		label := textFor(lang, "Answer", "Odpowiedź")
+		label := textFor(lang, "tui.view_markdown.b2a3aa6027")
 		for _, collapsed := range []bool{false, true} {
 			out := renderAssistantMarkdown("<thinking>private plan</thinking>\nI think this is the answer.\n\nMore detail.", NoColorPalette(), collapsed, lang)
 			if strings.Count(out, "── "+label+" ──") != 1 {

@@ -1,4 +1,5 @@
 "use strict";
+const {serveFixtureLocale}=require("./ui-fixture-locales.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const http = require("node:http");
@@ -13,10 +14,11 @@ const { chromium } = require("playwright");
   // Worker/backend routing is covered separately by worker_resume_test.go.
   const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, "http://localhost").pathname;
+      if (serveFixtureLocale(res,pathname)) return;
     if (pathname.startsWith("/api/")) {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ sessions: [], projects: [], providers: [], models: [],
-        workers: [], tasks: [], settings: {}, ui: { lang: "pl" } }));
+        workers: [], tasks: [], settings: {"ui.lang":"pl"}, ui: { lang: "pl" } }));
       return;
     }
     const filename = pathname === "/" ? "assets/index.html" :

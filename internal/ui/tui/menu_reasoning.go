@@ -12,33 +12,21 @@ type reasoningMenuOption struct {
 	Desc  string
 }
 
-func reasoningMenuOptions() []reasoningMenuOption {
+func reasoningMenuOptions() []reasoningMenuOption { return reasoningMenuOptionsFor("en") }
+func reasoningMenuOptionsFor(language string) []reasoningMenuOption {
 	return []reasoningMenuOption{
-		{Label: "provider default", Value: "", Desc: "let the provider choose its default"},
-		{Label: "none", Value: "none", Desc: "explicitly disable when the provider supports a none value"},
-		{Label: "minimal", Value: "minimal", Desc: "smallest thinking budget if accepted by the backend"},
-		{Label: "low", Value: "low", Desc: "low thinking budget"},
-		{Label: "medium", Value: "medium", Desc: "balanced thinking budget"},
-		{Label: "high", Value: "high", Desc: "larger thinking budget"},
-		{Label: "xhigh", Value: "xhigh", Desc: "extra-high thinking effort where supported"},
-		{Label: "max", Value: "max", Desc: "maximum thinking effort where supported"},
+		{Label: textFor(language, "tui.menu_reasoning.ecc40b6a46"), Value: "", Desc: textFor(language, "tui.reasoning.06a0e222ed")},
+		{Label: textFor(language, "tui.reasoning.140bedbf9c"), Value: "none", Desc: textFor(language, "tui.reasoning.6040a9c4a9")},
+		{Label: textFor(language, "tui.reasoning.a703788f83"), Value: "minimal", Desc: textFor(language, "tui.reasoning.2819358bdb")},
+		{Label: textFor(language, "tui.reasoning.6c1ff09db3"), Value: "low", Desc: textFor(language, "tui.reasoning.8cce663ae4")},
+		{Label: textFor(language, "tui.reasoning.c082456a77"), Value: "medium", Desc: textFor(language, "tui.reasoning.1c9ca5d08f")},
+		{Label: textFor(language, "tui.reasoning.6ef7c9b15e"), Value: "high", Desc: textFor(language, "tui.reasoning.95b9990b05")},
+		{Label: textFor(language, "tui.reasoning.b5255978be"), Value: "xhigh", Desc: textFor(language, "tui.reasoning.c596119f7c")},
+		{Label: textFor(language, "tui.reasoning.9baf3a4031"), Value: "max", Desc: textFor(language, "tui.reasoning.bde6d6ae2b")},
 	}
 }
-
 func (m Model) allLocalizedReasoningMenuOptions() []reasoningMenuOption {
-	if m.language != "pl" {
-		return reasoningMenuOptions()
-	}
-	return []reasoningMenuOption{
-		{Label: "domyślne dostawcy", Value: "", Desc: "pozostaw wybór dostawcy"},
-		{Label: "brak", Value: "none", Desc: "wyłącz jawnie, jeśli dostawca obsługuje tę wartość"},
-		{Label: "minimalne", Value: "minimal", Desc: "najmniejszy budżet myślenia akceptowany przez backend"},
-		{Label: "niskie", Value: "low", Desc: "niski budżet myślenia"},
-		{Label: "średnie", Value: "medium", Desc: "zrównoważony budżet myślenia"},
-		{Label: "wysokie", Value: "high", Desc: "większy budżet myślenia"},
-		{Label: "bardzo wysokie (xhigh)", Value: "xhigh", Desc: "bardzo wysoki poziom myślenia"},
-		{Label: "maksymalne (max)", Value: "max", Desc: "maksymalny poziom myślenia, jeśli obsługiwany"},
-	}
+	return reasoningMenuOptionsFor(m.language)
 }
 
 func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
@@ -51,11 +39,11 @@ func (m Model) localizedReasoningMenuOptions() []reasoningMenuOption {
 		}
 		if state.ToggleOnly {
 			if opt.Value == "none" {
-				opt.Label = m.tr("Off", "Wyłączone")
-				opt.Desc = m.tr("disable thinking", "wyłącz myślenie")
+				opt.Label = m.tr("tui.menu_reasoning.ca7981b46e")
+				opt.Desc = m.tr("tui.menu_reasoning.f19cfd4fe1")
 			} else {
-				opt.Label = m.tr("On", "Włączone")
-				opt.Desc = m.tr("enable thinking", "włącz myślenie")
+				opt.Label = m.tr("tui.menu_reasoning.1300117561")
+				opt.Desc = m.tr("tui.menu_reasoning.e4d1d82495")
 			}
 		}
 		options = append(options, opt)
@@ -75,10 +63,10 @@ func (m Model) reasoningOptionIndex(value string) int {
 func (m Model) reasoningLabel(value string, toggleOnly bool) string {
 	if toggleOnly {
 		if value == "none" {
-			return m.tr("Off", "Wyłączone")
+			return m.tr("tui.menu_reasoning.ca7981b46e")
 		}
 		if value != "" {
-			return m.tr("On", "Włączone")
+			return m.tr("tui.menu_reasoning.1300117561")
 		}
 	}
 	return value
@@ -101,16 +89,16 @@ func (m Model) selectReasoningEffort() (tea.Model, tea.Cmd) {
 	}
 	opt := opts[minInt(m.menu.cursor, len(opts)-1)]
 	if err := llm.SetReasoningEffort(opt.Value); err != nil {
-		m.setStatus(m.tr("Reasoning: ", "Myślenie: ")+err.Error(), false)
+		m.setStatus(m.tr("tui.menu_reasoning.636c852945")+err.Error(), false)
 	} else {
 		state := llm.ProviderReasoningState(m.llm)
 		label := m.reasoningLabel(state.Effective, state.ToggleOnly)
 		if opt.Value == "" {
-			label = m.tr("provider default", "domyślne dostawcy")
+			label = m.tr("tui.menu_reasoning.ecc40b6a46")
 		} else if label == "" {
-			label = m.tr("provider default (parameter not sent)", "domyślne dostawcy (parametr niewysyłany)")
+			label = m.tr("tui.menu_reasoning.c980985b9e")
 		}
-		m.setStatus(m.tr("Thinking: ", "Myślenie: ")+label, true)
+		m.setStatus(m.tr("tui.menu_reasoning.d5c955f93b")+label, true)
 		m.persistReasoningEffort(opt.Value)
 	}
 	next, _ := m.backMenu()
@@ -122,33 +110,33 @@ func (m Model) renderReasoningMenu() string {
 	configured := m.reasoningLabel(state.Configured, state.ToggleOnly)
 	effective := m.reasoningLabel(state.Effective, state.ToggleOnly)
 	if configured == "" {
-		configured = m.tr("provider default", "domyślne dostawcy")
+		configured = m.tr("tui.menu_reasoning.ecc40b6a46")
 	}
 	if effective == "" {
-		effective = m.tr("not sent", "niewysyłane")
+		effective = m.tr("tui.menu_reasoning.8513a9ecd7")
 	}
-	page := menuPage{title: m.tr("Reasoning effort", "Poziom myślenia"),
-		subtitle: m.reasoningModelName() + " · " + m.tr("effective: ", "aktywne: ") + effective,
-		footer:   m.tr("↑↓ choose · Enter apply", "↑↓ wybierz · Enter zastosuj")}
+	page := menuPage{title: m.tr("tui.menu_reasoning.3236aeec43"),
+		subtitle: m.reasoningModelName() + " · " + m.tr("tui.menu_reasoning.da2a43583d") + effective,
+		footer:   m.tr("tui.menu_reasoning.5c07cbff09")}
 	options := m.localizedReasoningMenuOptions()
 	for _, opt := range options {
 		badge := ""
 		if opt.Value == state.Configured || (state.Configured != "" && state.Selected != "" && opt.Value == state.Selected) {
-			badge = m.tr("● active", "● aktywne")
+			badge = m.tr("tui.menu_models_render.a1922b55b9")
 		}
 		page.items = append(page.items, menuListItem{label: opt.Label, badge: badge})
 	}
 	if len(options) > 0 {
 		opt := options[minInt(m.menu.cursor, len(options)-1)]
 		page.detailTitle = opt.Label
-		page.detail = []string{opt.Desc, "", m.tr("Configured: ", "Ustawione: ") + configured, m.tr("Effective: ", "Efektywne: ") + effective}
+		page.detail = []string{opt.Desc, "", m.tr("tui.menu_reasoning.6319fc4737") + configured, m.tr("tui.menu_reasoning.0d30db04bf") + effective}
 	}
 	if state.ToggleOnly {
-		page.detail = append(page.detail, "", m.tr("This model supports on/off only.", "Ten model obsługuje tylko włączanie i wyłączanie myślenia."))
+		page.detail = append(page.detail, "", m.tr("tui.menu_reasoning.b063256851"))
 	} else if state.Adjusted {
-		page.detail = append(page.detail, "", m.tr("Adjusted to levels accepted by this provider.", "Dopasowano do poziomów obsługiwanych przez dostawcę."))
+		page.detail = append(page.detail, "", m.tr("tui.menu_reasoning.c279ba6b80"))
 	} else if !state.Supported {
-		page.detail = append(page.detail, "", m.tr("This model does not advertise reasoning controls.", "Ten model nie zgłasza obsługi zmiany myślenia."))
+		page.detail = append(page.detail, "", m.tr("tui.menu_reasoning.f954554920"))
 	}
 	return m.renderMenuPage(page)
 }

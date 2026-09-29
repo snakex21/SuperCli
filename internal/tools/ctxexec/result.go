@@ -16,11 +16,9 @@
 //     for `cd ../../etc` gets ErrEscape, not root.
 //   - Env is `sandbox.ScrubEnv()`: no API keys, no
 //     tokens, no secrets reach the child.
-//   - Output is captured to a temp file (not piped) so a
-//     process that produces 1 GB does not deadlock on
-//     the kernel pipe buffer. The cap is applied AFTER
-//     the process exits, when the file is read in
-//     chunks.
+//   - Output streams are drained concurrently into bounded head/tail buffers.
+//     A descendant retaining a pipe cannot delay completion indefinitely;
+//     incomplete capture is reported separately from the process exit code.
 //   - Wallclock timeout kills the process; partial
 //     output is returned with exit code 124 (the
 //     `timeout(1)` convention).
@@ -117,6 +115,11 @@ type Result struct {
 	// (path escape, nil binary, etc.). The ExitCode
 	// mirrors the error class so the model can react.
 	Error string `json:"error,omitempty"`
+
+	// OutputWarning distinguishes incomplete capture from a failed process.
+	// In particular, an inherited output pipe does not imply a failed launch.
+	OutputWarning    string `json:"output_warning,omitempty"`
+	OutputIncomplete bool   `json:"output_incomplete,omitempty"`
 
 	// retained contains the bounded capture before the smaller UI/model
 	// preview cap. It is deliberately excluded from JSON and session history.

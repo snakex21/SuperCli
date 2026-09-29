@@ -9,6 +9,12 @@ import (
 )
 
 func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.menu.kind == menuUpdate {
+		return m.handleSearchMenuKey(msg, func() int { return 3 }, m.selectUpdateAction)
+	}
+	if m.menu.kind == menuLanguage {
+		return m.handleSearchMenuKey(msg, func() int { return len(m.languageRows()) }, m.selectLanguage)
+	}
 	if msg.String() == "ctrl+k" {
 		return m.closeMenu()
 	}
@@ -297,7 +303,7 @@ func (m Model) openProviderModelsAtCursor() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if p.Disabled {
-		m.setStatus("provider "+p.Name+" is paused; press Space to enable it", false)
+		m.setStatus(m.tr("tui.menu_keys.7170173a8d")+p.Name+m.tr("tui.menu_keys.7331e976c6"), false)
 		return m, m.statusClearCmd()
 	}
 	m.enterMenu(interactiveMenu{kind: menuProviderModels, provider: p.Name})

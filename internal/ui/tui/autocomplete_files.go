@@ -25,7 +25,7 @@ func buildMentionItems(home string, languages ...string) []autocompleteItem {
 		desc := ""
 		if e.IsDir() {
 			label = name + "/"
-			desc = textFor(language, "dir", "folder")
+			desc = textFor(language, "tui.autocomplete_files.2b64c6d9af")
 		} else {
 			// Show file size.
 			info, err := e.Info()
@@ -37,7 +37,7 @@ func buildMentionItems(home string, languages ...string) []autocompleteItem {
 			Label:    label,
 			Desc:     desc,
 			Value:    "@" + label + " ",
-			Category: textFor(language, "file", "plik"),
+			Category: textFor(language, "tui.autocomplete_files.3b9c358f36"),
 		})
 	}
 	return items

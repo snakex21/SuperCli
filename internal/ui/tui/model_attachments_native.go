@@ -36,7 +36,7 @@ func (m Model) beginNativeAttachments(pick func(string, string) ([]string, error
 		dir = filepath.Dir(m.pendingAttachments[len(m.pendingAttachments)-1])
 	}
 	language := m.language
-	m.setStatus(m.tr("Choose files in the Windows dialog", "Wybierz pliki w oknie Windows"), true)
+	m.setStatus(m.tr("tui.model_attachments_native.571af06600"), true)
 	return m, func() tea.Msg {
 		paths, err := pick(dir, language)
 		return nativeAttachmentsMsg{paths: paths, err: err}
@@ -49,7 +49,7 @@ func (m Model) applyNativeAttachments(msg nativeAttachmentsMsg) (tea.Model, tea.
 	if msg.err != nil {
 		next, cmd := m.openAttachmentsMenu()
 		m = next.(Model)
-		m.menu.formErr = m.tr("Windows picker unavailable: ", "Okno Windows niedostępne: ") + msg.err.Error()
+		m.menu.formErr = m.tr("tui.model_attachments_native.1ba1f53308") + msg.err.Error()
 		return m, cmd
 	}
 	if len(msg.paths) == 0 {
@@ -70,7 +70,7 @@ func (m *Model) addAttachmentPaths(paths []string) (int, error) {
 	selected := append([]string(nil), m.pendingAttachments...)
 	for _, path := range paths {
 		if !filepath.IsAbs(path) {
-			return 0, fmt.Errorf(m.tr("Expected an absolute file path: %s", "Oczekiwano pełnej ścieżki pliku: %s"), path)
+			return 0, fmt.Errorf(m.tr("tui.model_attachments_native.b6363d5c07"), path)
 		}
 		path = filepath.Clean(path)
 		duplicate := false
@@ -85,7 +85,7 @@ func (m *Model) addAttachmentPaths(paths []string) (int, error) {
 		}
 	}
 	if len(selected) > attachments.MaxFiles {
-		return 0, fmt.Errorf(m.tr("Maximum %d files", "Maksymalnie %d plików"), attachments.MaxFiles)
+		return 0, fmt.Errorf(m.tr("tui.menu_attachments.e2dd0e64b3"), attachments.MaxFiles)
 	}
 	var total int64
 	for _, path := range selected {
@@ -94,15 +94,15 @@ func (m *Model) addAttachmentPaths(paths []string) (int, error) {
 			return 0, err
 		}
 		if !info.Mode().IsRegular() {
-			return 0, fmt.Errorf(m.tr("Choose a file, not a folder: %s", "Wybierz plik, nie folder: %s"), filepath.Base(path))
+			return 0, fmt.Errorf(m.tr("tui.model_attachments_native.c67733d9d6"), filepath.Base(path))
 		}
 		if info.Size() > attachments.MaxFileBytes {
-			return 0, fmt.Errorf(m.tr("File exceeds 32 MiB: %s", "Plik przekracza 32 MiB: %s"), filepath.Base(path))
+			return 0, fmt.Errorf(m.tr("tui.model_attachments_native.c20cb50356"), filepath.Base(path))
 		}
 		total += info.Size()
 	}
 	if total > attachments.MaxTotalBytes {
-		return 0, errors.New(m.tr("Attachments exceed 64 MiB", "Załączniki przekraczają 64 MiB"))
+		return 0, errors.New(m.tr("tui.model_attachments_native.edf3b60a1a"))
 	}
 	added := len(selected) - len(m.pendingAttachments)
 	m.pendingAttachments = selected
@@ -112,13 +112,13 @@ func (m *Model) addAttachmentPaths(paths []string) (int, error) {
 func (m Model) applyAttachmentSelection(paths []string) (tea.Model, tea.Cmd) {
 	added, err := m.addAttachmentPaths(paths)
 	if err != nil {
-		m.setStatus(m.tr("Attachments: ", "Załączniki: ")+err.Error(), false)
+		m.setStatus(m.tr("tui.model_attachments_native.623c4ebb74")+err.Error(), false)
 		if m.mode == modeMenu && m.menu.kind == menuAttachments {
 			m.menu.formErr = err.Error()
 		}
 	} else {
 		m.menu.formErr = ""
-		m.setStatus(fmt.Sprintf(m.tr("Added %d files · Enter sends with your message", "Dodano %d plików · Enter wyśle je z wiadomością"), added), true)
+		m.setStatus(fmt.Sprintf(m.tr("tui.model_attachments_native.5831f6a18d"), added), true)
 		m.syncInputHeight()
 	}
 	return m, m.statusClearCmd()
@@ -127,12 +127,12 @@ func (m Model) applyAttachmentSelection(paths []string) (tea.Model, tea.Cmd) {
 func (m Model) pasteClipboard() (tea.Model, tea.Cmd) {
 	paths, err := desktopfiles.ClipboardFiles(attachments.MaxFiles)
 	if err != nil {
-		m.setStatus(m.tr("Clipboard: ", "Schowek: ")+err.Error(), false)
+		m.setStatus(m.tr("tui.model_attachments_native.f95ed9dbe3")+err.Error(), false)
 		return m, m.statusClearCmd()
 	}
 	if len(paths) > 0 {
 		if m.busy {
-			m.setStatus(m.tr("Add files after the current response finishes", "Dodaj pliki po zakończeniu bieżącej odpowiedzi"), false)
+			m.setStatus(m.tr("tui.model_attachments_native.e4bb8d7796"), false)
 			return m, m.statusClearCmd()
 		}
 		return m.applyAttachmentSelection(paths)

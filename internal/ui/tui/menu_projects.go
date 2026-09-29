@@ -167,24 +167,24 @@ func (m Model) projectsMenuKey(key string) (tea.Model, tea.Cmd, bool) {
 // action row in accent.
 func (m Model) renderProjectsMenu() string {
 	rows := m.projectRows()
-	page := menuPage{title: m.tr("Projects", "Projekty"), subtitle: m.tr("Project memory travels with the application data.", "Pamięć projektów jest przechowywana razem z danymi aplikacji."),
-		footer: m.tr("Enter use · A add · I details · D remove", "Enter użyj · A dodaj · I szczegóły · D usuń")}
+	page := menuPage{title: m.tr("tui.menu_projects.04e2a9728a"), subtitle: m.tr("tui.menu_projects.ba50e08985"),
+		footer: m.tr("tui.menu_projects.06a1da73ab")}
 	for i, row := range rows {
 		label, badge := row.name, ""
 		if row.isAdd {
-			label = m.tr("+  add current directory", "+  dodaj bieżący folder")
+			label = m.tr("tui.menu_projects.d5ed576aaa")
 		}
 		if row.isActive {
-			badge = m.tr("[active]", "[aktywny]")
+			badge = m.tr("tui.menu_projects.95e1efbb26")
 		}
 		page.items = append(page.items, menuListItem{label: label, badge: badge})
 		if i == m.menu.cursor {
 			page.detailTitle = label
 			if row.isAdd {
-				page.detail = []string{m.tr("Register the current folder as a project.", "Zarejestruj bieżący folder jako projekt."), m.home}
+				page.detail = []string{m.tr("tui.menu_projects.dd7eb61422"), m.home}
 				continue
 			}
-			size := m.tr("(no memory yet)", "(jeszcze bez pamięci)")
+			size := m.tr("tui.menu_projects.55287cedf8")
 			if row.key != "" && m.dataDir != "" {
 				if fi, err := os.Stat(filepath.Join(m.dataDir, "projects", row.key, "memory.db")); err == nil {
 					size = fmt.Sprintf("%.1f KB", float64(fi.Size())/1024)
@@ -192,7 +192,7 @@ func (m Model) renderProjectsMenu() string {
 			}
 			page.detail = []string{row.path, "", size, row.key, row.model}
 			if row.isCwd {
-				page.detail = append(page.detail, m.tr("(cwd)", "(bieżący folder)"))
+				page.detail = append(page.detail, m.tr("tui.menu_projects.9682e4d4fc"))
 			}
 		}
 	}

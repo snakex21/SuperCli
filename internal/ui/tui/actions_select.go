@@ -54,6 +54,8 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch rows[minInt(m.menu.cursor, len(rows)-1)].id {
+	case "update":
+		return m.openUpdateMenu()
 	case "context-limit":
 		return m.openContextLimitMenu()
 	case "accounts":
@@ -128,11 +130,11 @@ func (m Model) renderTranscriptMenu() string {
 	rows := m.filteredTranscriptRows()
 	width := m.menuWidth()
 	var b strings.Builder
-	b.WriteString(m.palette.PanelTitle.Render(m.tr("Search conversation", "Przeszukaj rozmow\u0119")) + "\n")
-	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("Enter jumps to a block; Space folds or unfolds multi-line blocks.", "Enter przechodzi do bloku; Spacja zwija lub rozwija bloki wielowierszowe."), width)) + "\n")
-	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("Search: ", "Szukaj: ")+m.menu.filter, width)) + "\n\n")
+	b.WriteString(m.palette.PanelTitle.Render(m.tr("tui.actions_select.42c60071a9")) + "\n")
+	b.WriteString(m.palette.Dim.Render(truncateVisible(m.tr("tui.actions_select.ce44e68483"), width)) + "\n")
+	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("tui.actions_select.3363e5f143")+m.menu.filter, width)) + "\n\n")
 	if len(rows) == 0 {
-		b.WriteString(m.palette.Dim.Render(m.tr("  No matching messages.", "  Brak pasuj\u0105cych wiadomo\u015bci.")) + "\n")
+		b.WriteString(m.palette.Dim.Render(m.tr("tui.actions_select.c98e73807f")) + "\n")
 	} else {
 		start, end := menuWindow(len(rows), m.menu.cursor, maxInt(3, m.height-7))
 		for i := start; i < end; i++ {
@@ -140,7 +142,7 @@ func (m Model) renderTranscriptMenu() string {
 			who := "System"
 			switch row.Role {
 			case roleUser:
-				who = m.tr("You", "Ty")
+				who = m.tr("tui.actions_select.08b0419357")
 			case roleAssistant:
 				who = "SuperCli"
 			}
@@ -164,7 +166,7 @@ func (m Model) renderTranscriptMenu() string {
 			b.WriteString(truncateVisible(line, width) + "\n")
 		}
 	}
-	hint := m.tr("\u2191\u2193 select \u00b7 Enter jump \u00b7 Space fold \u00b7 type to search \u00b7 Esc back", "\u2191\u2193 wybierz \u00b7 Enter przejd\u017a \u00b7 Spacja zwi\u0144 \u00b7 pisz aby szuka\u0107 \u00b7 Esc wr\u00f3\u0107")
+	hint := m.tr("tui.actions_select.dada6337ea")
 	b.WriteString("\n" + m.palette.InputHint.Render(truncateVisible(hint, width)))
 	return b.String()
 }

@@ -42,7 +42,7 @@ func TestUISettingsLanguageIsSharedWithTUIConfig(t *testing.T) {
 func TestUISettingsRejectsUnsupportedLanguage(t *testing.T) {
 	srv := newTestServer(t, false)
 	rec := httptest.NewRecorder()
-	srv.handleUISettings(rec, httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"ui.lang":"de"}`)))
+	srv.handleUISettings(rec, httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"ui.lang":"xx"}`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", rec.Code)
 	}

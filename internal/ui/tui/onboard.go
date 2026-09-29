@@ -82,7 +82,7 @@ type onboardModel struct {
 	dataDir  string
 }
 
-func (m onboardModel) tr(english, polish string) string { return textFor(m.language, english, polish) }
+func (m onboardModel) tr(key string) string { return textFor(m.language, key) }
 
 func (m onboardModel) Init() tea.Cmd {
 	return func() tea.Msg {
@@ -113,7 +113,7 @@ func buildChoices(detected []providers.LocalServer, languages ...string) []onboa
 		seen[server.Name] = true
 		out = append(out, onboardChoice{
 			label: presentation.providerTemplateLabel(server.Name),
-			desc: fmt.Sprintf(presentation.tr("detected · %d model(s) · %s", "wykryto · %d modeli · %s"),
+			desc: fmt.Sprintf(presentation.tr("tui.onboard.d3d7c1d6d0"),
 				len(server.Models), server.BaseURL),
 			local: server, kind: "local", provider: byName[server.Name],
 		})
@@ -129,12 +129,12 @@ func buildChoices(detected []providers.LocalServer, languages ...string) []onboa
 			choice.kind = template.Name
 		case "ollama", "lmstudio":
 			choice.kind = "local-manual"
-			choice.desc = presentation.tr("not detected · ", "nie wykryto · ") + template.BaseURL
+			choice.desc = presentation.tr("tui.onboard.3f9cb35955") + template.BaseURL
 		}
 		out = append(out, choice)
 	}
-	return append(out, onboardChoice{label: "Offline / echo",
-		desc: presentation.tr("no LLM, just try the UI", "bez LLM, tylko test interfejsu"), kind: "echo"})
+	return append(out, onboardChoice{label: textFor(language, "tui.other.c4c5af7386"),
+		desc: presentation.tr("tui.onboard.1a0eda6f97"), kind: "echo"})
 }
 
 func (m onboardModel) filteredChoices() []onboardChoice {

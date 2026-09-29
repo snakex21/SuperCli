@@ -76,7 +76,7 @@ func (m *Model) toggleAttachment(path string) {
 		}
 	}
 	if len(m.pendingAttachments) >= attachments.MaxFiles {
-		m.menu.formErr = fmt.Sprintf(m.tr("Maximum %d files", "Maksymalnie %d plików"), attachments.MaxFiles)
+		m.menu.formErr = fmt.Sprintf(m.tr("tui.menu_attachments.e2dd0e64b3"), attachments.MaxFiles)
 		return
 	}
 	m.pendingAttachments = append(m.pendingAttachments, path)
@@ -185,28 +185,28 @@ func (m Model) selectAttachment() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) renderAttachmentsMenu() string {
-	p := menuPage{title: fmt.Sprintf(m.tr("Attachments · %d/%d", "Załączniki · %d/%d"), len(m.pendingAttachments), attachments.MaxFiles),
+	p := menuPage{title: fmt.Sprintf(m.tr("tui.menu_attachments.c4d916d8f3"), len(m.pendingAttachments), attachments.MaxFiles),
 		subtitle: m.menu.attachmentDir, searchable: !m.menu.editing,
-		tabs:        m.menuTabs([]string{m.tr("Files", "Pliki"), m.tr("Selected", "Wybrane")}, m.menu.category),
-		footer:      m.tr("Enter select · ←→ tab · Ctrl+O dialog · Ctrl+L path · Del remove", "Enter wybierz · ←→ zakładka · Ctrl+O okno · Ctrl+L ścieżka · Del usuń"),
-		detailTitle: m.tr("Attach to the next message", "Dołącz do następnej wiadomości"),
-		detail:      []string{m.tr("Images, documents and code. Choose files and then Done; they are sent only with your next message.", "Obrazy, dokumenty i kod. Wybierz pliki, potem Gotowe; wyślesz je dopiero z następną wiadomością."), "", m.tr("Ctrl+O opens the Windows file dialog. You can also copy files in Explorer and paste them with Ctrl+V. Images use the same preparation as GUI.", "Ctrl+O otwiera okno wyboru Windows. Możesz też skopiować pliki w Eksploratorze i wkleić je przez Ctrl+V. Obrazy są przygotowywane tak jak w GUI.")}}
-	p.items = []menuListItem{{label: m.tr("Done — return to message", "Gotowe — wróć do wiadomości"), badge: fmt.Sprint(len(m.pendingAttachments))}, {label: "..", meta: m.tr("Parent directory", "Folder nadrzędny")}}
+		tabs:        m.menuTabs([]string{m.tr("tui.autocomplete_render.abc7e98928"), m.tr("tui.menu_attachments.57fd7a0cf3")}, m.menu.category),
+		footer:      m.tr("tui.menu_attachments.1d1c29e672"),
+		detailTitle: m.tr("tui.menu_attachments.bcbdd23083"),
+		detail:      []string{m.tr("tui.menu_attachments.e21aabc940"), "", m.tr("tui.menu_attachments.e34925d124")}}
+	p.items = []menuListItem{{label: m.tr("tui.menu_attachments.c80edd86d3"), badge: fmt.Sprint(len(m.pendingAttachments))}, {label: "..", meta: m.tr("tui.menu_attachments.79498d0401")}}
 	for _, e := range m.attachmentRows() {
 		badge := "[ ]"
 		if e.dir {
-			badge = m.tr("folder", "folder")
+			badge = m.tr("tui.menu_attachments.034a006248")
 		} else if m.attachmentSelected(e.path) {
 			badge = "[x]"
 		}
 		p.items = append(p.items, menuListItem{label: e.name, badge: badge})
 	}
 	if m.menu.attachmentLoading {
-		p.subtitle = m.tr("Loading: ", "Wczytywanie: ") + m.menu.attachmentDir
+		p.subtitle = m.tr("tui.menu_attachments.b132667b81") + m.menu.attachmentDir
 	}
 	if m.menu.editing {
-		p.subtitle = m.tr("Folder path: ", "Ścieżka folderu: ") + m.menu.editBuf + "|"
-		p.footer = m.tr("Enter open folder · Esc cancel · Ctrl+V paste", "Enter otwórz folder · Esc anuluj · Ctrl+V wklej")
+		p.subtitle = m.tr("tui.menu_attachments.95ccec987d") + m.menu.editBuf + "|"
+		p.footer = m.tr("tui.menu_attachments.647cc445e0")
 		// Keep the editable path visible even in a short terminal.
 		p.tabs = p.subtitle
 	}
@@ -218,10 +218,14 @@ func (m Model) renderAttachmentsMenu() string {
 	}
 	return m.renderMenuPage(p)
 }
-func attachmentDisplay(paths []string) string {
+func attachmentDisplay(paths []string, languages ...string) string {
+	language := "en"
+	if len(languages) > 0 {
+		language = languages[0]
+	}
 	names := make([]string, 0, len(paths))
 	for _, path := range paths {
 		names = append(names, filepath.Base(path))
 	}
-	return "[files] " + strings.Join(names, ", ")
+	return textFor(language, "tui.other.513ba0d0e5") + strings.Join(names, ", ")
 }

@@ -31,7 +31,7 @@ type resumeLoadedMsg struct {
 func (m Model) resumeConversation(id string) (tea.Model, tea.Cmd) {
 	store := m.sessionStore
 	if store == nil {
-		return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("session history unavailable")} }
+		return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("%s", m.tr("tui.model_resume.e1501e7a39"))} }
 	}
 	m.busy = true
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,7 +52,7 @@ func (m Model) resumeConversation(id string) (tea.Model, tea.Cmd) {
 				same = strings.EqualFold(a, b)
 			}
 			if !same {
-				result.err = fmt.Errorf("%s: %s", m.tr("Switch to this project before continuing the session", "Przełącz projekt przed kontynuacją tej sesji"), sess.Cwd)
+				result.err = fmt.Errorf("%s: %s", m.tr("tui.model_resume.e6f938b0a0"), sess.Cwd)
 				return result
 			}
 		}
@@ -62,7 +62,7 @@ func (m Model) resumeConversation(id string) (tea.Model, tea.Cmd) {
 			return result
 		}
 		if len(rows) == 0 {
-			result.err = fmt.Errorf("session is empty")
+			result.err = fmt.Errorf("%s", m.tr("tui.model_resume.84e9b033a2"))
 			return result
 		}
 		history := &resumedTranscript{ID: id, Title: sess.Title}
@@ -125,7 +125,7 @@ func (m Model) finishResume(msg resumeLoadedMsg) (tea.Model, tea.Cmd) {
 			if loader, ok := m.agent.(interface{ LoadConversation([]llm.Message) }); ok {
 				loader.LoadConversation(h.ModelContext)
 			} else {
-				err = fmt.Errorf("session continuation unavailable")
+				err = fmt.Errorf("%s", m.tr("tui.model_resume.a512953b2a"))
 			}
 		}
 	}
@@ -158,7 +158,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 		switch item.Role {
 		case llm.RoleUser:
 			if paths := h.Attachments[h.Seqs[i]]; len(paths) > 0 && !strings.Contains(text, "📎") && !strings.Contains(text, "[files]") {
-				text += "\n" + attachmentDisplay(paths)
+				text += "\n" + attachmentDisplay(paths, m.language)
 			}
 			m.chat.addUser(text)
 			m.appendLineToTranscript("> " + text)
@@ -188,7 +188,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 	if strings.TrimSpace(title) == "" {
 		title = h.ID
 	}
-	m.setStatus(m.tr("Conversation loaded: ", "Wczytano rozmowę: ")+title, true)
+	m.setStatus(m.tr("tui.model_resume.84f293d7d6")+title, true)
 	m.refreshTranscript()
 	m.viewport.GotoBottom()
 }

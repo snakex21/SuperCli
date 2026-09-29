@@ -13,6 +13,13 @@ import (
 )
 
 func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
+	if cmd.Name == "update" && m.hasActiveTask() && strings.EqualFold(strings.TrimSpace(cmd.Args), "install") {
+		m.setStatus(m.tr("update.busy"), false)
+		return m, m.statusClearCmd()
+	}
+	if cmd.Name == "update" && cmd.Args == "" {
+		return m.openUpdateMenu()
+	}
 	if cmd.Name == "quit" || cmd.Name == "exit" {
 		m.quitting = true
 		return m, tea.Quit
@@ -66,7 +73,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 
 	handler, ok := m.commands[cmd.Name]
 	if !ok {
-		m.appendLine(formatSlashResult("unknown command", fmt.Sprintf("`/%s` is not registered. %s", cmd.Name, RenderHelp())))
+		m.appendLine(formatSlashResult(m.tr("tui.model_slash.a3d9c6b427"), fmt.Sprintf(m.tr("tui.model_slash.ee991133c6"), cmd.Name, HelpContentFor(m.language))))
 		m.refreshTranscript()
 		return m, nil
 	}
@@ -97,4 +104,16 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		out, err := handler(ctx, cmd.Args)
 		return slashResultMsg{Body: out, Err: err, Document: true}
 	}
+}
+
+func (m Model) hasActiveTask() bool {
+	if m.busy {
+		return true
+	}
+	for _, worker := range m.workerViews {
+		if worker.status == "running" {
+			return true
+		}
+	}
+	return false
 }

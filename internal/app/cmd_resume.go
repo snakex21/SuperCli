@@ -12,21 +12,23 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/uilang"
 )
 
 // listResumableSessions renders the /resume picker text. By default it
 // shows sessions from the current project (cwd); when all is true it
 // shows every project's sessions. An empty cwd falls back to showing all
 // (nothing to filter on).
-func listResumableSessions(ctx context.Context, store *session.Store, currentSessionID, cwd string, all bool) (string, error) {
+func listResumableSessions(ctx context.Context, store *session.Store, currentSessionID, cwd string, all bool, languages ...string) (string, error) {
+	language := optionalCommandLanguage(languages)
 	var recent []session.RecentSession
 	var err error
-	scope := "all projects"
+	scope := uilang.Text(language, "app.resume.all_projects")
 	if all || cwd == "" {
 		recent, err = store.ListRecent(ctx, 10)
 	} else {
 		recent, err = store.ListRecentByCwd(ctx, cwd, 10)
-		scope = "this project"
+		scope = uilang.Text(language, "app.resume.this_project")
 	}
 	if err != nil {
 		return "", err
@@ -42,33 +44,34 @@ func listResumableSessions(ctx context.Context, store *session.Store, currentSes
 			snippet = snippet[:59] + "…"
 		}
 		if snippet == "" {
-			snippet = "(no user message)"
+			snippet = uilang.Text(language, "app.resume.empty_user")
 		}
-		fmt.Fprintf(&b, "  %s  %s  %3d msg  %s\n",
+		fmt.Fprintf(&b, uilang.Text(language, "app.resume.row"),
 			r.ID, r.StartedAt.Format("2006-01-02 15:04"), r.MessageCount, snippet)
 		n++
 	}
 	if n == 0 {
 		if !all && cwd != "" {
-			return "resume: no previous sessions in this project (try /resume all)", nil
+			return uilang.Text(language, "app.resume.none_project"), nil
 		}
-		return "resume: no previous sessions found", nil
+		return uilang.Text(language, "app.resume.none"), nil
 	}
-	return fmt.Sprintf("%d recent session(s) — %s:\n%susage: /resume <session-id>  ·  /resume all to list every project",
+	return fmt.Sprintf(uilang.Text(language, "app.resume.list"),
 		n, scope, b.String()), nil
 }
 
 // resumeSession loads the saved model projection into the loop. Context
 // preparation is shared with normal turns and runs only before inference.
 // Returns a human-readable result line.
-func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, windowFor func(string) int, id string) (string, error) {
+func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, windowFor func(string) int, id string, languages ...string) (string, error) {
+	language := optionalCommandLanguage(languages)
 	id = strings.TrimSpace(id)
 	loaded, err := store.ReadModelContext(ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("resume: read %s: %w", id, err)
+		return "", fmt.Errorf(uilang.Text(language, "app.resume.read_error"), id, err)
 	}
 	if len(loaded) == 0 {
-		return "", fmt.Errorf("resume: session %q not found or empty", id)
+		return "", fmt.Errorf(uilang.Text(language, "app.resume.not_found"), id)
 	}
 	// Decode, dropping the leading system run (the old base
 	// prompt / pattern injection — the live loop has its own).
@@ -84,7 +87,7 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		msgs = append(msgs, m)
 	}
 	if len(msgs) == 0 {
-		return "", fmt.Errorf("resume: session %q has no loadable messages", id)
+		return "", fmt.Errorf(uilang.Text(language, "app.resume.no_messages"), id)
 	}
 
 	// The shared loop prepares long context at the next Run, after the new
@@ -97,14 +100,14 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "resumed session %s: %d message(s) loaded", id, len(msgs))
+	fmt.Fprintf(&b, uilang.Text(language, "app.resume.loaded"), id, len(msgs))
 	// Show the tail so the user sees where the conversation
 	// left off.
 	tail := msgs
 	if len(tail) > 4 {
 		tail = tail[len(tail)-4:]
 	}
-	b.WriteString("\n--- last messages ---")
+	b.WriteString(uilang.Text(language, "app.resume.tail"))
 	for _, m := range tail {
 		text := strings.TrimSpace(m.Content)
 		if text == "" {
@@ -125,4 +128,14 @@ func resumeSession(ctx context.Context, loop *agent.Loop, store *session.Store, 
 		fmt.Fprintf(&b, "\n[%s] %s", m.Role, text)
 	}
 	return b.String(), nil
+}
+
+// Legacy callers retain English; command handlers pass the persisted UI choice.
+func optionalCommandLanguage(languages []string) string {
+	if len(languages) > 0 {
+		if language := uilang.Normalize(languages[0]); language != "" {
+			return language
+		}
+	}
+	return uilang.English
 }

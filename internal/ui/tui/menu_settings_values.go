@@ -6,6 +6,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 	"supercli/internal/tools/sandbox"
 )
 
@@ -141,92 +142,93 @@ func settingResetKey(c *config.TomlConfig, key string) {
 func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, source string) {
 	switch r.key {
 	case "language":
-		if c.Language == "pl" || (c.Language == "" && m.language == "pl") {
-			return "Polski", "manual"
+		language := c.Language
+		if language == "" {
+			language = m.language
 		}
-		return "English", "manual"
+		return uilang.Name(language), "manual"
 	case "orchestrator":
 		if c.Orchestrator == nil {
 			return "auto", "default"
 		}
 		if *c.Orchestrator {
-			return "zawsze", "manual"
+			return m.tr("tui.setting_value.9cdc6c47aa"), "manual"
 		}
-		return "nigdy", "manual"
+		return m.tr("tui.setting_value.6497e4b3d7"), "manual"
 	case "allow_all":
 		if c.AllowAll {
-			return "on", "manual"
+			return m.settingStateDisplay("on"), "manual"
 		}
-		return "off", "default"
+		return m.settingStateDisplay("off"), "default"
 	case "stable_toolset":
-		return triDisplay(c.StableToolset, "on")
+		return m.triDisplay(c.StableToolset, "on")
 	case "discard_previous_reasoning":
-		return triDisplay(c.DiscardPreviousReasoning, "off")
+		return m.triDisplay(c.DiscardPreviousReasoning, "off")
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {
 			v = "off"
 		}
 		if c.Thinking == nil {
-			return v, "default"
+			return m.settingStateDisplay(v), "default"
 		}
-		return v, "manual"
+		return m.settingStateDisplay(v), "manual"
 	case "cache_prompt":
-		return triAutoDisplay(c.CachePrompt, "on", "off")
+		return m.triAutoDisplay(c.CachePrompt, "on", "off")
 	case "darwin_parallel":
-		return triAutoDisplay(c.DarwinParallel, "parallel", "sequential")
+		return m.triAutoDisplay(c.DarwinParallel, "parallel", "sequential")
 	case "task_parallel":
-		return triAutoDisplay(c.TaskParallel, "parallel", "sequential")
+		return m.triAutoDisplay(c.TaskParallel, "parallel", "sequential")
 	case "navigator":
 		if strings.TrimSpace(c.Navigator) == "" {
 			return "auto", "default"
 		}
-		return c.Navigator, "manual"
+		return m.settingStateDisplay(c.Navigator), "manual"
 	case "memory_briefing_tokens":
-		return intDisplay(c.MemoryBriefingTokens, "700/300 by tier")
+		return m.intDisplay(c.MemoryBriefingTokens, m.tr("tui.setting_value.63cbdf9d7d"))
 	case "context_policy":
-		return "prune 60% · compact window − reserve", "built-in"
+		return m.tr("tui.setting_value.4a9cb686d5"), "built-in"
 	case "context_window":
-		return intDisplay(c.ContextWindow, "auto")
+		return m.intDisplay(c.ContextWindow, m.tr("tui.setting_value.1a9561da73")+"auto)")
 	case "prune_protect_tokens":
-		return intDisplay(c.PruneProtectTokens, "scaled")
+		return m.intDisplay(c.PruneProtectTokens, m.tr("tui.setting_value.98f9ec1cd2"))
 	case "task_max_steps":
-		return intDisplay(c.TaskMaxSteps, "spec or 10")
+		return m.intDisplay(c.TaskMaxSteps, m.tr("tui.setting_value.c5d9c16664"))
 	case "task_max_tokens":
-		return intDisplay(int(c.TaskMaxTokens), "no cap")
+		return m.intDisplay(int(c.TaskMaxTokens), m.tr("tui.setting_value.5b63281580"))
 	case "task_model":
 		if strings.TrimSpace(c.TaskModel) == "" {
-			return "default (coordinator's model)", "default"
+			return m.tr("tui.setting_value.8119d30029"), "default"
 		}
 		return c.TaskModel, "manual"
 	case "orchestrator_model":
 		if strings.TrimSpace(c.OrchestratorModel) == "" {
-			return "default (main model)", "default"
+			return m.tr("tui.setting_value.c0d7b51675"), "default"
 		}
 		return c.OrchestratorModel, "manual"
 	case "compact_model":
 		if strings.TrimSpace(c.CompactModel) == "" {
-			return "default (active model)", "default"
+			return m.tr("tui.setting_value.f5c2d04208"), "default"
 		}
 		return c.CompactModel, "manual"
 	case "fallback_models":
 		if len(c.FallbackModels) == 0 {
-			return "off (no paid fallback)", "default"
+			return m.tr("tui.setting_value.1b0ad2a0d6"), "default"
 		}
 		return strings.Join(c.FallbackModels, " ; "), "manual"
 	case "fallback_cooldown_seconds":
-		return intDisplay(c.FallbackCooldownSeconds, "30")
+		return m.intDisplay(c.FallbackCooldownSeconds, m.tr("tui.setting_value.1a9561da73")+"30)")
 	case "draft_verify":
-		return triDisplay(c.DraftVerify, "off")
+		return m.triDisplay(c.DraftVerify, "off")
 	case "noop_gate":
-		return triDisplay(c.NoopGate, "off")
+		return m.triDisplay(c.NoopGate, "off")
 	case "preflight_repo":
-		return triDisplay(c.PreflightRepo, "on")
+		return m.triDisplay(c.PreflightRepo, "on")
 	case "draft_verify_max_rounds":
-		return intDisplay(c.DraftVerifyMaxRounds, "2")
+		return m.intDisplay(c.DraftVerifyMaxRounds, m.tr("tui.setting_value.1a9561da73")+"2)")
 	case "verify_commands":
 		if len(c.VerifyCommands) == 0 {
-			return "none (diff-only verdict)", "default"
+			return m.tr("tui.setting_value.b050b79da0"), "default"
 		}
 		return strings.Join(c.VerifyCommands, " ; "), "manual"
 	case "default_model":
@@ -238,32 +240,49 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 }
 
 // triDisplay renders a tri-state with a fixed built-in default.
-func triDisplay(p *bool, def string) (value, source string) {
+func (m Model) triDisplay(p *bool, def string) (value, source string) {
 	if p == nil {
-		return def, "default"
+		return m.settingStateDisplay(def), "default"
 	}
 	if *p {
-		return "on", "manual"
+		return m.settingStateDisplay("on"), "manual"
 	}
-	return "off", "manual"
+	return m.settingStateDisplay("off"), "manual"
 }
 
 // triAutoDisplay renders a tri-state whose nil means host-dependent auto.
-func triAutoDisplay(p *bool, on, off string) (value, source string) {
+func (m Model) triAutoDisplay(p *bool, on, off string) (value, source string) {
 	if p == nil {
 		return "auto", "default"
 	}
 	if *p {
-		return on, "manual"
+		return m.settingStateDisplay(on), "manual"
 	}
-	return off, "manual"
+	return m.settingStateDisplay(off), "manual"
 }
 
-func intDisplay(v int, def string) (value, source string) {
+func (m Model) intDisplay(v int, def string) (value, source string) {
 	if v == 0 {
-		return "default (" + def + ")", "default"
+		return def, "default"
 	}
 	return strconv.Itoa(v), "manual"
+}
+
+// Only known switch states are localized. Provider names, model identifiers
+// and user-entered commands pass straight from their own setting branches.
+func (m Model) settingStateDisplay(state string) string {
+	switch state {
+	case "on":
+		return m.tr("tui.setting_value.b8d31e8527")
+	case "off":
+		return m.tr("tui.setting_value.b4dc66dde8")
+	case "parallel":
+		return m.tr("tui.setting_value.83a00300ad")
+	case "sequential":
+		return m.tr("tui.setting_value.3ee15b8a77")
+	default:
+		return state
+	}
 }
 
 func dashIfEmpty(s string) string {

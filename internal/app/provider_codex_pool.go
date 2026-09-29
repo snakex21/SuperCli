@@ -10,6 +10,7 @@ import (
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
+	"supercli/internal/system/uilang"
 )
 
 // buildCodexPool builds a Codex provider for every logged-in
@@ -130,7 +131,8 @@ func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLim
 // aligned table with a small bar for each account's 5h and 7d
 // usage, marks the active account, and adds a pool total row — so
 // the user sees both "this account" and "all accounts combined".
-func codexPoolUsageDetail(prov llm.Provider) string {
+func codexPoolUsageDetail(prov llm.Provider, languages ...string) string {
+	language := optionalCommandLanguage(languages)
 	rt, ok := llm.Unwrap(prov).(*llm.RouterProvider)
 	if !ok {
 		return ""
@@ -147,7 +149,7 @@ func codexPoolUsageDetail(prov llm.Provider) string {
 		}
 	}
 	var b strings.Builder
-	b.WriteString("\n\naccounts (magazine — active drains first):\n")
+	b.WriteString(uilang.Text(language, "app.usage.accounts"))
 	for i, s := range snaps {
 		marker := "  "
 		if i == active {
@@ -155,7 +157,7 @@ func codexPoolUsageDetail(prov llm.Provider) string {
 		}
 		name := rt.LabelAt(i)
 		if !oks[i] || !s.OK {
-			fmt.Fprintf(&b, "%s%-*s   (no usage data yet)\n", marker, nameW, name)
+			fmt.Fprintf(&b, uilang.Text(language, "app.usage.no_account_data"), marker, nameW, name)
 			continue
 		}
 		fmt.Fprintf(&b, "%s%-*s   5h %s   7d %s\n",
@@ -165,7 +167,7 @@ func codexPoolUsageDetail(prov llm.Provider) string {
 	// Pool total.
 	if p5, p7, n := rt.PoolAggregate(); n > 0 {
 		fmt.Fprintf(&b, "  %-*s   5h %s   7d %s\n",
-			nameW, "POOL", usageBar(p5), usageBar(p7))
+			nameW, uilang.Text(language, "app.usage.pool"), usageBar(p5), usageBar(p7))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

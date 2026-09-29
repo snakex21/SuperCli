@@ -128,7 +128,7 @@ func TestRenderModelsMenu_CodexShowsSubscriptionNotUSD(t *testing.T) {
 	m := New(Options{CapabilityRegistry: caps})
 	m.menu = interactiveMenu{kind: menuModels}
 	out := m.renderMenuView()
-	if !strings.Contains(out, "sub") {
+	if !strings.Contains(out, m.tr("tui.cost_source.subscription")) {
 		t.Fatalf("codex model should show subscription marker, got:\n%s", out)
 	}
 	if strings.Contains(out, "$1250") || strings.Contains(out, "$10000") {

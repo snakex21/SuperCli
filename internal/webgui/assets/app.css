@@ -1849,3 +1849,15 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   .worker-overview-item { grid-template-columns: 7px minmax(85px, 115px) minmax(0, 1fr) auto; gap: 6px; }
   .worker-overview { margin-bottom: 6px; }
 }
+
+/* Explicit update actions; no background update checks. */
+.update-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.update-version { font-family:var(--mono); }
+.update-status { margin-top:10px; min-height:1.4em; }
+.update-release { text-decoration:none; }
+.update-release[hidden] { display:none; }
+
+.update-actions .btn:disabled, .update-actions .btn.primary:disabled, .update-actions .btn:disabled:hover {
+  background: var(--surface); color: var(--muted); border-color: var(--line);
+  opacity: .55; cursor: not-allowed; box-shadow: none;
+}

@@ -1,31 +1,56 @@
 package webgui
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
+
+	"supercli/internal/system/uilang"
 )
 
 // Server-authored prose cannot be translated by the browser. Every notice the
-// GUI renders must therefore travel as a catalog key, and that key must exist
-// in both catalogs — otherwise one language silently falls back to the other,
-// or to the raw key.
-func TestUINoticeCodesExistInBothLanguageCatalogs(t *testing.T) {
-	dictionary, err := os.ReadFile("assets/js/01-i18n.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(dictionary)
-	for _, key := range []string{"prov.warn.typeUnclear", "prov.warn.scanTimeout", "chat.noProvider"} {
-		if got := strings.Count(text, `"`+key+`"`); got != 2 {
-			t.Errorf("%s defined %d times, want 2 (en and pl)", key, got)
+// GUI renders must travel as a catalog key that exists in every supported
+// language, including the parameters required by the wire contract.
+func TestUINoticeCodesExistInAllLanguageCatalogs(t *testing.T) {
+	forEachEmbeddedGUILanguageCatalog(t, func(t *testing.T, catalog map[string]string) {
+		for key, placeholders := range map[string][]string{
+			"prov.warn.typeUnclear": nil,
+			"prov.warn.scanTimeout": {"{n}", "{c}"},
+			"chat.noProvider":       {"{n}"},
+		} {
+			value := catalog[key]
+			if strings.TrimSpace(value) == "" {
+				t.Errorf("missing notice key %s", key)
+				continue
+			}
+			for _, placeholder := range placeholders {
+				if !strings.Contains(value, placeholder) {
+					t.Errorf("%s must interpolate %s", key, placeholder)
+				}
+			}
 		}
+	})
+}
+
+func forEachEmbeddedGUILanguageCatalog(t *testing.T, check func(*testing.T, map[string]string)) {
+	t.Helper()
+	languages := uilang.Languages()
+	if len(languages) != 27 {
+		t.Fatalf("supported GUI languages = %d, want 27", len(languages))
 	}
-	if !strings.Contains(text, `"prov.warn.scanTimeout": "{n} was added`) {
-		t.Error("English prov.warn.scanTimeout must interpolate the provider name as {n}")
-	}
-	if !strings.Contains(text, "within {c}") {
-		t.Error("prov.warn.scanTimeout must interpolate the discovery timeout as {c}")
+	for _, language := range languages {
+		t.Run(language.Code, func(t *testing.T) {
+			data, err := assetsFS.ReadFile("assets/locales/" + language.Code + ".json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var catalog map[string]string
+			if err := json.Unmarshal(data, &catalog); err != nil {
+				t.Fatal(err)
+			}
+			check(t, catalog)
+		})
 	}
 }
 

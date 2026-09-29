@@ -17,7 +17,7 @@ import (
 
 func (m Model) View() string {
 	if m.quitting {
-		return "SuperCli closed.\n"
+		return m.tr("tui.model_view.8f2ae4ad05")
 	}
 	if m.mode == modeAsking && m.pendingAsk != nil {
 		return renderAskView(m.pendingAsk, m.width, m.height, m.language)
@@ -49,7 +49,7 @@ func (m Model) View() string {
 
 	// 4. Status bar
 	if m.busy {
-		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render(m.tr("working · Ctrl+C interrupt · Esc cancel", "praca · Ctrl+C przerwij · Esc anuluj")))
+		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render(m.tr("tui.model_view.2a7749f651")))
 	}
 	if m.dashboardFn != nil {
 		b.WriteString(m.renderDashboard() + "\n")
@@ -70,7 +70,7 @@ func (m Model) View() string {
 	}
 
 	if len(m.pendingAttachments) > 0 {
-		b.WriteString(m.palette.InputHint.Render(truncateVisible(attachmentDisplay(m.pendingAttachments)+m.tr(" · Ctrl+O add · Ctrl+K → Attachments: remove", " · Ctrl+O dodaj · Ctrl+K → Załączniki: usuń"), m.width)) + "\n")
+		b.WriteString(m.palette.InputHint.Render(truncateVisible(attachmentDisplay(m.pendingAttachments, m.language)+m.tr("tui.model_view.3ab0177331"), m.width)) + "\n")
 	}
 	// 6. Input box + persistent key hints
 	b.WriteString(m.renderInputBox())
@@ -87,16 +87,16 @@ func (m Model) renderHeader() string {
 	if width <= 0 {
 		width = 80
 	}
-	mode := m.tr("● ready", "● gotowy")
+	mode := m.tr("tui.model_view.d010c6a7e3")
 	if m.busy {
-		mode = m.tr("● working", "● pracuje")
+		mode = m.tr("tui.model_view.cc560c1f85")
 	} else if m.mode == modeAsking {
-		mode = m.tr("● asking", "● pyta")
+		mode = m.tr("tui.model_view.f3fb2ec691")
 	}
 	if m.planMode {
-		mode = "PLAN · " + mode
+		mode = m.tr("tui.model_view.7c4ba6a66c") + mode
 	}
-	model := m.tr("no-model", "brak modelu")
+	model := m.tr("tui.model_view.be46ce0c28")
 	if m.llm != nil {
 		model = m.llm.Name()
 		// Show the active reasoning-effort level next to the
@@ -157,23 +157,23 @@ func (m Model) renderHintLine() string {
 		return m.renderNotice(m.menuWidth())
 	}
 	if !m.viewport.AtBottom() {
-		return m.palette.HeaderMode.Render(truncateVisible(m.tr("Reading history · End: follow latest · Wheel/PgUp/PgDn scroll", "Czytasz historię · End: śledź odpowiedź · Kółko/PgUp/PgDn przewiń"), m.width))
+		return m.palette.HeaderMode.Render(truncateVisible(m.tr("tui.model_view.5913460e19"), m.width))
 	}
 	hints := []string{
-		m.tr("While working: type + Enter queues", "Podczas pracy: wpisz + Enter dodaje do kolejki"),
-		m.tr("Tab actions", "Tab działania"), m.tr("Enter send", "Enter wyślij"), m.tr("Ctrl+O files", "Ctrl+O pliki"),
-		m.tr("Alt+Enter newline", "Alt+Enter nowa linia"), m.tr("Ctrl+Y copy reply", "Ctrl+Y kopiuj odpowiedź"),
-		m.tr("Ctrl+R reasoning menu", "Ctrl+R poziom myślenia"), m.tr("Esc clear", "Esc wyczyść"),
-		m.tr("Ctrl+C interrupt", "Ctrl+C przerwij"), m.tr("Wheel/PgUp/PgDn scroll", "Kółko/PgUp/PgDn przewiń"),
-		m.tr("Shift+T thinking", "Shift+T myślenie"), m.tr("Shift+E expand", "Shift+E rozwiń"),
-		m.tr("/ advanced", "/ zaawansowane"),
+		m.tr("tui.model_view.8aa47e642f"),
+		m.tr("tui.model_view.6067c72033"), m.tr("tui.model_view.7ed24ce7cc"), m.tr("tui.model_view.0ed0cc347f"),
+		m.tr("tui.model_view.0c363d2b22"), m.tr("tui.model_view.8adc2457b4"),
+		m.tr("tui.model_view.ab21629046"), m.tr("tui.model_view.c08cd0239d"),
+		m.tr("tui.model_view.8992f9364a"), m.tr("tui.model_view.924a43eed2"),
+		m.tr("tui.model_view.63b8bb6f00"), m.tr("tui.model_view.538052fb13"),
+		m.tr("tui.model_view.b5b7232926"),
 	}
 	line := strings.Join(hints, " · ")
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = m.tr("Tab actions · Enter send · Ctrl+O files · Alt+Enter newline · Esc clear · Ctrl+C interrupt", "Tab działania · Enter wyślij · Ctrl+O pliki · Alt+Enter nowa linia · Esc wyczyść · Ctrl+C przerwij")
+		line = m.tr("tui.model_view.ac95b92889")
 	}
 	if m.width > 0 && lipgloss.Width(line) > m.width {
-		line = m.tr("Tab actions · Enter send · Ctrl+O files · Ctrl+C stop", "Tab działania · Enter wyślij · Ctrl+O pliki · Ctrl+C stop")
+		line = m.tr("tui.model_view.61df2d0a77")
 	}
 	if m.width > 0 {
 		line = truncateVisible(line, m.width)
@@ -247,20 +247,20 @@ func (m *Model) refreshRuntimeHUD() {
 	parts := make([]string, 0, 3)
 	if report.Window > 0 {
 		pct := used * 100 / report.Window
-		parts = append(parts, fmt.Sprintf("ctx %d%% (%s/%s)", pct, compactTokens(used), compactTokens(report.Window)))
+		parts = append(parts, fmt.Sprintf(m.tr("tui.model_view.b2c0dcf233"), pct, compactTokens(used), compactTokens(report.Window)))
 		threshold := report.CompactThreshold
 		if threshold <= 0 {
 			threshold = agent.AutoCompactThreshold(report.Window)
 		}
 		m.runtimeContext.CompactAt = (threshold*100 + report.Window/2) / report.Window
-		parts = append(parts, fmt.Sprintf("compact %d%%", m.runtimeContext.CompactAt))
+		parts = append(parts, fmt.Sprintf(m.tr("tui.model_view.b15499579b"), m.runtimeContext.CompactAt))
 	}
 	if breakdown, ok := m.agent.(turnBreakdownReporter); ok {
 		cached, evaluated, _, set := breakdown.LastTurnBreakdown()
 		if set && cached+evaluated > 0 {
 			m.runtimeContext.Cached, m.runtimeContext.Evaluated = cached, evaluated
 			m.runtimeContext.HasCache = true
-			parts = append(parts, fmt.Sprintf("cache %d%%", cached*100/(cached+evaluated)))
+			parts = append(parts, fmt.Sprintf(m.tr("tui.model_view.7feace1099"), cached*100/(cached+evaluated)))
 		}
 	}
 	// Daily request count for the active endpoint (e.g. the OpenCode
@@ -269,7 +269,7 @@ func (m *Model) refreshRuntimeHUD() {
 	if baseURL := m.activeProviderBaseURL(); baseURL != "" {
 		if n := llm.ProviderRequestsTodayFlexible(baseURL); n > 0 {
 			m.runtimeContext.Requests = n
-			parts = append(parts, fmt.Sprintf("%d req today", n))
+			parts = append(parts, fmt.Sprintf(m.tr("tui.model_view.49df76d0f1"), n))
 		}
 	}
 	m.runtimeHUD = strings.Join(parts, " · ")
@@ -356,8 +356,8 @@ func welcomeAtWidth(opts Options, p Palette, width int) string {
 
 func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	language := normalizeLanguage(opts.Language)
-	tr := func(en, pl string) string { return textFor(language, en, pl) }
-	model := tr("not configured", "nieskonfigurowany")
+	tr := func(key string) string { return textFor(language, key) }
+	model := tr("tui.model_view.9f33f06843")
 	if opts.LLM != nil {
 		model = opts.LLM.Name()
 	}
@@ -367,15 +367,15 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	// A short terminal needs the chat viewport more than decorative cards.
 	// Keep the same actions visible in a five-line, borderless empty state.
 	if height > 0 && height < 28 {
-		modelWidth := width - lipgloss.Width("model ")
+		modelWidth := width - lipgloss.Width(tr("tui.model_view.4e383de876"))
 		if modelWidth < 8 {
 			modelWidth = 8
 		}
 		lines := []string{
-			p.PanelTitle.Render("> SuperCli") + " " + p.PanelMuted.Render(tr("· portable AI coding agent", "· przenośny agent programistyczny AI")),
-			p.Bold.Render(tr("Welcome back", "Witaj ponownie")) + " " + p.Dim.Render(tr("· ask for a change, inspect files, or run a plan", "· zleć zmianę, sprawdź pliki lub uruchom plan")),
-			p.Dim.Render(tr("model ", "model ")) + p.StatusValue.Render(truncateVisible(model, modelWidth)),
-			p.HeaderMode.Render("Tab") + p.Dim.Render(tr(" actions · ", " działania · ")) + p.HeaderMode.Render("@") + p.Dim.Render(tr(" attach file · ", " dołącz plik · ")) + p.HeaderMode.Render("/") + p.Dim.Render(tr(" advanced", " zaawansowane")),
+			p.PanelTitle.Render("> SuperCli") + " " + p.PanelMuted.Render(tr("tui.model_view.d0b3443b7e")),
+			p.Bold.Render(tr("tui.model_view.6621249514")) + " " + p.Dim.Render(tr("tui.model_view.4098febb87")),
+			p.Dim.Render(tr("tui.model_view.4e383de876")) + p.StatusValue.Render(truncateVisible(model, modelWidth)),
+			p.HeaderMode.Render("Tab") + p.Dim.Render(tr("tui.model_view.1b8bc93bc3")) + p.HeaderMode.Render("@") + p.Dim.Render(tr("tui.model_view.ff05c4eb5b")) + p.HeaderMode.Render("/") + p.Dim.Render(tr("tui.model_view.1a4939ac0b")),
 		}
 		for i := range lines {
 			lines[i] = truncateVisible(lines[i], width)
@@ -388,17 +388,17 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	}
 	leftContent :=
 		p.PanelTitle.Render("> SuperCli") + "\n" +
-			p.PanelMuted.Render(tr("portable AI coding agent", "przenośny agent programistyczny AI")) + "\n\n" +
-			p.Bold.Render(tr("Welcome back", "Witaj ponownie")) + "\n" +
-			tr("Ask for a change, inspect files, or run a plan.", "Zleć zmianę, sprawdź pliki lub uruchom plan.") + "\n\n" +
-			p.Dim.Render("model ") + p.StatusValue.Render(model)
+			p.PanelMuted.Render(tr("tui.model_view.670cf9649b")) + "\n\n" +
+			p.Bold.Render(tr("tui.model_view.6621249514")) + "\n" +
+			tr("tui.model_view.3b4d65ae64") + "\n\n" +
+			p.Dim.Render(tr("tui.model_view.4e383de876")) + p.StatusValue.Render(model)
 	rightContent :=
-		p.PanelTitle.Render(tr("Start here", "Zacznij tutaj")) + "\n\n" +
-			p.HeaderMode.Render("Tab") + p.Dim.Render(tr("        action centre", "        centrum działań")) + "\n" +
-			p.HeaderMode.Render("Enter") + p.Dim.Render(tr("      send message", "      wyślij wiadomość")) + "\n" +
-			p.HeaderMode.Render("@") + p.Dim.Render(tr("          attach a project file", "          dołącz plik projektu")) + "\n" +
-			p.HeaderMode.Render("/") + p.Dim.Render(tr("          advanced commands", "          komendy zaawansowane")) + "\n\n" +
-			p.Dim.Render(tr("Esc clears · Ctrl+C interrupts · Shift+E expands tools", "Esc czyści · Ctrl+C przerywa · Shift+E rozwija narzędzia"))
+		p.PanelTitle.Render(tr("tui.model_view.2adc964c08")) + "\n\n" +
+			p.HeaderMode.Render("Tab") + p.Dim.Render(tr("tui.model_view.3b6d9c1440")) + "\n" +
+			p.HeaderMode.Render("Enter") + p.Dim.Render(tr("tui.model_view.0255a03e43")) + "\n" +
+			p.HeaderMode.Render("@") + p.Dim.Render(tr("tui.model_view.68a55a1101")) + "\n" +
+			p.HeaderMode.Render("/") + p.Dim.Render(tr("tui.model_view.4c6e3ca7d5")) + "\n\n" +
+			p.Dim.Render(tr("tui.model_view.00dac47b56"))
 	left := p.Panel.Width(cardWidth).Render(leftContent)
 	right := p.Panel.Width(cardWidth).Render(rightContent)
 	horizontal := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)

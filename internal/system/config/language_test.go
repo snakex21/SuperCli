@@ -48,3 +48,21 @@ func TestEnsureLanguageKeepsPersistedPreference(t *testing.T) {
 		t.Fatalf("language=%q, want en", language)
 	}
 }
+
+func TestSetLanguageCanonicalRegionAndScript(t *testing.T) {
+	for input, want := range map[string]string{"pt_br.UTF-8": "pt-BR", "sr_Latn_RS": "sr-Latn", "no-NO": "nb", "de-DE": "de", "unknown": "en"} {
+		t.Run(input, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := SetLanguage(dir, dir, input); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadToml(filepath.Join(dir, "config.toml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Language != want {
+				t.Fatalf("saved %q, want %q", cfg.Language, want)
+			}
+		})
+	}
+}

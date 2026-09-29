@@ -13,11 +13,12 @@ func (m Model) renderSettingsMenu() string {
 		cfg = &c
 	}
 	rows := m.localizedSettingsRows()
-	page := menuPage{title: m.tr("Settings", "Ustawienia"), tabs: m.menuTabs(m.settingsCategories(), m.menu.category),
-		footer: m.tr("↑↓ choose · ←→ category · Enter change · R reset", "↑↓ wybierz · ←→ kategoria · Enter zmień · R reset")}
+	page := menuPage{title: m.tr("tui.menu_navigation.74a883a037"), tabs: m.menuTabs(m.settingsCategories(), m.menu.category),
+		footer: m.tr("tui.menu_settings_render.5dbfc12d13")}
 	for i, row := range rows {
 		value, source := m.settingValueSource(row, cfg)
-		value, source = m.localizeSettingDisplay(value, source)
+		defaultValue := source == "default"
+		source = m.localizeSettingSource(source)
 		if row.kind == setResetAll {
 			value = ""
 		}
@@ -25,23 +26,23 @@ func (m Model) renderSettingsMenu() string {
 			value = m.menu.editBuf + "▏"
 		}
 		badge := value
-		if strings.HasPrefix(value, "default (") || strings.HasPrefix(value, "domyśln") {
-			badge = m.tr("default", "domyślne")
+		if defaultValue && strings.HasSuffix(value, ")") {
+			badge = m.tr("tui.menu_settings_render.37a8eec1ce")
 		}
 		page.items = append(page.items, menuListItem{label: row.label, badge: badge})
 		if i == m.menu.cursor {
 			page.detailTitle = row.label
 			page.detail = []string{row.desc}
 			if row.key != "" {
-				page.detail = append(page.detail, "", m.tr("Value: ", "Wartość: ")+value, m.tr("Source: ", "Źródło: ")+source, "", row.key)
+				page.detail = append(page.detail, "", m.tr("tui.menu_settings_render.905b8b1136")+value, m.tr("tui.menu_settings_render.1a5ac0bd0b")+source, "", row.key)
 			}
 			if row.nextSession {
-				page.detail = append(page.detail, "", m.tr("Applies after restart (next session).", "Zadziała po restarcie (następna sesja)."))
+				page.detail = append(page.detail, "", m.tr("tui.menu_settings_render.5858764be7"))
 			}
 		}
 	}
 	if m.menu.editing {
-		page.footer = m.tr("Type value · Enter save · Esc cancel", "Wpisz wartość · Enter zapisz · Esc anuluj")
+		page.footer = m.tr("tui.menu_settings_render.c9366e8025")
 	}
 	if m.menu.formErr != "" {
 		page.detail = append([]string{m.menu.formErr, ""}, page.detail...)
@@ -49,51 +50,20 @@ func (m Model) renderSettingsMenu() string {
 	return m.renderMenuPage(page)
 }
 
-func (m Model) localizeSettingDisplay(value, source string) (string, string) {
-	if m.language != "pl" {
-		if value == "zawsze" {
-			value = "always"
-		} else if value == "nigdy" {
-			value = "never"
-		}
-		return value, source
-	}
-	replacements := map[string]string{
-		"default (main model)":          "domyślny (model główny)",
-		"default (active model)":        "domyślny (aktywny model)",
-		"default (spec or 10)":          "domyślnie (profil lub 10)",
-		"default (no cap)":              "domyślnie (bez limitu)",
-		"default (scaled)":              "domyślnie (skalowane)",
-		"default (700/300 by tier)":     "domyślnie (700/300 wg profilu)",
-		"English":                       "Angielski",
-		"on":                            "włączone",
-		"off":                           "wyłączone",
-		"parallel":                      "równolegle",
-		"sequential":                    "sekwencyjnie",
-		"none (diff-only verdict)":      "brak (tylko ocena zmian)",
-		"off (no paid fallback)":        "wyłączone (bez płatnego zapasu)",
-		"default (coordinator's model)": "domyślny (model koordynatora)",
-		"prune 60% · compact window − reserve": "skracanie 60% · kompakcja: okno − rezerwa",
-	}
-	if translated, ok := replacements[value]; ok {
-		value = translated
-	}
-	if strings.HasPrefix(value, "default (") {
-		value = "domyślnie (" + strings.TrimPrefix(value, "default (")
-	}
+func (m Model) localizeSettingSource(source string) string {
 	switch source {
 	case "default":
-		source = "domyślne"
+		source = m.tr("tui.menu_settings_render.37a8eec1ce")
 	case "manual":
-		source = "własne"
+		source = m.tr("tui.view_markers.36bde66f28")
 	case "built-in":
-		source = "wbudowane"
+		source = m.tr("tui.setting_source.5c73a5c73d")
 	case "editing":
-		source = "edycja"
+		source = m.tr("tui.setting_source.62b8e80d98")
 	case "set via /model":
-		source = "ustawiane w modelach"
+		source = m.tr("tui.setting_source.fc0b78c9c0")
 	case "set via /providers":
-		source = "ustawiane u dostawców"
+		source = m.tr("tui.setting_source.1aace6fff5")
 	}
-	return value, source
+	return source
 }

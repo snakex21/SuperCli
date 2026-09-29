@@ -279,7 +279,7 @@ type pendingAsk struct {
 type Options struct {
 	Home    string
 	DataDir string
-	// Language is the shared UI language (en/pl), detected and persisted by
+	// Language is the shared UI locale, detected and persisted by
 	// the executable before constructing the TUI.
 	Language string
 	// SessionID identifies the live conversation so the interactive
@@ -413,7 +413,7 @@ type ModelSwapFunc func(modelID, provider string) (llm.Provider, error)
 func New(opts Options) Model {
 	opts.Language = normalizeLanguage(opts.Language)
 	ti := newInputArea()
-	ti.Placeholder = textFor(opts.Language, "Message SuperCli · Tab opens actions", "Napisz do SuperCli · Tab otwiera działania")
+	ti.Placeholder = textFor(opts.Language, "tui.menu_settings_actions.2d53d0e1de")
 	ti.Focus()
 
 	sp := spinner.New()
@@ -487,7 +487,7 @@ func New(opts Options) Model {
 		m.pendingAttachments = saved.Attachments
 		m.syncInputHeight()
 		if saved.Text != "" || len(saved.Attachments) > 0 {
-			m.setStatus(m.tr("Unsent draft restored", "Przywrócono niewysłany szkic"), true)
+			m.setStatus(m.tr("tui.model.6f2da678de"), true)
 			if opts.ResumeID == "" && m.sessionStore != nil && saved.SessionID != "" {
 				if sess, err := m.sessionStore.Get(saved.SessionID); err == nil && sess.MessageCount > 0 {
 					opts.ResumeID = saved.SessionID
@@ -514,7 +514,7 @@ const maxInputLines = 5
 // from Enter on Windows terminals).
 func newInputArea() textarea.Model {
 	ti := textarea.New()
-	ti.Placeholder = "Message SuperCli · Tab opens actions"
+	ti.Placeholder = textFor("en", "tui.menu_settings_actions.2d53d0e1de")
 	// Keep the primary prompt ASCII-safe. A surprising number of Windows
 	// terminal/font combinations render the former ❯ glyph as an empty box.
 	ti.Prompt = "> "
@@ -526,7 +526,7 @@ func newInputArea() textarea.Model {
 	// rebind newline insertion to Alt+Enter / Ctrl+J.
 	ti.KeyMap.InsertNewline = key.NewBinding(
 		key.WithKeys("alt+enter", "ctrl+j"),
-		key.WithHelp("alt+enter", "insert newline"),
+		key.WithHelp("alt+enter", textFor("en", "tui.other.c7cf1c599b")),
 	)
 	return ti
 }
@@ -747,7 +747,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncInputHeight()
 		}
 		if msg.attachmentWarning != "" {
-			m.appendLine(m.marker.Error(fmt.Errorf("attachment history: %s", msg.attachmentWarning)))
+			m.appendLine(m.marker.Error(fmt.Errorf(m.tr("tui.model.9d4ca46626"), msg.attachmentWarning)))
 		}
 		if msg.mentionCount > 0 && msg.mentionTokens > 0 {
 			m.appendLine(m.marker.Mention(msg.mentionCount, msg.mentionTokens))
@@ -786,18 +786,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dataOperationMsg:
 		if msg.err != nil {
-			m.setStatus("data: "+msg.err.Error(), false)
+			m.setStatus(m.tr("tui.model.68fdbe4d9b")+msg.err.Error(), false)
 			return m, nil
 		}
 		m.mode = modeNormal
 		m.menu = interactiveMenu{}
 		m.input.Focus()
 		if msg.kind == "import" {
-			m.setStatus(m.tr("backup ready; restart SuperCli to apply it", "kopia przygotowana; uruchom SuperCli ponownie, aby ją zastosować"), true)
-			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
+			m.setStatus(m.tr("tui.model.62b14214ce"), true)
+			m.appendLine(m.palette.Success.Render(m.tr("tui.model.f5e7fbcac3")) + m.statusOverride)
 		} else {
-			m.setStatus(m.tr("backup saved: ", "kopia zapisana: ")+msg.path, true)
-			m.appendLine(m.palette.Success.Render("[data] ") + m.statusOverride)
+			m.setStatus(m.tr("tui.model.51ae95b11d")+msg.path, true)
+			m.appendLine(m.palette.Success.Render(m.tr("tui.model.f5e7fbcac3")) + m.statusOverride)
 		}
 		m.refreshTranscript()
 		return m, nil
@@ -854,18 +854,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if len(msg.form) > 0 {
 				formAt = len(msg.form) - 1
 			}
-			formErr := "Verification failed. "
+			formErr := m.tr("tui.model.546dd6f834")
 			formEditName := msg.editName
 			switch {
 			case msg.wasNew && msg.rolledBack:
-				formErr += "Provider was not added. "
+				formErr += m.tr("tui.model.6cb2c32028")
 				formEditName = ""
 			case msg.wasNew && msg.rollbackErr != nil:
-				formErr += "Automatic rollback also failed; the provider may still be saved. "
-				formErr += "Rollback: " + compactProviderError(msg.rollbackErr) + ". "
+				formErr += m.tr("tui.model.31ff0d62e8")
+				formErr += m.tr("tui.model.6899286b47") + compactProviderError(msg.rollbackErr) + ". "
 				formEditName = msg.name
 			default:
-				formErr += "The edited provider remains saved; correct its settings and try again. "
+				formErr += m.tr("tui.model.b08e428273")
 			}
 			formErr += compactProviderError(msg.err)
 			m.enterMenu(interactiveMenu{
@@ -880,7 +880,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		} else {
-			m.appendLine(m.palette.InputHint.Render("provider " + msg.name + ": " + msg.body))
+			m.appendLine(m.palette.InputHint.Render(m.tr("tui.menu_keys.7170173a8d") + msg.name + ": " + msg.body))
 		}
 		m.refreshTranscript()
 		return m, nil
@@ -938,12 +938,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				out += "\n" + r.Stderr
 			}
 			m.appendLine(m.marker.ToolResult(
-				fmt.Sprintf("!%s (exit %d, %v)\n%s",
+				fmt.Sprintf(m.tr("tui.model.9482205df6"),
 					r.Command, r.ExitCode, r.Duration.Round(1e6), out), true))
 		} else {
 			out := strings.TrimSpace(r.Stdout)
 			if out == "" {
-				out = "(no output)"
+				out = m.tr("tui.view_markers.efefc15c24")
 			}
 			m.appendLine(m.marker.ToolResult(
 				fmt.Sprintf("!%s (%v)\n%s",
@@ -1004,7 +1004,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // (Esc) — so cancelling never rebuilds the provider or writes config.
 func (m *Model) applyModelSwap(modelID, provider string) {
 	if m.modelSwapFn == nil || m.modelSwapper == nil {
-		m.appendLine(m.marker.ModelInfo(fmt.Sprintf("requested swap to %s", modelID)))
+		m.appendLine(m.marker.ModelInfo(fmt.Sprintf(m.tr("tui.model.cf4041c413"), modelID)))
 		return
 	}
 	// modelSwapFn rebuilds the provider AND (for Codex providers)
@@ -1013,7 +1013,7 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	// message send required.
 	newProv, err := m.modelSwapFn(modelID, provider)
 	if err != nil {
-		m.appendLine(m.marker.Error(fmt.Errorf("model swap failed: %w", err)))
+		m.appendLine(m.marker.Error(fmt.Errorf(m.tr("tui.model.7bc54e9db4"), err)))
 		return
 	}
 	m.modelSwapper.SetModel(newProv)
@@ -1030,7 +1030,7 @@ func (m *Model) applyModelSwap(modelID, provider string) {
 	if swapLabel == "" {
 		swapLabel = newProv.Name()
 	}
-	m.appendLine(m.marker.ModelInfo(fmt.Sprintf(m.tr("switched to %s", "wybrano %s"), swapLabel)))
+	m.appendLine(m.marker.ModelInfo(fmt.Sprintf(m.tr("tui.model.2f3dd8cd86"), swapLabel)))
 	// Persist active model + provider for next startup. Done here
 	// (at confirm time) rather than lazily at the next send, so
 	// closing the CLI immediately after picking keeps the choice.

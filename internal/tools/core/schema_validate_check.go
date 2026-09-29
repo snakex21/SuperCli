@@ -95,10 +95,17 @@ func (n *schemaNode) validate(value any, path string) error {
 					return err
 				}
 			case n.denyAdditional && !n.hasPatternProperties:
+				// Report the missing anchors as well as the invalid field. A
+				// replacement-only patch otherwise repeats without an old string.
+				var missing []string
+				for _, required := range n.required {
+					if _, exists := typed[required]; !exists {
+						missing = append(missing, propertyPath(path, required))
+					}
+				}
 				return &unknownArgumentError{
-					path:  childPath,
-					valid: n.propertyOrder,
-					hint:  nearestArgument(name, n.propertyOrder),
+					path: childPath, valid: n.propertyOrder,
+					hint: nearestArgument(name, n.propertyOrder), missing: missing,
 				}
 			default:
 				// Fail-open on purpose. The key is unknown to this node, but the

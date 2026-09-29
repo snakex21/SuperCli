@@ -70,7 +70,6 @@ function loadSentAttachmentIndex() {
 }
 function saveSentAttachmentIndex() {
   if (sentAttachmentIndex.length > 240) sentAttachmentIndex = sentAttachmentIndex.slice(-240);
-  try { localStorage.setItem(sentAttachmentStorageKey, JSON.stringify(sentAttachmentIndex)); } catch (e) {}
   saveBlobKey(sentAttachmentStorageKey, sentAttachmentIndex);
 }
 function rememberSentAttachments(sessionID, seq, paths) {
