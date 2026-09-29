@@ -10,6 +10,18 @@ En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skriveb
 <!-- readme-unit:status -->
 Denne README beskriver versjon `1.0.0`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
 
+<!-- readme-unit:h.screenshots -->
+## Skjermbilder
+
+<!-- readme-unit:screenshot.gui -->
+![SuperClis nettgrensesnitt (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![SuperClis handlingssenter i terminalen (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+GUI-bildet er et skjermbilde; TUI-bildet er en gjengivelse av programmets faktiske terminaloppsett. [Flere skjermbilder](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Kom i gang
 

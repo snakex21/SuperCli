@@ -5,11 +5,18 @@
   "links": {
     "releases": "https://github.com/snakex21/SuperCli/releases",
     "releasing": "docs/releasing.md",
+    "guishot": "docs/screenshots/1.0.0/gui-en.jpg",
+    "tuishot": "docs/screenshots/1.0.0/tui-actions-pl.jpg",
+    "gallery": "docs/screenshots/1.0.0/README.md",
     "index": "docs/README.md", "quickstart": "docs/quickstart.md", "data": "docs/data-layout.md", "config": "docs/configuration.md", "architecture": "docs/architecture.md", "delegation": "docs/delegation.md", "performance": "docs/performance.md", "webgui": "docs/webgui.md", "structure": "docs/project-structure.md", "mcp": "docs/portable-mcp.md", "skills": "docs/builtin-skills.md", "telemetry": "docs/telemetry.md", "plan": "docs/PLAN.md", "roadmap": "docs/ROADMAP.md", "reference": "docs/readme-reference.md", "license": "LICENSE", "notices": "THIRD_PARTY_NOTICES.md"
   },
   "text": [
     ["intro", "A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine."],
     ["status", "This README describes version `1.0.0`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."],
+    ["h.screenshots", "Screenshots"],
+    ["screenshot.gui", "![SuperCli web interface (GUI)]({guishot})"],
+    ["screenshot.tui", "![SuperCli terminal action centre (TUI)]({tuishot})"],
+    ["screenshots.more", "The GUI image is a screenshot; the TUI image is a rendering of the application's actual terminal layout. [More screenshots]({gallery})."],
     ["h.start", "Get started"],
     ["start", "Extract the bundle for your operating system and architecture into a writable folder. On Windows, launch `supercli.exe` for the terminal or `supercli-web.exe` for the GUI. Keep the included `supercli-data/` folder beside the executables."],
     ["start.other", "On Linux or macOS, use the corresponding executable from the bundle or build from source. Select your project with `--home`; use `--batch` for one prompt without the TUI."],
@@ -62,7 +69,7 @@
   ],
   "blocks": [
     {"type":"title", "text":"SuperCli 1.0.0"},
-    "intro", "status", "h.start", "start",
+    "intro", "status", "h.screenshots", "screenshot.gui", "screenshot.tui", "screenshots.more", "h.start", "start",
     {"type":"code","lang":"powershell","text":".\\supercli.exe\n.\\supercli-web.exe\n.\\supercli.exe --home \"D:\\projects\\example\"\n.\\supercli.exe --batch \"Summarize this project\"\n.\\supercli.exe --doctor"},
     "start.other",
     {"type":"code","lang":"bash","text":"./supercli --home ./my-project\n./supercli --batch \"Summarize this project\"\n./supercli --doctor"},

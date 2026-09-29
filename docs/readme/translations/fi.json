@@ -1,6 +1,10 @@
 [
   "Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.",
   "Tämä README kuvaa versiota `1.0.0`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
+  "Kuvakaappaukset",
+  "![SuperClin verkkokäyttöliittymä (GUI)]({guishot})",
+  "![SuperClin päätteen toimintokeskus (TUI)]({tuishot})",
+  "GUI-kuva on kuvakaappaus; TUI-kuva on sovelluksen todellisen päätenäkymän renderöinti. [Lisää kuvakaappauksia]({gallery}).",
   "Aloittaminen",
   "Pura käyttöjärjestelmääsi ja arkkitehtuuriisi sopiva paketti kirjoitettavaan kansioon. Käynnistä Windowsissa `supercli.exe` päätettä tai `supercli-web.exe` GUI:ta varten. Pidä mukana toimitettu `supercli-data/`-kansio suoritettavien tiedostojen vieressä.",
   "Käytä Linuxissa tai macOS:ssä paketin vastaavaa suoritettavaa tiedostoa tai käännä lähdekoodista. Valitse projekti valitsimella `--home`; käytä `--batch`-valitsinta yhteen pyyntöön ilman TUI:ta.",

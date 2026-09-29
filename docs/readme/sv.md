@@ -10,6 +10,18 @@ En portabel AI-kodningsagent skriven i Go, med terminalgränssnitt (TUI), skrivb
 <!-- readme-unit:status -->
 Denna README beskriver version `1.0.0`. Portabla utgivningspaket distribueras via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal kompilering innebär inte att motsvarande version redan har publicerats.
 
+<!-- readme-unit:h.screenshots -->
+## Skärmbilder
+
+<!-- readme-unit:screenshot.gui -->
+![SuperClis webbgränssnitt (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![SuperClis åtgärdscenter i terminalen (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+GUI-bilden är en skärmbild; TUI-bilden är en rendering av programmets faktiska terminallayout. [Fler skärmbilder](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Kom igång
 

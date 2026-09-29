@@ -10,6 +10,18 @@
 <!-- readme-unit:status -->
 Този README описва версия `1.0.0`. Преносимите пакети се разпространяват чрез [GitHub Releases](https://github.com/snakex21/SuperCli/releases); локална компилация не означава, че съответната версия вече е публикувана.
 
+<!-- readme-unit:h.screenshots -->
+## Екранни снимки
+
+<!-- readme-unit:screenshot.gui -->
+![Уеб интерфейс на SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![Център за действия в терминала на SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+Изображението на GUI е екранна снимка; изображението на TUI е визуализация на действителното оформление на терминалния интерфейс на приложението. [Още екранни снимки](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Първи стъпки
 

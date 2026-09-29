@@ -1,6 +1,10 @@
 [
   "En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.",
   "Denne README beskriver versjon `1.0.0`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
+  "Skjermbilder",
+  "![SuperClis nettgrensesnitt (GUI)]({guishot})",
+  "![SuperClis handlingssenter i terminalen (TUI)]({tuishot})",
+  "GUI-bildet er et skjermbilde; TUI-bildet er en gjengivelse av programmets faktiske terminaloppsett. [Flere skjermbilder]({gallery}).",
   "Kom i gang",
   "Pakk ut pakken for operativsystemet og arkitekturen din i en skrivbar mappe. På Windows starter du `supercli.exe` for terminalen eller `supercli-web.exe` for GUI. Behold den medfølgende mappen `supercli-data/` ved siden av de kjørbare filene.",
   "På Linux eller macOS bruker du den tilsvarende kjørbare filen fra pakken eller bygger fra kildekoden. Velg prosjektet med `--home`; bruk `--batch` for én forespørsel uten TUI.",

@@ -1,6 +1,10 @@
 [
   "En bærbar AI-kodningsagent skrevet i Go, med en terminalgrænseflade (TUI), en skrivebords-/webgrænseflade (GUI) og batchtilstand, der deler én motor.",
   "Denne README beskriver version `1.0.0`. Bærbare udgivelsespakker distribueres via [GitHub Releases]({releases}); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.",
+  "Skærmbilleder",
+  "![SuperClis webgrænseflade (GUI)]({guishot})",
+  "![SuperClis handlingscenter i terminalen (TUI)]({tuishot})",
+  "GUI-billedet er et skærmbillede; TUI-billedet er en gengivelse af programmets faktiske terminallayout. [Flere skærmbilleder]({gallery}).",
   "Kom i gang",
   "Udpak pakken til dit operativsystem og din arkitektur i en skrivbar mappe. På Windows starter du `supercli.exe` til terminalen eller `supercli-web.exe` til GUI. Behold den medfølgende mappe `supercli-data/` ved siden af de eksekverbare filer.",
   "På Linux eller macOS bruger du den tilsvarende eksekverbare fil fra pakken eller bygger fra kildekoden. Vælg dit projekt med `--home`; brug `--batch` til én forespørgsel uden TUI.",
