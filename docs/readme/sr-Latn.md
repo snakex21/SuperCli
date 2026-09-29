@@ -10,6 +10,18 @@ Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfe
 <!-- readme-unit:status -->
 Ovaj README opisuje verziju `1.0.0`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.
 
+<!-- readme-unit:h.screenshots -->
+## Snimci ekrana
+
+<!-- readme-unit:screenshot.gui -->
+![Veb interfejs SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![Centar radnji u terminalu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+Slika GUI-ja je snimak ekrana; slika TUI-ja je prikaz stvarnog rasporeda terminalskog interfejsa aplikacije. [Još snimaka ekrana](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Početak rada
 

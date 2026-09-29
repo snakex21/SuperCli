@@ -1,6 +1,10 @@
 [
   "Ein portabler KI-Programmieragent in Go mit Terminaloberfläche (TUI), Desktop-/Weboberfläche (GUI) und Stapelmodus, die dieselbe Engine nutzen.",
   "Dieses README beschreibt Version `1.0.0`. Portable Veröffentlichungspakete werden über [GitHub Releases]({releases}) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.",
+  "Screenshots",
+  "![SuperCli-Weboberfläche (GUI)]({guishot})",
+  "![Aktionszentrum im SuperCli-Terminal (TUI)]({tuishot})",
+  "Das GUI-Bild ist ein Screenshot; das TUI-Bild ist eine Darstellung des tatsächlichen Terminallayouts der Anwendung. [Weitere Screenshots]({gallery}).",
   "Erste Schritte",
   "Entpacken Sie das Paket für Ihr Betriebssystem und Ihre Architektur in einen beschreibbaren Ordner. Starten Sie unter Windows `supercli.exe` für das Terminal oder `supercli-web.exe` für die GUI. Lassen Sie den mitgelieferten Ordner `supercli-data/` neben den ausführbaren Dateien.",
   "Verwenden Sie unter Linux oder macOS die passende ausführbare Datei aus dem Paket oder bauen Sie aus dem Quellcode. Wählen Sie Ihr Projekt mit `--home`; verwenden Sie `--batch` für eine einzelne Anfrage ohne TUI.",

@@ -10,6 +10,18 @@ Un agente de programación con IA portátil escrito en Go, con interfaz de termi
 <!-- readme-unit:status -->
 Este README describe la versión `1.0.0`. Los paquetes portátiles se distribuyen mediante [GitHub Releases](https://github.com/snakex21/SuperCli/releases); una compilación local no implica que su versión ya se haya publicado.
 
+<!-- readme-unit:h.screenshots -->
+## Capturas de pantalla
+
+<!-- readme-unit:screenshot.gui -->
+![Interfaz web de SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![Centro de acciones del terminal de SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+La imagen de la GUI es una captura de pantalla; la imagen de la TUI es una representación de la disposición real del terminal de la aplicación. [Más capturas de pantalla](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Primeros pasos
 

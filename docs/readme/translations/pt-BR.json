@@ -1,6 +1,10 @@
 [
   "Um agente de programação com IA portátil escrito em Go, com interface de terminal (TUI), interface desktop/web (GUI) e modo em lote que compartilham um único mecanismo.",
   "Este README descreve a versão `1.0.0`. Os pacotes portáteis são distribuídos pelo [GitHub Releases]({releases}); uma compilação local não significa que sua versão já foi publicada.",
+  "Capturas de tela",
+  "![Interface web do SuperCli (GUI)]({guishot})",
+  "![Central de ações do terminal do SuperCli (TUI)]({tuishot})",
+  "A imagem da GUI é uma captura de tela; a imagem da TUI é uma renderização do layout real do terminal do aplicativo. [Mais capturas de tela]({gallery}).",
   "Primeiros passos",
   "Extraia o pacote para seu sistema operacional e arquitetura em uma pasta com permissão de gravação. No Windows, execute `supercli.exe` para o terminal ou `supercli-web.exe` para a GUI. Mantenha a pasta incluída `supercli-data/` ao lado dos executáveis.",
   "No Linux ou macOS, use o executável correspondente do pacote ou compile a partir do código-fonte. Selecione seu projeto com `--home`; use `--batch` para uma solicitação sem TUI.",

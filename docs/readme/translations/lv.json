@@ -1,6 +1,10 @@
 [
   "Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.",
   "Šis README apraksta versiju `1.0.0`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
+  "Ekrānuzņēmumi",
+  "![SuperCli tīmekļa saskarne (GUI)]({guishot})",
+  "![SuperCli termināļa darbību centrs (TUI)]({tuishot})",
+  "GUI attēls ir ekrānuzņēmums; TUI attēls ir lietotnes faktiskā termināļa izkārtojuma atveidojums. [Vairāk ekrānuzņēmumu]({gallery}).",
   "Darba sākšana",
   "Izpakojiet savai operētājsistēmai un arhitektūrai atbilstošo komplektu rakstāmā mapē. Windows sistēmā palaidiet `supercli.exe` terminālim vai `supercli-web.exe` GUI. Iekļauto `supercli-data/` mapi turiet līdzās izpildāmajiem failiem.",
   "Linux vai macOS sistēmā izmantojiet atbilstošo izpildāmo failu no komplekta vai būvējiet no pirmkoda. Izvēlieties projektu ar `--home`; vienam pieprasījumam bez TUI izmantojiet `--batch`.",

@@ -1,6 +1,10 @@
 [
   "Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.",
   "Bu README `1.0.0` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases]({releases}) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.",
+  "Ekran görüntüleri",
+  "![SuperCli web arayüzü (GUI)]({guishot})",
+  "![SuperCli terminal eylem merkezi (TUI)]({tuishot})",
+  "GUI görseli bir ekran görüntüsüdür; TUI görseli uygulamanın gerçek terminal düzeninin işlenmiş görüntüsüdür. [Diğer ekran görüntüleri]({gallery}).",
   "Başlangıç",
   "İşletim sisteminize ve mimarinize uygun paketi yazılabilir bir klasöre çıkarın. Windows'ta terminal için `supercli.exe`, GUI için `supercli-web.exe` başlatın. Birlikte gelen `supercli-data/` klasörünü yürütülebilir dosyaların yanında tutun.",
   "Linux veya macOS'ta paketteki uygun yürütülebilir dosyayı kullanın ya da kaynak koddan derleyin. Projenizi `--home` ile seçin; TUI olmadan tek bir istem için `--batch` kullanın.",

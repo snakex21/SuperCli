@@ -10,6 +10,18 @@ Go nyelven írt hordozható AI programozóügynök, közös motort használó te
 <!-- readme-unit:status -->
 Ez a README az `1.0.0` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
 
+<!-- readme-unit:h.screenshots -->
+## Képernyőképek
+
+<!-- readme-unit:screenshot.gui -->
+![A SuperCli webes felülete (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![A SuperCli terminálos műveletközpontja (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+A GUI képe képernyőkép; a TUI képe az alkalmazás tényleges terminálelrendezésének megjelenítése. [További képernyőképek](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Első lépések
 

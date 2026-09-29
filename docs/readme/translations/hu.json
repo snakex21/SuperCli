@@ -1,6 +1,10 @@
 [
   "Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.",
   "Ez a README az `1.0.0` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases]({releases}) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.",
+  "Képernyőképek",
+  "![A SuperCli webes felülete (GUI)]({guishot})",
+  "![A SuperCli terminálos műveletközpontja (TUI)]({tuishot})",
+  "A GUI képe képernyőkép; a TUI képe az alkalmazás tényleges terminálelrendezésének megjelenítése. [További képernyőképek]({gallery}).",
   "Első lépések",
   "Csomagolja ki az operációs rendszerének és architektúrájának megfelelő csomagot egy írható mappába. Windows alatt a terminálhoz indítsa a `supercli.exe`, a GUI-hoz a `supercli-web.exe` fájlt. A mellékelt `supercli-data/` mappát tartsa a futtatható fájlok mellett.",
   "Linux vagy macOS alatt használja a csomag megfelelő futtatható fájlját, vagy fordítsa le a forráskódot. A projektet a `--home` választja ki; egyetlen kéréshez TUI nélkül használja a `--batch` kapcsolót.",

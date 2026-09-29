@@ -10,6 +10,18 @@ Un agent AI portabil pentru programare, scris în Go, cu interfață de terminal
 <!-- readme-unit:status -->
 Acest README descrie versiunea `1.0.0`. Pachetele portabile sunt distribuite prin [GitHub Releases](https://github.com/snakex21/SuperCli/releases); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.
 
+<!-- readme-unit:h.screenshots -->
+## Capturi de ecran
+
+<!-- readme-unit:screenshot.gui -->
+![Interfața web SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![Centrul de acțiuni din terminalul SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+Imaginea GUI este o captură de ecran; imaginea TUI este o redare a structurii reale a interfeței de terminal a aplicației. [Mai multe capturi de ecran](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Primii pași
 

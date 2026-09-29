@@ -1,6 +1,10 @@
 [
   "Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.",
   "Šis README aprašo versiją `1.0.0`. Nešiojamieji leidimų paketai platinami per [GitHub Releases]({releases}); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.",
+  "Ekrano nuotraukos",
+  "![SuperCli žiniatinklio sąsaja (GUI)]({guishot})",
+  "![SuperCli terminalo veiksmų centras (TUI)]({tuishot})",
+  "GUI vaizdas yra ekrano nuotrauka; TUI vaizdas yra atvaizduotas tikrasis programos terminalo išdėstymas. [Daugiau ekrano nuotraukų]({gallery}).",
   "Darbo pradžia",
   "Išskleiskite savo operacinei sistemai ir architektūrai skirtą paketą į aplanką, kuriame galima rašyti. Windows sistemoje terminalui paleiskite `supercli.exe`, GUI – `supercli-web.exe`. Pridėtą `supercli-data/` aplanką laikykite šalia vykdomųjų failų.",
   "Linux arba macOS sistemoje naudokite atitinkamą paketo vykdomąjį failą arba kompiliuokite iš šaltinio kodo. Projektą pasirinkite su `--home`; vienai užklausai be TUI naudokite `--batch`.",

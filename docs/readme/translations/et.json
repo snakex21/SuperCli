@@ -1,6 +1,10 @@
 [
   "Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.",
   "See README kirjeldab versiooni `1.0.0`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases]({releases}) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.",
+  "Kuvatõmmised",
+  "![SuperCli veebiliides (GUI)]({guishot})",
+  "![SuperCli terminali tegevuskeskus (TUI)]({tuishot})",
+  "GUI pilt on kuvatõmmis; TUI pilt on rakenduse tegeliku terminalipaigutuse renderdus. [Rohkem kuvatõmmiseid]({gallery}).",
   "Alustamine",
   "Paki oma operatsioonisüsteemi ja arhitektuuri pakett lahti kirjutatavasse kausta. Windowsis käivita terminali jaoks `supercli.exe` või GUI jaoks `supercli-web.exe`. Hoia kaasas olevat `supercli-data/` kausta käivitatavate failide kõrval.",
   "Linuxis või macOS-is kasuta paketi vastavat käivitatavat faili või ehita lähtekoodist. Vali projekt valikuga `--home`; ühe päringu jaoks ilma TUI-ta kasuta `--batch`.",

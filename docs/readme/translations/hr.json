@@ -1,6 +1,10 @@
 [
   "Prijenosni AI agent za programiranje napisan u Gou, s terminalskim sučeljem (TUI), stolnim/web sučeljem (GUI) i skupnim načinom rada koji dijele jedan pogon.",
   "Ovaj README opisuje verziju `1.0.0`. Prijenosni paketi izdanja distribuiraju se putem [GitHub Releases]({releases}); lokalna kompilacija ne znači da je pripadajuće izdanje već objavljeno.",
+  "Snimke zaslona",
+  "![Web-sučelje SuperClija (GUI)]({guishot})",
+  "![Centar radnji u terminalu SuperClija (TUI)]({tuishot})",
+  "Slika GUI-ja je snimka zaslona; slika TUI-ja je prikaz stvarnog rasporeda terminalnog sučelja aplikacije. [Više snimki zaslona]({gallery}).",
   "Početak rada",
   "Raspakirajte paket za svoj operacijski sustav i arhitekturu u mapu s pravom pisanja. U Windowsu pokrenite `supercli.exe` za terminal ili `supercli-web.exe` za GUI. Priloženu mapu `supercli-data/` držite uz izvršne datoteke.",
   "Na Linuxu ili macOS-u koristite odgovarajuću izvršnu datoteku iz paketa ili kompilirajte iz izvornog koda. Projekt odaberite pomoću `--home`; koristite `--batch` za jedan upit bez TUI-ja.",

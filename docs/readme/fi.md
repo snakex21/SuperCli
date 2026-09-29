@@ -10,6 +10,18 @@ Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäy
 <!-- readme-unit:status -->
 Tämä README kuvaa versiota `1.0.0`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
+<!-- readme-unit:h.screenshots -->
+## Kuvakaappaukset
+
+<!-- readme-unit:screenshot.gui -->
+![SuperClin verkkokäyttöliittymä (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![SuperClin päätteen toimintokeskus (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+GUI-kuva on kuvakaappaus; TUI-kuva on sovelluksen todellisen päätenäkymän renderöinti. [Lisää kuvakaappauksia](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Aloittaminen
 

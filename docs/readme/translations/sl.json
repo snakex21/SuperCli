@@ -1,6 +1,10 @@
 [
   "Prenosni AI agent za programiranje, napisan v Go, s terminalskim vmesnikom (TUI), namiznim/spletnim vmesnikom (GUI) in paketnim načinom, ki uporabljajo isti pogon.",
   "Ta README opisuje različico `1.0.0`. Prenosni paketi izdaj se razširjajo prek [GitHub Releases]({releases}); lokalna gradnja ne pomeni, da je pripadajoča izdaja že objavljena.",
+  "Posnetki zaslona",
+  "![Spletni vmesnik SuperCli (GUI)]({guishot})",
+  "![Središče dejanj v terminalu SuperCli (TUI)]({tuishot})",
+  "Slika GUI je posnetek zaslona; slika TUI je izris dejanske postavitve terminalskega vmesnika aplikacije. [Več posnetkov zaslona]({gallery}).",
   "Začetek",
   "Razširite paket za svoj operacijski sistem in arhitekturo v mapo z dovoljenjem za pisanje. V Windows za terminal zaženite `supercli.exe`, za GUI pa `supercli-web.exe`. Priloženo mapo `supercli-data/` obdržite ob izvršljivih datotekah.",
   "V Linux ali macOS uporabite ustrezno izvršljivo datoteko iz paketa ali zgradite iz izvorne kode. Projekt izberite z `--home`; za en poziv brez TUI uporabite `--batch`.",

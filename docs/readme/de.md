@@ -10,6 +10,18 @@ Ein portabler KI-Programmieragent in Go mit Terminaloberfläche (TUI), Desktop-/
 <!-- readme-unit:status -->
 Dieses README beschreibt Version `1.0.0`. Portable Veröffentlichungspakete werden über [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.
 
+<!-- readme-unit:h.screenshots -->
+## Screenshots
+
+<!-- readme-unit:screenshot.gui -->
+![SuperCli-Weboberfläche (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![Aktionszentrum im SuperCli-Terminal (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+Das GUI-Bild ist ein Screenshot; das TUI-Bild ist eine Darstellung des tatsächlichen Terminallayouts der Anwendung. [Weitere Screenshots](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Erste Schritte
 

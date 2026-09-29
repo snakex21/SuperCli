@@ -10,6 +10,18 @@ Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/
 <!-- readme-unit:status -->
 Bu README `1.0.0` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
 
+<!-- readme-unit:h.screenshots -->
+## Ekran görüntüleri
+
+<!-- readme-unit:screenshot.gui -->
+![SuperCli web arayüzü (GUI)](../screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![SuperCli terminal eylem merkezi (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+GUI görseli bir ekran görüntüsüdür; TUI görseli uygulamanın gerçek terminal düzeninin işlenmiş görüntüsüdür. [Diğer ekran görüntüleri](../screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Başlangıç
 

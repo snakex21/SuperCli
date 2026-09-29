@@ -10,6 +10,18 @@ A portable AI coding agent written in Go, with a terminal interface (TUI), a des
 <!-- readme-unit:status -->
 This README describes version `1.0.0`. Portable release bundles are distributed through [GitHub Releases](https://github.com/snakex21/SuperCli/releases); a local build does not imply that its release has already been published.
 
+<!-- readme-unit:h.screenshots -->
+## Screenshots
+
+<!-- readme-unit:screenshot.gui -->
+![SuperCli web interface (GUI)](docs/screenshots/1.0.0/gui-en.jpg)
+
+<!-- readme-unit:screenshot.tui -->
+![SuperCli terminal action centre (TUI)](docs/screenshots/1.0.0/tui-actions-pl.jpg)
+
+<!-- readme-unit:screenshots.more -->
+The GUI image is a screenshot; the TUI image is a rendering of the application's actual terminal layout. [More screenshots](docs/screenshots/1.0.0/README.md).
+
 <!-- readme-unit:h.start -->
 ## Get started
 
