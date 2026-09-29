@@ -17,7 +17,7 @@ Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa s
 ![SuperCli tīmekļa saskarne (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperCli termināļa darbību centrs (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperCli termināļa darbību centrs (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI attēls ir ekrānuzņēmums; TUI attēls ir lietotnes faktiskā termināļa izkārtojuma atveidojums. [Vairāk ekrānuzņēmumu](../screenshots/1.0.0/README.md).

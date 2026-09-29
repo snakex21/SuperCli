@@ -17,7 +17,7 @@
 ![Вебінтерфейс SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Центр дій у терміналі SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Центр дій у терміналі SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Зображення GUI — це знімок екрана; зображення TUI — візуалізація фактичного компонування термінального інтерфейсу застосунку. [Більше знімків екрана](../screenshots/1.0.0/README.md).

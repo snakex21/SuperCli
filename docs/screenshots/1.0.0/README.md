@@ -18,6 +18,8 @@ The GUI images are captures of the running Windows build in the browser.
 
 The terminal examples are rendered from the production `Model.View()` output, including ANSI colors. They show the actual layout with synthetic data; they are not screenshots of a native terminal window. Fonts and emoji support depend on the user's terminal.
 
+![English action menu](tui-actions-en.jpg)
+
 ![Polish action menu](tui-actions-pl.jpg)
 
 ![TUI language picker](tui-languages-pl.jpg)

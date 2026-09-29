@@ -17,7 +17,7 @@ Ta README opisuje različico `1.0.0`. Prenosni paketi izdaj se razširjajo prek 
 ![Spletni vmesnik SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Središče dejanj v terminalu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Središče dejanj v terminalu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Slika GUI je posnetek zaslona; slika TUI je izris dejanske postavitve terminalskega vmesnika aplikacije. [Več posnetkov zaslona](../screenshots/1.0.0/README.md).

@@ -17,7 +17,7 @@ Acest README descrie versiunea `1.0.0`. Pachetele portabile sunt distribuite pri
 ![Interfața web SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Centrul de acțiuni din terminalul SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Centrul de acțiuni din terminalul SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Imaginea GUI este o captură de ecran; imaginea TUI este o redare a structurii reale a interfeței de terminal a aplicației. [Mai multe capturi de ecran](../screenshots/1.0.0/README.md).

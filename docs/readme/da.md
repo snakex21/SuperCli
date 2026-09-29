@@ -17,7 +17,7 @@ Denne README beskriver version `1.0.0`. Bærbare udgivelsespakker distribueres v
 ![SuperClis webgrænseflade (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperClis handlingscenter i terminalen (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperClis handlingscenter i terminalen (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI-billedet er et skærmbillede; TUI-billedet er en gengivelse af programmets faktiske terminallayout. [Flere skærmbilleder](../screenshots/1.0.0/README.md).

@@ -17,7 +17,7 @@ Tento README popisuje verzi `1.0.0`. Přenosné balíčky se distribuují prost�
 ![Webové rozhraní SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Centrum akcí v terminálu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Centrum akcí v terminálu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Obrázek GUI je snímek obrazovky; obrázek TUI je vykreslením skutečného rozložení terminálového rozhraní aplikace. [Další snímky obrazovky](../screenshots/1.0.0/README.md).

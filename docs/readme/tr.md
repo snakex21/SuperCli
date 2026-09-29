@@ -17,7 +17,7 @@ Bu README `1.0.0` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHu
 ![SuperCli web arayüzü (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperCli terminal eylem merkezi (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperCli terminal eylem merkezi (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI görseli bir ekran görüntüsüdür; TUI görseli uygulamanın gerçek terminal düzeninin işlenmiş görüntüsüdür. [Diğer ekran görüntüleri](../screenshots/1.0.0/README.md).

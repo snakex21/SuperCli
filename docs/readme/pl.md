@@ -17,7 +17,7 @@ Ten README opisuje wersję `1.0.0`. Przenośne pakiety wydań są rozpowszechnia
 ![Interfejs webowy SuperCli (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![Centrum działań w terminalu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![Centrum działań w terminalu SuperCli (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 Obraz GUI to zrzut ekranu; obraz TUI przedstawia wyrenderowany rzeczywisty układ interfejsu terminalowego aplikacji. [Więcej zrzutów](../screenshots/1.0.0/README.md).

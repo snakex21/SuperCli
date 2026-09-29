@@ -17,7 +17,7 @@ See README kirjeldab versiooni `1.0.0`. Kaasaskantavaid väljalaskepakette levit
 ![SuperCli veebiliides (GUI)](../screenshots/1.0.0/gui-en.jpg)
 
 <!-- readme-unit:screenshot.tui -->
-![SuperCli terminali tegevuskeskus (TUI)](../screenshots/1.0.0/tui-actions-pl.jpg)
+![SuperCli terminali tegevuskeskus (TUI)](../screenshots/1.0.0/tui-actions-en.jpg)
 
 <!-- readme-unit:screenshots.more -->
 GUI pilt on kuvatõmmis; TUI pilt on rakenduse tegeliku terminalipaigutuse renderdus. [Rohkem kuvatõmmiseid](../screenshots/1.0.0/README.md).
