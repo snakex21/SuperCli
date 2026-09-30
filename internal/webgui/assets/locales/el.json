@@ -82,6 +82,7 @@
   "composer.queued": "Σε ουρά",
   "composer.interrupt": "Διακοπή & αποστολή",
   "composer.sendNow": "Αποστολή τώρα",
+  "composer.sendingQueued": "Αποστολή μηνύματος από την ουρά…",
   "composer.resume": "Συνέχιση ουράς",
   "composer.remove": "Αφαιρώ",
   "composer.moveUp": "Μετακινηθείτε προς τα πάνω",

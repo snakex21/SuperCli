@@ -82,6 +82,7 @@
   "composer.queued": "W kolejce",
   "composer.interrupt": "Przerwij i wyślij",
   "composer.sendNow": "Wyślij teraz",
+  "composer.sendingQueued": "Wysyłanie wiadomości z kolejki…",
   "composer.resume": "Wznów kolejkę",
   "composer.remove": "Usuń",
   "composer.moveUp": "Przesuń wyżej",

@@ -82,6 +82,7 @@
   "composer.queued": "In de wachtrij",
   "composer.interrupt": "Onderbreken en verzenden",
   "composer.sendNow": "Verstuur nu",
+  "composer.sendingQueued": "Bericht uit wachtrij verzenden…",
   "composer.resume": "Wachtrij hervatten",
   "composer.remove": "Verwijderen",
   "composer.moveUp": "Ga omhoog",

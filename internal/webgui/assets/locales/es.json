@@ -82,6 +82,7 @@
   "composer.queued": "En cola",
   "composer.interrupt": "Interrumpir y enviar",
   "composer.sendNow": "Enviar ahora",
+  "composer.sendingQueued": "Enviando mensaje de la cola…",
   "composer.resume": "Reanudar cola",
   "composer.remove": "Eliminar",
   "composer.moveUp": "Subir",

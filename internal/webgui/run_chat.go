@@ -15,6 +15,7 @@ import (
 // chatRequest is the JSON body posted to /api/chat.
 type chatRequest struct {
 	Prompt              string   `json:"prompt"`
+	TurnID              string   `json:"turn_id,omitempty"`
 	SessionID           string   `json:"session_id,omitempty"`
 	Attachments         []string `json:"attachments,omitempty"`
 	Rewound             bool     `json:"rewound,omitempty"`
@@ -79,6 +80,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	streamSessionID := strings.TrimSpace(req.SessionID)
+	completion, err := s.registerChatCompletion(req.TurnID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if completion != nil {
+		defer func() {
+			completion.sessionID = streamSessionID
+			close(completion.done)
+		}()
+	}
 	finishActiveRun := s.eng.beginActiveRun()
 	defer finishActiveRun()
 
@@ -91,7 +104,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	eventCount := 0
 	lastType := ""
 	terminalSeen := false
-	streamSessionID := strings.TrimSpace(req.SessionID)
 	previousUserSeq := 0
 	if len(req.Attachments) > 0 {
 		if streamSessionID != "" {
@@ -115,6 +127,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	emit := func(ev wireEvent) {
 		if ev.Type == "session" && strings.TrimSpace(ev.SessionID) != "" {
 			streamSessionID = strings.TrimSpace(ev.SessionID)
+		}
+		if completion != nil && ev.Type == "session_activity" {
+			completion.accepted = true
 		}
 		eventCount++
 		lastType = ev.Type

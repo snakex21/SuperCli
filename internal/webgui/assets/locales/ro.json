@@ -82,6 +82,7 @@
   "composer.queued": "În coadă",
   "composer.interrupt": "Întrerupeți și trimiteți",
   "composer.sendNow": "Trimite acum",
+  "composer.sendingQueued": "Se trimite mesajul din coadă…",
   "composer.resume": "Reluați coada",
   "composer.remove": "Elimina",
   "composer.moveUp": "Mișcă-te în sus",

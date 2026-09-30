@@ -82,6 +82,7 @@
   "composer.queued": "Queued",
   "composer.interrupt": "Interrupt & send",
   "composer.sendNow": "Send now",
+  "composer.sendingQueued": "Sending queued message…",
   "composer.resume": "Resume queue",
   "composer.remove": "Remove",
   "composer.moveUp": "Move up",

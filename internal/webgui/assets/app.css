@@ -791,6 +791,21 @@ a:hover { text-decoration: underline; }
 .queue-action, .queue-remove, .interrupt-btn, .stop-run-btn { color:var(--faint); font:10.5px var(--mono); }
 .queue-action:hover, .queue-remove:hover, .interrupt-btn:hover, .stop-run-btn:hover { color:var(--text); }
 .queue-action:disabled { opacity:.28; cursor:default; }
+
+.queue-row.queue-transition, .task-center-row.queue-transition {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.queue-transition .queue-text, .queue-transition .queue-action { color: var(--accent); }
+.queue-sending:disabled { opacity: 1; }
+.queue-sending::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px;
+  border: 1px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  vertical-align: -1px; animation: queue-send-spin 900ms linear infinite;
+}
+@keyframes queue-send-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .queue-sending::before { animation: none; } }
+
 .queue-resume { width:100%; padding:5px 8px; border-bottom:1px solid var(--line); color:var(--accent); font:10.5px var(--mono); text-align:left; }
 .interrupt-btn, .stop-run-btn { padding:4px 7px; border:1px solid var(--line); border-radius:var(--radius); }
 .stop-run-btn { color:var(--danger); }

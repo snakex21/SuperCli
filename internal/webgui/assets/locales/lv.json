@@ -82,6 +82,7 @@
   "composer.queued": "Rindā",
   "composer.interrupt": "Pārtraukt un nosūtīt",
   "composer.sendNow": "Sūti tagad",
+  "composer.sendingQueued": "Sūta rindā esošo ziņojumu…",
   "composer.resume": "Atsākt rindu",
   "composer.remove": "Noņemt",
   "composer.moveUp": "Pārvietojieties uz augšu",

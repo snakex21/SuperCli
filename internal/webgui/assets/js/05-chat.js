@@ -11,6 +11,8 @@ var lastTurn = null;    // last done-event payload + elapsed (stats pane)
 var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
+var queueDispatching = false, queueDispatchItem = null;
+var chatTurnSequence = 0;
 var pendingAttachments = [];
 var appFocused = !document.hidden && document.hasFocus();
 var sentAttachmentStorageKey = "supercli-sent-attachments-v1";
@@ -445,7 +447,9 @@ function renderPromptQueue() {
     var row = el("div", "queue-row");
     var drag = queueDragHandle();
     row.appendChild(drag);
-    row.appendChild(queuePositionButton(item, index));
+    var position = queuePositionButton(item, index);
+    position.disabled = isQueuedTaskTransition(item);
+    row.appendChild(position);
     var text = el("button", "queue-text", item.text);
     text.type = "button";
     text.title = t("composer.editQueued");
@@ -453,11 +457,14 @@ function renderPromptQueue() {
     row.appendChild(text);
     var now = i18nEl("button", "queue-action", "composer.sendNow"); now.type = "button";
     now.addEventListener("click", function () { runQueuedTask(item, true); });
+    styleQueuedTaskTransition(row, item, now);
     var remove = el("button", "queue-remove", "×"); remove.type = "button"; remove.title = t("composer.remove");
     remove.addEventListener("click", function () { removeQueuedTask(item.id); });
+    remove.disabled = isQueuedTaskTransition(item);
+    text.disabled = remove.disabled;
     row.appendChild(now); row.appendChild(remove);
     host.appendChild(row);
-    wireQueuedTaskDrag(row, drag, item);
+    if (!isQueuedTaskTransition(item)) wireQueuedTaskDrag(row, drag, item);
   });
   updateAppBadge();
   renderTaskCenter();
@@ -524,21 +531,68 @@ async function removeQueuedTask(id) {
   try { await j("/api/tasks?id=" + encodeURIComponent(id), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
   catch (e) { toast(e.message); return false; }
 }
+function isQueuedTaskTransition(item) {
+  var selected = pendingImmediate || queueDispatchItem;
+  return !!(selected && selected.id && selected.id === item.id);
+}
+function styleQueuedTaskTransition(row, item, button) {
+  var selected = isQueuedTaskTransition(item);
+  row.classList.toggle("queue-transition", selected);
+  button.classList.toggle("queue-sending", selected);
+  if (selected) {
+    row.setAttribute("aria-busy", "true");
+    button.dataset.i18nText = "composer.sendingQueued";
+    button.textContent = t("composer.sendingQueued");
+    button.i18nTextNode = button.firstChild;
+  }
+  button.disabled = !!(pendingImmediate || queueDispatching || queueDispatchItem);
+}
+function showQueueTransition(item) {
+  queueDispatchItem = item;
+  sendBtn.textContent = t("composer.queue");
+  sendBtn.classList.add("queue");
+  $("#stop-run-btn").hidden = false;
+  $("#interrupt-btn").hidden = true;
+  setRunState("running", t("composer.sendingQueued"));
+  renderPromptQueue();
+}
+async function dispatchQueuedTask(item) {
+  if (queueDispatching) return;
+  queueDispatching = true;
+  showQueueTransition(item);
+  var launched = false;
+  try {
+    if (!await prepareQueuedTask(item) || pauseQueue) return;
+    // Remove the durable queue entry only after /api/chat accepts it.
+    launched = true;
+    sendPrompt(item.text, item.attachments || [], item.draft || null, item);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    if (!launched) {
+      if (item.draft && !promptEl.value && composerDraftStore.scope() === item.draft.scope) {
+        composerDraftStore.restore(item.draft.scope);
+      }
+      pauseQueue = true;
+      queueDispatching = false;
+      queueDispatchItem = null;
+      sendBtn.textContent = t("composer.send");
+      sendBtn.classList.remove("queue");
+      $("#stop-run-btn").hidden = true;
+      $("#interrupt-btn").hidden = true;
+      setRunState("idle", t("composer.ready"));
+      renderPromptQueue();
+    }
+  }
+}
 async function runQueuedTask(item, interrupt) {
-  if (interrupt && streaming) {
-    pendingImmediate = item;
-    pauseQueue = false;
-    if (abortCtl) abortCtl.abort();
-    return;
-  }
-  if (!await prepareQueuedTask(item)) {
-    pauseQueue = true;
-    renderPromptQueue();
-    return;
-  }
-  if (!await removeQueuedTask(item.id)) return;
+  if (pendingImmediate || queueDispatching || queueDispatchItem) return;
   pauseQueue = false;
-  sendPrompt(item.text, item.attachments || []);
+  if (streaming) {
+    if (interrupt) interruptAndSend(item.text, item);
+    return;
+  }
+  await dispatchQueuedTask(item);
 }
 function renderTaskCenter() {
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
@@ -572,9 +626,14 @@ function renderTaskCenter() {
     row.appendChild(down);
     var go = i18nEl("button", "queue-action", "composer.sendNow");
     go.addEventListener("click", function () { runQueuedTask(item, true); });
+    styleQueuedTaskTransition(row, item, go);
     row.appendChild(go);
+    if (isQueuedTaskTransition(item)) {
+      copy.disabled = edit.disabled = up.disabled = down.disabled = true;
+      position.disabled = true;
+    }
     host.appendChild(row);
-    wireQueuedTaskDrag(row, drag, item);
+    if (!isQueuedTaskTransition(item)) wireQueuedTaskDrag(row, drag, item);
   });
 }
 
@@ -665,29 +724,37 @@ $("#manage-side-goal").addEventListener("click", function () { openPanel("goal")
 async function prepareQueuedTask(item) {
   if (!item || !item.session_id) return true;
   if (activeSessionID === item.session_id && transcriptSessionID === item.session_id) {
-    if (sessionByID[item.session_id]) await restoreSessionRuntime(sessionByID[item.session_id]);
+    // Keep the current selection: restoring stale sidebar metadata here can
+    // undo a model/reasoning change. sendPrompt awaits runtime readiness.
     return true;
   }
-  return await resumeSession(item.session_id, sessionByID[item.session_id] || null);
+  return await resumeSession(item.session_id, sessionByID[item.session_id] || null, true);
 }
 function interruptAndSend(text, item, attachments, draft) {
+  if (pendingImmediate || queueDispatching || queueDispatchItem) return;
   pendingImmediate = item || { text: text, session_id: activeSessionID, attachments: attachments || [], draft: draft || null };
   if (item && attachments && attachments.length) pendingImmediate.attachments = attachments;
   pauseQueue = false;
+  showQueueTransition(pendingImmediate);
+  $("#interrupt-btn").disabled = true;
   if (abortCtl) abortCtl.abort(); else {
     var next = pendingImmediate;
     pendingImmediate = null;
-    prepareQueuedTask(next).then(function () { sendPrompt(next.text, next.attachments || [], next.draft || null); });
+    dispatchQueuedTask(next);
   }
 }
 
+function newChatTurnID() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return Date.now().toString(36) + "-" + (++chatTurnSequence).toString(36) + "-" + Math.random().toString(36).slice(2);
+}
 function setRunState(state, text) {
   runStatus.textContent = text || "";
   $("#status-dot").classList.toggle("busy", state === "running");
 }
 
-async function sendPrompt(text, attachments, draft) {
-  if (streaming) return;
+async function sendPrompt(text, attachments, draft, queuedItem) {
+  if (streaming || (queueDispatching && !queuedItem)) return;
   attachments = (attachments || []).slice();
   text = String(text || "").trim();
   if (!text && attachments.length) text = t("composer.inspectAttachments");
@@ -701,6 +768,20 @@ async function sendPrompt(text, attachments, draft) {
     if (readyRuntime === sessionRuntimeReady) break;
   }
   if (streaming) return;
+  if (queuedItem && pauseQueue) {
+    if (draft && !promptEl.value && composerDraftStore.scope() === draft.scope) {
+      composerDraftStore.restore(draft.scope);
+    }
+    queueDispatching = false;
+    queueDispatchItem = null;
+    sendBtn.textContent = t("composer.send");
+    sendBtn.classList.remove("queue");
+    $("#stop-run-btn").hidden = true;
+    $("#interrupt-btn").hidden = true;
+    setRunState("idle", t("composer.ready"));
+    renderPromptQueue();
+    return;
+  }
   // Once a live turn starts, the DOM becomes append-only again. Retire the
   // history pager so a late older-page response cannot rebuild the transcript
   // over messages currently arriving from SSE.
@@ -712,6 +793,7 @@ async function sendPrompt(text, attachments, draft) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
+  queueDispatching = false;
   transcriptLiveAppend = true;
   abortCtl = new AbortController();
   runToolCount = 0;
@@ -722,18 +804,40 @@ async function sendPrompt(text, attachments, draft) {
   sendBtn.type = "submit";
   $("#stop-run-btn").hidden = false;
   $("#interrupt-btn").hidden = false;
+  $("#interrupt-btn").disabled = false;
   var persistedText = attachmentTranscriptText(text, attachments);
   var liveUserNode = addUserMsg(text, 0, attachments);
   var current = null;
   var terminalSeen = false;
   var stopped = false;
-  var draftAccepted = false;
+  var turnID = newChatTurnID();
+  var draftAccepted = false, requestAccepted = false;
+  var queueRemoval = null;
+  function acceptPrompt() {
+    if (draftAccepted) return;
+    draftAccepted = true;
+    if (draft) composerDraftStore.clear(draft.scope, draft.text);
+    if (queuedItem && queuedItem.id) {
+      queueRemoval = removeQueuedTask(queuedItem.id).then(function (removed) {
+        if (!removed) pauseQueue = true;
+        queueDispatchItem = null;
+        renderPromptQueue();
+      });
+    } else {
+      queueDispatchItem = null;
+      renderPromptQueue();
+    }
+  }
   var lastProgressAt = Date.now();
   runStart = Date.now();
   setRunState("running", t("composer.working"));
   runTimer = setInterval(function () {
     var now = Date.now();
     var quiet = now - lastProgressAt;
+    if (pendingImmediate) {
+      runStatus.textContent = t("composer.sendingQueued");
+      return;
+    }
     runStatus.textContent = (quiet >= 10000 ? t("composer.waiting") + " " + fmtDuration(quiet) :
       t("composer.working") + " " + fmtDuration(now - runStart));
   }, 100);
@@ -744,6 +848,7 @@ async function sendPrompt(text, attachments, draft) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: text,
+        turn_id: turnID,
         session_id: activeSessionID,
         attachments: attachments,
       }),
@@ -753,10 +858,10 @@ async function sendPrompt(text, attachments, draft) {
       addEventLine(t("common.error") + ": " + resp.status, "error");
       return;
     }
-    draftAccepted = true;
-    if (draft) composerDraftStore.clear(draft.scope, draft.text);
+    requestAccepted = true;
     await superCliUI.readSSE(resp.body, function (ev) {
       lastProgressAt = Date.now();
+      if (ev.type === "session_activity") acceptPrompt();
       if (ev.type === "done" || ev.type === "error") terminalSeen = true;
       current = handleEvent(ev, current);
     });
@@ -786,59 +891,70 @@ async function sendPrompt(text, attachments, draft) {
     if (e.name === "AbortError") {
       stopped = true;
       addEventLine(t("chat.stopped"), "", "stop");
-      setRunState("idle", t("composer.stopped"));
+      setRunState(pendingImmediate ? "running" : "idle", t(pendingImmediate ? "composer.sendingQueued" : "composer.stopped"));
     } else {
       addEventLine(t("chat.connError") + ": " + e.message, "error");
       setRunState("idle", t("chat.connError"));
     }
-	} finally {
-	  if (draft && !draftAccepted && !promptEl.value && composerDraftStore.scope() === draft.scope) {
-	    composerDraftStore.restore(draft.scope);
-	  }
-	  sealAssistantSegment(current);
-	  closeQuestionOverlay();
-	  streaming = false;
+  } finally {
+    sealAssistantSegment(current);
+    closeQuestionOverlay();
     abortCtl = null;
     clearInterval(runTimer);
     settleOpenTools();
     releaseLiveTranscriptBlocks();
-    sendBtn.textContent = t("composer.send");
-    sendBtn.classList.remove("queue");
-    sendBtn.type = "submit";
-    $("#stop-run-btn").hidden = true;
-    $("#interrupt-btn").hidden = true;
-    if (runStatus.textContent.indexOf(t("composer.working")) === 0) setRunState("idle", t("composer.ready"));
-    $("#status-dot").classList.remove("busy");
-    promptEl.focus();
-    renderStats();
-    var userSeq = await addLatestMessageRewind(liveUserNode, persistedText, stopped ? 8 : 1);
+    // One completion wait replaces transcript polling after Stop. The server
+    // closes this receipt only after the canceled loop finishes its writes.
+    if (stopped && requestAccepted) {
+      if (pendingImmediate) setRunState("running", t("composer.sendingQueued"));
+      try {
+        var completed = await j("/api/chat/completion?id=" + encodeURIComponent(turnID));
+        if (completed && completed.accepted) acceptPrompt();
+        if (completed && completed.session_id) {
+          activeSessionID = completed.session_id;
+          transcriptSessionID = completed.session_id;
+        }
+      } catch (completionError) {
+        pauseQueue = true;
+        if (pendingImmediate && pendingImmediate.draft && !promptEl.value) {
+          composerDraftStore.restore(pendingImmediate.draft.scope);
+        }
+        toast(completionError.message);
+      }
+    }
+    if (draft && !draftAccepted && !promptEl.value && composerDraftStore.scope() === draft.scope) {
+      composerDraftStore.restore(draft.scope);
+    }
+    // Reserve the composer through final metadata work; Enter still queues.
+    if (queueRemoval) await queueRemoval;
+    if (queuedItem && !draftAccepted) pauseQueue = true;
+    queueDispatchItem = pendingImmediate;
+    var userSeq = draftAccepted ? await addLatestMessageRewind(liveUserNode, persistedText, 1) : 0;
     if (userSeq) rememberSentAttachments(activeSessionID, userSeq, attachments);
-    await loadSessions();
-    // A model may have updated the durable goal through its tool during this
-    // turn. Keep an already-open Goal panel in sync without polling.
+    // Presentation refreshes do not block the next model request.
+    loadSessions();
     if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
     if ($("#side-tab-goal").classList.contains("active")) loadSideGoal();
+    renderStats();
     var immediate = pendingImmediate;
     pendingImmediate = null;
-	var next = null;
-	if (immediate) {
-	  if (await prepareQueuedTask(immediate)) {
-	    if (!immediate.id || await removeQueuedTask(immediate.id)) next = immediate;
-	  } else {
-	    pauseQueue = true;
-	  }
-	}
-    if (!next && !pauseQueue && promptQueue.length) {
-      var queued = promptQueue[0];
-	  if (!await prepareQueuedTask(queued)) {
-	    pauseQueue = true;
-	  } else if (!await removeQueuedTask(queued.id)) {
-	    queued = null;
-	  }
-	  if (queued && !pauseQueue) next = { text: queued.text, attachments: queued.attachments || [] };
+    streaming = false;
+    var next = !pauseQueue ? (immediate || promptQueue[0]) : null;
+    if (next) {
+      dispatchQueuedTask(next);
+    } else {
+      queueDispatchItem = null;
+      queueDispatching = false;
+      sendBtn.textContent = t("composer.send");
+      sendBtn.classList.remove("queue");
+      sendBtn.type = "submit";
+      $("#stop-run-btn").hidden = true;
+      $("#interrupt-btn").hidden = true;
+      if (runStatus.textContent.indexOf(t("composer.working")) === 0 || runStatus.textContent === t("composer.sendingQueued")) setRunState("idle", t("composer.ready"));
+      $("#status-dot").classList.remove("busy");
+      promptEl.focus();
+      renderPromptQueue();
     }
-    renderPromptQueue();
-    if (next) setTimeout(function () { sendPrompt(next.text, next.attachments || [], next.draft || null); }, 0);
   }
 }
 
@@ -861,7 +977,10 @@ function chatErrorText(ev) {
 function handleEvent(ev, current) {
   switch (ev.type) {
     case "session":
-      if (ev.session_id) activeSessionID = ev.session_id;
+      if (ev.session_id) {
+        activeSessionID = ev.session_id;
+        transcriptSessionID = ev.session_id;
+      }
       return current;
     case "session_activity":
       if (ev.session_id === activeSessionID) loadSessions();
@@ -931,8 +1050,12 @@ function handleEvent(ev, current) {
       lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount };
       addFileChanges(ev.file_changes);
       addTurnMeta(ev, elapsed);
-      setRunState("idle", t("run.done") + " · " + fmtDuration(elapsed));
-      notifyDone(elapsed);
+      if (pendingImmediate || (!pauseQueue && promptQueue.length)) {
+        setRunState("running", t("composer.sendingQueued"));
+      } else {
+        setRunState("idle", t("run.done") + " · " + fmtDuration(elapsed));
+        notifyDone(elapsed);
+      }
       return null;
     case "error":
       closeAssistantReasoning(current);
@@ -1042,7 +1165,7 @@ $("#composer").addEventListener("submit", async function (e) {
   var rawText = promptEl.value;
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
-  if (streaming && pendingAttachments.length) {
+  if ((streaming || queueDispatching) && pendingAttachments.length) {
     toast(t("composer.attachQueue"));
     return;
   }
@@ -1050,7 +1173,7 @@ $("#composer").addEventListener("submit", async function (e) {
   var draft = { scope: composerDraftStore.scope(), text: rawText };
   promptEl.value = "";
   promptEl.style.height = "auto";
-  if (streaming) {
+  if (streaming || queueDispatching) {
     if (await enqueuePrompt(text)) composerDraftStore.clear(draft.scope, draft.text);
     else composerDraftStore.restore(draft.scope);
     return;
@@ -1060,9 +1183,11 @@ $("#composer").addEventListener("submit", async function (e) {
 });
 $("#stop-run-btn").addEventListener("click", function () {
   pauseQueue = true;
+  pendingImmediate = null;
   if (abortCtl) abortCtl.abort();
 });
 $("#interrupt-btn").addEventListener("click", function () {
+  if (pendingImmediate || queueDispatching || queueDispatchItem) return;
   var rawText = promptEl.value;
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
@@ -1117,7 +1242,7 @@ $$(".welcome .hints button").forEach(function (b) {
 });
 
 function newSession() {
-  if (streaming) return;
+  if (streaming || queueDispatching) return;
   clearAttachments();
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;

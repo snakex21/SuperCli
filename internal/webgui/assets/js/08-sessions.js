@@ -359,8 +359,8 @@ async function loadOlderTranscript() {
   }
 }
 
-async function resumeSession(id, session) {
-  if (streaming) {
+async function resumeSession(id, session, fromQueue) {
+  if (streaming || (queueDispatching && !fromQueue)) {
     toast(t("session.stopRun"));
     return false;
   }

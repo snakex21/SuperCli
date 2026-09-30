@@ -82,6 +82,7 @@
   "composer.queued": "Eilėje",
   "composer.interrupt": "Pertraukti ir siųsti",
   "composer.sendNow": "Siųsti dabar",
+  "composer.sendingQueued": "Siunčiamas eilėje esantis pranešimas…",
   "composer.resume": "Tęsti eilę",
   "composer.remove": "Pašalinti",
   "composer.moveUp": "Judėti aukštyn",

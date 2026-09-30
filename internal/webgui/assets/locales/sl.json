@@ -82,6 +82,7 @@
   "composer.queued": "V čakalni vrsti",
   "composer.interrupt": "Prekini in pošlji",
   "composer.sendNow": "Pošlji zdaj",
+  "composer.sendingQueued": "Pošiljanje sporočila iz čakalne vrste…",
   "composer.resume": "Nadaljuj čakalno vrsto",
   "composer.remove": "Odstrani",
   "composer.moveUp": "Premakni se navzgor",

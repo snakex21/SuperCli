@@ -82,6 +82,7 @@
   "composer.queued": "Järjekorras",
   "composer.interrupt": "Katkesta ja saada",
   "composer.sendNow": "Saada kohe",
+  "composer.sendingQueued": "Järjekorras oleva sõnumi saatmine…",
   "composer.resume": "Jätka järjekorda",
   "composer.remove": "Eemalda",
   "composer.moveUp": "Liigu üles",

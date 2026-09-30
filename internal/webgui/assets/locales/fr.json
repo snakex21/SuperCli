@@ -82,6 +82,7 @@
   "composer.queued": "En file d'attente",
   "composer.interrupt": "Interrompre et envoyer",
   "composer.sendNow": "Envoyer maintenant",
+  "composer.sendingQueued": "Envoi du message en attente…",
   "composer.resume": "Reprendre la file d'attente",
   "composer.remove": "Retirer",
   "composer.moveUp": "Monter",
