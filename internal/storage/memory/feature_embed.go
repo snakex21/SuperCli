@@ -56,16 +56,8 @@ func DetectEmbedder(openaiKey string) Embedder {
 			return &ollamaEmbedder{base: "http://localhost:11434", model: model}
 		}
 	}
-	// LM Studio: GET /v1/models answers when the server is up.
-	if resp, err := client.Get("http://localhost:1234/v1/models"); err == nil {
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			return &openAIEmbedder{
-				base:  "http://localhost:1234",
-				model: "nomic-embed-text",
-				label: "lmstudio",
-			}
-		}
+	if embedder := detectLMStudioEmbedder(client, "http://localhost:1234"); embedder != nil {
+		return embedder
 	}
 	if strings.TrimSpace(openaiKey) != "" {
 		return &openAIEmbedder{

@@ -6,7 +6,9 @@ import "context"
 // prevents legacy diagnostics from hiding useful matches further down the rank.
 const recallNoiseFilter = " AND NOT (e.scope GLOB 'pattern:*' AND instr(lower(e.content), 'no heuristic matched') > 0)"
 
-// RecallSearch applies the agent's diagnostic-noise policy before ranking caps.
+// RecallSearch filters diagnostic noise before ranking caps. While background
+// vectors are indexing, fresh notes remain searchable through durable FTS
+// without blocking the agent. Idle recall combines keyword and vector matches.
 // Search and HybridSearch remain unfiltered for inspection and maintenance.
 func (s *Store) RecallSearch(ctx context.Context, query string, k int) ([]Entry, error) {
 	return s.hybridSearch(ctx, query, k, true)

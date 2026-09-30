@@ -84,6 +84,28 @@ func (s *Storage) ListTasks(ctx context.Context, goalID string) ([]Task, error) 
 	return out, rows.Err()
 }
 
+// listOpenTasks reads only the next bounded tasks needed by the model context.
+// Completed history remains available through ListTasks.
+func (s *Storage) listOpenTasks(ctx context.Context, goalID string, limit int) ([]Task, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,goal_id,seq,title,status,created_at,completed_at FROM goal_tasks WHERE goal_id=? AND status NOT IN ('done','skipped') ORDER BY seq LIMIT ?`, goalID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("goal: open tasks: %w", err)
+	}
+	defer rows.Close()
+	tasks := make([]Task, 0, min(limit, 16))
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, *task)
+	}
+	return tasks, rows.Err()
+}
+
 // SetTaskStatus updates a task's status. seq is 1-based
 // (matches ListTasks display). Returns ErrNotFound if
 // the (goalID, seq) pair has no row.
