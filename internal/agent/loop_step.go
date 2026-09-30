@@ -313,14 +313,12 @@ func (l *Loop) runStep(
 		// F9 Sisyphus: when ultrawork is on AND
 		// the active /goal still has unfinished
 		// tasks, re-prompt the model instead of
-		// emitting DoneEvent. The reminder becomes
-		// a system message in the conversation so
-		// the next iteration of the loop sees it.
+		// emitting DoneEvent. Keep only the latest reminder
+		// in the request tail; it must not become a permanent
+		// instruction in subsequent user turns.
 		if l.ultraworkMode && l.ultraworkSisyphus != nil {
 			if should, msg := l.ultraworkSisyphus.ShouldContinue(ctx); should {
-				sys := llm.Message{Role: llm.RoleSystem, Content: msg}
-				l.Messages = append(l.Messages, sys)
-				l.persist(ctx, sys)
+				l.ultraworkReminder = msg
 				// SisyphusEvent uses a separate Hit
 				// counter (1-indexed) so the TUI can
 				// label it "Sisyphus #1/3" without
