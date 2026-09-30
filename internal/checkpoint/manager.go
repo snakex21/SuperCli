@@ -62,6 +62,8 @@ type Manager struct {
 	mu               sync.Mutex
 	home, repo, meta string
 	excludes         string
+	excludedDataRel  string
+	repoReady        bool
 	records          []Record
 }
 
@@ -73,8 +75,12 @@ func Open(home, dataDir string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	dataAbs, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	h := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
-	root := filepath.Join(dataDir, "checkpoints", hex.EncodeToString(h[:8]))
+	root := filepath.Join(dataAbs, "checkpoints", hex.EncodeToString(h[:8]))
 	m := &Manager{home: abs, repo: filepath.Join(root, "objects.git"), meta: filepath.Join(root, "turns.json")}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
@@ -83,10 +89,15 @@ func Open(home, dataDir string) (*Manager, error) {
 	if rel, relErr := filepath.Rel(abs, root); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		excludes += filepath.ToSlash(rel) + "/\n"
 	}
+	if rel, relErr := filepath.Rel(abs, dataAbs); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		m.excludedDataRel = filepath.ToSlash(rel)
+		excludes += "/" + escapeExcludePath(m.excludedDataRel) + "/\n"
+	}
 	m.excludes = excludes
 	if data, err := os.ReadFile(m.meta); err == nil {
 		_ = json.Unmarshal(data, &m.records)
 	}
+	m.filterApplicationDataRecords()
 	return m, nil
 }
 
