@@ -89,6 +89,17 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 		return Result{Err: fmt.Errorf("search_code: %w", err)}, nil
 	}
 
+	// The resolver returns canonical targets. Match their coordinate system
+	// for display, once per call rather than once per hit. Copy the tool so
+	// concurrent calls and the caller's public WorkDir remain unchanged.
+	if base, absErr := filepath.Abs(s.WorkDir); absErr == nil {
+		if canonical, resolveErr := filepath.EvalSymlinks(base); resolveErr == nil {
+			local := *s
+			local.WorkDir = canonical
+			s = &local
+		}
+	}
+
 	radius := 0
 	if a.Context != nil {
 		radius = *a.Context

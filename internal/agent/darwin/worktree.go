@@ -54,9 +54,9 @@ func NewWorktreeManager(base string) *WorktreeManager {
 // NewWorktreeManager. Always non-empty.
 func (m *WorktreeManager) Base() string { return m.base }
 
-// HasGit reports whether base is inside a git
-// working tree. The check is `git rev-parse
-// --show-toplevel`; non-zero exit means "no".
+// HasGit reports whether base names a git working-tree root. A descendant
+// alone is not sufficient: worktree operations must stay rooted at base.
+// The check is `git rev-parse --show-toplevel`; non-zero exit means "no".
 func (m *WorktreeManager) HasGit() bool {
 	if m == nil || m.base == "" {
 		return false
@@ -71,10 +71,14 @@ func (m *WorktreeManager) HasGit() bool {
 	if top == "" {
 		return false
 	}
-	// Resolve both paths to absolute for comparison.
-	want, _ := filepath.Abs(m.base)
-	got, _ := filepath.Abs(top)
-	return filepath.Clean(want) == filepath.Clean(got)
+	// Git may expand symlinks, junctions, or Windows short names. Compare
+	// directory identity instead of spelling, without changing the public base.
+	want, err := os.Stat(m.base)
+	if err != nil || !want.IsDir() {
+		return false
+	}
+	got, err := os.Stat(top)
+	return err == nil && got.IsDir() && os.SameFile(want, got)
 }
 
 // Create makes a new worktree on a fresh branch

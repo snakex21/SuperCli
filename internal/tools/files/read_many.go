@@ -227,7 +227,13 @@ func displayGlobMatch(baseDir, pattern, match string) string {
 	if err != nil {
 		return match
 	}
-	rel, err := filepath.Rel(absBase, match)
+	// Glob matches have already passed through the canonical path resolver.
+	// Use the same spelling for the base before producing round-trip reads.
+	canonicalBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		return match
+	}
+	rel, err := filepath.Rel(canonicalBase, match)
 	if err != nil {
 		return match
 	}
