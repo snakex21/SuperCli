@@ -27,6 +27,9 @@ func TestMoveTool_Rename(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}
+	if res.Text != "Moved a.txt -> b.txt" {
+		t.Fatalf("direct destination result changed: %q", res.Text)
+	}
 	if _, err := os.Stat(filepath.Join(dir, "b.txt")); err != nil {
 		t.Errorf("renamed file missing: %v", err)
 	}
@@ -43,6 +46,9 @@ func TestMoveTool_IntoFolder(t *testing.T) {
 	res := runMove(t, tool, `{"src":"a.txt","dest":"archive"}`)
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	if res.Text != "Moved a.txt -> archive/a.txt" {
+		t.Fatalf("result lost actual moved path: %q", res.Text)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "archive", "a.txt")); err != nil {
 		t.Errorf("file not moved into folder: %v", err)
@@ -117,5 +123,32 @@ func TestMoveTool_Spec(t *testing.T) {
 	}
 	if spec.Fn == nil {
 		t.Error("Fn is nil")
+	}
+}
+
+func TestMoveTool_FolderIntoFolderReportsFinalPath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "src", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "sub", "a.txt"), []byte("moved"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "archive"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res := runMove(t, NewMove(dir), `{"src":"src","dest":"archive/"}`)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if res.Text != "Moved src -> archive/src" {
+		t.Fatalf("result lost actual moved directory: %q", res.Text)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "archive", "src", "sub", "a.txt"))
+	if err != nil || string(got) != "moved" {
+		t.Fatalf("move destination content = %q, error = %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "src")); !os.IsNotExist(err) {
+		t.Fatalf("source directory still present after move: %v", err)
 	}
 }

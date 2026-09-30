@@ -116,6 +116,13 @@ func TestCompactFactsResultBoundaries(t *testing.T) {
 		{"filename is not status", "patch_file", "{\"path\":\"changed=true .go\"}", "Patched changed=true .go: replacements=1 changed=false before_hash=a after_hash=a", "files_referenced: changed=true .go"},
 		{"dry run", "edit_docx", "{\"path\":\"draft.docx\",\"dry_run\":true}", "Preview only: would replace text. Nothing was written.", "files_referenced: draft.docx"},
 		{"word noop", "edit_docx", "{\"path\":\"draft.docx\"}", "p1 already contains the requested text. Nothing was changed.", "files_referenced: draft.docx"},
+		{"copy actual destination", "copy", `{"src":"a.go","dest":"out"}`, "Copied a.go -> out/a.go", "files_modified: out/a.go"},
+		{"move actual destination", "move", `{"src":"a.go","dest":"out"}`, "Moved a.go -> out/a.go", "files_modified: a.go, out/a.go"},
+		{"legacy direct copy result", "copy", `{"src":"a.go","dest":"b.go"}`, "Copied a.go -> b.go", "files_modified: b.go"},
+		{"copy source contains arrow", "copy", `{"src":"a -> b.go","dest":"out"}`, "Copied a -> b.go -> out/a -> b.go", "files_modified: out/a -> b.go"},
+		{"copy mismatched source", "copy", `{"src":"a.go","dest":"out"}`, "Copied different.go -> out/a.go", "files_referenced: out"},
+		{"copy missing destination", "copy", `{"src":"a.go","dest":"out"}`, "Copied a.go -> ", "files_referenced: out"},
+		{"pruned copy", "copy", `{"src":"a.go","dest":"out"}`, "[tool result pruned: copy; details omitted]", "files_referenced: out"},
 		{"directory", "list_dir", "{\"path\":\"src\"}", "one.go\ntwo.go", ""},
 		{"search root", "search_code", "{\"path\":\"src\"}", "src/main.go:1:package main", ""},
 		{"unknown extension", "edit_network", "{\"path\":\"src\"}", "done", ""},
@@ -201,5 +208,52 @@ func TestCompactFactsReadManyPreview(t *testing.T) {
 	history[1].Content = pruneMarker(history[1])
 	if got := CompactFacts(history, nil); got != "" {
 		t.Fatalf("pruned mixed batch invented per-file outcomes: %s", got)
+	}
+}
+
+func TestCompactFactsTransferIntoFolderRetainsExecutedDestination(t *testing.T) {
+	for _, name := range []string{"copy", "move"} {
+		for _, wrapped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/wrapped=%t", name, wrapped), func(t *testing.T) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package fixture\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(filepath.Join(root, "out"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				reg := tools.NewRegistry()
+				reg.MustRegister(tools.NewCopy(root).Spec())
+				reg.MustRegister(tools.NewMove(root).Spec())
+				args := json.RawMessage(`{"src":"a.go","dest":"out"}`)
+				result, err := reg.Execute(context.Background(), name, args)
+				if err != nil || result.Err != nil {
+					t.Fatalf("transfer failed: %v %v", err, result.Err)
+				}
+				got, err := os.ReadFile(filepath.Join(root, "out", "a.go"))
+				if err != nil || string(got) != "package fixture\n" {
+					t.Fatalf("executed destination content = %q, error = %v", got, err)
+				}
+				call := llm.ToolCall{ID: "transfer", Name: name, Arguments: string(args)}
+				if wrapped {
+					envelope, err := json.Marshal(map[string]any{"tool": name, "args": args})
+					if err != nil {
+						t.Fatal(err)
+					}
+					call.Name, call.Arguments = "invoke_tool", string(envelope)
+				}
+				history := []llm.Message{
+					{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+					{Role: llm.RoleTool, Name: call.Name, ToolCallID: call.ID, Content: core.NewOutputStore().ModelContent(name, result)},
+				}
+				want := "files_modified: out/a.go"
+				if name == "move" {
+					want = "files_modified: a.go, out/a.go"
+				}
+				if got := strings.TrimSpace(CompactFacts(history, nil)); got != want {
+					t.Fatalf("retained destination = %q; want %q", got, want)
+				}
+			})
+		}
 	}
 }

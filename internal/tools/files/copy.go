@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"supercli/internal/tools/fileops"
 	"supercli/internal/tools/sandbox"
@@ -69,8 +70,15 @@ func (t *Copy) execute(ctx context.Context, args json.RawMessage) (Result, error
 	if err != nil {
 		return Result{Err: fmt.Errorf("copy: dest: %w", err)}, nil
 	}
-	if _, err := fileops.CopyContext(ctx, srcFull, dstFull); err != nil {
+	finalDst, err := fileops.CopyContext(ctx, srcFull, dstFull)
+	if err != nil {
 		return Result{Err: fmt.Errorf("copy: %w", err)}, nil
 	}
-	return Result{Text: fmt.Sprintf("Copied %s -> %s", a.Src, a.Dest)}, nil
+	// Keep the requested spelling for direct targets, but report the actual
+	// child path when the filesystem copied into an existing folder.
+	dest := a.Dest
+	if finalDst != dstFull {
+		dest = filepath.ToSlash(filepath.Join(a.Dest, filepath.Base(finalDst)))
+	}
+	return Result{Text: fmt.Sprintf("Copied %s -> %s", a.Src, dest)}, nil
 }
