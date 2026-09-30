@@ -2,6 +2,7 @@ package fileops
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -154,6 +155,20 @@ func consumeLineWindow(ctx context.Context, r *bufio.Reader, from, to, maxLineBy
 	var out []LineRange
 	var content []byte
 	lineNo, completed, lineBytes := 1, 0, 0
+	if from > 1 {
+		var err error
+		completed, err = skipLinePrefix(ctx, r, from-1)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if eof != nil {
+					*eof = true
+				}
+				return nil, completed, nil
+			}
+			return nil, completed, err
+		}
+		lineNo = completed + 1
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return out, completed, err
@@ -210,6 +225,42 @@ func consumeLineWindow(ctx context.Context, r *bufio.Reader, from, to, maxLineBy
 			return out, completed, nil
 		}
 	}
+}
+
+// Skip unrequested lines by buffer, without decoding or retaining their text.
+// A partial final line counts only at EOF; each refill keeps cancellation bounded.
+func skipLinePrefix(ctx context.Context, r *bufio.Reader, count int) (completed int, err error) {
+	partial := false
+	for completed < count {
+		if err := ctx.Err(); err != nil {
+			return completed, err
+		}
+		if r.Buffered() == 0 {
+			if _, err := r.Peek(1); err != nil {
+				if errors.Is(err, io.EOF) && partial {
+					completed++
+				}
+				return completed, err
+			}
+			if err := ctx.Err(); err != nil {
+				return completed, err
+			}
+		}
+		block, _ := r.Peek(r.Buffered())
+		lines := bytes.Count(block, []byte{'\n'})
+		if lines >= count-completed {
+			end := 0
+			for remaining := count - completed; remaining > 0; remaining-- {
+				end += bytes.IndexByte(block[end:], '\n') + 1
+			}
+			_, _ = r.Discard(end)
+			return count, nil
+		}
+		partial = block[len(block)-1] != '\n'
+		_, _ = r.Discard(len(block))
+		completed += lines
+	}
+	return completed, nil
 }
 
 func validateLineRange(from, to int) error {
