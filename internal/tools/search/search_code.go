@@ -193,13 +193,7 @@ func (s *SearchCode) rgPath() string {
 	return ""
 }
 
-func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max int, previews ...*searchContext) (Result, error) {
-	// rg's --max-count is PER FILE, while the tool contract is a
-	// GLOBAL cap. The pipe reader below enforces the real limit:
-	// it stops after `max` surviving matches and kills rg, so a
-	// query hitting thousands of files never buffers the full
-	// output in RAM (cmd.Output() used to load everything before
-	// trimming to `max` lines).
+func (s *SearchCode) ripgrepCommand(ctx context.Context, rg, root, query string, max int, previews ...*searchContext) *exec.Cmd {
 	args := []string{"--no-heading", "--with-filename", "--color=never", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
 	if len(previews) > 0 && previews[0] != nil {
 		args = append(args, "--null")
@@ -213,23 +207,38 @@ func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max in
 	}
 	sort.Strings(dirs)
 	for _, dir := range dirs {
-		args = append(args, "-g", "!"+dir+"/**")
+		// Prune descendants before rg reads them, using the same recursive,
+		// case-insensitive directory policy as searchPathIsSkipped. Keep the
+		// user's positive --glob case-sensitive.
+		args = append(args, "--iglob", "!**/"+dir+"/**")
 	}
 	if !pathContainsAgentWorktree(root) {
 		args = append(args, "--iglob", "!**/.claude/worktrees/**")
 	}
 	args = append(args, "--", query, root)
 
+	cmd := exec.CommandContext(ctx, rg, args...)
+	childproc.HideWindow(cmd)
+	// rg applies globs relative to its working directory. Anchor them at
+	// the requested root so an explicitly selected build/.tmp checkout is
+	// searchable even when one of its ancestors has an excluded name.
+	cmd.Dir = root
+	if info, e := os.Stat(root); e == nil && !info.IsDir() {
+		cmd.Dir = filepath.Dir(root)
+	}
+	return cmd
+}
+
+func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max int, previews ...*searchContext) (Result, error) {
+	// rg's --max-count is PER FILE, while the tool contract is a
+	// GLOBAL cap. The pipe reader below enforces the real limit:
+	// it stops after `max` surviving matches and kills rg, so a
+	// query hitting thousands of files never buffers the full
+	// output in RAM (cmd.Output() used to load everything before
+	// trimming to `max` lines).
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, rg, args...)
-	childproc.HideWindow(cmd)
-	if len(previews) > 0 && previews[0] != nil && previews[0].include != nil {
-		cmd.Dir = root
-		if info, e := os.Stat(root); e == nil && !info.IsDir() {
-			cmd.Dir = filepath.Dir(root)
-		}
-	}
+	cmd := s.ripgrepCommand(runCtx, rg, root, query, max, previews...)
 	stderr := core.NewHeadTailBuffer(2048, 1024)
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()
