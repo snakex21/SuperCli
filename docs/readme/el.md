@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.0
+# SuperCli 1.0.1
 
 <!-- readme-unit:intro -->
 Ένας φορητός πράκτορας AI για προγραμματισμό, γραμμένος σε Go, με διεπαφή τερματικού (TUI), επιτραπέζια/διαδικτυακή διεπαφή (GUI) και λειτουργία δέσμης που μοιράζονται μία μηχανή.
 
 <!-- readme-unit:status -->
-Αυτό το README περιγράφει την έκδοση `1.0.0`. Τα φορητά πακέτα διανέμονται μέσω του [GitHub Releases](https://github.com/snakex21/SuperCli/releases)· μια τοπική μεταγλώττιση δεν σημαίνει ότι η έκδοσή της έχει ήδη δημοσιευτεί.
+Αυτό το README περιγράφει την έκδοση `1.0.1`. Τα φορητά πακέτα διανέμονται μέσω του [GitHub Releases](https://github.com/snakex21/SuperCli/releases)· μια τοπική μεταγλώττιση δεν σημαίνει ότι η έκδοσή της έχει ήδη δημοσιευτεί.
 
 <!-- readme-unit:h.screenshots -->
 ## Στιγμιότυπα οθόνης

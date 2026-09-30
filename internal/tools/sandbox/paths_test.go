@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,7 +93,7 @@ func TestResolveSafe_SymlinkEscape(t *testing.T) {
 	outside := t.TempDir()
 	// Create a symlink inside home pointing outside.
 	link := filepath.Join(home, "evil")
-	if err := symlinkLink(outside, link); err != nil {
+	if err := os.Symlink(outside, link); err != nil {
 		t.Skipf("symlink not supported: %v", err)
 	}
 	_, err := ResolveSafe(home, "evil")

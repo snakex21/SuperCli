@@ -48,7 +48,7 @@ func (p *writingThenFailProvider) Complete(_ context.Context, _ []llm.Message, _
 
 func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	dir := t.TempDir()
-	eng, err := NewEngine(echoConfig(), dir, dir)
+	eng, err := NewEngine(echoConfig(), dir, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 
 func TestWebTurnReportsFileChangesWhenProviderFailsAfterWrite(t *testing.T) {
 	dir := t.TempDir()
-	eng, err := NewEngine(echoConfig(), dir, dir)
+	eng, err := NewEngine(echoConfig(), dir, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

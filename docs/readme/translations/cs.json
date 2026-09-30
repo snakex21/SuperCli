@@ -1,6 +1,6 @@
 [
   "Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.",
-  "Tento README popisuje verzi `1.0.0`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases]({releases}); místní sestavení neznamená, že příslušná verze již byla zveřejněna.",
+  "Tento README popisuje verzi `1.0.1`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases]({releases}); místní sestavení neznamená, že příslušná verze již byla zveřejněna.",
   "Snímky obrazovky",
   "![Webové rozhraní SuperCli (GUI)]({guishot})",
   "![Centrum akcí v terminálu SuperCli (TUI)]({tuishot})",
