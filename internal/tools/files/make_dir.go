@@ -62,7 +62,7 @@ func (t *MakeDir) execute(ctx context.Context, args json.RawMessage) (Result, er
 	if err != nil {
 		return Result{Err: fmt.Errorf("make_dir: %w", err)}, nil
 	}
-	created, err := fileops.MakeDir(full)
+	created, err := fileops.MakeDirContext(ctx, full)
 	if err != nil {
 		return Result{Err: fmt.Errorf("make_dir: %w", err)}, nil
 	}

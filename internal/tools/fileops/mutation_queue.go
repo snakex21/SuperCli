@@ -1,6 +1,7 @@
 package fileops
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -8,12 +9,11 @@ import (
 	"sync"
 )
 
-// mutationPathLock serializes mutations of one canonical filesystem path.
-// refs includes holders and waiters, so entries can be removed without racing
-// a goroutine that has found the entry but has not acquired its mutex yet.
+// refs covers both holders and waiters. The semaphore allows a canceled waiter
+// to leave without waiting for the current filesystem mutation to finish.
 type mutationPathLock struct {
-	mu   sync.Mutex
-	refs int
+	token chan struct{}
+	refs  int
 }
 
 var mutationPaths = struct {
@@ -21,17 +21,25 @@ var mutationPaths = struct {
 	locks map[string]*mutationPathLock
 }{locks: make(map[string]*mutationPathLock)}
 
-// LockMutationPaths serializes mutations touching the supplied paths. Paths
-// are canonicalized, deduplicated and locked in lexical order, which makes
-// multi-path operations such as move and copy deadlock-free.
-//
-// The queue is process-wide on purpose: parent and delegated agents use
-// separate tool instances but share the same filesystem. Unrelated paths do
-// not block one another, and the map entry disappears after the last waiter.
+// LockMutationPaths is the non-cancelable compatibility form.
 func LockMutationPaths(paths ...string) func() {
+	release, _ := LockMutationPathsContext(context.Background(), paths...)
+	return release
+}
+
+// LockMutationPathsContext serializes canonical paths in lexical order. Parent
+// and worker tools share this queue; unrelated paths remain independent. On
+// cancellation it releases any acquired paths and every waiter reference.
+func LockMutationPathsContext(ctx context.Context, paths ...string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	keys := make([]string, 0, len(paths))
 	seen := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if path == "" {
 			continue
 		}
@@ -43,27 +51,21 @@ func LockMutationPaths(paths ...string) func() {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-
 	locks := make([]*mutationPathLock, len(keys))
 	mutationPaths.Lock()
 	for i, key := range keys {
 		lock := mutationPaths.locks[key]
 		if lock == nil {
-			lock = &mutationPathLock{}
+			lock = &mutationPathLock{token: make(chan struct{}, 1)}
 			mutationPaths.locks[key] = lock
 		}
 		lock.refs++
 		locks[i] = lock
 	}
 	mutationPaths.Unlock()
-
-	for _, lock := range locks {
-		lock.mu.Lock()
-	}
-
-	return func() {
-		for i := len(locks) - 1; i >= 0; i-- {
-			locks[i].mu.Unlock()
+	release := func(acquired int) {
+		for i := acquired - 1; i >= 0; i-- {
+			<-locks[i].token
 		}
 		mutationPaths.Lock()
 		for i, key := range keys {
@@ -74,6 +76,23 @@ func LockMutationPaths(paths ...string) func() {
 		}
 		mutationPaths.Unlock()
 	}
+	for i, lock := range locks {
+		select {
+		case <-ctx.Done():
+			release(i)
+			return nil, ctx.Err()
+		case lock.token <- struct{}{}:
+		}
+		if err := ctx.Err(); err != nil {
+			release(i + 1)
+			return nil, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		release(len(locks))
+		return nil, err
+	}
+	return func() { release(len(locks)) }, nil
 }
 
 func canonicalMutationPath(path string) string {

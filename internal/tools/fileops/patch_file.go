@@ -1,6 +1,7 @@
 package fileops
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -110,13 +111,21 @@ func FileSHA256(path string) (string, error) {
 // expected_count of 0 is treated as 1. The number of non-overlapping
 // occurrences of Old must match ExpectedCount exactly.
 func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult, error) {
+	return PatchFileContext(context.Background(), path, changes, baseHash)
+}
+
+// PatchFileContext abandons canceled queued edits before reading or writing.
+func PatchFileContext(ctx context.Context, path string, changes []PatchChange, baseHash string) (PatchResult, error) {
 	if path == "" {
 		return PatchResult{}, fmt.Errorf("fileops.PatchFile: empty path")
 	}
 	if len(changes) == 0 {
 		return PatchResult{}, fmt.Errorf("fileops.PatchFile: changes is empty")
 	}
-	release := LockMutationPaths(path)
+	release, err := LockMutationPathsContext(ctx, path)
+	if err != nil {
+		return PatchResult{}, err
+	}
 	defer release()
 
 	data, err := os.ReadFile(path)
@@ -188,6 +197,9 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 			Empty:        len(afterData) == 0,
 		}, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return PatchResult{}, err
+	}
 	if err := os.WriteFile(path, afterData, 0o644); err != nil {
 		return PatchResult{}, FileErr(err, path)
 	}
@@ -221,16 +233,27 @@ func PatchFile(path string, changes []PatchChange, baseHash string) (PatchResult
 // (O_CREATE|O_EXCL). On write failure after create, the incomplete file
 // is removed.
 func CreateFileExclusive(path, content string) error {
+	return CreateFileExclusiveContext(context.Background(), path, content)
+}
+
+// CreateFileExclusiveContext does not start a canceled queued create.
+func CreateFileExclusiveContext(ctx context.Context, path, content string) error {
 	if path == "" {
 		return fmt.Errorf("fileops.CreateFileExclusive: empty path")
 	}
-	release := LockMutationPaths(path)
+	release, err := LockMutationPathsContext(ctx, path)
+	if err != nil {
+		return err
+	}
 	defer release()
 
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return FileErr(err, dir)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {

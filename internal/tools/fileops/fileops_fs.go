@@ -10,6 +10,7 @@
 package fileops
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -36,10 +37,18 @@ type WriteResult struct {
 // sandbox.ResolveSafe BEFORE calling this, exactly as ctx_execute
 // does — keeping the safety boundary in one place (the tool).
 func WriteFile(path, content string) (WriteResult, error) {
+	return WriteFileContext(context.Background(), path, content)
+}
+
+// WriteFileContext lets canceled requests leave the mutation queue.
+func WriteFileContext(ctx context.Context, path, content string) (WriteResult, error) {
 	if path == "" {
 		return WriteResult{}, fmt.Errorf("fileops.WriteFile: empty path")
 	}
-	release := LockMutationPaths(path)
+	release, err := LockMutationPathsContext(ctx, path)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	defer release()
 	// Overwriting a binary file with text destroys it irrecoverably (no
 	// backup is taken here), and writing text to a path NAMED like a
@@ -60,6 +69,9 @@ func WriteFile(path, content string) (WriteResult, error) {
 			return WriteResult{}, FileErr(err, dir)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return WriteResult{}, err
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return WriteResult{}, FileErr(err, path)
 	}
@@ -74,10 +86,18 @@ func WriteFile(path, content string) (WriteResult, error) {
 // Like WriteFile, the package stays pure: the sandbox boundary is
 // enforced by the calling tool via sandbox.ResolveSafe.
 func MakeDir(path string) (created bool, err error) {
+	return MakeDirContext(context.Background(), path)
+}
+
+// MakeDirContext lets canceled requests leave the mutation queue.
+func MakeDirContext(ctx context.Context, path string) (created bool, err error) {
 	if path == "" {
 		return false, fmt.Errorf("fileops.MakeDir: empty path")
 	}
-	release := LockMutationPaths(path)
+	release, err := LockMutationPathsContext(ctx, path)
+	if err != nil {
+		return false, err
+	}
 	defer release()
 	if info, statErr := os.Stat(path); statErr == nil {
 		if !info.IsDir() {
@@ -104,10 +124,18 @@ func MakeDir(path string) (created bool, err error) {
 // move-into-folder adjustment) so the caller can report it.
 // Pure: the sandbox is enforced by the tool on BOTH src and dst.
 func Move(src, dst string) (finalDst string, err error) {
+	return MoveContext(context.Background(), src, dst)
+}
+
+// MoveContext lets canceled requests leave the mutation queue.
+func MoveContext(ctx context.Context, src, dst string) (finalDst string, err error) {
 	if src == "" || dst == "" {
 		return "", fmt.Errorf("fileops.Move: src and dst are required")
 	}
-	release := LockMutationPaths(src, dst)
+	release, err := LockMutationPathsContext(ctx, src, dst)
+	if err != nil {
+		return "", err
+	}
 	defer release()
 	if _, err := os.Lstat(src); err != nil {
 		return "", FileErr(err, src)
@@ -127,6 +155,9 @@ func Move(src, dst string) (finalDst string, err error) {
 			return "", fmt.Errorf("fileops.Move: mkdir parent: %w", err)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := os.Rename(src, dst); err != nil {
 		return "", fmt.Errorf("fileops.Move: %w", err)
 	}
@@ -142,10 +173,18 @@ func Move(src, dst string) (finalDst string, err error) {
 // Returns the final destination path used. Pure: the tool enforces
 // the sandbox on both src and dst.
 func Copy(src, dst string) (finalDst string, err error) {
+	return CopyContext(context.Background(), src, dst)
+}
+
+// CopyContext lets canceled requests leave the mutation queue.
+func CopyContext(ctx context.Context, src, dst string) (finalDst string, err error) {
 	if src == "" || dst == "" {
 		return "", fmt.Errorf("fileops.Copy: src and dst are required")
 	}
-	release := LockMutationPaths(src, dst)
+	release, err := LockMutationPathsContext(ctx, src, dst)
+	if err != nil {
+		return "", err
+	}
 	defer release()
 	srcInfo, err := os.Lstat(src)
 	if err != nil {
@@ -226,10 +265,18 @@ func copyFileContents(src, dst string) error {
 // Returns the path the item was moved to. Pure: the tool resolves
 // src against the sandbox and supplies trashDir under home.
 func Trash(src, trashDir string, now time.Time) (dst string, err error) {
+	return TrashContext(context.Background(), src, trashDir, now)
+}
+
+// TrashContext lets canceled requests leave the mutation queue.
+func TrashContext(ctx context.Context, src, trashDir string, now time.Time) (dst string, err error) {
 	if src == "" {
 		return "", fmt.Errorf("fileops.Trash: empty path")
 	}
-	release := LockMutationPaths(src, trashDir)
+	release, err := LockMutationPathsContext(ctx, src, trashDir)
+	if err != nil {
+		return "", err
+	}
 	defer release()
 	if _, err := os.Lstat(src); err != nil {
 		return "", FileErr(err, src)
@@ -245,6 +292,9 @@ func Trash(src, trashDir string, now time.Time) (dst string, err error) {
 			break
 		}
 		dst = filepath.Join(trashDir, fmt.Sprintf("%s-%d_%s", stamp, i, base))
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	if err := os.Rename(src, dst); err != nil {
 		return "", fmt.Errorf("fileops.Trash: %w", err)

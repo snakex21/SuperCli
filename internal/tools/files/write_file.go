@@ -68,7 +68,7 @@ func (t *WriteFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if err != nil {
 		return Result{Err: fmt.Errorf("write_file: %w", err)}, nil
 	}
-	res, err := fileops.WriteFile(full, a.Content)
+	res, err := fileops.WriteFileContext(ctx, full, a.Content)
 	if err != nil {
 		return Result{Err: fmt.Errorf("write_file: %w", err)}, nil
 	}

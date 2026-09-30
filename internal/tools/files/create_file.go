@@ -56,7 +56,7 @@ func (t *CreateFile) execute(ctx context.Context, args json.RawMessage) (Result,
 	if err != nil {
 		return Result{Err: fmt.Errorf("create_file: %w", err)}, nil
 	}
-	if err := fileops.CreateFileExclusive(full, a.Content); err != nil {
+	if err := fileops.CreateFileExclusiveContext(ctx, full, a.Content); err != nil {
 		return Result{Err: fmt.Errorf("create_file: %w", err)}, nil
 	}
 	return Result{Text: fmt.Sprintf("Created %s (%d bytes)", a.Path, len(a.Content)), EmptyFileExpected: a.Content == ""}, nil

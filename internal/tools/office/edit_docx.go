@@ -202,7 +202,10 @@ func (t *EditDocxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		err = fmt.Errorf("edit_docx: %w", err)
 		return Result{Err: err}, err
 	}
-	release := fileops.LockMutationPaths(full)
+	release, err := fileops.LockMutationPathsContext(ctx, full)
+	if err != nil {
+		return Result{Err: err}, err
+	}
 	defer release()
 	return t.executeResolved(full, p)
 }
