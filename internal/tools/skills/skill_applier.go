@@ -51,18 +51,16 @@ func NewSkillApplier(d *Discoverer) *SkillApplier {
 // model can call it in any turn.
 func (s *SkillApplier) Spec() Tool {
 	return Tool{
-		Name: "apply_skill",
-		ReadOnly: true,
-		Description: "Search or activate an installed skill. Pass query to find " +
-			"matching skills without loading their bodies; then pass name to apply " +
-			"one. Applied guidance is returned once as an append-only tool result " +
-			"and remains in conversation context.",
+		Name:        "apply_skill",
+		ReadOnly:    true,
+		Description: "Apply by name, or query with auto=true to select and load a clear match in one call. Ambiguous queries return metadata only.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"name": {"type": "string", "description": "exact skill name to apply"},
 				"query": {"type": "string", "description": "keywords to search when the name is unknown"},
-				"limit": {"type": "integer", "default": 5, "maximum": 10}
+				"limit": {"type": "integer", "default": 5, "maximum": 10},
+				"auto": {"type": "boolean", "description": "apply a clear query match; otherwise list candidates"}
 			}
 		}`,
 		Fn: s.execute,
@@ -74,6 +72,7 @@ type applyArgs struct {
 	Name  string `json:"name"`
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
+	Auto  bool   `json:"auto"`
 }
 
 // execute either searches metadata or resolves one skill and returns its
@@ -89,8 +88,12 @@ func (s *SkillApplier) execute(_ context.Context, args json.RawMessage) (Result,
 		if query == "" {
 			return Result{Err: fmt.Errorf("apply_skill: provide name to apply or query to search")}, nil
 		}
-		return s.search(query, a.Limit)
+		return s.search(query, a.Limit, a.Auto)
 	}
+	return s.apply(name)
+}
+
+func (s *SkillApplier) apply(name string) (Result, error) {
 	s.mu.Lock()
 	if guidance, ok := s.content[name]; ok {
 		detail := s.details[name]
@@ -127,10 +130,26 @@ func appliedSkillResult(name, path, risk, guidance string, sourceBytes int) stri
 	)
 }
 
-func (s *SkillApplier) search(query string, limit int) (Result, error) {
-	hits, err := s.discoverer.Search(query, limit)
+func (s *SkillApplier) search(query string, limit int, auto bool) (Result, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 10 {
+		limit = 10
+	}
+	searchLimit := limit
+	if auto && searchLimit < 2 {
+		searchLimit = 2
+	}
+	hits, err := s.discoverer.Search(query, searchLimit)
 	if err != nil {
 		return Result{Err: fmt.Errorf("apply_skill: search: %w", err)}, nil
+	}
+	if auto && clearSkillMatch(query, hits) {
+		return s.apply(hits[0].Name)
+	}
+	if len(hits) > limit {
+		hits = hits[:limit]
 	}
 	type match struct {
 		Name        string `json:"name"`

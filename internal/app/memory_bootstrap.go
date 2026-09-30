@@ -91,6 +91,9 @@ func registerMemoryTools(registry *tools.Registry, b memoryBundle) {
 // execution profile. ThinTools decides which of these carry a full
 // schema vs catalog entry; small_full_tools is the escape hatch.
 func applyAlwaysOnToolProfile(registry *tools.Registry, coordinatorMode, thinTools bool) {
+	// Keep skill discovery visible in every execution profile. Thin mode carries
+	// only its compact catalog entry, not all skill bodies or a full schema.
+	registry.MarkAlwaysOn("apply_skill")
 	if coordinatorMode {
 		registry.MarkAlwaysOn("ask_user")
 		registry.MarkAlwaysOn("tool_search")
@@ -115,7 +118,6 @@ func applyAlwaysOnToolProfile(registry *tools.Registry, coordinatorMode, thinToo
 	registry.MarkAlwaysOn("ask_user")
 	registry.MarkAlwaysOn("tool_search")
 	registry.MarkAlwaysOn("invoke_tool")
-	registry.MarkAlwaysOn("apply_skill")
 	// darwin is deliberately NOT always-on: its schema (~277 tok)
 	// is a heavy always-on prefix that overlaps conceptually with
 	// task/orchestrator delegation. It stays reachable on demand

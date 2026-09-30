@@ -236,7 +236,7 @@ func startPostTUIShutdownTimer(dataDir string, d time.Duration) {
 // skills without requiring a running provider.
 func discoverSkillsForDoctor(home, dataDir string) []freshness.SkillEntry {
 	d := tools.NewDiscovererWithBuiltins(home, dataDir)
-	skills, err := d.Discover()
+	skills, _, err := d.List("", 0, int(^uint(0)>>1))
 	if err != nil {
 		return nil
 	}

@@ -37,6 +37,12 @@ func writeTestBuiltinPack(t *testing.T, dataDir string) {
 	if err == nil {
 		_, err = w.Write([]byte("# 007\nRun a careful security audit."))
 	}
+	if err == nil {
+		w, err = zw.Create("skills/unselected/SKILL.md")
+		if err == nil {
+			_, err = w.Write([]byte("Do not load this unrelated body."))
+		}
+	}
 	if closeErr := zw.Close(); err == nil {
 		err = closeErr
 	}
