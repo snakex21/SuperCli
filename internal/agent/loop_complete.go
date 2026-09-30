@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/system/stats"
 )
@@ -161,6 +162,7 @@ func (l *Loop) providerMessages() []llm.Message {
 // tail is never persisted as part of the user's transcript.
 func (l *Loop) trailingContext() string {
 	s := l.contextTail()
+
 	if l.finalReplyOnly {
 		return s + "\n\n[final reply only] The requested Word operation succeeded. " +
 			"Do not call or describe another tool. Briefly tell the user that the document is ready, include its path, and stop."
@@ -174,9 +176,17 @@ func (l *Loop) trailingContext() string {
 // contextTail keeps refreshed snapshots behind the conversation. Updating a
 // remembered fact must not invalidate the entire conversation prefix. Reuse
 // the existing trailing message so this adds no message or instruction wrapper.
+// The shared tail is also priced by the context-window estimator.
 func (l *Loop) contextTail() string {
-	if l.liveContext == "" {
-		return l.stampSection()
+	s := l.stampSection()
+	if l.liveContext != "" {
+		s = l.liveContext + "\n\n" + s
 	}
-	return l.liveContext + "\n\n" + l.stampSection()
+	if l.ultraworkMode {
+		s += ultrawork.SystemPromptSection()
+		if l.ultraworkReminder != "" {
+			s += "\n\n" + l.ultraworkReminder
+		}
+	}
+	return s
 }

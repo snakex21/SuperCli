@@ -192,6 +192,7 @@ type Loop struct {
 	ultraworkGates    *ultrawork.Wiring
 	ultraworkSisyphus *ultrawork.Sisyphus
 	ultraworkMode     bool
+	ultraworkReminder string // latest continuation, scoped to this Run
 
 	// F11 draft wiring. The bridge calls a cheap
 	// "draft" model before each verifier call when
@@ -717,6 +718,8 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	// channel closes. We do NOT silently fall back to
 	// non-ultrawork mode; the user asked for autonomy and
 	// the answer is "not yet, here's why".
+	l.ultraworkMode = false
+	l.ultraworkReminder = ""
 	if l.ultraworkGates != nil && ultrawork.Detect(prompt) {
 		res := ultrawork.CheckGates(l.ultraworkGates.Goal, l.ultraworkGates.Credit)
 		if !res.OK {
@@ -730,12 +733,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		if l.ultraworkSisyphus != nil {
 			l.ultraworkSisyphus.Reset()
 		}
-		sys := llm.Message{
-			Role:    llm.RoleSystem,
-			Content: ultrawork.SystemPromptSection(),
-		}
-		l.Messages = append(l.Messages, sys)
-		l.persist(ctx, sys)
+
 	} else {
 		// Either F9 is not wired or the keyword was
 		// absent. Either way, make sure ultraworkMode is
