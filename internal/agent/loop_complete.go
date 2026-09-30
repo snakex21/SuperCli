@@ -16,12 +16,12 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// context_prepare part 2: provider message assembly (visible
 	// view, thin preamble placement, freshness stamp).
 	msgStart := time.Now()
-	msgs := l.providerMessages()
+	msgs, messageEstimate := l.prepareProviderMessages(true)
 	// Calibrate against the same local projection used by the NEXT compaction
 	// check. Chat/advisor routes intentionally send a smaller history window;
 	// comparing that wire-only estimate with the full logical estimate on the
 	// next turn would manufacture a large delta that was never appended.
-	requestEstimate := estimateRequestTokens(msgs, toolDefs)
+	requestEstimate := messageEstimate + estimateRequestTokens(nil, toolDefs)
 	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
 	window := l.windowResolution()
 	hardThreshold := autoCompactThreshold(window.Tokens)
@@ -71,10 +71,24 @@ func (l *Loop) stampSection() string {
 }
 
 func (l *Loop) providerMessages() []llm.Message {
+	out, _ := l.prepareProviderMessages(false)
+	return out
+}
+
+// prepareProviderMessages optionally prices the exact request view as it is
+// assembled. Unchanged canonical history reuses the append-only estimate;
+// projected histories retain a full scan. The wire payload is identical.
+func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 	if l.route == RouteCoordinator {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
 		visible := l.mediaProviderView(l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages()))))
+		tokens := 0
+		cachedHistory := estimate && l.hidden == nil && len(visible) == len(l.Messages) &&
+			(len(visible) == 0 || &visible[0] == &l.Messages[0])
+		if cachedHistory {
+			tokens = l.EstimateVisibleTokens()
+		}
 		out := make([]llm.Message, 0, len(visible)+2)
 		// Thin tool protocol placement depends on stableToolset:
 		//
@@ -111,6 +125,9 @@ func (l *Loop) providerMessages() []llm.Message {
 			// purpose of the hoist in the first place.
 			leading := make([]string, 0, lead+1)
 			for _, msg := range visible[:lead] {
+				if cachedHistory {
+					tokens -= llm.EstimateMessageTokens(msg)
+				}
 				if text := messageDraftText(msg); text != "" {
 					leading = append(leading, text)
 				}
@@ -120,16 +137,28 @@ func (l *Loop) providerMessages() []llm.Message {
 			}
 			if len(leading) > 0 {
 				out = append(out, llm.Message{Role: llm.RoleSystem, Content: strings.Join(leading, "\n\n")})
+				if cachedHistory {
+					tokens += llm.EstimateMessageTokens(out[len(out)-1])
+				}
 			}
 			out = append(out, visible[lead:]...)
 		} else {
 			out = append(out, visible...)
 			if pre := l.thinToolsPreamble(); pre != "" {
 				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
+				if cachedHistory {
+					tokens += llm.EstimateMessageTokens(out[len(out)-1])
+				}
 			}
 		}
 		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
-		return out
+		if cachedHistory {
+			tokens += llm.EstimateMessageTokens(out[len(out)-1])
+		}
+		if estimate && !cachedHistory {
+			tokens = llm.EstimateTokens(out)
+		}
+		return out, tokens
 	}
 	visible := l.mediaProviderView(l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages()))))
 	system := chatOnlySystemPrompt
@@ -154,7 +183,10 @@ func (l *Loop) providerMessages() []llm.Message {
 	// renders this trailing system message in place as a
 	// <system-reminder> user turn.
 	out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
-	return out
+	if estimate {
+		return out, llm.EstimateTokens(out)
+	}
+	return out, 0
 }
 
 // trailingContext appends live context and freshness after the conversation.
