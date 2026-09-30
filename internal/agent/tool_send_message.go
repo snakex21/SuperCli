@@ -111,6 +111,8 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 	defer cancel()
 	w.setCancel(cancel)
 
+	invocation, _ := ctx.Value(workerInvocationKey{}).(workerInvocation)
+	w.Loop.verificationObserver = invocation.checks
 	events, err := w.Loop.Run(runCtx, prompt)
 	if err != nil {
 		w.clearCancel()

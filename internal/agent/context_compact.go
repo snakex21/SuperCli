@@ -21,6 +21,7 @@ func (l *Loop) Provider() llm.Provider {
 // session id). Hidden flags are reset.
 func (l *Loop) LoadConversation(msgs []llm.Message) {
 	l.conversationEpoch.Add(1)
+	l.failedChecks.reset()
 	l.resetModelContextBaseline()
 	keep := 0
 	for keep < len(l.Messages) && l.Messages[keep].Role == llm.RoleSystem {

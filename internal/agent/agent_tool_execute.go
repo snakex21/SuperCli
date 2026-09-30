@@ -223,7 +223,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		w.setState(func(w *Worker) { w.Model = prov.Name() })
 	}
 	if ar.Async {
-		a.startBackgroundWorker(w, workerPrompt, maxSteps)
+		a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps)
 		return tools.Result{Text: fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>

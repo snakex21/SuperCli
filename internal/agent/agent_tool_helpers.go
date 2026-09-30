@@ -171,7 +171,7 @@ const defaultAgentKind = "general"
 // task's advise:true flag (Task B). Registered by BuiltinSubAgents.
 const advisorAgentKind = "advisor"
 
-func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int) {
+func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, prompt string, maxSteps int) {
 	if w == nil {
 		return
 	}
@@ -179,6 +179,7 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 	if timeout <= 0 {
 		timeout = 30 * time.Second * time.Duration(maxSteps)
 	}
+	invocation, _ := parentCtx.Value(workerInvocationKey{}).(workerInvocation)
 	// Capture the original session binding while the parent still owns it.
 	parent := a.ParentLoop
 	var deliver func(context.Context, string)
@@ -191,6 +192,9 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		if invocation.checks != nil {
+			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{checks: invocation.checks})
+		}
 		text, err := runWorkerLoop(ctx, w, prompt)
 		if err != nil && text == "" {
 			text = err.Error()

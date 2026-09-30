@@ -7,18 +7,23 @@ import "context"
 type workerInvocation struct {
 	callID string
 	out    chan<- Event
+	checks func(verificationObservation)
 }
 type workerInvocationKey struct{}
 
-func withWorkerInvocation(ctx context.Context, callID string, out chan<- Event) context.Context {
-	return context.WithValue(ctx, workerInvocationKey{}, workerInvocation{callID, out})
+func withWorkerInvocation(ctx context.Context, callID string, out chan<- Event, checks ...func(verificationObservation)) context.Context {
+	invocation := workerInvocation{callID: callID, out: out}
+	if len(checks) > 0 {
+		invocation.checks = checks[0]
+	}
+	return context.WithValue(ctx, workerInvocationKey{}, invocation)
 }
 
 func workerProgressSink(ctx context.Context, w *Worker, run int) func(WorkerProgressEvent) {
 	invocation, current := ctx.Value(workerInvocationKey{}).(workerInvocation)
 	return func(ev WorkerProgressEvent) {
 		ev.TaskID, ev.Agent, ev.Run = w.ID, w.Agent, run
-		if current {
+		if current && invocation.out != nil {
 			ev.ParentCallID = invocation.callID
 			select {
 			case invocation.out <- ev:
