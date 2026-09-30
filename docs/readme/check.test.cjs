@@ -8,6 +8,8 @@ const original = render('en', file);
 
 test('all translations preserve technical literals and destinations', () => checkSources());
 test('canonical document passes', () => checkDocument('en', original, file));
+test('Windows checkout line endings preserve document parity', () => checkDocument('en', original.replaceAll('\n', '\r\n'), file));
+test('CRLF still rejects a changed code example', () => assert.throws(() => checkDocument('en', original.replace('go test ./...', 'go test ./cmd/...').replaceAll('\n', '\r\n'), file)));
 for (const [name, mutate] of [
   ['missing paragraph', value => value.replace(/<!-- readme-unit:intro -->\n[^\n]+\n\n/, '')],
   ['duplicate unit', value => `${value}\n<!-- readme-unit:intro -->\nRepeated content.\n`],

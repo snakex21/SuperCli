@@ -1,6 +1,6 @@
 [
   "Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.",
-  "See README kirjeldab versiooni `1.0.0`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases]({releases}) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.",
+  "See README kirjeldab versiooni `1.0.1`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases]({releases}) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.",
   "Kuvatõmmised",
   "![SuperCli veebiliides (GUI)]({guishot})",
   "![SuperCli terminali tegevuskeskus (TUI)]({tuishot})",

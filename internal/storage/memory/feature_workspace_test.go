@@ -7,8 +7,10 @@ import (
 
 func TestWorkspace_UpsertAndFind(t *testing.T) {
 	w := &Workspace{}
-	w.Upsert(Project{Name: "alpha", Path: `C:\work\alpha`})
-	w.Upsert(Project{Path: `C:\work\beta`}) // name derived from basename
+	root := t.TempDir()
+	alpha := filepath.Join(root, "alpha")
+	w.Upsert(Project{Name: "alpha", Path: alpha})
+	w.Upsert(Project{Path: filepath.Join(root, "beta")}) // name derived from basename
 
 	if len(w.Projects) != 2 {
 		t.Fatalf("want 2 projects, got %d", len(w.Projects))
@@ -17,7 +19,7 @@ func TestWorkspace_UpsertAndFind(t *testing.T) {
 		t.Errorf("derived name = %q, want beta", w.Projects[1].Name)
 	}
 	// Resolve by path, name, basename.
-	if _, ok := w.Get(`C:\work\alpha`); !ok {
+	if _, ok := w.Get(alpha); !ok {
 		t.Error("Get by path failed")
 	}
 	if _, ok := w.Get("ALPHA"); !ok {

@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.0
+# SuperCli 1.0.1
 
 <!-- readme-unit:intro -->
 Prenosný AI agent na programovanie napísaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimom zdieľajúcimi jeden engine.
 
 <!-- readme-unit:status -->
-Tento README opisuje verziu `1.0.0`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.
+Tento README opisuje verziu `1.0.1`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky

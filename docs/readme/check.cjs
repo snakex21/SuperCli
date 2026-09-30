@@ -38,6 +38,8 @@ function checkSources() {
 }
 
 function checkDocument(locale, content, file) {
+  // Git may check Markdown out with CRLF on Windows; compare its content.
+  content = content.replaceAll("\r\n", "\n");
   const englishFile = path.join(__dirname, 'en.md');
   const english = render('en', englishFile);
   assert.deepEqual(unitIds(content), ids, `${locale}: missing, duplicate, or reordered content units`);

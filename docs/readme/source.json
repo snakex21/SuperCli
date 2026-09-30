@@ -12,7 +12,7 @@
   },
   "text": [
     ["intro", "A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine."],
-    ["status", "This README describes version `1.0.0`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."],
+    ["status", "This README describes version `1.0.1`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."],
     ["h.screenshots", "Screenshots"],
     ["screenshot.gui", "![SuperCli web interface (GUI)]({guishot})"],
     ["screenshot.tui", "![SuperCli terminal action centre (TUI)]({tuishot})"],
@@ -68,7 +68,7 @@
     ["license", "SuperCli uses the [MIT License]({license}). Bundled dependencies and content have their own notices; see [third-party notices]({notices}) and the [skills guide]({skills})."]
   ],
   "blocks": [
-    {"type":"title", "text":"SuperCli 1.0.0"},
+    {"type":"title", "text":"SuperCli 1.0.1"},
     "intro", "status", "h.screenshots", "screenshot.gui", "screenshot.tui", "screenshots.more", "h.start", "start",
     {"type":"code","lang":"powershell","text":".\\supercli.exe\n.\\supercli-web.exe\n.\\supercli.exe --home \"D:\\projects\\example\"\n.\\supercli.exe --batch \"Summarize this project\"\n.\\supercli.exe --doctor"},
     "start.other",

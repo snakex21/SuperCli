@@ -1,6 +1,6 @@
 [
   "En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.",
-  "Denne README beskriver versjon `1.0.0`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
+  "Denne README beskriver versjon `1.0.1`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
   "Skjermbilder",
   "![SuperClis nettgrensesnitt (GUI)]({guishot})",
   "![SuperClis handlingssenter i terminalen (TUI)]({tuishot})",

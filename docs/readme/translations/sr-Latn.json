@@ -1,6 +1,6 @@
 [
   "Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfejsom (TUI), desktop/veb interfejsom (GUI) i paketnim režimom koji dele jedan mehanizam.",
-  "Ovaj README opisuje verziju `1.0.0`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
+  "Ovaj README opisuje verziju `1.0.1`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
   "Snimci ekrana",
   "![Veb interfejs SuperCli (GUI)]({guishot})",
   "![Centar radnji u terminalu SuperCli (TUI)]({tuishot})",

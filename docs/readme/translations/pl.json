@@ -1,6 +1,6 @@
 [
   "Przenośny agent AI do programowania napisany w Go, z interfejsem terminalowym (TUI), interfejsem desktopowym/webowym (GUI) i trybem wsadowym korzystającymi ze wspólnego silnika.",
-  "Ten README opisuje wersję `1.0.0`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
+  "Ten README opisuje wersję `1.0.1`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
   "Zrzuty ekranu",
   "![Interfejs webowy SuperCli (GUI)]({guishot})",
   "![Centrum działań w terminalu SuperCli (TUI)]({tuishot})",

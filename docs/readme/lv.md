@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.0
+# SuperCli 1.0.1
 
 <!-- readme-unit:intro -->
 Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.
 
 <!-- readme-unit:status -->
-Šis README apraksta versiju `1.0.0`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
+Šis README apraksta versiju `1.0.1`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrānuzņēmumi

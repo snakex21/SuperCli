@@ -2,6 +2,8 @@ package webgui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,6 +27,10 @@ func TestCasualHistoryStaysLightAcrossWebRequests(t *testing.T) {
 	t.Setenv("SUPERCLI_KEEP_THINKING", "")
 	ctx := context.Background()
 	home, data := t.TempDir(), t.TempDir()
+	// A project request has useful preflight only when the workspace has content.
+	if err := os.WriteFile(filepath.Join(home, "README.md"), []byte("# Test project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	eng, err := NewEngine(echoConfig(), home, data)
 	if err != nil {
 		t.Fatal(err)
