@@ -34,6 +34,18 @@ func TestMakeDirTool_Creates(t *testing.T) {
 	}
 }
 
+func TestMakeDirTool_CreatesMissingWorkspace(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "new", "workspace")
+	res := runMakeDir(t, NewMakeDir(home), `{"path":"reports/2026"}`)
+	if res.Err != nil {
+		t.Fatalf("new workspace creation failed: %v", res.Err)
+	}
+	info, err := os.Stat(filepath.Join(home, "reports", "2026"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("new workspace directory not created: %v", err)
+	}
+}
+
 func TestMakeDirTool_AlreadyExists(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewMakeDir(dir)

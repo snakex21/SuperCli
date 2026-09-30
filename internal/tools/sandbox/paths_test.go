@@ -3,7 +3,6 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -43,7 +42,11 @@ func TestResolveSafe_Relative(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSafe: %v", err)
 	}
-	want := filepath.Join(home, "foo", "bar")
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(canonicalHome, "foo", "bar")
 	if got != want {
 		t.Errorf("ResolveSafe = %q, want %q", got, want)
 	}
@@ -55,8 +58,12 @@ func TestResolveSafe_EmptyRelReturnsHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != home {
-		t.Errorf("empty rel = %q, want %q", got, home)
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != canonicalHome {
+		t.Errorf("empty rel = %q, want %q", got, canonicalHome)
 	}
 }
 
@@ -110,8 +117,12 @@ func TestResolveSafe_NonExistentPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSafe: %v", err)
 	}
-	if !strings.HasPrefix(got, home) {
-		t.Errorf("expected path under %q, got %q", home, got)
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsUnder(canonicalHome, got) {
+		t.Errorf("expected path under %q, got %q", canonicalHome, got)
 	}
 }
 
@@ -207,8 +218,12 @@ func TestResolveSafeFilesystemRoot(t *testing.T) {
 	if _, err := ResolveSafe(home, root); err != ErrDenied {
 		t.Errorf("unsandboxed filesystem root = %v, want ErrDenied", err)
 	}
-	if got, err := ResolveSafe(home, home); err != nil || got != home {
-		t.Errorf("ordinary home = %q, %v; want %q, nil", got, err, home)
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ResolveSafe(home, home); err != nil || got != canonicalHome {
+		t.Errorf("ordinary home = %q, %v; want %q, nil", got, err, canonicalHome)
 	}
 }
 

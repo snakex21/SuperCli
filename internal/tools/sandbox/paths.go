@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -109,8 +110,8 @@ func IsUnsandboxed() bool { return unsandboxed.Load() }
 // outside home (unless Unsandboxed is on), or if it
 // points at a sensitive system root.
 //
-// If home is empty, an error is returned. The function
-// tolerates a non-existent path: it returns the
+// If home is empty, an error is returned. Home and target may not exist yet:
+// the function returns the
 // canonical would-be path as long as the path's
 // ancestors can be walked. (We use evalSymlinks on the
 // longest existing prefix.)
@@ -136,6 +137,12 @@ func resolvePath(home, rel string, enforceHome bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("sandbox: abs home: %w", err)
 	}
+	// Compare home and target in the same canonical coordinate system. Home
+	// may be a symlink/junction or contain Windows short-name components.
+	canonicalHome, err := canonicalHomePath(absHome)
+	if err != nil {
+		return "", fmt.Errorf("sandbox: resolve home: %w", err)
+	}
 	// Combine.
 	var abs string
 	if rel == "" {
@@ -154,7 +161,7 @@ func resolvePath(home, rel string, enforceHome bool) (string, error) {
 	}
 	// Refuse if outside home. ResolveSafe disables this only for the explicit
 	// agent allow-all mode; ResolveWithin always keeps it enabled.
-	if enforceHome && !IsUnder(absHome, resolved) {
+	if enforceHome && !IsUnder(canonicalHome, resolved) {
 		return "", ErrEscape
 	}
 	// Refuse if it lands on a sensitive system path
@@ -163,6 +170,34 @@ func resolvePath(home, rel string, enforceHome bool) (string, error) {
 		return "", ErrDenied
 	}
 	return resolved, nil
+}
+
+// canonicalHomePath preserves new-workspace creation: a missing suffix is
+// appended to its canonical existing directory ancestor. An existing symlink
+// must resolve successfully; errors are never treated as a missing suffix.
+func canonicalHomePath(home string) (string, error) {
+	prefix := home
+	var tail []string
+	for {
+		if _, err := os.Lstat(prefix); err == nil {
+			resolved, err := filepath.EvalSymlinks(prefix)
+			if err != nil {
+				return "", err
+			}
+			info, err := os.Stat(resolved)
+			if err != nil {
+				return "", err
+			}
+			if !info.IsDir() {
+				return "", fmt.Errorf("home ancestor is not a directory")
+			}
+			return filepath.Join(append([]string{resolved}, tail...)...), nil
+		} else if !os.IsNotExist(err) || filepath.Dir(prefix) == prefix {
+			return "", err
+		}
+		tail = append([]string{filepath.Base(prefix)}, tail...)
+		prefix = filepath.Dir(prefix)
+	}
 }
 
 // evalSymlinksPrefix resolves symlinks for the longest
