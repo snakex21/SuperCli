@@ -575,6 +575,7 @@ type runStartMsg struct {
 	draft             string
 	attachmentsSent   bool
 	attachmentWarning string
+	queueWarning      error
 }
 
 type runEventMsg struct {
@@ -745,6 +746,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendLine(m.marker.Error(msg.err))
 			m.refreshTranscript()
 			return m, nil
+		}
+		if msg.queueWarning != nil {
+			m.appendLine(m.marker.Error(fmt.Errorf("%s%w", m.tr("tui.menu_workflow.6d90ed4e2a"), msg.queueWarning)))
+			m.refreshTranscript()
 		}
 		if msg.attachmentsSent {
 			m.pendingAttachments = nil

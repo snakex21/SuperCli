@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
+	"supercli/internal/storage/session"
 )
 
 // The model projection belongs to the agent. The UI always reads the full
@@ -24,9 +25,10 @@ type resumedTranscript struct {
 }
 
 type resumeLoadedMsg struct {
-	ctx     context.Context
-	history *resumedTranscript
-	err     error
+	ctx        context.Context
+	history    *resumedTranscript
+	err        error
+	queuedTask *session.QueuedTask
 }
 
 func (m Model) resumeConversation(id string) (tea.Model, tea.Cmd) {
@@ -142,6 +144,9 @@ func (m Model) finishResume(msg resumeLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.syncInputHeight()
 	m.input.Focus()
+	if err == nil && h != nil && msg.queuedTask != nil {
+		return m.startQueuedPrompt(*msg.queuedTask)
+	}
 	return m, nil
 }
 
