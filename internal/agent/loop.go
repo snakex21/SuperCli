@@ -330,8 +330,11 @@ type Loop struct {
 	// steps, so history mutation remains single-owner and tool-call/result pairs
 	// can never be split. The small cap prevents an unattended UI from growing
 	// an unbounded side queue.
-	interjectionMu sync.Mutex
-	interjections  []string
+	interjectionMu    sync.Mutex
+	interjections     []pendingInterjection
+	interjectionsOpen bool
+	interjectionCtx   context.Context
+	interjectionSeq   uint64
 
 	// chatWindowStart is the sticky start (a VisibleMessages index) of
 	// the growing history window used by the light routes (chat-only /
@@ -780,6 +783,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	// user's raw words plus durable image refs so reopening a session never
 	// exposes internal preflight/rewind markers and never loses attachments.
 	l.persist(ctx, persistedUser)
+	l.openInterjections(ctx)
 	go l.run(ctx, prompt, out)
 	return out, nil
 }
@@ -797,12 +801,14 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.emptyReplyNudges = 0
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
-	// A final run-goroutine retry covers recovery on the last step. The
-	// projection is rebuilt from current Messages, never from a stale snapshot.
-	// Bound it so a locked database can never delay shutdown indefinitely.
+	// Finish already-collected history even after cancellation, then rebuild
+	// a dirty projection from current Messages. One bounded context covers all
+	// shutdown writes, so a locked database cannot delay shutdown indefinitely.
 	defer func() {
-		retryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
+		l.closeInterjections(ctx, retryCtx, out)
+		l.retryPendingAppends(retryCtx)
 		l.retryDirtyProjection(retryCtx)
 		l.persistDiscoveredTools(retryCtx)
 	}()

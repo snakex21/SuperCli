@@ -817,7 +817,25 @@ function addWorkerProgress(ev) {
   if (!row._activity) row._activity = el("div", "task-activity");
   if (!row._workerCalls) row._workerCalls = {};
   var item = ev.call_id ? row._workerCalls[ev.call_id] : null;
-  if (ev.kind === "tool_call") {
+  if (ev.kind === "steering_delivered" || ev.kind === "steering_rejected") {
+    var receiptKey = "steering:" + (ev.call_id || "");
+    item = row._workerCalls[receiptKey];
+    if (!item) {
+      item = el("div", "task-activity-item");
+      item.appendChild(el("span", "activity-dot"));
+      item.appendChild(el("span", "activity-name", "send_message"));
+      item.appendChild(el("span", "activity-hint"));
+      item.appendChild(el("span", "activity-status"));
+      row._activity.appendChild(item);
+      if (ev.call_id) row._workerCalls[receiptKey] = item;
+    }
+    var rejected = ev.kind === "steering_rejected";
+    item.classList.remove("done", "failed");
+    item.classList.add(rejected ? "failed" : "done");
+    item.querySelector(".activity-hint").textContent = clip(ev.prompt || "", 140);
+    item.querySelector(".activity-status").textContent = t(rejected ? "task.failed" : "task.done");
+    item.title = ev.err || ev.prompt || "";
+  } else if (ev.kind === "tool_call") {
     var info = toolHint(ev.tool || "tool", ev.args || "{}");
     updateWorkerOverview(ev.id, ev.name, "running", (info.name || ev.tool) + (info.hint ? " · " + info.hint : ""), row);
     item = el("div", "task-activity-item running");

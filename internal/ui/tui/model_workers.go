@@ -66,6 +66,10 @@ func (m *Model) updateWorkerView(e agent.WorkerProgressEvent) {
 		if e.Err != "" {
 			w.activity = compactWorkerText(e.Err, 140)
 		}
+	case "steering_delivered":
+		w.activity = "send_message · " + m.tr("tui.model_workers.a4c3ed04a9")
+	case "steering_rejected":
+		w.activity = "send_message · " + m.tr("tui.model_workers.5d28a90f44")
 	case "finished":
 		w.status = e.Status
 		w.activity = ""

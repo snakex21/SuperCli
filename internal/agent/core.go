@@ -177,6 +177,16 @@ type WorkerNotificationEvent struct {
 
 func (WorkerNotificationEvent) event() {}
 
+// steeringDeliveryEvent is an internal receipt for a queued worker instruction.
+// Delivery means insertion at a complete assistant/tool boundary in this Run.
+type steeringDeliveryEvent struct {
+	ID   string
+	Text string
+	Err  error
+}
+
+func (steeringDeliveryEvent) event() {}
+
 // WorkerProgressEvent surfaces factual activity from a delegated worker while
 // its parent task tool is still running. It deliberately carries tool events,
 // not private chain-of-thought. Output/arguments are capped at the producer so
@@ -184,7 +194,7 @@ func (WorkerNotificationEvent) event() {}
 type WorkerProgressEvent struct {
 	TaskID       string
 	Agent        string
-	Kind         string // started, tool_call, tool_result, or finished
+	Kind         string // started, tool_call, tool_result, steering_delivered, steering_rejected, finished
 	ParentCallID string // parent task/send_message call; stable across worker tool calls
 	Run          int    // 1-based invocation within this worker
 	Prompt       string // UI-only instruction for this invocation

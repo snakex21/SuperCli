@@ -25,13 +25,14 @@ func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
 func (s *SendMessageTool) Spec() tools.Tool {
 	return tools.Tool{
 		Name:        "send_message",
-		Description: "Continue an existing task worker by ID. Use when the worker's existing context is useful, especially for corrections after failures or continuing research into implementation.",
+		Description: "Continue a finished task worker by ID, or use mode=steer to queue a correction in its current run. Steering returns a receipt without starting another run; delivery or rejection is reported with worker progress.",
 		Schema: `{
 			"type":"object",
 			"required":["to","message"],
 			"properties":{
 				"to":{"type":"string","description":"worker id returned by task, e.g. worker-1"},
-				"message":{"type":"string","description":"self-contained follow-up instruction for that worker"}
+				"message":{"type":"string","description":"self-contained follow-up instruction for that worker"},
+				"mode":{"type":"string","enum":["continue","steer"],"description":"continue (default) resumes a finished worker; steer queues an instruction only in an already running worker"}
 			}
 		}`,
 		Fn: s.execute,
@@ -41,6 +42,7 @@ func (s *SendMessageTool) Spec() tools.Tool {
 type sendMessageArgs struct {
 	To      string `json:"to"`
 	Message string `json:"message"`
+	Mode    string `json:"mode"`
 }
 
 func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (tools.Result, error) {
@@ -50,6 +52,10 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 	}
 	args.To = strings.TrimSpace(args.To)
 	args.Message = strings.TrimSpace(args.Message)
+	args.Mode = strings.TrimSpace(args.Mode)
+	if args.Mode != "" && args.Mode != "continue" && args.Mode != "steer" {
+		return tools.Result{Err: fmt.Errorf("send_message: mode must be continue or steer")}, nil
+	}
 	if args.To == "" {
 		return tools.Result{Err: fmt.Errorf("send_message: to is required")}, nil
 	}
@@ -69,6 +75,22 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		return tools.Result{Err: fmt.Errorf("send_message: unknown worker %q", args.To)}, nil
 	}
 
+	if args.Mode == "steer" {
+		if err := ctx.Err(); err != nil {
+			return tools.Result{Err: err}, nil
+		}
+		if w.status() == "created" {
+			return tools.Result{Err: fmt.Errorf("worker %s is already running or has not started; its original task must start before steering", w.ID)}, nil
+		}
+		if w.status() != "running" || w.Loop == nil {
+			return tools.Result{Err: fmt.Errorf("send_message: worker %s is not running; use send_message without mode=steer to continue it", w.ID)}, nil
+		}
+		id, err := w.Loop.queueInterjection(args.Message, true)
+		if err != nil {
+			return tools.Result{Err: fmt.Errorf("send_message: worker %s: %w", w.ID, err)}, nil
+		}
+		return tools.Result{Text: fmt.Sprintf("Steering queued for worker %s in its current run (receipt %s). Delivery or rejection will be reported in worker progress; no new run was started.", w.ID, id)}, nil
+	}
 	text, err := runWorkerLoopInRegistry(ctx, w, args.Message, s.Workers)
 	return workerResult(w, text, err), nil
 }
@@ -133,6 +155,8 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 	}
 
 	var text strings.Builder
+	var runErr error
+	var rejectedSteering []string
 	toolCalls := make(map[string]ToolCallEvent)
 	var evidence workerEvidenceLog
 	defer func() { w.setState(func(w *Worker) { w.lastEvidence = evidence.text() }) }()
@@ -175,31 +199,54 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 					w.Steps++
 				}
 			})
-		case ErrorEvent:
-			stopped := w.clearCancel()
-			result := strings.TrimSpace(stripThinking(text.String()))
-			w.setState(func(w *Worker) {
-				w.UpdatedAt = time.Now()
-				w.LastResult = result
-				w.TokensIn += e.Usage.Input
-				w.TokensOut += e.Usage.Output
-				w.Steps += e.Steps
-				if stopped {
-					w.Status = "stopped"
-					w.LastError = "stopped by request"
-					return
-				}
-				w.Status = "failed"
-				w.LastError = e.Err.Error()
-			})
-			if stopped {
-				return result, fmt.Errorf("worker %s stopped by request", w.ID)
+		case steeringDeliveryEvent:
+			progress := WorkerProgressEvent{Kind: "steering_delivered", CallID: e.ID, Prompt: toolcore.HeadTail(e.Text, 180, 60), Status: "running"}
+			if e.Err != nil {
+				progress.Kind = "steering_rejected"
+				progress.Err = e.Err.Error()
+				rejectedSteering = append(rejectedSteering, fmt.Sprintf("%s rejected: %s", e.ID, e.Err))
+			} else {
+				// The final report belongs to the latest instruction, not the
+				// completed answer that the coordinator just corrected.
+				text.Reset()
 			}
-			return result, e.Err
+			emit(progress)
+		case ErrorEvent:
+			// Drain through channel close: Run still owns its conversation and
+			// may emit rejected steering receipts during bounded final cleanup.
+			if runErr == nil {
+				runErr = e.Err
+				w.setState(func(w *Worker) {
+					w.TokensIn += e.Usage.Input
+					w.TokensOut += e.Usage.Output
+					w.Steps += e.Steps
+				})
+			}
 		}
 	}
-	w.clearCancel()
+	stopped := w.clearCancel()
 	result := strings.TrimSpace(stripThinking(text.String()))
+	if len(rejectedSteering) > 0 {
+		result += "\n[Steering delivery: " + strings.Join(rejectedSteering, "; ") + "]"
+	}
+	if runErr != nil || stopped {
+		if stopped {
+			runErr = fmt.Errorf("worker %s stopped by request", w.ID)
+		}
+		w.setState(func(w *Worker) {
+			w.Status = "failed"
+			if stopped {
+				w.Status = "stopped"
+			}
+			w.UpdatedAt = time.Now()
+			w.LastResult = result
+			w.LastError = runErr.Error()
+			if len(rejectedSteering) > 0 {
+				w.LastError += "; " + strings.Join(rejectedSteering, "; ")
+			}
+		})
+		return result, runErr
+	}
 	w.setState(func(w *Worker) {
 		w.Status = "done"
 		w.UpdatedAt = time.Now()

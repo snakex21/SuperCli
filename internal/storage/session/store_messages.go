@@ -121,30 +121,27 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 	if msg.Role == string(llm.RoleTool) {
 		msg.Content = capToolContent(msg.Content)
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	var nextSeq int
-	if err := tx.QueryRow(
-		`SELECT IFNULL(MAX(seq), 0) + 1 FROM messages WHERE session_id = ?`, sessionID,
-	).Scan(&nextSeq); err != nil {
-		return fmt.Errorf("append: next seq: %w", err)
-	}
 	now := time.Now().UTC()
-	if _, err := tx.Exec(
-		`INSERT INTO messages(session_id, seq, role, content, parts_json, tool_call_id, tool_calls_json, name, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		sessionID, nextSeq, msg.Role, msg.Content, msg.PartsJSON, msg.ToolCallID, msg.ToolCallsJSON, msg.Name, now.UnixNano(),
-	); err != nil {
-		return fmt.Errorf("append: insert: %w", err)
-	}
-	if _, err := tx.Exec(
+	// Updating metadata first reserves the writer before reading the next
+	// sequence. Rollback restores the count if the following insert fails.
+	// A deferred read snapshot cannot safely upgrade after another append.
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?`,
 		now.UnixNano(), sessionID,
 	); err != nil {
 		return fmt.Errorf("append: bump: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO messages(session_id, seq, role, content, parts_json, tool_call_id, tool_calls_json, name, created_at)
+  SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE session_id = ?`,
+		sessionID, msg.Role, msg.Content, msg.PartsJSON, msg.ToolCallID, msg.ToolCallsJSON, msg.Name, now.UnixNano(), sessionID,
+	); err != nil {
+		return fmt.Errorf("append: insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return err

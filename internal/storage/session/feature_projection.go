@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -47,17 +48,22 @@ func (s *Store) SaveContextProjection(ctx context.Context, sessionID string, msg
 // appended after its boundary. A missing or corrupt projection fails open
 // to the full transcript: resume must remain usable even after disk damage.
 func (s *Store) ReadModelContext(ctx context.Context, sessionID string) ([]llm.Message, error) {
+	// Projection and tail must share a snapshot. A concurrent truncate invalidates
+	// the stored projection and can reuse sequence numbers for a new branch.
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
 	var through int
 	var raw []byte
-	err := s.db.QueryRowContext(ctx, `SELECT through_seq, messages_json FROM session_context_projections WHERE session_id = ?`, sessionID).Scan(&through, &raw)
-	if err != nil {
-		return s.readFullModelContext(ctx, sessionID)
-	}
+	err = tx.QueryRowContext(ctx, `SELECT through_seq, messages_json FROM session_context_projections WHERE session_id = ?`, sessionID).Scan(&through, &raw)
 	var out []llm.Message
-	if json.Unmarshal(raw, &out) != nil || !validMessages(out) {
-		return s.readFullModelContext(ctx, sessionID)
+	projected := err == nil && json.Unmarshal(raw, &out) == nil && validMessages(out)
+	if !projected {
+		out = nil
 	}
-	rows, err := s.readMessagesAfter(ctx, sessionID, through)
+	rows, err := readContextMessages(ctx, tx, sessionID, through, projected)
 	if err != nil {
 		return nil, err
 	}
@@ -68,27 +74,21 @@ func (s *Store) ReadModelContext(ctx context.Context, sessionID string) ([]llm.M
 		}
 		out = append(out, m)
 	}
-	return s.externalizeModelImages(sessionID, out), nil
-}
-
-func (s *Store) readFullModelContext(ctx context.Context, sessionID string) ([]llm.Message, error) {
-	rows, err := s.ReadMessages(ctx, sessionID)
-	if err != nil {
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	out := make([]llm.Message, 0, len(rows))
-	for _, row := range rows {
-		m, err := row.ToMessage()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, m)
-	}
 	return s.externalizeModelImages(sessionID, out), nil
 }
 
-func (s *Store) readMessagesAfter(ctx context.Context, sessionID string, seq int) ([]Encoded, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? AND seq > ? ORDER BY seq ASC`, sessionID, seq)
+func readContextMessages(ctx context.Context, tx *sql.Tx, sessionID string, through int, projected bool) ([]Encoded, error) {
+	query := `SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ?`
+	args := []any{sessionID}
+	if projected {
+		query += " AND seq > ?"
+		args = append(args, through)
+	}
+	query += " ORDER BY seq ASC"
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

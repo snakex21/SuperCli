@@ -296,7 +296,7 @@ func (l *Loop) runStep(
 		// that as the next user turn instead of completing the Run and making
 		// them wait/re-submit. Draining here is a safe history boundary: the
 		// assistant message above is already complete and persisted.
-		if l.drainInterjections(ctx) > 0 {
+		if l.drainInterjections(ctx, out, step+1 < stepLimit, false) > 0 {
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
@@ -349,6 +349,10 @@ func (l *Loop) runStep(
 				return stepContinue
 			}
 		}
+		if l.drainInterjections(ctx, out, step+1 < stepLimit, true) > 0 {
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
 		// Once a user-facing answer has resolved the tool chain, persist the
 		// smaller provider projection. The lossless transcript remains intact
 		// and searchable, while reopening this session no longer reloads every
@@ -358,6 +362,10 @@ func (l *Loop) runStep(
 			l.persistProjection(ctx)
 		}
 		l.statsEndStep(stepStart)
+		if err := ctx.Err(); err != nil {
+			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
+			return stepAbort
+		}
 		out <- DoneEvent{Usage: *totalUsage, Steps: step + 1}
 		return stepDone
 	}
@@ -374,7 +382,7 @@ func (l *Loop) runStep(
 			l.persist(ctx, result)
 		}
 		l.drainBackgroundMessages(ctx)
-		if l.drainInterjections(ctx) > 0 {
+		if l.drainInterjections(ctx, out, step+1 < stepLimit, false) > 0 {
 			truncationAttempt = 0
 			if repeatProg != nil {
 				*repeatProg = repeatProgress{}
@@ -409,7 +417,7 @@ func (l *Loop) runStep(
 	l.continueWithDiscoveredTools(toolCalls, toolOutcomes)
 	toolFailures := countFailures(toolOutcomes)
 	// User steering starts fresh progress accounting before any loop verdict.
-	interjections := l.drainInterjections(ctx)
+	interjections := l.drainInterjections(ctx, out, step+1 < stepLimit, false)
 	if interjections > 0 {
 		if repeatProg != nil {
 			*repeatProg = repeatProgress{}

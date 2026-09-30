@@ -192,6 +192,43 @@ func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) {
 	l.persistNotify(recovered)
 }
 
+// retryPendingAppends finishes already-collected history during Run shutdown.
+// One bounded, uncancelled context covers the whole batch. It never adds a dummy
+// message, never requeues an already-buffered item, and preserves append order.
+func (l *Loop) retryPendingAppends(ctx context.Context) {
+	if l.writer == nil {
+		return
+	}
+	h := &l.persistHealth
+	h.mu.Lock()
+	if len(h.pending) == 0 {
+		h.mu.Unlock()
+		return
+	}
+	for len(h.pending) > 0 {
+		if err := l.writer.AppendMessage(ctx, h.pending[0]); err != nil {
+			h.outage = true
+			warn := h.noteFailureLocked("append", err)
+			h.mu.Unlock()
+			l.persistNotify(warn)
+			return
+		}
+		h.pending[0] = llm.Message{}
+		h.pending = h.pending[1:]
+	}
+	var recovered string
+	if h.outage {
+		h.outage = false
+		h.warned = false
+		recovered = fmt.Sprintf("session persistence recovered after %d failed write(s)", h.failures)
+		if h.dropped > 0 {
+			recovered += fmt.Sprintf("; %d message(s) were lost to buffer overflow", h.dropped)
+		}
+	}
+	h.mu.Unlock()
+	l.persistNotify(recovered)
+}
+
 // persistUsageFailure records a failed UpdateUsage call. Usage is
 // an additive counter, not history — there is nothing to buffer —
 // so it only feeds the sticky error, the counter and the one-shot
