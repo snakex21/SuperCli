@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,4 +68,56 @@ func TestApplySkillGuidanceReachesNextModelCall(t *testing.T) {
 		}
 	}
 	t.Fatalf("applied skill guidance missing from second request: %+v", provider.second)
+}
+
+func TestAutomaticSkillGuidanceUsesOneToolCallOnBothRoutes(t *testing.T) {
+	for _, thin := range []bool{false, true} {
+		name := "native"
+		if thin {
+			name = "sentinel"
+		}
+		t.Run(name, func(t *testing.T) {
+			project := t.TempDir()
+			dir := filepath.Join(project, "skills", "officecli-docx")
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\ndescription: Edit Word documents\n---\nselected Word guidance"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			registry := tools.NewRegistry()
+			applier := tools.NewSkillApplier(tools.NewDiscoverer(project, t.TempDir()))
+			spec := applier.Spec()
+			execute, calls := spec.Fn, 0
+			spec.Fn = func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+				calls++
+				return execute(ctx, args)
+			}
+			registry.MustRegister(spec)
+			registry.MarkAlwaysOn("apply_skill")
+			call := []llm.Delta{{ToolCall: &llm.ToolCall{ID: "select-skill", Name: "apply_skill", Arguments: `{"query":"officecli docx","auto":true}`}}}
+			if thin {
+				call = []llm.Delta{{Content: "«apply_skill\nquery: officecli docx\nauto: true»", FinishReason: "stop"}}
+			}
+			provider := &stubProvider{name: "auto-skill", scripts: [][]llm.Delta{call, {{Content: "Guidance received.", FinishReason: "stop"}}}}
+			loop, err := NewLoop(LoopConfig{Provider: provider, Registry: registry, ThinTools: thin, MaxSteps: 3})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range drainEvents(t, mustRun(t, loop, "Edit the Word document.")) {
+				if failure, ok := event.(ErrorEvent); ok {
+					t.Fatal(failure.Err)
+				}
+			}
+			if calls != 1 || provider.calls != 2 {
+				t.Fatalf("tool calls=%d model calls=%d", calls, provider.calls)
+			}
+			for _, msg := range provider.reqs[1] {
+				if msg.Role == llm.RoleTool && msg.Name == "apply_skill" && strings.Contains(msg.Content, "selected Word guidance") {
+					return
+				}
+			}
+			t.Fatal("selected guidance missing from next request")
+		})
+	}
 }

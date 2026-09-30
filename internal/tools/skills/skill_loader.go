@@ -3,9 +3,11 @@ package skills
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -84,8 +86,9 @@ func NewDiscovererWithBuiltins(projectDir, dataDir string) *Discoverer {
 	return d
 }
 
-// Discover returns a snapshot of the lazily-built merged catalog, sorted by
-// (Priority desc, Name asc). Skill directories are scanned once per process;
+// Discover returns a snapshot with external skill bodies for legacy callers.
+// Search and List use only metadata; Get loads one selected body.
+// Results are sorted by (Priority desc, Name asc). Directories are scanned once;
 // restart SuperCli after installing a new external skill.
 func (d *Discoverer) Discover() ([]Skill, error) {
 	all, err := d.catalog()
@@ -93,7 +96,16 @@ func (d *Discoverer) Discover() ([]Skill, error) {
 		return nil, err
 	}
 	out := make([]Skill, len(all))
-	copy(out, all)
+	for i, metadata := range all {
+		out[i] = metadata
+		if !strings.HasPrefix(metadata.Path, builtinScheme) {
+			selected, err := d.loadExternal(metadata)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = *selected
+		}
+	}
 	return out, nil
 }
 
@@ -125,7 +137,7 @@ func (d *Discoverer) discoverUncached() ([]Skill, error) {
 			// Each subdir is one skill; SKILL.md is the
 			// entry point.
 			skillPath := filepath.Join(src.Dir, e.Name(), "SKILL.md")
-			s, err := readSkill(skillPath)
+			s, err := readSkillMetadata(skillPath)
 			if err != nil {
 				// Missing SKILL.md is fine — silently
 				// skip the dir. Other errors surface.
@@ -138,6 +150,7 @@ func (d *Discoverer) discoverUncached() ([]Skill, error) {
 				s.Name = e.Name()
 			}
 			s.Priority = src.Priority
+			s.Frontmatter = nil
 			// On duplicate, keep the higher-priority
 			// one (earlier source = higher priority
 			// in our convention).
@@ -192,10 +205,19 @@ func (d *Discoverer) Get(name string) (*Skill, error) {
 			if strings.HasPrefix(s.Path, builtinScheme) && d.Builtin != nil {
 				return d.Builtin.Load(s.Name)
 			}
-			return &s, nil
+			return d.loadExternal(s)
 		}
 	}
 	return nil, fmt.Errorf("skill %q not found", name)
+}
+
+func (d *Discoverer) loadExternal(metadata Skill) (*Skill, error) {
+	selected, err := readSkill(metadata.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read %q: %w", metadata.Path, err)
+	}
+	selected.Name, selected.Priority = metadata.Name, metadata.Priority
+	return &selected, nil
 }
 
 // Search ranks skill metadata without opening any SKILL.md bodies. It is a
@@ -224,24 +246,7 @@ func (d *Discoverer) Search(query string, limit int) ([]Skill, error) {
 	ranked := make([]scored, 0, limit)
 	qLower := strings.ToLower(query)
 	for _, s := range all {
-		name := s.searchName
-		hay := s.searchText
-		score := 0
-		switch {
-		case name == qLower:
-			score += 100
-		case strings.HasPrefix(name, qLower):
-			score += 40
-		case strings.Contains(name, qLower):
-			score += 25
-		}
-		for _, token := range qt {
-			if strings.Contains(name, token) {
-				score += 12
-			} else if strings.Contains(hay, token) {
-				score += 3
-			}
-		}
+		score := skillMatchScore(s, qLower, qt)
 		if score > 0 {
 			s.Content = ""
 			candidate := scored{skill: s, score: score}
@@ -301,90 +306,183 @@ func (d *Discoverer) List(query string, offset, limit int) ([]Skill, int, error)
 	return out, total, nil
 }
 
+func skillMatchScore(skill Skill, query string, tokens []string) int {
+	score := 0
+	switch {
+	case skill.searchName == query:
+		score += 100
+	case strings.HasPrefix(skill.searchName, query):
+		score += 40
+	case strings.Contains(skill.searchName, query):
+		score += 25
+	}
+	for _, token := range tokens {
+		if strings.Contains(skill.searchName, token) {
+			score += 12
+		} else if strings.Contains(skill.searchText, token) {
+			score += 3
+		}
+	}
+	return score
+}
+
+// Automatic selection is deliberately conservative: exact unique names, or
+// multiple name tokens with broad query coverage and a clear runner-up gap.
+func clearSkillMatch(query string, hits []Skill) bool {
+	if len(hits) == 0 {
+		return false
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	best := hits[0]
+	if best.searchName == query {
+		return len(hits) == 1 || hits[1].searchName != query
+	}
+	tokens := skillTokens(query)
+	nameMatches, matches := 0, 0
+	for _, token := range tokens {
+		if strings.Contains(best.searchText, token) {
+			matches++
+		}
+		if strings.Contains(best.searchName, token) {
+			nameMatches++
+		}
+	}
+	if nameMatches < 2 || matches*4 < len(tokens)*3 {
+		return false
+	}
+	return len(hits) == 1 || skillMatchScore(best, query, tokens)-skillMatchScore(hits[1], query, tokens) >= 12
+}
+
 func skillTokens(s string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	})
 	out := fields[:0]
+	seen := make(map[string]struct{}, len(fields))
 	for _, f := range fields {
-		if len([]rune(f)) >= 2 {
-			out = append(out, f)
+		switch f {
+		case "the", "for", "of", "with", "to", "and", "or", "in", "on", "our", "this", "that":
+			continue
 		}
+		if len([]rune(f)) < 2 {
+			continue
+		}
+		if _, exists := seen[f]; exists {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
 	}
 	return out
 }
 
-// readSkill reads a SKILL.md file, parses optional YAML
-// frontmatter (delimited by ---), and returns the Skill. The
-// frontmatter is intentionally parsed by hand to avoid a YAML
-// dependency: we only support `key: value` lines. Comments
-// and nested structures are not allowed in F4.
-func readSkill(path string) (Skill, error) {
+const skillMetadataReadLimit = 32 << 10
+
+func readSkill(path string) (Skill, error)         { return readSkillFile(path, true) }
+func readSkillMetadata(path string) (Skill, error) { return readSkillFile(path, false) }
+
+// Metadata scanning stops at the header or first descriptive paragraph. Its
+// bounded reader prevents an unrelated large body from slowing or breaking the
+// catalog. The selected skill is read separately, without Scanner's line limit.
+func readSkillFile(path string, body bool) (Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Skill{}, err
 	}
 	defer f.Close()
-	var (
-		content     strings.Builder
-		fm          = make(map[string]string)
-		inFront     bool
-		frontClosed bool
-	)
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Text()
-		if !frontClosed && strings.TrimSpace(line) == "---" {
-			if !inFront {
-				inFront = true
-				continue
-			}
-			frontClosed = true
-			continue
+	var input io.Reader = f
+	if !body {
+		input = io.LimitReader(f, skillMetadataReadLimit)
+	}
+	reader := bufio.NewReader(input)
+	fm := make(map[string]string)
+	var content strings.Builder
+	first, inFront := true, false
+	fallback := ""
+	blockKey, blockSeparator := "", ""
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil && readErr != io.EOF {
+			return Skill{}, readErr
 		}
-		if inFront && !frontClosed {
-			// Parse "key: value" frontmatter lines.
-			idx := strings.Index(line, ":")
-			if idx > 0 {
-				k := strings.TrimSpace(line[:idx])
-				v := strings.TrimSpace(line[idx+1:])
-				fm[k] = v
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		headerLine := false
+		if first && trimmed != "" {
+			first = false
+			if trimmed == "---" {
+				inFront, headerLine = true, true
 			}
-			continue
-		}
-		content.WriteString(line)
-		content.WriteString("\n")
-	}
-	if err := sc.Err(); err != nil {
-		return Skill{}, err
-	}
-	s := Skill{
-		Path:        path,
-		Content:     strings.TrimSpace(content.String()),
-		Frontmatter: fm,
-	}
-	// Pull common frontmatter fields into typed fields.
-	s.Name = fm["name"]
-	s.Description = fm["description"]
-	if tags := fm["tags"]; tags != "" {
-		// Allow comma- or bracket-style tags.
-		tags = strings.Trim(tags, "[]")
-		for _, t := range strings.Split(tags, ",") {
-			t = strings.TrimSpace(strings.Trim(t, "\""))
-			if t != "" {
-				s.Tags = append(s.Tags, t)
+		} else if inFront {
+			headerLine = true
+			if trimmed == "---" {
+				inFront = false
+				if !body && fm["description"] != "" {
+					break
+				}
+			} else if blockKey != "" && (trimmed == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+				if trimmed != "" {
+					if fm[blockKey] != "" {
+						fm[blockKey] += blockSeparator
+					}
+					fm[blockKey] += trimmed
+				}
+			} else {
+				blockKey = ""
+				if idx := strings.Index(line, ":"); idx > 0 {
+					key, value := strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:])
+					if value == ">" || value == ">-" || value == "|" || value == "|-" {
+						blockKey, blockSeparator = key, " "
+						if strings.HasPrefix(value, "|") {
+							blockSeparator = "\n"
+						}
+						fm[key] = ""
+					} else {
+						fm[key] = skillScalar(value)
+					}
+				}
 			}
 		}
+		if !headerLine && !inFront {
+			if body {
+				content.WriteString(line)
+			}
+			if fallback == "" && trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				fallback = trimmed
+				if !body {
+					break
+				}
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
 	}
+	s := Skill{Path: path, Content: strings.TrimSpace(content.String()), Frontmatter: fm,
+		Name: fm["name"], Description: fm["description"], Category: fm["category"], Risk: fm["risk"], Source: fm["source"]}
 	if s.Description == "" {
-		// Fall back: first non-empty content line.
-		for _, l := range strings.Split(s.Content, "\n") {
-			l = strings.TrimSpace(l)
-			if l != "" && !strings.HasPrefix(l, "#") {
-				s.Description = l
-				break
+		s.Description = fallback
+	}
+	if tags := fm["tags"]; tags != "" {
+		for _, tag := range strings.Split(strings.Trim(tags, "[]"), ",") {
+			if tag = skillScalar(strings.TrimSpace(tag)); tag != "" {
+				s.Tags = append(s.Tags, tag)
 			}
 		}
 	}
 	return s, nil
+}
+
+func skillScalar(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+	if value[0] == '"' && value[len(value)-1] == '"' {
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			return unquoted
+		}
+	}
+	if value[0] == '\'' && value[len(value)-1] == '\'' {
+		return strings.ReplaceAll(value[1:len(value)-1], "''", "'")
+	}
+	return value
 }
