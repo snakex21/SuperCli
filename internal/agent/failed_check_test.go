@@ -99,7 +99,7 @@ func TestVerificationCommandDetection(t *testing.T) {
 			t.Errorf("check not recognized: %q", command)
 		}
 	}
-	for _, command := range [][]string{nil, {"git", "diff"}, {"git", "status"}, {"cmd", "/c", "go test ./..."}, {"python", "script.py"}, {"npm", "install"}} {
+	for _, command := range [][]string{nil, {"git", "diff"}, {"git", "status"}, {"python", "script.py"}, {"npm", "install"}} {
 		if isVerificationCommand(command) {
 			t.Errorf("non-check inferred as verification: %q", command)
 		}

@@ -134,6 +134,8 @@ func isVerificationCommand(command []string) bool {
 		return action == "test" || action == "build" || action == "lint" || action == "typecheck"
 	case "python", "python3", "python3.12", "python3.13":
 		return repeatableCheckCommand(command)
+	case "cmd", "powershell", "pwsh", "sh", "bash", "dash", "zsh":
+		return isVerificationCommand(unwrapVerificationShell(command))
 	case "make", "cmake", "zig":
 		return command[1] == "test" || command[1] == "check" || command[1] == "build" || command[1] == "--build"
 	}
