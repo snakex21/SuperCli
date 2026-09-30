@@ -24,7 +24,7 @@ type RequestBreakdown struct {
 func EstimateRequestBreakdown(msgs []Message, tools []ToolDef) RequestBreakdown {
 	var out RequestBreakdown
 	for _, msg := range msgs {
-		tokens := EstimateMessageTokens(msg)
+		tokens, toolTokens := estimateMessageTokens(msg)
 		switch msg.Role {
 		case RoleSystem:
 			out.System += tokens
@@ -33,10 +33,7 @@ func EstimateRequestBreakdown(msgs []Message, tools []ToolDef) RequestBreakdown 
 		case RoleTool:
 			out.Tool += tokens
 		case RoleAssistant:
-			toolTokens := 0
 			if len(msg.ToolCalls) > 0 {
-				toolOnly := Message{Role: RoleAssistant, ToolCalls: msg.ToolCalls}
-				toolTokens = EstimateMessageTokens(toolOnly) - 16
 				if toolTokens < 0 {
 					toolTokens = 0
 				}

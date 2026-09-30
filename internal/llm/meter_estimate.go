@@ -51,6 +51,14 @@ func nonWhitespaceLen(s string) int {
 // chars/4 helpers ignored ToolCalls, so a big write_file/edit call
 // was invisible to the compaction trigger.
 func EstimateMessageTokens(m Message) int {
+	tokens, _ := estimateMessageTokens(m)
+	return tokens
+}
+
+// estimateMessageTokens also returns the tool-call share so request accounting
+// need not scan potentially large write/edit arguments a second time. Keep the
+// total rounding across all text separate from the tool-only rounding.
+func estimateMessageTokens(m Message) (tokens, toolTokens int) {
 	b := nonWhitespaceLen(m.Content)
 	reasoning := 0
 	for _, p := range m.Parts {
@@ -60,10 +68,11 @@ func EstimateMessageTokens(m Message) int {
 			reasoning += p.Reasoning.EstimateTokens()
 		}
 	}
+	toolBytes := 0
 	for _, tc := range m.ToolCalls {
-		b += nonWhitespaceLen(tc.Name) + nonWhitespaceLen(tc.Arguments)
+		toolBytes += nonWhitespaceLen(tc.Name) + nonWhitespaceLen(tc.Arguments)
 	}
-	return b/estBytesPerToken + estPerMessageCost + reasoning
+	return (b+toolBytes)/estBytesPerToken + estPerMessageCost + reasoning, toolBytes / estBytesPerToken
 }
 
 // EstimateTokens sums EstimateMessageTokens over msgs.
