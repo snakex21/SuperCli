@@ -72,7 +72,7 @@ func (t *Move) execute(ctx context.Context, args json.RawMessage) (Result, error
 	if err != nil {
 		return Result{Err: fmt.Errorf("move: dest: %w", err)}, nil
 	}
-	if _, err := fileops.Move(srcFull, dstFull); err != nil {
+	if _, err := fileops.MoveContext(ctx, srcFull, dstFull); err != nil {
 		return Result{Err: fmt.Errorf("move: %w", err)}, nil
 	}
 	return Result{Text: fmt.Sprintf("Moved %s -> %s", a.Src, a.Dest)}, nil

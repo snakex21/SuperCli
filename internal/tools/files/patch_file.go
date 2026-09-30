@@ -119,7 +119,7 @@ func (t *PatchFile) execute(ctx context.Context, args json.RawMessage) (Result, 
 		}
 		chs[i] = fileops.PatchChange{Old: *c.Old, New: *c.New, ExpectedCount: c.ExpectedCount}
 	}
-	res, err := fileops.PatchFile(full, chs, a.BaseHash)
+	res, err := fileops.PatchFileContext(ctx, full, chs, a.BaseHash)
 	if err != nil {
 		return Result{Err: fmt.Errorf("patch_file: %w", err)}, nil
 	}

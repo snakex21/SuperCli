@@ -72,7 +72,7 @@ func (t *Trash) execute(ctx context.Context, args json.RawMessage) (Result, erro
 		now = t.Now
 	}
 	trashDir := filepath.Join(t.BaseDir, ".supercli", "trash")
-	dst, err := fileops.Trash(full, trashDir, now())
+	dst, err := fileops.TrashContext(ctx, full, trashDir, now())
 	if err != nil {
 		return Result{Err: fmt.Errorf("trash: %w", err)}, nil
 	}
