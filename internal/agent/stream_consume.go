@@ -11,10 +11,19 @@ import (
 	"supercli/internal/system/stats"
 )
 
+// truncatedToolResponseError marks a completed response whose tool arguments
+// cannot be trusted. Keep consuming through the usage frame before returning it.
+type truncatedToolResponseError struct{}
+
+func (*truncatedToolResponseError) Error() string {
+	return "provider response reached the output token limit"
+}
+
 func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
 	var toolCalls []llm.ToolCall
 	var textCallIndexes []int
 	var usage *llm.Usage
+	truncated := false
 	sc := newToolCallScanner()
 	var transcript strings.Builder
 	reasoningOpen := false
@@ -151,6 +160,11 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		if d.Usage != nil {
 			usage = d.Usage
 		}
+		// Anthropic normalizes max_tokens to length; compatible gateways may
+		// preserve the native spelling. A later usage/stop frame cannot undo it.
+		if d.FinishReason == "length" || d.FinishReason == "max_tokens" {
+			truncated = true
+		}
 	}
 	// No complete tool block claimed the retained suffix: surface it as plain
 	// text (including malformed/incomplete markers) rather than losing output.
@@ -159,7 +173,11 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		return transcript.String(), toolCalls, usage, err
 	}
 	closeReasoning()
-	return transcript.String(), l.coalesceMirroredReads(toolCalls, textCallIndexes), usage, nil
+	calls := l.coalesceMirroredReads(toolCalls, textCallIndexes)
+	if truncated && len(calls) > 0 {
+		return transcript.String(), calls, usage, &truncatedToolResponseError{}
+	}
+	return transcript.String(), calls, usage, nil
 }
 
 // extractXMLToolCalls scans text for <tool_call>...</tool_call>

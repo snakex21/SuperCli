@@ -6,8 +6,8 @@ package agent
 // ("read_fil" instead of "read_file"). Instead of failing the
 // whole call with a raw parse error, we:
 //
-//  1. try to repair the JSON (close open strings/brackets, strip
-//     trailing commas) and proceed when the repaired form parses,
+//  1. repair syntax around complete values (close brackets, strip
+//     trailing commas) without inventing or discarding argument values,
 //  2. validate the tool name and suggest the closest known one,
 //  3. when the call is beyond repair, send the model a short
 //     error with an example of the correct format so it can try
@@ -77,7 +77,7 @@ func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 		tc.Arguments = args
 		return ""
 	}
-	if fixed, ok := RepairToolArguments(args); ok {
+	if fixed, ok := repairToolArguments(args, false); ok {
 		tc.Arguments = fixed
 		return ""
 	}
@@ -302,8 +302,16 @@ func minOf3(a, b, c int) int {
 //   - removes a trailing comma or dangling key,
 //   - closes open braces/brackets in the right order.
 //
-// Returns the repaired JSON and true when the result parses.
+// Returns the repaired JSON and true when the result parses. This permissive
+// helper is for provider-history serialization, not authorization to execute.
 func RepairToolArguments(raw string) (string, bool) {
+	return repairToolArguments(raw, true)
+}
+
+// Execution may repair syntax around complete values, but must never guess
+// missing text or discard fields. Permissive value repair is used only to
+// produce legal provider history; invoke still receives the original arguments.
+func repairToolArguments(raw string, repairValues bool) (string, bool) {
 	s := strings.TrimSpace(raw)
 	// Strip markdown fences (```json ... ```).
 	s = strings.TrimPrefix(s, "```json")
@@ -321,7 +329,7 @@ func RepairToolArguments(raw string) (string, bool) {
 	// Find the last comma outside of strings so we can drop a
 	// dangling truncated tail as a second repair attempt.
 	lastComma := -1
-	{
+	if repairValues {
 		inStr, esc := false, false
 		for i := 0; i < len(s); i++ {
 			c := s[i]
@@ -377,6 +385,9 @@ func RepairToolArguments(raw string) (string, bool) {
 			}
 		}
 		if inStr {
+			if !repairValues {
+				return "", false
+			}
 			body += `"`
 		}
 		body = strings.TrimRight(body, " \t\r\n")
@@ -400,7 +411,7 @@ func RepairToolArguments(raw string) (string, bool) {
 	}
 	// Second try: drop the dangling tail after the last comma
 	// (e.g. a truncated `"key": "val` or a lone `"key"`).
-	if lastComma >= 0 {
+	if repairValues && lastComma >= 0 {
 		if out, ok := candidate(s[:lastComma]); ok {
 			return out, true
 		}

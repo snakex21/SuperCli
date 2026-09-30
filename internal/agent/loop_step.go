@@ -93,18 +93,32 @@ func (l *Loop) runStep(
 	l.recordWallPhase(stats.PhaseContextPrepare, prep)
 
 	text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
-	if err != nil && l.handleContextOverflow(ctx, err, out) {
+	_, truncatedToolCalls := err.(*truncatedToolResponseError)
+	if err != nil && !truncatedToolCalls && l.handleContextOverflow(ctx, err, out) {
 		// Wave 4: provider rejected the context size.
 		// The learned limit was persisted and the
 		// conversation compacted; retry once. The retry's phase
 		// timings accumulate onto this step's (documented in
 		// stats.Turn.Phases).
 		text, toolCalls, usage, err = l.completeOnce(ctx, toolDefs, out)
+		_, truncatedToolCalls = err.(*truncatedToolResponseError)
 	}
-	if err != nil {
+	if err != nil && !truncatedToolCalls {
 		l.statsEndStep(stepStart)
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 		return stepAbort
+	}
+	truncationAttempt := 0
+	if truncatedToolCalls {
+		truncationAttempt = step + 1 // conservative bound for callers without progress state
+	}
+	if repeatProg != nil {
+		if truncatedToolCalls {
+			repeatProg.truncatedToolResponses++
+			truncationAttempt = repeatProg.truncatedToolResponses
+		} else {
+			repeatProg.truncatedToolResponses = 0
+		}
 	}
 	// Resolve the schema-stable invoke_tool dispatcher before the
 	// assistant/tool-result pair enters history. Valid direct calls become
@@ -348,6 +362,35 @@ func (l *Loop) runStep(
 		return stepDone
 	}
 
+	if truncatedToolCalls {
+		// Every call in the incomplete response is rejected, even if one has
+		// valid JSON. Persist one result per ID without running repair/Execute,
+		// so the next request retains a complete assistant/tool exchange.
+		for _, tc := range toolCalls {
+			out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
+			out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", truncatedToolCallMessage)}
+			result := llm.Message{Role: llm.RoleTool, ToolCallID: tc.ID, Name: tc.Name, Content: truncatedToolCallMessage}
+			l.Messages = append(l.Messages, result)
+			l.persist(ctx, result)
+		}
+		l.drainBackgroundMessages(ctx)
+		if l.drainInterjections(ctx) > 0 {
+			truncationAttempt = 0
+			if repeatProg != nil {
+				*repeatProg = repeatProgress{}
+			}
+		}
+		l.statsEndStep(stepStart)
+		if truncationAttempt > maxToolFormatRetries {
+			out <- ErrorEvent{
+				Err:   fmt.Errorf("agent: output token limit prevented tool execution after %d attempts", truncationAttempt),
+				Usage: *totalUsage, Steps: step + 1,
+			}
+			return stepAbort
+		}
+		return stepContinue
+	}
+
 	toolStart := time.Now()
 	toolsOK, toolOutcomes := l.invokeToolCalls(ctx, toolCalls, out)
 	l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
@@ -440,3 +483,5 @@ func (l *Loop) runStep(
 	l.statsEndStep(stepStart)
 	return stepContinue
 }
+
+const truncatedToolCallMessage = badToolCallMarker + "response reached the output token limit; no tools were executed. Reissue with complete arguments."
