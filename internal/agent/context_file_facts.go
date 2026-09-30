@@ -93,7 +93,11 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 				"edit_docx", "edit_xlsx", "trash":
 				record(get("path"), kind, i)
 			case "copy", "move":
-				record(get("dest"), kind, i)
+				dest := get("dest")
+				if kind == compactModified {
+					dest = compactTransferDestination(name, args, body)
+				}
+				record(dest, kind, i)
 				if name == "move" {
 					record(get("src"), kind, i)
 				}
@@ -199,8 +203,12 @@ func compactResultKind(name string, args map[string]json.RawMessage, body string
 		if strings.HasPrefix(body, "Created "+path+" (") || (name == "write_file" && strings.HasPrefix(body, "Overwrote "+path+" (")) {
 			return compactModified
 		}
-	case "move", "copy", "trash":
-		if strings.HasPrefix(body, "Moved ") || strings.HasPrefix(body, "Copied ") {
+	case "move", "copy":
+		if compactTransferDestination(name, args, body) != "" {
+			return compactModified
+		}
+	case "trash":
+		if strings.HasPrefix(body, "Moved ") {
 			return compactModified
 		}
 	case "edit_docx", "edit_xlsx":
@@ -216,6 +224,25 @@ func compactResultKind(name string, args map[string]json.RawMessage, body string
 		return compactModified
 	}
 	return compactReferenced
+}
+
+// Use the destination reported by the completed operation. The requested dest
+// may name a folder; matching the exact generated prefix also keeps source
+// filenames containing arrows from changing where the destination starts.
+func compactTransferDestination(name string, args map[string]json.RawMessage, body string) string {
+	var src string
+	if json.Unmarshal(args["src"], &src) != nil || src == "" {
+		return ""
+	}
+	verb := "Copied "
+	if name == "move" {
+		verb = "Moved "
+	}
+	dest, ok := strings.CutPrefix(body, verb+src+" -> ")
+	if !ok {
+		return ""
+	}
+	return dest
 }
 
 // read_many numbers source lines, so only unnumbered, sequential generated
