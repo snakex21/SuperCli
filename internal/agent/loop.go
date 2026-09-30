@@ -239,6 +239,8 @@ type Loop struct {
 	// failed write from being immediately declared complete.
 	concreteFailure atomic.Bool
 	failedChecks    failedChecks
+	// Per-invocation worker evidence sink; no prompts, history or environment values.
+	verificationObserver func(verificationObservation)
 
 	// stepPhaseWall accumulates the DISJOINT wall-clock phases of the
 	// current step (context_prepare, request_encode, backend_wait,

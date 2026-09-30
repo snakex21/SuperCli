@@ -78,6 +78,7 @@ func TestWorkerCodingSchemasAB_Live(t *testing.T) {
 				ToolCalls                   []llm.ToolCall
 				Messages                    []llm.Message
 				Correct, TestsUnchanged     bool
+				UnresolvedWorkerChecks      bool
 				Verification, Report, Error string
 				GateRejections              int
 			}
@@ -223,6 +224,8 @@ func TestWorkerCodingSchemasAB_Live(t *testing.T) {
 			ctx = llm.WithOpenCodeSession(ctx, "coding-eval-"+filepath.Base(outDir)+"-"+arm)
 			prompt := "Pobieranie wpisu cache zwraca nieaktualną wartość dokładnie w chwili wygaśnięcia. Znajdź przyczynę, popraw kod produkcyjny i uruchom istniejące testy przez go test ./... . Nie zmieniaj testów. W krótkim raporcie podaj zmieniony plik i wynik sprawdzenia."
 			args, _ := json.Marshal(map[string]any{"agent": "code", "prompt": prompt})
+			// Match the production dispatcher's evidence sink without another model call.
+			ctx = withWorkerInvocation(ctx, "coding-worker", nil, parent.failedChecks.observer())
 			start := time.Now()
 			handoff, runErr := task.execute(ctx, args)
 			result.DurationMS = time.Since(start).Milliseconds()
@@ -250,7 +253,8 @@ func TestWorkerCodingSchemasAB_Live(t *testing.T) {
 			result.Verification = string(output)
 			originalTests, readErr := os.ReadFile(filepath.Join(root, "cache/store_test.go"))
 			result.TestsUnchanged = readErr == nil && string(originalTests) == files["cache/store_test.go"]
-			result.Correct = verifyErr == nil && result.TestsUnchanged && result.Error == ""
+			result.UnresolvedWorkerChecks = parent.failedChecks.unresolved()
+			result.Correct = verifyErr == nil && result.TestsUnchanged && result.Error == "" && !result.UnresolvedWorkerChecks
 			if !result.Correct {
 				t.Errorf("worker failed independent verification: %v %s; worker=%s", verifyErr, output, result.Error)
 			}

@@ -479,7 +479,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	} else if tc.Name == sessionImageToolName {
 		res, err = l.loadSessionImage(ctx, raw)
 	} else {
-		res, err = l.registry.Execute(withWorkerInvocation(ctx, tc.ID, out), tc.Name, raw)
+		var checkObserver func(verificationObservation)
+		if tc.Name == "task" || tc.Name == "send_message" {
+			checkObserver = l.failedChecks.observer()
+		}
+		res, err = l.registry.Execute(withWorkerInvocation(ctx, tc.ID, out, checkObserver), tc.Name, raw)
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 
