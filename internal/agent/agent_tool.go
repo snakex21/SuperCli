@@ -133,7 +133,8 @@ func (a *AgentTool) Spec() tools.Tool {
 				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
 				"expect": {"type": "string", "description": "optional: what the report must contain"},
 				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},
-				"advise": {"type": "boolean", "description": "optional: ask a READ-ONLY second opinion on a decision (routed to the advisor worker; never edits files)"}
+				"advise": {"type": "boolean", "description": "optional: ask a READ-ONLY second opinion on a decision (routed to the advisor worker; never edits files)"},
+				"async": {"type": "boolean", "description": "optional: run in the background and return a worker ID; completion arrives as a task notification"}
 			},
 			"required": ["prompt"]
 		}`, string(enumJSON)),

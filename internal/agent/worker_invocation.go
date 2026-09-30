@@ -28,6 +28,9 @@ func workerProgressSink(ctx context.Context, w *Worker, run int) func(WorkerProg
 			select {
 			case invocation.out <- ev:
 			case <-ctx.Done():
+				// The originating UI may no longer consume events after cancel.
+				// Preserve terminal receipts through the worker's lifetime sink.
+				w.emitProgress(ev)
 			}
 			return
 		}

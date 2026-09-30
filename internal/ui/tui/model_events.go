@@ -152,6 +152,10 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			if e.Err != "" {
 				m.appendLine(prefix + m.marker.ToolResultErr(e.Tool, e.Err))
 			}
+		case "steering_delivered":
+			m.appendLine(prefix + "send_message · " + m.tr("tui.model_workers.a4c3ed04a9") + ": " + compactWorkerText(e.Prompt, 160))
+		case "steering_rejected":
+			m.appendLine(prefix + m.marker.ToolResultErr("send_message", e.Err))
 		case "finished":
 			m.appendLine(prefix + e.Status)
 		}

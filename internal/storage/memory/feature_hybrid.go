@@ -131,13 +131,10 @@ func (s *Store) flushEmbedQueue() {
 		}
 		vectors := s.embedEntries(emb, batch)
 		for i, e := range batch {
-			if i >= len(vectors) || len(vectors[i]) == 0 || !s.entryStillCurrent(e) {
+			if i >= len(vectors) || len(vectors[i]) == 0 {
 				continue
 			}
-			_, _ = s.db.Exec(
-				`INSERT OR REPLACE INTO memory_vectors(id, dim, vec) VALUES (?,?,?)`,
-				e.ID, len(vectors[i]), encodeVec(vectors[i]),
-			)
+			_ = s.saveEntryVector(e, vectors[i])
 		}
 	}
 }
@@ -168,16 +165,16 @@ func (s *Store) embedEntries(emb Embedder, entries []Entry) [][]float32 {
 	return vectors
 }
 
-// entryStillCurrent prevents an embedding computed for an older Put from
-// resurrecting a vector after Delete or overwriting a newer version of the
-// same ID.
-func (s *Store) entryStillCurrent(e Entry) bool {
-	var content string
-	var updated int64
-	if err := s.db.QueryRow(`SELECT content, updated_at FROM memory_entries WHERE id = ?`, e.ID).Scan(&content, &updated); err != nil {
-		return false
-	}
-	return content == e.Content && updated == e.UpdatedAt.Unix()
+// saveEntryVector checks the source version and writes its embedding in one SQL
+// statement. Delete or a newer Put cannot slip between validation and insertion.
+func (s *Store) saveEntryVector(e Entry, vector []float32) error {
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO memory_vectors(id, dim, vec)
+		 SELECT id, ?, ? FROM memory_entries
+		 WHERE id = ? AND content = ? AND updated_at = ?`,
+		len(vector), encodeVec(vector), e.ID, e.Content, e.UpdatedAt.Unix(),
+	)
+	return err
 }
 
 // afterDelete is the Delete hook: drop the entry's vector. A

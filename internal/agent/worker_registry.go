@@ -105,6 +105,7 @@ type Snapshot struct {
 	TokensOut   int
 	Steps       int
 	ToolNames   []string
+	Runs        int
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -126,6 +127,7 @@ func (w *Worker) Snapshot() Snapshot {
 		TokensOut:   w.TokensOut,
 		Steps:       w.Steps,
 		ToolNames:   append([]string(nil), w.ToolNames...),
+		Runs:        w.Runs,
 	}
 }
 

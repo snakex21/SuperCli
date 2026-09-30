@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"supercli/internal/llm"
@@ -82,38 +83,109 @@ func (l *Loop) SetNextCoordinatorAddon(s string) {
 
 const maxPendingInterjections = 8
 
-// QueueInterjection accepts a user message while Run is active. It performs no
-// model call and never mutates Messages from the caller goroutine; run() drains
-// it at the next assistant/tool boundary. False means empty input or a full
-// queue, allowing the UI to keep the draft for retry.
+// pendingInterjection belongs to exactly one Run. A tracked entry gets a receipt
+// through that Run's event stream; it never installs the sender's event sink.
+type pendingInterjection struct {
+	id   string
+	text string
+}
+
+// QueueInterjection accepts a user message only while the current Run's inbox
+// is open. False also covers cancellation and the final persistence/Done window,
+// allowing the UI to keep its draft. Producers never mutate conversation history.
 func (l *Loop) QueueInterjection(s string) bool {
+	_, err := l.queueInterjection(s, false)
+	return err == nil
+}
+
+func (l *Loop) queueInterjection(s string, tracked bool) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return false
+		return "", fmt.Errorf("steering instruction is empty")
 	}
 	l.interjectionMu.Lock()
 	defer l.interjectionMu.Unlock()
-	if len(l.interjections) >= maxPendingInterjections {
-		return false
+	if !l.interjectionsOpen || l.interjectionCtx == nil || l.interjectionCtx.Err() != nil {
+		return "", fmt.Errorf("the current run is no longer accepting steering; wait for it to finish, then use send_message without mode=steer")
 	}
-	l.interjections = append(l.interjections, s)
-	return true
+	if len(l.interjections) >= maxPendingInterjections {
+		return "", fmt.Errorf("steering queue is full (%d pending instructions)", maxPendingInterjections)
+	}
+	id := ""
+	if tracked {
+		l.interjectionSeq++
+		id = fmt.Sprintf("steer-%d", l.interjectionSeq)
+	}
+	l.interjections = append(l.interjections, pendingInterjection{id: id, text: s})
+	return id, nil
 }
 
-func (l *Loop) drainInterjections(ctx context.Context) int {
+func (l *Loop) openInterjections(ctx context.Context) {
 	l.interjectionMu.Lock()
-	pending := append([]string(nil), l.interjections...)
-	l.interjections = l.interjections[:0]
+	l.interjectionCtx = ctx
+	l.interjectionsOpen = ctx.Err() == nil
 	l.interjectionMu.Unlock()
-	for _, text := range pending {
-		msg := llm.Message{Role: llm.RoleUser, Content: text}
+}
+
+// With finish=true, observing an empty inbox and closing it is one atomic
+// operation. A racing producer is either consumed by this Run or rejected;
+// final SaveContextProjection cannot strand accepted instructions.
+func (l *Loop) drainInterjections(ctx context.Context, out chan<- Event, canContinue, finish bool) int {
+	l.interjectionMu.Lock()
+	if ctx.Err() != nil || !canContinue {
+		if finish {
+			l.interjectionsOpen = false
+		}
+		l.interjectionMu.Unlock()
+		return 0
+	}
+	pending := l.interjections
+	l.interjections = nil
+	if finish && len(pending) == 0 {
+		l.interjectionsOpen = false
+		l.interjectionCtx = nil
+	}
+	l.interjectionMu.Unlock()
+	for _, item := range pending {
+		msg := llm.Message{Role: llm.RoleUser, Content: item.text}
 		l.Messages = append(l.Messages, msg)
 		l.persist(ctx, msg)
+		if item.id != "" {
+			out <- steeringDeliveryEvent{ID: item.id, Text: item.text}
+		}
 	}
 	if len(pending) > 0 {
 		l.invalidateVisibleEstimate()
 	}
 	return len(pending)
+}
+
+// Run owns shutdown as well as delivery. Unconsumed instructions are explicitly
+// rejected, never silently left for another Run. The transcript records the
+// rejection as assistant text, not an executable future user instruction.
+func (l *Loop) closeInterjections(ctx, saveCtx context.Context, out chan<- Event) {
+	l.interjectionMu.Lock()
+	l.interjectionsOpen = false
+	l.interjectionCtx = nil
+	pending := l.interjections
+	l.interjections = nil
+	l.interjectionMu.Unlock()
+	if len(pending) == 0 {
+		return
+	}
+	reason := "run ended before another steering delivery boundary (step or token limit, or run failure)"
+	if err := ctx.Err(); err != nil {
+		reason = "run cancelled before steering delivery: " + err.Error()
+	}
+	for _, item := range pending {
+		notice := fmt.Sprintf("[Steering %s rejected: %s]\nUndelivered instruction: %q", item.id, reason, item.text)
+		l.persist(saveCtx, llm.Message{Role: llm.RoleAssistant, Content: notice})
+		if item.id != "" {
+			out <- steeringDeliveryEvent{ID: item.id, Text: item.text, Err: fmt.Errorf("%s", reason)}
+		} else {
+			out <- NoticeEvent{Text: notice}
+		}
+	}
 }
 
 // CurrentModel returns the name of the active provider.
