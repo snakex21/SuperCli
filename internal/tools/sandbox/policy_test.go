@@ -63,10 +63,21 @@ func TestAllowDestructive_SensitiveRoot(t *testing.T) {
 	if filepath.Separator == '\\' {
 		t.Skip("Unix-only sensitive root test")
 	}
-	home := t.TempDir()
+	// The sensitive target is inside home; outside-home denial is separate.
+	home := string(filepath.Separator)
 	_, err := AllowDestructive(home, OpFileWrite, "/etc/hosts")
 	if err != ErrDenied {
 		t.Errorf("expected ErrDenied, got %v", err)
+	}
+}
+
+func TestAllowDestructiveFilesystemRoot(t *testing.T) {
+	root := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	for _, op := range []Op{OpFileWrite, OpFileDelete, OpBash} {
+		d, err := AllowDestructive(root, op, root)
+		if err != ErrDenied || d.Allowed {
+			t.Errorf("root %s = %+v, %v; want denied", op, d, err)
+		}
 	}
 }
 

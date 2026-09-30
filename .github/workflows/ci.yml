@@ -31,6 +31,7 @@ jobs:
       - name: UI and documentation checks
         run: |
           node scripts/test-ui.cjs
+          node --test docs/readme/check.test.cjs
           node docs/readme/check.cjs
       - name: Test
         run: go test ./...

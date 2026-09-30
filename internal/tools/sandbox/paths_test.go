@@ -119,7 +119,9 @@ func TestResolveSafe_SensitiveRoot(t *testing.T) {
 	if filepath.Separator == '\\' {
 		t.Skip("Unix-only sensitive root test")
 	}
-	home := t.TempDir()
+	// Put the target inside home so this exercises sensitive-path policy,
+	// not the separate outside-home rejection tested above.
+	home := string(filepath.Separator)
 	// Even an absolute path to a sensitive root must
 	// be refused, even if the home allows it.
 	_, err := ResolveSafe(home, "/dev/null")
@@ -133,6 +135,80 @@ func TestResolveSafe_SensitiveRoot(t *testing.T) {
 	_, err = ResolveSafe(home, "/proc/cpuinfo")
 	if err != ErrDenied {
 		t.Errorf("expected ErrDenied for /proc/cpuinfo, got %v", err)
+	}
+}
+
+func TestIsSensitiveFilesystemRoots(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{".", false},
+		{"..", false},
+		{t.TempDir(), false},
+	}
+	if filepath.Separator == '\\' {
+		cases = append(cases, []struct {
+			path string
+			want bool
+		}{
+			{`C:\`, true},
+			{`D:\`, true},
+			{`\\server\share`, true},
+			{`\\server\share\`, true},
+			{`\\?\C:\`, true},
+			{`\\?\UNC\server\share`, true},
+			{`\\?\UNC\server\share\`, true},
+			{`\\?\unc\server\share`, true},
+			{`\\.\UNC\server\share`, true},
+			{`\??\UNC\server\share`, true},
+			{`\??\unc\server\share\`, true},
+			{`C:`, false},
+			{`C:\work`, false},
+			{`D:\work`, false},
+			{`\\server\share\work`, false},
+			{`\\?\UNC\server\share\work`, false},
+			{`\\?\unc\server\share\work`, false},
+			{`\\.\UNC\server\share\work`, false},
+			{`\??\UNC\server\share\work`, false},
+		}...)
+	} else {
+		cases = append(cases, []struct {
+			path string
+			want bool
+		}{
+			{"/", true},
+			{"/project/..", true},
+			{"/project", false},
+			{"/dev-project", false},
+			{"/etc-backup", false},
+		}...)
+	}
+	for _, tc := range cases {
+		if got := isSensitive(tc.path); got != tc.want {
+			t.Errorf("isSensitive(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestResolveSafeFilesystemRoot(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.VolumeName(home) + string(filepath.Separator)
+	prev := IsUnsandboxed()
+	t.Cleanup(func() { SetUnsandboxed(prev) })
+	SetUnsandboxed(false)
+	if _, err := ResolveSafe(root, root); err != ErrDenied {
+		t.Errorf("filesystem root inside home = %v, want ErrDenied", err)
+	}
+	if _, err := ResolveWithin(home, root); err != ErrEscape {
+		t.Errorf("filesystem root outside home = %v, want ErrEscape", err)
+	}
+	SetUnsandboxed(true)
+	if _, err := ResolveSafe(home, root); err != ErrDenied {
+		t.Errorf("unsandboxed filesystem root = %v, want ErrDenied", err)
+	}
+	if got, err := ResolveSafe(home, home); err != nil || got != home {
+		t.Errorf("ordinary home = %q, %v; want %q, nil", got, err, home)
 	}
 }
 
