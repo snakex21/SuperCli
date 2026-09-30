@@ -56,7 +56,7 @@ func (s *Server) handleDataStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	status.MemoryEntries, _ = countAllMemory(s.eng.DataDir())
 	if service, err := s.eng.goalService(r.Context()); err == nil {
-		if goals, listErr := service.List(r.Context()); listErr == nil {
+		if goals, listErr := service.ListAll(r.Context()); listErr == nil {
 			status.Goals = len(goals)
 		}
 	}

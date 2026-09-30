@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (nemokami modeliai, žetonų planas)",
   "provider.description.sensenova": "SenseTime SenseNova (nemokamas žetonų plano beta versija)",
   "provider.description.lmstudio": "Vietiniai modeliai per LM Studio",
-  "provider.description.ollama": "Vietiniai modeliai per Ollama"
+  "provider.description.ollama": "Vietiniai modeliai per Ollama",
+  "goal.scope.project": "Projekto tikslas",
+  "goal.scope.global": "Bendras tikslas",
+  "goal.unassigned": "Nepriskirti tikslai",
+  "goal.assign.project": "Priskirti šiam projektui",
+  "goal.assign.global": "Padaryti bendru"
 }

@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Mälu andmebaas",
   "doctor.providerConfig": "Pakkuja konfiguratsioon",
   "doctor.command": "{name} käsk",
-  "doctor.server": "{name} server"
+  "doctor.server": "{name} server",
+  "goal.scope.project": "Projekti eesmärk",
+  "goal.scope.global": "Üldine eesmärk",
+  "goal.unassigned": "Määramata eesmärgid",
+  "goal.assign.project": "Määra sellele projektile",
+  "goal.assign.global": "Muuda üldiseks"
 }

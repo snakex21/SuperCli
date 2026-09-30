@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (modèles gratuits, plan de jetons)",
   "provider.description.sensenova": "SenseTime SenseNova (bêta gratuite du plan de jetons)",
   "provider.description.lmstudio": "Modèles locaux via LM Studio",
-  "provider.description.ollama": "Modèles locaux via Ollama"
+  "provider.description.ollama": "Modèles locaux via Ollama",
+  "goal.scope.project": "Objectif du projet",
+  "goal.scope.global": "Objectif général",
+  "goal.unassigned": "Objectifs non attribués",
+  "goal.assign.project": "Attribuer à ce projet",
+  "goal.assign.global": "Définir comme général"
 }

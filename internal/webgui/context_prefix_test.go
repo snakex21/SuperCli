@@ -97,3 +97,51 @@ func TestWebMemoryUpdatePreservesConversationPrefix(t *testing.T) {
 	}
 	t.Logf("stable conversation prefix: %d estimated tokens", llm.EstimateTokens(second[:len(second)-1]))
 }
+
+func TestWebGoalUpdatePreservesConversationPrefix(t *testing.T) {
+	eng, err := NewEngine(echoConfig(), t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	p := &prefixCaptureProvider{}
+	eng.prov = p
+	svc, err := eng.goalService(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := []llm.Message{{Role: llm.RoleUser, Content: "Work on the parser source."}, {Role: llm.RoleAssistant, Content: strings.Repeat("Prior code evidence. ", 100)}}
+	for _, title := range []string{"First goal", "Updated goal"} {
+		if _, err := svc.Set(context.Background(), title, "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		loop, err := eng.newLoopWithSession(history, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch, err := loop.Run(context.Background(), "Continue implementation in parser.go.")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for ev := range ch {
+			if failure, ok := ev.(agent.ErrorEvent); ok {
+				t.Fatal(failure.Err)
+			}
+		}
+		for _, message := range loop.AllMessages() {
+			if strings.Contains(message.Content, "[current_goal]") {
+				t.Fatal("goal accumulated in history")
+			}
+		}
+	}
+	if len(p.requests) != 2 {
+		t.Fatalf("calls=%d", len(p.requests))
+	}
+	first, second := p.requests[0], p.requests[1]
+	if len(first) != len(second) || !reflect.DeepEqual(first[:len(first)-1], second[:len(second)-1]) {
+		t.Fatal("goal update invalidated the prefix before the conversation")
+	}
+	if !strings.Contains(first[len(first)-1].Content, "First goal") || !strings.Contains(second[len(second)-1].Content, "Updated goal") || strings.Contains(second[len(second)-1].Content, "First goal") {
+		t.Fatal("current goal is missing or stale")
+	}
+}

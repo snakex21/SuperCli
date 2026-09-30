@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Memória adatbázis",
   "doctor.providerConfig": "Szolgáltató konfigurációja",
   "doctor.command": "{name} parancs",
-  "doctor.server": "{name} szerver"
+  "doctor.server": "{name} szerver",
+  "goal.scope.project": "Projektcél",
+  "goal.scope.global": "Általános cél",
+  "goal.unassigned": "Hozzárendeletlen célok",
+  "goal.assign.project": "Hozzárendelés ehhez a projekthez",
+  "goal.assign.global": "Beállítás általános célként"
 }

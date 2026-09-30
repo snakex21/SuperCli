@@ -698,5 +698,10 @@
   "doctor.memoryDB": "База данных памяти",
   "doctor.providerConfig": "Конфигурация провайдера",
   "doctor.command": "Команда {name}",
-  "doctor.server": "Сервер {name}"
+  "doctor.server": "Сервер {name}",
+  "goal.scope.project": "Цель проекта",
+  "goal.scope.global": "Общая цель",
+  "goal.unassigned": "Неназначенные цели",
+  "goal.assign.project": "Назначить этому проекту",
+  "goal.assign.global": "Сделать общей"
 }

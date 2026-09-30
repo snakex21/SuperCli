@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (bezmaksas modeļi, marķiera plāns)",
   "provider.description.sensenova": "SenseTime SenseNova (bezmaksas marķieru plāna beta versija)",
   "provider.description.lmstudio": "Vietējie modeļi, izmantojot LM Studio",
-  "provider.description.ollama": "Vietējie modeļi, izmantojot Ollama"
+  "provider.description.ollama": "Vietējie modeļi, izmantojot Ollama",
+  "goal.scope.project": "Projekta mērķis",
+  "goal.scope.global": "Vispārējs mērķis",
+  "goal.unassigned": "Nepiešķirti mērķi",
+  "goal.assign.project": "Piešķirt šim projektam",
+  "goal.assign.global": "Iestatīt kā vispārēju"
 }

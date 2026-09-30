@@ -81,7 +81,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	orchestrator := tc.Orchestrator != nil && *tc.Orchestrator
 	delegation := tc.Orchestrator == nil || *tc.Orchestrator
 	taskParallel, taskParallelWarnLocal := execution.Parallel(cfg.BaseURL, tc.TaskParallel)
-	goalSvc, err := e.goalService(context.Background())
+	goalSvc, err := e.goalServiceAt(context.Background(), home)
 	if err != nil {
 		return nil, fmt.Errorf("goal service: %w", err)
 	}
@@ -250,7 +250,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		}
 		return agent.ContextWindowResolution{}
 	}
-	systemPrompt := webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, goalSvc, appProfile)
+	systemPrompt := webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
 	if instructions := llmprompt.ActiveUserInstructions(e.dataDir); instructions != "" {
 		systemPrompt += "\n\n" + instructions
 	}
@@ -266,6 +266,11 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 			liveContext += "\n\n"
 		}
 		liveContext += folders
+	}
+	if current, injectErr := goalSvc.Inject(context.Background(), liveContext, 5); injectErr == nil {
+		liveContext = current
+	} else {
+		return nil, fmt.Errorf("goal context: %w", injectErr)
 	}
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.

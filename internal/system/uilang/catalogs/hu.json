@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (ingyenes modellek, token terv)",
   "provider.description.sensenova": "SenseTime SenseNova (Token Plan ingyenes béta)",
   "provider.description.lmstudio": "Helyi modellek a LM Studio-n keresztül",
-  "provider.description.ollama": "Helyi modellek a Ollama-n keresztül"
+  "provider.description.ollama": "Helyi modellek a Ollama-n keresztül",
+  "goal.scope.project": "Projektcél",
+  "goal.scope.global": "Általános cél",
+  "goal.unassigned": "Hozzárendeletlen célok",
+  "goal.assign.project": "Hozzárendelés ehhez a projekthez",
+  "goal.assign.global": "Beállítás általános célként"
 }

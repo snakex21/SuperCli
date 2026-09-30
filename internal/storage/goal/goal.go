@@ -32,9 +32,11 @@ import (
 	"time"
 )
 
-// Status is the lifecycle state of a Goal or Task. The
-// zero value is StatusActive; callers should set it
-// explicitly to avoid surprises.
+// GlobalProjectKey marks an explicitly shared goal. Empty keys are legacy
+// goals awaiting assignment, rather than implicitly global goals.
+const GlobalProjectKey = "*"
+
+// Status is the lifecycle state of a Goal or Task.
 type Status string
 
 // VerificationStatus records the latest explicit check of a goal's success
@@ -127,6 +129,7 @@ type Goal struct {
 	CreatedAt            time.Time
 	CompletedAt          *time.Time
 	ParentSessionID      string
+	ProjectKey           string // empty = legacy/unassigned; GlobalProjectKey = explicit global
 }
 
 // Task is one ordered step under a Goal.

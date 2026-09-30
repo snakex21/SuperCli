@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Memory database",
   "doctor.providerConfig": "Provider configuration",
   "doctor.command": "{name} command",
-  "doctor.server": "{name} server"
+  "doctor.server": "{name} server",
+  "goal.scope.project": "Project goal",
+  "goal.scope.global": "Global goal",
+  "goal.unassigned": "Unassigned goals",
+  "goal.assign.project": "Assign to this project",
+  "goal.assign.global": "Make global"
 }

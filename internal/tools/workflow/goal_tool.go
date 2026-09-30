@@ -99,6 +99,7 @@ func (g *GoalTool) Spec() Tool {
 				},
 				"goal_id":  {"type": "string", "description": "Goal id (g-...). Defaults to the active goal."},
 				"task_seq": {"type": "integer", "description": "Task sequence number (1-based)."},
+				"scope": {"type": "string", "enum": ["project", "global"], "description": "Scope for set; default project."},
 				"title":    {"type": "string", "description": "For set / add_task / decompose input."},
 				"description": {"type": "string", "description": "Optional background for set."},
 				"success_criteria": {"type": "string", "description": "Optional definition of done for set."},
@@ -114,6 +115,7 @@ func (g *GoalTool) Spec() Tool {
 
 type goalParams struct {
 	Action          string `json:"action"`
+	Scope           string `json:"scope,omitempty"`
 	GoalID          string `json:"goal_id,omitempty"`
 	TaskSeq         int    `json:"task_seq,omitempty"`
 	Title           string `json:"title,omitempty"`
@@ -205,6 +207,16 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 
 	switch p.Action {
 	case "set":
+		if p.Scope == "global" {
+			gl, err := g.Service.SetGlobal(ctx, p.Title, p.Description, p.SuccessCriteria, "")
+			if err != nil {
+				return Result{Err: err}, err
+			}
+			return Result{Text: fmt.Sprintf("active global goal: %s (%s)", gl.Title, gl.ID)}, nil
+		}
+		if p.Scope != "" && p.Scope != "project" {
+			return Result{Err: fmt.Errorf("goal: invalid scope")}, nil
+		}
 		return g.execSet(ctx, p.Title, p.Description, p.SuccessCriteria)
 	case "show":
 		return g.execShow(ctx, p.GoalID)

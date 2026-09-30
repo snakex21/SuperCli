@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Podatkovna baza pomnilnika",
   "doctor.providerConfig": "Konfiguracija ponudnika",
   "doctor.command": "Ukaz {name}",
-  "doctor.server": "Strežnik {name}"
+  "doctor.server": "Strežnik {name}",
+  "goal.scope.project": "Cilj projekta",
+  "goal.scope.global": "Splošni cilj",
+  "goal.unassigned": "Nedodeljeni cilji",
+  "goal.assign.project": "Dodeli temu projektu",
+  "goal.assign.global": "Nastavi kot splošni"
 }

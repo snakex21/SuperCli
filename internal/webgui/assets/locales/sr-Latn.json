@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Baza podataka memorije",
   "doctor.providerConfig": "Konfiguracija provajdera",
   "doctor.command": "Komanda {name}",
-  "doctor.server": "Server {name}"
+  "doctor.server": "Server {name}",
+  "goal.scope.project": "Cilj projekta",
+  "goal.scope.global": "Opšti cilj",
+  "goal.unassigned": "Nedodeljeni ciljevi",
+  "goal.assign.project": "Dodeli ovom projektu",
+  "goal.assign.global": "Postavi kao opšti"
 }

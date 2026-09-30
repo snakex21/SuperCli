@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (δωρεάν μοντέλα, Token Plan)",
   "provider.description.sensenova": "SenseTime SenseNova (δωρεάν beta του προγράμματος Token)",
   "provider.description.lmstudio": "Τοπικά μοντέλα μέσω LM Studio",
-  "provider.description.ollama": "Τοπικά μοντέλα μέσω Ollama"
+  "provider.description.ollama": "Τοπικά μοντέλα μέσω Ollama",
+  "goal.scope.project": "Στόχος έργου",
+  "goal.scope.global": "Γενικός στόχος",
+  "goal.unassigned": "Μη ανατεθειμένοι στόχοι",
+  "goal.assign.project": "Ανάθεση σε αυτό το έργο",
+  "goal.assign.global": "Ορισμός ως γενικού"
 }

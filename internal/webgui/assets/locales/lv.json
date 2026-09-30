@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Atmiņas datu bāze",
   "doctor.providerConfig": "Pakalpojumu sniedzēja konfigurācija",
   "doctor.command": "{name} komanda",
-  "doctor.server": "{name} serveris"
+  "doctor.server": "{name} serveris",
+  "goal.scope.project": "Projekta mērķis",
+  "goal.scope.global": "Vispārējs mērķis",
+  "goal.unassigned": "Nepiešķirti mērķi",
+  "goal.assign.project": "Piešķirt šim projektam",
+  "goal.assign.global": "Iestatīt kā vispārēju"
 }

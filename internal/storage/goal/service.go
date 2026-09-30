@@ -11,12 +11,13 @@ import (
 // Service is the in-memory front of the goal package.
 // It holds a pointer to the active goal, exposes a
 // thread-safe Refresh from SQLite, and renders the
-// `[current_goal]` block the agent loop prepends to the
-// system prompt.
+// `[current_goal]` block included in the transient
+// context of each user run.
 //
 // Service is safe for concurrent use.
 type Service struct {
-	storage *Storage
+	storage    *Storage
+	projectKey string // immutable for the lifetime of a running agent
 
 	mu        sync.RWMutex
 	progress  ProgressSnapshot
@@ -41,7 +42,7 @@ func (s *Service) Refresh(ctx context.Context) (*Goal, error) {
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.Refresh: nil storage")
 	}
-	g, err := s.storage.ActiveGoal(ctx)
+	g, err := s.storage.ActiveForProject(ctx, s.projectKey)
 	progress := ProgressSnapshot{}
 	if g != nil {
 		progress.Title = g.Title
@@ -77,10 +78,8 @@ func (s *Service) Active() *Goal {
 	return s.active
 }
 
-// Set creates a new active goal. The current active
-// (if any) is automatically moved to `paused` so the
-// per-home "one active" invariant holds. Returns the
-// new goal.
+// Set creates a new active goal and pauses the previous active goal only
+// within this service's project or global scope.
 func (s *Service) Set(ctx context.Context, title, description, criteria, parentSession string) (*Goal, error) {
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.Set: nil storage")
@@ -88,21 +87,15 @@ func (s *Service) Set(ctx context.Context, title, description, criteria, parentS
 	if strings.TrimSpace(title) == "" {
 		return nil, ErrEmptyTitle
 	}
-	// Pause any current active.
-	cur, _ := s.storage.ActiveGoal(ctx)
-	if cur != nil {
-		if err := s.storage.UpdateGoalStatus(ctx, cur.ID, StatusPaused); err != nil {
-			return nil, fmt.Errorf("goal: pause prior active: %w", err)
-		}
-	}
 	g := &Goal{
 		Title:           strings.TrimSpace(title),
 		Description:     description,
 		SuccessCriteria: criteria,
 		Status:          StatusActive,
 		ParentSessionID: parentSession,
+		ProjectKey:      s.projectKey,
 	}
-	if err := s.storage.CreateGoal(ctx, g); err != nil {
+	if err := s.storage.replaceActive(ctx, g); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
@@ -121,13 +114,11 @@ func (s *Service) AddTask(ctx context.Context, goalID, title string) (*Task, err
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.AddTask: nil storage")
 	}
-	if goalID == "" {
-		g := s.Active()
-		if g == nil {
-			return nil, fmt.Errorf("goal: AddTask: no active goal; specify --goal")
-		}
-		goalID = g.ID
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return nil, err
 	}
+	goalID = resolved
 	task, err := s.storage.AddTask(ctx, goalID, title)
 	if err == nil {
 		s.refreshIfActive(ctx, goalID)
@@ -140,13 +131,11 @@ func (s *Service) SetTaskStatus(ctx context.Context, goalID string, seq int, sta
 	if s == nil || s.storage == nil {
 		return fmt.Errorf("goal: Service.SetTaskStatus: nil storage")
 	}
-	if goalID == "" {
-		g := s.Active()
-		if g == nil {
-			return fmt.Errorf("goal: SetTaskStatus: no active goal")
-		}
-		goalID = g.ID
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return err
 	}
+	goalID = resolved
 	if err := s.storage.SetTaskStatus(ctx, goalID, seq, status); err != nil {
 		return err
 	}
@@ -161,7 +150,7 @@ func (s *Service) Verify(ctx context.Context, goalID string, passed bool, eviden
 	if s == nil || s.storage == nil {
 		return fmt.Errorf("goal: Service.Verify: nil storage")
 	}
-	goalID, err := s.resolveGoalID(goalID)
+	goalID, err := s.resolveGoalID(ctx, goalID)
 	if err != nil {
 		return err
 	}
@@ -190,19 +179,27 @@ func (s *Service) SetStatus(ctx context.Context, goalID string, status Status) e
 	if s == nil || s.storage == nil {
 		return fmt.Errorf("goal: Service.SetStatus: nil storage")
 	}
-	if goalID == "" {
-		g := s.Active()
-		if g == nil {
-			return fmt.Errorf("goal: SetStatus: no active goal")
-		}
-		goalID = g.ID
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return err
 	}
+	goalID = resolved
 	if status == StatusDone {
 		if err := s.storage.CompleteVerifiedGoal(ctx, goalID); err != nil {
 			return err
 		}
 	} else {
-		if err := s.storage.UpdateGoalStatus(ctx, goalID, status); err != nil {
+		var err error
+		if status == StatusActive {
+			g, getErr := s.Goal(ctx, goalID)
+			if getErr != nil {
+				return getErr
+			}
+			err = s.storage.moveGoal(ctx, goalID, g.ProjectKey, true)
+		} else {
+			err = s.storage.UpdateGoalStatus(ctx, goalID, status)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -215,16 +212,23 @@ func (s *Service) SetStatus(ctx context.Context, goalID string, status Status) e
 		}
 		s.mu.Unlock()
 	}
-	return nil
+	_, err = s.Refresh(ctx)
+	return err
 }
 
-func (s *Service) resolveGoalID(goalID string) (string, error) {
+func (s *Service) resolveGoalID(ctx context.Context, goalID string) (string, error) {
 	if goalID != "" {
+		if _, err := s.Goal(ctx, goalID); err != nil {
+			return "", err
+		}
 		return goalID, nil
 	}
 	g := s.Active()
 	if g == nil {
 		return "", fmt.Errorf("goal: no active goal")
+	}
+	if _, err := s.Goal(ctx, g.ID); err != nil {
+		return "", err
 	}
 	return g.ID, nil
 }
@@ -244,13 +248,11 @@ func (s *Service) AppendNote(ctx context.Context, goalID, text string) error {
 	if s == nil || s.storage == nil {
 		return fmt.Errorf("goal: Service.AppendNote: nil storage")
 	}
-	if goalID == "" {
-		g := s.Active()
-		if g == nil {
-			return fmt.Errorf("goal: AppendNote: no active goal")
-		}
-		goalID = g.ID
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return err
 	}
+	goalID = resolved
 	return s.storage.AppendNote(ctx, goalID, text)
 }
 
@@ -259,13 +261,14 @@ func (s *Service) ListTasks(ctx context.Context, goalID string) ([]Task, error) 
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.ListTasks: nil storage")
 	}
-	if goalID == "" {
-		g := s.Active()
-		if g == nil {
-			return nil, nil
-		}
-		goalID = g.ID
+	if goalID == "" && s.Active() == nil {
+		return nil, nil
 	}
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return nil, err
+	}
+	goalID = resolved
 	return s.storage.ListTasks(ctx, goalID)
 }
 
@@ -274,7 +277,11 @@ func (s *Service) Goal(ctx context.Context, id string) (*Goal, error) {
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.Goal: nil storage")
 	}
-	return s.storage.GetGoal(ctx, id)
+	g, err := s.storage.GetGoal(ctx, id)
+	if err == nil && !s.visible(g) {
+		return nil, ErrNotFound
+	}
+	return g, err
 }
 
 // List returns all goals.
@@ -282,7 +289,10 @@ func (s *Service) List(ctx context.Context) ([]*Goal, error) {
 	if s == nil || s.storage == nil {
 		return nil, fmt.Errorf("goal: Service.List: nil storage")
 	}
-	return s.storage.ListGoals(ctx)
+	if s.projectKey == "" {
+		return s.storage.ListGoals(ctx)
+	}
+	return s.storage.listScope(ctx, s.projectKey, false)
 }
 
 // Inject returns systemBase with a `[current_goal]`
@@ -291,8 +301,8 @@ func (s *Service) List(ctx context.Context) ([]*Goal, error) {
 // description, success criteria, and the first
 // maxTasks pending/in_progress tasks.
 //
-// This is the function the agent loop calls once at
-// session start. It does NOT mutate state.
+// Callers refresh the service before collecting context for a user run.
+// Inject does not mutate state or persisted conversation history.
 func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (string, error) {
 	if s == nil {
 		return systemBase, nil
@@ -323,6 +333,9 @@ func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (
 	b.WriteString("\n\n[current_goal]\n")
 	fmt.Fprintf(&b, "title: %s\n", g.Title)
 	fmt.Fprintf(&b, "goal_id: %s\n", g.ID)
+	if g.ProjectKey == GlobalProjectKey {
+		b.WriteString("scope: global\n")
+	}
 	if g.Description != "" {
 		fmt.Fprintf(&b, "description: %s\n", g.Description)
 	}

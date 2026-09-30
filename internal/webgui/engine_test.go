@@ -809,3 +809,47 @@ func TestEngine_ProvidersComeOutMetered(t *testing.T) {
 		t.Fatalf("provider after SwitchModel is not metered: %T", eng.prov)
 	}
 }
+
+func TestProjectSwitchKeepsGoalServicesBoundToTheirOriginalHome(t *testing.T) {
+	ctx := context.Background()
+	homeA, homeB := t.TempDir(), t.TempDir()
+	eng, err := NewEngine(echoConfig(), homeA, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	a, err := eng.goalService(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := a.Set(ctx, "Windows goal for A", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng.setHome(homeB)
+	b, err := eng.goalService(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatal("switch reused A's goal scope")
+	}
+	if active, err := b.Refresh(ctx); err != nil || active != nil {
+		t.Fatalf("A goal leaked into B: %+v %v", active, err)
+	}
+	if _, err := b.Set(ctx, "Game goal for B", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	old, err := eng.goalServiceAt(ctx, homeA)
+	if err != nil || old != a {
+		t.Fatalf("captured loop home changed: %v", err)
+	}
+	if active, err := old.Refresh(ctx); err != nil || active.ID != g.ID {
+		t.Fatalf("old loop observes B: %+v %v", active, err)
+	}
+	eng.setHome(homeA)
+	view, err := eng.activeGoal(ctx)
+	if err != nil || view.ID != g.ID || view.Scope != "project" {
+		t.Fatalf("return to A lost goal: %+v %v", view, err)
+	}
+}

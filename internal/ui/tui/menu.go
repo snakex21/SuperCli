@@ -199,7 +199,14 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 }
 
 func (m Model) openGoalMenu() (tea.Model, tea.Cmd) {
+	if m.goalSvc != nil {
+		m.goalUnassigned, _ = m.goalSvc.Unassigned(context.Background())
+		if m.globalGoalSvc == nil {
+			m.globalGoalSvc = m.goalSvc.GlobalService()
+		}
+	}
 	m.enterMenu(interactiveMenu{kind: menuGoal})
+	m.refreshGoalMenuData()
 	for i, row := range m.goalMenuRows() {
 		if row.id == "toggle" {
 			m.menu.cursor = i

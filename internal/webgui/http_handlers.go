@@ -179,7 +179,30 @@ func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, out)
 		return
 	}
-	out, err := s.eng.activeGoal(r.Context())
+	if r.URL.Query().Get("catalog") == "1" {
+		out, err := s.eng.goalCatalog(r.Context(), r.URL.Query().Get("scope"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+		return
+	}
+	if r.URL.Query().Get("unassigned") == "1" {
+		svc, err := s.eng.goalService(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		goals, err := svc.Unassigned(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, summarizeGoals(goals, false))
+		return
+	}
+	out, err := s.eng.activeGoalScope(r.Context(), r.URL.Query().Get("scope"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

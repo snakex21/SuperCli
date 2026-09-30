@@ -47,7 +47,11 @@ func toMemoryItems(entries []memory.Entry, target string) []memoryItem {
 // activeGoal returns the current goal and its tasks, or nil when no goal is
 // set. Refresh observes changes made by the TUI or another running instance.
 func (e *Engine) activeGoal(ctx context.Context) (*goalView, error) {
-	svc, err := e.goalService(ctx)
+	return e.activeGoalScope(ctx, "project")
+}
+
+func (e *Engine) activeGoalScope(ctx context.Context, scope string) (*goalView, error) {
+	svc, err := e.goalServiceScope(ctx, e.Home(), scope)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +78,12 @@ func (e *Engine) activeGoal(ctx context.Context) (*goalView, error) {
 	if g.VerifiedAt != nil {
 		verifiedAt = g.VerifiedAt.Format(time.RFC3339)
 	}
+	scopeName := "project"
+	if g.ProjectKey == goal.GlobalProjectKey {
+		scopeName = "global"
+	}
 	return &goalView{
+		Scope:                scopeName,
 		ID:                   g.ID,
 		Title:                g.Title,
 		Description:          g.Description,
@@ -93,7 +102,8 @@ func (e *Engine) activeGoal(ctx context.Context) (*goalView, error) {
 // mutateGoal applies one bounded UI operation and returns the fresh active
 // view. Goal history remains in SQLite when a goal is completed or abandoned.
 func (e *Engine) mutateGoal(ctx context.Context, in goalMutation) (*goalView, error) {
-	svc, err := e.goalService(ctx)
+	home := e.Home()
+	svc, err := e.goalServiceScope(ctx, home, in.Scope)
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +113,19 @@ func (e *Engine) mutateGoal(ctx context.Context, in goalMutation) (*goalView, er
 	switch strings.TrimSpace(in.Action) {
 	case "set":
 		_, err = svc.Set(ctx, in.Title, strings.TrimSpace(in.Description), strings.TrimSpace(in.SuccessCriteria), strings.TrimSpace(in.ParentSessionID))
+	case "assign":
+		if in.Target != "project" && in.Target != "global" {
+			return nil, fmt.Errorf("invalid target scope")
+		}
+		projectSvc, serviceErr := e.goalServiceAt(ctx, home)
+		if serviceErr != nil {
+			return nil, serviceErr
+		}
+		err = projectSvc.Assign(ctx, in.GoalID, in.Target == "global")
+	case "resume":
+		err = svc.SetStatus(ctx, in.GoalID, goal.StatusActive)
 	case "add_task":
-		_, err = svc.AddTask(ctx, "", in.Title)
+		_, err = svc.AddTask(ctx, in.GoalID, in.Title)
 	case "set_task_status":
 		status := goal.Status(strings.TrimSpace(in.Status))
 		if !goal.ValidTaskStatus(status) {
@@ -113,25 +134,65 @@ func (e *Engine) mutateGoal(ctx context.Context, in goalMutation) (*goalView, er
 		if in.TaskSeq <= 0 {
 			return nil, fmt.Errorf("task_seq must be positive")
 		}
-		err = svc.SetTaskStatus(ctx, "", in.TaskSeq, status)
+		err = svc.SetTaskStatus(ctx, in.GoalID, in.TaskSeq, status)
 	case "add_note":
-		err = svc.AppendNote(ctx, "", in.Text)
+		err = svc.AppendNote(ctx, in.GoalID, in.Text)
 	case "verify":
 		if in.Passed == nil {
 			return nil, fmt.Errorf("verify requires passed")
 		}
-		err = svc.Verify(ctx, "", *in.Passed, in.Text)
+		err = svc.Verify(ctx, in.GoalID, *in.Passed, in.Text)
 	case "set_status":
 		status := goal.Status(strings.TrimSpace(in.Status))
 		if status != goal.StatusDone && status != goal.StatusAbandoned {
 			return nil, fmt.Errorf("invalid terminal goal status %q", in.Status)
 		}
-		err = svc.SetStatus(ctx, "", status)
+		err = svc.SetStatus(ctx, in.GoalID, status)
 	default:
 		return nil, fmt.Errorf("unknown goal action %q", in.Action)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return e.activeGoal(ctx)
+	return e.activeGoalScope(ctx, in.Scope)
+}
+
+type goalSummary struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Scope  string `json:"scope"`
+}
+
+func summarizeGoals(goals []*goal.Goal, pausedOnly bool) []goalSummary {
+	out := []goalSummary{}
+	for _, g := range goals {
+		if pausedOnly && g.Status != goal.StatusPaused {
+			continue
+		}
+		scope := "project"
+		if g.ProjectKey == goal.GlobalProjectKey {
+			scope = "global"
+		} else if g.ProjectKey == "" {
+			scope = "unassigned"
+		}
+		out = append(out, goalSummary{ID: g.ID, Title: g.Title, Status: string(g.Status), Scope: scope})
+	}
+	return out
+}
+
+func (e *Engine) goalCatalog(ctx context.Context, scope string) (map[string][]goalSummary, error) {
+	svc, err := e.goalServiceScope(ctx, e.Home(), scope)
+	if err != nil {
+		return nil, err
+	}
+	old, err := svc.Unassigned(ctx)
+	if err != nil {
+		return nil, err
+	}
+	goals, err := svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]goalSummary{"unassigned": summarizeGoals(old, false), "paused": summarizeGoals(goals, true)}, nil
 }

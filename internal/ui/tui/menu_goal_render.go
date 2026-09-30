@@ -14,12 +14,24 @@ type goalMenuRow struct {
 	seq               int
 }
 
+func (m Model) goalMenuService() *goal.Service {
+	if m.menu.filter == "global" && m.globalGoalSvc != nil {
+		return m.globalGoalSvc
+	}
+	return m.goalSvc
+}
+
 func (m Model) goalMenuRows() []goalMenuRow {
-	if m.goalSvc == nil {
+	svc := m.goalMenuService()
+	if svc == nil {
 		return nil
 	}
-	rows := []goalMenuRow{{id: "new", label: m.tr("tui.menu_goal_render.3c3424ee34")}}
-	if g := m.goalSvc.Active(); g != nil {
+	scope, other := "project", "global"
+	if m.menu.filter == "global" {
+		scope, other = "global", "project"
+	}
+	rows := []goalMenuRow{{id: "scope_" + other, label: m.tr("goal.scope." + other)}, {id: "new", label: m.tr("tui.menu_goal_render.3c3424ee34") + " · " + m.tr("goal.scope."+scope)}}
+	if g := svc.Active(); g != nil {
 		rows = append(rows, goalMenuRow{id: "task", label: m.tr("tui.menu_goal_render.b86897c127")})
 		for _, task := range m.goalTaskRows() {
 			mark := "[ ]"
@@ -33,12 +45,19 @@ func (m Model) goalMenuRows() []goalMenuRow {
 			goalMenuRow{id: "verify", label: m.tr("tui.menu_goal_render.274e155e69")},
 			goalMenuRow{id: "done", label: m.tr("tui.menu_goal_render.b0d19d16b6")},
 			goalMenuRow{id: "pause", label: m.tr("tui.menu_goal_render.27aa9fe4bc")})
-	} else if goals, err := m.goalSvc.List(context.Background()); err == nil {
-		for _, g := range goals {
-			if g.Status == goal.StatusPaused {
-				rows = append(rows, goalMenuRow{id: "resume", goalID: g.ID, label: m.tr("tui.menu_goal_render.5ca7346671") + g.Title})
-			}
+		target := "global"
+		if g.ProjectKey == goal.GlobalProjectKey {
+			target = "project"
 		}
+		rows = append(rows, goalMenuRow{id: "assign_" + target, goalID: g.ID, label: m.tr("goal.assign." + target)})
+	}
+	for _, g := range m.goalMenuHistory {
+		if g.Status == goal.StatusPaused {
+			rows = append(rows, goalMenuRow{id: "resume", goalID: g.ID, label: m.tr("tui.menu_goal_render.5ca7346671") + g.Title})
+		}
+	}
+	for _, g := range m.goalUnassigned {
+		rows = append(rows, goalMenuRow{id: "assign_project", goalID: g.ID, label: m.tr("goal.assign.project") + ": " + g.Title}, goalMenuRow{id: "assign_global", goalID: g.ID, label: m.tr("goal.assign.global") + ": " + g.Title})
 	}
 	return rows
 }
@@ -66,7 +85,7 @@ func (m Model) handleGoalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a", "n":
 		if m.goalSvc != nil {
 			op := "new"
-			if m.goalSvc.Active() != nil {
+			if m.goalMenuService().Active() != nil {
 				op = "task"
 			}
 			return m.openGoalForm(op)
@@ -80,7 +99,7 @@ func (m Model) openGoalForm(operation string) (tea.Model, tea.Cmd) {
 	if operation == "new" {
 		form = []string{"", "", ""}
 	}
-	m.enterMenu(interactiveMenu{kind: menuGoalForm, editName: operation, form: form})
+	m.enterMenu(interactiveMenu{kind: menuGoalForm, editName: operation, form: form, filter: m.menu.filter})
 	return m, nil
 }
 
@@ -93,8 +112,21 @@ func (m Model) selectGoalAction() (tea.Model, tea.Cmd) {
 	ctx := context.Background()
 	var err error
 	switch row.id {
+	case "scope_project", "scope_global":
+		m.menu.filter = strings.TrimPrefix(row.id, "scope_")
+		m.menu.cursor = 0
+		m.refreshGoalMenuData()
+		return m, nil
 	case "new", "task", "note", "verify":
 		return m.openGoalForm(row.id)
+	case "assign_project", "assign_global":
+		err = m.goalSvc.Assign(ctx, row.goalID, row.id == "assign_global")
+		if err == nil {
+			m.goalUnassigned, _ = m.goalSvc.Unassigned(ctx)
+			if m.globalGoalSvc != nil {
+				_, _ = m.globalGoalSvc.Refresh(ctx)
+			}
+		}
 	case "toggle":
 		status := goal.TaskDone
 		for _, task := range m.goalTaskRows() {
@@ -102,17 +134,18 @@ func (m Model) selectGoalAction() (tea.Model, tea.Cmd) {
 				status = goal.TaskPending
 			}
 		}
-		err = m.goalSvc.SetTaskStatus(ctx, "", row.seq, status)
+		err = m.goalMenuService().SetTaskStatus(ctx, "", row.seq, status)
 	case "done":
-		err = m.goalSvc.SetStatus(ctx, "", goal.StatusDone)
+		err = m.goalMenuService().SetStatus(ctx, "", goal.StatusDone)
 	case "pause":
-		err = m.goalSvc.SetStatus(ctx, "", goal.StatusPaused)
+		err = m.goalMenuService().SetStatus(ctx, "", goal.StatusPaused)
 	case "resume":
-		err = m.goalSvc.SetStatus(ctx, row.goalID, goal.StatusActive)
+		err = m.goalMenuService().SetStatus(ctx, row.goalID, goal.StatusActive)
 		if err == nil {
-			_, err = m.goalSvc.Refresh(ctx)
+			_, err = m.goalMenuService().Refresh(ctx)
 		}
 	}
+	m.refreshGoalMenuData()
 	m.menu.formErr = ""
 	if err != nil {
 		m.menu.formErr = err.Error()
@@ -139,13 +172,13 @@ func (m Model) submitGoalForm() (tea.Model, tea.Cmd) {
 	var err error
 	switch m.menu.editName {
 	case "new":
-		_, err = m.goalSvc.Set(ctx, value, m.menu.form[1], m.menu.form[2], m.sessionID)
+		_, err = m.goalMenuService().Set(ctx, value, m.menu.form[1], m.menu.form[2], m.sessionID)
 	case "task":
-		_, err = m.goalSvc.AddTask(ctx, "", value)
+		_, err = m.goalMenuService().AddTask(ctx, "", value)
 	case "note":
-		err = m.goalSvc.AppendNote(ctx, "", value)
+		err = m.goalMenuService().AppendNote(ctx, "", value)
 	case "verify":
-		err = m.goalSvc.Verify(ctx, "", true, value)
+		err = m.goalMenuService().Verify(ctx, "", true, value)
 	}
 	if err != nil {
 		m.menu.formErr = err.Error()
@@ -154,13 +187,19 @@ func (m Model) submitGoalForm() (tea.Model, tea.Cmd) {
 	next, cmd := m.backMenu()
 	parent := next.(Model)
 	parent.menu.formErr = ""
+	parent.refreshGoalMenuData()
 	return parent, cmd
 }
 
 func (m Model) renderGoalMenu() string {
 	title := m.tr("tui.menu_goal_render.3f87b02f0d")
-	if m.goalSvc != nil && m.goalSvc.Active() != nil {
-		title = m.goalSvc.Active().Title
+	if svc := m.goalMenuService(); svc != nil && svc.Active() != nil {
+		title = svc.Active().Title
+		scope := "project"
+		if svc.Active().ProjectKey == goal.GlobalProjectKey {
+			scope = "global"
+		}
+		title += " · " + m.tr("goal.scope."+scope)
 	}
 	page := menuPage{title: m.tr("tui.menu_goal_render.cdbf6975e8"), subtitle: title, detailTitle: title,
 		detail: []string{m.tr("tui.menu_goal_render.af476ecc74")},
@@ -180,6 +219,11 @@ func (m Model) renderGoalForm() string {
 	title := m.tr("tui.menu_goal_render.f326ad6eff")
 	labels := []string{m.tr("tui.menu_goal_render.7e8cd2056d"), m.tr("tui.menu_goal_render.a163618396"), m.tr("tui.menu_goal_render.0878d10bc0")}
 	hint := m.tr("tui.menu_goal_render.2c1eb8a708")
+	scope := "project"
+	if m.menu.filter == "global" {
+		scope = "global"
+	}
+	title += " · " + m.tr("goal.scope."+scope)
 	switch m.menu.editName {
 	case "task":
 		title = m.tr("tui.menu_goal_render.839bd5e01e")
@@ -211,4 +255,23 @@ func (m Model) renderGoalForm() string {
 	b.WriteString(m.palette.Error.Render(truncateVisible(m.menu.formErr, width)) + "\n")
 	b.WriteString(m.palette.InputHint.Render(truncateVisible(m.tr("tui.menu_goal_render.53217ca92b"), width)))
 	return b.String()
+}
+
+// Refresh only when opening the goal menu or after a user action. Arrow keys
+// render the collected rows without querying SQLite again.
+func (m *Model) refreshGoalMenuData() {
+	m.goalMenuTasks, m.goalMenuHistory = nil, nil
+	svc := m.goalMenuService()
+	if svc == nil {
+		return
+	}
+	ctx := context.Background()
+	_, _ = svc.Refresh(ctx)
+	if svc != m.goalSvc && m.goalSvc != nil {
+		_, _ = m.goalSvc.Refresh(ctx)
+	}
+	if svc.Active() != nil {
+		m.goalMenuTasks, _ = svc.ListTasks(ctx, "")
+	}
+	m.goalMenuHistory, _ = svc.List(ctx)
 }

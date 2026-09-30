@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Bellek veritabanı",
   "doctor.providerConfig": "Sağlayıcı yapılandırması",
   "doctor.command": "{name} komutu",
-  "doctor.server": "{name} sunucusu"
+  "doctor.server": "{name} sunucusu",
+  "goal.scope.project": "Proje hedefi",
+  "goal.scope.global": "Genel hedef",
+  "goal.unassigned": "Atanmamış hedefler",
+  "goal.assign.project": "Bu projeye ata",
+  "goal.assign.global": "Genel yap"
 }

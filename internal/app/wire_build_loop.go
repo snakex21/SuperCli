@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"supercli/internal/account/credits"
 	"supercli/internal/agent"
 	"supercli/internal/agent/ultrawork"
@@ -52,9 +53,18 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := a.tomlCfg.MaxStepsOr(agent.DefaultMaxSteps)
 	return agent.LoopConfig{
-		Provider:           a.provider,
-		Registry:           a.registry,
-		System:             buildSystemPrompt(a.goalSvc),
+		Provider: a.provider,
+		Registry: a.registry,
+		System:   buildSystemPrompt(nil),
+		LiveContextForRun: func(ctx context.Context) (string, error) {
+			if a.goalSvc == nil {
+				return "", nil
+			}
+			if _, err := a.goalSvc.Refresh(ctx); err != nil {
+				return "", err
+			}
+			return a.goalSvc.Inject(ctx, "", 5)
+		},
 		Briefing:           a.memoryBriefing,
 		MaxSteps:           maxSteps,
 		ErrorLog:           a.errorLog,

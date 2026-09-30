@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"supercli/internal/llm"
+	"supercli/internal/storage/goal"
 	"supercli/internal/storage/session"
 )
 
@@ -311,15 +312,33 @@ func TestHandleGoal_CreateManageAndInject(t *testing.T) {
 		t.Fatalf("verified view = %+v", view)
 	}
 
+	capture := &prefixCaptureProvider{}
+	srv.eng.prov = capture
 	loop, err := srv.eng.newLoop()
 	if err != nil {
 		t.Fatal(err)
 	}
 	messages := loop.AllMessages()
-	if len(messages) == 0 || !strings.Contains(messages[0].Content, "[current_goal]") ||
-		!strings.Contains(messages[0].Content, "Ship web goals") ||
-		!strings.Contains(messages[0].Content, "verification: passed") {
-		t.Fatalf("active goal was not injected into web agent prompt: %+v", messages)
+	if len(messages) == 0 || strings.Contains(messages[0].Content, "[current_goal]") {
+		t.Fatal("goal rewrote stable prompt")
+	}
+	events, err := loop.Run(context.Background(), "Report the goal progress.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range events {
+	}
+	if len(capture.requests) != 1 {
+		t.Fatalf("model calls=%d", len(capture.requests))
+	}
+	var request strings.Builder
+	for _, message := range capture.requests[0] {
+		request.WriteString(message.Content)
+	}
+	for _, want := range []string{"[current_goal]", "Ship web goals", "verification: passed"} {
+		if !strings.Contains(request.String(), want) {
+			t.Fatalf("missing current goal %q: %s", want, request.String())
+		}
 	}
 
 	finished := post(`{"action":"set_status","status":"done"}`)
@@ -424,5 +443,113 @@ func TestRecordMessageAttachmentsRequiresNewUserMessage(t *testing.T) {
 	}
 	if len(attachments) != 1 || len(attachments[2]) != 1 || attachments[2][0] != path {
 		t.Fatalf("attachments = %#v", attachments)
+	}
+}
+
+func TestHandleGoalGlobalScopeAndLegacyAssignment(t *testing.T) {
+	srv := newTestServer(t, false)
+	post := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		srv.handleGoal(rec, httptest.NewRequest(http.MethodPost, "/api/goal", strings.NewReader(body)))
+		return rec
+	}
+	project := post(`{"action":"set","title":"Project goal"}`)
+	global := post(`{"action":"set","scope":"global","title":"General goal"}`)
+	var p, g goalView
+	if project.Code != http.StatusOK || global.Code != http.StatusOK {
+		t.Fatalf("create: %s %s", project.Body.String(), global.Body.String())
+	}
+	if err := json.Unmarshal(project.Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(global.Body.Bytes(), &g); err != nil {
+		t.Fatal(err)
+	}
+	if p.Scope != "project" || g.Scope != "global" || p.ID == g.ID {
+		t.Fatalf("wrong scopes: %+v %+v", p, g)
+	}
+	current, err := srv.eng.activeGoal(context.Background())
+	if err != nil || current.ID != p.ID {
+		t.Fatal("global creation replaced project goal")
+	}
+	if bad := post(`{"action":"set","scope":"other-project","title":"wrong"}`); bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid scope accepted: %s", bad.Body.String())
+	}
+	service, err := srv.eng.goalService(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyStore := goal.NewStorage(srv.eng.goalDB)
+	legacy, err := goal.NewService(legacyStore).Set(context.Background(), "Old Windows goal", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unassigned := httptest.NewRecorder()
+	srv.handleGoal(unassigned, httptest.NewRequest(http.MethodGet, "/api/goal?unassigned=1", nil))
+	if unassigned.Code != http.StatusOK || !strings.Contains(unassigned.Body.String(), legacy.ID) {
+		t.Fatal("legacy goal disappeared")
+	}
+	body, _ := json.Marshal(goalMutation{Action: "assign", GoalID: legacy.ID, Target: "project"})
+	assigned := post(string(body))
+	if assigned.Code != http.StatusOK {
+		t.Fatalf("assignment: %s", assigned.Body.String())
+	}
+	if active, _ := service.Refresh(context.Background()); active.ID != legacy.ID {
+		t.Fatal("legacy goal not assigned")
+	}
+}
+
+func TestHandleGoalRejectsActionsFromAnotherProjectPanel(t *testing.T) {
+	for _, action := range []goalMutation{
+		{Action: "add_task", Title: "Old panel task"},
+		{Action: "add_note", Text: "Old panel note"},
+		{Action: "set_task_status", TaskSeq: 1, Status: "done"},
+		{Action: "set_status", Status: "abandoned"},
+	} {
+		t.Run(action.Action, func(t *testing.T) {
+			ctx := context.Background()
+			srv := newTestServer(t, false)
+			a, err := srv.eng.goalService(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old, err := a.Set(ctx, "Project A", "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv.eng.setHome(t.TempDir())
+			b, err := srv.eng.goalService(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := b.Set(ctx, "Project B", "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := b.AddTask(ctx, current.ID, "Keep pending"); err != nil {
+				t.Fatal(err)
+			}
+			action.GoalID = old.ID
+			body, err := json.Marshal(action)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			srv.handleGoal(rec, httptest.NewRequest(http.MethodPost, "/api/goal", strings.NewReader(string(body))))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("stale project action accepted: %d %s", rec.Code, rec.Body.String())
+			}
+			got, err := b.Goal(ctx, current.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tasks, err := b.ListTasks(ctx, current.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != goal.StatusActive || got.Notes != "" || len(tasks) != 1 || tasks[0].Status != goal.TaskPending {
+				t.Fatalf("wrong project mutated: %+v %+v", got, tasks)
+			}
+		})
 	}
 }

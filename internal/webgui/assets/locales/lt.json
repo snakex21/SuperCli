@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Atminties duomenų bazė",
   "doctor.providerConfig": "Teikėjo konfigūracija",
   "doctor.command": "{name} komanda",
-  "doctor.server": "{name} serveris"
+  "doctor.server": "{name} serveris",
+  "goal.scope.project": "Projekto tikslas",
+  "goal.scope.global": "Bendras tikslas",
+  "goal.unassigned": "Nepriskirti tikslai",
+  "goal.assign.project": "Priskirti šiam projektui",
+  "goal.assign.global": "Padaryti bendru"
 }

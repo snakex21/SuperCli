@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -163,11 +162,7 @@ func (m Model) configuredProviderNames() []string {
 }
 
 func (m Model) goalTaskRows() []goal.Task {
-	if m.goalSvc == nil {
-		return nil
-	}
-	rows, _ := m.goalSvc.ListTasks(context.Background(), "")
-	return rows
+	return m.goalMenuTasks
 }
 
 func fuzzy(haystack, needle string) bool {

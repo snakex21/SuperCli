@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (brezplačni modeli, načrt žetonov)",
   "provider.description.sensenova": "SenseTime SenseNova (načrt žetonov brezplačna beta)",
   "provider.description.lmstudio": "Lokalni modeli prek LM Studio",
-  "provider.description.ollama": "Lokalni modeli prek Ollama"
+  "provider.description.ollama": "Lokalni modeli prek Ollama",
+  "goal.scope.project": "Cilj projekta",
+  "goal.scope.global": "Splošni cilj",
+  "goal.unassigned": "Nedodeljeni cilji",
+  "goal.assign.project": "Dodeli temu projektu",
+  "goal.assign.global": "Nastavi kot splošni"
 }

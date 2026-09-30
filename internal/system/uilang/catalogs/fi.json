@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (ilmaiset mallit, Token Plan)",
   "provider.description.sensenova": "SenseTime SenseNova (Token Plan ilmainen beta)",
   "provider.description.lmstudio": "Paikalliset mallit LM Studio:n kautta",
-  "provider.description.ollama": "Paikalliset mallit Ollama:n kautta"
+  "provider.description.ollama": "Paikalliset mallit Ollama:n kautta",
+  "goal.scope.project": "Projektin tavoite",
+  "goal.scope.global": "Yleinen tavoite",
+  "goal.unassigned": "Kohdistamattomat tavoitteet",
+  "goal.assign.project": "Kohdista tähän projektiin",
+  "goal.assign.global": "Aseta yleiseksi"
 }
