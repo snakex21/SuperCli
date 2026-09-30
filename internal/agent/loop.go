@@ -322,8 +322,11 @@ type Loop struct {
 	// nextCoordinatorAddon is the route-aware variant used by repository
 	// preflight. It waits until a coordinator turn, so greetings and general
 	// advice do not pay hundreds of irrelevant repository tokens. Unlike the
-	// user's actual message it is ephemeral and is not persisted to history.
+	// user's actual message it is absent from the raw transcript (the model
+	// projection may retain it for continuation).
 	nextCoordinatorAddon string
+	// The source defers filesystem work until this context actually needs it.
+	nextCoordinatorAddonSource func(context.Context) string
 
 	// interjections are user messages typed while a Run is active. The TUI
 	// enqueues from Bubble Tea's goroutine; the loop drains only between model

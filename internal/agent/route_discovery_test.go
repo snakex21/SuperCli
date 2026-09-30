@@ -32,7 +32,11 @@ func TestLightTurnDiscoversAndUsesToolWithoutRepeatingRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l.nextCoordinatorAddon = "deferred-repo-context-marker"
+			collections := 0
+			l.SetNextCoordinatorAddonSource(func(context.Context) string {
+				collections++
+				return "deferred-repo-context-marker"
+			})
 			ch, err := l.Run(context.Background(), prompt)
 			if err != nil {
 				t.Fatal(err)
@@ -45,6 +49,9 @@ func TestLightTurnDiscoversAndUsesToolWithoutRepeatingRequest(t *testing.T) {
 					t.Fatal(e.Err)
 				}
 			}
+			if collections != 1 {
+				t.Fatalf("repo collections=%d, want one after discovery", collections)
+			}
 			if len(p.reqs) != 3 || executions != 1 {
 				t.Fatalf("requests=%d executions=%d", len(p.reqs), executions)
 			}
@@ -56,6 +63,9 @@ func TestLightTurnDiscoversAndUsesToolWithoutRepeatingRequest(t *testing.T) {
 				users := 0
 				for _, m := range req {
 					text.WriteString(m.TextOnly().Content)
+					if strings.Contains(m.TextOnly().Content, "deferred-repo-context-marker") && m.Role != llm.RoleUser {
+						t.Fatalf("request %d repo block changed stable system context", i)
+					}
 					if m.Role == llm.RoleUser {
 						users++
 					}
@@ -78,11 +88,11 @@ func TestFailedDiscoveryKeepsLightRoute(t *testing.T) {
 	r.MustRegister(tools.Tool{Name: "fixture", Description: "fixture", Schema: "{\"type\":\"object\"}", Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "ok"}, nil }})
 	r.ActivateDiscovered("fixture")
 	l := &Loop{route: RouteChatOnly, registry: r}
-	l.continueWithDiscoveredTools([]llm.ToolCall{{Name: "tool_search"}}, []callOutcome{{failed: true}})
+	l.continueWithDiscoveredTools(context.Background(), []llm.ToolCall{{Name: "tool_search"}}, []callOutcome{{failed: true}})
 	if l.route != RouteChatOnly {
 		t.Fatal("failed discovery expanded context")
 	}
-	l.continueWithDiscoveredTools([]llm.ToolCall{{Name: "recall"}}, []callOutcome{{}})
+	l.continueWithDiscoveredTools(context.Background(), []llm.ToolCall{{Name: "recall"}}, []callOutcome{{}})
 	if l.route != RouteChatOnly {
 		t.Fatal("recall expanded context")
 	}

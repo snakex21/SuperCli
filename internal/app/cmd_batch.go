@@ -241,16 +241,14 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// Preflight repo context (config `preflight_repo`): batch runs are
 	// always a fresh context, so the repo block saves the same early
 	// discovery turns as in the TUI. Appended to the user prompt side.
-	preflightTurn := !execProfile.EnableNavigator
-	if execProfile.EnableNavigator {
-		mode, confident := agent.DefaultRouteMap().ClassifyConfident(userPrompt)
-		preflightTurn = !confident || mode == agent.RouteCoordinator
-	}
-	if resolvePreflightRepo(tomlCfg.PreflightRepo) && preflightTurn {
-		if block := preflight.Build(home, preflight.Options{}); block != "" {
-			l.SetNextCoordinatorAddon(block)
-			fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok (project turn)\n", preflight.EstimateTokens(block))
-		}
+	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
+		l.SetNextCoordinatorAddonSource(func(ctx context.Context) string {
+			block := preflight.BuildContext(ctx, home, preflight.Options{})
+			if block != "" && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok (project turn)\n", preflight.EstimateTokens(block))
+			}
+			return block
+		})
 	}
 
 	// Orchestrator wiring — the same contract as the TUI (wireAgentTool):

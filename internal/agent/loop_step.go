@@ -414,7 +414,7 @@ func (l *Loop) runStep(
 		return stepAbort
 	}
 	l.drainBackgroundMessages(ctx)
-	l.continueWithDiscoveredTools(toolCalls, toolOutcomes)
+	l.continueWithDiscoveredTools(ctx, toolCalls, toolOutcomes)
 	toolFailures := countFailures(toolOutcomes)
 	// User steering starts fresh progress accounting before any loop verdict.
 	interjections := l.drainInterjections(ctx, out, step+1 < stepLimit, false)

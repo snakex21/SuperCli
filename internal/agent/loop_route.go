@@ -11,7 +11,7 @@ import (
 // only apply on the coordinator path (repo preflight, verification hint).
 // Called once at the start of run(), after the user message is already on
 // Messages. Routing uses the raw prompt; the session store keeps that raw
-// prompt — addons are not persisted.
+// prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// A1: the navigator is a full LLM call. It runs here, inside the
 	// background goroutine, so Run() returns immediately and the TUI
@@ -43,9 +43,8 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// queued across chat/advisor turns and attach it to the newest user message
 	// immediately before the first coordinator provider call. Routing above saw
 	// only the user's raw prompt, and the session store keeps that raw prompt.
-	if l.route == RouteCoordinator && l.nextCoordinatorAddon != "" {
-		l.appendCurrentUserContext(l.nextCoordinatorAddon)
-		l.nextCoordinatorAddon = ""
+	if l.route == RouteCoordinator {
+		l.attachCoordinatorAddon(ctx)
 	}
 	if l.route == RouteCoordinator && l.wordDocumentContext(prompt) {
 		// These are registered but normally invisible. Promote them before the
@@ -60,6 +59,27 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 		if hint := implementationVerificationHint(prompt); hint != "" {
 			l.appendCurrentUserContext(hint)
 		}
+	}
+}
+
+// attachCoordinatorAddon keeps collection off light turns and uses the current
+// Run's context. Empty successful results are consumed; canceled work can retry
+// on the next project turn. Both eager and lazy addons use the variable side.
+func (l *Loop) attachCoordinatorAddon(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	block := l.nextCoordinatorAddon
+	if source := l.nextCoordinatorAddonSource; source != nil {
+		block = strings.TrimSpace(source(ctx))
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	l.nextCoordinatorAddon = ""
+	l.nextCoordinatorAddonSource = nil
+	if block != "" {
+		l.appendCurrentUserContext(block)
 	}
 }
 
@@ -122,7 +142,7 @@ func containsWordDocumentReference(s string) bool {
 // continueWithDiscoveredTools restores project instructions and normal tools
 // after a lightweight turn discovers a capability. This uses the already
 // required tool-result continuation; no router call or repeated user prompt.
-func (l *Loop) continueWithDiscoveredTools(calls []llm.ToolCall, outcomes []callOutcome) {
+func (l *Loop) continueWithDiscoveredTools(ctx context.Context, calls []llm.ToolCall, outcomes []callOutcome) {
 	if l.route == RouteCoordinator || len(l.registry.DiscoveredNames()) == 0 {
 		return
 	}
@@ -131,11 +151,7 @@ func (l *Loop) continueWithDiscoveredTools(calls []llm.ToolCall, outcomes []call
 			continue
 		}
 		l.route = RouteCoordinator
-		if l.nextCoordinatorAddon != "" {
-			l.Messages = append(l.Messages, llm.Message{Role: llm.RoleSystem, Content: l.nextCoordinatorAddon})
-			l.nextCoordinatorAddon = ""
-			l.invalidateVisibleEstimate()
-		}
+		l.attachCoordinatorAddon(ctx)
 		return
 	}
 }

@@ -12,23 +12,34 @@ import (
 	"supercli/internal/llm"
 )
 
-func TestShouldAttachPreflightWaitsForFirstProjectTurn(t *testing.T) {
-	if shouldAttachPreflight(nil, "hello") {
-		t.Fatal("greeting should not pay repository preflight")
+func TestShouldQueuePreflightWaitsForFirstProjectTurn(t *testing.T) {
+	if !shouldQueuePreflight(nil) {
+		t.Fatal("fresh session should retain lazy project context")
 	}
 	history := []llm.Message{
 		{Role: llm.RoleUser, Content: "hello"},
 		{Role: llm.RoleAssistant, Content: "hi"},
 	}
-	if !shouldAttachPreflight(history, "inspect project files") {
+	if !shouldQueuePreflight(history) {
 		t.Fatal("first project turn should receive repository preflight")
 	}
 	history = append(history,
 		llm.Message{Role: llm.RoleUser, Content: "inspect project files"},
 		llm.Message{Role: llm.RoleAssistant, Content: "done"},
 	)
-	if shouldAttachPreflight(history, "fix another file") {
+	if shouldQueuePreflight(history) {
 		t.Fatal("preflight must not repeat after a project turn")
+	}
+}
+
+func TestShouldQueuePreflightRecognizesPromotedAndMultimodalHistory(t *testing.T) {
+	for _, message := range []llm.Message{
+		{Role: llm.RoleUser, Content: "cześć\n\nRepo state (auto-collected):\nbranch: main"},
+		{Role: llm.RoleUser, Parts: []llm.ContentPart{{Type: llm.PartTypeText, Text: "hello\n\nRepo state (auto-collected):\nbranch: main"}}},
+	} {
+		if shouldQueuePreflight([]llm.Message{message}) {
+			t.Fatal("previous project context was collected again after promotion or attachment")
+		}
 	}
 }
 
