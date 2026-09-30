@@ -54,6 +54,9 @@ const (
 // tasks off mid-work.
 type repeatProgress struct {
 	unchanged unchangedProgress
+	// Count incomplete responses, not calls, independently of compacted history
+	// or changing arguments. A complete response resets this per-Run bound.
+	truncatedToolResponses int
 	// identicalStreak counts consecutive calls with the same fingerprint.
 	identicalStreak int
 	last            [sha256.Size]byte
