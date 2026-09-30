@@ -43,6 +43,7 @@ type Server struct {
 	folderJob       *folderIndexJob
 	folderJobCancel context.CancelFunc
 	updateFactory   func() (applicationUpdater, error)
+	chatCompletions chatCompletions
 }
 
 // codexLoginState is the per-account (by label) tracking record for

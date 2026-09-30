@@ -82,6 +82,7 @@
   "composer.queued": "На опашка",
   "composer.interrupt": "Прекъсване и изпращане",
   "composer.sendNow": "Изпратете сега",
+  "composer.sendingQueued": "Изпращане на съобщение от опашката…",
   "composer.resume": "Възобновяване на опашката",
   "composer.remove": "Премахнете",
   "composer.moveUp": "Придвижете се нагоре",

@@ -82,6 +82,7 @@
   "composer.queued": "In der Warteschlange",
   "composer.interrupt": "Unterbrechen und senden",
   "composer.sendNow": "Jetzt senden",
+  "composer.sendingQueued": "Nachricht aus der Warteschlange wird gesendet…",
   "composer.resume": "Warteschlange fortsetzen",
   "composer.remove": "Entfernen",
   "composer.moveUp": "Bewegen Sie sich nach oben",

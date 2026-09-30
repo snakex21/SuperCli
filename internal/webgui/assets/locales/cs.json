@@ -82,6 +82,7 @@
   "composer.queued": "Ve frontě",
   "composer.interrupt": "Přerušit a odeslat",
   "composer.sendNow": "Poslat nyní",
+  "composer.sendingQueued": "Odesílání zprávy z fronty…",
   "composer.resume": "Obnovit frontu",
   "composer.remove": "Odstranit",
   "composer.moveUp": "Posuňte se nahoru",

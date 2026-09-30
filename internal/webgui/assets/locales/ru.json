@@ -82,6 +82,7 @@
   "composer.queued": "В очереди",
   "composer.interrupt": "Прервать и отправить",
   "composer.sendNow": "Отправить сейчас",
+  "composer.sendingQueued": "Отправка сообщения из очереди…",
   "composer.resume": "Возобновить очередь",
   "composer.remove": "Удалять",
   "composer.moveUp": "Вверх",

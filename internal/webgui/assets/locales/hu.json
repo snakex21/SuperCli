@@ -82,6 +82,7 @@
   "composer.queued": "Sorban",
   "composer.interrupt": "Megszakítás és küldés",
   "composer.sendNow": "Küldje el most",
+  "composer.sendingQueued": "Sorban álló üzenet küldése…",
   "composer.resume": "Sor folytatása",
   "composer.remove": "Távolítsa el",
   "composer.moveUp": "Lépj felfelé",

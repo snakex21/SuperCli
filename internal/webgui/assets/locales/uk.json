@@ -82,6 +82,7 @@
   "composer.queued": "У черзі",
   "composer.interrupt": "Перервати та відправити",
   "composer.sendNow": "Надішліть зараз",
+  "composer.sendingQueued": "Надсилання повідомлення з черги…",
   "composer.resume": "Відновити чергу",
   "composer.remove": "видалити",
   "composer.moveUp": "Рухатися вгору",

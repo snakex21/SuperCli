@@ -82,6 +82,7 @@
   "composer.queued": "Jonossa",
   "composer.interrupt": "Keskeytä ja lähetä",
   "composer.sendNow": "Lähetä nyt",
+  "composer.sendingQueued": "Lähetetään jonossa olevaa viestiä…",
   "composer.resume": "Jatka jonoa",
   "composer.remove": "Poistaa",
   "composer.moveUp": "Siirrä ylös",

@@ -232,33 +232,8 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 	}
 }
 
-func TestQueuedMessageOpensItsConversationBeforeSending(t *testing.T) {
-	js := readEmbeddedAppJS(t)
-	for _, required := range []string{
-		"return await resumeSession(item.session_id, sessionByID[item.session_id] || null)",
-		"if (!await prepareQueuedTask(item))",
-		"if (!immediate.id || await removeQueuedTask(immediate.id)) next = immediate",
-		"if (!await prepareQueuedTask(queued))",
-	} {
-		if !strings.Contains(js, required) {
-			t.Fatalf("queued message can run outside its visible conversation: missing %q", required)
-		}
-	}
-}
-
-func TestStoppedRunRecoversMessageRewind(t *testing.T) {
-	js := readEmbeddedAppJS(t)
-	for _, required := range []string{
-		"async function addLatestMessageRewind(node, text, attempts)",
-		"/api/sessions?limit=6",
-		"stopped ? 8 : 1",
-		"activeSessionID = sessionID",
-	} {
-		if !strings.Contains(js, required) {
-			t.Fatalf("stopped-run rewind recovery is missing %q", required)
-		}
-	}
-}
+// Queue/session handoff and fast-Stop recovery are exercised behaviorally in
+// test/ui/queue-handoff.test.cjs and chat_completion_test.go.
 
 func TestHardProtocolLongTranscriptRenderingIsBounded(t *testing.T) {
 	js := readEmbeddedAppJS(t)

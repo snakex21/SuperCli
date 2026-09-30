@@ -354,6 +354,14 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	for {
 		select {
 		case <-ctx.Done():
+			// An aborted SSE connection is not the end of the loop's durable
+			// writes. Drain its channel until close (the completion signal) so
+			// a forced next turn cannot resume a half-saved conversation.
+			for ev := range ch {
+				if result, ok := ev.(agent.ToolResultEvent); ok {
+					recordToolResult(result)
+				}
+			}
 			flushMessages()
 			checkpointID, changes := finishCheckpoint()
 			if len(changes) > 0 {

@@ -82,6 +82,7 @@
   "composer.queued": "I kø",
   "composer.interrupt": "Avbryt og send",
   "composer.sendNow": "Send nå",
+  "composer.sendingQueued": "Sender melding fra køen…",
   "composer.resume": "Gjenoppta køen",
   "composer.remove": "Fjerne",
   "composer.moveUp": "Flytt opp",

@@ -82,6 +82,7 @@
   "composer.queued": "Na fila",
   "composer.interrupt": "Interromper e enviar",
   "composer.sendNow": "Enviar agora",
+  "composer.sendingQueued": "Enviando mensagem da fila…",
   "composer.resume": "Retomar fila",
   "composer.remove": "Remover",
   "composer.moveUp": "Subir",

@@ -82,6 +82,7 @@
   "composer.queued": "Sıraya alındı",
   "composer.interrupt": "Kes ve gönder",
   "composer.sendNow": "Şimdi gönder",
+  "composer.sendingQueued": "Kuyruktaki mesaj gönderiliyor…",
   "composer.resume": "Kuyruğu devam ettir",
   "composer.remove": "Kaldırmak",
   "composer.moveUp": "Yukarı taşı",

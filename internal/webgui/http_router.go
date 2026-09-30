@@ -111,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 
 	// SSE chat stream.
 	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/api/chat/completion", s.handleChatCompletion)
 	mux.HandleFunc("/api/question/answer", s.handleQuestionAnswer)
 	mux.HandleFunc("/api/question/image", s.handleQuestionImage)
 	mux.HandleFunc("/api/checkpoint", s.handleCheckpoint)
