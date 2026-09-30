@@ -17,7 +17,7 @@ func init() {
 		return
 	}
 	args := strings.Join(os.Args[1:], " ")
-	for _, flag := range []string{"--with-filename", "--color=never", "!.zig-cache/**", "!zig-out/**"} {
+	for _, flag := range []string{"--with-filename", "--color=never", "!**/.zig-cache/**", "!**/zig-out/**"} {
 		if !strings.Contains(args, flag) {
 			fmt.Fprintln(os.Stderr, "missing expected flag", flag)
 			os.Exit(2)
