@@ -180,13 +180,13 @@ const chatOnlySystemPrompt = `You are SuperCli. Answer directly in the user's la
 
 const advisorSystemPrompt = `You are SuperCli. Give thoughtful advice in the user's language. Use web_lookup for current facts, recall for remembered facts, and tool_search when the answer requires other tools or project evidence. Only claim to have inspected what you actually checked.`
 
-const implementationVerificationInstruction = `Completion contract: continue past discovery and make the requested change unless blocked. Each assistant tool turn is another provider request: batch independent reads/searches, use read_many for multiple files/ranges, combine related search_code terms with regex alternation, and send several independent read-only tool calls together. Once evidence is sufficient, edit instead of exploring one file per round. If a tool call fails, correct it or report the blocker. After changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Do not claim completion before a concrete check succeeds; report exactly what passed and what was not verified.`
+const implementationVerificationInstruction = `Requested edits only: implement and verify unless blocked; honor read-only requests. Each tool turn is another provider request: batch independent reads/searches, use read_many for multiple files/ranges, combine related search_code terms with regex alternation, and send several independent read-only tool calls together. Once evidence suffices, make requested edits instead of exploring one file per round. If a tool call fails, correct it or report the blocker. After changing code, run the most relevant build/test/check and, when practical, exercise the changed program. Do not claim completion before a concrete check succeeds; report exactly what passed and what was not verified.`
 
 // implementationVerificationHint recognizes explicit mutation intent without
 // a model call. Keep the list narrow: asking about a project must not inherit a
 // testing lecture, while concrete implementation work should.
 func implementationVerificationHint(prompt string) string {
-	p := strings.ToLower(prompt)
+	p := unquotedActionPrompt(strings.ToLower(prompt))
 	for _, hit := range []string{
 		"napraw", "zaimplement", "dodaj", "usuń", "usun", "zmień", "zmien", "edytuj",
 		"przerób", "przerob", "popraw", "zbuduj", "stwórz", "stworz", "zrób", "zrob",
@@ -201,7 +201,7 @@ func implementationVerificationHint(prompt string) string {
 
 // hasUnnegatedActionWord guards the cheap hint classifier, not routing or tool
 // permissions. Stems still recognize Polish inflections, but embedded fragments
-// (prefix, credit, identifiers) and directly negated verbs are not edit requests.
+// (prefix, credit, identifiers), negations and read-only mentions are not edit requests.
 func hasUnnegatedActionWord(prompt, fragment string) bool {
 	if fragment == "" {
 		return false
@@ -219,13 +219,83 @@ func hasUnnegatedActionWord(prompt, fragment string) bool {
 				continue
 			}
 		}
-		before := strings.TrimRightFunc(prompt[:at], unicode.IsSpace)
-		previousWord := before[strings.LastIndexFunc(before, unicode.IsSpace)+1:]
-		switch previousWord {
-		case "not", "never", "don't", "don’t", "cannot", "can't", "can’t", "nie", "bez":
+		if actionMentionContext(prompt[:at]) {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+// These conservative guards only omit optional guidance. They neither authorize
+// edits nor restrict tools; ambiguous intent remains with the model. In
+// particular, a quoted action or an explanation of an action is not a request
+// to perform it.
+func unquotedActionPrompt(prompt string) string {
+	runes := []rune(prompt)
+	var closing rune
+	for i, r := range runes {
+		if closing != 0 {
+			runes[i] = ' '
+			if r == closing {
+				closing = 0
+			}
+			continue
+		}
+		switch r {
+		case '"', '`', '“', '„', '«', '‘', '\'':
+			// Apostrophes inside words are contractions, not quotations.
+			if (r == '\'' || r == '‘') && i > 0 && unicode.IsLetter(runes[i-1]) {
+				continue
+			}
+			closing = r
+			if r == '“' || r == '„' {
+				closing = '”'
+			} else if r == '«' {
+				closing = '»'
+			} else if r == '‘' {
+				closing = '’'
+			}
+			runes[i] = ' '
+		}
+	}
+	return string(runes)
+}
+
+func actionMentionContext(before string) bool {
+	// Keep sentence boundaries: "I think not. Fix it" is a positive request.
+	clause := before[strings.LastIndexAny(before, ".!?;\n")+1:]
+	words := strings.Fields(before)
+	for i := len(words) - 1; i >= 0; i-- {
+		switch words[i] {
+		case "actually", "really", "ever", "directly", "just", "należy", "nalezy":
+			continue
+		case "not", "never", "don't", "don’t", "cannot", "can't", "can’t", "nie", "bez":
+			return true
+		}
+		break
+	}
+	// Explicit sequencing can introduce implementation after an explanation.
+	for _, transition := range []string{" then ", " potem ", " następnie ", " nastepnie "} {
+		if at := strings.LastIndex(clause, transition); at >= 0 {
+			clause = clause[at+len(transition):]
+		}
+	}
+	clause = strings.TrimLeft(clause, " \t,(")
+	clause = strings.TrimPrefix(clause, "please ")
+	for _, prefix := range []string{
+		"explain ", "describe ", "review ", "tell me ", "show me ", "how ", "whether ",
+		"wyjaśnij ", "wyjasnij ", "wytłumacz ", "wytlumacz ", "opisz ", "jak ",
+	} {
+		if strings.HasPrefix(clause, prefix) {
+			// "Review and fix" requests an edit; "explain how to fix and
+			// refactor" still only requests an explanation.
+			if strings.HasSuffix(strings.TrimSpace(clause), " and") &&
+				!strings.Contains(clause, "how ") && !strings.Contains(clause, "whether ") {
+				return false
+			}
+			return true
+		}
 	}
 	return false
 }
