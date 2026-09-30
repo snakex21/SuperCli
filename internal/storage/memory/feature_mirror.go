@@ -159,9 +159,6 @@ func (s *Store) renderScopeMirrorLocked(tx *sql.Tx, scope string, generation int
 	if err != nil {
 		return fmt.Errorf("memory mirror %s: scan entries: %w", scope, err)
 	}
-	for i := range entries {
-		entries[i].FilePath = path
-	}
 	if s.afterMirrorRead != nil {
 		s.afterMirrorRead(scope)
 	}
@@ -197,7 +194,16 @@ func (s *Store) renderScopeMirrorLocked(tx *sql.Tx, scope string, generation int
 		}
 	}
 
-	for _, entry := range positions {
+	for i, entry := range positions {
+		// The verified file has the same canonical order as the SQLite snapshot.
+		// Most edits leave earlier line positions intact; avoid rewriting those
+		// rows and their indexes on every save or startup reconciliation.
+		if i < len(entries) {
+			previous := entries[i]
+			if previous.ID == entry.ID && previous.FilePath == path && previous.LineStart == entry.LineStart && previous.LineEnd == entry.LineEnd {
+				continue
+			}
+		}
 		if _, err := tx.Exec(`
 			UPDATE memory_entries SET file_path = ?, line_start = ?, line_end = ?
 			WHERE id = ? AND scope = ?`, path, entry.LineStart, entry.LineEnd, entry.ID, scope); err != nil {

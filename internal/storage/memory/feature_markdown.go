@@ -39,6 +39,7 @@ func mdRead(path string) ([]Entry, error) {
 	var entries []Entry
 	scope := scopeFromPath(path)
 	var cur *Entry
+	var content strings.Builder
 	var lineNo int
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -46,9 +47,11 @@ func mdRead(path string) ([]Entry, error) {
 		line := scanner.Text()
 		if m := mdHeader.FindStringSubmatch(line); m != nil {
 			if cur != nil {
+				cur.Content = content.String()
 				cur.LineEnd = lineNo - 1
 				entries = append(entries, *cur)
 			}
+			content.Reset()
 			ts, _ := time.Parse(time.RFC3339, m[2])
 			cur = &Entry{
 				ID:        m[1],
@@ -62,14 +65,14 @@ func mdRead(path string) ([]Entry, error) {
 			continue
 		}
 		if cur != nil {
-			if cur.Content == "" {
-				cur.Content = line
-			} else {
-				cur.Content += "\n" + line
+			if content.Len() > 0 {
+				content.WriteByte('\n')
 			}
+			content.WriteString(line)
 		}
 	}
 	if cur != nil {
+		cur.Content = content.String()
 		cur.LineEnd = lineNo
 		// trim trailing whitespace that came from the
 		// separator blank line in the file
