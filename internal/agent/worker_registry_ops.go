@@ -69,10 +69,33 @@ func (r *WorkerRegistry) checkActiveLimitLocked() error {
 	if r.maxActive > 0 {
 		if active := r.activeCountLocked(); active >= r.maxActive {
 			return fmt.Errorf(
-				"worker limit reached: %d workers active (max %d) — wait for one to finish, stop one with task_stop, or continue an existing worker with send_message",
+				"worker limit reached: %d workers active (max %d) — wait for a worker to finish or stop one with task_stop before starting or continuing another task",
 				active, r.maxActive)
 		}
 	}
+	return nil
+}
+
+// startContinuation reserves a slot under the same lock as TryAdd. Checking
+// without changing status here lets concurrent follow-ups all see a free slot.
+// Caller holds w.runMu; lock order is registry mu -> worker stateMu.
+func (r *WorkerRegistry) startContinuation(w *Worker) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if registered, ok := r.workers[w.ID]; !ok || registered != w {
+		if evicted, ok := r.evicted[w.ID]; ok {
+			return fmt.Errorf("worker %s was evicted; start a new task instead. Summary: %s", w.ID, evicted.Line())
+		}
+		return fmt.Errorf("unknown worker %q", w.ID)
+	}
+	switch w.status() {
+	case "created", "running":
+		return fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
+	}
+	if err := r.checkActiveLimitLocked(); err != nil {
+		return err
+	}
+	w.setState(func(w *Worker) { w.Status = "running" })
 	return nil
 }
 
