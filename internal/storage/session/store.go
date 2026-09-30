@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -34,6 +35,9 @@ type Session struct {
 type Store struct {
 	db   *sql.DB
 	root string
+	// Cache only the compiled count query, never its results.
+	countsMu   sync.Mutex
+	countsStmt *sql.Stmt
 }
 
 // OpenStore opens (or creates) a session store inside the given
@@ -75,6 +79,11 @@ func OpenStore(home string) (*Store, error) {
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
+	}
+	s.countsMu.Lock()
+	defer s.countsMu.Unlock()
+	if s.countsStmt != nil {
+		_ = s.countsStmt.Close()
 	}
 	return s.db.Close()
 }
