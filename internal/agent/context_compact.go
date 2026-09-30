@@ -40,7 +40,7 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 // single user message containing summary. Leading system
 // messages (the base prompt, the F5.d pattern injection) are
 // kept so the model's standing instructions survive compaction.
-// The summary message is persisted like any other; the dropped
+// The summary is saved only in the model context projection; the dropped
 // messages remain in the F13 session store and stay searchable
 // via search_history. Hidden flags for retained messages are remapped;
 // flags for replaced messages disappear.
@@ -85,7 +85,6 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	sum := llm.Message{Role: llm.RoleUser, Content: summary}
 	l.Messages = append(l.Messages, sum)
 	l.Messages = append(l.Messages, tail...)
-	l.persist(context.Background(), sum)
 	l.resetHidden()
 	// Only the replaced prefix disappears. Preserve visibility for surviving
 	// system messages and the untouched tail after their indices shift.

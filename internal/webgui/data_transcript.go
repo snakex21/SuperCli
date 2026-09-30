@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 
+	"supercli/internal/agent"
 	"supercli/internal/storage/session"
 )
 
@@ -46,8 +47,9 @@ func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit
 		return transcriptPage{}, err
 	}
 	cursor := 0
-	if len(messages) > 0 {
-		cursor = messages[0].Seq
+	if len(rows) > 0 {
+		// Pages containing only legacy summaries still need an advancing cursor.
+		cursor = rows[0].Seq
 	}
 	return transcriptPage{Messages: messages, HasMore: hasMore, BeforeSeq: cursor}, nil
 }
@@ -75,6 +77,9 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 		msg, err := m.ToMessage()
 		if err != nil {
 			return nil, err
+		}
+		if agent.IsLegacyCompactionSummary(msg) {
+			continue
 		}
 		textOnly := msg.TextOnly()
 		item := transcriptMsg{

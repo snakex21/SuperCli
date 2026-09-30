@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/agent"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
@@ -136,7 +137,8 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	selectedUser := false
 	for _, message := range messages {
 		if message.Seq == b.SelectedSeq && message.Role == string(llm.RoleUser) {
-			selectedUser = true
+			msg, decodeErr := message.ToMessage()
+			selectedUser = decodeErr == nil && !agent.IsLegacyCompactionSummary(msg)
 			break
 		}
 	}
