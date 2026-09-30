@@ -19,7 +19,7 @@ import (
 func (m *Manager) capture(ctx context.Context) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.ensureRepoLocked(); err != nil {
+	if err := m.ensureRepoLocked(ctx); err != nil {
 		return "", err
 	}
 	if _, err := m.git(ctx, "add", "-A", "--", "."); err != nil {
@@ -42,16 +42,41 @@ func (m *Manager) capture(ctx context.Context) (string, error) {
 	return commit, nil
 }
 
-func (m *Manager) ensureRepoLocked() error {
-	if _, err := os.Stat(filepath.Join(m.repo, "HEAD")); err == nil {
+func (m *Manager) ensureRepoLocked(ctx context.Context) error {
+	if m.repoReady {
 		return nil
 	}
-	cmd := exec.Command("git", "init", "--bare", m.repo)
-	childproc.HideWindow(cmd)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("checkpoint init: %w: %s", err, out)
+	existing := true
+	if _, err := os.Stat(filepath.Join(m.repo, "HEAD")); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		existing = false
+		cmd := exec.CommandContext(ctx, "git", "init", "--bare", m.repo)
+		childproc.HideWindow(cmd)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("checkpoint init: %w: %s", err, out)
+		}
 	}
-	return os.WriteFile(filepath.Join(m.repo, "info", "exclude"), []byte(m.excludes), 0o600)
+	excludePath := filepath.Join(m.repo, "info", "exclude")
+	old, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if string(old) != m.excludes {
+		// Existing private indexes may already track data that was not previously
+		// excluded. Ignore rules alone cannot remove tracked entries.
+		if existing && m.excludedDataRel != "" {
+			if _, err := m.git(ctx, "--literal-pathspecs", "rm", "-r", "--cached", "--force", "--ignore-unmatch", "--", m.excludedDataRel); err != nil {
+				return err
+			}
+		}
+		if err := os.WriteFile(excludePath, []byte(m.excludes), 0600); err != nil {
+			return err
+		}
+	}
+	m.repoReady = true
+	return nil
 }
 
 func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
