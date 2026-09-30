@@ -147,6 +147,9 @@ func (d *DraftRecovery) writeLocked() error {
 func (m Model) FlushDraft() error { return m.drafts.Flush() }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if inputs, ok := msg.(terminalInputBatchMsg); ok {
+		return updateTerminalInputBatch(m, inputs)
+	}
 	if keys, ok := msg.(terminalKeyBatchMsg); ok {
 		return updateTerminalKeyBatch(m, keys)
 	}
