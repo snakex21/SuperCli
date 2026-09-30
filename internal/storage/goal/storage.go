@@ -60,6 +60,8 @@ func (s *Storage) Migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS goal_tasks_goal_idx
 			ON goal_tasks(goal_id, seq)`,
+		`CREATE INDEX IF NOT EXISTS goal_tasks_open_idx
+			ON goal_tasks(goal_id, seq) WHERE status NOT IN ('done', 'skipped')`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {

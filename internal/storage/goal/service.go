@@ -314,19 +314,9 @@ func (s *Service) Inject(ctx context.Context, systemBase string, maxTasks int) (
 	if g == nil {
 		return systemBase, nil
 	}
-	tasks, err := s.storage.ListTasks(ctx, g.ID)
+	pending, err := s.storage.listOpenTasks(ctx, g.ID, maxTasks)
 	if err != nil {
 		return systemBase, err
-	}
-	pending := make([]Task, 0, len(tasks))
-	for _, t := range tasks {
-		if t.Status == TaskDone || t.Status == TaskSkipped {
-			continue
-		}
-		pending = append(pending, t)
-		if len(pending) >= maxTasks {
-			break
-		}
 	}
 	var b strings.Builder
 	b.WriteString(systemBase)

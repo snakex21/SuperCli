@@ -54,12 +54,13 @@ type Store struct {
 	// Deferred vector indexing. Put writes SQLite/FTS synchronously and only
 	// queues embedding work, so slow local/remote embedding servers never hold
 	// up the caller. Close drains outstanding work before closing the DB.
-	embedQueueMu sync.Mutex
-	embedWorkMu  sync.Mutex
-	embedQueue   []Entry
-	embedWake    chan struct{}
-	embedStop    chan struct{}
-	embedDone    chan struct{}
+	embedQueueMu    sync.Mutex
+	embedWorkMu     sync.Mutex
+	embedQueue      []Entry
+	embedQueueIndex map[string]int
+	embedWake       chan struct{}
+	embedStop       chan struct{}
+	embedDone       chan struct{}
 }
 
 // OpenStore opens (or creates) a persistent memory store inside

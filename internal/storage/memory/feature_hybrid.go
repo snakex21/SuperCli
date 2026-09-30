@@ -1,7 +1,9 @@
 package memory
 
 import (
+	"container/heap"
 	"context"
+	"database/sql"
 	"encoding/binary"
 	"math"
 	"sort"
@@ -64,7 +66,15 @@ func (s *Store) afterPut(e Entry) {
 		return
 	}
 	s.embedQueueMu.Lock()
-	s.embedQueue = append(s.embedQueue, e)
+	if index, queued := s.embedQueueIndex[e.ID]; queued {
+		s.embedQueue[index] = e
+	} else {
+		if s.embedQueueIndex == nil {
+			s.embedQueueIndex = make(map[string]int)
+		}
+		s.embedQueueIndex[e.ID] = len(s.embedQueue)
+		s.embedQueue = append(s.embedQueue, e)
+	}
 	s.embedQueueMu.Unlock()
 	select {
 	case s.embedWake <- struct{}{}:
@@ -112,6 +122,7 @@ func (s *Store) flushEmbedQueue() {
 		}
 		batch := append([]Entry(nil), s.embedQueue...)
 		s.embedQueue = s.embedQueue[:0]
+		s.embedQueueIndex = nil
 		s.embedQueueMu.Unlock()
 
 		emb := s.getEmbedder()
@@ -187,11 +198,21 @@ func (s *Store) hybridSearch(ctx context.Context, query string, k int, recall bo
 	if k <= 0 {
 		k = 5
 	}
-	// Keep Put non-blocking while preserving read-after-write behavior for
-	// callers that immediately search memories they just saved. If the
-	// background worker is already indexing, this waits for that one batch;
-	// otherwise it drains any queued entries here.
-	s.flushEmbedQueue()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if recall {
+		// Fresh writes are already durable in FTS. Foreground recall must not
+		// wait for unrelated indexing or join its local model queue. Semantic
+		// recall resumes once the background backlog has finished.
+		if s.embeddingPending() {
+			entries, err := s.search(query, k*2, true)
+			return capEntries(entries, k), err
+		}
+	} else {
+		// Explicit HybridSearch preserves its read-after-write vector contract.
+		s.flushEmbedQueue()
+	}
 	emb := s.getEmbedder()
 	if emb == nil {
 		ftsResults, err := s.search(query, k*2, recall)
@@ -272,51 +293,68 @@ func (s *Store) hybridSearch(ctx context.Context, query string, k int, recall bo
 	return out, nil
 }
 
+// embeddingPending inspects worker ownership and the queued entries without
+// waiting for network/model work or altering the indexing queue.
+func (s *Store) embeddingPending() bool {
+	s.embedQueueMu.Lock()
+	pending := len(s.embedQueue) > 0
+	s.embedQueueMu.Unlock()
+	if pending {
+		return true
+	}
+	if !s.embedWorkMu.TryLock() {
+		return true
+	}
+	s.embedWorkMu.Unlock()
+	return false
+}
+
 // nearestIDs scans all stored vectors and returns the k IDs with
 // the highest cosine similarity to q.
 func (s *Store) nearestIDs(q []float32, k int, recall bool) ([]string, error) {
-	query := `SELECT id, dim, vec FROM memory_vectors`
+	if k <= 0 {
+		return []string{}, nil
+	}
+	query := `SELECT id,dim,vec FROM memory_vectors`
 	if recall {
-		query = `SELECT v.id, v.dim, v.vec FROM memory_vectors v JOIN memory_entries e ON e.id = v.id WHERE 1=1` + recallNoiseFilter
+		query = `SELECT v.id,v.dim,v.vec FROM memory_vectors v JOIN memory_entries e ON e.id=v.id WHERE 1=1` + recallNoiseFilter
 	}
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	type scored struct {
-		id  string
-		sim float64
+	top := make(vectorTopHeap, 0, min(k, 16))
+	qnorm := 0.0
+	for _, value := range q {
+		qnorm += float64(value) * float64(value)
 	}
-	var all []scored
+	qnorm = math.Sqrt(qnorm)
 	for rows.Next() {
 		var id string
 		var dim int
-		var blob []byte
+		var blob sql.RawBytes
 		if err := rows.Scan(&id, &dim, &blob); err != nil {
 			return nil, err
 		}
-		v := decodeVec(blob)
-		if len(v) != len(q) || len(v) != dim {
-			continue // dimension mismatch (embedder changed) — skip
+		if dim != len(q) || len(blob)/4 != len(q) {
+			continue
 		}
-		all = append(all, scored{id: id, sim: cosine(q, v)})
+		candidate := vectorScore{id: id, sim: encodedCosine(q, blob, qnorm)}
+		if len(top) < k {
+			heap.Push(&top, candidate)
+		} else if candidate.betterThan(top[0]) {
+			top[0] = candidate
+			heap.Fix(&top, 0)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].sim != all[j].sim {
-			return all[i].sim > all[j].sim
-		}
-		return all[i].id < all[j].id
-	})
-	if len(all) > k {
-		all = all[:k]
-	}
-	ids := make([]string, len(all))
-	for i, s := range all {
-		ids[i] = s.id
+	sort.Slice(top, func(i, j int) bool { return top[i].betterThan(top[j]) })
+	ids := make([]string, len(top))
+	for i, score := range top {
+		ids[i] = score.id
 	}
 	return ids, nil
 }
