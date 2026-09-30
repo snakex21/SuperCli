@@ -186,7 +186,7 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("exec %q: %w", firstLine(q), err)
 		}
 	}
-	return nil
+	return s.migrateCapacity()
 }
 
 // Get returns the entry with the given ID.
@@ -201,9 +201,6 @@ func (s *Store) Put(e Entry) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if err := e.Validate(); err != nil {
-		return err
-	}
-	if err := s.ensureCapacity(e); err != nil {
 		return err
 	}
 	if e.Source == "" {
@@ -225,10 +222,9 @@ func (s *Store) Put(e Entry) error {
 		return err
 	}
 	defer tx.Rollback()
-
-	var oldScope string
-	if err := tx.QueryRow(`SELECT scope FROM memory_entries WHERE id = ?`, e.ID).Scan(&oldScope); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read old scope: %w", err)
+	oldScope, err := checkMemoryCapacity(tx, e)
+	if err != nil {
+		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM memory_entries WHERE id = ?`, e.ID); err != nil {
 		return fmt.Errorf("delete old: %w", err)
@@ -248,8 +244,10 @@ func (s *Store) Put(e Entry) error {
 	); err != nil {
 		return fmt.Errorf("insert fts: %w", err)
 	}
-	if err := enqueueMirrorTx(tx, oldScope); err != nil {
-		return fmt.Errorf("enqueue old mirror: %w", err)
+	if oldScope != e.Scope {
+		if err := enqueueMirrorTx(tx, oldScope); err != nil {
+			return fmt.Errorf("enqueue old mirror: %w", err)
+		}
 	}
 	if err := enqueueMirrorTx(tx, e.Scope); err != nil {
 		return fmt.Errorf("enqueue mirror: %w", err)
@@ -262,23 +260,6 @@ func (s *Store) Put(e Entry) error {
 	s.afterPut(e)
 	if err := s.drainMirrorOutboxLocked(); err != nil {
 		return fmt.Errorf("memory.Store.Put(%s): %w", e.ID, err)
-	}
-	return nil
-}
-
-func (s *Store) ensureCapacity(e Entry) error {
-	var entries, contentBytes int64
-	err := s.db.QueryRow(`
-		SELECT COUNT(*), COALESCE(SUM(length(CAST(content AS BLOB))), 0)
-		FROM memory_entries WHERE id <> ?`, e.ID).Scan(&entries, &contentBytes)
-	if err != nil {
-		return fmt.Errorf("memory.Store.Put(%s): capacity check: %w", e.ID, err)
-	}
-	if entries+1 > MaxStoreEntries {
-		return fmt.Errorf("memory.Store.Put(%s): store entry limit %d reached; delete or compact old memories before saving more", e.ID, MaxStoreEntries)
-	}
-	if contentBytes+int64(len(e.Content)) > MaxStoreContentBytes {
-		return fmt.Errorf("memory.Store.Put(%s): store content limit %d bytes reached; delete or compact old memories before saving more", e.ID, MaxStoreContentBytes)
 	}
 	return nil
 }
