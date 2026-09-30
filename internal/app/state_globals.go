@@ -63,14 +63,6 @@ var memoryBriefing string
 // over any conflicting project path a memory fact might mention.
 var workingDirNote string
 
-// memoryAutoSaveInstruction backs the B4 contract: the model is
-// told to save a task-log entry after each finished task; the
-// AutoSaver in code covers sessions where it forgets.
-const memoryAutoSaveInstruction = "Memory: after completing a task, call remember with " +
-	"type=task-log summarizing WHAT you did, WHY, and which files you touched. " +
-	"Save user preferences with type=preference (scope=global). Use recall at the " +
-	"start of non-trivial tasks to check prior context."
-
 // buildSystemPrompt returns the base prompt plus the
 // current ISO date stamp and, if a goal service is
 // passed and has an active goal, the [current_goal]
@@ -102,7 +94,7 @@ func buildSystemPrompt(svc *goal.Service) string {
 	if workingDirNote != "" {
 		base += "\n\n" + workingDirNote
 	}
-	base += "\n\n" + memoryAutoSaveInstruction
+	base += "\n\n" + prompt.MemoryGuidance(true)
 	if svc == nil {
 		return base
 	}

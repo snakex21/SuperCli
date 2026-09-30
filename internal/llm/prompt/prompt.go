@@ -66,3 +66,14 @@ key: value
 One block per call; separate blocks for independent calls. For no arguments: «tool_name».
 Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
 Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`
+
+// MemoryGuidance keeps foreground memory tools proportional to missing context
+// and durable new facts. Session/task logging is handled by the memory runtime.
+func MemoryGuidance(autoSave bool) string {
+	if !autoSave {
+		return "Do not proactively save new memory. Only call remember when the user explicitly asks you to remember something."
+	}
+	return "Memory: recall only for missing prior context needed by this task. " +
+		"Use remember for new durable facts or user preferences (type=preference, scope=global), or when explicitly asked. " +
+		"Do not call memory tools just to start or finish a task. Never store secrets."
+}
