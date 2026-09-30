@@ -106,18 +106,19 @@ type thunderbirdBridgeResponse struct {
 }
 
 type thunderbirdBridgeState struct {
-	once        sync.Once
-	startErr    error
-	queue       chan thunderbirdBridgeRequest
-	mu          sync.Mutex
-	waiters     map[string]chan thunderbirdBridgeResponse
-	completed   map[string]thunderbirdCompletion
-	dispatched  map[string]bool
-	transfers   map[string]thunderbirdFileTransfer
-	downloads   map[string]thunderbirdDownloadedAttachment
-	lastPoll    time.Time
-	activePolls int
-	requestID   atomic.Uint64
+	once               sync.Once
+	startErr           error
+	queue              chan thunderbirdBridgeRequest
+	mu                 sync.Mutex
+	waiters            map[string]chan thunderbirdBridgeResponse
+	completed          map[string]thunderbirdCompletion
+	completionSequence uint64 // guarded by mu; breaks ties on coarse clocks
+	dispatched         map[string]bool
+	transfers          map[string]thunderbirdFileTransfer
+	downloads          map[string]thunderbirdDownloadedAttachment
+	lastPoll           time.Time
+	activePolls        int
+	requestID          atomic.Uint64
 }
 
 var globalThunderbirdBridge = &thunderbirdBridgeState{
@@ -135,7 +136,6 @@ func (t *ThunderbirdMail) Spec() Tool {
 			"Read operations: 'status', 'accounts', 'folders', 'count', 'search', 'read', 'attachments', 'get_attachment', 'senders', 'largest', 'address_books', 'contacts', and 'contact_candidates'. search/count can filter by sender (from), recipient (to), sender-or-recipient email address (address), subject substring, text and date. 'contact_candidates' aggregates sender and recipient addresses from message headers without loading bodies, excluding the mailbox owner's own address. 'largest' scans message headers locally and returns only the largest 1-100 messages with byte sizes and stable Message-ID headers, avoiding large AI context. Use 'read' with a message_id returned by search to retrieve the decoded body without changing read/unread state. read returns at most max_chars (default 12000); when hasMore:true, repeat with nextStartChar as start_char instead of loading a huge email into a small local model at once. search results include hasAttachments, attachmentCount and attachment metadata (full filename including extension, extension, MIME type, size, partName); 'attachments' lists the same metadata for one message_id. 'get_attachment' fetches the actual attachment bytes. For PNG/JPEG/GIF/WebP it returns a real image to the agent loop so a vision-capable model receives the pixels on the next model turn; for PDF/Office/other files it returns a temporary localPath so the appropriate document tool can read it. count/search/senders/largest default to Inbox to avoid Gmail label duplicates; use scope:'account' only when an explicit whole-account search is needed. 'senders' is the preferred fast first step for newsletter/junk cleanup because it aggregates frequent Inbox senders without repeated full-text scans. " +
 			"Write operations: 'create_folder', 'rename_folder' and 'delete_folder' manage Thunderbird folders after confirm:true; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
 			"Address-book writes: 'create_address_book' creates a separate local book, 'add_contacts' adds an explicit list of name/email pairs, and 'update_contact' corrects one existing card after confirm:true. add_contacts deduplicates email addresses inside the selected destination book and is safe to retry while still allowing a complete dedicated book. Filter automated/noreply/store addresses out of contact_candidates before importing. " +
-			"If a call reports outcome unknown after timeout or cancellation, do not automatically retry a mutation: Thunderbird may already have executed it. Verify mailbox state first. Each new tool call has a new request ID and is a new operation. " +
 			"Bulk filtered writes are intentionally paged: one call processes up to batch_size messages (default 250, max 500). If the result has more:true, immediately repeat the SAME approved operation and filters with the returned continuation token; this avoids timeouts and loop protection. No new user confirmation is needed for continuation of the exact same approved cleanup. " +
 			"For whole-Trash cleanup, prefer empty_trash instead of simulating 'all' with date filters. empty_trash is one server-side operation and only counts as success when it returns serverVerified:true. For purge/delete_permanently, intermediate IMAP batches are not server-confirmed and MUST NOT be reported as final success; the final IMAP batch must return serverVerified:true, while Local Folders use localVerified:true because no mail server exists. " +
 			"move/trash/restore/import_msg and filtered purge require confirm:true after explicit user approval. move requires destination and either at least one filter or all:true; all:true is only for an explicitly approved whole-folder move. import_msg requires path to a local .msg file plus destination; because importing to an IMAP folder can upload the historical message to the mail server, never guess the target folder. empty_trash requires confirm:true and is irreversible. restore is recoverable and only reads from the default Trash. Use count before destructive cleanup when the local Trash count is trustworthy, but empty_trash can still repair a diverged Gmail Trash when Thunderbird's local cache incorrectly shows 0. The bridge extension must be installed and Thunderbird must be running for mailbox operations.",
@@ -445,7 +445,8 @@ func (b *thunderbirdBridgeState) handleResult(w http.ResponseWriter, r *http.Req
 		if b.completed == nil {
 			b.completed = make(map[string]thunderbirdCompletion)
 		}
-		b.completed[response.ID] = thunderbirdCompletion{digest: digest, at: now}
+		b.completionSequence++
+		b.completed[response.ID] = thunderbirdCompletion{digest: digest, at: now, order: b.completionSequence}
 		b.pruneCompletions(now)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -459,6 +460,7 @@ const thunderbirdCompletionLimit = 256
 type thunderbirdCompletion struct {
 	digest [32]byte
 	at     time.Time
+	order  uint64
 }
 
 // Caller holds b.mu. This process-local acknowledgement window is not durable
@@ -472,9 +474,10 @@ func (b *thunderbirdBridgeState) pruneCompletions(now time.Time) {
 	for len(b.completed) > thunderbirdCompletionLimit {
 		var oldest string
 		var at time.Time
+		var order uint64
 		for id, completion := range b.completed {
-			if at.IsZero() || completion.at.Before(at) {
-				oldest, at = id, completion.at
+			if at.IsZero() || completion.at.Before(at) || (completion.at.Equal(at) && completion.order < order) {
+				oldest, at, order = id, completion.at, completion.order
 			}
 		}
 		delete(b.completed, oldest)
