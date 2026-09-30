@@ -10,19 +10,25 @@ import (
 	"supercli/internal/storage/session"
 )
 
-func shouldAttachPreflight(initial []llm.Message, prompt string) bool {
+// shouldQueuePreflight installs a lazy source until this session has had a
+// project turn. Actual collection is decided by Loop's route, not a second
+// frontend classifier. The marker also covers a light turn promoted by tools
+// or an attachment; older transcripts retain the conservative keyword fallback.
+func shouldQueuePreflight(initial []llm.Message) bool {
 	routes := agent.DefaultRouteMap()
 	for _, msg := range initial {
 		if msg.Role != llm.RoleUser || strings.Contains(msg.Content, "<task-notification>") {
 			continue
+		}
+		if strings.Contains(msg.TextOnly().Content, "Repo state (auto-collected):") {
+			return false
 		}
 		mode, confident := routes.ClassifyConfident(msg.Content)
 		if !confident || mode == agent.RouteCoordinator {
 			return false
 		}
 	}
-	mode, confident := routes.ClassifyConfident(prompt)
-	return !confident || mode == agent.RouteCoordinator
+	return true
 }
 
 // sessionState opens the persistent session store, creates a new session when

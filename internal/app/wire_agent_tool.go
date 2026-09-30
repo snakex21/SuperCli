@@ -96,15 +96,17 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	// appended ONCE to the first user message — the variable side of the
 	// prompt, never the system prefix, so the KV-cache front stays stable
 	// — and freshly rebuilt for every delegated worker's briefing (cold
-	// contexts benefit most). Cost is visible in the normal per-turn
-	// token telemetry; the one-line log states the estimate up front.
+	// contexts benefit most). Main-loop collection waits for an actual project
+	// turn, so startup and greetings do not run Git or scan the repository.
 	if resolvePreflightRepo(w.tomlCfg.PreflightRepo) {
-		if block := preflight.Build(w.home, preflight.Options{}); block != "" {
-			w.loop.SetNextCoordinatorAddon(block)
-			log.Printf("preflight: repo context ~%d tok (rides the first user message)",
-				preflight.EstimateTokens(block))
-		}
 		home := w.home
+		w.loop.SetNextCoordinatorAddonSource(func(ctx context.Context) string {
+			block := preflight.BuildContext(ctx, home, preflight.Options{})
+			if block != "" && ctx.Err() == nil {
+				log.Printf("preflight: repo context ~%d tok (project turn)", preflight.EstimateTokens(block))
+			}
+			return block
+		})
 		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
 	}
 	if !w.delegationOff {

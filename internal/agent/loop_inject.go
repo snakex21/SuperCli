@@ -75,10 +75,19 @@ func (l *Loop) SetNextUserImages(images []llm.ImageRef) {
 }
 
 // SetNextCoordinatorAddon queues text for the next coordinator-routed Run.
-// Chat/advisor turns skip it without consuming it. This is the preferred API
-// for automatically collected repository context.
+// Chat/advisor turns skip it without consuming it. Set before starting Run.
 func (l *Loop) SetNextCoordinatorAddon(s string) {
 	l.nextCoordinatorAddon = strings.TrimSpace(s)
+	l.nextCoordinatorAddonSource = nil
+}
+
+// SetNextCoordinatorAddonSource collects one-shot context only when a Run
+// needs the coordinator, including promotion after tool discovery. Chat/advisor
+// turns do not invoke it. The source receives that Run's cancellation context;
+// a canceled collection remains pending for a later Run. Set before Run.
+func (l *Loop) SetNextCoordinatorAddonSource(source func(context.Context) string) {
+	l.nextCoordinatorAddon = ""
+	l.nextCoordinatorAddonSource = source
 }
 
 const maxPendingInterjections = 8

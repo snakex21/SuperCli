@@ -126,15 +126,17 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	external := make(chan agent.Event, 32)
 	loop.SetExternalSink(external)
 	defer loop.SetExternalSink(nil)
-	// Preflight repo context (config preflight_repo, default ON): the
-	// block rides the FIRST user message of a session only — resumed
-	// conversations already paid for it. The notice makes the cost
-	// visible in the transcript, mirroring the CLI's startup log line.
-	if shouldAttachPreflight(initial, prompt) {
-		if block, tokens := e.preflightBlockAtContext(ctx, home); block != "" {
-			loop.SetNextCoordinatorAddon(block)
-			emit(wireEvent{Type: "notice", Text: fmt.Sprintf("preflight: repo context ~%d tok (next project turn)", tokens)})
-		}
+	// Fresh project context is collected inside the loop only after the real
+	// route needs it. A greeting can still discover tools and promote its route;
+	// neither greeting startup nor request acceptance waits for repository I/O.
+	if shouldQueuePreflight(initial) {
+		loop.SetNextCoordinatorAddonSource(func(runCtx context.Context) string {
+			block, tokens := e.preflightBlockAtContext(runCtx, home)
+			if block != "" && runCtx.Err() == nil {
+				loop.Emit(agent.NoticeEvent{Text: fmt.Sprintf("preflight: repo context ~%d tok (project turn)", tokens)})
+			}
+			return block
+		})
 	}
 	ch, err := loop.Run(ctx, prompt)
 	if err != nil {
@@ -488,12 +490,6 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 	}
 }
-
-// shouldAttachPreflight lets a new WebGUI chat start with cheap smalltalk and
-// delays repository context until the first project-like turn. WebGUI builds a
-// fresh loop per HTTP request, so we infer whether a previous user turn already
-// crossed that boundary from persisted prompts. Ambiguous prompts count as
-// project-like: paying once is safer than starving a real task of repo facts.
 
 // truncateDiag caps a diagnostic string at max runes (with an ellipsis),
 // keeping the per-turn diag column compact: the goal is to distinguish
