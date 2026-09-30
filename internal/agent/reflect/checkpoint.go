@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 )
@@ -32,10 +33,10 @@ type ModelReflector struct {
 	// are dropped. Default 5.
 	HistoryTail int
 
-	once    sync.Once
-	prompt  string
-	tail    int
-	maxTok  int
+	once   sync.Once
+	prompt string
+	tail   int
+	maxTok int
 }
 
 // Prepare is called once at startup. It freezes the
@@ -86,22 +87,77 @@ func (r *ModelReflector) Reflect(ctx context.Context, history []llm.Message) (st
 	return strings.TrimSpace(b.String()), nil
 }
 
-// transcript renders the last N messages as plain text,
-// stripping prior system messages. Each non-system message
-// is rendered as "role: content" with newlines escaped.
+// transcript renders the last N non-system messages as bounded plain text.
+// Prior system nudges must not displace the actions/results being reviewed.
+// Only visible text is included: no reasoning, image payloads or tool arguments.
 func (r *ModelReflector) transcript(history []llm.Message) string {
-	tail := history
-	if len(tail) > r.tail {
-		tail = tail[len(tail)-r.tail:]
+	start, count := len(history), 0
+	for start > 0 && count < r.tail {
+		start--
+		if history[start].Role != llm.RoleSystem {
+			count++
+		}
 	}
 	var b strings.Builder
-	for _, m := range tail {
+	for _, m := range history[start:] {
 		if m.Role == llm.RoleSystem {
 			continue
 		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, oneLine(m.Content))
+		var line transcriptLine
+		line.write("[" + string(m.Role) + "] ")
+		if m.Role == llm.RoleTool {
+			line.write("tool=" + m.Name + " id=" + m.ToolCallID + " ")
+		}
+		for _, call := range m.ToolCalls {
+			line.write("[tool_call name=" + call.Name + " id=" + call.ID + "] ")
+			if line.truncated {
+				break
+			}
+		}
+		if len(m.Parts) == 0 {
+			line.write(m.Content)
+		} else {
+			for _, part := range m.Parts {
+				if part.Type == llm.PartTypeText {
+					line.write(part.Text)
+				}
+				if line.truncated {
+					break
+				}
+			}
+		}
+		b.WriteString(oneLine(line.b.String()))
+		if line.truncated {
+			b.WriteString(" [truncated]")
+		}
+		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// Bound each entry independently so a large read result cannot crowd out the
+// remaining recent messages. The cap also applies to tool names and call IDs.
+const reflectionTranscriptMessageBytes = 2000
+
+type transcriptLine struct {
+	b         strings.Builder
+	truncated bool
+}
+
+func (l *transcriptLine) write(s string) {
+	if l.truncated {
+		return
+	}
+	remaining := reflectionTranscriptMessageBytes - l.b.Len()
+	if len(s) > remaining {
+		end := remaining
+		for end > 0 && !utf8.RuneStart(s[end]) {
+			end--
+		}
+		s = s[:end]
+		l.truncated = true
+	}
+	l.b.WriteString(s)
 }
 
 func oneLine(s string) string {
