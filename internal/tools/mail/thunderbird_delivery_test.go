@@ -562,3 +562,40 @@ func TestThunderbirdDeliveryAuthenticationPrecedesRecoveryCache(t *testing.T) {
 		t.Fatal("unauthorized replay changed recovery state")
 	}
 }
+
+func TestThunderbirdDeliveryCompletionCacheKeepsAcceptanceOrderAtEqualTimes(t *testing.T) {
+	b := newThunderbirdDeliveryTestState()
+	sameTime := time.Now().Add(-time.Minute)
+	firstID := fmt.Sprintf("tie-%03d", thunderbirdCompletionLimit)
+	for i := 0; i < thunderbirdCompletionLimit; i++ {
+		id := fmt.Sprintf("tie-%03d", thunderbirdCompletionLimit-i)
+		waiter := make(chan thunderbirdBridgeResponse, 1)
+		b.waiters[id] = waiter
+		body := fmt.Sprintf(`{"id":%q,"ok":true,"data":{"synthetic":true}}`, id)
+		if rec := postThunderbirdDeliveryResult(b, body); rec.Code != http.StatusNoContent {
+			t.Fatal(rec.Code)
+		}
+		<-waiter
+		b.mu.Lock()
+		delete(b.waiters, id)
+		completion := b.completed[id]
+		completion.at = sameTime // Force a coarse Windows clock without depending on its resolution.
+		b.completed[id] = completion
+		b.mu.Unlock()
+	}
+	b.waiters["tie-newest"] = make(chan thunderbirdBridgeResponse, 1)
+	newest := `{"id":"tie-newest","ok":true,"data":{"synthetic":true}}`
+	if rec := postThunderbirdDeliveryResult(b, newest); rec.Code != http.StatusNoContent {
+		t.Fatal(rec.Code)
+	}
+	oldest := fmt.Sprintf(`{"id":%q,"ok":true,"data":{"synthetic":true}}`, firstID)
+	if rec := postThunderbirdDeliveryResult(b, oldest); rec.Code != http.StatusNotFound {
+		t.Fatalf("first accepted result survived tied-time eviction: status=%d", rec.Code)
+	}
+	if rec := postThunderbirdDeliveryResult(b, newest); rec.Code != http.StatusNoContent {
+		t.Fatalf("newest result lost its recovery receipt: status=%d", rec.Code)
+	}
+	if len(b.completed) != thunderbirdCompletionLimit {
+		t.Fatal("receipt cache exceeded its limit")
+	}
+}
