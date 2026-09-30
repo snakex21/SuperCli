@@ -82,7 +82,7 @@ func RunOnboarding(language string, dataDirs ...string) OnboardResult {
 	if len(dataDirs) > 0 {
 		initial.dataDir = dataDirs[0]
 	}
-	p := tea.NewProgram(initial, tea.WithMouseCellMotion())
+	p := NewProgram(initial, tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return OnboardResult{Skipped: true}
@@ -114,7 +114,7 @@ func (m onboardModel) renderProviderChoices() string {
 		title:      m.tr("tui.menu_providers_render.e1d36c3ade"),
 		subtitle:   m.tr("tui.onboard_view.188a6da089"),
 		searchable: true,
-		footer:     m.tr("tui.onboard_view.fc64b84595"),
+		footer:     m.tr("tui.onboard_view.fc64b84595") + " · Tab / Shift+Tab",
 	}
 	for i, row := range m.filteredChoices() {
 		page.items = append(page.items, menuListItem{label: row.label, meta: row.desc})

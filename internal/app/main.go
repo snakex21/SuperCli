@@ -797,7 +797,7 @@ func Main() {
 	// the log for what got added to the hot path.
 	log.Printf("startup: TUI ready in %s", time.Since(startupT).Round(time.Millisecond))
 
-	program = tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	program = tui.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	pumpDone := make(chan struct{})
 	go func() {
