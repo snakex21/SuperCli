@@ -33,6 +33,7 @@ func (l *Loop) runStep(
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step}
 		return stepAbort
 	}
+	l.drainBackgroundMessages(ctx)
 	l.retryDirtyProjection(ctx)
 	// 1-based, matching the step numbers the phase telemetry prints.
 	l.curStep.Store(int64(step + 1))
@@ -276,6 +277,7 @@ func (l *Loop) runStep(
 	}
 
 	if len(toolCalls) == 0 {
+		l.drainBackgroundMessages(ctx)
 		// A user may have typed while this provider call was running. Treat
 		// that as the next user turn instead of completing the Run and making
 		// them wait/re-submit. Draining here is a safe history boundary: the
@@ -360,6 +362,7 @@ func (l *Loop) runStep(
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 		return stepAbort
 	}
+	l.drainBackgroundMessages(ctx)
 	l.continueWithDiscoveredTools(toolCalls, toolOutcomes)
 	toolFailures := countFailures(toolOutcomes)
 	// User steering starts fresh progress accounting before any loop verdict.

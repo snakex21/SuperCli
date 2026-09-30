@@ -179,6 +179,15 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 	if timeout <= 0 {
 		timeout = 30 * time.Second * time.Duration(maxSteps)
 	}
+	// Capture the original session binding while the parent still owns it.
+	parent := a.ParentLoop
+	var deliver func(context.Context, string)
+	var outputSource *tools.Registry
+	var outputPersistence tools.OutputPersistence
+	if parent != nil {
+		deliver = parent.backgroundDelivery()
+		outputSource, outputPersistence = parent.registry, parent.toolOutputs
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -186,13 +195,13 @@ func (a *AgentTool) startBackgroundWorker(w *Worker, prompt string, maxSteps int
 		if err != nil && text == "" {
 			text = err.Error()
 		}
-		if a.ParentLoop != nil {
+		if deliver != nil {
 			noticeCtx := context.Background()
-			if a.ParentLoop.toolOutputs != nil {
-				noticeCtx = tools.WithOutputPersistence(noticeCtx, a.ParentLoop.toolOutputs)
+			if outputPersistence != nil {
+				noticeCtx = tools.WithOutputPersistence(noticeCtx, outputPersistence)
 			}
-			notification := a.ParentLoop.registry.ModelResultContentContext(noticeCtx, "task", workerResult(w, text, err))
-			a.ParentLoop.InjectUserMessage(noticeCtx, notification)
+			notification := outputSource.ModelResultContentContext(noticeCtx, "task", workerResult(w, text, err))
+			deliver(noticeCtx, notification)
 		}
 		a.emitWorkerNotification(w, text)
 	}()
