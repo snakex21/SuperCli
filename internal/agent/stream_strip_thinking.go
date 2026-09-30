@@ -131,8 +131,11 @@ func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
 // messages and text parts so the UI/archive keeps the original reasoning.
 // User text, tool results, call IDs and images are not reasoning to discard.
 func (l *Loop) cleanModelHistory(msgs []llm.Message) []llm.Message {
-	out := make([]llm.Message, len(msgs))
-	for i, msg := range msgs {
+	out := make([]llm.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if isLegacyUltraworkInstruction(msg) {
+			continue
+		}
 		if msg.Role == llm.RoleAssistant {
 			thinking, plain := captureThinkingFromMessage(msg)
 			if msg.HasNativeReasoning() {
@@ -140,9 +143,9 @@ func (l *Loop) cleanModelHistory(msgs []llm.Message) []llm.Message {
 			} else if l.keepThinking && thinking != "" {
 				l.lastThinking = thinking
 			}
-			out[i] = plain
+			out = append(out, plain)
 		} else {
-			out[i] = msg
+			out = append(out, msg)
 		}
 	}
 	return out

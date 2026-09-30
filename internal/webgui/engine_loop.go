@@ -276,11 +276,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// NestCafe preference key while the overlay migrates to the shared key.
 	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory",
 		uiSettingBool(e.dataDir, "nestcafe.autoMemory", true))
-	if autoMemory {
-		systemPrompt += "\n\nAfter completing a useful task or learning a durable user preference, call remember with one short self-contained fact. Never store secrets."
-	} else {
-		systemPrompt += "\n\nDo not proactively save new memory. Only call remember when the user explicitly asks you to remember something."
-	}
+	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)

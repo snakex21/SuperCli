@@ -202,15 +202,15 @@ func TestLoop_Ultrawork_SisyphusRePrompts(t *testing.T) {
 		t.Errorf("provider was called %d times, want 2", p.calls)
 	}
 
-	// The system prompt section should have been injected
-	// exactly once (at the start of Run). The Sisyphus
-	// reminder should also be in Messages, as a system
-	// message appended after the Sisyphus check.
-	if !containsSystemText(loop.Messages, "ULTRAWORK MODE ACTIVE") {
-		t.Error("Messages should contain the ULTRAWORK system-prompt section")
+	// Run-only instructions reach the provider, never the saved conversation.
+	if !containsSystemText(p.reqs[0], "ULTRAWORK MODE ACTIVE") {
+		t.Error("first request should contain the ULTRAWORK section")
 	}
-	if !containsSystemText(loop.Messages, "Sisyphus @1/3") {
-		t.Error("Messages should contain the Sisyphus reminder from the re-prompt")
+	if !containsSystemText(p.reqs[1], "Sisyphus @1/3") {
+		t.Error("continuation request should contain the Sisyphus reminder")
+	}
+	if containsSystemText(loop.Messages, "ULTRAWORK MODE ACTIVE") || containsSystemText(loop.Messages, "Sisyphus @") {
+		t.Error("run-only instructions should not enter conversation history")
 	}
 }
 
