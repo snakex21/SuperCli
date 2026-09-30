@@ -191,8 +191,8 @@ func TestContextCompactEndpointPreservesTranscriptAndRewritesProjection(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != len(msgs)+1 { // summary is appended; originals remain intact
-		t.Fatalf("transcript rows=%d, want original %d + summary", len(rows), len(msgs))
+	if len(rows) != len(msgs) { // summary belongs only to the model projection
+		t.Fatalf("transcript rows=%d, want original %d", len(rows), len(msgs))
 	}
 	projection, err := store.ReadModelContext(context.Background(), sess.ID)
 	if err != nil {

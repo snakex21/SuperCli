@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/agent"
 	"supercli/internal/llm"
 )
 
@@ -154,6 +155,9 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 	m.workerViews = nil
 	names := make(map[string]string)
 	for i, item := range h.Messages {
+		if agent.IsLegacyCompactionSummary(item) {
+			continue
+		}
 		text := transcriptMessageText(item)
 		switch item.Role {
 		case llm.RoleUser:
