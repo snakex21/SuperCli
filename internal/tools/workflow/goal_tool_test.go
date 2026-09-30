@@ -380,3 +380,32 @@ func jsonRaw(t *testing.T, s string) json.RawMessage {
 	}
 	return json.RawMessage(s)
 }
+
+func TestGoalToolDefaultsToProjectAndCanCreateExplicitGlobal(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := goal.NewStorage(db)
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	svc := goal.NewProjectService(store, "usos")
+	tool := NewGoalTool(svc)
+	for _, raw := range []string{`{"action":"set","title":"Windows work"}`, `{"action":"set","scope":"global","title":"General work"}`} {
+		result, err := tool.Execute(ctx, json.RawMessage(raw))
+		if err != nil || result.Err != nil {
+			t.Fatalf("tool: %+v %v", result, err)
+		}
+	}
+	if active := svc.Active(); active == nil || active.Title != "Windows work" {
+		t.Fatal("global creation replaced project")
+	}
+	other := goal.NewProjectService(store, "game")
+	active, err := other.Refresh(ctx)
+	if err != nil || active.Title != "General work" || active.ProjectKey != goal.GlobalProjectKey {
+		t.Fatalf("wrong global fallback: %+v %v", active, err)
+	}
+}

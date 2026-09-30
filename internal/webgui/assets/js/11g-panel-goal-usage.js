@@ -1,7 +1,17 @@
 "use strict";
 
+var goalPanelScope = "project";
+var goalUnassigned = [];
+var goalPaused = [];
 sections.goal = async function () {
-  try { renderGoalPanel(await j("/api/goal")); } catch (e) {
+  try {
+    var scope = goalPanelScope;
+    var data = await Promise.all([j("/api/goal?scope=" + encodeURIComponent(scope)), j("/api/goal?catalog=1&scope=" + encodeURIComponent(scope))]);
+    if (scope !== goalPanelScope) return;
+    goalUnassigned = data[1].unassigned;
+    goalPaused = data[1].paused;
+    renderGoalPanel(data[0]);
+  } catch (e) {
     panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
   }
 };

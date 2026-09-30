@@ -43,7 +43,8 @@ func (s *Storage) Migrate(ctx context.Context) error {
 			status TEXT NOT NULL DEFAULT 'active',
 			created_at INTEGER NOT NULL,
 			completed_at INTEGER,
-			parent_session_id TEXT
+			parent_session_id TEXT,
+			project_key TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS goals_status_idx
 			ON goals(status, created_at)`,
@@ -75,12 +76,14 @@ func (s *Storage) Migrate(ctx context.Context) error {
 		{"verification_status", "TEXT NOT NULL DEFAULT ''"},
 		{"verification_evidence", "TEXT NOT NULL DEFAULT ''"},
 		{"verified_at", "INTEGER"},
+		{"project_key", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureGoalColumn(ctx, col.name, col.ddl); err != nil {
 			return err
 		}
 	}
-	return nil
+	_, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS goals_project_status_idx ON goals(project_key, status, created_at DESC, id DESC)`)
+	return err
 }
 
 func (s *Storage) ensureGoalColumn(ctx context.Context, name, ddl string) error {
@@ -117,6 +120,13 @@ func (s *Storage) ensureGoalColumn(ctx context.Context, name, ddl string) error 
 // generated id, timestamps populated).
 func (s *Storage) CreateGoal(ctx context.Context, g *Goal) error {
 	if s == nil || s.db == nil {
+		return ErrNotFound
+	}
+	return s.createGoal(ctx, g, s.db.ExecContext)
+}
+
+func (s *Storage) createGoal(ctx context.Context, g *Goal, exec func(context.Context, string, ...any) (sql.Result, error)) error {
+	if s == nil || s.db == nil {
 		return ErrNotFound // misuse, but matches the read path
 	}
 	if g.Title == "" {
@@ -137,14 +147,14 @@ func (s *Storage) CreateGoal(ctx context.Context, g *Goal) error {
 	if g.CreatedAt.IsZero() {
 		g.CreatedAt = time.Now()
 	}
-	_, err := s.db.ExecContext(ctx,
+	_, err := exec(ctx,
 		`INSERT INTO goals
 			(id, title, description, success_criteria, notes, verification_status, verification_evidence,
-			 verified_at, status, created_at, completed_at, parent_session_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 verified_at, status, created_at, completed_at, parent_session_id, project_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		g.ID, g.Title, g.Description, g.SuccessCriteria, g.Notes, string(g.VerificationStatus), g.VerificationEvidence,
 		nullableTime(g.VerifiedAt), string(g.Status),
-		g.CreatedAt.UnixNano(), nullableTime(g.CompletedAt), nullableString(g.ParentSessionID),
+		g.CreatedAt.UnixNano(), nullableTime(g.CompletedAt), nullableString(g.ParentSessionID), g.ProjectKey,
 	)
 	if err != nil {
 		return fmt.Errorf("goal: CreateGoal: %w", err)
@@ -161,7 +171,7 @@ func (s *Storage) GetGoal(ctx context.Context, id string) (*Goal, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
 		        verification_status, verification_evidence, verified_at,
-		        status, created_at, completed_at, parent_session_id
+		        status, created_at, completed_at, parent_session_id, project_key
 		 FROM goals WHERE id = ?`, id)
 	return scanGoal(row)
 }
@@ -177,7 +187,7 @@ func (s *Storage) ActiveGoal(ctx context.Context) (*Goal, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
 		        verification_status, verification_evidence, verified_at,
-		        status, created_at, completed_at, parent_session_id
+		        status, created_at, completed_at, parent_session_id, project_key
 		 FROM goals WHERE status = 'active'
 		 ORDER BY created_at DESC, id DESC LIMIT 1`)
 	g, err := scanGoal(row)
@@ -195,7 +205,7 @@ func (s *Storage) ListGoals(ctx context.Context) ([]*Goal, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, title, description, success_criteria, notes,
 		        verification_status, verification_evidence, verified_at,
-		        status, created_at, completed_at, parent_session_id
+		        status, created_at, completed_at, parent_session_id, project_key
 		 FROM goals ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("goal: ListGoals: %w", err)

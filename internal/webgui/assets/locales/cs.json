@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Databáze paměti",
   "doctor.providerConfig": "Konfigurace poskytovatele",
   "doctor.command": "Příkaz {name}",
-  "doctor.server": "Server {name}"
+  "doctor.server": "Server {name}",
+  "goal.scope.project": "Cíl projektu",
+  "goal.scope.global": "Obecný cíl",
+  "goal.unassigned": "Nepřiřazené cíle",
+  "goal.assign.project": "Přiřadit k tomuto projektu",
+  "goal.assign.global": "Nastavit jako obecný"
 }

@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (modele gratuite, plan Token)",
   "provider.description.sensenova": "SenseTime SenseNova (Beta gratuită pentru Token Plan)",
   "provider.description.lmstudio": "Modele locale prin LM Studio",
-  "provider.description.ollama": "Modele locale prin Ollama"
+  "provider.description.ollama": "Modele locale prin Ollama",
+  "goal.scope.project": "Obiectivul proiectului",
+  "goal.scope.global": "Obiectiv general",
+  "goal.unassigned": "Obiective neatribuite",
+  "goal.assign.project": "Atribuie acestui proiect",
+  "goal.assign.global": "Setează ca general"
 }

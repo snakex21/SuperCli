@@ -126,6 +126,10 @@ type Model struct {
 	modelContexts    *config.ModelContextStore
 	caps             *llm.CapabilityRegistry
 	goalSvc          *goal.Service
+	globalGoalSvc    *goal.Service
+	goalUnassigned   []*goal.Goal
+	goalMenuTasks    []goal.Task
+	goalMenuHistory  []*goal.Goal
 	toolRegistry     *tools.Registry
 	doctorReport     *doctor.Report
 	menu             interactiveMenu

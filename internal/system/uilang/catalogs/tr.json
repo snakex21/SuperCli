@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (ücretsiz modeller, Jeton Planı)",
   "provider.description.sensenova": "SenseTime SenseNova (Token Planı ücretsiz beta)",
   "provider.description.lmstudio": "LM Studio aracılığıyla yerel modeller",
-  "provider.description.ollama": "Ollama aracılığıyla yerel modeller"
+  "provider.description.ollama": "Ollama aracılığıyla yerel modeller",
+  "goal.scope.project": "Proje hedefi",
+  "goal.scope.global": "Genel hedef",
+  "goal.unassigned": "Atanmamış hedefler",
+  "goal.assign.project": "Bu projeye ata",
+  "goal.assign.global": "Genel yap"
 }

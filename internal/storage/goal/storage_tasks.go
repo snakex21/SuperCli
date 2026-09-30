@@ -271,7 +271,7 @@ func scanGoal(r scannable) (*Goal, error) {
 	if err := r.Scan(
 		&g.ID, &g.Title, &g.Description, &g.SuccessCriteria, &g.Notes,
 		&verificationStatus, &g.VerificationEvidence, &verifiedAt,
-		&status, &createdAt, &completedAt, &parentSessionID,
+		&status, &createdAt, &completedAt, &parentSessionID, &g.ProjectKey,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound

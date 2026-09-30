@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Baza de date de memorie",
   "doctor.providerConfig": "Configurarea furnizorului",
   "doctor.command": "Comanda {name}",
-  "doctor.server": "Serverul {name}"
+  "doctor.server": "Serverul {name}",
+  "goal.scope.project": "Obiectivul proiectului",
+  "goal.scope.global": "Obiectiv general",
+  "goal.unassigned": "Obiective neatribuite",
+  "goal.assign.project": "Atribuie acestui proiect",
+  "goal.assign.global": "Setează ca general"
 }

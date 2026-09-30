@@ -96,6 +96,7 @@ type memoryItem struct {
 // goalView is the active goal plus its tasks for the goals panel.
 type goalView struct {
 	ID                   string     `json:"id"`
+	Scope                string     `json:"scope"`
 	Title                string     `json:"title"`
 	Description          string     `json:"description,omitempty"`
 	SuccessCriteria      string     `json:"success_criteria,omitempty"`
@@ -117,6 +118,9 @@ type taskView struct {
 }
 
 type goalMutation struct {
+	Scope           string `json:"scope,omitempty"`
+	Target          string `json:"target,omitempty"`
+	GoalID          string `json:"goal_id,omitempty"`
 	Action          string `json:"action"`
 	Title           string `json:"title,omitempty"`
 	Description     string `json:"description,omitempty"`

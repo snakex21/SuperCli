@@ -110,9 +110,10 @@ type Engine struct {
 	// the TUI. Keeping one handle per Engine avoids reopening and migrating the
 	// database for every panel refresh and lets web agent tools observe UI edits
 	// immediately.
-	goalMu sync.Mutex
-	goalDB *sql.DB
-	goals  *goal.Service
+	goalMu       sync.Mutex
+	goalDB       *sql.DB
+	goals        *goal.Service
+	projectGoals map[string]*goal.Service
 	// Daily totals reuse one lazy ledger connection. Refreshing statistics must
 	// not reopen SQLite or run schema migrations, nor cache totals from the TUI.
 	creditMu     sync.Mutex
@@ -333,6 +334,17 @@ func (e *Engine) toolErrorLog() agent.ErrorLogger {
 // shared portable database once. Callers that need to observe changes made by
 // another SuperCli process should call Refresh on the returned service.
 func (e *Engine) goalService(ctx context.Context) (*goal.Service, error) {
+	return e.goalServiceAt(ctx, e.Home())
+}
+
+func (e *Engine) goalServiceAt(ctx context.Context, home string) (*goal.Service, error) {
+	return e.goalServiceScope(ctx, home, "project")
+}
+
+func (e *Engine) goalServiceScope(ctx context.Context, home, scope string) (*goal.Service, error) {
+	if scope != "" && scope != "project" && scope != "global" {
+		return nil, fmt.Errorf("invalid goal scope %q", scope)
+	}
 	e.goalMu.Lock()
 	defer e.goalMu.Unlock()
 	e.sessionMu.Lock()
@@ -341,25 +353,35 @@ func (e *Engine) goalService(ctx context.Context) (*goal.Service, error) {
 	if closed {
 		return nil, fmt.Errorf("webgui engine is closed")
 	}
-	if e.goals != nil {
-		return e.goals, nil
+	if e.goals == nil {
+		db, err := openDataDB(e.dataDir)
+		if err != nil {
+			return nil, err
+		}
+		gs := goal.NewStorage(db)
+		if err := gs.Migrate(ctx); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		e.goalDB, e.goals = db, goal.NewService(gs)
+		e.projectGoals = make(map[string]*goal.Service)
 	}
-	db, err := openDataDB(e.dataDir)
-	if err != nil {
-		return nil, err
+	key := home
+	if scope == "global" {
+		key = goal.GlobalProjectKey
 	}
-	storage := goal.NewStorage(db)
-	if err := storage.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
+	if svc := e.projectGoals[key]; svc != nil {
+		return svc, nil
 	}
-	svc := goal.NewService(storage)
+	projectKey := goal.GlobalProjectKey
+	if scope != "global" {
+		projectKey = memory.ProjectStorageKey(e.dataDir, home)
+	}
+	svc := goal.NewProjectService(goal.NewStorage(e.goalDB), projectKey)
 	if _, err := svc.Refresh(ctx); err != nil {
-		_ = db.Close()
 		return nil, err
 	}
-	e.goalDB = db
-	e.goals = svc
+	e.projectGoals[key] = svc
 	return svc, nil
 }
 
@@ -448,6 +470,7 @@ func (e *Engine) Close() error {
 	goalDB := e.goalDB
 	e.goalDB = nil
 	e.goals = nil
+	e.projectGoals = nil
 	e.goalMu.Unlock()
 	var goalErr error
 	if goalDB != nil {

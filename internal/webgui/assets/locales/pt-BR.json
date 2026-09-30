@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Banco de dados de memória",
   "doctor.providerConfig": "Configuração do provedor",
   "doctor.command": "Comando {name}",
-  "doctor.server": "Servidor {name}"
+  "doctor.server": "Servidor {name}",
+  "goal.scope.project": "Objetivo do projeto",
+  "goal.scope.global": "Objetivo geral",
+  "goal.unassigned": "Objetivos não atribuídos",
+  "goal.assign.project": "Atribuir a este projeto",
+  "goal.assign.global": "Tornar geral"
 }

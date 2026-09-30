@@ -45,6 +45,7 @@ import (
 	"supercli/internal/storage"
 	"supercli/internal/storage/freshness"
 	"supercli/internal/storage/goal"
+	"supercli/internal/storage/memory"
 	"supercli/internal/system/childproc"
 	"supercli/internal/system/execution"
 	"supercli/internal/system/stats"
@@ -129,7 +130,7 @@ func Main() {
 	if err := goalStorage.Migrate(context.Background()); err != nil {
 		fatal("migrate goals", err)
 	}
-	goalSvc := goal.NewService(goalStorage)
+	goalSvc := goal.NewProjectService(goalStorage, memory.ProjectStorageKey(dataDir, home))
 	if _, err := goalSvc.Refresh(context.Background()); err != nil {
 		log.Printf("goal refresh: %v", err)
 	}

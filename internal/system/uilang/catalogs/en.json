@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (free models, Token Plan)",
   "provider.description.sensenova": "SenseTime SenseNova (Token Plan free beta)",
   "provider.description.lmstudio": "Local models via LM Studio",
-  "provider.description.ollama": "Local models via Ollama"
+  "provider.description.ollama": "Local models via Ollama",
+  "goal.scope.project": "Project goal",
+  "goal.scope.global": "Global goal",
+  "goal.unassigned": "Unassigned goals",
+  "goal.assign.project": "Assign to this project",
+  "goal.assign.global": "Make global"
 }

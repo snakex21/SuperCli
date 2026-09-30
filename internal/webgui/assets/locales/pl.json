@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Baza pamięci",
   "doctor.providerConfig": "Konfiguracja dostawców",
   "doctor.command": "Polecenie {name}",
-  "doctor.server": "Serwer {name}"
+  "doctor.server": "Serwer {name}",
+  "goal.scope.project": "Cel projektu",
+  "goal.scope.global": "Cel ogólny",
+  "goal.unassigned": "Nieprzypisane cele",
+  "goal.assign.project": "Przypisz do tego projektu",
+  "goal.assign.global": "Ustaw jako ogólny"
 }

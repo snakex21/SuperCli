@@ -55,18 +55,19 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
-	sessionBusy   atomic.Bool
-	provider      llm.Provider
-	registry      *tools.Registry
-	caps          *llm.CapabilityRegistry
-	system        string
-	briefing      string
-	liveContext   string
-	maxSteps      int
-	thinTools     bool
-	stableToolset bool
-	catalogHoist  bool
-	orchestrator  bool
+	sessionBusy       atomic.Bool
+	provider          llm.Provider
+	registry          *tools.Registry
+	caps              *llm.CapabilityRegistry
+	system            string
+	briefing          string
+	liveContext       string
+	liveContextForRun func(context.Context) (string, error)
+	maxSteps          int
+	thinTools         bool
+	stableToolset     bool
+	catalogHoist      bool
+	orchestrator      bool
 	// taskParallel decides whether a batch of multiple `task` calls in
 	// one model turn runs concurrently. Resolved by the app layer:
 	// parallel for cloud backends, sequential for local ones (one GPU
@@ -444,6 +445,9 @@ type LoopConfig struct {
 	// turns. It is sent once at the request tail on every route, never inserted
 	// into the stable system prefix or accumulated in persisted history.
 	LiveContext string
+	// LiveContextForRun refreshes transient context once before each user run,
+	// keeping it out of persisted history and the stable system prefix.
+	LiveContextForRun func(context.Context) (string, error)
 	// MaxSteps is the runaway safety net: how many model calls one Run may
 	// make before the loop stops. It is NOT a work budget — a healthy long
 	// task must never reach it. Zero means DefaultMaxSteps. Negative means
@@ -682,6 +686,14 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	}
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("agent is still finishing the previous run")
+	}
+	if l.liveContextForRun != nil {
+		contextText, err := l.liveContextForRun(ctx)
+		if err != nil {
+			l.sessionBusy.Store(false)
+			return nil, fmt.Errorf("refresh run context: %w", err)
+		}
+		l.liveContext = strings.TrimSpace(contextText)
 	}
 	// F14: hidden flags deliberately SURVIVE across Runs. /clear,
 	// hide_messages and budget eviction all fire between or during

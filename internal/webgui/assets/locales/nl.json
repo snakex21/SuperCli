@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Geheugendatabase",
   "doctor.providerConfig": "Providerconfiguratie",
   "doctor.command": "{name}-opdracht",
-  "doctor.server": "{name}-server"
+  "doctor.server": "{name}-server",
+  "goal.scope.project": "Projectdoel",
+  "goal.scope.global": "Algemeen doel",
+  "goal.unassigned": "Niet toegewezen doelen",
+  "goal.assign.project": "Toewijzen aan dit project",
+  "goal.assign.global": "Algemeen maken"
 }

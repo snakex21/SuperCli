@@ -831,5 +831,10 @@
   "provider.description.qianfan": "Baidu ERNIE Qianfan (tasuta mudelid, märgiplaan)",
   "provider.description.sensenova": "SenseTime SenseNova (Token Plan tasuta beeta)",
   "provider.description.lmstudio": "Kohalikud mudelid LM Studio kaudu",
-  "provider.description.ollama": "Kohalikud mudelid Ollama kaudu"
+  "provider.description.ollama": "Kohalikud mudelid Ollama kaudu",
+  "goal.scope.project": "Projekti eesmärk",
+  "goal.scope.global": "Üldine eesmärk",
+  "goal.unassigned": "Määramata eesmärgid",
+  "goal.assign.project": "Määra sellele projektile",
+  "goal.assign.global": "Muuda üldiseks"
 }

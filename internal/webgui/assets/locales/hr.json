@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Memorijska baza podataka",
   "doctor.providerConfig": "Konfiguracija davatelja usluga",
   "doctor.command": "Naredba {name}",
-  "doctor.server": "Poslužitelj {name}"
+  "doctor.server": "Poslužitelj {name}",
+  "goal.scope.project": "Cilj projekta",
+  "goal.scope.global": "Opći cilj",
+  "goal.unassigned": "Nedodijeljeni ciljevi",
+  "goal.assign.project": "Dodijeli ovom projektu",
+  "goal.assign.global": "Postavi kao opći"
 }

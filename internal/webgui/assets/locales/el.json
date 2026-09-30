@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Βάση δεδομένων μνήμης",
   "doctor.providerConfig": "Διαμόρφωση παρόχου",
   "doctor.command": "Εντολή {name}",
-  "doctor.server": "Διακομιστής {name}"
+  "doctor.server": "Διακομιστής {name}",
+  "goal.scope.project": "Στόχος έργου",
+  "goal.scope.global": "Γενικός στόχος",
+  "goal.unassigned": "Μη ανατεθειμένοι στόχοι",
+  "goal.assign.project": "Ανάθεση σε αυτό το έργο",
+  "goal.assign.global": "Ορισμός ως γενικού"
 }

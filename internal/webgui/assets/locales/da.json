@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Hukommelsesdatabase",
   "doctor.providerConfig": "Udbyder konfiguration",
   "doctor.command": "{name}-kommando",
-  "doctor.server": "{name}-server"
+  "doctor.server": "{name}-server",
+  "goal.scope.project": "Projektmål",
+  "goal.scope.global": "Generelt mål",
+  "goal.unassigned": "Ikke tildelte mål",
+  "goal.assign.project": "Tildel til dette projekt",
+  "goal.assign.global": "Gør generelt"
 }

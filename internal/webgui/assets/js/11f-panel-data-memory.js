@@ -126,9 +126,14 @@ function goalStatus(status) { return t("goal.status." + status); }
 async function goalMutate(button, body) {
   if (button) button.disabled = true;
   try {
+    if (!body.scope) body.scope = goalPanelScope;
     var got = await jpost("/api/goal", body);
+    if (["assign", "set", "resume", "set_status"].indexOf(body.action) >= 0) {
+      var catalog = await j("/api/goal?catalog=1&scope=" + encodeURIComponent(goalPanelScope));
+      goalUnassigned = catalog.unassigned; goalPaused = catalog.paused;
+    }
     renderGoalPanel(got);
-    if ($("#side-tab-goal").classList.contains("active")) renderSideGoal(got);
+    if ($("#side-tab-goal").classList.contains("active")) renderSideGoal(body.scope === "global" ? await j("/api/goal") : got);
     toast(t("goal.updated"));
   } catch (e) {
     toast(e.message);
@@ -170,11 +175,11 @@ function renderGoalCreate() {
   title.focus();
 }
 
-function goalTaskAction(label, task, status) {
+function goalTaskAction(label, task, status, goalID) {
   var button = el("button", "goal-task-action", label);
   button.type = "button";
   button.addEventListener("click", function () {
-    goalMutate(button, { action: "set_task_status", task_seq: task.seq, status: status });
+    goalMutate(button, { action: "set_task_status", goal_id: goalID, task_seq: task.seq, status: status });
   });
   return button;
 }
@@ -221,7 +226,7 @@ function renderGoalVerification(got) {
     function verify(passed, button) {
       var value = evidence.value.trim();
       if (!value) { evidence.focus(); return; }
-      goalMutate(button, { action: "verify", passed: passed, text: value });
+      goalMutate(button, { action: "verify", goal_id: got.id, passed: passed, text: value });
     }
     form.addEventListener("submit", function (ev) { ev.preventDefault(); verify(true, pass); });
     fail.addEventListener("click", function () { verify(false, fail); });
@@ -232,6 +237,22 @@ function renderGoalVerification(got) {
 
 function renderGoalPanel(got) {
   panelContent.innerHTML = "";
+  var controls = el("div", "goal-head-actions");
+  var scope = el("select", "field-input");
+  scope.setAttribute("aria-label", t("goal.scope.project"));
+  ["project", "global"].forEach(function (value) {
+    var option = el("option", "", t("goal.scope." + value)); option.value = value; scope.appendChild(option);
+  });
+  scope.value = goalPanelScope;
+  scope.addEventListener("change", function () { goalPanelScope = scope.value; sections.goal(); });
+  controls.appendChild(scope);
+  var create = i18nEl("button", "btn", "goal.create");
+  create.type = "button";
+  create.addEventListener("click", function () { panelContent.innerHTML = ""; panelContent.appendChild(controls); renderGoalCreate(); });
+  controls.appendChild(create);
+  panelContent.appendChild(controls);
+  renderUnassignedGoals();
+  renderPausedGoals();
   if (!got) {
     renderGoalCreate();
     return;
@@ -241,7 +262,7 @@ function renderGoalPanel(got) {
   var copy = el("div", "goal-overview-copy");
   var eyebrow = el("div", "goal-eyebrow");
   eyebrow.appendChild(el("span", "goal-live-dot"));
-  eyebrow.appendChild(document.createTextNode(goalStatus(got.status)));
+  eyebrow.appendChild(document.createTextNode(goalStatus(got.status) + " · " + t("goal.scope." + got.scope)));
   copy.appendChild(eyebrow);
   copy.appendChild(el("h3", "goal-title", got.title));
   if (got.description) {
@@ -264,14 +285,19 @@ function renderGoalPanel(got) {
   finish.addEventListener("click", async function () {
     if (await appConfirm(t("goal.finishConfirm"), {
       title: t("goal.finish"), confirmLabel: t("goal.finish"),
-    })) goalMutate(finish, { action: "set_status", status: "done" });
+    })) goalMutate(finish, { action: "set_status", goal_id: got.id, status: "done" });
   });
   var abandon = i18nEl("button", "btn danger", "goal.abandon");
   abandon.addEventListener("click", async function () {
     if (await appConfirm(t("goal.abandonConfirm"), {
       title: t("goal.abandon"), danger: true, confirmLabel: t("goal.abandon"),
-    })) goalMutate(abandon, { action: "set_status", status: "abandoned" });
+    })) goalMutate(abandon, { action: "set_status", goal_id: got.id, status: "abandoned" });
   });
+  var target = got.scope === "global" ? "project" : "global";
+  var assign = el("button", "btn", t("goal.assign." + target));
+  assign.type = "button";
+  assign.addEventListener("click", function () { goalMutate(assign, { action: "assign", goal_id: got.id, target: target }); });
+  goalActions.appendChild(assign);
   goalActions.appendChild(finish);
   goalActions.appendChild(abandon);
   head.appendChild(goalActions);
@@ -301,12 +327,12 @@ function renderGoalPanel(got) {
     taskCopy.appendChild(el("div", "goal-task-status", goalStatus(task.status)));
     row.appendChild(taskCopy);
     var actions = el("div", "goal-task-actions");
-    if (task.status === "pending") actions.appendChild(goalTaskAction(t("goal.start"), task, "in_progress"));
+    if (task.status === "pending") actions.appendChild(goalTaskAction(t("goal.start"), task, "in_progress", got.id));
     if (task.status === "pending" || task.status === "in_progress") {
-      actions.appendChild(goalTaskAction(t("goal.complete"), task, "done"));
-      actions.appendChild(goalTaskAction(t("goal.skip"), task, "skipped"));
+      actions.appendChild(goalTaskAction(t("goal.complete"), task, "done", got.id));
+      actions.appendChild(goalTaskAction(t("goal.skip"), task, "skipped", got.id));
     } else {
-      actions.appendChild(goalTaskAction(t("goal.reopen"), task, "pending"));
+      actions.appendChild(goalTaskAction(t("goal.reopen"), task, "pending", got.id));
     }
     row.appendChild(actions);
     group.appendChild(row);
@@ -321,7 +347,7 @@ function renderGoalPanel(got) {
     ev.preventDefault();
     var value = taskInput.value.trim();
     if (!value) { taskInput.focus(); return; }
-    goalMutate(add, { action: "add_task", title: value });
+    goalMutate(add, { action: "add_task", goal_id: got.id, title: value });
   });
   group.appendChild(addForm);
   panelContent.appendChild(group);
@@ -340,8 +366,42 @@ function renderGoalPanel(got) {
     ev.preventDefault();
     var value = noteInput.value.trim();
     if (!value) { noteInput.focus(); return; }
-    goalMutate(addNote, { action: "add_note", text: value });
+    goalMutate(addNote, { action: "add_note", goal_id: got.id, text: value });
   });
   notes.appendChild(noteForm);
   panelContent.appendChild(notes);
+}
+
+function renderUnassignedGoals() {
+  if (!goalUnassigned.length) return;
+  var group = el("section", "group");
+  group.appendChild(i18nEl("div", "g-label", "goal.unassigned"));
+  goalUnassigned.forEach(function (goal) {
+    var row = el("div", "goal-task");
+    row.appendChild(el("div", "goal-task-copy", goal.title));
+    ["project", "global"].forEach(function (target) {
+      var button = el("button", "btn", t("goal.assign." + target));
+      button.type = "button";
+      button.addEventListener("click", function () { goalMutate(button, { action: "assign", goal_id: goal.id, target: target }); });
+      row.appendChild(button);
+    });
+    group.appendChild(row);
+  });
+  panelContent.appendChild(group);
+}
+
+function renderPausedGoals() {
+  if (!goalPaused.length) return;
+  var group = el("section", "group");
+  group.appendChild(el("div", "g-label", goalStatus("paused")));
+  goalPaused.forEach(function (goal) {
+    var row = el("div", "goal-task");
+    row.appendChild(el("div", "goal-task-copy", goal.title + " · " + t("goal.scope." + goal.scope)));
+    var button = i18nEl("button", "btn", "goal.start");
+    button.type = "button";
+    button.addEventListener("click", function () { goalMutate(button, { action: "resume", goal_id: goal.id }); });
+    row.appendChild(button);
+    group.appendChild(row);
+  });
+  panelContent.appendChild(group);
 }

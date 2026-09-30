@@ -698,5 +698,10 @@
   "doctor.memoryDB": "Muistitietokanta",
   "doctor.providerConfig": "Palveluntarjoajan määritykset",
   "doctor.command": "{name}-komento",
-  "doctor.server": "{name}-palvelin"
+  "doctor.server": "{name}-palvelin",
+  "goal.scope.project": "Projektin tavoite",
+  "goal.scope.global": "Yleinen tavoite",
+  "goal.unassigned": "Kohdistamattomat tavoitteet",
+  "goal.assign.project": "Kohdista tähän projektiin",
+  "goal.assign.global": "Aseta yleiseksi"
 }
