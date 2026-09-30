@@ -86,15 +86,10 @@ func TestSearchMissingRootIsAnErrorAndCommaNameRemainsLiteral(t *testing.T) {
 func TestSearchRelativeWorkspaceAndNarrowRoot(t *testing.T) {
 	dir := t.TempDir()
 	writeSearchFixture(t, dir, "src/example.zig", "DetectedSystem\n")
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rel, err := filepath.Rel(cwd, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tool := NewSearchCode(rel)
+	// Keep cwd and workspace on the same volume (Windows CI checks out on D:
+	// while TempDir is on C:). The tool still receives a genuinely relative base.
+	t.Chdir(filepath.Dir(dir))
+	tool := NewSearchCode(filepath.Base(dir))
 	for _, path := range []string{"", "src", "src/example.zig"} {
 		args, _ := json.Marshal(map[string]any{"query": "DetectedSystem", "path": path, "context": 0})
 		result, err := tool.run(context.Background(), args)

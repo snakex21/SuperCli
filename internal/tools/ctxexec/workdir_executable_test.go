@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -97,8 +96,12 @@ func TestRunnerExplicitExecutableUsesWorkdir(t *testing.T) {
 			if err := json.Unmarshal([]byte(res.Stdout), &got); err != nil {
 				t.Fatalf("%v: %s", err, res.Stdout)
 			}
-			if !strings.EqualFold(filepath.Clean(got.Workdir), filepath.Clean(tc.cwd)) || len(got.Args) != 1 || got.Args[0] != literal {
-				t.Fatalf("cwd or arguments changed: %+v", got)
+			// The child reports its physical cwd; Windows can expand an 8.3
+			// spelling here. Require the exact directory, not a string alias.
+			gotDir, gotErr := os.Stat(got.Workdir)
+			wantDir, wantErr := os.Stat(tc.cwd)
+			if gotErr != nil || wantErr != nil || !os.SameFile(gotDir, wantDir) || len(got.Args) != 1 || got.Args[0] != literal {
+				t.Fatalf("cwd or arguments changed: %+v (stat errors: %v / %v)", got, gotErr, wantErr)
 			}
 		})
 	}

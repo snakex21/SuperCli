@@ -101,7 +101,11 @@ func TestFileDiscoverySandbox(t *testing.T) {
 	}
 	sandbox.SetUnsandboxed(true)
 	res, _ = tool.Fn(context.Background(), args)
-	if res.Err != nil || res.Text != filepath.Join(root, "outside", "secret.go") {
+	want, err := filepath.EvalSymlinks(filepath.Join(root, "outside", "secret.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Err != nil || !filepath.IsAbs(res.Text) || res.Text != want {
 		t.Fatalf("external allowed path must remain absolute: %+v", res)
 	}
 }

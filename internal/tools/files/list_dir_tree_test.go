@@ -91,15 +91,9 @@ func TestListDirTreeSharedLimitAndBreadth(t *testing.T) {
 
 func TestListDirTreeRelativeBase(t *testing.T) {
 	root := treeFixture(t)
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rel, err := filepath.Rel(cwd, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := runListDir(t, NewListDir(rel), `{"depth":3}`).Text
+	// Both paths belong to the same temporary volume, even on Windows CI.
+	t.Chdir(filepath.Dir(root))
+	out := runListDir(t, NewListDir(filepath.Base(root)), `{"depth":3}`).Text
 	if !strings.Contains(out, "src/auth/login.go") {
 		t.Fatal(out)
 	}
