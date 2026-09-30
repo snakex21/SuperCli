@@ -290,11 +290,7 @@ function buildHistoryFragment(messages) {
         sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
-        if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
-          body.appendChild(i18nEl("div", "lbl", "tool.input"));
-          body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
-        }
-        appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
+        appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
         row.appendChild(body);
         appendStream(row);
       }
@@ -446,11 +442,7 @@ async function resumeSession(id, session, fromQueue) {
         sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
-        if (persistedArgs && !FILE_READ_TOOLS[persistedName]) {
-          body.appendChild(i18nEl("div", "lbl", "tool.input"));
-          body.appendChild(el("pre", "", prettyJSON(persistedArgs)));
-        }
-        appendToolPayload(body, t("tool.output"), m.content || "", persistedName, false);
+        appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
         row.appendChild(body);
         appendStream(row);
       }

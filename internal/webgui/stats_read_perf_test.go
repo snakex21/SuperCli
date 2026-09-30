@@ -65,3 +65,60 @@ func fullTranscriptStats(t testing.TB, store *session.Store, sid string) (statsS
 	}
 	return summarizeSession(meta, messages), messages
 }
+
+func BenchmarkLegacyStatsTranscript(b *testing.B) {
+	for _, mode := range []string{"full_transcript", "stream_summary"} {
+		b.Run(mode, func(b *testing.B) {
+			eng, sid := capsuleCostFixture(b, 200)
+			store, err := eng.sessionStore()
+			if err != nil {
+				b.Fatal(err)
+			}
+			ctx := context.Background()
+			expectedSummary, messages := fullTranscriptStats(b, store, sid)
+			expectedContext := contextFromMessages(messages, 32768)
+			messages = nil
+			meta, err := store.Get(sid)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				var summary statsSessionView
+				var contextView statsContextView
+				if mode == "full_transcript" {
+					rows, err := store.ReadMessages(ctx, sid)
+					if err != nil {
+						b.Fatal(err)
+					}
+					messages := make([]llm.Message, 0, len(rows))
+					for _, row := range rows {
+						if message, err := row.ToMessage(); err == nil {
+							messages = append(messages, message)
+						}
+					}
+					summary = summarizeSession(meta, messages)
+					contextView = contextFromMessages(messages, 32768)
+				} else {
+					aggregate, err := store.ReadMessageSummary(ctx, sid)
+					if err != nil {
+						b.Fatal(err)
+					}
+					summary = summarizeSession(meta, nil)
+					summary.UserMessages = aggregate.Counts.User
+					summary.AssistantMsgs = aggregate.Counts.Assistant
+					summary.ToolMessages = aggregate.Counts.Tool
+					summary.ToolCalls = aggregate.Counts.ToolCalls
+					contextView = contextFromUsage(session.UsageRecord{
+						ContextWindow: 32768, ContextSystem: aggregate.Breakdown.System,
+						ContextUser: aggregate.Breakdown.User, ContextAssistant: aggregate.Breakdown.Assistant,
+						ContextTool: aggregate.Breakdown.Tool, ContextOther: aggregate.Breakdown.Other,
+					})
+				}
+				if !reflect.DeepEqual(summary, expectedSummary) || !reflect.DeepEqual(contextView, expectedContext) {
+					b.Fatal("legacy counts or estimate changed")
+				}
+			}
+		})
+	}
+}

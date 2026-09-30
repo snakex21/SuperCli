@@ -140,7 +140,7 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 	}
 
 	var meta session.Session
-	var messages []llm.Message
+	var legacyBreakdown llm.RequestBreakdown
 	var usage []session.UsageRecord
 	if sessionID != "" {
 		meta, err = store.Get(sessionID)
@@ -165,20 +165,18 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 			sv.Session.ToolMessages = counts.Tool
 			sv.Session.ToolCalls = counts.ToolCalls
 		} else {
-			// Legacy sessions need their text to estimate context usage. Modern
-			// sessions already persist that breakdown with each provider call.
-			rows, readErr := store.ReadMessages(ctx, sessionID)
+			// Legacy sessions still need an estimate, but opening an old chat
+			// must not retain a second full copy of all historical tool output.
+			summary, readErr := store.ReadMessageSummary(ctx, sessionID)
 			if readErr != nil {
 				return sv, readErr
 			}
-			messages = make([]llm.Message, 0, len(rows))
-			for _, row := range rows {
-				msg, decodeErr := row.ToMessage()
-				if decodeErr == nil {
-					messages = append(messages, msg)
-				}
-			}
-			sv.Session = summarizeSession(meta, messages)
+			sv.Session = summarizeSession(meta, nil)
+			sv.Session.UserMessages = summary.Counts.User
+			sv.Session.AssistantMsgs = summary.Counts.Assistant
+			sv.Session.ToolMessages = summary.Counts.Tool
+			sv.Session.ToolCalls = summary.Counts.ToolCalls
+			legacyBreakdown = summary.Breakdown
 		}
 	}
 
@@ -213,7 +211,11 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		usage = []session.UsageRecord{fallbackRecord}
 		sv.Tokens.Input = fallbackRecord.Input
 		sv.Tokens.Output = fallbackRecord.Output
-		sv.Context = contextFromMessages(messages, fallback.ContextWindow)
+		sv.Context = contextFromUsage(session.UsageRecord{
+			ContextWindow: fallback.ContextWindow, ContextSystem: legacyBreakdown.System,
+			ContextUser: legacyBreakdown.User, ContextAssistant: legacyBreakdown.Assistant,
+			ContextTool: legacyBreakdown.Tool, ContextOther: legacyBreakdown.Other,
+		})
 	}
 
 	// Daily request quota for the active endpoint — independent of
