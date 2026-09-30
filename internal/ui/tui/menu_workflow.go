@@ -8,6 +8,8 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"supercli/internal/storage/session"
 )
 
 func (m Model) openQueueMenu() (tea.Model, tea.Cmd) {
@@ -177,15 +179,56 @@ func (m Model) runQueuedTask() (tea.Model, tea.Cmd) {
 	if m.sessionStore == nil || len(m.menu.tasks) == 0 {
 		return m, nil
 	}
-	row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
-	if err := m.sessionStore.DeleteQueuedTask(context.Background(), m.home, row.ID); err != nil {
-		m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
-		return m, nil
+	if m.busy {
+		m.setStatus(m.tr("tui.view_markers.99032d7e36"), false)
+		return m, m.statusClearCmd()
 	}
+	row := m.menu.tasks[minInt(m.menu.cursor, len(m.menu.tasks)-1)]
 	m.mode = modeNormal
 	m.menu = interactiveMenu{}
 	m.input.Focus()
-	return m.startPrompt(row.Prompt)
+	if row.SessionID != "" && row.SessionID != m.sessionID {
+		next, cmd := m.resumeConversation(row.SessionID)
+		return next, func() tea.Msg {
+			msg := cmd()
+			if loaded, ok := msg.(resumeLoadedMsg); ok {
+				loaded.queuedTask = &row
+				return loaded
+			}
+			return msg
+		}
+	}
+	return m.startQueuedPrompt(row)
+}
+
+// Queue rows already provide recovery for their prompt. A queue submission must
+// leave the independent composer draft and its attachments available, and only
+// remove its durable row after this specific Run has accepted the message.
+func (m Model) startQueuedPrompt(row session.QueuedTask) (tea.Model, tea.Cmd) {
+	drafts, selected := m.drafts, m.pendingAttachments
+	m.drafts, m.pendingAttachments = nil, nil
+	next, cmd := m.startPrompt(row.Prompt)
+	n := next.(Model)
+	n.drafts, n.pendingAttachments = drafts, selected
+	n.syncInputHeight()
+	if cmd == nil || n.submittingDraft == "" {
+		return n, cmd
+	}
+	store, home := m.sessionStore, m.home
+	return n, func() tea.Msg {
+		msg := cmd()
+		started, ok := msg.(runStartMsg)
+		if !ok {
+			return msg
+		}
+		// A rejected queue item remains in the queue, so it need not overwrite
+		// an empty composer with another copy of the same prompt.
+		started.draft = ""
+		if started.err == nil {
+			started.queueWarning = store.DeleteQueuedTask(context.Background(), home, row.ID)
+		}
+		return started
+	}
 }
 func (m Model) renderQueueMenu() string {
 	width := m.menuWidth()
