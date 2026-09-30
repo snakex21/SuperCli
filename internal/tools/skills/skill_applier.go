@@ -53,14 +53,17 @@ func (s *SkillApplier) Spec() Tool {
 	return Tool{
 		Name:        "apply_skill",
 		ReadOnly:    true,
-		Description: "Apply by name, or query with auto=true to select and load a clear match in one call. Ambiguous queries return metadata only.",
+		Description: "Apply by name, or query with auto=true to select and load a clear match in one call. Ambiguous queries return metadata only. Read a referenced text file with name + relative resource; from/to select numbered lines. Resources are read-only.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"name": {"type": "string", "description": "exact skill name to apply"},
 				"query": {"type": "string", "description": "keywords to search when the name is unknown"},
 				"limit": {"type": "integer", "default": 5, "maximum": 10},
-				"auto": {"type": "boolean", "description": "apply a clear query match; otherwise list candidates"}
+				"auto": {"type": "boolean", "description": "apply a clear query match; otherwise list candidates"},
+				"resource": {"type": "string", "description": "Read a text file relative to this skill folder, without repeating its guidance", "minLength": 1, "maxLength": 4096},
+				"from": {"type": "integer", "description": "Resource start line (1-based; default 1)", "minimum": 1},
+				"to": {"type": "integer", "description": "Resource end line (inclusive; default 300-line window; max 500 lines)", "minimum": 1}
 			}
 		}`,
 		Fn: s.execute,
@@ -69,20 +72,29 @@ func (s *SkillApplier) Spec() Tool {
 
 // applyArgs is the JSON shape the model sends.
 type applyArgs struct {
-	Name  string `json:"name"`
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
-	Auto  bool   `json:"auto"`
+	Name     string  `json:"name"`
+	Query    string  `json:"query"`
+	Limit    int     `json:"limit"`
+	Auto     bool    `json:"auto"`
+	Resource *string `json:"resource"`
+	From     *int    `json:"from"`
+	To       *int    `json:"to"`
 }
 
 // execute either searches metadata or resolves one skill and returns its
 // bounded guidance. Only this selected body is read and materialized.
-func (s *SkillApplier) execute(_ context.Context, args json.RawMessage) (Result, error) {
+func (s *SkillApplier) execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	var a applyArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("apply_skill: bad args: %w", err)}, nil
 	}
 	name := strings.TrimSpace(a.Name)
+	if a.Resource != nil {
+		return s.readResource(ctx, name, *a.Resource, a.From, a.To)
+	}
+	if a.From != nil || a.To != nil {
+		return Result{Err: fmt.Errorf("apply_skill: from/to require resource")}, nil
+	}
 	if name == "" {
 		query := strings.TrimSpace(a.Query)
 		if query == "" {
