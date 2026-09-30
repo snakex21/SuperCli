@@ -32,6 +32,19 @@ var sensitiveRoots = []string{
 // case-sensitive elsewhere.
 func isSensitive(abs string) bool {
 	abs = filepath.Clean(abs)
+	// Protect the filesystem/volume root itself, not all of its descendants.
+	// The absolute check keeps relative paths such as "." or "C:" ordinary.
+	rootPath := abs
+	// filepath.Dir treats extended UNC paths as device paths rather than
+	// shares. Classify their roots using ordinary UNC form, without changing
+	// the resolved path returned to callers.
+	if filepath.Separator == '\\' && len(abs) >= 8 &&
+		(strings.EqualFold(abs[:8], `\\?\UNC\`) || strings.EqualFold(abs[:8], `\\.\UNC\`) || strings.EqualFold(abs[:8], `\??\UNC\`)) {
+		rootPath = `\\` + abs[8:]
+	}
+	if filepath.IsAbs(rootPath) && filepath.Dir(rootPath) == rootPath {
+		return true
+	}
 	absLower := strings.ToLower(abs)
 	for _, root := range sensitiveRoots {
 		root = filepath.Clean(root)
