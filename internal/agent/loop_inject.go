@@ -46,16 +46,14 @@ func (l *Loop) Emit(ev Event) bool {
 	}
 }
 
-// InjectUserMessage appends an out-of-band user-role message to the loop. It is
-// used by background workers to deliver task notifications to the coordinator's
-// future context without requiring the user to paste them manually.
+// InjectUserMessage queues an out-of-band user-role message. An active run
+// receives it only after its complete assistant/tool exchange; an idle loop
+// saves it immediately under the same ownership guard as Run/ResumeConversation.
 func (l *Loop) InjectUserMessage(ctx context.Context, content string) {
 	if l == nil || strings.TrimSpace(content) == "" {
 		return
 	}
-	msg := llm.Message{Role: llm.RoleUser, Content: content}
-	l.Messages = append(l.Messages, msg)
-	l.persist(ctx, msg)
+	l.enqueueBackgroundMessage(backgroundMessage{content: content})
 }
 
 // SetNextUserAddon queues text that will be appended once to the

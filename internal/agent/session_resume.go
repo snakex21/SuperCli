@@ -14,7 +14,7 @@ func (l *Loop) ResumeConversation(ctx context.Context, writer SessionWriter, msg
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return fmt.Errorf("agent is still finishing the previous run")
 	}
-	defer l.sessionBusy.Store(false)
+	defer l.releaseConversation()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

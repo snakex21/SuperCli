@@ -55,7 +55,12 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
-	sessionBusy       atomic.Bool
+	sessionBusy        atomic.Bool
+	conversationEpoch  atomic.Uint64
+	backgroundMu       sync.Mutex
+	backgroundPending  atomic.Bool
+	backgroundMessages []backgroundMessage
+
 	provider          llm.Provider
 	registry          *tools.Registry
 	caps              *llm.CapabilityRegistry
@@ -691,7 +696,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	if l.liveContextForRun != nil {
 		contextText, err := l.liveContextForRun(ctx)
 		if err != nil {
-			l.sessionBusy.Store(false)
+			l.releaseConversation()
 			return nil, fmt.Errorf("refresh run context: %w", err)
 		}
 		l.liveContext = strings.TrimSpace(contextText)
@@ -725,7 +730,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		if !res.OK {
 			errEvent := ErrorEvent{Err: fmt.Errorf("ultrawork gate failed: %s", res.Reason)}
 			out <- errEvent
-			l.sessionBusy.Store(false)
+			l.releaseConversation()
 			close(out)
 			return out, nil
 		}
@@ -779,7 +784,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
-	defer l.sessionBusy.Store(false)
+	defer l.releaseConversation()
 	l.discardPreviousReasoning = llm.DiscardPreviousReasoning()
 	if l.discardPreviousReasoning {
 		l.lastThinking = ""
