@@ -69,17 +69,26 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		return tools.Result{Err: fmt.Errorf("send_message: unknown worker %q", args.To)}, nil
 	}
 
-	text, err := runWorkerLoop(ctx, w, args.Message)
+	text, err := runWorkerLoopInRegistry(ctx, w, args.Message, s.Workers)
 	return workerResult(w, text, err), nil
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
+	return runWorkerLoopInRegistry(ctx, w, prompt, nil)
+}
+
+func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry) (string, error) {
 	if !w.runMu.TryLock() {
 		return "", fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if workers != nil {
+		if err := workers.startContinuation(w); err != nil {
+			return "", err
+		}
 	}
 	w.setState(func(w *Worker) {
 		w.Status = "running"
