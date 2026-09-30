@@ -18,9 +18,12 @@ func (l *Loop) reasoningHistoryView(messages []llm.Message) []llm.Message {
 		}
 	}
 	completed := -1
-	for i := 0; i < lastUser; i++ {
+	// Only the latest visible reply defines the completed boundary. Searching
+	// backwards avoids parsing every older answer on each preparation pass.
+	for i := lastUser - 1; i >= 0; i-- {
 		if messages[i].Role == llm.RoleAssistant && len(messages[i].ToolCalls) == 0 && messageHasVisibleReply(messages[i]) {
 			completed = i
+			break
 		}
 	}
 	var out []llm.Message
