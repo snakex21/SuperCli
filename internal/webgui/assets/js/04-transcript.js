@@ -451,6 +451,24 @@ function toolChangeStats(name, text) {
   return stats;
 }
 
+// Replayed tool rows start folded. Build their potentially large file/diff
+// viewers only when expanded, while the transcript keeps the original text.
+function appendHistoryToolPayload(row, body, args, text, name) {
+  var rendered = false;
+  function renderIfOpen() {
+    if (!row.open || rendered) return;
+    rendered = true;
+    row.removeEventListener("toggle", renderIfOpen);
+    if (args && !FILE_READ_TOOLS[name]) {
+      body.appendChild(i18nEl("div", "lbl", "tool.input"));
+      body.appendChild(el("pre", "", prettyJSON(args)));
+    }
+    appendToolPayload(body, t("tool.output"), text || "", name, false);
+  }
+  row.addEventListener("toggle", renderIfOpen);
+  renderIfOpen();
+}
+
 function appendToolPayload(body, label, text, name, isError) {
   var raw = String(text == null ? "" : text);
   if (FILE_READ_TOOLS[name] && !isError) {
