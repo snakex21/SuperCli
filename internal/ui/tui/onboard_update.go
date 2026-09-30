@@ -12,6 +12,9 @@ import (
 )
 
 func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keys, ok := msg.(terminalKeyBatchMsg); ok {
+		return updateTerminalKeyBatch(m, keys)
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -93,9 +96,9 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case onboardMenu:
 		n := len(m.filteredChoices())
 		switch key.String() {
-		case "up":
+		case "up", "shift+tab":
 			m.cursor = maxInt(0, m.cursor-1)
-		case "down":
+		case "down", "tab":
 			m.cursor = minInt(maxInt(0, n-1), m.cursor+1)
 		case "home":
 			m.cursor = 0
@@ -124,11 +127,11 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case onboardAuthMethod:
 		switch key.String() {
-		case "up", "k":
+		case "up", "shift+tab", "k":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", "tab", "j":
 			if m.cursor < 1 {
 				m.cursor++
 			}
@@ -140,11 +143,11 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case onboardModels:
 		switch key.String() {
-		case "up", "k":
+		case "up", "shift+tab", "k":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", "tab", "j":
 			if m.cursor < len(m.models)-1 {
 				m.cursor++
 			}
