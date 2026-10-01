@@ -161,6 +161,10 @@ func TestBackgroundWorkerFailureReachesCoordinatorBeforeItsReport(t *testing.T) 
 			events := make(chan Event, 64)
 			parent.SetExternalSink(events)
 			// Async remains an embedder API, not an advertised model argument.
+			// Mirror Run's ownership while invoking foreground tools.
+			if scopeChange == "none" {
+				parent.sessionBusy.Store(true)
+			}
 			invocation := withWorkerInvocation(ctx, "delegate", events, parent.failedChecks.observer())
 			result, err := task.execute(invocation, json.RawMessage(`{"prompt":"Run the verification check","async":true}`))
 			if err != nil || result.Err != nil {
@@ -193,6 +197,7 @@ func TestBackgroundWorkerFailureReachesCoordinatorBeforeItsReport(t *testing.T) 
 				if !goalResult.failed || goalCalls != 0 {
 					t.Error("background failed check was ignored")
 				}
+				parent.releaseConversation()
 			}
 			for {
 				event := <-events
