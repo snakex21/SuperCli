@@ -255,6 +255,7 @@ function buildHistoryFragment(messages) {
         }
         var node = addAssistantMsg();
         node._raw = m.content;
+        node._history = true;
         renderAssistant(node);
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
         if (m.turn) {
@@ -406,6 +407,7 @@ async function resumeSession(id, session, fromQueue) {
         }
         var node = addAssistantMsg();
         node._raw = m.content;
+        node._history = true;
         renderAssistant(node);
         // History replay: thinking folded (only live streams open it).
 	        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });

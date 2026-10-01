@@ -1,0 +1,127 @@
+# Transcript performance checks
+
+The change keeps completed Markdown blocks in the DOM, reparses only the unfinished
+part, appends code bytes to an existing text node, and schedules subsequent live
+updates on the next animation frame. It does not add a typing queue. Tool boundaries,
+Stop/finalization and terminal events still flush received source synchronously.
+Folded **historical** reasoning is materialized on first opening; the original
+source remains available. Live reasoning still opens by default.
+
+## Reproducible checks
+
+The regular dependency-free gate includes boundary, recovery, frame cancellation,
+and existing Stop/queue/history tests:
+
+```sh
+node scripts/test-ui.cjs
+go test ./...
+go vet ./...
+go build ./cmd/supercli ./cmd/supercli-web
+```
+
+Optional HTML DOM regression and benchmark (Node 22+):
+
+```sh
+npm install --prefix .tmp/transcript-tools --no-audit --no-fund linkedom@0.18.12
+NODE_PATH="$PWD/.tmp/transcript-tools/node_modules" node scripts/bench-transcript-dom.cjs
+```
+
+On PowerShell set `$env:NODE_PATH` to the absolute `node_modules` path instead.
+`TRANSCRIPT_BASE_REF` selects an existing comparison commit; default is
+`e83ca331b0a0892518a3083fad1fbe27aee21128`. `TRANSCRIPT_BENCH_OUTPUT` optionally saves
+JSON. Each timing is the median of five equal-work runs after warmup. Every 64
+source characters trigger a render on **both** versions; this isolates rendering
+work rather than conflating it with the different scheduling rates.
+
+The HTML fixture also checks every character prefix against the original renderer,
+including split/nested/repeated reasoning tags, incomplete tables/fences, HTML-like
+text, empty comments, Unicode, recovery replacement, fold state and tool ordering.
+LinkeDOM has no layout, paint, GPU or compositor. Its times are **not** browser FPS,
+WebView2 RAM, or end-to-end model latency. Retained element counts and characters
+sent through the Markdown parser are deterministic structural measurements.
+
+For a real Chromium regression, install Playwright in the same optional development
+prefix and run `scripts/test-transcript-performance.cjs` with `NODE_PATH` and
+`PLAYWRIGHT_BROWSER_PATH` pointing to an installed Chromium/Edge executable. It
+serves the real frontend on loopback only, with synthetic API replies. It makes no
+model requests. Do not expose this fixture on a public interface.
+
+## Measured in the Linux development environment
+
+2026-10-01, Node v24.19.0, LinkeDOM 0.18.12; baseline commit above:
+
+| Fixed workload | Before | After |
+| --- | ---: | ---: |
+| 26,690 characters, 418 updates: Markdown input processed | 5,604,482 chars | 40,536 chars |
+| Same workload: median parse/DOM construction | 1,732.1 ms | 34.3 ms |
+| 33,696-character unfinished code fence: Markdown input processed | 8,904,160 chars | 0 chars (text append path) |
+| Same code workload: median parse/DOM construction | 4,690.9 ms | 13.1 ms |
+| 133,477-character history message, thinking folded | 6,006 elements | 6 elements |
+
+Comment anchors preserve completed blocks without adding wrapper elements, so
+paragraph last-child styling keeps its original meaning. There is no claim
+that the native application's memory falls by the same ratio as its DOM element
+count. Raw transcript strings remain in memory. Expanded history still requires
+its full DOM, and a very large unfinished paragraph/table still needs to be parsed
+as one Markdown block. Sections containing empty HTML comment markers use the
+original full renderer, because future whitespace can change the marker filter
+and join paragraphs across an apparent blank line. The unfinished code node survives ordinary appends, but
+closing its fence can replace it once; preserving selection and horizontal scroll
+through that boundary has not been established in native WebView2.
+
+Native Windows process memory, compositor smoothness, screenshots and actual
+paint latency were **not measured** here. Chromium could not start in the execution
+environment: `socket() failed: Operation not permitted`, including the supported
+escalated attempt. The optional browser regression is supplied but was not run
+successfully in this environment.
+
+## Windows / WebView2 verification
+
+Microsoft documents a browser/renderer/GPU process model for WebView2. Several
+`msedgewebview2.exe` processes alone do not establish a leak. Investigate the
+processes belonging to this app and the retained web content:
+
+- [WebView2 process model](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-model)
+- [Microsoft performance guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/performance)
+
+Use the same Windows machine, WebView2 version, window size, display scaling and
+GPU settings for both builds. Keep ordinary security and GPU settings unchanged.
+Create an isolated empty workspace/data directory for each build, and use the echo
+provider so no real account, conversation, tool execution or model charge is involved:
+
+```powershell
+$fixtureRoot = Join-Path $env:TEMP ("supercli-transcript-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
+$env:SUPERCLI_DEVTOOLS = "1"
+.\supercli-web.exe --echo --home $fixtureRoot --data-dir (Join-Path $fixtureRoot "data") --app-profile transcript-profile
+```
+
+Open DevTools with F12/Ctrl+Shift+I. Paste the **reviewed local** contents of
+`scripts/transcript-native-fixture.js` into the console. The fixture is inert until
+called and changes only this test window's display; it does not save synthetic
+messages or call a provider. Never run it over a real conversation. Its methods:
+
+1. `supercliTranscriptFixture.history()` loads 20 synthetic messages, each with
+   100 reasoning paragraphs. Capture the time, DOM count, heap snapshot and the
+   app's WebView2 process tree private working set/commit before and after opening
+   a folded thought. Verify all paragraphs and the final answer are present.
+2. `await supercliTranscriptFixture.stream()` feeds real SSE decoding/GUI event
+   handling with deterministic 256-character chunks every 8 ms. The returned
+   numbers distinguish DOM commit delay from actual screen paint. Record a
+   DevTools Performance trace to check layout/paint and responsiveness separately.
+   The complete received source is checked byte-for-byte as a JavaScript string.
+3. While streaming, scroll away from the tail, select/copy text and type in the
+   composer. Check that content does not vanish or jump between tool rows. Use the
+   browser regression and normal echo UI to exercise Stop, tool boundaries,
+   repeated session opening, loading older pages and rapid session switches.
+4. Run `supercliTranscriptFixture.clear()`, then alternate history/clear 20 times.
+   Compare retained DOM and post-GC heap snapshots; use Task Manager for the
+   owning process tree. Distinguish reusable runtime caches from detached DOM
+   that grows after every cycle. Record cold and warm process measurements
+   separately. Close the window and check that its process tree exits.
+
+Record at least five comparable runs per build, including median/p95 DOM commit
+latency, time in rendering/layout, long tasks, retained nodes, JS heap and native
+private memory. Do not infer RAM from node counts or claim that a DOM update time
+is a displayed frame. The fix should preserve exact source, final formatting,
+fold choices, navigation and tool order in every run before judging speed.

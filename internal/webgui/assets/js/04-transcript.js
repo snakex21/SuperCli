@@ -173,56 +173,202 @@ function addAssistantMsg() {
   appendStream(m);
   return m;
 }
-function renderAssistant(node) {
-  // Thinking is open by default; preserve the blocks the user FOLDED
-  // across streaming re-renders (ids are positional and stable).
-  var closed = {};
-  node.querySelectorAll("details[data-think-id]:not([open])").forEach(function (d) {
-    closed[d.dataset.thinkId] = true;
-  });
-  // A renderer failure must never end the stream. renderAssistant runs from a
-  // timer and from the SSE handler; letting it throw there stopped every later
-  // chunk from reaching the screen for the rest of the session. Falling back to
-  // plain text keeps the answer readable and lets the next chunk try again.
-  var html;
-  try {
-    html = renderText(node._raw);
-  } catch (renderErr) {
-    node.textContent = node._raw;
-    if (window.console && console.error) console.error("renderAssistant", renderErr);
-    return;
+// A blank line outside a fence, or a complete fence boundary, cannot be
+// changed by later Markdown. Keep those DOM nodes and only repaint the tail.
+function stableMarkdownEnd(text) {
+  var tokens = /```|\n[^\S\n]*\n/g, match, fenced = false, end = 0;
+  while ((match = tokens.exec(text)) !== null) {
+    if (match[0] === "```") {
+      if (fenced) end = tokens.lastIndex;
+      else end = match.index;
+      fenced = !fenced;
+    } else if (!fenced) end = tokens.lastIndex;
   }
-  node.innerHTML = html;
-  node.querySelectorAll("details[data-think-id]").forEach(function (d) {
-    if (closed[d.dataset.thinkId]) d.open = false;
-  });
+  return end;
 }
 
-// Providers often send a token in each SSE frame. Rebuilding all accumulated
-// Markdown for every token makes long answers progressively more expensive and
-// can freeze the WebView UI. Batch chunks and render at an adaptive cadence.
+function markdownStream(target) {
+  // Comments delimit a section without introducing elements that would alter
+  // p:last-child, margins, selection containers, or the final DOM hierarchy.
+  var start = document.createComment("markdown-start");
+  var end = document.createComment("markdown-end");
+  target.appendChild(start);
+  target.appendChild(end);
+  return {start: start, end: end, source: "", committed: 0, tailNodes: [], code: null, codeText: ""};
+}
+
+function appendMarkdownHTML(state, html) {
+  var template = document.createElement("template");
+  template.innerHTML = html;
+  var nodes = Array.from(template.content.childNodes);
+  state.end.parentNode.insertBefore(template.content, state.end);
+  return nodes;
+}
+
+function clearMarkdownTail(state) {
+  state.tailNodes.forEach(function (node) { node.remove(); });
+  state.tailNodes = [];
+  state.code = null;
+}
+
+function removeMarkdownSection(state) {
+  var node = state.start;
+  while (node) {
+    var next = node.nextSibling;
+    node.remove();
+    if (node === state.end) break;
+    node = next;
+  }
+}
+
+function updateMarkdownStream(state, text) {
+  if (text === state.source) return;
+  // Empty comments are removed by a multiline regex before block parsing.
+  // Future whitespace (including CR/LS/PS) can change how much it consumes,
+  // even after a blank line. Use the original full-block rendering for this
+  // uncommon case instead of guessing a permanently stable boundary.
+  var fullRender = /<!--\s*-->/.test(text);
+  if (fullRender || state.fullRender || text.indexOf(state.source) !== 0) {
+    // Split protocol tags, a replaced recovery snapshot, or trimmed reasoning
+    // can revise the unfinished section. Never append to a stale prefix.
+    while (state.start.nextSibling !== state.end) state.start.nextSibling.remove();
+    state.source = "";
+    state.committed = 0;
+    state.tailNodes = [];
+    state.code = null;
+  }
+  state.fullRender = fullRender;
+  if (fullRender) {
+    state.tailNodes = appendMarkdownHTML(state, renderMarkdownish(text));
+    state.source = text;
+    return;
+  }
+  var tail = text.slice(state.committed);
+  var end = stableMarkdownEnd(tail);
+  if (end) {
+    clearMarkdownTail(state);
+    appendMarkdownHTML(state, renderMarkdownish(tail.slice(0, end)));
+    state.committed += end;
+    tail = tail.slice(end);
+  }
+  // A large unfinished fenced code block is plain text. Append its new bytes
+  // without rebuilding the pre/code elements on every display frame.
+  var header = /^```([^\n]*)\n/.exec(tail);
+  if (header && tail.indexOf("```", 3) < 0) {
+    var code = tail.slice(header[1] ? header[0].length : 3), trim = code.length;
+    while (trim && /\s/.test(code.charAt(trim - 1))) trim--;
+    code = code.slice(0, trim);
+    var lang = header[1].trim();
+    if (!state.code || state.codeLang !== lang) {
+      clearMarkdownTail(state);
+      var pre = el("pre");
+      pre.dataset.lang = lang;
+      var codeNode = el("code");
+      state.code = document.createTextNode("");
+      codeNode.appendChild(state.code);
+      pre.appendChild(codeNode);
+      state.end.parentNode.insertBefore(pre, state.end);
+      state.tailNodes = [pre];
+      state.codeText = "";
+      state.codeLang = lang;
+    }
+    if (code.indexOf(state.codeText) === 0) state.code.appendData(code.slice(state.codeText.length));
+    else state.code.data = code;
+    state.codeText = code;
+  } else {
+    clearMarkdownTail(state);
+    state.tailNodes = appendMarkdownHTML(state, renderMarkdownish(tail));
+  }
+  state.source = text;
+}
+
+function assistantPart(part, history) {
+  var container, target;
+  if (part.kind === "thinking") {
+    // There is at most one reasoning block per assistant segment, matching
+    // renderText. A persisted, folded thought does not need a Markdown DOM.
+    var template = document.createElement("template");
+    _thinkId = 0;
+    template.innerHTML = renderThinkBlock("");
+    container = template.content.firstElementChild;
+    target = container.querySelector(".think-content");
+    if (history) container.open = false;
+  } else {
+    container = target = document.createDocumentFragment();
+  }
+  var state = {kind: part.kind, node: container, text: part.text, markdown: null};
+  function paint() {
+    if (!state.markdown) state.markdown = markdownStream(target);
+    updateMarkdownStream(state.markdown, state.text);
+  }
+  state.paint = paint;
+  state.remove = function () {
+    if (state.kind === "thinking") container.remove();
+    else removeMarkdownSection(state.markdown);
+  };
+  if (history && part.kind === "thinking") {
+    container.addEventListener("toggle", function reveal() {
+      if (!container.open) return;
+      paint();
+      container.removeEventListener("toggle", reveal);
+    });
+  } else paint();
+  return state;
+}
+
+function renderAssistant(node) {
+  // The original source is authoritative. A renderer failure must not stop
+  // SSE delivery, and recovery may replace a source rather than append to it.
+  try {
+    var parts = assistantTextParts(node._raw);
+    if (!node._assistantParts) {
+      node.textContent = "";
+      node._assistantParts = [];
+    }
+    var states = node._assistantParts;
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i], state = states[i];
+      if (!state || state.kind !== part.kind) {
+        while (states.length > i) states.pop().remove();
+        state = assistantPart(part, !!node._history);
+        states.push(state);
+        node.appendChild(state.node);
+      } else {
+        state.text = part.text;
+        // Keep history thinking unmaterialized until the user opens it.
+        if (state.markdown) state.paint();
+      }
+    }
+    while (states.length > parts.length) states.pop().remove();
+  } catch (renderErr) {
+    node.textContent = node._raw;
+    node._assistantParts = null;
+    if (window.console && console.error) console.error("renderAssistant", renderErr);
+  }
+}
+
+// Show the first fragment immediately, then coalesce the real received bytes
+// once per display frame. No length-based delay or artificial typing queue.
 function scheduleAssistantRender(node) {
   if (!node || node._renderTimer !== null) return;
-  // Paint the first fragment now; only subsequent Markdown updates are batched.
   if (!node._firstPainted && node._raw) {
     node._firstPainted = true;
     renderAssistant(node);
     smartScroll();
     return;
   }
-  var n = node._raw.length;
-  var delay = n > 48000 ? 250 : (n > 16000 ? 120 : (n > 4000 ? 60 : 40));
-  node._renderTimer = setTimeout(function () {
+  node._renderTimer = requestAnimationFrame(function () {
     node._renderTimer = null;
+    if (node.isConnected === false) return;
     renderAssistant(node);
     smartScroll();
-  }, delay);
+  });
 }
 
 function flushAssistantRender(node) {
   if (!node) return;
   if (node._renderTimer !== null) {
-    clearTimeout(node._renderTimer);
+    cancelAnimationFrame(node._renderTimer);
     node._renderTimer = null;
   }
   renderAssistant(node);
