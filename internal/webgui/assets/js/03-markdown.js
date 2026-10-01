@@ -126,9 +126,10 @@ function renderThinkBlock(text) {
     '<summary><span>' + escHtml(t("role.thinking")) + '</span><span class="think-line"></span></summary>' +
     '<div class="think-content">' + renderMarkdownish(String(text).trim()) + "</div></details>";
 }
-function renderText(text) {
-  _thinkId = 0;
-  var src = String(text || ""), html = "", outside = 0, inside = 0, depth = 0, thought = "", m;
+function assistantTextParts(text) {
+  var parts = [];
+  function markdown(value) { if (value) parts.push({kind: "markdown", text: value}); }
+  var src = String(text || ""), outside = 0, inside = 0, depth = 0, thought = "", m;
   var renderedThinking = false;
   // Local servers are inconsistent: some use <think>, others <thinking>,
   // and a few emit a second opening marker or an orphan closing marker when
@@ -139,7 +140,7 @@ function renderText(text) {
   while ((m = tags.exec(src)) !== null) {
     var closing = m[0].charAt(1) === "/";
     if (depth === 0) {
-      if (m.index > outside) html += renderMarkdownish(src.slice(outside, m.index));
+      if (m.index > outside) markdown(src.slice(outside, m.index));
       if (closing) {
         // Orphan close: provider/model both closed the same native channel.
         outside = tags.lastIndex;
@@ -160,7 +161,8 @@ function renderText(text) {
         // One assistant segment has one reasoning phase. Some local servers
         // incorrectly open the native channel again around the final answer;
         // keep the first block as reasoning and recover later blocks as prose.
-        html += renderedThinking ? renderMarkdownish(thought) : renderThinkBlock(thought);
+        if (renderedThinking) markdown(thought);
+        else parts.push({kind: "thinking", text: thought.trim()});
         renderedThinking = true;
       }
       thought = "";
@@ -169,10 +171,20 @@ function renderText(text) {
   }
   if (depth > 0) {
     thought += src.slice(inside);
-    if (thought.trim()) html += renderedThinking ? renderMarkdownish(thought) : renderThinkBlock(thought);
+    if (thought.trim()) {
+      if (renderedThinking) markdown(thought);
+      else parts.push({kind: "thinking", text: thought.trim()});
+    }
   } else if (outside < src.length) {
-    html += renderMarkdownish(src.slice(outside));
+    markdown(src.slice(outside));
   }
-  return html;
+  return parts;
+}
+
+function renderText(text) {
+  _thinkId = 0;
+  return assistantTextParts(text).map(function (part) {
+    return part.kind === "thinking" ? renderThinkBlock(part.text) : renderMarkdownish(part.text);
+  }).join("");
 }
 
