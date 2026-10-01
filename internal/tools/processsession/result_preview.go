@@ -12,19 +12,21 @@ import (
 // failed commands keep the shared actionable failure diagnostic instead.
 func (s snapshot) modelPreview() string {
 	preview := struct {
-		ID              string          `json:"id"`
-		Status          string          `json:"status"`
-		ExitCode        *int            `json:"exit_code,omitempty"`
-		DurationMS      int64           `json:"duration_ms"`
-		PTY             bool            `json:"pty,omitempty"`
-		Preview         bool            `json:"preview"`
-		Stdout          json.RawMessage `json:"stdout"`
-		Stderr          json.RawMessage `json:"stderr"`
-		TruncatedStdout bool            `json:"truncated_stdout"`
-		TruncatedStderr bool            `json:"truncated_stderr"`
-		OmittedOut      int64           `json:"omitted_stdout_bytes,omitempty"`
-		OmittedErr      int64           `json:"omitted_stderr_bytes,omitempty"`
-	}{ID: s.ID, Status: s.Status, ExitCode: s.ExitCode, DurationMS: s.DurationMS, PTY: s.PTY, Preview: true, Stdout: json.RawMessage(`""`), Stderr: json.RawMessage(`""`), OmittedOut: s.OmittedOut, OmittedErr: s.OmittedErr}
+		ID               string          `json:"id"`
+		Status           string          `json:"status"`
+		ExitCode         *int            `json:"exit_code,omitempty"`
+		DurationMS       int64           `json:"duration_ms"`
+		PTY              bool            `json:"pty,omitempty"`
+		Preview          bool            `json:"preview"`
+		OutputIncomplete bool            `json:"output_incomplete,omitempty"`
+		OutputWarning    string          `json:"output_warning,omitempty"`
+		Stdout           json.RawMessage `json:"stdout"`
+		Stderr           json.RawMessage `json:"stderr"`
+		TruncatedStdout  bool            `json:"truncated_stdout"`
+		TruncatedStderr  bool            `json:"truncated_stderr"`
+		OmittedOut       int64           `json:"omitted_stdout_bytes,omitempty"`
+		OmittedErr       int64           `json:"omitted_stderr_bytes,omitempty"`
+	}{ID: s.ID, Status: s.Status, ExitCode: s.ExitCode, DurationMS: s.DurationMS, PTY: s.PTY, Preview: true, Stdout: json.RawMessage(`""`), Stderr: json.RawMessage(`""`), OmittedOut: s.OmittedOut, OmittedErr: s.OmittedErr, OutputIncomplete: s.OutputIncomplete, OutputWarning: s.OutputWarning}
 	empty, _ := json.Marshal(preview)
 	remaining := core.ModelOutputPreviewBytes - len(empty) + 4
 	if remaining < 4 {

@@ -1,13 +1,18 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
@@ -645,16 +650,46 @@ func TestProbeProvider_EmptyBaseURL(t *testing.T) {
 }
 
 func TestProbeProvider_Timeout(t *testing.T) {
-	// Use a non-routable IP that will cause a connection timeout.
-	// 192.0.2.0/24 is reserved for documentation (TEST-NET-1).
-	ok, err := probeProvider(config.ProviderConf{
-		BaseURL: "http://192.0.2.1:9999/v1",
-	})
-	if err == nil {
-		t.Fatal("expected timeout error for unreachable IP")
+	// Exercise the real three-second timeout on a local stalled response.
+	// A TEST-NET address is not an offline fixture: proxies can route it.
+	canceled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(canceled)
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" || r.ContentLength != 0 {
+			t.Errorf("unexpected probe request: %s %s length=%d", r.Method, r.URL.Path, r.ContentLength)
+		}
+		if r.Header.Get("Authorization") != "" || r.Header.Get("x-api-key") != "" {
+			t.Error("fixture must not send credentials")
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(func() { server.CloseClientConnections(); server.Close() })
+	transport := &http.Transport{Proxy: nil}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != server.Listener.Addr().String() {
+			return nil, fmt.Errorf("timeout fixture refused a non-local destination")
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}
+	previous := http.DefaultTransport
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = previous; transport.CloseIdleConnections() })
+
+	started := time.Now()
+	ok, err := probeProvider(config.ProviderConf{BaseURL: server.URL + "/v1"})
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected request deadline error, got %v", err)
 	}
 	if ok {
 		t.Fatal("expected not connected on timeout")
+	}
+	if time.Since(started) < 2500*time.Millisecond {
+		t.Fatal("probe failed before exercising the three-second timeout")
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("timed-out probe did not cancel the local server request")
 	}
 }
 

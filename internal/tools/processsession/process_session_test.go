@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,21 @@ func TestProcessSessionHelper(t *testing.T) {
 	case "fail":
 		fmt.Fprintln(os.Stderr, "specific failing assertion")
 		os.Exit(7)
+	case "descendant", "descendant-fail":
+		child := exec.Command(os.Args[0], "-test.run=TestProcessSessionHelper", "--", "sleep")
+		child.Stdout, child.Stderr, child.Env = os.Stdout, os.Stderr, os.Environ()
+		if err := child.Start(); err != nil {
+			os.Exit(8)
+		}
+		if err := os.WriteFile(os.Getenv("SUPERCLI_DESCENDANT_PID"), []byte(strconv.Itoa(child.Process.Pid)), 0600); err != nil {
+			_ = child.Process.Kill()
+			os.Exit(9)
+		}
+		fmt.Println("parent completed stdout")
+		fmt.Fprintln(os.Stderr, "parent completed stderr")
+		if mode == "descendant-fail" {
+			os.Exit(7)
+		}
 	case "sleep":
 		time.Sleep(30 * time.Second)
 	default:

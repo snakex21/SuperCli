@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // ToolSearcher is a meta-tool exposed to the model. When the
@@ -83,6 +84,8 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	var hits []SearchResult
 	if exact := exactToolNameHit(s.Registry, a.Query); exact != nil {
 		hits = []SearchResult{*exact}
+	} else {
+		hits = exactToolNameListHits(s.Registry, a.Query, limit)
 	}
 	// Small per-request registries (WebGUI/batch) can skip SQLite entirely
 	// and use the deterministic lexical ranker. The long-lived TUI supplies
@@ -192,6 +195,69 @@ func exactToolNameHit(reg *Registry, query string) *SearchResult {
 		}
 	}
 	return nil
+}
+
+// A query consisting only of registered tool names is an explicit list, not
+// a bag of description words. Keep its order and bound it by the same limit.
+// Unknown words (including negation) retain the existing intent-search path;
+// this never resolves a tool outside the caller's current registry.
+func exactToolNameListHits(reg *Registry, query string, limit int) []SearchResult {
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return unicode.IsSpace(r) || r == ',' || r == ';' || r == '|' || r == '&'
+	})
+	if len(fields) < 2 {
+		return nil
+	}
+	hits := make([]SearchResult, 0, min(len(fields), 8))
+	seen := make(map[string]bool)
+	names := 0
+	previousName := false
+	for i, field := range fields {
+		hit := uniqueListedToolNameHit(reg, field)
+		if hit == nil {
+			if strings.EqualFold(field, "and") && previousName && i+1 < len(fields) {
+				previousName = false
+				continue
+			}
+			return nil
+		}
+		names++
+		previousName = true
+		if !seen[hit.Name] {
+			seen[hit.Name] = true
+			if limit <= 0 || len(hits) < limit {
+				hits = append(hits, *hit)
+			}
+		}
+	}
+	if names < 2 || !previousName {
+		return nil
+	}
+	return hits
+}
+
+// Unlike a single legacy name lookup, a list must not resolve repeated
+// case-folded tokens to different identities when a registry contains names
+// differing only in case. Exact-case names win; ambiguous folds stay a search.
+func uniqueListedToolNameHit(reg *Registry, field string) *SearchResult {
+	if reg == nil {
+		return nil
+	}
+	if t, ok := reg.Get(field); ok && t.Name != "tool_search" && t.Name != "invoke_tool" {
+		return &SearchResult{Name: t.Name, Server: classifyServer(t.Name), Score: 1}
+	}
+	lower := strings.ToLower(field)
+	var hit *SearchResult
+	for _, name := range reg.Names() {
+		if name == "tool_search" || name == "invoke_tool" || strings.ToLower(name) != lower {
+			continue
+		}
+		if hit != nil {
+			return nil
+		}
+		hit = &SearchResult{Name: name, Server: classifyServer(name), Score: 1}
+	}
+	return hit
 }
 
 // lexicalFallback ranks registered tools by simple token

@@ -137,46 +137,50 @@ func NewManager(baseDir string) *Manager {
 }
 
 type process struct {
-	id         string
-	command    []string
-	commandKey *[32]byte
-	workdir    string
-	stdin      io.WriteCloser
-	stdout     *streamBuffer
-	stderr     *streamBuffer
-	streams    sync.WaitGroup
-	done       chan struct{}
-	cancel     context.CancelFunc
-	waitFn     func() (int, error)
-	killFn     func() error
-	resizeFn   func(int, int) error
-	pty        bool
+	id          string
+	command     []string
+	commandKey  *[32]byte
+	workdir     string
+	stdin       io.WriteCloser
+	stdout      *streamBuffer
+	stderr      *streamBuffer
+	streams     sync.WaitGroup
+	closeOutput func()
+	done        chan struct{}
+	cancel      context.CancelFunc
+	waitFn      func() (int, error)
+	killFn      func() error
+	resizeFn    func(int, int) error
+	pty         bool
 
-	mu            sync.Mutex
-	started       time.Time
-	ended         time.Time
-	exitCode      int
-	errText       string
-	status        string
-	stopRequested bool
-	stdoutCursor  int64
-	stderrCursor  int64
+	mu               sync.Mutex
+	started          time.Time
+	ended            time.Time
+	exitCode         int
+	errText          string
+	status           string
+	stopRequested    bool
+	outputIncomplete bool
+	stdoutCursor     int64
+	stderrCursor     int64
 }
 
 type snapshot struct {
-	CommandKey *[32]byte `json:"-"`
-	ID         string    `json:"id"`
-	Status     string    `json:"status"`
-	Command    []string  `json:"command,omitempty"`
-	Workdir    string    `json:"workdir,omitempty"`
-	ExitCode   *int      `json:"exit_code,omitempty"`
-	DurationMS int64     `json:"duration_ms"`
-	Stdout     string    `json:"stdout,omitempty"`
-	Stderr     string    `json:"stderr,omitempty"`
-	OmittedOut int64     `json:"omitted_stdout_bytes,omitempty"`
-	OmittedErr int64     `json:"omitted_stderr_bytes,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	PTY        bool      `json:"pty,omitempty"`
+	CommandKey       *[32]byte `json:"-"`
+	ID               string    `json:"id"`
+	Status           string    `json:"status"`
+	Command          []string  `json:"command,omitempty"`
+	Workdir          string    `json:"workdir,omitempty"`
+	ExitCode         *int      `json:"exit_code,omitempty"`
+	DurationMS       int64     `json:"duration_ms"`
+	Stdout           string    `json:"stdout,omitempty"`
+	Stderr           string    `json:"stderr,omitempty"`
+	OmittedOut       int64     `json:"omitted_stdout_bytes,omitempty"`
+	OmittedErr       int64     `json:"omitted_stderr_bytes,omitempty"`
+	Error            string    `json:"error,omitempty"`
+	PTY              bool      `json:"pty,omitempty"`
+	OutputIncomplete bool      `json:"output_incomplete,omitempty"`
+	OutputWarning    string    `json:"output_warning,omitempty"`
 }
 
 // Managing a process successfully is not evidence that its command succeeded.
@@ -193,6 +197,12 @@ func (s snapshot) commandFailure() error {
 	if s.Status == "timeout" {
 		code = ctxexec.ExitTimeout
 	}
-	result := ctxexec.Result{ExitCode: code, Error: s.Error, DurationMS: s.DurationMS, Stdout: s.Stdout, Stderr: s.Stderr, TruncatedStdout: s.OmittedOut > 0, TruncatedStderr: s.OmittedErr > 0}
-	return core.SelfContainedErr(fmt.Errorf("process_session %s: %s", s.ID, result.FailureSummary()))
+	result := ctxexec.Result{ExitCode: code, Error: s.Error, DurationMS: s.DurationMS, Stdout: s.Stdout, Stderr: s.Stderr, TruncatedStdout: s.OmittedOut > 0, TruncatedStderr: s.OmittedErr > 0, OutputIncomplete: s.OutputIncomplete, OutputWarning: s.OutputWarning}
+	capture := ""
+	summary := result.FailureSummary()
+	if s.OutputIncomplete {
+		capture = " output_incomplete=true"
+		summary += "\n" + s.OutputWarning
+	}
+	return core.SelfContainedErr(fmt.Errorf("process_session %s%s: %s", s.ID, capture, summary))
 }
