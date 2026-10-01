@@ -94,30 +94,52 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		cmd := exec.CommandContext(procCtx, p.Command[0], p.Command[1:]...)
 		cmd.Dir = workdir
 		cmd.Env = append(os.Environ(), env...)
-		stdin, pipeErr := cmd.StdinPipe()
-		if pipeErr != nil {
-			cancel()
-			m.mu.Unlock()
-			return snapshot{}, fmt.Errorf("process_session: stdin: %w", pipeErr)
-		}
-		stdout, pipeErr := cmd.StdoutPipe()
+		// Allocate caller-owned output pipes first. A StdinPipe child end is
+		// owned by Cmd and is cleaned up by Start; do not create it before
+		// fallible output allocations that could return without Start.
+		stdout, stdoutWriter, pipeErr := os.Pipe()
 		if pipeErr != nil {
 			cancel()
 			m.mu.Unlock()
 			return snapshot{}, fmt.Errorf("process_session: stdout: %w", pipeErr)
 		}
-		stderr, pipeErr := cmd.StderrPipe()
+		stderr, stderrWriter, pipeErr := os.Pipe()
 		if pipeErr != nil {
 			cancel()
 			m.mu.Unlock()
+			_ = stdout.Close()
+			_ = stdoutWriter.Close()
 			return snapshot{}, fmt.Errorf("process_session: stderr: %w", pipeErr)
 		}
+		stdin, pipeErr := cmd.StdinPipe()
+		if pipeErr != nil {
+			cancel()
+			m.mu.Unlock()
+			_ = stdout.Close()
+			_ = stdoutWriter.Close()
+			_ = stderr.Close()
+			_ = stderrWriter.Close()
+			return snapshot{}, fmt.Errorf("process_session: stdin: %w", pipeErr)
+		}
+		// Own the read ends: Cmd.Wait closes StdoutPipe/StderrPipe before a
+		// separately scheduled reader has necessarily drained them. Caller-
+		// supplied writer files let process exit and output draining be joined.
+		cmd.Stdout, cmd.Stderr = stdoutWriter, stderrWriter
 		scope, startErr := childproc.Start(cmd)
 		if startErr != nil {
 			cancel()
 			m.mu.Unlock()
+			_ = stdin.Close()
+			_ = stdout.Close()
+			_ = stdoutWriter.Close()
+			_ = stderr.Close()
+			_ = stderrWriter.Close()
 			return snapshot{}, fmt.Errorf("process_session: start: %w", startErr)
 		}
+		// Only the child keeps writer handles; otherwise EOF never arrives.
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		item.closeOutput = func() { _ = stdout.Close(); _ = stderr.Close() }
 		item.stdin = stdin
 		item.waitFn = func() (int, error) {
 			waitErr := cmd.Wait()
@@ -134,8 +156,8 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			return scope.Kill(cmd)
 		}
 		item.streams.Add(2)
-		go func() { defer item.streams.Done(); _, _ = io.Copy(item.stdout, stdout) }()
-		go func() { defer item.streams.Done(); _, _ = io.Copy(item.stderr, stderr) }()
+		go func() { defer item.streams.Done(); defer stdout.Close(); _, _ = io.Copy(item.stdout, stdout) }()
+		go func() { defer item.streams.Done(); defer stderr.Close(); _, _ = io.Copy(item.stderr, stderr) }()
 	}
 	m.items[id] = item
 	m.mu.Unlock()
@@ -175,14 +197,16 @@ func (p *process) wait(procCtx context.Context) {
 		_ = p.killFn()
 		result = <-waited
 	}
-	p.streams.Wait()
+	timedOut := errors.Is(procCtx.Err(), context.DeadlineExceeded)
+	incomplete := p.drainOutput()
 	p.mu.Lock()
+	p.outputIncomplete = incomplete
 	p.ended = time.Now()
 	p.exitCode = result.code
 	switch {
 	case p.stopRequested:
 		p.status = "stopped"
-	case errors.Is(procCtx.Err(), context.DeadlineExceeded):
+	case timedOut:
 		p.status = "timeout"
 	case result.err != nil:
 		p.status = "failed"
@@ -194,6 +218,31 @@ func (p *process) wait(procCtx context.Context) {
 	_ = p.stdin.Close()
 	p.cancel()
 	close(p.done)
+}
+
+const processOutputDrainGrace = time.Second
+const processOutputWarning = "Output capture incomplete: the process exited, but inherited output pipes stayed open past the drain limit. A descendant may still be running; check its status before rerunning the command."
+
+// A descendant can inherit output handles after its parent exits. Bound the
+// drain, close only our readers, then join them before publishing completion.
+// PTY handles retain their existing terminal-specific lifetime behavior.
+func (p *process) drainOutput() bool {
+	if p.closeOutput == nil {
+		p.streams.Wait()
+		return false
+	}
+	drained := make(chan struct{})
+	go func() { p.streams.Wait(); close(drained) }()
+	timer := time.NewTimer(processOutputDrainGrace)
+	defer timer.Stop()
+	select {
+	case <-drained:
+		return false
+	case <-timer.C:
+		p.closeOutput()
+		<-drained
+		return true
+	}
 }
 
 // Wait uses the existing completion channel, without timers or periodic reads.
@@ -236,7 +285,7 @@ func (p *process) snapshot(maxBytes int) snapshot {
 	errOut, nextErr, omittedErr := p.stderr.readFrom(p.stderrCursor, maxBytes)
 	p.stdoutCursor, p.stderrCursor = nextOut, nextErr
 	status, code, errText := p.status, p.exitCode, p.errText
-	started, ended := p.started, p.ended
+	started, ended, incomplete := p.started, p.ended, p.outputIncomplete
 	p.mu.Unlock()
 	duration := time.Since(started)
 	if !ended.IsZero() {
@@ -246,6 +295,10 @@ func (p *process) snapshot(maxBytes int) snapshot {
 		out = stripTerminalControl(out)
 	}
 	s := snapshot{CommandKey: p.commandKey, ID: p.id, Status: status, Command: append([]string(nil), p.command...), Workdir: p.workdir, DurationMS: duration.Milliseconds(), Stdout: strings.ToValidUTF8(string(out), "?"), Stderr: strings.ToValidUTF8(string(errOut), "?"), OmittedOut: omittedOut, OmittedErr: omittedErr, Error: errText, PTY: p.pty}
+	if incomplete {
+		s.OutputIncomplete = true
+		s.OutputWarning = processOutputWarning
+	}
 	if status != "running" && code >= 0 {
 		s.ExitCode = &code
 	}
@@ -339,13 +392,17 @@ func (m *Manager) List() []snapshot {
 	out := make([]snapshot, 0, len(items))
 	for _, item := range items {
 		item.mu.Lock()
-		status, code, started, ended := item.status, item.exitCode, item.started, item.ended
+		status, code, started, ended, incomplete := item.status, item.exitCode, item.started, item.ended, item.outputIncomplete
 		item.mu.Unlock()
 		duration := time.Since(started)
 		if !ended.IsZero() {
 			duration = ended.Sub(started)
 		}
 		s := snapshot{ID: item.id, Status: status, Command: append([]string(nil), item.command...), Workdir: item.workdir, DurationMS: duration.Milliseconds(), PTY: item.pty}
+		if incomplete {
+			s.OutputIncomplete = true
+			s.OutputWarning = processOutputWarning
+		}
 		if status != "running" && code >= 0 {
 			s.ExitCode = &code
 		}
