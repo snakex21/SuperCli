@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.2
+# SuperCli 1.0.3
 
 <!-- readme-unit:intro -->
 Een draagbare AI-programmeeragent geschreven in Go, met een terminalinterface (TUI), desktop-/webinterface (GUI) en batchmodus die één engine delen.
 
 <!-- readme-unit:status -->
-Deze README beschrijft versie `1.0.2`. Draagbare releasepakketten worden via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.
+Deze README beschrijft versie `1.0.3`. Draagbare releasepakketten worden via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.
 
 <!-- readme-unit:h.screenshots -->
 ## Schermafbeeldingen

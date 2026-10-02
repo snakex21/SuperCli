@@ -1,6 +1,6 @@
 [
   "Ein portabler KI-Programmieragent in Go mit Terminaloberfläche (TUI), Desktop-/Weboberfläche (GUI) und Stapelmodus, die dieselbe Engine nutzen.",
-  "Dieses README beschreibt Version `1.0.2`. Portable Veröffentlichungspakete werden über [GitHub Releases]({releases}) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.",
+  "Dieses README beschreibt Version `1.0.3`. Portable Veröffentlichungspakete werden über [GitHub Releases]({releases}) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.",
   "Screenshots",
   "![SuperCli-Weboberfläche (GUI)]({guishot})",
   "![Aktionszentrum im SuperCli-Terminal (TUI)]({tuishot})",

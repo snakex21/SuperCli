@@ -722,5 +722,8 @@
   "preview.close": "Fechar prévia",
   "preview.unavailable": "Para usar a prévia integrada, coloque supercli-web ao lado de supercli. Você também pode abrir o site no navegador.",
   "provider.description.cline": "Cline (chave de API necessária)",
-  "provider.description.nous": "Nous Portal (chave de API ou token de inferência necessário)"
+  "provider.description.nous": "Nous Portal (chave de API ou token de inferência necessário)",
+  "code.copy": "Copiar",
+  "code.copied": "Copiado.",
+  "code.copyFailed": "Não foi possível copiar. Selecione o código e pressione Ctrl+C."
 }

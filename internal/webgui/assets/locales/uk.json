@@ -722,5 +722,8 @@
   "preview.close": "Закрити попередній перегляд",
   "preview.unavailable": "Для вбудованого попереднього перегляду розмістіть supercli-web поруч із supercli. Ви також можете відкрити сайт у браузері.",
   "provider.description.cline": "Cline (потрібен ключ API)",
-  "provider.description.nous": "Nous Portal (потрібен ключ API або токен для генерації)"
+  "provider.description.nous": "Nous Portal (потрібен ключ API або токен для генерації)",
+  "code.copy": "Копіювати",
+  "code.copied": "Скопійовано.",
+  "code.copyFailed": "Не вдалося скопіювати. Виділіть код і натисніть Ctrl+C."
 }

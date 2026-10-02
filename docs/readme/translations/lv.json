@@ -1,6 +1,6 @@
 [
   "Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.",
-  "Šis README apraksta versiju `1.0.2`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
+  "Šis README apraksta versiju `1.0.3`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
   "Ekrānuzņēmumi",
   "![SuperCli tīmekļa saskarne (GUI)]({guishot})",
   "![SuperCli termināļa darbību centrs (TUI)]({tuishot})",

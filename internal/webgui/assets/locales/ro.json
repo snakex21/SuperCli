@@ -722,5 +722,8 @@
   "preview.close": "Închide previzualizarea",
   "preview.unavailable": "Pentru previzualizarea integrată, plasează supercli-web lângă supercli. Poți deschide site-ul și în browser.",
   "provider.description.cline": "Cline (necesită cheie API)",
-  "provider.description.nous": "Nous Portal (necesită cheie API sau token de inferență)"
+  "provider.description.nous": "Nous Portal (necesită cheie API sau token de inferență)",
+  "code.copy": "Copiază",
+  "code.copied": "Copiat.",
+  "code.copyFailed": "Copierea a eșuat. Selectează codul și apasă Ctrl+C."
 }

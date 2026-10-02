@@ -2,6 +2,46 @@
 
 /* ═══ markdown-ish renderer (safe: escape first, then decorate) ═══ */
 
+function codeCopyButtonHTML() {
+  return '<button class="code-copy" type="button" data-i18n="code.copy" data-i18n-title="code.copy" data-i18n-aria="code.copy" title="' +
+    escAttr(t("code.copy")) + '" aria-label="' + escAttr(t("code.copy")) + '">' + escHtml(t("code.copy")) + "</button>";
+}
+
+function copyTextFallback(text) {
+  var active = document.activeElement, selection = window.getSelection && window.getSelection(), ranges = [];
+  if (selection) for (var i = 0; i < selection.rangeCount; i++) ranges.push(selection.getRangeAt(i).cloneRange());
+  var input = document.createElement("textarea");
+  input.value = text;
+  input.style.position = "fixed"; input.style.opacity = "0"; input.style.pointerEvents = "none";
+  document.body.appendChild(input);
+  try {
+    input.select();
+    if (!document.execCommand("copy")) throw new Error("Clipboard copy failed");
+  } finally {
+    input.remove();
+    if (active && active.focus) active.focus({preventScroll: true});
+    if (selection) { selection.removeAllRanges(); ranges.forEach(function (range) { selection.addRange(range); }); }
+  }
+}
+
+async function copyCodeBlock(button) {
+  if (!button || button.disabled) return;
+  var pre = button.closest("pre"), code = pre && pre.querySelector("code");
+  if (!code) return;
+  // Capture this exact block when clicked, including newlines and indentation.
+  // No per-frame DOM scans, inline handlers or extra backend/model requests.
+  var text = code.textContent;
+  button.disabled = true;
+  try {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard || !navigator.clipboard.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(text);
+    } catch (error) { copyTextFallback(text); }
+    toast(t("code.copied"));
+  } catch (error) { toast(t("code.copyFailed")); }
+  finally { button.disabled = false; }
+}
+
 function mdInline(s) {
   s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
@@ -20,7 +60,7 @@ function renderMarkdownish(text) {
     if (i % 2 === 1) {
       var lang = "", code = parts[i], nl = code.indexOf("\n");
       if (nl > 0) { lang = code.slice(0, nl).trim(); code = code.slice(nl + 1); }
-      html += '<pre data-lang="' + escAttr(lang) + '"><code>' + escHtml(code.replace(/\s+$/, "")) + "</code></pre>";
+      html += '<pre data-lang="' + escAttr(lang) + '">' + codeCopyButtonHTML() + '<code>' + escHtml(code.replace(/\s+$/, "")) + "</code></pre>";
     } else {
       // Some providers emit empty HTML comment markers while transitioning
       // between reasoning and visible text. They carry no content and should

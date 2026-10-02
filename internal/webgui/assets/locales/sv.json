@@ -722,5 +722,8 @@
   "preview.close": "Stäng förhandsvisning",
   "preview.unavailable": "För den inbyggda förhandsvisningen placerar du supercli-web bredvid supercli. Du kan också öppna webbplatsen i webbläsaren.",
   "provider.description.cline": "Cline (API-nyckel krävs)",
-  "provider.description.nous": "Nous Portal (API-nyckel eller inferenstoken krävs)"
+  "provider.description.nous": "Nous Portal (API-nyckel eller inferenstoken krävs)",
+  "code.copy": "Kopiera",
+  "code.copied": "Kopierat.",
+  "code.copyFailed": "Det gick inte att kopiera. Markera koden och tryck Ctrl+C."
 }

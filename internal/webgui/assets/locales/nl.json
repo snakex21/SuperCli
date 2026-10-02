@@ -722,5 +722,8 @@
   "preview.close": "Voorbeeldweergave sluiten",
   "preview.unavailable": "Plaats supercli-web naast supercli om de ingebouwde voorbeeldweergave te gebruiken. Je kunt de website ook in je browser openen.",
   "provider.description.cline": "Cline (API-sleutel vereist)",
-  "provider.description.nous": "Nous Portal (API-sleutel of inferentietoken vereist)"
+  "provider.description.nous": "Nous Portal (API-sleutel of inferentietoken vereist)",
+  "code.copy": "Kopiëren",
+  "code.copied": "Gekopieerd.",
+  "code.copyFailed": "Kopiëren mislukt. Selecteer de code en druk op Ctrl+C."
 }

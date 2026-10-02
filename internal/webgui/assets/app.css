@@ -394,6 +394,7 @@ a:hover { text-decoration: underline; }
 .stream > .msg-user,
 .stream > .msg-assistant,
 .stream > .tool-row,
+.stream > .tool-media-preview,
 .stream > .event-line,
 .stream > .turn-meta,
 .stream > .file-change-summary {
@@ -495,6 +496,20 @@ a:hover { text-decoration: underline; }
   font: 12.5px/1.55 var(--mono);
 }
 .msg-assistant pre code { background: none; border: 0; padding: 0; }
+.msg-assistant pre[data-lang] { position: relative; padding-top: 38px; }
+.msg-assistant pre[data-lang]::before {
+  content: attr(data-lang); position: absolute; top: 10px; left: 12px;
+  max-width: calc(100% - 110px); overflow: hidden; text-overflow: ellipsis;
+  color: var(--faint); font: 10.5px var(--mono);
+}
+.code-copy {
+  position: absolute; top: 6px; right: 8px; padding: 3px 8px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--muted); background: var(--surface); font: 11px var(--sans);
+}
+.code-copy:hover, .code-copy:focus-visible { color: var(--text); border-color: var(--accent); }
+.code-copy:disabled { opacity: .6; cursor: wait; }
+.tool-media-preview .sent-attachment-gallery { margin: 0; }
 .md-table-wrap { overflow-x: auto; margin: 0 0 10px; }
 .msg-assistant table { border-collapse: collapse; font-size: 13px; }
 .msg-assistant th, .msg-assistant td {

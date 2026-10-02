@@ -722,5 +722,8 @@
   "preview.close": "Sulge eelvaade",
   "preview.unavailable": "Sisseehitatud eelvaate kasutamiseks paiguta supercli-web supercli kõrvale. Saidi saad avada ka brauseris.",
   "provider.description.cline": "Cline (vajalik API-võti)",
-  "provider.description.nous": "Nous Portal (vajalik API-võti või genereerimispääse)"
+  "provider.description.nous": "Nous Portal (vajalik API-võti või genereerimispääse)",
+  "code.copy": "Kopeeri",
+  "code.copied": "Kopeeritud.",
+  "code.copyFailed": "Kopeerimine ebaõnnestus. Vali kood ja vajuta Ctrl+C."
 }

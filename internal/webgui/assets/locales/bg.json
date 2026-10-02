@@ -722,5 +722,8 @@
   "preview.close": "Затваряне на прегледа",
   "preview.unavailable": "За вградения преглед поставете supercli-web до supercli. Можете също да отворите сайта в браузъра си.",
   "provider.description.cline": "Cline (изисква се API ключ)",
-  "provider.description.nous": "Nous Portal (изисква се API ключ или токен за генериране)"
+  "provider.description.nous": "Nous Portal (изисква се API ключ или токен за генериране)",
+  "code.copy": "Копирай",
+  "code.copied": "Копирано.",
+  "code.copyFailed": "Копирането не бе успешно. Изберете кода и натиснете Ctrl+C."
 }

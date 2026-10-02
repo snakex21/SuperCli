@@ -722,5 +722,8 @@
   "preview.close": "Закрыть предпросмотр",
   "preview.unavailable": "Для встроенного предпросмотра поместите supercli-web рядом с supercli. Вы также можете открыть сайт в браузере.",
   "provider.description.cline": "Cline (требуется ключ API)",
-  "provider.description.nous": "Nous Portal (требуется ключ API или токен для генерации)"
+  "provider.description.nous": "Nous Portal (требуется ключ API или токен для генерации)",
+  "code.copy": "Копировать",
+  "code.copied": "Скопировано.",
+  "code.copyFailed": "Не удалось скопировать. Выделите код и нажмите Ctrl+C."
 }

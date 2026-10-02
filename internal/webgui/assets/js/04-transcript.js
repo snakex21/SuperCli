@@ -15,6 +15,13 @@ var smartScrollFrame = null;
 var smartScrollForced = false;
 var smartScrollPending = false;
 
+stream.addEventListener("click", function (event) {
+  var button = event.target && event.target.closest && event.target.closest(".code-copy");
+  if (!button || !stream.contains(button)) return;
+  event.preventDefault();
+  copyCodeBlock(button);
+});
+
 function appendStream(node) {
   if (transcriptLiveAppend && node && node.classList) node.classList.add("transcript-live");
   (streamAppendTarget || stream).appendChild(node);
@@ -418,6 +425,7 @@ function updateMarkdownStream(state, text) {
       clearMarkdownTail(state);
       var pre = el("pre");
       pre.dataset.lang = lang;
+      pre.innerHTML = codeCopyButtonHTML();
       var codeNode = el("code");
       state.code = document.createTextNode("");
       codeNode.appendChild(state.code);
@@ -901,19 +909,14 @@ function appendHistoryToolPayload(row, body, args, text, name) {
   });
 }
 
-function appendToolPayload(body, label, text, name, isError) {
-  var raw = String(text == null ? "" : text);
-  if (FILE_READ_TOOLS[name] && !isError) {
-    appendFileReadPayload(body, raw);
-    return;
-  }
-  body.appendChild(el("div", "lbl", label));
+// Media is user-visible output, not hidden diagnostic JSON. Its thumbnail stays
+// outside folded tool details in both live and restored conversations.
+function toolMediaDescriptor(text, name, isError) {
   if ((name === "send_screenshot" || name === "show_media") && !isError) {
     try {
-      var media = JSON.parse(raw);
+      var media = JSON.parse(String(text == null ? "" : text));
       var mediaPath = media && media.path;
-      // Tool previews use only recognized local file results. Keep their raw
-      // text below, including paths and whether the model received an image.
+      // Accept only recognized local file metadata; never arbitrary model HTML.
       if (typeof mediaPath === "string" && !/[\x00-\x1f]/.test(mediaPath) &&
           /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(mediaPath) &&
           !media.save_error && !media.error &&
@@ -922,10 +925,34 @@ function appendToolPayload(body, label, text, name, isError) {
           ["image", "video", "audio"].indexOf(media.type) >= 0) {
         var previewPath = name === "send_screenshot" && typeof media.preview_path === "string" &&
           /^snapshot:[A-Za-z0-9._-]+$/.test(media.preview_path) ? media.preview_path : "";
-        renderSentAttachments(body, [mediaPath], media.type, previewPath);
+        return {path: mediaPath, kind: media.type, previewPath: previewPath};
       }
     } catch (e) {}
   }
+  return null;
+}
+
+function appendToolMediaPreview(row, text, name, isError) {
+  if (!row || !row.parentNode || row._mediaPreview) return;
+  var media = toolMediaDescriptor(text, name, isError);
+  if (!media) return;
+  var preview = el("div", "tool-media-preview");
+  if (row.classList.contains("transcript-live")) preview.classList.add("transcript-live");
+  renderSentAttachments(preview, [media.path], media.kind, media.previewPath);
+  preview.querySelectorAll("img").forEach(function (image) {
+    image.addEventListener("load", function () { smartScroll(); }, {once: true});
+  });
+  row.parentNode.insertBefore(preview, row.nextSibling);
+  row._mediaPreview = preview;
+}
+
+function appendToolPayload(body, label, text, name, isError) {
+  var raw = String(text == null ? "" : text);
+  if (FILE_READ_TOOLS[name] && !isError) {
+    appendFileReadPayload(body, raw);
+    return;
+  }
+  body.appendChild(el("div", "lbl", label));
   if (name === "ctx_execute" && !isError) {
     try {
       var execution = JSON.parse(raw);
@@ -1157,6 +1184,7 @@ function addToolResult(id, output, err) {
   if (changes.diff || mutationLabel) row.classList.add("has-changes");
   if (err) row._stat.classList.add("err");
   setToolResultStatus(row, ms, err, changes);
+  appendToolMediaPreview(row, payload, row._toolName, !!err);
   // Live results start folded too. Large read/diff viewers should not occupy
   // the WebView DOM until the user actually expands this result.
   renderToolPayloadWhenOpen(row, function () {

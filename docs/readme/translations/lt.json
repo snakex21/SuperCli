@@ -1,6 +1,6 @@
 [
   "Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.",
-  "Šis README aprašo versiją `1.0.2`. Nešiojamieji leidimų paketai platinami per [GitHub Releases]({releases}); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.",
+  "Šis README aprašo versiją `1.0.3`. Nešiojamieji leidimų paketai platinami per [GitHub Releases]({releases}); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.",
   "Ekrano nuotraukos",
   "![SuperCli žiniatinklio sąsaja (GUI)]({guishot})",
   "![SuperCli terminalo veiksmų centras (TUI)]({tuishot})",

@@ -722,5 +722,8 @@
   "preview.close": "Vorschau schließen",
   "preview.unavailable": "Für die integrierte Vorschau muss supercli-web neben supercli liegen. Du kannst die Website auch im Browser öffnen.",
   "provider.description.cline": "Cline (API-Schlüssel erforderlich)",
-  "provider.description.nous": "Nous Portal (API-Schlüssel oder Inferenz-Token erforderlich)"
+  "provider.description.nous": "Nous Portal (API-Schlüssel oder Inferenz-Token erforderlich)",
+  "code.copy": "Kopieren",
+  "code.copied": "Kopiert.",
+  "code.copyFailed": "Kopieren fehlgeschlagen. Markiere den Code und drücke Strg+C."
 }

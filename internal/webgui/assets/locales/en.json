@@ -722,5 +722,8 @@
   "preview.close": "Close preview",
   "preview.unavailable": "For the built-in preview, place supercli-web beside supercli. You can also open the site in your browser.",
   "provider.description.cline": "Cline (API key required)",
-  "provider.description.nous": "Nous Portal (API key or inference token required)"
+  "provider.description.nous": "Nous Portal (API key or inference token required)",
+  "code.copy": "Copy",
+  "code.copied": "Copied.",
+  "code.copyFailed": "Could not copy. Select the code and press Ctrl+C."
 }

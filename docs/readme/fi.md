@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.2
+# SuperCli 1.0.3
 
 <!-- readme-unit:intro -->
 Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.
 
 <!-- readme-unit:status -->
-Tämä README kuvaa versiota `1.0.2`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
+Tämä README kuvaa versiota `1.0.3`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvakaappaukset
