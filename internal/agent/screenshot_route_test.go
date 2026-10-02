@@ -124,3 +124,38 @@ func TestScreenshotRequestExecutesWithoutDiscoveryRound(t *testing.T) {
 		})
 	}
 }
+
+func TestScreenshotRequestExposesOwnedProcessWorkflowOnlyForThatRun(t *testing.T) {
+	for _, stable := range []bool{false, true} {
+		reg := tools.NewRegistry()
+		process := tools.NewProcessSession(t.TempDir())
+		defer process.Close()
+		reg.MustRegister(process.Spec())
+		reg.MustRegister(tools.NewSendScreenshot(t.TempDir(), nil).Spec())
+		loop, err := NewLoop(LoopConfig{Provider: echoProvider("ok"), Registry: reg, ThinTools: true, StableToolset: stable})
+		if err != nil {
+			t.Fatal(err)
+		}
+		loop.prepareRunRoute(context.Background(), "Launch my application and take a screenshot of its window")
+		found := false
+		for _, def := range loop.buildToolDefs() {
+			found = found || def.Name == "process_session"
+		}
+		if !found || reg.IsActive("process_session") {
+			t.Fatal("owned launch/capture contract absent or permanently activated")
+		}
+		call := llm.ToolCall{ID: "shot", Name: "invoke_tool", Arguments: `{"tool":"process_session","args":{"action":"screenshot","id":"proc-1"}}`}
+		if resolved := loop.resolveInvokeToolCalls([]llm.ToolCall{call}); resolved[0].Name != "process_session" {
+			t.Fatal("requested owned capture required a discovery round")
+		}
+		loop.prepareRunRoute(context.Background(), "cześć")
+		for _, def := range loop.buildToolDefs() {
+			if def.Name == "process_session" {
+				t.Fatal("capture workflow schema leaked into ordinary next turn")
+			}
+		}
+		if reg.IsActive("process_session") {
+			t.Fatal("run-scoped capture changed persistent discovery")
+		}
+	}
+}

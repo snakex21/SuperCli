@@ -61,8 +61,28 @@ func canonicalSingleChatPayload(data json.RawMessage, key string, value json.Raw
 }
 
 func (b *ReasoningBlock) Validate() error {
+	// Canonical chat state only needs its string type and JSON grammar checked.
+	// The request builder decodes that text later; validation must not allocate
+	// a discarded copy. Other formats and legacy payloads keep the full parser.
+	if b != nil && b.Format == ReasoningChat && b.Model != "" && b.Scope != "" && validCanonicalChatPayload(b.Data) {
+		return nil
+	}
 	_, err := b.validateParsed()
 	return err
+}
+
+func validCanonicalChatPayload(data json.RawMessage) bool {
+	for _, prefix := range []string{"{\"reasoning_content\":", "{\"reasoning\":", "{\"reasoning_text\":"} {
+		if len(data) <= len(prefix)+1 || !bytes.HasPrefix(data, []byte(prefix)) || data[len(data)-1] != '}' {
+			continue
+		}
+		value := data[len(prefix) : len(data)-1]
+		// json.Unmarshal historically accepts null as an empty string. Check
+		// the complete value so duplicate/additional keys cannot use this path.
+		// Do not TrimSpace(data): Unicode space is not valid JSON whitespace.
+		return (value[0] == '"' || bytes.Equal(value, []byte("null"))) && json.Valid(value)
+	}
+	return false
 }
 
 // validateParsed preserves native validation and makes decoded chat text

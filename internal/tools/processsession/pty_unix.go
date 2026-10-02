@@ -26,6 +26,7 @@ func startPTY(command []string, workdir string, env []string, columns, rows int)
 }
 
 func (p *unixPTY) Read(dst []byte) (int, error)  { return p.terminal.Read(dst) }
+func (p *unixPTY) PID() int                      { return p.cmd.Process.Pid }
 func (p *unixPTY) Write(src []byte) (int, error) { return p.terminal.Write(src) }
 func (p *unixPTY) Close() error                  { return p.terminal.Close() }
 func (p *unixPTY) Resize(columns, rows int) error {

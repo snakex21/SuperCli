@@ -14,6 +14,7 @@ import (
 type windowsPTY struct {
 	terminal *conpty.ConPty
 	handle   windows.Handle
+	pid      int
 	mu       sync.Mutex
 	exited   bool
 }
@@ -25,13 +26,15 @@ func startPTY(command []string, workdir string, env []string, columns, rows int)
 	}
 	// ConPTY is already headless. CREATE_NO_WINDOW must not be added here:
 	// Windows accepts it but disconnects the pseudo-console output stream.
-	_, handle, err := terminal.Spawn(command[0], command, &syscall.ProcAttr{Dir: workdir, Env: env})
+	pid, handle, err := terminal.Spawn(command[0], command, &syscall.ProcAttr{Dir: workdir, Env: env})
 	if err != nil {
 		_ = terminal.Close()
 		return nil, err
 	}
-	return &windowsPTY{terminal: terminal, handle: windows.Handle(handle)}, nil
+	return &windowsPTY{terminal: terminal, handle: windows.Handle(handle), pid: pid}, nil
 }
+
+func (p *windowsPTY) PID() int { return p.pid }
 
 func (p *windowsPTY) Read(dst []byte) (int, error)  { return p.terminal.Read(dst) }
 func (p *windowsPTY) Write(src []byte) (int, error) { return p.terminal.Write(src) }

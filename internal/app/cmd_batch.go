@@ -131,7 +131,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	reg := tools.NewRegistry()
 	codeIntel := tools.NewCodeIntel(home)
 	defer codeIntel.Close()
-	processSession := tools.NewProcessSession(home)
+	processSession := tools.NewProcessSession(home, dataDir)
 	defer processSession.Close()
 	// Register the thin file tools so batch mode can actually
 	// exercise them (CI / live tool tests). tool_search makes the

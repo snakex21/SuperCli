@@ -421,3 +421,34 @@ test('headless status, other sources, failures and invalid media never become pr
   ]) assert.equal(h.c.toolMediaDescriptor(raw,'headless_control',false),null);
   assert.equal(h.c.toolMediaDescriptor(mediaResult('image',file,{source:'qmp'}),'headless_control',true),null);
 });
+
+test('owned process screenshots preview live and restored; ordinary process output never does', () => {
+  const file = 'C:/portable/data/.supercli/snapshots/window-owned.png';
+  const previewPath = 'snapshot:window-owned.png';
+  const raw = mediaResult('image', file, {source: 'window', preview_path: previewPath, window: {pid: 123, hwnd: '0x456'}});
+  for (const history of [false, true]) {
+    const h = harness();
+    const row = history ? h.c.buildHistoryFragment([{seq: 3, role: 'tool', name: 'process_session', content: raw}]).children[0] :
+      liveResult(h, 'process_session', raw);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent(previewPath) + '&thumbnail=transcript');
+    buttons(row._mediaPreview)[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent(previewPath));
+  }
+  const h = harness();
+  for (const output of [JSON.stringify({id:'proc-1',status:'running',stdout:raw}),
+    mediaResult('image', file, {source:'screen'}), mediaResult('video', file, {source:'window'}),
+    mediaResult('image', file, {source:'window',save_error:'failed'})]) {
+    assert.equal(h.c.toolMediaDescriptor(output,'process_session',false),null);
+  }
+  assert.equal(h.c.toolMediaDescriptor(raw,'process_session',true),null);
+});
+
+test('ordinary process snapshots bypass media JSON parsing even with large captured stdout', () => {
+  const h = harness();
+  h.c.JSON = {parse() { throw Error('ordinary process output reached media decoder'); }};
+  assert.equal(h.c.toolMediaDescriptor(JSON.stringify({id:'proc-1',status:'running',stdout:'x'.repeat(65536)}),'process_session',false),null);
+  assert.equal(h.c.toolMediaDescriptor(null,'process_session',false),null);
+});

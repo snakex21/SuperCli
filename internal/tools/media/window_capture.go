@@ -9,9 +9,11 @@ import (
 // WindowSelector identifies one already-open top-level window. A title is an
 // exact, case-insensitive match first, then an unambiguous substring match.
 // HWND is a decimal or 0x-prefixed Windows handle; it is never a foreground hint.
+// PID restricts selection to that process, optionally narrowed by title/handle.
 type WindowSelector struct {
 	Title string
 	HWND  string
+	PID   uint32
 }
 
 // WindowInfo describes the selected window without exposing its pixels.
@@ -23,6 +25,7 @@ type WindowInfo struct {
 	Visible   bool   `json:"visible"`
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
+	auxiliary bool   // Native input/tool windows are not automatic PID targets.
 }
 
 func parseWindowHandle(value string) (uintptr, error) {
@@ -39,8 +42,8 @@ func parseWindowHandle(value string) (uintptr, error) {
 }
 
 func validateWindowSelector(selector WindowSelector) error {
-	if strings.TrimSpace(selector.Title) == "" && strings.TrimSpace(selector.HWND) == "" {
-		return fmt.Errorf("window capture requires window_title or window_id; use source:windows to list open windows")
+	if strings.TrimSpace(selector.Title) == "" && strings.TrimSpace(selector.HWND) == "" && selector.PID == 0 {
+		return fmt.Errorf("window capture requires process_id, window_title or window_id; use source:windows to list open windows")
 	}
 	if strings.TrimSpace(selector.Title) != "" && strings.TrimSpace(selector.HWND) != "" {
 		return fmt.Errorf("choose either window_title or window_id")
@@ -63,6 +66,9 @@ func selectCaptureWindow(windows []WindowInfo, selector WindowSelector) (WindowI
 		for _, window := range windows {
 			id, err := parseWindowHandle(window.HWND)
 			if err == nil && id == hwnd {
+				if selector.PID != 0 && window.PID != selector.PID {
+					return WindowInfo{}, fmt.Errorf("window_id %q does not belong to process_id %d", selector.HWND, selector.PID)
+				}
 				return window, nil
 			}
 		}
@@ -71,6 +77,16 @@ func selectCaptureWindow(windows []WindowInfo, selector WindowSelector) (WindowI
 	title := strings.TrimSpace(selector.Title)
 	var exact, partial []WindowInfo
 	for _, window := range windows {
+		if selector.PID != 0 && window.PID != selector.PID {
+			continue
+		}
+		if title == "" {
+			if window.auxiliary {
+				continue
+			}
+			partial = append(partial, window)
+			continue
+		}
 		if strings.EqualFold(window.Title, title) {
 			exact = append(exact, window)
 		}
@@ -86,6 +102,9 @@ func selectCaptureWindow(windows []WindowInfo, selector WindowSelector) (WindowI
 		return matches[0], nil
 	}
 	if len(matches) == 0 {
+		if selector.PID != 0 {
+			return WindowInfo{}, fmt.Errorf("process_id %d has no matching open window (title %q); launch the GUI executable directly, or use headless_control for a browser/VM", selector.PID, title)
+		}
 		return WindowInfo{}, fmt.Errorf("no open window matches title %q; use source:windows to list open windows", title)
 	}
 	choices := make([]string, 0, 8)
@@ -98,6 +117,9 @@ func selectCaptureWindow(windows []WindowInfo, selector WindowSelector) (WindowI
 			caption = append(caption[:117], '.', '.', '.')
 		}
 		choices = append(choices, fmt.Sprintf("%s (%q)", match.HWND, string(caption)))
+	}
+	if selector.PID != 0 {
+		return WindowInfo{}, fmt.Errorf("process_id %d has ambiguous windows (%d matches); narrow window_title or window_id: %s", selector.PID, len(matches), strings.Join(choices, ", "))
 	}
 	return WindowInfo{}, fmt.Errorf("window title %q is ambiguous (%d matches); choose window_id: %s", title, len(matches), strings.Join(choices, ", "))
 }

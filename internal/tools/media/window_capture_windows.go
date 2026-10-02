@@ -81,12 +81,34 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 		}
 		return json.NewEncoder(output).Encode(info)
 	case "capture":
-		selector := WindowSelector{Title: request.Title, HWND: request.HWND}
+		selector := WindowSelector{Title: request.Title, HWND: request.HWND, PID: request.ExpectedPID}
 		if err := validateWindowSelector(selector); err != nil {
 			return err
 		}
-		if request.Title != "" {
-			infos, err := listNativeCaptureWindows(context.Background())
+		// Hold the requested process open through capture: Windows cannot reuse
+		// its PID while this handle exists. Never discover an unrelated foreground
+		// window if the launched process exits or has not supplied a GUI window.
+		var process windows.Handle
+		if selector.PID != 0 {
+			var err error
+			process, err = windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, selector.PID)
+			if err != nil {
+				return fmt.Errorf("capture process_id %d: %w", selector.PID, err)
+			}
+			defer windows.CloseHandle(process)
+			if err := requireCaptureProcessAlive(process); err != nil {
+				return err
+			}
+			if selector.HWND == "" {
+				// One bounded event wait for initialization, not a readiness polling
+				// loop. Console/no-message-queue processes return immediately. An
+				// already busy app may still have a capturable window, so selection
+				// below is authoritative even when this wait times out or fails.
+				captureUser32.NewProc("WaitForInputIdle").Call(uintptr(process), 2000)
+			}
+		}
+		if request.Title != "" || request.HWND == "" {
+			infos, err := listNativeProcessWindows(context.Background(), selector.PID)
 			if err != nil {
 				return err
 			}
@@ -100,7 +122,13 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return captureNativeWindow(context.Background(), hwnd, request.ExpectedPID, output)
+		if err := captureNativeWindow(context.Background(), hwnd, request.ExpectedPID, output); err != nil {
+			return err
+		}
+		if process != 0 {
+			return requireCaptureProcessAlive(process)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown native capture operation")
 	}
@@ -152,7 +180,7 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 	if err := validateWindowSelector(selector); err != nil {
 		return nil, "", WindowInfo{}, err
 	}
-	request := windowHelperRequest{Mode: "capture", HWND: strings.TrimSpace(selector.HWND), Title: strings.TrimSpace(selector.Title)}
+	request := windowHelperRequest{Mode: "capture", HWND: strings.TrimSpace(selector.HWND), Title: strings.TrimSpace(selector.Title), ExpectedPID: selector.PID}
 	data, err := runWindowHelper(ctx, request, DefaultMaxScreenshotBytes+4096)
 	if err != nil {
 		return nil, "", WindowInfo{}, err
@@ -164,6 +192,9 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 	var info WindowInfo
 	if err := json.Unmarshal(data[:split], &info); err != nil {
 		return nil, "", WindowInfo{}, fmt.Errorf("invalid native window capture metadata: %w", err)
+	}
+	if selector.PID != 0 && info.PID != selector.PID {
+		return nil, "", WindowInfo{}, fmt.Errorf("native capture returned a different process")
 	}
 	pixels := data[split+1:]
 	if len(pixels) > DefaultMaxScreenshotBytes || sniffMediaType(pixels) != "image/png" {
@@ -197,10 +228,36 @@ func inspectNativeWindow(hwnd uintptr) (WindowInfo, error) {
 	captureUser32.NewProc("GetWindowTextW").Call(hwnd, uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
 	minimized, _, _ := captureUser32.NewProc("IsIconic").Call(hwnd)
 	visible, _, _ := captureUser32.NewProc("IsWindowVisible").Call(hwnd)
-	return WindowInfo{HWND: fmt.Sprintf("0x%X", hwnd), Title: windows.UTF16ToString(title), PID: pid, Minimized: minimized != 0, Visible: visible != 0}, nil
+	// The same PID can own invisible input-method helper windows. They are
+	// available for explicit title/handle selection, never the default app target.
+	styleProc := "GetWindowLongPtrW"
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		styleProc = "GetWindowLongW"
+	}
+	style, _, _ := captureUser32.NewProc(styleProc).Call(hwnd, ^uintptr(19)) // GWL_EXSTYLE (-20).
+	class := make([]uint16, 256)
+	captureUser32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
+	className := windows.UTF16ToString(class)
+	auxiliary := style&0x80 != 0 || className == "IME" || className == "MSCTFIME UI"
+	return WindowInfo{HWND: fmt.Sprintf("0x%X", hwnd), Title: windows.UTF16ToString(title), PID: pid, Minimized: minimized != 0, Visible: visible != 0, auxiliary: auxiliary}, nil
 }
 
 func listNativeCaptureWindows(ctx context.Context) ([]WindowInfo, error) {
+	return listNativeProcessWindows(ctx, 0)
+}
+
+func requireCaptureProcessAlive(process windows.Handle) error {
+	status, err := windows.WaitForSingleObject(process, 0)
+	if err != nil {
+		return fmt.Errorf("capture process state unavailable: %w", err)
+	}
+	if status != uint32(windows.WAIT_TIMEOUT) {
+		return fmt.Errorf("capture target process exited")
+	}
+	return nil
+}
+
+func listNativeProcessWindows(ctx context.Context, pid uint32) ([]WindowInfo, error) {
 	var infos []WindowInfo
 	var stopped error
 	// This callback is created only inside the disposable helper process.
@@ -210,7 +267,7 @@ func listNativeCaptureWindows(ctx context.Context) ([]WindowInfo, error) {
 			return 0
 		}
 		info, err := inspectNativeWindow(hwnd)
-		if err == nil && (info.Title != "" || info.Visible || info.Minimized) {
+		if err == nil && (pid == 0 || info.PID == pid) && (info.Title != "" || info.Visible || info.Minimized) {
 			if len(infos) >= 512 {
 				stopped = fmt.Errorf("open window list exceeds 512 windows")
 				return 0

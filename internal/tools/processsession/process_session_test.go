@@ -132,6 +132,10 @@ func TestPTYCapturesMergedOutputAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	owned, err := tool.Manager.get(start.ID)
+	if err != nil || owned.pid <= 0 || owned.pid == os.Getpid() {
+		t.Fatalf("PTY did not retain its native child PID: %v", err)
+	}
 	final := waitCompletion(t, tool, start.ID)
 	if !final.PTY || final.Status != "done" || final.ExitCode == nil || *final.ExitCode != 0 {
 		t.Fatalf("snapshot = %+v", final)

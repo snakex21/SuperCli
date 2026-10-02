@@ -64,13 +64,14 @@ func NewSendScreenshot(baseDir string, _ func(string) bool) *SendScreenshotTool 
 func (t *SendScreenshotTool) Spec() Tool {
 	return Tool{
 		Name:        "send_screenshot",
-		Description: "Capture this computer's desktop, a named open window (including covered windows), or clipboard image. Saves and displays the image in chat. Use window_title directly when the user names a window; list source:windows only to find unknown targets. Chat preview is automatic and does not need attach:true. Set attach:true only to inspect/analyze the pixels yourself.",
+		Description: "Capture a target application's window, the currently visible screen, or clipboard image; displays it in chat. For your launched/tested app use process_session screenshot with its id; for an existing app use process_id/window_title. Use screen only for what the user currently sees. Never substitute screen for a failed target capture. Preview needs no attach:true; attach only to analyze pixels.",
 		Schema: `{
   "type": "object",
   "properties": {
     "source": {"type": "string", "enum": ["clipboard", "screen", "window", "windows"], "description": "clipboard (default) reads a copied image; screen captures the visible desktop; window captures a chosen open window without activating it; windows lists open window IDs/titles."},
     "window_title": {"type": "string", "description": "Open window title or unique part of it. Selects window capture when source is omitted or screen."},
     "window_id": {"type": "string", "description": "Window ID from source:windows, for an exact target."},
+    "process_id": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "Capture only this process's window. Optional title/ID disambiguates multiple windows. Does not use the foreground screen."},
     "image_detail": {"type": "string", "enum": ["auto", "original"], "description": "auto (default) bounds analysis pixels; original keeps full resolution for fine text. Does not alter the saved image or chat preview."},
     "attach": {"type": "boolean", "description": "Display/show requests need false (screen/window default): chat preview is automatic. True only for pixel inspection/analysis. Clipboard default true."}
   }
@@ -108,6 +109,7 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		Source      string `json:"source"`
 		WindowTitle string `json:"window_title"`
 		WindowID    string `json:"window_id"`
+		ProcessID   uint32 `json:"process_id"`
 		ImageDetail string `json:"image_detail"`
 		Attach      *bool  `json:"attach"`
 	}
@@ -121,8 +123,8 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		err := fmt.Errorf("send_screenshot: image_detail must be auto or original")
 		return Result{Err: err}, err
 	}
-	selector := WindowSelector{Title: strings.TrimSpace(params.WindowTitle), HWND: strings.TrimSpace(params.WindowID)}
-	hasWindow := selector.Title != "" || selector.HWND != ""
+	selector := WindowSelector{Title: strings.TrimSpace(params.WindowTitle), HWND: strings.TrimSpace(params.WindowID), PID: params.ProcessID}
+	hasWindow := selector.Title != "" || selector.HWND != "" || selector.PID != 0
 	source := params.Source
 	if hasWindow && (source == "" || source == "screen") {
 		source = "window"
@@ -165,7 +167,7 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		return Result{Err: err}, err
 	}
 	if source == "window" && !hasWindow {
-		err := fmt.Errorf("send_screenshot: window_title or window_id is required; source:windows lists available targets")
+		err := fmt.Errorf("send_screenshot: process_id, window_title or window_id is required; source:windows lists available targets")
 		return Result{Err: err}, err
 	}
 	if source == "clipboard" && hasWindow {

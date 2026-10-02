@@ -147,7 +147,7 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		return result, nil
 	}
 	if len(result.Text) > core.ModelOutputInlineBytes {
-		result.ModelPreview = res.SuccessPreview()
+		result.ModelPreview = res.SuccessPreviewFromJSON(jb)
 	} else {
 		result.ModelText = ctxExecuteInlineModelText(res, p.Command, result)
 	}

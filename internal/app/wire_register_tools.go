@@ -59,7 +59,7 @@ func registerMediaAndOfficeTools(
 	// Dormant by default: tool_search exposes its one compact schema only when
 	// the model needs exact symbols, references or diagnostics.
 	registry.MustRegister(codeIntel.Spec())
-	processSession = tools.NewProcessSession(home)
+	processSession = tools.NewProcessSession(home, dataDir)
 	registry.MustRegister(processSession.Spec())
 	registry.MustRegister(tools.NewHeadlessControl(home, dataDir, askCh).Spec())
 

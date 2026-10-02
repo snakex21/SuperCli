@@ -214,8 +214,33 @@ func TestNativeWindowBlankAndReplacementFailWithoutFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	data, err = runWindowHelper(ctx, windowHelperRequest{Mode: "capture", HWND: fmt.Sprintf("0x%X", fixture.HWND), ExpectedPID: uint32(os.Getpid()) + 1}, DefaultMaxScreenshotBytes)
-	if err == nil || !strings.Contains(err.Error(), "closed or replaced") || len(data) != 0 {
+	if err == nil || len(data) != 0 {
 		t.Fatalf("replaced capture=%d bytes err=%v", len(data), err)
+	}
+}
+
+func TestNativeProcessWindowCaptureKeepsForegroundAndExactOwner(t *testing.T) {
+	fixture := newSyntheticWindow(t, "colors")
+	foreground, _, _ := captureUser32.NewProc("GetForegroundWindow").Call()
+	for _, selector := range []WindowSelector{
+		{PID: uint32(os.Getpid())},
+		{PID: uint32(os.Getpid()), Title: fixture.Title},
+		{PID: uint32(os.Getpid()), HWND: fmt.Sprintf("0x%X", fixture.HWND)},
+	} {
+		data, mime, info, err := captureWindow(context.Background(), selector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSyntheticColors(t, data, mime, info)
+		if info.PID != selector.PID || info.HWND != fmt.Sprintf("0x%X", fixture.HWND) {
+			t.Fatalf("wrong process window: %+v", info)
+		}
+	}
+	if after, _, _ := captureUser32.NewProc("GetForegroundWindow").Call(); foreground != after {
+		t.Fatal("process capture changed foreground")
+	}
+	if data, _, _, err := captureWindow(context.Background(), WindowSelector{PID: uint32(os.Getpid()), Title: "missing-owned-window"}); err == nil || len(data) != 0 {
+		t.Fatalf("missing target capture=%d err=%v", len(data), err)
 	}
 }
 
