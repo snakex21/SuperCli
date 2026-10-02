@@ -234,6 +234,10 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	if thumbnail := r.URL.Query().Get("thumbnail"); thumbnail != "" {
+		s.serveAttachmentThumbnail(w, r, file, info, full, mediaType, thumbnail)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store, private")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", mediaType)

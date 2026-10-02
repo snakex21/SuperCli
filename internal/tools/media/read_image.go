@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"supercli/internal/tools/fileops"
 	"supercli/internal/tools/sandbox"
@@ -45,12 +45,14 @@ func NewReadImage(baseDir string, maxBytes int64) *ReadImageTool {
 func (t *ReadImageTool) Spec() Tool {
 	return Tool{
 		Name:        "read_image",
-		Description: "Read an image file from disk and attach it to the conversation. Returns the image plus a short text summary. Supported formats: PNG, JPEG, GIF, WebP.",
+		Description: "Read image pixels for analysis. Large images are bounded by default; use crop with original-image coordinates for small text/regions, or image_detail:original for full resolution. Original file stays unchanged. PNG, JPEG, GIF, WebP.",
 		ReadOnly:    true,
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"path": {"type": "string", "description": "Path to the image file, absolute or relative to the working directory."}
+				"path": {"type": "string", "description": "Path to the image file, absolute or relative to the working directory."},
+				"image_detail": {"type":"string","enum":["auto","original"],"description":"auto (default) bounds analysis pixels; original sends full resolution."},
+				"crop": {"type":"object","description":"Read a precise region using original image pixel coordinates.","properties":{"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},"width":{"type":"integer","minimum":1},"height":{"type":"integer","minimum":1}},"required":["x","y","width","height"]}
 			},
 			"required": ["path"]
 		}`,
@@ -65,10 +67,16 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 		return Result{Err: err}, err
 	}
 	var params struct {
-		Path string `json:"path"`
+		Path        string               `json:"path"`
+		ImageDetail string               `json:"image_detail"`
+		Crop        *AnalysisImageRegion `json:"crop"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return Result{Err: fmt.Errorf("read_image: bad args: %w", err)}, err
+	}
+	if params.ImageDetail != "" && params.ImageDetail != "auto" && params.ImageDetail != "original" {
+		err := fmt.Errorf("read_image: image_detail must be auto or original")
+		return Result{Err: err}, err
 	}
 	if params.Path == "" {
 		err := fmt.Errorf("read_image: path is required")
@@ -80,7 +88,13 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 		return Result{Err: fmt.Errorf("read_image: %w", err)}, nil
 	}
 
-	info, err := os.Stat(full)
+	f, err := os.Open(full)
+	if err != nil {
+		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
+		return Result{Err: err}, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
 		return Result{Err: err}, err
@@ -89,31 +103,51 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 		err := fmt.Errorf("read_image: %q is a directory", full)
 		return Result{Err: err}, err
 	}
-	if info.Size() > t.MaxBytes {
-		err := fmt.Errorf("read_image: file too large: %d bytes > %d max", info.Size(), t.MaxBytes)
+	if !info.Mode().IsRegular() {
+		err := fmt.Errorf("read_image: %q is not a regular file", full)
+		return Result{Err: err}, err
+	}
+	limit := t.MaxBytes
+	if limit > DefaultMaxScreenshotBytes {
+		limit = DefaultMaxScreenshotBytes
+	}
+	if info.Size() > limit {
+		err := fmt.Errorf("read_image: file too large: %d bytes > %d max", info.Size(), limit)
 		return Result{Err: err}, err
 	}
 
-	data, err := os.ReadFile(full)
+	// Keep the opened descriptor and cap the read even if the file grows after Stat.
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
 		return Result{Err: err}, err
 	}
 
+	if int64(len(data)) > limit {
+		err := fmt.Errorf("read_image: file grew beyond %d max bytes", limit)
+		return Result{Err: err}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{Err: err}, err
+	}
 	mime := detectImageMIME(data)
 	if mime == "" {
 		err := fmt.Errorf("read_image: %q is not a recognised image (magic bytes)", filepath.Base(full))
 		return Result{Err: err}, err
 	}
 
-	// Return raw bytes; the agent loop will base64-encode for
-	// llm.ImageRef using llm.EncodeBase64.
+	analysisData, analysisType, analysis, err := prepareAnalysisImageRegion(ctx, data, mime, params.ImageDetail, params.Crop)
+	if err != nil {
+		return Result{Err: err}, err
+	}
+	text := fmt.Sprintf("Loaded image %s (%d bytes, %s)", params.Path, info.Size(), mime)
+	if analysis.Resized || params.Crop != nil {
+		metadata, _ := json.Marshal(analysis)
+		text += "\nAnalysis image: " + string(metadata)
+	}
 	return Result{
-		Text: fmt.Sprintf("Loaded image %s (%d bytes, %s)", params.Path, info.Size(), mime),
-		Image: &ImageContent{
-			MediaType: mime,
-			Data:      data,
-		},
+		Text:  text,
+		Image: &ImageContent{MediaType: analysisType, Data: analysisData},
 	}, nil
 }
 
@@ -148,7 +182,3 @@ func detectImageMIME(data []byte) string {
 func SupportedImageMIMEs() []string {
 	return []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
 }
-
-// to keep `strings` in imports for the future "image magic
-// extension" code path planned for F2.
-var _ = strings.HasSuffix

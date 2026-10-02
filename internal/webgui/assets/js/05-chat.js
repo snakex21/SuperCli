@@ -60,6 +60,9 @@ function attachmentMimeKind(mime) {
 function attachmentPreviewSource(path) {
   return "/api/attachment/preview?path=" + encodeURIComponent(path);
 }
+function attachmentThumbnailSource(path, size) {
+  return attachmentPreviewSource(path) + "&thumbnail=" + size;
+}
 function attachmentTranscriptText(text, paths) {
   paths = paths || [];
   if (!paths.length) return text;
@@ -123,10 +126,22 @@ function renderSentAttachments(node, paths, mediaKind, previewPath) {
     open.addEventListener("click", function () { openAttachmentPreview(path, kind, previewPath); });
     if (kind === "image") {
       var image = document.createElement("img");
-      image.src = attachmentPreviewSource(previewPath || path);
       image.alt = attachmentName(path);
       image.loading = "lazy";
-      image.addEventListener("error", function () { open.remove(); });
+      image.decoding = "async";
+      image.addEventListener("error", function () {
+        // Go's bundled codecs have no WebP decoder. Keep its existing preview
+        // behavior without sending other failed thumbnails through full decode.
+        if (attachmentExtension(path) === ".webp" && !image._originalFallback) {
+          image._originalFallback = true;
+          image.src = attachmentPreviewSource(previewPath || path);
+          return;
+        }
+        image.remove();
+        open.classList.add("sent-media-attachment");
+        open.appendChild(el("span", "attachment-name", attachmentName(path)));
+      }, {once: false});
+      image.src = attachmentThumbnailSource(previewPath || path, "transcript");
       open.appendChild(image);
     } else {
       // No media element or source is created before an explicit click.
@@ -161,6 +176,9 @@ async function uploadAttachmentFiles(files, successKey) {
 }
 function clearAttachmentPreviewContent() {
   var content = $("#attachment-preview-content");
+  content.querySelectorAll("img, iframe").forEach(function (media) {
+    media.removeAttribute("src");
+  });
   content.querySelectorAll("video, audio").forEach(function (media) {
     media.pause();
     media.removeAttribute("src");
@@ -219,13 +237,19 @@ function renderAttachments() {
     if (isImage) {
       var thumbnail = document.createElement("img");
       thumbnail.className = "attachment-thumbnail";
-      thumbnail.src = attachmentPreviewSource(path);
       thumbnail.alt = "";
       thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
       thumbnail.addEventListener("error", function () {
+        if (attachmentExtension(path) === ".webp" && !thumbnail._originalFallback) {
+          thumbnail._originalFallback = true;
+          thumbnail.src = attachmentPreviewSource(path);
+          return;
+        }
         chip.classList.add("thumbnail-unavailable");
         thumbnail.remove();
       });
+      thumbnail.src = attachmentThumbnailSource(path, "composer");
       open.appendChild(thumbnail);
     }
     open.appendChild(el("span", "attachment-name", attachmentName(path)));

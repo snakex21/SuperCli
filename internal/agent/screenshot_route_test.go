@@ -30,7 +30,7 @@ func TestScreenshotSchemaIsScopedToCurrentRequest(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, prompt := range []string{"cześć zrób zrzut pulpitu mi", "Take a screenshot of my desktop", "pokaż zrzut ekranu"} {
+				for _, prompt := range []string{"cześć zrób zrzut pulpitu mi", "Take a screenshot of my desktop", "pokaż zrzut ekranu", "zrób zrzut okna Notatnik", "window capture of Notepad"} {
 					loop.prepareRunRoute(context.Background(), prompt)
 					if loop.route != RouteCoordinator || !hasScreenshotSchema(loop.buildToolDefs()) {
 						t.Fatalf("capture schema absent for %q", prompt)
@@ -60,20 +60,25 @@ type screenshotReplayProvider struct {
 }
 
 func (*screenshotReplayProvider) Name() string { return "screenshot-replay" }
-func (p *screenshotReplayProvider) Complete(_ context.Context, _ []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
+func (p *screenshotReplayProvider) Complete(_ context.Context, messages []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
 	p.calls++
 	if !hasScreenshotSchema(defs) {
 		p.t.Fatal("real agent provider request omitted screen-capture capability")
 	}
 	ch := make(chan llm.Delta, 1)
 	if p.calls == 1 {
-		call := llm.ToolCall{ID: "capture", Name: "send_screenshot", Arguments: `{"source":"screen","attach":false}`}
+		call := llm.ToolCall{ID: "capture", Name: "send_screenshot", Arguments: `{"source":"screen"}`}
 		if p.viaInvoke {
 			call.Name = "invoke_tool"
-			call.Arguments = `{"tool":"send_screenshot","args":{"source":"screen","attach":false}}`
+			call.Arguments = `{"tool":"send_screenshot","args":{"source":"screen"}}`
 		}
 		ch <- llm.Delta{ToolCall: &call, FinishReason: "tool_calls"}
 	} else {
+		for _, msg := range messages {
+			if msg.HasImage() {
+				p.t.Fatal("capture-only screenshot uploaded unnecessary pixels")
+			}
+		}
 		ch <- llm.Delta{Content: "Screenshot saved.", FinishReason: "stop"}
 	}
 	close(ch)
