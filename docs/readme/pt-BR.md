@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.1
+# SuperCli 1.0.2
 
 <!-- readme-unit:intro -->
 Um agente de programação com IA portátil escrito em Go, com interface de terminal (TUI), interface desktop/web (GUI) e modo em lote que compartilham um único mecanismo.
 
 <!-- readme-unit:status -->
-Este README descreve a versão `1.0.1`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
+Este README descreve a versão `1.0.2`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
 
 <!-- readme-unit:h.screenshots -->
 ## Capturas de tela

@@ -1,6 +1,6 @@
 [
   "Prijenosni AI agent za programiranje napisan u Gou, s terminalskim sučeljem (TUI), stolnim/web sučeljem (GUI) i skupnim načinom rada koji dijele jedan pogon.",
-  "Ovaj README opisuje verziju `1.0.1`. Prijenosni paketi izdanja distribuiraju se putem [GitHub Releases]({releases}); lokalna kompilacija ne znači da je pripadajuće izdanje već objavljeno.",
+  "Ovaj README opisuje verziju `1.0.2`. Prijenosni paketi izdanja distribuiraju se putem [GitHub Releases]({releases}); lokalna kompilacija ne znači da je pripadajuće izdanje već objavljeno.",
   "Snimke zaslona",
   "![Web-sučelje SuperClija (GUI)]({guishot})",
   "![Centar radnji u terminalu SuperClija (TUI)]({tuishot})",

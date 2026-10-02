@@ -1,6 +1,6 @@
 [
   "Een draagbare AI-programmeeragent geschreven in Go, met een terminalinterface (TUI), desktop-/webinterface (GUI) en batchmodus die één engine delen.",
-  "Deze README beschrijft versie `1.0.1`. Draagbare releasepakketten worden via [GitHub Releases]({releases}) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.",
+  "Deze README beschrijft versie `1.0.2`. Draagbare releasepakketten worden via [GitHub Releases]({releases}) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.",
   "Schermafbeeldingen",
   "![Webinterface van SuperCli (GUI)]({guishot})",
   "![Actiecentrum in de SuperCli-terminal (TUI)]({tuishot})",
