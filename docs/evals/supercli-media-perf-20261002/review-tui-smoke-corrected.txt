@@ -1,0 +1,1 @@
+{"result": "PASS", "surface": "Linux actual 80x24 PTY", "observed": ["startup SuperCli header", "/help rendering", "/quit exit 0", "terminal modes restored"], "offline_pricing_cache": true, "output_bytes": 8820}

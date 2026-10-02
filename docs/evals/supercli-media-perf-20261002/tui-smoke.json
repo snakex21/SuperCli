@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "platform": "Linux amd64",
+  "surface": "real pseudo-terminal, TERM=xterm-256color",
+  "provider": "echo-fixture, offline local pricing cache",
+  "observed": ["SuperCli 1.0.3 header and ready state", "workspace, token/context footer and input box", "help command list and keyboard shortcuts", "SuperCli closed, terminal modes restored, process exit 0"],
+  "limitations": ["No terminal inline-image protocol asserted", "No paid provider call", "No Windows runtime test"]
+}

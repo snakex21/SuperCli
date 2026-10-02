@@ -136,6 +136,9 @@ func (b *Bridge) search(ctx context.Context, serverName, query string) string {
 			continue
 		}
 		for _, tool := range s.Tools() {
+			if !s.ToolAllowed(tool.Name) {
+				continue
+			}
 			haystack := strings.ToLower(tool.Name + " " + tool.Description)
 			if query != "" && serverName != "" && !strings.Contains(haystack, query) {
 				continue
@@ -192,7 +195,7 @@ func (b *Bridge) call(ctx context.Context, serverName, toolName string, argument
 	if result.IsError {
 		return core.Result{Err: fmt.Errorf("mcp %s/%s: %s", serverName, toolName, text)}
 	}
-	return core.Result{Text: text}
+	return core.Result{Text: text, Images: result.Images}
 }
 
 // normalizeBridgeArguments accepts the object required by MCP and repairs the

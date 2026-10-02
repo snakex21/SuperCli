@@ -1,0 +1,18 @@
+{
+  "command": [
+    "sh",
+    "-c",
+    "go test -count=1 ./... && go vet ./... && python test/media-smoke/http_smoke.py ../supercli-build-cache/bin/supercli-web"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 61.883,
+  "peak_group_rss_bytes": 310710272,
+  "peak_cache_bytes": 1221200197,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

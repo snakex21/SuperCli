@@ -20,10 +20,10 @@ const mcpStartTimeout = 60 * time.Second
 // initMcp merges config.toml servers with portable packages discovered under
 // <dataDir>/mcp. It registers one small bridge tool and deliberately starts no
 // subprocesses: a server is launched only when the model searches or calls it.
-func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry, reindex func()) *mcp.Manager {
+func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry, reindex func(), askChannels ...chan tools.AskRequest) *mcp.Manager {
 	configs := make(map[string]mcp.ServerConfig, len(tomlCfg.Mcp.Servers))
 	for name, s := range tomlCfg.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env}
+		configs[name] = mcp.ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env, ConfirmCalls: s.ConfirmCalls, AllowedTools: s.AllowedTools}
 	}
 	merged, packages, err := mcp.LoadWorkspace(dataDir, configs)
 	if err != nil {
@@ -40,6 +40,12 @@ func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry
 		return nil
 	}
 	manager := mcp.NewManager(configs)
+	if len(askChannels) > 0 {
+		for _, name := range manager.Names() {
+			server, _ := manager.Get(name)
+			server.ConfirmationChannel = askChannels[0]
+		}
+	}
 	registry.MustRegister(mcp.NewBridge(manager).Spec())
 	registry.MarkAlwaysOn("mcp_bridge")
 	if reindex != nil {

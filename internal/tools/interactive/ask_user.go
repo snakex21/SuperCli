@@ -70,6 +70,8 @@ type AskRequest struct {
 	// AllowCustom exposes a free-form answer in addition to the suggested
 	// options. SuperCli enables it for model-originated questions by default.
 	AllowCustom bool `json:"allowCustom"`
+	// Confirmation marks a trusted action gate, never a model-supplied question.
+	Confirmation bool `json:"confirmation,omitempty"`
 	// Respond is the channel the TUI sends the answer to. The
 	// tool's goroutine is blocked reading from this channel;
 	// the TUI is the only writer.

@@ -248,7 +248,7 @@ func (e *Engine) HasActiveWork() bool {
 func explicitMCPConfigs(tc config.TomlConfig) map[string]mcp.ServerConfig {
 	configs := make(map[string]mcp.ServerConfig, len(tc.Mcp.Servers))
 	for name, sc := range tc.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env}
+		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, ConfirmCalls: sc.ConfirmCalls, AllowedTools: sc.AllowedTools}
 	}
 	return configs
 }

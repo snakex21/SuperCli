@@ -21,18 +21,20 @@ const (
 // <dataDir>/mcp/<package>/manifest.toml. All paths may use the portable
 // placeholders ${MCP_DIR}, ${DATA_DIR}, and ${SUPERCLI_DIR}.
 type Manifest struct {
-	Schema      int               `toml:"schema"`
-	Name        string            `toml:"name"`
-	Version     string            `toml:"version"`
-	Description string            `toml:"description"`
-	Command     string            `toml:"command"`
-	Args        []string          `toml:"args"`
-	Env         map[string]string `toml:"env"`
-	Cwd         string            `toml:"cwd"`
-	Tags        []string          `toml:"tags"`
-	Platforms   []string          `toml:"platforms"`
-	Requires    []Requirement     `toml:"requires"`
-	Enabled     *bool             `toml:"enabled"`
+	ConfirmCalls bool              `toml:"confirm_calls"`
+	AllowedTools []string          `toml:"allowed_tools"`
+	Schema       int               `toml:"schema"`
+	Name         string            `toml:"name"`
+	Version      string            `toml:"version"`
+	Description  string            `toml:"description"`
+	Command      string            `toml:"command"`
+	Args         []string          `toml:"args"`
+	Env          map[string]string `toml:"env"`
+	Cwd          string            `toml:"cwd"`
+	Tags         []string          `toml:"tags"`
+	Platforms    []string          `toml:"platforms"`
+	Requires     []Requirement     `toml:"requires"`
+	Enabled      *bool             `toml:"enabled"`
 }
 
 // Requirement describes an external host application or runtime. Candidates
@@ -189,6 +191,7 @@ func resolvePortableConfig(dataDir string, pkg PortablePackage) (ServerConfig, e
 	}
 	return ServerConfig{
 		Command: command, Args: args, Env: env, Dir: dir,
+		ConfirmCalls: manifest.ConfirmCalls, AllowedTools: append([]string(nil), manifest.AllowedTools...),
 		Description: manifest.Description, Portable: true, PackageDir: pkg.Dir,
 		PackageID: pkg.ID, Tags: append([]string(nil), manifest.Tags...),
 	}, nil

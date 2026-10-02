@@ -906,7 +906,7 @@ function renderToolPayloadWhenOpen(row, render) {
 }
 
 function appendHistoryToolPayload(row, body, args, text, name) {
-  renderToolPayloadWhenOpen(row, function () {
+  return renderToolPayloadWhenOpen(row, function () {
     if (args && !FILE_READ_TOOLS[name]) {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
       body.appendChild(el("pre", "", prettyJSON(args)));
@@ -918,7 +918,7 @@ function appendHistoryToolPayload(row, body, args, text, name) {
 // Media is user-visible output, not hidden diagnostic JSON. Its thumbnail stays
 // outside folded tool details in both live and restored conversations.
 function toolMediaDescriptor(text, name, isError) {
-  if ((name === "send_screenshot" || name === "show_media" || name === "headless_control") && !isError) {
+  if ((name === "send_screenshot" || name === "show_media" || name === "generate_image" || name === "generate_video" || name === "headless_control") && !isError) {
     try {
       var media = JSON.parse(String(text == null ? "" : text));
       var mediaPath = media && media.path;
@@ -926,7 +926,7 @@ function toolMediaDescriptor(text, name, isError) {
       if (typeof mediaPath === "string" && !/[\x00-\x1f]/.test(mediaPath) &&
           /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(mediaPath) &&
           !media.save_error && !media.error &&
-          (name === "show_media" || media.type === "image") &&
+          ((name !== "send_screenshot" && name !== "headless_control") || media.type === "image") &&
           (name !== "headless_control" || media.source === "qmp" || media.source === "browser") &&
           media.type === attachmentMimeKind(media.media_type) &&
           ["image", "video", "audio"].indexOf(media.type) >= 0) {
@@ -1398,4 +1398,18 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
 	appendStream(line);
   smartScroll();
+}
+
+// Native tool images use same-origin, session-scoped handles produced by the
+// server. Treat all strings as data; never accept provider HTML or remote URLs.
+function appendNativeToolImages(row, paths) {
+  if (!row || !row.parentNode || row._mediaPreview) return;
+  paths = (paths || []).filter(function (path) {
+    return typeof path === "string" && /^session:[A-Za-z0-9_-]+\/[a-f0-9]{64}\.(png|jpg|jpeg|gif|webp)$/.test(path);
+  });
+  if (!paths.length) return;
+  var preview = el("div", "tool-media-preview");
+  renderSentAttachments(preview, paths, "image");
+  row.parentNode.insertBefore(preview, row.nextSibling);
+  row._mediaPreview = preview;
 }

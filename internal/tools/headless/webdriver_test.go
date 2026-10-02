@@ -105,8 +105,12 @@ func TestWebdriverOpenOwnsPortableHeadlessProfileAndExplicitClose(t *testing.T) 
 						profile = args[2].(string)
 					}
 					portableRoot := filepath.Join(app, ".supercli", "headless")
-					if filepath.Dir(profile) != portableRoot {
-						t.Errorf("profile outside app: %s", profile)
+					// Windows temp paths may use RUNNER~1 while the sandbox returns
+					// the long canonical path. Assert directory identity, not spelling.
+					expectedParent, expectedErr := os.Stat(portableRoot)
+					actualParent, actualErr := os.Stat(filepath.Dir(profile))
+					if expectedErr != nil || actualErr != nil || !os.SameFile(expectedParent, actualParent) {
+						t.Errorf("profile outside app: %s (expected parent %s; stat errors %v, %v)", profile, portableRoot, expectedErr, actualErr)
 					}
 					if _, err := os.Stat(profile); err != nil {
 						t.Errorf("profile before session creation: %v", err)

@@ -21,11 +21,12 @@ type wireEvent struct {
 	Text string `json:"text,omitempty"`
 	// Tool fields (type "tool_call" / "tool_result"). Name doubles as
 	// the worker agent kind on type "worker".
-	Name   string `json:"name,omitempty"`
-	Args   string `json:"args,omitempty"`
-	ID     string `json:"id,omitempty"`
-	Output string `json:"output,omitempty"`
-	Err    string `json:"err,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Args   string   `json:"args,omitempty"`
+	ID     string   `json:"id,omitempty"`
+	Output string   `json:"output,omitempty"`
+	Images []string `json:"images,omitempty"`
+	Err    string   `json:"err,omitempty"`
 	// Status carries the worker outcome on type "worker".
 	Status       string `json:"status,omitempty"`
 	Kind         string `json:"kind,omitempty"`
@@ -77,6 +78,11 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "tool_call", Name: e.Name, Args: e.Args, ID: e.ID}, true
 	case agent.ToolResultEvent:
 		w := wireEvent{Type: "tool_result", ID: e.ID, Output: e.Output}
+		for _, img := range e.Images {
+			if img.Path != "" {
+				w.Images = append(w.Images, img.Path)
+			}
+		}
 		if e.Err != nil {
 			w.Err = e.Err.Error()
 		}

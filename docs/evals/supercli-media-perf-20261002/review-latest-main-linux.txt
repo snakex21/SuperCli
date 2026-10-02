@@ -1,0 +1,55 @@
+?   	supercli/cmd/supercli	[no test files]
+?   	supercli/cmd/supercli-eval	[no test files]
+?   	supercli/cmd/supercli-perf	[no test files]
+ok  	supercli/cmd/supercli-web	0.004s
+?   	supercli/cmd/supercli-wireprobe	[no test files]
+?   	supercli/cmd/thunderbird-mail-call	[no test files]
+?   	supercli/cmd/thunderbird-msg-import	[no test files]
+ok  	supercli/internal/account/codexauth	0.006s
+ok  	supercli/internal/account/cost	0.002s
+ok  	supercli/internal/account/credits	0.266s
+ok  	supercli/internal/account/pricing	0.008s
+ok  	supercli/internal/account/tier	0.002s
+?   	supercli/internal/account/usagecost	[no test files]
+ok  	supercli/internal/agent	5.462s
+ok  	supercli/internal/agent/darwin	0.758s
+ok  	supercli/internal/agent/planmode	0.001s
+ok  	supercli/internal/agent/reflect	0.070s
+ok  	supercli/internal/agent/ultrawork	0.002s
+ok  	supercli/internal/agenteval	0.007s
+ok  	supercli/internal/app	0.584s
+?   	supercli/internal/buildinfo	[no test files]
+ok  	supercli/internal/checkpoint	0.541s
+ok  	supercli/internal/codeintel/lsp	0.216s
+ok  	supercli/internal/llm	4.428s
+ok  	supercli/internal/llm/consult	0.125s
+ok  	supercli/internal/llm/draft	0.006s
+ok  	supercli/internal/llm/factory	0.007s
+ok  	supercli/internal/llm/prompt	0.004s
+ok  	supercli/internal/llm/providers	3.043s
+ok  	supercli/internal/llm/shuffler	0.003s
+ok  	supercli/internal/perfbench	0.002s
+ok  	supercli/internal/storage	0.016s
+ok  	supercli/internal/storage/freshness	0.002s
+ok  	supercli/internal/storage/goal	0.226s
+ok  	supercli/internal/storage/library	0.002s
+ok  	supercli/internal/storage/memory	1.494s
+ok  	supercli/internal/storage/session	1.161s
+ok  	supercli/internal/system/browser	0.004s
+ok  	supercli/internal/system/childproc	0.005s
+ok  	supercli/internal/system/config	0.015s
+ok  	supercli/internal/system/doctor	0.007s
+ok  	supercli/internal/system/execution	0.003s
+ok  	supercli/internal/system/manifest	0.005s
+ok  	supercli/internal/system/preflight	0.104s
+ok  	supercli/internal/system/releasebundle	0.008s
+ok  	supercli/internal/system/stats	0.003s
+ok  	supercli/internal/system/uilang	0.422s
+ok  	supercli/internal/system/updater	0.026s
+ok  	supercli/internal/tools	0.005s
+ok  	supercli/internal/tools/codeintel	0.003s
+ok  	supercli/internal/tools/core	0.076s
+ok  	supercli/internal/tools/ctxexec	4.428s
+ok  	supercli/internal/tools/fileops	0.246s
+ok  	supercli/internal/tools/files	0.219s
+ok  	supercli/internal/tools/headless	0.230s

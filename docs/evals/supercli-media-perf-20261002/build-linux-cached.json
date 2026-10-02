@@ -1,0 +1,21 @@
+{
+  "command": [
+    "go",
+    "build",
+    "-o",
+    "../supercli-build-cache/bin/",
+    "./cmd/supercli",
+    "./cmd/supercli-web"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 12.465,
+  "peak_group_rss_bytes": 339750912,
+  "peak_cache_bytes": 1460948992,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

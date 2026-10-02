@@ -167,6 +167,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	} {
 		reg.MustRegister(sp)
 	}
+	e.registerMediaGeneration(reg, home)
 	// Office editors are discoverable alongside their readers. Keeping them
 	// out of the always-on set avoids schema overhead in ordinary chat, while
 	// tool_search can expose them for an explicit Word or Excel request.

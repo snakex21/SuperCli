@@ -11,6 +11,9 @@ import (
 // model has called ask_user. The viewport is suspended; the
 // user navigates with 1-4 / arrows / space / enter / esc.
 func renderAskView(a *pendingAsk, width, height int, languages ...string) string {
+	if a.Confirmation {
+		return renderConfirmationView(a, width, height)
+	}
 	language := "en"
 	if len(languages) > 0 {
 		language = normalizeLanguage(languages[0])

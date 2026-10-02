@@ -88,7 +88,7 @@ func inferFamily(tool string, args json.RawMessage, r Result) string {
 	}
 	// Result-shape fallback: an empty Text + non-nil Err
 	// is a "search" miss; an Image-result tool is "read".
-	if r.Image != nil {
+	if r.Image != nil || len(r.Images) > 0 {
 		return "read"
 	}
 	return ""
@@ -172,6 +172,14 @@ func verifySearch(c Check) VerifyVerdict {
 // result. Image and text both count; size > 0 is required.
 func verifyRead(c Check) VerifyVerdict {
 	if c.Result.Err != nil {
+		return VerifyVerdict{OK: true}
+	}
+	if len(c.Result.Images) > 0 {
+		for _, image := range c.Result.Images {
+			if image == nil || len(image.Data) == 0 {
+				return VerifyVerdict{OK: false, Reason: "verification failed: image is empty"}
+			}
+		}
 		return VerifyVerdict{OK: true}
 	}
 	if c.Result.Image != nil {
@@ -279,13 +287,14 @@ func rewriteResultForFailure(orig Result, reason string) Result {
 	if orig.Text != "" {
 		body += "\n--- tool returned ---\n" + orig.Text
 	}
-	if orig.Image != nil {
+	if orig.Image != nil || len(orig.Images) > 0 {
 		// Keep the image; the model may want to see what
 		// was claimed. Add the reason as text.
 		return Result{
-			Text:  body,
-			Image: orig.Image,
-			Err:   fmt.Errorf("%s", reason),
+			Text:   body,
+			Image:  orig.Image,
+			Images: orig.Images,
+			Err:    fmt.Errorf("%s", reason),
 		}
 	}
 	return Result{Text: body, Err: fmt.Errorf("%s", reason)}

@@ -354,6 +354,45 @@ test('WebP keeps the original preview fallback while failed PNG thumbnails keep 
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
   }
 });
+test('native MCP image refs show same-origin previews without base64 and reject remote URLs', () => {
+  const h = harness();
+  const row = liveResult(h, 'mcp_bridge', 'Captured');
+  const token = 'session:fixture_123/' + 'a'.repeat(64) + '.png';
+  h.c.appendNativeToolImages(row, [token, 'https://untrusted.test/image.png', 'data:image/png;base64,secret', 'session:../escape.png']);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 1);
+  assert.equal(row._mediaPreview.querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(token) + '&thumbnail=transcript');
+  h.c.appendNativeToolImages(row, [token]);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 1);
+});
+
+test('generation outputs share local image and lazy video preview contract', () => {
+  for (const [name, kind, file] of [['generate_image', 'image', '/project/generated.png'], ['generate_video', 'video', '/project/generated.mp4']]) {
+    for (const history of [false, true]) {
+      const h = harness(), raw = mediaResult(kind, file);
+      const row = history ? h.c.buildHistoryFragment([{seq: 2, role: 'tool', name, content: raw}]).children[0] :
+        liveResult(h, name, raw);
+      assert.ok(row._mediaPreview);
+      assert.equal(row.open, false);
+      assert.equal(row._body.children.length, 0);
+      assert.equal(buttons(row._mediaPreview).length, 1);
+      assert.equal(row._mediaPreview.querySelectorAll('img').length, kind === 'image' ? 1 : 0);
+      assert.equal(h.created.filter(node => node.tag === 'video').length, 0);
+      expand(row);
+      assert.equal(row._body.querySelector('pre').textContent, raw);
+      buttons(row._mediaPreview)[0].dispatch('click');
+      const media = h.$('#attachment-preview-content').querySelector(kind === 'image' ? 'img' : kind);
+      assert.equal(media.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+      if (kind === 'video') assert.equal(media.preload, 'none');
+    }
+  }
+});
+
+test('restored native image attachments do not depend on browser localStorage', () => {
+  const h = harness();
+  const token = 'session:fixture_123/' + 'b'.repeat(64) + '.png';
+  h.c.addUserMsg = (content, seq, attachments) => { assert.deepEqual(Array.from(attachments), [token]); };
+  h.c.buildHistoryFragment([{role:'user', seq:2, content:'Attached image from tool mcp_bridge:', attachments:[token]}]);
+});
 
 test('headless QMP and browser screenshots have automatic bounded preview in live and restored chat', () => {
   for (const source of ['qmp', 'browser']) {

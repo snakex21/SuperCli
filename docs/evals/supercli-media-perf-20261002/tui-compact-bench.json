@@ -1,0 +1,23 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./internal/ui/tui",
+    "-bench",
+    "BenchmarkTUI(UnchangedStreamFrame|StreamEvents)",
+    "-benchmem",
+    "-benchtime=300ms",
+    "-count=3"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 14.539,
+  "peak_group_rss_bytes": 331268096,
+  "peak_cache_bytes": 1412734976,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

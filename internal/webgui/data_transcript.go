@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"supercli/internal/agent"
+	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 )
 
@@ -89,6 +90,15 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 			Attachments: append([]string(nil), attachments[m.Seq]...),
 			Name:        m.Name,
 			ToolCallID:  msg.ToolCallID,
+		}
+		if len(item.Attachments) == 0 {
+			for _, part := range msg.Parts {
+				if part.Type == llm.PartTypeImage && part.Image != nil {
+					if token := sessionImagePreviewPath(id, part.Image.Path); token != "" {
+						item.Attachments = append(item.Attachments, token)
+					}
+				}
+			}
 		}
 		for _, call := range msg.ToolCalls {
 			item.ToolCalls = append(item.ToolCalls, transcriptToolCall{

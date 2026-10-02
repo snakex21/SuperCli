@@ -1,0 +1,18 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./..."
+  ],
+  "exit_code": 0,
+  "elapsed_s": 47.74,
+  "peak_group_rss_bytes": 327409664,
+  "peak_cache_bytes": 1402654720,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}
