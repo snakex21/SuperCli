@@ -68,7 +68,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 
 func containsScreenshotReference(prompt string) bool {
 	p := strings.ToLower(prompt)
-	for _, marker := range []string{"screenshot", "screen capture", "screen grab", "zrzut ekranu", "zrzut pulpitu", "zrzut z ekranu", "zrzutu ekranu", "zrzutu pulpitu"} {
+	for _, marker := range []string{"screenshot", "screen capture", "screen grab", "zrzut ekranu", "zrzut pulpitu", "zrzut z ekranu", "zrzutu ekranu", "zrzutu pulpitu", "zrzut okna", "zrzutu okna", "zrzut aplikacji", "zrzutu aplikacji", "window capture"} {
 		if strings.Contains(p, marker) {
 			return true
 		}

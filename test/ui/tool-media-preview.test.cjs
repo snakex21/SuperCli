@@ -93,7 +93,7 @@ test('successful screenshots and images are visible outside folded live details 
     const cards = buttons(row._mediaPreview);
     assert.equal(cards.length, 1);
     const img = cards[0].children[0];
-    assert.equal(img.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+    assert.equal(img.src, '/api/attachment/preview?path=' + encodeURIComponent(file) + '&thumbnail=transcript');
     assert.equal(img.loading, 'lazy');
     assert.equal(img.alt, 'zażółć 😀.png');
     assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
@@ -101,9 +101,11 @@ test('successful screenshots and images are visible outside folded live details 
     assert.equal(buttons(row._mediaPreview)[0], cards[0]);
     cards[0].dispatch('click');
     assert.equal(h.$('#attachment-preview-dialog').open, true);
-    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, img.src);
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
     img.dispatch('error');
-    assert.equal(buttons(row._mediaPreview).length, 0, 'an unavailable image removes its preview card while preserving diagnostics');
+    assert.equal(row._mediaPreview.querySelector('img'), null);
+    assert.equal(buttons(row._mediaPreview).length, 1, 'an unavailable thumbnail keeps the original click control');
+    assert.equal(buttons(row._mediaPreview)[0].textContent, 'zażółć 😀.png');
     assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
   }
 });
@@ -282,7 +284,7 @@ test('portable screenshot identifiers keep the same lazy live and history URL af
     assert.equal(row.nextSibling, row._mediaPreview);
       expand(row);
       const card = buttons(row._mediaPreview)[0], image = card.children[0];
-      assert.equal(image.src, stableURL);
+      assert.equal(image.src, stableURL + '&thumbnail=transcript');
       assert.equal(image.alt, 'screen-2398173.png');
       assert.equal(card.title, 'attachment.preview: screen-2398173.png');
       assert.equal(body.querySelector('pre').textContent, raw);
@@ -305,15 +307,50 @@ test('only strict snapshot basenames from send_screenshot override the original 
     const row = liveResult(h, 'send_screenshot', raw);
     expand(row);
     const card = buttons(row._mediaPreview)[0];
-    assert.equal(card.children[0].src, absoluteURL);
+    assert.equal(card.children[0].src, absoluteURL + '&thumbnail=transcript');
     card.dispatch('click');
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, absoluteURL);
   }
   const h = harness();
   const row = liveResult(h, 'show_media', mediaResult('image', file, {preview_path: 'snapshot:screen.png'}));
   expand(row);
-  assert.equal(buttons(row._mediaPreview)[0].children[0].src, absoluteURL);
+  assert.equal(buttons(row._mediaPreview)[0].children[0].src, absoluteURL + '&thumbnail=transcript');
   const invalid = liveResult(h, 'send_screenshot', mediaResult('image', 'relative.png', {preview_path: 'snapshot:screen.png'}));
   expand(invalid);
   assert.equal(buttons(invalid._body).length, 0, 'a portable token cannot bypass the absolute path requirement');
+});
+
+test('composer uses a bounded thumbnail and opening or closing uses and releases the original', () => {
+  const h = harness(), file = '/portable/4k.png';
+  h.c.pendingAttachments = [file];
+  h.c.renderAttachments();
+  const chip = h.$('#attachment-list').children[0], thumbnail = chip.querySelector('img');
+  assert.equal(thumbnail.src, '/api/attachment/preview?path=%2Fportable%2F4k.png&thumbnail=composer');
+  assert.equal(thumbnail.loading, 'lazy');
+  assert.equal(thumbnail.decoding, 'async');
+  chip.querySelector('.attachment-open').dispatch('click');
+  const original = h.$('#attachment-preview-content').querySelector('img');
+  assert.equal(original.src, '/api/attachment/preview?path=%2Fportable%2F4k.png');
+  h.c.closeAttachmentPreview();
+  assert.equal(original.src, '');
+  assert.equal(original.parentNode, null);
+});
+
+test('WebP keeps the original preview fallback while failed PNG thumbnails keep only a click control', () => {
+  for (const extension of ['webp', 'png']) {
+    const h = harness(), file = '/portable/picture.' + extension;
+    const host = element('div');
+    h.c.renderSentAttachments(host, [file]);
+    const image = host.querySelector('img'), button = buttons(host)[0];
+    image.dispatch('error');
+    if (extension === 'webp') {
+      assert.equal(image.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+      assert.equal(image.parentNode, button);
+      image.dispatch('error');
+    }
+    assert.equal(host.querySelector('img'), null);
+    assert.equal(button.textContent, 'picture.' + extension);
+    button.dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+  }
 });

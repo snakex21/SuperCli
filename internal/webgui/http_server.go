@@ -44,6 +44,11 @@ type Server struct {
 	folderJobCancel context.CancelFunc
 	updateFactory   func() (applicationUpdater, error)
 	chatCompletions chatCompletions
+
+	// Thumbnail generation decodes at most one source at a time. Finished
+	// derivatives live on disk; no decoded images or per-file keys are retained.
+	thumbnailOnce sync.Once
+	thumbnailGate chan struct{}
 }
 
 // codexLoginState is the per-account (by label) tracking record for

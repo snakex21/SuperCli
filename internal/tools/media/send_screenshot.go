@@ -21,29 +21,17 @@ const (
 	DefaultMaxScreenshotBytes = 16 * 1024 * 1024 // 16 MB
 )
 
-// SendScreenshotTool captures an image from
-// the OS clipboard and returns the
-// image as a Result.Image so the agent loop
-// can attach it to the next model request.
-//
-// The capture itself is OS-specific
-// (Windows: PowerShell + System.Windows.Forms
-// Clipboard, macOS: osascript + NSPasteboard,
-// Linux: xclip / wl-paste). The OS shim is
-// isolated behind the ClipboardCapture
-// interface so tests can inject a fake.
-//
-// Safety: the bytes that come out of the
-// clipboard are typed (PNG/JPEG/etc.) — we
-// only accept a known image magic header
-// (checked in captureOS) so a clipboard
-// stuffed with arbitrary bytes can't
-// smuggle a file into the agent.
+// SendScreenshotTool saves portable screenshots and exposes previews to the UI.
+// Pixel attachment is optional: desktop/window captures default to display only,
+// while clipboard images keep their existing attachment behavior.
+// Native capture is on demand, with injected seams for tests.
 type SendScreenshotTool struct {
 	BaseDir       string
 	Capture       ClipboardCapture // injected; default = osCapture{}
 	MaxBytes      int64
 	ScreenCapture func(context.Context) ([]byte, string, error)
+	WindowCapture func(context.Context, WindowSelector) ([]byte, string, WindowInfo, error)
+	WindowsList   func(context.Context) ([]WindowInfo, error)
 }
 
 // ClipboardCapture is the small interface
@@ -76,12 +64,15 @@ func NewSendScreenshot(baseDir string, _ func(string) bool) *SendScreenshotTool 
 func (t *SendScreenshotTool) Spec() Tool {
 	return Tool{
 		Name:        "send_screenshot",
-		Description: "Capture this computer's desktop (source:screen) or clipboard image (default) using native OS access, and save it in the portable snapshots folder. No image-generation model is needed. attach:false saves/shows it without sending pixels to the model.",
+		Description: "Capture this computer's desktop, a named open window (including covered windows), or clipboard image. Saves and displays the image in chat. Use window_title directly when the user names a window; list source:windows only to find unknown targets. Chat preview is automatic and does not need attach:true. Set attach:true only to inspect/analyze the pixels yourself.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "source": {"type": "string", "enum": ["clipboard", "screen"], "description": "clipboard (default) reads a copied image; screen takes a new desktop screenshot."},
-    "attach": {"type": "boolean", "description": "Default true. False saves/shows the image without attaching pixels to the model."}
+    "source": {"type": "string", "enum": ["clipboard", "screen", "window", "windows"], "description": "clipboard (default) reads a copied image; screen captures the visible desktop; window captures a chosen open window without activating it; windows lists open window IDs/titles."},
+    "window_title": {"type": "string", "description": "Open window title or unique part of it. Selects window capture when source is omitted or screen."},
+    "window_id": {"type": "string", "description": "Window ID from source:windows, for an exact target."},
+    "image_detail": {"type": "string", "enum": ["auto", "original"], "description": "auto (default) bounds analysis pixels; original keeps full resolution for fine text. Does not alter the saved image or chat preview."},
+    "attach": {"type": "boolean", "description": "Display/show requests need false (screen/window default): chat preview is automatic. True only for pixel inspection/analysis. Clipboard default true."}
   }
 }`,
 		Fn:         t.Execute,
@@ -104,8 +95,7 @@ func repairScreenshotArgs(raw json.RawMessage) (json.RawMessage, bool) {
 	return out, err == nil
 }
 
-// Execute captures the clipboard image,
-// saves a snapshot and returns Result with the image attached.
+// Execute captures and saves an image for preview; pixel forwarding is optional.
 func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{Err: err}, err
@@ -115,8 +105,11 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		return Result{Err: err}, err
 	}
 	var params struct {
-		Source string `json:"source"`
-		Attach *bool  `json:"attach"`
+		Source      string `json:"source"`
+		WindowTitle string `json:"window_title"`
+		WindowID    string `json:"window_id"`
+		ImageDetail string `json:"image_detail"`
+		Attach      *bool  `json:"attach"`
 	}
 	if len(args) > 0 && string(args) != "null" {
 		if err := json.Unmarshal(args, &params); err != nil {
@@ -124,19 +117,80 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		}
 	}
 
+	if params.ImageDetail != "" && params.ImageDetail != "auto" && params.ImageDetail != "original" {
+		err := fmt.Errorf("send_screenshot: image_detail must be auto or original")
+		return Result{Err: err}, err
+	}
+	selector := WindowSelector{Title: strings.TrimSpace(params.WindowTitle), HWND: strings.TrimSpace(params.WindowID)}
+	hasWindow := selector.Title != "" || selector.HWND != ""
 	source := params.Source
+	if hasWindow && (source == "" || source == "screen") {
+		source = "window"
+	}
 	if source == "" {
 		source = "clipboard"
 	}
-	if source != "clipboard" && source != "screen" {
-		err := fmt.Errorf("send_screenshot: source must be clipboard or screen")
+	if source == "windows" {
+		if hasWindow {
+			err := fmt.Errorf("send_screenshot: use source:window with a selector, or source:windows without one to list targets")
+			return Result{Err: err}, err
+		}
+		list := t.WindowsList
+		if list == nil {
+			list = listCaptureWindows
+		}
+		windows, err := list(ctx)
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			return Result{Err: err}, err
+		}
+		const limit = 40
+		truncated := len(windows) > limit
+		if truncated {
+			windows = windows[:limit]
+		}
+		if windows == nil {
+			windows = []WindowInfo{}
+		}
+		text, _ := json.Marshal(struct {
+			Windows   []WindowInfo `json:"windows"`
+			Truncated bool         `json:"truncated,omitempty"`
+		}{windows, truncated})
+		return Result{Text: string(text)}, nil
+	}
+	if source != "clipboard" && source != "screen" && source != "window" {
+		err := fmt.Errorf("send_screenshot: source must be clipboard, screen, window or windows")
 		return Result{Err: err}, err
 	}
-	attached := params.Attach == nil || *params.Attach
+	if source == "window" && !hasWindow {
+		err := fmt.Errorf("send_screenshot: window_title or window_id is required; source:windows lists available targets")
+		return Result{Err: err}, err
+	}
+	if source == "clipboard" && hasWindow {
+		err := fmt.Errorf("send_screenshot: a window selector cannot be used with clipboard")
+		return Result{Err: err}, err
+	}
+	// A capture for display does not require a second pixel upload, duplicate
+	// session blob or vision inference. Clipboard keeps its existing attach default.
+	attached := source == "clipboard"
+	if params.Attach != nil {
+		attached = *params.Attach
+	}
 	var data []byte
 	var mediaType string
 	var err error
-	if source == "screen" {
+	var windowInfo *WindowInfo
+	if source == "window" {
+		capture := t.WindowCapture
+		if capture == nil {
+			capture = captureWindow
+		}
+		var target WindowInfo
+		data, mediaType, target, err = capture(ctx, selector)
+		windowInfo = &target
+	} else if source == "screen" {
 		if t.ScreenCapture != nil {
 			data, mediaType, err = t.ScreenCapture(ctx)
 		} else {
@@ -163,7 +217,7 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		return Result{Err: err}, err
 	}
 	if int64(len(data)) > t.MaxBytes {
-		err := fmt.Errorf("send_screenshot: clipboard image too large: %d > %d", len(data), t.MaxBytes)
+		err := fmt.Errorf("send_screenshot: captured image too large: %d > %d", len(data), t.MaxBytes)
 		return Result{Err: err}, err
 	}
 	detectedType := sniffMediaType(data)
@@ -171,8 +225,20 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		mediaType = detectedType
 	}
 	if detectedType == "" || mediaType != detectedType {
-		err := fmt.Errorf("send_screenshot: clipboard bytes do not look like a known image format (magic header missing)")
+		err := fmt.Errorf("send_screenshot: captured bytes do not look like a known image format (magic header missing)")
 		return Result{Err: err}, err
+	}
+
+	var analysisData []byte
+	var analysisType string
+	var analysisInfo *AnalysisImageInfo
+	if attached {
+		var info AnalysisImageInfo
+		analysisData, analysisType, info, err = prepareAnalysisImage(ctx, data, mediaType, params.ImageDetail)
+		if err != nil {
+			return Result{Err: err}, err
+		}
+		analysisInfo = &info
 	}
 
 	// Save a copy for the audit trail. We
@@ -185,15 +251,17 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		return Result{Err: err}, err
 	}
 	metadata := struct {
-		Type        string `json:"type"`
-		Source      string `json:"source"`
-		Path        string `json:"path,omitempty"`
-		PreviewPath string `json:"preview_path,omitempty"`
-		MediaType   string `json:"media_type"`
-		Bytes       int    `json:"bytes"`
-		Attached    bool   `json:"attached"`
-		SaveError   string `json:"save_error,omitempty"`
-	}{Type: "image", Source: source, Path: path, MediaType: mediaType, Bytes: len(data), Attached: attached}
+		Type        string             `json:"type"`
+		Source      string             `json:"source"`
+		Path        string             `json:"path,omitempty"`
+		PreviewPath string             `json:"preview_path,omitempty"`
+		MediaType   string             `json:"media_type"`
+		Bytes       int                `json:"bytes"`
+		Attached    bool               `json:"attached"`
+		SaveError   string             `json:"save_error,omitempty"`
+		Window      *WindowInfo        `json:"window,omitempty"`
+		Analysis    *AnalysisImageInfo `json:"analysis,omitempty"`
+	}{Type: "image", Source: source, Path: path, MediaType: mediaType, Bytes: len(data), Attached: attached, Window: windowInfo, Analysis: analysisInfo}
 	if saveErr != nil {
 		metadata.SaveError = saveErr.Error()
 	} else {
@@ -202,7 +270,7 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 	text, _ := json.Marshal(metadata)
 	res := Result{Text: string(text)}
 	if attached {
-		res.Image = &ImageContent{MediaType: mediaType, Data: data}
+		res.Image = &ImageContent{MediaType: analysisType, Data: analysisData}
 	}
 	return res, nil
 }
