@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Accept reads:["file:from-to", ...] and the equivalent singleton item wrapper.
-// Unwrap only a unique string list, preserving every range and its order.
+// Accept a string list or a singleton item wrapper containing a list/shorthand.
+// Unwrap only an unambiguous representation, preserving every range and its order.
 // Keep the compact advertised schema and leave ambiguous formats invalid.
 func repairReadManyRangeList(raw json.RawMessage) (json.RawMessage, bool) {
 	object, ok := uniqueArgumentObject(raw)
@@ -29,6 +29,19 @@ func repairReadManyRangeList(raw json.RawMessage) (json.RawMessage, bool) {
 		reads, ok = wrapper["item"]
 		if !ok {
 			return nil, false
+		}
+		// A wrapped shorthand is already the complete reads format. Keep its
+		// literal value; the normal parser still handles delimiters and caps.
+		// uniqueArgumentObject decodes each RawMessage after JSON whitespace.
+		// Gate the type so accepted string lists avoid a failed string decode.
+		if len(reads) > 0 && reads[0] == '"' {
+			var shorthand string
+			if json.Unmarshal(reads, &shorthand) != nil || strings.TrimSpace(shorthand) == "" {
+				return nil, false
+			}
+			object["reads"] = reads
+			repaired, err := json.Marshal(object)
+			return repaired, err == nil
 		}
 	}
 	var items []string

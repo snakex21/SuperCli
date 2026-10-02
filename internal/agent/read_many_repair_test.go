@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +13,19 @@ import (
 )
 
 func TestReadManyRangeListRepairReachesBothProtocols(t *testing.T) {
-	for _, thin := range []bool{false, true} {
-		t.Run(fmt.Sprint(thin), func(t *testing.T) {
+	ranges := []string{"a.go:3-3", "a.go:1-1"}
+	for _, tc := range []struct {
+		name string
+		item any
+		thin bool
+	}{
+		{"list/native", ranges, false},
+		{"list/envelope", ranges, true},
+		{"scalar/native", "a.go:3-3 | a.go:1-1", false},
+		{"scalar/envelope", "a.go:3-3 | a.go:1-1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			thin := tc.thin
 			root := t.TempDir()
 			if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("alpha\nbeta\ngamma\n"), 0600); err != nil {
 				t.Fatal(err)
@@ -37,7 +47,7 @@ func TestReadManyRangeListRepairReachesBothProtocols(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			args := map[string]any{"reads": map[string]any{"item": []string{"a.go:3-3", "a.go:1-1"}}}
+			args := map[string]any{"reads": map[string]any{"item": tc.item}}
 			raw, _ := json.Marshal(args)
 			call := llm.ToolCall{ID: "ranges", Name: "read_many", Arguments: string(raw)}
 			if thin {

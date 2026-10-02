@@ -136,7 +136,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if ev.Type == "done" || ev.Type == "error" {
 			terminalSeen = true
 		}
-		fmt.Fprintf(w, "data: %s\n\n", ev.marshal())
+		writeSSEFrame(w, ev.marshal())
 		flusher.Flush()
 	}
 
