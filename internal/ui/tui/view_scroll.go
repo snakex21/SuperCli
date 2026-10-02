@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/viewport"
+	"supercli/internal/ui/viewport"
 )
 
 // ScrollConfig holds the keyboard scroll behavior. It is

@@ -1146,6 +1146,8 @@ function addToolCall(name, args, id) {
     renderToolPayloadWhenOpen(row, function () {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
       body.appendChild(el("pre", "", prettyJSON(args)));
+      row._toolArgs = null;
+      args = null;
     });
   }
   row.appendChild(body);
