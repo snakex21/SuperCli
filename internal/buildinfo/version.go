@@ -4,4 +4,4 @@
 //	go build -ldflags "-X supercli/internal/buildinfo.Version=v0.7.0"
 package buildinfo
 
-var Version = "1.0.1"
+var Version = "1.0.2"

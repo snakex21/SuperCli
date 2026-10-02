@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.1
+# SuperCli 1.0.2
 
 <!-- readme-unit:intro -->
 Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.
 
 <!-- readme-unit:status -->
-Šis README aprašo versiją `1.0.1`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
+Šis README aprašo versiją `1.0.2`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrano nuotraukos

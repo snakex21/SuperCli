@@ -1,6 +1,6 @@
 [
   "Un agente de programación con IA portátil escrito en Go, con interfaz de terminal (TUI), interfaz de escritorio/web (GUI) y modo por lotes que comparten un motor.",
-  "Este README describe la versión `1.0.1`. Los paquetes portátiles se distribuyen mediante [GitHub Releases]({releases}); una compilación local no implica que su versión ya se haya publicado.",
+  "Este README describe la versión `1.0.2`. Los paquetes portátiles se distribuyen mediante [GitHub Releases]({releases}); una compilación local no implica que su versión ya se haya publicado.",
   "Capturas de pantalla",
   "![Interfaz web de SuperCli (GUI)]({guishot})",
   "![Centro de acciones del terminal de SuperCli (TUI)]({tuishot})",

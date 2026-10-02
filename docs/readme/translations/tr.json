@@ -1,6 +1,6 @@
 [
   "Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.",
-  "Bu README `1.0.1` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases]({releases}) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.",
+  "Bu README `1.0.2` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases]({releases}) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.",
   "Ekran görüntüleri",
   "![SuperCli web arayüzü (GUI)]({guishot})",
   "![SuperCli terminal eylem merkezi (TUI)]({tuishot})",
