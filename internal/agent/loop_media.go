@@ -100,30 +100,61 @@ func (l *Loop) prepareSessionImages(ctx context.Context, images []llm.ImageRef) 
 func (l *Loop) mediaProviderView(msgs []llm.Message) []llm.Message {
 	var out []llm.Message
 	for i, msg := range msgs {
-		var parts []llm.ContentPart
-		for j, part := range msg.Parts {
-			if part.Type != llm.PartTypeImage || part.Image == nil {
-				continue
-			}
+		if parts := projectedMediaProviderParts(msg.Parts, true); parts != nil {
 			if out == nil {
 				out = append([]llm.Message(nil), msgs...)
 			}
-			if parts == nil {
-				parts = append([]llm.ContentPart(nil), msg.Parts...)
-				out[i].Parts = parts
-			}
-			if part.Image.Active {
-				img := *part.Image
-				parts[j] = llm.ContentPart{Type: llm.PartTypeImage, Image: &img}
-			} else {
-				parts[j] = llm.ContentPart{Type: llm.PartTypeText, Text: sessionImageMarker(*part.Image)}
-			}
+			out[i].Parts = parts
 		}
 	}
 	if out == nil {
 		return msgs
 	}
 	return out
+}
+
+// projectedMediaProviderParts copies only image-bearing parts. Active refs need
+// snapshots for a request; dormant refs become reloadable text markers. Cost-only
+// projection can omit active snapshots because token accounting ignores pixels.
+func projectedMediaProviderParts(source []llm.ContentPart, snapshotActive bool) []llm.ContentPart {
+	var parts []llm.ContentPart
+	for j, part := range source {
+		if part.Type != llm.PartTypeImage || part.Image == nil || (part.Image.Active && !snapshotActive) {
+			continue
+		}
+		if parts == nil {
+			parts = append([]llm.ContentPart(nil), source...)
+		}
+		if part.Image.Active {
+			img := *part.Image
+			parts[j] = llm.ContentPart{Type: llm.PartTypeImage, Image: &img}
+		} else {
+			parts[j] = llm.ContentPart{Type: llm.PartTypeText, Text: sessionImageMarker(*part.Image)}
+		}
+	}
+	return parts
+}
+
+// projectOwnedMediaProviderMessages operates on an independently owned request
+// slice. It must never receive canonical history or a shared visibility view.
+func projectOwnedMediaProviderMessages(out []llm.Message) bool {
+	changed := false
+	for i := range out {
+		if parts := projectedMediaProviderParts(out[i].Parts, true); parts != nil {
+			out[i].Parts = parts
+			changed = true
+		}
+	}
+	return changed
+}
+
+// Request-only window pricing reproduces the old media-before-window ordering.
+// Shared estimator/pruning projection deliberately retains its previous cost.
+func mediaProjectedMessageTokens(m llm.Message) int {
+	if parts := projectedMediaProviderParts(m.Parts, false); parts != nil {
+		m.Parts = parts
+	}
+	return llm.EstimateMessageTokens(m)
 }
 
 func sessionImageMarker(img llm.ImageRef) string {

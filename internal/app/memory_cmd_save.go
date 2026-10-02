@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,19 +45,60 @@ func (p *memProgress) lockWithin(d time.Duration) bool {
 // stats attribute it correctly (autosave used to be invisible).
 func providerSummarizer(provider llm.Provider) memory.SummarizeFunc {
 	return func(ctx context.Context, prompt string) (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		ctx = llm.WithBackground(llm.WithPurpose(ctx, llm.PurposeMemory))
+		var preempted atomic.Bool
+		ctx = llm.WithCallSink(ctx, func(stat llm.CallStat) {
+			if stat.Canceled {
+				preempted.Store(true)
+			}
+		})
 		ch, err := provider.Complete(ctx, []llm.Message{
 			{Role: llm.RoleUser, Content: prompt},
 		}, nil)
 		if err != nil {
+			if preempted.Load() {
+				return "", errors.Join(memory.ErrSummaryInterrupted, err)
+			}
 			return "", err
 		}
 		var out strings.Builder
-		for d := range ch {
-			if d.Err != nil {
-				return "", d.Err
+		var streamErr error
+	stream:
+		for {
+			var d llm.Delta
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case delta, ok := <-ch:
+				if !ok {
+					break stream
+				}
+				d = delta
 			}
-			out.WriteString(d.Content)
+			if d.Err != nil {
+				if streamErr == nil {
+					streamErr = d.Err
+				}
+				continue
+			}
+			if streamErr == nil {
+				out.WriteString(d.Content)
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		// Metered may cancel only its derived context and close the stream
+		// silently. Its additive sink runs before close, so partial text is
+		// never accepted as a completed memory summary.
+		if preempted.Load() {
+			return "", errors.Join(memory.ErrSummaryInterrupted, context.Canceled)
+		}
+		if streamErr != nil {
+			return "", streamErr
 		}
 		return out.String(), nil
 	}

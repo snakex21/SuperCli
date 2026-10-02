@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"supercli/internal/tools/fileops"
+	"supercli/internal/tools/sandbox"
 )
 
 // Default bounds for the read_zip tool. The
@@ -247,6 +248,9 @@ func (t *ReadZipTool) extractAction(ctx context.Context, r *zip.Reader, pattern,
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_zip: resolve target: %w", err)}, err
 	}
+	if err := rejectZipUnresolvedLinks(absTarget, ""); err != nil {
+		return Result{Err: fmt.Errorf("read_zip: target: %w", err)}, err
+	}
 	if err := os.MkdirAll(absTarget, 0o755); err != nil {
 		return Result{Err: fmt.Errorf("read_zip: mkdir target: %w", err)}, err
 	}
@@ -295,7 +299,18 @@ func (t *ReadZipTool) extractAction(ctx context.Context, r *zip.Reader, pattern,
 			err := fmt.Errorf("read_zip: entry %q escapes target", f.Name)
 			return Result{Err: err}, err
 		}
-		if err := t.writeEntry(f, abs, size, isDir); err != nil {
+		resolved, err := sandbox.ResolveSafe(absTarget, abs)
+		if err != nil {
+			return Result{Err: fmt.Errorf("read_zip: resolve entry %q: %w", f.Name, err)}, err
+		}
+		if !sandbox.IsUnder(absTarget, resolved) {
+			err := fmt.Errorf("read_zip: entry %q resolves outside target", f.Name)
+			return Result{Err: err}, err
+		}
+		if err := rejectZipUnresolvedLinks(resolved, absTarget); err != nil {
+			return Result{Err: fmt.Errorf("read_zip: entry %q: %w", f.Name, err)}, err
+		}
+		if err := t.writeEntry(f, resolved, size, isDir); err != nil {
 			return Result{Err: fmt.Errorf("read_zip: extract %q: %w", f.Name, err)}, err
 		}
 		extracted = append(extracted, f.Name)
@@ -308,6 +323,26 @@ func (t *ReadZipTool) extractAction(ctx context.Context, r *zip.Reader, pattern,
 		fmt.Fprintf(&b, "  %s\n", name)
 	}
 	return Result{Text: b.String()}, nil
+}
+
+// rejectZipUnresolvedLinks rejects links left unresolved by the path resolver.
+// In particular, Windows mount-point junctions may appear as ModeIrregular.
+// A blank stop checks target ancestors before creating the target directory.
+func rejectZipUnresolvedLinks(path, stop string) error {
+	for {
+		info, err := os.Lstat(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return fmt.Errorf("unresolved symlink or irregular/reparse path %q", path)
+		}
+		parent := filepath.Dir(path)
+		if parent == path || (stop != "" && !sandbox.IsUnder(stop, parent)) {
+			return nil
+		}
+		path = parent
+	}
 }
 
 // writeEntry writes a single zip entry to abs.

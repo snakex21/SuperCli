@@ -84,6 +84,8 @@ function harness(rebuild = false) {
   c.stage.clientHeight = 500;
   Object.defineProperty(c.stage, 'scrollHeight', {get() { return c.stream.children.reduce((sum, row) => sum + row.height, 0); }});
   if (rebuild) {
+    // Historical full rebuild must keep its historical message array.
+    vm.runInContext("renderLoadedTranscript = " + c.renderLoadedTranscript.toString().replace("  loadedTranscriptMessages = [];", ""), c);
     // Previous algorithm, using the same renderer/fixtures as the fixed path.
     vm.runInContext(`loadOlderTranscript = async function () {
       var page = await j('/api/transcript?id=' + transcriptSessionID + '&limit=' + transcriptPageSize + '&before=' + transcriptBeforeSeq);
@@ -125,7 +127,7 @@ test('older pages retain expanded output, image identity, focus, chronology and 
   assert.equal(row._mediaPreview, preview); assert.equal(preview.querySelector('img'), image);
   assert.equal(h.c.document.activeElement, image); assert.equal(top(h, row), anchor);
   assert.equal(h.stats.imageSources - oldImages, 60);
-  assert.deepEqual(Array.from(h.c.loadedTranscriptMessages, m => m.seq), Array.from({length: 120}, (_, i) => i + 1));
+  assert.equal(h.c.loadedTranscriptMessages.length, 0, 'the rendered DOM owns history payloads');
   assert.equal(h.c.stream.querySelector('.history-older'), null);
 });
 

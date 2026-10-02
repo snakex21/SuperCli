@@ -10,6 +10,11 @@ import (
 // It is pure: only request assembly commits nextStart. Index tracking is used
 // for pruning; normal requests avoid that extra allocation.
 func chatHistoryProjection(messages []llm.Message, start int, trackIndices bool) (view []llm.Message, indices []int, nextStart int) {
+	return chatHistoryProjectionWithMediaCost(messages, start, trackIndices, false)
+}
+
+// Only outgoing assembly uses projected media cost; estimators/pruning retain their existing behavior.
+func chatHistoryProjectionWithMediaCost(messages []llm.Message, start int, trackIndices, mediaCost bool) (view []llm.Message, indices []int, nextStart int) {
 	lastUser := -1
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == llm.RoleUser && !strings.Contains(messages[i].Content, "<task-notification>") {
@@ -29,7 +34,11 @@ func chatHistoryProjection(messages []llm.Message, start int, trackIndices bool)
 	for i := start; i < end; i++ {
 		if chatWindowEligible(messages[i]) {
 			count++
-			tokens += llm.EstimateMessageTokens(messages[i])
+			if mediaCost {
+				tokens += mediaProjectedMessageTokens(messages[i])
+			} else {
+				tokens += llm.EstimateMessageTokens(messages[i])
+			}
 		}
 	}
 	if tokens > chatWindowMaxTokens {

@@ -142,7 +142,9 @@ test('history rows already open render input and output immediately with the ori
 
 test('opening a session and loading an older page preserve paging, raw results and scroll behavior', async () => {
   const h = harness(), latest = readLines(), older = {...readLines(3), seq: 1};
-  const requests = [];
+  const requests = [], outputs = [];
+  const appendPayload = h.c.appendToolPayload;
+  h.c.appendToolPayload = (...args) => { outputs.push(args[2]); return appendPayload(...args); };
   h.c.j = async url => {
     requests.push(url);
     return url.includes('&before=2') ? {messages: [older], has_more: false, before_seq: 1} :
@@ -150,16 +152,14 @@ test('opening a session and loading an older page preserve paging, raw results a
   };
   assert.equal(await h.c.resumeSession('old-chat', {}), true);
   assert.deepEqual(requests, ['/api/transcript?id=old-chat&limit=60']);
-  assert.equal(h.c.loadedTranscriptMessages[0].content, latest.content);
+  assert.equal(h.c.loadedTranscriptMessages.length, 0, 'no duplicate raw message-object history');
   assert.equal(h.c.transcriptBeforeSeq, 2);
   assert.equal(h.c.stream.querySelectorAll('.tool-file-view').length, 0);
   assert.equal(h.calls.filter(call => call === 'scroll').length, 1, 'latest page follows the tail');
   h.c.stage.scrollHeight = 1000; h.c.stage.scrollTop = 30;
   await h.c.loadOlderTranscript();
   assert.deepEqual(requests, ['/api/transcript?id=old-chat&limit=60', '/api/transcript?id=old-chat&limit=60&before=2']);
-  assert.equal(h.c.loadedTranscriptMessages.length, 2);
-  assert.equal(h.c.loadedTranscriptMessages[0].seq, 1);
-  assert.equal(h.c.loadedTranscriptMessages[1].content, latest.content);
+  assert.equal(h.c.loadedTranscriptMessages.length, 0);
   assert.equal(h.c.transcriptHasMore, false);
   assert.equal(h.c.stage.scrollTop, 30, 'older page retains its scroll anchor');
   assert.equal(h.c.stream.querySelectorAll('.tool-file-view').length, 0, 'older-page rerender stays lazy too');
@@ -167,6 +167,7 @@ test('opening a session and loading an older page preserve paging, raw results a
   assert.equal(rows.length, 2);
   rows.forEach(row => { row.open = true; row.dispatch('toggle'); });
   assert.equal(h.c.stream.querySelectorAll('.tool-file-view').length, 2, 'all details remain available');
+  assert.deepEqual(outputs, [older.content, latest.content], 'lazy output still receives every original byte');
 });
 
 function resultRow(h, name) {
@@ -258,14 +259,14 @@ test('task history paging retains raw reports and defers newly received rows', a
   const older = {seq: 1, role: 'tool', name: 'task', content: content('older')};
   h.c.j = async url => url.includes('&before=2') ? {messages: [older], has_more: false, before_seq: 1} : {messages: [latest], has_more: true, before_seq: 2};
   assert.equal(await h.c.resumeSession('task-chat', {}), true);
-  assert.deepEqual(calls, []); assert.equal(h.c.loadedTranscriptMessages[0].content, latest.content);
+  assert.deepEqual(calls, []); assert.equal(h.c.loadedTranscriptMessages.length, 0, 'no duplicate raw message-object history');
   h.c.stage.scrollHeight = 1000; h.c.stage.scrollTop = 30;
   await h.c.loadOlderTranscript();
   assert.deepEqual(calls, []); assert.equal(h.c.stage.scrollTop, 30);
   const rows = h.c.stream.querySelectorAll('.task-row');
   assert.equal(rows.length, 2); rows.forEach(row => { row.open = true; row.dispatch('toggle'); });
   assert.deepEqual(calls, ['older', 'latest']);
-  assert.equal(h.c.loadedTranscriptMessages[1].content, latest.content);
+  assert.equal(h.c.loadedTranscriptMessages.length, 0);
 });
 
 
@@ -329,7 +330,7 @@ test('failed older-page rendering releases temporary worker references without c
   const notices = []; h.c.toast = text => notices.push(text);
   await h.c.loadOlderTranscript();
   assert.equal(h.c.workerRows, workers); assert.equal(h.c.workerRows.current, worker); assert.equal(h.c.workerRows.orphan, undefined);
-  assert.equal(h.c.stream.querySelector('.tool-row'), existing); assert.equal(h.c.loadedTranscriptMessages.length, 1);
+  assert.equal(h.c.stream.querySelector('.tool-row'), existing); assert.equal(h.c.loadedTranscriptMessages.length, 0);
   assert.equal(h.c.transcriptLiveAppend, true); assert.equal(h.c.stream.querySelector('.history-older').disabled, false);
   assert.ok(notices[0].includes('fixture render failed'));
 });
@@ -462,4 +463,24 @@ test('task and continuation live rows do not format the input they replace with 
     assert.equal(row._body.children.length, 4);
     assert.equal(row._toolArgs, args);
   }
+});
+
+
+test('initial render failure retains its page for recovery; successful retry releases only wrappers', async () => {
+  const h = harness(), message = readLines(3), render = h.c.buildHistoryFragment;
+  h.c.j = async () => ({messages: [message], has_more: false, before_seq: 2});
+  const notices = []; h.c.toast = text => notices.push(text);
+  h.c.buildHistoryFragment = () => { throw Error('initial render fixture failed'); };
+  assert.equal(await h.c.resumeSession('retry-chat', {}), false);
+  assert.equal(h.c.loadedTranscriptMessages.length, 1);
+  assert.equal(h.c.loadedTranscriptMessages[0].content, message.content);
+  assert.ok(notices[0].includes('initial render fixture failed'));
+  h.c.buildHistoryFragment = render;
+  assert.equal(await h.c.resumeSession('retry-chat', {}), true);
+  assert.equal(h.c.loadedTranscriptMessages.length, 0);
+  const row = h.c.stream.querySelector('.tool-row');
+  assert.equal(row._body.children.length, 0);
+  row.open = true; row.dispatch('toggle');
+  assert.equal(row._body.querySelector('.tool-file-view').children.length, 3);
+  assert.ok(row._body.textContent.includes('payload-2'));
 });
