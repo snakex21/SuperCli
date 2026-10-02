@@ -1,0 +1,5 @@
+aab36df8848bcb0bd65e0d0b6d397664e19e7c6a8a57510268664d23518162c4  ../supercli-build-cache/bin/media.windows.test.exe
+e5e6e50af29c9b3220a127e5e58be07ef4573d0f14d6014f4492d6b1f24d1d5a  ../supercli-build-cache/bin/supercli
+fa03800c8e8b75598c2822defe701337ffce8b7bec199250252c9602b878aa9b  ../supercli-build-cache/bin/supercli-web
+cc1e37b6e8c3ce5d3043cb786627226731dd51970f70979cf9b2a31f563ae23c  ../supercli-build-cache/bin/supercli-web.exe
+c3e45d60f7e14a764c0ed5a8cb43cb96d2cdce412c09dbe2fbce146a8ba83484  ../supercli-build-cache/bin/supercli.exe

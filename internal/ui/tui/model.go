@@ -267,15 +267,17 @@ type SlashHandler func(ctx context.Context, args string) (string, error)
 
 // pendingAsk is the live state of an active ask_user interaction.
 type pendingAsk struct {
-	ID          string
-	done        <-chan struct{}
-	Question    string
-	Header      string
-	Options     []tools.AskOption
-	MultiSelect bool
-	AllowCustom bool
-	customMode  bool
-	custom      string
+	Confirmation bool
+	detailOffset int
+	ID           string
+	done         <-chan struct{}
+	Question     string
+	Header       string
+	Options      []tools.AskOption
+	MultiSelect  bool
+	AllowCustom  bool
+	customMode   bool
+	custom       string
 	// cursor is the currently focused option (0..len(Options)-1).
 	cursor int
 	// toggled tracks which options are checked in multi-select

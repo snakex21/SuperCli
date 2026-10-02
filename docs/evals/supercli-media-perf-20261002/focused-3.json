@@ -1,0 +1,25 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./internal/tools/media",
+    "./internal/tools/mcp",
+    "./internal/tools/interactive",
+    "./internal/system/config",
+    "./internal/agent",
+    "./internal/webgui",
+    "./internal/ui/tui",
+    "./internal/app"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 47.757,
+  "peak_group_rss_bytes": 452362240,
+  "peak_cache_bytes": 1255247872,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

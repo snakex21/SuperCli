@@ -38,9 +38,10 @@ func TestScreenshotScreenAndDisplayOnly(t *testing.T) {
 		t.Fatalf("metadata=%+v", metadata)
 	}
 	expectedDir := filepath.Join(dir, ".supercli", "snapshots")
-	if !filepath.IsAbs(metadata.Path) || filepath.Dir(metadata.Path) != expectedDir {
+	if !filepath.IsAbs(metadata.Path) {
 		t.Fatalf("path=%s", metadata.Path)
 	}
+	assertSameMediaFile(t, filepath.Dir(metadata.Path), expectedDir)
 	if metadata.PreviewPath != "snapshot:"+filepath.Base(metadata.Path) {
 		t.Fatalf("portable preview=%q", metadata.PreviewPath)
 	}

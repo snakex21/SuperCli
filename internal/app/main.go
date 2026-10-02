@@ -583,7 +583,7 @@ func Main() {
 			log.Printf("mcp: tool index rebuild: %v", err)
 		}
 	}
-	mcpManager := initMcp(dataDir, tomlCfg, registry, reindexTools)
+	mcpManager := initMcp(dataDir, tomlCfg, registry, reindexTools, askCh)
 	if mcpManager != nil {
 		defer mcpManager.StopAll()
 	}

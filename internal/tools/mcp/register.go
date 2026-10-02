@@ -29,6 +29,9 @@ func RegisterTools(m *Manager, reg *tools.Registry) int {
 	for _, name := range m.Names() {
 		s, _ := m.Get(name)
 		for _, td := range s.Tools() {
+			if !s.ToolAllowed(td.Name) {
+				continue
+			}
 			if err := reg.Register(wrapTool(s, td)); err == nil {
 				count++
 			}
@@ -62,7 +65,7 @@ func wrapTool(s *Server, td ToolDef) tools.Tool {
 				return tools.Result{Err: fmt.Errorf("mcp %s/%s: %s", s.Name, remote,
 					core.HeadTail(res.Text, core.ModelContentTailBytes, core.ModelContentTailBytes))}, nil
 			}
-			return tools.Result{Text: core.HeadTail(res.Text, mcpResultHeadBytes, mcpResultTailBytes)}, nil
+			return tools.Result{Text: core.HeadTail(res.Text, mcpResultHeadBytes, mcpResultTailBytes), Images: res.Images}, nil
 		},
 	}
 }

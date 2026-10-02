@@ -19,7 +19,9 @@ import (
 type Result struct {
 	Text  string
 	Image *ImageContent
-	Err   error
+	// Images carries additional native image blocks (e.g. MCP multi-image results).
+	Images []*ImageContent
+	Err    error
 	// RetainedText optionally holds a larger, bounded result behind Text's
 	// preview. Only OutputStore consumes it; it never enters history or UI JSON.
 	RetainedText string `json:"-"`

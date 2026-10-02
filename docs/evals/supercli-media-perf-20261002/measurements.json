@@ -1,0 +1,84 @@
+{
+  "BenchmarkReadImagePayload/png-8MiB/baseline": {
+    "ns_per_op": 2596059.0,
+    "allocated_bytes_per_op": 17081224.0,
+    "allocations_per_op": 122.0
+  },
+  "BenchmarkReadImagePayload/png-8MiB/optimized": {
+    "ns_per_op": 1701932.0,
+    "allocated_bytes_per_op": 8406704.0,
+    "allocations_per_op": 93.0
+  },
+  "BenchmarkReadImagePayload/invalid-8MiB/baseline": {
+    "ns_per_op": 2143188.0,
+    "allocated_bytes_per_op": 17071800.0,
+    "allocations_per_op": 113.5
+  },
+  "BenchmarkReadImagePayload/invalid-8MiB/optimized": {
+    "ns_per_op": 27661.0,
+    "allocated_bytes_per_op": 8608.0,
+    "allocations_per_op": 81.5
+  },
+  "BenchmarkMCPFragmentedText/100/baseline": {
+    "ns_per_op": 228408.0,
+    "allocated_bytes_per_op": 701368.0,
+    "allocations_per_op": 315.0
+  },
+  "BenchmarkMCPFragmentedText/100/optimized": {
+    "ns_per_op": 149436.0,
+    "allocated_bytes_per_op": 95416.0,
+    "allocations_per_op": 229.0
+  },
+  "BenchmarkMCPFragmentedText/1000/baseline": {
+    "ns_per_op": 9330637.0,
+    "allocated_bytes_per_op": 67535569.0,
+    "allocations_per_op": 3018.0
+  },
+  "BenchmarkMCPFragmentedText/1000/optimized": {
+    "ns_per_op": 1500746.0,
+    "allocated_bytes_per_op": 793034.0,
+    "allocations_per_op": 2039.0
+  },
+  "BenchmarkTUIUnchangedStreamFrame/4096": {
+    "ns_per_op": 47443.0,
+    "allocated_bytes_per_op": 131168.0,
+    "allocations_per_op": 7.0
+  },
+  "BenchmarkTUIUnchangedStreamFrame/32768": {
+    "ns_per_op": 53336.0,
+    "allocated_bytes_per_op": 131168.0,
+    "allocations_per_op": 7.0
+  },
+  "BenchmarkTUIStreamEvents": {
+    "ns_per_op": 67709635.0,
+    "allocated_bytes_per_op": 51918630.0,
+    "allocations_per_op": 125555.0
+  },
+  "BenchmarkReadImagePayload/png-1920x1080-original/baseline": {
+    "ns_per_op": 1658730.0,
+    "allocated_bytes_per_op": 14914508.0,
+    "allocations_per_op": 120.0
+  },
+  "BenchmarkReadImagePayload/png-1920x1080-original/optimized": {
+    "ns_per_op": 661321.0,
+    "allocated_bytes_per_op": 6240152.0,
+    "allocations_per_op": 93.0
+  },
+  "tui_after": {
+    "BenchmarkTUIUnchangedStreamFrame/4096": {
+      "ns_per_op": 44630.0,
+      "allocated_bytes_per_op": 98400.0,
+      "allocations_per_op": 7.0
+    },
+    "BenchmarkTUIUnchangedStreamFrame/32768": {
+      "ns_per_op": 42003.0,
+      "allocated_bytes_per_op": 98400.0,
+      "allocations_per_op": 7.0
+    },
+    "BenchmarkTUIStreamEvents": {
+      "ns_per_op": 64603613.0,
+      "allocated_bytes_per_op": 40120238.0,
+      "allocations_per_op": 125528.0
+    }
+  }
+}

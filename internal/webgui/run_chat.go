@@ -131,6 +131,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if completion != nil && ev.Type == "session_activity" {
 			completion.accepted = true
 		}
+		if len(ev.Images) > 0 {
+			paths := make([]string, 0, len(ev.Images))
+			for _, path := range ev.Images {
+				if token := sessionImagePreviewPath(streamSessionID, path); token != "" {
+					paths = append(paths, token)
+				}
+			}
+			ev.Images = paths
+		}
 		eventCount++
 		lastType = ev.Type
 		if ev.Type == "done" || ev.Type == "error" {

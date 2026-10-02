@@ -1,0 +1,139 @@
+[?25l[?1049h[2J[H[?25l[?2004h[?1002h[?1006h[H│                                    │ │  Tab        action centre          │   
+│  Welcome back                      │ │  Enter      send message           │   
+│  Ask for a change, inspect files,  │ │  @          attach a project file  │   
+│  or run a plan.                    │ │  /          advanced commands      │   
+│                                    │ │                                    │   
+│  model no model                    │ │  Esc clears · Ctrl+C interrupts ·  │   
+│                                    │ │  Shift+E expands tools             │   
+╰────────────────────────────────────╯ │                                    │   
+                                       ╰────────────────────────────────────╯   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+…[K
+…[K
+…[K
+╭──────────────────────────────────────────╮[K
+│ > Message SuperCli · Tab opens           │[K
+╰──────────────────────────────────────────╯[K
+While working: type + Enter queues · Tab actions · Enter send · Ctrl+O files · A[24;H[H> SuperCli 1.0.3 · no model                                              ● ready
+Welcome back · ask for a change, inspect files, or run a plan                   
+model no model                                                                  
+Tab actions · @ attach file · / advanced                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+Workspace · …/supercli-tui-offline-e9y__6i_/project[K
+Tokens 0 · 0 today[K
+Context waiting · cache not reported[K
+╭────────────────────────────────────────────────────────────────────────────╮[K
+│ > Message SuperCli · Tab opens actions                                     │[K
+╰────────────────────────────────────────────────────────────────────────────╯[K
+Tab actions · Enter send · Ctrl+O files · Ctrl+C stop[K[J[22;H[H
+> SuperCli · portable AI coding agent                                           
+Welcome back · ask for a change, inspect files, or run a plan                   
+model no model                                                                  
+Tab actions · @ attach file · / advanced                                        
+
+
+────────────────────────────────────────────────────────────────────────────────
+Workspace · …/supercli-tui-offline-e9y__6i_/project[K
+Tokens 0 · 0 today[K
+Context waiting · cache not reported[K
+╭─ Commands · /help──────────────────────────────────────────────────────────╮[K
+│> /help               system    show this help message                      │[K
+├────────────────────────────────────────────────────────────────────────────┤[K
+│  show this help message                                                    │[K
+├────────────────────────────────────────────────────────────────────────────┤[K
+│  ↑/↓ select · Tab insert · Enter run · Esc close                           │[K
+╰────────────────────────────────────────────────────────────────────────────╯[K
+
+│ > /help                                                                    │[K
+
+[22;H[H
+  /help         show this help message                                          
+  /quit         exit SuperCli (alias: /exit)                                    
+                                                                                
+ more: /reflect /workers /context /mcp /sandbox /allow-all /diff /usage /undo   
+/redo /test /account /accounts /logout /update                                  
+ type /help all for every command with its description                          
+                                                                                
+Keys: PgUp/PgDn scroll · Ctrl+C quit/cancel · Esc clear input · q types q       
+      Alt+Enter (or Ctrl+J) insert newline · Ctrl+Y copy last reply · Ctrl+V    
+paste (keeps newlines)                                                          
+      Ctrl+R open reasoning effort menu                                         
+      Shift+T toggle thinking · Shift+E expand tool output                      
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+Workspace · …/supercli-tui-offline-e9y__6i_/project[K
+Tokens 0 · 0 today[K
+Context waiting · cache not reported[K
+
+
+
+[22;H[H
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+│ > /help /quit                                                              │[K
+
+[22;H[H
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+│ > Message SuperCli · Tab opens actions                                     │[K
+
+[22;H
+Traceback (most recent call last):
+  File "/workspace/scratch/cdc79842cc4e/supercli-review-qa-tools/tui_smoke.py", line 25, in <module>
+    try:proc.wait(timeout=5)
+        ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 2045, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/workspace/scratch/cdc79842cc4e/supercli-build-cache/bin/supercli', '--echo', '--home', '/workspace/scratch/cdc79842cc4e/supercli-build-cache/tmp/supercli-tui-offline-e9y__6i_/project', '--data-dir', '/workspace/scratch/cdc79842cc4e/supercli-build-cache/tmp/supercli-tui-offline-e9y__6i_/data']' timed out after 5 seconds

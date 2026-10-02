@@ -1,0 +1,18 @@
+{
+  "command": [
+    "sh",
+    "-c",
+    "GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -ldflags=\"-s -w\" -o ../supercli-build-cache/bin/supercli.exe ./cmd/supercli && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -ldflags=\"-s -w -H windowsgui\" -o ../supercli-build-cache/bin/supercli-web.exe ./cmd/supercli-web && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o ../supercli-build-cache/bin/media.windows.test.exe ./internal/tools/media"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 103.319,
+  "peak_group_rss_bytes": 644218880,
+  "peak_cache_bytes": 1270697984,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

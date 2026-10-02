@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "scope": "actual Linux GUI HTTP/SSE backend and child MCP, no browser renderer or paid provider",
+  "events": [
+    "session",
+    "session_activity",
+    "notice",
+    "tool_call",
+    "question",
+    "question_closed",
+    "tool_result",
+    "tool_call",
+    "tool_result",
+    "message",
+    "done"
+  ],
+  "image_bytes": [
+    95301
+  ],
+  "video_range_bytes": [
+    24
+  ],
+  "confirmation_questions": 1,
+  "durable_session": true,
+  "replay_has_portable_image": true
+}

@@ -29,6 +29,8 @@
 | Doc | Topic |
 |------|--------|
 | [portable-mcp.md](./portable-mcp.md) | MCP packages beside data dir |
+| [media-generation.md](./media-generation.md) | Explicit image/video providers, consent and bounded outputs |
+| [computer-use-mcp.md](./computer-use-mcp.md) | Scoped computer-use MCP calls and native images |
 | [builtin-skills.md](./builtin-skills.md) | Skill catalog zip |
 | [telemetry.md](./telemetry.md) | Low-overhead phase timers (WebGUI) |
 

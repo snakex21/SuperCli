@@ -49,6 +49,11 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.ToolResultEvent:
+		for _, image := range e.Images {
+			if image.Path != "" {
+				e.Output += "\nImage: " + image.Path
+			}
+		}
 		name := m.toolNames[e.ID]
 		if name == "" {
 			name = m.lastToolName
