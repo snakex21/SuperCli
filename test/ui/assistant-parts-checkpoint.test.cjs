@@ -180,3 +180,69 @@ test('deterministic mixed protocol chunks retain exact full-parser parity',()=>{
     }
   }
 });
+
+// Exercise the real renderer's success/failure tracking. Part nodes are minimal
+// doubles; the incremental Markdown and scroll suites cover their DOM/layout
+// contracts separately.
+function realRenderHarness() {
+  const h=harness(),counts={renders:0,parses:0,scrolls:0},parse=h.c.assistantTextParts;
+  h.c.assistantTextParts=function(){counts.parses++;return parse.apply(h.c,arguments);};
+  h.c.assistantPart=part=>({kind:part.kind,text:part.text,markdown:true,node:{},paint(){},remove(){}});
+  h.c.renderAssistant=n=>{counts.renders++;h.renderAssistant(n);};
+  h.c.smartScroll=()=>counts.scrolls++;
+  return {...h,counts};
+}
+
+test('done, EOF and seal reuse one complete successful render and still scroll',()=>{
+  for(const source of ['', 'plain 中文 😀', '<thinking>'+('thought\n'.repeat(10000))+'</thinking>Answer.']){
+    const h=realRenderHarness(),n=node(source);
+    h.c.flushAssistantRender(n);
+    const states=n._assistantParts,first=states[0];
+    h.c.flushAssistantRender(n);h.c.sealAssistantSegment(n);
+    assert.equal(h.counts.parses,1);assert.equal(h.counts.renders,1);
+    assert.equal(h.counts.scrolls,3);
+    assert.equal(n._assistantParts,states);assert.equal(n._assistantParts[0],first);
+    assert.deepEqual(h.plain(states),h.plain(h.c.assistantTextParts(source)));
+    assert.equal(n._partsCache,null);assert.equal(n._renderTimer,null);assert.equal(n._sealed,true);
+  }
+});
+
+test('source replacement, partial display and render failure cannot reuse completion',()=>{
+  const h=realRenderHarness(),n=node('<thinking>old</thinking>answer');
+  h.c.flushAssistantRender(n);h.c.sealAssistantSegment(n);
+  for(const replacement of ['<thinking>fresh</thinking>different answer', '', 'short', 'unclosed <think>thought']){
+    const renders=h.counts.renders;n._raw=replacement;h.c.flushAssistantRender(n);
+    assert.equal(h.counts.renders,renders+1,'recovery source replacement');
+    assert.deepEqual(h.plain(n._assistantParts),h.plain(h.c.assistantTextParts(replacement)));
+  }
+  const partial=realRenderHarness(),p=node('full answer');
+  partial.c.flushAssistantRender(p);
+  p._displayParts=[{kind:'markdown',text:'full'}];
+  partial.c.flushAssistantRender(p);
+  assert.equal(partial.counts.renders,2,'pending display must get an authoritative flush');
+  assert.deepEqual(partial.plain(p._assistantParts),[{kind:'markdown',text:'full answer'}]);
+  const failed=realRenderHarness(),f=node('retry this answer'),part=failed.c.assistantPart;
+  failed.c.assistantPart=()=>{throw Error('fixture renderer failure');};
+  failed.c.flushAssistantRender(f);
+  assert.equal(f._renderedSource,null);assert.equal(f._assistantParts,null);assert.equal(f.textContent,f._raw);
+  failed.c.assistantPart=part;failed.c.flushAssistantRender(f);
+  assert.equal(failed.counts.renders,2);
+  assert.deepEqual(failed.plain(f._assistantParts),[{kind:'markdown',text:'retry this answer'}]);
+});
+
+test('completion drains paced text and closes reasoning before reusing its render',()=>{
+  const h=realRenderHarness(),n=node('First');
+  h.c.scheduleAssistantRender(n);h.advance();h.c.appendAssistantSource(n,' several queued words 中文 😀');h.c.scheduleAssistantRender(n);
+  assert.ok(h.frames.size,'fixture must have pending paced output');
+  h.c.flushAssistantRender(n);
+  assert.deepEqual(h.plain(n._assistantParts),[{kind:'markdown',text:'First several queued words 中文 😀'}]);
+  assert.equal(h.frames.size,0);assert.equal(n._displayParts,null);assert.equal(n._pacedParts,null);
+  const renders=h.counts.renders;h.c.flushAssistantRender(n);
+  assert.equal(h.counts.renders,renders,'only a fully drained successful paint can be reused');
+  const reason=realRenderHarness(),r=node('<thinking>unfinished');r._reasoningOpen=true;
+  reason.c.flushAssistantRender(r);reason.c.sealAssistantSegment(r);
+  assert.equal(reason.counts.renders,2,'reasoning closure changes authoritative bytes');
+  assert.equal(r._reasoningOpen,false);assert.equal(r._raw,'<thinking>unfinished</thinking>\n');
+  assert.deepEqual(reason.plain(r._assistantParts),[{kind:'thinking',text:'unfinished'},{kind:'markdown',text:'\n'}]);
+  reason.c.flushAssistantRender(r);assert.equal(reason.counts.renders,2);
+});

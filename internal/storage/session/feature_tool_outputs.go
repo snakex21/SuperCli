@@ -46,10 +46,11 @@ func (w *Writer) SaveToolOutput(ctx context.Context, handle, text string) error 
 // the handle rather than the currently selected session. There is no list API.
 // Deleting the owning session removes its cache rows; evicted references expire.
 func (w *Writer) ReadToolOutput(ctx context.Context, handle string) (string, error) {
-	// Scan directly into the final string: []byte would clone the blob before
-	// a second copy converts it to the immutable text returned to callers.
+	// Request text at the driver boundary so Scan does not copy a Go blob
+	// into a second string. The stored BLOB and its byte-based limits stay
+	// unchanged; embedded NUL and non-UTF-8 bytes are preserved.
 	var text string
-	err := w.store.db.QueryRowContext(ctx, "SELECT content FROM tool_outputs WHERE handle = ?", handle).Scan(&text)
+	err := w.store.db.QueryRowContext(ctx, "SELECT CAST(content AS TEXT) FROM tool_outputs WHERE handle = ?", handle).Scan(&text)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("unknown or expired output handle %q", handle)
 	}

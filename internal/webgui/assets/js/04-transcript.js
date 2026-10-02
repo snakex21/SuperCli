@@ -525,7 +525,10 @@ function renderAssistant(node) {
       }
     }
     while (states.length > parts.length) states.pop().remove();
+    // Only a complete paint may satisfy repeated done/EOF/seal flushes.
+    node._renderedSource = node._displayParts ? null : node._raw;
   } catch (renderErr) {
+    node._renderedSource = null;
     node.textContent = node._raw;
     node._assistantParts = null;
     node._displayParts = null;
@@ -650,10 +653,13 @@ function scheduleAssistantRender(node) {
 
 function flushAssistantRender(node) {
   if (!node) return;
+  var alreadyRendered = !node._displayParts && !node._pacedParts &&
+    node._renderedSource != null && node._renderedSource === node._raw;
   if (node._renderTimer != null) { cancelAnimationFrame(node._renderTimer); node._renderTimer = null; }
   node._pacedParts = null;
   node._displayParts = null;
-  paintAssistant(node, performance.now());
+  if (alreadyRendered) smartScroll();
+  else paintAssistant(node, performance.now());
   node._partsCache = null;
 }
 
