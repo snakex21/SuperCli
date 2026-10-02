@@ -760,7 +760,11 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   var items = Object.values(workerOverview).sort(function (a, b) {
     return a.id.localeCompare(b.id, undefined, { numeric: true });
   });
-  items.forEach(function (w) { $("#worker-overview-list").appendChild(w.button); });
+  var list = $("#worker-overview-list");
+  items.forEach(function (w, index) {
+    var next = list.children[index] || null;
+    if (next !== w.button) list.insertBefore(w.button, next);
+  });
   var active = items.filter(function (w) { return w.status === "running"; }).length;
   $("#worker-overview-summary").textContent = t("task.workers") + " · " +
     t("task.active") + ": " + active + " / " + items.length;

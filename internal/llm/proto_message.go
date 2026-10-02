@@ -123,7 +123,18 @@ func resolveImageURL(img *ImageRef) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("read image %q: %w", img.Path, err)
 		}
-		data = base64.StdEncoding.EncodeToString(buf)
+		if img.MediaType == "" || len(buf) == 0 {
+			return "", fmt.Errorf("image part: incomplete (need URL, Data, or Path+MediaType)")
+		}
+		var uri strings.Builder
+		uri.Grow(len("data:") + len(img.MediaType) + len(";base64,") + base64.StdEncoding.EncodedLen(len(buf)))
+		uri.WriteString("data:")
+		uri.WriteString(img.MediaType)
+		uri.WriteString(";base64,")
+		encoder := base64.NewEncoder(base64.StdEncoding, &uri)
+		_, _ = encoder.Write(buf)
+		_ = encoder.Close()
+		return uri.String(), nil
 	}
 	if img.MediaType == "" || data == "" {
 		return "", fmt.Errorf("image part: incomplete (need URL, Data, or Path+MediaType)")
