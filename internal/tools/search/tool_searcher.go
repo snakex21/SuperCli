@@ -1,6 +1,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -151,7 +152,7 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 			Server:    h.Server,
 			Score:     h.Score,
 			Signature: toolSignature(tool.Name, tool.Schema),
-			Schema:    tool.Schema,
+			Schema:    compactDiscoverySchema(tool.Schema),
 		})
 	}
 	// Truthful hint: only promise a callable schema when we
@@ -168,6 +169,18 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		return Result{Err: fmt.Errorf("tool_search: marshal: %w", err)}, nil
 	}
 	return Result{Text: string(out)}, nil
+}
+
+// Compact only the discovery copy; registry and provider contracts retain their bytes.
+func compactDiscoverySchema(schema string) string {
+	if schema == "" {
+		return schema
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(schema)); err != nil {
+		return schema
+	}
+	return compact.String()
 }
 
 // exactToolNameHit returns a single perfect hit when the query is exactly

@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"supercli/internal/system/browser"
 )
 
 //go:embed assets/*
@@ -122,6 +124,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/user-instructions", s.handleUserInstructions)
 	mux.HandleFunc("/api/scratchpad", s.handleScratchpad)
 
+	// User-invoked site preview and system browser.
+	mux.HandleFunc("/api/browser/resolve", siteBrowserHandler(false, nil))
+	mux.HandleFunc("/api/browser/open", siteBrowserHandler(true, browser.Open))
+
 	// Native folder picker (Windows dialog)
 	mux.HandleFunc("/api/folder-picker", s.handleFolderPicker)
 	mux.HandleFunc("/api/file-picker", s.handleFilePicker)
@@ -193,6 +199,9 @@ func (s *Server) withLocalGuard(next http.Handler) http.Handler {
 			w.Header().Add("WWW-Authenticate", `Basic realm="SuperCli remote", charset="UTF-8"`)
 			w.Header().Add("WWW-Authenticate", `Bearer realm="SuperCli"`)
 			http.Error(w, "unauthorized: remote session token required", http.StatusUnauthorized)
+			return
+		}
+		if !guardPreviewOrigin(w, r) {
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -1,0 +1,35 @@
+/* Experimental Sciter layout overrides; the production CSS is unchanged. */
+html,body {width:*;height:*;}
+.shell{flow:horizontal;width:*;height:*;}
+.main{flow:vertical;width:*;height:*;min-width:0;}
+.topbar{flow:horizontal;width:*;vertical-align:middle;}
+.topbar .spacer{width:*;}
+.topbar .brand,.model-btn,.think-btn,.project-folder-btn{flow:horizontal;vertical-align:middle;width:max-content;}
+.topbar .icon-btn{width:28px;height:28px;}
+.stage{width:*;height:*;min-height:100px;overflow-y:auto;}
+.column{width:*;max-width:1060px;margin-left:auto;margin-right:auto;}
+.composer-wrap{width:*;height:max-content;}
+.composer,.composer .box{width:*;flow:vertical;}
+.composer .row{flow:horizontal;width:*;}
+.composer .row .hint{width:*;}
+.composer textarea{width:*;height:76px;min-height:50px;}
+.sidebar{flow:vertical;width:330px;height:*;}
+.sidebar-head,.side-tabs{flow:horizontal;width:*;}
+.side-tabs button{width:*;}
+.side-pane.active{flow:vertical;display:block;height:*;}
+.side-list,.stats-block{height:*;overflow-y:auto;}
+.overlay{position:fixed;left:0;top:0;width:*;height:*;background:#0008;}
+.panel{flow:horizontal;width:90%;height:85%;margin:*;}
+.panel-nav{flow:vertical;width:180px;height:*;}
+.panel-body{flow:vertical;width:*;height:*;}
+.panel-content{width:*;height:*;overflow-y:auto;}
+.panel-head{flow:horizontal;width:*;}
+.panel-head h2{width:*;}
+[hidden]{display:none!important;}
+
+dialog:not([open]){display:none;}
+.composer{width:*;max-width:1060px;margin-left:auto;margin-right:auto;padding:14px 26px;}
+.composer .box{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;}
+.composer textarea{background:var(--surface);color:var(--text);border:none;padding:4px;overflow-y:auto;}
+.composer .hint{width:*;}
+.composer button{width:max-content;}

@@ -161,6 +161,8 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		tools.NewReadDocx(home, 0).Spec(),
 		tools.NewReadXlsx(home, 0).Spec(),
 		tools.NewReadZip(home, 0).Spec(),
+		tools.NewSendScreenshot(e.DataDir(), nil).Spec(),
+		tools.NewShowMedia(home).Spec(),
 	} {
 		reg.MustRegister(sp)
 	}

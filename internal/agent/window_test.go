@@ -450,3 +450,12 @@ func TestMaybeAutoCompact_HugeLastTurnFallsBackToFull(t *testing.T) {
 		t.Errorf("compactSplit = %d, want %d (full compaction)", got, len(msgs))
 	}
 }
+
+func TestResolveContextWindowExactMatchKeepsPriorityOverAmbiguousAlias(t *testing.T) {
+	caps := llm.NewCapabilityRegistry()
+	caps.RegisterAll([]llm.ModelInfo{{ID: "model", ContextLength: 32000}, {ID: "other/model", ContextLength: 64000}})
+	got := ResolveContextWindow("model", 0, 0, caps, nil, "http://localhost:1234/v1")
+	if got.Tokens != 32000 || got.Source != "catalog" {
+		t.Fatalf("exact catalog match lost priority: %+v", got)
+	}
+}

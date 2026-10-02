@@ -3,8 +3,12 @@
 // English and language metadata are served from the embedded JSON catalog by
 // /locales/en.js. Only the selected additional catalog is loaded on demand.
 var languageLoads = Object.create(null);
-var languageRefreshers = [];
-function registerLanguageRefresh(node, refresh) { languageRefreshers.push({node:node, refresh:refresh}); }
+// Store dynamic refreshers on their DOM owner, so removed panels and their
+// captured report data become collectible without waiting for a language change.
+function registerLanguageRefresh(node, refresh) {
+  node._languageRefresh = refresh;
+  node.setAttribute("data-i18n-refresh", "");
+}
 function normalizeLanguage(value) {
   var locale = String(value || "").trim().replace(/_/g, "-").split(/[:.@]/)[0].toLowerCase();
   if (locale === "no" || locale.indexOf("no-") === 0) locale = "nb";
@@ -94,6 +98,7 @@ function applyI18n() {
   $$("[data-i18n-ph]").forEach(function (n) { n.placeholder = t(n.dataset.i18nPh); });
   $$("[data-i18n-title]").forEach(function (n) { n.title = t(n.dataset.i18nTitle); });
   $$("[data-i18n-aria]").forEach(function (n) { n.setAttribute("aria-label", t(n.dataset.i18nAria)); });
-  languageRefreshers = languageRefreshers.filter(function (item) { return item.node.isConnected !== false; });
-  languageRefreshers.forEach(function (item) { item.refresh(); });
+  $$("[data-i18n-refresh]").forEach(function (node) {
+    if (typeof node._languageRefresh === "function") node._languageRefresh();
+  });
 }

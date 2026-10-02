@@ -1,6 +1,6 @@
 "use strict";
 
-sections.providers = function () { renderProvidersList(); };
+sections.providers = function () { return renderProvidersList(); };
 
 function providerModelCount(models) {
   return Array.isArray(models) ? models.length : (Number(models) || 0);
@@ -184,7 +184,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
   var selectedName = selectedTemplate && !selectedTemplate.Custom ? selectedTemplate.Name : "";
   var lbl = el("div", "g-label", existing
     ? t("prov.save") + ": " + existing.Name
-    : (selectedName || (t("prov.custom"))));
+    : ((selectedTemplate && selectedTemplate.DisplayName) || selectedName || (t("prov.custom"))));
   var back = el("button", "g-act", "‹ " + t("common.back"));
   back.addEventListener("click", function () {
     if (existing) renderProvidersList();
@@ -192,6 +192,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
   });
   lbl.appendChild(back);
   g.appendChild(lbl);
+  if (selectedTemplate && selectedTemplate.Desc) g.appendChild(el("div", "note", selectedTemplate.Desc));
 
   var form = el("form", "form-grid");
   form.autocomplete = "off";

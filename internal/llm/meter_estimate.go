@@ -1,6 +1,9 @@
 package llm
 
-import "strings"
+import (
+	"bytes"
+	"strings"
+)
 
 // Cheap, calibrated prompt-token estimator for compaction decisions.
 // This is THE message-slice estimator — the agent loop, the /context
@@ -38,6 +41,23 @@ func nonWhitespaceLen(s string) int {
 	n := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
+		case ' ', '\t', '\n', '\r':
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// nonWhitespaceBytes applies the same byte count to native JSON payloads without
+// allocating a string copy of the continuation state.
+func nonWhitespaceBytes(raw []byte) int {
+	if len(raw) >= 64 {
+		return len(raw) - bytes.Count(raw, []byte(" ")) - bytes.Count(raw, []byte("\t")) - bytes.Count(raw, []byte("\n")) - bytes.Count(raw, []byte("\r"))
+	}
+	n := 0
+	for _, b := range raw {
+		switch b {
 		case ' ', '\t', '\n', '\r':
 		default:
 			n++

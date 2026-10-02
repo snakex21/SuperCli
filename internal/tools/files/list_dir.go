@@ -49,7 +49,8 @@ func (t *ListDirTool) Spec() Tool {
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Folder; default working directory."},
-    "depth": {"type": "integer", "minimum": 1, "maximum": 4, "description": "Levels; default 1."}
+    "depth": {"type": "integer", "minimum": 1, "maximum": 4, "description": "Levels; default 1."},
+    "limit": {"type": "integer", "minimum": 1, "description": "Total entries; default 500, capped by configured maximum."}
   }
 }`,
 		Fn: t.Execute,
@@ -59,6 +60,7 @@ func (t *ListDirTool) Spec() Tool {
 type listDirArgs struct {
 	Path  string `json:"path"`
 	Depth *int   `json:"depth"`
+	Limit *int   `json:"limit"`
 }
 
 // Execute lists the directory named by args.Path (default: the
@@ -80,6 +82,14 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	if depth < 1 || depth > 4 {
 		err := fmt.Errorf("list_dir: depth must be between 1 and 4")
 		return Result{Err: err}, err
+	}
+	maxEntries := t.MaxEntries
+	if p.Limit != nil {
+		if *p.Limit < 1 {
+			err := fmt.Errorf("list_dir: limit must be at least 1")
+			return Result{Err: err}, err
+		}
+		maxEntries = min(maxEntries, *p.Limit)
 	}
 	path := strings.TrimSpace(p.Path)
 	// Some local models serialize an empty path twice and produce a JSON
@@ -113,7 +123,9 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 
 	if depth > 1 {
-		return t.listTree(ctx, dir, depth)
+		bounded := *t // per-call cap; concurrent callers keep the configured tool unchanged
+		bounded.MaxEntries = maxEntries
+		return bounded.listTree(ctx, dir, depth)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -123,7 +135,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	var lines []string
 	truncated := false
 	for _, d := range entries {
-		if len(lines) >= t.MaxEntries {
+		if len(lines) >= maxEntries {
 			truncated = true
 			break
 		}
@@ -144,7 +156,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	}
 	out := fmt.Sprintf("%s contains %d item(s):\n%s", dir, len(lines), strings.Join(lines, "\n"))
 	if truncated {
-		out += fmt.Sprintf("\n... (showing first %d of %d entries; list a subfolder to narrow, or use ctx_execute for the full listing)", t.MaxEntries, len(entries))
+		out += fmt.Sprintf("\n... (showing first %d of %d entries; list a subfolder to narrow, or use ctx_execute for the full listing)", maxEntries, len(entries))
 	}
 	return Result{Text: out}, nil
 }

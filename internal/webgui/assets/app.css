@@ -445,6 +445,7 @@ a:hover { text-decoration: underline; }
   object-fit: contain; background: var(--bg);
 }
 .sent-attachment-gallery:not(.single) .sent-attachment-preview img { height: 170px; }
+.sent-media-attachment { padding: 12px; }
 .msg-user:has(.msg-rewind) { padding-right: 116px; }
 .msg-rewind {
   position: absolute; top: 7px; right: 8px;
@@ -940,6 +941,8 @@ a:hover { text-decoration: underline; }
   display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain;
 }
 .attachment-preview-content iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.attachment-preview-content video { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.attachment-preview-content audio { width: min(600px, calc(100% - 24px)); }
 .composer.drop-target .box { border-color: var(--accent); background: color-mix(in srgb, var(--surface) 92%, var(--accent)); }
 .send-btn {
   background: var(--accent); color: #fff;

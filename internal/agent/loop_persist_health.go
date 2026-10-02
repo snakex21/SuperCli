@@ -134,11 +134,22 @@ func (h *persistHealth) noteFailureLocked(op string, err error) string {
 		op, err)
 }
 
+// dequeueLocked releases a successfully written or already evicted message.
+// Unwritten messages stay intact; an empty queue owns no obsolete backing array.
+// Caller holds h.mu and guarantees the queue is non-empty.
+func (h *persistHealth) dequeueLocked() {
+	h.pending[0] = llm.Message{}
+	h.pending = h.pending[1:]
+	if len(h.pending) == 0 {
+		h.pending = nil
+	}
+}
+
 // enqueueLocked buffers a message whose append failed, evicting
 // the oldest entry when the buffer is full. Caller holds h.mu.
 func (h *persistHealth) enqueueLocked(msg llm.Message) {
 	if len(h.pending) >= persistPendingMax {
-		h.pending = h.pending[1:]
+		h.dequeueLocked()
 		h.dropped++
 	}
 	h.pending = append(h.pending, msg)
@@ -165,7 +176,7 @@ func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) {
 			l.persistNotify(warn)
 			return
 		}
-		h.pending = h.pending[1:]
+		h.dequeueLocked()
 	}
 
 	if err := l.writer.AppendMessage(ctx, msg); err != nil {
@@ -213,8 +224,7 @@ func (l *Loop) retryPendingAppends(ctx context.Context) {
 			l.persistNotify(warn)
 			return
 		}
-		h.pending[0] = llm.Message{}
-		h.pending = h.pending[1:]
+		h.dequeueLocked()
 	}
 	var recovered string
 	if h.outage {

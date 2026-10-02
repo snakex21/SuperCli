@@ -1,10 +1,6 @@
 package agent
 
-import (
-	"strings"
-
-	"supercli/internal/llm"
-)
+import "supercli/internal/llm"
 
 // defaultContextWindow is the conservative fallback when the
 // model's context window cannot be resolved from config,
@@ -107,27 +103,7 @@ func ResolveContextWindow(model string, configured, providerTokens int, caps *ll
 		// Router providers often use a short active id while catalogs store a
 		// canonical provider/model id. Accept only a unique suffix match so two
 		// providers advertising the same short id can never select each other.
-		short := model
-		if slash := strings.LastIndexByte(short, '/'); slash >= 0 {
-			short = short[slash+1:]
-		}
-		matched := 0
-		matches := 0
-		for _, info := range caps.All() {
-			candidate := info.ID
-			if slash := strings.LastIndexByte(candidate, '/'); slash >= 0 {
-				candidate = candidate[slash+1:]
-			}
-			if strings.EqualFold(candidate, short) && info.ContextLength > 0 {
-				matches++
-				if matches > 1 {
-					matched = 0
-					break
-				}
-				matched = info.ContextLength
-			}
-		}
-		if matched > 0 {
+		if matched := caps.UniqueSuffixContextLength(model); matched > 0 {
 			return ContextWindowResolution{Tokens: matched, Source: "catalog-alias"}
 		}
 	}

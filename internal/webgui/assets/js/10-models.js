@@ -13,6 +13,8 @@ function togglePalette(show) {
     renderModelList($("#model-search").value.trim().toLowerCase()); // cached list: instant
     loadModels(); // then refresh quietly
     setTimeout(function () { $("#model-search").focus(); }, 30);
+  } else {
+    $("#model-list").innerHTML = "";
   }
 }
 $("#model-btn").addEventListener("click", function () { togglePalette(); });
@@ -116,8 +118,11 @@ $("#model-context-input").addEventListener("keydown", function (event) {
 });
 
 function renderModelList(filter) {
+  renderActiveContextControl();
   var list = $("#model-list");
   list.innerHTML = "";
+  // The cached metadata is enough until the picker becomes visible.
+  if (palette.hidden) return;
   paletteModels(modelCache).forEach(function (m) {
     if (filter && (m.id + " " + m.provider).toLowerCase().indexOf(filter) < 0) return;
     var isActive = m.id === activeModelID && (!activeProviderID || m.provider === activeProviderID);
@@ -161,7 +166,6 @@ function renderModelList(filter) {
     list.appendChild(row);
   });
   if (!list.children.length) list.innerHTML = '<div class="side-empty">—</div>';
-  renderActiveContextControl();
 }
 $("#model-search").addEventListener("input", function () {
   renderModelList(this.value.trim().toLowerCase());

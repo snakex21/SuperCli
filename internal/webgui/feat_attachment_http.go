@@ -20,23 +20,9 @@ func (s *Server) handleAttachmentUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatAttachmentsBytes+attachmentUploadOverhead)
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
+	reader, err := r.MultipartReader()
+	if err != nil {
 		http.Error(w, "invalid attachment upload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	headers := r.MultipartForm.File["files"]
-	if len(headers) == 0 {
-		headers = r.MultipartForm.File["file"]
-	}
-	if len(headers) == 0 {
-		http.Error(w, "no files uploaded", http.StatusBadRequest)
-		return
-	}
-	if len(headers) > maxChatAttachments {
-		http.Error(w, fmt.Sprintf("too many files: %d (maximum %d)", len(headers), maxChatAttachments), http.StatusBadRequest)
 		return
 	}
 
@@ -57,36 +43,47 @@ func (s *Server) handleAttachmentUpload(w http.ResponseWriter, r *http.Request) 
 	}()
 
 	var total int64
-	paths := make([]string, 0, len(headers))
-	for index, header := range headers {
-		if header.Size > maxChatAttachmentBytes {
-			http.Error(w, fmt.Sprintf("%q is too large", header.Filename), http.StatusBadRequest)
-			return
+	paths := make([]string, 0, maxChatAttachments)
+	// Stream straight into the portable staging directory. ParseMultipartForm
+	// retains megabytes of file data and spills larger files into OS temp.
+	for {
+		source, err := reader.NextPart()
+		if err == io.EOF {
+			break
 		}
-		source, err := header.Open()
 		if err != nil {
-			http.Error(w, "open uploaded attachment: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "read uploaded attachment: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		name := safeAttachmentName(header.Filename)
+		if source.FileName() == "" || (source.FormName() != "files" && source.FormName() != "file") {
+			if err := source.Close(); err != nil {
+				http.Error(w, "read upload field: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			continue
+		}
+		if len(paths) >= maxChatAttachments {
+			http.Error(w, fmt.Sprintf("too many files (maximum %d)", maxChatAttachments), http.StatusBadRequest)
+			return
+		}
+		name := safeAttachmentName(source.FileName())
 		if name == "attachment" {
-			name = fmt.Sprintf("clipboard-%d", index+1)
+			name = fmt.Sprintf("clipboard-%d", len(paths)+1)
 		}
 		target := uniqueAttachmentTarget(root, name)
 		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
-			_ = source.Close()
 			http.Error(w, "create staged attachment: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		written, copyErr := io.Copy(output, io.LimitReader(source, maxChatAttachmentBytes+1))
+		limit := min(int64(maxChatAttachmentBytes), int64(maxChatAttachmentsBytes)-total) + 1
+		written, copyErr := io.Copy(output, io.LimitReader(source, limit))
 		closeErr := output.Close()
-		sourceErr := source.Close()
 		if written > maxChatAttachmentBytes {
 			copyErr = fmt.Errorf("file exceeds the %d-byte limit", maxChatAttachmentBytes)
 		}
-		if copyErr != nil || closeErr != nil || sourceErr != nil {
-			http.Error(w, "stage attachment: "+fmt.Sprint(errorsJoinNonNil(copyErr, closeErr, sourceErr)), http.StatusBadRequest)
+		if copyErr != nil || closeErr != nil {
+			http.Error(w, "stage attachment: "+fmt.Sprint(errorsJoinNonNil(copyErr, closeErr)), http.StatusBadRequest)
 			return
 		}
 		total += written
@@ -94,7 +91,15 @@ func (s *Server) handleAttachmentUpload(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, fmt.Sprintf("attachments exceed the %d-byte total limit", maxChatAttachmentsBytes), http.StatusBadRequest)
 			return
 		}
+		if err := source.Close(); err != nil {
+			http.Error(w, "read uploaded attachment: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		paths = append(paths, target)
+	}
+	if len(paths) == 0 {
+		http.Error(w, "no files uploaded", http.StatusBadRequest)
+		return
 	}
 	keep = true
 	writeJSON(w, map[string]any{"paths": paths, "workspace": s.eng.Home()})
@@ -181,8 +186,13 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 	var err error
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "profile") {
 		full, err = sandbox.ResolveWithin(filepath.Join(s.eng.DataDir(), "module-sources"), raw)
+	} else if strings.HasPrefix(raw, "snapshot:") && s.eng.DataDir() != "" {
+		full, err = sandbox.ResolveWithin(filepath.Join(s.eng.DataDir(), ".supercli", "snapshots"), strings.TrimPrefix(raw, "snapshot:"))
 	} else {
 		full, err = sandbox.ResolveSafe(s.eng.Home(), raw)
+		if err != nil && filepath.IsAbs(raw) && s.eng.DataDir() != "" {
+			full, err = sandbox.ResolveWithin(filepath.Join(s.eng.DataDir(), ".supercli", "snapshots"), raw)
+		}
 	}
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -220,7 +230,7 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		} else {
-			http.Error(w, "preview is available only for images and PDF files", http.StatusUnsupportedMediaType)
+			http.Error(w, "preview is available only for supported images, PDF, video and audio files", http.StatusUnsupportedMediaType)
 			return
 		}
 	}
@@ -246,7 +256,8 @@ func profileDocumentSourceMIME(name string) string {
 
 func previewableAttachmentMIME(mediaType string) bool {
 	switch strings.ToLower(strings.TrimSpace(strings.Split(mediaType, ";")[0])) {
-	case "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp":
+	case "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
+		"video/mp4", "video/webm", "audio/mpeg", "audio/wave", "audio/wav", "audio/x-wav", "audio/ogg", "application/ogg":
 		return true
 	default:
 		return false

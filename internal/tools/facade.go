@@ -241,6 +241,7 @@ var (
 	NewReadImage        = media.NewReadImage
 	SupportedImageMIMEs = media.SupportedImageMIMEs
 	NewSendScreenshot   = media.NewSendScreenshot
+	NewShowMedia        = media.NewShowMedia
 	NewAskUser          = interactive.NewAskUser
 	WithAskChannel      = interactive.WithAskChannel
 )

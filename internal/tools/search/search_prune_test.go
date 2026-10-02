@@ -60,7 +60,9 @@ func TestSearchGlobCanDescend(t *testing.T) {
 // Exhaustively check short paths against the existing file matcher. A directory
 // predicate may admit extra work, but it must never discard a matching file.
 func TestSearchPruningPreservesMatchingAncestors(t *testing.T) {
-	root := t.TempDir()
+	// Dir normalizes Windows separators; normalize the stopping point too when
+	// the caller supplies TEMP with forward slashes.
+	root := filepath.Clean(t.TempDir())
 	patterns := []string{"*.go", "src/*.go", "src/**/*.go", "{src,lib}/**/*.{go,zig}", "[sl]*c/**/test?.go", "src/**/lib/**/test?.go", "src/**/**/a.go", "src/*/*/a.go", "./src/**", "src/[ab]*/**/[^x]*.go"}
 	var paths []string
 	var generate func(string, int)

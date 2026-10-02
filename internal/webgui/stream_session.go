@@ -47,7 +47,7 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 		// zero inference, so the session is named instantly and the
 		// model slot stays free for the actual answer. The nicer LLM
 		// title runs later, after the stream + idle (see title.go).
-		title := summarizeHistoryMessage(prompt, 80)
+		title := summarizeHistoryMessage(prompt, sessionTitleMaxRunes)
 		sess, err := store.Create(home, model, title)
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("create session: %w", err)

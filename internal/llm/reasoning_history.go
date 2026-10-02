@@ -106,13 +106,13 @@ func (b *ReasoningBlock) EstimateTokens() int {
 				var part struct{ Type string }
 				_ = json.Unmarshal(raw, &part)
 				if part.Type == "thinking" || part.Type == "redacted_thinking" {
-					n += nonWhitespaceLen(string(raw))
+					n += nonWhitespaceBytes(raw)
 				}
 			}
 			return n / estBytesPerToken
 		}
 	}
-	return nonWhitespaceLen(string(b.Data)) / estBytesPerToken
+	return nonWhitespaceBytes(b.Data) / estBytesPerToken
 }
 
 // filterNativeReasoning prevents replay across endpoints, models or protocols.
@@ -174,8 +174,12 @@ type chatReasoningAccumulator struct {
 
 func (a *chatReasoningAccumulator) add(delta map[string]json.RawMessage) {
 	for _, key := range []string{"reasoning_content", "reasoning", "reasoning_text"} {
+		raw, ok := delta[key]
+		if !ok {
+			continue
+		}
 		var s string
-		if json.Unmarshal(delta[key], &s) == nil && s != "" {
+		if json.Unmarshal(raw, &s) == nil && s != "" {
 			if a.field == "" {
 				a.field = key
 			}

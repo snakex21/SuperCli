@@ -26,6 +26,14 @@ type Result struct {
 	// ModelPreview optionally preserves the structure of a large successful
 	// result within the usual preview budget. Text remains the UI result.
 	ModelPreview string `json:"-"`
+	// ModelText is an equivalent model representation of a small successful result.
+	// Together with the paired tool-call arguments, it must preserve every result
+	// record. It may group records or omit a byte-identical echoed input, never
+	// outcome, streams or diagnostics. OutputStore uses it without retention only
+	// when both texts fit inline and no preview or retained evidence is present.
+	// Text remains unchanged for live UI events and Result serialization.
+	// The chosen model text is stored in tool-message history on replay.
+	ModelText string `json:"-"`
 	// Inert marks a call that succeeded without producing anything new —
 	// a mutation whose write left the world where it already was. The agent
 	// loop excludes such calls from progress accounting so they cannot reset

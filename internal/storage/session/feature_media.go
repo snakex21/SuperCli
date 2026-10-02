@@ -28,28 +28,32 @@ func (w *Writer) ExternalizeImage(ctx context.Context, mediaType string, data []
 	if mediaType == "" || len(data) == 0 {
 		return llm.ImageRef{}, fmt.Errorf("session.Writer.ExternalizeImage: media type and data are required")
 	}
-	path, err := w.store.storeSessionImage(w.sessionID, mediaType, data)
+	path, sum, err := w.store.storeSessionImage(w.sessionID, mediaType, data)
 	if err != nil {
 		return llm.ImageRef{}, err
 	}
-	return llm.ImageRef{MediaType: mediaType, Path: path, ID: sessionImageID(data)}, nil
+	return llm.ImageRef{MediaType: mediaType, Path: path, ID: sessionImageDigestID(sum)}, nil
 }
 
 func sessionImageID(data []byte) string {
 	sum := sha256.Sum256(data)
+	return sessionImageDigestID(sum)
+}
+
+func sessionImageDigestID(sum [sha256.Size]byte) string {
 	return fmt.Sprintf("img_%x", sum[:6])
 }
 
-func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (string, error) {
+func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (string, [sha256.Size]byte, error) {
 	if s == nil || strings.TrimSpace(s.root) == "" {
-		return "", fmt.Errorf("session.Store.storeSessionImage: store root is empty")
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage: store root is empty")
 	}
 	if strings.TrimSpace(sessionID) == "" {
-		return "", fmt.Errorf("session.Store.storeSessionImage: session id is empty")
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage: session id is empty")
 	}
 	dir := s.sessionMediaDir(sessionID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("session.Store.storeSessionImage mkdir: %w", err)
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage mkdir: %w", err)
 	}
 	sum := sha256.Sum256(data)
 	name := fmt.Sprintf("%x%s", sum[:], imageExtension(mediaType))
@@ -57,9 +61,10 @@ func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (str
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if os.IsExist(err) {
-			return filepath.Abs(path)
+			absolute, err := filepath.Abs(path)
+			return absolute, sum, err
 		}
-		return "", fmt.Errorf("session.Store.storeSessionImage create: %w", err)
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage create: %w", err)
 	}
 	ok := false
 	defer func() {
@@ -69,13 +74,14 @@ func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (str
 		}
 	}()
 	if _, err := f.Write(data); err != nil {
-		return "", fmt.Errorf("session.Store.storeSessionImage write: %w", err)
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage write: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("session.Store.storeSessionImage close: %w", err)
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage close: %w", err)
 	}
 	ok = true
-	return filepath.Abs(path)
+	absolute, err := filepath.Abs(path)
+	return absolute, sum, err
 }
 
 func (s *Store) sessionMediaDir(sessionID string) string {
@@ -139,14 +145,14 @@ func (s *Store) externalizeModelImages(sessionID string, msgs []llm.Message) []l
 			if err != nil {
 				continue
 			}
-			path, err := s.storeSessionImage(sessionID, img.MediaType, raw)
+			path, sum, err := s.storeSessionImage(sessionID, img.MediaType, raw)
 			if err != nil {
 				continue
 			}
 			copy := *img
 			copy.Data = ""
 			copy.Path = path
-			copy.ID = sessionImageID(raw)
+			copy.ID = sessionImageDigestID(sum)
 			copy.Active = false
 			part.Image = &copy
 		}

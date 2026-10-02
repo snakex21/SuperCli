@@ -29,6 +29,13 @@ func (m Model) renderDashboard() string {
 		return ""
 	}
 	d := m.dashboardFn()
+	if m.renderCache == nil {
+		return m.renderDashboardSnapshot(d)
+	}
+	return m.cachedDashboard(d)
+}
+
+func (m Model) renderDashboardSnapshot(d DashboardSnapshot) string {
 	width := max(1, m.width)
 	sep := m.palette.StatusSep.Render(" · ")
 	workspace := d.Project

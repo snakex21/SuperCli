@@ -35,8 +35,8 @@ func summarizeHistoryMessage(text string, maxRunes int) string {
 	return truncateRunes(text, maxRunes)
 }
 
-// summarizeHistoryMessageLLM asks the active model for a short PR-style
-// summary of the conversation so far. Falls back to summarizeHistoryMessage
+// summarizeHistoryMessageLLM asks the active model for a short topic title
+// for the user message. Falls back to summarizeHistoryMessage
 // so history still works offline or when the provider refuses the request.
 func (e *Engine) summarizeHistoryMessageLLM(ctx context.Context, text string, maxRunes int) string {
 	if e == nil {
@@ -60,26 +60,16 @@ func summarizeHistoryMessageWithProvider(ctx context.Context, text string, maxRu
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
-	// PR-style summary prompt (like opencode's summary.txt):
-	// 2-3 sentences, first person, describe changes made, not process.
-	prompt := fmt.Sprintf(`Summarize what was done in this conversation. Write like a pull request description.
-
-Rules:
-- 2-3 sentences max
-- Describe the changes made, not the process
-- Do not mention running tests, builds, or other validation steps
-- Do not explain what the user asked for
-- Write in first person (I added..., I fixed...)
-- Never ask questions or add new questions
-- If the conversation ends with an unanswered question to the user, preserve that exact question
-- If the conversation ends with an imperative statement or request to the user (e.g. "Now please run the command and paste the console output"), always include that exact request in the summary
-- Return only the summary, no quotes, max %d characters. Preserve the user's language.
+	// A conversation label describes the topic, not completed work. Keep the
+	// off-turn request short and bounded even when the first prompt pasted code.
+	topic := summarizeHistoryMessage(text, 512)
+	prompt := fmt.Sprintf(`Name the user's topic or request in the same language. One short title, at most %d characters. Return only the title; do not answer the message or describe work done.
 
 Message:
-%s`, maxRunes, text)
+%s`, maxRunes, topic)
 
 	ch, err := prov.Complete(llm.WithBackground(llm.WithPurpose(ctx, llm.PurposeTitle)), []llm.Message{
-		{Role: llm.RoleSystem, Content: "You write concise PR-style conversation summaries."},
+		{Role: llm.RoleSystem, Content: "You name conversations by their topic."},
 		{Role: llm.RoleUser, Content: prompt},
 	}, nil)
 	if err != nil {

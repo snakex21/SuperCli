@@ -105,16 +105,9 @@ func registerMediaAndOfficeTools(
 	// "--- Page N ---" headers.
 	registry.MustRegister(tools.NewReadPdf(home, 0).Spec())
 
-	// F23: send_screenshot is opt-in (not
-	// always-on). The model discovers it via
-	// tool_search when it needs to attach a
-	// clipboard image to the next message.
-	// The capture uses OS-specific commands
-	// (PowerShell / osascript / xclip /
-	// wl-paste) and the F16 vision gate
-	// refuses the call if the current model
-	// doesn't support image input.
-	registry.MustRegister(tools.NewSendScreenshot(home, caps.HasVision).Spec())
+	// Media previews stay discoverable, without overhead in ordinary prompts.
+	registry.MustRegister(tools.NewShowMedia(home).Spec())
+	registry.MustRegister(tools.NewSendScreenshot(dataDir, caps.HasVision).Spec())
 
 	ftsIndex, err := tools.NewInMemoryIndex()
 	if err != nil {

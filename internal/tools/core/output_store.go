@@ -82,6 +82,13 @@ func (s *OutputStore) ModelContent(toolName string, result Result) string {
 }
 
 func (s *OutputStore) ModelContentContext(ctx context.Context, toolName string, result Result) string {
+	if result.Err == nil && toolName != "read_output" && result.ModelText != "" &&
+		result.ModelPreview == "" && result.RetainedText == "" &&
+		len(result.Text) <= modelInlineLimit(toolName) && len(result.ModelText) <= modelInlineLimit(toolName) {
+		// This view is complete; storing the original merely to expose a different
+		// format would add I/O and an unnecessary read_output hint.
+		return result.ModelText
+	}
 	if s != nil && toolName != "read_output" && result.Err == nil && result.ModelPreview != "" {
 		preview := result.ModelPreview
 		if len(preview) > ModelOutputPreviewBytes {

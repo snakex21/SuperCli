@@ -17,6 +17,7 @@ type actionRow struct {
 
 var commonActionsEN = []actionRow{
 	{id: "paste-image", group: "tui.autocomplete_render.abc7e98928", title: "tui.action_paste-image.bb68ddb623", desc: "tui.action_paste-image.293a526293"},
+	{id: "preview", group: "tui.autocomplete_render.abc7e98928", title: "preview.title", desc: "preview.description"},
 	{id: "attach", group: "tui.autocomplete_render.abc7e98928", title: "tui.menu_navigation.634de11477", desc: "tui.action_attach.93e8551b68", shortcut: "Ctrl+O"},
 	{id: "transcript", group: "tui.action_transcript.104ab9213e", title: "tui.actions_select.42c60071a9", desc: "tui.action_transcript.fcb51b069e", shortcut: "Ctrl+F"},
 	{id: "queue", group: "tui.action_transcript.104ab9213e", title: "tui.menu_workflow.6daed5b2ef", desc: "tui.action_queue.37382a2c5a"},

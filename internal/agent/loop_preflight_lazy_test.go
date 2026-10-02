@@ -25,13 +25,14 @@ func TestLazyPreflightSkipsRepeatedGreetingAndCollectsOnceForProject(t *testing.
 		collections++
 		return testRepoBlock
 	})
-	for _, prompt := range []string{"cześć", "cześć", "inspect project files", "fix another file"} {
+	prompts := []string{"cześć", "cześć lubisz mnie?", "Hej! Jak tam?", "cześć inspect project files", "fix another file"}
+	for i, prompt := range prompts {
 		ch, err := loop.Run(context.Background(), prompt)
 		if err != nil {
 			t.Fatal(err)
 		}
 		drainEvents(t, ch)
-		if prompt == "cześć" && collections != 0 {
+		if i < 3 && collections != 0 {
 			t.Fatal("greeting collected repository context")
 		}
 	}
@@ -39,7 +40,7 @@ func TestLazyPreflightSkipsRepeatedGreetingAndCollectsOnceForProject(t *testing.
 		t.Fatalf("collections=%d, want one project collection", collections)
 	}
 	requests := provider.requests()
-	if len(requests) != 4 {
+	if len(requests) != len(prompts) {
 		t.Fatalf("provider requests=%d, want one per prompt", len(requests))
 	}
 	for i, request := range requests {
@@ -53,7 +54,7 @@ func TestLazyPreflightSkipsRepeatedGreetingAndCollectsOnceForProject(t *testing.
 				found = true
 			}
 		}
-		if found != (i >= 2) {
+		if found != (i >= 3) {
 			t.Fatalf("request %d repo context present=%v", i, found)
 		}
 	}

@@ -9,7 +9,12 @@ import (
 
 var emptyObjectSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 
-const toolSchemaCacheLimit = 512
+const (
+	toolSchemaCacheLimit = 512
+	// Residency only: oversized schemas are compiled normally without caching.
+	// Static builtins use about 120 KiB for both forms; leave ample room for MCP.
+	toolSchemaCacheByteLimit = 8 << 20
+)
 
 type toolSchemaMode uint8
 
@@ -27,6 +32,7 @@ var normalizedToolSchemaCache = struct {
 	sync.Mutex
 	entries map[toolSchemaCacheKey]json.RawMessage
 	order   []toolSchemaCacheKey
+	bytes   int // owned raw keys + encoded values, excluding map/order overhead
 }{entries: make(map[toolSchemaCacheKey]json.RawMessage)}
 
 // normalizeToolSchema converts SuperCli's historical shorthand tool schemas
@@ -181,9 +187,10 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 	key := toolSchemaCacheKey{mode: mode, raw: raw}
 	normalizedToolSchemaCache.Lock()
 	if cached, ok := normalizedToolSchemaCache.entries[key]; ok {
-		out := append(json.RawMessage(nil), cached...)
+		// Values are immutable. Copy outside the lock so large cache hits do not
+		// serialize callers while copying their independent result slices.
 		normalizedToolSchemaCache.Unlock()
-		return out, nil
+		return append(json.RawMessage(nil), cached...), nil
 	}
 	normalizedToolSchemaCache.Unlock()
 
@@ -200,16 +207,40 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 	}
 	value := json.RawMessage(encoded)
 
+	// Do not reject or truncate schemas to make them fit the cache. The freshly
+	// marshaled value has no shared owner, so an oversized result belongs to its
+	// caller directly and needs neither residency nor another large copy.
+	if len(raw) > toolSchemaCacheByteLimit || len(value) > toolSchemaCacheByteLimit-len(raw) {
+		return value, nil
+	}
+	weight := len(raw) + len(value)
 	normalizedToolSchemaCache.Lock()
 	if _, exists := normalizedToolSchemaCache.entries[key]; !exists {
-		if len(normalizedToolSchemaCache.order) >= toolSchemaCacheLimit {
-			oldest := normalizedToolSchemaCache.order[0]
-			delete(normalizedToolSchemaCache.entries, oldest)
-			copy(normalizedToolSchemaCache.order, normalizedToolSchemaCache.order[1:])
-			normalizedToolSchemaCache.order = normalizedToolSchemaCache.order[:len(normalizedToolSchemaCache.order)-1]
+		// An empty cache owns no payload, including after a cache clear.
+		if len(normalizedToolSchemaCache.entries) == 0 {
+			normalizedToolSchemaCache.bytes = 0
 		}
-		normalizedToolSchemaCache.entries[key] = append(json.RawMessage(nil), value...)
+		evicted := 0
+		for evicted < len(normalizedToolSchemaCache.order) &&
+			(len(normalizedToolSchemaCache.order)-evicted >= toolSchemaCacheLimit ||
+				normalizedToolSchemaCache.bytes > toolSchemaCacheByteLimit-weight) {
+			oldest := normalizedToolSchemaCache.order[evicted]
+			normalizedToolSchemaCache.bytes -= len(oldest.raw) + len(normalizedToolSchemaCache.entries[oldest])
+			delete(normalizedToolSchemaCache.entries, oldest)
+			evicted++
+		}
+		if evicted > 0 {
+			kept := copy(normalizedToolSchemaCache.order, normalizedToolSchemaCache.order[evicted:])
+			clear(normalizedToolSchemaCache.order[kept:])
+			normalizedToolSchemaCache.order = normalizedToolSchemaCache.order[:kept]
+		}
+		// TrimSpace may have left raw pointing into a much larger input. Own just
+		// the counted key bytes. value is private marshal output; only the return
+		// below is copied, so callers cannot mutate the cache.
+		key.raw = strings.Clone(raw)
+		normalizedToolSchemaCache.entries[key] = value
 		normalizedToolSchemaCache.order = append(normalizedToolSchemaCache.order, key)
+		normalizedToolSchemaCache.bytes += weight
 	}
 	normalizedToolSchemaCache.Unlock()
 	return append(json.RawMessage(nil), value...), nil

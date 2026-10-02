@@ -2,10 +2,13 @@ package webgui
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 )
 
@@ -138,7 +141,7 @@ func TestRunSessionTitleLLM_SetsTitleAndRespectsRename(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	prompt := "summarize the quarterly report for me"
+	prompt := strings.Repeat("summarize the quarterly report and its financial tables for me with particular attention to the new reporting layout. ", 2)
 	local := summarizeHistoryMessage(prompt, 80)
 	sess, err := store.Create(dir, eng.ModelName(), local)
 	if err != nil {
@@ -163,5 +166,92 @@ func TestRunSessionTitleLLM_SetsTitleAndRespectsRename(t *testing.T) {
 	got, _ = store.Get(sess.ID)
 	if got.Title != "my own name" {
 		t.Fatalf("regeneration overwrote a manual rename: %q", got.Title)
+	}
+}
+
+func TestRunSessionTitleLLM_ShortAndManualNamesNeedNoModelCall(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	store, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	eng.prov = summaryProvider{text: "Unexpected title", onComplete: func(context.Context, []llm.Message) { calls++ }}
+	for _, prompt := range []string{"cześć", "hello", "你好", "Napraw przewijanie GUI", "Corriger le défilement"} {
+		local := summarizeHistoryMessage(prompt, sessionTitleMaxRunes)
+		sess, err := store.Create(dir, "test", local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !eng.runSessionTitleLLM(context.Background(), sess.ID, prompt) {
+			t.Fatal("local title should finish without a retry")
+		}
+		got, err := store.Get(sess.ID)
+		if err != nil || got.Title != local {
+			t.Fatalf("title = %q, err=%v", got.Title, err)
+		}
+	}
+	prompt := strings.Repeat("Inspect the application's session list and improve its labels. ", 3)
+	sess, err := store.Create(dir, "test", summarizeHistoryMessage(prompt, sessionTitleMaxRunes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetTitle(sess.ID, "My chosen name"); err != nil {
+		t.Fatal(err)
+	}
+	if !eng.runSessionTitleLLM(context.Background(), sess.ID, prompt) {
+		t.Fatal("manual title should finish without a retry")
+	}
+	if calls != 0 {
+		t.Fatalf("unnecessary title calls = %d", calls)
+	}
+}
+
+func TestRunSessionTitleLLM_FallbackIsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := NewEngine(echoConfig(), dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	store, err := eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	eng.prov = summaryProvider{err: errors.New("provider unavailable"), onComplete: func(context.Context, []llm.Message) { calls++ }}
+	prompt := strings.Repeat("Please investigate incorrect labels in the history sidebar. ", 3)
+	local := summarizeHistoryMessage(prompt, sessionTitleMaxRunes)
+	sess, err := store.Create(dir, "test", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eng.runSessionTitleLLM(context.Background(), sess.ID, prompt) {
+		t.Fatal("failed title must retain the local label without retrying")
+	}
+	got, err := store.Get(sess.ID)
+	if err != nil || got.Title != local || calls != 1 {
+		t.Fatalf("title=%q calls=%d err=%v", got.Title, calls, err)
+	}
+}
+
+func TestNeedsSessionTitleUsesVisibleUnicodeTopic(t *testing.T) {
+	for _, tc := range []struct {
+		prompt string
+		want   bool
+	}{
+		{strings.Repeat("界", 80), false},
+		{strings.Repeat("界", 81), true},
+		{"Napraw GUI.\n\n\x60\x60\x60go\n" + strings.Repeat("var x = 1\n", 2000) + "\x60\x60\x60", false},
+		{strings.Repeat("Inspect session labels and refresh behavior. ", 3), true},
+	} {
+		if got := needsSessionTitle(tc.prompt); got != tc.want {
+			t.Errorf("needsSessionTitle = %v, want %v", got, tc.want)
+		}
 	}
 }

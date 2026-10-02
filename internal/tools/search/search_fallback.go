@@ -29,6 +29,7 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int, 
 		}
 		return Result{Err: fmt.Errorf("search_code: %w", message)}, nil
 	}
+	filesOnly := len(previews) > 0 && previews[0] != nil && previews[0].filesOnly
 	re, reErr := regexp.Compile(query)
 	literal := strings.ToLower(query)
 	reader := bufio.NewReaderSize(strings.NewReader(""), 32*1024)
@@ -82,6 +83,14 @@ func (s *SearchCode) fallback(ctx context.Context, root, query string, max int, 
 			}
 			if b.Len() > 0 {
 				b.WriteByte('\n')
+			}
+			if filesOnly {
+				b.WriteString(displayPath)
+				count++
+				if count >= max {
+					return errStopWalk
+				}
+				return nil // One matching file, independent of its number of hits.
 			}
 			text := string(line)
 			fmt.Fprintf(&b, "%s:%d:%s", displayPath, lineNo, text)

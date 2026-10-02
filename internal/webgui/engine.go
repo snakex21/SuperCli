@@ -172,7 +172,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return nil, fmt.Errorf("webgui.NewEngine: capabilities: %w", err)
 	}
 	if cachedPrices := pricing.LoadCache(dataDir); len(cachedPrices) > 0 {
-		pricing.ApplyCachedRates(dataDir)
+		pricing.ApplyRates(cachedPrices)
 		applyWebPricingEntries(caps, cachedPrices)
 	}
 	f := factory.New(nil, dataDir, caps)

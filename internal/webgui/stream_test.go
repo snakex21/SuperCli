@@ -232,24 +232,26 @@ func TestWireEvent_Marshal(t *testing.T) {
 func TestMessageCoalescerPreservesSemanticBoundaries(t *testing.T) {
 	var got []wireEvent
 	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
-	if c.Push(wireEvent{Type: "message", Text: "one"}) || len(got) != 1 || c.Pending() {
+	now := time.Unix(1, 0)
+	push := func(ev wireEvent) bool { now = now.Add(time.Millisecond); return c.pushAt(ev, now) }
+	if push(wireEvent{Type: "message", Text: "one"}) || len(got) != 1 || c.Pending() {
 		t.Fatal("first chunk must be emitted without a timer")
 	}
-	if !c.Push(wireEvent{Type: "message", Text: " two"}) {
+	if !push(wireEvent{Type: "message", Text: " two"}) {
 		t.Fatal("following chunk must start batch")
 	}
-	if c.Push(wireEvent{Type: "message", Text: " three"}) || len(got) != 1 {
+	if push(wireEvent{Type: "message", Text: " three"}) || len(got) != 1 {
 		t.Fatal("following chunks should coalesce")
 	}
-	if c.Push(wireEvent{Type: "reasoning", Text: "why"}) {
+	if push(wireEvent{Type: "reasoning", Text: "why"}) {
 		t.Fatal("first reasoning chunk must be immediate")
 	}
 	if len(got) != 3 || got[1].Text != " two three" || got[2].Text != "why" {
 		t.Fatalf("%+v", got)
 	}
-	c.Push(wireEvent{Type: "reasoning", Text: " now"})
-	c.Push(wireEvent{Type: "tool_call", Name: "search_code"})
-	c.Push(wireEvent{Type: "message", Text: "answer"})
+	push(wireEvent{Type: "reasoning", Text: " now"})
+	push(wireEvent{Type: "tool_call", Name: "search_code"})
+	push(wireEvent{Type: "message", Text: "answer"})
 	if len(got) != 6 || got[3].Text != " now" || got[4].Type != "tool_call" || got[5].Text != "answer" || c.Pending() {
 		t.Fatalf("event order changed: %+v", got)
 	}
@@ -402,5 +404,59 @@ func TestRunStreamPersistsToolDiag(t *testing.T) {
 	}
 	if !strings.Contains(diag.Terminal, "boom after probes") {
 		t.Errorf("terminal = %q, want boom after probes", diag.Terminal)
+	}
+}
+
+func TestMessageCoalescerSparsePacketsNeedNoTimer(t *testing.T) {
+	var got []wireEvent
+	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
+	now := time.Unix(1, 0)
+	for _, text := range []string{"Zażółć ", "😀 ", "中文"} {
+		if c.pushAt(wireEvent{Type: "message", Text: text}, now) || c.Pending() {
+			t.Fatal("sparse packet was delayed")
+		}
+		now = now.Add(50 * time.Millisecond)
+	}
+	if len(got) != 3 || got[0].Text+got[1].Text+got[2].Text != "Zażółć 😀 中文" {
+		t.Fatal(got)
+	}
+}
+
+func TestMessageCoalescerDenseBurstUsesPreviousEmissionDeadline(t *testing.T) {
+	var got []wireEvent
+	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
+	now := time.Unix(1, 0)
+	c.pushAt(wireEvent{Type: "message", Text: "first"}, now)
+	if !c.pushAt(wireEvent{Type: "message", Text: " second"}, now.Add(time.Millisecond)) {
+		t.Fatal("dense batch missing")
+	}
+	if delay := c.delayAt(now.Add(time.Millisecond)); delay != messageCoalesceWindow-time.Millisecond {
+		t.Fatalf("delay=%v", delay)
+	}
+	c.pushAt(wireEvent{Type: "message", Text: " third"}, now.Add(2*time.Millisecond))
+	if c.pushAt(wireEvent{Type: "message", Text: " fourth"}, now.Add(messageCoalesceWindow)) || c.Pending() {
+		t.Fatal("deadline did not flush")
+	}
+	if len(got) != 2 || got[1].Text != " second third fourth" {
+		t.Fatal(got)
+	}
+	if c.delayAt(now.Add(50*time.Millisecond)) != 0 {
+		t.Fatal("expired deadline renewed")
+	}
+	c.pushAt(wireEvent{Type: "message", Text: strings.Repeat("x", messageCoalesceBytes)}, now.Add(messageCoalesceWindow+time.Millisecond))
+	if c.Pending() || len(got) != 3 {
+		t.Fatal("large burst not flushed")
+	}
+}
+
+func TestMessageCoalescerKeepsReasoningCountWithoutText(t *testing.T) {
+	var got []wireEvent
+	c := messageCoalescer{emit: func(ev wireEvent) { got = append(got, ev) }}
+	now := time.Unix(1, 0)
+	c.pushAt(wireEvent{Type: "message", Text: "first"}, now)
+	c.pushAt(wireEvent{Type: "message", Text: " tail"}, now.Add(time.Millisecond))
+	c.pushAt(wireEvent{Type: "reasoning", ReasoningTok: 42}, now.Add(2*time.Millisecond))
+	if len(got) != 3 || got[1].Text != " tail" || got[2].ReasoningTok != 42 || c.Pending() {
+		t.Fatal(got)
 	}
 }

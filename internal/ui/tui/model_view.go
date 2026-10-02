@@ -141,7 +141,11 @@ func (m Model) renderInputBox() string {
 	if m.width > 4 {
 		style = style.Width(m.width - 4)
 	}
-	return style.Render(m.input.View())
+	content := m.input.View()
+	if m.renderCache == nil {
+		return style.Render(content)
+	}
+	return m.renderCache.inputBox(style, m.palette.renderColors(), content)
 }
 
 func (m Model) rule() string {
@@ -159,6 +163,13 @@ func (m Model) renderHintLine() string {
 	if !m.viewport.AtBottom() {
 		return m.palette.HeaderMode.Render(truncateVisible(m.tr("tui.model_view.5913460e19"), m.width))
 	}
+	if m.renderCache != nil {
+		return m.cachedHintLine()
+	}
+	return m.renderDefaultHintLine()
+}
+
+func (m Model) renderDefaultHintLine() string {
 	hints := []string{
 		m.tr("tui.model_view.8aa47e642f"),
 		m.tr("tui.model_view.6067c72033"), m.tr("tui.model_view.7ed24ce7cc"), m.tr("tui.model_view.0ed0cc347f"),

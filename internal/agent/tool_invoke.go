@@ -202,6 +202,11 @@ func flatScalarSchemaProperties(schema string) (map[string]string, bool) {
 }
 
 func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.ToolCall, error) {
+	return resolveInvokeToolCallForRun(registry, call, "")
+}
+
+// runTool is an exact schema exposed for this turn, not persistent discovery.
+func resolveInvokeToolCallForRun(registry *tools.Registry, call llm.ToolCall, runTool string) (llm.ToolCall, error) {
 	if registry == nil {
 		return call, fmt.Errorf("invoke_tool: registry unavailable")
 	}
@@ -233,7 +238,7 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 	// Goal retains its existing control-plane exception; its service validates
 	// every action. All other dormant mutations still require tool_search.
 	coreAlwaysOn := registry.IsVisible(target) && isCoreDispatchName(target)
-	if target != "goal" && !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
+	if target != "goal" && target != runTool && !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
 		return call, fmt.Errorf("%s", dispatchRefusal(registry, target))
 	}
 
@@ -340,11 +345,15 @@ func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
 // real hit rate is. Count the rewrites so the ratio is measurable.
 func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 	l.invokeDispatchStep = 0
+	runTool := ""
+	if l.screenshotForRun {
+		runTool = "send_screenshot"
+	}
 	for i := range calls {
 		if calls[i].Name != invokeToolName {
 			continue
 		}
-		if resolved, err := resolveInvokeToolCall(l.registry, calls[i]); err == nil {
+		if resolved, err := resolveInvokeToolCallForRun(l.registry, calls[i], runTool); err == nil {
 			calls[i] = resolved
 			l.invokeDispatchStep++
 			l.invokeDispatchTotal.Add(1)

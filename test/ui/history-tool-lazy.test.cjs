@@ -36,7 +36,7 @@ function domNode(tag, type = 1) {
       if (String(value) !== '') this.children.push({nodeType: 3, text: String(value), textContent: String(value), children: []});
     },
   });
-  Object.defineProperty(node, 'innerHTML', {set() { this.children = []; }, get() { return ''; }});
+  Object.defineProperty(node, 'innerHTML', {set(value) { this.children = []; this.html = String(value); }, get() { return this.html || ''; }});
   return node;
 }
 function descendants(node) { return node.children.flatMap(child => [child, ...descendants(child)]); }
@@ -153,4 +153,103 @@ test('opening a session and loading an older page preserve paging, raw results a
   assert.equal(rows.length, 2);
   rows.forEach(row => { row.open = true; row.dispatch('toggle'); });
   assert.equal(h.c.stream.querySelectorAll('.tool-file-view').length, 2, 'all details remain available');
+});
+
+function resultRow(h, name) {
+  const row = domNode('details'); row.className = 'tool-row';
+  row._body = domNode('div'); row._stat = domNode('span'); row._tname = domNode('span');
+  row._toolName = name; row._t0 = 0; row._clock = 7;
+  row.appendChild(row._stat); row.appendChild(row._body);
+  h.c.performance = {now: () => 100}; h.c.fmtDuration = () => '0.1s';
+  h.c.clearInterval = () => {}; h.c.toolRows = {'read-1': row}; h.c.openToolOrder = ['read-1'];
+  return row;
+}
+
+test('live folded results defer the large viewer while preserving completion and exact output', t => {
+  const output = readLines().content;
+  const eager = harness(); eager.c.renderToolPayloadWhenOpen = (row, render) => render();
+  const before = resultRow(eager, 'read_lines'); eager.c.addToolResult('read-1', output, '');
+  const h = harness(), row = resultRow(h, 'read_lines');
+  h.c.addToolResult('read-1', output, '');
+  assert.equal(row._clock, null); assert.equal(h.c.openToolOrder.length, 0);
+  assert.equal(row._body.children.length, 0); assert.equal(row._stat.textContent, '0.1s');
+  assert.equal(countNodes(row), 5); assert.equal(countNodes(before), 25006);
+  t.diagnostic('live folded 5000-line read: DOM nodes 25006 -> 5');
+  row.open = true; row.dispatch('toggle');
+  assert.equal(row._body.textContent, before._body.textContent);
+  assert.equal(row._body.children[0].children.length, 5000);
+  const expanded = countNodes(row);
+  row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
+  assert.equal(countNodes(row), expanded);
+});
+
+test('open live results render immediately and failures retain their diagnostic on expansion', () => {
+  const h = harness(), row = resultRow(h, 'ctx_execute');
+  row.open = true;
+  h.c.addToolResult('read-1', JSON.stringify({exit_code:0,stdout:'hello',duration_ms:100}), '');
+  assert.ok(row._body.textContent.includes('hello'));
+  const failed = harness(), errorRow = resultRow(failed, 'ctx_execute');
+  failed.c.addToolResult('read-1', '', 'command_failed exit=7\nmissing file');
+  assert.equal(errorRow._body.children.length, 0);
+  assert.ok(errorRow._stat.textContent.includes('×'));
+  errorRow.open = true; errorRow.dispatch('toggle');
+  assert.equal(errorRow._body.children[0].textContent, 'tool.error');
+  assert.equal(errorRow._body.children[1].textContent, 'command_failed exit=7\nmissing file');
+});
+
+
+test('folded task reports render their complete source only once on expansion', () => {
+  const {c} = harness(), calls = [];
+  c.renderText = source => { calls.push(source); return '<p>' + source + '</p>'; };
+  const note = {id: 'worker-lazy', agent: 'worker', status: 'done', summary: 'completed', result: 'Full **report** & details'};
+  const row = c.addHistoryTask(note), report = row.querySelector('.task-report');
+  assert.equal(report.innerHTML, ''); assert.deepEqual(calls, []);
+  assert.equal(row._thint.textContent, 'completed');
+  row.dispatch('toggle'); assert.deepEqual(calls, [], 'initial closed toggle does not render');
+  row.open = true; row.dispatch('toggle');
+  assert.deepEqual(calls, [note.result]); assert.equal(report.innerHTML, '<p>' + note.result + '</p>');
+  row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
+  assert.deepEqual(calls, [note.result]); assert.equal(row.querySelector('.task-report'), report);
+  assert.equal(row.listeners.get('toggle').size, 0); assert.equal(row._cancelTaskReport, null);
+  assert.equal(note.result, 'Full **report** & details');
+});
+
+test('task report replacement cancels stale folded callbacks and preserves open updates', () => {
+  const {c} = harness(), calls = [];
+  c.renderText = source => { calls.push(source); return source; };
+  const note = {id: 'worker-reuse', agent: 'worker', status: 'done', summary: 'completed', result: 'Old result'};
+  const row = c.addHistoryTask(note);
+  c.renderTaskResult(row, {...note, result: 'Current result'}, null, '', false);
+  assert.equal(row.listeners.get('toggle').size, 1, 'only the current callback remains');
+  row.open = true; row.dispatch('toggle');
+  assert.deepEqual(calls, ['Current result']); assert.equal(row.querySelector('.task-report').innerHTML, 'Current result');
+  c.renderTaskResult(row, {...note, result: 'Updated while open'}, null, '', false);
+  assert.deepEqual(calls, ['Current result', 'Updated while open']);
+  assert.equal(row.querySelector('.task-report').innerHTML, 'Updated while open');
+  assert.equal(row.listeners.get('toggle').size, 0);
+  row.open = false; row.dispatch('toggle');
+  c.renderTaskResult(row, {...note, result: 'Pending replacement'}, null, '', false);
+  c.renderTaskResult(row, {...note, result: ''}, null, '', false);
+  row.open = true; row.dispatch('toggle');
+  assert.deepEqual(calls, ['Current result', 'Updated while open']);
+  assert.equal(row.querySelector('.task-report'), null);
+  assert.equal(row.listeners.get('toggle').size, 0); assert.equal(row._cancelTaskReport, null);
+});
+
+test('task history paging retains raw reports and defers each rebuilt row', async () => {
+  const h = harness(), calls = [];
+  h.c.renderText = source => { calls.push(source); return source; };
+  const content = result => '<task-notification><task-id>worker-' + result + '</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>';
+  const latest = {seq: 2, role: 'tool', name: 'task', content: content('latest')};
+  const older = {seq: 1, role: 'tool', name: 'task', content: content('older')};
+  h.c.j = async url => url.includes('&before=2') ? {messages: [older], has_more: false, before_seq: 1} : {messages: [latest], has_more: true, before_seq: 2};
+  assert.equal(await h.c.resumeSession('task-chat', {}), true);
+  assert.deepEqual(calls, []); assert.equal(h.c.loadedTranscriptMessages[0].content, latest.content);
+  h.c.stage.scrollHeight = 1000; h.c.stage.scrollTop = 30;
+  await h.c.loadOlderTranscript();
+  assert.deepEqual(calls, []); assert.equal(h.c.stage.scrollTop, 30);
+  const rows = h.c.stream.querySelectorAll('.task-row');
+  assert.equal(rows.length, 2); rows.forEach(row => { row.open = true; row.dispatch('toggle'); });
+  assert.deepEqual(calls, ['older', 'latest']);
+  assert.equal(h.c.loadedTranscriptMessages[1].content, latest.content);
 });

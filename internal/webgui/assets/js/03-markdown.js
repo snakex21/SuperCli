@@ -90,28 +90,31 @@ function mdBlocks(text) {
   return out;
 }
 
-function renderTable(lines) {
-  function cells(line) {
-    return line.replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); });
+function markdownTableCells(line) {
+  return line.replace(/^\||\|$/g, "").split("|").map(function (cell) { return cell.trim(); });
+}
+
+function markdownTableAlign(line) {
+  return markdownTableCells(line).map(function (cell) {
+    return /^:.*:$/.test(cell) ? "center" : /:$/.test(cell) ? "right" : "left";
+  });
+}
+
+function markdownTableCellHTML(line, align, width, heading) {
+  var cells = markdownTableCells(line), html = "", tag = heading ? "th" : "td";
+  for (var i = 0; i < width; i++) {
+    html += '<' + tag + ' style="text-align:' + (align[i] || "left") + '">' +
+      mdInline(escHtml(cells[i] || "")) + '</' + tag + '>';
   }
-  var head = cells(lines[0]), align = [];
-  cells(lines[1]).forEach(function (c) {
-    if (/^:.*:$/.test(c)) align.push("center");
-    else if (/:$/.test(c)) align.push("right");
-    else align.push("left");
-  });
-  var html = '<div class="md-table-wrap"><table><thead><tr>';
-  head.forEach(function (c, idx) {
-    html += '<th style="text-align:' + (align[idx] || "left") + '">' + mdInline(escHtml(c)) + "</th>";
-  });
-  html += "</tr></thead><tbody>";
-  for (var r = 2; r < lines.length; r++) {
-    var row = cells(lines[r]);
-    html += "<tr>";
-    for (var c = 0; c < head.length; c++) {
-      html += '<td style="text-align:' + (align[c] || "left") + '">' + mdInline(escHtml(row[c] || "")) + "</td>";
-    }
-    html += "</tr>";
+  return html;
+}
+
+function renderTable(lines) {
+  var width = markdownTableCells(lines[0]).length, align = markdownTableAlign(lines[1]);
+  var html = '<div class="md-table-wrap"><table><thead><tr>' +
+    markdownTableCellHTML(lines[0], align, width, true) + '</tr></thead><tbody>';
+  for (var row = 2; row < lines.length; row++) {
+    html += '<tr>' + markdownTableCellHTML(lines[row], align, width, false) + '</tr>';
   }
   return html + "</tbody></table></div>";
 }
@@ -126,17 +129,22 @@ function renderThinkBlock(text) {
     '<summary><span>' + escHtml(t("role.thinking")) + '</span><span class="think-line"></span></summary>' +
     '<div class="think-content">' + renderMarkdownish(String(text).trim()) + "</div></details>";
 }
-function assistantTextParts(text) {
-  var parts = [];
+function assistantTextParts(text, checkpoint) {
+  var src = String(text || "");
+  var parts = checkpoint && checkpoint.parts.length ? checkpoint.parts.slice() : [];
   function markdown(value) { if (value) parts.push({kind: "markdown", text: value}); }
-  var src = String(text || ""), outside = 0, inside = 0, depth = 0, thought = "", m;
-  var renderedThinking = false;
+  var outside = checkpoint ? checkpoint.offset : 0, inside = outside, depth = 0, thought = "", m;
+  var renderedThinking = checkpoint ? checkpoint.renderedThinking : false;
+  // Only a balanced closing boundary is immutable. Reparse the complete open
+  // suffix so partial/nested/orphan/repeated protocol tags keep their semantics.
+  var stableEnd = outside, stableCount = parts.length, stableThinking = renderedThinking;
   // Local servers are inconsistent: some use <think>, others <thinking>,
   // and a few emit a second opening marker or an orphan closing marker when
   // native reasoning_content switches back to visible content. A depth-aware
   // parser keeps nested/split streams renderable and never shows protocol tags
   // as assistant prose.
   var tags = /<\/?(?:thinking|think|reasoning|reflection)>/gi;
+  tags.lastIndex = outside;
   while ((m = tags.exec(src)) !== null) {
     var closing = m[0].charAt(1) === "/";
     if (depth === 0) {
@@ -144,6 +152,7 @@ function assistantTextParts(text) {
       if (closing) {
         // Orphan close: provider/model both closed the same native channel.
         outside = tags.lastIndex;
+        stableEnd = outside; stableCount = parts.length; stableThinking = renderedThinking;
         continue;
       }
       depth = 1;
@@ -167,7 +176,13 @@ function assistantTextParts(text) {
       }
       thought = "";
       outside = tags.lastIndex;
+      stableEnd = outside; stableCount = parts.length; stableThinking = renderedThinking;
     }
+  }
+  if (checkpoint && stableEnd !== checkpoint.offset) {
+    checkpoint.offset = stableEnd;
+    checkpoint.parts = parts.slice(0, stableCount);
+    checkpoint.renderedThinking = stableThinking;
   }
   if (depth > 0) {
     thought += src.slice(inside);

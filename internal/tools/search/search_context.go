@@ -23,6 +23,7 @@ type searchHit struct {
 
 type searchContext struct {
 	radius    int
+	filesOnly bool
 	hits      []searchHit
 	records   []searchRecord
 	include   *searchGlob

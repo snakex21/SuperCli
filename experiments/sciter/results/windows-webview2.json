@@ -1,0 +1,48 @@
+{
+  "elapsed_ms": 7719,
+  "idle_cpu_ms_over_4s": 63,
+  "process_tree": {
+    "WorkingSet": 181260288,
+    "Private": 313241600,
+    "PrivateWorkingSet": 68747264,
+    "CPUMS": 1935
+  },
+  "result": {
+    "errors": [],
+    "checks": {
+      "echo": true,
+      "model": true,
+      "streaming": true,
+      "cancel": true,
+      "providers": true,
+      "appearance": true,
+      "language": true,
+      "runtimeRestore": true,
+      "history": true,
+      "submit": true,
+      "layout": true
+    },
+    "viewport": {
+      "width": 1200,
+      "height": 820
+    },
+    "stream": [
+      {
+        "event": {
+          "type": "message",
+          "text": "Zażółć 🦊"
+        },
+        "ms": 81
+      },
+      {
+        "event": {
+          "type": "done"
+        },
+        "ms": 432
+      }
+    ],
+    "submitEvents": 2,
+    "passed": true
+  },
+  "variant": "WebView2"
+}

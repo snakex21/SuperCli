@@ -47,6 +47,8 @@ func (m *Model) returnToProvidersMenu() {
 
 func (m Model) menuLabel(kind menuKind) string {
 	switch kind {
+	case menuPreview:
+		return m.tr("preview.title")
 	case menuUsage:
 		return m.tr("tui.menu_navigation.8d59829c1e")
 	case menuAttachments:

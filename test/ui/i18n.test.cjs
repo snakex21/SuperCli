@@ -17,11 +17,13 @@ function languageUI(fetchOverride) {
    return {ok:true,json:async()=>catalog(decodeURIComponent(url.match(/([^/]+)\.json$/)[1]))};
   }), requests,
   el(tag,cls,text) {
-   const node={tag,dataset:{},children:[],className:cls};
+   const node={tag,dataset:{},children:[],className:cls,isConnected:true,attributes:{},
+    setAttribute(name,value){this.attributes[name]=value;}};
    const label={nodeValue:text,parentNode:node};
    node.firstChild=label;node.children.push(label);nodes.push(node);return node;
   },
-  $$(selector) {return selector==='[data-i18n-text]' ? nodes.filter(n=>n.dataset.i18nText) : []}
+  $$(selector) {return selector==='[data-i18n-text]' ? nodes.filter(n=>n.dataset.i18nText) :
+    selector==='[data-i18n-refresh]' ? nodes.filter(n=>n.isConnected && Object.hasOwn(n.attributes,'data-i18n-refresh')) : []}
  };
  vm.createContext(context);
  vm.runInContext(fs.readFileSync(path.join(assets,'01-i18n.js'),'utf8'),context);
@@ -95,4 +97,17 @@ test('the empty-model fallback follows language changes while actual model ident
  ui.ui.lang='en';ui.applyI18n();assert.equal(model.textContent,'no model');
  ui.ui.lang='pl';ui.applyI18n();assert.equal(model.textContent,catalog('pl')['model.none']);assert.equal(ui.modelDisplayName('no model'),catalog('pl')['model.none']);
  ui.activeModelID='custom/my-model';model.textContent=ui.activeModelID;ui.ui.lang='en';ui.applyI18n();assert.equal(model.textContent,'custom/my-model');assert.equal(ui.modelDisplayName('custom/my-model'),'custom/my-model');
+});
+
+test('dynamic translations refresh connected owners and stop updating removed panels',async()=>{
+ const ui=languageUI();await ui.loadLanguage('pl');
+ const active=ui.el('span','',''),removed=ui.el('span','','');
+ let activeCalls=0,removedCalls=0;
+ ui.registerLanguageRefresh(active,()=>{activeCalls++;active.textContent=ui.t('common.save');});
+ ui.registerLanguageRefresh(removed,()=>{removedCalls++;});
+ ui.applyI18n();assert.equal(active.textContent,'Zapisz');assert.equal(activeCalls,1);assert.equal(removedCalls,1);
+ removed.isConnected=false;ui.ui.lang='en';ui.applyI18n();
+ assert.equal(active.textContent,'Save');assert.equal(activeCalls,2);assert.equal(removedCalls,1);
+ ui.registerLanguageRefresh(active,()=>{active.textContent=ui.t('common.cancel');});ui.applyI18n();
+ assert.equal(active.textContent,'Cancel');assert.equal(activeCalls,2,'replaced callbacks stop retaining and updating old content');
 });

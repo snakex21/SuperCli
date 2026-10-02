@@ -6,6 +6,7 @@ package session
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -45,12 +46,12 @@ type Store struct {
 func OpenStore(home string) (*Store, error) {
 	if home == "" {
 		var err error
-		home, err = tempHome()
+		home, err = os.MkdirTemp("", "supercli-sess-*")
 		if err != nil {
 			return nil, err
 		}
 	}
-	if err := mkdirAll(home, 0o755); err != nil {
+	if err := os.MkdirAll(home, 0o755); err != nil {
 		return nil, fmt.Errorf("session.OpenStore: mkdir: %w", err)
 	}
 	dsn := filepath.Join(home, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
@@ -243,8 +244,9 @@ func (s *Store) SetTitle(id, title string) error {
 // session in the meantime. It prevents an asynchronous title summarizer from
 // overwriting a user's explicit conversation name.
 func (s *Store) SetTitleIfCurrent(id, current, title string) (bool, error) {
-	now := time.Now().UTC()
-	res, err := s.db.Exec(`UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title = ?`, title, now.UnixNano(), id, current)
+	// Generated labels are metadata, not conversation activity. Preserve the
+	// message timestamp so a background title cannot move an old chat to the top.
+	res, err := s.db.Exec(`UPDATE sessions SET title = ? WHERE id = ? AND title = ?`, title, id, current)
 	if err != nil {
 		return false, err
 	}

@@ -39,6 +39,8 @@ var (
 // so individual renderers (chat, status, markers) can reference
 // them without hardcoding values.
 type Palette struct {
+	// renderer records the color environment used by cached chrome.
+	renderer *lipgloss.Renderer
 	// Chrome
 	Header       lipgloss.Style
 	HeaderDim    lipgloss.Style
@@ -102,6 +104,7 @@ type Palette struct {
 // styles render as plain text — no ANSI escapes.
 func NewPalette(r *lipgloss.Renderer) Palette {
 	return Palette{
+		renderer: r,
 		// Chrome
 		Header:       r.NewStyle().Foreground(colorAccent).Bold(true),
 		HeaderDim:    r.NewStyle().Foreground(colorMuted),

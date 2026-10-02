@@ -54,6 +54,8 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch rows[minInt(m.menu.cursor, len(rows)-1)].id {
+	case "preview":
+		return m.openPreviewMenu()
 	case "update":
 		return m.openUpdateMenu()
 	case "context-limit":

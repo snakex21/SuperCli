@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -147,8 +148,65 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	}
 	if len(result.Text) > core.ModelOutputInlineBytes {
 		result.ModelPreview = res.SuccessPreview()
+	} else {
+		result.ModelText = ctxExecuteInlineModelText(res, p.Command, result)
 	}
 	return result, nil
+}
+
+// A short command echo saves too little to justify another JSON encoding.
+// Longer scripts are already present in the paired assistant tool call.
+const ctxExecuteDuplicateCommandMinBytes = 256
+
+// ctxExecuteInlineModelText removes a byte-identical long command echo or JSON
+// HTML escapes from a small successful result. Values, capture diagnostics and
+// unmatched commands stay complete. Text remains the original live UI evidence.
+func ctxExecuteInlineModelText(res *ctxexec.Result, command []string, result Result) string {
+	if res == nil || result.Err != nil || res.ExitCode != 0 || res.Error != "" ||
+		result.RetainedText != "" || result.ModelPreview != "" ||
+		len(result.Text) > core.ModelOutputInlineBytes {
+		return ""
+	}
+	duplicateCommand := len(res.Command) >= ctxExecuteDuplicateCommandMinBytes &&
+		res.Command == strings.Join(command, " ")
+	// JSON here is tool text, not HTML. Avoid another encoding unless the escaped
+	// characters offer a useful reduction; ordinary command results keep the fast path.
+	const minHTMLGain = 512
+	htmlCandidate := len(result.Text) >= minHTMLGain &&
+		5*(strings.Count(result.Text, "\\u003c")+
+			strings.Count(result.Text, "\\u003e")+
+			strings.Count(result.Text, "\\u0026")) >= minHTMLGain
+	if !duplicateCommand && !htmlCandidate {
+		return ""
+	}
+	var view any = res
+	if duplicateCommand {
+		view = struct {
+			*ctxexec.Result
+			Command *string `json:"command,omitempty"`
+		}{Result: res}
+	}
+	if !htmlCandidate {
+		data, err := json.Marshal(view)
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+	var buffer bytes.Buffer
+	buffer.Grow(len(result.Text))
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(view); err != nil {
+		return ""
+	}
+	data := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
+	// Literal backslash-u text can resemble an HTML escape in the cheap scan.
+	// Validate the actual gain so those results retain the original representation.
+	if !duplicateCommand && len(result.Text)-len(data) < minHTMLGain {
+		return ""
+	}
+	return string(data)
 }
 
 var officeScriptMarkers = []string{
