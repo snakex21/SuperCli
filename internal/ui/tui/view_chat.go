@@ -43,9 +43,10 @@ type chat struct {
 	// Streaming used to run Markdown/ANSI rendering over the entire conversation
 	// for every provider delta. Only current changes while a response streams,
 	// so keep the completed prefix until a message/fold setting really changes.
-	completedCache string
-	completedDirty bool
-	activeCache    *activeSectionCache
+	completedCache    string
+	completedDirty    bool
+	completedSnapshot *completedHistorySnapshot
+	activeCache       *activeSectionCache
 
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
@@ -274,8 +275,10 @@ func (c *chat) renderCompleted(p Palette) string {
 	if !c.completedDirty {
 		return c.completedCache
 	}
+	start, prefix, stock := c.completedPrefix(p)
 	var b strings.Builder
-	for i, m := range c.msgs {
+	for rel, m := range c.msgs[start:] {
+		i := start + rel
 		if i > 0 && (m.role == roleUser || m.role == roleAssistant) {
 			b.WriteByte('\n')
 		}
@@ -286,7 +289,8 @@ func (c *chat) renderCompleted(p Palette) string {
 		b.WriteString(rendered)
 		b.WriteByte('\n')
 	}
-	c.completedCache = b.String()
+	c.completedCache = prefix + b.String()
+	c.rememberCompleted(p, stock)
 	c.completedDirty = false
 	return c.completedCache
 }

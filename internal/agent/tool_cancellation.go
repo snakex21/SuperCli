@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 
 	"supercli/internal/llm"
@@ -16,7 +17,13 @@ func (l *Loop) cancelledToolResult(tc llm.ToolCall, res tools.Result, cause erro
 	} else {
 		res.Err = fmt.Errorf("TOOL_NOT_STARTED: turn ended before dispatch; tool was not run (%w)", cause)
 	}
-	content := l.registry.ModelResultContent(tc.Name, res)
+	// Interrupted diagnostics still belong to this session. Cancellation must
+	// not discard omitted evidence; retain uses its existing one-second timeout.
+	saveCtx := context.Background()
+	if l.toolOutputs != nil {
+		saveCtx = tools.WithOutputPersistence(saveCtx, l.toolOutputs)
+	}
+	content := l.registry.ModelResultContentContext(saveCtx, tc.Name, res)
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, Err: res.Err, OutputHandle: retainedToolOutputHandle(tc.Name, res, content)}
 	return toolResult{
 		failed: true,

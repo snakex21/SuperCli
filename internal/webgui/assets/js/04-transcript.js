@@ -901,12 +901,13 @@ function renderToolPayloadWhenOpen(row, render) {
     if (!row.open || rendered) return;
     rendered = true;
     row.removeEventListener("toggle", renderIfOpen);
-    render();
+    try { render(); } finally { render = null; }
   }
   row.addEventListener("toggle", renderIfOpen);
   renderIfOpen();
   return function () {
     rendered = true;
+    render = null;
     row.removeEventListener("toggle", renderIfOpen);
   };
 }
