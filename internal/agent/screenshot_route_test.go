@@ -62,7 +62,7 @@ type screenshotReplayProvider struct {
 func (*screenshotReplayProvider) Name() string { return "screenshot-replay" }
 func (p *screenshotReplayProvider) Complete(_ context.Context, messages []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
 	p.calls++
-	if !hasScreenshotSchema(defs) {
+	if !hasScreenshotSchema(defs) && !requestContainsToolContract(messages, "send_screenshot") {
 		p.t.Fatal("real agent provider request omitted screen-capture capability")
 	}
 	ch := make(chan llm.Delta, 1)

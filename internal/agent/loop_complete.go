@@ -220,5 +220,8 @@ func (l *Loop) contextTail() string {
 			s += "\n\n" + l.ultraworkReminder
 		}
 	}
+	if requested := l.requestedToolContext(); requested != "" {
+		s += "\n\n" + requested
+	}
 	return s
 }

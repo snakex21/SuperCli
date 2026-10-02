@@ -80,7 +80,7 @@ function mediaResult(type, file, extra = {}) {
 function buttons(node) { return node ? node.querySelectorAll('.sent-attachment-preview') : []; }
 
 test('successful screenshots and images are visible outside folded live details with exact raw output', () => {
-  for (const [name, source] of [['send_screenshot', 'screen'], ['send_screenshot', 'clipboard'], ['show_media', 'screen']]) {
+  for (const [name, source] of [['send_screenshot', 'screen'], ['send_screenshot', 'desktop'], ['send_screenshot', 'clipboard'], ['show_media', 'screen']]) {
     const h = harness(), file = 'C:\\portable project\\.supercli\\snapshots\\zażółć 😀.png';
     const raw = mediaResult('image', file, {source});
     const row = liveResult(h, name, raw);
@@ -113,6 +113,7 @@ test('successful screenshots and images are visible outside folded live details 
 test('persisted tool results restore visible previews across Unix, Windows and UNC paths', () => {
   const cases = [
     ['send_screenshot', 'image', '/portable/.supercli/snapshots/screen.png'],
+    ['send_screenshot', 'image', 'C:/portable/.supercli/snapshots/desktop.png', 'desktop'],
     ['show_media', 'image', 'C:/portable/picture.JPEG'],
     ['show_media', 'video', '/portable/clip.mp4'],
     ['show_media', 'video', 'C:\\portable\\clip.webm'],
@@ -120,8 +121,8 @@ test('persisted tool results restore visible previews across Unix, Windows and U
     ['show_media', 'audio', 'C:/portable/sound.wav'],
     ['show_media', 'audio', '\\\\server\\portable\\sound.ogg'],
   ];
-  for (const [name, type, file] of cases) {
-    const h = harness(), raw = mediaResult(type, file);
+  for (const [name, type, file, source = 'screen'] of cases) {
+    const h = harness(), raw = mediaResult(type, file, {source});
     const row = h.c.buildHistoryFragment([{seq: 2, role: 'tool', tool_call_id: 'old-media', name, content: raw}]).children[0];
     const body = row.children[1];
     assert.equal(body.children.length, 0);

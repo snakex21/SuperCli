@@ -64,6 +64,11 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 		return fmt.Errorf("invalid trailing native capture request")
 	}
 	switch request.Mode {
+	case "desktop":
+		if request.HWND != "" || request.Title != "" || request.ExpectedPID != 0 {
+			return fmt.Errorf("desktop capture does not accept an application window selector")
+		}
+		return captureNativeDesktop(context.Background(), output)
 	case "list":
 		infos, err := listNativeCaptureWindows(context.Background())
 		if err != nil {
@@ -185,6 +190,23 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 	if err != nil {
 		return nil, "", WindowInfo{}, err
 	}
+	return decodeNativeWindowCapture(ctx, data, selector.PID)
+}
+
+func captureDesktop(ctx context.Context) ([]byte, string, WindowInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, screenshotCaptureTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, "", WindowInfo{}, err
+	}
+	data, err := runWindowHelper(ctx, windowHelperRequest{Mode: "desktop"}, DefaultMaxScreenshotBytes+4096)
+	if err != nil {
+		return nil, "", WindowInfo{}, err
+	}
+	return decodeNativeWindowCapture(ctx, data, 0)
+}
+
+func decodeNativeWindowCapture(ctx context.Context, data []byte, expectedPID uint32) ([]byte, string, WindowInfo, error) {
 	split := bytes.IndexByte(data, '\n')
 	if split < 0 || split > 4096 {
 		return nil, "", WindowInfo{}, fmt.Errorf("invalid native window capture metadata")
@@ -193,7 +215,7 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 	if err := json.Unmarshal(data[:split], &info); err != nil {
 		return nil, "", WindowInfo{}, fmt.Errorf("invalid native window capture metadata: %w", err)
 	}
-	if selector.PID != 0 && info.PID != selector.PID {
+	if expectedPID != 0 && info.PID != expectedPID {
 		return nil, "", WindowInfo{}, fmt.Errorf("native capture returned a different process")
 	}
 	pixels := data[split+1:]
@@ -204,6 +226,99 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 		return nil, "", WindowInfo{}, err
 	}
 	return pixels, "image/png", info, nil
+}
+
+func nativeShellWindow() uintptr {
+	hwnd, _, _ := captureUser32.NewProc("GetShellWindow").Call()
+	return hwnd
+}
+
+func captureNativeDesktop(ctx context.Context, output io.Writer) error {
+	return captureNativeDesktopWith(ctx, nativeShellWindow, output)
+}
+
+// GetShellWindow identifies the shell desktop directly; no foreground lookup,
+// guessed title, Explorer message, activation or screen fallback is used.
+// The injectable resolver lets native tests own every captured pixel.
+func captureNativeDesktopWith(ctx context.Context, shellWindow func() uintptr, output io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	hwnd := shellWindow()
+	if hwnd == 0 {
+		return fmt.Errorf("shell desktop is unavailable")
+	}
+	info, err := inspectNativeWindow(hwnd)
+	if err != nil {
+		return fmt.Errorf("shell desktop: %w", err)
+	}
+	process, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, info.PID)
+	if err != nil {
+		return fmt.Errorf("shell desktop owner: %w", err)
+	}
+	defer windows.CloseHandle(process)
+	if err := requireCaptureProcessAlive(process); err != nil {
+		return err
+	}
+	if err := validateNativeDesktopTopology(ctx, hwnd, info.PID); err != nil {
+		return err
+	}
+	if err := captureNativeWindowWith(ctx, hwnd, info.PID, output, true); err != nil {
+		return err
+	}
+	if shellWindow() != hwnd {
+		return fmt.Errorf("shell desktop changed during capture")
+	}
+	return requireCaptureProcessAlive(process)
+}
+
+// Some Explorer layouts move the icon view onto a sibling WorkerW. Rendering
+// only Progman would then return wallpaper without the requested icons. Fail
+// honestly for that known split instead of photographing covering applications
+// or trying to reparent/composite undocumented shell surfaces.
+func validateNativeDesktopTopology(ctx context.Context, shell uintptr, pid uint32) error {
+	var stopped error
+	count := 0
+	defView, _ := windows.UTF16PtrFromString("SHELLDLL_DefView")
+	callback := windows.NewCallback(func(hwnd, _ uintptr) uintptr {
+		if err := ctx.Err(); err != nil {
+			stopped = err
+			return 0
+		}
+		count++
+		if count > 512 {
+			stopped = fmt.Errorf("shell desktop discovery exceeds 512 windows")
+			return 0
+		}
+		if hwnd == shell {
+			return 1
+		}
+		var owner uint32
+		captureUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&owner)))
+		if owner != pid {
+			return 1
+		}
+		class := make([]uint16, 64)
+		captureUser32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
+		name := windows.UTF16ToString(class)
+		if name != "WorkerW" && name != "Progman" {
+			return 1
+		}
+		icons, _, _ := captureUser32.NewProc("FindWindowExW").Call(hwnd, 0, uintptr(unsafe.Pointer(defView)), 0)
+		if icons != 0 {
+			stopped = fmt.Errorf("shell desktop icons are on a separate %s surface; desktop-only background capture is unavailable for this shell layout", name)
+			return 0
+		}
+		return 1
+	})
+	ok, _, err := captureUser32.NewProc("EnumWindows").Call(callback, 0)
+	if stopped != nil {
+		return stopped
+	}
+	if ok == 0 {
+		return fmt.Errorf("enumerate shell desktop: %v", err)
+	}
+	return nil
 }
 
 type nativeWindowRect struct{ Left, Top, Right, Bottom int32 }
@@ -290,6 +405,10 @@ func listNativeProcessWindows(ctx context.Context, pid uint32) ([]WindowInfo, er
 }
 
 func captureNativeWindow(ctx context.Context, hwnd uintptr, expectedPID uint32, output io.Writer) error {
+	return captureNativeWindowWith(ctx, hwnd, expectedPID, output, false)
+}
+
+func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint32, output io.Writer, desktop bool) error {
 	restore := enterWindowCaptureDPI(hwnd)
 	defer restore()
 	info, err := inspectNativeWindow(hwnd)
@@ -350,10 +469,12 @@ func captureNativeWindow(ctx context.Context, hwnd uintptr, expectedPID uint32, 
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if !blankWindowPixels(pixels, int(width), int(height)) {
+			if (desktop && !blankDesktopPixels(pixels)) || (!desktop && !blankWindowPixels(pixels, int(width), int(height))) {
 				return nil
 			}
-			if info.Minimized {
+			if desktop {
+				renderError = fmt.Errorf("shell desktop returned untouched or incomplete content")
+			} else if info.Minimized {
 				renderError = fmt.Errorf("minimized window returned blank or incomplete content; its application does not support capture while minimized")
 			} else {
 				renderError = fmt.Errorf("window returned blank or incomplete content; its application may not support background capture")
@@ -434,6 +555,22 @@ func blankWindowPixels(pixels []byte, width, height int) bool {
 		}
 	}
 	return false
+}
+
+// A solid-color wallpaper with icons hidden is a valid desktop. Keep the
+// untouched-DIB test, but do not apply application-window uniform/black-client
+// heuristics to the directly resolved shell desktop.
+func blankDesktopPixels(pixels []byte) bool {
+	if len(pixels) < 4 {
+		return true
+	}
+	var unpainted int
+	for i := 0; i < len(pixels); i += 4 {
+		if pixels[i] == 0x23 && pixels[i+1] == 0x45 && pixels[i+2] == 0x67 {
+			unpainted++
+		}
+	}
+	return unpainted > len(pixels)/8 // Same majority-untouched limit as windows.
 }
 
 type windowOutputWriter struct {

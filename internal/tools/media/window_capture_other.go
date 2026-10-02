@@ -24,3 +24,10 @@ func captureWindow(ctx context.Context, selector WindowSelector) ([]byte, string
 	}
 	return nil, "", WindowInfo{}, fmt.Errorf("background window capture is currently supported only on Windows (this platform: %s)", runtime.GOOS)
 }
+
+func captureDesktop(ctx context.Context) ([]byte, string, WindowInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", WindowInfo{}, err
+	}
+	return nil, "", WindowInfo{}, fmt.Errorf("desktop-only capture is currently supported only on Windows (this platform: %s); source:screen captures the currently visible display", runtime.GOOS)
+}

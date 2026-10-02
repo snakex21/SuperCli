@@ -71,9 +71,9 @@ type headlessReplayProvider struct {
 }
 
 func (*headlessReplayProvider) Name() string { return "headless-fixture" }
-func (p *headlessReplayProvider) Complete(_ context.Context, _ []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
+func (p *headlessReplayProvider) Complete(_ context.Context, messages []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
 	p.calls++
-	if !hasHeadlessSchema(defs) {
+	if !hasHeadlessSchema(defs) && !requestContainsToolContract(messages, "headless_control") {
 		p.t.Fatal("omitted requested schema")
 	}
 	ch := make(chan llm.Delta, 1)

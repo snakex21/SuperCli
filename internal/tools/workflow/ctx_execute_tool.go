@@ -46,12 +46,12 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one command in a sandbox and return ONLY its bounded stdout. Never use it to read, create, edit, convert, or unpack DOCX; use read_docx/edit_docx directly. `command` is an argv LIST (binary + arguments), NOT a shell string; the binary is resolved directly via PATH. The workspace is the default workdir. Use explicit timeouts for long builds/tests; default 10s, max 5min. Output is JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}.",
+		Description: "Run one sandbox command; bounded output JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}. Never read/create/edit/convert/unpack DOCX here; use read_docx/edit_docx. Set timeouts for long builds/tests (default 10s, max 5min).",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "Executable + arguments, e.g. [\"git\",\"status\",\"--short\"]. A JSON-encoded argv array passed as a string (\"[\\\"git\\\",\\\"status\\\"]\") is also accepted. Use only binaries actually on PATH. Use search_code instead of assuming rg is installed. Windows built-ins need [\"cmd\",\"/c\",...]."},
-				"workdir": {"type": "string", "description": "Working dir relative to home. Default: home root."},
+				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "argv (binary + args), not shell text; e.g. [\"git\",\"status\",\"--short\"]. Only installed PATH binaries, resolved directly. JSON-encoded argv strings also work (\"[\\\"git\\\",\\\"status\\\"]\"). Use search_code rather than assuming rg exists. Windows built-ins: [\"cmd\",\"/c\",...]."},
+				"workdir": {"type": "string", "description": "Home/workspace-relative working dir; default: home root."},
 				"timeout_ms": {"type": "integer", "minimum": 100, "maximum": %d, "default": 10000, "description": "Timeout (ms)."},
 				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "stdout cap in KB, clamped to 64; keeps tail."},
 				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "stderr cap in KB, clamped to 64; keeps tail."},
