@@ -453,12 +453,16 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	}
 	in, err := m.inner.Complete(ctx, msgs, tools)
 	if err != nil {
+		// Background cleanup cancels its derived context too. Preserve the
+		// actual request state before cleanup so an ordinary provider error
+		// cannot be reported as foreground preemption.
+		canceled := ctx != nil && ctx.Err() != nil
 		release()
 		cleanup()
 		finishForeground()
 		stat.Duration = time.Since(start)
 		stat.Failed = true
-		stat.Canceled = ctx != nil && ctx.Err() != nil
+		stat.Canceled = canceled
 		emit()
 		return nil, err
 	}

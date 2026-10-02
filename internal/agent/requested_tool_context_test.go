@@ -15,8 +15,19 @@ import (
 func requestToolContracts(messages []llm.Message) []llm.ToolDef {
 	for _, message := range messages {
 		if at := strings.Index(message.Content, requestedToolContextPreamble+"\n"); at >= 0 {
-			var defs []llm.ToolDef
-			_ = json.NewDecoder(strings.NewReader(message.Content[at+len(requestedToolContextPreamble)+1:])).Decode(&defs)
+			var contracts []struct {
+				Name, Description string
+				Schema            json.RawMessage
+			}
+			_ = json.NewDecoder(strings.NewReader(message.Content[at+len(requestedToolContextPreamble)+1:])).Decode(&contracts)
+			defs := make([]llm.ToolDef, len(contracts))
+			for i, contract := range contracts {
+				schema := string(contract.Schema)
+				if len(contract.Schema) > 0 && contract.Schema[0] == '"' {
+					_ = json.Unmarshal(contract.Schema, &schema)
+				}
+				defs[i] = llm.ToolDef{Name: contract.Name, Description: contract.Description, Schema: schema}
+			}
 			return defs
 		}
 	}
