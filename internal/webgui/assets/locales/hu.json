@@ -722,5 +722,8 @@
   "preview.close": "Előnézet bezárása",
   "preview.unavailable": "A beépített előnézethez helyezze a supercli-web fájlt a supercli mellé. A webhelyet a böngészőben is megnyithatja.",
   "provider.description.cline": "Cline (API-kulcs szükséges)",
-  "provider.description.nous": "Nous Portal (API-kulcs vagy generálási token szükséges)"
+  "provider.description.nous": "Nous Portal (API-kulcs vagy generálási token szükséges)",
+  "code.copy": "Másolás",
+  "code.copied": "Másolva.",
+  "code.copyFailed": "Nem sikerült másolni. Jelöld ki a kódot, és nyomd meg a Ctrl+C billentyűket."
 }

@@ -301,6 +301,7 @@ function buildHistoryFragment(messages) {
         appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
         row.appendChild(body);
         appendStream(row);
+        appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
       }
     });
   } finally {
@@ -454,6 +455,7 @@ async function resumeSession(id, session, fromQueue) {
         appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
         row.appendChild(body);
         appendStream(row);
+        appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
       }
 	});
 	streamAppendTarget = null;

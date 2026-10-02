@@ -722,5 +722,8 @@
   "preview.close": "Aizvērt priekšskatījumu",
   "preview.unavailable": "Lai izmantotu iebūvēto priekšskatījumu, novietojiet supercli-web blakus supercli. Vietni varat atvērt arī pārlūkprogrammā.",
   "provider.description.cline": "Cline (nepieciešama API atslēga)",
-  "provider.description.nous": "Nous Portal (nepieciešama API atslēga vai ģenerēšanas tokens)"
+  "provider.description.nous": "Nous Portal (nepieciešama API atslēga vai ģenerēšanas tokens)",
+  "code.copy": "Kopēt",
+  "code.copied": "Nokopēts.",
+  "code.copyFailed": "Neizdevās nokopēt. Atlasiet kodu un nospiediet Ctrl+C."
 }

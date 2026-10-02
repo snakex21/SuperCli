@@ -1,6 +1,6 @@
 [
   "Prenosný AI agent na programovanie napísaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimom zdieľajúcimi jeden engine.",
-  "Tento README opisuje verziu `1.0.2`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases]({releases}); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.",
+  "Tento README opisuje verziu `1.0.3`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases]({releases}); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.",
   "Snímky obrazovky",
   "![Webové rozhranie SuperCli (GUI)]({guishot})",
   "![Centrum akcií v termináli SuperCli (TUI)]({tuishot})",

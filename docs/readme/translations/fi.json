@@ -1,6 +1,6 @@
 [
   "Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.",
-  "Tämä README kuvaa versiota `1.0.2`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
+  "Tämä README kuvaa versiota `1.0.3`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
   "Kuvakaappaukset",
   "![SuperClin verkkokäyttöliittymä (GUI)]({guishot})",
   "![SuperClin päätteen toimintokeskus (TUI)]({tuishot})",

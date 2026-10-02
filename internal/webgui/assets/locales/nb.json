@@ -722,5 +722,8 @@
   "preview.close": "Lukk forhåndsvisning",
   "preview.unavailable": "For å bruke den innebygde forhåndsvisningen må du plassere supercli-web ved siden av supercli. Du kan også åpne nettstedet i nettleseren.",
   "provider.description.cline": "Cline (krever API-nøkkel)",
-  "provider.description.nous": "Nous Portal (krever API-nøkkel eller token for generering)"
+  "provider.description.nous": "Nous Portal (krever API-nøkkel eller token for generering)",
+  "code.copy": "Kopier",
+  "code.copied": "Kopiert.",
+  "code.copyFailed": "Kunne ikke kopiere. Merk koden og trykk Ctrl+C."
 }

@@ -722,5 +722,8 @@
   "preview.close": "Önizlemeyi kapat",
   "preview.unavailable": "Yerleşik önizleme için supercli-web dosyasını supercli dosyasının yanına yerleştirin. Siteyi tarayıcınızda da açabilirsiniz.",
   "provider.description.cline": "Cline (API anahtarı gerekir)",
-  "provider.description.nous": "Nous Portal (API anahtarı veya çıkarım jetonu gerekir)"
+  "provider.description.nous": "Nous Portal (API anahtarı veya çıkarım jetonu gerekir)",
+  "code.copy": "Kopyala",
+  "code.copied": "Kopyalandı.",
+  "code.copyFailed": "Kopyalanamadı. Kodu seçip Ctrl+C tuşlarına basın."
 }

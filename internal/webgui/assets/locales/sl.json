@@ -722,5 +722,8 @@
   "preview.close": "Zapri predogled",
   "preview.unavailable": "Za vgrajeni predogled postavite supercli-web poleg supercli. Spletno mesto lahko odprete tudi v brskalniku.",
   "provider.description.cline": "Cline (zahteva ključ API)",
-  "provider.description.nous": "Nous Portal (zahteva ključ API ali žeton za generiranje)"
+  "provider.description.nous": "Nous Portal (zahteva ključ API ali žeton za generiranje)",
+  "code.copy": "Kopiraj",
+  "code.copied": "Kopirano.",
+  "code.copyFailed": "Kopiranje ni uspelo. Označite kodo in pritisnite Ctrl+C."
 }

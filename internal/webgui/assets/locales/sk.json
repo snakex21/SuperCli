@@ -722,5 +722,8 @@
   "preview.close": "Zavrieť náhľad",
   "preview.unavailable": "Pre vstavaný náhľad umiestnite supercli-web vedľa supercli. Web môžete otvoriť aj v prehliadači.",
   "provider.description.cline": "Cline (vyžaduje kľúč API)",
-  "provider.description.nous": "Nous Portal (vyžaduje kľúč API alebo token na generovanie)"
+  "provider.description.nous": "Nous Portal (vyžaduje kľúč API alebo token na generovanie)",
+  "code.copy": "Kopírovať",
+  "code.copied": "Skopírované.",
+  "code.copyFailed": "Kopírovanie zlyhalo. Označte kód a stlačte Ctrl+C."
 }

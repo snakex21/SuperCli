@@ -13,6 +13,7 @@ function element(tag, className = '', text) {
       else { this.children.push(child); child.parentNode = this; }
       return child;
     },
+    insertBefore(child, before) { child.remove(); const index = before ? this.children.indexOf(before) : this.children.length; this.children.splice(index, 0, child); child.parentNode = this; return child; },
     replaceChildren(...children) { this.children.forEach(child => child.parentNode = null); this.children = []; children.forEach(child => this.appendChild(child)); },
     remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); this.parentNode = null; },
     setAttribute(name, value) { this.attributes[name] = value; },
@@ -33,8 +34,10 @@ function element(tag, className = '', text) {
   node.classList = {
     add(...names) { node.className += ' ' + names.join(' '); },
     remove(...names) { node.className = node.className.split(' ').filter(value => !names.includes(value)).join(' '); },
+    contains(name) { return node.className.split(" ").includes(name); },
     toggle() {},
   };
+  Object.defineProperty(node, 'nextSibling', {get() { return this.parentNode ? this.parentNode.children[this.parentNode.children.indexOf(this) + 1] || null : null; }});
   Object.defineProperty(node, 'textContent', {get() { return this.nodeType === 3 ? this.text : this.children.map(child => child.textContent).join(''); },
     set(value) { this.children = String(value) ? [{nodeType: 3, text: String(value), textContent: String(value), children: []}] : []; }});
   Object.defineProperty(node, 'innerHTML', {get() { return ''; }, set() { this.children = []; }});
@@ -65,6 +68,7 @@ function liveResult(h, name, raw, err = '') {
   const row = element('details'); row._toolName = name; row._t0 = 0; row._clock = 1;
   row._body = element('div'); row._stat = element('span'); row._tname = element('span');
   row.appendChild(row._body);
+  h.c.appendStream(row);
   h.c.toolRows = {'media-1': row}; h.c.openToolOrder = ['media-1'];
   h.c.addToolResult('media-1', raw, err);
   return row;
@@ -73,17 +77,20 @@ function expand(row) { row.open = true; row.dispatch('toggle'); }
 function mediaResult(type, file, extra = {}) {
   return JSON.stringify({type, source: 'screen', path: file, media_type: {image: 'image/png', video: 'video/mp4', audio: 'audio/mpeg'}[type], bytes: 10, attached: false, ...extra});
 }
-function buttons(node) { return node.querySelectorAll('.sent-attachment-preview'); }
+function buttons(node) { return node ? node.querySelectorAll('.sent-attachment-preview') : []; }
 
-test('successful screenshots and images preview lazily in live output without changing raw text', () => {
+test('successful screenshots and images are visible outside folded live details with exact raw output', () => {
   for (const [name, source] of [['send_screenshot', 'screen'], ['send_screenshot', 'clipboard'], ['show_media', 'screen']]) {
     const h = harness(), file = 'C:\\portable project\\.supercli\\snapshots\\zażółć 😀.png';
     const raw = mediaResult('image', file, {source});
     const row = liveResult(h, name, raw);
     assert.equal(row._body.children.length, 0);
-    assert.equal(h.created.filter(node => node.tag === 'img').length, 0);
+    assert.equal(h.created.filter(node => node.tag === 'img').length, 1);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.parentNode, row.parentNode);
+    assert.equal(row.nextSibling, row._mediaPreview);
     expand(row);
-    const cards = buttons(row._body);
+    const cards = buttons(row._mediaPreview);
     assert.equal(cards.length, 1);
     const img = cards[0].children[0];
     assert.equal(img.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
@@ -91,17 +98,17 @@ test('successful screenshots and images preview lazily in live output without ch
     assert.equal(img.alt, 'zażółć 😀.png');
     assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
     row.open = false; row.dispatch('toggle'); expand(row);
-    assert.equal(buttons(row._body)[0], cards[0]);
+    assert.equal(buttons(row._mediaPreview)[0], cards[0]);
     cards[0].dispatch('click');
     assert.equal(h.$('#attachment-preview-dialog').open, true);
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, img.src);
     img.dispatch('error');
-    assert.equal(buttons(row._body).length, 0, 'an unavailable image removes its preview card');
+    assert.equal(buttons(row._mediaPreview).length, 0, 'an unavailable image removes its preview card while preserving diagnostics');
     assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
   }
 });
 
-test('persisted tool results share lazy media previews across Unix, Windows and UNC paths', () => {
+test('persisted tool results restore visible previews across Unix, Windows and UNC paths', () => {
   const cases = [
     ['send_screenshot', 'image', '/portable/.supercli/snapshots/screen.png'],
     ['show_media', 'image', 'C:/portable/picture.JPEG'],
@@ -116,14 +123,16 @@ test('persisted tool results share lazy media previews across Unix, Windows and 
     const row = h.c.buildHistoryFragment([{seq: 2, role: 'tool', tool_call_id: 'old-media', name, content: raw}]).children[0];
     const body = row.children[1];
     assert.equal(body.children.length, 0);
-    assert.equal(h.created.filter(node => ['img', 'video', 'audio'].includes(node.tag)).length, 0);
+    assert.equal(h.created.filter(node => ['img', 'video', 'audio'].includes(node.tag)).length, type === 'image' ? 1 : 0);
+    assert.equal(buttons(row._mediaPreview).length, 1);
+    assert.equal(row.open, false);
     expand(row);
-    assert.equal(buttons(body).length, 1);
+    assert.equal(buttons(row._mediaPreview).length, 1);
     assert.equal(body.querySelector('pre').textContent, raw);
-    if (type === 'image') assert.equal(body.querySelector('img').loading, 'lazy');
+    if (type === 'image') assert.equal(row._mediaPreview.querySelector('img').loading, 'lazy');
     else {
       assert.equal(h.created.filter(node => node.tag === type).length, 0, 'expanding creates a button only');
-      buttons(body)[0].dispatch('click');
+      buttons(row._mediaPreview)[0].dispatch('click');
       const media = h.$('#attachment-preview-content').querySelector(type);
       assert.ok(media);
       assert.equal(media.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
@@ -141,9 +150,9 @@ test('live audio and video keep their original path and create no player until c
     const row = liveResult(h, 'show_media', raw);
     expand(row);
     assert.equal(row._body.querySelector(type), null);
-    assert.equal(buttons(row._body)[0].textContent, 'sample' + ext);
+    assert.equal(buttons(row._mediaPreview)[0].textContent, 'sample' + ext);
     assert.equal(row._body.querySelector('pre').textContent, raw);
-    buttons(row._body)[0].dispatch('click');
+    buttons(row._mediaPreview)[0].dispatch('click');
     assert.equal(h.$('#attachment-preview-content').querySelector(type).preload, 'none');
   }
 });
@@ -171,11 +180,11 @@ test('unrecognized, malformed and error results never preview and keep diagnosti
   for (const [name, raw, err] of bad) {
     const h = harness(), row = liveResult(h, name, raw, err);
     expand(row);
-    assert.equal(buttons(row._body).length, 0);
+    assert.equal(buttons(row._mediaPreview).length, 0);
     assert.equal(row._body.querySelector('pre').textContent, err || raw);
     const old = h.c.buildHistoryFragment([{seq: 2, role: 'tool', name, content: err || raw}]).children[0];
     // Persisted error role payloads remain text, even without a separate error flag.
-    if (!err) { expand(old); assert.equal(buttons(old).length, 0); }
+    if (!err) { expand(old); assert.equal(buttons(old._mediaPreview).length, 0); }
   }
 });
 
@@ -233,9 +242,9 @@ test('tool MIME descriptors preview valid content even with no or mismatched fil
         liveResult(h, 'show_media', raw);
       const body = history ? row.children[1] : row._body;
       expand(row);
-      assert.equal(buttons(body).length, 1, type + ' ' + mime + ' ' + file);
+      assert.equal(buttons(row._mediaPreview).length, 1, type + ' ' + mime + ' ' + file);
       assert.equal(body.querySelector('pre').textContent, raw);
-      buttons(body)[0].dispatch('click');
+      buttons(row._mediaPreview)[0].dispatch('click');
       const content = h.$('#attachment-preview-content');
       assert.ok(content.querySelector(type === 'image' ? 'img' : type));
       assert.equal(content.querySelector('iframe'), null, 'tool MIME takes priority over a PDF-looking name');
@@ -247,7 +256,7 @@ test('tool MIME descriptors preview valid content even with no or mismatched fil
 test('a tool MIME override does not change ordinary user attachment inference for the same path', () => {
   const h = harness(), file = '/portable/output.bin', raw = mediaResult('image', file);
   const row = liveResult(h, 'show_media', raw);
-  expand(row); buttons(row._body)[0].dispatch('click');
+  expand(row); buttons(row._mediaPreview)[0].dispatch('click');
   assert.ok(h.$('#attachment-preview-content').querySelector('img'));
   h.c.closeAttachmentPreview();
   assert.equal(h.c.previewableAttachment(file), false);
@@ -267,9 +276,12 @@ test('portable screenshot identifiers keep the same lazy live and history URL af
         liveResult(h, 'send_screenshot', raw);
       const body = history ? row.children[1] : row._body;
       assert.equal(body.children.length, 0);
-      assert.equal(h.created.filter(node => node.tag === 'img').length, 0);
+      assert.equal(h.created.filter(node => node.tag === 'img').length, 1);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.parentNode, row.parentNode);
+    assert.equal(row.nextSibling, row._mediaPreview);
       expand(row);
-      const card = buttons(body)[0], image = card.children[0];
+      const card = buttons(row._mediaPreview)[0], image = card.children[0];
       assert.equal(image.src, stableURL);
       assert.equal(image.alt, 'screen-2398173.png');
       assert.equal(card.title, 'attachment.preview: screen-2398173.png');
@@ -292,7 +304,7 @@ test('only strict snapshot basenames from send_screenshot override the original 
     const h = harness(), raw = mediaResult('image', file, {preview_path: previewPath});
     const row = liveResult(h, 'send_screenshot', raw);
     expand(row);
-    const card = buttons(row._body)[0];
+    const card = buttons(row._mediaPreview)[0];
     assert.equal(card.children[0].src, absoluteURL);
     card.dispatch('click');
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, absoluteURL);
@@ -300,7 +312,7 @@ test('only strict snapshot basenames from send_screenshot override the original 
   const h = harness();
   const row = liveResult(h, 'show_media', mediaResult('image', file, {preview_path: 'snapshot:screen.png'}));
   expand(row);
-  assert.equal(buttons(row._body)[0].children[0].src, absoluteURL);
+  assert.equal(buttons(row._mediaPreview)[0].children[0].src, absoluteURL);
   const invalid = liveResult(h, 'send_screenshot', mediaResult('image', 'relative.png', {preview_path: 'snapshot:screen.png'}));
   expand(invalid);
   assert.equal(buttons(invalid._body).length, 0, 'a portable token cannot bypass the absolute path requirement');

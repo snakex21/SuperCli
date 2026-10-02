@@ -722,5 +722,8 @@
   "preview.close": "Chiudi anteprima",
   "preview.unavailable": "Per usare l’anteprima integrata, posiziona supercli-web accanto a supercli. Puoi anche aprire il sito nel browser.",
   "provider.description.cline": "Cline (chiave API richiesta)",
-  "provider.description.nous": "Nous Portal (chiave API o token di inferenza richiesto)"
+  "provider.description.nous": "Nous Portal (chiave API o token di inferenza richiesto)",
+  "code.copy": "Copia",
+  "code.copied": "Copiato.",
+  "code.copyFailed": "Impossibile copiare. Seleziona il codice e premi Ctrl+C."
 }

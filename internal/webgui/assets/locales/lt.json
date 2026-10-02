@@ -722,5 +722,8 @@
   "preview.close": "Užverti peržiūrą",
   "preview.unavailable": "Norėdami naudoti integruotą peržiūrą, padėkite supercli-web šalia supercli. Svetainę taip pat galite atverti naršyklėje.",
   "provider.description.cline": "Cline (reikalingas API raktas)",
-  "provider.description.nous": "Nous Portal (reikalingas API raktas arba generavimo žetonas)"
+  "provider.description.nous": "Nous Portal (reikalingas API raktas arba generavimo žetonas)",
+  "code.copy": "Kopijuoti",
+  "code.copied": "Nukopijuota.",
+  "code.copyFailed": "Nepavyko nukopijuoti. Pažymėkite kodą ir paspauskite Ctrl+C."
 }

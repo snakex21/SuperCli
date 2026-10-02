@@ -722,5 +722,8 @@
   "preview.close": "Zamknij podgląd",
   "preview.unavailable": "Aby korzystać z wbudowanego podglądu, umieść supercli-web obok supercli. Możesz też otworzyć stronę w przeglądarce.",
   "provider.description.cline": "Cline (wymagany klucz API)",
-  "provider.description.nous": "Nous Portal (wymagany klucz API lub token do generowania)"
+  "provider.description.nous": "Nous Portal (wymagany klucz API lub token do generowania)",
+  "code.copy": "Kopiuj",
+  "code.copied": "Skopiowano.",
+  "code.copyFailed": "Nie udało się skopiować. Zaznacz kod i naciśnij Ctrl+C."
 }

@@ -722,5 +722,8 @@
   "preview.close": "Κλείσιμο προεπισκόπησης",
   "preview.unavailable": "Για την ενσωματωμένη προεπισκόπηση, τοποθετήστε το supercli-web δίπλα στο supercli. Μπορείτε επίσης να ανοίξετε τον ιστότοπο στο πρόγραμμα περιήγησης.",
   "provider.description.cline": "Cline (απαιτείται κλειδί API)",
-  "provider.description.nous": "Nous Portal (απαιτείται κλειδί API ή διακριτικό παραγωγής)"
+  "provider.description.nous": "Nous Portal (απαιτείται κλειδί API ή διακριτικό παραγωγής)",
+  "code.copy": "Αντιγραφή",
+  "code.copied": "Αντιγράφηκε.",
+  "code.copyFailed": "Η αντιγραφή απέτυχε. Επιλέξτε τον κώδικα και πατήστε Ctrl+C."
 }

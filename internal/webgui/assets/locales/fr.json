@@ -722,5 +722,8 @@
   "preview.close": "Fermer l’aperçu",
   "preview.unavailable": "Pour utiliser l’aperçu intégré, placez supercli-web à côté de supercli. Vous pouvez aussi ouvrir le site dans votre navigateur.",
   "provider.description.cline": "Cline (clé API requise)",
-  "provider.description.nous": "Nous Portal (clé API ou jeton d’inférence requis)"
+  "provider.description.nous": "Nous Portal (clé API ou jeton d’inférence requis)",
+  "code.copy": "Copier",
+  "code.copied": "Copié.",
+  "code.copyFailed": "Impossible de copier. Sélectionnez le code et appuyez sur Ctrl+C."
 }
