@@ -230,5 +230,8 @@ func (m Model) closeMenu() (tea.Model, tea.Cmd) {
 	m.mode = modeNormal
 	m.menu = interactiveMenu{}
 	m.input.Focus()
+	if m.chat.completedDirty && (m.chat.len() > 0 || m.current != "") {
+		m.refreshTranscript()
+	}
 	return m, nil
 }

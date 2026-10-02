@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -35,60 +36,94 @@ func nativeReasoning(format, model, base string, raw []byte) *ReasoningBlock {
 	return &ReasoningBlock{Format: format, Model: model, Scope: reasoningScope(base), Data: append(json.RawMessage(nil), raw...)}
 }
 
+type nativeChatPayload struct {
+	field, text string
+	canonical   bool
+}
+
+// Only the exact one-field form skips the legacy typed-map decode. Duplicate
+// keys can retain an earlier UnmarshalTypeError even when the final value is a
+// string; escaped keys and other spellings therefore use the original path.
+func canonicalSingleChatPayload(data json.RawMessage, key string, value json.RawMessage) bool {
+	var prefix string
+	switch key {
+	case "reasoning_content":
+		prefix = "{\"reasoning_content\":"
+	case "reasoning":
+		prefix = "{\"reasoning\":"
+	case "reasoning_text":
+		prefix = "{\"reasoning_text\":"
+	default:
+		return false
+	}
+	data = bytes.TrimSpace(data)
+	return len(data) == len(prefix)+len(value)+1 && bytes.HasPrefix(data, []byte(prefix)) && data[len(data)-1] == '}'
+}
+
 func (b *ReasoningBlock) Validate() error {
+	_, err := b.validateParsed()
+	return err
+}
+
+// validateParsed preserves native validation and makes decoded chat text
+// available to the request builder. It owns no cache and never changes Data.
+func (b *ReasoningBlock) validateParsed() (nativeChatPayload, error) {
+	var chat nativeChatPayload
 	if b == nil || b.Model == "" || b.Scope == "" || !json.Valid(b.Data) {
-		return fmt.Errorf("reasoning part: invalid origin or payload")
+		return chat, fmt.Errorf("reasoning part: invalid origin or payload")
 	}
 	switch b.Format {
 	case ReasoningChat, ReasoningResponses, ReasoningAnthropic:
 	default:
-		return fmt.Errorf("reasoning part: unknown format %q", b.Format)
+		return chat, fmt.Errorf("reasoning part: unknown format %q", b.Format)
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(b.Data, &fields) != nil || fields == nil {
-		return fmt.Errorf("reasoning part: payload must be an object")
+		return chat, fmt.Errorf("reasoning part: payload must be an object")
 	}
 	if b.Format == ReasoningChat {
 		if len(fields) != 1 {
-			return fmt.Errorf("reasoning part: expected one native chat field")
+			return chat, fmt.Errorf("reasoning part: expected one native chat field")
 		}
 		for key, value := range fields {
 			if key != "reasoning_content" && key != "reasoning" && key != "reasoning_text" {
-				return fmt.Errorf("reasoning part: unsupported chat field")
+				return chat, fmt.Errorf("reasoning part: unsupported chat field")
 			}
 			var text string
 			if json.Unmarshal(value, &text) != nil {
-				return fmt.Errorf("reasoning part: chat reasoning must be text")
+				return chat, fmt.Errorf("reasoning part: chat reasoning must be text")
 			}
+			chat.field, chat.text = key, text
+			chat.canonical = canonicalSingleChatPayload(b.Data, key, value)
 		}
 	} else {
 		var kind string
 		_ = json.Unmarshal(fields["type"], &kind)
 		if b.Format == ReasoningResponses && kind != "reasoning" {
-			return fmt.Errorf("reasoning part: expected reasoning item")
+			return chat, fmt.Errorf("reasoning part: expected reasoning item")
 		}
 		if b.Format == ReasoningAnthropic && kind == "assistant" {
 			var content []map[string]json.RawMessage
 			if json.Unmarshal(fields["content"], &content) != nil || len(content) == 0 {
-				return fmt.Errorf("reasoning part: missing native assistant content")
+				return chat, fmt.Errorf("reasoning part: missing native assistant content")
 			}
 			hasThinking := false
 			for _, part := range content {
 				var t string
 				if json.Unmarshal(part["type"], &t) != nil || t == "" {
-					return fmt.Errorf("reasoning part: invalid content block")
+					return chat, fmt.Errorf("reasoning part: invalid content block")
 				}
 				hasThinking = hasThinking || t == "thinking" || t == "redacted_thinking"
 			}
 			if !hasThinking {
-				return fmt.Errorf("reasoning part: native assistant has no thinking")
+				return chat, fmt.Errorf("reasoning part: native assistant has no thinking")
 			}
 		}
 		if b.Format == ReasoningAnthropic && kind != "thinking" && kind != "redacted_thinking" && kind != "assistant" {
-			return fmt.Errorf("reasoning part: expected thinking block")
+			return chat, fmt.Errorf("reasoning part: expected thinking block")
 		}
 	}
-	return nil
+	return chat, nil
 }
 
 func (b *ReasoningBlock) EstimateTokens() int {
@@ -202,21 +237,35 @@ func (a *chatReasoningAccumulator) block(model, base string) *ReasoningBlock {
 }
 
 func applyChatReasoning(out *openaiReqMsg, m Message, model string) {
-	for _, raw := range nativePayloads(m, ReasoningChat, model) {
-		var fields map[string]string
-		if json.Unmarshal(raw, &fields) != nil {
+	if m.Role != RoleAssistant {
+		return
+	}
+	for _, part := range m.Parts {
+		b := part.Reasoning
+		if part.Type != PartTypeReasoning || b == nil || b.Format != ReasoningChat || b.Model != model {
 			continue
 		}
-		for key, value := range fields {
-			s := value
-			switch key {
-			case "reasoning_content":
-				out.ReasoningContent = &s
-			case "reasoning":
-				out.Reasoning = &s
-			case "reasoning_text":
-				out.ReasoningText = &s
+		payload, err := b.validateParsed()
+		if err != nil {
+			continue
+		}
+		if !payload.canonical {
+			var fields map[string]string
+			if json.Unmarshal(b.Data, &fields) != nil {
+				continue
 			}
+			for field, text := range fields {
+				payload.field, payload.text = field, text
+			}
+		}
+		s := payload.text
+		switch payload.field {
+		case "reasoning_content":
+			out.ReasoningContent = &s
+		case "reasoning":
+			out.Reasoning = &s
+		case "reasoning_text":
+			out.ReasoningText = &s
 		}
 	}
 }

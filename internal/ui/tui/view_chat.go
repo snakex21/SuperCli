@@ -212,6 +212,9 @@ func renderRoleBlock(label, body string, gutter lipgloss.Style, widths ...int) s
 func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 	if c.current == "" {
 		c.clearActiveSection()
+		if spinnerView == "" {
+			return c.renderCompleted(p)
+		}
 	}
 	var b strings.Builder
 	b.WriteString(c.renderCompleted(p))
@@ -331,8 +334,12 @@ func (c *chat) renderedLineForMessage(index int, p Palette) int {
 		if i > 0 && (c.msgs[i].role == roleUser || c.msgs[i].role == roleAssistant) {
 			lines++
 		}
-		rendered := c.renderMsg(c.msgs[i], p)
+		rendered := ansi.Wrap(c.renderMsg(c.msgs[i], p), max(1, c.width), "")
 		lines += strings.Count(rendered, "\n") + 1
+	}
+	// The target conversation block starts after its own separator as well.
+	if index < len(c.msgs) && (c.msgs[index].role == roleUser || c.msgs[index].role == roleAssistant) {
+		lines++
 	}
 	return lines
 }

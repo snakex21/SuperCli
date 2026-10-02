@@ -51,7 +51,7 @@ func (m Model) selectLanguage() (tea.Model, tea.Cmd) {
 	if len(m.chat.msgs) > 0 {
 		m.refreshTranscript()
 	} else {
-		m.viewport.SetContent(welcomeAtSize(Options{Language: language, LLM: m.llm}, m.palette, m.width, m.height))
+		m.setViewportContent(welcomeAtSize(Options{Language: language, LLM: m.llm}, m.palette, m.width, m.height))
 	}
 	// Returning to Settings must also show the just-saved selection.
 	for previous := m.menu.parent; previous != nil; previous = previous.parent {

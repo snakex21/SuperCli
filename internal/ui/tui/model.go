@@ -73,9 +73,11 @@ type Model struct {
 	marker      Marker
 
 	// Widgets
-	viewport viewport.Model
-	input    textarea.Model
-	spinner  spinner.Model
+	viewport           viewport.Model
+	viewportContent    string
+	viewportContentSet bool
+	input              textarea.Model
+	spinner            spinner.Model
 
 	// State
 	quitting bool
@@ -665,7 +667,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// started refreshTranscript owns the viewport and resize must never
 		// replace the chat with the welcome screen.
 		if m.transcript.String() == "" && m.current == "" {
-			m.viewport.SetContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
+			m.setViewportContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
 		} else {
 			m.refreshTranscript()
 		}
