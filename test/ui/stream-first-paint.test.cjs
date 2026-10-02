@@ -141,3 +141,56 @@ test('replacement snapshots immediately correct source and cancel stale animatio
   n._raw='Corrected.';h.c.scheduleAssistantRender(n);
   assert.equal(h.parts(n)[0].text,'Corrected.');assert.equal(h.frames.size,0);assert.equal(n._renderTimer,null);
 });
+
+
+test('a long provider pause does not keep resumed prose or reasoning on the old display cadence',()=>{
+  for(const kind of ['markdown','thinking']){
+    const h=harness(),n=node(kind==='thinking'?'<thinking>Start.':'Start.');
+    if(kind==='thinking')n._reasoningOpen=true;
+    h.c.scheduleAssistantRender(n);h.elapse(1000);
+    const packet=(' Received words 😀.').repeat(8);
+    if(kind==='thinking')h.c.appendAssistantReasoning(n,packet);
+    else {h.c.appendAssistantSource(n,packet);h.c.scheduleAssistantRender(n);}
+    const exact=n._raw,expected=JSON.parse(JSON.stringify(h.c.assistantTextParts(exact)));
+    h.frame();
+    assert.ok(h.parts(n)[0].text.length>6,'the first resumed text uses the next frame');
+    assert.ok(h.parts(n)[0].text.length<expected[0].text.length,'a short buffer still paces the received packet');
+    for(let i=0;i<3;i++)h.frame();
+    assert.deepEqual(h.parts(n),expected,'the complete resumed packet is visible within four frames');
+    assert.equal(n._raw,exact);assert.equal(h.frames.size,0);
+    h.c.flushAssistantRender(n);
+    assert.deepEqual(h.parts(n),expected);assert.equal(h.frames.size,0);
+    assert.equal(n._pacedParts,null);assert.equal(n._displayParts,null);
+  }
+});
+
+test('a pause beyond the cadence sampling horizon restarts the short buffer at its boundary',()=>{
+  for(const gap of [600,601]){
+    const h=harness(),n=node('Start.');h.c.scheduleAssistantRender(n);h.elapse(gap);
+    h.c.appendAssistantSource(n,'x'.repeat(160));h.c.scheduleAssistantRender(n);
+    for(let i=0;i<4;i++)h.frame();
+    if(gap===600){
+      assert.notEqual(h.parts(n)[0].text,n._raw,'a supported cadence sample keeps the existing smoothing');
+      assert.equal(h.frames.size,1);
+    }else{
+      assert.equal(h.parts(n)[0].text,n._raw,'a longer silence is not the resumed stream rate');
+      assert.equal(h.frames.size,0);
+    }
+    for(let i=0;i<22;i++)h.frame();
+    assert.equal(h.parts(n)[0].text,n._raw);assert.equal(h.frames.size,0);
+  }
+});
+
+test('rapid packets after a long pause drain promptly without losing text or retaining an old queue',()=>{
+  const h=harness(),n=node('Start.');h.c.scheduleAssistantRender(n);h.elapse(280);
+  h.c.appendAssistantSource(n,'w'.repeat(160));h.c.scheduleAssistantRender(n);
+  for(let i=0;i<22;i++)h.frame();
+  h.elapse(1000);
+  for(let i=0;i<10;i++){
+    h.c.appendAssistantSource(n,'x'.repeat(160));h.c.scheduleAssistantRender(n);
+    h.frame(10);h.frame(10);
+  }
+  const exact=n._raw;for(let i=0;i<4;i++)h.frame();
+  assert.equal(h.parts(n)[0].text,exact);assert.equal(h.frames.size,0);assert.equal(n._raw,exact);
+  for(const paint of h.paints)assert.equal(paint.parts[0].text.isWellFormed(),true);
+});

@@ -174,18 +174,15 @@ func verifyRead(c Check) VerifyVerdict {
 	if c.Result.Err != nil {
 		return VerifyVerdict{OK: true}
 	}
-	if len(c.Result.Images) > 0 {
-		for _, image := range c.Result.Images {
-			if image == nil || len(image.Data) == 0 {
-				return VerifyVerdict{OK: false, Reason: "verification failed: image is empty"}
-			}
-		}
-		return VerifyVerdict{OK: true}
+	if c.Result.Image != nil && len(c.Result.Image.Data) == 0 {
+		return VerifyVerdict{OK: false, Reason: "verification failed: image is empty"}
 	}
-	if c.Result.Image != nil {
-		if len(c.Result.Image.Data) == 0 {
+	for _, image := range c.Result.Images {
+		if image == nil || len(image.Data) == 0 {
 			return VerifyVerdict{OK: false, Reason: "verification failed: image is empty"}
 		}
+	}
+	if c.Result.Image != nil || len(c.Result.Images) > 0 {
 		return VerifyVerdict{OK: true}
 	}
 	if strings.TrimSpace(c.Result.Text) == "" {
