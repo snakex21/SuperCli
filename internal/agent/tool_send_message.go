@@ -247,6 +247,9 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 		})
 		return result, runErr
 	}
+	// The streamed report also lives in canonical history. Reuse its immutable
+	// bytes when exactly equal instead of retaining a second completed report.
+	result = canonicalWorkerReport(w.Loop, result)
 	w.setState(func(w *Worker) {
 		w.Status = "done"
 		w.UpdatedAt = time.Now()

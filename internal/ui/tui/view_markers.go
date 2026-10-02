@@ -152,10 +152,10 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 	if clean == "" {
 		clean = m.tr("tui.view_markers.efefc15c24")
 	}
-	lines := strings.Split(clean, "\n")
-	totalLines := len(lines)
-	truncated := len(lines) > maxLines
-	if len(lines) > maxLines {
+	totalLines := strings.Count(clean, "\n") + 1
+	lines := strings.SplitN(clean, "\n", maxLines+1)
+	truncated := totalLines > maxLines
+	if truncated {
 		lines = lines[:maxLines]
 	}
 	var b strings.Builder
@@ -362,6 +362,10 @@ func (m Marker) ModelInfo(text string) string {
 // toolDisplayOutput unwraps structured process results for the transcript.
 // The original JSON is kept in the stored tool result and model history.
 func toolDisplayOutput(output string) string {
+	trimmed := strings.TrimSpace(output)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return output
+	}
 	var result struct {
 		Stdout *string `json:"stdout"`
 		Stderr string  `json:"stderr"`

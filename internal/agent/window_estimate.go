@@ -25,9 +25,7 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 	if l.registry == nil {
 		return est
 	}
-	defs := l.buildToolDefs()
-	toolCost := llm.EstimateRequestBreakdown(nil, defs)
-	est += toolCost.System + toolCost.User + toolCost.Assistant + toolCost.Tool + toolCost.Other
+	est += l.toolDefinitionTokens()
 	if l.route == RouteCoordinator {
 		if pre := l.thinToolsPreamble(); pre != "" {
 			est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: pre})
@@ -60,7 +58,7 @@ func (l *Loop) estimateChatRequestTokensRaw() int {
 	est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: system})
 	est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: l.contextTail()})
 	if l.registry != nil {
-		est += estimateRequestTokens(nil, l.buildToolDefs())
+		est += l.toolDefinitionTokens()
 	}
 	return est
 }

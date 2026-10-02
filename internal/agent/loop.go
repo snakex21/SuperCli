@@ -63,6 +63,7 @@ type Loop struct {
 
 	provider          llm.Provider
 	registry          *tools.Registry
+	toolDefsSnapshot  toolDefinitionSnapshot
 	caps              *llm.CapabilityRegistry
 	system            string
 	briefing          string

@@ -23,7 +23,11 @@ func TestToolOutputReadPreservesAllBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	writer := NewWriter(store, sess.ID)
-	for i, text := range []string{"", "plain", "Żółw 🙂", "nul\x00bytes\xff\xfe", "legacy-\xb9\xea", strings.Repeat("🙂", 10000)} {
+	allBytes := make([]byte, 256)
+	for i := range allBytes {
+		allBytes[i] = byte(i)
+	}
+	for i, text := range []string{strings.Repeat(string(allBytes), 127), "", "plain", "Żółw 🙂", "nul\x00bytes\xff\xfe", "legacy-\xb9\xea", strings.Repeat("🙂", 10000)} {
 		h := fmt.Sprintf("out_bytes_%d", i)
 		if err := writer.SaveToolOutput(context.Background(), h, text); err != nil {
 			t.Fatal(err)
@@ -32,6 +36,10 @@ func TestToolOutputReadPreservesAllBytes(t *testing.T) {
 		if err != nil || got != text {
 			t.Fatalf("case=%d length=%d err=%v", i, len(got), err)
 		}
+	}
+	var contentType string
+	if err := store.db.QueryRow("SELECT typeof(content) FROM tool_outputs WHERE handle = ?", "out_bytes_0").Scan(&contentType); err != nil || contentType != "blob" {
+		t.Fatalf("stored output type=%q err=%v", contentType, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

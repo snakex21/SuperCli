@@ -116,6 +116,7 @@ type Registry struct {
 	order      []string                       // insertion order, for stable Visible()
 	alwaysOn   map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
 	outputs    *OutputStore                   // bounded large-result store; may be shared by one loop family
+	revision   uint64                         // tool contracts/visibility only; guarded by mu
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
@@ -169,8 +170,12 @@ func (r *Registry) EnsureReadOutput() {
 		r.tools[t.Name] = t
 		r.schemas[t.Name] = compiled
 		r.order = append(r.order, t.Name)
+		r.revision++
 	}
-	r.alwaysOn["read_output"] = struct{}{}
+	if _, present := r.alwaysOn["read_output"]; !present {
+		r.alwaysOn["read_output"] = struct{}{}
+		r.revision++
+	}
 }
 
 // CompactModelOutput returns a bounded provider-facing view of a successful
@@ -238,6 +243,7 @@ func (r *Registry) registerCompiled(t Tool, compiled *compiledToolSchema) error 
 	r.tools[t.Name] = t
 	r.schemas[t.Name] = compiled
 	r.order = append(r.order, t.Name)
+	r.revision++
 	return nil
 }
 
@@ -255,7 +261,10 @@ func (r *Registry) MustRegister(t Tool) {
 func (r *Registry) MarkAlwaysOn(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.alwaysOn[name] = struct{}{}
+	if _, present := r.alwaysOn[name]; !present {
+		r.alwaysOn[name] = struct{}{}
+		r.revision++
+	}
 }
 
 // Activate marks the named tools as visible to the model.
@@ -266,7 +275,10 @@ func (r *Registry) Activate(names ...string) {
 	defer r.mu.Unlock()
 	for _, n := range names {
 		if _, ok := r.tools[n]; ok {
-			r.visible[n] = struct{}{}
+			if _, present := r.visible[n]; !present {
+				r.visible[n] = struct{}{}
+				r.revision++
+			}
 		}
 	}
 }
@@ -279,8 +291,13 @@ func (r *Registry) Deactivate(names ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, n := range names {
-		delete(r.visible, n)
-		delete(r.discovered, n)
+		_, active := r.visible[n]
+		_, discovered := r.discovered[n]
+		if active || discovered {
+			delete(r.visible, n)
+			delete(r.discovered, n)
+			r.revision++
+		}
 	}
 }
 
@@ -289,6 +306,9 @@ func (r *Registry) Deactivate(names ...string) {
 func (r *Registry) ResetVisibility() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(r.visible) != 0 || len(r.discovered) != 0 {
+		r.revision++
+	}
 	r.visible = make(map[string]struct{})
 	r.discovered = nil
 }
@@ -476,8 +496,13 @@ func (r *Registry) ActivateDiscovered(names ...string) {
 		if r.discovered == nil {
 			r.discovered = make(map[string]struct{})
 		}
-		r.visible[name] = struct{}{}
-		r.discovered[name] = struct{}{}
+		_, active := r.visible[name]
+		_, discovered := r.discovered[name]
+		if !active || !discovered {
+			r.visible[name] = struct{}{}
+			r.discovered[name] = struct{}{}
+			r.revision++
+		}
 	}
 }
 
@@ -492,4 +517,14 @@ func (r *Registry) DiscoveredNames() []string {
 		}
 	}
 	return names
+}
+
+// Revision changes whenever registration or activation changes a tool contract.
+// Tool descriptors are stored by value and their schema/description strings are
+// immutable; returned Tool values cannot modify the registered contract. Normal
+// execution and output retention do not invalidate definition snapshots.
+func (r *Registry) Revision() uint64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.revision
 }

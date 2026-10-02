@@ -33,6 +33,7 @@ func (l *Loop) SetRegistry(r *tools.Registry) {
 	}
 	r.EnsureReadOutput()
 	l.registry = r
+	l.toolDefsSnapshot.reset()
 	l.toolDiscovery = toolDiscoveryState{}
 	// The hoisted thin-tools preamble (stableToolset) renders from the
 	// registry; a swap before the first Run must re-render it, not
@@ -59,7 +60,7 @@ func (l *Loop) VisibleToolNames() []string { return l.registry.VisibleNames() }
 // pulled in via tool_search; the dormant tail is omitted here and
 // advertised in the catalog (see toolCatalog). This is the thin
 // tool protocol's token win.
-func (l *Loop) buildToolDefs() []llm.ToolDef {
+func (l *Loop) buildToolDefsUncached() []llm.ToolDef {
 	if l.finalReplyOnly {
 		return nil
 	}

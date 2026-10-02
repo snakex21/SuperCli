@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -221,5 +223,96 @@ func BenchmarkMarkerToolResultFull(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		marker := NewMarker(p, "en")
 		markerBenchmarkSink = marker.ToolResultFull("read_file", "package main\nfunc main() {}", false)
+	}
+}
+
+func TestToolDisplayOutputKeepsPlainAndUnsupportedJSON(t *testing.T) {
+	for _, input := range []string{"", " \n\t", "plain\noutput\n", "[1, 2]", "null", "123", "\"text\"", "{}", "{invalid", `{"stdout":null,"stderr":"warning"}`, "\u00a0plain\n中文"} {
+		if got := toolDisplayOutput(input); got != input {
+			t.Errorf("changed raw output %q to %q", input, got)
+		}
+	}
+}
+
+func TestToolDisplayOutputUnwrapsProcessJSON(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{`{"stdout":"one\r\n","stderr":""}`, "one"},
+		{" \t\n" + `{"stdout":"中文 😀\n","stderr":"warning\r\n"}` + "\n ", "中文 😀\nstderr:\nwarning"},
+		{`{"stdout":"","stderr":""}`, ""},
+		{`{"stdout":"","stderr":"warning"}`, "stderr:\nwarning"},
+		{`{"stdout":false,"stderr":"warning"}`, `{"stdout":false,"stderr":"warning"}`},
+	}
+	for _, tc := range cases {
+		if got := toolDisplayOutput(tc.input); got != tc.want {
+			t.Errorf("toolDisplayOutput(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestMarkerToolResultVisibleLineBoundaries(t *testing.T) {
+	marker := NewMarker(NoColorPalette(), "en")
+	for _, expanded := range []bool{false, true} {
+		limit := 4
+		if expanded {
+			limit = 40
+		}
+		for _, count := range []int{1, limit - 1, limit, limit + 1, 40000} {
+			lines := make([]string, count)
+			for i := range lines {
+				lines[i] = fmt.Sprintf("row-%05d 中文 😀", i+1)
+			}
+			input := strings.Join(lines, "\n") + "\n\n"
+			got := marker.ToolResultFull("read_file", input, expanded)
+			visible := count
+			if visible > limit {
+				visible = limit
+			}
+			if n := strings.Count(got, "    │ "); n != visible {
+				t.Fatalf("expanded=%v count=%d: rendered %d lines, want %d", expanded, count, n, visible)
+			}
+			for _, line := range lines[:visible] {
+				if !strings.Contains(got, "    │ "+line) {
+					t.Fatalf("missing visible line %q", line)
+				}
+			}
+			if count > limit {
+				if strings.Contains(got, lines[limit]) {
+					t.Fatalf("hidden line was rendered: %q", lines[limit])
+				}
+				if !strings.Contains(got, fmt.Sprintf("%d more", count-limit)) {
+					t.Fatalf("incorrect remainder count: %q", got)
+				}
+			} else if strings.Contains(got, "more ·") {
+				t.Fatalf("untruncated output has remainder: %q", got)
+			}
+			label := "lines"
+			if count == 1 {
+				label = "line"
+			}
+			if !strings.Contains(got, fmt.Sprintf("%d %s ·", count, label)) {
+				t.Fatalf("incorrect total line count: %q", got)
+			}
+		}
+	}
+}
+
+func BenchmarkMarkerToolResultLargePayload(b *testing.B) {
+	row := "src/example.go:123: warning: Zażółć 中文 😀 inspect this line.\n"
+	raw := strings.Repeat(row, (1<<20)/len(row))
+	structured, err := json.Marshal(map[string]string{"stdout": raw, "stderr": "warning"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	marker := NewMarker(NoColorPalette(), "en")
+	for _, sample := range []struct{ name, output string }{{"raw-lines", raw}, {"json-lines", string(structured)}} {
+		for _, expanded := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/expanded=%v", sample.name, expanded), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					markerBenchmarkSink = marker.ToolResultFull("read_file", sample.output, expanded)
+				}
+			})
+		}
 	}
 }
