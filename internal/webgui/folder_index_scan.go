@@ -5,11 +5,13 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"supercli/internal/llm"
@@ -164,20 +166,48 @@ func describeIndexedImage(ctx context.Context, provider llm.Provider, path, lang
 		{Type: llm.PartTypeText, Text: prompt},
 		{Type: llm.PartTypeImage, Image: &llm.ImageRef{Data: base64.StdEncoding.EncodeToString(data), MediaType: mediaType}},
 	}}
-	callCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	callCtx, cancel := context.WithTimeout(llm.WithBackground(llm.WithPurpose(ctx, "vision-index")), 90*time.Second)
 	defer cancel()
-	stream, err := provider.Complete(llm.WithPurpose(callCtx, "vision-index"), []llm.Message{message}, nil)
-	if err != nil {
-		return "", err
-	}
-	var caption strings.Builder
-	for delta := range stream {
-		if delta.Err != nil {
-			return "", delta.Err
+	var text string
+	for {
+		// Metered may close a preempted stream without an error delta. Its
+		// final stat precedes stream close; keep the existing sinks and never
+		// cache that partial description as a successful image analysis.
+		var preempted atomic.Bool
+		attemptCtx := llm.WithCallSink(callCtx, func(stat llm.CallStat) {
+			if stat.Canceled {
+				preempted.Store(true)
+			}
+		})
+		stream, streamErr := provider.Complete(attemptCtx, []llm.Message{message}, nil)
+		var caption strings.Builder
+		if streamErr == nil {
+			for delta := range stream {
+				if delta.Err != nil {
+					if !errors.Is(delta.Err, context.Canceled) {
+						return "", delta.Err
+					}
+					streamErr = delta.Err
+				} else if streamErr == nil {
+					caption.WriteString(delta.Content)
+				}
+			}
 		}
-		caption.WriteString(delta.Content)
+		if err := callCtx.Err(); err != nil {
+			return "", err
+		}
+		if preempted.Load() {
+			// The parent deadline is still live, so Metered's derived background
+			// context was preempted. Retry this same image through its idle gate,
+			// sharing the original 90-second limit (no timer or busy retry).
+			continue
+		}
+		if streamErr != nil {
+			return "", streamErr
+		}
+		text = strings.Join(strings.Fields(strings.TrimSpace(memory.StripReasoning(caption.String()))), " ")
+		break
 	}
-	text := strings.Join(strings.Fields(strings.TrimSpace(memory.StripReasoning(caption.String()))), " ")
 	if text == "" {
 		return "", fmt.Errorf("the model returned no description for image %s", filepath.Base(path))
 	}

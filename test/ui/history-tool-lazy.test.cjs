@@ -354,3 +354,112 @@ test('history fragments restore the previous append target and live mode after s
   assert.equal(c.streamAppendTarget, previousTarget);
   assert.equal(c.transcriptLiveAppend, true);
 });
+
+// Exercise the real live call/result path using the same transcript DOM double.
+function liveInputHarness() {
+  const h = harness(), formats = [];
+  Object.assign(h.c, {
+    performance: {now: () => 100}, runToolCount: 0,
+    setInterval: () => 7, clearInterval: () => {}, fmtDuration: () => '0.1s',
+  });
+  const format = h.c.prettyJSON;
+  h.c.prettyJSON = args => { formats.push(args); return format(args); };
+  return {...h, formats};
+}
+
+test('folded live inputs defer formatting and retain exact input before output on expansion', () => {
+  const h = liveInputHarness();
+  const args = JSON.stringify({path: 'fixture.go', content: 'ordinary generated code\n'.repeat(1000)});
+  h.c.addToolCall('create_file', args, 'create-1');
+  const row = h.c.toolRows['create-1'];
+  row.dispatch('toggle');
+  assert.deepEqual(h.formats, []);
+  assert.equal(row._body.children.length, 0);
+  assert.equal(row._toolArgs, args, 'original arguments remain available');
+  h.c.addToolResult('create-1', 'file ready', '');
+  assert.equal(row._clock, null);
+  assert.equal(row._stat.textContent, '0.1s');
+  assert.equal(row._body.children.length, 0);
+  assert.deepEqual(h.formats, []);
+  row.open = true; row.dispatch('toggle');
+  assert.deepEqual(h.formats, [args]);
+  assert.deepEqual(row._body.children.map(n => n.textContent), ['tool.input', JSON.stringify(JSON.parse(args), null, 2), 'tool.output', 'file ready']);
+  const input = row._body.children[1], output = row._body.children[3];
+  row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
+  assert.equal(row._body.children.length, 4);
+  assert.equal(row._body.children[1], input);
+  assert.equal(row._body.children[3], output);
+  assert.deepEqual(h.formats, [args], 'reopening does not repeat input formatting');
+});
+
+test('opening a running live input preserves callback order and immediate error diagnostics', () => {
+  const h = liveInputHarness(), order = [];
+  const format = h.c.prettyJSON, append = h.c.appendToolPayload;
+  h.c.prettyJSON = args => { order.push('input'); return format(args); };
+  h.c.appendToolPayload = function (...args) { order.push('output'); return append(...args); };
+  h.c.addToolCall('create_file', '{"path":"ą日本語<&>","content":"line\\nline\\t🌍"}', 'create-error');
+  const row = h.c.toolRows['create-error'];
+  row.open = true; row.dispatch('toggle');
+  assert.deepEqual(order, ['input']);
+  assert.equal(row._body.hidden, false);
+  assert.equal(row._body.children.length, 2);
+  const input = row._body.children[1];
+  h.c.addToolResult('create-error', '', 'write failed <unsafe>');
+  assert.deepEqual(order, ['input', 'output']);
+  assert.equal(row._body.children[1], input);
+  assert.equal(row._body.children[2].textContent, 'tool.error');
+  assert.equal(row._body.children[3].textContent, 'write failed <unsafe>');
+  assert.equal(row._body.children[3].className, 'tool-output error');
+});
+
+test('stopped live inputs retain malformed and empty arguments until explicitly opened', () => {
+  for (const args of ['not JSON <unsafe>', '', undefined]) {
+    const h = liveInputHarness();
+    h.c.addToolCall('create_file', args, 'stopped');
+    const row = h.c.toolRows.stopped;
+    h.c.settleOpenTools();
+    assert.equal(row._clock, null);
+    assert.deepEqual(h.formats, []);
+    assert.equal(row._body.children.length, 0);
+    row.open = true; row.dispatch('toggle');
+    assert.equal(row._body.children[1].textContent, args || '');
+    assert.deepEqual(h.formats, [args]);
+    row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
+    assert.equal(row._body.children.length, 2);
+    assert.deepEqual(h.formats, [args]);
+  }
+});
+
+test('file-read live rows keep their input-free output path', () => {
+  for (const name of ['read_lines', 'read_context', 'read_many']) {
+    const h = liveInputHarness();
+    h.c.addToolCall(name, '{"file":"fixture.go"}', 'read-call');
+    const row = h.c.toolRows['read-call'];
+    h.c.addToolResult('read-call', '1 | const value = 1;', '');
+    row.open = true; row.dispatch('toggle');
+    assert.deepEqual(h.formats, []);
+    assert.equal(row._body.children.length, 1);
+    assert.equal(row._body.children[0].className, 'tool-file-view');
+    assert.equal(row._body.children[0].textContent, '1const value = 1;');
+  }
+});
+
+test('task and continuation live rows do not format the input they replace with a brief', () => {
+  for (const [name, args, brief] of [
+    ['task', '{"prompt":"focused brief","agent_kind":"implementer"}', 'focused brief'],
+    ['send_message', '{"to":"worker-1","message":"continue carefully"}', 'continue carefully'],
+  ]) {
+    const h = liveInputHarness();
+    h.c.addToolCall(name, args, 'worker-call');
+    const row = h.c.toolRows['worker-call'];
+    assert.deepEqual(h.formats, []);
+    assert.equal(row._taskPrompt, brief);
+    assert.equal(row.querySelector('.task-brief').textContent, brief);
+    const activity = row._activity;
+    row.open = true; row.dispatch('toggle');
+    assert.deepEqual(h.formats, []);
+    assert.equal(row._activity, activity);
+    assert.equal(row._body.children.length, 4);
+    assert.equal(row._toolArgs, args);
+  }
+});

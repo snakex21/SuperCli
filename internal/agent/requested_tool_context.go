@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"supercli/internal/llm"
@@ -48,6 +49,26 @@ func (l *Loop) requestedToolContext() string {
 	if len(defs) == 0 {
 		return ""
 	}
-	raw, _ := json.Marshal(defs) // ToolDef contains strings only.
-	return requestedToolContextPreamble + "\n" + string(raw)
+	return requestedToolContextPreamble + "\n" + renderRequestedToolDefinitions(defs)
+}
+
+// Embed valid object schemas directly instead of quoting their JSON a second
+// time. RawMessage keeps numeric literals and constraints intact. Legacy
+// empty, malformed or non-object schemas retain the original string rendering.
+func renderRequestedToolDefinitions(defs []llm.ToolDef) string {
+	type contract struct {
+		Name, Description string
+		Schema            json.RawMessage
+	}
+	contracts := make([]contract, len(defs))
+	for i, def := range defs {
+		schema := bytes.TrimSpace([]byte(def.Schema))
+		if len(schema) == 0 || schema[0] != '{' || !json.Valid(schema) {
+			raw, _ := json.Marshal(defs)
+			return string(raw)
+		}
+		contracts[i] = contract{Name: def.Name, Description: def.Description, Schema: schema}
+	}
+	raw, _ := json.Marshal(contracts)
+	return string(raw)
 }

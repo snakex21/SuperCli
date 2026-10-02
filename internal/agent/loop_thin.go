@@ -96,6 +96,7 @@ func (l *Loop) buildToolDefsUncached() []llm.ToolDef {
 		if len(toolDefs) == 0 {
 			return nil
 		}
+		l.projectInvokeToolDescription(toolDefs)
 		return toolDefs
 	}
 	for _, name := range chatRouteTools {

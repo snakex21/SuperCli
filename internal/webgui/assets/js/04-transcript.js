@@ -1135,10 +1135,13 @@ function addToolCall(name, args, id) {
   row.appendChild(sum);
   var body = el("div", "tbody");
   body.hidden = true;
-  if (!FILE_READ_TOOLS[name]) {
-    var lblA = i18nEl("div", "lbl", "tool.input");
-    body.appendChild(lblA);
-    body.appendChild(el("pre", "", prettyJSON(args)));
+  // Like outputs, live inputs need no hidden DOM while the row is folded.
+  // Task rows replace the input with their brief below; do not format it.
+  if (!FILE_READ_TOOLS[name] && name !== "task" && name !== "send_message") {
+    renderToolPayloadWhenOpen(row, function () {
+      body.appendChild(i18nEl("div", "lbl", "tool.input"));
+      body.appendChild(el("pre", "", prettyJSON(args)));
+    });
   }
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
