@@ -153,7 +153,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keys, ok := msg.(terminalKeyBatchMsg); ok {
 		return updateTerminalKeyBatch(m, keys)
 	}
-	next, cmd := m.update(msg)
+	var next tea.Model
+	var cmd tea.Cmd
+	if key, ok := msg.(tea.KeyMsg); ok {
+		next, cmd = m.updateKeyMessage(key)
+	} else {
+		next, cmd = m.update(msg)
+	}
 	n, ok := next.(Model)
 	if !ok || n.drafts == nil {
 		return next, cmd

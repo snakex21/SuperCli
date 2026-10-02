@@ -28,23 +28,23 @@ const (
 	estPerMessageCost = 16
 )
 
+// The classifier is only read. Every non-ASCII byte and other control byte
+// remains counted, including invalid UTF-8; this estimates bytes, not runes.
+var nonWhitespaceClassifier = [256]byte{' ': 1, '\t': 1, '\n': 1, '\r': 1}
+
 // nonWhitespaceLen counts the bytes of s that are not spaces, tabs
 // or newlines. Whitespace runs (code indentation, blank lines)
 // compress to almost nothing in BPE vocabularies, so counting them
 // would overestimate indented code relative to prose.
 func nonWhitespaceLen(s string) int {
 	// Count uses the standard library byte scan without allocating.
-	// Keep the scalar path for short names where four calls cost more than a loop.
+	// A byte lookup avoids branches for short names where four calls cost more than a loop.
 	if len(s) >= 64 {
 		return len(s) - strings.Count(s, " ") - strings.Count(s, "\t") - strings.Count(s, "\n") - strings.Count(s, "\r")
 	}
-	n := 0
+	n := len(s)
 	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case ' ', '\t', '\n', '\r':
-		default:
-			n++
-		}
+		n -= int(nonWhitespaceClassifier[s[i]])
 	}
 	return n
 }
@@ -55,13 +55,9 @@ func nonWhitespaceBytes(raw []byte) int {
 	if len(raw) >= 64 {
 		return len(raw) - bytes.Count(raw, []byte(" ")) - bytes.Count(raw, []byte("\t")) - bytes.Count(raw, []byte("\n")) - bytes.Count(raw, []byte("\r"))
 	}
-	n := 0
+	n := len(raw)
 	for _, b := range raw {
-		switch b {
-		case ' ', '\t', '\n', '\r':
-		default:
-			n++
-		}
+		n -= int(nonWhitespaceClassifier[b])
 	}
 	return n
 }
