@@ -34,13 +34,14 @@ const memoryIdleDelay = 15 * time.Second
 // it must treat cancellation as "retry later" (the memory saver
 // already does — a failed summary leaves the fragment uncovered).
 type idleScheduler struct {
-	mu     sync.Mutex
-	delay  time.Duration
-	job    func(ctx context.Context)
-	timer  *time.Timer
-	cancel context.CancelFunc // non-nil while a job is in flight
-	gen    int                // job generation; guards cancel ownership
-	closed bool
+	mu       sync.Mutex
+	delay    time.Duration
+	job      func(ctx context.Context)
+	timer    *time.Timer
+	cancel   context.CancelFunc // non-nil while a job is in flight
+	gen      int                // job generation; guards cancel ownership
+	timerGen uint64             // invalidates callbacks whose timer already expired
+	closed   bool
 }
 
 func newIdleScheduler(delay time.Duration, job func(ctx context.Context)) *idleScheduler {
@@ -59,7 +60,9 @@ func (s *idleScheduler) Schedule() {
 	if s.timer != nil {
 		s.timer.Stop()
 	}
-	s.timer = time.AfterFunc(s.delay, s.fire)
+	s.timerGen++
+	timerGen := s.timerGen
+	s.timer = time.AfterFunc(s.delay, func() { s.fire(timerGen) })
 }
 
 // Activity marks the user as active: the pending timer is stopped
@@ -68,6 +71,7 @@ func (s *idleScheduler) Schedule() {
 func (s *idleScheduler) Activity() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.timerGen++
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
@@ -85,6 +89,7 @@ func (s *idleScheduler) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
+	s.timerGen++
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
@@ -96,12 +101,15 @@ func (s *idleScheduler) Close() {
 }
 
 // fire runs on the timer goroutine when the idle delay elapses.
-func (s *idleScheduler) fire() {
+func (s *idleScheduler) fire(timerGen uint64) {
 	s.mu.Lock()
-	if s.closed {
+	// Stop cannot retract an expired AfterFunc callback. Activity or a
+	// newer schedule must also invalidate it before it can start a job.
+	if s.closed || s.timerGen != timerGen {
 		s.mu.Unlock()
 		return
 	}
+	s.timer = nil
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.gen++
