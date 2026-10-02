@@ -61,7 +61,6 @@ allowed_parameters = ["duration", "aspect_ratio", "negative_prompt"]
 allowed_download_hosts = ["v3.fal.media", "storage.googleapis.com"]
 max_bytes = 33554432
 timeout_seconds = 600
-poll_interval_milliseconds = 2000
 
 [media_generation.video.default_parameters]
 duration = "5"
@@ -105,8 +104,9 @@ Current GPT image models return `data[0].b64_json`; the legacy `response_format`
 parameter is intentionally omitted. URL-only responses are rejected. Successful
 PNG, JPEG or WebP data is decoded into a bounded local file.
 
-Videos use fal queue submission, then context-bound polling of `IN_QUEUE`,
-`IN_PROGRESS` and `COMPLETED`. A completed job's `error` still means failure.
+Videos use one fal queue submission, then one context-bound SSE connection to
+`<status_url>/stream` for `IN_QUEUE`, `IN_PROGRESS` and `COMPLETED`. Status
+updates arrive over that connection; there is no reconnect or polling fallback. A completed job's `error` still means failure.
 The result's `video.url` is downloaded without provider credentials. Queue status,
 result and cancellation URLs must have exactly the configured API origin;
 foreign origins are rejected before any authenticated request. On cancellation,
@@ -114,7 +114,7 @@ timeout or another pre-completion failure after obtaining a usable job ID,
 SuperCli attempts one bounded `PUT` to the trusted cancellation URL. This is
 best-effort: a running provider job may finish and remain billable. If submission
 fails before a usable job ID/URL is returned, its remote outcome can be unknown.
-There is no background job left polling after the tool returns.
+There is no background status connection left after the tool returns.
 
 Outputs are exclusive, random-named files under `<workspace>/generated`, scoped
 with `os.Root`; existing files are never overwritten and failed partial writes
@@ -122,9 +122,10 @@ are removed. File magic determines the format, not a remote MIME header or file
 extension. Supported videos are MP4 and WebM. Each output is limited to 32 MiB
 (or a smaller configured `max_bytes`), compatible with the local preview limit.
 Image JSON envelopes and video job metadata are separately bounded. The deadline
-covers generation, polling and saving, with up to three extra seconds for an
-independent remote cancellation request. Valid timeout settings are 1–3600 seconds
-(default 600); polling is 250–30000 ms (default 2000).
+covers generation, streaming status and saving, with up to three extra seconds
+for an independent remote cancellation request. Valid timeout settings are
+1–3600 seconds (default 600). Legacy `poll_interval_milliseconds` settings remain
+accepted with their previous validation but no longer control video execution.
 
 Successful results are small `show_media`-compatible metadata:
 
@@ -162,7 +163,7 @@ go test ./internal/tools/mediagen ./internal/system/config
 Verified 2026-10-02:
 
 - [OpenAI create-image API](https://developers.openai.com/api/reference/resources/images/methods/generate)
-- [fal queue submit, status, result and cancellation](https://fal.ai/docs/model-apis/model-endpoints/queue)
+- [fal queue submit, streaming status, result and cancellation](https://fal.ai/docs/documentation/model-apis/inference/queue)
 - [Kling 2.5 Turbo Pro text-to-video schema](https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/text-to-video/api)
 
 There is no OpenAI video/Sora adapter in this implementation. The supported video

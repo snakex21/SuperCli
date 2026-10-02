@@ -562,8 +562,10 @@ function paceAssistantPart(state, source, now, expensive) {
   if (source === state.source) return;
   var gap = now - state.lastAt;
   state.lastAt = now;
-  if (gap >= 1) {
-    state.gaps.push(Math.min(600, gap));
+  // A long upstream pause is not the resumed stream's cadence.
+  if (gap > 600) state.gaps.length = 0;
+  else if (gap >= 1) {
+    state.gaps.push(gap);
     if (state.gaps.length > 6) state.gaps.shift();
   }
   state.source = source;

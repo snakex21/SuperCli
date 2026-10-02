@@ -43,7 +43,6 @@ func configuredTool(t *testing.T, kind string, handler http.HandlerFunc) *Tool {
 	tool := newTool(t.TempDir(), kind, cfg, func(context.Context, string) error { return nil })
 	tool.client = server.Client()
 	tool.allowTestHTTP = true
-	tool.pollOverride = time.Millisecond
 	tool.lookupEnv = func(name string) string {
 		if name != "MEDIA_FIXTURE_KEY" {
 			t.Errorf("unexpected environment access %q", name)
@@ -244,7 +243,8 @@ func TestImageProviderErrorsOversizeAndMalformedOutput(t *testing.T) {
 }
 
 type videoFixture struct {
-	polls     atomic.Int32
+	streams   atomic.Int32
+	responses atomic.Int32
 	submits   atomic.Int32
 	cancels   atomic.Int32
 	downloads atomic.Int32
@@ -296,33 +296,44 @@ func (f *videoFixture) handler(t *testing.T) http.HandlerFunc {
 				urls["cancel_url"] = f.foreign
 			}
 			_ = json.NewEncoder(w).Encode(urls)
-		case "/jobs/job-123/status":
-			n := f.polls.Add(1)
+		case "/jobs/job-123/status/stream":
+			f.streams.Add(1)
+			if r.Method != http.MethodGet || r.Header.Get("Accept") != "text/event-stream" {
+				t.Error("status must use one SSE GET")
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			emit := func(status string) {
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", status)
+			}
+			if f.mode == "timeout" || f.mode == "cancel" {
+				emit(`{"status":"IN_PROGRESS","request_id":"job-123"}`)
+				w.(http.Flusher).Flush()
+				if f.onStatus != nil {
+					f.onStatus()
+				}
+				<-r.Context().Done()
+				return
+			}
 			if f.onStatus != nil {
 				f.onStatus()
 			}
-			status := "COMPLETED"
-			if n == 1 {
-				status = "IN_QUEUE"
-			} else if n == 2 {
-				status = "IN_PROGRESS"
-			}
-			if f.mode == "timeout" || f.mode == "cancel" {
-				status = "IN_PROGRESS"
-			}
 			if f.mode == "unknown-status" {
-				status = "MYSTERY"
+				emit(`{"status":"MYSTERY"}`)
+				return
 			}
 			if f.mode == "provider-failure" {
-				fmt.Fprint(w, `{"status":"COMPLETED","error":"fixture-only-secret"}`)
+				emit(`{"status":"COMPLETED","error":"fixture-only-secret"}`)
 				return
 			}
 			if f.mode == "mismatched-id" {
-				fmt.Fprint(w, `{"status":"IN_QUEUE","request_id":"another"}`)
+				emit(`{"status":"IN_QUEUE","request_id":"another"}`)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "request_id": "job-123"})
+			emit(`{"status":"IN_QUEUE","request_id":"job-123"}`)
+			emit(`{"status":"IN_PROGRESS","request_id":"job-123"}`)
+			emit(`{"status":"COMPLETED","request_id":"job-123"}`)
 		case "/jobs/job-123/response":
+			f.responses.Add(1)
 			if f.mode == "result-failure" {
 				http.Error(w, "private", 500)
 				return
@@ -364,8 +375,8 @@ func TestFalQueueSuccessAndUnauthenticatedDownload(t *testing.T) {
 	if err != nil || !bytes.Equal(data, tinyMP4) {
 		t.Fatalf("saved file: %v", err)
 	}
-	if f.submits.Load() != 1 || f.polls.Load() != 3 || f.cancels.Load() != 0 || f.downloads.Load() != 1 {
-		t.Fatalf("counts submit=%d polls=%d cancel=%d download=%d", f.submits.Load(), f.polls.Load(), f.cancels.Load(), f.downloads.Load())
+	if f.submits.Load() != 1 || f.streams.Load() != 1 || f.cancels.Load() != 0 || f.downloads.Load() != 1 || f.responses.Load() != 1 {
+		t.Fatalf("counts submit=%d streams=%d cancel=%d download=%d response=%d", f.submits.Load(), f.streams.Load(), f.cancels.Load(), f.downloads.Load(), f.responses.Load())
 	}
 }
 func TestFalFailureURLAndDownloadBoundaries(t *testing.T) {
