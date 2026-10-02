@@ -206,7 +206,7 @@ func resolveInvokeToolCall(registry *tools.Registry, call llm.ToolCall) (llm.Too
 }
 
 // runTool is an exact schema exposed for this turn, not persistent discovery.
-func resolveInvokeToolCallForRun(registry *tools.Registry, call llm.ToolCall, runTool string) (llm.ToolCall, error) {
+func resolveInvokeToolCallForRun(registry *tools.Registry, call llm.ToolCall, runTools ...string) (llm.ToolCall, error) {
 	if registry == nil {
 		return call, fmt.Errorf("invoke_tool: registry unavailable")
 	}
@@ -238,7 +238,11 @@ func resolveInvokeToolCallForRun(registry *tools.Registry, call llm.ToolCall, ru
 	// Goal retains its existing control-plane exception; its service validates
 	// every action. All other dormant mutations still require tool_search.
 	coreAlwaysOn := registry.IsVisible(target) && isCoreDispatchName(target)
-	if target != "goal" && target != runTool && !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
+	requested := false
+	for _, name := range runTools {
+		requested = requested || (name != "" && target == name)
+	}
+	if target != "goal" && !requested && !directReadOnly && !registry.IsActive(target) && !coreAlwaysOn {
 		return call, fmt.Errorf("%s", dispatchRefusal(registry, target))
 	}
 
@@ -345,15 +349,18 @@ func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
 // real hit rate is. Count the rewrites so the ratio is measurable.
 func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 	l.invokeDispatchStep = 0
-	runTool := ""
+	var runTools []string
 	if l.screenshotForRun {
-		runTool = "send_screenshot"
+		runTools = append(runTools, "send_screenshot")
+	}
+	if l.headlessForRun {
+		runTools = append(runTools, "headless_control", "process_session")
 	}
 	for i := range calls {
 		if calls[i].Name != invokeToolName {
 			continue
 		}
-		if resolved, err := resolveInvokeToolCallForRun(l.registry, calls[i], runTool); err == nil {
+		if resolved, err := resolveInvokeToolCallForRun(l.registry, calls[i], runTools...); err == nil {
 			calls[i] = resolved
 			l.invokeDispatchStep++
 			l.invokeDispatchTotal.Add(1)

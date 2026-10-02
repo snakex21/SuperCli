@@ -8,7 +8,7 @@ import (
 )
 
 func (m onboardModel) View() string {
-	p := DefaultPalette()
+	p := m.renderPalette()
 	var b strings.Builder
 	header := p.PanelTitle.Render("✻ SuperCli") + p.PanelMuted.Render(m.tr("tui.onboard_view.59570f1941"))
 	if m.width > 0 {
@@ -78,7 +78,14 @@ func (m onboardModel) View() string {
 // and returns the user's choice. A TTY error or abort returns
 // Skipped=true so the caller falls back to echo mode.
 func RunOnboarding(language string, dataDirs ...string) OnboardResult {
-	initial := onboardModel{language: normalizeLanguage(language)}
+	// Color detection can query and read the terminal. Complete it before Bubble
+	// Tea owns stdin, and reuse the renderer in every wizard view. Creating fresh
+	// adaptive palettes during View raced that reader and leaked CPR fragments
+	// (e.g. [29;1R) into provider search on Linux terminals.
+	palette := DefaultPalette()
+	palette.renderer.ColorProfile()
+	palette.renderer.HasDarkBackground()
+	initial := onboardModel{language: normalizeLanguage(language), palette: &palette}
 	if len(dataDirs) > 0 {
 		initial.dataDir = dataDirs[0]
 	}
@@ -106,7 +113,7 @@ func (m onboardModel) renderProviderChoices() string {
 		return truncateVisible(m.tr("tui.onboard_view.6fd3e6609a"), width)
 	}
 	presentation := Model{
-		language: m.language, palette: DefaultPalette(),
+		language: m.language, palette: m.renderPalette(),
 		width: minInt(width, 120), height: height - 1,
 		menu: interactiveMenu{kind: menuProviderPredefined, cursor: m.cursor, filter: m.filter, formErr: m.errMsg},
 	}
@@ -127,4 +134,13 @@ func (m onboardModel) renderProviderChoices() string {
 		}
 	}
 	return presentation.renderMenuPage(page)
+}
+
+func (m onboardModel) renderPalette() Palette {
+	if m.palette != nil {
+		return *m.palette
+	}
+	// Directly constructed models are used by display fixtures; live onboarding
+	// always prepares its palette before starting terminal input.
+	return DefaultPalette()
 }

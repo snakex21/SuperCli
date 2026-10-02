@@ -61,6 +61,7 @@ func registerMediaAndOfficeTools(
 	registry.MustRegister(codeIntel.Spec())
 	processSession = tools.NewProcessSession(home)
 	registry.MustRegister(processSession.Spec())
+	registry.MustRegister(tools.NewHeadlessControl(home, dataDir).Spec())
 
 	// F21: read_zip is opt-in (not always-on).
 	// The model discovers it via tool_search

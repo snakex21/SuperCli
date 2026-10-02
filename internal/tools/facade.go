@@ -11,6 +11,7 @@ import (
 	"supercli/internal/tools/codeintel"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/files"
+	"supercli/internal/tools/headless"
 	"supercli/internal/tools/interactive"
 	"supercli/internal/tools/mail"
 	"supercli/internal/tools/media"
@@ -34,6 +35,9 @@ var NewCodeIntel = codeintel.New
 type ProcessSession = processsession.Tool
 
 var NewProcessSession = processsession.New
+
+// Lazy local QMP/WebDriver control, no runtime dependency when unused.
+var NewHeadlessControl = headless.New
 
 // Core contracts and registry.
 type (

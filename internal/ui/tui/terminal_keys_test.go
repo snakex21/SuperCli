@@ -117,6 +117,7 @@ func TestTerminalNavigationPreservesTextAtEverySplit(t *testing.T) {
 		{"\x1b[H", "home"}, {"\x1b[F", "end"}, {"\x1b[5~", "pgup"}, {"\x1b[6~", "pgdown"},
 		{"\x1b[1;2A", "shift+up"}, {"\x1b[1;3B", "alt+down"}, {"\x1b[1;5C", "ctrl+right"}, {"\x1b[1;6D", "ctrl+shift+left"},
 		{"\x1b[1;8H", "alt+ctrl+shift+home"}, {"\x1b[Z", "shift+tab"},
+		{"\x1b[1;3R", "alt+f3"}, {"\x1b[1;2R", "f15"},
 	} {
 		for split := 1; split < len(tc.sequence); split++ {
 			t.Run(fmt.Sprintf("%s/split-%d", tc.key, split), func(t *testing.T) {
@@ -428,6 +429,93 @@ func TestTerminalMouseGrammarRejectsOversizedFields(t *testing.T) {
 	} {
 		if msg, _, pending := recoverTerminalSequence(candidate); msg != nil || pending {
 			t.Fatalf("invalid/oversized mouse report was buffered or recovered: %q %#v pending=%v", candidate, msg, pending)
+		}
+	}
+}
+
+func TestTerminalCursorReportsNeverBecomeKeysAtEverySplit(t *testing.T) {
+	for _, sequence := range []string{"\x1b[29;1R", "\x1b[32;1R", "\x1b[1234;5678R"} {
+		for split := 1; split < len(sequence); split++ {
+			t.Run(fmt.Sprintf("%q/split-%d", sequence, split), func(t *testing.T) {
+				got := readTerminalKeys(t, []string{sequence[:split], sequence[split:] + "LM Studio\r"})
+				var text strings.Builder
+				for _, key := range got {
+					if key.Alt || key.Paste || key.Type != tea.KeyRunes && key.Type != tea.KeySpace {
+						t.Fatalf("report became a key: %#v", got)
+					}
+					text.WriteString(string(key.Runes))
+				}
+				if text.String() != "LM Studio" {
+					t.Fatalf("CPR leaked or genuine search was lost: %q", text.String())
+				}
+			})
+		}
+		chunks := make([]string, 0, len(sequence)+1)
+		for i := 0; i < len(sequence); i++ {
+			chunks = append(chunks, sequence[i:i+1])
+		}
+		chunks = append(chunks, "\x1b[Bsearch\r")
+		got := readTerminalKeys(t, chunks)
+		if len(got) != 2 || got[0].String() != "down" || string(got[1].Runes) != "search" {
+			t.Fatalf("one-byte CPR/navigation replay: %#v", got)
+		}
+	}
+}
+
+func TestFirstRunCPRAndFragmentedArrowsSelectProviderWithoutSearchJunk(t *testing.T) {
+	for _, chunks := range [][]string{
+		{"\x1b[29;1R\x1b[32;1R\x1b[B\r"},
+		{"\x1b[", "29;", "1R", "\x1b", "[32;1R", "\x1b[", "B\r"},
+		{"\x1b", "[", "2", "9", ";", "1", "R", "\x1b", "O", "B", "\r"},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		model := onboardInputFixture{onboardModel{step: onboardMenu, language: "en", choices: []onboardChoice{{label: "first", kind: "echo"}, {label: "second", kind: "echo"}}}}
+		program := NewProgram(model, tea.WithContext(ctx), tea.WithInput(&keyChunkReader{chunks: chunks}), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler())
+		final, err := program.Run()
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := final.(onboardInputFixture).onboardModel
+		if got.aborted || got.step != onboardDone || got.cursor != 1 || got.filter != "" {
+			t.Fatalf("report/arrow corrupted first-run chooser: aborted=%v step=%v cursor=%d filter=%q", got.aborted, got.step, got.cursor, got.filter)
+		}
+	}
+}
+
+func TestCPRRecoveryPreservesLiteralBracketsPasteAndOtherCSI(t *testing.T) {
+	for _, chunks := range [][]string{
+		{"[29;1R[32;1R\r"},
+		{"[", "29;1R", "[32;1R\r"},
+		{"\x1b[200~\x1b[29;1R[32;1R\x1b[201~\r"},
+		{"\x1b[", "9~\r"},
+	} {
+		firstChunk := chunks[0]
+		got := readTerminalKeys(t, chunks)
+		if strings.HasPrefix(firstChunk, "\x1b[200~") {
+			if len(got) != 1 || !got[0].Paste || string(got[0].Runes) != "\x1b[29;1R[32;1R" {
+				t.Fatalf("CPR-looking paste modified: %#v", got)
+			}
+		} else if firstChunk == "\x1b[" {
+			if len(got) != 2 || !got[0].Alt || string(got[0].Runes) != "[" || string(got[1].Runes) != "9~" {
+				t.Fatalf("unknown CSI swallowed: %#v", got)
+			}
+		} else {
+			var text strings.Builder
+			for _, key := range got {
+				text.WriteString(string(key.Runes))
+			}
+			if text.String() != "[29;1R[32;1R" {
+				t.Fatalf("literal brackets swallowed: %#v", got)
+			}
+		}
+	}
+}
+
+func TestCursorReportGrammarIsStrictAndBounded(t *testing.T) {
+	for _, candidate := range []string{"\x1b[0;1R", "\x1b[1;0R", "\x1b[;1R", "\x1b[1;;R", "\x1b[1;1;R", "\x1b[4294967296;1R", "\x1b[12345678901", "\x1b[?1;1R", "[29;1R"} {
+		if msg, _, incomplete := recoverTerminalCursorReport(candidate); msg != nil || incomplete {
+			t.Fatalf("invalid report buffered or discarded: %q %#v incomplete=%v", candidate, msg, incomplete)
 		}
 	}
 }

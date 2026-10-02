@@ -80,6 +80,7 @@ type onboardModel struct {
 	errMsg   string
 	language string
 	dataDir  string
+	palette  *Palette
 }
 
 func (m onboardModel) tr(key string) string { return textFor(m.language, key) }

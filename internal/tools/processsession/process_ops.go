@@ -20,6 +20,23 @@ import (
 	"supercli/internal/tools/sandbox"
 )
 
+// sessionLifetime keeps the short default unless the caller explicitly opts
+// into a longer owned session. Clamp before multiplying to avoid duration
+// overflow turning an oversized timeout into an unexpectedly short lifetime.
+func sessionLifetime(timeoutMS int) time.Duration {
+	if timeoutMS <= 0 {
+		return defaultLifetime
+	}
+	if timeoutMS >= int(maxLifetime/time.Millisecond) {
+		return maxLifetime
+	}
+	lifetime := time.Duration(timeoutMS) * time.Millisecond
+	if lifetime < time.Second {
+		return time.Second
+	}
+	return lifetime
+}
+
 func (m *Manager) Start(p params) (snapshot, error) {
 	if len(p.Command) == 0 {
 		return snapshot{}, errors.New("process_session: command is required for start")
@@ -45,16 +62,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	lifetime := defaultLifetime
-	if p.TimeoutMS > 0 {
-		lifetime = time.Duration(p.TimeoutMS) * time.Millisecond
-	}
-	if lifetime > maxLifetime {
-		lifetime = maxLifetime
-	}
-	if lifetime < time.Second {
-		lifetime = time.Second
-	}
+	lifetime := sessionLifetime(p.TimeoutMS)
 
 	m.mu.Lock()
 	if m.closed {

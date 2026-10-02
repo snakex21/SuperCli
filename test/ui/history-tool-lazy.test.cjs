@@ -8,11 +8,20 @@ const vm = require('node:vm');
 // nodes, and document fragments transfer their children as the DOM does.
 function domNode(tag, type = 1) {
   const node = {tag, nodeType: type, children: [], style: {}, dataset: {}, open: false, listeners: new Map(),
-    appendChild(child) {
+    appendChild(child) { return this.insertBefore(child, null); },
+    insertBefore(child, before) {
       if (child.nodeType === 11) {
-        child.children.splice(0).forEach(value => this.appendChild(value));
-      } else this.children.push(child);
+        child.children.slice().forEach(value => this.insertBefore(value, before));
+      } else {
+        if (child.parentNode) child.parentNode.children.splice(child.parentNode.children.indexOf(child), 1);
+        child.parentNode = this;
+        this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, child);
+      }
       return child;
+    },
+    remove() {
+      if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1);
+      this.parentNode = null;
     },
     addEventListener(name, listener) {
       if (!this.listeners.has(name)) this.listeners.set(name, new Set());
@@ -28,6 +37,9 @@ function domNode(tag, type = 1) {
     },
   };
   node.classList = {add() {}, remove() {}, toggle() {}};
+  Object.defineProperty(node, 'isConnected', {get: () => !!node.parentNode});
+  Object.defineProperty(node, 'firstChild', {get: () => node.children[0] || null});
+  Object.defineProperty(node, 'nextSibling', {get() { return this.parentNode ? this.parentNode.children[this.parentNode.children.indexOf(this) + 1] || null : null; }});
   Object.defineProperty(node, 'childNodes', {get: () => node.children});
   Object.defineProperty(node, 'textContent', {
     get() { return this.nodeType === 3 ? this.text : this.children.map(child => child.textContent).join(''); },
@@ -45,11 +57,13 @@ function countNodes(node, elementsOnly = false) {
 }
 function harness() {
   const nodes = new Map(), calls = [];
+  let created = 0;
   const $ = selector => {
     if (!nodes.has(selector)) nodes.set(selector, domNode('div'));
     return nodes.get(selector);
   };
   function el(tag, cls, text) {
+    created++;
     const node = domNode(tag);
     if (cls) node.className = cls;
     if (text != null) node.textContent = text;
@@ -77,7 +91,7 @@ function harness() {
   c.renderStats = () => calls.push('stats');
   c.restoreSessionRuntime = () => calls.push('runtime');
   c.setSessionOpening = () => {};
-  return {c, calls};
+  return {c, calls, created: () => created};
 }
 function readLines(lines = 5000) {
   return {seq: 2, role: 'tool', name: 'read_lines', tool_call_id: 'read-1',
@@ -236,7 +250,7 @@ test('task report replacement cancels stale folded callbacks and preserves open 
   assert.equal(row.listeners.get('toggle').size, 0); assert.equal(row._cancelTaskReport, null);
 });
 
-test('task history paging retains raw reports and defers each rebuilt row', async () => {
+test('task history paging retains raw reports and defers newly received rows', async () => {
   const h = harness(), calls = [];
   h.c.renderText = source => { calls.push(source); return source; };
   const content = result => '<task-notification><task-id>worker-' + result + '</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>';
@@ -252,4 +266,70 @@ test('task history paging retains raw reports and defers each rebuilt row', asyn
   assert.equal(rows.length, 2); rows.forEach(row => { row.open = true; row.dispatch('toggle'); });
   assert.deepEqual(calls, ['older', 'latest']);
   assert.equal(h.c.loadedTranscriptMessages[1].content, latest.content);
+});
+
+
+test('older paging retains expanded rows and live messages while rendering only the incoming page', async t => {
+  const h = harness();
+  const latest = Array.from({length: 60}, (_, i) => ({...readLines(3), seq: 61 + i, tool_call_id: 'latest-' + i}));
+  const older = Array.from({length: 60}, (_, i) => ({...readLines(3), seq: 1 + i, tool_call_id: 'older-' + i}));
+  h.c.j = async url => url.includes('&before=61') ? {messages: older, has_more: true, before_seq: 1} :
+    {messages: latest, has_more: true, before_seq: 61};
+  assert.equal(await h.c.resumeSession('retained-chat', {}), true);
+  const rows = h.c.stream.querySelectorAll('.tool-row');
+  rows[0].open = true; rows[0].dispatch('toggle');
+  const expandedBody = rows[0].children[1], viewer = expandedBody.children[0];
+  const live = domNode('div'); live.className = 'live-segment'; live.textContent = 'received after resume';
+  h.c.stream.appendChild(live);
+  h.c.streaming = true; h.c.transcriptLiveAppend = true;
+  let height = 1000;
+  Object.defineProperty(h.c.stage, 'scrollHeight', {get: () => height});
+  h.c.stage.scrollTop = 30;
+  const oldInsert = h.c.stream.insertBefore;
+  h.c.stream.insertBefore = function(child, before) { if (child.nodeType === 11) height += 600; return oldInsert.call(this, child, before); };
+  const created = h.created();
+  await h.c.loadOlderTranscript();
+  const appendedElements = h.created() - created;
+  assert.equal(appendedElements, 360, 'only six summary elements for each of the 60 newly received rows');
+  t.diagnostic('loading 60 older rows after 60 retained rows: summary elements created 720 -> 360');
+  assert.equal(h.c.stream.querySelectorAll('.tool-row').length, 120);
+  assert.equal(h.c.stream.querySelectorAll('.tool-row')[60], rows[0]);
+  assert.equal(rows[0].open, true); assert.equal(rows[0].children[1], expandedBody); assert.equal(expandedBody.children[0], viewer);
+  assert.equal(live.parentNode, h.c.stream); assert.equal(live.textContent, 'received after resume');
+  assert.equal(h.c.transcriptLiveAppend, true); assert.equal(h.c.streamAppendTarget, null);
+  assert.equal(h.c.stage.scrollTop, 630); assert.equal(h.c.stream.querySelector('.history-older').disabled, false);
+  assert.equal(h.c.transcriptBeforeSeq, 1);
+});
+
+test('paging an older task notification preserves the latest worker backlink and its open report', async () => {
+  const h = harness(); h.c.renderText = source => source;
+  const task = (seq, result) => ({seq, role: 'tool', name: 'task', content:
+    '<task-notification><task-id>worker-shared</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>'});
+  h.c.j = async url => url.includes('&before=2') ? {messages: [task(1, 'old report')], has_more: false, before_seq: 1} :
+    {messages: [task(2, 'current report')], has_more: true, before_seq: 2};
+  assert.equal(await h.c.resumeSession('worker-chat', {}), true);
+  const current = h.c.workerRows['worker-shared']; current.open = true; current.dispatch('toggle');
+  const report = current.querySelector('.task-report');
+  await h.c.loadOlderTranscript();
+  assert.equal(h.c.workerRows['worker-shared'], current); assert.equal(current.open, true);
+  assert.equal(current.querySelector('.task-report'), report); assert.equal(report.innerHTML, 'current report');
+  assert.equal(h.c.stream.querySelectorAll('.task-row').length, 2); assert.equal(h.c.stream.querySelector('.history-older'), null);
+});
+
+
+test('failed older-page rendering releases temporary worker references without clearing current content', async () => {
+  const h = harness();
+  h.c.j = async url => url.includes('&before=2') ? {messages: [readLines(1)], has_more: false, before_seq: 1} :
+    {messages: [readLines(3)], has_more: true, before_seq: 2};
+  assert.equal(await h.c.resumeSession('failed-page', {}), true);
+  const existing = h.c.stream.querySelector('.tool-row'), workers = h.c.workerRows;
+  const worker = domNode('details'); workers.current = worker;
+  h.c.transcriptLiveAppend = true;
+  h.c.buildHistoryFragment = () => { h.c.workerRows.orphan = domNode('details'); throw Error('fixture render failed'); };
+  const notices = []; h.c.toast = text => notices.push(text);
+  await h.c.loadOlderTranscript();
+  assert.equal(h.c.workerRows, workers); assert.equal(h.c.workerRows.current, worker); assert.equal(h.c.workerRows.orphan, undefined);
+  assert.equal(h.c.stream.querySelector('.tool-row'), existing); assert.equal(h.c.loadedTranscriptMessages.length, 1);
+  assert.equal(h.c.transcriptLiveAppend, true); assert.equal(h.c.stream.querySelector('.history-older').disabled, false);
+  assert.ok(notices[0].includes('fixture render failed'));
 });

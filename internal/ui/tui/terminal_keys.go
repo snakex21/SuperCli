@@ -26,6 +26,9 @@ type terminalKeyBatchMsg []tea.KeyMsg
 type terminalInputBatchMsg []tea.Msg
 type terminalEscapeTimeout struct{ generation uint64 }
 
+// Terminal replies are protocol traffic, not user search/input text.
+type terminalCursorReportMsg struct{ row, column uint32 }
+
 // Updates run synchronously in input order. Sending text after a recovered key
 // or mouse event asynchronously could let Enter overtake it.
 func updateTerminalInputBatch(model tea.Model, msgs terminalInputBatchMsg) (tea.Model, tea.Cmd) {
@@ -73,7 +76,10 @@ func (f *terminalKeyFilter) filter(_ tea.Model, msg tea.Msg) tea.Msg {
 			recovered, consumed, incomplete := recoverTerminalSequence(candidate)
 			if recovered != nil {
 				f.flush()
-				msgs := []tea.Msg{recovered}
+				var msgs []tea.Msg
+				if _, cursorReport := recovered.(terminalCursorReportMsg); !cursorReport {
+					msgs = append(msgs, recovered)
+				}
 				if rest := candidate[consumed:]; rest != "" {
 					msgs = append(msgs, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(rest)})
 				}
@@ -140,6 +146,9 @@ func recoverTerminalSequence(candidate string) (tea.Msg, int, bool) {
 			return navigation, len(sequence), false
 		}
 	}
+	if report, consumed, incomplete := recoverTerminalCursorReport(candidate); report != nil || incomplete {
+		return report, consumed, incomplete
+	}
 	// X10 is recoverable only while its prefix remains in key events. A read
 	// ending exactly after ESC[M becomes an upstream unknownCSISequenceMsg
 	// backed by a reused input buffer, so do not inspect or guess that event.
@@ -195,6 +204,44 @@ func recoverTerminalSequence(candidate string) (tea.Msg, int, bool) {
 		}
 	}
 	return nil, 0, false
+}
+
+// Recognize CPR only after a real Escape/CSI prefix. A user typing [29;1R or
+// bracketed paste containing it must remain ordinary text. Known keys take
+// precedence because modified navigation/function keys can resemble a report.
+func recoverTerminalCursorReport(candidate string) (tea.Msg, int, bool) {
+	if !strings.HasPrefix(candidate, "\x1b[") {
+		return nil, 0, false
+	}
+	var values [2]uint32
+	field, start := 0, 2
+	for i := start; i < len(candidate); i++ {
+		c := candidate[i]
+		if c >= '0' && c <= '9' {
+			if i-start >= 10 {
+				return nil, 0, false
+			}
+			continue
+		}
+		if i == start {
+			return nil, 0, false
+		}
+		n, err := strconv.ParseUint(candidate[start:i], 10, 32)
+		if err != nil || n == 0 {
+			return nil, 0, false
+		}
+		values[field] = uint32(n)
+		if c == ';' && field == 0 {
+			field++
+			start = i + 1
+			continue
+		}
+		if c == 'R' && field == 1 {
+			return terminalCursorReportMsg{row: values[0], column: values[1]}, i + 1, false
+		}
+		return nil, 0, false
+	}
+	return nil, 0, true
 }
 
 // Match Bubble Tea's complete-event decoder, including its legacy Type field.
@@ -281,12 +328,14 @@ func terminalMessagesMsg(msgs []tea.Msg) tea.Msg {
 	return terminalKeyBatchMsg(keys)
 }
 
-// Only recognized navigation is reconstructed. Unknown sequences, Alt text and
-// bracketed paste are preserved, rather than guessed to be keyboard shortcuts.
+// Recognized navigation and function keys overlapping the CPR grammar match the
+// upstream decoder. Unknown sequences, Alt text and bracketed paste are preserved.
 var terminalNavigationSequences = func() map[string]tea.KeyMsg {
 	keys := map[string]tea.KeyMsg{
-		"\x1b[Z":  {Type: tea.KeyShiftTab},
-		"\x1b[1~": {Type: tea.KeyHome}, "\x1b[4~": {Type: tea.KeyEnd},
+		"\x1b[1;3R": {Type: tea.KeyF3, Alt: true},
+		"\x1b[1;2R": {Type: tea.KeyF15},
+		"\x1b[Z":    {Type: tea.KeyShiftTab},
+		"\x1b[1~":   {Type: tea.KeyHome}, "\x1b[4~": {Type: tea.KeyEnd},
 		"\x1b[7~": {Type: tea.KeyHome}, "\x1b[8~": {Type: tea.KeyEnd},
 		"\x1b[5~": {Type: tea.KeyPgUp}, "\x1b[6~": {Type: tea.KeyPgDown},
 	}

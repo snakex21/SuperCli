@@ -159,6 +159,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	}
 	reg.MustRegister(codeIntel.Spec())
 	reg.MustRegister(processSession.Spec())
+	reg.MustRegister(tools.NewHeadlessControl(home, dataDir).Spec())
 	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
 	reg.MarkAlwaysOn("invoke_tool")
 	// A compact current-facts tool is always available in batch mode. The

@@ -323,3 +323,40 @@ func TestOnboardingEmptyMessagesCannotAdvanceSetup(t *testing.T) {
 		t.Fatal("Escape did not skip first-run setup")
 	}
 }
+
+func TestOnboardingKeepsPreparedPaletteAcrossEveryView(t *testing.T) {
+	palette := NoColorPalette()
+	// Prepare the color queries before the input loop, as RunOnboarding does.
+	palette.renderer.ColorProfile()
+	palette.renderer.HasDarkBackground()
+	m := onboardModel{step: onboardMenu, choices: buildChoices(nil), language: "en", width: 100, height: 28, palette: &palette}
+	for _, step := range []onboardStep{onboardDetect, onboardMenu, onboardAuthMethod, onboardURL, onboardKey, onboardLoadModels, onboardModels, onboardVerify, onboardDone} {
+		m.step = step
+		if m.renderPalette().renderer != palette.renderer {
+			t.Fatalf("step=%v replaced prepared renderer", step)
+		}
+		m.View()
+		if m.palette != &palette {
+			t.Fatalf("step=%v replaced prepared palette", step)
+		}
+	}
+}
+
+func BenchmarkOnboardingPaletteViews(b *testing.B) {
+	for _, reused := range []bool{false, true} {
+		b.Run(fmt.Sprintf("prepared=%t", reused), func(b *testing.B) {
+			palette := DefaultPalette()
+			palette.renderer.ColorProfile()
+			palette.renderer.HasDarkBackground()
+			m := onboardModel{step: onboardMenu, choices: buildChoices(nil), language: "en", width: 100, height: 28}
+			if reused {
+				m.palette = &palette
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.View()
+			}
+		})
+	}
+}
