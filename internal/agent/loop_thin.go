@@ -82,12 +82,18 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 		// The dormant catalog is not evidence a small model will discover OS
 		// capture. Expose its exact contract for this requested turn only,
 		// without changing persistent activation or ordinary prompt cost.
-		if l.screenshotForRun {
+		for _, requested := range []struct {
+			enabled bool
+			name    string
+		}{{l.screenshotForRun, "send_screenshot"}, {l.headlessForRun, "headless_control"}, {l.headlessForRun, "process_session"}} {
+			if !requested.enabled {
+				continue
+			}
 			found := false
 			for _, def := range toolDefs {
-				found = found || def.Name == "send_screenshot"
+				found = found || def.Name == requested.name
 			}
-			if t, ok := l.registry.Get("send_screenshot"); ok && !found {
+			if t, ok := l.registry.Get(requested.name); ok && !found {
 				toolDefs = append(toolDefs, llm.ToolDef{Name: t.Name, Description: t.Description, Schema: t.Schema})
 			}
 		}

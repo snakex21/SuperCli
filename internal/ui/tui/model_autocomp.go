@@ -110,8 +110,13 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // updateAutocompleteState checks the current input value and opens/closes
 // the autocomplete popup accordingly. Called after every textinput update.
 func (m *Model) updateAutocompleteState() {
+	previousKind := m.autocomp.kind
 	defer func() {
-		m.resizeViewport()
+		// No popup before or after a normal key means there is no layout change.
+		// Opening, closing and filtering a popup still update the viewport at once.
+		if previousKind != autocompNone || m.autocomp.kind != autocompNone {
+			m.resizeViewport()
+		}
 	}()
 	text := m.input.Value()
 	kind, query := splitAutocompleteTrigger(text)

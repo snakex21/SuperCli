@@ -912,7 +912,7 @@ function appendHistoryToolPayload(row, body, args, text, name) {
 // Media is user-visible output, not hidden diagnostic JSON. Its thumbnail stays
 // outside folded tool details in both live and restored conversations.
 function toolMediaDescriptor(text, name, isError) {
-  if ((name === "send_screenshot" || name === "show_media") && !isError) {
+  if ((name === "send_screenshot" || name === "show_media" || name === "headless_control") && !isError) {
     try {
       var media = JSON.parse(String(text == null ? "" : text));
       var mediaPath = media && media.path;
@@ -920,10 +920,11 @@ function toolMediaDescriptor(text, name, isError) {
       if (typeof mediaPath === "string" && !/[\x00-\x1f]/.test(mediaPath) &&
           /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(mediaPath) &&
           !media.save_error && !media.error &&
-          (name !== "send_screenshot" || media.type === "image") &&
+          (name === "show_media" || media.type === "image") &&
+          (name !== "headless_control" || media.source === "qmp" || media.source === "browser") &&
           media.type === attachmentMimeKind(media.media_type) &&
           ["image", "video", "audio"].indexOf(media.type) >= 0) {
-        var previewPath = name === "send_screenshot" && typeof media.preview_path === "string" &&
+        var previewPath = (name === "send_screenshot" || name === "headless_control") && typeof media.preview_path === "string" &&
           /^snapshot:[A-Za-z0-9._-]+$/.test(media.preview_path) ? media.preview_path : "";
         return {path: mediaPath, kind: media.type, previewPath: previewPath};
       }

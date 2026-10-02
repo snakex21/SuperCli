@@ -347,10 +347,38 @@ async function loadOlderTranscript() {
     var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) +
       "&limit=" + transcriptPageSize + "&before=" + transcriptBeforeSeq, { signal: controller.signal });
     if (sessionID !== transcriptSessionID || controller !== transcriptAbortCtl) return;
-    loadedTranscriptMessages = (page.messages || []).concat(loadedTranscriptMessages);
+    var olderMessages = page.messages || [];
+    var oldHeight = stage.scrollHeight;
+    var oldTop = stage.scrollTop;
+    // An older page must not rebuild the existing transcript: it may contain
+    // expanded results, selected text, or new messages from the active stream.
+    // Older task notifications also must not replace the latest worker backlink.
+    var currentWorkers = workerRows;
+    var olderWorkers = Object.assign({}, currentWorkers);
+    var liveAppend = transcriptLiveAppend;
+    var fragment;
+    transcriptLiveAppend = false;
+    workerRows = olderWorkers;
+    try {
+      fragment = buildHistoryFragment(olderMessages);
+    } finally {
+      transcriptLiveAppend = liveAppend;
+      workerRows = currentWorkers;
+    }
+    Object.keys(olderWorkers).forEach(function (id) {
+      if (!currentWorkers[id]) currentWorkers[id] = olderWorkers[id];
+    });
+    loadedTranscriptMessages = olderMessages.concat(loadedTranscriptMessages);
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
-    renderLoadedTranscript(true);
+    stream.insertBefore(fragment, button ? button.nextSibling : stream.firstChild);
+    if (button) {
+      if (transcriptHasMore) {
+        button.disabled = false;
+        button.textContent = t("session.older");
+      } else button.remove();
+    }
+    stage.scrollTop = Math.max(0, oldTop + stage.scrollHeight - oldHeight);
   } catch (e) {
     if (e.name !== "AbortError") {
       toast(t("common.error") + ": " + e.message);
@@ -390,77 +418,7 @@ async function resumeSession(id, session, fromQueue) {
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
-    stream.innerHTML = "";
-    toolRows = {}; workerRows = {}; openToolOrder = [];
-  resetWorkerOverview();
-    lastTurn = null; workersSeen = [];
-    hideWelcome();
-    var historyCalls = {};
-	var historyFragment = document.createDocumentFragment();
-	if (transcriptHasMore) {
-	  var older = i18nEl("button", "history-older", "session.older");
-	  older.type = "button";
-	  older.addEventListener("click", loadOlderTranscript);
-	  historyFragment.appendChild(older);
-	}
-	streamAppendTarget = historyFragment;
-	(msgs || []).forEach(function (m) {
-      if (m.role === "user") {
-        addUserMsg(m.content, m.seq, sentAttachmentsFor(id, m.seq));
-	      } else if (m.role === "assistant") {
-        (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
-        if (!m.content) {
-          if (m.turn) { addFileChanges(m.turn.file_changes); addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq); }
-          return;
-        }
-        var node = addAssistantMsg();
-        node._raw = m.content;
-        node._history = true;
-        renderAssistant(node);
-        // History replay: thinking folded (only live streams open it).
-	        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
-        if (m.turn) {
-          addFileChanges(m.turn.file_changes);
-          addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
-        }
-      } else if (m.role === "tool") {
-        var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
-          parseTaskNotification(m.content) : null;
-        if (task) {
-          addHistoryTask(task);
-          return;
-        }
-        var persistedCall = historyCalls[m.tool_call_id] || null;
-        var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
-        var persistedArgs = persistedCall ? persistedCall.arguments : "";
-        var historyInfo = persistedArgs ? toolHint(persistedName, persistedArgs) :
-          { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
-        var row = document.createElement("details");
-        row.className = "tool-row done";
-        var sum = el("summary");
-        var historyName = el("span", "tname", historyInfo.name);
-        historyName.title = persistedName;
-        sum.appendChild(historyName);
-        sum.appendChild(el("span", "thint", historyInfo.hint));
-        var historyStat = el("span", "tstat", "");
-        var historyChanges = toolChangeStats(persistedName, m.content);
-        var historyMutationLabel = mutationOutcomeLabel(persistedName, m.content, /^error:/i.test(String(m.content || "")));
-        if (historyMutationLabel) historyName.textContent = t(historyMutationLabel);
-        if (historyChanges.added) historyStat.appendChild(el("span", "change-add", "+" + historyChanges.added));
-        if (historyChanges.removed) historyStat.appendChild(el("span", "change-remove", "−" + historyChanges.removed));
-        if (historyChanges.diff || historyMutationLabel) row.classList.add("has-changes");
-        sum.appendChild(historyStat);
-        row.appendChild(sum);
-        var body = el("div", "tbody");
-        appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
-        row.appendChild(body);
-        appendStream(row);
-        appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
-      }
-	});
-	streamAppendTarget = null;
-	stream.appendChild(historyFragment);
-	smartScroll(true);
+    renderLoadedTranscript(false);
     loadSessions();
     renderStats();
     promptEl.focus();

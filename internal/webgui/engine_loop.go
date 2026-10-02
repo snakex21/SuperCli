@@ -101,6 +101,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	codeIntel := e.codeIntelFor(home)
 	reg.MustRegister(codeIntel.Spec())
 	reg.MustRegister(e.processSessionFor(home).Spec())
+	reg.MustRegister(tools.NewHeadlessControl(home, e.DataDir()).Spec())
 	discoverer := e.skillDiscovererFor(home)
 	skillApplier := tools.NewSkillApplier(discoverer)
 	reg.MustRegister(skillApplier.Spec())

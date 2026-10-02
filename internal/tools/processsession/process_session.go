@@ -26,7 +26,7 @@ const (
 	maxPollBytes    = 12 << 10
 	maxWriteBytes   = 16 << 10
 	defaultLifetime = 10 * time.Minute
-	maxLifetime     = 30 * time.Minute
+	maxLifetime     = 24 * time.Hour
 )
 
 // Tool owns process sessions for one workspace.
@@ -43,7 +43,7 @@ func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
 		Description: "Start a long-running command; wait for its exit, poll for diagnostics, write input, resize PTY, stop, or list sessions. Use ctx_execute for short commands. pty=true gives a real terminal with merged output. At most 3 active sessions; output and lifetime are capped.",
-		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":1800000,"default":600000},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30}},"required":["action"]}`,
+		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":86400000,"default":600000,"description":"Lifetime; default 10 min, opt in up to 24 h for long jobs"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30}},"required":["action"]}`,
 		Fn:          t.Execute,
 	}
 }

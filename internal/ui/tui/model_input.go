@@ -44,8 +44,18 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	m.syncInputHeight()
+	m.syncTypedInputHeight()
 	return m, cmd
+}
+
+// Ordinary typing only changes transcript geometry when the input gains or
+// loses a visible row. Runtime/attachment transitions keep syncInputHeight's
+// complete resize path; cursor movement must not rebuild their layout.
+func (m *Model) syncTypedInputHeight() {
+	h := min(max(1, m.input.LineCount()), maxInputLines)
+	if m.input.Height() != h {
+		m.syncInputHeight()
+	}
 }
 
 // handleCtrlC implements the F25 cancel behavior:
@@ -136,6 +146,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.input.Value() != "" {
 			m.input.Reset()
+			m.syncTypedInputHeight()
 			return m, nil
 		}
 		// Empty input + Esc is a no-op. The exit tip is shown
@@ -183,7 +194,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	m.syncInputHeight()
+	m.syncTypedInputHeight()
 	m.updateAutocompleteState()
 	return m, cmd
 }

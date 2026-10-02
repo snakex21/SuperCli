@@ -14,11 +14,12 @@ import (
 // prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	l.screenshotForRun = containsScreenshotReference(prompt)
+	l.headlessForRun = containsHeadlessReference(prompt)
 	// A1: the navigator is a full LLM call. It runs here, inside the
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
 	switch {
-	case l.screenshotForRun:
+	case l.screenshotForRun || l.headlessForRun:
 		// Capture is an OS tool capability, not a conceptual chat question.
 		l.route = RouteCoordinator
 	case !l.navigate:
@@ -168,4 +169,15 @@ func (l *Loop) continueWithDiscoveredTools(ctx context.Context, calls []llm.Tool
 		l.attachCoordinatorAddon(ctx)
 		return
 	}
+}
+
+// Explicit endpoint requests receive the exact optional contract for this run.
+func containsHeadlessReference(prompt string) bool {
+	p := strings.ToLower(prompt)
+	for _, marker := range []string{"headless", "qemu", "qmp", "webdriver", "maszyną wirtualną", "maszyne wirtualna", "maszynę wirtualną", "maszyny wirtualnej", "maszynie wirtualnej"} {
+		if strings.Contains(p, marker) {
+			return true
+		}
+	}
+	return false
 }

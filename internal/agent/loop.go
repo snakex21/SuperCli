@@ -121,6 +121,7 @@ type Loop struct {
 	toolDiscovery   toolDiscoveryState
 	// Only requested screen-capture turns carry this optional tool's schema.
 	screenshotForRun bool
+	headlessForRun   bool
 
 	// Optional legacy reasoning replay (SUPERCLI_KEEP_THINKING, default off).
 	// Assistant reasoning is stripped before entering Messages, while the

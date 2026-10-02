@@ -354,3 +354,31 @@ test('WebP keeps the original preview fallback while failed PNG thumbnails keep 
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
   }
 });
+
+test('headless QMP and browser screenshots have automatic bounded preview in live and restored chat', () => {
+  for (const source of ['qmp', 'browser']) {
+    const h = harness(), file = 'C:/portable/data/.supercli/snapshots/' + source + '-123.png';
+    const raw = mediaResult('image', file, {source, preview_path: 'snapshot:' + source + '-123.png'});
+    const live = liveResult(h, 'headless_control', raw);
+    assert.equal(live.open, false);
+    assert.equal(live._mediaPreview.querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent('snapshot:' + source + '-123.png') + '&thumbnail=transcript');
+    const restored = h.c.buildHistoryFragment([{seq: 10, role:'tool', tool_call_id:'vm-shot',name:'headless_control',content:raw}]).children[0];
+    assert.equal(restored.open, false);
+    assert.ok(restored._mediaPreview.querySelector('img'));
+    buttons(restored._mediaPreview)[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent('snapshot:' + source + '-123.png'));
+  }
+});
+test('headless status, other sources, failures and invalid media never become previews', () => {
+  const h = harness(), file = '/portable/data/.supercli/snapshots/qmp-123.png';
+  for (const raw of [
+    JSON.stringify({protocol:'qmp', status:{running:true}}),
+    mediaResult('image',file,{source:'unknown'}),
+    mediaResult('video',file,{source:'qmp'}),
+    mediaResult('image',file,{source:'qmp',save_error:'disk full'}),
+    mediaResult('image','https://example.com/a.png',{source:'qmp'}),
+  ]) assert.equal(h.c.toolMediaDescriptor(raw,'headless_control',false),null);
+  assert.equal(h.c.toolMediaDescriptor(mediaResult('image',file,{source:'qmp'}),'headless_control',true),null);
+});
