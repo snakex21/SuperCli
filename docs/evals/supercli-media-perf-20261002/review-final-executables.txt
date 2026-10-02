@@ -1,0 +1,4 @@
+6f2b58b74b78033b962c5c9a2b7f46b9fa88251040d51717627876af77206c11  ../supercli-build-cache/bin/supercli
+c2e3b7275efefbd5573a2d333c45945f04c092e152cde183005eb747ce7fa30a  ../supercli-build-cache/bin/supercli-web
+a2b511667a55781fb4c607f3e437ff85caa603ccdc20829f70714151640a289a  ../supercli-build-cache/bin/supercli.exe
+55dc1d3110594a36456fa6464a4270b72af4a33d265a405a08cecdef32341d95  ../supercli-build-cache/bin/supercli-web.exe

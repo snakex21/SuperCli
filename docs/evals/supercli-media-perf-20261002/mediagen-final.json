@@ -1,0 +1,21 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./internal/tools/mediagen",
+    "./internal/system/config",
+    "-count=1",
+    "-v"
+  ],
+  "exit_code": 1,
+  "elapsed_s": 2.089,
+  "peak_group_rss_bytes": 2785280,
+  "peak_cache_bytes": 1362751488,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

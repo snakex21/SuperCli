@@ -11,17 +11,31 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"supercli/internal/system/config"
 	"supercli/internal/tools/core"
+	"supercli/internal/tools/interactive"
 	"supercli/internal/tools/media"
 	"sync"
 	"time"
 )
 
-type Tool struct{ BaseDir, DataDir string }
+type Tool struct {
+	BaseDir, DataDir string
+	scope            config.HeadlessConf
+	scopeErr         error
+	confirmation     chan<- interactive.AskRequest
+}
 
-func New(baseDir, dataDir string) *Tool { return &Tool{BaseDir: baseDir, DataDir: dataDir} }
+func New(baseDir, dataDir string, confirmation ...chan<- interactive.AskRequest) *Tool {
+	scope, err := config.LoadHeadless(dataDir)
+	t := &Tool{BaseDir: baseDir, DataDir: dataDir, scope: scope, scopeErr: err}
+	if len(confirmation) > 0 {
+		t.confirmation = confirmation[0]
+	}
+	return t
+}
 func (t *Tool) Spec() core.Tool {
-	return core.Tool{Name: "headless_control", Description: "Control an explicitly selected local headless QEMU (qmp) or browser (webdriver). Start QEMU/driver once with process_session; reuse endpoint/session. QMP: status, keys, click, screenshot, wait_event. WebDriver: open headless browser, status, inspect semantic DOM, navigate, click/type CSS selector, screenshot, close. Prefer inspect/status over image inference. Chat preview is automatic; attach=true only for pixel analysis. Does not change host mouse/keyboard or foreground window.",
+	return core.Tool{Name: "headless_control", Description: "Control an operator-allowlisted local headless QEMU (qmp) or browser (webdriver). Requires global [headless.targets] configuration; mutations require interactive per-action approval. Start QEMU/driver once with process_session; reuse endpoint/session. QMP: status, keys, click, screenshot, wait_event. WebDriver: open headless browser, status, inspect semantic DOM, navigate, click/type CSS selector, screenshot, close. Prefer inspect/status over image inference. Chat preview is automatic; attach=true only for pixel analysis. Does not change host mouse/keyboard or foreground window.",
 		Schema: `{"type":"object","properties":{"protocol":{"type":"string","enum":["qmp","webdriver"]},"endpoint":{"type":"string","description":"Explicit loopback endpoint: tcp://127.0.0.1:4444 QMP or http://127.0.0.1:9515 WebDriver"},"action":{"type":"string","enum":["open","status","inspect","navigate","keys","click","type","screenshot","wait_event","close"]},"session_id":{"type":"string"},"browser":{"type":"string","enum":["chrome","firefox"],"default":"chrome"},"binary":{"type":"string","description":"Optional browser executable"},"url":{"type":"string"},"selector":{"type":"string","description":"WebDriver CSS selector"},"text":{"type":"string","maxLength":4096},"keys":{"type":"array","items":{"type":"string"},"maxItems":16,"description":"QMP qcode chord, e.g. [ctrl,alt,delete]"},"x":{"type":"integer","minimum":0,"maximum":32767},"y":{"type":"integer","minimum":0,"maximum":32767},"button":{"type":"string","enum":["left","right","middle"],"default":"left"},"event":{"type":"string","description":"QMP event to await without polling, e.g. SHUTDOWN"},"attach":{"type":"boolean","default":false},"image_detail":{"type":"string","enum":["auto","original"],"default":"auto"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":300000,"default":30000}},"required":["protocol","endpoint","action"]}`, Fn: t.Execute}
 }
 
@@ -82,6 +96,21 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		return core.Result{Err: err}, nil
 	}
 	p.Endpoint = endpoint.String()
+	if p.TimeoutMS == 0 {
+		p.TimeoutMS = 30000
+	}
+	if p.ImageDetail == "" {
+		p.ImageDetail = "auto"
+	}
+	if p.Action == "open" && p.Browser == "" {
+		p.Browser = "chrome"
+	}
+	if p.Action == "click" && p.Button == "" {
+		p.Button = "left"
+	}
+	if err := t.authorize(ctx, p); err != nil {
+		return core.Result{Err: fmt.Errorf("headless_control: %w", err)}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	release, err := lockTarget(ctx, p.Protocol+":"+p.Endpoint)

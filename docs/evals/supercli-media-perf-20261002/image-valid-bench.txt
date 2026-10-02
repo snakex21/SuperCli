@@ -1,0 +1,18 @@
+goos: linux
+goarch: amd64
+pkg: supercli/internal/tools/media
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkReadImagePayload/png-1920x1080-original/baseline         	     220	   1656253 ns/op	14914689 B/op	     122 allocs/op
+BenchmarkReadImagePayload/png-1920x1080-original/baseline         	     200	   1658730 ns/op	14914508 B/op	     120 allocs/op
+BenchmarkReadImagePayload/png-1920x1080-original/baseline         	     238	   1659866 ns/op	14914508 B/op	     120 allocs/op
+BenchmarkReadImagePayload/png-1920x1080-original/optimized        	     519	    661321 ns/op	 6240138 B/op	      93 allocs/op
+BenchmarkReadImagePayload/png-1920x1080-original/optimized        	     541	    664668 ns/op	 6240152 B/op	      93 allocs/op
+BenchmarkReadImagePayload/png-1920x1080-original/optimized        	     594	    625212 ns/op	 6240154 B/op	      93 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline                   	     158	   2118158 ns/op	17071800 B/op	     114 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline                   	     169	   2110056 ns/op	17071800 B/op	     114 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline                   	     157	   2129225 ns/op	17071800 B/op	     114 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized                  	   13284	     27047 ns/op	    8616 B/op	      82 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized                  	   13686	     25873 ns/op	    8584 B/op	      82 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized                  	   14205	     25242 ns/op	    8584 B/op	      82 allocs/op
+PASS
+ok  	supercli/internal/tools/media	4.901s

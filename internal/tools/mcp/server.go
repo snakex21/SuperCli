@@ -10,19 +10,22 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/tools/interactive"
 )
 
 // ServerConfig mirrors a [mcp.servers.<name>] section in config.toml.
 type ServerConfig struct {
-	Command     string            `toml:"command"`
-	Args        []string          `toml:"args"`
-	Env         map[string]string `toml:"env"`
-	Dir         string            `toml:"-"`
-	Description string            `toml:"-"`
-	Portable    bool              `toml:"-"`
-	PackageDir  string            `toml:"-"`
-	PackageID   string            `toml:"-"`
-	Tags        []string          `toml:"-"`
+	ConfirmCalls bool              `toml:"confirm_calls"`
+	AllowedTools []string          `toml:"allowed_tools"`
+	Command      string            `toml:"command"`
+	Args         []string          `toml:"args"`
+	Env          map[string]string `toml:"env"`
+	Dir          string            `toml:"-"`
+	Description  string            `toml:"-"`
+	Portable     bool              `toml:"-"`
+	PackageDir   string            `toml:"-"`
+	PackageID    string            `toml:"-"`
+	Tags         []string          `toml:"-"`
 }
 
 // Server is one configured MCP server: a subprocess speaking JSON-RPC
@@ -30,6 +33,8 @@ type ServerConfig struct {
 type Server struct {
 	Name   string
 	Config ServerConfig
+	// ConfirmationChannel is supplied only by the hosting UI, never MCP content.
+	ConfirmationChannel chan<- interactive.AskRequest
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -146,6 +151,18 @@ func (s *Server) CallTool(ctx context.Context, name string, args []byte) (Result
 	if client == nil {
 		return Result{}, fmt.Errorf("mcp server %s is not running (try /mcp restart %s)", s.Name, s.Name)
 	}
+	if !s.ToolAllowed(name) {
+		return Result{}, fmt.Errorf("mcp: tool %q is outside the configured scope for %s", name, s.Name)
+	}
+	if s.Config.ConfirmCalls {
+		question := fmt.Sprintf("Allow MCP server %s to run %s once?\nArguments: %s", s.Name, name, args)
+		if len(question) > 16384 {
+			return Result{}, fmt.Errorf("mcp: action arguments exceed confirmation display limit")
+		}
+		if err := interactive.ConfirmAction(ctx, s.ConfirmationChannel, question); err != nil {
+			return Result{}, err
+		}
+	}
 	return client.CallTool(ctx, name, args)
 }
 
@@ -246,4 +263,18 @@ func (m *Manager) Statuses() []Status {
 		}
 	}
 	return out
+}
+
+// ToolAllowed is an exact allow-list. An omitted list preserves existing MCP
+// installations; computer-control configurations should set an explicit list.
+func (s *Server) ToolAllowed(name string) bool {
+	if len(s.Config.AllowedTools) == 0 {
+		return true
+	}
+	for _, allowed := range s.Config.AllowedTools {
+		if allowed == name {
+			return true
+		}
+	}
+	return false
 }

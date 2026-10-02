@@ -1,0 +1,18 @@
+2026/10/02 16:03:39 sampling: protocol=anthropic model=claude-fixture none
+2026/10/02 16:03:39 sampling: protocol=openai model=qwen none
+2026/10/02 16:03:39 sampling: protocol=openai model=gpt-6-astra none
+goos: linux
+goarch: amd64
+pkg: supercli/internal/ui/tui
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkTUIUnchangedStreamFrame/4096         	    9040	     44630 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/4096         	    8589	     41371 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/4096         	    8274	     47938 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    8510	     42003 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    7104	     44602 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    8254	     41093 ns/op	   98400 B/op	       7 allocs/op
+BenchmarkTUIStreamEvents                      	       6	  62701548 ns/op	40120238 B/op	  125528 allocs/op
+BenchmarkTUIStreamEvents                      	       6	  64603613 ns/op	40120241 B/op	  125528 allocs/op
+BenchmarkTUIStreamEvents                      	       5	  68182852 ns/op	40120216 B/op	  125527 allocs/op
+PASS
+ok  	supercli/internal/ui/tui	8.674s

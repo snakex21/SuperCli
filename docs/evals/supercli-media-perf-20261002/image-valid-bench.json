@@ -1,0 +1,25 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./internal/tools/media",
+    "-run",
+    "^TestRead",
+    "-bench",
+    "BenchmarkReadImagePayload",
+    "-benchmem",
+    "-benchtime=300ms",
+    "-count=3"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 6.196,
+  "peak_group_rss_bytes": 62111744,
+  "peak_cache_bytes": 1368838144,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

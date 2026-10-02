@@ -61,7 +61,7 @@ func registerMediaAndOfficeTools(
 	registry.MustRegister(codeIntel.Spec())
 	processSession = tools.NewProcessSession(home)
 	registry.MustRegister(processSession.Spec())
-	registry.MustRegister(tools.NewHeadlessControl(home, dataDir).Spec())
+	registry.MustRegister(tools.NewHeadlessControl(home, dataDir, askCh).Spec())
 
 	// F21: read_zip is opt-in (not always-on).
 	// The model discovers it via tool_search
@@ -108,6 +108,7 @@ func registerMediaAndOfficeTools(
 
 	// Media previews stay discoverable, without overhead in ordinary prompts.
 	registry.MustRegister(tools.NewShowMedia(home).Spec())
+	registerMediaGeneration(registry, home, dataDir, askCh)
 	registry.MustRegister(tools.NewSendScreenshot(dataDir, caps.HasVision).Spec())
 
 	ftsIndex, err := tools.NewInMemoryIndex()

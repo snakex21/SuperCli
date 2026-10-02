@@ -1,0 +1,51 @@
+goos: linux
+goarch: amd64
+pkg: supercli/internal/tools/media
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkReadImagePayload/png-8MiB/baseline         	     136	   2596059 ns/op	17081321 B/op	     122 allocs/op
+BenchmarkReadImagePayload/png-8MiB/baseline         	     138	   2589634 ns/op	17081224 B/op	     122 allocs/op
+BenchmarkReadImagePayload/png-8MiB/baseline         	     138	   2653822 ns/op	17081224 B/op	     122 allocs/op
+BenchmarkReadImagePayload/png-8MiB/optimized        	     195	   1689839 ns/op	 8406704 B/op	      93 allocs/op
+BenchmarkReadImagePayload/png-8MiB/optimized        	     207	   1776397 ns/op	 8406704 B/op	      93 allocs/op
+BenchmarkReadImagePayload/png-8MiB/optimized        	     208	   1701932 ns/op	 8406704 B/op	      93 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline     	     159	   2157151 ns/op	17071864 B/op	     113 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline     	     154	   2486443 ns/op	17071800 B/op	     113 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/baseline     	     139	   2482846 ns/op	17071864 B/op	     113 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized    	   10000	     30267 ns/op	    8608 B/op	      81 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized    	   12831	     28275 ns/op	    8608 B/op	      81 allocs/op
+BenchmarkReadImagePayload/invalid-8MiB/optimized    	   12226	     29250 ns/op	    8608 B/op	      81 allocs/op
+PASS
+ok  	supercli/internal/tools/media	4.264s
+goos: linux
+goarch: amd64
+pkg: supercli/internal/tools/mcp
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkMCPFragmentedText/100/baseline         	    1461	    227825 ns/op	  701371 B/op	     315 allocs/op
+BenchmarkMCPFragmentedText/100/baseline         	    1557	    244776 ns/op	  701368 B/op	     315 allocs/op
+BenchmarkMCPFragmentedText/100/baseline         	    1606	    228408 ns/op	  701368 B/op	     315 allocs/op
+BenchmarkMCPFragmentedText/100/optimized        	    2254	    152564 ns/op	   95418 B/op	     229 allocs/op
+BenchmarkMCPFragmentedText/100/optimized        	    2400	    149436 ns/op	   95416 B/op	     229 allocs/op
+BenchmarkMCPFragmentedText/100/optimized        	    2677	    140362 ns/op	   95416 B/op	     229 allocs/op
+BenchmarkMCPFragmentedText/1000/baseline        	      34	   9172842 ns/op	67535569 B/op	    3018 allocs/op
+BenchmarkMCPFragmentedText/1000/baseline        	      34	   9330637 ns/op	67535570 B/op	    3018 allocs/op
+BenchmarkMCPFragmentedText/1000/baseline        	      42	   9684428 ns/op	67535569 B/op	    3018 allocs/op
+BenchmarkMCPFragmentedText/1000/optimized       	     238	   1551771 ns/op	  793034 B/op	    2039 allocs/op
+BenchmarkMCPFragmentedText/1000/optimized       	     235	   1500746 ns/op	  793034 B/op	    2039 allocs/op
+BenchmarkMCPFragmentedText/1000/optimized       	     253	   1443968 ns/op	  793033 B/op	    2039 allocs/op
+PASS
+ok  	supercli/internal/tools/mcp	4.297s
+goos: linux
+goarch: amd64
+pkg: supercli/internal/ui/tui
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkTUIUnchangedStreamFrame/4096         	    7945	     48195 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/4096         	    7563	     45942 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/4096         	    6811	     47443 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    7218	     53392 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    7252	     53336 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIUnchangedStreamFrame/32768        	    6861	     50109 ns/op	  131168 B/op	       7 allocs/op
+BenchmarkTUIStreamEvents                      	       5	  66022273 ns/op	51918657 B/op	  125555 allocs/op
+BenchmarkTUIStreamEvents                      	       5	  67997944 ns/op	51918630 B/op	  125555 allocs/op
+BenchmarkTUIStreamEvents                      	       5	  67709635 ns/op	51918600 B/op	  125554 allocs/op
+PASS
+ok  	supercli/internal/ui/tui	5.896s

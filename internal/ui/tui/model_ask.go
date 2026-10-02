@@ -24,14 +24,15 @@ func (m Model) beginAsk(req tools.AskRequest) (tea.Model, tea.Cmd) {
 	}
 	m.pendingAsk = &pendingAsk{
 		ID: req.ID, done: req.Done,
-		Question:    req.Question,
-		Header:      req.Header,
-		Options:     req.Options,
-		MultiSelect: req.MultiSelect,
-		AllowCustom: req.AllowCustom,
-		cursor:      0,
-		toggled:     make(map[int]bool),
-		respond:     req.Respond,
+		Question:     req.Question,
+		Header:       req.Header,
+		Options:      req.Options,
+		MultiSelect:  req.MultiSelect,
+		AllowCustom:  req.AllowCustom,
+		Confirmation: req.Confirmation,
+		cursor:       0,
+		toggled:      make(map[int]bool),
+		respond:      req.Respond,
 	}
 	m.mode = modeAsking
 	m.input.Blur()
@@ -45,6 +46,9 @@ func (m Model) handleAskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.input.Focus()
 		return m, nil
+	}
+	if a.Confirmation {
+		return m.handleConfirmationKey(msg)
 	}
 	if a.customMode {
 		switch msg.String() {
@@ -156,7 +160,7 @@ func (m *Model) endAsk() {
 		// The queued request already has a completion subscription.
 		m.pendingAsk = &pendingAsk{ID: req.ID, done: req.Done, Question: req.Question,
 			Header: req.Header, Options: req.Options, MultiSelect: req.MultiSelect,
-			AllowCustom: req.AllowCustom, toggled: make(map[int]bool), respond: req.Respond}
+			AllowCustom: req.AllowCustom, Confirmation: req.Confirmation, toggled: make(map[int]bool), respond: req.Respond}
 		m.mode = modeAsking
 		m.input.Blur()
 		return

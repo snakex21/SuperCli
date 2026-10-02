@@ -298,6 +298,12 @@ type TomlConfig struct {
 	// the default engine (duckduckgo) needs no API key.
 	WebSearch WebSearchConf `toml:"web_search"`
 
+	// Media generation is explicitly enabled per provider; it never uses the
+	// chat provider or an automatic paid fallback.
+	MediaGeneration MediaGenerationConf `toml:"media_generation"`
+	// Headless scope is loaded only by LoadHeadless, never merged from projects.
+	Headless HeadlessConf `toml:"headless"`
+
 	// Council configures the /council roster (F12).
 	// Empty = fall back to the auto-assembled
 	// cheapest-N council.
@@ -325,9 +331,11 @@ type McpConf struct {
 //	[mcp.servers.context7.env]
 //	CONTEXT7_API_KEY = "..."
 type McpServerConf struct {
-	Command string            `toml:"command"`
-	Args    []string          `toml:"args"`
-	Env     map[string]string `toml:"env"`
+	ConfirmCalls bool              `toml:"confirm_calls"`
+	AllowedTools []string          `toml:"allowed_tools"`
+	Command      string            `toml:"command"`
+	Args         []string          `toml:"args"`
+	Env          map[string]string `toml:"env"`
 }
 
 // CouncilConf is the [council] section of config.toml.

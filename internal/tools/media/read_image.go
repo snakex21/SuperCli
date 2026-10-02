@@ -18,8 +18,8 @@ import (
 //
 // Safety:
 //
-//   - Paths are resolved relative to BaseDir; absolute paths are
-//     allowed but the user is responsible for not leaking secrets.
+//   - Paths are resolved relative to BaseDir; absolute paths must
+//     pass the same workspace sandbox policy as relative paths.
 //   - Files larger than MaxBytes are rejected.
 //   - Only files whose detected MIME type is an image format are
 //     accepted. Non-image files return an error.
@@ -88,51 +88,37 @@ func (t *ReadImageTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 		return Result{Err: fmt.Errorf("read_image: %w", err)}, nil
 	}
 
-	f, err := os.Open(full)
+	// Reject named pipes/devices before Open, which could otherwise block.
+	preflight, err := os.Stat(full)
+	if err != nil {
+		return Result{Err: err}, err
+	}
+	if !preflight.Mode().IsRegular() {
+		err = fmt.Errorf("read_image: %q is not a regular file", full)
+		return Result{Err: err}, err
+	}
+	file, err := os.Open(full)
 	if err != nil {
 		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
 		return Result{Err: err}, err
 	}
-	defer f.Close()
-	info, err := f.Stat()
+	defer file.Close()
+	info, err := file.Stat()
 	if err != nil {
-		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
-		return Result{Err: err}, err
-	}
-	if info.IsDir() {
-		err := fmt.Errorf("read_image: %q is a directory", full)
 		return Result{Err: err}, err
 	}
 	if !info.Mode().IsRegular() {
-		err := fmt.Errorf("read_image: %q is not a regular file", full)
+		err = fmt.Errorf("read_image: %q is not a regular file", full)
 		return Result{Err: err}, err
 	}
-	limit := t.MaxBytes
-	if limit > DefaultMaxScreenshotBytes {
-		limit = DefaultMaxScreenshotBytes
-	}
+	limit := min(t.MaxBytes, int64(DefaultMaxScreenshotBytes))
 	if info.Size() > limit {
-		err := fmt.Errorf("read_image: file too large: %d bytes > %d max", info.Size(), limit)
+		err = fmt.Errorf("read_image: file too large: %d bytes > %d max", info.Size(), limit)
 		return Result{Err: err}, err
 	}
-
-	// Keep the opened descriptor and cap the read even if the file grows after Stat.
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	data, mime, err := readBoundedImage(ctx, file, info.Size())
 	if err != nil {
-		err = fmt.Errorf("read_image: %w", fileops.FileErr(err, full))
-		return Result{Err: err}, err
-	}
-
-	if int64(len(data)) > limit {
-		err := fmt.Errorf("read_image: file grew beyond %d max bytes", limit)
-		return Result{Err: err}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return Result{Err: err}, err
-	}
-	mime := detectImageMIME(data)
-	if mime == "" {
-		err := fmt.Errorf("read_image: %q is not a recognised image (magic bytes)", filepath.Base(full))
+		err = fmt.Errorf("read_image: %q: %w", filepath.Base(full), err)
 		return Result{Err: err}, err
 	}
 
@@ -181,4 +167,42 @@ func detectImageMIME(data []byte) string {
 // can detect. Useful for capability checks.
 func SupportedImageMIMEs() []string {
 	return []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
+}
+
+// Sniff before allocating the payload. A 10 MiB text/HTML response mislabeled
+// as PNG costs only a small header, and a file that grows cannot bypass limits.
+func readBoundedImage(ctx context.Context, source io.Reader, size int64) ([]byte, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	var header [512]byte
+	n, err := io.ReadFull(source, header[:min(int64(len(header)), size)])
+	if err != nil {
+		return nil, "", err
+	}
+	mime := detectImageMIME(header[:n])
+	if mime == "" {
+		return nil, "", fmt.Errorf("not a recognised image (magic bytes)")
+	}
+	data := make([]byte, int(size))
+	copy(data, header[:n])
+	for offset := n; offset < len(data); {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
+		end := min(offset+1024*1024, len(data))
+		count, err := io.ReadFull(source, data[offset:end])
+		if err != nil {
+			return nil, "", err
+		}
+		offset += count
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	var extra [1]byte
+	if n, err := source.Read(extra[:]); n != 0 || err != io.EOF {
+		return nil, "", fmt.Errorf("file changed while reading")
+	}
+	return data, mime, nil
 }

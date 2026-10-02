@@ -49,22 +49,41 @@ func waitCompletionTest(t *testing.T, done <-chan struct{}, label string) {
 }
 func TestChatCompletionWaitsForCanceledLoopAndRecoversFreshSession(t *testing.T) {
 	srv := newTestServer(t, false)
+	// Materialize lazy engine stores/registry before timing the cancellation
+	// protocol. Cold Windows SQLite initialization is not provider progress.
+	if _, err := srv.eng.sessionStore(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.eng.newLoop(); err != nil {
+		t.Fatal(err)
+	}
 	provider := &completionBarrierProvider{make(chan struct{}), make(chan struct{}), make(chan struct{})}
 	srv.eng.mu.Lock()
 	srv.eng.prov = provider
 	srv.eng.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(provider.release) }) }
-	defer release()
 	chatDone := make(chan struct{})
+	// Drain the handler before newTestServer closes its stores, including
+	// assertion failures during startup. Otherwise cleanup races live SQLite.
+	t.Cleanup(func() {
+		cancel()
+		release()
+		waitCompletionTest(t, chatDone, "handler cleanup")
+	})
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"prompt":"hello","turn_id":"test-turn-1"}`)).WithContext(ctx)
 	go func() {
 		defer close(chatDone)
 		srv.handleChat(httptest.NewRecorder(), request)
 	}()
-	waitCompletionTest(t, provider.entered, "provider")
+	select {
+	case <-provider.entered:
+	case <-chatDone:
+		t.Fatal("chat handler exited before reaching provider")
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for provider startup")
+	}
 	cancel()
 	waitCompletionTest(t, provider.canceled, "provider cancellation")
 	srv.chatCompletions.Lock()

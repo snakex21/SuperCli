@@ -31,6 +31,7 @@ func TestExecutePreservesCreatedSessionWhenNavigationCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	tool := New(t.TempDir(), t.TempDir())
+	ctx = fixtureApproval(t, ctx, tool, "webdriver", server.URL)
 	resultCh := make(chan core.Result, 1)
 	raw := []byte(`{"protocol":"webdriver","endpoint":"` + server.URL + `","action":"open","url":"https://example.com"}`)
 	go func() { result, _ := tool.Execute(ctx, raw); resultCh <- result }()

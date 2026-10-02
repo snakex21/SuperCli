@@ -1,0 +1,23 @@
+{
+  "command": [
+    "go",
+    "test",
+    "-count=1",
+    "./internal/tools/headless",
+    "./internal/tools/interactive",
+    "./internal/tools/mcp",
+    "./internal/system/config",
+    "./internal/ui/tui"
+  ],
+  "exit_code": 0,
+  "elapsed_s": 115.95,
+  "peak_group_rss_bytes": 650215424,
+  "peak_cache_bytes": 1182798158,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

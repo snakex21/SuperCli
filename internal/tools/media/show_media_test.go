@@ -36,9 +36,10 @@ func TestShowMediaMetadataWithoutModelPixels(t *testing.T) {
 			if err := json.Unmarshal([]byte(res.Text), &metadata); err != nil {
 				t.Fatal(err)
 			}
-			if metadata.Type != c.kind || metadata.Path != path || metadata.Bytes != len(c.header) || metadata.Attached {
+			if metadata.Type != c.kind || metadata.Bytes != len(c.header) || metadata.Attached {
 				t.Fatalf("metadata=%+v", metadata)
 			}
+			assertSameMediaFile(t, metadata.Path, path)
 			data, _ := os.ReadFile(path)
 			if !bytes.Equal(data, c.header) {
 				t.Fatal("preview changed source")
@@ -101,4 +102,41 @@ func BenchmarkShowMediaMetadata(b *testing.B) {
 			b.Fatalf("%+v %v", res, err)
 		}
 	}
+}
+
+// Sandbox output is canonical. Windows temp paths may contain 8.3 aliases,
+// and Unix temp roots may be symlinks; compare the actual filesystem objects.
+func assertSameMediaFile(t *testing.T, got, want string) {
+	t.Helper()
+	gotInfo, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("stat returned path %q: %v", got, err)
+	}
+	wantInfo, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("stat expected path %q: %v", want, err)
+	}
+	if !os.SameFile(gotInfo, wantInfo) {
+		t.Fatalf("different filesystem objects: got %q, want %q", got, want)
+	}
+}
+
+func TestShowMediaCanonicalAliasStillIdentifiesSource(t *testing.T) {
+	real := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "image.png"), pngHeader, 0600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := NewShowMedia(alias).Execute(context.Background(), json.RawMessage(`{"path":"image.png"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("result=%+v err=%v", res, err)
+	}
+	var metadata screenshotMetadata
+	if err := json.Unmarshal([]byte(res.Text), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	assertSameMediaFile(t, metadata.Path, filepath.Join(alias, "image.png"))
 }

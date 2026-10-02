@@ -1,0 +1,98 @@
+?   	supercli/cmd/supercli	[no test files]
+?   	supercli/cmd/supercli-eval	[no test files]
+?   	supercli/cmd/supercli-perf	[no test files]
+ok  	supercli/cmd/supercli-web	0.008s
+?   	supercli/cmd/supercli-wireprobe	[no test files]
+?   	supercli/cmd/thunderbird-mail-call	[no test files]
+?   	supercli/cmd/thunderbird-msg-import	[no test files]
+ok  	supercli/internal/account/codexauth	0.012s
+ok  	supercli/internal/account/cost	0.001s
+ok  	supercli/internal/account/credits	0.278s
+ok  	supercli/internal/account/pricing	0.007s
+ok  	supercli/internal/account/tier	0.003s
+?   	supercli/internal/account/usagecost	[no test files]
+ok  	supercli/internal/agent	5.092s
+ok  	supercli/internal/agent/darwin	0.870s
+ok  	supercli/internal/agent/planmode	0.001s
+ok  	supercli/internal/agent/reflect	0.099s
+ok  	supercli/internal/agent/ultrawork	0.002s
+ok  	supercli/internal/agenteval	0.010s
+ok  	supercli/internal/app	0.611s
+?   	supercli/internal/buildinfo	[no test files]
+ok  	supercli/internal/checkpoint	0.606s
+ok  	supercli/internal/codeintel/lsp	0.215s
+ok  	supercli/internal/llm	4.443s
+ok  	supercli/internal/llm/consult	0.125s
+ok  	supercli/internal/llm/draft	0.005s
+ok  	supercli/internal/llm/factory	0.006s
+ok  	supercli/internal/llm/prompt	0.003s
+ok  	supercli/internal/llm/providers	3.038s
+ok  	supercli/internal/llm/shuffler	0.003s
+ok  	supercli/internal/perfbench	0.001s
+ok  	supercli/internal/storage	0.015s
+ok  	supercli/internal/storage/freshness	0.002s
+ok  	supercli/internal/storage/goal	0.197s
+ok  	supercli/internal/storage/library	0.001s
+ok  	supercli/internal/storage/memory	1.504s
+ok  	supercli/internal/storage/session	1.102s
+ok  	supercli/internal/system/browser	0.003s
+ok  	supercli/internal/system/childproc	0.004s
+ok  	supercli/internal/system/config	0.012s
+ok  	supercli/internal/system/doctor	0.006s
+ok  	supercli/internal/system/execution	0.004s
+ok  	supercli/internal/system/manifest	0.005s
+ok  	supercli/internal/system/preflight	0.319s
+ok  	supercli/internal/system/releasebundle	0.007s
+ok  	supercli/internal/system/stats	0.002s
+ok  	supercli/internal/system/uilang	0.401s
+ok  	supercli/internal/system/updater	0.015s
+ok  	supercli/internal/tools	0.004s
+ok  	supercli/internal/tools/codeintel	0.003s
+ok  	supercli/internal/tools/core	0.059s
+ok  	supercli/internal/tools/ctxexec	4.423s
+ok  	supercli/internal/tools/fileops	0.217s
+ok  	supercli/internal/tools/files	0.221s
+ok  	supercli/internal/tools/headless	0.226s
+ok  	supercli/internal/tools/interactive	0.065s
+ok  	supercli/internal/tools/mail	0.112s
+ok  	supercli/internal/tools/mcp	0.151s
+ok  	supercli/internal/tools/media	1.558s
+ok  	supercli/internal/tools/mediagen	0.089s
+ok  	supercli/internal/tools/memorytools	0.109s
+ok  	supercli/internal/tools/mentions	0.003s
+ok  	supercli/internal/tools/office	0.100s
+ok  	supercli/internal/tools/processsession	4.048s
+ok  	supercli/internal/tools/sandbox	0.009s
+ok  	supercli/internal/tools/scratchpad	0.004s
+ok  	supercli/internal/tools/search	0.838s
+ok  	supercli/internal/tools/shellescape	0.477s
+ok  	supercli/internal/tools/skills	0.053s
+ok  	supercli/internal/tools/usertools	0.006s
+ok  	supercli/internal/tools/web	0.005s
+ok  	supercli/internal/tools/workflow	1.852s
+?   	supercli/internal/ui/attachments	[no test files]
+ok  	supercli/internal/ui/desktopfiles	0.004s
+ok  	supercli/internal/ui/export	0.003s
+ok  	supercli/internal/ui/tui	1.256s
+ok  	supercli/internal/verification/hardtest	0.002s
+ok  	supercli/internal/webgui	7.204s
+?   	supercli/scripts/agent-efficiency	[no test files]
+?   	supercli/scripts/batch-read-turns	[no test files]
+?   	supercli/scripts/exploration-economy	[no test files]
+?   	supercli/scripts/file-discovery	[no test files]
+?   	supercli/scripts/history-query-terms	[no test files]
+?   	supercli/scripts/output-search-lines	[no test files]
+?   	supercli/scripts/read-eof	[no test files]
+?   	supercli/scripts/read-range-cap	[no test files]
+?   	supercli/scripts/reasoning-history/live-loop	[no test files]
+?   	supercli/scripts/reasoning-history/probe	[no test files]
+?   	supercli/scripts/recent-batch-evidence	[no test files]
+?   	supercli/scripts/release	[no test files]
+?   	supercli/scripts/search-context-hit	[no test files]
+?   	supercli/scripts/search-focus	[no test files]
+?   	supercli/scripts/search-hit-preview	[no test files]
+?   	supercli/scripts/search-limit-context	[no test files]
+?   	supercli/scripts/uneven-read-batch	[no test files]
+?   	supercli/scripts/worker-handoff	[no test files]
+ok  	supercli/test/go	0.007s
+{"result": "PASS", "scope": "actual Linux GUI HTTP/SSE backend and child MCP, no browser renderer or paid provider", "events": ["session", "session_activity", "notice", "tool_call", "question", "question_closed", "tool_result", "tool_call", "tool_result", "message", "done"], "image_bytes": [95301], "video_range_bytes": [24], "confirmation_questions": 1, "durable_session": true, "replay_has_portable_image": true}

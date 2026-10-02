@@ -19,7 +19,7 @@ type toolObservation struct {
 }
 
 func observeToolResult(call llm.ToolCall, result tools.Result) toolObservation {
-	if result.Err != nil || result.Image != nil {
+	if result.Err != nil || result.Image != nil || len(result.Images) > 0 {
 		return toolObservation{}
 	}
 	text := result.Text

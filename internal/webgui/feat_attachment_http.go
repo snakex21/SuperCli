@@ -186,6 +186,8 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 	var err error
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "profile") {
 		full, err = sandbox.ResolveWithin(filepath.Join(s.eng.DataDir(), "module-sources"), raw)
+	} else if strings.HasPrefix(raw, "session:") {
+		full, err = s.eng.resolveSessionImagePreview(raw)
 	} else if strings.HasPrefix(raw, "snapshot:") && s.eng.DataDir() != "" {
 		full, err = sandbox.ResolveWithin(filepath.Join(s.eng.DataDir(), ".supercli", "snapshots"), strings.TrimPrefix(raw, "snapshot:"))
 	} else {
