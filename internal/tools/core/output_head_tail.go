@@ -58,7 +58,7 @@ func headTailWithHeadEnd(s string, head, tail int) (string, int) {
 		i += nl + 1
 	}
 	omitted := int64(i - h)
-	lines := int64(bytes.Count([]byte(s[h:i]), []byte{'\n'}))
+	lines := int64(strings.Count(s[h:i], "\n"))
 	return s[:h] + omissionMarker(omitted, lines) + s[i:], h
 }
 

@@ -24,7 +24,7 @@ func NewInvokeTool(registry *tools.Registry) *InvokeTool { return &InvokeTool{re
 
 func (t *InvokeTool) Spec() tools.Tool {
 	eligible := directToolCatalog(t.registry)
-	description := "Call a tool with target arguments in args (or arg.<name> fields). Visible core tools, active tools and simple read-only tools work immediately; use tool_search for other tools. Normal target validation and safety controls apply."
+	description := "Call a tool using args or arg.<name> fields. Visible core, active and simple read-only tools work directly; use tool_search for others. Target validation and safety still apply."
 	if eligible != "" {
 		description += " Eligible: " + eligible
 	}

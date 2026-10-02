@@ -26,12 +26,13 @@ const (
 // while clipboard images keep their existing attachment behavior.
 // Native capture is on demand, with injected seams for tests.
 type SendScreenshotTool struct {
-	BaseDir       string
-	Capture       ClipboardCapture // injected; default = osCapture{}
-	MaxBytes      int64
-	ScreenCapture func(context.Context) ([]byte, string, error)
-	WindowCapture func(context.Context, WindowSelector) ([]byte, string, WindowInfo, error)
-	WindowsList   func(context.Context) ([]WindowInfo, error)
+	BaseDir        string
+	Capture        ClipboardCapture // injected; default = osCapture{}
+	MaxBytes       int64
+	ScreenCapture  func(context.Context) ([]byte, string, error)
+	DesktopCapture func(context.Context) ([]byte, string, WindowInfo, error)
+	WindowCapture  func(context.Context, WindowSelector) ([]byte, string, WindowInfo, error)
+	WindowsList    func(context.Context) ([]WindowInfo, error)
 }
 
 // ClipboardCapture is the small interface
@@ -64,16 +65,16 @@ func NewSendScreenshot(baseDir string, _ func(string) bool) *SendScreenshotTool 
 func (t *SendScreenshotTool) Spec() Tool {
 	return Tool{
 		Name:        "send_screenshot",
-		Description: "Capture a target application's window, the currently visible screen, or clipboard image; displays it in chat. For your launched/tested app use process_session screenshot with its id; for an existing app use process_id/window_title. Use screen only for what the user currently sees. Never substitute screen for a failed target capture. Preview needs no attach:true; attach only to analyze pixels.",
+		Description: "Capture and preview clipboard, desktop wallpaper/icons, the visible screen, or an open app window. For your launched app use process_session screenshot/id; for an existing app select PID/title/ID. Desktop excludes covering apps; screen shows the user's current view. Never fall back to screen after target failure. attach:true is only for pixel analysis.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "source": {"type": "string", "enum": ["clipboard", "screen", "window", "windows"], "description": "clipboard (default) reads a copied image; screen captures the visible desktop; window captures a chosen open window without activating it; windows lists open window IDs/titles."},
-    "window_title": {"type": "string", "description": "Open window title or unique part of it. Selects window capture when source is omitted or screen."},
-    "window_id": {"type": "string", "description": "Window ID from source:windows, for an exact target."},
-    "process_id": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "Capture only this process's window. Optional title/ID disambiguates multiple windows. Does not use the foreground screen."},
-    "image_detail": {"type": "string", "enum": ["auto", "original"], "description": "auto (default) bounds analysis pixels; original keeps full resolution for fine text. Does not alter the saved image or chat preview."},
-    "attach": {"type": "boolean", "description": "Display/show requests need false (screen/window default): chat preview is automatic. True only for pixel inspection/analysis. Clipboard default true."}
+    "source": {"type": "string", "enum": ["clipboard", "screen", "desktop", "window", "windows"], "description": "clipboard (default): copied image; screen: visible display; desktop: wallpaper/icons, no covering apps (Windows); window: selected open window, no activation; windows: list IDs/titles."},
+    "window_title": {"type": "string", "description": "Full title or unique substring; implies window capture when source is omitted or screen."},
+    "window_id": {"type": "string", "description": "Exact ID from source:windows."},
+    "process_id": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "Only this PID's window; optional title/ID selects among its windows. Never uses the visible screen."},
+    "image_detail": {"type": "string", "enum": ["auto", "original"], "description": "auto (default) bounds analysis pixels; original keeps full resolution for fine text. Saved image/preview unchanged."},
+    "attach": {"type": "boolean", "description": "Preview is automatic. True only for pixel analysis; clipboard defaults true, other captures false."}
   }
 }`,
 		Fn:         t.Execute,
@@ -162,8 +163,12 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 		}{windows, truncated})
 		return Result{Text: string(text)}, nil
 	}
-	if source != "clipboard" && source != "screen" && source != "window" {
-		err := fmt.Errorf("send_screenshot: source must be clipboard, screen, window or windows")
+	if source != "clipboard" && source != "screen" && source != "desktop" && source != "window" {
+		err := fmt.Errorf("send_screenshot: source must be clipboard, screen, desktop, window or windows")
+		return Result{Err: err}, err
+	}
+	if source == "desktop" && hasWindow {
+		err := fmt.Errorf("send_screenshot: desktop does not accept an application window selector")
 		return Result{Err: err}, err
 	}
 	if source == "window" && !hasWindow {
@@ -184,7 +189,15 @@ func (t *SendScreenshotTool) Execute(ctx context.Context, args json.RawMessage) 
 	var mediaType string
 	var err error
 	var windowInfo *WindowInfo
-	if source == "window" {
+	if source == "desktop" {
+		capture := t.DesktopCapture
+		if capture == nil {
+			capture = captureDesktop
+		}
+		var target WindowInfo
+		data, mediaType, target, err = capture(ctx)
+		windowInfo = &target
+	} else if source == "window" {
 		capture := t.WindowCapture
 		if capture == nil {
 			capture = captureWindow

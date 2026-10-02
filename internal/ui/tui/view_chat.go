@@ -229,19 +229,36 @@ func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 			return c.renderCompleted(p)
 		}
 	}
+	// Render in the existing callback order before sizing the one final buffer.
+	// Appending active text must not grow and recopy a large completed prefix.
+	completed := c.renderCompleted(p)
+	current := c.current != ""
+	separator := current && len(c.msgs) > 0
+	active := ""
+	if current {
+		active = c.renderActiveSection(p)
+	}
+	size := len(completed)
+	if current {
+		size += len(active) + len(spinnerView) + 2
+		if separator {
+			size++
+		}
+	} else if spinnerView != "" {
+		size += len(spinnerView) + 1
+	}
 	var b strings.Builder
-	b.WriteString(c.renderCompleted(p))
-	if c.current != "" {
-		if len(c.msgs) > 0 {
+	b.Grow(size)
+	b.WriteString(completed)
+	if current {
+		if separator {
 			b.WriteByte('\n')
 		}
-		b.WriteString(c.renderActiveSection(p))
+		b.WriteString(active)
 		b.WriteString(" ")
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
 	} else if spinnerView != "" {
-		// No streaming text yet, but spinner is active —
-		// show the spinner on its own line.
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
 	}

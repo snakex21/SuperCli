@@ -37,6 +37,9 @@ func paintSyntheticWindow(dc uintptr, mode string) {
 	if mode == "blank" {
 		redColor, blueColor = 0, 0
 	}
+	if mode == "solid" {
+		redColor, blueColor = 0x0000FF00, 0x0000FF00
+	}
 	red, _, _ := captureGDI32.NewProc("CreateSolidBrush").Call(redColor)
 	blue, _, _ := captureGDI32.NewProc("CreateSolidBrush").Call(blueColor)
 	captureUser32.NewProc("FillRect").Call(dc, uintptr(unsafe.Pointer(&left)), red)
