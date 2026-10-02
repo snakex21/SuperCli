@@ -4,6 +4,8 @@ SuperCli can control an explicitly selected local QEMU display through QMP, and 
 
 QEMU and a browser driver are optional external programs. Launch them once with the existing process_session tool, then reuse the endpoint/session_id. Its default lifetime remains ten minutes; timeout_ms can explicitly extend a managed process to 24 hours. Closing SuperCli closes its managed processes. Connecting headless_control to an externally started VM/driver never transfers ownership of that process.
 
+For an ordinary GUI application launched by the agent, use [owned application window screenshots](app-window-capture.md): process_session start followed by screenshot with the returned id. That captures the chosen process, while source:screen remains the separate option for what the user sees.
+
 ## Trusted target scope and consent
 
 Enable only the intended automation endpoints in the portable global `supercli-data/config.toml`:

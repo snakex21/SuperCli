@@ -920,7 +920,12 @@ function appendHistoryToolPayload(row, body, args, text, name) {
 // Media is user-visible output, not hidden diagnostic JSON. Its thumbnail stays
 // outside folded tool details in both live and restored conversations.
 function toolMediaDescriptor(text, name, isError) {
-  if ((name === "send_screenshot" || name === "show_media" || name === "generate_image" || name === "generate_video" || name === "headless_control") && !isError) {
+  // Owned screenshots retain SendScreenshot's canonical top-level metadata.
+  // Ordinary process snapshots start with id; do not parse their large stdout
+  // merely because the process tool can also return an image.
+  if (name === "process_session" && (typeof text !== "string" ||
+      !text.startsWith('{"type":"image",'))) return null;
+  if ((name === "send_screenshot" || name === "process_session" || name === "show_media" || name === "generate_image" || name === "generate_video" || name === "headless_control") && !isError) {
     try {
       var media = JSON.parse(String(text == null ? "" : text));
       var mediaPath = media && media.path;
@@ -928,11 +933,12 @@ function toolMediaDescriptor(text, name, isError) {
       if (typeof mediaPath === "string" && !/[\x00-\x1f]/.test(mediaPath) &&
           /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(mediaPath) &&
           !media.save_error && !media.error &&
-          ((name !== "send_screenshot" && name !== "headless_control") || media.type === "image") &&
+          ((name !== "send_screenshot" && name !== "headless_control" && name !== "process_session") || media.type === "image") &&
+          (name !== "process_session" || media.source === "window") &&
           (name !== "headless_control" || media.source === "qmp" || media.source === "browser") &&
           media.type === attachmentMimeKind(media.media_type) &&
           ["image", "video", "audio"].indexOf(media.type) >= 0) {
-        var previewPath = (name === "send_screenshot" || name === "headless_control") && typeof media.preview_path === "string" &&
+        var previewPath = (name === "send_screenshot" || name === "headless_control" || name === "process_session") && typeof media.preview_path === "string" &&
           /^snapshot:[A-Za-z0-9._-]+$/.test(media.preview_path) ? media.preview_path : "";
         return {path: mediaPath, kind: media.type, previewPath: previewPath};
       }

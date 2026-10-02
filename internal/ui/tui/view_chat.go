@@ -146,39 +146,52 @@ func (c *chat) render(p Palette) string {
 
 // renderMsg renders a single message with role-based color.
 func (c *chat) renderMsg(m msg, p Palette) string {
+	text, _ := c.renderMsgWrapHint(m, p, false)
+	return text
+}
+
+func (c *chat) renderMsgWrapHint(m msg, p Palette, hint bool) (string, bool) {
 	m.text = terminalText(m.text, c.legacySymbols)
 	if m.collapsed {
 		first := strings.TrimSpace(strings.SplitN(m.text, "\n", 2)[0])
 		if first == "" {
 			first = textFor(c.language, "tui.view_chat.d3915a1179")
 		}
-		return p.Dim.Render(first + textFor(c.language, "tui.view_chat.1df2bf9533"))
+		return p.Dim.Render(first + textFor(c.language, "tui.view_chat.1df2bf9533")), false
 	}
 	switch m.role {
 	case roleUser:
 		// The plain transcript keeps a "> " prefix for compatibility; the
 		// colored gutter already communicates the role visually.
 		body := strings.TrimPrefix(m.text, "> ")
-		return renderRoleBlock(p.UserLabel.Render(textFor(c.language, "tui.actions_select.08b0419357")), p.User.Render(body), p.UserGutter, c.width)
+		label, body := p.UserLabel.Render(textFor(c.language, "tui.actions_select.08b0419357")), p.User.Render(body)
+		if hint && roleTextFitsWrapHint(label, body, c.width) && gutterFitsWrapHint(p.UserGutter) {
+			return renderRoleBlockWrapHint(label, body, p.UserGutter, c.width)
+		}
+		return renderRoleBlock(label, body, p.UserGutter, c.width), false
 	case roleAssistant:
-		return renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language), p.AssistGutter, c.width)
+		label, body := p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(m.text, p, c.thinkingCollapsed, c.language)
+		if hint && roleTextFitsWrapHint(label, body, c.width) && gutterFitsWrapHint(p.AssistGutter) {
+			return renderRoleBlockWrapHint(label, body, p.AssistGutter, c.width)
+		}
+		return renderRoleBlock(label, body, p.AssistGutter, c.width), false
 	case roleDocument:
-		return renderCommandDocument(m.text, p, c.width)
+		return renderCommandDocument(m.text, p, c.width), false
 	case roleSystem:
 		if m.toolName != "" {
 			marker := NewMarker(p, c.language)
 			if m.toolError != "" {
-				return marker.ToolResultErr(m.toolName, m.toolError)
+				return marker.ToolResultErr(m.toolName, m.toolError), false
 			}
-			return marker.ToolResultFull(m.toolName, m.text, c.toolsExpanded)
+			return marker.ToolResultFull(m.toolName, m.text, c.toolsExpanded), false
 		}
 		// System messages already carry ANSI styling from
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
 		// etc.). Wrapping them in p.System.Render() would
 		// produce nested ANSI sequences. Return as-is.
-		return m.text
+		return m.text, false
 	default:
-		return m.text
+		return m.text, false
 	}
 }
 
@@ -249,7 +262,11 @@ func (c *chat) renderCompleted(p Palette) string {
 		if i > 0 && (m.role == roleUser || m.role == roleAssistant) {
 			b.WriteByte('\n')
 		}
-		b.WriteString(ansi.Wrap(c.renderMsg(m, p), max(1, c.width), ""))
+		rendered, fits := c.renderMsgWrapHint(m, p, true)
+		if !fits {
+			rendered = ansi.Wrap(rendered, max(1, c.width), "")
+		}
+		b.WriteString(rendered)
 		b.WriteByte('\n')
 	}
 	c.completedCache = b.String()

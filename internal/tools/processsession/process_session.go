@@ -31,36 +31,47 @@ const (
 
 // Tool owns process sessions for one workspace.
 type Tool struct {
-	BaseDir string
-	Manager *Manager
+	BaseDir           string
+	DataDir           string
+	Manager           *Manager
+	captureScreenshot func(context.Context, json.RawMessage) (core.Result, error)
 }
 
-func New(baseDir string) *Tool {
-	return &Tool{BaseDir: baseDir, Manager: NewManager(baseDir)}
+// New preserves the one-argument workspace constructor. The optional dataDir
+// keeps snapshots beside the application data rather than inside a user project.
+func New(baseDir string, dataDir ...string) *Tool {
+	portableDir := baseDir
+	if len(dataDir) > 0 && strings.TrimSpace(dataDir[0]) != "" {
+		portableDir = dataDir[0]
+	}
+	return &Tool{BaseDir: baseDir, DataDir: portableDir, Manager: NewManager(baseDir)}
 }
 
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
-		Description: "Start a long-running command; wait for its exit, poll for diagnostics, write input, resize PTY, stop, or list sessions. Use ctx_execute for short commands. pty=true gives a real terminal with merged output. At most 3 active sessions; output and lifetime are capped.",
-		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":86400000,"default":600000,"description":"Lifetime; default 10 min, opt in up to 24 h for long jobs"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30}},"required":["action"]}`,
+		Description: "Start a long-running command; wait for its exit, poll for diagnostics, write input, resize PTY, stop, list, or screenshot its open window by owned session id. Launch the GUI executable directly for screenshots; shell-child windows are not inferred. Use ctx_execute for short commands. pty=true gives a real terminal with merged output. At most 3 active sessions; output and lifetime are capped.",
+		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":86400000,"default":600000,"description":"Lifetime; default 10 min, opt in up to 24 h for long jobs"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`,
 		Fn:          t.Execute,
 	}
 }
 
 type params struct {
-	Action    string   `json:"action"`
-	ID        string   `json:"id"`
-	Command   []string `json:"command"`
-	Workdir   string   `json:"workdir"`
-	Env       []string `json:"env"`
-	TimeoutMS int      `json:"timeout_ms"`
-	YieldMS   *int     `json:"yield_ms"`
-	Input     string   `json:"input"`
-	Newline   *bool    `json:"newline"`
-	PTY       bool     `json:"pty"`
-	Columns   int      `json:"columns"`
-	Rows      int      `json:"rows"`
+	Action      string   `json:"action"`
+	ID          string   `json:"id"`
+	Command     []string `json:"command"`
+	Workdir     string   `json:"workdir"`
+	Env         []string `json:"env"`
+	TimeoutMS   int      `json:"timeout_ms"`
+	YieldMS     *int     `json:"yield_ms"`
+	Input       string   `json:"input"`
+	Newline     *bool    `json:"newline"`
+	PTY         bool     `json:"pty"`
+	Columns     int      `json:"columns"`
+	Rows        int      `json:"rows"`
+	WindowTitle string   `json:"window_title"`
+	Attach      bool     `json:"attach"`
+	ImageDetail string   `json:"image_detail"`
 }
 
 func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
@@ -95,6 +106,8 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		out, err = t.Manager.Stop(ctx, strings.TrimSpace(p.ID))
 	case "list":
 		out = t.Manager.List()
+	case "screenshot":
+		return t.screenshot(ctx, p)
 	default:
 		err = fmt.Errorf("process_session: unknown action %q", p.Action)
 	}
@@ -152,6 +165,10 @@ type process struct {
 	killFn      func() error
 	resizeFn    func(int, int) error
 	pty         bool
+	pid         int
+	// Output draining may keep status=running after OS exit. Capture ownership
+	// ends as soon as the native waiter observes exit, not when pipes finish.
+	exited atomic.Bool
 
 	mu               sync.Mutex
 	started          time.Time

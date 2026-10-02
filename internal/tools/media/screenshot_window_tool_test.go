@@ -20,6 +20,9 @@ func TestScreenshotTargetWindowAndPixelDefaults(t *testing.T) {
 		{`{"window_title":"Fixture"}`, "window", false},
 		{`{"source":"screen","window_id":"0x123"}`, "window", false},
 		{`{"window_id":"0x123","attach":true}`, "window", true},
+		{`{"process_id":123}`, "window", false},
+		{`{"source":"screen","process_id":123}`, "window", false},
+		{`{"source":"window","process_id":123,"window_title":"Fixture"}`, "window", false},
 		{`{}`, "clipboard", true},
 		{`{"source":"clipboard","attach":false}`, "clipboard", false},
 	} {
@@ -33,7 +36,7 @@ func TestScreenshotTargetWindowAndPixelDefaults(t *testing.T) {
 			}
 			tool.WindowCapture = func(ctx context.Context, selector WindowSelector) ([]byte, string, WindowInfo, error) {
 				windowCalls++
-				if selector.Title != "Fixture" && selector.HWND != "0x123" {
+				if selector.Title != "Fixture" && selector.HWND != "0x123" && selector.PID != 123 {
 					t.Fatalf("wrong target: %+v", selector)
 				}
 				return pngHeader, "image/png", WindowInfo{HWND: "0x123", Title: "Fixture", PID: 123}, ctx.Err()
@@ -72,7 +75,7 @@ func TestScreenshotTargetWindowAndPixelDefaults(t *testing.T) {
 }
 
 func TestScreenshotWindowSelectionDoesNotFallBackToDesktop(t *testing.T) {
-	for _, args := range []string{`{"source":"window"}`, `{"source":"clipboard","window_title":"Fixture"}`, `{"source":"windows","window_id":"0x123"}`} {
+	for _, args := range []string{`{"source":"window"}`, `{"source":"clipboard","window_title":"Fixture"}`, `{"source":"windows","window_id":"0x123"}`, `{"source":"clipboard","process_id":123}`, `{"source":"windows","process_id":123}`} {
 		tool := NewSendScreenshot(t.TempDir(), nil)
 		calls := 0
 		tool.ScreenCapture = func(context.Context) ([]byte, string, error) { calls++; return pngHeader, "image/png", nil }

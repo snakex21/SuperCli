@@ -46,3 +46,26 @@ func TestWindowSelectionLimitsAmbiguityOutput(t *testing.T) {
 		t.Fatalf("unbounded ambiguity: %v", err)
 	}
 }
+
+func TestWindowSelectionIsRestrictedToProcess(t *testing.T) {
+	windows := []WindowInfo{
+		{HWND: "0x10", Title: "Editor", PID: 1},
+		{HWND: "0x20", Title: "Editor", PID: 2},
+		{HWND: "0x30", Title: "Other window", PID: 3},
+	}
+	for _, selector := range []WindowSelector{{PID: 2}, {PID: 2, Title: "editor"}, {PID: 2, HWND: "0x20"}} {
+		selected, err := selectCaptureWindow(windows, selector)
+		if err != nil || selected.PID != 2 || selected.HWND != "0x20" {
+			t.Fatalf("selector=%+v selected=%+v err=%v", selector, selected, err)
+		}
+	}
+	for _, selector := range []WindowSelector{{PID: 99}, {PID: 2, Title: "Other"}, {PID: 2, HWND: "0x10"}} {
+		if _, err := selectCaptureWindow(windows, selector); err == nil {
+			t.Fatalf("selected another process for %+v", selector)
+		}
+	}
+	windows = append(windows, WindowInfo{HWND: "0x40", Title: "Settings", PID: 2})
+	if _, err := selectCaptureWindow(windows, WindowSelector{PID: 2}); err == nil || !strings.Contains(err.Error(), "2 matches") || strings.Contains(err.Error(), "0x10") {
+		t.Fatalf("process ambiguity=%v", err)
+	}
+}

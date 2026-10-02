@@ -86,7 +86,7 @@ func (l *Loop) buildToolDefsUncached() []llm.ToolDef {
 		for _, requested := range []struct {
 			enabled bool
 			name    string
-		}{{l.screenshotForRun, "send_screenshot"}, {l.headlessForRun, "headless_control"}, {l.headlessForRun, "process_session"}} {
+		}{{l.screenshotForRun, "send_screenshot"}, {l.headlessForRun, "headless_control"}, {l.headlessForRun || l.screenshotForRun, "process_session"}} {
 			if !requested.enabled {
 				continue
 			}

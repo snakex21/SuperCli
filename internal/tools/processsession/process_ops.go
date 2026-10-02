@@ -93,6 +93,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			return snapshot{}, fmt.Errorf("process_session: pty start: %w", startErr)
 		}
 		item.stdin = terminal
+		item.pid = terminal.PID()
 		item.waitFn = terminal.Wait
 		item.killFn = terminal.Kill
 		item.resizeFn = terminal.Resize
@@ -145,6 +146,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			return snapshot{}, fmt.Errorf("process_session: start: %w", startErr)
 		}
 		// Only the child keeps writer handles; otherwise EOF never arrives.
+		item.pid = cmd.Process.Pid
 		_ = stdoutWriter.Close()
 		_ = stderrWriter.Close()
 		item.closeOutput = func() { _ = stdout.Close(); _ = stderr.Close() }
@@ -196,6 +198,7 @@ func (p *process) wait(procCtx context.Context) {
 	waited := make(chan waitResult, 1)
 	go func() {
 		code, err := p.waitFn()
+		p.exited.Store(true)
 		waited <- waitResult{code: code, err: err}
 	}()
 	var result waitResult

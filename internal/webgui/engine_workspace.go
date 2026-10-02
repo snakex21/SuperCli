@@ -37,7 +37,7 @@ func (e *Engine) processSessionFor(home string) *tools.ProcessSession {
 	if tool := e.processes[key]; tool != nil {
 		return tool
 	}
-	tool := tools.NewProcessSession(abs)
+	tool := tools.NewProcessSession(abs, e.dataDir)
 	e.processes[key] = tool
 	return tool
 }

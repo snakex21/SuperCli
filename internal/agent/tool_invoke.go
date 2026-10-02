@@ -351,7 +351,7 @@ func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 	l.invokeDispatchStep = 0
 	var runTools []string
 	if l.screenshotForRun {
-		runTools = append(runTools, "send_screenshot")
+		runTools = append(runTools, "send_screenshot", "process_session")
 	}
 	if l.headlessForRun {
 		runTools = append(runTools, "headless_control", "process_session")
