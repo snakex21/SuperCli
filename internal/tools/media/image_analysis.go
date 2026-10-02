@@ -204,9 +204,11 @@ func (v analysisImageView) ColorModel() color.Model { return v.source.ColorModel
 func (v analysisImageView) Bounds() image.Rectangle { return v.rectangle }
 func (v analysisImageView) At(x, y int) color.Color { return v.source.At(x, y) }
 
+// Boundary overlaps and span are prepared once per axis. Interior pixels
+// contribute exactly one; do not recompute min/max for every sampled pixel.
 type analysisArea struct {
-	first, last int
-	left, right float64
+	first, last                   int
+	firstWeight, lastWeight, span float64
 }
 
 func analysisAreas(source, target int) []analysisArea {
@@ -214,12 +216,23 @@ func analysisAreas(source, target int) []analysisArea {
 	scale := float64(source) / float64(target)
 	for i := range areas {
 		left, right := float64(i)*scale, float64(i+1)*scale
-		areas[i] = analysisArea{first: int(math.Floor(left)), last: min(source-1, int(math.Ceil(right))-1), left: left, right: right}
+		first, last := int(math.Floor(left)), min(source-1, int(math.Ceil(right))-1)
+		areas[i] = analysisArea{
+			first: first, last: last, span: right - left,
+			firstWeight: math.Min(right, float64(first+1)) - math.Max(left, float64(first)),
+			lastWeight:  math.Min(right, float64(last+1)) - math.Max(left, float64(last)),
+		}
 	}
 	return areas
 }
 func (a analysisArea) weight(position int) float64 {
-	return math.Min(a.right, float64(position+1)) - math.Max(a.left, float64(position))
+	if position == a.first {
+		return a.firstWeight
+	}
+	if position == a.last {
+		return a.lastWeight
+	}
+	return 1
 }
 
 // Area sampling keeps narrow text strokes represented when reducing a screen.
@@ -257,8 +270,11 @@ func analysisAreaScale(ctx context.Context, source image.Image, width, height in
 				target.Pix[offset+1] = analysisByte(green * 255 / alpha)
 				target.Pix[offset+2] = analysisByte(blue * 255 / alpha)
 			}
-			target.Pix[offset+3] = analysisByte(alpha / ((xArea.right - xArea.left) * (yArea.right - yArea.left)))
+			target.Pix[offset+3] = analysisByte(alpha / (xArea.span * yArea.span))
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return target, nil
 }

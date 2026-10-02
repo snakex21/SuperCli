@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"supercli/internal/tools/core"
 )
 
 // ToolSearcher is a meta-tool exposed to the model. When the
@@ -124,18 +126,7 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	// the model can call it in the same turn. The signature is a
 	// compact one-line call form (cheap for small models); the
 	// schema is the exact JSON contract.
-	type match struct {
-		Name      string  `json:"name"`
-		Server    string  `json:"server"`
-		Score     float64 `json:"score"`
-		Signature string  `json:"signature"`
-		Schema    string  `json:"schema"`
-	}
-	resp := struct {
-		Query   string  `json:"query"`
-		Matches []match `json:"matches"`
-		Hint    string  `json:"hint"`
-	}{
+	resp := discoveryResponse{
 		Query: a.Query,
 	}
 	for _, h := range hits {
@@ -147,7 +138,7 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 			continue
 		}
 		s.Registry.ActivateDiscovered(h.Name)
-		resp.Matches = append(resp.Matches, match{
+		resp.Matches = append(resp.Matches, discoveryMatch{
 			Name:      h.Name,
 			Server:    h.Server,
 			Score:     h.Score,
@@ -168,7 +159,61 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	if err != nil {
 		return Result{Err: fmt.Errorf("tool_search: marshal: %w", err)}, nil
 	}
-	return Result{Text: string(out)}, nil
+	text := string(out)
+	return Result{Text: text, ModelText: discoveryModelText(resp, text)}, nil
+}
+
+// Keep the public response contract stable; only small complete model views use
+// an object schema instead of serializing JSON inside another JSON string.
+type discoveryMatch struct {
+	Name      string  `json:"name"`
+	Server    string  `json:"server"`
+	Score     float64 `json:"score"`
+	Signature string  `json:"signature"`
+	Schema    string  `json:"schema"`
+}
+
+type discoveryResponse struct {
+	Query   string           `json:"query"`
+	Matches []discoveryMatch `json:"matches"`
+	Hint    string           `json:"hint"`
+}
+
+func discoveryModelText(resp discoveryResponse, public string) string {
+	if len(public) > core.ModelOutputInlineBytes || len(resp.Matches) == 0 {
+		return ""
+	}
+	type modelMatch struct {
+		Name      string  `json:"name"`
+		Server    string  `json:"server"`
+		Score     float64 `json:"score"`
+		Signature string  `json:"signature"`
+		Schema    any     `json:"schema"`
+	}
+	view := struct {
+		Query   string       `json:"query"`
+		Matches []modelMatch `json:"matches"`
+		Hint    string       `json:"hint"`
+	}{Query: resp.Query, Hint: resp.Hint, Matches: make([]modelMatch, len(resp.Matches))}
+	changed := false
+	for i, match := range resp.Matches {
+		var schema any = match.Schema
+		if json.Valid([]byte(match.Schema)) {
+			// RawMessage retains every field and numeric spelling. Empty or
+			// malformed schemas keep their original string representation.
+			schema = json.RawMessage(match.Schema)
+			changed = true
+		}
+		view.Matches[i] = modelMatch{match.Name, match.Server, match.Score, match.Signature, schema}
+	}
+	if !changed {
+		return ""
+	}
+	out, err := json.Marshal(view)
+	if err != nil || len(out) >= len(public) || len(out) > core.ModelOutputInlineBytes {
+		return ""
+	}
+	return string(out)
 }
 
 // Compact only the discovery copy; registry and provider contracts retain their bytes.

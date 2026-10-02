@@ -37,9 +37,9 @@ function sessionDateGroup(iso) {
   var key = date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
   var label;
   try {
-    label = new Intl.DateTimeFormat(statsLocale(), {
+    label = statsFormatter("sessionDate:" + (date.getFullYear() === today.getFullYear() ? "short" : "year"), {
       day: "numeric", month: "short", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
-    }).format(date);
+    }, true).format(date);
   } catch (e) { label = date.toLocaleDateString(); }
   return { key: key, label: label };
 }

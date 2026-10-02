@@ -5,13 +5,28 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Marker renders inline event markers in the chat transcript.
 // Each marker type has a fixed prefix and a compact format.
 type Marker struct {
-	p        Palette
+	p        markerPalette
 	language string
+}
+
+// Keep only marker styles by value. Model copies avoid duplicating the full
+// palette while independently reassigned styles and zero-value markers work.
+type markerPalette struct {
+	Dim        lipgloss.Style
+	Error      lipgloss.Style
+	Marker     lipgloss.Style
+	MarkerDim  lipgloss.Style
+	Success    lipgloss.Style
+	ToolErr    lipgloss.Style
+	ToolName   lipgloss.Style
+	ToolOutput lipgloss.Style
 }
 
 // NewMarker creates a Marker bound to the given palette.
@@ -20,7 +35,13 @@ func NewMarker(p Palette, language ...string) Marker {
 	if len(language) > 0 {
 		lang = normalizeLanguage(language[0])
 	}
-	return Marker{p: p, language: lang}
+	return Marker{
+		p: markerPalette{
+			Dim: p.Dim, Error: p.Error, Marker: p.Marker, MarkerDim: p.MarkerDim,
+			Success: p.Success, ToolErr: p.ToolErr, ToolName: p.ToolName, ToolOutput: p.ToolOutput,
+		},
+		language: lang,
+	}
 }
 
 func (m Marker) tr(key string) string { return textFor(m.language, key) }
