@@ -7,12 +7,20 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"reflect"
+	"strings"
+
 	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
+
+	"supercli/internal/tools/core"
 )
 
 // ProtocolVersion is the MCP protocol version this client speaks.
@@ -31,6 +39,7 @@ type ToolDef struct {
 type Result struct {
 	Text    string
 	IsError bool
+	Images  []*core.ImageContent
 }
 
 // ProtocolError is a JSON-RPC error returned by the server.
@@ -130,23 +139,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage
 	if err != nil {
 		return Result{}, err
 	}
-	var parsed struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return Result{}, fmt.Errorf("mcp: tools/call decode: %w", err)
-	}
-	var text string
-	for _, part := range parsed.Content {
-		if part.Type == "text" {
-			text += part.Text
-		}
-	}
-	return Result{Text: text, IsError: parsed.IsError}, nil
+	return decodeToolResult(raw)
 }
 
 // Call sends a JSON-RPC request and blocks until the matching
@@ -260,4 +253,104 @@ func (c *Client) readLoop(r io.Reader) {
 		close(ch)
 	}
 	c.pendingMu.Unlock()
+}
+
+// Preserve native image blocks: never turn binary content into model text.
+// Bounds are within the transport's 8 MiB frame limit, and apply in aggregate.
+const maxMCPImageBytes = 5 << 20
+const maxMCPImages = 16
+
+func decodeToolResult(raw json.RawMessage) (Result, error) {
+	var parsed struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+			Data string `json:"data"`
+			MIME string `json:"mimeType"`
+		} `json:"content"`
+		Structured json.RawMessage `json:"structuredContent"`
+		IsError    bool            `json:"isError"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return Result{}, fmt.Errorf("mcp: tools/call decode: %w", err)
+	}
+	result := Result{IsError: parsed.IsError}
+	var text strings.Builder
+	total := 0
+	for _, part := range parsed.Content {
+		switch part.Type {
+		case "text":
+			text.WriteString(part.Text)
+		case "image":
+			if len(result.Images) >= maxMCPImages || len(part.Data) > base64.StdEncoding.EncodedLen(maxMCPImageBytes-total) {
+				return Result{}, fmt.Errorf("mcp: image result exceeds bounded image budget")
+			}
+			data, err := base64.StdEncoding.DecodeString(part.Data)
+			if err != nil {
+				return Result{}, fmt.Errorf("mcp: invalid image base64: %w", err)
+			}
+			mime := http.DetectContentType(data)
+			switch mime {
+			case "image/png", "image/jpeg", "image/gif", "image/webp":
+			default:
+				return Result{}, fmt.Errorf("mcp: unsupported image type %q", mime)
+			}
+			if mime != strings.ToLower(strings.TrimSpace(part.MIME)) {
+				return Result{}, fmt.Errorf("mcp: image MIME mismatch")
+			}
+			total += len(data)
+			if total > maxMCPImageBytes {
+				return Result{}, fmt.Errorf("mcp: image result exceeds bounded image budget")
+			}
+			result.Images = append(result.Images, &core.ImageContent{MediaType: mime, Data: data})
+		}
+	}
+	// Preserve structured results unless an equivalent JSON value is already
+	// present in the text, including a backwards-compatible text block beside
+	// a human-readable summary. Ordinary prose is not a substitute for data.
+	if len(parsed.Structured) > 0 && string(parsed.Structured) != "null" {
+		duplicate := false
+		if text.Len() > 0 {
+			var structured any
+			decoder := json.NewDecoder(bytes.NewReader(parsed.Structured))
+			decoder.UseNumber()
+			if err := decoder.Decode(&structured); err != nil {
+				return Result{}, fmt.Errorf("mcp: structured result decode: %w", err)
+			}
+			duplicate = jsonTextMatchesValue(text.String(), structured)
+			if !duplicate && len(parsed.Content) > 1 {
+				for _, part := range parsed.Content {
+					if part.Type == "text" && jsonTextMatchesValue(part.Text, structured) {
+						duplicate = true
+						break
+					}
+				}
+			}
+		}
+		if !duplicate {
+			if text.Len() > 0 {
+				text.WriteByte('\n')
+			}
+			text.Write(parsed.Structured)
+		}
+	}
+	result.Text = text.String()
+	return result, nil
+}
+
+// Compare complete JSON values independent of whitespace and object key order.
+// UseNumber keeps distinct large integers from collapsing through float64;
+// differing number spellings are conservatively retained rather than discarded.
+func jsonTextMatchesValue(text string, value any) bool {
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return false
+	}
+	return reflect.DeepEqual(decoded, value)
 }

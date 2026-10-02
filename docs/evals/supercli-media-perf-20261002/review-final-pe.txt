@@ -1,0 +1,6 @@
+MajorSubsystemVersion	6
+MinorSubsystemVersion	1
+Subsystem		00000002	(Windows GUI)
+MajorSubsystemVersion	6
+MinorSubsystemVersion	1
+Subsystem		00000003	(Windows CUI)

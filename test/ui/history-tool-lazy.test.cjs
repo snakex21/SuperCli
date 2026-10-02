@@ -333,3 +333,24 @@ test('failed older-page rendering releases temporary worker references without c
   assert.equal(h.c.transcriptLiveAppend, true); assert.equal(h.c.stream.querySelector('.history-older').disabled, false);
   assert.ok(notices[0].includes('fixture render failed'));
 });
+
+
+test('history fragments restore the previous append target and live mode after success or failure', () => {
+  const {c} = harness(), previousTarget = domNode('#fragment', 11);
+  c.streamAppendTarget = previousTarget;
+  c.transcriptLiveAppend = true;
+  const fragment = c.buildHistoryFragment([readLines(1)]);
+  assert.notEqual(fragment, previousTarget);
+  assert.equal(fragment.children.length, 1);
+  assert.equal(previousTarget.children.length, 0);
+  assert.equal(c.streamAppendTarget, previousTarget);
+  assert.equal(c.transcriptLiveAppend, true);
+  c.addUserMsg = () => {
+    assert.notEqual(c.streamAppendTarget, previousTarget);
+    assert.equal(c.transcriptLiveAppend, false);
+    throw Error('fixture user render failed');
+  };
+  assert.throws(() => c.buildHistoryFragment([{role: 'user', seq: 1, content: 'old message'}]), /fixture user render failed/);
+  assert.equal(c.streamAppendTarget, previousTarget);
+  assert.equal(c.transcriptLiveAppend, true);
+});

@@ -580,24 +580,35 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		l.concreteFailure.Store(false)
 	}
 
-	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, OutputHandle: outputHandle}
+	var previews []llm.ImageRef
 	follow := []llm.Message{{
 		Role:       llm.RoleTool,
 		ToolCallID: tc.ID,
 		Name:       tc.Name,
 		Content:    modelContent,
 	}}
+	images := res.Images
 	if res.Image != nil {
-		img := l.toolImageRef(ctx, tc.Name, res.Image)
-		l.enableSessionImageTool()
-		follow = append(follow, llm.Message{
-			Role: llm.RoleUser,
-			Parts: []llm.ContentPart{
-				{Type: llm.PartTypeText, Text: "Attached image from tool " + tc.Name + ":"},
-				{Type: llm.PartTypeImage, Image: img},
-			},
-		})
+		images = append([]*tools.ImageContent{res.Image}, images...)
 	}
+	if len(images) > 0 {
+		parts := []llm.ContentPart{{Type: llm.PartTypeText, Text: "Attached image from tool " + tc.Name + ":"}}
+		for _, image := range images {
+			if image == nil {
+				continue
+			}
+			img := l.toolImageRef(ctx, tc.Name, image)
+			parts = append(parts, llm.ContentPart{Type: llm.PartTypeImage, Image: img})
+			// Storage failure retains pixels for the model, but never sends an
+			// inline binary payload over SSE or leaks a remote image URL.
+			if img.Path != "" && img.ID != "" {
+				previews = append(previews, llm.ImageRef{Path: img.Path, ID: img.ID, MediaType: img.MediaType, Name: img.Name})
+			}
+		}
+		l.enableSessionImageTool()
+		follow = append(follow, llm.Message{Role: llm.RoleUser, Parts: parts})
+	}
+	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, OutputHandle: outputHandle, Images: previews}
 	return toolResult{followUps: follow, inert: res.Inert, observation: observeToolResult(tc, res)}
 }
 

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "python",
+    "/workspace/scratch/cdc79842cc4e/supercli-review-qa-tools/tui_smoke.py"
+  ],
+  "exit_code": 1,
+  "elapsed_s": 3.518,
+  "peak_group_rss_bytes": 10747904,
+  "peak_cache_bytes": 1111383332,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

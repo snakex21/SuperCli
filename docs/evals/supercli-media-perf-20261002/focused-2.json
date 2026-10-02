@@ -1,0 +1,26 @@
+{
+  "command": [
+    "go",
+    "test",
+    "./internal/tools/media",
+    "./internal/tools/mcp",
+    "./internal/tools/interactive",
+    "./internal/tools/mediagen",
+    "./internal/system/config",
+    "./internal/agent",
+    "./internal/webgui",
+    "./internal/ui/tui",
+    "./internal/app"
+  ],
+  "exit_code": null,
+  "elapsed_s": 18.884,
+  "peak_group_rss_bytes": 425598976,
+  "peak_cache_bytes": 1063755776,
+  "guard_stop": null,
+  "env": {
+    "GOTOOLCHAIN": "local",
+    "GOMAXPROCS": "1",
+    "GOFLAGS": "-p=1",
+    "GOMEMLIMIT": "570MiB"
+  }
+}

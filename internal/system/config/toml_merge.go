@@ -11,6 +11,7 @@
 package config
 
 func mergeToml(dst *TomlConfig, src TomlConfig) {
+	mergeMediaGeneration(&dst.MediaGeneration, src.MediaGeneration)
 	if src.DefaultModel != "" {
 		dst.DefaultModel = src.DefaultModel
 	}

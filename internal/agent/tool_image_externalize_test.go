@@ -286,3 +286,25 @@ func TestToolImageExternalizeDurableStoreAndProviderWire(t *testing.T) {
 		})
 	}
 }
+
+func TestToolMultipleImagesUseOneFollowupAndLightweightEvents(t *testing.T) {
+	writer := &toolImageFixtureWriter{ref: llm.ImageRef{MediaType: "image/png", Path: "image.png", ID: "img_a"}}
+	got, events := toolImageFixtureInvoke(t, writer, tools.Result{Text: "two images", Images: []*tools.ImageContent{
+		{MediaType: "image/png", Data: []byte("first")}, {MediaType: "image/png", Data: []byte("second")},
+	}}, nil)
+	if got.failed || len(got.followUps) != 2 || len(got.followUps[1].Parts) != 3 || writer.calls != 2 {
+		t.Fatalf("followups=%+v calls=%d", got, writer.calls)
+	}
+	for _, event := range events {
+		if res, ok := event.(ToolResultEvent); ok {
+			if len(res.Images) != 2 {
+				t.Fatalf("images=%+v", res.Images)
+			}
+			for _, img := range res.Images {
+				if img.Data != "" || img.URL != "" || img.Active {
+					t.Fatal("binary payload in UI event")
+				}
+			}
+		}
+	}
+}

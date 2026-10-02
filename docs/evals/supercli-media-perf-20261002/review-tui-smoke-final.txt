@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/cdc79842cc4e/supercli-review-qa-tools/tui_smoke.py", line 25, in <module>
+    proc.wait(timeout=5)
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/subprocess.py", line 2045, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/workspace/scratch/cdc79842cc4e/supercli-build-cache/bin/supercli', '--echo', '--home', '/workspace/scratch/cdc79842cc4e/supercli-build-cache/tmp/supercli-tui-offline-8fnqzdd5/project', '--data-dir', '/workspace/scratch/cdc79842cc4e/supercli-build-cache/tmp/supercli-tui-offline-8fnqzdd5/data']' timed out after 5 seconds

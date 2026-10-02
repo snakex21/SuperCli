@@ -246,14 +246,72 @@ var transcriptSessionID = "";
 // persisted message very large; older pages remain available on demand.
 var transcriptPageSize = 60;
 
-function buildHistoryFragment(messages) {
-  var historyCalls = {};
+function historyPager() {
+  var button = i18nEl("button", "history-older", "session.older");
+  button.type = "button";
+  // Only unresolved boundary calls retain rows. Removing the pager releases
+  // this index on a new session/live turn, without another global DOM cache.
+  button._pendingHistoryCalls = Object.create(null);
+  button.addEventListener("click", loadOlderTranscript);
+  return button;
+}
+
+function resolveHistoryToolCall(entry, call) {
+  var row = entry.row, message = entry.message, body = row._body;
+  var name = call.name || message.name || "tool", args = call.arguments || "";
+  var info = args ? toolHint(name, args) : {name: toolDisplayName(name), hint: clip(message.content || "", 90)};
+  row._tname.title = name;
+  row._tname.textContent = info.name;
+  row._thint.textContent = info.hint;
+  var mutationLabel = mutationOutcomeLabel(name, message.content, /^error:/i.test(String(message.content || "")));
+  if (mutationLabel) row._tname.textContent = t(mutationLabel);
+  if (row._cancelHistoryPayload) row._cancelHistoryPayload();
+  row._cancelHistoryPayload = null;
+  if (body.childNodes.length && row._historyName === name) {
+    // An already opened boundary result keeps its expensive output viewer.
+    // Only its newly discovered input needs adding ahead of the output.
+    if (args && !FILE_READ_TOOLS[name]) {
+      var input = document.createDocumentFragment();
+      input.appendChild(i18nEl("div", "lbl", "tool.input"));
+      input.appendChild(el("pre", "", prettyJSON(args)));
+      body.insertBefore(input, body.firstChild);
+    }
+  } else {
+    body.innerHTML = "";
+    row._cancelHistoryPayload = appendHistoryToolPayload(row, body, args, message.content, name);
+  }
+  row._historyName = name;
+  appendToolMediaPreview(row, message.content, name, /^error:/i.test(String(message.content || "")));
+}
+
+function buildHistoryFragment(messages, pager, prepend) {
+  var historyCalls = Object.create(null);
+  var pendingCalls = pager && pager._pendingHistoryCalls;
+  var newerWorkers = prepend ? Object.assign(Object.create(null), workerRows) : null;
   var fragment = document.createDocumentFragment();
+  var previousTarget = streamAppendTarget, previousLive = transcriptLiveAppend;
   streamAppendTarget = fragment;
+  transcriptLiveAppend = false;
   try {
+    // A reused call ID in the incoming page must resolve a newer-page result
+    // against its nearest preceding call, not the first historical occurrence.
+    // Do this before creating new pending rows, then render this page forward.
+    if (pendingCalls) {
+      for (var index = (messages || []).length - 1; index >= 0; index--) {
+        var prior = messages[index];
+        if (prior.role !== "assistant") continue;
+        var calls = prior.tool_calls || [];
+        for (var callIndex = calls.length - 1; callIndex >= 0; callIndex--) {
+          var call = calls[callIndex];
+          if (!pendingCalls[call.id]) continue;
+          pendingCalls[call.id].forEach(function (entry) { resolveHistoryToolCall(entry, call); });
+          delete pendingCalls[call.id];
+        }
+      }
+    }
     (messages || []).forEach(function (m) {
       if (m.role === "user") {
-        addUserMsg(m.content, m.seq, sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq));
+        addUserMsg(m.content, m.seq, m.attachments && m.attachments.length ? m.attachments : sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq));
       } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
         if (!m.content) {
@@ -273,7 +331,9 @@ function buildHistoryFragment(messages) {
         var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
           parseTaskNotification(m.content) : null;
         if (task) {
+          var newerWorker = newerWorkers && newerWorkers[task.id];
           addHistoryTask(task);
+          if (newerWorker) workerRows[task.id] = newerWorker;
           return;
         }
         var persistedCall = historyCalls[m.tool_call_id] || null;
@@ -287,7 +347,8 @@ function buildHistoryFragment(messages) {
         var historyName = el("span", "tname", historyInfo.name);
         historyName.title = persistedName;
         sum.appendChild(historyName);
-        sum.appendChild(el("span", "thint", historyInfo.hint));
+        var historyHint = el("span", "thint", historyInfo.hint);
+        sum.appendChild(historyHint);
         var historyStat = el("span", "tstat", "");
         var historyChanges = toolChangeStats(persistedName, m.content);
         var historyMutationLabel = mutationOutcomeLabel(persistedName, m.content, /^error:/i.test(String(m.content || "")));
@@ -298,14 +359,21 @@ function buildHistoryFragment(messages) {
         sum.appendChild(historyStat);
         row.appendChild(sum);
         var body = el("div", "tbody");
-        appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
+        row._body = body; row._tname = historyName; row._thint = historyHint;
+        row._historyName = persistedName;
+        row._cancelHistoryPayload = appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
+        if (!persistedCall && m.tool_call_id && pendingCalls) {
+          if (!pendingCalls[m.tool_call_id]) pendingCalls[m.tool_call_id] = [];
+          pendingCalls[m.tool_call_id].push({row: row, message: m});
+        }
         row.appendChild(body);
         appendStream(row);
         appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
       }
     });
   } finally {
-    streamAppendTarget = null;
+    streamAppendTarget = previousTarget;
+    transcriptLiveAppend = previousLive;
   }
   return fragment;
 }
@@ -318,13 +386,9 @@ function renderLoadedTranscript(preserveScroll) {
   resetWorkerOverview();
   lastTurn = null; workersSeen = [];
   hideWelcome();
-  if (transcriptHasMore) {
-    var older = i18nEl("button", "history-older", "session.older");
-    older.type = "button";
-    older.addEventListener("click", loadOlderTranscript);
-    stream.appendChild(older);
-  }
-  stream.appendChild(buildHistoryFragment(loadedTranscriptMessages));
+  var older = transcriptHasMore ? historyPager() : null;
+  if (older) stream.appendChild(older);
+  stream.appendChild(buildHistoryFragment(loadedTranscriptMessages, older));
   if (preserveScroll) {
     stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
   } else {
@@ -354,13 +418,13 @@ async function loadOlderTranscript() {
     // expanded results, selected text, or new messages from the active stream.
     // Older task notifications also must not replace the latest worker backlink.
     var currentWorkers = workerRows;
-    var olderWorkers = Object.assign({}, currentWorkers);
+    var olderWorkers = Object.assign(Object.create(null), currentWorkers);
     var liveAppend = transcriptLiveAppend;
     var fragment;
     transcriptLiveAppend = false;
     workerRows = olderWorkers;
     try {
-      fragment = buildHistoryFragment(olderMessages);
+      fragment = buildHistoryFragment(olderMessages, button, true);
     } finally {
       transcriptLiveAppend = liveAppend;
       workerRows = currentWorkers;

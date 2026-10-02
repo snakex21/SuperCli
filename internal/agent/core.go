@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"supercli/internal/llm"
 )
 
 // Event is a single tick produced by the agent loop. The full union
@@ -41,6 +43,8 @@ func (ToolCallEvent) event() {}
 type ToolResultEvent struct {
 	ID     string
 	Output string
+	// Images contains lightweight durable references for the UI, never base64.
+	Images []llm.ImageRef `json:"images,omitempty"`
 	Err    error
 	// OutputHandle links worker observations to already-retained full output.
 	// It is internal metadata; UI text and event JSON stay unchanged.

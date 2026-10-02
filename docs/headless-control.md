@@ -4,6 +4,28 @@ SuperCli can control an explicitly selected local QEMU display through QMP, and 
 
 QEMU and a browser driver are optional external programs. Launch them once with the existing process_session tool, then reuse the endpoint/session_id. Its default lifetime remains ten minutes; timeout_ms can explicitly extend a managed process to 24 hours. Closing SuperCli closes its managed processes. Connecting headless_control to an externally started VM/driver never transfers ownership of that process.
 
+## Trusted target scope and consent
+
+Enable only the intended automation endpoints in the portable global `supercli-data/config.toml`:
+
+```toml
+[headless.targets.my_vm]
+protocol = "qmp"
+endpoint = "tcp://127.0.0.1:4444"
+allowed_actions = ["status", "screenshot", "wait_event", "keys", "click"]
+
+[headless.targets.my_browser]
+protocol = "webdriver"
+endpoint = "http://127.0.0.1:9515"
+allowed_actions = ["open", "status", "inspect", "navigate", "click", "type", "screenshot", "close"]
+```
+
+There is no default target or wildcard. Empty targets/actions deny access. Project configuration and model arguments cannot add targets. The tool snapshots the global configuration at construction; restart/recreate the session after an operator config change. Matching uses the exact normalized protocol, loopback endpoint and WebDriver base path. Read-only status/inspection/capture also require an allowed target and action.
+
+Mutations additionally require interactive **Allow once** approval before any endpoint connection or profile creation. The confirmation shows the configured target, endpoint, session ID and complete arguments, including URL, selector, text, keys, browser/binary and coordinates. It describes browser launch/profile creation or session closure. Missing UI, Cancel, interruption and arbitrary answer text deny the operation. TUI starts at Cancel; scroll all details, then use Tab to select Allow once. A small terminal cannot approve. A headless/batch invocation can use permitted read-only actions, but cannot silently approve mutations.
+
+The allowlist trusts the operator's chosen local endpoint; it does not authenticate which process binds that port. Start and inspect the intended driver/VM yourself, and do not reuse a configured port for an unrelated application. This protection covers the native headless tool; launching arbitrary processes remains a separate capability.
+
 ## QEMU
 
 Launch your explicitly selected VM with -display none and a loopback QMP server, for example these additional QEMU arguments:

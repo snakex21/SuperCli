@@ -1,0 +1,3 @@
+supercli-web.exe: pei-x86-64, Subsystem 00000002 (Windows GUI)
+supercli.exe: pei-x86-64, Subsystem 00000003 (Windows CUI)
+Media test binary cross-compiled. Windows binaries/tests were not executed here.

@@ -1,0 +1,260 @@
+?   	supercli/cmd/supercli	[no test files]
+?   	supercli/cmd/supercli-eval	[no test files]
+?   	supercli/cmd/supercli-perf	[no test files]
+ok  	supercli/cmd/supercli-web	0.004s
+?   	supercli/cmd/supercli-wireprobe	[no test files]
+?   	supercli/cmd/thunderbird-mail-call	[no test files]
+?   	supercli/cmd/thunderbird-msg-import	[no test files]
+ok  	supercli/internal/account/codexauth	0.007s
+ok  	supercli/internal/account/cost	0.002s
+ok  	supercli/internal/account/credits	0.292s
+ok  	supercli/internal/account/pricing	0.009s
+ok  	supercli/internal/account/tier	0.002s
+?   	supercli/internal/account/usagecost	[no test files]
+ok  	supercli/internal/agent	5.198s
+ok  	supercli/internal/agent/darwin	0.824s
+ok  	supercli/internal/agent/planmode	0.002s
+ok  	supercli/internal/agent/reflect	0.078s
+ok  	supercli/internal/agent/ultrawork	0.002s
+ok  	supercli/internal/agenteval	0.011s
+ok  	supercli/internal/app	0.594s
+?   	supercli/internal/buildinfo	[no test files]
+ok  	supercli/internal/checkpoint	0.633s
+ok  	supercli/internal/codeintel/lsp	0.216s
+ok  	supercli/internal/llm	4.461s
+ok  	supercli/internal/llm/consult	0.124s
+ok  	supercli/internal/llm/draft	0.005s
+ok  	supercli/internal/llm/factory	0.006s
+ok  	supercli/internal/llm/prompt	0.005s
+ok  	supercli/internal/llm/providers	3.040s
+ok  	supercli/internal/llm/shuffler	0.003s
+ok  	supercli/internal/perfbench	0.002s
+ok  	supercli/internal/storage	0.027s
+ok  	supercli/internal/storage/freshness	0.002s
+ok  	supercli/internal/storage/goal	0.195s
+ok  	supercli/internal/storage/library	0.002s
+ok  	supercli/internal/storage/memory	1.552s
+ok  	supercli/internal/storage/session	1.145s
+ok  	supercli/internal/system/browser	0.003s
+ok  	supercli/internal/system/childproc	0.004s
+ok  	supercli/internal/system/config	0.013s
+ok  	supercli/internal/system/doctor	0.007s
+ok  	supercli/internal/system/execution	0.003s
+ok  	supercli/internal/system/manifest	0.005s
+ok  	supercli/internal/system/preflight	0.167s
+ok  	supercli/internal/system/releasebundle	0.009s
+ok  	supercli/internal/system/stats	0.003s
+ok  	supercli/internal/system/uilang	0.452s
+ok  	supercli/internal/system/updater	0.032s
+ok  	supercli/internal/tools	0.004s
+ok  	supercli/internal/tools/codeintel	0.003s
+ok  	supercli/internal/tools/core	0.064s
+ok  	supercli/internal/tools/ctxexec	4.418s
+ok  	supercli/internal/tools/fileops	0.244s
+ok  	supercli/internal/tools/files	0.241s
+ok  	supercli/internal/tools/headless	0.250s
+ok  	supercli/internal/tools/interactive	0.063s
+ok  	supercli/internal/tools/mail	0.113s
+ok  	supercli/internal/tools/mcp	0.122s
+ok  	supercli/internal/tools/media	1.384s
+ok  	supercli/internal/tools/mediagen	0.108s
+ok  	supercli/internal/tools/memorytools	0.149s
+ok  	supercli/internal/tools/mentions	0.004s
+ok  	supercli/internal/tools/office	0.192s
+ok  	supercli/internal/tools/processsession	4.062s
+ok  	supercli/internal/tools/sandbox	0.016s
+ok  	supercli/internal/tools/scratchpad	0.012s
+ok  	supercli/internal/tools/search	1.012s
+ok  	supercli/internal/tools/shellescape	0.489s
+ok  	supercli/internal/tools/skills	0.112s
+ok  	supercli/internal/tools/usertools	0.012s
+ok  	supercli/internal/tools/web	0.004s
+ok  	supercli/internal/tools/workflow	2.005s
+?   	supercli/internal/ui/attachments	[no test files]
+ok  	supercli/internal/ui/desktopfiles	0.006s
+ok  	supercli/internal/ui/export	0.003s
+ok  	supercli/internal/ui/tui	1.232s
+ok  	supercli/internal/verification/hardtest	0.003s
+ok  	supercli/internal/webgui	7.759s
+?   	supercli/scripts/agent-efficiency	[no test files]
+?   	supercli/scripts/batch-read-turns	[no test files]
+?   	supercli/scripts/exploration-economy	[no test files]
+?   	supercli/scripts/file-discovery	[no test files]
+?   	supercli/scripts/history-query-terms	[no test files]
+?   	supercli/scripts/output-search-lines	[no test files]
+?   	supercli/scripts/read-eof	[no test files]
+?   	supercli/scripts/read-range-cap	[no test files]
+?   	supercli/scripts/reasoning-history/live-loop	[no test files]
+?   	supercli/scripts/reasoning-history/probe	[no test files]
+?   	supercli/scripts/recent-batch-evidence	[no test files]
+?   	supercli/scripts/release	[no test files]
+?   	supercli/scripts/search-context-hit	[no test files]
+?   	supercli/scripts/search-focus	[no test files]
+?   	supercli/scripts/search-hit-preview	[no test files]
+?   	supercli/scripts/search-limit-context	[no test files]
+?   	supercli/scripts/uneven-read-batch	[no test files]
+?   	supercli/scripts/worker-handoff	[no test files]
+ok  	supercli/test/go	0.014s
+✔ trusted append checkpoints equal full parsing at every UTF-16 boundary (23.797719ms)
+✔ only balanced boundaries are committed and closed parts keep their identity (1.102469ms)
+✔ orphan closes and empty first thoughts retain later reasoning semantics (0.987877ms)
+✔ replacement, recovery and untracked direct append use a fresh full parse (1.10305ms)
+✔ multiple trusted appends before parsing preserve exact native reasoning (1.514318ms)
+✔ history, terminal flush, sealed and disconnected nodes retain no checkpoint (1.399316ms)
+✔ render failure clears checkpoint and recovery remains exact (2.839852ms)
+✔ deterministic mixed protocol chunks retain exact full-parser parity (82.165584ms)
+✔ copy reads only the clicked code block, preserving indentation, newlines, Unicode and HTML-looking text (2.983287ms)
+✔ a pending copy captures the current text and cannot submit twice while more code streams in (0.887505ms)
+✔ missing or rejected Clipboard API falls back locally and restores focus and selection (1.850374ms)
+✔ failure of both clipboard paths reports failure and releases temporary elements (0.689327ms)
+✔ only fenced blocks get a translated keyboard-accessible button and code stays escaped (1.452755ms)
+✔ legacy browser fixtures bootstrap actual catalogs and all native language names (3.350991ms)
+✔ goal form submits the selected global scope and project switching is available (5.346723ms)
+✔ legacy assignment sends the selected goal id and preserves the target (2.649666ms)
+✔ paused goals can be resumed without mutating an unrelated active goal (1.406857ms)
+✔ task buttons submit the displayed goal id instead of whichever goal is active later (1.334177ms)
+✔ older pages retain expanded output, image identity, focus, chronology and scroll anchor (26.575138ms)
+✔ ten media pages construct each image once rather than rebuilding preceding pages (416.494208ms)
+ℹ {"pages":10,"pageSize":60,"before":{"imageSources":3300,"elements":33025,"visibleImages":600},"after":{"imageSources":600,"elements":6017,"visibleImages":600},"scope":"deterministic construction counts, no browser/network/decoding"}
+✔ one new page does the same image work with 60 or 600 existing messages (83.34549ms)
+✔ boundary tool calls recover arguments without replacing images or expanded output (4.096443ms)
+✔ missing boundary calls remain resolvable across more than one older page (1.804805ms)
+✔ older task reports cannot redirect progress away from a newer worker row (3.205993ms)
+✔ incremental paging never clears separately appended rows or active run state (2.162202ms)
+✔ stale or failed requests leave current content intact and allow a retry (2.428894ms)
+✔ an empty terminal page removes its pager without moving the old content anchor (1.458124ms)
+✔ repeated worker IDs select the latest row in the incoming page unless a newer page already owns it (3.190019ms)
+✔ reused tool-call IDs bind each result to its nearest preceding call across page boundaries (1.713968ms)
+✔ a folded 5000-line history read creates only its summary until expanded once (308.000998ms)
+ℹ 5000-line read_lines: DOM nodes 25009 -> 8 while folded (elements 15007 -> 6)
+✔ history rows already open render input and output immediately with the original text (1.499786ms)
+✔ opening a session and loading an older page preserve paging, raw results and scroll behavior (78.782336ms)
+✔ live folded results defer the large viewer while preserving completion and exact output (233.978614ms)
+ℹ live folded 5000-line read: DOM nodes 25006 -> 5
+✔ open live results render immediately and failures retain their diagnostic on expansion (2.524007ms)
+✔ folded task reports render their complete source only once on expansion (1.623403ms)
+✔ task report replacement cancels stale folded callbacks and preserves open updates (1.860959ms)
+✔ task history paging retains raw reports and defers newly received rows (2.158728ms)
+✔ older paging retains expanded rows and live messages while rendering only the incoming page (5.941819ms)
+ℹ loading 60 older rows after 60 retained rows: summary elements created 720 -> 360
+✔ paging an older task notification preserves the latest worker backlink and its open report (1.899858ms)
+✔ failed older-page rendering releases temporary worker references without clearing current content (1.340606ms)
+✔ history fragments restore the previous append target and live mode after success or failure (1.325194ms)
+✔ legacy drafts migrate to portable settings once and clearing survives reload (4.511056ms)
+✔ server drafts restore without browser persistence and preserve a newer typed draft (2.1144ms)
+✔ legacy attachment indexes migrate once and a cleared server index survives reload (3.110359ms)
+✔ GUI reuses its settings snapshot while standalone draft consumers fetch once (3.094415ms)
+✔ update panel makes no automatic network check and uses three explicit actions (5.881748ms)
+✔ update errors show the translated code and unsafe release URLs remain hidden (1.373406ms)
+✔ GUI writes drafts, preferences and attachment indexes through portable server settings only (0.663188ms)
+✔ open update status and errors change language without resetting the update state (1.852817ms)
+✔ doctor labels use stable record identifiers and leave raw runtime details untouched (1.538064ms)
+✔ the About model fallback refreshes when the language changes (1.493978ms)
+✔ switching language preserves nested controls and user drafts (4.272628ms)
+✔ translation leaves a temporary run status intact (3.15081ms)
+✔ catalogs have exactly the supported languages, keys and placeholders (40.847328ms)
+✔ every static and dynamic catalog reference resolves (7.477509ms)
+✔ loading is lazy, deduplicates requests and keeps immediate English fallback (2.550817ms)
+✔ a failed locale keeps English usable and can be retried (2.737909ms)
+✔ browser and saved locales normalize to the exact catalog codes (1.07038ms)
+✔ the empty-model fallback follows language changes while actual model identifiers stay intact (2.223945ms)
+✔ dynamic translations refresh connected owners and stop updating removed panels (1.622161ms)
+✔ a closed picker retains model metadata without creating rows and opening restores search and selection (40.332784ms)
+✔ default and hide actions remain available when the picker is visible (46.324187ms)
+✔ same-session queue keeps the current runtime and waits for a pending model change (6.124373ms)
+✔ forced send stays busy, highlights the chosen row and dispatches it once before sidebar refresh (4.297705ms)
+✔ failed session switch preserves the queued message and releases the composer (1.591985ms)
+✔ rejected chat and failed queue deletion never silently discard or repeat a queued message (4.335241ms)
+✔ Stop after a forced send cancels the pending handoff and keeps the queue intact (2.349124ms)
+✔ Stop while a queued message waits for runtime readiness leaves it queued (1.454639ms)
+✔ automatic queue order stays intact and a completed last item returns to ready (2.08019ms)
+✔ early Stop waits once for durable completion and sends the next prompt in the recovered session (1.850524ms)
+✔ an SSE setup error before session_activity keeps the queue entry available (1.757053ms)
+✔ unchanged session metadata preserves sidebar rows and their focus/hover state (3.813727ms)
+✔ title, activity, selection, locale and minute changes still refresh the list (1.683182ms)
+✔ a failed refresh invalidates the snapshot so an identical successful retry restores rows (1.207997ms)
+✔ an overlapping stale response cannot replace the current sidebar snapshot (0.955017ms)
+✔ session date labels preserve every supported locale and calendar group (33.753527ms)
+✔ old session dates reuse bounded formatters and switch locale immediately (3.114996ms)
+✔ year rollover and unavailable ICU preserve session date behavior (2.952352ms)
+✔ SSE preserves ordering, multiline data and UTF-8 across every split delimiter (127.617004ms)
+✔ SSE parses a large fragmented tool result exactly once before following events (10.095156ms)
+✔ SSE emits a complete first frame before requesting another network chunk (0.988377ms)
+✔ SSE retains explicit errors, missing-terminal failures and upstream/callback errors (4.733952ms)
+✔ opening an empty preview creates no frame and sends no request (2.481924ms)
+✔ navigation creates one isolated frame and reload keeps its identity (8.850233ms)
+✔ closing while validation is pending cannot recreate the frame (1.610062ms)
+✔ only the latest URL request can navigate the preview (1.424423ms)
+✔ external open uses the current input without creating a frame (1.359726ms)
+✔ language refresh preserves the address, frame and focus (1.370111ms)
+✔ invalid URLs never create a frame and show a localized notice (1.330792ms)
+✔ existing notices change language without changing the URL (1.502661ms)
+✔ programmatic link navigation reuses the same frame and ignores a disposed controller (1.025753ms)
+✔ native launch errors stay visible as text and survive language refresh (2.748685ms)
+✔ a second click cannot duplicate a pending native launch (1.052313ms)
+✔ clear removes the page and remembered URL while keeping the pane ready (1.326355ms)
+✔ clear invalidates navigation already in flight (0.699673ms)
+✔ clearing a pending browser launch keeps its stale completion out of the empty pane (1.44911ms)
+✔ startup reuses settings for drafts and skips reasoning for the no-model sentinel (2.972041ms)
+✔ initial health and model discovery keep the empty-model label localized (4.570886ms)
+✔ cached formatters preserve number, currency and date output for every supported language (153.863982ms)
+✔ repeated dashboard formatting constructs ICU formatters once and switches locale immediately (24.674869ms)
+✔ arbitrary currency churn stays bounded and evicted formats remain correct (7.908026ms)
+✔ invalid values and unsupported formatting keep the original fallback and can retry (2.265268ms)
+✔ first content is immediate; subsequent received prose is paced without changing source (4.86886ms)
+✔ the first answer finishes queued reasoning synchronously and stays below a stable thought (2.066839ms)
+✔ steady Zen-sized packets stop producing long visible gaps after the initial wait (6.28177ms)
+✔ cheap formatting follows high-refresh frames while retaining a short fast-provider buffer (4.734783ms)
+✔ a 60 Hz display stays on native frames without requesting faster timer paints (1.078683ms)
+✔ moderately expensive formatting retains the work budget at high refresh (1.266385ms)
+✔ sparse characters are not invented or repainted just to fill display frames (1.415699ms)
+✔ completion and tool boundaries synchronously drain exact received text (1.237511ms)
+✔ large and expensive updates bypass animation instead of multiplying formatting work (1.108888ms)
+✔ Unicode stays well formed and protocol markers remain outside displayed parts (2.031736ms)
+✔ detached messages cancel pending display work; suspended frames catch up on resume (1.113295ms)
+✔ replacement snapshots immediately correct source and cancel stale animation (0.985452ms)
+✔ incremental Markdown equals the full renderer at every chunk boundary (27.915204ms)
+✔ completed blocks and a growing code node survive subsequent chunks (1.517172ms)
+✔ reasoning parts preserve nested, orphan and repeated protocol tags (1.766257ms)
+✔ mixed Markdown fragments keep exact full-render parity (60.107873ms)
+✔ completed table rows survive open-row updates and newly received rows (2.31299ms)
+✔ completed list items survive growing last items without joining unlike blocks (2.331277ms)
+✔ row caching applies to prose after the native reasoning closing newline (2.012127ms)
+✔ growing plain paragraphs retain both their element and their single text node (1.281087ms)
+✔ unfinished paragraph markup and block markers retain exact prefix rendering (4.689765ms)
+✔ ordinary suffixes reuse formatted paragraph markup while preserving the full renderer (1.726477ms)
+✔ formatted paragraph suffixes respect inline closures, block markers and source corrections (4.870306ms)
+✔ successful screenshots and images are visible outside folded live details with exact raw output (11.350705ms)
+✔ persisted tool results restore visible previews across Unix, Windows and UNC paths (10.385083ms)
+✔ live audio and video keep their original path and create no player until clicked (3.067705ms)
+✔ unrecognized, malformed and error results never preview and keep diagnostics (20.542643ms)
+✔ closing, Escape close events and switching previews stop playback and release source (4.160319ms)
+✔ existing image and PDF previews and composer attachment names keep their behavior (1.512165ms)
+✔ tool MIME descriptors preview valid content even with no or mismatched file extension (34.730958ms)
+✔ a tool MIME override does not change ordinary user attachment inference for the same path (1.765917ms)
+✔ portable screenshot identifiers keep the same lazy live and history URL after moving the app (4.847913ms)
+✔ only strict snapshot basenames from send_screenshot override the original preview path (14.941136ms)
+✔ composer uses a bounded thumbnail and opening or closing uses and releases the original (1.701329ms)
+✔ WebP keeps the original preview fallback while failed PNG thumbnails keep only a click control (2.908145ms)
+✔ native MCP image refs show same-origin previews without base64 and reject remote URLs (1.617423ms)
+✔ generation outputs share local image and lazy video preview contract (4.991949ms)
+✔ restored native image attachments do not depend on browser localStorage (1.542641ms)
+✔ headless QMP and browser screenshots have automatic bounded preview in live and restored chat (2.444137ms)
+✔ headless status, other sources, failures and invalid media never become previews (1.100165ms)
+✔ pending paced text paints before the single tail geometry read (5.608107ms)
+✔ first sparse content and tool bursts scroll on the next frame without extra paints (1.84102ms)
+✔ manually scrolling away from the tail remains respected during paced paints (1.430291ms)
+✔ a detached message does not lose an already pending scroll from another block (2.067199ms)
+✔ worker steering receipts remain visible and localized: en (4.011024ms)
+✔ worker steering receipts remain visible and localized: pl (2.381823ms)
+ℹ tests 148
+ℹ suites 0
+ℹ pass 148
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3878.786605
+README parity passed: 27 languages, 55 translated units each, 6 identical code blocks, all link targets valid.
+{"result": "PASS", "scope": "actual Linux GUI HTTP/SSE backend and child MCP, no browser renderer or paid provider", "events": ["session", "session_activity", "notice", "tool_call", "question", "question_closed", "tool_result", "tool_call", "tool_result", "message", "done"], "image_bytes": [95301], "video_range_bytes": [24], "confirmation_questions": 1, "durable_session": true, "replay_has_portable_image": true}
+{"result": "PASS", "surface": "Linux actual 80x24 PTY", "observed": ["startup SuperCli header", "/help rendering", "/quit exit 0", "terminal modes restored"], "offline_pricing_cache": true, "output_bytes": 10975, "quit_exit_observed_seconds": 0.118}
