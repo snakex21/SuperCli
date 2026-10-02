@@ -84,7 +84,12 @@ func TestCtxExecuteStructuredPreviewPreservesBothStreams(t *testing.T) {
 			store := core.NewOutputStore()
 			content := store.ModelContent("ctx_execute", result)
 			if mode == "small" {
-				if result.ModelPreview != "" || content != result.Text || strings.Contains(content, "output_warning") {
+				expected := result.Text
+				if result.ModelText != "" {
+					expected = result.ModelText
+					ctxShortAssertEvidence(t, Result{Text: result.Text}, result)
+				}
+				if result.ModelPreview != "" || content != expected || strings.Contains(content, "output_warning") {
 					t.Fatal("small result changed")
 				}
 				return

@@ -121,7 +121,8 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// structured payload (and can be re-fed it
 	// verbatim if it wants to inspect details).
 	jb, _ := json.Marshal(res)
-	result := Result{Text: string(jb), RetainedText: res.RetainedJSON()}
+	freshJSON := ctxExecuteFreshJSON(string(jb))
+	result := Result{Text: string(freshJSON), RetainedText: res.RetainedJSON()}
 	if runErr != nil {
 		result.Err = runErr
 		return result, runErr
@@ -150,12 +151,92 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		result.ModelPreview = res.SuccessPreviewFromJSON(jb)
 	} else {
 		result.ModelText = ctxExecuteInlineModelText(res, p.Command, result)
+		if result.ModelText == "" {
+			result.ModelText = ctxExecuteFreshShortCommandModelText(freshJSON, res, p.Command, result)
+		}
 	}
 	return result, nil
 }
 
-// A short command echo saves too little to justify another JSON encoding.
-// Longer scripts are already present in the paired assistant tool call.
+// Only Execute's own typed marshal produces this marker. It is never a view of
+// persisted history, provider payloads or arbitrary custom tool Result.Text.
+type ctxExecuteFreshJSON string
+
+const (
+	ctxExecuteShortCommandMinBytes = 64
+	ctxExecuteShortResultMaxBytes  = 1024
+)
+
+// Small fresh results can reuse their paired argv without encoding output again.
+// The original Text remains byte-identical; only the model's equivalent view is
+// copied. Cap that extra string to 1 KiB and preserve existing legacy projections.
+func ctxExecuteFreshShortCommandModelText(fresh ctxExecuteFreshJSON, res *ctxexec.Result, command []string, result Result) string {
+	if res == nil || result.Err != nil || res.ExitCode != 0 || res.Error != "" ||
+		result.RetainedText != "" || result.ModelPreview != "" || result.ModelText != "" ||
+		len(fresh) > ctxExecuteShortResultMaxBytes || result.Text != string(fresh) ||
+		len(res.Command) < ctxExecuteShortCommandMinBytes || len(res.Command) >= ctxExecuteDuplicateCommandMinBytes ||
+		!ctxExecuteExactCommand(res.Command, command) {
+		return ""
+	}
+	text := string(fresh)
+	const marker = `,"command":`
+	start := strings.Index(text, marker)
+	if start < 0 || strings.Index(text[start+len(marker):], marker) >= 0 {
+		return ""
+	}
+	valueStart := start + len(marker)
+	if valueStart >= len(text) || text[valueStart] != '"' {
+		return ""
+	}
+	// This known, freshly encoded flat struct has a string command followed by
+	// workdir. Its JSON quotes/escapes are bounded by six bytes per input byte.
+	// Escaped marker text inside stdout/stderr cannot match the field marker.
+	limit := valueStart + 2 + 6*len(res.Command)
+	if limit > len(text) {
+		limit = len(text)
+	}
+	for end := valueStart + 1; end < limit; end++ {
+		switch text[end] {
+		case '\\':
+			end++
+		case '"':
+			end++
+			if end >= len(text) || text[end] != ',' {
+				return ""
+			}
+			var model strings.Builder
+			model.Grow(len(text) - (end - start))
+			model.WriteString(text[:start])
+			model.WriteString(text[end:])
+			return model.String()
+		}
+	}
+	return ""
+}
+
+// Check strings.Join(argv, " ") equality without allocating the joined copy.
+func ctxExecuteExactCommand(actual string, argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	pos := 0
+	for i, arg := range argv {
+		if i != 0 {
+			if pos >= len(actual) || actual[pos] != ' ' {
+				return false
+			}
+			pos++
+		}
+		if len(arg) > len(actual)-pos || actual[pos:pos+len(arg)] != arg {
+			return false
+		}
+		pos += len(arg)
+	}
+	return pos == len(actual)
+}
+
+// Re-encoding output is reserved for longer echoed scripts. Smaller results can
+// use Execute's fresh typed JSON path above without another encoding.
 const ctxExecuteDuplicateCommandMinBytes = 256
 
 // ctxExecuteInlineModelText removes a byte-identical long command echo or JSON

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
+	"supercli/internal/ui/viewport"
 )
 
 func BenchmarkTUIActiveHistoryAssembly(b *testing.B) {

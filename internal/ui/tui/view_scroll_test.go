@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/charmbracelet/bubbles/viewport"
+	"supercli/internal/ui/viewport"
 )
 
 // mockKeyMsg implements teaKeyMsg for testing.

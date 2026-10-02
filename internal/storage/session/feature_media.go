@@ -58,20 +58,25 @@ func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (str
 	sum := sha256.Sum256(data)
 	name := fmt.Sprintf("%x%s", sum[:], imageExtension(mediaType))
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	// A returned complete path must not be replaced by another repair in this
+	// Store while its caller starts reading it (Windows sharing semantics).
+	s.mediaMu.Lock()
+	defer s.mediaMu.Unlock()
+	complete, exists, checkErr := sessionImageComplete(path, len(data))
+	if checkErr != nil {
+		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage create: %w", checkErr)
+	} else if complete {
+		absolute, err := filepath.Abs(path)
+		return absolute, sum, err
+	}
+	f, err := os.CreateTemp(dir, ".image-*")
 	if err != nil {
-		if os.IsExist(err) {
-			absolute, err := filepath.Abs(path)
-			return absolute, sum, err
-		}
 		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage create: %w", err)
 	}
-	ok := false
+	temporary := f.Name()
 	defer func() {
 		_ = f.Close()
-		if !ok {
-			_ = os.Remove(path)
-		}
+		_ = os.Remove(temporary)
 	}()
 	if _, err := f.Write(data); err != nil {
 		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage write: %w", err)
@@ -79,9 +84,32 @@ func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (str
 	if err := f.Close(); err != nil {
 		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage close: %w", err)
 	}
-	ok = true
+	if err := replaceSessionImage(temporary, path, exists); err != nil {
+		// Another identical publisher may have won while our temporary file
+		// was written. Never return a short file after a failed publication.
+		if complete, _, checkErr := sessionImageComplete(path, len(data)); checkErr != nil || !complete {
+			return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage create: %w", err)
+		}
+	}
 	absolute, err := filepath.Abs(path)
 	return absolute, sum, err
+}
+
+// Size is sufficient to reject interrupted old in-place writes; future files
+// become visible only after a complete, closed write. This does not verify
+// externally modified same-size content or add an image-sized read on reuse.
+func sessionImageComplete(path string, size int) (complete, exists bool, err error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, true, fmt.Errorf("image path is not a regular file: %s", path)
+	}
+	return info.Size() == int64(size), true, nil
 }
 
 func (s *Store) sessionMediaDir(sessionID string) string {

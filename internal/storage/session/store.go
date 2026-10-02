@@ -36,6 +36,8 @@ type Session struct {
 type Store struct {
 	db   *sql.DB
 	root string
+	// Serialize publication/repair, never the hashing of incoming image bytes.
+	mediaMu sync.Mutex
 	// Cache only the compiled count query, never its results.
 	countsMu   sync.Mutex
 	countsStmt *sql.Stmt

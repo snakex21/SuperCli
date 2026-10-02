@@ -484,3 +484,61 @@ test('initial render failure retains its page for recovery; successful retry rel
   assert.equal(row._body.querySelector('.tool-file-view').children.length, 3);
   assert.ok(row._body.textContent.includes('payload-2'));
 });
+
+
+test('materialized live input releases raw arguments while retaining complete visible input and reopen identity', () => {
+  for (const args of [JSON.stringify({path:'ą日本語<&>',content:'first\nsecond\t🌍'}), 'not JSON <unsafe>', '', undefined]) {
+    const h=liveInputHarness(); h.c.addToolCall('create_file',args,'released');
+    const row=h.c.toolRows.released;
+    row.dispatch('toggle'); assert.deepEqual(h.formats, []);
+    const before=row._toolArgs;
+    row.open=true; row.dispatch('toggle');
+    const input=row._body.children[1];
+    let expected; try { expected=JSON.stringify(JSON.parse(args),null,2); } catch { expected=args || ''; }
+    assert.equal(input.textContent,expected); assert.equal(row._toolArgs,null);
+    row.open=false;row.dispatch('toggle');row.open=true;row.dispatch('toggle');
+    assert.equal(row._body.children[1],input); assert.deepEqual(h.formats,[args]);
+    assert.ok(before !== null);
+  }
+});
+
+test('failed input formatting or insertion retains raw arguments and original consumed-once errors', () => {
+  for (const fail of ['format','insert']) {
+    const h=liveInputHarness(), args='{"path":"keep","content":"full source"}', error=new Error('original '+fail+' failure');
+    h.c.addToolCall('create_file',args,'failed');const row=h.c.toolRows.failed;
+    if(fail==='format') h.c.prettyJSON=()=>{throw error;};
+    else {const append=row._body.appendChild;row._body.appendChild=function(node){if(node.tag==='pre')throw error;return append.call(this,node);};}
+    row.open=true;assert.throws(()=>row.dispatch('toggle'),value=>value===error);
+    assert.equal(row._toolArgs,args);const count=row._body.children.length;
+    row.open=false;row.dispatch('toggle');row.open=true;row.dispatch('toggle');
+    assert.equal(row._body.children.length,count);
+  }
+});
+
+async function liveInputOwnershipCheck(makeHarness) {
+  const h=makeHarness();
+  function setup(id, expanded) {
+    // Box only the source for WeakRef observation; real string payload parity is
+    // covered above and by the existing call/result tests.
+    const source=new String(JSON.stringify({path:id,content:'generated original source\n'.repeat(400)}));
+    const ref=new WeakRef(source);h.c.addToolCall('create_file',source,id);
+    const row=h.c.toolRows[id];if(expanded){row.open=true;row.dispatch('toggle');}
+    return {row,ref};
+  }
+  const folded=setup('folded',false),expanded=setup('expanded',true);
+  h.formats.length=0;
+  async function collect(){await new Promise(resolve=>setImmediate(()=>{global.gc();setImmediate(()=>{global.gc();resolve();});}));}
+  await collect();assert.ok(folded.ref.deref(),'folded arguments must stay available');
+  assert.equal(expanded.ref.deref(),undefined,'the persistent body toggle listener retained consumed arguments');
+  assert.equal(expanded.row._body.hidden,false);expanded.row.open=false;expanded.row.dispatch('toggle');
+  assert.equal(expanded.row._body.hidden,true);expanded.row.open=true;expanded.row.dispatch('toggle');
+  assert.equal(expanded.row._body.hidden,false);
+  folded.row.open=true;folded.row.dispatch('toggle');h.formats.length=0;
+  assert.ok(folded.row._body.children[1].textContent.includes('generated original source'));
+  await collect();assert.equal(folded.ref.deref(),undefined);
+}
+
+test('live body toggle listener does not retain consumed argument context while folded input remains usable', async () => {
+  const childScript = "const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'); const domNode="+domNode.toString()+"; const descendants="+descendants.toString()+"; const harness="+harness.toString()+"; const liveInputHarness="+liveInputHarness.toString()+"; const __dirname=process.argv[1]; ("+liveInputOwnershipCheck.toString()+")(liveInputHarness).catch(error=>{console.error(error);process.exitCode=1;});";
+  await new Promise((resolve,reject)=>require('node:child_process').execFile(process.execPath,['--expose-gc','-e',childScript,__dirname],{windowsHide:true},(error,stdout,stderr)=>{if(error)reject(new Error(stderr||stdout||error.message));else resolve();}));
+});

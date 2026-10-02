@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/ui/viewport"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
