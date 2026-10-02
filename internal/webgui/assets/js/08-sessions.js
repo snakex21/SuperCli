@@ -389,6 +389,9 @@ function renderLoadedTranscript(preserveScroll) {
   var older = transcriptHasMore ? historyPager() : null;
   if (older) stream.appendChild(older);
   stream.appendChild(buildHistoryFragment(loadedTranscriptMessages, older));
+  // Rows own their complete lazy payloads and unresolved boundary messages.
+  // The raw page wrappers are no longer read after this successful render.
+  loadedTranscriptMessages = [];
   if (preserveScroll) {
     stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
   } else {
@@ -432,7 +435,6 @@ async function loadOlderTranscript() {
     Object.keys(olderWorkers).forEach(function (id) {
       if (!currentWorkers[id]) currentWorkers[id] = olderWorkers[id];
     });
-    loadedTranscriptMessages = olderMessages.concat(loadedTranscriptMessages);
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
     stream.insertBefore(fragment, button ? button.nextSibling : stream.firstChild);

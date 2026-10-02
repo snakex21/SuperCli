@@ -721,8 +721,11 @@ func Main() {
 		// keeps its raw entries and retries at the next idle.
 		if !rawSummarized.Load() {
 			rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			memAutoSaver.SummarizePendingRaw(rctx, providerSummarizer(p))
+			completed := memAutoSaver.SummarizePendingRaw(rctx, providerSummarizer(p))
 			cancel()
+			if !completed {
+				return // Preempted helper work waits for the next idle window.
+			}
 			if ctx.Err() == nil {
 				rawSummarized.Store(true)
 			}

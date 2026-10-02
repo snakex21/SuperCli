@@ -1,0 +1,15 @@
+# ZIP extraction through existing links
+
+This is a correctness repair for `read_zip` extraction. It does not claim lower latency, RAM, token use, or model-turn count.
+
+An already-existing directory symlink or Windows junction below `target_dir` could redirect ZIP output outside that directory. Controlled native Windows fixtures also reproduced overwrites outside `BaseDir`, an external file created through a dangling final symlink, and a directory created through an unresolved junction in the target's ancestors. All fixture paths and link endpoints remained inside private portable temporary directories.
+
+The previous batch-scheduling repair describes extraction as a write to its target directory. In a matched actual `invokeToolCalls` fixture, an external read and that declared directory write therefore entered one wave: the read completed first, then ZIP extraction silently overwrote the external file. The boundary repair reports an honest ZIP error and keeps the external file and read evidence unchanged. The ignored reproduction is retained under `.tmp/goal-zip-link-boundary-2026-10-02`.
+
+`read_zip` now checks the target's unresolved path components before `MkdirAll`. Each entry uses the existing `sandbox.ResolveSafe`, an explicit check that its resolved destination stays inside the extraction target even in unsandboxed mode, and an unresolved-component check before the entry's mkdir/open/write. A dangling final symlink must be rejected separately because longest-existing-prefix resolution can leave it unresolved. This Windows runtime exposes mount-point junctions as `ModeIrregular`; junctions it cannot canonicalize are refused with the offending path rather than followed silently. No global sandbox rewrite, Win32 dependency, resolver cache, schema, `ReadOnly`, provider, or Zen change was introduced.
+
+Native fixtures demonstrate baseline FAIL → candidate PASS for directory/file links, dangling final links, and unsupported Windows junctions. Ordinary single/nested extraction, directory entries, result text bytes, file bytes, and repeat overwrites remain equivalent. Correctly resolvable symlinks work as the workspace, above the workspace, as the target, and inside the target. An unsupported junction above a nested workspace was already rejected by the existing workspace resolver; that policy is unchanged. Tests accommodate runtimes that fully canonicalize valid junctions.
+
+The checks add on-demand path resolution and metadata work during extraction only. No benchmark or savings claim is made. Focused link/parity tests live in `internal/tools/office/read_zip_links_test.go`; existing agent tests cover the invocation and scheduling paths. Validation uses office/agent tests, scoped vet, and whitespace checks.
+
+This repair covers already-existing symlink/junction paths. It does not pin directory handles against hostile concurrent replacement, change in-place hard-link overwrite semantics, or roll back safe entries already written before a later error. Those require separate designs and evidence.

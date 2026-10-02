@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -59,6 +60,11 @@ const summaryPrompt = "Summarize this session in 2-4 short lines: WHAT was done,
 // a single LLM call. Wire it to the active provider.
 type SummarizeFunc func(ctx context.Context, prompt string) (string, error)
 
+// ErrSummaryInterrupted marks confirmed cancellation of a summarizer's private
+// context. Ordinary provider errors, including context.Canceled while the caller
+// is still alive, do not make a completed startup pass eligible for idle retries.
+var ErrSummaryInterrupted = errors.New("memory summary interrupted")
+
 // Finalize runs at session end (and may be called every N
 // messages — it is idempotent per call site). transcript is a
 // plain-text tail of the conversation; empty transcripts are
@@ -94,9 +100,12 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 	if transcript == "" || summarize == nil || a.Project == nil {
 		return true
 	}
+	if ctx.Err() != nil {
+		return false
+	}
 	prompt := summaryPrompt + "\n\n" + transcript
 	summary, err := summarize(ctx, prompt)
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		return false
 	}
 	summary = strings.TrimSpace(StripReasoning(summary))
@@ -162,21 +171,39 @@ func (a *AutoSaver) StoreRawTail(transcript string) {
 // SummarizePendingRaw summarizes raw-log entries left behind by an
 // abrupt shutdown into normal task-log entries (extracting USER:
 // facts on the way) and deletes the raw entries. Call it in the
-// background at startup — it makes one LLM call per pending entry.
-func (a *AutoSaver) SummarizePendingRaw(ctx context.Context, summarize SummarizeFunc) {
+// background at startup — it makes one LLM call per pending entry. Returns
+// false when interrupted, so the caller retries at the next idle window.
+// Ordinary failures keep their entries without repeatedly retrying this pass.
+func (a *AutoSaver) SummarizePendingRaw(ctx context.Context, summarize SummarizeFunc) bool {
 	if a == nil || a.Project == nil || summarize == nil {
-		return
+		return true
+	}
+	if ctx.Err() != nil {
+		return false
 	}
 	entries, err := a.Project.Recent(ScopeRawLog, 10)
 	if err != nil {
-		return
+		return true
+	}
+	interrupted := false
+	tracked := func(ctx context.Context, prompt string) (string, error) {
+		text, err := summarize(ctx, prompt)
+		interrupted = errors.Is(err, ErrSummaryInterrupted)
+		return text, err
 	}
 	for _, e := range entries {
-		if !a.StoreSummary(ctx, e.Content, summarize) {
+		if ctx.Err() != nil {
+			return false
+		}
+		if !a.StoreSummary(ctx, e.Content, tracked) {
+			if interrupted || ctx.Err() != nil {
+				return false
+			}
 			continue // summarize failed — keep the raw entry for next time
 		}
 		_ = a.Project.Delete(e.ID)
 	}
+	return ctx.Err() == nil
 }
 
 // splitUserFacts separates trailing "USER: ..." lines from the

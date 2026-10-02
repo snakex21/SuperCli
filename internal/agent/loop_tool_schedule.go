@@ -165,8 +165,31 @@ func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 		return one("path", true)
 	case "read_lines", "read_context":
 		return one("file", false)
-	case "list_dir", "read_image", "read_docx", "read_pdf", "read_xlsx", "read_zip":
+	case "list_dir", "read_image", "read_docx", "read_pdf", "read_xlsx":
 		return one("path", false)
+	case "read_zip":
+		var action string
+		if raw, present := args["action"]; present {
+			if value := strings.TrimSpace(string(raw)); len(value) == 0 || value[0] != '"' {
+				return nil, false
+			}
+			if err := json.Unmarshal(raw, &action); err != nil {
+				return nil, false
+			}
+		}
+		if action == "" || action == "list" {
+			return one("path", false)
+		}
+		if action != "extract" {
+			return nil, false
+		}
+		src, ok1 := get("path")
+		dst, ok2 := get("target_dir")
+		if !ok1 || !ok2 {
+			// The default destination depends on the tool instance and current time.
+			return nil, false
+		}
+		return []toolFileAccess{{path: src, write: false}, {path: dst, write: true}}, true
 	case "copy":
 		src, ok1 := get("src")
 		dst, ok2 := get("dest")
