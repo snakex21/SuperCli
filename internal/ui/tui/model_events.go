@@ -198,7 +198,7 @@ func (m *Model) refreshTranscript() {
 	follow := m.viewport.AtBottom()
 	m.resizeViewport()
 	content := m.chat.renderWithSpinner(m.palette, spinnerView)
-	m.viewport.SetContent(content)
+	m.setViewportContent(content)
 	m.renderedCurrent = m.current
 	m.renderedSpinner = spinnerView
 	m.streamPaintAt = time.Now()
