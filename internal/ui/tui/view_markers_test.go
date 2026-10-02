@@ -187,3 +187,39 @@ func TestMarker_NoAgent(t *testing.T) {
 		t.Fatalf("missing message: %q", rendered)
 	}
 }
+
+func TestMarkerPaletteKeepsValueIsolation(t *testing.T) {
+	p := NoColorPalette()
+	original := NewMarker(p, "en")
+	before := original.Draft("small", "big", 1, "")
+	p.Marker = p.Marker.Transform(func(s string) string { return "changed-parent " + s })
+	if original.Draft("small", "big", 1, "") != before {
+		t.Fatal("source palette mutation changed marker")
+	}
+	copy := original
+	copy.p.Marker = copy.p.Marker.Transform(func(s string) string { return "changed-copy " + s })
+	if original.Draft("small", "big", 1, "") != before {
+		t.Fatal("copied marker mutation changed original")
+	}
+	if copy.Draft("small", "big", 1, "") == before {
+		t.Fatal("copy mutation was ignored")
+	}
+}
+func TestMarkerZeroValue(t *testing.T) {
+	var marker Marker
+	if marker.Done(1, 2) == "" {
+		t.Fatal("zero-value marker did not render")
+	}
+}
+
+var markerBenchmarkSink string
+
+func BenchmarkMarkerToolResultFull(b *testing.B) {
+	p := NoColorPalette()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		marker := NewMarker(p, "en")
+		markerBenchmarkSink = marker.ToolResultFull("read_file", "package main\nfunc main() {}", false)
+	}
+}

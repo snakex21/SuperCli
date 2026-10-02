@@ -47,8 +47,7 @@ func stripThinking(s string) string {
 // this separate block (SUPERCLI_KEEP_THINKING); the default discards it
 // from model context, while the original stream remains in the archive.
 func captureThinking(s string) (plain, captured string) {
-	low := strings.ToLower(s)
-	if !strings.Contains(low, "<think") && !strings.Contains(low, "<reasoning") && !strings.Contains(low, "<reflection") {
+	if !hasReasoningTagPrefix(s) {
 		return s, ""
 	}
 	var kept, taken strings.Builder
@@ -70,6 +69,48 @@ func captureThinking(s string) (plain, captured string) {
 		plain = strings.ReplaceAll(plain, "\n\n\n", "\n\n")
 	}
 	return strings.TrimSpace(plain), strings.TrimSpace(taken.String())
+}
+
+// hasReasoningTagPrefix only examines potential tag starts. Ordinary replies
+// and source code avoid a lowercase copy of the entire answer just to prove
+// that no reasoning marker is present.
+func hasReasoningTagPrefix(s string) bool {
+	for offset := 0; offset < len(s); {
+		at := strings.IndexByte(s[offset:], '<')
+		if at < 0 {
+			return false
+		}
+		offset += at
+		remaining := s[offset:]
+		if reasoningPrefixMatch(remaining, "<think") || reasoningPrefixMatch(remaining, "<reasoning") || reasoningPrefixMatch(remaining, "<reflection") {
+			return true
+		}
+		offset++
+	}
+	return false
+}
+
+func reasoningPrefixMatch(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for i := 1; i < len(prefix); i++ {
+		c := s[i]
+		if c >= 128 {
+			// Keep the old strings.ToLower probe semantics for Unicode letters
+			// such as dotted I or Kelvin K. EqualFold/regexp case folding is
+			// different. The longest prefix is 11 runes; 48 source bytes
+			// cover it even when every letter is a four-byte UTF-8 rune.
+			return strings.HasPrefix(strings.ToLower(s[:min(48, len(s))]), prefix)
+		}
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // stripThinkingFromMessage returns a copy of msg with reasoning blocks
