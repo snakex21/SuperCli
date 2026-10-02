@@ -47,28 +47,53 @@
     }
     var reader = body.getReader();
     var decoder = new TextDecoder();
-    var buffer = "";
+    var parts = [], pendingText = "", carry = "";
     var eventCount = 0;
     var terminalSeen = false;
 
-    function emit(frame) {
+    function appendPart(text) {
+      if (!text) return;
+      pendingText += text;
+      // Bound fragment overhead even when the network delivers tiny chunks.
+      if (pendingText.length >= 16384) { parts.push(pendingText); pendingText = ""; }
+    }
+    function emitPending() {
+      var frame = pendingText;
+      if (parts.length) {
+        if (pendingText) parts.push(pendingText);
+        frame = parts.join("");
+        parts = [];
+      }
+      pendingText = "";
       var event = decodeSSEFrame(frame);
       if (!event) return;
       eventCount++;
       if (event.type === "done" || event.type === "error") terminalSeen = true;
       onEvent(event);
     }
+    function consume(text, final) {
+      // Only the new chunk and a possible split delimiter need scanning.
+      // Retain at most three characters for the longest CRLF separator.
+      var scan = carry + text, start = 0;
+      var separator = /\r?\n\r?\n/g, match;
+      while ((match = separator.exec(scan))) {
+        appendPart(scan.slice(start, match.index));
+        emitPending();
+        start = separator.lastIndex;
+      }
+      var rest = scan.slice(start);
+      var kept = final ? 0 : Math.min(3, rest.length);
+      appendPart(rest.slice(0, rest.length - kept));
+      carry = kept ? rest.slice(-kept) : "";
+      if (final) emitPending();
+    }
 
     for (;;) {
       var chunk = await reader.read();
       if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      var frames = buffer.split(/\r?\n\r?\n/);
-      buffer = frames.pop() || "";
-      frames.forEach(emit);
+      consume(decoder.decode(chunk.value, { stream: true }), false);
     }
-    buffer += decoder.decode();
-    if (buffer.trim()) emit(buffer);
+    consume(decoder.decode(), true);
     // /api/chat promises a terminal frame. A clean HTTP EOF without one used
     // to look like success to consumers, which made an unfinished answer (or
     // an ask_user call) simply disappear when the UI unlocked the composer.

@@ -79,6 +79,18 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 				Schema:      t.Schema,
 			})
 		}
+		// The dormant catalog is not evidence a small model will discover OS
+		// capture. Expose its exact contract for this requested turn only,
+		// without changing persistent activation or ordinary prompt cost.
+		if l.screenshotForRun {
+			found := false
+			for _, def := range toolDefs {
+				found = found || def.Name == "send_screenshot"
+			}
+			if t, ok := l.registry.Get("send_screenshot"); ok && !found {
+				toolDefs = append(toolDefs, llm.ToolDef{Name: t.Name, Description: t.Description, Schema: t.Schema})
+			}
+		}
 		if len(toolDefs) == 0 {
 			return nil
 		}

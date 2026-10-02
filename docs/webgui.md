@@ -127,3 +127,56 @@ is removed on a clean exit. The automatically opened local window instead
 receives an HttpOnly session cookie through a loopback-only bootstrap, so the
 token is never placed in a URL or log. Credential reveal, full backup and import
 remain loopback-only even for an authenticated remote request.
+
+## On-demand site preview
+
+The topbar browser icon opens a site preview beside the conversation. Enter an
+HTTP(S) address (for example, localhost:5173), then use Enter to load it. The pane
+has reload, clear, open-in-your-browser, expand/restore and close actions. Clear
+removes the page and address while keeping an empty pane open; it also forgets
+the previous address and cancels pending navigation. Drag the left edge to resize
+the pane, or focus that edge and use Left/Right (Shift for larger steps), Home or
+End. Expand/restore keeps the same page loaded. On narrow windows it already
+fills the available width until closed; the composer draft is retained. Opening
+an empty pane sends no network request. Closing removes the iframe and its DOM.
+
+In the TUI, use Tab → Site preview. Edit or paste the address, then select Open
+preview or Open in your browser with the arrows/Enter. The built-in choice starts
+the sibling supercli-web executable in --preview mode. That mode serves only the
+viewer and URL actions: it does not create an agent engine, open the sessions
+database, scan providers, or load a model. Its profile/window state stays under
+supercli-data/site-preview (or the explicitly selected data directory). A missing
+GUI executable leaves the TUI active and offers a localized explanation.
+
+The viewer reuses the current renderer and adds no runtime dependency. All
+preview controls use the existing 27 language catalogs. An HTTP(S)-only shared
+URL normalizer handles localhost/IP addresses and prevents shell interpolation
+when opening the system browser. The latter is an explicit user action and uses
+the user's own browser/profile.
+
+Some sites disallow iframe embedding; use Open in your browser for those sites.
+This is a development preview, not a full browser with tabs or automated page
+inspection. Cross-origin navigation inside the preview cannot update its outer
+address field; reload/external-open use the entered address. The development
+server must already be running.
+
+Preview frames permit scripts, forms and HMR, but cannot navigate the parent or
+open popups. The application refuses framing its UI/API and rejects browser API
+requests from other origins. Existing same-origin MIME-checked PDF attachment
+frames remain supported.
+
+Standalone use:
+
+    supercli-web --preview http://localhost:5173
+    supercli-web --preview http://localhost:5173 --no-window --addr 127.0.0.1:8765
+
+The second command serves just the viewer for a manually chosen browser. Preview
+listeners are loopback-only.
+
+An ordinary HTTP(S) link click in the conversation offers the site preview or the default browser. Cancelling opens neither. The default-browser action uses the Windows association (including Opera GX); native launch failures now show the system diagnostic after the localized notice.
+
+The provider chooser uses the shared GUI/TUI/first-run catalog. Cline and Nous
+Portal presets pre-fill their OpenAI-compatible endpoints and explain that a key
+or inference token is needed. Their public model catalogs do not provide
+anonymous completion access. The selected description remains visible in the
+add-provider form. See [provider checks and catalog efficiency](evals/2026-10-02-provider-presets-and-catalog.md).

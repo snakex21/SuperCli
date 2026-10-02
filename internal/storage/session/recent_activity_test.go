@@ -152,3 +152,32 @@ func TestRecentSessionsRetainLegacyMessages(t *testing.T) {
 	}
 	assertQueryPlanHasNoTempSort(t, s, recentProjectQuery, "/project", 40)
 }
+
+func TestGeneratedTitleDoesNotChangeSessionActivity(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"older", "recent"} {
+		if err := s.EnsureSession(id, "/project", "model"); err != nil {
+			t.Fatal(err)
+		}
+		if err := NewWriter(s, id).AppendMessage(ctx, llm.Message{Role: llm.RoleUser, Content: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stamp := time.Now().UTC().Add(-48 * time.Hour).UnixNano()
+	if _, err := s.db.Exec("UPDATE sessions SET title='local title',updated_at=? WHERE id='older'", stamp); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.SetTitleIfCurrent("older", "local title", "Useful topic")
+	if err != nil || !updated {
+		t.Fatalf("title update=%v err=%v", updated, err)
+	}
+	got, err := s.Get("older")
+	if err != nil || got.UpdatedAt.UnixNano() != stamp || got.Title != "Useful topic" {
+		t.Fatalf("metadata changed activity: %+v %v", got, err)
+	}
+	rows, err := s.ListRecentByCwd(ctx, "/project", 2)
+	if err != nil || len(rows) != 2 || rows[0].ID != "recent" {
+		t.Fatalf("background metadata reordered chats: %+v %v", rows, err)
+	}
+}

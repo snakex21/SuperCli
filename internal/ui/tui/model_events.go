@@ -7,6 +7,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -17,12 +18,14 @@ import (
 func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	switch e := ev.(type) {
 	case agent.MessageEvent:
+		first := m.current == "" || m.reasoningOpen
 		m.closeReasoning()
 		m.appendStreamText(e.Text)
 		m.responseLen += len(e.Text)
-		m.refreshTranscript()
+		m.refreshStreamTranscript(first)
 		return m, m.waitForNextEvent()
 	case agent.ReasoningEvent:
+		first := m.current == "" || !m.reasoningOpen
 		if e.Text != "" {
 			if !m.reasoningOpen {
 				m.appendStreamText("<thinking>")
@@ -31,7 +34,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			m.appendStreamText(e.Text)
 			m.responseLen += len(e.Text)
 		}
-		m.refreshTranscript()
+		m.refreshStreamTranscript(first)
 		return m, m.waitForNextEvent()
 	case agent.ToolCallEvent:
 		m.flushCurrent()
@@ -43,6 +46,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.toolActivity.call(e.Name, e.Args)
 		line := m.marker.ToolCall(e.Name, e.Args)
 		m.appendLine(line)
+		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.ToolResultEvent:
 		name := m.toolNames[e.ID]
@@ -58,6 +62,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			m.chat.addToolResult(name, e.Output, "")
 			m.appendLineToTranscript(m.marker.ToolResultFull(name, e.Output, m.toolExpanded))
 		}
+		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.DoneEvent:
 		// Save response text before flush for token estimation.
@@ -85,6 +90,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.chat.addSystem(m.marker.DoneEst(in, out, estimated))
 		m.refreshRuntimeHUD()
 		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.5a658d3ae8"), in, out))
+		m.refreshTranscript()
 		return m, m.waitForRunClose()
 	case agent.ErrorEvent:
 		m.flushCurrent()
@@ -105,6 +111,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 		m.chat.addSystem(m.marker.Error(err))
 		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.b577809eab"), err))
+		m.refreshTranscript()
 		return m, m.waitForRunClose()
 	case agent.DraftUsedEvent:
 		line := m.marker.Draft(e.DraftModel, e.VerifierModel, e.Savings, e.Decision)
@@ -194,6 +201,7 @@ func (m *Model) refreshTranscript() {
 	m.viewport.SetContent(content)
 	m.renderedCurrent = m.current
 	m.renderedSpinner = spinnerView
+	m.streamPaintAt = time.Now()
 	if follow {
 		m.viewport.GotoBottom()
 	}

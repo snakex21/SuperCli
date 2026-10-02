@@ -132,7 +132,11 @@ func searchLimitedResult(text string, limit int, previews []*searchContext) Resu
 	if len(previews) > 0 && previews[0] != nil {
 		previews[0].limit = limit
 	}
-	return Result{Text: text + "\n" + searchLimitNotice(limit)}
+	notice := searchLimitNotice(limit)
+	if len(previews) > 0 && previews[0] != nil && previews[0].filesOnly {
+		notice = fmt.Sprintf("[search limit reached: %d matching files; results may be incomplete. Narrow query/path/include or raise max.]", limit)
+	}
+	return Result{Text: text + "\n" + notice}
 }
 
 // canDescend reports whether any descendant file could match. Unlike matches,

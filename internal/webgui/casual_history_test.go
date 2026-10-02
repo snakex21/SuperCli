@@ -52,7 +52,7 @@ func TestCasualHistoryStaysLightAcrossWebRequests(t *testing.T) {
 			notices = append(notices, ev.Text)
 		}
 	}
-	if err := eng.runStream(ctx, "cześć", "", "", emit); err != nil {
+	if err := eng.runStream(ctx, "cześć lubisz mnie?", "", "", emit); err != nil {
 		t.Fatal(err)
 	}
 	if sid == "" {
@@ -115,7 +115,7 @@ func TestCasualHistoryStaysLightAcrossWebRequests(t *testing.T) {
 	}
 	t.Logf("message-token estimates: first=%d second=%d", llm.EstimateTokens(p.requests[0]), llm.EstimateTokens(p.requests[1]))
 	notices = nil
-	if err := eng.runStream(ctx, "sprawdź pliki w repo", sid, "", emit); err != nil {
+	if err := eng.runStream(ctx, "cześć sprawdź pliki w repo", sid, "", emit); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.requests) != 3 {

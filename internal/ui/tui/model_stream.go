@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // appendStreamText owns one growable buffer and exposes immutable string
 // snapshots to the chat. Appending never overwrites a previously emitted prefix.
@@ -23,6 +26,7 @@ func (m *Model) resetCurrent() {
 	m.current = ""
 	m.currentBuffer = nil
 	m.chat.current = ""
+	m.chat.clearActiveSection()
 }
 
 func (m *Model) streamSpinner() string {
@@ -46,5 +50,16 @@ func (m *Model) resizeViewport() {
 	m.viewport.Height = m.viewportHeight()
 	if follow {
 		m.viewport.GotoBottom()
+	}
+}
+
+// Reuse the existing frame tick to finish dense bursts. Preparing at most twice
+// per terminal frame keeps latency low without formatting every provider delta.
+// Short answers, sparse fragments and the first text of each section are immediate.
+const streamFrameInterval = 16 * time.Millisecond
+
+func (m *Model) refreshStreamTranscript(first bool) {
+	if first || len(m.current) < 1024 || !m.busy || m.eventCh == nil || m.streamPaintAt.IsZero() || time.Since(m.streamPaintAt) >= streamFrameInterval/2 {
+		m.refreshTranscript()
 	}
 }

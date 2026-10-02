@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -218,6 +219,35 @@ func (r *CapabilityRegistry) All() []ModelInfo {
 	r.mu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// UniqueSuffixContextLength resolves an unambiguous positive context limit for
+// a short model id. It reads current metadata without copying or sorting the
+// full catalog; multiple providers with the same suffix remain unresolved.
+func (r *CapabilityRegistry) UniqueSuffixContextLength(id string) int {
+	if slash := strings.LastIndexByte(id, '/'); slash >= 0 {
+		id = id[slash+1:]
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	matched := 0
+	for _, info := range r.models {
+		if info.ContextLength <= 0 {
+			continue
+		}
+		candidate := info.ID
+		if slash := strings.LastIndexByte(candidate, '/'); slash >= 0 {
+			candidate = candidate[slash+1:]
+		}
+		if !strings.EqualFold(candidate, id) {
+			continue
+		}
+		if matched > 0 {
+			return 0
+		}
+		matched = info.ContextLength
+	}
+	return matched
 }
 
 // IsConfigured reports whether the model id is

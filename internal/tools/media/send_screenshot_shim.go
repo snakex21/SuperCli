@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -21,7 +22,9 @@ import (
 // directly so the tool stays in pure Go —
 // no cgo, no syscall imports, no platform-
 // specific code paths in the hot loop.
-func captureClipboardWindows() ([]byte, string, error) {
+func captureClipboardWindows(ctx context.Context) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, screenshotCaptureTimeout)
+	defer cancel()
 	// PowerShell one-liner. Stderr is captured
 	// so the user sees why a capture failed
 	// (e.g. "Clipboard is empty" vs. "no
@@ -38,12 +41,15 @@ $ms = New-Object System.IO.MemoryStream
 $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
 [System.Convert]::ToBase64String($ms.ToArray())
 `
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.CommandContext(ctx, "powershell", "-STA", "-NoProfile", "-NonInteractive", "-Command", script)
 	childproc.HideWindow(cmd)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = &captureBuffer{buffer: &stdout, remaining: DefaultMaxScreenshotBytes * 2, ctx: ctx}
+	cmd.Stderr = &captureBuffer{buffer: &stderr, remaining: 4096, ctx: ctx}
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
 		return nil, "", fmt.Errorf("powershell: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	b64 := strings.TrimSpace(stdout.String())
@@ -57,82 +63,95 @@ $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
 	return raw, "image/png", nil
 }
 
-// captureClipboardDarwin uses osascript to
-// read the clipboard as PNG. macOS's
-// NSPasteboard returns the image as raw
-// bytes when fetched via the as «class PNGf»
-// coercion. We hex-encode the bytes inside
-// osascript because osascript returns a list
-// of integers; the only sane way to ferry
-// arbitrary binary out of the AppleScript
-// bridge is via hex characters.
-func captureClipboardDarwin() ([]byte, string, error) {
-	const script = `
-try
-  set theData to the clipboard as «class PNGf»
-  set theBytes to theData
-  set theText to ""
-  repeat with b in theBytes
-    set theText to theText & (character ((b mod 16) + 1) of "0123456789abcdef")
-    set theText to theText & (character ((b div 16) + 1) of "0123456789abcdef")
-  end repeat
-  return theText
-on error errMsg
-  return "ERROR:" & errMsg
-end try
-`
-	cmd := exec.Command("osascript", "-e", script)
+// captureClipboardDarwin reads the clipboard PNG descriptor in source form.
+func captureClipboardDarwin(ctx context.Context) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, screenshotCaptureTimeout)
+	defer cancel()
+	// Source-form AppleScript serializes its data descriptor as
+	// «data PNGf<hex>». Do not reinterpret that descriptor as an integer list.
+	const script = `get the clipboard as «class PNGf»`
+	cmd := exec.CommandContext(ctx, "osascript", "-s", "s", "-e", script)
 	childproc.HideWindow(cmd)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	cmd.Stdout = &captureBuffer{buffer: &stdout, remaining: DefaultMaxScreenshotBytes * 2, ctx: ctx}
+	cmd.Stderr = &captureBuffer{buffer: &stderr, remaining: 4096, ctx: ctx}
+	err := cmd.Run()
+	out := stdout.Bytes()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
 		return nil, "", fmt.Errorf("osascript: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	s := strings.TrimSpace(string(out))
-	if strings.HasPrefix(s, "ERROR:") {
-		return nil, "", fmt.Errorf("osascript: %s", strings.TrimPrefix(s, "ERROR:"))
+	raw, err := decodeDarwinClipboardPNG(string(out))
+	if err != nil {
+		return nil, "", err
+	}
+	return raw, "image/png", nil
+}
+
+func decodeDarwinClipboardPNG(output string) ([]byte, error) {
+	s := strings.TrimSpace(output)
+	const prefix = "«data PNGf"
+	if !strings.HasPrefix(s, prefix) || !strings.HasSuffix(s, "»") {
+		return nil, fmt.Errorf("osascript did not return a PNG data descriptor")
+	}
+	s = strings.TrimSuffix(strings.TrimPrefix(s, prefix), "»")
+	if len(s) > DefaultMaxScreenshotBytes*2 {
+		return nil, fmt.Errorf("clipboard PNG exceeds limit")
 	}
 	raw, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, "", fmt.Errorf("decode hex: %w", err)
+		return nil, fmt.Errorf("decode clipboard PNG: %w", err)
 	}
-	return raw, "image/png", nil
+	if sniffMediaType(raw) != "image/png" {
+		return nil, fmt.Errorf("clipboard descriptor is not PNG")
+	}
+	return raw, nil
 }
 
 // captureClipboardLinux tries xclip first
 // (X11), then wl-paste (Wayland). Both write
 // raw image bytes to stdout when the format
 // is image/png.
-func captureClipboardLinux() ([]byte, string, error) {
-	if _, err := exec.LookPath("xclip"); err == nil {
-		cmd := exec.Command("xclip", "-selection", "clipboard", "-t", "image/png", "-o")
-		childproc.HideWindow(cmd)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err == nil {
-			raw := stdout.Bytes()
-			if len(raw) > 0 {
-				return raw, "image/png", nil
-			}
+func captureClipboardLinux(ctx context.Context) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, screenshotCaptureTimeout)
+	defer cancel()
+	return captureClipboardLinuxWith(ctx, exec.LookPath, func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return captureCommand(ctx, exec.CommandContext(ctx, name, args...), DefaultMaxScreenshotBytes)
+	})
+}
+
+func captureClipboardLinuxWith(ctx context.Context, lookPath func(string) (string, error), run func(context.Context, string, ...string) ([]byte, error)) ([]byte, string, error) {
+	var diagnostics []string
+	for _, helper := range []struct {
+		name string
+		args []string
+	}{
+		{"xclip", []string{"-selection", "clipboard", "-t", "image/png", "-o"}},
+		{"wl-paste", []string{"--type", "image/png"}},
+	} {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
 		}
-		// Fall through to wl-paste on xclip
-		// failure — could be a Wayland session.
+		path, err := lookPath(helper.name)
+		if err != nil {
+			continue
+		}
+		out, err := run(ctx, path, helper.args...)
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		if err == nil && len(out) > 0 {
+			return out, "image/png", nil
+		}
+		if err == nil {
+			err = fmt.Errorf("clipboard holds no image")
+		}
+		diagnostics = append(diagnostics, helper.name+": "+err.Error())
 	}
-	if _, err := exec.LookPath("wl-paste"); err == nil {
-		cmd := exec.Command("wl-paste", "--type", "image/png")
-		childproc.HideWindow(cmd)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err == nil {
-			raw := stdout.Bytes()
-			if len(raw) > 0 {
-				return raw, "image/png", nil
-			}
-		}
+	if len(diagnostics) > 0 {
+		return nil, "", fmt.Errorf("clipboard image unavailable: %s", strings.Join(diagnostics, "; "))
 	}
 	return nil, "", fmt.Errorf("send_screenshot: no clipboard tool available (install xclip or wl-paste)")
 }

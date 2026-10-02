@@ -340,7 +340,7 @@ func TestApplyVerification_PerToolOverride(t *testing.T) {
 	override := func(r Result) VerifyVerdict {
 		return VerifyVerdict{OK: false, Reason: "always fail"}
 	}
-	out := applyVerification(c, override)
+	out := ApplyVerification(c, override)
 	if out.Err == nil {
 		t.Error("expected Err to be set")
 	}
@@ -356,7 +356,7 @@ func TestApplyVerification_NoOverride_UsesDefault(t *testing.T) {
 		Args:   json.RawMessage(`{}`),
 		Result: Result{Text: ""},
 	}
-	out := applyVerification(c, nil)
+	out := ApplyVerification(c, nil)
 	if out.Err == nil {
 		t.Error("expected Err to be set on default verification fail")
 	}
@@ -373,7 +373,7 @@ func TestApplyVerification_PassThrough_KeepsImage(t *testing.T) {
 	override := func(r Result) VerifyVerdict {
 		return VerifyVerdict{OK: false, Reason: "claimed wrongly"}
 	}
-	out := applyVerification(c, override)
+	out := ApplyVerification(c, override)
 	if out.Image != img {
 		t.Error("image lost on verification failure")
 	}

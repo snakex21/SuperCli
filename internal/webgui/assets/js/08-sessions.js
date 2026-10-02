@@ -7,6 +7,7 @@ var sessionRuntimeRevision = 0;
 var sessionResumeSeq = 0;
 var sessionListSeq = 0;
 var sessionListAbortCtl = null;
+var sessionListSnapshot = null;
 
 function setSessionOpening(id) {
   $$("#session-list .side-item").forEach(function (item) {
@@ -58,6 +59,11 @@ async function loadSessions() {
     var rows = await j("/api/sessions?limit=40", { signal: controller.signal });
     if (stale()) return;
 	sessionByID = {}; (rows || []).forEach(function(s){sessionByID[s.id]=s;});
+    // Refreshing unchanged metadata should preserve rows, hover and keyboard
+    // focus. Minute/locale/selection changes still refresh the visible labels.
+    var snapshot = JSON.stringify([rows || [], activeSessionID, statsLocale(), Math.floor(Date.now() / 60000)]);
+    if (snapshot === sessionListSnapshot) return;
+    sessionListSnapshot = snapshot;
     list.innerHTML = "";
     if (!rows || !rows.length) {
       list.appendChild(i18nEl("div", "side-empty", "side.noSessions"));
@@ -138,6 +144,7 @@ async function loadSessions() {
     });
   } catch (e) {
     if (e.name === "AbortError" || stale()) return;
+    sessionListSnapshot = null;
     list.innerHTML = "";
     list.appendChild(i18nEl("div", "side-empty", "common.error"));
   } finally {

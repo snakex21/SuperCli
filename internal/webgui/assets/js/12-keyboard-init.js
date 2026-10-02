@@ -17,6 +17,7 @@ document.addEventListener("keydown", function (e) {
     if (!overlay.hidden) { closePanel(); return; }
     if (!$("#reasoning-menu").hidden) { toggleReasoningMenu(false); $("#reasoning-btn").focus(); return; }
     if (!palette.hidden) { togglePalette(false); return; }
+    if (sitePreviewController) { closeSitePreview(); return; }
     return;
   }
   var combo = comboOf(e);

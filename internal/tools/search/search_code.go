@@ -58,6 +58,7 @@ func (s *SearchCode) Spec() Tool {
 				"path":  {"type": "string", "description": "search root, default: cwd"},
                 "include": {"type": "string", "description": "glob relative to path: *.go, src/**/*.ts, *.{zig,go}; ** spans 0+ dirs"},
 				"max":   {"type": "integer", "description": "max results, default 50"},
+                "output_mode": {"type": "string", "enum": ["lines", "files"], "description": "files = matching paths only; max counts files"},
 				"context": {"type": "integer", "minimum": 0, "description": "surrounding lines, capped at 20; default auto for up to 3 hits, 0 = locations"}
 			}
 		}`,
@@ -66,17 +67,21 @@ func (s *SearchCode) Spec() Tool {
 }
 
 type searchCodeArgs struct {
-	Query   string `json:"query"`
-	Path    string `json:"path"`
-	Max     int    `json:"max"`
-	Context *int   `json:"context"`
-	Include string `json:"include"`
+	Query      string `json:"query"`
+	Path       string `json:"path"`
+	Max        int    `json:"max"`
+	Context    *int   `json:"context"`
+	Include    string `json:"include"`
+	OutputMode string `json:"output_mode"`
 }
 
 func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, error) {
 	var a searchCodeArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("search_code: bad args: %w", err)}, nil
+	}
+	if a.OutputMode != "" && a.OutputMode != "lines" && a.OutputMode != "files" {
+		return Result{Err: fmt.Errorf("search_code: output_mode must be lines or files")}, nil
 	}
 	if a.Query == "" && a.Include == "" {
 		return Result{Err: fmt.Errorf("search_code: provide query for content or include for file paths")}, nil
@@ -104,6 +109,10 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 	if a.Context != nil {
 		radius = *a.Context
 	}
+	filesOnly := a.Query != "" && a.OutputMode == "files"
+	if filesOnly {
+		radius = 0 // Content neighborhoods do not apply to matching-file results.
+	}
 	if radius < 0 {
 		return Result{Err: fmt.Errorf("search_code: context must be non-negative")}, nil
 	}
@@ -121,17 +130,20 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 		}
 		return s.findFiles(ctx, root, include, a.Max)
 	}
-	autoContext := a.Context == nil
+	autoContext := a.Context == nil && !filesOnly
 	if autoContext {
 		radius = 4
 	}
-	preview := &searchContext{radius: radius, include: include, query: a.Query}
+	preview := &searchContext{radius: radius, include: include, query: a.Query, filesOnly: filesOnly}
 	var result Result
 	rg := s.rgPath()
 	if rg == "" {
 		result, err = s.fallback(ctx, root, a.Query, a.Max, preview)
 	} else {
 		result, err = s.ripgrep(ctx, rg, root, a.Query, a.Max, preview)
+	}
+	if filesOnly {
+		return result, err
 	}
 	if err == nil {
 		result = s.previewSearchHits(result, preview, a.Query)
@@ -194,7 +206,17 @@ func (s *SearchCode) rgPath() string {
 }
 
 func (s *SearchCode) ripgrepCommand(ctx context.Context, rg, root, query string, max int, previews ...*searchContext) *exec.Cmd {
-	args := []string{"--no-heading", "--with-filename", "--color=never", "--line-number", "--max-count", fmt.Sprintf("%d", max)}
+	perFileMax := max
+	filesOnly := len(previews) > 0 && previews[0] != nil && previews[0].filesOnly
+	if filesOnly {
+		perFileMax = 1
+	}
+	args := []string{"--no-heading", "--with-filename", "--color=never", "--line-number", "--max-count", fmt.Sprintf("%d", perFileMax)}
+	if filesOnly {
+		// Keep text-search binary handling and unambiguous filename records.
+		// No matching content is needed, so bound long-line pipe output as well.
+		args = append(args, "--max-columns", "1")
+	}
 	if len(previews) > 0 && previews[0] != nil {
 		args = append(args, "--null")
 	}
@@ -250,6 +272,11 @@ func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max in
 	}
 
 	lines := make([]string, 0, min(max, 50))
+	filesOnly := len(previews) > 0 && previews[0] != nil && previews[0].filesOnly
+	var seenFiles map[string]bool
+	if filesOnly {
+		seenFiles = make(map[string]bool)
+	}
 	hitLimit := false
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -265,8 +292,16 @@ func (s *SearchCode) ripgrep(ctx context.Context, rg, root, query string, max in
 			if searchPathIsSkipped(root, path) || !searchFileIncluded(previews, root, path) {
 				continue
 			}
-			captureSearchHit(previews, path, number, content)
-			lines = append(lines, fmt.Sprintf("%s:%d:%s", s.displayPath(path), number, content))
+			if filesOnly {
+				if seenFiles[path] {
+					continue
+				}
+				seenFiles[path] = true
+				lines = append(lines, s.displayPath(path))
+			} else {
+				captureSearchHit(previews, path, number, content)
+				lines = append(lines, fmt.Sprintf("%s:%d:%s", s.displayPath(path), number, content))
+			}
 		} else {
 			if ripgrepPathIsSkipped(root, line) {
 				continue

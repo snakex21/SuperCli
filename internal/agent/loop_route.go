@@ -13,10 +13,14 @@ import (
 // Messages. Routing uses the raw prompt; the session store keeps that raw
 // prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
+	l.screenshotForRun = containsScreenshotReference(prompt)
 	// A1: the navigator is a full LLM call. It runs here, inside the
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
 	switch {
+	case l.screenshotForRun:
+		// Capture is an OS tool capability, not a conceptual chat question.
+		l.route = RouteCoordinator
 	case !l.navigate:
 		// Navigator off: everything is coordinator (safe default for
 		// scripted/worker use, which must keep the full tool context).
@@ -60,6 +64,16 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 			l.appendCurrentUserContext(hint)
 		}
 	}
+}
+
+func containsScreenshotReference(prompt string) bool {
+	p := strings.ToLower(prompt)
+	for _, marker := range []string{"screenshot", "screen capture", "screen grab", "zrzut ekranu", "zrzut pulpitu", "zrzut z ekranu", "zrzutu ekranu", "zrzutu pulpitu"} {
+		if strings.Contains(p, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // attachCoordinatorAddon keeps collection off light turns and uses the current

@@ -61,6 +61,10 @@ func (m Model) providerTemplateLabel(name string) string {
 		return "OpenCode Zen"
 	case "openrouter":
 		return "OpenRouter"
+	case "cline":
+		return "Cline"
+	case "nous":
+		return "Nous Portal"
 	default:
 		return name
 	}

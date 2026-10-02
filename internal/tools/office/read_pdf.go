@@ -71,12 +71,13 @@ func NewReadPdf(baseDir string, maxBytes int64) *ReadPdfTool {
 func (t *ReadPdfTool) Spec() Tool {
 	return Tool{
 		Name:        "read_pdf",
-		Description: "Read a PDF file and extract its text. Pure Go (ledongthuc/pdf, no cgo, no shell-out). Renders pages in reading order separated by '--- Page N ---' headers. Bounds: 256 MB on disk, 1000 pages, 4 MB output.",
+		Description: "Read PDF text with '--- Page N ---' headers. Select the first page with start_page and limit returned pages with max_pages. Read-only; 256 MB on disk, 4 MB output.",
 		Schema: `{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Path to the PDF file."},
-    "max_pages": {"type": "integer", "description": "Cap on pages to render (default 1000)."}
+    "start_page": {"type": "integer", "minimum": 1, "description": "First page, 1-based (default 1)."},
+    "max_pages": {"type": "integer", "description": "Maximum pages to return (default 1000)."}
   },
   "required": ["path"]
 }`,
@@ -91,8 +92,9 @@ func (t *ReadPdfTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		return Result{Err: err}, err
 	}
 	var params struct {
-		Path     string `json:"path"`
-		MaxPages int    `json:"max_pages"`
+		Path      string `json:"path"`
+		StartPage *int   `json:"start_page"`
+		MaxPages  int    `json:"max_pages"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return Result{Err: fmt.Errorf("read_pdf: bad args: %w", err)}, err
@@ -100,6 +102,14 @@ func (t *ReadPdfTool) Execute(ctx context.Context, args json.RawMessage) (Result
 	if params.Path == "" {
 		err := fmt.Errorf("read_pdf: path is required")
 		return Result{Err: err}, err
+	}
+	start := 1
+	if params.StartPage != nil {
+		start = *params.StartPage
+		if start < 1 {
+			err := fmt.Errorf("read_pdf: start_page must be >= 1")
+			return Result{Err: err}, err
+		}
 	}
 	maxP := params.MaxPages
 	if maxP <= 0 {
@@ -135,30 +145,48 @@ func (t *ReadPdfTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		return Result{Err: fmt.Errorf("read_pdf: parse %q: %w", full, err)}, err
 	}
 
-	text, err := t.renderPages(reader, maxP)
+	text, err := t.renderPages(ctx, reader, start, maxP)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_pdf: %w", err)}, err
 	}
 	return Result{Text: text}, nil
 }
 
-// renderPages walks the first n pages of the
+// renderPages walks the selected page range of the
 // PDF and renders their text. Pages are
 // separated by a "--- Page N ---" header so
 // the model can reference individual pages
 // in its answer.
-func (t *ReadPdfTool) renderPages(reader *pdf.Reader, maxPages int) (string, error) {
-	total := reader.NumPage()
-	if total > maxPages {
-		total = maxPages
+func (t *ReadPdfTool) renderPages(ctx context.Context, reader *pdf.Reader, startPage, maxPages int) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
+	total := reader.NumPage()
+	if startPage < 1 {
+		return "", fmt.Errorf("start_page must be >= 1")
+	}
+	if total == 0 && startPage == 1 {
+		return "", nil
+	}
+	if startPage > total {
+		return "", fmt.Errorf("start_page %d outside PDF page range 1-%d", startPage, total)
+	}
+	// Subtract first, so even a MaxInt request cannot overflow the endpoint.
+	count := min(maxPages, total-startPage+1)
+	if count <= 0 {
+		return "", nil
+	}
+	endPage := startPage + count - 1
 	var out strings.Builder
-	for i := 1; i <= total; i++ {
-		if err := ctxErr(); err != nil {
+	for i := startPage; i <= endPage; i++ {
+		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		page := reader.Page(i)
 		text, err := t.renderPage(page)
+		if canceled := ctx.Err(); canceled != nil {
+			return "", canceled
+		}
 		if err != nil {
 			// Don't fail the whole read for one
 			// bad page — log and continue.
@@ -169,6 +197,12 @@ func (t *ReadPdfTool) renderPages(reader *pdf.Reader, maxPages int) (string, err
 		}
 		fmt.Fprintf(&out, "--- Page %d ---\n", i)
 		out.WriteString(text)
+		if int64(out.Len()) > t.MaxOutputBytes {
+			return "", fmt.Errorf("rendered text exceeds %d bytes", t.MaxOutputBytes)
+		}
+	}
+	if startPage > 1 || endPage < total {
+		fmt.Fprintf(&out, "\n\n[Showing pages %d-%d of %d]", startPage, endPage, total)
 		if int64(out.Len()) > t.MaxOutputBytes {
 			return "", fmt.Errorf("rendered text exceeds %d bytes", t.MaxOutputBytes)
 		}
@@ -194,10 +228,3 @@ func (t *ReadPdfTool) renderPage(page pdf.Page) (string, error) {
 	}
 	return text, nil
 }
-
-// ctxErr is a placeholder for future context
-// propagation. Kept here so we have one
-// place to add ctx cancellation if we ever
-// thread it through to the ledongthuc/pdf
-// library.
-func ctxErr() error { return nil }

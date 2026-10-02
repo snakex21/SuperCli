@@ -255,6 +255,8 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 
 func (m Model) renderMenuContent() string {
 	switch m.menu.kind {
+	case menuPreview:
+		return m.renderPreviewMenu()
 	case menuUpdate:
 		return m.renderUpdateMenu()
 	case menuLanguage:

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -67,8 +68,9 @@ type Model struct {
 	dashboardFn func() DashboardSnapshot
 
 	// F25: theme and styled markers
-	palette Palette
-	marker  Marker
+	palette     Palette
+	renderCache *tuiRenderCache
+	marker      Marker
 
 	// Widgets
 	viewport viewport.Model
@@ -133,6 +135,8 @@ type Model struct {
 	toolRegistry     *tools.Registry
 	doctorReport     *doctor.Report
 	menu             interactiveMenu
+	previewURL       string
+	previewID        uint64
 	autocomp         autocomplete // autocomplete popup state
 	// providerStatuses caches async connectivity probe results for
 	// the /providers menu (key: provider name). The menu renders
@@ -179,6 +183,7 @@ type Model struct {
 	// The last painted inputs let timer ticks skip unchanged Markdown/layout.
 	renderedCurrent string
 	renderedSpinner string
+	streamPaintAt   time.Time
 
 	// responseLen tracks the total character count of the
 	// current assistant response. Used for chars/4 token
@@ -454,6 +459,7 @@ func New(opts Options) Model {
 		statusFn:          opts.StatusFn,
 		dashboardFn:       opts.DashboardFn,
 		palette:           p,
+		renderCache:       new(tuiRenderCache),
 		marker:            mkr,
 		extCh:             opts.ExtCh,
 		viewport:          vp,
@@ -726,6 +732,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleBusyInput(msg)
 		}
 		return m.handleKey(msg)
+
+	case previewPasteMsg:
+		return m.applyPreviewPaste(msg)
+
+	case previewOpenedMsg:
+		return m.applyPreviewOpened(msg)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd

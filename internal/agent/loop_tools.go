@@ -588,22 +588,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		Content:    modelContent,
 	}}
 	if res.Image != nil {
-		img := &llm.ImageRef{
-			MediaType: res.Image.MediaType,
-			Data:      base64.StdEncoding.EncodeToString(res.Image.Data),
-			Name:      "tool " + tc.Name,
-			Active:    true,
-		}
-		// Durable session writers externalize tool images to disk so history
-		// holds only a lightweight file reference. If storage is unavailable,
-		// keep the legacy inline representation rather than losing the image.
-		if ext, ok := l.writer.(imageExternalizer); ok {
-			if ref, err := ext.ExternalizeImage(ctx, res.Image.MediaType, res.Image.Data); err == nil {
-				ref.Name = img.Name
-				ref.Active = true
-				img = &ref
-			}
-		}
+		img := l.toolImageRef(ctx, tc.Name, res.Image)
 		l.enableSessionImageTool()
 		follow = append(follow, llm.Message{
 			Role: llm.RoleUser,
@@ -614,6 +599,27 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		})
 	}
 	return toolResult{followUps: follow, inert: res.Inert, observation: observeToolResult(tc, res)}
+}
+
+// toolImageRef keeps durable tool images out of history without first allocating
+// an inline base64 copy that would immediately be discarded. Failed storage or
+// an incomplete returned reference retains the original inline representation.
+func (l *Loop) toolImageRef(ctx context.Context, toolName string, image *tools.ImageContent) *llm.ImageRef {
+	name := "tool " + toolName
+	if ext, ok := l.writer.(imageExternalizer); ok {
+		if ref, err := ext.ExternalizeImage(ctx, image.MediaType, image.Data); err == nil &&
+			(ref.URL != "" || (ref.MediaType != "" && (ref.Path != "" || ref.Data != ""))) {
+			ref.Name = name
+			ref.Active = true
+			return &ref
+		}
+	}
+	return &llm.ImageRef{
+		MediaType: image.MediaType,
+		Data:      base64.StdEncoding.EncodeToString(image.Data),
+		Name:      name,
+		Active:    true,
+	}
 }
 
 // logToolFailure classifies one failed tool call and appends it to

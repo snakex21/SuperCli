@@ -225,7 +225,7 @@ func ApplyCachedRates(home string) bool {
 	if len(entries) == 0 {
 		return false
 	}
-	pushRatesToCredits(entries)
+	ApplyRates(entries)
 	return true
 }
 
@@ -241,7 +241,7 @@ func (f *Fetcher) FetchAndUpdate(existing []llm.ModelInfo) []llm.ModelInfo {
 	// Save cache.
 	_ = SaveCache(f.home, entries)
 	// Push rates into credits package for CostFor/StatusBar.
-	pushRatesToCredits(entries)
+	ApplyRates(entries)
 	// Convert to ModelInfo and merge.
 	fresh := make([]llm.ModelInfo, 0, len(entries))
 	for _, e := range entries {
@@ -257,9 +257,10 @@ func (f *Fetcher) FetchAndUpdate(existing []llm.ModelInfo) []llm.ModelInfo {
 	return llm.MergeCatalog(existing, fresh)
 }
 
-// pushRatesToCredits converts PriceEntry (per-1M) into
-// credits.Rate (per-1k) and sets them on the credits package.
-func pushRatesToCredits(entries []PriceEntry) {
+// ApplyRates installs already-loaded pricing entries without reading the cache
+// again. Callers choose freshness before passing per-million-token prices; the
+// credits package stores their per-thousand-token equivalents.
+func ApplyRates(entries []PriceEntry) {
 	rates := make(map[string]credits.Rate, len(entries))
 	providerRates := make(map[string]credits.Rate)
 	for _, e := range entries {

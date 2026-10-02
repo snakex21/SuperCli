@@ -1,6 +1,7 @@
 package search_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -63,6 +64,11 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("indexed=%v/%s/limit=%d", indexed, tc.query, tc.limit), func(t *testing.T) {
 				s := commandDiscoveryFixture(t, indexed)
+				registeredSchemas := make(map[string]string)
+				for _, name := range s.Registry.Names() {
+					tool, _ := s.Registry.Get(name)
+					registeredSchemas[name] = tool.Schema
+				}
 				args, _ := json.Marshal(map[string]any{"query": tc.query, "limit": tc.limit})
 				result, err := s.Spec().Fn(context.Background(), args)
 				if err != nil || result.Err != nil {
@@ -77,9 +83,15 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 				var names []string
 				for _, hit := range response.Matches {
 					names = append(names, hit.Name)
-					tool, _ := s.Registry.Get(hit.Name)
-					if !s.Registry.IsActive(hit.Name) || tool.Schema != hit.Schema {
-						t.Fatal("returned tool lost activation or schema")
+					if !s.Registry.IsActive(hit.Name) {
+						t.Fatal("returned tool lost activation")
+					}
+					var compact bytes.Buffer
+					if err := json.Compact(&compact, []byte(registeredSchemas[hit.Name])); err != nil {
+						t.Fatalf("fixture schema for %s: %v", hit.Name, err)
+					}
+					if hit.Schema != compact.String() {
+						t.Fatal("returned schema is not the compact discovery copy")
 					}
 				}
 				slices.Sort(names)
@@ -88,6 +100,10 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 					t.Fatalf("matches=%v want=%v", names, tc.want)
 				}
 				for _, name := range s.Registry.Names() {
+					tool, _ := s.Registry.Get(name)
+					if tool.Schema != registeredSchemas[name] {
+						t.Fatalf("discovery changed registered schema: %s", name)
+					}
 					if s.Registry.IsActive(name) != slices.Contains(tc.want, name) {
 						t.Fatalf("unrequested activation: %s", name)
 					}

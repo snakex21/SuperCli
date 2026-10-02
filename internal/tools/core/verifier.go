@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -104,7 +103,8 @@ func verifyFileWrite(c Check) VerifyVerdict {
 		// Tool already failed; verification is moot.
 		return VerifyVerdict{OK: true}
 	}
-	path, ok := extractPath(c.Args)
+	args := decodeVerificationArgs(c.Args)
+	path, ok := extractPath(args)
 	if !ok {
 		// No path in args; we cannot verify, so pass.
 		return VerifyVerdict{OK: true}
@@ -120,7 +120,7 @@ func verifyFileWrite(c Check) VerifyVerdict {
 		// is useful evidence, not a failed mutation requiring another edit.
 		expectedEmpty := c.Result.EmptyFileExpected
 		if strings.EqualFold(c.Tool, "write_file") {
-			if content, present := extractStringArg(c.Args, "content"); present && content == "" {
+			if content, present := extractStringArg(args, "content"); present && content == "" {
 				expectedEmpty = true // compatibility for older/custom write tools
 			}
 		}
@@ -128,7 +128,7 @@ func verifyFileWrite(c Check) VerifyVerdict {
 			return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: file %s is empty", path)}
 		}
 	}
-	if want, ok := extractExpectedContent(c.Args); ok && want != "" {
+	if want, ok := extractExpectedContent(args); ok && want != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return VerifyVerdict{OK: false, Reason: fmt.Sprintf("verification failed: cannot read %s: %v", path, err)}
@@ -184,7 +184,7 @@ func verifyRead(c Check) VerifyVerdict {
 		// Reading an existing zero-byte file is a valid, useful result. The
 		// empty response describes the file faithfully and must not be shown as
 		// a failed tool call in the chat.
-		if path, ok := extractPath(c.Args); ok {
+		if path, ok := extractPath(decodeVerificationArgs(c.Args)); ok {
 			info, err := os.Stat(resolveForVerify(c.BaseDir, path))
 			if err == nil && info.Mode().IsRegular() && info.Size() == 0 {
 				return VerifyVerdict{OK: true}
@@ -206,56 +206,41 @@ func resolveForVerify(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// extractPath pulls the path from common arg names.
-func extractPath(args json.RawMessage) (string, bool) {
+// decodeVerificationArgs parses once for the shared path/content/expectation
+// checks. Large write or patch payloads must not be decoded again for each key.
+// A map retains exact key matching and the existing duplicate-key semantics.
+func decodeVerificationArgs(args json.RawMessage) map[string]any {
 	if len(args) == 0 {
-		return "", false
+		return nil
 	}
-	var m map[string]any
-	if err := json.Unmarshal(args, &m); err != nil {
-		return "", false
+	var object map[string]any
+	if json.Unmarshal(args, &object) != nil {
+		return nil
 	}
-	for _, k := range []string{"path", "file", "destination", "dest", "filepath"} {
-		if v, ok := m[k]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				return s, true
-			}
+	return object
+}
+
+// extractPath pulls the path from common arg names.
+func extractPath(args map[string]any) (string, bool) {
+	for _, key := range []string{"path", "file", "destination", "dest", "filepath"} {
+		if value, ok := args[key].(string); ok && value != "" {
+			return value, true
 		}
 	}
 	return "", false
 }
 
-func extractStringArg(args json.RawMessage, key string) (string, bool) {
-	if len(args) == 0 {
-		return "", false
-	}
-	var m map[string]any
-	if err := json.Unmarshal(args, &m); err != nil {
-		return "", false
-	}
-	v, ok := m[key]
-	if !ok {
-		return "", false
-	}
-	s, ok := v.(string)
-	return s, ok
+func extractStringArg(args map[string]any, key string) (string, bool) {
+	value, ok := args[key].(string)
+	return value, ok
 }
 
 // extractExpectedContent returns the expected_content /
 // must_contain / contains field from args, if any.
-func extractExpectedContent(args json.RawMessage) (string, bool) {
-	if len(args) == 0 {
-		return "", false
-	}
-	var m map[string]any
-	if err := json.Unmarshal(args, &m); err != nil {
-		return "", false
-	}
-	for _, k := range []string{"expected_content", "must_contain", "contains", "expected"} {
-		if v, ok := m[k]; ok {
-			if s, ok := v.(string); ok {
-				return s, true
-			}
+func extractExpectedContent(args map[string]any) (string, bool) {
+	for _, key := range []string{"expected_content", "must_contain", "contains", "expected"} {
+		if value, ok := args[key].(string); ok {
+			return value, true
 		}
 	}
 	return "", false
@@ -289,13 +274,6 @@ func ApplyVerification(c Check, override VerifyFn) Result {
 	return c.Result
 }
 
-// applyVerification is the package-private alias kept for
-// tests in this file. New callers should use
-// ApplyVerification.
-func applyVerification(c Check, override VerifyFn) Result {
-	return ApplyVerification(c, override)
-}
-
 func rewriteResultForFailure(orig Result, reason string) Result {
 	body := "[verification failed] " + reason
 	if orig.Text != "" {
@@ -312,8 +290,3 @@ func rewriteResultForFailure(orig Result, reason string) Result {
 	}
 	return Result{Text: body, Err: fmt.Errorf("%s", reason)}
 }
-
-// ensureContext here is unused but kept as a doc anchor for
-// future context-aware verifiers. (Removed: builds warning.)
-var _ = context.Background
-var _ = filepath.Separator

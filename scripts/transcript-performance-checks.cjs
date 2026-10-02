@@ -20,8 +20,13 @@ function transcriptChecks({baseline}) {
         check(JSON.stringify(positions(node)) === JSON.stringify(positions(box)), 'Paragraph last-child semantics: ' + JSON.stringify(text));
       }
       const samples = [
+        '<thinking>Thought</thinking>\n- first\n- second\n- third',
+        '<thinking>Thought</thinking>\n| A | B |\n| --- | --- |\n| one | two |',
         '# Heading\n\nAlpha **bold** and [link](https://example.com).\n\n- first\n- second\n\n> quote\n> next\n\nTail',
         '| A | B |\n| --- | --- |\n| one | two |\n\nAfter',
+        '| A | B |\n| :--- | ---: |\n| one **bold** | two |\n| third | fourth |\nAfter table',
+        '- first **bold**\n+ second item\n* third item\n1. different list\n\nEnd',
+        '1. first\n2) second\n3. third\n- switches type\nTail',
         'before\n\n```js\nconst a = "<tag>";\n\nconsole.log(a);\n```\n\nAfter',
         '```\n  spaces\n\n```\ntext```x```last',
         '<thinking>One\n\nTwo **bold**\n\n```txt\ncode\n```</thinking>\nAnswer\n\nMore',
@@ -51,6 +56,30 @@ function transcriptChecks({baseline}) {
         check(normalized(node) === expected(node._raw), 'Recovery snapshot parity');
         node.remove();
       }
+      // Check native HTML parsing and keep completed rows across marker transitions.
+      for (const source of ['| A | B |\n| --- | --- |\n| first | row |\n', '- first item\n- second item\n']) {
+        const growing = addAssistantMsg(); growing._raw = source; renderAssistant(growing);
+        const row = growing.querySelector(source[0] === '|' ? 'tbody tr' : 'li');
+        for (const chunk of (source[0] === '|' ? '| next | row |\n' : '- next item\n')) {
+          growing._raw += chunk; renderAssistant(growing);
+          check(growing.querySelector(source[0] === '|' ? 'tbody tr' : 'li') === row, 'Completed row identity retained');
+          check(normalized(growing) === expected(growing._raw), 'Growing row prefix parity');
+          prefixes++;
+        }
+        growing.remove();
+      }
+
+      const paragraph = addAssistantMsg();
+      paragraph._raw = 'Stable prose'; renderAssistant(paragraph);
+      const p = paragraph.querySelector('p'), textNode = p.firstChild;
+      for (const piece of [' & <escaped> ', 'emoji 😀 ', '**bold** ', 'plus [link](https://example.com)']) {
+        paragraph._raw += piece; renderAssistant(paragraph);
+        check(paragraph.querySelector('p') === p, 'Growing paragraph identity');
+        check(normalized(paragraph) === expected(paragraph._raw), 'Growing paragraph formatting');
+        if (piece.indexOf('**') < 0 && piece.indexOf('[link]') < 0) check(p.firstChild === textNode, 'Plain text node identity');
+        prefixes++;
+      }
+      paragraph.remove();
       const folded = addAssistantMsg();
       folded._history = true;
       folded._raw = '<thinking>' + ('Paragraph **bold**.\n\n'.repeat(2000)) + '</thinking>Final answer';

@@ -145,24 +145,9 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	if p.Type == config.ProviderAnthropic {
 		ids, err = DiscoverModelIDs(ctx, p)
 	} else if freeOnlyProvider(p) {
-		// Public OpenCode/Kilo catalogs contain paid entries as well. Their
-		// metadata (Kilo isFree / zero pricing, OpenCode's explicit free IDs) is
-		// the authority; downloading every ID and guessing later leaked hundreds
-		// of unusable models into the picker.
-		ids, err = DiscoverModelIDs(ctx, p)
-		if err == nil {
-			if all, listErr := llm.ListProviderModelInfos(ctx, p.BaseURL, apiKey); listErr == nil {
-				allowed := make(map[string]struct{}, len(ids))
-				for _, id := range ids {
-					allowed[id] = struct{}{}
-				}
-				for _, model := range all {
-					if _, ok := allowed[model.ID]; ok {
-						discovered = append(discovered, model)
-					}
-				}
-			}
-		}
+		// Keep the free inventory and capabilities on one fresh server response.
+		// This avoids a second fetch and metadata retained from an older scan.
+		ids, discovered, err = llm.ListFreeProviderCatalog(ctx, p.BaseURL, apiKey)
 	} else {
 		discovered, err = llm.ListProviderModelInfos(ctx, p.BaseURL, apiKey)
 		for _, model := range discovered {

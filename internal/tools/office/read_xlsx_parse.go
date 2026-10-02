@@ -4,8 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -262,4 +265,176 @@ func IsXlsx(path string) bool {
 		}
 	}
 	return false
+}
+
+var errXlsxEntryNotFound = errors.New("xlsx zip entry not found")
+
+// readXlsxZipEntry shares one archive reader for workbook metadata and data,
+// retaining both declared-size and runtime bounds for every entry.
+func readXlsxZipEntry(zr *zip.Reader, name string, maxBytes int64) ([]byte, error) {
+	var target *zip.File
+	for _, f := range zr.File {
+		if f.Name == name {
+			target = f
+			break
+		}
+	}
+	if target == nil {
+		return nil, fmt.Errorf("entry %q not found: %w", name, errXlsxEntryNotFound)
+	}
+	if target.UncompressedSize64 > uint64(maxBytes) {
+		return nil, fmt.Errorf("entry %q is too large: %d bytes (declared) > %d cap", name, target.UncompressedSize64, maxBytes)
+	}
+	rc, err := target.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open entry: %w", err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read entry: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("entry %q exceeded %d bytes during read", name, maxBytes)
+	}
+	return data, nil
+}
+
+type xlsxWorkbookSheet struct {
+	Name           string `xml:"name,attr"`
+	RelationshipID string `xml:"id,attr"`
+}
+
+// resolveSheetEntry keeps the existing default and physical-number selection.
+// Logical names use workbook relationships; legacy direct entry names still
+// work when no logical name matches, without masking malformed metadata.
+func (t *ReadXlsxTool) resolveSheetEntry(zr *zip.Reader, sheet string) (string, error) {
+	if sheet == "" {
+		return "xl/worksheets/sheet1.xml", nil
+	}
+	if n, err := strconv.Atoi(sheet); err == nil {
+		if n < 1 {
+			return "", fmt.Errorf("sheet index must be >= 1, got %d", n)
+		}
+		return fmt.Sprintf("xl/worksheets/sheet%d.xml", n), nil
+	}
+	if strings.ContainsAny(sheet, `/\`) {
+		return "", fmt.Errorf("invalid sheet name %q", sheet)
+	}
+	var workbook struct {
+		XMLName xml.Name            `xml:"workbook"`
+		Sheets  []xlsxWorkbookSheet `xml:"sheets>sheet"`
+	}
+	data, err := readXlsxZipEntry(zr, "xl/workbook.xml", t.MaxXlsxBytes)
+	if err != nil && !errors.Is(err, errXlsxEntryNotFound) {
+		return "", err
+	}
+	if err == nil && len(bytes.TrimSpace(data)) != 0 {
+		if err := xml.Unmarshal(data, &workbook); err != nil {
+			return "", fmt.Errorf("parse workbook.xml: %w", err)
+		}
+	}
+	for _, s := range workbook.Sheets {
+		if s.Name != sheet {
+			continue
+		}
+		if s.RelationshipID == "" {
+			return "", fmt.Errorf("sheet %q has no worksheet relationship", sheet)
+		}
+		data, err := readXlsxZipEntry(zr, "xl/_rels/workbook.xml.rels", t.MaxXlsxBytes)
+		if err != nil {
+			return "", fmt.Errorf("sheet %q relationship %q: %w", sheet, s.RelationshipID, err)
+		}
+		var rels struct {
+			XMLName xml.Name `xml:"Relationships"`
+			Items   []struct {
+				ID         string `xml:"Id,attr"`
+				Type       string `xml:"Type,attr"`
+				Target     string `xml:"Target,attr"`
+				TargetMode string `xml:"TargetMode,attr"`
+			} `xml:"Relationship"`
+		}
+		if err := xml.Unmarshal(data, &rels); err != nil {
+			return "", fmt.Errorf("parse workbook.xml.rels: %w", err)
+		}
+		for _, rel := range rels.Items {
+			if rel.ID != s.RelationshipID {
+				continue
+			}
+			if strings.EqualFold(rel.TargetMode, "External") {
+				return "", fmt.Errorf("sheet %q uses an external worksheet relationship", sheet)
+			}
+			if rel.TargetMode != "" && !strings.EqualFold(rel.TargetMode, "Internal") {
+				return "", fmt.Errorf("sheet %q has invalid worksheet relationship mode %q", sheet, rel.TargetMode)
+			}
+			if !strings.HasSuffix(rel.Type, "/worksheet") {
+				return "", fmt.Errorf("sheet %q relationship is not a worksheet", sheet)
+			}
+			entry, err := xlsxWorksheetTarget(rel.Target)
+			if err != nil {
+				return "", fmt.Errorf("sheet %q: %w", sheet, err)
+			}
+			return entry, nil
+		}
+		return "", fmt.Errorf("sheet %q worksheet relationship %q not found", sheet, s.RelationshipID)
+	}
+	// Older tools accepted physical entry names, including Sheet1.xml. Preserve
+	// existing archives of this form while prioritizing genuine workbook names.
+	legacy := "xl/worksheets/" + strings.TrimSuffix(sheet, ".xml") + ".xml"
+	for _, f := range zr.File {
+		if f.Name == legacy {
+			return legacy, nil
+		}
+	}
+	return "", fmt.Errorf("sheet %q not found; available sheets: %s", sheet, xlsxAvailableSheetNames(workbook.Sheets))
+}
+
+func xlsxWorksheetTarget(target string) (string, error) {
+	u, err := url.Parse(target)
+	if err != nil || u.IsAbs() || u.Host != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return "", fmt.Errorf("invalid worksheet target %q", target)
+	}
+	if u.Path == "" || strings.ContainsAny(u.Path, `\`) || strings.HasSuffix(u.Path, "/") {
+		return "", fmt.Errorf("invalid worksheet target %q", target)
+	}
+	var entry string
+	if strings.HasPrefix(u.Path, "/") {
+		entry = path.Clean(strings.TrimPrefix(u.Path, "/"))
+	} else {
+		entry = path.Clean(path.Join("xl", u.Path))
+	}
+	if entry == "." || entry == ".." || strings.HasPrefix(entry, "../") || path.IsAbs(entry) {
+		return "", fmt.Errorf("invalid worksheet target %q", target)
+	}
+	return entry, nil
+}
+
+func xlsxAvailableSheetNames(sheets []xlsxWorkbookSheet) string {
+	if len(sheets) == 0 {
+		return "(none listed in workbook metadata)"
+	}
+	const maxNames = 8
+	names := make([]string, 0, maxNames)
+	for i, s := range sheets {
+		if i == maxNames {
+			break
+		}
+		name, count, end := s.Name, 0, len(s.Name)
+		for offset := range name {
+			if count == 64 {
+				end = offset
+				break
+			}
+			count++
+		}
+		if end < len(name) {
+			name = name[:end] + "…"
+		}
+		names = append(names, strconv.Quote(name))
+	}
+	result := strings.Join(names, ", ")
+	if len(sheets) > len(names) {
+		result += fmt.Sprintf(" (and %d more)", len(sheets)-len(names))
+	}
+	return result
 }

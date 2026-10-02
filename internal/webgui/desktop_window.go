@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"supercli/internal/system/childproc"
+	"supercli/internal/system/browser"
 )
 
 // OpenAppWindow tries to open url in a chromeless "app mode" window
@@ -45,17 +45,7 @@ func OpenAppWindow(url, profileDir string) (*exec.Cmd, error) {
 // tab. This uses the browser's own profile; portable GUI startup must not
 // invoke it automatically.
 func OpenInBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-		childproc.HideWindow(cmd)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Start()
+	return browser.Open(url)
 }
 
 // prepareAppWindowProfile must succeed before any browser process is started.

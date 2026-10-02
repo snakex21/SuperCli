@@ -1,0 +1,48 @@
+{
+  "elapsed_ms": 7519,
+  "idle_cpu_ms_over_4s": 15,
+  "process_tree": {
+    "WorkingSet": 113971200,
+    "Private": 344047616,
+    "PrivateWorkingSet": 59375616,
+    "CPUMS": 733
+  },
+  "result": {
+    "errors": [],
+    "checks": {
+      "echo": true,
+      "model": true,
+      "streaming": true,
+      "cancel": true,
+      "providers": true,
+      "appearance": true,
+      "language": true,
+      "runtimeRestore": true,
+      "history": true,
+      "submit": true,
+      "layout": true
+    },
+    "viewport": {
+      "width": 1200,
+      "height": 820.6666870117188
+    },
+    "stream": [
+      {
+        "event": {
+          "type": "message",
+          "text": "Zażółć 🦊"
+        },
+        "ms": 91
+      },
+      {
+        "event": {
+          "type": "done"
+        },
+        "ms": 442
+      }
+    ],
+    "submitEvents": 2,
+    "passed": true
+  },
+  "variant": "Sciter Direct2D"
+}

@@ -48,7 +48,7 @@ func (m *Model) waitForNextEvent() tea.Cmd {
 // (token-by-token streaming) instead of all at once on DoneEvent.
 func streamFlushCmd() tea.Cmd {
 	return func() tea.Msg {
-		time.Sleep(16 * time.Millisecond)
+		time.Sleep(streamFrameInterval)
 		return streamFlushMsg{}
 	}
 }

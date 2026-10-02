@@ -13,6 +13,7 @@ var transcriptLiveAppend = false;
 var transcriptFollowTail = true;
 var smartScrollFrame = null;
 var smartScrollForced = false;
+var smartScrollPending = false;
 
 function appendStream(node) {
   if (transcriptLiveAppend && node && node.classList) node.classList.add("transcript-live");
@@ -30,22 +31,29 @@ function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clie
 stage.addEventListener("scroll", function () {
   transcriptFollowTail = nearBottom();
 }, { passive: true });
+function flushSmartScroll() {
+  if (smartScrollFrame !== null) {
+    cancelAnimationFrame(smartScrollFrame);
+    smartScrollFrame = null;
+  }
+  if (!smartScrollPending) return;
+  // Read geometry after the frame's text writes. Reading before a paced paint
+  // followed the preceding line height and made the transcript jump next frame.
+  if (!streamAppendTarget && (smartScrollForced || transcriptFollowTail)) stage.scrollTop = stage.scrollHeight;
+  smartScrollPending = false;
+  smartScrollForced = false;
+}
 function smartScroll(force) {
   if (streamAppendTarget) return;
   if (force) {
     transcriptFollowTail = true;
     smartScrollForced = true;
   }
-  if ((!transcriptFollowTail && !smartScrollForced) || smartScrollFrame !== null) return;
-  // A burst of SSE/tool events used to force a full scrollHeight layout for
-  // every event. On a long NestCafe transcript that can mean dozens of large
-  // WebView2 layouts per second. One tail update per paint is visually
-  // identical while leaving the main thread available for input and Markdown.
-  smartScrollFrame = requestAnimationFrame(function () {
-    smartScrollFrame = null;
-    if (smartScrollForced || transcriptFollowTail) stage.scrollTop = stage.scrollHeight;
-    smartScrollForced = false;
-  });
+  if (!transcriptFollowTail && !smartScrollForced) return;
+  smartScrollPending = true;
+  if (smartScrollFrame !== null) return;
+  // Batch tool/SSE bursts, and let a pending paced paint own the scroll read.
+  smartScrollFrame = requestAnimationFrame(flushSmartScroll);
 }
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
 function showWelcome() { if (welcome) welcome.style.display = ""; }
@@ -194,7 +202,7 @@ function markdownStream(target) {
   var end = document.createComment("markdown-end");
   target.appendChild(start);
   target.appendChild(end);
-  return {start: start, end: end, source: "", committed: 0, tailNodes: [], code: null, codeText: ""};
+  return {start: start, end: end, source: "", committed: 0, tailNodes: [], lineBlock: null, code: null, codeText: ""};
 }
 
 function appendMarkdownHTML(state, html) {
@@ -208,6 +216,8 @@ function appendMarkdownHTML(state, html) {
 function clearMarkdownTail(state) {
   state.tailNodes.forEach(function (node) { node.remove(); });
   state.tailNodes = [];
+  state.lineBlock = null;
+  state.paragraph = null;
   state.code = null;
 }
 
@@ -219,6 +229,143 @@ function removeMarkdownSection(state) {
     if (node === state.end) break;
     node = next;
   }
+}
+
+
+// Keep the unfinished paragraph in place. Ordinary prose updates its existing
+// text node; formatted prose uses the existing renderer and parses only a new HTML
+// suffix when the already rendered inline markup remains unchanged.
+function updateMarkdownParagraph(state, text) {
+  // HTML normalizes CR and NUL; let its parser handle these rare inputs.
+  var value = text.trim(), plain = text.indexOf("\n") < 0 &&
+    !/[\r\x00\x60*_~\[\]]/.test(value) &&
+    !/^(?:#{1,6}\s|>(?:\s|$)|[-+]\s|\d+[.)]\s|-{3,})/.test(value);
+  // A plain single-line suffix preserves completed inline markup. Delimiters,
+  // block starts and end-sensitive italic markers keep the full-render path.
+  var body, block = state.paragraph;
+  var suffix = block && block.source ? value.slice(block.source.length) : "";
+  var extendsInline = !plain && block && block.html !== null && block.source &&
+    value.indexOf(block.source) === 0 && text.indexOf("\n") < 0 &&
+    text.indexOf("\r") < 0 && text.indexOf("\x00") < 0 &&
+    !/[\r\x00\x60*_~\[\]()]/.test(suffix) && !/[*_]$/.test(block.source) &&
+    !/^(?:#{1,6}\s|>(?:\s|$)|[-*+]\s|\d+[.)]\s|-{3,})/.test(value);
+  if (extendsInline) body = block.html + escHtml(suffix);
+  else if (!plain) {
+    var html = renderMarkdownish(text);
+    if (html.indexOf("<p>") !== 0 || html.indexOf("</p>") !== html.length - 4) return false;
+    body = html.slice(3, -4);
+  } else if (!value) return false;
+  if (!block) {
+    clearMarkdownTail(state);
+    var root = el("p");
+    state.end.parentNode.insertBefore(root, state.end);
+    state.tailNodes = [root];
+    block = state.paragraph = {node: root, text: null, html: ""};
+  }
+  if (plain) {
+    if (!block.text) {
+      block.node.textContent = "";
+      block.text = document.createTextNode("");
+      block.node.appendChild(block.text);
+    }
+    if (value !== block.text.data) block.text.data = value;
+    block.html = null;
+  } else {
+    var previous = block.html === null ? escHtml(block.text.data) : block.html;
+    if (body !== previous) {
+      if (body.indexOf(previous) === 0) {
+        var template = document.createElement("template");
+        template.innerHTML = body.slice(previous.length);
+        var first = template.content.firstChild, last = block.node.lastChild;
+        if (first && last && first.nodeType === 3 && last.nodeType === 3) {
+          last.data += first.data;
+          first.remove();
+        }
+        block.node.appendChild(template.content);
+      } else block.node.innerHTML = body;
+    }
+    block.text = null;
+    block.html = body;
+  }
+  block.source = value;
+  return true;
+}
+
+// A complete table/list row cannot change when another row arrives. Retain
+// those nodes and parse only the open row, falling back for mixed block syntax.
+function updateMarkdownLineBlock(state, text) {
+  var firstEnd = text.indexOf("\n"), first = (firstEnd < 0 ? text : text.slice(0, firstEnd)).trim();
+  var kind, header = "", start = 0, align, width, listPattern;
+  var secondEnd = firstEnd < 0 ? -1 : text.indexOf("\n", firstEnd + 1);
+  if (secondEnd >= 0 && first.charAt(0) === "|" &&
+      /^\|[\s\-:|]+\|$/.test(text.slice(firstEnd + 1, secondEnd).trim())) {
+    kind = "table";
+    start = secondEnd + 1;
+    header = text.slice(0, start);
+    align = markdownTableAlign(text.slice(firstEnd + 1, secondEnd).trim());
+    width = markdownTableCells(first).length;
+  } else if (/^[-*+]\s+(.+)/.test(first)) {
+    kind = "ul"; listPattern = /^[-*+]\s+(.+)/;
+  } else if (/^\d+[.)]\s+(.+)/.test(first)) {
+    kind = "ol"; listPattern = /^\d+[.)]\s+(.+)/;
+  } else return false;
+  var block = state.lineBlock;
+  var same = block && block.kind === kind && block.header === header && text.indexOf(block.source) === 0;
+  var lines = text.slice(same ? block.complete : start).split("\n"), pending = lines.pop();
+  function valid(line) {
+    line = line.trim();
+    return kind === "table" ? line.indexOf("|") >= 0 : listPattern.test(line);
+  }
+  // A partial line can still become a paragraph, a different list, or a fence.
+  // Check before touching retained DOM so the original renderer stays authoritative.
+  if (!lines.every(valid)) return false;
+  if (!same) {
+    clearMarkdownTail(state);
+    var root = el(kind === "table" ? "div" : kind, kind === "table" ? "md-table-wrap" : "");
+    var parent = root;
+    if (kind === "table") {
+      var table = el("table"), head = el("thead");
+      head.innerHTML = '<tr>' + markdownTableCellHTML(first, align, width, true) + '</tr>';
+      table.appendChild(head);
+      parent = el("tbody"); table.appendChild(parent); root.appendChild(table);
+    }
+    state.end.parentNode.insertBefore(root, state.end);
+    state.tailNodes = [root];
+    block = state.lineBlock = {kind: kind, header: header, source: "", complete: start,
+      parent: parent, pending: null, pendingHTML: null, after: [], afterHTML: ""};
+  }
+  function row(line) {
+    var html = kind === "table" ? markdownTableCellHTML(line.trim(), align, width, false) :
+      mdInline(escHtml(line.trim().match(listPattern)[1]));
+    if (!block.pending) block.pending = el(kind === "table" ? "tr" : "li");
+    if (html !== block.pendingHTML) { block.pending.innerHTML = html; block.pendingHTML = html; }
+    return block.pending;
+  }
+  var added = document.createDocumentFragment();
+  lines.forEach(function (line) {
+    var node = row(line);
+    if (node.parentNode !== block.parent) added.appendChild(node);
+    block.pending = null; block.pendingHTML = null;
+    block.complete += line.length + 1;
+  });
+  block.parent.appendChild(added);
+  // While a new marker is arriving (e.g. "- " without its item yet), the
+  // full renderer shows a small paragraph after the finished list. Keep that
+  // temporary block separate instead of rebuilding every completed item.
+  var pendingValid = valid(pending);
+  var afterHTML = pendingValid ? "" : renderMarkdownish(pending);
+  if (afterHTML !== block.afterHTML) {
+    block.after.forEach(function (node) { node.remove(); });
+    block.after = afterHTML ? appendMarkdownHTML(state, afterHTML) : [];
+    block.afterHTML = afterHTML;
+    state.tailNodes = [state.tailNodes[0]].concat(block.after);
+  }
+  if (pendingValid) {
+    var node = row(pending);
+    if (node.parentNode !== block.parent) block.parent.appendChild(node);
+  }
+  block.source = text;
+  return true;
 }
 
 function updateMarkdownStream(state, text) {
@@ -235,6 +382,8 @@ function updateMarkdownStream(state, text) {
     state.source = "";
     state.committed = 0;
     state.tailNodes = [];
+    state.lineBlock = null;
+    state.paragraph = null;
     state.code = null;
   }
   state.fullRender = fullRender;
@@ -251,6 +400,12 @@ function updateMarkdownStream(state, text) {
     state.committed += end;
     tail = tail.slice(end);
   }
+  // Native reasoning closes with a newline before prose. Completed leading
+  // blank lines are inert Markdown; skip them so list/table/code fast paths
+  // also apply to an answer immediately following the thought.
+  var leading = /^(?:[^\S\n]*\n)+/.exec(tail);
+  if (leading) { state.committed += leading[0].length; tail = tail.slice(leading[0].length); }
+  if (updateMarkdownLineBlock(state, tail)) { state.source = text; return; }
   // A large unfinished fenced code block is plain text. Append its new bytes
   // without rebuilding the pre/code elements on every display frame.
   var header = /^```([^\n]*)\n/.exec(tail);
@@ -275,7 +430,7 @@ function updateMarkdownStream(state, text) {
     if (code.indexOf(state.codeText) === 0) state.code.appendData(code.slice(state.codeText.length));
     else state.code.data = code;
     state.codeText = code;
-  } else {
+  } else if (!updateMarkdownParagraph(state, tail)) {
     clearMarkdownTail(state);
     state.tailNodes = appendMarkdownHTML(state, renderMarkdownish(tail));
   }
@@ -316,11 +471,33 @@ function assistantPart(part, history) {
   return state;
 }
 
+// Checkpoints belong to one active node. A direct replacement or recovery
+// snapshot uses the full parser; only our exact append helper advances source.
+function assistantPartsForNode(node) {
+  var source = String(node._raw || "");
+  if (node._history || node._sealed) {
+    node._partsCache = null;
+    return assistantTextParts(source);
+  }
+  var checkpoint = node._partsCache;
+  if (!checkpoint || checkpoint.source !== source) {
+    checkpoint = node._partsCache = {source: source, offset: 0, parts: [], renderedThinking: false};
+  }
+  return assistantTextParts(source, checkpoint);
+}
+
+function appendAssistantSource(node, text) {
+  var checkpoint = node._partsCache, previous = node._raw;
+  node._raw += text;
+  if (checkpoint && checkpoint.source === previous) checkpoint.source = node._raw;
+  else node._partsCache = null;
+}
+
 function renderAssistant(node) {
   // The original source is authoritative. A renderer failure must not stop
   // SSE delivery, and recovery may replace a source rather than append to it.
   try {
-    var parts = assistantTextParts(node._raw);
+    var parts = node._displayParts || assistantPartsForNode(node);
     if (!node._assistantParts) {
       node.textContent = "";
       node._assistantParts = [];
@@ -343,51 +520,148 @@ function renderAssistant(node) {
   } catch (renderErr) {
     node.textContent = node._raw;
     node._assistantParts = null;
+    node._displayParts = null;
+    node._pacedParts = null;
+    node._partsCache = null;
     if (window.console && console.error) console.error("renderAssistant", renderErr);
   }
 }
 
-// Show the first fragment immediately, then coalesce the real received bytes
-// once per display frame. No length-based delay or artificial typing queue.
-function scheduleAssistantRender(node) {
-  if (!node || node._renderTimer !== null) return;
-  if (!node._firstPainted && node._raw) {
-    node._firstPainted = true;
-    renderAssistant(node);
-    smartScroll();
+// Providers can send reasoning and prose in irregular packets. Pace only the
+// received text of each section, retaining the complete raw transcript. A new
+// answer section paints immediately even if its thought has pending display
+// frames. Small packets use recent arrival gaps (at most 320 ms plus a paint);
+// fast streams need only a few frames. Large/expensive updates drain directly.
+function paintAssistant(node, now, withinFrame) {
+  var start = performance.now();
+  renderAssistant(node);
+  node._renderCost = performance.now() - start;
+  node._lastPaintAt = now;
+  if (withinFrame) { smartScrollPending = true; flushSmartScroll(); }
+  else smartScroll();
+}
+
+function assistantPrefixEnd(text, end) {
+  // Parts already exclude reasoning tags. Keep UTF-16 pairs intact.
+  if (end > 0 && end < text.length && /[\uD800-\uDBFF]/.test(text.charAt(end - 1))) end++;
+  return Math.min(end, text.length);
+}
+
+function paceAssistantPart(state, source, now, expensive) {
+  if (source === state.source) return;
+  var gap = now - state.lastAt;
+  state.lastAt = now;
+  if (gap >= 1) {
+    state.gaps.push(Math.min(600, gap));
+    if (state.gaps.length > 6) state.gaps.shift();
+  }
+  state.source = source;
+  if (expensive || source.length - state.text.length >= 2048) {
+    state.text = source;
+    state.queue.length = 0;
     return;
+  }
+  var cadence = state.gaps.length ? Math.max.apply(null, state.gaps) : 40;
+  var until = now + Math.max(24, Math.min(320, cadence + Math.max(8, cadence * .08)));
+  if (!state.queue.length) { state.from = state.text.length; state.at = now; }
+  var last = state.queue[state.queue.length - 1];
+  if (last && until <= last.until) last.length = source.length;
+  else state.queue.push({length: source.length, until: until});
+}
+
+function queueAssistantPaint(node) {
+  if (node._renderTimer != null) return;
+  if (smartScrollFrame !== null) {
+    cancelAnimationFrame(smartScrollFrame);
+    smartScrollFrame = null;
   }
   node._renderTimer = requestAnimationFrame(function () {
     node._renderTimer = null;
-    if (node.isConnected === false) return;
-    renderAssistant(node);
-    smartScroll();
+    if (node.isConnected === false) { node._pacedParts = null; node._displayParts = null; node._partsCache = null; flushSmartScroll(); return; }
+    var now = performance.now(), states = node._pacedParts || [], changed = false;
+    if (!states.some(function (state) { return state.queue.length; })) { flushSmartScroll(); return; }
+    // Native rAF follows the display refresh rate. Let cheap formatting use every
+    // frame; budget its measured work to roughly 1/8 of the interval, capped at
+    // the previous 16 ms cadence for moderately expensive updates.
+    var paintInterval = Math.min(16, (node._renderCost || 0) * 8);
+    if (now - node._lastPaintAt < paintInterval) { flushSmartScroll(); queueAssistantPaint(node); return; }
+    states.forEach(function (state) {
+      if (!state.queue.length) return;
+      var end = state.source.length;
+      if (node._renderCost > 6 || end - state.text.length >= 2048) state.queue.length = 0;
+      else {
+        while (state.queue.length && state.queue[0].until <= now) {
+          var finished = state.queue.shift();
+          state.from = finished.length;
+          state.at = finished.until;
+        }
+        if (state.queue.length) {
+          var progress = Math.max(0, (now - state.at) / (state.queue[0].until - state.at));
+          end = assistantPrefixEnd(state.source, Math.ceil(state.from + (state.queue[0].length - state.from) * progress));
+        }
+      }
+      if (end > state.text.length) { state.text = state.source.slice(0, end); changed = true; }
+    });
+    if (changed) paintAssistant(node, now, true);
+    else flushSmartScroll();
+    if ((node._pacedParts || []).some(function (state) { return state.queue.length; })) queueAssistantPaint(node);
   });
+}
+
+function scheduleAssistantRender(node) {
+  if (!node) return;
+  var now = performance.now(), parts = assistantPartsForNode(node), changed = false;
+  var states = node._pacedParts || (node._pacedParts = []);
+  if (states.length !== parts.length) changed = true;
+  parts.forEach(function (part, index) {
+    var state = states[index];
+    if (!state || state.kind !== part.kind || (part.text !== state.source && part.text.indexOf(state.source) !== 0)) {
+      states[index] = {kind: part.kind, source: part.text, text: part.text, queue: [], gaps: [], lastAt: now};
+      changed = true;
+    } else {
+      var displayed = state.text;
+      paceAssistantPart(state, part.text, now, node._renderCost > 6);
+      if (displayed !== state.text) changed = true;
+    }
+  });
+  states.length = parts.length;
+  // A new section is a semantic boundary: finish the preceding section before
+  // showing it. Otherwise delayed thought characters keep moving the answer
+  // after it has already appeared, despite the provider having finished thinking.
+  states.slice(0, -1).forEach(function (state) {
+    if (!state.queue.length) return;
+    state.text = state.source;
+    state.queue.length = 0;
+    changed = true;
+  });
+  node._displayParts = states;
+  if (changed) { node._firstPainted = true; paintAssistant(node, now); }
+  if ((node._pacedParts || []).some(function (state) { return state.queue.length; })) queueAssistantPaint(node);
+  else if (node._renderTimer != null) { cancelAnimationFrame(node._renderTimer); node._renderTimer = null; }
 }
 
 function flushAssistantRender(node) {
   if (!node) return;
-  if (node._renderTimer !== null) {
-    cancelAnimationFrame(node._renderTimer);
-    node._renderTimer = null;
-  }
-  renderAssistant(node);
-  smartScroll();
+  if (node._renderTimer != null) { cancelAnimationFrame(node._renderTimer); node._renderTimer = null; }
+  node._pacedParts = null;
+  node._displayParts = null;
+  paintAssistant(node, performance.now());
+  node._partsCache = null;
 }
 
 function closeAssistantReasoning(node) {
   if (!node || !node._reasoningOpen) return;
-  node._raw += "</thinking>\n";
+  appendAssistantSource(node, "</thinking>\n");
   node._reasoningOpen = false;
 }
 
 function appendAssistantReasoning(node, text) {
   if (!node) return;
   if (!node._reasoningOpen) {
-    node._raw += "<thinking>";
+    appendAssistantSource(node, "<thinking>");
     node._reasoningOpen = true;
   }
-  node._raw += text || "";
+  appendAssistantSource(node, text || "");
   scheduleAssistantRender(node);
 }
 
@@ -599,20 +873,32 @@ function toolChangeStats(name, text) {
 
 // Replayed tool rows start folded. Build their potentially large file/diff
 // viewers only when expanded, while the transcript keeps the original text.
-function appendHistoryToolPayload(row, body, args, text, name) {
+// Rendering callbacks belong to their row; clearing a transcript also releases
+// their raw payload. Expanded rows render immediately, folded rows wait for use.
+function renderToolPayloadWhenOpen(row, render) {
   var rendered = false;
   function renderIfOpen() {
     if (!row.open || rendered) return;
     rendered = true;
     row.removeEventListener("toggle", renderIfOpen);
+    render();
+  }
+  row.addEventListener("toggle", renderIfOpen);
+  renderIfOpen();
+  return function () {
+    rendered = true;
+    row.removeEventListener("toggle", renderIfOpen);
+  };
+}
+
+function appendHistoryToolPayload(row, body, args, text, name) {
+  renderToolPayloadWhenOpen(row, function () {
     if (args && !FILE_READ_TOOLS[name]) {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
       body.appendChild(el("pre", "", prettyJSON(args)));
     }
     appendToolPayload(body, t("tool.output"), text || "", name, false);
-  }
-  row.addEventListener("toggle", renderIfOpen);
-  renderIfOpen();
+  });
 }
 
 function appendToolPayload(body, label, text, name, isError) {
@@ -622,6 +908,24 @@ function appendToolPayload(body, label, text, name, isError) {
     return;
   }
   body.appendChild(el("div", "lbl", label));
+  if ((name === "send_screenshot" || name === "show_media") && !isError) {
+    try {
+      var media = JSON.parse(raw);
+      var mediaPath = media && media.path;
+      // Tool previews use only recognized local file results. Keep their raw
+      // text below, including paths and whether the model received an image.
+      if (typeof mediaPath === "string" && !/[\x00-\x1f]/.test(mediaPath) &&
+          /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(mediaPath) &&
+          !media.save_error && !media.error &&
+          (name !== "send_screenshot" || media.type === "image") &&
+          media.type === attachmentMimeKind(media.media_type) &&
+          ["image", "video", "audio"].indexOf(media.type) >= 0) {
+        var previewPath = name === "send_screenshot" && typeof media.preview_path === "string" &&
+          /^snapshot:[A-Za-z0-9._-]+$/.test(media.preview_path) ? media.preview_path : "";
+        renderSentAttachments(body, [mediaPath], media.type, previewPath);
+      }
+    } catch (e) {}
+  }
   if (name === "ctx_execute" && !isError) {
     try {
       var execution = JSON.parse(raw);
@@ -706,7 +1010,10 @@ function taskMetrics(note) {
   return parts.join(" · ") || summary.replace(new RegExp("^" + agent + "\\s+" + status + "\\s*[·-]?\\s*", "i"), "");
 }
 
-function renderTaskResult(row, note, elapsed, prompt, err) {
+function renderTaskResult(row, note, elapsed, prompt, err, history) {
+  // A replacement result must release its previous unopened report callback.
+  if (row._cancelTaskReport) row._cancelTaskReport();
+  row._cancelTaskReport = null;
   var activity = row._activity;
   row.classList.add("task-row");
   row.classList.remove("running", "done", "failed");
@@ -743,8 +1050,15 @@ function renderTaskResult(row, note, elapsed, prompt, err) {
   if (note.result) {
     row._body.appendChild(i18nEl("div", "lbl", "task.report"));
     var report = el("div", "task-report msg-assistant");
-    report.innerHTML = renderText(note.result);
     row._body.appendChild(report);
+    // Task rows start folded too; keep large reports out of the hidden DOM.
+    var source = note.result;
+    var cancel = renderToolPayloadWhenOpen(row, function () {
+      row._cancelTaskReport = null;
+      report.innerHTML = renderText(source);
+      if (history) report.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+    });
+    if (!row.open) row._cancelTaskReport = cancel;
   }
 }
 
@@ -760,8 +1074,7 @@ function addHistoryTask(note) {
   row._body = el("div", "tbody");
   row.appendChild(row._body);
   if (note.id) { row._taskID = note.id; workerRows[note.id] = row; }
-  renderTaskResult(row, note, null, "", note.status === "failed");
-  row.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+  renderTaskResult(row, note, null, "", note.status === "failed", true);
   appendStream(row);
   return row;
 }
@@ -844,7 +1157,11 @@ function addToolResult(id, output, err) {
   if (changes.diff || mutationLabel) row.classList.add("has-changes");
   if (err) row._stat.classList.add("err");
   setToolResultStatus(row, ms, err, changes);
-  appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err);
+  // Live results start folded too. Large read/diff viewers should not occupy
+  // the WebView DOM until the user actually expands this result.
+  renderToolPayloadWhenOpen(row, function () {
+    appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err);
+  });
   smartScroll();
 }
 

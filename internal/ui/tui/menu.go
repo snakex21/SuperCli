@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/llm"
@@ -41,6 +42,7 @@ const (
 	menuAttachments
 	menuLanguage
 	menuUpdate
+	menuPreview
 )
 
 // CheckpointPreview is intentionally presentation-sized metadata. It contains
@@ -81,6 +83,8 @@ type interactiveMenu struct {
 	attachmentDir     string
 	attachmentEntries []attachmentEntry
 	attachmentLoading bool
+	previewInput      textinput.Model
+	previewID         uint64
 }
 
 func (m Model) openModelsMenu() (tea.Model, tea.Cmd) {

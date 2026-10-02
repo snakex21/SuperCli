@@ -39,10 +39,23 @@ function attachmentExtension(path) {
   return dot >= 0 ? name.slice(dot) : "";
 }
 function previewableAttachment(path) {
-  return [".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"].indexOf(attachmentExtension(path)) >= 0;
+  return attachmentExtension(path) === ".pdf" || !!attachmentMediaType(path);
 }
 function imageAttachment(path) {
   return [".png", ".jpg", ".jpeg", ".webp", ".gif"].indexOf(attachmentExtension(path)) >= 0;
+}
+function attachmentMediaType(path) {
+  if (imageAttachment(path)) return "image";
+  var ext = attachmentExtension(path);
+  if ([".mp4", ".webm"].indexOf(ext) >= 0) return "video";
+  if ([".mp3", ".wav", ".ogg"].indexOf(ext) >= 0) return "audio";
+  return "";
+}
+function attachmentMimeKind(mime) {
+  if (["image/png", "image/jpeg", "image/gif", "image/webp"].indexOf(mime) >= 0) return "image";
+  if (["video/mp4", "video/webm"].indexOf(mime) >= 0) return "video";
+  if (["audio/mpeg", "audio/wave", "audio/wav", "audio/x-wav", "audio/ogg", "application/ogg"].indexOf(mime) >= 0) return "audio";
+  return "";
 }
 function attachmentPreviewSource(path) {
   return "/api/attachment/preview?path=" + encodeURIComponent(path);
@@ -96,22 +109,30 @@ function forgetSentAttachments(sessionID, fromSeq) {
   });
   saveSentAttachmentIndex();
 }
-function renderSentAttachments(node, paths) {
-  var images = (paths || []).filter(imageAttachment);
-  if (!node || !images.length) return;
-  var gallery = el("div", "sent-attachment-gallery" + (images.length === 1 ? " single" : ""));
-  images.forEach(function (path) {
+function renderSentAttachments(node, paths, mediaKind, previewPath) {
+  var override = ["image", "video", "audio"].indexOf(mediaKind) >= 0 ? mediaKind : "";
+  var mediaPaths = (paths || []).filter(function (path) { return !!(override || attachmentMediaType(path)); });
+  if (!node || !mediaPaths.length) return;
+  var gallery = el("div", "sent-attachment-gallery" + (mediaPaths.length === 1 ? " single" : ""));
+  mediaPaths.forEach(function (path) {
     var open = el("button", "sent-attachment-preview");
     open.type = "button";
     open.title = t("attachment.preview") + ": " + attachmentName(path);
     open.setAttribute("aria-label", open.title);
-    open.addEventListener("click", function () { openAttachmentPreview(path); });
-    var image = document.createElement("img");
-    image.src = attachmentPreviewSource(path);
-    image.alt = attachmentName(path);
-    image.loading = "lazy";
-    image.addEventListener("error", function () { open.remove(); });
-    open.appendChild(image);
+    var kind = override || attachmentMediaType(path);
+    open.addEventListener("click", function () { openAttachmentPreview(path, kind, previewPath); });
+    if (kind === "image") {
+      var image = document.createElement("img");
+      image.src = attachmentPreviewSource(previewPath || path);
+      image.alt = attachmentName(path);
+      image.loading = "lazy";
+      image.addEventListener("error", function () { open.remove(); });
+      open.appendChild(image);
+    } else {
+      // No media element or source is created before an explicit click.
+      open.classList.add("sent-media-attachment");
+      open.appendChild(el("span", "attachment-name", attachmentName(path)));
+    }
     gallery.appendChild(open);
   });
   node.appendChild(gallery);
@@ -138,26 +159,43 @@ async function uploadAttachmentFiles(files, successKey) {
   addAttachmentPaths(result.paths || []);
   toast(t(successKey) + " · " + (result.paths || []).length);
 }
+function clearAttachmentPreviewContent() {
+  var content = $("#attachment-preview-content");
+  content.querySelectorAll("video, audio").forEach(function (media) {
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+  });
+  content.replaceChildren();
+}
 function closeAttachmentPreview() {
   var dialog = $("#attachment-preview-dialog");
-  $("#attachment-preview-content").replaceChildren();
+  clearAttachmentPreviewContent();
   if (dialog.open) dialog.close();
 }
-function openAttachmentPreview(path) {
-  if (!previewableAttachment(path)) {
+function openAttachmentPreview(path, mediaKind, previewPath) {
+  var override = ["image", "video", "audio"].indexOf(mediaKind) >= 0 ? mediaKind : "";
+  var kind = override || attachmentMediaType(path);
+  if (!kind && !previewableAttachment(path)) {
     toast(t("attachment.previewUnavailable"));
     return;
   }
   var dialog = $("#attachment-preview-dialog");
   var content = $("#attachment-preview-content");
-  content.replaceChildren();
+  clearAttachmentPreviewContent();
   $("#attachment-preview-title").textContent = attachmentName(path);
-  var source = attachmentPreviewSource(path);
-  if (attachmentExtension(path) === ".pdf") {
+  var source = attachmentPreviewSource(previewPath || path);
+  if (!override && attachmentExtension(path) === ".pdf") {
     var frame = document.createElement("iframe");
     frame.src = source + "#view=FitH";
     frame.title = attachmentName(path);
     content.appendChild(frame);
+  } else if (kind === "video" || kind === "audio") {
+    var media = document.createElement(kind);
+    media.controls = true;
+    media.preload = "none";
+    media.src = source;
+    content.appendChild(media);
   } else {
     var image = document.createElement("img");
     image.src = source;
@@ -988,7 +1026,7 @@ function handleEvent(ev, current) {
     case "message":
       if (!current || current._sealed) current = addAssistantMsg();
       closeAssistantReasoning(current);
-      current._raw += ev.text;
+      appendAssistantSource(current, ev.text);
       scheduleAssistantRender(current);
       return current;
     case "reasoning":
@@ -1199,6 +1237,7 @@ $("#interrupt-btn").addEventListener("click", function () {
 });
 $("#attach-btn").addEventListener("click", pickAttachments);
 $("#attachment-preview-close").addEventListener("click", closeAttachmentPreview);
+$("#attachment-preview-dialog").addEventListener("close", clearAttachmentPreviewContent);
 $("#attachment-preview-dialog").addEventListener("click", function (event) {
   if (event.target === this) closeAttachmentPreview();
 });

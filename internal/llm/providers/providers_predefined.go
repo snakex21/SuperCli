@@ -15,10 +15,11 @@ import (
 )
 
 type PredefinedProvider struct {
-	Name    string
-	Type    string
-	BaseURL string
-	Desc    string
+	Name        string
+	Type        string
+	BaseURL     string
+	Desc        string
+	DisplayName string `json:"DisplayName,omitempty"`
 }
 
 // PredefinedProviders returns a list of well-known providers
@@ -36,6 +37,8 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "openrouter", Type: "openai", BaseURL: "https://openrouter.ai/api/v1", Desc: "Meta-router to 200+ models"},
 		{Name: "xai", Type: "openai", BaseURL: "https://api.x.ai/v1", Desc: "Grok-3, Grok-2"},
 		{Name: "huggingface", Type: "openai", BaseURL: "https://api-inference.huggingface.co/v1", Desc: "HF Inference API"},
+		{Name: "cline", DisplayName: "Cline", Type: "openai", BaseURL: "https://api.cline.bot/api/v1", Desc: "Cline (API key required)"},
+		{Name: "nous", DisplayName: "Nous Portal", Type: "openai", BaseURL: "https://inference-api.nousresearch.com/v1", Desc: "Nous Portal (API key or inference token required)"},
 		{Name: "kilo", Type: "openai", BaseURL: "https://api.kilo.ai/api/openrouter", Desc: "Kilo AI (free models, no key)"},
 		{Name: "zen", Type: "openai", BaseURL: "https://opencode.ai/zen/v1", Desc: "OpenCode Zen (free models, no key)"},
 		{Name: "opencode-go", Type: "openai", BaseURL: "https://opencode.ai/zen/go/v1", Desc: "OpenCode Go (subscription $5-10/mo)"},

@@ -1,13 +1,14 @@
 package office
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"supercli/internal/tools/fileops"
@@ -28,9 +29,9 @@ const (
 // ReadXlsxTool extracts the text content of a
 // .xlsx file. A .xlsx is a zip archive whose
 // main content is xl/sharedStrings.xml (string
-// table) and xl/worksheets/sheet1.xml (cell
-// data); the tool opens the zip, reads those
-// two entries, and walks the XML to emit a
+// table) and worksheet XML (cell data); named
+// sheets are resolved through workbook metadata.
+// The tool opens the zip once and emits a
 // markdown-style table per row.
 //
 // The implementation is pure stdlib
@@ -40,8 +41,8 @@ const (
 // .NET runtime, no temporary files.
 //
 // Safety: zip-slip protection comes for free
-// because we ONLY read known entry names and
-// never call Open on anything else. The size
+// because worksheet targets stay inside the
+// archive and no entries are extracted. The size
 // cap is enforced before reading each entry's
 // body.
 type ReadXlsxTool struct {
@@ -74,12 +75,12 @@ func NewReadXlsx(baseDir string, maxBytes int64) *ReadXlsxTool {
 func (t *ReadXlsxTool) Spec() Tool {
 	return Tool{
 		Name:        "read_xlsx",
-		Description: "Read an Excel .xlsx file and extract its text. Pure Go: opens the .xlsx as a zip, parses xl/sharedStrings.xml and xl/worksheets/sheet1.xml, and emits a markdown-style pipe-separated table (one row per line, cells separated by ' | '). Defaults to sheet1; pass 'sheet' to pick another sheet (sheet2, sheet3, ...) by number.",
+		Description: "Read an Excel .xlsx file as a pipe-separated table, one row per line. Pick a worksheet by its workbook name or physical sheet number; defaults to sheet1.",
 		Schema: `{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Path to the .xlsx file."},
-    "sheet": {"type": "string", "description": "Sheet name or 1-based index (e.g. 'Sheet1' or '1'). Defaults to sheet1."},
+    "sheet": {"type": "string", "description": "Workbook sheet name or physical sheet number (e.g. 'Sales 2026' or '1' for sheet1.xml). Defaults to sheet1."},
     "max_cells": {"type": "integer", "description": "Cap on cells to render (default 200000)."}
   },
   "required": ["path"]
@@ -129,31 +130,26 @@ func (t *ReadXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 		return Result{Err: err}, err
 	}
 
-	// Resolve sheet entry name. We only support
-	// sheet1..sheetN (1-based) by number, or
-	// "Sheet1" style by name → fallback to
-	// sheet1 if name not present. We do NOT
-	// parse xl/workbook.xml in v1; the model's
-	// --list-models-style use of "sheet1" by
-	// name or number is the common case.
-	sheetEntry, err := t.resolveSheetEntry(full, params.Sheet)
+	zr, err := zip.OpenReader(full)
+	if err != nil {
+		return Result{Err: fmt.Errorf("read_xlsx: open zip: %w", err)}, err
+	}
+	defer zr.Close()
+
+	sheetEntry, err := t.resolveSheetEntry(&zr.Reader, params.Sheet)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_xlsx: %w", err)}, err
 	}
 
 	// 1. Load shared strings (may be empty if
 	// the file has none).
-	sharedStrings, err := t.loadSharedStrings(full)
+	sharedStrings, err := t.loadSharedStrings(&zr.Reader)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read_xlsx: %w", err)}, err
 	}
 	// 2. Load the sheet's row data.
-	sheetData, err := readZipEntry(full, sheetEntry, t.MaxXlsxBytes)
+	sheetData, err := readXlsxZipEntry(&zr.Reader, sheetEntry, t.MaxXlsxBytes)
 	if err != nil {
-		// Not found → empty sheet, not error.
-		if strings.Contains(err.Error(), "not found") {
-			return Result{Text: ""}, nil
-		}
 		return Result{Err: fmt.Errorf("read_xlsx: %w", err)}, err
 	}
 	// 3. Render.
@@ -164,46 +160,16 @@ func (t *ReadXlsxTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	return Result{Text: text}, nil
 }
 
-// resolveSheetEntry maps a user-supplied sheet
-// name/number to the zip entry path under
-// xl/worksheets/. If empty, defaults to sheet1.
-// We only accept the canonical sheetN.xml
-// form to keep the v1 surface small; custom
-// names with spaces or non-ASCII are rejected
-// with a clear error.
-func (t *ReadXlsxTool) resolveSheetEntry(zipPath, sheet string) (string, error) {
-	if sheet == "" {
-		return "xl/worksheets/sheet1.xml", nil
-	}
-	// Numeric form: "1" → sheet1, "2" → sheet2, ...
-	if n, err := strconv.Atoi(sheet); err == nil {
-		if n < 1 {
-			return "", fmt.Errorf("sheet index must be >= 1, got %d", n)
-		}
-		return fmt.Sprintf("xl/worksheets/sheet%d.xml", n), nil
-	}
-	// Name form: "Sheet1" → sheet1.xml.
-	// We strip ".xml" if the user passed it.
-	name := strings.TrimSuffix(sheet, ".xml")
-	// Reject path separators — keep the v1
-	// surface small and the zip-slip surface
-	// zero.
-	if strings.ContainsAny(name, `/\`) {
-		return "", fmt.Errorf("invalid sheet name %q", sheet)
-	}
-	return "xl/worksheets/" + name + ".xml", nil
-}
-
 // loadSharedStrings reads xl/sharedStrings.xml
 // and returns the string table as a slice
 // indexed by 0-based position. Returns an
 // empty slice (no error) if the entry is
 // missing — many xlsx files have no shared
 // strings, and that's fine.
-func (t *ReadXlsxTool) loadSharedStrings(zipPath string) ([]string, error) {
-	data, err := readZipEntry(zipPath, "xl/sharedStrings.xml", t.MaxXlsxBytes)
+func (t *ReadXlsxTool) loadSharedStrings(zr *zip.Reader) ([]string, error) {
+	data, err := readXlsxZipEntry(zr, "xl/sharedStrings.xml", t.MaxXlsxBytes)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, errXlsxEntryNotFound) {
 			return nil, nil
 		}
 		return nil, err

@@ -198,10 +198,23 @@ func containsAny(haystack string, needles []string) bool {
 // zero input/output pricing metadata. An explicit isFree=false wins over price
 // heuristics because some gateways publish zero-priced non-chat previews.
 func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	ids, _, err := listFreeProviderCatalog(ctx, baseURL, apiKey, false)
+	return ids, err
+}
+
+// ListFreeProviderCatalog returns free IDs and their capabilities from the same
+// fresh response. Scans need not fetch a second, possibly stale catalog to recover
+// metadata. Free filtering, credentials and provider headers remain shared with
+// ListFreeModels.
+func ListFreeProviderCatalog(ctx context.Context, baseURL, apiKey string) ([]string, []ModelInfo, error) {
+	return listFreeProviderCatalog(ctx, baseURL, apiKey, true)
+}
+
+func listFreeProviderCatalog(ctx context.Context, baseURL, apiKey string, includeInfo bool) ([]string, []ModelInfo, error) {
 	u := ResolveOpenAIEndpoints(baseURL).Models
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+		return nil, nil, fmt.Errorf("llm: ListFreeModels: %w", err)
 	}
 	if key := CleanAPIKey(apiKey); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
@@ -210,15 +223,15 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+		return nil, nil, fmt.Errorf("llm: ListFreeModels: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, fmt.Errorf("llm: ListFreeModels: %w", err)
+		return nil, nil, fmt.Errorf("llm: ListFreeModels: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("llm: ListFreeModels: status %d: %s", resp.StatusCode, body)
+		return nil, nil, fmt.Errorf("llm: ListFreeModels: status %d: %s", resp.StatusCode, body)
 	}
 	var payload struct {
 		Data []struct {
@@ -229,7 +242,7 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("llm: ListFreeModels: parse: %w", err)
+		return nil, nil, fmt.Errorf("llm: ListFreeModels: parse: %w", err)
 	}
 	var out []string
 	for _, m := range payload.Data {
@@ -254,7 +267,27 @@ func ListFreeModels(ctx context.Context, baseURL, apiKey string) ([]string, erro
 			out = append(out, m.ID)
 		}
 	}
-	return out, nil
+	if !includeInfo {
+		return out, nil, nil
+	}
+	models, err := parseProviderModelInfos(body)
+	if err != nil {
+		// Capability fields are optional. Keep the validated free inventory and
+		// let the scanner use its existing heuristic fallback if metadata has an
+		// incompatible shape, just as it did when the second fetch failed.
+		return out, nil, nil
+	}
+	allowed := make(map[string]struct{}, len(out))
+	for _, id := range out {
+		allowed[id] = struct{}{}
+	}
+	filtered := models[:0]
+	for _, model := range models {
+		if _, ok := allowed[model.ID]; ok {
+			filtered = append(filtered, model)
+		}
+	}
+	return out, filtered, nil
 }
 
 func modelPricingIsZero(fields map[string]json.RawMessage) bool {

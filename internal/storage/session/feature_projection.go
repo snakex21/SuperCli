@@ -67,12 +67,15 @@ func (s *Store) ReadModelContext(ctx context.Context, sessionID string) ([]llm.M
 	if err != nil {
 		return nil, err
 	}
-	for _, row := range rows {
+	for i, row := range rows {
 		m, err := row.ToMessage()
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, m)
+		// Only this temporary SQL view owns the encoded slots. Decoded parts
+		// have their own payloads, so release each raw row after conversion.
+		rows[i] = Encoded{}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

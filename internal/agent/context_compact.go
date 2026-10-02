@@ -28,7 +28,15 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 		keep++
 	}
 	cleaned := l.cleanModelHistory(msgs)
-	l.Messages = append(l.Messages[:keep], cleaned...)
+	// A smaller replacement must release obsolete message slots and their payloads.
+	// Keep external archive views intact instead of clearing the old array.
+	messages := make([]llm.Message, keep+len(cleaned))
+	if len(messages) == 0 && l.Messages == nil {
+		messages = nil
+	}
+	copy(messages, l.Messages[:keep])
+	copy(messages[keep:], cleaned)
+	l.Messages = messages
 	// The loaded body may come from a different session than this loop's
 	// writer (/resume); its model identity is unknown until the next call.
 	l.contextModel = contextModelState{loaded: true}
@@ -74,8 +82,7 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 		return 0
 	}
 	oldHidden := l.hidden
-	tail := append([]llm.Message(nil), l.Messages[upto:]...)
-	l.Messages = l.Messages[:keep]
+	tail := l.Messages[upto:]
 	// The summary rides as a USER message, not system: several chat
 	// templates (e.g. Qwen3.5's Jinja) hard-reject any system message
 	// that is not at the very beginning of the conversation, so a
@@ -83,8 +90,13 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	// framing text (wrapCompactSummary) already reads naturally as a
 	// user hand-off.
 	sum := llm.Message{Role: llm.RoleUser, Content: summary}
-	l.Messages = append(l.Messages, sum)
-	l.Messages = append(l.Messages, tail...)
+	// Copy only retained messages into a fresh exact-size array. Reusing the
+	// old capacity would keep the discarded prefix payloads alive beyond len.
+	messages := make([]llm.Message, keep+1+len(tail))
+	copy(messages, l.Messages[:keep])
+	messages[keep] = sum
+	copy(messages[keep+1:], tail)
+	l.Messages = messages
 	l.resetHidden()
 	// Only the replaced prefix disappears. Preserve visibility for surviving
 	// system messages and the untouched tail after their indices shift.

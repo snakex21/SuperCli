@@ -22,7 +22,18 @@ type searchRecord struct {
 // middle hit behind one long source line. Full search output stays in Text
 // for the UI and the existing saved-output mechanism.
 func (s *SearchCode) previewSearchHits(result Result, preview *searchContext, query string) Result {
-	if result.Err != nil || len(result.Text) <= core.ModelOutputInlineBytes || preview == nil || len(preview.records) == 0 || len(preview.records) > maxSearchPreviewHits {
+	if result.Err != nil || preview == nil || len(preview.records) == 0 || len(preview.records) > maxSearchPreviewHits {
+		return result
+	}
+	if grouped := s.groupedSearchPreview(result, preview); grouped != "" {
+		if len(result.Text) <= core.ModelOutputInlineBytes {
+			result.ModelText = grouped
+		} else {
+			result.ModelPreview = grouped
+		}
+		return result
+	}
+	if len(result.Text) <= core.ModelOutputInlineBytes {
 		return result
 	}
 	notice := "[search preview: long matching lines shortened; full result saved]"

@@ -1,7 +1,7 @@
 // Deferred LLM session titles. A fresh web session gets its title in
 // two steps: a deterministic local one (first words of the first
 // prompt) synchronously at session creation — free, instant, never
-// competes with the answer — and a nicer LLM summary only AFTER the
+// competes with the answer — and, for long prompts, a topic title only AFTER the
 // first answer finished streaming and the session has been quiet for
 // a grace period. The old behaviour fired the title inference the
 // moment the request arrived, racing the user's actual answer for
@@ -23,8 +23,16 @@ import (
 // memoryIdleDelay).
 const titleIdleDelay = 15 * time.Second
 
+const sessionTitleMaxRunes = 80
+
+// Short prompts fit as complete local labels in any language; keep them
+// without an extra background request to shorten them.
+func needsSessionTitle(prompt string) bool {
+	return runeLen(collapseWhitespace(stripMarkdownNoise(prompt))) > sessionTitleMaxRunes
+}
+
 // titleMaxAttempts bounds retries when the title call was preempted
-// by foreground work or failed; afterwards the local title simply
+// by foreground work or storage failures; afterwards the local title simply
 // stays.
 const titleMaxAttempts = 3
 
@@ -166,17 +174,28 @@ func (s *titleScheduler) fire(sessionID, prompt string) {
 }
 
 // runSessionTitleLLM asks the active (metered) provider for a
-// PR-style title and stores it — only if the deterministic local
+// topic title and stores it — only if the deterministic local
 // title is still current (a manual rename always wins). The call is
 // marked background+title by the summarizer, so it queues on the
 // background gate and is preempted the moment any foreground call
-// starts. Returns true when the LLM title actually landed.
+// starts. Returns true when the job is complete, including an adequate local
+// title or a terminal provider fallback.
 func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt string) bool {
 	ctx = llm.WithOpenCodeSession(ctx, sessionID)
-	initialTitle := summarizeHistoryMessage(prompt, 80)
+	if ctx.Err() != nil {
+		return false
+	}
+	initialTitle := summarizeHistoryMessage(prompt, sessionTitleMaxRunes)
 	store, err := e.sessionStore()
 	if err != nil {
 		return false
+	}
+	current, err := store.Get(sessionID)
+	if err != nil {
+		return false
+	}
+	if current.Title != initialTitle || !needsSessionTitle(prompt) {
+		return true // Manual/short names already suffice; no inference or retry.
 	}
 	e.mu.RLock()
 	prov := e.prov
@@ -189,11 +208,14 @@ func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt strin
 	// The title is written after the answer finished, so it belongs to no
 	// turn; count it with the rest of the out-of-turn model work.
 	ctx = e.countOffTurnCalls(ctx)
-	title := summarizeHistoryMessageWithProvider(ctx, prompt, 80, prov)
+	title := summarizeHistoryMessageWithProvider(ctx, prompt, sessionTitleMaxRunes, prov)
+	if ctx.Err() != nil {
+		return false // Foreground preemption may be retried after the idle window.
+	}
 	if title == "" || strings.HasPrefix(title, "<") || title == initialTitle {
-		// Canceled/failed calls fall back to the local title — the
-		// session is never left unnamed, and the scheduler may retry.
-		return false
+		// A completed request with the same/fallback label is terminal.
+		// Retrying an already adequate name only spends more model work.
+		return true
 	}
 	_, err = store.SetTitleIfCurrent(sessionID, initialTitle, title)
 	return err == nil

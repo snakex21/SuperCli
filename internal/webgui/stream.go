@@ -149,9 +149,9 @@ func (w wireEvent) marshal() []byte {
 }
 
 const (
-	// A 40 ms window is below the normal visual rendering cadence while
-	// collapsing token-at-a-time providers into far fewer JSON/SSE writes.
-	messageCoalesceWindow = 40 * time.Millisecond
+	// Only dense token bursts need batching. Keep them within 8 ms of the
+	// previous emission; a sparse packet already beyond that window is immediate.
+	messageCoalesceWindow = 8 * time.Millisecond
 	// Large bursts flush eagerly so the batching layer never becomes an
 	// output-sized buffer or adds noticeable latency on very fast backends.
 	messageCoalesceBytes = 4 * 1024
@@ -166,43 +166,64 @@ type messageCoalescer struct {
 	visibleType string // first chunk after each semantic/channel boundary is immediate
 	pendingType string
 	pending     strings.Builder
+	lastEmit    time.Time
 }
 
 func (c *messageCoalescer) Pending() bool { return c.pending.Len() > 0 }
 
+// Delay is the remaining burst window, measured from the previous emission,
+// not a new full wait added to every incoming fragment.
+func (c *messageCoalescer) Delay() time.Duration {
+	return c.delayAt(time.Now())
+}
+
+func (c *messageCoalescer) delayAt(now time.Time) time.Duration {
+	return max(0, messageCoalesceWindow-now.Sub(c.lastEmit))
+}
+
 // Push returns true when a new timed batch was started.
-func (c *messageCoalescer) Push(ev wireEvent) (started bool) {
-	if ev.Type == "message" || ev.Type == "reasoning" {
+func (c *messageCoalescer) Push(ev wireEvent) bool {
+	return c.pushAt(ev, time.Now())
+}
+
+func (c *messageCoalescer) pushAt(ev wireEvent, now time.Time) (started bool) {
+	if (ev.Type == "message" || ev.Type == "reasoning") && ev.ReasoningTok == 0 {
 		if ev.Text == "" {
 			return false
 		}
 		if c.visibleType != ev.Type {
-			c.Flush()
+			c.flushAt(now)
 			c.visibleType = ev.Type
+			c.lastEmit = now
 			c.emit(ev)
 			return false
 		}
-		if c.Pending() && c.pendingType != ev.Type {
-			c.Flush()
+		if !c.Pending() && now.Sub(c.lastEmit) >= messageCoalesceWindow {
+			c.lastEmit = now
+			c.emit(ev)
+			return false
 		}
 		started = !c.Pending()
 		if started {
 			c.pendingType = ev.Type
 		}
 		c.pending.WriteString(ev.Text)
-		if c.pending.Len() >= messageCoalesceBytes {
-			c.Flush()
+		if c.pending.Len() >= messageCoalesceBytes || now.Sub(c.lastEmit) >= messageCoalesceWindow {
+			c.flushAt(now)
 			return false
 		}
 		return started && c.Pending()
 	}
-	c.Flush()
+	c.flushAt(now)
 	c.visibleType = ""
+	c.lastEmit = now
 	c.emit(ev)
 	return false
 }
 
-func (c *messageCoalescer) Flush() {
+func (c *messageCoalescer) Flush() { c.flushAt(time.Now()) }
+
+func (c *messageCoalescer) flushAt(now time.Time) {
 	if !c.Pending() {
 		return
 	}
@@ -210,6 +231,7 @@ func (c *messageCoalescer) Flush() {
 	typ := c.pendingType
 	c.pending.Reset()
 	c.pendingType = ""
+	c.lastEmit = now
 	c.emit(wireEvent{Type: typ, Text: text})
 }
 

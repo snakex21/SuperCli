@@ -410,7 +410,7 @@ func TestFetchAndUpdate_PreservesUserOverrides(t *testing.T) {
 	}
 }
 
-// F28: pushRatesToCredits correctly converts per-1M to per-1k.
+// F28: ApplyRates correctly converts per-1M to per-1k.
 func TestPushRatesToCredits(t *testing.T) {
 	defer credits.SetFetchedRates(nil) // cleanup
 	defer credits.SetProviderRates(nil)
@@ -419,7 +419,7 @@ func TestPushRatesToCredits(t *testing.T) {
 		{ModelID: "gpt-4o", InputPer1M: 2.5, CachedInputPer1M: 1.25, OutputPer1M: 10.0},
 		{ModelID: "claude-3.5-sonnet", InputPer1M: 3.0, OutputPer1M: 15.0},
 	}
-	pushRatesToCredits(entries)
+	ApplyRates(entries)
 	got := credits.GetFetchedRates()
 	if got == nil {
 		t.Fatal("expected non-nil fetched rates")
@@ -447,7 +447,7 @@ func TestPushRatesToCredits_OpenRouterProviderRates(t *testing.T) {
 	defer credits.SetFetchedRates(nil)
 	defer credits.SetProviderRates(nil)
 
-	pushRatesToCredits([]PriceEntry{{
+	ApplyRates([]PriceEntry{{
 		ModelID:          "deepseek/deepseek-chat",
 		InputPer1M:       0.14,
 		CachedInputPer1M: 0.0028,

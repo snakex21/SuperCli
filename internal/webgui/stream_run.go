@@ -63,7 +63,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		// Fresh session: the LLM title summary runs only after this
 		// answer has fully streamed AND the session sat idle — the
 		// deterministic local title from sessionState covers the gap.
-		defer e.titles.Schedule(sid, prompt)
+		if needsSessionTitle(prompt) {
+			defer e.titles.Schedule(sid, prompt)
+		}
 	} else {
 		// New activity on an existing session: whatever title work is
 		// pending or in flight for it is stale — cancel, don't compete
@@ -213,9 +215,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 		if started {
 			if messageTimer == nil {
-				messageTimer = time.NewTimer(messageCoalesceWindow)
+				messageTimer = time.NewTimer(coalescer.Delay())
 			} else {
-				messageTimer.Reset(messageCoalesceWindow)
+				messageTimer.Reset(coalescer.Delay())
 			}
 			messageTimerC = messageTimer.C
 		}

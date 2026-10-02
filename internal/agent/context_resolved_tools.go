@@ -62,9 +62,9 @@ func resolvedToolHistoryProjection(messages []llm.Message, trackIndices bool) ([
 		}
 	}
 
-	drop := make([]bool, len(messages))
+	var drop []bool
 	var trimmedCalls map[int][]llm.ToolCall
-	recentStart := recentCompletedTurnStart(messages)
+	recentStart := 0
 	remaining := recentToolEvidenceBytes
 	hasLaterFinal := false
 	for index := len(messages) - 1; index >= 0; index-- {
@@ -73,7 +73,7 @@ func resolvedToolHistoryProjection(messages []llm.Message, trackIndices bool) ([
 			continue
 		}
 		if len(message.ToolCalls) == 0 {
-			if messageHasVisibleReply(message) {
+			if !hasLaterFinal && messageHasVisibleReply(message) {
 				hasLaterFinal = true
 			}
 			continue
@@ -82,6 +82,13 @@ func resolvedToolHistoryProjection(messages []llm.Message, trackIndices bool) ([
 			continue
 		}
 
+		// Most preparation passes have only dialogue or an active tool tail.
+		// Allocate the mask and price the recent turn only when a completed
+		// batch exists. Once a later final is found, older replies need no parsing.
+		if drop == nil {
+			drop = make([]bool, len(messages))
+			recentStart = recentCompletedTurnStart(messages)
+		}
 		drop[index] = true
 		eligible := index >= recentStart && remaining > 0
 		cost := 0

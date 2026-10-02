@@ -147,3 +147,63 @@ func TestStreamBufferReleasedAtCompletionAndRestart(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamBurstStoresAllTextWithoutRepeatedFormatting(t *testing.T) {
+	m := streamTestModel(t)
+	prefix := strings.Repeat("Ready for inspection. ", 60)
+	next, _ := m.Update(runEventMsg{ev: agent.MessageEvent{Text: prefix}})
+	m = next.(Model)
+	before := m.viewport.View()
+	// Freeze the preparation window while injecting a deterministic burst.
+	m.streamPaintAt = time.Now().Add(time.Hour)
+	for _, text := range []string{"Zażółć ", "😀 ", "中文"} {
+		next, cmd := m.Update(runEventMsg{ev: agent.MessageEvent{Text: text}})
+		m = next.(Model)
+		if cmd == nil || m.viewport.View() != before {
+			t.Fatal("burst stalled consumption or repeated formatting")
+		}
+	}
+	want := prefix + "Zażółć 😀 中文"
+	if m.current != want || m.chat.lastAssistant() != want {
+		t.Fatal("burst text lost")
+	}
+	next, _ = m.Update(streamFlushMsg{})
+	m = next.(Model)
+	if m.renderedCurrent != want {
+		t.Fatal("frame did not paint all received text")
+	}
+}
+
+func TestStreamSparseTextAndSectionBoundariesAreImmediate(t *testing.T) {
+	m := streamTestModel(t)
+	for _, ev := range []agent.Event{agent.ReasoningEvent{Text: strings.Repeat("plan ", 300)}, agent.MessageEvent{Text: "answer"}} {
+		m.streamPaintAt = time.Now().Add(time.Hour)
+		next, _ := m.Update(runEventMsg{ev: ev})
+		m = next.(Model)
+		if m.renderedCurrent != m.current {
+			t.Fatal("first section was delayed")
+		}
+	}
+	m.streamPaintAt = time.Now().Add(-streamFrameInterval)
+	next, _ := m.Update(runEventMsg{ev: agent.MessageEvent{Text: " sparse"}})
+	m = next.(Model)
+	if m.renderedCurrent != m.current {
+		t.Fatal("sparse packet waited for a frame")
+	}
+}
+
+func TestStreamToolsAndCompletionFlushPendingTextImmediately(t *testing.T) {
+	for _, terminal := range []agent.Event{agent.DoneEvent{Usage: agent.Usage{Input: 1, Output: 1}}, agent.ErrorEvent{Err: errors.New("interrupted")}, agent.ToolCallEvent{Name: "read_file", ID: "read", Args: "{}"}} {
+		m := streamTestModel(t)
+		next, _ := m.Update(runEventMsg{ev: agent.MessageEvent{Text: strings.Repeat("Ready for inspection. ", 60)}})
+		m = next.(Model)
+		m.streamPaintAt = time.Now().Add(time.Hour)
+		next, _ = m.Update(runEventMsg{ev: agent.MessageEvent{Text: " final tail"}})
+		m = next.(Model)
+		next, _ = m.Update(runEventMsg{ev: terminal})
+		m = next.(Model)
+		if m.current != "" || !strings.Contains(m.viewport.View(), "final tail") {
+			t.Fatalf("boundary %T current=%q viewport=%q completed=%q", terminal, m.current, m.viewport.View(), m.completedLines())
+		}
+	}
+}

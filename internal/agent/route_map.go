@@ -108,7 +108,7 @@ func DefaultRouteMap() RouteMap {
 			"explain", "what is", "what does", "how does", "why does", "difference between",
 		},
 		CoordinatorHits: []string{
-			"plik", "pliki", "folder", "projekt", "repo", "kod", "funkcj", "test", "build", "błąd", "blad",
+			"plik", "pliki", "folder", "projekt", "projekcie", "repo", "kod", "funkcj", "test", "build", "błąd", "blad",
 			"napraw", "zrób", "zrob", "dodaj", "usuń", "usun", "zmień", "zmien", "edytuj",
 			"uruchom", "komenda", "terminal", "powershell", "cmd", "go test", "go build",
 			"docx", "xlsx", "pdf", "zip", "screenshot", "tutaj", "tu jest", "co tutaj", "co jest w",
@@ -144,7 +144,15 @@ func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bo
 			return RouteChatOnly, true
 		}
 	}
-	if len([]rune(p)) <= 80 {
+	if utf8.RuneCountInString(p) <= 80 {
+		// A greeting can introduce an already-recognized social message.
+		// Unknown continuations still fall through to project routing.
+		p = withoutChatOpening(p, m.ChatExact)
+		for _, exact := range m.ChatExact {
+			if p == exact {
+				return RouteChatOnly, true
+			}
+		}
 		if undecidedChat(p) {
 			return RouteChatOnly, true
 		}
@@ -154,7 +162,7 @@ func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bo
 			}
 		}
 	}
-	if len([]rune(p)) <= 240 {
+	if utf8.RuneCountInString(p) <= 240 {
 		for _, prefix := range m.AdvisorPrefixes {
 			if strings.HasPrefix(p, prefix) {
 				return RouteAdvisor, true
@@ -162,6 +170,25 @@ func (m RouteMap) ClassifyConfident(prompt string) (mode RouteMode, confident bo
 		}
 	}
 	return RouteCoordinator, false
+}
+
+// withoutChatOpening removes a complete greeting or acknowledgement, never
+// a word fragment (e.g. "hi" in "history"). Coordinator keywords are checked
+// against the original message before this helper is used.
+func withoutChatOpening(p string, openings []string) string {
+	for _, opening := range openings {
+		if !strings.HasPrefix(p, opening) || len(p) == len(opening) {
+			continue
+		}
+		rest := p[len(opening):]
+		first, _ := utf8.DecodeRuneInString(rest)
+		if unicode.IsSpace(first) || unicode.IsPunct(first) {
+			return strings.TrimLeftFunc(rest, func(r rune) bool {
+				return unicode.IsSpace(r) || unicode.IsPunct(r)
+			})
+		}
+	}
+	return p
 }
 
 const navigatorSystemPrompt = `You are SuperCli's navigator. Choose which map the next user message should use.

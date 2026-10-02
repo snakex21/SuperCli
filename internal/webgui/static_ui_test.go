@@ -241,7 +241,8 @@ func TestHardProtocolLongTranscriptRenderingIsBounded(t *testing.T) {
 		"var transcriptPageSize = 60",
 		"var transcriptFollowTail = true",
 		"smartScrollFrame = requestAnimationFrame",
-		"if ((!transcriptFollowTail && !smartScrollForced) || smartScrollFrame !== null) return",
+		"if (!transcriptFollowTail && !smartScrollForced) return",
+		"if (smartScrollFrame !== null) return",
 	} {
 		if !strings.Contains(js, required) {
 			t.Fatalf("long-transcript rendering guard is missing %q", required)

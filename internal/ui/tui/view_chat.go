@@ -45,6 +45,7 @@ type chat struct {
 	// so keep the completed prefix until a message/fold setting really changes.
 	completedCache string
 	completedDirty bool
+	activeCache    *activeSectionCache
 
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
@@ -118,6 +119,7 @@ func (c *chat) appendCurrent(text string) {
 // flushCurrent moves the streaming text into the message list
 // and clears current.
 func (c *chat) flushCurrent() {
+	c.clearActiveSection()
 	if c.current != "" {
 		c.msgs = append(c.msgs, msg{role: roleAssistant, text: c.current})
 		c.current = ""
@@ -208,13 +210,16 @@ func renderRoleBlock(label, body string, gutter lipgloss.Style, widths ...int) s
 // renderWithSpinner renders the transcript including the current
 // streaming text with a spinner appended.
 func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
+	if c.current == "" {
+		c.clearActiveSection()
+	}
 	var b strings.Builder
 	b.WriteString(c.renderCompleted(p))
 	if c.current != "" {
 		if len(c.msgs) > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(renderRoleBlock(p.AssistantLabel.Render("SuperCli"), renderAssistantMarkdown(terminalText(c.current, c.legacySymbols), p, c.thinkingCollapsed, c.language), p.AssistGutter, c.width))
+		b.WriteString(c.renderActiveSection(p))
 		b.WriteString(" ")
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
@@ -223,6 +228,9 @@ func (c *chat) renderWithSpinner(p Palette, spinnerView string) string {
 		// show the spinner on its own line.
 		b.WriteString(spinnerView)
 		b.WriteByte('\n')
+	}
+	if spinnerView == "" {
+		c.clearActiveSection()
 	}
 	return b.String()
 }

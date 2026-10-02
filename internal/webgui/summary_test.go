@@ -2,19 +2,24 @@ package webgui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"supercli/internal/llm"
 )
 
 type summaryProvider struct {
-	text string
-	err  error
+	text       string
+	err        error
+	onComplete func(context.Context, []llm.Message)
 }
 
 func (s summaryProvider) Name() string { return "summary-test" }
 
-func (s summaryProvider) Complete(ctx context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+func (s summaryProvider) Complete(ctx context.Context, messages []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	if s.onComplete != nil {
+		s.onComplete(ctx, messages)
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -93,5 +98,26 @@ func TestCleanLLMSummary_UnclosedThinkingBecomesEmpty(t *testing.T) {
 	got := cleanLLMSummary("<thinking>We are asked to create a concise history title")
 	if got != "" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSessionTopicRequestIsShortAndBounded(t *testing.T) {
+	var captured []llm.Message
+	prov := summaryProvider{text: "Naprawa przewijania GUI", onComplete: func(ctx context.Context, messages []llm.Message) { captured = append([]llm.Message(nil), messages...) }}
+	source := "Napraw przewijanie GUI.\n\n" + strings.Repeat("Detailed ordinary context ", 3000)
+	got := summarizeHistoryMessageWithProvider(context.Background(), source, 80, prov)
+	if got != "Naprawa przewijania GUI" {
+		t.Fatalf("title = %q", got)
+	}
+	if len(captured) != 2 {
+		t.Fatalf("messages = %d", len(captured))
+	}
+	request := captured[1].Content
+	if strings.Contains(request, "what was done") || strings.Contains(request, "first person") ||
+		!strings.Contains(request, "topic or request") || !strings.Contains(request, "same language") {
+		t.Fatalf("wrong title task: %q", request)
+	}
+	if runeLen(request) > 750 {
+		t.Fatalf("unbounded title input: %d runes", runeLen(request))
 	}
 }

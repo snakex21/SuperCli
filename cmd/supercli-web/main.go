@@ -64,7 +64,24 @@ func run(crashDataDir *string) {
 	allowRemoteFlag := flag.Bool("allow-remote", false, "allow token-protected non-loopback access")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
+	previewFlag := flag.String("preview", "", "open only a lightweight site preview (HTTP(S) URL), without starting the agent")
+	previewLanguageFlag := flag.String("preview-language", "", "interface language for the site preview")
 	flag.Parse()
+	if strings.TrimSpace(*previewFlag) != "" {
+		dataDir, _, err := storage.ResolveRuntimeDataRoot(*dataDirFlag)
+		if err != nil {
+			fatal("resolve preview data dir", err)
+		}
+		*crashDataDir = dataDir
+		language := *previewLanguageFlag
+		if language == "" {
+			language = startupUILanguage(*homeFlag, *dataDirFlag)
+		}
+		if err := webgui.RunSitePreview(*previewFlag, language, dataDir, webgui.RunOptions{Addr: *addrFlag, NoWindow: *noWindowFlag, IconPath: *iconFlag}); err != nil {
+			fatal("preview", err)
+		}
+		return
+	}
 
 	uiFS, appName, appProfile := bundledUI()
 	if strings.TrimSpace(*appNameFlag) != "" {

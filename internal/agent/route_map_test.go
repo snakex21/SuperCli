@@ -42,6 +42,18 @@ func TestRouteMapClassifyConfident(t *testing.T) {
 		// Explicit chat exact / prefix — confident.
 		{"cześć", RouteChatOnly, true},
 		{"lubisz mnie?", RouteChatOnly, true},
+		{"cześć lubisz mnie?", RouteChatOnly, true},
+		{"Cześć, lubisz mnie?", RouteChatOnly, true},
+		{"Hej! Jak tam?", RouteChatOnly, true},
+		{"hi, translate hello into Polish", RouteChatOnly, true},
+		{"hej narazie nie wiem właśnie zastanawiam się", RouteChatOnly, true},
+		// Greetings do not turn work or unknown continuations into small talk.
+		{"cześć napraw błąd", RouteCoordinator, true},
+		{"hej co tam w projekcie?", RouteCoordinator, true},
+		{"cześć lubisz ten kod?", RouteCoordinator, true},
+		{"cześć kontynuuj", RouteCoordinator, false},
+		{"hej sprawdź co się dzieje", RouteCoordinator, false},
+		{"hilubisz mnie", RouteCoordinator, false},
 		// Ambiguous: falls through to coordinator default, NOT confident
 		// (this is where the model navigator earns its round-trip).
 		{"co lepsze na dłuższą metę?", RouteCoordinator, false},

@@ -9,6 +9,9 @@ import (
 )
 
 func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.menu.kind == menuPreview {
+		return m.handlePreviewKey(msg)
+	}
 	if m.menu.kind == menuUpdate {
 		return m.handleSearchMenuKey(msg, func() int { return 3 }, m.selectUpdateAction)
 	}

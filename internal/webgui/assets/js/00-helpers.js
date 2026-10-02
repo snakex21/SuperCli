@@ -52,17 +52,36 @@ function fmtWhen(iso) {
 function statsLocale() {
   return typeof ui !== "undefined" ? (normalizeLanguage(ui.lang) || "en") : "en";
 }
+// Keep native ICU formatters bounded and scoped to the current UI language.
+var statsFormatterLocale = "";
+var statsFormatterCache = Object.create(null);
+var statsFormatterKeys = [];
+function statsFormatter(key, options, dateTime) {
+  var locale = statsLocale();
+  if (statsFormatterLocale !== locale) {
+    statsFormatterLocale = locale;
+    statsFormatterCache = Object.create(null);
+    statsFormatterKeys = [];
+  }
+  var formatter = statsFormatterCache[key];
+  if (formatter) return formatter;
+  formatter = dateTime ? new Intl.DateTimeFormat(locale, options) : new Intl.NumberFormat(locale, options);
+  if (statsFormatterKeys.length >= 32) delete statsFormatterCache[statsFormatterKeys.shift()];
+  statsFormatterCache[key] = formatter;
+  statsFormatterKeys.push(key);
+  return formatter;
+}
 function fmtInteger(n) {
   n = Number(n);
   if (!Number.isFinite(n)) n = 0;
-  try { return new Intl.NumberFormat(statsLocale(), { maximumFractionDigits: 0 }).format(Math.round(n)); }
+  try { return statsFormatter("integer", { maximumFractionDigits: 0 }).format(Math.round(n)); }
   catch (e) { return String(Math.round(n)); }
 }
 function fmtCompactNumber(n) {
   n = Number(n);
   if (!Number.isFinite(n)) n = 0;
   try {
-    return new Intl.NumberFormat(statsLocale(), {
+    return statsFormatter("compact:" + (Math.abs(n) >= 10000 ? 1 : 0), {
       notation: "compact", maximumFractionDigits: Math.abs(n) >= 10000 ? 1 : 0,
     }).format(n);
   } catch (e) { return fmtTok(n); }
@@ -73,7 +92,7 @@ function fmtMoney(n, currency, rate) {
   var abs = Math.abs(n);
   var digits = rate ? 6 : (abs > 0 && abs < 0.0001 ? 6 : (abs > 0 && abs < 0.01 ? 4 : 2));
   try {
-    return new Intl.NumberFormat(statsLocale(), {
+    return statsFormatter("money:" + (currency || "USD") + ":" + (rate ? 2 : Math.min(2, digits)) + ":" + digits, {
       style: "currency", currency: currency || "USD",
       minimumFractionDigits: rate ? 2 : Math.min(2, digits), maximumFractionDigits: digits,
     }).format(n);
@@ -84,9 +103,9 @@ function fmtDateTime(iso) {
   var d = new Date(iso);
   if (isNaN(d)) return "—";
   try {
-    return new Intl.DateTimeFormat(statsLocale(), {
+    return statsFormatter("dateTime", {
       dateStyle: "medium", timeStyle: "short",
-    }).format(d);
+    }, true).format(d);
   } catch (e) { return d.toLocaleString(); }
 }
 async function j(url, opts) {
@@ -145,11 +164,24 @@ function showAppDialog(options) {
     var actions = el("div", "app-dialog-actions");
     var cancel = el("button", "btn", options.cancelLabel || t("common.cancel"));
     cancel.type = "button";
-    var confirm = el("button", "btn " + (options.danger ? "danger app-dialog-danger" : "primary"),
-      options.confirmLabel || (options.input ? t("common.save") : t("dialog.confirm")));
-    confirm.type = "submit";
+    var choices = Array.isArray(options.choices) ? options.choices : [];
+    var confirm = null, firstChoice = null;
     actions.appendChild(cancel);
-    actions.appendChild(confirm);
+    if (choices.length) {
+      panel.classList.add("app-dialog-choices");
+      choices.forEach(function (choice) {
+        var button = el("button", "btn" + (choice.primary ? " primary" : ""), choice.label);
+        button.type = "button";
+        button.addEventListener("click", function () { finish(choice.value); });
+        actions.appendChild(button);
+        if (!firstChoice) firstChoice = button;
+      });
+    } else {
+      confirm = el("button", "btn " + (options.danger ? "danger app-dialog-danger" : "primary"),
+        options.confirmLabel || (options.input ? t("common.save") : t("dialog.confirm")));
+      confirm.type = "submit";
+      actions.appendChild(confirm);
+    }
     panel.appendChild(actions);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
@@ -168,7 +200,13 @@ function showAppDialog(options) {
     function onKeyDown(event) {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         finish(null);
+      } else if (event.key === "Tab") {
+        var controls = Array.from(panel.querySelectorAll("button:not([disabled]), input, textarea"));
+        var first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
     }
     activeAppDialog = finish;
@@ -177,6 +215,7 @@ function showAppDialog(options) {
     overlay.addEventListener("mousedown", function (event) { if (event.target === overlay) finish(null); });
     panel.addEventListener("submit", function (event) {
       event.preventDefault();
+      if (choices.length) return;
       if (!input) { finish(true); return; }
       var value = input.value.trim();
       if (!value) {
@@ -187,8 +226,9 @@ function showAppDialog(options) {
       finish(value);
     });
     requestAnimationFrame(function () {
+      if (settled) return;
       if (input) { input.focus(); input.select(); }
-      else confirm.focus();
+      else (firstChoice || confirm).focus();
     });
   });
 }

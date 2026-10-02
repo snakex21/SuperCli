@@ -119,6 +119,8 @@ type Loop struct {
 	modelID         string
 	contextModel    contextModelState
 	toolDiscovery   toolDiscoveryState
+	// Only requested screen-capture turns carry this optional tool's schema.
+	screenshotForRun bool
 
 	// Optional legacy reasoning replay (SUPERCLI_KEEP_THINKING, default off).
 	// Assistant reasoning is stripped before entering Messages, while the
