@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -25,9 +26,23 @@ func (w *Writer) SaveToolOutput(ctx context.Context, handle, text string) error 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO tool_outputs(handle,session_id,content,bytes) VALUES(?,?,?,?)",
-		handle, w.sessionID, []byte(text), len(text)); err != nil {
+	// SQLite text-to-BLOB casts use the database encoding. Determine it only
+	// on the first save; unknown encodings retain the original byte binding.
+	w.store.toolOutputEncodingOnce.Do(func() {
+		var encoding string
+		if err := tx.QueryRowContext(ctx, "PRAGMA encoding").Scan(&encoding); err == nil {
+			w.store.toolOutputTextBindSafe = strings.EqualFold(encoding, "UTF-8")
+		}
+	})
+	query := "INSERT INTO tool_outputs(handle,session_id,content,bytes) VALUES(?,?,?,?)"
+	var content any
+	if w.store.toolOutputTextBindSafe {
+		query = "INSERT INTO tool_outputs(handle,session_id,content,bytes) VALUES(?,?,CAST(? AS BLOB),?)"
+		content = text
+	} else {
+		content = []byte(text)
+	}
+	if _, err := tx.ExecContext(ctx, query, handle, w.sessionID, content, len(text)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_outputs WHERE id IN (

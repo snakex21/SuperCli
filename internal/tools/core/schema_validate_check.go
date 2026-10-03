@@ -160,12 +160,14 @@ func (n *schemaNode) validate(value any, path string) error {
 			}
 		}
 	case string:
-		length := utf8.RuneCountInString(typed)
-		if n.minLength != nil && length < *n.minLength {
-			return fmt.Errorf("%s: length must be at least %d", path, *n.minLength)
-		}
-		if n.maxLength != nil && length > *n.maxLength {
-			return fmt.Errorf("%s: length must be at most %d", path, *n.maxLength)
+		if n.minLength != nil || n.maxLength != nil {
+			length := utf8.RuneCountInString(typed)
+			if n.minLength != nil && length < *n.minLength {
+				return fmt.Errorf("%s: length must be at least %d", path, *n.minLength)
+			}
+			if n.maxLength != nil && length > *n.maxLength {
+				return fmt.Errorf("%s: length must be at most %d", path, *n.maxLength)
+			}
 		}
 		if n.pattern != nil && !n.pattern.MatchString(typed) {
 			return fmt.Errorf("%s: does not match required pattern", path)

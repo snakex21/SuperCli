@@ -226,6 +226,8 @@ function clearMarkdownTail(state) {
   state.lineBlock = null;
   state.paragraph = null;
   state.code = null;
+  state.codeText = "";
+  state.codeLang = "";
 }
 
 function removeMarkdownSection(state) {
@@ -392,6 +394,8 @@ function updateMarkdownStream(state, text) {
     state.lineBlock = null;
     state.paragraph = null;
     state.code = null;
+    state.codeText = "";
+    state.codeLang = "";
   }
   state.fullRender = fullRender;
   if (fullRender) {

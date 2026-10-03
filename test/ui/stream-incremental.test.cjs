@@ -229,3 +229,69 @@ test('formatted paragraph suffixes respect inline closures, block markers and so
     }
   }
 });
+
+
+test('retiring streamed code releases its incremental checkpoints while preserving the complete response',()=>{
+  const {c,el}=harness(),node=el('div'),fence=String.fromCharCode(96).repeat(3);
+  c.performance={now:()=>0};c.smartScroll=()=>{};node.classList={add(){}};
+  node._raw='Stable paragraph.\n\n'+fence+'javascript-react\n  const value = "żółć 😀 <data>&";';
+  c.renderAssistant(node);
+  const markdown=node._assistantParts[0].markdown,code=markdown.code,paragraph=node.children[1];
+  node._raw+='\n\treturn value;';c.renderAssistant(node);
+  assert.equal(markdown.code,code,'unfinished code keeps its existing text node');
+  assert.equal(markdown.codeLang,'javascript-react');
+  assert.equal(markdown.codeText,'  const value = "żółć 😀 <data>&";\n\treturn value;');
+  assert.equal(node.innerHTML,c.renderText(node._raw));
+  node._raw+='\n'+fence+'\n\nThe final answer.';c.renderAssistant(node);
+  assert.equal(node.children[1],paragraph,'already committed content stays in place');
+  assert.equal(markdown.code,null);
+  assert.equal(markdown.codeText,'','closed code needs no incremental text checkpoint');
+  assert.equal(markdown.codeLang,'','a language slice must not keep the retired source buffer');
+  assert.equal(markdown.source,node._raw,'the full source remains authoritative');
+  assert.equal(node.innerHTML,c.renderText(node._raw));
+  assert.ok(node.innerHTML.includes(c.codeCopyButtonHTML()),'closed code keeps its copy control');
+  const nodes=node.children.slice(),html=node.innerHTML;
+  c.sealAssistantSegment(node);c.renderAssistant(node);
+  assert.equal(node.innerHTML,html);
+  assert.equal(node.children.length,nodes.length);
+  node.children.forEach((child,index)=>assert.equal(child,nodes[index]));
+});
+
+test('recovery snapshots and HTML-comment resets release old code and allow the next code stream',()=>{
+  for(const replacement of ['Recovered plain answer.','<!-- -->Recovered plain answer.']){
+    const {c,el}=harness(),node=el('div'),fence=String.fromCharCode(96).repeat(3);
+    node._raw=fence+'javascript-react\npreviousCode();';c.renderAssistant(node);
+    const markdown=node._assistantParts[0].markdown,oldCode=markdown.code;
+    node._raw=replacement;c.renderAssistant(node);
+    assert.equal(markdown.code,null);assert.equal(markdown.codeText,'');assert.equal(markdown.codeLang,'');
+    assert.equal(markdown.source,replacement);assert.equal(node._raw,replacement);
+    assert.equal(node.innerHTML,c.renderText(replacement));
+    node._raw=fence+'typescript\nnextCode();';c.renderAssistant(node);
+    const nextCode=markdown.code;
+    assert.notEqual(nextCode,oldCode);assert.equal(markdown.codeLang,'typescript');
+    node._raw+='\nmoreCode();';c.renderAssistant(node);
+    assert.equal(markdown.code,nextCode);assert.equal(markdown.codeText,'nextCode();\nmoreCode();');
+    assert.equal(node.innerHTML,c.renderText(node._raw));
+  }
+});
+
+test('a failed recovery paint keeps the exact raw answer and can rebuild the active code node',()=>{
+  const {c,el}=harness(),node=el('div'),fence=String.fromCharCode(96).repeat(3);
+  Object.defineProperty(node,'textContent',{set(text){
+    this.children.slice().forEach(child=>child.remove());
+    if(text)this.appendChild(c.document.createTextNode(text));
+  }});
+  node._raw=fence+'javascript-react\npreviousCode();';c.renderAssistant(node);
+  node._raw=fence+'typescript\n  const retry = "<value>";';
+  const expected=node._raw,originalEl=c.el;
+  c.el=(tag,...args)=>{if(tag==='pre')throw Error('isolated render failure');return originalEl(tag,...args)};
+  c.renderAssistant(node);
+  assert.equal(node._assistantParts,null);assert.equal(node._raw,expected);
+  c.el=originalEl;c.renderAssistant(node);
+  const markdown=node._assistantParts[0].markdown;
+  assert.equal(markdown.codeLang,'typescript');assert.equal(markdown.codeText,'  const retry = "<value>";');
+  assert.equal(node._raw,expected);assert.equal(node.innerHTML,c.renderText(expected));
+  node._raw+='\n'+fence+'\n\nRecovered.';c.renderAssistant(node);
+  assert.equal(markdown.codeText,'');assert.equal(markdown.codeLang,'');
+  assert.equal(node.innerHTML,c.renderText(node._raw));
+});
