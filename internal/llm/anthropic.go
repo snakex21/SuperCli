@@ -173,7 +173,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 		actual := body
 		if resp.Request != nil && resp.Request.GetBody != nil {
 			if reader, e := resp.Request.GetBody(); e == nil {
-				if raw, e := io.ReadAll(reader); e == nil {
+				if raw, e := anthropicReplayRequestBytes(reader); e == nil {
 					actual = raw
 				}
 				_ = reader.Close()
@@ -205,6 +205,9 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
 			return nil, err
+		}
+		if !isOpenCodeZenBaseURL(p.cfg.BaseURL) {
+			req.GetBody = anthropicOwnedGetBody(body)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")

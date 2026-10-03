@@ -27,15 +27,21 @@ func parseSSE(r io.Reader, onEvent func(eventName, data string) error) error {
 
 	var (
 		event string
-		data  strings.Builder
+		data  string
+		multi strings.Builder
 	)
 	flush := func() error {
-		if data.Len() == 0 {
+		if data == "" && multi.Len() == 0 {
 			return nil
 		}
-		err := onEvent(event, data.String())
+		payload := data
+		if multi.Len() > 0 {
+			payload = multi.String()
+		}
+		err := onEvent(event, payload)
 		event = ""
-		data.Reset()
+		data = ""
+		multi.Reset()
 		return err
 	}
 	for scanner.Scan() {
@@ -64,10 +70,21 @@ func parseSSE(r io.Reader, onEvent func(eventName, data string) error) error {
 		case "event":
 			event = value
 		case "data":
-			if data.Len() > 0 {
-				data.WriteByte('\n')
+			// scanner.Text owns its string. Keep the usual single-line payload
+			// without a second copy; only multi-line data needs assembly.
+			switch {
+			case multi.Len() > 0:
+				multi.WriteByte('\n')
+				multi.WriteString(value)
+			case data != "":
+				multi.Grow(len(data) + 1 + len(value))
+				multi.WriteString(data)
+				multi.WriteByte('\n')
+				multi.WriteString(value)
+				data = ""
+			default:
+				data = value
 			}
-			data.WriteString(value)
 		case "id", "retry":
 			// last-event-id and retry intervals are not relevant
 			// for the OpenAI chat-completions stream; ignore.
