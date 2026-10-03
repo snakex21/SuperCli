@@ -302,11 +302,12 @@ function supercliOrchPicker(container, knobM, onSave) {
     renderList("");
     pop.appendChild(phead);
     pop.appendChild(list);
-    search.focus();
+    return search;
   }
   btn.addEventListener("click", function () {
-    if (pop.hidden) fill();
+    var search = pop.hidden ? fill() : null;
     pop.hidden = !pop.hidden;
+    if (search) search.focus();
   });
   document.addEventListener("click", closeOrchPickerPopups);
   wrap.appendChild(btn);

@@ -180,6 +180,7 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		timeout = 30 * time.Second * time.Duration(maxSteps)
 	}
 	invocation, _ := parentCtx.Value(workerInvocationKey{}).(workerInvocation)
+	mutationObserver, _ := parentCtx.Value(workerMutationKey{}).(func(string))
 	// Capture the original session binding while the parent still owns it.
 	parent := a.ParentLoop
 	var deliver func(context.Context, string)
@@ -194,6 +195,9 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		defer cancel()
 		if invocation.checks != nil {
 			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{checks: invocation.checks})
+		}
+		if mutationObserver != nil {
+			ctx = withWorkerMutationObserver(ctx, mutationObserver)
 		}
 		text, err := runWorkerLoop(ctx, w, prompt)
 		if err != nil && text == "" {

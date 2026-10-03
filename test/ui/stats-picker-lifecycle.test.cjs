@@ -22,7 +22,7 @@ function fixture(source) {
       contains(target) { counts.contains++; if (!this.isConnected) counts.detachedContains++; for (let n = target; n; n = n.parentNode) if (n === this) return true; return false; },
       querySelectorAll(selector) { const found = []; for (const child of this.children) { if (matches(child, selector)) found.push(child); found.push(...child.querySelectorAll(selector)); } return found; },
       querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
-      focus() { document.activeElement = this; },
+      focus() { if (!this.isConnected) return; for (let n = this; n; n = n.parentNode) if (n.hidden) return; document.activeElement = this; },
     };
     Object.defineProperties(node, {
       isConnected: {get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; }},
@@ -129,4 +129,27 @@ test('rebuilding materialized lists releases the first and subsequent detached p
   await new Promise((resolve, reject) => cp.execFile(process.execPath, ['--expose-gc', '-e', script, sourcePath], {windowsHide: true}, (error, stdout, stderr) => {
     if (error) reject(new Error(stderr || stdout || error.message)); else resolve();
   }));
+});
+
+
+test('opening focuses the visible search so keyboard filtering is immediately available', () => {
+  const h = fixture(fs.readFileSync(sourcePath, 'utf8')), saves = [];
+  const picker = h.picker(h.host(), '', value => saves.push(value));
+  const button = picker.querySelector('.orch-btn'), popup = picker.querySelector('.orch-pop');
+  assert.equal(h.document.activeElement, h.body);
+  h.emit(button);
+  const search = picker.querySelector('input');
+  assert.equal(popup.hidden, false);
+  assert.equal(h.document.activeElement, search, 'opening must focus the visible input');
+  search.value = 'model-b'; h.emit(h.document.activeElement, 'input');
+  assert.equal(picker.querySelectorAll('.prow').length, 2);
+  h.emit(button);
+  assert.equal(popup.hidden, true);
+  assert.equal(picker.querySelector('input'), search, 'closing does not rebuild the list');
+  h.emit(button);
+  const reopened = picker.querySelector('input');
+  assert.notEqual(reopened, search);
+  assert.equal(h.document.activeElement, reopened, 'reopening focuses the fresh visible input');
+  assert.equal(picker.querySelector('.orch-btn'), button);
+  assert.deepEqual(saves, []);
 });

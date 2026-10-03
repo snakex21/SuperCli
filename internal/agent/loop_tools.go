@@ -480,10 +480,16 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		res, err = l.loadSessionImage(ctx, raw)
 	} else {
 		var checkObserver func(verificationObservation)
+		var mutationObserver func(string)
 		if tc.Name == "task" || tc.Name == "send_message" {
 			checkObserver = l.failedChecks.observer()
+			mutationObserver = l.workerMutationObserver(ctx)
 		}
-		res, err = l.registry.Execute(withWorkerInvocation(ctx, tc.ID, out, checkObserver), tc.Name, raw)
+		dispatchCtx := withWorkerInvocation(ctx, tc.ID, out, checkObserver)
+		if mutationObserver != nil {
+			dispatchCtx = withWorkerMutationObserver(dispatchCtx, mutationObserver)
+		}
+		res, err = l.registry.Execute(dispatchCtx, tc.Name, raw)
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 
@@ -521,6 +527,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolKind(tc.Name) == "mutation" && !res.Inert {
 			l.identicalFails.workspaceChanged()
+			l.forwardWorkerMutation(ctx)
 		}
 	}
 

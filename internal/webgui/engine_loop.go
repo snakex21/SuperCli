@@ -278,8 +278,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	}
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
-	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory",
-		uiSettingBool(e.dataDir, "nestcafe.autoMemory", true))
+	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
 	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
 	// An explicit max_steps in config.toml stays a strict user cap.
