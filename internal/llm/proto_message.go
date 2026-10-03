@@ -94,6 +94,10 @@ type ImageRef struct {
 	ID        string // stable session media id, e.g. img_a1b2c3d4e5f6
 	Name      string // optional human-facing source name (auto.jpg, screenshot, ...)
 	Active    bool   // send pixels on the next provider call only; never persist true
+	// Host-only provenance for synthetic native tool image carriers. Provider
+	// builders ignore it; genuine attachment admission clears both fields.
+	ToolOutputCarrier bool   `json:"tool_output_carrier,omitempty"`
+	SourceToolCallID  string `json:"source_tool_call_id,omitempty"`
 }
 
 // AsDataURI returns a data: URI suitable for OpenAI's image_url.url

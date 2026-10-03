@@ -252,12 +252,16 @@ function historyPager() {
   // Only unresolved boundary calls retain rows. Removing the pager releases
   // this index on a new session/live turn, without another global DOM cache.
   button._pendingHistoryCalls = Object.create(null);
+  button._pendingHistoryImages = [];
   button.addEventListener("click", loadOlderTranscript);
   return button;
 }
 
 function resolveHistoryToolCall(entry, call) {
   var row = entry.row, message = entry.message, body = row._body;
+  var nativePreview = row._mediaPreview;
+  if (nativePreview && !nativePreview.classList.contains("tool-native-preview")) nativePreview = null;
+  if (nativePreview && nativePreview._cancelNativeRender) nativePreview._cancelNativeRender();
   var name = call.name || message.name || "tool", args = call.arguments || "";
   var info = args ? toolHint(name, args) : {name: toolDisplayName(name), hint: clip(message.content || "", 90)};
   row._tname.title = name;
@@ -267,7 +271,7 @@ function resolveHistoryToolCall(entry, call) {
   if (mutationLabel) row._tname.textContent = t(mutationLabel);
   if (row._cancelHistoryPayload) row._cancelHistoryPayload();
   row._cancelHistoryPayload = null;
-  if (body.childNodes.length && row._historyName === name) {
+  if (row._historyPayloadRendered && row._historyName === name) {
     // An already opened boundary result keeps its expensive output viewer.
     // Only its newly discovered input needs adding ahead of the output.
     if (args && !FILE_READ_TOOLS[name]) {
@@ -281,12 +285,55 @@ function resolveHistoryToolCall(entry, call) {
     row._cancelHistoryPayload = appendHistoryToolPayload(row, body, args, message.content, name);
   }
   row._historyName = name;
+  if (nativePreview && toolMediaDescriptor(message.content, name, /^error:/i.test(String(message.content || "")))) {
+    nativePreview._nativePaths = null;
+    nativePreview.remove();
+    row._mediaPreview = null;
+    nativePreview = null;
+  }
   appendToolMediaPreview(row, message.content, name, /^error:/i.test(String(message.content || "")));
+  if (nativePreview) renderNativeToolPreview(row, nativePreview);
+}
+
+function nearestHistoryToolResult(results, seq) {
+  for (var i = (results || []).length - 1; i >= 0; i--) {
+    if (results[i].seq < seq) return results[i].row;
+  }
+  return null;
+}
+function addHistoryToolImages(message, results, pending) {
+  var groups = Object.create(null);
+  (message.tool_images || []).forEach(function (image) {
+    if (!image || typeof image.source_call_id !== "string" || !image.source_call_id) return;
+    if (!groups[image.source_call_id]) groups[image.source_call_id] = [];
+    groups[image.source_call_id].push(image.path);
+  });
+  Object.keys(groups).forEach(function (callID) {
+    var row = nearestHistoryToolResult(results[callID], message.seq);
+    if (row) {
+      appendNativeToolImages(row, groups[callID]);
+      return;
+    }
+    // The original result may be on an older page (or pruned). Keep an owned,
+    // folded preview card until a strictly preceding result is loaded.
+    row = document.createElement("details");
+    row.className = "tool-row done";
+    row.open = toolDisclosureOpen();
+    row.appendChild(i18nEl("summary", "", "attachment.preview"));
+    row._body = el("div", "tbody");
+    row.appendChild(row._body);
+    appendNativeToolImages(row, groups[callID]);
+    if (!row._mediaPreview) return;
+    appendStream(row);
+    if (pending) pending.push({callID: callID, seq: message.seq, row: row});
+  });
 }
 
 function buildHistoryFragment(messages, pager, prepend) {
   var historyCalls = Object.create(null);
   var pendingCalls = pager && pager._pendingHistoryCalls;
+  var pendingImages = pager && pager._pendingHistoryImages;
+  var historyResults = Object.create(null);
   var newerWorkers = prepend ? Object.assign(Object.create(null), workerRows) : null;
   var fragment = document.createDocumentFragment();
   var previousTarget = streamAppendTarget, previousLive = transcriptLiveAppend;
@@ -311,6 +358,10 @@ function buildHistoryFragment(messages, pager, prepend) {
     }
     (messages || []).forEach(function (m) {
       if (m.role === "user") {
+        if (m.tool_image_carrier === true) {
+          addHistoryToolImages(m, historyResults, pendingImages);
+          return;
+        }
         addUserMsg(m.content, m.seq, m.attachments && m.attachments.length ? m.attachments : sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq));
       } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
@@ -322,7 +373,7 @@ function buildHistoryFragment(messages, pager, prepend) {
         node._raw = m.content;
         node._history = true;
         renderAssistant(node);
-        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+        node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = thinkingDisclosureOpen(true); });
         if (m.turn) {
           addFileChanges(m.turn.file_changes);
           addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
@@ -343,6 +394,7 @@ function buildHistoryFragment(messages, pager, prepend) {
           { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
         var row = document.createElement("details");
         row.className = "tool-row done";
+        row.open = toolDisclosureOpen();
         var sum = el("summary");
         var historyName = el("span", "tname", historyInfo.name);
         historyName.title = persistedName;
@@ -369,8 +421,21 @@ function buildHistoryFragment(messages, pager, prepend) {
         row.appendChild(body);
         appendStream(row);
         appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
+        if (m.tool_call_id) {
+          if (!historyResults[m.tool_call_id]) historyResults[m.tool_call_id] = [];
+          historyResults[m.tool_call_id].push({seq: m.seq, row: row});
+        }
       }
     });
+    if (pendingImages) {
+      for (var imageIndex = pendingImages.length - 1; imageIndex >= 0; imageIndex--) {
+        var imageEntry = pendingImages[imageIndex];
+        var origin = nearestHistoryToolResult(historyResults[imageEntry.callID], imageEntry.seq);
+        if (!origin) continue;
+        moveHistoryToolImages(imageEntry.row, origin);
+        pendingImages.splice(imageIndex, 1);
+      }
+    }
   } finally {
     streamAppendTarget = previousTarget;
     transcriptLiveAppend = previousLive;

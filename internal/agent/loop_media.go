@@ -87,6 +87,8 @@ func (l *Loop) prepareSessionImages(ctx context.Context, images []llm.ImageRef) 
 				}
 			}
 		}
+		img.SourceToolCallID = ""
+		img.ToolOutputCarrier = false
 		img.Active = true
 		out = append(out, img)
 	}

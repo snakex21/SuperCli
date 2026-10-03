@@ -256,3 +256,105 @@ test('reused tool-call IDs bind each result to its nearest preceding call across
   assert.deepEqual(rows.map(row => JSON.parse(row._body.querySelector('pre').textContent).path), ['first', 'nearest', 'nearest']);
   assert.equal(h.stats.imageSources, 3);
 });
+
+function nativeCarrier(seq, callID, digit = 'a') {
+  return {seq, role:'user', content:'Host carrier text', tool_image_carrier:true,
+    tool_images:[{source_call_id:callID,path:'session:fixture_123/' + digit.repeat(64) + '.png'}]};
+}
+function imageResult(seq, callID, content = 'Exact native output') {
+  return {seq,role:'tool',name:'read_image',tool_call_id:callID,content};
+}
+
+test('native tool image carrier restores inside its prior result without a user bubble or eager src', () => {
+  const h = harness(), users = [];
+  h.c.addUserMsg = (...args) => users.push(args);
+  begin(h, [imageResult(2,'read-1'), nativeCarrier(3,'read-1')], false);
+  const row = h.c.stream.querySelector('.tool-row');
+  assert.equal(users.length, 0);
+  assert.equal(h.c.stream.querySelectorAll('.tool-row').length, 1);
+  assert.equal(row._body.childNodes.length, 0);
+  assert.equal(h.stats.imageSources, 0);
+  expand(row);
+  assert.equal(row._mediaPreview.parentNode, row._body);
+  assert.equal(row._body.querySelector('pre').textContent, 'Exact native output');
+  assert.equal(h.stats.imageSources, 1);
+  const image = row._mediaPreview.querySelector('img');
+  row.open = false; row.dispatch('toggle'); expand(row);
+  assert.equal(row._mediaPreview.querySelector('img'), image);
+  assert.equal(h.stats.imageSources, 1);
+});
+
+test('only explicit carrier provenance suppresses user attachments; legacy and mixed messages stay unchanged', () => {
+  const h = harness(), users = [];
+  h.c.addUserMsg = (...args) => users.push(args);
+  const attachments = ['session:fixture_123/' + 'b'.repeat(64) + '.png'];
+  begin(h, [
+    {seq:1,role:'user',content:'Attached image from tool read_image:',attachments},
+    {...nativeCarrier(2,'read-1'),tool_image_carrier:false,attachments,content:'A real user message'},
+  ], false);
+  assert.equal(users.length, 2);
+  assert.equal(users[0][0], 'Attached image from tool read_image:');
+  assert.equal(users[1][0], 'A real user message');
+  for (const entry of users) assert.deepEqual(Array.from(entry[2]), attachments);
+  assert.equal(h.c.stream.querySelectorAll('.tool-row').length, 0);
+});
+
+test('a carrier, result and call on three pages retain exact unopened output and resolve the original card', async () => {
+  const h = harness(); begin(h, [nativeCarrier(3,'read-1')]);
+  const temporary = h.c.stream.querySelector('.tool-row'), preview = temporary._mediaPreview;
+  assert.equal(h.stats.imageSources, 0);
+  await older(h, [imageResult(2,'read-1')], true);
+  const result = h.c.stream.querySelector('.tool-row');
+  assert.notEqual(result, temporary);
+  assert.equal(temporary.parentNode, null);
+  assert.equal(result._mediaPreview, preview);
+  assert.equal(result._body.childNodes.length, 0);
+  await older(h, [{seq:1,role:'assistant',content:'',tool_calls:[{id:'read-1',name:'read_image',arguments:'{"path":"source.png"}'}]}]);
+  assert.equal(result._mediaPreview, preview);
+  assert.equal(result._body.childNodes.length, 0);
+  expand(result);
+  assert.deepEqual(result._body.querySelectorAll('pre').map(n => n.textContent), ['{\n  "path": "source.png"\n}', 'Exact native output']);
+  assert.equal(h.stats.imageSources, 1);
+});
+
+test('opened boundary image preserves nodes and delayed output while its older call is resolved', async () => {
+  const h = harness(); begin(h, [nativeCarrier(3,'read-1')]);
+  const temporary = h.c.stream.querySelector('.tool-row'); expand(temporary);
+  const preview = temporary._mediaPreview, image = preview.querySelector('img'), button = preview.querySelector('.sent-attachment-preview');
+  await older(h, [imageResult(2,'read-1')], true);
+  const result = h.c.stream.querySelector('.tool-row');
+  assert.equal(result.open, true);
+  assert.equal(result._mediaPreview, preview);
+  // Native details.toggle is asynchronous: the call page may arrive before it.
+  await older(h, [{seq:1,role:'assistant',content:'',tool_calls:[{id:'read-1',name:'read_image',arguments:'{"path":"source.png"}'}]}]);
+  assert.ok(result._body.querySelectorAll('pre').some(n => n.textContent === 'Exact native output'));
+  assert.equal(preview.querySelector('img'), image);
+  assert.equal(preview.querySelector('.sent-attachment-preview'), button);
+  assert.equal(h.stats.imageSources, 1);
+});
+
+test('reused call IDs select the nearest strictly preceding actual result and never a future result', async () => {
+  const h = harness(); begin(h, [nativeCarrier(30,'reused')]);
+  await older(h, [imageResult(10,'reused','older'),imageResult(20,'reused','nearest')]);
+  const rows = h.c.stream.querySelectorAll('.tool-row');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]._mediaPreview, undefined);
+  assert.ok(rows[1]._mediaPreview);
+  expand(rows[1]); assert.equal(rows[1]._body.querySelector('pre').textContent, 'nearest');
+  const future = harness(); begin(future, [nativeCarrier(5,'same'),imageResult(6,'same')], false);
+  const futureRows = future.c.stream.querySelectorAll('.tool-row');
+  assert.equal(futureRows.length, 2);
+  assert.ok(futureRows[0]._mediaPreview, 'missing origin remains a usable folded card');
+  assert.equal(futureRows[1]._mediaPreview, undefined, 'a later reused result is not its origin');
+});
+
+test('canonical presentation stays visible after a native carrier boundary and expanded preference loads future rows', async () => {
+  const h = harness(); h.c.ui = {toolsExpanded:true};
+  begin(h, [nativeCarrier(3,'shown')]);
+  await older(h, [mediaMessage(2,{tool_call_id:'shown'})]);
+  const result = h.c.stream.querySelector('.tool-row');
+  assert.equal(result.open, true);
+  assert.equal(result._mediaPreview.parentNode, result.parentNode);
+  assert.equal(result._mediaPreview.querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent('/portable/image-2.png') + '&thumbnail=transcript');
+  assert.equal(result._body.querySelectorAll('img').length, 0);
+});

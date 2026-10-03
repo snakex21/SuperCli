@@ -15,11 +15,30 @@ var smartScrollFrame = null;
 var smartScrollForced = false;
 var smartScrollPending = false;
 
+function thinkingDisclosureOpen(history) {
+  return typeof ui !== "undefined" && typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : !history;
+}
+function toolDisclosureOpen() { return typeof ui !== "undefined" && ui.toolsExpanded === true; }
+function saveDisclosurePreference(kind, open) {
+  if (typeof ui === "undefined") return;
+  ui[kind === "tools" ? "toolsExpanded" : "thinkingExpanded"] = open;
+  saveUI();
+}
+
 stream.addEventListener("click", function (event) {
-  var button = event.target && event.target.closest && event.target.closest(".code-copy");
-  if (!button || !stream.contains(button)) return;
-  event.preventDefault();
-  copyCodeBlock(button);
+  var target = event.target;
+  var button = target && target.closest && target.closest(".code-copy");
+  if (button && stream.contains(button)) {
+    event.preventDefault();
+    copyCodeBlock(button);
+    return;
+  }
+  if (event.defaultPrevented || !target || !target.closest) return;
+  var summary = target.closest("summary"), row = summary && summary.parentNode;
+  if (!row || !stream.contains(row) || !row.classList ||
+      target.closest("a,button,input,select,textarea,label")) return;
+  if (row.classList.contains("tool-row")) saveDisclosurePreference("tools", !row.open);
+  else if (row.classList.contains("think-block")) saveDisclosurePreference("thinking", !row.open);
 });
 
 function appendStream(node) {
@@ -459,7 +478,7 @@ function assistantPart(part, history) {
     template.innerHTML = renderThinkBlock("");
     container = template.content.firstElementChild;
     target = container.querySelector(".think-content");
-    if (history) container.open = false;
+    container.open = thinkingDisclosureOpen(history);
   } else {
     container = target = document.createDocumentFragment();
   }
@@ -473,7 +492,7 @@ function assistantPart(part, history) {
     if (state.kind === "thinking") container.remove();
     else removeMarkdownSection(state.markdown);
   };
-  if (history && part.kind === "thinking") {
+  if (history && part.kind === "thinking" && !container.open) {
     container.addEventListener("toggle", function reveal() {
       if (!container.open) return;
       paint();
@@ -917,12 +936,14 @@ function renderToolPayloadWhenOpen(row, render) {
 }
 
 function appendHistoryToolPayload(row, body, args, text, name) {
+  row._historyPayloadRendered = false;
   return renderToolPayloadWhenOpen(row, function () {
     if (args && !FILE_READ_TOOLS[name]) {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
       body.appendChild(el("pre", "", prettyJSON(args)));
     }
     appendToolPayload(body, t("tool.output"), text || "", name, false);
+    row._historyPayloadRendered = true;
   });
 }
 
@@ -1107,7 +1128,7 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
     var cancel = renderToolPayloadWhenOpen(row, function () {
       row._cancelTaskReport = null;
       report.innerHTML = renderText(source);
-      if (history) report.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = false; });
+      report.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = thinkingDisclosureOpen(history); });
     });
     if (!row.open) row._cancelTaskReport = cancel;
   }
@@ -1116,6 +1137,7 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
 function addHistoryTask(note) {
   var row = document.createElement("details");
   row.className = "tool-row task-row done";
+  row.open = toolDisclosureOpen();
   var sum = el("summary");
   row._tname = el("span", "tname");
   row._thint = el("span", "thint");
@@ -1133,6 +1155,7 @@ function addToolCall(name, args, id) {
   var info = toolHint(name, args);
   var row = document.createElement("details");
   row.className = "tool-row";
+  row.open = toolDisclosureOpen();
   var sum = el("summary");
   var title = el("span", "tname", info.name);
   title.title = name;
@@ -1143,7 +1166,9 @@ function addToolCall(name, args, id) {
   sum.appendChild(stat);
   row.appendChild(sum);
   var body = el("div", "tbody");
-  body.hidden = true;
+  body.hidden = !row.open;
+  row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
+  row._toolName = name; row._toolArgs = args || "{}"; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
   // Like outputs, live inputs need no hidden DOM while the row is folded.
   // Task rows replace the input with their brief below; do not format it.
   if (!FILE_READ_TOOLS[name] && name !== "task" && name !== "send_message") {
@@ -1156,8 +1181,6 @@ function addToolCall(name, args, id) {
   }
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
-  row._stat = stat; row._body = body; row._tname = title; row._thint = hint;
-  row._toolName = name; row._toolArgs = args || "{}"; row._taskAgent = info.agent || ""; row._taskPrompt = info.prompt || "";
   row._t0 = performance.now();
   if (name === "task" || name === "send_message") {
     row.classList.add("task-row");
@@ -1424,14 +1447,49 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 
 // Native tool images use same-origin, session-scoped handles produced by the
 // server. Treat all strings as data; never accept provider HTML or remote URLs.
+function renderNativeToolPreview(row, preview) {
+  if (preview._cancelNativeRender) preview._cancelNativeRender();
+  preview._cancelNativeRender = null;
+  var cancel = renderToolPayloadWhenOpen(row, function () {
+    if (preview._nativePaths) {
+      renderSentAttachments(preview, preview._nativePaths, "image");
+      preview._nativePaths = null;
+    }
+    row._body.appendChild(preview);
+    preview._cancelNativeRender = null;
+  });
+  if (!row.open) preview._cancelNativeRender = cancel;
+}
 function appendNativeToolImages(row, paths) {
-  if (!row || !row.parentNode || row._mediaPreview) return;
+  if (!row || !row._body || row._mediaPreview) return;
   paths = (paths || []).filter(function (path) {
     return typeof path === "string" && /^session:[A-Za-z0-9_-]+\/[a-f0-9]{64}\.(png|jpg|jpeg|gif|webp)$/.test(path);
   });
   if (!paths.length) return;
-  var preview = el("div", "tool-media-preview");
-  renderSentAttachments(preview, paths, "image");
-  row.parentNode.insertBefore(preview, row.nextSibling);
+  var preview = el("div", "tool-media-preview tool-native-preview");
+  preview._nativePaths = paths;
   row._mediaPreview = preview;
+  // Keep folded media out of the body. Both image nodes and their src are
+  // created only after opening, after the row's payload callback.
+  renderNativeToolPreview(row, preview);
+}
+function moveHistoryToolImages(source, target) {
+  var preview = source._mediaPreview;
+  if (!preview) return;
+  if (preview._cancelNativeRender) preview._cancelNativeRender();
+  preview._cancelNativeRender = null;
+  source._mediaPreview = null;
+  if (!target._mediaPreview) {
+    target._mediaPreview = preview;
+    if (source.open) {
+      target.open = true;
+      target._body.hidden = false;
+    }
+    renderNativeToolPreview(target, preview);
+  } else {
+    // Canonical show/capture output is already visible; analysis adds no copy.
+    preview._nativePaths = null;
+    preview.remove();
+  }
+  source.remove();
 }

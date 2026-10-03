@@ -5,6 +5,7 @@
 var ui = {
   theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
+  toolsExpanded: false, thinkingExpanded: null,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
@@ -152,6 +153,8 @@ async function loadUI() {
       if (Object.keys(migration).length) await jpost("/api/settings", migration);
     }
   } catch (e) {}
+  ui.toolsExpanded = ui.toolsExpanded === true;
+  ui.thinkingExpanded = typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : null;
   ui.lang = normalizeLanguage(ui.lang) || detectedLanguage();
   try { await loadLanguage(ui.lang); } catch (e) {}
   // A persisted desktop-open inspector must not cover the conversation when

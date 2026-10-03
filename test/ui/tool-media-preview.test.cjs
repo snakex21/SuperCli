@@ -355,11 +355,16 @@ test('WebP keeps the original preview fallback while failed PNG thumbnails keep 
     assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
   }
 });
-test('native MCP image refs show same-origin previews without base64 and reject remote URLs', () => {
+test('native MCP images stay folded and materialize safe thumbnails only after opening', () => {
   const h = harness();
   const row = liveResult(h, 'mcp_bridge', 'Captured');
   const token = 'session:fixture_123/' + 'a'.repeat(64) + '.png';
   h.c.appendNativeToolImages(row, [token, 'https://untrusted.test/image.png', 'data:image/png;base64,secret', 'session:../escape.png']);
+  assert.equal(row._mediaPreview.parentNode, undefined);
+  assert.equal(row._body.children.length, 0);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 0);
+  expand(row);
+  assert.equal(row._mediaPreview.parentNode, row._body);
   assert.equal(row._mediaPreview.querySelectorAll('img').length, 1);
   assert.equal(row._mediaPreview.querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(token) + '&thumbnail=transcript');
   h.c.appendNativeToolImages(row, [token]);
