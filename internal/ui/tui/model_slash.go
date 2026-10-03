@@ -91,7 +91,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		return m, func() tea.Msg {
 			out, err := handler(context.Background(), cmd.Args)
-			return slashResultMsg{Body: out, Err: err, Document: true, Local: true}
+			return slashResultMsg{Body: out, Err: err, Document: true, Local: true, RefreshAccounts: cmd.Name == "login" || cmd.Name == "logout"}
 		}
 	}
 	m.appendLine(m.marker.Running())
@@ -102,7 +102,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		defer cancel()
 		out, err := handler(ctx, cmd.Args)
-		return slashResultMsg{Body: out, Err: err, Document: true}
+		return slashResultMsg{Body: out, Err: err, Document: true, RefreshAccounts: cmd.Name == "login" || cmd.Name == "logout"}
 	}
 }
 

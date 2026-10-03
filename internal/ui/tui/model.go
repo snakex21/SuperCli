@@ -112,34 +112,35 @@ type Model struct {
 	tracker *fileops.Tracker
 
 	// F26.5: modelSwapper for /model hot-swap.
-	modelSwapper     ModelSwapper
-	modelLister      ModelLister
-	modelSwapFn      ModelSwapFunc
-	resumeSession    func(context.Context, string, []llm.Message, []string) error
-	resumeContext    context.Context
-	prepareResume    func(context.Context, string) error
-	initialResumeCmd tea.Cmd
-	drafts           *DraftRecovery
-	submittingDraft  string
-	cancelling       bool
-	draftErrorShown  string
-	sessionStore     *session.Store
-	statsRecorder    stats.Recorder     // F28: per-turn metrics for /cost
-	providerMgr      *providers.Manager // F30: provider management
-	activeProvider   string
-	modelContexts    *config.ModelContextStore
-	caps             *llm.CapabilityRegistry
-	goalSvc          *goal.Service
-	globalGoalSvc    *goal.Service
-	goalUnassigned   []*goal.Goal
-	goalMenuTasks    []goal.Task
-	goalMenuHistory  []*goal.Goal
-	toolRegistry     *tools.Registry
-	doctorReport     *doctor.Report
-	menu             interactiveMenu
-	previewURL       string
-	previewID        uint64
-	autocomp         autocomplete // autocomplete popup state
+	modelSwapper         ModelSwapper
+	modelLister          ModelLister
+	modelSwapFn          ModelSwapFunc
+	codexAccountsChanged bool
+	resumeSession        func(context.Context, string, []llm.Message, []string) error
+	resumeContext        context.Context
+	prepareResume        func(context.Context, string) error
+	initialResumeCmd     tea.Cmd
+	drafts               *DraftRecovery
+	submittingDraft      string
+	cancelling           bool
+	draftErrorShown      string
+	sessionStore         *session.Store
+	statsRecorder        stats.Recorder     // F28: per-turn metrics for /cost
+	providerMgr          *providers.Manager // F30: provider management
+	activeProvider       string
+	modelContexts        *config.ModelContextStore
+	caps                 *llm.CapabilityRegistry
+	goalSvc              *goal.Service
+	globalGoalSvc        *goal.Service
+	goalUnassigned       []*goal.Goal
+	goalMenuTasks        []goal.Task
+	goalMenuHistory      []*goal.Goal
+	toolRegistry         *tools.Registry
+	doctorReport         *doctor.Report
+	menu                 interactiveMenu
+	previewURL           string
+	previewID            uint64
+	autocomp             autocomplete // autocomplete popup state
 	// providerStatuses caches async connectivity probe results for
 	// the /providers menu (key: provider name). The menu renders
 	// instantly with "checking..." and statuses pop in as the
@@ -215,50 +216,9 @@ type Model struct {
 	// transcript).
 	tipShown bool
 
-	// Transcript holds the raw text for backward-compatible
-	// test assertions. Do NOT use strings.Builder here:
-	// Bubble Tea models are copied by value, and Builder panics
-	// after a non-zero copy. transcriptBuffer is copy-safe: it
-	// holds a pointer to its backing slice, so every copy of the
-	// model shares the same buffer and appends are amortized O(1)
-	// (the old string-concatenation version was O(n²)).
-	transcript transcriptBuffer
-}
-
-// transcriptBuffer is a copy-safe, append-only text buffer.
-// The backing []byte lives behind a pointer: copying the
-// struct (and hence the Bubble Tea model) copies only the
-// pointer, so all copies append to the same buffer and no
-// copy can observe a stale slice header. The zero value is
-// ready to use; the backing slice is allocated lazily on
-// first write.
-type transcriptBuffer struct{ buf *[]byte }
-
-func (t *transcriptBuffer) ensure() {
-	if t.buf == nil {
-		t.buf = new([]byte)
-	}
-}
-
-// WriteString appends s. It implements io.StringWriter.
-func (t *transcriptBuffer) WriteString(s string) (int, error) {
-	t.ensure()
-	*t.buf = append(*t.buf, s...)
-	return len(s), nil
-}
-
-// WriteByte appends b. It implements io.ByteWriter.
-func (t *transcriptBuffer) WriteByte(b byte) error {
-	t.ensure()
-	*t.buf = append(*t.buf, b)
-	return nil
-}
-
-func (t transcriptBuffer) String() string {
-	if t.buf == nil {
-		return ""
-	}
-	return string(*t.buf)
+	// hasTranscript preserves the legacy empty/welcome decision without a
+	// second copy of the completed text already owned by chat.
+	hasTranscript bool
 }
 
 // SlashHandler is the signature for a TUI slash command
@@ -621,11 +581,12 @@ type runExtEventMsg struct {
 // slashResultMsg is delivered to the TUI when a slash
 // command handler returns.
 type slashResultMsg struct {
-	Body     string
-	Err      error
-	History  *resumedTranscript
-	Document bool
-	Local    bool
+	Body            string
+	Err             error
+	History         *resumedTranscript
+	Document        bool
+	Local           bool
+	RefreshAccounts bool
 }
 
 // askRequestMsg is delivered to the TUI by main.go's pump
@@ -672,7 +633,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Keep the empty-state welcome responsive. Once a conversation has
 		// started refreshTranscript owns the viewport and resize must never
 		// replace the chat with the welcome screen.
-		if m.transcript.String() == "" && m.current == "" {
+		if !m.hasTranscript && m.current == "" {
 			m.setViewportContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
 		} else {
 			m.refreshTranscript()
@@ -800,7 +761,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case usageLoadedMsg:
-		if m.menu.kind == menuUsage && m.menu.category == msg.scope {
+		if m.menu.kind == menuUsage && m.menu.category == msg.scope && (msg.request == nil || msg.request == m.menu.usage) {
 			if msg.err != nil {
 				m.menu.formErr = msg.err.Error()
 			} else {
@@ -878,6 +839,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case slashResultMsg:
+		if msg.Err == nil && msg.RefreshAccounts {
+			m.codexAccountsChanged = true
+		}
 		if !msg.Local {
 			m.busy = false
 			m.cancel.Disarm()

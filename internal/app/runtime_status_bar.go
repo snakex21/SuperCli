@@ -49,9 +49,8 @@ func buildDashboardFn(d statusBarDeps) func() tui.DashboardSnapshot {
 			snaps, _, active := rt.PoolUsage()
 			if len(snaps) > 1 {
 				s.Account = fmt.Sprintf("%s (%d/%d)", rt.ActiveLabel(), active+1, len(snaps))
-				if p5, p7, n := rt.PoolAggregate(); n > 0 {
-					s.Limits = strings.TrimSpace(s.Limits + fmt.Sprintf(" · %d: 5h ~%d%% / 7d ~%d%%", n, p5, p7))
-				}
+				summary := rt.PoolUsageSummary()
+				s.Limits = strings.TrimSpace(s.Limits + fmt.Sprintf(" · %d/%d", summary.Available, summary.Accounts))
 			}
 		}
 		return s

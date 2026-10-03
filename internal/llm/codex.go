@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -71,8 +72,8 @@ type CodexConfig struct {
 	// file per account instead of sharing one (which made every
 	// account display another account's usage). Empty uses the
 	// legacy shared file. Pass the account id known at build time
-	// (e.g. from the auth manager) — it is not required to match
-	// the live token; it only namespaces the on-disk snapshot.
+	// (e.g. from the auth manager). Usage updates with a different
+	// live identity are rejected instead of mixing account snapshots.
 	AccountID string
 	// Sampling overrides the process-global sampling settings. Only the
 	// public Responses API dialect (StandardResponsesAPI) receives
@@ -100,8 +101,9 @@ type CodexProvider struct {
 	// on each stream without an extra request. Guarded by rlMu
 	// because doWithAuth runs on the streaming goroutine while the
 	// TUI reads it from the render goroutine.
-	rlMu sync.Mutex
-	rl   CodexRateLimits
+	rlMu        sync.Mutex
+	rl          CodexRateLimits
+	rlAccountID string
 }
 
 // CodexRateLimits is a snapshot of the ChatGPT-subscription usage
@@ -110,18 +112,20 @@ type CodexProvider struct {
 // usable headers were present (e.g. a non-Codex provider), in which
 // case the HUD shows nothing.
 type CodexRateLimits struct {
-	// Primary is the short rolling window (typically 5h / 300 min).
+	// Primary is the server-provided primary window, when present.
 	PrimaryUsedPct    int
 	PrimaryWindowMin  int
 	PrimaryResetAt    int64 // unix epoch seconds, 0 if unknown
 	PrimaryResetAfter int64 // seconds until reset, 0 if unknown
-	// Secondary is the long window (typically weekly / 10080 min).
+	// Secondary is the server-provided secondary window, when present.
 	SecondaryUsedPct    int
 	SecondaryWindowMin  int
 	SecondaryResetAt    int64
 	SecondaryResetAfter int64
-	// OK reports whether at least one usage percentage was present.
+	// OK reports a recognized usage observation; Snapshot retains unknowns.
 	OK bool
+	// Snapshot preserves missing values, additional server windows and account plan.
+	Snapshot *CodexUsageSnapshot `json:"snapshot,omitempty"`
 }
 
 // RateLimits returns the latest rate-limit snapshot. The bool is
@@ -129,7 +133,12 @@ type CodexRateLimits struct {
 func (p *CodexProvider) RateLimits() (CodexRateLimits, bool) {
 	p.rlMu.Lock()
 	defer p.rlMu.Unlock()
-	return p.rl, p.rl.OK
+	rl := p.rl
+	if rl.Snapshot != nil {
+		snapshot := rl.Snapshot.At(time.Now())
+		rl.Snapshot = &snapshot
+	}
+	return rl, rl.OK
 }
 
 // setRateLimits stores a freshly parsed snapshot when it is usable
@@ -143,11 +152,28 @@ func (p *CodexProvider) RateLimits() (CodexRateLimits, bool) {
 // failed write is silently ignored (it only delays the tile by one
 // response and never affects the live stream).
 func (p *CodexProvider) setRateLimits(accountID string, rl CodexRateLimits) {
-	if !rl.OK {
+	if !rl.OK || (p.cfg.AccountID != "" && p.cfg.AccountID != accountID) {
 		return
 	}
 	p.rlMu.Lock()
+	if rl.Snapshot != nil {
+		snapshot := rl.Snapshot.At(time.Now())
+		// Header-only updates retain account plan/credits/additional limits.
+		if snapshot.Source == "headers" && p.rl.Snapshot != nil && p.rlAccountID == accountID {
+			prior := p.rl.Snapshot
+			snapshot.PlanType = prior.PlanType
+			snapshot.Credits = prior.Credits
+			for _, limit := range prior.RateLimits {
+				if limit.ID != "codex" {
+					snapshot.RateLimits = append(snapshot.RateLimits, limit)
+				}
+			}
+		}
+		snapshot = snapshot.At(time.Now())
+		rl.Snapshot = &snapshot
+	}
 	p.rl = rl
+	p.rlAccountID = accountID
 	p.rlMu.Unlock()
 	_ = saveCodexRateLimits(p.cfg.DataDir, accountID, rl)
 }
@@ -174,6 +200,9 @@ func parseCodexRateLimits(h http.Header) CodexRateLimits {
 	rl.SecondaryWindowMin = parseIntHeader(h.Get("X-Codex-Secondary-Window-Minutes"))
 	rl.SecondaryResetAt = parseInt64Header(h.Get("X-Codex-Secondary-Reset-At"))
 	rl.SecondaryResetAfter = parseInt64Header(h.Get("X-Codex-Secondary-Reset-After-Seconds"))
+	if rl.OK {
+		rl.Snapshot = codexSnapshotFromHeaders(h, time.Now())
+	}
 	return rl
 }
 
@@ -188,7 +217,7 @@ func parsePercent(s string) (int, bool) {
 	if i, err := strconv.Atoi(s); err == nil {
 		return clampPct(i), true
 	}
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
+	if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
 		return clampPct(int(f)), true
 	}
 	return 0, false
@@ -244,13 +273,16 @@ func (rl CodexRateLimits) formatHUDAt(now time.Time) string {
 	if !rl.OK {
 		return ""
 	}
+	if rl.Snapshot != nil {
+		return rl.Snapshot.formatHUD(now)
+	}
 	primaryPct, primaryReset := effectiveUsedPct(rl.PrimaryUsedPct, rl.PrimaryResetAt, now)
-	primary := fmt.Sprintf("%s %s", windowLabel(rl.PrimaryWindowMin, "5h"), formatPct(primaryPct, primaryReset))
+	primary := fmt.Sprintf("%s %s", windowLabel(rl.PrimaryWindowMin, "primary"), formatPct(primaryPct, primaryReset))
 	if d := rl.primaryResetDuration(now, primaryReset); d > 0 {
 		primary += " (" + shortDuration(d) + ")"
 	}
 	secondaryPct, secondaryReset := effectiveUsedPct(rl.SecondaryUsedPct, rl.SecondaryResetAt, now)
-	secondary := fmt.Sprintf("%s %s", windowLabel(rl.SecondaryWindowMin, "7d"), formatPct(secondaryPct, secondaryReset))
+	secondary := fmt.Sprintf("%s %s", windowLabel(rl.SecondaryWindowMin, "secondary"), formatPct(secondaryPct, secondaryReset))
 	return primary + " · " + secondary
 }
 
@@ -393,7 +425,7 @@ func NewCodex(cfg CodexConfig) (*CodexProvider, error) {
 		sampling = resolveSampling(cfg.Sampling).responsesOnly()
 		logSampling("responses", cfg.Model, sampling)
 	}
-	p := &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, sampling: sampling}
+	p := &CodexProvider{cfg: cfg, http: cfg.HTTPClient, caps: caps, sampling: sampling, rlAccountID: cfg.AccountID}
 	// Seed the snapshot from disk so the HUD `limit:` tile renders the
 	// last known usage immediately, before any /responses call. This
 	// reads a local file only — it never performs a network request.

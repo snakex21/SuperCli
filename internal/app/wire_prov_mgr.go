@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/llm/consult"
@@ -15,7 +16,7 @@ import (
 
 // setupProviderManager creates the F30 provider manager, points active
 // config writes at the highest-priority config file, reloads providers
-// and registers the static Codex catalog for configured codex entries.
+// and loads account-bound Codex metadata for configured entries.
 func setupProviderManager(dataDir, cwd string, caps *llm.CapabilityRegistry) *providers.Manager {
 	// F30: create provider manager, load persisted
 	// hidden-models state, and reload the providers list
@@ -39,19 +40,11 @@ func setupProviderManager(dataDir, cwd string, caps *llm.CapabilityRegistry) *pr
 	provMgr.Reload()
 	provMgr.LoadHiddenState()
 
-	// ChatGPT-OAuth (codex) providers have no /v1/models endpoint,
-	// so the background ScanModels alone could never discover their
-	// models in past releases. Register the static Codex catalog for
-	// every configured codex-type entry NOW, under the entry's own
-	// name — otherwise the /model picker stays empty after a restart
-	// (the catalog used to be registered only inside the /login
-	// handler, and only under the hardcoded "codex" name, while the
-	// onboarding wizard saves the entry as name "openai").
-	for _, p := range provMgr.Configured() {
-		if !p.Disabled && p.Type == config.ProviderCodex {
-			llm.RegisterCodexCatalog(caps, p.Name)
-		}
-	}
+	// Load account-bound metadata without blocking startup on a network call.
+	tc, _ := config.ResolveConfig(dataDir, cwd, "")
+	provMgr.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
+	_, _ = provMgr.EnsureCodexProvider()
+	provMgr.LoadCodexModels(caps)
 	return provMgr
 }
 

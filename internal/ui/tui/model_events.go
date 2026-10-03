@@ -217,22 +217,16 @@ func (m *Model) flushCurrent() {
 	}
 }
 
-// appendLine adds a system-level message to the chat and the
-// raw transcript for backward-compatible test assertions.
+// appendLine adds a system-level message to the canonical chat.
 func (m *Model) appendLine(line string) {
 	m.chat.addSystem(line)
 	m.appendLineToTranscript(line)
 }
 
-// appendLineToTranscript writes to the raw transcript only.
-// Used for plain-text markers that don't need chat coloring.
-func (m *Model) appendLineToTranscript(line string) {
-	m.transcript.WriteString(line)
-	m.transcript.WriteByte('\n')
-}
-
-func (m *Model) completedLines() string {
-	return m.transcript.String()
+// Every legacy append included a newline, including an empty line. Preserve
+// that presence condition without storing a second raw transcript.
+func (m *Model) appendLineToTranscript(_ string) {
+	m.hasTranscript = true
 }
 
 // View renders the current state. When the user is being

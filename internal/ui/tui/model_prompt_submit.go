@@ -49,6 +49,10 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 		m.appendLine(m.marker.NoAgent())
 		return m, nil
 	}
+	if err := m.refreshCodexAccounts(); err != nil {
+		m.submittingDraft = text
+		return m, func() tea.Msg { return runStartMsg{err: err, draft: text} }
+	}
 	if m.onRunStart != nil {
 		m.onRunStart()
 	}

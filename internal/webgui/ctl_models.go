@@ -44,6 +44,10 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	active := s.eng.ModelName()
 	provider, _, _ := s.eng.RuntimeSelection()
 
+	_, _ = m.EnsureCodexProvider()
+	m.LoadCodexModels(s.eng.caps)
+	m.RefreshCodexModels(r.Context(), s.eng.caps)
+
 	s.eng.ensureLocalReasoningMetadata(r.Context())
 
 	// Auto-scan if no models cached yet (first request after startup)
@@ -54,11 +58,6 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 	models := make([]modelView, 0)
 	seen := map[string]struct{}{}
-	for _, p := range m.Configured() {
-		if !p.Disabled && p.Type == config.ProviderCodex {
-			llm.RegisterCodexCatalog(s.eng.caps, p.Name)
-		}
-	}
 	for _, p := range m.ListConfigured(s.eng.caps) {
 		if p.Disabled {
 			continue

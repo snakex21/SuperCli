@@ -114,7 +114,7 @@ func TestViewportRepeatParity(t *testing.T) {
 	m.chat.addUser("first chat after welcome")
 	m.refreshTranscript()
 	m.chat = newChat(80, "en")
-	m.transcript = transcriptBuffer{}
+	m.hasTranscript = false
 	next, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = next.(Model)
 	m.chat.addUser("first chat after welcome")

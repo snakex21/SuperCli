@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
+	"supercli/internal/llm/providers"
 	"supercli/internal/system/config"
 	"supercli/internal/system/uilang"
 )
@@ -24,22 +26,28 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 		labels = nil // fall through to the default-account path
 	}
 
-	// Count accounts that actually have usable tokens. Only a
-	// genuine multi-account setup (>=2) takes the router path; a
-	// single account uses the original global-manager path
-	// unchanged (preserving its usage snapshot / HUD behaviour).
-	var loggedIn []string
-	for _, label := range labels {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
-		if mgr.LoggedIn() {
-			loggedIn = append(loggedIn, label)
-		}
+	opts := codexauth.Options{}
+	if codexAuthMgr != nil && filepath.Clean(filepath.Dir(codexAuthMgr.Path())) == filepath.Clean(dataDir) {
+		opts = codexAuthMgr.Options()
 	}
-
-	if len(loggedIn) > 1 {
-		var pool []llm.Provider
-		for _, label := range loggedIn {
-			mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{})
+	if cfg.BaseURL != "" {
+		opts.BackendURL = cfg.BaseURL
+	}
+	opts = opts.WithDefaults()
+	// A single named account is still a valid login. Every manager uses the
+	// same resolved endpoints, rather than reverting named accounts to defaults.
+	var loggedIn []string
+	var pool []llm.Provider
+	for _, label := range labels {
+		mgr := codexauth.NewManagerFor(dataDir, label, opts)
+		if label == codexauth.DefaultAccount && codexAuthMgr != nil && codexAuthMgr.Path() == mgr.Path() && codexAuthMgr.Options() == opts {
+			mgr = codexAuthMgr
+		}
+		if mgr.LoggedIn() {
+			if available, known := providers.CodexAccountModelAvailability(dataDir, opts.BackendURL, mgr, cfg.Model); known && !available {
+				continue
+			}
+			loggedIn = append(loggedIn, label)
 			// Resolve the account id from disk (no network) so each
 			// provider scopes its rate-limit snapshot to its own
 			// account — otherwise both accounts share one file and
@@ -63,7 +71,12 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 			}
 			pool = append(pool, p)
 		}
-		log.Printf("codex: magazine across %d accounts: %v", len(pool), loggedIn)
+	}
+	if len(pool) == 1 {
+		return pool[0], nil
+	}
+	if len(pool) > 1 {
+		log.Printf("codex: round robin across %d accounts", len(pool))
 		rt, err := llm.NewRouter(pool...)
 		if err != nil {
 			return nil, err
@@ -74,13 +87,14 @@ func buildCodexPool(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 		return rt, nil
 	}
 
-	// Single (or zero) account: preserve the exact original path,
-	// including the global codexAuthMgr the /login command already
-	// populated (carries the usage snapshot for the HUD).
-	mgr := codexAuthMgr
-	if mgr == nil {
-		mgr = codexauth.NewManager(dataDir, codexauth.Options{})
+	// If saved logins all advertised the model absent, do not route it to
+	// an unrelated default account. Unknown catalogs above remain eligible.
+	for _, label := range labels {
+		if codexauth.NewManagerFor(dataDir, label, opts).LoggedIn() {
+			return nil, fmt.Errorf("codex: selected model is absent from the logged-in accounts' current catalogs")
+		}
 	}
+	mgr := codexauth.NewManager(dataDir, opts)
 	return llm.NewCodex(llm.CodexConfig{
 		BackendURL:     mgr.Options().BackendURL,
 		Model:          cfg.Model,
@@ -104,8 +118,7 @@ type codexUsageFetcher interface {
 // refreshes the usage snapshot for EVERY account in the pool (each with
 // its own token), not just the active one. When a provider implements
 // it, refreshing usage fills in every account's snapshot so the pool
-// aggregate counts all accounts — the whole point of the magazine
-// being one combined limit. Single-account / non-router providers only
+// dashboard retains independent account limits. Single-account providers only
 // implement codexUsageFetcher.
 type codexUsageAllFetcher interface {
 	FetchUsageAll(ctx context.Context) (llm.CodexRateLimits, error)
@@ -126,11 +139,7 @@ func refreshCodexUsage(ctx context.Context, prov llm.Provider) (llm.CodexRateLim
 	return llm.CodexRateLimits{}, fmt.Errorf("provider has no usage")
 }
 
-// codexPoolUsageDetail returns a per-account usage breakdown when
-// prov is a multi-account router, or "" otherwise. It renders an
-// aligned table with a small bar for each account's 5h and 7d
-// usage, marks the active account, and adds a pool total row — so
-// the user sees both "this account" and "all accounts combined".
+// codexPoolUsageDetail preserves each account's actual server windows.
 func codexPoolUsageDetail(prov llm.Provider, languages ...string) string {
 	language := optionalCommandLanguage(languages)
 	rt, ok := llm.Unwrap(prov).(*llm.RouterProvider)
@@ -139,36 +148,27 @@ func codexPoolUsageDetail(prov llm.Provider, languages ...string) string {
 	}
 	snaps, oks, active := rt.PoolUsage()
 	if len(snaps) <= 1 {
-		return "" // single account: the main detail already covers it
-	}
-	// Column width: longest account label (so the bars line up).
-	nameW := len("account")
-	for i := range snaps {
-		if l := len(rt.LabelAt(i)); l > nameW {
-			nameW = l
-		}
+		return ""
 	}
 	var b strings.Builder
 	b.WriteString(uilang.Text(language, "app.usage.accounts"))
-	for i, s := range snaps {
+	for i, snapshot := range snaps {
 		marker := "  "
 		if i == active {
-			marker = "▶ "
+			marker = "> "
 		}
-		name := rt.LabelAt(i)
-		if !oks[i] || !s.OK {
-			fmt.Fprintf(&b, uilang.Text(language, "app.usage.no_account_data"), marker, nameW, name)
+		fmt.Fprintf(&b, "%s%s\n", marker, rt.LabelAt(i))
+		if !oks[i] || !snapshot.OK {
+			b.WriteString("  " + uilang.Text(language, "acct.usage.noSnapshot") + "\n")
 			continue
 		}
-		fmt.Fprintf(&b, "%s%-*s   5h %s   7d %s\n",
-			marker, nameW, name,
-			usageBar(s.PrimaryUsedPct), usageBar(s.SecondaryUsedPct))
+		for _, line := range strings.Split(snapshot.FormatDetailFor(language), "\n") {
+			b.WriteString("  " + line + "\n")
+		}
 	}
-	// Pool total.
-	if p5, p7, n := rt.PoolAggregate(); n > 0 {
-		fmt.Fprintf(&b, "  %-*s   5h %s   7d %s\n",
-			nameW, uilang.Text(language, "app.usage.pool"), usageBar(p5), usageBar(p7))
-	}
+	summary := rt.PoolUsageSummary()
+	fmt.Fprintf(&b, "%s: %d · %s: %d · %s: %d · %s: %d\n", uilang.Text(language, "acct.usage.accounts"), summary.Accounts, uilang.Text(language, "acct.usage.available"), summary.Available, uilang.Text(language, "acct.usage.exhausted"), summary.Exhausted, uilang.Text(language, "acct.usage.unknown"), summary.Unknown)
+	b.WriteString(uilang.Text(language, "acct.usage.aggregateHint"))
 	return strings.TrimRight(b.String(), "\n")
 }
 

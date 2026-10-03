@@ -158,7 +158,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 	m.chat.hideGenerationSpeed = hideSpeed
 	m.chat.toolsExpanded = m.toolExpanded
 	m.resetCurrent()
-	m.transcript = transcriptBuffer{}
+	m.hasTranscript = false
 	m.workerViews = nil
 	names := make(map[string]string)
 	for i, item := range h.Messages {

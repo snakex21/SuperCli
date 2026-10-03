@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"supercli/internal/account/codexauth"
 	"supercli/internal/account/credits"
 	"supercli/internal/account/pricing"
 	"supercli/internal/agent"
@@ -177,6 +178,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 	}
 	f := factory.New(nil, dataDir, caps)
 	tc, _ := config.ResolveConfig(dataDir, home, "")
+	f.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
 	// Daily per-endpoint request counter — the web front-end and any
 	// bot embedding it read quota from the same store as the TUI.
 	llm.InitRequestBudget(dataDir)

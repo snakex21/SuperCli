@@ -269,6 +269,19 @@ func (m *Manager) providerByNameLocked(name string) (config.ProviderConf, bool) 
 }
 
 func modelVisibleForProvider(p config.ProviderConf, id string) bool {
+	if p.Type == config.ProviderCodex {
+		// Account catalogs are authoritative. Keep an explicit configured model
+		// visible for offline recovery without restoring the old static seed.
+		if id == p.Model && id != "" {
+			return true
+		}
+		for _, known := range p.CachedModels {
+			if id == known {
+				return true
+			}
+		}
+		return false
+	}
 	if !freeOnlyProvider(p) {
 		return true
 	}

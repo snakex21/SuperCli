@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"supercli/internal/account/usagecost"
+	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/stats"
@@ -19,11 +20,16 @@ type usageSnapshot struct {
 	cost                             usagecost.Summary
 	calls                            []stats.Call
 	turns                            []stats.Turn
+	codexAccounts                    []llm.CodexAccountUsage
+	codexSummary                     llm.CodexUsageSummary
+	codexLoading                     bool
+	codexError                       string
 }
 type usageLoadedMsg struct {
-	data  *usageSnapshot
-	err   error
-	scope int
+	data    *usageSnapshot
+	err     error
+	scope   int
+	request *usageSnapshot // guards Codex requests after close/reopen or tab changes
 }
 
 func (m Model) openUsageMenu() (tea.Model, tea.Cmd) {
@@ -117,18 +123,46 @@ func (m Model) loadUsage() tea.Cmd {
 func (m Model) handleUsageKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "left", "right", "tab", "shift+tab":
+		categories := []int{0, 2}
 		if m.loadedSessionID != "" {
-			m.menu.category = 1 - m.menu.category
-			m.menu.cursor = 0
-			m.menu.usage = nil
-			return m, m.loadUsage()
+			categories = []int{0, 1, 2}
 		}
-		return m, nil
+		index := 0
+		for i, c := range categories {
+			if c == m.menu.category {
+				index = i
+				break
+			}
+		}
+		step := 1
+		if key.String() == "left" || key.String() == "shift+tab" {
+			step = -1
+		}
+		m.menu.category = categories[(index+step+len(categories))%len(categories)]
+		m.menu.cursor = 0
+		m.menu.usage = nil
+		m.menu.formErr = ""
+		if m.menu.category == 2 {
+			return m.beginCodexUsage(false)
+		}
+		return m, m.loadUsage()
 	case "r", "R":
+		if m.menu.category == 2 {
+			if m.menu.usage != nil && m.menu.usage.codexLoading {
+				return m, nil
+			}
+			return m.beginCodexUsage(true)
+		}
 		return m, m.loadUsage()
 	}
-	return m.handleSearchMenuKey(key, func() int { return len(m.usageItems()) }, func() (tea.Model, tea.Cmd) { return m, nil })
+	return m.handleSearchMenuKey(key, func() int { return len(m.usageItems()) }, func() (tea.Model, tea.Cmd) {
+		if m.menu.category == 2 {
+			return m.refreshSelectedCodexUsage()
+		}
+		return m, nil
+	})
 }
+
 func (m Model) costLabel(c usagecost.Summary) string {
 	switch c.State {
 	case "free":
@@ -151,6 +185,14 @@ func (m Model) costLabel(c usagecost.Summary) string {
 	return label
 }
 func (m Model) usageItems() []menuListItem {
+	if m.menu.category == 2 {
+		rows := m.codexUsageRows()
+		items := make([]menuListItem, len(rows))
+		for i, row := range rows {
+			items[i] = row.menuListItem
+		}
+		return items
+	}
 	d := m.menu.usage
 	if d == nil {
 		return nil
@@ -189,10 +231,13 @@ func (m Model) costSourceLabel(source string) string {
 	}
 }
 func (m Model) renderUsageMenu() string {
+	if m.menu.category == 2 {
+		return m.renderCodexUsageMenu()
+	}
 	p := menuPage{title: m.tr("tui.menu_usage.6ed5b1520e"), footer: m.tr("tui.menu_usage.6dc0164c79"), empty: m.tr("tui.menu_usage.0134e99d31")}
-	p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc"), m.tr("tui.menu_usage.20844222e7")}, m.menu.category)
+	p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc"), m.tr("tui.menu_usage.20844222e7"), m.tr("acct.title")}, m.menu.category)
 	if m.loadedSessionID == "" {
-		p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc")}, 0)
+		p.tabs = m.menuTabs([]string{m.tr("tui.menu_usage.34a04b78fc"), m.tr("acct.title")}, 0)
 	} else {
 		p.footer += " · ←→ " + m.tr("tui.menu_usage.5f161c9149")
 	}

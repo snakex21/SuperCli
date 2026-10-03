@@ -1,6 +1,7 @@
 package codexauth
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -151,6 +152,8 @@ func Load(path string) (*AuthFile, error) {
 		return nil, fmt.Errorf("codexauth: read %s: %w", path, err)
 	}
 	var af AuthFile
+	// Imported Windows UTF-8 files may include a BOM; credentials stay local.
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	if err := json.Unmarshal(data, &af); err != nil {
 		return nil, fmt.Errorf("codexauth: parse %s: %w", path, err)
 	}

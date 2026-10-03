@@ -318,8 +318,8 @@ func TestUpdate_SlashResultErrorDoesNotQuit(t *testing.T) {
 	if mm.busy {
 		t.Fatal("slashResultMsg should clear busy")
 	}
-	if !strings.Contains(mm.transcript.String(), "darwin failed") {
-		t.Fatalf("expected error in transcript, got %q", mm.transcript.String())
+	if !strings.Contains(mm.completedLines(), "darwin failed") {
+		t.Fatalf("expected error in transcript, got %q", mm.completedLines())
 	}
 }
 
@@ -375,8 +375,8 @@ func TestUpdate_AllCoreSlashCommandsAreSimulated(t *testing.T) {
 			if cmd != nil {
 				t.Fatalf("/%s result should not schedule another command", name)
 			}
-			if !strings.Contains(mm.transcript.String(), "ok:sample args") {
-				t.Fatalf("/%s transcript missing result: %q", name, mm.transcript.String())
+			if !strings.Contains(mm.completedLines(), "ok:sample args") {
+				t.Fatalf("/%s transcript missing result: %q", name, mm.completedLines())
 			}
 		})
 	}
@@ -412,8 +412,8 @@ func TestUpdate_AllCoreSlashCommandErrorsAreNonFatal(t *testing.T) {
 			if mm.busy {
 				t.Fatalf("/%s error should clear busy", name)
 			}
-			if !strings.Contains(mm.transcript.String(), "boom "+name) {
-				t.Fatalf("/%s transcript missing error: %q", name, mm.transcript.String())
+			if !strings.Contains(mm.completedLines(), "boom "+name) {
+				t.Fatalf("/%s transcript missing error: %q", name, mm.completedLines())
 			}
 		})
 	}
@@ -433,8 +433,8 @@ func TestUpdate_UnknownSlashCommandIsNonFatal(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("unknown slash command must not schedule a command")
 	}
-	if !strings.Contains(mm.transcript.String(), "unknown command") {
-		t.Fatalf("expected unknown command in transcript, got %q", mm.transcript.String())
+	if !strings.Contains(mm.completedLines(), "unknown command") {
+		t.Fatalf("expected unknown command in transcript, got %q", mm.completedLines())
 	}
 }
 
@@ -582,8 +582,8 @@ func TestUpdate_EnterWithoutAgentShowsError(t *testing.T) {
 	if mm.busy {
 		t.Fatal("should not start without an agent")
 	}
-	if !strings.Contains(mm.transcript.String(), "no agent wired") {
-		t.Fatalf("expected error message, got %q", mm.transcript.String())
+	if !strings.Contains(mm.completedLines(), "no agent wired") {
+		t.Fatalf("expected error message, got %q", mm.completedLines())
 	}
 }
 
@@ -739,13 +739,13 @@ func TestUpdate_ToolCallAndResultRendered(t *testing.T) {
 	ch := cmd().(runStartMsg).ch
 	out, _ = mm.Update(runEventMsg{ev: <-ch})
 	mm = out.(Model)
-	if !strings.Contains(mm.transcript.String(), "read_image") {
-		t.Fatalf("transcript missing tool name: %q", mm.transcript.String())
+	if !strings.Contains(mm.completedLines(), "read_image") {
+		t.Fatalf("transcript missing tool name: %q", mm.completedLines())
 	}
 	out, _ = mm.Update(runEventMsg{ev: <-ch})
 	mm = out.(Model)
-	if !strings.Contains(mm.transcript.String(), "loaded x.png") {
-		t.Fatalf("transcript missing tool output: %q", mm.transcript.String())
+	if !strings.Contains(mm.completedLines(), "loaded x.png") {
+		t.Fatalf("transcript missing tool output: %q", mm.completedLines())
 	}
 }
 
@@ -792,7 +792,7 @@ func TestAppendLine(t *testing.T) {
 	m := New(Options{Home: "/x"})
 	m.appendLine("a")
 	m.appendLine("b")
-	if got := m.transcript.String(); got != "a\nb\n" {
+	if got := m.completedLines(); got != "a\nb\n" {
 		t.Fatalf("transcript = %q", got)
 	}
 }
@@ -804,7 +804,7 @@ func TestFlushCurrent(t *testing.T) {
 	if m.current != "" {
 		t.Fatal("current should be cleared after flush")
 	}
-	if !strings.Contains(m.transcript.String(), "streaming") {
+	if !strings.Contains(m.completedLines(), "streaming") {
 		t.Fatal("transcript should contain flushed text")
 	}
 }

@@ -1897,3 +1897,19 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 
 /* One presentation toggle; no transcript rebuild or stream timer. */
 .generation-speed-hidden .generation-speed { display: none !important; }
+
+/* Account-scoped Codex limits; percentages never aggregate across accounts. */
+.codex-usage-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 8px; font: 12px var(--mono); color: var(--muted); }
+.codex-usage-account { border-top: 1px solid var(--line); padding: 16px 0; }
+.codex-usage-account-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.codex-usage-account-head .btn { margin-left: auto; }
+.codex-usage-state { font: 11px var(--mono); color: var(--muted); }
+.codex-usage-account.available .codex-usage-state { color: var(--ok); }
+.codex-usage-account.exhausted .codex-usage-state, .codex-usage-error { color: var(--danger); }
+.codex-usage-meta { font: 11px/1.6 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.codex-usage-window { margin: 14px 0 0; }
+.codex-usage-window-label { font: 12px var(--sans); color: var(--muted); }
+.codex-usage-window-values { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 5px 0; font: 12px var(--mono); }
+.codex-usage-meter { height: 4px; background: var(--line); overflow: hidden; border-radius: 2px; margin: 7px 0; }
+.codex-usage-meter > span { display: block; height: 100%; background: var(--accent); }
+.codex-usage-window.stale .codex-usage-meter > span { background: var(--muted); }
