@@ -308,11 +308,20 @@ function supercliOrchPicker(container, knobM, onSave) {
     if (pop.hidden) fill();
     pop.hidden = !pop.hidden;
   });
-  document.addEventListener("click", function (e) {
-    if (!wrap.contains(e.target)) pop.hidden = true;
-  });
+  document.addEventListener("click", closeOrchPickerPopups);
   wrap.appendChild(btn);
   wrap.appendChild(pop);
   container.appendChild(wrap);
 }
 
+
+function closeOrchPickerPopups(e) {
+  var pickers = document.getElementsByClassName("orch-pick");
+  for (var i = 0; i < pickers.length; i++) {
+    var wrap = pickers[i];
+    if (!wrap.contains(e.target)) {
+      var pop = wrap.querySelector(".orch-pop");
+      if (pop) pop.hidden = true;
+    }
+  }
+}

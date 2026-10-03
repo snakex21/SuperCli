@@ -137,6 +137,14 @@ func (l *Loop) resolveToolFileAccess(path string, parents map[string]string) (to
 }
 
 func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
+	// Unknown resource shapes stay conservative without copying/parsing arguments.
+	switch call.Name {
+	case "write_file", "patch_file", "create_file", "make_dir", "trash", "edit_docx", "edit_xlsx",
+		"read_lines", "read_context", "list_dir", "read_image", "read_docx", "read_pdf", "read_xlsx",
+		"read_zip", "copy", "move":
+	default:
+		return nil, false
+	}
 	var args map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return nil, false
