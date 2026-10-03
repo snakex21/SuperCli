@@ -36,6 +36,7 @@ func (m Model) settingsApply(mutate func(*config.TomlConfig)) (tea.Model, tea.Cm
 	llm.SetDiscardPreviousReasoning(cfg.DiscardPreviousReasoning != nil && *cfg.DiscardPreviousReasoning)
 	m.menu.settingsCfg = &cfg
 	m.menu.formErr = ""
+	m.applyGenerationSpeedPreference(cfg.ShowGenerationSpeed)
 	return m, nil
 }
 

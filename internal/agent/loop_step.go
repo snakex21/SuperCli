@@ -366,7 +366,7 @@ func (l *Loop) runStep(
 			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 			return stepAbort
 		}
-		out <- DoneEvent{Usage: *totalUsage, Steps: step + 1}
+		out <- DoneEvent{Usage: *totalUsage, Steps: step + 1, GenerationTokens: l.generationTokens, GenerationDuration: l.generationDuration}
 		return stepDone
 	}
 

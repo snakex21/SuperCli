@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (wymagany klucz API lub token do generowania)",
   "code.copy": "Kopiuj",
   "code.copied": "Skopiowano.",
-  "code.copyFailed": "Nie udało się skopiować. Zaznacz kod i naciśnij Ctrl+C."
+  "code.copyFailed": "Nie udało się skopiować. Zaznacz kod i naciśnij Ctrl+C.",
+  "setting.show_generation_speed.label": "Szybkość generowania",
+  "setting.show_generation_speed.desc": "Średnie tok/s po odpowiedzi, z myśleniem; bez przetwarzania promptu i wykonywania narzędzi. Wymaga liczników tokenów od providera.",
+  "generation.speed": "Szybkość generowania",
+  "generation.speed_hint": "Średnie tok/s po odpowiedzi, z myśleniem; bez przetwarzania promptu i wykonywania narzędzi. Wymaga liczników tokenów od providera."
 }

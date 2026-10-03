@@ -854,5 +854,10 @@
   "preview.close": "Κλείσιμο προεπισκόπησης",
   "preview.unavailable": "Για την ενσωματωμένη προεπισκόπηση, τοποθετήστε το supercli-web δίπλα στο supercli. Μπορείτε επίσης να ανοίξετε τον ιστότοπο στο πρόγραμμα περιήγησης.",
   "provider.description.cline": "Cline (απαιτείται κλειδί API)",
-  "provider.description.nous": "Nous Portal (απαιτείται κλειδί API ή διακριτικό παραγωγής)"
+  "provider.description.nous": "Nous Portal (απαιτείται κλειδί API ή διακριτικό παραγωγής)",
+  "tui.setting_show_generation_speed.label": "Ταχύτητα παραγωγής",
+  "tui.setting_show_generation_speed.desc": "Μέσος όρος tokens/s μετά την απάντηση, μαζί με τη συλλογιστική· χωρίς επεξεργασία προτροπής και εργαλεία. Απαιτεί μετρήσεις tokens από τον πάροχο.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Ταχύτητα παραγωγής",
+  "generation.speed_hint": "Μέσος όρος tokens/s μετά την απάντηση, μαζί με τη συλλογιστική· χωρίς επεξεργασία προτροπής και εργαλεία. Απαιτεί μετρήσεις tokens από τον πάροχο."
 }

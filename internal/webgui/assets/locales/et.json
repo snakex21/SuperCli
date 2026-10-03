@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (vajalik API-võti või genereerimispääse)",
   "code.copy": "Kopeeri",
   "code.copied": "Kopeeritud.",
-  "code.copyFailed": "Kopeerimine ebaõnnestus. Vali kood ja vajuta Ctrl+C."
+  "code.copyFailed": "Kopeerimine ebaõnnestus. Vali kood ja vajuta Ctrl+C.",
+  "setting.show_generation_speed.label": "Genereerimiskiirus",
+  "setting.show_generation_speed.desc": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid.",
+  "generation.speed": "Genereerimiskiirus",
+  "generation.speed_hint": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid."
 }

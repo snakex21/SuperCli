@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API key or inference token required)",
   "code.copy": "Copy",
   "code.copied": "Copied.",
-  "code.copyFailed": "Could not copy. Select the code and press Ctrl+C."
+  "code.copyFailed": "Could not copy. Select the code and press Ctrl+C.",
+  "setting.show_generation_speed.label": "Generation speed",
+  "setting.show_generation_speed.desc": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts.",
+  "generation.speed": "Generation speed",
+  "generation.speed_hint": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts."
 }

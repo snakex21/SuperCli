@@ -1,0 +1,11 @@
+# Generation throughput in GUI and TUI
+
+2026-10-03, 1.0.4-dev.20.
+
+Completed new replies show average observed output tokens/second beside the existing time/token counters (GUI also in the last-turn statistics). Settings → Generation speed is shared through portable config.toml: show_generation_speed, nil/default = on. The TUI startup uses the configuration already loaded by the app; it does not add a startup file read. GUI settings overlay the authoritative global configuration instead of trusting a stale appearance blob. On/off/reset take effect on existing measured completion rows immediately.
+
+The agent reuses its existing first-output/stream-close clock. Only successful main provider calls with reported output usage and at least 1 ms of measured output delivery contribute: sum(output tokens) / sum(output durations). This weights multiple tool steps correctly and includes the provider's reasoning/tool-argument output tokens. It excludes time before first output, local tool execution, helper/delegated inference, failed calls and instantaneous/usage-less streams. The rate describes observed delivery (including transport cadence), not a hardware decode benchmark. No characters/chunks are substituted for tokens, and no estimated input/output count becomes a generation rate. Old restored replies have no invented speed.
+
+No provider request/schema/native-reasoning/Zen route changes; no additional model calls, stream timers, per-delta tokenization or persistence. GUI toggles a CSS class without rebuilding the transcript. TUI keeps one float on a message header (+8 B) and includes the visibility flag in its existing completed-prefix cache identity. Normal streaming rendering is unchanged.
+
+Validation: public scripted Loop.Run weights two successful tool-chain calls and resets for a subsequent usage-less run; failed stream and unknown/instantaneous rate controls. GUI HTTP tests cover portable on/off/default, external TUI configuration changes and omission of unknown wire rates. Node display tests cover finite reported values, zero timers and same-node hide/reveal. TUI event→View, live toggles/reset/reload/resume and copied prefix invalidation tests. Full integration receipts are retained under ignored .tmp/goal-integrated-dev20-2026-10-03. No live provider TPS or process RSS improvement is claimed by this UI feature.

@@ -854,5 +854,10 @@
   "preview.close": "Zavrieť náhľad",
   "preview.unavailable": "Pre vstavaný náhľad umiestnite supercli-web vedľa supercli. Web môžete otvoriť aj v prehliadači.",
   "provider.description.cline": "Cline (vyžaduje kľúč API)",
-  "provider.description.nous": "Nous Portal (vyžaduje kľúč API alebo token na generovanie)"
+  "provider.description.nous": "Nous Portal (vyžaduje kľúč API alebo token na generovanie)",
+  "tui.setting_show_generation_speed.label": "Rýchlosť generovania",
+  "tui.setting_show_generation_speed.desc": "Priemerné tokeny/s po odpovedi, vrátane uvažovania; bez spracovania promptu a nástrojov. Vyžaduje počty tokenov od poskytovateľa.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Rýchlosť generovania",
+  "generation.speed_hint": "Priemerné tokeny/s po odpovedi, vrátane uvažovania; bez spracovania promptu a nástrojov. Vyžaduje počty tokenov od poskytovateľa."
 }

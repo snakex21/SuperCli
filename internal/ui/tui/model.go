@@ -295,6 +295,8 @@ type Options struct {
 	// Language is the shared UI locale, detected and persisted by
 	// the executable before constructing the TUI.
 	Language string
+	// ShowGenerationSpeed controls completed-turn delivery throughput. Nil is on.
+	ShowGenerationSpeed *bool
 	// SessionID identifies the live conversation so the interactive
 	// session picker can omit it from the "continue session" list.
 	SessionID     string
@@ -495,6 +497,7 @@ func New(opts Options) Model {
 		dataExport:        opts.DataExport,
 		dataImport:        opts.DataImport,
 	}
+	m.chat.hideGenerationSpeed = opts.ShowGenerationSpeed != nil && !*opts.ShowGenerationSpeed
 	if m.drafts != nil {
 		saved := m.drafts.Snapshot()
 		m.input.SetValue(saved.Text)

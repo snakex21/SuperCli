@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (potreban je API ključ ili token za generisanje)",
   "code.copy": "Kopiraj",
   "code.copied": "Kopirano.",
-  "code.copyFailed": "Kopiranje nije uspelo. Označite kôd i pritisnite Ctrl+C."
+  "code.copyFailed": "Kopiranje nije uspelo. Označite kôd i pritisnite Ctrl+C.",
+  "setting.show_generation_speed.label": "Brzina generisanja",
+  "setting.show_generation_speed.desc": "Prosečni tokeni/s posle odgovora, uključujući razmišljanje; bez obrade upita i alata. Potrebni su brojači tokena provajdera.",
+  "generation.speed": "Brzina generisanja",
+  "generation.speed_hint": "Prosečni tokeni/s posle odgovora, uključujući razmišljanje; bez obrade upita i alata. Potrebni su brojači tokena provajdera."
 }

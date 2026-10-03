@@ -854,5 +854,10 @@
   "preview.close": "Luk forhåndsvisning",
   "preview.unavailable": "For at bruge den indbyggede forhåndsvisning skal du placere supercli-web ved siden af supercli. Du kan også åbne hjemmesiden i din browser.",
   "provider.description.cline": "Cline (kræver API-nøgle)",
-  "provider.description.nous": "Nous Portal (kræver API-nøgle eller token til generering)"
+  "provider.description.nous": "Nous Portal (kræver API-nøgle eller token til generering)",
+  "tui.setting_show_generation_speed.label": "Genereringshastighed",
+  "tui.setting_show_generation_speed.desc": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Genereringshastighed",
+  "generation.speed_hint": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen."
 }

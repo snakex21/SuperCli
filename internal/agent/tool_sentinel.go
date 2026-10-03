@@ -103,7 +103,7 @@ func parseSentinelBlock(inner string) []llm.ToolCall {
 		if key == "" {
 			continue
 		}
-		pairs = append(pairs, fmt.Sprintf(`%s:%s`, jsonString(key), jsonString(val)))
+		pairs = append(pairs, fmt.Sprintf(`%s:%s`, quoteToolJSONString(key), jsonString(val)))
 	}
 
 	args := "{" + strings.Join(pairs, ",") + "}"

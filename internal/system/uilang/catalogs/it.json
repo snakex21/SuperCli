@@ -854,5 +854,10 @@
   "preview.close": "Chiudi anteprima",
   "preview.unavailable": "Per usare l’anteprima integrata, posiziona supercli-web accanto a supercli. Puoi anche aprire il sito nel browser.",
   "provider.description.cline": "Cline (chiave API richiesta)",
-  "provider.description.nous": "Nous Portal (chiave API o token di inferenza richiesto)"
+  "provider.description.nous": "Nous Portal (chiave API o token di inferenza richiesto)",
+  "tui.setting_show_generation_speed.label": "Velocità di generazione",
+  "tui.setting_show_generation_speed.desc": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Velocità di generazione",
+  "generation.speed_hint": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider."
 }

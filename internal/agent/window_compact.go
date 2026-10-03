@@ -28,7 +28,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	}
 	history := l.compactionHistory()
 	all := history.messages
-	split := history.compactSplit(w)
+	var split int
 	if reason == "" {
 		// Speculative auto-compaction must never summarize the user turn that
 		// is still running. A conservative/unknown window (the 16k fallback)
@@ -37,6 +37,8 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// provider context-limit error is allowed to use the full-history
 		// "big hammer" selected by compactSplit.
 		split = history.autoCompactSplit()
+	} else {
+		split = history.compactSplit(w)
 	}
 	keep := leadingSystemCount(all)
 	if split <= keep {

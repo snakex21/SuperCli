@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (chiave API o token di inferenza richiesto)",
   "code.copy": "Copia",
   "code.copied": "Copiato.",
-  "code.copyFailed": "Impossibile copiare. Seleziona il codice e premi Ctrl+C."
+  "code.copyFailed": "Impossibile copiare. Seleziona il codice e premi Ctrl+C.",
+  "setting.show_generation_speed.label": "Velocità di generazione",
+  "setting.show_generation_speed.desc": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider.",
+  "generation.speed": "Velocità di generazione",
+  "generation.speed_hint": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider."
 }

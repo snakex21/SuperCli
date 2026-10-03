@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API-sleutel of inferentietoken vereist)",
   "code.copy": "Kopiëren",
   "code.copied": "Gekopieerd.",
-  "code.copyFailed": "Kopiëren mislukt. Selecteer de code en druk op Ctrl+C."
+  "code.copyFailed": "Kopiëren mislukt. Selecteer de code en druk op Ctrl+C.",
+  "setting.show_generation_speed.label": "Generatiesnelheid",
+  "setting.show_generation_speed.desc": "Gemiddelde tokens/s na het antwoord, inclusief redeneren; zonder promptverwerking en uitvoering van tools. Vereist tokenaantallen van de provider.",
+  "generation.speed": "Generatiesnelheid",
+  "generation.speed_hint": "Gemiddelde tokens/s na het antwoord, inclusief redeneren; zonder promptverwerking en uitvoering van tools. Vereist tokenaantallen van de provider."
 }

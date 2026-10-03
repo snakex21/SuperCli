@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (kræver API-nøgle eller token til generering)",
   "code.copy": "Kopiér",
   "code.copied": "Kopieret.",
-  "code.copyFailed": "Kunne ikke kopiere. Markér koden og tryk Ctrl+C."
+  "code.copyFailed": "Kunne ikke kopiere. Markér koden og tryk Ctrl+C.",
+  "setting.show_generation_speed.label": "Genereringshastighed",
+  "setting.show_generation_speed.desc": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen.",
+  "generation.speed": "Genereringshastighed",
+  "generation.speed_hint": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen."
 }

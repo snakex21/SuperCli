@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API anahtarı veya çıkarım jetonu gerekir)",
   "code.copy": "Kopyala",
   "code.copied": "Kopyalandı.",
-  "code.copyFailed": "Kopyalanamadı. Kodu seçip Ctrl+C tuşlarına basın."
+  "code.copyFailed": "Kopyalanamadı. Kodu seçip Ctrl+C tuşlarına basın.",
+  "setting.show_generation_speed.label": "Üretim hızı",
+  "setting.show_generation_speed.desc": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir.",
+  "generation.speed": "Üretim hızı",
+  "generation.speed_hint": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir."
 }

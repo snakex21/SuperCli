@@ -854,5 +854,10 @@
   "preview.close": "Zapri predogled",
   "preview.unavailable": "Za vgrajeni predogled postavite supercli-web poleg supercli. Spletno mesto lahko odprete tudi v brskalniku.",
   "provider.description.cline": "Cline (zahteva ključ API)",
-  "provider.description.nous": "Nous Portal (zahteva ključ API ali žeton za generiranje)"
+  "provider.description.nous": "Nous Portal (zahteva ključ API ali žeton za generiranje)",
+  "tui.setting_show_generation_speed.label": "Hitrost ustvarjanja",
+  "tui.setting_show_generation_speed.desc": "Povprečni tokeni/s po odgovoru, vključno z razmišljanjem; brez obdelave poziva in orodij. Zahteva števce tokenov ponudnika.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Hitrost ustvarjanja",
+  "generation.speed_hint": "Povprečni tokeni/s po odgovoru, vključno z razmišljanjem; brez obdelave poziva in orodij. Zahteva števce tokenov ponudnika."
 }

@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API-kulcs vagy generálási token szükséges)",
   "code.copy": "Másolás",
   "code.copied": "Másolva.",
-  "code.copyFailed": "Nem sikerült másolni. Jelöld ki a kódot, és nyomd meg a Ctrl+C billentyűket."
+  "code.copyFailed": "Nem sikerült másolni. Jelöld ki a kódot, és nyomd meg a Ctrl+C billentyűket.",
+  "setting.show_generation_speed.label": "Generálási sebesség",
+  "setting.show_generation_speed.desc": "Átlagos token/s a válasz után, a gondolkodással együtt; a prompt feldolgozása és az eszközök nélkül. A szolgáltató tokenszámai szükségesek.",
+  "generation.speed": "Generálási sebesség",
+  "generation.speed_hint": "Átlagos token/s a válasz után, a gondolkodással együtt; a prompt feldolgozása és az eszközök nélkül. A szolgáltató tokenszámai szükségesek."
 }

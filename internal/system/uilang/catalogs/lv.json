@@ -854,5 +854,10 @@
   "preview.close": "Aizvērt priekšskatījumu",
   "preview.unavailable": "Lai izmantotu iebūvēto priekšskatījumu, novietojiet supercli-web blakus supercli. Vietni varat atvērt arī pārlūkprogrammā.",
   "provider.description.cline": "Cline (nepieciešama API atslēga)",
-  "provider.description.nous": "Nous Portal (nepieciešama API atslēga vai ģenerēšanas tokens)"
+  "provider.description.nous": "Nous Portal (nepieciešama API atslēga vai ģenerēšanas tokens)",
+  "tui.setting_show_generation_speed.label": "Ģenerēšanas ātrums",
+  "tui.setting_show_generation_speed.desc": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Ģenerēšanas ātrums",
+  "generation.speed_hint": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji."
 }

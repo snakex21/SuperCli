@@ -5,7 +5,7 @@
 var ui = {
   theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
-  toolsExpanded: false, thinkingExpanded: null,
+  toolsExpanded: false, thinkingExpanded: null, showGenerationSpeed: true,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
@@ -40,7 +40,7 @@ var pushTimer = null;
 // model cache) can never be wiped by a stale browser state.
 function saveUI() {
   var patch = {};
-  Object.keys(ui).forEach(function (k) { patch["ui." + k] = ui[k]; });
+  Object.keys(ui).forEach(function (k) { if (k !== "showGenerationSpeed") patch["ui." + k] = ui[k]; });
   clearTimeout(pushTimer);
   pushTimer = setTimeout(function () {
     jpost("/api/settings", patch).catch(function () {});
@@ -109,7 +109,11 @@ function applyViewportScale() {
   root.classList.toggle("ui-scale-narrow", width <= 900);
   root.classList.toggle("ui-scale-mobile", width <= 600);
 }
+function applyGenerationSpeedVisibility() {
+  document.documentElement.classList.toggle("generation-speed-hidden", ui.showGenerationSpeed === false);
+}
 function applyUI() {
+  applyGenerationSpeedVisibility();
   document.documentElement.dataset.theme = ui.theme || "dark";
   document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
   document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
@@ -153,6 +157,7 @@ async function loadUI() {
       if (Object.keys(migration).length) await jpost("/api/settings", migration);
     }
   } catch (e) {}
+  ui.showGenerationSpeed = ui.showGenerationSpeed !== false;
   ui.toolsExpanded = ui.toolsExpanded === true;
   ui.thinkingExpanded = typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : null;
   ui.lang = normalizeLanguage(ui.lang) || detectedLanguage();

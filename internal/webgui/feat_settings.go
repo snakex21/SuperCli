@@ -138,6 +138,9 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 		// config.toml is the cross-front-end source of truth. Always overlay it
 		// so a language changed in the TUI wins over a stale browser blob.
 		blob["ui.lang"] = language
+		global, _ := config.FindTomlPaths(s.eng.DataDir(), s.eng.Home())
+		presentation, _ := config.LoadToml(global)
+		blob["ui.showGenerationSpeed"] = presentation.ShowGenerationSpeed == nil || *presentation.ShowGenerationSpeed
 		writeJSON(w, map[string]any{"settings": blob})
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))

@@ -41,6 +41,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	// bool in TOML, so we use a pointer approach in the
 	// raw decode — but for simplicity, we merge all bools).
 	// In practice: project config can set no_color = true.
+	if src.ShowGenerationSpeed != nil {
+		dst.ShowGenerationSpeed = src.ShowGenerationSpeed
+	}
 	if src.NoColor {
 		dst.NoColor = true
 	}

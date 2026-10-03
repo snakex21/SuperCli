@@ -854,5 +854,10 @@
   "preview.close": "Voorbeeldweergave sluiten",
   "preview.unavailable": "Plaats supercli-web naast supercli om de ingebouwde voorbeeldweergave te gebruiken. Je kunt de website ook in je browser openen.",
   "provider.description.cline": "Cline (API-sleutel vereist)",
-  "provider.description.nous": "Nous Portal (API-sleutel of inferentietoken vereist)"
+  "provider.description.nous": "Nous Portal (API-sleutel of inferentietoken vereist)",
+  "tui.setting_show_generation_speed.label": "Generatiesnelheid",
+  "tui.setting_show_generation_speed.desc": "Gemiddelde tokens/s na het antwoord, inclusief redeneren; zonder promptverwerking en uitvoering van tools. Vereist tokenaantallen van de provider.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Generatiesnelheid",
+  "generation.speed_hint": "Gemiddelde tokens/s na het antwoord, inclusief redeneren; zonder promptverwerking en uitvoering van tools. Vereist tokenaantallen van de provider."
 }

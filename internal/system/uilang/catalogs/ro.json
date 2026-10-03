@@ -854,5 +854,10 @@
   "preview.close": "Închide previzualizarea",
   "preview.unavailable": "Pentru previzualizarea integrată, plasează supercli-web lângă supercli. Poți deschide site-ul și în browser.",
   "provider.description.cline": "Cline (necesită cheie API)",
-  "provider.description.nous": "Nous Portal (necesită cheie API sau token de inferență)"
+  "provider.description.nous": "Nous Portal (necesită cheie API sau token de inferență)",
+  "tui.setting_show_generation_speed.label": "Viteză de generare",
+  "tui.setting_show_generation_speed.desc": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Viteză de generare",
+  "generation.speed_hint": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului."
 }

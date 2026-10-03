@@ -177,7 +177,10 @@ type Loop struct {
 	prefillProfiles *llm.PrefillProfiles
 	// lastCallTTFT is measured by consume from stream handoff to the first
 	// model output (including buffered tool progress). Single-owner while running.
-	lastCallTTFT time.Duration
+	lastCallTTFT       time.Duration
+	lastCallGeneration time.Duration
+	generationTokens   int
+	generationDuration time.Duration
 	// pruneProtect: tool-result tokens protected from pruning
 	// (prune.go). 0 = defaultPruneProtectTokens, negative = prune
 	// disabled.
@@ -720,6 +723,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	// next message and invalidated the KV-cache prefix. Hides are
 	// only reset where the message indices themselves become invalid
 	// (compaction, LoadConversation).
+	l.generationTokens, l.generationDuration = 0, 0
 	out := make(chan Event, 32)
 
 	// F9 ultrawork: detect the keyword in the user prompt.

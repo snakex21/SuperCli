@@ -38,6 +38,8 @@ func cycleTri(p *bool) *bool {
 // in-process global in sync so a same-session /model swap honours them).
 func settingToggleKey(c *config.TomlConfig, key string) {
 	switch key {
+	case "show_generation_speed":
+		c.ShowGenerationSpeed = cycleTri(c.ShowGenerationSpeed)
 	case "orchestrator":
 		c.Orchestrator = cycleTri(c.Orchestrator)
 	case "allow_all":
@@ -81,6 +83,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 // future default change in code is never pinned by a stale value.
 func settingResetKey(c *config.TomlConfig, key string) {
 	switch key {
+	case "show_generation_speed":
+		c.ShowGenerationSpeed = nil
 	case "orchestrator":
 		c.Orchestrator = nil
 	case "allow_all":
@@ -141,6 +145,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 // label (default / auto / manual / editing).
 func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, source string) {
 	switch r.key {
+	case "show_generation_speed":
+		return m.triDisplay(c.ShowGenerationSpeed, "on")
 	case "language":
 		language := c.Language
 		if language == "" {

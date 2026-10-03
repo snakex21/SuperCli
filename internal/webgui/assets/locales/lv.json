@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (nepieciešama API atslēga vai ģenerēšanas tokens)",
   "code.copy": "Kopēt",
   "code.copied": "Nokopēts.",
-  "code.copyFailed": "Neizdevās nokopēt. Atlasiet kodu un nospiediet Ctrl+C."
+  "code.copyFailed": "Neizdevās nokopēt. Atlasiet kodu un nospiediet Ctrl+C.",
+  "setting.show_generation_speed.label": "Ģenerēšanas ātrums",
+  "setting.show_generation_speed.desc": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji.",
+  "generation.speed": "Ģenerēšanas ātrums",
+  "generation.speed_hint": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji."
 }

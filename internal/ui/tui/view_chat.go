@@ -26,6 +26,8 @@ type msg struct {
 	text                string
 	collapsed           bool
 	toolName, toolError string
+	// Backend-measured rate, kept even while its presentation is disabled.
+	generationSpeed float64
 }
 
 // chat holds the ordered message history and the current
@@ -50,8 +52,9 @@ type chat struct {
 
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
-	thinkingCollapsed bool
-	toolsExpanded     bool
+	thinkingCollapsed   bool
+	toolsExpanded       bool
+	hideGenerationSpeed bool // zero/default keeps measured rates visible
 }
 
 // newChat creates an empty chat with the given terminal width.
@@ -190,6 +193,9 @@ func (c *chat) renderMsgWrapHint(m msg, p Palette, hint bool) (string, bool) {
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
 		// etc.). Wrapping them in p.System.Render() would
 		// produce nested ANSI sequences. Return as-is.
+		if !c.hideGenerationSpeed && m.generationSpeed > 0 {
+			return m.text + generationSpeedSuffix(m.generationSpeed, p, c.language), false
+		}
 		return m.text, false
 	default:
 		return m.text, false

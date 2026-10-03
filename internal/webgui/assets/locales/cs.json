@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (vyžaduje klíč API nebo token pro generování)",
   "code.copy": "Kopírovat",
   "code.copied": "Zkopírováno.",
-  "code.copyFailed": "Kopírování se nezdařilo. Označte kód a stiskněte Ctrl+C."
+  "code.copyFailed": "Kopírování se nezdařilo. Označte kód a stiskněte Ctrl+C.",
+  "setting.show_generation_speed.label": "Rychlost generování",
+  "setting.show_generation_speed.desc": "Průměrné tokeny/s po odpovědi, včetně uvažování; bez zpracování promptu a nástrojů. Vyžaduje počty tokenů od poskytovatele.",
+  "generation.speed": "Rychlost generování",
+  "generation.speed_hint": "Průměrné tokeny/s po odpovědi, včetně uvažování; bez zpracování promptu a nástrojů. Vyžaduje počty tokenů od poskytovatele."
 }
