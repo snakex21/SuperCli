@@ -94,18 +94,21 @@ func readUISettings(dataDir string) map[string]any {
 	return blob
 }
 
-func uiSettingBool(dataDir, key string, fallback bool) bool {
+// uiSettingBool resolves current and legacy keys from one fresh settings snapshot.
+// Only boolean values override the fallback; no preference cache is introduced.
+func uiSettingBool(dataDir, key string, fallback bool, fallbackKeys ...string) bool {
 	uiSettingsMu.Lock()
 	defer uiSettingsMu.Unlock()
-	value, ok := readUISettings(dataDir)[key]
-	if !ok {
-		return fallback
+	settings := readUISettings(dataDir)
+	if enabled, ok := settings[key].(bool); ok {
+		return enabled
 	}
-	enabled, ok := value.(bool)
-	if !ok {
-		return fallback
+	for _, fallbackKey := range fallbackKeys {
+		if enabled, ok := settings[fallbackKey].(bool); ok {
+			return enabled
+		}
 	}
-	return enabled
+	return fallback
 }
 
 // handleUISettings persists the web GUI's UI preferences server-side so
