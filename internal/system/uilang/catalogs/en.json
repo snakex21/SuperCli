@@ -854,5 +854,10 @@
   "preview.close": "Close preview",
   "preview.unavailable": "For the built-in preview, place supercli-web beside supercli. You can also open the site in your browser.",
   "provider.description.cline": "Cline (API key required)",
-  "provider.description.nous": "Nous Portal (API key or inference token required)"
+  "provider.description.nous": "Nous Portal (API key or inference token required)",
+  "tui.setting_show_generation_speed.label": "Generation speed",
+  "tui.setting_show_generation_speed.desc": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Generation speed",
+  "generation.speed_hint": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts."
 }

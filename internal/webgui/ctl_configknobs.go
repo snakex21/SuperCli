@@ -53,6 +53,7 @@ type knobDef struct {
 func knobDefs() []knobDef {
 	return []knobDef{
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
+		{"show_generation_speed", "show measured generation tokens per second after each reply", knobTri, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
 		{"discard_previous_reasoning", "omit completed replies' reasoning from the next turn; preserve the transcript and required tool-call blocks; default off", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
@@ -98,6 +99,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return "off", "default", ""
 	case "discard_previous_reasoning":
 		v, source := triKnob(c.DiscardPreviousReasoning, "off")
+		return v, source, ""
+	case "show_generation_speed":
+		v, source := triKnob(c.ShowGenerationSpeed, "on")
 		return v, source, ""
 	case "thinking":
 		v := "on"
@@ -229,6 +233,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return "off"
 	case "discard_previous_reasoning":
 		return tri(c.DiscardPreviousReasoning)
+	case "show_generation_speed":
+		return tri(c.ShowGenerationSpeed)
 	case "thinking":
 		return tri(c.Thinking)
 	case "navigator":
@@ -261,7 +267,7 @@ func knobDefault(key string) string {
 	switch key {
 	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
 		return "auto"
-	case "thinking", "stable_toolset", "preflight_repo":
+	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed":
 		return "on"
 	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning":
 		return "off"

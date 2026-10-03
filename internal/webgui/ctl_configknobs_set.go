@@ -55,6 +55,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return nil
 	case "discard_previous_reasoning":
 		return setTri(&c.DiscardPreviousReasoning)
+	case "show_generation_speed":
+		return setTri(&c.ShowGenerationSpeed)
 	case "thinking":
 		if err := setTri(&c.Thinking); err != nil {
 			return err

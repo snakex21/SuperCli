@@ -854,5 +854,10 @@
   "preview.close": "Sulje esikatselu",
   "preview.unavailable": "Sisäänrakennettua esikatselua varten sijoita supercli-web samaan kansioon kuin supercli. Voit myös avata sivuston selaimessa.",
   "provider.description.cline": "Cline (API-avain vaaditaan)",
-  "provider.description.nous": "Nous Portal (API-avain tai päättelytunniste vaaditaan)"
+  "provider.description.nous": "Nous Portal (API-avain tai päättelytunniste vaaditaan)",
+  "tui.setting_show_generation_speed.label": "Generointinopeus",
+  "tui.setting_show_generation_speed.desc": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Generointinopeus",
+  "generation.speed_hint": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät."
 }

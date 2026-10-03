@@ -854,5 +854,10 @@
   "preview.close": "Sulge eelvaade",
   "preview.unavailable": "Sisseehitatud eelvaate kasutamiseks paiguta supercli-web supercli kõrvale. Saidi saad avada ka brauseris.",
   "provider.description.cline": "Cline (vajalik API-võti)",
-  "provider.description.nous": "Nous Portal (vajalik API-võti või genereerimispääse)"
+  "provider.description.nous": "Nous Portal (vajalik API-võti või genereerimispääse)",
+  "tui.setting_show_generation_speed.label": "Genereerimiskiirus",
+  "tui.setting_show_generation_speed.desc": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Genereerimiskiirus",
+  "generation.speed_hint": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid."
 }

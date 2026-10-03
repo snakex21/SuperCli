@@ -28,6 +28,10 @@ sections.settings = async function () {
     return;
   }
   panelContent.innerHTML = "";
+  (got.knobs || []).forEach(function (k) {
+    if (k.key === "show_generation_speed") ui.showGenerationSpeed = k.value !== "off";
+  });
+  applyGenerationSpeedVisibility();
   panelContent.appendChild(i18nEl("div", "note", "set.hint"));
   var wrap = el("div", "group");
   wrap.style.marginTop = "10px";

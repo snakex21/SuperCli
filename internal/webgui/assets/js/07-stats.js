@@ -179,6 +179,14 @@ async function renderStats() {
     else if (ev.tok_total) box.appendChild(statRow("in / gen", fmtCompactNumber(ev.tok_in) + " / " + fmtCompactNumber(ev.tok_out)));
     if (ev.cache_hit_pct) box.appendChild(statRow(t("run.cached"), ev.cache_hit_pct + "%"));
     if (ev.reasoning_tok) box.appendChild(statRow(t("run.think"), fmtCompactNumber(ev.reasoning_tok)));
+    var speed = generationSpeedText(ev);
+    if (speed) {
+      var speedRow = statRow(t("generation.speed"), speed);
+      speedRow.classList.add("generation-speed");
+      speedRow.title = t("generation.speed_hint");
+      speedRow.dataset.i18nTitle = "generation.speed_hint";
+      box.appendChild(speedRow);
+    }
     if (lastTurn.tools) box.appendChild(statRow(t("run.tools"), String(lastTurn.tools)));
   }
 

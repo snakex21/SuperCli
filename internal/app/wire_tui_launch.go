@@ -53,6 +53,7 @@ type tuiLaunchDeps struct {
 	goalSvc                                       *goal.Service
 	registry                                      *tools.Registry
 	provFactory                                   *factory.Factory
+	showGenerationSpeed                           *bool
 	cfg                                           config.Config
 	redrawStatus                                  func()
 }
@@ -98,13 +99,14 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			}
 			return nil
 		},
-		Version:     d.version,
-		Tier:        string(d.modelTier),
-		Language:    d.uiLanguage,
-		Agent:       d.loop,
-		LLM:         d.provider,
-		Commands:    d.mergedCommands,
-		DashboardFn: d.dashboardFn,
+		Version:             d.version,
+		Tier:                string(d.modelTier),
+		Language:            d.uiLanguage,
+		ShowGenerationSpeed: d.showGenerationSpeed,
+		Agent:               d.loop,
+		LLM:                 d.provider,
+		Commands:            d.mergedCommands,
+		DashboardFn:         d.dashboardFn,
 		// Incremental memory: after every finished agent turn,
 		// deterministic user facts are saved immediately (no model
 		// call) and the model-backed summary is scheduled for the

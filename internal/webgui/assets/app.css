@@ -1894,3 +1894,6 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   background: var(--surface); color: var(--muted); border-color: var(--line);
   opacity: .55; cursor: not-allowed; box-shadow: none;
 }
+
+/* One presentation toggle; no transcript rebuild or stream timer. */
+.generation-speed-hidden .generation-speed { display: none !important; }

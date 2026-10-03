@@ -59,9 +59,22 @@ func (ToolResultEvent) event() {}
 type DoneEvent struct {
 	Usage Usage
 	Steps int
+	// Only successful main calls with provider-reported usage contribute.
+	GenerationTokens   int
+	GenerationDuration time.Duration
 }
 
 func (DoneEvent) event() {}
+
+// GenerationTokensPerSecond is observed delivery throughput, including reasoning
+// and tool arguments but excluding pre-output wait, tools and helper calls.
+// Do not invent a rate for usage-less or effectively instantaneous responses.
+func (e DoneEvent) GenerationTokensPerSecond() float64 {
+	if e.GenerationTokens <= 0 || e.GenerationDuration < time.Millisecond {
+		return 0
+	}
+	return float64(e.GenerationTokens) / e.GenerationDuration.Seconds()
+}
 
 // ReflectionEvent is emitted by the F5.a loop when a self-
 // reflection checkpoint fires. TUI may render it as a marker

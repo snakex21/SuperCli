@@ -43,6 +43,8 @@ type TomlConfig struct {
 	// UI.
 	NoColor  bool   `toml:"no_color"`
 	Language string `toml:"language"`
+	// ShowGenerationSpeed displays measured output tokens/second; nil means on.
+	ShowGenerationSpeed *bool `toml:"show_generation_speed"`
 
 	// Provider configuration.
 	Provider  string         `toml:"provider"`

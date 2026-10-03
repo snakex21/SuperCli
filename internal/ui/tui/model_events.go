@@ -92,7 +92,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if m.toolActivity.calls > 0 {
 			m.chat.addSystem(m.marker.ToolActivity(m.toolActivity.calls, m.toolActivity.errors, m.toolActivity.repeats, m.toolActivity.byName))
 		}
-		m.chat.addSystem(m.marker.DoneEst(in, out, estimated))
+		m.chat.addCompletion(m.marker.DoneEst(in, out, estimated), e.GenerationTokensPerSecond())
 		m.refreshRuntimeHUD()
 		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.5a658d3ae8"), in, out))
 		m.refreshTranscript()

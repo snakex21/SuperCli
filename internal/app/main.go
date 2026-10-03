@@ -771,6 +771,7 @@ func Main() {
 		sessionID:              sessionID,
 		version:                version,
 		uiLanguage:             uiLanguage,
+		showGenerationSpeed:    tomlCfg.ShowGenerationSpeed,
 		modelTier:              modelTier,
 		loop:                   loop,
 		provider:               provider,

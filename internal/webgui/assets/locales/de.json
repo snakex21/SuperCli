@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API-Schlüssel oder Inferenz-Token erforderlich)",
   "code.copy": "Kopieren",
   "code.copied": "Kopiert.",
-  "code.copyFailed": "Kopieren fehlgeschlagen. Markiere den Code und drücke Strg+C."
+  "code.copyFailed": "Kopieren fehlgeschlagen. Markiere den Code und drücke Strg+C.",
+  "setting.show_generation_speed.label": "Generierungsgeschwindigkeit",
+  "setting.show_generation_speed.desc": "Durchschnittliche Tokens/s nach Antworten, einschließlich Denkens; ohne Promptverarbeitung und Werkzeugausführung. Erfordert Tokenzahlen des Anbieters.",
+  "generation.speed": "Generierungsgeschwindigkeit",
+  "generation.speed_hint": "Durchschnittliche Tokens/s nach Antworten, einschließlich Denkens; ohne Promptverarbeitung und Werkzeugausführung. Erfordert Tokenzahlen des Anbieters."
 }

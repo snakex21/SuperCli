@@ -1426,6 +1426,11 @@ function addWorkerProgress(ev) {
   return true;
 }
 
+function generationSpeedText(ev) {
+  var rate = ev && ev.generation_tps;
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? rate.toFixed(1) + " tok/s" : "";
+}
+
 // Telemetry line: time · cache/eval/gen · cached% · think · tools
 function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount == null) toolCount = runToolCount;
@@ -1441,6 +1446,13 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount) parts.push(toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
 	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
+	var speed = generationSpeedText(ev);
+  if (speed) {
+    var speedNode = el("span", "generation-speed", " · " + speed);
+    speedNode.dataset.i18nTitle = "generation.speed_hint";
+    speedNode.title = t("generation.speed_hint");
+    line.appendChild(speedNode);
+  }
 	appendStream(line);
   smartScroll();
 }

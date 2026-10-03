@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API-avain tai päättelytunniste vaaditaan)",
   "code.copy": "Kopioi",
   "code.copied": "Kopioitu.",
-  "code.copyFailed": "Kopiointi epäonnistui. Valitse koodi ja paina Ctrl+C."
+  "code.copyFailed": "Kopiointi epäonnistui. Valitse koodi ja paina Ctrl+C.",
+  "setting.show_generation_speed.label": "Generointinopeus",
+  "setting.show_generation_speed.desc": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät.",
+  "generation.speed": "Generointinopeus",
+  "generation.speed_hint": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät."
 }

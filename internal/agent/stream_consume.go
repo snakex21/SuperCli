@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 	"supercli/internal/system/stats"
@@ -56,6 +57,7 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	waitStart := time.Now()
 	var firstDelta time.Time
 	l.lastCallTTFT = 0
+	l.lastCallGeneration = 0
 	defer func() {
 		if firstDelta.IsZero() {
 			// The stream ended (or errored) before any model output:
@@ -63,7 +65,8 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 			l.recordWallPhase(stats.PhaseBackendWait, time.Since(waitStart))
 			return
 		}
-		l.recordWallPhase(stats.PhaseStreamTotal, time.Since(firstDelta))
+		l.lastCallGeneration = time.Since(firstDelta)
+		l.recordWallPhase(stats.PhaseStreamTotal, l.lastCallGeneration)
 	}()
 	for d := range stream {
 		// Role, usage, retry notices and terminal frames are not generated
@@ -271,7 +274,7 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 			if ci < 0 {
 				break
 			}
-			pairs = append(pairs, fmt.Sprintf(`"%s":""`, paramName))
+			pairs = append(pairs, fmt.Sprintf(`%s:""`, quoteToolJSONString(paramName)))
 			names = append(names, paramName)
 			values = append(values, "")
 			rem = rem[ci+2:]
@@ -284,7 +287,7 @@ func parseXMLToolCallBlock(block string) []llm.ToolCall {
 		values = append(values, value)
 		// Try to parse value as JSON; if it's not valid JSON,
 		// treat it as a string.
-		pairs = append(pairs, fmt.Sprintf(`"%s":%s`, paramName, jsonString(value)))
+		pairs = append(pairs, fmt.Sprintf(`%s:%s`, quoteToolJSONString(paramName), jsonString(value)))
 	}
 
 	if len(pairs) == 0 {
@@ -340,8 +343,49 @@ func jsonString(v string) string {
 	if (v[0] == '{' || v[0] == '[') && (v[len(v)-1] == '}' || v[len(v)-1] == ']') {
 		return v // already JSON object/array
 	}
-	// Escape double quotes and wrap.
-	escaped := strings.ReplaceAll(v, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	return `"` + escaped + `"`
+	return quoteToolJSONString(v)
+}
+
+// quoteToolJSONString encodes a literal key or value without expanding HTML.
+// Structured argument values are handled separately by jsonString.
+func quoteToolJSONString(v string) string {
+	if !utf8.ValidString(v) {
+		encoded, _ := json.Marshal(v)
+		return string(encoded)
+	}
+	const hex = "0123456789abcdef"
+	var out strings.Builder
+	out.Grow(len(v) + 2)
+	out.WriteByte('"')
+	start := 0
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c >= 0x20 && c != '"' && c != '\\' {
+			continue
+		}
+		out.WriteString(v[start:i])
+		switch c {
+		case '"', '\\':
+			out.WriteByte('\\')
+			out.WriteByte(c)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		default:
+			out.WriteString(`\u00`)
+			out.WriteByte(hex[c>>4])
+			out.WriteByte(hex[c&0xf])
+		}
+		start = i + 1
+	}
+	out.WriteString(v[start:])
+	out.WriteByte('"')
+	return out.String()
 }

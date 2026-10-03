@@ -152,8 +152,10 @@ func (m Model) finishResume(msg resumeLoadedMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 	collapsed := m.chat.thinkingCollapsed
+	hideSpeed := m.chat.hideGenerationSpeed
 	m.chat = newChat(m.width, m.language)
 	m.chat.thinkingCollapsed = collapsed
+	m.chat.hideGenerationSpeed = hideSpeed
 	m.chat.toolsExpanded = m.toolExpanded
 	m.resetCurrent()
 	m.transcript = transcriptBuffer{}

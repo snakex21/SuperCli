@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (clé API ou jeton d’inférence requis)",
   "code.copy": "Copier",
   "code.copied": "Copié.",
-  "code.copyFailed": "Impossible de copier. Sélectionnez le code et appuyez sur Ctrl+C."
+  "code.copyFailed": "Impossible de copier. Sélectionnez le code et appuyez sur Ctrl+C.",
+  "setting.show_generation_speed.label": "Vitesse de génération",
+  "setting.show_generation_speed.desc": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur.",
+  "generation.speed": "Vitesse de génération",
+  "generation.speed_hint": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur."
 }

@@ -854,5 +854,10 @@
   "preview.close": "Önizlemeyi kapat",
   "preview.unavailable": "Yerleşik önizleme için supercli-web dosyasını supercli dosyasının yanına yerleştirin. Siteyi tarayıcınızda da açabilirsiniz.",
   "provider.description.cline": "Cline (API anahtarı gerekir)",
-  "provider.description.nous": "Nous Portal (API anahtarı veya çıkarım jetonu gerekir)"
+  "provider.description.nous": "Nous Portal (API anahtarı veya çıkarım jetonu gerekir)",
+  "tui.setting_show_generation_speed.label": "Üretim hızı",
+  "tui.setting_show_generation_speed.desc": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Üretim hızı",
+  "generation.speed_hint": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir."
 }

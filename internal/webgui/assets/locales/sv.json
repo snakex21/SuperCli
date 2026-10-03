@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (API-nyckel eller inferenstoken krävs)",
   "code.copy": "Kopiera",
   "code.copied": "Kopierat.",
-  "code.copyFailed": "Det gick inte att kopiera. Markera koden och tryck Ctrl+C."
+  "code.copyFailed": "Det gick inte att kopiera. Markera koden och tryck Ctrl+C.",
+  "setting.show_generation_speed.label": "Genereringshastighet",
+  "setting.show_generation_speed.desc": "Genomsnittliga tokens/s efter svaret, inklusive resonemang; utan promptbearbetning och verktyg. Kräver leverantörens tokenantal.",
+  "generation.speed": "Genereringshastighet",
+  "generation.speed_hint": "Genomsnittliga tokens/s efter svaret, inklusive resonemang; utan promptbearbetning och verktyg. Kräver leverantörens tokenantal."
 }

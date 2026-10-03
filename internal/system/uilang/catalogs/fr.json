@@ -854,5 +854,10 @@
   "preview.close": "Fermer l’aperçu",
   "preview.unavailable": "Pour utiliser l’aperçu intégré, placez supercli-web à côté de supercli. Vous pouvez aussi ouvrir le site dans votre navigateur.",
   "provider.description.cline": "Cline (clé API requise)",
-  "provider.description.nous": "Nous Portal (clé API ou jeton d’inférence requis)"
+  "provider.description.nous": "Nous Portal (clé API ou jeton d’inférence requis)",
+  "tui.setting_show_generation_speed.label": "Vitesse de génération",
+  "tui.setting_show_generation_speed.desc": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur.",
+  "generation.rate": "%.1f tok/s",
+  "generation.speed": "Vitesse de génération",
+  "generation.speed_hint": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur."
 }

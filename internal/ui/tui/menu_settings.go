@@ -37,6 +37,7 @@ func settingsRows() []settingRow {
 
 func settingsRowsFor(language string) []settingRow {
 	return []settingRow{
+		{"show_generation_speed", textFor(language, "tui.setting_show_generation_speed.label"), textFor(language, "tui.setting_show_generation_speed.desc"), setTriState, false},
 		{"language", textFor(language, "tui.setting_language.8027f432a7"), textFor(language, "tui.setting_language.99a2af69fc"), setLanguage, false},
 		{"orchestrator", textFor(language, "tui.setting_orchestrator.0a4b20425b"), textFor(language, "tui.setting_orchestrator.4b3142f61d"), setTriState, true},
 		{"navigator", textFor(language, "tui.setting_navigator.f4b3f6314f"), textFor(language, "tui.setting_navigator.117b57b29d"), setNavigator, true},
@@ -77,7 +78,7 @@ func settingCategory(key string) int {
 		return 1
 	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
 		return 2
-	case "language", "default_model", "default_provider", "allow_all", "":
+	case "show_generation_speed", "language", "default_model", "default_provider", "allow_all", "":
 		return 0
 	default:
 		return 3

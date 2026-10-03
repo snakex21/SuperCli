@@ -725,5 +725,9 @@
   "provider.description.nous": "Nous Portal (necesită cheie API sau token de inferență)",
   "code.copy": "Copiază",
   "code.copied": "Copiat.",
-  "code.copyFailed": "Copierea a eșuat. Selectează codul și apasă Ctrl+C."
+  "code.copyFailed": "Copierea a eșuat. Selectează codul și apasă Ctrl+C.",
+  "setting.show_generation_speed.label": "Viteză de generare",
+  "setting.show_generation_speed.desc": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului.",
+  "generation.speed": "Viteză de generare",
+  "generation.speed_hint": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului."
 }

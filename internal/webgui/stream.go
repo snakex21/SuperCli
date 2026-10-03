@@ -36,9 +36,10 @@ type wireEvent struct {
 	Run          int    `json:"run,omitempty"`
 	Prompt       string `json:"prompt,omitempty"`
 	// Usage fields (type "done").
-	TokIn    int `json:"tok_in,omitempty"`
-	TokOut   int `json:"tok_out,omitempty"`
-	TokTotal int `json:"tok_total,omitempty"`
+	TokIn         int     `json:"tok_in,omitempty"`
+	TokOut        int     `json:"tok_out,omitempty"`
+	TokTotal      int     `json:"tok_total,omitempty"`
+	GenerationTPS float64 `json:"generation_tps,omitempty"`
 	// TokCached is the raw cached-prompt token count (type "done"),
 	// so the front-end can render the TUI-style
 	// "cache X · eval Y · gen Z" breakdown without recomputing it
@@ -119,12 +120,13 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "notice", Text: txt}, true
 	case agent.DoneEvent:
 		w := wireEvent{
-			Type:         "done",
-			TokIn:        e.Usage.Input,
-			TokOut:       e.Usage.Output,
-			TokTotal:     e.Usage.Total,
-			TokCached:    e.Usage.Cached,
-			ReasoningTok: e.Usage.Reasoning,
+			Type:          "done",
+			TokIn:         e.Usage.Input,
+			TokOut:        e.Usage.Output,
+			TokTotal:      e.Usage.Total,
+			TokCached:     e.Usage.Cached,
+			ReasoningTok:  e.Usage.Reasoning,
+			GenerationTPS: e.GenerationTokensPerSecond(),
 		}
 		if e.Usage.Input > 0 && e.Usage.Cached > 0 {
 			w.CacheHitPct = e.Usage.Cached * 100 / e.Usage.Input
