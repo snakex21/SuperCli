@@ -266,9 +266,23 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 	return out, rows.Err()
 }
 
+// ReadMessageAt returns one exact transcript message. Missing sessions or
+// sequences return sql.ErrNoRows, without loading unrelated message payloads.
+func (s *Store) ReadMessageAt(ctx context.Context, sessionID string, seq int) (Encoded, error) {
+	var m Encoded
+	err := s.db.QueryRowContext(ctx,
+		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? AND seq = ?`,
+		sessionID, seq,
+	).Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name)
+	if err != nil {
+		return Encoded{}, err
+	}
+	return m, nil
+}
+
 // ReadMessages returns all messages for a session, in seq order.
 func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, error) {
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? ORDER BY seq ASC`,
 		sessionID,
 	)

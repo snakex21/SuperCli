@@ -233,13 +233,25 @@ func TestHandleSessionRewindConversationAndFiles(t *testing.T) {
 	}
 }
 
-func TestHandleSessionRewindRejectsNonUserSequence(t *testing.T) {
+func TestHandleSessionRewindRejectsInvalidSelectionWithoutChangingHistory(t *testing.T) {
 	srv := newTestServer(t, false)
-	source, _ := createRewindSession(t, srv, "invalid rewind")
-	body := fmt.Sprintf(`{"session_id":%q,"selected_seq":2}`, source.ID)
-	recorder := httptest.NewRecorder()
-	srv.handleSessionRewind(recorder, httptest.NewRequest(http.MethodPost, "/api/session/rewind", strings.NewReader(body)))
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", recorder.Code)
+	source, store := createRewindSession(t, srv, "invalid rewind")
+	// A persisted row with malformed parts must not become a valid rewind target.
+	if err := store.AppendMessage(context.Background(), source.ID, session.Encoded{Role: string(llm.RoleUser), Content: "invalid parts", PartsJSON: "{"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, seq := range []int{2, 999, 5} {
+		t.Run(fmt.Sprint(seq), func(t *testing.T) {
+			body := fmt.Sprintf(`{"session_id":%q,"selected_seq":%d}`, source.ID, seq)
+			recorder := httptest.NewRecorder()
+			srv.handleSessionRewind(recorder, httptest.NewRequest(http.MethodPost, "/api/session/rewind", strings.NewReader(body)))
+			if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "selected_seq must identify a user message") {
+				t.Fatalf("status=%d: %s", recorder.Code, recorder.Body.String())
+			}
+			rows, err := store.ReadMessages(context.Background(), source.ID)
+			if err != nil || len(rows) != 5 || rows[3].Content != "discard this answer" || rows[4].Content != "invalid parts" {
+				t.Fatalf("invalid rewind changed history: rows=%+v err=%v", rows, err)
+			}
+		})
 	}
 }

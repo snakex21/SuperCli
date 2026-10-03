@@ -37,9 +37,12 @@ func needsSessionTitle(prompt string) bool {
 const titleMaxAttempts = 3
 
 type titleJob struct {
-	timer    *time.Timer
-	cancel   context.CancelFunc // non-nil while the LLM call is in flight
-	attempts int
+	timer       *time.Timer
+	cancel      context.CancelFunc
+	attempts    int
+	timerGen    uint64 // invalidates callbacks already dispatched by AfterFunc
+	runGen      uint64 // identifies the cancel/cleanup owner
+	scheduleGen uint64 // preserves an explicitly rearmed job after old completion
 }
 
 // titleScheduler defers one title job per session. New requests for
@@ -50,13 +53,19 @@ type titleScheduler struct {
 	delay  time.Duration
 	jobs   map[string]*titleJob
 	closed bool
-	// run performs the actual title generation; it reports success so
-	// the scheduler knows whether to retry. Swappable in tests.
+	// run performs title generation and reports whether the job is complete.
 	run func(ctx context.Context, sessionID, prompt string) bool
 }
 
 func newTitleScheduler(delay time.Duration, run func(ctx context.Context, sessionID, prompt string) bool) *titleScheduler {
 	return &titleScheduler{delay: delay, jobs: make(map[string]*titleJob), run: run}
+}
+
+// armLocked preserves the existing delay and one timer per pending title.
+func (s *titleScheduler) armLocked(sessionID, prompt string, job *titleJob) {
+	job.timerGen++
+	timerGen := job.timerGen
+	job.timer = time.AfterFunc(s.delay, func() { s.fire(sessionID, prompt, job, timerGen) })
 }
 
 // Schedule (re)arms the idle timer for sessionID's title. Call it
@@ -77,12 +86,13 @@ func (s *titleScheduler) Schedule(sessionID, prompt string) {
 		s.jobs[sessionID] = job
 	}
 	if job.attempts >= titleMaxAttempts {
-		return // the local title stays; stop burning inference on it
+		return
 	}
 	if job.timer != nil {
 		job.timer.Stop()
 	}
-	job.timer = time.AfterFunc(s.delay, func() { s.fire(sessionID, prompt) })
+	job.scheduleGen++
+	s.armLocked(sessionID, prompt, job)
 }
 
 // Cancel stops the pending timer and aborts any in-flight title call
@@ -95,6 +105,7 @@ func (s *titleScheduler) Cancel(sessionID string) {
 	if job == nil {
 		return
 	}
+	job.timerGen++
 	if job.timer != nil {
 		job.timer.Stop()
 		job.timer = nil
@@ -118,6 +129,7 @@ func (s *titleScheduler) Close() {
 	}
 	s.closed = true
 	for id, job := range s.jobs {
+		job.timerGen++
 		if job.timer != nil {
 			job.timer.Stop()
 		}
@@ -128,49 +140,42 @@ func (s *titleScheduler) Close() {
 	}
 }
 
-func (s *titleScheduler) fire(sessionID, prompt string) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (s *titleScheduler) fire(sessionID, prompt string, expected *titleJob, timerGen uint64) {
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		cancel()
-		return
-	}
 	job := s.jobs[sessionID]
-	if job == nil {
+	// Stop cannot retract an expired callback; job identity also prevents ABA
+	// when a completed/deleted session job is replaced under the same key.
+	if s.closed || job == nil || job != expected || job.timerGen != timerGen || job.timer == nil {
 		s.mu.Unlock()
-		cancel()
 		return
 	}
+	job.timer = nil
 	job.attempts++
+	job.runGen++
+	runGen, scheduleGen := job.runGen, job.scheduleGen
+	ctx, cancel := context.WithCancel(context.Background())
 	job.cancel = cancel
 	s.mu.Unlock()
+	defer cancel()
 
 	ok := s.run(ctx, sessionID, prompt)
 
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		cancel()
+	defer s.mu.Unlock()
+	if s.closed || s.jobs[sessionID] != job || job.runGen != runGen {
 		return
 	}
-	if job.cancel != nil {
-		job.cancel = nil
+	job.cancel = nil
+	// A newer explicit Schedule owns its timer. Cancel alone still preserves
+	// the existing failed/preempted attempt retry after the same idle delay.
+	if job.scheduleGen != scheduleGen {
+		return
 	}
-	retry := !ok && job.attempts < titleMaxAttempts
 	if ok {
 		delete(s.jobs, sessionID)
-	} else if retry && job.timer != nil {
-		job.timer.Stop()
+	} else if job.attempts < titleMaxAttempts {
+		s.armLocked(sessionID, prompt, job)
 	}
-	if retry {
-		// Preempted by foreground work (or the model failed): the
-		// local title is still in place; try again after another
-		// quiet window.
-		job.timer = time.AfterFunc(s.delay, func() { s.fire(sessionID, prompt) })
-	}
-	s.mu.Unlock()
-	cancel()
 }
 
 // runSessionTitleLLM asks the active (metered) provider for a
