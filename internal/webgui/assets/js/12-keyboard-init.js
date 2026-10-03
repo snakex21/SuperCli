@@ -30,6 +30,7 @@ document.addEventListener("keydown", function (e) {
     e.preventDefault();
     var blocks = $$(".think-block");
     var anyOpen = blocks.some(function (b) { return b.open; });
+    saveDisclosurePreference("thinking", !anyOpen);
     blocks.forEach(function (b) { b.open = !anyOpen; });
     return;
   }
@@ -37,6 +38,7 @@ document.addEventListener("keydown", function (e) {
     e.preventDefault();
     var rows = $$(".tool-row");
     var anyOpenT = rows.some(function (r) { return r.open; });
+    saveDisclosurePreference("tools", !anyOpenT);
     rows.forEach(function (r) { r.open = !anyOpenT; });
   }
 });

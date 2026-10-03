@@ -360,7 +360,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// unbalanced JSON arguments before execution. An unrepairable
 	// call is bounced back to the model with the correct format so
 	// it can retry (up to maxToolFormatRetries consecutive times).
-	if errMsg := HardenToolCall(&tc, l.registry.Names(), l.recentBadCallStreak()); errMsg != "" {
+	known := []string{tc.Name}
+	if _, ok := l.registry.Get(tc.Name); !ok {
+		known = l.registry.Names()
+	}
+	if errMsg := HardenToolCall(&tc, known, l.recentBadCallStreak()); errMsg != "" {
 		out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
 		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", errMsg)}
 		// A hallucinated tool name or unrepairable arguments never
@@ -605,6 +609,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 				continue
 			}
 			img := l.toolImageRef(ctx, tc.Name, image)
+			img.SourceToolCallID = tc.ID
+			img.ToolOutputCarrier = true
 			parts = append(parts, llm.ContentPart{Type: llm.PartTypeImage, Image: img})
 			// Storage failure retains pixels for the model, but never sends an
 			// inline binary payload over SSE or leaks a remote image URL.

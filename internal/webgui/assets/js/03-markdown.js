@@ -165,7 +165,8 @@ function renderTable(lines) {
 var _thinkId = 0;
 function renderThinkBlock(text) {
   var id = "think-" + (++_thinkId);
-  return '<details class="think-block" open data-think-id="' + id + '">' +
+  var open = typeof ui === "undefined" || ui.thinkingExpanded !== false;
+  return '<details class="think-block"' + (open ? " open" : "") + ' data-think-id="' + id + '">' +
     '<summary><span>' + escHtml(t("role.thinking")) + '</span><span class="think-line"></span></summary>' +
     '<div class="think-content">' + renderMarkdownish(String(text).trim()) + "</div></details>";
 }

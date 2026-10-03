@@ -91,7 +91,9 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 			Name:        m.Name,
 			ToolCallID:  msg.ToolCallID,
 		}
-		if len(item.Attachments) == 0 {
+		item.ToolImages = transcriptToolImagePreviews(id, msg, len(item.Attachments) != 0)
+		item.ToolImageCarrier = len(item.ToolImages) != 0
+		if !item.ToolImageCarrier && len(item.Attachments) == 0 {
 			for _, part := range msg.Parts {
 				if part.Type == llm.PartTypeImage && part.Image != nil {
 					if token := sessionImagePreviewPath(id, part.Image.Path); token != "" {
@@ -116,6 +118,34 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+// Only an explicitly host-authored, image-only carrier is reparented. Mixed,
+// genuine and legacy messages retain the existing attachment presentation.
+func transcriptToolImagePreviews(sessionID string, msg llm.Message, realAttachments bool) []transcriptToolImage {
+	if realAttachments || msg.Role != llm.RoleUser || msg.Content != "" || msg.Name != "" || msg.ToolCallID != "" || len(msg.ToolCalls) != 0 {
+		return nil
+	}
+	var images []transcriptToolImage
+	for _, part := range msg.Parts {
+		switch part.Type {
+		case llm.PartTypeText:
+			// Surrounding host text is covered by the explicit carrier marker,
+			// never recognized by its words or an image name.
+		case llm.PartTypeImage:
+			if part.Image == nil || !part.Image.ToolOutputCarrier || part.Image.SourceToolCallID == "" {
+				return nil
+			}
+			token := sessionImagePreviewPath(sessionID, part.Image.Path)
+			if token == "" {
+				return nil
+			}
+			images = append(images, transcriptToolImage{SourceCallID: part.Image.SourceToolCallID, Path: token})
+		default:
+			return nil
+		}
+	}
+	return images
 }
 
 // memoryList returns recent memory entries across both scopes

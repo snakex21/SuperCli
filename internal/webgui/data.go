@@ -49,14 +49,21 @@ type sessionMeta struct {
 
 // transcriptMsg is one message in a session transcript.
 type transcriptMsg struct {
-	Seq         int                  `json:"seq"`
-	Role        string               `json:"role"`
-	Content     string               `json:"content"`
-	Attachments []string             `json:"attachments,omitempty"`
-	Name        string               `json:"name,omitempty"`
-	ToolCallID  string               `json:"tool_call_id,omitempty"`
-	ToolCalls   []transcriptToolCall `json:"tool_calls,omitempty"`
-	Turn        *transcriptTurn      `json:"turn,omitempty"`
+	Seq              int                   `json:"seq"`
+	Role             string                `json:"role"`
+	Content          string                `json:"content"`
+	Attachments      []string              `json:"attachments,omitempty"`
+	ToolImages       []transcriptToolImage `json:"tool_images,omitempty"`
+	ToolImageCarrier bool                  `json:"tool_image_carrier,omitempty"`
+	Name             string                `json:"name,omitempty"`
+	ToolCallID       string                `json:"tool_call_id,omitempty"`
+	ToolCalls        []transcriptToolCall  `json:"tool_calls,omitempty"`
+	Turn             *transcriptTurn       `json:"turn,omitempty"`
+}
+
+type transcriptToolImage struct {
+	SourceCallID string `json:"source_call_id"`
+	Path         string `json:"path"`
 }
 
 type transcriptPage struct {
