@@ -135,6 +135,14 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 }
 
 func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, vision bool, effort string) ([]byte, error) {
+	req, err := assembleCodexRequestWithEffort(model, msgs, tools, vision, effort)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(req)
+}
+
+func assembleCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, vision bool, effort string) (codexRequest, error) {
 	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	req := codexRequest{
 		Model:      model,
@@ -152,7 +160,7 @@ func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, 
 	for _, t := range tools {
 		parameters, err := normalizeToolSchemaChecked(t.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("tool %q schema: %w", t.Name, err)
+			return codexRequest{}, fmt.Errorf("tool %q schema: %w", t.Name, err)
 		}
 		req.Tools = append(req.Tools, codexToolDecl{
 			Type:        "function",
@@ -193,7 +201,7 @@ func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, 
 		default: // user
 			parts, err := codexUserParts(m, vision)
 			if err != nil {
-				return nil, err
+				return codexRequest{}, err
 			}
 			req.Input = append(req.Input, codexItem{
 				Type: "message", Role: "user", Content: parts,
@@ -201,7 +209,7 @@ func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, 
 		}
 	}
 	req.Instructions = strings.Join(instructions, "\n\n")
-	return json.Marshal(req)
+	return req, nil
 }
 
 // prepareStandardResponsesRequest adds the state-carrying fields used by

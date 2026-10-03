@@ -409,3 +409,44 @@ func TestRegistryRejectsExtremeArgumentExponentWithoutCallingTool(t *testing.T) 
 		p.requireInvalid(t, args, "$.value: invalid number")
 	}
 }
+
+func TestRegistryStringLengthGuardsCountCodePoints(t *testing.T) {
+	schema, _ := json.Marshal(map[string]any{"type": "object", "properties": map[string]any{"body": map[string]any{"type": "string", "minLength": 2, "maxLength": 2}}, "required": []string{"body"}})
+	p := newValidationProbe(t, string(schema))
+	for _, value := range []string{"ż界", "e\u0301", "😀😀"} {
+		raw, _ := json.Marshal(map[string]string{"body": value})
+		p.requireValid(t, string(raw))
+		if string(p.lastArgs) != string(raw) {
+			t.Fatal("accepted JSON bytes changed")
+		}
+	}
+	for _, tc := range []struct{ value, err string }{{"界", "length must be at least 2"}, {"ą界😀", "length must be at most 2"}} {
+		raw, _ := json.Marshal(map[string]string{"body": tc.value})
+		p.requireInvalid(t, string(raw), tc.err)
+	}
+	zeroSchema, _ := json.Marshal(map[string]any{"type": "object", "properties": map[string]any{"body": map[string]any{"type": "string", "maxLength": 0}}})
+	zero := newValidationProbe(t, string(zeroSchema))
+	raw, _ := json.Marshal(map[string]string{"body": ""})
+	zero.requireValid(t, string(raw))
+	raw, _ = json.Marshal(map[string]string{"body": "😀"})
+	zero.requireInvalid(t, string(raw), "length must be at most 0")
+}
+func TestRegistryUnboundedStringPreservesPatternAndBody(t *testing.T) {
+	for _, pattern := range []string{"", "^ż+$"} {
+		schemaBody := map[string]any{"type": "string"}
+		if pattern != "" {
+			schemaBody["pattern"] = pattern
+		}
+		schema, _ := json.Marshal(map[string]any{"type": "object", "properties": map[string]any{"body": schemaBody}})
+		p := newValidationProbe(t, string(schema))
+		raw, _ := json.Marshal(map[string]string{"body": strings.Repeat("ż", 16384)})
+		p.requireValid(t, string(raw))
+		if string(p.lastArgs) != string(raw) {
+			t.Fatal("unbounded accepted input changed")
+		}
+		if pattern != "" {
+			raw, _ = json.Marshal(map[string]string{"body": "bad"})
+			p.requireInvalid(t, string(raw), "does not match required pattern")
+		}
+	}
+}

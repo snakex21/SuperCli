@@ -41,6 +41,10 @@ type Store struct {
 	// Cache only the compiled count query, never its results.
 	countsMu   sync.Mutex
 	countsStmt *sql.Stmt
+
+	// Determine fixed database encoding only when saving the first output.
+	toolOutputEncodingOnce sync.Once
+	toolOutputTextBindSafe bool
 }
 
 // OpenStore opens (or creates) a session store inside the given

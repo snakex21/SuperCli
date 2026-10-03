@@ -29,15 +29,33 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
 	msgs = filterNativeReasoning(msgs, ReasoningResponses, p.cfg.Model, p.cfg.BackendURL)
 	effort := p.reasoningEffort()
-	reqBody, err := buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	var imageFallback []byte
-	if visionAttempt && messagesContainImage(msgs) {
-		imageFallback, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
+	standardResponses := p.cfg.StandardResponsesAPI && !isOpenCodeZenBaseURL(p.cfg.BackendURL)
+	var reqBody, imageFallback []byte
+	var standardPrimary, standardFallback codexRequest
+	var err error
+	hasImageFallback := false
+	if standardResponses {
+		standardPrimary, err = assembleCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
 		if err != nil {
-			return nil, fmt.Errorf("build image fallback request: %w", err)
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		hasImageFallback = visionAttempt && messagesContainImage(msgs)
+		if hasImageFallback {
+			standardFallback, err = assembleCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
+			if err != nil {
+				return nil, fmt.Errorf("build image fallback request: %w", err)
+			}
+		}
+	} else {
+		reqBody, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		if visionAttempt && messagesContainImage(msgs) {
+			imageFallback, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
+			if err != nil {
+				return nil, fmt.Errorf("build image fallback request: %w", err)
+			}
 		}
 	}
 	if p.cfg.StandardResponsesAPI {
@@ -64,12 +82,12 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			}
 		} else {
 			reasoningModel := p.supportsReasoningControl()
-			reqBody, err = prepareStandardResponsesRequest(reqBody, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			reqBody, err = prepareOwnedStandardResponsesRequest(standardPrimary, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 			if err != nil {
 				return nil, fmt.Errorf("build standard responses request: %w", err)
 			}
-			if len(imageFallback) > 0 {
-				imageFallback, err = prepareStandardResponsesRequest(imageFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			if hasImageFallback {
+				imageFallback, err = prepareOwnedStandardResponsesRequest(standardFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 				if err != nil {
 					return nil, fmt.Errorf("build standard image fallback request: %w", err)
 				}
