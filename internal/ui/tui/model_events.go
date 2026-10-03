@@ -27,11 +27,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	case agent.ReasoningEvent:
 		first := m.current == "" || !m.reasoningOpen
 		if e.Text != "" {
-			if !m.reasoningOpen {
-				m.appendStreamText("<thinking>")
-				m.reasoningOpen = true
-			}
-			m.appendStreamText(e.Text)
+			m.appendReasoningText(e.Text)
 			m.responseLen += len(e.Text)
 		}
 		m.refreshStreamTranscript(first)

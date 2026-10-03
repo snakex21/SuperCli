@@ -58,6 +58,8 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	var firstDelta time.Time
 	l.lastCallTTFT = 0
 	l.lastCallGeneration = 0
+	l.lastCallOutputFrames = 0
+	l.lastCallReasoningStarted = false
 	defer func() {
 		if firstDelta.IsZero() {
 			// The stream ended (or errored) before any model output:
@@ -71,7 +73,14 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 	for d := range stream {
 		// Role, usage, retry notices and terminal frames are not generated
 		// output and must not make a long backend wait look instant.
-		if firstDelta.IsZero() && d.HasModelOutput() {
+		modelOutput := d.HasModelOutput()
+		if modelOutput {
+			l.lastCallOutputFrames++
+			if firstDelta.IsZero() && (d.ReasoningStarted || d.Reasoning != "") {
+				l.lastCallReasoningStarted = true
+			}
+		}
+		if firstDelta.IsZero() && modelOutput {
 			firstDelta = time.Now()
 			l.lastCallTTFT = firstDelta.Sub(waitStart)
 			l.recordWallPhase(stats.PhaseBackendWait, firstDelta.Sub(waitStart))

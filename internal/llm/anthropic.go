@@ -26,6 +26,9 @@ const anthropicVersion = "2023-06-01"
 // endpoint doesn't work". Stripping a trailing "/messages" (and any trailing
 // slash) makes both the paste-the-endpoint and paste-the-root forms work.
 func NormalizeAnthropicBaseURL(base string) string {
+	if IsAnyRouterBaseURL(base) {
+		return NormalizeAnyRouterBaseURL(base)
+	}
 	base = strings.TrimSpace(base)
 	base = strings.TrimRight(base, "/")
 	if strings.HasSuffix(base, "/messages") {
@@ -74,6 +77,11 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 		cfg.BaseURL = "https://api.anthropic.com/v1"
 	}
 	cfg.BaseURL = NormalizeAnthropicBaseURL(cfg.BaseURL)
+	// This provider explicitly requires the 1M beta on its Messages API.
+	// Opt in before the first request rather than paying a known 400 retry.
+	if IsAnyRouterBaseURL(cfg.BaseURL) {
+		rememberEndpointBeta(cfg.BaseURL, anthropicBetaContext1M)
+	}
 	cfg.APIKey = CleanAPIKey(cfg.APIKey)
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 4096

@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Vitesse de génération",
-  "generation.speed_hint": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur."
+  "generation.speed_hint": "Moyenne en tokens/s après la réponse, raisonnement inclus ; hors traitement du prompt et exécution des outils. Nécessite les compteurs du fournisseur.",
+  "provider.description.anyrouter": "API choisie par modèle (jeton API requis)"
 }

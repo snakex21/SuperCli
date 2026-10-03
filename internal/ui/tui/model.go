@@ -200,9 +200,10 @@ type Model struct {
 	// runtimeHUD is refreshed once after a completed turn. It is deliberately
 	// not recomputed from the full conversation in View(), keeping redraws and
 	// token streaming free of context-estimation work.
-	runtimeHUD     string
-	runtimeContext contextSnapshot
-	reasoningOpen  bool
+	runtimeHUD         string
+	runtimeContext     contextSnapshot
+	reasoningOpen      bool
+	nativeReasoningEnd int // end of the host-created leading thought, before its close tag
 
 	// toolExpanded: when true, tool results are shown in
 	// full (max 50 lines). Toggled with 'E' key.

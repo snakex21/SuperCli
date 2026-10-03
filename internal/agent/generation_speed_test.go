@@ -44,9 +44,12 @@ func (p *generationWindowProvider) Complete(ctx context.Context, _ []llm.Message
 		if call == 1 {
 			ch <- llm.Delta{Reasoning: "fixture reasoning"}
 		} else {
-			ch <- llm.Delta{Content: "fixture reply"}
+			ch <- llm.Delta{Content: "fixture "}
 		}
 		time.Sleep(3 * time.Millisecond)
+		if call != 1 {
+			ch <- llm.Delta{Content: "reply"}
+		}
 		if call == 1 {
 			ch <- llm.Delta{ToolCall: &llm.ToolCall{ID: "fixture-call", Name: "fixture", Arguments: "{}"}}
 		}
@@ -55,7 +58,11 @@ func (p *generationWindowProvider) Complete(ctx context.Context, _ []llm.Message
 			if call == 2 {
 				out = 90
 			}
-			ch <- llm.Delta{Usage: &llm.Usage{Input: 100, Output: out, Total: 100 + out, Reasoning: 10}, FinishReason: "stop"}
+			reasoning := 0
+			if call == 1 {
+				reasoning = 10
+			}
+			ch <- llm.Delta{Usage: &llm.Usage{Input: 100, Output: out, Total: 100 + out, Reasoning: reasoning}, FinishReason: "stop"}
 		}
 		p.windows = append(p.windows, time.Since(first))
 	}()
@@ -126,5 +133,81 @@ func TestFailedStreamDoesNotContributeGenerationRate(t *testing.T) {
 	}
 	if l.generationTokens != 0 || l.generationDuration != 0 {
 		t.Fatal("failed output produced a rate")
+	}
+}
+
+// A replayed hidden block cannot establish when hidden generation began.
+type generationIntervalProvider struct {
+	first, second llm.Delta
+	reasoning     int
+}
+
+func (p *generationIntervalProvider) Name() string { return "fixture-interval" }
+func (p *generationIntervalProvider) Complete(ctx context.Context, _ []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
+	ch := make(chan llm.Delta)
+	go func() {
+		defer close(ch)
+		select {
+		case ch <- p.first:
+		case <-ctx.Done():
+			return
+		}
+		time.Sleep(3 * time.Millisecond)
+		select {
+		case ch <- p.second:
+		case <-ctx.Done():
+			return
+		}
+		select {
+		case ch <- llm.Delta{Usage: &llm.Usage{Input: 10, Output: 163, Reasoning: p.reasoning}, FinishReason: "stop"}:
+		case <-ctx.Done():
+		}
+	}()
+	return ch, nil
+}
+func TestGenerationRateRequiresObservedOutputInterval(t *testing.T) {
+	cases := []struct {
+		name      string
+		first     llm.Delta
+		second    llm.Delta
+		reasoning int
+		measured  bool
+	}{
+		{"hidden-with-start", llm.Delta{OutputStarted: true, ReasoningStarted: true}, llm.Delta{Content: "reply"}, 151, true},
+		{"hidden-without-start", llm.Delta{Content: "re"}, llm.Delta{Content: "ply"}, 151, false},
+		{"single-batched-answer", llm.Delta{Content: "reply"}, llm.Delta{}, 0, false},
+		{"visible-stream", llm.Delta{Content: "re"}, llm.Delta{Content: "ply"}, 0, true},
+		{"late-reasoning", llm.Delta{Content: "reply"}, llm.Delta{Reasoning: "late summary"}, 151, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &generationIntervalProvider{first: tc.first, second: tc.second, reasoning: tc.reasoning}
+			l, err := NewLoop(LoopConfig{Provider: p, Registry: tools.NewRegistry(), System: "fixture", SkipImplementationHint: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := l.Run(context.Background(), "hello")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var done *DoneEvent
+			for ev := range stream {
+				switch e := ev.(type) {
+				case DoneEvent:
+					done = &e
+				case ErrorEvent:
+					t.Fatal(e.Err)
+				}
+			}
+			if done == nil {
+				t.Fatal("missing completion")
+			}
+			if got := done.GenerationTokensPerSecond() > 0; got != tc.measured {
+				t.Fatalf("measured=%v want=%v completion=%+v", got, tc.measured, done)
+			}
+			if done.Usage.Output != 163 || done.Usage.Reasoning != tc.reasoning {
+				t.Fatalf("usage changed: %+v", done.Usage)
+			}
+		})
 	}
 }

@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Vidutinis žetonų/s skaičius po atsakymo, įskaitant samprotavimą; be užklausos apdorojimo ir įrankių vykdymo. Reikia teikėjo žetonų skaitiklių.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Generavimo greitis",
-  "generation.speed_hint": "Vidutinis žetonų/s skaičius po atsakymo, įskaitant samprotavimą; be užklausos apdorojimo ir įrankių vykdymo. Reikia teikėjo žetonų skaitiklių."
+  "generation.speed_hint": "Vidutinis žetonų/s skaičius po atsakymo, įskaitant samprotavimą; be užklausos apdorojimo ir įrankių vykdymo. Reikia teikėjo žetonų skaitiklių.",
+  "provider.description.anyrouter": "Automatinis API parinkimas modeliui (reikalingas API raktas)"
 }

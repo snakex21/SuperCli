@@ -42,9 +42,19 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// MediaID handles unless the model explicitly reloads one.
 	l.deactivateActiveImages()
 	text, calls, usage, err := l.consume(ctx, stream, out)
-	if err == nil && usage != nil && usage.Output > 0 && l.lastCallGeneration >= time.Millisecond {
-		l.generationTokens += usage.Output
-		l.generationDuration += l.lastCallGeneration
+	if err == nil {
+		// A hidden reasoning count without a reasoning-start signal has no
+		// output-only clock. A single batched output also has no measured
+		// generation interval. Never turn either into a fictitious tok/s rate.
+		measured := usage != nil && l.lastCallGeneration >= time.Millisecond && l.lastCallOutputFrames > 1 &&
+			(usage.Reasoning == 0 || l.lastCallReasoningStarted)
+		if !measured && (usage == nil || usage.Output > 0) {
+			l.generationIncomplete = true
+			l.generationTokens, l.generationDuration = 0, 0
+		} else if measured && usage.Output > 0 && !l.generationIncomplete {
+			l.generationTokens += usage.Output
+			l.generationDuration += l.lastCallGeneration
+		}
 	}
 	if err == nil && usage != nil {
 		l.recordContextBaseline(requestEstimate, usage.Input)

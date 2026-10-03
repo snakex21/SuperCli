@@ -130,6 +130,10 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 			})
 		}
 	}
+	if protocol := llm.AnyRouterModelProtocol(cfg.BaseURL, cfg.Model); protocol != "" {
+		cfg.Provider = protocol
+		cfg.BaseURL = llm.NormalizeAnyRouterBaseURL(cfg.BaseURL)
+	}
 	switch cfg.Provider {
 	case config.ProviderResponses:
 		return llm.NewResponses(llm.ResponsesConfig{

@@ -211,6 +211,10 @@ func ListAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string,
 	cleanKey := CleanAPIKey(apiKey)
 	if cleanKey != "" {
 		req.Header.Set("x-api-key", cleanKey)
+		if IsAnyRouterBaseURL(base) {
+			// Its model inventory uses Bearer authentication, unlike Messages.
+			req.Header.Set("Authorization", "Bearer "+cleanKey)
+		}
 	}
 	client := &http.Client{Timeout: ProviderDiscoveryTimeout}
 	resp, err := client.Do(req)

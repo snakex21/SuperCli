@@ -536,6 +536,15 @@ function renderAssistant(node) {
     var states = node._assistantParts;
     for (var i = 0; i < parts.length; i++) {
       var part = parts[i], state = states[i];
+      // Usage-only or delayed native reasoning can arrive after visible prose.
+      // Insert its leading block without rebuilding the unchanged answer DOM.
+      if (i === 0 && part.kind === "thinking" && parts.length === 2 && states.length === 1 &&
+          state && state.kind === "markdown" && state.text === parts[1].text && state.markdown &&
+          state.markdown.start && state.markdown.start.parentNode === node) {
+        state = assistantPart(part, !!node._history);
+        node.insertBefore(state.node, states[0].markdown.start);
+        states.unshift(state);
+      }
       if (!state || state.kind !== part.kind) {
         while (states.length > i) states.pop().remove();
         state = assistantPart(part, !!node._history);
@@ -690,17 +699,30 @@ function flushAssistantRender(node) {
 
 function closeAssistantReasoning(node) {
   if (!node || !node._reasoningOpen) return;
+  node._nativeReasoningEnd = node._raw.length;
   appendAssistantSource(node, "</thinking>\n");
   node._reasoningOpen = false;
 }
 
 function appendAssistantReasoning(node, text) {
-  if (!node) return;
-  if (!node._reasoningOpen) {
-    appendAssistantSource(node, "<thinking>");
+  if (!node || !text) return;
+  if (node._reasoningOpen) appendAssistantSource(node, text);
+  else if (!node._raw) {
+    appendAssistantSource(node, "<thinking>" + text);
     node._reasoningOpen = true;
+  } else {
+    var source = node._raw, end = node._nativeReasoningEnd;
+    // Only this host-created leading native block accepts delayed fragments.
+    // Inline/legacy protocol tags keep the existing parser's semantics.
+    if (end > 0 && source.indexOf("<thinking>") === 0 && source.slice(end, end + 11) === "</thinking>") {
+      node._raw = source.slice(0, end) + text + source.slice(end);
+      node._nativeReasoningEnd += text.length;
+    } else {
+      node._raw = "<thinking>" + text + "</thinking>" + source;
+      node._nativeReasoningEnd = "<thinking>".length + text.length;
+    }
+    node._partsCache = null;
   }
-  appendAssistantSource(node, text || "");
   scheduleAssistantRender(node);
 }
 

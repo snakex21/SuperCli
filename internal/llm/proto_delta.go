@@ -21,6 +21,9 @@ type Delta struct {
 	// or conversation text; timing consumers use it to exclude generation
 	// time from backend wait. Role/usage/status frames must not set it.
 	OutputStarted bool
+	// ReasoningStarted marks an upstream reasoning-item start, even when its
+	// text is hidden. This is timing metadata, never a reconstructed thought.
+	ReasoningStarted bool
 
 	// Content is a text fragment. Empty for deltas that only
 	// carry tool calls or finish_reason.
@@ -139,5 +142,5 @@ func (d Delta) IsTerminal() bool {
 // HasModelOutput distinguishes generated output from stream metadata. Buffered
 // tool calls can announce output before their complete, executable ToolCall.
 func (d Delta) HasModelOutput() bool {
-	return d.Notice == "" && d.Err == nil && (d.OutputStarted || d.Content != "" || d.Reasoning != "" || d.NativeReasoning != nil || d.ToolCall != nil)
+	return d.Notice == "" && d.Err == nil && (d.OutputStarted || d.ReasoningStarted || d.Content != "" || d.Reasoning != "" || d.NativeReasoning != nil || d.ToolCall != nil)
 }

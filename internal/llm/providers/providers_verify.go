@@ -34,6 +34,10 @@ func VerifyConnection(ctx context.Context, baseURL, apiKey, model string) error 
 func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, apiKey, model string, dataDirs ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, verifyTimeout)
 	defer cancel()
+	if protocol := llm.AnyRouterModelProtocol(baseURL, model); protocol != "" {
+		providerType = protocol
+		baseURL = llm.NormalizeAnyRouterBaseURL(baseURL)
+	}
 	if llm.IsOpenCodeZenBaseURL(baseURL) || providerType == config.ProviderResponses || providerType == config.ProviderAnthropic {
 		var p llm.Provider
 		var err error

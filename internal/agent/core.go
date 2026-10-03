@@ -68,7 +68,7 @@ func (DoneEvent) event() {}
 
 // GenerationTokensPerSecond is observed delivery throughput, including reasoning
 // and tool arguments but excluding pre-output wait, tools and helper calls.
-// Do not invent a rate for usage-less or effectively instantaneous responses.
+// Do not invent a rate for usage-less, batched or unclocked hidden reasoning.
 func (e DoneEvent) GenerationTokensPerSecond() float64 {
 	if e.GenerationTokens <= 0 || e.GenerationDuration < time.Millisecond {
 		return 0

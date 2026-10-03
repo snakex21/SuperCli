@@ -24,6 +24,11 @@ func DetectProviderProtocol(ctx context.Context, baseURL, apiKey string) (string
 	if typ := protocolFromTerminalPath(baseURL); typ != "" {
 		return typ, nil
 	}
+	// AnyRouter lists mixed model families in an OpenAI-shaped catalog.
+	// Runtime construction resolves each selected model's actual dialect.
+	if IsAnyRouterBaseURL(baseURL) {
+		return "openai", nil
+	}
 
 	openaiURL := ResolveOpenAIEndpoints(baseURL).Models
 	openaiBody, openaiStatus, openaiErr := probeModelsEndpoint(ctx, openaiURL, func(req *http.Request) {
