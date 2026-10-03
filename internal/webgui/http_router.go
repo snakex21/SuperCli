@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/codex/login", s.handleCodexLogin)
 	mux.HandleFunc("/api/codex/logout", s.handleCodexLogout)
 	mux.HandleFunc("/api/codex/refresh", s.handleCodexRefresh)
+	mux.HandleFunc("/api/codex/usage", s.handleCodexUsage)
 	mux.HandleFunc("/api/context", s.handleContext)
 	mux.HandleFunc("/api/context/compact", s.handleContextCompact)
 

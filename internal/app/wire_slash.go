@@ -640,25 +640,30 @@ func wireSlashLate(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 			}
 			return fmt.Sprintf("login failed: %v", err), nil
 		}
-		// Register a "codex" provider entry so /model and the
-		// provider menus can route through the ChatGPT backend.
+		// A successful login registers the provider; its native catalog supplies
+		// available models without guessing a default or changing selection.
+		var models []string
 		if d.provMgr != nil {
-			if err := d.provMgr.Add("codex", config.ProviderCodex,
-				mgr.Options().BackendURL, "", "gpt-5.5"); err != nil &&
-				!strings.Contains(err.Error(), "already exists") {
-				log.Printf("login: register codex provider: %v", err)
+			name, ensureErr := d.provMgr.EnsureCodexProvider()
+			if ensureErr != nil {
+				log.Printf("login: register codex provider: %v", ensureErr)
+			} else if name != "" {
+				scan := d.provMgr.ScanProvider(name, d.caps)
+				models = scan.Models
+				if scan.Err != nil {
+					log.Printf("login: discover Codex models: %v", scan.Err)
+				}
 			}
-			d.provMgr.Reload()
 		}
-		// Register the Codex model family in the capability
-		// registry so /model gpt-5.5 resolves immediately
-		// (the ChatGPT backend has no /v1/models to probe).
-		llm.RegisterCodexCatalog(d.caps, "codex")
 		plan := res.PlanType
 		if plan == "" {
 			plan = "unknown plan"
 		}
-		return fmt.Sprintf("logged in with ChatGPT (%s).\nUse /model to switch to a Codex model (e.g. gpt-5.5) — requests now route through the ChatGPT backend.", plan), nil
+		out := fmt.Sprintf("logged in with ChatGPT (%s). Use /model to choose a model available to your account.", plan)
+		if len(models) > 0 {
+			out += "\n" + strings.Join(models, ", ")
+		}
+		return out, nil
 	}
 	cmds["logout"] = func(ctx context.Context, args string) (string, error) {
 		// Multi-account: "/logout <label>" removes that named
@@ -670,20 +675,25 @@ func wireSlashLate(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 			if !mgr.LoggedIn() {
 				return fmt.Sprintf("account %s is not logged in", strconv.Quote(label)), nil
 			}
+			info, _ := mgr.Account()
 			if err := mgr.Logout(); err != nil {
 				return "", fmt.Errorf("logout %s: %w", label, err)
+			}
+			if err := llm.ClearCodexAccountRateLimits(d.dataDir, info.AccountID); err != nil {
+				log.Printf("logout: clear usage snapshot: %v", err)
 			}
 			return fmt.Sprintf("logged out account %s (credentials removed)", strconv.Quote(label)), nil
 		}
 		if codexAuthMgr == nil || !codexAuthMgr.LoggedIn() {
 			return "not logged in (no ChatGPT credentials saved)", nil
 		}
+		info, _ := codexAuthMgr.Account()
 		if err := codexAuthMgr.Logout(); err != nil {
 			return "", fmt.Errorf("logout: %w", err)
 		}
 		// Drop the saved usage snapshot too, so the HUD does not keep
 		// showing the logged-out account's rate limits.
-		if err := llm.ClearCodexRateLimits(d.dataDir); err != nil {
+		if err := llm.ClearCodexAccountRateLimits(d.dataDir, info.AccountID); err != nil {
 			log.Printf("logout: clear usage snapshot: %v", err)
 		}
 		return "logged out — ChatGPT credentials and saved usage limits removed from the data dir", nil

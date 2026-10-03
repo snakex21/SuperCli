@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 // RouterProvider wraps a pool of providers and spreads requests
@@ -31,7 +32,8 @@ type RouterProvider struct {
 	providers []Provider
 	labels    []string // optional human labels, 1:1 with providers
 	mu        sync.Mutex
-	active    int // "magazine" cursor: the account currently in use
+	active    int // most recently selected account, for usage/UI
+	next      int // round-robin cursor for the next independent call
 }
 
 // NewRouter returns a RouterProvider over the given pool. The pool
@@ -62,35 +64,51 @@ func (r *RouterProvider) Name() string {
 	return fmt.Sprintf("%s (%d accounts)", r.providers[0].Name(), len(r.providers))
 }
 
-// order returns the provider indices to try for this call in
-// "magazine" order: the currently-active account first, then the
-// rest as failover, wrapping around. It does NOT advance the
-// cursor — a request sticks to the active account until that
-// account fails (see noteFailure), which is what makes one account
-// drain before the next is touched. Guarded by mu.
+// ModelName is the undecorated model id used when rebuilding an account pool.
+// Name remains a display label for compatibility with existing callers.
+func (r *RouterProvider) ModelName() string { return r.providers[0].Name() }
+
+// order reserves the next start slot, advancing once per independent call.
+// Only fresh, explicit quota evidence excludes an account; missing or expired
+// snapshots remain eligible. It does no network or catalog discovery.
 func (r *RouterProvider) order() []int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := len(r.providers)
-	start := r.active
+	start := r.next
 	out := make([]int, 0, n)
+	now := time.Now()
 	for i := 0; i < n; i++ {
-		out = append(out, (start+i)%n)
+		idx := (start + i) % n
+		if rp, ok := r.providers[idx].(interface {
+			RateLimits() (CodexRateLimits, bool)
+		}); ok {
+			if limits, known := rp.RateLimits(); known && limits.ExhaustedAt(now) {
+				continue
+			}
+		}
+		out = append(out, idx)
+	}
+	if len(out) > 0 {
+		r.next = (out[0] + 1) % n
 	}
 	return out
 }
 
-// noteFailure advances the active account to idx+1 (mod n), but
-// only if the failed account is still the active one — so the
-// magazine moves forward exactly one slot per exhausted account and
-// concurrent failures don't skip past healthy accounts. Called when
-// a provider errors before emitting output and failover succeeds.
+// noteFailure preserves the last attempted slot for usage/diagnostics.
+// Failover does not consume another round-robin reservation.
 func (r *RouterProvider) noteFailure(failedIdx int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if failedIdx == r.active {
 		r.active = (r.active + 1) % len(r.providers)
 	}
+}
+
+func (r *RouterProvider) noteAttempt(idx int) {
+	r.mu.Lock()
+	r.active = idx
+	r.mu.Unlock()
 }
 
 // ActiveIndex reports which account slot is currently in use (0-based).
@@ -137,28 +155,35 @@ func (r *RouterProvider) LabelAt(i int) string {
 // early error. It returns an output channel that the router owns and
 // closes exactly once, preserving the Provider streaming contract.
 func (r *RouterProvider) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	seq := r.order()
+	if len(seq) == 0 {
+		return nil, fmt.Errorf("llm.Router: all accounts have an observed exhausted quota")
+	}
 
 	// Initiate the first provider synchronously so a hard config
 	// error (Complete returning err) can fail over before we even
 	// open the output channel — and so the caller sees a plain
 	// error if EVERY provider refuses to start.
 	var (
-		stream <-chan Delta
-		err    error
+		stream    <-chan Delta
+		err       error
 		firstErrs []string
 		startIdx  int
 	)
 	consumed := 0
 	for ; consumed < len(seq); consumed++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		startIdx = seq[consumed]
+		r.noteAttempt(startIdx)
 		stream, err = r.providers[startIdx].Complete(ctx, msgs, tools)
 		if err == nil {
 			break
 		}
-		// This account could not start: advance the magazine past it
-		// so the next request starts from a healthy account.
-		r.noteFailure(startIdx)
 		firstErrs = append(firstErrs, fmt.Sprintf("%s: %v", r.providers[startIdx].Name(), err))
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -178,21 +203,25 @@ func (r *RouterProvider) Complete(ctx context.Context, msgs []Message, tools []T
 // arrives before any real output was forwarded, it transparently
 // fails over to the next provider in remaining. Once output has been
 // forwarded, errors pass through and no failover happens. curIdx is
-// the pool index of the stream currently being relayed, used to
-// advance the magazine cursor on failover.
+// the pool index of the stream currently being relayed.
 func (r *RouterProvider) relay(ctx context.Context, out chan<- Delta, stream <-chan Delta, curIdx int, msgs []Message, tools []ToolDef, remaining []int, priorErrs []string) {
 	defer close(out)
 	emitted := false
 	for {
 		for d := range stream {
+			if ctx.Err() != nil {
+				return
+			}
+			if d.Content != "" || d.Reasoning != "" || d.NativeReasoning != nil || d.ToolCall != nil || d.OutputStarted || d.ReasoningStarted {
+				emitted = true
+			}
 			if d.Err != nil && !emitted && len(remaining) > 0 {
 				// Safe failover: nothing forwarded yet, try next.
-				// Advance the magazine past the account that just
-				// failed so future requests skip it too.
-				r.noteFailure(curIdx)
+				// Keep diagnostics on the account selected for this attempt.
 				idx := remaining[0]
 				remaining = remaining[1:]
 				curIdx = idx
+				r.noteAttempt(idx)
 				next, startErr := r.providers[idx].Complete(ctx, msgs, tools)
 				if startErr != nil {
 					priorErrs = append(priorErrs, fmt.Sprintf("%s: %v", r.providers[idx].Name(), startErr))
@@ -202,9 +231,6 @@ func (r *RouterProvider) relay(ctx context.Context, out chan<- Delta, stream <-c
 				}
 				stream = next
 				goto nextProvider
-			}
-			if d.Content != "" || d.ToolCall != nil {
-				emitted = true
 			}
 			select {
 			case out <- d:
@@ -229,9 +255,8 @@ func closedErr(err error) <-chan Delta {
 }
 
 // FetchUsage delegates to the active account's provider so /usage
-// and the HUD work behind the router. With the magazine strategy
-// there is exactly one active account, so its usage is the usage
-// that matters. Providers that do not support usage cause a
+// and the HUD work behind the router. Other accounts retain their own
+// snapshots for the dashboard. Providers without usage support cause a
 // graceful "not supported" error.
 func (r *RouterProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error) {
 	p := r.providers[r.ActiveIndex()]
@@ -246,20 +271,15 @@ func (r *RouterProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error
 
 // FetchUsageAll refreshes the usage snapshot for EVERY account in the
 // pool, each with its own token — not just the active one. This is what
-// makes the magazine behave like one combined limit: without it, only
-// the active account ever gets fresh usage data, so the pool aggregate
-// (and the per-account /usage table) only ever counts a single account
-// until the others become active through failover.
+// allows the UI to show every account without combining unrelated quota
+// denominators. It does not run automatically in the background.
 //
 // Each account's provider has its own CodexTokenSource (a per-account
 // auth Manager), so fetching per-provider naturally uses the right
 // token without ever switching the active account under the user.
 //
-// Fetches run concurrently (one goroutine per account); each provider
-// guards its own snapshot with its own rlMu, so there is no shared
-// mutable state to race on here. A per-account failure (expired token,
-// offline) is collected but never aborts the others — accounts that
-// succeeded still get fresh data, and the caller can surface the rest.
+// Manual fetches run serially under one overall timeout. A per-account
+// failure is collected without discarding successful snapshots.
 //
 // It returns the active account's refreshed snapshot (so existing
 // callers that want "the current account's numbers" keep working) and
@@ -267,50 +287,57 @@ func (r *RouterProvider) FetchUsage(ctx context.Context) (CodexRateLimits, error
 // accounts that support usage succeeded). Providers that do not support
 // usage are skipped silently.
 func (r *RouterProvider) FetchUsageAll(ctx context.Context) (CodexRateLimits, error) {
-	type result struct {
-		idx int
-		rl  CodexRateLimits
-		err error
-	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	active := r.ActiveIndex()
-	results := make([]result, len(r.providers))
-	var wg sync.WaitGroup
+	var activeRL CodexRateLimits
+	var errs []string
 	for i, p := range r.providers {
 		f, ok := p.(interface {
 			FetchUsage(context.Context) (CodexRateLimits, error)
 		})
 		if !ok {
-			results[i] = result{idx: i, err: fmt.Errorf("%s: no usage", p.Name())}
+			errs = append(errs, fmt.Sprintf("%s: no usage", r.LabelAt(i)))
 			continue
 		}
-		wg.Add(1)
-		go func(i int, f interface {
-			FetchUsage(context.Context) (CodexRateLimits, error)
-		}) {
-			defer wg.Done()
-			rl, err := f.FetchUsage(ctx)
-			results[i] = result{idx: i, rl: rl, err: err}
-		}(i, f)
-	}
-	wg.Wait()
-
-	var (
-		activeRL CodexRateLimits
-		errs     []string
-	)
-	for i, res := range results {
-		if res.err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", r.LabelAt(i), res.err))
+		rl, err := f.FetchUsage(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %s", r.LabelAt(i), safeCodexUsageError(err)))
 			continue
 		}
 		if i == active {
-			activeRL = res.rl
+			activeRL = rl
 		}
 	}
 	if len(errs) > 0 {
 		return activeRL, fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return activeRL, nil
+}
+
+// PoolUsageSummary counts account observations without averaging percentages
+// across potentially different plans, window lengths or quota capacities.
+func (r *RouterProvider) PoolUsageSummary() CodexUsageSummary {
+	var summary CodexUsageSummary
+	seen := make(map[string]bool, len(r.providers))
+	for _, provider := range r.providers {
+		if p, ok := Unwrap(provider).(*CodexProvider); ok && p.cfg.AccountID != "" {
+			if seen[p.cfg.AccountID] {
+				continue
+			}
+			seen[p.cfg.AccountID] = true
+		}
+		var snapshot *CodexUsageSnapshot
+		if p, ok := provider.(interface {
+			RateLimits() (CodexRateLimits, bool)
+		}); ok {
+			if limits, has := p.RateLimits(); has {
+				snapshot = limits.Snapshot
+			}
+		}
+		summary.add(snapshot, time.Now())
+	}
+	return summary
 }
 
 // RateLimits returns the active account's last known snapshot, so
@@ -346,15 +373,9 @@ func (r *RouterProvider) PoolUsage() (snaps []CodexRateLimits, oks []bool, activ
 	return snaps, oks, active
 }
 
-// PoolAggregate returns the pool-wide usage: the average 5h and 7d
-// used-percent across all accounts that have a snapshot, plus how
-// many accounts were counted. This is the "whole pool" figure —
-// the point of the magazine strategy is summed capacity, so the
-// user wants to see total headroom across every account, not just
-// the active one. Averaging is right because the accounts have
-// equal per-account limits: 0% + 12% over two accounts means ~6%
-// of the combined capacity is spent. counted is 0 when no account
-// has usable data yet (caller then shows nothing).
+// PoolAggregate is a legacy arithmetic API, not a capacity or entitlement
+// estimate. Deprecated: presentation must use PoolUsageSummary and each
+// account's actual windows; account plans and denominators may differ.
 func (r *RouterProvider) PoolAggregate() (primaryPct, secondaryPct, counted int) {
 	var pSum, sSum int
 	for _, p := range r.providers {

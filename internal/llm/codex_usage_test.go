@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -92,7 +93,7 @@ func TestParseCodexUsageBody(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseCodexUsageBody([]byte(tt.body))
+			got := scalarCodexLimits(parseCodexUsageBody([]byte(tt.body)))
 			if got != tt.want {
 				t.Errorf("parseCodexUsageBody()\n got = %+v\nwant = %+v", got, tt.want)
 			}
@@ -141,7 +142,7 @@ func TestFetchUsageStoresSnapshot(t *testing.T) {
 	}
 
 	stored, ok := p.RateLimits()
-	if !ok || stored != rl {
+	if !ok || !reflect.DeepEqual(stored, rl) {
 		t.Errorf("snapshot not stored: ok=%v stored=%+v", ok, stored)
 	}
 }

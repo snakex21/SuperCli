@@ -97,15 +97,9 @@ func (s *Server) handleProviderDiagnostics(w http.ResponseWriter, r *http.Reques
 	started := time.Now()
 	var models []string
 	var err error
-	if p.Type == config.ProviderCodex {
-		models = llm.RegisterCodexCatalog(s.eng.caps, p.Name)
-	} else {
-		// A diagnostic refresh is also the explicit capability refresh. The
-		// manager reads the same passive model endpoints and records their
-		// modality metadata, including native local-server capabilities.
-		res := m.ScanProvider(p.Name, s.eng.caps)
-		models, err = res.Models, res.Err
-	}
+	// Explicit discovery uses the selected provider's native catalog and auth.
+	res := m.ScanProvider(p.Name, s.eng.caps)
+	models, err = res.Models, res.Err
 	view.LatencyMS = time.Since(started).Milliseconds()
 	view.CheckedAt = time.Now().UTC()
 	if err != nil {

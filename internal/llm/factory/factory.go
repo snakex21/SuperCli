@@ -12,6 +12,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
@@ -27,10 +28,13 @@ type BuildFunc func(cfg config.Config, dataDir string, caps *llm.CapabilityRegis
 // Factory builds metered providers. The zero value is not usable;
 // construct with New.
 type Factory struct {
-	build   BuildFunc
-	dataDir string
-	caps    *llm.CapabilityRegistry
-	sink    llm.CallSink
+	build      BuildFunc
+	dataDir    string
+	caps       *llm.CapabilityRegistry
+	sink       llm.CallSink
+	useDefault bool
+	mu         sync.RWMutex
+	codexOpts  *codexauth.Options
 }
 
 // New returns a Factory over build (nil = Default). sinks receive one
@@ -38,6 +42,7 @@ type Factory struct {
 // usable sink the Factory still wraps with a no-op sink so the
 // gate/preemption semantics of llm.Metered always apply.
 func New(build BuildFunc, dataDir string, caps *llm.CapabilityRegistry, sinks ...llm.CallSink) *Factory {
+	useDefault := build == nil
 	if build == nil {
 		build = Default
 	}
@@ -45,7 +50,16 @@ func New(build BuildFunc, dataDir string, caps *llm.CapabilityRegistry, sinks ..
 	if sink == nil {
 		sink = func(llm.CallStat) {}
 	}
-	return &Factory{build: build, dataDir: dataDir, caps: caps, sink: sink}
+	return &Factory{build: build, dataDir: dataDir, caps: caps, sink: sink, useDefault: useDefault}
+}
+
+// SetCodexAuthOptions supplies project-resolved OAuth options to the default
+// factory. Custom CLI builders retain their own manager/configuration contract.
+func (f *Factory) SetCodexAuthOptions(opts codexauth.Options) {
+	opts = opts.WithDefaults()
+	f.mu.Lock()
+	f.codexOpts = &opts
+	f.mu.Unlock()
 }
 
 // Build constructs the provider for cfg and wraps it in llm.Metered
@@ -54,7 +68,16 @@ func New(build BuildFunc, dataDir string, caps *llm.CapabilityRegistry, sinks ..
 // double-wrapped: nesting would double-report every call and deadlock
 // the background gate.
 func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error) {
-	p, err := f.build(cfg, f.dataDir, f.caps)
+	var p llm.Provider
+	var err error
+	f.mu.RLock()
+	opts := f.codexOpts
+	f.mu.RUnlock()
+	if f.useDefault && cfg.Provider == config.ProviderCodex && opts != nil {
+		p, err = buildCodexProviderWithAuth(cfg, f.dataDir, f.caps, *opts)
+	} else {
+		p, err = f.build(cfg, f.dataDir, f.caps)
+	}
 	if err != nil || p == nil {
 		return p, err
 	}
@@ -77,8 +100,12 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 		heuristic := llm.HeuristicCapabilities(cfg.Model)
 		if existing, ok := caps.Get(cfg.Model); ok {
 			if existing.Source != llm.SourceCatalog && existing.Source != llm.SourceProbe {
-				existing.Vision = existing.Vision || heuristic.Vision
-				existing.Reasoning = existing.Reasoning || heuristic.Reasoning
+				if !existing.VisionKnown {
+					existing.Vision = existing.Vision || heuristic.Vision
+				}
+				if !existing.ReasoningKnown {
+					existing.Reasoning = existing.Reasoning || heuristic.Reasoning
+				}
 				existing.Stream = existing.Stream || heuristic.Stream
 				caps.Register(existing)
 			}
@@ -185,16 +212,47 @@ func buildCodexProvider(cfg config.Config, dataDir string, caps *llm.CapabilityR
 	if dataDir == "" {
 		return nil, fmt.Errorf("codex provider requires SuperCli data dir")
 	}
+	opts := codexauth.Options{BackendURL: cfg.BaseURL}
+	// A front-end may use the default factory without the CLI global manager.
+	// Resolve the same portable OAuth configuration for all named accounts.
+	if tc, err := config.ResolveConfig(dataDir, ".", ""); err == nil {
+		opts.ClientID, opts.Issuer = tc.CodexAuth.ClientID, tc.CodexAuth.Issuer
+		if opts.BackendURL == "" {
+			opts.BackendURL = tc.CodexAuth.BackendURL
+		}
+	}
+	opts = opts.WithDefaults()
+	return buildCodexProviderWithAuth(cfg, dataDir, caps, opts)
+}
+
+func buildCodexProviderWithAuth(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry, opts codexauth.Options) (llm.Provider, error) {
+	if dataDir == "" {
+		return nil, fmt.Errorf("codex provider requires SuperCli data dir")
+	}
+	if cfg.BaseURL != "" {
+		opts.BackendURL = cfg.BaseURL
+	}
+	opts = opts.WithDefaults()
 	labels, _ := codexauth.ListAccounts(dataDir)
 	var logged []string
+	hasLogin := false
 	for _, label := range labels {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{BackendURL: cfg.BaseURL})
+		mgr := codexauth.NewManagerFor(dataDir, label, opts)
 		if mgr.LoggedIn() {
+			hasLogin = true
+			if identity, err := mgr.CatalogIdentity(); err == nil {
+				if available, known := llm.CodexModelCacheAvailability(dataDir, opts.BackendURL, identity, cfg.Model); known && !available {
+					continue
+				}
+			}
 			logged = append(logged, label)
 		}
 	}
 	if len(logged) == 0 {
-		mgr := codexauth.NewManager(dataDir, codexauth.Options{BackendURL: cfg.BaseURL})
+		if hasLogin {
+			return nil, fmt.Errorf("codex: selected model is absent from the logged-in accounts' current catalogs")
+		}
+		mgr := codexauth.NewManager(dataDir, opts)
 		if !mgr.LoggedIn() {
 			return nil, fmt.Errorf("codex: not logged in — run /login in TUI first")
 		}
@@ -202,16 +260,17 @@ func buildCodexProvider(cfg config.Config, dataDir string, caps *llm.CapabilityR
 	}
 	pool := make([]llm.Provider, 0, len(logged))
 	for _, label := range logged {
-		mgr := codexauth.NewManagerFor(dataDir, label, codexauth.Options{BackendURL: cfg.BaseURL})
+		mgr := codexauth.NewManagerFor(dataDir, label, opts)
 		info, _ := mgr.Account()
 		p, err := llm.NewCodex(llm.CodexConfig{
-			BackendURL:   mgr.Options().BackendURL,
-			Model:        cfg.Model,
-			Tokens:       mgr,
-			Timeout:      cfg.Timeout,
-			Capabilities: caps,
-			DataDir:      dataDir,
-			AccountID:    info.AccountID,
+			BackendURL:     mgr.Options().BackendURL,
+			Model:          cfg.Model,
+			Tokens:         mgr,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+			DataDir:        dataDir,
+			AccountID:      info.AccountID,
 		})
 		if err != nil {
 			return nil, err
@@ -221,5 +280,9 @@ func buildCodexProvider(cfg config.Config, dataDir string, caps *llm.CapabilityR
 	if len(pool) == 1 {
 		return pool[0], nil
 	}
-	return llm.NewRouter(pool...)
+	router, err := llm.NewRouter(pool...)
+	if err == nil {
+		router.SetLabels(logged)
+	}
+	return router, err
 }

@@ -33,10 +33,10 @@ func TestCodexRateLimits_PerAccountIsolation(t *testing.T) {
 		t.Errorf("account B snapshot polluted by A: %+v", gotB)
 	}
 	// Distinct files on disk.
-	if _, err := os.Stat(filepath.Join(dir, "codex_ratelimits-acct-A.json")); err != nil {
+	if _, err := os.Stat(codexRateLimitsPath(dir, "acct-A")); err != nil {
 		t.Errorf("per-account file A missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "codex_ratelimits-acct-B.json")); err != nil {
+	if _, err := os.Stat(codexRateLimitsPath(dir, "acct-B")); err != nil {
 		t.Errorf("per-account file B missing: %v", err)
 	}
 }

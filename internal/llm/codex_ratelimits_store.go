@@ -1,7 +1,10 @@
 package llm
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,14 +29,14 @@ type codexRateLimitsSnapshot struct {
 	SavedAt time.Time `json:"saved_at"`
 	// AccountID is the ChatGPT account the limits belong to. A load
 	// for a different account is discarded so one account's usage is
-	// never shown under another. Empty matches any account.
+	// never shown under another. Unknown identity is legacy-only.
 	AccountID string `json:"account_id,omitempty"`
 	// Limits is the parsed snapshot itself.
 	Limits CodexRateLimits `json:"limits"`
 }
 
 // codexRateLimitsPath returns the snapshot path for an account.
-// With an accountID it is <dataDir>/codex_ratelimits-<id>.json so
+// With an accountID it is <dataDir>/codex_ratelimits-<sha256>.json so
 // each account keeps its OWN usage snapshot — without this every
 // account shared one file and showed another account's numbers.
 // An empty accountID keeps the legacy <dataDir>/codex_ratelimits.json
@@ -46,7 +49,10 @@ func codexRateLimitsPath(dataDir, accountID string) string {
 	if accountID == "" {
 		return filepath.Join(dataDir, codexRateLimitsFileName)
 	}
-	return filepath.Join(dataDir, "codex_ratelimits-"+sanitizeAccountID(accountID)+".json")
+	// Include a digest: Windows filename case folding and sanitization must not
+	// let two account identities overwrite one another's snapshot.
+	digest := sha256.Sum256([]byte(accountID))
+	return filepath.Join(dataDir, fmt.Sprintf("codex_ratelimits-%x.json", digest[:]))
 }
 
 // sanitizeAccountID keeps an account id safe as a filename fragment
@@ -108,8 +114,8 @@ func saveCodexRateLimits(dataDir, accountID string, rl CodexRateLimits) error {
 }
 
 // ClearCodexRateLimits deletes persisted usage snapshots. It is
-// called on /logout so a fresh login does not show the previous
-// account's limits in the HUD before the first response arrives.
+// intended for an explicit full reset. Single-account logout must use
+// ClearCodexAccountRateLimits.
 // It removes both the legacy shared file and every per-account
 // snapshot (codex_ratelimits-*.json). A missing file (or an empty
 // dataDir) is not an error.
@@ -132,6 +138,33 @@ func ClearCodexRateLimits(dataDir string) error {
 	return nil
 }
 
+// ClearCodexAccountRateLimits clears only the specified identity. Empty identity
+// addresses the legacy anonymous file, never all authenticated accounts.
+func ClearCodexAccountRateLimits(dataDir, accountID string) error {
+	if dataDir == "" {
+		return nil
+	}
+	paths := []string{codexRateLimitsPath(dataDir, accountID)}
+	if accountID != "" {
+		legacy := filepath.Join(dataDir, "codex_ratelimits-"+sanitizeAccountID(accountID)+".json")
+		if snap, ok := readCodexRateLimitsFile(legacy, accountID); ok && snap.AccountID == accountID {
+			paths = append(paths, legacy)
+		}
+		// An older shared envelope can be removed only if it explicitly names
+		// this account; anonymous or another account's cache is left alone.
+		shared := codexRateLimitsPath(dataDir, "")
+		if snap, ok := readCodexRateLimitsFile(shared, accountID); ok && snap.AccountID == accountID {
+			paths = append(paths, shared)
+		}
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 // loadCodexRateLimits reads the persisted snapshot. It returns
 // ok=false (no error) when the file is missing, unreadable, contains
 // corrupt JSON, holds a non-OK snapshot, or belongs to a different
@@ -142,25 +175,46 @@ func loadCodexRateLimits(dataDir, accountID string) (CodexRateLimits, bool) {
 	if path == "" {
 		return CodexRateLimits{}, false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
+	snap, ok := readCodexRateLimitsFile(path, accountID)
+	if !ok && accountID != "" {
+		snap, ok = readCodexRateLimitsFile(filepath.Join(dataDir, "codex_ratelimits-"+sanitizeAccountID(accountID)+".json"), accountID)
+	}
+	if !ok {
 		return CodexRateLimits{}, false
+	}
+	rl := snap.Limits
+	if rl.Snapshot == nil {
+		legacy := legacyCodexUsageSnapshot(rl, snap.SavedAt)
+		rl.Snapshot = &legacy
+	}
+	usage := rl.Snapshot.At(time.Now())
+	rl.Snapshot = &usage
+	return rl, true
+}
+
+func readCodexRateLimitsFile(path, accountID string) (codexRateLimitsSnapshot, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return codexRateLimitsSnapshot{}, false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 1024*1024+1))
+	if err != nil || len(data) > 1024*1024 {
+		return codexRateLimitsSnapshot{}, false
 	}
 	var snap codexRateLimitsSnapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		return CodexRateLimits{}, false
+	if json.Unmarshal(data, &snap) != nil || !snap.Limits.OK || snap.AccountID != accountID {
+		return codexRateLimitsSnapshot{}, false
 	}
-	if !snap.Limits.OK {
-		return CodexRateLimits{}, false
+	return snap, true
+}
+
+func LoadCodexUsageSnapshot(dataDir, accountID string) (CodexUsageSnapshot, bool) {
+	rl, ok := loadCodexRateLimits(dataDir, accountID)
+	if !ok || rl.Snapshot == nil {
+		return CodexUsageSnapshot{}, false
 	}
-	// Discard a snapshot saved under a different account. An empty
-	// stored or requested account id matches anything (e.g. older
-	// snapshots written before account scoping, or callers that
-	// don't know the account yet).
-	if accountID != "" && snap.AccountID != "" && snap.AccountID != accountID {
-		return CodexRateLimits{}, false
-	}
-	return snap.Limits, true
+	return rl.Snapshot.At(time.Now()), true
 }
 
 // LoadCodexRateLimitsSnapshot reads the persisted Codex rate-limit

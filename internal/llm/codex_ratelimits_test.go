@@ -27,13 +27,13 @@ func TestParseCodexRateLimits(t *testing.T) {
 		{
 			name: "full set",
 			h: hdr(map[string]string{
-				"X-Codex-Primary-Used-Percent":         "1",
-				"X-Codex-Primary-Window-Minutes":       "300",
-				"X-Codex-Primary-Reset-At":             "1700000000",
-				"X-Codex-Primary-Reset-After-Seconds":  "16320",
-				"X-Codex-Secondary-Used-Percent":       "11",
-				"X-Codex-Secondary-Window-Minutes":     "10080",
-				"X-Codex-Secondary-Reset-At":           "1700500000",
+				"X-Codex-Primary-Used-Percent":          "1",
+				"X-Codex-Primary-Window-Minutes":        "300",
+				"X-Codex-Primary-Reset-At":              "1700000000",
+				"X-Codex-Primary-Reset-After-Seconds":   "16320",
+				"X-Codex-Secondary-Used-Percent":        "11",
+				"X-Codex-Secondary-Window-Minutes":      "10080",
+				"X-Codex-Secondary-Reset-At":            "1700500000",
 				"X-Codex-Secondary-Reset-After-Seconds": "200000",
 			}),
 			want: CodexRateLimits{
@@ -97,7 +97,7 @@ func TestParseCodexRateLimits(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseCodexRateLimits(tt.h)
+			got := scalarCodexLimits(parseCodexRateLimits(tt.h))
 			if got != tt.want {
 				t.Errorf("parseCodexRateLimits()\n got = %+v\nwant = %+v", got, tt.want)
 			}
@@ -126,11 +126,11 @@ func TestCodexRateLimitsFormatHUD(t *testing.T) {
 			want: "5h 1% · 7d 11%",
 		},
 		{
-			name: "unknown windows fall back to 5h/7d labels",
+			name: "unknown windows do not invent duration",
 			rl: CodexRateLimits{
 				PrimaryUsedPct: 2, SecondaryUsedPct: 33, OK: true,
 			},
-			want: "5h 2% · 7d 33%",
+			want: "primary 2% · secondary 33%",
 		},
 		{
 			name: "reset-after appended to primary",
@@ -251,7 +251,7 @@ func TestFormatHUDAtResetAware(t *testing.T) {
 				SecondaryUsedPct: 11, SecondaryWindowMin: 10080, SecondaryResetAt: now.Unix() + 100000,
 				OK: true,
 			},
-			want: "5h ~0% · 7d 11%",
+			want: "primary ~0% · 7d 11%",
 		},
 		{
 			name: "mixed labels and percents, one reset",
@@ -297,8 +297,8 @@ func TestFormatHUDAtResetAware(t *testing.T) {
 
 func TestShortDuration(t *testing.T) {
 	cases := map[string]string{
-		"45s":   shortDuration(45_000_000_000),       // 45s
-		"12m":   shortDuration(12 * 60_000_000_000),  // 12m
+		"45s":   shortDuration(45_000_000_000),      // 45s
+		"12m":   shortDuration(12 * 60_000_000_000), // 12m
 		"4h32m": shortDuration((4*60 + 32) * 60_000_000_000),
 	}
 	for want, got := range cases {
@@ -369,7 +369,7 @@ func TestCodexRateLimitsSaveLoadRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("expected snapshot to load for matching account")
 	}
-	if got != want {
+	if scalarCodexLimits(got) != want {
 		t.Errorf("round-trip mismatch\n got = %+v\nwant = %+v", got, want)
 	}
 

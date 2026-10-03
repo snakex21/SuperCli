@@ -7,10 +7,12 @@ package providers
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
 
+	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
@@ -33,6 +35,10 @@ type Manager struct {
 	// hidden tracks models whose visibility is toggled off.
 	// Key: model ID. Value: true = hidden.
 	hidden map[string]struct{}
+	// Codex discovery uses the same resolved OAuth endpoints as inference.
+	codexAuthOptions codexauth.Options
+	codexHTTPClient  *http.Client
+	codexScanMu      sync.Mutex
 }
 
 // NewManager creates a Manager that reads providers from

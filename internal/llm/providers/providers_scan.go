@@ -26,6 +26,9 @@ func (m *Manager) ScanModels(caps *llm.CapabilityRegistry) int {
 			continue
 		}
 		res := scanProviderConf(p, caps)
+		if p.Type == config.ProviderCodex {
+			res = m.scanCodexProvider(context.Background(), p, caps, false)
+		}
 		if res.Err == nil {
 			total += len(res.Models)
 			m.cacheProviderModels(p.Name, res.Models)
@@ -57,6 +60,9 @@ func (m *Manager) ScanProvider(name string, caps *llm.CapabilityRegistry) ScanRe
 		return ScanResult{Provider: name, Err: fmt.Errorf("provider %q is disabled", name)}
 	}
 	res := scanProviderConf(found, caps)
+	if found.Type == config.ProviderCodex {
+		res = m.scanCodexProvider(context.Background(), found, caps, true)
+	}
 	if res.Err == nil {
 		m.cacheProviderModels(found.Name, res.Models)
 	}
@@ -119,11 +125,8 @@ func stringSlicesEqual(a, b []string) bool {
 
 func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanResult {
 	res := ScanResult{Provider: p.Name}
-	if caps != nil && p.Type == config.ProviderCodex {
-		// ChatGPT-OAuth (codex) backend has no /v1/models
-		// endpoint — register the static Codex catalog under
-		// this provider entry's name instead of probing.
-		res.Models = llm.RegisterCodexCatalog(caps, p.Name)
+	if p.Type == config.ProviderCodex {
+		res.Err = fmt.Errorf("codex model discovery requires the account manager")
 		return res
 	}
 	if p.BaseURL == "" {

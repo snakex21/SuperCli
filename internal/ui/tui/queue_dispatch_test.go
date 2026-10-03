@@ -186,8 +186,8 @@ func TestQueuedTaskResumesItsOriginalSession(t *testing.T) {
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if len(ag.calls) != 1 || ag.calls[0] != row.Prompt || !strings.Contains(m.transcript.String(), "old question") {
-		t.Fatalf("wrong queued continuation: %+v / %q", ag.calls, m.transcript.String())
+	if len(ag.calls) != 1 || ag.calls[0] != row.Prompt || !strings.Contains(m.completedLines(), "old question") {
+		t.Fatalf("wrong queued continuation: %+v / %q", ag.calls, m.completedLines())
 	}
 }
 
@@ -257,7 +257,7 @@ func TestQueuedTaskReportsFailedDequeueWithoutRepeatingRun(t *testing.T) {
 	}
 	next, _ = m.Update(started)
 	m = next.(Model)
-	if !strings.Contains(m.transcript.String(), started.queueWarning.Error()) {
+	if !strings.Contains(m.completedLines(), started.queueWarning.Error()) {
 		t.Fatal("dequeue failure not visible")
 	}
 	next, _ = m.Update(runEndMsg{})

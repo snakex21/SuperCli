@@ -432,6 +432,12 @@ sections.usage = async function () {
     if (seq !== usageRenderSeq || currentSection !== "usage" || requestSession !== activeSessionID) return;
     panelContent.innerHTML = "";
     panelContent.appendChild(renderUsageInspector(stats));
+    try {
+      var accounts = await j("/api/codex/accounts");
+      if (seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID) panelContent.appendChild(renderCodexUsageDashboard(accounts));
+    } catch (accountError) {
+      if (seq === usageRenderSeq && currentSection === "usage") panelContent.appendChild(el("div", "usage-caption", t("acct.usage.title") + ": " + accountError.message));
+    }
   } catch (e) {
     if (seq === usageRenderSeq && currentSection === "usage") {
       panelContent.innerHTML = "";

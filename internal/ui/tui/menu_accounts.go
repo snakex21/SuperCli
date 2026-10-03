@@ -65,8 +65,8 @@ func (m Model) loggedInAccounts() []string {
 
 // accountsMenuEnter handles Enter in the accounts menu: on the
 // add-action row it starts a login (default account if none exists
-// yet, otherwise a prompt for a label); on an account row it does
-// nothing (use 'd' to log out — see menuAccountsKey).
+// yet, otherwise a prompt for a label); on an account row it opens
+// observed Codex limits (use 'd' to log out — see menuAccountsKey).
 func (m Model) accountsMenuEnter() (tea.Model, tea.Cmd) {
 	rows := m.accountRows()
 	if len(rows) == 0 {
@@ -74,10 +74,7 @@ func (m Model) accountsMenuEnter() (tea.Model, tea.Cmd) {
 	}
 	row := rows[minInt(m.menu.cursor, len(rows)-1)]
 	if !row.isAdd {
-		// Selecting an existing account is a no-op; logging out is
-		// the 'd' key. Keep Enter harmless so a stray keypress
-		// never disturbs a live login.
-		return m, nil
+		return m.openCodexUsageMenu()
 	}
 	// Add account: first account uses the default (bare /login);
 	// subsequent ones go through the labelled login form.
@@ -96,7 +93,7 @@ func (m Model) menuAccountsKey(key string) (tea.Model, tea.Cmd, bool) {
 	if m.menu.kind != menuAccounts {
 		return m, nil, false
 	}
-	if key != "d" && key != "D" {
+	if key != "d" && key != "D" && key != "delete" {
 		return m, nil, false
 	}
 	rows := m.accountRows()
@@ -191,7 +188,7 @@ func (m Model) renderAccountsMenu() string {
 		Padding(0, 2).
 		Render(body.String())
 
-	hint := m.palette.InputHint.Render(truncateText(m.tr("tui.menu_accounts.436e0aaae1"), m.menuWidth()))
+	hint := m.palette.InputHint.Render(truncateText(m.tr("acct.usage.accountsHint")+" · Del "+m.tr("acct.delete"), m.menuWidth()))
 	return panel + "\n" + hint
 }
 

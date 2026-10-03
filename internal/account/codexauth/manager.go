@@ -3,6 +3,8 @@ package codexauth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,6 +64,22 @@ func (m *Manager) LoggedIn() bool {
 	return err == nil && af != nil && af.Tokens != nil && af.Tokens.AccessToken != ""
 }
 
+// CatalogIdentity binds metadata caches to the current portable login without
+// exposing credentials. A replaced/refreshed token cannot inherit old choices.
+func (m *Manager) CatalogIdentity() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	af, err := Load(m.path)
+	if err != nil {
+		return "", err
+	}
+	if af == nil || af.Tokens == nil || af.Tokens.AccessToken == "" {
+		return "", fmt.Errorf("codexauth: not logged in")
+	}
+	sum := sha256.Sum256([]byte(m.label + "\x00" + af.Tokens.AccountID + "\x00" + af.Tokens.AccessToken + "\x00" + af.Tokens.IDToken))
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // Token returns a valid access token and the ChatGPT account id,
 // refreshing stale tokens (older than 28 days) transparently.
 func (m *Manager) Token(ctx context.Context) (access, accountID string, err error) {
@@ -79,7 +97,14 @@ func (m *Manager) Token(ctx context.Context) (access, accountID string, err erro
 			return "", "", err
 		}
 	}
-	return af.Tokens.AccessToken, af.Tokens.AccountID, nil
+	accountID = af.Tokens.AccountID
+	if accountID == "" {
+		accountID = ParseAccountID(af.Tokens.IDToken)
+	}
+	if accountID == "" {
+		accountID = ParseAccountID(af.Tokens.AccessToken)
+	}
+	return af.Tokens.AccessToken, accountID, nil
 }
 
 // Refresh forces a token refresh (e.g. after a 401) and persists

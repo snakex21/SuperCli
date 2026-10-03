@@ -160,8 +160,8 @@ func TestSessionsMenuSelectsWithoutSlashBubble(t *testing.T) {
 	if _, ok := msg.(resumeLoadedMsg); !ok {
 		t.Fatalf("message=%T, want resumeLoadedMsg", msg)
 	}
-	if strings.Contains(mm.transcript.String(), "/resume") {
-		t.Fatalf("visual selection leaked slash command: %q", mm.transcript.String())
+	if strings.Contains(mm.completedLines(), "/resume") {
+		t.Fatalf("visual selection leaked slash command: %q", mm.completedLines())
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 
+	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
@@ -195,6 +196,8 @@ func (e *Engine) buildWorker(cfg config.Config) (llm.Provider, *config.Config) {
 // sync with changes made by the TUI or by this GUI.
 func (e *Engine) providerManager() *providers.Manager {
 	m := providers.NewManager(e.dataDir)
+	tc, _ := config.ResolveConfig(e.dataDir, e.Home(), "")
+	m.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
 	_, projectPath := config.FindTomlPaths(e.dataDir, e.Home())
 	m.SetActiveConfigPath(projectPath)
 	m.Reload()
@@ -242,6 +245,7 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 		return err
 	}
 	tc, _ := config.ResolveConfig(e.dataDir, e.Home(), "")
+	e.factory.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
 	prov, err := e.factory.BuildChain(cfg, tc, llm.PurposeMain)
 	if err != nil {
 		return err

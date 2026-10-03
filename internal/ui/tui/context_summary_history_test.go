@@ -61,7 +61,7 @@ func TestResumeLegacySummaryKeepsModelContextWithoutFakeUserMessage(t *testing.T
 				}
 			}
 			for _, text := range []string{"compacted to save context", "Goal: continue", "initial inspection"} {
-				if strings.Contains(rendered, text) || strings.Contains(m.transcript.String(), text) {
+				if strings.Contains(rendered, text) || strings.Contains(m.completedLines(), text) {
 					t.Fatalf("internal summary leaked into chat: %s", rendered)
 				}
 			}

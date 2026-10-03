@@ -92,7 +92,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		adaptiveReflect:          cfg.AdaptiveReflection,
 		patternInjector:          cfg.PatternInjector,
 		creditTracker:            cfg.CreditTracker,
-		modelID:                  cfg.Provider.Name(),
+		modelID:                  llm.ProviderModelName(cfg.Provider),
 		keepThinking:             cfg.KeepThinking || keepThinkingEnabled(),
 		discardPreviousReasoning: llm.DiscardPreviousReasoning(),
 		windowFor:                cfg.WindowFor,

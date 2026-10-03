@@ -206,7 +206,8 @@ func (l *Loop) CurrentModel() string {
 // Used by /model hot-swap (F26.5). The capability
 // check is the caller's responsibility.
 func (l *Loop) SetModel(p llm.Provider) {
-	if l.modelID != p.Name() {
+	modelID := llm.ProviderModelName(p)
+	if l.modelID != modelID {
 		l.needsModelHandoff(context.Background())
 		if l.contextModel.model == "" {
 			l.contextModel.provider, l.contextModel.model = l.prefillScope(), l.modelID
@@ -214,7 +215,19 @@ func (l *Loop) SetModel(p llm.Provider) {
 		l.resetModelContextBaseline()
 	}
 	l.provider = p
-	l.modelID = p.Name()
+	l.modelID = modelID
+}
+
+// SetAccountProvider refreshes an account pool for the same model without
+// injecting a model handoff or resetting its context baseline. Call between
+// runs; an already-running loop keeps its own provider snapshot.
+func (l *Loop) SetAccountProvider(p llm.Provider) error {
+	if p == nil || llm.ProviderModelName(p) != llm.ProviderModelName(l.provider) {
+		return fmt.Errorf("account provider must keep the current model")
+	}
+	l.provider = p
+	l.modelID = llm.ProviderModelName(p)
+	return nil
 }
 
 // SetContextProvider updates the configured connection identity after a TUI
