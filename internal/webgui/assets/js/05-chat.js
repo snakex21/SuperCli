@@ -1054,8 +1054,10 @@ function handleEvent(ev, current) {
       scheduleAssistantRender(current);
       return current;
     case "reasoning":
+      var reasoningText = ev.text || reasoningFallbackText(ev.reasoning_tok);
+      if (!reasoningText) return current;
       if (!current || current._sealed) current = addAssistantMsg();
-      appendAssistantReasoning(current, ev.text || reasoningFallbackText(ev.reasoning_tok));
+      appendAssistantReasoning(current, reasoningText);
       return current;
     case "tool_call":
       sealAssistantSegment(current);

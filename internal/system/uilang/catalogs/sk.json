@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Priemerné tokeny/s po odpovedi, vrátane uvažovania; bez spracovania promptu a nástrojov. Vyžaduje počty tokenov od poskytovateľa.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Rýchlosť generovania",
-  "generation.speed_hint": "Priemerné tokeny/s po odpovedi, vrátane uvažovania; bez spracovania promptu a nástrojov. Vyžaduje počty tokenov od poskytovateľa."
+  "generation.speed_hint": "Priemerné tokeny/s po odpovedi, vrátane uvažovania; bez spracovania promptu a nástrojov. Vyžaduje počty tokenov od poskytovateľa.",
+  "provider.description.anyrouter": "Automatický výber API podľa modelu (vyžaduje API token)"
 }

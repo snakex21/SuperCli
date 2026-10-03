@@ -274,6 +274,12 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 		}
 		switch ev.Type {
 		case "response.output_item.added", "response.function_call_arguments.delta":
+			if ev.Type == "response.output_item.added" && ev.Item != nil && ev.Item.Type == "reasoning" &&
+				!isOpenCodeZenBaseURL(p.cfg.BackendURL) {
+				if !emit(Delta{OutputStarted: true, ReasoningStarted: true}) {
+					return
+				}
+			}
 			started := ev.Type == "response.function_call_arguments.delta" && ev.Delta != ""
 			if ev.Item != nil && ev.Item.Type == "function_call" && ev.Item.Name != "" {
 				started = true

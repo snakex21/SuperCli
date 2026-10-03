@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Üretim hızı",
-  "generation.speed_hint": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir."
+  "generation.speed_hint": "Yanıt sonrası ortalama token/s, düşünme dahil; istem işleme ve araç çalıştırma hariç. Sağlayıcının token sayıları gerekir.",
+  "provider.description.anyrouter": "Modele göre otomatik API (API anahtarı gerekli)"
 }

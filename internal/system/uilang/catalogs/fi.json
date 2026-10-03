@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Generointinopeus",
-  "generation.speed_hint": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät."
+  "generation.speed_hint": "Keskimääräiset tokenit/s vastauksen jälkeen, myös päättely; ilman syötteen käsittelyä ja työkaluja. Vaatii palveluntarjoajan tokenimäärät.",
+  "provider.description.anyrouter": "Automaattinen API mallin mukaan (API-tunniste vaaditaan)"
 }

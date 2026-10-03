@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Viteză de generare",
-  "generation.speed_hint": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului."
+  "generation.speed_hint": "Media de tokenuri/s după răspuns, inclusiv raționamentul; fără procesarea promptului și executarea instrumentelor. Necesită contoarele furnizorului.",
+  "provider.description.anyrouter": "API ales automat pentru model (necesită token API)"
 }

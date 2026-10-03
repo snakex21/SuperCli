@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Prosječni tokeni/s nakon odgovora, uključujući razmišljanje; bez obrade upita i alata. Potrebni su brojači tokena pružatelja.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Brzina generiranja",
-  "generation.speed_hint": "Prosječni tokeni/s nakon odgovora, uključujući razmišljanje; bez obrade upita i alata. Potrebni su brojači tokena pružatelja."
+  "generation.speed_hint": "Prosječni tokeni/s nakon odgovora, uključujući razmišljanje; bez obrade upita i alata. Potrebni su brojači tokena pružatelja.",
+  "provider.description.anyrouter": "Automatski odabir API-ja za model (potreban API token)"
 }

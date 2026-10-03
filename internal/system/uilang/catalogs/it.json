@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Velocità di generazione",
-  "generation.speed_hint": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider."
+  "generation.speed_hint": "Media dei token/s dopo la risposta, incluso il ragionamento; senza elaborazione del prompt ed esecuzione degli strumenti. Richiede i conteggi del provider.",
+  "provider.description.anyrouter": "API automatica per modello (token API richiesto)"
 }

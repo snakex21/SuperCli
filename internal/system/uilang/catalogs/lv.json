@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Ģenerēšanas ātrums",
-  "generation.speed_hint": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji."
+  "generation.speed_hint": "Vidēji tokeni/s pēc atbildes, ieskaitot spriešanu; bez uzvednes apstrādes un rīkiem. Nepieciešami pakalpojuma sniedzēja tokenu skaitītāji.",
+  "provider.description.anyrouter": "Automātiska API izvēle modelim (vajadzīga API atslēga)"
 }

@@ -23,6 +23,7 @@ func (m *Model) appendStreamText(text string) {
 
 func (m *Model) resetCurrent() {
 	m.reasoningOpen = false
+	m.nativeReasoningEnd = 0
 	m.current = ""
 	m.currentBuffer = nil
 	m.chat.current = ""
@@ -38,9 +39,36 @@ func (m *Model) streamSpinner() string {
 
 func (m *Model) closeReasoning() {
 	if m.reasoningOpen {
+		m.nativeReasoningEnd = len(m.current)
 		m.appendStreamText("</thinking>\n")
 		m.reasoningOpen = false
 	}
+}
+
+// Native reasoning may be reported after prose or delivered in delayed fragments.
+// Keep its host-created leading block before the unchanged visible answer.
+func (m *Model) appendReasoningText(text string) {
+	if m.reasoningOpen {
+		m.appendStreamText(text)
+		return
+	}
+	if m.current == "" {
+		m.appendStreamText("<thinking>" + text)
+		m.reasoningOpen = true
+		return
+	}
+	end := m.nativeReasoningEnd
+	if end > 0 && end+len("</thinking>") <= len(m.current) && strings.HasPrefix(m.current, "<thinking>") && m.current[end:end+len("</thinking>")] == "</thinking>" {
+		m.current = m.current[:end] + text + m.current[end:]
+		m.nativeReasoningEnd += len(text)
+	} else {
+		m.current = "<thinking>" + text + "</thinking>" + m.current
+		m.nativeReasoningEnd = len("<thinking>") + len(text)
+	}
+	// A splice is not a trusted append to the old stream buffer. Copied models
+	// retain their immutable current string and independently owned next buffer.
+	m.currentBuffer = nil
+	m.chat.current = m.current
 }
 
 // Resizing chrome must preserve follow mode; AtBottom after shrinking would

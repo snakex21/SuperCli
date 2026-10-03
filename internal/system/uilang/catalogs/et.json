@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Genereerimiskiirus",
-  "generation.speed_hint": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid."
+  "generation.speed_hint": "Keskmine tokenit/s pärast vastust, koos arutlusega; ilma sisendi töötlemise ja tööriistadeta. Vajab pakkuja tokeniloendureid.",
+  "provider.description.anyrouter": "Automaatne API valik mudeli järgi (nõuab API võtit)"
 }

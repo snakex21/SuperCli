@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Generation speed",
-  "generation.speed_hint": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts."
+  "generation.speed_hint": "Average tokens/s after replies, including reasoning; excludes prompt processing and tool execution. Requires provider token counts.",
+  "provider.description.anyrouter": "Automatic API per model (API token required)"
 }

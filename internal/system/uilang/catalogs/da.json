@@ -859,5 +859,6 @@
   "tui.setting_show_generation_speed.desc": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen.",
   "generation.rate": "%.1f tok/s",
   "generation.speed": "Genereringshastighed",
-  "generation.speed_hint": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen."
+  "generation.speed_hint": "Gennemsnitlige tokens/s efter svar, inklusive ræsonnement; uden promptbehandling og værktøjer. Kræver tokenantal fra udbyderen.",
+  "provider.description.anyrouter": "Automatisk API pr. model (kræver API-token)"
 }

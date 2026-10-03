@@ -35,6 +35,7 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "deepseek", Type: "openai", BaseURL: "https://api.deepseek.com/v1", Desc: "DeepSeek-V3, DeepSeek-R1"},
 		{Name: "mistral", Type: "openai", BaseURL: "https://api.mistral.ai/v1", Desc: "Mistral Large, Codestral"},
 		{Name: "openrouter", Type: "openai", BaseURL: "https://openrouter.ai/api/v1", Desc: "Meta-router to 200+ models"},
+		{Name: "anyrouter", DisplayName: "AnyRouter", Type: "openai", BaseURL: "https://anyrouter.top/v1", Desc: "Automatic API per model (API token required)"},
 		{Name: "xai", Type: "openai", BaseURL: "https://api.x.ai/v1", Desc: "Grok-3, Grok-2"},
 		{Name: "huggingface", Type: "openai", BaseURL: "https://api-inference.huggingface.co/v1", Desc: "HF Inference API"},
 		{Name: "cline", DisplayName: "Cline", Type: "openai", BaseURL: "https://api.cline.bot/api/v1", Desc: "Cline (API key required)"},

@@ -56,6 +56,10 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 			})
 		}
 	}
+	if protocol := llm.AnyRouterModelProtocol(cfg.BaseURL, cfg.Model); protocol != "" {
+		cfg.Provider = protocol
+		cfg.BaseURL = llm.NormalizeAnyRouterBaseURL(cfg.BaseURL)
+	}
 	if cfg.Provider == config.ProviderResponses {
 		return llm.NewResponses(llm.ResponsesConfig{
 			BaseURL:        cfg.BaseURL,
