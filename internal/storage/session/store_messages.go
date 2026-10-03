@@ -329,6 +329,9 @@ func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, before
 	}
 	hasMore := len(out) > limit
 	if hasMore {
+		// The extra row only signals older history; do not keep its payload
+		// alive through the returned slice backing array.
+		out[limit] = Encoded{}
 		out = out[:limit]
 	}
 	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
