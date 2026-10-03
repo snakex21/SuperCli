@@ -129,18 +129,15 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowError(w, errSessionOutsideWorkspace)
 		return
 	}
-	messages, err := store.ReadMessages(r.Context(), b.SessionID)
-	if err != nil {
+	message, err := store.ReadMessageAt(r.Context(), b.SessionID, b.SelectedSeq)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeWorkflowError(w, err)
 		return
 	}
 	selectedUser := false
-	for _, message := range messages {
-		if message.Seq == b.SelectedSeq && message.Role == string(llm.RoleUser) {
-			msg, decodeErr := message.ToMessage()
-			selectedUser = decodeErr == nil && !agent.IsLegacyCompactionSummary(msg)
-			break
-		}
+	if err == nil && message.Role == string(llm.RoleUser) {
+		msg, decodeErr := message.ToMessage()
+		selectedUser = decodeErr == nil && !agent.IsLegacyCompactionSummary(msg)
 	}
 	if !selectedUser {
 		http.Error(w, "selected_seq must identify a user message", http.StatusBadRequest)
