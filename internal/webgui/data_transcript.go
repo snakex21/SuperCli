@@ -2,6 +2,7 @@ package webgui
 
 import (
 	"context"
+	"strconv"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
@@ -20,11 +21,11 @@ func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, er
 	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 		return nil, errSessionOutsideWorkspace
 	}
-	rows, err := store.ReadMessages(ctx, id)
+	rows, err := store.ReadTranscriptMessages(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return buildTranscript(ctx, store, id, rows)
+	return e.buildTranscript(ctx, store, id, rows)
 }
 
 func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit int) (transcriptPage, error) {
@@ -39,11 +40,11 @@ func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit
 	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 		return transcriptPage{}, errSessionOutsideWorkspace
 	}
-	rows, hasMore, err := store.ReadMessagesBefore(ctx, id, beforeSeq, limit)
+	rows, hasMore, err := store.ReadTranscriptMessagesBefore(ctx, id, beforeSeq, limit)
 	if err != nil {
 		return transcriptPage{}, err
 	}
-	messages, err := buildTranscript(ctx, store, id, rows)
+	messages, err := e.buildTranscript(ctx, store, id, rows)
 	if err != nil {
 		return transcriptPage{}, err
 	}
@@ -55,7 +56,7 @@ func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit
 	return transcriptPage{Messages: messages, HasMore: hasMore, BeforeSeq: cursor}, nil
 }
 
-func buildTranscript(ctx context.Context, store *session.Store, id string, rows []session.Encoded) ([]transcriptMsg, error) {
+func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id string, rows []session.TranscriptMessage) ([]transcriptMsg, error) {
 	if len(rows) == 0 {
 		return []transcriptMsg{}, nil
 	}
@@ -65,6 +66,7 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 	if err != nil {
 		return nil, err
 	}
+	e.recoverCheckpointChanges(ctx, store, id, turnRows)
 	turns := make(map[int]session.TurnSummary, len(turnRows))
 	for _, turn := range turnRows {
 		turns[turn.AssistantSeq] = turn
@@ -90,6 +92,9 @@ func buildTranscript(ctx context.Context, store *session.Store, id string, rows 
 			Attachments: append([]string(nil), attachments[m.Seq]...),
 			Name:        m.Name,
 			ToolCallID:  msg.ToolCallID,
+		}
+		if msg.Role == llm.RoleUser && m.MessageID > 0 {
+			item.MessageID = strconv.FormatInt(m.MessageID, 10)
 		}
 		item.ToolImages = transcriptToolImagePreviews(id, msg, len(item.Attachments) != 0)
 		item.ToolImageCarrier = len(item.ToolImages) != 0

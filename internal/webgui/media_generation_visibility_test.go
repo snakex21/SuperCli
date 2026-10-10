@@ -4,10 +4,10 @@ import "testing"
 
 func TestMediaGenerationIsDiscoverableWithoutAlwaysOnSchemas(t *testing.T) {
 	srv := newTestServer(t, false)
-	if _, err := srv.eng.newLoop(); err != nil {
+	_, registry, err := srv.eng.buildLoopWithSession(nil, nil, srv.eng.Home(), nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	registry := srv.eng.diagnosticRegistry
 	for _, name := range []string{"generate_image", "generate_video"} {
 		if _, ok := registry.Get(name); !ok {
 			t.Fatalf("missing %s", name)

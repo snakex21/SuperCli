@@ -3,6 +3,7 @@
 /* ═══ model palette ═══ */
 
 var palette = $("#palette"), modelCache = [];
+var modelsLoadSeq = 0;
 var reasoningRevision = 0;
 var lastReasoningState = null;
 function togglePalette(show) {
@@ -44,9 +45,12 @@ function paletteModels(models) {
 }
 
 async function loadModels() {
+  var seq = ++modelsLoadSeq;
   var revision = reasoningRevision;
   try {
     var got = await j("/api/models");
+    if (seq !== modelsLoadSeq) return;
+    var previousContext = activeContextKey();
     activeModelID = selectedModelID(got.active);
     $("#model-name").textContent = modelDisplayName(activeModelID);
     activeProviderID = got.provider || "";
@@ -57,10 +61,33 @@ async function loadModels() {
     saveBlobKey("supercli-model-cache", modelCache);
     renderModelList($("#model-search").value.trim().toLowerCase());
     if (revision === reasoningRevision) renderReasoning(got.reasoning);
+    if (previousContext !== activeContextKey() && typeof renderStats === "function") renderStats();
     return got;
   } catch (e) {
+    if (seq !== modelsLoadSeq) return;
     if (!modelCache.length) $("#model-list").innerHTML = '<div class="side-empty">' + escHtml(e.message) + "</div>";
   }
+}
+
+function activeContextKey() {
+  var active = activeModelEntry();
+  return JSON.stringify([activeModelID, activeProviderID, active && active.context_length,
+    active && active.manual_context_length]);
+}
+
+function showSelectedModel(model, provider) {
+  // A catalog request issued before the successful mutation may still finish
+  // afterwards. It must not restore the previous selection or manual budget.
+  modelsLoadSeq++;
+  activeModelID = selectedModelID(model);
+  activeProviderID = provider || "";
+  $("#model-name").textContent = modelDisplayName(activeModelID);
+  $("#model-prov").textContent = activeProviderID;
+  modelCache.forEach(function (entry) {
+    entry.active = entry.id === activeModelID && entry.provider === activeProviderID;
+  });
+  renderActiveContextControl();
+  if (typeof renderStats === "function") renderStats();
 }
 
 function contextBudgetText(tokens) {
@@ -99,10 +126,16 @@ function saveActiveModelContext() {
   button.disabled = true;
   jpost("/api/model/context", { provider: active.provider, model: active.id, value: value })
     .then(function (result) {
+      modelsLoadSeq++;
       active.manual_context_length = result.automatic ? 0 : (result.tokens || 0);
+      var currentEntry = modelCache.find(function (entry) {
+        return entry.id === active.id && entry.provider === active.provider;
+      });
+      if (currentEntry) currentEntry.manual_context_length = active.manual_context_length;
       saveBlobKey("supercli-model-cache", modelCache);
       renderModelList($("#model-search").value.trim().toLowerCase());
       toast(t("model.contextSaved") + ": " + active.provider + " / " + active.id + " = " + contextBudgetText(active.manual_context_length));
+      if (active.id === activeModelID && active.provider === activeProviderID && typeof renderStats === "function") renderStats();
     })
     .catch(function (err) { toast(err.message || t("model.contextInvalid")); })
     .finally(function () { button.disabled = false; });
@@ -160,7 +193,11 @@ function renderModelList(filter) {
     row.appendChild(act);
     row.addEventListener("click", function () {
       jpost("/api/model", { model: m.id, provider: m.provider })
-        .then(function () { togglePalette(false); loadReasoning(); loadModels(); checkHealth(); })
+        .then(function (result) {
+          togglePalette(false);
+          showSelectedModel(result.model || m.id, m.provider);
+          loadReasoning(); loadModels(); checkHealth();
+        })
         .catch(function (err) { toast(err.message); });
     });
     list.appendChild(row);
@@ -223,9 +260,11 @@ function renderReasoning(r) {
 
 async function loadReasoning() {
   var revision = reasoningRevision;
+  var modelSeq = modelsLoadSeq;
+  var contextKey = activeContextKey();
   try {
     var got = await j("/api/reasoning");
-    if (revision === reasoningRevision) renderReasoning(got);
+    if (revision === reasoningRevision && modelSeq === modelsLoadSeq && contextKey === activeContextKey()) renderReasoning(got);
   } catch (e) {
     // Keep the always-visible default control; health status already reports
     // connectivity and a transient request failure must not move the toolbar.

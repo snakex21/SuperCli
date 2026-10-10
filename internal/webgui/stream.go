@@ -36,6 +36,7 @@ type wireEvent struct {
 	Run          int    `json:"run,omitempty"`
 	Prompt       string `json:"prompt,omitempty"`
 	// Usage fields (type "done").
+	Model         string  `json:"model,omitempty"`
 	TokIn         int     `json:"tok_in,omitempty"`
 	TokOut        int     `json:"tok_out,omitempty"`
 	TokTotal      int     `json:"tok_total,omitempty"`
@@ -57,8 +58,12 @@ type wireEvent struct {
 	Step int `json:"step,omitempty"`
 	// SessionID is emitted once at stream start so the browser keeps later
 	// prompts in the same persisted conversation.
-	SessionID string        `json:"session_id,omitempty"`
-	Question  *questionWire `json:"question,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// The exact current Run insert, emitted only on session_activity after a
+	// successful append. Decimal text preserves SQLite IDs above JS 2^53.
+	UserSeq       int           `json:"user_seq,omitempty"`
+	UserMessageID string        `json:"user_message_id,omitempty"`
+	Question      *questionWire `json:"question,omitempty"`
 	// ErrCode names a known failure so the browser renders the sentence from
 	// its UI-language catalog instead of showing server-authored prose.
 	ErrCode string `json:"err_code,omitempty"`
@@ -121,6 +126,7 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	case agent.DoneEvent:
 		w := wireEvent{
 			Type:          "done",
+			Model:         e.Model,
 			TokIn:         e.Usage.Input,
 			TokOut:        e.Usage.Output,
 			TokTotal:      e.Usage.Total,

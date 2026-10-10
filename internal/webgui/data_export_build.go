@@ -21,7 +21,7 @@ func buildFullDataExport(dataDir string) (string, error) {
 }
 
 func buildDataExportMode(dataDir string, full bool) (string, error) {
-	stage, err := os.MkdirTemp("", "supercli-export-*")
+	stage, err := portableWorkDir(dataDir, "export-*")
 	if err != nil {
 		return "", err
 	}
@@ -30,18 +30,27 @@ func buildDataExportMode(dataDir string, full bool) (string, error) {
 	if err := os.MkdirAll(dataRoot, 0o700); err != nil {
 		return fail(err)
 	}
-	for _, name := range []string{"sessions.db", "memory.db", "supercli.db"} {
+	for _, name := range []string{"sessions.db", "memory.db", "supercli.db", dataCurrencyRatesFile} {
 		src := filepath.Join(dataDir, name)
-		if _, err := os.Stat(src); err == nil {
-			if err := snapshotSQLite(src, filepath.Join(dataRoot, name)); err != nil {
-				return fail(err)
-			}
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return fail(err)
+		}
+		if err := snapshotSQLite(src, filepath.Join(dataRoot, name)); err != nil {
+			return fail(err)
 		}
 	}
-	for _, name := range []string{"projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"} {
+	if err := validateCurrencyRatesBackup(dataRoot); err != nil {
+		return fail(fmt.Errorf("export currency rates: %w", err))
+	}
+	for _, name := range []string{"projects.json", "workspace.json", "webgui-settings.json", "project-cleanup.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"} {
 		if err := copyIfExists(filepath.Join(dataDir, name), filepath.Join(dataRoot, name)); err != nil {
 			return fail(err)
 		}
+	}
+	if err := validateProjectCleanupBackup(dataRoot); err != nil {
+		return fail(fmt.Errorf("export project checkpoint preference: %w", err))
 	}
 	if err := copyTreeIfExists(filepath.Join(dataDir, "memory"), filepath.Join(dataRoot, "memory")); err != nil {
 		return fail(err)

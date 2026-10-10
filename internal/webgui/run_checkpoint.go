@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,25 @@ func (s *Server) handleCheckpointRewind(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "session not found in active project", http.StatusNotFound)
 		return
 	}
+	messageID, err := strconv.ParseInt(r.URL.Query().Get("message_id"), 10, 64)
+	if err != nil || messageID <= 0 {
+		http.Error(w, "positive message_id is required; reload the conversation", http.StatusBadRequest)
+		return
+	}
+	store, err := s.eng.sessionStore()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	current, err := store.IsCurrentUserReceipt(r.Context(), sessionID, session.MessageReceipt{Seq: fromSeq, ID: messageID})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !current {
+		http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+		return
+	}
 	manager, err := s.eng.checkpointManager(s.eng.Home())
 	if err != nil {
 		if errors.Is(err, checkpoint.ErrUnavailable) {
@@ -53,7 +73,11 @@ func (s *Server) handleCheckpointRewind(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	preview := manager.PreviewFrom(sessionID, fromSeq)
+	preview, err := manager.PreviewFromContext(r.Context(), sessionID, fromSeq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	writeJSON(w, checkpointRewindView{
 		Available:   len(preview.Records) > 0,
 		Checkpoints: len(preview.Records),

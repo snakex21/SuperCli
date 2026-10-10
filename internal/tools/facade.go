@@ -41,24 +41,26 @@ var NewHeadlessControl = headless.New
 
 // Core contracts and registry.
 type (
-	Tool              = core.Tool
-	Result            = core.Result
-	ImageContent      = core.ImageContent
-	OutputPersistence = core.OutputPersistence
-	Registry          = core.Registry
-	CatalogEntry      = core.CatalogEntry
-	Check             = core.Check
-	VerifyVerdict     = core.VerifyVerdict
-	Verifier          = core.Verifier
-	VerifyFn          = core.VerifyFn
-	DefaultVerifier   = core.DefaultVerifier
-	Category          = core.Category
-	Verdict           = core.Verdict
-	Action            = core.Action
-	Policy            = core.Policy
-	Classifier        = core.Classifier
-	ErrorRecord       = core.ErrorRecord
-	ErrorLog          = core.ErrorLog
+	Tool                     = core.Tool
+	Result                   = core.Result
+	ImageContent             = core.ImageContent
+	OutputPersistence        = core.OutputPersistence
+	Registry                 = core.Registry
+	RegistryDiagnostics      = core.RegistryDiagnostics
+	RegistryDiagnosticCounts = core.RegistryDiagnosticCounts
+	CatalogEntry             = core.CatalogEntry
+	Check                    = core.Check
+	VerifyVerdict            = core.VerifyVerdict
+	Verifier                 = core.Verifier
+	VerifyFn                 = core.VerifyFn
+	DefaultVerifier          = core.DefaultVerifier
+	Category                 = core.Category
+	Verdict                  = core.Verdict
+	Action                   = core.Action
+	Policy                   = core.Policy
+	Classifier               = core.Classifier
+	ErrorRecord              = core.ErrorRecord
+	ErrorLog                 = core.ErrorLog
 )
 
 const (
@@ -161,13 +163,15 @@ var (
 // Web tools.
 type (
 	WebFetch        = web.WebFetch
+	WebDownload     = web.WebDownload
 	WebSearch       = web.WebSearch
 	WebSearchResult = web.WebSearchResult
 )
 
 var (
-	NewWebFetch  = web.NewWebFetch
-	NewWebSearch = web.NewWebSearch
+	NewWebFetch    = web.NewWebFetch
+	NewWebDownload = web.NewWebDownload
+	NewWebSearch   = web.NewWebSearch
 )
 
 // Search/meta tools.

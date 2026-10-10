@@ -152,13 +152,14 @@ async function loadSessions() {
   }
 }
 
-async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button) {
-  if (!id || !selectedSeq || streaming) return false;
+async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID) {
+  if (!id || !selectedSeq || !/^[1-9][0-9]*$/.test(String(messageID || "")) || streaming) return false;
   if (button) button.disabled = true;
   try {
     var result = await jpost("/api/session/rewind", {
       session_id: id,
       selected_seq: selectedSeq,
+      selected_message_id: String(messageID),
       rewind_files: !!rewindFiles,
       reason: reason || "",
     });
@@ -362,7 +363,7 @@ function buildHistoryFragment(messages, pager, prepend) {
           addHistoryToolImages(m, historyResults, pendingImages);
           return;
         }
-        addUserMsg(m.content, m.seq, m.attachments && m.attachments.length ? m.attachments : sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq));
+        addUserMsg(m.content, m.seq, m.attachments && m.attachments.length ? m.attachments : sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq), m.message_id, transcriptSessionID || activeSessionID);
       } else if (m.role === "assistant") {
         (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
         if (!m.content) {

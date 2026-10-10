@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.
 
 <!-- readme-unit:status -->
-Denne README beskriver versjon `1.0.3`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
+Denne README beskriver versjon `1.0.5`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
 
 <!-- readme-unit:h.screenshots -->
 ## Skjermbilder
@@ -172,6 +172,7 @@ Bruk Go-versjonen angitt i `go.mod`. På Windows bygger `build.bat` TUI, `build_
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

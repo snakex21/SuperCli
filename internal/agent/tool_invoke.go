@@ -350,12 +350,16 @@ func decodeInvokeArgs(raw json.RawMessage) (map[string]json.RawMessage, error) {
 func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 	l.invokeDispatchStep = 0
 	var runTools []string
+	if l.downloadForRun {
+		runTools = append(runTools, "web_download")
+	}
 	if l.screenshotForRun {
 		runTools = append(runTools, "send_screenshot", "process_session")
 	}
 	if l.headlessForRun {
 		runTools = append(runTools, "headless_control", "process_session")
 	}
+	runTools = append(runTools, l.workflowTools...)
 	for i := range calls {
 		if calls[i].Name != invokeToolName {
 			continue

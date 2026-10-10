@@ -38,6 +38,10 @@ func TestWebSessionCapsuleAndRelevantRecall(t *testing.T) {
 		}
 	}
 
+	// Model the runtime briefing that opens memory before each normal run.
+	if _, project := eng.webMemoryStores(home); project == nil {
+		t.Fatal("project memory unavailable")
+	}
 	eng.saveWebSessionCapsule(context.Background(), sess.ID)
 	project, err := memory.OpenProjectStore(dataDir, home)
 	if err != nil {

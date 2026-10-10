@@ -26,7 +26,7 @@ func TestResumeRejectsActiveRunAndUnpersistedHistory(t *testing.T) {
 		t.Fatal("switched while running")
 	}
 	loop.sessionBusy.Store(false)
-	loop.persistHealth.pending = []llm.Message{{Role: llm.RoleAssistant, Content: "not yet saved"}}
+	loop.persistHealth.pending = []pendingAppend{{Message: llm.Message{Role: llm.RoleAssistant, Content: "not yet saved"}, Writer: loop.writer}}
 	if err := loop.ResumeConversation(context.Background(), session.NewWriter(store, next.ID), history, nil); err == nil {
 		t.Fatal("lost pending writes")
 	}

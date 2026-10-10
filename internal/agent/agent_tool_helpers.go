@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/tools"
 	"supercli/internal/tools/core"
@@ -90,13 +92,14 @@ func ensureWorkerDiscovery(reg *tools.Registry) {
 
 // workerProvider picks the LLM backend for a new worker: the
 // configured WorkerProvider when it is set and (checked once, on the
-// first delegation) passes WorkerPing, else the coordinator's
-// Provider. An unreachable worker backend downgrades every delegation
+// first delegation) passes WorkerPing, else the explicit Provider or, for
+// same-parent construction, the coordinator's current provider.
+// An unreachable worker backend downgrades every delegation
 // for the rest of the process with a single warning line — never a
 // hard error, so a dead second host cannot break delegation itself.
 func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
 	if a.WorkerProvider == nil {
-		return a.Provider
+		return a.coordinatorProvider()
 	}
 	if a.WorkerPing == nil {
 		return a.WorkerProvider
@@ -110,7 +113,7 @@ func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
 			down := a.workerDown
 			a.workerProbeMu.Unlock()
 			if down {
-				return a.Provider
+				return a.coordinatorProvider()
 			}
 			return a.WorkerProvider
 		}
@@ -129,15 +132,34 @@ func (a *AgentTool) workerProvider(ctx context.Context) llm.Provider {
 
 		err, canceled := a.probeWorkerBackend(ctx, done)
 		if !canceled && err != nil {
+			fallback := a.coordinatorProvider()
 			if a.ParentLoop != nil {
 				a.ParentLoop.Emit(NoticeEvent{Text: fmt.Sprintf(
 					"task: worker model %q unreachable (%v) — falling back to %q",
-					a.WorkerProvider.Name(), err, a.Provider.Name())})
+					a.WorkerProvider.Name(), err, fallback.Name())})
 			}
-			return a.Provider
+			return fallback
 		}
 		return a.WorkerProvider
 	}
+}
+
+// A TUI model/account switch replaces the parent's live provider while the
+// AgentTool may still hold its startup provider. Constructor-created defaults
+// inherit this current backend; explicit injections and legacy literals do not.
+// Configured workers and existing continuations keep their selected backend.
+func (a *AgentTool) coordinatorProvider() llm.Provider {
+	if a.inheritParentProvider && a.ParentLoop != nil && a.ParentLoop.provider != nil {
+		return a.ParentLoop.provider
+	}
+	return a.Provider
+}
+
+// Provider identity must not be inferred from a model/transport name: two
+// separate hosts can advertise the same name. Custom value providers may be
+// incomparable, so preserve their explicit backend rather than panic or guess.
+func sameProviderInstance(a, b llm.Provider) bool {
+	return a != nil && b != nil && reflect.ValueOf(a).Comparable() && reflect.ValueOf(b).Comparable() && a == b
 }
 
 // probeWorkerBackend publishes a result only after a completed, uncanceled
@@ -171,9 +193,21 @@ const defaultAgentKind = "general"
 // task's advise:true flag (Task B). Registered by BuiltinSubAgents.
 const advisorAgentKind = "advisor"
 
-func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, prompt string, maxSteps int) {
+func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, prompt string, maxSteps int) error {
 	if w == nil {
-		return
+		return fmt.Errorf("task: missing background worker")
+	}
+	mutatingCapable := true
+	if w.Loop != nil {
+		mutatingCapable = checkpoint.HasCheckpointMutators(w.Loop.registry)
+	}
+	borrow, err := checkpoint.BorrowInvocation(parentCtx, mutatingCapable)
+	if err != nil {
+		w.setState(func(w *Worker) {
+			w.Status, w.LastError = "failed", err.Error()
+			w.UpdatedAt = time.Now()
+		})
+		return err
 	}
 	timeout := a.TimeoutPerStep * time.Duration(maxSteps)
 	if timeout <= 0 {
@@ -181,6 +215,7 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 	}
 	invocation, _ := parentCtx.Value(workerInvocationKey{}).(workerInvocation)
 	mutationObserver, _ := parentCtx.Value(workerMutationKey{}).(func(string))
+	effectBarrier, _ := parentCtx.Value(workerEffectBarrierKey{}).(func(string))
 	// Capture the original session binding while the parent still owns it.
 	parent := a.ParentLoop
 	var deliver func(context.Context, string)
@@ -193,38 +228,55 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		defer borrow.Close()
+		ctx = borrow.Bind(ctx)
 		if invocation.checks != nil {
 			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{checks: invocation.checks})
 		}
 		if mutationObserver != nil {
 			ctx = withWorkerMutationObserver(ctx, mutationObserver)
 		}
+		if effectBarrier != nil {
+			ctx = withWorkerEffectBarrier(ctx, effectBarrier)
+		}
 		text, err := runWorkerLoop(ctx, w, prompt)
+		borrow.Close() // Fn/event drain ended; persistence is outside the turn.
 		if err != nil && text == "" {
 			text = err.Error()
 		}
-		if deliver != nil {
-			noticeCtx := context.Background()
-			if outputPersistence != nil {
-				noticeCtx = tools.WithOutputPersistence(noticeCtx, outputPersistence)
+		if deliver != nil || a.ParentLoop != nil {
+			handoff := prepareWorkerHandoff(w, text)
+			if deliver != nil {
+				noticeCtx := context.Background()
+				if outputPersistence != nil {
+					noticeCtx = tools.WithOutputPersistence(noticeCtx, outputPersistence)
+				}
+				notification := outputSource.ModelResultContentContext(noticeCtx, "task", handoff.result(w, err))
+				deliver(noticeCtx, notification)
 			}
-			notification := outputSource.ModelResultContentContext(noticeCtx, "task", workerResult(w, text, err))
-			deliver(noticeCtx, notification)
+			a.emitPreparedWorkerNotification(handoff)
 		}
-		a.emitWorkerNotification(w, text)
 	}()
+	return nil
 }
 
 func (a *AgentTool) emitWorkerNotification(w *Worker, text string) {
 	if a.ParentLoop == nil || w == nil {
 		return
 	}
+	a.emitPreparedWorkerNotification(prepareWorkerHandoff(w, text))
+}
+
+func (a *AgentTool) emitPreparedWorkerNotification(h workerHandoff) {
+	if a.ParentLoop == nil {
+		return
+	}
 	a.ParentLoop.Emit(WorkerNotificationEvent{
-		TaskID:  w.ID,
-		Agent:   w.Agent,
-		Status:  w.status(),
-		Summary: workerSummary(w),
-		Text:    renderWorkerNotification(w, text),
+		TaskID:  h.snapshot.ID,
+		Agent:   h.snapshot.Agent,
+		Status:  h.snapshot.Status,
+		Summary: h.summary,
+		Text:    h.notification,
 	})
 }
 

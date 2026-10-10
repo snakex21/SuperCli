@@ -129,27 +129,54 @@ func (l *Loop) draftPrompt() string {
 // tool-call names (so the draft sees WHICH tools ran even
 // when the assistant message had no prose).
 func messageDraftText(m llm.Message) string {
-	var sb strings.Builder
-	if m.Content != "" {
-		sb.WriteString(m.Content)
+	first := m.Content
+	size := len(first)
+	for _, p := range m.Parts {
+		if p.Type != llm.PartTypeText || p.Text == "" {
+			continue
+		}
+		if size > 0 {
+			size++
+		} else {
+			first = p.Text
+		}
+		size += len(p.Text)
 	}
+	if len(m.ToolCalls) == 0 && size == len(first) {
+		return strings.TrimSpace(first)
+	}
+	if len(m.ToolCalls) > 0 {
+		if size > 0 {
+			size++
+		}
+		size += len("[called tools: ") + len("]") + (len(m.ToolCalls)-1)*len(", ")
+		for _, tc := range m.ToolCalls {
+			size += len(tc.Name)
+		}
+	}
+	var sb strings.Builder
+	sb.Grow(size)
+	sb.WriteString(m.Content)
 	for _, p := range m.Parts {
 		if p.Type == llm.PartTypeText && p.Text != "" {
 			if sb.Len() > 0 {
-				sb.WriteString(" ")
+				sb.WriteByte(' ')
 			}
 			sb.WriteString(p.Text)
 		}
 	}
 	if len(m.ToolCalls) > 0 {
-		var names []string
-		for _, tc := range m.ToolCalls {
-			names = append(names, tc.Name)
-		}
 		if sb.Len() > 0 {
-			sb.WriteString(" ")
+			sb.WriteByte(' ')
 		}
-		sb.WriteString("[called tools: " + strings.Join(names, ", ") + "]")
+		sb.WriteString("[called tools: ")
+		for i, tc := range m.ToolCalls {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(tc.Name)
+		}
+		sb.WriteByte(']')
 	}
 	return strings.TrimSpace(sb.String())
 }

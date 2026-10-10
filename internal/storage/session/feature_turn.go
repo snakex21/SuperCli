@@ -11,33 +11,35 @@ import (
 // response. AssistantSeq ties it to the transcript without storing prompts or
 // duplicating message content.
 type TurnSummary struct {
-	SessionID       string
-	AssistantSeq    int
-	DurationMS      int64
-	Input           int64
-	Output          int64
-	CachedInput     int64
-	Reasoning       int64
-	HasCachedInput  bool
-	HasReasoning    bool
-	ToolCalls       int
-	ToolFailures    int
-	Steps           int
-	ModelCalls      int
-	FailedCalls     int
-	CanceledCalls   int
-	BackgroundCalls int
-	HelperCalls     int
+	RowID             int64
+	CheckpointBinding *CheckpointBinding
+	SessionID         string
+	AssistantSeq      int
+	DurationMS        int64
+	Input             int64
+	Output            int64
+	CachedInput       int64
+	Reasoning         int64
+	HasCachedInput    bool
+	HasReasoning      bool
+	ToolCalls         int
+	ToolFailures      int
+	Steps             int
+	ModelCalls        int
+	FailedCalls       int
+	CanceledCalls     int
+	BackgroundCalls   int
+	HelperCalls       int
 	// AuxCalls/AuxUs are the agent loop's own count of helper model
 	// calls charged to this turn and their wall time in microseconds.
 	// They come from stats.Turn (the same time.Since that produces the
 	// "model:<purpose>" phases), not from a second clock, and unlike
 	// HelperCalls they also carry the pre-step navigator call, which
 	// has no phase of its own.
-	AuxCalls        int
-	AuxUs           int64
-	Phases          map[string]int64
-	FileChanges     []FileChange
+	AuxCalls    int
+	AuxUs       int64
+	Phases      map[string]int64
+	FileChanges []FileChange
 	// ToolDiag carries the failure diagnostics that aggregate counters
 	// cannot express: WHICH tool failed, how often, with what message,
 	// plus the stall signature (repeated no-match searches) and the
@@ -71,15 +73,50 @@ type FileChange struct {
 	Kind string `json:"kind"`
 }
 
+const turnSummaryColumns = `INSERT INTO session_turns (
+		session_id, assistant_seq, duration_ms, input_tokens, output_tokens,
+		cached_input_tokens, reasoning_tokens, has_cached_input, has_reasoning,
+		tool_calls, tool_failures, steps, model_calls, failed_model_calls,
+		canceled_model_calls, background_calls, helper_calls, aux_calls, aux_us,
+		phases_json, file_changes_json, tool_diag_json, created_at, checkpoint_binding
+	)`
+const turnSummaryUpsert = `
+	ON CONFLICT(session_id, assistant_seq) DO UPDATE SET
+		duration_ms=excluded.duration_ms, input_tokens=excluded.input_tokens,
+		output_tokens=excluded.output_tokens, cached_input_tokens=excluded.cached_input_tokens,
+		reasoning_tokens=excluded.reasoning_tokens, has_cached_input=excluded.has_cached_input,
+		has_reasoning=excluded.has_reasoning, tool_calls=excluded.tool_calls,
+		tool_failures=excluded.tool_failures, steps=excluded.steps,
+		model_calls=excluded.model_calls, failed_model_calls=excluded.failed_model_calls,
+		canceled_model_calls=excluded.canceled_model_calls,
+		background_calls=excluded.background_calls, helper_calls=excluded.helper_calls,
+		aux_calls=excluded.aux_calls, aux_us=excluded.aux_us,
+		phases_json=excluded.phases_json, file_changes_json=CASE WHEN session_turns.checkpoint_binding='' THEN excluded.file_changes_json ELSE session_turns.file_changes_json END,
+		tool_diag_json=excluded.tool_diag_json,
+		created_at=excluded.created_at`
+const ordinaryTurnSummaryInsert = turnSummaryColumns + ` VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)` + turnSummaryUpsert + `
+	WHERE session_turns.checkpoint_binding='' RETURNING id`
+const boundTurnSummaryInsert = turnSummaryColumns + ` SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+	WHERE EXISTS (SELECT 1 FROM messages WHERE session_id = ? AND seq = ? AND id = ? AND role = 'user')
+		AND EXISTS (SELECT 1 FROM messages WHERE session_id = ? AND seq = ? AND role = 'assistant')` + turnSummaryUpsert + `
+	WHERE session_turns.checkpoint_binding IN (?,?) RETURNING id`
+
 // AppendTurnSummary attaches telemetry to the latest assistant message in a
 // session. The lookup and insert share one transaction so a resumed turn can
 // never be attached to a response from another concurrent append.
 func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
+	_, err := s.AppendTurnSummaryWithID(ctx, turn)
+	return err
+}
+
+// AppendTurnSummaryWithID returns this exact committed AUTOINCREMENT row.
+// Rewind can reuse assistant_seq; the physical row identity cannot be reused.
+func (s *Store) AppendTurnSummaryWithID(ctx context.Context, turn TurnSummary) (rowID int64, err error) {
 	if s == nil || s.db == nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary: nil store")
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary: nil store")
 	}
 	if turn.SessionID == "" {
-		return fmt.Errorf("session.Store.AppendTurnSummary: empty session id")
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary: empty session id")
 	}
 	turn.DurationMS = max(turn.DurationMS, 0)
 	turn.Input = max(turn.Input, 0)
@@ -98,17 +135,17 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 	turn.AuxUs = max(turn.AuxUs, 0)
 	phases, err := json.Marshal(turn.Phases)
 	if err != nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary phases: %w", err)
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary phases: %w", err)
 	}
 	fileChanges, err := json.Marshal(turn.FileChanges)
 	if err != nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary file changes: %w", err)
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary file changes: %w", err)
 	}
 	toolDiag := ""
 	if !turn.ToolDiag.Empty() {
 		encoded, err := json.Marshal(turn.ToolDiag)
 		if err != nil {
-			return fmt.Errorf("session.Store.AppendTurnSummary tool diag: %w", err)
+			return 0, fmt.Errorf("session.Store.AppendTurnSummary tool diag: %w", err)
 		}
 		toolDiag = string(encoded)
 	}
@@ -118,50 +155,48 @@ func (s *Store) AppendTurnSummary(ctx context.Context, turn TurnSummary) error {
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary begin: %w", err)
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary begin: %w", err)
 	}
 	defer tx.Rollback()
 	if turn.AssistantSeq <= 0 {
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM messages WHERE session_id = ? AND role = 'assistant'`, turn.SessionID).Scan(&turn.AssistantSeq); err != nil {
-			return fmt.Errorf("session.Store.AppendTurnSummary assistant: %w", err)
+			return 0, fmt.Errorf("session.Store.AppendTurnSummary assistant: %w", err)
 		}
 	}
 	if turn.AssistantSeq <= 0 {
-		return fmt.Errorf("session.Store.AppendTurnSummary: no assistant message")
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary: no assistant message")
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO session_turns (
-		session_id, assistant_seq, duration_ms, input_tokens, output_tokens,
-		cached_input_tokens, reasoning_tokens, has_cached_input, has_reasoning,
-		tool_calls, tool_failures, steps, model_calls, failed_model_calls,
-		canceled_model_calls, background_calls, helper_calls, aux_calls, aux_us,
-		phases_json, file_changes_json, tool_diag_json, created_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-	ON CONFLICT(session_id, assistant_seq) DO UPDATE SET
-		duration_ms=excluded.duration_ms, input_tokens=excluded.input_tokens,
-		output_tokens=excluded.output_tokens, cached_input_tokens=excluded.cached_input_tokens,
-		reasoning_tokens=excluded.reasoning_tokens, has_cached_input=excluded.has_cached_input,
-		has_reasoning=excluded.has_reasoning, tool_calls=excluded.tool_calls,
-		tool_failures=excluded.tool_failures, steps=excluded.steps,
-		model_calls=excluded.model_calls, failed_model_calls=excluded.failed_model_calls,
-		canceled_model_calls=excluded.canceled_model_calls,
-		background_calls=excluded.background_calls, helper_calls=excluded.helper_calls,
-		aux_calls=excluded.aux_calls, aux_us=excluded.aux_us,
-		phases_json=excluded.phases_json, file_changes_json=excluded.file_changes_json,
-		tool_diag_json=excluded.tool_diag_json,
-		created_at=excluded.created_at`,
+	pending, resolved := "", ""
+	if turn.CheckpointBinding != nil {
+		if turn.CheckpointBinding.Resolved || turn.AssistantSeq <= turn.CheckpointBinding.UserSeq {
+			return 0, fmt.Errorf("session.Store.AppendTurnSummary: invalid pending owner")
+		}
+		pending, err = turn.CheckpointBinding.encoded(false)
+		if err != nil {
+			return 0, err
+		}
+		resolved, _ = turn.CheckpointBinding.encoded(true)
+	}
+	query := ordinaryTurnSummaryInsert
+	args := []any{
 		turn.SessionID, turn.AssistantSeq, turn.DurationMS, turn.Input, turn.Output,
 		turn.CachedInput, turn.Reasoning, boolInt(turn.HasCachedInput), boolInt(turn.HasReasoning),
 		turn.ToolCalls, turn.ToolFailures, turn.Steps, turn.ModelCalls, turn.FailedCalls,
 		turn.CanceledCalls, turn.BackgroundCalls, turn.HelperCalls, turn.AuxCalls, turn.AuxUs,
-		string(phases), string(fileChanges), toolDiag,
-		turn.CreatedAt.UnixNano())
+		string(phases), string(fileChanges), toolDiag, turn.CreatedAt.UnixNano(), pending,
+	}
+	if turn.CheckpointBinding != nil {
+		query = boundTurnSummaryInsert
+		args = append(args, turn.SessionID, turn.CheckpointBinding.UserSeq, turn.CheckpointBinding.UserMessageID, turn.SessionID, turn.AssistantSeq, pending, resolved)
+	}
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&rowID)
 	if err != nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary insert: %w", err)
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("session.Store.AppendTurnSummary commit: %w", err)
+		return 0, fmt.Errorf("session.Store.AppendTurnSummary commit: %w", err)
 	}
-	return nil
+	return rowID, nil
 }
 
 // ReadTurnSummaries returns persisted per-response telemetry in transcript
@@ -177,7 +212,7 @@ func (s *Store) ReadRecentTurnSummaries(ctx context.Context, since time.Time, li
 	if limit <= 0 || limit > 2000 {
 		limit = 2000
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT session_id, assistant_seq, duration_ms,
+	rows, err := s.db.QueryContext(ctx, `SELECT id, checkpoint_binding, session_id, assistant_seq, duration_ms,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
@@ -194,7 +229,7 @@ func (s *Store) ReadRecentTurnSummaries(ctx context.Context, since time.Time, li
 // ReadTurnSummariesRange returns telemetry attached to assistant messages in
 // the inclusive sequence range. Non-positive bounds are left open.
 func (s *Store) ReadTurnSummariesRange(ctx context.Context, sessionID string, fromSeq, toSeq int) ([]TurnSummary, error) {
-	query := `SELECT session_id, assistant_seq, duration_ms,
+	query := `SELECT id, checkpoint_binding, session_id, assistant_seq, duration_ms,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning, tool_calls, tool_failures, steps,
 		model_calls, failed_model_calls, canceled_model_calls, background_calls,
@@ -230,9 +265,9 @@ func scanTurnSummaries(rows rowScanner) ([]TurnSummary, error) {
 	for rows.Next() {
 		var turn TurnSummary
 		var cached, reasoning int
-		var phases, fileChanges, toolDiag string
+		var phases, fileChanges, toolDiag, binding string
 		var created int64
-		if err := rows.Scan(&turn.SessionID, &turn.AssistantSeq, &turn.DurationMS,
+		if err := rows.Scan(&turn.RowID, &binding, &turn.SessionID, &turn.AssistantSeq, &turn.DurationMS,
 			&turn.Input, &turn.Output, &turn.CachedInput, &turn.Reasoning,
 			&cached, &reasoning, &turn.ToolCalls, &turn.ToolFailures, &turn.Steps,
 			&turn.ModelCalls, &turn.FailedCalls, &turn.CanceledCalls,
@@ -240,6 +275,7 @@ func scanTurnSummaries(rows rowScanner) ([]TurnSummary, error) {
 			&phases, &fileChanges, &toolDiag, &created); err != nil {
 			return nil, err
 		}
+		turn.CheckpointBinding = decodeCheckpointBinding(binding)
 		if phases != "" {
 			_ = json.Unmarshal([]byte(phases), &turn.Phases)
 		}

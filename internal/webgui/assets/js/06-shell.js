@@ -39,7 +39,7 @@ async function checkHealth() {
   var dot = $("#status-dot");
   try {
     var h = await j("/api/health");
-    dot.className = "status-dot ok" + (streaming ? " busy" : "");
+    dot.className = "status-dot ok" + ((streaming && (!runFinishing || pendingImmediate)) || queueDispatching ? " busy" : "");
     dot.title = t("status.connected") + " · " + modelDisplayName(h.model);
     activeWorkspacePath = h.home || "";
     $("#workspace").textContent = workspaceDisplayName(activeWorkspacePath);

@@ -269,6 +269,41 @@ func TestGoalTool_VerifyRequiresEvidence(t *testing.T) {
 	}
 }
 
+func TestGoalTool_VerifyReportsAllRequiredFieldsBeforeRepair(t *testing.T) {
+	svc := newGoalTestService(t)
+	ctx := context.Background()
+	created, err := svc.Set(ctx, "ship", "", "tests pass", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := NewGoalTool(svc)
+	// A bare verify previously revealed only passed, requiring another model
+	// turn to discover that text was also missing. Whitespace is missing too.
+	for _, args := range []string{`{"action":"verify"}`, `{"action":"verify","text":"  "}`} {
+		res, err := tool.Execute(ctx, jsonRaw(t, args))
+		if err == nil || res.Err == nil {
+			t.Fatalf("incomplete verify accepted: args=%s result=%+v err=%v", args, res, err)
+		}
+		for _, field := range []string{"passed", "evidence in text"} {
+			if !strings.Contains(err.Error(), field) || !strings.Contains(res.Err.Error(), field) {
+				t.Fatalf("verify must report both required fields at once: err=%v result=%v", err, res.Err)
+			}
+		}
+	}
+	before, err := svc.Goal(ctx, created.ID)
+	if err != nil || before.VerificationStatus != created.VerificationStatus || before.VerificationEvidence != "" {
+		t.Fatalf("invalid verification changed goal: goal=%+v err=%v", before, err)
+	}
+	res, err := tool.Execute(ctx, jsonRaw(t, `{"action":"verify","passed":true,"text":"go test passed"}`))
+	if err != nil || res.Err != nil {
+		t.Fatalf("fully repaired verify failed: err=%v result=%v", err, res.Err)
+	}
+	verified, err := svc.Goal(ctx, created.ID)
+	if err != nil || verified.VerificationStatus != goal.VerificationPassed || verified.VerificationEvidence != "go test passed" {
+		t.Fatalf("repaired verification not persisted: goal=%+v err=%v", verified, err)
+	}
+}
+
 func TestGoalTool_Abandon(t *testing.T) {
 	svc := newGoalTestService(t)
 	ctx := context.Background()

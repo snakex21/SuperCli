@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/account/fx"
 	"supercli/internal/account/usagecost"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
@@ -39,6 +41,8 @@ func (m Model) openUsageMenu() (tea.Model, tea.Cmd) {
 func (m Model) loadUsage() tea.Cmd {
 	selected := m.menu.category
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
 		d := &usageSnapshot{sessionID: m.sessionID, scope: m.tr("tui.menu_usage.fd8cbf3c80")}
 		if selected == 0 && m.statsRecorder == nil {
 			return usageLoadedMsg{err: fmt.Errorf("%s", m.tr("tui.menu_usage.864213086a")), scope: selected}
@@ -72,7 +76,7 @@ func (m Model) loadUsage() tea.Cmd {
 			d.model = sess.Model
 			preview = identity(sess.Provider, sess.Model)
 			var errUsage error
-			records, errUsage = m.sessionStore.ReadUsage(context.Background(), d.sessionID)
+			records, errUsage = m.sessionStore.ReadUsage(ctx, d.sessionID)
 			if errUsage != nil {
 				return usageLoadedMsg{err: errUsage, scope: selected}
 			}
@@ -89,13 +93,20 @@ func (m Model) loadUsage() tea.Cmd {
 			d.calls = m.statsRecorder.Calls()
 			d.turns = m.statsRecorder.Snapshot()
 			for _, c := range d.calls {
-				u := identity(c.Provider, c.Model)
-				if u.Provider == "" {
-					u = identity(m.activeProviderName(), c.Model)
+				provider := c.Provider
+				if provider == "" {
+					provider = m.activeProviderName()
 				}
+				u := usagecost.CallIdentity(tc, llm.CallStat{Model: c.Model, ProviderType: c.ProviderType,
+					EndpointHost: c.EndpointHost, ConnectionKey: c.ConnectionKey, StartedAt: c.StartedAt}, identity(provider, c.Model))
+				// An old injected recorder may lack a timestamp. Keep that unknown
+				// rather than converting its history at the date of this menu read.
+				u.CreatedAt, u.Source = c.StartedAt, c.Purpose
 				u.Input = int64(c.TokensIn)
 				u.Output = int64(c.TokensOut)
 				u.CachedInput = int64(c.TokensCached)
+				u.Reasoning = int64(c.TokensReasoning)
+				u.HasCachedInput, u.HasReasoning = c.TokensCached > 0, c.TokensReasoning > 0
 				records = append(records, u)
 			}
 			// Older recorders may have turns but no measured provider calls.
@@ -103,9 +114,15 @@ func (m Model) loadUsage() tea.Cmd {
 				for _, t := range d.turns {
 					u := preview
 					u.Model = t.Model
+					u.CreatedAt = t.StartedAt
 					u.Input = int64(t.TokensIn)
 					u.Output = int64(t.TokensOut)
 					records = append(records, u)
+				}
+			}
+			if m.sessionStore != nil {
+				if err := preferPersistedUsageCalls(ctx, m.sessionStore, records); err != nil {
+					return usageLoadedMsg{err: err, scope: selected}
 				}
 			}
 		}
@@ -116,9 +133,82 @@ func (m Model) loadUsage() tea.Cmd {
 			d.cached += u.CachedInput
 			d.reasoning += u.Reasoning
 		}
-		d.cost = usagecost.Resolve(tc, records, preview)
+		var cache *fx.Cache
+		if config.EffectiveCostCurrency(tc) != "USD" {
+			if m.usageRates != nil {
+				cache, _ = m.usageRates.Cache()
+			} else if m.dataDir != "" {
+				cache, _ = fx.New(m.dataDir)
+				if cache != nil {
+					defer cache.Close()
+				}
+			}
+			if cache != nil {
+				_ = cache.Refresh(ctx)
+			}
+		}
+		if len(records) == 0 {
+			// Preserve the preview's classification without counting a model call.
+			d.cost = usagecost.Resolve(tc, nil, preview)
+			d.cost.Currency = config.EffectiveCostCurrency(tc)
+		} else {
+			cost := usagecost.NewCurrencyAccumulator(tc, cache)
+			for _, u := range records {
+				cost.Add(u)
+			}
+			d.cost = cost.Summary()
+		}
 		return usageLoadedMsg{data: d, scope: selected}
 	}
+}
+
+// The current-process tab keeps its recorder's exact set of calls, including
+// helpers and calls from earlier conversations in this process. Only matching
+// journal entries replace fallback prices; older unrelated history is excluded.
+func preferPersistedUsageCalls(ctx context.Context, store *session.Store, records []session.UsageRecord) error {
+	type callKey struct {
+		started                          int64
+		model, source                    string
+		input, output, cached, reasoning int64
+	}
+	key := func(u session.UsageRecord) callKey {
+		source := u.Source
+		if source == "" {
+			source = "model"
+		}
+		input, output := max(u.Input, 0), max(u.Output, 0)
+		return callKey{u.CreatedAt.UnixNano(), u.Model, source, input, output,
+			min(max(u.CachedInput, 0), input), min(max(u.Reasoning, 0), output)}
+	}
+	var since time.Time
+	wanted := make(map[callKey][]int)
+	for i, u := range records {
+		if u.CreatedAt.IsZero() {
+			continue
+		}
+		if since.IsZero() || u.CreatedAt.Before(since) {
+			since = u.CreatedAt
+		}
+		wanted[key(u)] = append(wanted[key(u)], i)
+	}
+	if since.IsZero() {
+		return nil
+	}
+	return store.VisitBilling(ctx, "", since, func(u session.UsageRecord) {
+		k := key(u)
+		for n, i := range wanted[k] {
+			candidate := records[i]
+			if candidate.ProviderType != "" && candidate.ProviderType != u.ProviderType {
+				continue
+			}
+			if candidate.EndpointHost != "" && candidate.EndpointHost != u.EndpointHost {
+				continue
+			}
+			records[i] = u
+			wanted[k] = append(wanted[k][:n], wanted[k][n+1:]...)
+			return
+		}
+	})
 }
 func (m Model) handleUsageKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
@@ -173,9 +263,16 @@ func (m Model) costLabel(c usagecost.Summary) string {
 		return m.tr("tui.menu_usage.8c7eadf499")
 	}
 	if c.Amount == nil {
+		if c.MissingFXCalls > 0 {
+			return m.tr("tui.menu_usage.7311518410") + " (" + c.Currency + ")"
+		}
 		return m.tr("tui.menu_usage.7311518410")
 	}
-	label := fmt.Sprintf("$%.6f", *c.Amount)
+	currency := c.Currency
+	if currency == "" {
+		currency = "USD"
+	}
+	label := fmt.Sprintf("%.6f %s", *c.Amount, currency)
 	if c.Estimated {
 		label = "~" + label
 	}
@@ -224,7 +321,7 @@ func (m Model) costSourceLabel(source string) string {
 	switch source {
 	case "manual", "free", "local", "subscription", "provider", "official", "catalog", "mixed":
 		return m.tr("tui.cost_source." + source)
-	case "":
+	case "", "fx_missing":
 		return m.tr("tui.menu_usage.7311518410")
 	default:
 		return source

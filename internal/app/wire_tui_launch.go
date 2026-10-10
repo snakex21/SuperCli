@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"supercli/internal/account/tier"
+	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
 	"supercli/internal/checkpoint"
@@ -45,10 +46,12 @@ type tuiLaunchDeps struct {
 	memIdle                                       *idleScheduler
 	extCh                                         chan agent.Event
 	sessStore                                     *session.Store
+	usageRates                                    *usagecost.HistoryRates
 	draftStats                                    *stats.Memory
 	provMgr                                       *providers.Manager
 	initialContextProvider                        string
 	modelContexts                                 *config.ModelContextStore
+	rebindContextConfig                           func(string, config.Config)
 	caps                                          *llm.CapabilityRegistry
 	goalSvc                                       *goal.Service
 	registry                                      *tools.Registry
@@ -60,6 +63,7 @@ type tuiLaunchDeps struct {
 
 // buildTUIOptions assembles tui.Options for the interactive CLI.
 func buildTUIOptions(d tuiLaunchDeps) tui.Options {
+	configureInvocationPersistence(d.loop, d.sessStore, d.checkpointCtrl)
 	return tui.Options{
 		Home:      d.home,
 		DataDir:   d.dataDir,
@@ -115,7 +119,11 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			defer recoverAndLog(d.dataDir)()
 			if d.checkpointCtrl != nil {
 				cpCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				if _, err := d.checkpointCtrl.Complete(cpCtx); err != nil {
+				if _, err := d.checkpointCtrl.CompleteDeferred(cpCtx, func(_ *checkpoint.Record, err error) {
+					if err != nil {
+						log.Printf("checkpoint deferred complete: %v", err)
+					}
+				}); err != nil {
 					log.Printf("checkpoint complete: %v", err)
 				}
 				cancel()
@@ -197,6 +205,21 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			// The factory keeps the model-call metering across /model swaps.
 			np, err := d.provFactory.BuildChain(swapCfg, swapToml, llm.PurposeMain)
 			if err == nil {
+				refresh := func(ctx context.Context) error {
+					configs := []config.Config{swapCfg}
+					if worker, override := resolveTaskWorkerConfig(swapToml, swapCfg); override {
+						configs = append(configs, worker)
+					}
+					return config.RefreshLocalContextWindows(ctx, configs...)
+				}
+				// ModelSwapFn has no operation context; the shared refresh remains
+				// bounded. Subsequent runs use their own cancellation context.
+				_ = refresh(context.Background())
+				d.loop.SetContextWindowRefresh(refresh)
+				if d.rebindContextConfig != nil {
+					d.rebindContextConfig(providerName, swapCfg)
+				}
+				d.cfg = swapCfg
 				if d.darwinTool != nil {
 					sequential := llm.IsLocalBaseURL(swapCfg.BaseURL)
 					if swapToml.DarwinParallel != nil {
@@ -215,6 +238,7 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			return np, err
 		},
 		SessionStore:       d.sessStore,
+		UsageRates:         d.usageRates,
 		StatsRecorder:      d.draftStats,
 		ProviderMgr:        d.provMgr,
 		ActiveProvider:     d.initialContextProvider,

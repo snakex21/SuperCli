@@ -3,7 +3,6 @@ package reflect
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -83,34 +82,19 @@ func (s *Store) Load(ctx context.Context, id string) (Pattern, bool, error) {
 // List returns all stored patterns, sorted by confidence
 // desc. limit <= 0 = no cap.
 //
-// memory.Store.List takes an exact scope; we need a
-// prefix match for "pattern:". We pull the full list
-// (no scope) and filter — the count is small enough
-// (tens, not thousands) that this is fine.
+// Filtering, confidence ordering and the cap happen in SQLite so a session
+// never reads every unrelated journal entry just to find a few patterns.
 func (s *Store) List(ctx context.Context, limit int) ([]Pattern, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	entries, err := s.Mem.List("", -1)
+	entries, err := s.Mem.PatternEntries(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("reflect: store.List: %w", err)
 	}
 	out := make([]Pattern, 0, len(entries))
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Scope, "pattern:") || memory.IsDiagnosticNoise(e) {
-			continue
-		}
 		out = append(out, s.fromEntry(e))
-	}
-	sort.Slice(out, func(i, j int) bool {
-		// Higher confidence first; tie-break by ID.
-		if out[i].Confidence != out[j].Confidence {
-			return out[i].Confidence > out[j].Confidence
-		}
-		return out[i].ID < out[j].ID
-	})
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
 	}
 	return out, nil
 }

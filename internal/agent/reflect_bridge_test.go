@@ -315,13 +315,17 @@ func TestLoop_LoopWarningSuppressesDuplicateReflection(t *testing.T) {
 	// (repeated_tool_batch) in the same step the [loop] warning fires for the
 	// identical calls. The reflection must be suppressed — one system message
 	// about the same event is enough — and the signal consumed.
-	call := llm.ToolCall{ID: "same", Name: "probe", Arguments: `{"n":1}`}
+	call := llm.ToolCall{ID: "same", Name: "read_lines", Arguments: `{"n":1}`}
 	prov := &dupBatchProvider{turnBatches: [][]llm.ToolCall{
 		{call, call},
 		{call, call},
 	}}
 	reflector := &stubReflector{text: "change approach"}
 	loop := newAdaptiveReflectionLoop(t, prov, reflector, 10, false)
+	loop.registry.MustRegister(tools.Tool{Name: "read_lines", Description: "Observed read fixture", ReadOnly: true, Schema: `{}`,
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			return tools.Result{Text: "unchanged contents"}, nil
+		}})
 	events, _ := loop.Run(context.Background(), "start")
 	evs := drainEvents(t, events)
 

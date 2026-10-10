@@ -16,6 +16,10 @@ import (
 )
 
 func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int) (int, error) {
+	return s.truncateFrom(ctx, sessionID, fromSeq, nil)
+}
+
+func (s *Store) truncateFrom(ctx context.Context, sessionID string, fromSeq int, exact *MessageReceipt) (int, error) {
 	if s == nil || s.db == nil {
 		return 0, fmt.Errorf("session.Store.TruncateFrom: nil store")
 	}
@@ -28,12 +32,27 @@ func (s *Store) TruncateFrom(ctx context.Context, sessionID string, fromSeq int)
 	}
 	defer tx.Rollback()
 
-	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = ?`, sessionID).Scan(&exists); err != nil {
+	// Reserve SQLite's writer before checking identity; a deferred read/write
+	// upgrade could race another ordinary append on an independent Store.
+	reservation, err := tx.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at WHERE id = ?`, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	exists, err := reservation.RowsAffected()
+	if err != nil {
 		return 0, err
 	}
 	if exists == 0 {
 		return 0, sql.ErrNoRows
+	}
+	if exact != nil {
+		var current bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND seq = ? AND id = ? AND role = ?)`, sessionID, fromSeq, exact.ID, string(llm.RoleUser)).Scan(&current); err != nil {
+			return 0, err
+		}
+		if !current {
+			return 0, sql.ErrNoRows
+		}
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id = ? AND seq >= ?`, sessionID, fromSeq)
 	if err != nil {
@@ -112,18 +131,35 @@ func capToolContent(content string) string {
 // AppendMessage adds a message to a session, assigning the next
 // seq number. tokenIn/tokenOut are optional (zero is fine).
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded) error {
+	_, err := s.AppendMessageWithSeq(ctx, sessionID, msg)
+	return err
+}
+
+// AppendMessageWithSeq returns the sequence assigned by this exact insert,
+// only after the transaction commits. The caller's msg.Seq is ignored, as in
+// AppendMessage. A failed validation, insert or commit returns sequence zero.
+// RETURNING avoids a later query that could observe another writer's message.
+func (s *Store) AppendMessageWithSeq(ctx context.Context, sessionID string, msg Encoded) (int, error) {
+	receipt, err := s.AppendMessageWithReceipt(ctx, sessionID, msg)
+	return receipt.Seq, err
+}
+
+// AppendMessageWithReceipt returns the sequence and physical ID from this
+// exact INSERT, only after its transaction commits. Failed validation, insert
+// or commit returns the zero receipt. No follow-up identity query is needed.
+func (s *Store) AppendMessageWithReceipt(ctx context.Context, sessionID string, msg Encoded) (MessageReceipt, error) {
 	if sessionID == "" {
-		return fmt.Errorf("session.Store.AppendMessage: sessionID is empty")
+		return MessageReceipt{}, fmt.Errorf("session.Store.AppendMessage: sessionID is empty")
 	}
 	if err := msg.Validate(); err != nil {
-		return fmt.Errorf("session.Store.AppendMessage: %w", err)
+		return MessageReceipt{}, fmt.Errorf("session.Store.AppendMessage: %w", err)
 	}
 	if msg.Role == string(llm.RoleTool) {
 		msg.Content = capToolContent(msg.Content)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return MessageReceipt{}, err
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC()
@@ -134,19 +170,20 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg Encoded
 		`UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?`,
 		now.UnixNano(), sessionID,
 	); err != nil {
-		return fmt.Errorf("append: bump: %w", err)
+		return MessageReceipt{}, fmt.Errorf("append: bump: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
+	var receipt MessageReceipt
+	if err := tx.QueryRowContext(ctx,
 		`INSERT INTO messages(session_id, seq, role, content, parts_json, tool_call_id, tool_calls_json, name, created_at)
-  SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE session_id = ?`,
+  SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE session_id = ? RETURNING seq, id`,
 		sessionID, msg.Role, msg.Content, msg.PartsJSON, msg.ToolCallID, msg.ToolCallsJSON, msg.Name, now.UnixNano(), sessionID,
-	); err != nil {
-		return fmt.Errorf("append: insert: %w", err)
+	).Scan(&receipt.Seq, &receipt.ID); err != nil {
+		return MessageReceipt{}, fmt.Errorf("append: insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return err
+		return MessageReceipt{}, err
 	}
-	return nil
+	return receipt, nil
 }
 
 // LatestMessageSeq returns the latest transcript sequence for one role. It is
@@ -357,7 +394,11 @@ func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, before
 // UpdateUsage updates the cumulative token counters for a
 // session. It is called after the loop emits a DoneEvent.
 func (s *Store) UpdateUsage(sessionID string, in, out int) error {
-	_, err := s.db.Exec(
+	return s.UpdateUsageContext(context.Background(), sessionID, in, out)
+}
+
+func (s *Store) UpdateUsageContext(ctx context.Context, sessionID string, in, out int) error {
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET token_in = token_in + ?, token_out = token_out + ?, updated_at = ? WHERE id = ?`,
 		in, out, time.Now().UTC().UnixNano(), sessionID,
 	)

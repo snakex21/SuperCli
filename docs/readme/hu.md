@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.
 
 <!-- readme-unit:status -->
-Ez a README az `1.0.3` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
+Ez a README az `1.0.5` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
 
 <!-- readme-unit:h.screenshots -->
 ## Képernyőképek
@@ -172,6 +172,7 @@ Használja a `go.mod` által megadott Go-verziót. Windows alatt a `build.bat` a
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

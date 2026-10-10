@@ -1,6 +1,6 @@
 [
   "Un agent AI portabil pentru programare, scris în Go, cu interfață de terminal (TUI), interfață desktop/web (GUI) și mod batch care folosesc același motor.",
-  "Acest README descrie versiunea `1.0.3`. Pachetele portabile sunt distribuite prin [GitHub Releases]({releases}); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.",
+  "Acest README descrie versiunea `1.0.5`. Pachetele portabile sunt distribuite prin [GitHub Releases]({releases}); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.",
   "Capturi de ecran",
   "![Interfața web SuperCli (GUI)]({guishot})",
   "![Centrul de acțiuni din terminalul SuperCli (TUI)]({tuishot})",

@@ -29,10 +29,15 @@ type adaptiveReflectionProgress struct {
 // file does not get a wall of identical warnings.
 const repeatWarnCooldown = 4
 
-// repeatHardLimit is the last-resort stop: the SAME call with the SAME
-// arguments repeated this many times in a row is not work, it is a stuck
-// model burning the user's money. Everything below this only warns.
+// repeatHardLimit is the last-resort budget guard for an identical completed
+// operation with comparable text or an inert result, or identical failures.
+// Ordinary successful writes and failure retries have their own separate gates.
 const repeatHardLimit = 50
+
+// unchangedRoundLimit applies only when every completed operation in each
+// consecutive round returned successful evidence already seen in this Run.
+// New or changed evidence, failures and possible side effects reset the count.
+const unchangedRoundLimit = 8
 
 // cycleHistorySize is how many recent call fingerprints we keep to detect
 // short A-B-A-B loops, not only consecutive identical calls.
@@ -47,11 +52,9 @@ const (
 	repeatAbort              // absurd identical repetition: stop the run
 )
 
-// repeatProgress detects a REAL loop — the same tool called with the same
-// arguments over and over — and nothing else. It deliberately does not count
-// "discovery without progress": reading an unfamiliar codebase for fifty calls
-// is the job, not a symptom, and charging for it is what used to cut healthy
-// tasks off mid-work.
+// repeatProgress detects repeated completed operations and short cycles.
+// Fresh evidence is progress even if the read arguments have not changed;
+// discovering different files or pages does not count as repetition.
 type repeatProgress struct {
 	unchanged unchangedProgress
 	// Count incomplete responses, not calls, independently of compacted history
@@ -61,23 +64,51 @@ type repeatProgress struct {
 	identicalStreak int
 	last            [sha256.Size]byte
 	haveLast        bool
-	// recent holds normalized fingerprints of the last N calls for cycle detect.
+	// Failures have their own budget guard; they are never successful evidence.
+	identicalFailureStreak int
+	lastFailure            [sha256.Size]byte
+	haveFailure            bool
+	// recent holds completed-call fingerprints, including observed read results.
 	recent [][sha256.Size]byte
 	// cooldown counts down calls after a warning was issued.
 	cooldown int
 }
 
-// observe combines argument-based failure/cycle detection with fresh output
-// evidence. A changing read result is progress even when its arguments match.
+// observe combines short-cycle detection with per-operation output evidence.
+// Failures are handled by the separate failure gate, not counted as successes.
 func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) repeatSignal {
 	if len(calls) == 0 {
 		return repeatNone
 	}
 	p.unchanged.observe(calls, outcomes)
 	for i, c := range calls {
-		ob := outcomeAt(outcomes, i).observation
+		if p.cooldown > 0 {
+			p.cooldown--
+		}
+		o := outcomeAt(outcomes, i)
+		ob := o.observation
+		if i < len(outcomes) && o.failed {
+			fp := toolCallFingerprint(c.Name, c.Arguments)
+			if p.haveFailure && fp == p.lastFailure {
+				p.identicalFailureStreak++
+			} else {
+				p.identicalFailureStreak = 1
+			}
+			p.lastFailure, p.haveFailure = fp, true
+		} else {
+			p.identicalFailureStreak, p.haveFailure = 0, false
+		}
+		if i >= len(outcomes) || o.failed || (!ob.valid && !ob.comparable && !o.inert) {
+			// An edit, unknown side effect, failed read or unfinished call makes
+			// a following recheck legitimate. An unobserved read may have new
+			// image or other evidence; arguments cannot establish repetition.
+			// Unrelated successful reads retain their per-key history when
+			// only a known read failed.
+			p.identicalStreak, p.haveLast, p.recent = 0, false, nil
+			continue
+		}
 		var fp [sha256.Size]byte
-		if ob.valid {
+		if ob.valid || ob.comparable {
 			var evidence [2 * sha256.Size]byte
 			copy(evidence[:sha256.Size], ob.key[:])
 			copy(evidence[sha256.Size:], ob.result[:])
@@ -96,27 +127,30 @@ func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) r
 		if len(p.recent) > cycleHistorySize {
 			p.recent = p.recent[len(p.recent)-cycleHistorySize:]
 		}
-		if p.cooldown > 0 {
-			p.cooldown--
-		}
 	}
-	if p.identicalStreak >= repeatHardLimit {
+	if p.unchanged.rounds >= unchangedRoundLimit || p.identicalStreak >= repeatHardLimit || p.identicalFailureStreak >= repeatHardLimit {
 		return repeatAbort
 	}
-	if p.cooldown == 0 && ((p.unchanged.seen == nil && p.hasShortCycle()) || p.unchanged.repeats >= 3 || p.unchanged.rounds >= 2) {
+	if p.cooldown == 0 && (p.hasShortCycle() || p.unchanged.repeats >= 3 || p.unchanged.rounds >= 2) {
 		p.cooldown = repeatWarnCooldown
 		return repeatWarn
 	}
 	return repeatNone
 }
 
-// repeatCount is how long the current identical-call streak is, for the
-// wording of the injected error.
-func (p *repeatProgress) repeatCount() int { return p.identicalStreak }
+func (p *repeatProgress) repeatAbortText() string {
+	if p.unchanged.rounds >= unchangedRoundLimit {
+		return fmt.Sprintf("agent: stopped — the last %d consecutive tool rounds returned only previously observed successful results, with no new evidence or completed change. The work so far is kept in this conversation", p.unchanged.rounds)
+	}
+	if p.identicalFailureStreak >= repeatHardLimit {
+		return fmt.Sprintf("agent: stopped — the same tool call failed %d consecutive times without a successful intervening operation. The work so far is kept in this conversation", p.identicalFailureStreak)
+	}
+	return fmt.Sprintf("agent: stopped — the same completed tool call returned identical evidence or an inert result %d consecutive times. The work so far is kept in this conversation", p.identicalStreak)
+}
 
 // hasShortCycle detects short loops in recent fingerprints:
 // period-1 (A A A), period-2 (A B A B), period-3 (A B C A B C).
-// Fingerprints are name+normalized-args only (no tool_call_id).
+// Observed reads include their actual results; tool_call_id is never included.
 func (p *repeatProgress) hasShortCycle() bool {
 	n := len(p.recent)
 	if n < 3 {
@@ -170,10 +204,31 @@ func toolKind(name string) string {
 		"scratchpad", "mcp_bridge", "search_history":
 		return "discovery"
 	case "patch_file", "create_file", "write_file", "make_dir", "move", "copy", "trash",
-		"edit_docx", "edit_xlsx":
+		"edit_docx", "edit_xlsx", "web_download":
 		return "mutation"
 	case "ctx_execute":
 		return "execution"
+	default:
+		return "other"
+	}
+}
+
+// toolCallKind resolves tools whose action can either inspect or change files.
+func toolCallKind(name, args string) string {
+	if name != "read_zip" {
+		return toolKind(name)
+	}
+	var a struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal([]byte(args), &a) != nil {
+		return "other"
+	}
+	switch a.Action {
+	case "extract":
+		return "mutation"
+	case "", "list", "read":
+		return "discovery"
 	default:
 		return "other"
 	}
@@ -303,14 +358,14 @@ type identicalSuccessGate struct {
 func (g *identicalSuccessGate) shouldBlock(name, args string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.counts == nil || toolKind(name) != "mutation" {
+	if g.counts == nil || toolCallKind(name, args) != "mutation" {
 		return false
 	}
 	return g.counts[toolCallFingerprint(name, args)] >= repeatedMutationLimit
 }
 
 func (g *identicalSuccessGate) recordSuccess(name, args string) {
-	if toolKind(name) != "mutation" {
+	if toolCallKind(name, args) != "mutation" {
 		return
 	}
 	g.mu.Lock()
@@ -486,11 +541,18 @@ func clampReflection(s string) string {
 }
 
 func (p *repeatProgress) warningText() string {
+	var reason string
 	if p.unchanged.repeats >= 3 {
-		return fmt.Sprintf("[loop] %s returned the same result %d times. Use the existing evidence or change the approach.", p.unchanged.tool, p.unchanged.repeats)
+		reason = fmt.Sprintf("[loop] %s returned the same result %d times.", p.unchanged.tool, p.unchanged.repeats)
+	} else if p.unchanged.rounds >= 2 {
+		reason = fmt.Sprintf("[loop] The last %d rounds returned only previously seen results.", p.unchanged.rounds)
+	} else {
+		reason = "[loop] Repeated tool-call cycle."
 	}
-	if p.unchanged.rounds >= 2 {
-		return fmt.Sprintf("[loop] The last %d rounds returned only previously seen results. Use existing evidence or change the approach.", p.unchanged.rounds)
+	reason += " Use the collected results for the next dependent action. When all user requests are completed and verified, give the final answer; otherwise change the approach or explain the blocker."
+	switch p.unchanged.tool {
+	case "web_lookup", "web_search", "web_fetch":
+		reason += " If the web data may have changed, request a fresh read with refresh=true."
 	}
-	return "[loop] Repeated tool-call cycle. Change the approach or explain the blocker."
+	return reason
 }

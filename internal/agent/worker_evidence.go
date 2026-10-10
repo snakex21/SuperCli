@@ -66,27 +66,60 @@ func (e *workerEvidenceLog) text() string {
 // parent's existing output store for read_output retrieval. The parent LRU also
 // supports attachments without a session writer.
 func workerResult(w *Worker, report string, err error) (result tools.Result) {
-	notification := renderWorkerNotification(w, report)
+	return prepareWorkerHandoff(w, report).result(w, err)
+}
+
+// A handoff belongs to one completed invocation. Capture its reportable state
+// and historical evidence together, then share the immutable wrapper between
+// the UI and tool result. Nothing is cached for a later run or continuation.
+type workerHandoff struct {
+	snapshot     Snapshot
+	evidence     string
+	report       string
+	summary      string
+	notification string
+}
+
+func prepareWorkerHandoff(w *Worker, report string) workerHandoff {
+	w.stateMu.RLock()
+	s := Snapshot{
+		ID: w.ID, Agent: w.Agent, Description: w.Description, Model: w.Model,
+		Status: w.Status, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
+		LastError: w.LastError, TokensIn: w.TokensIn, TokensOut: w.TokensOut,
+		Steps: w.Steps, ToolNames: append([]string(nil), w.ToolNames...), Runs: w.Runs,
+	}
+	evidence := w.lastEvidence
+	w.stateMu.RUnlock()
+	summary := workerSummaryFromSnapshot(s)
+	return workerHandoff{
+		snapshot: s, evidence: evidence, report: report, summary: summary,
+		notification: renderWorkerNotificationFromSnapshot(s, summary, report),
+	}
+}
+
+func (h workerHandoff) result(w *Worker, err error) (result tools.Result) {
+	report := h.report
+	notification := h.notification
 	result = tools.Result{Text: notification, Err: err}
 	var inlineObservation string
 	if err != nil {
-		defer func() { result.Err = workerFailureHandoff(w, report, err, inlineObservation) }()
+		defer func() {
+			result.Err = workerFailureHandoffFromSnapshot(w, h.snapshot, report, err, inlineObservation)
+		}()
 	} else {
 		defer func() {
 			if len(result.Text) > core.ModelOutputInlineBytes {
-				result.ModelPreview = workerReportPreview(w, report, result.Text[len(notification):])
+				result.ModelPreview = workerReportPreviewFromSnapshot(h.snapshot, h.summary, report, result.Text[len(notification):])
 			}
 		}()
 	}
-	w.stateMu.RLock()
-	evidence, run, updated, status := w.lastEvidence, w.Runs, w.UpdatedAt, w.Status
-	w.stateMu.RUnlock()
+	evidence, run, updated, status := h.evidence, h.snapshot.Runs, h.snapshot.UpdatedAt, h.snapshot.Status
 	if evidence == "" || status == "running" {
 		return result
 	}
 	observation := fmt.Sprintf(
 		"\n\n[Worker %s run %d tool observations at %s; historical snapshots, not current workspace state; outputs may be truncated]\n",
-		w.ID, run, updated.UTC().Format("2006-01-02T15:04:05Z")) + evidence
+		h.snapshot.ID, run, updated.UTC().Format("2006-01-02T15:04:05Z")) + evidence
 	// Tiny observations cost less than another retrieval round. Larger ones
 	// stay off-context; neither case needs another worker inference.
 	if len(observation) <= workerEvidenceInlineBytes {

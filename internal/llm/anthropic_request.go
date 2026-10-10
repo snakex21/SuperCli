@@ -7,13 +7,14 @@ import (
 )
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	Stream    bool               `json:"stream"`
-	System    string             `json:"system,omitempty"`
-	Messages  []anthropicMessage `json:"messages"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
-	Thinking  *anthropicThinking `json:"thinking,omitempty"`
+	Model        string                 `json:"model"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Stream       bool                   `json:"stream"`
+	System       string                 `json:"system,omitempty"`
+	Messages     []anthropicMessage     `json:"messages"`
+	Tools        []anthropicTool        `json:"tools,omitempty"`
+	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 	// Sampling. Pointers + omitempty: unset stays absent from the body.
 	Temperature *float64 `json:"temperature,omitempty"`
 	TopP        *float64 `json:"top_p,omitempty"`
@@ -31,16 +32,17 @@ type anthropicMessage struct {
 }
 
 type anthropicContentBlock struct {
-	Prefix    string                `json:"-"`
-	Raw       json.RawMessage       `json:"-"`
-	Type      string                `json:"type"`
-	Text      string                `json:"text,omitempty"`
-	Source    *anthropicImageSource `json:"source,omitempty"`
-	ID        string                `json:"id,omitempty"`
-	Name      string                `json:"name,omitempty"`
-	Input     map[string]any        `json:"input,omitempty"`
-	ToolUseID string                `json:"tool_use_id,omitempty"`
-	Content   string                `json:"content,omitempty"`
+	Prefix       string                 `json:"-"`
+	Raw          json.RawMessage        `json:"-"`
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text,omitempty"`
+	Source       *anthropicImageSource  `json:"source,omitempty"`
+	ID           string                 `json:"id,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Input        map[string]any         `json:"input,omitempty"`
+	ToolUseID    string                 `json:"tool_use_id,omitempty"`
+	Content      string                 `json:"content,omitempty"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 type anthropicImageSource struct {
@@ -61,6 +63,10 @@ func buildAnthropicRequest(model string, msgs []Message, tools []ToolDef, vision
 }
 
 func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int, sampling Sampling) ([]byte, error) {
+	return buildAnthropicRequestWithCaching(model, msgs, tools, vision, maxTokens, sampling, false)
+}
+
+func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int, sampling Sampling, cacheConversation bool) ([]byte, error) {
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
@@ -78,7 +84,7 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 		req.TopK = sampling.TopK
 	}
 	for _, t := range tools {
-		inputSchema, err := normalizeToolSchemaChecked(t.Schema)
+		inputSchema, err := normalizeAnthropicToolSchemaChecked(t.Schema)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q schema: %w", t.Name, err)
 		}
@@ -88,6 +94,13 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 	// req.System; later system messages (freshness stamp, reflection
 	// checkpoints, ...) stay in place as <system-reminder> user turns
 	// so the prompt prefix stays append-only for prompt caching.
+	// Request-only reminders are refreshed between calls and must stay outside
+	// the cache write. Record their boundary before the role demotion below.
+	cacheEnd := len(msgs)
+	for cacheEnd > 0 && msgs[cacheEnd-1].Role == RoleSystem {
+		cacheEnd--
+	}
+	hasReminders := cacheEnd < len(msgs)
 	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	var system []string
 	for _, m := range msgs {
@@ -119,7 +132,11 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 	}
 	req.System = strings.Join(system, "\n\n")
 	protectAnthropicPrefixes(&req)
-	return json.Marshal(req)
+	cacheSystem := false
+	if cacheConversation {
+		cacheSystem = applyAnthropicPromptCache(&req, hasReminders)
+	}
+	return marshalAnthropicPromptCache(req, cacheSystem)
 }
 
 func anthropicThinkingForModel(model string, maxTokens int) *anthropicThinking {

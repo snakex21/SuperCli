@@ -202,22 +202,24 @@ func TestRepeatProgress_NovelCallsNeverSignal(t *testing.T) {
 	}
 }
 
-func TestRepeatProgress_WarnsOnCycleAbortsOnAbsurdRepetition(t *testing.T) {
+func TestRepeatProgress_WarnsOnObservedCycleGuardsInertRepetition(t *testing.T) {
 	var p repeatProgress
 	a := []llm.ToolCall{{Name: "read_lines", Arguments: `{"file":"a"}`}}
 	b := []llm.ToolCall{{Name: "read_lines", Arguments: `{"file":"b"}`}}
 	// A-B-A-B is a period-2 cycle: warn, never stop.
-	p.observe(a, allOK(1))
-	p.observe(b, allOK(1))
-	p.observe(a, allOK(1))
-	if sig := p.observe(b, allOK(1)); sig != repeatWarn {
+	p.observe(a, []callOutcome{observed(a[0], "a body")})
+	p.observe(b, []callOutcome{observed(b[0], "b body")})
+	p.observe(a, []callOutcome{observed(a[0], "a body")})
+	if sig := p.observe(b, []callOutcome{observed(b[0], "b body")}); sig != repeatWarn {
 		t.Fatalf("A-B-A-B: got %v, want warn", sig)
 	}
 
 	var q repeatProgress
+	inert := []llm.ToolCall{{Name: "patch_file", Arguments: `{"file":"a","old":"x","new":"y"}`}}
+	inertOutcome := []callOutcome{{inert: true}}
 	warns, aborts := 0, 0
 	for i := 0; i < repeatHardLimit+5; i++ {
-		switch q.observe(a, allOK(1)) {
+		switch q.observe(inert, inertOutcome) {
 		case repeatWarn:
 			warns++
 		case repeatAbort:
@@ -233,7 +235,7 @@ func TestRepeatProgress_WarnsOnCycleAbortsOnAbsurdRepetition(t *testing.T) {
 	// The abort must not fire early: below the hard limit it is only a warning.
 	var r repeatProgress
 	for i := 0; i < repeatHardLimit-1; i++ {
-		if r.observe(a, allOK(1)) == repeatAbort {
+		if r.observe(inert, inertOutcome) == repeatAbort {
 			t.Fatalf("aborted after %d identical calls, hard limit is %d", i+1, repeatHardLimit)
 		}
 	}

@@ -2,7 +2,7 @@
 
 /* ═══ chat streaming ═══ */
 
-var streaming = false, abortCtl = null, activeSessionID = "", projectEpoch = 0;
+var streaming = false, runFinishing = false, abortCtl = null, activeSessionID = "", projectEpoch = 0;
 var sessionRuntimeReady = Promise.resolve();
 var activeQuestionOverlay = null;
 var questionOverlays = Object.create(null);
@@ -12,7 +12,7 @@ var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
 var queueDispatching = false, queueDispatchItem = null;
-var chatTurnSequence = 0;
+var chatTurnSequence = 0, runStopRevision = 0;
 var pendingAttachments = [];
 var appFocused = !document.hidden && document.hasFocus();
 var sentAttachmentStorageKey = "supercli-sent-attachments-v1";
@@ -624,7 +624,7 @@ async function dispatchQueuedTask(item) {
   showQueueTransition(item);
   var launched = false;
   try {
-    if (!await prepareQueuedTask(item) || pauseQueue) return;
+    if (!await prepareQueuedTask(item) || (pauseQueue && !isAfterRunPrompt(item))) return;
     // Remove the durable queue entry only after /api/chat accepts it.
     launched = true;
     sendPrompt(item.text, item.attachments || [], item.draft || null, item);
@@ -632,6 +632,7 @@ async function dispatchQueuedTask(item) {
     toast(e.message);
   } finally {
     if (!launched) {
+      restoreUnsentAfterRun(item);
       if (item.draft && !promptEl.value && composerDraftStore.scope() === item.draft.scope) {
         composerDraftStore.restore(item.draft.scope);
       }
@@ -799,11 +800,47 @@ function interruptAndSend(text, item, attachments, draft) {
   pauseQueue = false;
   showQueueTransition(pendingImmediate);
   $("#interrupt-btn").disabled = true;
-  if (abortCtl) abortCtl.abort(); else {
+  if (streaming) {
+    if (abortCtl && !runFinishing) abortCtl.abort();
+  } else {
     var next = pendingImmediate;
     pendingImmediate = null;
     dispatchQueuedTask(next);
   }
+}
+
+// Generation has ended, but transcript/checkpoint writes still own this turn.
+// Release presentation now; keep the serialization fence until HTTP EOF/receipt.
+function finishRunPresentation() {
+  runFinishing = true;
+  clearInterval(runTimer);
+  runTimer = null;
+  if (!pendingImmediate) {
+    sendBtn.textContent = t("composer.send");
+    sendBtn.classList.remove("queue");
+    $("#stop-run-btn").hidden = true;
+    $("#interrupt-btn").hidden = true;
+    $("#status-dot").classList.remove("busy");
+  }
+}
+function isAfterRunPrompt(item) {
+  return !!(item && item.afterRun && item.stopRevision === runStopRevision);
+}
+function restoreUnsentAfterRun(item) {
+  if (!item || !item.afterRun || !item.draft || promptEl.value) return;
+  var scope = composerDraftStore.scope();
+  if (scope !== item.draft.scope && (!item.session_id || item.session_id !== activeSessionID)) return;
+  promptEl.value = item.draft.text;
+  promptEl.style.height = "auto";
+  if (composerDraftStore.capture) composerDraftStore.capture();
+  if (scope !== item.draft.scope) composerDraftStore.clear(item.draft.scope, item.draft.text);
+  addAttachmentPaths(item.attachments || []);
+}
+function sendAfterRun(text, attachments, draft) {
+  pendingImmediate = {text: text, session_id: activeSessionID, attachments: attachments, draft: draft, afterRun: true, stopRevision: runStopRevision};
+  // A manual next message bypasses the pause for this one turn only. Stop must
+  // not silently resume older queued work when the user starts a new prompt.
+  showQueueTransition(pendingImmediate);
 }
 
 function newChatTurnID() {
@@ -830,7 +867,8 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     if (readyRuntime === sessionRuntimeReady) break;
   }
   if (streaming) return;
-  if (queuedItem && pauseQueue) {
+  if (queuedItem && ((queuedItem.afterRun && !isAfterRunPrompt(queuedItem)) || (pauseQueue && !isAfterRunPrompt(queuedItem)))) {
+    restoreUnsentAfterRun(queuedItem);
     if (draft && !promptEl.value && composerDraftStore.scope() === draft.scope) {
       composerDraftStore.restore(draft.scope);
     }
@@ -855,6 +893,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
+  runFinishing = false;
   queueDispatching = false;
   transcriptLiveAppend = true;
   abortCtl = new AbortController();
@@ -871,7 +910,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   var liveUserNode = addUserMsg(text, 0, attachments);
   var current = null;
   var terminalSeen = false;
-  var stopped = false;
+  var stopped = false, handoffBlocked = false;
   var turnID = newChatTurnID();
   var draftAccepted = false, requestAccepted = false;
   var queueRemoval = null;
@@ -894,6 +933,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   runStart = Date.now();
   setRunState("running", t("composer.working"));
   runTimer = setInterval(function () {
+    if (runFinishing) return;
     var now = Date.now();
     var quiet = now - lastProgressAt;
     if (pendingImmediate) {
@@ -923,8 +963,20 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     requestAccepted = true;
     await superCliUI.readSSE(resp.body, function (ev) {
       lastProgressAt = Date.now();
-      if (ev.type === "session_activity") acceptPrompt();
-      if (ev.type === "done" || ev.type === "error") terminalSeen = true;
+      if (ev.type === "session_activity") {
+        acceptPrompt();
+        bindLiveMessageReceipt(liveUserNode, ev);
+      }
+      if (ev.type === "finishing") {
+        finishRunPresentation();
+        closeAssistantReasoning(current);
+        flushAssistantRender(current);
+        setRunState(pendingImmediate ? "running" : "idle", t(pendingImmediate ? "composer.sendingQueued" : "run.done"));
+      }
+      if (ev.type === "done" || ev.type === "error") {
+        terminalSeen = true;
+        finishRunPresentation();
+      }
       current = handleEvent(ev, current);
     });
     flushAssistantRender(current);
@@ -962,7 +1014,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     sealAssistantSegment(current);
     closeQuestionOverlay();
     abortCtl = null;
-    clearInterval(runTimer);
+    finishRunPresentation();
     settleOpenTools();
     releaseLiveTranscriptBlocks();
     // One completion wait replaces transcript polling after Stop. The server
@@ -975,9 +1027,12 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
         if (completed && completed.session_id) {
           activeSessionID = completed.session_id;
           transcriptSessionID = completed.session_id;
+          if (pendingImmediate && pendingImmediate.afterRun && !pendingImmediate.session_id) pendingImmediate.session_id = completed.session_id;
         }
       } catch (completionError) {
+        handoffBlocked = true;
         pauseQueue = true;
+        restoreUnsentAfterRun(pendingImmediate);
         if (pendingImmediate && pendingImmediate.draft && !promptEl.value) {
           composerDraftStore.restore(pendingImmediate.draft.scope);
         }
@@ -987,9 +1042,12 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     if (draft && !draftAccepted && !promptEl.value && composerDraftStore.scope() === draft.scope) {
       composerDraftStore.restore(draft.scope);
     }
-    // Reserve the composer through final metadata work; Enter still queues.
+    // Keep writes serialized, while the composer can accept one next prompt.
     if (queueRemoval) await queueRemoval;
-    if (queuedItem && !draftAccepted) pauseQueue = true;
+    if (queuedItem && !draftAccepted) {
+      restoreUnsentAfterRun(queuedItem);
+      pauseQueue = true;
+    }
     queueDispatchItem = pendingImmediate;
     var userSeq = draftAccepted ? await addLatestMessageRewind(liveUserNode, persistedText, 1) : 0;
     if (userSeq) rememberSentAttachments(activeSessionID, userSeq, attachments);
@@ -1001,7 +1059,8 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     var immediate = pendingImmediate;
     pendingImmediate = null;
     streaming = false;
-    var next = !pauseQueue ? (immediate || promptQueue[0]) : null;
+    runFinishing = false;
+    var next = handoffBlocked ? null : (immediate && (isAfterRunPrompt(immediate) || !pauseQueue) ? immediate : (!pauseQueue ? promptQueue[0] : null));
     if (next) {
       dispatchQueuedTask(next);
     } else {
@@ -1111,8 +1170,10 @@ function handleEvent(ev, current) {
     case "done":
       closeAssistantReasoning(current);
       flushAssistantRender(current);
+      releaseAssistantParagraphCaches(current);
       var elapsed = Date.now() - runStart;
-      lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount };
+      lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount, sessionID: activeSessionID };
+      if (typeof rememberStatsLiveSpeed === "function") rememberStatsLiveSpeed(lastTurn, activeSessionID);
       addFileChanges(ev.file_changes);
       addTurnMeta(ev, elapsed);
       if (pendingImmediate || (!pauseQueue && promptQueue.length)) {
@@ -1125,6 +1186,7 @@ function handleEvent(ev, current) {
     case "error":
       closeAssistantReasoning(current);
       flushAssistantRender(current);
+      releaseAssistantParagraphCaches(current);
       addFileChanges(ev.file_changes);
       addEventLine(chatErrorText(ev), "error", "error");
       setRunState("idle", t("common.error"));
@@ -1230,7 +1292,8 @@ $("#composer").addEventListener("submit", async function (e) {
   var rawText = promptEl.value;
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
-  if ((streaming || queueDispatching) && pendingAttachments.length) {
+  var afterRun = streaming && runFinishing && !pendingImmediate;
+  if ((streaming || queueDispatching) && !afterRun && pendingAttachments.length) {
     toast(t("composer.attachQueue"));
     return;
   }
@@ -1238,6 +1301,11 @@ $("#composer").addEventListener("submit", async function (e) {
   var draft = { scope: composerDraftStore.scope(), text: rawText };
   promptEl.value = "";
   promptEl.style.height = "auto";
+  if (afterRun) {
+    clearAttachments();
+    sendAfterRun(text, attachments, draft);
+    return;
+  }
   if (streaming || queueDispatching) {
     if (await enqueuePrompt(text)) composerDraftStore.clear(draft.scope, draft.text);
     else composerDraftStore.restore(draft.scope);
@@ -1248,7 +1316,11 @@ $("#composer").addEventListener("submit", async function (e) {
 });
 $("#stop-run-btn").addEventListener("click", function () {
   pauseQueue = true;
+  runStopRevision++;
+  restoreUnsentAfterRun(pendingImmediate || queueDispatchItem);
   pendingImmediate = null;
+  finishRunPresentation();
+  setRunState("idle", t("composer.stopped"));
   if (abortCtl) abortCtl.abort();
 });
 $("#interrupt-btn").addEventListener("click", function () {

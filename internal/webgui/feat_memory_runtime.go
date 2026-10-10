@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -100,12 +101,59 @@ func (e *Engine) webMemoryStore(home string, global bool) (*memory.Store, error)
 	if store := e.projectMemory[home]; store != nil {
 		return store, nil
 	}
+	// Keep the ordinary cache hit free of canonicalization and metadata I/O.
+	// Windows spelling aliases also borrow an already observed home's identity,
+	// including an authoritative relocated key absent under the new spelling.
+	if runtime.GOOS == "windows" {
+		for observed, store := range e.projectMemory {
+			if strings.EqualFold(observed, home) {
+				e.projectMemory[home] = store
+				return store, nil
+			}
+		}
+	}
+	key := memory.ProjectStorageKey(e.dataDir, home)
+	databaseKey := webMemoryDatabaseKey(filepath.Join(e.dataDir, "projects", key))
+	if store := e.projectMemoryByDB[databaseKey]; store != nil {
+		e.projectMemory[home] = store
+		return store, nil
+	}
 	store, err := memory.OpenProjectStore(e.dataDir, home)
 	if err != nil {
 		return nil, err
 	}
+	// OpenProjectStore resolves projects.json itself. Another writer may have
+	// changed it after the lookup above, so index the database actually opened.
+	databaseKey = webMemoryDatabaseKey(store.Root())
+	if existing := e.projectMemoryByDB[databaseKey]; existing != nil {
+		// Only this unpublished handle is redundant; never close a live Store.
+		_ = store.Close()
+		e.projectMemory[home] = existing
+		return existing, nil
+	}
+	if e.projectMemoryByDB == nil {
+		e.projectMemoryByDB = make(map[string]*memory.Store)
+	}
+	e.projectMemoryByDB[databaseKey] = store
 	e.projectMemory[home] = store
 	return store, nil
+}
+
+// webMemoryDatabaseKey identifies the physical portable memory database. The
+// resolver runs only on a new home; existing keepers retain their cached binding.
+func webMemoryDatabaseKey(root string) string {
+	path := filepath.Join(root, "memory.db")
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
 }
 
 func (e *Engine) webMemoryStores(home string) (globalStore, projectStore *memory.Store) {
@@ -134,6 +182,9 @@ func (e *Engine) webMemoryBriefingExcludingSession(home string, tokenCap int, se
 }
 
 func (e *Engine) saveWebUserFacts(prompt string) {
+	if len(memory.ExtractUserFacts([]string{prompt})) == 0 {
+		return
+	}
 	globalStore, err := e.webMemoryStore("", true)
 	if err != nil {
 		return
@@ -148,12 +199,43 @@ const webSessionRecallTokens = 420
 // conversation. It deliberately makes no LLM call: all text already exists in
 // the session DB, so cross-session memory adds only a small local SQLite read
 // and one upsert after a turn completes.
-func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string) {
+func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string, runHome ...string) {
 	if e == nil || strings.TrimSpace(sessionID) == "" {
 		return
 	}
-	sessions, err := e.sessionStore()
-	if err != nil {
+	if ctx.Err() != nil {
+		return
+	}
+	// The caller may pass the workspace captured when this run started. Never
+	// resolve its SID against a newly switched project during the terminal tail.
+	home := ""
+	if len(runHome) > 0 {
+		home = runHome[0]
+	} else {
+		if !e.mu.TryRLock() {
+			return
+		}
+		home = e.home
+		e.mu.RUnlock()
+	}
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return
+	}
+	home = filepath.Clean(home)
+	project := e.cachedWebCapsuleStore(home)
+	if project == nil {
+		return
+	}
+	// A real run already owns an open session store. Do not wait behind an
+	// unrelated session open, media recovery or shutdown while closing this run.
+	if !e.sessionMu.TryLock() {
+		return
+	}
+	sessions := e.sessions
+	closed := e.closed
+	e.sessionMu.Unlock()
+	if closed || sessions == nil {
 		return
 	}
 	messages, err := sessions.ReadDialogueExcerpt(ctx, sessionID, 8, func(message session.Encoded) bool {
@@ -168,10 +250,6 @@ func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string) {
 		return
 	}
 
-	_, project := e.webMemoryStores(e.Home())
-	if project == nil {
-		return
-	}
 	id := "web-session-" + sessionID
 	entry := memory.Entry{
 		ID:      id,
@@ -180,13 +258,31 @@ func (e *Engine) saveWebSessionCapsule(ctx context.Context, sessionID string) {
 		Tags:    []string{"session", "cross-session"},
 		Source:  memory.SourceAgent,
 	}
-	if old, getErr := project.Get(id); getErr == nil {
-		entry.CreatedAt = old.CreatedAt
+	_ = project.SaveTaskLogCapsule(ctx, entry, memory.MaxTaskLogEntries)
+}
+
+// cachedWebCapsuleStore never waits behind an open/migration or rebinds a late
+// capsule to another workspace. Skipping this best-effort update is safe: the
+// complete transcript is already durable and can rebuild the capsule later.
+func (e *Engine) cachedWebCapsuleStore(home string) *memory.Store {
+	if !e.memoryMu.TryLock() {
+		return nil
 	}
-	_, _ = project.Retain(memory.ScopeTaskLog, memory.MaxTaskLogEntries-1)
-	if project.Put(entry) == nil {
-		_, _ = project.Retain(memory.ScopeTaskLog, memory.MaxTaskLogEntries)
+	defer e.memoryMu.Unlock()
+	if e.memoryClosed {
+		return nil
 	}
+	if store := e.projectMemory[home]; store != nil {
+		return store
+	}
+	if runtime.GOOS == "windows" {
+		for observed, store := range e.projectMemory {
+			if strings.EqualFold(observed, home) {
+				return store
+			}
+		}
+	}
+	return nil
 }
 
 // webCapsuleText accepts the same text and parts representations as the archive.

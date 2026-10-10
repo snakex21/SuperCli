@@ -83,6 +83,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 // future default change in code is never pinned by a stale value.
 func settingResetKey(c *config.TomlConfig, key string) {
 	switch key {
+	case "cost_currency":
+		c.CostCurrency = ""
 	case "show_generation_speed":
 		c.ShowGenerationSpeed = nil
 	case "orchestrator":
@@ -145,6 +147,11 @@ func settingResetKey(c *config.TomlConfig, key string) {
 // label (default / auto / manual / editing).
 func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, source string) {
 	switch r.key {
+	case "cost_currency":
+		if strings.TrimSpace(c.CostCurrency) == "" {
+			return config.EffectiveCostCurrency(*c), "default"
+		}
+		return config.EffectiveCostCurrency(*c), "manual"
 	case "show_generation_speed":
 		return m.triDisplay(c.ShowGenerationSpeed, "on")
 	case "language":

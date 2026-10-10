@@ -75,6 +75,8 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 		changed = true
 	}
 	if changed {
+		l.resultReuse.reset()
+		l.completedOps.reset()
 		l.invalidateVisibleEstimate()
 	}
 }

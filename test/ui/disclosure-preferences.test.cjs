@@ -210,7 +210,9 @@ test('thought preference covers inline and native segments, restored lazy materi
     const h=preferenceHarness({'ui.thinkingExpanded':expanded});await h.c.loadUI();
     const inline=h.c.renderThinkBlock('thought');assert.equal(/class="think-block" open/.test(inline),expanded!==false);
     const live=h.c.assistantPart({kind:'thinking',text:'live thought'},false);
-    assert.equal(live.node.open,expanded===null?true:expanded);assert.equal(live.node.querySelector('.think-content').textContent,'live thought');
+    assert.equal(live.node.open,expanded===null?true:expanded);assert.equal(live.node.querySelector('.think-content').textContent,expanded===false?'':'live thought');
+    if (!live.node.open) {live.node.open=true;live.node.dispatch('toggle');}
+    assert.equal(live.node.querySelector('.think-content').textContent,'live thought');
     const old=h.c.assistantPart({kind:'thinking',text:'saved thought'},true);
     assert.equal(old.node.open,expanded===true);assert.equal(old.node.querySelector('.think-content').textContent,expanded===true?'saved thought':'');
     if (!old.node.open) {old.node.open=true;old.node.dispatch('toggle');assert.equal(old.node.querySelector('.think-content').textContent,'saved thought');}

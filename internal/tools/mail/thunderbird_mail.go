@@ -23,9 +23,19 @@ const (
 // SuperCLI never reads passwords or OAuth tokens. The first version is
 // intentionally read-only so it can be validated against Gmail before any
 // mutation support is enabled.
-type ThunderbirdMail struct{}
+type ThunderbirdMail struct {
+	dataDir string
+}
 
-func NewThunderbirdMail() *ThunderbirdMail { return &ThunderbirdMail{} }
+// NewThunderbirdMail accepts the resolved app data directory. Omitting it keeps
+// the portable executable-relative default and SUPERCLI_DATA_DIR override.
+func NewThunderbirdMail(dataDir ...string) *ThunderbirdMail {
+	t := &ThunderbirdMail{}
+	if len(dataDir) > 0 {
+		t.dataDir = strings.TrimSpace(dataDir[0])
+	}
+	return t
+}
 
 type thunderbirdContactInput struct {
 	Name  string `json:"name"`
@@ -108,6 +118,7 @@ type thunderbirdBridgeResponse struct {
 type thunderbirdBridgeState struct {
 	once               sync.Once
 	startErr           error
+	dataDir            string // guarded by mu; pinned on first operation
 	queue              chan thunderbirdBridgeRequest
 	mu                 sync.Mutex
 	waiters            map[string]chan thunderbirdBridgeResponse
@@ -301,6 +312,9 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		return Result{Err: fmt.Errorf("thunderbird_mail: unsupported op %q", args.Op)}, nil
 	}
 
+	if err := globalThunderbirdBridge.configureDataDir(t.dataDir); err != nil {
+		return Result{Err: fmt.Errorf("thunderbird_mail: %w", err)}, nil
+	}
 	if args.Op == "import_msg" {
 		return t.importMSG(ctx, args)
 	}

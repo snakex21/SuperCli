@@ -10,6 +10,10 @@ import "supercli/internal/llm"
 // reported as a recognizable context-length error.
 const defaultContextWindow = 16384
 
+// DefaultContextWindow exposes the loop's conservative local fallback to
+// lightweight status readers without constructing an agent loop.
+func DefaultContextWindow() int { return defaultContextWindow }
+
 // defaultRemoteContextWindow is the same last-resort fallback for a
 // model served over a public endpoint. Cloud gateways routinely
 // publish neither `context_length` in /v1/models nor any window in the
@@ -118,6 +122,31 @@ func ResolveContextWindow(model string, configured, providerTokens int, caps *ll
 		return ContextWindowResolution{Tokens: defaultRemoteContextWindow, Source: "fallback-remote"}
 	}
 	return ContextWindowResolution{}
+}
+
+// ResolveContextWindowWithRuntime uses the actual loaded instance capacity in
+// place of advertised catalog maxima. A smaller explicit budget still applies;
+// absent runtime metadata preserves the existing resolution cascade exactly.
+// The runtime lookup is memory-only and scoped to the endpoint and credential.
+func ResolveContextWindowWithRuntime(model string, configured, providerTokens int, caps *llm.CapabilityRegistry, learned *llm.LearnedLimits, baseURL, apiKey string) ContextWindowResolution {
+	if runtime := llm.ProviderRuntimeContext(baseURL, apiKey, model); runtime > 0 {
+		if configured > 0 && configured <= runtime {
+			return ContextWindowResolution{Tokens: configured, Source: "config"}
+		}
+		return ContextWindowResolution{Tokens: runtime, Source: "provider-runtime"}
+	}
+	return ResolveContextWindow(model, configured, providerTokens, caps, learned, baseURL)
+}
+
+// ClampContextWindowToRuntime bounds an explicit scoped model budget by the
+// actual loaded instance. It never caps a budget using a guessed fallback or a
+// catalog maximum and does not enlarge an already smaller explicit budget.
+func ClampContextWindowToRuntime(resolution ContextWindowResolution, baseURL, apiKey, model string) ContextWindowResolution {
+	if runtime := llm.ProviderRuntimeContext(baseURL, apiKey, model); runtime > 0 &&
+		(resolution.Tokens <= 0 || runtime < resolution.Tokens) {
+		return ContextWindowResolution{Tokens: runtime, Source: "provider-runtime"}
+	}
+	return resolution
 }
 
 // EstimateNextRequestTokens prices the complete prompt that is about to reach

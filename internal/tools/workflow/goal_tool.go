@@ -25,6 +25,7 @@ import (
 //	  "goal_id":  "...",            // optional, defaults to active
 //	  "task_seq": 2,                // for complete_task / skip_task
 //	  "title":    "do the thing",   // for set, add_task, decompose (input)
+//	  "titles":   ["first", "next"], // for add_task instead of title; 1-16 explicit tasks
 //	  "description": "background",  // optional for set
 //	  "success_criteria": "done",   // optional for set
 //	  "context":  "background...",  // for decompose
@@ -100,11 +101,12 @@ func (g *GoalTool) Spec() Tool {
 				"goal_id":  {"type": "string", "description": "Goal id (g-...). Defaults to the active goal."},
 				"task_seq": {"type": "integer", "description": "Task sequence number (1-based)."},
 				"scope": {"type": "string", "enum": ["project", "global"], "description": "Scope for set; default project."},
-				"title":    {"type": "string", "description": "For set / add_task / decompose input."},
+				"title": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "For set / decompose, or one add_task; use instead of titles."},
+				"titles": {"anyOf": [{"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 16}, {"type": "null"}], "description": "For add_task: explicit titles in order, added atomically. Use instead of title."},
 				"description": {"type": "string", "description": "Optional background for set."},
 				"success_criteria": {"type": "string", "description": "Optional definition of done for set."},
 				"context":  {"type": "string", "description": "Optional context for decompose."},
-				"text":     {"type": "string", "description": "Note body for add_note; concrete evidence for verify."},
+				"text":     {"type": "string", "description": "Required for verify: concrete evidence naming checks and results. Note body for add_note."},
 				"passed":   {"type": "boolean", "description": "Required for verify. True only when concrete checks satisfy the goal."}
 			},
 			"required": ["action"]
@@ -114,24 +116,29 @@ func (g *GoalTool) Spec() Tool {
 }
 
 type goalParams struct {
-	Action          string `json:"action"`
-	Scope           string `json:"scope,omitempty"`
-	GoalID          string `json:"goal_id,omitempty"`
-	TaskSeq         int    `json:"task_seq,omitempty"`
-	Title           string `json:"title,omitempty"`
-	Description     string `json:"description,omitempty"`
-	SuccessCriteria string `json:"success_criteria,omitempty"`
-	Context         string `json:"context,omitempty"`
-	Text            string `json:"text,omitempty"`
+	Action          string   `json:"action"`
+	Scope           string   `json:"scope,omitempty"`
+	GoalID          string   `json:"goal_id,omitempty"`
+	TaskSeq         int      `json:"task_seq,omitempty"`
+	Title           string   `json:"title,omitempty"`
+	Titles          []string `json:"titles,omitempty"`
+	Description     string   `json:"description,omitempty"`
+	SuccessCriteria string   `json:"success_criteria,omitempty"`
+	Context         string   `json:"context,omitempty"`
+	Text            string   `json:"text,omitempty"`
 	// Result/Evidence are input-only compatibility aliases. The advertised
 	// schema stays small and canonical (`text`), while local models that use a
 	// semantically equivalent field do not waste a repair inference.
-	Result   string `json:"result,omitempty"`
-	Evidence string `json:"evidence,omitempty"`
-	Passed   *bool  `json:"passed,omitempty"`
+	Result                        string `json:"result,omitempty"`
+	Evidence                      string `json:"evidence,omitempty"`
+	Passed                        *bool  `json:"passed,omitempty"`
+	titleProvided, titlesProvided bool
 }
 
 func (p goalParams) Validate() error {
+	if (p.titlesProvided || p.Titles != nil) && p.Action != "add_task" {
+		return fmt.Errorf("goal: titles is only supported for add_task")
+	}
 	switch p.Action {
 	case "show", "list", "tasks":
 		return nil
@@ -141,6 +148,12 @@ func (p goalParams) Validate() error {
 		}
 		return nil
 	case "add_task":
+		if p.titlesProvided || p.Titles != nil {
+			if p.titleProvided || p.Title != "" {
+				return fmt.Errorf("goal: add_task accepts title or titles, not both; nothing written")
+			}
+			return goal.ValidateTaskTitles(p.Titles)
+		}
 		if strings.TrimSpace(p.Title) == "" {
 			return fmt.Errorf("goal: add_task requires title")
 		}
@@ -157,6 +170,9 @@ func (p goalParams) Validate() error {
 		return nil
 	case "verify":
 		if p.Passed == nil {
+			if strings.TrimSpace(p.Text) == "" {
+				return fmt.Errorf("goal: verify requires passed and evidence in text")
+			}
 			return fmt.Errorf("goal: verify requires passed")
 		}
 		if strings.TrimSpace(p.Text) == "" {
@@ -188,6 +204,14 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("goal: bad args: %w", err)},
 			fmt.Errorf("goal: bad args: %w", err)
 	}
+	// Some strict-schema adapters fill unused optional fields with null.
+	// Only a non-null field is a supplied choice; title:"" still counts.
+	var fields struct{ Title, Titles json.RawMessage }
+	if err := json.Unmarshal(args, &fields); err != nil {
+		return Result{Err: fmt.Errorf("goal: bad args: %w", err)}, err
+	}
+	p.titleProvided = len(fields.Title) != 0 && strings.TrimSpace(string(fields.Title)) != "null"
+	p.titlesProvided = len(fields.Titles) != 0 && strings.TrimSpace(string(fields.Titles)) != "null"
 	p.GoalID = normalizeActiveGoalID(p.GoalID)
 	if p.GoalID != "" {
 		if active := g.Service.Active(); active != nil && strings.EqualFold(p.GoalID, strings.TrimSpace(active.Title)) {
@@ -225,6 +249,9 @@ func (g *GoalTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 	case "tasks":
 		return g.execTasks(ctx, p.GoalID)
 	case "add_task":
+		if p.titlesProvided {
+			return g.execAddTasks(ctx, p.GoalID, p.Titles)
+		}
 		return g.execAddTask(ctx, p.GoalID, p.Title)
 	case "start_task":
 		return g.execSetTaskStatus(ctx, p.GoalID, p.TaskSeq, goal.TaskInProgress)
@@ -339,6 +366,19 @@ func (g *GoalTool) execAddTask(ctx context.Context, id, title string) (Result, e
 		return Result{Err: err}, err
 	}
 	return Result{Text: fmt.Sprintf("added task %d: %s", t.Seq, t.Title)}, nil
+}
+
+func (g *GoalTool) execAddTasks(ctx context.Context, id string, titles []string) (Result, error) {
+	tasks, err := g.Service.AddTasks(ctx, id, titles)
+	if err != nil {
+		return Result{Err: err}, err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "added %d tasks:\n", len(tasks))
+	for _, task := range tasks {
+		fmt.Fprintf(&b, "  %d. %s\n", task.Seq, task.Title)
+	}
+	return Result{Text: b.String()}, nil
 }
 
 func (g *GoalTool) execSetTaskStatus(ctx context.Context, id string, seq int, status goal.Status) (Result, error) {

@@ -35,12 +35,14 @@ sections.settings = async function () {
   panelContent.appendChild(i18nEl("div", "note", "set.hint"));
   var wrap = el("div", "group");
   wrap.style.marginTop = "10px";
-  (got.knobs || []).forEach(function (k) { wrap.appendChild(knobRow(k)); });
+  (got.knobs || []).forEach(function (k) { wrap.appendChild(knobRow(k, got.cost_currencies)); });
   panelContent.appendChild(wrap);
   var reset = i18nEl("button", "btn danger", "set.resetAll");
   reset.addEventListener("click", async function () {
     await jpost("/api/config", { reset_all: true }).catch(function (e) { toast(e.message); });
     sections.settings();
+    renderStats();
+    refreshCostDetails();
   });
   panelContent.appendChild(reset);
   panelContent.appendChild(el("div", "note", " "));
@@ -62,8 +64,19 @@ function knobSourceLabel(k) {
   return t(key || "set.source." + k.source);
 }
 
-function knobRow(k) {
-  var row = el("div", "knob-row");
+function currencyDisplayNames() {
+  try {
+    if (typeof Intl.DisplayNames === "function") return new Intl.DisplayNames([ui.lang || "en"], {type: "currency"});
+  } catch (e) { /* Older browsers or unsupported locales retain the ISO code. */ }
+  return null;
+}
+function currencyOptionLabel(code, names) {
+  var label = names && names.of(code);
+  if (label && label !== code) return code + " · " + label;
+  return code;
+}
+function knobRow(k, currencyCodes) {
+  var row = el("div", "knob-row" + (k.kind === "currency" ? " knob-row-currency" : ""));
   var copy = settingCopy(k);
   var name = el("div", "k-name", copy[0]);
   name.title = "config.toml · " + k.key;
@@ -77,7 +90,10 @@ function knobRow(k) {
       title: t("sandbox.allowTitle"), danger: true, confirmLabel: t("dialog.confirm"),
     })) return;
     jpost("/api/config", { key: k.key, value: value })
-      .then(function () { sections.settings(); })
+      .then(function () {
+        sections.settings();
+        if (k.key === "cost_currency") { renderStats(); refreshCostDetails(); }
+      })
       .catch(function (e) { toast(e.message); });
   }
 
@@ -99,6 +115,21 @@ function knobRow(k) {
     });
     row.appendChild(el("span", "k-val", k.source === "default" ? knobDisplayValue(k) : ""));
     row.appendChild(seg);
+  } else if (k.kind === "currency") {
+    var currency = el("select", "field-select k-currency");
+    currency.setAttribute("aria-label", copy[0]);
+    var selected = k.raw || k.value || "USD";
+    var codes = Array.isArray(currencyCodes) ? currencyCodes.filter(function (code, index, values) {
+      return typeof code === "string" && /^[A-Z]{3}$/.test(code) && values.indexOf(code) === index;
+    }) : [];
+    if (codes.indexOf(selected) < 0) codes.push(selected);
+    var currencyNames = currencyDisplayNames();
+    codes.forEach(function (code) {
+      var option = el("option", "", currencyOptionLabel(code, currencyNames)); option.value = code; currency.appendChild(option);
+    });
+    currency.value = selected;
+    currency.addEventListener("change", function () { post(currency.value); });
+    row.appendChild(currency);
   } else if (k.key === "orchestrator_model") {
     // Compact model-palette-style picker — pick, never type a model id.
     var wrap = el("span", "k-edit-wrap");

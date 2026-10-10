@@ -27,7 +27,7 @@ type AgentTool struct {
 	Registry     *SubAgentRegistry
 	ParentLoop   *Loop // optional; used for context sharing and parent system prompt
 	BaseRegistry *tools.Registry
-	Provider     llm.Provider // passed to every child loop
+	Provider     llm.Provider // explicit/default child backend; same-parent construction inherits live swaps
 	Caps         *llm.CapabilityRegistry
 	NewLoop      LoopFactory
 	Workers      *WorkerRegistry
@@ -70,6 +70,9 @@ type AgentTool struct {
 	// the turn saving is largest: it skips the "where am I" discovery
 	// turns. Nil = no block (default, byte-identical behaviour).
 	Preflight func() string
+	// PreflightContext is the cancelable alternative used by application
+	// entry points. When set, it takes precedence over legacy Preflight.
+	PreflightContext func(context.Context) string
 
 	// DraftVerify configures the draft-verify ladder (config
 	// `draft_verify`). Nil or disabled = task delegation is byte-identical
@@ -78,6 +81,10 @@ type AgentTool struct {
 	// objective sieve runs and the coordinator's model issues a verdict on
 	// the diff + evidence (see draftverify.go).
 	DraftVerify *DraftVerifyConfig
+
+	// Only the constructor can opt into parent-provider inheritance. A distinct
+	// injected Provider and legacy struct literals retain their explicit backend.
+	inheritParentProvider bool
 
 	// A completed probe is cached; caller cancellation leaves it untested.
 	// Concurrent delegations share one probe and can cancel their own wait.
@@ -103,14 +110,15 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 		return nil, fmt.Errorf("agent.NewAgentTool: NewLoop factory is nil")
 	}
 	return &AgentTool{
-		Registry:       reg,
-		ParentLoop:     parent,
-		BaseRegistry:   base,
-		Provider:       provider,
-		Caps:           caps,
-		NewLoop:        factory,
-		Workers:        NewWorkerRegistry(),
-		TimeoutPerStep: 30 * time.Second,
+		Registry:              reg,
+		ParentLoop:            parent,
+		BaseRegistry:          base,
+		Provider:              provider,
+		Caps:                  caps,
+		NewLoop:               factory,
+		Workers:               NewWorkerRegistry(),
+		TimeoutPerStep:        30 * time.Second,
+		inheritParentProvider: parent != nil && sameProviderInstance(provider, parent.provider),
 	}, nil
 }
 

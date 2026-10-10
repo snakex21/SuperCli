@@ -8,6 +8,7 @@ import (
 func (c *chat) addDocument(text string) {
 	c.msgs = append(c.msgs, msg{role: roleDocument, text: text})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 func renderCommandDocument(text string, p Palette, width int) string {

@@ -3,6 +3,9 @@ function transcriptChecks({baseline}) {
       const referenceRender = new Function(baseline['03-markdown.js'] + ';return renderText;')();
       const normalized = node => {
         const clone = node.cloneNode(true);
+        // Copy controls were added after the parser reference commit. Compare
+        // canonical Markdown independently of this intentional UI addition.
+        clone.querySelectorAll("pre > button.code-copy").forEach(button => button.remove());
         clone.normalize();
         function tree(node) {
           if (node.nodeType === 3) return node.data;
@@ -10,9 +13,10 @@ function transcriptChecks({baseline}) {
         }
         return JSON.stringify(Array.from(clone.childNodes).filter(n => n.nodeType === 1 || (n.nodeType === 3 && n.data)).map(tree));
       };
-      const expected = text => {
-        const box = document.createElement('div'); box.innerHTML = referenceRender(text); return normalized(box);
+      const rendered = (render, text) => {
+        const box = document.createElement('div'); box.innerHTML = render(text); return normalized(box);
       };
+      const expected = text => rendered(referenceRender, text);
       function check(condition, message) {if (!condition) throw Error(message);}
       function paragraphPositions(node, text) {
         const box = document.createElement('div'); box.innerHTML = referenceRender(text);
@@ -47,7 +51,7 @@ function transcriptChecks({baseline}) {
         for (let i = 1; i <= sample.length; i++) {
           node._raw = sample.slice(0, i); renderAssistant(node);
           check(normalized(node) === expected(node._raw), 'Prefix parity at ' + i + ': ' + JSON.stringify(node._raw) + '\n' + normalized(node) + '\n' + expected(node._raw));
-          check(renderText(node._raw) === referenceRender(node._raw), 'Reference parser parity');
+          check(rendered(renderText, node._raw) === expected(node._raw), 'Reference parser parity');
           paragraphPositions(node, node._raw);
           prefixes++;
         }

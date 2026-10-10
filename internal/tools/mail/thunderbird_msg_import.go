@@ -84,6 +84,10 @@ func (b *thunderbirdBridgeState) handleMessageFile(w http.ResponseWriter, r *htt
 }
 
 func (t *ThunderbirdMail) importMSG(ctx context.Context, args thunderbirdToolArgs) (Result, error) {
+	return t.importMSGWithConverter(ctx, args, convertOutlookMSGToEML)
+}
+
+func (t *ThunderbirdMail) importMSGWithConverter(ctx context.Context, args thunderbirdToolArgs, convert func(context.Context, string, string) (msgConversionMeta, error)) (Result, error) {
 	source := strings.TrimSpace(args.Path)
 	if abs, err := filepath.Abs(source); err == nil {
 		source = abs
@@ -99,7 +103,7 @@ func (t *ThunderbirdMail) importMSG(ctx context.Context, args thunderbirdToolArg
 		return Result{Err: fmt.Errorf("thunderbird_mail: import_msg path is not a regular file: %s", source)}, nil
 	}
 
-	tmp, err := os.CreateTemp("", "supercli-msg-import-*.eml")
+	tmp, err := createThunderbirdMSGFile(t.dataDir)
 	if err != nil {
 		return Result{Err: fmt.Errorf("thunderbird_mail: cannot create temporary .eml: %w", err)}, nil
 	}
@@ -110,7 +114,7 @@ func (t *ThunderbirdMail) importMSG(ctx context.Context, args thunderbirdToolArg
 	}
 	defer os.Remove(tmpPath)
 
-	meta, err := convertOutlookMSGToEML(ctx, source, tmpPath)
+	meta, err := convert(ctx, source, tmpPath)
 	if err != nil {
 		return Result{Err: fmt.Errorf("thunderbird_mail: .msg -> .eml conversion failed: %w", err)}, nil
 	}

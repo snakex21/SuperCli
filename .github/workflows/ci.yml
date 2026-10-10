@@ -30,6 +30,7 @@ jobs:
           node-version: '22'
       - name: UI and documentation checks
         run: |
+          npm ci --ignore-scripts --no-audit --no-fund
           node scripts/test-ui.cjs
           node --test docs/readme/check.test.cjs
           node docs/readme/check.cjs

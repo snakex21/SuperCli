@@ -11,7 +11,7 @@ import (
 	"supercli/internal/system/stats"
 )
 
-func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
+func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
 	l.nativeReasoning = nil
 	// context_prepare part 2: provider message assembly (visible
 	// view, thin preamble placement, freshness stamp).
@@ -21,7 +21,7 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// check. Chat/advisor routes intentionally send a smaller history window;
 	// comparing that wire-only estimate with the full logical estimate on the
 	// next turn would manufacture a large delta that was never appended.
-	requestEstimate := messageEstimate + estimateRequestTokens(nil, toolDefs)
+	requestEstimate := messageEstimate + toolRequest.tokens
 	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
 	window := l.windowResolution()
 	hardThreshold := autoCompactThreshold(window.Tokens)
@@ -32,7 +32,7 @@ func (l *Loop) completeOnce(ctx context.Context, toolDefs []llm.ToolDef, out cha
 	// request serialization plus whatever the provider does before
 	// returning its delta channel.
 	encStart := time.Now()
-	stream, err := l.provider.Complete(ctx, msgs, toolDefs)
+	stream, err := l.provider.Complete(ctx, msgs, toolRequest.defs)
 	l.recordWallPhase(stats.PhaseRequestEncode, time.Since(encStart))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
@@ -235,8 +235,14 @@ func (l *Loop) trailingContext() string {
 // The shared tail is also priced by the context-window estimator.
 func (l *Loop) contextTail() string {
 	s := l.stampSection()
+	if completed := l.completedOps.context(); completed != "" {
+		s += "\n\n" + completed
+	}
 	if l.liveContext != "" {
 		s = l.liveContext + "\n\n" + s
+	}
+	if l.downloadExportContext != "" {
+		s += "\n\n" + l.downloadExportContext
 	}
 	if l.ultraworkMode {
 		s += ultrawork.SystemPromptSection()

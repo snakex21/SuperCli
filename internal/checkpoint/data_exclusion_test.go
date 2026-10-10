@@ -94,7 +94,9 @@ func TestReopenedCheckpointUpgradesLegacyDataExclusions(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Reproduce the old checkpoint index and stored records without changing user data.
-	legacy := &Manager{home: opened.home, repo: opened.repo, meta: opened.meta, excludes: ".git/\n.supercli/\ncheckpoints/\nsessions.db*\n*.db-wal\n*.db-shm\nportable-data/checkpoints/\n"}
+	// The usage ledger did not exist in this legacy version; keep current
+	// accounting writes out of this deliberately incomplete exclusion fixture.
+	legacy := &Manager{home: opened.home, repo: opened.repo, meta: opened.meta, excludes: ".git/\n.supercli/\ncheckpoints/\nsessions.db*\n*.db-wal\n*.db-shm\nportable-data/checkpoints/\n.checkpoint-store.lock\n.checkpoint-usage.json\n"}
 	turn := legacy.NewTurn("s", "old source edit")
 	if err := turn.ensureBefore(ctx); err != nil {
 		t.Fatal(err)

@@ -210,7 +210,7 @@ func TestCompactionStillPricesRequiredToolHistory(t *testing.T) {
 			case "outage":
 				l.persistHealth.outage = true
 			case "pending":
-				l.persistHealth.pending = []llm.Message{l.Messages[3]}
+				l.persistHealth.pending = []pendingAppend{{Message: l.Messages[3], Writer: l.writer}}
 			case "lost":
 				l.persistHealth.dropped = 1
 			case "native continuation":

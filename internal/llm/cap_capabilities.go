@@ -31,13 +31,16 @@ type ModelInfo struct {
 	Reasoning      bool `json:"reasoning"`
 	ReasoningKnown bool `json:"reasoning_known,omitempty"`
 	// ReasoningToggleOnly records native metadata advertising only on/off.
-	ReasoningToggleOnly bool      `json:"reasoning_toggle_only,omitempty"`
-	ContextLength       int       `json:"context_length,omitempty"`
-	InputCost           float64   `json:"input_cost,omitempty"`
-	OutputCost          float64   `json:"output_cost,omitempty"`
-	Notes               string    `json:"notes,omitempty"`
-	LastVerified        time.Time `json:"last_verified,omitempty"`
-	Source              Source    `json:"-"`
+	ReasoningToggleOnly bool `json:"reasoning_toggle_only,omitempty"`
+	ContextLength       int  `json:"context_length,omitempty"`
+	// RuntimeContextLength is the currently loaded instance's capacity, not
+	// the catalog maximum. Discovery refreshes it; catalogs must never persist it.
+	RuntimeContextLength int       `json:"-"`
+	InputCost            float64   `json:"input_cost,omitempty"`
+	OutputCost           float64   `json:"output_cost,omitempty"`
+	Notes                string    `json:"notes,omitempty"`
+	LastVerified         time.Time `json:"last_verified,omitempty"`
+	Source               Source    `json:"-"`
 }
 
 // ModelCapabilities is the small struct used by the

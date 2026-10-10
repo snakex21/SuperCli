@@ -1,9 +1,7 @@
 package webgui
 
 import (
-	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,59 +21,39 @@ func (s *Server) handleDocumentImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxLocalDocumentImportBytes+(1<<20))
-	if err := r.ParseMultipartForm(4 << 20); err != nil {
-		http.Error(w, "invalid document upload: "+err.Error(), http.StatusBadRequest)
+	upload, cleanup, err := stageMultipartUpload(r, s.eng.DataDir(), "document-import-*", maxLocalDocumentImportBytes, "file", "document", "files")
+	if err != nil {
+		http.Error(w, "invalid document upload: "+err.Error(), uploadErrorStatus(err))
 		return
 	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	header := firstUploadedDocument(r)
-	if header == nil {
-		http.Error(w, "no document uploaded", http.StatusBadRequest)
-		return
-	}
-	if header.Size <= 0 || header.Size > maxLocalDocumentImportBytes {
+	defer cleanup()
+	if upload.Size <= 0 {
 		http.Error(w, "document is empty or too large", http.StatusBadRequest)
 		return
 	}
-	ext := strings.ToLower(filepath.Ext(header.Filename))
+	ext := strings.ToLower(filepath.Ext(upload.Name))
 	if ext != ".docx" && ext != ".md" && ext != ".markdown" && ext != ".txt" {
 		http.Error(w, "supported document formats: DOCX, MD, TXT", http.StatusUnsupportedMediaType)
 		return
 	}
 
-	file, err := header.Open()
-	if err != nil {
-		http.Error(w, "open document: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
 	var text string
 	switch ext {
 	case ".docx":
-		tmp, err := os.CreateTemp("", "nestcafe-import-*.docx")
-		if err != nil {
-			http.Error(w, "prepare docx import: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		tmpPath := tmp.Name()
-		defer os.Remove(tmpPath)
-		written, copyErr := io.Copy(tmp, io.LimitReader(file, maxLocalDocumentImportBytes+1))
-		closeErr := tmp.Close()
-		if copyErr != nil || closeErr != nil || written > maxLocalDocumentImportBytes {
-			http.Error(w, "read docx: "+fmt.Sprint(errorsJoinNonNil(copyErr, closeErr)), http.StatusBadRequest)
-			return
-		}
-		text, err = office.ReadSimpleDocxMarkdown(tmpPath, maxLocalDocumentImportBytes)
+		text, err = office.ReadSimpleDocxMarkdown(upload.Path, maxLocalDocumentImportBytes)
 		if err != nil {
 			http.Error(w, "read docx: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	default:
-		data, err := io.ReadAll(io.LimitReader(file, maxLocalDocumentImportBytes+1))
-		if err != nil || len(data) > maxLocalDocumentImportBytes {
+		file, err := os.Open(upload.Path)
+		if err != nil {
+			http.Error(w, "open document: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, maxLocalDocumentImportBytes+1))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || len(data) > maxLocalDocumentImportBytes {
 			http.Error(w, "read text document", http.StatusBadRequest)
 			return
 		}
@@ -93,20 +71,8 @@ func (s *Server) handleDocumentImport(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"ok":            true,
-		"name":          filepath.Base(header.Filename),
+		"name":          filepath.Base(upload.Name),
 		"source_format": format,
 		"text":          text,
 	})
-}
-
-func firstUploadedDocument(r *http.Request) *multipart.FileHeader {
-	if r.MultipartForm == nil {
-		return nil
-	}
-	for _, key := range []string{"file", "document", "files"} {
-		if headers := r.MultipartForm.File[key]; len(headers) > 0 {
-			return headers[0]
-		}
-	}
-	return nil
 }

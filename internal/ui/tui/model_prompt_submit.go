@@ -68,7 +68,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 		visible += "\n\n" + attachmentDisplay(selected, m.language)
 	}
 	m.chat.addUser("> " + visible)
-	m.appendLineToTranscript("> " + visible)
+	m.markTranscriptPresent()
 	m.busy = true
 	m.submittingDraft = text
 	if m.drafts != nil {

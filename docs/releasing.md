@@ -3,18 +3,22 @@
 The canonical source version is `internal/buildinfo/version.go`. Validate the Go suite, UI suite and all README translations before packaging:
 
 ```text
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go vet ./...
 node scripts/test-ui.cjs
+node --test docs/readme/check.test.cjs
 node docs/readme/check.cjs
 ```
+
+Node dependencies are development-only DOM fixtures, pinned by `package-lock.json`. The packaged Go application does not require Node or these dependencies.
 
 Build both binaries into a clean `bin/` directory. For Windows:
 
 ```powershell
 go build -trimpath -buildvcs=false -o bin/supercli.exe ./cmd/supercli
 go build -trimpath -buildvcs=false -ldflags="-H=windowsgui" -o bin/supercli-web.exe ./cmd/supercli-web
-go run ./scripts/release -version 1.0.1 -os windows -arch amd64 -cli bin/supercli.exe -gui bin/supercli-web.exe -output dist
+go run ./scripts/release -version 1.0.5 -os windows -arch amd64 -cli bin/supercli.exe -gui bin/supercli-web.exe -output dist
 ```
 
 Use corresponding Linux binaries with `-os linux` and macOS binaries with `-os darwin`. Provide both `-arch amd64` and `-arch arm64` for Linux and macOS; Windows is packaged for amd64. On Linux/macOS the GUI uses a Chromium browser in app mode with a portable profile, or `--no-window` for the server only. Packaging fails if a ZIP already exists: use a fresh output directory. The tool includes only both executables, public documentation/license notices and the exact `supercli-data/skills/builtin-skills.zip` asset if present. It never copies settings, credentials, sessions, logs or the rest of `supercli-data/`.
@@ -22,7 +26,7 @@ Use corresponding Linux binaries with `-os linux` and macOS binaries with `-os d
 Combine all platform ZIPs into one folder and run:
 
 ```text
-go run ./scripts/release -manifest -version 1.0.1 -output dist
+go run ./scripts/release -manifest -version 1.0.5 -output dist
 ```
 
 Upload the ZIPs, `supercli-update.json` and `SHA256SUMS` together to a stable GitHub release. The manifest names each platform, file, exact byte size and SHA256 digest. A release without a matching verified bundle remains a manual update. The first 1.0.0 release must already include the manifest so later versions can use it consistently.

@@ -4,6 +4,7 @@
 package session
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -113,6 +114,8 @@ func (s *Store) migrate() error {
 			has_cached_input      INTEGER NOT NULL DEFAULT 0,
 			has_reasoning         INTEGER NOT NULL DEFAULT 0,
 			ttft_ms               INTEGER NOT NULL DEFAULT 0,
+			duration_ms           INTEGER NOT NULL DEFAULT 0,
+			has_timing            INTEGER NOT NULL DEFAULT 0,
 			prefill_evaluated_tokens INTEGER NOT NULL DEFAULT 0,
 			prefill_tokens_per_second REAL NOT NULL DEFAULT 0,
 			prefill_budget_tokens INTEGER NOT NULL DEFAULT 0,
@@ -160,6 +163,7 @@ func (s *Store) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, assistant_seq)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_turns_created ON session_turns(created_at)`,
 	}
+	stmts = append(stmts, billingSchemaStatements...)
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("exec %q: %w", firstLine(q), err)
@@ -181,6 +185,8 @@ func (s *Store) migrate() error {
 		def  string
 	}{
 		{"ttft_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"duration_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"has_timing", "INTEGER NOT NULL DEFAULT 0"},
 		{"prefill_evaluated_tokens", "INTEGER NOT NULL DEFAULT 0"},
 		{"prefill_tokens_per_second", "REAL NOT NULL DEFAULT 0"},
 		{"prefill_budget_tokens", "INTEGER NOT NULL DEFAULT 0"},
@@ -208,48 +214,27 @@ func (s *Store) migrate() error {
 		{"phases_json", "TEXT NOT NULL DEFAULT '{}'"},
 		{"file_changes_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"tool_diag_json", "TEXT NOT NULL DEFAULT ''"},
+		{"checkpoint_binding", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureTableColumn("session_turns", column.name, column.def); err != nil {
 			return err
 		}
 	}
-	// F13: FTS5 index on messages.content with porter stemming +
-	// diacritic folding. Triggers keep the index in sync. The
-	// 'rebuild' command backfills any rows that pre-existed.
-	// We check for the FTS table first so the migration is
-	// idempotent and self-healing for stores that predate F13.
-	var hasFTS int
-	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'`).Scan(&hasFTS); err != nil {
-		return fmt.Errorf("check fts: %w", err)
-	}
-	if hasFTS == 0 {
-		ftsStmts := []string{
-			// FTS5 stores its own copy of content (no
-			// content_rowid linkage — that path is broken
-			// in modernc.org/sqlite 1.52.0 and fails the
-			// 'delete' command with SQL logic error).
-			`CREATE VIRTUAL TABLE messages_fts USING fts5(
-				content,
-				tokenize = 'porter unicode61 remove_diacritics 2'
-			)`,
-			`CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
-				INSERT INTO messages_fts(rowid, content) VALUES (new.id, COALESCE(new.content, ''));
-			END`,
-			`CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
-				DELETE FROM messages_fts WHERE rowid = old.id;
-			END`,
-			`CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
-				DELETE FROM messages_fts WHERE rowid = old.id;
-				INSERT INTO messages_fts(rowid, content) VALUES (new.id, COALESCE(new.content, ''));
-			END`,
-		}
-		for _, q := range ftsStmts {
-			if _, err := s.db.Exec(q); err != nil {
-				return fmt.Errorf("exec %q: %w", firstLine(q), err)
-			}
+	for _, column := range []string{"ctx_tool_tokens", "has_context_estimate", "duration_ms", "ttft_ms", "has_timing"} {
+		if err := s.ensureTableColumn("billing_usage", column, "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
 		}
 	}
-	return nil
+	if err := s.migrateRawBillingUsage(context.Background()); err != nil {
+		return err
+	}
+	if err := s.migrateBillingUsageDetails(context.Background()); err != nil {
+		return err
+	}
+	if err := s.migrateLegacyBillingAggregates(context.Background()); err != nil {
+		return err
+	}
+	return s.ensureMessagesFTS()
 }
 
 func scanSession(row *sql.Row) (Session, error) {
@@ -290,7 +275,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 }
 
 func (s *Store) ensureTableColumn(table, name, definition string) error {
-	if table != "sessions" && table != "session_turns" && table != "session_usage" {
+	if table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" {
 		return fmt.Errorf("unsupported migration table %q", table)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)

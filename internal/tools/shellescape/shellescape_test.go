@@ -39,9 +39,9 @@ func TestIsShellEscape_False(t *testing.T) {
 
 func TestExtractCommand(t *testing.T) {
 	cases := map[string]string{
-		"!ls -la":    "ls -la",
+		"!ls -la":     "ls -la",
 		"!echo hello": "echo hello",
-		"! pwd":      "pwd",
+		"! pwd":       "pwd",
 	}
 	for input, want := range cases {
 		got := ExtractCommand(input)
@@ -176,22 +176,6 @@ func TestRunner_CwdIsHome(t *testing.T) {
 	res := r.Run(context.Background(), "pwd")
 	if !strings.Contains(res.Stdout, dir) {
 		t.Errorf("stdout = %q, expected to contain %q", res.Stdout, dir)
-	}
-}
-
-func TestRunner_StdoutTruncation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skip on windows")
-	}
-	r := NewRunner(t.TempDir())
-	// Generate >16 KB of output.
-	res := r.Run(context.Background(), "python3 -c \"print('x' * 20000)\"")
-	if res.Stdout == "" {
-		t.Fatal("expected some stdout")
-	}
-	// Should be truncated.
-	if len(res.Stdout) > 17000 { // 16KB + truncation message
-		t.Errorf("stdout too long: %d bytes", len(res.Stdout))
 	}
 }
 

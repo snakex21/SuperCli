@@ -127,42 +127,44 @@ func TestRunnerRetainsEvidenceBeforePreview(t *testing.T) {
 
 func TestRunnerBoundsInheritedOutputPipeWait(t *testing.T) {
 	for _, mode := range []string{"inherited", "inherited_failure"} {
-		t.Run(mode, func(t *testing.T) {
-			result, err := New(t.TempDir()).Run(context.Background(), &Request{
-				Command:  []string{os.Args[0], "-test.run=^TestCaptureHelper$"},
-				EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=" + mode}, TimeoutMS: 5000,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			pid, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
-			if err != nil {
-				t.Fatalf("descendant PID: %v; output=%q", err, result.Stdout)
-			}
-			if child, err := os.FindProcess(pid); err == nil {
-				defer child.Release()
-				defer child.Kill()
-			}
-			if mode == "inherited_failure" {
-				if result.ExitCode != 7 {
-					t.Fatalf("actual process failure lost: %+v", result)
-				}
-				return
-			}
-			if result.ExitCode != 0 || result.Error != "" {
-				t.Fatalf("completed launcher reported as failed: exit=%d error=%q", result.ExitCode, result.Error)
-			}
-			for _, body := range []string{result.SuccessPreview(), mustResultJSON(t, result)} {
-				var got map[string]any
-				if err := json.Unmarshal([]byte(body), &got); err != nil {
+		for _, timeout := range []int{5000, 500} {
+			t.Run(fmt.Sprintf("%s/timeout=%d", mode, timeout), func(t *testing.T) {
+				result, err := New(t.TempDir()).Run(context.Background(), &Request{
+					Command:  []string{os.Args[0], "-test.run=^TestCaptureHelper$"},
+					EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=" + mode}, TimeoutMS: timeout,
+				})
+				if err != nil {
 					t.Fatal(err)
 				}
-				warning, _ := got["output_warning"].(string)
-				if got["output_incomplete"] != true || !strings.Contains(warning, "incomplete") || !strings.Contains(warning, "descendant") || !strings.Contains(warning, "rerunning") {
-					t.Fatalf("missing incomplete capture / descendant status warning: %s", body)
+				pid, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
+				if err != nil {
+					t.Fatalf("descendant PID: %v; output=%q", err, result.Stdout)
 				}
-			}
-		})
+				if child, err := os.FindProcess(pid); err == nil {
+					defer child.Release()
+					defer child.Kill()
+				}
+				if mode == "inherited_failure" {
+					if result.ExitCode != 7 {
+						t.Fatalf("actual process failure lost: %+v", result)
+					}
+					return
+				}
+				if result.ExitCode != 0 || result.Error != "" {
+					t.Fatalf("completed launcher reported as failed: exit=%d error=%q", result.ExitCode, result.Error)
+				}
+				for _, body := range []string{result.SuccessPreview(), mustResultJSON(t, result)} {
+					var got map[string]any
+					if err := json.Unmarshal([]byte(body), &got); err != nil {
+						t.Fatal(err)
+					}
+					warning, _ := got["output_warning"].(string)
+					if got["output_incomplete"] != true || !strings.Contains(warning, "incomplete") || !strings.Contains(warning, "descendant") || !strings.Contains(warning, "rerunning") {
+						t.Fatalf("missing incomplete capture / descendant status warning: %s", body)
+					}
+				}
+			})
+		}
 	}
 }
 

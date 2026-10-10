@@ -1,6 +1,32 @@
 {
   "locales": {
-    "en": "English", "bg": "Български", "cs": "Čeština", "da": "Dansk", "de": "Deutsch", "el": "Ελληνικά", "es": "Español", "et": "Eesti", "fi": "Suomi", "fr": "Français", "hr": "Hrvatski", "hu": "Magyar", "it": "Italiano", "lt": "Lietuvių", "lv": "Latviešu", "nb": "Norsk bokmål", "nl": "Nederlands", "pl": "Polski", "pt-BR": "Português (Brasil)", "ro": "Română", "ru": "Русский", "sk": "Slovenčina", "sl": "Slovenščina", "sr-Latn": "Srpski (latinica)", "sv": "Svenska", "tr": "Türkçe", "uk": "Українська"
+    "en": "English",
+    "bg": "Български",
+    "cs": "Čeština",
+    "da": "Dansk",
+    "de": "Deutsch",
+    "el": "Ελληνικά",
+    "es": "Español",
+    "et": "Eesti",
+    "fi": "Suomi",
+    "fr": "Français",
+    "hr": "Hrvatski",
+    "hu": "Magyar",
+    "it": "Italiano",
+    "lt": "Lietuvių",
+    "lv": "Latviešu",
+    "nb": "Norsk bokmål",
+    "nl": "Nederlands",
+    "pl": "Polski",
+    "pt-BR": "Português (Brasil)",
+    "ro": "Română",
+    "ru": "Русский",
+    "sk": "Slovenčina",
+    "sl": "Slovenščina",
+    "sr-Latn": "Srpski (latinica)",
+    "sv": "Svenska",
+    "tr": "Türkçe",
+    "uk": "Українська"
   },
   "links": {
     "releases": "https://github.com/snakex21/SuperCli/releases",
@@ -8,91 +34,373 @@
     "guishot": "docs/screenshots/1.0.0/gui-en.jpg",
     "tuishot": "docs/screenshots/1.0.0/tui-actions-en.jpg",
     "gallery": "docs/screenshots/1.0.0/README.md",
-    "index": "docs/README.md", "quickstart": "docs/quickstart.md", "data": "docs/data-layout.md", "config": "docs/configuration.md", "architecture": "docs/architecture.md", "delegation": "docs/delegation.md", "performance": "docs/performance.md", "webgui": "docs/webgui.md", "structure": "docs/project-structure.md", "mcp": "docs/portable-mcp.md", "skills": "docs/builtin-skills.md", "telemetry": "docs/telemetry.md", "plan": "docs/PLAN.md", "roadmap": "docs/ROADMAP.md", "reference": "docs/readme-reference.md", "license": "LICENSE", "notices": "THIRD_PARTY_NOTICES.md"
+    "index": "docs/README.md",
+    "quickstart": "docs/quickstart.md",
+    "data": "docs/data-layout.md",
+    "config": "docs/configuration.md",
+    "architecture": "docs/architecture.md",
+    "delegation": "docs/delegation.md",
+    "performance": "docs/performance.md",
+    "webgui": "docs/webgui.md",
+    "structure": "docs/project-structure.md",
+    "mcp": "docs/portable-mcp.md",
+    "skills": "docs/builtin-skills.md",
+    "telemetry": "docs/telemetry.md",
+    "plan": "docs/PLAN.md",
+    "roadmap": "docs/ROADMAP.md",
+    "reference": "docs/readme-reference.md",
+    "license": "LICENSE",
+    "notices": "THIRD_PARTY_NOTICES.md"
   },
   "text": [
-    ["intro", "A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine."],
-    ["status", "This README describes version `1.0.3`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."],
-    ["h.screenshots", "Screenshots"],
-    ["screenshot.gui", "![SuperCli web interface (GUI)]({guishot})"],
-    ["screenshot.tui", "![SuperCli terminal action centre (TUI)]({tuishot})"],
-    ["screenshots.more", "The GUI image is a screenshot; the TUI image is a rendering of the application's actual terminal layout. [More screenshots]({gallery})."],
-    ["h.start", "Get started"],
-    ["start", "Extract the bundle for your operating system and architecture into a writable folder. On Windows, launch `supercli.exe` for the terminal or `supercli-web.exe` for the GUI. Keep the included `supercli-data/` folder beside the executables."],
-    ["start.other", "On Linux or macOS, use the corresponding executable from the bundle or build from source. Select your project with `--home`; use `--batch` for one prompt without the TUI."],
-    ["h.data", "Portable data"],
-    ["data", "Settings, sessions, memory, credentials, caches, logs, and backups live in `supercli-data/` beside the application. Move the whole application folder to carry them with you. The application does not use `%APPDATA%`, `%LOCALAPPDATA%`, or the Windows registry for its state."],
-    ["workspace", "`--home` and `SUPERCLI_HOME` select the workspace without moving application data. Project overrides and workspace artifacts use `<project>/.supercli/`."],
-    ["override", "Only an explicit `--data-dir` or `SUPERCLI_DATA_DIR` overrides the data location. If the application folder is unwritable, startup reports an error instead of silently using a profile directory."],
-    ["legacy", "The terminal can copy legacy `~/.supercli` data into an empty portable directory on first start, retaining the original. See [data layout]({data})."],
-    ["secrets", "Credentials travel with the portable folder. Keep that folder private, back it up, and never commit API keys or authentication files to a public repository."],
-    ["h.config", "Models and configuration"],
-    ["providers", "Configure providers through the GUI settings or TUI `/providers` and `/models`. Supported connections include OpenAI-compatible endpoints, native Anthropic, ChatGPT/Codex OAuth, opencode gateways, and an offline echo provider."],
-    ["config", "Global settings are in `supercli-data/config.toml`; `<project>/.supercli/config.toml` can override them. Environment variables and CLI flags take precedence. An example local endpoint:"],
-    ["config.note", "Replace the example endpoint and model with your server's values. Cloud services may require credentials and charge for usage. Model capabilities determine vision, tools, reasoning, and context limits. See [configuration]({config})."],
-    ["h.features", "Features"],
-    ["surface", "GUI and TUI support the same 27 interface languages. They provide streaming conversations, session recovery, project selection, model management, attachments, and usage views. The TUI supports mouse scrolling, transcript search, and collapsible thinking/tool output."],
-    ["agent", "The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models."],
-    ["tools", "Tools cover code search, targeted file reads and patches, images, ZIP archives, DOCX/XLSX/PDF documents, and bounded context execution. Available tools depend on the selected profile and model; use tool discovery for the current catalog."],
-    ["extensions", "Optional MCP packages live in `supercli-data/mcp/` and start when used. The built-in skills archive lives in `supercli-data/skills/builtin-skills.zip`; missing it does not prevent normal startup. Extensions may need their own runtimes or installed host applications."],
-    ["optional", "Darwin candidate generation, councils, and worker delegation are optional workflows. Parallel model calls can increase resource use and cost. The core executable does not require Node, Python, Docker, or CGO."],
-    ["h.controls", "Commands and controls"],
-    ["controls", "Type `/` for the command palette. Open the TUI action centre with `Tab` on empty input or `Ctrl+K`; use arrows to select actions and `Esc` to return."],
-    ["table.command", "Command"],
-    ["table.action", "Action"],
-    ["cmd.help", "Show help and diagnostics."],
-    ["cmd.models", "Choose models and manage providers."],
-    ["cmd.sessions", "Resume or export a conversation."],
-    ["cmd.context", "Inspect usage or compact context."],
-    ["cmd.goal", "Manage goals and read-only plan mode."],
-    ["cmd.diff", "Inspect changes or undo/redo an agent turn."],
-    ["cmd.parallel", "Use optional multi-model workflows."],
-    ["cmd.update", "Check, download, or explicitly install an update."],
-    ["cmd.quit", "Exit the application."],
-    ["keys", "`Enter` sends a prompt; `Ctrl+C` interrupts. `PgUp`/`PgDn` and the mouse wheel scroll; `Ctrl+F` searches; `Shift+T` toggles thinking; `Shift+E` expands tool output. Prompts entered during a run are queued for a safe next step."],
-    ["h.updates", "Updates"],
-    ["update.check", "Check stable GitHub releases on demand from the GUI About screen, TUI `/update check`, or CLI `--check-update`. Checking does not install anything."],
-    ["update.download", "Download stages the matching portable bundle and verifies its SHA256 against the release manifest. GUI download and `/update download` leave the running installation in place."],
-    ["update.install", "Use the GUI install button or `/update install` to install the staged update. CLI `--update` explicitly requests download and installation. Existing `supercli-data/` is preserved, and replaced executables are backed up locally."],
-    ["update.restart", "Restart manually after installation. Close other copies before installing; running executables may be locked on Windows. If a matching bundle or verification metadata is unavailable, use a verified manual release download. Keep your own data backup."],
-    ["h.docs", "Documentation"],
-    ["docs.start", "Begin with the [documentation index]({index}), [quick start]({quickstart}), [data layout]({data}), and [configuration]({config})."],
-    ["docs.engine", "Read [architecture]({architecture}), [delegation]({delegation}), [performance]({performance}), [GUI design]({webgui}), and [project structure]({structure}) for implementation details."],
-    ["docs.extra", "Feature guides: [portable MCP]({mcp}), [built-in skills]({skills}), and [telemetry]({telemetry}). Development tracking: [plan]({plan}) and [roadmap]({roadmap})."],
-    ["reference", "The [previous full README]({reference}) is retained as a historical reference; older feature descriptions may predate version `1.0.0`."],
-    ["h.build", "Build and verify"],
-    ["build", "Use the Go version specified in `go.mod`. On Windows, `build.bat` builds the TUI, `build_ui.bat` builds the GUI, and `run.bat` builds if needed and starts the terminal."],
-    ["tests", "Run the Go tests before a release. The documentation checker verifies all 27 translations, mapped content, headings, links, technical literals, and identical code examples."],
-    ["requirements", "Normal use requires a configured model endpoint or account. Git and ripgrep improve repository workflows; external tools are optional unless a workflow needs them. The GUI additionally requires its platform's webview/browser support. Use `--doctor` to diagnose your installation."],
-    ["h.license", "License"],
-    ["license", "SuperCli uses the [MIT License]({license}). Bundled dependencies and content have their own notices; see [third-party notices]({notices}) and the [skills guide]({skills})."]
+    [
+      "intro",
+      "A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine."
+    ],
+    [
+      "status",
+      "This README describes version `1.0.5`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
+    ],
+    [
+      "h.screenshots",
+      "Screenshots"
+    ],
+    [
+      "screenshot.gui",
+      "![SuperCli web interface (GUI)]({guishot})"
+    ],
+    [
+      "screenshot.tui",
+      "![SuperCli terminal action centre (TUI)]({tuishot})"
+    ],
+    [
+      "screenshots.more",
+      "The GUI image is a screenshot; the TUI image is a rendering of the application's actual terminal layout. [More screenshots]({gallery})."
+    ],
+    [
+      "h.start",
+      "Get started"
+    ],
+    [
+      "start",
+      "Extract the bundle for your operating system and architecture into a writable folder. On Windows, launch `supercli.exe` for the terminal or `supercli-web.exe` for the GUI. Keep the included `supercli-data/` folder beside the executables."
+    ],
+    [
+      "start.other",
+      "On Linux or macOS, use the corresponding executable from the bundle or build from source. Select your project with `--home`; use `--batch` for one prompt without the TUI."
+    ],
+    [
+      "h.data",
+      "Portable data"
+    ],
+    [
+      "data",
+      "Settings, sessions, memory, credentials, caches, logs, and backups live in `supercli-data/` beside the application. Move the whole application folder to carry them with you. The application does not use `%APPDATA%`, `%LOCALAPPDATA%`, or the Windows registry for its state."
+    ],
+    [
+      "workspace",
+      "`--home` and `SUPERCLI_HOME` select the workspace without moving application data. Project overrides and workspace artifacts use `<project>/.supercli/`."
+    ],
+    [
+      "override",
+      "Only an explicit `--data-dir` or `SUPERCLI_DATA_DIR` overrides the data location. If the application folder is unwritable, startup reports an error instead of silently using a profile directory."
+    ],
+    [
+      "legacy",
+      "The terminal can copy legacy `~/.supercli` data into an empty portable directory on first start, retaining the original. See [data layout]({data})."
+    ],
+    [
+      "secrets",
+      "Credentials travel with the portable folder. Keep that folder private, back it up, and never commit API keys or authentication files to a public repository."
+    ],
+    [
+      "h.config",
+      "Models and configuration"
+    ],
+    [
+      "providers",
+      "Configure providers through the GUI settings or TUI `/providers` and `/models`. Supported connections include OpenAI-compatible endpoints, native Anthropic, ChatGPT/Codex OAuth, opencode gateways, and an offline echo provider."
+    ],
+    [
+      "config",
+      "Global settings are in `supercli-data/config.toml`; `<project>/.supercli/config.toml` can override them. Environment variables and CLI flags take precedence. An example local endpoint:"
+    ],
+    [
+      "config.note",
+      "Replace the example endpoint and model with your server's values. Cloud services may require credentials and charge for usage. Model capabilities determine vision, tools, reasoning, and context limits. See [configuration]({config})."
+    ],
+    [
+      "h.features",
+      "Features"
+    ],
+    [
+      "surface",
+      "GUI and TUI support the same 27 interface languages. They provide streaming conversations, session recovery, project selection, model management, attachments, and usage views. The TUI supports mouse scrolling, transcript search, and collapsible thinking/tool output."
+    ],
+    [
+      "agent",
+      "The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models."
+    ],
+    [
+      "tools",
+      "Tools cover code search, targeted file reads and patches, images, ZIP archives, DOCX/XLSX/PDF documents, and bounded context execution. Available tools depend on the selected profile and model; use tool discovery for the current catalog."
+    ],
+    [
+      "extensions",
+      "Optional MCP packages live in `supercli-data/mcp/` and start when used. The built-in skills archive lives in `supercli-data/skills/builtin-skills.zip`; missing it does not prevent normal startup. Extensions may need their own runtimes or installed host applications."
+    ],
+    [
+      "optional",
+      "Darwin candidate generation, councils, and worker delegation are optional workflows. Parallel model calls can increase resource use and cost. The core executable does not require Node, Python, Docker, or CGO."
+    ],
+    [
+      "h.controls",
+      "Commands and controls"
+    ],
+    [
+      "controls",
+      "Type `/` for the command palette. Open the TUI action centre with `Tab` on empty input or `Ctrl+K`; use arrows to select actions and `Esc` to return."
+    ],
+    [
+      "table.command",
+      "Command"
+    ],
+    [
+      "table.action",
+      "Action"
+    ],
+    [
+      "cmd.help",
+      "Show help and diagnostics."
+    ],
+    [
+      "cmd.models",
+      "Choose models and manage providers."
+    ],
+    [
+      "cmd.sessions",
+      "Resume or export a conversation."
+    ],
+    [
+      "cmd.context",
+      "Inspect usage or compact context."
+    ],
+    [
+      "cmd.goal",
+      "Manage goals and read-only plan mode."
+    ],
+    [
+      "cmd.diff",
+      "Inspect changes or undo/redo an agent turn."
+    ],
+    [
+      "cmd.parallel",
+      "Use optional multi-model workflows."
+    ],
+    [
+      "cmd.update",
+      "Check, download, or explicitly install an update."
+    ],
+    [
+      "cmd.quit",
+      "Exit the application."
+    ],
+    [
+      "keys",
+      "`Enter` sends a prompt; `Ctrl+C` interrupts. `PgUp`/`PgDn` and the mouse wheel scroll; `Ctrl+F` searches; `Shift+T` toggles thinking; `Shift+E` expands tool output. Prompts entered during a run are queued for a safe next step."
+    ],
+    [
+      "h.updates",
+      "Updates"
+    ],
+    [
+      "update.check",
+      "Check stable GitHub releases on demand from the GUI About screen, TUI `/update check`, or CLI `--check-update`. Checking does not install anything."
+    ],
+    [
+      "update.download",
+      "Download stages the matching portable bundle and verifies its SHA256 against the release manifest. GUI download and `/update download` leave the running installation in place."
+    ],
+    [
+      "update.install",
+      "Use the GUI install button or `/update install` to install the staged update. CLI `--update` explicitly requests download and installation. Existing `supercli-data/` is preserved, and replaced executables are backed up locally."
+    ],
+    [
+      "update.restart",
+      "Restart manually after installation. Close other copies before installing; running executables may be locked on Windows. If a matching bundle or verification metadata is unavailable, use a verified manual release download. Keep your own data backup."
+    ],
+    [
+      "h.docs",
+      "Documentation"
+    ],
+    [
+      "docs.start",
+      "Begin with the [documentation index]({index}), [quick start]({quickstart}), [data layout]({data}), and [configuration]({config})."
+    ],
+    [
+      "docs.engine",
+      "Read [architecture]({architecture}), [delegation]({delegation}), [performance]({performance}), [GUI design]({webgui}), and [project structure]({structure}) for implementation details."
+    ],
+    [
+      "docs.extra",
+      "Feature guides: [portable MCP]({mcp}), [built-in skills]({skills}), and [telemetry]({telemetry}). Development tracking: [plan]({plan}) and [roadmap]({roadmap})."
+    ],
+    [
+      "reference",
+      "The [previous full README]({reference}) is retained as a historical reference; older feature descriptions may predate version `1.0.0`."
+    ],
+    [
+      "h.build",
+      "Build and verify"
+    ],
+    [
+      "build",
+      "Use the Go version specified in `go.mod`. On Windows, `build.bat` builds the TUI, `build_ui.bat` builds the GUI, and `run.bat` builds if needed and starts the terminal."
+    ],
+    [
+      "tests",
+      "Run the Go tests before a release. The documentation checker verifies all 27 translations, mapped content, headings, links, technical literals, and identical code examples."
+    ],
+    [
+      "requirements",
+      "Normal use requires a configured model endpoint or account. Git and ripgrep improve repository workflows; external tools are optional unless a workflow needs them. The GUI additionally requires its platform's webview/browser support. Use `--doctor` to diagnose your installation."
+    ],
+    [
+      "h.license",
+      "License"
+    ],
+    [
+      "license",
+      "SuperCli uses the [MIT License]({license}). Bundled dependencies and content have their own notices; see [third-party notices]({notices}) and the [skills guide]({skills})."
+    ]
   ],
   "blocks": [
-    {"type":"title", "text":"SuperCli 1.0.3"},
-    "intro", "status", "h.screenshots", "screenshot.gui", "screenshot.tui", "screenshots.more", "h.start", "start",
-    {"type":"code","lang":"powershell","text":".\\supercli.exe\n.\\supercli-web.exe\n.\\supercli.exe --home \"D:\\projects\\example\"\n.\\supercli.exe --batch \"Summarize this project\"\n.\\supercli.exe --doctor"},
+    {
+      "type": "title",
+      "text": "SuperCli 1.0.5"
+    },
+    "intro",
+    "status",
+    "h.screenshots",
+    "screenshot.gui",
+    "screenshot.tui",
+    "screenshots.more",
+    "h.start",
+    "start",
+    {
+      "type": "code",
+      "lang": "powershell",
+      "text": ".\\supercli.exe\n.\\supercli-web.exe\n.\\supercli.exe --home \"D:\\projects\\example\"\n.\\supercli.exe --batch \"Summarize this project\"\n.\\supercli.exe --doctor"
+    },
     "start.other",
-    {"type":"code","lang":"bash","text":"./supercli --home ./my-project\n./supercli --batch \"Summarize this project\"\n./supercli --doctor"},
-    "h.data", "data", "workspace", "override", "legacy", "secrets", "h.config", "providers", "config",
-    {"type":"code","lang":"toml","text":"default_provider = \"local\"\ndefault_model = \"qwen\"\nlanguage = \"en\"\n\n[[providers]]\nname = \"local\"\ntype = \"openai\"\nbase_url = \"http://localhost:1234/v1\"\napi_key = \"lm-studio\"\nmodel = \"qwen\""},
-    "config.note", "h.features", "surface", "agent", "tools", "extensions", "optional", "h.controls", "controls",
-    {"type":"table","headers":["table.command","table.action"],"rows":[
-      ["`/help`, `/doctor`", "cmd.help"],
-      ["`/model`, `/models`, `/providers`", "cmd.models"],
-      ["`/resume`, `/export`", "cmd.sessions"],
-      ["`/status`, `/cost`, `/compact`", "cmd.context"],
-      ["`/goal`, `/plan`", "cmd.goal"],
-      ["`/diff`, `/undo`, `/redo`", "cmd.diff"],
-      ["`/darwin`, `/council`", "cmd.parallel"],
-      ["`/update check|download|install`", "cmd.update"],
-      ["`/quit`, `/exit`", "cmd.quit"]
-    ]},
-    "keys", "h.updates", "update.check", "update.download", "update.install", "update.restart",
-    {"type":"code","lang":"powershell","text":".\\supercli.exe --check-update\n.\\supercli.exe --update"},
-    "h.docs", "docs.start", "docs.engine", "docs.extra", "reference", "h.build", "build",
-    {"type":"reference","key":"releasing"},
-    {"type":"code","lang":"bash","text":"go test ./...\ngo build -o supercli ./cmd/supercli\ngo build -o supercli-web ./cmd/supercli-web\nnode docs/readme/check.cjs"},
-    {"type":"code","lang":"powershell","text":"go test ./...\ngo build -o supercli.exe ./cmd/supercli\ngo build -ldflags=\"-H windowsgui\" -o supercli-web.exe ./cmd/supercli-web\nnode docs/readme/check.cjs"},
-    "tests", "requirements", "h.license", "license"
+    {
+      "type": "code",
+      "lang": "bash",
+      "text": "./supercli --home ./my-project\n./supercli --batch \"Summarize this project\"\n./supercli --doctor"
+    },
+    "h.data",
+    "data",
+    "workspace",
+    "override",
+    "legacy",
+    "secrets",
+    "h.config",
+    "providers",
+    "config",
+    {
+      "type": "code",
+      "lang": "toml",
+      "text": "default_provider = \"local\"\ndefault_model = \"qwen\"\nlanguage = \"en\"\n\n[[providers]]\nname = \"local\"\ntype = \"openai\"\nbase_url = \"http://localhost:1234/v1\"\napi_key = \"lm-studio\"\nmodel = \"qwen\""
+    },
+    "config.note",
+    "h.features",
+    "surface",
+    "agent",
+    "tools",
+    "extensions",
+    "optional",
+    "h.controls",
+    "controls",
+    {
+      "type": "table",
+      "headers": [
+        "table.command",
+        "table.action"
+      ],
+      "rows": [
+        [
+          "`/help`, `/doctor`",
+          "cmd.help"
+        ],
+        [
+          "`/model`, `/models`, `/providers`",
+          "cmd.models"
+        ],
+        [
+          "`/resume`, `/export`",
+          "cmd.sessions"
+        ],
+        [
+          "`/status`, `/cost`, `/compact`",
+          "cmd.context"
+        ],
+        [
+          "`/goal`, `/plan`",
+          "cmd.goal"
+        ],
+        [
+          "`/diff`, `/undo`, `/redo`",
+          "cmd.diff"
+        ],
+        [
+          "`/darwin`, `/council`",
+          "cmd.parallel"
+        ],
+        [
+          "`/update check|download|install`",
+          "cmd.update"
+        ],
+        [
+          "`/quit`, `/exit`",
+          "cmd.quit"
+        ]
+      ]
+    },
+    "keys",
+    "h.updates",
+    "update.check",
+    "update.download",
+    "update.install",
+    "update.restart",
+    {
+      "type": "code",
+      "lang": "powershell",
+      "text": ".\\supercli.exe --check-update\n.\\supercli.exe --update"
+    },
+    "h.docs",
+    "docs.start",
+    "docs.engine",
+    "docs.extra",
+    "reference",
+    "h.build",
+    "build",
+    {
+      "type": "reference",
+      "key": "releasing"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "text": "npm ci --ignore-scripts --no-audit --no-fund\ngo test ./...\ngo build -o supercli ./cmd/supercli\ngo build -o supercli-web ./cmd/supercli-web\nnode docs/readme/check.cjs"
+    },
+    {
+      "type": "code",
+      "lang": "powershell",
+      "text": "npm ci --ignore-scripts --no-audit --no-fund\ngo test ./...\ngo build -o supercli.exe ./cmd/supercli\ngo build -ldflags=\"-H windowsgui\" -o supercli-web.exe ./cmd/supercli-web\nnode docs/readme/check.cjs"
+    },
+    "tests",
+    "requirements",
+    "h.license",
+    "license"
   ]
 }

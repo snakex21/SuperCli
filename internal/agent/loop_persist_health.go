@@ -18,6 +18,13 @@ import (
 // recovery.
 const persistPendingMax = 64
 
+// A failed append keeps its original invocation writer. Rotating the Loop's
+// current writer must not attribute an old prompt to the next invocation.
+type pendingAppend struct {
+	Message llm.Message
+	Writer  SessionWriter
+}
+
 // persistHealth tracks the reliability of session writes. Session
 // persistence is best-effort by design (a failed write must never
 // abort inference), but failures used to be swallowed silently:
@@ -56,7 +63,7 @@ type persistHealth struct {
 	// pending holds messages whose append failed, in order.
 	// They are retried before the next append so a late
 	// recovery leaves no hole in the on-disk history.
-	pending []llm.Message
+	pending []pendingAppend
 	// dropped counts messages evicted from a full pending
 	// buffer — real, unrecoverable history loss.
 	dropped int
@@ -138,7 +145,7 @@ func (h *persistHealth) noteFailureLocked(op string, err error) string {
 // Unwritten messages stay intact; an empty queue owns no obsolete backing array.
 // Caller holds h.mu and guarantees the queue is non-empty.
 func (h *persistHealth) dequeueLocked() {
-	h.pending[0] = llm.Message{}
+	h.pending[0] = pendingAppend{}
 	h.pending = h.pending[1:]
 	if len(h.pending) == 0 {
 		h.pending = nil
@@ -147,12 +154,12 @@ func (h *persistHealth) dequeueLocked() {
 
 // enqueueLocked buffers a message whose append failed, evicting
 // the oldest entry when the buffer is full. Caller holds h.mu.
-func (h *persistHealth) enqueueLocked(msg llm.Message) {
+func (h *persistHealth) enqueueLocked(msg llm.Message, writer SessionWriter) {
 	if len(h.pending) >= persistPendingMax {
 		h.dequeueLocked()
 		h.dropped++
 	}
-	h.pending = append(h.pending, msg)
+	h.pending = append(h.pending, pendingAppend{Message: msg, Writer: writer})
 }
 
 // persistAppend writes msg via the session writer, first flushing
@@ -160,21 +167,22 @@ func (h *persistHealth) enqueueLocked(msg llm.Message) {
 // a recovered store ends up with a hole-free history). On failure
 // the message joins the retry buffer and the failure is recorded;
 // inference is never interrupted. Caller guarantees l.writer != nil.
-func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) {
+func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) bool {
 	h := &l.persistHealth
 	h.mu.Lock()
 
 	// Retry earlier failures first to preserve on-disk order.
 	for len(h.pending) > 0 {
-		if err := l.writer.AppendMessage(ctx, h.pending[0]); err != nil {
+		pending := h.pending[0]
+		if err := pending.Writer.AppendMessage(ctx, pending.Message); err != nil {
 			// Still broken: the current message queues up
 			// behind the backlog.
 			h.outage = true
 			warn := h.noteFailureLocked("append", err)
-			h.enqueueLocked(msg)
+			h.enqueueLocked(msg, l.writer)
 			h.mu.Unlock()
 			l.persistNotify(warn)
-			return
+			return false
 		}
 		h.dequeueLocked()
 	}
@@ -182,10 +190,10 @@ func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) {
 	if err := l.writer.AppendMessage(ctx, msg); err != nil {
 		h.outage = true
 		warn := h.noteFailureLocked("append", err)
-		h.enqueueLocked(msg)
+		h.enqueueLocked(msg, l.writer)
 		h.mu.Unlock()
 		l.persistNotify(warn)
-		return
+		return false
 	}
 
 	// Success. If we were in an outage, report recovery once.
@@ -201,15 +209,13 @@ func (l *Loop) persistAppend(ctx context.Context, msg llm.Message) {
 	}
 	h.mu.Unlock()
 	l.persistNotify(recovered)
+	return true
 }
 
 // retryPendingAppends finishes already-collected history during Run shutdown.
 // One bounded, uncancelled context covers the whole batch. It never adds a dummy
 // message, never requeues an already-buffered item, and preserves append order.
 func (l *Loop) retryPendingAppends(ctx context.Context) {
-	if l.writer == nil {
-		return
-	}
 	h := &l.persistHealth
 	h.mu.Lock()
 	if len(h.pending) == 0 {
@@ -217,7 +223,8 @@ func (l *Loop) retryPendingAppends(ctx context.Context) {
 		return
 	}
 	for len(h.pending) > 0 {
-		if err := l.writer.AppendMessage(ctx, h.pending[0]); err != nil {
+		pending := h.pending[0]
+		if err := pending.Writer.AppendMessage(ctx, pending.Message); err != nil {
 			h.outage = true
 			warn := h.noteFailureLocked("append", err)
 			h.mu.Unlock()

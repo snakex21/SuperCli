@@ -70,7 +70,23 @@ func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- 
 		l.lastCallGeneration = time.Since(firstDelta)
 		l.recordWallPhase(stats.PhaseStreamTotal, l.lastCallGeneration)
 	}()
-	for d := range stream {
+streamLoop:
+	for {
+		var d llm.Delta
+		select {
+		case <-ctx.Done():
+			closeReasoning()
+			return transcript.String(), toolCalls, usage, ctx.Err()
+		case next, ok := <-stream:
+			if !ok {
+				if err := ctx.Err(); err != nil {
+					closeReasoning()
+					return transcript.String(), toolCalls, usage, err
+				}
+				break streamLoop
+			}
+			d = next
+		}
 		// Role, usage, retry notices and terminal frames are not generated
 		// output and must not make a long backend wait look instant.
 		modelOutput := d.HasModelOutput()

@@ -21,20 +21,36 @@ func (l *Loop) usesRequestedToolContext() bool {
 
 func (l *Loop) requestedToolDefinitions() []llm.ToolDef {
 	var defs []llm.ToolDef
+	appendRegistered := func(name string) {
+		if l.registry == nil {
+			return
+		}
+		for _, def := range defs {
+			if def.Name == name {
+				return
+			}
+		}
+		if tool, ok := l.registry.Get(name); ok {
+			defs = append(defs, llm.ToolDef{Name: tool.Name, Description: tool.Description, Schema: tool.Schema})
+		}
+	}
 	for _, requested := range []struct {
 		enabled bool
 		name    string
 	}{
 		{l.screenshotForRun, "send_screenshot"},
+		{l.downloadForRun, "web_download"},
+		{l.downloadPageForRun, "web_fetch"},
 		{l.headlessForRun, "headless_control"},
 		{l.headlessForRun || l.screenshotForRun, "process_session"},
 	} {
 		if !requested.enabled {
 			continue
 		}
-		if tool, ok := l.registry.Get(requested.name); ok {
-			defs = append(defs, llm.ToolDef{Name: tool.Name, Description: tool.Description, Schema: tool.Schema})
-		}
+		appendRegistered(requested.name)
+	}
+	for _, name := range l.workflowTools {
+		appendRegistered(name)
 	}
 	return defs
 }
@@ -46,6 +62,14 @@ func (l *Loop) requestedToolContext() string {
 		return ""
 	}
 	defs := l.requestedToolDefinitions()
+	native := l.nativeContracts()
+	filtered := defs[:0]
+	for _, def := range defs {
+		if !containsNativeContract(native, def.Name) {
+			filtered = append(filtered, def)
+		}
+	}
+	defs = filtered
 	if len(defs) == 0 {
 		return ""
 	}

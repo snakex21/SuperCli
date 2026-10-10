@@ -15,6 +15,7 @@ import (
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
+	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
 	"supercli/internal/system/config"
@@ -23,7 +24,7 @@ import (
 	"supercli/internal/tools"
 )
 
-func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig) error {
+func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Provider, caps *llm.CapabilityRegistry, home string, tc config.TomlConfig, turns ...*checkpoint.Turn) error {
 	subReg := agent.NewSubAgentRegistry()
 	agent.MustRegisterAll(subReg, agent.BuiltinSubAgents())
 	at, err := agent.NewAgentTool(subReg, loop, reg, prov, caps,
@@ -50,9 +51,14 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	}
 	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
-		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
+		at.PreflightContext = func(ctx context.Context) string {
+			return preflight.BuildContext(ctx, home, preflight.Options{})
+		}
 	}
 	for _, sp := range []tools.Tool{at.Spec(), agent.NewSendMessageTool(at.Workers).Spec(), agent.NewTaskStopTool(at.Workers).Spec()} {
+		if len(turns) > 0 && turns[0] != nil {
+			sp = turns[0].Wrap(sp)
+		}
 		reg.MustRegister(sp)
 		reg.MarkAlwaysOn(sp.Name)
 	}
@@ -214,6 +220,12 @@ func (e *Engine) providerManager() *providers.Manager {
 // be empty; in that case the capability registry's provider hint is
 // used when possible.
 func (e *Engine) SwitchModel(modelID, providerName string) error {
+	return e.SwitchModelContext(context.Background(), modelID, providerName)
+}
+
+// SwitchModelContext keeps discovery bounded and lets the browser cancel its
+// wait before the new selection is committed.
+func (e *Engine) SwitchModelContext(ctx context.Context, modelID, providerName string) error {
 	if modelID == "" {
 		return fmt.Errorf("model is empty")
 	}
@@ -248,6 +260,9 @@ func (e *Engine) SwitchModel(modelID, providerName string) error {
 	e.factory.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
 	prov, err := e.factory.BuildChain(cfg, tc, llm.PurposeMain)
 	if err != nil {
+		return err
+	}
+	if err := config.RefreshLocalContextWindows(ctx, cfg); err != nil {
 		return err
 	}
 	if err := saveLastModel(e.dataDir, modelID, providerName); err != nil {

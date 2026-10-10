@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Портативный AI-агент для программирования на Go: терминальный интерфейс (TUI), настольный/веб-интерфейс (GUI) и пакетный режим используют единый движок.
 
 <!-- readme-unit:status -->
-Этот README описывает версию `1.0.3`. Портативные пакеты распространяются через [GitHub Releases](https://github.com/snakex21/SuperCli/releases); локальная сборка не означает, что соответствующий выпуск уже опубликован.
+Этот README описывает версию `1.0.5`. Портативные пакеты распространяются через [GitHub Releases](https://github.com/snakex21/SuperCli/releases); локальная сборка не означает, что соответствующий выпуск уже опубликован.
 
 <!-- readme-unit:h.screenshots -->
 ## Снимки экрана
@@ -172,6 +172,7 @@ GUI и TUI поддерживают одинаковые 27 языков инт�
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

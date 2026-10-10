@@ -145,7 +145,10 @@ func (s *SearchCode) run(ctx context.Context, args json.RawMessage) (Result, err
 	if filesOnly {
 		return result, err
 	}
-	if err == nil {
+	// Explicit context with captured hits replaces the entire Result below.
+	// Avoid formatting a model preview that cannot reach the caller; auto and
+	// location-only searches keep their existing preview/fallback policy.
+	if err == nil && (autoContext || radius == 0 || len(preview.hits) == 0 || result.Err != nil) {
 		result = s.previewSearchHits(result, preview, a.Query)
 	}
 	if err == nil && result.Err == nil && radius > 0 {

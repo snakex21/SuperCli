@@ -15,6 +15,7 @@ import (
 // executing and verifying a tool: this is not a cache and cannot serve stale data.
 type toolObservation struct {
 	valid       bool
+	comparable  bool // textual evidence sufficient for the last-resort guard only
 	key, result [sha256.Size]byte
 }
 
@@ -23,10 +24,16 @@ func observeToolResult(call llm.ToolCall, result tools.Result) toolObservation {
 		return toolObservation{}
 	}
 	text := result.Text
-	switch call.Name {
-	case "read_lines", "read_many", "read_context", "list_dir", "search_code",
-		"read_docx", "read_pdf", "read_xlsx", "read_zip", "read_output", "tool_search":
-	case "ctx_execute":
+	if !observationReadCall(call) {
+		if call.Name != "ctx_execute" {
+			switch call.Name {
+			case "code_intel", "recall", "search_history":
+				// These textual discovery results are useful for the budget
+				// guard, but do not establish a whole unchanged read round.
+				return toolObservation{comparable: true, key: observationCallFingerprint(call), result: sha256.Sum256([]byte(text))}
+			}
+			return toolObservation{}
+		}
 		var args struct {
 			Command []string `json:"command"`
 		}
@@ -58,13 +65,45 @@ func observeToolResult(call llm.ToolCall, result tools.Result) toolObservation {
 			return toolObservation{}
 		}
 		text = string(encoded)
-	default:
-		return toolObservation{}
 	}
 	return toolObservation{
-		valid: true, key: toolCallFingerprint(call.Name, call.Arguments),
+		valid: true, comparable: true, key: observationCallFingerprint(call),
 		result: sha256.Sum256([]byte(text)),
 	}
+}
+
+// Refresh changes where web evidence is obtained, not the requested evidence.
+// Its output hash still records any change found by a fresh read. Malformed
+// values retain their identity so this never repairs or aliases invalid calls.
+func observationCallFingerprint(call llm.ToolCall) [sha256.Size]byte {
+	switch call.Name {
+	case "web_lookup", "web_search", "web_fetch":
+		var args map[string]json.RawMessage
+		if json.Unmarshal([]byte(call.Arguments), &args) == nil {
+			value := strings.TrimSpace(string(args["refresh"]))
+			if value == "true" || value == "false" {
+				delete(args, "refresh")
+				if encoded, err := json.Marshal(args); err == nil {
+					return toolCallFingerprint(call.Name, string(encoded))
+				}
+			}
+		}
+	}
+	return toolCallFingerprint(call.Name, call.Arguments)
+}
+
+// These calls inspect evidence without changing it. A failed read can
+// invalidate its own previous result without invalidating unrelated reads.
+func observationReadCall(call llm.ToolCall) bool {
+	switch call.Name {
+	case "read_lines", "read_many", "read_context", "list_dir", "search_code",
+		"read_docx", "read_pdf", "read_xlsx", "read_output", "tool_search",
+		"web_lookup", "web_search", "web_fetch":
+		return true
+	case "read_zip":
+		return toolCallKind(call.Name, call.Arguments) == "discovery"
+	}
+	return false
 }
 
 var pythonTestDuration = regexp.MustCompile(`(?m)^(Ran [0-9]+ tests? in )[0-9.]+s$`)
@@ -113,33 +152,46 @@ type unchangedProgress struct {
 	tool    string
 }
 
-// A changed result or a new observation breaks the no-progress streak.
-// Mutations, failures and unknown side effects also clear prior evidence, so
-// rechecking after an edit, worker, shell command or user question is legitimate.
+// A changed result or a new observation breaks the round-wide streak while
+// each read also retains its own count. Mutations and unknown side effects
+// clear prior evidence; a failed known read invalidates only its own key.
 func (p *unchangedProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) {
 	p.repeats, p.tool = 0, ""
-	for i := range calls {
+	allRepeated := len(calls) > 0
+	var repeatedKey [sha256.Size]byte
+	for i, call := range calls {
 		o := outcomeAt(outcomes, i)
+		if o.failed && observationReadCall(call) {
+			key := observationCallFingerprint(call)
+			p.forget(key)
+			if key == repeatedKey {
+				p.repeats, p.tool = 0, ""
+			}
+			allRepeated = false
+			continue
+		}
 		if o.failed || !o.observation.valid {
 			*p = unchangedProgress{}
-			return
+			allRepeated = false
+			continue
 		}
-	}
-	if p.seen == nil {
-		p.seen = make(map[[sha256.Size]byte]seenObservation)
-	}
-	allRepeated := len(calls) > 0
-	for i, call := range calls {
-		ob := outcomes[i].observation
+		if p.seen == nil {
+			p.seen = make(map[[sha256.Size]byte]seenObservation)
+		}
+		ob := o.observation
 		prev, found := p.seen[ob.key]
 		if found && prev.result == ob.result {
 			prev.count++
 			if prev.count > p.repeats {
 				p.repeats, p.tool = prev.count, call.Name
+				repeatedKey = ob.key
 			}
 		} else {
 			allRepeated = false
 			prev = seenObservation{result: ob.result, count: 1}
+			if ob.key == repeatedKey {
+				p.repeats, p.tool = 0, ""
+			}
 		}
 		if !found {
 			if len(p.order) >= observationHistoryLimit {
@@ -154,5 +206,18 @@ func (p *unchangedProgress) observe(calls []llm.ToolCall, outcomes []callOutcome
 		p.rounds++
 	} else {
 		p.rounds = 0
+	}
+}
+
+func (p *unchangedProgress) forget(key [sha256.Size]byte) {
+	if _, found := p.seen[key]; !found {
+		return
+	}
+	delete(p.seen, key)
+	for i, old := range p.order {
+		if old == key {
+			p.order = append(p.order[:i], p.order[i+1:]...)
+			break
+		}
 	}
 }

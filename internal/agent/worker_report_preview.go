@@ -9,7 +9,12 @@ import (
 // Keep a map of long structured reports in the existing preview budget. The
 // full report and observations remain in Text/RetainedText for UI/read_output.
 func workerReportPreview(w *Worker, report, suffix string) string {
-	wrapper := renderWorkerNotification(w, "")
+	s := w.Snapshot()
+	return workerReportPreviewFromSnapshot(s, workerSummaryFromSnapshot(s), report, suffix)
+}
+
+func workerReportPreviewFromSnapshot(s Snapshot, summary, report, suffix string) string {
+	wrapper := renderWorkerNotificationFromSnapshot(s, summary, "")
 	if len(wrapper)+len(report)+len(suffix) <= core.ModelOutputInlineBytes {
 		return ""
 	}
@@ -25,7 +30,7 @@ func workerReportPreview(w *Worker, report, suffix string) string {
 	}
 	outline = workerReportClip(outline, budget/2)
 	excerpt := workerReportClip(report, budget-len(outline))
-	preview := renderWorkerNotification(w, outlineLabel+outline+excerptLabel+excerpt) + suffix
+	preview := renderWorkerNotificationFromSnapshot(s, summary, outlineLabel+outline+excerptLabel+excerpt) + suffix
 	if len(preview) > core.ModelOutputPreviewBytes {
 		return ""
 	}

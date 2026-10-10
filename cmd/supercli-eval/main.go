@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"supercli/internal/agenteval"
+	"supercli/internal/storage"
 )
 
 type stringsFlag []string
@@ -28,7 +29,7 @@ func (s *stringsFlag) Set(value string) error {
 func main() {
 	fs := flag.NewFlagSet("supercli-eval", flag.ExitOnError)
 	suitePath := fs.String("suite", filepath.FromSlash("test/go/eval/suite.json"), "suite JSON path")
-	workRoot := fs.String("work-root", filepath.Join(os.TempDir(), "supercli-eval"), "isolated workspace root")
+	workRoot := fs.String("work-root", "", "isolated workspace root (default: portable data eval/workspaces)")
 	taskID := fs.String("task", "", "run only one task id")
 	timeout := fs.Duration("timeout", 10*time.Minute, "timeout per task/model")
 	keep := fs.Bool("keep-workspaces", false, "retain isolated workspaces")
@@ -53,7 +54,11 @@ func main() {
 		fs.Usage()
 		os.Exit(2)
 	}
-	report, err := agenteval.Bench(context.Background(), agenteval.BenchOptions{SuitePath: *suitePath, WorkRoot: *workRoot, Models: models, TaskID: *taskID, AgentCommand: fs.Args(), Timeout: *timeout, KeepWorkspaces: *keep})
+	resolvedWorkRoot, err := prepareEvalWorkRoot(*workRoot, storage.ResolveRuntimeDataRoot)
+	if err != nil {
+		fatal(err)
+	}
+	report, err := agenteval.Bench(context.Background(), agenteval.BenchOptions{SuitePath: *suitePath, WorkRoot: resolvedWorkRoot, Models: models, TaskID: *taskID, AgentCommand: fs.Args(), Timeout: *timeout, KeepWorkspaces: *keep})
 	if err != nil {
 		fatal(err)
 	}

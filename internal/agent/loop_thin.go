@@ -35,6 +35,12 @@ func (l *Loop) SetRegistry(r *tools.Registry) {
 	l.registry = r
 	l.toolDefsSnapshot.reset()
 	l.toolDiscovery = toolDiscoveryState{}
+	l.workflowTools = nil
+	l.workflowRevision++
+	l.resultReuse.reset()
+	l.completedOps.reset()
+	l.nativeReads, l.nativeReadsSet = nil, false
+	l.nativeRunTools, l.nativeRunSet = nil, false
 	// The hoisted thin-tools preamble (stableToolset) renders from the
 	// registry; a swap before the first Run must re-render it, not
 	// serve a stale frozen copy.
@@ -66,11 +72,15 @@ func (l *Loop) buildToolDefsUncached() []llm.ToolDef {
 	}
 	var toolDefs []llm.ToolDef
 	if l.route == RouteCoordinator {
+		native := l.nativeContracts()
 		visible := l.registry.Visible()
 		// Build the wire definitions directly. The catalog tail is unused here;
 		// materializing both partitions copied tools repeatedly on every estimate.
 		toolDefs = make([]llm.ToolDef, 0, len(visible))
 		for _, t := range visible {
+			if containsNativeContract(native, t.Name) {
+				continue
+			}
 			if !l.carriesToolSchema(t.Name) {
 				continue
 			}
@@ -80,6 +90,7 @@ func (l *Loop) buildToolDefsUncached() []llm.ToolDef {
 				Schema:      t.Schema,
 			})
 		}
+		toolDefs = append(toolDefs, native...)
 		// Keep the core prefix fixed when the dispatcher can carry requested
 		// contracts in the tail. Other profiles retain native full schemas.
 		if !l.usesRequestedToolContext() {
@@ -146,7 +157,11 @@ func (l *Loop) isActivated(name string) bool {
 // still fully usable — its schema arrived as the tool_search result
 // text and Registry.Execute dispatches by name, not by promotion.
 func (l *Loop) thinPartition() (schema, tail []tools.Tool) {
+	l.nativeContracts()
 	for _, t := range l.registry.Visible() {
+		if l.thinTools && l.stableToolset && containsNativeContract(l.nativeReads, t.Name) {
+			continue
+		}
 		if l.carriesToolSchema(t.Name) {
 			schema = append(schema, t)
 		} else {

@@ -84,7 +84,7 @@ func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error)
 	if llm.IsMetered(p) {
 		return p, nil
 	}
-	return llm.Metered(p, cfg.Provider, purpose, f.sink), nil
+	return llm.MeteredConnection(p, cfg.Provider, cfg.BaseURL, cfg.APIKey, purpose, f.sink), nil
 }
 
 // Default maps a config to a concrete raw llm.Provider: echo,

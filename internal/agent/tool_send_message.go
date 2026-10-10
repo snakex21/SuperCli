@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/tools"
 	toolcore "supercli/internal/tools/core"
 )
@@ -107,6 +108,16 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	mutatingCapable := true
+	if w.Loop != nil {
+		mutatingCapable = checkpoint.HasCheckpointMutators(w.Loop.registry)
+	}
+	borrow, borrowErr := checkpoint.BorrowInvocation(ctx, mutatingCapable)
+	if borrowErr != nil {
+		return "", fmt.Errorf("worker %s checkpoint binding: %w", w.ID, borrowErr)
+	}
+	defer borrow.Close()
+	ctx = borrow.Bind(ctx)
 	if workers != nil {
 		if err := workers.startContinuation(w); err != nil {
 			return "", err
@@ -260,11 +271,14 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 
 func renderWorkerNotification(w *Worker, result string) string {
 	s := w.Snapshot()
+	return renderWorkerNotificationFromSnapshot(s, workerSummaryFromSnapshot(s), result)
+}
+
+func renderWorkerNotificationFromSnapshot(s Snapshot, summary, result string) string {
 	status := s.Status
 	if status == "" {
 		status = "done"
 	}
-	summary := workerSummary(w)
 	toolsUsed := workerToolSummary(s.ToolNames)
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
@@ -304,6 +318,10 @@ func workerSummary(w *Worker) string {
 		return "worker unknown"
 	}
 	s := w.Snapshot()
+	return workerSummaryFromSnapshot(s)
+}
+
+func workerSummaryFromSnapshot(s Snapshot) string {
 	status := s.Status
 	if status == "" {
 		status = "done"

@@ -72,7 +72,20 @@ func (b *ReasoningBlock) Validate() error {
 }
 
 func validCanonicalChatPayload(data json.RawMessage) bool {
-	for _, prefix := range []string{"{\"reasoning_content\":", "{\"reasoning\":", "{\"reasoning_text\":"} {
+	_, _, valid := canonicalChatPayloadValue(data)
+	return valid
+}
+
+// The common stream-produced shape needs no object map or RawMessage copy.
+// Keep this deliberately exact: legacy spacing, escaped keys and duplicates
+// must retain the full decoder's validation and replay behavior below.
+func canonicalChatPayloadValue(data json.RawMessage) (string, json.RawMessage, bool) {
+	for _, field := range []struct{ key, prefix string }{
+		{"reasoning_content", "{\"reasoning_content\":"},
+		{"reasoning", "{\"reasoning\":"},
+		{"reasoning_text", "{\"reasoning_text\":"},
+	} {
+		prefix := field.prefix
 		if len(data) <= len(prefix)+1 || !bytes.HasPrefix(data, []byte(prefix)) || data[len(data)-1] != '}' {
 			continue
 		}
@@ -80,15 +93,27 @@ func validCanonicalChatPayload(data json.RawMessage) bool {
 		// json.Unmarshal historically accepts null as an empty string. Check
 		// the complete value so duplicate/additional keys cannot use this path.
 		// Do not TrimSpace(data): Unicode space is not valid JSON whitespace.
-		return (value[0] == '"' || bytes.Equal(value, []byte("null"))) && json.Valid(value)
+		if (value[0] == '"' || bytes.Equal(value, []byte("null"))) && json.Valid(value) {
+			return field.key, value, true
+		}
+		return "", nil, false
 	}
-	return false
+	return "", nil, false
 }
 
 // validateParsed preserves native validation and makes decoded chat text
 // available to the request builder. It owns no cache and never changes Data.
 func (b *ReasoningBlock) validateParsed() (nativeChatPayload, error) {
 	var chat nativeChatPayload
+	if b != nil && b.Format == ReasoningChat && b.Model != "" && b.Scope != "" {
+		if field, value, valid := canonicalChatPayloadValue(b.Data); valid {
+			var text string
+			if err := json.Unmarshal(value, &text); err != nil {
+				return chat, fmt.Errorf("reasoning part: chat reasoning must be text")
+			}
+			return nativeChatPayload{field: field, text: text, canonical: true}, nil
+		}
+	}
 	if b == nil || b.Model == "" || b.Scope == "" || !json.Valid(b.Data) {
 		return chat, fmt.Errorf("reasoning part: invalid origin or payload")
 	}

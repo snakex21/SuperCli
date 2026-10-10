@@ -33,13 +33,23 @@ func requestToolContracts(messages []llm.Message) []llm.ToolDef {
 	}
 	return nil
 }
-func requestContainsToolContract(messages []llm.Message, name string) bool {
-	for _, def := range requestToolContracts(messages) {
+func requestContainsToolContract(messages []llm.Message, name string, native ...[]llm.ToolDef) bool {
+	for _, def := range availableToolContracts(messages, native...) {
 		if def.Name == name {
 			return true
 		}
 	}
 	return false
+}
+
+// Capability checks inspect both supported transports: native provider schemas
+// and the request-only dispatcher contracts learned later in the same Run.
+func availableToolContracts(messages []llm.Message, native ...[]llm.ToolDef) []llm.ToolDef {
+	defs := append([]llm.ToolDef(nil), requestToolContracts(messages)...)
+	for _, batch := range native {
+		defs = append(defs, batch...)
+	}
+	return defs
 }
 func requestedContextFixture(t *testing.T, dispatcherVisible bool) *Loop {
 	t.Helper()
@@ -162,7 +172,7 @@ func TestRequestedToolContextFallsBackWithoutAdvertisedDispatcher(t *testing.T) 
 func TestRequestedToolContextRefreshesRegistryAndPreservesHistory(t *testing.T) {
 	l := requestedContextFixture(t, true)
 	l.prepareRunRoute(context.Background(), "Take screenshot")
-	before := l.requestedToolContext()
+	before, _ := json.Marshal(l.buildToolDefs())
 	next := tools.NewRegistry()
 	source, _ := l.registry.Get("send_screenshot")
 	source.Description += " replacement"
@@ -171,7 +181,7 @@ func TestRequestedToolContextRefreshesRegistryAndPreservesHistory(t *testing.T) 
 	next.MustRegister(NewInvokeTool(next).Spec())
 	next.MarkAlwaysOn(invokeToolName)
 	l.SetRegistry(next)
-	if got := l.requestedToolContext(); got == before || !strings.Contains(got, "replacement") {
+	if got, _ := json.Marshal(l.buildToolDefs()); bytes.Equal(got, before) || !bytes.Contains(got, []byte("replacement")) {
 		t.Fatal("registry replacement kept stale contract")
 	}
 	late := tools.Tool{Name: "process_session", Description: "late process", Schema: "{}", Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }}
@@ -214,13 +224,14 @@ func (p *requestedOwnedWorkflowProvider) Complete(_ context.Context, messages []
 	} else if !bytes.Equal(p.defsJSON, raw) || p.system != messages[0].Content {
 		p.t.Fatal("workflow changed stable prefix")
 	}
-	if !requestContainsToolContract(messages, "send_screenshot") || !requestContainsToolContract(messages, "process_session") {
+	if !requestContainsToolContract(messages, "send_screenshot", defs) || !requestContainsToolContract(messages, "process_session", defs) {
 		p.t.Fatal("workflow omitted complete requested capability")
 	}
-	for _, def := range defs {
-		if def.Name == "send_screenshot" || def.Name == "process_session" {
-			p.t.Fatal("requested schema moved into stable core")
-		}
+	if !containsNativeContract(defs, "send_screenshot") || !containsNativeContract(defs, "process_session") {
+		p.t.Fatal("initial requested capability lacks native schemas")
+	}
+	if requestContainsToolContract(messages, "send_screenshot") || requestContainsToolContract(messages, "process_session") {
+		p.t.Fatal("native capability also advertised as invoke-only")
 	}
 	var call llm.ToolCall
 	var final bool

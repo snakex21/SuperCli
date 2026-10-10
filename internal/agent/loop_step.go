@@ -70,7 +70,11 @@ func (l *Loop) runStep(
 	l.maybePruneToolResults(ctx, out)
 	auxBefore := l.stepAuxWall
 	if !l.maybeModelHandoff(ctx, out) {
-		l.maybeAutoCompact(ctx, out, "")
+		if err := l.maybeAutoCompact(ctx, out, ""); err != nil {
+			l.statsEndStep(stepStart)
+			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
+			return stepAbort
+		}
 	}
 
 	// Build tool definitions from visible tools. Non-coordinator routes
@@ -80,7 +84,7 @@ func (l *Loop) runStep(
 	//
 	// Tools are never taken away from the model mid-run: a counter that
 	// disarmed them ended the turn and made the user type "continue".
-	toolDefs := l.buildToolDefs()
+	toolRequest := l.prepareToolRequest()
 	// context_prepare part 1: prune/compact/tool defs. Part 2
 	// (provider message assembly) is added inside completeOnce.
 	// The auto-compact SUMMARY MODEL CALL is excluded — it is
@@ -92,20 +96,36 @@ func (l *Loop) runStep(
 	}
 	l.recordWallPhase(stats.PhaseContextPrepare, prep)
 
-	text, toolCalls, usage, err := l.completeOnce(ctx, toolDefs, out)
+	text, toolCalls, usage, err := l.completeOnce(ctx, toolRequest, out)
 	_, truncatedToolCalls := err.(*truncatedToolResponseError)
-	if err != nil && !truncatedToolCalls && l.handleContextOverflow(ctx, err, out) {
-		// Wave 4: provider rejected the context size.
-		// The learned limit was persisted and the
-		// conversation compacted; retry once. The retry's phase
-		// timings accumulate onto this step's (documented in
-		// stats.Turn.Phases).
-		text, toolCalls, usage, err = l.completeOnce(ctx, toolDefs, out)
-		_, truncatedToolCalls = err.(*truncatedToolResponseError)
-	}
 	if err != nil && !truncatedToolCalls {
+		retry, compactErr := l.handleContextOverflow(ctx, err, out)
+		if compactErr != nil {
+			err = compactErr
+		} else if retry {
+			// Wave 4: provider rejected the context size.
+			// The learned limit was persisted and the
+			// conversation compacted; retry once. The retry's phase
+			// timings accumulate onto this step's (documented in
+			// stats.Turn.Phases).
+			// The provider owns the earlier slice and may have normalized it
+			// before rejection. Only the uncommon retry reprices that same
+			// slice; a later registry revision cannot change this request.
+			toolRequest.tokens = estimateRequestTokens(nil, toolRequest.defs)
+			text, toolCalls, usage, err = l.completeOnce(ctx, toolRequest, out)
+			_, truncatedToolCalls = err.(*truncatedToolResponseError)
+		}
+	}
+	usageErr := l.recordStepUsage(ctx, totalUsage, usage)
+	if err != nil && !truncatedToolCalls {
+		l.retainInterruptedReply(text)
 		l.statsEndStep(stepStart)
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
+		return stepAbort
+	}
+	if usageErr != nil {
+		l.statsEndStep(stepStart)
+		out <- ErrorEvent{Err: usageErr, Usage: *totalUsage, Steps: step + 1}
 		return stepAbort
 	}
 	truncationAttempt := 0
@@ -138,65 +158,6 @@ func (l *Loop) runStep(
 				text = "✓ Word document ready."
 			}
 			out <- MessageEvent{Text: text}
-		}
-	}
-	if usage != nil {
-		totalUsage.Input += usage.Input
-		totalUsage.Output += usage.Output
-		totalUsage.Total += usage.Total
-		totalUsage.Cached += usage.CachedInput
-		totalUsage.Reasoning += usage.Reasoning
-		l.sessUsageMu.Lock()
-		l.sessUsage.Input += usage.Input
-		l.sessUsage.Output += usage.Output
-		l.sessUsage.Total += usage.Total
-		l.sessUsage.Cached += usage.CachedInput
-		l.sessUsage.Reasoning += usage.Reasoning
-		// Last-turn snapshot for the status-line badges.
-		l.lastTurnPrompt = usage.Input
-		l.lastTurnCached = usage.CachedInput
-		l.lastTurnOutput = usage.Output
-		l.lastTurnReasoning = usage.Reasoning
-		l.lastTurnSet = true
-		l.sessUsageMu.Unlock()
-		// Provider-reported prompt/completion tokens for the
-		// phase telemetry (llama.cpp and the cloud backends
-		// report usage on the final delta).
-		if l.stats != nil {
-			l.stats.RecordTokens(usage.Input, usage.Output)
-			l.stats.RecordModel(l.modelID)
-		}
-		// Report per-turn usage to the writer (if any).
-		// Failures feed the persistence-health tracker
-		// (sticky first error + /status) but never abort
-		// the run.
-		if l.writer != nil {
-			if err := l.writer.UpdateUsage(usage.Input, usage.Output); err != nil {
-				l.persistUsageFailure(err)
-			}
-		}
-		// F7: record to credit tracker. A budget
-		// cap is a hard stop, but we still emit
-		// the partial usage for the turn.
-		if l.creditTracker != nil {
-			if err := l.creditTracker.Record(ctx, int64(usage.Input), int64(usage.Output), l.modelID); err != nil {
-				l.statsEndStep(stepStart)
-				out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
-				return stepAbort
-			}
-		}
-		// F11: charge the draft call's tokens
-		// against the same tracker. Draft spend
-		// shares the user's F7 budget (per D2
-		// decision). The draft provider's
-		// usage is captured at the end of
-		// invokeDraft.
-		if l.draftSavings != nil && l.lastDraftTokens > 0 {
-			if err := l.recordDraftUsage(ctx); err != nil {
-				l.statsEndStep(stepStart)
-				out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
-				return stepAbort
-			}
 		}
 	}
 
@@ -357,16 +318,13 @@ func (l *Loop) runStep(
 		// smaller provider projection. The lossless transcript remains intact
 		// and searchable, while reopening this session no longer reloads every
 		// historical tool envelope into the model context.
-		visible := l.VisibleMessages()
-		if len(l.resolvedToolProviderView(visible)) < len(visible) {
-			l.persistProjection(ctx)
-		}
+		l.persistCompletedProjection(ctx)
 		l.statsEndStep(stepStart)
 		if err := ctx.Err(); err != nil {
 			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 			return stepAbort
 		}
-		out <- DoneEvent{Usage: *totalUsage, Steps: step + 1, GenerationTokens: l.generationTokens, GenerationDuration: l.generationDuration}
+		out <- DoneEvent{Model: l.modelID, Usage: *totalUsage, Steps: step + 1, GenerationTokens: l.generationTokens, GenerationDuration: l.generationDuration}
 		return stepDone
 	}
 
@@ -414,6 +372,7 @@ func (l *Loop) runStep(
 		return stepAbort
 	}
 	l.drainBackgroundMessages(ctx)
+	l.learnWorkflowTools(toolCalls, toolOutcomes)
 	l.continueWithDiscoveredTools(ctx, toolCalls, toolOutcomes)
 	toolFailures := countFailures(toolOutcomes)
 	// User steering starts fresh progress accounting before any loop verdict.
@@ -442,12 +401,11 @@ func (l *Loop) runStep(
 			l.persist(ctx, warn)
 			out <- NoticeEvent{Text: "identical tool call repeated: loop warning injected"}
 		case repeatAbort:
-			// Last resort, and only here: an identical call repeated absurdly
-			// many times is a stuck model spending the user's money.
+			// Report the actual no-progress condition, including cycles of
+			// different reads. Retain the partial work without claiming Done.
 			l.statsEndStep(stepStart)
 			out <- ErrorEvent{
-				Err: fmt.Errorf("agent: stopped — the same tool call with the same arguments was repeated %d times in a row. "+
-					"The work so far is kept in this conversation", repeatProg.repeatCount()),
+				Err:   fmt.Errorf("%s", repeatProg.repeatAbortText()),
 				Usage: *totalUsage,
 				Steps: step + 1,
 			}

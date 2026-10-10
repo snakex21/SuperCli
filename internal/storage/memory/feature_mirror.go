@@ -176,7 +176,7 @@ func (s *Store) renderScopeMirrorLocked(tx *sql.Tx, scope string, generation int
 		return nil
 	}
 
-	var positions []Entry
+	var positions []markdownPosition
 	if len(entries) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("memory mirror %s: remove %s: %w", scope, path, err)
@@ -188,7 +188,7 @@ func (s *Store) renderScopeMirrorLocked(tx *sql.Tx, scope string, generation int
 		if err := mdWrite(path, entries); err != nil {
 			return fmt.Errorf("memory mirror %s: write: %w", scope, err)
 		}
-		positions, err = mdRead(path)
+		positions, err = mdReadPositions(path)
 		if err != nil {
 			return fmt.Errorf("memory mirror %s: verify: %w", scope, err)
 		}

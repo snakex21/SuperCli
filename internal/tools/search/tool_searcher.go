@@ -45,7 +45,8 @@ func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 // visible to the model (caller should MarkAlwaysOn).
 func (s *ToolSearcher) Spec() Tool {
 	return Tool{
-		Name: "tool_search",
+		Name:              "tool_search",
+		PreservesEvidence: true,
 		Description: "Find a tool, plugin, or MCP capability absent from the current tool set, by name or intent. " +
 			"Returns its full schema and activates it. Use already available tools directly.",
 		Schema: `{"type":"object","properties":{
@@ -89,6 +90,11 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		hits = []SearchResult{*exact}
 	} else {
 		hits = exactToolNameListHits(s.Registry, a.Query, limit)
+	}
+	if len(hits) == 0 {
+		if download := downloadIntentHit(s.Registry, a.Query); download != nil {
+			hits = []SearchResult{*download}
+		}
 	}
 	// Small per-request registries (WebGUI/batch) can skip SQLite entirely
 	// and use the deterministic lexical ranker. The long-lived TUI supplies
@@ -251,6 +257,35 @@ func exactToolNameHit(reg *Registry, query string) *SearchResult {
 		if strings.ToLower(name) == low {
 			return &SearchResult{Name: name, Server: classifyServer(name), Score: 1.0}
 		}
+	}
+	return nil
+}
+
+// web_fetch mentions downloading only to direct binary/file work to
+// web_download. Literal FTS queries such as "downloading assets" can therefore
+// match only that advisory text, before lexical synonyms ever get a chance.
+// Resolve explicit asset/file download intent to the actual capability; page
+// reads, mail attachments and local archive operations keep ordinary ranking.
+func downloadIntentHit(reg *Registry, query string) *SearchResult {
+	if reg == nil {
+		return nil
+	}
+	download, file := false, false
+	for _, word := range lexTokens(query) {
+		switch word {
+		case "download":
+			download = true
+		case "file", "files", "asset", "assets", "texture", "textures", "image", "images", "audio", "model", "models", "font", "fonts", "zip", "archive", "archives", "url", "plik", "pliki", "pliku", "plikow", "zasoby", "zasobow", "tekstury":
+			file = true
+		case "read", "readable", "page", "pages", "article", "articles", "documentation", "instructions", "html", "extract", "unzip", "attachment", "attachments", "mail", "email", "outlook", "thunderbird":
+			return nil
+		}
+	}
+	if !download || !file {
+		return nil
+	}
+	if tool, ok := reg.Get("web_download"); ok {
+		return &SearchResult{Name: tool.Name, Server: classifyServer(tool.Name), Score: 1}
 	}
 	return nil
 }
@@ -425,6 +460,10 @@ func forEachLexToken(s string, visit func(string)) {
 				visit("test")
 			case "builds":
 				visit("build")
+			// Asset downloads should be found from ordinary English/Polish
+			// requests without expanding the always-on tool catalog or prompt.
+			case "downloads", "downloading", "downloaded", "pobierz", "pobranie", "pobieranie":
+				visit("download")
 			default:
 				visit(word)
 			}

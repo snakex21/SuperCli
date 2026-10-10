@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // WebFetch fetches a public http(s) URL and returns the page title
@@ -36,6 +39,12 @@ const (
 
 // NewWebFetch returns a tool with an SSRF-guarded HTTP client.
 func NewWebFetch() *WebFetch {
+	return &WebFetch{client: newPublicHTTPClient(webFetchTimeout)}
+}
+
+// newPublicHTTPClient is shared by page reads and file downloads. Both check
+// every connection at dial time and bound redirects, including cancellation.
+func newPublicHTTPClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -43,19 +52,20 @@ func NewWebFetch() *WebFetch {
 		},
 		Proxy: http.ProxyFromEnvironment,
 	}
-	return &WebFetch{
-		client: &http.Client{
-			Timeout:   webFetchTimeout,
-			Transport: transport,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= webFetchMaxRedirects {
-					return fmt.Errorf("stopped after %d redirects", webFetchMaxRedirects)
-				}
-				if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-					return fmt.Errorf("redirect to non-http(s) URL blocked: %s", req.URL)
-				}
-				return nil
-			},
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= webFetchMaxRedirects {
+				return fmt.Errorf("stopped after %d redirects", webFetchMaxRedirects)
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-http(s) URL blocked")
+			}
+			if req.URL.User != nil {
+				return fmt.Errorf("redirect with username/password blocked")
+			}
+			return nil
 		},
 	}
 }
@@ -118,21 +128,31 @@ func validateFetchURL(raw string) (*url.URL, error) {
 type webFetchArgs struct {
 	URL      string `json:"url"`
 	MaxChars int    `json:"max_chars"`
+	Mode     string `json:"mode"`
+	Refresh  bool   `json:"refresh"`
 }
 
 // Spec returns the tool registration.
 func (t *WebFetch) Spec() Tool {
 	return Tool{
-		Name:     "web_fetch",
-		ReadOnly: true,
+		Name:       "web_fetch",
+		ReadOnly:   true,
+		ReuseTTL:   2 * time.Minute,
+		RefreshArg: "refresh",
+		NextTools:  []string{"web_download"},
 		Description: "Fetch a public web page by URL and return its title and readable text content (HTML is converted to plain text; scripts/styles/navigation stripped). " +
 			"Use when the user gives a URL, or after web_search to read a result in full. " +
+			"When only file URLs are needed, mode=media returns the title and declared media/download links (including PDF/ZIP links and download attributes) without unrelated page text. " +
+			"Set refresh=true only when a fresh network read is needed instead of reusing a recent result. " +
+			"For downloading binary assets or saving a URL to a file, use web_download instead. " +
 			"Do not use for local files (use read_lines/file tools), internal/private addresses (blocked), or APIs requiring authentication. Read-only; never submits forms.",
 		Schema: `{
   "type": "object",
   "properties": {
     "url":       {"type": "string", "description": "Full http(s) URL to fetch."},
-    "max_chars": {"type": "integer", "description": "Truncate returned content to this many characters (default 20000, max 100000)."}
+    "max_chars": {"type": "integer", "description": "Truncate returned content to this many characters (default 20000, max 100000)."},
+    "mode":      {"type": "string", "enum": ["text", "media"], "description": "text (default) returns readable page content; media scans only the first 64 KiB for title and declared media/download links, without fetching files or returning page text."},
+    "refresh":   {"type": "boolean", "description": "Bypass recent result reuse to make a fresh network read (default false)."}
   },
   "required": ["url"]
 }`,
@@ -148,6 +168,9 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 	u, err := validateFetchURL(a.URL)
 	if err != nil {
 		return Result{Err: fmt.Errorf("web_fetch: %w", err)}, nil
+	}
+	if a.Mode != "" && a.Mode != "text" && a.Mode != "media" {
+		return Result{Err: fmt.Errorf("web_fetch: mode must be text or media")}, nil
 	}
 	maxChars := a.MaxChars
 	if maxChars <= 0 {
@@ -174,19 +197,39 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// Keep a capped tail of the error body: API error
-		// payloads carry the actionable detail a bare status
-		// code hides.
+		// Retain bounded API diagnostics, while HTML errors expose readable
+		// failure text rather than scripts or bootstrap configuration.
 		return Result{Err: fmt.Errorf("web_fetch: %w", httpFailedErr(resp, u.Host))}, nil
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, webFetchMaxBody))
+	reader := bufio.NewReader(resp.Body)
+	prefix, _ := reader.Peek(512)
+	contentType := resp.Header.Get("Content-Type")
+	if !isFetchedText(prefix, contentType) {
+		return Result{Err: fmt.Errorf("web_fetch: binary response; use web_download with url and a local path to save this file")}, nil
+	}
+	bodyLimit := webFetchMaxBody
+	if a.Mode == "media" {
+		bodyLimit = mediaHeadBytes
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, int64(bodyLimit)+1))
 	if err != nil {
 		return Result{Err: fmt.Errorf("web_fetch: read body: %w", err)}, nil
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	title, content := formatFetched(string(body), contentType)
+	bodyTruncated := len(body) > bodyLimit
+	if bodyTruncated {
+		body = body[:bodyLimit]
+	}
+	if !isFetchedText(body, contentType) {
+		return Result{Err: fmt.Errorf("web_fetch: binary response; use web_download with url and a local path to save this file")}, nil
+	}
+	page := string(body)
+	media := fetchedMediaURLs(page, contentType, resp.Request.URL, maxChars)
+	if a.Mode == "media" {
+		return Result{Text: formatFetchedMedia(page, contentType, resp.Request.URL, media)}, nil
+	}
+	title, content := formatFetched(page, contentType)
 
 	finalURL := resp.Request.URL.String()
 	var sb strings.Builder
@@ -195,29 +238,63 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 		fmt.Fprintf(&sb, "Title: %s\n", title)
 	}
 	sb.WriteString("\n")
+	if media != "" {
+		sb.WriteString(media)
+		sb.WriteString("\n")
+	}
 	if len(content) > maxChars {
 		sb.WriteString(content[:maxChars])
 		fmt.Fprintf(&sb, "\n\n[content truncated at %d characters; total %d]", maxChars, len(content))
 	} else {
 		sb.WriteString(content)
 	}
+	if bodyTruncated {
+		fmt.Fprintf(&sb, "\n\n[response exceeds %d bytes; use web_download to save the complete file]", webFetchMaxBody)
+	}
 	return Result{Text: sb.String()}, nil
+}
+
+// isFetchedText prevents compressed files, images and other binary bodies
+// from becoming tool-message text. Unknown/octet-stream responses are sniffed
+// so plain source files without a useful Content-Type remain readable.
+func isFetchedText(prefix []byte, contentType string) bool {
+	if bytes.IndexByte(prefix, 0) >= 0 {
+		return false
+	}
+	// Peek may end in the middle of a UTF-8 rune. Accept only that incomplete
+	// suffix, never malformed bytes that utf8.FullRune can already classify.
+	for rest := prefix; len(rest) > 0; {
+		if !utf8.FullRune(rest) {
+			break
+		}
+		r, n := utf8.DecodeRune(rest)
+		if r == utf8.RuneError && n == 1 {
+			return false
+		}
+		rest = rest[n:]
+	}
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	sniffed := strings.SplitN(http.DetectContentType(prefix), ";", 2)[0]
+	// A misleading text/plain header must not expose a PDF/image/media body.
+	if strings.HasPrefix(sniffed, "image/") || strings.HasPrefix(sniffed, "audio/") ||
+		strings.HasPrefix(sniffed, "video/") || sniffed == "application/pdf" ||
+		sniffed == "application/zip" || sniffed == "application/x-gzip" ||
+		sniffed == "application/x-rar-compressed" {
+		return false
+	}
+	if ct == "" || ct == "application/octet-stream" {
+		ct = sniffed
+	}
+	return strings.HasPrefix(ct, "text/") || ct == "application/json" ||
+		ct == "application/xml" || ct == "application/xhtml+xml" ||
+		ct == "application/javascript" || ct == "image/svg+xml" ||
+		strings.HasSuffix(ct, "+json") || strings.HasSuffix(ct, "+xml")
 }
 
 // formatFetched converts a response body to (title, readable text)
 // based on its content type. Pure; unit-tested.
 func formatFetched(body, contentType string) (title, content string) {
-	ct := strings.ToLower(contentType)
-	isHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
-	// Sniff when the server didn't say: leading '<' + html/doctype.
-	if ct == "" || strings.Contains(ct, "octet-stream") {
-		trimmed := strings.TrimSpace(body)
-		low := strings.ToLower(trimmed)
-		if strings.HasPrefix(low, "<!doctype html") || strings.HasPrefix(low, "<html") {
-			isHTML = true
-		}
-	}
-	if isHTML {
+	if fetchedHTML(body, contentType) {
 		return htmlTitle(body), htmlToText(body)
 	}
 	return "", strings.TrimSpace(body)

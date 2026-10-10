@@ -81,22 +81,27 @@ type webSearchArgs struct {
 	Freshness      string   `json:"freshness"`
 	IncludeDomains []string `json:"include_domains"`
 	ExcludeDomains []string `json:"exclude_domains"`
+	Refresh        bool     `json:"refresh"`
 }
 
 type webLookupArgs struct {
-	Query string `json:"query"`
+	Query   string `json:"query"`
+	Refresh bool   `json:"refresh"`
 }
 
 // LookupSpec is the tiny always-on path for current facts. It deliberately
-// exposes only a query: models can search in one call without first spending a
-// turn discovering the larger web_search schema. Advanced filters remain on
+// exposes a query and an explicit refresh switch: models can search in one call
+// without first spending a turn discovering the larger web_search schema. Advanced filters remain on
 // web_search behind tool_search.
 func (t *WebSearch) LookupSpec() Tool {
 	return Tool{
 		Name:        "web_lookup",
 		ReadOnly:    true,
-		Description: "Search the live public web for current facts. Use before answering time-sensitive questions.",
-		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"What to look up on the web."}},"required":["query"]}`,
+		ReuseTTL:    2 * time.Minute,
+		RefreshArg:  "refresh",
+		NextTools:   []string{"web_fetch", "web_download"},
+		Description: "Search the live public web for current facts, new candidate URLs or external references. This does not open, inspect or download a supplied URL. Returns search hits and snippets. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
+		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},"refresh":{"type":"boolean","description":"Bypass recent result reuse and the search cache to make a fresh network search (default false)."}},"required":["query"]}`,
 		Fn:          t.lookup,
 	}
 }
@@ -110,27 +115,30 @@ func (t *WebSearch) lookup(ctx context.Context, raw json.RawMessage) (Result, er
 	if a.Query == "" {
 		return Result{Err: fmt.Errorf("web_lookup: query is empty")}, nil
 	}
-	forward, _ := json.Marshal(webSearchArgs{Query: a.Query, MaxResults: webSearchDefaultResults})
+	forward, _ := json.Marshal(webSearchArgs{Query: a.Query, MaxResults: webSearchDefaultResults, Refresh: a.Refresh})
 	return t.execute(ctx, forward)
 }
 
 // Spec returns the tool registration.
 func (t *WebSearch) Spec() Tool {
 	return Tool{
-		Name:     "web_search",
-		ReadOnly: true,
-		Description: "Search the web and return a list of results (title, URL, snippet). " +
-			"Use for current events, documentation lookups, or anything not in your training data. " +
-			"Follow up with web_fetch to read a result in full. Default engine needs no API key. " +
-			"Optional freshness and domain filters narrow results without extra searches.",
+		Name:       "web_search",
+		ReadOnly:   true,
+		ReuseTTL:   2 * time.Minute,
+		RefreshArg: "refresh",
+		NextTools:  []string{"web_fetch", "web_download"},
+		Description: "Search the public web for current facts, new candidate URLs or external references, returning title, URL and snippet. " +
+			"This does not open, inspect or download a supplied URL. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Default engine needs no API key. " +
+			"Optional freshness and domain filters narrow results without extra searches. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "query":           {"type": "string", "description": "Search query, e.g. 'golang bubbletea textarea height'."},
+    "query":           {"type": "string", "description": "Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},
     "max_results":     {"type": "integer", "description": "Number of results (default 5, max 10)."},
     "freshness":       {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Optional recency window."},
     "include_domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional domains to include."},
-    "exclude_domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional domains to exclude."}
+    "exclude_domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional domains to exclude."},
+    "refresh":         {"type": "boolean", "description": "Bypass recent result reuse and the search cache to make a fresh network search (default false)."}
   },
   "required": ["query"]
 }`,
@@ -169,8 +177,18 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 		return Result{Err: fmt.Errorf("web_search: exclude_domains: %w", err)}, nil
 	}
 	cacheKey := t.cacheKey(a)
-	if cached, ok := t.cache.get(cacheKey, time.Now()); ok {
-		return Result{Text: formatSearchResults(q, cached.engine, cached.fallbackFrom, cached.results)}, nil
+	if err := ctx.Err(); err != nil {
+		return Result{Err: fmt.Errorf("web_search: %w", err)}, nil
+	}
+	cacheGeneration := t.cache.currentGeneration()
+	if a.Refresh {
+		// A failed fresh request must not silently restore older evidence on
+		// the next ordinary call. Invalidate before making the HTTP request.
+		cacheGeneration = t.cache.remove(cacheKey)
+	} else {
+		if cached, ok := t.cache.get(cacheKey, time.Now()); ok {
+			return Result{Text: formatSearchResults(q, cached.engine, cached.fallbackFrom, cached.results)}, nil
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, webSearchTimeout)
@@ -225,7 +243,7 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	}
 	results = filterAndDedupeResults(results, a.IncludeDomains, a.ExcludeDomains, n)
 	value := searchCacheValue{results: results, engine: usedEngine, fallbackFrom: fallbackFrom}
-	t.cache.set(cacheKey, value, searchCacheTTL(a), time.Now())
+	t.cache.setIfCurrent(cacheKey, value, searchCacheTTL(a), time.Now(), cacheGeneration)
 	return Result{Text: formatSearchResults(q, usedEngine, fallbackFrom, results)}, nil
 }
 

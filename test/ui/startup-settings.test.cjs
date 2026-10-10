@@ -18,7 +18,8 @@ test('initial health and model discovery keep the empty-model label localized',a
  const shell=fs.readFileSync(path.join(assets,'js/06-shell.js'),'utf8');
  const models=fs.readFileSync(path.join(assets,'js/10-models.js'),'utf8');
  const health=shell.slice(shell.indexOf('async function checkHealth()'),shell.indexOf('/* ═══ side panel: tabs'));
- const discovery=models.slice(models.indexOf('async function loadModels()'),models.indexOf('function contextBudgetText('));
+ const discovery=models.slice(models.indexOf('async function loadModels()'),models.indexOf('function contextBudgetText('))+
+  models.slice(models.indexOf('function activeModelEntry()'),models.indexOf('function renderActiveContextControl()'));
  const english=JSON.parse(fs.readFileSync(path.join(assets,'locales/en.json'),'utf8'));
  const polish=JSON.parse(fs.readFileSync(path.join(assets,'locales/pl.json'),'utf8'));
  for(const model of ['no model','','custom/my-model']){
@@ -28,7 +29,7 @@ test('initial health and model discovery keep the empty-model label localized',a
   let complete;const ready=new Promise(resolve=>complete=resolve);
   const calls=[];const c={ui:{lang:'pl'},I18N:{en:english,pl:polish},UI_LANGUAGES:[{code:'en'},{code:'pl'}],
    document:{documentElement:{},addEventListener(){}},navigator:{languages:['pl-PL']},$:node,$$:()=>[],
-   activeModelID:'',activeProviderID:'',activeWorkspacePath:'',streaming:false,reasoningRevision:0,
+   activeModelID:'',activeProviderID:'',activeWorkspacePath:'',streaming:false,runFinishing:false,queueDispatching:false,pendingImmediate:null,reasoningRevision:0,modelsLoadSeq:0,modelCache:[],
    workspaceDisplayName:value=>value,slimModels:values=>values,saveBlobKey(){},renderModelList(){},renderReasoning(){},
    j:async url=>{calls.push(url);if(url==='/api/health')return {model,home:''};if(url==='/api/models'){assert.equal(node('#model-name').textContent,expected,'health label');return {active:model,provider:'',models:[]};}throw Error('Unexpected request '+url);},
    loadUI:async()=>({}),composerDraftStore:{load:async()=>{}},loadReasoning(){},loadSessions(){},loadProjects(){},loadPromptQueue(){},loadWorkers(){},renderStats(){},setInterval(){},promptEl:{focus(){}}};
@@ -38,5 +39,11 @@ test('initial health and model discovery keep the empty-model label localized',a
   assert.deepEqual(calls,['/api/health','/api/models']);
   assert.equal(c.activeModelID,model==='custom/my-model'?model:'');
   assert.equal(node('#model-name').textContent,expected,'model discovery label');
+  c.streaming=true;c.runFinishing=true;await c.checkHealth();
+  assert.equal(node('#status-dot').className,'status-dot ok','health must not resurrect busy after terminal/Stop');
+  c.pendingImmediate={text:'next'};await c.checkHealth();
+  assert.equal(node('#status-dot').className,'status-dot ok busy','health preserves the pending handoff');
+  c.pendingImmediate=null;c.runFinishing=false;await c.checkHealth();
+  assert.equal(node('#status-dot').className,'status-dot ok busy','health keeps actual generation busy');
  }
 });

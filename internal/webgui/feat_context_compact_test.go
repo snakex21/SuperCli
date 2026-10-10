@@ -88,7 +88,7 @@ func TestWebLoop_AutoCompactUsesSummary(t *testing.T) {
 	// strict chat templates reject mid-history system messages)...
 	var summary string
 	for _, m := range loop.AllMessages() {
-		if m.Role == llm.RoleUser && strings.Contains(m.Content, "continued from a previous conversation") {
+		if agent.IsLegacyCompactionSummary(m) {
 			summary = m.Content
 		}
 	}
@@ -203,7 +203,7 @@ func TestContextCompactEndpointPreservesTranscriptAndRewritesProjection(t *testi
 	}
 	foundSummary := false
 	for _, msg := range projection {
-		if strings.Contains(msg.Content, "continued from a previous conversation") {
+		if agent.IsLegacyCompactionSummary(msg) {
 			foundSummary = true
 		}
 	}

@@ -23,7 +23,7 @@ func TestEngine_WebEditorProfileMatchesTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = eng.Close() })
-	loop, err := eng.newLoop()
+	loop, reg, err := eng.buildLoopWithSession(nil, nil, eng.Home(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +40,8 @@ func TestEngine_WebEditorProfileMatchesTUI(t *testing.T) {
 		}
 	}
 
-	reg := eng.diagnosticRegistry
 	if reg == nil {
-		t.Fatal("diagnostic registry not captured")
+		t.Fatal("base registry not returned")
 	}
 	if _, ok := reg.Get("search_history"); !ok {
 		t.Fatal("search_history must retrieve tool details omitted from future provider prompts")
@@ -133,12 +132,12 @@ func TestEngine_NestCafeCtxExecuteRefusesDocxAutomation(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = eng.Close() })
 	eng.SetAppProfile("nestcafe")
-	if _, err := eng.newLoop(); err != nil {
+	_, reg, err := eng.buildLoopWithSession(nil, nil, eng.Home(), nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	reg := eng.diagnosticRegistry
 	if reg == nil {
-		t.Fatal("diagnostic registry not captured")
+		t.Fatal("base registry not returned")
 	}
 	ctxTool, ok := reg.Get("ctx_execute")
 	if !ok {

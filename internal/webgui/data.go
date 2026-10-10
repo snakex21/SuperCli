@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/storage/session"
 )
 
@@ -50,6 +51,7 @@ type sessionMeta struct {
 // transcriptMsg is one message in a session transcript.
 type transcriptMsg struct {
 	Seq              int                   `json:"seq"`
+	MessageID        string                `json:"message_id,omitempty"`
 	Role             string                `json:"role"`
 	Content          string                `json:"content"`
 	Attachments      []string              `json:"attachments,omitempty"`
@@ -256,14 +258,29 @@ func (e *Engine) deleteSession(id string) error {
 	if err != nil {
 		return err
 	}
-	meta, err := store.Get(id)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	gate, err := checkpoint.NewStoreGate(e.dataDir)
 	if err != nil {
 		return err
 	}
-	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
-		return errSessionOutsideWorkspace
+	transaction, err := gate.Acquire(ctx)
+	if err != nil {
+		return err
 	}
-	return store.Delete(id)
+	meta, err := store.Get(id)
+	if err != nil {
+		return errors.Join(err, transaction.Close())
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return errors.Join(errSessionOutsideWorkspace, transaction.Close())
+	}
+	cleanup, deleteErr := store.DeleteRows(ctx, id)
+	closeErr := transaction.Close()
+	if deleteErr != nil {
+		return errors.Join(deleteErr, closeErr)
+	}
+	return errors.Join(closeErr, cleanup())
 }
 
 // transcript returns all messages for one session in order.

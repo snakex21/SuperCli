@@ -151,10 +151,8 @@ func TestRunner_ExitCodeWindows(t *testing.T) {
 	}
 }
 
-// TestRunner_OutputCapsWindows checks the 16 KB stdout / 4 KB stderr caps on a
-// path that runs on Windows (the existing cap test needs python3 and is skipped
-// here). The payload is written from Go and echoed back with "type" so the test
-// stays fast and deterministic.
+// TestRunner_OutputCapsWindows checks bounded stdout/stderr capture through
+// cmd.exe redirection. The payload is written from Go and echoed with "type".
 func TestRunner_OutputCapsWindows(t *testing.T) {
 	dir := t.TempDir()
 	big := strings.Repeat("x", 40*1024)
@@ -164,19 +162,22 @@ func TestRunner_OutputCapsWindows(t *testing.T) {
 	r := NewRunner(dir)
 
 	res := r.Run(context.Background(), "type big.txt")
-	if len(res.Stdout) > 17*1024 {
-		t.Errorf("stdout = %d bytes, want capped near 16 KB", len(res.Stdout))
+	if len(res.Stdout) > 16*1024+128 {
+		t.Errorf("stdout = %d bytes, want capped at 16 KiB plus an omission marker", len(res.Stdout))
 	}
-	if !strings.Contains(res.Stdout, "truncated") {
+	if strings.Count(res.Stdout, "omitted_bytes=") != 1 {
 		t.Errorf("capped stdout carries no truncation marker")
 	}
 
 	res = r.Run(context.Background(), "type big.txt 1>&2")
-	if len(res.Stderr) > 4*1024 {
-		t.Errorf("stderr = %d bytes, want capped at 4 KB", len(res.Stderr))
+	if len(res.Stderr) > 4*1024+128 {
+		t.Errorf("stderr = %d bytes, want capped at 4 KiB plus an omission marker", len(res.Stderr))
 	}
 	if res.Stderr == "" {
 		t.Errorf("stderr empty, want the redirected payload")
+	}
+	if strings.Count(res.Stderr, "omitted_bytes=") != 1 {
+		t.Errorf("capped stderr carries no truncation marker")
 	}
 }
 

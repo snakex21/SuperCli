@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Ein portabler KI-Programmieragent in Go mit Terminaloberfläche (TUI), Desktop-/Weboberfläche (GUI) und Stapelmodus, die dieselbe Engine nutzen.
 
 <!-- readme-unit:status -->
-Dieses README beschreibt Version `1.0.3`. Portable Veröffentlichungspakete werden über [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.
+Dieses README beschreibt Version `1.0.5`. Portable Veröffentlichungspakete werden über [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.
 
 <!-- readme-unit:h.screenshots -->
 ## Screenshots
@@ -172,6 +172,7 @@ Verwenden Sie die in `go.mod` angegebene Go-Version. Unter Windows baut `build.b
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

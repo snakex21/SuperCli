@@ -1,7 +1,9 @@
 package webgui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/childproc"
 )
@@ -23,6 +26,17 @@ type projectView struct {
 	Model  string `json:"model,omitempty"`
 	Active bool   `json:"active"`
 	Cwd    bool   `json:"cwd"`
+}
+
+var errProjectWorkActive = errors.New("stop the active task before changing projects or clearing checkpoints")
+
+type projectActionOptions struct {
+	DeleteCheckpoints *bool
+	RememberCleanup   bool
+}
+
+type projectActionResult struct {
+	Cleanup *checkpoint.WorkspaceCleanupPreview
 }
 
 // loadWorkspaceMerged loads the named-workspace store, lazily migrating any
@@ -74,6 +88,119 @@ func (e *Engine) listProjects() []projectView {
 // requests use the selected sandbox immediately. name is an optional display
 // name for "add"; when empty the directory basename is used.
 func (e *Engine) projectAction(action, target, name, newPath string) error {
+	_, err := e.projectActionContext(context.Background(), action, target, name, newPath, projectActionOptions{})
+	return err
+}
+
+func (e *Engine) projectActionContext(ctx context.Context, action, target, name, newPath string, options projectActionOptions) (projectActionResult, error) {
+	result := projectActionResult{}
+	remove := action == "remove" || action == "delete"
+	if options.RememberCleanup && (!remove || options.DeleteCheckpoints == nil) {
+		return result, errors.New("remember_cleanup requires an explicit delete_checkpoints choice when removing a project")
+	}
+	if options.DeleteCheckpoints != nil && !remove {
+		return result, errors.New("delete_checkpoints is only supported when removing a project")
+	}
+	switch action {
+	case "use", "select", "add", "relocate", "edit", "remove", "delete", "clear_checkpoints", "checkpoint_preview":
+	default:
+		return result, fmt.Errorf("unknown action %q", action)
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	if action != "checkpoint_preview" {
+		// Foreground runs hold the matching read lock. Refuse active work rather
+		// than stopping it, and keep new runs out until this action finishes.
+		if !e.updateGate.TryLock() {
+			return result, errProjectWorkActive
+		}
+		defer e.updateGate.Unlock()
+		if e.HasActiveWork() {
+			return result, errProjectWorkActive
+		}
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+	}
+	if !remove && action != "clear_checkpoints" && action != "checkpoint_preview" {
+		return result, e.projectRegistrationAction(action, target, name, newPath)
+	}
+
+	// Resolve only a registered project, before changing either registration
+	// file. A browser-supplied directory cannot authorize unrelated cleanup.
+	project, ok := e.loadWorkspaceMerged().Get(target)
+	if !ok {
+		return result, fmt.Errorf("no project matches %q", target)
+	}
+	if action == "checkpoint_preview" {
+		preview, err := checkpoint.PreviewWorkspaceCleanup(ctx, project.Path, e.dataDir)
+		result.Cleanup = &preview
+		return result, err
+	}
+	cleanup := action == "clear_checkpoints"
+	if remove {
+		if options.DeleteCheckpoints != nil {
+			cleanup = *options.DeleteCheckpoints
+		} else {
+			var err error
+			cleanup, err = memory.LoadProjectCheckpointCleanup(e.dataDir)
+			if err != nil {
+				return result, fmt.Errorf("load project checkpoint preference: %w", err)
+			}
+		}
+	}
+	if options.RememberCleanup {
+		if err := memory.SaveProjectCheckpointCleanup(e.dataDir, cleanup); err != nil {
+			return result, fmt.Errorf("save project checkpoint preference: %w", err)
+		}
+	}
+	if cleanup {
+		if err := e.retryProjectCheckpointCompletions(ctx, project.Path); err != nil {
+			return result, err
+		}
+		preview, err := checkpoint.ClearWorkspaceCheckpoints(ctx, project.Path, e.dataDir)
+		result.Cleanup = &preview
+		if err != nil {
+			return result, err
+		}
+		e.forgetProjectCheckpointManagers(project.Path)
+	}
+	if remove {
+		// A failed checkpoint cleanup leaves the project registered for retry.
+		return result, e.projectRegistrationAction(action, project.Path, name, newPath)
+	}
+	return result, nil
+}
+
+func (e *Engine) retryProjectCheckpointCompletions(ctx context.Context, home string) error {
+	e.checkpointMu.Lock()
+	var managers []*checkpoint.Manager
+	for key, manager := range e.checkpoints {
+		if sameSessionWorkspace(key, home) {
+			managers = append(managers, manager)
+		}
+	}
+	e.checkpointMu.Unlock()
+	for _, manager := range managers {
+		if err := manager.RetryRecordedCompletions(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) forgetProjectCheckpointManagers(home string) {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	for key := range e.checkpoints {
+		if sameSessionWorkspace(key, home) {
+			delete(e.checkpoints, key)
+		}
+	}
+}
+
+func (e *Engine) projectRegistrationAction(action, target, name, newPath string) error {
 	ws := e.loadWorkspaceMerged()
 	switch action {
 	case "use", "select":

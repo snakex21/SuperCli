@@ -164,6 +164,8 @@ func (l *Loop) drainInterjections(ctx context.Context, out chan<- Event, canCont
 		}
 	}
 	if len(pending) > 0 {
+		l.resultReuse.reset()
+		l.completedOps.reset()
 		l.invalidateVisibleEstimate()
 	}
 	return len(pending)

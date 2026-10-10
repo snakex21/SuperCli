@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"supercli/internal/ui/viewport"
 
+	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
@@ -45,6 +46,7 @@ const (
 type Model struct {
 	home                 string
 	dataDir              string
+	usageRates           *usagecost.HistoryRates
 	sessionID            string
 	loadedSessionID      string
 	pendingAttachments   []string
@@ -103,7 +105,8 @@ type Model struct {
 
 	// F26.2: shellRunner handles "!command" shell escapes.
 	// nil = shell escapes disabled.
-	shellRunner *shellescape.Runner
+	shellRunner     *shellescape.Runner
+	shellInvocation *shellInvocation
 
 	// F26.3: planMode toggles read-only analysis mode.
 	planMode bool
@@ -300,6 +303,7 @@ type Options struct {
 	ModelSwapFn ModelSwapFunc
 	// F26.6: SessionStore for /resume.
 	SessionStore *session.Store
+	UsageRates   *usagecost.HistoryRates
 	// F28: StatsRecorder provides per-turn metrics for /cost dashboard.
 	StatsRecorder stats.Recorder
 	// F30: ProviderMgr manages the provider list from config.toml.
@@ -444,6 +448,7 @@ func New(opts Options) Model {
 		prepareResume:     opts.PrepareResume,
 		drafts:            opts.DraftRecovery,
 		sessionStore:      opts.SessionStore,
+		usageRates:        opts.UsageRates,
 		statsRecorder:     opts.StatsRecorder,
 		providerMgr:       opts.ProviderMgr,
 		activeProvider:    opts.ActiveProvider,
@@ -853,7 +858,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyResumedTranscript(msg.History)
 		} else if msg.Document {
 			m.chat.addDocument(msg.Body)
-			m.appendLineToTranscript(msg.Body)
+			m.markTranscriptPresent()
 		} else {
 			m.appendLine(msg.Body)
 		}
@@ -863,9 +868,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case shellResultMsg:
-		m.busy = false
-		m.cancel.Disarm()
-		m.chat.removeLastSystem(m.marker.Running())
+		current := msg.invocation != nil && msg.invocation == m.shellInvocation
+		if msg.invocation != nil {
+			msg.invocation.cancel()
+		}
+		if current {
+			m.shellInvocation = nil
+			m.cancelling = false
+			m.busy = false
+			m.cancel.Disarm()
+			m.chat.removeLastSystem(m.marker.Running())
+		}
 		r := msg.res
 		if r.Error != "" {
 			m.appendLine(m.marker.Error(fmt.Errorf("%s", r.Error)))
@@ -887,8 +900,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					r.Command, r.Duration.Round(1e6), out), false))
 		}
 		m.refreshTranscript()
-		m.syncInputHeight()
-		m.input.Focus()
+		if current {
+			m.syncInputHeight()
+			m.input.Focus()
+		}
 		return m, nil
 
 	case statusOverrideClearMsg:

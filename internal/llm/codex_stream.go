@@ -82,12 +82,12 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			}
 		} else {
 			reasoningModel := p.supportsReasoningControl()
-			reqBody, err = prepareOwnedStandardResponsesRequest(standardPrimary, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			reqBody, err = prepareAssembledStandardResponsesRequest(standardPrimary, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 			if err != nil {
 				return nil, fmt.Errorf("build standard responses request: %w", err)
 			}
 			if hasImageFallback {
-				imageFallback, err = prepareOwnedStandardResponsesRequest(standardFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+				imageFallback, err = prepareAssembledStandardResponsesRequest(standardFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
 				if err != nil {
 					return nil, fmt.Errorf("build standard image fallback request: %w", err)
 				}

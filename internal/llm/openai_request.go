@@ -375,6 +375,9 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			req.ReasoningEffort = e
 		}
 	}
+	if len(tools) > 0 {
+		req.Tools = make([]openaiToolDecl, 0, len(tools))
+	}
 	for _, t := range tools {
 		parameters, err := normalizeOpenAIToolSchemaChecked(t.Schema)
 		if err != nil {
@@ -392,6 +395,9 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 	if len(req.Tools) > 0 {
 		enabled := true
 		req.ParallelToolCalls = &enabled
+	}
+	if len(msgs) > 0 {
+		req.Messages = make([]openaiReqMsg, 0, len(msgs))
 	}
 	for _, m := range msgs {
 		rm := openaiReqMsg{
@@ -412,6 +418,9 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			rm.Content = content
 		}
 		// Assistant tool calls.
+		if len(m.ToolCalls) > 0 {
+			rm.ToolCalls = make([]openaiReqToolRef, 0, len(m.ToolCalls))
+		}
 		for _, tc := range m.ToolCalls {
 			rm.ToolCalls = append(rm.ToolCalls, openaiReqToolRef{
 				ID:       tc.ID,

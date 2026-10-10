@@ -54,11 +54,11 @@ func TestWebRecreatedLoopRestoresToolDiscovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		l, err := eng.newLoopWithSession(history, writer)
+		l, reg, err := eng.buildLoopWithSession(history, writer, eng.Home(), nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		eng.diagnosticRegistry.MustRegister(tools.Tool{Name: "fixture_records", Description: "Process fixture records.", ReadOnly: true,
+		reg.MustRegister(tools.Tool{Name: "fixture_records", Description: "Process fixture records.", ReadOnly: true,
 			Schema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}},"required":["items"]}`,
 			Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 				executions++

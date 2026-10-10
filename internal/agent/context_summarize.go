@@ -10,6 +10,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -17,29 +18,26 @@ import (
 	"supercli/internal/llm"
 )
 
-// compactionPrompt is the summarization instruction sent to the
-// active model for /compact and auto-compaction. Deliberately a
-// SHORT forced template: the summary replaces history byte-for-byte
-// in every later prompt, and small local models both ramble and get
-// lost in long 9-section summaries. Exact facts that need no prose
-// (file paths, loaded tools) are appended by code, not the model —
-// see CompactFacts.
-const compactionPrompt = `Summarize the conversation so far. The summary will REPLACE the older history, so it must let the work continue without the original messages.
+// Keep the placeholders shared with the narrow empty-template echo check.
+// Factoring this constant does not change the provider's instruction bytes.
+const compactionTemplate = `Goal: user's requests and intent; quote the key instruction verbatim.
+Done: completed files, fixes and checks supported by tool/task results.
+State: needed paths, decisions, values, defaults, open errors and ALL still-applicable user requirements/prohibitions, including earlier ones. Keep constraints as instructions, not just past compliance.
+Pending: unfinished work and immediate next step.`
 
-Use EXACTLY this template, plain text, no code fences:
+// compactionPrompt is the shared summarization instruction. Exact file/tool
+// facts are appended by code (CompactFacts); the model supplies task state.
+const compactionPrompt = `Summarize the conversation to REPLACE older history and let work continue without it.
 
-Goal: the user's request(s) and intent; quote the key instruction verbatim.
-Done: what was accomplished (files created/modified, problems solved, errors fixed).
-State: facts needed to continue — key paths, decisions, values, open errors.
-Pending: what remains, and the immediate next step.
+Use EXACTLY this plain-text template, no code fences:
+` + compactionTemplate + `
 
-Treat tool/task results as authoritative. Do not turn an assistant's intention
-or promise ("I will inspect/edit/test") into Done. Do not list an investigation
-as Pending when a successful worker already returned its result. Preserve
-failed worker IDs and say to continue them with send_message when useful,
-instead of starting the same work from scratch.
+Tool/task results are authoritative. Assistant intentions/promises are not Done.
+A successful worker's returned investigation is not Pending. Preserve failed worker IDs; continue them with send_message when useful instead of restarting.
 
-Hard limit: 500 tokens total. Prefer bare file paths and short phrases over prose. Respond with TEXT ONLY — no tool calls.`
+Hard limit: 500 tokens total. Prefer bare paths and short phrases. TEXT ONLY — no tool calls.`
+
+var errCompactionInstructionEcho = errors.New("compact: model repeated summarization instructions instead of conversation facts; history preserved")
 
 // compactSummaryMaxChars hard-caps the model-produced summary
 // (~1000 tokens). Small models overshoot instruction limits; the
@@ -51,8 +49,12 @@ const compactSummaryMaxChars = 4000
 // compactSummaryWrapper frames the summary so the model resumes
 // seamlessly on the next turn.
 const (
-	compactSummaryPreamble = "This session is continued from a previous conversation that was compacted to save context. The conversation is summarized below:\n\n"
-	compactSummaryEpilogue = "\n\nPlease continue the conversation from where it was left off. Do not ask the user to repeat anything and do not acknowledge this summary in your response."
+	compactSummaryPreamble = "Earlier context was compacted. Continue using this summary:\n\n"
+	compactSummaryEpilogue = "\n\nResume the work; do not acknowledge this summary or ask the user to repeat information."
+	// Older sessions may still contain the original envelope. Keep it
+	// recognizable without rewriting archived conversation or summary facts.
+	legacyCompactSummaryPreamble = "This session is continued from a previous conversation that was compacted to save context. The conversation is summarized below:\n\n"
+	legacyCompactSummaryEpilogue = "\n\nPlease continue the conversation from where it was left off. Do not ask the user to repeat anything and do not acknowledge this summary in your response."
 )
 
 // WrapCompactSummary wraps the model-produced summary in the
@@ -66,37 +68,108 @@ func WrapCompactSummary(summary string) string {
 // gets its own instructions); tool results are truncated so a
 // huge file read doesn't blow the summarization call itself.
 func RenderCompactTranscript(msgs []llm.Message) string {
-	const toolResultCap = 700
-	var b strings.Builder
-	for _, m := range msgs {
+	if len(msgs) == 0 {
+		return ""
+	}
+	// Render each message once, then reserve the exact transcript length.
+	// Repeated append/format of large coding histories otherwise copies text
+	// on every buffer growth. These are request-local strings, not a cache.
+	contents := make([]string, len(msgs))
+	size := 0
+	for i, m := range msgs {
 		if m.Role == llm.RoleSystem {
 			continue
 		}
-		content := m.Content
-		if content == "" {
-			for _, p := range m.Parts {
-				if p.Type == llm.PartTypeText {
-					content += p.Text
-				}
-			}
-		}
-		for _, tc := range m.ToolCalls {
-			content += fmt.Sprintf("\n[tool call: %s %s]", tc.Name, compactExcerpt(string(tc.Arguments), toolResultCap))
-		}
-		if m.Role == llm.RoleTool {
-			content = compactExcerpt(content, toolResultCap)
-		}
+		content := compactTranscriptContent(m)
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, content)
+		contents[i] = content
+		size += len(m.Role) + 3 + len(content) + 1
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for i, content := range contents {
+		if content == "" {
+			continue
+		}
+		b.WriteByte('[')
+		b.WriteString(string(msgs[i].Role))
+		b.WriteString("] ")
+		b.WriteString(content)
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
 
+// Preserve Content precedence, separator bytes and existing tool excerpts.
+// A single text string can be reused; fragmented text and tool calls require
+// only one assembly buffer instead of copying every preceding fragment.
+func compactTranscriptContent(m llm.Message) string {
+	const toolResultCap = 700
+	if IsLegacyCompactionSummary(m) {
+		// Resume framing controls the following main request, not this helper.
+		// Re-summarize every saved fact verbatim without repeating that framing.
+		for _, envelope := range []struct{ preamble, epilogue string }{
+			{compactSummaryPreamble, compactSummaryEpilogue},
+			{legacyCompactSummaryPreamble, legacyCompactSummaryEpilogue},
+		} {
+			if hasCompactSummaryEnvelope(m.Content, envelope.preamble, envelope.epilogue) {
+				return m.Content[len(envelope.preamble) : len(m.Content)-len(envelope.epilogue)]
+			}
+		}
+	}
+	size := len(m.Content)
+	first := m.Content
+	if m.Content == "" {
+		for _, p := range m.Parts {
+			if p.Type == llm.PartTypeText {
+				if size == 0 {
+					first = p.Text
+				}
+				size += len(p.Text)
+			}
+		}
+	}
+	if len(m.ToolCalls) == 0 && size == len(first) {
+		if m.Role == llm.RoleTool {
+			return compactExcerpt(first, toolResultCap)
+		}
+		return first
+	}
+	for _, tc := range m.ToolCalls {
+		// UTF-8 boundary adjustment can make the excerpt slightly shorter.
+		// Its byte cap is a safe size bound without rendering it twice.
+		size += len("\n[tool call: ") + len(tc.Name) + 1 + min(len(tc.Arguments), toolResultCap) + 1
+	}
+	var b strings.Builder
+	b.Grow(size)
+	if m.Content != "" {
+		b.WriteString(m.Content)
+	} else {
+		for _, p := range m.Parts {
+			if p.Type == llm.PartTypeText {
+				b.WriteString(p.Text)
+			}
+		}
+	}
+	for _, tc := range m.ToolCalls {
+		b.WriteString("\n[tool call: ")
+		b.WriteString(tc.Name)
+		b.WriteByte(' ')
+		b.WriteString(compactExcerpt(tc.Arguments, toolResultCap))
+		b.WriteByte(']')
+	}
+	content := b.String()
+	if m.Role == llm.RoleTool {
+		return compactExcerpt(content, toolResultCap)
+	}
+	return content
+}
+
 // SummarizeForCompaction asks the provider for the Goal/Done/State/
 // Pending summary of msgs. Returns an error when the provider fails
-// or produces an empty answer.
+// or produces an empty, incomplete, or non-text answer.
 func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message) (string, error) {
 	transcript := RenderCompactTranscript(msgs)
 	if strings.TrimSpace(transcript) == "" {
@@ -107,6 +180,9 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	if llm.PurposeFromContext(ctx) == "" {
 		ctx = llm.WithPurpose(ctx, llm.PurposeCompact)
 	}
+	// Cancel the helper request when a rejected result ends consumption early.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	ch, err := provider.Complete(ctx, []llm.Message{
 		{Role: llm.RoleSystem, Content: compactionPrompt},
 		{Role: llm.RoleUser, Content: transcript},
@@ -115,11 +191,39 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 		return "", err
 	}
 	var b strings.Builder
-	for d := range ch {
-		if d.Err != nil {
-			return "", d.Err
+	var resultErr error
+readStream:
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case d, ok := <-ch:
+			if !ok {
+				break readStream
+			}
+			if d.Err != nil {
+				return "", d.Err
+			}
+			if resultErr == nil {
+				if d.ToolCall != nil {
+					resultErr = fmt.Errorf("summarizer returned a tool call instead of text")
+				} else if d.FinishReason != "" && d.FinishReason != "stop" {
+					resultErr = fmt.Errorf("summarizer did not complete: finish_reason=%q", d.FinishReason)
+				}
+			}
+			// A rejected answer may still have a final usage frame. Drain the
+			// stream so the metered provider records it before returning; caller
+			// cancellation remains immediate, and unusable text is not retained.
+			if resultErr == nil {
+				b.WriteString(d.Content)
+			}
 		}
-		b.WriteString(d.Content)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if resultErr != nil {
+		return "", resultErr
 	}
 	// Reasoning models prepend <thinking> blocks even when told not
 	// to; that chain-of-thought would be re-sent with every later
@@ -128,7 +232,39 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	if out == "" {
 		return "", fmt.Errorf("summarizer returned empty text")
 	}
+	// A stop marker proves stream completion, not that the model summarized
+	// anything. Accepting its literal empty template would erase the task state.
+	// Keep this check narrow: meaningful summaries can quote an instruction or
+	// use different sections, and must not be rejected for formatting alone.
+	if sameCompactionInstructionLines(out, compactionTemplate) || sameCompactionInstructionLines(out, compactionPrompt) {
+		return "", errCompactionInstructionEcho
+	}
 	return ClampSummary(out), nil
+}
+
+// Ignore blank lines and outer line whitespace, but no wording, punctuation or
+// internal whitespace. No semantic inference or additional model call is needed.
+func sameCompactionInstructionLines(output, instructions string) bool {
+	next := func(s string) (line, rest string) {
+		for s != "" {
+			line, s, _ = strings.Cut(s, "\n")
+			if line = strings.TrimSpace(line); line != "" {
+				return line, s
+			}
+		}
+		return "", ""
+	}
+	for {
+		var a, b string
+		a, output = next(output)
+		b, instructions = next(instructions)
+		if a != b {
+			return false
+		}
+		if a == "" {
+			return true
+		}
+	}
 }
 
 // clampSummary enforces compactSummaryMaxChars, cutting at the last
@@ -140,6 +276,9 @@ func ClampSummary(s string) string {
 	cut := strings.LastIndexByte(s[:compactSummaryMaxChars], '\n')
 	if cut < compactSummaryMaxChars/2 {
 		cut = compactSummaryMaxChars
+	}
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
 	}
 	return strings.TrimSpace(s[:cut]) + "\n[summary truncated]"
 }
@@ -167,14 +306,14 @@ func NewAutoSummarizerWithProvider(provider llm.Provider, activeTools func() []s
 			p = provider
 		}
 		summary, err := SummarizeForCompaction(ctx, p, msgs)
-		if err != nil && provider != nil && mainProvider != nil && mainProvider != provider {
+		if err != nil && ctx.Err() == nil && provider != nil && mainProvider != nil && mainProvider != provider {
 			// A separately configured cheap summarizer is an optimization, not a
 			// new single point of failure. Retry on the active provider only when
 			// the side model fails; the default path still makes exactly one call.
 			sideErr := err
 			summary, err = SummarizeForCompaction(ctx, mainProvider, msgs)
 			if err != nil {
-				return "", fmt.Errorf("compact_model failed (%v); active-model fallback failed: %w", sideErr, err)
+				return "", fmt.Errorf("compact_model failed (%w); active-model fallback failed: %w", sideErr, err)
 			}
 		}
 		if err != nil {

@@ -19,12 +19,26 @@ type toolDefinitionSnapshot struct {
 	tokens int
 }
 
+// preparedToolRequest binds the estimate to the exact provider-owned definition
+// slice from that preparation, rather than a later registry revision.
+type preparedToolRequest struct {
+	defs   []llm.ToolDef
+	tokens int
+}
+
+func (l *Loop) prepareToolRequest() preparedToolRequest {
+	defs, tokens := l.preparedToolDefinitions(true)
+	return preparedToolRequest{defs: defs, tokens: tokens}
+}
+
 type toolDefinitionKey struct {
-	registry                              *tools.Registry
-	revision                              uint64
-	route                                 RouteMode
-	thin, stable, orchestrator, finalOnly bool
-	screenshot, headless, images          bool
+	registry                               *tools.Registry
+	revision                               uint64
+	route                                  RouteMode
+	thin, stable, orchestrator, finalOnly  bool
+	screenshot, headless, download, images bool
+	downloadPage                           bool
+	workflowRevision                       uint64
 }
 
 func (s *toolDefinitionSnapshot) reset() {
@@ -41,7 +55,9 @@ func (l *Loop) currentToolDefinitionKey() toolDefinitionKey {
 		registry: l.registry, route: l.route,
 		thin: l.thinTools, stable: l.stableToolset,
 		orchestrator: l.orchestrator, finalOnly: l.finalReplyOnly,
-		screenshot: l.screenshotForRun, headless: l.headlessForRun,
+		screenshot: l.screenshotForRun, headless: l.headlessForRun, download: l.downloadForRun,
+		downloadPage:     l.downloadPageForRun,
+		workflowRevision: l.workflowRevision,
 	}
 	if key.registry != nil {
 		key.revision = key.registry.Revision()
@@ -89,8 +105,8 @@ func (l *Loop) buildToolDefs() []llm.ToolDef {
 }
 
 // Estimation needs only the cached cost, not an allocated provider slice.
-// completeOnce still prices the actual passed snapshot, whose revision may
-// differ from the registry after a tool activation or a concurrent update.
+// Main completions carry their exact prepared slice and estimate together,
+// including when the registry changes after request preparation.
 func (l *Loop) toolDefinitionTokens() int {
 	_, tokens := l.preparedToolDefinitions(false)
 	return tokens

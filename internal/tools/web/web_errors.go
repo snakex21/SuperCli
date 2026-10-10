@@ -49,7 +49,19 @@ func httpFailedErr(resp *http.Response, host string) error {
 		fmt.Fprintf(&b, " retry_after=%s", strings.TrimSpace(ra))
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyReadMax))
-	if text := strings.TrimSpace(string(body)); text != "" {
+	text := strings.TrimSpace(string(body))
+	if fetchedHTML(text, resp.Header.Get("Content-Type")) || strings.HasPrefix(http.DetectContentType(body), "text/html") {
+		title, readable := readableHTMLError(text)
+		if title != "" {
+			b.WriteString("\npage_title: ")
+			b.WriteString(truncateRunes(title, mediaTitleRunes))
+		}
+		if readable != "" {
+			b.WriteString("\npage_text:\n")
+			b.WriteString(core.HeadTail(readable, errBodyHead/2, errBodyTail/2))
+		}
+		b.WriteString("\nThis URL did not return an available page. Use web_lookup to find an existing page URL, then web_fetch. Do not guess page paths or API endpoints.")
+	} else if text != "" {
 		b.WriteString("\nbody:\n")
 		b.WriteString(core.HeadTail(text, errBodyHead, errBodyTail))
 	}

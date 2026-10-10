@@ -21,6 +21,7 @@ type toolSchemaMode uint8
 const (
 	toolSchemaFull toolSchemaMode = iota
 	toolSchemaPortable
+	toolSchemaAnthropic
 )
 
 type toolSchemaCacheKey struct {
@@ -198,8 +199,11 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 	if err != nil {
 		return nil, err
 	}
-	if mode == toolSchemaPortable {
+	switch mode {
+	case toolSchemaPortable:
 		rewritePortableToolSchema(schema, true)
+	case toolSchemaAnthropic:
+		rewriteAnthropicToolSchema(schema)
 	}
 	encoded, err := json.Marshal(schema)
 	if err != nil {

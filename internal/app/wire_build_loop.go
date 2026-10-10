@@ -34,6 +34,7 @@ type loopAssembly struct {
 	draftSink              agent.DraftOverrideSink
 	draftStats             *stats.Memory
 	contextWindowFor       func(model string) agent.ContextWindowResolution
+	refreshContextWindow   func(context.Context) error
 	initialContextProvider string
 	scopedContextWindowFor func(provider, model string) agent.ContextWindowResolution
 	autoSummarizer         agent.Summarizer
@@ -53,9 +54,10 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := a.tomlCfg.MaxStepsOr(agent.DefaultMaxSteps)
 	return agent.LoopConfig{
-		Provider: a.provider,
-		Registry: a.registry,
-		System:   buildSystemPrompt(nil),
+		Provider:             a.provider,
+		Registry:             a.registry,
+		System:               buildSystemPrompt(nil),
+		RefreshContextWindow: a.refreshContextWindow,
 		LiveContextForRun: func(ctx context.Context) (string, error) {
 			if a.goalSvc == nil {
 				return "", nil
@@ -131,5 +133,6 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 		TaskParallel:          a.taskParallel,
 		TaskParallelWarnLocal: a.taskParallelWarnLocal,
 		BaseDir:               a.home,
+		UserDownloadsDir:      agent.SystemDownloadsDir,
 	}
 }

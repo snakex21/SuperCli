@@ -49,6 +49,7 @@ type chat struct {
 	completedDirty    bool
 	completedSnapshot *completedHistorySnapshot
 	activeCache       *activeSectionCache
+	searchCache       *transcriptSearchCache
 
 	// thinkingCollapsed toggles <thinking> block visibility.
 	// Press 'T' to expand/collapse all thinking blocks.
@@ -63,19 +64,21 @@ func newChat(width int, language ...string) chat {
 	if len(language) > 0 {
 		lang = normalizeLanguage(language[0])
 	}
-	return chat{width: width, language: lang, legacySymbols: legacyTerminalSymbols()}
+	return chat{width: width, language: lang, legacySymbols: legacyTerminalSymbols(), searchCache: new(transcriptSearchCache)}
 }
 
 // addUser appends a user prompt.
 func (c *chat) addUser(text string) {
 	c.msgs = append(c.msgs, msg{role: roleUser, text: text})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 // addSystem appends a system message (markers, errors, etc).
 func (c *chat) addSystem(text string) {
 	c.msgs = append(c.msgs, msg{role: roleSystem, text: text})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 // lastAssistant returns the most recent completed assistant
@@ -103,6 +106,7 @@ func (c *chat) removeLastSystem(text string) bool {
 		if c.msgs[i].role == roleSystem && c.msgs[i].text == text {
 			c.msgs = append(c.msgs[:i], c.msgs[i+1:]...)
 			c.completedDirty = true
+			c.invalidateTranscriptSearch()
 			return true
 		}
 	}
@@ -113,6 +117,7 @@ func (c *chat) removeLastSystem(text string) bool {
 func (c *chat) addAssistant(text string) {
 	c.msgs = append(c.msgs, msg{role: roleAssistant, text: text})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 // appendCurrent appends text to the streaming assistant message.
@@ -128,6 +133,7 @@ func (c *chat) flushCurrent() {
 		c.msgs = append(c.msgs, msg{role: roleAssistant, text: c.current})
 		c.current = ""
 		c.completedDirty = true
+		c.invalidateTranscriptSearch()
 	}
 }
 
@@ -320,6 +326,7 @@ func (c *chat) len() int {
 func (c *chat) toggleThinking() {
 	c.thinkingCollapsed = !c.thinkingCollapsed
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 // transcriptMatch is presentation-only search metadata. MessageIndex remains
@@ -329,25 +336,6 @@ type transcriptMatch struct {
 	MessageIndex int
 	Role         role
 	Preview      string
-}
-
-// search returns messages containing query without rendering Markdown or ANSI.
-// This is intentionally local and allocation-bounded by the number of messages;
-// it never touches the model context or session database.
-func (c *chat) search(query string) []transcriptMatch {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
-		return nil
-	}
-	matches := make([]transcriptMatch, 0, 8)
-	for i, m := range c.msgs {
-		plain := strings.Join(strings.Fields(m.text), " ")
-		if !strings.Contains(strings.ToLower(plain), q) {
-			continue
-		}
-		matches = append(matches, transcriptMatch{MessageIndex: i, Role: m.role, Preview: plain})
-	}
-	return matches
 }
 
 func (c *chat) isFoldable(index int) bool {
@@ -360,6 +348,7 @@ func (c *chat) toggleMessage(index int) bool {
 	}
 	c.msgs[index].collapsed = !c.msgs[index].collapsed
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 	return c.msgs[index].collapsed
 }
 
@@ -391,4 +380,5 @@ func (c *chat) renderedLineForMessage(index int, p Palette) int {
 func (c *chat) addToolResult(name, output, errText string) {
 	c.msgs = append(c.msgs, msg{role: roleSystem, text: output, toolName: name, toolError: errText})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }

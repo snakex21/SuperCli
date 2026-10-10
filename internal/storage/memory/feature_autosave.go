@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // AutoSaver is the code-level guarantee behind the "remember
@@ -96,7 +97,7 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 	// Never feed (or store) raw model reasoning: providers wrap
 	// reasoning streams in <thinking>...</thinking> and those
 	// blocks must not leak into summaries or saved entries.
-	transcript = strings.TrimSpace(StripReasoning(transcript))
+	transcript = strings.TrimSpace(strings.ToValidUTF8(StripReasoning(transcript), "\uFFFD"))
 	if transcript == "" || summarize == nil || a.Project == nil {
 		return true
 	}
@@ -149,13 +150,17 @@ func (a *AutoSaver) StoreRawTail(transcript string) {
 	if a == nil || a.Project == nil {
 		return
 	}
-	transcript = strings.TrimSpace(StripReasoning(transcript))
+	transcript = strings.TrimSpace(strings.ToValidUTF8(StripReasoning(transcript), "\uFFFD"))
 	if transcript == "" {
 		return
 	}
 	const maxRaw = 8000
 	if len(transcript) > maxRaw {
-		transcript = transcript[len(transcript)-maxRaw:]
+		start := len(transcript) - maxRaw
+		for start < len(transcript) && !utf8.RuneStart(transcript[start]) {
+			start++
+		}
+		transcript = transcript[start:]
 	}
 	_, _ = a.Project.Retain(ScopeRawLog, MaxRawLogEntries-1)
 	if err := a.Project.Put(Entry{

@@ -43,6 +43,8 @@ type TomlConfig struct {
 	// UI.
 	NoColor  bool   `toml:"no_color"`
 	Language string `toml:"language"`
+	// CostCurrency affects cost presentation; accounting remains in USD.
+	CostCurrency string `toml:"cost_currency,omitempty"`
 	// ShowGenerationSpeed displays measured output tokens/second; nil means on.
 	ShowGenerationSpeed *bool `toml:"show_generation_speed"`
 

@@ -25,6 +25,7 @@ type agentToolWiring struct {
 	home               string
 	delegationOff      bool
 	coordinatorMode    bool
+	checkpoint         func(tools.Tool) tools.Tool
 }
 
 // wireAgentTool builds AgentTool, applies task limits / draft-verify /
@@ -107,12 +108,19 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 			}
 			return block
 		})
-		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
+		at.PreflightContext = func(ctx context.Context) string {
+			return preflight.BuildContext(ctx, home, preflight.Options{})
+		}
 	}
 	if !w.delegationOff {
-		w.registry.MustRegister(at.Spec())
-		sendMessageTool := agent.NewSendMessageTool(at.Workers)
-		w.registry.MustRegister(sendMessageTool.Spec())
+		taskSpec := at.Spec()
+		sendSpec := agent.NewSendMessageTool(at.Workers).Spec()
+		if w.checkpoint != nil {
+			taskSpec = w.checkpoint(taskSpec)
+			sendSpec = w.checkpoint(sendSpec)
+		}
+		w.registry.MustRegister(taskSpec)
+		w.registry.MustRegister(sendSpec)
 		taskStopTool := agent.NewTaskStopTool(at.Workers)
 		w.registry.MustRegister(taskStopTool.Spec())
 		if w.coordinatorMode {

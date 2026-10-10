@@ -1,15 +1,18 @@
 package webgui
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/storage/memory"
 )
 
@@ -126,33 +129,78 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProjects lists named workspaces (GET) or performs a
-// use/add/relocate/remove action (POST {action,target,name,new_path}). On add with an empty
+// use/add/relocate/remove action or project checkpoint preview/cleanup. On add with an empty
 // target the current sandbox root is registered; name is an optional
 // display name for the added project.
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cleanupOnRemove, err := memory.LoadProjectCheckpointCleanup(s.eng.DataDir())
+	if err != nil {
+		http.Error(w, "load project checkpoint preference: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var result projectActionResult
 	if r.Method == http.MethodPost {
 		var body struct {
-			Action  string `json:"action"`
-			Target  string `json:"target"`
-			Name    string `json:"name"`
-			NewPath string `json:"new_path"`
+			Action            string `json:"action"`
+			Target            string `json:"target"`
+			Name              string `json:"name"`
+			NewPath           string `json:"new_path"`
+			DeleteCheckpoints *bool  `json:"delete_checkpoints"`
+			RememberCleanup   bool   `json:"remember_cleanup"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			http.Error(w, "bad request: expected one JSON object", http.StatusBadRequest)
 			return
 		}
 		if body.Action == "add" && strings.TrimSpace(body.Target) == "" {
 			body.Target = s.eng.Home()
 		}
-		if err := s.eng.projectAction(body.Action, body.Target, body.Name, body.NewPath); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		var err error
+		result, err = s.eng.projectActionContext(r.Context(), body.Action, body.Target, body.Name, body.NewPath, projectActionOptions{
+			DeleteCheckpoints: body.DeleteCheckpoints, RememberCleanup: body.RememberCleanup,
+		})
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errProjectWorkActive) || errors.Is(err, checkpoint.ErrStoreBusy) || errors.Is(err, checkpoint.ErrActiveTurn) || errors.Is(err, checkpoint.ErrRecoveryRequired) {
+				status = http.StatusConflict
+			} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				status = http.StatusRequestTimeout
+			}
+			if result.Cleanup != nil {
+				writeJSONStatus(w, status, map[string]any{"error": err.Error(), "checkpoint_cleanup": result.Cleanup})
+			} else {
+				http.Error(w, err.Error(), status)
+			}
 			return
 		}
+		if body.Action == "checkpoint_preview" || body.Action == "clear_checkpoints" {
+			writeJSON(w, result.Cleanup)
+			return
+		}
+		if body.RememberCleanup {
+			cleanupOnRemove = *body.DeleteCheckpoints
+		}
 	}
-	writeJSON(w, map[string]any{
-		"projects": s.eng.listProjects(),
-		"home":     s.eng.Home(),
-	})
+	response := map[string]any{
+		"projects":                     s.eng.listProjects(),
+		"home":                         s.eng.Home(),
+		"delete_checkpoints_on_remove": cleanupOnRemove,
+	}
+	if result.Cleanup != nil {
+		response["checkpoint_cleanup"] = result.Cleanup
+	}
+	writeJSON(w, response)
 }
 
 // handleGoal returns the active goal and its tasks, or applies one local UI

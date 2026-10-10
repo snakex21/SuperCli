@@ -2,11 +2,15 @@ package webgui
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"supercli/internal/account/fx"
 	"supercli/internal/account/usagecost"
+	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/config"
 )
 
 type statsView struct {
@@ -15,11 +19,57 @@ type statsView struct {
 	SessionToken int64  `json:"session_tokens"`
 	DailyToken   int64  `json:"daily_tokens"`
 
-	Session   statsSessionView   `json:"session"`
-	Tokens    statsTokensView    `json:"tokens"`
-	Context   statsContextView   `json:"context"`
-	Cost      statsCostView      `json:"cost"`
-	Telemetry statsTelemetryView `json:"telemetry"`
+	Session       statsSessionView       `json:"session"`
+	Tokens        statsTokensView        `json:"tokens"`
+	Context       statsContextView       `json:"context"`
+	ActiveContext statsActiveContextView `json:"active_context"`
+	Cost          statsCostView          `json:"cost"`
+	// Pricing is the current editable USD quote for this session's model.
+	// Cost keeps the immutable historical amounts and rates.
+	Pricing         statsCostView            `json:"pricing"`
+	Telemetry       statsTelemetryView       `json:"telemetry"`
+	LastTurn        *statsLastTurnView       `json:"last_turn,omitempty"`
+	GenerationSpeed statsGenerationSpeedView `json:"generation_speed"`
+}
+
+// ActiveContext describes the model selected for future requests. The separate
+// Context field keeps the last main request's estimate and its own denominator.
+type statsActiveContextView struct {
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+	Window           int    `json:"window"`
+	WindowSource     string `json:"window_source"`
+	CompactThreshold int    `json:"compact_threshold"`
+}
+
+func (e *Engine) statsActiveContext(cfg config.Config) statsActiveContextView {
+	// Match RuntimeSelection using this request's captured config, rather than
+	// rereading e.cfg while another browser request may be switching models.
+	provider := ""
+	for _, p := range e.providerManager().Configured() {
+		if p.Type == cfg.Provider && strings.TrimRight(p.BaseURL, "/") == strings.TrimRight(cfg.BaseURL, "/") {
+			provider = p.Name
+			if p.Model == cfg.Model {
+				break
+			}
+		}
+	}
+	if provider == "" {
+		e.mu.RLock()
+		caps := e.caps
+		e.mu.RUnlock()
+		if caps != nil {
+			provider = caps.Provider(cfg.Model)
+		}
+	}
+	if provider == "" {
+		provider = cfg.Provider
+	}
+	window := e.statsContextWindow(cfg, provider)
+	return statsActiveContextView{
+		Provider: provider, Model: cfg.Model, Window: window.Tokens,
+		WindowSource: window.Source, CompactThreshold: agent.AutoCompactThreshold(window.Tokens),
+	}
 }
 
 type statsSessionView struct {
@@ -50,6 +100,8 @@ type statsTokensView struct {
 
 type statsContextView struct {
 	Window           int                   `json:"window"`
+	WindowSource     string                `json:"window_source,omitempty"`
+	HasSnapshot      bool                  `json:"has_snapshot"`
 	EstimatedUsed    int                   `json:"estimated_used"`
 	Percent          int                   `json:"percent"`
 	CompactThreshold int                   `json:"compact_threshold"`
@@ -127,21 +179,39 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 	e.mu.RUnlock()
 	preview := e.usageIdentity(cfg, "model")
 	sv := statsView{
-		Model: cfg.Model,
+		Model:           cfg.Model,
+		Context:         contextFromUsage(session.UsageRecord{ContextWindow: preview.ContextWindow}),
+		ActiveContext:   e.statsActiveContext(cfg),
+		GenerationSpeed: statsGenerationSpeedView{Scope: "session"},
 		Session: statsSessionView{
 			Provider: preview.Provider, ProviderType: preview.ProviderType, Model: cfg.Model,
 		},
 	}
+	sv.Context.WindowSource = preview.WindowSource
+	sv.Context.RequestsToday = llm.ProviderRequestsTodayFlexible(cfg.BaseURL)
 
 	store, err := e.sessionStore()
 	if err != nil {
 		sv.Cost = resolveStatsCost(e.tomlConfig(), nil, usageRecordFromIdentity(preview))
+		sv.Pricing = sv.Cost
+		sv.Cost.Currency = config.EffectiveCostCurrency(e.tomlConfig())
 		return sv, nil
 	}
 
 	var meta session.Session
 	var legacyBreakdown llm.RequestBreakdown
-	var usage []session.UsageRecord
+	tc := e.tomlConfig()
+	var exchangeCache *fx.Cache
+	if config.EffectiveCostCurrency(tc) != "USD" {
+		if rates := e.historyRates(); rates != nil {
+			exchangeCache, _ = rates.Cache()
+			if exchangeCache != nil {
+				_ = exchangeCache.Refresh(ctx)
+			}
+		}
+	}
+	var usage statsUsageRead
+	var legacyUsage *session.UsageRecord
 	if sessionID != "" {
 		meta, err = store.Get(sessionID)
 		if err != nil {
@@ -150,11 +220,15 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 			return sv, errSessionOutsideWorkspace
 		}
-		usage, err = store.ReadUsage(ctx, sessionID)
+		usage, err = readStatsUsage(ctx, store, sessionID, tc, exchangeCache)
 		if err != nil {
 			return sv, err
 		}
-		if len(usage) > 0 {
+		sv.LastTurn, err = readStatsLastTurn(ctx, store, sessionID)
+		if err != nil {
+			return sv, err
+		}
+		if usage.HasMain {
 			counts, readErr := store.ReadMessageCounts(ctx, sessionID)
 			if readErr != nil {
 				return sv, readErr
@@ -165,8 +239,8 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 			sv.Session.ToolMessages = counts.Tool
 			sv.Session.ToolCalls = counts.ToolCalls
 		} else {
-			// Legacy sessions still need an estimate, but opening an old chat
-			// must not retain a second full copy of all historical tool output.
+			// Sessions without a main-call snapshot still need an estimate,
+			// without retaining a second full copy of historical tool output.
 			summary, readErr := store.ReadMessageSummary(ctx, sessionID)
 			if readErr != nil {
 				return sv, readErr
@@ -180,21 +254,17 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		}
 	}
 
-	if len(usage) > 0 {
-		last := usage[len(usage)-1]
+	if usage.Records > 0 {
+		sv.Tokens = usage.Tokens
+		sv.GenerationSpeed = usage.GenerationSpeed
+	}
+	if usage.HasMain {
+		last := usage.Main
 		sv.Session.Provider = last.Provider
 		sv.Session.ProviderType = last.ProviderType
 		sv.Session.Model = last.Model
 		sv.Model = last.Model
-		for _, u := range usage {
-			sv.Tokens.Input += u.Input
-			sv.Tokens.Output += u.Output
-			sv.Tokens.CachedInput += u.CachedInput
-			sv.Tokens.Reasoning += u.Reasoning
-			sv.Tokens.HasCached = sv.Tokens.HasCached || u.HasCachedInput
-			sv.Tokens.HasReasoning = sv.Tokens.HasReasoning || u.HasReasoning
-		}
-		sv.Context = contextFromUsage(last)
+		sv.Context = e.statsContextFromUsage(last, preview)
 	} else if sessionID != "" {
 		fallback := e.legacyUsageIdentity(meta.Model)
 		fallbackRecord := usageRecordFromIdentity(fallback)
@@ -208,14 +278,17 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 		if sv.Session.Model == "" {
 			sv.Session.Model = meta.Model
 		}
-		usage = []session.UsageRecord{fallbackRecord}
-		sv.Tokens.Input = fallbackRecord.Input
-		sv.Tokens.Output = fallbackRecord.Output
+		if usage.Records == 0 {
+			legacyUsage = &fallbackRecord
+			sv.Tokens.Input = fallbackRecord.Input
+			sv.Tokens.Output = fallbackRecord.Output
+		}
 		sv.Context = contextFromUsage(session.UsageRecord{
-			ContextWindow: fallback.ContextWindow, ContextSystem: legacyBreakdown.System,
+			ContextWindow: preview.ContextWindow, ContextSystem: legacyBreakdown.System,
 			ContextUser: legacyBreakdown.User, ContextAssistant: legacyBreakdown.Assistant,
 			ContextTool: legacyBreakdown.Tool, ContextOther: legacyBreakdown.Other,
 		})
+		sv.Context.WindowSource = preview.WindowSource
 	}
 
 	// Daily request quota for the active endpoint — independent of
@@ -235,7 +308,7 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 	// Cross-session diagnosis is deliberately a bounded, panel-time query.
 	// Normal turns do not aggregate history and the cap prevents old stores
 	// from turning observability into a new performance problem.
-	if recent, recentErr := store.ReadRecentTurnSummaries(ctx, time.Now().Add(-7*24*time.Hour), 2000); recentErr == nil {
+	if recent, recentErr := store.ReadRecentTurnTelemetry(ctx, time.Now().Add(-7*24*time.Hour), 2000); recentErr == nil {
 		sv.Telemetry = summarizeTelemetry(recent, sv.Tokens)
 		sv.Telemetry.Scope = "7d"
 	}
@@ -247,22 +320,34 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 
 	now := time.Now()
 	localMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	if in, out, usageErr := store.UsageSince(ctx, localMidnight); usageErr == nil {
-		sv.DailyToken = in + out
-	}
-	// TUI/CLI usage still lives in credit_ledger. Web usage is recorded only in
-	// session_usage, so the two totals are disjoint and can be combined.
-	if ledger, ledgerErr := e.creditStorage(ctx); ledgerErr == nil {
-		if total, totalErr := ledger.TotalSince(ctx, localMidnight); totalErr == nil {
-			sv.DailyToken += total
-		}
-	}
+	ledger, _ := e.creditStorage(ctx)
+	sv.DailyToken = dailyTokenTotal(ctx, store, ledger, localMidnight)
 
-	tc := e.tomlConfig()
-	if len(usage) == 0 {
-		sv.Cost = resolveStatsCost(tc, nil, usageRecordFromIdentity(preview))
+	if usage.Records > 0 {
+		sv.Cost = usage.Cost
+	} else if legacyUsage != nil {
+		sv.Cost = resolveStatsCost(tc, []session.UsageRecord{*legacyUsage}, session.UsageRecord{})
+		if config.EffectiveCostCurrency(tc) != "USD" && sv.Cost.Amount != nil && *sv.Cost.Amount > 0 {
+			// A pre-ledger aggregate has no per-call dates. A single current
+			// exchange rate would manufacture a historical converted amount.
+			sv.Cost.Amount, sv.Cost.Source, sv.Cost.Partial = nil, "fx_missing", true
+		}
 	} else {
-		sv.Cost = resolveStatsCost(tc, usage, session.UsageRecord{})
+		sv.Cost = resolveStatsCost(tc, nil, usageRecordFromIdentity(preview))
 	}
+	sv.Cost.Currency = config.EffectiveCostCurrency(tc)
+	if sv.Cost.MissingFXCalls > 0 {
+		pending, generation := e.historyRates().State()
+		sv.Cost.RatesPending, sv.Cost.RatesGeneration = pending, generation
+	}
+	pricingIdentity := usageRecordFromIdentity(preview)
+	if usage.HasMain {
+		pricingIdentity = usage.Main
+	} else if legacyUsage != nil {
+		pricingIdentity = *legacyUsage
+	}
+	pricingIdentity.PriceSnapshot = nil
+	pricingIdentity.Input, pricingIdentity.Output, pricingIdentity.CachedInput = 0, 0, 0
+	sv.Pricing = resolveStatsCost(tc, nil, pricingIdentity)
 	return sv, nil
 }

@@ -6,11 +6,14 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
+	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
 	"supercli/internal/llm/prompt"
+	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
 	"supercli/internal/system/preflight"
@@ -123,8 +126,24 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		}
 	}
 	mainProvider := p
+	contextCfg := cfg
 	if orchestratorProvider != nil {
 		mainProvider = orchestratorProvider
+		contextCfg.Provider, contextCfg.BaseURL, contextCfg.APIKey = orchCfg.Provider, orchCfg.BaseURL, orchCfg.APIKey
+		contextProvider = config.RuntimeProviderName(tomlCfg, orchCfg)
+	}
+	configForProvider := contextWindowConfigForProvider(dataDir, tomlCfg, contextCfg, contextProvider)
+
+	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
+	var taskWorkerProvider llm.Provider
+	if taskWorkerOverride {
+		wp, wpErr := provFactory.Build(taskWorkerCfg, llm.PurposeTask)
+		if wpErr != nil {
+			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
+		} else {
+			taskWorkerProvider = wp
+			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
+		}
 	}
 
 	// Build the agent loop.
@@ -165,6 +184,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// A compact current-facts tool is always available in batch mode. The
 	// advanced web_search/web_fetch contracts stay discoverable on demand.
 	reg.MustRegister(tools.NewWebFetch().Spec())
+	reg.MustRegister(codeIntel.WrapMutation(tools.NewWebDownload(home).Spec()))
 	batchWebEngine := tomlCfg.WebSearch.Engine
 	batchWebKey := tomlCfg.WebSearch.APIKey
 	if batchWebKey == "" {
@@ -201,6 +221,13 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// failures land in the same corpus as interactive ones.
 	batchErrorLog := openToolErrorLog(dataDir)
 	defer batchErrorLog.Close()
+	batchSessionID := fmt.Sprintf("batch-%d", time.Now().UnixNano())
+	usageStore, sessionWriter := openSessionStack(dataDir, batchSessionID, home, mainProvider.Name(), nil, tomlCfg)
+	if usageStore != nil {
+		defer usageStore.Close()
+	}
+	usageRates := usagecost.NewHistoryRates(dataDir)
+	defer usageRates.Close()
 	l, err := agent.NewLoop(agent.LoopConfig{
 		Provider:              mainProvider,
 		Registry:              reg,
@@ -209,7 +236,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		System:                systemPrompt,
 		MaxSteps:              tomlCfg.MaxStepsOr(agent.DefaultMaxSteps),
 		BaseDir:               home,
+		UserDownloadsDir:      agent.SystemDownloadsDir,
 		Stats:                 batchStats,
+		Writer:                sessionWriter,
 		EnableNavigator:       execProfile.EnableNavigator,
 		NavigatorAuto:         execProfile.NavigatorAuto,
 		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly,
@@ -218,17 +247,28 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		CatalogHoist:          execProfile.CatalogHoist,
 		Orchestrator:          orchHard,
 		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
-		// intentionally local and latency-free: config > cached model catalog >
-		// learned provider limit > conservative loop fallback.
+		// memory-only: explicit budget bounded by the loaded runtime capacity,
+		// then the existing catalog/learned/fallback cascade when unknown.
 		ContextWindowFor: func(model string) agent.ContextWindowResolution {
-			return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, 0, caps, learned, cfg.BaseURL)
+			return agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, 0, caps, learned, contextCfg.BaseURL, contextCfg.APIKey)
 		},
 		ContextProvider: contextProvider,
 		ScopedContextWindowFor: func(provider, model string) agent.ContextWindowResolution {
+			scopedCfg := configForProvider(provider)
 			if tokens, ok := modelContexts.Get(provider, model); ok {
-				return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
+				return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
 			}
-			return agent.ContextWindowResolution{}
+			resolved := agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, 0, caps, learned, scopedCfg.BaseURL, scopedCfg.APIKey)
+			if resolved.Tokens <= 0 {
+				return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
+			}
+			return resolved
+		},
+		RefreshContextWindow: func(ctx context.Context) error {
+			if taskWorkerProvider != nil {
+				return config.RefreshLocalContextWindows(ctx, contextCfg, taskWorkerCfg)
+			}
+			return config.RefreshLocalContextWindows(ctx, contextCfg)
 		},
 		Summarizer:         agent.NewAutoSummarizerWithProvider(compactProvider, reg.ActiveNames),
 		LearnLimit:         learned.Learn,
@@ -262,17 +302,6 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// `draft_verify` sieves a file-changing draft with verify_commands
 	// and lets this (big) model judge the diff + evidence ("small drafts,
 	// big verdict").
-	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
-	var taskWorkerProvider llm.Provider
-	if taskWorkerOverride {
-		wp, wpErr := provFactory.Build(taskWorkerCfg, llm.PurposeTask)
-		if wpErr != nil {
-			log.Printf("task_model: worker provider %q build failed: %v — workers use the main provider", tomlCfg.TaskModel, wpErr)
-		} else {
-			taskWorkerProvider = wp
-			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
-		}
-	}
 	at, atErr := wireAgentTool(agentToolWiring{
 		loop:               l,
 		registry:           reg,
@@ -291,7 +320,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// Fresh worker briefings get the same compact repo-state block as the
 	// coordinator's first turn (cold contexts benefit most).
 	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
-		at.Preflight = func() string { return preflight.Build(home, preflight.Options{}) }
+		at.PreflightContext = func(ctx context.Context) string {
+			return preflight.BuildContext(ctx, home, preflight.Options{})
+		}
 	}
 	if orchMode.hard() {
 		// Coordinator contract: the main loop keeps only delegation +
@@ -299,7 +330,21 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		l.SetRegistry(agent.OrchestratorRegistry(reg))
 	}
 
-	ch, err := l.Run(context.Background(), userPrompt)
+	runCtx := context.Background()
+	if usageStore != nil {
+		runCtx = llm.WithCallSink(runCtx, func(stat llm.CallStat) {
+			if stat.TokensIn == 0 && stat.TokensOut == 0 {
+				return
+			}
+			u := usagecost.CallUsage(tomlCfg, stat, session.UsageRecord{SessionID: batchSessionID, Provider: contextProvider, ProviderType: contextCfg.Provider, Model: mainProvider.Name()})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := usageStore.AppendUsage(ctx, u); err == nil && config.EffectiveCostCurrency(tomlCfg) != "USD" && u.PriceSnapshot.AmountUSD != nil && *u.PriceSnapshot.AmountUSD > 0 {
+				usageRates.WarmCurrency(config.EffectiveCostCurrency(tomlCfg), u.PriceSnapshot.UsageDay)
+			}
+		})
+	}
+	ch, err := l.Run(runCtx, userPrompt)
 	if err != nil {
 		fatal("agent run", err)
 	}

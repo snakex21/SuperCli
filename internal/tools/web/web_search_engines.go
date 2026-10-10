@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,7 +31,11 @@ func (t *WebSearch) search(ctx context.Context, a webSearchArgs) ([]WebSearchRes
 
 func formatSearchResults(query, engine, fallbackFrom string, results []WebSearchResult) string {
 	if len(results) == 0 {
-		return fmt.Sprintf("No results for %q (engine: %s).", query, engine)
+		text := fmt.Sprintf("No results for %q (engine: %s).", query, engine)
+		if isURLSearchQuery(query) {
+			text += "\n\n" + urlSearchResultClarification
+		}
+		return text
 	}
 
 	var sb strings.Builder
@@ -39,14 +44,54 @@ func formatSearchResults(query, engine, fallbackFrom string, results []WebSearch
 		fmt.Fprintf(&sb, ", fallback from %s", fallbackFrom)
 	}
 	sb.WriteString("):\n\n")
+	fileCandidate := false
 	for i, r := range results {
 		fmt.Fprintf(&sb, "%d. %s\n   %s\n", i+1, r.Title, r.URL)
+		fileCandidate = fileCandidate || hasDirectFileExtension(r.URL)
 		if r.Snippet != "" {
 			fmt.Fprintf(&sb, "   %s\n", r.Snippet)
 		}
 	}
-	sb.WriteString("\nUse web_fetch with a result URL to read the full page.")
+	if isURLSearchQuery(query) {
+		sb.WriteString(urlSearchResultClarification + "\n")
+	}
+	if fileCandidate {
+		sb.WriteString("\nSome result URLs have file extensions; use web_download directly to save a file. ")
+	} else {
+		sb.WriteString("\nUse web_download for a direct file URL. ")
+	}
+	sb.WriteString("Use web_fetch for known pages, with mode=media when only declared asset URLs are needed. These actions use existing URLs without another lookup; search again when new candidates or external references are needed. Preserve returned URLs; do not guess media IDs.")
 	return sb.String()
+}
+
+const urlSearchResultClarification = "These are search hits about the URL, not content fetched from it. To read that page, use web_fetch with url; to save a direct file, use web_download with url and path."
+
+// URL-reference searches remain valid and unchanged. This only explains what
+// the returned evidence means; it never redirects the query or fetches a page.
+func isURLSearchQuery(query string) bool {
+	query = strings.TrimSpace(query)
+	if strings.ContainsAny(query, " \t\r\n") {
+		return false
+	}
+	u, err := url.Parse(query)
+	return err == nil && u.Hostname() != "" && (u.Scheme == "http" || u.Scheme == "https")
+}
+
+// An extension is only a hint for selecting a tool, not proof of MIME type or
+// a reason to repair a URL. The downloader still verifies the HTTP response.
+func hasDirectFileExtension(raw string) bool {
+	u, err := validateFetchURL(raw)
+	if err != nil || u.User != nil {
+		return false
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".gif", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".avif", ".bmp", ".ico",
+		".mp4", ".webm", ".mov", ".mp3", ".wav", ".ogg", ".flac",
+		".pdf", ".zip", ".gz", ".tar", ".7z", ".rar", ".docx", ".xlsx", ".pptx",
+		".woff", ".woff2", ".ttf", ".otf", ".obj", ".glb", ".gltf", ".stl":
+		return true
+	}
+	return false
 }
 
 // --- DuckDuckGo (HTML scrape, no key) --------------------------------------

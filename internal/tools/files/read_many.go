@@ -21,8 +21,8 @@ const (
 )
 
 // ReadMany reads independent line ranges in one tool call. It is useful on
-// both local and cloud models: one provider round-trip replaces a sequence of
-// read_lines turns. Reads execute concurrently, but results are rendered in
+// both local and cloud models: one tool call replaces independent read_lines
+// calls. Reads execute concurrently, but results are rendered in
 // request order so the model sees deterministic context.
 type ReadMany struct{ BaseDir string }
 
@@ -41,9 +41,9 @@ type readManyArgs struct {
 func (t *ReadMany) Spec() Tool {
 	return Tool{
 		Name: "read_many",
-		Description: "Read up to 12 independent file ranges in one call to save model turns. " +
-			"Use 'file:from-to | file:from-to'; a bare file defaults to lines 1-300; globs are allowed. " +
-			"Works with native and thin/sentinel tool calling.",
+		Description: "Batch independent file ranges, including verification; prefer over separate read_lines calls. " +
+			"Concurrent; max 12 ranges, 300 lines each. native/sentinel: 'file:from-to | file:from-to'; " +
+			"bare file: lines 1-300; globs allowed.",
 		ReadOnly: true,
 		Schema: `{
   "type": "object",

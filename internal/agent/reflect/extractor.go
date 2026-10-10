@@ -199,7 +199,7 @@ func normalizeReason(reason string) string {
 	// starts with "/".
 	tokens := strings.Fields(s)
 	for i, tok := range tokens {
-		if strings.Contains(tok, "/") || strings.HasPrefix(tok, "/") {
+		if strings.ContainsAny(tok, "/\\") {
 			tokens[i] = "<path>"
 		}
 	}
@@ -219,11 +219,7 @@ func buildTitle(tool, category, reason string) string {
 		return fmt.Sprintf("%s: %s", tool, category)
 	}
 	// Trim reason to ~80 runes for readability.
-	r := reason
-	if len(r) > 80 {
-		r = r[:77] + "..."
-	}
-	return fmt.Sprintf("%s: %s", tool, r)
+	return compactPatternText(fmt.Sprintf("%s: %s", tool, compactPatternText(reason, 80)), 160)
 }
 
 // buildDescription produces a one-sentence body the model
@@ -231,10 +227,7 @@ func buildTitle(tool, category, reason string) string {
 //
 //	"search_code errors with 'rg not found' (env). Try installing ripgrep or using grep fallback."
 func buildDescription(tool, category, reason, suggestion string) string {
-	r := reason
-	if len(r) > 80 {
-		r = r[:77] + "..."
-	}
+	r := compactPatternText(reason, 80)
 	s := fmt.Sprintf("When using %s, errors with %q (%s) recurred.", tool, r, category)
 	if suggestion != "" {
 		s += " Suggestion: " + suggestion + "."

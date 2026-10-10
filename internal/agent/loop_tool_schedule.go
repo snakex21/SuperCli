@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -21,6 +22,13 @@ type toolFileAccess struct {
 // The boolean is false when any call has an unknown mutation/resource shape;
 // callers then keep the conservative sequential behavior.
 func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bool) {
+	return l.toolConflictWavesContext(context.Background(), toolCalls)
+}
+
+// Download export permission belongs to this invocation. Resolve its targets
+// with the same context as execution, rather than falling back to sequential
+// dispatch just because a human requested a folder outside the workspace.
+func (l *Loop) toolConflictWavesContext(ctx context.Context, toolCalls []llm.ToolCall) ([][]llm.ToolCall, bool) {
 	if len(toolCalls) < 2 || l.baseDir == "" {
 		return nil, false
 	}
@@ -63,18 +71,27 @@ func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bo
 	// Compare actual tool targets, not argument spelling: relative/absolute
 	// paths and symlink parents may point to the same file. Scope reuse to this
 	// batch so renames or link changes cannot leave a stale identity cache.
-	resolved := make(map[string]toolFileAccess)
+	type resolutionKey struct {
+		path     string
+		download bool
+	}
+	resolved := make(map[resolutionKey]toolFileAccess)
 	parents := make(map[string]string)
 	for i, acc := range accesses {
 		for j, access := range acc {
-			target, found := resolved[access.path]
+			key := resolutionKey{path: access.path, download: toolCalls[i].Name == "web_download"}
+			target, found := resolved[key]
 			if !found {
 				var err error
-				target, err = l.resolveToolFileAccess(access.path, parents)
+				if key.download {
+					target, err = l.resolveDownloadFileAccess(ctx, access.path)
+				} else {
+					target, err = l.resolveToolFileAccess(access.path, parents)
+				}
 				if err != nil {
 					return nil, false
 				}
-				resolved[access.path] = target
+				resolved[key] = target
 			}
 			target.write = access.write
 			accesses[i][j] = target
@@ -98,6 +115,21 @@ func (l *Loop) toolConflictWaves(toolCalls []llm.ToolCall) ([][]llm.ToolCall, bo
 		waves = append(waves, current)
 	}
 	return waves, true
+}
+
+// Keep export authorization specific to web_download: a sibling read/edit tool
+// cannot acquire the grant from a shared path-identity cache. The resolver pins
+// junction roots and canonicalizes missing destinations exactly as the tool does.
+func (l *Loop) resolveDownloadFileAccess(ctx context.Context, path string) (toolFileAccess, error) {
+	full, err := sandbox.ResolveDownloadDestination(ctx, l.baseDir, path)
+	if err != nil {
+		return toolFileAccess{}, err
+	}
+	info, err := os.Stat(full)
+	if err != nil && !os.IsNotExist(err) {
+		return toolFileAccess{}, err
+	}
+	return toolFileAccess{path: normalizeToolPath(full), info: info}, nil
 }
 
 // Resolve a shared parent once per batch rather than walking the whole project
@@ -139,7 +171,7 @@ func (l *Loop) resolveToolFileAccess(path string, parents map[string]string) (to
 func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 	// Unknown resource shapes stay conservative without copying/parsing arguments.
 	switch call.Name {
-	case "write_file", "patch_file", "create_file", "make_dir", "trash", "edit_docx", "edit_xlsx",
+	case "write_file", "patch_file", "create_file", "make_dir", "trash", "edit_docx", "edit_xlsx", "web_download",
 		"read_lines", "read_context", "list_dir", "read_image", "read_docx", "read_pdf", "read_xlsx",
 		"read_zip", "copy", "move":
 	default:
@@ -169,7 +201,7 @@ func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 	}
 
 	switch call.Name {
-	case "write_file", "patch_file", "create_file", "make_dir", "trash", "edit_docx", "edit_xlsx":
+	case "write_file", "patch_file", "create_file", "make_dir", "trash", "edit_docx", "edit_xlsx", "web_download":
 		return one("path", true)
 	case "read_lines", "read_context":
 		return one("file", false)
@@ -186,6 +218,26 @@ func fileAccessesForCall(call llm.ToolCall) ([]toolFileAccess, bool) {
 			}
 		}
 		if action == "" || action == "list" {
+			return one("path", false)
+		}
+		if action == "read" {
+			if raw, present := args["paths"]; present {
+				if _, hasPath := args["path"]; hasPath {
+					return nil, false
+				}
+				var paths []string
+				if json.Unmarshal(raw, &paths) != nil || len(paths) < 1 || len(paths) > 16 {
+					return nil, false
+				}
+				accesses := make([]toolFileAccess, 0, len(paths))
+				for _, path := range paths {
+					if strings.TrimSpace(path) == "" {
+						return nil, false
+					}
+					accesses = append(accesses, toolFileAccess{path: path})
+				}
+				return accesses, true
+			}
 			return one("path", false)
 		}
 		if action != "extract" {

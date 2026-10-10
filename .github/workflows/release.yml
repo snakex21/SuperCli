@@ -8,7 +8,7 @@ on:
       version:
         description: 'Stable version (x.y.z); packages a draft release'
         required: true
-        default: '1.0.4'
+        default: '1.0.5'
 
 permissions:
   contents: read
@@ -35,6 +35,7 @@ jobs:
           node-version: '22'
       - name: Verify
         run: |
+          npm ci --ignore-scripts --no-audit --no-fund
           go test ./...
           go vet ./...
           node scripts/test-ui.cjs

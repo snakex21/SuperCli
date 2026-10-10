@@ -34,6 +34,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"supercli/internal/storage"
 )
 
 type requestRecord struct {
@@ -49,7 +51,7 @@ type requestRecord struct {
 func main() {
 	listen := flag.String("listen", "127.0.0.1:9099", "probe listen address")
 	upstream := flag.String("upstream", "http://127.0.0.1:1234", "upstream OpenAI-compatible base URL")
-	logPath := flag.String("log", "wire.jsonl", "JSONL request log")
+	logPath := flag.String("log", "", "JSONL request log (default: portable data logs/wire.jsonl)")
 	flag.Parse()
 
 	up, err := url.Parse(*upstream)
@@ -57,9 +59,9 @@ func main() {
 		fatal(fmt.Sprintf("bad upstream %q: %v", *upstream, err))
 	}
 
-	f, err := os.OpenFile(*logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, resolvedLogPath, err := openProbeLog(*logPath, storage.ResolveRuntimeDataRoot)
 	if err != nil {
-		fatal(fmt.Sprintf("open log: %v", err))
+		fatal(err.Error())
 	}
 	defer f.Close()
 
@@ -137,7 +139,7 @@ func main() {
 		record(requestRecord{Time: time.Now().UTC().Format(time.RFC3339Nano), Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Status: resp.StatusCode, BodyLen: len(body), Body: string(body)})
 	})
 
-	fmt.Printf("wireprobe: listening on %s -> %s, log %s\n", *listen, up.String(), *logPath)
+	fmt.Printf("wireprobe: listening on %s -> %s, log %s\n", *listen, up.String(), resolvedLogPath)
 	if err := http.ListenAndServe(*listen, handler); err != nil {
 		fatal(err.Error())
 	}

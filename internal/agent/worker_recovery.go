@@ -14,6 +14,10 @@ import (
 // make its still-live context effectively undiscoverable to the coordinator.
 func workerFailureHandoff(w *Worker, report string, cause error, observation string) error {
 	s := w.Snapshot()
+	return workerFailureHandoffFromSnapshot(w, s, report, cause, observation)
+}
+
+func workerFailureHandoffFromSnapshot(w *Worker, s Snapshot, report string, cause error, observation string) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
 		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))

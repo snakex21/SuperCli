@@ -46,27 +46,30 @@ func TestCtxExecuteAcceptsLongExplicitTimeout(t *testing.T) {
 	root := t.TempDir()
 	reg := NewRegistry()
 	reg.MustRegister(NewCtxExecuteTool(ctxexec.New(root), root).Spec())
-	for _, timeout := range []int{60000, 120000, 300000} {
+	for _, timeout := range []int{0, 60000, 120000, 300000, 300001, 1800000} {
 		result, err := reg.Execute(context.Background(), "ctx_execute", ctxTimeoutArgs(t, "quick", timeout))
 		if err != nil || result.Err != nil || !strings.Contains(result.Text, "FINISHED") {
 			t.Fatalf("timeout=%d: %v / %v / %s", timeout, err, result.Err, result.Text)
 		}
 	}
-	// Extending the explicit limit must not allow unbounded requests.
-	result, err := reg.Execute(context.Background(), "ctx_execute", ctxTimeoutArgs(t, "quick", 300001))
+	// Negative and unrepresentable values must not overflow into a short timer.
+	result, err := reg.Execute(context.Background(), "ctx_execute", ctxTimeoutArgs(t, "quick", -1))
 	if err == nil && result.Err == nil {
-		t.Fatal("request beyond five-minute limit was accepted")
+		t.Fatal("negative timeout was accepted")
 	}
 }
 
 func TestCtxExecutePreservesParentCancellation(t *testing.T) {
-	for _, deadline := range []bool{false, true} {
-		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
+	for _, scenario := range []struct {
+		deadline bool
+		timeout  int
+	}{{false, 0}, {true, 0}, {false, 120000}, {true, 120000}} {
+		t.Run(fmt.Sprintf("deadline=%v/timeout=%d", scenario.deadline, scenario.timeout), func(t *testing.T) {
 			root := t.TempDir()
 			runner := ctxexec.New(root)
 			ctx, cancel := context.WithCancel(context.Background())
 			want := context.Canceled
-			if deadline {
+			if scenario.deadline {
 				cancel()
 				ctx, cancel = context.WithTimeout(context.Background(), 100*time.Millisecond)
 				want = context.DeadlineExceeded
@@ -76,7 +79,7 @@ func TestCtxExecutePreservesParentCancellation(t *testing.T) {
 				runner.Now = func() time.Time { cancel(); return time.Now() }
 			}
 			defer cancel()
-			result, err := NewCtxExecuteTool(runner, root).Execute(ctx, ctxTimeoutArgs(t, "wait", 120000))
+			result, err := NewCtxExecuteTool(runner, root).Execute(ctx, ctxTimeoutArgs(t, "wait", scenario.timeout))
 			if !errors.Is(result.Err, want) && !errors.Is(err, want) {
 				t.Fatalf("lost cancellation cause: %v / %v", result.Err, err)
 			}
@@ -102,7 +105,7 @@ func TestCtxExecuteLongCommandLive(t *testing.T) {
 		t.Skip("set SUPERCLI_TEST_LONG_COMMAND=1 for the 31-second regression")
 	}
 	root := t.TempDir()
-	result, err := NewCtxExecuteTool(ctxexec.New(root), root).Execute(context.Background(), ctxTimeoutArgs(t, "long", 60000))
+	result, err := NewCtxExecuteTool(ctxexec.New(root), root).Execute(context.Background(), ctxTimeoutArgs(t, "long", 0))
 	if err != nil || result.Err != nil || !strings.Contains(result.Text, "FINISHED") {
 		t.Fatalf("long command did not finish: %v / %v / %s", err, result.Err, result.Text)
 	}

@@ -1,12 +1,11 @@
 // Package shellescape handles the "!command" prefix that lets
 // users run shell commands directly from the TUI without
 // leaving the conversation. Commands run through the system
-// shell (sh -c on Unix, cmd /c on Windows) with a timeout
-// and output cap for safety.
+// shell (sh -c on Unix, cmd /c on Windows) with caller-controlled
+// cancellation and bounded output capture.
 package shellescape
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/tools/core"
 )
 
 // waitDelay bounds how long Wait may block on output pipes that a killed child
@@ -24,6 +24,13 @@ import (
 // create, or a grandchild that was started in the microseconds between
 // CreateProcess and the job assignment.
 const waitDelay = time.Second
+
+const (
+	stdoutHeadBytes = 12 * 1024
+	stdoutTailBytes = 4 * 1024
+	stderrHeadBytes = 2 * 1024
+	stderrTailBytes = 2 * 1024
+)
 
 // Result holds the output of a shell escape command.
 type Result struct {
@@ -52,7 +59,8 @@ func ExtractCommand(text string) string {
 }
 
 // Runner executes shell commands. The home directory is used
-// as the working directory. Timeout defaults to 30 seconds.
+// as the working directory. A positive Timeout adds an explicit runtime limit;
+// otherwise only the caller's context can cancel the command or set a deadline.
 type Runner struct {
 	Home    string
 	Timeout time.Duration
@@ -60,11 +68,19 @@ type Runner struct {
 
 // NewRunner creates a Runner bound to the given home directory.
 func NewRunner(home string) *Runner {
-	return &Runner{Home: home, Timeout: 30 * time.Second}
+	return &Runner{Home: home}
+}
+
+func runnerContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return ctx, func() {}
 }
 
 // Run executes the command through the system shell and returns
-// the captured output. Stdout is capped at 16 KB.
+// bounded head/tail output: 16 KiB of stdout and 4 KiB of stderr,
+// plus one omission marker per stream when needed.
 func (r *Runner) Run(ctx context.Context, command string) *Result {
 	if r == nil {
 		return &Result{Command: command, Error: "nil runner"}
@@ -74,11 +90,8 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 	}
 
 	timeout := r.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := runnerContext(ctx, timeout)
 	defer cancel()
 
 	// Shell selection and, on Windows, the raw command-line handling live in
@@ -88,11 +101,12 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 		cmd.Dir = r.Home
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := core.NewHeadTailBuffer(stdoutHeadBytes, stdoutTailBytes)
+	stderr := core.NewHeadTailBuffer(stderrHeadBytes, stderrTailBytes)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
-	// On the deadline, kill the whole process tree rather than just the shell.
+	// On cancellation or a deadline, kill the whole process tree.
 	// exec's default cancel kills the shell only; a grandchild it spawned keeps
 	// the inherited stdout/stderr handles open and Wait blocks on them, so the
 	// timeout was not enforced at all ("ping -n 30" returned after 29 s under a
@@ -126,25 +140,10 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 
 	res := &Result{
 		Command:  command,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
 		Duration: duration,
 	}
-
-	// Cap stdout at 16 KB.
-	out := stdout.Bytes()
-	const maxOut = 16 * 1024
-	if len(out) > maxOut {
-		out = out[:maxOut]
-		res.Stdout = string(out) + "\n... (truncated at 16 KB)"
-	} else {
-		res.Stdout = string(out)
-	}
-
-	errStr := stderr.Bytes()
-	const maxErr = 4 * 1024
-	if len(errStr) > maxErr {
-		errStr = errStr[:maxErr]
-	}
-	res.Stderr = string(errStr)
 
 	if err != nil {
 		var exitErr *exec.ExitError
