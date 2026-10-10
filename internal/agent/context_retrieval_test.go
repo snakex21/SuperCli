@@ -110,7 +110,7 @@ func TestResolvedHistoryRequiresAvailableTranscript(t *testing.T) {
 			case "outage":
 				l.persistHealth.outage = true
 			case "pending":
-				l.persistHealth.pending = []llm.Message{messages[2]}
+				l.persistHealth.pending = []pendingAppend{{Message: messages[2], Writer: l.writer}}
 			case "lost messages":
 				l.persistHealth.dropped = 1
 			case "usage failure only":

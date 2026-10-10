@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Memory entry scopes used by the remember tool's `type` field.
@@ -48,22 +49,39 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 		tokenCap = 700
 	}
 	var b strings.Builder
-	budget := tokenCap
+	const closing = "\n[/memory_briefing]"
 
 	write := func(s string) bool {
-		t := estimateTokens(s)
-		if t > budget {
+		// Reserve the closing delimiter and count the actual assembled text.
+		// Per-fragment estimates miss delimiters and round independently.
+		if (b.Len()+len(s)+len(closing)+3)/4 > tokenCap {
 			return false
 		}
 		b.WriteString(s)
-		budget -= t
 		return true
 	}
+	writeLines := func(header string, lines []string) {
+		for _, line := range lines {
+			if write(header + line) {
+				header = ""
+			}
+			// An oversized recent note must not hide a smaller useful note.
+		}
+	}
+	writeNotes := func(header string, entries []Entry) {
+		lines := make([]string, 0, len(entries))
+		for _, e := range entries {
+			lines = append(lines, "- "+oneLine(e.Content)+"\n")
+		}
+		writeLines(header, lines)
+	}
 
-	write("[memory_briefing]\n")
-	write("Remembered context from previous sessions. When the user asks about " +
+	if !write("[memory_briefing]\n" +
+		"Remembered context from previous sessions. When the user asks about " +
 		"themselves (their name, what they like, their preferences), answer " +
-		"from the facts below (or the recall tool) — do not claim you have no memory.\n")
+		"from the facts below (or the recall tool) — do not claim you have no memory.\n") {
+		return ""
+	}
 	// Everything up to here is boilerplate: a briefing that gains
 	// no actual content below must collapse to "".
 	boilerplate := b.String()
@@ -71,12 +89,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// 1. Global user preferences.
 	if global != nil {
 		if prefs, err := global.Recent(ScopePreference, 10); err == nil && len(prefs) > 0 {
-			write("User preferences:\n")
-			for _, e := range prefs {
-				if !write("- " + oneLine(e.Content) + "\n") {
-					break
-				}
-			}
+			writeNotes("User preferences:\n", prefs)
 		}
 	}
 
@@ -85,30 +98,15 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// so both global and project facts must be injected.
 	if global != nil {
 		if facts, err := global.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			write("Remembered user facts:\n")
-			for _, e := range facts {
-				if !write("- " + oneLine(e.Content) + "\n") {
-					break
-				}
-			}
+			writeNotes("Remembered user facts:\n", facts)
 		}
 	}
 	if project != nil {
 		if facts, err := project.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			write("Remembered project facts:\n")
-			for _, e := range facts {
-				if !write("- " + oneLine(e.Content) + "\n") {
-					break
-				}
-			}
+			writeNotes("Remembered project facts:\n", facts)
 		}
 		if decisions, err := project.Recent(ScopeDecision, 4); err == nil && len(decisions) > 0 {
-			write("Project decisions:\n")
-			for _, e := range decisions {
-				if !write("- " + oneLine(e.Content) + "\n") {
-					break
-				}
-			}
+			writeNotes("Project decisions:\n", decisions)
 		}
 	}
 
@@ -139,15 +137,11 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 					filtered = append(filtered, entry)
 				}
 			}
-			if len(filtered) > 0 {
-				write("Recent sessions:\n")
-			}
+			lines := make([]string, 0, len(filtered))
 			for _, e := range filtered {
-				line := fmt.Sprintf("- [%s] %s\n", e.UpdatedAt.Format("2006-01-02"), oneLine(e.Content))
-				if !write(line) {
-					break
-				}
+				lines = append(lines, fmt.Sprintf("- [%s] %s\n", e.UpdatedAt.Format("2006-01-02"), oneLine(e.Content)))
 			}
+			writeLines("Recent sessions:\n", lines)
 		}
 	}
 
@@ -158,8 +152,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// startup (see AutoSaver.SummarizePendingRaw).
 	if project != nil {
 		if raws, err := project.Recent(ScopeRawLog, 1); err == nil && len(raws) > 0 {
-			write("Tail of the previous session (not yet summarized):\n")
-			write(truncate(strings.TrimSpace(raws[0].Content), 600) + "\n")
+			writeLines("Tail of the previous session (not yet summarized):\n", []string{truncate(strings.TrimSpace(raws[0].Content), 600) + "\n"})
 		}
 	}
 
@@ -177,13 +170,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 				}
 				lines = append(lines, l+"\n")
 			}
-			if len(lines) > 0 && write("Other projects:\n") {
-				for _, l := range lines {
-					if !write(l) {
-						break
-					}
-				}
-			}
+			writeLines("Other projects:\n", lines)
 		}
 	}
 
@@ -191,7 +178,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	if out == boilerplate {
 		return ""
 	}
-	return strings.TrimRight(out, "\n") + "\n[/memory_briefing]"
+	return strings.TrimRight(out, "\n") + closing
 }
 
 // RefreshCard updates the global store's card for a project with
@@ -219,8 +206,20 @@ func projectName(path string) string {
 }
 
 func truncate(s string, n int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if n <= 0 {
+		return ""
+	}
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	const marker = "…"
+	end := n - len(marker)
+	if end < 0 {
+		return ""
+	}
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + marker
 }

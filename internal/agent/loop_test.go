@@ -23,12 +23,13 @@ import (
 // later turns behave however the final script says — useful for
 // "always tool_calls" loops that should hit MaxSteps.
 type stubProvider struct {
-	name     string
-	scripts  [][]llm.Delta // one script per call
-	calls    int32
-	onCalled func(call int)
-	reqs     [][]llm.Message // every Complete receives this; tests use it to inspect wire requests
-	toolReqs []int           // schema count per Complete call
+	name         string
+	scripts      [][]llm.Delta // one script per call
+	calls        int32
+	onCalled     func(call int)
+	reqs         [][]llm.Message // every Complete receives this; tests use it to inspect wire requests
+	toolReqs     []int           // schema count per Complete call
+	toolDefsReqs [][]llm.ToolDef // exact native contracts per Complete call
 }
 
 func (p *stubProvider) Name() string { return p.name }
@@ -41,6 +42,7 @@ func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, toolDef
 	}
 	p.reqs = append(p.reqs, msgs)
 	p.toolReqs = append(p.toolReqs, len(toolDefs))
+	p.toolDefsReqs = append(p.toolDefsReqs, append([]llm.ToolDef(nil), toolDefs...))
 	if len(p.scripts) == 0 {
 		ch := make(chan llm.Delta, 1)
 		go func() {

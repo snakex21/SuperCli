@@ -24,6 +24,7 @@ const (
 	knobNav      = "nav"      // navigator: auto/on/off
 	knobInt      = "int"      // integer, 0/empty = built-in default
 	knobText     = "text"     // free text, empty = built-in default
+	knobCurrency = "currency" // supported ISO currency code; default USD
 	knobReadonly = "readonly" // display only
 )
 
@@ -54,6 +55,7 @@ func knobDefs() []knobDef {
 	return []knobDef{
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
 		{"show_generation_speed", "show measured generation tokens per second after each reply", knobTri, false},
+		{"cost_currency", "cost display currency; historical NBP rates; accounting stays in USD", knobCurrency, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
 		{"discard_previous_reasoning", "omit completed replies' reasoning from the next turn; preserve the transcript and required tool-call blocks; default off", knobTri, false},
 		{"thinking", "chain-of-thought for local soft-switch models (Qwen /no_think)", knobTri, false},
@@ -103,6 +105,12 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	case "show_generation_speed":
 		v, source := triKnob(c.ShowGenerationSpeed, "on")
 		return v, source, ""
+	case "cost_currency":
+		value := config.EffectiveCostCurrency(*c)
+		if strings.TrimSpace(c.CostCurrency) == "" {
+			return value, "default", value
+		}
+		return value, "manual", value
 	case "thinking":
 		v := "on"
 		if !llm.ThinkingEnabled() {
@@ -265,6 +273,8 @@ func knobState(c *config.TomlConfig, key string) string {
 // on or off; backend-aware policies deliberately report auto.
 func knobDefault(key string) string {
 	switch key {
+	case "cost_currency":
+		return "USD"
 	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
 		return "auto"
 	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed":

@@ -88,7 +88,15 @@ func createRewindSession(t *testing.T, srv *Server, title string) (session.Sessi
 
 func postSessionRewind(t *testing.T, srv *Server, sessionID string, seq int, files bool, reason string) sessionRewindView {
 	t.Helper()
-	body := fmt.Sprintf(`{"session_id":%q,"selected_seq":%d,"rewind_files":%t,"reason":%q}`, sessionID, seq, files, reason)
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.ReadUserReceiptAt(context.Background(), sessionID, seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"session_id":%q,"selected_seq":%d,"selected_message_id":"%d","rewind_files":%t,"reason":%q}`, sessionID, seq, receipt.ID, files, reason)
 	recorder := httptest.NewRecorder()
 	srv.handleSessionRewind(recorder, httptest.NewRequest(http.MethodPost, "/api/session/rewind", strings.NewReader(body)))
 	if recorder.Code != http.StatusOK {
@@ -173,7 +181,15 @@ func TestHandleSessionRewindKeepsFilesAndDetachesOldCheckpoints(t *testing.T) {
 		t.Skip(err)
 	}
 	turn := manager.NewTurn(source.ID, "return here")
-	turn.SetUserSeq(3)
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.ReadUserReceiptAt(context.Background(), source.ID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn.SetUserMessageReceipt(receipt.Seq, receipt.ID)
 	spec := turn.Wrap(tools.NewWriteFile(srv.eng.Home()).Spec())
 	result, _ := spec.Fn(context.Background(), json.RawMessage(`{"path":"app.txt","content":"after"}`))
 	if result.Err != nil {
@@ -204,7 +220,15 @@ func TestHandleSessionRewindConversationAndFiles(t *testing.T) {
 		t.Skip(err)
 	}
 	turn := manager.NewTurn(source.ID, "return here")
-	turn.SetUserSeq(3)
+	store, err := srv.eng.sessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.ReadUserReceiptAt(context.Background(), source.ID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn.SetUserMessageReceipt(receipt.Seq, receipt.ID)
 	spec := turn.Wrap(tools.NewWriteFile(srv.eng.Home()).Spec())
 	result, _ := spec.Fn(context.Background(), json.RawMessage(`{"path":"app.txt","content":"after"}`))
 	if result.Err != nil {

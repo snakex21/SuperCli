@@ -43,7 +43,7 @@ type readLinesArgs struct {
 func (t *ReadLines) Spec() Tool {
 	return Tool{
 		Name:        "read_lines",
-		Description: "Read numbered file lines. Start defaults to 1; missing end reads up to 300 lines. Explicit ranges: max 500.",
+		Description: "Read one numbered file range; prefer read_many for 2+ independent reads. Missing end: up to 300 lines; explicit max: 500.",
 		ReadOnly:    true,
 		Schema: `{
 			"file": {"type": "string", "description": "File path (relative or absolute)"},

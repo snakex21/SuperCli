@@ -1,6 +1,6 @@
 [
   "En portabel AI-kodningsagent skriven i Go, med terminalgränssnitt (TUI), skrivbords-/webbgränssnitt (GUI) och batchläge som delar en motor.",
-  "Denna README beskriver version `1.0.3`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
+  "Denna README beskriver version `1.0.5`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
   "Skärmbilder",
   "![SuperClis webbgränssnitt (GUI)]({guishot})",
   "![SuperClis åtgärdscenter i terminalen (TUI)]({tuishot})",

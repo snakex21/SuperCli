@@ -104,6 +104,9 @@ type Call struct {
 	Purpose                string    `json:"purpose"`
 	Model                  string    `json:"model,omitempty"`
 	Provider               string    `json:"provider,omitempty"`
+	ProviderType           string    `json:"provider_type,omitempty"`
+	EndpointHost           string    `json:"endpoint_host,omitempty"`
+	ConnectionKey          string    `json:"-"` // Ephemeral profile match; never exported.
 	Background             bool      `json:"background,omitempty"`
 	Canceled               bool      `json:"canceled,omitempty"`
 	Failed                 bool      `json:"failed,omitempty"`
@@ -112,6 +115,7 @@ type Call struct {
 	TokensIn               int       `json:"tokens_in"`
 	TokensOut              int       `json:"tokens_out"`
 	TokensCached           int       `json:"tokens_cached,omitempty"`
+	TokensReasoning        int       `json:"tokens_reasoning,omitempty"`
 	PrefillEvaluated       int       `json:"prefill_evaluated_tokens,omitempty"`
 	PrefillTokensPerSecond float64   `json:"prefill_tokens_per_second,omitempty"`
 	PrefillBudget          int       `json:"prefill_budget_tokens,omitempty"`

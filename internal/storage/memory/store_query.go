@@ -29,6 +29,25 @@ func (s *Store) List(scope string, limit int) ([]Entry, error) {
 	return scanAll(rows, limit)
 }
 
+// PatternEntries returns useful learned patterns in confidence order. Filter
+// and cap inside SQLite: the injector must not load unrelated journals, facts
+// or legacy classifier diagnostics merely to discard them in Go.
+func (s *Store) PatternEntries(ctx context.Context, limit int) ([]Entry, error) {
+	if limit <= 0 {
+		limit = -1
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, scope, file_path, line_start, line_end, content, tags, source, created_at, updated_at
+	 FROM memory_entries e WHERE e.scope GLOB 'pattern:*'`+recallNoiseFilter+`
+	 ORDER BY CASE WHEN instr(',' || tags, ',confidence:') > 0
+	 THEN CAST(substr(',' || tags, instr(',' || tags, ',confidence:') + length(',confidence:')) AS REAL)
+	 ELSE 0 END DESC, scope, id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanAll(rows, limit)
+}
+
 // Search runs an FTS5 query, falling back to LIKE when the
 // query is empty or contains no FTS5 operators. Results are
 // ranked by FTS5 rank (best match first) and capped at k.
@@ -88,20 +107,17 @@ func (s *Store) RecentBudgeted(scope string, tokenCap int) (string, error) {
 		return "", err
 	}
 	var b strings.Builder
-	tokens := 0
 	for _, e := range entries {
-		t := estimateTokens(e.Content)
-		if tokens+t > tokenCap {
+		line := "- [" + e.ID + "] " + oneLine(e.Content)
+		if b.Len() > 0 {
+			line = "\n\n" + line
+		}
+		// IDs and separators are part of the model input, too. Accounting
+		// only for content lets many tiny notes exceed the hard budget.
+		if (b.Len()+len(line)+3)/4 > tokenCap {
 			continue
 		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString("- [")
-		b.WriteString(e.ID)
-		b.WriteString("] ")
-		b.WriteString(oneLine(e.Content))
-		tokens += t
+		b.WriteString(line)
 	}
 	return b.String(), nil
 }
@@ -274,6 +290,7 @@ func estimateTokens(s string) int { return (len(s) + 3) / 4 }
 
 // oneLine returns s with newlines collapsed to spaces.
 func oneLine(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)

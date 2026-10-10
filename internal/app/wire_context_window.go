@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ type contextWindowBundle struct {
 	InitialContextProvider string
 	ContextWindowFor       func(model string) agent.ContextWindowResolution
 	ScopedContextWindowFor func(provider, model string) agent.ContextWindowResolution
+	RebindConfig           func(provider string, cfg config.Config)
 	WindowFor              func(model string) int
 	AutoSummarizer         agent.Summarizer
 	NavigatorProvider      llm.Provider
@@ -63,17 +65,43 @@ func wireContextWindows(
 			provWinMu.Unlock()
 		}()
 	}
-	b.ContextWindowFor = func(model string) agent.ContextWindowResolution {
+	resolveWindowForConfig := func(model string, resolvedCfg config.Config) agent.ContextWindowResolution {
 		provWinMu.Lock()
-		w := provWindows[model]
+		w := 0
+		if resolvedCfg.BaseURL == cfg.BaseURL && resolvedCfg.APIKey == cfg.APIKey {
+			w = provWindows[model]
+		}
 		provWinMu.Unlock()
-		return agent.ResolveContextWindow(model, tomlCfg.ContextWindow, w, caps, b.Learned, cfg.BaseURL)
+		return agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, w, caps, b.Learned, resolvedCfg.BaseURL, resolvedCfg.APIKey)
+	}
+	var resolverMu sync.RWMutex
+	activeCfg := cfg
+	configForProvider := contextWindowConfigForProvider(dataDir, tomlCfg, cfg, b.InitialContextProvider)
+	b.RebindConfig = func(provider string, next config.Config) {
+		nextConfigForProvider := contextWindowConfigForProvider(dataDir, tomlCfg, next, provider)
+		resolverMu.Lock()
+		activeCfg, configForProvider = next, nextConfigForProvider
+		resolverMu.Unlock()
+	}
+	b.ContextWindowFor = func(model string) agent.ContextWindowResolution {
+		resolverMu.RLock()
+		resolvedCfg := activeCfg
+		resolverMu.RUnlock()
+		return resolveWindowForConfig(model, resolvedCfg)
 	}
 	b.ScopedContextWindowFor = func(provider, model string) agent.ContextWindowResolution {
+		resolverMu.RLock()
+		scopedCfg := configForProvider(provider)
+		resolverMu.RUnlock()
 		if tokens, ok := b.ModelContexts.Get(provider, model); ok {
-			return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
+			return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
 		}
-		return agent.ContextWindowResolution{}
+		resolved := resolveWindowForConfig(model, scopedCfg)
+		if resolved.Tokens <= 0 {
+			// Do not fall through to the coordinator's endpoint for a worker.
+			return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
+		}
+		return resolved
 	}
 	// Legacy helpers such as resume sizing need only the numeric value; keep
 	// them on the same resolver rather than duplicating the cascade.
@@ -91,4 +119,33 @@ func wireContextWindows(
 	// the draft provider. Nil keeps today's behaviour (main provider).
 	b.NavigatorProvider = resolveNavigatorProvider(taskWorkerProvider, draftProvider)
 	return b
+}
+
+// contextWindowConfigForProvider snapshots configured connections once. The
+// loop may ask for a window every step; resolving a worker's endpoint must not
+// reread configuration each time or borrow the coordinator's runtime capacity.
+func contextWindowConfigForProvider(dataDir string, tc config.TomlConfig, active config.Config, activeProvider string) func(string) config.Config {
+	connections := make(map[string]config.ProviderConf)
+	globalPath, _ := config.FindTomlPaths(dataDir, "")
+	if global, err := config.LoadToml(globalPath); err == nil {
+		for _, p := range global.Providers {
+			connections[p.Name] = p
+		}
+	}
+	for _, p := range tc.Providers {
+		connections[p.Name] = p
+	}
+	return func(provider string) config.Config {
+		provider = strings.TrimSpace(provider)
+		if provider == "" || provider == activeProvider {
+			return active
+		}
+		out := active
+		// Unknown identities cannot inherit another endpoint's loaded limit.
+		out.Provider, out.BaseURL, out.APIKey = provider, "", ""
+		if p, ok := connections[provider]; ok {
+			out.Provider, out.BaseURL, out.APIKey = p.Type, p.BaseURL, p.APIKey
+		}
+		return out
+	}
 }

@@ -142,7 +142,7 @@ func TestRejectedResumeKeepsOutputBinding(t *testing.T) {
 			case "empty history":
 				history = nil
 			case "pending history":
-				loop.persistHealth.pending = []llm.Message{{Role: llm.RoleUser, Content: "unsaved"}}
+				loop.persistHealth.pending = []pendingAppend{{Message: llm.Message{Role: llm.RoleUser, Content: "unsaved"}, Writer: previous}}
 			case "dirty projection":
 				loop.persistHealth.projectionDirty = true
 			}

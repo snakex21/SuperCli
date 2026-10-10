@@ -15,11 +15,22 @@ import (
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	l.screenshotForRun = containsScreenshotReference(prompt)
 	l.headlessForRun = containsHeadlessReference(prompt)
+	l.downloadForRun = l.downloadRequestForPrompt(prompt).download
+	l.downloadPageForRun = l.downloadForRun && needsDownloadPageContract(prompt)
+	webOnly := isSelfContainedWebRequest(prompt)
+	if !webOnly && l.downloadForRun && !hasLocalWebRequestWork(unquotedActionPrompt(strings.ToLower(prompt)), true) {
+		webOnly = l.previousDownloadWasWeb()
+	}
+	// A supplied attachment may carry project or local evidence omitted from
+	// its caption. Preserve normal coordinator collection in that case.
+	if len(l.Messages) > 0 && l.Messages[len(l.Messages)-1].HasImage() {
+		webOnly = false
+	}
 	// A1: the navigator is a full LLM call. It runs here, inside the
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
 	switch {
-	case l.screenshotForRun || l.headlessForRun:
+	case l.screenshotForRun || l.headlessForRun || l.downloadForRun || webOnly:
 		// Capture is an OS tool capability, not a conceptual chat question.
 		l.route = RouteCoordinator
 	case !l.navigate:
@@ -48,7 +59,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// queued across chat/advisor turns and attach it to the newest user message
 	// immediately before the first coordinator provider call. Routing above saw
 	// only the user's raw prompt, and the session store keeps that raw prompt.
-	if l.route == RouteCoordinator {
+	if l.route == RouteCoordinator && !webOnly {
 		l.attachCoordinatorAddon(ctx)
 	}
 	if l.route == RouteCoordinator && l.wordDocumentContext(prompt) {

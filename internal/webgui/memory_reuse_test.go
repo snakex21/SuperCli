@@ -43,12 +43,10 @@ func webMemoryAccessFixture(t testing.TB) (*Engine, *tools.Registry, []*memory.S
 			}
 		}
 	}
-	if _, err := eng.newLoop(); err != nil {
+	_, reg, err := eng.buildLoopWithSession(nil, nil, eng.Home(), nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	eng.diagnosticMu.RLock()
-	reg := eng.diagnosticRegistry
-	eng.diagnosticMu.RUnlock()
 	if reg == nil {
 		t.Fatal("missing loop registry")
 	}

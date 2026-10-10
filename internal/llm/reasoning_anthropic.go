@@ -12,14 +12,25 @@ import (
 
 type anthropicPrefixKey struct{}
 
-// Hash the actual wire prefix once per message, including unknown native
-// fields. Canonical JSON avoids treating object key order as a history edit.
+// Hash prompt content once per message, including unknown native fields.
+// Cache placement is transport metadata, so moving a cache marker must not
+// invalidate signed reasoning or prefixes persisted before caching was enabled.
+// Canonical JSON avoids treating object key order as a history edit.
 func writeAnthropicPrefix(h hash.Hash, value any) {
 	raw, _ := json.Marshal(value)
 	var decoded any
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	if d.Decode(&decoded) == nil {
+		if message, ok := decoded.(map[string]any); ok {
+			if content, ok := message["content"].([]any); ok {
+				for _, item := range content {
+					if block, ok := item.(map[string]any); ok {
+						delete(block, "cache_control")
+					}
+				}
+			}
+		}
 		raw, _ = json.Marshal(decoded)
 	}
 	_, _ = h.Write(raw)
@@ -35,17 +46,21 @@ func anthropicPrefixHash(system string, tools any) hash.Hash {
 
 func anthropicRequestPrefix(body []byte) string {
 	var req struct {
-		System   string
+		System   json.RawMessage
 		Tools    json.RawMessage
 		Messages []json.RawMessage
 	}
 	if json.Unmarshal(body, &req) != nil {
 		return ""
 	}
+	system, ok := anthropicCacheSystemText(req.System)
+	if !ok {
+		return ""
+	}
 	if len(req.Tools) == 0 {
 		req.Tools = json.RawMessage("null")
 	}
-	h := anthropicPrefixHash(req.System, req.Tools)
+	h := anthropicPrefixHash(system, req.Tools)
 	for _, m := range req.Messages {
 		writeAnthropicPrefix(h, m)
 	}

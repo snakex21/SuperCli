@@ -133,13 +133,14 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	// incomplete capability metadata remains optimistic, so custom
 	// Anthropic-compatible gateways can still prove they support vision.
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
-	body, err := buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling)
+	cacheConversation := anthropicConversationCaching(ctx, p.cfg.BaseURL)
+	body, err := buildAnthropicRequestWithCaching(p.cfg.Model, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling, cacheConversation)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	var imageFallback []byte
 	if visionAttempt && messagesContainImage(msgs) {
-		imageFallback, err = buildAnthropicRequestWithSampling(p.cfg.Model, msgs, tools, false, p.cfg.MaxTokens, p.sampling)
+		imageFallback, err = buildAnthropicRequestWithCaching(p.cfg.Model, msgs, tools, false, p.cfg.MaxTokens, p.sampling, cacheConversation)
 		if err != nil {
 			return nil, fmt.Errorf("build image fallback request: %w", err)
 		}

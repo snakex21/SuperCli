@@ -20,6 +20,10 @@ func (l *Loop) Provider() llm.Provider {
 // (they already live in the session store under their original
 // session id). Hidden flags are reset.
 func (l *Loop) LoadConversation(msgs []llm.Message) {
+	// Reload authorization from the resumed writer's raw transcript on Run,
+	// never from this provider projection or its model-produced summary.
+	l.downloadHumanContext = nil
+	l.downloadHistoryLoaded = false
 	l.conversationEpoch.Add(1)
 	l.failedChecks.reset()
 	l.resetModelContextBaseline()

@@ -13,6 +13,10 @@ import (
 )
 
 func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
+	if cmd.Name == "projects" && strings.TrimSpace(cmd.Args) != "" && m.hasActiveTask() {
+		m.setStatus(m.tr("project.stopRun"), false)
+		return m, m.statusClearCmd()
+	}
 	if cmd.Name == "update" && m.hasActiveTask() && strings.EqualFold(strings.TrimSpace(cmd.Args), "install") {
 		m.setStatus(m.tr("update.busy"), false)
 		return m, m.statusClearCmd()
@@ -80,7 +84,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	handler = SafeWrap(cmd.Name, handler)
 	if !cmd.Quiet {
 		m.chat.addUser("> /" + cmd.Name + " " + cmd.Args)
-		m.appendLineToTranscript("> /" + cmd.Name + " " + cmd.Args)
+		m.markTranscriptPresent()
 	}
 	if localSlashCommands[cmd.Name] {
 		// Fast local commands (no LLM/network work) must not flip

@@ -150,7 +150,7 @@ func TestThunderbirdVisionMIME(t *testing.T) {
 }
 
 func TestThunderbirdAttachmentUploadEndpoint(t *testing.T) {
-	state := &thunderbirdBridgeState{downloads: make(map[string]thunderbirdDownloadedAttachment)}
+	state := &thunderbirdBridgeState{dataDir: t.TempDir(), downloads: make(map[string]thunderbirdDownloadedAttachment)}
 	body := []byte("hello attachment")
 	req := httptest.NewRequest(http.MethodPost, "/attachment-file?token="+thunderbirdBridgeToken+"&id=att-endpoint&filename=hello.txt&content_type=text%2Fplain", bytes.NewReader(body))
 	rec := httptest.NewRecorder()

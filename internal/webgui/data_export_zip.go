@@ -2,16 +2,22 @@ package webgui
 
 import (
 	"archive/zip"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"supercli/internal/account/fx"
 	llmprompt "supercli/internal/llm/prompt"
+	"supercli/internal/storage/memory"
 )
 
 func writeZip(dst io.Writer, root string) error {
@@ -101,6 +107,9 @@ func extractDataBackupMode(archivePath, stage string, allowSecrets bool) (dataBa
 		if rawName != name || !allowedBackupPathMode(name, allowSecrets) || file.Mode()&os.ModeSymlink != 0 {
 			return dataBackupMeta{}, fmt.Errorf("backup contains unsupported path %q", file.Name)
 		}
+		if name == "data/project-cleanup.json" && file.UncompressedSize64 > 4096 {
+			return dataBackupMeta{}, errors.New("backup project checkpoint preference exceeds 4096 bytes")
+		}
 		total += file.UncompressedSize64
 		if total > maxDataBackupBytes {
 			return dataBackupMeta{}, fmt.Errorf("unpacked backup is too large")
@@ -146,7 +155,105 @@ func extractDataBackupMode(archivePath, stage string, allowSecrets bool) (dataBa
 	if err := json.Unmarshal(manifestData, &manifest); err != nil || manifest.Format != dataBackupFormat || manifest.App != "SuperCli" || manifest.Secrets != allowSecrets {
 		return dataBackupMeta{}, errors.New("unsupported or unsafe backup format")
 	}
+	if err := validateProjectCleanupBackup(filepath.Join(stage, "data")); err != nil {
+		return dataBackupMeta{}, fmt.Errorf("backup project checkpoint preference: %w", err)
+	}
+	if err := validateCurrencyRatesBackup(filepath.Join(stage, "data")); err != nil {
+		return dataBackupMeta{}, fmt.Errorf("backup currency rates: %w", err)
+	}
 	return manifest, nil
+}
+
+func validateProjectCleanupBackup(dataRoot string) error {
+	info, err := os.Lstat(filepath.Join(dataRoot, "project-cleanup.json"))
+	if os.IsNotExist(err) {
+		return nil // Older archives have no preference; the default keeps history.
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("project checkpoint preference must be a regular file")
+	}
+	_, err = memory.LoadProjectCheckpointCleanup(dataRoot)
+	return err
+}
+
+// A rate backup is one self-contained SQLite snapshot, never a live DB plus
+// sidecars. Revalidate before applying a pending import as well as on upload.
+func validateCurrencyRatesBackup(dataRoot string) error {
+	filename := filepath.Join(dataRoot, dataCurrencyRatesFile)
+	info, err := os.Lstat(filename)
+	if os.IsNotExist(err) {
+		return nil // Older archives do not contain historical exchange rates.
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("currency rate snapshot must be a regular file")
+	}
+	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(filename)}
+	if !strings.HasPrefix(uri.Path, "/") {
+		uri.Path = "/" + uri.Path
+	}
+	uri.RawQuery = "mode=ro&immutable=1&_pragma=query_only(1)"
+	db, err := sql.Open("sqlite", uri.String())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var integrity string
+	if err := db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&integrity); err != nil {
+		return fmt.Errorf("invalid currency rate database: %w", err)
+	}
+	if integrity != "ok" {
+		return fmt.Errorf("invalid currency rate database: %s", integrity)
+	}
+	var validSchema bool
+	if err := db.QueryRowContext(ctx, `SELECT
+		EXISTS(SELECT 1 FROM sqlite_schema WHERE name='currency_days' AND type='table')
+		AND EXISTS(SELECT 1 FROM pragma_table_info('currency_days') WHERE name='id' AND upper(type)='INTEGER' AND pk=1)
+		AND EXISTS(SELECT 1 FROM pragma_index_list('currency_days') l WHERE l."unique"=1 AND l.partial=0
+			AND (SELECT COUNT(*) FROM pragma_index_info(l.name))=1
+			AND (SELECT name FROM pragma_index_info(l.name) WHERE seqno=0)='usage_day')`).Scan(&validSchema); err != nil {
+		return fmt.Errorf("invalid currency rate schema: %w", err)
+	}
+	if !validSchema {
+		return errors.New("currency rate schema requires a table, ID primary key and unique usage day")
+	}
+	rows, err := db.QueryContext(ctx, "SELECT id, usage_day, publication_day, source, multipliers FROM currency_days ORDER BY id")
+	if err != nil {
+		return fmt.Errorf("invalid currency rate schema: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var day, publication, source, raw string
+		if err := rows.Scan(&id, &day, &publication, &source, &raw); err != nil {
+			return err
+		}
+		if id <= 0 {
+			return errors.New("currency rate snapshot contains an invalid row ID")
+		}
+		var multipliers map[string]float64
+		if err := json.Unmarshal([]byte(raw), &multipliers); err != nil {
+			return fmt.Errorf("invalid currency rate multipliers for %s: %w", day, err)
+		}
+		if err := fx.ValidateSnapshot(day, publication, source, multipliers); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	return validateCurrencyQuoteBackup(ctx, db)
 }
 
 func allowedBackupPath(name string) bool {
@@ -168,7 +275,7 @@ func allowedBackupPathMode(name string, allowSecrets bool) bool {
 		}
 	}
 	switch rel {
-	case "sessions.db", "memory.db", "supercli.db", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
+	case "sessions.db", "memory.db", "supercli.db", dataCurrencyRatesFile, "projects.json", "workspace.json", "webgui-settings.json", "project-cleanup.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
 		return true
 	}
 	if len(parts) >= 2 && (parts[0] == "memory" || parts[0] == "reflect" || parts[0] == "module-sources") {

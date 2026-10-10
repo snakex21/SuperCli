@@ -174,7 +174,10 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 	if r.OnSave != nil {
 		r.OnSave()
 	}
-	return Result{Text: fmt.Sprintf("remembered [%s] (%s, %s): %s", e.ID, entryScope, targetName, a.Text)}, nil
+	// The paired call already carries the accepted note. Keep its full echo
+	// for live output, while the model needs only the successful save receipt.
+	receipt := fmt.Sprintf("remembered [%s] (%s, %s)", e.ID, entryScope, targetName)
+	return Result{Text: receipt + ": " + a.Text, ModelText: receipt}, nil
 }
 
 func isUserProfileTopic(topic string) bool {

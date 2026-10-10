@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,10 +97,11 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		SessionID   string `json:"session_id"`
-		SelectedSeq int    `json:"selected_seq"`
-		RewindFiles bool   `json:"rewind_files"`
-		Reason      string `json:"reason"`
+		SessionID         string `json:"session_id"`
+		SelectedSeq       int    `json:"selected_seq"`
+		SelectedMessageID string `json:"selected_message_id"`
+		RewindFiles       bool   `json:"rewind_files"`
+		Reason            string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		http.Error(w, "bad request: "+err.Error(), 400)
@@ -129,7 +131,7 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowError(w, errSessionOutsideWorkspace)
 		return
 	}
-	message, err := store.ReadMessageAt(r.Context(), b.SessionID, b.SelectedSeq)
+	message, err := store.ReadTranscriptMessageAt(r.Context(), b.SessionID, b.SelectedSeq)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeWorkflowError(w, err)
 		return
@@ -143,6 +145,15 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "selected_seq must identify a user message", http.StatusBadRequest)
 		return
 	}
+	messageID, err := strconv.ParseInt(b.SelectedMessageID, 10, 64)
+	if err != nil || messageID <= 0 {
+		http.Error(w, "positive selected_message_id is required; reload the conversation", http.StatusBadRequest)
+		return
+	}
+	if message.MessageID != messageID {
+		http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+		return
+	}
 	attachmentRows, err := store.ReadMessageAttachmentsRange(r.Context(), b.SessionID, b.SelectedSeq, b.SelectedSeq)
 	if err != nil {
 		writeWorkflowError(w, err)
@@ -150,37 +161,43 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	}
 	selectedAttachments := append([]string(nil), attachmentRows[b.SelectedSeq]...)
 
+	removed := 0
+	truncate := func(ctx context.Context) error {
+		// Recheck project ownership inside the same gate as checkpoint commit.
+		meta, err := store.Get(b.SessionID)
+		if err != nil || !sameSessionWorkspace(meta.Cwd, s.eng.Home()) {
+			return errSessionOutsideWorkspace
+		}
+		n, err := store.TruncateFromExact(ctx, b.SessionID, session.MessageReceipt{Seq: b.SelectedSeq, ID: messageID})
+		if err == nil {
+			removed = n
+		}
+		return err
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
 	undone := checkpoint.BatchResult{}
 	manager, managerErr := s.eng.checkpointManager(s.eng.Home())
-	if b.RewindFiles {
-		if managerErr != nil {
-			http.Error(w, managerErr.Error(), http.StatusBadRequest)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		undone, err = manager.UndoFrom(ctx, b.SessionID, b.SelectedSeq)
-		cancel()
-		if err != nil {
-			writeJSONStatus(w, http.StatusConflict, checkpointRewindView{
-				Available:   len(undone.Records) > 0,
-				Checkpoints: len(undone.Records),
-				Files:       undone.Files,
-				Conflicts:   undone.Conflicts,
-			})
-			return
-		}
+	if managerErr == nil {
+		undone, err = manager.RewindTranscript(ctx, b.SessionID, b.SelectedSeq, messageID, b.RewindFiles, truncate)
+	} else if !b.RewindFiles && errors.Is(managerErr, checkpoint.ErrUnavailable) {
+		// Conversation-only rewind remains available without Git; SQL exact
+		// identity validation still participates in the shared portable gate.
+		err = s.eng.truncateTranscriptWithoutCheckpoint(ctx, truncate)
+	} else {
+		err = managerErr
 	}
-	removed, err := store.TruncateFrom(r.Context(), b.SessionID, b.SelectedSeq)
-	if err != nil {
-		if len(undone.Records) > 0 {
-			rollbackCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			rollbackErr := manager.RedoBatch(rollbackCtx, undone)
-			cancel()
-			if rollbackErr != nil {
-				err = errors.Join(err, errors.New("file rewind rollback failed: "+rollbackErr.Error()))
-			}
+	if err != nil && removed == 0 {
+		if errors.Is(err, checkpoint.ErrUserMessageChanged) || errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+		} else if b.RewindFiles && len(undone.Conflicts) > 0 {
+			writeJSONStatus(w, http.StatusConflict, checkpointRewindView{
+				Available: len(undone.Records) > 0, Checkpoints: len(undone.Records),
+				Files: undone.Files, Conflicts: undone.Conflicts,
+			})
+		} else {
+			writeWorkflowError(w, err)
 		}
-		writeWorkflowError(w, err)
 		return
 	}
 
@@ -191,10 +208,8 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		Files:        undone.Files,
 		Attachments:  selectedAttachments,
 	}
-	if managerErr == nil {
-		if err := manager.ForgetFrom(b.SessionID, b.SelectedSeq); err != nil {
-			out.Warning = "conversation was rewound, but old checkpoint metadata could not be detached: " + err.Error()
-		}
+	if err != nil {
+		out.Warning = "conversation was rewound, but checkpoint cleanup could not finish: " + err.Error()
 	}
 	marker := "[conversation rewind] The user permanently removed the selected message and the later conversation. Do not rely on the discarded attempt."
 	if b.RewindFiles {
@@ -218,22 +233,34 @@ func waitForActiveWorkToFinish(ctx context.Context, eng *Engine, timeout time.Du
 	if eng == nil || !eng.HasActiveWork() {
 		return true
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-	for {
+	eng.activeRunMu.Lock()
+	idle := eng.activeRunIdle
+	foreground := eng.activeRuns.Load() > 0
+	eng.activeRunMu.Unlock()
+	if foreground {
+		waitCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
 		select {
-		case <-ctx.Done():
+		case <-waitCtx.Done():
 			return false
-		case <-timer.C:
-			return !eng.HasActiveWork()
-		case <-ticker.C:
-			if !eng.HasActiveWork() {
-				return true
-			}
+		case <-idle:
 		}
 	}
+	// Worker activity has its own checkpoint lease. Do not poll it or hold up
+	// this HTTP handler waiting for unrelated model work.
+	return !eng.HasActiveWork()
+}
+
+func (e *Engine) truncateTranscriptWithoutCheckpoint(ctx context.Context, truncate func(context.Context) error) error {
+	gate, err := checkpoint.NewStoreGate(e.dataDir)
+	if err != nil {
+		return err
+	}
+	transaction, err := gate.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	return errors.Join(truncate(ctx), transaction.Close())
 }
 
 func writeWorkflowError(w http.ResponseWriter, err error) {

@@ -75,15 +75,15 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.eng.diagnosticMu.RLock()
-	registry := s.eng.diagnosticRegistry
+	diagnostics := s.eng.toolDiagnostics
 	s.eng.diagnosticMu.RUnlock()
-	if registry == nil {
+	if diagnostics == nil {
 		if _, err := s.eng.newLoop(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		s.eng.diagnosticMu.RLock()
-		registry = s.eng.diagnosticRegistry
+		diagnostics = s.eng.toolDiagnostics
 		s.eng.diagnosticMu.RUnlock()
 	}
 	store, _ := s.eng.sessionStore()
@@ -92,7 +92,7 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	s.eng.mu.RUnlock()
 	report := doctor.Run(r.Context(), doctor.Env{
 		Version: buildinfo.Version, Home: s.eng.Home(), DataDir: s.eng.DataDir(),
-		Provider: provider, Registry: registry, Sessions: store,
+		Provider: provider, ToolDiagnostics: diagnostics, Sessions: store,
 		ProviderMgr: s.eng.providerManager(), Caps: caps,
 	})
 	ok, warn, fail, skip := report.Summary()

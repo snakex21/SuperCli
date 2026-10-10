@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/system/childproc"
@@ -60,6 +61,8 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 			Error:    err.Error(),
 		}, err
 	}
+	runCtx, cancel := commandContext(parent, req.TimeoutMS)
+	defer cancel()
 	if r.home == "" {
 		return &Result{
 			ExitCode: ExitSandboxError,
@@ -79,17 +82,39 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}, err
 	}
 
-	// Resolve the binary directly, never through cmd/PowerShell. In addition to
-	// PATH, rg may be bundled beside the GUI executable because desktop apps do
-	// not always inherit the user's terminal PATH.
-	file := req.Command[0]
-	if !filepath.IsAbs(file) && filepath.VolumeName(file) == "" &&
-		(strings.ContainsRune(file, filepath.Separator) || strings.ContainsRune(file, '/')) {
-		// Explicit relative paths belong to the requested project directory,
-		// not the GUI/CLI process cwd. Bare names still use PATH as before.
-		file = filepath.Join(wd, file)
+	// Ordinary requests keep direct argv execution. Only a validated literal
+	// Windows dir builtin can use native cmd; checkpoint admission binds that
+	// exact executable so a later PATH change cannot replace the admitted call.
+	command := req.Command
+	mapped := false
+	if runtime.GOOS == "windows" {
+		command, mapped = boundWindowsDirCommand(parent, req)
+		if !mapped {
+			lookPath := r.LookPath
+			if lookPath == nil {
+				lookPath = exec.LookPath
+			}
+			if listing, ok := ResolveWindowsDirCommand(req.Command, req.EnvExtra, os.Getenv("SystemRoot"), lookPath); ok {
+				command, mapped = listing.effective, true
+			}
+		}
+		if !mapped {
+			command = req.Command
+		}
 	}
-	binary, err := r.resolveBinary(file)
+	var binary string
+	if mapped {
+		binary = command[0]
+	} else {
+		// rg may be bundled beside the GUI executable; explicit relative
+		// paths belong to the requested project directory rather than cwd.
+		file := command[0]
+		if !filepath.IsAbs(file) && filepath.VolumeName(file) == "" &&
+			(strings.ContainsRune(file, filepath.Separator) || strings.ContainsRune(file, '/')) {
+			file = filepath.Join(wd, file)
+		}
+		binary, err = r.resolveBinary(file)
+	}
 	if err != nil {
 		return &Result{
 			ExitCode: ExitNotFound,
@@ -99,13 +124,6 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}, nil
 	}
 
-	timeout := req.TimeoutMS
-	if timeout <= 0 {
-		timeout = DefaultTimeoutMS
-	}
-	if timeout > MaxTimeoutMSHard {
-		timeout = MaxTimeoutMSHard
-	}
 	maxOut := req.MaxStdoutKB
 	if maxOut <= 0 {
 		maxOut = DefaultMaxStdoutKB
@@ -122,15 +140,12 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	}
 
 	// Build the command. Args after the binary are
-	// passed verbatim. CommandContext takes the
-	// TIMEOUT context so the kill goroutine fires
-	// when the timeout elapses (or when the caller
-	// cancels the parent ctx).
-	runCtx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
-	defer cancel()
-	cmd := exec.CommandContext(runCtx, binary, req.Command[1:]...)
+	// passed verbatim. Without an explicit timeout the caller owns lifetime;
+	// user cancellation/deadlines still stop the command. No default timer.
+	cmd := exec.CommandContext(runCtx, binary, command[1:]...)
 	childproc.HideWindow(cmd)
-	configureCommandLine(cmd, req.Command[1:])
+	configureCommandLine(cmd, command[1:])
+	configureCommandScope(cmd)
 	cmd.Dir = wd
 	cmd.Env = buildEnv(req.EnvExtra)
 
@@ -144,27 +159,49 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	// Bound that wait and report incomplete capture instead of hanging.
 	cmd.WaitDelay = time.Second
 
+	// Publish the owned scope before cancellation can act on the child. Start
+	// returns without waiting for exit; its context watchdog runs separately.
+	var scopeMu sync.Mutex
+	var scope *childproc.Scope
+	var cancellationCause error
+	cmd.Cancel = func() error {
+		scopeMu.Lock()
+		cancellationCause = runCtx.Err()
+		s := scope
+		scopeMu.Unlock()
+		return killCommandTree(cmd, s)
+	}
 	start := r.Now()
-	runErr := cmd.Run()
+	scopeMu.Lock()
+	started, runErr := childproc.Start(cmd)
+	scope = started
+	scopeMu.Unlock()
+	if runErr == nil {
+		runErr = cmd.Wait()
+		_ = started.Close()
+	}
+	scopeMu.Lock()
+	cancelErr := cancellationCause
+	scopeMu.Unlock()
 	dur := r.Now().Sub(start).Milliseconds()
 
 	// ErrWaitDelay specifically means a successful process exit followed by
 	// an inherited pipe that never closed. Do not report a failed command or
 	// encourage a second launch; the descendant may still be doing its work.
 	outputWarning := ""
-	if errors.Is(runErr, exec.ErrWaitDelay) && runCtx.Err() == nil {
+	if errors.Is(runErr, exec.ErrWaitDelay) && cancelErr == nil {
 		outputWarning = "Output capture incomplete: process exited with code 0, but inherited output pipes stayed open. A descendant may still be running; check its status before rerunning the command."
 		runErr = nil
 	}
 
 	exit := ExitOK
 	if runErr != nil {
-		exit = classifyErr(runErr, runCtx.Err())
+		exit = classifyErr(runErr, cancelErr)
 	}
 	// Preserve the actual process exit code, except for timeout/cancellation.
 	if ee, ok := runErr.(*exec.ExitError); ok {
 		exit = ee.ExitCode()
-		if runCtx.Err() != nil {
+		if cancelErr != nil {
 			exit = ExitTimeout
 		}
 	}
@@ -194,6 +231,17 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}
 	}
 	return result, nil
+}
+
+func commandContext(parent context.Context, timeoutMS int) (context.Context, context.CancelFunc) {
+	if timeoutMS == 0 {
+		return parent, func() {}
+	}
+	deadline := time.Now().Add(time.Duration(timeoutMS) * time.Millisecond)
+	if earlier, ok := parent.Deadline(); ok && !deadline.Before(earlier) {
+		return parent, func() {}
+	}
+	return context.WithDeadline(parent, deadline)
 }
 
 func (r *Runner) resolveBinary(file string) (string, error) {

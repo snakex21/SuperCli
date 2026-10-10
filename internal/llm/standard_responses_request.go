@@ -7,11 +7,22 @@ import (
 	"unicode/utf8"
 )
 
-// prepareOwnedStandardResponsesRequest accepts only a freshly assembled typed
-// request. Its final maps retain the legacy byte ordering and numeric decoding
-// without encoding and decoding every ordinary history string first.
+// prepareOwnedStandardResponsesRequest preserves legacy decoding for typed
+// requests whose tool Parameters may contain arbitrary JSON.
 func prepareOwnedStandardResponsesRequest(req codexRequest, key string, reasoningModel bool, sampling Sampling) ([]byte, error) {
-	root, err := standardResponsesRequestMap(&req, key, reasoningModel, sampling)
+	return prepareStandardResponsesTypedRequest(req, key, reasoningModel, sampling, false)
+}
+
+// prepareAssembledStandardResponsesRequest accepts only an unmodified request
+// freshly returned by assembleCodexRequestWithEffort. That assembler supplies
+// private tool schema bytes already decoded and encoded by
+// normalizeToolSchemaChecked, including legacy numeric and string semantics.
+func prepareAssembledStandardResponsesRequest(req codexRequest, key string, reasoningModel bool, sampling Sampling) ([]byte, error) {
+	return prepareStandardResponsesTypedRequest(req, key, reasoningModel, sampling, true)
+}
+
+func prepareStandardResponsesTypedRequest(req codexRequest, key string, reasoningModel bool, sampling Sampling, canonicalTools bool) ([]byte, error) {
+	root, err := standardResponsesRequestMapWithCanonicalTools(&req, key, reasoningModel, sampling, canonicalTools)
 	if err != nil {
 		// Keep exact legacy replacement-character and opaque parser/error behavior.
 		body, oldErr := json.Marshal(req)
@@ -24,6 +35,10 @@ func prepareOwnedStandardResponsesRequest(req codexRequest, key string, reasonin
 }
 
 func standardResponsesRequestMap(req *codexRequest, key string, reasoningModel bool, sampling Sampling) (map[string]any, error) {
+	return standardResponsesRequestMapWithCanonicalTools(req, key, reasoningModel, sampling, false)
+}
+
+func standardResponsesRequestMapWithCanonicalTools(req *codexRequest, key string, reasoningModel bool, sampling Sampling, canonicalTools bool) (map[string]any, error) {
 	validStrings := func(ss ...string) bool {
 		for _, s := range ss {
 			if !utf8.ValidString(s) {
@@ -93,11 +108,17 @@ func standardResponsesRequestMap(req *codexRequest, key string, reasoningModel b
 			m["description"] = tool.Description
 		}
 		if len(tool.Parameters) != 0 {
-			var schema any
-			if err := json.Unmarshal(tool.Parameters, &schema); err != nil {
-				return nil, err
+			if canonicalTools {
+				// Reuse only assembler-owned canonical bytes; final Marshal still
+				// validates and applies the standard JSON escaping rules.
+				m["parameters"] = tool.Parameters
+			} else {
+				var schema any
+				if err := json.Unmarshal(tool.Parameters, &schema); err != nil {
+					return nil, err
+				}
+				m["parameters"] = schema
 			}
-			m["parameters"] = schema
 		}
 		toolList = append(toolList, m)
 	}

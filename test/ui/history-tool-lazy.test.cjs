@@ -461,7 +461,7 @@ test('task and continuation live rows do not format the input they replace with 
     assert.deepEqual(h.formats, []);
     assert.equal(row._activity, activity);
     assert.equal(row._body.children.length, 4);
-    assert.equal(row._toolArgs, args);
+    assert.equal(row._toolArgs, null);
   }
 });
 
@@ -541,4 +541,143 @@ async function liveInputOwnershipCheck(makeHarness) {
 test('live body toggle listener does not retain consumed argument context while folded input remains usable', async () => {
   const childScript = "const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'); const domNode="+domNode.toString()+"; const descendants="+descendants.toString()+"; const harness="+harness.toString()+"; const liveInputHarness="+liveInputHarness.toString()+"; const __dirname=process.argv[1]; ("+liveInputOwnershipCheck.toString()+")(liveInputHarness).catch(error=>{console.error(error);process.exitCode=1;});";
   await new Promise((resolve,reject)=>require('node:child_process').execFile(process.execPath,['--expose-gc','-e',childScript,__dirname],{windowsHide:true},(error,stdout,stderr)=>{if(error)reject(new Error(stderr||stdout||error.message));else resolve();}));
+});
+
+
+function taskInputHarness() {
+  const h = liveInputHarness(), overview = [], renders = [];
+  h.c.updateWorkerOverview = (id, agent, status, activity, row) => overview.push({id, agent, status, activity, row});
+  h.c.fmtInteger = String;
+  h.c.fmtCompactNumber = String;
+  h.c.renderText = text => { renders.push(text); return text; };
+  return {...h, overview, renders};
+}
+function taskInputNote(result) {
+  return '<task-notification><task-id>worker-1</task-id><agent>code</agent><status>done</status>' +
+    '<summary>code done · 2 steps · 200 in/40 out tok</summary><result>' + result + '</result></task-notification>';
+}
+
+test('task and continuation release unused JSON while retaining full canonical briefs, activity and controls', () => {
+  const h = taskInputHarness();
+  const canonicalCalls = [
+    {id: 'spawn', name: 'task', arguments: JSON.stringify({agent: 'code', prompt: 'Full task brief ą日本語<&>\nsecond\t🌍'})},
+    {id: 'resume', name: 'send_message', arguments: JSON.stringify({to: 'worker-1', message: 'Full continuation ą日本語<&>\nsecond\t🌍'})},
+  ];
+  const canonicalBefore = JSON.stringify(canonicalCalls), rows = [];
+  for (let i = 0; i < canonicalCalls.length; i++) {
+    const call = canonicalCalls[i], brief = JSON.parse(call.arguments)[i ? 'message' : 'prompt'];
+    h.c.addToolCall(call.name, call.arguments, call.id);
+    const row = h.c.toolRows[call.id]; rows.push(row);
+    assert.equal(row._toolArgs, null, 'materialized brief must release unused JSON property');
+    assert.equal(row._taskPrompt, brief);
+    assert.equal(row.querySelector('.task-brief').textContent, brief);
+    assert.equal(row.open, false); assert.equal(row._body.hidden, true);
+    if (i) assert.equal(row._previousTaskRow, rows[0]);
+    h.c.addWorkerProgress({id: 'worker-1', name: 'code', kind: 'started', parent_call_id: call.id, run: i + 1});
+    h.c.addWorkerProgress({id: 'worker-1', name: 'code', kind: 'tool_call', parent_call_id: call.id,
+      call_id: 'read-' + i, tool: 'read_lines', args: '{"file":"source.go"}'});
+    h.c.addWorkerProgress({id: 'worker-1', name: 'code', kind: 'tool_result', parent_call_id: call.id,
+      call_id: 'read-' + i, output: 'complete activity preview'});
+    assert.equal(row.open, false, 'worker activity never changes disclosure');
+    const activity = row._activity, reportText = 'Complete report ' + i + ' ą日本語<&>';
+    h.c.addToolResult(call.id, taskInputNote(reportText), '');
+    assert.equal(row._clock, null); assert.equal(row._activity, activity);
+    assert.equal(row._taskPrompt, brief); assert.equal(row.querySelector('.task-brief').textContent, brief);
+    const report = row.querySelector('.task-report'); assert.equal(report.innerHTML, '');
+    assert.deepEqual(row._body.children.map(node => node.className).filter(name => name !== 'lbl'),
+      i ? ['task-backlink', 'task-brief', 'task-activity', 'task-report msg-assistant'] :
+        ['task-brief', 'task-activity', 'task-report msg-assistant']);
+    row.open = true; row.dispatch('toggle');
+    assert.equal(report.innerHTML, reportText);
+    const visibleBrief = row.querySelector('.task-brief');
+    row.open = false; row.dispatch('toggle'); assert.equal(row._body.hidden, true);
+    row.open = true; row.dispatch('toggle'); assert.equal(row._body.hidden, false);
+    assert.equal(row.querySelector('.task-brief'), visibleBrief); assert.equal(row.querySelector('.task-report'), report);
+    assert.equal(h.c.workerRows['worker-1'], row);
+    const lastOverview = h.overview.at(-1);
+    assert.equal(lastOverview.row, row); assert.equal(lastOverview.activity, brief); assert.equal(lastOverview.status, 'done');
+  }
+  rows[0].scrollIntoView = options => { rows[0].scrollOptions = options; };
+  rows[0].open = false;
+  for (const callback of rows[1].querySelector('.task-backlink').listeners.get('click')) callback();
+  assert.equal(rows[0].open, true); assert.equal(rows[0].scrollOptions.block, 'center');
+  assert.equal(JSON.stringify(canonicalCalls), canonicalBefore, 'canonical tool arguments remain intact');
+  assert.deepEqual(h.formats, []); assert.equal(h.renders.length, 2, 'reports render once');
+});
+
+test('saved delegation history retains canonical arguments and folded report reopening', () => {
+  const h = taskInputHarness(), messages = [
+    {seq: 1, role: 'assistant', content: '', tool_calls: [{id: 'spawn', name: 'task', arguments: '{"agent":"code","prompt":"original canonical brief"}'}]},
+    {seq: 2, role: 'tool', name: 'task', tool_call_id: 'spawn', content: taskInputNote('first full report ą<&>')},
+    {seq: 3, role: 'assistant', content: '', tool_calls: [{id: 'resume', name: 'send_message', arguments: '{"to":"worker-1","message":"canonical continuation"}'}]},
+    {seq: 4, role: 'tool', name: 'send_message', tool_call_id: 'resume', content: taskInputNote('second full report 日本語')},
+  ];
+  const before = JSON.stringify(messages), fragment = h.c.buildHistoryFragment(messages);
+  const rows = fragment.querySelectorAll('.task-row'); assert.equal(rows.length, 2);
+  assert.equal(h.c.workerRows['worker-1'], rows[1]);
+  rows.forEach((row, i) => {
+    assert.equal(row.open, false); assert.equal(row.querySelector('.task-brief'), null, 'preserve saved-history presentation');
+    const report = row.querySelector('.task-report'); assert.equal(report.innerHTML, '');
+    row.open = true; row.dispatch('toggle');
+    assert.equal(report.innerHTML, i ? 'second full report 日本語' : 'first full report ą<&>');
+    row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
+    assert.equal(row.querySelector('.task-report'), report);
+  });
+  assert.equal(JSON.stringify(messages), before);
+  assert.deepEqual(h.formats, []); assert.equal(h.renders.length, 2);
+});
+
+test('task brief or details insertion failures retain raw arguments and the original error', () => {
+  for (const name of ['task', 'send_message']) {
+    for (const fail of ['task-brief', 'task-activity']) {
+      const h = taskInputHarness(), args = JSON.stringify(name === 'task' ? {prompt: 'complete brief'} : {to: 'worker-1', message: 'complete continuation'});
+      const error = new Error('original ' + fail + ' failure'), el = h.c.el, create = h.c.document.createElement;
+      let partial;
+      h.c.document.createElement = tag => { const node = create(tag); if (tag === 'details') partial = node; return node; };
+      h.c.el = (tag, cls, text) => { if (cls === fail) throw error; return el(tag, cls, text); };
+      assert.throws(() => h.c.addToolCall(name, args, 'failed'), value => value === error);
+      assert.equal(partial._toolArgs, args);
+      assert.equal(partial._taskPrompt, name === 'task' ? 'complete brief' : 'complete continuation');
+    }
+  }
+});
+
+async function taskInputOwnershipCheck(makeHarness) {
+  const h = makeHarness(), canonicalBriefs = [], canonicalRaw = [];
+  function setup(name, id, holdRaw) {
+    const brief = 'complete canonical brief ą日本語<&>\n'.repeat(400);
+    // Box only the source for reachability. Actual string bytes and shared raw
+    // ownership are measured separately by the read-only retained-heap fixture.
+    const args = new String(JSON.stringify(name === 'task' ? {agent: 'code', prompt: brief} :
+      name === 'send_message' ? {to: 'worker-1', message: brief} : {content: brief}));
+    const ref = new WeakRef(args);
+    if (holdRaw) canonicalRaw.push(args);
+    h.c.addToolCall(name, args, id);
+    const row = h.c.toolRows[id];
+    if (name === 'task' || name === 'send_message') canonicalBriefs.push({row, brief: row._taskPrompt});
+    return {row, ref};
+  }
+  const task = setup('task', 'task', false), continuation = setup('send_message', 'continuation', false);
+  const held = setup('task', 'canonical-raw-control', true), ordinary = setup('create_file', 'ordinary-folded-control', false);
+  await new Promise(resolve => setImmediate(() => { global.gc(); setImmediate(() => { global.gc(); resolve(); }); }));
+  assert.equal(task.ref.deref(), undefined, 'persistent toggle context retained task JSON');
+  assert.equal(continuation.ref.deref(), undefined, 'persistent toggle context retained continuation JSON');
+  assert.ok(held.ref.deref(), 'canonical raw owner must remain alive');
+  assert.ok(ordinary.ref.deref(), 'ordinary folded input must remain available');
+  assert.equal(canonicalRaw.length, 1);
+  for (const {row, brief} of canonicalBriefs) {
+    assert.equal(row._taskPrompt, brief); assert.equal(row.querySelector('.task-brief').textContent, brief);
+    assert.equal(row._toolArgs, null); assert.equal(row.listeners.get('toggle').size, 1);
+    row.open = true; row.dispatch('toggle'); assert.equal(row._body.hidden, false);
+    row.open = false; row.dispatch('toggle'); assert.equal(row._body.hidden, true);
+    row.open = true; row.dispatch('toggle'); assert.equal(row.querySelector('.task-brief').textContent, brief);
+  }
+}
+
+test('task visibility listener releases raw JSON context while canonical briefs and other raw owners stay live', async () => {
+  const script = "const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'); const domNode=" + domNode.toString() + "; const descendants=" + descendants.toString() + "; const harness=" + harness.toString() + "; const liveInputHarness=" + liveInputHarness.toString() + "; const __dirname=process.argv[1]; (" + taskInputOwnershipCheck.toString() + ")(liveInputHarness).catch(error=>{console.error(error);process.exitCode=1;});";
+  await new Promise((resolve, reject) => require('node:child_process').execFile(process.execPath,
+    ['--expose-gc', '-e', script, __dirname], {windowsHide: true}, (error, stdout, stderr) => {
+      if (error) reject(new Error(stderr || stdout || error.message)); else resolve();
+    }));
 });

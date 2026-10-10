@@ -406,12 +406,10 @@ func TestWebLoopRegistersWorkingMemoryTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = eng.Close() })
-	if _, err := eng.newLoop(); err != nil {
+	_, registry, err := eng.buildLoopWithSession(nil, nil, eng.Home(), nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	eng.diagnosticMu.RLock()
-	registry := eng.diagnosticRegistry
-	eng.diagnosticMu.RUnlock()
 	if registry == nil {
 		t.Fatal("web loop did not publish its tool registry")
 	}

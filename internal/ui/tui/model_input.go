@@ -32,7 +32,7 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.statusClearCmd()
 		}
 		m.chat.addUser("> " + text)
-		m.appendLineToTranscript("> " + text)
+		m.markTranscriptPresent()
 		m.appendLine(m.palette.InputHint.Render(m.tr("tui.model_input.d5f42b0f2b")))
 		m.input.Reset()
 		m.syncInputHeight()
@@ -80,7 +80,7 @@ func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
 		// still in progress after cancelling.)
 		m.cancel.Cancel()
 		m.resumeContext = nil
-		m.cancelling = m.eventCh != nil || m.submittingDraft != ""
+		m.cancelling = m.eventCh != nil || m.submittingDraft != "" || m.shellInvocation != nil
 		m.busy = m.cancelling
 		m.cancel.Disarm()
 		m.setStatus("cancelled", true)
@@ -105,7 +105,7 @@ func (m Model) handleEscCancel() (tea.Model, tea.Cmd) {
 	}
 	m.cancel.Cancel()
 	m.resumeContext = nil
-	m.cancelling = m.eventCh != nil || m.submittingDraft != ""
+	m.cancelling = m.eventCh != nil || m.submittingDraft != "" || m.shellInvocation != nil
 	m.busy = m.cancelling
 	m.cancel.Disarm()
 	m.setStatus("cancelled", true)

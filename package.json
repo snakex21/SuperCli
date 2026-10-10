@@ -1,0 +1,14 @@
+{
+  "name": "supercli-development-tests",
+  "private": true,
+  "scripts": {
+    "test:ui": "node scripts/test-ui.cjs",
+    "test:docs": "node --test docs/readme/check.test.cjs && node docs/readme/check.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.12"
+  }
+}

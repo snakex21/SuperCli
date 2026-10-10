@@ -55,10 +55,21 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// context is cold, so the repo-state block saves it the initial
 	// discovery turns. Rides the briefing (user message) — the
 	// worker's system prefix stays stable.
-	if a.Preflight != nil {
-		if block := strings.TrimSpace(a.Preflight()); block != "" {
+	// Self-contained public-web work does not need a Git snapshot. Inspect the
+	// full briefing so project work required by expect retains repo context.
+	if (a.PreflightContext != nil || a.Preflight != nil) && !isSelfContainedWebRequest(workerPrompt) {
+		var block string
+		if a.PreflightContext != nil {
+			block = a.PreflightContext(ctx)
+		} else {
+			block = a.Preflight()
+		}
+		if block = strings.TrimSpace(block); block != "" {
 			workerPrompt += "\n\n" + block
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return tools.Result{Err: err}, nil
 	}
 
 	// Decide on the seed messages. When share_context is
@@ -223,7 +234,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		w.setState(func(w *Worker) { w.Model = prov.Name() })
 	}
 	if ar.Async {
-		a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps)
+		if err := a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps); err != nil {
+			return tools.Result{Err: fmt.Errorf("task: background checkpoint binding: %w", err)}, nil
+		}
 		return tools.Result{Text: fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>
@@ -234,8 +247,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 
 	text, err := runWorkerLoop(childCtx, w, workerPrompt)
 	if err != nil {
-		a.emitWorkerNotification(w, text)
-		return workerResult(w, text, err), nil
+		handoff := prepareWorkerHandoff(w, text)
+		a.emitPreparedWorkerNotification(handoff)
+		return handoff.result(w, err), nil
 	}
 	// Draft-verify ladder: when enabled, the completed worker run above was
 	// the DRAFT. The objective sieve + big-model verdict now decide its
@@ -246,8 +260,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if a.draftVerifyEnabled() && !ar.Advise {
 		text = a.runDraftVerify(childCtx, w, ar, workerPrompt, text, maxSteps)
 	}
-	a.emitWorkerNotification(w, text)
-	return workerResult(w, text, nil), nil
+	handoff := prepareWorkerHandoff(w, text)
+	a.emitPreparedWorkerNotification(handoff)
+	return handoff.result(w, nil), nil
 }
 
 // draftVerifyEnabled reports whether the ladder is switched on. Guards every

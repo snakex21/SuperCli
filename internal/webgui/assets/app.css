@@ -358,6 +358,9 @@ a:hover { text-decoration: underline; }
   font-size: 12px; color: var(--muted); gap: 10px;
 }
 .stat-row .v { font: 12px var(--mono); color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+button.stat-row.stat-action { width: 100%; text-align: left; cursor: pointer; }
+button.stat-row.stat-action:hover { background: var(--surface); color: var(--text); }
+button.stat-row.stat-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ctx-bar { height: 3px; background: var(--line-soft); margin: 9px 0 3px; overflow: hidden; }
 .ctx-bar > div { height: 100%; background: var(--accent); }
 .stats-note { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
@@ -370,6 +373,10 @@ a:hover { text-decoration: underline; }
   margin-top: 10px; padding: 9px 0 10px;
   border-top: 1px solid var(--line); border-bottom: 1px solid var(--line-soft);
 }
+button.side-cost { display: block; width: 100%; text-align: left; color: inherit; background: transparent; border-left: 0; border-right: 0; border-radius: 0; cursor: pointer; }
+button.side-cost > span { display: block; }
+button.side-cost:hover { background: var(--surface); }
+button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .side-cost-label {
   font-size: 10px; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; color: var(--faint);
@@ -1155,6 +1162,9 @@ a:hover { text-decoration: underline; }
 }
 .knob-row input.k-edit:focus { border-color: var(--muted); }
 .knob-row .k-val { font: 12px var(--mono); color: var(--muted); flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knob-row.knob-row-currency { flex-wrap: wrap; }
+.knob-row.knob-row-currency .k-name { flex: 1 1 16em; overflow-wrap: anywhere; }
+.knob-row .k-currency { width: auto; min-width: 6.5em; max-width: min(24em, 100%); flex: 0 1 auto; }
 
 /* Toggle rows (appearance etc.) */
 .toggle-row {
@@ -1491,6 +1501,44 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   animation: app-dialog-enter 160ms cubic-bezier(.2,.75,.25,1) both;
 }
 .app-dialog.danger { border-top-color: var(--danger); }
+.cost-details-dialog { width: min(760px, 100%); max-height: calc(var(--app-viewport-height) - 44px); overflow: auto; }
+.cost-details-scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; color: var(--muted); }
+.cost-details-body { margin-top: 16px; }
+.cost-details-total { color: var(--text); font-size: 16px; }
+.cost-details-caption { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.cost-details-scroll { overflow-x: auto; margin-top: 16px; }
+.cost-details-scroll:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.cost-details-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cost-details-table th, .cost-details-table td { padding: 10px 8px; border-bottom: 1px solid var(--line-soft); text-align: right; vertical-align: top; }
+.cost-details-table thead th { color: var(--faint); font-weight: 500; white-space: nowrap; }
+.cost-details-table th:first-child { text-align: left; overflow-wrap: anywhere; min-width: 160px; max-width: 270px; }
+.cost-details-number { font-family: var(--mono); white-space: nowrap; }
+.cost-details-rates { margin-top: 12px; color: var(--muted); font-size: 11px; }
+.cost-details-rates summary { cursor: pointer; }
+.cost-details-legacy { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.cost-details-legacy-title { margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.usage-details-dialog { width: min(980px, 100%); }
+.usage-output-charts { margin-top: 16px; }
+.usage-chart-title { margin: 0; color: var(--text); font-size: 12px; font-weight: 500; }
+.usage-output-chart { margin-top: 14px; }
+.usage-chart-heading, .usage-chart-legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 11px; line-height: 1.5; }
+.usage-chart-model { min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.usage-chart-model .cost-details-caption { margin-top: 0; }
+.usage-chart-total { color: var(--muted); font-family: var(--mono); }
+.usage-chart-bar { display: flex; width: 100%; height: 10px; margin: 7px 0; overflow: hidden; border-radius: 2px; background: var(--line-soft); }
+.usage-chart-thinking { background: var(--accent); }
+.usage-chart-remaining { background: var(--muted); }
+.usage-chart-unknown .usage-chart-remaining { background: repeating-linear-gradient(135deg, var(--muted) 0 3px, var(--line-soft) 3px 6px); }
+.usage-chart-thinking-label, .usage-chart-remaining-label { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.usage-chart-thinking-label::before, .usage-chart-remaining-label::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; background: var(--accent); }
+.usage-chart-remaining-label::before { background: var(--muted); }
+.usage-purpose-row > td { text-align: left; padding-top: 0; padding-bottom: 12px; }
+.usage-purpose-table { font-size: 11px; }
+.usage-purpose-table th, .usage-purpose-table td { padding: 7px 6px; }
+.usage-timing { margin-top: 10px; font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--muted); }
+.usage-timing-compact { margin-top: 4px; font-size: 10px; }
+.usage-timing-compact .usage-chart-legend { font-size: inherit; }
+.usage-timing-total { overflow-wrap: anywhere; }
 .app-dialog-kicker {
   color: var(--accent); font: 10px var(--mono); letter-spacing: .09em; text-transform: uppercase;
 }
@@ -1799,7 +1847,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   .knob-row { flex-wrap: wrap; }
   .knob-row .k-name { flex-basis: calc(100% - 70px); }
   .knob-row .k-next { order: 2; margin-left: auto; }
-  .knob-row .k-val, .knob-row .seg, .knob-row input.k-edit { order: 3; }
+  .knob-row .k-val, .knob-row .seg, .knob-row input.k-edit, .knob-row .k-currency { order: 3; }
   .knob-row .k-src { order: 4; margin-left: auto; }
 }
 @media (max-width: 720px) {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"supercli/internal/checkpoint"
 	"supercli/internal/storage/memory"
 )
 
@@ -30,7 +31,7 @@ import (
 // the project key ("name-8hex"), or the bare basename of the
 // directory — the resolver tries each in turn so the user does not
 // need to know the canonical form.
-func projectsCommand(_ context.Context, args, dataDir string) (string, error) {
+func projectsCommand(ctx context.Context, args, dataDir string) (string, error) {
 	args = strings.TrimSpace(args)
 	cmd, rest := splitCmd(args)
 
@@ -42,7 +43,11 @@ func projectsCommand(_ context.Context, args, dataDir string) (string, error) {
 	case "use", "select", "switch", "activate":
 		return projectsUse(dataDir, rest)
 	case "remove", "rm", "delete":
-		return projectsRemove(dataDir, rest)
+		return projectsRemoveContext(ctx, dataDir, rest)
+	case "checkpoints":
+		return projectsCheckpoints(ctx, dataDir, rest)
+	case "cleanup-policy":
+		return projectsCleanupPolicy(dataDir, rest)
 	case "info", "show":
 		return projectsInfo(dataDir, rest), nil
 	case "help", "?":
@@ -222,6 +227,23 @@ func projectsAdd(dataDir, path string) (string, error) {
 }
 
 func projectsRemove(dataDir, target string) (string, error) {
+	return projectsRemoveContext(context.Background(), dataDir, target)
+}
+
+func projectsRemoveContext(ctx context.Context, dataDir, target string) (string, error) {
+	var cleanupOverride *bool
+	for _, flag := range []struct {
+		name  string
+		value bool
+	}{{"--checkpoints", true}, {"--keep-checkpoints", false}} {
+		if strings.HasSuffix(target, " "+flag.name) {
+			target = strings.TrimSpace(strings.TrimSuffix(target, flag.name))
+			choice := flag.value
+			cleanupOverride = &choice
+			break
+		}
+	}
+	target = strings.Trim(target, "\"")
 	if target == "" {
 		return "", fmt.Errorf("usage: /projects remove <path|key|basename>")
 	}
@@ -229,6 +251,24 @@ func projectsRemove(dataDir, target string) (string, error) {
 	path, key, ok := resolveProject(m, target)
 	if !ok {
 		return "", fmt.Errorf("projects: no registered project matches %q", target)
+	}
+	cleanup, err := memory.LoadProjectCheckpointCleanup(dataDir)
+	if cleanupOverride != nil {
+		cleanup = *cleanupOverride
+		err = nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var cleaned checkpoint.WorkspaceCleanupPreview
+	if cleanup {
+		cleaned, err = checkpoint.ClearWorkspaceCheckpoints(ctx, path, dataDir)
+		if err != nil {
+			return "", fmt.Errorf("projects: checkpoints were not fully cleared; project registration kept: %w", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	delete(m, path)
 	if err := memory.SaveProjectsMap(dataDir, m); err != nil {
@@ -244,8 +284,63 @@ func projectsRemove(dataDir, target string) (string, error) {
 	// memory. We only tell the user where it lives so they can
 	// purge it manually if they really want to.
 	dir := filepath.Join(dataDir, "projects", key)
-	return fmt.Sprintf("Unregistered project:\n  path: %s\n  key:  %s\n  (memory preserved at %s — delete that folder to wipe)",
-		path, key, dir), nil
+	result := fmt.Sprintf("Unregistered project:\n  path: %s\n  key:  %s\n  (memory preserved at %s — delete that folder to wipe)", path, key, dir)
+	if cleanup {
+		result += fmt.Sprintf("\nCheckpoint history cleared: %d bytes in %d stores. Project files and conversations are preserved.", cleaned.Bytes, cleaned.Stores)
+	}
+	return result, nil
+}
+
+func projectsCheckpoints(ctx context.Context, dataDir, target string) (string, error) {
+	clear := strings.HasSuffix(target, " --clear")
+	if clear {
+		target = strings.TrimSpace(strings.TrimSuffix(target, " --clear"))
+	}
+	target = strings.Trim(target, "\"")
+	if target == "" {
+		return "", fmt.Errorf("usage: /projects checkpoints <project> [--clear]")
+	}
+	path, _, ok := resolveProject(memory.LoadProjectsMap(dataDir), target)
+	if !ok {
+		return "", fmt.Errorf("projects: no registered project matches %q", target)
+	}
+	var preview checkpoint.WorkspaceCleanupPreview
+	var err error
+	if clear {
+		preview, err = checkpoint.ClearWorkspaceCheckpoints(ctx, path, dataDir)
+	} else {
+		preview, err = checkpoint.PreviewWorkspaceCleanup(ctx, path, dataDir)
+	}
+	if err != nil {
+		return "", err
+	}
+	if clear {
+		return fmt.Sprintf("Cleared checkpoint history for %s: %d bytes in %d stores. Project files, memory and conversations are preserved.", preview.Workspace, preview.Bytes, preview.Stores), nil
+	}
+	return fmt.Sprintf("Checkpoint history for %s: %d bytes in %d stores.\nTo permanently remove Undo history: /projects checkpoints %q --clear", preview.Workspace, preview.Bytes, preview.Stores, target), nil
+}
+
+func projectsCleanupPolicy(dataDir, choice string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(choice)) {
+	case "always", "on":
+		if err := memory.SaveProjectCheckpointCleanup(dataDir, true); err != nil {
+			return "", err
+		}
+		return "Checkpoint history will be cleared when a project is removed. Conversations and project files are preserved.", nil
+	case "keep", "off":
+		if err := memory.SaveProjectCheckpointCleanup(dataDir, false); err != nil {
+			return "", err
+		}
+		return "Checkpoint history will be kept when a project is removed.", nil
+	case "":
+		enabled, err := memory.LoadProjectCheckpointCleanup(dataDir)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Clear checkpoint history on project removal: %t. Set with /projects cleanup-policy always|keep.", enabled), nil
+	default:
+		return "", fmt.Errorf("usage: /projects cleanup-policy always|keep")
+	}
 }
 
 func projectsInfo(dataDir, target string) string {
@@ -310,6 +405,11 @@ func projectsHelp() string {
   /projects add [path]      — register a project (default: current directory)
   /projects use <X>         — make a project active (applies on next launch)
   /projects remove <X>      — unregister (memory preserved on disk)
+  /projects remove <X> --checkpoints — also remove checkpoint history
+  /projects remove <X> --keep-checkpoints — override automatic cleanup once
+  /projects checkpoints <X> — preview checkpoint disk usage
+  /projects checkpoints <X> --clear — permanently remove Undo history
+  /projects cleanup-policy always|keep — set removal policy for GUI and CLI
   /projects info <X>        — show project memory details
   /projects help            — this message
 

@@ -4,6 +4,7 @@
 package session
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -261,32 +262,24 @@ func (s *Store) SetTitleIfCurrent(id, current, title string) (bool, error) {
 }
 
 // Delete removes a session and cascades to its messages. Session-owned media
-// files are removed after the database row is gone.
+// files are quarantined before commit and removed afterward. Production
+// callers coordinating checkpoints use DeleteRows while holding StoreGate.
 func (s *Store) Delete(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+	cleanup, err := s.DeleteRows(context.Background(), id)
+	if err != nil {
 		return err
 	}
-	return s.removeSessionMedia(id)
+	return cleanup()
 }
 
 // DeleteAll removes every conversation and its cascaded messages, turns and
 // usage rows. Provider configuration and project files are not stored here.
 func (s *Store) DeleteAll() error {
-	tx, err := s.db.Begin()
+	_, cleanup, err := s.DeleteAllRows(context.Background())
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM prompt_queue`); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM sessions`); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return s.removeAllSessionMedia()
+	return cleanup()
 }
 
 // ReassignCwd moves durable conversation and queue ownership from one

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		return errNoActiveProvider
 	}
 	runStarted := time.Now()
+	if err := e.refreshLocalContextWindows(ctx); err != nil {
+		return fmt.Errorf("refresh context window: %w", err)
+	}
 	askCh := make(chan tools.AskRequest, 3)
 	ctx = tools.WithAskChannel(ctx, askCh)
 	activeQuestions := []string{}
@@ -57,7 +61,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	defer func() {
 		memoryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		e.saveWebSessionCapsule(memoryCtx, sid)
+		e.saveWebSessionCapsule(memoryCtx, sid, home)
 	}()
 	if strings.TrimSpace(sessionID) == "" {
 		// Fresh session: the LLM title summary runs only after this
@@ -94,9 +98,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 	}
 	ctx = llm.WithCallSink(ctx, telemetryCallSink(telemetry))
+	lateChanges := &deferredCheckpointChanges{store: usageStore, sessionID: sid}
 	var checkpointTurn *checkpoint.Turn
 	if manager, openErr := e.checkpointManager(home); openErr == nil {
 		checkpointTurn = manager.NewTurn(sid, prompt)
+		lateChanges.manager = manager
 	} else if !errors.Is(openErr, checkpoint.ErrUnavailable) {
 		log.Printf("checkpoint open: %v", openErr)
 	}
@@ -140,13 +146,36 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			return block
 		})
 	}
+	// GUI writers are already fresh per invocation. Bind the committed prompt
+	// inside Run, before its goroutine can invoke any checkpointed tool.
+	initiatingReceipt := session.MessageReceipt{}
+	loop.SetInvocationPersistence(func(current agent.SessionWriter) agent.SessionWriter {
+		return current
+	}, func(current agent.SessionWriter) (int, int64) {
+		if receipted, ok := current.(interface{ FirstUserReceipt() session.MessageReceipt }); ok {
+			receipt := receipted.FirstUserReceipt()
+			return receipt.Seq, receipt.ID
+		}
+		return 0, 0
+	}, func(seq int, id int64) {
+		initiatingReceipt = session.MessageReceipt{Seq: seq, ID: id}
+		if checkpointTurn != nil {
+			checkpointTurn.SetUserMessageReceipt(seq, id)
+		}
+		lateChanges.setUserReceipt(seq, id)
+	})
 	ch, err := loop.Run(ctx, prompt)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 	// Run persists the user message synchronously. Refresh the sidebar now,
 	// while the model is working, rather than before the write or after its reply.
-	emit(wireEvent{Type: "session_activity", SessionID: sid})
+	activity := wireEvent{Type: "session_activity", SessionID: sid}
+	if initiatingReceipt.ID > 0 {
+		activity.UserSeq = initiatingReceipt.Seq
+		activity.UserMessageID = strconv.FormatInt(initiatingReceipt.ID, 10)
+	}
+	emit(activity)
 	// Provider transports may keep an HTTP connection alive with comment-only
 	// heartbeats while producing no model/tool progress. The transport-level
 	// idle reader sees those bytes and cannot distinguish that state from a
@@ -261,6 +290,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 	}
 	var turnFileChanges []checkpoint.FileChange
+	var checkpointBinding *session.CheckpointBinding
 	finishCheckpoint := func() (string, []checkpoint.FileChange) {
 		if checkpointTurn == nil {
 			// A terminal done/error event already received the completed
@@ -272,17 +302,17 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		checkpointTurn = nil
 		finishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if usageStore != nil {
-			if userSeq, seqErr := usageStore.LatestMessageSeq(finishCtx, sid, string(llm.RoleUser)); seqErr == nil {
-				turn.SetUserSeq(userSeq)
-			} else {
-				log.Printf("checkpoint user sequence: %v", seqErr)
+		record, finishErr := turn.CompleteDeferred(finishCtx, func(record *checkpoint.Record, err error) {
+			// Records retain the original SID/UserSeq. Late completion must never
+			// write through this run's already-closed SSE/coalescer.
+			if err != nil {
+				log.Printf("checkpoint deferred complete: %v", err)
 			}
-		}
-		record, finishErr := turn.Complete(finishCtx)
+			lateChanges.complete(record, err)
+		})
+		checkpointBinding = lateChanges.bindCompletion(turn.CompletionKey())
 		if finishErr != nil {
 			log.Printf("checkpoint complete: %v", finishErr)
-			return "", nil
 		}
 		if record == nil {
 			return "", nil
@@ -332,8 +362,8 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		for _, change := range turnFileChanges {
 			storedChanges = append(storedChanges, session.FileChange{Path: change.Path, Kind: change.Kind})
 		}
-		if saveErr := usageStore.AppendTurnSummary(saveCtx, session.TurnSummary{
-			SessionID: sid, AssistantSeq: assistantSeq,
+		summaryID, saveErr := usageStore.AppendTurnSummaryWithID(saveCtx, session.TurnSummary{
+			SessionID: sid, AssistantSeq: assistantSeq, CheckpointBinding: checkpointBinding,
 			DurationMS: time.Since(runStarted).Milliseconds(),
 			Input:      int64(usage.Input), Output: int64(usage.Output),
 			CachedInput: int64(usage.Cached), Reasoning: int64(usage.Reasoning),
@@ -344,12 +374,14 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			AuxCalls: total.AuxCalls, AuxUs: total.AuxUs,
 			Phases: systats.SumPhases(turns), FileChanges: storedChanges,
 			ToolDiag: turnDiag,
-		}); saveErr != nil {
+		})
+		if saveErr != nil {
 			// Telemetry must never fail or delay the user's answer/error.
 			log.Printf("web turn summary: session=%q: %v", sid, saveErr)
 			return
 		}
 		turnSaved = true
+		lateChanges.bindSummary(assistantSeq, summaryID)
 	}
 	// Context cancellation and semantic progress timeouts return before the
 	// loop's terminal event can always be observed. Persist whatever completed
@@ -421,6 +453,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			_, errorEvent := ev.(agent.ErrorEvent)
 			if doneEvent || errorEvent {
 				flushMessages()
+				// The model has ended; release the GUI animation/composer before
+				// potentially slow checkpoint and telemetry writes. Keep terminal
+				// metadata and HTTP EOF after those writes so turns cannot overlap.
+				emit(wireEvent{Type: "finishing"})
 				checkpointID, fileChanges = finishCheckpoint()
 			}
 			if done, ok := ev.(agent.DoneEvent); ok {

@@ -4,8 +4,11 @@ import (
 	"context"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/account/usagecost"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/config"
 )
 
 // Captures the destination when the run starts: a late usage frame cannot be
@@ -15,24 +18,52 @@ func (m Model) sessionUsageSink() llm.CallSink {
 	if store == nil || id == "" {
 		return nil
 	}
+	tc, _ := config.ResolveConfig(m.dataDir, m.home, "")
+	fallback := session.UsageRecord{SessionID: id, Provider: provider}
+	if m.llm != nil {
+		fallback.Model = m.llm.Name()
+	}
+	for _, p := range tc.Providers {
+		if p.Name == provider {
+			fallback.ProviderType = p.Type
+			break
+		}
+	}
+	rates := m.usageRates
 	return func(s llm.CallStat) {
 		if s.TokensIn == 0 && s.TokensOut == 0 {
 			return
 		}
-		name := s.Provider
-		if name == "" {
-			name = provider
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = store.AppendUsage(ctx, session.UsageRecord{
-			SessionID: id, Provider: name, Model: s.Model,
-			Input: int64(s.TokensIn), Output: int64(s.TokensOut), CachedInput: int64(s.TokensCached), Reasoning: int64(s.TokensReasoning),
-			HasCachedInput: s.TokensCached > 0, HasReasoning: s.TokensReasoning > 0,
-			TTFTMS: s.TTFT.Milliseconds(), PrefillEvaluated: int64(s.PrefillEvaluated),
-			PrefillTokensPerSecond: s.PrefillTokensPerSecond, PrefillBudget: s.PrefillBudget, PrefillBudgetSource: s.PrefillBudgetSource,
-			ContextSystem: s.Request.System, ContextUser: s.Request.User, ContextAssistant: s.Request.Assistant, ContextTool: s.Request.Tool, ContextOther: s.Request.Other,
-			Source: s.Purpose,
+		u := usagecost.CallUsage(tc, s, fallback)
+		if err := store.AppendUsage(ctx, u); err == nil && config.EffectiveCostCurrency(tc) != "USD" && u.PriceSnapshot.AmountUSD != nil && *u.PriceSnapshot.AmountUSD > 0 {
+			rates.WarmCurrency(config.EffectiveCostCurrency(tc), u.PriceSnapshot.UsageDay)
+		}
+	}
+}
+
+// This command only runs after a currency preference changes. Rendering and
+// opening statistics never trigger exchange requests.
+func (m Model) refreshUsageRates(tc config.TomlConfig) tea.Cmd {
+	store, rates := m.sessionStore, m.usageRates
+	if store == nil || rates == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		days := map[string]bool{}
+		_ = store.VisitBilling(ctx, "", time.Time{}, func(u session.UsageRecord) {
+			if u.Source != "legacy" && u.PriceSnapshot != nil && u.PriceSnapshot.AmountUSD != nil && *u.PriceSnapshot.AmountUSD > 0 {
+				days[u.PriceSnapshot.UsageDay] = true
+			}
 		})
+		list := make([]string, 0, len(days))
+		for day := range days {
+			list = append(list, day)
+		}
+		_ = rates.EnsureCurrency(ctx, list, config.EffectiveCostCurrency(tc))
+		return StatusRefreshMsgValue()
 	}
 }

@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.
 
 <!-- readme-unit:status -->
-Tento README popisuje verzi `1.0.3`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
+Tento README popisuje verzi `1.0.5`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky
@@ -172,6 +172,7 @@ Použijte verzi Go uvedenou v `go.mod`. Ve Windows `build.bat` sestaví TUI, `bu
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

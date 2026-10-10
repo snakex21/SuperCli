@@ -30,6 +30,16 @@ type SessionWriter interface {
 	UpdateUsage(in, out int) error
 }
 
+// usageContextWriter lets production writes obey cancellation and deadlines.
+type usageContextWriter interface {
+	UpdateUsageContext(context.Context, int, int) error
+}
+
+// interruptedUsageWriter avoids SQLite lock waits when ending a canceled stream.
+type interruptedUsageWriter interface {
+	TryUpdateUsage(context.Context, int, int) error
+}
+
 // contextProjectionWriter is an optional extension implemented by the
 // SQLite session writer. It stores the exact provider-visible view while
 // the ordinary writer retains the full transcript.
@@ -61,19 +71,25 @@ type Loop struct {
 	backgroundPending  atomic.Bool
 	backgroundMessages []backgroundMessage
 
-	provider          llm.Provider
-	registry          *tools.Registry
-	toolDefsSnapshot  toolDefinitionSnapshot
-	caps              *llm.CapabilityRegistry
-	system            string
-	briefing          string
-	liveContext       string
-	liveContextForRun func(context.Context) (string, error)
-	maxSteps          int
-	thinTools         bool
-	stableToolset     bool
-	catalogHoist      bool
-	orchestrator      bool
+	provider               llm.Provider
+	registry               *tools.Registry
+	toolDefsSnapshot       toolDefinitionSnapshot
+	caps                   *llm.CapabilityRegistry
+	system                 string
+	briefing               string
+	liveContext            string
+	liveContextForRun      func(context.Context) (string, error)
+	refreshContextWindow   func(context.Context) error
+	userDownloadsDir       func() (string, error)
+	downloadExportContext  string
+	downloadHumanContext   []downloadRequestContext
+	downloadHistoryLoaded  bool
+	downloadHistorySession string
+	maxSteps               int
+	thinTools              bool
+	stableToolset          bool
+	catalogHoist           bool
+	orchestrator           bool
 	// taskParallel decides whether a batch of multiple `task` calls in
 	// one model turn runs concurrently. Resolved by the app layer:
 	// parallel for cloud backends, sequential for local ones (one GPU
@@ -93,11 +109,12 @@ type Loop struct {
 	// history every step. hoistedPreSet gates the lazy first render so
 	// the freeze happens after any SetRegistry swap. Guarded by nothing:
 	// providerMessages runs on the loop goroutine only.
-	hoistedPre    string
-	hoistedPreSet bool
-	baseDir       string
-	writer        SessionWriter
-	toolOutputs   tools.OutputPersistence
+	hoistedPre            string
+	hoistedPreSet         bool
+	baseDir               string
+	writer                SessionWriter
+	invocationPersistence invocationPersistence
+	toolOutputs           tools.OutputPersistence
 	// Derived stores follow session changes; explicit worker/embedder stores do not.
 	toolOutputsFollowWriter bool
 	// persistHealth tracks session-write reliability: sticky
@@ -110,19 +127,29 @@ type Loop struct {
 	// curStep is the step index the loop is currently executing; it
 	// orders those records within the run. Written by the loop
 	// goroutine, read by tool goroutines during parallel dispatch.
-	runID           string
-	curStep         atomic.Int64
-	reflector       Reflector
-	reflectEvery    int
-	adaptiveReflect bool
-	patternInjector PatternInjector
-	creditTracker   CreditTracker
-	modelID         string
-	contextModel    contextModelState
-	toolDiscovery   toolDiscoveryState
+	runID            string
+	curStep          atomic.Int64
+	reflector        Reflector
+	reflectEvery     int
+	adaptiveReflect  bool
+	patternInjector  PatternInjector
+	creditTracker    CreditTracker
+	modelID          string
+	contextModel     contextModelState
+	toolDiscovery    toolDiscoveryState
+	workflowTools    []string
+	workflowRevision uint64
+	resultReuse      toolResultReuse
+	completedOps     completedOperations
+	nativeReads      []llm.ToolDef // immutable, bounded read contracts selected once per registry
+	nativeReadsSet   bool
+	nativeRunTools   []llm.ToolDef // initially requested contracts, stable within one Run
+	nativeRunSet     bool
 	// Only requested screen-capture turns carry this optional tool's schema.
-	screenshotForRun bool
-	headlessForRun   bool
+	screenshotForRun   bool
+	headlessForRun     bool
+	downloadForRun     bool
+	downloadPageForRun bool
 
 	// Optional legacy reasoning replay (SUPERCLI_KEEP_THINKING, default off).
 	// Assistant reasoning is stripped before entering Messages, while the
@@ -472,6 +499,15 @@ type LoopConfig struct {
 	// LiveContextForRun refreshes transient context once before each user run,
 	// keeping it out of persisted history and the stable system prefix.
 	LiveContextForRun func(context.Context) (string, error)
+	// RefreshContextWindow reads optional runtime metadata once before a user
+	// run, before compaction or the first model call. Workers leave it nil.
+	// Applications should tolerate unavailable discovery and return an error
+	// only when the user operation itself has been canceled.
+	RefreshContextWindow func(context.Context) error
+	// UserDownloadsDir enables explicit Downloads exports on human-facing loops.
+	// Workers leave it nil: generated task text must never grant filesystem access.
+	// A worker can still inherit a grant from its parent's authorized run context.
+	UserDownloadsDir func() (string, error)
 	// MaxSteps is the runaway safety net: how many model calls one Run may
 	// make before the loop stops. It is NOT a work budget — a healthy long
 	// task must never reach it. Zero means DefaultMaxSteps. Negative means
@@ -711,6 +747,21 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("agent is still finishing the previous run")
 	}
+	if l.refreshContextWindow != nil {
+		if err := l.refreshContextWindow(ctx); err != nil {
+			l.releaseConversation()
+			return nil, fmt.Errorf("refresh context window: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			l.releaseConversation()
+			return nil, fmt.Errorf("refresh context window: %w", err)
+		}
+	}
+	l.workflowTools = nil
+	l.workflowRevision++
+	l.resultReuse.reset()
+	l.completedOps.reset()
+	l.nativeRunTools, l.nativeRunSet = nil, false
 	if l.liveContextForRun != nil {
 		contextText, err := l.liveContextForRun(ctx)
 		if err != nil {
@@ -719,6 +770,16 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		}
 		l.liveContext = strings.TrimSpace(contextText)
 	}
+	ctx, l.downloadExportContext = l.prepareUserDownloadExport(ctx, prompt)
+	if l.userDownloadsDir != nil {
+		if err := ctx.Err(); err != nil {
+			l.releaseConversation()
+			return nil, fmt.Errorf("prepare user download context: %w", err)
+		}
+	}
+	// Keep only parsed metadata from raw input. Addons/provider projections
+	// must not become authorization for later output directories.
+	l.rememberUserDownloadRequest(prompt)
 	// F14: hidden flags deliberately SURVIVE across Runs. /clear,
 	// hide_messages and budget eviction all fire between or during
 	// Runs and express durable intent ("this content is out of the
@@ -767,6 +828,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.ultraworkMode = false
 	}
 
+	invocationWriterReady := l.beginInvocationPersistence()
 	userText := prompt
 	// One-shot user-message addon (preflight repo context). Appended
 	// to the message CONTENT only — routing/ultrawork detection above
@@ -797,7 +859,9 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	// Addons are one-shot provider context, not transcript content. Persist the
 	// user's raw words plus durable image refs so reopening a session never
 	// exposes internal preflight/rewind markers and never loses attachments.
-	l.persist(ctx, persistedUser)
+	if l.persist(ctx, persistedUser) && invocationWriterReady {
+		l.bindInvocationPrompt()
+	}
 	l.openInterjections(ctx)
 	go l.run(ctx, prompt, out)
 	return out, nil
@@ -806,6 +870,9 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
 	defer l.releaseConversation()
+	defer l.resultReuse.reset()
+	defer l.completedOps.reset()
+	defer func() { l.nativeRunTools, l.nativeRunSet = nil, false }()
 	l.discardPreviousReasoning = llm.DiscardPreviousReasoning()
 	if l.discardPreviousReasoning {
 		l.lastThinking = ""

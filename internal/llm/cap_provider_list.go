@@ -76,6 +76,7 @@ func providerModelsCacheKey(protocol, baseURL, apiKey string) string {
 // to hit the server. Provider edits call this before their verification scan
 // so a success cached under old credentials cannot hide a 401.
 func InvalidateProviderModelCache(baseURL string) {
+	invalidateProviderRuntimeContexts(baseURL)
 	cleanBase := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	providerListCache.mu.Lock()
 	defer providerListCache.mu.Unlock()

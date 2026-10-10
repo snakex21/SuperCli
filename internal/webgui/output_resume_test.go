@@ -96,19 +96,19 @@ func TestGUIStoredOutputSurvivesFreshEngineWithoutRepeatingTool(t *testing.T) {
 					}
 					provider := &resumeOutputProvider{inspect: turn == 1, sentinel: sentinel}
 					eng.prov = provider
-					loop, err := eng.newLoopWithSession(history, writer)
+					loop, reg, err := eng.buildLoopWithSession(history, writer, eng.Home(), nil, nil)
 					if err != nil {
 						t.Fatal(err)
 					}
 					if turn == 0 {
-						eng.diagnosticRegistry.MustRegister(tools.Tool{Name: "fixture_log", Description: "fixture log", Schema: "{}", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+						reg.MustRegister(tools.Tool{Name: "fixture_log", Description: "fixture log", Schema: "{}", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 							executions++
 							return tools.Result{Text: strings.Repeat("routine output ", 1500) + "original hidden diagnostic" + strings.Repeat(" output tail", 1500)}, nil
 						}})
-						eng.diagnosticRegistry.MarkAlwaysOn("fixture_log")
+						reg.MarkAlwaysOn("fixture_log")
 					} else {
 						// A new unrelated result must never reuse the old handle.
-						eng.diagnosticRegistry.ModelResultContentContext(tools.WithOutputPersistence(ctx, writer), "fixture_log", tools.Result{Text: strings.Repeat("wrong later result", 2000)})
+						reg.ModelResultContentContext(tools.WithOutputPersistence(ctx, writer), "fixture_log", tools.Result{Text: strings.Repeat("wrong later result", 2000)})
 					}
 					ch, err := loop.Run(ctx, "Inspect the source code evidence from the completed command.")
 					if err != nil {

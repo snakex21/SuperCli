@@ -74,8 +74,8 @@ func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *
 		contentType = "application/octet-stream"
 	}
 
-	dir := filepath.Join(os.TempDir(), "supercli-thunderbird-attachments")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := b.attachmentCacheDir()
+	if err != nil {
 		http.Error(w, "cannot create attachment cache", http.StatusInternalServerError)
 		return
 	}
@@ -187,12 +187,9 @@ func (t *ThunderbirdMail) attachmentResult(data json.RawMessage) (Result, error)
 
 	var image *ImageContent
 	if item.Size > 0 && item.Size <= maxThunderbirdVisionBytes {
-		if raw, err := os.ReadFile(item.Path); err == nil {
-			if mediaType := thunderbirdVisionMIME(raw); mediaType != "" {
-				payload["contentType"] = mediaType
-				payload["visionAttached"] = true
-				image = &ImageContent{MediaType: mediaType, Data: raw}
-			}
+		if image = readThunderbirdVision(item.Path); image != nil {
+			payload["contentType"] = image.MediaType
+			payload["visionAttached"] = true
 		}
 	}
 	formatted, err := json.MarshalIndent(payload, "", "  ")

@@ -15,7 +15,7 @@ func observed(call llm.ToolCall, text string) callOutcome {
 	return callOutcome{observation: observeToolResult(call, tools.Result{Text: text})}
 }
 
-func TestObservedLoopDetectsLongCycleWithoutStopping(t *testing.T) {
+func TestObservedLoopWarnsThenStopsLongUnchangedCycle(t *testing.T) {
 	var p repeatProgress
 	var calls []llm.ToolCall
 	for i := 0; i < 12; i++ {
@@ -26,13 +26,13 @@ func TestObservedLoopDetectsLongCycleWithoutStopping(t *testing.T) {
 		}
 	}
 	warned := false
-	for i := 0; i < len(calls)*2; i++ {
+	for i := 0; i < unchangedRoundLimit; i++ {
 		index := i % len(calls)
 		call := calls[index]
 		got := p.observe([]llm.ToolCall{call}, []callOutcome{observed(call, fmt.Sprintf("file %d", index))})
 		warned = warned || got == repeatWarn
-		if got == repeatAbort {
-			t.Fatalf("observation cycle prematurely stopped at %d", i)
+		if (got == repeatAbort) != (i == unchangedRoundLimit-1) {
+			t.Fatalf("unchanged round %d signaled %v", i+1, got)
 		}
 	}
 	if !warned {
@@ -113,7 +113,8 @@ func TestObservedHistoryIsBounded(t *testing.T) {
 
 func TestLoopUnchangedReadsCanRecoverAfterSixRounds(t *testing.T) {
 	p := &stubProvider{name: "observation-test"}
-	for i := 0; i < 12; i++ {
+	const reads = 7 // first fresh observation followed by six unchanged rounds
+	for i := 0; i < reads; i++ {
 		p.scripts = append(p.scripts, []llm.Delta{
 			{ToolCall: &llm.ToolCall{ID: fmt.Sprint(i), Name: "read_lines", Arguments: `{"file":"a"}`}},
 			{FinishReason: "tool_calls"},
@@ -145,7 +146,7 @@ func TestLoopUnchangedReadsCanRecoverAfterSixRounds(t *testing.T) {
 	if _, ok := events[len(events)-1].(DoneEvent); !ok {
 		t.Fatal("no final answer")
 	}
-	if executions != 12 || int(p.calls) != executions+1 {
+	if executions != reads || int(p.calls) != executions+1 {
 		t.Fatalf("unexpected extra requests: executions=%d calls=%d", executions, p.calls)
 	}
 }

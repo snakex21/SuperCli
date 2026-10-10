@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Injector reads patterns from a Store and renders the
@@ -15,7 +16,9 @@ import (
 //
 // Relevance scoring: keyword overlap with the system
 // context. A pattern's score is
-//     |words(pattern) ∩ words(system)| / |words(pattern)|
+//
+//	|words(pattern) ∩ words(system)| / |words(pattern)|
+//
 // Patterns with score < MinScore are dropped. The top
 // MaxPatterns are returned, ordered by score desc.
 type Injector struct {
@@ -120,26 +123,38 @@ func relevanceScore(p Pattern, sysTokens []string) float64 {
 // Tries to stay compact — F5.d contributes to every
 // system message, so we don't want to bloat it.
 func renderSection(items []scoredPattern) string {
+	const maxSectionBytes = 2048
+	const footer = "This context may or may not be relevant to the current task. " +
+		"Only act on it if it is highly relevant; otherwise ignore it.\n</system-reminder>\n"
 	var b strings.Builder
 	b.WriteString("<system-reminder>\n")
 	b.WriteString("## Relevant patterns learned from past sessions\n")
 	for _, it := range items {
-		b.WriteString("- ")
-		b.WriteString(it.p.Title)
+		line := "- " + compactPatternText(it.p.Title, 160)
 		if it.p.Description != "" {
-			b.WriteString(": ")
-			// Cap description at ~120 chars to keep
-			// the section short.
-			d := it.p.Description
-			if len(d) > 120 {
-				d = d[:117] + "..."
-			}
-			b.WriteString(d)
+			line += ": " + compactPatternText(it.p.Description, 120)
 		}
-		b.WriteString("\n")
+		line += "\n"
+		if b.Len()+len(line)+len(footer) > maxSectionBytes {
+			continue
+		}
+		b.WriteString(line)
 	}
-	b.WriteString("This context may or may not be relevant to the current task. " +
-		"Only act on it if it is highly relevant; otherwise ignore it.\n")
-	b.WriteString("</system-reminder>\n")
+	b.WriteString(footer)
 	return b.String()
+}
+
+// Legacy patterns may contain arbitrary titles or multi-line tool diagnostics.
+// Keep each bullet compact and preserve UTF-8 when slicing a Polish word.
+func compactPatternText(s string, maxBytes int) string {
+	s = strings.Join(strings.Fields(strings.ToValidUTF8(s, "\uFFFD")), " ")
+	if len(s) <= maxBytes {
+		return s
+	}
+	const marker = "..."
+	end := maxBytes - len(marker)
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + marker
 }

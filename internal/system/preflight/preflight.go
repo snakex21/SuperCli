@@ -17,6 +17,7 @@ package preflight
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -57,10 +58,9 @@ const (
 var gitStaticCache sync.Map
 
 type gitStaticState struct {
-	at     time.Time
-	branch string
-	head   string
-	log    string
+	at   time.Time
+	head string
+	log  string
 }
 
 // Options configures Build. The zero value uses the real git binary
@@ -71,7 +71,8 @@ type Options struct {
 	Budget int
 	// LookPath resolves the git binary. nil = exec.LookPath.
 	LookPath func(file string) (string, error)
-	// RunGit runs `git -C root args...` and returns trimmed stdout.
+	// RunGit runs `git -C root args...`. Status output must preserve its
+	// leading porcelain columns; trailing line endings may be removed.
 	// Calls may run concurrently. nil = the real subprocess (with a shared
 	// deadline). Any error from a
 	// git call just drops that section — never fails the build.
@@ -114,9 +115,6 @@ func BuildContext(ctx context.Context, root string, o Options) string {
 		lookPath = exec.LookPath
 	}
 	runGit := o.RunGit
-	if runGit == nil {
-		runGit = func(root string, args ...string) (string, error) { return realRunGit(ctx, root, args...) }
-	}
 	now := o.Now
 	if now.IsZero() {
 		now = time.Now()
@@ -131,18 +129,36 @@ func BuildContext(ctx context.Context, root string, o Options) string {
 	var secs []section
 
 	gitOK := false
-	if _, err := lookPath("git"); err == nil {
-		// Status is independent of branch/log lookup. Keep it fresh while the
-		// identity is collected, without another serial subprocess wait.
+	if executable, err := lookPath("git"); err == nil {
+		if runGit == nil {
+			// Resolve once for this collection. Command("git") would search
+			// PATH again for every read; later builds still resolve it afresh.
+			runGit = func(root string, args ...string) (string, error) {
+				return realRunGitExecutable(ctx, executable, root, args...)
+			}
+		}
+		// Porcelain status also carries the current branch. Collect the log in
+		// parallel instead of spawning a separate branch process first.
 		var status string
 		var statusErr error
 		statusDone := make(chan struct{})
 		go func() {
 			defer close(statusDone)
-			status, statusErr = runGit(root, "status", "--porcelain")
+			status, statusErr = runGit(root, "status", "--porcelain", "--branch")
 		}()
-		branch, head, lg := loadGitStatic(root, runGit, cacheStaticGit)
+		head, lg := loadGitLog(root, runGit, cacheStaticGit)
 		<-statusDone
+		branch, worktree, hasBranch := statusBranch(status)
+		if hasBranch {
+			status = worktree
+		}
+		if (statusErr != nil || !hasBranch) && !gitStatusNotRepository(statusErr) {
+			// Injected/legacy runners may return porcelain without its header.
+			// A failed status must not erase independent repository identity.
+			if identity, err := runGit(root, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+				branch = identity
+			}
+		}
 		if branch != "" {
 			gitOK = true
 			id := "branch: " + branch
@@ -161,7 +177,9 @@ func BuildContext(ctx context.Context, root string, o Options) string {
 				}
 			}
 			if lg != "" {
-				secs = append(secs, section{header: "recent commits:", lines: splitLines(lg)})
+				if lines := recentCommitLines(head, lg); len(lines) > 0 {
+					secs = append(secs, section{header: "recent commits:", lines: lines})
+				}
 			}
 		}
 	}
@@ -215,19 +233,23 @@ func BuildContext(ctx context.Context, root string, o Options) string {
 	return out
 }
 
-func loadGitStatic(root string, runGit func(string, ...string) (string, error), cacheable bool) (branch, head, lg string) {
+// Only the native Git subprocess's unambiguous non-repository diagnostic makes
+// another identity lookup redundant. Timeouts, bare repositories, permissions,
+// translated/unknown messages and injected runner errors retain the fallback.
+func gitStatusNotRepository(err error) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && strings.HasPrefix(strings.TrimSpace(string(exit.Stderr)), "fatal: not a git repository")
+}
+
+func loadGitLog(root string, runGit func(string, ...string) (string, error), cacheable bool) (head, lg string) {
 	key := filepath.Clean(root)
 	if cacheable {
 		if cached, ok := gitStaticCache.Load(key); ok {
 			state := cached.(gitStaticState)
 			if time.Since(state.at) < gitStaticCacheTTL {
-				return state.branch, state.head, state.log
+				return state.head, state.log
 			}
 		}
-	}
-	branch, err := runGit(root, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil || branch == "" {
-		return "", "", ""
 	}
 	// One log call supplies both the HEAD display line and recent commits.
 	// The previous implementation spawned a separate `git log -1` process.
@@ -236,21 +258,68 @@ func loadGitStatic(root string, runGit func(string, ...string) (string, error), 
 		head = lines[0]
 	}
 	if cacheable {
-		gitStaticCache.Store(key, gitStaticState{at: time.Now(), branch: branch, head: head, log: lg})
+		if head != "" {
+			gitStaticCache.Store(key, gitStaticState{at: time.Now(), head: head, log: lg})
+		}
 	}
-	return branch, head, lg
+	return head, lg
+}
+
+// The --branch header uses separators forbidden in ref names. Only the header
+// is parsed; porcelain file columns and quoted rename/path payloads stay opaque.
+func statusBranch(status string) (branch, worktree string, ok bool) {
+	header, rest, _ := strings.Cut(status, "\n")
+	header = strings.TrimSuffix(header, "\r")
+	if !strings.HasPrefix(header, "## ") {
+		return "", status, false
+	}
+	branch = strings.TrimPrefix(header, "## ")
+	if branch == "HEAD (no branch)" {
+		return "HEAD", rest, true
+	}
+	if strings.HasPrefix(branch, "No commits yet on ") || strings.HasPrefix(branch, "Initial commit on ") {
+		return "", rest, true
+	}
+	branch, _, _ = strings.Cut(branch, "...")
+	branch, _, _ = strings.Cut(branch, " [")
+	if branch == "" || strings.ContainsAny(branch, " \t\r") {
+		return "", status, false
+	}
+	return branch, rest, true
 }
 
 // realRunGit observes the shared build deadline and always waits for process
 // completion. CommandContext also handles cancellation before Start safely.
 func realRunGit(ctx context.Context, root string, args ...string) (string, error) {
+	return realRunGitExecutable(ctx, "git", root, args...)
+}
+
+func realRunGitExecutable(ctx context.Context, executable, root string, args ...string) (string, error) {
 	full := append([]string{"-C", root}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd := exec.CommandContext(ctx, executable, full...)
+	// Preserve the original command argv even though cmd.Path is resolved.
+	cmd.Args[0] = "git"
 	childproc.HideWindow(cmd)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
+	if len(args) > 0 && args[0] == "status" {
+		// Porcelain's leading two columns are data. TrimSpace would remove
+		// the first column of a worktree-only modification and corrupt the
+		// first path when compactStatus parses the fixed status/path boundary.
+		return strings.TrimRight(string(out), "\r\n"), err
+	}
 	return strings.TrimSpace(string(out)), err
+}
+
+// The first log entry already appears as HEAD. Remove only that exact first
+// duplicate, retaining every other commit and preserving the source order.
+func recentCommitLines(head, log string) []string {
+	lines := splitLines(log)
+	if head != "" && len(lines) > 0 && lines[0] == head {
+		return lines[1:]
+	}
+	return lines
 }
 
 // recentFiles retains only the newest n entries in a bounded workspace sample.
@@ -325,21 +394,42 @@ func splitLines(s string) []string {
 // status is deliberately parsed only at the stable two-column status/path
 // boundary; rename payloads and unusual filenames stay opaque display text.
 func compactStatus(status string) []string {
-	lines := splitLines(status)
-	if len(lines) <= defaultMaxStatusFiles {
-		return lines
-	}
-
-	types := make(map[string]int)
-	areas := make(map[string]int)
-	sample := make([]string, 0, defaultMaxStatusFiles)
-	for _, line := range lines {
+	// Keep only the small exact listing. Once the threshold is crossed,
+	// count the remaining lines directly instead of allocating two complete
+	// slices of an arbitrarily large porcelain output.
+	var lines, sample []string
+	var types, areas map[string]int
+	total := 0
+	for line := range strings.SplitSeq(status, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		total++
+		if total <= defaultMaxStatusFiles {
+			if lines == nil {
+				lines = make([]string, 0, defaultMaxStatusFiles)
+			}
+			lines = append(lines, line)
+			continue
+		}
+		if total == defaultMaxStatusFiles+1 {
+			types = make(map[string]int)
+			areas = make(map[string]int)
+			sample = make([]string, 0, defaultMaxStatusFiles)
+			for _, first := range lines {
+				code, path := porcelainParts(first)
+				types[statusKind(code)]++
+				areas[statusArea(path)]++
+				sample = append(sample, path)
+			}
+		}
 		code, path := porcelainParts(line)
 		types[statusKind(code)]++
 		areas[statusArea(path)]++
-		if len(sample) < defaultMaxStatusFiles {
-			sample = append(sample, path)
-		}
+	}
+	if total <= defaultMaxStatusFiles {
+		return lines
 	}
 
 	type orderCount struct {
@@ -376,9 +466,9 @@ func compactStatus(status string) []string {
 	}
 
 	return []string{
-		"total: " + itoa(len(lines)) + " (" + strings.Join(typeParts, ", ") + ")",
+		"total: " + itoa(total) + " (" + strings.Join(typeParts, ", ") + ")",
 		"areas: " + strings.Join(areaParts, ", "),
-		"sample: " + strings.Join(sample, ", ") + " (and " + itoa(len(lines)-len(sample)) + " more)",
+		"sample: " + strings.Join(sample, ", ") + " (and " + itoa(total-len(sample)) + " more)",
 	}
 }
 
@@ -414,15 +504,13 @@ func statusArea(path string) string {
 	if arrow := strings.LastIndex(path, " -> "); arrow >= 0 {
 		path = strings.TrimSpace(path[arrow+4:])
 	}
-	parts := strings.Split(path, "/")
-	if len(parts) >= 2 && parts[0] == "internal" {
-		return strings.Join(parts[:2], "/")
+	first, rest, nested := strings.Cut(path, "/")
+	if nested && first == "internal" {
+		second, _, _ := strings.Cut(rest, "/")
+		return path[:len(first)+1+len(second)]
 	}
-	if len(parts) >= 2 && (parts[0] == "cmd" || parts[0] == "docs" || parts[0] == "test") {
-		return parts[0]
-	}
-	if len(parts) > 1 {
-		return parts[0]
+	if nested {
+		return first
 	}
 	return "root"
 }

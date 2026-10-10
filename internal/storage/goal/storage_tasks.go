@@ -3,6 +3,8 @@ package goal
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +60,115 @@ func (s *Storage) AddTask(ctx context.Context, goalID, title string) (*Task, err
 		return nil, fmt.Errorf("goal: AddTask commit: %w", err)
 	}
 	return t, nil
+}
+
+// MaxTaskBatch is the bounded explicit task list accepted by AddTasks.
+const MaxTaskBatch = 16
+
+// ValidateTaskTitles checks the whole explicit list before any task is added.
+// Titles are preserved exactly, matching the existing single-title contract.
+func ValidateTaskTitles(titles []string) error {
+	if len(titles) < 1 || len(titles) > MaxTaskBatch {
+		return fmt.Errorf("goal: titles must contain 1 to %d tasks", MaxTaskBatch)
+	}
+	for i, title := range titles {
+		if strings.TrimSpace(title) == "" {
+			return fmt.Errorf("goal: titles[%d]: %w", i, ErrEmptyTitle)
+		}
+	}
+	return nil
+}
+
+// AddTasks appends explicit titles in order with one transaction and one
+// verification invalidation. On failure no task or verification change remains.
+func (s *Storage) AddTasks(ctx context.Context, goalID string, titles []string) ([]*Task, error) {
+	return s.addTasks(ctx, goalID, titles, "")
+}
+
+// The service supplies its immutable project key so scope is rechecked under
+// the same writer reservation as status and sequence allocation.
+func (s *Storage) addTasks(ctx context.Context, goalID string, titles []string, projectKey string) (_ []*Task, retErr error) {
+	if err := ValidateTaskTitles(titles); err != nil {
+		return nil, err
+	}
+	if s == nil || s.db == nil {
+		return nil, ErrNotFound
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, addTasksError(ctx, "connection", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		return nil, addTasksError(ctx, "begin", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			// SQLite can leave a transaction open after a failed COMMIT (e.g. a
+			// deferred FK). A pinned connection lets us still roll it back, even
+			// when the caller was canceled. Never pool a failed rollback.
+			if _, err := conn.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+				_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+				retErr = errors.Join(retErr, fmt.Errorf("goal: AddTasks rollback: %w", err))
+			}
+		}
+	}()
+	var status Status
+	var scope string
+	if err := conn.QueryRowContext(ctx, "SELECT status, project_key FROM goals WHERE id=?", goalID).Scan(&status, &scope); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, addTasksError(ctx, "goal", err)
+	}
+	if projectKey != "" && scope != projectKey && scope != GlobalProjectKey {
+		return nil, ErrNotFound
+	}
+	if status != StatusActive {
+		return nil, fmt.Errorf("goal: cannot add a task to a %s goal", status)
+	}
+	var nextSeq int
+	if err := conn.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0)+1 FROM goal_tasks WHERE goal_id=?", goalID).Scan(&nextSeq); err != nil {
+		return nil, addTasksError(ctx, "seq", err)
+	}
+	tasks := make([]*Task, 0, len(titles))
+	for i, title := range titles {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		t := &Task{ID: generateTaskID(defaultRandBytes), GoalID: goalID, Seq: nextSeq + i,
+			Title: title, Status: TaskPending, CreatedAt: time.Now()}
+		if _, err := conn.ExecContext(ctx, `INSERT INTO goal_tasks (id,goal_id,seq,title,status,created_at,completed_at) VALUES (?,?,?,?,?,?,NULL)`,
+			t.ID, t.GoalID, t.Seq, t.Title, string(t.Status), t.CreatedAt.UnixNano()); err != nil {
+			return nil, addTasksError(ctx, "insert", err)
+		}
+		tasks = append(tasks, t)
+	}
+	if _, err := conn.ExecContext(ctx, clearVerificationSQL, goalID); err != nil {
+		return nil, addTasksError(ctx, "invalidate verification", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return nil, addTasksError(ctx, "commit", err)
+	}
+	committed = true
+	return tasks, nil
+}
+
+func addTasksError(ctx context.Context, stage string, err error) error {
+	// A driver interruption can have its own SQLite error code. Retain the
+	// cancellation identity so callers do not treat it as a repairable tool error.
+	if canceled := ctx.Err(); canceled != nil {
+		err = errors.Join(err, canceled)
+	}
+	return fmt.Errorf("goal: AddTasks %s: %w", stage, err)
 }
 
 // ListTasks returns the tasks for a goal, ordered by seq.

@@ -23,6 +23,7 @@ import (
 	"supercli/internal/account/codexauth"
 	"supercli/internal/account/credits"
 	"supercli/internal/account/pricing"
+	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
@@ -89,17 +90,24 @@ type Engine struct {
 	// sessions is opened lazily and shared by every web request. Store wraps
 	// sql.DB and is safe for concurrent use; keeping one handle avoids running
 	// SQLite Ping + the complete migration/FTS audit on every endpoint call.
-	sessionMu sync.Mutex
-	sessions  *session.Store
-	closed    bool
+	sessionMu  sync.Mutex
+	sessions   *session.Store
+	closed     bool
+	costMu     sync.Mutex
+	costRates  *usagecost.HistoryRates
+	costClosed bool
 	// Memory stores are likewise long-lived for the Engine. Cross-session
 	// recall runs on every user turn, so reopening a project memory DB there
 	// would waste ~8 ms and hundreds of KB of transient allocations on a local
 	// machine. One shared WAL-backed Store makes the hot path just FTS5.
-	memoryMu      sync.Mutex
-	globalMemory  *memory.Store
+	memoryMu     sync.Mutex
+	globalMemory *memory.Store
+	// Observed homes keep their original Store when project metadata changes.
+	// Running worker keepers capture a home before a possible relocation.
 	projectMemory map[string]*memory.Store
-	memoryClosed  bool
+	// Own one Store per backing database; multiple homes may borrow it.
+	projectMemoryByDB map[string]*memory.Store
+	memoryClosed      bool
 	// errorLog is the shared append-only tool_errors.log handle. Web
 	// runs build a fresh loop per request, so the file is opened once
 	// per Engine and every loop appends to it; opening it per run
@@ -146,17 +154,19 @@ type Engine struct {
 	// share it so active delegations remain observable and stoppable after a
 	// panel refresh, while the registry's existing retention bounds memory.
 	workers *agent.WorkerRegistry
-	// diagnosticRegistry points at the most recently built complete tool
-	// registry. Doctor only reads it; ordinary rendering never touches it.
-	diagnosticMu       sync.RWMutex
-	diagnosticRegistry *tools.Registry
-	schedules          *scheduleManager
-	modelContexts      *config.ModelContextStore
+	// Tool counts follow the most recently built complete base registry, without
+	// retaining its callbacks and the finished conversation behind task.Fn.
+	diagnosticMu    sync.RWMutex
+	toolDiagnostics *tools.RegistryDiagnostics
+	schedules       *scheduleManager
+	modelContexts   *config.ModelContextStore
 	// activeRuns counts foreground chat streams currently executing. The
 	// native close handler combines it with active delegated workers so an
 	// idle window closes immediately and only real work triggers a warning.
-	activeRuns atomic.Int32
-	updateGate sync.RWMutex
+	activeRuns    atomic.Int32
+	activeRunMu   sync.Mutex
+	activeRunIdle chan struct{}
+	updateGate    sync.RWMutex
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -227,10 +237,22 @@ func (e *Engine) beginActiveRun() func() {
 		return func() {}
 	}
 	e.updateGate.RLock()
+	e.activeRunMu.Lock()
+	if e.activeRuns.Load() == 0 {
+		e.activeRunIdle = make(chan struct{})
+	}
 	e.activeRuns.Add(1)
+	e.activeRunMu.Unlock()
 	var once sync.Once
 	return func() {
-		once.Do(func() { e.activeRuns.Add(-1); e.updateGate.RUnlock() })
+		once.Do(func() {
+			e.activeRunMu.Lock()
+			if e.activeRuns.Add(-1) == 0 {
+				close(e.activeRunIdle)
+			}
+			e.activeRunMu.Unlock()
+			e.updateGate.RUnlock()
+		})
 	}
 }
 
@@ -299,6 +321,17 @@ func (e *Engine) sessionStore() (*session.Store, error) {
 		store, err := session.OpenStore(e.dataDir)
 		if err != nil {
 			return nil, err
+		}
+		if err := recoverSessionMediaDeletes(store, e.dataDir); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("session media recovery: %w", err)
+		}
+		billingConfig := e.tomlConfig()
+		if err := store.BackfillBilling(context.Background(), func(u session.UsageRecord) session.PriceSnapshot {
+			return usagecost.FreezeQuote(billingConfig, u, true)
+		}); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("billing migration: %w", err)
 		}
 		e.sessions = store
 	}
@@ -390,6 +423,10 @@ func (e *Engine) goalServiceScope(ctx context.Context, home, scope string) (*goa
 // checkpointManager returns a long-lived manager for home. Manager serializes
 // its mutable Git metadata internally; Engine only guards cache creation.
 func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return nil, err
+	}
 	abs, err := filepath.Abs(home)
 	if err != nil {
 		return nil, err
@@ -410,6 +447,9 @@ func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	manager.SetUserReceiptValidator(func(ctx context.Context, sid string, seq int, id int64) (bool, error) {
+		return store.IsCurrentUserReceipt(ctx, sid, session.MessageReceipt{Seq: seq, ID: id})
+	})
 	e.checkpoints[key] = manager
 	return manager, nil
 }
@@ -421,16 +461,27 @@ func (e *Engine) clearCheckpointManagers() error {
 	for key, manager := range e.checkpoints {
 		if err := manager.Clear(); err != nil {
 			result = errors.Join(result, err)
+			continue
 		}
 		delete(e.checkpoints, key)
 	}
-	return errors.Join(result, os.RemoveAll(filepath.Join(e.dataDir, "checkpoints")))
+	// Uncached workspaces and failed active managers still own recovery data.
+	// Only the quota collector may reclaim their stores with its own proof.
+	return result
 }
 
 // Close releases Engine-owned resources after the HTTP server has drained.
 func (e *Engine) Close() error {
 	if e == nil {
 		return nil
+	}
+	e.costMu.Lock()
+	costRates := e.costRates
+	e.costClosed = true
+	e.costMu.Unlock()
+	var costErr error
+	if costRates != nil {
+		costErr = costRates.Close()
 	}
 	if e.titles != nil {
 		e.titles.Close()
@@ -491,8 +542,9 @@ func (e *Engine) Close() error {
 	e.memoryMu.Lock()
 	globalMemory := e.globalMemory
 	e.globalMemory = nil
-	projectMemory := e.projectMemory
+	projectMemory := e.projectMemoryByDB
 	e.projectMemory = nil
+	e.projectMemoryByDB = nil
 	e.memoryClosed = true
 	e.memoryMu.Unlock()
 	if globalMemory != nil {
@@ -515,8 +567,8 @@ func (e *Engine) Close() error {
 	e.sessionMu.Unlock()
 	if store != nil {
 		if err := store.Close(); err != nil {
-			return errors.Join(err, goalErr, creditErr)
+			return errors.Join(err, goalErr, creditErr, costErr)
 		}
 	}
-	return errors.Join(goalErr, creditErr)
+	return errors.Join(goalErr, creditErr, costErr)
 }

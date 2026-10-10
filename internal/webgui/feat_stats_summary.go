@@ -179,12 +179,13 @@ func summarizeSession(meta session.Session, messages []llm.Message) statsSession
 }
 
 func contextFromUsage(u session.UsageRecord) statsContextView {
-	out := statsContextView{Window: u.ContextWindow, CompactThreshold: agent.AutoCompactThreshold(u.ContextWindow)}
+	out := statsContextView{Window: u.ContextWindow, WindowSource: "usage", CompactThreshold: agent.AutoCompactThreshold(u.ContextWindow)}
 	out.Breakdown = statsContextBreakdown{
 		User: u.ContextUser, Assistant: u.ContextAssistant, Tools: u.ContextTool,
 		Other: u.ContextSystem + u.ContextOther,
 	}
 	out.EstimatedUsed = out.Breakdown.User + out.Breakdown.Assistant + out.Breakdown.Tools + out.Breakdown.Other
+	out.HasSnapshot = out.EstimatedUsed > 0
 	if out.Window > 0 {
 		out.Percent = int(math.Min(100, math.Round(float64(out.EstimatedUsed)*100/float64(out.Window))))
 	}

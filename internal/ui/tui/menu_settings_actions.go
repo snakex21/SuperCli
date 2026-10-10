@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"supercli/internal/account/fx"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
@@ -28,6 +29,7 @@ func (m Model) settingsApply(mutate func(*config.TomlConfig)) (tea.Model, tea.Cm
 		m.menu.formErr = err.Error()
 		return m, nil
 	}
+	previousCurrency := config.EffectiveCostCurrency(cfg)
 	mutate(&cfg)
 	if err := config.SaveToml(path, cfg); err != nil {
 		m.menu.formErr = err.Error()
@@ -37,6 +39,9 @@ func (m Model) settingsApply(mutate func(*config.TomlConfig)) (tea.Model, tea.Cm
 	m.menu.settingsCfg = &cfg
 	m.menu.formErr = ""
 	m.applyGenerationSpeedPreference(cfg.ShowGenerationSpeed)
+	if currency := config.EffectiveCostCurrency(cfg); currency != previousCurrency && currency != "USD" {
+		return m, m.refreshUsageRates(cfg)
+	}
 	return m, nil
 }
 
@@ -174,6 +179,8 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return ""
 	}
 	switch key {
+	case "cost_currency":
+		return config.EffectiveCostCurrency(*c)
 	case "task_model":
 		return c.TaskModel
 	case "orchestrator_model":
@@ -195,10 +202,20 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 	rows := m.localizedSettingsRows()
 	r := rows[minInt(m.menu.cursor, len(rows)-1)]
 	buf := strings.TrimSpace(m.menu.editBuf)
+	if r.key == "cost_currency" && buf != "" {
+		code, err := fx.NormalizeCurrency(buf)
+		if err != nil {
+			m.menu.formErr = err.Error()
+			return m, nil
+		}
+		buf = code
+	}
 	m.menu.editing = false
 	m.menu.editBuf = ""
 	return m.settingsApply(func(c *config.TomlConfig) {
 		switch r.key {
+		case "cost_currency":
+			c.CostCurrency = buf
 		case "task_model":
 			c.TaskModel = buf
 		case "orchestrator_model":

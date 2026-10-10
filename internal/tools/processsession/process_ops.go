@@ -17,24 +17,17 @@ import (
 
 	"supercli/internal/system/childproc"
 	"supercli/internal/tools/core"
+	"supercli/internal/tools/ctxexec"
 	"supercli/internal/tools/sandbox"
 )
 
-// sessionLifetime keeps the short default unless the caller explicitly opts
-// into a longer owned session. Clamp before multiplying to avoid duration
-// overflow turning an oversized timeout into an unexpectedly short lifetime.
-func sessionLifetime(timeoutMS int) time.Duration {
-	if timeoutMS <= 0 {
-		return defaultLifetime
+// Zero delegates lifetime to explicit stop/manager close. Optional deadlines
+// are checked before conversion so large values cannot overflow into a kill.
+func sessionLifetime(timeoutMS int) (time.Duration, error) {
+	if timeoutMS < 0 || int64(timeoutMS) > ctxexec.MaxTimeoutMS {
+		return 0, errors.New("process_session: timeout_ms must be non-negative and fit a time.Duration")
 	}
-	if timeoutMS >= int(maxLifetime/time.Millisecond) {
-		return maxLifetime
-	}
-	lifetime := time.Duration(timeoutMS) * time.Millisecond
-	if lifetime < time.Second {
-		return time.Second
-	}
-	return lifetime
+	return time.Duration(timeoutMS) * time.Millisecond, nil
 }
 
 func (m *Manager) Start(p params) (snapshot, error) {
@@ -62,7 +55,10 @@ func (m *Manager) Start(p params) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	lifetime := sessionLifetime(p.TimeoutMS)
+	lifetime, err := sessionLifetime(p.TimeoutMS)
+	if err != nil {
+		return snapshot{}, err
+	}
 
 	m.mu.Lock()
 	if m.closed {
@@ -81,7 +77,13 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		return snapshot{}, fmt.Errorf("process_session: active limit reached (%d); stop or reuse a session", maxActive)
 	}
 	id := fmt.Sprintf("proc-%d", m.nextID.Add(1))
-	procCtx, cancel := context.WithTimeout(context.Background(), lifetime)
+	var procCtx context.Context
+	var cancel context.CancelFunc
+	if lifetime == 0 {
+		procCtx, cancel = context.WithCancel(context.Background())
+	} else {
+		procCtx, cancel = context.WithTimeout(context.Background(), lifetime)
+	}
 	commandKey := core.VerificationCommandKey(p.Command, workdir, env)
 	item := &process{commandKey: &commandKey, id: id, command: append([]string(nil), p.Command...), workdir: workdir, stdout: newStreamBuffer(maxBufferBytes), stderr: newStreamBuffer(maxBufferBytes), done: make(chan struct{}), cancel: cancel, started: time.Now(), exitCode: -1, status: "running", pty: p.PTY}
 	if p.PTY {

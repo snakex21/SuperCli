@@ -36,6 +36,17 @@ func pendingRetentionMessages() []llm.Message {
 	}
 }
 
+func pendingRetentionPayloads(pending []pendingAppend) []llm.Message {
+	if pending == nil {
+		return nil
+	}
+	messages := make([]llm.Message, len(pending))
+	for i, item := range pending {
+		messages[i] = item.Message
+	}
+	return messages
+}
+
 func TestPersistPendingRecoveryReleasesPayloads(t *testing.T) {
 	for _, mode := range []string{"append", "shutdown"} {
 		t.Run(mode, func(t *testing.T) {
@@ -64,7 +75,7 @@ func TestPersistPendingRecoveryReleasesPayloads(t *testing.T) {
 				t.Fatalf("fully written retry buffer retains backing array: len=%d cap=%d", len(loop.persistHealth.pending), cap(loop.persistHealth.pending))
 			}
 			for i, msg := range backing {
-				if !reflect.DeepEqual(msg, llm.Message{}) {
+				if !reflect.DeepEqual(msg, pendingAppend{}) {
 					t.Fatalf("written slot %d still retains its payload", i)
 				}
 			}
@@ -95,10 +106,10 @@ func TestPersistPendingPartialRecoveryKeepsUnwrittenPayloads(t *testing.T) {
 	current := llm.Message{Role: llm.RoleUser, Content: "next turn"}
 	loop.persistAppend(context.Background(), current)
 	wantPending := append(append([]llm.Message(nil), messages[1:]...), current)
-	if !reflect.DeepEqual(loop.persistHealth.pending, wantPending) {
+	if !reflect.DeepEqual(pendingRetentionPayloads(loop.persistHealth.pending), wantPending) {
 		t.Fatal("partial recovery removed or changed unwritten tool-pair/current payloads")
 	}
-	if !reflect.DeepEqual(backing[0], llm.Message{}) {
+	if !reflect.DeepEqual(backing[0], pendingAppend{}) {
 		t.Fatal("successfully written slot retains its image payload")
 	}
 	if !reflect.DeepEqual(writer.messages, messages[:1]) {
@@ -114,7 +125,7 @@ func TestPersistPendingPartialRecoveryKeepsUnwrittenPayloads(t *testing.T) {
 		t.Fatal("shutdown retry did not preserve FIFO or release the completed buffer")
 	}
 	for i, msg := range backing {
-		if !reflect.DeepEqual(msg, llm.Message{}) {
+		if !reflect.DeepEqual(msg, pendingAppend{}) {
 			t.Fatalf("retired slot %d still retains its payload", i)
 		}
 	}
@@ -139,10 +150,10 @@ func TestPersistPendingOverflowClearsOnlyExistingEviction(t *testing.T) {
 	current := llm.Message{Role: llm.RoleUser, Content: "overflow turn"}
 	loop.persistAppend(context.Background(), current)
 	want := append(append([]llm.Message(nil), messages[1:]...), current)
-	if !reflect.DeepEqual(loop.persistHealth.pending, want) {
+	if !reflect.DeepEqual(pendingRetentionPayloads(loop.persistHealth.pending), want) {
 		t.Fatal("overflow changed the existing oldest-only eviction/FIFO policy")
 	}
-	if !reflect.DeepEqual(backing[0], llm.Message{}) {
+	if !reflect.DeepEqual(backing[0], pendingAppend{}) {
 		t.Fatal("evicted slot still retains its image payload")
 	}
 	status := loop.PersistStatus()

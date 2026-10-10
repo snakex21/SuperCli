@@ -60,7 +60,7 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		}
 		return l.invokeCallsParallel(ctx, toolCalls, out)
 	}
-	if waves, ok := l.toolConflictWaves(toolCalls); ok {
+	if waves, ok := l.toolConflictWavesContext(ctx, toolCalls); ok {
 		if len(waves) == 1 {
 			return l.invokeCallsParallel(ctx, toolCalls, out)
 		}
@@ -305,12 +305,7 @@ func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
 }
 
 func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
-	type item struct {
-		idx int
-		res toolResult
-	}
 	results := make([]toolResult, len(toolCalls))
-	ch := make(chan item, len(toolCalls))
 	var wg sync.WaitGroup
 
 	for i, tc := range toolCalls {
@@ -318,15 +313,13 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ch <- item{idx: i, res: l.invoke(ctx, tc, out)}
+			results[i] = l.invoke(ctx, tc, out)
 		}()
 	}
 
+	// Each goroutine owns one fixed slot; Wait publishes every completed
+	// result before history/persistence is appended in model-call order.
 	wg.Wait()
-	close(ch)
-	for it := range ch {
-		results[it.idx] = it.res
-	}
 
 	// Append tool results in the same order as the assistant's tool calls so
 	// provider APIs that expect call/result pairing stay deterministic.
@@ -474,7 +467,66 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	execStart := time.Now()
 	var res tools.Result
 	var err error
-	if (isPassingGoalVerification(tc.Name, raw) || isGoalTaskCompletion(tc.Name, raw)) && l.failedChecks.unresolved() {
+	tool, knownTool := l.registry.Get(tc.Name)
+	invalidatesEvidence := !knownTool || (!tool.ReadOnly && !tool.PreservesEvidence)
+	if invalidatesEvidence {
+		l.forwardWorkerEffectBarrier(ctx)
+		defer l.forwardWorkerEffectBarrier(ctx)
+	}
+	var reuseClaim resultReuseClaim
+	var haveReuseClaim, reused bool
+	var reuseAge time.Duration
+	var operationKey [32]byte
+	var operationGeneration uint64
+	var operationEligible, operationReplayed bool
+	if knownTool && tool.ReplaySuccess != nil {
+		if prepared, validationErr := l.registry.PrepareArgs(tc.Name, raw); validationErr == nil {
+			operationKey, operationEligible = completedOperationKey(tc.Name, prepared)
+			if operationEligible {
+				prior, found, generation := l.completedOps.lookup(operationKey)
+				operationGeneration = generation
+				if found {
+					res, operationReplayed = replayCompletedOperation(ctx, tool, prepared, prior)
+					if !operationReplayed || res.Err != nil {
+						l.completedOps.drop(operationKey)
+					}
+				}
+			}
+		}
+	} else if invalidatesEvidence {
+		// Unknown mutations may invalidate previously completed output evidence.
+		l.completedOps.reset()
+	}
+	if invalidatesEvidence {
+		// Unknown effects, commands and workers are barriers even when they
+		// eventually fail: they may have changed the observed state.
+		l.resultReuse.reset()
+	} else if tool.ReadOnly && tool.ReplaySuccess == nil && tool.ReuseTTL > 0 && tool.RefreshArg != "" {
+		if prepared, validationErr := l.registry.PrepareArgs(tc.Name, raw); validationErr == nil {
+			if key, fresh, eligible := reusableToolKey(tool, prepared); eligible {
+				res, reuseAge, reused, reuseClaim, err = l.resultReuse.acquire(ctx, key, fresh, time.Now)
+				if err != nil {
+					return l.cancelledToolResult(tc, tools.Result{}, err, false, out)
+				}
+				haveReuseClaim = !reused
+				defer func() {
+					if haveReuseClaim {
+						l.resultReuse.finish(reuseClaim, nil, 0, time.Now())
+					}
+				}()
+			}
+		}
+	}
+	if reused && ctx.Err() != nil {
+		return l.cancelledToolResult(tc, tools.Result{}, ctx.Err(), false, out)
+	}
+	if operationReplayed {
+		// Live permission and evidence checks handled this call without repeating
+		// the original effect. Ordinary verification and protocol pairing follow.
+	} else if reused {
+		// Same accepted arguments and the same immutable registered tool;
+		// reuse never grants access to another contract or a later Run.
+	} else if (isPassingGoalVerification(tc.Name, raw) || isGoalTaskCompletion(tc.Name, raw)) && l.failedChecks.unresolved() {
 		res.Err = fmt.Errorf("goal: a verification command failed and has no successful rerun; fix and rerun it before marking the work complete")
 	} else if isPassingGoalVerification(tc.Name, raw) && (!l.toolEvidence.Load() || l.concreteFailure.Load()) {
 		res.Err = fmt.Errorf("goal: passing verification requires a successful concrete check after the latest tool failure")
@@ -492,6 +544,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		dispatchCtx := withWorkerInvocation(ctx, tc.ID, out, checkObserver)
 		if mutationObserver != nil {
 			dispatchCtx = withWorkerMutationObserver(dispatchCtx, mutationObserver)
+		}
+		if tc.Name == "task" || tc.Name == "send_message" {
+			dispatchCtx = withWorkerEffectBarrier(dispatchCtx, l.workerEffectBarrierObserver(ctx))
 		}
 		res, err = l.registry.Execute(dispatchCtx, tc.Name, raw)
 	}
@@ -513,7 +568,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// the reason instead of the (potentially lying)
 	// tool output. Record identical-failure AFTER this so
 	// a verifier rewrite still counts as a failed attempt.
-	if err == nil {
+	if err == nil && !reused {
 		tool, ok := l.registry.Get(tc.Name)
 		if ok {
 			res = tools.ApplyVerification(tools.Check{
@@ -524,12 +579,26 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			}, tool.Verify)
 		}
 	}
+	if operationEligible && !operationReplayed && err == nil && ctx.Err() == nil {
+		l.completedOps.record(operationGeneration, operationKey, res)
+	}
+	if operationReplayed && res.Err != nil {
+		l.completedOps.drop(operationKey)
+	}
+	if haveReuseClaim {
+		var verified *tools.Result
+		if err == nil && res.Err == nil && ctx.Err() == nil {
+			verified = &res
+		}
+		l.resultReuse.finish(reuseClaim, verified, tool.ReuseTTL, time.Now())
+		haveReuseClaim = false
+	}
 	if err != nil || res.Err != nil {
 		l.identicalFails.recordFailure(tc.Name, tc.Arguments)
 	} else {
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments)
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
-		if toolKind(tc.Name) == "mutation" && !res.Inert {
+		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
 			l.identicalFails.workspaceChanged()
 			l.forwardWorkerMutation(ctx)
 		}
@@ -546,12 +615,17 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	if attributed.Err == nil {
 		attributed.Err = err
 	}
-	l.recordCheckResult(tc, attributed)
+	if !reused && !operationReplayed {
+		l.recordCheckResult(tc, attributed)
+	}
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
 	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments))
 	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, attributed)
 	outputHandle := retainedToolOutputHandle(tc.Name, attributed, modelContent)
+	if reused {
+		modelContent = reusedResultHint(reuseAge, tool.RefreshArg) + modelContent
+	}
 
 	// Tool not found.
 	if err != nil {
@@ -586,7 +660,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 			}},
 		}
 	}
-	if isConcreteEvidenceTool(tc.Name) {
+	if !reused && !operationReplayed && isConcreteEvidenceTool(tc.Name) {
 		l.toolEvidence.Store(true)
 		l.concreteFailure.Store(false)
 	}

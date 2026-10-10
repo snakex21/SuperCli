@@ -197,7 +197,7 @@ func convertOutlookMSGToEML(ctx context.Context, source, destination string) (me
 		bodyType = "text/html; charset=UTF-8"
 	}
 
-	tempDir, err := os.MkdirTemp("", "supercli-msg-attachments-*")
+	tempDir, err := createThunderbirdMSGAttachmentDir(destination)
 	if err != nil {
 		return meta, fmt.Errorf("create attachment temp directory: %w", err)
 	}

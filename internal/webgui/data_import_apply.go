@@ -29,6 +29,14 @@ func ApplyPendingDataImport(dataDir string) error {
 	if info, err := os.Stat(dataStage); err != nil || !info.IsDir() {
 		return errors.New("pending import data is missing")
 	}
+	// Staging may have changed since upload validation. Reject an invalid
+	// cleanup policy before moving any live state into the rescue backup.
+	if err := validateProjectCleanupBackup(dataStage); err != nil {
+		return fmt.Errorf("import project checkpoint preference: %w", err)
+	}
+	if err := validateCurrencyRatesBackup(dataStage); err != nil {
+		return fmt.Errorf("import currency rates: %w", err)
+	}
 	rescue := filepath.Join(dataDir, "backups", "pre-import-"+time.Now().Format("20060102-150405")+"-"+randomDataID()[:6])
 	if err := os.MkdirAll(rescue, 0o700); err != nil {
 		return err
@@ -75,7 +83,8 @@ func ApplyPendingDataImport(dataDir string) error {
 }
 
 func dataImportTargets(dataDir string, full bool) []string {
-	targets := []string{"sessions.db", "sessions.db-wal", "sessions.db-shm", "memory.db", "memory.db-wal", "memory.db-shm", "supercli.db", "supercli.db-wal", "supercli.db-shm", "memory", "projects", "reflect", "module-sources", "checkpoints", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"}
+	targets := []string{"sessions.db", "sessions.db-wal", "sessions.db-shm", "memory.db", "memory.db-wal", "memory.db-shm", "supercli.db", "supercli.db-wal", "supercli.db-shm", "memory", "projects", "reflect", "module-sources", "checkpoints", "projects.json", "workspace.json", "webgui-settings.json", "project-cleanup.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json"}
+	targets = append(targets, dataCurrencyRatesFile, dataCurrencyRatesFile+"-wal", dataCurrencyRatesFile+"-shm")
 	if !full {
 		return targets
 	}
@@ -91,7 +100,7 @@ func dataImportTargets(dataDir string, full bool) []string {
 
 func allowedImportedRoot(name string, full bool) bool {
 	switch name {
-	case "sessions.db", "memory.db", "supercli.db", "memory", "projects", "reflect", "module-sources", "projects.json", "workspace.json", "webgui-settings.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
+	case "sessions.db", "memory.db", "supercli.db", dataCurrencyRatesFile, "memory", "projects", "reflect", "module-sources", "projects.json", "workspace.json", "webgui-settings.json", "project-cleanup.json", llmprompt.UserInstructionsFile, folderIndexFile, folderIndexCacheFile, "schedules.json":
 		return true
 	case "config.toml", "models.json", "context_limits.json", "mcp", "skills", "tools", "profiles":
 		return full

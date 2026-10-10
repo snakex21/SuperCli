@@ -1,6 +1,6 @@
 [
   "Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.",
-  "Ez a README az `1.0.3` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases]({releases}) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.",
+  "Ez a README az `1.0.5` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases]({releases}) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.",
   "Képernyőképek",
   "![A SuperCli webes felülete (GUI)]({guishot})",
   "![A SuperCli terminálos műveletközpontja (TUI)]({tuishot})",

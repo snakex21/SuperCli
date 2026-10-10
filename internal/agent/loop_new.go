@@ -73,6 +73,8 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		briefing:                 cfg.Briefing,
 		liveContext:              strings.TrimSpace(cfg.LiveContext),
 		liveContextForRun:        cfg.LiveContextForRun,
+		refreshContextWindow:     cfg.RefreshContextWindow,
+		userDownloadsDir:         cfg.UserDownloadsDir,
 		maxSteps:                 cfg.MaxSteps,
 		thinTools:                cfg.ThinTools,
 		stableToolset:            cfg.StableToolset,

@@ -61,7 +61,7 @@ func (s *Server) handleContextCompact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ctx := r.Context()
+	ctx := llm.WithOpenCodeSession(r.Context(), req.SessionID)
 	if sink := s.eng.usageCallSink(store, req.SessionID); sink != nil {
 		ctx = llm.WithCallSink(ctx, sink)
 	}
@@ -91,7 +91,8 @@ func (s *Server) handleContextCompact(w http.ResponseWriter, r *http.Request) {
 }
 
 func contextViewFromReport(report agent.ContextReport) statsContextView {
-	view := statsContextView{Window: report.Window, EstimatedUsed: report.RequestTokens, CompactThreshold: report.CompactThreshold}
+	view := statsContextView{Window: report.Window, WindowSource: report.WindowSource,
+		HasSnapshot: true, EstimatedUsed: report.RequestTokens, CompactThreshold: report.CompactThreshold}
 	view.Breakdown = statsContextBreakdown{
 		User: report.UserTokens, Assistant: report.AssistantTokens,
 		Tools: report.ToolResultTokens + report.ToolSchemaTokens + report.CatalogTokens,

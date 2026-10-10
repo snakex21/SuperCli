@@ -17,6 +17,10 @@ func capsuleCostFixture(t testing.TB, turns int) (*Engine, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = eng.Close() })
+	// A normal run opens project memory before the terminal capsule save.
+	if _, project := eng.webMemoryStores(eng.Home()); project == nil {
+		t.Fatal("project memory unavailable")
+	}
 	store, err := eng.sessionStore()
 	if err != nil {
 		t.Fatal(err)

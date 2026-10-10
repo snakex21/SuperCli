@@ -44,6 +44,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.ShowGenerationSpeed != nil {
 		dst.ShowGenerationSpeed = src.ShowGenerationSpeed
 	}
+	if src.CostCurrency != "" {
+		dst.CostCurrency = src.CostCurrency
+	}
 	if src.NoColor {
 		dst.NoColor = true
 	}

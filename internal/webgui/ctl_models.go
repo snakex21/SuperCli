@@ -188,7 +188,7 @@ func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.eng.SwitchModel(strings.TrimSpace(req.Model), strings.TrimSpace(req.Provider)); err != nil {
+	if err := s.eng.SwitchModelContext(r.Context(), strings.TrimSpace(req.Model), strings.TrimSpace(req.Provider)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

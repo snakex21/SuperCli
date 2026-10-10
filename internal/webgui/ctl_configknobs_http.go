@@ -1,10 +1,13 @@
 package webgui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
+	"supercli/internal/account/fx"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
@@ -42,6 +45,13 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		llm.SetDiscardPreviousReasoning(tc.DiscardPreviousReasoning != nil && *tc.DiscardPreviousReasoning)
+		if strings.TrimSpace(req.Key) == "cost_currency" && config.EffectiveCostCurrency(tc) != "USD" {
+			ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+			// Persisting the preference succeeds offline too. Missing rates are
+			// displayed explicitly and can be retried from the details dialog.
+			_ = s.eng.ensureCostRates(ctx, "")
+			cancel()
+		}
 	}
 
 	tc, err := config.LoadToml(global)
@@ -57,5 +67,5 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 			State: knobState(&tc, d.key), Default: knobDefault(d.key), NextSession: d.nextSession,
 		})
 	}
-	writeJSON(w, map[string]any{"knobs": out})
+	writeJSON(w, map[string]any{"knobs": out, "cost_currencies": fx.SupportedCurrencies()})
 }

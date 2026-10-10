@@ -20,13 +20,11 @@ import (
 )
 
 const (
-	maxActive       = 3
-	maxHistory      = 12
-	maxBufferBytes  = 64 << 10
-	maxPollBytes    = 12 << 10
-	maxWriteBytes   = 16 << 10
-	defaultLifetime = 10 * time.Minute
-	maxLifetime     = 24 * time.Hour
+	maxActive      = 3
+	maxHistory     = 12
+	maxBufferBytes = 64 << 10
+	maxPollBytes   = 12 << 10
+	maxWriteBytes  = 16 << 10
 )
 
 // Tool owns process sessions for one workspace.
@@ -50,8 +48,8 @@ func New(baseDir string, dataDir ...string) *Tool {
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
-		Description: "Start a long command; wait for exit, poll for diagnostics, write input, resize PTY, stop, list, or screenshot its owned window by id. Launch the GUI executable directly; shell-child windows are not inferred. Short commands use ctx_execute. pty=true merges stdout/stderr in a real terminal. Maximum 3 active sessions; output/lifetime capped.",
-		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":86400000,"default":600000,"description":"Lifetime; default 10 min, opt in up to 24 h for long jobs"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`,
+		Description: "Start a long command; wait for exit, poll for diagnostics, write input, resize PTY, stop, list, or screenshot its owned window by id. Launch the GUI executable directly; shell-child windows are not inferred. Short commands use ctx_execute. pty=true merges stdout/stderr in a real terminal. Maximum 3 active sessions; bounded output, optional timeout; stop or close ends the process.",
+		Schema:      fmt.Sprintf(`{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":0,"maximum":%d,"default":0,"description":"0/omitted: run until exit or stop; positive: optional lifetime in ms"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`, ctxexec.MaxTimeoutMS),
 		Fn:          t.Execute,
 	}
 }

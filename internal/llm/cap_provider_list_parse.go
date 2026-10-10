@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
-	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,8 +20,12 @@ type providerModelWire struct {
 	ContextLength    json.RawMessage `json:"context_length"`
 	MaxContextLength json.RawMessage `json:"max_context_length"`
 	ContextWindow    json.RawMessage `json:"context_window"`
-	Capabilities     json.RawMessage `json:"capabilities"`
-	InputModalities  []string        `json:"input_modalities"`
+	// Runtime capacity is separate from the catalog metadata above. v0 reports
+	// one loaded capacity; v1 reports one configuration per named instance.
+	LoadedContextLength json.RawMessage `json:"loaded_context_length"`
+	LoadedInstances     json.RawMessage `json:"loaded_instances"`
+	Capabilities        json.RawMessage `json:"capabilities"`
+	InputModalities     []string        `json:"input_modalities"`
 	// Routers publish an object; LM Studio publishes a string such as qwen35.
 	Architecture json.RawMessage `json:"architecture"`
 }
@@ -38,6 +43,25 @@ func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
 		wires = payload.Models
 	}
 	out := make([]ModelInfo, 0, len(wires))
+	byID := make(map[string]int, len(wires))
+	exactRuntime := make(map[string]bool)
+	appendModel := func(model ModelInfo, exact bool) {
+		if index, exists := byID[model.ID]; exists {
+			// Keep the first metadata record. A concrete loaded instance wins
+			// over an ambiguous model-key capacity; contradictory duplicates
+			// of the same instance retain the smaller positive capacity.
+			if exact && !exactRuntime[model.ID] {
+				out[index].RuntimeContextLength = model.RuntimeContextLength
+			} else if exact || !exactRuntime[model.ID] {
+				out[index].RuntimeContextLength = minPositiveRuntimeContext(out[index].RuntimeContextLength, model.RuntimeContextLength)
+			}
+			exactRuntime[model.ID] = exactRuntime[model.ID] || exact
+			return
+		}
+		byID[model.ID] = len(out)
+		exactRuntime[model.ID] = exact
+		out = append(out, model)
+	}
 	for _, wire := range wires {
 		id := strings.TrimSpace(wire.ID)
 		if id == "" {
@@ -63,9 +87,96 @@ func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
 		case "embedding", "embeddings":
 			model.Vision, model.VisionKnown, model.ToolUse = false, true, false
 		}
-		out = append(out, model)
+		model.RuntimeContextLength = positiveRuntimeContextLength(wire.LoadedContextLength)
+		exact := model.RuntimeContextLength > 0
+		instances := providerLoadedContexts(wire.LoadedInstances)
+		if len(instances) > 0 {
+			model.RuntimeContextLength, exact = 0, false
+			for _, instance := range instances {
+				model.RuntimeContextLength = minPositiveRuntimeContext(model.RuntimeContextLength, instance.context)
+			}
+			for _, instance := range instances {
+				if instance.id == id {
+					// The exact loaded ID is authoritative even when it equals the
+					// model key. Otherwise the key uses the safe minimum of its loads.
+					model.RuntimeContextLength, exact = instance.context, true
+					break
+				}
+			}
+		}
+		appendModel(model, exact)
+		for _, instance := range instances {
+			alias := model
+			alias.ID, alias.RuntimeContextLength = instance.id, instance.context
+			appendModel(alias, true)
+		}
 	}
 	return out, nil
+}
+
+type providerLoadedContext struct {
+	id      string
+	context int
+}
+
+func providerLoadedContexts(raw json.RawMessage) []providerLoadedContext {
+	var entries []json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil {
+		return nil
+	}
+	var out []providerLoadedContext
+	byID := make(map[string]int)
+	for _, entry := range entries {
+		var instance struct {
+			ID     string          `json:"id"`
+			Config json.RawMessage `json:"config"`
+		}
+		if json.Unmarshal(entry, &instance) != nil || strings.TrimSpace(instance.ID) == "" {
+			continue
+		}
+		var config struct {
+			ContextLength json.RawMessage `json:"context_length"`
+		}
+		if json.Unmarshal(instance.Config, &config) != nil {
+			continue
+		}
+		capacity := positiveRuntimeContextLength(config.ContextLength)
+		if capacity == 0 {
+			continue
+		}
+		if index, exists := byID[instance.ID]; exists {
+			out[index].context = minPositiveRuntimeContext(out[index].context, capacity)
+			continue
+		}
+		byID[instance.ID] = len(out)
+		// Instance IDs are opaque and case-sensitive; only blank IDs are ignored.
+		out = append(out, providerLoadedContext{id: instance.ID, context: capacity})
+	}
+	return out
+}
+
+func positiveRuntimeContextLength(raw json.RawMessage) int {
+	var integer int
+	if json.Unmarshal(raw, &integer) == nil {
+		if integer > 0 {
+			return integer
+		}
+		return 0
+	}
+	// Integral JSON numbers written with a decimal/exponent are also valid.
+	// Reject fractional, overflowing and nonnumeric values before conversion.
+	var number float64
+	if json.Unmarshal(raw, &number) != nil || number <= 0 || math.Trunc(number) != number || number >= math.Ldexp(1, strconv.IntSize-1) {
+		return 0
+	}
+	return int(number)
+}
+
+func minPositiveRuntimeContext(a, b int) int {
+	if a <= 0 || (b > 0 && b < a) {
+		return b
+	}
+	return a
 }
 
 func applyCapabilityMetadata(model *ModelInfo, raw json.RawMessage) {
@@ -145,32 +256,8 @@ func containsFold(values []string, wanted string) bool {
 // local/private OpenAI-compatible servers. The returned schema, not a model
 // or configured provider name, determines whether the endpoint applies.
 func ListLocalNativeModelInfos(ctx context.Context, baseURL, apiKey string) []ModelInfo {
-	u, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || !isLocalDiscoveryHost(u.Hostname()) || !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/v1") {
-		return nil
-	}
-	root := u.Scheme + "://" + u.Host
-	for _, path := range []string{"/api/v1/models", "/api/v0/models"} {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, root+path, nil)
-		if err != nil {
-			continue
-		}
-		if key := CleanAPIKey(apiKey); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		resp, err := (&http.Client{Timeout: ProviderDiscoveryTimeout}).Do(req)
-		if err != nil {
-			continue
-		}
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		resp.Body.Close()
-		if readErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			if models, parseErr := parseProviderModelInfos(body); parseErr == nil && len(models) > 0 {
-				return models
-			}
-		}
-	}
-	return nil
+	models, _, _ := fetchLocalNativeModelInfos(ctx, baseURL, apiKey)
+	return models
 }
 
 func isLocalDiscoveryHost(host string) bool {

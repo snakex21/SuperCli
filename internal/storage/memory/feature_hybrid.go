@@ -121,6 +121,9 @@ func (s *Store) flushEmbedQueue() {
 			return
 		}
 		batch := append([]Entry(nil), s.embedQueue...)
+		// Retain capacity for the next batch, but release completed note strings
+		// and tag slices from its backing array while the store remains open.
+		clear(s.embedQueue)
 		s.embedQueue = s.embedQueue[:0]
 		s.embedQueueIndex = nil
 		s.embedQueueMu.Unlock()

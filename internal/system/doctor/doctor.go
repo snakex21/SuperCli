@@ -41,14 +41,17 @@ type Report struct {
 }
 
 type Env struct {
-	Version     string
-	Home        string
-	DataDir     string
-	Provider    llm.Provider
-	Registry    *tools.Registry
-	Sessions    *session.Store
-	ProviderMgr *providers.Manager
-	Caps        *llm.CapabilityRegistry
+	Version  string
+	Home     string
+	DataDir  string
+	Provider llm.Provider
+	Registry *tools.Registry
+	// ToolDiagnostics preserves GUI tool counts without retaining a run's
+	// executable registry. TUI/batch callers can continue passing Registry.
+	ToolDiagnostics *tools.RegistryDiagnostics
+	Sessions        *session.Store
+	ProviderMgr     *providers.Manager
+	Caps            *llm.CapabilityRegistry
 }
 
 func Run(ctx context.Context, env Env) Report {
@@ -66,7 +69,7 @@ func Run(ctx context.Context, env Env) Report {
 		sessionsCheck(ctx, env.Sessions),
 		providerCheck(env.Provider),
 		providerConfigCheck(env.ProviderMgr, env.Caps),
-		toolsCheck(env.Registry),
+		toolsCheckWithDiagnostics(env.Registry, env.ToolDiagnostics),
 		commandCheck("git", true),
 		commandCheck("rg", false),
 	}
@@ -217,15 +220,25 @@ func providerConfigCheck(mgr *providers.Manager, caps *llm.CapabilityRegistry) C
 }
 
 func toolsCheck(reg *tools.Registry) Check {
-	if reg == nil {
+	return toolsCheckWithDiagnostics(reg, nil)
+}
+
+func toolsCheckWithDiagnostics(reg *tools.Registry, diagnostics *tools.RegistryDiagnostics) Check {
+	if diagnostics == nil && reg == nil {
 		return Check{Name: "tools", Status: Warn, Detail: "registry not wired"}
 	}
-	visible := len(reg.VisibleNames())
+	var registered, visible int
+	if diagnostics != nil {
+		counts := diagnostics.Snapshot()
+		registered, visible = counts.Registered, counts.Visible
+	} else {
+		registered, visible = reg.Len(), len(reg.VisibleNames())
+	}
 	status := OK
 	if visible == 0 {
 		status = Warn
 	}
-	return Check{Name: "tools", Status: status, Detail: fmt.Sprintf("%d registered · %d visible", reg.Len(), visible)}
+	return Check{Name: "tools", Status: status, Detail: fmt.Sprintf("%d registered · %d visible", registered, visible)}
 }
 
 func commandCheck(name string, required bool) Check {

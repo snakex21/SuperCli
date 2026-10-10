@@ -60,7 +60,7 @@ func TestResumeLegacySummaryKeepsModelContextWithoutFakeUserMessage(t *testing.T
 					t.Fatalf("real message %q missing: %s", text, rendered)
 				}
 			}
-			for _, text := range []string{"compacted to save context", "Goal: continue", "initial inspection"} {
+			for _, text := range []string{"compacted to save context", "Earlier context was compacted", "Goal: continue", "initial inspection"} {
 				if strings.Contains(rendered, text) || strings.Contains(m.completedLines(), text) {
 					t.Fatalf("internal summary leaked into chat: %s", rendered)
 				}

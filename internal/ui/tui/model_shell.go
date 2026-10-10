@@ -18,9 +18,17 @@ import (
 	"supercli/internal/tools/shellescape"
 )
 
+// A nonzero-sized invocation gives copied Model values a stable identity until
+// the command really returns, including while cancellation drains its process.
+type shellInvocation struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
 // shellResultMsg is delivered when a !command finishes.
 type shellResultMsg struct {
-	res *shellescape.Result
+	res        *shellescape.Result
+	invocation *shellInvocation
 }
 
 // doctorReportMsg delivers an asynchronously computed /doctor report.
@@ -44,13 +52,20 @@ func (m Model) dispatchShellEscape(text string) (tea.Model, tea.Cmd) {
 	}
 	cmd := shellescape.ExtractCommand(text)
 	m.chat.addUser("> !" + cmd)
-	m.appendLineToTranscript("> !" + cmd)
+	m.markTranscriptPresent()
 	m.appendLine(m.marker.Running())
 	m.refreshTranscript()
+	ctx, cancel := context.WithCancel(context.Background())
+	invocation := &shellInvocation{ctx: ctx, cancel: cancel}
+	m.shellInvocation = invocation
+	m.cancel.Arm(cancelRun, cancel)
+	m.cancelling = false
 	m.busy = true
+	runner := m.shellRunner
 	return m, func() tea.Msg {
-		res := m.shellRunner.Run(context.Background(), cmd)
-		return shellResultMsg{res: res}
+		defer cancel()
+		res := runner.Run(ctx, cmd)
+		return shellResultMsg{res: res, invocation: invocation}
 	}
 }
 

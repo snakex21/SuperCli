@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.
 
 <!-- readme-unit:status -->
-Tämä README kuvaa versiota `1.0.3`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
+Tämä README kuvaa versiota `1.0.5`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvakaappaukset
@@ -172,6 +172,7 @@ Käytä tiedostossa `go.mod` määritettyä Go-versiota. Windowsissa `build.bat`
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

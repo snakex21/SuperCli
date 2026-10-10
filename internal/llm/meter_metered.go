@@ -2,6 +2,10 @@ package llm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +26,12 @@ type CallStat struct {
 	// Name() at call time.
 	Provider string
 	Model    string
+	// Connection identifies the actual factory-built backend, including helper
+	// and fallback calls. Only the type and hostname are persisted; the digest
+	// permits an exact profile match without copying credentials into usage.
+	ProviderType  string
+	EndpointHost  string
+	ConnectionKey string
 	// Background marks calls made outside the user's foreground
 	// turn (memory autosave, startup raw-memory summarization).
 	// Set via WithBackground on the context.
@@ -313,10 +323,11 @@ func unregisterBackgroundCall(id uint64) {
 // channel closes, so a consumer that drains the stream observes
 // the record as soon as its range loop ends.
 type metered struct {
-	inner    Provider
-	provider string // transport label for CallStat.Provider
-	purpose  string // default purpose when the ctx carries none
-	sink     CallSink
+	inner                                     Provider
+	provider                                  string // transport label for CallStat.Provider
+	purpose                                   string // default purpose when the ctx carries none
+	sink                                      CallSink
+	providerType, endpointHost, connectionKey string
 }
 
 // meteredDeltaBuffer absorbs short provider bursts without forcing a
@@ -335,6 +346,28 @@ func Metered(inner Provider, providerLabel, purpose string, sink CallSink) Provi
 		return inner
 	}
 	return &metered{inner: inner, provider: providerLabel, purpose: purpose, sink: sink}
+}
+
+// ProviderConnectionKey is an opaque, process-local matching key, never a
+// credential or full URL. The same endpoint with different credentials is a
+// different billing profile.
+func ProviderConnectionKey(providerType, baseURL, apiKey string) string {
+	digest := sha256.Sum256([]byte(providerType + "\x00" + strings.TrimRight(baseURL, "/") + "\x00" + apiKey))
+	return hex.EncodeToString(digest[:])
+}
+
+// MeteredConnection records the connection selected when this provider was
+// built, rather than inferring it later from a coordinator's active settings.
+func MeteredConnection(inner Provider, providerType, baseURL, apiKey, purpose string, sink CallSink) Provider {
+	p := Metered(inner, providerType, purpose, sink)
+	if m, ok := p.(*metered); ok {
+		m.providerType = providerType
+		if endpoint, err := url.Parse(baseURL); err == nil {
+			m.endpointHost = strings.ToLower(endpoint.Hostname())
+		}
+		m.connectionKey = ProviderConnectionKey(providerType, baseURL, apiKey)
+	}
+	return p
 }
 
 // Unwrap exposes the wrapped provider so capability type
@@ -373,12 +406,15 @@ func (m *metered) Name() string { return m.inner.Name() }
 
 func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
 	stat := CallStat{
-		Purpose:    m.purpose,
-		Provider:   m.provider,
-		Model:      m.inner.Name(),
-		Background: IsBackground(ctx),
-		Request:    EstimateRequestBreakdown(msgs, tools),
-		StartedAt:  time.Now().UTC(),
+		Purpose:       m.purpose,
+		Provider:      m.provider,
+		ProviderType:  m.providerType,
+		EndpointHost:  m.endpointHost,
+		ConnectionKey: m.connectionKey,
+		Model:         m.inner.Name(),
+		Background:    IsBackground(ctx),
+		Request:       EstimateRequestBreakdown(msgs, tools),
+		StartedAt:     time.Now().UTC(),
 	}
 	if p := PurposeFromContext(ctx); p != "" {
 		stat.Purpose = p
@@ -475,19 +511,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		defer release()
 		defer finishForeground()
 		defer close(out)
-		defer func() {
-			stat.Duration = time.Since(start)
-			if ctx != nil && ctx.Err() != nil {
-				stat.Canceled = true
-			}
-			emit()
-		}()
-		gotFirst := false
-		for d := range in {
-			if !gotFirst && d.HasModelOutput() {
-				stat.TTFT = time.Since(start)
-				gotFirst = true
-			}
+		observeAccounting := func(d Delta) {
 			if d.Usage != nil {
 				stat.TokensIn = d.Usage.Input
 				stat.TokensOut = d.Usage.Output
@@ -496,6 +520,51 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 			}
 			if d.Err != nil {
 				stat.Failed = true
+			}
+		}
+		drainReadyAccounting := func() {
+			// Preserve ready terminal usage even when cancellation wins a receive
+			// or a blocked forward. Never wait for EOF or forward more content.
+			// A buffer snapshot plus one ready sender bounds a live producer.
+			for remaining := len(in) + 1; remaining > 0; remaining-- {
+				select {
+				case d, ok := <-in:
+					if !ok {
+						return
+					}
+					observeAccounting(d)
+				default:
+					return
+				}
+			}
+		}
+		defer func() {
+			if ctx != nil && ctx.Err() != nil {
+				drainReadyAccounting()
+				stat.Canceled = true
+			}
+			stat.Duration = time.Since(start)
+			emit()
+		}()
+		gotFirst := false
+		for {
+			var d Delta
+			select {
+			case <-ctx.Done():
+				return
+			case next, ok := <-in:
+				if !ok {
+					return
+				}
+				d = next
+			}
+			if !gotFirst && d.HasModelOutput() {
+				stat.TTFT = time.Since(start)
+				gotFirst = true
+			}
+			observeAccounting(d)
+			if ctx.Err() != nil {
+				return
 			}
 			select {
 			case out <- d:

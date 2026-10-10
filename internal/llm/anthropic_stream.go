@@ -3,9 +3,14 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
+
+// message_stop is the protocol's final event, after all content and usage.
+// A proxy may keep the HTTP body open after it; no further read is necessary.
+var errAnthropicMessageStop = errors.New("anthropic: completed message")
 
 func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan<- Delta) error {
 	emit := func(d Delta) bool {
@@ -148,6 +153,7 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			if !emit(Delta{FinishReason: finishReason, Usage: lastUsage}) {
 				return ctx.Err()
 			}
+			return errAnthropicMessageStop
 		case "error":
 			message := ev.Error.Message
 			if message == "" {
@@ -157,7 +163,7 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 		}
 		return nil
 	})
-	if parseErr != nil {
+	if parseErr != nil && !errors.Is(parseErr, errAnthropicMessageStop) {
 		return fmt.Errorf("sse: %w", parseErr)
 	}
 	if !sawResponse {

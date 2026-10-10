@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Result is what a tool returns after execution. Exactly one of
@@ -48,6 +49,19 @@ type Result struct {
 	// CommandKey carries verification/workdir/environment identity across process
 	// start and wait calls. It never adds environment values to model/UI output.
 	CommandKey *[32]byte `json:"-"`
+	// Operation records a verified effect produced by this invocation. It is
+	// trusted runtime metadata, never parsed from model arguments or tool text.
+	// The loop retains it only after successful verification and only within
+	// the current human request. ReplaySuccess must revalidate its evidence.
+	Operation *VerifiedOperation `json:"-"`
+}
+
+// VerifiedOperation describes one completed effect, not completion of the
+// entire user request. Evidence is private to the registered tool; it must be
+// small, immutable metadata rather than file bodies or an execution context.
+type VerifiedOperation struct {
+	Summary  string
+	Evidence any `json:"-"`
 }
 
 // ImageContent holds an image produced by a tool. The agent loop
@@ -63,11 +77,30 @@ type ImageContent struct {
 type Tool struct {
 	Name        string
 	Description string
+	// NextTools declares related tool contracts useful after a successful call.
+	// This is trusted registration metadata, never inferred from returned text.
+	// The agent exposes only registered targets for the current workflow;
+	// argument validation, authorization and execution remain unchanged.
+	NextTools []string `json:"-"`
 	// ReadOnly certifies that concurrent execution cannot mutate files,
 	// process state, user data, or external services. The agent may run a
 	// batch consisting exclusively of ReadOnly tools in parallel. False is
 	// the safe default; tools must opt in explicitly.
 	ReadOnly bool
+	// PreservesEvidence certifies that the tool's effects are limited to local
+	// discovery metadata, such as activating existing tool schemas. Trusted
+	// registration may opt in to preserve verified results across that call.
+	// This does not grant read-only/parallel execution or result reuse. Tools
+	// that replace tool contracts or change files, processes, user data or
+	// services must leave it false.
+	PreservesEvidence bool `json:"-"`
+	// ReuseTTL opts a read-only tool into bounded, verified result reuse within
+	// one agent Run. Zero disables reuse. Files, commands and mutations must not
+	// opt in merely because they can be read-only: their state may change locally.
+	ReuseTTL time.Duration `json:"-"`
+	// RefreshArg names a schema-declared boolean that requests a fresh result.
+	// It must also bypass any cache implemented inside the tool itself.
+	RefreshArg string `json:"-"`
 	// Schema is a JSON Schema string for the tool's arguments.
 	// F4 will parse and validate against it. For F1 it is passed
 	// through to the provider as a hint.
@@ -87,6 +120,13 @@ type Tool struct {
 	// DefaultVerifier applies family heuristics based on the
 	// tool name and result shape.
 	Verify func(Result) VerifyVerdict
+	// ReplaySuccess opts into checked reuse of this tool's own completed effect
+	// within one human request. Args have passed ordinary schema preparation;
+	// prior is a successful verified result from identical prepared arguments.
+	// The callback must recheck current authorization and actual state without
+	// repeating the effect. False declines replay and permits normal execution;
+	// true returns either a verified Inert success or a concrete failure.
+	ReplaySuccess func(context.Context, json.RawMessage, Result) (Result, bool) `json:"-"`
 }
 
 // Validate returns nil if the tool has the minimum required fields
@@ -110,15 +150,16 @@ func (t Tool) Validate() error {
 // Activate / Deactivate control what the model sees at any given
 // turn; MarkAlwaysOn / ResetVisibility manage the meta set.
 type Registry struct {
-	mu         sync.RWMutex
-	tools      map[string]Tool
-	schemas    map[string]*compiledToolSchema // normalized once at Register; nil means fail-open
-	discovered map[string]struct{}            // explicit tool_search discoveries; separate from automatic promotions
-	visible    map[string]struct{}            // subset of tools visible to the model
-	order      []string                       // insertion order, for stable Visible()
-	alwaysOn   map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
-	outputs    *OutputStore                   // bounded large-result store; may be shared by one loop family
-	revision   uint64                         // tool contracts/visibility only; guarded by mu
+	mu          sync.RWMutex
+	tools       map[string]Tool
+	schemas     map[string]*compiledToolSchema // normalized once at Register; nil means fail-open
+	discovered  map[string]struct{}            // explicit tool_search discoveries; separate from automatic promotions
+	visible     map[string]struct{}            // subset of tools visible to the model
+	order       []string                       // insertion order, for stable Visible()
+	alwaysOn    map[string]struct{}            // tools that ignore visibility (tool_search, ask_user, read_image, ...)
+	outputs     *OutputStore                   // bounded large-result store; may be shared by one loop family
+	revision    uint64                         // tool contracts/visibility only; guarded by mu
+	diagnostics *RegistryDiagnostics           // allocated only when a diagnostic consumer requests it
 }
 
 // NewRegistry returns an empty registry. Nothing is visible
@@ -160,6 +201,7 @@ func newRegistryWithOutputs(outputs *OutputStore) *Registry {
 func (r *Registry) EnsureReadOutput() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	if r.outputs == nil {
 		r.outputs = NewOutputStore()
 	}
@@ -239,9 +281,11 @@ func (r *Registry) RegisterFrom(source *Registry, name string) error {
 func (r *Registry) registerCompiled(t Tool, compiled *compiledToolSchema) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	if _, exists := r.tools[t.Name]; exists {
 		return fmt.Errorf("register %q: already present", t.Name)
 	}
+	t.NextTools = append([]string(nil), t.NextTools...)
 	r.tools[t.Name] = t
 	r.schemas[t.Name] = compiled
 	r.order = append(r.order, t.Name)
@@ -263,6 +307,7 @@ func (r *Registry) MustRegister(t Tool) {
 func (r *Registry) MarkAlwaysOn(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	if _, present := r.alwaysOn[name]; !present {
 		r.alwaysOn[name] = struct{}{}
 		r.revision++
@@ -275,6 +320,7 @@ func (r *Registry) MarkAlwaysOn(name string) {
 func (r *Registry) Activate(names ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	for _, n := range names {
 		if _, ok := r.tools[n]; ok {
 			if _, present := r.visible[n]; !present {
@@ -292,6 +338,7 @@ func (r *Registry) Activate(names ...string) {
 func (r *Registry) Deactivate(names ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	for _, n := range names {
 		_, active := r.visible[n]
 		_, discovered := r.discovered[n]
@@ -308,6 +355,7 @@ func (r *Registry) Deactivate(names ...string) {
 func (r *Registry) ResetVisibility() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	if len(r.visible) != 0 || len(r.discovered) != 0 {
 		r.revision++
 	}
@@ -320,6 +368,7 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
+	t.NextTools = append([]string(nil), t.NextTools...)
 	return t, ok
 }
 
@@ -351,11 +400,15 @@ func (r *Registry) Visible() []Tool {
 	out := make([]Tool, 0, len(r.visible)+len(r.alwaysOn))
 	for _, n := range r.order {
 		if _, ok := r.visible[n]; ok {
-			out = append(out, r.tools[n])
+			t := r.tools[n]
+			t.NextTools = append([]string(nil), t.NextTools...)
+			out = append(out, t)
 			continue
 		}
 		if _, ok := r.alwaysOn[n]; ok {
-			out = append(out, r.tools[n])
+			t := r.tools[n]
+			t.NextTools = append([]string(nil), t.NextTools...)
+			out = append(out, t)
 		}
 	}
 	return out
@@ -443,6 +496,29 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	if !ok {
 		return Result{Err: fmt.Errorf("%w: %q", ErrUnknownTool, name)}, ErrUnknownTool
 	}
+	prepared, err := prepareRegisteredArgs(t, schema, args)
+	if err != nil {
+		return Result{Err: err}, nil
+	}
+	return t.Fn(ctx, prepared)
+}
+
+// PrepareArgs runs exactly the same coercion, validation and optional pure
+// repair as Execute, without invoking the tool. Reusing a previous result must
+// still validate the current call, including an explicit refresh argument.
+func (r *Registry) PrepareArgs(name string, args json.RawMessage) (json.RawMessage, error) {
+	r.mu.RLock()
+	t, ok := r.tools[name]
+	schema := r.schemas[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUnknownTool, name)
+	}
+	return prepareRegisteredArgs(t, schema, args)
+}
+
+func prepareRegisteredArgs(t Tool, schema *compiledToolSchema, args json.RawMessage) (json.RawMessage, error) {
+	name := t.Name
 	// Lenient arg coercion for small/local models that stringify
 	// scalars ({"limit":"5"} -> {"limit":5}). Schema-driven and
 	// conservative: only fields the tool's schema types as
@@ -456,7 +532,7 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 				if repaired, ok := t.RepairArgs(originalArgs); ok {
 					repaired = coerceCompiledArgs(schema, repaired)
 					if schema.validateJSON(repaired) == nil {
-						return t.Fn(ctx, repaired)
+						return repaired, nil
 					}
 				}
 			}
@@ -465,16 +541,16 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 			// prefix plus a detail. See unknownArgumentError.
 			var unknown *unknownArgumentError
 			if errors.As(err, &unknown) {
-				return Result{Err: fmt.Errorf("%w: %s", ErrInvalidToolArgs, unknown.messageFor(name))}, nil
+				return nil, fmt.Errorf("%w: %s", ErrInvalidToolArgs, unknown.messageFor(name))
 			}
 			validationErr := fmt.Errorf("%w for %s: %s", ErrInvalidToolArgs, name, err)
 			// Bad model arguments are an ordinary tool failure, not a Go/runtime
 			// failure. Returning it in Result.Err lets the attribution layer mark
 			// it as CategoryModel and gives the model one compact repair hint.
-			return Result{Err: validationErr}, nil
+			return nil, validationErr
 		}
 	}
-	return t.Fn(ctx, args)
+	return args, nil
 }
 
 // ErrUnknownTool is returned by Execute when the name is not in
@@ -491,6 +567,7 @@ var ErrInvalidToolArgs = fmt.Errorf("invalid tool arguments")
 func (r *Registry) ActivateDiscovered(names ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.publishDiagnosticsLocked()
 	for _, name := range names {
 		if _, ok := r.tools[name]; !ok {
 			continue

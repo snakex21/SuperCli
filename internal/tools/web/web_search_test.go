@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+func TestWebToolsDeclareExactInternalFollowupContracts(t *testing.T) {
+	search := NewWebSearch("", "")
+	for _, fixture := range []struct {
+		tool Tool
+		next string
+	}{
+		{search.LookupSpec(), "web_fetch,web_download"},
+		{search.Spec(), "web_fetch,web_download"},
+		{NewWebFetch().Spec(), "web_download"},
+		{NewWebDownload(t.TempDir()).Spec(), ""},
+	} {
+		if got := strings.Join(fixture.tool.NextTools, ","); got != fixture.next {
+			t.Errorf("%s followup metadata = %q, want %q", fixture.tool.Name, got, fixture.next)
+		}
+	}
+}
+
 func TestNormalizeDomainsAndQuery(t *testing.T) {
 	domains, err := normalizeDomains([]string{"https://Docs.Example.com/path", "*.example.org", "docs.example.com"})
 	if err != nil {
@@ -33,6 +50,67 @@ func TestFilterAndDedupeResults(t *testing.T) {
 	got := filterAndDedupeResults(results, []string{"example.com"}, []string{"ads.example.com"}, 10)
 	if len(got) != 1 || got[0].Title != "A" {
 		t.Fatalf("filtered results = %#v", got)
+	}
+}
+
+func TestSearchBinarySnippetsDoNotDiscardURLsOrOrdinaryText(t *testing.T) {
+	ordinary := "GIF89a is the six-byte header used by animated GIF images. A normal documentation result remains readable."
+	long := strings.Repeat("zażółć gęślą jaźń ", 35)
+	results := []WebSearchResult{
+		{Title: "GIF file", URL: "https://cdn.example.net/assets/cat.gif/", Snippet: "GIF89a€ € ÷Àÿ \" , 4! 6% G( G4*J1 this is not page prose"},
+		{Title: "Another candidate", URL: "https://cdn.example.net/assets/other.gif3D?download=1", Snippet: "GIF89a\x01\x00\x01\x00binary"},
+		{Title: "Documentation", URL: "https://example.org/docs/gif-format", Snippet: ordinary},
+		{Title: "Normal snippet", URL: "https://example.org/page", Snippet: long},
+	}
+	got := filterAndDedupeResults(results, nil, nil, 10)
+	if len(got) != len(results) {
+		t.Fatalf("binary snippets discarded result URLs: %+v", got)
+	}
+	for i := range results {
+		if got[i].URL != results[i].URL {
+			t.Fatalf("URL %d rewritten: %q != %q", i, got[i].URL, results[i].URL)
+		}
+	}
+	for _, i := range []int{0, 1} {
+		if !strings.Contains(got[i].Snippet, "Binary file data omitted") || strings.Contains(got[i].Snippet, "GIF89a") {
+			t.Fatalf("binary bytes remained as prose: %q", got[i].Snippet)
+		}
+	}
+	if got[2].Snippet != ordinary || got[3].Snippet != cleanHTMLFragment(truncateRunes(long, 300)) {
+		t.Fatalf("ordinary snippet changed: %#v", got)
+	}
+	formatted := formatSearchResults("animated cat", "fixture", "", got)
+	if strings.Contains(formatted, "GIF89a€") || !strings.Contains(formatted, "mode=media") || !strings.Contains(formatted, "web_download") || !strings.Contains(formatted, results[0].URL) {
+		t.Fatalf("search guidance or URLs lost: %s", formatted)
+	}
+}
+
+func TestSearchDirectFileHintsUseURLPathAndNeverRepairURLs(t *testing.T) {
+	for _, test := range []struct {
+		url    string
+		direct bool
+	}{
+		{"https://cdn.example.org/ONE.GIF?name=page.html", true},
+		{"https://cdn.example.org/file.woff2", true},
+		{"https://example.org/view?id=cat.gif", false},
+		{"https://cdn.example.org/cat.gif/", false},
+		{"https://cdn.example.org/cat.gif3D", false},
+		{"https://example.org/page", false},
+		{"javascript:foo.gif", false},
+		{"https://user:secret@example.org/cat.gif", false},
+	} {
+		if got := hasDirectFileExtension(test.url); got != test.direct {
+			t.Errorf("direct file hint for %q = %v, want %v", test.url, got, test.direct)
+		}
+	}
+	for _, rawURL := range []string{"https://cdn.example.org/a.gif?raw=1", "https://example.org/view?id=a.gif"} {
+		formatted := formatSearchResults("some file", "fixture", "", []WebSearchResult{{Title: "A", URL: rawURL, Snippet: "A normal search result."}})
+		if !strings.Contains(formatted, rawURL) || !strings.Contains(formatted, "A normal search result.") || !strings.Contains(formatted, "web_fetch") || !strings.Contains(formatted, "web_download") {
+			t.Fatalf("guidance changed result information: %s", formatted)
+		}
+		if strings.Contains(formatted, "Some result URLs have file extensions") != hasDirectFileExtension(rawURL) {
+			t.Fatalf("direct hint did not match URL shape: %s", formatted)
+		}
 	}
 }
 

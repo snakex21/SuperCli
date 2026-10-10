@@ -58,11 +58,10 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if e.Err != nil {
 			m.toolActivity.errors++
 			m.chat.addToolResult(name, e.Output, e.Err.Error())
-			m.appendLineToTranscript(m.marker.ToolResultErr(name, e.Err.Error()))
 		} else {
 			m.chat.addToolResult(name, e.Output, "")
-			m.appendLineToTranscript(m.marker.ToolResultFull(name, e.Output, m.toolExpanded))
 		}
+		m.markTranscriptPresent()
 		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.DoneEvent:
@@ -90,7 +89,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 		m.chat.addCompletion(m.marker.DoneEst(in, out, estimated), e.GenerationTokensPerSecond())
 		m.refreshRuntimeHUD()
-		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.5a658d3ae8"), in, out))
+		m.markTranscriptPresent()
 		m.refreshTranscript()
 		return m, m.waitForRunClose()
 	case agent.ErrorEvent:
@@ -111,30 +110,30 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			err = fmt.Errorf(m.tr("tui.model_events.cf8461d7e0"), name, e.Err)
 		}
 		m.chat.addSystem(m.marker.Error(err))
-		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.b577809eab"), err))
+		m.markTranscriptPresent()
 		m.refreshTranscript()
 		return m, m.waitForRunClose()
 	case agent.DraftUsedEvent:
 		line := m.marker.Draft(e.DraftModel, e.VerifierModel, e.Savings, e.Decision)
 		m.appendLine(line)
-		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.4267fabff4"), e.DraftModel, e.VerifierModel, e.Savings))
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	case agent.AutoCompactEvent:
 		line := fmt.Sprintf(m.tr("tui.model_events.b27e411e40"),
 			e.Removed, e.Reason, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)
 		m.appendLine(line)
-		m.appendLineToTranscript(line)
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	case agent.ToolResultsPrunedEvent:
 		line := fmt.Sprintf(m.tr("tui.model_events.a1e963e2a3"),
 			e.Pruned, e.Reclaimed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource)
 		m.appendLine(line)
-		m.appendLineToTranscript(line)
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	case agent.MessagesHiddenEvent:
 		line := m.marker.ContextHid(e.Count, e.Reason)
 		m.appendLine(line)
-		m.appendLineToTranscript(fmt.Sprintf(m.tr("tui.model_events.764f3e9b33"), e.Count))
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	case agent.ConsultEvent:
 		if e.AllFailed {
@@ -155,7 +154,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			}
 			m.appendLine(prefix + label + ": " + compactWorkerText(e.Prompt, 160))
 		case "tool_call":
-			m.appendLineToTranscript(prefix + m.marker.ToolCall(e.Tool, e.Args))
+			m.markTranscriptPresent()
 		case "tool_result":
 			if e.Err != "" {
 				m.appendLine(prefix + m.marker.ToolResultErr(e.Tool, e.Err))
@@ -173,14 +172,14 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.updateWorkerView(agent.WorkerProgressEvent{TaskID: e.TaskID, Agent: e.Agent, Kind: "finished", Status: e.Status})
 		line := fmt.Sprintf(m.tr("tui.model_events.0169a72b57"), e.TaskID, e.Status, e.Summary)
 		m.appendLine(line)
-		m.appendLineToTranscript(line)
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	case agent.NoticeEvent:
 		// Provider status (e.g. rate-limit retry wait) — show it so
 		// the user knows the run is waiting, not hung.
 		line := fmt.Sprintf("[%s]", e.Text)
 		m.appendLine(line)
-		m.appendLineToTranscript(line)
+		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	}
 	return m, m.waitForNextEvent()
@@ -212,7 +211,7 @@ func (m *Model) flushCurrent() {
 	m.closeReasoning()
 	if m.current != "" {
 		m.chat.addAssistant(m.current)
-		m.appendLineToTranscript(m.current)
+		m.markTranscriptPresent()
 		m.resetCurrent()
 	}
 }
@@ -220,12 +219,12 @@ func (m *Model) flushCurrent() {
 // appendLine adds a system-level message to the canonical chat.
 func (m *Model) appendLine(line string) {
 	m.chat.addSystem(line)
-	m.appendLineToTranscript(line)
+	m.markTranscriptPresent()
 }
 
 // Every legacy append included a newline, including an empty line. Preserve
 // that presence condition without storing a second raw transcript.
-func (m *Model) appendLineToTranscript(_ string) {
+func (m *Model) markTranscriptPresent() {
 	m.hasTranscript = true
 }
 

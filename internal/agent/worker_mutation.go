@@ -11,6 +11,37 @@ import (
 // invocations retain their existing context representation.
 type workerMutationKey struct{}
 
+type workerEffectBarrierKey struct{}
+
+func withWorkerEffectBarrier(ctx context.Context, observe func(string)) context.Context {
+	if observe == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, workerEffectBarrierKey{}, observe)
+}
+
+// An attempted effect can invalidate parent evidence even on error or Stop.
+// This is deliberately separate from successful-repair accounting.
+func (l *Loop) workerEffectBarrierObserver(ctx context.Context) func(string) {
+	root := l.baseDir
+	upstream, _ := ctx.Value(workerEffectBarrierKey{}).(func(string))
+	return func(childRoot string) {
+		if sameWorkerWorkspace(root, childRoot) {
+			l.resultReuse.reset()
+			l.completedOps.reset()
+		}
+		if upstream != nil {
+			upstream(childRoot)
+		}
+	}
+}
+
+func (l *Loop) forwardWorkerEffectBarrier(ctx context.Context) {
+	if observe, _ := ctx.Value(workerEffectBarrierKey{}).(func(string)); observe != nil {
+		observe(l.baseDir)
+	}
+}
+
 func withWorkerMutationObserver(ctx context.Context, observe func(string)) context.Context {
 	if observe == nil {
 		return ctx
@@ -29,6 +60,8 @@ func (l *Loop) workerMutationObserver(ctx context.Context) func(string) {
 	l.failedChecks.mu.Unlock()
 	return func(childRoot string) {
 		if sameWorkerWorkspace(root, childRoot) {
+			l.resultReuse.reset()
+			l.completedOps.reset()
 			l.failedChecks.mu.Lock()
 			if l.failedChecks.generation == generation {
 				l.identicalFails.workspaceChanged()

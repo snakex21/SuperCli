@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -33,6 +34,15 @@ func TestSessionActivityPublishedAfterMessageIsSaved(t *testing.T) {
 		defer cancel() // The model never replies; activity must already be visible.
 		if ev.SessionID != oldID {
 			t.Errorf("activity for %q, want %q", ev.SessionID, oldID)
+		}
+		store, storeErr := srv.eng.sessionStore()
+		if storeErr != nil {
+			t.Error(storeErr)
+			return
+		}
+		receipt, receiptErr := store.ReadUserReceiptAt(ctx, oldID, 2)
+		if receiptErr != nil || ev.UserSeq != receipt.Seq || ev.UserMessageID != strconv.FormatInt(receipt.ID, 10) {
+			t.Errorf("activity does not identify the exact committed prompt: event=%+v receipt=%+v err=%v", ev, receipt, receiptErr)
 		}
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, localProviderRequest(http.MethodGet, "/api/sessions?limit=1"))

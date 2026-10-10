@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 func (t *WebSearch) cacheKey(a webSearchArgs) string {
@@ -122,13 +124,52 @@ func filterAndDedupeResults(results []WebSearchResult, include, exclude []string
 		}
 		seen[key] = struct{}{}
 		result.Title = truncateRunes(cleanHTMLFragment(result.Title), webSearchMaxTitleRunes)
-		result.Snippet = cleanHTMLFragment(truncateRunes(result.Snippet, 300))
+		result.Snippet = compactSearchSnippet(result.Snippet)
 		out = append(out, result)
 		if len(out) >= limit {
 			break
 		}
 	}
 	return out
+}
+
+// Some engines index a binary response as a snippet. Keep the result URL, but
+// avoid sending its decoded bytes as prose. A magic string alone is not enough:
+// documentation describing GIF89a and other signatures is still useful text.
+func compactSearchSnippet(snippet string) string {
+	if binarySearchSnippet(snippet) {
+		return "[Binary file data omitted; use web_download to save the returned URL.]"
+	}
+	return cleanHTMLFragment(truncateRunes(snippet, 300))
+}
+
+func binarySearchSnippet(snippet string) bool {
+	snippet = strings.TrimSpace(snippet)
+	magic := false
+	for _, prefix := range []string{"GIF87a", "GIF89a", "\x89PNG\r\n\x1a\n", "%PDF-", "PK\x03\x04", "\xff\xd8\xff"} {
+		if strings.HasPrefix(snippet, prefix) {
+			magic = true
+			break
+		}
+	}
+	if !magic {
+		return false
+	}
+	// Limit classification to the header. Require two controls, replacement
+	// runes or non-ASCII symbols, including byte-to-text mojibake such as € €.
+	// Letters, accents and punctuation in a textual explanation are preserved.
+	suspicious := 0
+	count := 0
+	for _, r := range snippet {
+		if count >= 24 {
+			break
+		}
+		count++
+		if r == utf8.RuneError || (unicode.IsControl(r) && r != '\t' && r != '\r' && r != '\n') || (r > 127 && unicode.IsSymbol(r)) {
+			suspicious++
+		}
+	}
+	return suspicious >= 2
 }
 
 func resultHostAndKey(raw string) (string, string) {

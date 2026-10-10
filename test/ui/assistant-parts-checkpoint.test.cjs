@@ -4,6 +4,16 @@ const path = require('node:path');
 const vm = require('node:vm');
 const test = require('node:test');
 
+// Match the renderer state contract; actual DOM suites cover HTML parsing.
+function renderPartDouble(part, history = false) {
+  const markdown = {source: part.text, paragraph: history ? null : {source: part.text, html: part.text}};
+  return {kind: part.kind, text: part.text, complete: history, markdown, node: {},
+    paint() {
+      markdown.source = this.text;
+      markdown.paragraph = this.complete ? null : {source: this.text, html: this.text};
+    }, remove() {}};
+}
+
 function harness() {
   const frames = new Map(), paints = [];
   let now = 0, id = 0;
@@ -157,7 +167,7 @@ test('render failure clears checkpoint and recovery remains exact',()=>{
   render(n);
   assert.equal(n.textContent,n._raw);
   assert.equal(n._partsCache,null);
-  h.c.assistantPart=part=>({kind:part.kind,text:part.text,markdown:true,paint(){},remove(){}});
+  h.c.assistantPart=renderPartDouble;
   render(n);
   assert.deepEqual(h.plain(n._assistantParts),h.plain(h.c.assistantTextParts(n._raw)));
   h.c.appendAssistantSource(n,' recovered tail.');
@@ -187,7 +197,7 @@ test('deterministic mixed protocol chunks retain exact full-parser parity',()=>{
 function realRenderHarness() {
   const h=harness(),counts={renders:0,parses:0,scrolls:0},parse=h.c.assistantTextParts;
   h.c.assistantTextParts=function(){counts.parses++;return parse.apply(h.c,arguments);};
-  h.c.assistantPart=part=>({kind:part.kind,text:part.text,markdown:true,node:{},paint(){},remove(){}});
+  h.c.assistantPart=renderPartDouble;
   h.c.renderAssistant=n=>{counts.renders++;h.renderAssistant(n);};
   h.c.smartScroll=()=>counts.scrolls++;
   return {...h,counts};

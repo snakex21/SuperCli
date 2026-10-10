@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"supercli/internal/account/fx"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 	"supercli/internal/tools/sandbox"
@@ -57,6 +58,17 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setTri(&c.DiscardPreviousReasoning)
 	case "show_generation_speed":
 		return setTri(&c.ShowGenerationSpeed)
+	case "cost_currency":
+		if val == "" || strings.EqualFold(val, "default") {
+			c.CostCurrency = ""
+			return nil
+		}
+		code, err := fx.NormalizeCurrency(val)
+		if err != nil {
+			return err
+		}
+		c.CostCurrency = code
+		return nil
 	case "thinking":
 		if err := setTri(&c.Thinking); err != nil {
 			return err

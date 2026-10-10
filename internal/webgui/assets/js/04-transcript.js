@@ -84,21 +84,23 @@ function smartScroll(force) {
 function hideWelcome() { if (welcome) welcome.style.display = "none"; }
 function showWelcome() { if (welcome) welcome.style.display = ""; }
 
-function addUserMsg(text, seq, attachments) {
+function addUserMsg(text, seq, attachments, messageID, sessionID) {
   hideWelcome();
   attachments = (attachments || []).slice();
   var m = el("div", "msg-user");
   var displayText = userMessageDisplayText(text, attachments);
   if (displayText) m.appendChild(el("div", "msg-user-text", displayText));
   renderSentAttachments(m, attachments);
-  if (seq) addMessageRewind(m, seq, text);
+  if (seq && messageID) addMessageRewind(m, seq, text, messageID, sessionID);
   appendStream(m);
   smartScroll(true);
   return m;
 }
 
-function addMessageRewind(node, seq, text) {
-  if (!node || !seq || node.querySelector(".msg-rewind")) return;
+function addMessageRewind(node, seq, text, messageID, sessionID) {
+  var ownerSessionID = sessionID || activeSessionID;
+  messageID = String(messageID || "");
+  if (!node || !seq || !ownerSessionID || !/^[1-9][0-9]*$/.test(messageID) || node.querySelector(".msg-rewind")) return;
   var button = el("button", "msg-rewind", "↶ " + t("workflow.rewind"));
   button.type = "button";
   button.title = t("workflow.rewindHint");
@@ -106,16 +108,16 @@ function addMessageRewind(node, seq, text) {
   button.addEventListener("click", function (event) {
     event.preventDefault();
     event.stopPropagation();
-    showRewindDialog(activeSessionID, seq, text, button);
+    showRewindDialog(ownerSessionID, seq, text, button, messageID);
   });
   node.appendChild(button);
 }
 
-async function showRewindDialog(sessionID, seq, text, trigger) {
+async function showRewindDialog(sessionID, seq, text, trigger, messageID) {
   if (trigger) trigger.disabled = true;
   var preview = null;
   try {
-    preview = await j("/api/checkpoint/rewind?session=" + encodeURIComponent(sessionID) + "&from_seq=" + seq);
+    preview = await j("/api/checkpoint/rewind?session=" + encodeURIComponent(sessionID) + "&from_seq=" + seq + "&message_id=" + encodeURIComponent(messageID));
   } catch (e) {}
   if (trigger) trigger.disabled = false;
   var overlay = el("div", "question-overlay rewind-dialog");
@@ -151,7 +153,7 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
   confirm.addEventListener("click", async function () {
     confirm.disabled = true;
     cancel.disabled = true;
-    var ok = await rewindSession(sessionID, seq, text, input.value.trim(), !!(rewindFiles && rewindFiles.checked), trigger);
+    var ok = await rewindSession(sessionID, seq, text, input.value.trim(), !!(rewindFiles && rewindFiles.checked), trigger, messageID);
     if (ok) close();
     else { confirm.disabled = false; cancel.disabled = false; }
   });
@@ -163,41 +165,19 @@ async function showRewindDialog(sessionID, seq, text, trigger) {
   input.focus();
 }
 
-async function addLatestMessageRewind(node, text, attempts) {
-  if (!node || !node.isConnected) return 0;
-  attempts = Math.max(1, Number(attempts) || 1);
-  for (var attempt = 0; attempt < attempts; attempt++) {
-    var candidates = activeSessionID ? [activeSessionID] : [];
-    // A very fast Stop can abort the SSE response before its initial session
-    // event reaches the browser. Recover the newly created session from the
-    // recent list, then confirm it by exact user-message content.
-    if (!candidates.length) {
-      try {
-        var recent = await j("/api/sessions?limit=6");
-        candidates = (recent || []).slice(0, 3).map(function (session) { return session.id; });
-      } catch (listError) {}
-    }
-    for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
-      var sessionID = candidates[candidateIndex];
-      try {
-        var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) + "&limit=24");
-        if (!node.isConnected) return 0;
-        var messages = page.messages || [];
-        for (var i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === "user" && messages[i].content === text) {
-            activeSessionID = sessionID;
-            transcriptSessionID = sessionID;
-            addMessageRewind(node, messages[i].seq, text);
-            return messages[i].seq;
-          }
-        }
-      } catch (transcriptError) {}
-    }
-    if (attempt + 1 < attempts) {
-      await new Promise(function (resolve) { setTimeout(resolve, 100 + attempt * 75); });
-    }
-  }
-  return 0;
+function bindLiveMessageReceipt(node, event) {
+  if (!node || !event || event.type !== "session_activity" || !event.session_id || event.user_seq <= 0 ||
+      !/^[1-9][0-9]*$/.test(String(event.user_message_id || ""))) return;
+  node._userReceipt = {sessionID: event.session_id, seq: event.user_seq, messageID: String(event.user_message_id)};
+}
+
+async function addLatestMessageRewind(node, text) {
+  // This receipt belongs to this live invocation, captured from its successful
+  // session_activity. Text matching or latest(seq) cannot establish ownership.
+  var receipt = node && node._userReceipt;
+  if (!node || !node.isConnected || !receipt) return 0;
+  addMessageRewind(node, receipt.seq, text, receipt.messageID, receipt.sessionID);
+  return receipt.seq;
 }
 function addAssistantMsg() {
   var m = el("div", "msg-assistant");
@@ -271,6 +251,16 @@ function updateMarkdownParagraph(state, text) {
   // A plain single-line suffix preserves completed inline markup. Delimiters,
   // block starts and end-sensitive italic markers keep the full-render path.
   var body, block = state.paragraph;
+  // A completed paragraph keeps its DOM, but needs its descriptor again only
+  // if this same section receives more source or a recovery update.
+  if (!block && state.tailNodes.length === 1) {
+    var existing = state.tailNodes[0], first = existing.firstChild;
+    if (existing.nodeName === "P" && existing.parentNode === state.end.parentNode) {
+      var textNode = first && first.nodeType === 3 && !first.nextSibling ? first : null;
+      block = state.paragraph = {node: existing, text: textNode,
+        html: textNode ? null : existing.innerHTML, source: state.source.slice(state.committed).trim()};
+    }
+  }
   var suffix = block && block.source ? value.slice(block.source.length) : "";
   var extendsInline = !plain && block && block.html !== null && block.source &&
     value.indexOf(block.source) === 0 && text.indexOf("\n") < 0 &&
@@ -304,12 +294,13 @@ function updateMarkdownParagraph(state, text) {
       if (body.indexOf(previous) === 0) {
         var template = document.createElement("template");
         template.innerHTML = body.slice(previous.length);
-        var first = template.content.firstChild, last = block.node.lastChild;
+        var fragment = template.content;
+        var first = fragment.firstChild, last = block.node.lastChild;
         if (first && last && first.nodeType === 3 && last.nodeType === 3) {
           last.data += first.data;
           first.remove();
         }
-        block.node.appendChild(template.content);
+        block.node.appendChild(fragment);
       } else block.node.innerHTML = body;
     }
     block.text = null;
@@ -472,7 +463,7 @@ function assistantPart(part, history) {
   var container, target;
   if (part.kind === "thinking") {
     // There is at most one reasoning block per assistant segment, matching
-    // renderText. A persisted, folded thought does not need a Markdown DOM.
+    // renderText. A folded thought does not need a Markdown DOM until opened.
     var template = document.createElement("template");
     _thinkId = 0;
     template.innerHTML = renderThinkBlock("");
@@ -482,23 +473,24 @@ function assistantPart(part, history) {
   } else {
     container = target = document.createDocumentFragment();
   }
-  var state = {kind: part.kind, node: container, text: part.text, markdown: null};
+  var state = {kind: part.kind, node: container, text: part.text, markdown: null, complete: !!history};
   function paint() {
+    if (state.kind === "thinking" && !container.open) return;
     if (!state.markdown) state.markdown = markdownStream(target);
     updateMarkdownStream(state.markdown, state.text);
+    if (state.complete) state.markdown.paragraph = null;
   }
+  function reveal() { if (container.open) paint(); }
   state.paint = paint;
   state.remove = function () {
-    if (state.kind === "thinking") container.remove();
+    if (state.kind === "thinking") {
+      container.removeEventListener("toggle", reveal);
+      container.remove();
+    }
     else removeMarkdownSection(state.markdown);
   };
-  if (history && part.kind === "thinking" && !container.open) {
-    container.addEventListener("toggle", function reveal() {
-      if (!container.open) return;
-      paint();
-      container.removeEventListener("toggle", reveal);
-    });
-  } else paint();
+  if (part.kind === "thinking") container.addEventListener("toggle", reveal);
+  paint();
   return state;
 }
 
@@ -552,13 +544,14 @@ function renderAssistant(node) {
         node.appendChild(state.node);
       } else {
         state.text = part.text;
-        // Keep history thinking unmaterialized until the user opens it.
+        // Unopened thoughts keep their latest text without materializing DOM.
         if (state.markdown) state.paint();
       }
     }
     while (states.length > parts.length) states.pop().remove();
     // Only a complete paint may satisfy repeated done/EOF/seal flushes.
     node._renderedSource = node._displayParts ? null : node._raw;
+    if (node._history || node._sealed) releaseAssistantParagraphCaches(node);
   } catch (renderErr) {
     node._renderedSource = null;
     node.textContent = node._raw;
@@ -697,6 +690,14 @@ function flushAssistantRender(node) {
   node._partsCache = null;
 }
 
+function releaseAssistantParagraphCaches(node) {
+  if (!node) return;
+  (node._assistantParts || []).forEach(function (part) {
+    part.complete = true;
+    if (part.markdown) part.markdown.paragraph = null;
+  });
+}
+
 function closeAssistantReasoning(node) {
   if (!node || !node._reasoningOpen) return;
   node._nativeReasoningEnd = node._raw.length;
@@ -734,6 +735,7 @@ function sealAssistantSegment(node) {
   closeAssistantReasoning(node);
   flushAssistantRender(node);
   node._sealed = true;
+  releaseAssistantParagraphCaches(node);
   node.classList.add("assistant-segment-complete");
 }
 function addEventLine(text, cls, tag) {
@@ -929,10 +931,19 @@ function appendFileReadPayload(body, text) {
 function toolChangeStats(name, text) {
   if (!DIFF_TOOLS[name]) return { added: 0, removed: 0, diff: false };
   var stats = { added: 0, removed: 0, diff: false };
-  String(text || "").split(/\r?\n/).forEach(function (line) {
-    if (/^\+(?!\+\+)/.test(line)) { stats.added++; stats.diff = true; }
-    else if (/^-(?!---)/.test(line)) { stats.removed++; stats.diff = true; }
-  });
+  // Folded history still needs its summary. Inspect line starts without
+  // allocating an array and substring for every line of a large diff.
+  // Keep the original prefix rules, including the four-minus exclusion.
+  var raw = String(text || ""), offset = 0;
+  while (offset < raw.length) {
+    var sign = raw.charCodeAt(offset);
+    if (sign === 43 && (raw.charCodeAt(offset + 1) !== 43 || raw.charCodeAt(offset + 2) !== 43)) stats.added++;
+    else if (sign === 45 && (raw.charCodeAt(offset + 1) !== 45 || raw.charCodeAt(offset + 2) !== 45 || raw.charCodeAt(offset + 3) !== 45)) stats.removed++;
+    var end = raw.indexOf("\n", offset);
+    if (end < 0) break;
+    offset = end + 1;
+  }
+  stats.diff = stats.added > 0 || stats.removed > 0;
   return stats;
 }
 
@@ -1219,6 +1230,10 @@ function addToolCall(name, args, id) {
     row._activity = el("div", "task-activity");
     row._workerCalls = {};
     body.appendChild(row._activity);
+    // The full brief above is canonical; these unused JSON owners also share
+    // the persistent visibility listener context. Release both after success.
+    row._toolArgs = null;
+    args = null;
   }
   row.classList.add("running");
   function updateElapsed() {
@@ -1313,11 +1328,7 @@ function addFileChanges(changes) {
       if (root) groupHeader.appendChild(el("code", "file-change-root", root));
       group.appendChild(groupHeader);
       var groupList = el("div", "file-change-group-list");
-      grouped[kind].forEach(function (change) {
-        var path = String(change.path);
-        if (root && path.indexOf(root + "/") === 0) path = path.slice(root.length + 1);
-        groupList.appendChild(el("code", "file-change-path", path));
-      });
+      appendFileChangePathsWhenOpen(group, groupList, grouped[kind], root);
       group.appendChild(groupList);
       body.appendChild(group);
     });
@@ -1327,16 +1338,41 @@ function addFileChanges(changes) {
   smartScroll();
 }
 
+// Retain only this group's paths until it is opened. Large folded change
+// summaries keep their counts and directory header without hidden path nodes.
+function appendFileChangePathsWhenOpen(group, list, changes, root) {
+  renderToolPayloadWhenOpen(group, function () {
+    var paths = document.createDocumentFragment();
+    changes.forEach(function (change) {
+      var path = String(change.path);
+      if (root && path.indexOf(root + "/") === 0) path = path.slice(root.length + 1);
+      paths.appendChild(el("code", "file-change-path", path));
+    });
+    list.appendChild(paths);
+    changes = null;
+  });
+}
+
 function commonFileChangeDirectory(changes) {
   if (!changes.length) return "";
-  var common = String(changes[0].path).replace(/\\/g, "/").split("/").slice(0, -1);
+  var common = String(changes[0].path).replace(/\\/g, "/");
+  var end = common.lastIndexOf("/");
+  common = end < 0 ? "" : common.slice(0, end);
   for (var i = 1; i < changes.length && common.length; i++) {
-    var parts = String(changes[i].path).replace(/\\/g, "/").split("/").slice(0, -1);
+    var path = String(changes[i].path).replace(/\\/g, "/");
+    var dirEnd = path.lastIndexOf("/");
+    if (dirEnd < 0) return "";
+    var limit = Math.min(common.length, dirEnd);
     var keep = 0;
-    while (keep < common.length && keep < parts.length && common[keep] === parts[keep]) keep++;
-    common.length = keep;
+    while (keep < limit && common.charCodeAt(keep) === path.charCodeAt(keep)) keep++;
+    if (keep === common.length && (keep === dirEnd || path.charAt(keep) === "/")) continue;
+    if (keep === dirEnd && common.charAt(keep) === "/") common = common.slice(0, keep);
+    else {
+      var boundary = common.lastIndexOf("/", keep - 1);
+      common = boundary < 0 ? "" : common.slice(0, boundary);
+    }
   }
-  return common.join("/");
+  return common;
 }
 function settleOpenTools() {
   openToolOrder.forEach(function (k) {

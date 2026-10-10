@@ -29,9 +29,9 @@ const (
 	DefaultMaxSingleFileBytes = 64 * 1024 * 1024  // 64 MB per file
 )
 
-// ReadZipTool opens a .zip archive and either
-// lists its entries (cheap) or extracts a subset
-// to disk. The implementation is pure stdlib
+// ReadZipTool opens explicitly named .zip archives and lists entries, reads
+// bounded UTF-8 entry text without extracting, or extracts a subset to disk.
+// The implementation is pure stdlib
 // (archive/zip + path/filepath), so the binary
 // stays self-contained — no exec of unzip, no
 // external tools.
@@ -93,17 +93,20 @@ func NewReadZip(baseDir string, maxZipBytes int64) *ReadZipTool {
 func (t *ReadZipTool) Spec() Tool {
 	return Tool{
 		Name:        "read_zip",
-		Description: "Read a .zip archive. Action=list enumerates entries (default); action=extract writes files to disk. Pure Go; no shell-out. Refuses entries with path-traversal names. Rejects entries larger than the per-file cap and total extracted bytes.",
+		Description: "Inspect explicitly named .zip archives. Action=list enumerates entries (default); action=read reads matching UTF-8 entry text without extraction and identifies its archive and exact entry; action=extract writes files to disk. Use read with paths to locate text across known archive parts without guessing a part or entry prefix. Pure Go; no shell-out.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "path":        {"type": "string", "description": "Path to the .zip file."},
-    "action":      {"type": "string", "enum": ["list", "extract"], "description": "Action (default: list)."},
-    "pattern":     {"type": "string", "description": "Glob filter (Go path.Match syntax). Empty matches all. '*.txt' also matches 'subdir/foo.txt' via basename fallback."},
+    "path":        {"type": "string", "description": "One .zip file. Required for list/extract; for read use path or paths, not both."},
+    "paths":       {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 16, "description": "For read only: explicitly named .zip files (including known parts), instead of path. No automatic part selection."},
+    "action":      {"type": "string", "enum": ["list", "read", "extract"], "description": "Action (default: list)."},
+    "pattern":     {"type": "string", "description": "Glob filter (Go path.Match syntax). Required and nonempty for read; empty matches all for list/extract. '*.txt' or a filename matches any depth via basename fallback."},
     "max_entries": {"type": "integer", "description": "Cap on entries processed (default 10000)."},
+    "max_matches": {"type": "integer", "minimum": 1, "maximum": 16, "description": "For read: maximum matched files across all archives (default 16); narrow pattern if exceeded."},
+    "max_text_bytes": {"type": "integer", "minimum": 1, "maximum": 65536, "description": "For read: total uncompressed UTF-8 text budget (default 32768 bytes). Oversized matches are rejected before reading; no truncation or binary/base64 output."},
     "target_dir":  {"type": "string", "description": "Directory to extract into (default: <ExtractRoot>/<zip-basename>-<timestamp>)."}
   },
-  "required": ["path"]
+  "oneOf": [{"required": ["path"]}, {"required": ["paths"]}]
 }`,
 		Fn: t.Execute,
 	}
@@ -130,21 +133,31 @@ func (t *ReadZipTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		return Result{Err: err}, err
 	}
 	var params struct {
-		Path       string `json:"path"`
-		Action     string `json:"action"`
-		Pattern    string `json:"pattern"`
-		MaxEntries int    `json:"max_entries"`
-		TargetDir  string `json:"target_dir"`
+		Path         string   `json:"path"`
+		Paths        []string `json:"paths"`
+		Action       string   `json:"action"`
+		Pattern      string   `json:"pattern"`
+		MaxEntries   int      `json:"max_entries"`
+		MaxMatches   int      `json:"max_matches"`
+		MaxTextBytes int      `json:"max_text_bytes"`
+		TargetDir    string   `json:"target_dir"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return Result{Err: fmt.Errorf("read_zip: bad args: %w", err)}, err
 	}
+	if params.Action == "" {
+		params.Action = "list"
+	}
+	if params.Action == "read" {
+		return t.readAction(ctx, params.Path, params.Paths, params.Pattern, params.MaxEntries, params.MaxMatches, params.MaxTextBytes)
+	}
+	if len(params.Paths) > 0 {
+		err := fmt.Errorf("read_zip: paths is only supported for read; use path for list or extract")
+		return Result{Err: err}, err
+	}
 	if params.Path == "" {
 		err := fmt.Errorf("read_zip: path is required")
 		return Result{Err: err}, err
-	}
-	if params.Action == "" {
-		params.Action = "list"
 	}
 	maxEntries := params.MaxEntries
 	if maxEntries <= 0 {
@@ -201,7 +214,7 @@ func (t *ReadZipTool) Execute(ctx context.Context, args json.RawMessage) (Result
 		}
 		return t.extractAction(ctx, &r.Reader, pattern, target)
 	default:
-		err := fmt.Errorf("read_zip: unknown action %q (use list or extract)", params.Action)
+		err := fmt.Errorf("read_zip: unknown action %q (use list, read or extract)", params.Action)
 		return Result{Err: err}, err
 	}
 }
@@ -322,7 +335,7 @@ func (t *ReadZipTool) extractAction(ctx context.Context, r *zip.Reader, pattern,
 	for _, name := range extracted {
 		fmt.Fprintf(&b, "  %s\n", name)
 	}
-	return Result{Text: b.String()}, nil
+	return Result{Text: b.String(), Inert: len(extracted) == 0}, nil
 }
 
 // rejectZipUnresolvedLinks rejects links left unresolved by the path resolver.

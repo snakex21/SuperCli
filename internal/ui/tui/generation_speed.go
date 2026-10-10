@@ -10,6 +10,7 @@ import (
 func (c *chat) addCompletion(text string, speed float64) {
 	c.msgs = append(c.msgs, msg{role: roleSystem, text: text, generationSpeed: speed})
 	c.completedDirty = true
+	c.invalidateTranscriptSearch()
 }
 
 func generationSpeedSuffix(speed float64, p Palette, language string) string {

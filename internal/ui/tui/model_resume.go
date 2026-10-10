@@ -172,11 +172,11 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 				text += "\n" + attachmentDisplay(paths, m.language)
 			}
 			m.chat.addUser(text)
-			m.appendLineToTranscript("> " + text)
+			m.markTranscriptPresent()
 		case llm.RoleAssistant:
 			if strings.TrimSpace(text) != "" {
 				m.chat.addAssistant(text)
-				m.appendLineToTranscript(text)
+				m.markTranscriptPresent()
 			}
 			for _, tc := range item.ToolCalls {
 				names[tc.ID] = tc.Name
@@ -191,7 +191,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 				name = "tool"
 			}
 			m.chat.addToolResult(name, text, "")
-			m.appendLineToTranscript(text)
+			m.markTranscriptPresent()
 		}
 	}
 	m.loadedSessionID = h.ID

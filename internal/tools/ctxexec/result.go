@@ -19,7 +19,7 @@
 //   - Output streams are drained concurrently into bounded head/tail buffers.
 //     A descendant retaining a pipe cannot delay completion indefinitely;
 //     incomplete capture is reported separately from the process exit code.
-//   - Wallclock timeout kills the process; partial
+//   - An optional wallclock timeout kills the process; partial
 //     output is returned with exit code 124 (the
 //     `timeout(1)` convention).
 package ctxexec
@@ -44,13 +44,12 @@ const MaxCommandLen = 4 * 1024
 // tokens — more than enough for any sensible answer.
 const MaxStdoutKBHard = 64
 
-// MaxTimeoutMSHard is the hard ceiling for TimeoutMS.
-// Explicit timeouts allow ordinary builds/tests to finish without a restart.
-// Foreground commands remain bounded; the default stays short.
-const MaxTimeoutMSHard = 300_000
+// MaxTimeoutMS is only the representable time.Duration range, not a policy
+// ceiling. Validate before converting milliseconds to avoid overflow.
+const MaxTimeoutMS int64 = (1<<63 - 1) / 1_000_000
 
-// DefaultTimeoutMS is used when TimeoutMS is zero.
-const DefaultTimeoutMS = 10_000
+// DefaultTimeoutMS waits for completion or caller cancellation, without a timer.
+const DefaultTimeoutMS = 0
 
 // DefaultMaxStdoutKB is used when MaxStdoutKB is zero.
 const DefaultMaxStdoutKB = 16
@@ -87,7 +86,7 @@ type Request struct {
 	// Workdir is relative to the home and resolved via
 	// sandbox.ResolveSafe. Empty = home root.
 	Workdir string
-	// TimeoutMS caps wallclock time. Zero = default.
+	// TimeoutMS optionally caps wallclock time. Zero = no tool-owned deadline.
 	TimeoutMS int
 	// MaxStdoutKB caps stdout. Zero = default.
 	MaxStdoutKB int
@@ -152,6 +151,9 @@ func (r *Request) Validate() error {
 	}
 	if len(r.Command) == 0 {
 		return ErrEmptyCommand
+	}
+	if r.TimeoutMS < 0 || int64(r.TimeoutMS) > MaxTimeoutMS {
+		return errors.New("ctxexec: timeout_ms must be non-negative and fit a time.Duration; zero waits until completion or cancellation")
 	}
 	for _, a := range r.Command {
 		if len(a) > MaxCommandLen {

@@ -39,7 +39,9 @@ func TestScreenshotSchemaIsScopedToCurrentRequest(t *testing.T) {
 						t.Fatal("one-turn capability changed persistent discovery")
 					}
 				}
-				loop.prepareRunRoute(context.Background(), "napraw plik main.go")
+				// Cross the real instruction boundary: native requested schemas stay
+				// fixed during a Run and expire at the next Run.
+				drainEvents(t, mustRun(t, loop, "napraw plik main.go"))
 				if hasScreenshotSchema(loop.buildToolDefs()) {
 					t.Fatal("screenshot schema leaked into unrelated next turn")
 				}
@@ -148,7 +150,7 @@ func TestScreenshotRequestExposesOwnedProcessWorkflowOnlyForThatRun(t *testing.T
 		if resolved := loop.resolveInvokeToolCalls([]llm.ToolCall{call}); resolved[0].Name != "process_session" {
 			t.Fatal("requested owned capture required a discovery round")
 		}
-		loop.prepareRunRoute(context.Background(), "cześć")
+		drainEvents(t, mustRun(t, loop, "cześć"))
 		for _, def := range loop.buildToolDefs() {
 			if def.Name == "process_session" {
 				t.Fatal("capture workflow schema leaked into ordinary next turn")

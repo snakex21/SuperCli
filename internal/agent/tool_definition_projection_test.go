@@ -50,7 +50,9 @@ func projectionFixture(t *testing.T, custom bool) (*Loop, string) {
 	reg := tools.NewRegistry()
 	noop := func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }
 	reg.MustRegister(tools.Tool{Name: "read_lines", Description: "Read", ReadOnly: true, Schema: "{\"file\":{\"type\":\"string\"}}", Fn: noop})
-	reg.MustRegister(tools.Tool{Name: "read_context", Description: "Context", ReadOnly: true, Schema: "{\"query\":{\"type\":\"string\"}}", Fn: noop})
+	// Keep one eligible read behind the dispatcher to exercise catalog
+	// preservation: native read selection deliberately has a bounded budget.
+	reg.MustRegister(tools.Tool{Name: "read_context", Description: strings.Repeat("c", nativeReadToolBytes+1), ReadOnly: true, Schema: "{\"query\":{\"type\":\"string\"}}", Fn: noop})
 	reg.MarkAlwaysOn("read_lines")
 	invoke := NewInvokeTool(reg).Spec()
 	if custom {

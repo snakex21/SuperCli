@@ -4,20 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"supercli/internal/checkpoint"
 )
 
 const (
-	dataBackupFormat   = 1
-	maxDataBackupBytes = 512 << 20
-	maxDataBackupFiles = 20000
-	pendingImportFile  = "pending-data-import.json"
-	dataBackupManifest = "manifest.json"
+	dataBackupFormat      = 1
+	maxDataBackupBytes    = 512 << 20
+	maxDataBackupFiles    = 20000
+	pendingImportFile     = "pending-data-import.json"
+	dataBackupManifest    = "manifest.json"
+	dataCurrencyRatesFile = "currency-rates.db"
 )
 
 type dataBackupMeta struct {
@@ -94,20 +96,30 @@ func (s *Server) handleDataClear(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		rows, err := store.List(0)
+		gate, err := checkpoint.NewStoreGate(s.eng.DataDir())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := store.DeleteAll(); err != nil {
+		transaction, err := gate.Acquire(r.Context())
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := s.eng.clearCheckpointManagers(); err != nil {
+		removed, cleanup, deleteErr := store.DeleteAllRows(r.Context())
+		closeErr := transaction.Close()
+		if deleteErr != nil {
+			http.Error(w, errors.Join(deleteErr, closeErr).Error(), http.StatusInternalServerError)
+			return
+		}
+		// Deleted receipts stop automatic checkpoint links. Leave recovery
+		// records to the collector; Clear here could erase a newer conversation
+		// that completed after this SQL transaction released the store gate.
+		if err := errors.Join(closeErr, cleanup()); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"ok": true, "removed": len(rows)})
+		writeJSON(w, map[string]any{"ok": true, "removed": removed})
 	case "memory":
 		removed, err := clearAllMemory(s.eng.DataDir())
 		if err != nil {
@@ -252,37 +264,13 @@ func (s *Server) handleDataImport(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store, private")
 	r.Body = http.MaxBytesReader(w, r.Body, maxDataBackupBytes)
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		http.Error(w, "invalid backup upload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	file, _, err := r.FormFile("backup")
+	upload, cleanup, err := stageMultipartUpload(r, s.eng.DataDir(), "backup-import-*", maxDataBackupBytes, "backup")
 	if err != nil {
-		http.Error(w, "backup file is required", http.StatusBadRequest)
+		http.Error(w, "invalid backup upload: "+err.Error(), uploadErrorStatus(err))
 		return
 	}
-	defer file.Close()
-	importsRoot := filepath.Join(s.eng.DataDir(), "imports")
-	if err := os.MkdirAll(importsRoot, 0o700); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	id := randomDataID()
-	uploadPath := filepath.Join(importsRoot, id+".zip")
-	upload, err := os.OpenFile(uploadPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, copyErr := io.Copy(upload, file)
-	closeErr := upload.Close()
-	if copyErr != nil || closeErr != nil {
-		os.Remove(uploadPath)
-		http.Error(w, errors.Join(copyErr, closeErr).Error(), http.StatusBadRequest)
-		return
-	}
-	defer os.Remove(uploadPath)
-	full, err := StageDataImport(s.eng.DataDir(), uploadPath)
+	defer cleanup()
+	full, err := StageDataImport(s.eng.DataDir(), upload.Path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -115,12 +115,15 @@ func TestToWireEvent_ToolResultSuccess(t *testing.T) {
 }
 
 func TestToWireEvent_Done(t *testing.T) {
-	w, keep := toWireEvent(agent.DoneEvent{Usage: agent.Usage{Input: 10, Output: 5, Total: 15}})
+	w, keep := toWireEvent(agent.DoneEvent{Model: "completed-model", Usage: agent.Usage{Input: 10, Output: 5, Total: 15}})
 	if !keep || w.Type != "done" {
 		t.Fatalf("got %+v keep=%v", w, keep)
 	}
 	if w.TokIn != 10 || w.TokOut != 5 || w.TokTotal != 15 {
 		t.Errorf("usage mismatch: %+v", w)
+	}
+	if w.Model != "completed-model" {
+		t.Fatalf("completed turn lost its own model: %+v", w)
 	}
 	// No cache/reasoning reported → both omitted.
 	if w.CacheHitPct != 0 || w.ReasoningTok != 0 {

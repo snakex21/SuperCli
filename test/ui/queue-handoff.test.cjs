@@ -31,7 +31,7 @@ function harness(options = {}) {
   const elements = new Map();
   const calls = [], events = [], requests = [], sends = [];
   const arrivals = Array.from({length: 4}, deferred);
-  const streams = new Map();
+  const streams = new Map(), terminals = new Map(), finishing = new Map(), intervals = new Map();
   const entered = Array.from({length: 4}, deferred);
   const deletion = deferred();
   const catalog = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../internal/webgui/assets/locales/en.json'), 'utf8'));
@@ -46,14 +46,16 @@ function harness(options = {}) {
     i18nEl: (tag, cls, key) => element(tag, cls, catalog[key]),
     t: key => { assert.ok(catalog[key], 'missing translation: ' + key); return catalog[key]; },
     superCliUI: {
-      createComposerDraftStore: () => ({scope: () => 'session:s1', clear() {}, restore() {}}),
+      createComposerDraftStore: () => ({scope: () => options.dynamicScope ? (context.activeSessionID ? 'session:' + context.activeSessionID : 'new') : 'session:s1', clear() {}, restore() {}}),
       readSSE: async (body, emit) => {
         if (!(options.hideSession && body.index === 0)) {
           emit({type: 'session', session_id: 's1'});
-          if (options.acceptMessage !== false) emit({type: 'session_activity', session_id: 's1'});
+          if (options.acceptMessage !== false && !(options.rejectSecondMessage && body.index === 1)) emit({type: 'session_activity', session_id: 's1'});
         }
         const done = deferred();
-        streams.set(body.index, () => { emit({type: 'done'}); done.resolve(); });
+        finishing.set(body.index, () => emit({type: 'finishing'}));
+        terminals.set(body.index, () => emit({type: 'done'}));
+        streams.set(body.index, () => { if (!options.separateTerminal) terminals.get(body.index)(); done.resolve(); });
         body.signal.addEventListener('abort', () => {
           const err = new Error('aborted'); err.name = 'AbortError'; done.reject(err);
         }, {once: true});
@@ -61,17 +63,19 @@ function harness(options = {}) {
         await done.promise;
       },
     },
-    setInterval: () => 1, clearInterval() {},
+    setInterval: callback => { const id = intervals.size + 1; intervals.set(id, callback); return id; },
+    clearInterval(id) { intervals.delete(id); },
     fetch: async (_url, request) => {
       const index = requests.length;
       requests.push(request);
       arrivals[index].resolve(request);
-      return {ok: options.accepted !== false, status: 503, body: {index, signal: request.signal}};
+      return {ok: options.accepted !== false && !(options.rejectSecondHTTP && index === 1), status: 503, body: {index, signal: request.signal}};
     },
     j: async (url, opts) => {
       calls.push([url, opts]);
       if (url.startsWith('/api/chat/completion?id=')) {
         if (options.completionRequested) options.completionRequested.resolve();
+        if (options.completionFails) throw new Error("completion unavailable");
         if (options.completion) return await options.completion.promise;
         return {session_id: 's1', accepted: true};
       }
@@ -94,15 +98,19 @@ function harness(options = {}) {
   context.activeSessionID = 's1';
   for (const name of ['updateAppBadge', 'wireQueuedTaskDrag', 'sealAssistantSegment',
     'closeQuestionOverlay', 'settleOpenTools', 'releaseLiveTranscriptBlocks', 'renderStats',
-    'addFileChanges', 'addTurnMeta', 'loadSideGoal', 'closeAssistantReasoning', 'flushAssistantRender']) context[name] = () => {};
+    'addFileChanges', 'addTurnMeta', 'loadSideGoal', 'closeAssistantReasoning', 'flushAssistantRender',
+    'releaseAssistantParagraphCaches']) context[name] = () => {};
   context.toast = value => events.push(value);
   context.addEventLine = value => events.push(value);
   context.addUserMsg = () => element('div');
+	context.bindLiveMessageReceipt = () => {}; // 04-transcript is stubbed in this queue fixture.
   context.addLatestMessageRewind = async (_node, _text, attempts) => {
     assert.equal(attempts, 1, 'handoff must not poll transcript repeatedly');
     return 0;
   };
   context.rememberSentAttachments = () => {};
+  context.clearAttachments = () => { context.pendingAttachments = []; };
+  context.addAttachmentPaths = paths => { context.pendingAttachments = [...new Set([...context.pendingAttachments, ...paths])]; };
   context.loadSessions = () => new Promise(() => {}); // slow sidebar must not block dispatch
   context.notifyDone = () => events.push('completed-notification');
   context.restoreSessionRuntime = async () => calls.push(['restore-runtime']);
@@ -111,7 +119,7 @@ function harness(options = {}) {
   context.sendPrompt = (...args) => {
     const pending = sendPrompt(...args); sends.push(pending); return pending;
   };
-  return {context, $, calls, events, requests, sends, arrivals, streams, entered, deletion};
+  return {context, $, calls, events, requests, sends, arrivals, streams, terminals, finishing, intervals, entered, deletion};
 }
 test('same-session queue keeps the current runtime and waits for a pending model change', async () => {
   const h = harness();
@@ -279,4 +287,164 @@ test('an SSE setup error before session_activity keeps the queue entry available
   assert.equal(h.context.promptQueue.length, 1);
   assert.equal(h.context.pauseQueue, true);
   assert.equal(h.calls.some(c => c[0].startsWith('/api/tasks?id=')), false);
+});
+
+
+test('terminal frame releases Stop and the clock before a delayed HTTP EOF', async () => {
+  const h = harness({separateTerminal: true});
+  const first = h.context.sendPrompt('working');
+  await h.entered[0].promise;
+  const delayedTick = [...h.intervals.values()][0];
+  h.terminals.get(0)();
+  assert.equal(h.$('#stop-run-btn').hidden, true);
+  assert.equal(h.$('#send-btn').textContent, h.context.t('composer.send'));
+  assert.equal(h.intervals.size, 0);
+  const completed = h.$('#run-status').textContent;
+  delayedTick(); // a tick already scheduled before clearInterval
+  assert.equal(h.$('#run-status').textContent, completed);
+  assert.equal(h.$('#status-dot').classList.contains('busy'), false);
+  h.streams.get(0)();
+  await first;
+});
+
+test('Enter after Stop sends once after the durable receipt, preserving a paused older queue and attachments', async () => {
+  const completion = deferred(), completionRequested = deferred();
+  const h = harness({completion, completionRequested});
+  h.context.clearAttachments = () => { h.context.pendingAttachments = []; };
+  const earlier = {id: 'earlier', text: 'paused task', session_id: 's1'};
+  h.context.promptQueue = [earlier];
+  const first = h.context.sendPrompt('working');
+  await h.entered[0].promise;
+  h.$('#stop-run-btn').events.click();
+  assert.equal(h.$('#stop-run-btn').hidden, true);
+  assert.equal(h.$('#status-dot').classList.contains('busy'), false);
+  assert.equal(h.intervals.size, 0);
+  await completionRequested.promise;
+  h.context.pendingAttachments = ['image.png'];
+  h.$('#prompt').value = 'new instruction';
+  await h.$('#composer').events.submit({preventDefault() {}});
+  assert.equal(h.requests.length, 1, 'next turn overlapped unfinished writes');
+  assert.equal(h.context.pendingImmediate.text, 'new instruction');
+  completion.resolve({session_id: 's1', accepted: true});
+  await first;
+  await h.entered[1].promise;
+  assert.equal(JSON.parse(h.requests[1].body).prompt, 'new instruction');
+  assert.deepEqual(JSON.parse(h.requests[1].body).attachments, ['image.png']);
+  h.streams.get(1)();
+  await h.sends[1];
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.context.promptQueue[0].id, 'earlier');
+  assert.equal(h.context.pauseQueue, true);
+});
+
+test('Enter after normal completion is accepted before EOF and starts exactly once after it', async () => {
+  const h = harness({separateTerminal: true});
+  h.context.clearAttachments = () => { h.context.pendingAttachments = []; };
+  const first = h.context.sendPrompt('working');
+  await h.entered[0].promise;
+  h.terminals.get(0)();
+  h.$('#prompt').value = 'continue';
+  await h.$('#composer').events.submit({preventDefault() {}});
+  assert.equal(h.requests.length, 1);
+  h.streams.get(0)();
+  await first;
+  await h.entered[1].promise;
+  assert.equal(JSON.parse(h.requests[1].body).prompt, 'continue');
+  h.terminals.get(1)();
+  h.streams.get(1)();
+  await h.sends[1];
+  assert.equal(h.requests.length, 2);
+});
+
+
+test('Stop cancels a manual next prompt waiting for model readiness and restores its draft and attachment', async () => {
+ const h=harness({separateTerminal:true});
+ const ready=deferred();
+ const first=h.context.sendPrompt('working');await h.entered[0].promise;
+ h.terminals.get(0)();
+ h.$('#prompt').value='later';h.context.pendingAttachments=['later.png'];
+ await h.$('#composer').events.submit({preventDefault(){}});
+ h.context.sessionRuntimeReady=ready.promise;
+ h.streams.get(0)();await first;
+ assert.equal(h.context.queueDispatching,true);
+ h.$('#stop-run-btn').events.click();ready.resolve();
+ await h.sends[1];
+ assert.equal(h.requests.length,1,'Stop must cancel the manual bypass of a paused queue');
+ assert.equal(h.$('#prompt').value,'later');
+ assert.deepEqual(Array.from(h.context.pendingAttachments),['later.png']);
+});
+
+test('Stop during receipt restores the canceled next prompt rather than silently losing it',async()=>{
+ const completion=deferred(),completionRequested=deferred();
+ const h=harness({completion,completionRequested});
+ const first=h.context.sendPrompt('working');await h.entered[0].promise;
+ h.$('#stop-run-btn').events.click();await completionRequested.promise;
+ h.$('#prompt').value='keep draft';h.context.pendingAttachments=['kept.png'];
+ await h.$('#composer').events.submit({preventDefault(){}});
+ h.$('#stop-run-btn').events.click();
+ assert.equal(h.$('#prompt').value,'keep draft');
+ assert.deepEqual(Array.from(h.context.pendingAttachments),['kept.png']);
+ completion.resolve({session_id:'s1',accepted:true});await first;
+ assert.equal(h.requests.length,1);
+});
+
+test('failed durable receipt restores the manual next prompt and does not send it',async()=>{
+ const completion=deferred(),completionRequested=deferred();
+ const h=harness({completion,completionRequested});
+ const first=h.context.sendPrompt('working');await h.entered[0].promise;
+ h.$('#stop-run-btn').events.click();await completionRequested.promise;
+ h.$('#prompt').value='keep after error';h.context.pendingAttachments=['kept.png'];
+ await h.$('#composer').events.submit({preventDefault(){}});
+ completion.reject(new Error('receipt failed'));await first;
+ assert.equal(h.requests.length,1);
+ assert.equal(h.$('#prompt').value,'keep after error');
+ assert.deepEqual(Array.from(h.context.pendingAttachments),['kept.png']);
+});
+
+
+test('rejection of the manual next turn restores its unsent attachment as well as text',async()=>{
+ for(const opts of [{rejectSecondHTTP:true},{rejectSecondMessage:true}]){
+  const h=harness(opts);const first=h.context.sendPrompt('working');await h.entered[0].promise;
+  h.$('#stop-run-btn').events.click();
+  h.$('#prompt').value='keep rejected';h.context.pendingAttachments=['kept.png'];
+  await h.$('#composer').events.submit({preventDefault(){}});
+  await first;
+  if(opts.rejectSecondMessage){await h.entered[1].promise;h.streams.get(1)();}
+  await h.sends[1];
+  assert.equal(h.requests.length,2);
+  assert.equal(h.$('#prompt').value,'keep rejected');
+  assert.deepEqual(Array.from(h.context.pendingAttachments),['kept.png']);
+ }
+});
+
+
+test('a failed manual next prompt restores its draft after an early Stop recovered a new session ID',async()=>{
+ const completion=deferred(),completionRequested=deferred();
+ const h=harness({completion,completionRequested,hideSession:true,dynamicScope:true,rejectSecondHTTP:true});
+ h.context.activeSessionID='';h.context.transcriptSessionID='';
+ const first=h.context.sendPrompt('new conversation');await h.entered[0].promise;
+ h.$('#stop-run-btn').events.click();await completionRequested.promise;
+ h.$('#prompt').value='keep after recovered ID';h.context.pendingAttachments=['kept.png'];
+ await h.$('#composer').events.submit({preventDefault(){}});
+ completion.resolve({session_id:'s1',accepted:true});await first;await h.sends[1];
+ assert.equal(h.requests.length,2);
+ assert.equal(h.$('#prompt').value,'keep after recovered ID');
+ assert.deepEqual(Array.from(h.context.pendingAttachments),['kept.png']);
+});
+
+
+test('generation completion releases GUI while checkpoint writes still hold the terminal/EOF fence',async()=>{
+ const h=harness({separateTerminal:true});
+ const first=h.context.sendPrompt('working');await h.entered[0].promise;
+ h.finishing.get(0)();
+ assert.equal(h.$('#stop-run-btn').hidden,true);
+ assert.equal(h.intervals.size,0);
+ assert.equal(h.$('#status-dot').classList.contains('busy'),false);
+ h.$('#prompt').value='next during save';
+ await h.$('#composer').events.submit({preventDefault(){}});
+ assert.equal(h.requests.length,1);
+ h.terminals.get(0)();h.streams.get(0)();await first;await h.entered[1].promise;
+ assert.equal(JSON.parse(h.requests[1].body).prompt,'next during save');
+ h.finishing.get(1)();h.terminals.get(1)();h.streams.get(1)();await h.sends[1];
+ assert.equal(h.requests.length,2);
 });

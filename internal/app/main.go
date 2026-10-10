@@ -35,6 +35,7 @@ import (
 
 	"supercli/internal/account/credits"
 	"supercli/internal/account/tier"
+	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
 	"supercli/internal/buildinfo"
@@ -47,6 +48,7 @@ import (
 	"supercli/internal/storage/goal"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/childproc"
+	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
@@ -426,8 +428,10 @@ func Main() {
 		}
 	}
 	mainProvider := provider
+	coordinatorCfg := cfg
 	if orchestratorProvider != nil {
 		mainProvider = orchestratorProvider
+		coordinatorCfg = orchCfg
 	}
 	taskParallel, taskParallelWarnLocal := execution.Parallel(taskWorkerCfg.BaseURL, tomlCfg.TaskParallel)
 
@@ -470,10 +474,12 @@ func Main() {
 	llm.InitRequestBudget(dataDir)
 
 	// F13: session store + optional search_history tool.
-	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry)
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry, tomlCfg)
 	if sessStore != nil {
 		defer sessStore.Close()
 	}
+	usageRates := usagecost.NewHistoryRates(dataDir)
+	defer usageRates.Close()
 
 	drafts, draftErr := tui.OpenDraftRecovery(dataDir, home)
 	if draftErr != nil {
@@ -486,7 +492,7 @@ func Main() {
 	dr := wireDraftAndReflection(flags.DraftMode, flags.DraftModel, provider, provFactory, cfg, tierRules, tomlCfg, dataDir)
 	draftPolicy, draftProvider, draftSink := dr.Policy, dr.Provider, dr.Sink
 	reflectEvery, adaptiveReflection, reflector := dr.ReflectEvery, dr.AdaptiveReflection, dr.Reflector
-	cw := wireContextWindows(dataDir, cfg, tomlCfg, caps, compactProvider, registry, taskWorkerProvider, draftProvider)
+	cw := wireContextWindows(dataDir, coordinatorCfg, tomlCfg, caps, compactProvider, registry, taskWorkerProvider, draftProvider)
 	learned, modelContexts := cw.Learned, cw.ModelContexts
 	initialContextProvider := cw.InitialContextProvider
 	contextWindowFor, scopedContextWindowFor := cw.ContextWindowFor, cw.ScopedContextWindowFor
@@ -498,24 +504,31 @@ func Main() {
 
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(buildMainLoopConfig(loopAssembly{
-		provider:               mainProvider,
-		registry:               registry,
-		goalSvc:                goalSvc,
-		memoryBriefing:         memoryBriefing,
-		tomlCfg:                tomlCfg,
-		errorLog:               errorLog,
-		reflector:              reflector,
-		reflectEvery:           reflectEvery,
-		adaptiveReflection:     adaptiveReflection,
-		injector:               injector,
-		tracker:                tracker,
-		sessWriter:             sessWriter,
-		draftPolicy:            draftPolicy,
-		draftProvider:          draftProvider,
-		navigatorProvider:      navigatorProvider,
-		draftSink:              draftSink,
-		draftStats:             draftStats,
-		contextWindowFor:       contextWindowFor,
+		provider:           mainProvider,
+		registry:           registry,
+		goalSvc:            goalSvc,
+		memoryBriefing:     memoryBriefing,
+		tomlCfg:            tomlCfg,
+		errorLog:           errorLog,
+		reflector:          reflector,
+		reflectEvery:       reflectEvery,
+		adaptiveReflection: adaptiveReflection,
+		injector:           injector,
+		tracker:            tracker,
+		sessWriter:         sessWriter,
+		draftPolicy:        draftPolicy,
+		draftProvider:      draftProvider,
+		navigatorProvider:  navigatorProvider,
+		draftSink:          draftSink,
+		draftStats:         draftStats,
+		contextWindowFor:   contextWindowFor,
+		refreshContextWindow: func(ctx context.Context) error {
+			configs := []config.Config{coordinatorCfg}
+			if taskWorkerProvider != nil {
+				configs = append(configs, taskWorkerCfg)
+			}
+			return config.RefreshLocalContextWindows(ctx, configs...)
+		},
 		initialContextProvider: initialContextProvider,
 		scopedContextWindowFor: scopedContextWindowFor,
 		autoSummarizer:         autoSummarizer,
@@ -530,6 +543,8 @@ func Main() {
 		fatal("init agent", err)
 	}
 
+	configureInvocationPersistence(loop, sessStore, checkpointCtrl)
+
 	at, err := wireAgentTool(agentToolWiring{
 		loop:               loop,
 		registry:           registry,
@@ -541,6 +556,7 @@ func Main() {
 		home:               home,
 		delegationOff:      supercliDelegationDisabled,
 		coordinatorMode:    supercliCoordinatorMode,
+		checkpoint:         checkpointSpec,
 	})
 	if err != nil {
 		fatal("init agent tool", err)
@@ -643,7 +659,7 @@ func Main() {
 		buildCouncilMember: buildCouncilMember,
 	})
 
-	registerFileWebAndLineTools(registry, home, tomlCfg, wrap, toolSearcher)
+	registerFileWebAndLineTools(registry, home, dataDir, tomlCfg, wrap, toolSearcher)
 
 	darwinTool.SetProviderResolver(loop.Provider)
 
@@ -784,10 +800,12 @@ func Main() {
 		memIdle:                memIdle,
 		extCh:                  extCh,
 		sessStore:              sessStore,
+		usageRates:             usageRates,
 		draftStats:             draftStats,
 		provMgr:                provMgr,
 		initialContextProvider: initialContextProvider,
 		modelContexts:          modelContexts,
+		rebindContextConfig:    cw.RebindConfig,
 		caps:                   caps,
 		goalSvc:                goalSvc,
 		registry:               registry,

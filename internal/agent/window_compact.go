@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -11,7 +12,7 @@ import (
 	"supercli/internal/llm"
 )
 
-func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason string) {
+func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason string) error {
 	window := l.windowResolution()
 	w := window.Tokens
 	hardThreshold := autoCompactThreshold(w)
@@ -24,7 +25,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	estimate := l.nextRequestTokenEstimate()
 	est := estimate.Effective
 	if reason == "" && est <= threshold {
-		return
+		return nil
 	}
 	history := l.compactionHistory()
 	all := history.messages
@@ -42,17 +43,17 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	}
 	keep := leadingSystemCount(all)
 	if split <= keep {
-		return
+		return nil
 	}
 	prefix := all[:split]
 	if len(prefix) <= leadingSystemCount(prefix) {
-		return
+		return nil
 	}
 	if reason == "" && !hasFreshCompactablePrefix(prefix, len(prefix)) {
 		// Fixed request overhead (system prompt/tool schemas) can itself sit
 		// above the reserve boundary. Re-summarizing an existing summary cannot reduce that
 		// overhead and would otherwise spend one model call every step.
-		return
+		return nil
 	}
 	removed := 0
 	if l.summarizer != nil {
@@ -61,6 +62,11 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
 		summary, err := l.summarizePrefix(ctx, prefix)
+		if errors.Is(err, errCompactionInstructionEcho) {
+			// An empty template is not task memory. Abort this turn before
+			// hiding history or issuing another request without its facts.
+			return err
+		}
 		if err == nil && summary != "" && compactionReduces(history.requestPrefix(split), summary) {
 			removed = l.CompactPrefixWithSummary(summary, history.originalSplit(split))
 		}
@@ -73,7 +79,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		removed = l.HideLastUserTurns(2)
 	}
 	if removed == 0 {
-		return
+		return nil
 	}
 	if reason == "" {
 		reason = "auto"
@@ -90,6 +96,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		case <-ctx.Done():
 		}
 	}
+	return nil
 }
 
 func hasFreshCompactablePrefix(all []llm.Message, split int) bool {
@@ -101,7 +108,7 @@ func hasFreshCompactablePrefix(all []llm.Message, split int) bool {
 			break
 		}
 	}
-	if lastUser == keep && strings.Contains(all[keep].Content, "continued from a previous conversation that was compacted to save context") {
+	if lastUser == keep && (IsLegacyCompactionSummary(all[keep]) || strings.Contains(all[keep].Content, "continued from a previous conversation that was compacted to save context")) {
 		// The summary is still the current turn's only user message. Tool
 		// calls/results appended after it do not create older history yet.
 		return false
@@ -110,7 +117,7 @@ func hasFreshCompactablePrefix(all []llm.Message, split int) bool {
 		split = len(all)
 	}
 	for _, msg := range all[keep:split] {
-		if !strings.Contains(msg.Content, "continued from a previous conversation that was compacted to save context") {
+		if !IsLegacyCompactionSummary(msg) && !strings.Contains(msg.Content, "continued from a previous conversation that was compacted to save context") {
 			return true
 		}
 	}
@@ -169,6 +176,13 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	}
 	prefix := all[:split]
 	if len(prefix) <= leadingSystemCount(prefix) {
+		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
+	}
+	// Repeated manual compaction of exactly the saved summary cannot add
+	// task knowledge. Keep its facts verbatim instead of generating them
+	// again. Any additional message (including a new tool result or assistant
+	// fact) remains eligible; do not use the broader automatic-freshness rule.
+	if body := prefix[leadingSystemCount(prefix):]; len(body) == 1 && IsLegacyCompactionSummary(body[0]) {
 		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
 	}
 	summary, err := l.summarizePrefix(ctx, prefix)
@@ -318,15 +332,17 @@ func extractContextLimit(msg string) int {
 // through provider metadata, not through error strings.
 const minLearnedContextLimit = 4096
 
-func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- Event) bool {
+func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- Event) (bool, error) {
 	if !isContextLimitErr(err) {
-		return false
+		return false, nil
 	}
 	if lim := extractContextLimit(err.Error()); lim >= minLearnedContextLimit && l.learnLimit != nil {
 		l.learnLimit(l.modelID, lim)
 	}
-	l.maybeAutoCompact(ctx, out, "context-limit")
-	return true
+	if compactErr := l.maybeAutoCompact(ctx, out, "context-limit"); compactErr != nil {
+		return false, compactErr
+	}
+	return true, nil
 }
 
 // summarizePrefix measures helper inference separately from local context work.

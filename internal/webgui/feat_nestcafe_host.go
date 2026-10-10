@@ -135,7 +135,7 @@ func (s *Server) handleThunderbirdIntegration(w http.ResponseWriter, r *http.Req
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
 
-	tool := tools.NewThunderbirdMail().Spec()
+	tool := tools.NewThunderbirdMail(s.eng.DataDir()).Spec()
 	result, callErr := tool.Fn(ctx, json.RawMessage(`{"op":"status"}`))
 	if callErr != nil {
 		writeJSON(w, map[string]any{

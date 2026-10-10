@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.
 
 <!-- readme-unit:status -->
-Bu README `1.0.3` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
+Bu README `1.0.5` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekran görüntüleri
@@ -172,6 +172,7 @@ Uygulama ayrıntıları için [mimari](../architecture.md), [görev devri](../de
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

@@ -126,6 +126,26 @@ func (s *Service) AddTask(ctx context.Context, goalID, title string) (*Task, err
 	return task, err
 }
 
+// AddTasks appends explicit titles atomically, after the same scope resolution
+// as AddTask. Refresh the cached goal/progress once after a successful batch.
+func (s *Service) AddTasks(ctx context.Context, goalID string, titles []string) ([]*Task, error) {
+	if s == nil || s.storage == nil {
+		return nil, fmt.Errorf("goal: Service.AddTasks: nil storage")
+	}
+	if err := ValidateTaskTitles(titles); err != nil {
+		return nil, err
+	}
+	resolved, err := s.resolveGoalID(ctx, goalID)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.storage.addTasks(ctx, resolved, titles, s.projectKey)
+	if err == nil {
+		s.refreshIfActive(ctx, resolved)
+	}
+	return tasks, err
+}
+
 // SetTaskStatus updates a task's status.
 func (s *Service) SetTaskStatus(ctx context.Context, goalID string, seq int, status Status) error {
 	if s == nil || s.storage == nil {

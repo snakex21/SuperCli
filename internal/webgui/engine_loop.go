@@ -52,6 +52,13 @@ func (e *Engine) newLoopWithSessionAtUsageAsk(initial []llm.Message, writer agen
 }
 
 func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest, turn *checkpoint.Turn, telemetry ...systats.Recorder) (*agent.Loop, error) {
+	loop, _, err := e.buildLoopWithSession(initial, writer, home, askCh, turn, telemetry...)
+	return loop, err
+}
+
+// buildLoopWithSession returns the complete base registry to callers wiring a
+// run. Engine retains only its diagnostic counts; the loop owns executable tools.
+func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.SessionWriter, home string, askCh chan<- tools.AskRequest, turn *checkpoint.Turn, telemetry ...systats.Recorder) (*agent.Loop, *tools.Registry, error) {
 	e.mu.RLock()
 	prov := e.prov
 	caps := e.caps
@@ -83,10 +90,10 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	taskParallel, taskParallelWarnLocal := execution.Parallel(cfg.BaseURL, tc.TaskParallel)
 	goalSvc, err := e.goalServiceAt(context.Background(), home)
 	if err != nil {
-		return nil, fmt.Errorf("goal service: %w", err)
+		return nil, nil, fmt.Errorf("goal service: %w", err)
 	}
 	if _, err := goalSvc.Refresh(context.Background()); err != nil {
-		return nil, fmt.Errorf("refresh goal: %w", err)
+		return nil, nil, fmt.Errorf("refresh goal: %w", err)
 	}
 	reg := tools.NewRegistry()
 	// Completed tool envelopes are omitted from future provider prompts, while
@@ -161,12 +168,16 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		tools.NewReadPdf(home, 0).Spec(),
 		tools.NewReadDocx(home, 0).Spec(),
 		tools.NewReadXlsx(home, 0).Spec(),
-		tools.NewReadZip(home, 0).Spec(),
 		tools.NewSendScreenshot(e.DataDir(), nil).Spec(),
 		tools.NewShowMedia(home).Spec(),
 	} {
 		reg.MustRegister(sp)
 	}
+	zipSpec := tools.NewReadZip(home, 0).Spec()
+	if turn != nil {
+		zipSpec = turn.Wrap(zipSpec)
+	}
+	reg.MustRegister(zipSpec)
 	e.registerMediaGeneration(reg, home)
 	// Office editors are discoverable alongside their readers. Keeping them
 	// out of the always-on set avoids schema overhead in ordinary chat, while
@@ -209,6 +220,11 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// tiny query-only tool always available, while the larger filtered search
 	// and fetch schemas remain discoverable through tool_search.
 	reg.MustRegister(tools.NewWebFetch().Spec())
+	downloadSpec := tools.NewWebDownload(home).Spec()
+	if turn != nil {
+		downloadSpec = turn.Wrap(downloadSpec)
+	}
+	reg.MustRegister(codeIntel.WrapMutation(downloadSpec))
 	webEngine := tc.WebSearch.Engine
 	webKey := tc.WebSearch.APIKey
 	if webKey == "" {
@@ -232,7 +248,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	reg.MustRegister(tools.NewOutlookMail().Spec())
 	// Direct Thunderbird bridge for Gmail/IMAP verification. Read-only for now;
 	// it is discoverable and therefore costs nothing in unrelated turns.
-	reg.MustRegister(tools.NewThunderbirdMail().Spec())
+	reg.MustRegister(tools.NewThunderbirdMail(e.DataDir()).Spec())
 	// Web loops are short-lived and have a small registry. Lexical discovery
 	// avoids opening an FTS database per request while preserving the exact
 	// tool_search contract used by TUI and batch.
@@ -245,14 +261,21 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	// blind hide fallback — the model silently loses the whole prior
 	// conversation ("[earlier context cleared]" with no summary).
 	contextWindowFor := func(model string) agent.ContextWindowResolution {
-		return agent.ResolveContextWindow(model, tc.ContextWindow, 0, caps, e.learned, cfg.BaseURL)
+		return agent.ResolveContextWindowWithRuntime(model, tc.ContextWindow, 0, caps, e.learned, cfg.BaseURL, cfg.APIKey)
 	}
-	contextProvider, _, _ := e.RuntimeSelection()
+	configuredProviders := e.providerManager().Configured()
+	contextProvider := runtimeProviderForConfig(cfg, caps, configuredProviders)
+	configForProvider := contextWindowConfigForProvider(cfg, contextProvider, configuredProviders)
 	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {
+		scopedCfg := configForProvider(provider)
 		if tokens, ok := e.modelContexts.Get(provider, model); ok {
-			return agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}
+			return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
 		}
-		return agent.ContextWindowResolution{}
+		resolved := agent.ResolveContextWindowWithRuntime(model, tc.ContextWindow, 0, caps, e.learned, scopedCfg.BaseURL, scopedCfg.APIKey)
+		if resolved.Tokens <= 0 {
+			return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
+		}
+		return resolved
 	}
 	systemPrompt := webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
 	if instructions := llmprompt.ActiveUserInstructions(e.dataDir); instructions != "" {
@@ -274,7 +297,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 	if current, injectErr := goalSvc.Inject(context.Background(), liveContext, 5); injectErr == nil {
 		liveContext = current
 	} else {
-		return nil, fmt.Errorf("goal context: %w", injectErr)
+		return nil, nil, fmt.Errorf("goal context: %w", injectErr)
 	}
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
@@ -301,6 +324,7 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		StableToolset:          execProfile.StableToolset,
 		CatalogHoist:           execProfile.CatalogHoist,
 		BaseDir:                home,
+		UserDownloadsDir:       agent.SystemDownloadsDir,
 		InitialMessages:        initial,
 		Writer:                 writer,
 		ContextWindowFor:       contextWindowFor,
@@ -321,22 +345,22 @@ func (e *Engine) newLoopWithSessionAtUsageInteractive(initial []llm.Message, wri
 		ErrorLog: e.toolErrorLog(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if delegation {
 		// AUTO and ON expose workers. Explicit OFF skips this block, so task,
 		// send_message and task_stop cannot be discovered or executed.
-		if err := e.wireTaskTool(loop, reg, prov, caps, home, tc); err != nil {
-			return nil, err
+		if err := e.wireTaskTool(loop, reg, prov, caps, home, tc, turn); err != nil {
+			return nil, nil, err
 		}
 	}
 	e.diagnosticMu.Lock()
-	e.diagnosticRegistry = reg
+	e.toolDiagnostics = reg.Diagnostics()
 	e.diagnosticMu.Unlock()
 	if orchestrator {
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
 		loop.SetRegistry(agent.OrchestratorRegistry(reg))
 	}
-	return loop, nil
+	return loop, reg, nil
 }

@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.3
+# SuperCli 1.0.5
 
 <!-- readme-unit:intro -->
 Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.
 
 <!-- readme-unit:status -->
-Šis README aprašo versiją `1.0.3`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
+Šis README aprašo versiją `1.0.5`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrano nuotraukos
@@ -172,6 +172,7 @@ Naudokite `go.mod` nurodytą Go versiją. Windows sistemoje `build.bat` sukompil
 [docs/releasing.md](../releasing.md)
 
 ```bash
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
@@ -179,6 +180,7 @@ node docs/readme/check.cjs
 ```
 
 ```powershell
+npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web

@@ -118,10 +118,14 @@ func TestHandleChat_AttachmentOnlyPromptAndRichReaders(t *testing.T) {
 		t.Fatalf("attachment context did not reach the model: %s", body)
 	}
 	srv.eng.diagnosticMu.RLock()
-	registry := srv.eng.diagnosticRegistry
+	diagnostics := srv.eng.toolDiagnostics
 	srv.eng.diagnosticMu.RUnlock()
-	if registry == nil {
-		t.Fatal("tool registry was not captured")
+	if diagnostics == nil || diagnostics.Snapshot().Registered == 0 {
+		t.Fatal("tool diagnostic counts were not captured")
+	}
+	_, registry, err := srv.eng.buildLoopWithSession(nil, nil, srv.eng.Home(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, name := range []string{"read_image", "read_pdf", "read_docx", "read_xlsx", "read_zip"} {
 		if _, ok := registry.Get(name); !ok {
@@ -134,6 +138,15 @@ func TestHandleChat_SendsImageDirectlyInFirstModelRequest(t *testing.T) {
 	var mu sync.Mutex
 	var requests [][]byte
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("unexpected upstream request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		requests = append(requests, body)

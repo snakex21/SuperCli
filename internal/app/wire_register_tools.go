@@ -68,7 +68,7 @@ func registerMediaAndOfficeTools(
 	// when needed. The implementation is pure
 	// stdlib (archive/zip + path/filepath), so
 	// the binary stays self-contained.
-	registry.MustRegister(tools.NewReadZip(home, 0).Spec())
+	registry.MustRegister(wrap.mut(tools.NewReadZip(home, 0).Spec()))
 
 	// F19: read_docx is opt-in (not always-on).
 	// The model discovers it via tool_search
@@ -139,7 +139,7 @@ func registerMediaAndOfficeTools(
 // agent loop and other late tools so tool_search reindex sees them.
 func registerFileWebAndLineTools(
 	registry *tools.Registry,
-	home string,
+	home, dataDir string,
 	tomlCfg config.TomlConfig,
 	wrap toolWrappers,
 	toolSearcher *tools.ToolSearcher,
@@ -176,6 +176,7 @@ func registerFileWebAndLineTools(
 	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
 	// MarkAlwaysOn); the model discovers them via tool_search.
 	registry.MustRegister(tools.NewWebFetch().Spec())
+	registry.MustRegister(wrap.mut(tools.NewWebDownload(home).Spec()))
 	wsEngine := tomlCfg.WebSearch.Engine
 	wsKey := tomlCfg.WebSearch.APIKey
 	if wsKey == "" {
@@ -201,7 +202,7 @@ func registerFileWebAndLineTools(
 	// thunderbird_mail: direct read-only bridge into a running Thunderbird
 	// MailExtension. Thunderbird owns the authenticated IMAP/OAuth session,
 	// avoiding Outlook COM/cache ambiguity for Gmail checks.
-	registry.MustRegister(tools.NewThunderbirdMail().Spec())
+	registry.MustRegister(tools.NewThunderbirdMail(dataDir).Spec())
 
 	// Re-index for tool_search: many tools (ctx_execute, goal,
 	// memory, task, consult, file-line tools, web tools, ...)

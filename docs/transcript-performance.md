@@ -146,3 +146,7 @@ in [stream delivery latency](evals/2026-10-01-stream-delivery-latency.md).
 ### Reasoning-to-answer stability and same-frame scrolling (2026-10-01)
 
 New sections finish the preceding queued display text before appearing, so delayed reasoning does not continue moving an already visible answer. Unfinished paragraphs retain their DOM elements, and paced paints perform tail scrolling after their text writes within the same frame. The native comparison and regression results are recorded in [the reasoning handoff evaluation](evals/2026-10-01-gui-reasoning-handoff.md).
+
+## Windows headless Chrome follow-up — 2026-10-09
+
+The real-browser gate now passes on Windows in headless Chrome 155.0.8059.39 after correcting its reference comparison for the intentionally added code-copy controls. Five synthetic SSE runs retained exact source, with median per-run DOM-commit p95 of 5.7 ms and no observed long tasks. These are DOM measurements, not native WebView2 paint/FPS/RAM or provider latency. See [the evaluation and limitations](evals/2026-10-09-frontend-and-prefill-audit.md).

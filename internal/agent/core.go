@@ -57,6 +57,8 @@ func (ToolResultEvent) event() {}
 // total token usage reported by the model. Steps is the number of model
 // turns consumed by this Run.
 type DoneEvent struct {
+	// Model identifies this completed turn, independent of the next selection.
+	Model string
 	Usage Usage
 	Steps int
 	// Only successful main calls with provider-reported usage contribute.

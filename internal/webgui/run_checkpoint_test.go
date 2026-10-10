@@ -59,6 +59,7 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 	var checkpointID, sessionID string
 	var fileChanges []checkpoint.FileChange
 	fileChangeEvents := 0
+	finishingEvents := 0
 	if err := eng.runStream(context.Background(), "write it", "", "", func(ev wireEvent) {
 		if ev.Type == "session" {
 			sessionID = ev.SessionID
@@ -66,7 +67,13 @@ func TestWebTurnCheckpointUndoAndHistoryEvent(t *testing.T) {
 		if len(ev.FileChanges) > 0 {
 			fileChangeEvents++
 		}
+		if ev.Type == "finishing" {
+			finishingEvents++
+		}
 		if ev.Type == "done" {
+			if finishingEvents != 1 {
+				t.Fatalf("terminal arrived without exactly one generation-completion signal: %d", finishingEvents)
+			}
 			checkpointID = ev.CheckpointID
 			fileChanges = ev.FileChanges
 		}

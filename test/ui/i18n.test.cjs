@@ -7,6 +7,13 @@ const assets = path.resolve(__dirname, '../../internal/webgui/assets/js');
 const locales = path.resolve(assets, '../locales');
 const languages = ['en','bg','cs','da','de','el','es','et','fi','fr','hr','hu','it','lt','lv','nb','nl','pl','pt-BR','ro','ru','sk','sl','sr-Latn','sv','tr','uk'];
 function catalog(code) { return JSON.parse(fs.readFileSync(path.join(locales,code+'.json'),'utf8')); }
+function staticCatalogKeys(source) {
+ const direct=source.matchAll(/\bt\(\s*"([a-z][\w.-]+)"\s*\)/g);
+ // Stay inside one call: a dynamic third argument must not consume a later
+ // DOM attribute or another statement on the same line as a catalog key.
+ const element=source.matchAll(/\bi18nEl\(\s*[^,\n()]+,\s*[^,\n()]+,\s*"([a-z][\w.-]+)"\s*\)/g);
+ return [...direct,...element].map(match=>match[1]);
+}
 function languageUI(fetchOverride) {
  const nodes=[]; const requests=[];
  const context={ ui:{lang:'pl'}, document:{documentElement:{}},
@@ -66,12 +73,17 @@ test('every static and dynamic catalog reference resolves',()=>{
  const english=catalog('en');
  for(const file of fs.readdirSync(assets).filter(x=>x.endsWith('.js'))) {
   const source=fs.readFileSync(path.join(assets,file),'utf8');new vm.Script(source,{filename:file});
-  const direct=source.matchAll(/\bt\(\s*"([a-z][\w.-]+)"\s*\)/g);
-  const dynamic=source.matchAll(/i18nEl\([^\n]*?,\s*"([a-z][\w.-]+)"\)/g);
-  for(const match of [...direct,...dynamic])assert.equal(typeof english[match[1]],'string',file+': '+match[1]);
+  for(const key of staticCatalogKeys(source))assert.equal(typeof english[key],'string',file+': '+key);
  }
  const html=fs.readFileSync(path.resolve(assets,'../index.html'),'utf8');
  for(const match of html.matchAll(/data-i18n(?:-ph|-title|-aria)?="([^"]+)"/g))assert.equal(typeof english[match[1]],'string','HTML '+match[1]);
+});
+
+test('catalog scanning distinguishes dynamic keys from later DOM literals',()=>{
+ assert.deepEqual(staticCatalogKeys('var th=i18nEl("th", "", key); th.setAttribute("scope", "col");'),[]);
+ assert.deepEqual(staticCatalogKeys('i18nEl("th", "", "stats.model"); i18nEl("td", cls, "missing.label");'),['stats.model','missing.label']);
+ assert.deepEqual(staticCatalogKeys('var th=i18nEl("th", "", key); label=t("common.close");'),['common.close']);
+ assert.deepEqual(staticCatalogKeys('i18nEl("th", "", "stats.model")\nnext.setAttribute("role", "region");'),['stats.model']);
 });
 test('loading is lazy, deduplicates requests and keeps immediate English fallback',async()=>{
  const ui=languageUI();assert.equal(ui.requests.length,0);assert.equal(ui.t('common.save'),'Save');

@@ -12,34 +12,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"supercli/internal/system/childproc"
 )
 
 func (m *Manager) capture(ctx context.Context) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.ensureRepoLocked(ctx); err != nil {
-		return "", err
-	}
-	if _, err := m.git(ctx, "add", "-A", "--", "."); err != nil {
-		return "", err
-	}
-	tree, err := m.git(ctx, "write-tree")
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.CommandContext(ctx, "git", "--git-dir="+m.repo, "commit-tree", strings.TrimSpace(tree), "-m", "SuperCli checkpoint")
-	childproc.HideWindow(cmd)
-	cmd.Dir = m.home
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=SuperCli", "GIT_AUTHOR_EMAIL=checkpoint@local", "GIT_COMMITTER_NAME=SuperCli", "GIT_COMMITTER_EMAIL=checkpoint@local")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("checkpoint commit: %w: %s", err, out)
-	}
-	commit := strings.TrimSpace(string(out))
-	_, _ = m.git(ctx, "update-ref", "refs/supercli/latest", commit)
-	return commit, nil
+	return m.captureSnapshot(ctx, nil, "", nil)
 }
 
 func (m *Manager) ensureRepoLocked(ctx context.Context) error {
@@ -52,8 +28,12 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 			return err
 		}
 		existing = false
-		cmd := exec.CommandContext(ctx, "git", "init", "--bare", m.repo)
-		childproc.HideWindow(cmd)
+		if err := m.requireUsageCensusLocked(); err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, "git", "-c", "core.longpaths=true", "-c", "init.defaultRefFormat=files", "init", "--bare", "--object-format=sha1", m.repo)
+		configureCheckpointCommand(cmd)
+		cmd.Env = checkpointGitEnv()
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("checkpoint init: %w: %s", err, out)
 		}
@@ -64,6 +44,9 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 		return err
 	}
 	if string(old) != m.excludes {
+		if err := m.requireUsageCensusLocked(); err != nil {
+			return err
+		}
 		// Existing private indexes may already track data that was not previously
 		// excluded. Ignore rules alone cannot remove tracked entries.
 		if existing && m.excludedDataRel != "" {
@@ -75,15 +58,24 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := m.pinRecordsLocked(ctx, m.records); err != nil {
+		return err
+	}
 	m.repoReady = true
 	return nil
 }
 
 func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
-	base := []string{"--git-dir=" + m.repo, "--work-tree=" + m.home}
-	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
-	childproc.HideWindow(cmd)
-	cmd.Dir = m.home
+	if len(args) >= 2 && args[0] == "update-ref" {
+		ref := args[1]
+		if ref == "-d" && len(args) >= 3 {
+			ref = args[2]
+		}
+		if err := m.prepareRefUpdatesLocked(ref); err != nil {
+			return "", err
+		}
+	}
+	cmd := m.gitCommand(ctx, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
@@ -104,7 +96,7 @@ func (m *Manager) diffFiles(ctx context.Context, a, b string) ([]string, error) 
 }
 
 func (m *Manager) diffChanges(ctx context.Context, a, b string) ([]FileChange, error) {
-	out, err := m.git(ctx, "diff", "--name-status", "-z", "--no-renames", a, b)
+	out, err := m.git(ctx, "diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "--no-renames", a, b)
 	if err != nil {
 		return nil, err
 	}
@@ -145,17 +137,62 @@ func parseNameStatus(out string) []FileChange {
 }
 
 func (m *Manager) append(r Record) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.records = append(m.records, r)
-	return m.saveLocked()
+	_, err := m.appendCommitted(context.Background(), r)
+	return err
 }
-func (m *Manager) saveLocked() error {
+
+func (m *Manager) appendCommitted(ctx context.Context, r Record) (committed bool, err error) {
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	finishUsage, err := m.beginUsageLocked(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { err = errors.Join(err, finishUsage(err == nil)) }()
+	return m.appendCommittedLocked(ctx, r)
+}
+
+// The caller holds StoreIO and fresh metadata, including while creating the
+// minimal record trees. Pinning and metadata publish share that transaction.
+func (m *Manager) appendCommittedLocked(ctx context.Context, r Record) (bool, error) {
+	if err := m.requireNewRecordLocked(r); err != nil {
+		return false, err
+	}
+	if err := m.pinNewRecordLocked(ctx, r); err != nil {
+		return false, err
+	}
+	previous := m.records
+	m.records = append(m.records, r)
+	if err := m.saveLocked(); err != nil {
+		m.records = previous
+		// A failed admission owns only the refs it just created. Active roots
+		// still protect the turn's original snapshots and recovery baseline.
+		return false, errors.Join(err, m.rollbackNewRecordRefsLocked(r))
+	}
+	return true, nil
+}
+func (m *Manager) saveLocked() (err error) {
+	if err := m.dirtyStandaloneUsageLocked(context.Background()); err != nil {
+		return err
+	}
+	if _, err := checkpointMetadataStringsLowerBound(m.records); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(m.records, "", "  ")
 	if err != nil {
 		return err
 	}
+	if err := checkCheckpointMetadataBytes(int64(len(data))); err != nil {
+		return err
+	}
+	if err := m.accountMetadataLocked(int64(len(data))); err != nil {
+		return err
+	}
 	tmp := m.meta + ".tmp"
+	defer os.Remove(tmp)
 	if err = os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -172,6 +209,13 @@ func clip(s string, n int) string {
 func (m *Manager) Latest(sessionID string) *Record {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.reloadRecordsLocked(); err != nil {
+		return nil
+	}
+	return m.latestLocked(sessionID)
+}
+
+func (m *Manager) latestLocked(sessionID string) *Record {
 	for i := len(m.records) - 1; i >= 0; i-- {
 		if m.records[i].SessionID == sessionID {
 			r := m.records[i]
@@ -183,11 +227,64 @@ func (m *Manager) Latest(sessionID string) *Record {
 
 // Clear drops all conversation-linked checkpoints for this workspace. It is
 // used only when the user explicitly deletes every conversation.
-func (m *Manager) Clear() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Manager) Clear() (err error) {
+	return m.ClearContext(context.Background())
+}
+
+// ClearContext is the cancellable form of Clear. It deletes only this
+// Manager's private checkpoint subtree under the portable store gate.
+func (m *Manager) ClearContext(ctx context.Context) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := m.RetryRecordedCompletions(ctx); err != nil {
+		return err
+	}
+
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	if err := m.requireNoActiveTurnLocked(ctx); err != nil {
+		return err
+	}
+	data := filepath.Dir(m.gate.path)
+	root := filepath.Join(data, "checkpoints", workspaceCheckpointKey(m.home))
+	actual := filepath.Dir(m.repo)
+	if resolved, resolveErr := filepath.EvalSymlinks(actual); resolveErr == nil {
+		actual = resolved
+	}
+	if !pathEqual(actual, root) {
+		return ErrStoreInventory
+	}
+	if err := retentionSafePath(data, root); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(root); os.IsNotExist(err) {
+		m.records, m.repoReady = nil, false
+		return ctx.Err()
+	} else if err != nil {
+		return err
+	}
+	plan := workspaceCleanupStore{root: root}
+	entries := 0
+	if err := walkWorkspaceCleanup(ctx, data, root, 0, &entries, &plan, true); err != nil {
+		return err
+	}
+	if err := m.dirtyStandaloneUsageLocked(ctx); err != nil {
+		return err
+	}
+	var removed WorkspaceCleanupPreview
+	if err := removeWorkspaceCleanupStore(ctx, data, plan, &removed); err != nil {
+		if removed.Files != 0 {
+			m.records, m.repoReady = nil, false
+		}
+		return err
+	}
 	m.records = nil
-	return os.RemoveAll(filepath.Dir(m.repo))
+	m.repoReady = false
+	return nil
 }
 
 // PreviewFrom reports non-undone checkpoints at or after a user message.
@@ -196,6 +293,13 @@ func (m *Manager) Clear() error {
 func (m *Manager) PreviewFrom(sessionID string, userSeq int) BatchResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.reloadRecordsLocked(); err != nil {
+		return BatchResult{}
+	}
+	return m.previewFromLocked(sessionID, userSeq)
+}
+
+func (m *Manager) previewFromLocked(sessionID string, userSeq int) BatchResult {
 	result := BatchResult{}
 	files := map[string]struct{}{}
 	for i := len(m.records) - 1; i >= 0; i-- {
@@ -220,52 +324,48 @@ func (m *Manager) PreviewFrom(sessionID string, userSeq int) BatchResult {
 // workspace files. This makes the files currently on disk the new baseline
 // and prevents newly appended messages (which can reuse sequence numbers)
 // from colliding with checkpoints from the discarded conversation tail.
-func (m *Manager) ForgetFrom(sessionID string, userSeq int) error {
+func (m *Manager) ForgetFrom(sessionID string, userSeq int) (err error) {
 	if strings.TrimSpace(sessionID) == "" || userSeq <= 0 {
 		return errors.New("session id and positive user sequence are required")
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	kept := make([]Record, 0, len(m.records))
-	changed := false
-	for _, record := range m.records {
-		if record.SessionID == sessionID && record.UserSeq >= userSeq && record.UserSeq > 0 {
-			changed = true
-			continue
-		}
-		kept = append(kept, record)
-	}
-	if !changed {
-		return nil
-	}
-	previous := m.records
-	m.records = kept
-	if err := m.saveLocked(); err != nil {
-		m.records = previous
+	// The caller has already truncated history. Detach late owners even if
+	// metadata I/O fails; a later SetUserSeq must not link a reused message.
+	// Never take Turn.mu from inside the Manager/store transaction.
+	m.detachPendingUserSequences(sessionID, userSeq)
+	unlock, err := m.lockStore(context.Background())
+	if err != nil {
 		return err
 	}
-	return nil
+	defer func() { err = errors.Join(err, unlock()) }()
+	return m.forgetFromLocked(context.Background(), sessionID, userSeq)
 }
 
 // UndoFrom restores every recorded turn at and after userSeq, newest first.
 // If any restore conflicts, already-applied restores are redone so callers do
 // not observe a half-rewound workspace.
-func (m *Manager) UndoFrom(ctx context.Context, sessionID string, userSeq int) (BatchResult, error) {
-	preview := m.PreviewFrom(sessionID, userSeq)
-	applied := BatchResult{Files: preview.Files}
-	for _, record := range preview.Records {
-		result, err := m.Undo(ctx, record.ID)
-		if err != nil {
-			applied.Conflicts = append(applied.Conflicts, result.Conflicts...)
-			rollbackErr := m.RedoBatch(ctx, applied)
-			if rollbackErr != nil {
-				return applied, fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
-			}
-			return applied, err
-		}
-		applied.Records = append(applied.Records, result.Record)
+func (m *Manager) UndoFrom(ctx context.Context, sessionID string, userSeq int) (out BatchResult, err error) {
+	if err := m.RetryRecordedCompletions(ctx); err != nil {
+		return BatchResult{}, err
 	}
-	return applied, nil
+
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	// Pending workers can exist before their first record. Empty previews do
+	// not make a file rewind safe, and expired history cannot be half-restored.
+	if err := m.requireNoActiveTurnLocked(ctx); err != nil {
+		return BatchResult{}, err
+	}
+	if err := m.requireRetentionHistoryFromLocked(sessionID, userSeq); err != nil {
+		return BatchResult{}, err
+	}
+	preview, err := m.validatedPreviewFromLocked(ctx, sessionID, userSeq)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	return m.undoPreviewLocked(ctx, preview)
 }
 
 // RedoBatch reverses UndoFrom. Records are redone oldest first so consecutive
@@ -278,19 +378,25 @@ func (m *Manager) RedoBatch(ctx context.Context, batch BatchResult) error {
 // RedoIDs restores one exact UndoFrom batch. IDs must be supplied in the
 // newest-to-oldest order returned by UndoFrom; keeping the receipt explicit
 // prevents an older, unrelated undone checkpoint from being restored.
-func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (BatchResult, error) {
-	m.mu.Lock()
+func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (out BatchResult, err error) {
+	if err := m.RetryRecordedCompletions(ctx); err != nil {
+		return BatchResult{}, err
+	}
+
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
 	batch := BatchResult{}
 	files := map[string]struct{}{}
 	seen := map[string]struct{}{}
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
 		if id == "" {
-			m.mu.Unlock()
 			return BatchResult{}, errors.New("empty checkpoint id")
 		}
 		if _, duplicate := seen[id]; duplicate {
-			m.mu.Unlock()
 			return BatchResult{}, fmt.Errorf("duplicate checkpoint %q", id)
 		}
 		seen[id] = struct{}{}
@@ -302,11 +408,9 @@ func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (
 			}
 		}
 		if idx < 0 || m.records[idx].SessionID != sessionID {
-			m.mu.Unlock()
 			return BatchResult{}, fmt.Errorf("checkpoint %q does not belong to session", id)
 		}
 		if !m.records[idx].Undone {
-			m.mu.Unlock()
 			return BatchResult{}, fmt.Errorf("checkpoint %q is not undone", id)
 		}
 		record := m.records[idx]
@@ -315,7 +419,6 @@ func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (
 			files[file] = struct{}{}
 		}
 	}
-	m.mu.Unlock()
 	if len(batch.Records) == 0 {
 		return BatchResult{}, errors.New("no checkpoints to restore")
 	}
@@ -326,13 +429,26 @@ func (m *Manager) RedoIDs(ctx context.Context, sessionID string, ids []string) (
 		return batch.Records[i].CreatedAt.After(batch.Records[j].CreatedAt)
 	})
 	sort.Strings(batch.Files)
-	return m.redoBatch(ctx, batch)
+	return m.redoBatchLocked(ctx, batch)
 }
 
-func (m *Manager) redoBatch(ctx context.Context, batch BatchResult) (BatchResult, error) {
+func (m *Manager) redoBatch(ctx context.Context, batch BatchResult) (out BatchResult, err error) {
+	if err := m.RetryRecordedCompletions(ctx); err != nil {
+		return BatchResult{}, err
+	}
+
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	return m.redoBatchLocked(ctx, batch)
+}
+
+func (m *Manager) redoBatchLocked(ctx context.Context, batch BatchResult) (BatchResult, error) {
 	applied := make([]Record, 0, len(batch.Records))
 	for i := len(batch.Records) - 1; i >= 0; i-- {
-		result, err := m.Redo(ctx, batch.Records[i].ID)
+		result, err := m.restoreLockedWithRename(ctx, batch.Records[i].ID, true, os.Rename)
 		if err == nil {
 			applied = append(applied, result.Record)
 			continue
@@ -340,7 +456,7 @@ func (m *Manager) redoBatch(ctx context.Context, batch BatchResult) (BatchResult
 		batch.Conflicts = append(batch.Conflicts, result.Conflicts...)
 		var rollbackErr error
 		for j := len(applied) - 1; j >= 0; j-- {
-			if _, undoErr := m.Undo(ctx, applied[j].ID); undoErr != nil {
+			if _, undoErr := m.restoreLockedWithRename(context.WithoutCancel(ctx), applied[j].ID, false, os.Rename); undoErr != nil {
 				rollbackErr = errors.Join(rollbackErr, undoErr)
 			}
 		}
@@ -360,79 +476,7 @@ func (m *Manager) Redo(ctx context.Context, id string) (Result, error) {
 }
 
 func (m *Manager) restore(ctx context.Context, id string, redo bool) (Result, error) {
-	m.mu.Lock()
-	idx := -1
-	for i := range m.records {
-		if m.records[i].ID == id {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		m.mu.Unlock()
-		return Result{}, os.ErrNotExist
-	}
-	rec := m.records[idx]
-	m.mu.Unlock()
-	if redo && !rec.Undone {
-		return Result{}, errors.New("checkpoint is not undone")
-	}
-	if !redo && rec.Undone {
-		return Result{}, errors.New("checkpoint is already undone")
-	}
-	expect, target := rec.After, rec.Before
-	if redo {
-		expect, target = rec.Before, rec.After
-	}
-	conflicts := []string{}
-	for _, p := range rec.Files {
-		expected, _ := m.blobHash(ctx, expect, p)
-		current, _ := m.currentHash(ctx, p)
-		if expected != current {
-			conflicts = append(conflicts, p)
-		}
-	}
-	if len(conflicts) > 0 {
-		return Result{Record: rec, Conflicts: conflicts}, fmt.Errorf("checkpoint conflicts in %d file(s)", len(conflicts))
-	}
-	for _, p := range rec.Files {
-		data, mode, exists, err := m.blob(ctx, target, p)
-		if err != nil {
-			return Result{}, err
-		}
-		full := filepath.Join(m.home, filepath.FromSlash(p))
-		if !within(m.home, full) {
-			return Result{}, fmt.Errorf("unsafe checkpoint path %q", p)
-		}
-		if !exists {
-			if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
-				return Result{}, err
-			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return Result{}, err
-		}
-		perm := os.FileMode(0o644)
-		if mode == "100755" {
-			perm = 0o755
-		}
-		if mode == "120000" {
-			return Result{}, fmt.Errorf("checkpoint symlink restore is not supported for %q", p)
-		}
-		if err := os.WriteFile(full, data, perm); err != nil {
-			return Result{}, err
-		}
-		if err := os.Chmod(full, perm); err != nil {
-			return Result{}, err
-		}
-	}
-	m.mu.Lock()
-	m.records[idx].Undone = !redo
-	rec = m.records[idx]
-	err := m.saveLocked()
-	m.mu.Unlock()
-	return Result{Record: rec, Files: rec.Files}, err
+	return m.restoreWithRename(ctx, id, redo, os.Rename)
 }
 
 func (m *Manager) blobHash(ctx context.Context, commit, path string) (string, error) {
@@ -451,28 +495,31 @@ func (m *Manager) currentHash(ctx context.Context, path string) (string, error) 
 	if err != nil || !info.Mode().IsRegular() {
 		return "", err
 	}
-	out, err := m.git(ctx, "hash-object", "--", filepath.ToSlash(path))
+	out, err := m.git(ctx, "hash-object", "--no-filters", "--", filepath.ToSlash(path))
 	return strings.TrimSpace(out), err
-}
-func (m *Manager) blob(ctx context.Context, commit, path string) ([]byte, string, bool, error) {
-	if h, _ := m.blobHash(ctx, commit, path); h == "" {
-		return nil, "", false, nil
-	}
-	modeOut, err := m.git(ctx, "ls-tree", commit, "--", filepath.ToSlash(path))
-	if err != nil {
-		return nil, "", false, err
-	}
-	fields := strings.Fields(modeOut)
-	mode := "100644"
-	if len(fields) > 0 {
-		mode = fields[0]
-	}
-	out, err := m.git(ctx, "show", commit+":"+filepath.ToSlash(path))
-	return []byte(out), mode, true, err
 }
 func within(root, path string) bool {
 	r, _ := filepath.Abs(root)
 	p, _ := filepath.Abs(path)
 	rel, err := filepath.Rel(r, p)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// Selecting the latest point and restoring it is one store transaction.
+// A second process cannot insert a newer record between these two steps.
+func (m *Manager) restoreLatest(ctx context.Context, sessionID string, redo bool) (out Result, err error) {
+	if err := m.RetryRecordedCompletions(ctx); err != nil {
+		return Result{}, err
+	}
+
+	unlock, err := m.lockStore(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	record := m.latestLocked(sessionID)
+	if record == nil {
+		return Result{}, os.ErrNotExist
+	}
+	return m.restoreLockedWithRename(ctx, record.ID, redo, os.Rename)
 }

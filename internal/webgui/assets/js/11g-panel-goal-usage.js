@@ -191,7 +191,8 @@ function validPrice(value) {
   return Number.isFinite(value) && value >= 0 && value <= 1000000;
 }
 function renderPriceDetails(stats) {
-  var cost = stats.cost;
+  // Editing always uses the current price; completed-call cost snapshots stay immutable.
+  var cost = stats.pricing || stats.cost;
   var state = normalizedCostState(cost);
   var details = el("details", "usage-rates");
   details.open = state === "unknown" || state === "partial";
@@ -200,9 +201,9 @@ function renderPriceDetails(stats) {
 
   var rates = el("dl", "price-rates");
   rates.appendChild(usageFact(t("cost.source"), costSourceLabel(cost.source) || "—"));
-  rates.appendChild(usageFact(t("price.input"), cost.inputPerMillion === null ? "—" : fmtMoney(cost.inputPerMillion, cost.currency, true)));
-  rates.appendChild(usageFact(t("price.cache"), cost.cachedInputPerMillion === null ? "—" : fmtMoney(cost.cachedInputPerMillion, cost.currency, true)));
-  rates.appendChild(usageFact(t("price.output"), cost.outputPerMillion === null ? "—" : fmtMoney(cost.outputPerMillion, cost.currency, true)));
+  rates.appendChild(usageFact(t("price.input"), cost.inputPerMillion === null ? "—" : fmtMoney(cost.inputPerMillion, cost.pricingCurrency, true)));
+  rates.appendChild(usageFact(t("price.cache"), cost.cachedInputPerMillion === null ? "—" : fmtMoney(cost.cachedInputPerMillion, cost.pricingCurrency, true)));
+  rates.appendChild(usageFact(t("price.output"), cost.outputPerMillion === null ? "—" : fmtMoney(cost.outputPerMillion, cost.pricingCurrency, true)));
   body.appendChild(rates);
   var coverage = costCoverage(cost);
   if (coverage) body.appendChild(el("div", "price-note", coverage));

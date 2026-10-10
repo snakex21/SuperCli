@@ -2,9 +2,9 @@ package agent
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"supercli/internal/llm"
 )
@@ -13,6 +13,69 @@ import (
 type ContextItem struct {
 	Label  string
 	Tokens int
+}
+
+type contextTopItemKind uint8
+
+const (
+	contextTopMessage contextTopItemKind = iota
+	contextTopSchema
+	contextTopCatalog
+)
+
+// Keep descriptors until the five largest items are known. Labels can scan
+// sizeable tool output; the report only needs to render the winning items.
+type contextTopItem struct {
+	kind   contextTopItemKind
+	tokens int
+	index  int
+	name   string
+}
+
+type contextTopItems struct {
+	items [5]contextTopItem
+	count int
+}
+
+func (top *contextTopItems) add(item contextTopItem) {
+	position := 0
+	// Equal-sized later items follow earlier ones, matching the stable sort.
+	for position < top.count && top.items[position].tokens >= item.tokens {
+		position++
+	}
+	if position == len(top.items) {
+		return
+	}
+	if top.count < len(top.items) {
+		top.count++
+	}
+	copy(top.items[position+1:top.count], top.items[position:top.count-1])
+	top.items[position] = item
+}
+
+func (top *contextTopItems) report(messages []llm.Message) []ContextItem {
+	if top.count == 0 {
+		return nil
+	}
+	items := make([]ContextItem, top.count)
+	for i, item := range top.items[:top.count] {
+		var label string
+		switch item.kind {
+		case contextTopMessage:
+			m := messages[item.index]
+			label = fmt.Sprintf("#%d %s", item.index, m.Role)
+			if m.Role == llm.RoleTool && m.Name != "" {
+				label += " (" + m.Name + ")"
+			}
+			label += ": " + firstWords(m.Content, 8)
+		case contextTopSchema:
+			label = "tool schema: " + item.name
+		case contextTopCatalog:
+			label = fmt.Sprintf("tool catalog (%d tail tools)", item.index)
+		}
+		items[i] = ContextItem{Label: label, Tokens: item.tokens}
+	}
+	return items
 }
 
 // ContextReport is the data behind the /context command: where the
@@ -158,7 +221,7 @@ func (l *Loop) ContextReport() ContextReport {
 	visible := l.resolvedToolProviderView(l.VisibleMessages())
 	r.Visible = len(visible)
 
-	var items []ContextItem
+	var top contextTopItems
 	for i, m := range visible {
 		t := estimateMessageTokens(m)
 		r.EstimatedTokens += t
@@ -172,12 +235,7 @@ func (l *Loop) ContextReport() ContextReport {
 		case llm.RoleTool:
 			r.ToolResultTokens += t
 		}
-		label := fmt.Sprintf("#%d %s", i, m.Role)
-		if m.Role == llm.RoleTool && m.Name != "" {
-			label += " (" + m.Name + ")"
-		}
-		label += ": " + firstWords(m.Content, 8)
-		items = append(items, ContextItem{Label: label, Tokens: t})
+		top.add(contextTopItem{kind: contextTopMessage, index: i, tokens: t})
 	}
 
 	// Tool exposure. In JSON mode every visible tool carries a full
@@ -187,12 +245,12 @@ func (l *Loop) ContextReport() ContextReport {
 	// otherwise /context would hide the very saving thin mode buys.
 	if l.thinTools && l.route == RouteCoordinator {
 		r.Thin = true
-		schema, tail := l.thinPartition()
-		for _, t := range schema {
+		_, tail := l.thinPartition()
+		for _, t := range l.buildToolDefs() {
 			r.ToolCount++
 			st := (len(t.Name) + len(t.Description) + len(t.Schema)) / 4
 			r.ToolSchemaTokens += st
-			items = append(items, ContextItem{Label: "tool schema: " + t.Name, Tokens: st})
+			top.add(contextTopItem{kind: contextTopSchema, name: t.Name, tokens: st})
 		}
 		// The thin preamble (sentinel call-format instruction + the
 		// dormant-tail catalog) is injected as a system message every
@@ -200,25 +258,18 @@ func (l *Loop) ContextReport() ContextReport {
 		// what actually goes on the wire, not just the catalog body.
 		r.CatalogTokens = len(l.thinToolsPreamble()) / 4
 		if r.CatalogTokens > 0 {
-			items = append(items, ContextItem{
-				Label:  fmt.Sprintf("tool catalog (%d tail tools)", len(tail)),
-				Tokens: r.CatalogTokens,
-			})
+			top.add(contextTopItem{kind: contextTopCatalog, index: len(tail), tokens: r.CatalogTokens})
 		}
 	} else {
 		for _, t := range l.registry.Visible() {
 			r.ToolCount++
 			st := (len(t.Name) + len(t.Description) + len(t.Schema)) / 4
 			r.ToolSchemaTokens += st
-			items = append(items, ContextItem{Label: "tool schema: " + t.Name, Tokens: st})
+			top.add(contextTopItem{kind: contextTopSchema, name: t.Name, tokens: st})
 		}
 	}
 
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Tokens > items[j].Tokens })
-	if len(items) > 5 {
-		items = items[:5]
-	}
-	r.Top = items
+	r.Top = top.report(visible)
 	estimate := l.nextRequestTokenEstimate()
 	r.RequestTokens = estimate.Effective
 	r.RawRequestTokens = estimate.Raw
@@ -232,12 +283,39 @@ func estimateMessageTokens(m llm.Message) int {
 }
 
 func firstWords(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	words := strings.SplitN(s, " ", n+1)
-	if len(words) > n {
+	if n <= 0 {
+		// Retain the legacy zero/negative-limit behavior as well.
+		s = strings.Join(strings.Fields(s), " ")
+		words := strings.SplitN(s, " ", n+1)
 		return strings.Join(words[:n], " ") + "…"
 	}
-	return s
+	var b strings.Builder
+	start, words := -1, 0
+	for i, r := range s {
+		if unicode.IsSpace(r) {
+			if start >= 0 {
+				if words > 0 {
+					b.WriteByte(' ')
+				}
+				b.WriteString(s[start:i])
+				words++
+				start = -1
+			}
+		} else if start < 0 {
+			if words == n {
+				b.WriteString("…")
+				return b.String()
+			}
+			start = i
+		}
+	}
+	if start >= 0 {
+		if words > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(s[start:])
+	}
+	return b.String()
 }
 
 // FormatContextReport renders the report for the TUI transcript.
