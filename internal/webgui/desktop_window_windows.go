@@ -53,6 +53,7 @@ const (
 	appIconID      = 1
 	smCXScreen     = 0
 	smCYScreen     = 1
+	wmSize         = 0x0005
 	wmClose        = 0x0010
 	mbYesNo        = 0x00000004
 	mbIconWarning  = 0x00000030
@@ -175,7 +176,8 @@ func runNativeAppWindow(url, appName, dataDir, iconPath string, hasActiveWork fu
 	}); err != nil {
 		log.Printf("native file save unavailable: %v", err)
 	}
-	closeCallback, closeErr := installNativeCloseConfirmation(w.Window(), dataDir, appName, hasActiveWork)
+	memoryPolicy := newNativeMemoryPolicy(w)
+	closeCallback, closeErr := installNativeCloseConfirmation(w.Window(), dataDir, appName, hasActiveWork, memoryPolicy.onSize)
 	if closeErr != nil {
 		log.Printf("native close confirmation unavailable: %v", closeErr)
 	}
@@ -227,13 +229,16 @@ func withPortableWebViewProfile(dataDir string, open func() error) error {
 	return open()
 }
 
-func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName string, hasActiveWork func() bool) (uintptr, error) {
+func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName string, hasActiveWork func() bool, onSize func(uintptr)) (uintptr, error) {
 	hwnd := uintptr(window)
 	if hwnd == 0 {
 		return 0, fmt.Errorf("window handle is empty")
 	}
 	var previous uintptr
 	callback := syscall.NewCallback(func(messageWindow, message, wParam, lParam uintptr) uintptr {
+		if message == wmSize && onSize != nil {
+			onSize(wParam)
+		}
 		if message == wmClose {
 			if shouldConfirmClose(dataDir, hasActiveWork) {
 				text, textErr := windows.UTF16PtrFromString(
