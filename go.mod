@@ -2,6 +2,9 @@ module supercli
 
 go 1.26.2
 
+// Local, pinned glaze backend exposes WebView2's supported memory target API.
+replace github.com/crgimenes/glaze => ./third_party/glaze
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/atotto/clipboard v0.1.4
