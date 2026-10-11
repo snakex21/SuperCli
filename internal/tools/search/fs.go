@@ -11,11 +11,12 @@ import (
 
 var skippedDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true,
-	"target": true, "dist": true, "build": true,
+	"target": true, "dist": true, "build": true, "bin": true,
 	".next": true, ".cache": true, "__pycache__": true,
 	".venv": true, "venv": true, ".supercli": true,
 	".zig-cache": true, "zig-cache": true, "zig-out": true,
-	".tmp": true, "supercli-data": true,
+	".tmp": true, "supercli-data": true, "supercli-data-preview": true,
+	"%systemdrive%": true,
 }
 
 // IsSkippedDirectory shares the search ignore policy with bounded repo listings.

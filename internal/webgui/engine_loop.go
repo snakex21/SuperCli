@@ -306,7 +306,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)
-	compactProv := e.compactProvider(tc)
+	compactResolver := e.compactProviderResolver(tc, cfg, prov)
 	loop, err := agent.NewLoop(agent.LoopConfig{
 		Provider:               prov,
 		Registry:               reg,
@@ -330,7 +330,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		ContextWindowFor:       contextWindowFor,
 		ContextProvider:        contextProvider,
 		ScopedContextWindowFor: scopedContextWindowFor,
-		Summarizer:             agent.NewAutoSummarizerWithProvider(compactProv, reg.ActiveNames),
+		Summarizer:             agent.NewAutoSummarizerWithProviderResolver(compactResolver, reg.ActiveNames),
 		LearnLimit:             e.learned.Learn,
 		PrefillProfiles:        e.prefillProfiles,
 		// Zero-LLM tool-result prune (first line of context defense,

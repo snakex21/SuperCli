@@ -282,7 +282,11 @@ func TestImageRequestKeepsCoordinatorContextOnWire(t *testing.T) {
 				messages = request.Input
 			}
 			found := false
+			hintCopies := 0
 			for _, message := range messages {
+				// Guidance belongs to the request-only context tail. Confirm it
+				// survives actual HTTP encoding, separately from image/user parts.
+				hintCopies += strings.Count(string(message.Content), hint)
 				if message.Role != "user" || !strings.Contains(string(message.Content), "image_url") {
 					continue
 				}
@@ -300,7 +304,7 @@ func TestImageRequestKeepsCoordinatorContextOnWire(t *testing.T) {
 						text.WriteString(part.Text)
 					}
 				}
-				for _, want := range []string{prompt, "USER-ADDON", "CURRENT-REPO-CONTEXT", hint} {
+				for _, want := range []string{prompt, "USER-ADDON", "CURRENT-REPO-CONTEXT"} {
 					if !strings.Contains(text.String(), want) {
 						t.Errorf("multimodal HTTP message lost %q", want)
 					}
@@ -308,6 +312,9 @@ func TestImageRequestKeepsCoordinatorContextOnWire(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("main request lost the image")
+			}
+			if hintCopies != 1 {
+				t.Fatalf("request-only verification hint copies=%d, want one", hintCopies)
 			}
 			for _, message := range writer.messages {
 				if message.Role != llm.RoleUser {

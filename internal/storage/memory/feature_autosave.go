@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -55,6 +56,7 @@ const summaryPrompt = "Summarize this session in 2-4 short lines: WHAT was done,
 	"fact, each starting with exactly \"USER: \" (example: USER: The user's " +
 	"name is Anna. / USER: The user likes computers.). Write the facts in " +
 	"English. Only durable facts about the user — no session details. " +
+	"Do not turn appreciation, quoted messages, or remarks about this exchange into preferences. " +
 	"If there are no such facts, append no USER: lines."
 
 // SummarizeFunc produces a short summary for the given prompt with
@@ -115,7 +117,7 @@ func (a *AutoSaver) StoreSummary(ctx context.Context, transcript string, summari
 	}
 	summary, userFacts := splitUserFacts(summary)
 	a.saveUserFacts(userFacts)
-	if summary == "" || strings.EqualFold(summary, "NOTHING") || len(summary) > 4000 {
+	if emptyMemoryNote(summary) || len(summary) > 4000 {
 		return true
 	}
 	now := time.Now()
@@ -305,6 +307,14 @@ func containsSimilar(existingRaw []string, raw string) bool {
 // standing fact about the user.
 func junkFact(s string) bool {
 	t := strings.ToLower(strings.TrimSpace(s))
+	if emptyMemoryNote(s) {
+		return true
+	}
+	for _, prefix := range []string{"the user likes ", "the user dislikes ", "the user prefers ", "user likes ", "user prefers "} {
+		if value, ok := strings.CutPrefix(t, prefix); ok && conversationalFactValue(value) {
+			return true
+		}
+	}
 	for _, frag := range []string{
 		"not explicitly stated", "not stated", "not mentioned",
 		"not provided", "not specified", "not known", "not clear",
@@ -324,6 +334,19 @@ func junkFact(s string) bool {
 		return true
 	}
 	return false
+}
+
+// Some summarizers return "project: NOTHING" instead of the bare sentinel.
+// Recognize only an empty note, never a real sentence mentioning that word.
+func emptyMemoryNote(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return true
+	}
+	if _, tail, ok := strings.Cut(s, ":"); ok {
+		s = strings.TrimSpace(tail)
+	}
+	return strings.EqualFold(strings.Trim(s, " .!`"), "NOTHING")
 }
 
 // factStopwords are the words that carry no identifying meaning
@@ -364,6 +387,9 @@ func factTokens(norm string) []string {
 	flush := func() {
 		t := strings.TrimSpace(cur.String())
 		cur.Reset()
+		if t == "communication" || t == "communicating" {
+			t = "communicate"
+		}
 		if len(t) < 3 || factStopwords[t] {
 			return
 		}
@@ -371,7 +397,7 @@ func factTokens(norm string) []string {
 	}
 	for _, r := range strings.ToLower(norm) {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case unicode.IsLetter(r), unicode.IsNumber(r):
 			cur.WriteRune(r)
 		default:
 			flush()

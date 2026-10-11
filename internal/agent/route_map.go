@@ -310,9 +310,29 @@ func actionMentionContext(before string) bool {
 	}
 	clause = strings.TrimLeft(clause, " \t,(")
 	clause = strings.TrimPrefix(clause, "please ")
+	// A question about completed work is not a request to repeat that work.
+	// Keep polite requests ("czy możesz naprawić?", "can you fix?") eligible;
+	// the question mark alone cannot distinguish them from status questions.
+	for _, conditional := range []string{"jak możesz, ", "jak mozesz, "} {
+		clause = strings.TrimPrefix(clause, conditional)
+	}
+	if strings.HasPrefix(clause, "czy ") {
+		request := false
+		for _, modal := range []string{
+			"czy możesz ", "czy mozesz ", "czy mógłbyś ", "czy moglbys ",
+			"czy mogłabyś ", "czy moglabys ", "czy zechcesz ",
+		} {
+			request = request || strings.HasPrefix(clause, modal)
+		}
+		if !request {
+			return true
+		}
+	}
 	for _, prefix := range []string{
 		"explain ", "describe ", "review ", "tell me ", "show me ", "how ", "whether ",
 		"wyjaśnij ", "wyjasnij ", "wytłumacz ", "wytlumacz ", "opisz ", "jak ",
+		"what ", "why ", "when ", "who ", "did ", "does ", "has ", "have ", "is ", "are ",
+		"co ", "kto ", "kiedy ", "gdzie ", "dlaczego ",
 	} {
 		if strings.HasPrefix(clause, prefix) {
 			// "Review and fix" requests an edit; "explain how to fix and

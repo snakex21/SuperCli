@@ -366,8 +366,9 @@ func (e *Engine) toolErrorLog() agent.ErrorLogger {
 }
 
 // goalService returns the Engine-owned goal service, opening and migrating the
-// shared portable database once. Callers that need to observe changes made by
-// another SuperCli process should call Refresh on the returned service.
+// shared portable database once. Services are created without loading their
+// active goal; consumers call Refresh before using cached state to observe
+// changes made by another SuperCli process without a duplicate factory read.
 func (e *Engine) goalService(ctx context.Context) (*goal.Service, error) {
 	return e.goalServiceAt(ctx, e.Home())
 }
@@ -387,6 +388,9 @@ func (e *Engine) goalServiceScope(ctx context.Context, home, scope string) (*goa
 	e.sessionMu.Unlock()
 	if closed {
 		return nil, fmt.Errorf("webgui engine is closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if e.goals == nil {
 		db, err := openDataDB(e.dataDir)
@@ -412,10 +416,10 @@ func (e *Engine) goalServiceScope(ctx context.Context, home, scope string) (*goa
 	if scope != "global" {
 		projectKey = memory.ProjectStorageKey(e.dataDir, home)
 	}
-	svc := goal.NewProjectService(goal.NewStorage(e.goalDB), projectKey)
-	if _, err := svc.Refresh(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	svc := goal.NewProjectService(goal.NewStorage(e.goalDB), projectKey)
 	e.projectGoals[key] = svc
 	return svc, nil
 }

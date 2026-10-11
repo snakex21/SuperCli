@@ -73,6 +73,13 @@ func (s *Store) dedupScope(scope string) (int, error) {
 // distinct while "name is Maks" vs "Użytkownik ma na imię Maks."
 // (translation) collapses.
 func similarFact(a, b string) bool {
+	// Opposite preferences must survive deduplication even with identical topics.
+	if negativeFact(a) != negativeFact(b) {
+		return false
+	}
+	if normalizeFact(a) == normalizeFact(b) {
+		return true
+	}
 	ta := factTokens(strings.ToLower(a))
 	tb := factTokens(strings.ToLower(b))
 	if len(ta) == 0 || len(tb) == 0 {
@@ -102,4 +109,14 @@ func similarFact(a, b string) bool {
 		return false
 	}
 	return float64(shared)/float64(minLen) >= 0.8
+}
+
+func negativeFact(s string) bool {
+	s = " " + foldKey(s) + " "
+	for _, word := range []string{"dislikes", "hate", "hates", "not", "never", "nie", "nigdy", "bez"} {
+		if strings.Contains(s, " "+word+" ") {
+			return true
+		}
+	}
+	return false
 }

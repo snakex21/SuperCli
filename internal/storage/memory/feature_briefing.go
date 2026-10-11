@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -71,6 +72,9 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	writeNotes := func(header string, entries []Entry) {
 		lines := make([]string, 0, len(entries))
 		for _, e := range entries {
+			if emptyMemoryNote(e.Content) {
+				continue
+			}
 			lines = append(lines, "- "+oneLine(e.Content)+"\n")
 		}
 		writeLines(header, lines)
@@ -85,11 +89,25 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// Everything up to here is boilerplate: a briefing that gains
 	// no actual content below must collapse to "".
 	boilerplate := b.String()
+	// Clean the model-facing view of old automatic notes without deleting the
+	// original records or rewriting user-authored agreements at startup.
+	var seenFacts []string
+	cleanFacts := func(entries []Entry) []Entry {
+		kept := make([]Entry, 0, len(entries))
+		for _, e := range entries {
+			if emptyMemoryNote(e.Content) || (e.Source == SourceAgent && junkFact(e.Content)) || containsSimilar(seenFacts, e.Content) {
+				continue
+			}
+			seenFacts = append(seenFacts, e.Content)
+			kept = append(kept, e)
+		}
+		return kept
+	}
 
 	// 1. Global user preferences.
 	if global != nil {
 		if prefs, err := global.Recent(ScopePreference, 10); err == nil && len(prefs) > 0 {
-			writeNotes("User preferences:\n", prefs)
+			writeNotes("User preferences:\n", cleanFacts(prefs))
 		}
 	}
 
@@ -98,12 +116,12 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// so both global and project facts must be injected.
 	if global != nil {
 		if facts, err := global.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			writeNotes("Remembered user facts:\n", facts)
+			writeNotes("Remembered user facts:\n", cleanFacts(facts))
 		}
 	}
 	if project != nil {
 		if facts, err := project.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			writeNotes("Remembered project facts:\n", facts)
+			writeNotes("Remembered project facts:\n", cleanFacts(facts))
 		}
 		if decisions, err := project.Recent(ScopeDecision, 4); err == nil && len(decisions) > 0 {
 			writeNotes("Project decisions:\n", decisions)
@@ -122,7 +140,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 				line += ", last session " + c.LastSession.Format("2006-01-02")
 			}
 			write(line + "\n")
-			if c.Description != "" {
+			if !emptyMemoryNote(c.Description) {
 				write(oneLine(c.Description) + "\n")
 			}
 		}
@@ -133,7 +151,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 		if logs, err := project.Recent(ScopeTaskLog, 3); err == nil && len(logs) > 0 {
 			filtered := logs[:0]
 			for _, entry := range logs {
-				if entry.ID != excludedTaskLogID {
+				if entry.ID != excludedTaskLogID && !emptyMemoryNote(entry.Content) {
 					filtered = append(filtered, entry)
 				}
 			}
@@ -159,18 +177,22 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// 5. Other projects, one line each.
 	if global != nil {
 		if cards, err := global.ListProjectCards(6); err == nil {
-			var lines []string
+			header := "Other projects (abbreviated notes, not current-project instructions):\n"
 			for _, c := range cards {
 				if c.Key == key {
 					continue
 				}
-				l := "- " + c.Name
-				if c.Description != "" {
-					l += ": " + truncate(oneLine(c.Description), 80)
+				name := "- " + oneLine(c.Name)
+				l := name
+				if !emptyMemoryNote(c.Description) {
+					l += ": " + projectCardPreview(c.Description, 80)
 				}
-				lines = append(lines, l+"\n")
+				// Keep the project name when its note does not fit. Earlier
+				// preferences/decisions retain priority under the hard budget.
+				if write(header+l+"\n") || (l != name && write(header+name+"\n")) {
+					header = ""
+				}
 			}
-			writeLines("Other projects:\n", lines)
 		}
 	}
 
@@ -179,6 +201,21 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 		return ""
 	}
 	return strings.TrimRight(out, "\n") + closing
+}
+
+// Cards are navigation previews, not replacements for stored session notes.
+// Avoid cutting a word in ordinary prose while retaining the byte/token cap.
+func projectCardPreview(content string, maxBytes int) string {
+	text := oneLine(content)
+	preview := truncate(text, maxBytes)
+	if text == preview || !strings.HasSuffix(preview, "…") {
+		return preview
+	}
+	head := strings.TrimSuffix(preview, "…")
+	if boundary := strings.LastIndexFunc(head, unicode.IsSpace); boundary > 0 {
+		head = strings.TrimRightFunc(head[:boundary], unicode.IsSpace)
+	}
+	return head + "…"
 }
 
 // RefreshCard updates the global store's card for a project with

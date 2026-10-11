@@ -128,16 +128,37 @@ func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config
 	return e.buildWorker(*worker)
 }
 
-func (e *Engine) compactProvider(tc config.TomlConfig) llm.Provider {
-	cfg := e.modelOverrideConfig(tc, tc.CompactModel)
+// compactProviderResolver snapshots the optional backend for this loop without
+// constructing it on ordinary turns. The factory resolves a real, metered
+// provider only when the summarizer is actually called.
+func (e *Engine) compactProviderResolver(tc config.TomlConfig, coordinator config.Config, main llm.Provider) func(context.Context) (llm.Provider, error) {
+	cfg := modelOverrideConfigFor(tc, strings.TrimSpace(tc.CompactModel), coordinator)
 	if cfg == nil {
 		return nil
 	}
-	p, err := e.factory.Build(*cfg, llm.PurposeCompact)
-	if err != nil {
-		return nil
+	e.mu.RLock()
+	f := e.factory
+	e.mu.RUnlock()
+	// Construction may update capabilities shared with the active transport.
+	// Keep the old order for an aliased model and for gateway discovery, which
+	// can register every /models entry rather than only the selected side model.
+	// Codex also snapshots mutable auth options/account pools at construction;
+	// Zen catalog discovery still has a legacy non-context API. Preserve both
+	// existing eager boundaries instead of moving them into live compaction.
+	if cfg.Provider == config.ProviderOpencode || cfg.Provider == config.ProviderCodex ||
+		llm.IsOpenCodeZenBaseURL(cfg.BaseURL) || cfg.Model == coordinator.Model || (main != nil && cfg.Model == main.Name()) {
+		p, err := f.Build(*cfg, llm.PurposeCompact)
+		if err != nil || p == nil {
+			return nil
+		}
+		return func(ctx context.Context) (llm.Provider, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return p, nil
+		}
 	}
-	return p
+	return f.ProviderResolver(*cfg, llm.PurposeCompact)
 }
 
 // taskWorkerConfig resolves the task_model knob to a worker config
@@ -154,10 +175,18 @@ func (e *Engine) modelOverrideConfig(tc config.TomlConfig, ref string) *config.C
 		return nil
 	}
 	e.mu.RLock()
-	worker := e.cfg
-	coordinatorModel := e.cfg.Model
-	coordinatorBaseURL := e.cfg.BaseURL
+	coordinator := e.cfg
 	e.mu.RUnlock()
+	return modelOverrideConfigFor(tc, ref, coordinator)
+}
+
+func modelOverrideConfigFor(tc config.TomlConfig, ref string, coordinator config.Config) *config.Config {
+	if ref == "" {
+		return nil
+	}
+	worker := coordinator
+	coordinatorModel := coordinator.Model
+	coordinatorBaseURL := coordinator.BaseURL
 	if name, model, found := strings.Cut(ref, "/"); found {
 		for _, p := range tc.Providers {
 			if p.Name != name {

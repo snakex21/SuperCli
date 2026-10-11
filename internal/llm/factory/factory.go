@@ -68,6 +68,18 @@ func (f *Factory) SetCodexAuthOptions(opts codexauth.Options) {
 // double-wrapped: nesting would double-report every call and deadlock
 // the background gate.
 func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error) {
+	return f.BuildContext(context.Background(), cfg, purpose)
+}
+
+// BuildContext carries caller cancellation through optional default-provider
+// discovery. Custom BuildFunc implementations retain their construction API.
+func (f *Factory) BuildContext(ctx context.Context, cfg config.Config, purpose string) (llm.Provider, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var p llm.Provider
 	var err error
 	f.mu.RLock()
@@ -75,8 +87,13 @@ func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error)
 	f.mu.RUnlock()
 	if f.useDefault && cfg.Provider == config.ProviderCodex && opts != nil {
 		p, err = buildCodexProviderWithAuth(cfg, f.dataDir, f.caps, *opts)
+	} else if f.useDefault {
+		p, err = DefaultContext(ctx, cfg, f.dataDir, f.caps)
 	} else {
 		p, err = f.build(cfg, f.dataDir, f.caps)
+	}
+	if cause := ctx.Err(); cause != nil {
+		return nil, cause
 	}
 	if err != nil || p == nil {
 		return p, err
@@ -92,6 +109,18 @@ func (f *Factory) Build(cfg config.Config, purpose string) (llm.Provider, error)
 // (Moved verbatim from the web GUI's private buildProviderWithDataDir
 // so both front-ends share one construction table.)
 func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
+	return DefaultContext(context.Background(), cfg, dataDir, caps)
+}
+
+// DefaultContext preserves Default's transport selection while allowing
+// optional metadata discovery to observe the owning request's cancellation.
+func DefaultContext(ctx context.Context, cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (llm.Provider, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Provider discovery normally populates capabilities, but a saved local
 	// model can be used before /api/models is ever opened. Ensure name-based
 	// multimodal families (notably Qwen 3.5 community builds) are available to
@@ -183,7 +212,10 @@ func Default(cfg config.Config, dataDir string, caps *llm.CapabilityRegistry) (l
 			return nil, fmt.Errorf("opencode: %w", err)
 		}
 		// Best-effort model discovery; gateway being down is not fatal.
-		_, _ = p.ProbeModels(context.Background())
+		_, _ = p.ProbeModels(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return p, nil
 	case config.ProviderCodex:
 		return buildCodexProvider(cfg, dataDir, caps)

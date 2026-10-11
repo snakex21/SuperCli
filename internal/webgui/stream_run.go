@@ -180,20 +180,23 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// heartbeats while producing no model/tool progress. The transport-level
 	// idle reader sees those bytes and cannot distinguish that state from a
 	// healthy stream, so enforce the configured inactivity limit at the agent
-	// event layer too. This guarantees a terminal error instead of an endless
-	// spinner when an upstream job is wedged.
+	// event layer too. Tool execution has its own lifetime and can legitimately
+	// stay silent longer than a model's idle limit (builds, benchmarks, workers).
+	// Suspend this watchdog until all dispatched tools have returned; caller
+	// cancellation and any explicit tool deadline remain in force.
 	e.mu.RLock()
 	progressTimeout := e.cfg.Timeout
 	e.mu.RUnlock()
 	var progressTimer *time.Timer
 	var progressC <-chan time.Time
+	activeTools := map[string]struct{}{}
 	if progressTimeout > 0 {
 		progressTimer = time.NewTimer(progressTimeout)
 		progressC = progressTimer.C
 		defer progressTimer.Stop()
 	}
 	resetProgress := func() {
-		if progressTimer == nil || len(activeQuestions) > 0 {
+		if progressTimer == nil || len(activeQuestions) > 0 || len(activeTools) > 0 {
 			return
 		}
 		if !progressTimer.Stop() {
@@ -433,6 +436,13 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 						return nil
 					}
 				}
+			}
+			switch event := ev.(type) {
+			case agent.ToolCallEvent:
+				activeTools[event.ID] = struct{}{}
+				pauseProgress()
+			case agent.ToolResultEvent:
+				delete(activeTools, event.ID)
 			}
 			resetProgress()
 			if _, ok := ev.(agent.ReasoningEvent); ok {

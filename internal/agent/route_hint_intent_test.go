@@ -29,6 +29,18 @@ var readOnlyActionMentions = []string{
 	"Wyjaśnij jak naprawić ten kod; nie zmieniaj plików.",
 	"Nie edytuj teraz plików; opisz jak poprawić ten kod.",
 	"Nie należy zmieniać plików.",
+	"jak poprawił coś agent?",
+	"Co poprawił agent?",
+	"Co zmienił agent w kodzie?",
+	"Czy agent naprawił ten błąd?",
+	"Czy zostało to poprawione?",
+	"Czy da się poprawić czas uruchamiania?",
+	"Jak poprawić ten kod?",
+	"What did the agent fix in this file?",
+	"Did you fix the bug?",
+	"Has the agent implemented the feature?",
+	"Is it safe to remove this function?",
+	"Why did you refactor this code?",
 }
 
 func TestImplementationHintReadOnlyActionMentions(t *testing.T) {
@@ -77,6 +89,14 @@ func TestImplementationHintWordBoundariesAndNegation(t *testing.T) {
 		"Explain how to fix this code. Then implement it.",
 		"Wyjaśnij problem, potem napraw błąd.",
 		"I think not. Fix the bug.", "(popraw ten błąd)",
+		"Czy możesz naprawić ten błąd?",
+		"Czy mógłbyś poprawić obsługę błędów?",
+		"Czy mogłabyś zmienić ten plik?",
+		"Can you fix the bug?", "Could you implement retries?",
+		"Would you refactor this function?",
+		"Jak możesz, popraw ten błąd.",
+		"Co poprawił agent? Napraw pozostały błąd.",
+		"Did you fix it? Please implement the missing check.",
 	} {
 		t.Run(prompt, func(t *testing.T) {
 			if hint := implementationVerificationHint(prompt); hint == "" {
@@ -128,6 +148,9 @@ func TestCoordinatorRetainsContractForRequestedEdits(t *testing.T) {
 			"Do not actually edit tests; fix production code.",
 			"Replace the text `do not edit` and fix the bug.",
 			"Wyjaśnij problem, potem napraw błąd.",
+			"Czy możesz naprawić ten błąd?",
+			"Can you fix the bug?",
+			"Co poprawił agent? Napraw pozostały błąd.",
 		} {
 			t.Run(fmt.Sprintf("thin=%v/%s", thin, prompt), func(t *testing.T) {
 				provider := &stubProvider{name: "fixture", scripts: [][]llm.Delta{{{Content: "answer", FinishReason: "stop"}}}}
@@ -139,15 +162,21 @@ func TestCoordinatorRetainsContractForRequestedEdits(t *testing.T) {
 				if len(provider.reqs) != 1 {
 					t.Fatal("classification added a provider request")
 				}
+				seenRequest, seenHint := false, false
 				for _, message := range provider.reqs[0] {
 					if message.Role == llm.RoleUser {
-						if message.Content != prompt+"\n\n"+implementationVerificationInstruction {
-							t.Fatalf("requested edit lost its completion guidance: %q", message.Content)
+						if message.Content != prompt {
+							t.Fatalf("request-only guidance changed user history: %q", message.Content)
 						}
-						return
+						seenRequest = true
+					}
+					if strings.Contains(message.Content, implementationVerificationInstruction) {
+						seenHint = true
 					}
 				}
-				t.Fatal("request missing")
+				if !seenRequest || !seenHint {
+					t.Fatal("request or completion guidance missing")
+				}
 			})
 		}
 	}

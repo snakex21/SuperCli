@@ -150,14 +150,7 @@ func localNativeModelsRoot(baseURL string) string {
 // fetchLocalNativeModelInfos distinguishes an unsupported API from a transient
 // failure. Unsupported APIs need an explicit Scan/edit before another attempt.
 func fetchLocalNativeModelInfos(ctx context.Context, baseURL, apiKey string) ([]ModelInfo, bool, error) {
-	if localNativeModelsRoot(baseURL) == "" {
-		return nil, false, nil
-	}
-	runtimeContextState.Lock()
-	read := newRuntimeContextReadLocked(runtimeContextKey(baseURL, apiKey))
-	runtimeContextState.Unlock()
-	defer forgetRuntimeContextRead(read)
-	return fetchLocalNativeModelInfosForRead(ctx, baseURL, apiKey, read)
+	return localNativeModelDiscovery.fetch(ctx, baseURL, apiKey)
 }
 
 func fetchLocalNativeModelInfosForRead(ctx context.Context, baseURL, apiKey string, read *runtimeContextRead) ([]ModelInfo, bool, error) {
@@ -281,6 +274,7 @@ func invalidateProviderRuntimeContexts(baseURL string) {
 	prefix := "runtime\x00" + strings.TrimRight(strings.TrimSpace(baseURL), "/") + "\x00"
 	runtimeContextState.Lock()
 	defer runtimeContextState.Unlock()
+	localNativeModelDiscovery.detachLocked(baseURL)
 	for key := range runtimeContextState.snapshots {
 		if strings.HasPrefix(key, prefix) {
 			delete(runtimeContextState.snapshots, key)

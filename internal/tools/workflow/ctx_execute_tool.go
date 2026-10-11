@@ -46,7 +46,7 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one sandbox command; bounded output JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}. Never read/create/edit/convert/unpack DOCX here; use read_docx/edit_docx. Builds/tests/downloads wait for exit or cancellation; timeout_ms optional.",
+		Description: "Run one sandbox command, including builds/tests/checks; bounded output JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}. Never read/create/edit/convert/unpack DOCX here; use read_docx/edit_docx. Wait for exit or Stop; timeout_ms 0/omitted has no runtime limit. Persistent servers/watchers: discover process_session, start once and reuse its id.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {

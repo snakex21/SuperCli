@@ -182,6 +182,11 @@ type opencodeModelEntry struct {
 // is a soft failure — the provider can still be
 // used with an explicit --model flag.
 func (o *OpencodeProvider) ProbeModels(ctx context.Context) ([]ModelInfo, error) {
+	// Discovery must be bounded even when the generation client intentionally
+	// has no overall timeout. This deadline covers both headers and body reads
+	// and retains any shorter caller deadline; generation settings are intact.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	// Build the /v1/models URL from the inner
 	// provider's configured base URL. The
 	// OpenAI provider's BaseURL already includes
@@ -202,7 +207,7 @@ func (o *OpencodeProvider) ProbeModels(ctx context.Context) ([]ModelInfo, error)
 
 	client := o.inner.http
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = &http.Client{}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

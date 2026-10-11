@@ -253,5 +253,8 @@ func (l *Loop) contextTail() string {
 	if requested := l.requestedToolContext(); requested != "" {
 		s += "\n\n" + requested
 	}
+	if l.implementationHintForRun != "" {
+		s += "\n\n" + l.implementationHintForRun
+	}
 	return s
 }

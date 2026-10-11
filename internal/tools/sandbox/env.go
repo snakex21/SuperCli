@@ -21,7 +21,7 @@ var defaultKeep = []string{
 	// Non-secret Go toolchain locations and cache controls. Go derives its
 	// defaults from HOME on Unix and USERPROFILE/LOCALAPPDATA on Windows; both
 	// platform families must survive scrubbing so ctx_execute can build/test.
-	"GOCACHE", "GOMODCACHE", "GOPATH", "GOROOT", "GOFLAGS", "GOTOOLCHAIN",
+	"GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOPATH", "GOROOT", "GOFLAGS", "GOTOOLCHAIN",
 	"SUPERCLI_HOME", "SUPERCLI_DEBUG",
 }
 

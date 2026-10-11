@@ -37,8 +37,12 @@ func (t *Turn) ensureBeforeForTool(ctx context.Context, name string, args json.R
 		return err
 	}
 	defer t.mu.Unlock()
-	roots, known, err := t.manager.toolScopeContext(ctx, name, args)
+	var external []string
+	roots, known, err := t.manager.toolScopeDetailed(ctx, name, args, &external)
 	if err != nil {
+		return err
+	}
+	if err := t.ensureExternalBeforeLocked(ctx, external); err != nil {
 		return err
 	}
 	if !known {
@@ -113,6 +117,10 @@ func (m *Manager) toolScope(name string, args json.RawMessage) ([]string, bool, 
 }
 
 func (m *Manager) toolScopeContext(ctx context.Context, name string, args json.RawMessage) ([]string, bool, error) {
+	return m.toolScopeDetailed(ctx, name, args, nil)
+}
+
+func (m *Manager) toolScopeDetailed(ctx context.Context, name string, args json.RawMessage, external *[]string) ([]string, bool, error) {
 	var a struct {
 		Path      string `json:"path"`
 		Src       string `json:"src"`
@@ -185,13 +193,21 @@ func (m *Manager) toolScopeContext(ctx context.Context, name string, args json.R
 		return nil, false, fmt.Errorf("checkpoint workspace: %w", err)
 	}
 	roots := make([]string, 0, len(paths))
-	for _, p := range paths {
+	for index, p := range paths {
 		full, err := sandbox.ResolveSafe(m.home, p)
 		if err != nil {
 			return nil, false, fmt.Errorf("checkpoint path: %w", err)
 		}
 		rel, err := filepath.Rel(canonicalHome, full)
 		if err != nil || !within(canonicalHome, full) {
+			if sandbox.IsUnsandboxed() {
+				if external != nil && !(name == "copy" && index == 0) {
+					*external = append(*external, full)
+				}
+				// ensureExternalBeforeLocked protects these named paths in a
+				// separate portable store before the actual tool is admitted.
+				continue
+			}
 			return nil, false, fmt.Errorf("unsafe checkpoint path %q", p)
 		}
 		rel = filepath.ToSlash(rel)

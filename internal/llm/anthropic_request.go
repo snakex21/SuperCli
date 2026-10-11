@@ -84,7 +84,7 @@ func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []Tool
 		req.TopK = sampling.TopK
 	}
 	for _, t := range tools {
-		inputSchema, err := normalizeAnthropicToolSchemaChecked(t.Schema)
+		inputSchema, err := toolSchemaForRequest(t.Schema, toolSchemaAnthropic)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q schema: %w", t.Name, err)
 		}

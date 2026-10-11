@@ -19,7 +19,13 @@ func (s snapshot) modelPreview() string {
 		PTY              bool            `json:"pty,omitempty"`
 		Preview          bool            `json:"preview"`
 		OutputIncomplete bool            `json:"output_incomplete,omitempty"`
+		OutputPending    bool            `json:"output_pending,omitempty"`
 		OutputWarning    string          `json:"output_warning,omitempty"`
+		StatusSummary    string          `json:"status_summary,omitempty"`
+		Ready            bool            `json:"ready"`
+		ReadyPattern     string          `json:"ready_pattern,omitempty"`
+		ReadyPort        int             `json:"ready_port,omitempty"`
+		ReadyAt          string          `json:"ready_at,omitempty"`
 		Stdout           json.RawMessage `json:"stdout"`
 		Stderr           json.RawMessage `json:"stderr"`
 		TruncatedStdout  bool            `json:"truncated_stdout"`
@@ -27,6 +33,8 @@ func (s snapshot) modelPreview() string {
 		OmittedOut       int64           `json:"omitted_stdout_bytes,omitempty"`
 		OmittedErr       int64           `json:"omitted_stderr_bytes,omitempty"`
 	}{ID: s.ID, Status: s.Status, ExitCode: s.ExitCode, DurationMS: s.DurationMS, PTY: s.PTY, Preview: true, Stdout: json.RawMessage(`""`), Stderr: json.RawMessage(`""`), OmittedOut: s.OmittedOut, OmittedErr: s.OmittedErr, OutputIncomplete: s.OutputIncomplete, OutputWarning: s.OutputWarning}
+	preview.StatusSummary, preview.Ready, preview.ReadyPattern, preview.ReadyPort, preview.ReadyAt = s.StatusSummary, s.Ready, s.ReadyPattern, s.ReadyPort, s.ReadyAt
+	preview.OutputPending = s.OutputPending
 	empty, _ := json.Marshal(preview)
 	remaining := core.ModelOutputPreviewBytes - len(empty) + 4
 	if remaining < 4 {

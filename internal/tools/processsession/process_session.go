@@ -48,28 +48,31 @@ func New(baseDir string, dataDir ...string) *Tool {
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
-		Description: "Start a long command; wait for exit, poll for diagnostics, write input, resize PTY, stop, list, or screenshot its owned window by id. Launch the GUI executable directly; shell-child windows are not inferred. Short commands use ctx_execute. pty=true merges stdout/stderr in a real terminal. Maximum 3 active sessions; bounded output, optional timeout; stop or close ends the process.",
-		Schema:      fmt.Sprintf(`{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":0,"maximum":%d,"default":0,"description":"0/omitted: run until exit or stop; positive: optional lifetime in ms"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":250},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`, ctxexec.MaxTimeoutMS),
+		Description: "Start a persistent server/watcher/command/GUI once; reuse its id across turns until exit, stop or app close. timeout_ms 0/omitted: no runtime limit. Start waits up to 500 ms for early exits; yield_ms:0 skips that wait. Start is not proof of readiness: wait_ready blocks on a ready_pattern log regex, optionally checks a local ready_port once after matching; no polling. ready_at is a historical observation time, retained after exit/stop. wait blocks until exit; poll is for diagnostics. Write input, resize PTY, stop, list or screenshot its owned window. Launch the executable directly: detached shell launchers do not prove child liveness. One-shot commands use ctx_execute. pty=true merges streams. Maximum 3 active sessions; bounded output.",
+		Schema:      fmt.Sprintf(`{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","wait_ready","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":0,"maximum":%d,"default":0,"description":"0/omitted: run until exit or stop; positive: optional lifetime in ms"},"ready_pattern":{"type":"string","maxLength":512,"description":"wait_ready: regex in stdout OR stderr; retained logs count; process must still be running"},"ready_port":{"type":"integer","minimum":1,"maximum":65535,"description":"Optional single TCP check on 127.0.0.1 AFTER log match; no retries"},"ready_timeout_ms":{"type":"integer","minimum":0,"default":0,"description":"Optional wait deadline only; does not kill the process"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":500,"description":"Startup completion wait only; default 500 ms, 0 skips early-exit observation"},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`, ctxexec.MaxTimeoutMS),
 		Fn:          t.Execute,
 	}
 }
 
 type params struct {
-	Action      string   `json:"action"`
-	ID          string   `json:"id"`
-	Command     []string `json:"command"`
-	Workdir     string   `json:"workdir"`
-	Env         []string `json:"env"`
-	TimeoutMS   int      `json:"timeout_ms"`
-	YieldMS     *int     `json:"yield_ms"`
-	Input       string   `json:"input"`
-	Newline     *bool    `json:"newline"`
-	PTY         bool     `json:"pty"`
-	Columns     int      `json:"columns"`
-	Rows        int      `json:"rows"`
-	WindowTitle string   `json:"window_title"`
-	Attach      bool     `json:"attach"`
-	ImageDetail string   `json:"image_detail"`
+	Action         string   `json:"action"`
+	ID             string   `json:"id"`
+	Command        []string `json:"command"`
+	Workdir        string   `json:"workdir"`
+	Env            []string `json:"env"`
+	TimeoutMS      int      `json:"timeout_ms"`
+	YieldMS        *int     `json:"yield_ms"`
+	Input          string   `json:"input"`
+	Newline        *bool    `json:"newline"`
+	PTY            bool     `json:"pty"`
+	Columns        int      `json:"columns"`
+	Rows           int      `json:"rows"`
+	WindowTitle    string   `json:"window_title"`
+	Attach         bool     `json:"attach"`
+	ImageDetail    string   `json:"image_detail"`
+	ReadyPattern   string   `json:"ready_pattern"`
+	ReadyPort      int      `json:"ready_port"`
+	ReadyTimeoutMS int      `json:"ready_timeout_ms"`
 }
 
 func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
@@ -87,9 +90,11 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	)
 	switch p.Action {
 	case "start":
-		out, err = t.Manager.Start(p)
+		out, err = t.Manager.start(ctx, p)
 	case "wait":
 		out, err = t.Manager.Wait(ctx, strings.TrimSpace(p.ID))
+	case "wait_ready":
+		out, err = t.Manager.WaitReady(ctx, strings.TrimSpace(p.ID), p.ReadyPattern, p.ReadyPort, p.ReadyTimeoutMS)
 	case "poll":
 		out, err = t.Manager.Poll(strings.TrimSpace(p.ID))
 	case "write":
@@ -110,16 +115,18 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		err = fmt.Errorf("process_session: unknown action %q", p.Action)
 	}
 	if err != nil {
-		return core.Result{Err: err}, nil
+		if snap, ok := out.(snapshot); !ok || snap.ID == "" {
+			return core.Result{Err: err}, nil
+		}
 	}
 	data, marshalErr := json.Marshal(out)
 	if marshalErr != nil {
 		return core.Result{Err: fmt.Errorf("process_session: marshal: %w", marshalErr)}, nil
 	}
-	result := core.Result{Text: string(data)}
+	result := core.Result{Text: string(data), Err: err}
 	if snap, ok := out.(snapshot); ok {
 		result.CommandKey = snap.CommandKey
-		if p.Action != "stop" {
+		if result.Err == nil && p.Action != "stop" {
 			result.Err = snap.commandFailure()
 		}
 		if result.Err == nil && len(data) > core.ModelOutputInlineBytes {
@@ -178,6 +185,10 @@ type process struct {
 	outputIncomplete bool
 	stdoutCursor     int64
 	stderrCursor     int64
+	readyPattern     string
+	readyPort        int
+	readyAt          time.Time
+	readyValid       bool
 }
 
 type snapshot struct {
@@ -195,14 +206,21 @@ type snapshot struct {
 	Error            string    `json:"error,omitempty"`
 	PTY              bool      `json:"pty,omitempty"`
 	OutputIncomplete bool      `json:"output_incomplete,omitempty"`
+	OutputPending    bool      `json:"output_pending,omitempty"`
 	OutputWarning    string    `json:"output_warning,omitempty"`
+	StatusSummary    string    `json:"status_summary,omitempty"`
+	Ready            bool      `json:"ready"`
+	ReadyPattern     string    `json:"ready_pattern,omitempty"`
+	ReadyPort        int       `json:"ready_port,omitempty"`
+	// ReadyAt is the last historical observation, never a current-health claim.
+	ReadyAt string `json:"ready_at,omitempty"`
 }
 
 // Managing a process successfully is not evidence that its command succeeded.
 // Keep the structured snapshot for the UI and expose failed exits through the
 // same concise diagnostic path as ctx_execute. Listing/stopping is management.
 func (s snapshot) commandFailure() error {
-	if s.Status != "failed" && s.Status != "timeout" && !(s.Status == "done" && s.ExitCode != nil && *s.ExitCode != 0) {
+	if s.Status != "failed" && s.Status != "timeout" && !((s.Status == "done" || s.Status == "exited_draining") && s.ExitCode != nil && *s.ExitCode != 0) {
 		return nil
 	}
 	code := -1
@@ -212,11 +230,15 @@ func (s snapshot) commandFailure() error {
 	if s.Status == "timeout" {
 		code = ctxexec.ExitTimeout
 	}
-	result := ctxexec.Result{ExitCode: code, Error: s.Error, DurationMS: s.DurationMS, Stdout: s.Stdout, Stderr: s.Stderr, TruncatedStdout: s.OmittedOut > 0, TruncatedStderr: s.OmittedErr > 0, OutputIncomplete: s.OutputIncomplete, OutputWarning: s.OutputWarning}
+	result := ctxexec.Result{ExitCode: code, Error: s.Error, DurationMS: s.DurationMS, Stdout: s.Stdout, Stderr: s.Stderr, TruncatedStdout: s.OmittedOut > 0, TruncatedStderr: s.OmittedErr > 0, OutputIncomplete: s.OutputIncomplete || s.OutputPending, OutputWarning: s.OutputWarning}
 	capture := ""
 	summary := result.FailureSummary()
-	if s.OutputIncomplete {
-		capture = " output_incomplete=true"
+	if s.OutputIncomplete || s.OutputPending {
+		if s.OutputPending {
+			capture = " output_pending=true"
+		} else {
+			capture = " output_incomplete=true"
+		}
 		summary += "\n" + s.OutputWarning
 	}
 	return core.SelfContainedErr(fmt.Errorf("process_session %s%s: %s", s.ID, capture, summary))

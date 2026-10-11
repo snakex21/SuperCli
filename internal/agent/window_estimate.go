@@ -159,5 +159,5 @@ func (l *Loop) ContextWindow() int {
 // visible token estimate enters the model's reserved generation
 // space, the conversation is summarized (via the same
 // machinery as /compact) and replaced. Emits AutoCompactEvent
-// so the TUI can show a marker. Best-effort: a summarization
-// failure falls back to hiding all but the two most recent user turns.
+// so the TUI can show a marker. A configured summarizer's failure preserves
+// history and stops the turn; only loops without one use the legacy hide fallback.
