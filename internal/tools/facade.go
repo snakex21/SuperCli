@@ -46,6 +46,7 @@ type (
 	ImageContent             = core.ImageContent
 	OutputPersistence        = core.OutputPersistence
 	Registry                 = core.Registry
+	PreparedInvocation       = core.PreparedInvocation
 	RegistryDiagnostics      = core.RegistryDiagnostics
 	RegistryDiagnosticCounts = core.RegistryDiagnosticCounts
 	CatalogEntry             = core.CatalogEntry

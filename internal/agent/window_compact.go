@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -13,6 +12,9 @@ import (
 )
 
 func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	window := l.windowResolution()
 	w := window.Tokens
 	hardThreshold := autoCompactThreshold(w)
@@ -62,20 +64,33 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
 		summary, err := l.summarizePrefix(ctx, prefix)
-		if errors.Is(err, errCompactionInstructionEcho) {
-			// An empty template is not task memory. Abort this turn before
-			// hiding history or issuing another request without its facts.
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err == nil && summary != "" && compactionReduces(history.requestPrefix(split), summary) {
-			removed = l.CompactPrefixWithSummary(summary, history.originalSplit(split))
+		// A configured summarizer must supply usable task memory. Failing it
+		// must not silently replace older requirements with a cleared marker.
+		if err != nil {
+			return fmt.Errorf("summarize context: %w", err)
 		}
-	}
-	if removed == 0 {
-		// Fallback: no summarizer or it failed (possibly
-		// because the summarization call itself overflows).
-		// Keep two recent user turns verbatim even when the summary provider is
-		// unavailable. This preserves the active task and its latest correction.
+		if strings.TrimSpace(summary) == "" {
+			return fmt.Errorf("summarize context: empty summary")
+		}
+		requestPrefix := history.requestPrefix(split)
+		if !compactionReduces(requestPrefix, summary) {
+			before := compactablePrefixTokens(requestPrefix)
+			after := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleUser, Content: summary})
+			return fmt.Errorf("summarize context: insufficient reduction (%d -> %d tokens)", before, after)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		removed = l.CompactPrefixWithSummary(summary, history.originalSplit(split))
+	} else {
+		// Legacy loops without a summarizer keep two recent user turns.
+		// A configured helper's error never enters this lossy fallback.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		removed = l.HideLastUserTurns(2)
 	}
 	if removed == 0 {

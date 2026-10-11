@@ -143,11 +143,11 @@ func factFromSentence(sentence string) (string, bool) {
 	folded := string(fold)
 
 	// 1. Unambiguous name patterns.
-	if v, ok := matchPrefix(namePatterns, folded, orig); ok {
+	if v, ok := matchPrefix(namePatterns, folded, orig, false); ok {
 		return v, true
 	}
 	// 2. Preference patterns.
-	if v, ok := matchPrefix(likePatterns, folded, orig); ok {
+	if v, ok := matchPrefix(likePatterns, folded, orig, true); ok {
 		return v, true
 	}
 	// 3. Risky identity: "jestem X" / "i'm X" — only when X is not a
@@ -169,18 +169,30 @@ func prefixRuneLen(prefix string) int { return len([]rune(prefix)) }
 // matchPrefix returns the rendered fact for the first pattern whose
 // prefix begins the folded sentence. The value is sliced from the
 // original-case runes so the stored fact keeps the user's spelling.
-func matchPrefix(patterns []factPattern, folded string, orig []rune) (string, bool) {
+func matchPrefix(patterns []factPattern, folded string, orig []rune, preference bool) (string, bool) {
 	for _, p := range patterns {
 		if !strings.HasPrefix(folded, p.prefix) {
 			continue
 		}
 		value := cleanValue(string(orig[prefixRuneLen(p.prefix):]))
-		if value == "" {
+		if value == "" || (preference && (conversationalFactValue(value) || len(strings.Fields(value)) > 8)) {
 			continue
 		}
 		return p.render(value), true
 	}
 	return "", false
+}
+
+// Raw clauses about this exchange are not standing preferences. Leave richer
+// declarations to the summarizer rather than saving a fragment verbatim.
+func conversationalFactValue(value string) bool {
+	t := foldKey(value)
+	for _, prefix := range []string{"ze ", "to ze ", "jak ", "gdy ", "kiedy ", "pewnie ", "that ", "when ", "how ", "because ", "you ", "your "} {
+		if strings.HasPrefix(t, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchIdentity handles the transient-state-guarded "jestem/i'm"

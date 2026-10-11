@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/system/processoutput"
 	"supercli/internal/tools/core"
 )
 
@@ -103,8 +104,9 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 
 	stdout := core.NewHeadTailBuffer(stdoutHeadBytes, stdoutTailBytes)
 	stderr := core.NewHeadTailBuffer(stderrHeadBytes, stderrTailBytes)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	outText, errText := processoutput.NewWriter(stdout), processoutput.NewWriter(stderr)
+	cmd.Stdout = outText
+	cmd.Stderr = errText
 
 	// On cancellation or a deadline, kill the whole process tree.
 	// exec's default cancel kills the shell only; a grandchild it spawned keeps
@@ -137,6 +139,8 @@ func (r *Runner) Run(ctx context.Context, command string) *Result {
 		_ = started.Close()
 	}
 	duration := time.Since(start)
+	_ = outText.Close()
+	_ = errText.Close()
 
 	res := &Result{
 		Command:  command,

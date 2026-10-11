@@ -207,7 +207,7 @@ func (r *Registry) EnsureReadOutput() {
 	}
 	if _, ok := r.tools["read_output"]; !ok {
 		t := r.outputs.ReadOutputTool()
-		compiled, err := compileToolSchema(t.Schema)
+		compiled, err := compileRegisteredToolSchema(t.Schema)
 		if err != nil {
 			panic(fmt.Sprintf("register %q: %v", t.Name, err))
 		}
@@ -254,7 +254,7 @@ func (r *Registry) Register(t Tool) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	compiled, err := compileToolSchema(t.Schema)
+	compiled, err := compileRegisteredToolSchema(t.Schema)
 	if err != nil {
 		return fmt.Errorf("register %q: %w", t.Name, err)
 	}

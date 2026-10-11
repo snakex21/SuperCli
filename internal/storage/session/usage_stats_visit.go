@@ -19,6 +19,11 @@ func (s *Store) VisitUsageForStats(ctx context.Context, sessionID string, visit 
 	}
 	defer rows.Close()
 	for rows.Next() {
+		// A driver can buffer several rows and never consult QueryContext
+		// again. Observe callback/caller cancellation before consuming them.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		var u UsageRecord
 		var cachedKnown, reasoningKnown, timingKnown int
 		var priceJSON sql.NullString
@@ -35,6 +40,9 @@ func (s *Store) VisitUsageForStats(ctx context.Context, sessionID string, visit 
 			return err
 		}
 		visit(u)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return rows.Err()
 }

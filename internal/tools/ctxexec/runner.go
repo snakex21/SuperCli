@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/system/processoutput"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/sandbox"
 )
@@ -153,8 +154,9 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	// (including for noisy commands), with no temporary files or disk writes.
 	stdout := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
 	stderr := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	outText, errText := processoutput.NewWriter(stdout), processoutput.NewWriter(stderr)
+	cmd.Stdout = outText
+	cmd.Stderr = errText
 	// A detached descendant may inherit a pipe after the command exits.
 	// Bound that wait and report incomplete capture instead of hanging.
 	cmd.WaitDelay = time.Second
@@ -180,6 +182,8 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		runErr = cmd.Wait()
 		_ = started.Close()
 	}
+	_ = outText.Close()
+	_ = errText.Close()
 	scopeMu.Lock()
 	cancelErr := cancellationCause
 	scopeMu.Unlock()

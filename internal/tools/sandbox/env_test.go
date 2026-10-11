@@ -71,6 +71,7 @@ func TestScrubEnv_KeepsWindowsAndGoCacheLocations(t *testing.T) {
 		`PUBLIC=C:\Users\Public`,
 		`GOCACHE=C:\cache\go-build`,
 		`GOMODCACHE=C:\cache\go-mod`,
+		`GOTMPDIR=C:\portable-app\cache\go-tmp`,
 		`OPENAI_API_KEY=must-not-leak`,
 	}
 	got := ScrubEnv(env)
@@ -78,7 +79,7 @@ func TestScrubEnv_KeepsWindowsAndGoCacheLocations(t *testing.T) {
 	for _, name := range []string{
 		"USERPROFILE=", "LOCALAPPDATA=", "SYSTEMDRIVE=", "PROGRAMDATA=",
 		"ALLUSERSPROFILE=", "HOMEDRIVE=", "HOMEPATH=", "PUBLIC=",
-		"GOCACHE=", "GOMODCACHE=",
+		"GOCACHE=", "GOMODCACHE=", "GOTMPDIR=",
 	} {
 		if !strings.Contains(joined, name) {
 			t.Fatalf("%s missing from scrubbed environment: %v", name, got)

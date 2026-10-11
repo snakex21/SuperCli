@@ -379,7 +379,7 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 		req.Tools = make([]openaiToolDecl, 0, len(tools))
 	}
 	for _, t := range tools {
-		parameters, err := normalizeOpenAIToolSchemaChecked(t.Schema)
+		parameters, err := toolSchemaForRequest(t.Schema, toolSchemaPortable)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q schema: %w", t.Name, err)
 		}

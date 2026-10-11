@@ -141,8 +141,8 @@ func TestCompactionSkipsTwoShortTurnsWithArchivedToolOutput(t *testing.T) {
 	}
 }
 
-func TestCompactionFallbackKeepsPolicyAndVisibleCorrection(t *testing.T) {
-	for _, failure := range []string{"provider error", "larger summary"} {
+func TestCompactionFailurePreservesPolicyAndVisibleCorrection(t *testing.T) {
+	for _, failure := range []string{"provider error", "larger summary", "no summarizer"} {
 		t.Run(failure, func(t *testing.T) {
 			messages := []llm.Message{
 				{Role: llm.RoleUser, Content: "old request"},
@@ -159,10 +159,26 @@ func TestCompactionFallbackKeepsPolicyAndVisibleCorrection(t *testing.T) {
 					return "", context.DeadlineExceeded
 				}
 			}
+			if failure == "no summarizer" {
+				l.summarizer = nil
+			}
 			if err := l.HideRange(5, 7); err != nil {
 				t.Fatal(err)
 			}
-			l.maybeAutoCompact(context.Background(), nil, "")
+			before, _ := json.Marshal(l.Messages)
+			beforeVisible, _ := json.Marshal(l.VisibleMessages())
+			err := l.maybeAutoCompact(context.Background(), nil, "")
+			if failure != "no summarizer" {
+				after, _ := json.Marshal(l.Messages)
+				afterVisible, _ := json.Marshal(l.VisibleMessages())
+				if err == nil || string(before) != string(after) || string(beforeVisible) != string(afterVisible) {
+					t.Fatalf("failed summary changed history/projection: error=%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
 			visible := l.VisibleMessages()
 			if len(visible) == 0 || visible[0].Role != llm.RoleSystem || visible[0].Content != "policy" {
 				t.Error("fallback hid standing instructions")

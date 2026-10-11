@@ -28,7 +28,16 @@ func TestProcessSessionHelper(t *testing.T) {
 	case "stdin":
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		fmt.Print("got:" + line)
-	case "fail":
+	case "ready":
+		reader := bufio.NewReader(os.Stdin)
+		_, _ = reader.ReadString('\n')
+		fmt.Fprint(os.Stdout, "REA")
+		fmt.Fprintln(os.Stdout, "DY zażółć")
+		_, _ = reader.ReadString('\n')
+	case "fail", "delayed-fail":
+		if mode == "delayed-fail" {
+			time.Sleep(300 * time.Millisecond)
+		}
 		fmt.Fprintln(os.Stderr, "specific failing assertion")
 		os.Exit(7)
 	case "descendant", "descendant-fail":

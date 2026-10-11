@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 func terminalSize(columns, rows int) (int, int) {
@@ -88,11 +89,12 @@ func validatedEnv(values []string) ([]string, error) {
 // entire retained tail for every chunk of a noisy long-running command. Storage
 // grows lazily, so quiet sessions do not pay for an empty 64 KiB buffer.
 type streamBuffer struct {
-	mu   sync.Mutex
-	max  int
-	base int64
-	data []byte
-	head int
+	mu      sync.Mutex
+	max     int
+	base    int64
+	data    []byte
+	head    int
+	changed chan struct{}
 }
 
 func newStreamBuffer(max int) *streamBuffer {
@@ -108,6 +110,10 @@ func (b *streamBuffer) Write(p []byte) (int, error) {
 	n := len(p)
 	if n == 0 {
 		return 0, nil
+	}
+	if b.changed != nil {
+		close(b.changed)
+		b.changed = nil
 	}
 	if b.max == 0 {
 		b.base += int64(n)
@@ -137,6 +143,24 @@ func (b *streamBuffer) Write(p []byte) (int, error) {
 	copy(storage, p[copied:])
 	b.data = b.data[:retained+n]
 	return n, nil
+}
+
+// Observe atomically takes a retained-log view and subscribes to the next
+// write. It never consumes the model's output cursor and cannot miss a write
+// between checking for readiness and blocking on its notification.
+func (b *streamBuffer) observe() ([]byte, <-chan struct{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.changed == nil {
+		b.changed = make(chan struct{})
+	}
+	out := make([]byte, len(b.data))
+	if len(out) > 0 {
+		storage := b.data[:cap(b.data)]
+		copied := copy(out, storage[b.head:])
+		copy(out[copied:], storage)
+	}
+	return out, b.changed
 }
 
 // grow preserves chronological order when a small buffer needs more space.
@@ -192,4 +216,24 @@ func (b *streamBuffer) readFrom(cursor int64, max int) ([]byte, int64, int64) {
 	copied := copy(out, storage[start:])
 	copy(out[copied:], storage)
 	return out, cursor + int64(count), omitted
+}
+
+func (b *streamBuffer) readTextFrom(cursor int64, max int) ([]byte, int64, int64) {
+	out, next, omitted := b.readFrom(cursor, max)
+	// The capture is UTF-8 before retention. A ring overflow may cut its first
+	// rune; a poll-sized view must leave the last incomplete rune for next time.
+	leading := 0
+	for leading < len(out) && !utf8.RuneStart(out[leading]) {
+		leading++
+	}
+	end := len(out)
+	for i := end - 1; i >= leading && i >= end-utf8.UTFMax; i-- {
+		if utf8.RuneStart(out[i]) {
+			if !utf8.FullRune(out[i:]) {
+				end = i
+			}
+			break
+		}
+	}
+	return out[leading:end], next - int64(len(out)-end), omitted + int64(leading)
 }

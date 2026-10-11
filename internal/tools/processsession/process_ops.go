@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
+	"supercli/internal/system/processoutput"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/ctxexec"
 	"supercli/internal/tools/sandbox"
@@ -31,6 +32,13 @@ func sessionLifetime(timeoutMS int) (time.Duration, error) {
 }
 
 func (m *Manager) Start(p params) (snapshot, error) {
+	return m.start(context.Background(), p)
+}
+
+func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return snapshot{}, err
+	}
 	if len(p.Command) == 0 {
 		return snapshot{}, errors.New("process_session: command is required for start")
 	}
@@ -100,7 +108,7 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		item.killFn = terminal.Kill
 		item.resizeFn = terminal.Resize
 		item.streams.Add(1)
-		go func() { defer item.streams.Done(); _, _ = io.Copy(item.stdout, terminal) }()
+		go func() { defer item.streams.Done(); copyText(item.stdout, terminal) }()
 	} else {
 		cmd := exec.CommandContext(procCtx, p.Command[0], p.Command[1:]...)
 		cmd.Dir = workdir
@@ -168,15 +176,15 @@ func (m *Manager) Start(p params) (snapshot, error) {
 			return scope.Kill(cmd)
 		}
 		item.streams.Add(2)
-		go func() { defer item.streams.Done(); defer stdout.Close(); _, _ = io.Copy(item.stdout, stdout) }()
-		go func() { defer item.streams.Done(); defer stderr.Close(); _, _ = io.Copy(item.stderr, stderr) }()
+		go func() { defer item.streams.Done(); defer stdout.Close(); copyText(item.stdout, stdout) }()
+		go func() { defer item.streams.Done(); defer stderr.Close(); copyText(item.stderr, stderr) }()
 	}
 	m.items[id] = item
 	m.mu.Unlock()
 
 	go item.wait(procCtx)
 
-	yield := 250 * time.Millisecond
+	yield := defaultStartYield
 	if p.YieldMS != nil && *p.YieldMS >= 0 {
 		yield = time.Duration(*p.YieldMS) * time.Millisecond
 	}
@@ -184,12 +192,28 @@ func (m *Manager) Start(p params) (snapshot, error) {
 		yield = 1500 * time.Millisecond
 	}
 	if yield > 0 {
+		timer := time.NewTimer(yield)
+		defer timer.Stop()
 		select {
 		case <-item.done:
-		case <-time.After(yield):
+		case <-ctx.Done():
+			// Waiting and process lifetime are independent. Retain the id and
+			// output so a cancelled caller can later wait or explicitly stop.
+			return item.poll(), ctx.Err()
+		case <-timer.C:
 		}
 	}
 	return item.poll(), nil
+}
+
+// A single bounded completion wait catches common immediate startup errors.
+// Explicit yield_ms:0 retains the existing non-blocking launch contract.
+const defaultStartYield = 500 * time.Millisecond
+
+func copyText(dst io.Writer, src io.Reader) {
+	writer := processoutput.NewWriter(dst)
+	_, _ = io.Copy(writer, src)
+	_ = writer.Close()
 }
 
 func (p *process) wait(procCtx context.Context) {
@@ -200,7 +224,6 @@ func (p *process) wait(procCtx context.Context) {
 	waited := make(chan waitResult, 1)
 	go func() {
 		code, err := p.waitFn()
-		p.exited.Store(true)
 		waited <- waitResult{code: code, err: err}
 	}()
 	var result waitResult
@@ -211,10 +234,20 @@ func (p *process) wait(procCtx context.Context) {
 		result = <-waited
 	}
 	timedOut := errors.Is(procCtx.Err(), context.DeadlineExceeded)
+	// Measure native execution separately from the bounded output drain.
+	p.mu.Lock()
+	p.ended = time.Now()
+	p.exitCode = result.code
+	if result.err != nil {
+		p.errText = result.err.Error()
+	}
+	// Publish exit only after its code/time are available to start/list.
+	// Output draining can outlive the startup observation window.
+	p.exited.Store(true)
+	p.mu.Unlock()
 	incomplete := p.drainOutput()
 	p.mu.Lock()
 	p.outputIncomplete = incomplete
-	p.ended = time.Now()
 	p.exitCode = result.code
 	switch {
 	case p.stopRequested:
@@ -235,6 +268,7 @@ func (p *process) wait(procCtx context.Context) {
 
 const processOutputDrainGrace = time.Second
 const processOutputWarning = "Output capture incomplete: the process exited, but inherited output pipes stayed open past the drain limit. A descendant may still be running; check its status before rerunning the command."
+const processOutputPendingWarning = "Process has exited; output capture is still draining. Use wait to receive the remaining output without restarting the command."
 
 // A descendant can inherit output handles after its parent exits. Bound the
 // drain, close only our readers, then join them before publishing completion.
@@ -294,11 +328,14 @@ func (p *process) poll() snapshot {
 
 func (p *process) snapshot(maxBytes int) snapshot {
 	p.mu.Lock()
-	out, nextOut, omittedOut := p.stdout.readFrom(p.stdoutCursor, maxBytes)
-	errOut, nextErr, omittedErr := p.stderr.readFrom(p.stderrCursor, maxBytes)
+	out, nextOut, omittedOut := p.stdout.readTextFrom(p.stdoutCursor, maxBytes)
+	errOut, nextErr, omittedErr := p.stderr.readTextFrom(p.stderrCursor, maxBytes)
 	p.stdoutCursor, p.stderrCursor = nextOut, nextErr
 	status, code, errText := p.status, p.exitCode, p.errText
 	started, ended, incomplete := p.started, p.ended, p.outputIncomplete
+	pattern, port, readyAt := p.readyPattern, p.readyPort, p.readyAt
+	readyValid := p.readyValid
+	exited := p.exited.Load()
 	p.mu.Unlock()
 	duration := time.Since(started)
 	if !ended.IsZero() {
@@ -315,6 +352,18 @@ func (p *process) snapshot(maxBytes int) snapshot {
 	if status != "running" && code >= 0 {
 		s.ExitCode = &code
 	}
+	if status == "running" && exited {
+		s.Status = "exited_draining"
+		s.OutputPending, s.OutputWarning = true, processOutputPendingWarning
+		if code >= 0 {
+			s.ExitCode = &code
+		}
+	}
+	if !readyAt.IsZero() {
+		s.Ready = s.Status == "running" && readyValid
+		s.ReadyPattern, s.ReadyPort, s.ReadyAt = pattern, port, readyAt.Format(time.RFC3339Nano)
+	}
+	s.describeState()
 	return s
 }
 
@@ -406,6 +455,9 @@ func (m *Manager) List() []snapshot {
 	for _, item := range items {
 		item.mu.Lock()
 		status, code, started, ended, incomplete := item.status, item.exitCode, item.started, item.ended, item.outputIncomplete
+		pattern, port, readyAt := item.readyPattern, item.readyPort, item.readyAt
+		readyValid := item.readyValid
+		exited := item.exited.Load()
 		item.mu.Unlock()
 		duration := time.Since(started)
 		if !ended.IsZero() {
@@ -419,6 +471,18 @@ func (m *Manager) List() []snapshot {
 		if status != "running" && code >= 0 {
 			s.ExitCode = &code
 		}
+		if status == "running" && exited {
+			s.Status = "exited_draining"
+			s.OutputPending, s.OutputWarning = true, processOutputPendingWarning
+			if code >= 0 {
+				s.ExitCode = &code
+			}
+		}
+		if !readyAt.IsZero() {
+			s.Ready = s.Status == "running" && readyValid
+			s.ReadyPattern, s.ReadyPort, s.ReadyAt = pattern, port, readyAt.Format(time.RFC3339Nano)
+		}
+		s.describeState()
 		out = append(out, s)
 	}
 	return out

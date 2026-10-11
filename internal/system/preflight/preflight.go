@@ -53,9 +53,28 @@ const (
 	// A short cache collapses repeated preflights from coordinator/workers
 	// without hiding fresh file edits: status is deliberately never cached.
 	gitStaticCacheTTL = 2 * time.Second
+	maxGitLogFlights  = 64
 )
 
 var gitStaticCache sync.Map
+
+// Only overlapping native log reads share work. Each build still resolves Git
+// and collects its own fresh status; different executables never share a flight.
+var gitLogFlights = struct {
+	sync.Mutex
+	m map[gitLogFlightKey]*gitLogFlight
+}{m: make(map[gitLogFlightKey]*gitLogFlight)}
+
+type gitLogFlightKey struct {
+	root       string
+	executable string
+}
+
+type gitLogFlight struct {
+	done  chan struct{}
+	state gitStaticState
+	retry bool
+}
 
 type gitStaticState struct {
 	at   time.Time
@@ -146,7 +165,7 @@ func BuildContext(ctx context.Context, root string, o Options) string {
 			defer close(statusDone)
 			status, statusErr = runGit(root, "status", "--porcelain", "--branch")
 		}()
-		head, lg := loadGitLog(root, runGit, cacheStaticGit)
+		head, lg := loadGitLog(ctx, root, executable, runGit, cacheStaticGit)
 		<-statusDone
 		branch, worktree, hasBranch := statusBranch(status)
 		if hasBranch {
@@ -241,28 +260,94 @@ func gitStatusNotRepository(err error) bool {
 	return errors.As(err, &exit) && strings.HasPrefix(strings.TrimSpace(string(exit.Stderr)), "fatal: not a git repository")
 }
 
-func loadGitLog(root string, runGit func(string, ...string) (string, error), cacheable bool) (head, lg string) {
-	key := filepath.Clean(root)
-	if cacheable {
-		if cached, ok := gitStaticCache.Load(key); ok {
-			state := cached.(gitStaticState)
-			if time.Since(state.at) < gitStaticCacheTTL {
-				return state.head, state.log
-			}
-		}
-	}
+func readGitLog(root string, runGit func(string, ...string) (string, error)) (gitStaticState, error) {
 	// One log call supplies both the HEAD display line and recent commits.
 	// The previous implementation spawned a separate `git log -1` process.
-	lg, _ = runGit(root, "log", "--oneline", "-"+itoa(defaultMaxCommits))
-	if lines := splitLines(lg); len(lines) > 0 {
-		head = lines[0]
+	lg, err := runGit(root, "log", "--oneline", "-"+itoa(defaultMaxCommits))
+	state := gitStaticState{log: lg}
+	if lines := splitLines(lg); len(lines) != 0 {
+		state.head = lines[0]
 	}
-	if cacheable {
-		if head != "" {
-			gitStaticCache.Store(key, gitStaticState{at: time.Now(), head: head, log: lg})
+	return state, err
+}
+
+func loadGitLog(ctx context.Context, root, executable string, runGit func(string, ...string) (string, error), cacheable bool) (head, lg string) {
+	if !cacheable {
+		// Explicit runners/options keep their original independent behavior.
+		state, _ := readGitLog(root, runGit)
+		return state.head, state.log
+	}
+	flightKey := gitLogFlightKey{root: filepath.Clean(root), executable: executable}
+	cachedState := func() (gitStaticState, bool) {
+		if cached, ok := gitStaticCache.Load(flightKey); ok {
+			state := cached.(gitStaticState)
+			if time.Since(state.at) < gitStaticCacheTTL {
+				return state, true
+			}
 		}
+		return gitStaticState{}, false
 	}
-	return head, lg
+	collect := func() (gitStaticState, bool) {
+		state, err := readGitLog(root, runGit)
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// A healthy follower retries with its own remaining deadline. Never
+			// publish/cache a partial result from the canceled leader's process.
+			return gitStaticState{}, true
+		}
+		if state.head != "" {
+			state.at = time.Now()
+			gitStaticCache.Store(flightKey, state)
+		}
+		return state, false
+	}
+	for {
+		if ctx.Err() != nil {
+			return "", ""
+		}
+		if state, ok := cachedState(); ok {
+			return state.head, state.log
+		}
+		gitLogFlights.Lock()
+		// A preceding leader may have published between the first cache read
+		// and this lock. Do not start another process after its completed read.
+		if state, ok := cachedState(); ok {
+			gitLogFlights.Unlock()
+			return state.head, state.log
+		}
+		if flight := gitLogFlights.m[flightKey]; flight != nil {
+			gitLogFlights.Unlock()
+			select {
+			case <-ctx.Done():
+				return "", ""
+			case <-flight.done:
+				if ctx.Err() != nil {
+					return "", ""
+				}
+				if !flight.retry {
+					return flight.state.head, flight.state.log
+				}
+				continue
+			}
+		}
+		if len(gitLogFlights.m) >= maxGitLogFlights {
+			// Unrelated roots must not create an unbounded pending map or wait
+			// on each other. Overflow keeps the original independent read.
+			gitLogFlights.Unlock()
+			state, _ := collect()
+			return state.head, state.log
+		}
+		flight := &gitLogFlight{done: make(chan struct{}), retry: true}
+		gitLogFlights.m[flightKey] = flight
+		gitLogFlights.Unlock()
+		defer func() {
+			gitLogFlights.Lock()
+			delete(gitLogFlights.m, flightKey)
+			close(flight.done)
+			gitLogFlights.Unlock()
+		}()
+		flight.state, flight.retry = collect()
+		return flight.state.head, flight.state.log
+	}
 }
 
 // The --branch header uses separators forbidden in ref names. Only the header

@@ -143,7 +143,7 @@ func TestWebUserFactsNonemptyMatchesExistingSaver(t *testing.T) {
 		{"pl-unicode", "Cześć, mam na imię Łukasz. Lubię kawę.", []string{"The user's name is Łukasz.", "The user likes kawę."}},
 		{"en-ascii", "My name is Anna. I prefer coffee.", []string{"The user's name is Anna.", "The user prefers coffee."}},
 		{"en-unicode", "My name is José. I prefer café output.", []string{"The user's name is José.", "The user prefers café output."}},
-		{"existing-filtered-unicode", "My name is Zoë. I prefer crème brûlée.", nil},
+		{"unicode-facts-preserved", "My name is Zoë. I prefer crème brûlée.", []string{"The user's name is Zoë.", "The user prefers crème brûlée."}},
 		{"mixed-clauses", "Nazywam się Élodie; I love żółte filiżanki!", []string{"The user's name is Élodie.", "The user likes żółte filiżanki."}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

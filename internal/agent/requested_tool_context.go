@@ -59,6 +59,7 @@ func (l *Loop) requestedToolDefinitions() []llm.ToolDef {
 // This request-only text never enters Messages, discovery or the frozen catalog.
 func (l *Loop) requestedToolContext() string {
 	if !l.usesRequestedToolContext() {
+		l.requestedContextCache.reset()
 		return ""
 	}
 	defs := l.requestedToolDefinitions()
@@ -71,9 +72,10 @@ func (l *Loop) requestedToolContext() string {
 	}
 	defs = filtered
 	if len(defs) == 0 {
+		l.requestedContextCache.reset()
 		return ""
 	}
-	return requestedToolContextPreamble + "\n" + renderRequestedToolDefinitions(defs)
+	return l.requestedContextCache.render(defs)
 }
 
 // Embed valid object schemas directly instead of quoting their JSON a second

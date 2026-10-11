@@ -71,6 +71,23 @@ func anthropicRequestPrefix(body []byte) string {
 // invalidate signed state. Preserve the original non-thinking blocks and
 // archive; never retry an invalid signature or send opaque state as prose.
 func protectAnthropicPrefixes(req *anthropicRequest) {
+	// Without a saved prefix there is no signed state to compare or prune.
+	// The accepted HTTP request is still hashed separately for future replay.
+	hasPrefix := false
+	for _, m := range req.Messages {
+		for _, b := range m.Content {
+			if b.Prefix != "" {
+				hasPrefix = true
+				break
+			}
+		}
+		if hasPrefix {
+			break
+		}
+	}
+	if !hasPrefix {
+		return
+	}
 	h := anthropicPrefixHash(req.System, req.Tools)
 	for i := range req.Messages {
 		m := &req.Messages[i]

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"supercli/internal/checkpoint"
 )
 
 // Only complete generated metadata is evidence. Never search log text or a
@@ -13,6 +16,7 @@ func processStatusForPrune(content, storedHandle string) string {
 	if rest, ok := strings.CutPrefix(content, "error: process_session "); ok {
 		id, diagnostic, ok := strings.Cut(rest, ": ")
 		id, incomplete := strings.CutSuffix(id, " output_incomplete=true")
+		id, pending := strings.CutSuffix(id, " output_pending=true")
 		if !ok || !validPrunedSequenceID(id, "proc-") {
 			return ""
 		}
@@ -24,9 +28,15 @@ func processStatusForPrune(content, storedHandle string) string {
 		if strings.HasPrefix(diagnostic, "command_failed timeout ") {
 			status = "timeout"
 		}
+		if pending {
+			status = "exited_draining"
+		}
 		summary := fmt.Sprintf(", id=%s, status=%s, exit_code=%d", id, status, exit)
 		if incomplete {
 			summary += ", output_incomplete=true"
+		}
+		if pending {
+			summary += ", output_pending=true"
 		}
 		return summary
 	}
@@ -35,12 +45,15 @@ func processStatusForPrune(content, storedHandle string) string {
 		Status           string `json:"status"`
 		ExitCode         *int   `json:"exit_code"`
 		OutputIncomplete bool   `json:"output_incomplete"`
+		OutputPending    bool   `json:"output_pending"`
+		Ready            *bool  `json:"ready"`
+		ReadyAt          string `json:"ready_at"`
 	}
 	if json.Unmarshal([]byte(pruneStructuredBody(content, storedHandle)), &snap) != nil || !validPrunedSequenceID(snap.ID, "proc-") {
 		return ""
 	}
 	switch snap.Status {
-	case "running", "done", "failed", "timeout", "stopped":
+	case "running", "exited_draining", "done", "failed", "timeout", "stopped":
 	default:
 		return ""
 	}
@@ -50,6 +63,20 @@ func processStatusForPrune(content, storedHandle string) string {
 	}
 	if snap.OutputIncomplete {
 		status += ", output_incomplete=true"
+	}
+	if snap.OutputPending {
+		status += ", output_pending=true"
+	}
+	if snap.Ready != nil {
+		verified, err := time.Parse(time.RFC3339Nano, snap.ReadyAt)
+		if *snap.Ready && snap.Status == "running" && err == nil && !verified.IsZero() {
+			status += ", ready_observed_at=" + verified.UTC().Format(time.RFC3339Nano)
+		} else {
+			status += ", ready=false"
+			if err == nil && !verified.IsZero() {
+				status += ", past_ready_observed_at=" + verified.UTC().Format(time.RFC3339Nano)
+			}
+		}
 	}
 	return status
 }
@@ -67,8 +94,12 @@ func validPrunedSequenceID(id, prefix string) bool {
 func pruneStructuredBody(content, storedHandle string) string {
 	if storedHandle != "" {
 		if i := strings.LastIndexByte(content, '\n'); i >= 0 && strings.HasPrefix(content[i+1:], "[stored tool output: ") {
-			return content[:i]
+			content = content[:i]
 		}
 	}
+	// Scoped external-file checkpoints append a fixed notice after generated
+	// file metadata. Keep it out of destination/JSON parsing without scanning
+	// or interpreting arbitrary stdout, file bodies, or model claims.
+	content = strings.TrimSuffix(content, "\n"+checkpoint.ExternalCheckpointNotice)
 	return content
 }

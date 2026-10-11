@@ -184,20 +184,41 @@ func CompileToolSchema(raw string) (CompiledToolSchema, error) {
 }
 
 func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) {
+	value, shared, err := cachedToolSchemaValue(raw, mode)
+	if err != nil {
+		return nil, err
+	}
+	if shared {
+		return append(json.RawMessage(nil), value...), nil
+	}
+	return value, nil
+}
+
+// toolSchemaForRequest borrows immutable encoded schema bytes for immediate
+// request serialization only. The request builders never modify these bytes or
+// expose the borrowed slice. Eviction only removes the cache reference; it
+// neither reuses nor mutates the backing bytes still held by a request. Ordinary
+// normalizers and CompileToolSchema continue returning independent copies.
+func toolSchemaForRequest(raw string, mode toolSchemaMode) (json.RawMessage, error) {
+	value, _, err := cachedToolSchemaValue(raw, mode)
+	return value, err
+}
+
+// cachedToolSchemaValue returns immutable bytes plus whether an ordinary caller
+// needs its own copy. Oversized, uncached results already have a private owner.
+func cachedToolSchemaValue(raw string, mode toolSchemaMode) (json.RawMessage, bool, error) {
 	raw = strings.TrimSpace(raw)
 	key := toolSchemaCacheKey{mode: mode, raw: raw}
 	normalizedToolSchemaCache.Lock()
 	if cached, ok := normalizedToolSchemaCache.entries[key]; ok {
-		// Values are immutable. Copy outside the lock so large cache hits do not
-		// serialize callers while copying their independent result slices.
 		normalizedToolSchemaCache.Unlock()
-		return append(json.RawMessage(nil), cached...), nil
+		return cached, true, nil
 	}
 	normalizedToolSchemaCache.Unlock()
 
 	schema, err := normalizedToolSchemaObjectChecked(raw)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	switch mode {
 	case toolSchemaPortable:
@@ -207,7 +228,7 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 	}
 	encoded, err := json.Marshal(schema)
 	if err != nil {
-		return nil, fmt.Errorf("marshal JSON schema: %w", err)
+		return nil, false, fmt.Errorf("marshal JSON schema: %w", err)
 	}
 	value := json.RawMessage(encoded)
 
@@ -215,7 +236,7 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 	// marshaled value has no shared owner, so an oversized result belongs to its
 	// caller directly and needs neither residency nor another large copy.
 	if len(raw) > toolSchemaCacheByteLimit || len(value) > toolSchemaCacheByteLimit-len(raw) {
-		return value, nil
+		return value, false, nil
 	}
 	weight := len(raw) + len(value)
 	normalizedToolSchemaCache.Lock()
@@ -239,15 +260,15 @@ func cachedToolSchema(raw string, mode toolSchemaMode) (json.RawMessage, error) 
 			normalizedToolSchemaCache.order = normalizedToolSchemaCache.order[:kept]
 		}
 		// TrimSpace may have left raw pointing into a much larger input. Own just
-		// the counted key bytes. value is private marshal output; only the return
-		// below is copied, so callers cannot mutate the cache.
+		// the counted key bytes. value is immutable private marshal output;
+		// ordinary callers receive a copy through cachedToolSchema above.
 		key.raw = strings.Clone(raw)
 		normalizedToolSchemaCache.entries[key] = value
 		normalizedToolSchemaCache.order = append(normalizedToolSchemaCache.order, key)
 		normalizedToolSchemaCache.bytes += weight
 	}
 	normalizedToolSchemaCache.Unlock()
-	return append(json.RawMessage(nil), value...), nil
+	return value, true, nil
 }
 
 // Some OpenAI-compatible validators use a narrower dialect than the official

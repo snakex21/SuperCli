@@ -62,7 +62,9 @@ func runWorkerHintProbe(t *testing.T, agent, prompt string, thin, advise, wantHi
 	}
 	for i, request := range provider.reqs {
 		user := ""
+		hintCount := 0
 		for _, message := range request {
+			hintCount += strings.Count(message.Content, implementationVerificationInstruction)
 			if message.Role == llm.RoleUser {
 				user = message.Content
 			}
@@ -71,11 +73,11 @@ func runWorkerHintProbe(t *testing.T, agent, prompt string, thin, advise, wantHi
 		if i == 1 {
 			rawPrompt = followup
 		}
-		if strings.Contains(user, implementationVerificationInstruction) != wantHint {
-			t.Fatalf("role=%s request=%d hint=%v, want=%v; added bytes=%d", agent, i, strings.Contains(user, implementationVerificationInstruction), wantHint, len(user)-len(rawPrompt))
+		if hintCount != map[bool]int{true: 1, false: 0}[wantHint] {
+			t.Fatalf("role=%s request=%d hint copies=%d, want hint=%v", agent, i, hintCount, wantHint)
 		}
-		if !wantHint && user != rawPrompt {
-			t.Fatalf("read-only instruction rewritten: %q", user)
+		if user != rawPrompt {
+			t.Fatalf("user instruction rewritten: %q", user)
 		}
 	}
 	if !wantHint {

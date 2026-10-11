@@ -238,10 +238,8 @@ func TestWorkerCodingSchemasAB_Live(t *testing.T) {
 			}
 			if child != nil {
 				result.Messages = child.Messages
+				result.ImplementationHintPresent = strings.Contains(child.contextTail(), implementationVerificationInstruction)
 				for _, message := range child.Messages {
-					if message.Role == llm.RoleUser && strings.Contains(message.Content, implementationVerificationInstruction) {
-						result.ImplementationHintPresent = true
-					}
 					result.ToolCalls = append(result.ToolCalls, message.ToolCalls...)
 				}
 			}

@@ -33,17 +33,18 @@ Use EXACTLY this plain-text template, no code fences:
 ` + compactionTemplate + `
 
 Tool/task results are authoritative. Assistant intentions/promises are not Done.
+Process launch/exit is not server readiness. Preserve last observed status, readiness evidence and time separately; old log/port checks are not current health. Detached shell launch success proves only the launcher ran.
 A successful worker's returned investigation is not Pending. Preserve failed worker IDs; continue them with send_message when useful instead of restarting.
 
 Hard limit: 500 tokens total. Prefer bare paths and short phrases. TEXT ONLY — no tool calls.`
 
 var errCompactionInstructionEcho = errors.New("compact: model repeated summarization instructions instead of conversation facts; history preserved")
+var errCompactionSummaryTooLong = errors.New("compact: model summary exceeds byte limit; history preserved")
 
-// compactSummaryMaxChars hard-caps the model-produced summary
-// (~1000 tokens). Small models overshoot instruction limits; the
-// summary is re-sent with EVERY later request, so an unbounded one
-// would defeat the point of compacting. Truncation prefers a line
-// boundary.
+// compactSummaryMaxChars is the byte cap for the model-produced summary
+// (~1000 tokens). Small models overshoot instruction limits; the summary
+// is re-sent with every later request. Reject oversized new summaries
+// instead of cutting off the task state or outstanding requirements.
 const compactSummaryMaxChars = 4000
 
 // compactSummaryWrapper frames the summary so the model resumes
@@ -169,7 +170,7 @@ func compactTranscriptContent(m llm.Message) string {
 
 // SummarizeForCompaction asks the provider for the Goal/Done/State/
 // Pending summary of msgs. Returns an error when the provider fails
-// or produces an empty, incomplete, or non-text answer.
+// or produces an empty, incomplete, oversized, or non-text answer.
 func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message) (string, error) {
 	transcript := RenderCompactTranscript(msgs)
 	if strings.TrimSpace(transcript) == "" {
@@ -227,7 +228,7 @@ readStream:
 	}
 	// Reasoning models prepend <thinking> blocks even when told not
 	// to; that chain-of-thought would be re-sent with every later
-	// request, so strip it before clamping.
+	// request, so strip it before validating the visible summary's size.
 	out := strings.TrimSpace(stripThinking(b.String()))
 	if out == "" {
 		return "", fmt.Errorf("summarizer returned empty text")
@@ -239,7 +240,13 @@ readStream:
 	if sameCompactionInstructionLines(out, compactionTemplate) || sameCompactionInstructionLines(out, compactionPrompt) {
 		return "", errCompactionInstructionEcho
 	}
-	return ClampSummary(out), nil
+	// A completed stream can still exceed the requested limit. Its tail may
+	// contain the only State/Pending instructions, so never accept a cut-off
+	// replacement for the original history. Usage has already been drained.
+	if len(out) > compactSummaryMaxChars {
+		return "", fmt.Errorf("%w: %d bytes, maximum %d", errCompactionSummaryTooLong, len(out), compactSummaryMaxChars)
+	}
+	return out, nil
 }
 
 // Ignore blank lines and outer line whitespace, but no wording, punctuation or
@@ -300,8 +307,34 @@ type compactToolScopeKey struct{}
 type compactToolScope struct{ activeTools func() []string }
 
 func NewAutoSummarizerWithProvider(provider llm.Provider, activeTools func() []string) Summarizer {
+	var resolve func(context.Context) (llm.Provider, error)
+	if provider != nil {
+		resolve = func(context.Context) (llm.Provider, error) { return provider, nil }
+	}
+	return NewAutoSummarizerWithProviderResolver(resolve, activeTools)
+}
+
+// NewAutoSummarizerWithProviderResolver defers an optional backend's construction
+// until summarization is needed. A construction error falls back to the active
+// provider, like the existing optional-provider wiring; cancellation preserves
+// history and does not launch a fallback. The resolver returns a real provider.
+func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Provider, error), activeTools func() []string) Summarizer {
 	return func(ctx context.Context, p llm.Provider, msgs []llm.Message) (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		mainProvider := p
+		var provider llm.Provider
+		if resolve != nil {
+			var resolveErr error
+			provider, resolveErr = resolve(ctx)
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			if resolveErr != nil {
+				provider = nil
+			}
+		}
 		if provider != nil {
 			p = provider
 		}

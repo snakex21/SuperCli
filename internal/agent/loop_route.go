@@ -13,6 +13,7 @@ import (
 // Messages. Routing uses the raw prompt; the session store keeps that raw
 // prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
+	l.implementationHintForRun = ""
 	l.screenshotForRun = containsScreenshotReference(prompt)
 	l.headlessForRun = containsHeadlessReference(prompt)
 	l.downloadForRun = l.downloadRequestForPrompt(prompt).download
@@ -68,13 +69,11 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 		// tool_search and never sees scripting as the only usable route.
 		l.registry.Activate("read_docx", "edit_docx")
 	}
-	// Verification is a variable, one-shot user-message hint, never part of the
-	// cacheable system prefix. It is injected only for explicit mutation work;
-	// project questions and ordinary chat pay zero tokens for it.
+	// Keep optional guidance in the request-only tail. Mutating each user
+	// message retained an identical copy for every editing turn, including
+	// resumed workers. Earlier user text and the cacheable prefix stay intact.
 	if l.route == RouteCoordinator && !l.skipImplementationHint {
-		if hint := implementationVerificationHint(prompt); hint != "" {
-			l.appendCurrentUserContext(hint)
-		}
+		l.implementationHintForRun = implementationVerificationHint(prompt)
 	}
 }
 

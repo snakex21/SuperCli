@@ -39,10 +39,17 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 		facts[key] = compactFileFact{path: path, kind: max(kind, prior.kind), last: last}
 	}
 	var pending map[string]llm.ToolCall
+	processFacts := map[string]compactFileFact{}
 	for i, m := range msgs {
 		switch m.Role {
 		case llm.RoleUser:
 			pending = nil
+			if IsLegacyCompactionSummary(m) {
+				for _, observation := range compactPriorProcessObservations(m.Content) {
+					identity, _, _ := strings.Cut(observation.path, ",")
+					processFacts[identity] = compactFileFact{path: observation.path, last: i}
+				}
+			}
 		case llm.RoleAssistant:
 			pending = make(map[string]llm.ToolCall, len(m.ToolCalls))
 			for _, call := range m.ToolCalls {
@@ -66,6 +73,13 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 				continue
 			}
 			body := strings.TrimSpace(pruneStructuredBody(m.Content, core.StoredOutputHandle(m.Content)))
+			if name == "process_session" {
+				for _, observation := range compactProcessObservations(body) {
+					identity, _, _ := strings.Cut(observation.path, ",")
+					processFacts[identity] = compactFileFact{path: observation.path, kind: 0, last: i}
+				}
+				continue
+			}
 			if strings.HasPrefix(body, "error:") || strings.HasPrefix(body, "blocked:") {
 				continue
 			}
@@ -142,6 +156,23 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 	}
 	// Preserve active tools and completed changes before lower-value references.
 	writeList("loaded_tools", loadedTools)
+	if len(processFacts) > 0 {
+		observations := make([]compactFileFact, 0, len(processFacts))
+		for _, fact := range processFacts {
+			observations = append(observations, fact)
+		}
+		sort.Slice(observations, func(i, j int) bool {
+			if observations[i].last == observations[j].last {
+				return observations[i].path < observations[j].path
+			}
+			return observations[i].last > observations[j].last
+		})
+		entries := make([]string, 0, len(observations))
+		for _, fact := range observations {
+			entries = append(entries, fact.path)
+		}
+		writeList(processObservationsLabel, entries)
+	}
 	for _, group := range []struct {
 		kind  int
 		label string

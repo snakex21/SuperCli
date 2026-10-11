@@ -479,14 +479,21 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	var operationKey [32]byte
 	var operationGeneration uint64
 	var operationEligible, operationReplayed bool
+	var preparedInvocation tools.PreparedInvocation
+	var havePreparedInvocation bool
 	if knownTool && tool.ReplaySuccess != nil {
-		if prepared, validationErr := l.registry.PrepareArgs(tc.Name, raw); validationErr == nil {
+		if invocation, prepared, validationErr := l.registry.PrepareInvocation(tc.Name, raw); validationErr == nil {
+			preparedInvocation, havePreparedInvocation = invocation, true
 			operationKey, operationEligible = completedOperationKey(tc.Name, prepared)
 			if operationEligible {
 				prior, found, generation := l.completedOps.lookup(operationKey)
 				operationGeneration = generation
 				if found {
-					res, operationReplayed = replayCompletedOperation(ctx, tool, prepared, prior)
+					// Replay callbacks may mutate their input before declining.
+					// Keep execution, verification and failure bookkeeping bound
+					// to the original call, even when preparation aliases raw.
+					replayArgs := append(json.RawMessage(nil), prepared...)
+					res, operationReplayed = replayCompletedOperation(ctx, tool, replayArgs, prior)
 					if !operationReplayed || res.Err != nil {
 						l.completedOps.drop(operationKey)
 					}
@@ -502,7 +509,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		// eventually fail: they may have changed the observed state.
 		l.resultReuse.reset()
 	} else if tool.ReadOnly && tool.ReplaySuccess == nil && tool.ReuseTTL > 0 && tool.RefreshArg != "" {
-		if prepared, validationErr := l.registry.PrepareArgs(tc.Name, raw); validationErr == nil {
+		if invocation, prepared, validationErr := l.registry.PrepareInvocation(tc.Name, raw); validationErr == nil {
+			preparedInvocation, havePreparedInvocation = invocation, true
 			if key, fresh, eligible := reusableToolKey(tool, prepared); eligible {
 				res, reuseAge, reused, reuseClaim, err = l.resultReuse.acquire(ctx, key, fresh, time.Now)
 				if err != nil {
@@ -548,7 +556,20 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		if tc.Name == "task" || tc.Name == "send_message" {
 			dispatchCtx = withWorkerEffectBarrier(dispatchCtx, l.workerEffectBarrierObserver(ctx))
 		}
-		res, err = l.registry.Execute(dispatchCtx, tc.Name, raw)
+		// Preparation/replay may run callbacks or wait for another result. A
+		// turn cancelled there must not start a tool that ignores its context.
+		if cause := dispatchCtx.Err(); cause != nil {
+			l.recordPhase("tool:"+tc.Name, time.Since(execStart))
+			return l.cancelledToolResult(tc, tools.Result{}, cause, false, out)
+		}
+		if havePreparedInvocation {
+			// This invocation already accepted the arguments for its cache key.
+			// Reuse that preparation only; the current callback still performs
+			// permissions, checkpoint binding and other execution-time checks.
+			res, err = l.registry.ExecutePrepared(dispatchCtx, preparedInvocation)
+		} else {
+			res, err = l.registry.Execute(dispatchCtx, tc.Name, raw)
+		}
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 

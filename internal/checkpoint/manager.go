@@ -65,6 +65,7 @@ type BatchResult struct {
 type Manager struct {
 	mu                   contextMutex
 	home, repo, meta     string
+	dataDir              string
 	excludes             string
 	excludedDataRel      string
 	repoReady            bool
@@ -91,7 +92,7 @@ func Open(home, dataDir string) (*Manager, error) {
 	}
 	h := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
 	root := filepath.Join(dataAbs, "checkpoints", hex.EncodeToString(h[:8]))
-	m := &Manager{home: abs, repo: filepath.Join(root, "objects.git"), meta: filepath.Join(root, "turns.json")}
+	m := &Manager{home: abs, repo: filepath.Join(root, "objects.git"), meta: filepath.Join(root, "turns.json"), dataDir: dataAbs}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
@@ -133,6 +134,8 @@ type Turn struct {
 	snapshotAfter             string
 	deferredOnce              sync.Once
 	retentionOnce             sync.Once
+	external                  map[string]*Turn
+	externalNoticeSent        bool
 }
 
 // Controller reuses one manager across interactive TUI turns. Registered tool
@@ -216,7 +219,11 @@ func (c *Controller) Wrap(spec tools.Tool) tools.Tool {
 		if err := turn.ensureBeforeForTool(ctx, spec.Name, args); err != nil {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
-		return original(ctx, args)
+		result, err := original(ctx, args)
+		if err == nil {
+			turn.describeExternalCapture(spec.Name, &result)
+		}
+		return result, err
 	}
 	return spec
 }
@@ -303,7 +310,11 @@ func (t *Turn) Wrap(spec tools.Tool) tools.Tool {
 		if err := turn.ensureBeforeForTool(ctx, spec.Name, args); err != nil {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
-		return original(ctx, args)
+		result, err := original(ctx, args)
+		if err == nil {
+			turn.describeExternalCapture(spec.Name, &result)
+		}
+		return result, err
 	}
 	return spec
 }
@@ -382,6 +393,9 @@ func (t *Turn) commitCheckpoint(ctx context.Context) (committed bool, err error)
 		return false, err
 	}
 	defer t.mu.Unlock()
+	if err := t.completeExternalLocked(ctx); err != nil {
+		return false, err
+	}
 	if !t.touched {
 		return true, nil
 	}

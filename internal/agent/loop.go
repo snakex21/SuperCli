@@ -74,6 +74,7 @@ type Loop struct {
 	provider               llm.Provider
 	registry               *tools.Registry
 	toolDefsSnapshot       toolDefinitionSnapshot
+	requestedContextCache  requestedToolContextSnapshot
 	caps                   *llm.CapabilityRegistry
 	system                 string
 	briefing               string
@@ -329,7 +330,8 @@ type Loop struct {
 	route    RouteMode
 	navigate bool
 	// Role policy: analysis workers must not be instructed to implement edits.
-	skipImplementationHint bool
+	skipImplementationHint   bool
+	implementationHintForRun string
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
