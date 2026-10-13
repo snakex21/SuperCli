@@ -17,7 +17,7 @@ func TestNativePowerShellStartObservesFastFailure(t *testing.T) {
 	}
 	tool := New(t.TempDir())
 	t.Cleanup(tool.Close)
-	raw, _ := json.Marshal(map[string]any{"action": "start", "command": []string{powershell, "-NoProfile", "-Command", "[Console]::Error.WriteLine('błąd startu: port zajęty'); exit 3"}})
+	raw, _ := json.Marshal(map[string]any{"action": "start", "command": []string{powershell, "-NoProfile", "-Command", "[Console]::Error.WriteLine('start error: port busy'); exit 3"}})
 	result, err := tool.Execute(context.Background(), raw)
 	if err != nil {
 		t.Fatal(err)
@@ -31,12 +31,12 @@ func TestNativePowerShellStartObservesFastFailure(t *testing.T) {
 		// merely to launch PowerShell. Do not convert slow startup into failure.
 		t.Logf("PowerShell outlived the 500ms startup observation; awaiting actual exit")
 		final, err := tool.Manager.Wait(context.Background(), snap.ID)
-		if err != nil || final.ExitCode == nil || *final.ExitCode != 3 || !strings.Contains(snap.Stderr+final.Stderr, "błąd startu: port zajęty") {
+		if err != nil || final.ExitCode == nil || *final.ExitCode != 3 || !strings.Contains(snap.Stderr+final.Stderr, "start error: port busy") {
 			t.Fatalf("slow startup lost eventual evidence: %+v %v", final, err)
 		}
 		return
 	}
-	if result.Err == nil || snap.ExitCode == nil || *snap.ExitCode != 3 || !strings.Contains(snap.Stderr, "błąd startu: port zajęty") {
+	if result.Err == nil || snap.ExitCode == nil || *snap.ExitCode != 3 || !strings.Contains(snap.Stderr, "start error: port busy") {
 		t.Fatalf("fast PowerShell failure not reported by start: %+v %v", snap, result.Err)
 	}
 	t.Logf("PowerShell failure observed by start: native duration %dms", snap.DurationMS)
