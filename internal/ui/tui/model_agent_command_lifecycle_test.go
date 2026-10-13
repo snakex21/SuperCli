@@ -227,15 +227,21 @@ func TestTUIAgentStopNativeCommandAndNextPrompt(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyCtrlC, tea.KeyEsc} {
 		t.Run(tea.KeyMsg{Type: key}.String(), func(t *testing.T) {
 			entered, closed := make(chan struct{}), make(chan struct{})
+			// curl fetches /ready to completion (writing its body to stdout)
+			// before it requests /block, so the accepted output is already in
+			// the pipe when Stop kills the process group.
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprintln(w, "native curl is ready")
+				if r.URL.Path == "/ready" {
+					fmt.Fprintln(w, "native curl is ready")
+					return
+				}
 				w.(http.Flusher).Flush()
 				close(entered)
 				<-r.Context().Done()
 				close(closed)
 			}))
 			defer server.Close()
-			m, provider, completed := tuiCommandModel(t, t.TempDir(), []string{curl, "--silent", "--no-buffer", server.URL})
+			m, provider, completed := tuiCommandModel(t, t.TempDir(), []string{curl, "--silent", "--no-buffer", server.URL + "/ready", server.URL + "/block"})
 			m = tuiCommandSubmit(t, m, "run command until Stop")
 			select {
 			case <-entered:
