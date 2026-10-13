@@ -186,8 +186,11 @@ func TestTUIAgentNativeCommandCompletionAndNextPrompt(t *testing.T) {
 			}
 			result := results[0]
 			if mode == "checkpoint-limit" {
-				if !errors.Is(result.Err, checkpoint.ErrSnapshotLimit) {
-					t.Fatalf("checkpoint rejection never reached TUI: %+v", result)
+				// An oversized workspace no longer blocks the command: it runs
+				// without a baseline and the TUI result carries the undo warning.
+				if result.Err != nil || !strings.Contains(result.Output, "TUI_NATIVE_COMPLETED") ||
+					!strings.Contains(result.Output, checkpoint.ErrSnapshotLimit.Error()) {
+					t.Fatalf("checkpoint limit notice never reached TUI: %+v", result)
 				}
 			} else {
 				var native ctxexec.Result
