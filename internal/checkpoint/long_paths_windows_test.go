@@ -12,7 +12,11 @@ import (
 
 func TestCheckpointLongPathsWindows(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
+	// Canonical root: Open expands 8.3 short names, so the length math must too.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	home := filepath.Join(root, "workspace")
 	// The private repository fits the native Git init limit, while generated
 	// record refs and their locks exceed it. This reproduces the actual failure

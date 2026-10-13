@@ -31,7 +31,8 @@ func retentionFixture(t *testing.T) (*Manager, string, Record, Record) {
 	}
 	old := recordParallelStoreFileChange(t, m, "old", "session", "old.bin", 1, before, after)
 	newest := recordParallelStoreFileChange(t, m, "new", "session", "new.bin", 2, []byte("new-before"), []byte("new-after"))
-	return m, data, old, newest
+	// m.dataDir is the canonical form (Windows 8.3 short names expanded).
+	return m, m.dataDir, old, newest
 }
 
 func retentionTransaction(t *testing.T, m *Manager, fn func()) {

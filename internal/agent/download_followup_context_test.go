@@ -126,6 +126,10 @@ func TestDownloadFollowupCreatesTwoIndependentScopedCalls(t *testing.T) {
 		t.Fatalf("calls=%d provider=%d", len(executed), p.calls)
 	}
 	first, second := <-executed, <-executed
+	// Destinations are canonical (Windows 8.3 short names expanded).
+	if resolved, err := filepath.EvalSymlinks(export); err == nil {
+		export = resolved
+	}
 	if first == second || !sandbox.IsUnder(export, first) || !sandbox.IsUnder(export, second) {
 		t.Fatalf("independent destinations = %q, %q", first, second)
 	}

@@ -47,6 +47,10 @@ func TestWebDownloadReplayVerifiesSameEffectWithoutHTTP(t *testing.T) {
 		}
 	}
 	full := filepath.Join(tool.BaseDir, "assets", "portable.bin")
+	// The summary names the canonical path (Windows 8.3 short names expanded).
+	if resolved, err := filepath.EvalSymlinks(full); err == nil {
+		full = resolved
+	}
 	quotedPath, _ := json.Marshal(full)
 	if !strings.Contains(prior.Operation.Summary, string(quotedPath)) || !strings.Contains(prior.Operation.Summary, fmt.Sprintf("%d bytes", len(body))) {
 		t.Fatalf("operation summary lost exact destination or measured size: %s", prior.Operation.Summary)

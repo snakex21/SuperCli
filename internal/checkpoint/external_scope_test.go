@@ -16,7 +16,12 @@ func TestFullAccessExternalEditsHaveSeparatePortableCheckpoint(t *testing.T) {
 	old := sandbox.IsUnsandboxed()
 	sandbox.SetUnsandboxed(true)
 	defer sandbox.SetUnsandboxed(old)
-	root := t.TempDir()
+	// Tool scope resolves paths canonically (8.3 short names expanded); reopen
+	// the external workspace under the same spelling.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	workspace := filepath.Join(root, "project")
 	outside := filepath.Join(root, "other")
 	for _, dir := range []string{workspace, outside} {
@@ -60,7 +65,7 @@ func TestFullAccessExternalEditsHaveSeparatePortableCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := external.Latest("session")
-	if record == nil || len(record.Files) != 1 || record.Files[0] != "zażółć.go" || !strings.HasPrefix(external.repo, data) {
+	if record == nil || len(record.Files) != 1 || record.Files[0] != "zażółć.go" || !strings.HasPrefix(external.repo, external.dataDir) {
 		t.Fatalf("external checkpoint missing: %+v", record)
 	}
 	if _, err := external.Undo(context.Background(), record.ID); err != nil {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
@@ -21,7 +22,8 @@ import (
 
 func TestDeferredCheckpointChangesRecoverAfterRestart(t *testing.T) {
 	ctx := context.Background()
-	home, dataDir := t.TempDir(), t.TempDir()
+	// Canonical home: the engine keys checkpoint stores by the resolved path.
+	home, dataDir := canonicalTestDir(t), t.TempDir()
 	eng, err := NewEngine(echoConfig(), home, dataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +70,13 @@ func TestDeferredCheckpointChangesRecoverAfterRestart(t *testing.T) {
 		result, err := tool.Fn(ctx, json.RawMessage("{\"path\":\"a.txt\"}"))
 		toolDone <- errors.Join(err, result.Err)
 	}()
-	<-entered
+	select {
+	case <-entered:
+	case err := <-toolDone:
+		t.Fatalf("wrapped tool finished without running: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("wrapped tool never started")
+	}
 	fixture, err := sql.Open("sqlite", filepath.Join(eng.DataDir(), "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -97,10 +105,20 @@ func TestDeferredCheckpointChangesRecoverAfterRestart(t *testing.T) {
 	}
 	sink.bindSummary(2, rowID)
 	unblock()
-	if err := <-toolDone; err != nil {
-		t.Fatal(err)
+	select {
+	case err := <-toolDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("wrapped tool did not finish")
 	}
-	finished := <-completed
+	var finished completion
+	select {
+	case finished = <-completed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("deferred checkpoint did not complete")
+	}
 	if finished.err != nil || finished.record == nil || len(finished.record.Changes) != 1 || sink.flushed || sink.attempts != 1 {
 		t.Fatalf("failure fixture did not retain durable changes: %+v attempts=%d", finished, sink.attempts)
 	}
