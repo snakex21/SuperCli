@@ -164,7 +164,9 @@ func TestWorkerContinuationPreservesWireEvidence(t *testing.T) {
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
-					const sessionID = "ses_0123456789abcdef0123456789"
+					// Wire-shaped session (counter 1) so ApplyOpenCodeZenHeaders
+					// passes it through unchanged (normalizeZenSessionID).
+					const sessionID = "ses_f35823b5fffe7lXLKSv2dZfIup"
 					ctx = llm.WithOpenCodeSession(ctx, sessionID)
 					args, _ := json.Marshal(map[string]any{"agent": "code", "prompt": initial})
 					result, err := task.execute(ctx, args)

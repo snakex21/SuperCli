@@ -305,7 +305,8 @@ func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoni
 //   - "prompt_cache_key" = x-opencode-session (ses_… / process fallback)
 //   - empty tools: omit "tools" and "tool_choice" entirely
 //
-// sessionID is normalized to the ses_+26hex wire shape; it must match the
+// sessionID is normalized to the ses_+26 wire shape (12 hex + 14 base62,
+// counter ≤ 63); it must match the
 // x-opencode-session header ApplyOpenCodeZenHeaders sets on the same request.
 func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string) ([]byte, error) {
 	var req map[string]any

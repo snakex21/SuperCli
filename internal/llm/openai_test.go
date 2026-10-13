@@ -1740,7 +1740,7 @@ func TestOpenCodeZenAnonymousRequestUsesPublicClientHeaders(t *testing.T) {
 	if client := got.Get("X-OpenCode-Client"); client != "cli" {
 		t.Fatalf("X-OpenCode-Client = %q", client)
 	}
-	if userAgent := got.Get("User-Agent"); userAgent != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+	if userAgent := got.Get("User-Agent"); userAgent != "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", userAgent)
 	}
 	if project := got.Get("X-OpenCode-Project"); project != "global" {
@@ -1771,7 +1771,7 @@ func TestOpenCodeGoRequestUsesStableSessionHeaders(t *testing.T) {
 		if got := req.Header.Get("X-OpenCode-Session"); got != want {
 			t.Fatalf("%s: X-OpenCode-Session = %q, want %q", baseURL, got, want)
 		}
-		if got := req.Header.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+		if got := req.Header.Get("User-Agent"); got != "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
 			t.Fatalf("%s: User-Agent = %q", baseURL, got)
 		}
 		if got := req.Header.Get("X-OpenCode-Client"); got != "cli" {

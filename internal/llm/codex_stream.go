@@ -78,7 +78,8 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			if zenSession == "" {
 				zenSession = openCodeProcessSessionID
 			}
-			// Zen free-tier edge accepts only ses_+26hex; normalizeZenSessionID
+			// Zen free-tier edge accepts only ses_+26 wire IDs (12 hex +
+			// 14 base62, counter ≤ 63); normalizeZenSessionID
 			// inside prepare keeps header (ApplyOpenCodeZenHeaders) and body
 			// prompt_cache_key identical.
 			reqBody, err = prepareOpenCodeZenResponsesRequest(reqBody, zenSession)

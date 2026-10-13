@@ -101,7 +101,8 @@ func TestZenGateInvalidSessionControl(t *testing.T) {
 
 // Unit: normalizeZenSessionID shape rules.
 func TestNormalizeZenSessionID(t *testing.T) {
-	valid := "ses_0123456789abcdef0123456789"
+	// Genuine wire shape: 12 hex with low12=0xFFF (counter 0) + 14 base62.
+	valid := "ses_cd67f91c1fffnakl7eqdkWXvHA"
 	if got := normalizeZenSessionID(valid); got != valid {
 		t.Fatalf("valid passthrough: %q", got)
 	}
@@ -119,5 +120,62 @@ func TestNormalizeZenSessionID(t *testing.T) {
 	}
 	if normalizeZenSessionID("") == "" || !isZenSessionWireID(normalizeZenSessionID("")) {
 		t.Fatalf("empty must map to wire shape: %q", normalizeZenSessionID(""))
+	}
+}
+
+// TestZenSessionWireIDCounter pins the free-tier counter bound: the
+// descending-encoded value's low 12 bits must be ≥ 0xFC0 (counter ≤ 63).
+// Bisect 2026-10-13: counter 63 → 200, counter 64 → 403.
+func TestZenSessionWireIDCounter(t *testing.T) {
+	// Last 3 hex digits of the 12-hex time part carry low 12 bits:
+	// counter = 0xFFF - low12, so fff→0, ffe→1, fc0→63, fbf→64, f00→255, 9ab→1620.
+	cases := []struct {
+		id   string
+		want bool
+	}{
+		{"ses_ffffffffffffabcdefghijklmn", true},  // low12=fff, counter 0
+		{"ses_fffffffffffeabcdefghijklmn", true},  // low12=ffe, counter 1
+		{"ses_ffffffffffc0abcdefghijklmn", true},  // low12=fc0, counter 63
+		{"ses_ffffffffffbfabcdefghijklmn", false}, // low12=fbf, counter 64
+		{"ses_ffffffffff00abcdefghijklmn", false}, // low12=f00, counter 255
+		{"ses_fffffffff9abcdefghijklmn", false},   // low12=9ab, counter 1620
+		// Shape failures: short hex, bad suffix charset.
+		{"ses_ffffabcdefghijklmn", false},
+		{"ses_ffffffffffff!!!!!!!!!!!!!!", false},
+	}
+	for _, c := range cases {
+		if got := isZenSessionWireID(c.id); got != c.want {
+			t.Errorf("isZenSessionWireID(%q) = %v, want %v", c.id, got, c.want)
+		}
+	}
+}
+
+// TestZenSessionFromEntropyRecency: minted IDs must carry a real wall-clock
+// millisecond (not hash-derived garbage) so a future recency check on the
+// free-tier edge cannot reject them. Determinism still holds within a process.
+func TestZenSessionFromEntropyRecency(t *testing.T) {
+	id := zenSessionFromEntropy("recency-test-entropy")
+	if !isZenSessionWireID(id) {
+		t.Fatalf("not wire-shaped: %q", id)
+	}
+	// The 48-bit field stores ~(ms*4096+counter) mod 2^48; current ms overflows
+	// 48 bits so only ms mod 2^36 is recoverable. Check it tracks wall-clock.
+	var v uint64
+	for _, c := range id[4:16] {
+		v = v<<4 | hexVal(c)
+	}
+	msMod := ((^v) & 0xFFFFFFFFFFFF) >> 12
+	nowMod := uint64(time.Now().UnixMilli()) & 0xFFFFFFFFF // 2^36-1
+	diff := int64(msMod) - int64(nowMod)
+	if diff < 0 {
+		diff = -diff
+	}
+	// Allow wrap-around near the 2^36 boundary (≈ every 2.18 years).
+	if diff > 10000 && diff < (1<<36)-10000 {
+		t.Fatalf("minted ms mod 2^36 = %d not near now mod 2^36 = %d (id=%q)", msMod, nowMod, id)
+	}
+	// Same entropy must stay stable (cache).
+	if again := zenSessionFromEntropy("recency-test-entropy"); again != id {
+		t.Fatalf("cache miss: %q vs %q", id, again)
 	}
 }

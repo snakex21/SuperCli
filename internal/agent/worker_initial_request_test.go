@@ -102,7 +102,10 @@ func TestCodeWorkerInitialRequestIncludesPatchSchema(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				ctx = llm.WithOpenCodeSession(ctx, "ses_0123456789abcdef0123456789")
+				// Wire-shaped session (counter 1) so ApplyOpenCodeZenHeaders
+				// passes it through unchanged (normalizeZenSessionID).
+				const wireSession = "ses_f35823b5fffe7lXLKSv2dZfIup"
+				ctx = llm.WithOpenCodeSession(ctx, wireSession)
 				result, err := task.execute(ctx, json.RawMessage(`{"agent":"code","prompt":"Inspect your available tools and report ready."}`))
 				if err != nil || result.Err != nil {
 					t.Fatalf("worker: %v %v", err, result.Err)
@@ -140,7 +143,7 @@ func TestCodeWorkerInitialRequestIncludesPatchSchema(t *testing.T) {
 					t.Fatal("discovery usage hint absent")
 				}
 				if protocol == "zen-responses" {
-					if got.Path != "/zen/v1/responses" || got.Client != "cli" || got.Session != "ses_0123456789abcdef0123456789" {
+					if got.Path != "/zen/v1/responses" || got.Client != "cli" || got.Session != wireSession {
 						t.Fatalf("Zen route/headers changed: %s %s %s", got.Path, got.Client, got.Session)
 					}
 					if names["bash"].Name == "" || names["read"].Name == "" {
