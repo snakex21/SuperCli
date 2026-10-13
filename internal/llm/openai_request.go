@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,12 +20,15 @@ type openCodeSessionCtxKey struct{}
 // The fallback covers requests that do not belong to a persisted conversation,
 // such as model discovery and diagnostics. It is created once per process and
 // reused, so adding the required header never adds I/O or per-request ID work.
-// Shape matches what Zen's free-tier edge accepts: ses_ + 26 lowercase hex.
+// Shape matches what Zen's free-tier edge accepts: ses_ + 12 hex + 14 base62
+// with a descending-encoded counter ≤ 63 (see isZenSessionWireID).
 var openCodeProcessSessionID = zenSessionFromEntropy(fmt.Sprintf("proc-%d", time.Now().UnixNano()))
 
-// openCodeZenUserAgent mirrors `opencode/1.18.32`'s exact UA from the
-// successful mitm capture (post_2.json / post_3.json, 2026-09-22).
-const openCodeZenUserAgent = "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+// openCodeZenUserAgent mirrors the official CLI's UA shape
+// (`opencode/<semver> ai-sdk/... runtime/bun/<ver>`, captured 2026-10-13).
+// The free-tier edge parses the leading `opencode/<semver>`; trailing
+// ai-sdk/runtime markers must track the binary we impersonate.
+const openCodeZenUserAgent = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 
 // WithOpenCodeSession attaches the stable SuperCli conversation ID used by
 // OpenCode Go for routing and prompt caching. Other providers ignore it.
@@ -46,25 +49,84 @@ func openCodeSessionFromContext(ctx context.Context) string {
 }
 
 // isZenSessionWireID reports whether s already matches the free-tier wire
-// shape: "ses_" + exactly 26 lowercase hex characters (bisect 2026-09-22:
-// any other length/charset → 403 FreeTierError).
+// shape (bisect 2026-10-13): "ses_" + exactly 12 hex chars (48-bit
+// descending timestamp) + exactly 14 alphanumeric chars (base62 suffix),
+// with the descending-encoded counter (low 12 bits of ~value) ≤ 63.
+// Anything else → 403 FreeTierError.
 func isZenSessionWireID(s string) bool {
 	if !strings.HasPrefix(s, "ses_") || len(s) != 4+26 {
 		return false
 	}
-	for _, c := range s[4:] {
+	body := s[4:]
+	for _, c := range body[:12] {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}
-	return true
+	for _, c := range body[12:] {
+		if (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
+			return false
+		}
+	}
+	var v uint64
+	for _, c := range body[:12] {
+		v = v<<4 | uint64(hexVal(c))
+	}
+	return v&0x0FFF >= 0x0FC0
 }
 
-// zenSessionFromEntropy maps arbitrary entropy to a stable ses_+26hex ID.
-func zenSessionFromEntropy(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return "ses_" + hex.EncodeToString(sum[:13])
+func hexVal(c rune) uint64 {
+	switch {
+	case c >= '0' && c <= '9':
+		return uint64(c - '0')
+	case c >= 'a' && c <= 'f':
+		return uint64(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return uint64(c-'A') + 10
+	default:
+		return 0
+	}
 }
+
+// zenSessionFromEntropy maps arbitrary entropy to a ses_+26 wire ID whose
+// descending 48-bit prefix is a real wall-clock millisecond (counter 0), so
+// a future recency check on the free-tier edge cannot reject it. The suffix
+// is 14 base62 chars from sha256(entropy). Results are cached per entropy
+// string so the same conversation keeps a stable prompt_cache_key across
+// turns without re-minting a fresh timestamp each request.
+func zenSessionFromEntropy(s string) string {
+	if v, ok := zenSessionIDCache.Load(s); ok {
+		return v.(string)
+	}
+	sum := sha256.Sum256([]byte(s))
+	// descending: value = ~(ms<<12 | counter) & (2^48-1); counter 0 → low12=0xFFF.
+	w := (^(uint64(time.Now().UnixMilli()) << 12)) & 0xFFFFFFFFFFFF
+	const hexDigits = "0123456789abcdef"
+	const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	var b strings.Builder
+	b.WriteString("ses_")
+	b.WriteByte(hexDigits[(w>>44)&0xF])
+	b.WriteByte(hexDigits[(w>>40)&0xF])
+	b.WriteByte(hexDigits[(w>>36)&0xF])
+	b.WriteByte(hexDigits[(w>>32)&0xF])
+	b.WriteByte(hexDigits[(w>>28)&0xF])
+	b.WriteByte(hexDigits[(w>>24)&0xF])
+	b.WriteByte(hexDigits[(w>>20)&0xF])
+	b.WriteByte(hexDigits[(w>>16)&0xF])
+	b.WriteByte(hexDigits[(w>>12)&0xF])
+	b.WriteByte(hexDigits[(w>>8)&0xF])
+	b.WriteByte(hexDigits[(w>>4)&0xF])
+	b.WriteByte(hexDigits[w&0xF])
+	for i := 6; i < 20; i++ {
+		b.WriteByte(base62[int(sum[i])%62])
+	}
+	id, _ := zenSessionIDCache.LoadOrStore(s, b.String())
+	return id.(string)
+}
+
+// zenSessionIDCache memoizes zenSessionFromEntropy per entropy string so
+// prompt_cache_key stays stable for the life of the process.
+var zenSessionIDCache sync.Map
 
 // normalizeZenSessionID rewrites any SuperCli/process session ID into the
 // wire shape Zen accepts. Already-valid IDs pass through unchanged so a
@@ -146,7 +208,7 @@ func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	// Flag.OPENCODE_CLIENT defaults to "cli" in official OpenCode.
 	req.Header.Set("X-OpenCode-Client", "cli")
 	// Real client UA is richer than bare version: `opencode/<ver> ai-sdk/...
-	// runtime/bun/<ver>` (re-captured from CLI 1.18.32 via mitmproxy 2026-09-22).
+	// runtime/bun/<ver>` (re-captured from CLI 1.19.0 via mitmproxy 2026-10-13).
 	// Free-tier edge parses the leading `opencode/<semver>` for the 1.18.0 gate;
 	// the trailing ai-sdk/runtime bumps must track the binary we impersonate.
 	req.Header.Set("User-Agent", openCodeZenUserAgent)
@@ -167,6 +229,9 @@ func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	}
 	sessionID := normalizeZenSessionID(openCodeSessionFromContext(req.Context()))
 	req.Header.Set("X-OpenCode-Session", sessionID)
+	// Real client also sends the same value as X-OpenCode-Session-Id
+	// (capture 2026-10-13); set both so SuperCli matches wire-for-wire.
+	req.Header.Set("X-OpenCode-Session-Id", sessionID)
 	// x-opencode-request carries the user message ID (msg_ ascending form)
 	// so Zen can correlate a single prompt. Generate one per request.
 	req.Header.Set("X-OpenCode-Request", newOpenCodeMessageID())

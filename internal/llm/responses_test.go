@@ -116,7 +116,7 @@ func TestResponsesCompleteUsesOpenCodeZenPublicHeaders(t *testing.T) {
 	if got := gotHeaders.Get("X-OpenCode-Client"); got != "cli" {
 		t.Fatalf("X-OpenCode-Client = %q", got)
 	}
-	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", got)
 	}
 	if got := gotHeaders.Get("Accept"); got != "*/*" {
@@ -161,7 +161,7 @@ func TestResponsesCompleteUsesOpenCodeGoSessionHeader(t *testing.T) {
 	if got := gotHeaders.Get("Authorization"); got != "Bearer go-key" {
 		t.Fatalf("Authorization = %q", got)
 	}
-	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.18.32 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+	if got := gotHeaders.Get("User-Agent"); got != "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
 		t.Fatalf("User-Agent = %q", got)
 	}
 	if got := gotHeaders.Get("X-OpenCode-Session"); got != normalizeZenSessionID("sess-muse-123") {
