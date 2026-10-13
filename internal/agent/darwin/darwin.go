@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,11 @@ type Config struct {
 	// isolation even when Worktree is set. Useful
 	// for testing in non-git dirs.
 	UseWorktree bool
+	// KeepAll keeps the branch of every successful
+	// candidate that changed files (not just the
+	// winner's), so a UI can let the user apply any
+	// of them. Off by default (TUI keeps the winner).
+	KeepAll bool
 	// OnEvent is an optional callback fired for
 	// every event before it's put on the
 	// channel. Useful for logging or TUI
@@ -115,6 +121,7 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 	defer close(out)
 	// Phase 1: spawn pool.
 	poolCfg := d.cfg.PoolConfig
+	poolCfg.Prompt = prompt
 	// If we're using worktrees, hand each agent a
 	// fresh worktree path; otherwise pass the
 	// home dir.
@@ -157,7 +164,9 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 		}
 	}
 	// Phase 2: stream events into candidates.
-	stream, err := SpawnPool(ctx, poolCfg)
+	spawnCtx, cancelSpawn := context.WithCancel(ctx)
+	defer cancelSpawn()
+	stream, err := SpawnPool(spawnCtx, poolCfg)
 	if err != nil {
 		d.failRun(out, fmt.Errorf("darwin: spawn pool: %w", err))
 		return
@@ -165,6 +174,7 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 	var cands []Candidate
 	var totalUsage llm.Usage
 	budgetExceeded := false
+collect:
 	for ev := range stream {
 		switch e := ev.(type) {
 		case LoopMessageEvent:
@@ -191,7 +201,13 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 			d.emit(out, CandidateDoneEvent{Candidate: cands[len(cands)-1]})
 		}
 		if budgetExceeded {
-			break
+			// Stop the remaining agents and wait for the pool
+			// to wind down so no child still writes into a
+			// worktree that the deferred cleanup removes.
+			cancelSpawn()
+			for range stream {
+			}
+			break collect
 		}
 	}
 	// Attach branches/worktrees to candidates by the
@@ -200,6 +216,9 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 	for i := range cands {
 		idx := cands[i].Index
 		cands[i].AgentID = fmtAgentID(idx)
+		if p := poolCfg.providerFor(idx); p != nil {
+			cands[i].Model = p.Name()
+		}
 		if idx >= 0 && idx < len(branches) {
 			cands[i].Branch = branches[idx]
 		}
@@ -220,8 +239,9 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 		if cands[i].Branch == "" || cands[i].Err != nil || d.cfg.Worktree == nil {
 			continue
 		}
-		diff, dErr := d.cfg.Worktree.CommitAndDiff(ctx, cands[i].Branch)
+		diff, stat, dErr := d.cfg.Worktree.CommitAndDiffStat(ctx, cands[i].Branch)
 		cands[i].Diff = diff
+		cands[i].DiffStat = stat
 		if dErr != nil && cands[i].Err == nil {
 			cands[i].Err = dErr
 		}
@@ -241,6 +261,29 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 		Score:       verdict.Score,
 		Reason:      verdict.Reason,
 	})
+	// Phase 3.5: keep the winner's branch. Its worktree
+	// directory is removed, but the committed branch
+	// survives the deferred CleanupAll so the user can
+	// `git diff` / `git merge` it (and so a failed
+	// auto-merge does not lose the work).
+	keptBranch := ""
+	if d.cfg.Worktree != nil {
+		for i := range cands {
+			if i != verdict.WinnerIndex && !d.cfg.KeepAll {
+				continue
+			}
+			c := cands[i]
+			if c.Branch == "" || c.Err != nil || strings.TrimSpace(c.Diff) == "" {
+				continue
+			}
+			if kErr := d.cfg.Worktree.Release(context.Background(), c.Branch); kErr == nil {
+				cands[i].Kept = true
+				if i == verdict.WinnerIndex {
+					keptBranch = c.Branch
+				}
+			}
+		}
+	}
 	// Phase 4: optional merge.
 	merged := false
 	mergeBranch := ""
@@ -252,6 +295,9 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 				target = "HEAD"
 			}
 			if mErr := d.cfg.Worktree.Merge(ctx, winner.Branch, target); mErr != nil {
+				if keptBranch != "" {
+					mErr = fmt.Errorf("%w (winner kept on branch %s)", mErr, keptBranch)
+				}
 				d.failRun(out, mErr)
 				return
 			}
@@ -271,6 +317,8 @@ func (d *Darwin) runInner(ctx context.Context, prompt string, out chan<- Event) 
 		MergeBranch: mergeBranch,
 		TotalUsage:  totalUsage,
 		Note:        note,
+		KeptBranch:  keptBranch,
+		MergeTarget: d.cfg.MergeTarget,
 	}
 	if verdict.WinnerIndex >= 0 && verdict.WinnerIndex < len(cands) {
 		w := cands[verdict.WinnerIndex]
@@ -285,20 +333,30 @@ func (d *Darwin) failRun(out chan<- Event, err error) {
 	d.emit(out, ErrorEvent{Err: err})
 }
 
-// emit is a non-blocking send. DoneEvent and
-// ErrorEvent are always delivered (we never drop
-// the final event); other events are best-effort.
+// finalEmitTimeout bounds how long a terminal event
+// (Done/Error) waits for a consumer that stopped
+// reading, so the run goroutine can never leak.
+const finalEmitTimeout = 30 * time.Second
+
+// emit sends ev on out. Progress events are
+// best-effort (dropped after 100ms on a slow
+// consumer); the terminal DoneEvent / ErrorEvent
+// waits up to finalEmitTimeout so the result is
+// not lost.
 func (d *Darwin) emit(out chan<- Event, ev Event) {
 	if d.cfg.OnEvent != nil {
 		d.cfg.OnEvent(ev)
 	}
+	wait := 100 * time.Millisecond
+	switch ev.(type) {
+	case DoneEvent, ErrorEvent:
+		wait = finalEmitTimeout
+	}
+	t := time.NewTimer(wait)
+	defer t.Stop()
 	select {
 	case out <- ev:
-	case <-time.After(100 * time.Millisecond):
-		// Slow consumer: drop non-final events.
-		// The final event (Done/Error) is emitted
-		// in runInner after close(out), so this
-		// timeout never applies to it.
+	case <-t.C:
 	}
 }
 

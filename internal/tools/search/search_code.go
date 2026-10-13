@@ -50,6 +50,7 @@ func (s *SearchCode) Spec() Tool {
 		Name:     "search_code",
 		ReadOnly: true,
 		Description: "Search code (RE2; (?i) ignores case) with file/line references. " +
+			"Use output_mode=files to locate owners; lines for source evidence. Narrow to known files before expanding searches. " +
 			"With include and no query, list paths without reading files. Skips build/dependency dirs.",
 		Schema: `{
 			"type": "object",

@@ -35,6 +35,7 @@ func initCodexAuth(dataDir string, t config.TomlConfig) {
 var supercliSystemPromptBase = prompt.Build(false)
 var supercliModelProfile string
 var supercliUserInstructions string
+var supercliProjectInstructions string
 var supercliCoordinatorMode bool
 
 // supercliOrchestratorMode is the HARD delegation mode (explicit
@@ -74,6 +75,9 @@ func buildSystemPrompt(svc *goal.Service) string {
 	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
 	if supercliModelProfile != "" {
 		base += "\n\n" + supercliModelProfile
+	}
+	if supercliProjectInstructions != "" {
+		base += "\n\n" + supercliProjectInstructions
 	}
 	if supercliUserInstructions != "" {
 		base += "\n\n" + supercliUserInstructions

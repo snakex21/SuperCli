@@ -24,12 +24,14 @@ func (l *Loop) recordStepUsage(ctx context.Context, totalUsage *Usage, usage *ll
 	totalUsage.Output += usage.Output
 	totalUsage.Total += usage.Total
 	totalUsage.Cached += usage.CachedInput
+	totalUsage.CacheWrite += usage.CacheWrite
 	totalUsage.Reasoning += usage.Reasoning
 	l.sessUsageMu.Lock()
 	l.sessUsage.Input += usage.Input
 	l.sessUsage.Output += usage.Output
 	l.sessUsage.Total += usage.Total
 	l.sessUsage.Cached += usage.CachedInput
+	l.sessUsage.CacheWrite += usage.CacheWrite
 	l.sessUsage.Reasoning += usage.Reasoning
 	// Last-turn snapshot for the status-line badges.
 	l.lastTurnPrompt = usage.Input

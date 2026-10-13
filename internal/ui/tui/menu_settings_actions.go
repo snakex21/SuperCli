@@ -183,6 +183,12 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return config.EffectiveCostCurrency(*c)
 	case "task_model":
 		return c.TaskModel
+	case "advisor_model":
+		return c.AdvisorModel
+	case "darwin_judge_model":
+		return c.DarwinJudgeModel
+	case "darwin_models":
+		return strings.Join(c.DarwinModels, " ; ")
 	case "orchestrator_model":
 		return c.OrchestratorModel
 	case "compact_model":
@@ -218,6 +224,12 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			c.CostCurrency = buf
 		case "task_model":
 			c.TaskModel = buf
+		case "advisor_model":
+			c.AdvisorModel = buf
+		case "darwin_judge_model":
+			c.DarwinJudgeModel = buf
+		case "darwin_models":
+			c.DarwinModels = parseCommandList(buf)
 		case "orchestrator_model":
 			c.OrchestratorModel = buf
 		case "compact_model":

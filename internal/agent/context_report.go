@@ -108,6 +108,12 @@ type ContextReport struct {
 	UserTokens       int
 	AssistantTokens  int
 	ToolResultTokens int // RoleTool messages (tool outputs)
+	// ToolCallTokens is the part of AssistantTokens spent on tool-call
+	// names/arguments (write_file bodies, shell commands, ...).
+	ToolCallTokens int
+	// ToolResultsByTool splits ToolResultTokens per tool name, largest
+	// first; at most ContextToolBreakdownLimit entries plus one "" (other).
+	ToolResultsByTool []ContextToolUsage
 
 	// Tool exposure sent with every coordinator-route request.
 	// In JSON mode every visible tool carries a full schema, counted
@@ -222,8 +228,9 @@ func (l *Loop) ContextReport() ContextReport {
 	r.Visible = len(visible)
 
 	var top contextTopItems
+	var perTool llm.ToolResultTally
 	for i, m := range visible {
-		t := estimateMessageTokens(m)
+		t, callTokens := llm.EstimateMessageTokenSplit(m)
 		r.EstimatedTokens += t
 		switch m.Role {
 		case llm.RoleSystem:
@@ -232,9 +239,11 @@ func (l *Loop) ContextReport() ContextReport {
 			r.UserTokens += t
 		case llm.RoleAssistant:
 			r.AssistantTokens += t
+			r.ToolCallTokens += callTokens
 		case llm.RoleTool:
 			r.ToolResultTokens += t
 		}
+		perTool.Observe(m, t)
 		top.add(contextTopItem{kind: contextTopMessage, index: i, tokens: t})
 	}
 
@@ -270,6 +279,7 @@ func (l *Loop) ContextReport() ContextReport {
 	}
 
 	r.Top = top.report(visible)
+	r.ToolResultsByTool = perTool.Report(ContextToolBreakdownLimit)
 	estimate := l.nextRequestTokenEstimate()
 	r.RequestTokens = estimate.Effective
 	r.RawRequestTokens = estimate.Raw
@@ -361,6 +371,7 @@ func FormatContextReport(r ContextReport) string {
 	} else {
 		fmt.Fprintf(&b, "    tool schemas (%d tools):  ~%d tok\n", r.ToolCount, r.ToolSchemaTokens)
 	}
+	writeContextMap(&b, r)
 	fmt.Fprintf(&b, "  provider-reported usage: %d in / %d out tok\n", r.UsageIn, r.UsageOut)
 	if len(r.Top) > 0 {
 		b.WriteString("  top items:\n")

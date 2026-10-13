@@ -104,7 +104,9 @@ func checkpointWorkerActiveRefs(t *testing.T, ctx context.Context, data string) 
 		} else if err != nil {
 			t.Fatal(err)
 		}
-		cmd := exec.CommandContext(ctx, "git", "--git-dir="+repo, "for-each-ref", "--format=%(refname)", "refs/supercli/active/")
+		// Match the production command factory: fixture paths plus deep ref
+		// names can exceed MAX_PATH inside a portable Windows build directory.
+		cmd := exec.CommandContext(ctx, "git", "--git-dir="+repo, "-c", "core.longpaths=true", "for-each-ref", "--format=%(refname)", "refs/supercli/active/")
 		childproc.HideWindow(cmd)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

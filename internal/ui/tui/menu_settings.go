@@ -47,11 +47,15 @@ func settingsRowsFor(language string) []settingRow {
 		{"navigator", textFor(language, "tui.setting_navigator.f4b3f6314f"), textFor(language, "tui.setting_navigator.117b57b29d"), setNavigator, true},
 		{"task_parallel", textFor(language, "tui.setting_task_parallel.6bb8136641"), textFor(language, "tui.setting_task_parallel.33c09ad488"), setTriState, true},
 		{"task_model", textFor(language, "tui.setting_task_model.7488f3d1c7"), textFor(language, "tui.setting_task_model.993b9e80db"), setText, true},
+		{"advisor_model", textFor(language, "tui.setting_advisor_model.label"), textFor(language, "tui.setting_advisor_model.desc"), setText, true},
 		{"orchestrator_model", textFor(language, "tui.setting_orchestrator_model.99a9adf37c"), textFor(language, "tui.setting_orchestrator_model.976aa9f04e"), setText, true},
 		{"compact_model", textFor(language, "tui.setting_compact_model.a97ce991de"), textFor(language, "tui.setting_compact_model.6f3046be32"), setText, true},
 		{"task_max_steps", textFor(language, "tui.setting_task_max_steps.8214ac6f43"), textFor(language, "tui.setting_task_max_steps.6bacd7f7a5"), setInt, true},
 		{"task_max_tokens", textFor(language, "tui.setting_task_max_tokens.9b54812a40"), textFor(language, "tui.setting_task_max_tokens.83fd4c61c6"), setInt, true},
 		{"darwin_parallel", textFor(language, "tui.setting_darwin_parallel.b039de2a33"), textFor(language, "tui.setting_darwin_parallel.b00873ce9c"), setTriState, true},
+		{"darwin_models", textFor(language, "tui.setting_darwin_models.label"), textFor(language, "tui.setting_darwin_models.desc"), setText, true},
+		{"darwin_judge_model", textFor(language, "tui.setting_darwin_judge_model.label"), textFor(language, "tui.setting_darwin_judge_model.desc"), setText, true},
+		{"darwin_auto_merge", textFor(language, "tui.setting_darwin_auto_merge.label"), textFor(language, "tui.setting_darwin_auto_merge.desc"), setTriState, true},
 		{"draft_verify", textFor(language, "tui.setting_draft_verify.3aaf10a735"), textFor(language, "tui.setting_draft_verify.d7a874f8fd"), setTriState, true},
 		{"draft_verify_max_rounds", textFor(language, "tui.setting_draft_verify_max_rounds.a0afb48721"), textFor(language, "tui.setting_draft_verify_max_rounds.8fc2a7faa9"), setInt, true},
 		{"verify_commands", textFor(language, "tui.setting_verify_commands.cab6203fa7"), textFor(language, "tui.setting_verify_commands.7451ed04b9"), setText, true},
@@ -78,7 +82,7 @@ func englishSettingsRows() []settingRow { return settingsRowsFor("en") }
 
 func settingCategory(key string) int {
 	switch key {
-	case "orchestrator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
+	case "orchestrator", "task_parallel", "task_model", "advisor_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
 		return 1
 	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
 		return 2
@@ -103,7 +107,7 @@ func (m Model) localizedSettingsRows() []settingRow {
 
 func settingSection(key string) string {
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "advisor_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return textFor("pl", "tui.setting_section.86e566d0ea")
 	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return textFor("pl", "tui.setting_section.630226b61c")
@@ -114,7 +118,7 @@ func settingSection(key string) string {
 
 func (m Model) localizedSettingSection(key string) string {
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "advisor_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return m.tr("tui.setting_section.86e566d0ea")
 	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return m.tr("tui.setting_section.630226b61c")

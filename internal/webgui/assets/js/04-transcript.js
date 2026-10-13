@@ -767,13 +767,25 @@ var workerRows = {}; // worker task id -> latest delegated-task row
 
 // This overview is fed by the existing event stream; it never polls the backend.
 var workerOverview = {};
+var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = false;
+var workerOverviewRank = { running: 0, failed: 1, stopped: 1, done: 2 };
 function workerLabel(id) { return String(id || "Worker").replace(/^worker-(\d+)$/, "Worker $1"); }
 function resetWorkerOverview() {
   workerOverview = {};
+  workerOverviewUserToggled = false;
   var panel = $("#worker-overview");
   if (panel) panel.hidden = true;
   var list = $("#worker-overview-list");
   if (list) list.replaceChildren();
+}
+// A new run keeps only workers that still need attention; settled ones stay in the transcript.
+function pruneWorkerOverview() {
+  workerOverviewUserToggled = false;
+  Object.keys(workerOverview).forEach(function (id) {
+    var w = workerOverview[id];
+    if (w.status === "done" || w.status === "stopped") { w.button.remove(); delete workerOverview[id]; }
+  });
+  renderWorkerOverview();
 }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
@@ -801,21 +813,45 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   if (row) item.row = row;
   item.button.dataset.state = item.status;
   item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
-  item.detail.textContent = item.activity || "";
+  item.detail.textContent = clip(String(item.activity || "").split("\n")[0], 140);
   item.state.textContent = taskStatusLabel(item.status);
-  item.button.title = [id, item.activity].filter(Boolean).join(" · ");
+  item.button.title = clip([id, item.activity].filter(Boolean).join(" · "), 400);
+  renderWorkerOverview();
+}
+function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
+function renderWorkerOverview() {
+  var panel = $("#worker-overview");
+  if (!panel) return;
+  if (!workerOverviewBound) {
+    workerOverviewBound = true;
+    panel.addEventListener("toggle", function () {
+      if (panel.open !== workerOverviewAutoOpen) workerOverviewUserToggled = true;
+    });
+  }
+  // Working first, then problems, then finished; numeric id within a group.
   var items = Object.values(workerOverview).sort(function (a, b) {
-    return a.id.localeCompare(b.id, undefined, { numeric: true });
+    return workerOverviewOrder(a) - workerOverviewOrder(b) ||
+      a.id.localeCompare(b.id, undefined, { numeric: true });
   });
   var list = $("#worker-overview-list");
   items.forEach(function (w, index) {
     var next = list.children[index] || null;
     if (next !== w.button) list.insertBefore(w.button, next);
   });
-  var active = items.filter(function (w) { return w.status === "running"; }).length;
-  $("#worker-overview-summary").textContent = t("task.workers") + " · " +
-    t("task.active") + ": " + active + " / " + items.length;
-  $("#worker-overview").hidden = false;
+  var counts = {};
+  items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
+  var parts = [t("task.workers")];
+  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
+    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
+  });
+  $("#worker-overview-summary").textContent = parts.join(" · ");
+  panel.hidden = !items.length;
+  // Collapse once nothing is working so the panel does not cover the chat,
+  // unless the user already chose otherwise during this run.
+  if (items.length && !workerOverviewUserToggled) {
+    workerOverviewAutoOpen = !!counts.running;
+    panel.open = workerOverviewAutoOpen;
+  }
 }
 function taskRowTitle(row, agentName, id) {
   return (id ? workerLabel(id) : t("task.delegation")) +
@@ -1011,6 +1047,10 @@ function toolMediaDescriptor(text, name, isError) {
 }
 
 function appendToolMediaPreview(row, text, name, isError) {
+  if (name === "darwin") {
+    if (typeof appendDarwinCard === "function") appendDarwinCard(row, text, isError);
+    return;
+  }
   if (!row || !row.parentNode || row._mediaPreview) return;
   var media = toolMediaDescriptor(text, name, isError);
   if (!media) return;
@@ -1477,7 +1517,7 @@ function addWorkerProgress(ev) {
     item.classList.add(ev.err ? "failed" : "done");
     item.querySelector(".activity-status").textContent = ev.err ? t("task.failed") : t("task.done");
     if (ev.err || ev.output) item.title = ev.err || ev.output;
-    updateWorkerOverview(ev.id, ev.name, "running", row._taskPrompt, row);
+    updateWorkerOverview(ev.id, ev.name, "running", null, row);
   }
   row._body.hidden = !row.open;
   smartScroll();

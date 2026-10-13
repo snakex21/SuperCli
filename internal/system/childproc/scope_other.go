@@ -11,6 +11,7 @@ type Scope struct{}
 // journal: without a Windows Job Object this journal is the ONLY
 // cleanup path for children of a crashed process.
 func Start(cmd *exec.Cmd) (*Scope, error) {
+	detachSession(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}

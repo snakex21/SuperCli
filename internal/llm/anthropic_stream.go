@@ -49,7 +49,7 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			// is the portion served from Anthropic's prompt cache.
 			if u := ev.Message.Usage; u.InputTokens > 0 || u.CacheReadInputTokens > 0 || u.CacheCreationInputTokens > 0 {
 				in := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
-				lastUsage = &Usage{Input: in, Total: in, CachedInput: u.CacheReadInputTokens}
+				lastUsage = &Usage{Input: in, Total: in, CachedInput: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens}
 			}
 		case "content_block_start":
 			sawResponse = true

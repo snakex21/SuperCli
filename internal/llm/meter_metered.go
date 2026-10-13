@@ -160,6 +160,7 @@ const (
 	PurposeProbe     = "probe"
 	PurposeTitle     = "title"
 	PurposeTask      = "task"
+	PurposeAdvisor   = "advisor"
 )
 
 // WithPurpose labels every model call made under ctx. The label

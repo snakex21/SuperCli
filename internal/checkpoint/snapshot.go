@@ -69,6 +69,33 @@ func (m *Manager) snapshotExcluded(p string) bool {
 func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []string) ([]snapshotFile, error) {
 	files := make([]snapshotFile, 0)
 	seen := map[string]bool{}
+	// Check each directory boundary once, including ancestors of explicit file
+	// roots and entries retained in a legacy private Git index.
+	nestedDirectories := map[string]bool{}
+	var nestedRepository func(string) (bool, error)
+	nestedRepository = func(dir string) (bool, error) {
+		if pathEqual(dir, m.home) {
+			return false, nil
+		}
+		if !within(m.home, dir) {
+			return false, fmt.Errorf("unsafe checkpoint ancestor %q", dir)
+		}
+		key := dir
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if nested, ok := nestedDirectories[key]; ok {
+			return nested, nil
+		}
+		nested, err := nestedRepository(filepath.Dir(dir))
+		if err == nil && !nested {
+			nested, err = m.nestedRepositoryDirectory(dir)
+		}
+		if err == nil {
+			nestedDirectories[key] = nested
+		}
+		return nested, err
+	}
 	var total int64
 	add := func(p string, info os.FileInfo) error {
 		if err := ctx.Err(); err != nil {
@@ -76,6 +103,15 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 		}
 		p = filepath.ToSlash(p)
 		if m.snapshotExcluded(p) || scopeContains(protected, p) {
+			return nil
+		}
+		full := filepath.Join(m.home, filepath.FromSlash(p))
+		if !within(m.home, full) {
+			return fmt.Errorf("unsafe checkpoint path %q", p)
+		}
+		// Git lists an untracked embedded repository as a directory, without
+		// enumerating its files. Gitlinks can instead arrive without a slash.
+		if roots == nil && strings.HasSuffix(p, "/") {
 			return nil
 		}
 		key := p
@@ -88,7 +124,7 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 		seen[key] = true
 		if info == nil {
 			var err error
-			info, err = os.Lstat(filepath.Join(m.home, filepath.FromSlash(p)))
+			info, err = os.Lstat(full)
 			if os.IsNotExist(err) {
 				return nil
 			}
@@ -96,8 +132,16 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 				return err
 			}
 		}
+		if roots == nil && info.IsDir() {
+			return nil
+		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("checkpoint cannot safely restore non-regular path %q", p)
+		}
+		if nested, err := nestedRepository(filepath.Dir(full)); err != nil {
+			return err
+		} else if nested {
+			return nil
 		}
 		if info.Size() > maxSnapshotFileBytes {
 			return snapshotLimit(fmt.Sprintf("%q is %d bytes (file limit %d)", p, info.Size(), maxSnapshotFileBytes))
@@ -137,6 +181,11 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 			}
 			if !info.IsDir() {
 				return add(rel, info)
+			}
+			if nested, err := nestedRepository(p); err != nil {
+				return err
+			} else if nested {
+				return nil
 			}
 			directory, err := os.Open(p)
 			if err != nil {

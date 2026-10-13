@@ -38,7 +38,7 @@ type readContextArgs struct {
 func (t *ReadContext) Spec() Tool {
 	return Tool{
 		Name:        "read_context",
-		Description: "Read N lines around a target line (default ±10). Use before patch_file to copy the exact text to replace.",
+		Description: "Read N lines around a target (default ±10) when exact text for patch_file is missing. Reuse source already returned; reread for changes or missing lines.",
 		ReadOnly:    true,
 		Schema: `{
 			"file":   {"type": "string", "description": "File path"},

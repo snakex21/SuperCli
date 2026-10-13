@@ -57,6 +57,10 @@ type AgentTool struct {
 	// actual configured connection, independent of whether it is local HTTP or
 	// remote HTTP. Empty inherits the parent's connection identity.
 	WorkerContextProvider string
+	// AdvisorProvider, when non-nil, runs advise:true calls (config
+	// `advisor_model`), e.g. a cloud model advising a local one. Nil = the
+	// advisor uses the normal worker backend.
+	AdvisorProvider llm.Provider
 	PrefillProfiles       *llm.PrefillProfiles
 	// WorkerPing verifies the worker backend, lazily, on the first
 	// delegation only (never on the startup path). Nil = no probe. On
@@ -133,7 +137,7 @@ func (a *AgentTool) Spec() tools.Tool {
 		Name: "task",
 		Description: "Delegate independent work or substantial exploration to an isolated worker. " +
 			"Use direct tools for targeted lookups; send_message to reuse a worker. " +
-			"Provide goal, paths/findings and expected result: it cannot see this chat. " +
+			"Provide goal, paths/findings and expected result. Relevant already-read source excerpts are attached automatically; other chat history is private. " +
 			"Returns a report and evidence. Workers cannot delegate.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
@@ -141,7 +145,7 @@ func (a *AgentTool) Spec() tools.Tool {
 				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
 				"expect": {"type": "string", "description": "optional: what the report must contain"},
 				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},
-				"advise": {"type": "boolean", "description": "optional: ask a READ-ONLY second opinion on a decision (routed to the advisor worker; never edits files)"},
+				"advise": {"type": "boolean", "description": "optional: READ-ONLY second opinion (advisor worker; never edits files). Use before choosing an approach for a hard decision, after 2 failed attempts at the same fix, or before declaring a risky change done"},
 				"async": {"type": "boolean", "description": "optional: run in the background and return a worker ID; completion arrives as a task notification"}
 			},
 			"required": ["prompt"]

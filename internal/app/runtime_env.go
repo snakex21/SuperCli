@@ -71,6 +71,18 @@ func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (conf
 	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.TaskModel), "task_model", tomlCfg, cfg)
 }
 
+// resolveAdvisorConfig maps advisor_model onto the provider config used by
+// advise:true task calls. Same contract as task_model.
+func resolveAdvisorConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.AdvisorModel), "advisor_model", tomlCfg, cfg)
+}
+
+// resolveReviewConfig maps review_model onto the provider config used by
+// post-hoc batch review. Same contract as task_model.
+func resolveReviewConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.ReviewModel), "review_model", tomlCfg, cfg)
+}
+
 // resolveOrchestratorModelConfig maps orchestrator_model onto the provider
 // config used by the COORDINATOR (main loop). Same "model" or
 // "provider/model" contract as task_model; empty or same-as-main returns

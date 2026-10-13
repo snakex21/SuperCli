@@ -7,8 +7,8 @@ import (
 // BuiltinSubAgents returns the default worker roles. Keep each briefing short
 // and consistent with its tool allowlist; workers cannot delegate further.
 func BuiltinSubAgents() []SubAgent {
-	const evidence = " Batch independent calls; read_many for files/ranges. Reuse evidence. Fix errors and recheck, or report the blocker; never end with promised work."
-	const readOnlyEvidence = " Batch independent calls; read_many for files/ranges. Reuse evidence. No shell or edits; report findings, suggested checks and blockers."
+	const evidence = " Batch independent calls; read_many for files/ranges. For coding, locate the owner and required contracts, then implement. Search again only for a specific missing fact, relevant change or failed check; reuse evidence already seen. Fix errors and recheck, or report the blocker. Once the requested outcome and required checks are complete, report and stop; never end with promised work."
+	const readOnlyEvidence = " Batch independent calls; read_many for files/ranges. Once the focused question is answered, report findings; further searches must resolve a specific missing fact. Reuse source already seen. No shell or edits; report findings, suggested checks and blockers."
 	exploreSystem := "You are the SuperCli explore worker. Answer the focused codebase question with precise paths/lines. Use web_lookup/web_fetch/web_search for current external documentation, read_image only for images. Return a concise answer." + readOnlyEvidence
 	planSystem := "You are the SuperCli plan worker. Read-only: produce a numbered plan within 30 lines, including unknowns." + readOnlyEvidence
 	reviewSystem := "You are the SuperCli review worker. Read-only: inspect targeted code and call sites for correctness, performance, and clarity. Report findings by severity with paths/lines." + readOnlyEvidence

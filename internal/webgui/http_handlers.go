@@ -259,14 +259,16 @@ func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStats returns the cost/credit dashboard; ?session= scopes the
-// per-session token total.
+// per-session token total. The 7-day turn telemetry is computed only with
+// ?telemetry=1 (Usage panel); the per-turn HUD refresh skips it.
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	id := strings.TrimSpace(r.URL.Query().Get("session"))
-	out, err := s.eng.stats(r.Context(), id)
+	withTelemetry := r.URL.Query().Get("telemetry") == "1"
+	out, err := s.eng.statsWithTelemetry(r.Context(), id, withTelemetry)
 	if err != nil {
 		if errors.Is(err, errSessionOutsideWorkspace) || errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "session not found in active project", http.StatusNotFound)

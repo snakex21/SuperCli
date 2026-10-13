@@ -3,6 +3,7 @@ package darwin
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,12 @@ var runGitCtx = func(ctx context.Context, dir string, args ...string) ([]byte, e
 // called without a lock.
 type WorktreeManager struct {
 	base string // absolute path to the repo root
+	// root is the directory that holds the
+	// worktrees. Empty = defaultWorktreeRoot(base),
+	// which lives OUTSIDE the workspace so candidate
+	// checkouts never show up in the user's
+	// `git status` or in workspace-wide searches.
+	root string
 	mu   sync.Mutex
 	open map[string]string // branch -> worktree path
 	rng  *randSrc          // for unique ids in Create
@@ -53,6 +60,35 @@ func NewWorktreeManager(base string) *WorktreeManager {
 // Base returns the repo root passed to
 // NewWorktreeManager. Always non-empty.
 func (m *WorktreeManager) Base() string { return m.base }
+
+// SetRoot overrides the directory that holds the
+// candidate worktrees (tests, custom layouts).
+func (m *WorktreeManager) SetRoot(root string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.root = root
+}
+
+// defaultWorktreeRoot returns a per-repo directory
+// under the OS temp dir: <tmp>/supercli-darwin/<repo>-<hash>.
+// Keeping worktrees outside the workspace means they
+// do not dirty the user's `git status` (a repo that
+// does not ignore .darwin/ would otherwise show it
+// as untracked) and parent-agent searches never
+// wander into candidate copies.
+func defaultWorktreeRoot(base string) string {
+	abs := base
+	if a, err := filepath.Abs(base); err == nil {
+		abs = a
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(filepath.Clean(abs))))
+	name := filepath.Base(abs)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		name = "repo"
+	}
+	return filepath.Join(os.TempDir(), "supercli-darwin", fmt.Sprintf("%s-%08x", name, h.Sum32()))
+}
 
 // HasGit reports whether base names a git working-tree root. A descendant
 // alone is not sufficient: worktree operations must stay rooted at base.
@@ -84,7 +120,8 @@ func (m *WorktreeManager) HasGit() bool {
 // Create makes a new worktree on a fresh branch
 // rooted at HEAD. The branch is named
 // `darwin-<unixnano>-<id>` and the worktree lives
-// under <base>/.darwin/<unixnano>-<id>. If the repo
+// under <root>/<unixnano>-<id> (root defaults to a
+// per-repo dir in the OS temp dir). If the repo
 // has no commits yet, falls back to a detached
 // worktree at HEAD. Returns the branch name and the
 // worktree's absolute path.
@@ -107,8 +144,11 @@ func (m *WorktreeManager) Create(ctx context.Context) (branch, path string, err 
 	id := m.rng.hex(4)
 	stamp := time.Now().UnixNano()
 	branch = fmt.Sprintf("darwin-%d-%s", stamp, id)
-	rel := filepath.Join(".darwin", fmt.Sprintf("%d-%s", stamp, id))
-	abs := filepath.Join(m.base, rel)
+	root := m.root
+	if root == "" {
+		root = defaultWorktreeRoot(m.base)
+	}
+	abs := filepath.Join(root, fmt.Sprintf("%d-%s", stamp, id))
 	if mkErr := os.MkdirAll(filepath.Dir(abs), 0o755); mkErr != nil {
 		return "", "", fmt.Errorf("darwin: mkdir worktree parent: %w", mkErr)
 	}
@@ -137,28 +177,87 @@ func (m *WorktreeManager) Create(ctx context.Context) (branch, path string, err 
 // agent made no changes — in that case nothing is
 // committed). Unknown branch is an error.
 func (m *WorktreeManager) CommitAndDiff(ctx context.Context, branch string) (string, error) {
+	diff, _, err := m.CommitAndDiffStat(ctx, branch)
+	return diff, err
+}
+
+// CommitAndDiffStat is CommitAndDiff that also
+// returns `git diff --cached --stat` for the same
+// change ("" when nothing changed).
+func (m *WorktreeManager) CommitAndDiffStat(ctx context.Context, branch string) (diff, stat string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	abs, ok := m.open[branch]
 	if !ok || abs == "" {
-		return "", fmt.Errorf("darwin: commit: unknown branch %q", branch)
+		return "", "", fmt.Errorf("darwin: commit: unknown branch %q", branch)
 	}
 	if out, err := runGitCtx(ctx, abs, "add", "-A"); err != nil {
-		return "", fmt.Errorf("darwin: stage worktree: %v: %s", err, strings.TrimSpace(string(out)))
+		return "", "", fmt.Errorf("darwin: stage worktree: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	diffOut, err := runGitCtx(ctx, abs, "diff", "--cached")
 	if err != nil {
-		return "", fmt.Errorf("darwin: diff worktree: %v: %s", err, strings.TrimSpace(string(diffOut)))
+		return "", "", fmt.Errorf("darwin: diff worktree: %v: %s", err, strings.TrimSpace(string(diffOut)))
 	}
-	diff := string(diffOut)
+	diff = string(diffOut)
 	if strings.TrimSpace(diff) == "" {
-		return "", nil
+		return "", "", nil
+	}
+	if statOut, sErr := runGitCtx(ctx, abs, "diff", "--cached", "--stat"); sErr == nil {
+		stat = strings.TrimRight(string(statOut), "\r\n")
 	}
 	msg := fmt.Sprintf("darwin: candidate work on %s", branch)
-	if out, err := runGitCtx(ctx, abs, "commit", "-m", msg); err != nil {
-		return diff, fmt.Errorf("darwin: commit worktree: %v: %s", err, strings.TrimSpace(string(out)))
+	out, cErr := runGitCtx(ctx, abs, "commit", "--no-verify", "-m", msg)
+	if cErr != nil && isMissingIdentity(out) {
+		// No user.name/email configured: commit with a
+		// neutral Darwin identity rather than fail.
+		out, cErr = runGitCtx(ctx, abs, "-c", "user.name=SuperCli Darwin", "-c", "user.email=darwin@supercli.invalid",
+			"commit", "--no-verify", "-m", msg)
 	}
-	return diff, nil
+	if cErr != nil {
+		return diff, stat, fmt.Errorf("darwin: commit worktree: %v: %s", cErr, strings.TrimSpace(string(out)))
+	}
+	return diff, stat, nil
+}
+
+// isMissingIdentity matches git's "Please tell me
+// who you are" / empty ident failure.
+func isMissingIdentity(out []byte) bool {
+	s := strings.ToLower(string(out))
+	return strings.Contains(s, "tell me who you are") || strings.Contains(s, "empty ident") ||
+		strings.Contains(s, "unable to auto-detect email")
+}
+
+// Release removes the worktree directory of branch
+// but KEEPS the branch (and its commit), then stops
+// tracking it so CleanupAll leaves it alone. Used to
+// preserve the Darwin winner for `git diff` /
+// `git merge`. Errors if the branch does not exist
+// as a ref (e.g. the empty-repo detached fallback),
+// in which case the worktree stays tracked.
+func (m *WorktreeManager) Release(ctx context.Context, branch string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	abs, ok := m.open[branch]
+	if !ok {
+		return fmt.Errorf("darwin: release: unknown branch %q", branch)
+	}
+	if out, err := runGitCtx(ctx, m.base, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		return fmt.Errorf("darwin: release: branch %q has no ref: %v: %s", branch, err, strings.TrimSpace(string(out)))
+	}
+	delete(m.open, branch)
+	if abs != "" {
+		_, _ = runGitCtx(ctx, m.base, "worktree", "remove", "--force", abs)
+		removeIfEmpty(filepath.Dir(abs))
+	}
+	return nil
+}
+
+// removeIfEmpty deletes dir when it has no entries
+// (best effort; keeps the temp root tidy).
+func removeIfEmpty(dir string) {
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) == 0 {
+		_ = os.Remove(dir)
+	}
 }
 
 // Cleanup removes a single worktree by branch name.
@@ -183,6 +282,7 @@ func (m *WorktreeManager) cleanupLocked(ctx context.Context, branch string) erro
 	if abs != "" {
 		// --force so we don't fail on dirty worktrees.
 		_, _ = runGitCtx(ctx, m.base, "worktree", "remove", "--force", abs)
+		removeIfEmpty(filepath.Dir(abs))
 	}
 	if branch != "" {
 		_, _ = runGitCtx(ctx, m.base, "branch", "-D", branch)

@@ -123,7 +123,10 @@ const { chromium } = require("playwright");
       addWorkerProgress({ id: "worker-3", name: "review", kind: "tool_call", parent_call_id: "spawn-c",
         call_id: "c-read", tool: "read_lines", args: '{"file":"internal/config.go"}' });
       if (workerOverview["worker-3"].status !== "running") throw Error("active worker state");
-      if (!$("#worker-overview-summary").textContent.includes("1 / 3")) throw Error("active worker count");
+      const summary = $("#worker-overview-summary").textContent;
+      if (!summary.includes("pracuje: 1") || !summary.includes("gotowe: 2")) throw Error("worker counts: " + summary);
+      if (document.querySelector(".worker-overview-item") !== workerOverview["worker-3"].button) throw Error("running worker not first");
+      if (!$("#worker-overview").open) throw Error("overview collapsed while a worker runs");
       toolRows["resume-a"].open = false;
       stage.scrollTop = 0;
     });
@@ -132,6 +135,9 @@ const { chromium } = require("playwright");
     await page.evaluate(() => {
       settleOpenTools();
       if (workerOverview["worker-3"].status !== "stopped") throw Error("cancelled worker still running");
+      if ($("#worker-overview").open) throw Error("idle overview stayed expanded");
+      pruneWorkerOverview();
+      if (!$("#worker-overview").hidden || Object.keys(workerOverview).length) throw Error("settled workers kept after new run");
       newSession();
       if (!$("#worker-overview").hidden || Object.keys(workerOverview).length) throw Error("previous session workers retained");
     });

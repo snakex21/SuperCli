@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -132,6 +133,35 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 		effort = ""
 	}
 	return buildCodexRequestWithEffort(model, msgs, tools, vision, effort)
+}
+
+// codexPromptCacheKey is the stable per-conversation cache key for the
+// ChatGPT backend: the SuperCli session id when one is attached to ctx,
+// otherwise the per-process id (batch/eval runs).
+func codexPromptCacheKey(ctx context.Context) string {
+	if key := openCodeSessionFromContext(ctx); key != "" {
+		return key
+	}
+	return openCodeProcessSessionID
+}
+
+// withCodexPromptCacheKey appends prompt_cache_key as the last field of a
+// marshalled codexRequest object. The struct never emits that field, so a
+// byte splice keeps the rest of the body (and its cacheable prefix) intact.
+func withCodexPromptCacheKey(body []byte, key string) []byte {
+	key = strings.TrimSpace(key)
+	if key == "" || len(body) < 2 || body[len(body)-1] != '}' {
+		return body
+	}
+	enc, err := json.Marshal(key)
+	if err != nil {
+		return body
+	}
+	out := make([]byte, 0, len(body)+len(enc)+22)
+	out = append(out, body[:len(body)-1]...)
+	out = append(out, `,"prompt_cache_key":`...)
+	out = append(out, enc...)
+	return append(out, '}')
 }
 
 func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, vision bool, effort string) ([]byte, error) {

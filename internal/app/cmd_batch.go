@@ -24,7 +24,7 @@ import (
 
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
-func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, tomlCfg config.TomlConfig) {
+func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, traceJSONL bool, tomlCfg config.TomlConfig) {
 	_ = home // project root; data lives in dataDir
 	// Echo shortcut.
 	if echoFlag {
@@ -145,6 +145,15 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
 		}
 	}
+	var advisorProvider llm.Provider
+	if advisorCfg, advisorOverride := resolveAdvisorConfig(tomlCfg, cfg); advisorOverride {
+		ap, apErr := provFactory.Build(advisorCfg, llm.PurposeAdvisor)
+		if apErr != nil {
+			log.Printf("advisor_model: provider %q build failed: %v — advisor uses the worker provider", tomlCfg.AdvisorModel, apErr)
+		} else {
+			advisorProvider = ap
+		}
+	}
 
 	// Build the agent loop.
 	reg := tools.NewRegistry()
@@ -208,6 +217,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
 		systemPrompt += "\n\n" + modelProfile
 	}
+	if project := prompt.LoadProjectInstructions(home); project != "" {
+		systemPrompt += "\n\n" + project
+	}
 	if instructions := prompt.ActiveUserInstructions(dataDir); instructions != "" {
 		systemPrompt += "\n\n" + instructions
 	}
@@ -228,7 +240,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	}
 	usageRates := usagecost.NewHistoryRates(dataDir)
 	defer usageRates.Close()
-	l, err := agent.NewLoop(agent.LoopConfig{
+	loopCfg := agent.LoopConfig{
 		Provider:              mainProvider,
 		Registry:              reg,
 		Caps:                  caps,
@@ -274,7 +286,8 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		LearnLimit:         learned.Learn,
 		PrefillProfiles:    prefillProfiles,
 		PruneProtectTokens: tomlCfg.PruneProtectTokens,
-	})
+	}
+	l, err := agent.NewLoop(loopCfg)
 	if err != nil {
 		fatal("agent loop", err)
 	}
@@ -310,6 +323,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		tomlCfg:            tomlCfg,
 		taskWorkerProvider: taskWorkerProvider,
 		taskWorkerCfg:      taskWorkerCfg,
+		advisorProvider:    advisorProvider,
 		home:               home,
 		delegationOff:      !orchMode.delegationEnabled(),
 		coordinatorMode:    orchMode.hard(),
@@ -344,55 +358,97 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 			}
 		})
 	}
-	ch, err := l.Run(runCtx, userPrompt)
-	if err != nil {
-		fatal("agent run", err)
-	}
+	// review_model: post-hoc review of the finished change (nil = off).
+	// The tree snapshot is taken here, before the main model runs.
+	reviewer := newBatchReviewer(tomlCfg, cfg, provFactory, home)
+	runStarted := time.Now()
+	// --trace-jsonl: machine-readable tool/usage lines on stdout for
+	// the eval harness. nil (flag off) makes every call a no-op.
+	trace := newBatchTrace(os.Stdout, traceJSONL)
+	toolCalls := 0
 
 	// Consume events. MessageEvent carries streaming fragments, not logical
 	// lines; Print preserves the model's formatting while Println inserted a
 	// newline after every token/delta on slow local streams.
 	printedMessage := false
-	for ev := range ch {
-		switch e := ev.(type) {
-		case agent.MessageEvent:
-			fmt.Print(e.Text)
-			printedMessage = true
-		case agent.ReasoningEvent:
-			fmt.Printf("<thinking>%s</thinking>\n", e.Text)
-			printedMessage = true
-		case agent.NoticeEvent:
-			// Provider status (rate-limit retry etc.) — stderr so it
-			// never pollutes the assistant output on stdout.
-			fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
-		case agent.ToolResultsPrunedEvent:
-			fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d threshold=%d threshold_source=%s window=%d\n",
-				e.Pruned, e.Reclaimed, e.Estimated, e.Threshold, e.ThresholdSource, e.Window)
-		case agent.AutoCompactEvent:
-			fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d raw=%d estimate_source=%s exact_base=%d threshold=%d threshold_source=%s window=%d window_source=%s\n",
-				e.Removed, e.Reason, e.Estimated, e.RawEstimated, e.EstimateSource,
-				e.ExactBase, e.Threshold, e.ThresholdSource, e.Window, e.WindowSource)
-		case agent.DoneEvent:
-			// Real provider-reported token usage for this run
-			// (exact, not an estimate). Printed to stderr so it
-			// never pollutes the assistant output on stdout. The
-			// cache/eval split (cache-miss telemetry) is appended
-			// only when the backend reported a cached share, so the
-			// baseline format stays stable for scripts.
-			line := fmt.Sprintf("[tokens] in=%d out=%d total=%d",
-				e.Usage.Input, e.Usage.Output, e.Usage.Total)
-			if e.Usage.Cached > 0 {
-				line += fmt.Sprintf(" cache=%d eval=%d", e.Usage.Cached, e.Usage.Input-e.Usage.Cached)
-			}
-			fmt.Fprintln(os.Stderr, line)
-		case agent.ErrorEvent:
-			fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
-			os.Exit(1)
+	runOnce := func(ctx context.Context, loop *agent.Loop, prompt string) batchRunResult {
+		var res batchRunResult
+		ch, err := loop.Run(ctx, prompt)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: agent run: %v\n", err)
+			res.Err = err
+			return res
 		}
+		for ev := range ch {
+			switch e := ev.(type) {
+			case agent.MessageEvent:
+				fmt.Print(e.Text)
+				trace.noteText(e.Text)
+				printedMessage = true
+			case agent.ReasoningEvent:
+				fmt.Printf("<thinking>%s</thinking>\n", e.Text)
+				trace.noteText("\n")
+				printedMessage = true
+			case agent.ToolCallEvent:
+				toolCalls++
+				trace.tool(e.Name)
+			case agent.NoticeEvent:
+				// Provider status (rate-limit retry etc.) — stderr so it
+				// never pollutes the assistant output on stdout.
+				fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
+			case agent.ToolResultsPrunedEvent:
+				fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d threshold=%d threshold_source=%s window=%d\n",
+					e.Pruned, e.Reclaimed, e.Estimated, e.Threshold, e.ThresholdSource, e.Window)
+			case agent.AutoCompactEvent:
+				fmt.Fprintf(os.Stderr, "[compact] removed=%d reason=%s est=%d raw=%d estimate_source=%s exact_base=%d threshold=%d threshold_source=%s window=%d window_source=%s\n",
+					e.Removed, e.Reason, e.Estimated, e.RawEstimated, e.EstimateSource,
+					e.ExactBase, e.Threshold, e.ThresholdSource, e.Window, e.WindowSource)
+			case agent.DoneEvent:
+				// Real provider-reported token usage for this run
+				// (exact, not an estimate). Printed to stderr so it
+				// never pollutes the assistant output on stdout. The
+				// cache/eval split (cache-miss telemetry) is appended
+				// only when the backend reported a cached share, so the
+				// baseline format stays stable for scripts.
+				line := fmt.Sprintf("[tokens] in=%d out=%d total=%d",
+					e.Usage.Input, e.Usage.Output, e.Usage.Total)
+				if e.Usage.Cached > 0 {
+					line += fmt.Sprintf(" cache=%d eval=%d", e.Usage.Cached, e.Usage.Input-e.Usage.Cached)
+				}
+				fmt.Fprintln(os.Stderr, line)
+				res.Usage, res.Steps, res.Model = e.Usage, e.Steps, e.Model
+			case agent.ErrorEvent:
+				fmt.Fprintf(os.Stderr, "error: %v\n", e.Err)
+				res.Usage, res.Steps, res.Err = e.Usage, e.Steps, e.Err
+			}
+		}
+		return res
+	}
+	workerCtx, stopWorker := reviewer.workerContext(runCtx)
+	result := runOnce(workerCtx, l, userPrompt)
+	if reviewer != nil {
+		result = reviewer.finish(runCtx, workerCtx, userPrompt, l, loopCfg, result, runOnce)
+	}
+	stopWorker()
+	doneModel := result.Model
+	if doneModel == "" {
+		doneModel = mainProvider.Name()
+	}
+	usageLine := buildBatchTraceUsage(doneModel, result.Usage, result.Steps, toolCalls, batchStats.Calls(), time.Since(runStarted), result.Err != nil)
+	if reviewer != nil {
+		usageLine.Review = &reviewer.trace
+	}
+	if result.Err != nil {
+		// Partial accounting survives the failure for the eval
+		// harness; plain batch output is unchanged.
+		trace.usage(usageLine)
+		os.Exit(1)
 	}
 	if printedMessage {
 		fmt.Println()
+		trace.noteText("\n")
 	}
+	trace.usage(usageLine)
 
 	// Phase telemetry: one machine-greppable line per step on stderr
 	// (stdout stays pure assistant output). Where each step's wall

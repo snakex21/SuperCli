@@ -419,6 +419,8 @@ type Loop struct {
 	// entire conversation. Rewrites explicitly invalidate the cache.
 	visibleEstimateCount  int
 	visibleEstimateTokens int
+	// Source loop evidence must not survive removal from the provider context.
+	sourceEvidenceEpoch uint64
 }
 
 // chatWindowMaxTokens is the estimated-token threshold of the light-route

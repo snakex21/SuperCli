@@ -31,6 +31,7 @@ func (l *Loop) HideRange(from, to int) error {
 	for i := from; i < to; i++ {
 		l.hidden[i] = true
 	}
+	l.sourceEvidenceEpoch++
 	l.persistProjection(context.Background())
 	return nil
 }
@@ -67,6 +68,7 @@ func (l *Loop) HideLastUserTurns(keep int) (hidden int) {
 		}
 	}
 	if hidden > 0 {
+		l.sourceEvidenceEpoch++
 		// The turns whose reasoning was retained are gone: stale
 		// thinking must not ride into the fresh conversation.
 		l.lastThinking = ""
@@ -158,6 +160,7 @@ func (l *Loop) EstimateVisibleTokens() int {
 // invalidateVisibleEstimate must be called whenever an already-counted
 // message is replaced or edited. Plain appends deliberately do not call it.
 func (l *Loop) invalidateVisibleEstimate() {
+	l.sourceEvidenceEpoch++
 	l.visibleEstimateCount = 0
 	l.visibleEstimateTokens = 0
 }
@@ -232,6 +235,7 @@ func (l *Loop) EvictForBudget(ctx context.Context, out chan<- Event) (evicted in
 		}
 	}
 	if evicted > 0 {
+		l.sourceEvidenceEpoch++
 		l.persistProjection(context.Background())
 	}
 	return evicted

@@ -81,6 +81,7 @@ func TestSpawnPool_PerAgentHomesReachFactory(t *testing.T) {
 	stream, err := SpawnPool(context.Background(), PoolConfig{
 		Provider: providerStub{},
 		System:   "sys",
+		Prompt:   "task",
 		Home:     "/fallback",
 		Homes:    homesIn,
 		PoolSize: 3,
@@ -127,6 +128,7 @@ func TestSpawnPool_HomesShorterThanPoolFallsBack(t *testing.T) {
 	stream, err := SpawnPool(context.Background(), PoolConfig{
 		Provider: providerStub{},
 		System:   "sys",
+		Prompt:   "task",
 		Home:     "/fallback",
 		Homes:    []string{"/wt/a"},
 		PoolSize: 2,

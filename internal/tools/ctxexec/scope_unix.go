@@ -13,7 +13,9 @@ func configureCommandScope(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.Setpgid = true
+	// New session (also a new process group) without the TUI's terminal;
+	// see childproc.detachSession.
+	cmd.SysProcAttr.Setsid = true
 }
 
 func killCommandTree(cmd *exec.Cmd, scope *childproc.Scope) error {

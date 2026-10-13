@@ -37,6 +37,7 @@ func checkpointZIPFixture(t *testing.T, home string) {
 }
 
 func TestZIPReadsSkipCheckpointAndExtractCapturesOnlyDestination(t *testing.T) {
+	t.Parallel()
 	for _, controller := range []bool{false, true} {
 		t.Run(map[bool]string{false: "turn", true: "controller"}[controller], func(t *testing.T) {
 			ctx := context.Background()
@@ -86,6 +87,7 @@ func TestZIPReadsSkipCheckpointAndExtractCapturesOnlyDestination(t *testing.T) {
 }
 
 func TestZIPCustomDefaultExtractionRetainsCheckpoint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	checkpointZIPFixture(t, home)

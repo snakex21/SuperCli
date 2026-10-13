@@ -23,6 +23,7 @@ func recordRefsTestListing(t *testing.T, m *Manager, root string) string {
 }
 
 func TestFailedTurnAppendRollsBackNewRecordRefsWithoutLosingBaseline(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)
@@ -130,6 +131,7 @@ func TestFailedTurnAppendRollsBackNewRecordRefsWithoutLosingBaseline(t *testing.
 }
 
 func TestAppendRejectsExistingRecordIDBeforePinning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openSnapshotTestManager(t, t.TempDir())
 	r := recordParallelStoreFileChange(t, m, "same-id", "original", "source.bin", 1, []byte("before"), []byte("after"))
@@ -155,6 +157,7 @@ func TestAppendRejectsExistingRecordIDBeforePinning(t *testing.T) {
 }
 
 func TestAppendRejectsOrphanRecordRefPairs(t *testing.T) {
+	t.Parallel()
 	for _, side := range []string{"before", "after"} {
 		t.Run(side, func(t *testing.T) {
 			ctx := context.Background()
@@ -178,6 +181,7 @@ func TestAppendRejectsOrphanRecordRefPairs(t *testing.T) {
 }
 
 func TestUnknownRecordRefChildSurvivesFailedAppendAndForget(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openSnapshotTestManager(t, t.TempDir())
 	path := filepath.Join(m.home, "source.bin")
@@ -240,6 +244,7 @@ func TestUnknownRecordRefChildSurvivesFailedAppendAndForget(t *testing.T) {
 }
 
 func TestRecordRefTransactionsDoNotPublishOrDeletePartialPairs(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m := openSnapshotTestManager(t, t.TempDir())

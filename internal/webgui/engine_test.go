@@ -802,6 +802,12 @@ func TestEngine_ProvidersComeOutMetered(t *testing.T) {
 	if wp, _ := eng.taskWorkerProvider(config.TomlConfig{TaskModel: "other-echo"}); wp == nil || !llm.IsMetered(wp) {
 		t.Fatalf("task worker provider is not metered: %T", wp)
 	}
+	if ap := eng.advisorProvider(config.TomlConfig{AdvisorModel: "advisor-echo"}); ap == nil || !llm.IsMetered(ap) {
+		t.Fatalf("advisor provider is not metered: %T", ap)
+	}
+	if ap := eng.advisorProvider(config.TomlConfig{}); ap != nil {
+		t.Fatalf("advisor provider without advisor_model = %T, want nil", ap)
+	}
 	if err := eng.SwitchModel("echo-two", ""); err != nil {
 		t.Fatalf("SwitchModel: %v", err)
 	}

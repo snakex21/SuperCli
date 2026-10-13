@@ -102,8 +102,17 @@ the normal binary):
 ```bash
 go run ./cmd/supercli-eval --validate
 go run ./cmd/supercli-eval --model local-qwen --model cloud-model -- \
-  ./supercli --home {workspace} --model {model} --batch {prompt}
+  ./supercli --home {workspace} --model {model} --trace-jsonl --batch {prompt}
+```
 
+`--trace-jsonl` (batch only) adds JSON lines to stdout: one
+`{"type":"tool","name":...}` per tool call (matched by
+`requiredTraceEvents`) and a final `{"type":"usage","name":"run",...}` with
+tokens (input/output/cached/cacheWrite/reasoning), steps, requests, tool
+calls, TTFT and duration — also on failure, flagged `"error":true`. The eval
+report stores it per run as `metrics` and aggregates a per-model `summary`.
+
+```bash
 go build -o supercli ./cmd/supercli
 go run ./cmd/supercli-perf --binary ./supercli --output test/perf/latest.json
 ```

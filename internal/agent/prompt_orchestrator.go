@@ -93,5 +93,6 @@ Brief workers with goal, relevant paths/findings, expected result and completion
 criteria; they cannot see this chat. Reuse their evidence and continue with
 send_message when their context helps. Repeat reads/checks only for missing
 details, failures or relevant changes. Report changes, checks and blockers.
+Do not repeat a worker's assigned investigation; use its report and captured evidence.
 Use scratchpad for detailed evidence that should survive outside the chat.`
 }

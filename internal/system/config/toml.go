@@ -137,6 +137,21 @@ type TomlConfig struct {
 	// address (auto would misread it as cloud) or to force sequential.
 	DarwinParallel *bool `toml:"darwin_parallel"`
 
+	// DarwinModels optionally gives Darwin best-of-N candidates their own
+	// models, assigned round-robin ("model" or "provider/model", same forms
+	// as task_model). Mixing a local and a cloud model gives more diverse
+	// attempts. Empty = every candidate uses the active model.
+	DarwinModels []string `toml:"darwin_models"`
+
+	// DarwinJudgeModel picks the model that judges Darwin candidates. Same
+	// forms as task_model. Empty = the active model judges.
+	DarwinJudgeModel string `toml:"darwin_judge_model"`
+
+	// DarwinAutoMerge lets the darwin tool merge the winner into the current
+	// branch without asking. Nil/false (default) = never: the winner stays on
+	// its own branch for review and a manual merge.
+	DarwinAutoMerge *bool `toml:"darwin_auto_merge"`
+
 	// TaskParallel controls whether MULTIPLE `task` delegations emitted
 	// in a single model turn run concurrently. Tri-state: nil = auto
 	// (parallel for cloud backends, sequential for local ones, decided
@@ -204,6 +219,32 @@ type TomlConfig struct {
 	// delegation falls back to the coordinator's provider with a single
 	// warning line — never a hard error.
 	TaskModel string `toml:"task_model"`
+
+	// AdvisorModel routes `task` calls with advise:true (a read-only
+	// second opinion) to a separate model, e.g. a cloud model advising a
+	// local coordinator. Same forms as task_model. Empty = the advisor
+	// uses the normal worker backend.
+	AdvisorModel string `toml:"advisor_model"`
+
+	// ReviewModel turns on post-hoc review in batch runs: after the main
+	// model finishes a file-changing task, this (stronger) model judges the
+	// changes plus verify_commands evidence in ONE tool-free call — accept,
+	// revise (the main model gets another pass) or takeover. Same forms as
+	// task_model. Empty = no review (unchanged behaviour, zero cost).
+	ReviewModel string `toml:"review_model"`
+
+	// ReviewMaxRounds caps revise passes sent back to the main model. 0 = 1.
+	ReviewMaxRounds int `toml:"review_max_rounds"`
+
+	// ReviewTakeover lets review_model finish the task itself when the
+	// verdict is takeover or revise rounds are exhausted. nil/false = the
+	// result is reported but not taken over.
+	ReviewTakeover *bool `toml:"review_takeover"`
+
+	// ReviewHandoffAfter (Go duration, e.g. "8m") stops a main model that
+	// is still working after this long and hands the same conversation to
+	// review_model. Needs review_takeover. Empty = no time handoff.
+	ReviewHandoffAfter string `toml:"review_handoff_after"`
 
 	// CompactModel optionally routes context summaries to a separate model or
 	// host so compaction does not evict the coordinator's local KV cache. It

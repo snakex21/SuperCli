@@ -19,6 +19,7 @@ type cliFlags struct {
 	MaxSession, MaxDay                       int64
 	DraftMode, DraftModel, Batch             string
 	Coordinator, NoCoordinator, Unsandboxed  bool
+	TraceJSONL                               bool
 }
 
 // parseCLIFlags registers and parses flags. Side effects: sets
@@ -47,6 +48,7 @@ func parseCLIFlags() cliFlags {
 	flag.StringVar(&f.DraftModel, "draft-model", "", "F11 draft model id (required to enable F11; no auto-pick)")
 	flag.StringVar(&f.Config, "config", "", "path to config.toml override")
 	flag.StringVar(&f.Batch, "batch", "", "F33: run prompt without TUI, output to stdout and exit")
+	flag.BoolVar(&f.TraceJSONL, "trace-jsonl", false, "with --batch, also write JSON lines to stdout: one {\"type\":\"tool\"} per tool call and a final {\"type\":\"usage\"} run summary")
 	flag.BoolVar(&f.Resume, "resume", false, "resume the most recent session on startup")
 	flag.BoolVar(&f.Coordinator, "coordinator", false, "run main loop as a lightweight coordinator that delegates code work to isolated task workers (default on)")
 	flag.BoolVar(&f.NoCoordinator, "no-coordinator", false, "disable default coordinator mode and expose the normal tool set directly to the main loop")

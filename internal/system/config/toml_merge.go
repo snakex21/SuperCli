@@ -79,6 +79,21 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.TaskModel != "" {
 		dst.TaskModel = src.TaskModel
 	}
+	if src.AdvisorModel != "" {
+		dst.AdvisorModel = src.AdvisorModel
+	}
+	if src.ReviewModel != "" {
+		dst.ReviewModel = src.ReviewModel
+	}
+	if src.ReviewMaxRounds != 0 {
+		dst.ReviewMaxRounds = src.ReviewMaxRounds
+	}
+	if src.ReviewTakeover != nil {
+		dst.ReviewTakeover = src.ReviewTakeover
+	}
+	if src.ReviewHandoffAfter != "" {
+		dst.ReviewHandoffAfter = src.ReviewHandoffAfter
+	}
 	if src.CompactModel != "" {
 		dst.CompactModel = src.CompactModel
 	}
@@ -105,6 +120,15 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.DarwinParallel != nil {
 		dst.DarwinParallel = src.DarwinParallel
+	}
+	if len(src.DarwinModels) > 0 {
+		dst.DarwinModels = src.DarwinModels
+	}
+	if src.DarwinJudgeModel != "" {
+		dst.DarwinJudgeModel = src.DarwinJudgeModel
+	}
+	if src.DarwinAutoMerge != nil {
+		dst.DarwinAutoMerge = src.DarwinAutoMerge
 	}
 	if src.TaskParallel != nil {
 		dst.TaskParallel = src.TaskParallel

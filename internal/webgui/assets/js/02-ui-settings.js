@@ -5,7 +5,7 @@
 var ui = {
   theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
-  toolsExpanded: false, thinkingExpanded: null, showGenerationSpeed: true,
+  toolsExpanded: false, thinkingExpanded: null, showGenerationSpeed: true, resumeLastSession: false,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)

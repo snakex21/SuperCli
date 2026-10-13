@@ -268,6 +268,9 @@ func TestContextReportLazyTopMatchesLegacy(t *testing.T) {
 					messagesBefore := append([]llm.Message(nil), l.Messages...)
 					hiddenBefore := append([]bool(nil), l.hidden...)
 					want, got := legacyContextReportTopOracle(l), l.ContextReport()
+					// The oracle predates the tool-call / per-tool split; it only
+					// guards the lazy top-item labels and the role totals.
+					want.ToolCallTokens, want.ToolResultsByTool = got.ToolCallTokens, got.ToolResultsByTool
 					if !reflect.DeepEqual(got, want) {
 						t.Fatalf("report = %#v; want %#v", got, want)
 					}
@@ -280,7 +283,9 @@ func TestContextReportLazyTopMatchesLegacy(t *testing.T) {
 					// A late registry change retains the existing frozen catalog policy.
 					l.registry.MustRegister(tools.Tool{Name: "late_schema", Description: strings.Repeat("large schema ", 300), Schema: `{}`, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
 					l.registry.MarkAlwaysOn("late_schema")
-					if got, want := l.ContextReport(), legacyContextReportTopOracle(l); !reflect.DeepEqual(got, want) {
+					got, want = l.ContextReport(), legacyContextReportTopOracle(l)
+					want.ToolCallTokens, want.ToolResultsByTool = got.ToolCallTokens, got.ToolResultsByTool
+					if !reflect.DeepEqual(got, want) {
 						t.Fatalf("late schema report = %#v; want %#v", got, want)
 					}
 				})
@@ -295,7 +300,9 @@ func TestContextReportLazyTopMatchesLegacy(t *testing.T) {
 		t.Fatalf("empty report = %#v; want %#v", got, want)
 	}
 	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: "one\u00a0two"}, {Role: llm.RoleTool, Content: ""}}
-	if got, want := l.ContextReport(), legacyContextReportTopOracle(l); !reflect.DeepEqual(got, want) {
+	got, want := l.ContextReport(), legacyContextReportTopOracle(l)
+	want.ToolCallTokens, want.ToolResultsByTool = got.ToolCallTokens, got.ToolResultsByTool
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("small report = %#v; want %#v", got, want)
 	}
 }
@@ -308,7 +315,9 @@ func BenchmarkContextReportLazyTop(b *testing.B) {
 			for _, legacy := range []bool{true, false} {
 				b.Run(fmt.Sprintf("thin=%v/repeats=%d/legacy=%v", thin, outputRepeats, legacy), func(b *testing.B) {
 					l := contextReportLazyFixture(b, thin, 127, outputRepeats)
-					if got, want := l.ContextReport(), legacyContextReportTopOracle(l); !reflect.DeepEqual(got, want) {
+					got, want := l.ContextReport(), legacyContextReportTopOracle(l)
+					want.ToolCallTokens, want.ToolResultsByTool = got.ToolCallTokens, got.ToolResultsByTool
+					if !reflect.DeepEqual(got, want) {
 						b.Fatal("benchmark fixture does not produce identical reports")
 					}
 					report := (*Loop).ContextReport

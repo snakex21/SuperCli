@@ -24,6 +24,7 @@ func cleanupFixture(t *testing.T) (*Manager, string) {
 }
 
 func TestWorkspaceCleanupExactStoresPreservesChatsAndProjectFiles(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	ctx := context.Background()
 	writeCheckpointFixture(t, filepath.Join(m.home, "keep.txt"), "before")
@@ -96,6 +97,7 @@ func TestWorkspaceCleanupExactStoresPreservesChatsAndProjectFiles(t *testing.T) 
 }
 
 func TestWorkspaceCleanupCanceledAdmissionPreservesAllData(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	path := filepath.Join(filepath.Dir(m.repo), "sentinel")
 	writeCheckpointFixture(t, path, "kept")
@@ -117,6 +119,7 @@ func TestWorkspaceCleanupCanceledAdmissionPreservesAllData(t *testing.T) {
 }
 
 func TestWorkspaceCleanupProtectsLiveOwnerBeforeFirstSnapshot(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	turn, barrier := bindingFixtureTurn(t, m)
 	borrow, err := BorrowInvocation(WithTurn(context.Background(), turn, barrier), true)
@@ -139,6 +142,7 @@ func TestWorkspaceCleanupProtectsLiveOwnerBeforeFirstSnapshot(t *testing.T) {
 }
 
 func TestWorkspaceCleanupUnknownArchiveAndPreparedJournalFailClosed(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"unknown archive", "malformed archive", "prepared journal"} {
 		t.Run(scenario, func(t *testing.T) {
 			m, data := cleanupFixture(t)
@@ -165,6 +169,7 @@ func TestWorkspaceCleanupUnknownArchiveAndPreparedJournalFailClosed(t *testing.T
 }
 
 func TestWorkspaceCleanupArchivedActiveRootsProtectBothStores(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	writeCheckpointFixture(t, filepath.Join(m.home, "a.txt"), "before")
 	turn := m.NewTurn("session", "edit")
@@ -196,6 +201,7 @@ func TestWorkspaceCleanupArchivedActiveRootsProtectBothStores(t *testing.T) {
 }
 
 func TestWorkspaceCleanupRejectsLaterSymlinkOrJunction(t *testing.T) {
+	t.Parallel()
 	for _, where := range []string{"parent", "store", "descendant"} {
 		t.Run(where, func(t *testing.T) {
 			m, data := cleanupFixture(t)
@@ -229,6 +235,7 @@ func TestWorkspaceCleanupRejectsLaterSymlinkOrJunction(t *testing.T) {
 }
 
 func TestWorkspaceCleanupLinkAliasUsesItsOwnOpenKey(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	alias := filepath.Join(t.TempDir(), "linked-workspace")
 	if err := os.Symlink(m.home, alias); err != nil {
@@ -259,6 +266,7 @@ func TestWorkspaceCleanupLinkAliasUsesItsOwnOpenKey(t *testing.T) {
 }
 
 func TestWorkspaceCleanupCanceledWhileWaitingForGate(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	sentinel := filepath.Join(filepath.Dir(m.repo), "sentinel")
 	writeCheckpointFixture(t, sentinel, "kept")
@@ -297,6 +305,7 @@ func (c cancelAfterCleanupFile) Err() error {
 }
 
 func TestWorkspaceCleanupMidDeleteCancellationIsReportedAndRetryable(t *testing.T) {
+	t.Parallel()
 	m, data := cleanupFixture(t)
 	first := filepath.Join(filepath.Dir(m.repo), "first")
 	writeCheckpointFixture(t, first, "removed first")

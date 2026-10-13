@@ -71,6 +71,19 @@ func EstimateMessageTokens(m Message) int {
 	return tokens
 }
 
+// EstimateMessageTokenSplit returns the same total as EstimateMessageTokens
+// plus the share spent on tool-call names/arguments, in one scan.
+func EstimateMessageTokenSplit(m Message) (tokens, toolCallTokens int) {
+	tokens, toolCallTokens = estimateMessageTokens(m)
+	if len(m.ToolCalls) == 0 || toolCallTokens < 0 {
+		toolCallTokens = 0
+	}
+	if toolCallTokens > tokens {
+		toolCallTokens = tokens
+	}
+	return tokens, toolCallTokens
+}
+
 // estimateMessageTokens also returns the tool-call share so request accounting
 // need not scan potentially large write/edit arguments a second time. Keep the
 // total rounding across all text separate from the tool-only rounding.

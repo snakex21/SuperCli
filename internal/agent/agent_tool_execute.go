@@ -26,6 +26,10 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// agent kind the model supplied: a second opinion must never edit files.
 	if ar.Advise {
 		ar.Agent = advisorAgentKind
+		// A configured advisor_model bills separately so its cost is visible.
+		if a.AdvisorProvider != nil {
+			ctx = llm.WithPurpose(ctx, llm.PurposeAdvisor)
+		}
 	}
 	// agent is optional: a bare prompt gets the general worker. This
 	// keeps the lean call {"prompt": "..."} valid while still allowing
@@ -51,6 +55,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if strings.TrimSpace(ar.Expect) != "" {
 		workerPrompt += "\n\nYour final report must contain: " + strings.TrimSpace(ar.Expect)
 	}
+	// Source selection follows the delegated task, not incidental paths listed
+	// in the repository preflight appended below.
+	sourceTask := workerPrompt
 	// Preflight repo context (config preflight_repo): the worker's
 	// context is cold, so the repo-state block saves it the initial
 	// discovery turns. Rides the briefing (user message) — the
@@ -83,6 +90,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 			}
 			seed = append(seed, m)
 		}
+		if ar.Advise {
+			seed = advisorSeed(seed)
+		}
+	}
+	if !ar.ShareContext && !isSelfContainedWebRequest(sourceTask) {
+		workerPrompt += a.workerSourceContext(ctx, sourceTask, spec)
 	}
 
 	// Compose the system prompt: parent system + spec
@@ -126,7 +139,12 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 
 	// Resolve the backend before choosing its tool protocol and context scope.
 	// Mixed local/cloud setups must not inherit the coordinator's model profile.
-	prov := a.workerProvider(childCtx)
+	var prov llm.Provider
+	if ar.Advise && a.AdvisorProvider != nil {
+		prov = a.AdvisorProvider
+	} else {
+		prov = a.workerProvider(childCtx)
+	}
 	if err := childCtx.Err(); err != nil {
 		return tools.Result{Err: err}, nil
 	}

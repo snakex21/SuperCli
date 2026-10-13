@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,11 +89,25 @@ type LoopConfig struct {
 	// cwd if worktrees are disabled) so the child
 	// agent reads/writes inside the right tree.
 	Home string
-	// Prompt is unused here (passed to Run) but
-	// kept on the config so factory implementations
-	// can pre-warm caches or echo it.
+	// Prompt is the task the agent will be Run with
+	// (the pool passes the same string to Run). Kept on
+	// the config so factories can pre-warm caches or
+	// echo it.
 	Prompt string
+	// MaxSteps caps the child loop's iterations. 0
+	// means the adapter's default (DefaultMaxStepsPerAgent).
+	MaxSteps int
 }
+
+// DefaultMaxStepsPerAgent is the step cap a Darwin child
+// gets when PoolConfig.MaxStepsPerAgent is 0. Coding tasks
+// (read, edit, run tests, fix) routinely need more than a
+// handful of tool rounds.
+const DefaultMaxStepsPerAgent = 30
+
+// DefaultBudgetWallPerAgent is the per-candidate wall-clock
+// limit used when PoolConfig.BudgetWall is 0.
+const DefaultBudgetWallPerAgent = 10 * time.Minute
 
 // PoolConfig is the static configuration for a
 // pool. All fields are required unless documented
@@ -103,9 +118,17 @@ type PoolConfig struct {
 	// Provider is the LLM backend shared by all
 	// agents. Required.
 	Provider llm.Provider
+	// Providers optionally assigns models to agents
+	// round-robin: agent i uses Providers[i%len].
+	// Nil entries (or an empty slice) mean Provider.
+	Providers []llm.Provider
 	// System is the system prompt shared by all
 	// agents. Required.
 	System string
+	// Prompt is the task every agent is Run with.
+	// Required: agent.Loop.Run rejects an empty
+	// prompt. Darwin.Run fills it in.
+	Prompt string
 	// Home is the worktree base (or the user's
 	// cwd if worktrees are disabled). Required.
 	Home string
@@ -122,14 +145,17 @@ type PoolConfig struct {
 	PoolSize int
 	// MaxStepsPerAgent is passed to each Loop's
 	// config; the agent loop enforces it
-	// internally. 0 means use Loop's default.
+	// internally. 0 means DefaultMaxStepsPerAgent.
 	MaxStepsPerAgent int
 	// BudgetTokens is the total token budget for
 	// the whole pool. If exceeded, the run
 	// aborts with errBudgetExceeded. 0 disables.
 	BudgetTokens int
-	// BudgetWall is the wall-clock timeout for
-	// the whole pool. Default 10m.
+	// BudgetWall is the wall-clock timeout for EACH
+	// candidate (not the pool as a whole): in the
+	// sequential path N candidates may take up to
+	// N×BudgetWall in total. Default
+	// DefaultBudgetWallPerAgent.
 	BudgetWall time.Duration
 	// Sequential runs the agents one at a time
 	// instead of concurrently. On a single local
@@ -174,6 +200,9 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 	if cfg.System == "" {
 		return nil, errors.New("darwin: PoolConfig.System is required")
 	}
+	if strings.TrimSpace(cfg.Prompt) == "" {
+		return nil, errors.New("darwin: PoolConfig.Prompt is required")
+	}
 	size := cfg.PoolSize
 	if size <= 0 {
 		size = 3
@@ -183,36 +212,66 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 	}
 	wall := cfg.BudgetWall
 	if wall <= 0 {
-		wall = 10 * time.Minute
+		wall = DefaultBudgetWallPerAgent
 	}
-	poolCtx, cancel := context.WithTimeout(ctx, wall)
+	maxSteps := cfg.MaxStepsPerAgent
+	if maxSteps <= 0 {
+		maxSteps = DefaultMaxStepsPerAgent
+	}
+	// poolCtx is only cancelled by the caller (or when the pool
+	// finishes); the wall-clock budget is applied per agent below.
+	poolCtx, cancel := context.WithCancel(ctx)
 	out := make(chan LoopEvent, size*4)
 
 	// runAgent drives one agent to completion, emitting its events on
-	// out. Shared by the parallel and sequential paths.
+	// out. Shared by the parallel and sequential paths. Every agent
+	// that starts produces exactly one terminal event (Done or Error).
 	runAgent := func(i int) {
 		home := cfg.Home
 		if i < len(cfg.Homes) && cfg.Homes[i] != "" {
 			home = cfg.Homes[i]
 		}
 		loopCfg := LoopConfig{
-			Provider: cfg.Provider,
+			Provider: cfg.providerFor(i),
 			System:   cfg.System,
 			Home:     home,
-			Prompt:   "", // set per-Run by the caller
+			Prompt:   cfg.Prompt,
+			MaxSteps: maxSteps,
 		}
 		loop, err := cfg.Factory(loopCfg)
 		if err != nil {
 			emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
 			return
 		}
-		ch, err := loop.Run(poolCtx, "")
+		agentCtx, agentCancel := context.WithTimeout(poolCtx, wall)
+		defer agentCancel()
+		ch, err := loop.Run(agentCtx, cfg.Prompt)
 		if err != nil {
 			emitOrSkip(poolCtx, out, LoopErrorEvent{Err: err, Agent: i})
 			return
 		}
+		terminal := false
 		for ev := range ch {
+			if isTerminal(ev) {
+				if terminal {
+					continue // one candidate per agent
+				}
+				terminal = true
+			}
 			emitOrSkip(poolCtx, out, stampAgent(ev, i))
+		}
+		if !terminal {
+			// The loop closed its channel without Done/Error —
+			// typically the per-agent wall budget fired and the
+			// adapter bailed on ctx.Done. Record it as a failed
+			// candidate instead of silently losing it.
+			errAgent := agentCtx.Err()
+			if errors.Is(errAgent, context.DeadlineExceeded) {
+				errAgent = fmt.Errorf("darwin: agent exceeded wall budget %s", wall)
+			} else if errAgent == nil {
+				errAgent = errors.New("darwin: agent finished without a result")
+			}
+			emitOrSkip(poolCtx, out, LoopErrorEvent{Err: errAgent, Agent: i})
 		}
 	}
 
@@ -250,6 +309,16 @@ func SpawnPool(ctx context.Context, cfg PoolConfig) (<-chan LoopEvent, error) {
 	return out, nil
 }
 
+// providerFor returns the model agent i runs on.
+func (cfg PoolConfig) providerFor(i int) llm.Provider {
+	if n := len(cfg.Providers); n > 0 && i >= 0 {
+		if p := cfg.Providers[i%n]; p != nil {
+			return p
+		}
+	}
+	return cfg.Provider
+}
+
 // stampAgent rewrites a LoopEvent so its Agent field
 // carries the spawn index of the goroutine that
 // produced it. Loops themselves don't know their
@@ -269,22 +338,39 @@ func stampAgent(ev LoopEvent, i int) LoopEvent {
 	return ev
 }
 
-// emitOrSkip sends ev on ch unless the ctx is done
-// or the channel is full. A non-blocking send with
-// a closed-channel guard.
+// isTerminal reports whether ev ends an agent's stream.
+func isTerminal(ev LoopEvent) bool {
+	switch ev.(type) {
+	case LoopDoneEvent, LoopErrorEvent:
+		return true
+	}
+	return false
+}
+
+// emitOrSkip sends ev on ch. Terminal events
+// (LoopDoneEvent / LoopErrorEvent) carry the
+// candidate and are sent blocking until the
+// consumer takes them or ctx is cancelled.
+// Progress events (LoopMessageEvent) are
+// best-effort: dropped when the channel is full or
+// ctx is done.
 func emitOrSkip(ctx context.Context, ch chan<- LoopEvent, ev LoopEvent) {
 	if ctx.Err() != nil {
+		return
+	}
+	if isTerminal(ev) {
+		select {
+		case ch <- ev:
+		case <-ctx.Done():
+		}
 		return
 	}
 	select {
 	case ch <- ev:
 	case <-ctx.Done():
 	default:
-		// Channel full + context still live =
-		// drop. Per-agent events are best-effort;
-		// the final LoopDoneEvent always arrives
-		// because Run blocks until the loop
-		// finishes.
+		// Channel full + context still live = drop the
+		// progress event; it is not material to the result.
 	}
 }
 

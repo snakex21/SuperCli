@@ -64,6 +64,7 @@ func (l *Loop) compactionHistory() compactionHistory {
 		}
 	} else {
 		view.requestMessages, view.requestIndices = l.resolvedToolProviderProjection(view.messages, true)
+		view.requestMessages = sourceEvidenceProjection(view.requestMessages, l.baseDir)
 	}
 	return view
 }
@@ -131,6 +132,9 @@ func (l *Loop) projectedPruneGain(h compactionHistory, victims []pruneVictim, ha
 		candidate[index].Parts = nil
 	}
 	projected := l.resolvedToolProviderView(candidate)
+	if l.route == RouteCoordinator {
+		projected = sourceEvidenceProjection(projected, l.baseDir)
+	}
 	if l.route != RouteCoordinator {
 		projected, _, _ = chatHistoryProjection(projected, l.chatWindowStart, false)
 	}

@@ -24,9 +24,11 @@ type toolResult struct {
 	// inert: the call succeeded but changed nothing that did not already
 	// exist. Kept apart from failed — the model is told the truth (it
 	// worked) while progress accounting refuses to bank it.
-	inert       bool
-	err         error
-	observation toolObservation
+	inert         bool
+	err           error
+	observation   toolObservation
+	source        []sourceRow
+	sourcePartial bool
 }
 
 // invokeToolCalls runs the model's tool-call batch and appends the matching
@@ -92,7 +94,7 @@ func (l *Loop) invokeToolCallsSequential(ctx context.Context, toolCalls []llm.To
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
-		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation}
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation, source: ev.source, sourcePartial: ev.sourcePartial}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
@@ -325,7 +327,7 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 	// provider APIs that expect call/result pairing stay deterministic.
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, ev := range results {
-		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation}
+		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation, source: ev.source, sourcePartial: ev.sourcePartial}
 		for _, m := range ev.followUps {
 			l.Messages = append(l.Messages, m)
 			l.persist(ctx, m)
@@ -717,7 +719,10 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		follow = append(follow, llm.Message{Role: llm.RoleUser, Parts: parts})
 	}
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, OutputHandle: outputHandle, Images: previews}
-	return toolResult{followUps: follow, inert: res.Inert, observation: observeToolResult(tc, res)}
+	observation := observeToolResult(tc, res)
+	rows := sourceRows(tc, modelContent, l.baseDir)
+	return toolResult{followUps: follow, inert: res.Inert, observation: observation,
+		source: rows, sourcePartial: sourceResultPartial(tc, modelContent, rows)}
 }
 
 // toolImageRef keeps durable tool images out of history without first allocating

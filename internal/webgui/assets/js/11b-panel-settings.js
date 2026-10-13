@@ -37,6 +37,7 @@ sections.settings = async function () {
   wrap.style.marginTop = "10px";
   (got.knobs || []).forEach(function (k) { wrap.appendChild(knobRow(k, got.cost_currencies)); });
   panelContent.appendChild(wrap);
+  panelContent.appendChild(resumeLastSessionGroup());
   var reset = i18nEl("button", "btn danger", "set.resetAll");
   reset.addEventListener("click", async function () {
     await jpost("/api/config", { reset_all: true }).catch(function (e) { toast(e.message); });
@@ -53,7 +54,7 @@ sections.settings = async function () {
 function knobDisplayValue(k) {
   var key = ({on:"set.state.on", off:"set.state.off", auto:"set.state.auto", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
     "default (700/300 by tier)":"setting.value.memoryBudget", "default (spec or 10)":"setting.value.workerSteps", "default (no cap)":"setting.value.noCap",
-    "default (coordinator's model)":"setting.value.coordinator", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active",
+    "default (coordinator's model)":"setting.value.coordinator", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active", "default (worker model)":"setting.value.worker",
     "off (no automatic paid fallback)":"setting.value.noFallback", "none (diff-only verdict)":"setting.value.diffOnly"})[k.value];
   if (key) return t(key);
   var number = String(k.value || "").match(/^default \((\d+)\)$/);
@@ -252,6 +253,25 @@ function sessionRuntimePreferenceGroup() {
   });
   sr.appendChild(sessionRuntime);
   gs.appendChild(sr);
+  return gs;
+}
+
+function resumeLastSessionGroup() {
+  var gs = el("div", "group");
+  var lr = el("label", "toggle-row");
+  var lc = el("span");
+  lc.appendChild(i18nEl("span", "", "session.resumeLast"));
+  lc.appendChild(i18nEl("span", "toggle-hint", "session.resumeLastHint"));
+  lr.appendChild(lc);
+  var resumeLast = document.createElement("input");
+  resumeLast.type = "checkbox";
+  resumeLast.checked = ui.resumeLastSession === true;
+  resumeLast.addEventListener("change", function () {
+    ui.resumeLastSession = resumeLast.checked;
+    saveUI();
+  });
+  lr.appendChild(resumeLast);
+  gs.appendChild(lr);
   return gs;
 }
 

@@ -94,6 +94,11 @@ type Usage struct {
 	// report it. Used to surface a cache-hit ratio in the status line.
 	CachedInput int
 
+	// CacheWrite is the portion of Input the backend wrote INTO its
+	// prompt cache this turn (Anthropic cache_creation_input_tokens).
+	// Zero when the backend does not report it.
+	CacheWrite int
+
 	// Reasoning is the number of Output tokens spent on hidden
 	// chain-of-thought (OpenAI completion_tokens_details.reasoning_tokens;
 	// LM Studio reports it for reasoning models). Zero when not reported.
