@@ -65,6 +65,7 @@ type batchTraceReview struct {
 	Instructions   []string `json:"instructions,omitempty"`
 	ChangesBytes   []int    `json:"changesBytes,omitempty"`
 	SieveRed       []bool   `json:"sieveRed,omitempty"`
+	SieveOutput    []string `json:"sieveOutput,omitempty"`
 	Handoff        bool     `json:"handoff,omitempty"`
 	Takeover       bool     `json:"takeover,omitempty"`
 	WorkerInput    int      `json:"workerInput"`
@@ -162,6 +163,7 @@ func (r *batchReviewer) finish(ctx, workerCtx context.Context, task string, l *a
 		r.trace.Instructions = append(r.trace.Instructions, out.Instruction)
 		r.trace.ChangesBytes = append(r.trace.ChangesBytes, len(changes))
 		r.trace.SieveRed = append(r.trace.SieveRed, out.SieveRed())
+		r.trace.SieveOutput = append(r.trace.SieveOutput, out.SieveSummary())
 		r.trace.ReviewInput += out.Usage.Input
 		r.trace.ReviewOutput += out.Usage.Output
 		r.trace.ReviewCached += out.Usage.CachedInput

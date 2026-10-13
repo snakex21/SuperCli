@@ -99,7 +99,7 @@ function harness(options = {}) {
   for (const name of ['updateAppBadge', 'wireQueuedTaskDrag', 'sealAssistantSegment',
     'closeQuestionOverlay', 'settleOpenTools', 'releaseLiveTranscriptBlocks', 'renderStats',
     'addFileChanges', 'addTurnMeta', 'loadSideGoal', 'closeAssistantReasoning', 'flushAssistantRender',
-    'releaseAssistantParagraphCaches']) context[name] = () => {};
+    'releaseAssistantParagraphCaches', 'pruneWorkerOverview']) context[name] = () => {};
   context.toast = value => events.push(value);
   context.addEventLine = value => events.push(value);
   context.addUserMsg = () => element('div');

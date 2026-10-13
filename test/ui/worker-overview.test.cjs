@@ -81,7 +81,7 @@ test('worker overview keeps numeric order and moves existing buttons only when t
   }
   assert.equal(h.moves.length, 0, 'unchanged order must not move or re-append focused buttons');
   h.$('#worker-overview-list').children.forEach((button, index) => assert.equal(button, buttons[index]));
-  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 3 / 3');
+  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 3');
 });
 
 test('worker overview refreshes status and language, opens the current row and releases buttons on reset', () => {
@@ -95,8 +95,11 @@ test('worker overview refreshes status and language, opens the current row and r
   assert.equal(buttons[0].querySelector('.worker-overview-activity').textContent, 'Wynik');
   assert.equal(buttons[0].querySelector('.worker-overview-status').textContent, h.context.t('task.done'));
   assert.equal(buttons[0].dataset.state, 'done');
-  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 1 / 2');
-  assert.equal(h.moves.length, 0);
+  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 1 · ' + h.context.t('task.done') + ': 1');
+  const list = h.$('#worker-overview-list').children;
+  assert.equal(list[0], buttons[1], 'running workers stay ahead of finished ones');
+  assert.equal(list[1], buttons[0]);
+  assert.equal(h.moves.length, 1, 'only the finished worker is relocated');
   buttons[0].click(); assert.equal(first.open, true); assert.equal(first._body.hidden, false); assert.equal(first.scrolls.length, 1);
   h.context.updateWorkerOverview('worker-1', 'code', 'running', 'Nowa tura', second);
   buttons[0].click(); assert.equal(second.open, true); assert.equal(second._body.hidden, false); assert.equal(second.scrolls.length, 1);

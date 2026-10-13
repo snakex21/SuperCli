@@ -26,6 +26,18 @@ type ReviewOutcome struct {
 // SieveRed reports whether a verify command failed.
 func (o ReviewOutcome) SieveRed() bool { return !o.sieve.Green && !o.sieve.Skipped }
 
+// SieveSummary is "<command> exit N: <output tail>" for a red sieve, else "".
+func (o ReviewOutcome) SieveSummary() string {
+	if !o.SieveRed() {
+		return ""
+	}
+	out := strings.TrimSpace(o.sieve.Output)
+	if len(out) > 400 {
+		out = "…" + out[len(out)-400:]
+	}
+	return fmt.Sprintf("%s exit %d: %s", o.sieve.Command, o.sieve.Exit, out)
+}
+
 // ReviewChange runs verifyCommands in dir, then asks reviewer for a verdict
 // on task + changes + the command evidence. It never errors: a failed or
 // unparseable verdict is a "takeover" with Parsed=false.

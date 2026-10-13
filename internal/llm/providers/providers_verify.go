@@ -94,8 +94,14 @@ func humanizeVerifyError(raw, baseURL, apiKey string) error {
 		} else {
 			hint = "the API key was rejected — check it for typos or expiry"
 		}
+	case strings.Contains(low, "is not available at this provider"):
+		hint = "this provider does not serve the selected model through its API — pick another model"
 	case hasVerifyHTTPStatus(low, 404):
 		hint = "endpoint not found — check the base URL (it usually ends with /v1)"
+	case hasVerifyHTTPStatus(low, 500) || hasVerifyHTTPStatus(low, 502) || hasVerifyHTTPStatus(low, 503) ||
+		hasVerifyHTTPStatus(low, 504) || hasVerifyHTTPStatus(low, 529) ||
+		(hasVerifyHTTPStatus(low, 429) && strings.Contains(low, "service unavailable")):
+		hint = "the provider is overloaded or has no upstream for this model right now — the configuration is fine; retry later or pick another model"
 	case hasVerifyHTTPStatus(low, 429):
 		hint = "rate limited — wait a moment or check your plan limits"
 	case strings.Contains(low, "model") && (strings.Contains(low, "not found") || strings.Contains(low, "does not exist") || strings.Contains(low, "status 400")):

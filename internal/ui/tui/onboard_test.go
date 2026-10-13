@@ -79,6 +79,45 @@ func TestOnboardingSharesAllProviderTemplatesWithoutDuplicates(t *testing.T) {
 	}
 }
 
+func TestOnboardingTextFieldsPasteAndEdit(t *testing.T) {
+	old := onboardClipboard
+	t.Cleanup(func() { onboardClipboard = old })
+	onboardClipboard = func() (string, error) { return "sk-test-123\r\n", nil }
+
+	m := onboardModel{step: onboardKey}
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyCtrlV},
+		{Type: tea.KeyRunes, Runes: []rune("xy")},
+		{Type: tea.KeyBackspace},
+		{Type: tea.KeyCtrlH},
+		{Type: tea.KeyRunes, Runes: []rune("-pasted\n"), Paste: true},
+	} {
+		next, _ := m.Update(key)
+		m = next.(onboardModel)
+	}
+	if m.input != "sk-test-123-pasted" {
+		t.Fatalf("API key field = %q", m.input)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if next.(onboardModel).input != "" {
+		t.Fatal("Ctrl+U should clear the field")
+	}
+
+	onboardClipboard = func() (string, error) { return "http://localhost:1234/v1", nil }
+	m = onboardModel{step: onboardURL}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if next.(onboardModel).input != "http://localhost:1234/v1" {
+		t.Fatalf("URL field = %q", next.(onboardModel).input)
+	}
+
+	onboardClipboard = func() (string, error) { return "LM Studio", nil }
+	m = onboardModel{step: onboardMenu, choices: buildChoices(nil, "en"), language: "en"}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if rows := next.(onboardModel).filteredChoices(); len(rows) != 1 || rows[0].provider.Name != "lmstudio" {
+		t.Fatalf("pasted search result: %+v", rows)
+	}
+}
+
 func TestOnboardingSearchNavigationAndSpecialChoices(t *testing.T) {
 	m := onboardModel{step: onboardMenu, choices: buildChoices(nil, "pl"), language: "pl"}
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
