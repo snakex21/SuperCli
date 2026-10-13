@@ -916,6 +916,20 @@ async function renderStats() {
         });
         box.appendChild(rowM);
       }
+      // Advisor model — where task advise:true second opinions go.
+      // Empty = the worker model, so the advisor is always available.
+      var knobA = null;
+      (cfg.knobs || []).forEach(function (k) { if (k.key === "advisor_model") knobA = k; });
+      if (knobA) {
+        var rowA = el("div", "stat-row");
+        rowA.appendChild(i18nEl("span", "", "stats.advModel"));
+        supercliOrchPicker(rowA, knobA, function (v) {
+          jpost("/api/config", { key: "advisor_model", value: v })
+            .then(renderStats)
+            .catch(function (e2) { toast(e2.message); });
+        }, "stats.advModelDef");
+        box.appendChild(rowA);
+      }
     }
   }
   if (statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) box.setAttribute("aria-busy", "false");
@@ -924,10 +938,12 @@ async function renderStats() {
 // supercliOrchPicker renders the orchestrator-model selector: a compact
 // button showing the current value plus a dropdown list of known models,
 // mirroring the model palette rows (.prow). Clicking a row calls onSave
-// with the "provider/model" ref (or "" for the main model).
-function supercliOrchPicker(container, knobM, onSave) {
+// with the "provider/model" ref (or "" for the default). defKey names
+// the i18n label of that default (main model unless given).
+function supercliOrchPicker(container, knobM, onSave, defKey) {
+  defKey = defKey || "stats.orchModelDef";
   var wrap = el("span", "orch-pick");
-  var btn = el("button", "orch-btn", knobM.raw || t("stats.orchModelDef"));
+  var btn = el("button", "orch-btn", knobM.raw || t(defKey));
   btn.type = "button";
   var pop = el("div", "orch-pop");
   pop.hidden = true;
@@ -944,7 +960,7 @@ function supercliOrchPicker(container, knobM, onSave) {
       list.innerHTML = "";
       var base = el("div", "prow" + (cur === "" ? " active" : ""));
       base.appendChild(el("span", "state-dot on"));
-      base.appendChild(i18nEl("span", "pid", "stats.orchModelDef"));
+      base.appendChild(i18nEl("span", "pid", defKey));
       base.addEventListener("click", function () {
         pop.hidden = true;
         if (cur !== "") onSave("");

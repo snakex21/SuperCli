@@ -54,6 +54,8 @@ type Report struct {
 	Passed        int         `json:"passed"`
 	Failed        int         `json:"failed"`
 	Runs          []RunReport `json:"runs"`
+	// Summary aggregates runs per model (see summarize).
+	Summary []ModelSummary `json:"summary,omitempty"`
 }
 
 type RunReport struct {
@@ -69,6 +71,9 @@ type RunReport struct {
 	AgentError       string        `json:"agentError,omitempty"`
 	StdoutTail       string        `json:"stdoutTail,omitempty"`
 	StderrTail       string        `json:"stderrTail,omitempty"`
+	// Metrics is the agent's last `{"type":"usage"}` stdout line
+	// (supercli --batch --trace-jsonl); nil when none was emitted.
+	Metrics *RunMetrics `json:"metrics,omitempty"`
 }
 
 type CheckReport struct {
@@ -123,6 +128,7 @@ func Bench(ctx context.Context, options BenchOptions) (Report, error) {
 		return Report{}, fmt.Errorf("no eval runs selected")
 	}
 	report.DurationMs = time.Since(started).Milliseconds()
+	report.Summary = summarize(report.Runs)
 	return report, nil
 }
 
@@ -162,6 +168,7 @@ func runOne(parent context.Context, suiteDir string, options BenchOptions, task 
 	run.MissingChanges = missingExpected(task.ExpectedChangedFiles, run.ChangedFiles)
 	run.ForbiddenChanges = intersect(task.ForbiddenChangedFiles, run.ChangedFiles)
 	run.MissingTrace = missingTrace(task.RequiredTraceEvents, out.Stdout)
+	run.Metrics = parseUsage(out.Stdout)
 	for _, check := range task.VerificationCommands {
 		run.Checks = append(run.Checks, runCheck(ctx, workspace, check))
 	}

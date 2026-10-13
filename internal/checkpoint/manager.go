@@ -216,16 +216,31 @@ func (c *Controller) Wrap(spec tools.Tool) tools.Tool {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
 		defer leave()
-		if err := turn.ensureBeforeForTool(ctx, spec.Name, args); err != nil {
+		notice, err := turn.ensureBeforeForToolNotice(ctx, spec.Name, args)
+		if err != nil {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
 		result, err := original(ctx, args)
 		if err == nil {
 			turn.describeExternalCapture(spec.Name, &result)
 		}
+		appendCheckpointNotice(&result, notice)
 		return result, err
 	}
 	return spec
+}
+
+// appendCheckpointNotice makes a degraded checkpoint visible in the tool result
+// (seen by both the model and the user) instead of silently losing undo.
+func appendCheckpointNotice(result *tools.Result, notice string) {
+	if notice == "" {
+		return
+	}
+	note := "\n" + notice
+	result.Text += note
+	if result.ModelPreview != "" {
+		result.ModelPreview += note
+	}
 }
 
 func (c *Controller) Complete(ctx context.Context) (*Record, error) {
@@ -307,13 +322,15 @@ func (t *Turn) Wrap(spec tools.Tool) tools.Tool {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
 		defer leave()
-		if err := turn.ensureBeforeForTool(ctx, spec.Name, args); err != nil {
+		notice, err := turn.ensureBeforeForToolNotice(ctx, spec.Name, args)
+		if err != nil {
 			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
 		}
 		result, err := original(ctx, args)
 		if err == nil {
 			turn.describeExternalCapture(spec.Name, &result)
 		}
+		appendCheckpointNotice(&result, notice)
 		return result, err
 	}
 	return spec

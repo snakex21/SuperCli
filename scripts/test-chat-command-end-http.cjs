@@ -54,8 +54,8 @@ function deferred(){let resolve;const promise=new Promise(yes=>{resolve=yes});re
   }
   if(event.type==='tool_result'&&event.id===callID){
    resultCount++;assert(firstRow,'result without real tool_call row');
-   assert.equal(!!event.err,mode==='cmd-error'||mode==='checkpoint-rejected','native command outcome changed');
-   assert(firstRow.classList.contains((mode==='cmd-error'||mode==='checkpoint-rejected')?'failed':'done'),'tool_result did not settle row');
+   assert.equal(!!event.err,mode==='cmd-error','native command outcome changed');
+   assert(firstRow.classList.contains(mode==='cmd-error'?'failed':'done'),'tool_result did not settle row');
    assert.equal(firstRow.classList.contains('running'),false);assert.equal(firstRow._clock,null);
    assert.equal(c.openToolOrder.includes(callID),false);
    resultSeen.resolve();

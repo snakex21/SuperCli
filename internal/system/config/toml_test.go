@@ -259,6 +259,33 @@ func TestMergeToml_TaskModelOverride(t *testing.T) {
 	}
 }
 
+// TestMergeToml_AdvisorModelOverride mirrors task_model merge semantics.
+func TestMergeToml_AdvisorModelOverride(t *testing.T) {
+	dst := TomlConfig{AdvisorModel: "cloud/big"}
+	mergeToml(&dst, TomlConfig{})
+	if dst.AdvisorModel != "cloud/big" {
+		t.Fatalf("empty src should not clear advisor_model: %q", dst.AdvisorModel)
+	}
+	mergeToml(&dst, TomlConfig{AdvisorModel: "other"})
+	if dst.AdvisorModel != "other" {
+		t.Fatalf("src should override advisor_model: %q", dst.AdvisorModel)
+	}
+}
+
+func TestMergeToml_ReviewOverride(t *testing.T) {
+	on := true
+	dst := TomlConfig{ReviewModel: "codex/sol", ReviewMaxRounds: 2, ReviewTakeover: &on, ReviewHandoffAfter: "8m"}
+	mergeToml(&dst, TomlConfig{})
+	if dst.ReviewModel != "codex/sol" || dst.ReviewMaxRounds != 2 || dst.ReviewTakeover == nil || dst.ReviewHandoffAfter != "8m" {
+		t.Fatalf("empty src cleared review settings: %+v", dst)
+	}
+	off := false
+	mergeToml(&dst, TomlConfig{ReviewModel: "other", ReviewTakeover: &off})
+	if dst.ReviewModel != "other" || *dst.ReviewTakeover {
+		t.Fatalf("src should override review settings: %+v", dst)
+	}
+}
+
 func TestMergeToml_CompactModelOverride(t *testing.T) {
 	dst := TomlConfig{CompactModel: "cheap/qwen"}
 	mergeToml(&dst, TomlConfig{})

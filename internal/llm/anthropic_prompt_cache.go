@@ -21,7 +21,7 @@ func anthropicConversationCaching(ctx context.Context, base string) bool {
 		return false
 	}
 	switch PurposeFromContext(ctx) {
-	case "", PurposeMain, PurposeTask:
+	case "", PurposeMain, PurposeTask, PurposeAdvisor:
 		return true
 	default:
 		return false

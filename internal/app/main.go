@@ -158,7 +158,7 @@ func Main() {
 
 	// --batch short-circuits: run prompt without TUI.
 	if flags.Batch != "" {
-		runBatch(flags.Batch, home, dataDir, flags.Provider, flags.Key, flags.BaseURL, flags.Model, flags.Echo, flags.Debug, flags.DraftMode, flags.DraftModel, tomlCfg)
+		runBatch(flags.Batch, home, dataDir, flags.Provider, flags.Key, flags.BaseURL, flags.Model, flags.Echo, flags.Debug, flags.DraftMode, flags.DraftModel, flags.TraceJSONL, tomlCfg)
 		return
 	}
 
@@ -240,6 +240,7 @@ func Main() {
 	supercliSystemPromptBase = prompt.Build(execProfile.PromptSmall)
 	supercliModelProfile = prompt.LoadProfileAt(home, dataDir, cfg.Model)
 	supercliUserInstructions = prompt.ActiveUserInstructions(dataDir)
+	supercliProjectInstructions = prompt.LoadProjectInstructions(home)
 
 	// Orchestrator mode (hard delegation): resolved from config, with an
 	// env override for scripted/test use. When on, the main loop gets a
@@ -365,6 +366,30 @@ func Main() {
 	if darwinSequential {
 		log.Printf("darwin: local backend — sequential best-of-N (expect ~N× time)")
 	}
+	// darwin_models: candidates round-robin over these models (nil entry =
+	// the active model). darwin_judge_model: separate judge. Build failures
+	// only warn; the active model takes over.
+	var darwinModels []llm.Provider
+	for _, ref := range tomlCfg.DarwinModels {
+		var p llm.Provider
+		if mc, ok := resolveModelOverrideConfig(strings.TrimSpace(ref), "darwin_models", tomlCfg, cfg); ok {
+			if bp, bErr := provFactory.Build(mc, llm.PurposeTask); bErr != nil {
+				log.Printf("darwin_models: %q build failed: %v — that slot uses the active model", ref, bErr)
+			} else {
+				p = bp
+			}
+		}
+		darwinModels = append(darwinModels, p)
+	}
+	darwinTool.SetModels(darwinModels)
+	if jc, ok := resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.DarwinJudgeModel), "darwin_judge_model", tomlCfg, cfg); ok {
+		if jp, jErr := provFactory.Build(jc, llm.PurposeDarwin); jErr != nil {
+			log.Printf("darwin_judge_model: %q build failed: %v — the active model judges", tomlCfg.DarwinJudgeModel, jErr)
+		} else {
+			darwinTool.SetJudgeProvider(jp)
+		}
+	}
+	darwinTool.SetAllowAutoMerge(tomlCfg.DarwinAutoMerge != nil && *tomlCfg.DarwinAutoMerge)
 	registry.MustRegister(darwinTool.Spec())
 
 	// Task delegation parallelism mirrors darwin: a batch of `task` calls
@@ -397,6 +422,16 @@ func Main() {
 		} else {
 			taskWorkerProvider = wp
 			log.Printf("task_model: delegated workers use %q @ %s", wp.Name(), taskWorkerCfg.BaseURL)
+		}
+	}
+	var advisorProvider llm.Provider
+	if advisorCfg, advisorOverride := resolveAdvisorConfig(tomlCfg, cfg); advisorOverride {
+		ap, apErr := provFactory.Build(advisorCfg, llm.PurposeAdvisor)
+		if apErr != nil {
+			log.Printf("advisor_model: provider %q build failed: %v — advisor uses the worker provider", tomlCfg.AdvisorModel, apErr)
+		} else {
+			advisorProvider = ap
+			log.Printf("advisor_model: advise calls use %q @ %s", ap.Name(), advisorCfg.BaseURL)
 		}
 	}
 	compactCfg, compactOverride := resolveCompactConfig(tomlCfg, cfg)
@@ -553,6 +588,7 @@ func Main() {
 		tomlCfg:            tomlCfg,
 		taskWorkerProvider: taskWorkerProvider,
 		taskWorkerCfg:      taskWorkerCfg,
+		advisorProvider:    advisorProvider,
 		home:               home,
 		delegationOff:      supercliDelegationDisabled,
 		coordinatorMode:    supercliCoordinatorMode,

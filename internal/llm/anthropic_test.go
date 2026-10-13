@@ -247,6 +247,9 @@ func TestAnthropic_UsageCachePromptBreakdown(t *testing.T) {
 	if usage.CachedInput != 12000 {
 		t.Errorf("CachedInput = %d, want 12000 (cache_read_input_tokens)", usage.CachedInput)
 	}
+	if usage.CacheWrite != 2000 {
+		t.Errorf("CacheWrite = %d, want 2000 (cache_creation_input_tokens)", usage.CacheWrite)
+	}
 	if usage.Output != 220 || usage.Total != 14231 {
 		t.Errorf("Output/Total = %d/%d, want 220/14231", usage.Output, usage.Total)
 	}

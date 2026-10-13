@@ -63,11 +63,15 @@ func knobDefs() []knobDef {
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
 		{"cache_prompt", "ask local llama.cpp servers to reuse the KV prompt cache", knobTriAuto, true},
 		{"darwin_parallel", "run darwin best-of-N agents concurrently vs one at a time", knobTriAuto, true},
+		{"darwin_models", "darwin candidate models, round-robin; semicolon-separated \"model\" or \"provider/model\" (mix local + cloud; empty = active model)", knobText, true},
+		{"darwin_judge_model", "model that judges darwin candidates (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
+		{"darwin_auto_merge", "let darwin merge the winner into the current branch by itself; off = you apply it manually", knobTri, true},
 		{"task_parallel", "run multiple task delegations from one turn concurrently", knobTriAuto, true},
 		{"memory_briefing_tokens", "hard token budget for the session-start memory briefing", knobInt, true},
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
+		{"advisor_model", "model/host for task advise:true second opinions (\"model\" or \"provider/model\"; empty = worker model)", knobText, true},
 		{"orchestrator_model", "coordinator model/host (\"model\" or \"provider/model\"; empty = the main model coordinates; pair with task_model for a two-model setup)", knobText, true},
 		{"compact_model", "optional model/host for context summaries (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
 		{"fallback_models", "ordered opt-in main-model failover list; semicolon-separated provider/model references", knobText, true},
@@ -134,6 +138,20 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	case "darwin_parallel":
 		v, s := triAutoKnob(c.DarwinParallel, "parallel", "sequential")
 		return v, s, ""
+	case "darwin_models":
+		if len(c.DarwinModels) == 0 {
+			return "default (active model)", "default", ""
+		}
+		joined := strings.Join(c.DarwinModels, " ; ")
+		return joined, "manual", joined
+	case "darwin_judge_model":
+		if strings.TrimSpace(c.DarwinJudgeModel) == "" {
+			return "default (active model)", "default", ""
+		}
+		return c.DarwinJudgeModel, "manual", c.DarwinJudgeModel
+	case "darwin_auto_merge":
+		v, s := triKnob(c.DarwinAutoMerge, "off")
+		return v, s, ""
 	case "task_parallel":
 		v, s := triAutoKnob(c.TaskParallel, "parallel", "sequential")
 		return v, s, ""
@@ -148,6 +166,11 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (coordinator's model)", "default", ""
 		}
 		return c.TaskModel, "manual", c.TaskModel
+	case "advisor_model":
+		if strings.TrimSpace(c.AdvisorModel) == "" {
+			return "default (worker model)", "default", ""
+		}
+		return c.AdvisorModel, "manual", c.AdvisorModel
 	case "orchestrator_model":
 		if strings.TrimSpace(c.OrchestratorModel) == "" {
 			return "default (main model)", "default", ""
@@ -256,6 +279,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.CachePrompt)
 	case "darwin_parallel":
 		return tri(c.DarwinParallel)
+	case "darwin_auto_merge":
+		return tri(c.DarwinAutoMerge)
 	case "task_parallel":
 		return tri(c.TaskParallel)
 	case "noop_gate":

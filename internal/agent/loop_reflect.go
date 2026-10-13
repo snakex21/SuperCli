@@ -56,7 +56,9 @@ const (
 // Fresh evidence is progress even if the read arguments have not changed;
 // discovering different files or pages does not count as repetition.
 type repeatProgress struct {
-	unchanged unchangedProgress
+	unchanged   unchangedProgress
+	source      sourceProgress
+	sourceEpoch uint64
 	// Count incomplete responses, not calls, independently of compacted history
 	// or changing arguments. A complete response resets this per-Run bound.
 	truncatedToolResponses int
@@ -81,6 +83,7 @@ func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) r
 		return repeatNone
 	}
 	p.unchanged.observe(calls, outcomes)
+	p.source.observe(calls, outcomes)
 	for i, c := range calls {
 		if p.cooldown > 0 {
 			p.cooldown--
@@ -128,10 +131,10 @@ func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) r
 			p.recent = p.recent[len(p.recent)-cycleHistorySize:]
 		}
 	}
-	if p.unchanged.rounds >= unchangedRoundLimit || p.identicalStreak >= repeatHardLimit || p.identicalFailureStreak >= repeatHardLimit {
+	if p.source.unchanged >= unchangedRoundLimit || p.unchanged.rounds >= unchangedRoundLimit || p.identicalStreak >= repeatHardLimit || p.identicalFailureStreak >= repeatHardLimit {
 		return repeatAbort
 	}
-	if p.cooldown == 0 && (p.hasShortCycle() || p.unchanged.repeats >= 3 || p.unchanged.rounds >= 2) {
+	if p.cooldown == 0 && (p.source.warn || p.hasShortCycle() || p.unchanged.repeats >= 3 || p.unchanged.rounds >= 2) {
 		p.cooldown = repeatWarnCooldown
 		return repeatWarn
 	}
@@ -139,6 +142,9 @@ func (p *repeatProgress) observe(calls []llm.ToolCall, outcomes []callOutcome) r
 }
 
 func (p *repeatProgress) repeatAbortText() string {
+	if p.source.unchanged >= unchangedRoundLimit {
+		return fmt.Sprintf("agent: stopped — the last %d source-reading rounds only revisited unchanged lines despite different queries/ranges. The work so far is kept in this conversation", p.source.unchanged)
+	}
 	if p.unchanged.rounds >= unchangedRoundLimit {
 		return fmt.Sprintf("agent: stopped — the last %d consecutive tool rounds returned only previously observed successful results, with no new evidence or completed change. The work so far is kept in this conversation", p.unchanged.rounds)
 	}
@@ -241,9 +247,11 @@ func toolCallKind(name, args string) string {
 // write, not progress; counting it as progress is what kept a self-repeating
 // edit loop funded.
 type callOutcome struct {
-	failed      bool
-	inert       bool
-	observation toolObservation
+	failed        bool
+	inert         bool
+	observation   toolObservation
+	source        []sourceRow // generated source rows actually exposed to the model
+	sourcePartial bool        // omitted or unclassified source prevents a semantic hard stop
 }
 
 // outcomeAt is index-safe: a batch cut short by a fatal call leaves the tail
@@ -541,6 +549,9 @@ func clampReflection(s string) string {
 }
 
 func (p *repeatProgress) warningText() string {
+	if p.source.warn {
+		return p.source.warningText()
+	}
 	var reason string
 	if p.unchanged.repeats >= 3 {
 		reason = fmt.Sprintf("[loop] %s returned the same result %d times.", p.unchanged.tool, p.unchanged.repeats)

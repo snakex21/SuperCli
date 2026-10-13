@@ -152,6 +152,15 @@ async function loadSessions() {
   }
 }
 
+// Opt-in startup restore: reopen the newest listed session unless the user
+// already picked a session or started a run while the list was loading.
+function resumeLastSessionOnStart() {
+  if (ui.resumeLastSession !== true || activeSessionID || streaming) return;
+  var first = $("#session-list .side-item");
+  var id = first && first.dataset.sessionId;
+  if (id) resumeSession(id, sessionByID[id] || null);
+}
+
 async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID) {
   if (!id || !selectedSeq || !/^[1-9][0-9]*$/.test(String(messageID || "")) || streaming) return false;
   if (button) button.disabled = true;

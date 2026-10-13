@@ -145,7 +145,8 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	w := l.window()
 	hardThreshold := autoCompactThreshold(w)
 	prefillBudget, adaptive := l.adaptivePrefillBudget(hardThreshold)
-	trigger := int(pruneTriggerFrac * float64(w))
+	windowTrigger := int(pruneTriggerFrac * float64(w))
+	trigger := windowTrigger
 	triggerSource := "context-window"
 	workingWindow := w
 	if adaptive && prefillBudget < trigger {
@@ -161,6 +162,10 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	if est <= trigger {
 		return 0
 	}
+	// A learned latency target is not a context-capacity limit. Discarding
+	// evidence from the ongoing task to meet it causes read/prune/read cycles.
+	// Under actual window pressure ordinary bounded pruning still applies.
+	latencyOnly := adaptive && est < windowTrigger
 	// Memoized refusal: the previous scan already decided that too
 	// little is reclaimable, and that verdict cannot change while the
 	// context stays the same size. Skip the whole O(history) walk
@@ -178,9 +183,15 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	// assistant message that carries tool calls — are untouchable:
 	// the model is actively reasoning over them.
 	lastStep := -1
+	lastUser := -1
 	for i := len(projected) - 1; i >= 0; i-- {
-		if projected[i].Role == llm.RoleAssistant && len(projected[i].ToolCalls) > 0 {
+		if lastStep < 0 && projected[i].Role == llm.RoleAssistant && len(projected[i].ToolCalls) > 0 {
 			lastStep = i
+		}
+		if lastUser < 0 && isConversationUserTurn(projected[i]) {
+			lastUser = i
+		}
+		if lastStep >= 0 && lastUser >= 0 {
 			break
 		}
 	}
@@ -198,6 +209,14 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		}
 		i := history.requestOriginalIndex(viewIndex)
 		t := llm.EstimateMessageTokens(m)
+		active := lastUser >= 0 && viewIndex > lastUser
+		if active && (latencyOnly || m.Name == "read_output") {
+			// Retrieved evidence must be usable throughout this task, rather
+			// than immediately archived again. Old completed turns are eligible
+			// on the next user turn; no permanent pin or duplicate store is made.
+			acc += t
+			continue
+		}
 		if viewIndex > lastStep {
 			acc += t // current step: protected, but budget-counted
 			continue

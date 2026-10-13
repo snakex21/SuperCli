@@ -387,19 +387,19 @@ func (l *Loop) runStep(
 	}
 	warnInjected := false
 	if repeatProg != nil {
+		repeatProg.syncSourceEpoch(l.sourceEvidenceEpoch)
 		switch repeatProg.observe(toolCalls, toolOutcomes) {
 		case repeatWarn:
 			warnInjected = true
-			// A real loop: the same call with the same arguments, or a short
-			// A-B-A-B cycle. The fix travels with the error — the model is
-			// told what it is doing and keeps its tools.
+			// Repeated evidence can survive changing arguments or ranges.
+			// Give specific advice and keep the model's tools available.
 			warn := llm.Message{
 				Role:    llm.RoleSystem,
 				Content: repeatProg.warningText(),
 			}
 			l.Messages = append(l.Messages, warn)
 			l.persist(ctx, warn)
-			out <- NoticeEvent{Text: "identical tool call repeated: loop warning injected"}
+			out <- NoticeEvent{Text: "repeated tool evidence: loop warning injected"}
 		case repeatAbort:
 			// Report the actual no-progress condition, including cycles of
 			// different reads. Retain the partial work without claiming Done.

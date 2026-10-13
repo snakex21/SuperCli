@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -347,6 +348,38 @@ func TestCodexProviderCapturesRateLimitHeaders(t *testing.T) {
 	}
 	if got := rl.FormatHUD(); got != "5h 3% · 7d 11%" {
 		t.Errorf("FormatHUD() = %q", got)
+	}
+}
+
+// TestCodexSubscriptionSendsStablePromptCacheKey: the ChatGPT backend reuses
+// a cached prefix only for calls sharing prompt_cache_key, so every step of
+// one conversation must carry the same session-derived key.
+func TestCodexSubscriptionSendsStablePromptCacheKey(t *testing.T) {
+	var keys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		key, _ := body["prompt_cache_key"].(string)
+		keys = append(keys, key)
+		codexSSE(w, `{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`)
+	}))
+	defer srv.Close()
+	p, err := NewCodex(CodexConfig{BackendURL: srv.URL, Model: "gpt-5-codex", Tokens: &fakeTokens{access: "t"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ctx := range []context.Context{WithOpenCodeSession(context.Background(), "sess-1"), WithOpenCodeSession(context.Background(), "sess-1"), context.Background()} {
+		ch, err := p.Complete(ctx, []Message{{Role: RoleUser, Content: "x"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range ch {
+		}
+	}
+	if len(keys) != 3 || keys[0] != "sess-1" || keys[1] != "sess-1" || keys[2] != openCodeProcessSessionID {
+		t.Fatalf("prompt_cache_key per call = %q", keys)
 	}
 }
 

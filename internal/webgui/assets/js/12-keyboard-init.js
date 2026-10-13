@@ -55,7 +55,7 @@ document.addEventListener("keydown", function (e) {
     if (selectedModelID(h.model)) loadReasoning();
     loadModels();
   }
-  loadSessions();
+  loadSessions().then(resumeLastSessionOnStart);
   loadProjects();
 	loadPromptQueue();
 	loadWorkers();

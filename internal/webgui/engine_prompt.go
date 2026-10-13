@@ -29,6 +29,11 @@ func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator
 	if profile := llmprompt.LoadProfileAt(home, dataDir, model); profile != "" {
 		system += "\n\n" + profile
 	}
+	if !officeProfile {
+		if project := llmprompt.LoadProjectInstructions(home); project != "" {
+			system += "\n\n" + project
+		}
+	}
 	if orchestrator {
 		system += agent.OrchestratorPrompt()
 	} else if delegation {

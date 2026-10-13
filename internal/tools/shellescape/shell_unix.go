@@ -16,19 +16,20 @@ import (
 // through untouched, so no special handling is needed here. The Windows
 // counterpart in shell_windows.go has to work around cmd.exe's quoting rules.
 //
-// Setpgid puts the shell in its own process group so the timeout can signal the
+// Setsid puts the shell in its own session and process group so the timeout can signal the
 // whole group. Windows gets the same guarantee from a Job Object; POSIX has no
 // job objects, and a process group is the closest equivalent that needs no extra
 // bookkeeping. It is safe here because a shell-escape command is a one-shot
 // non-interactive child: nothing forwards terminal signals to it, cancellation
-// travels through the context.
+// travels through the context. Having no controlling terminal also makes tty
+// prompts (ssh, sudo, git credentials) fail fast instead of stopping the shell.
 func newShellCmd(ctx context.Context, command string) *exec.Cmd {
 	c := exec.CommandContext(ctx, "sh", "-c", command)
 	childproc.HideWindow(c)
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	c.SysProcAttr.Setpgid = true
+	c.SysProcAttr.Setsid = true
 	return c
 }
 
@@ -41,7 +42,7 @@ func newShellCmd(ctx context.Context, command string) *exec.Cmd {
 // (e.g. the child was reaped between the deadline and the signal).
 func killShellTree(cmd *exec.Cmd, scope *childproc.Scope) error {
 	if cmd != nil && cmd.Process != nil && cmd.Process.Pid > 0 {
-		// Setpgid made the child a group leader, so its pgid equals its pid.
+		// Setsid made the child a group leader, so its pgid equals its pid.
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err == nil {
 			return nil
 		}

@@ -47,7 +47,7 @@ func TestReadStatsUsagePreservesFullReadAggregates(t *testing.T) {
 		t.Fatalf("aggregate differs: %+v", got)
 	}
 	last := rows[len(rows)-1]
-	if contextFromUsage(got.Last) != contextFromUsage(last) || got.Last.Provider != last.Provider || got.Last.ProviderType != last.ProviderType || got.Last.Model != last.Model || got.Last.EndpointHost != last.EndpointHost {
+	if !reflect.DeepEqual(contextFromUsage(got.Last), contextFromUsage(last)) || got.Last.Provider != last.Provider || got.Last.ProviderType != last.ProviderType || got.Last.Model != last.Model || got.Last.EndpointHost != last.EndpointHost {
 		t.Fatalf("last call differs: %+v want %+v", got.Last, last)
 	}
 	empty, err := readStatsUsage(ctx, store, "missing", tc)

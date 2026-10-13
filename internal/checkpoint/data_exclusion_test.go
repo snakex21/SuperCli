@@ -21,6 +21,7 @@ func writeCheckpointFixture(t *testing.T, p, value string) {
 }
 
 func TestNestedApplicationDataIsNotCapturedOrRewound(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"portable-data", "run state[1]"} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -79,6 +80,7 @@ func TestNestedApplicationDataIsNotCapturedOrRewound(t *testing.T) {
 }
 
 func TestReopenedCheckpointUpgradesLegacyDataExclusions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	data := filepath.Join(home, "portable-data")
@@ -141,6 +143,7 @@ func TestReopenedCheckpointUpgradesLegacyDataExclusions(t *testing.T) {
 }
 
 func TestApplicationDataOutsideWorkspaceDoesNotExcludeSource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home, data := t.TempDir(), t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, filepath.Base(data), "source.go"), "source")

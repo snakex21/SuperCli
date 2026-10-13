@@ -49,11 +49,16 @@ func AgentLoopAdapter(registry *tools.Registry, buildRegistry RegistryBuilder) L
 				reg = r
 			}
 		}
+		maxSteps := cfg.MaxSteps
+		if maxSteps <= 0 {
+			maxSteps = DefaultMaxStepsPerAgent
+		}
 		loop, err := agent.NewLoop(agent.LoopConfig{
 			Provider:        cfg.Provider,
 			Registry:        reg,
 			System:          cfg.System,
-			MaxSteps:        10,
+			BaseDir:         cfg.Home,
+			MaxSteps:        maxSteps,
 			PatternInjector: nil, // F5 patterns are NOT inherited in F6
 		})
 		if err != nil {
@@ -93,8 +98,11 @@ func (a *agentLoopAdapter) Run(ctx context.Context, prompt string) (<-chan LoopE
 					return
 				}
 			case agent.ReasoningEvent:
+				// Reasoning is progress only: it arrives token by
+				// token, and folding it into the candidate text
+				// (which the judge reads) buried the answer under
+				// hundreds of per-token <thinking> wrappers.
 				chunk := "<thinking>" + e.Text + "</thinking>\n"
-				text.WriteString(chunk)
 				select {
 				case out <- LoopMessageEvent{Text: chunk}:
 				case <-ctx.Done():

@@ -321,6 +321,10 @@ type Usage struct {
 	// KV/prompt cache across the run (provider cached_tokens). Zero
 	// when the backend does not report it.
 	Cached int
+	// CacheWrite is the sum of prompt tokens written into the
+	// backend's prompt cache across the run (Anthropic
+	// cache_creation_input_tokens). Zero when not reported.
+	CacheWrite int
 	// Reasoning is the sum of hidden chain-of-thought tokens across
 	// the run (provider reasoning_tokens). Zero when not reported.
 	Reasoning int

@@ -1,0 +1,133 @@
+{
+  "id": "supercli-hard-agent",
+  "name": "SuperCli hard coding-agent suite",
+  "description": "Nine spec-heavy Go tasks (parsers, matchers, caches, multi-file bugfix and refactor). Each fixture has visible tests plus stricter edge-case tests that follow from the prompt; designed to separate strong models from cheaper ones.",
+  "tasks": [
+    {
+      "id": "semver-precedence",
+      "name": "Semantic Versioning precedence with pre-release rules",
+      "tags": ["go", "parsing", "spec", "edge-cases"],
+      "difficulty": "hard",
+      "prompt": "Implement Compare in semver.go (package semver) following Semantic Versioning 2.0.0 precedence. Rules: (1) A version is MAJOR.MINOR.PATCH, optionally followed by '-' and a pre-release, optionally followed by '+' and build metadata (the pre-release starts at the first '-' after the core and the build metadata at the first '+'). A single leading lowercase 'v' is allowed and ignored ('v1.2.3' equals '1.2.3'); nothing else is tolerated (no 'V', no 'vv', no surrounding whitespace). (2) MAJOR, MINOR and PATCH are non-empty ASCII digit strings without leading zeros ('0' is fine, '01' is invalid). They may be arbitrarily large: never overflow, always compare numerically. (3) Pre-release and build metadata are dot-separated identifiers; every identifier is non-empty and contains only [0-9A-Za-z-]. Numeric pre-release identifiers (all digits) must not have leading zeros; build identifiers may. (4) Build metadata is ignored for precedence. (5) Compare MAJOR, MINOR, PATCH numerically; if they are equal, a version without a pre-release has higher precedence than one with a pre-release. (6) Pre-releases are compared identifier by identifier from left to right: two numeric identifiers compare numerically (any size); two alphanumeric identifiers compare lexically in ASCII byte order (so 'Alpha' < 'alpha'); a numeric identifier always has lower precedence than an alphanumeric one ('0a' is alphanumeric); if all compared identifiers are equal, the version with more identifiers is greater. Example chain: 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0. (7) If either argument is malformed, return 0 and an error for which errors.Is(err, ErrInvalid) is true. Keep the exported API, use only the standard library, change only semver.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-semver",
+      "expectedChangedFiles": ["semver.go"],
+      "forbiddenChangedFiles": ["semver_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "glob-matcher",
+      "name": "Shell-style glob matcher with classes and escapes",
+      "tags": ["go", "algorithm", "unicode", "spec"],
+      "difficulty": "hard",
+      "prompt": "Implement Match(pattern, name) in glob.go (package glob): a shell-style matcher reporting whether the ENTIRE name matches the ENTIRE pattern. Do not use path.Match, filepath.Match or regexp. Pattern and name are processed as Unicode code points (runes), never bytes. Syntax: '*' matches any sequence of zero or more characters except '/'. '?' matches exactly one character except '/'. '[...]' is a character class matching exactly one character, and never matches '/' (not even when negated or listed). A class holds single characters and inclusive ranges 'lo-hi' compared by code point (e.g. [a-z], [ą-ż]). If the first character after '[' is '!' the class is negated ([!abc]). A ']' that comes first in the class (right after '[' or '[!') is a literal member; any later ']' closes the class. A '-' that is first or last in the class is a literal. Inside a class a backslash makes the next character literal, and an escaped character never acts as a range operator or closing bracket ([a\\-z] matches only 'a', '-' and 'z'; [\\]] matches ']'). Outside classes a backslash makes the next character literal (\\* matches '*', \\\\ matches one backslash, \\a matches 'a'). Every other character matches itself. Errors: return (false, err) with errors.Is(err, ErrBadPattern) for a pattern ending in an unpaired backslash (also inside a class), an unterminated class (e.g. '[a', '[]', '[!]'), or a range whose start is greater than its end ('[z-a]'). The whole pattern must be validated, so a malformed pattern returns the error regardless of the name and of where matching would stop. Performance: matching must not be exponential; 'a*a*a*a*a*a*a*a*b' against a name of 200 'a' characters must return almost instantly. Keep the exported API, change only glob.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-glob",
+      "expectedChangedFiles": ["glob.go"],
+      "forbiddenChangedFiles": ["glob_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "csv-quoted-parser",
+      "name": "CSV dialect parser with quotes, CRLF and error positions",
+      "tags": ["go", "parsing", "state-machine", "spec"],
+      "difficulty": "hard",
+      "prompt": "Implement Parse in csvline.go (package csvline) without using encoding/csv. Rules: Records are terminated by '\\n' or '\\r\\n'; a '\\r' that is not followed by '\\n' is ordinary data. A terminator after the last record does not create an extra record, and an empty input yields zero records and a nil error. An empty line is a record with one empty field (\"a\\n\\nb\" -> [[a] [\"\"] [b]]). Fields are separated by ','; a trailing comma means a trailing empty field. Field text is returned verbatim (no trimming of spaces). A field is quoted when its first character is '\"': inside quotes '\"\"' stands for one '\"', and commas, '\\n' and '\\r\\n' are kept verbatim as part of the field. After a closing quote the next character must be ',', a record terminator, or the end of input. Errors: an unterminated quoted field, any other character after a closing quote (a space included), or a '\"' anywhere inside an unquoted field is a syntax error. On error return nil records and a *ParseError whose Record is the 1-based index of the record containing the error (every record counts, including empty-line records; a record spanning several lines because of a quoted newline counts once) and for which errors.Is(err, ErrSyntax) is true. Keep the exported API, change only csvline.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-csv",
+      "expectedChangedFiles": ["csvline.go"],
+      "forbiddenChangedFiles": ["csvline_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "interval-merge",
+      "name": "Closed integer interval merge with touching rule",
+      "tags": ["go", "algorithm", "overflow"],
+      "difficulty": "medium",
+      "prompt": "Fix Merge in intervals.go (package intervals). Interval{Start, End} is a closed integer range: both ends are included. Merge must return the union of the input as disjoint intervals sorted by Start. Overlapping intervals merge, and so do touching ones: because the ranges are closed and integer, [1,3] and [4,6] together cover 1..6 and must become [1,6], while [1,3] and [5,6] stay separate (4 is not covered). Requirements: the input slice must not be modified (not even reordered) and the result must not share memory with it; an empty or nil input returns an empty result and a nil error; if any interval has Start > End, Merge returns nil and an error for which errors.Is(err, ErrInvalid) is true; values may lie anywhere in the int range including math.MinInt and math.MaxInt, so avoid integer overflow (e.g. End+1 when End == math.MaxInt). Keep the exported API, change only intervals.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-intervals",
+      "expectedChangedFiles": ["intervals.go"],
+      "forbiddenChangedFiles": ["intervals_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "lru-cache",
+      "name": "LRU cache with eviction callback and resize",
+      "tags": ["go", "data-structure", "edge-cases"],
+      "difficulty": "medium",
+      "prompt": "Finish the LRU cache in lru.go (package lru). Semantics: an entry becomes most recently used when it is inserted or updated by Put, or read by Get. Get(key) returns (value, true) and promotes the entry; for a missing key it returns (0, false). Peek(key) is like Get but never changes recency. Put on an existing key updates the value and promotes it, and never evicts. Put of a new key into a full cache evicts exactly the least recently used entry. Every eviction (from Put or Resize) calls onEvict(key, value) when onEvict is non-nil. Remove(key) deletes the entry without calling onEvict and reports whether it was present. Keys() returns all keys ordered from most to least recently used, as a new slice the caller may modify. Len() is the number of entries. Resize(n) sets the capacity; when shrinking it evicts least recently used entries one at a time (each reported to onEvict, least recent first) until Len() <= n; growing never evicts. A capacity <= 0 (from New or Resize) means the cache holds nothing: Put stores nothing and calls no onEvict. Get, Peek, Put and Remove should be O(1) on average (container/list plus a map is fine). Keep the exported API, change only lru.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-lru",
+      "expectedChangedFiles": ["lru.go"],
+      "forbiddenChangedFiles": ["lru_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "human-duration",
+      "name": "Human duration parser and formatter with range checks",
+      "tags": ["go", "parsing", "overflow", "spec"],
+      "difficulty": "hard",
+      "prompt": "Implement Parse and Format in duration.go (package humandur) without time.ParseDuration or Duration.String. Parse grammar: one or more components, each an ASCII-digit number immediately followed by a unit. Units: 'd' (24h), 'h', 'm' (minute), 's', 'ms' (millisecond); 'ms' always means milliseconds. Units are case-sensitive and nothing else is a unit (e.g. 'us', 'µs', 'ns', 'H' are invalid). Units must appear in strictly decreasing size order d > h > m > s > ms, each at most once ('30m1h' and '1h1h' are invalid). Numbers have no sign and no fraction; leading zeros are allowed ('007s'). A component is not limited by the next unit ('36h', '90m', '1500ms' are fine). Components may be separated by one or more ASCII spaces and the string may have leading/trailing spaces, but there must be no space between a number and its unit and nothing else may separate components ('1h,30m' is invalid). An empty or all-space string is invalid. For syntax problems return 0 and an error with errors.Is(err, ErrSyntax). If any number or the total exceeds what time.Duration can hold (max 9223372036854775807ns), return 0 and an error with errors.Is(err, ErrRange); never silently overflow, and a well-formed number with very many digits is a range error, not a syntax error. Format(d): truncate d toward zero to whole milliseconds; if that is 0 return \"0s\"; otherwise write '-' for negative values, followed by the non-zero components in the order d, h, m, s, ms with no spaces (26h3m -> \"1d2h3m\", 1.5s -> \"1s500ms\", -90m -> \"-1h30m\"). Format must work over the entire time.Duration range, including math.MinInt64. For non-negative d, Parse(Format(d)) must equal d truncated to milliseconds. Keep the exported API, change only duration.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-duration",
+      "expectedChangedFiles": ["duration.go"],
+      "forbiddenChangedFiles": ["duration_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "rune-text-wrap",
+      "name": "Rune-aware greedy text wrapping",
+      "tags": ["go", "unicode", "text"],
+      "difficulty": "medium",
+      "prompt": "Implement Wrap(text, width) in wrap.go (package textwrap). Width and every length are counted in Unicode code points (runes), never bytes, and every output line must be valid UTF-8 (think Polish diacritics or CJK). Rules: width < 1 returns nil and an error with errors.Is(err, ErrWidth). Empty text returns no lines and a nil error. Otherwise normalise '\\r\\n' to '\\n' and split the text into paragraphs on every '\\n'; each paragraph is wrapped independently and its lines are appended in order (so 'a\\n\\nb' gives [\"a\" \"\" \"b\"] and a trailing '\\n' gives a final empty line). Inside a paragraph, words are maximal runs of non-whitespace as defined by unicode.IsSpace (tabs and a lone '\\r' separate words). Whitespace is never kept: words on a line are joined by exactly one space, and a paragraph without words produces exactly one empty line. Greedy fill: append the next word to the current line if the result fits in width, otherwise start a new line. A word longer than width always starts on a new line and is split into chunks of exactly width runes; its last chunk (possibly shorter) becomes the current line and following words may be appended to it (Wrap(\"abcde f\", 4) = [\"abcd\" \"e f\"]; Wrap(\"ab cdefgh i\", 3) = [\"ab\" \"cde\" \"fgh\" \"i\"]). No line may exceed width. Keep the exported API, change only wrap.go, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-wrap",
+      "expectedChangedFiles": ["wrap.go"],
+      "forbiddenChangedFiles": ["wrap_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "cursor-pagination-bugfix",
+      "name": "Multi-file cursor pagination bugfix",
+      "tags": ["go", "debugging", "multi-file", "root-cause"],
+      "difficulty": "hard",
+      "prompt": "Bug report for package pager (store.go, cursor.go, page.go): paging through a Store with List is broken and TestListAllPages fails. Find and fix the root causes (there is more than one, and not all of them are in page.go) so that List honours this contract. List(cursor, limit) returns items in ascending ID order. limit <= 0 returns an error with errors.Is(err, ErrBadLimit); a limit above MaxPageSize is clamped to MaxPageSize. Cursor \"\" starts at the beginning; otherwise it is a cursor previously returned in Page.Next, and the page starts with the first item whose ID is strictly greater than the last ID of the previous page. This must stay correct even if items were added, updated or deleted between calls (including deleting that last item). Malformed cursors return an error with errors.Is(err, ErrBadCursor). Page.Next is non-empty exactly when more items exist after the returned ones, so the last page has Next == \"\" and paging never ends with an extra empty page (7 items with limit 3 -> pages of 3, 3, 1; 6 items -> 3, 3). Page.Items must be an independent copy: mutating or appending to it must not affect the store, and later store changes must not affect an already returned page. IDs can be any int, including negative ones. Keep the exported API and the cursor format produced by encodeCursor, do not modify tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-paginate",
+      "expectedChangedFiles": ["cursor.go", "page.go"],
+      "forbiddenChangedFiles": ["page_test.go", "hidden_test.go", "go.mod"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    },
+    {
+      "id": "money-format-refactor",
+      "name": "Multi-file refactor to a shared money formatter",
+      "tags": ["go", "refactor", "multi-file", "api"],
+      "difficulty": "hard",
+      "prompt": "Refactor package invoicing. Three files each have their own buggy private money helper: formatCents in invoice.go, moneyStr in summary.go (uses float64) and amountText in csvexport.go. Replace them with one exported function in a new file money.go: func FormatAmount(cents int64) string. Format: '-' for negative amounts, then the integer part with ',' as thousands separator, then '.', then exactly two decimal digits (5 -> \"0.05\", -5 -> \"-0.05\", 100000 -> \"1,000.00\", -12345678 -> \"-123,456.78\"). Use exact integer arithmetic (no floating point); it must be correct over the entire int64 range including math.MaxInt64 and math.MinInt64. Delete the three old helpers completely (those names must no longer be declared anywhere) and make RenderInvoice, Summary and ExportCSV call FormatAmount directly in their files (no new wrapper helpers). Keep the public API (Line, TotalCents, RenderInvoice, Summary, ExportCSV) and the existing output layouts unchanged; only the amount text changes to the new format. Do not modify types.go, tests or go.mod, and run go test ./... before finishing.",
+      "workspaceFixture": "fixtures/hard-refactor",
+      "expectedChangedFiles": ["money.go", "invoice.go", "summary.go", "csvexport.go"],
+      "forbiddenChangedFiles": ["invoicing_test.go", "hidden_test.go", "go.mod", "types.go"],
+      "verificationCommands": [
+        {"id": "visible-tests", "args": ["go", "test", "./..."]},
+        {"id": "hidden-tests", "args": ["go", "test", "-tags", "evalhidden", "./..."]}
+      ]
+    }
+  ]
+}

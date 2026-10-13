@@ -44,9 +44,14 @@ func (e *Engine) usageCallSink(store *session.Store, sessionID string) llm.CallS
 	model := e.usageIdentity(cfg, "model")
 	tc := e.tomlConfig()
 	var worker *usageIdentity
-	if wcfg := e.taskWorkerConfig(e.tomlConfig()); wcfg != nil {
+	if wcfg := e.taskWorkerConfig(tc); wcfg != nil {
 		id := e.usageIdentity(*wcfg, "worker")
 		worker = &id
+	}
+	var advisor *usageIdentity
+	if acfg := e.modelOverrideConfig(tc, tc.AdvisorModel); acfg != nil {
+		id := e.usageIdentity(*acfg, "advisor")
+		advisor = &id
 	}
 	return func(s llm.CallStat) {
 		id := model
@@ -56,6 +61,13 @@ func (e *Engine) usageCallSink(store *session.Store, sessionID string) llm.CallS
 				id = *worker
 			}
 			id.Source = "worker"
+		case llm.PurposeAdvisor:
+			if advisor != nil {
+				id = *advisor
+			} else if worker != nil {
+				id = *worker
+			}
+			id.Source = "advisor"
 		case llm.PurposeTitle:
 			id.Source = "title"
 		case "", llm.PurposeMain, "model":

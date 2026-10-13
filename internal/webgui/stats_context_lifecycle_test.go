@@ -108,7 +108,7 @@ func TestStatsContextKeepsMainSnapshotAfterHelpers(t *testing.T) {
 			}
 			wantContext := contextFromUsage(main)
 			wantContext.RequestsToday = got.Context.RequestsToday
-			if got.Model != main.Model || got.Session.Model != main.Model || got.Session.Provider != main.Provider || got.Session.ProviderType != main.ProviderType || got.Context != wantContext {
+			if got.Model != main.Model || got.Session.Model != main.Model || got.Session.Provider != main.Provider || got.Session.ProviderType != main.ProviderType || !reflect.DeepEqual(got.Context, wantContext) {
 				t.Fatalf("helper replaced coordinator snapshot: %+v", got)
 			}
 			if got.Tokens.Input != 1060 || got.Tokens.Output != 130 || got.Tokens.Total != 1190 {

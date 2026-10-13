@@ -52,6 +52,7 @@ func validPool(t *testing.T, factory LoopFactory) PoolConfig {
 		Provider: providerStub{},
 		Home:     t.TempDir(),
 		System:   "you are a stub agent",
+		Prompt:   "stub task",
 	}
 }
 

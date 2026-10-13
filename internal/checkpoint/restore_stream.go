@@ -215,6 +215,15 @@ func (m *Manager) safeRestorePath(path string) (string, error) {
 		if check != full && !info.IsDir() {
 			return "", fmt.Errorf("checkpoint path %q has a non-directory ancestor", path)
 		}
+		// A directory can become a separate repository after an old checkpoint
+		// was recorded. Refuse the entire restore before touching its files.
+		if info.IsDir() {
+			if nested, err := m.nestedRepositoryDirectory(check); err != nil {
+				return "", err
+			} else if nested {
+				return "", fmt.Errorf("checkpoint path %q belongs to a nested repository", path)
+			}
+		}
 		if filepath.Dir(check) == check {
 			return "", fmt.Errorf("unsafe checkpoint ancestor for %q", path)
 		}

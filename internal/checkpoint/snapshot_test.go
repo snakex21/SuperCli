@@ -46,6 +46,7 @@ func writeOversizedSnapshotFixture(t *testing.T, home string) {
 }
 
 func TestScopedTurnAvoidsUnrelatedLargeFilesAndPreservesFirstBefore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original-a")
@@ -107,6 +108,7 @@ func TestScopedTurnAvoidsUnrelatedLargeFilesAndPreservesFirstBefore(t *testing.T
 }
 
 func TestMixedWholeAndScopedTurnPreservesExplicitIgnoredPaths(t *testing.T) {
+	t.Parallel()
 	for _, wholeFirst := range []bool{false, true} {
 		t.Run(map[bool]string{false: "scope-before-command", true: "command-before-scope"}[wholeFirst], func(t *testing.T) {
 			ctx := context.Background()
@@ -154,6 +156,7 @@ func TestMixedWholeAndScopedTurnPreservesExplicitIgnoredPaths(t *testing.T) {
 }
 
 func TestLegacyCRLFCheckpointRefusesByteLossWithoutRunningFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, ".gitattributes"), "*.txt text eol=lf\n")
@@ -203,6 +206,7 @@ func TestLegacyCRLFCheckpointRefusesByteLossWithoutRunningFilters(t *testing.T) 
 }
 
 func TestLegacyUnfilteredBinaryCheckpointRemainsUsable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	file := filepath.Join(home, "a.bin")
@@ -237,6 +241,7 @@ func TestLegacyUnfilteredBinaryCheckpointRemainsUsable(t *testing.T) {
 }
 
 func TestScopedToWholeTurnKeepsEarliestModifiedAndAbsentPaths(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original-a")
@@ -269,6 +274,7 @@ func TestScopedToWholeTurnKeepsEarliestModifiedAndAbsentPaths(t *testing.T) {
 }
 
 func TestScopedDirectoryExpansionAndMoveIntoExistingFolder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "src", "a.txt"), "original")
@@ -297,7 +303,10 @@ func TestScopedDirectoryExpansionAndMoveIntoExistingFolder(t *testing.T) {
 	assertFileBytes(t, filepath.Join(home, "destination", "src", "ignored.bak"), []byte("backup-bytes"))
 }
 
-func TestFullCaptureRejectsLargeFileBeforeMutationOrBlobWrites(t *testing.T) {
+// An over-limit whole-workspace baseline no longer blocks a command: it runs
+// with a visible warning, and the failed preflight writes no objects.
+func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)
 	m := openSnapshotTestManager(t, home)
@@ -305,20 +314,32 @@ func TestFullCaptureRejectsLargeFileBeforeMutationOrBlobWrites(t *testing.T) {
 	t.Cleanup(func() {
 		record, err := turn.Complete(context.Background())
 		if err != nil || record != nil {
-			t.Errorf("rejected mutation cleanup: record=%+v err=%v", record, err)
+			t.Errorf("uncheckpointed command cleanup: record=%+v err=%v", record, err)
 		}
 		if pendingOwnerCount(t, m) != 0 {
-			t.Error("rejected mutation retained its lifetime lease")
+			t.Error("uncheckpointed command retained its lifetime lease")
 		}
 	})
 	called := false
 	spec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		called = true
-		return tools.Result{}, nil
+		return tools.Result{Text: "ok"}, nil
 	}})
 	result, _ := spec.Fn(context.Background(), json.RawMessage(`{"command":["custom-command"]}`))
-	if !errors.Is(result.Err, ErrSnapshotLimit) || called || turn.touched {
-		t.Fatalf("mutation ran or limit lost: err=%v called=%v touched=%v", result.Err, called, turn.touched)
+	if result.Err != nil || !called || turn.touched {
+		t.Fatalf("command blocked or baseline kept: err=%v called=%v touched=%v", result.Err, called, turn.touched)
+	}
+	if !strings.Contains(result.Text, "bez checkpointu: przekroczony limit") || !strings.Contains(result.Text, "checkpoint snapshot limit exceeded") {
+		t.Fatalf("missing visible warning: %q", result.Text)
+	}
+	// Tools other than ctx_execute keep the strict refusal.
+	// read_zip without an explicit target also needs a whole-workspace baseline.
+	other := turn.Wrap(tools.Tool{Name: "read_zip", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+		t.Fatal("whole-workspace tool ran without a baseline")
+		return tools.Result{}, nil
+	}})
+	if result, _ := other.Fn(context.Background(), json.RawMessage(`{"action":"extract"}`)); !errors.Is(result.Err, ErrSnapshotLimit) {
+		t.Fatalf("unknown tool limit lost: %v", result.Err)
 	}
 	entries, err := os.ReadDir(filepath.Join(m.repo, "objects"))
 	if err != nil {
@@ -332,6 +353,7 @@ func TestFullCaptureRejectsLargeFileBeforeMutationOrBlobWrites(t *testing.T) {
 }
 
 func TestRawSnapshotsPreserveCRLFAndDoNotRunCleanFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, ".gitattributes"), "*.txt text eol=lf filter=fixture\n")
@@ -366,6 +388,7 @@ func TestRawSnapshotsPreserveCRLFAndDoNotRunCleanFilters(t *testing.T) {
 }
 
 func TestRecordRefsKeepHistoricalUndoAfterGitPrune(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original")
@@ -404,6 +427,7 @@ func TestRecordRefsKeepHistoricalUndoAfterGitPrune(t *testing.T) {
 }
 
 func TestWebDownloadCheckpointIncludesDestinationOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)

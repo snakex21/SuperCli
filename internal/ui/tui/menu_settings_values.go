@@ -49,6 +49,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.StableToolset = cycleTri(c.StableToolset)
 	case "darwin_parallel":
 		c.DarwinParallel = cycleTri(c.DarwinParallel)
+	case "darwin_auto_merge":
+		c.DarwinAutoMerge = cycleTri(c.DarwinAutoMerge)
 	case "task_parallel":
 		c.TaskParallel = cycleTri(c.TaskParallel)
 	case "draft_verify":
@@ -96,6 +98,12 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.StableToolset = nil
 	case "darwin_parallel":
 		c.DarwinParallel = nil
+	case "darwin_models":
+		c.DarwinModels = nil
+	case "darwin_judge_model":
+		c.DarwinJudgeModel = ""
+	case "darwin_auto_merge":
+		c.DarwinAutoMerge = nil
 	case "task_parallel":
 		c.TaskParallel = nil
 	case "cache_prompt":
@@ -120,6 +128,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskMaxTokens = 0
 	case "task_model":
 		c.TaskModel = ""
+	case "advisor_model":
+		c.AdvisorModel = ""
 	case "orchestrator_model":
 		c.OrchestratorModel = ""
 	case "compact_model":
@@ -190,6 +200,18 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return m.triAutoDisplay(c.CachePrompt, "on", "off")
 	case "darwin_parallel":
 		return m.triAutoDisplay(c.DarwinParallel, "parallel", "sequential")
+	case "darwin_models":
+		if len(c.DarwinModels) == 0 {
+			return m.tr("tui.setting_value.f5c2d04208"), "default"
+		}
+		return strings.Join(c.DarwinModels, " ; "), "manual"
+	case "darwin_judge_model":
+		if strings.TrimSpace(c.DarwinJudgeModel) == "" {
+			return m.tr("tui.setting_value.f5c2d04208"), "default"
+		}
+		return c.DarwinJudgeModel, "manual"
+	case "darwin_auto_merge":
+		return m.triDisplay(c.DarwinAutoMerge, "off")
 	case "task_parallel":
 		return m.triAutoDisplay(c.TaskParallel, "parallel", "sequential")
 	case "navigator":
@@ -214,6 +236,11 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return m.tr("tui.setting_value.8119d30029"), "default"
 		}
 		return c.TaskModel, "manual"
+	case "advisor_model":
+		if strings.TrimSpace(c.AdvisorModel) == "" {
+			return m.tr("tui.setting_value.advisor_default"), "default"
+		}
+		return c.AdvisorModel, "manual"
 	case "orchestrator_model":
 		if strings.TrimSpace(c.OrchestratorModel) == "" {
 			return m.tr("tui.setting_value.c0d7b51675"), "default"

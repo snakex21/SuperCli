@@ -46,12 +46,18 @@ type Candidate struct {
 	Index int
 	// AgentID is the formatted id (e.g. "agent-1").
 	AgentID string
+	// Model is the provider name the agent ran on.
+	Model string
 	// Branch is the git worktree branch the agent
 	// worked on (empty if worktrees were disabled).
 	Branch string
 	// WorktreePath is the absolute path to the
 	// worktree dir (empty if worktrees disabled).
 	WorktreePath string
+	// Kept is true when the candidate's branch was
+	// preserved after cleanup (winner, or every
+	// changed candidate with Config.KeepAll).
+	Kept bool
 	// Text is the final assistant message.
 	Text string
 	// Diff is the git diff of the changes the agent
@@ -60,6 +66,9 @@ type Candidate struct {
 	// truncated for the judge but is stored in full
 	// here.
 	Diff string
+	// DiffStat is `git diff --stat` of the same
+	// change (empty when Diff is empty).
+	DiffStat string
 	// Usage is the total token usage for this agent.
 	Usage llm.Usage
 	// Steps is how many loop iterations the agent
@@ -100,6 +109,15 @@ type Result struct {
 	// but unavailable because the home dir is not a
 	// git repository. Empty when nothing noteworthy.
 	Note string
+	// KeptBranch is the winner's branch that was
+	// preserved after cleanup (its worktree dir is
+	// removed, the commit stays) so the user can
+	// inspect or merge it. Empty when the winner
+	// changed no files or worktrees were disabled.
+	KeptBranch string
+	// MergeTarget echoes Config.MergeTarget ("" =
+	// the caller's current branch).
+	MergeTarget string
 }
 
 // Event is the union of orchestrator events emitted

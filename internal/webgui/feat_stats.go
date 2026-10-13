@@ -111,6 +111,22 @@ type statsContextView struct {
 	// as OpenCode Zen's ~100/day show it next to the context gauge;
 	// zero when the counter is uninitialized or nothing was sent.
 	RequestsToday int `json:"requests_today"`
+	// Categories is the full window map (system, tool definitions, user,
+	// assistant, tool calls, tool results, other, free, autocompact buffer);
+	// ToolResults splits tool-result tokens per tool. Both feed the donuts.
+	Categories  []statsContextCategory `json:"categories,omitempty"`
+	ToolResults []statsContextTool     `json:"tool_results,omitempty"`
+}
+
+type statsContextCategory struct {
+	Key    string `json:"key"`
+	Tokens int    `json:"tokens"`
+}
+
+type statsContextTool struct {
+	Name   string `json:"name"`
+	Tokens int    `json:"tokens"`
+	Count  int    `json:"count"`
 }
 
 type statsContextBreakdown struct {
@@ -174,6 +190,13 @@ type statsToolTimingView struct {
 // stats returns persisted per-call usage when available and falls back to the
 // legacy session aggregate for conversations created before session_usage.
 func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error) {
+	return e.statsWithTelemetry(ctx, sessionID, true)
+}
+
+// statsWithTelemetry is stats with the cross-session 7-day turn telemetry
+// aggregation made optional: the per-turn HUD refresh never shows it, so only
+// the Usage panel (?telemetry=1) pays for reading up to 2000 turn summaries.
+func (e *Engine) statsWithTelemetry(ctx context.Context, sessionID string, withTelemetry bool) (statsView, error) {
 	e.mu.RLock()
 	cfg := e.cfg
 	e.mu.RUnlock()
@@ -308,7 +331,9 @@ func (e *Engine) stats(ctx context.Context, sessionID string) (statsView, error)
 	// Cross-session diagnosis is deliberately a bounded, panel-time query.
 	// Normal turns do not aggregate history and the cap prevents old stores
 	// from turning observability into a new performance problem.
-	if recent, recentErr := store.ReadRecentTurnTelemetry(ctx, time.Now().Add(-7*24*time.Hour), 2000); recentErr == nil {
+	if !withTelemetry {
+		// Skipped on purpose; the HUD does not render telemetry.
+	} else if recent, recentErr := store.ReadRecentTurnTelemetry(ctx, time.Now().Add(-7*24*time.Hour), 2000); recentErr == nil {
 		sv.Telemetry = summarizeTelemetry(recent, sv.Tokens)
 		sv.Telemetry.Scope = "7d"
 	}

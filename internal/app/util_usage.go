@@ -29,6 +29,7 @@ Flags:
   --max-credits-per-day N         cap total tokens per UTC day (0 = no cap)
   --draft-mode MODE               F11 draft mode: off|always|balanced|critical (default off; opt-in)
   --draft-model ID                F11 draft model id (required to enable F11; no auto-pick)
+  --trace-jsonl                   with --batch, write tool/usage JSON lines to stdout (eval harness)
   --resume                        resume the most recent session on startup (also: /resume in the TUI)
   --check-update                  check for a newer stable release and exit
   --update                        download and install a verified update, then exit

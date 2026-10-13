@@ -24,6 +24,7 @@ func pendingWrite(t *testing.T, tool tools.Tool, content string) {
 	runSnapshotTool(t, tool, string(args))
 }
 func TestPendingOwnerSurvivesControllerPopWithoutRecapturing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)
@@ -64,6 +65,7 @@ func TestPendingOwnerSurvivesControllerPopWithoutRecapturing(t *testing.T) {
 	}
 }
 func TestRecordedCleanupRetryPreservesCheckpointAndManualEdits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)

@@ -57,6 +57,17 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 				return nil, fmt.Errorf("build image fallback request: %w", err)
 			}
 		}
+		if !p.cfg.StandardResponsesAPI {
+			// The ChatGPT backend only reuses a cached prefix when calls
+			// carry the same prompt_cache_key (codex-rs sends the
+			// conversation id). Without it every step re-prefilled the
+			// whole prompt: measured cached=0 on gpt-6.1-sol.
+			key := codexPromptCacheKey(ctx)
+			reqBody = withCodexPromptCacheKey(reqBody, key)
+			if len(imageFallback) > 0 {
+				imageFallback = withCodexPromptCacheKey(imageFallback, key)
+			}
+		}
 	}
 	if p.cfg.StandardResponsesAPI {
 		if isOpenCodeZenBaseURL(p.cfg.BackendURL) {
@@ -174,6 +185,9 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			if accountID != "" {
 				req.Header.Set("chatgpt-account-id", accountID)
 			}
+			// codex-rs routes a conversation to one cache shard via the
+			// session_id header (same value as body prompt_cache_key).
+			req.Header.Set("session_id", codexPromptCacheKey(ctx))
 		}
 		resp, err := doWithResponseHeaderTimeout(p.http, req, p.cfg.Timeout, cancel)
 		if err != nil {

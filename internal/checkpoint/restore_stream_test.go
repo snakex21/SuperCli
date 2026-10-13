@@ -80,6 +80,7 @@ func assertNoRestoreTemporaries(t *testing.T, home string) {
 }
 
 func TestStreamingRestoreLargeBinaryHasBoundedHeapAndExactBytes(t *testing.T) {
+	// Not parallel: it measures process-wide runtime.MemStats.TotalAlloc.
 	ctx := context.Background()
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)
@@ -137,6 +138,7 @@ func makeTwoFileRestoreFixture(t *testing.T) (*Manager, *Record, string) {
 }
 
 func TestStreamingRestoreRollsBackWhenSecondPromotionFails(t *testing.T) {
+	t.Parallel()
 	m, record, home := makeTwoFileRestoreFixture(t)
 	calls := 0
 	rename := func(from, to string) error {
@@ -159,6 +161,7 @@ func TestStreamingRestoreRollsBackWhenSecondPromotionFails(t *testing.T) {
 }
 
 func TestStreamingRestoreRollsBackWhenMetadataSaveFails(t *testing.T) {
+	t.Parallel()
 	m, record, home := makeTwoFileRestoreFixture(t)
 	calls := 0
 	rename := func(from, to string) error {
@@ -189,6 +192,7 @@ func TestStreamingRestoreRollsBackWhenMetadataSaveFails(t *testing.T) {
 }
 
 func TestStreamingRestoreRefusesLaterSymlinkAncestor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home, outside := t.TempDir(), t.TempDir()
 	file := filepath.Join(home, "nested", "a.txt")
@@ -237,6 +241,7 @@ type snapshotSizedInfo struct {
 func (i snapshotSizedInfo) Size() int64 { return i.bytes }
 
 func TestExpandedSnapshotCountsUnionWhenPathsAlreadyExistInBase(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home := t.TempDir()
 	for _, name := range []string{"a", "b", "c", "d"} {

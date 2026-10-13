@@ -22,6 +22,7 @@ type agentToolWiring struct {
 	tomlCfg            config.TomlConfig
 	taskWorkerProvider llm.Provider
 	taskWorkerCfg      config.Config
+	advisorProvider    llm.Provider
 	home               string
 	delegationOff      bool
 	coordinatorMode    bool
@@ -72,6 +73,9 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 			}
 		}
 	}
+	// advisor_model: advise:true calls run on their own backend (nil =
+	// normal worker backend).
+	at.AdvisorProvider = w.advisorProvider
 	if w.loop != nil {
 		at.PrefillProfiles = w.loop.PrefillProfiles()
 	}

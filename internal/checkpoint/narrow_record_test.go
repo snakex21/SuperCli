@@ -116,6 +116,7 @@ func assertNoNarrowRecordTemporaries(t *testing.T, m *Manager) {
 }
 
 func TestNarrowChangedSnapshotsPreservesOnlyRecordFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {
@@ -218,6 +219,7 @@ func TestNarrowChangedSnapshotsPreservesOnlyRecordFiles(t *testing.T) {
 }
 
 func TestNarrowChangedSnapshotsMatchesCanonicalGitTreeAndModes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {
@@ -250,6 +252,7 @@ func TestNarrowChangedSnapshotsMatchesCanonicalGitTreeAndModes(t *testing.T) {
 }
 
 func TestNarrowChangedSnapshotsRejectsNonRegularSelectedMode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {
@@ -273,6 +276,7 @@ func TestNarrowChangedSnapshotsRejectsNonRegularSelectedMode(t *testing.T) {
 }
 
 func TestNarrowChangedSnapshotSelectionBounds(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{"", "../escape", "a/../b", "/absolute", "a//b", "a\\b", "a/\x00b", ".git/config"} {
 		if _, err := narrowSelectedPaths([]string{path}); err == nil {
 			t.Errorf("invalid selected path accepted: %q", path)

@@ -66,6 +66,8 @@ function normalizedContext(raw) {
       user: statNumber(breakdown.user), assistant: statNumber(breakdown.assistant),
       tools: statNumber(breakdown.tools), other: statNumber(breakdown.other),
     },
+    categories: Array.isArray(raw.categories) ? raw.categories : [],
+    toolResults: Array.isArray(raw.tool_results) ? raw.tool_results : [],
   };
 }
 function contextState(percent, compactPercent) {
@@ -137,6 +139,10 @@ function renderContextInspector(context) {
     legend.appendChild(entry);
   });
   section.appendChild(legend);
+  if (typeof usageContextDonuts === "function") {
+    var donuts = usageContextDonuts(context);
+    if (donuts) section.appendChild(donuts);
+  }
   var footer = el("div", "context-actions");
   footer.appendChild(i18nEl("div", "usage-caption", "context.compactHint"));
   var compact = i18nEl("button", "btn context-compact", "context.compactNow");
@@ -317,6 +323,8 @@ function renderUsageInspector(stats) {
   root.appendChild(lead);
 
   root.appendChild(renderPerformanceTelemetry(stats.telemetry));
+  // Cross-session daily history; fetched lazily when scrolled into view.
+  if (typeof renderUsageHistorySection === "function") root.appendChild(renderUsageHistorySection());
 
   var factsSection = el("section", "usage-section");
   factsSection.appendChild(i18nEl("h3", "usage-section-title", "usage.details"));
@@ -351,6 +359,17 @@ function offTurnFact(telemetry) {
   return usageFact(t("telemetry.offTurn"),
     fmtInteger(telemetry.offTurnCalls) + " · " + fmtDuration(telemetry.offTurnMS),
     t("telemetry.offTurnNote"));
+}
+
+// Signals are ids, optionally parameterised ("slow_tool:bash"). Unknown ids
+// fall back to the id itself rather than a raw "telemetry.signal.*" key.
+function telemetrySignalText(signal) {
+  var raw = String(signal || "");
+  var cut = raw.indexOf(":");
+  var key = "telemetry.signal." + (cut >= 0 ? raw.slice(0, cut) : raw);
+  var text = t(key);
+  if (text === key) return raw;
+  return cut >= 0 ? text.replace("{name}", raw.slice(cut + 1)) : text;
 }
 
 function renderPerformanceTelemetry(telemetry) {
@@ -414,7 +433,7 @@ function renderPerformanceTelemetry(telemetry) {
   if (telemetry.signals.length) {
     var notes = el("div", "telemetry-signals");
     telemetry.signals.forEach(function (signal) {
-      notes.appendChild(el("p", "", t("telemetry.signal." + signal)));
+      notes.appendChild(el("p", "", telemetrySignalText(signal)));
     });
     section.appendChild(notes);
   }

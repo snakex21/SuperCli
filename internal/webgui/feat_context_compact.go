@@ -106,6 +106,12 @@ func contextViewFromReport(report agent.ContextReport) statsContextView {
 		// belongs to Other so the four-part meter still sums to the request.
 		view.Breakdown.Other += view.EstimatedUsed - accounted
 	}
+	for _, c := range report.Categories() {
+		view.Categories = append(view.Categories, statsContextCategory{Key: c.Key, Tokens: c.Tokens})
+	}
+	for _, u := range report.ToolResultsByTool {
+		view.ToolResults = append(view.ToolResults, statsContextTool{Name: u.Name, Tokens: u.Tokens, Count: u.Count})
+	}
 	if view.Window > 0 {
 		view.Percent = int((int64(view.EstimatedUsed)*100 + int64(view.Window)/2) / int64(view.Window))
 		if view.Percent > 100 {

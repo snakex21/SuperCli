@@ -168,8 +168,9 @@ func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
 			case "cmd-error":
 				provider.command = []string{"cmd", "/c", "exit /b 7"}
 			case "checkpoint-rejected":
-				// Metadata-only over-limit fixture; checkpoint must reject before
-				// running the command, then settle its GUI row and active owner.
+				// Metadata-only over-limit fixture; the command runs without a
+				// checkpoint but with a visible warning, then settles its GUI row
+				// and active owner.
 				large, err := os.Create(filepath.Join(home, "large-archive.7z"))
 				if err != nil {
 					t.Fatal(err)
@@ -241,11 +242,8 @@ func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
 				t.Fatalf("native exit code lost: %s", toolInputs[0])
 			}
 			if mode == "checkpoint-rejected" {
-				if !strings.Contains(toolInputs[0], "checkpoint snapshot limit exceeded") || !strings.Contains(toolInputs[0], "tool did not run") {
-					t.Fatalf("checkpoint cause lost: %s", toolInputs[0])
-				}
-				if _, err := os.Stat(filepath.Join(home, "unexpected.txt")); !os.IsNotExist(err) {
-					t.Fatal("rejected command ran", err)
+				if !strings.Contains(toolInputs[0], "checkpoint snapshot limit exceeded") || !strings.Contains(toolInputs[0], "bez checkpointu") || strings.Contains(toolInputs[0], "tool did not run") {
+					t.Fatalf("over-limit warning lost or command blocked: %s", toolInputs[0])
 				}
 			}
 			if mode == "curl-gif" {

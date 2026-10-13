@@ -49,6 +49,11 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 			loop.SetTaskParallelPolicy(parallel, warnLocal)
 		}
 	}
+	// advisor_model: advise:true calls run on their own backend (nil =
+	// the worker/coordinator provider, as before).
+	if ap := e.advisorProvider(tc); ap != nil {
+		at.AdvisorProvider = ap
+	}
 	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
 		at.PreflightContext = func(ctx context.Context) string {
@@ -126,6 +131,20 @@ func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config
 		return nil, nil
 	}
 	return e.buildWorker(*worker)
+}
+
+// advisorProvider builds the advisor_model override (metered, purpose
+// "advisor"); nil when unset, unresolvable or failing to build.
+func (e *Engine) advisorProvider(tc config.TomlConfig) llm.Provider {
+	cfg := e.modelOverrideConfig(tc, tc.AdvisorModel)
+	if cfg == nil || cfg.Normalize() != nil {
+		return nil
+	}
+	ap, err := e.factory.Build(*cfg, llm.PurposeAdvisor)
+	if err != nil {
+		return nil
+	}
+	return ap
 }
 
 // compactProviderResolver snapshots the optional backend for this loop without

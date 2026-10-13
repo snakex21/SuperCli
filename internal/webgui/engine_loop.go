@@ -303,6 +303,9 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// NestCafe preference key while the overlay migrates to the shared key.
 	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
 	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
+	if !officeProfile {
+		e.registerDarwin(reg, prov, cfg, tc, home, systemPrompt)
+	}
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)

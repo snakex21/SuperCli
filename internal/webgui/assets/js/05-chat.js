@@ -900,6 +900,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   runToolCount = 0;
   // Keep worker identity and previous cards across coordinator turns.
   toolRows = {}; openToolOrder = [];
+  pruneWorkerOverview();
   sendBtn.textContent = t("composer.queue");
   sendBtn.classList.add("queue");
   sendBtn.type = "submit";

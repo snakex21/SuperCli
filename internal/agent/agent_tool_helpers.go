@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
@@ -192,6 +193,45 @@ const defaultAgentKind = "general"
 // advisorAgentKind is the read-only "second opinion" worker selected by
 // task's advise:true flag (Task B). Registered by BuiltinSubAgents.
 const advisorAgentKind = "advisor"
+
+// Shared context for an advisor is a recent tail with clipped tool results:
+// a (possibly paid) second opinion should not re-read the whole session.
+const (
+	advisorSeedMessages  = 12
+	advisorSeedToolBytes = 1500
+)
+
+// advisorSeed keeps the last user request plus the recent tail, never
+// starting on an orphaned tool result, and clips long tool outputs.
+func advisorSeed(msgs []llm.Message) []llm.Message {
+	start := len(msgs) - advisorSeedMessages
+	if start < 0 {
+		start = 0
+	}
+	for start < len(msgs) && msgs[start].Role == llm.RoleTool {
+		start++
+	}
+	out := make([]llm.Message, 0, advisorSeedMessages+1)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == llm.RoleUser {
+			if i < start {
+				out = append(out, msgs[i])
+			}
+			break
+		}
+	}
+	for _, m := range msgs[start:] {
+		if m.Role == llm.RoleTool && len(m.Parts) == 0 && len(m.Content) > advisorSeedToolBytes {
+			cut := advisorSeedToolBytes
+			for cut > 0 && !utf8.RuneStart(m.Content[cut]) {
+				cut--
+			}
+			m.Content = m.Content[:cut] + "\n[… clipped for advisor]"
+		}
+		out = append(out, m)
+	}
+	return out
+}
 
 func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, prompt string, maxSteps int) error {
 	if w == nil {
