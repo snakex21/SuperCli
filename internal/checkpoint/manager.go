@@ -91,16 +91,28 @@ func Open(home, dataDir string) (*Manager, error) {
 		return nil, err
 	}
 	h := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
-	root := filepath.Join(dataAbs, "checkpoints", hex.EncodeToString(h[:8]))
-	m := &Manager{home: abs, repo: filepath.Join(root, "objects.git"), meta: filepath.Join(root, "turns.json"), dataDir: dataAbs}
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dataAbs, "checkpoints", hex.EncodeToString(h[:8])), 0o700); err != nil {
 		return nil, err
 	}
+	// The store gate canonicalizes the data directory (symlinks and Windows
+	// 8.3 short names). Store paths must use the same form or the store's
+	// own path checks reject it as unsafe.
+	if resolved, resolveErr := filepath.EvalSymlinks(dataAbs); resolveErr == nil {
+		dataAbs = resolved
+	}
+	root := filepath.Join(dataAbs, "checkpoints", hex.EncodeToString(h[:8]))
+	m := &Manager{home: abs, repo: filepath.Join(root, "objects.git"), meta: filepath.Join(root, "turns.json"), dataDir: dataAbs}
 	excludes := ".git/\n.supercli/\ncheckpoints/\nsessions.db*\n*.db-wal\n*.db-shm\n"
-	if rel, relErr := filepath.Rel(abs, root); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	// Compare in the same canonical form as dataAbs; m.home and the workspace
+	// key keep the caller's spelling.
+	relHome := abs
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		relHome = resolved
+	}
+	if rel, relErr := filepath.Rel(relHome, root); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		excludes += filepath.ToSlash(rel) + "/\n"
 	}
-	if rel, relErr := filepath.Rel(abs, dataAbs); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	if rel, relErr := filepath.Rel(relHome, dataAbs); relErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		m.excludedDataRel = filepath.ToSlash(rel)
 		excludes += "/" + escapeExcludePath(m.excludedDataRel) + "/\n"
 	}

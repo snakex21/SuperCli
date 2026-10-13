@@ -52,6 +52,12 @@ func (a *AgentTool) workerSourceContext(ctx context.Context, task string, spec S
 	if err != nil {
 		return ""
 	}
+	// Tool results name paths under the configured baseDir spelling, which can
+	// differ from the canonical base (Windows 8.3 short names, symlinks).
+	rawBase, err := filepath.Abs(a.ParentLoop.baseDir)
+	if err != nil {
+		return ""
+	}
 	messages := a.ParentLoop.VisibleMessages()
 	calls := make(map[string]llm.ToolCall)
 	for _, message := range messages {
@@ -76,7 +82,10 @@ func (a *AgentTool) workerSourceContext(ctx context.Context, task string, spec S
 			path := row.location.path
 			file := byPath[path]
 			if file == nil {
-				rel, err := filepath.Rel(base, path)
+				rel, err := filepath.Rel(rawBase, path)
+				if err != nil || !workerSourceWithin(rel) {
+					rel, err = filepath.Rel(base, path)
+				}
 				if err != nil || !workerSourceWithin(rel) || !workerSourceMentioned(task, rel) || len(files) >= 4 {
 					continue
 				}

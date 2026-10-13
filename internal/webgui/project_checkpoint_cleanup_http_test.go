@@ -26,7 +26,7 @@ func projectCleanupFixture(t *testing.T) (*Server, string, string) {
 		t.Skip("git is unavailable")
 	}
 	srv := newTestServer(t, false)
-	home := t.TempDir()
+	home := canonicalTestDir(t)
 	if err := srv.eng.projectAction("add", home, "Cleanup fixture", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,18 @@ func projectCleanupFixture(t *testing.T) (*Server, string, string) {
 		t.Fatal(err)
 	}
 	return srv, home, chat.ID
+}
+
+// The engine opens checkpoint stores under the resolved workspace path, while
+// cleanup keys stores lexically. Use the canonical form so both agree when the
+// temp dir has an alias (Windows 8.3 short names such as RUNNER~1 on CI).
+func canonicalTestDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func seedProjectCleanupCheckpoint(t *testing.T, eng *Engine, home string) {
@@ -116,7 +128,7 @@ func assertProjectCleanupPreservedData(t *testing.T, srv *Server, home, chatID s
 
 func TestProjectCheckpointHTTPPreviewClearPreservesProjectAndOtherData(t *testing.T) {
 	srv, home, chatID := projectCleanupFixture(t)
-	other := t.TempDir()
+	other := canonicalTestDir(t)
 	if err := srv.eng.projectAction("add", other, "Other fixture", ""); err != nil {
 		t.Fatal(err)
 	}
