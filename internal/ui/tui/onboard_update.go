@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/llm"
@@ -118,6 +119,11 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		case "ctrl+u":
 			m.filter, m.cursor = "", 0
+		case "ctrl+v":
+			if text, err := onboardClipboard(); err == nil {
+				m.filter += normalizePastedLine(text)
+			}
+			m.cursor = 0
 		case "enter":
 			return m.choose()
 		default:
@@ -170,13 +176,8 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result.BaseURL = strings.TrimRight(url, "/")
 			m.step = onboardKey
 			m.input = ""
-		case tea.KeyBackspace:
-			if len(m.input) > 0 {
-				r := []rune(m.input)
-				m.input = string(r[:len(r)-1])
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			m.input += string(key.Runes)
+		default:
+			m.input = editOnboardText(m.input, key)
 		}
 	case onboardKey:
 		switch key.Type {
@@ -184,16 +185,39 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result.APIKey = strings.TrimSpace(m.input)
 			m.input = ""
 			return m.startLoadModels()
-		case tea.KeyBackspace:
-			if len(m.input) > 0 {
-				r := []rune(m.input)
-				m.input = string(r[:len(r)-1])
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			m.input += string(key.Runes)
+		default:
+			m.input = editOnboardText(m.input, key)
 		}
 	}
 	return m, nil
+}
+
+// onboardClipboard is replaceable in tests.
+var onboardClipboard = clipboard.ReadAll
+
+// editOnboardText applies one key to a single-line setup field (URL, API
+// key): typing, bracketed paste, Ctrl+V, Backspace/Ctrl+H and Ctrl+U.
+func editOnboardText(s string, key tea.KeyMsg) string {
+	if key.Type == tea.KeyRunes || key.Type == tea.KeySpace {
+		text := string(key.Runes)
+		if key.Paste {
+			text = normalizePastedLine(text)
+		}
+		return s + text
+	}
+	switch key.String() {
+	case "backspace", "ctrl+h":
+		if r := []rune(s); len(r) > 0 {
+			return string(r[:len(r)-1])
+		}
+	case "ctrl+u":
+		return ""
+	case "ctrl+v":
+		if text, err := onboardClipboard(); err == nil {
+			return s + normalizePastedLine(text)
+		}
+	}
+	return s
 }
 
 // choose applies the main menu selection.

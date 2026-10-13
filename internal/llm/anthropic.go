@@ -204,7 +204,6 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 // (clamped by rateLimitWaitBudget), a notify callback per wait so the
 // UI shows the rate-limit pause. notify may be nil.
 func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, body, imageFallback []byte, notify func(string)) (*http.Response, error) {
-	const maxAttempts = 3
 	waitBudget := rateLimitWaitBudget
 	rateAttempts := 0
 	thinkingRetried := false
@@ -276,6 +275,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
 		}
 		rateAttempts++
+		maxAttempts := providerRetryAttempts(resp.StatusCode)
 		if rateAttempts >= maxAttempts {
 			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
 		}

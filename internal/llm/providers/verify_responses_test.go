@@ -53,6 +53,10 @@ func TestHumanizeVerifyErrorRecognizesResponsesHTTPFormat(t *testing.T) {
 		{`http 401: {"error":"bad key"}`, "API key was rejected"},
 		{`http 404: {"error":"missing endpoint"}`, "endpoint not found"},
 		{`http 429: {"error":"slow down"}`, "rate limited"},
+		{`http 503: {"error":{"message":"Service Unavailable","type":"error"}}`, "configuration is fine"},
+		{`http 500: {"error":{"message":"当前模型 gpt-6-astra 负载已经达到上限，请稍后重试"}}`, "configuration is fine"},
+		{`http 429: {"error":{"message":"Service Unavailable","type":"error"}}`, "configuration is fine"},
+		{`http 404: {"error":"当前 API 不支持所选模型 gpt-5-codex"} — model "gpt-5-codex" is not available at this provider`, "does not serve the selected model"},
 	}
 	for _, tc := range tests {
 		if got := humanizeVerifyError(tc.raw, "https://example.test/v1", "key").Error(); !strings.Contains(got, tc.want) {

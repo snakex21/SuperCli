@@ -5,7 +5,7 @@ test('startup reuses settings for drafts and skips reasoning for the no-model se
   const snapshot={'drafts':{}};const calls=[];let complete;
   const ready=new Promise(resolve=>complete=resolve);
   const c={document:{addEventListener(){}},setInterval(){},loadUI:async()=>snapshot,applyI18n(){},checkHealth:async()=>({model}),selectedModelID:value=>String(value||'').trim()==='no model'?'':value,
-   composerDraftStore:{load:async value=>{assert.equal(value,snapshot);calls.push('drafts');}},loadReasoning:()=>calls.push('reasoning'),loadModels:()=>calls.push('models'),loadSessions(){},loadProjects(){},loadPromptQueue(){},loadWorkers(){},renderStats(){},promptEl:{focus:()=>complete()}};
+   composerDraftStore:{load:async value=>{assert.equal(value,snapshot);calls.push('drafts');}},loadReasoning:()=>calls.push('reasoning'),loadModels:()=>calls.push('models'),loadSessions:async()=>{},resumeLastSessionOnStart(){},loadProjects(){},loadPromptQueue(){},loadWorkers(){},renderStats(){},promptEl:{focus:()=>complete()}};
   vm.createContext(c);vm.runInContext(source,c);await ready;
   assert.equal(calls.filter(x=>x==='drafts').length,1);
   assert.equal(calls.filter(x=>x==='reasoning').length,model==='qwen'?1:0);
@@ -32,7 +32,7 @@ test('initial health and model discovery keep the empty-model label localized',a
    activeModelID:'',activeProviderID:'',activeWorkspacePath:'',streaming:false,runFinishing:false,queueDispatching:false,pendingImmediate:null,reasoningRevision:0,modelsLoadSeq:0,modelCache:[],
    workspaceDisplayName:value=>value,slimModels:values=>values,saveBlobKey(){},renderModelList(){},renderReasoning(){},
    j:async url=>{calls.push(url);if(url==='/api/health')return {model,home:''};if(url==='/api/models'){assert.equal(node('#model-name').textContent,expected,'health label');return {active:model,provider:'',models:[]};}throw Error('Unexpected request '+url);},
-   loadUI:async()=>({}),composerDraftStore:{load:async()=>{}},loadReasoning(){},loadSessions(){},loadProjects(){},loadPromptQueue(){},loadWorkers(){},renderStats(){},setInterval(){},promptEl:{focus(){}}};
+   loadUI:async()=>({}),composerDraftStore:{load:async()=>{}},loadReasoning(){},loadSessions:async()=>{},resumeLastSessionOnStart(){},loadProjects(){},loadPromptQueue(){},loadWorkers(){},renderStats(){},setInterval(){},promptEl:{focus(){}}};
   vm.createContext(c);vm.runInContext(i18n,c);vm.runInContext(health,c);vm.runInContext(discovery,c);
   const discover=c.loadModels;c.loadModels=()=>discover().then(complete);
   vm.runInContext(source,c);await ready;
