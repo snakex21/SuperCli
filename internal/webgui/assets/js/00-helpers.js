@@ -26,8 +26,8 @@ function clip(s, n) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 function fmtDuration(ms) {
-  if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
-  var m = Math.floor(ms / 60000), s = Math.round((ms % 60000) / 1000);
+  if (ms < 59950) return (ms / 1000).toFixed(1) + "s";
+  var total = Math.round(ms / 1000), m = Math.floor(total / 60), s = total % 60;
   return m + "m" + (s < 10 ? "0" : "") + s + "s";
 }
 function fmtTok(n) {
