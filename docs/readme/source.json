@@ -59,7 +59,7 @@
     ],
     [
       "status",
-      "This README describes version `1.0.8`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
+      "This README describes version `1.0.9`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
     ],
     [
       "h.screenshots",
@@ -88,6 +88,10 @@
     [
       "start.other",
       "On Linux or macOS, use the corresponding executable from the bundle or build from source. Select your project with `--home`; use `--batch` for one prompt without the TUI."
+    ],
+    [
+      "start.termux",
+      "On Android, install with one line in Termux. The script downloads the newest release, verifies the checksum, and adds the `supercli` and `supercli-web` commands. Run it again to update; `supercli-data/` is kept."
     ],
     [
       "h.data",
@@ -277,7 +281,7 @@
   "blocks": [
     {
       "type": "title",
-      "text": "SuperCli 1.0.8"
+      "text": "SuperCli 1.0.9"
     },
     "intro",
     "status",
@@ -297,6 +301,12 @@
       "type": "code",
       "lang": "bash",
       "text": "./supercli --home ./my-project\n./supercli --batch \"Summarize this project\"\n./supercli --doctor"
+    },
+    "start.termux",
+    {
+      "type": "code",
+      "lang": "bash",
+      "text": "curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh"
     },
     "h.data",
     "data",

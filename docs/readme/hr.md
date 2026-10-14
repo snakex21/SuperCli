@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Prijenosni AI agent za programiranje napisan u Gou, s terminalskim sučeljem (TUI), stolnim/web sučeljem (GUI) i skupnim načinom rada koji dijele jedan pogon.
 
 <!-- readme-unit:status -->
-Ovaj README opisuje verziju `1.0.8`. Prijenosni paketi izdanja distribuiraju se putem [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna kompilacija ne znači da je pripadajuće izdanje već objavljeno.
+Ovaj README opisuje verziju `1.0.9`. Prijenosni paketi izdanja distribuiraju se putem [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna kompilacija ne znači da je pripadajuće izdanje već objavljeno.
 
 <!-- readme-unit:h.screenshots -->
 ## Snimke zaslona
@@ -43,6 +43,13 @@ Na Linuxu ili macOS-u koristite odgovarajuću izvršnu datoteku iz paketa ili ko
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Na Androidu instalirajte jednim retkom u Termuxu. Skripta preuzima najnovije izdanje, provjerava kontrolni zbroj i dodaje naredbe `supercli` i `supercli-web`. Za ažuriranje pokrenite je ponovno; `supercli-data/` se zadržava.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

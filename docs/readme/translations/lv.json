@@ -1,6 +1,6 @@
 [
   "Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.",
-  "Šis README apraksta versiju `1.0.8`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
+  "Šis README apraksta versiju `1.0.9`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
   "Ekrānuzņēmumi",
   "![SuperCli tīmekļa saskarne (GUI)]({guishot})",
   "![SuperCli termināļa darbību centrs (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Darba sākšana",
   "Izpakojiet savai operētājsistēmai un arhitektūrai atbilstošo komplektu rakstāmā mapē. Windows sistēmā palaidiet `supercli.exe` terminālim vai `supercli-web.exe` GUI. Iekļauto `supercli-data/` mapi turiet līdzās izpildāmajiem failiem.",
   "Linux vai macOS sistēmā izmantojiet atbilstošo izpildāmo failu no komplekta vai būvējiet no pirmkoda. Izvēlieties projektu ar `--home`; vienam pieprasījumam bez TUI izmantojiet `--batch`.",
+  "Android ierīcē instalējiet ar vienu rindu Termux. Skripts lejupielādē jaunāko laidienu, pārbauda kontrolsummu un pievieno komandas `supercli` un `supercli-web`. Lai atjauninātu, palaidiet to vēlreiz; `supercli-data/` tiek saglabāta.",
   "Pārnēsājami dati",
   "Iestatījumi, sesijas, atmiņa, akreditācijas dati, kešatmiņas, žurnāli un rezerves kopijas atrodas `supercli-data/` līdzās lietotnei. Pārvietojiet visu lietotnes mapi, lai paņemtu tos līdzi. Lietotne savam stāvoklim neizmanto `%APPDATA%`, `%LOCALAPPDATA%` vai Windows reģistru.",
   "`--home` un `SUPERCLI_HOME` izvēlas darbvietu, nepārvietojot lietotnes datus. Projekta pārrakstošie iestatījumi un darba faili izmanto `<project>/.supercli/`.",

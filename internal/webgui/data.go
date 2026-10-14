@@ -158,6 +158,9 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 	out := make([]sessionMeta, 0, len(recent))
 	for _, r := range recent {
 		title := cleanLLMSummary(r.Title)
+		if title == "" && strings.TrimSpace(r.Title) == "" {
+			title = persistLocalSessionTitle(store, r.ID, r.FirstUserMsg)
+		}
 		if title == "" {
 			title = summarizeHistoryMessage(r.FirstUserMsg, defaultHistorySummaryLen)
 		}
@@ -175,6 +178,21 @@ func (e *Engine) listSessions(ctx context.Context, limit int) ([]sessionMeta, er
 		})
 	}
 	return out, nil
+}
+
+// persistLocalSessionTitle names a session created without a title (TUI/CLI
+// rows come from EnsureSession with title "") using the same deterministic
+// local label a fresh GUI session gets. It never calls a model, so listing
+// many old sessions stays free; SetTitleIfCurrent only fills an empty title,
+// never overrides a rename and does not bump activity order. Best-effort:
+// a storage failure just leaves the derived label display-only.
+func persistLocalSessionTitle(store *session.Store, id, firstUserMsg string) string {
+	title := summarizeHistoryMessage(firstUserMsg, sessionTitleMaxRunes)
+	if title == "" || store == nil {
+		return title
+	}
+	_, _ = store.SetTitleIfCurrent(id, "", title)
+	return title
 }
 
 func (e *Engine) queuedTasks(ctx context.Context) ([]session.QueuedTask, error) {

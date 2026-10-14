@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Un agent de programmation IA portable écrit en Go, avec une interface terminal (TUI), une interface bureau/web (GUI) et un mode traitement par lots partageant le même moteur.
 
 <!-- readme-unit:status -->
-Ce README décrit la version `1.0.8`. Les paquets portables sont distribués via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) ; une compilation locale ne signifie pas que sa version a déjà été publiée.
+Ce README décrit la version `1.0.9`. Les paquets portables sont distribués via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) ; une compilation locale ne signifie pas que sa version a déjà été publiée.
 
 <!-- readme-unit:h.screenshots -->
 ## Captures d’écran
@@ -43,6 +43,13 @@ Sous Linux ou macOS, utilisez l'exécutable correspondant du paquet ou compilez 
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Sous Android, installez en une ligne dans Termux. Le script télécharge la dernière version, vérifie la somme de contrôle et ajoute les commandes `supercli` et `supercli-web`. Relancez-le pour mettre à jour ; `supercli-data/` est conservé.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

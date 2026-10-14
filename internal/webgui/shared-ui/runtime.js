@@ -14,6 +14,8 @@
     trash: true,
     apply_patch: true,
     patch: true,
+    patch_file: true,
+    create_file: true,
   });
 
   function requestJSON(url, options) {
@@ -249,6 +251,8 @@
     if (isError || !FILE_MUTATION_TOOLS[name]) return "";
     var text = String(output || "");
     if (name === "write_file") return /^Created\b/i.test(text) ? "created" : "modified";
+    if (name === "create_file") return /^Created\b/i.test(text) ? "created" : "";
+    if (name === "patch_file") return /\bchanged=false\b/.test(text) ? "" : "modified";
     if (name === "trash") return "deleted";
     if (name === "make_dir") return /^Created folder\b/i.test(text) ? "folder-created" : "";
     if (name === "move") return "moved";

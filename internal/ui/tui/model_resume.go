@@ -161,6 +161,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 	m.hasTranscript = false
 	m.workerViews = nil
 	names := make(map[string]string)
+	langs := make(map[string]string)
 	for i, item := range h.Messages {
 		if agent.IsLegacyCompactionSummary(item) {
 			continue
@@ -180,6 +181,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 			}
 			for _, tc := range item.ToolCalls {
 				names[tc.ID] = tc.Name
+				langs[tc.ID] = toolFileLang(tc.Name, string(tc.Arguments))
 				m.appendLine(m.marker.ToolCall(tc.Name, string(tc.Arguments)))
 			}
 		case llm.RoleTool:
@@ -190,7 +192,7 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 			if name == "" {
 				name = "tool"
 			}
-			m.chat.addToolResult(name, text, "")
+			m.chat.addToolResultLang(name, text, "", langs[item.ToolCallID])
 			m.markTranscriptPresent()
 		}
 	}

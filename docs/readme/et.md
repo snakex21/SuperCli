@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.
 
 <!-- readme-unit:status -->
-See README kirjeldab versiooni `1.0.8`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
+See README kirjeldab versiooni `1.0.9`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvatõmmised
@@ -43,6 +43,13 @@ Linuxis või macOS-is kasuta paketi vastavat käivitatavat faili või ehita läh
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Androidis paigalda Termuxis ühe reaga. Skript laadib alla uusima väljalaske, kontrollib kontrollsummat ja lisab käsud `supercli` ja `supercli-web`. Uuendamiseks käivita see uuesti; `supercli-data/` säilib.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

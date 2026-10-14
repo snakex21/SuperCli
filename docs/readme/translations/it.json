@@ -1,6 +1,6 @@
 [
   "Un agente di programmazione IA portatile scritto in Go, con interfaccia terminale (TUI), interfaccia desktop/web (GUI) e modalità batch che condividono un unico motore.",
-  "Questo README descrive la versione `1.0.8`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases]({releases}); una compilazione locale non implica che la relativa versione sia già pubblicata.",
+  "Questo README descrive la versione `1.0.9`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases]({releases}); una compilazione locale non implica che la relativa versione sia già pubblicata.",
   "Schermate",
   "![Interfaccia web di SuperCli (GUI)]({guishot})",
   "![Centro azioni del terminale di SuperCli (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Per iniziare",
   "Estrai il pacchetto per il tuo sistema operativo e la tua architettura in una cartella scrivibile. Su Windows avvia `supercli.exe` per il terminale o `supercli-web.exe` per la GUI. Mantieni la cartella inclusa `supercli-data/` accanto agli eseguibili.",
   "Su Linux o macOS usa l'eseguibile corrispondente del pacchetto o compila dai sorgenti. Seleziona il progetto con `--home`; usa `--batch` per una richiesta senza TUI.",
+  "Su Android, installa con una sola riga in Termux. Lo script scarica la versione più recente, verifica il checksum e aggiunge i comandi `supercli` e `supercli-web`. Eseguilo di nuovo per aggiornare; `supercli-data/` viene conservata.",
   "Dati portatili",
   "Impostazioni, sessioni, memoria, credenziali, cache, registri e backup risiedono in `supercli-data/` accanto all'applicazione. Sposta tutta la cartella dell'applicazione per portarli con te. L'applicazione non usa `%APPDATA%`, `%LOCALAPPDATA%` o il registro Windows per il proprio stato.",
   "`--home` e `SUPERCLI_HOME` selezionano lo spazio di lavoro senza spostare i dati dell'applicazione. Le impostazioni specifiche del progetto e i relativi artefatti usano `<project>/.supercli/`.",

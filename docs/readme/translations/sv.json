@@ -1,6 +1,6 @@
 [
   "En portabel AI-kodningsagent skriven i Go, med terminalgränssnitt (TUI), skrivbords-/webbgränssnitt (GUI) och batchläge som delar en motor.",
-  "Denna README beskriver version `1.0.8`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
+  "Denna README beskriver version `1.0.9`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
   "Skärmbilder",
   "![SuperClis webbgränssnitt (GUI)]({guishot})",
   "![SuperClis åtgärdscenter i terminalen (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Kom igång",
   "Packa upp paketet för ditt operativsystem och din arkitektur i en skrivbar mapp. På Windows startar du `supercli.exe` för terminalen eller `supercli-web.exe` för GUI. Behåll den medföljande mappen `supercli-data/` bredvid de körbara filerna.",
   "På Linux eller macOS använder du motsvarande körbara fil från paketet eller bygger från källkoden. Välj projekt med `--home`; använd `--batch` för en begäran utan TUI.",
+  "På Android installerar du med en rad i Termux. Skriptet hämtar den senaste versionen, kontrollerar kontrollsumman och lägger till kommandona `supercli` och `supercli-web`. Kör det igen för att uppdatera; `supercli-data/` behålls.",
   "Portabla data",
   "Inställningar, sessioner, minne, inloggningsuppgifter, cache, loggar och säkerhetskopior finns i `supercli-data/` bredvid programmet. Flytta hela programmappen för att ta dem med dig. Programmet använder inte `%APPDATA%`, `%LOCALAPPDATA%` eller Windows-registret för sitt tillstånd.",
   "`--home` och `SUPERCLI_HOME` väljer arbetsområdet utan att flytta programdata. Projektåsidosättningar och arbetsfiler använder `<project>/.supercli/`.",

@@ -1,6 +1,6 @@
 [
   "En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.",
-  "Denne README beskriver versjon `1.0.8`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
+  "Denne README beskriver versjon `1.0.9`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
   "Skjermbilder",
   "![SuperClis nettgrensesnitt (GUI)]({guishot})",
   "![SuperClis handlingssenter i terminalen (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Kom i gang",
   "Pakk ut pakken for operativsystemet og arkitekturen din i en skrivbar mappe. På Windows starter du `supercli.exe` for terminalen eller `supercli-web.exe` for GUI. Behold den medfølgende mappen `supercli-data/` ved siden av de kjørbare filene.",
   "På Linux eller macOS bruker du den tilsvarende kjørbare filen fra pakken eller bygger fra kildekoden. Velg prosjektet med `--home`; bruk `--batch` for én forespørsel uten TUI.",
+  "På Android installerer du med én linje i Termux. Skriptet laster ned den nyeste utgivelsen, kontrollerer sjekksummen og legger til kommandoene `supercli` og `supercli-web`. Kjør det på nytt for å oppdatere; `supercli-data/` beholdes.",
   "Portable data",
   "Innstillinger, økter, minne, påloggingsdata, hurtiglagre, logger og sikkerhetskopier ligger i `supercli-data/` ved siden av programmet. Flytt hele programmappen for å ta dem med. Programmet bruker ikke `%APPDATA%`, `%LOCALAPPDATA%` eller Windows-registeret til sin tilstand.",
   "`--home` og `SUPERCLI_HOME` velger arbeidsområdet uten å flytte programdata. Prosjektoverstyringer og arbeidsfiler bruker `<project>/.supercli/`.",

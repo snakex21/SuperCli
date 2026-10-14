@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.
 
 <!-- readme-unit:status -->
-Ez a README az `1.0.8` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
+Ez a README az `1.0.9` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
 
 <!-- readme-unit:h.screenshots -->
 ## Képernyőképek
@@ -43,6 +43,13 @@ Linux vagy macOS alatt használja a csomag megfelelő futtatható fájlját, vag
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Androidon egyetlen sorral telepíthet a Termuxban. A szkript letölti a legújabb kiadást, ellenőrzi az ellenőrzőösszeget, és hozzáadja a `supercli` és `supercli-web` parancsokat. Frissítéshez futtassa újra; a `supercli-data/` megmarad.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

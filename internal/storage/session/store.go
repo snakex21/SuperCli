@@ -61,7 +61,7 @@ func OpenStore(home string) (*Store, error) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return nil, fmt.Errorf("session.OpenStore: mkdir: %w", err)
 	}
-	dsn := filepath.Join(home, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	dsn := filepath.Join(home, "sessions.db") + sessionDSNPragmas
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("session.OpenStore: open: %w", err)
@@ -71,6 +71,7 @@ func OpenStore(home string) (*Store, error) {
 		return nil, fmt.Errorf("session.OpenStore: ping: %w", err)
 	}
 	s := &Store{db: db, root: home}
+	s.initAutoVacuum()
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("session.OpenStore: migrate: %w", err)

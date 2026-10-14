@@ -72,5 +72,17 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("read session messages: %w", err)
 	}
+	if strings.TrimSpace(meta.Title) == "" {
+		// Sessions started in the TUI carry no title; continuing one in the
+		// GUI names it locally from its first prompt (no model call).
+		first := prompt
+		for _, msg := range initial {
+			if msg.Role == llm.RoleUser && strings.TrimSpace(msg.Content) != "" {
+				first = msg.Content
+				break
+			}
+		}
+		persistLocalSessionTitle(store, requestedID, first)
+	}
 	return initial, session.NewWriter(store, requestedID), requestedID, nil
 }
