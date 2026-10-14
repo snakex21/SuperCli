@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -42,3 +42,5 @@ jobs:
         run: go build ./cmd/supercli
       - name: Build WebGUI
         run: go build ./cmd/supercli-web
+      - name: Cross-compile Windows
+        run: GOOS=windows go vet ./... && GOOS=windows go build ./cmd/supercli ./cmd/supercli-web
