@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"supercli/internal/system/childproc"
@@ -29,6 +30,8 @@ type BenchOptions struct {
 	Timeout        time.Duration
 	KeepWorkspaces bool
 	Runner         AgentRunner
+	// Jobs is how many task/model pairs run side by side (default 1).
+	Jobs int
 }
 
 type AgentInput struct {
@@ -110,22 +113,53 @@ func Bench(ctx context.Context, options BenchOptions) (Report, error) {
 	started := time.Now()
 	report := Report{SchemaVersion: ReportSchemaVersion, SuiteID: suite.ID, StartedAt: started.UTC().Format(time.RFC3339Nano), Models: compactStrings(options.Models)}
 	suiteDir := filepath.Dir(options.SuitePath)
+	type pair struct {
+		task  Task
+		model string
+	}
+	var pairs []pair
 	for _, task := range suite.Tasks {
 		if options.TaskID != "" && task.ID != options.TaskID {
 			continue
 		}
 		for _, model := range models {
-			run := runOne(ctx, suiteDir, options, task, model, runner)
-			report.Runs = append(report.Runs, run)
-			if run.Passed {
-				report.Passed++
-			} else {
-				report.Failed++
-			}
+			pairs = append(pairs, pair{task, model})
 		}
 	}
-	if len(report.Runs) == 0 {
+	if len(pairs) == 0 {
 		return Report{}, fmt.Errorf("no eval runs selected")
+	}
+	jobs := options.Jobs
+	if jobs < 1 {
+		jobs = 1
+	}
+	if jobs > len(pairs) {
+		jobs = len(pairs)
+	}
+	// Runs keep suite order regardless of which worker finishes first.
+	report.Runs = make([]RunReport, len(pairs))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < jobs; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				report.Runs[i] = runOne(ctx, suiteDir, options, pairs[i].task, pairs[i].model, runner)
+			}
+		}()
+	}
+	for i := range pairs {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	for _, run := range report.Runs {
+		if run.Passed {
+			report.Passed++
+		} else {
+			report.Failed++
+		}
 	}
 	report.DurationMs = time.Since(started).Milliseconds()
 	report.Summary = summarize(report.Runs)

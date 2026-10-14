@@ -62,6 +62,7 @@ func knobDefs() []knobDef {
 		{"navigator", "pre-request route (chat/advisor/coordinator) decision mode", knobNav, true},
 		{"stable_toolset", "keep the tools list fixed all session (KV-cache friendly)", knobTri, true},
 		{"cache_prompt", "ask local llama.cpp servers to reuse the KV prompt cache", knobTriAuto, true},
+		{"darwin", "let the model start darwin best-of-N runs; off hides the tool (your /darwin command still works)", knobTri, true},
 		{"darwin_parallel", "run darwin best-of-N agents concurrently vs one at a time", knobTriAuto, true},
 		{"darwin_models", "darwin candidate models, round-robin; semicolon-separated \"model\" or \"provider/model\" (mix local + cloud; empty = active model)", knobText, true},
 		{"darwin_judge_model", "model that judges darwin candidates (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
@@ -71,7 +72,8 @@ func knobDefs() []knobDef {
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
-		{"advisor_model", "model/host for task advise:true second opinions (\"model\" or \"provider/model\"; empty = worker model)", knobText, true},
+		{"advisor_model", "model/host for task advise:true second opinions (\"model\" or \"provider/model\"; empty = worker model; off = no advisor)", knobText, true},
+		{"review_model", "post-work review: after a file-changing turn this model checks the changes and sends notes back to the main model (\"model\" or \"provider/model\"; empty or off = no review)", knobText, true},
 		{"orchestrator_model", "coordinator model/host (\"model\" or \"provider/model\"; empty = the main model coordinates; pair with task_model for a two-model setup)", knobText, true},
 		{"compact_model", "optional model/host for context summaries (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
 		{"fallback_models", "ordered opt-in main-model failover list; semicolon-separated provider/model references", knobText, true},
@@ -152,6 +154,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	case "darwin_auto_merge":
 		v, s := triKnob(c.DarwinAutoMerge, "off")
 		return v, s, ""
+	case "darwin":
+		v, s := triKnob(c.Darwin, "off")
+		return v, s, ""
 	case "task_parallel":
 		v, s := triAutoKnob(c.TaskParallel, "parallel", "sequential")
 		return v, s, ""
@@ -171,6 +176,11 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (worker model)", "default", ""
 		}
 		return c.AdvisorModel, "manual", c.AdvisorModel
+	case "review_model":
+		if config.ReviewDisabled(*c) {
+			return "off", "default", ""
+		}
+		return c.ReviewModel, "manual", c.ReviewModel
 	case "orchestrator_model":
 		if strings.TrimSpace(c.OrchestratorModel) == "" {
 			return "default (main model)", "default", ""
@@ -281,6 +291,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.DarwinParallel)
 	case "darwin_auto_merge":
 		return tri(c.DarwinAutoMerge)
+	case "darwin":
+		return tri(c.Darwin)
 	case "task_parallel":
 		return tri(c.TaskParallel)
 	case "noop_gate":
@@ -304,7 +316,7 @@ func knobDefault(key string) string {
 		return "auto"
 	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed":
 		return "on"
-	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning":
+	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin":
 		return "off"
 	default:
 		return ""

@@ -130,6 +130,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.DarwinAutoMerge != nil {
 		dst.DarwinAutoMerge = src.DarwinAutoMerge
 	}
+	if src.Darwin != nil {
+		dst.Darwin = src.Darwin
+	}
 	if src.TaskParallel != nil {
 		dst.TaskParallel = src.TaskParallel
 	}

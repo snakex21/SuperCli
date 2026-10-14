@@ -116,7 +116,8 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		// Phase telemetry rides the same recorder (and the same
 		// default-on wiring) as the historical per-turn stats — it is
 		// no longer gated on the F11 draft bridge being configured.
-		stats: cfg.Stats,
+		stats:     cfg.Stats,
+		reviewCfg: cfg.Review,
 	}
 
 	// GUI continuations enter through InitialMessages; TUI /resume uses

@@ -3,11 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -23,13 +20,6 @@ import (
 // one tool-free call. revise sends its instruction back to the main model;
 // takeover (or a time handoff) lets the reviewer finish the task itself in a
 // fresh context that starts from the reviewer's findings.
-
-const (
-	reviewSnapshotMaxFile  = 256 << 10
-	reviewSnapshotMaxTotal = 16 << 20
-	reviewChangeMaxFile    = 12 << 10
-	reviewChangeMaxTotal   = 32 << 10
-)
 
 // batchRunResult is the accounting of one or more loop runs.
 type batchRunResult struct {
@@ -121,7 +111,7 @@ func newBatchReviewer(tomlCfg config.TomlConfig, cfg config.Config, provFactory 
 			log.Printf("review_handoff_after: invalid duration %q — no time handoff", s)
 		}
 	}
-	r.before = snapshotTree(home)
+	r.before = agent.SnapshotTree(home)
 	fmt.Fprintf(os.Stderr, "[review] on · reviewer=%s · verify=%v · max_rounds=%d · takeover=%v · handoff_after=%s\n",
 		p.Name(), r.verify, r.maxRounds, r.takeover, r.handoffAfter)
 	return r
@@ -157,7 +147,7 @@ func (r *batchReviewer) finish(ctx, workerCtx context.Context, task string, l *a
 		reason = "error"
 	}
 	for round := 0; reason == ""; round++ {
-		changes := renderTreeChanges(r.home, r.before)
+		changes := agent.RenderTreeChanges(r.home, r.before)
 		out := agent.ReviewChange(ctx, r.provider, task, changes, r.verify, r.home)
 		r.trace.Decisions = append(r.trace.Decisions, out.Decision)
 		r.trace.Instructions = append(r.trace.Instructions, out.Instruction)
@@ -211,7 +201,7 @@ func (r *batchReviewer) finish(ctx, workerCtx context.Context, task string, l *a
 	}
 	r.trace.Takeover = true
 	fmt.Fprintf(os.Stderr, "[review] takeover by %s (reason=%s)\n", r.provider.Name(), reason)
-	res := run(ctx, tl, reviewTakeoverPrompt(task, reason, evidence, renderTreeChanges(r.home, r.before)))
+	res := run(ctx, tl, reviewTakeoverPrompt(task, reason, evidence, agent.RenderTreeChanges(r.home, r.before)))
 	r.trace.TakeoverInput += res.Usage.Input
 	r.trace.TakeoverOutput += res.Usage.Output
 	r.trace.TakeoverCached += res.Usage.Cached
@@ -242,76 +232,6 @@ func reviewTakeoverPrompt(task, reason, evidence, changes string) string {
 	return b.String()
 }
 
-// snapshotTree records small text files under root (dot-directories skipped).
-func snapshotTree(root string) map[string]string {
-	out := map[string]string{}
-	total := 0
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if path != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil || !info.Mode().IsRegular() || info.Size() > reviewSnapshotMaxFile || total+int(info.Size()) > reviewSnapshotMaxTotal {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		total += len(data)
-		out[filepath.ToSlash(rel)] = string(data)
-		return nil
-	})
-	return out
-}
-
-// renderTreeChanges lists new, modified (full new content) and deleted files
-// relative to the before snapshot, bounded for the review prompt.
-func renderTreeChanges(root string, before map[string]string) string {
-	after := snapshotTree(root)
-	var paths []string
-	for p := range after {
-		if old, ok := before[p]; !ok || old != after[p] {
-			paths = append(paths, p)
-		}
-	}
-	var deleted []string
-	for p := range before {
-		if _, ok := after[p]; !ok {
-			deleted = append(deleted, p)
-		}
-	}
-	sort.Strings(paths)
-	sort.Strings(deleted)
-	var b strings.Builder
-	for _, p := range paths {
-		kind := "modified"
-		if _, ok := before[p]; !ok {
-			kind = "new"
-		}
-		body := after[p]
-		if len(body) > reviewChangeMaxFile {
-			body = body[:reviewChangeMaxFile] + "\n[...truncated...]"
-		}
-		entry := fmt.Sprintf("### %s (%s, full content)\n```\n%s\n```\n", p, kind, strings.TrimRight(body, "\n"))
-		if b.Len()+len(entry) > reviewChangeMaxTotal {
-			fmt.Fprintf(&b, "### %s (%s, omitted: size limit)\n", p, kind)
-			continue
-		}
-		b.WriteString(entry)
-	}
-	for _, p := range deleted {
-		fmt.Fprintf(&b, "### %s (deleted)\n", p)
-	}
-	return b.String()
-}
+// The tree snapshot / change rendering now lives in package agent
+// (agent.SnapshotTree / agent.RenderTreeChanges) so the interactive
+// post-work review shares exactly the batch behaviour.

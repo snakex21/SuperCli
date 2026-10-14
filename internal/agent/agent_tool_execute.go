@@ -24,6 +24,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 	// advise (Task B) forces the read-only advisor worker regardless of any
 	// agent kind the model supplied: a second opinion must never edit files.
+	if ar.Advise && a.AdvisorOff {
+		return tools.Result{Err: fmt.Errorf("task: the advisor is turned off by the user; decide yourself or ask the user")}, nil
+	}
 	if ar.Advise {
 		ar.Agent = advisorAgentKind
 		// A configured advisor_model bills separately so its cost is visible.

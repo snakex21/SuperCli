@@ -18,6 +18,7 @@ import (
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	llmprompt "supercli/internal/llm/prompt"
+	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
 	systats "supercli/internal/system/stats"
 	"supercli/internal/tools"
@@ -303,7 +304,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// NestCafe preference key while the overlay migrates to the shared key.
 	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
 	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
-	if !officeProfile {
+	if !officeProfile && config.DarwinEnabled(tc) {
 		e.registerDarwin(reg, prov, cfg, tc, home, systemPrompt)
 	}
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
@@ -346,6 +347,8 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		// wiring, so every failure since the GUI became the primary
 		// front-end was classified and then thrown away.
 		ErrorLog: e.toolErrorLog(),
+		// review_model: interactive post-work review ("Sprawdzanie"); nil = off.
+		Review: e.postReviewConfig(tc),
 	})
 	if err != nil {
 		return nil, nil, err

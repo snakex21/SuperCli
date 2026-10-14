@@ -916,23 +916,68 @@ async function renderStats() {
         });
         box.appendChild(rowM);
       }
-      // Advisor model — where task advise:true second opinions go.
-      // Empty = the worker model, so the advisor is always available.
-      var knobA = null;
-      (cfg.knobs || []).forEach(function (k) { if (k.key === "advisor_model") knobA = k; });
-      if (knobA) {
-        var rowA = el("div", "stat-row");
-        rowA.appendChild(i18nEl("span", "", "stats.advModel"));
-        supercliOrchPicker(rowA, knobA, function (v) {
-          jpost("/api/config", { key: "advisor_model", value: v })
-            .then(renderStats)
-            .catch(function (e2) { toast(e2.message); });
-        }, "stats.advModelDef");
-        box.appendChild(rowA);
-      }
     }
+    appendModesSection(box, cfg);
   }
   if (statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) box.setAttribute("aria-busy", "false");
+}
+
+// appendModesSection renders the "Modes" group: the few switches the user,
+// not the model, decides — which model gives second opinions (or none) and
+// whether the model may start Darwin by itself.
+function appendModesSection(box, cfg) {
+  var knobs = {};
+  (cfg.knobs || []).forEach(function (k) { knobs[k.key] = k; });
+  var knobA = knobs.advisor_model, knobR = knobs.review_model, knobD = knobs.darwin;
+  if (!knobA && !knobR && !knobD) return;
+  box.appendChild(i18nEl("div", "stats-head", "stats.modes"));
+  // Advisor model — where task advise:true second opinions go.
+  // Empty = the worker model; "off" hides the second opinion entirely.
+  if (knobA) {
+    var rowA = el("div", "stat-row");
+    rowA.appendChild(i18nEl("span", "", "stats.advModel"));
+    supercliOrchPicker(rowA, knobA, function (v) {
+      jpost("/api/config", { key: "advisor_model", value: v })
+        .then(renderStats)
+        .catch(function (e2) { toast(e2.message); });
+    }, "stats.advModelDef");
+    box.appendChild(rowA);
+  }
+  // Sprawdzanie (review_model) — after the work is done the chosen model
+  // checks the changes and sends notes back to the main model. The picker's
+  // default entry (empty value) means off: no review, zero cost.
+  if (knobR) {
+    var rowR = el("div", "stat-row");
+    rowR.appendChild(i18nEl("span", "", "stats.reviewModel"));
+    rowR.title = t("stats.reviewModelTip");
+    supercliOrchPicker(rowR, knobR, function (v) {
+      jpost("/api/config", { key: "review_model", value: v })
+        .then(renderStats)
+        .catch(function (e2) { toast(e2.message); });
+    }, "stats.reviewModelOff");
+    box.appendChild(rowR);
+  }
+  // Darwin — off by default (N candidates = N× cost); on offers the tool.
+  if (knobD) {
+    var rowD = el("div", "stat-row");
+    rowD.appendChild(i18nEl("span", "", "stats.darwinTool"));
+    rowD.title = t("setting.darwin.desc");
+    var cur = knobD.state === "on" ? "on" : "off";
+    var seg = el("span", "seg");
+    ["on", "off"].forEach(function (st) {
+      var b = el("button", st === cur ? "on" : "", t("set.state." + st));
+      b.type = "button";
+      b.addEventListener("click", function () {
+        if (st === cur) return;
+        jpost("/api/config", { key: "darwin", value: st === "on" ? "on" : "default" })
+          .then(renderStats)
+          .catch(function (e2) { toast(e2.message); });
+      });
+      seg.appendChild(b);
+    });
+    rowD.appendChild(seg);
+    box.appendChild(rowD);
+  }
 }
 
 // supercliOrchPicker renders the orchestrator-model selector: a compact
@@ -959,13 +1004,25 @@ function supercliOrchPicker(container, knobM, onSave, defKey) {
     function renderList(filter) {
       list.innerHTML = "";
       var base = el("div", "prow" + (cur === "" ? " active" : ""));
-      base.appendChild(el("span", "state-dot on"));
+      // For review_model the default entry means "off" (no review).
+      base.appendChild(el("span", knobM.key === "review_model" ? "state-dot" : "state-dot on"));
       base.appendChild(i18nEl("span", "pid", defKey));
       base.addEventListener("click", function () {
         pop.hidden = true;
         if (cur !== "") onSave("");
       });
       list.appendChild(base);
+      // The advisor picker can also switch the second opinion off.
+      if (knobM.key === "advisor_model") {
+        var offRow = el("div", "prow" + (cur.toLowerCase() === "off" ? " active" : ""));
+        offRow.appendChild(el("span", "state-dot"));
+        offRow.appendChild(i18nEl("span", "pid", "set.state.off"));
+        offRow.addEventListener("click", function () {
+          pop.hidden = true;
+          if (cur.toLowerCase() !== "off") onSave("off");
+        });
+        list.appendChild(offRow);
+      }
       var shown = 0;
       (modelCache || []).forEach(function (m) {
         if (m.hidden) return;

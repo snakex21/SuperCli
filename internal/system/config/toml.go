@@ -152,6 +152,11 @@ type TomlConfig struct {
 	// its own branch for review and a manual merge.
 	DarwinAutoMerge *bool `toml:"darwin_auto_merge"`
 
+	// Darwin exposes the darwin best-of-N tool to the model. Nil/true
+	// (default) = available; false = the tool is not registered, so the
+	// model cannot start it (the user's /darwin command keeps working).
+	Darwin *bool `toml:"darwin"`
+
 	// TaskParallel controls whether MULTIPLE `task` delegations emitted
 	// in a single model turn run concurrently. Tri-state: nil = auto
 	// (parallel for cloud backends, sequential for local ones, decided
