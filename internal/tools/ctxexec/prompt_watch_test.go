@@ -33,6 +33,8 @@ func TestPromptLine(t *testing.T) {
 		"=== RUN   TestFoo\n",
 		"Compiling crate:\n",
 		"Results:",
+		"    view_test.go:42: unexpected value:\n",
+		"main.go:5:2: undefined name:",
 	}
 	for _, q := range quiet {
 		if got := promptLine(q); got != "" {

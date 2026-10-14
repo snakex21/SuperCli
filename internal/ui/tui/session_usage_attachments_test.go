@@ -45,6 +45,7 @@ func TestResumeRestoresFullTranscriptAndPreservesDraft(t *testing.T) {
 	}
 	m := New(Options{Home: old.Cwd, SessionStore: store, NoColor: true, Language: "pl", Commands: map[string]SlashHandler{"resume": func(context.Context, string) (string, error) { return "raw tail must not leak", nil }}})
 	m.width, m.height = 70, 25
+	m.chat.thinkingCollapsed = false // resume keeps this choice; check full text
 	m.input.SetValue("draft stays")
 	m.chat.addSystem("old cost output")
 	next, cmd := m.resumeConversation(old.ID)

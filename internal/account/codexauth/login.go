@@ -213,7 +213,7 @@ func IsHeadless() bool {
 	if os.Getenv("SUPERCLI_HEADLESS") == "1" {
 		return true
 	}
-	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+	if (runtime.GOOS == "linux" || runtime.GOOS == "android") && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		return true
 	}
 	return false

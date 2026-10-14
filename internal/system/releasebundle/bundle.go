@@ -18,7 +18,7 @@ import (
 )
 
 var versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-var bundlePattern = regexp.MustCompile(`^supercli_([0-9]+\.[0-9]+\.[0-9]+)_(windows|linux|darwin)_(amd64|arm64)\.zip$`)
+var bundlePattern = regexp.MustCompile(`^supercli_([0-9]+\.[0-9]+\.[0-9]+)_(windows|linux|darwin|android)_(amd64|arm64)\.zip$`)
 
 type Options struct{ Version, OS, Arch, CLI, GUI, Source, Output string }
 

@@ -370,6 +370,10 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// --trace-jsonl: machine-readable tool/usage lines on stdout for
 	// the eval harness. nil (flag off) makes every call a no-op.
 	trace := newBatchTrace(os.Stdout, traceJSONL)
+	contextProbe := newBatchContextProbe(traceJSONL)
+	if contextProbe != nil {
+		runCtx = llm.WithRequestObserver(runCtx, contextProbe.observe)
+	}
 	toolCalls := 0
 
 	// Consume events. MessageEvent carries streaming fragments, not logical
@@ -443,6 +447,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if reviewer != nil {
 		usageLine.Review = &reviewer.trace
 	}
+	usageLine.Context = contextProbe.report(batchStats.Calls())
 	if result.Err != nil {
 		// Partial accounting survives the failure for the eval
 		// harness; plain batch output is unchanged.

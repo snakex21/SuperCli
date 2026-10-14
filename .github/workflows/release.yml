@@ -8,7 +8,7 @@ on:
       version:
         description: 'Stable version (x.y.z); packages and publishes the release'
         required: true
-        default: '1.0.7'
+        default: '1.0.8'
 
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
           - {goos: windows, goarch: amd64}
           - {goos: linux, goarch: amd64}
           - {goos: linux, goarch: arm64}
+          - {goos: android, goarch: arm64}
           - {goos: darwin, goarch: amd64}
           - {goos: darwin, goarch: arm64}
     steps:

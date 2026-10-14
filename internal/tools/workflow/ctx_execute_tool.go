@@ -46,16 +46,16 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one sandbox command, including builds/tests/checks; bounded output JSON: {stdout, stderr, exit_code, truncated_stdout, truncated_stderr, duration_ms, command, workdir, error}. Never read/create/edit/convert/unpack DOCX here; use read_docx/edit_docx. Wait for exit or Stop; timeout_ms 0/omitted has no runtime limit. Persistent servers/watchers: discover process_session, start once and reuse its id.",
+		Description: "Run one sandbox command (builds/tests/checks); returns bounded JSON {stdout, stderr, exit_code, truncated_*, duration_ms, error}. Not for DOCX (use read_docx/edit_docx). Servers/watchers: use process_session.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "argv (binary + args), not shell text; e.g. [\"git\",\"status\",\"--short\"]. Only installed PATH binaries, resolved directly. JSON-encoded argv strings also work (\"[\\\"git\\\",\\\"status\\\"]\"). Use search_code rather than assuming rg exists. Windows built-ins: [\"cmd\",\"/c\",...]."},
+				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "argv, not shell text, e.g. [\"git\",\"status\"]; PATH binaries only (prefer search_code over rg). Windows built-ins: [\"cmd\",\"/c\",...]."},
 				"workdir": {"type": "string", "description": "Home/workspace-relative working dir; default: home root."},
-				"timeout_ms": {"type": "integer", "minimum": 0, "maximum": %d, "default": 0, "description": "0 or omitted: wait until completion/cancellation. Positive: optional timeout in ms."},
-				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "stdout cap in KB, clamped to 64; keeps tail."},
-				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "stderr cap in KB, clamped to 64; keeps tail."},
-				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "Optional KEY=VALUE env vars. Rarely needed."}
+				"timeout_ms": {"type": "integer", "minimum": 0, "maximum": %d, "default": 0, "description": "0 = no limit."},
+				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "KB cap (max 64), keeps tail."},
+				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "KB cap (max 64), keeps tail."},
+				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "KEY=VALUE, rarely needed."}
 			},
 			"required": ["command"]
 		}`, ctxexec.MaxTimeoutMS),

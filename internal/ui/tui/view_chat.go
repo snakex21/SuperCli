@@ -51,8 +51,8 @@ type chat struct {
 	activeCache       *activeSectionCache
 	searchCache       *transcriptSearchCache
 
-	// thinkingCollapsed toggles <thinking> block visibility.
-	// Press 'T' to expand/collapse all thinking blocks.
+	// thinkingCollapsed folds finished <thinking> blocks (default on; a block
+	// still streaming stays visible). Press 'T' to expand/collapse all.
 	thinkingCollapsed   bool
 	toolsExpanded       bool
 	hideGenerationSpeed bool // zero/default keeps measured rates visible
@@ -64,7 +64,7 @@ func newChat(width int, language ...string) chat {
 	if len(language) > 0 {
 		lang = normalizeLanguage(language[0])
 	}
-	return chat{width: width, language: lang, legacySymbols: legacyTerminalSymbols(), searchCache: new(transcriptSearchCache)}
+	return chat{width: width, language: lang, legacySymbols: legacyTerminalSymbols(), searchCache: new(transcriptSearchCache), thinkingCollapsed: true}
 }
 
 // addUser appends a user prompt.

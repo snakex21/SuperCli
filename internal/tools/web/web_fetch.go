@@ -140,19 +140,16 @@ func (t *WebFetch) Spec() Tool {
 		ReuseTTL:   2 * time.Minute,
 		RefreshArg: "refresh",
 		NextTools:  []string{"web_download"},
-		Description: "Fetch a public web page by URL and return its title and readable text content (HTML is converted to plain text; scripts/styles/navigation stripped). " +
-			"Use when the user gives a URL, or after web_search to read a result in full. " +
-			"When only file URLs are needed, mode=media returns the title and declared media/download links (including PDF/ZIP links and download attributes) without unrelated page text. " +
-			"Set refresh=true only when a fresh network read is needed instead of reusing a recent result. " +
-			"For downloading binary assets or saving a URL to a file, use web_download instead. " +
-			"Do not use for local files (use read_lines/file tools), internal/private addresses (blocked), or APIs requiring authentication. Read-only; never submits forms.",
+		Description: "Read a public http(s) page as title + plain text (a given URL or a search result). " +
+			"mode=media lists only media/download links; refresh=true skips a recent cached read. To save files use web_download. " +
+			"Not for local files, private addresses or authenticated APIs.",
 		Schema: `{
   "type": "object",
   "properties": {
     "url":       {"type": "string", "description": "Full http(s) URL to fetch."},
-    "max_chars": {"type": "integer", "description": "Truncate returned content to this many characters (default 20000, max 100000)."},
-    "mode":      {"type": "string", "enum": ["text", "media"], "description": "text (default) returns readable page content; media scans only the first 64 KiB for title and declared media/download links, without fetching files or returning page text."},
-    "refresh":   {"type": "boolean", "description": "Bypass recent result reuse to make a fresh network read (default false)."}
+    "max_chars": {"type": "integer", "description": "Max characters (default 20000, max 100000)."},
+    "mode":      {"type": "string", "enum": ["text", "media"], "description": "text (default) or media (links only, first 64 KiB)."},
+    "refresh":   {"type": "boolean", "description": "Skip reuse of a recent result (default false)."}
   },
   "required": ["url"]
 }`,

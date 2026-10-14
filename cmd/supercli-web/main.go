@@ -28,6 +28,7 @@ import (
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
+	_ "supercli/internal/system/termux"
 	"supercli/internal/system/uilang"
 	"supercli/internal/tools/sandbox"
 	"supercli/internal/webgui"

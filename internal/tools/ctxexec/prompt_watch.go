@@ -131,6 +131,9 @@ func promptLine(tail string) string {
 	case strings.HasSuffix(line, "?"):
 		return clipPromptLine(line)
 	case strings.HasSuffix(line, ":"), strings.HasSuffix(line, ">"):
+		if sourceLocation.MatchString(line) {
+			return ""
+		}
 		for _, w := range promptWords {
 			if strings.Contains(lower, w) {
 				return clipPromptLine(line)
@@ -141,6 +144,9 @@ func promptLine(tail string) string {
 }
 
 const promptScanLines = 8
+
+// sourceLocation matches compiler/test lines such as "x_test.go:12: bad value:".
+var sourceLocation = regexp.MustCompile(`\S\.\w+:\d+(:\d+)?:`)
 
 func strongPrompt(line string) bool {
 	lower := strings.ToLower(line)

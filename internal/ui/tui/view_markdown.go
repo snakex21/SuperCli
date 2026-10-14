@@ -46,7 +46,7 @@ func renderAssistantMarkdown(text string, p Palette, collapsed bool, languages .
 	afterThinking := false
 	for _, seg := range segments {
 		if seg.thinking {
-			b.WriteString(renderThinkingBlock(seg.text, p, collapsed, language))
+			b.WriteString(renderThinkingBlock(seg.text, p, collapsed && !seg.open, language))
 			afterThinking = afterThinking || strings.TrimSpace(seg.text) != ""
 		} else {
 			if afterThinking {
@@ -157,6 +157,7 @@ func isDefinitelyResponseLine(line string) bool {
 type textSegment struct {
 	text     string
 	thinking bool
+	open     bool // unclosed thinking: still streaming
 }
 
 // splitThinking splits text by <thinking>...</thinking> tags.
@@ -185,7 +186,7 @@ func splitThinking(text string) []textSegment {
 			}
 		} else {
 			// Unclosed — streaming in progress.
-			out = append(out, textSegment{text: p, thinking: true})
+			out = append(out, textSegment{text: p, thinking: true, open: true})
 		}
 	}
 	return out

@@ -40,6 +40,8 @@ type batchTraceUsage struct {
 	// Review is set when review_model is on: the token split between
 	// the main model and the reviewer, plus each verdict.
 	Review *batchTraceReview `json:"review,omitempty"`
+	// Context is the per-request prompt breakdown (see batchContextProbe).
+	Context *batchTraceContext `json:"context,omitempty"`
 }
 
 // batchTrace writes `--trace-jsonl` events as JSON lines. A nil

@@ -21,6 +21,7 @@ func TestLateNativeReasoningPrecedesAnswerAndCompletes(t *testing.T) {
 		{agent.ReasoningEvent{Text: "First thought."}, agent.MessageEvent{Text: "Visible answer."}, agent.ReasoningEvent{Text: " Delayed thought."}},
 	} {
 		m := reasoningOrderModel()
+		m.chat.thinkingCollapsed = false // order check needs the thought text
 		for _, event := range events {
 			next, _ := m.handleAgentEvent(event)
 			m = next.(Model)
