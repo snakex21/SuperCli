@@ -5,14 +5,40 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"supercli/internal/llm"
 )
 
 const sessionMediaDirName = "session-media"
+
+// Publication of one image path is serialized process-wide, not only per
+// Store: several Stores may share a root. On Windows MoveFileEx keeps its
+// DELETE-access handle open briefly after the new name becomes visible, so a
+// second Store that sees the complete file in that window would hand its
+// caller a path whose open fails with a sharing violation. Striped and bounded.
+var sessionImagePublishLocks [64]sync.Mutex
+
+func lockSessionImagePublication(path string) func() {
+	key := path
+	if absolute, err := filepath.Abs(path); err == nil {
+		key = absolute
+	}
+	key = filepath.Clean(key)
+	if runtime.GOOS == "windows" {
+		key = strings.ToLower(key)
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	m := &sessionImagePublishLocks[h.Sum32()%uint32(len(sessionImagePublishLocks))]
+	m.Lock()
+	return m.Unlock
+}
 
 // ExternalizeImage implements agent.imageExternalizer without importing the
 // agent package. Tool-generated image bytes are written once to the session
@@ -62,6 +88,7 @@ func (s *Store) storeSessionImage(sessionID, mediaType string, data []byte) (str
 	// Store while its caller starts reading it (Windows sharing semantics).
 	s.mediaMu.Lock()
 	defer s.mediaMu.Unlock()
+	defer lockSessionImagePublication(path)()
 	complete, exists, checkErr := sessionImageComplete(path, len(data))
 	if checkErr != nil {
 		return "", [sha256.Size]byte{}, fmt.Errorf("session.Store.storeSessionImage create: %w", checkErr)

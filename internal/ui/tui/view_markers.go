@@ -3,6 +3,8 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -14,6 +16,8 @@ import (
 type Marker struct {
 	p        markerPalette
 	language string
+	// Code colours for file-read results; zero value renders plain.
+	colors renderColors
 }
 
 // Keep only marker styles by value. Model copies avoid duplicating the full
@@ -41,6 +45,7 @@ func NewMarker(p Palette, language ...string) Marker {
 			Success: p.Success, ToolErr: p.ToolErr, ToolName: p.ToolName, ToolOutput: p.ToolOutput,
 		},
 		language: lang,
+		colors:   p.renderColors(),
 	}
 }
 
@@ -144,6 +149,48 @@ func (m Marker) ToolResult(output string, isErr bool) string {
 // ToolResultFull renders tool output with the tool name header
 // and up to maxLines of content. expanded=true shows more lines.
 func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
+	return m.toolResultFull(toolName, output, expanded, "")
+}
+
+// fileReadTools return numbered "N | code" lines that get code colours.
+var fileReadTools = map[string]bool{"read_lines": true, "read_context": true, "read_many": true}
+
+// numberedCodeTools also include patch_file, whose written snapshot uses the
+// same numbered lines for the file named in its "path" argument.
+var numberedCodeTools = map[string]bool{"read_lines": true, "read_context": true, "read_many": true, "patch_file": true}
+
+var (
+	toolNumberedLine = regexp.MustCompile(`^(\s*\d+ \| ?)(.*)$`)
+	toolSectionPath  = regexp.MustCompile(`^== (?:\[\d+\] )?(.+):\d+-\d+ ==$`)
+	// Status lines of build/test logs, coloured like the GUI tool output.
+	toolOutOK  = regexp.MustCompile(`^\s*(?:ok\s|PASS\b|--- PASS|✓)`)
+	toolOutErr = regexp.MustCompile(`(?i)^\s*(?:FAIL\b|--- FAIL|panic:|error:|ERROR\b|fatal:|✗)`)
+)
+
+// toolFileLang returns the chroma tag (file extension) of a read_lines /
+// read_context call. read_many names its files in section headers instead.
+func toolFileLang(name, args string) string {
+	if !numberedCodeTools[name] {
+		return ""
+	}
+	var in struct {
+		File string `json:"file"`
+		Path string `json:"path"`
+	}
+	if json.Unmarshal([]byte(args), &in) != nil {
+		return ""
+	}
+	if in.File == "" {
+		in.File = in.Path
+	}
+	return pathCodeLang(in.File)
+}
+
+func pathCodeLang(path string) string {
+	return strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
+}
+
+func (m Marker) toolResultFull(toolName, output string, expanded bool, lang string) string {
 	maxLines := 4
 	if expanded {
 		maxLines = 40
@@ -166,12 +213,33 @@ func (m Marker) ToolResultFull(toolName, output string, expanded bool) string {
 	meta += " · " + humanSize(int64(len(output)))
 	b.WriteString(m.p.Success.Render("  + ") + m.p.ToolName.Render(toolName) + m.p.Dim.Render(" · "+meta))
 	shortened := false
+	highlight := numberedCodeTools[toolName] && m.colors.renderer != nil
 	for _, line := range lines {
 		if !expanded {
 			shortened = shortened || len([]rune(line)) > 180
 			line = compactWorkerText(line, 180)
 		}
 		b.WriteByte('\n')
+		if highlight {
+			if section := toolSectionPath.FindStringSubmatch(line); section != nil {
+				lang = pathCodeLang(section[1])
+			} else if parts := toolNumberedLine.FindStringSubmatch(line); parts != nil && parts[2] != "" {
+				if code := highlightCodeLinesFor(lang, parts[2:3], m.colors); code != nil {
+					b.WriteString(m.p.ToolOutput.Render("    │ "+parts[1]) + code[0])
+					continue
+				}
+			}
+		}
+		if !highlight && m.colors.renderer != nil {
+			if toolOutErr.MatchString(line) {
+				b.WriteString(m.p.ToolOutput.Render("    │ ") + m.p.ToolErr.Render(line))
+				continue
+			}
+			if toolOutOK.MatchString(line) {
+				b.WriteString(m.p.ToolOutput.Render("    │ ") + m.p.Success.Render(line))
+				continue
+			}
+		}
 		b.WriteString(m.p.ToolOutput.Render("    │ " + line))
 	}
 	if truncated {

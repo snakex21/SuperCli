@@ -1,6 +1,6 @@
 [
   "Un agent de programmation IA portable écrit en Go, avec une interface terminal (TUI), une interface bureau/web (GUI) et un mode traitement par lots partageant le même moteur.",
-  "Ce README décrit la version `1.0.8`. Les paquets portables sont distribués via [GitHub Releases]({releases}) ; une compilation locale ne signifie pas que sa version a déjà été publiée.",
+  "Ce README décrit la version `1.0.9`. Les paquets portables sont distribués via [GitHub Releases]({releases}) ; une compilation locale ne signifie pas que sa version a déjà été publiée.",
   "Captures d’écran",
   "![Interface web de SuperCli (GUI)]({guishot})",
   "![Centre d’actions du terminal de SuperCli (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Prise en main",
   "Extrayez le paquet correspondant à votre système et architecture dans un dossier accessible en écriture. Sous Windows, lancez `supercli.exe` pour le terminal ou `supercli-web.exe` pour la GUI. Conservez le dossier fourni `supercli-data/` à côté des exécutables.",
   "Sous Linux ou macOS, utilisez l'exécutable correspondant du paquet ou compilez les sources. Sélectionnez votre projet avec `--home` ; utilisez `--batch` pour une requête sans TUI.",
+  "Sous Android, installez en une ligne dans Termux. Le script télécharge la dernière version, vérifie la somme de contrôle et ajoute les commandes `supercli` et `supercli-web`. Relancez-le pour mettre à jour ; `supercli-data/` est conservé.",
   "Données portables",
   "Paramètres, sessions, mémoire, identifiants, caches, journaux et sauvegardes se trouvent dans `supercli-data/` à côté de l'application. Déplacez tout le dossier de l'application pour les emporter. L'application n'utilise ni `%APPDATA%`, ni `%LOCALAPPDATA%`, ni le registre Windows pour son état.",
   "`--home` et `SUPERCLI_HOME` sélectionnent l'espace de travail sans déplacer les données de l'application. Les paramètres propres au projet et les fichiers de travail utilisent `<project>/.supercli/`.",

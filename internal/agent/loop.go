@@ -70,6 +70,9 @@ type Loop struct {
 	backgroundMu       sync.Mutex
 	backgroundPending  atomic.Bool
 	backgroundMessages []backgroundMessage
+	// speculative is the single in-flight background compaction summary.
+	speculativeMu sync.Mutex
+	speculative   *speculativeCompact
 
 	provider               llm.Provider
 	registry               *tools.Registry
@@ -882,6 +885,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer close(out)
 	defer l.releaseConversation()
+	defer l.stopSpeculativeCompact() // the next Run has a different prefix
 	defer l.resultReuse.reset()
 	defer l.completedOps.reset()
 	defer func() { l.nativeRunTools, l.nativeRunSet = nil, false }()

@@ -274,6 +274,7 @@ function resolveHistoryToolCall(entry, call) {
   if (nativePreview && nativePreview._cancelNativeRender) nativePreview._cancelNativeRender();
   var name = call.name || message.name || "tool", args = call.arguments || "";
   var info = args ? toolHint(name, args) : {name: toolDisplayName(name), hint: clip(message.content || "", 90)};
+  applyToolKind(row, name);
   row._tname.title = name;
   row._tname.textContent = info.name;
   row._thint.textContent = info.hint;
@@ -287,7 +288,7 @@ function resolveHistoryToolCall(entry, call) {
     if (args && !FILE_READ_TOOLS[name]) {
       var input = document.createDocumentFragment();
       input.appendChild(i18nEl("div", "lbl", "tool.input"));
-      input.appendChild(el("pre", "", prettyJSON(args)));
+      input.appendChild(toolInputPre(args));
       body.insertBefore(input, body.firstChild);
     }
   } else {
@@ -404,6 +405,7 @@ function buildHistoryFragment(messages, pager, prepend) {
           { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
         var row = document.createElement("details");
         row.className = "tool-row done";
+        applyToolKind(row, persistedName);
         row.open = toolDisclosureOpen();
         var sum = el("summary");
         var historyName = el("span", "tname", historyInfo.name);

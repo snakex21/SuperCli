@@ -1,6 +1,6 @@
 [
   "Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.",
-  "Tämä README kuvaa versiota `1.0.8`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
+  "Tämä README kuvaa versiota `1.0.9`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
   "Kuvakaappaukset",
   "![SuperClin verkkokäyttöliittymä (GUI)]({guishot})",
   "![SuperClin päätteen toimintokeskus (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Aloittaminen",
   "Pura käyttöjärjestelmääsi ja arkkitehtuuriisi sopiva paketti kirjoitettavaan kansioon. Käynnistä Windowsissa `supercli.exe` päätettä tai `supercli-web.exe` GUI:ta varten. Pidä mukana toimitettu `supercli-data/`-kansio suoritettavien tiedostojen vieressä.",
   "Käytä Linuxissa tai macOS:ssä paketin vastaavaa suoritettavaa tiedostoa tai käännä lähdekoodista. Valitse projekti valitsimella `--home`; käytä `--batch`-valitsinta yhteen pyyntöön ilman TUI:ta.",
+  "Androidissa asenna yhdellä rivillä Termuxissa. Skripti lataa uusimman julkaisun, tarkistaa tarkistussumman ja lisää komennot `supercli` ja `supercli-web`. Päivitä ajamalla se uudelleen; `supercli-data/` säilyy.",
   "Siirrettävät tiedot",
   "Asetukset, istunnot, muisti, tunnistetiedot, välimuistit, lokit ja varmuuskopiot sijaitsevat sovelluksen vieressä kansiossa `supercli-data/`. Siirrä koko sovelluskansio ottaaksesi ne mukaan. Sovellus ei tallenna tilaansa sijainteihin `%APPDATA%`, `%LOCALAPPDATA%` eikä Windowsin rekisteriin.",
   "`--home` ja `SUPERCLI_HOME` valitsevat työtilan siirtämättä sovelluksen tietoja. Projektin ylikirjoittavat asetukset ja työtilan tiedostot käyttävät sijaintia `<project>/.supercli/`.",

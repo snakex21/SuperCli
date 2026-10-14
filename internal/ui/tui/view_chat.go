@@ -26,6 +26,7 @@ type msg struct {
 	text                string
 	collapsed           bool
 	toolName, toolError string
+	toolLang            string // code colours for file-read results
 	// Backend-measured rate, kept even while its presentation is disabled.
 	generationSpeed float64
 }
@@ -193,7 +194,7 @@ func (c *chat) renderMsgWrapHint(m msg, p Palette, hint bool) (string, bool) {
 			if m.toolError != "" {
 				return marker.ToolResultErr(m.toolName, m.toolError), false
 			}
-			return marker.ToolResultFull(m.toolName, m.text, c.toolsExpanded), false
+			return marker.toolResultFull(m.toolName, m.text, c.toolsExpanded, m.toolLang), false
 		}
 		// System messages already carry ANSI styling from
 		// the Marker methods (p.Marker.Render, p.Dim.Render,
@@ -378,7 +379,11 @@ func (c *chat) renderedLineForMessage(index int, p Palette) int {
 }
 
 func (c *chat) addToolResult(name, output, errText string) {
-	c.msgs = append(c.msgs, msg{role: roleSystem, text: output, toolName: name, toolError: errText})
+	c.addToolResultLang(name, output, errText, "")
+}
+
+func (c *chat) addToolResultLang(name, output, errText, lang string) {
+	c.msgs = append(c.msgs, msg{role: roleSystem, text: output, toolName: name, toolError: errText, toolLang: lang})
 	c.completedDirty = true
 	c.invalidateTranscriptSearch()
 }

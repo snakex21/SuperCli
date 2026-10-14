@@ -101,6 +101,7 @@ type Model struct {
 	pendingAsk  *pendingAsk
 	askQueue    []tools.AskRequest
 	toolNames   map[string]string
+	toolLangs   map[string]string // call ID → file extension for code colours
 	workerViews []workerView
 
 	// F26.2: shellRunner handles "!command" shell escapes.

@@ -60,7 +60,15 @@ function renderMarkdownish(text) {
     if (i % 2 === 1) {
       var lang = "", code = parts[i], nl = code.indexOf("\n");
       if (nl > 0) { lang = code.slice(0, nl).trim(); code = code.slice(nl + 1); }
-      html += '<pre data-lang="' + escAttr(lang) + '">' + codeCopyButtonHTML() + '<code>' + escHtml(code.replace(/\s+$/, "")) + "</code></pre>";
+      code = code.replace(/\s+$/, "");
+      // 03b-highlight.js returns fully escaped span markup, or null for plain
+      // text (unknown language, oversized block). Copy reads textContent, so
+      // the clipboard still receives the original source, not HTML. An
+      // unclosed fence is still streaming; it stays plain (matching the
+      // incremental text-node path) and is coloured once the fence closes.
+      var closed = i < parts.length - 1;
+      var highlighted = closed && typeof highlightCodeHTML === "function" ? highlightCodeHTML(code, lang) : null;
+      html += '<pre data-lang="' + escAttr(lang) + '">' + codeCopyButtonHTML() + '<code>' + (highlighted === null ? escHtml(code) : highlighted) + "</code></pre>";
     } else {
       // Some providers emit empty HTML comment markers while transitioning
       // between reasoning and visible text. They carry no content and should

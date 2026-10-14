@@ -69,6 +69,22 @@ func WrapCompactSummary(summary string) string {
 // gets its own instructions); tool results are truncated so a
 // huge file read doesn't blow the summarization call itself.
 func RenderCompactTranscript(msgs []llm.Message) string {
+	return renderCompactTranscript(msgs, 0)
+}
+
+// compactOlderTextCap bounds one older user/assistant text in the summary
+// input; head and tail survive around an explicit omission marker.
+const compactOlderTextCap = 3000
+
+// compactSummaryInput is the helper transcript: messages before the two
+// newest user turns have long texts capped. Tool excerpts, prior summaries
+// and the recent turns stay byte-identical to RenderCompactTranscript.
+func compactSummaryInput(msgs []llm.Message) string {
+	return renderCompactTranscript(msgs, autoCompactSplit(msgs))
+}
+
+// capBefore: user/assistant texts at indices below it are capped.
+func renderCompactTranscript(msgs []llm.Message, capBefore int) string {
 	if len(msgs) == 0 {
 		return ""
 	}
@@ -80,6 +96,9 @@ func RenderCompactTranscript(msgs []llm.Message) string {
 	for i, m := range msgs {
 		if m.Role == llm.RoleSystem {
 			continue
+		}
+		if i < capBefore {
+			m = capCompactText(m, compactOlderTextCap)
 		}
 		content := compactTranscriptContent(m)
 		if strings.TrimSpace(content) == "" {
@@ -101,6 +120,52 @@ func RenderCompactTranscript(msgs []llm.Message) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// capCompactText returns a copy of an older user/assistant message whose text
+// keeps head and tail. Tool results/calls and prior summaries are unchanged.
+func capCompactText(m llm.Message, budget int) llm.Message {
+	if (m.Role != llm.RoleUser && m.Role != llm.RoleAssistant) || IsLegacyCompactionSummary(m) {
+		return m
+	}
+	text := m.Content
+	if text == "" {
+		size := 0
+		for _, p := range m.Parts {
+			if p.Type == llm.PartTypeText {
+				size += len(p.Text)
+			}
+		}
+		if size <= budget {
+			return m
+		}
+		var b strings.Builder
+		b.Grow(size)
+		for _, p := range m.Parts {
+			if p.Type == llm.PartTypeText {
+				b.WriteString(p.Text)
+			}
+		}
+		text = b.String()
+	}
+	if len(text) <= budget {
+		return m
+	}
+	m.Content, m.Parts = compactHeadTail(text, budget), nil
+	return m
+}
+
+// compactHeadTail keeps ~2/3 head (instructions) and ~1/3 tail (outcome).
+func compactHeadTail(s string, budget int) string {
+	head := budget * 2 / 3
+	tail := len(s) - (budget - head)
+	for head > 0 && !utf8.RuneStart(s[head]) {
+		head--
+	}
+	for tail < len(s) && !utf8.RuneStart(s[tail]) {
+		tail++
+	}
+	return s[:head] + fmt.Sprintf("\n[... %d chars omitted ...]\n", utf8.RuneCountInString(s[head:tail])) + s[tail:]
 }
 
 // Preserve Content precedence, separator bytes and existing tool excerpts.
@@ -172,7 +237,7 @@ func compactTranscriptContent(m llm.Message) string {
 // Pending summary of msgs. Returns an error when the provider fails
 // or produces an empty, incomplete, oversized, or non-text answer.
 func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message) (string, error) {
-	transcript := RenderCompactTranscript(msgs)
+	transcript := compactSummaryInput(msgs)
 	if strings.TrimSpace(transcript) == "" {
 		return "", fmt.Errorf("nothing to summarize")
 	}

@@ -144,6 +144,9 @@ func (s *Store) deleteRows(ctx context.Context, id string, all bool) (removed in
 		return 0, nil, err
 	}
 	committed = true
+	// Best effort: give freed pages back to the filesystem (incremental
+	// auto_vacuum databases only). The deletion itself is already durable.
+	s.reclaimFreePages()
 	return len(ids), func() error {
 		// No request/transaction is retained by this post-gate cleanup.
 		s.mediaMu.Lock()

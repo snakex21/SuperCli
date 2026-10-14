@@ -1,6 +1,6 @@
 [
   "Prenosný AI agent na programovanie napísaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimom zdieľajúcimi jeden engine.",
-  "Tento README opisuje verziu `1.0.8`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases]({releases}); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.",
+  "Tento README opisuje verziu `1.0.9`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases]({releases}); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.",
   "Snímky obrazovky",
   "![Webové rozhranie SuperCli (GUI)]({guishot})",
   "![Centrum akcií v termináli SuperCli (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Začíname",
   "Rozbaľte balík pre svoj operačný systém a architektúru do priečinka s právom zápisu. Vo Windows spustite `supercli.exe` pre terminál alebo `supercli-web.exe` pre GUI. Priložený priečinok `supercli-data/` ponechajte vedľa spustiteľných súborov.",
   "V Linuxe alebo macOS použite príslušný spustiteľný súbor z balíka alebo zostavte zo zdrojového kódu. Projekt vyberte cez `--home`; pre jednu požiadavku bez TUI použite `--batch`.",
+  "V Androide nainštalujte jedným riadkom v Termuxe. Skript stiahne najnovšie vydanie, overí kontrolný súčet a pridá príkazy `supercli` a `supercli-web`. Na aktualizáciu ho spustite znova; `supercli-data/` sa zachová.",
   "Prenosné údaje",
   "Nastavenia, relácie, pamäť, prihlasovacie údaje, vyrovnávacie pamäte, záznamy a zálohy sú v `supercli-data/` vedľa aplikácie. Presuňte celý priečinok aplikácie, aby ste ich preniesli so sebou. Aplikácia na svoj stav nepoužíva `%APPDATA%`, `%LOCALAPPDATA%` ani register Windows.",
   "`--home` a `SUPERCLI_HOME` vyberajú pracovný priestor bez presunu údajov aplikácie. Projektové prepisy nastavení a pracovné artefakty používajú `<project>/.supercli/`.",

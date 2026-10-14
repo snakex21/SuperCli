@@ -882,6 +882,21 @@ function toolDisplayName(name) {
   return translated === key ? name : translated;
 }
 
+// Colour group of a tool row title: reading, writing, running or web.
+function toolKind(name) {
+  name = String(name || "");
+  if (superCliUI.fileMutationTools[name] || /^edit_/.test(name) || name === "remember") return "write";
+  if (name === "ctx_execute" || name === "process_session") return "run";
+  if (/^web_/.test(name) || name === "mcp_bridge") return "web";
+  if (/^(read_|search_|list_dir$|recall$|load_session_image$)/.test(name)) return "read";
+  return "";
+}
+function applyToolKind(row, name) {
+  row.classList.remove("tk-read", "tk-write", "tk-run", "tk-web");
+  var kind = toolKind(name);
+  if (kind) row.classList.add("tk-" + kind);
+}
+
 function commandPreview(command) {
   if (!Array.isArray(command)) command = [command];
   return "$ " + command.filter(function (part) { return part != null && String(part) !== ""; }).map(function (part) {
@@ -951,20 +966,46 @@ function mutationOutcomeLabel(name, output, isError) {
 var FILE_READ_TOOLS = {
   read_lines: true, read_context: true, read_many: true,
 };
+// Tools whose output can show numbered "N | code" lines of the file they name.
+var NUMBERED_CODE_TOOLS = {
+  read_lines: true, read_context: true, read_many: true, patch_file: true,
+};
 
-function appendFileReadPayload(body, text) {
+// Fence-style language tag of a tool file path: "a/b.go:1-40" → "go".
+function toolPathLang(path) {
+  var m = /\.([A-Za-z0-9+#_-]{1,12})(?::\d+(?:-\d+)?)?\s*$/.exec(String(path || ""));
+  return m ? m[1].toLowerCase() : "";
+}
+function toolArgsFile(args) {
+  try {
+    var parsed = JSON.parse(args || "{}");
+    if (!parsed) return "";
+    if (typeof parsed.file === "string") return parsed.file;
+    return typeof parsed.path === "string" ? parsed.path : "";
+  } catch (e) { return ""; }
+}
+
+function appendFileReadPayload(body, text, args) {
   var viewer = el("div", "tool-file-view");
+  // read_lines/read_context name the file in args; read_many per section.
+  var lang = toolPathLang(toolArgsFile(args));
   String(text == null ? "" : text).split(/\r?\n/).forEach(function (line) {
     var numbered = line.match(/^\s*(\d+)\s*\|\s?(.*)$/);
     if (numbered) {
       var row = el("div", "file-code-line");
       row.appendChild(el("span", "file-line-no", numbered[1]));
-      row.appendChild(el("code", "file-line-code", numbered[2] || " "));
+      var src = numbered[2], code = el("code", "file-line-code");
+      // highlightCodeHTML escapes everything it returns, or null for plain.
+      var html = src && lang && typeof highlightCodeHTML === "function" ? highlightCodeHTML(src, lang) : null;
+      if (html === null) code.textContent = src || " ";
+      else code.innerHTML = html;
+      row.appendChild(code);
       viewer.appendChild(row);
       return;
     }
     var section = line.match(/^==\s*(.*?)\s*==$/);
     if (section) {
+      lang = toolPathLang(section[1]);
       viewer.appendChild(el("div", "file-code-section", section[1]));
       return;
     }
@@ -1024,9 +1065,9 @@ function appendHistoryToolPayload(row, body, args, text, name) {
   return renderToolPayloadWhenOpen(row, function () {
     if (args && !FILE_READ_TOOLS[name]) {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
-      body.appendChild(el("pre", "", prettyJSON(args)));
+      body.appendChild(toolInputPre(args));
     }
-    appendToolPayload(body, t("tool.output"), text || "", name, false);
+    appendToolPayload(body, t("tool.output"), text || "", name, false, args);
     row._historyPayloadRendered = true;
   });
 }
@@ -1079,10 +1120,15 @@ function appendToolMediaPreview(row, text, name, isError) {
   row._mediaPreview = preview;
 }
 
-function appendToolPayload(body, label, text, name, isError) {
+function appendToolPayload(body, label, text, name, isError, args) {
   var raw = String(text == null ? "" : text);
   if (FILE_READ_TOOLS[name] && !isError) {
-    appendFileReadPayload(body, raw);
+    appendFileReadPayload(body, raw, args);
+    return;
+  }
+  if (NUMBERED_CODE_TOOLS[name] && !isError && /^\s*\d+ \|/m.test(raw)) {
+    body.appendChild(el("div", "lbl", label));
+    appendFileReadPayload(body, raw, args);
     return;
   }
   body.appendChild(el("div", "lbl", label));
@@ -1104,7 +1150,7 @@ function appendToolPayload(body, label, text, name, isError) {
   }
   var changes = toolChangeStats(name, raw);
   if (!changes.diff) {
-    body.appendChild(el("pre", "tool-output" + (isError ? " error" : ""), raw || t("tool.empty")));
+    body.appendChild(toolOutputPre(raw, isError));
     return;
   }
   var diff = el("div", "tool-diff");
@@ -1243,6 +1289,7 @@ function addToolCall(name, args, id) {
   var info = toolHint(name, args);
   var row = document.createElement("details");
   row.className = "tool-row";
+  applyToolKind(row, name);
   row.open = toolDisclosureOpen();
   var sum = el("summary");
   var title = el("span", "tname", info.name);
@@ -1262,8 +1309,9 @@ function addToolCall(name, args, id) {
   if (!FILE_READ_TOOLS[name] && name !== "task" && name !== "send_message") {
     renderToolPayloadWhenOpen(row, function () {
       body.appendChild(i18nEl("div", "lbl", "tool.input"));
-      body.appendChild(el("pre", "", prettyJSON(args)));
-      row._toolArgs = null;
+      body.appendChild(toolInputPre(args));
+      // patch_file output still needs its path to pick the code language.
+      if (!NUMBERED_CODE_TOOLS[name]) row._toolArgs = null;
       args = null;
     });
   }
@@ -1332,7 +1380,7 @@ function addToolResult(id, output, err) {
   // Live results start folded too. Large read/diff viewers should not occupy
   // the WebView DOM until the user actually expands this result.
   renderToolPayloadWhenOpen(row, function () {
-    appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err);
+    appendToolPayload(row._body, err ? t("tool.error") : t("tool.output"), payload, row._toolName, !!err, row._toolArgs);
   });
   smartScroll();
 }
@@ -1444,6 +1492,84 @@ function settleOpenTools() {
 }
 function prettyJSON(s) {
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s || ""; }
+}
+// highlightCodeHTML escapes everything it returns; null means plain text.
+function highlightedPre(cls, text, lang) {
+  var pre = el("pre", cls);
+  var html = text && lang && typeof highlightCodeHTML === "function" ? highlightCodeHTML(text, lang) : null;
+  if (html === null) pre.textContent = text;
+  else pre.innerHTML = html;
+  return pre;
+}
+
+// Argument names that carry file content; they use the target file's language.
+var TOOL_CODE_FIELDS = {
+  old: true, new: true, content: true, text: true, code: true, source: true,
+  replacement: true, patch: true, diff: true, input: true,
+};
+
+// Tool input: one row per argument instead of raw JSON, so multi-line strings
+// show real lines rather than "\n" escapes. Non-object input stays JSON.
+function toolInputPre(args) {
+  var parsed = null;
+  try { parsed = JSON.parse(args || ""); } catch (e) {}
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.keys(parsed).length) {
+    return highlightedPre("", prettyJSON(args), "json");
+  }
+  var lang = toolPathLang(typeof parsed.file === "string" ? parsed.file : parsed.path);
+  var view = el("div", "tool-input-view");
+  appendToolInputFields(view, parsed, "", lang);
+  return view;
+}
+function appendToolInputFields(view, obj, prefix, lang) {
+  Object.keys(obj).forEach(function (key) {
+    var value = obj[key], label = prefix + key;
+    // patch_file "changes": list each replacement's fields, numbered from 1.
+    if (Array.isArray(value) && value.length && value.every(function (v) { return v && typeof v === "object" && !Array.isArray(v); })) {
+      value.forEach(function (item, i) { appendToolInputFields(view, item, label + "[" + (i + 1) + "].", lang); });
+      return;
+    }
+    if (typeof value === "string" && (value.indexOf("\n") >= 0 || TOOL_CODE_FIELDS[key])) {
+      // Replaced text red, replacement green, so old/new read like a diff.
+      var side = /^old(_string|_text)?$/.test(key) ? " is-old" : /^new(_string|_text)?$/.test(key) ? " is-new" : "";
+      view.appendChild(el("div", "tool-input-key" + side, label));
+      var codeLang = key === "patch" || key === "diff" ? "diff" : TOOL_CODE_FIELDS[key] ? lang : "";
+      view.appendChild(highlightedPre("tool-input-code" + side, value || " ", codeLang));
+      return;
+    }
+    var row = el("div", "tool-input-field");
+    row.appendChild(el("span", "tool-input-key", label));
+    var shown = typeof value === "string" ? value : JSON.stringify(value);
+    var cls = typeof value === "string" ? "hl-str" : typeof value === "number" ? "hl-num" :
+      typeof value === "boolean" || value === null ? "hl-lit" : "";
+    if (cls) row.appendChild(el("span", "tool-input-val " + cls, shown));
+    else row.appendChild(highlightedPre("tool-input-val", shown, "json"));
+    view.appendChild(row);
+  });
+}
+
+// Plain tool output: JSON gets JSON colours; logs get status-line colours
+// (ok/PASS green, FAIL/panic/error red, warnings amber). Text never changes.
+var OUT_OK_LINE = /^\s*(?:ok\s|PASS\b|--- PASS|✓)/;
+var OUT_ERR_LINE = /^\s*(?:FAIL\b|--- FAIL|panic:|error:|ERROR\b|fatal:|✗)/i;
+var OUT_WARN_LINE = /^\s*(?:warning:|WARN\b)/i;
+function toolOutputPre(raw, isError) {
+  var cls = "tool-output" + (isError ? " error" : "");
+  if (!raw) return el("pre", cls, t("tool.empty"));
+  if (isError || raw.length > HL_MAX_CHARS) return el("pre", cls, raw);
+  if (/^\s*[\[{]/.test(raw)) {
+    try { JSON.parse(raw); return highlightedPre(cls, raw, "json"); } catch (e) {}
+  }
+  var marked = false, html = raw.split("\n").map(function (line) {
+    var lineCls = OUT_ERR_LINE.test(line) ? "out-err" : OUT_OK_LINE.test(line) ? "out-ok" : OUT_WARN_LINE.test(line) ? "out-warn" : "";
+    if (!lineCls) return escHtml(line);
+    marked = true;
+    return '<span class="' + lineCls + '">' + escHtml(line) + "</span>";
+  }).join("\n");
+  var pre = el("pre", cls);
+  if (marked) pre.innerHTML = html;
+  else pre.textContent = raw;
+  return pre;
 }
 
 function appendTaskBacklink(row) {

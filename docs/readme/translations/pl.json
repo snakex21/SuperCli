@@ -1,6 +1,6 @@
 [
   "Przenośny agent AI do programowania napisany w Go, z interfejsem terminalowym (TUI), interfejsem desktopowym/webowym (GUI) i trybem wsadowym korzystającymi ze wspólnego silnika.",
-  "Ten README opisuje wersję `1.0.8`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
+  "Ten README opisuje wersję `1.0.9`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
   "Zrzuty ekranu",
   "![Interfejs webowy SuperCli (GUI)]({guishot})",
   "![Centrum działań w terminalu SuperCli (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Pierwsze kroki",
   "Rozpakuj pakiet dla swojego systemu operacyjnego i architektury do folderu z prawem zapisu. W Windows uruchom `supercli.exe` dla terminala albo `supercli-web.exe` dla GUI. Dołączony folder `supercli-data/` pozostaw obok plików wykonywalnych.",
   "W Linux lub macOS użyj odpowiedniego pliku wykonywalnego z pakietu albo skompiluj kod źródłowy. Projekt wybierz przez `--home`; użyj `--batch` dla jednego polecenia bez TUI.",
+  "Na Androidzie zainstaluj jedną linią w Termuxie. Skrypt pobiera najnowsze wydanie, sprawdza sumę kontrolną i dodaje polecenia `supercli` oraz `supercli-web`. Aby zaktualizować, uruchom go ponownie; `supercli-data/` zostaje zachowany.",
   "Przenośne dane",
   "Ustawienia, sesje, pamięć, dane uwierzytelniające, pamięć podręczna, logi i kopie zapasowe znajdują się w `supercli-data/` obok aplikacji. Przenieś cały folder aplikacji, aby zabrać je ze sobą. Aplikacja nie używa `%APPDATA%`, `%LOCALAPPDATA%` ani rejestru Windows do przechowywania swojego stanu.",
   "`--home` i `SUPERCLI_HOME` wybierają obszar roboczy bez przenoszenia danych aplikacji. Nadpisania ustawień projektu i artefakty obszaru roboczego korzystają z `<project>/.supercli/`.",

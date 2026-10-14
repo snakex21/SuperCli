@@ -27,6 +27,9 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	estimate := l.nextRequestTokenEstimate()
 	est := estimate.Effective
 	if reason == "" && est <= threshold {
+		if float64(est) >= speculativeCompactFrac*float64(threshold) {
+			l.maybeStartSpeculativeCompact(ctx)
+		}
 		return nil
 	}
 	history := l.compactionHistory()
@@ -63,7 +66,11 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// time as model:compact, so context_prepare (which wraps
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
-		summary, err := l.summarizePrefix(ctx, prefix)
+		// A background summary of this exact prefix replaces the blocking call.
+		summary, err, ok := l.takeSpeculativeCompact(ctx, prefix)
+		if !ok {
+			summary, err = l.summarizePrefix(ctx, prefix)
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -362,6 +369,7 @@ func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- 
 
 // summarizePrefix measures helper inference separately from local context work.
 func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (string, error) {
+	l.stopSpeculativeCompact() // never two summaries at once
 	start := time.Now()
 	var scope compactToolScope
 	if l.registry != nil {

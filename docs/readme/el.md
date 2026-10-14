@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Ένας φορητός πράκτορας AI για προγραμματισμό, γραμμένος σε Go, με διεπαφή τερματικού (TUI), επιτραπέζια/διαδικτυακή διεπαφή (GUI) και λειτουργία δέσμης που μοιράζονται μία μηχανή.
 
 <!-- readme-unit:status -->
-Αυτό το README περιγράφει την έκδοση `1.0.8`. Τα φορητά πακέτα διανέμονται μέσω του [GitHub Releases](https://github.com/snakex21/SuperCli/releases)· μια τοπική μεταγλώττιση δεν σημαίνει ότι η έκδοσή της έχει ήδη δημοσιευτεί.
+Αυτό το README περιγράφει την έκδοση `1.0.9`. Τα φορητά πακέτα διανέμονται μέσω του [GitHub Releases](https://github.com/snakex21/SuperCli/releases)· μια τοπική μεταγλώττιση δεν σημαίνει ότι η έκδοσή της έχει ήδη δημοσιευτεί.
 
 <!-- readme-unit:h.screenshots -->
 ## Στιγμιότυπα οθόνης
@@ -43,6 +43,13 @@
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Στο Android, εγκαταστήστε με μία γραμμή στο Termux. Το σενάριο κατεβάζει την πιο πρόσφατη έκδοση, ελέγχει το άθροισμα ελέγχου και προσθέτει τις εντολές `supercli` και `supercli-web`. Εκτελέστε το ξανά για ενημέρωση· το `supercli-data/` διατηρείται.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

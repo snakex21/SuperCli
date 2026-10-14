@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.
 
 <!-- readme-unit:status -->
-Šis README apraksta versiju `1.0.8`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
+Šis README apraksta versiju `1.0.9`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrānuzņēmumi
@@ -43,6 +43,13 @@ Linux vai macOS sistēmā izmantojiet atbilstošo izpildāmo failu no komplekta 
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Android ierīcē instalējiet ar vienu rindu Termux. Skripts lejupielādē jaunāko laidienu, pārbauda kontrolsummu un pievieno komandas `supercli` un `supercli-web`. Lai atjauninātu, palaidiet to vēlreiz; `supercli-data/` tiek saglabāta.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

@@ -39,6 +39,12 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			m.toolNames = make(map[string]string)
 		}
 		m.toolNames[e.ID] = e.Name
+		if lang := toolFileLang(e.Name, e.Args); lang != "" {
+			if m.toolLangs == nil {
+				m.toolLangs = make(map[string]string)
+			}
+			m.toolLangs[e.ID] = lang
+		}
 		m.toolActivity.call(e.Name, e.Args)
 		line := m.marker.ToolCall(e.Name, e.Args)
 		m.appendLine(line)
@@ -55,11 +61,13 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			name = m.lastToolName
 		}
 		delete(m.toolNames, e.ID)
+		lang := m.toolLangs[e.ID]
+		delete(m.toolLangs, e.ID)
 		if e.Err != nil {
 			m.toolActivity.errors++
 			m.chat.addToolResult(name, e.Output, e.Err.Error())
 		} else {
-			m.chat.addToolResult(name, e.Output, "")
+			m.chat.addToolResultLang(name, e.Output, "", lang)
 		}
 		m.markTranscriptPresent()
 		m.refreshTranscript()

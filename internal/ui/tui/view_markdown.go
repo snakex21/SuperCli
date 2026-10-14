@@ -92,7 +92,8 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languag
 		inThinking = false
 	}
 
-	for i, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if isHeuristicThinkingLine(line) && !isDefinitelyResponseLine(line) {
 			if !inThinking {
 				// Flush any pending normal text first.
@@ -114,6 +115,12 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languag
 			if afterThinking && strings.TrimSpace(line) != "" {
 				b.WriteString(renderAnswerHeading(p, language))
 				afterThinking = false
+			}
+			if isFenceLine(line) {
+				block, next := renderFencedBlock(lines, i, p)
+				b.WriteString(block)
+				i = next - 1
+				continue
 			}
 			b.WriteString(renderMarkdownLine(line, p))
 		}
@@ -231,11 +238,17 @@ func renderMarkdownBody(text string, p Palette) string {
 	}
 	lines := strings.Split(text, "\n")
 	var b strings.Builder
-	for i, line := range lines {
+	for i := 0; i < len(lines); i++ {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(renderMarkdownLine(line, p))
+		if isFenceLine(lines[i]) {
+			block, next := renderFencedBlock(lines, i, p)
+			b.WriteString(block)
+			i = next - 1
+			continue
+		}
+		b.WriteString(renderMarkdownLine(lines[i], p))
 	}
 	return b.String()
 }

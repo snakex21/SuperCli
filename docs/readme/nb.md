@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.
 
 <!-- readme-unit:status -->
-Denne README beskriver versjon `1.0.8`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
+Denne README beskriver versjon `1.0.9`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
 
 <!-- readme-unit:h.screenshots -->
 ## Skjermbilder
@@ -43,6 +43,13 @@ På Linux eller macOS bruker du den tilsvarende kjørbare filen fra pakken eller
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+På Android installerer du med én linje i Termux. Skriptet laster ned den nyeste utgivelsen, kontrollerer sjekksummen og legger til kommandoene `supercli` og `supercli-web`. Kjør det på nytt for å oppdatere; `supercli-data/` beholdes.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

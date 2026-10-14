@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.
 
 <!-- readme-unit:status -->
-Bu README `1.0.8` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
+Bu README `1.0.9` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekran görüntüleri
@@ -43,6 +43,13 @@ Linux veya macOS'ta paketteki uygun yürütülebilir dosyayı kullanın ya da ka
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Android'de Termux içinde tek satırla kurun. Betik en yeni sürümü indirir, sağlama toplamını doğrular ve `supercli` ile `supercli-web` komutlarını ekler. Güncellemek için yeniden çalıştırın; `supercli-data/` korunur.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

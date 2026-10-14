@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.
 
 <!-- readme-unit:status -->
-Tento README popisuje verzi `1.0.8`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
+Tento README popisuje verzi `1.0.9`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky
@@ -43,6 +43,13 @@ V Linuxu nebo macOS použijte odpovídající spustitelný soubor z balíčku ne
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Na Androidu nainstalujte jedním řádkem v Termuxu. Skript stáhne nejnovější vydání, ověří kontrolní součet a přidá příkazy `supercli` a `supercli-web`. Pro aktualizaci jej spusťte znovu; `supercli-data/` zůstane zachována.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

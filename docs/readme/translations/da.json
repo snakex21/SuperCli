@@ -1,6 +1,6 @@
 [
   "En bærbar AI-kodningsagent skrevet i Go, med en terminalgrænseflade (TUI), en skrivebords-/webgrænseflade (GUI) og batchtilstand, der deler én motor.",
-  "Denne README beskriver version `1.0.8`. Bærbare udgivelsespakker distribueres via [GitHub Releases]({releases}); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.",
+  "Denne README beskriver version `1.0.9`. Bærbare udgivelsespakker distribueres via [GitHub Releases]({releases}); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.",
   "Skærmbilleder",
   "![SuperClis webgrænseflade (GUI)]({guishot})",
   "![SuperClis handlingscenter i terminalen (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Kom i gang",
   "Udpak pakken til dit operativsystem og din arkitektur i en skrivbar mappe. På Windows starter du `supercli.exe` til terminalen eller `supercli-web.exe` til GUI. Behold den medfølgende mappe `supercli-data/` ved siden af de eksekverbare filer.",
   "På Linux eller macOS bruger du den tilsvarende eksekverbare fil fra pakken eller bygger fra kildekoden. Vælg dit projekt med `--home`; brug `--batch` til én forespørgsel uden TUI.",
+  "På Android installerer du med én linje i Termux. Scriptet henter den nyeste udgivelse, kontrollerer checksummen og tilføjer kommandoerne `supercli` og `supercli-web`. Kør det igen for at opdatere; `supercli-data/` bevares.",
   "Bærbare data",
   "Indstillinger, sessioner, hukommelse, legitimationsoplysninger, cache, logfiler og sikkerhedskopier ligger i `supercli-data/` ved siden af programmet. Flyt hele programmappen for at tage dem med. Programmet bruger ikke `%APPDATA%`, `%LOCALAPPDATA%` eller Windows-registreringsdatabasen til sin tilstand.",
   "`--home` og `SUPERCLI_HOME` vælger arbejdsområdet uden at flytte programmets data. Projektets tilsidesættelser og arbejdsfiler bruger `<project>/.supercli/`.",

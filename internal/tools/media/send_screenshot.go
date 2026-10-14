@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"supercli/internal/tools/sandbox"
 )
@@ -321,6 +322,8 @@ func (t *SendScreenshotTool) saveSnapshot(source string, data []byte, mediaType 
 		_ = os.Remove(path)
 		return "", closeErr
 	}
+	// Best-effort retention; never fails the capture that was just saved.
+	pruneSnapshots(dir, filepath.Join(base, snapshotSessionMediaDir), time.Now())
 	return path, nil
 }
 

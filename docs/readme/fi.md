@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
 
-# SuperCli 1.0.8
+# SuperCli 1.0.9
 
 <!-- readme-unit:intro -->
 Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.
 
 <!-- readme-unit:status -->
-Tämä README kuvaa versiota `1.0.8`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
+Tämä README kuvaa versiota `1.0.9`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvakaappaukset
@@ -43,6 +43,13 @@ Käytä Linuxissa tai macOS:ssä paketin vastaavaa suoritettavaa tiedostoa tai k
 ./supercli --home ./my-project
 ./supercli --batch "Summarize this project"
 ./supercli --doctor
+```
+
+<!-- readme-unit:start.termux -->
+Androidissa asenna yhdellä rivillä Termuxissa. Skripti lataa uusimman julkaisun, tarkistaa tarkistussumman ja lisää komennot `supercli` ja `supercli-web`. Päivitä ajamalla se uudelleen; `supercli-data/` säilyy.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

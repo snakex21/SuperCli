@@ -1,6 +1,6 @@
 [
   "Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfejsom (TUI), desktop/veb interfejsom (GUI) i paketnim režimom koji dele jedan mehanizam.",
-  "Ovaj README opisuje verziju `1.0.8`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
+  "Ovaj README opisuje verziju `1.0.9`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
   "Snimci ekrana",
   "![Veb interfejs SuperCli (GUI)]({guishot})",
   "![Centar radnji u terminalu SuperCli (TUI)]({tuishot})",
@@ -8,6 +8,7 @@
   "Početak rada",
   "Raspakujte paket za svoj operativni sistem i arhitekturu u fasciklu u koju može da se piše. U Windowsu pokrenite `supercli.exe` za terminal ili `supercli-web.exe` za GUI. Priloženu fasciklu `supercli-data/` držite pored izvršnih datoteka.",
   "Na Linuxu ili macOS-u koristite odgovarajuću izvršnu datoteku iz paketa ili kompajlirajte iz izvornog koda. Projekat izaberite pomoću `--home`; koristite `--batch` za jedan upit bez TUI-ja.",
+  "Na Androidu instalirajte jednim redom u Termuxu. Skripta preuzima najnovije izdanje, proverava kontrolni zbir i dodaje komande `supercli` i `supercli-web`. Za ažuriranje pokrenite je ponovo; `supercli-data/` se čuva.",
   "Prenosivi podaci",
   "Podešavanja, sesije, memorija, akreditivi, keševi, dnevnici i rezervne kopije nalaze se u `supercli-data/` pored aplikacije. Premestite celu fasciklu aplikacije da ih ponesete sa sobom. Aplikacija za svoje stanje ne koristi `%APPDATA%`, `%LOCALAPPDATA%` niti Windows registar.",
   "`--home` i `SUPERCLI_HOME` biraju radni prostor bez premeštanja podataka aplikacije. Projektna nadjačavanja podešavanja i radni artefakti koriste `<project>/.supercli/`.",
