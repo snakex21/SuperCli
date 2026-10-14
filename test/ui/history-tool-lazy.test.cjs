@@ -384,7 +384,9 @@ test('folded live inputs defer formatting and retain exact input before output o
   assert.deepEqual(h.formats, []);
   row.open = true; row.dispatch('toggle');
   assert.deepEqual(h.formats, [args]);
-  assert.deepEqual(row._body.children.map(n => n.textContent), ['tool.input', JSON.stringify(JSON.parse(args), null, 2), 'tool.output', 'file ready']);
+  // Code arguments render as key/value rows: key text then the exact value.
+  assert.deepEqual(row._body.children.map(n => n.textContent), ['tool.input', 'pathfixture.gocontent' + JSON.parse(args).content, 'tool.output', 'file ready']);
+  assert.equal(row._body.children[1].className, 'tool-input-view');
   const input = row._body.children[1], output = row._body.children[3];
   row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
   assert.equal(row._body.children.length, 4);
@@ -494,7 +496,8 @@ test('materialized live input releases raw arguments while retaining complete vi
     const before=row._toolArgs;
     row.open=true; row.dispatch('toggle');
     const input=row._body.children[1];
-    let expected; try { expected=JSON.stringify(JSON.parse(args),null,2); } catch { expected=args || ''; }
+    // Objects with code fields render as key/value rows; anything else stays pretty JSON or raw text.
+    let expected; try { expected=Object.entries(JSON.parse(args)).map(([k,v])=>k+v).join(''); } catch { expected=args || ''; }
     assert.equal(input.textContent,expected); assert.equal(row._toolArgs,null);
     row.open=false;row.dispatch('toggle');row.open=true;row.dispatch('toggle');
     assert.equal(row._body.children[1],input); assert.deepEqual(h.formats,[args]);
@@ -507,7 +510,7 @@ test('failed input formatting or insertion retains raw arguments and original co
     const h=liveInputHarness(), args='{"path":"keep","content":"full source"}', error=new Error('original '+fail+' failure');
     h.c.addToolCall('create_file',args,'failed');const row=h.c.toolRows.failed;
     if(fail==='format') h.c.prettyJSON=()=>{throw error;};
-    else {const append=row._body.appendChild;row._body.appendChild=function(node){if(node.tag==='pre')throw error;return append.call(this,node);};}
+    else {const append=row._body.appendChild;row._body.appendChild=function(node){if(node.className!=='lbl')throw error;return append.call(this,node);};}
     row.open=true;assert.throws(()=>row.dispatch('toggle'),value=>value===error);
     assert.equal(row._toolArgs,args);const count=row._body.children.length;
     row.open=false;row.dispatch('toggle');row.open=true;row.dispatch('toggle');

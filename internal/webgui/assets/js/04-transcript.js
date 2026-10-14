@@ -1511,15 +1511,25 @@ var TOOL_CODE_FIELDS = {
 // Tool input: one row per argument instead of raw JSON, so multi-line strings
 // show real lines rather than "\n" escapes. Non-object input stays JSON.
 function toolInputPre(args) {
-  var parsed = null;
-  try { parsed = JSON.parse(args || ""); } catch (e) {}
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.keys(parsed).length) {
-    return highlightedPre("", prettyJSON(args), "json");
+  var pretty = prettyJSON(args), parsed = null;
+  try { parsed = JSON.parse(pretty || ""); } catch (e) {}
+  // Short one-line arguments read fine as JSON; rows only help with code.
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !toolInputHasCode(parsed)) {
+    return highlightedPre("", pretty, "json");
   }
   var lang = toolPathLang(typeof parsed.file === "string" ? parsed.file : parsed.path);
   var view = el("div", "tool-input-view");
   appendToolInputFields(view, parsed, "", lang);
   return view;
+}
+function toolInputHasCode(obj) {
+  return Object.keys(obj).some(function (key) {
+    var value = obj[key];
+    if (typeof value === "string") return value.indexOf("\n") >= 0 || !!TOOL_CODE_FIELDS[key];
+    return Array.isArray(value) && value.some(function (v) {
+      return v && typeof v === "object" && !Array.isArray(v) && toolInputHasCode(v);
+    });
+  });
 }
 function appendToolInputFields(view, obj, prefix, lang) {
   Object.keys(obj).forEach(function (key) {
@@ -1556,19 +1566,20 @@ var OUT_WARN_LINE = /^\s*(?:warning:|WARN\b)/i;
 function toolOutputPre(raw, isError) {
   var cls = "tool-output" + (isError ? " error" : "");
   if (!raw) return el("pre", cls, t("tool.empty"));
-  if (isError || raw.length > HL_MAX_CHARS) return el("pre", cls, raw);
+  // 03b-highlight.js may be absent (tests load single files); same limit then.
+  var maxChars = typeof HL_MAX_CHARS === "number" ? HL_MAX_CHARS : 200000;
+  if (isError || raw.length > maxChars) return el("pre", cls, raw);
   if (/^\s*[\[{]/.test(raw)) {
     try { JSON.parse(raw); return highlightedPre(cls, raw, "json"); } catch (e) {}
   }
-  var marked = false, html = raw.split("\n").map(function (line) {
-    var lineCls = OUT_ERR_LINE.test(line) ? "out-err" : OUT_OK_LINE.test(line) ? "out-ok" : OUT_WARN_LINE.test(line) ? "out-warn" : "";
-    if (!lineCls) return escHtml(line);
-    marked = true;
-    return '<span class="' + lineCls + '">' + escHtml(line) + "</span>";
-  }).join("\n");
+  var lines = raw.split("\n"), classes = lines.map(function (line) {
+    return OUT_ERR_LINE.test(line) ? "out-err" : OUT_OK_LINE.test(line) ? "out-ok" : OUT_WARN_LINE.test(line) ? "out-warn" : "";
+  });
   var pre = el("pre", cls);
-  if (marked) pre.innerHTML = html;
-  else pre.textContent = raw;
+  if (!classes.some(Boolean)) { pre.textContent = raw; return pre; }
+  pre.innerHTML = lines.map(function (line, i) {
+    return classes[i] ? '<span class="' + classes[i] + '">' + escHtml(line) + "</span>" : escHtml(line);
+  }).join("\n");
   return pre;
 }
 
