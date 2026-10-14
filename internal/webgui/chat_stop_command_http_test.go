@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -197,14 +196,7 @@ func TestChatHTTPStopKillsCommandAndNextPromptReachesProvider(t *testing.T) {
 func TestChatGUIStopCommandAndSendUsingProductionJS(t *testing.T) {
 	for _, mode := range []string{"running-command", "checkpoint-store-held"} {
 		t.Run(mode, func(t *testing.T) {
-			node := os.Getenv("SUPERCLI_TEST_NODE_EXE")
-			if node == "" {
-				var err error
-				node, err = exec.LookPath("node")
-				if err != nil {
-					t.Skip("Node.js unavailable for production GUI integration")
-				}
-			}
+			node := productionGUINode(t)
 			curl, err := exec.LookPath("curl")
 			if err != nil {
 				t.Skip("native curl unavailable")

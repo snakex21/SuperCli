@@ -103,18 +103,29 @@ func commandEndHTTPRoot(t *testing.T) (string, string) {
 	return root, dir
 }
 
+// productionGUINode returns Node for the DOM fixtures. Without an explicit
+// SUPERCLI_TEST_NODE_EXE it skips when Node or the dev-only linkedom package
+// (installed by npm ci) is missing, so Go-only local runs need no Node setup.
+func productionGUINode(t *testing.T) string {
+	t.Helper()
+	if node := os.Getenv("SUPERCLI_TEST_NODE_EXE"); node != "" {
+		return node
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js unavailable for production GUI integration")
+	}
+	if err := exec.Command(node, "-e", "require.resolve('linkedom')").Run(); err != nil {
+		t.Skip("linkedom unavailable (npm ci) for production GUI integration")
+	}
+	return node
+}
+
 func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("native cmd regression requires Windows")
 	}
-	node := os.Getenv("SUPERCLI_TEST_NODE_EXE")
-	if node == "" {
-		var err error
-		node, err = exec.LookPath("node")
-		if err != nil {
-			t.Skip("Node.js unavailable for production GUI integration")
-		}
-	}
+	node := productionGUINode(t)
 	if _, err := exec.LookPath("cmd"); err != nil {
 		t.Fatal("native cmd unavailable: ", err)
 	}
