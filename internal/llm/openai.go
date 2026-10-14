@@ -235,7 +235,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	// upstream then rejects image input, the transport-local learning below
 	// retries once without images and skips the doomed attempt on later turns.
 	visionAttempt := p.caps.AllowsVisionAttempt(p.capabilityModel()) && !p.imageRejected.Load()
-	reqBody, err := buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+	// OpenCode Zen retires models in place (410 ModelDeprecated). A successor
+	// learned on an earlier turn goes straight onto the wire here, so a
+	// deprecated id stops costing a doomed round-trip every request.
+	reqModel := zenEffectiveModel(p.cfg.BaseURL, p.cfg.Model)
+	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -271,6 +275,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		var streamCancel func()
 		effortRetried := false
 		visionRetried := false
+		zenRemapped := false
 		for {
 			reqCtx, cancel := context.WithCancel(ctx)
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(reqBody))
@@ -324,7 +329,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			// on a 400.
 			if visionAttempt && !visionRetried && messagesContainImage(msgs) && isImageRejection(resp.StatusCode, body) {
 				p.imageRejected.Store(true)
-				reqBody, err = buildOpenAIRequestWithReasoningKey(p.cfg.Model, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
 				if err == nil {
 					visionRetried = true
 					select {
@@ -333,6 +338,27 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 						return
 					}
 					continue
+				}
+			}
+			// OpenCode Zen retired the configured model (HTTP 410
+			// ModelDeprecated) and named its successor. Learn it, retarget
+			// this request and retry once instead of failing the turn —
+			// same shape as the effort and vision learning above, and the
+			// only time the 410 costs a whole request.
+			if !zenRemapped && isOpenCodeZenBaseURL(p.cfg.BaseURL) {
+				if repl := zenModelDeprecation(resp.StatusCode, body); repl != "" && !strings.EqualFold(repl, reqModel) {
+					if patched, old, patchedOK := retargetRequestModel(reqBody, repl); patchedOK {
+						reqBody = patched
+						rememberZenReplacement(p.cfg.BaseURL, p.cfg.Model, old, repl)
+						reqModel = repl
+						zenRemapped = true
+						select {
+						case out <- Delta{Notice: fmt.Sprintf("model %q has been deprecated by the provider; now using %q", old, repl)}:
+						case <-ctx.Done():
+							return
+						}
+						continue
+					}
 				}
 			}
 			responseErr := newHTTPResponseError(resp.StatusCode, body,

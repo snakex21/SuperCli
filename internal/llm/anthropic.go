@@ -134,13 +134,16 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	// Anthropic-compatible gateways can still prove they support vision.
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
 	cacheConversation := anthropicConversationCaching(ctx, p.cfg.BaseURL)
-	body, err := buildAnthropicRequestWithCaching(p.cfg.Model, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling, cacheConversation)
+	// OpenCode Zen retires models in place (410 ModelDeprecated); a successor
+	// learned earlier goes straight onto the wire (see do).
+	reqModel := zenEffectiveModel(p.cfg.BaseURL, p.cfg.Model)
+	body, err := buildAnthropicRequestWithCaching(reqModel, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling, cacheConversation)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	var imageFallback []byte
 	if visionAttempt && messagesContainImage(msgs) {
-		imageFallback, err = buildAnthropicRequestWithCaching(p.cfg.Model, msgs, tools, false, p.cfg.MaxTokens, p.sampling, cacheConversation)
+		imageFallback, err = buildAnthropicRequestWithCaching(reqModel, msgs, tools, false, p.cfg.MaxTokens, p.sampling, cacheConversation)
 		if err != nil {
 			return nil, fmt.Errorf("build image fallback request: %w", err)
 		}
@@ -209,6 +212,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 	thinkingRetried := false
 	betaRetried := false
 	visionRetried := false
+	zenRemapped := false
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
@@ -270,6 +274,28 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 				notify(fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model))
 			}
 			continue
+		}
+		// OpenCode Zen retired the configured model (HTTP 410 ModelDeprecated)
+		// and named its successor. Learn it, retarget this request and retry
+		// once instead of failing the turn — same shape as the beta/effort/
+		// vision learning above, and Zen-scoped for the same reason.
+		if !zenRemapped && isOpenCodeZenBaseURL(p.cfg.BaseURL) {
+			if repl := zenModelDeprecation(resp.StatusCode, respBody); repl != "" {
+				if patched, old, patchedOK := retargetRequestModel(body, repl); patchedOK {
+					body = patched
+					if len(imageFallback) > 0 {
+						if fb, _, fbOK := retargetRequestModel(imageFallback, repl); fbOK {
+							imageFallback = fb
+						}
+					}
+					rememberZenReplacement(p.cfg.BaseURL, p.cfg.Model, old, repl)
+					zenRemapped = true
+					if notify != nil {
+						notify(fmt.Sprintf("model %q has been deprecated by the provider; now using %q", old, repl))
+					}
+					continue
+				}
+			}
 		}
 		if !isRetryableProviderResponse(resp.StatusCode, respBody) {
 			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))

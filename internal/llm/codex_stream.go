@@ -29,30 +29,33 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
 	msgs = filterNativeReasoning(msgs, ReasoningResponses, p.cfg.Model, p.cfg.BackendURL)
 	effort := p.reasoningEffort()
+	// OpenCode Zen retires models in place (410 ModelDeprecated); a successor
+	// learned earlier goes straight onto the wire (see doWithAuth).
+	reqModel := zenEffectiveModel(p.cfg.BackendURL, p.cfg.Model)
 	standardResponses := p.cfg.StandardResponsesAPI && !isOpenCodeZenBaseURL(p.cfg.BackendURL)
 	var reqBody, imageFallback []byte
 	var standardPrimary, standardFallback codexRequest
 	var err error
 	hasImageFallback := false
 	if standardResponses {
-		standardPrimary, err = assembleCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
+		standardPrimary, err = assembleCodexRequestWithEffort(reqModel, msgs, tools, visionAttempt, effort)
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
 		hasImageFallback = visionAttempt && messagesContainImage(msgs)
 		if hasImageFallback {
-			standardFallback, err = assembleCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
+			standardFallback, err = assembleCodexRequestWithEffort(reqModel, msgs, tools, false, effort)
 			if err != nil {
 				return nil, fmt.Errorf("build image fallback request: %w", err)
 			}
 		}
 	} else {
-		reqBody, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, visionAttempt, effort)
+		reqBody, err = buildCodexRequestWithEffort(reqModel, msgs, tools, visionAttempt, effort)
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
 		if visionAttempt && messagesContainImage(msgs) {
-			imageFallback, err = buildCodexRequestWithEffort(p.cfg.Model, msgs, tools, false, effort)
+			imageFallback, err = buildCodexRequestWithEffort(reqModel, msgs, tools, false, effort)
 			if err != nil {
 				return nil, fmt.Errorf("build image fallback request: %w", err)
 			}
@@ -165,6 +168,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 	effortRetried := false
 	refreshed := false
 	visionRetried := false
+	zenRemapped := false
 	const maxRateLimitAttempts = 3
 	rlAttempt := 0
 	waitBudget := rateLimitWaitBudget
@@ -236,6 +240,29 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 				notify(Delta{Notice: fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model)})
 			}
 			continue
+		}
+		// OpenCode Zen retired the configured model (HTTP 410 ModelDeprecated)
+		// and named its successor. Learn it, retarget this request and retry
+		// once instead of failing the turn — same shape as the effort and
+		// vision learning above. Zen-scoped: another provider's 410 is not
+		// ours to interpret.
+		if !zenRemapped && isOpenCodeZenBaseURL(p.cfg.BackendURL) {
+			if repl := zenModelDeprecation(resp.StatusCode, respBody); repl != "" {
+				if patched, old, patchedOK := retargetRequestModel(body, repl); patchedOK {
+					body = patched
+					if len(imageFallback) > 0 {
+						if fb, _, fbOK := retargetRequestModel(imageFallback, repl); fbOK {
+							imageFallback = fb
+						}
+					}
+					rememberZenReplacement(p.cfg.BackendURL, p.cfg.Model, old, repl)
+					zenRemapped = true
+					if notify != nil {
+						notify(Delta{Notice: fmt.Sprintf("model %q has been deprecated by the provider; now using %q", old, repl)})
+					}
+					continue
+				}
+			}
 		}
 		if isRetryableProviderResponse(resp.StatusCode, respBody) && rlAttempt < maxRateLimitAttempts-1 {
 			rlAttempt++
