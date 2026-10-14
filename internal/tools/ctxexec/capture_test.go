@@ -35,6 +35,15 @@ func TestCaptureHelper(t *testing.T) {
 		}
 		os.Exit(0)
 	}
+	if mode == "prompt" || mode == "quiet" {
+		if mode == "prompt" {
+			fmt.Print("Overwrite existing file? [y/N] ")
+		} else {
+			fmt.Println("building packages")
+		}
+		time.Sleep(3 * time.Second)
+		os.Exit(0)
+	}
 	count := 6000
 	if mode == "overflow" {
 		count = 150000

@@ -51,6 +51,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.DarwinParallel = cycleTri(c.DarwinParallel)
 	case "darwin_auto_merge":
 		c.DarwinAutoMerge = cycleTri(c.DarwinAutoMerge)
+	case "darwin":
+		c.Darwin = cycleTri(c.Darwin)
 	case "task_parallel":
 		c.TaskParallel = cycleTri(c.TaskParallel)
 	case "draft_verify":
@@ -104,6 +106,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.DarwinJudgeModel = ""
 	case "darwin_auto_merge":
 		c.DarwinAutoMerge = nil
+	case "darwin":
+		c.Darwin = nil
 	case "task_parallel":
 		c.TaskParallel = nil
 	case "cache_prompt":
@@ -130,6 +134,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskModel = ""
 	case "advisor_model":
 		c.AdvisorModel = ""
+	case "review_model":
+		c.ReviewModel = ""
 	case "orchestrator_model":
 		c.OrchestratorModel = ""
 	case "compact_model":
@@ -212,6 +218,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return c.DarwinJudgeModel, "manual"
 	case "darwin_auto_merge":
 		return m.triDisplay(c.DarwinAutoMerge, "off")
+	case "darwin":
+		return m.triDisplay(c.Darwin, "off")
 	case "task_parallel":
 		return m.triAutoDisplay(c.TaskParallel, "parallel", "sequential")
 	case "navigator":
@@ -241,6 +249,11 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return m.tr("tui.setting_value.advisor_default"), "default"
 		}
 		return c.AdvisorModel, "manual"
+	case "review_model":
+		if config.ReviewDisabled(*c) {
+			return m.tr("tui.setting_value.review_off"), "default"
+		}
+		return c.ReviewModel, "manual"
 	case "orchestrator_model":
 		if strings.TrimSpace(c.OrchestratorModel) == "" {
 			return m.tr("tui.setting_value.c0d7b51675"), "default"

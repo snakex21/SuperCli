@@ -207,6 +207,8 @@ const FailTailBytes = 2048
 func (r *Result) FailureSummary() string {
 	var b strings.Builder
 	switch {
+	case r.ExitCode == ExitTimeout && strings.HasPrefix(r.Error, PromptStallPrefix):
+		fmt.Fprintf(&b, "command_failed exit=%d (%s): %s", r.ExitCode, fmtDurMS(r.DurationMS), r.Error)
 	case r.ExitCode == ExitTimeout:
 		fmt.Fprintf(&b, "command_failed timeout exit=%d (%s)", r.ExitCode, fmtDurMS(r.DurationMS))
 	case r.Error != "":

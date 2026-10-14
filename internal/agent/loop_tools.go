@@ -472,6 +472,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	tool, knownTool := l.registry.Get(tc.Name)
 	invalidatesEvidence := !knownTool || (!tool.ReadOnly && !tool.PreservesEvidence)
 	if invalidatesEvidence {
+		l.notePostReviewMutation()
 		l.forwardWorkerEffectBarrier(ctx)
 		defer l.forwardWorkerEffectBarrier(ctx)
 	}

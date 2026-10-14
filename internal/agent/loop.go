@@ -400,6 +400,11 @@ type Loop struct {
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
 
+	// reviewCfg is the optional interactive post-work review (config
+	// review_model); nil = off. postReview is its per-Run state.
+	reviewCfg  *PostReviewConfig
+	postReview postReviewState
+
 	// finalReplyOnly is a one-step, model-independent guard used after a
 	// complete standalone document mutation. The next provider request carries
 	// no tool schemas and may only turn the successful result into a short
@@ -718,6 +723,9 @@ type LoopConfig struct {
 	// impl is the in-memory default; the persistent
 	// path is out of scope for F11.
 	Stats stats.Recorder
+	// Review, when non-nil, runs one tool-free post-work review (config
+	// review_model) before a file-changing Run completes. Nil = off.
+	Review *PostReviewConfig
 }
 
 // CreditTracker is the F7 hook. Implementations:
@@ -885,6 +893,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.concreteFailure.Store(false)
 	l.failedChecks.reset()
 	l.emptyReplyNudges = 0
+	l.resetPostReview(prompt)
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
 	// Finish already-collected history even after cancellation, then rebuild

@@ -213,7 +213,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	toolSearcher := tools.NewToolSearcher(reg, nil)
 	reg.MustRegister(toolSearcher.Spec())
 	reg.MarkAlwaysOn("tool_search")
-	systemPrompt := prompt.Build(execProfile.PromptSmall)
+	systemPrompt := prompt.Build(execProfile.PromptSmall) + "\n\n" + platformHint()
 	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
 		systemPrompt += "\n\n" + modelProfile
 	}
@@ -228,6 +228,11 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// delegate-first guidance (same as buildSystemPrompt in the TUI).
 	if orchHard {
 		systemPrompt += agent.OrchestratorPrompt()
+	}
+	// Same as the TUI: state the real workspace last so the model does not
+	// guess a path (weak local models invented /home/dev on Windows).
+	if workingDirNote != "" {
+		systemPrompt += "\n\n" + workingDirNote
 	}
 	// Batch runs share the CLI/GUI tool_errors.log so one-shot
 	// failures land in the same corpus as interactive ones.

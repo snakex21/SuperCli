@@ -36,6 +36,11 @@ type Runner struct {
 
 	// Now is overridable for tests. Default = time.Now.
 	Now func() time.Time
+
+	// PromptIdle stops a command that stays silent this long after a
+	// prompt-like last line (it has no stdin and would wait forever).
+	// 0 = DefaultPromptIdle; negative disables the watchdog.
+	PromptIdle time.Duration
 }
 
 // New returns a Runner bound to the F7 home directory.
@@ -143,7 +148,9 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	// Build the command. Args after the binary are
 	// passed verbatim. Without an explicit timeout the caller owns lifetime;
 	// user cancellation/deadlines still stop the command. No default timer.
-	cmd := exec.CommandContext(runCtx, binary, command[1:]...)
+	watchCtx, stopWatch := context.WithCancel(runCtx)
+	defer stopWatch()
+	cmd := exec.CommandContext(watchCtx, binary, command[1:]...)
 	childproc.HideWindow(cmd)
 	configureCommandLine(cmd, command[1:])
 	configureCommandScope(cmd)
@@ -154,7 +161,9 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	// (including for noisy commands), with no temporary files or disk writes.
 	stdout := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
 	stderr := core.NewHeadTailBuffer(captureStreamBytes/2, captureStreamBytes/2)
-	outText, errText := processoutput.NewWriter(stdout), processoutput.NewWriter(stderr)
+	activity := &outputActivity{last: time.Now()}
+	outText := processoutput.NewWriter(activityWriter{dst: stdout, act: activity})
+	errText := processoutput.NewWriter(activityWriter{dst: stderr, act: activity})
 	cmd.Stdout = outText
 	cmd.Stderr = errText
 	// A detached descendant may inherit a pipe after the command exits.
@@ -168,7 +177,7 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	var cancellationCause error
 	cmd.Cancel = func() error {
 		scopeMu.Lock()
-		cancellationCause = runCtx.Err()
+		cancellationCause = watchCtx.Err()
 		s := scope
 		scopeMu.Unlock()
 		return killCommandTree(cmd, s)
@@ -178,10 +187,29 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	started, runErr := childproc.Start(cmd)
 	scope = started
 	scopeMu.Unlock()
+	var stallMu sync.Mutex
+	stalledLine := ""
+	idle := r.PromptIdle
+	if idle == 0 {
+		idle = DefaultPromptIdle
+	}
 	if runErr == nil {
+		watchDone := make(chan struct{})
+		if idle > 0 {
+			go watchPrompt(watchDone, activity, idle, func(line string) {
+				stallMu.Lock()
+				stalledLine = line
+				stallMu.Unlock()
+				stopWatch()
+			})
+		}
 		runErr = cmd.Wait()
+		close(watchDone)
 		_ = started.Close()
 	}
+	stallMu.Lock()
+	stalled := stalledLine
+	stallMu.Unlock()
 	_ = outText.Close()
 	_ = errText.Close()
 	scopeMu.Lock()
@@ -221,6 +249,13 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		if !errors.As(runErr, &exitErr) {
 			result.Error = runErr.Error()
 		}
+	}
+	if stalled != "" && runCtx.Err() == nil {
+		result.ExitCode = ExitTimeout
+		result.Error = fmt.Sprintf("%s: no output for %s and the last line looks like an interactive prompt: %q. "+
+			"ctx_execute has no stdin, so the command was stopped. Rerun with a non-interactive flag "+
+			"(e.g. -y, --yes, --non-interactive) or answer it via process_session start + write.",
+			PromptStallPrefix, idle, stalled)
 	}
 	if len(result.Stdout) > maxOut*1024 || len(result.Stderr) > maxErr*1024 {
 		retained := *result

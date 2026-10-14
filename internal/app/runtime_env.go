@@ -74,12 +74,19 @@ func resolveTaskWorkerConfig(tomlCfg config.TomlConfig, cfg config.Config) (conf
 // resolveAdvisorConfig maps advisor_model onto the provider config used by
 // advise:true task calls. Same contract as task_model.
 func resolveAdvisorConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	if config.AdvisorDisabled(tomlCfg) {
+		return cfg, false
+	}
 	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.AdvisorModel), "advisor_model", tomlCfg, cfg)
 }
 
 // resolveReviewConfig maps review_model onto the provider config used by
-// post-hoc batch review. Same contract as task_model.
+// post-hoc review (batch and interactive). Same contract as task_model;
+// empty or "off" = no review.
 func resolveReviewConfig(tomlCfg config.TomlConfig, cfg config.Config) (config.Config, bool) {
+	if config.ReviewDisabled(tomlCfg) {
+		return cfg, false
+	}
 	return resolveModelOverrideConfig(strings.TrimSpace(tomlCfg.ReviewModel), "review_model", tomlCfg, cfg)
 }
 

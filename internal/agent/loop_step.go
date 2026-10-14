@@ -96,7 +96,7 @@ func (l *Loop) runStep(
 	}
 	l.recordWallPhase(stats.PhaseContextPrepare, prep)
 
-	text, toolCalls, usage, err := l.completeOnce(ctx, toolRequest, out)
+	text, toolCalls, usage, err := l.completeWithStreamRetry(ctx, toolRequest, out)
 	_, truncatedToolCalls := err.(*truncatedToolResponseError)
 	if err != nil && !truncatedToolCalls {
 		retry, compactErr := l.handleContextOverflow(ctx, err, out)
@@ -311,6 +311,13 @@ func (l *Loop) runStep(
 			}
 		}
 		if l.drainInterjections(ctx, out, step+1 < stepLimit, true) > 0 {
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
+		// Post-work review (config review_model): a file-changing Run gets
+		// one tool-free verdict before it completes; revise/takeover notes go
+		// back to the main model for another pass (capped per Run).
+		if l.reviewCfg != nil && l.runPostReview(ctx, out, totalUsage, step+1 < stepLimit) {
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}

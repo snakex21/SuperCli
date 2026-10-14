@@ -61,6 +61,10 @@ type AgentTool struct {
 	// `advisor_model`), e.g. a cloud model advising a local one. Nil = the
 	// advisor uses the normal worker backend.
 	AdvisorProvider llm.Provider
+	// AdvisorOff (config advisor_model = "off") removes the advise flag
+	// from the schema and refuses advise:true calls: the user turned the
+	// second opinion off.
+	AdvisorOff bool
 	PrefillProfiles       *llm.PrefillProfiles
 	// WorkerPing verifies the worker backend, lazily, on the first
 	// delegation only (never on the startup path). Nil = no probe. On
@@ -133,6 +137,11 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 func (a *AgentTool) Spec() tools.Tool {
 	names := a.Registry.Names()
 	enumJSON, _ := json.Marshal(names)
+	adviseProp := `
+				"advise": {"type": "boolean", "description": "optional: READ-ONLY second opinion (advisor worker; never edits files). Use before choosing an approach for a hard decision, after 2 failed attempts at the same fix, or before declaring a risky change done"},`
+	if a.AdvisorOff {
+		adviseProp = ""
+	}
 	return tools.Tool{
 		Name: "task",
 		Description: "Delegate independent work or substantial exploration to an isolated worker. " +
@@ -144,12 +153,11 @@ func (a *AgentTool) Spec() tools.Tool {
 			"properties": {
 				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
 				"expect": {"type": "string", "description": "optional: what the report must contain"},
-				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},
-				"advise": {"type": "boolean", "description": "optional: READ-ONLY second opinion (advisor worker; never edits files). Use before choosing an approach for a hard decision, after 2 failed attempts at the same fix, or before declaring a risky change done"},
+				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},%s
 				"async": {"type": "boolean", "description": "optional: run in the background and return a worker ID; completion arrives as a task notification"}
 			},
 			"required": ["prompt"]
-		}`, string(enumJSON)),
+		}`, string(enumJSON), adviseProp),
 		Fn: a.execute,
 	}
 }

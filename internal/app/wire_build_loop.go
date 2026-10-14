@@ -44,6 +44,8 @@ type loopAssembly struct {
 	taskParallel           bool
 	taskParallelWarnLocal  bool
 	home                   string
+	// review is the interactive post-work review (review_model); nil = off.
+	review *agent.PostReviewConfig
 }
 
 // buildMainLoopConfig assembles LoopConfig for the interactive CLI agent.
@@ -134,5 +136,6 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 		TaskParallelWarnLocal: a.taskParallelWarnLocal,
 		BaseDir:               a.home,
 		UserDownloadsDir:      agent.SystemDownloadsDir,
+		Review:                a.review,
 	}
 }

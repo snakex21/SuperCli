@@ -185,6 +185,8 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return c.TaskModel
 	case "advisor_model":
 		return c.AdvisorModel
+	case "review_model":
+		return c.ReviewModel
 	case "darwin_judge_model":
 		return c.DarwinJudgeModel
 	case "darwin_models":
@@ -226,6 +228,8 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			c.TaskModel = buf
 		case "advisor_model":
 			c.AdvisorModel = buf
+		case "review_model":
+			c.ReviewModel = buf
 		case "darwin_judge_model":
 			c.DarwinJudgeModel = buf
 		case "darwin_models":

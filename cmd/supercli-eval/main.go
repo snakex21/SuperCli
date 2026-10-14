@@ -35,6 +35,7 @@ func main() {
 	keep := fs.Bool("keep-workspaces", false, "retain isolated workspaces")
 	validate := fs.Bool("validate", false, "validate suite without running an agent")
 	output := fs.String("output", "", "write JSON report")
+	jobs := fs.Int("jobs", 1, "task/model pairs run side by side (cloud models; a local server usually serves one request at a time)")
 	var models stringsFlag
 	fs.Var(&models, "model", "model id (repeat or comma-separate for a matrix)")
 	fs.Usage = func() {
@@ -58,7 +59,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	report, err := agenteval.Bench(context.Background(), agenteval.BenchOptions{SuitePath: *suitePath, WorkRoot: resolvedWorkRoot, Models: models, TaskID: *taskID, AgentCommand: fs.Args(), Timeout: *timeout, KeepWorkspaces: *keep})
+	report, err := agenteval.Bench(context.Background(), agenteval.BenchOptions{SuitePath: *suitePath, WorkRoot: resolvedWorkRoot, Models: models, TaskID: *taskID, AgentCommand: fs.Args(), Timeout: *timeout, KeepWorkspaces: *keep, Jobs: *jobs})
 	if err != nil {
 		fatal(err)
 	}

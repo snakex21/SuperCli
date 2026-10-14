@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"supercli/internal/agent"
 )
 
 func TestRenderTreeChangesListsNewModifiedDeleted(t *testing.T) {
@@ -22,7 +24,7 @@ func TestRenderTreeChangesListsNewModifiedDeleted(t *testing.T) {
 	write("edit.go", "package a\nfunc A() {}\n")
 	write("gone.go", "package a\n")
 	write(".git/HEAD", "ref\n")
-	before := snapshotTree(root)
+	before := agent.SnapshotTree(root)
 	if _, ok := before[".git/HEAD"]; ok {
 		t.Fatal("dot directories must be skipped")
 	}
@@ -32,7 +34,7 @@ func TestRenderTreeChangesListsNewModifiedDeleted(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "gone.go")); err != nil {
 		t.Fatal(err)
 	}
-	got := renderTreeChanges(root, before)
+	got := agent.RenderTreeChanges(root, before)
 	for _, want := range []string{"### edit.go (modified", "return 1", "### sub/new.go (new", "### gone.go (deleted)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("changes missing %q:\n%s", want, got)

@@ -10,6 +10,7 @@ package webgui
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -54,6 +55,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	if ap := e.advisorProvider(tc); ap != nil {
 		at.AdvisorProvider = ap
 	}
+	at.AdvisorOff = config.AdvisorDisabled(tc)
 	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
 		at.PreflightContext = func(ctx context.Context) string {
@@ -136,6 +138,9 @@ func (e *Engine) taskWorkerProvider(tc config.TomlConfig) (llm.Provider, *config
 // advisorProvider builds the advisor_model override (metered, purpose
 // "advisor"); nil when unset, unresolvable or failing to build.
 func (e *Engine) advisorProvider(tc config.TomlConfig) llm.Provider {
+	if config.AdvisorDisabled(tc) {
+		return nil
+	}
 	cfg := e.modelOverrideConfig(tc, tc.AdvisorModel)
 	if cfg == nil || cfg.Normalize() != nil {
 		return nil
@@ -145,6 +150,25 @@ func (e *Engine) advisorProvider(tc config.TomlConfig) llm.Provider {
 		return nil
 	}
 	return ap
+}
+
+// postReviewConfig builds the interactive post-work review (review_model,
+// metered purpose "verdict"); nil when off, unresolvable or failing to
+// build — never a fallback to another model.
+func (e *Engine) postReviewConfig(tc config.TomlConfig) *agent.PostReviewConfig {
+	if config.ReviewDisabled(tc) {
+		return nil
+	}
+	cfg := e.modelOverrideConfig(tc, tc.ReviewModel)
+	if cfg == nil || cfg.Normalize() != nil {
+		return nil
+	}
+	rp, err := e.factory.Build(*cfg, llm.PurposeVerdict)
+	if err != nil || rp == nil {
+		log.Printf("review_model: provider %q build failed: %v — review disabled", tc.ReviewModel, err)
+		return nil
+	}
+	return &agent.PostReviewConfig{Provider: rp, VerifyCommands: tc.VerifyCommands, MaxRounds: tc.ReviewMaxRounds}
 }
 
 // compactProviderResolver snapshots the optional backend for this loop without

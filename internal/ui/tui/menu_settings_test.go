@@ -525,7 +525,7 @@ model = "deepseek-v4-flash"
 // rows round-trip through config.toml and reset-all clears them.
 func TestSettings_DarwinAndAdvisorKnobsPersistAndReset(t *testing.T) {
 	m := newSettingsModel(t, "")
-	for key, text := range map[string]string{"advisor_model": "cloud/big", "darwin_judge_model": "judge", "darwin_models": "local/a ; cloud/b"} {
+	for key, text := range map[string]string{"advisor_model": "cloud/big", "review_model": "cloud/reviewer", "darwin_judge_model": "judge", "darwin_models": "local/a ; cloud/b"} {
 		m = cursorForKey(m, key)
 		mm, _ := m.settingsEnter()
 		m = mm.(Model)
@@ -540,6 +540,9 @@ func TestSettings_DarwinAndAdvisorKnobsPersistAndReset(t *testing.T) {
 	mm, _ := m.settingsEnter()
 	m = mm.(Model)
 	cfg := loadCfg(t, m)
+	if cfg.ReviewModel != "cloud/reviewer" {
+		t.Fatalf("review_model not persisted: %q", cfg.ReviewModel)
+	}
 	if cfg.AdvisorModel != "cloud/big" || cfg.DarwinJudgeModel != "judge" || !reflect.DeepEqual(cfg.DarwinModels, []string{"local/a", "cloud/b"}) || cfg.DarwinAutoMerge == nil || !*cfg.DarwinAutoMerge {
 		t.Fatalf("knobs not persisted: %+v", cfg)
 	}
@@ -547,7 +550,7 @@ func TestSettings_DarwinAndAdvisorKnobsPersistAndReset(t *testing.T) {
 	mm, _ = m.settingsEnter()
 	m = mm.(Model)
 	cfg = loadCfg(t, m)
-	if cfg.AdvisorModel != "" || cfg.DarwinJudgeModel != "" || cfg.DarwinModels != nil || cfg.DarwinAutoMerge != nil {
+	if cfg.AdvisorModel != "" || cfg.ReviewModel != "" || cfg.DarwinJudgeModel != "" || cfg.DarwinModels != nil || cfg.DarwinAutoMerge != nil {
 		t.Fatalf("reset all left Darwin/advisor knobs: %+v", cfg)
 	}
 }

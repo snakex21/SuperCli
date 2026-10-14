@@ -103,6 +103,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return nil
 	case "darwin_auto_merge":
 		return setTri(&c.DarwinAutoMerge)
+	case "darwin":
+		return setTri(&c.Darwin)
 	case "task_parallel":
 		return setTri(&c.TaskParallel)
 	case "memory_briefing_tokens":
@@ -121,6 +123,9 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return nil
 	case "advisor_model":
 		c.AdvisorModel = val
+		return nil
+	case "review_model":
+		c.ReviewModel = val
 		return nil
 	case "orchestrator_model":
 		c.OrchestratorModel = val

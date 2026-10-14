@@ -390,7 +390,10 @@ func Main() {
 		}
 	}
 	darwinTool.SetAllowAutoMerge(tomlCfg.DarwinAutoMerge != nil && *tomlCfg.DarwinAutoMerge)
-	registry.MustRegister(darwinTool.Spec())
+	// darwin = false hides the tool from the model; /darwin still works.
+	if config.DarwinEnabled(tomlCfg) {
+		registry.MustRegister(darwinTool.Spec())
+	}
 
 	// Task delegation parallelism mirrors darwin: a batch of `task` calls
 	// in one turn runs concurrently on cloud backends but sequentially on
@@ -432,6 +435,19 @@ func Main() {
 		} else {
 			advisorProvider = ap
 			log.Printf("advisor_model: advise calls use %q @ %s", ap.Name(), advisorCfg.BaseURL)
+		}
+	}
+	// review_model: interactive post-work review ("Sprawdzanie"). Off when
+	// empty/"off"/unresolvable; a failed build never falls back to another
+	// model — review simply stays off.
+	var postReview *agent.PostReviewConfig
+	if reviewCfg, reviewOn := resolveReviewConfig(tomlCfg, cfg); reviewOn {
+		rp, rpErr := provFactory.Build(reviewCfg, llm.PurposeVerdict)
+		if rpErr != nil {
+			log.Printf("review_model: provider %q build failed: %v — review disabled", tomlCfg.ReviewModel, rpErr)
+		} else {
+			postReview = &agent.PostReviewConfig{Provider: rp, VerifyCommands: tomlCfg.VerifyCommands, MaxRounds: tomlCfg.ReviewMaxRounds}
+			log.Printf("review_model: post-work review uses %q @ %s", rp.Name(), reviewCfg.BaseURL)
 		}
 	}
 	compactCfg, compactOverride := resolveCompactConfig(tomlCfg, cfg)
@@ -573,6 +589,7 @@ func Main() {
 		taskParallel:           taskParallel,
 		taskParallelWarnLocal:  taskParallelWarnLocal,
 		home:                   home,
+		review:                 postReview,
 	}))
 	if err != nil {
 		fatal("init agent", err)
