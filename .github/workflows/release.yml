@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Stable version (x.y.z); packages a draft release'
+        description: 'Stable version (x.y.z); packages and publishes the release'
         required: true
         default: '1.0.7'
 
@@ -60,7 +60,7 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
-  draft:
+  publish:
     needs: bundles
     runs-on: ubuntu-latest
     permissions:
@@ -76,7 +76,7 @@ jobs:
           pattern: bundle-*
           path: dist
           merge-multiple: true
-      - name: Create verification manifest and draft
+      - name: Create verification manifest and publish
         env:
           RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,4 +88,4 @@ jobs:
           if gh release view "v$RELEASE_VERSION" >/dev/null 2>&1; then
             exit 0
           fi
-          gh release create "v$RELEASE_VERSION" dist/*.zip dist/supercli-update.json dist/SHA256SUMS --draft --title "SuperCli $RELEASE_VERSION" --notes-file "$NOTES_FILE" --target "$GITHUB_SHA"
+          gh release create "v$RELEASE_VERSION" dist/*.zip dist/supercli-update.json dist/SHA256SUMS --latest --title "SuperCli $RELEASE_VERSION" --notes-file "$NOTES_FILE" --target "$GITHUB_SHA"

@@ -31,7 +31,7 @@ go run ./scripts/release -manifest -version 1.0.7 -output dist
 
 Upload the ZIPs, `supercli-update.json` and `SHA256SUMS` together to a stable GitHub release. The manifest names each platform, file, exact byte size and SHA256 digest. A release without a matching verified bundle remains a manual update. The first 1.0.0 release must already include the manifest so later versions can use it consistently.
 
-The `Portable release` GitHub workflow builds Windows amd64, Linux amd64/arm64 and macOS amd64/arm64 bundles and creates a **draft** when an explicit version tag is pushed or it is manually invoked. Review the draft and smoke-test both platforms before publishing. Existing published tags are not silently overwritten. If a release already exists, the workflow leaves its assets intact. Release builds use `-buildvcs=false` so unrelated portable files beside the source do not affect VCS metadata.
+The `Portable release` GitHub workflow builds Windows amd64, Linux amd64/arm64 and macOS amd64/arm64 bundles and **publishes** the release when an explicit version tag is pushed or it is manually invoked. Run the full checks before pushing the tag, because the release goes live immediately. Existing published tags are not silently overwritten. If a release already exists, the workflow leaves its assets intact. Release builds use `-buildvcs=false` so unrelated portable files beside the source do not affect VCS metadata.
 
 ## Installed application
 
