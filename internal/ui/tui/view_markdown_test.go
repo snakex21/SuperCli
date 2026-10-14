@@ -249,16 +249,28 @@ func TestSplitThinking_TagInMiddle(t *testing.T) {
 
 func TestChat_ToggleThinking(t *testing.T) {
 	c := newChat(80)
+	if !c.thinkingCollapsed {
+		t.Fatal("finished thinking should fold by default")
+	}
+	c.toggleThinking()
 	if c.thinkingCollapsed {
-		t.Fatal("default should be not collapsed")
+		t.Fatal("after toggle, should be expanded")
 	}
 	c.toggleThinking()
 	if !c.thinkingCollapsed {
-		t.Fatal("after toggle, should be collapsed")
+		t.Fatal("after second toggle, should be collapsed")
 	}
-	c.toggleThinking()
-	if c.thinkingCollapsed {
-		t.Fatal("after second toggle, should be not collapsed")
+}
+
+func TestThinkingFoldsOnlyAfterItCloses(t *testing.T) {
+	p := NewPalette(nil)
+	streaming := renderAssistantMarkdown("<thinking>still working out the plan", p, true)
+	if !strings.Contains(streaming, "still working out the plan") {
+		t.Fatalf("streaming thought must stay visible: %q", streaming)
+	}
+	done := renderAssistantMarkdown("<thinking>still working out the plan</thinking>\nAnswer.", p, true)
+	if strings.Contains(done, "still working out the plan") || !strings.Contains(done, "Answer.") {
+		t.Fatalf("finished thought must fold, answer stays: %q", done)
 	}
 }
 

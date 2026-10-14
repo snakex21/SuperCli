@@ -549,6 +549,7 @@ function renderAssistant(node) {
       }
     }
     while (states.length > parts.length) states.pop().remove();
+    autoCollapseThinking(node);
     // Only a complete paint may satisfy repeated done/EOF/seal flushes.
     node._renderedSource = node._displayParts ? null : node._raw;
     if (node._history || node._sealed) releaseAssistantParagraphCaches(node);
@@ -698,6 +699,19 @@ function releaseAssistantParagraphCaches(node) {
   });
 }
 
+// Without an explicit Shift+T/click preference, a live thought folds once it
+// is finished: the answer started after it or the segment was sealed.
+function autoCollapseThinking(node) {
+  if (typeof ui !== "undefined" && typeof ui.thinkingExpanded === "boolean") return;
+  var states = node._assistantParts || [];
+  states.forEach(function (state, i) {
+    if (state.kind !== "thinking" || state.autoClosed) return;
+    if (!node._sealed && !node._history && i === states.length - 1) return;
+    state.autoClosed = true;
+    state.node.open = false;
+  });
+}
+
 function closeAssistantReasoning(node) {
   if (!node || !node._reasoningOpen) return;
   node._nativeReasoningEnd = node._raw.length;
@@ -735,6 +749,7 @@ function sealAssistantSegment(node) {
   closeAssistantReasoning(node);
   flushAssistantRender(node);
   node._sealed = true;
+  autoCollapseThinking(node);
   releaseAssistantParagraphCaches(node);
   node.classList.add("assistant-segment-complete");
 }

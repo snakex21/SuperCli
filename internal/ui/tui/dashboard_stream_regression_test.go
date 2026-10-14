@@ -11,6 +11,7 @@ import (
 
 func TestNativeReasoningIsOneBlockAndToolOrderIsChronological(t *testing.T) {
 	m := streamTestModel(t)
+	m.chat.thinkingCollapsed = false // order check needs the thought text
 	for _, text := range []string{"Need ", "to inspect ", "the file."} {
 		next, _ := m.Update(runEventMsg{ev: agent.ReasoningEvent{Text: text}})
 		m = next.(Model)

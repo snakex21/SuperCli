@@ -107,7 +107,8 @@ func newSyntheticWindow(t testing.TB, mode string) *syntheticWindow {
 			return
 		}
 		defer captureUser32.NewProc("UnregisterClassW").Call(uintptr(unsafe.Pointer(className)), instance)
-		hwnd, _, err := captureUser32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)), 0x00CF0000, 20, 20, 256, 160, 0, 0, instance, 0)
+		// WS_EX_NOACTIVATE also keeps the fixture off the taskbar.
+		hwnd, _, err := captureUser32.NewProc("CreateWindowExW").Call(0x08000000, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)), 0x00CF0000, 20, 20, 256, 160, 0, 0, instance, 0)
 		if hwnd == 0 {
 			ready <- fmt.Errorf("create synthetic window: %v", err)
 			return

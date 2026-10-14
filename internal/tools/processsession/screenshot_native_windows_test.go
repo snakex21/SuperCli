@@ -96,7 +96,9 @@ func TestOwnedWindowFixtureHelper(t *testing.T) {
 		t.Fatalf("register owned fixture: %v", err)
 	}
 	defer ownedWindowUser32.NewProc("UnregisterClassW").Call(uintptr(unsafe.Pointer(className)), instance)
-	hwnd, _, err := ownedWindowUser32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(className)), 0x00CF0000, 20, 20, 256, 160, 0, 0, instance, 0)
+	// WS_EX_NOACTIVATE also keeps the fixture off the taskbar, so test runs do
+	// not flash taskbar buttons on the developer's desktop.
+	hwnd, _, err := ownedWindowUser32.NewProc("CreateWindowExW").Call(0x08000000, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(className)), 0x00CF0000, 20, 20, 256, 160, 0, 0, instance, 0)
 	if hwnd == 0 {
 		t.Fatalf("create owned fixture: %v", err)
 	}

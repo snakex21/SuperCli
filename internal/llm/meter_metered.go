@@ -420,6 +420,9 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	if p := PurposeFromContext(ctx); p != "" {
 		stat.Purpose = p
 	}
+	if obs := requestObserverFromContext(ctx); obs != nil {
+		obs(stat.Purpose, msgs, tools)
+	}
 	if ctx != nil {
 		if budget, ok := ctx.Value(prefillBudgetCtxKey{}).(prefillBudgetContext); ok {
 			stat.PrefillBudget = budget.Tokens
