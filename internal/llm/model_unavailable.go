@@ -415,11 +415,17 @@ func modelEditDistance(a, b string, limit int) int {
 }
 
 // providerErrorHint is the single repair suffix appended to a terminal non-2xx
-// provider error. The three classes are near-disjoint; effort is checked first
+// provider error. The four classes are near-disjoint; effort is checked first
 // because a rejected reasoning parameter is the one message that can also quote
-// the model id.
+// the model id, and the Zen deprecation comes next because it names the one
+// exact replacement the endpoint serves.
 func providerErrorHint(baseURL, model string, status int, body []byte) string {
 	if h := badRequestEffortHint(status, body); h != "" {
+		return h
+	}
+	// OpenCode Zen names the successor for a retired model; that exact id
+	// beats any "available:" list, which may not have been rescanned yet.
+	if h := zenDeprecationHint(baseURL, model, status, body); h != "" {
 		return h
 	}
 	if h := modelUnavailableHint(baseURL, model, status, body); h != "" {
