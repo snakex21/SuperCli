@@ -48,7 +48,7 @@ function harness() {
     return node;
   }
   const $ = selector => { if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector); };
-  const context = {window: {}, superCliUI: {}, $, el: element, clip: (value, length) => String(value || '').slice(0, length), clearInterval() {}};
+  const context = {window: {}, superCliUI: {fileMutationTools: {}}, $, el: element, clip: (value, length) => String(value || '').slice(0, length), clearInterval() {}};
   context.t = key => { assert.ok(catalogs[language][key], 'missing catalog key ' + key); return catalogs[language][key]; };
   context.i18nEl = (tag, className, key) => element(tag, className, context.t(key));
   vm.createContext(context);

@@ -114,13 +114,16 @@ func TestChatSilentCommandDoesNotConsumeModelProgressTimeout(t *testing.T) {
 				defer close(finished)
 				srv.handleChat(recorder, request)
 			}()
-			waitCompletionTest(t, entered, "silent native command")
 			if mode == "explicit-command-deadline" {
+				// Startup is part of the command deadline too. Under load curl
+				// may legitimately time out before reaching the HTTP fixture;
+				// require retained timeout evidence, not a pre-timeout connection.
 				waitCompletionTest(t, finished, "explicit command deadline")
 				if provider.calls.Load() != 2 || !strings.Contains(provider.toolResult, "deadline exceeded") {
 					t.Fatalf("explicit deadline was not honored: calls=%d result=%q body=%s", provider.calls.Load(), provider.toolResult, recorder.Body.String())
 				}
 			} else {
+				waitCompletionTest(t, entered, "silent native command")
 				// Await a single timer, not repeated progress checks. Before the fix
 				// the GUI ends the request at modelIdle while curl is still alive.
 				select {

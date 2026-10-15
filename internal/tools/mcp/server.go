@@ -10,12 +10,10 @@ import (
 	"time"
 
 	"supercli/internal/system/childproc"
-	"supercli/internal/tools/interactive"
 )
 
 // ServerConfig mirrors a [mcp.servers.<name>] section in config.toml.
 type ServerConfig struct {
-	ConfirmCalls bool              `toml:"confirm_calls"`
 	AllowedTools []string          `toml:"allowed_tools"`
 	Command      string            `toml:"command"`
 	Args         []string          `toml:"args"`
@@ -33,8 +31,6 @@ type ServerConfig struct {
 type Server struct {
 	Name   string
 	Config ServerConfig
-	// ConfirmationChannel is supplied only by the hosting UI, never MCP content.
-	ConfirmationChannel chan<- interactive.AskRequest
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -153,15 +149,6 @@ func (s *Server) CallTool(ctx context.Context, name string, args []byte) (Result
 	}
 	if !s.ToolAllowed(name) {
 		return Result{}, fmt.Errorf("mcp: tool %q is outside the configured scope for %s", name, s.Name)
-	}
-	if s.Config.ConfirmCalls {
-		question := fmt.Sprintf("Allow MCP server %s to run %s once?\nArguments: %s", s.Name, name, args)
-		if len(question) > 16384 {
-			return Result{}, fmt.Errorf("mcp: action arguments exceed confirmation display limit")
-		}
-		if err := interactive.ConfirmAction(ctx, s.ConfirmationChannel, question); err != nil {
-			return Result{}, err
-		}
 	}
 	return client.CallTool(ctx, name, args)
 }

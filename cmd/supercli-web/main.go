@@ -102,7 +102,9 @@ func run(crashDataDir *string) {
 			fatal("single instance", instanceErr)
 		}
 		if alreadyRunning {
-			notifyAlreadyRunning(appName, startupUILanguage(*homeFlag, *dataDirFlag))
+			if !showExistingInstance(appProfile) {
+				notifyAlreadyRunning(appName, startupUILanguage(*homeFlag, *dataDirFlag))
+			}
 			return
 		}
 		defer releaseInstance()
@@ -291,6 +293,7 @@ func run(crashDataDir *string) {
 		UIFS:        uiFS,
 		AppName:     appName,
 		IconPath:    *iconFlag,
+		ShowEvent:   showEventName(appProfile),
 	}); err != nil {
 		fatal("run", err)
 	}

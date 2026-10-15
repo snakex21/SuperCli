@@ -19,6 +19,12 @@ func Start(cmd *exec.Cmd) (*Scope, error) {
 	return &Scope{}, nil
 }
 
+// StartVisible matches Start outside Windows, where no window is hidden.
+func StartVisible(cmd *exec.Cmd) (*Scope, error) { return Start(cmd) }
+
+// StartMinimized matches Start outside Windows. Callers wait on cmd.Process.
+func StartMinimized(cmd *exec.Cmd) (*Scope, error) { return Start(cmd) }
+
 func (*Scope) Kill(cmd *exec.Cmd) error {
 	journalDone(cmd)
 	if cmd == nil || cmd.Process == nil {

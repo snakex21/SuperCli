@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"supercli/internal/system/windowautomation"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/ctxexec"
 )
@@ -33,6 +34,9 @@ type Tool struct {
 	DataDir           string
 	Manager           *Manager
 	captureScreenshot func(context.Context, json.RawMessage) (core.Result, error)
+	windowMu          sync.Mutex
+	windowGate        chan struct{}
+	runWindow         func(context.Context, *windowautomation.Process, windowautomation.Request) (windowautomation.Result, error)
 }
 
 // New preserves the one-argument workspace constructor. The optional dataDir
@@ -48,8 +52,8 @@ func New(baseDir string, dataDir ...string) *Tool {
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name:        "process_session",
-		Description: "Start a persistent server/watcher/command/GUI once; reuse its id across turns until exit, stop or app close. timeout_ms 0/omitted: no runtime limit. Start waits up to 500 ms for early exits; yield_ms:0 skips that wait. Start is not proof of readiness: wait_ready blocks on a ready_pattern log regex, optionally checks a local ready_port once after matching; no polling. ready_at is a historical observation time, retained after exit/stop. wait blocks until exit; poll is for diagnostics. Write input, resize PTY, stop, list or screenshot its owned window. Launch the executable directly: detached shell launchers do not prove child liveness. One-shot commands use ctx_execute. pty=true merges streams. Maximum 3 active sessions; bounded output.",
-		Schema:      fmt.Sprintf(`{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","wait_ready","poll","write","resize","stop","list","screenshot"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":0,"maximum":%d,"default":0,"description":"0/omitted: run until exit or stop; positive: optional lifetime in ms"},"ready_pattern":{"type":"string","maxLength":512,"description":"wait_ready: regex in stdout OR stderr; retained logs count; process must still be running"},"ready_port":{"type":"integer","minimum":1,"maximum":65535,"description":"Optional single TCP check on 127.0.0.1 AFTER log match; no retries"},"ready_timeout_ms":{"type":"integer","minimum":0,"default":0,"description":"Optional wait deadline only; does not kill the process"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":500,"description":"Startup completion wait only; default 500 ms, 0 skips early-exit observation"},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`, ctxexec.MaxTimeoutMS),
+		Description: "Start a persistent server/watcher/command/GUI once; reuse its id across turns until exit, stop or app close. timeout_ms 0/omitted: no runtime limit. Start waits up to 500 ms for early exits; yield_ms:0 skips that wait. Start is not proof of readiness: wait_ready blocks on a ready_pattern log regex, optionally checks a local ready_port once after matching; no polling. ready_at is historical. wait blocks until exit; poll is for diagnostics. Write input, resize PTY, stop, list or screenshot its owned window. On Windows, inspect_window returns bounded accessibility elements; click/type use element_id without moving the mouse or injecting keys. type replaces the field value. Unsupported controls fail without a physical-input fallback. process_id targets an already running external program; never takes the user's mouse or keyboard. Launch the executable directly: detached shell launchers do not prove child liveness. One-shot commands use ctx_execute. pty=true merges streams. Maximum 3 active sessions; bounded output.",
+		Schema:      fmt.Sprintf(`{"type":"object","properties":{"action":{"type":"string","enum":["start","wait","wait_ready","poll","write","resize","stop","list","screenshot","inspect_window","click","type"]},"id":{"type":"string"},"command":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},"workdir":{"type":"string"},"env":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Optional KEY=VALUE entries"},"timeout_ms":{"type":"integer","minimum":0,"maximum":%d,"default":0,"description":"0/omitted: run until exit or stop; positive: optional lifetime in ms"},"ready_pattern":{"type":"string","maxLength":512,"description":"wait_ready: regex in stdout OR stderr; retained logs count; process must still be running"},"ready_port":{"type":"integer","minimum":1,"maximum":65535,"description":"Optional single TCP check on 127.0.0.1 AFTER log match; no retries"},"ready_timeout_ms":{"type":"integer","minimum":0,"default":0,"description":"Optional wait deadline only; does not kill the process"},"yield_ms":{"type":"integer","minimum":0,"maximum":1500,"default":500,"description":"Startup completion wait only; default 500 ms, 0 skips early-exit observation"},"input":{"type":"string","maxLength":16384},"newline":{"type":"boolean","default":true},"pty":{"type":"boolean","default":false,"description":"Attach a real pseudo-terminal; stdout and stderr are merged"},"visible":{"type":"boolean","default":false,"description":"start: GUI opens minimized without focus by default; true only when the user wants to see it"},"columns":{"type":"integer","minimum":20,"maximum":500,"default":100},"rows":{"type":"integer","minimum":5,"maximum":200,"default":30},"process_id":{"type":"integer","minimum":1,"description":"External running process, instead of id"},"window_id":{"type":"string","maxLength":32,"description":"Exact top-level window within the selected process; inspect_window returns it"},"element_id":{"type":"string","maxLength":64,"description":"Opaque id returned by inspect_window; stale ids fail"},"text":{"type":"string","maxLength":16384,"description":"type: replace accessible field value; no physical typing or clipboard"},"window_title":{"type":"string","maxLength":512,"description":"Optional title within the owned process for screenshot"},"attach":{"type":"boolean","default":false,"description":"Screenshot preview is automatic; true only for model pixel analysis"},"image_detail":{"type":"string","enum":["auto","original"]}},"required":["action"]}`, ctxexec.MaxTimeoutMS),
 		Fn:          t.Execute,
 	}
 }
@@ -65,6 +69,7 @@ type params struct {
 	Input          string   `json:"input"`
 	Newline        *bool    `json:"newline"`
 	PTY            bool     `json:"pty"`
+	Visible        bool     `json:"visible"`
 	Columns        int      `json:"columns"`
 	Rows           int      `json:"rows"`
 	WindowTitle    string   `json:"window_title"`
@@ -73,6 +78,10 @@ type params struct {
 	ReadyPattern   string   `json:"ready_pattern"`
 	ReadyPort      int      `json:"ready_port"`
 	ReadyTimeoutMS int      `json:"ready_timeout_ms"`
+	ProcessID      int      `json:"process_id"`
+	WindowID       string   `json:"window_id"`
+	ElementID      string   `json:"element_id"`
+	Text           string   `json:"text"`
 }
 
 func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
@@ -110,7 +119,12 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	case "list":
 		out = t.Manager.List()
 	case "screenshot":
+		if p.ID == "" && p.ProcessID != 0 {
+			return t.externalScreenshot(ctx, p)
+		}
 		return t.screenshot(ctx, p)
+	case "inspect_window", "click", "type":
+		return t.windowAction(ctx, p, raw)
 	default:
 		err = fmt.Errorf("process_session: unknown action %q", p.Action)
 	}
@@ -171,6 +185,7 @@ type process struct {
 	resizeFn    func(int, int) error
 	pty         bool
 	pid         int
+	windowBirth uint64
 	// Output draining may keep status=running after OS exit. Capture ownership
 	// ends as soon as the native waiter observes exit, not when pipes finish.
 	exited atomic.Bool

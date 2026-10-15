@@ -16,7 +16,9 @@ async function loadProjects() {
       return;
     }
     projects.forEach(function (p) {
-      var b = el("div", "side-item project-item" + (p.cwd ? " active" : ""));
+      // running: a conversation of this project is still working, possibly
+      // left going after switching here from that project.
+      var b = el("div", "side-item project-item" + (p.cwd ? " active" : "") + (p.running > 0 ? " running" : ""));
       var select = el("button", "project-select");
       select.type = "button";
       var tspan = el("span", "t");

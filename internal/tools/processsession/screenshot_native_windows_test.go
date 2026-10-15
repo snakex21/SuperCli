@@ -52,6 +52,16 @@ func TestOwnedWindowFixtureHelper(t *testing.T) {
 	}
 	callback := windows.NewCallback(func(hwnd, message, wparam, lparam uintptr) uintptr {
 		switch message {
+		case 0x0111: // WM_COMMAND, from the synthetic fixture button only.
+			if os.Getenv("SUPERCLI_OWNED_WINDOW_UIA") == "1" && wparam&0xffff == 202 {
+				name, _ := windows.UTF16PtrFromString(os.Getenv("SUPERCLI_OWNED_WINDOW_CLICKED"))
+				event, _, _ := ownedWindowKernel32.NewProc("OpenEventW").Call(0x0002, 0, uintptr(unsafe.Pointer(name)))
+				if event != 0 {
+					ownedWindowKernel32.NewProc("SetEvent").Call(event)
+					windows.CloseHandle(windows.Handle(event))
+				}
+				return 0
+			}
 		case 0x000F:
 			state := struct {
 				DC                 uintptr
@@ -101,6 +111,24 @@ func TestOwnedWindowFixtureHelper(t *testing.T) {
 	hwnd, _, err := ownedWindowUser32.NewProc("CreateWindowExW").Call(0x08000000, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(className)), 0x00CF0000, 20, 20, 256, 160, 0, 0, instance, 0)
 	if hwnd == 0 {
 		t.Fatalf("create owned fixture: %v", err)
+	}
+	if os.Getenv("SUPERCLI_OWNED_WINDOW_UIA") == "1" {
+		for _, control := range []struct {
+			class, text string
+			id, style   uintptr
+		}{
+			{"Edit", "visible seed", 201, 0x00800000},
+			{"Button", "Owned action", 202, 0},
+			{"Static", "Fixture label", 203, 0},
+			{"Edit", "PASSWORD_SENTINEL_DO_NOT_RETURN", 204, 0x00800020},
+		} {
+			class, _ := windows.UTF16PtrFromString(control.class)
+			text, _ := windows.UTF16PtrFromString(control.text)
+			child, _, err := ownedWindowUser32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(text)), 0x50000000|control.style, 10, 10+(control.id-201)*25, 180, 24, hwnd, control.id, instance, 0)
+			if child == 0 {
+				t.Fatalf("create accessibility fixture control: %v", err)
+			}
+		}
 	}
 	// Show at the bottom without activation; never focus or restore user windows.
 	ownedWindowUser32.NewProc("SetWindowPos").Call(hwnd, 1, 0, 0, 0, 0, 0x0010|0x0001|0x0002|0x0040)
@@ -197,22 +225,19 @@ func TestNativeOwnedSessionScreenshotKeepsForegroundAndPortablePreview(t *testin
 				t.Fatalf("owned fixture readiness wait=%d err=%v", wait, waitErr)
 			}
 			foreground, _, _ := ownedWindowUser32.NewProc("GetForegroundWindow").Call()
+			inputState := struct{ Size, Tick uint32 }{Size: 8}
+			ownedWindowUser32.NewProc("GetLastInputInfo").Call(uintptr(unsafe.Pointer(&inputState)))
+			inputBefore := inputState.Tick
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			raw, _ := json.Marshal(map[string]any{"action": "screenshot", "id": start.ID})
 			shot, err := tool.Execute(ctx, raw)
-			if after, _, _ := ownedWindowUser32.NewProc("GetForegroundWindow").Call(); after != foreground {
+			ownedWindowUser32.NewProc("GetLastInputInfo").Call(uintptr(unsafe.Pointer(&inputState)))
+			if after, _, _ := ownedWindowUser32.NewProc("GetForegroundWindow").Call(); after != foreground && inputState.Tick == inputBefore {
 				t.Fatal("owned capture changed foreground")
 			}
-			if minimized {
-				if err == nil && shot.Err == nil {
-					t.Fatal("minimized classic window unexpectedly accepted")
-				}
-				failure := fmt.Sprint(err, shot.Err)
-				if !strings.Contains(failure, "minimized") || shot.Image != nil || shot.Text != "" {
-					t.Fatalf("minimized limit concealed: %s", failure)
-				}
-				return
+			if inputState.Tick != inputBefore {
+				t.Log("Concurrent desktop input: foreground preservation cannot be assessed for this capture")
 			}
 			if err != nil || shot.Err != nil {
 				t.Fatalf("native owned capture failed: %v / %v", err, shot.Err)

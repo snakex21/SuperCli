@@ -17,6 +17,7 @@ import (
 
 	"supercli/internal/system/childproc"
 	"supercli/internal/system/processoutput"
+	"supercli/internal/system/windowautomation"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/ctxexec"
 	"supercli/internal/tools/sandbox"
@@ -130,7 +131,7 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 			_ = stdoutWriter.Close()
 			return snapshot{}, fmt.Errorf("process_session: stderr: %w", pipeErr)
 		}
-		stdin, pipeErr := cmd.StdinPipe()
+		stdinReader, stdin, pipeErr := os.Pipe()
 		if pipeErr != nil {
 			cancel()
 			m.mu.Unlock()
@@ -140,11 +141,21 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 			_ = stderrWriter.Close()
 			return snapshot{}, fmt.Errorf("process_session: stdin: %w", pipeErr)
 		}
+		cmd.Stdin = stdinReader
 		// Own the read ends: Cmd.Wait closes StdoutPipe/StderrPipe before a
 		// separately scheduled reader has necessarily drained them. Caller-
 		// supplied writer files let process exit and output draining be joined.
 		cmd.Stdout, cmd.Stderr = stdoutWriter, stderrWriter
-		scope, startErr := childproc.Start(cmd)
+		// GUI windows start minimized without activation so they never cover
+		// the user's work or take focus, yet stay available for
+		// screenshot/inspect_window; visible:true shows them normally.
+		// Consoles stay hidden either way.
+		startFn := childproc.StartMinimized
+		if p.Visible {
+			startFn = childproc.StartVisible
+		}
+		scope, startErr := startFn(cmd)
+		_ = stdinReader.Close()
 		if startErr != nil {
 			cancel()
 			m.mu.Unlock()
@@ -162,12 +173,26 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 		item.closeOutput = func() { _ = stdout.Close(); _ = stderr.Close() }
 		item.stdin = stdin
 		item.waitFn = func() (int, error) {
-			waitErr := cmd.Wait()
-			_ = scope.Close()
-			if cmd.ProcessState != nil {
-				return cmd.ProcessState.ExitCode(), waitErr
+			// Both start paths use caller-owned file streams, so the native
+			// wait is complete; exec.Cmd.Wait is unavailable for the
+			// minimized path, which bypasses exec's own start.
+			if p.Visible {
+				waitErr := cmd.Wait()
+				_ = scope.Close()
+				if cmd.ProcessState != nil {
+					return cmd.ProcessState.ExitCode(), waitErr
+				}
+				return -1, waitErr
 			}
-			return -1, waitErr
+			state, waitErr := cmd.Process.Wait()
+			_ = scope.Close()
+			if state == nil {
+				return -1, waitErr
+			}
+			if waitErr == nil && !state.Success() {
+				waitErr = &exec.ExitError{ProcessState: state}
+			}
+			return state.ExitCode(), waitErr
 		}
 		item.killFn = func() error {
 			if cmd.Process == nil {
@@ -179,6 +204,7 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 		go func() { defer item.streams.Done(); defer stdout.Close(); copyText(item.stdout, stdout) }()
 		go func() { defer item.streams.Done(); defer stderr.Close(); copyText(item.stderr, stderr) }()
 	}
+	item.windowBirth = windowautomation.Birth(item.pid)
 	m.items[id] = item
 	m.mu.Unlock()
 

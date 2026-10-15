@@ -64,7 +64,12 @@ func FindProjectInstructions(home string) string {
 	// Without an enclosing git repo only the workspace itself is checked, so a
 	// stray AGENTS.md in a home or Desktop folder never leaks into unrelated
 	// workspaces.
-	root := gitRoot(dir)
+	return findProjectInstructionFile(dir, gitRoot(dir))
+}
+
+// Keep traversal separate from root discovery so the no-repository policy can
+// also be tested when portable TEMP is itself located inside a Git checkout.
+func findProjectInstructionFile(dir, root string) string {
 	for {
 		for _, name := range ProjectInstructionFiles {
 			p := filepath.Join(dir, name)

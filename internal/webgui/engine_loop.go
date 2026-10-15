@@ -240,7 +240,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	reg.MustRegister(webSearcher.Spec())
 	reg.MustRegister(webSearcher.LookupSpec())
 	reg.MarkAlwaysOn("web_lookup")
-	if manager := e.mcpRuntime(); manager != nil && len(manager.Names()) > 0 {
+	if manager := e.mcpRuntimeFor(home); manager != nil && len(manager.Names()) > 0 {
 		reg.MustRegister(mcp.NewBridge(manager).Spec())
 		reg.MarkAlwaysOn("mcp_bridge")
 	}

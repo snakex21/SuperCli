@@ -65,7 +65,41 @@ func TestWindowSelectionIsRestrictedToProcess(t *testing.T) {
 		}
 	}
 	windows = append(windows, WindowInfo{HWND: "0x40", Title: "Settings", PID: 2})
-	if _, err := selectCaptureWindow(windows, WindowSelector{PID: 2}); err == nil || !strings.Contains(err.Error(), "2 matches") || strings.Contains(err.Error(), "0x10") {
+	if _, err := selectCaptureWindow(windows, WindowSelector{PID: 2}); err == nil || !strings.Contains(err.Error(), "2 matches") || strings.Contains(err.Error(), "0x10") ||
+		!strings.Contains(err.Error(), `0x20 "Editor"`) || !strings.Contains(err.Error(), `0x40 "Settings"`) {
 		t.Fatalf("process ambiguity=%v", err)
+	}
+}
+
+func TestWindowSelectionByProcessPicksModalDialog(t *testing.T) {
+	states := map[uintptr]windowSelectionState{
+		0x10: {Enabled: false},
+		0x20: {Enabled: true, Owner: 0x10},
+		0x30: {Enabled: true, Menu: true},
+		0x50: {Enabled: true},
+	}
+	previous := windowSelectionDetails
+	windowSelectionDetails = func(hwnd uintptr) windowSelectionState { return states[hwnd] }
+	defer func() { windowSelectionDetails = previous }()
+	windows := []WindowInfo{
+		{HWND: "0x10", Title: "Bez tytułu - Notatnik", PID: 7, Visible: true},
+		{HWND: "0x30", PID: 7, Visible: true},
+		{HWND: "0x20", Title: "Notatnik", PID: 7, Visible: true},
+		{HWND: "0x40", Title: "Other", PID: 8, Visible: true},
+	}
+	selected, err := selectCaptureWindow(windows, WindowSelector{PID: 7})
+	if err != nil || selected.HWND != "0x20" {
+		t.Fatalf("selected=%+v err=%v", selected, err)
+	}
+	// Explicit titles keep the exact/substring rule.
+	if selected, err := selectCaptureWindow(windows, WindowSelector{PID: 7, Title: "bez tytułu"}); err != nil || selected.HWND != "0x10" {
+		t.Fatalf("title selection=%+v err=%v", selected, err)
+	}
+	states[0x10] = windowSelectionState{Enabled: true}
+	states[0x20] = windowSelectionState{Enabled: true}
+	windows = append(windows, WindowInfo{HWND: "0x50", Title: "Game", PID: 7, Visible: true})
+	_, err = selectCaptureWindow(windows, WindowSelector{PID: 7})
+	if err == nil || !strings.Contains(err.Error(), "3 matches") || !strings.Contains(err.Error(), `0x50 "Game"`) || strings.Contains(err.Error(), "0x30") {
+		t.Fatalf("ambiguity=%v", err)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestSingleInstanceIsScopedByApplicationProfile(t *testing.T) {
@@ -26,6 +28,28 @@ func TestSingleInstanceIsScopedByApplicationProfile(t *testing.T) {
 		t.Fatalf("NestCafe profile collided with SuperCli: already=%v err=%v", already, err)
 	}
 	releaseNestCafe()
+}
+
+func TestShowExistingInstanceSignalsListener(t *testing.T) {
+	profile := fmt.Sprintf("test-show-%d", time.Now().UnixNano())
+	if showExistingInstance(profile) {
+		t.Fatal("show request succeeded without a running instance")
+	}
+	name, err := windows.UTF16PtrFromString(showEventName(profile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := windows.CreateEvent(nil, 0, 0, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(event)
+	if !showExistingInstance(profile) {
+		t.Fatal("show request failed with a listening instance")
+	}
+	if result, err := windows.WaitForSingleObject(event, 1000); err != nil || result != windows.WAIT_OBJECT_0 {
+		t.Fatalf("event not signalled: result=%d err=%v", result, err)
+	}
 }
 
 func TestSingleInstanceMutexIsScopedByExecutablePath(t *testing.T) {
