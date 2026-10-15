@@ -11,7 +11,14 @@ func TestNestCafeSystemPromptUsesOfficeProfile(t *testing.T) {
 	previous := sandbox.IsUnsandboxed()
 	sandbox.SetUnsandboxed(true)
 	t.Cleanup(func() { sandbox.SetUnsandboxed(previous) })
-	prompt := webAgentSystemPrompt(t.TempDir(), t.TempDir(), "test-model", true, false, false, nil, "nestcafe")
+	home := t.TempDir()
+	system := webAgentSystemPrompt(home, t.TempDir(), "test-model", true, false, false, nil, "nestcafe")
+	// The per-project workspace note rides the request tail, never the stable
+	// system prefix, so switching projects keeps the cached prefix intact.
+	if strings.Contains(system, home) {
+		t.Fatal("workspace path leaked into the stable system prompt")
+	}
+	prompt := system + "\n\n" + webWorkspaceNote(home, true)
 	for _, expected := range []string{
 		"NestCafe office mode",
 		"general desktop and office assistant",

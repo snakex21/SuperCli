@@ -44,6 +44,8 @@
   "session.renamed": "Gesprek hernoemd.",
   "session.deleted": "Gesprek verwijderd.",
   "session.stopRun": "Stop de huidige run voordat u dit gesprek verwijdert.",
+  "session.busy": "Dit gesprek loopt nog. Wacht tot het klaar is en verstuur dan opnieuw.",
+  "session.switchWait": "Dit gesprek start nog of wacht op je antwoord. Probeer het zo opnieuw.",
   "session.runtime": "Onthoud het chatmodel",
   "session.runtimeHint": "Herstel het aanbieder-, model- en redeneringsniveau van deze sessie wanneer deze wordt geopend.",
   "session.runtimeFailed": "Kan het sessiemodel niet herstellen; de huidige selectie behouden.",

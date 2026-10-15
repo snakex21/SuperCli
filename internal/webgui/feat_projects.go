@@ -110,14 +110,20 @@ func (e *Engine) projectActionContext(ctx context.Context, action, target, name,
 		return result, err
 	}
 	if action != "checkpoint_preview" {
-		// Foreground runs hold the matching read lock. Refuse active work rather
-		// than stopping it, and keep new runs out until this action finishes.
-		if !e.updateGate.TryLock() {
-			return result, errProjectWorkActive
-		}
-		defer e.updateGate.Unlock()
-		if e.HasActiveWork() {
-			return result, errProjectWorkActive
+		e.projectMu.Lock()
+		defer e.projectMu.Unlock()
+		// Selecting or adding a project only changes the workspace for future
+		// requests; a running conversation keeps the one it started in. Moving,
+		// removing or clearing checkpoints still refuses active work rather
+		// than stopping it, and keeps new runs out until the action finishes.
+		if action != "use" && action != "select" && action != "add" {
+			if !e.updateGate.TryLock() {
+				return result, errProjectWorkActive
+			}
+			defer e.updateGate.Unlock()
+			if e.HasActiveWork() {
+				return result, errProjectWorkActive
+			}
 		}
 		if err := ctx.Err(); err != nil {
 			return result, err

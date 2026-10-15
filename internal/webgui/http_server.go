@@ -193,6 +193,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSessionMutationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errSessionBusy) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if errors.Is(err, errSessionOutsideWorkspace) || errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "session not found in active project", http.StatusNotFound)
 		return

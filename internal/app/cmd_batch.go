@@ -229,11 +229,6 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if orchHard {
 		systemPrompt += agent.OrchestratorPrompt()
 	}
-	// Same as the TUI: state the real workspace last so the model does not
-	// guess a path (weak local models invented /home/dev on Windows).
-	if workingDirNote != "" {
-		systemPrompt += "\n\n" + workingDirNote
-	}
 	// Batch runs share the CLI/GUI tool_errors.log so one-shot
 	// failures land in the same corpus as interactive ones.
 	batchErrorLog := openToolErrorLog(dataDir)
@@ -251,6 +246,10 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		Caps:                  caps,
 		ErrorLog:              batchErrorLog,
 		System:                systemPrompt,
+		// Same as the TUI: state the real workspace in the request tail so the
+		// model does not guess a path (weak local models invented /home/dev on
+		// Windows) and the system prefix stays cacheable across projects.
+		LiveContext:           workingDirNote,
 		MaxSteps:              tomlCfg.MaxStepsOr(agent.DefaultMaxSteps),
 		BaseDir:               home,
 		UserDownloadsDir:      agent.SystemDownloadsDir,

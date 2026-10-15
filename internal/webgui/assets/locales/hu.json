@@ -44,6 +44,8 @@
   "session.renamed": "A beszélgetés átnevezve.",
   "session.deleted": "Beszélgetés törölve.",
   "session.stopRun": "A beszélgetés törlése előtt állítsa le az aktuális futtatást.",
+  "session.busy": "Ez a beszélgetés még fut. Várja meg, amíg befejeződik, majd küldje el újra.",
+  "session.switchWait": "Ez a beszélgetés még indul, vagy a válaszodra vár. Próbáld újra egy pillanat múlva.",
   "session.runtime": "Emlékezzen a chat modellre",
   "session.runtimeHint": "A munkamenet szolgáltatójának, modelljének és érvelési szintjének visszaállítása megnyitásakor.",
   "session.runtimeFailed": "Nem sikerült visszaállítani a munkamenet-modellt; az aktuális kijelölés megtartása.",

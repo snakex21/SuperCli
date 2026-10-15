@@ -45,13 +45,10 @@ func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator
 	if delegation {
 		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
 	}
-	if officeProfile && sandbox.IsUnsandboxed() {
-		system += fmt.Sprintf("\n\nTechnical working directory: %s\nFull access to ordinary user files is ON. File, document, search, and command tools may use absolute paths such as Desktop, Documents, Downloads, Pictures, and user-named folders. Sensitive system folders remain blocked.", home)
-	} else if sandbox.IsUnsandboxed() {
-		system += fmt.Sprintf("\n\nActive workspace: %s\nFull filesystem access is ON. File and search tools may use absolute paths outside this workspace; sensitive system folders remain blocked.", home)
-	} else {
-		system += fmt.Sprintf("\n\nActive workspace (all file and shell tools are sandboxed here): %s", home)
-	}
+	// The workspace note is deliberately absent here: it differs per project,
+	// and everything after it (rest of the prompt plus tool schemas) had to be
+	// re-evaluated by local servers whenever a chat started in another folder.
+	// webWorkspaceNote travels in the per-request live context instead.
 	if officeProfile {
 		system += `
 
@@ -74,6 +71,18 @@ NestCafe office mode:
 		}
 	}
 	return system
+}
+
+// webWorkspaceNote states the real sandbox root and access mode. It is sent in
+// the request tail (live context), so the stable system prefix stays
+// byte-identical across projects and remains cacheable.
+func webWorkspaceNote(home string, officeProfile bool) string {
+	if officeProfile && sandbox.IsUnsandboxed() {
+		return fmt.Sprintf("Technical working directory: %s\nFull access to ordinary user files is ON. File, document, search, and command tools may use absolute paths such as Desktop, Documents, Downloads, Pictures, and user-named folders. Sensitive system folders remain blocked.", home)
+	} else if sandbox.IsUnsandboxed() {
+		return fmt.Sprintf("Active workspace: %s\nFull filesystem access is ON. File and search tools may use absolute paths outside this workspace; sensitive system folders remain blocked.", home)
+	}
+	return fmt.Sprintf("Active workspace (all file and shell tools are sandboxed here): %s", home)
 }
 
 // wireTaskTool registers the task / send_message / task_stop tools on

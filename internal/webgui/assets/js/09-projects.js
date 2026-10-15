@@ -117,7 +117,10 @@ async function confirmProjectCleanup(action, target) {
   return { delete_checkpoints: choice === "cleanup" || choice === "always", remember_cleanup: choice === "always" || choice === "always_keep" };
 }
 async function projectAction(action, target, name, newPath) {
-  if (streaming && (action === "use" || action === "add" || action === "relocate" || action === "remove")) {
+  // Switching keeps a running conversation going in its own project; moving
+  // or removing a project still waits for the run.
+  var switching = action === "use" || action === "add";
+  if (streaming && (action === "relocate" || action === "remove" || (switching && !canDetachActiveRun()))) {
     toast(t("project.stopRun"));
     return;
   }
@@ -140,6 +143,7 @@ async function projectAction(action, target, name, newPath) {
     if (result && typeof result.delete_checkpoints_on_remove === "boolean") {
       projectDeleteCheckpointsOnRemove = result.delete_checkpoints_on_remove;
     }
+    if (switching && streaming) detachActiveRun();
     if (action === "use" || action === "add" || action === "relocate") projectEpoch++;
     await checkHealth();
     loadProjects();

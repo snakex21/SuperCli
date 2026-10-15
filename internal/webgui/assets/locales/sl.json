@@ -44,6 +44,8 @@
   "session.renamed": "Pogovor je bil preimenovan.",
   "session.deleted": "Pogovor izbrisan.",
   "session.stopRun": "Ustavite trenutno izvajanje, preden izbrišete ta pogovor.",
+  "session.busy": "Ta pogovor še poteka. Počakajte, da se konča, nato pošljite znova.",
+  "session.switchWait": "Ta pogovor se še zaganja ali čaka na vaš odgovor. Poskusite znova čez trenutek.",
   "session.runtime": "Zapomni si model klepeta",
   "session.runtimeHint": "Obnovi ponudnika, model in raven sklepanja te seje, ko se odpre.",
   "session.runtimeFailed": "Ni bilo mogoče obnoviti modela seje; obdrži trenutno izbiro.",

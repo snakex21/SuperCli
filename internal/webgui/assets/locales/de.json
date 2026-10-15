@@ -44,6 +44,8 @@
   "session.renamed": "Konversation umbenannt.",
   "session.deleted": "Konversation gelöscht.",
   "session.stopRun": "Stoppen Sie die aktuelle Ausführung, bevor Sie diese Konversation löschen.",
+  "session.busy": "Diese Unterhaltung läuft noch. Warten Sie, bis sie fertig ist, und senden Sie dann erneut.",
+  "session.switchWait": "Diese Unterhaltung startet noch oder wartet auf Ihre Antwort. Versuchen Sie es gleich noch einmal.",
   "session.runtime": "Denken Sie an das Chat-Modell",
   "session.runtimeHint": "Stellen Sie den Anbieter, das Modell und die Argumentationsebene dieser Sitzung wieder her, wenn sie geöffnet wird.",
   "session.runtimeFailed": "Das Sitzungsmodell konnte nicht wiederhergestellt werden. Beibehaltung der aktuellen Auswahl.",

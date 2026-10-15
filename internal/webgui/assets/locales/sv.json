@@ -44,6 +44,8 @@
   "session.renamed": "Konversationen har bytt namn.",
   "session.deleted": "Konversationen raderades.",
   "session.stopRun": "Stoppa den pågående körningen innan du tar bort den här konversationen.",
+  "session.busy": "Den här konversationen pågår fortfarande. Vänta tills den är klar och skicka sedan igen.",
+  "session.switchWait": "Den här konversationen startar fortfarande eller väntar på ditt svar. Försök igen om en stund.",
   "session.runtime": "Kom ihåg chattmodellen",
   "session.runtimeHint": "Återställ denna sessions leverantör, modell och resonemangsnivå när den öppnas.",
   "session.runtimeFailed": "Kunde inte återställa sessionsmodellen; behålla det nuvarande urvalet.",

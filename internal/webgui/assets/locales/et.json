@@ -44,6 +44,8 @@
   "session.renamed": "Vestlus nimetati ümber.",
   "session.deleted": "Vestlus on kustutatud.",
   "session.stopRun": "Enne selle vestluse kustutamist peatage praegune käitamine.",
+  "session.busy": "See vestlus on veel pooleli. Oodake, kuni see lõpeb, ja saatke uuesti.",
+  "session.switchWait": "See vestlus alles käivitub või ootab sinu vastust. Proovi hetke pärast uuesti.",
   "session.runtime": "Pidage meeles vestlusmudelit",
   "session.runtimeHint": "Selle avamisel taastage selle seansi pakkuja, mudeli ja arutlustaseme tase.",
   "session.runtimeFailed": "Seansi mudelit ei saanud taastada; praeguse valiku säilitamine.",

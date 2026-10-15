@@ -300,6 +300,11 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	} else {
 		return nil, nil, fmt.Errorf("goal context: %w", injectErr)
 	}
+	// Last, so the real sandbox root wins over any path a memory fact mentions.
+	if liveContext = strings.TrimSpace(liveContext); liveContext != "" {
+		liveContext += "\n\n"
+	}
+	liveContext += webWorkspaceNote(home, officeProfile)
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
 	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")

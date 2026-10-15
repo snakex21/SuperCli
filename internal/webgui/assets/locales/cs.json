@@ -44,6 +44,8 @@
   "session.renamed": "Konverzace přejmenována.",
   "session.deleted": "Konverzace byla smazána.",
   "session.stopRun": "Před odstraněním této konverzace zastavte aktuální běh.",
+  "session.busy": "Tato konverzace stále běží. Počkejte, až skončí, a pak odešlete znovu.",
+  "session.switchWait": "Tato konverzace se ještě spouští nebo čeká na vaši odpověď. Zkuste to za chvíli.",
   "session.runtime": "Pamatujte na model chatu",
   "session.runtimeHint": "Při otevření této relace obnovte poskytovatele, model a úroveň uvažování.",
   "session.runtimeFailed": "Nelze obnovit model relace; zachování aktuálního výběru.",

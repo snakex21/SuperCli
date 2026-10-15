@@ -60,8 +60,10 @@ var memoryBriefing string
 // workingDirNote states the ACTUAL sandbox root (the BaseDir the
 // file tools enforce) so the model uses the right path on its
 // first file call. Derived in main() from the same resolved home
-// the tools get — never hardcoded — and injected last so it wins
-// over any conflicting project path a memory fact might mention.
+// the tools get — never hardcoded. It rides the per-run live context
+// (request tail), after the briefing, so it wins over any conflicting
+// project path a memory fact might mention and does not split the
+// cacheable system prefix between projects.
 var workingDirNote string
 
 // buildSystemPrompt returns the base prompt plus the
@@ -92,11 +94,6 @@ func buildSystemPrompt(svc *goal.Service) string {
 	}
 	if memoryBriefing != "" {
 		base += "\n\n" + memoryBriefing
-	}
-	// Inject AFTER the briefing so the real sandbox root wins over
-	// any conflicting project path a memory fact may carry.
-	if workingDirNote != "" {
-		base += "\n\n" + workingDirNote
 	}
 	base += "\n\n" + prompt.MemoryGuidance(true)
 	if svc == nil {

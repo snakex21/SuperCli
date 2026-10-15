@@ -199,6 +199,9 @@ func assembleCodexRequestWithEffort(model string, msgs []Message, tools []ToolDe
 			Parameters:  parameters,
 		})
 	}
+	// Same as the Codex CLI: independent calls may share one model step.
+	// The loop already executes multi-call turns (OpenAI path advertises it).
+	req.ParallelToolCalls = len(req.Tools) > 0
 	var instructions []string
 	for _, m := range msgs {
 		switch m.Role {
