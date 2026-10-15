@@ -80,6 +80,9 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments string
+	// InvalidName is transient diagnostic evidence. Provider history uses the
+	// safe Name field; the original spelling must not be lost in error feedback.
+	InvalidName string `json:"-"`
 }
 
 // Usage reports token accounting for one turn.

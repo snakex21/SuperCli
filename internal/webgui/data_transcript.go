@@ -76,6 +76,8 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 		return nil, err
 	}
 	out := make([]transcriptMsg, 0, len(rows))
+	var imageContext []llm.Message
+	loadedImageContext := false
 	for _, m := range rows {
 		msg, err := m.ToMessage()
 		if err != nil {
@@ -83,6 +85,32 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 		}
 		if agent.IsLegacyCompactionSummary(msg) {
 			continue
+		}
+		presentation := msg
+		if legacyToolImageName(msg, len(attachments[m.Seq]) != 0) != "" {
+			// A page may start between a tool result and its old image carrier.
+			// Read a bounded prefix only for that specific missing context.
+			if !loadedImageContext && legacyToolImageNeedsContext(imageContext) {
+				prefix, _, readErr := store.ReadTranscriptMessagesBefore(ctx, id, rows[0].Seq, 64)
+				if readErr != nil {
+					return nil, readErr
+				}
+				var older []llm.Message
+				for _, row := range prefix {
+					value, decodeErr := row.ToMessage()
+					if decodeErr != nil {
+						return nil, decodeErr
+					}
+					older = append(older, value)
+				}
+				imageContext = append(older, imageContext...)
+				loadedImageContext = true
+			}
+			presentation = projectLegacyToolImage(msg, imageContext)
+		}
+		imageContext = append(imageContext, msg)
+		if len(imageContext) > 64 {
+			imageContext = imageContext[len(imageContext)-64:]
 		}
 		textOnly := msg.TextOnly()
 		item := transcriptMsg{
@@ -93,11 +121,11 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 			Name:        m.Name,
 			ToolCallID:  msg.ToolCallID,
 		}
-		if msg.Role == llm.RoleUser && m.MessageID > 0 {
+		item.ToolImages = transcriptToolImagePreviews(id, presentation, len(item.Attachments) != 0)
+		item.ToolImageCarrier = isTranscriptToolImageCarrier(presentation, len(item.Attachments) != 0)
+		if msg.Role == llm.RoleUser && m.MessageID > 0 && !item.ToolImageCarrier {
 			item.MessageID = strconv.FormatInt(m.MessageID, 10)
 		}
-		item.ToolImages = transcriptToolImagePreviews(id, msg, len(item.Attachments) != 0)
-		item.ToolImageCarrier = len(item.ToolImages) != 0
 		if !item.ToolImageCarrier && len(item.Attachments) == 0 {
 			for _, part := range msg.Parts {
 				if part.Type == llm.PartTypeImage && part.Image != nil {
@@ -125,8 +153,9 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 	return out, nil
 }
 
-// Only an explicitly host-authored, image-only carrier is reparented. Mixed,
-// genuine and legacy messages retain the existing attachment presentation.
+// Only host-authored image carriers are reparented. The transcript projection
+// may first recover provenance for a strictly matched legacy host envelope;
+// ordinary user messages and actual attachment records remain unchanged.
 func transcriptToolImagePreviews(sessionID string, msg llm.Message, realAttachments bool) []transcriptToolImage {
 	if realAttachments || msg.Role != llm.RoleUser || msg.Content != "" || msg.Name != "" || msg.ToolCallID != "" || len(msg.ToolCalls) != 0 {
 		return nil

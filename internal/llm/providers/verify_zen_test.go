@@ -39,10 +39,13 @@ func TestVerifyZenUsesExistingCatalogTransportAndGate(t *testing.T) {
 					t.Error(err)
 				}
 				if tc.transport == llm.ModelTransportResponses {
-					// The existing Responses dialect omits empty tools and uses
-					// the same session key in the body and Zen headers.
-					if _, ok := body["tools"]; ok {
-						t.Error("empty Responses tools must be omitted")
+					// First-run verification must exercise the same tool-capable
+					// gateway path as a normal agent request, including Responses.
+					tools, _ := json.Marshal(body["tools"])
+					for _, name := range []string{"connection_test", "bash", "read"} {
+						if !strings.Contains(string(tools), "\"name\":\""+name+"\"") {
+							t.Errorf("verification tool %q missing", name)
+						}
 					}
 					if key, _ := body["prompt_cache_key"].(string); key == "" || key != r.Header.Get("x-opencode-session") {
 						t.Errorf("Responses cache/session key mismatch: %q", key)

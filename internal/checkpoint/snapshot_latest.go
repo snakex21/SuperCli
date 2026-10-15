@@ -25,6 +25,9 @@ func (t *Turn) finishSnapshotLatestLocked(ctx context.Context) error {
 	cmd := t.manager.gitCommand(ctx, "rev-parse", "--verify", "--quiet", "refs/supercli/latest")
 	output, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return errors.Join(ctx.Err(), err)
+		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 1 {
 			return nil

@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Voltooi of stop de huidige taak voordat je deze opdracht gebruikt. Je concept blijft bewaard.",
   "tui.actions_render.2ac463151e": "Actiecentrum",
   "tui.actions_render.80e7b49c59": "Je gesprek en concept blijven klaar als je terugkomt.",
   "tui.actions_render.a96cd43c0d": "↑↓ kies · ←→ categorie · Enter open",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "een vorige sessie hervatten",
   "tui.command_desc.export": "sessie exporteren naar Markdown (arg 'clip' kopieert naar klembord)",
   "tui.command_desc.cost": "toon het kostendashboard met uitsplitsing per beurt",
-  "tui.command_desc.usage": "vernieuw en toon gebruikslimieten voor ChatGPT-abonnementen (Codex)",
+  "tui.command_desc.usage": "tokengebruik en kosten tonen; ChatGPT-abonnementslimieten voor Codex",
   "tui.command_desc.undo": "de laatste agentbeurt terugdraaien",
   "tui.command_desc.redo": "herstel de laatst teruggedraaide beurt",
   "tui.command_desc.test": "voer deterministische tests, lint- en racecontroles uit",

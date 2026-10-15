@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"supercli/internal/llm"
+	"supercli/internal/tools"
 )
 
 func TestRepairToolArguments(t *testing.T) {
@@ -83,6 +85,40 @@ func TestHardenToolCallUnknownName(t *testing.T) {
 	}
 	if strings.Contains(msg, "valid JSON") || strings.Contains(msg, "tool_name") {
 		t.Errorf("name error should not be diagnosed as malformed arguments: %q", msg)
+	}
+}
+
+func TestMalformedToolNameExplainsProtocolInsteadOfSearchingForMarker(t *testing.T) {
+	calls := normalizeMalformedToolCalls([]llm.ToolCall{{Name: "functions.task", Arguments: `{"prompt":"review"}`}})
+	if calls[0].InvalidName != "functions.task" {
+		t.Fatal("original name lost")
+	}
+	for _, attempt := range []int{0, maxToolFormatRetries} {
+		msg := HardenToolCall(&calls[0], []string{"task", "tool_search"}, attempt)
+		if !strings.Contains(msg, "error marker") || !strings.Contains(msg, "functions.task") || strings.Contains(msg, "Use tool_search") {
+			t.Fatalf("misleading repair: %s", msg)
+		}
+		if attempt == maxToolFormatRetries && !strings.Contains(msg, "Do not repeat") {
+			t.Fatal("retry feedback is unbounded")
+		}
+	}
+}
+
+func TestQualifiedToolNamesResolveOnlyExactRegisteredTargets(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{Name: "task", Description: "fixture", Schema: `{}`, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
+	loop := &Loop{registry: reg}
+	for _, name := range []string{"functions.task", " tools.task ", " task "} {
+		call := loop.normalizeToolCallNames([]llm.ToolCall{{Name: name, Arguments: `{"prompt":"unchanged"}`}})[0]
+		if call.Name != "task" || call.Arguments != `{"prompt":"unchanged"}` {
+			t.Fatalf("exact target not recovered: %+v", call)
+		}
+	}
+	for _, name := range []string{"functions.delete_file", "other.task", "functions.tas", "task;exec"} {
+		call := loop.normalizeToolCallNames([]llm.ToolCall{{Name: name, Arguments: `{}`}})[0]
+		if call.Name == "task" {
+			t.Fatalf("unregistered/ambiguous name was redirected: %s", name)
+		}
 	}
 }
 

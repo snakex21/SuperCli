@@ -153,7 +153,13 @@ func TestCompactionFailurePreservesPolicyAndVisibleCorrection(t *testing.T) {
 				{Role: llm.RoleAssistant, Content: "hidden ack"},
 				{Role: llm.RoleUser, Content: strings.Repeat("CURRENT-TASK ", 2000)},
 			}
-			l, _, _ := resolvedCompactFixture(t, messages, strings.Repeat("expanded summary ", 5000), 4000)
+			l, _, calls := resolvedCompactFixture(t, messages, strings.Repeat("expanded summary ", 5000), 4000)
+			t.Cleanup(func() {
+				logFailedCompactionState(t, l)
+				if t.Failed() {
+					t.Logf("summary callbacks=%d", *calls)
+				}
+			})
 			if failure == "provider error" {
 				l.summarizer = func(context.Context, llm.Provider, []llm.Message) (string, error) {
 					return "", context.DeadlineExceeded

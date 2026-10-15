@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Završite ili zaustavite trenutačni zadatak prije upotrebe ove naredbe. Nacrt se zadržava.",
   "tui.actions_render.2ac463151e": "Akcijski centar",
   "tui.actions_render.80e7b49c59": "Vaš razgovor i nacrt ostaju spremni kad se vratite.",
   "tui.actions_render.a96cd43c0d": "↑↓ odaberite · ←→ kategoriju · Enter otvoriti",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "nastaviti prethodnu sesiju",
   "tui.command_desc.export": "izvezi sesiju u Markdown (arg 'isječak' kopira u međuspremnik)",
   "tui.command_desc.cost": "prikaži nadzornu ploču s troškovima s analizom po potezu",
-  "tui.command_desc.usage": "osvježi i prikaži ograničenja upotrebe pretplate ChatGPT (Codex)",
+  "tui.command_desc.usage": "prikaži potrošnju tokena i troškove; ograničenja pretplate ChatGPT za Codex",
   "tui.command_desc.undo": "vratiti zadnji red agenta",
   "tui.command_desc.redo": "vratiti zadnji okret",
   "tui.command_desc.test": "izvoditi determinističke testove, provjere vlakana i utrke",

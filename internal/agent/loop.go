@@ -73,6 +73,9 @@ type Loop struct {
 	// speculative is the single in-flight background compaction summary.
 	speculativeMu sync.Mutex
 	speculative   *speculativeCompact
+	// rejectedCompact is the last older prefix whose summary was not smaller.
+	rejectedCompact      []llm.Message
+	rejectedCompactEpoch uint64
 
 	provider               llm.Provider
 	registry               *tools.Registry
@@ -883,6 +886,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 }
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
+	ctx = context.WithValue(ctx, backgroundRunKey{}, &backgroundRun{})
 	defer close(out)
 	defer l.releaseConversation()
 	defer l.stopSpeculativeCompact() // the next Run has a different prefix

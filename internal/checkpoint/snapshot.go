@@ -518,7 +518,7 @@ func (m *Manager) gitIndex(ctx context.Context, index string, input io.Reader, a
 	cmd.Stdin = input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("checkpoint %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("checkpoint %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }
@@ -529,7 +529,7 @@ func (m *Manager) commitTreeLocked(ctx context.Context, tree string) (string, er
 	cmd.Env = append(cmd.Env, "GIT_AUTHOR_NAME=SuperCli", "GIT_AUTHOR_EMAIL=checkpoint@local", "GIT_COMMITTER_NAME=SuperCli", "GIT_COMMITTER_EMAIL=checkpoint@local", "GIT_AUTHOR_DATE=1970-01-01T00:00:00+0000", "GIT_COMMITTER_DATE=1970-01-01T00:00:00+0000")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("checkpoint commit: %w: %s", err, out)
+		return "", fmt.Errorf("checkpoint commit: %w: %s", errors.Join(ctx.Err(), err), out)
 	}
 	commit := strings.TrimSpace(string(out))
 	if _, err := m.git(ctx, "update-ref", "refs/supercli/latest", commit); err != nil {

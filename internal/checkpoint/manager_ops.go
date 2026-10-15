@@ -35,7 +35,7 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 		configureCheckpointCommand(cmd)
 		cmd.Env = checkpointGitEnv()
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("checkpoint init: %w: %s", err, out)
+			return fmt.Errorf("checkpoint init: %w: %s", errors.Join(ctx.Err(), err), out)
 		}
 	}
 	excludePath := filepath.Join(m.repo, "info", "exclude")
@@ -78,7 +78,7 @@ func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
 	cmd := m.gitCommand(ctx, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }

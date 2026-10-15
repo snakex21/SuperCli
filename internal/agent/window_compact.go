@@ -60,6 +60,9 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// overhead and would otherwise spend one model call every step.
 		return nil
 	}
+	if reason == "" && l.autoCompactRejected(prefix) {
+		return nil
+	}
 	removed := 0
 	if l.summarizer != nil {
 		// The summary is a model call: label it and book its wall
@@ -84,6 +87,16 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		}
 		requestPrefix := history.requestPrefix(split)
 		if !compactionReduces(requestPrefix, summary) {
+			if reason == "" && est <= hardThreshold {
+				// Only the learned performance budget triggered this, so the
+				// request still fits the hard window: a summary as large as a
+				// short older prefix (observed 717 -> 730 tokens) keeps the exact
+				// history and the run continues. The prefix is remembered so
+				// later steps do not pay for it again. Above the hard threshold
+				// or after a real context-limit error it still fails loudly.
+				l.rejectAutoCompact(prefix)
+				return nil
+			}
 			before := compactablePrefixTokens(requestPrefix)
 			after := llm.EstimateMessageTokens(llm.Message{Role: llm.RoleUser, Content: summary})
 			return fmt.Errorf("summarize context: insufficient reduction (%d -> %d tokens)", before, after)

@@ -15,15 +15,18 @@ type backgroundMessage struct {
 	scoped  bool
 	epoch   uint64
 	writer  SessionWriter
+	run     *backgroundRun
 }
 
 // Capture while the parent owns the conversation, before launching the worker.
 // A worker finishing after /resume must save its report to its original session.
-func (l *Loop) backgroundDelivery() func(context.Context, string) {
+func (l *Loop) backgroundDelivery(ctx context.Context) func(context.Context, string) {
 	epoch, writer := l.conversationEpoch.Load(), l.writer
+	run := backgroundRunFrom(ctx)
 	return func(_ context.Context, content string) {
 		if strings.TrimSpace(content) != "" {
-			l.enqueueBackgroundMessage(backgroundMessage{content: content, scoped: true, epoch: epoch, writer: writer})
+			run.publishReport()
+			l.enqueueBackgroundMessage(backgroundMessage{content: content, scoped: true, epoch: epoch, writer: writer, run: run})
 		}
 	}
 }
@@ -71,6 +74,7 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 			continue
 		}
 		l.Messages = append(l.Messages, msg)
+		message.run.acceptReport()
 		l.persist(ctx, msg)
 		changed = true
 	}

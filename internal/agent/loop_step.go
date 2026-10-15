@@ -33,7 +33,9 @@ func (l *Loop) runStep(
 		out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step}
 		return stepAbort
 	}
+	background := backgroundRunFrom(ctx)
 	l.drainBackgroundMessages(ctx)
+	backgroundRevision := background.revision()
 	l.retryDirtyProjection(ctx)
 	// 1-based, matching the step numbers the phase telemetry prints.
 	l.curStep.Store(int64(step + 1))
@@ -144,8 +146,8 @@ func (l *Loop) runStep(
 	// assistant/tool-result pair enters history. Valid direct calls become
 	// ordinary target calls, so verification, error attribution and
 	// telemetry all retain the real tool name.
+	toolCalls = l.normalizeToolCallNames(toolCalls)
 	toolCalls = l.resolveInvokeToolCalls(toolCalls)
-	toolCalls = normalizeMalformedToolCalls(toolCalls)
 	if l.finalReplyOnly {
 		// Some weak/local providers may print a tool call even when the request
 		// exposes no tools. Never execute it after a completed document create.
@@ -253,6 +255,25 @@ func (l *Loop) runStep(
 
 	if len(toolCalls) == 0 {
 		l.drainBackgroundMessages(ctx)
+		delegatedWaiting := false
+		resume, waitErr := background.wait(ctx, backgroundRevision, func() {
+			delegatedWaiting = true
+			out <- DelegatedWaitEvent{Waiting: true}
+			out <- NoticeEvent{Text: "Waiting for delegated tasks to finish; their results will be handled automatically."}
+		})
+		if delegatedWaiting {
+			out <- DelegatedWaitEvent{Waiting: false}
+		}
+		if waitErr != nil {
+			l.statsEndStep(stepStart)
+			out <- ErrorEvent{Err: waitErr, Usage: *totalUsage, Steps: step + 1}
+			return stepAbort
+		}
+		if resume {
+			l.drainBackgroundMessages(ctx)
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
 		// A user may have typed while this provider call was running. Treat
 		// that as the next user turn instead of completing the Run and making
 		// them wait/re-submit. Draining here is a safe history boundary: the

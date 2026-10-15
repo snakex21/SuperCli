@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Finalizați sau opriți sarcina curentă înainte de a folosi această comandă. Ciorna este păstrată.",
   "tui.menu_navigation.74a883a037": "Setări",
   "tui.setting_language.8027f432a7": "Limba interfeței",
   "tui.language.title": "Limba interfeței",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "reluați o sesiune anterioară",
   "tui.command_desc.export": "sesiune de export în Markdown (arg „clip” se copiează în clipboard)",
   "tui.command_desc.cost": "afișați tabloul de bord al costurilor cu defalcare pe tură",
-  "tui.command_desc.usage": "reîmprospătați și afișați limitele de utilizare a abonamentului ChatGPT (Codex)",
+  "tui.command_desc.usage": "afișează utilizarea tokenurilor și costurile; limitele abonamentului ChatGPT pentru Codex",
   "tui.command_desc.undo": "revine ultimul turn al agentului",
   "tui.command_desc.redo": "restabiliți ultimul viraj inversat",
   "tui.command_desc.test": "executați teste deterministe, verificări de scame și curse",

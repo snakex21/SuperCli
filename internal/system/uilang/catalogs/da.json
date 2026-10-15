@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Afslut eller stop den aktuelle opgave, før du bruger denne kommando. Din kladde bevares.",
   "tui.actions_render.2ac463151e": "Aktionscenter",
   "tui.actions_render.80e7b49c59": "Din samtale og kladde forbliver klar, når du vender tilbage.",
   "tui.actions_render.a96cd43c0d": "↑↓ vælg · ←→ kategori · Enter åben",
@@ -554,7 +555,7 @@
   "tui.command_desc.resume": "genoptage en tidligere session",
   "tui.command_desc.export": "eksportsession til Markdown (arg 'klip' ​​kopierer til udklipsholder)",
   "tui.command_desc.cost": "vis omkostningsdashboard med opdeling pr. tur",
-  "tui.command_desc.usage": "Opdater og vis brugsgrænser for ChatGPT-abonnement (Codex)",
+  "tui.command_desc.usage": "vis tokenforbrug og omkostninger; ChatGPT-abonnementsgrænser for Codex",
   "tui.command_desc.undo": "fortryd den sidste agenttur",
   "tui.command_desc.redo": "gendanne den sidste vendte tur",
   "tui.command_desc.test": "køre deterministiske tests, fnug- og racetjek",

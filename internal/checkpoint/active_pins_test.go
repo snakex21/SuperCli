@@ -4,12 +4,56 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/tools"
 )
+
+func TestActivePinNativeFailurePreservesContextCause(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"cancel", "deadline", "ordinary failure"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			var cause error
+			switch mode {
+			case "cancel":
+				cancelled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx, cause = cancelled, context.Canceled
+			case "deadline":
+				expired, cancel := context.WithDeadline(ctx, time.Unix(0, 0))
+				defer cancel()
+				ctx, cause = expired, context.DeadlineExceeded
+			}
+			pins := &activePins{command: func(context.Context, ...string) *exec.Cmd {
+				// Model native Git exiting normally while its owning context is
+				// already cancelled. Ignoring the context here makes that race
+				// deterministic; the invalid option cannot change any repository.
+				cmd := exec.Command(git, "--supercli-invalid-ref-test-option")
+				configureCheckpointCommand(cmd)
+				return cmd
+			}}
+			err := pins.update(ctx, "")
+			var native *exec.ExitError
+			if !errors.As(err, &native) || native.ExitCode() == 0 || !strings.Contains(err.Error(), "supercli-invalid-ref-test-option") {
+				t.Fatalf("native error or diagnostics lost: %v", err)
+			}
+			if cause != nil && !errors.Is(err, cause) {
+				t.Fatalf("context cause lost: %v, want %v", err, cause)
+			}
+			if cause == nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				t.Fatalf("ordinary Git error became a cancellation: %v", err)
+			}
+		})
+	}
+}
 
 func TestActivePinsRetainEarlierBaselineAcrossOtherCompletedTurn(t *testing.T) {
 	t.Parallel()

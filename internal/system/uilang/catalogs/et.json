@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Enne selle käsu kasutamist lõpeta või peata praegune ülesanne. Mustand säilib.",
   "tui.actions_render.2ac463151e": "Tegevuskeskus",
   "tui.actions_render.80e7b49c59": "Teie vestlus ja mustand jäävad naastes valmis.",
   "tui.actions_render.a96cd43c0d": "↑↓ vali · ←→ kategooria · Enter avatud",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "jätkata eelmist seanssi",
   "tui.command_desc.export": "ekspordi seanss Markdown (arg 'klipp' kopeerib lõikelauale)",
   "tui.command_desc.cost": "kuva kulude armatuurlaud pöördepõhise jaotusega",
-  "tui.command_desc.usage": "värskenda ja kuva ChatGPT-tellimuse kasutuspiirangud (Codex)",
+  "tui.command_desc.usage": "kuva tokenikasutus ja kulud; ChatGPT tellimuse piirangud (Codex)",
   "tui.command_desc.undo": "naasta viimane agendi kord",
   "tui.command_desc.redo": "taastada viimane tagasipööratud pööre",
   "tui.command_desc.test": "teha deterministlikke teste, ebemeid ja rassikontrolle",

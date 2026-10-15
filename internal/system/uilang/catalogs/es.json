@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Finaliza o detén la tarea actual antes de usar este comando. Se conserva el borrador.",
   "tui.actions_render.2ac463151e": "centro de acción",
   "tui.actions_render.80e7b49c59": "Su conversación y borrador estarán listos cuando regrese.",
   "tui.actions_render.a96cd43c0d": "↑↓ elegir · ←→ categoría · Enter abrir",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "reanudar una sesión anterior",
   "tui.command_desc.export": "exportar sesión a Markdown (arg 'clip' copia al portapapeles)",
   "tui.command_desc.cost": "mostrar panel de costos con desglose por turno",
-  "tui.command_desc.usage": "actualizar y mostrar los límites de uso de la suscripción ChatGPT (Codex)",
+  "tui.command_desc.usage": "mostrar uso de tokens y costes; límites de suscripción ChatGPT para Codex",
   "tui.command_desc.undo": "revertir el último turno del agente",
   "tui.command_desc.redo": "restaurar el último giro revertido",
   "tui.command_desc.test": "ejecutar pruebas deterministas, comprobaciones de pelusa y carreras",

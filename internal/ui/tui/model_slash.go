@@ -10,15 +10,28 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/llm"
 )
 
 func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
-	if cmd.Name == "projects" && strings.TrimSpace(cmd.Args) != "" && m.hasActiveTask() {
-		m.setStatus(m.tr("project.stopRun"), false)
-		return m, m.statusClearCmd()
-	}
 	if cmd.Name == "update" && m.hasActiveTask() && strings.EqualFold(strings.TrimSpace(cmd.Args), "install") {
 		m.setStatus(m.tr("update.busy"), false)
+		return m, m.statusClearCmd()
+	}
+	if m.busy && !slashAvailableDuringRun(cmd) {
+		m.setStatus(m.tr("tui.slash.busy"), false)
+		return m, m.statusClearCmd()
+	}
+	// Usage tokens/costs exist for every provider. Keep the account-limit
+	// refresh path for Codex, which actually exposes subscription windows.
+	if cmd.Name == "usage" && strings.TrimSpace(cmd.Args) == "" && !supportsSubscriptionUsage(m.llm) {
+		return m.openUsageMenu()
+	}
+	if m.busy && cmd.Name == "usage" {
+		return m.openCodexUsageMenu()
+	}
+	if cmd.Name == "projects" && strings.TrimSpace(cmd.Args) != "" && m.hasActiveTask() {
+		m.setStatus(m.tr("project.stopRun"), false)
 		return m, m.statusClearCmd()
 	}
 	if cmd.Name == "update" && cmd.Args == "" {
@@ -108,6 +121,33 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		out, err := handler(ctx, cmd.Args)
 		return slashResultMsg{Body: out, Err: err, Document: true, RefreshAccounts: cmd.Name == "login" || cmd.Name == "logout"}
 	}
+}
+
+// These commands use thread-safe state without replacing the active run/cancel
+// handler. /context needs a stable loop history, so it remains idle-only.
+// Other commands remain visible in the palette with a clear busy message.
+func slashAvailableDuringRun(cmd SlashCommand) bool {
+	switch cmd.Name {
+	case "help", "status", "workers", "cost":
+		return true
+	case "update":
+		return cmd.Args == "" || cmd.Args == "check" || cmd.Args == "download"
+	case "usage":
+		return strings.TrimSpace(cmd.Args) == ""
+	default:
+		return false
+	}
+}
+
+func supportsSubscriptionUsage(provider llm.Provider) bool {
+	provider = llm.Unwrap(provider)
+	_, single := provider.(interface {
+		FetchUsage(context.Context) (llm.CodexRateLimits, error)
+	})
+	_, pooled := provider.(interface {
+		FetchUsageAll(context.Context) (llm.CodexRateLimits, error)
+	})
+	return single || pooled
 }
 
 func (m Model) hasActiveTask() bool {

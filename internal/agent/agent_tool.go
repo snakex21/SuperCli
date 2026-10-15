@@ -64,8 +64,8 @@ type AgentTool struct {
 	// AdvisorOff (config advisor_model = "off") removes the advise flag
 	// from the schema and refuses advise:true calls: the user turned the
 	// second opinion off.
-	AdvisorOff bool
-	PrefillProfiles       *llm.PrefillProfiles
+	AdvisorOff      bool
+	PrefillProfiles *llm.PrefillProfiles
 	// WorkerPing verifies the worker backend, lazily, on the first
 	// delegation only (never on the startup path). Nil = no probe. On
 	// backend failure every delegation falls back to Provider and a single
@@ -147,7 +147,7 @@ func (a *AgentTool) Spec() tools.Tool {
 		Description: "Delegate independent work or substantial exploration to an isolated worker. " +
 			"Use direct tools for targeted lookups; send_message to reuse a worker. " +
 			"Provide goal, paths/findings and expected result. Relevant already-read source excerpts are attached automatically; other chat history is private. " +
-			"Returns a report and evidence. Workers cannot delegate.",
+			"Returns a report and evidence; use these to finish the user's task. Background results resume this run automatically: end the response to wait, without polling or restarting pending work. Workers cannot delegate.",
 		Schema: fmt.Sprintf(`{
 			"type": "object",
 			"properties": {

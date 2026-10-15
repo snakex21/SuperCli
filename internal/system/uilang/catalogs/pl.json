@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Zakończ lub zatrzymaj bieżącą pracę przed użyciem tej komendy. Wpisany tekst zostaje zachowany.",
   "tui.actions_render.2ac463151e": "Centrum działań",
   "tui.actions_render.80e7b49c59": "Rozmowa i szkic wiadomości czekają po powrocie.",
   "tui.actions_render.a96cd43c0d": "↑↓ wybierz · ←→ kategoria · Enter otwórz",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "wznów wcześniejszą sesję",
   "tui.command_desc.export": "eksportuj sesję do Markdown",
   "tui.command_desc.cost": "pokaż koszty według tur",
-  "tui.command_desc.usage": "odśwież i pokaż limity użycia subskrypcji ChatGPT (Codex)",
+  "tui.command_desc.usage": "pokaż zużycie tokenów i koszty; limity subskrypcji ChatGPT (Codex)",
   "tui.command_desc.undo": "cofnij ostatnią turę agenta",
   "tui.command_desc.redo": "przywróć cofniętą turę",
   "tui.command_desc.test": "uruchom testy, lint i wykrywanie wyścigów",

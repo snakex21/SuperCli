@@ -17,6 +17,9 @@ import (
 )
 
 func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.autocomp.kind != autocompNone {
+		return m.handleAutocompleteKey(msg)
+	}
 	if msg.String() == "enter" {
 		if m.cancelling {
 			m.setStatus(m.tr("tui.model_input.c29bf4d47d"), false)
@@ -25,6 +28,17 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
 			return m, nil
+		}
+		if text == "/" {
+			m.updateAutocompleteState()
+			return m, nil
+		}
+		if command := ParseSlashCommand(text); command != nil {
+			if slashAvailableDuringRun(*command) {
+				m.input.Reset()
+				m.syncInputHeight()
+			}
+			return m.dispatchSlashCommand(*command)
 		}
 		q, ok := m.agent.(interjectionQueuer)
 		if !ok || !q.QueueInterjection(text) {
@@ -45,6 +59,7 @@ func (m Model) handleBusyInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.syncTypedInputHeight()
+	m.updateAutocompleteState()
 	return m, cmd
 }
 

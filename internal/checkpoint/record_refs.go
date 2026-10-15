@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -112,7 +113,7 @@ func (m *Manager) updateRecordRefsLocked(ctx context.Context, updates, operation
 	cmd := m.gitCommand(ctx, "-c", "core.fsync=reference", "update-ref", "--stdin")
 	cmd.Stdin = strings.NewReader("start\n" + updates + "prepare\ncommit\n")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("checkpoint %s: %w: %s", operation, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("checkpoint %s: %w: %s", operation, errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -40,6 +40,20 @@ const badToolCallMarker = "invalid tool call: "
 func HardenToolCall(tc *llm.ToolCall, known []string, attempt int) string {
 	// 1. Tool name validation with did-you-mean.
 	if !containsName(known, tc.Name) {
+		if tc.Name == "invalid_tool_call" {
+			msg := badToolCallMarker + "the provider returned a missing or invalid function name. invalid_tool_call is an error marker, not an available tool; do not search for it."
+			if tc.InvalidName != "" {
+				name := tc.InvalidName
+				if len(name) > 160 {
+					name = name[:160] + "…"
+				}
+				msg += fmt.Sprintf(" Original name: %q.", name)
+			}
+			if attempt >= maxToolFormatRetries {
+				return msg + " Do not repeat this malformed call. Explain the blocker in your reply."
+			}
+			return msg + " Choose the exact function name from the provided definitions and pass its arguments separately as JSON."
+		}
 		if advice := retiredEditToolAdvice(tc.Name); advice != "" && containsName(known, "patch_file") {
 			return advice
 		}
@@ -116,10 +130,35 @@ func normalizeMalformedToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 			calls[i].ID = syntheticToolCallID("repair", "call")
 		}
 		if !providerSafeToolName(calls[i].Name) {
+			calls[i].InvalidName = calls[i].Name
 			calls[i].Name = "invalid_tool_call"
 		}
 	}
 	return calls
+}
+
+// Accept formatting wrappers only when they identify an exact registered tool.
+// This never fuzzy-matches an action, invents arguments or activates a tool.
+func (l *Loop) normalizeToolCallNames(calls []llm.ToolCall) []llm.ToolCall {
+	for i := range calls {
+		original := calls[i].Name
+		if _, exists := l.registry.Get(original); exists {
+			continue
+		}
+		name := strings.TrimSpace(original)
+		for _, prefix := range []string{"functions.", "tools."} {
+			if strings.HasPrefix(name, prefix) {
+				name = strings.TrimPrefix(name, prefix)
+				break
+			}
+		}
+		if providerSafeToolName(name) {
+			if _, exists := l.registry.Get(name); exists {
+				calls[i].Name = name
+			}
+		}
+	}
+	return normalizeMalformedToolCalls(calls)
 }
 
 func providerSafeToolName(name string) bool {
