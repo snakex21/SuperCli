@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -33,10 +35,11 @@ var (
 )
 
 type windowHelperRequest struct {
-	Mode        string `json:"mode"`
-	HWND        string `json:"hwnd,omitempty"`
-	Title       string `json:"title,omitempty"`
-	ExpectedPID uint32 `json:"expected_pid,omitempty"`
+	Mode           string `json:"mode"`
+	HWND           string `json:"hwnd,omitempty"`
+	Title          string `json:"title,omitempty"`
+	ExpectedPID    uint32 `json:"expected_pid,omitempty"`
+	RecoveryHandle uint64 `json:"recovery_handle,omitempty"`
 }
 
 // PrintWindow has no cancellation API. Run it in a short-lived hidden copy of
@@ -87,6 +90,15 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 		}
 		return json.NewEncoder(output).Encode(info)
 	case "capture":
+		var recovery *windowCaptureMapping
+		if request.RecoveryHandle != 0 {
+			var err error
+			recovery, err = mapWindowCaptureRecovery(windows.Handle(request.RecoveryHandle))
+			if err != nil {
+				return fmt.Errorf("capture recovery mapping: %w", err)
+			}
+			defer recovery.close()
+		}
 		selector := WindowSelector{Title: request.Title, HWND: request.HWND, PID: request.ExpectedPID}
 		if err := validateWindowSelector(selector); err != nil {
 			return err
@@ -105,18 +117,23 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 			if err := requireCaptureProcessAlive(process); err != nil {
 				return err
 			}
-			if selector.HWND == "" {
-				// One bounded event wait for initialization, not a readiness polling
-				// loop. Console/no-message-queue processes return immediately. An
-				// already busy app may still have a capturable window, so selection
-				// below is authoritative even when this wait times out or fails.
-				captureUser32.NewProc("WaitForInputIdle").Call(uintptr(process), 2000)
-			}
 		}
 		if request.Title != "" || request.HWND == "" {
 			infos, err := listNativeProcessWindows(context.Background(), selector.PID)
 			if err != nil {
 				return err
+			}
+			if len(infos) == 0 && process != 0 {
+				// Only a process without windows needs an initialization wait.
+				// A busy, existing window must not pay another two seconds on
+				// every screenshot. One event wait, then one fresh enumeration.
+				idle, _, _ := captureUser32.NewProc("WaitForInputIdle").Call(uintptr(process), 2000)
+				if idle == 0 {
+					infos, err = listNativeProcessWindows(context.Background(), selector.PID)
+					if err != nil {
+						return err
+					}
+				}
 			}
 			selected, err := selectCaptureWindow(infos, selector)
 			if err != nil {
@@ -128,7 +145,11 @@ func runWindowCaptureHelper(input io.Reader, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err := captureNativeWindow(context.Background(), hwnd, request.ExpectedPID, output); err != nil {
+		captureCtx := context.Background()
+		if recovery != nil {
+			captureCtx = context.WithValue(captureCtx, windowCaptureRecoveryKey{}, recovery.record)
+		}
+		if err := captureNativeWindow(captureCtx, hwnd, request.ExpectedPID, output); err != nil {
 			return err
 		}
 		if process != 0 {
@@ -145,6 +166,15 @@ func runWindowHelper(ctx context.Context, request windowHelperRequest, limit int
 	if err != nil {
 		return nil, err
 	}
+	var recovery *windowCaptureMapping
+	if request.Mode == "capture" {
+		recovery, err = newWindowCaptureMapping()
+		if err != nil {
+			return nil, fmt.Errorf("capture recovery mapping: %w", err)
+		}
+		defer recovery.close()
+		request.RecoveryHandle = uint64(recovery.handle)
+	}
 	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
@@ -157,6 +187,10 @@ func runWindowHelper(ctx context.Context, request windowHelperRequest, limit int
 		}
 	}
 	cmd.Env = append(cmd.Env, windowHelperEnv+"="+windowHelperMarker)
+	if recovery != nil {
+		recovery.inherit(cmd)
+		return runRecoverableWindowCapture(ctx, cmd, limit, recovery)
+	}
 	return captureCommand(ctx, cmd, limit)
 }
 
@@ -382,6 +416,13 @@ func listNativeProcessWindows(ctx context.Context, pid uint32) ([]WindowInfo, er
 			stopped = err
 			return 0
 		}
+		if pid != 0 {
+			var owner uint32
+			captureUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&owner)))
+			if owner != pid {
+				return 1 // do not query titles/styles of unrelated applications
+			}
+		}
 		info, err := inspectNativeWindow(hwnd)
 		if err == nil && (pid == 0 || info.PID == pid) && (info.Title != "" || info.Visible || info.Minimized) {
 			if len(infos) >= 512 {
@@ -410,6 +451,10 @@ func captureNativeWindow(ctx context.Context, hwnd uintptr, expectedPID uint32, 
 }
 
 func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint32, output io.Writer, desktop bool) error {
+	return captureNativeWindowRendering(ctx, hwnd, expectedPID, output, desktop, renderNativeWindow)
+}
+
+func captureNativeWindowRendering(ctx context.Context, hwnd uintptr, expectedPID uint32, output io.Writer, desktop bool, render func(context.Context, uintptr, WindowInfo, io.Writer, bool) error) error {
 	restore := enterWindowCaptureDPI(hwnd)
 	defer restore()
 	info, err := inspectNativeWindow(hwnd)
@@ -419,13 +464,53 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 	if expectedPID != 0 && info.PID != expectedPID {
 		return fmt.Errorf("selected window was closed or replaced; list windows again")
 	}
-	var rect nativeWindowRect
-	if info.Minimized && !desktop {
-		if reminimize, err := peekMinimizedWindow(hwnd); err == nil {
-			defer reminimize()
-			info.Minimized = false
+	// Most classic windows render while minimized. Try that first: no style,
+	// visibility, animation or Z-order changes and no fixed frame-settle delay.
+	err = render(ctx, hwnd, info, output, desktop)
+	if err == nil || !info.Minimized || desktop || !errors.Is(err, errWindowRender) {
+		return err
+	}
+	recovery, _ := ctx.Value(windowCaptureRecoveryKey{}).(*windowCaptureRecovery)
+	if recovery == nil {
+		return fmt.Errorf("%w; temporary restore needs a parent recovery guard", err)
+	}
+	cleanup, peekErr := peekMinimizedWindow(hwnd, recovery)
+	if peekErr != nil {
+		return fmt.Errorf("%w; minimized restore: %v", err, peekErr)
+	}
+	defer cleanup() // also clean up on panic; parent covers a killed helper
+	current, err := inspectNativeWindow(hwnd)
+	if err == nil && current.PID != info.PID {
+		err = fmt.Errorf("window ownership changed during capture")
+	}
+	if err == nil {
+		err = render(ctx, hwnd, current, output, desktop)
+	}
+	return errors.Join(err, cleanup())
+}
+
+var errWindowRender = errors.New("application background rendering unavailable")
+
+// Write metadata only when PNG encoding starts. A failed render has emitted
+// nothing, so the minimized fallback cannot append a second partial frame.
+type windowFrameWriter struct {
+	io.Writer
+	info    WindowInfo
+	started bool
+}
+
+func (w *windowFrameWriter) Write(p []byte) (int, error) {
+	if !w.started {
+		w.started = true
+		if err := json.NewEncoder(w.Writer).Encode(w.info); err != nil {
+			return 0, err
 		}
 	}
+	return w.Writer.Write(p)
+}
+
+func renderNativeWindow(ctx context.Context, hwnd uintptr, info WindowInfo, output io.Writer, desktop bool) error {
+	var rect nativeWindowRect
 	if info.Minimized {
 		placement := nativeWindowPlacement{Length: uint32(unsafe.Sizeof(nativeWindowPlacement{}))}
 		ok, _, err := captureUser32.NewProc("GetWindowPlacement").Call(hwnd, uintptr(unsafe.Pointer(&placement)))
@@ -444,15 +529,11 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 		return err
 	}
 	info.Width, info.Height = int(width), int(height)
-	// Metadata is followed by PNG bytes. A failed render exits unsuccessfully and
-	// the caller discards all partial output.
-	if err := json.NewEncoder(output).Encode(info); err != nil {
-		return err
-	}
-	return writeWindowsBitmap(ctx, int32(width), int32(height), output, func(_, mem uintptr, pixels []byte) error {
+	return writeWindowsBitmap(ctx, int32(width), int32(height), &windowFrameWriter{Writer: output, info: info}, func(_, mem uintptr, pixels []byte) error {
 		var renderError error
-		// Full-content capture serves modern compositor applications. The documented
-		// WM_PRINT path also serves classic GDI windows while hidden or minimized.
+		// Keep cross-process drawing inside PrintWindow. Sending WM_PRINT
+		// directly with this helper's HDC does not reliably render another
+		// process's window; the native fixture verifies the actual pixels.
 		for _, flags := range []uintptr{2, 0} {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -462,7 +543,7 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 			}
 			ok, _, err := captureUser32.NewProc("PrintWindow").Call(hwnd, mem, flags)
 			if ok == 0 {
-				renderError = fmt.Errorf("window refused background capture: %v; its application may not support it", err)
+				renderError = fmt.Errorf("%w: window refused background capture: %v", errWindowRender, err)
 				continue
 			}
 			flushed, _, err := captureGDI32.NewProc("GdiFlush").Call()
@@ -482,9 +563,9 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 			if desktop {
 				renderError = fmt.Errorf("shell desktop returned untouched or incomplete content")
 			} else if info.Minimized {
-				renderError = fmt.Errorf("minimized window returned blank or incomplete content; its application does not support capture while minimized")
+				renderError = fmt.Errorf("%w: minimized window returned blank or incomplete content", errWindowRender)
 			} else {
-				renderError = fmt.Errorf("window returned blank or incomplete content; its application may not support background capture")
+				renderError = fmt.Errorf("%w: window returned blank or incomplete content", errWindowRender)
 			}
 		}
 		return renderError
@@ -498,7 +579,20 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 // activation) and restores its original extended style. Focus never moves.
 // Classic GDI and DirectX programs paint nothing while minimized, so this is
 // the only way to capture them while they stay on the taskbar.
-func peekMinimizedWindow(hwnd uintptr) (func(), error) {
+func peekMinimizedWindow(hwnd uintptr, recovery *windowCaptureRecovery) (func() error, error) {
+	// This mutex exists only for the capture, and also excludes other SuperCli
+	// instances. No waiting/retry loop or resident window watcher is needed.
+	name, _ := windows.UTF16PtrFromString(fmt.Sprintf("Local\\SuperCli.WindowCapture.%X", hwnd))
+	mutex, err := windows.CreateMutex(nil, false, name)
+	if err != nil {
+		return nil, err
+	}
+	status, err := windows.WaitForSingleObject(mutex, 0)
+	if err != nil || (status != windows.WAIT_OBJECT_0 && status != windows.WAIT_ABANDONED) {
+		windows.CloseHandle(mutex)
+		return nil, fmt.Errorf("window already has an active capture")
+	}
+	unlock := func() { windows.ReleaseMutex(mutex); windows.CloseHandle(mutex) }
 	get, set := "GetWindowLongPtrW", "SetWindowLongPtrW"
 	if unsafe.Sizeof(uintptr(0)) == 4 {
 		get, set = "GetWindowLongW", "SetWindowLongW"
@@ -509,18 +603,29 @@ func peekMinimizedWindow(hwnd uintptr) (func(), error) {
 	if original&layered != 0 {
 		// The application owns its layering/alpha; changing it could not be
 		// undone faithfully.
+		unlock()
 		return nil, fmt.Errorf("layered window")
 	}
+	if err := recovery.prepare(hwnd, original); err != nil {
+		unlock()
+		return nil, err
+	}
+	cleanup := func() error {
+		err := recovery.restore()
+		unlock()
+		return err
+	}
+	// cleanup is idempotent, including its mutex handle.
+	var once sync.Once
+	var cleanupErr error
+	finish := func() error { once.Do(func() { cleanupErr = cleanup() }); return cleanupErr }
 	captureUser32.NewProc(set).Call(hwnd, exStyle, original|layered|transparent)
 	ok, _, err := captureUser32.NewProc("SetLayeredWindowAttributes").Call(hwnd, 0, 0, 2) // LWA_ALPHA = 0.
 	if ok == 0 {
-		captureUser32.NewProc(set).Call(hwnd, exStyle, original)
-		return nil, fmt.Errorf("transparent capture unavailable: %v", err)
+		return nil, errors.Join(fmt.Errorf("transparent capture unavailable: %v", err), finish())
 	}
-	// No restore/minimize animation: nothing may flash on the user's screen.
-	dwmSet := windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmSetWindowAttribute")
-	disabled, enabled := int32(1), int32(0)
-	dwmSet.Call(hwnd, 3, uintptr(unsafe.Pointer(&disabled)), 4) // DWMWA_TRANSITIONS_FORCEDISABLED.
+	// Alpha is already zero before restore. Do not overwrite the application's
+	// DWM transition preference: Windows exposes no corresponding getter.
 	const noActivateBottom = 0x0010 | 0x0001 | 0x0002 // SWP_NOACTIVATE|NOSIZE|NOMOVE.
 	captureUser32.NewProc("ShowWindow").Call(hwnd, 4) // SW_SHOWNOACTIVATE restores.
 	captureUser32.NewProc("SetWindowPos").Call(hwnd, 1, 0, 0, 0, 0, noActivateBottom)
@@ -529,11 +634,7 @@ func peekMinimizedWindow(hwnd uintptr) (func(), error) {
 	// GPU programs resume rendering asynchronously after restore; give them
 	// a few frames. This is a fixed bounded delay, not a readiness poll.
 	time.Sleep(150 * time.Millisecond)
-	return func() {
-		captureUser32.NewProc("ShowWindow").Call(hwnd, 7) // SW_SHOWMINNOACTIVE.
-		captureUser32.NewProc(set).Call(hwnd, exStyle, original)
-		dwmSet.Call(hwnd, 3, uintptr(unsafe.Pointer(&enabled)), 4)
-	}, nil
+	return finish, nil
 }
 
 func enterCaptureDPI() func() { return enterCaptureDPIContext(^uintptr(3)) }

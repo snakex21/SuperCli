@@ -167,8 +167,12 @@ func describe(o *comObject, r Request, hwnd uintptr, depth int, actions bool) (E
 			if pattern := o.pattern(p); pattern != nil {
 				if p.id == expandPattern.id {
 					state, err := pattern.integer(5) // CurrentExpandCollapseState
+					if err != nil {
+						pattern.release()
+						break // unknown parent state must not become an Invoke/Select
+					}
 					e.Expansion = expansionState(state)
-					if err != nil || state == 3 {
+					if state == 3 {
 						pattern.release()
 						continue
 					}
@@ -224,6 +228,14 @@ func windowClass(hwnd uintptr) string {
 	class := make([]uint16, 256)
 	user32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
 	return windows.UTF16ToString(class)
+}
+
+func actionError(hwnd uintptr, method string, err error) error {
+	message := "provider refused the background action; no alternative click was attempted"
+	if minimized, _, _ := user32.NewProc("IsIconic").Call(hwnd); minimized != 0 {
+		message += "; the window is minimized and this provider may require a visible window"
+	}
+	return fmt.Errorf("%s: %w; %s", method, err, message)
 }
 
 const popupMenuClass = "#32768"
@@ -359,6 +371,8 @@ func runUIAutomation(r Request, process *Process) (Result, error) {
 	}
 	defer walker.release()
 	result := Result{PID: r.PID, WindowID: fmt.Sprintf("0x%X", hwnd), Title: windowCaption(hwnd)}
+	minimized, _, _ := user32.NewProc("IsIconic").Call(hwnd)
+	result.Minimized = minimized != 0
 	menus := openPopupMenus(hwnd, r.PID)
 	limit := MaxElements
 	if len(menus) > 0 {
@@ -471,7 +485,11 @@ func runUIAutomation(r Request, process *Process) (Result, error) {
 		}
 		if p.id == expandPattern.id {
 			state, err := pattern.integer(5)
-			if err != nil || state == 3 { // LeafNode has no children to expand.
+			if err != nil {
+				pattern.release()
+				return Result{}, actionError(hwnd, "ExpandCollapsePattern.CurrentExpandCollapseState", err)
+			}
+			if state == 3 { // LeafNode has no children to expand.
 				pattern.release()
 				continue
 			}
@@ -498,11 +516,11 @@ func runUIAutomation(r Request, process *Process) (Result, error) {
 			runtime.KeepAlive(text)
 			if err != nil {
 				pattern.release()
-				return Result{}, err
+				return Result{}, actionError(hwnd, p.method, err)
 			}
 		} else if err := pattern.call(3); err != nil {
 			pattern.release()
-			return Result{}, err
+			return Result{}, actionError(hwnd, p.method, err)
 		}
 		// One readback saves a separate inspect for the common type/expand
 		// case. It never waits/polls or repeats a potentially mutating action.

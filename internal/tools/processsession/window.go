@@ -123,20 +123,11 @@ func (t *Tool) windowAction(ctx context.Context, p params, raw json.RawMessage) 
 	}
 	defer process.Close()
 	r.Identity = process.Identity
-	// A cancellable gate serializes actions/observations from concurrent worker
-	// calls.
-	t.windowMu.Lock()
-	if t.windowGate == nil {
-		t.windowGate = make(chan struct{}, 1)
+	unlock, err := t.lockWindowProcess(ctx, process.Identity)
+	if err != nil {
+		return fail(err)
 	}
-	gate := t.windowGate
-	t.windowMu.Unlock()
-	select {
-	case gate <- struct{}{}:
-	case <-ctx.Done():
-		return fail(ctx.Err())
-	}
-	defer func() { <-gate }()
+	defer unlock()
 	if err := check(); err != nil {
 		return fail(err)
 	}
@@ -170,6 +161,17 @@ func (t *Tool) externalScreenshot(ctx context.Context, p params) (core.Result, e
 		return core.Result{Err: err}, nil
 	}
 	defer process.Close()
+	unlock, err := t.lockWindowProcess(ctx, process.Identity)
+	if err != nil {
+		return core.Result{Err: err}, nil
+	}
+	defer unlock()
+	if err := check(); err != nil {
+		return core.Result{Err: err}, nil
+	}
+	if err := process.Alive(); err != nil {
+		return core.Result{Err: err}, nil
+	}
 	raw, _ := json.Marshal(map[string]any{"source": "window", "process_id": process.PID, "window_title": p.WindowTitle, "window_id": p.WindowID, "attach": p.Attach, "image_detail": p.ImageDetail})
 	capture := t.captureScreenshot
 	if capture == nil {

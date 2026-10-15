@@ -1,6 +1,6 @@
 # Application window screenshots
 
-Use the target application rather than the currently visible monitor when demonstrating a program built or tested by the agent. Windows capture never activates a window or takes focus. Programs started by `process_session` open minimized without focus (`visible:true` shows them normally). A minimized window is captured by briefly restoring it fully transparent, click-through and at the bottom of the Z-order, then minimizing it again. There is no fallback to the foreground screen.
+Use the target application rather than the currently visible monitor when demonstrating a program built or tested by the agent. Windows capture never activates a window or takes focus. Programs started by `process_session` open minimized without focus (`visible:true` shows them normally). Capture first tries rendering the minimized window directly. Only a refused or blank render needs a brief transparent, click-through restore at the bottom of the Z-order. The parent retains recovery state in anonymous shared memory and re-minimizes the window even if the capture helper is terminated. There is no fallback to the foreground screen.
 
 Start the GUI executable directly with `process_session`:
 
@@ -38,6 +38,8 @@ A successful capture saves the original in the portable application data folder 
 
 Native application-window capture currently requires Windows. Covered windows can be captured when the application supports background rendering. Some GPU applications still return blank or incomplete pixels; these produce an error, without switching windows or photographing the monitor. For background browser/VM work on supported platforms, use the explicit [WebDriver/QMP headless target](headless-control.md). No capture service, periodic readiness query or decoded-frame cache runs while these tools are unused.
 
+An existing process window is selected before considering an initialization wait, avoiding unnecessary `WaitForInputIdle` waits. Process-scoped discovery reads titles/styles only for windows belonging to that PID. Cross-process rendering stays inside `PrintWindow` in the disposable helper. Sending `WM_PRINT` directly with the helper's HDC was rejected after native pixel tests; it is not used as a shortcut. Windows that return blank pixels while minimized can use the guarded temporary restore. The temporary-restore path is serialized per window, leaves the application's DWM animation preference alone, and restores only its temporary style bits. If an unresponsive owner cannot acknowledge minimizing within the bounded cleanup request, the tool reports that recovery failed and retains transparency rather than exposing the window; it does not claim a successful capture.
+
 ## Background window accessibility
 
 On Windows, the same managed session supports reading controls and invoking their accessibility actions:
@@ -46,7 +48,7 @@ On Windows, the same managed session supports reading controls and invoking thei
 {"action":"inspect_window","id":"proc-1"}
 ```
 
-The result includes the selected `window_id` and up to 128 elements (at most 12 levels deep), with names, roles, automation IDs, bounded field values and available actions. Password values and their subtrees are omitted. Large field values are marked `value_truncated`; overwriting partially observed values is refused.
+The result includes the selected `window_id`, its observed `minimized` state and up to 128 elements (at most 12 levels deep), with names, roles, automation IDs, bounded field values and available actions. Password values and their subtrees are omitted. Large field values are marked `value_truncated`; overwriting partially observed values is refused.
 
 Use an element ID from that observation:
 
@@ -55,7 +57,13 @@ Use an element ID from that observation:
 {"action":"click","id":"proc-1","element_id":"el_..."}
 ```
 
-`type` replaces the complete field value through ValuePattern. `click` uses Invoke, Toggle or SelectionItem, depending on the control. These are [Windows UI Automation control patterns](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-controlpatternsoverview), not simulated desktop input. SuperCli does not move the mouse, inject keyboard events, focus the target, or use the clipboard. Unsupported controls fail without a physical-input fallback. The application itself can still open dialogs or perform its normal action when invoked.
+`type` replaces the complete field value through ValuePattern. `click` uses ExpandCollapse for expandable parents, otherwise Invoke, Toggle or SelectionItem. Leaf nodes do not attempt expansion. These are [Windows UI Automation control patterns](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-controlpatternsoverview), not simulated desktop input. SuperCli does not move the mouse, inject keyboard events, focus the target, or use the clipboard. Unsupported controls fail without a physical-input fallback. The application itself can still open dialogs or perform its normal action when invoked.
+
+Inspection includes `expansion` when the provider exposes it and adds open classic popup menus to the bounded tree. A menu provider can refuse expansion while its window is minimized; that refusal identifies the action and window state, without retrying Invoke or changing window visibility. `type` and expansion return a single immediate `effect_observed` readback when available, with a short `observation`. A verified field value or expanded control does not require a separate inspection solely to check the same effect. Other application work may still need its own completion check. Repeated expansion of an already expanded item returns `already_expanded` without dispatching another click.
+
+Action requests retain fresh process, password, value and stale-ID checks, but skip click-pattern discovery on unrelated controls. Pattern probing is needed when returning an inspection tree, rather than again for every control during each mutation. This avoids cross-process UI Automation calls without retaining a stale tree between requests; Microsoft documents the overhead of [current-pattern retrieval](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationelement-getcurrentpattern).
+
+Within one `process_session` tool, window operations and captures for the same process creation identity share a cancellable gate, including its modal windows. Independent applications can run concurrently; one stalled provider does not hold up all other applications. A gate is removed after its last owner/waiter leaves. Process ownership is checked again after waiting, so stopping a queued session does not authorize a later action.
 
 An element ID includes its process creation identity, window, runtime ID and observed semantics/value. Changed or replaced controls require another observation. Target ownership is checked before and after the operation; a shell launcher does not grant control over arbitrary descendants or other applications.
 

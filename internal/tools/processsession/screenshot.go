@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"supercli/internal/system/windowautomation"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/media"
 )
@@ -14,7 +15,7 @@ import (
 // screenshot targets only the native PID owned by this session. It does not
 // inspect output, infer shell descendants, focus a window, or fall back to the
 // foreground desktop. A minimized application may not maintain renderable pixels;
-// the native window capturer reports that limitation rather than restoring it.
+// the native capturer tries bounded rendering before a guarded temporary restore.
 func (t *Tool) screenshot(ctx context.Context, p params) (core.Result, error) {
 	failure := func(err error) (core.Result, error) { return core.Result{Err: err}, nil }
 	if err := ctx.Err(); err != nil {
@@ -37,6 +38,17 @@ func (t *Tool) screenshot(ctx context.Context, p params) (core.Result, error) {
 	}
 	pid, err := item.screenshotPID()
 	if err != nil {
+		return failure(err)
+	}
+	unlock, err := t.lockWindowProcess(ctx, windowautomation.Identity{PID: pid, Created: item.windowBirth})
+	if err != nil {
+		return failure(err)
+	}
+	defer unlock()
+	if owned, err := t.Manager.screenshotProcess(id); err != nil || owned != item {
+		return failure(fmt.Errorf("process_session: screenshot ownership ended"))
+	}
+	if _, err := item.screenshotPID(); err != nil {
 		return failure(err)
 	}
 	args, err := json.Marshal(struct {
