@@ -44,6 +44,8 @@
   "session.renamed": "Samtalen omdøbt.",
   "session.deleted": "Samtalen blev slettet.",
   "session.stopRun": "Stop den aktuelle kørsel, før du sletter denne samtale.",
+  "session.busy": "Denne samtale kører stadig. Vent, til den er færdig, og send igen.",
+  "session.switchWait": "Denne samtale starter stadig eller venter på dit svar. Prøv igen om lidt.",
   "session.runtime": "Husk chat model",
   "session.runtimeHint": "Gendan denne sessions udbyder, model og begrundelsesniveau, når den åbnes.",
   "session.runtimeFailed": "Kunne ikke gendanne sessionsmodellen; bevare det aktuelle valg.",

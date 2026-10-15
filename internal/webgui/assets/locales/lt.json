@@ -44,6 +44,8 @@
   "session.renamed": "Pokalbis pervardytas.",
   "session.deleted": "Pokalbis ištrintas.",
   "session.stopRun": "Prieš ištrindami šį pokalbį, sustabdykite dabartinį paleidimą.",
+  "session.busy": "Šis pokalbis vis dar vyksta. Palaukite, kol baigsis, tada siųskite dar kartą.",
+  "session.switchWait": "Šis pokalbis dar paleidžiamas arba laukia jūsų atsakymo. Pabandykite po akimirkos.",
   "session.runtime": "Prisiminkite pokalbių modelį",
   "session.runtimeHint": "Atkurti šios sesijos teikėjo, modelio ir argumentavimo lygį, kai jis atidaromas.",
   "session.runtimeFailed": "Nepavyko atkurti seanso modelio; išlaikyti dabartinį pasirinkimą.",

@@ -44,6 +44,8 @@
   "session.renamed": "Conversazione rinominata.",
   "session.deleted": "Conversazione eliminata.",
   "session.stopRun": "Interrompi l'esecuzione corrente prima di eliminare questa conversazione.",
+  "session.busy": "Questa conversazione è ancora in corso. Attendi che finisca, poi invia di nuovo.",
+  "session.switchWait": "Questa conversazione si sta ancora avviando o attende la tua risposta. Riprova tra un momento.",
   "session.runtime": "Ricorda il modello di chat",
   "session.runtimeHint": "Ripristina il provider, il modello e il livello di ragionamento di questa sessione quando viene aperta.",
   "session.runtimeFailed": "Impossibile ripristinare il modello di sessione; mantenendo la selezione corrente.",

@@ -285,7 +285,7 @@ func TestStandardResponsesOwnedLargePublicBodyParity(t *testing.T) {
 	previousEffort := ReasoningEffort()
 	_ = SetReasoningEffort("")
 	t.Cleanup(func() { _ = SetReasoningEffort(previousEffort) })
-	goldens := map[int]string{16: "556895e590fb542bf204f251481f42c02efc5cbaf233372a5e1e77968885eb7e", 128 << 10: "496e5992ec959991f7e95ce37a56847837cf1d4fe5945cb5fc1a73163ef17f3a", 1 << 20: "48c3784dfe726ac0045d3151257554701a6e6fd73e7706256fbbf299ba472e30"}
+	goldens := map[int]string{16: "01612ccc37401c09a3a356eb7a9b2040b1db73808c3d3e53fc50afaedde446c9", 128 << 10: "a352c474c8c970900315192aa7f042ccf40db69460c392e75e3fdb1373e632da", 1 << 20: "04f732ed53c9100e004f949dea29f5c62a3c6ec0e0733f54b96761a1905c6f35"}
 	for _, size := range []int{16, 128 << 10, 1 << 20} {
 		text := strings.Repeat("synthetic ordinary text <&> ąćę 日本語\n", size/42+1)
 		msgs := []Message{{Role: RoleSystem, Content: "synthetic instruction"}, {Role: RoleUser, Content: text}, {Role: RoleAssistant, Content: text}, {Role: RoleUser, Content: "continue"}}

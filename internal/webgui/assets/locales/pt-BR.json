@@ -44,6 +44,8 @@
   "session.renamed": "Conversa renomeada.",
   "session.deleted": "Conversa excluída.",
   "session.stopRun": "Interrompa a execução atual antes de excluir esta conversa.",
+  "session.busy": "Esta conversa ainda está em andamento. Aguarde terminar e envie novamente.",
+  "session.switchWait": "Esta conversa ainda está iniciando ou aguardando sua resposta. Tente novamente em instantes.",
   "session.runtime": "Lembre-se do modelo de chat",
   "session.runtimeHint": "Restaure o provedor, o modelo e o nível de raciocínio desta sessão quando ela for aberta.",
   "session.runtimeFailed": "Não foi possível restaurar o modelo de sessão; mantendo a seleção atual.",

@@ -235,17 +235,22 @@ a:hover { text-decoration: underline; }
   width: 2px; background: var(--accent); border-radius: 2px;
 }
 .side-item.opening { background: var(--accent-soft); }
-.side-item.opening .s::after {
+.side-item.opening .s::after,
+.side-item.running .s::after {
   content: ""; display: inline-block; width: 5px; height: 5px;
   margin-left: 7px; border-radius: 50%; vertical-align: 1px;
   background: var(--accent); animation: session-opening-pulse 800ms ease-in-out infinite alternate;
+}
+.side-item.failed .s::after {
+  content: ""; display: inline-block; width: 5px; height: 5px;
+  margin-left: 7px; border-radius: 50%; vertical-align: 1px; background: var(--danger);
 }
 @keyframes session-opening-pulse {
   from { opacity: .35; transform: scale(.8); }
   to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .side-item.opening .s::after { animation: none; }
+  .side-item.opening .s::after, .side-item.running .s::after { animation: none; }
 }
 .side-item .t {
   display: block; width: 100%; min-width: 0;

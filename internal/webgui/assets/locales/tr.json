@@ -44,6 +44,8 @@
   "session.renamed": "Görüşme yeniden adlandırıldı.",
   "session.deleted": "Görüşme silindi.",
   "session.stopRun": "Bu görüşmeyi silmeden önce mevcut çalıştırmayı durdurun.",
+  "session.busy": "Bu sohbet hâlâ sürüyor. Bitmesini bekleyip yeniden gönderin.",
+  "session.switchWait": "Bu sohbet hâlâ başlıyor veya yanıtınızı bekliyor. Birazdan tekrar deneyin.",
   "session.runtime": "Sohbet modelini hatırla",
   "session.runtimeHint": "Bu oturumun sağlayıcısını, modelini ve muhakeme düzeyini açıldığında geri yükleyin.",
   "session.runtimeFailed": "Oturum modeli geri yüklenemedi; mevcut seçimi koruyor.",

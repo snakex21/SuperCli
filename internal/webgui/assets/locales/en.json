@@ -44,6 +44,8 @@
   "session.renamed": "Conversation renamed.",
   "session.deleted": "Conversation deleted.",
   "session.stopRun": "Stop the current run before deleting this conversation.",
+  "session.busy": "This conversation is still running. Wait for it to finish, then send again.",
+  "session.switchWait": "This conversation is still starting or waiting for your answer. Try again in a moment.",
   "session.runtime": "Remember chat model",
   "session.runtimeHint": "Restore this session's provider, model and reasoning level when it is opened.",
   "session.runtimeFailed": "Could not restore the session model; keeping the current selection.",

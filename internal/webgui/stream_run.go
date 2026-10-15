@@ -50,9 +50,25 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 	}()
 	home := e.Home()
+	// A conversation may still be running after the user switched to another
+	// project. Admit one run per conversation; release after all saves below.
+	if id := strings.TrimSpace(sessionID); id != "" {
+		release, claimErr := e.claimSessionRun(ctx, id, sessionRunWait)
+		if claimErr != nil {
+			return claimErr
+		}
+		defer release()
+	}
 	initial, writer, sid, err := e.sessionState(ctx, prompt, sessionID, home)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		release, claimErr := e.claimSessionRun(ctx, sid, 0)
+		if claimErr != nil {
+			return claimErr
+		}
+		defer release()
 	}
 	// Cross-session memory is persisted from the already-written transcript,
 	// with no summarizer/model call. Do it on every exit: the helper skips

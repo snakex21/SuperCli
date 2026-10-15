@@ -82,9 +82,13 @@ func (e *Engine) setHome(home string) {
 	e.mu.Lock()
 	e.home = home
 	e.mu.Unlock()
-	// Project config may add or override MCP servers. Refresh metadata now;
-	// no process is started until a later bridge call.
-	_ = e.reloadMCP()
+	// Project config may add or override MCP servers. Refresh metadata now
+	// when idle; a run in another project keeps its servers until it ends.
+	// No process is started until a later bridge call.
+	e.activeRunMu.Lock()
+	e.mcpReloadPending = true
+	e.reloadMCPIfIdleLocked()
+	e.activeRunMu.Unlock()
 }
 
 // DataDir returns the SuperCli data directory.

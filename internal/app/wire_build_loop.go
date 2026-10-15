@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"strings"
+
 	"supercli/internal/account/credits"
 	"supercli/internal/agent"
 	"supercli/internal/agent/ultrawork"
@@ -61,13 +63,19 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 		System:               buildSystemPrompt(nil),
 		RefreshContextWindow: a.refreshContextWindow,
 		LiveContextForRun: func(ctx context.Context) (string, error) {
+			// Read per run, so /allow-all is reflected on the next turn.
+			note := workingDirNote
 			if a.goalSvc == nil {
-				return "", nil
+				return note, nil
 			}
 			if _, err := a.goalSvc.Refresh(ctx); err != nil {
 				return "", err
 			}
-			return a.goalSvc.Inject(ctx, "", 5)
+			current, err := a.goalSvc.Inject(ctx, "", 5)
+			if err != nil {
+				return "", err
+			}
+			return strings.TrimSpace(strings.TrimSpace(current) + "\n\n" + note), nil
 		},
 		Briefing:           a.memoryBriefing,
 		MaxSteps:           maxSteps,

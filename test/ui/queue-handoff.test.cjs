@@ -50,11 +50,11 @@ function harness(options = {}) {
       readSSE: async (body, emit) => {
         if (!(options.hideSession && body.index === 0)) {
           emit({type: 'session', session_id: 's1'});
-          if (options.acceptMessage !== false && !(options.rejectSecondMessage && body.index === 1)) emit({type: 'session_activity', session_id: 's1'});
+          if (options.acceptMessage !== false && !(options.rejectSecondMessage && body.index === 1)) emit(options.userSeq ? {type: 'session_activity', session_id: 's1', user_seq: 3} : {type: 'session_activity', session_id: 's1'});
         }
         const done = deferred();
         finishing.set(body.index, () => emit({type: 'finishing'}));
-        terminals.set(body.index, () => emit({type: 'done'}));
+        terminals.set(body.index, () => emit(options.failRun ? {type: 'error', err: 'provider overloaded'} : {type: 'done'}));
         streams.set(body.index, () => { if (!options.separateTerminal) terminals.get(body.index)(); done.resolve(); });
         body.signal.addEventListener('abort', () => {
           const err = new Error('aborted'); err.name = 'AbortError'; done.reject(err);
@@ -121,6 +121,75 @@ function harness(options = {}) {
   };
   return {context, $, calls, events, requests, sends, arrivals, streams, terminals, finishing, intervals, entered, deletion};
 }
+test('a project switch detaches an accepted run without stopping it', async () => {
+  const h = harness();
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.canDetachActiveRun(), true);
+  assert.equal(h.context.detachActiveRun(), true);
+  assert.equal(h.context.streaming, false);
+  assert.equal(h.requests[0].signal.aborted, false, 'detaching must not cancel the server run');
+  h.streams.get(0)();
+  await h.sends[0];
+  assert.equal(h.context.streaming, false);
+  assert.equal(h.calls.some(c => String(c[0]).startsWith('/api/chat/completion')), false);
+  assert.equal(h.events.includes(h.context.t('chat.stopped')), false);
+});
+test('a detached run is shown again when its conversation is reopened', async () => {
+  const h = harness({userSeq: true});
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.detachActiveRun(), true);
+  assert.ok(h.context.detachedRunFor('s1'), 'background run is not offered for reopening');
+  assert.equal(h.context.reattachDetachedRun('s1'), true);
+  assert.equal(h.context.streaming, true);
+  assert.equal(h.requests[0].signal.aborted, false, 'reopening must not restart or cancel the run');
+  assert.ok(!h.context.detachedRunFor('s1'));
+  h.streams.get(0)();
+  await h.sends[0];
+  assert.equal(h.context.streaming, false);
+  assert.equal(h.events.includes('completed-notification'), true, 'the reopened view did not receive the end');
+});
+test('a background run that fails keeps its error for the conversation', async () => {
+  const h = harness({userSeq: true, failRun: true});
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.detachActiveRun(), true);
+  h.context.activeSessionID = 's2';
+  h.streams.get(0)();
+  await h.sends[0];
+  assert.equal(h.context.failedRuns.s1.err, 'provider overloaded', 'background failure was lost');
+  assert.ok(h.events.includes(h.context.t('common.error') + ': provider overloaded'), 'background failure was not announced');
+});
+test('a background run that completes leaves no error', async () => {
+  const h = harness({userSeq: true});
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.detachActiveRun(), true);
+  h.streams.get(0)();
+  await h.sends[0];
+  assert.equal(h.context.failedRuns.s1, undefined);
+});
+test('a run without a known first message stays in the background', async () => {
+  const h = harness();
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.detachActiveRun(), true);
+  assert.ok(!h.context.detachedRunFor('s1'));
+  assert.equal(h.context.reattachDetachedRun('s1'), false);
+  h.streams.get(0)();
+  await h.sends[0];
+});
+test('a run is not detached before the server accepted its prompt', async () => {
+  const h = harness({acceptMessage: false});
+  h.context.sendPrompt('first', [], null);
+  await h.entered[0].promise;
+  assert.equal(h.context.canDetachActiveRun(), false);
+  assert.equal(h.context.detachActiveRun(), false);
+  assert.equal(h.context.streaming, true);
+  h.streams.get(0)();
+  await h.sends[0];
+});
 test('same-session queue keeps the current runtime and waits for a pending model change', async () => {
   const h = harness();
   const ready = deferred();

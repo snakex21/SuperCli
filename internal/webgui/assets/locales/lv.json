@@ -44,6 +44,8 @@
   "session.renamed": "Saruna pārdēvēta.",
   "session.deleted": "Saruna dzēsta.",
   "session.stopRun": "Pirms šīs sarunas dzēšanas apturiet pašreizējo palaišanu.",
+  "session.busy": "Šī saruna joprojām notiek. Pagaidiet, līdz tā beigsies, un nosūtiet vēlreiz.",
+  "session.switchWait": "Šī saruna vēl sākas vai gaida jūsu atbildi. Mēģiniet vēlreiz pēc brīža.",
   "session.runtime": "Atcerieties tērzēšanas modeli",
   "session.runtimeHint": "Atveriet šīs sesijas nodrošinātāja, modeļa un argumentācijas līmeni, kad tā tiek atvērta.",
   "session.runtimeFailed": "Nevarēja atjaunot sesijas modeli; saglabājot pašreizējo atlasi.",

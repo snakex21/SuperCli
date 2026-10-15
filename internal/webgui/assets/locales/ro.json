@@ -44,6 +44,8 @@
   "session.renamed": "Conversația a fost redenumită.",
   "session.deleted": "Conversația a fost ștearsă.",
   "session.stopRun": "Opriți rularea curentă înainte de a șterge această conversație.",
+  "session.busy": "Această conversație încă rulează. Așteaptă să se termine, apoi trimite din nou.",
+  "session.switchWait": "Această conversație încă pornește sau așteaptă răspunsul tău. Încearcă din nou peste câteva clipe.",
   "session.runtime": "Amintiți-vă modelul de chat",
   "session.runtimeHint": "Restabiliți furnizorul acestei sesiuni, modelul și nivelul de raționament atunci când este deschisă.",
   "session.runtimeFailed": "Nu s-a putut restaura modelul de sesiune; păstrând selecția curentă.",

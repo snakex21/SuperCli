@@ -44,6 +44,8 @@
   "session.renamed": "Razgovor je preimenovan.",
   "session.deleted": "Razgovor izbrisan.",
   "session.stopRun": "Zaustavite trenutno pokretanje prije brisanja ovog razgovora.",
+  "session.busy": "Ovaj razgovor još traje. Pričekajte da završi pa pošaljite ponovno.",
+  "session.switchWait": "Ovaj se razgovor još pokreće ili čeka vaš odgovor. Pokušajte ponovno za trenutak.",
   "session.runtime": "Zapamtite model chata",
   "session.runtimeHint": "Vrati pružatelja, model i razinu obrazloženja ove sesije kada se otvori.",
   "session.runtimeFailed": "Nije moguće vratiti model sesije; zadržavajući trenutni odabir.",

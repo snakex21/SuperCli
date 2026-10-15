@@ -34,7 +34,9 @@ function harness(options = {}) {
     t: key => english[key] || key,
     checkHealth: async () => { lifecycle.push("health"); },
     newSession: () => { lifecycle.push("new-session"); },
-    loadPromptQueue: () => { lifecycle.push("queue"); }
+    loadPromptQueue: () => { lifecycle.push("queue"); },
+    canDetachActiveRun: () => options.canDetach === true,
+    detachActiveRun: () => { lifecycle.push("detach"); context.streaming = false; return true; }
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(assets, "js/00-helpers.js"), "utf8"), context);
@@ -251,6 +253,23 @@ test("backend busy rejection preserves project and session UI and permits retry"
   assert.deepEqual(h.lifecycle, []);
   assert.deepEqual(h.toasts, ["busy"]);
   assert.equal(h.c.projectCleanupPending, false);
+});
+
+test("switching projects during a run detaches the view instead of stopping the run", async () => {
+  const h = harness({ streaming: true, canDetach: true });
+  await h.c.projectAction("use", "C:/synthetic/other");
+  assert.deepEqual(posts(h).map(request => request.body.action), ["use"]);
+  assert.deepEqual(h.lifecycle, ["detach", "health", "new-session", "queue"]);
+  assert.deepEqual(h.toasts, []);
+});
+
+test("a run that cannot leave the view still blocks switching, and moving always waits", async () => {
+  for (const [action, canDetach] of [["use", false], ["add", false], ["relocate", true]]) {
+    const h = harness({ streaming: true, canDetach });
+    await h.c.projectAction(action, workspace, "", "C:/synthetic/moved");
+    assert.deepEqual(h.requests, []);
+    assert.deepEqual(h.toasts, [english["project.stopRun"]]);
+  }
 });
 
 test("ordinary project switching keeps its existing request and conversation lifecycle", async () => {

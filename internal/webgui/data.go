@@ -293,6 +293,9 @@ func (e *Engine) deleteSession(id string) error {
 	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 		return errors.Join(errSessionOutsideWorkspace, transaction.Close())
 	}
+	if e.sessionRunActive(id) {
+		return errors.Join(errSessionBusy, transaction.Close())
+	}
 	cleanup, deleteErr := store.DeleteRows(ctx, id)
 	closeErr := transaction.Close()
 	if deleteErr != nil {

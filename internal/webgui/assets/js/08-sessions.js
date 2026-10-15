@@ -9,6 +9,24 @@ var sessionListSeq = 0;
 var sessionListAbortCtl = null;
 var sessionListSnapshot = null;
 
+// Background runs live in 05-chat.js; standalone pages and fixtures may not load it.
+function backgroundRunIDs() {
+  return typeof detachedRuns === "object" && detachedRuns ? detachedRuns : {};
+}
+function backgroundRunFor(id) {
+  return typeof detachedRunFor === "function" ? detachedRunFor(id) : null;
+}
+function failedRunIDs() {
+  return typeof failedRuns === "object" && failedRuns ? failedRuns : {};
+}
+// A background run failed unseen: its error is not saved with the history.
+function showFailedRun(id) {
+  var failures = failedRunIDs(), failure = failures[id];
+  if (!failure) return;
+  delete failures[id];
+  addEventLine(chatErrorText(failure), "error", "error");
+}
+
 function setSessionOpening(id) {
   $$("#session-list .side-item").forEach(function (item) {
     var opening = !!id && item.dataset.sessionId === id;
@@ -61,7 +79,7 @@ async function loadSessions() {
 	sessionByID = {}; (rows || []).forEach(function(s){sessionByID[s.id]=s;});
     // Refreshing unchanged metadata should preserve rows, hover and keyboard
     // focus. Minute/locale/selection changes still refresh the visible labels.
-    var snapshot = JSON.stringify([rows || [], activeSessionID, statsLocale(), Math.floor(Date.now() / 60000)]);
+    var snapshot = JSON.stringify([rows || [], activeSessionID, Object.keys(backgroundRunIDs()).sort(), Object.keys(failedRunIDs()).sort(), statsLocale(), Math.floor(Date.now() / 60000)]);
     if (snapshot === sessionListSnapshot) return;
     sessionListSnapshot = snapshot;
     list.innerHTML = "";
@@ -77,7 +95,7 @@ async function loadSessions() {
         currentDateGroup = dateGroup.key;
         if (dateGroup.label) list.appendChild(el("div", "session-date", dateGroup.label));
       }
-      var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : ""));
+      var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : "") + (backgroundRunIDs()[s.id] ? " running" : "") + (failedRunIDs()[s.id] ? " failed" : ""));
       b.type = "button";
       b.dataset.sessionId = s.id;
       var title = el("span", "t");
@@ -215,7 +233,7 @@ async function renameSession(session) {
 }
 
 async function deleteSession(id) {
-  if (streaming && id === activeSessionID) {
+  if ((streaming && id === activeSessionID) || backgroundRunIDs()[id]) {
     toast(t("session.stopRun"));
     return;
   }
@@ -225,6 +243,7 @@ async function deleteSession(id) {
   try {
     await j("/api/sessions?id=" + encodeURIComponent(id), { method: "DELETE" });
     forgetSentAttachments(id);
+    delete failedRunIDs()[id];
     if (id === activeSessionID) newSession();
     else await loadSessions();
     toast(t("session.deleted"));
@@ -536,8 +555,10 @@ async function loadOlderTranscript() {
 }
 
 async function resumeSession(id, session, fromQueue) {
-  if (streaming || (queueDispatching && !fromQueue)) {
-    toast(t("session.stopRun"));
+  if (streaming && id === activeSessionID) return true;
+  // Opening another conversation leaves a running one going in the background.
+  if ((streaming && !detachActiveRun()) || (queueDispatching && !fromQueue)) {
+    toast(t("session.switchWait"));
     return false;
   }
   var resumeSeq = ++sessionResumeSeq;
@@ -555,6 +576,10 @@ async function resumeSession(id, session, fromQueue) {
       { signal: controller.signal });
     var msgs = page.messages || [];
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
+    // A background run of this conversation is replayed from its own events;
+    // saved history stops before its first message to avoid duplicates.
+    var liveRun = backgroundRunFor(id);
+    if (liveRun) msgs = msgs.filter(function (m) { return m.seq < liveRun.userSeq; });
     activeSessionID = id;
     composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
@@ -562,6 +587,8 @@ async function resumeSession(id, session, fromQueue) {
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
     renderLoadedTranscript(false);
+    if (liveRun) reattachDetachedRun(id);
+    else showFailedRun(id);
     loadSessions();
     renderStats();
     promptEl.focus();

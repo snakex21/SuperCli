@@ -176,6 +176,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			if errors.Is(err, errNoActiveProvider) {
 				event.ErrCode = "chat.noProvider"
 				event.ErrName = s.runtimeAppName()
+			} else if errors.Is(err, errSessionBusy) {
+				event.ErrCode = "session.busy"
 			}
 			emit(event)
 		}

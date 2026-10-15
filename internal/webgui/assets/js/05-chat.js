@@ -12,6 +12,15 @@ var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
 var queueDispatching = false, queueDispatchItem = null;
+// The run this view renders. A project switch detaches it: the server keeps
+// running it in its own project while this view moves on.
+var activeRun = null;
+// Runs left running in the background, by conversation ID. Opening that
+// conversation again re-renders the run from its buffered events.
+var detachedRuns = Object.create(null);
+// The error of a background run that ended while nobody watched it, by
+// conversation ID; shown once that conversation is opened.
+var failedRuns = Object.create(null);
 var chatTurnSequence = 0, runStopRevision = 0;
 var pendingAttachments = [];
 var appFocused = !document.hidden && document.hasFocus();
@@ -823,6 +832,59 @@ function finishRunPresentation() {
     $("#status-dot").classList.remove("busy");
   }
 }
+// A run can leave this view only after the server accepted its prompt and
+// while nothing waits for the user here (an open question or a typed handoff).
+function canDetachActiveRun() {
+  return !!(streaming && activeRun && activeRun.accepted && activeRun.sessionID && !pendingImmediate &&
+    !Object.keys(questionOverlays).length);
+}
+function detachActiveRun() {
+  if (!canDetachActiveRun()) return false;
+  activeRun.detached = true;
+  detachedRuns[activeRun.sessionID] = activeRun;
+  activeRun = null;
+  queueDispatchItem = null;
+  queueDispatching = false;
+  finishRunPresentation();
+  streaming = false;
+  runFinishing = false;
+  abortCtl = null;
+  releaseLiveTranscriptBlocks();
+  setRunState("idle", t("composer.ready"));
+  loadSessions();
+  return true;
+}
+// A background run that can be shown again: still going, and its first
+// message is known, so saved history before it can be rendered without
+// repeating anything the replay adds.
+function detachedRunFor(id) {
+  var run = id ? detachedRuns[id] : null;
+  return run && run.detached && !run.terminal && run.userSeq > 0 ? run : null;
+}
+function reattachDetachedRun(id) {
+  var run = detachedRunFor(id);
+  if (!run || streaming || queueDispatching) return false;
+  delete detachedRuns[id];
+  run.reattach();
+  return true;
+}
+// Every event is kept for a later replay; streamed text is merged so a long
+// answer stays one entry instead of thousands of deltas.
+function rememberRunEvent(run, ev) {
+  if (ev.type === "session" && ev.session_id) run.sessionID = ev.session_id;
+  if (ev.type === "session_activity") { run.activity = ev; run.userSeq = ev.user_seq || 0; }
+  if (ev.type === "done" || ev.type === "error") run.terminal = true;
+  if (ev.type === "error") run.failure = ev;
+  // A question asked while nobody watches is cancelled; never replay it.
+  if (ev.type === "question" && run.detached) return;
+  if ((ev.type === "message" || ev.type === "reasoning") && ev.text) {
+    var last = run.events[run.events.length - 1];
+    if (last && last.type === ev.type && last.merged) { last.text += ev.text; return; }
+    run.events.push({ type: ev.type, text: ev.text, merged: true });
+    return;
+  }
+  run.events.push(ev);
+}
 function isAfterRunPrompt(item) {
   return !!(item && item.afterRun && item.stopRevision === runStopRevision);
 }
@@ -893,10 +955,13 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   var olderHistory = stream.querySelector(".history-older");
   if (olderHistory) olderHistory.remove();
   streaming = true;
+  var run = { detached: false, accepted: false, terminal: false, sessionID: activeSessionID, userSeq: 0, activity: null, events: [] };
+  activeRun = run;
   runFinishing = false;
   queueDispatching = false;
   transcriptLiveAppend = true;
   abortCtl = new AbortController();
+  run.abortCtl = abortCtl;
   runToolCount = 0;
   // Keep worker identity and previous cards across coordinator turns.
   toolRows = {}; openToolOrder = [];
@@ -918,6 +983,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   function acceptPrompt() {
     if (draftAccepted) return;
     draftAccepted = true;
+    run.accepted = true;
     if (draft) composerDraftStore.clear(draft.scope, draft.text);
     if (queuedItem && queuedItem.id) {
       queueRemoval = removeQueuedTask(queuedItem.id).then(function (removed) {
@@ -932,18 +998,63 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   }
   var lastProgressAt = Date.now();
   runStart = Date.now();
+  run.start = runStart;
   setRunState("running", t("composer.working"));
-  runTimer = setInterval(function () {
-    if (runFinishing) return;
-    var now = Date.now();
-    var quiet = now - lastProgressAt;
-    if (pendingImmediate) {
-      runStatus.textContent = t("composer.sendingQueued");
-      return;
-    }
-    runStatus.textContent = (quiet >= 10000 ? t("composer.waiting") + " " + fmtDuration(quiet) :
-      t("composer.working") + " " + fmtDuration(now - runStart));
-  }, 100);
+  function startRunTimer() {
+    clearInterval(runTimer);
+    runTimer = setInterval(function () {
+      if (runFinishing) return;
+      var now = Date.now();
+      var quiet = now - lastProgressAt;
+      if (pendingImmediate) {
+        runStatus.textContent = t("composer.sendingQueued");
+        return;
+      }
+      runStatus.textContent = (quiet >= 10000 ? t("composer.waiting") + " " + fmtDuration(quiet) :
+        t("composer.working") + " " + fmtDuration(now - runStart));
+    }, 100);
+  }
+  startRunTimer();
+  // Shows this background run in the current view again: the caller has
+  // rendered saved history before its first message; the replay adds the rest.
+  run.reattach = function () {
+    if (transcriptAbortCtl) transcriptAbortCtl.abort();
+    transcriptAbortCtl = null;
+    transcriptHasMore = false;
+    transcriptBeforeSeq = 0;
+    loadedTranscriptMessages = [];
+    var pager = stream.querySelector(".history-older");
+    if (pager) pager.remove();
+    run.detached = false;
+    activeRun = run;
+    streaming = true;
+    runFinishing = false;
+    abortCtl = run.abortCtl;
+    runStart = run.start;
+    transcriptLiveAppend = true;
+    toolRows = {}; openToolOrder = [];
+    sendBtn.textContent = t("composer.queue");
+    sendBtn.classList.add("queue");
+    $("#stop-run-btn").hidden = false;
+    $("#interrupt-btn").hidden = false;
+    $("#interrupt-btn").disabled = false;
+    setRunState("running", t("composer.working"));
+    liveUserNode = addUserMsg(text, 0, attachments);
+    if (run.activity) bindLiveMessageReceipt(liveUserNode, run.activity);
+    current = null;
+    run.events.forEach(function (ev) {
+      if (ev.type === "session" || ev.type === "session_activity") return;
+      if (ev.type === "finishing") {
+        finishRunPresentation();
+        closeAssistantReasoning(current);
+        flushAssistantRender(current);
+        return;
+      }
+      current = handleEvent(ev, current);
+    });
+    lastProgressAt = Date.now();
+    if (!runFinishing) startRunTimer();
+  };
 
   try {
     var resp = await fetch("/api/chat", {
@@ -963,6 +1074,16 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     }
     requestAccepted = true;
     await superCliUI.readSSE(resp.body, function (ev) {
+      rememberRunEvent(run, ev);
+      if (run.detached) {
+        if (ev.type === "done" || ev.type === "error") terminalSeen = true;
+        // Nobody can answer a question in a view that moved to another
+        // project; cancel it so the run does not wait for its timeout.
+        if (ev.type === "question" && ev.question && ev.question.id) {
+          jpost("/api/question/answer", { id: ev.question.id, selected: [], custom: "", cancelled: true }).catch(function () {});
+        }
+        return;
+      }
       lastProgressAt = Date.now();
       if (ev.type === "session_activity") {
         acceptPrompt();
@@ -980,6 +1101,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       }
       current = handleEvent(ev, current);
     });
+    if (run.detached) return;
     flushAssistantRender(current);
     if (!terminalSeen) {
       if (activeSessionID) {
@@ -1003,6 +1125,10 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("common.error"));
     }
   } catch (e) {
+    if (run.detached) {
+      if (e.name === "AbortError") run.aborted = true;
+      return;
+    }
     if (e.name === "AbortError") {
       stopped = true;
       addEventLine(t("chat.stopped"), "", "stop");
@@ -1012,6 +1138,21 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("chat.connError"));
     }
   } finally {
+    if (run.detached) {
+      if (detachedRuns[run.sessionID] === run) delete detachedRuns[run.sessionID];
+      if (run.sessionID && !run.aborted && (run.failure || !run.terminal)) {
+        var failure = run.failure || { type: "error", err: t("chat.streamEnded") };
+        failedRuns[run.sessionID] = failure;
+        if (run.sessionID !== activeSessionID || streaming) toast(t("common.error") + ": " + chatErrorText(failure));
+      }
+      loadSessions();
+      // A view that opened this conversation while it ran shows the saved end.
+      if (run.sessionID === activeSessionID && !streaming && !queueDispatching) {
+        resumeSession(run.sessionID, sessionByID[run.sessionID] || null);
+      }
+      return;
+    }
+    if (activeRun === run) activeRun = null;
     sealAssistantSegment(current);
     closeQuestionOverlay();
     abortCtl = null;
@@ -1381,7 +1522,9 @@ $$(".welcome .hints button").forEach(function (b) {
 });
 
 function newSession() {
-  if (streaming || queueDispatching) return;
+  // A running conversation keeps going in the background.
+  if (streaming && !detachActiveRun()) { toast(t("session.switchWait")); return; }
+  if (queueDispatching) return;
   clearAttachments();
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;

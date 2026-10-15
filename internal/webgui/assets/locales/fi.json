@@ -44,6 +44,8 @@
   "session.renamed": "Keskustelu nimettiin uudelleen.",
   "session.deleted": "Keskustelu poistettu.",
   "session.stopRun": "Pysäytä nykyinen ajo ennen tämän keskustelun poistamista.",
+  "session.busy": "Tämä keskustelu on yhä käynnissä. Odota, että se valmistuu, ja lähetä uudelleen.",
+  "session.switchWait": "Tämä keskustelu käynnistyy vielä tai odottaa vastaustasi. Yritä hetken kuluttua uudelleen.",
   "session.runtime": "Muista chat-malli",
   "session.runtimeHint": "Palauta tämän istunnon tarjoaja, malli ja perustelutaso, kun se avataan.",
   "session.runtimeFailed": "Istuntomallia ei voitu palauttaa; nykyisen valinnan säilyttäminen.",

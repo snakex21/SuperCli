@@ -44,6 +44,8 @@
   "session.renamed": "Zmieniono nazwę rozmowy.",
   "session.deleted": "Usunięto rozmowę.",
   "session.stopRun": "Zatrzymaj trwającą odpowiedź przed usunięciem tej rozmowy.",
+  "session.busy": "Ta rozmowa wciąż trwa. Poczekaj, aż się skończy, i wyślij ponownie.",
+  "session.switchWait": "Ta rozmowa jeszcze startuje albo czeka na Twoją odpowiedź. Spróbuj za chwilę.",
   "session.runtime": "Pamiętaj model czatu",
   "session.runtimeHint": "Po otwarciu sesji przywróć jej provider, model i poziom myślenia.",
   "session.runtimeFailed": "Nie udało się przywrócić modelu sesji; pozostawiono bieżący wybór.",

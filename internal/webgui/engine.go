@@ -167,6 +167,16 @@ type Engine struct {
 	activeRunMu   sync.Mutex
 	activeRunIdle chan struct{}
 	updateGate    sync.RWMutex
+	// projectMu serializes project registration changes. Switching projects
+	// does not wait for runs: every run pins the workspace it started in.
+	projectMu sync.Mutex
+	// mcpReloadPending defers a project-switch MCP reload until no run or
+	// worker can still use the previous servers. Guarded by activeRunMu.
+	mcpReloadPending bool
+	// sessionRuns admits one run per conversation, so a conversation left
+	// running in another project cannot be continued twice at once.
+	sessionRunMu sync.Mutex
+	sessionRuns  map[string]chan struct{}
 }
 
 // NewEngine builds the provider and capability registry from the
@@ -239,6 +249,7 @@ func (e *Engine) beginActiveRun() func() {
 	e.updateGate.RLock()
 	e.activeRunMu.Lock()
 	if e.activeRuns.Load() == 0 {
+		e.reloadMCPIfIdleLocked()
 		e.activeRunIdle = make(chan struct{})
 	}
 	e.activeRuns.Add(1)
@@ -249,11 +260,23 @@ func (e *Engine) beginActiveRun() func() {
 			e.activeRunMu.Lock()
 			if e.activeRuns.Add(-1) == 0 {
 				close(e.activeRunIdle)
+				e.reloadMCPIfIdleLocked()
 			}
 			e.activeRunMu.Unlock()
 			e.updateGate.RUnlock()
 		})
 	}
+}
+
+// reloadMCPIfIdleLocked applies a deferred project-switch MCP reload once no
+// foreground run or delegated worker can hold the previous servers. The caller
+// holds activeRunMu, so no run can start between the check and the swap.
+func (e *Engine) reloadMCPIfIdleLocked() {
+	if !e.mcpReloadPending || e.activeRuns.Load() > 0 || (e.workers != nil && e.workers.Counts().Running > 0) {
+		return
+	}
+	e.mcpReloadPending = false
+	_ = e.reloadMCP()
 }
 
 // HasActiveWork reports whether closing the desktop window would interrupt a
