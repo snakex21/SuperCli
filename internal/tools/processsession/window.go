@@ -135,18 +135,42 @@ func (t *Tool) windowAction(ctx context.Context, p params, raw json.RawMessage) 
 	if run == nil {
 		run = windowautomation.Execute
 	}
+	release := guardForeground(process.Identity.PID)
 	result, err := run(ctx, process, r)
+	release()
 	if err != nil {
 		return fail(err)
 	}
 	if err := check(); err != nil {
-		return fail(fmt.Errorf("window operation finished after ownership ended; an action may already have taken effect: %w", err))
+		// A dispatched click such as "Don't save" may legitimately close the
+		// program. Only a natural exit counts; stop, cancel and close still fail.
+		if !result.Dispatched || ctx.Err() != nil || !t.ownedExitedNaturally(p.ID) {
+			return fail(fmt.Errorf("window operation finished after ownership ended; an action may already have taken effect: %w", err))
+		}
+		result.Elements = nil
+		result.Observation = "the owned process exited after the action was dispatched (expected when the action closes the program)"
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
 		return fail(err)
 	}
 	return core.Result{Text: string(data)}, nil
+}
+
+func (t *Tool) ownedExitedNaturally(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	t.Manager.mu.Lock()
+	item, closed := t.Manager.items[id], t.Manager.closed
+	t.Manager.mu.Unlock()
+	if item == nil || closed {
+		return false
+	}
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	return item.exited.Load() && !item.stopRequested
 }
 
 func (t *Tool) externalScreenshot(ctx context.Context, p params) (core.Result, error) {

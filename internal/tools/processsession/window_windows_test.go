@@ -65,6 +65,46 @@ func TestWindowDiscardsObservationAfterOwnershipEnds(t *testing.T) {
 	}
 }
 
+func TestWindowDispatchedActionMayCloseOwnedProgram(t *testing.T) {
+	for _, mode := range []string{"exit", "stop", "close", "cancel", "inspect"} {
+		t.Run(mode, func(t *testing.T) {
+			tool := windowFixture(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			tool.runWindow = func(context.Context, *windowautomation.Process, windowautomation.Request) (windowautomation.Result, error) {
+				item := tool.Manager.items["proc-owned"]
+				item.exited.Store(true)
+				switch mode {
+				case "stop":
+					item.stopRequested = true
+				case "close":
+					tool.Manager.closed = true
+				case "cancel":
+					cancel()
+				}
+				return windowautomation.Result{PID: os.Getpid(), Dispatched: mode != "inspect"}, nil
+			}
+			raw := `{"action":"click","id":"proc-owned","element_id":"el_x"}`
+			if mode == "inspect" {
+				raw = `{"action":"inspect_window","id":"proc-owned"}`
+			}
+			r, err := tool.Execute(ctx, json.RawMessage(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "exit" {
+				if r.Err != nil || r.Text == "" {
+					t.Fatalf("closing click reported failure: %v", r.Err)
+				}
+				return
+			}
+			if r.Err == nil || r.Text != "" {
+				t.Fatalf("%s accepted after ownership ended: %+v", mode, r)
+			}
+		})
+	}
+}
+
 func TestWindowExternalRunsWithoutConfirmation(t *testing.T) {
 	tool := windowFixture(t)
 	calls := 0
