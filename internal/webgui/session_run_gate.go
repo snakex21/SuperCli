@@ -58,6 +58,31 @@ func (e *Engine) claimSessionRun(ctx context.Context, id string, wait time.Durat
 	}
 }
 
+// runningSessionCwds returns the workspace of every conversation with a run in
+// progress, so the project list can show work left going in another project.
+func (e *Engine) runningSessionCwds() []string {
+	e.sessionRunMu.Lock()
+	ids := make([]string, 0, len(e.sessionRuns))
+	for id := range e.sessionRuns {
+		ids = append(ids, id)
+	}
+	e.sessionRunMu.Unlock()
+	if len(ids) == 0 {
+		return nil
+	}
+	store, err := e.sessionStore()
+	if err != nil {
+		return nil
+	}
+	cwds := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if sess, err := store.Get(id); err == nil {
+			cwds = append(cwds, sess.Cwd)
+		}
+	}
+	return cwds
+}
+
 func (e *Engine) sessionRunActive(id string) bool {
 	e.sessionRunMu.Lock()
 	defer e.sessionRunMu.Unlock()

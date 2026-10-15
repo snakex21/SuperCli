@@ -19,9 +19,7 @@ try:
   if not line.startswith(b'data: '):continue
   event=json.loads(line[6:]);events.append(event)
   if event['type']=='session':session=event['session_id']
-  if event['type']=='question':
-   q=event['question'];assert 'fixture' in q['question'] and 'screenshot' in q['question'];assert not q['allow_custom'];questions+=1
-   with post('/api/question/answer',{'id':q['id'],'selected':['Allow once']}):pass
+  if event['type']=='question':questions+=1
   if event['type']=='tool_result':
    for ref in event.get('images',[]):
     raw=get('/api/attachment/preview?path='+urllib.parse.quote(ref)).read();assert raw.startswith(b'\x89PNG');images.append(len(raw));thumb=get('/api/attachment/preview?path='+urllib.parse.quote(ref)+'&thumbnail=transcript').read();assert thumb.startswith(b'\x89PNG')
@@ -31,7 +29,7 @@ try:
     req=urllib.request.Request(base+'/api/attachment/preview?path='+urllib.parse.quote(meta['path']),headers={'Range':'bytes=0-23'})
     with urllib.request.urlopen(req) as result:
      raw=result.read();assert result.status==206 and b'ftyp' in raw;videos.append(len(raw))
- assert images and videos and questions==1,(images,videos,questions,[x['type'] for x in events])
+ assert images and videos and questions==0,(images,videos,questions,[x['type'] for x in events])
  receipt=json.load(get('/api/chat/completion?id=local-fixture-smoke'));assert receipt['session_id']==session and receipt['accepted']
  transcript=json.load(get('/api/transcript?id='+urllib.parse.quote(session)))
  messages=transcript.get('messages',[]) if isinstance(transcript,dict) else transcript

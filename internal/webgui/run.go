@@ -37,6 +37,9 @@ type RunOptions struct {
 	// IconPath optionally replaces the executable icon in the native window.
 	// Branded launchers use it while keeping the engine binary replaceable.
 	IconPath string
+	// ShowEvent is the named event a second launch signals to reveal the
+	// running window, including one hidden while work finishes.
+	ShowEvent string
 }
 
 // Run starts the web GUI server on a loopback port, opens an
@@ -109,7 +112,10 @@ func Run(eng *Engine, opts RunOptions) error {
 		// Windows identity, this avoids tying server lifetime to a Chrome/Edge
 		// launcher process. The browser path remains a compatibility fallback
 		// for machines without the WebView2 runtime.
-		if nativeErr := runNativeAppWindow(url, appName, eng.DataDir(), opts.IconPath, eng.HasActiveWork); nativeErr == nil {
+		if nativeErr := runNativeAppWindow(nativeWindowOptions{
+			URL: url, AppName: appName, DataDir: eng.DataDir(), IconPath: opts.IconPath,
+			HasActiveWork: eng.HasActiveWork, NeedsAttention: eng.hasPendingQuestion, ShowEvent: opts.ShowEvent,
+		}); nativeErr == nil {
 			log.Printf("native app window closed; shutting down…")
 			return shutdownAfterWindowClose(srv)
 		} else {

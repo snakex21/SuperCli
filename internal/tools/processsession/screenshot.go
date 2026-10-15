@@ -27,6 +27,9 @@ func (t *Tool) screenshot(ctx context.Context, p params) (core.Result, error) {
 	if utf8.RuneCountInString(title) > 512 {
 		return failure(fmt.Errorf("process_session: window_title exceeds 512 characters"))
 	}
+	if title != "" && p.WindowID != "" {
+		return failure(fmt.Errorf("process_session: choose window_title or window_id"))
+	}
 	id := strings.TrimSpace(p.ID)
 	item, err := t.Manager.screenshotProcess(id)
 	if err != nil {
@@ -40,9 +43,10 @@ func (t *Tool) screenshot(ctx context.Context, p params) (core.Result, error) {
 		Source      string `json:"source"`
 		ProcessID   int    `json:"process_id"`
 		WindowTitle string `json:"window_title,omitempty"`
+		WindowID    string `json:"window_id,omitempty"`
 		Attach      bool   `json:"attach"`
 		ImageDetail string `json:"image_detail,omitempty"`
-	}{Source: "window", ProcessID: pid, WindowTitle: title, Attach: p.Attach, ImageDetail: p.ImageDetail})
+	}{Source: "window", ProcessID: pid, WindowTitle: title, WindowID: p.WindowID, Attach: p.Attach, ImageDetail: p.ImageDetail})
 	if err != nil {
 		return failure(fmt.Errorf("process_session: screenshot args: %w", err))
 	}

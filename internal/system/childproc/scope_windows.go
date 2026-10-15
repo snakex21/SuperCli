@@ -26,14 +26,37 @@ type Scope struct {
 // never get the job at all.
 func Start(cmd *exec.Cmd) (*Scope, error) {
 	HideWindow(cmd)
+	return startScoped(cmd)
+}
+
+// StartVisible is Start without forcing the child's first GUI window into
+// SW_HIDE. Console programs still get no console window; GUI programs show
+// their window normally, so it can be captured or inspected.
+func StartVisible(cmd *exec.Cmd) (*Scope, error) {
+	NoConsoleWindow(cmd)
+	return startScoped(cmd)
+}
+
+func startScoped(cmd *exec.Cmd) (*Scope, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	journalChild(cmd)
 	s := &Scope{}
+	if err := cmd.Process.WithHandle(func(handle uintptr) {
+		s.job = killOnCloseJob(windows.Handle(handle))
+	}); err != nil {
+		s.job = 0
+	}
+	return s, nil
+}
+
+// killOnCloseJob returns a kill-on-close job holding process, or 0 when the
+// host forbids it.
+func killOnCloseJob(process windows.Handle) windows.Handle {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return s, nil
+		return 0
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -44,20 +67,13 @@ func Start(cmd *exec.Cmd) (*Scope, error) {
 		uint32(unsafe.Sizeof(info)),
 	); err != nil {
 		_ = windows.CloseHandle(job)
-		return s, nil
+		return 0
 	}
-	var assignErr error
-	if err = cmd.Process.WithHandle(func(handle uintptr) {
-		assignErr = windows.AssignProcessToJobObject(job, windows.Handle(handle))
-	}); err != nil {
-		assignErr = err
-	}
-	if assignErr != nil {
+	if err = windows.AssignProcessToJobObject(job, process); err != nil {
 		_ = windows.CloseHandle(job)
-		return s, nil
+		return 0
 	}
-	s.job = job
-	return s, nil
+	return job
 }
 
 // Kill terminates cmd and every descendant assigned to its job. It is safe to

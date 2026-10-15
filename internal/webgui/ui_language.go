@@ -33,7 +33,13 @@ func respondInLanguage(language string) string {
 func nativeCloseText(dataDir, appName string) string {
 	cfg, _ := config.LoadToml(filepath.Join(dataDir, "config.toml"))
 	if uilang.IsPolish(uilang.Resolve(cfg.Language)) {
-		return fmt.Sprintf("Zamknąć %s?\n\nTrwające zadanie zostanie zatrzymane.", appName)
+		return fmt.Sprintf("Zamknąć %s?\n\nPraca wciąż trwa.\n\n"+
+			"Tak – dokończ w tle. Okno zniknie, a program zamknie się sam po skończeniu. Uruchom go ponownie, żeby wrócić.\n"+
+			"Nie – zatrzymaj pracę i zamknij.\n"+
+			"Anuluj – wróć do okna.", appName)
 	}
-	return fmt.Sprintf("Close %s?\n\nThe active task will be stopped.", appName)
+	return fmt.Sprintf("Close %s?\n\nWork is still running.\n\n"+
+		"Yes – finish in the background. The window disappears and the program closes itself when done. Launch it again to return.\n"+
+		"No – stop the work and close.\n"+
+		"Cancel – return to the window.", appName)
 }

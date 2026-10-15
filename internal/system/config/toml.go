@@ -381,7 +381,6 @@ type McpConf struct {
 //	[mcp.servers.context7.env]
 //	CONTEXT7_API_KEY = "..."
 type McpServerConf struct {
-	ConfirmCalls bool              `toml:"confirm_calls"`
 	AllowedTools []string          `toml:"allowed_tools"`
 	Command      string            `toml:"command"`
 	Args         []string          `toml:"args"`

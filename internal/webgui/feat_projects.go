@@ -26,6 +26,9 @@ type projectView struct {
 	Model  string `json:"model,omitempty"`
 	Active bool   `json:"active"`
 	Cwd    bool   `json:"cwd"`
+	// Running counts conversations with a run in progress in this project,
+	// including runs left going after switching to another project.
+	Running int `json:"running,omitempty"`
 }
 
 var errProjectWorkActive = errors.New("stop the active task before changing projects or clearing checkpoints")
@@ -67,15 +70,23 @@ func (e *Engine) loadWorkspaceMerged() *memory.Workspace {
 func (e *Engine) listProjects() []projectView {
 	ws := e.loadWorkspaceMerged()
 	home := e.Home()
+	running := e.runningSessionCwds()
 	out := make([]projectView, 0, len(ws.Projects))
 	for _, p := range ws.Projects {
+		count := 0
+		for _, cwd := range running {
+			if sameSessionWorkspace(cwd, p.Path) {
+				count++
+			}
+		}
 		out = append(out, projectView{
-			Name:   p.Name,
-			Path:   p.Path,
-			Key:    memory.ProjectStorageKey(e.dataDir, p.Path),
-			Model:  p.Model,
-			Active: p.Path == ws.Active,
-			Cwd:    p.Path == home,
+			Name:    p.Name,
+			Path:    p.Path,
+			Key:     memory.ProjectStorageKey(e.dataDir, p.Path),
+			Model:   p.Model,
+			Active:  p.Path == ws.Active,
+			Cwd:     p.Path == home,
+			Running: count,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })

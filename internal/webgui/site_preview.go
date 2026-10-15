@@ -158,7 +158,7 @@ func RunSitePreview(target, language, dataDir string, opts RunOptions) error {
 		fmt.Printf("%s: %s\n", title, launchURL)
 	} else {
 		profile := filepath.Join(dataDir, "site-preview")
-		if err := runNativeAppWindow(launchURL, title, profile, opts.IconPath, func() bool { return false }); err == nil {
+		if err := runNativeAppWindow(nativeWindowOptions{URL: launchURL, AppName: title, DataDir: profile, IconPath: opts.IconPath}); err == nil {
 			return shutdownAfterWindowClose(srv)
 		}
 		cmd, err := OpenAppWindow(launchURL, filepath.Join(profile, "browser-profile"))

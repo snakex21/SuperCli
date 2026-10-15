@@ -41,7 +41,7 @@ func TestOwnedScreenshotPreservesNativeResultAndSelection(t *testing.T) {
 		}
 		return want, nil
 	}
-	got, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"screenshot","id":"proc-fixture","window_title":" Owned editor ","process_id":9999,"window_id":"unowned"}`))
+	got, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"screenshot","id":"proc-fixture","window_title":" Owned editor ","process_id":9999}`))
 	if err != nil || got.Err != nil || calls != 1 || got.Text != want.Text || got.Image != image || len(got.Images) != 1 || got.Images[0] != otherImage {
 		t.Fatalf("native result changed: %+v err=%v calls=%d", got, err, calls)
 	}

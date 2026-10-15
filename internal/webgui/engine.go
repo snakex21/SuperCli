@@ -145,11 +145,14 @@ type Engine struct {
 	// external SKILL.md files are scanned once instead of once per request.
 	skillMu      sync.Mutex
 	skillCatalog map[string]*tools.Discoverer
-	// mcpManager owns both explicit config.toml servers and relocatable
-	// packages from <dataDir>/mcp. Servers remain stopped until mcp_bridge
-	// searches or calls one of them.
-	mcpMu      sync.RWMutex
-	mcpManager *mcp.Manager
+	// mcpManagers holds one MCP runtime per project (workspaceCacheKey), each
+	// with explicit config.toml servers (global + that project's file) and
+	// relocatable packages from <dataDir>/mcp. A run left going in one project
+	// keeps its servers while another project uses its own. Servers remain
+	// stopped until mcp_bridge searches or calls one of them.
+	mcpMu       sync.RWMutex
+	mcpManagers map[string]*mcp.Manager
+	mcpClosed   bool
 	// workers is process-wide for the web application. Short-lived HTTP loops
 	// share it so active delegations remain observable and stoppable after a
 	// panel refresh, while the registry's existing retention bounds memory.
@@ -234,11 +237,9 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return err
 	})
 	eng.providerManager().SetModelPrices(caps)
-	if err := eng.reloadMCP(); err != nil {
-		// A broken optional package must not prevent the application from
-		// opening. Discovery diagnostics remain visible in the MCP panel.
-		eng.mcpManager = nil
-	}
+	// A broken optional package must not prevent the application from
+	// opening. Discovery diagnostics remain visible in the MCP panel.
+	_ = eng.reloadMCP()
 	return eng, nil
 }
 
@@ -295,40 +296,93 @@ func (e *Engine) HasActiveWork() bool {
 func explicitMCPConfigs(tc config.TomlConfig) map[string]mcp.ServerConfig {
 	configs := make(map[string]mcp.ServerConfig, len(tc.Mcp.Servers))
 	for name, sc := range tc.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, ConfirmCalls: sc.ConfirmCalls, AllowedTools: sc.AllowedTools}
+		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, AllowedTools: sc.AllowedTools}
 	}
 	return configs
 }
 
-// reloadMCP atomically replaces the lazy MCP runtime after a configuration
-// edit. Old subprocesses are stopped only after new discovery succeeded.
-func (e *Engine) reloadMCP() error {
-	tc, err := config.ResolveConfig(e.dataDir, e.Home(), "")
+// loadMCPRuntime discovers the MCP servers of one project without starting
+// any of them. nil means the project has no servers.
+func (e *Engine) loadMCPRuntime(home string) (*mcp.Manager, error) {
+	tc, err := config.ResolveConfig(e.dataDir, home, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	configs, _, err := mcp.LoadWorkspace(e.dataDir, explicitMCPConfigs(tc))
 	if err != nil {
+		return nil, err
+	}
+	if len(configs) == 0 {
+		return nil, nil
+	}
+	return mcp.NewManager(configs), nil
+}
+
+// reloadMCP replaces every cached MCP runtime after a configuration edit.
+// The active project is discovered first, so a broken edit keeps the old
+// runtimes; other projects rebuild theirs on their next run.
+func (e *Engine) reloadMCP() error {
+	home := e.Home()
+	next, err := e.loadMCPRuntime(home)
+	if err != nil {
 		return err
 	}
-	var next *mcp.Manager
-	if len(configs) > 0 {
-		next = mcp.NewManager(configs)
-	}
+	_, key := workspaceCacheKey(home)
 	e.mcpMu.Lock()
-	previous := e.mcpManager
-	e.mcpManager = next
+	if e.mcpClosed {
+		e.mcpMu.Unlock()
+		if next != nil {
+			next.StopAll()
+		}
+		return nil
+	}
+	previous := e.mcpManagers
+	e.mcpManagers = map[string]*mcp.Manager{key: next}
 	e.mcpMu.Unlock()
-	if previous != nil {
-		previous.StopAll()
+	for _, manager := range previous {
+		if manager != nil {
+			manager.StopAll()
+		}
 	}
 	return nil
 }
 
+// mcpRuntime returns the MCP runtime of the active project.
 func (e *Engine) mcpRuntime() *mcp.Manager {
+	return e.mcpRuntimeFor(e.Home())
+}
+
+// mcpRuntimeFor returns the MCP runtime of one project, discovering it on
+// first use. No server process is started here. A discovery error is not
+// cached, so a fixed configuration is picked up by the next run.
+func (e *Engine) mcpRuntimeFor(home string) *mcp.Manager {
+	_, key := workspaceCacheKey(home)
 	e.mcpMu.RLock()
-	defer e.mcpMu.RUnlock()
-	return e.mcpManager
+	manager, ok := e.mcpManagers[key]
+	e.mcpMu.RUnlock()
+	if ok {
+		return manager
+	}
+	next, err := e.loadMCPRuntime(home)
+	if err != nil {
+		return nil
+	}
+	e.mcpMu.Lock()
+	if existing, ok := e.mcpManagers[key]; ok || e.mcpClosed {
+		// Another caller won the race, or the Engine closed meanwhile. The
+		// discarded runtime has started nothing; StopAll keeps it tidy.
+		e.mcpMu.Unlock()
+		if next != nil {
+			next.StopAll()
+		}
+		return existing
+	}
+	if e.mcpManagers == nil {
+		e.mcpManagers = make(map[string]*mcp.Manager)
+	}
+	e.mcpManagers[key] = next
+	e.mcpMu.Unlock()
+	return next
 }
 
 // sessionStore returns the Engine-owned session database. Opening is lazy so
@@ -518,11 +572,14 @@ func (e *Engine) Close() error {
 		e.schedules = nil
 	}
 	e.mcpMu.Lock()
-	mcpManager := e.mcpManager
-	e.mcpManager = nil
+	mcpManagers := e.mcpManagers
+	e.mcpManagers = nil
+	e.mcpClosed = true
 	e.mcpMu.Unlock()
-	if mcpManager != nil {
-		mcpManager.StopAll()
+	for _, manager := range mcpManagers {
+		if manager != nil {
+			manager.StopAll()
+		}
 	}
 	e.codeIntelMu.Lock()
 	codeIntel := e.codeIntel

@@ -760,6 +760,8 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   color: var(--text); font-weight: 600;
 }
 .file-code-section:first-child { border-top: 0; }
+.file-code-line.hit .file-line-no { color: var(--accent); font-weight: 600; }
+.file-code-line.hit .file-line-code { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .file-code-note, .file-code-summary {
   position: sticky; left: 0; width: max-content; min-width: calc(100% - 20px);
   box-sizing: border-box; padding: 3px 10px; color: var(--faint);
@@ -801,6 +803,10 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .task-activity-item.done .activity-dot { background: var(--ok); }
 .task-activity-item.failed .activity-dot { background: var(--danger); }
 .task-activity-item .activity-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.task-activity-item.tk-read .activity-name { color: var(--hl-fn); }
+.task-activity-item.tk-write .activity-name { color: var(--hl-add); }
+.task-activity-item.tk-run .activity-name { color: var(--hl-type); }
+.task-activity-item.tk-web .activity-name { color: var(--hl-kw); }
 .task-activity-item .activity-hint { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-activity-item .activity-status { color: var(--faint); white-space: nowrap; }
 .task-activity-item.running .activity-status { color: var(--accent); }

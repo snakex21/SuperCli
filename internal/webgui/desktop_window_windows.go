@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/crgimenes/glaze"
@@ -32,6 +34,8 @@ var (
 	setClassLongW      = user32DLL.NewProc("SetClassLongPtrW")
 	callWindowProcW    = user32DLL.NewProc("CallWindowProcW")
 	messageBoxW        = user32DLL.NewProc("MessageBoxW")
+	setForegroundW     = user32DLL.NewProc("SetForegroundWindow")
+	isIconicW          = user32DLL.NewProc("IsIconic")
 	getModuleW         = kernel32DLL.NewProc("GetModuleHandleW")
 	setAppID           = shell32DLL.NewProc("SetCurrentProcessExplicitAppUserModelID")
 	setDPIContext      = user32DLL.NewProc("SetProcessDpiAwarenessContext")
@@ -55,10 +59,13 @@ const (
 	smCYScreen     = 1
 	wmSize         = 0x0005
 	wmClose        = 0x0010
-	mbYesNo        = 0x00000004
+	mbYesNoCancel  = 0x00000003
 	mbIconWarning  = 0x00000030
-	mbDefButton2   = 0x00000100
 	idYes          = 6
+	idNo           = 7
+	swHide         = 0
+	swShow         = 5
+	swRestore      = 9
 	swMaximize     = 3
 )
 
@@ -91,7 +98,8 @@ type nativeSaveResult struct {
 // runNativeAppWindow hosts the local GUI in a real Win32 window backed by the
 // system WebView2 runtime. The process therefore has SuperCli's own taskbar and
 // Alt+Tab identity instead of appearing as a Chrome/Edge app-mode window.
-func runNativeAppWindow(url, appName, dataDir, iconPath string, hasActiveWork func() bool) error {
+func runNativeAppWindow(opts nativeWindowOptions) error {
+	url, appName, dataDir, iconPath := opts.URL, opts.AppName, opts.DataDir, opts.IconPath
 	enablePerMonitorDPI()
 	setNativeAppIdentity(appName)
 	// DevTools (Ctrl+Shift+I / F12) only when explicitly enabled.
@@ -177,7 +185,36 @@ func runNativeAppWindow(url, appName, dataDir, iconPath string, hasActiveWork fu
 		log.Printf("native file save unavailable: %v", err)
 	}
 	memoryPolicy := newNativeMemoryPolicy(w)
-	closeCallback, closeErr := installNativeCloseConfirmation(w.Window(), dataDir, appName, hasActiveWork, memoryPolicy.onSize)
+	hwnd := uintptr(w.Window())
+	background := &backgroundRunner{
+		hasActiveWork:  opts.HasActiveWork,
+		needsAttention: opts.NeedsAttention,
+		hide: func() {
+			w.Dispatch(func() {
+				_, _, _ = showWindowW.Call(hwnd, swHide)
+				memoryPolicy.onSize(1)
+			})
+		},
+		show: func() {
+			w.Dispatch(func() {
+				_, _, _ = showWindowW.Call(hwnd, swShow)
+				// Restoring a maximized window would shrink it; only undo minimize.
+				if minimized, _, _ := isIconicW.Call(hwnd); minimized != 0 {
+					_, _, _ = showWindowW.Call(hwnd, swRestore)
+				}
+				_, _, _ = setForegroundW.Call(hwnd)
+				memoryPolicy.onSize(0)
+			})
+		},
+		quit:     w.Terminate,
+		interval: time.Second,
+		// A hidden page may have its timers throttled to about one per minute,
+		// so wait long enough for a queued follow-up message to start.
+		idleGrace: 90 * time.Second,
+	}
+	stopShowListener := listenForShowRequests(opts.ShowEvent, background.leave)
+	defer stopShowListener()
+	closeCallback, closeErr := installNativeCloseConfirmation(w.Window(), dataDir, appName, opts.HasActiveWork, background.enter, memoryPolicy.onSize)
 	if closeErr != nil {
 		log.Printf("native close confirmation unavailable: %v", closeErr)
 	}
@@ -229,7 +266,43 @@ func withPortableWebViewProfile(dataDir string, open func() error) error {
 	return open()
 }
 
-func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName string, hasActiveWork func() bool, onSize func(uintptr)) (uintptr, error) {
+// listenForShowRequests reveals the window whenever another launch signals
+// the named event. It returns a function that stops listening.
+func listenForShowRequests(name string, show func()) func() {
+	if strings.TrimSpace(name) == "" {
+		return func() {}
+	}
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return func() {}
+	}
+	event, err := windows.CreateEvent(nil, 0, 0, namePtr)
+	if err != nil {
+		log.Printf("native show event unavailable: %v", err)
+		return func() {}
+	}
+	var stopped atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer windows.CloseHandle(event)
+		for !stopped.Load() {
+			result, waitErr := windows.WaitForSingleObject(event, 500)
+			if waitErr != nil {
+				return
+			}
+			if result == windows.WAIT_OBJECT_0 && !stopped.Load() {
+				show()
+			}
+		}
+	}()
+	return func() {
+		stopped.Store(true)
+		<-done
+	}
+}
+
+func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName string, hasActiveWork func() bool, toBackground func(), onSize func(uintptr)) (uintptr, error) {
 	hwnd := uintptr(window)
 	if hwnd == 0 {
 		return 0, fmt.Errorf("window handle is empty")
@@ -250,9 +323,17 @@ func installNativeCloseConfirmation(window unsafe.Pointer, dataDir, appName stri
 						messageWindow,
 						uintptr(unsafe.Pointer(text)),
 						uintptr(unsafe.Pointer(title)),
-						mbYesNo|mbIconWarning|mbDefButton2,
+						mbYesNoCancel|mbIconWarning,
 					)
-					if result != idYes {
+					switch {
+					case result == idYes && toBackground != nil:
+						// Keep the page and its streams alive; only the window goes.
+						if err := saveNativeWindowSize(messageWindow, dataDir); err != nil {
+							log.Printf("native window size save failed: %v", err)
+						}
+						toBackground()
+						return 0
+					case result != idNo:
 						return 0
 					}
 				}

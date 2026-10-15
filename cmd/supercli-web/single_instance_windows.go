@@ -16,7 +16,10 @@ import (
 	"supercli/internal/system/uilang"
 )
 
-var singleInstanceMessageBox = windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW")
+var (
+	singleInstanceMessageBox = windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW")
+	allowSetForeground       = windows.NewLazySystemDLL("user32.dll").NewProc("AllowSetForegroundWindow")
+)
 
 func claimSingleInstance(profile string) (func(), bool, error) {
 	executable, err := os.Executable()
@@ -55,6 +58,39 @@ func singleInstanceMutexName(profile, executable string) string {
 	}
 	sum := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(executable))))
 	return fmt.Sprintf(`Local\SuperCli.Desktop.%s.%x`, profile, sum[:12])
+}
+
+// showEventName is the event a running instance waits on to reveal its
+// window, including one hidden while work finishes in the background.
+func showEventName(profile string) string {
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return singleInstanceMutexName(profile, executable) + ".Show"
+}
+
+// showExistingInstance asks the running instance to bring its window back.
+// It reports false when that instance does not listen for the request.
+func showExistingInstance(profile string) bool {
+	name := showEventName(profile)
+	if name == "" {
+		return false
+	}
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return false
+	}
+	event, err := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, namePtr)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(event)
+	// This launch came from the user, so it may hand the foreground to the
+	// running instance; otherwise Windows only flashes its taskbar button.
+	const asfwAny = ^uintptr(0)
+	_, _, _ = allowSetForeground.Call(asfwAny)
+	return windows.SetEvent(event) == nil
 }
 
 // There is no browser here to translate for us, so the two variants live in

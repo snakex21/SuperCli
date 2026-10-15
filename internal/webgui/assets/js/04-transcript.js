@@ -891,6 +891,10 @@ function toolKind(name) {
   if (/^(read_|search_|list_dir$|recall$|load_session_image$)/.test(name)) return "read";
   return "";
 }
+function applyActivityToolKind(item, name) {
+  var kind = toolKind(name);
+  if (kind) item.classList.add("tk-" + kind);
+}
 function applyToolKind(row, name) {
   row.classList.remove("tk-read", "tk-write", "tk-run", "tk-web");
   var kind = toolKind(name);
@@ -969,6 +973,7 @@ var FILE_READ_TOOLS = {
 // Tools whose output can show numbered "N | code" lines of the file they name.
 var NUMBERED_CODE_TOOLS = {
   read_lines: true, read_context: true, read_many: true, patch_file: true,
+  search_code: true,
 };
 
 // Fence-style language tag of a tool file path: "a/b.go:1-40" → "go".
@@ -990,11 +995,12 @@ function appendFileReadPayload(body, text, args) {
   // read_lines/read_context name the file in args; read_many per section.
   var lang = toolPathLang(toolArgsFile(args));
   String(text == null ? "" : text).split(/\r?\n/).forEach(function (line) {
-    var numbered = line.match(/^\s*(\d+)\s*\|\s?(.*)$/);
+    // search_code marks matching lines with a leading ">".
+    var numbered = line.match(/^(>?)\s*(\d+)\s*\|\s?(.*)$/);
     if (numbered) {
-      var row = el("div", "file-code-line");
-      row.appendChild(el("span", "file-line-no", numbered[1]));
-      var src = numbered[2], code = el("code", "file-line-code");
+      var row = el("div", numbered[1] ? "file-code-line hit" : "file-code-line");
+      row.appendChild(el("span", "file-line-no", numbered[2]));
+      var src = numbered[3], code = el("code", "file-line-code");
       // highlightCodeHTML escapes everything it returns, or null for plain.
       var html = src && lang && typeof highlightCodeHTML === "function" ? highlightCodeHTML(src, lang) : null;
       if (html === null) code.textContent = src || " ";
@@ -1126,7 +1132,7 @@ function appendToolPayload(body, label, text, name, isError, args) {
     appendFileReadPayload(body, raw, args);
     return;
   }
-  if (NUMBERED_CODE_TOOLS[name] && !isError && /^\s*\d+ \|/m.test(raw)) {
+  if (NUMBERED_CODE_TOOLS[name] && !isError && /^>?\s*\d+ \|/m.test(raw)) {
     body.appendChild(el("div", "lbl", label));
     appendFileReadPayload(body, raw, args);
     return;
@@ -1650,8 +1656,9 @@ function addWorkerProgress(ev) {
     var info = toolHint(ev.tool || "tool", ev.args || "{}");
     updateWorkerOverview(ev.id, ev.name, "running", (info.name || ev.tool) + (info.hint ? " · " + info.hint : ""), row);
     item = el("div", "task-activity-item running");
+    applyActivityToolKind(item, ev.tool);
     item.appendChild(el("span", "activity-dot"));
-    item.appendChild(el("span", "activity-name", ev.tool || "tool"));
+    item.appendChild(el("span", "activity-name", toolDisplayName(ev.tool || "tool")));
     item.appendChild(el("span", "activity-hint", info.hint || ""));
     item.appendChild(i18nEl("span", "activity-status", "tool.running"));
     row._activity.appendChild(item);
@@ -1659,8 +1666,9 @@ function addWorkerProgress(ev) {
   } else if (ev.kind === "tool_result") {
     if (!item) {
       item = el("div", "task-activity-item");
+      applyActivityToolKind(item, ev.tool);
       item.appendChild(el("span", "activity-dot"));
-      item.appendChild(el("span", "activity-name", ev.tool || "tool"));
+      item.appendChild(el("span", "activity-name", toolDisplayName(ev.tool || "tool")));
       item.appendChild(el("span", "activity-hint", ""));
       item.appendChild(el("span", "activity-status"));
       row._activity.appendChild(item);

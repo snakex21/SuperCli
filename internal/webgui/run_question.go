@@ -55,6 +55,16 @@ func (e *Engine) registerQuestion(req tools.AskRequest) questionWire {
 	return out
 }
 
+// hasPendingQuestion reports whether a run is waiting for the user's answer.
+func (e *Engine) hasPendingQuestion() bool {
+	if e == nil {
+		return false
+	}
+	e.questionMu.Lock()
+	defer e.questionMu.Unlock()
+	return len(e.questions) > 0
+}
+
 func (e *Engine) cancelQuestion(id string) {
 	e.questionMu.Lock()
 	req, ok := e.questions[id]

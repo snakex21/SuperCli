@@ -7,3 +7,7 @@ func claimSingleInstance(string) (func(), bool, error) {
 }
 
 func notifyAlreadyRunning(string, string) {}
+
+func showEventName(string) string { return "" }
+
+func showExistingInstance(string) bool { return false }

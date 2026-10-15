@@ -61,10 +61,13 @@ func TestProjectInstructionsNoGitChecksOnlyWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outer, "AGENTS.md"), []byte("stray"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := LoadProjectInstructions(sub); got != "" {
+	// t.TempDir may be below this checkout in a portable installation. Supply
+	// the no-Git boundary explicitly; discovering the host checkout is correct
+	// production behavior, not the scenario this traversal test is exercising.
+	if got := findProjectInstructionFile(sub, ""); got != "" {
 		t.Fatalf("stray parent instructions leaked: %q", got)
 	}
-	if got := LoadProjectInstructions(outer); !strings.Contains(got, "stray") {
+	if got := findProjectInstructionFile(outer, ""); got != filepath.Join(outer, "AGENTS.md") {
 		t.Fatalf("workspace instructions=%q", got)
 	}
 }

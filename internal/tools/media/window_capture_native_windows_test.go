@@ -190,7 +190,7 @@ func TestNativeBackgroundWindowCapture(t *testing.T) {
 	t.Logf("covered synthetic capture: %dx%d %d bytes, %s; foreground unchanged", info.Width, info.Height, len(data), time.Since(started))
 }
 
-func TestNativeMinimizedWindowRefusesIncompleteContent(t *testing.T) {
+func TestNativeMinimizedWindowCapturedAndStaysMinimized(t *testing.T) {
 	fixture := newSyntheticWindow(t, "colors")
 	foreground, _, _ := captureUser32.NewProc("GetForegroundWindow").Call()
 	captureUser32.NewProc("ShowWindow").Call(fixture.HWND, 7) // SW_SHOWMINNOACTIVE.
@@ -199,13 +199,18 @@ func TestNativeMinimizedWindowRefusesIncompleteContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _, _, err := captureWindow(context.Background(), WindowSelector{HWND: fmt.Sprintf("0x%X", fixture.HWND)})
-	if err == nil || !strings.Contains(err.Error(), "minimized") || !strings.Contains(err.Error(), "incomplete") || len(data) != 0 {
+	if err != nil {
 		t.Fatalf("minimized classic window=%d bytes err=%v", len(data), err)
 	}
+	assertSyntheticColors(t, data, "image/png", WindowInfo{})
 	after, stateErr := inspectNativeWindow(fixture.HWND)
 	nowForeground, _, _ := captureUser32.NewProc("GetForegroundWindow").Call()
 	if stateErr != nil || !before.Minimized || !after.Minimized || after.Visible != before.Visible || foreground != nowForeground {
-		t.Fatalf("refusal changed window state: before=%+v after=%+v err=%v", before, after, stateErr)
+		t.Fatalf("capture changed window state: before=%+v after=%+v err=%v", before, after, stateErr)
+	}
+	style, _, _ := captureUser32.NewProc("GetWindowLongPtrW").Call(fixture.HWND, ^uintptr(19))
+	if style&0x00080020 != 0 {
+		t.Fatalf("temporary transparent style left on window: %#x", style)
 	}
 }
 

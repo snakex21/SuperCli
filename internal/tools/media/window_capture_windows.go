@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -419,6 +420,12 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 		return fmt.Errorf("selected window was closed or replaced; list windows again")
 	}
 	var rect nativeWindowRect
+	if info.Minimized && !desktop {
+		if reminimize, err := peekMinimizedWindow(hwnd); err == nil {
+			defer reminimize()
+			info.Minimized = false
+		}
+	}
 	if info.Minimized {
 		placement := nativeWindowPlacement{Length: uint32(unsafe.Sizeof(nativeWindowPlacement{}))}
 		ok, _, err := captureUser32.NewProc("GetWindowPlacement").Call(hwnd, uintptr(unsafe.Pointer(&placement)))
@@ -482,6 +489,51 @@ func captureNativeWindowWith(ctx context.Context, hwnd uintptr, expectedPID uint
 		}
 		return renderError
 	})
+}
+
+// peekMinimizedWindow lets a minimized application render for one capture
+// without the user seeing or touching it: the window becomes fully
+// transparent and click-through, is restored without activation at the
+// bottom of the Z-order, and the returned func minimizes it again (without
+// activation) and restores its original extended style. Focus never moves.
+// Classic GDI and DirectX programs paint nothing while minimized, so this is
+// the only way to capture them while they stay on the taskbar.
+func peekMinimizedWindow(hwnd uintptr) (func(), error) {
+	get, set := "GetWindowLongPtrW", "SetWindowLongPtrW"
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		get, set = "GetWindowLongW", "SetWindowLongW"
+	}
+	const exStyle = ^uintptr(19) // GWL_EXSTYLE (-20).
+	const layered, transparent = 0x00080000, 0x00000020
+	original, _, _ := captureUser32.NewProc(get).Call(hwnd, exStyle)
+	if original&layered != 0 {
+		// The application owns its layering/alpha; changing it could not be
+		// undone faithfully.
+		return nil, fmt.Errorf("layered window")
+	}
+	captureUser32.NewProc(set).Call(hwnd, exStyle, original|layered|transparent)
+	ok, _, err := captureUser32.NewProc("SetLayeredWindowAttributes").Call(hwnd, 0, 0, 2) // LWA_ALPHA = 0.
+	if ok == 0 {
+		captureUser32.NewProc(set).Call(hwnd, exStyle, original)
+		return nil, fmt.Errorf("transparent capture unavailable: %v", err)
+	}
+	// No restore/minimize animation: nothing may flash on the user's screen.
+	dwmSet := windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmSetWindowAttribute")
+	disabled, enabled := int32(1), int32(0)
+	dwmSet.Call(hwnd, 3, uintptr(unsafe.Pointer(&disabled)), 4) // DWMWA_TRANSITIONS_FORCEDISABLED.
+	const noActivateBottom = 0x0010 | 0x0001 | 0x0002 // SWP_NOACTIVATE|NOSIZE|NOMOVE.
+	captureUser32.NewProc("ShowWindow").Call(hwnd, 4) // SW_SHOWNOACTIVATE restores.
+	captureUser32.NewProc("SetWindowPos").Call(hwnd, 1, 0, 0, 0, 0, noActivateBottom)
+	captureUser32.NewProc("RedrawWindow").Call(hwnd, 0, 0, 0x0001|0x0080|0x0100|0x0004) // INVALIDATE|ALLCHILDREN|UPDATENOW|FRAME.
+	windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmFlush").Call()
+	// GPU programs resume rendering asynchronously after restore; give them
+	// a few frames. This is a fixed bounded delay, not a readiness poll.
+	time.Sleep(150 * time.Millisecond)
+	return func() {
+		captureUser32.NewProc("ShowWindow").Call(hwnd, 7) // SW_SHOWMINNOACTIVE.
+		captureUser32.NewProc(set).Call(hwnd, exStyle, original)
+		dwmSet.Call(hwnd, 3, uintptr(unsafe.Pointer(&enabled)), 4)
+	}, nil
 }
 
 func enterCaptureDPI() func() { return enterCaptureDPIContext(^uintptr(3)) }

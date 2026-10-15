@@ -21,7 +21,6 @@ const (
 // <dataDir>/mcp/<package>/manifest.toml. All paths may use the portable
 // placeholders ${MCP_DIR}, ${DATA_DIR}, and ${SUPERCLI_DIR}.
 type Manifest struct {
-	ConfirmCalls bool              `toml:"confirm_calls"`
 	AllowedTools []string          `toml:"allowed_tools"`
 	Schema       int               `toml:"schema"`
 	Name         string            `toml:"name"`
@@ -191,7 +190,7 @@ func resolvePortableConfig(dataDir string, pkg PortablePackage) (ServerConfig, e
 	}
 	return ServerConfig{
 		Command: command, Args: args, Env: env, Dir: dir,
-		ConfirmCalls: manifest.ConfirmCalls, AllowedTools: append([]string(nil), manifest.AllowedTools...),
+		AllowedTools: append([]string(nil), manifest.AllowedTools...),
 		Description: manifest.Description, Portable: true, PackageDir: pkg.Dir,
 		PackageID: pkg.ID, Tags: append([]string(nil), manifest.Tags...),
 	}, nil

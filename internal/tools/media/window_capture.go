@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"supercli/internal/system/windowautomation"
 )
 
 // WindowSelector identifies one already-open top-level window. A title is an
@@ -26,6 +28,37 @@ type WindowInfo struct {
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
 	auxiliary bool   // Native input/tool windows are not automatic PID targets.
+}
+
+// windowSelectionState is live window state used only to auto-pick among a
+// process's windows when neither window_title nor window_id was given.
+type windowSelectionState struct {
+	Enabled bool
+	Owner   uintptr // GW_OWNER handle; 0 when unowned
+	Menu    bool    // classic popup menu (class #32768)
+}
+
+// windowSelectionDetails is replaced by the native implementation; the default
+// treats every window as enabled, unowned and not a menu.
+var windowSelectionDetails = func(uintptr) windowSelectionState { return windowSelectionState{Enabled: true} }
+
+// pickProcessWindow applies the shared accessibility auto-pick rule: skip
+// popup menus, prefer visible, then enabled (a modal dialog disables its
+// owner), then owned-by-another-candidate, then titled windows.
+func pickProcessWindow(matches []WindowInfo) (WindowInfo, []windowautomation.WindowCandidate, bool) {
+	candidates := make([]windowautomation.WindowCandidate, 0, len(matches))
+	for _, window := range matches {
+		hwnd, _ := parseWindowHandle(window.HWND)
+		state := windowSelectionDetails(hwnd)
+		candidates = append(candidates, windowautomation.WindowCandidate{
+			HWND: hwnd, Title: window.Title, Visible: window.Visible, Enabled: state.Enabled,
+			Owner: state.Owner, Menu: state.Menu, Auxiliary: window.auxiliary,
+		})
+	}
+	if i := windowautomation.PickWindow(candidates); i >= 0 {
+		return matches[i], candidates, true
+	}
+	return WindowInfo{}, candidates, false
 }
 
 func parseWindowHandle(value string) (uintptr, error) {
@@ -100,6 +133,14 @@ func selectCaptureWindow(windows []WindowInfo, selector WindowSelector) (WindowI
 	}
 	if len(matches) == 1 {
 		return matches[0], nil
+	}
+	if title == "" && len(matches) > 1 {
+		picked, candidates, ok := pickProcessWindow(matches)
+		if ok {
+			return picked, nil
+		}
+		count, list := windowautomation.WindowChoices(candidates)
+		return WindowInfo{}, fmt.Errorf("process_id %d has ambiguous windows (%d matches); retry with window_id or narrow window_title: %s", selector.PID, count, list)
 	}
 	if len(matches) == 0 {
 		if selector.PID != 0 {
