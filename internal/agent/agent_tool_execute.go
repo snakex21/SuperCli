@@ -263,6 +263,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 <agent>%s</agent>
 <status>running</status>
 <summary>%s running in background</summary>
+<continuation>Results arrive automatically. Continue independent work, or end this response to wait. Do not restart this task or use its worker ID with read_output; use send_message only for new instructions.</continuation>
 </task-notification>`, w.ID, w.Agent, w.Agent)}, nil
 	}
 

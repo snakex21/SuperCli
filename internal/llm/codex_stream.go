@@ -295,6 +295,7 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 	var usage *Usage
 	sentRole := false
 	toolOutputStarted := false
+	var toolCalls responsesToolStream
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -316,6 +317,12 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 		}
 		switch ev.Type {
 		case "response.output_item.added", "response.function_call_arguments.delta":
+			if ev.Type == "response.function_call_arguments.delta" || (ev.Item != nil && ev.Item.Type == "function_call") {
+				if err := toolCalls.add(ev); err != nil {
+					emit(Delta{Err: err})
+					return
+				}
+			}
 			if ev.Type == "response.output_item.added" && ev.Item != nil && ev.Item.Type == "reasoning" &&
 				!isOpenCodeZenBaseURL(p.cfg.BackendURL) {
 				if !emit(Delta{OutputStarted: true, ReasoningStarted: true}) {
@@ -358,15 +365,32 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				}
 			}
 			if ev.Item != nil && ev.Item.Type == "function_call" {
-				if !emit(Delta{ToolCall: &ToolCall{
-					ID:        ev.Item.CallID,
-					Name:      ev.Item.Name,
-					Arguments: ev.Item.Arguments,
-				}}) {
+				if err := toolCalls.add(ev); err != nil {
+					emit(Delta{Err: err})
 					return
 				}
 			}
+		case "response.function_call_arguments.done":
+			if err := toolCalls.add(ev); err != nil {
+				emit(Delta{Err: err})
+				return
+			}
 		case "response.completed":
+			if ev.Response != nil {
+				for index, item := range ev.Response.Output {
+					if item.Type == "function_call" {
+						if err := toolCalls.add(codexEvent{Type: "response.output_item.done", Item: &item, OutputIndex: &index}); err != nil {
+							emit(Delta{Err: err})
+							return
+						}
+					}
+				}
+			}
+			for _, call := range toolCalls.calls() {
+				if !emit(Delta{ToolCall: &call}) {
+					return
+				}
+			}
 			if ev.Response != nil && ev.Response.Usage != nil {
 				usage = &Usage{
 					Input:  ev.Response.Usage.InputTokens,

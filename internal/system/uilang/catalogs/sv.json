@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Slutför eller stoppa den aktuella uppgiften innan du använder kommandot. Ditt utkast sparas.",
   "tui.menu_navigation.74a883a037": "Inställningar",
   "tui.setting_language.8027f432a7": "Gränssnittsspråk",
   "tui.language.title": "Gränssnittsspråk",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "återuppta en tidigare session",
   "tui.command_desc.export": "exportera session till Markdown (arg \"klipp\" kopierar till urklipp)",
   "tui.command_desc.cost": "visa kostnadsinstrumentpanelen med uppdelning per sväng",
-  "tui.command_desc.usage": "uppdatera och visa användningsgränser för ChatGPT-prenumeration (Codex)",
+  "tui.command_desc.usage": "visa tokenanvändning och kostnader; ChatGPT-prenumerationsgränser för Codex",
   "tui.command_desc.undo": "återställ den senaste agentturen",
   "tui.command_desc.redo": "återställ den senaste återställda svängen",
   "tui.command_desc.test": "köra deterministiska tester, ludd- och raskontroller",

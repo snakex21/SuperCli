@@ -54,6 +54,19 @@ func compactionFailureJSON(t *testing.T, messages []llm.Message) string {
 	return string(raw)
 }
 
+func logFailedCompactionState(t *testing.T, l *Loop) {
+	t.Helper()
+	if !t.Failed() {
+		return
+	}
+	history := l.compactionHistory()
+	split := history.autoCompactSplit()
+	t.Logf("compaction diagnostic: window=%+v estimate=%+v route=%v split=%d keep=%d fresh=%v rejected=%v baseline=%d/%d",
+		l.windowResolution(), l.nextRequestTokenEstimate(), l.route, split, leadingSystemCount(history.messages),
+		hasFreshCompactablePrefix(history.messages, split), l.autoCompactRejected(history.messages[:split]),
+		l.contextBaseExact, l.contextBaseEstimated)
+}
+
 func compactionFailureEvents(t *testing.T, l *Loop, ctx context.Context) []Event {
 	t.Helper()
 	ch, err := l.Run(ctx, "current task")
@@ -178,6 +191,12 @@ func TestConfiguredCompactionRejectsEmptyAndIneffectiveCallbacks(t *testing.T) {
 					helpers++
 					return reply, nil
 				}, window, writer)
+				t.Cleanup(func() {
+					logFailedCompactionState(t, l)
+					if t.Failed() {
+						t.Logf("summary callbacks=%d provider requests=%d", helpers, atomic.LoadInt32(&p.calls))
+					}
+				})
 				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
 				events := compactionFailureEvents(t, l, context.Background())
 				text := "empty summary"

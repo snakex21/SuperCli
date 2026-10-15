@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Conclua ou interrompa a tarefa atual antes de usar este comando. Seu rascunho será mantido.",
   "tui.actions_render.2ac463151e": "Centro de ação",
   "tui.actions_render.80e7b49c59": "Sua conversa e rascunho estarão prontos quando você retornar.",
   "tui.actions_render.a96cd43c0d": "↑↓ escolher · ←→ categoria · Enter abrir",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "retomar uma sessão anterior",
   "tui.command_desc.export": "exportar sessão para Markdown (arg 'clip' copia para a área de transferência)",
   "tui.command_desc.cost": "mostrar painel de custos com detalhamento por turno",
-  "tui.command_desc.usage": "atualizar e mostrar limites de uso da assinatura ChatGPT (Codex)",
+  "tui.command_desc.usage": "mostrar uso de tokens e custos; limites de assinatura ChatGPT para Codex",
   "tui.command_desc.undo": "reverter o último turno do agente",
   "tui.command_desc.redo": "restaurar a última curva revertida",
   "tui.command_desc.test": "executar testes determinísticos, verificações de lint e corrida",

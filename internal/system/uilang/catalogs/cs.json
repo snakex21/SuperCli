@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Před použitím tohoto příkazu dokončete nebo zastavte aktuální úlohu. Rozepsaný text zůstane zachován.",
   "tui.actions_render.2ac463151e": "Akční centrum",
   "tui.actions_render.80e7b49c59": "Vaše konverzace a koncept zůstanou připraveny, až se vrátíte.",
   "tui.actions_render.a96cd43c0d": "↑↓ vyberte · ←→ kategorii · Enter otevřít",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "pokračovat v předchozí relaci",
   "tui.command_desc.export": "exportovat relaci do Markdown (argument 'clip' kopiemi do schránky)",
   "tui.command_desc.cost": "zobrazit řídicí panel nákladů s rozpisem podle tahu",
-  "tui.command_desc.usage": "obnovit a zobrazit limity využití předplatného ChatGPT (Codex)",
+  "tui.command_desc.usage": "zobrazit využití tokenů a náklady; limity předplatného ChatGPT pro Codex",
   "tui.command_desc.undo": "vrátit poslední tah agenta",
   "tui.command_desc.redo": "obnovit poslední vrácenou zatáčku",
   "tui.command_desc.test": "provádějte deterministické testy, kontroly vláken a ras",

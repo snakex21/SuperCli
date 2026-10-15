@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Završite ili zaustavite trenutni zadatak pre korišćenja ove komande. Nacrt ostaje sačuvan.",
   "tui.menu_navigation.74a883a037": "Podešavanja",
   "tui.setting_language.8027f432a7": "Jezik interfejsa",
   "tui.language.title": "Jezik interfejsa",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "nastaviti prethodnu sesiju",
   "tui.command_desc.export": "izvoz sesije u Markdown (arg 'isječak' kopije u međuspremnik)",
   "tui.command_desc.cost": "prikaži kontrolnu tablu troškova sa analizom po skretanju",
-  "tui.command_desc.usage": "osvežite i pokažite ChatGPT-ograničenja korišćenja pretplate (Codex)",
+  "tui.command_desc.usage": "prikaži potrošnju tokena i troškove; ograničenja pretplate ChatGPT za Codex",
   "tui.command_desc.undo": "vrati poslednje okretanje agenta",
   "tui.command_desc.redo": "vratite poslednji vraćeni red",
   "tui.command_desc.test": "pokrenite determinističke testove, provere vlakana i rase",

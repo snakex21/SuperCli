@@ -39,6 +39,11 @@ func (m Model) updateKeyMessage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleMenuKey(msg)
 	}
 	if m.busy {
+		// Popup navigation owns Escape/arrows/letters before cancellation,
+		// transcript scrolling and the thinking/tool visibility shortcuts.
+		if m.autocomp.kind != autocompNone {
+			return m.handleAutocompleteKey(msg)
+		}
 		// ESC: soft-cancel current run (not the program).
 		if msg.String() == "esc" {
 			return m.handleEscCancel()

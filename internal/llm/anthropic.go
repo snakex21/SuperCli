@@ -110,8 +110,11 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 func (p *AnthropicProvider) Name() string { return p.cfg.Model }
 
 func (p *AnthropicProvider) SupportsVision() bool {
+	if p.imageRejected.Load() {
+		return false
+	}
 	if _, ok := p.caps.Get(p.cfg.Model); ok {
-		return p.caps.HasVision(p.cfg.Model)
+		return p.caps.AllowsVisionAttempt(p.cfg.Model)
 	}
 	return strings.Contains(strings.ToLower(p.cfg.Model), "claude")
 }

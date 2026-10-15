@@ -149,7 +149,10 @@ func (r *CapabilityRegistry) AllowsVisionAttempt(id string) bool {
 	if m.VisionKnown {
 		return false
 	}
-	return m.Source == SourceProvider
+	// External discovery and text-only connection probes do not prove that
+	// a model lacks vision. Preserve legacy explicit catalog/seed overrides;
+	// all other unknown records get the same attempt as a missing record.
+	return m.Source != SourceCatalog && m.Source != SourceSeed
 }
 
 // HasToolUse reports whether the model supports
@@ -433,6 +436,9 @@ func NewCapabilityRegistryFromSources(home string, db *sql.DB) (*CapabilityRegis
 			// model silently vanished from the list. A probe
 			// must never make a model disappear.
 			if existing, ok := r.Get(id); ok {
+				if !existing.Vision && (existing.Source == SourceCatalog || existing.Source == SourceSeed) {
+					existing.VisionKnown = true
+				}
 				existing.Reasoning = pr.Reasoning
 				existing.Vision = existing.Vision || pr.Vision
 				existing.Source = SourceProbe

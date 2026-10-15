@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Bu komutu kullanmadan önce geçerli görevi tamamlayın veya durdurun. Taslağınız korunur.",
   "tui.menu_navigation.74a883a037": "Ayarlar",
   "tui.setting_language.8027f432a7": "Arayüz dili",
   "tui.language.title": "Arayüz dili",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "önceki oturuma devam etme",
   "tui.command_desc.export": "oturumu Markdown'ye aktar (arg 'klip' ​​panoya kopyalanır)",
   "tui.command_desc.cost": "tur başına döküm ile maliyet kontrol panelini göster",
-  "tui.command_desc.usage": "ChatGPT abonelik kullanım sınırlarını yenileyin ve gösterin (Codex)",
+  "tui.command_desc.usage": "token kullanımını ve maliyetleri göster; Codex için ChatGPT abonelik sınırları",
   "tui.command_desc.undo": "son temsilci sırasını geri al",
   "tui.command_desc.redo": "geri alınan son dönüşü geri yükle",
   "tui.command_desc.test": "Deterministik testler, tüy ve yarış kontrolleri yapın",

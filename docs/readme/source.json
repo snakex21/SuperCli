@@ -59,7 +59,7 @@
     ],
     [
       "status",
-      "This README describes version `1.0.10`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
+      "This README describes version `1.0.11`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
     ],
     [
       "h.screenshots",
@@ -281,7 +281,7 @@
   "blocks": [
     {
       "type": "title",
-      "text": "SuperCli 1.0.10"
+      "text": "SuperCli 1.0.11"
     },
     "intro",
     "status",

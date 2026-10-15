@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Pred použitím tohto príkazu dokončite alebo zastavte aktuálnu úlohu. Rozpísaný text sa zachová.",
   "tui.menu_navigation.74a883a037": "Nastavenia",
   "tui.setting_language.8027f432a7": "Jazyk rozhrania",
   "tui.language.title": "Jazyk rozhrania",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "pokračovať v predchádzajúcej relácii",
   "tui.command_desc.export": "exportovať reláciu do Markdown (argument 'clip' kópie do schránky)",
   "tui.command_desc.cost": "zobraziť informačný panel nákladov s rozpisom podľa jednotlivých odbočiek",
-  "tui.command_desc.usage": "obnoviť a zobraziť limity používania predplatného ChatGPT (Codex)",
+  "tui.command_desc.usage": "zobraziť využitie tokenov a náklady; limity predplatného ChatGPT pre Codex",
   "tui.command_desc.undo": "vrátiť posledný ťah agenta",
   "tui.command_desc.redo": "obnoviť posledné otočenie späť",
   "tui.command_desc.test": "spustiť deterministické testy, kontroly vlákien a rasy",

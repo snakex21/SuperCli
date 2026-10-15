@@ -107,6 +107,29 @@ func TestNewCapabilityRegistryFromSources_NilDB(t *testing.T) {
 	}
 }
 
+func TestTextOnlyProbeLeavesVisionUnknownAndPreservesCatalogOverride(t *testing.T) {
+	home := t.TempDir()
+	db := newSourceDB(t)
+	if err := SaveCatalog(home, []ModelInfo{{ID: "manual-text-only", Source: SourceCatalog}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"new-model-with-text-probe", "manual-text-only"} {
+		if err := SaveProbeCache(db, id, ProbeResult{ProbedAt: nowFuture()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	caps, err := NewCapabilityRegistryFromSources(home, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !caps.AllowsVisionAttempt("new-model-with-text-probe") {
+		t.Fatal("a text-only connection probe was mistaken for a vision test")
+	}
+	if caps.AllowsVisionAttempt("manual-text-only") {
+		t.Fatal("a text-only connection probe erased the user's explicit override")
+	}
+}
+
 func TestNewCapabilityRegistryFromSources_MalformedCatalog(t *testing.T) {
 	home := t.TempDir()
 	db := newSourceDB(t)

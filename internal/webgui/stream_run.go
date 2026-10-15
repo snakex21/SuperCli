@@ -206,13 +206,15 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	var progressTimer *time.Timer
 	var progressC <-chan time.Time
 	activeTools := map[string]struct{}{}
+	delegatedWaiting := false
+	modelFinished := false
 	if progressTimeout > 0 {
 		progressTimer = time.NewTimer(progressTimeout)
 		progressC = progressTimer.C
 		defer progressTimer.Stop()
 	}
 	resetProgress := func() {
-		if progressTimer == nil || len(activeQuestions) > 0 || len(activeTools) > 0 {
+		if progressTimer == nil || len(activeQuestions) > 0 || len(activeTools) > 0 || delegatedWaiting || modelFinished {
 			return
 		}
 		if !progressTimer.Stop() {
@@ -454,6 +456,16 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 				}
 			}
 			switch event := ev.(type) {
+			case agent.DoneEvent, agent.ErrorEvent:
+				// Durable checkpoint/telemetry finishing is host work too; the
+				// provider has ended and cannot make more model progress.
+				modelFinished = true
+				pauseProgress()
+			case agent.DelegatedWaitEvent:
+				delegatedWaiting = event.Waiting
+				if delegatedWaiting {
+					pauseProgress()
+				}
 			case agent.ToolCallEvent:
 				activeTools[event.ID] = struct{}{}
 				pauseProgress()

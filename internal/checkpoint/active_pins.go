@@ -70,7 +70,10 @@ func (p *activePins) update(ctx context.Context, commands string) error {
 	cmd := p.command(ctx, "-c", "core.fsync=reference", "update-ref", "--stdin")
 	cmd.Stdin = strings.NewReader("start\n" + commands + "prepare\ncommit\n")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("checkpoint active refs: %w: %s", err, strings.TrimSpace(string(out)))
+		// Native Git may exit with an ordinary status when cancellation races
+		// its shutdown. Retain the deadline/cancel cause as well as native
+		// diagnostics; admission must still fail without running the tool.
+		return fmt.Errorf("checkpoint active refs: %w: %s", errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
 	return nil
 }

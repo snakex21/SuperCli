@@ -61,7 +61,14 @@ func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, api
 		if err != nil {
 			return humanizeVerifyError(err.Error(), baseURL, apiKey)
 		}
-		ch, err := p.Complete(ctx, []llm.Message{{Role: llm.RoleUser, Content: "Reply with the single token OK."}}, nil)
+		var verificationTools []llm.ToolDef
+		if llm.IsOpenCodeZenBaseURL(baseURL) {
+			// Exercise the same tool-capable transport as a real agent request.
+			// An empty Responses tool list takes a different gateway path and can
+			// reject a working free provider. This schema is never executed.
+			verificationTools = []llm.ToolDef{{Name: "connection_test", Description: "Connection test only; reply OK without calling this tool.", Schema: `{"type":"object","properties":{}}`}}
+		}
+		ch, err := p.Complete(ctx, []llm.Message{{Role: llm.RoleUser, Content: "Reply with the single token OK."}}, verificationTools)
 		if err != nil {
 			return humanizeVerifyError(err.Error(), baseURL, apiKey)
 		}

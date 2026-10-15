@@ -262,10 +262,12 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 	var outputSource *tools.Registry
 	var outputPersistence tools.OutputPersistence
 	if parent != nil {
-		deliver = parent.backgroundDelivery()
+		deliver = parent.backgroundDelivery(parentCtx)
 		outputSource, outputPersistence = parent.registry, parent.toolOutputs
 	}
+	finishBackground := backgroundRunFrom(parentCtx).start()
 	go func() {
+		defer finishBackground()
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		defer borrow.Close()

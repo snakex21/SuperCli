@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Prieš naudodami šią komandą užbaikite arba sustabdykite dabartinę užduotį. Juodraštis išsaugomas.",
   "tui.actions_render.2ac463151e": "Veiksmo centras",
   "tui.actions_render.80e7b49c59": "Jūsų pokalbis ir juodraštis bus paruošti, kai grįšite.",
   "tui.actions_render.a96cd43c0d": "↑↓ pasirinkite · ←→ kategorija · Enter atidaryta",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "atnaujinti ankstesnę sesiją",
   "tui.command_desc.export": "eksportuoti seansą į Markdown (arg „klipas“ kopijuoja į mainų sritį)",
   "tui.command_desc.cost": "rodyti išlaidų informacijos suvestinę su posūkio suskirstymu",
-  "tui.command_desc.usage": "atnaujinti ir rodyti ChatGPT prenumeratos naudojimo apribojimus (Codex)",
+  "tui.command_desc.usage": "rodyti žetonų naudojimą ir išlaidas; ChatGPT prenumeratos limitai Codex",
   "tui.command_desc.undo": "grąžinti paskutinį agento posūkį",
   "tui.command_desc.redo": "atkurti paskutinį sugrįžtą posūkį",
   "tui.command_desc.test": "atlikti deterministinius testus, pūkelių ir rasės patikras",

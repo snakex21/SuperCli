@@ -79,6 +79,17 @@ func (p *deferredWireProvider) Complete(ctx context.Context, messages []llm.Mess
 	if n == 1 {
 		return workerSteeringWireCall("deferred-task", "task", map[string]any{"agent": "code", "prompt": "deferred-wire-worker", "async": true})
 	}
+	if n == 3 {
+		for _, message := range messages {
+			if message.Role == llm.RoleUser && strings.Contains(message.Content, "worker done") {
+				return workerSteeringWireDeltas(llm.Delta{Content: "worker report processed", FinishReason: "stop"}), nil
+			}
+		}
+		return nil, fmt.Errorf("coordinator resumed without the worker report")
+	}
+	if n != 2 {
+		return nil, fmt.Errorf("coordinator repeated a completed review")
+	}
 	select {
 	case <-p.started:
 	case <-ctx.Done():
@@ -152,7 +163,9 @@ func TestWebStreamPersistsDeferredBindingOnFirstSummaryInsert(t *testing.T) {
 	provider.mu.Lock()
 	parentCalls, workerCalls := provider.parentCalls, provider.workerCalls
 	provider.mu.Unlock()
-	if parentCalls != 2 || workerCalls != 2 {
-		t.Fatalf("repair added model calls: parent=%d worker=%d", parentCalls, workerCalls)
+	// The second request precedes the worker report; the third consumes it.
+	// Checkpoint repair itself must not add another model request.
+	if parentCalls != 3 || workerCalls != 2 {
+		t.Fatalf("unexpected model calls around report delivery and repair: parent=%d worker=%d", parentCalls, workerCalls)
 	}
 }

@@ -47,7 +47,8 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 		return
 	}
 	prefix := all[:split]
-	if len(prefix) <= leadingSystemCount(prefix) || !hasFreshCompactablePrefix(prefix, len(prefix)) {
+	if len(prefix) <= leadingSystemCount(prefix) || !hasFreshCompactablePrefix(prefix, len(prefix)) ||
+		l.autoCompactRejected(prefix) {
 		return
 	}
 	tools := l.compactActiveTools()
@@ -126,6 +127,22 @@ func (l *Loop) stopSpeculativeCompact() {
 		job.cancel()
 		<-job.done
 	}
+}
+
+// rejectAutoCompact remembers an older prefix whose summary did not reduce it,
+// so threshold compaction does not pay for the same prefix on every step.
+func (l *Loop) rejectAutoCompact(prefix []llm.Message) {
+	l.speculativeMu.Lock()
+	l.rejectedCompact = cloneCompactPrefix(prefix)
+	l.rejectedCompactEpoch = l.conversationEpoch.Load()
+	l.speculativeMu.Unlock()
+}
+
+func (l *Loop) autoCompactRejected(prefix []llm.Message) bool {
+	l.speculativeMu.Lock()
+	defer l.speculativeMu.Unlock()
+	return l.rejectedCompact != nil && l.rejectedCompactEpoch == l.conversationEpoch.Load() &&
+		sameCompactPrefix(l.rejectedCompact, prefix)
 }
 
 func (l *Loop) compactActiveTools() []string {

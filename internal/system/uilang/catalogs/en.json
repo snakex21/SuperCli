@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Finish or stop the current run before using this command. Your draft is kept.",
   "tui.actions_render.2ac463151e": "Action centre",
   "tui.actions_render.80e7b49c59": "Your conversation and draft stay ready when you return.",
   "tui.actions_render.a96cd43c0d": "↑↓ choose · ←→ category · Enter open",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "resume a previous session",
   "tui.command_desc.export": "export session to Markdown (arg 'clip' copies to clipboard)",
   "tui.command_desc.cost": "show cost dashboard with per-turn breakdown",
-  "tui.command_desc.usage": "refresh and show ChatGPT-subscription usage limits (Codex)",
+  "tui.command_desc.usage": "show token usage and costs; ChatGPT subscription limits for Codex",
   "tui.command_desc.undo": "revert the last agent turn",
   "tui.command_desc.redo": "restore the last reverted turn",
   "tui.command_desc.test": "run deterministic tests, lint and race checks",

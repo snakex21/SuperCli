@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Viimeistele tai pysäytä nykyinen tehtävä ennen tämän komennon käyttöä. Luonnoksesi säilytetään.",
   "tui.actions_render.2ac463151e": "Toimintakeskus",
   "tui.actions_render.80e7b49c59": "Keskustelusi ja luonnoksesi pysyvät valmiina, kun palaat.",
   "tui.actions_render.a96cd43c0d": "↑↓ valitse · ←→ luokka · Enter auki",
@@ -551,7 +552,7 @@
   "tui.command_desc.resume": "jatkaa edellistä istuntoa",
   "tui.command_desc.export": "vie istunto Markdown:ään (arg \"leike\" kopioi leikepöydälle)",
   "tui.command_desc.cost": "näytä kustannusten hallintapaneeli käännöskohtaisella erittelyllä",
-  "tui.command_desc.usage": "päivitä ja näytä ChatGPT-tilauksen käyttörajat (Codex)",
+  "tui.command_desc.usage": "näytä tokenien käyttö ja kustannukset; ChatGPT-tilausrajat (Codex)",
   "tui.command_desc.undo": "palauta viimeinen agenttivuoro",
   "tui.command_desc.redo": "palauttaa viimeksi palautetun käännöksen",
   "tui.command_desc.test": "suorittaa deterministisiä testejä, nukka- ja rotutarkastuksia",

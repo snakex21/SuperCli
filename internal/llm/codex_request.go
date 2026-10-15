@@ -17,16 +17,21 @@ func (p *CodexProvider) responsesAPIName() string {
 // --- SSE event shape ---
 
 type codexEvent struct {
-	Type     string         `json:"type"`
-	Delta    string         `json:"delta,omitempty"`
-	Code     string         `json:"code,omitempty"`
-	Message  string         `json:"message,omitempty"`
-	Error    *codexError    `json:"error,omitempty"`
-	Item     *codexItemEv   `json:"item,omitempty"`
-	Response *codexRespMeta `json:"response,omitempty"`
+	Type        string         `json:"type"`
+	Delta       string         `json:"delta,omitempty"`
+	Code        string         `json:"code,omitempty"`
+	Message     string         `json:"message,omitempty"`
+	Error       *codexError    `json:"error,omitempty"`
+	Item        *codexItemEv   `json:"item,omitempty"`
+	Response    *codexRespMeta `json:"response,omitempty"`
+	OutputIndex *int           `json:"output_index,omitempty"`
+	ItemID      string         `json:"item_id,omitempty"`
+	Name        string         `json:"name,omitempty"`
+	Arguments   *string        `json:"arguments,omitempty"`
 }
 
 type codexItemEv struct {
+	ID        string `json:"id,omitempty"`
 	Type      string `json:"type"`
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
@@ -34,8 +39,9 @@ type codexItemEv struct {
 }
 
 type codexRespMeta struct {
-	Usage *codexUsage `json:"usage,omitempty"`
-	Error *codexError `json:"error,omitempty"`
+	Usage  *codexUsage   `json:"usage,omitempty"`
+	Error  *codexError   `json:"error,omitempty"`
+	Output []codexItemEv `json:"output,omitempty"`
 }
 
 type codexUsage struct {

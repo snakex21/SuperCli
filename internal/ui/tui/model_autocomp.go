@@ -16,18 +16,18 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc":
-		// Close popup, clear input back to just the trigger or empty.
+		// Dismiss suggestions without discarding the composer's draft.
 		m.autocomp = autocomplete{}
 		m.resizeViewport()
 		return m, nil
 
-	case "up", "k":
+	case "up":
 		if m.autocomp.cursor > 0 {
 			m.autocomp.cursor--
 		}
 		return m, nil
 
-	case "down", "j":
+	case "down":
 		if m.autocomp.cursor < len(filtered)-1 {
 			m.autocomp.cursor++
 		}
@@ -41,13 +41,23 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		it := filtered[minInt(m.autocomp.cursor, len(filtered)-1)]
+		kind := m.autocomp.kind
+		value := m.autocompleteValue(it)
 		m.autocomp = autocomplete{}
 		m.resizeViewport()
-		m.input.SetValue(it.Value)
+		m.input.SetValue(value)
 		m.input.CursorEnd()
+		m.syncTypedInputHeight()
+		if kind != autocompSlash {
+			return m, nil
+		}
 		// Dispatch the command right away.
 		text := strings.TrimSpace(it.Value)
 		if cmd := ParseSlashCommand(text); cmd != nil {
+			if !m.busy || slashAvailableDuringRun(*cmd) {
+				m.input.Reset()
+				m.syncInputHeight()
+			}
 			return m.dispatchSlashCommand(*cmd)
 		}
 		return m, nil
@@ -60,10 +70,12 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		it := filtered[minInt(m.autocomp.cursor, len(filtered)-1)]
+		value := m.autocompleteValue(it)
 		m.autocomp = autocomplete{}
 		m.resizeViewport()
-		m.input.SetValue(it.Value)
+		m.input.SetValue(value)
 		m.input.CursorEnd()
+		m.syncTypedInputHeight()
 		return m, nil
 
 	case "pgup":
@@ -84,6 +96,7 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// For all other keys: update the textinput first, then re-evaluate trigger.
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.syncTypedInputHeight()
 
 	// If the trigger character is no longer in the input, close the popup.
 	kind, query := splitAutocompleteTrigger(m.input.Value())
@@ -105,6 +118,19 @@ func (m Model) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.resizeViewport()
 
 	return m, cmd
+}
+
+func (m Model) autocompleteValue(item autocompleteItem) string {
+	if m.autocomp.kind == autocompMention {
+		text := m.input.Value()
+		kind, query := splitAutocompleteTrigger(text)
+		if kind == autocompMention {
+			// A mention replaces only the final @query, including when the
+			// preceding draft spans lines or starts with a slash command.
+			return text[:len(text)-len(query)-1] + item.Value
+		}
+	}
+	return item.Value
 }
 
 // updateAutocompleteState checks the current input value and opens/closes

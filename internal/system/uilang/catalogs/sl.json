@@ -1,4 +1,5 @@
 {
+  "tui.slash.busy": "Pred uporabo tega ukaza dokončajte ali ustavite trenutno opravilo. Osnutek se ohrani.",
   "tui.menu_navigation.74a883a037": "Nastavitve",
   "tui.setting_language.8027f432a7": "Jezik vmesnika",
   "tui.language.title": "Jezik vmesnika",
@@ -555,7 +556,7 @@
   "tui.command_desc.resume": "nadaljevanje prejšnje seje",
   "tui.command_desc.export": "izvozi sejo v Markdown (arg 'clip' kopira v odložišče)",
   "tui.command_desc.cost": "prikaz nadzorne plošče stroškov z razčlenitvijo po zavojih",
-  "tui.command_desc.usage": "osveži in prikaži omejitve uporabe naročnine ChatGPT (Codex)",
+  "tui.command_desc.usage": "prikaži porabo žetonov in stroške; omejitve naročnine ChatGPT za Codex",
   "tui.command_desc.undo": "povrni zadnji zastopnik",
   "tui.command_desc.redo": "obnovite zadnji obrat",
   "tui.command_desc.test": "izvajati deterministične teste, preverjanje vlaken in tekmovanj",

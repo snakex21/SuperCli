@@ -43,6 +43,38 @@ type toolResult struct {
 // The second return is the per-call verdict, index-aligned with toolCalls, so
 // progress accounting can judge each call on its own merits.
 func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+	var messages toolBatchMessages
+	defer messages.flush(l, ctx)
+	return l.invokeToolCallsBatch(ctx, toolCalls, out, &messages)
+}
+
+// toolBatchMessages keeps every protocol result immediately after the assistant
+// batch. Auxiliary image carriers follow the entire batch, including scheduling
+// waves: interleaving a user carrier with results makes strict provider repair
+// discard all later calls/results. Persistence must use this same ordering.
+type toolBatchMessages struct {
+	auxiliary []llm.Message
+}
+
+func (b *toolBatchMessages) append(l *Loop, ctx context.Context, followUps []llm.Message) {
+	for _, m := range followUps {
+		if m.Role != llm.RoleTool {
+			b.auxiliary = append(b.auxiliary, m)
+			continue
+		}
+		l.Messages = append(l.Messages, m)
+		l.persist(ctx, m)
+	}
+}
+
+func (b *toolBatchMessages) flush(l *Loop, ctx context.Context) {
+	for _, m := range b.auxiliary {
+		l.Messages = append(l.Messages, m)
+		l.persist(ctx, m)
+	}
+}
+
+func (l *Loop) invokeToolCallsBatch(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event, messages *toolBatchMessages) (bool, []callOutcome) {
 	// Rewrite Zen-gate placeholders (bash/read) to SuperCli's real tools
 	// BEFORE any registry lookup, so allReadOnlyCalls / toolConflictWaves
 	// / dispatch all see names that actually exist.
@@ -51,7 +83,7 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
 	if len(toolCalls) > 1 && l.allReadOnlyCalls(toolCalls) {
-		return l.invokeCallsParallel(ctx, toolCalls, out)
+		return l.invokeCallsParallelBatch(ctx, toolCalls, out, messages)
 	}
 	if len(toolCalls) > 1 && allTaskCalls(toolCalls) && l.taskParallel {
 		if l.taskParallelWarnLocal && !l.taskParallelWarned {
@@ -60,24 +92,24 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 				"running %d task workers in parallel on a local backend — they serialize on one GPU slot (~%d× time) and thrash each other's KV cache; set task_parallel = false for sequential",
 				len(toolCalls), len(toolCalls))}
 		}
-		return l.invokeCallsParallel(ctx, toolCalls, out)
+		return l.invokeCallsParallelBatch(ctx, toolCalls, out, messages)
 	}
 	if waves, ok := l.toolConflictWavesContext(ctx, toolCalls); ok {
 		if len(waves) == 1 {
-			return l.invokeCallsParallel(ctx, toolCalls, out)
+			return l.invokeCallsParallelBatch(ctx, toolCalls, out, messages)
 		}
 		outcomes := make([]callOutcome, 0, len(toolCalls))
 		for index, wave := range waves {
 			var waveOK bool
 			var waveOutcomes []callOutcome
 			if len(wave) > 1 && index == 0 {
-				waveOK, waveOutcomes = l.invokeCallsParallel(ctx, wave, out)
+				waveOK, waveOutcomes = l.invokeCallsParallelBatch(ctx, wave, out, messages)
 			} else if len(wave) > 1 {
 				// Earlier waves may move files or change link targets. Recheck the
 				// smaller batch against the current filesystem before parallel work.
-				waveOK, waveOutcomes = l.invokeToolCalls(ctx, wave, out)
+				waveOK, waveOutcomes = l.invokeToolCallsBatch(ctx, wave, out, messages)
 			} else {
-				waveOK, waveOutcomes = l.invokeToolCallsSequential(ctx, wave, out)
+				waveOK, waveOutcomes = l.invokeToolCallsSequentialBatch(ctx, wave, out, messages)
 			}
 			outcomes = append(outcomes, waveOutcomes...)
 			if !waveOK {
@@ -87,18 +119,21 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 		return true, outcomes
 	}
 
-	return l.invokeToolCallRuns(ctx, toolCalls, out)
+	return l.invokeToolCallRuns(ctx, toolCalls, out, messages)
 }
 
 func (l *Loop) invokeToolCallsSequential(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+	var messages toolBatchMessages
+	defer messages.flush(l, ctx)
+	return l.invokeToolCallsSequentialBatch(ctx, toolCalls, out, &messages)
+}
+
+func (l *Loop) invokeToolCallsSequentialBatch(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event, messages *toolBatchMessages) (bool, []callOutcome) {
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, tc := range toolCalls {
 		ev := l.invoke(ctx, tc, out)
 		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation, source: ev.source, sourcePartial: ev.sourcePartial}
-		for _, m := range ev.followUps {
-			l.Messages = append(l.Messages, m)
-			l.persist(ctx, m)
-		}
+		messages.append(l, ctx, ev.followUps)
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
 			return false, outcomes
@@ -264,7 +299,7 @@ func delegationRunEnd(calls []llm.ToolCall, start int) int {
 // calls on either side. An unknown command does not serialize the whole reply.
 // Recursion only receives a read-only or delegation batch, so it takes one of
 // invokeToolCalls' two parallel fast paths and never reaches this fallback.
-func (l *Loop) invokeToolCallRuns(ctx context.Context, calls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+func (l *Loop) invokeToolCallRuns(ctx context.Context, calls []llm.ToolCall, out chan<- Event, messages *toolBatchMessages) (bool, []callOutcome) {
 	outcomes := make([]callOutcome, 0, len(calls))
 	for start := 0; start < len(calls); {
 		end := start + 1
@@ -280,9 +315,9 @@ func (l *Loop) invokeToolCallRuns(ctx context.Context, calls []llm.ToolCall, out
 		var ok bool
 		var result []callOutcome
 		if end-start > 1 {
-			ok, result = l.invokeToolCalls(ctx, calls[start:end], out)
+			ok, result = l.invokeToolCallsBatch(ctx, calls[start:end], out, messages)
 		} else {
-			ok, result = l.invokeToolCallsSequential(ctx, calls[start:end], out)
+			ok, result = l.invokeToolCallsSequentialBatch(ctx, calls[start:end], out, messages)
 		}
 		outcomes = append(outcomes, result...)
 		if !ok {
@@ -307,6 +342,12 @@ func (l *Loop) allReadOnlyCalls(toolCalls []llm.ToolCall) bool {
 }
 
 func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event) (bool, []callOutcome) {
+	var messages toolBatchMessages
+	defer messages.flush(l, ctx)
+	return l.invokeCallsParallelBatch(ctx, toolCalls, out, &messages)
+}
+
+func (l *Loop) invokeCallsParallelBatch(ctx context.Context, toolCalls []llm.ToolCall, out chan<- Event, messages *toolBatchMessages) (bool, []callOutcome) {
 	results := make([]toolResult, len(toolCalls))
 	var wg sync.WaitGroup
 
@@ -328,10 +369,7 @@ func (l *Loop) invokeCallsParallel(ctx context.Context, toolCalls []llm.ToolCall
 	outcomes := make([]callOutcome, len(toolCalls))
 	for i, ev := range results {
 		outcomes[i] = callOutcome{failed: ev.failed, inert: ev.inert, observation: ev.observation, source: ev.source, sourcePartial: ev.sourcePartial}
-		for _, m := range ev.followUps {
-			l.Messages = append(l.Messages, m)
-			l.persist(ctx, m)
-		}
+		messages.append(l, ctx, ev.followUps)
 		if ev.fatal {
 			out <- ErrorEvent{Err: ev.err}
 			return false, outcomes
