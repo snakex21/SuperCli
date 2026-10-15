@@ -80,7 +80,13 @@ func newSyntheticWindow(t testing.TB, mode string) *syntheticWindow {
 				}
 				return 0
 			case 0x0317, 0x0318: // A classic owner may also handle WM_PRINT/WM_PRINTCLIENT.
-				paintSyntheticWindow(wparam, mode)
+				paintMode := mode
+				if mode == "needs_restore" {
+					if minimized, _, _ := captureUser32.NewProc("IsIconic").Call(hwnd); minimized != 0 {
+						paintMode = "blank"
+					}
+				}
+				paintSyntheticWindow(wparam, paintMode)
 				return 1
 			case 0x0010:
 				captureUser32.NewProc("DestroyWindow").Call(hwnd)
@@ -198,11 +204,13 @@ func TestNativeMinimizedWindowCapturedAndStaysMinimized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, _, err := captureWindow(context.Background(), WindowSelector{HWND: fmt.Sprintf("0x%X", fixture.HWND)})
+	started := time.Now()
+	data, _, info, err := captureWindow(context.Background(), WindowSelector{HWND: fmt.Sprintf("0x%X", fixture.HWND)})
 	if err != nil {
 		t.Fatalf("minimized classic window=%d bytes err=%v", len(data), err)
 	}
 	assertSyntheticColors(t, data, "image/png", WindowInfo{})
+	t.Logf("minimized capture=%s, restored for rendering=%t", time.Since(started), !info.Minimized)
 	after, stateErr := inspectNativeWindow(fixture.HWND)
 	nowForeground, _, _ := captureUser32.NewProc("GetForegroundWindow").Call()
 	if stateErr != nil || !before.Minimized || !after.Minimized || after.Visible != before.Visible || foreground != nowForeground {
@@ -211,6 +219,23 @@ func TestNativeMinimizedWindowCapturedAndStaysMinimized(t *testing.T) {
 	style, _, _ := captureUser32.NewProc("GetWindowLongPtrW").Call(fixture.HWND, ^uintptr(19))
 	if style&0x00080020 != 0 {
 		t.Fatalf("temporary transparent style left on window: %#x", style)
+	}
+}
+
+func TestNativeMinimizedFallbackCapturesOneFrameAndRestores(t *testing.T) {
+	fixture := newSyntheticWindow(t, "needs_restore")
+	captureUser32.NewProc("ShowWindow").Call(fixture.HWND, 7)
+	data, mime, info, err := captureWindow(context.Background(), WindowSelector{HWND: fmt.Sprintf("0x%X", fixture.HWND), PID: uint32(os.Getpid())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSyntheticColors(t, data, mime, info)
+	if info.Minimized {
+		t.Fatal("fixture did not exercise the restored-render fallback")
+	}
+	after, err := inspectNativeWindow(fixture.HWND)
+	if err != nil || !after.Minimized {
+		t.Fatalf("restore fallback did not re-minimize: %+v %v", after, err)
 	}
 }
 

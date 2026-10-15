@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestNativeOwnedSessionAccessibility(t *testing.T) {
 	ready, readyName := newEvent("Ready")
 	clicked, clickedName := newEvent("Clicked")
 	title := "SuperCli owned accessibility fixture " + nonce
-	start, err := execute(t, tool, map[string]any{"action": "start", "command": []string{os.Args[0], "-test.run=TestOwnedWindowFixtureHelper"}, "env": []string{"SUPERCLI_OWNED_WINDOW_HELPER=1", "SUPERCLI_OWNED_WINDOW_TITLE=" + title, "SUPERCLI_OWNED_WINDOW_READY=" + readyName, "SUPERCLI_OWNED_WINDOW_UIA=1", "SUPERCLI_OWNED_WINDOW_CLICKED=" + clickedName}, "yield_ms": 0})
+	start, err := execute(t, tool, map[string]any{"action": "start", "command": []string{os.Args[0], "-test.run=TestOwnedWindowFixtureHelper"}, "env": []string{"SUPERCLI_OWNED_WINDOW_HELPER=1", "SUPERCLI_OWNED_WINDOW_TITLE=" + title, "SUPERCLI_OWNED_WINDOW_READY=" + readyName, "SUPERCLI_OWNED_WINDOW_UIA=1", "SUPERCLI_OWNED_WINDOW_CLICKED=" + clickedName, "SUPERCLI_OWNED_WINDOW_MINIMIZED=1"}, "yield_ms": 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +74,9 @@ func TestNativeOwnedSessionAccessibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !view.Minimized {
+		t.Fatal("fixture did not begin minimized")
+	}
 	shotArgs, _ := json.Marshal(map[string]any{"action": "screenshot", "id": start.ID, "window_id": view.WindowID})
 	shot, shotErr := tool.Execute(ctx, shotArgs)
 	if shotErr != nil || shot.Err != nil {
@@ -82,7 +86,7 @@ func TestNativeOwnedSessionAccessibility(t *testing.T) {
 	if strings.Contains(string(raw), "PASSWORD_SENTINEL") {
 		t.Fatal("password value leaked")
 	}
-	var edit, button, label string
+	var edit, button, label, menu string
 	passwordSeen := false
 	for _, e := range view.Elements {
 		if e.Value == "visible seed" {
@@ -94,12 +98,15 @@ func TestNativeOwnedSessionAccessibility(t *testing.T) {
 		if e.Name == "Fixture label" {
 			label = e.ID
 		}
+		if e.Name == "Owned menu" && e.Expansion == "collapsed" {
+			menu = e.ID
+		}
 		passwordSeen = passwordSeen || e.Password
 	}
-	if edit == "" || button == "" || label == "" || !passwordSeen {
+	if edit == "" || button == "" || label == "" || menu == "" || !passwordSeen {
 		t.Fatalf("missing accessible controls: %s", raw)
 	}
-	if result, err := act("type", edit, "zażółć nowa wartość"); err != nil || !result.Dispatched {
+	if result, err := act("type", edit, "zażółć nowa wartość"); err != nil || !result.Dispatched || result.EffectObserved == nil || !*result.EffectObserved || result.Observation != "value_matches" {
 		t.Fatalf("background type: %+v %v", result, err)
 	}
 	view, err = act("inspect_window", "", "")
@@ -122,6 +129,24 @@ func TestNativeOwnedSessionAccessibility(t *testing.T) {
 	if state, _, _ := ownedWindowKernel32.NewProc("WaitForSingleObject").Call(clicked, 5000); state != 0 {
 		t.Fatal("button did not signal activation")
 	}
+	menuResult, err := act("click", menu, "")
+	if err != nil {
+		if !strings.Contains(err.Error(), "ExpandCollapsePattern.Expand") || !strings.Contains(err.Error(), "provider refused the background action") || menuResult.Dispatched {
+			t.Fatalf("menu refusal must identify the limitation without claiming success: %+v %v", menuResult, err)
+		}
+		t.Logf("minimized menu refusal is explicit, without a fallback click: %v", err)
+	} else {
+		if menuResult.Method != "UIAutomation.ExpandCollapsePattern.Expand" || menuResult.EffectObserved == nil {
+			t.Fatalf("parent menu must use expansion and report actual state: %+v %v", menuResult, err)
+		}
+		t.Logf("menu expansion dispatched=%t observed=%t observation=%s", menuResult.Dispatched, *menuResult.EffectObserved, menuResult.Observation)
+	}
+	// Only the fixture's menu is canceled; no physical Escape/input is sent.
+	hwnd, parseErr := strconv.ParseUint(strings.TrimPrefix(view.WindowID, "0x"), 16, 64)
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	ownedWindowUser32.NewProc("PostMessageW").Call(uintptr(hwnd), 0x001F, 0, 0) // WM_CANCELMODE
 	if _, err := act("click", label, ""); err == nil {
 		t.Fatal("unsupported label used an input fallback")
 	}

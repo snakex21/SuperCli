@@ -148,6 +148,7 @@ type Result struct {
 	PID        int       `json:"pid"`
 	WindowID   string    `json:"window_id"`
 	Title      string    `json:"title"`
+	Minimized  bool      `json:"minimized"`
 	Elements   []Element `json:"elements,omitempty"`
 	Truncated  bool      `json:"truncated,omitempty"`
 	Dispatched bool      `json:"dispatched,omitempty"`

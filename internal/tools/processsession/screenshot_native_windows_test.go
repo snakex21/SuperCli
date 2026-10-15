@@ -113,6 +113,13 @@ func TestOwnedWindowFixtureHelper(t *testing.T) {
 		t.Fatalf("create owned fixture: %v", err)
 	}
 	if os.Getenv("SUPERCLI_OWNED_WINDOW_UIA") == "1" {
+		menu, _, _ := ownedWindowUser32.NewProc("CreateMenu").Call()
+		popup, _, _ := ownedWindowUser32.NewProc("CreatePopupMenu").Call()
+		parentText, _ := windows.UTF16PtrFromString("Owned menu")
+		childText, _ := windows.UTF16PtrFromString("Owned menu command")
+		ownedWindowUser32.NewProc("AppendMenuW").Call(popup, 0, 205, uintptr(unsafe.Pointer(childText)))
+		ownedWindowUser32.NewProc("AppendMenuW").Call(menu, 0x10, popup, uintptr(unsafe.Pointer(parentText)))
+		ownedWindowUser32.NewProc("SetMenu").Call(hwnd, menu)
 		for _, control := range []struct {
 			class, text string
 			id, style   uintptr
