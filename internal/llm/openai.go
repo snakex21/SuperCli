@@ -328,7 +328,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			// and retry once — the conversation survives instead of dying
 			// on a 400.
 			if visionAttempt && !visionRetried && messagesContainImage(msgs) && isImageRejection(resp.StatusCode, body) {
-				p.imageRejected.Store(true)
+				if noteImageRejection(p.caps, p.capabilityModel(), resp.StatusCode, body) {
+					p.imageRejected.Store(true)
+				}
 				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
 				if err == nil {
 					visionRetried = true

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/ui/attachments"
 )
 
 const defaultHistorySummaryLen = 90
@@ -21,6 +22,15 @@ func summarizeHistoryMessage(text string, maxRunes int) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
+	}
+	// The persisted prompt ends with the attached file names for the model.
+	// A label names the request; the names only stand in when nothing else
+	// was written.
+	if stripped, names := attachments.SplitTranscriptNames(text); len(names) > 0 {
+		text = stripped
+		if text == "" {
+			text = strings.Join(names, ", ")
+		}
 	}
 
 	text = stripMarkdownNoise(text)

@@ -88,6 +88,8 @@ function addUserMsg(text, seq, attachments, messageID, sessionID) {
   hideWelcome();
   attachments = (attachments || []).slice();
   var m = el("div", "msg-user");
+  // Rewind puts these files back in the composer together with the text.
+  m._attachments = attachments;
   var displayText = userMessageDisplayText(text, attachments);
   if (displayText) m.appendChild(el("div", "msg-user-text", displayText));
   renderSentAttachments(m, attachments);
@@ -108,12 +110,12 @@ function addMessageRewind(node, seq, text, messageID, sessionID) {
   button.addEventListener("click", function (event) {
     event.preventDefault();
     event.stopPropagation();
-    showRewindDialog(ownerSessionID, seq, text, button, messageID);
+    showRewindDialog(ownerSessionID, seq, text, button, messageID, (node._attachments || []).slice());
   });
   node.appendChild(button);
 }
 
-async function showRewindDialog(sessionID, seq, text, trigger, messageID) {
+async function showRewindDialog(sessionID, seq, text, trigger, messageID, attachments) {
   if (trigger) trigger.disabled = true;
   var preview = null;
   try {
@@ -153,7 +155,7 @@ async function showRewindDialog(sessionID, seq, text, trigger, messageID) {
   confirm.addEventListener("click", async function () {
     confirm.disabled = true;
     cancel.disabled = true;
-    var ok = await rewindSession(sessionID, seq, text, input.value.trim(), !!(rewindFiles && rewindFiles.checked), trigger, messageID);
+    var ok = await rewindSession(sessionID, seq, text, input.value.trim(), !!(rewindFiles && rewindFiles.checked), trigger, messageID, attachments);
     if (ok) close();
     else { confirm.disabled = false; cancel.disabled = false; }
   });

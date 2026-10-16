@@ -69,6 +69,27 @@ test('preview and final request carry the same decimal ID without numeric conver
   assert.equal(h.posts[0].body.rewind_files, true);
 });
 
+test('rewind puts sent attachments back with the text instead of only the file-name line', async () => {
+  const h = harness(), c = h.c, added = [];
+  c.userMessageDisplayText = (text, paths) => paths.length ? text.replace(/\n\n\u{1F4CE} [^\n]*$/u, '') : text;
+  c.addAttachmentPaths = paths => added.push(...paths);
+  const node = h.element('div');
+  node._attachments = ['.supercli/attachments/x/image.png'];
+  const opened = [];
+  c.showRewindDialog = (...args) => opened.push(args);
+  c.addMessageRewind(node, 3, 'cześć co to?\n\n\u{1F4CE} image.png', '9', 'original');
+  node.querySelector('.msg-rewind').events.click({preventDefault() {}, stopPropagation() {}});
+  assert.deepEqual(opened[0][5], ['.supercli/attachments/x/image.png']);
+  assert.equal(await c.rewindSession('original', 3, opened[0][2], '', false, null, '9', opened[0][5]), true);
+  assert.equal(c.promptEl.value, 'cześć co to?');
+  assert.deepEqual(added, ['.supercli/attachments/x/image.png']);
+  assert.equal(await c.rewindSession('original', 3, 'composer.inspectAttachments\n\n\u{1F4CE} image.png', '', false, null, '9', ['a.png']), true);
+  assert.equal(c.promptEl.value, '');
+  assert.equal(await c.rewindSession('original', 3, 'plain', '', false, null, '9'), true);
+  assert.equal(c.promptEl.value, 'plain');
+  assert.deepEqual(added, ['.supercli/attachments/x/image.png', 'a.png']);
+});
+
 test('live rewind requires the successful current receipt and does not query by text', async () => {
   const h = harness(), c = h.c, node = h.element('div');
   c.bindLiveMessageReceipt(node, {type: 'session_activity', session_id: 'original'});

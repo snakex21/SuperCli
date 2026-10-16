@@ -13,6 +13,7 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/uilang"
+	"supercli/internal/ui/attachments"
 )
 
 // listResumableSessions renders the /resume picker text. By default it
@@ -39,7 +40,7 @@ func listResumableSessions(ctx context.Context, store *session.Store, currentSes
 		if r.ID == currentSessionID {
 			continue
 		}
-		snippet := strings.Join(strings.Fields(r.FirstUserMsg), " ")
+		snippet := strings.Join(strings.Fields(attachments.StripTranscriptNames(r.FirstUserMsg)), " ")
 		if len(snippet) > 60 {
 			snippet = snippet[:59] + "…"
 		}

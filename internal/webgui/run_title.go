@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"supercli/internal/llm"
+	"supercli/internal/ui/attachments"
 )
 
 // titleIdleDelay is how long a session must stay quiet after its
@@ -28,7 +29,7 @@ const sessionTitleMaxRunes = 80
 // Short prompts fit as complete local labels in any language; keep them
 // without an extra background request to shorten them.
 func needsSessionTitle(prompt string) bool {
-	return runeLen(collapseWhitespace(stripMarkdownNoise(prompt))) > sessionTitleMaxRunes
+	return runeLen(collapseWhitespace(stripMarkdownNoise(attachments.StripTranscriptNames(prompt)))) > sessionTitleMaxRunes
 }
 
 // titleMaxAttempts bounds retries when the title call was preempted

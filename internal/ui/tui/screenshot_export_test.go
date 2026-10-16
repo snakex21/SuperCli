@@ -68,4 +68,39 @@ func TestExportTUIScreenshots(t *testing.T) {
 		}
 		write("languages-"+language, m)
 	}
+
+	// A conversation view in the three environments the TUI must look right
+	// in: Windows Terminal (dark, true colour), a light terminal, and classic
+	// cmd/conhost (256 colours, emoji replaced by plain symbols).
+	variants := []struct {
+		name    string
+		profile termenv.Profile
+		dark    bool
+		legacy  bool
+	}{
+		{"chat-dark", termenv.TrueColor, true, false},
+		{"chat-light", termenv.TrueColor, false, false},
+		{"chat-cmd", termenv.ANSI256, true, true},
+	}
+	for _, v := range variants {
+		r := lipgloss.NewRenderer(io.Discard, termenv.WithProfile(v.profile))
+		r.SetColorProfile(v.profile)
+		r.SetHasDarkBackground(v.dark)
+		m := New(Options{Language: "pl", Version: "1.0.12", NoColor: false})
+		m.palette = NewPalette(r)
+		m.marker = NewMarker(m.palette, "pl")
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 34})
+		m = next.(Model)
+		m.chat.legacySymbols = v.legacy
+		m.chat.addUser("> Sprawdź, czemu testy w internal/llm się sypią 📎\n\n" + attachmentDisplay([]string{"log.txt"}, "pl"))
+		m.chat.addAssistant("Przejrzę **openai.go** i uruchomię testy.\n\n## Plan\n- odczyt pliku\n- `go test ./internal/llm`")
+		m.appendLine(m.marker.ToolCall("read_lines", `{"file":"internal/llm/openai.go","from":310,"to":355}`))
+		m.chat.addToolResultLang("read_lines", "310 | if resp.StatusCode/100 == 2 {\n311 | \tstreamCancel = cancel\n312 | \tbreak\n313 | }", "", "go")
+		m.appendLine(m.marker.ToolCall("ctx_execute", `{"command":["go","test","./internal/llm"]}`))
+		m.chat.addToolResultLang("ctx_execute", "", "exit status 1: TestOpenAI_Stream failed", "")
+		m.chat.addAssistant("Znalazłem przyczynę: brak `continue` po ponowieniu. ✅ Poprawione.")
+		m.markTranscriptPresent()
+		m.refreshTranscript()
+		write(v.name, m)
+	}
 }

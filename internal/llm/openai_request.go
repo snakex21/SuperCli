@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -579,7 +580,26 @@ func (p *OpenAIProvider) hasReasoningCapability() bool {
 	return p.caps.HasReasoning(model)
 }
 
-const imageInputOmittedPlaceholder = "[image omitted: current model has no image input]"
+// imageInputOmittedPlaceholder stands in for an image that was not sent on
+// this request. It states only what is true for the request: the pixels were
+// withheld. It must not claim the model is blind, because the model repeats
+// the claim to the user even when the image was dropped for another reason.
+const imageInputOmittedPlaceholder = "[image not sent: image input was unavailable for this request]"
+
+// noteImageRejection logs the provider's refusal of image input (so the
+// cause is visible afterwards) and reports whether the refusal should be
+// remembered for later turns. A model the registry knows accepts images is
+// not marked blind by one refusal: only this request is retried without
+// images, and the next turn sends them again.
+func noteImageRejection(caps *CapabilityRegistry, model string, status int, body []byte) bool {
+	remember := caps == nil || !caps.HasVision(model)
+	msg := strings.TrimSpace(string(body))
+	if len(msg) > 400 {
+		msg = msg[:400] + "..."
+	}
+	log.Printf("vision: model=%s http %d rejected image input (remembered=%v): %s", model, status, remember, msg)
+	return remember
+}
 
 func messagesContainImage(msgs []Message) bool {
 	for _, m := range msgs {
