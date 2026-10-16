@@ -15,24 +15,37 @@ import (
 // Theme colors. Adaptive: the first value targets light
 // terminals, the second dark terminals. Renderers must never
 // hardcode color codes — add a style here instead.
+//
+// Values are the GUI tokens from webgui/assets/app.css, so both interfaces
+// share one identity. lipgloss maps them to the nearest 256/16 colour on
+// terminals without true colour (classic cmd/conhost).
 var (
-	// colorAccent is the brand color (warm orange).
-	colorAccent = lipgloss.AdaptiveColor{Light: "166", Dark: "209"}
+	// colorAccent is the brand color (GUI --accent; darker on light
+	// backgrounds so it stays readable).
+	colorAccent = lipgloss.AdaptiveColor{Light: "#c2531f", Dark: "#e8763d"}
 	// colorAccentSoft is a lighter companion accent.
-	colorAccentSoft = lipgloss.AdaptiveColor{Light: "172", Dark: "216"}
+	colorAccentSoft = lipgloss.AdaptiveColor{Light: "#b5520a", Dark: "#f5a97f"}
 	// colorInfo is the secondary accent used for user labels
-	// and interactive highlights (cool cyan/blue).
-	colorInfo = lipgloss.AdaptiveColor{Light: "31", Dark: "81"}
-	// colorText is the main body text.
-	colorText = lipgloss.AdaptiveColor{Light: "235", Dark: "252"}
-	// colorMuted is for secondary text (hints, dim labels).
-	colorMuted = lipgloss.AdaptiveColor{Light: "245", Dark: "245"}
+	// and interactive highlights (GUI --hl-fn blue).
+	colorInfo = lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#82aaff"}
+	// colorText is the main body text (GUI --text).
+	colorText = lipgloss.AdaptiveColor{Light: "#1c1c20", Dark: "#e8e8ea"}
+	// colorMuted is for secondary text (GUI --muted).
+	colorMuted = lipgloss.AdaptiveColor{Light: "#63636b", Dark: "#9a9aa2"}
 	// colorFaint is for chrome lines (rules, borders, separators).
-	colorFaint = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
-	// colorSuccess / colorError / colorWarn are status colors.
-	colorSuccess = lipgloss.AdaptiveColor{Light: "28", Dark: "78"}
-	colorError   = lipgloss.AdaptiveColor{Light: "124", Dark: "203"}
-	colorWarn    = lipgloss.AdaptiveColor{Light: "130", Dark: "222"}
+	colorFaint = lipgloss.AdaptiveColor{Light: "#c8c8ce", Dark: "#3a3a44"}
+	// colorSurface is the raised background of bars and selections
+	// (GUI --raise).
+	colorSurface = lipgloss.AdaptiveColor{Light: "#ececf0", Dark: "#1d1d23"}
+	// colorSelect is a selected row, one step above the surface.
+	colorSelect = lipgloss.AdaptiveColor{Light: "#e2e2e8", Dark: "#2a2a33"}
+	// colorCode is inline code (GUI --hl-attr).
+	colorCode = lipgloss.AdaptiveColor{Light: "#0b7285", Dark: "#89ddff"}
+	// colorSuccess / colorError / colorWarn are status colors
+	// (GUI --hl-add, --hl-del and --hl-type).
+	colorSuccess = lipgloss.AdaptiveColor{Light: "#1f7a35", Dark: "#7fd18b"}
+	colorError   = lipgloss.AdaptiveColor{Light: "#b42318", Dark: "#f08080"}
+	colorWarn    = lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#e5c07b"}
 )
 
 // Palette is the set of styles used across the TUI. Exported
@@ -54,6 +67,8 @@ type Palette struct {
 	PanelMuted   lipgloss.Style
 	MenuSelected lipgloss.Style
 	MenuTab      lipgloss.Style
+	// Bar is the background of the header bar; segment styles inherit it.
+	Bar lipgloss.Style
 
 	// Input area border: accent when focused, faint when not.
 	InputBorderFocused lipgloss.Style
@@ -116,8 +131,9 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		Panel:        r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorFaint).Padding(1, 2),
 		PanelTitle:   r.NewStyle().Foreground(colorAccent).Bold(true),
 		PanelMuted:   r.NewStyle().Foreground(colorMuted),
-		MenuSelected: r.NewStyle().Foreground(colorAccentSoft).Background(lipgloss.AdaptiveColor{Light: "255", Dark: "236"}).Bold(true),
-		MenuTab:      r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "255", Dark: "232"}).Background(colorAccent).Bold(true),
+		MenuSelected: r.NewStyle().Foreground(colorAccentSoft).Background(colorSelect).Bold(true),
+		MenuTab:      r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#101014"}).Background(colorAccent).Bold(true),
+		Bar:          r.NewStyle().Background(colorSurface),
 
 		// Input area border
 		InputBorderFocused: r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1),
@@ -143,7 +159,7 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		StatusDim:   r.NewStyle().Foreground(colorMuted),
 
 		// Tool chips
-		ToolName:   r.NewStyle().Foreground(colorAccent).Bold(true),
+		ToolName:   r.NewStyle().Foreground(colorInfo).Bold(true),
 		ToolOutput: r.NewStyle().Foreground(colorMuted),
 		ToolErr:    r.NewStyle().Foreground(colorError),
 
@@ -156,7 +172,7 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		// Markdown
 		MdH2:   r.NewStyle().Foreground(colorAccentSoft).Bold(true),
 		MdH3:   r.NewStyle().Foreground(colorAccent).Bold(true),
-		MdCode: r.NewStyle().Foreground(colorSuccess),
+		MdCode: r.NewStyle().Foreground(colorCode),
 
 		// Thinking blocks
 		MdThinking:       r.NewStyle().Foreground(colorMuted).Italic(true),

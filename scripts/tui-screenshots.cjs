@@ -40,7 +40,9 @@ function htmlANSI(text) {
 }
 fs.mkdirSync(output,{recursive:true});
 for(const name of fs.readdirSync(input).filter(name=>name.endsWith('.ansi'))) {
- const html='<!doctype html><html><head><meta charset="utf-8"><title>SuperCli TUI render</title><style>html,body{margin:0;background:#101014;color:#e8e8ea}pre{box-sizing:border-box;display:inline-block;margin:0;padding:22px;font:15px/1.35 Consolas,"Cascadia Mono",monospace;white-space:pre;font-variant-ligatures:none}</style></head><body><pre>'+htmlANSI(fs.readFileSync(path.join(input,name),'utf8'))+'</pre></body></html>';
+ // A "-light" export was rendered for a light terminal; show it on one.
+ const page=name.includes('-light')?'background:#fbfaf8;color:#1f1f24':'background:#101014;color:#e8e8ea';
+ const html='<!doctype html><html><head><meta charset="utf-8"><title>SuperCli TUI render</title><style>html,body{margin:0;'+page+'}pre{box-sizing:border-box;display:inline-block;margin:0;padding:22px;font:15px/1.35 Consolas,"Cascadia Mono",monospace;white-space:pre;font-variant-ligatures:none}</style></head><body><pre>'+htmlANSI(fs.readFileSync(path.join(input,name),'utf8'))+'</pre></body></html>';
  fs.writeFileSync(path.join(output,name.replace(/\.ansi$/,'.html')),html);
 }
 console.log('Rendered '+output);

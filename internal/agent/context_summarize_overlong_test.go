@@ -131,7 +131,7 @@ func TestAutoSummarizerOverlongSideFallback(t *testing.T) {
 			messages := []llm.Message{{Role: llm.RoleUser, Content: "Preserve all earlier restrictions and finish the work."}}
 			got, err := NewAutoSummarizerWithProvider(side, nil)(context.Background(), main, messages)
 			if tc.want == nil {
-				if err != nil || got != WrapCompactSummary(valid) {
+				if err != nil || got != WrapCompactSummary(valid+compactRecentUserRequests(messages)) {
 					t.Fatalf("valid active fallback changed: error=%v bytes=%d", err, len(got))
 				}
 			} else if got != "" || !errors.Is(err, tc.want) || !errors.Is(err, errCompactionSummaryTooLong) {

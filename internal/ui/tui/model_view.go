@@ -113,17 +113,20 @@ func (m Model) renderHeader() string {
 	if m.version != "" {
 		name += " " + m.version
 	}
-	sep := m.palette.StatusSep.Render(" · ")
-	left := m.palette.Header.Render(name) + sep + m.palette.HeaderDim.Render(model)
-	right := m.palette.Success.Render(mode)
+	// Every segment inherits the bar background, so the header reads as one
+	// raised strip instead of loose words (each segment resets its colours).
+	bar := m.palette.Bar
+	sep := m.palette.StatusSep.Inherit(bar).Render(" · ")
+	left := bar.Render(" ") + m.palette.Header.Inherit(bar).Render(name) + sep + m.palette.HeaderDim.Inherit(bar).Render(model)
+	right := m.palette.Success.Inherit(bar).Render(mode) + bar.Render(" ")
 	if m.busy || m.mode == modeAsking || m.planMode {
-		right = m.palette.HeaderMode.Render(mode)
+		right = m.palette.HeaderMode.Inherit(bar).Render(mode) + bar.Render(" ")
 	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	line := left + strings.Repeat(" ", gap) + right
+	line := left + bar.Render(strings.Repeat(" ", gap)) + right
 	if lipgloss.Width(line) > width {
 		return truncateVisible(line, width)
 	}

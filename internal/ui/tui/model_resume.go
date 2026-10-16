@@ -11,6 +11,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/ui/attachments"
 )
 
 // The model projection belongs to the agent. The UI always reads the full
@@ -169,8 +170,18 @@ func (m *Model) applyResumedTranscript(h *resumedTranscript) {
 		text := transcriptMessageText(item)
 		switch item.Role {
 		case llm.RoleUser:
-			if paths := h.Attachments[h.Seqs[i]]; len(paths) > 0 && !strings.Contains(text, "📎") && !strings.Contains(text, "[files]") {
-				text += "\n" + attachmentDisplay(paths, m.language)
+			// The stored prompt ends with the file names for the model. Show
+			// them once, in the user's language, instead of the raw line.
+			stripped, names := attachments.SplitTranscriptNames(text)
+			if paths := h.Attachments[h.Seqs[i]]; len(paths) > 0 {
+				names = paths
+			}
+			if len(names) > 0 {
+				text = stripped
+				if text != "" {
+					text += "\n"
+				}
+				text += attachmentDisplay(names, m.language)
 			}
 			m.chat.addUser(text)
 			m.markTranscriptPresent()

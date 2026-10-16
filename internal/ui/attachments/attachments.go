@@ -70,7 +70,7 @@ func BuildAddon(home string, paths []string) (string, error) {
 		return "", nil
 	}
 	var out strings.Builder
-	out.WriteString("[attached_files]\nThe user selected these files for this request. Supported image pixels are already included directly in this user message; inspect them without calling read_image. Use read_pdf for PDF, read_docx for DOCX, read_xlsx for XLSX, read_zip for ZIP, and read_lines/read_context for CSV, text, or code. If a named reader is not visible yet, call tool_search for that exact tool name first:\n")
+	out.WriteString("[attached_files]\nThe user selected these files for this request. Pixels of supported images (PNG, JPEG, GIF, WebP) are already included directly in this user message: answer from them directly, without searching for, listing or reloading those files (no read_image, load_session_image or shell command). Use read_pdf for PDF, read_docx for DOCX, read_xlsx for XLSX, read_zip for ZIP, and read_lines/read_context for CSV, text, or code. If a named reader is not visible yet, call tool_search for that exact tool name first:\n")
 	for _, path := range selected {
 		out.WriteString("- ")
 		out.WriteString(strconv.Quote(path))

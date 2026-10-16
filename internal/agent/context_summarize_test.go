@@ -94,3 +94,47 @@ func TestAutoSummarizerCompactModelFallsBackToActiveProvider(t *testing.T) {
 		t.Fatalf("fallback summary missing: %q", got)
 	}
 }
+
+// The model summary may drop or mislabel the newest requests (a reported bug
+// turned into "waiting for the user"). The newest real user messages are
+// quoted by code, oldest first, without addon blocks, tool wrappers or a
+// prior summary, and without another model call.
+func TestAutoSummarizerQuotesRecentUserMessages(t *testing.T) {
+	main := &stubProvider{name: "main", scripts: [][]llm.Delta{{
+		{Content: "Goal: fix onboarding\nDone: nothing\nState: none\nPending: waiting for the user"},
+		{FinishReason: "stop"},
+	}}}
+	history := []llm.Message{
+		{Role: llm.RoleUser, Content: WrapCompactSummary("Goal: older work")},
+		{Role: llm.RoleUser, Content: "pierwsza prośba"},
+		{Role: llm.RoleAssistant, Content: "ok"},
+		{Role: llm.RoleUser, Content: "druga prośba\n\n[relevant_previous_sessions]\nprivate recall\n[/relevant_previous_sessions]"},
+		{Role: llm.RoleUser, Content: "Attached image from tool read_image:"},
+		{Role: llm.RoleUser, Content: "<task-notification>worker done</task-notification>"},
+		{Role: llm.RoleUser, Content: "Termux: setup przy pierwszym uruchomieniu daje błąd,   a /providers działa"},
+		{Role: llm.RoleAssistant, Content: "sprawdzę"},
+	}
+	got, err := NewAutoSummarizer(nil)(context.Background(), main, history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\nrecent_user_messages (oldest first, verbatim):\n- pierwsza prośba\n- druga prośba\n- Termux: setup przy pierwszym uruchomieniu daje błąd, a /providers działa"
+	if !strings.Contains(got, want) {
+		t.Fatalf("recent user messages not quoted:\n%s", got)
+	}
+	for _, leaked := range []string{"private recall", "Attached image", "task-notification", "older work\n- "} {
+		if strings.Contains(got[strings.Index(got, "recent_user_messages"):], leaked) {
+			t.Fatalf("quoted block leaked %q:\n%s", leaked, got)
+		}
+	}
+	if atomic.LoadInt32(&main.calls) != 1 {
+		t.Fatalf("calls=%d, want one summary call", main.calls)
+	}
+	long := strings.Repeat("ż", 400)
+	if q := compactRecentUserRequests([]llm.Message{{Role: llm.RoleUser, Content: long}}); len(q) > 80+compactRecentUserBytes || !strings.HasSuffix(q, "…") {
+		t.Fatalf("long message not bounded: %d bytes", len(q))
+	}
+	if q := compactRecentUserRequests([]llm.Message{{Role: llm.RoleAssistant, Content: "x"}}); q != "" {
+		t.Fatalf("no user message must add nothing: %q", q)
+	}
+}

@@ -219,8 +219,18 @@ test('existing image and PDF previews and composer attachment names keep their b
   h.c.closeAttachmentPreview();
   assert.equal(h.$('#attachment-preview-content').children.length, 0);
   const paperclip = String.fromCodePoint(0x1F4CE);
-  assert.equal(h.c.userMessageDisplayText('text\n\n' + paperclip + ' photo.webp, doc.pdf', ['/portable/photo.webp', '/portable/doc.pdf']),
-    'text\n\n' + paperclip + ' doc.pdf');
+  assert.equal(h.c.userMessageDisplayText('text\n\n' + paperclip + ' photo.webp, doc.pdf', ['/portable/photo.webp', '/portable/doc.pdf']), 'text');
+  assert.equal(h.c.userMessageDisplayText(paperclip + ' photo.webp', ['/portable/photo.webp']), '');
+  assert.equal(h.c.userMessageDisplayText('my ' + paperclip + ' notes\nmore', ['/portable/photo.webp']), 'my ' + paperclip + ' notes\nmore');
+  assert.equal(h.c.userMessageDisplayText('keep\n\n' + paperclip + ' x.png', []), 'keep\n\n' + paperclip + ' x.png');
+  const host = element('div');
+  h.c.renderSentAttachments(host, ['/portable/photo.webp', '/portable/doc.pdf', '/portable/data.csv']);
+  const tiles = host.querySelectorAll('.sent-file-attachment');
+  assert.deepEqual(tiles.map(tile => tile.querySelector('.attachment-name').textContent), ['doc.pdf', 'data.csv']);
+  assert.deepEqual(tiles.map(tile => tile.querySelector('.sent-file-badge').textContent), ['PDF', 'CSV']);
+  assert.equal(host.querySelectorAll('img').length, 1);
+  tiles[0].dispatch('click');
+  assert.ok(h.$('#attachment-preview-content').querySelector('iframe'));
 });
 
 test('tool MIME descriptors preview valid content even with no or mismatched file extension', () => {
@@ -266,7 +276,9 @@ test('a tool MIME override does not change ordinary user attachment inference fo
   assert.throws(() => h.c.openAttachmentPreview(file), /attachment.previewUnavailable/);
   const host = element('div');
   h.c.renderSentAttachments(host, [file]);
-  assert.equal(host.children.length, 0);
+  assert.equal(host.querySelectorAll('img').length, 0);
+  assert.equal(host.querySelectorAll('.sent-attachment-preview').length, 0);
+  assert.equal(host.querySelectorAll('.sent-file-attachment').length, 1, 'an ordinary file is a plain tile, not media');
 });
 
 test('portable screenshot identifiers keep the same lazy live and history URL after moving the app', () => {

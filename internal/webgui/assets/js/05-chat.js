@@ -77,15 +77,17 @@ function attachmentTranscriptText(text, paths) {
   if (!paths.length) return text;
   return text + "\n\n" + String.fromCodePoint(0x1F4CE) + " " + paths.map(attachmentName).join(", ");
 }
+// The persisted prompt ends with a "📎 a.png, b.pdf" line so the model keeps
+// the file names. Every attachment is shown as a tile, so the bubble drops
+// that final single-line paragraph instead of repeating the names.
 function userMessageDisplayText(text, paths) {
   text = String(text || "");
   paths = paths || [];
   if (!paths.length) return text;
-  var suffix = "\n\n" + String.fromCodePoint(0x1F4CE) + " " + paths.map(attachmentName).join(", ");
-  if (text.slice(-suffix.length) === suffix) text = text.slice(0, -suffix.length);
-  var documents = paths.filter(function (path) { return !imageAttachment(path); });
-  if (documents.length) {
-    text += "\n\n" + String.fromCodePoint(0x1F4CE) + " " + documents.map(attachmentName).join(", ");
+  var cut = text.lastIndexOf("\n\n");
+  var last = text.slice(cut >= 0 ? cut + 2 : 0);
+  if (last.indexOf("\n") < 0 && last.indexOf(String.fromCodePoint(0x1F4CE) + " ") === 0) {
+    text = cut >= 0 ? text.slice(0, cut).replace(/\s+$/, "") : "";
   }
   return text;
 }
@@ -124,7 +126,28 @@ function forgetSentAttachments(sessionID, fromSeq) {
 function renderSentAttachments(node, paths, mediaKind, previewPath) {
   var override = ["image", "video", "audio"].indexOf(mediaKind) >= 0 ? mediaKind : "";
   var mediaPaths = (paths || []).filter(function (path) { return !!(override || attachmentMediaType(path)); });
-  if (!node || !mediaPaths.length) return;
+  // A tool preview passes an explicit media kind; only user attachments get
+  // tiles for documents and other files.
+  var filePaths = override ? [] : (paths || []).filter(function (path) { return !attachmentMediaType(path); });
+  if (!node) return;
+  if (filePaths.length) {
+    var files = el("div", "sent-file-attachments");
+    filePaths.forEach(function (path) {
+      var tile = el("button", "sent-file-attachment" + (previewableAttachment(path) ? " previewable" : ""));
+      tile.type = "button";
+      tile.title = path;
+      tile.setAttribute("aria-label", attachmentName(path));
+      var ext = attachmentExtension(path).slice(1).toUpperCase();
+      tile.appendChild(el("span", "sent-file-badge", ext ? ext.slice(0, 4) : "FILE"));
+      tile.appendChild(el("span", "attachment-name", attachmentName(path)));
+      if (previewableAttachment(path)) {
+        tile.addEventListener("click", function () { openAttachmentPreview(path); });
+      }
+      files.appendChild(tile);
+    });
+    node.appendChild(files);
+  }
+  if (!mediaPaths.length) return;
   var gallery = el("div", "sent-attachment-gallery" + (mediaPaths.length === 1 ? " single" : ""));
   mediaPaths.forEach(function (path) {
     var open = el("button", "sent-attachment-preview");

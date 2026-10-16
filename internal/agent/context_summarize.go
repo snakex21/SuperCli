@@ -425,9 +425,66 @@ func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Pr
 		if toolNames != nil {
 			loaded = toolNames()
 		}
+		summary += compactRecentUserRequests(msgs)
 		summary += CompactFacts(msgs, loaded)
 		return WrapCompactSummary(summary), nil
 	}
+}
+
+// Bounds for the verbatim user requests appended to every summary.
+const (
+	compactRecentUserCount = 3
+	compactRecentUserBytes = 360
+)
+
+// compactRecentUserRequests quotes the newest real user messages of the
+// summarized prefix. The model summary is capped at a few hundred tokens and
+// small models drop or mislabel the latest requests (a reported bug became
+// "waiting for the user"). Quoting them by code keeps the user's own words
+// across compaction without another model call. Addon blocks that follow the
+// user's text (recall, attachments, rewind feedback) are not quoted.
+func compactRecentUserRequests(msgs []llm.Message) string {
+	var quotes []string
+	for i := len(msgs) - 1; i >= 0 && len(quotes) < compactRecentUserCount; i-- {
+		m := msgs[i]
+		if !isConversationUserTurn(m) || IsLegacyCompactionSummary(m) {
+			continue
+		}
+		text := m.Content
+		if text == "" {
+			for _, p := range m.Parts {
+				if p.Type == llm.PartTypeText && strings.TrimSpace(p.Text) != "" {
+					text = p.Text
+					break
+				}
+			}
+		}
+		if cut := strings.Index(text, "\n\n["); cut >= 0 {
+			text = text[:cut]
+		}
+		text = strings.Join(strings.Fields(text), " ")
+		if text == "" {
+			continue
+		}
+		if len(text) > compactRecentUserBytes {
+			cut := compactRecentUserBytes
+			for cut > 0 && !utf8.RuneStart(text[cut]) {
+				cut--
+			}
+			text = strings.TrimSpace(text[:cut]) + "…"
+		}
+		quotes = append(quotes, text)
+	}
+	if len(quotes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\nrecent_user_messages (oldest first, verbatim):")
+	for i := len(quotes) - 1; i >= 0; i-- {
+		b.WriteString("\n- ")
+		b.WriteString(quotes[i])
+	}
+	return b.String()
 }
 
 // Keep both the command/header and its terminal status; large patches and file

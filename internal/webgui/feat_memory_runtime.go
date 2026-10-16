@@ -11,6 +11,7 @@ import (
 
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
+	"supercli/internal/ui/attachments"
 )
 
 // webMemoryKeeper borrows the engine-owned store for the run's fixed workspace.
@@ -295,7 +296,11 @@ func webCapsuleText(message session.Encoded) string {
 	if err != nil {
 		return ""
 	}
-	return compactMemoryText(memory.StripReasoning(decoded.TextOnly().Content), 900)
+	text := memory.StripReasoning(decoded.TextOnly().Content)
+	if message.Role == "user" {
+		text = attachments.StripTranscriptNames(text)
+	}
+	return compactMemoryText(text, 900)
 }
 
 func buildWebSessionCapsule(sessionID string, messages []session.Encoded) string {
@@ -455,7 +460,7 @@ func (e *Engine) relevantLegacySessions(ctx context.Context, home, prompt, curre
 					continue
 				}
 				seen[item.ID] = true
-				candidates = append(candidates, candidate{id: item.ID, match: compactMemoryText(item.FirstUserMsg, 500)})
+				candidates = append(candidates, candidate{id: item.ID, match: compactMemoryText(attachments.StripTranscriptNames(item.FirstUserMsg), 500)})
 				if len(candidates) == 4 {
 					break
 				}

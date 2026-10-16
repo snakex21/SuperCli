@@ -121,6 +121,63 @@ func TestAnthropic_UnknownVisionRejectionRetriesAndLearns(t *testing.T) {
 	}
 }
 
+// A model the registry knows accepts images is not marked blind by one
+// refusal: the failing request is retried without images, but the next turn
+// sends the image again instead of omitting it until restart.
+func TestAnthropic_KnownVisionRejectionDoesNotStick(t *testing.T) {
+	var requests []string
+	var captured *string
+	srv, captured := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, *captured)
+		if len(requests) == 1 {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":{"message":"model does not support image input"}}`))
+			return
+		}
+		sseResponse(w,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+			`{"type":"message_stop"}`,
+		)
+	})
+	caps := NewCapabilityRegistry()
+	caps.Register(ModelInfo{ID: "seeing-model", Vision: true, VisionKnown: true, Source: SourceProvider})
+	p, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "key", Model: "seeing-model", Capabilities: caps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{
+		{Type: PartTypeText, Text: "look"},
+		{Type: PartTypeImage, Image: &ImageRef{Data: "AAAA", MediaType: "image/png"}},
+	}}}
+	for turn := 0; turn < 2; turn++ {
+		ch, err := p.Complete(context.Background(), msgs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range drainDeltas(t, ch) {
+			if d.Err != nil {
+				t.Fatalf("turn %d: unexpected error: %v", turn, d.Err)
+			}
+		}
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests=%d, want 3", len(requests))
+	}
+	if strings.Contains(requests[1], `"type":"image"`) || !strings.Contains(requests[1], imageInputOmittedPlaceholder) {
+		t.Fatalf("fallback request did not replace image: %s", requests[1])
+	}
+	if !strings.Contains(requests[2], `"type":"image"`) {
+		t.Fatalf("next turn must send the image again for a known vision model: %s", requests[2])
+	}
+	if !p.SupportsVision() {
+		t.Fatal("one refusal must not mark a known vision model blind")
+	}
+	if strings.Contains(imageInputOmittedPlaceholder, "no image input") {
+		t.Fatalf("placeholder must not claim the model is blind: %q", imageInputOmittedPlaceholder)
+	}
+}
+
 func TestNormalizeAnthropicBaseURL(t *testing.T) {
 	cases := map[string]string{
 		"https://api.anthropic.com/v1":           "https://api.anthropic.com/v1",

@@ -179,7 +179,7 @@ function resumeLastSessionOnStart() {
   if (id) resumeSession(id, sessionByID[id] || null);
 }
 
-async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID) {
+async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID, attachments) {
   if (!id || !selectedSeq || !/^[1-9][0-9]*$/.test(String(messageID || "")) || streaming) return false;
   if (button) button.disabled = true;
   try {
@@ -193,7 +193,16 @@ async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button,
 		forgetSentAttachments(id, selectedSeq);
 		await loadSessions();
     await resumeSession(id, sessionByID[id] || null);
-    promptEl.value = text || "";
+    // Restore the files with the text. Without them the composer kept only the
+    // "📎 image.png" line and the model went looking for the file on disk.
+    attachments = (attachments || []).slice();
+    var restored = text || "";
+    if (attachments.length) {
+      restored = userMessageDisplayText(restored, attachments);
+      if (restored === t("composer.inspectAttachments")) restored = "";
+      addAttachmentPaths(attachments);
+    }
+    promptEl.value = restored;
     promptEl.dispatchEvent(new Event("input"));
     promptEl.focus();
     promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length);

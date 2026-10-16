@@ -471,6 +471,23 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 .sent-attachment-gallery:not(.single) .sent-attachment-preview img { height: 170px; }
 .sent-media-attachment { padding: 12px; }
+.sent-file-attachments {
+  display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; white-space: normal;
+}
+.sent-file-attachment {
+  display: inline-flex; align-items: center; gap: 8px; max-width: min(280px, 100%);
+  padding: 7px 10px 7px 7px; border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text); background: var(--bg); font: 12px var(--mono); text-align: left;
+  cursor: default;
+}
+.sent-file-attachment.previewable { cursor: zoom-in; }
+.sent-file-attachment.previewable:hover,
+.sent-file-attachment.previewable:focus-visible { border-color: var(--accent); background: var(--raise); }
+.sent-file-badge {
+  flex: none; min-width: 34px; padding: 4px 5px; border-radius: 3px;
+  color: var(--accent); background: var(--surface); border: 1px solid var(--line-soft);
+  font: 600 9.5px var(--mono); text-align: center; letter-spacing: .04em;
+}
 .msg-user:has(.msg-rewind) { padding-right: 116px; }
 .msg-rewind {
   position: absolute; top: 7px; right: 8px;

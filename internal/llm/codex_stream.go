@@ -232,7 +232,9 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 		}
 		if !visionRetried && len(imageFallback) > 0 && isImageRejection(resp.StatusCode, respBody) {
-			p.imageRejected.Store(true)
+			if noteImageRejection(p.caps, p.cfg.Model, resp.StatusCode, respBody) {
+				p.imageRejected.Store(true)
+			}
 			body = imageFallback
 			imageFallback = nil
 			visionRetried = true

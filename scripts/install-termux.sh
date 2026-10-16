@@ -1,7 +1,7 @@
 #!/bin/sh
 # SuperCli installer for Termux (Android). One line:
 #   curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
-# Optional: SUPERCLI_VERSION=1.0.11 (default: latest release), SUPERCLI_DIR (default: ~/supercli).
+# Optional: SUPERCLI_VERSION=1.0.12 (default: latest release), SUPERCLI_DIR (default: ~/supercli).
 # Running it again updates the binaries; supercli-data (settings, sessions) is kept.
 set -eu
 
