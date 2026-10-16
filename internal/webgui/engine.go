@@ -48,11 +48,13 @@ func openDataDB(dataDir string) (*sql.DB, error) {
 // the model. It is built once at server start from the resolved
 // config and data directory, mirroring the CLI's runBatch wiring.
 type Engine struct {
-	mu         sync.RWMutex
-	cfg        config.Config
-	dataDir    string
-	home       string
-	appProfile string
+	syncHub      syncHub
+	chatLifetime chatLifetime
+	mu           sync.RWMutex
+	cfg          config.Config
+	dataDir      string
+	home         string
+	appProfile   string
 	// explicitEcho is enabled only by the command-line --echo flag. It keeps
 	// deterministic bridge/dev tests available while branded apps reject an
 	// accidental echo fallback caused by unreadable configuration.
@@ -556,6 +558,8 @@ func (e *Engine) Close() error {
 	if e == nil {
 		return nil
 	}
+	e.stopChatRuns()
+	e.chatLifetime.wg.Wait()
 	e.costMu.Lock()
 	costRates := e.costRates
 	e.costClosed = true

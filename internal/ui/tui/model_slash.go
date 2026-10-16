@@ -39,7 +39,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	}
 	if cmd.Name == "quit" || cmd.Name == "exit" {
 		m.quitting = true
-		return m, tea.Quit
+		return m, m.quitPhoneCmd()
 	}
 	// Bare menu openers — keep as one-liners so the dispatcher stays
 	// the single place that decides menu vs text-path.
@@ -48,6 +48,9 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	}
 	if cmd.Name == "attach" {
 		return m.openAttachmentsMenu()
+	}
+	if cmd.Name == "telefon" || cmd.Name == "phone" {
+		return m.openPhoneMenu()
 	}
 	if cmd.Name == "settings" {
 		return m.openSettingsMenu()
@@ -128,7 +131,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 // Other commands remain visible in the palette with a clear busy message.
 func slashAvailableDuringRun(cmd SlashCommand) bool {
 	switch cmd.Name {
-	case "help", "status", "workers", "cost":
+	case "help", "status", "workers", "cost", "telefon", "phone":
 		return true
 	case "update":
 		return cmd.Args == "" || cmd.Args == "check" || cmd.Args == "download"

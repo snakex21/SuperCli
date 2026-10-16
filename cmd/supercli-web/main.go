@@ -16,6 +16,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -63,11 +64,18 @@ func run(crashDataDir *string) {
 	requireUIContractFlag := flag.Int("require-ui-contract", 0, "minimum shared UI contract required by the launcher")
 	parentPIDFlag := flag.Int("parent-pid", 0, "exit when this launcher process exits")
 	allowRemoteFlag := flag.Bool("allow-remote", false, "allow token-protected non-loopback access")
+	phoneFlag := flag.Bool("phone", false, "start an independent loopback phone tunnel without a window")
+	phoneAllowDownloadFlag := flag.Bool("phone-allow-download", false, "consent to downloading the pinned official cloudflared release (~55 MB)")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
 	previewFlag := flag.String("preview", "", "open only a lightweight site preview (HTTP(S) URL), without starting the agent")
 	previewLanguageFlag := flag.String("preview-language", "", "interface language for the site preview")
 	flag.Parse()
+	if *phoneFlag {
+		*noWindowFlag = true
+		*addrFlag = "127.0.0.1:0"
+		*allowRemoteFlag = false
+	}
 	if strings.TrimSpace(*previewFlag) != "" {
 		dataDir, _, err := storage.ResolveRuntimeDataRoot(*dataDirFlag)
 		if err != nil {
@@ -210,6 +218,20 @@ func run(crashDataDir *string) {
 		baseExplicit := *baseFlag != "" || os.Getenv("SUPERCLI_LLM_BASE_URL") != ""
 		keyExplicit := *keyFlag != "" || os.Getenv("SUPERCLI_LLM_API_KEY") != ""
 		modelExplicit := *modelFlag != "" || os.Getenv("SUPERCLI_LLM_MODEL") != ""
+		// An explicit --provider must not inherit the default provider's
+		// endpoint/key when that provider has another type.
+		if *providerFlag != "" {
+			p, _ := config.ProviderForType(tomlCfg, *providerFlag)
+			if !baseExplicit {
+				cfg.BaseURL = p.BaseURL
+				if cfg.BaseURL == "" {
+					cfg.BaseURL = config.DefaultBaseURL(*providerFlag)
+				}
+			}
+			if !keyExplicit {
+				cfg.APIKey = p.APIKey
+			}
+		}
 		// config.Load normalizes empty model to "no model" before TOML is
 		// applied. For web GUI startup, the saved model must still win when
 		// no explicit --model/env override was provided.
@@ -286,15 +308,20 @@ func run(crashDataDir *string) {
 		uiFS = nil
 	}
 	if err := webgui.Run(eng, webgui.RunOptions{
-		Addr:        *addrFlag,
-		AllowRemote: *allowRemoteFlag,
-		NoWindow:    *noWindowFlag,
-		UIRoot:      *uiDirFlag,
-		UIFS:        uiFS,
-		AppName:     appName,
-		IconPath:    *iconFlag,
-		ShowEvent:   showEventName(appProfile),
+		Addr:               *addrFlag,
+		AllowRemote:        *allowRemoteFlag,
+		NoWindow:           *noWindowFlag,
+		Phone:              *phoneFlag,
+		PhoneAllowDownload: *phoneAllowDownloadFlag,
+		UIRoot:             *uiDirFlag,
+		UIFS:               uiFS,
+		AppName:            appName,
+		IconPath:           *iconFlag,
+		ShowEvent:          showEventName(appProfile),
 	}); err != nil {
+		if errors.Is(err, webgui.ErrPhoneNeedDownload) {
+			os.Exit(3)
+		}
 		fatal("run", err)
 	}
 }

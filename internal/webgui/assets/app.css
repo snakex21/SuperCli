@@ -944,6 +944,7 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .queue-index-button:hover, .queue-index-button:focus-visible { color:var(--text); background:var(--accent-soft); }
 .queue-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:12px; text-align:left; }
 .queue-text:hover, .queue-text:focus-visible { color:var(--text); }
+.queue-attach-count { margin-left:6px; color:var(--accent); font:10px var(--mono); white-space:nowrap; }
 .queue-drag { width:18px; color:var(--faint); font:11px var(--mono); cursor:grab; user-select:none; touch-action:none; }
 .queue-drag:active { cursor:grabbing; }
 .queue-dragging { opacity:.45; }

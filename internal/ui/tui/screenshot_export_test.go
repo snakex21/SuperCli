@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"supercli/internal/system/uilang"
+	"supercli/internal/webgui/qrcode"
 )
 
 // An explicit export request renders the actual production Model.View. Normal
@@ -56,6 +57,18 @@ func TestExportTUIScreenshots(t *testing.T) {
 		next, _ = m.openActionsMenu()
 		m = next.(Model)
 		write("actions-"+language, m)
+		// Render an inert pairing fixture, never a real tunnel or launcher.
+		m.enterMenu(interactiveMenu{kind: menuPhone})
+		m.phone.url = phoneTestURL
+		m.phone.code, err = qrcode.Encode(phoneTestURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.phone.status = "phone.ready"
+		m.width, m.height = 110, 48
+		write("phone-qr-"+language, m)
+		m.width, m.height = 38, 14
+		write("phone-small-"+language, m)
 		// A taller fixture exposes every native name in the same real menu.
 		m.width, m.height = 110, 48
 		next, _ = m.openLanguageMenu()
@@ -86,7 +99,7 @@ func TestExportTUIScreenshots(t *testing.T) {
 		r := lipgloss.NewRenderer(io.Discard, termenv.WithProfile(v.profile))
 		r.SetColorProfile(v.profile)
 		r.SetHasDarkBackground(v.dark)
-		m := New(Options{Language: "pl", Version: "1.0.12", NoColor: false})
+		m := New(Options{Language: "pl", Version: "1.0.13", NoColor: false})
 		m.palette = NewPalette(r)
 		m.marker = NewMarker(m.palette, "pl")
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 34})

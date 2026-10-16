@@ -87,7 +87,7 @@ func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
 	}
 	if m.cancelling {
 		m.quitting = true
-		return m, tea.Quit
+		return m, m.quitPhoneCmd()
 	}
 	if m.busy {
 		// Cancel the active run. (This used to append the
@@ -108,7 +108,7 @@ func (m Model) handleCtrlC() (tea.Model, tea.Cmd) {
 	}
 	// Idle → quit.
 	m.quitting = true
-	return m, tea.Quit
+	return m, m.quitPhoneCmd()
 }
 
 // handleEscCancel cancels the current agent run without quitting

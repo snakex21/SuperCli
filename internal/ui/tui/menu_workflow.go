@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"supercli/internal/storage/session"
+	"supercli/internal/ui/attachments"
 )
 
 func (m Model) openQueueMenu() (tea.Model, tea.Cmd) {
@@ -168,6 +169,10 @@ func (m Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus(m.tr("tui.menu_workflow.6d90ed4e2a")+err.Error(), false)
 			return m, nil
 		}
+		store := m.sessionStore
+		attachments.RemoveUnusedStaged(m.home, row.Attachments, func(path string) (bool, error) {
+			return store.AttachmentPathInUse(context.Background(), path)
+		})
 		return m.reloadQueue(), nil
 	case "enter":
 		return m.runQueuedTask()
@@ -206,7 +211,9 @@ func (m Model) runQueuedTask() (tea.Model, tea.Cmd) {
 // remove its durable row after this specific Run has accepted the message.
 func (m Model) startQueuedPrompt(row session.QueuedTask) (tea.Model, tea.Cmd) {
 	drafts, selected := m.drafts, m.pendingAttachments
-	m.drafts, m.pendingAttachments = nil, nil
+	// The queued row carries its own attachment paths (same representation as
+	// the web composer); the composer's unsent selection stays untouched.
+	m.drafts, m.pendingAttachments = nil, append([]string(nil), row.Attachments...)
 	next, cmd := m.startPrompt(row.Prompt)
 	n := next.(Model)
 	n.drafts, n.pendingAttachments = drafts, selected
@@ -259,7 +266,11 @@ func (m Model) renderQueueMenu() string {
 			if i == m.menu.cursor {
 				prefix = "> "
 			}
-			line := fmt.Sprintf("%s%02d  %s", prefix, i+1, truncateText(strings.ReplaceAll(row.Prompt, "\n", " "), maxInt(12, width-8)))
+			label := strings.ReplaceAll(row.Prompt, "\n", " ")
+			if n := len(row.Attachments); n > 0 {
+				label = fmt.Sprintf("[+%d] %s", n, label)
+			}
+			line := fmt.Sprintf("%s%02d  %s", prefix, i+1, truncateText(label, maxInt(12, width-8)))
 			if i == m.menu.cursor {
 				line = m.palette.HeaderMode.Render(line)
 			} else {

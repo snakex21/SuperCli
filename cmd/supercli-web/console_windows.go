@@ -22,7 +22,8 @@ func detachAccidentalConsole() {
 			arg = key
 		}
 		switch arg {
-		case "--no-window", "-no-window", "-h", "--help", "/?":
+		case "--no-window", "-no-window", "--phone", "-phone", "-h", "--help", "/?":
+
 			return
 		}
 	}

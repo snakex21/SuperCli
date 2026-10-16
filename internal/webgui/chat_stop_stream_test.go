@@ -52,12 +52,21 @@ func TestChatStopCompletesWhileCanceledProducerChannelRemainsOpen(t *testing.T) 
 	var once sync.Once
 	release := func() { once.Do(func() { close(provider.release) }) }
 	chatDone := make(chan struct{})
-	t.Cleanup(func() { cancel(); release(); waitCompletionTest(t, chatDone, "open stream cleanup") })
+	t.Cleanup(func() {
+		cancel()
+		srv.eng.stopChatRuns()
+		release()
+		waitCompletionTest(t, chatDone, "open stream cleanup")
+	})
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"prompt":"hello","turn_id":"cancel-open-stream"}`)).WithContext(ctx)
 	go func() { defer close(chatDone); srv.handleChat(httptest.NewRecorder(), request) }()
 	waitCompletionTest(t, provider.entered, "stream barrier")
 	started := time.Now()
-	cancel()
+	stop := httptest.NewRecorder()
+	srv.handleSyncStop(stop, httptest.NewRequest(http.MethodPost, "/api/sync/stop", strings.NewReader(`{"turn_id":"cancel-open-stream"}`)))
+	if stop.Code != http.StatusOK {
+		t.Fatalf("Stop: %d %s", stop.Code, stop.Body.String())
+	}
 	waitCompletionTest(t, provider.canceled, "stream cancellation")
 	waitCompletionTest(t, chatDone, "receipt without producer close")
 	elapsed := time.Since(started)

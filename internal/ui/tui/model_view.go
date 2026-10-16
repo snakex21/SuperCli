@@ -25,6 +25,9 @@ func (m Model) View() string {
 	if m.mode == modeDoctor && m.doctorReport != nil {
 		return m.renderDoctorView()
 	}
+	if m.mode == modeMenu && m.menu.kind == menuPhone {
+		return m.renderPhoneView()
+	}
 	if m.mode == modeMenu {
 		return m.renderMenuView()
 	}

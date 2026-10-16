@@ -547,6 +547,7 @@ function renderPromptQueue() {
     var text = el("button", "queue-text", item.text);
     text.type = "button";
     text.title = t("composer.editQueued");
+    appendQueuedAttachmentBadge(text, item);
     text.addEventListener("click", function () { editQueuedTask(item); });
     row.appendChild(text);
     var now = i18nEl("button", "queue-action", "composer.sendNow"); now.type = "button";
@@ -563,10 +564,16 @@ function renderPromptQueue() {
   updateAppBadge();
   renderTaskCenter();
 }
-async function enqueuePrompt(text) {
+// Queued attachments keep the /api/chat representation (staged file paths),
+// so the durable row survives reloads and other clients see the same files.
+async function enqueuePrompt(text, attachments) {
+  attachments = (attachments || []).slice();
   try {
-    var q = await jpost("/api/tasks", { session_id: activeSessionID, prompt: text });
+    var body = { session_id: activeSessionID, prompt: text };
+    if (attachments.length) body.attachments = attachments;
+    var q = await jpost("/api/tasks", body);
     q.text = q.prompt;
+    q.attachments = q.attachments || [];
     promptQueue.push(q);
     pauseQueue = false;
     renderPromptQueue();
@@ -575,7 +582,7 @@ async function enqueuePrompt(text) {
   return true;
 }
 async function loadPromptQueue() {
-  try { promptQueue = await j("/api/tasks") || []; promptQueue.forEach(function (q) { q.text = q.prompt; }); pauseQueue = promptQueue.length > 0; }
+  try { promptQueue = await j("/api/tasks") || []; promptQueue.forEach(function (q) { q.text = q.prompt; q.attachments = q.attachments || []; }); pauseQueue = promptQueue.length > 0; }
   catch (e) { promptQueue = []; }
   renderPromptQueue();
 }
@@ -621,8 +628,23 @@ function renderWorkers(workers) {
     host.appendChild(row);
   });
 }
-async function removeQueuedTask(id) {
-  try { await j("/api/tasks?id=" + encodeURIComponent(id), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
+function queuedAttachmentCount(item) {
+  return item && Array.isArray(item.attachments) ? item.attachments.length : 0;
+}
+function appendQueuedAttachmentBadge(host, item) {
+  var count = queuedAttachmentCount(item);
+  if (!count) return null;
+  var label = t("composer.queuedAttachments").replace("{count}", String(count));
+  var badge = el("span", "queue-attach-count", "\uD83D\uDCCE" + count);
+  badge.title = label;
+  badge.setAttribute("aria-label", label);
+  host.appendChild(badge);
+  return badge;
+}
+// keepAttachments: an accepted dispatch retires the row, but the started run
+// now owns its staged files. A user removal lets the server delete them.
+async function removeQueuedTask(id, keepAttachments) {
+  try { await j("/api/tasks?id=" + encodeURIComponent(id) + (keepAttachments ? "&keep_attachments=1" : ""), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
   catch (e) { toast(e.message); return false; }
 }
 function isQueuedTaskTransition(item) {
@@ -703,7 +725,9 @@ function renderTaskCenter() {
     copy.type = "button";
     copy.title = t("composer.editQueued");
     copy.appendChild(el("span", "t", item.text));
-    copy.appendChild(el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new")));
+    var meta = el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new"));
+    appendQueuedAttachmentBadge(meta, item);
+    copy.appendChild(meta);
     copy.addEventListener("click", function () { editQueuedTask(item); });
     row.appendChild(copy);
     var edit = i18nEl("button", "queue-action", "common.edit");
@@ -886,6 +910,7 @@ function detachedRunFor(id) {
 }
 function reattachDetachedRun(id) {
   var run = detachedRunFor(id);
+  if (!run && typeof syncRunFor === "function") run = syncRunFor(id);
   if (!run || streaming || queueDispatching) return false;
   delete detachedRuns[id];
   run.reattach();
@@ -898,8 +923,9 @@ function rememberRunEvent(run, ev) {
   if (ev.type === "session_activity") { run.activity = ev; run.userSeq = ev.user_seq || 0; }
   if (ev.type === "done" || ev.type === "error") run.terminal = true;
   if (ev.type === "error") run.failure = ev;
-  // A question asked while nobody watches is cancelled; never replay it.
-  if (ev.type === "question" && run.detached) return;
+  if (ev.type === "question_closed") {
+    run.events = run.events.filter(function (old) { return !(old.type === "question" && old.question && old.question.id === ev.id); });
+  }
   if ((ev.type === "message" || ev.type === "reasoning") && ev.text) {
     var last = run.events[run.events.length - 1];
     if (last && last.type === ev.type && last.merged) { last.text += ev.text; return; }
@@ -1001,6 +1027,14 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   var terminalSeen = false;
   var stopped = false, handoffBlocked = false;
   var turnID = newChatTurnID();
+  run.turnID = turnID;
+  var disconnectTransport = abortCtl.abort.bind(abortCtl);
+  run.disconnect = disconnectTransport;
+  function stopServerRun() {
+    if (!requestAccepted) return;
+    jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: turnID}).then(disconnectTransport).catch(function (error) { toast(error.message); });
+  }
+  run.abortCtl.abort = function () { run.stopRequested = true; stopServerRun(); };
   var draftAccepted = false, requestAccepted = false;
   var queueRemoval = null;
   function acceptPrompt() {
@@ -1009,7 +1043,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     run.accepted = true;
     if (draft) composerDraftStore.clear(draft.scope, draft.text);
     if (queuedItem && queuedItem.id) {
-      queueRemoval = removeQueuedTask(queuedItem.id).then(function (removed) {
+      queueRemoval = removeQueuedTask(queuedItem.id, true).then(function (removed) {
         if (!removed) pauseQueue = true;
         queueDispatchItem = null;
         renderPromptQueue();
@@ -1080,12 +1114,13 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   };
 
   try {
-    var resp = await fetch("/api/chat", {
+    var resp = await superCliUI.chatResponse("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: text,
         turn_id: turnID,
+        client_id: typeof syncClientID === "string" ? syncClientID : "",
         session_id: activeSessionID,
         attachments: attachments,
       }),
@@ -1096,15 +1131,11 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       return;
     }
     requestAccepted = true;
+    if (run.stopRequested) stopServerRun();
     await superCliUI.readSSE(resp.body, function (ev) {
       rememberRunEvent(run, ev);
       if (run.detached) {
         if (ev.type === "done" || ev.type === "error") terminalSeen = true;
-        // Nobody can answer a question in a view that moved to another
-        // project; cancel it so the run does not wait for its timeout.
-        if (ev.type === "question" && ev.question && ev.question.id) {
-          jpost("/api/question/answer", { id: ev.question.id, selected: [], custom: "", cancelled: true }).catch(function () {});
-        }
         return;
       }
       lastProgressAt = Date.now();
@@ -1161,6 +1192,8 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("chat.connError"));
     }
   } finally {
+    if (typeof syncFollowRun === "function" && !terminalSeen && !run.stopRequested && requestAccepted) syncFollowRun(run);
+    if (run.following) return;
     if (run.detached) {
       if (detachedRuns[run.sessionID] === run) delete detachedRuns[run.sessionID];
       if (run.sessionID && !run.aborted && (run.failure || !run.terminal)) {
@@ -1261,11 +1294,14 @@ function chatErrorText(ev) {
 }
 
 function handleEvent(ev, current) {
+  var remoteRun = typeof activeRun !== "undefined" && activeRun && activeRun.remote ? activeRun : null;
+  var eventAt = remoteRun ? ev.at : 0;
   switch (ev.type) {
     case "session":
       if (ev.session_id) {
         activeSessionID = ev.session_id;
         transcriptSessionID = ev.session_id;
+        if (typeof syncSelectSession === "function") syncSelectSession(ev.session_id);
       }
       return current;
     case "session_activity":
@@ -1285,10 +1321,10 @@ function handleEvent(ev, current) {
       return current;
     case "tool_call":
       sealAssistantSegment(current);
-      addToolCall(ev.name, ev.args, ev.id);
+      addToolCall(ev.name, ev.args, ev.id, eventAt);
       return null;
     case "tool_result":
-      addToolResult(ev.id, ev.output, ev.err);
+      addToolResult(ev.id, ev.output, ev.err, eventAt);
       if (!ev.err && Array.isArray(ev.images)) appendNativeToolImages(toolRows[ev.id], ev.images);
       return current;
     case "file_changes":
@@ -1321,7 +1357,7 @@ function handleEvent(ev, current) {
         clearInterval(workerRow._clock);
         workerRow._clock = null;
         if (task.id) workerRows[task.id] = workerRow;
-        renderTaskResult(workerRow, task, performance.now() - workerRow._t0, workerRow._taskPrompt, task.status === "failed");
+        renderTaskResult(workerRow, task, toolElapsed(workerRow, eventAt), workerRow._taskPrompt, task.status === "failed");
         return current;
       }
       addEventLine((ev.name || "worker") + " · " + (ev.status || "") + (ev.output ? " — " + clip(ev.output, 160) : ""), "", "worker");
@@ -1336,7 +1372,8 @@ function handleEvent(ev, current) {
       closeAssistantReasoning(current);
       flushAssistantRender(current);
       releaseAssistantParagraphCaches(current);
-      var elapsed = Date.now() - runStart;
+      var elapsed = remoteRun && typeof syncRunElapsed === "function" ?
+        syncRunElapsed(remoteRun, eventAt) : Date.now() - runStart;
       lastTurn = { ev: ev, elapsed: elapsed, tools: runToolCount, sessionID: activeSessionID };
       if (typeof rememberStatsLiveSpeed === "function") rememberStatsLiveSpeed(lastTurn, activeSessionID);
       addFileChanges(ev.file_changes);
@@ -1458,10 +1495,6 @@ $("#composer").addEventListener("submit", async function (e) {
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
   var afterRun = streaming && runFinishing && !pendingImmediate;
-  if ((streaming || queueDispatching) && !afterRun && pendingAttachments.length) {
-    toast(t("composer.attachQueue"));
-    return;
-  }
   var attachments = pendingAttachments.slice();
   var draft = { scope: composerDraftStore.scope(), text: rawText };
   promptEl.value = "";
@@ -1472,8 +1505,10 @@ $("#composer").addEventListener("submit", async function (e) {
     return;
   }
   if (streaming || queueDispatching) {
-    if (await enqueuePrompt(text)) composerDraftStore.clear(draft.scope, draft.text);
-    else composerDraftStore.restore(draft.scope);
+    if (await enqueuePrompt(text, attachments)) {
+      if (attachments.length) clearAttachments();
+      composerDraftStore.clear(draft.scope, draft.text);
+    } else composerDraftStore.restore(draft.scope);
     return;
   }
   clearAttachments();
@@ -1556,6 +1591,7 @@ function newSession() {
   transcriptBeforeSeq = 0;
   transcriptSessionID = "";
   activeSessionID = "";
+  if (typeof syncSelectSession === "function") syncSelectSession("");
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
   resetWorkerOverview();

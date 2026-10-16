@@ -100,7 +100,7 @@ func resolveWorkspace(f cliFlags) workspaceResolution {
 	r.UILanguage = uiLanguage
 	r.Toml = tomlCfg
 	// Apply TOML as defaults (env/flags still win later).
-	config.TomlConfigToEnv(tomlCfg)
+	config.TomlConfigToEnvForProvider(tomlCfg, f.Provider)
 	// Unsandboxed: flag > env (which TomlConfigToEnv may have set) > default off.
 	if f.Unsandboxed || envTruthy("SUPERCLI_ALLOW_ALL") {
 		sandbox.SetUnsandboxed(true)

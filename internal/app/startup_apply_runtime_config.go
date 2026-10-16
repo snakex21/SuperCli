@@ -32,6 +32,24 @@ func applyRuntimeConfig(f *cliFlags, tomlCfg config.TomlConfig, tomlErr error, a
 	// F29: apply TOML defaults for fields not set by env/flags.
 	if tomlErr == nil {
 		config.ApplyTomlToConfig(&cfg, tomlCfg)
+		// ApplyTomlToConfig installs the default provider's bundle; an
+		// explicit --provider keeps its own type, endpoint and key
+		// (resolved into env by TomlConfigToEnvForProvider).
+		if f.Provider != "" && !f.Echo {
+			cfg.Provider = f.Provider
+			cfg.BaseURL = config.DefaultBaseURL(f.Provider)
+			cfg.APIKey = ""
+			config.EnvOverrideConfig(&cfg)
+			if f.BaseURL != "" {
+				cfg.BaseURL = f.BaseURL
+			}
+			if f.Key != "" {
+				cfg.APIKey = f.Key
+			}
+			if f.Model != "" {
+				cfg.Model = f.Model
+			}
+		}
 	}
 	// Active project's preferred model/provider. More specific than the
 	// global TOML default, so it wins over it — but explicit --model /

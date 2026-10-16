@@ -131,6 +131,7 @@ func TestChatHTTPStopKillsCommandAndNextPromptReachesProvider(t *testing.T) {
 		t.Fatal("timeout waiting for curl TCP request")
 	}
 	stopAt := time.Now()
+	syncPost(t, api, "/api/sync/stop", `{"turn_id":"http-stop-command"}`)
 	cancel()
 	response.Body.Close()
 	waitCompletionTest(t, readerDone, "client SSE abort")

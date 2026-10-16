@@ -106,6 +106,7 @@ func TestChatSilentCommandDoesNotConsumeModelProgressTimeout(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			t.Cleanup(func() {
 				cancel()
+				srv.eng.stopChatRuns()
 				releaseOnce.Do(func() { close(release) })
 				waitCompletionTest(t, finished, "silent command cleanup")
 			})
@@ -132,7 +133,11 @@ func TestChatSilentCommandDoesNotConsumeModelProgressTimeout(t *testing.T) {
 				case <-time.After(4 * modelIdle):
 				}
 				if mode == "stop" {
-					cancel()
+					stop := httptest.NewRecorder()
+					srv.handleSyncStop(stop, httptest.NewRequest(http.MethodPost, "/api/sync/stop", strings.NewReader(`{"turn_id":"silent-command-progress"}`)))
+					if stop.Code != http.StatusOK {
+						t.Fatalf("Stop: %d %s", stop.Code, stop.Body.String())
+					}
 					waitCompletionTest(t, finished, "Stop after silent command")
 					waitCompletionTest(t, canceled, "native command socket closed")
 					if provider.calls.Load() != 1 {

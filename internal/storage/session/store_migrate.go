@@ -225,6 +225,10 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	// Queued prompts keep the same attachment paths /api/chat receives.
+	if err := s.ensureTableColumn("prompt_queue", "attachments_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := s.migrateRawBillingUsage(context.Background()); err != nil {
 		return err
 	}
@@ -275,7 +279,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 }
 
 func (s *Store) ensureTableColumn(table, name, definition string) error {
-	if table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" {
+	if table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" && table != "prompt_queue" {
 		return fmt.Errorf("unsupported migration table %q", table)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)

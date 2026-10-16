@@ -69,6 +69,7 @@ func TestChatCompletionWaitsForCanceledLoopAndRecoversFreshSession(t *testing.T)
 	// assertion failures during startup. Otherwise cleanup races live SQLite.
 	t.Cleanup(func() {
 		cancel()
+		srv.eng.stopChatRuns()
 		release()
 		waitCompletionTest(t, chatDone, "handler cleanup")
 	})
@@ -84,7 +85,11 @@ func TestChatCompletionWaitsForCanceledLoopAndRecoversFreshSession(t *testing.T)
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout waiting for provider startup")
 	}
-	cancel()
+	stop := httptest.NewRecorder()
+	srv.handleSyncStop(stop, httptest.NewRequest(http.MethodPost, "/api/sync/stop", strings.NewReader(`{"turn_id":"test-turn-1"}`)))
+	if stop.Code != http.StatusOK {
+		t.Fatalf("Stop: %d %s", stop.Code, stop.Body.String())
+	}
 	waitCompletionTest(t, provider.canceled, "provider cancellation")
 	srv.chatCompletions.Lock()
 	receipt := srv.chatCompletions.runs["test-turn-1"]
@@ -142,16 +147,16 @@ func TestChatCompletionWaitsForCanceledLoopAndRecoversFreshSession(t *testing.T)
 func TestChatCompletionRegistryIsBoundedAndPreservesActiveWaiters(t *testing.T) {
 	srv := &Server{}
 	for i := 0; i < chatCompletionLimit; i++ {
-		if _, err := srv.registerChatCompletion(fmt.Sprintf("run-%d", i)); err != nil {
+		if _, err := srv.registerChatCompletion(fmt.Sprintf("run-%d", i), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := srv.registerChatCompletion("overflow"); err == nil {
+	if _, err := srv.registerChatCompletion("overflow", nil); err == nil {
 		t.Fatal("unbounded active registry")
 	}
 	active := srv.chatCompletions.runs["run-0"]
 	close(active.done)
-	if _, err := srv.registerChatCompletion("replacement"); err != nil {
+	if _, err := srv.registerChatCompletion("replacement", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := srv.chatCompletions.runs["run-0"]; exists {
@@ -160,18 +165,18 @@ func TestChatCompletionRegistryIsBoundedAndPreservesActiveWaiters(t *testing.T) 
 	if len(srv.chatCompletions.runs) != chatCompletionLimit {
 		t.Fatal("incorrect registry size")
 	}
-	if _, err := srv.registerChatCompletion("run-1"); err == nil {
+	if _, err := srv.registerChatCompletion("run-1", nil); err == nil {
 		t.Fatal("duplicate active turn accepted")
 	}
 	for _, id := range []string{"bad/id", strings.Repeat("x", 129)} {
-		if _, err := srv.registerChatCompletion(id); err == nil {
+		if _, err := srv.registerChatCompletion(id, nil); err == nil {
 			t.Fatalf("invalid id accepted: %q", id)
 		}
 	}
 }
 func TestChatCompletionCanceledWaitDoesNotRemoveActiveReceipt(t *testing.T) {
 	srv := &Server{}
-	receipt, err := srv.registerChatCompletion("active")
+	receipt, err := srv.registerChatCompletion("active", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

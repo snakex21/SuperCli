@@ -139,7 +139,28 @@ func EnvOverrideConfig(c *Config) {
 //
 // When DefaultProvider is set, it looks up the matching
 // [[providers]] entry to resolve type, base_url, and api_key.
-func TomlConfigToEnv(t TomlConfig) {
+func TomlConfigToEnv(t TomlConfig) { TomlConfigToEnvForProvider(t, "") }
+
+// TomlConfigToEnvForProvider is TomlConfigToEnv for a start with an
+// explicit --provider type. The default provider's endpoint, key and
+// model are applied only when its type matches; otherwise the first
+// enabled entry of that type is used, or nothing (built-in defaults).
+// This keeps e.g. `--provider codex` off a default LM Studio URL.
+func TomlConfigToEnvForProvider(t TomlConfig, providerType string) {
+	if providerType != "" {
+		p, ok := ProviderForType(t, providerType)
+		if !ok {
+			return
+		}
+		if p.Name == t.DefaultProvider {
+			setEnvUnless("SUPERCLI_LLM_MODEL", t.DefaultModel)
+		} else {
+			setEnvUnless("SUPERCLI_LLM_MODEL", p.Model)
+		}
+		setEnvUnless("SUPERCLI_LLM_BASE_URL", p.BaseURL)
+		setEnvUnless("SUPERCLI_LLM_API_KEY", p.APIKey)
+		return
+	}
 	setEnvUnless("SUPERCLI_LLM_MODEL", t.DefaultModel)
 
 	// If DefaultProvider names a configured provider, use its
@@ -166,6 +187,23 @@ func TomlConfigToEnv(t TomlConfig) {
 	if t.AllowAll {
 		setEnvUnless("SUPERCLI_ALLOW_ALL", "1")
 	}
+}
+
+// ProviderForType returns the TOML provider entry to pair with an
+// explicit provider type: the default provider when its type matches,
+// else the first enabled entry of that type.
+func ProviderForType(t TomlConfig, providerType string) (ProviderConf, bool) {
+	for _, p := range t.Providers {
+		if p.Name == t.DefaultProvider && p.Type == providerType && !p.Disabled {
+			return p, true
+		}
+	}
+	for _, p := range t.Providers {
+		if p.Type == providerType && !p.Disabled {
+			return p, true
+		}
+	}
+	return ProviderConf{}, false
 }
 
 func setEnvUnless(key, val string) {

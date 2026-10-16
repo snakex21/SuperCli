@@ -352,7 +352,8 @@ func TestUIScaleKeepsLayoutInsideEffectiveViewport(t *testing.T) {
 	for _, required := range []string{
 		"function applyViewportScale()",
 		"window.innerWidth / scale",
-		"window.innerHeight / scale",
+		"viewportHeight / scale",
+		"window.visualViewport.height",
 		`--app-viewport-width`,
 		`--app-viewport-height`,
 	} {

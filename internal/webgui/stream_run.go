@@ -25,7 +25,16 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 	return e.runStreamWithImages(ctx, prompt, sessionID, userAddon, nil, emit)
 }
 
-func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, userAddon string, images []llm.ImageRef, emit func(wireEvent)) error {
+func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, userAddon string, images []llm.ImageRef, emit func(wireEvent)) (runErr error) {
+	ctx, cancelSyncRun := context.WithCancel(ctx)
+	defer cancelSyncRun()
+	var syncedRun *liveSyncRun
+	// Registered before all persistence/gate defers: finished means durable.
+	defer func() {
+		if syncedRun != nil {
+			e.syncHub.finish(syncedRun, runErr)
+		}
+	}()
 	// Echo is a deliberate CLI/development provider. It repeats the complete
 	// model input verbatim, including private cross-session recall and other
 	// internal add-ons. A branded end-user app must never use it as a silent
@@ -69,6 +78,23 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			return claimErr
 		}
 		defer release()
+	}
+	identity, _ := ctx.Value(syncIdentityKey{}).(syncIdentity)
+	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun)
+	originalEmit := emit
+	emit = func(ev wireEvent) {
+		ev.At = time.Now().UnixMilli()
+		observerEvent := ev
+		if len(ev.Images) > 0 {
+			observerEvent.Images = make([]string, 0, len(ev.Images))
+			for _, path := range ev.Images {
+				if token := sessionImagePreviewPath(sid, path); token != "" {
+					observerEvent.Images = append(observerEvent.Images, token)
+				}
+			}
+		}
+		e.syncHub.event(syncedRun, observerEvent)
+		originalEmit(ev)
 	}
 	// Cross-session memory is persisted from the already-written transcript,
 	// with no summarizer/model call. Do it on every exit: the helper skips
@@ -411,8 +437,8 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	for {
 		select {
 		case <-ctx.Done():
-			// An aborted SSE connection is not the end of the loop's durable
-			// writes. Drain its channel until close (the completion signal) so
+			// Stop is not the end of the loop's durable writes.
+			// Drain its channel until close (the completion signal) so
 			// a forced next turn cannot resume a half-saved conversation.
 			for ev := range ch {
 				if result, ok := ev.(agent.ToolResultEvent); ok {

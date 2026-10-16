@@ -17,6 +17,7 @@ import (
 // runtime) and exposes it over JSON + SSE. Construct it with
 // NewServer; build the routing with Handler.
 type Server struct {
+	phone     *phoneAccess
 	eng       *Engine
 	uiHandler http.Handler
 	appName   string

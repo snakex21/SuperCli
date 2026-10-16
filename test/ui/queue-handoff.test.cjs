@@ -86,6 +86,7 @@ function harness(options = {}) {
       }
       throw new Error('unexpected API: ' + url);
     },
+    jpost: async (url, body) => { assert.equal(url, '/api/sync/stop'); assert.ok(body.turn_id); calls.push([url, body]); return {ok: true}; },
     sessionByID: {s1: {model: 'old-model'}}, transcriptSessionID: 's1',
     transcriptAbortCtl: null, loadedTranscriptMessages: [], transcriptHasMore: false,
     transcriptBeforeSeq: 0, transcriptLiveAppend: false,
@@ -93,6 +94,7 @@ function harness(options = {}) {
     overlay: {hidden: true}, currentSection: '', sections: {},
     fmtDuration: () => '1s', clip: value => value,
   };
+  context.superCliUI.chatResponse = context.fetch;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../internal/webgui/assets/js/05-chat.js'), 'utf8'), context);
   context.activeSessionID = 's1';
@@ -516,4 +518,45 @@ test('generation completion releases GUI while checkpoint writes still hold the 
  assert.equal(JSON.parse(h.requests[1].body).prompt,'next during save');
  h.finishing.get(1)();h.terminals.get(1)();h.streams.get(1)();await h.sends[1];
  assert.equal(h.requests.length,2);
+});
+
+test('submit with an attachment while working enters the durable queue and dispatches with it', async () => {
+  const h = harness();
+  const shot = '/work/.supercli/attachments/u1/shot.png';
+  const posted = [];
+  h.context.jpost = async (url, body) => {
+    if (url === '/api/tasks') { posted.push(body); return {id: 'q9', prompt: body.prompt, session_id: body.session_id, attachments: body.attachments}; }
+    assert.equal(url, '/api/sync/stop'); return {ok: true};
+  };
+  const first = h.context.sendPrompt('working');
+  await h.entered[0].promise;
+  h.context.pendingAttachments = [shot];
+  h.$('#prompt').value = 'look at this';
+  await h.$('#composer').events.submit({preventDefault() {}});
+  assert.equal(h.events.includes(h.context.t('composer.queued')), false);
+  assert.equal(posted.length, 1);
+  assert.deepEqual(Array.from(posted[0].attachments), [shot]);
+  assert.equal(posted[0].prompt, 'look at this');
+  assert.equal(h.requests.length, 1, 'queued message must not interrupt the running turn');
+  assert.equal(h.context.promptQueue.length, 1);
+  assert.deepEqual(Array.from(h.context.promptQueue[0].attachments), [shot]);
+  assert.equal(h.context.pendingAttachments.length, 0, 'composer selection moves into the queue');
+  const row = h.$('#prompt-queue').children.find(c => c.children && c.children.some(x => x.classList && x.classList.contains('queue-text')));
+  const text = row.children.find(x => x.classList.contains('queue-text'));
+  const badge = text.children.find(x => x.classList.contains('queue-attach-count'));
+  assert.ok(badge, 'queue row shows the attachment count');
+  assert.match(badge.textContent, /1$/);
+  h.streams.get(0)();
+  await first;
+  await h.entered[1].promise;
+  const sent = JSON.parse(h.requests[1].body);
+  assert.equal(sent.prompt, 'look at this');
+  assert.deepEqual(sent.attachments, [shot]);
+  h.deletion.resolve();
+  h.context.pauseQueue = true;
+  h.streams.get(1)();
+  await h.sends[1];
+  const removal = h.calls.find(c => String(c[0]).startsWith('/api/tasks?id=q9'));
+  assert.ok(removal && removal[0].includes('keep_attachments=1'), 'dispatch removal keeps files owned by the started run');
+  assert.equal(h.context.promptQueue.length, 0);
 });

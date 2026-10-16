@@ -29,7 +29,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	}
 	if isQuitCommand(text) {
 		m.quitting = true
-		return m, tea.Quit
+		return m, m.quitPhoneCmd()
 	}
 	// Bare "q"/"quit"/"exit" (no slash): show the exit tip
 	// once, then treat further occurrences as regular input.

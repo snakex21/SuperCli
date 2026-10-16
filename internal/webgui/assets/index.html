@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>SuperCli</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13' fill='%23e8763d'%3E%E2%97%86%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="app.css" />
   <link rel="stylesheet" href="preview.css" />
+  <link rel="stylesheet" href="phone.css" />
   <link rel="stylesheet" href="session-fade.css" />
 </head>
 <body>
@@ -45,11 +46,29 @@
             <div id="reasoning-options"></div>
           </div>
         </div>
+        <button class="icon-btn" id="open-phone" type="button" data-i18n-title="phone.title" data-i18n-aria="phone.title" aria-expanded="false" aria-controls="phone-panel"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="2" width="10" height="16" rx="2"/><path d="M8 15h4"/></svg></button>
         <button class="icon-btn" id="open-preview" type="button" data-i18n-title="preview.title" data-i18n-aria="preview.title" aria-expanded="false" aria-controls="site-preview"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1"/><path d="M2 7h16M5 5h1m2 0h1"/></svg></button>
         <button class="icon-btn" id="open-panel" type="button" title="Control panel (Ctrl+,)" data-i18n-title="panel.title" data-i18n-aria="panel.title">⚙</button>
         <button class="icon-btn" id="toggle-sidebar" type="button" title="Side panel (Ctrl+B)" data-i18n-title="kb.sidebar" data-i18n-aria="kb.sidebar">◧</button>
         <span class="status-dot" id="status-dot" title="connecting…"></span>
       </header>
+
+      <section class="phone-panel" id="phone-panel" role="dialog" aria-labelledby="phone-title" hidden>
+        <header><h2 id="phone-title" data-i18n="phone.title">Phone access</h2><button id="phone-close" class="icon-btn" type="button" data-i18n-aria="common.close">×</button></header>
+        <label class="phone-switch"><input id="phone-enabled" type="checkbox" role="switch"><span data-i18n="phone.title">Phone access</span></label>
+        <p id="phone-status" role="status"></p><progress id="phone-progress" hidden></progress>
+        <div id="phone-qr"></div>
+        <label for="phone-link" data-i18n="phone.link">One-time pairing link</label>
+        <input id="phone-link" readonly autocomplete="off" spellcheck="false">
+        <div class="phone-actions"><button id="phone-copy" type="button" data-i18n="phone.copy">Copy</button><button id="phone-new-code" type="button" data-i18n="phone.newCode">Show new code</button><button id="phone-disconnect" type="button" data-i18n="phone.disconnect">Disconnect</button></div>
+        <p id="phone-expires"></p><p data-i18n="phone.security">Your phone has full control. Share this one-time link only with your own phone. API keys stay on the PC. Access closes after 24 hours without a message from the phone or when the app exits.</p>
+      </section>
+      <dialog id="phone-consent" class="phone-consent" aria-labelledby="phone-download-title">
+        <h2 id="phone-download-title" data-i18n="phone.downloadTitle">Download cloudflared?</h2>
+        <p data-i18n="phone.downloadInfo">Download about 55 MB from the official Cloudflare release on GitHub. SHA256 is verified before running. Nothing is installed without your consent.</p>
+        <a href="https://github.com/cloudflare/cloudflared/releases/tag/2026.10.1" target="_blank" rel="noreferrer" data-i18n="phone.source">Official Cloudflare release on GitHub</a>
+        <div class="phone-actions"><button id="phone-cancel-download" type="button" data-i18n="common.cancel">Cancel</button><button id="phone-download" type="button" data-i18n="phone.download">Download and enable</button></div>
+      </dialog>
 
       <!-- Model palette -->
       <div class="palette" id="palette" hidden>
@@ -231,9 +250,11 @@
   <script src="js/04-transcript.js"></script>
   <script src="js/04b-darwin-card.js"></script>
   <script src="js/05-chat.js"></script>
+  <script src="js/05b-sync.js"></script>
   <script src="js/06-shell.js"></script>
   <script src="js/site-preview.js"></script>
   <script src="js/06-preview.js"></script>
+  <script src="js/06-phone.js"></script>
   <script src="js/07-stats.js"></script>
   <script src="js/08-sessions.js"></script>
   <script src="js/09-projects.js"></script>

@@ -1,6 +1,7 @@
 package webgui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ const chatCompletionLimit = 128
 // waits on done exactly once, after the canceled run has finished saving.
 type chatCompletion struct {
 	done      chan struct{}
+	cancel    context.CancelFunc
 	sessionID string
 	accepted  bool
 }
@@ -21,7 +23,7 @@ type chatCompletions struct {
 	runs map[string]*chatCompletion
 }
 
-func (s *Server) registerChatCompletion(id string) (*chatCompletion, error) {
+func (s *Server) registerChatCompletion(id string, cancel context.CancelFunc) (*chatCompletion, error) {
 	if id == "" {
 		return nil, nil
 	} // older clients do not request receipts
@@ -54,7 +56,7 @@ func (s *Server) registerChatCompletion(id string) (*chatCompletion, error) {
 	if len(s.chatCompletions.runs) >= chatCompletionLimit {
 		return nil, errors.New("too many active turns")
 	}
-	run := &chatCompletion{done: make(chan struct{})}
+	run := &chatCompletion{done: make(chan struct{}), cancel: cancel}
 	s.chatCompletions.runs[id] = run
 	return run, nil
 }

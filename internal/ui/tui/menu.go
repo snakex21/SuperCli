@@ -43,6 +43,7 @@ const (
 	menuLanguage
 	menuUpdate
 	menuPreview
+	menuPhone
 )
 
 // CheckpointPreview is intentionally presentation-sized metadata. It contains

@@ -15,3 +15,6 @@ func stagePickedAttachments(home string, paths []string) ([]string, error) {
 	return attachments.StagePicked(home, paths)
 }
 func safeAttachmentName(name string) string { return attachments.SafeName(name) }
+func removeUnusedStagedAttachments(home string, paths []string, inUse func(string) (bool, error)) {
+	attachments.RemoveUnusedStaged(home, paths, inUse)
+}
