@@ -90,6 +90,18 @@ type FlagOverrides struct {
 	Debug    *bool // pointer so unset != false
 }
 
+// DefaultBaseURL is the built-in endpoint for a provider type, used
+// when neither a flag, env var nor config entry names one.
+func DefaultBaseURL(provider string) string {
+	switch provider {
+	case ProviderCodex:
+		return "https://chatgpt.com/backend-api/codex"
+	case ProviderAnthropic:
+		return "https://api.anthropic.com/v1"
+	}
+	return "https://api.openai.com/v1"
+}
+
 // Load reads env vars then applies flag overrides on top.
 func Load(flags FlagOverrides) (Config, error) {
 	c := Config{
@@ -98,7 +110,7 @@ func Load(flags FlagOverrides) (Config, error) {
 		// standard fallback so plain OpenAI API-key usage works
 		// out of the box (codex OAuth remains a separate provider).
 		APIKey:         getEnv("SUPERCLI_LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
-		BaseURL:        getEnv("SUPERCLI_LLM_BASE_URL", "https://api.openai.com/v1"),
+		BaseURL:        getEnv("SUPERCLI_LLM_BASE_URL", ""),
 		Model:          getEnv("SUPERCLI_LLM_MODEL", ""),
 		Temperature:    getEnvFloatPtr("SUPERCLI_LLM_TEMPERATURE"),
 		MaxTokens:      getEnvInt("SUPERCLI_LLM_MAX_TOKENS", 0),
@@ -116,6 +128,9 @@ func Load(flags FlagOverrides) (Config, error) {
 	}
 	if flags.BaseURL != "" {
 		c.BaseURL = flags.BaseURL
+	}
+	if c.BaseURL == "" {
+		c.BaseURL = DefaultBaseURL(c.Provider)
 	}
 	if flags.Model != "" {
 		c.Model = flags.Model

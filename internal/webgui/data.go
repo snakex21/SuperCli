@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -204,6 +205,17 @@ func (e *Engine) queuedTasks(ctx context.Context) ([]session.QueuedTask, error) 
 }
 
 func (e *Engine) enqueueTask(ctx context.Context, sessionID, prompt string) (session.QueuedTask, error) {
+	return e.enqueueTaskWithAttachments(ctx, sessionID, prompt, nil)
+}
+
+// enqueueTaskWithAttachments stores attachment paths exactly as /api/chat
+// receives them and validates them with the same limits and sandbox rules.
+func (e *Engine) enqueueTaskWithAttachments(ctx context.Context, sessionID, prompt string, paths []string) (session.QueuedTask, error) {
+	if len(paths) > 0 {
+		if _, err := buildAttachmentAddon(e.Home(), paths); err != nil {
+			return session.QueuedTask{}, fmt.Errorf("invalid attachments: %w", err)
+		}
+	}
 	store, err := e.sessionStore()
 	if err != nil {
 		return session.QueuedTask{}, err
@@ -214,15 +226,34 @@ func (e *Engine) enqueueTask(ctx context.Context, sessionID, prompt string) (ses
 			return session.QueuedTask{}, errSessionOutsideWorkspace
 		}
 	}
-	return store.EnqueueTask(ctx, e.Home(), sessionID, prompt)
+	return store.EnqueueTaskWithAttachments(ctx, e.Home(), sessionID, prompt, paths)
 }
 
-func (e *Engine) deleteTask(ctx context.Context, id string) error {
+// deleteTask removes a queued row. A user removal also deletes staged
+// attachment copies nothing else references; a dispatch removal keeps them
+// because the accepted /api/chat run now owns those files.
+func (e *Engine) deleteTask(ctx context.Context, id string, removeAttachments bool) error {
 	store, err := e.sessionStore()
 	if err != nil {
 		return err
 	}
-	return store.DeleteQueuedTask(ctx, e.Home(), id)
+	var paths []string
+	if removeAttachments {
+		if tasks, listErr := store.ListQueuedTasks(ctx, e.Home()); listErr == nil {
+			for _, task := range tasks {
+				if task.ID == strings.TrimSpace(id) {
+					paths = task.Attachments
+				}
+			}
+		}
+	}
+	if err := store.DeleteQueuedTask(ctx, e.Home(), id); err != nil {
+		return err
+	}
+	removeUnusedStagedAttachments(e.Home(), paths, func(path string) (bool, error) {
+		return store.AttachmentPathInUse(ctx, path)
+	})
+	return nil
 }
 
 func (e *Engine) updateTask(ctx context.Context, id, prompt string) error {
@@ -264,7 +295,11 @@ func (e *Engine) renameSession(id, title string) error {
 	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
 		return errSessionOutsideWorkspace
 	}
-	return store.SetTitle(id, title)
+	if err := store.SetTitle(id, title); err != nil {
+		return err
+	}
+	e.syncHub.changed()
+	return nil
 }
 
 func (e *Engine) deleteSession(id string) error {
@@ -301,7 +336,9 @@ func (e *Engine) deleteSession(id string) error {
 	if deleteErr != nil {
 		return errors.Join(deleteErr, closeErr)
 	}
-	return errors.Join(closeErr, cleanup())
+	err = errors.Join(closeErr, cleanup())
+	e.syncHub.changed()
+	return err
 }
 
 // transcript returns all messages for one session in order.

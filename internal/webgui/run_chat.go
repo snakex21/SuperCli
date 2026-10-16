@@ -16,6 +16,7 @@ import (
 type chatRequest struct {
 	Prompt              string   `json:"prompt"`
 	TurnID              string   `json:"turn_id,omitempty"`
+	ClientID            string   `json:"client_id,omitempty"`
 	SessionID           string   `json:"session_id,omitempty"`
 	Attachments         []string `json:"attachments,omitempty"`
 	Rewound             bool     `json:"rewound,omitempty"`
@@ -81,124 +82,165 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	streamSessionID := strings.TrimSpace(req.SessionID)
-	completion, err := s.registerChatCompletion(req.TurnID)
+	runCtx, cancelRun, finishRun := s.eng.beginChatRun(r.Context())
+	if runCtx.Err() != nil {
+		finishRun()
+		http.Error(w, "server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	completion, err := s.registerChatCompletion(req.TurnID, cancelRun)
 	if err != nil {
+		finishRun()
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	if completion != nil {
-		defer func() {
-			completion.sessionID = streamSessionID
-			close(completion.done)
-		}()
+	if s.phone != nil && !isLocalRequest(r) {
+		s.phone.manager.Touch()
 	}
-	finishActiveRun := s.eng.beginActiveRun()
-	defer finishActiveRun()
-
+	deliveryCtx, detach := context.WithCancel(r.Context())
+	defer detach()
+	if s.phone != nil && !isLocalRequest(r) {
+		active := s.phone.manager.ActiveContext()
+		if active == nil {
+			detach()
+		} else {
+			stop := context.AfterFunc(active, detach)
+			defer stop()
+		}
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	started := time.Now()
-	eventCount := 0
-	lastType := ""
-	terminalSeen := false
-	previousUserSeq := 0
-	if len(req.Attachments) > 0 {
-		if streamSessionID != "" {
-			if store, storeErr := s.eng.sessionStore(); storeErr == nil {
-				previousUserSeq, _ = store.LatestMessageSeq(r.Context(), streamSessionID, "user")
-			}
+	flusher.Flush()
+	frames := make(chan []byte, 128)
+	go func() {
+		defer finishRun()
+		defer close(frames)
+		if completion != nil {
+			defer func() {
+				completion.sessionID = streamSessionID
+				close(completion.done)
+			}()
 		}
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			if err := s.recordMessageAttachments(ctx, streamSessionID, previousUserSeq, req.Attachments); err != nil {
-				log.Printf("persist chat attachments: %v", err)
-			}
-		}()
-	}
+		finishActiveRun := s.eng.beginActiveRun()
+		defer finishActiveRun()
 
-	// emit writes one wire event as an SSE frame and flushes so the
-	// browser sees it immediately. It is called only from runStream's
-	// goroutine (this handler blocks on it), so no extra locking is
-	// needed around the ResponseWriter.
-	emit := func(ev wireEvent) {
-		if ev.Type == "session" && strings.TrimSpace(ev.SessionID) != "" {
-			streamSessionID = strings.TrimSpace(ev.SessionID)
-		}
-		if completion != nil && ev.Type == "session_activity" {
-			completion.accepted = true
-		}
-		if len(ev.Images) > 0 {
-			paths := make([]string, 0, len(ev.Images))
-			for _, path := range ev.Images {
-				if token := sessionImagePreviewPath(streamSessionID, path); token != "" {
-					paths = append(paths, token)
+		started := time.Now()
+		eventCount := 0
+		lastType := ""
+		terminalSeen := false
+		previousUserSeq := 0
+		if len(req.Attachments) > 0 {
+			if streamSessionID != "" {
+				if store, storeErr := s.eng.sessionStore(); storeErr == nil {
+					previousUserSeq, _ = store.LatestMessageSeq(runCtx, streamSessionID, "user")
 				}
 			}
-			ev.Images = paths
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if err := s.recordMessageAttachments(ctx, streamSessionID, previousUserSeq, req.Attachments); err != nil {
+					log.Printf("persist chat attachments: %v", err)
+				}
+			}()
 		}
-		eventCount++
-		lastType = ev.Type
-		if ev.Type == "done" || ev.Type == "error" {
-			terminalSeen = true
-		}
-		writeSSEFrame(w, ev.marshal())
-		flusher.Flush()
-	}
 
-	// The request context cancels when the client disconnects; the
-	// loop honours it and stops the run.
-	userAddons := make([]string, 0, 2)
-	if req.Rewound {
-		rewindFeedback := "[rewind_feedback]\nThe user deliberately rejected and rewound the previous attempt. Reconsider the approach and do not repeat it without verification."
-		if req.RewindFiles {
-			rewindFeedback += "\nThe program also restored the affected workspace files to their checkpointed state."
-		} else if req.RewindFilesRestored {
-			rewindFeedback += "\nThe user reconsidered and restored the complete file version produced by the rejected attempt. Preserve that workspace state unless the new request requires changing it."
-		}
-		if req.RewindReason != "" {
-			rewindFeedback += "\nUser-provided reason: " + req.RewindReason
-		}
-		rewindFeedback += "\n[/rewind_feedback]"
-		userAddons = append(userAddons, rewindFeedback)
-	}
-	if attachmentAddon != "" {
-		userAddons = append(userAddons, attachmentAddon)
-	}
-	if err := s.eng.runStreamWithImages(r.Context(), visiblePrompt, req.SessionID, strings.Join(userAddons, "\n\n"), directImages, emit); err != nil {
-		// Surface run-setup failures (provider/loop build) as a final
-		// error frame so the UI can show them instead of a dead stream.
-		if !terminalSeen {
-			event := wireEvent{Type: "error", Err: err.Error()}
-			if errors.Is(err, errNoActiveProvider) {
-				event.ErrCode = "chat.noProvider"
-				event.ErrName = s.runtimeAppName()
-			} else if errors.Is(err, errSessionBusy) {
-				event.ErrCode = "session.busy"
+		// A slow or disconnected browser drops delivery, never generation.
+		emit := func(ev wireEvent) {
+			if ev.Type == "session" && strings.TrimSpace(ev.SessionID) != "" {
+				streamSessionID = strings.TrimSpace(ev.SessionID)
 			}
-			emit(event)
+			if completion != nil && ev.Type == "session_activity" {
+				completion.accepted = true
+			}
+			if len(ev.Images) > 0 {
+				paths := make([]string, 0, len(ev.Images))
+				for _, path := range ev.Images {
+					if token := sessionImagePreviewPath(streamSessionID, path); token != "" {
+						paths = append(paths, token)
+					}
+				}
+				ev.Images = paths
+			}
+			eventCount++
+			lastType = ev.Type
+			if ev.Type == "done" || ev.Type == "error" {
+				terminalSeen = true
+			}
+			if deliveryCtx.Err() != nil {
+				return
+			}
+			select {
+			case frames <- ev.marshal():
+			default:
+				detach()
+			}
 		}
-		flusher.Flush()
-		log.Printf("web chat ended with error: model=%q session=%q duration=%s events=%d err=%v", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, err)
-		return
-	}
-	// Defensive protocol guarantee: even if an agent/provider channel closes
-	// cleanly without publishing DoneEvent or ErrorEvent, every browser stream
-	// still ends with an explicit terminal frame. The shared UI runtime also
-	// validates this contract so future proxy regressions cannot fail silently.
-	if !terminalSeen {
-		err := fmt.Errorf("agent event stream ended before a terminal event")
-		emit(wireEvent{Type: "error", Err: err.Error()})
-		flusher.Flush()
-		log.Printf("web chat ended without terminal event: model=%q session=%q duration=%s events=%d", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount)
-		return
-	}
-	log.Printf("web chat completed: model=%q session=%q duration=%s events=%d terminal=%t last=%q", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, terminalSeen, lastType)
-	if terminalSeen && lastType == "done" {
-		signalNativeRunCompleted()
+
+		// Stop and engine shutdown are the only cancellation sources.
+		userAddons := make([]string, 0, 2)
+		if req.Rewound {
+			rewindFeedback := "[rewind_feedback]\nThe user deliberately rejected and rewound the previous attempt. Reconsider the approach and do not repeat it without verification."
+			if req.RewindFiles {
+				rewindFeedback += "\nThe program also restored the affected workspace files to their checkpointed state."
+			} else if req.RewindFilesRestored {
+				rewindFeedback += "\nThe user reconsidered and restored the complete file version produced by the rejected attempt. Preserve that workspace state unless the new request requires changing it."
+			}
+			if req.RewindReason != "" {
+				rewindFeedback += "\nUser-provided reason: " + req.RewindReason
+			}
+			rewindFeedback += "\n[/rewind_feedback]"
+			userAddons = append(userAddons, rewindFeedback)
+		}
+		if attachmentAddon != "" {
+			userAddons = append(userAddons, attachmentAddon)
+		}
+		if err := s.eng.runStreamWithImages(context.WithValue(runCtx, syncIdentityKey{}, syncIdentity{turnID: req.TurnID, clientID: req.ClientID}), visiblePrompt, req.SessionID, strings.Join(userAddons, "\n\n"), directImages, emit); err != nil {
+			// Surface run-setup failures (provider/loop build) as a final
+			// error frame so the UI can show them instead of a dead stream.
+			if !terminalSeen {
+				event := wireEvent{Type: "error", Err: err.Error()}
+				if errors.Is(err, errNoActiveProvider) {
+					event.ErrCode = "chat.noProvider"
+					event.ErrName = s.runtimeAppName()
+				} else if errors.Is(err, errSessionBusy) {
+					event.ErrCode = "session.busy"
+				}
+				emit(event)
+			}
+			log.Printf("web chat ended with error: model=%q session=%q duration=%s events=%d err=%v", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, err)
+			return
+		}
+		// Defensive protocol guarantee: even if an agent/provider channel closes
+		// cleanly without publishing DoneEvent or ErrorEvent, every browser stream
+		// still ends with an explicit terminal frame. The shared UI runtime also
+		// validates this contract so future proxy regressions cannot fail silently.
+		if !terminalSeen {
+			err := fmt.Errorf("agent event stream ended before a terminal event")
+			emit(wireEvent{Type: "error", Err: err.Error()})
+			log.Printf("web chat ended without terminal event: model=%q session=%q duration=%s events=%d", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount)
+			return
+		}
+		log.Printf("web chat completed: model=%q session=%q duration=%s events=%d terminal=%t last=%q", s.eng.ModelName(), req.SessionID, time.Since(started).Round(time.Millisecond), eventCount, terminalSeen, lastType)
+		if terminalSeen && lastType == "done" {
+			signalNativeRunCompleted()
+		}
+	}()
+	for {
+		select {
+		case <-deliveryCtx.Done():
+			return
+		case frame, ok := <-frames:
+			if !ok {
+				return
+			}
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", frame); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }
 

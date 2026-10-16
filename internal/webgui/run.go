@@ -27,6 +27,9 @@ type RunOptions struct {
 	AllowRemote bool
 	// NoWindow skips opening a browser window (server only).
 	NoWindow bool
+	// Phone runs the line-oriented TUI pairing protocol on stdin/stdout.
+	Phone              bool
+	PhoneAllowDownload bool
 	// UIRoot serves a host application's front-end instead of the embedded UI.
 	UIRoot string
 	// UIFS serves an application front-end embedded in the executable. UIRoot
@@ -52,6 +55,11 @@ type RunOptions struct {
 func Run(eng *Engine, opts RunOptions) error {
 	defer eng.Close()
 	addr := opts.Addr
+	if opts.Phone {
+		addr = "127.0.0.1:0"
+		opts.NoWindow = true
+		opts.AllowRemote = false
+	}
 	if addr == "" {
 		addr = "127.0.0.1:0"
 	}
@@ -62,6 +70,8 @@ func Run(eng *Engine, opts RunOptions) error {
 	baseURL := localLaunchURL(ln.Addr().String())
 
 	webServer := NewServer(eng, opts.AllowRemote)
+	webServer.initPhone(strings.TrimRight(baseURL, "/"))
+	defer webServer.phone.manager.Stop("stop")
 	url := webServer.bootstrapLaunchURL(baseURL)
 	appName := strings.TrimSpace(opts.AppName)
 	if appName == "" {
@@ -93,6 +103,8 @@ func Run(eng *Engine, opts RunOptions) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	srv.RegisterOnShutdown(eng.stopChatRuns)
+	defer eng.stopChatRuns()
 	errCh := make(chan error, 1)
 	go func() {
 		if serveErr := srv.Serve(ln); serveErr != nil && serveErr != http.ErrServerClosed {
@@ -101,6 +113,12 @@ func Run(eng *Engine, opts RunOptions) error {
 	}()
 
 	log.Printf("%s web GUI: %s", appName, url)
+	if opts.Phone {
+		ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
+		defer stop()
+		defer srv.Close()
+		return webServer.runPhone(ctx, opts.PhoneAllowDownload)
+	}
 	if opts.NoWindow {
 		// Server-only launches must report the URL even though normal GUI logs
 		// are redirected to the portable log file.

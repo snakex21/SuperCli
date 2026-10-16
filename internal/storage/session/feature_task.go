@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,12 +20,27 @@ type QueuedTask struct {
 	Prompt    string    `json:"prompt"`
 	Position  int       `json:"position"`
 	CreatedAt time.Time `json:"created_at"`
+	// Attachments uses the /api/chat representation: file paths, normally
+	// staged uploads below <workspace>/.supercli/attachments. File bytes are
+	// never copied into the queue row.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 func (s *Store) EnqueueTask(ctx context.Context, cwd, sessionID, prompt string) (QueuedTask, error) {
+	return s.EnqueueTaskWithAttachments(ctx, cwd, sessionID, prompt, nil)
+}
+
+// EnqueueTaskWithAttachments stores a queued prompt together with the file
+// paths that must be sent with it once the queue dispatches the task.
+func (s *Store) EnqueueTaskWithAttachments(ctx context.Context, cwd, sessionID, prompt string, attachments []string) (QueuedTask, error) {
 	cwd, prompt = strings.TrimSpace(cwd), strings.TrimSpace(prompt)
-	if cwd == "" || prompt == "" {
-		return QueuedTask{}, fmt.Errorf("session.Store.EnqueueTask: cwd and prompt are required")
+	attachments = cleanQueuedAttachments(attachments)
+	rawAttachments, err := json.Marshal(attachments)
+	if err != nil {
+		return QueuedTask{}, fmt.Errorf("session.Store.EnqueueTask attachments: %w", err)
+	}
+	if cwd == "" || (prompt == "" && len(attachments) == 0) {
+		return QueuedTask{}, fmt.Errorf("session.Store.EnqueueTask: cwd and prompt or attachments are required")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -35,17 +52,50 @@ func (s *Store) EnqueueTask(ctx context.Context, cwd, sessionID, prompt string) 
 		return QueuedTask{}, err
 	}
 	id, now := newID(), time.Now().UTC()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO prompt_queue(id,cwd,session_id,prompt,position,created_at) VALUES(?,?,?,?,?,?)`, id, cwd, nullable(sessionID), prompt, pos, now.UnixNano()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO prompt_queue(id,cwd,session_id,prompt,position,created_at,attachments_json) VALUES(?,?,?,?,?,?,?)`, id, cwd, nullable(sessionID), prompt, pos, now.UnixNano(), string(rawAttachments)); err != nil {
 		return QueuedTask{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return QueuedTask{}, err
 	}
-	return QueuedTask{ID: id, Cwd: cwd, SessionID: sessionID, Prompt: prompt, Position: pos, CreatedAt: now}, nil
+	out := QueuedTask{ID: id, Cwd: cwd, SessionID: sessionID, Prompt: prompt, Position: pos, CreatedAt: now}
+	if len(attachments) > 0 {
+		out.Attachments = attachments
+	}
+	return out, nil
+}
+
+func cleanQueuedAttachments(paths []string) []string {
+	clean := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		clean = append(clean, path)
+	}
+	return clean
+}
+
+// AttachmentPathInUse reports whether a transcript message or another queued
+// task still references path. Callers use it before deleting staged files.
+func (s *Store) AttachmentPathInUse(ctx context.Context, path string) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM message_attachments, json_each(message_attachments.paths_json) WHERE json_each.value = ?
+		UNION ALL SELECT 1 FROM prompt_queue, json_each(prompt_queue.attachments_json) WHERE json_each.value = ? LIMIT 1`, path, path).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *Store) ListQueuedTasks(ctx context.Context, cwd string) ([]QueuedTask, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,cwd,IFNULL(session_id,''),prompt,position,created_at FROM prompt_queue WHERE cwd=? ORDER BY position,created_at`, strings.TrimSpace(cwd))
+	rows, err := s.db.QueryContext(ctx, `SELECT id,cwd,IFNULL(session_id,''),prompt,position,created_at,IFNULL(attachments_json,'[]') FROM prompt_queue WHERE cwd=? ORDER BY position,created_at`, strings.TrimSpace(cwd))
 	if err != nil {
 		return nil, err
 	}
@@ -54,10 +104,20 @@ func (s *Store) ListQueuedTasks(ctx context.Context, cwd string) ([]QueuedTask, 
 	for rows.Next() {
 		var q QueuedTask
 		var ns int64
-		if err := rows.Scan(&q.ID, &q.Cwd, &q.SessionID, &q.Prompt, &q.Position, &ns); err != nil {
+		var rawAttachments string
+		if err := rows.Scan(&q.ID, &q.Cwd, &q.SessionID, &q.Prompt, &q.Position, &ns, &rawAttachments); err != nil {
 			return nil, err
 		}
 		q.CreatedAt = time.Unix(0, ns).UTC()
+		if rawAttachments != "" && rawAttachments != "[]" {
+			if err := json.Unmarshal([]byte(rawAttachments), &q.Attachments); err != nil {
+				return nil, fmt.Errorf("session.Store.ListQueuedTasks attachments %s: %w", q.ID, err)
+			}
+			q.Attachments = cleanQueuedAttachments(q.Attachments)
+			if len(q.Attachments) == 0 {
+				q.Attachments = nil
+			}
+		}
 		out = append(out, q)
 	}
 	return out, rows.Err()

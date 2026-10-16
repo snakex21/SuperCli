@@ -14,7 +14,8 @@ function backgroundRunIDs() {
   return typeof detachedRuns === "object" && detachedRuns ? detachedRuns : {};
 }
 function backgroundRunFor(id) {
-  return typeof detachedRunFor === "function" ? detachedRunFor(id) : null;
+  return (typeof detachedRunFor === "function" ? detachedRunFor(id) : null) ||
+    (typeof syncRunFor === "function" ? syncRunFor(id) : null);
 }
 function failedRunIDs() {
   return typeof failedRuns === "object" && failedRuns ? failedRuns : {};
@@ -95,7 +96,7 @@ async function loadSessions() {
         currentDateGroup = dateGroup.key;
         if (dateGroup.label) list.appendChild(el("div", "session-date", dateGroup.label));
       }
-      var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : "") + (backgroundRunIDs()[s.id] ? " running" : "") + (failedRunIDs()[s.id] ? " failed" : ""));
+      var b = el("button", "side-item" + (s.id === activeSessionID ? " active" : "") + (backgroundRunIDs()[s.id] || (typeof syncRuns === "object" && syncRuns[s.id]) ? " running" : "") + (failedRunIDs()[s.id] ? " failed" : ""));
       b.type = "button";
       b.dataset.sessionId = s.id;
       var title = el("span", "t");
@@ -563,7 +564,8 @@ async function loadOlderTranscript() {
   }
 }
 
-async function resumeSession(id, session, fromQueue) {
+async function resumeSession(id, session, fromQueue, fromSync) {
+  if (fromSync && activeRun && activeRun.remote) syncReleaseView(activeRun);
   if (streaming && id === activeSessionID) return true;
   // Opening another conversation leaves a running one going in the background.
   if ((streaming && !detachActiveRun()) || (queueDispatching && !fromQueue)) {
@@ -581,6 +583,8 @@ async function resumeSession(id, session, fromQueue) {
   transcriptAbortCtl = controller;
   setSessionOpening(id);
   try {
+    if (typeof syncWatchSession === "function") await syncWatchSession(id);
+    if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
     var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=" + transcriptPageSize,
       { signal: controller.signal });
     var msgs = page.messages || [];
@@ -606,7 +610,7 @@ async function resumeSession(id, session, fromQueue) {
     // restoreSessionRuntime without rolling back the opened transcript.
     runtimeQueued = true;
     Promise.resolve(previousRuntimeReady).then(function () {
-      if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return;
+      if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq || backgroundRunFor(id)) return;
       return restoreSessionRuntime(sessionByID[id] || session);
     }).then(releaseRuntimeReady, releaseRuntimeReady);
     return true;
@@ -617,7 +621,10 @@ async function resumeSession(id, session, fromQueue) {
     if (!runtimeQueued) releaseRuntimeReady();
     streamAppendTarget = null;
     if (controller === transcriptAbortCtl) transcriptAbortCtl = null;
-    if (resumeSeq === sessionResumeSeq) setSessionOpening("");
+    if (resumeSeq === sessionResumeSeq) {
+      setSessionOpening("");
+      if (typeof syncSessionOpened === "function") syncSessionOpened(id);
+    }
   }
 }
 $("#reload-sessions").addEventListener("click", loadSessions);

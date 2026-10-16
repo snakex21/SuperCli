@@ -27,14 +27,19 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, out)
 	case http.MethodPost:
 		var b struct {
-			SessionID string `json:"session_id"`
-			Prompt    string `json:"prompt"`
+			SessionID   string   `json:"session_id"`
+			Prompt      string   `json:"prompt"`
+			Attachments []string `json:"attachments"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 			http.Error(w, "bad request: "+err.Error(), 400)
 			return
 		}
-		out, err := s.eng.enqueueTask(r.Context(), strings.TrimSpace(b.SessionID), b.Prompt)
+		if len(b.Attachments) > maxChatAttachments {
+			http.Error(w, "invalid attachments: too many files", http.StatusBadRequest)
+			return
+		}
+		out, err := s.eng.enqueueTaskWithAttachments(r.Context(), strings.TrimSpace(b.SessionID), b.Prompt, b.Attachments)
 		if err != nil {
 			writeWorkflowError(w, err)
 			return
@@ -69,7 +74,9 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	case http.MethodDelete:
-		if err := s.eng.deleteTask(r.Context(), r.URL.Query().Get("id")); err != nil {
+		// keep_attachments=1 is sent when an accepted dispatch retires the row.
+		keep := r.URL.Query().Get("keep_attachments") == "1"
+		if err := s.eng.deleteTask(r.Context(), r.URL.Query().Get("id"), !keep); err != nil {
 			writeWorkflowError(w, err)
 			return
 		}

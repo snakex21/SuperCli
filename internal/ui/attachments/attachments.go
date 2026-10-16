@@ -172,6 +172,50 @@ func StagePicked(home string, paths []string) ([]string, error) {
 	return staged, nil
 }
 
+// RemoveUnusedStaged deletes staged attachment copies (files below
+// <home>/.supercli/attachments, where uploads and picked outside files are
+// staged) once nothing references them anymore. Paths outside the staging
+// directory are user files and are never removed. Empty staging directories
+// left behind are pruned up to the staging root.
+func RemoveUnusedStaged(home string, paths []string, inUse func(string) (bool, error)) {
+	absHome, err := filepath.Abs(home)
+	if err != nil {
+		return
+	}
+	root := filepath.Join(absHome, ".supercli", "attachments")
+	for _, raw := range paths {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		path := raw
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(absHome, path)
+		}
+		path = filepath.Clean(path)
+		if path == root || !sandbox.IsUnder(root, path) {
+			continue
+		}
+		if inUse != nil {
+			if used, err := inUse(raw); err != nil || used {
+				continue
+			}
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if os.Remove(path) != nil {
+			continue
+		}
+		for dir := filepath.Dir(path); dir != root && sandbox.IsUnder(root, dir); dir = filepath.Dir(dir) {
+			if os.Remove(dir) != nil {
+				break
+			}
+		}
+	}
+}
+
 func SafeName(name string) string {
 	name = filepath.Base(strings.TrimSpace(name))
 	name = strings.Map(func(r rune) rune {

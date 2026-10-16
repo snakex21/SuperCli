@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const test=require('node:test');
 function harness(){
   const frames=new Map();let id=0,now=0,height=1000,reads=0,paints=0,scrollListener;
-  const stage={scrollTop:0,clientHeight:100,addEventListener(name,fn){scrollListener=fn;}};
+  const stage={scrollTop:0,clientHeight:100,addEventListener(name,fn){if(name==='scroll')scrollListener=fn;}};
   Object.defineProperty(stage,'scrollHeight',{get(){reads++;return height;}});
   const c={window:{},superCliUI:{},performance:{now:()=>now},$(){return stage;},requestAnimationFrame(fn){frames.set(++id,fn);return id;},cancelAnimationFrame(id){frames.delete(id);}};
   vm.createContext(c);

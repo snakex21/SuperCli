@@ -16,6 +16,7 @@ import (
 // differently. Empty fields are omitted to keep the stream compact.
 type wireEvent struct {
 	Type string `json:"type"`
+	At   int64  `json:"at,omitempty"` // Server event time in Unix milliseconds; retained on replay.
 	// Text carries assistant message chunks (type "message") and
 	// reflection/marker text.
 	Text string `json:"text,omitempty"`

@@ -14,6 +14,51 @@ var transcriptFollowTail = true;
 var smartScrollFrame = null;
 var smartScrollForced = false;
 var smartScrollPending = false;
+var transcriptResumeScroll = null, transcriptResumeScrollVersion = 0;
+
+function savedTranscriptScroll() {
+  if (transcriptResumeScroll && transcriptResumeScroll.sessionID !== activeSessionID) transcriptResumeScroll = null;
+  return transcriptResumeScroll;
+}
+function captureTranscriptScroll() {
+  // visibilitychange and pagehide can both fire; never replace the original intent
+  // with geometry from a hidden viewport or a partially rebuilt transcript.
+  if (!savedTranscriptScroll()) transcriptResumeScroll = {
+    sessionID: activeSessionID, followTail: transcriptFollowTail, top: stage.scrollTop
+  };
+  transcriptResumeScroll.resuming = false;
+  ++transcriptResumeScrollVersion;
+}
+function resumeTranscriptScroll() {
+  var saved = savedTranscriptScroll();
+  if (!saved || document.hidden) return;
+  saved.resuming = true;
+  transcriptFollowTail = saved.followTail;
+  ++transcriptResumeScrollVersion;
+}
+function settleTranscriptScroll(ready) {
+  var saved = savedTranscriptScroll();
+  if (!saved || !saved.resuming || document.hidden) return;
+  var version = ++transcriptResumeScrollVersion;
+  function restore(final) {
+    if (version !== transcriptResumeScrollVersion || savedTranscriptScroll() !== saved || document.hidden || !ready() || streamAppendTarget) return;
+    transcriptFollowTail = saved.followTail;
+    stage.scrollTop = saved.followTail ? stage.scrollHeight : saved.top;
+    if (final) transcriptResumeScroll = null;
+    else requestAnimationFrame(function () { restore(true); });
+  }
+  // Keep layout-generated scroll events from cancelling following while the
+  // refreshed history, replay and viewport changes reach their painted geometry.
+  requestAnimationFrame(function () { restore(false); });
+}
+function cancelTranscriptResumeScroll() {
+  if (!document.hidden && savedTranscriptScroll()) {
+    transcriptResumeScroll = null;
+    ++transcriptResumeScrollVersion;
+    transcriptFollowTail = nearBottom();
+    smartScrollPending = smartScrollForced = false;
+  }
+}
 
 function thinkingDisclosureOpen(history) {
   return typeof ui !== "undefined" && typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : !history;
@@ -55,8 +100,11 @@ function releaseLiveTranscriptBlocks() {
 
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
 stage.addEventListener("scroll", function () {
-  transcriptFollowTail = nearBottom();
+  if (!savedTranscriptScroll()) transcriptFollowTail = nearBottom();
 }, { passive: true });
+["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (name) {
+  stage.addEventListener(name, cancelTranscriptResumeScroll, { passive: true });
+});
 function flushSmartScroll() {
   if (smartScrollFrame !== null) {
     cancelAnimationFrame(smartScrollFrame);
@@ -65,12 +113,18 @@ function flushSmartScroll() {
   if (!smartScrollPending) return;
   // Read geometry after the frame's text writes. Reading before a paced paint
   // followed the preceding line height and made the transcript jump next frame.
-  if (!streamAppendTarget && (smartScrollForced || transcriptFollowTail)) stage.scrollTop = stage.scrollHeight;
+  var saved = savedTranscriptScroll();
+  if (!streamAppendTarget && (!saved || saved.followTail) && (smartScrollForced || transcriptFollowTail)) stage.scrollTop = stage.scrollHeight;
   smartScrollPending = false;
   smartScrollForced = false;
 }
 function smartScroll(force) {
   if (streamAppendTarget) return;
+  var saved = savedTranscriptScroll();
+  if (saved) {
+    if (!saved.followTail) return;
+    force = true;
+  }
   if (force) {
     transcriptFollowTail = true;
     smartScrollForced = true;
@@ -1293,7 +1347,17 @@ function addHistoryTask(note) {
   appendStream(row);
   return row;
 }
-function addToolCall(name, args, id) {
+// Remote events keep server epoch times; local/legacy events retain the
+// monotonic performance clock, including the originating client's behaviour.
+function toolElapsed(row, at) {
+  if (row._startedAtMS > 0) {
+    var now = at > 0 ? at : (typeof syncServerNow === "function" ? syncServerNow() : Date.now());
+    return Math.max(0, now - row._startedAtMS);
+  }
+  return Math.max(0, performance.now() - row._t0);
+}
+
+function addToolCall(name, args, id, at) {
   var info = toolHint(name, args);
   var row = document.createElement("details");
   row.className = "tool-row";
@@ -1326,6 +1390,7 @@ function addToolCall(name, args, id) {
   row.appendChild(body);
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
   row._t0 = performance.now();
+  row._startedAtMS = at > 0 ? at : 0;
   if (name === "task" || name === "send_message") {
     row.classList.add("task-row");
     if (info.workerID) {
@@ -1348,7 +1413,7 @@ function addToolCall(name, args, id) {
   }
   row.classList.add("running");
   function updateElapsed() {
-    stat.textContent = t("tool.running") + " · " + fmtDuration(performance.now() - row._t0);
+    stat.textContent = t("tool.running") + " · " + fmtDuration(toolElapsed(row));
   }
   updateElapsed();
   row._clock = setInterval(updateElapsed, 250);
@@ -1359,7 +1424,7 @@ function addToolCall(name, args, id) {
   runToolCount++;
   smartScroll();
 }
-function addToolResult(id, output, err) {
+function addToolResult(id, output, err, at) {
   var key = id && toolRows[id] ? id : openToolOrder[0];
   var row = toolRows[key];
   openToolOrder = openToolOrder.filter(function (k) { return k !== key; });
@@ -1368,7 +1433,7 @@ function addToolResult(id, output, err) {
   row._clock = null;
   row.classList.remove("running");
   row.classList.add(err ? "failed" : "done");
-  var ms = performance.now() - row._t0;
+  var ms = toolElapsed(row, at);
   var task = (row._toolName === "task" || row._toolName === "send_message") ? parseTaskNotification(output || err) : null;
   if (task) {
     if (task.id) workerRows[task.id] = row;
@@ -1629,7 +1694,7 @@ function addWorkerProgress(ev) {
   if (ev.kind === "finished") {
     clearInterval(row._clock);
     row._clock = null;
-    row._stat.textContent = taskStatusLabel(ev.status);
+    row._stat.textContent = taskStatusLabel(ev.status) + (row._startedAtMS > 0 ? " · " + fmtDuration(toolElapsed(row, ev.at)) : "");
     updateWorkerOverview(ev.id, ev.name, ev.status, row._taskPrompt, row);
     return true;
   }

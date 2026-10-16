@@ -223,6 +223,9 @@ func (e *Engine) runSessionTitleLLM(ctx context.Context, sessionID, prompt strin
 		// Retrying an already adequate name only spends more model work.
 		return true
 	}
-	_, err = store.SetTitleIfCurrent(sessionID, initialTitle, title)
+	changed, err := store.SetTitleIfCurrent(sessionID, initialTitle, title)
+	if err == nil && changed {
+		e.syncHub.changed()
+	}
 	return err == nil
 }

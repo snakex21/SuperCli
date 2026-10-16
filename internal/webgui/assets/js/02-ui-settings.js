@@ -98,7 +98,9 @@ function applyViewportScale() {
   viewportRetryDelay = 0;
   var scale = resolvedUIScale();
   var width = Math.max(1, window.innerWidth / scale);
-  var height = Math.max(1, window.innerHeight / scale);
+  var viewportHeight = window.innerHeight;
+  if (window.visualViewport && window.innerWidth <= 560) viewportHeight = window.visualViewport.height;
+  var height = Math.max(1, viewportHeight / scale);
   root.style.zoom = scale;
   root.style.width = width + "px";
   root.style.height = height + "px";

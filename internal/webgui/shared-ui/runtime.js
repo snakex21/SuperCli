@@ -43,6 +43,34 @@
     }
   }
 
+  // Remote quick tunnels buffer HTTP SSE; WebSocket frames stay live.
+  function chatResponse(url, options) {
+    var host = global.location && global.location.hostname;
+    if (!host || /^(localhost|127(?:\.[0-9]+){3}|\[?::1\]?)$/i.test(host)) return fetch(url, options);
+    return new Promise(function (resolve, reject) {
+      var ws = new WebSocket((global.location.protocol === "https:" ? "wss://" : "ws://") + global.location.host + url + "/ws");
+      var controller, opened = false, closed = false;
+      var encoder = new TextEncoder();
+      var body = new ReadableStream({start: function (c) { controller = c; }, cancel: function () { closed = true; ws.close(); }});
+      function abort() {
+        if (!closed) { closed = true; var error = new DOMException("Aborted", "AbortError"); controller.error(error); reject(error); }
+        ws.close();
+      }
+      if (options.signal) { options.signal.addEventListener("abort", abort, {once:true}); if (options.signal.aborted) { abort(); return; } }
+      ws.onopen = function () { opened = true; ws.send(options.body); resolve({ok:true,status:200,body:body}); };
+      ws.onmessage = function (event) { if (!closed) controller.enqueue(encoder.encode(event.data)); };
+      ws.onerror = function () { if (!closed) { closed = true; var error = new Error("WebSocket connection failed"); controller.error(error); reject(error); } };
+      ws.onclose = function (event) {
+        if (options.signal) options.signal.removeEventListener("abort", abort);
+        if (!closed) {
+          closed = true;
+          if (opened && event.code === 1000) controller.close();
+          else { var error = new Error("WebSocket disconnected (" + event.code + ")"); controller.error(error); reject(error); }
+        }
+      };
+    });
+  }
+
   async function readSSE(body, onEvent) {
     if (!body || typeof body.getReader !== "function") {
       throw new Error("SSE response body is unavailable");
@@ -540,6 +568,7 @@
     requestJSON: requestJSON,
     decodeSSEFrame: decodeSSEFrame,
     readSSE: readSSE,
+    chatResponse: chatResponse,
     createComposerDraftStore: createComposerDraftStore,
     mutationKind: mutationKind,
     normalizeFileChanges: normalizeFileChanges,

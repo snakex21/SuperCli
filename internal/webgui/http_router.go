@@ -45,6 +45,9 @@ func (s *Server) Handler() http.Handler {
 	// JSON read APIs for the side panels.
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/sync", s.handleSync)
+	mux.HandleFunc("/api/sync/ws", s.handleSyncWebSocket)
+	mux.HandleFunc("/api/sync/stop", s.handleSyncStop)
 	mux.HandleFunc("/api/transcript", s.handleTranscript)
 	mux.HandleFunc("/api/tasks", s.handleTasks)
 	mux.HandleFunc("/api/schedules", s.handleSchedules)
@@ -118,7 +121,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/file/read", s.handleFileRead)
 	mux.HandleFunc("/api/file/write", s.handleFileWrite)
 
-	// SSE chat stream.
+	if s.phone != nil {
+		mux.Handle("/api/phone/status", s.withSecretLocalOnly(http.HandlerFunc(s.handlePhoneStatus)))
+		mux.Handle("/api/phone/start", s.withSecretLocalOnly(http.HandlerFunc(s.handlePhoneStart)))
+		mux.Handle("/api/phone/stop", s.withSecretLocalOnly(http.HandlerFunc(s.handlePhoneStop)))
+		mux.Handle("/api/phone/pair", s.withSecretLocalOnly(http.HandlerFunc(s.handlePhonePair)))
+	}
+	mux.Handle("/api/provider-key", s.withSecretLocalOnly(http.NotFoundHandler()))
+	// Both transports run the same chat handler and emit the same SSE frames.
+	mux.HandleFunc("/api/chat/ws", s.handleChatWebSocket)
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/chat/completion", s.handleChatCompletion)
 	mux.HandleFunc("/api/question/answer", s.handleQuestionAnswer)
@@ -155,7 +166,7 @@ func (s *Server) Handler() http.Handler {
 // outer access guard before this stricter loopback-only rule.
 func (s *Server) withSecretLocalOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isLoopbackHost(r.Host) || !isLoopbackRemoteAddr(r.RemoteAddr) {
+		if !isLocalRequest(r) {
 			http.Error(w, "forbidden: secret is local-only", http.StatusForbidden)
 			return
 		}
@@ -179,7 +190,10 @@ const (
 // which itself accepts loopback peers only.
 func (s *Server) withLocalGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		loopback := isLoopbackHost(r.Host) && isLoopbackRemoteAddr(r.RemoteAddr)
+		if s.phoneGuard(w, r, next) {
+			return
+		}
+		loopback := isLocalRequest(r)
 		if !s.allowRemote && !loopback {
 			http.Error(w, "forbidden: local-only server", http.StatusForbidden)
 			return

@@ -144,6 +144,7 @@ type Model struct {
 	menu                 interactiveMenu
 	previewURL           string
 	previewID            uint64
+	phone                phoneState
 	autocomp             autocomplete // autocomplete popup state
 	// providerStatuses caches async connectivity probe results for
 	// the /providers menu (key: provider name). The menu renders
@@ -651,6 +652,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.updateKeyMessage(msg)
+
+	case phoneEventMsg:
+		return m.applyPhoneEvent(msg)
 
 	case previewPasteMsg:
 		return m.applyPreviewPaste(msg)
