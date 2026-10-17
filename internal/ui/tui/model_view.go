@@ -52,10 +52,13 @@ func (m Model) View() string {
 
 	// 4. Status bar
 	if m.busy {
-		fmt.Fprintf(&b, "%s %s\n", m.spinner.View(), m.palette.InputHint.Render(m.tr("tui.model_view.2a7749f651")))
+		line := m.spinner.View() + " " + m.palette.InputHint.Render(m.tr("tui.model_view.2a7749f651"))
+		b.WriteString(truncateVisible(line, m.width) + "\n")
 	}
 	if m.dashboardFn != nil {
-		b.WriteString(m.renderDashboard() + "\n")
+		if dashboard := m.renderDashboard(); dashboard != "" {
+			b.WriteString(dashboard + "\n")
+		}
 	} else if m.statusFn != nil {
 		if line := m.statusFn(); line != "" {
 			fmt.Fprintf(&b, "%s\n", line)
@@ -66,7 +69,7 @@ func (m Model) View() string {
 	}
 
 	// 5. Autocomplete popup (above input line)
-	acView := renderAutocomplete(&m.autocomp, m.width, m.palette, m.language)
+	acView := renderAutocompleteWithinHeight(&m.autocomp, m.width, m.autocompleteBudget(), m.palette, m.language)
 	if acView != "" {
 		b.WriteString(acView)
 		b.WriteString("\n")
@@ -205,24 +208,48 @@ func truncateVisible(s string, width int) string {
 	return ansi.Truncate(s, width, "…")
 }
 
+// Fixed chrome is measured exactly; optional dashboard rows use only the space
+// left after preserving the composer, hints and a useful slice of conversation.
+func (m Model) chromeBaseHeight() int {
+	// Header + separator + input borders + hints, plus textarea content.
+	reserved := 5 + max(1, m.input.Height()) + len(m.workerPanelLines())
+	if len(m.pendingAttachments) > 0 {
+		reserved++
+	}
+	if m.busy {
+		reserved++
+	}
+	return reserved
+}
+
+func (m Model) chromeHeight() int {
+	return m.chromeBaseHeight() + m.autocompleteHeight()
+}
+
+func (m Model) autocompleteBudget() int {
+	if m.autocomp.kind == autocompNone {
+		return 0
+	}
+	if m.height <= 0 {
+		return -1
+	}
+	reserved := m.chromeBaseHeight()
+	if m.dashboardFn == nil {
+		if m.statusFn != nil {
+			reserved += visualLineCount(m.statusFn(), m.width)
+		}
+		if m.runtimeHUD != "" {
+			reserved++
+		}
+	}
+	return max(0, m.height-reserved-1)
+}
+
 func (m Model) viewportHeight() int {
 	if m.height <= 0 {
 		return 20
 	}
-	// Header + separator + input (+2 border rows) + key-hints
-	// + at least one status line.
-	reserved := 8 + len(m.workerPanelLines())
-	if len(m.pendingAttachments) > 0 {
-		reserved++
-	}
-	// Multi-line input box: account for the extra rows.
-	if ih := m.input.Height(); ih > 1 {
-		reserved += ih - 1
-	}
-	reserved += m.autocompleteHeight()
-	if m.busy {
-		reserved++
-	}
+	reserved := m.chromeHeight()
 	if m.dashboardFn != nil {
 		reserved += m.dashboardHeight()
 	} else if m.statusFn != nil {
@@ -233,11 +260,7 @@ func (m Model) viewportHeight() int {
 	if m.dashboardFn == nil && m.runtimeHUD != "" {
 		reserved++
 	}
-	h := m.height - reserved
-	if h < 3 {
-		return 3
-	}
-	return h
+	return max(1, m.height-reserved)
 }
 
 type contextReporter interface {
@@ -342,25 +365,7 @@ func visualLineCount(s string, width int) int {
 }
 
 func (m Model) autocompleteHeight() int {
-	if m.autocomp.kind == autocompNone {
-		return 0
-	}
-	filtered := filterItems(m.autocomp.items, m.autocomp.query)
-	if len(filtered) == 0 {
-		return 0
-	}
-	visible := len(filtered)
-	if visible > autocompMaxVisible {
-		visible = autocompMaxVisible
-	}
-	// renderAutocomplete uses:
-	// title + visible rows + optional detail separator/detail + footer separator/footer + bottom.
-	height := 1 + visible + 2 + 1
-	selected := filtered[minInt(m.autocomp.cursor, len(filtered)-1)]
-	if selected.Desc != "" || selected.Hint != "" {
-		height += 2
-	}
-	return height
+	return autocompleteHeightWithin(&m.autocomp, m.autocompleteBudget())
 }
 
 func welcome(opts Options, p Palette) string {
@@ -381,9 +386,9 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	if width <= 0 {
 		width = 80
 	}
-	// A short terminal needs the chat viewport more than decorative cards.
-	// Keep the same actions visible in a five-line, borderless empty state.
-	if height > 0 && height < 28 {
+	// Size the empty state to its chat area, not the whole terminal. The
+	// model already appears in the header; quick actions take priority.
+	compact := func() string {
 		modelWidth := width - lipgloss.Width(tr("tui.model_view.4e383de876"))
 		if modelWidth < 8 {
 			modelWidth = 8
@@ -397,7 +402,20 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 		for i := range lines {
 			lines[i] = truncateVisible(lines[i], width)
 		}
-		return strings.Join(lines, "\n") + "\n"
+		if height > 0 && height < len(lines) {
+			switch height {
+			case 1:
+				lines = lines[3:]
+			case 2:
+				lines = []string{lines[0], lines[3]}
+			default:
+				lines = []string{lines[0], lines[1], lines[3]}
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	if height > 0 && height < 14 {
+		return compact()
 	}
 	cardWidth := (width - 7) / 2
 	if cardWidth < 32 {
@@ -420,7 +438,10 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	right := p.Panel.Width(cardWidth).Render(rightContent)
 	horizontal := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 	if lipgloss.Width(horizontal) <= width {
-		return horizontal + "\n"
+		if height > 0 && lipgloss.Height(horizontal) > height {
+			return compact()
+		}
+		return horizontal
 	}
 	// Narrow terminals get the same cards stacked. Subtract the border
 	// width so no line is clipped by the terminal's final column.
@@ -430,5 +451,9 @@ func welcomeAtSize(opts Options, p Palette, width, height int) string {
 	}
 	left = p.Panel.Width(stackWidth).Render(leftContent)
 	right = p.Panel.Width(stackWidth).Render(rightContent)
-	return lipgloss.JoinVertical(lipgloss.Left, left, right) + "\n"
+	vertical := lipgloss.JoinVertical(lipgloss.Left, left, right)
+	if height > 0 && lipgloss.Height(vertical) > height {
+		return compact()
+	}
+	return vertical
 }

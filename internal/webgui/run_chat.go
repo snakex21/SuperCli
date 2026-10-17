@@ -17,6 +17,7 @@ type chatRequest struct {
 	Prompt              string   `json:"prompt"`
 	TurnID              string   `json:"turn_id,omitempty"`
 	ClientID            string   `json:"client_id,omitempty"`
+	QueueTaskID         string   `json:"queue_task_id,omitempty"`
 	SessionID           string   `json:"session_id,omitempty"`
 	Attachments         []string `json:"attachments,omitempty"`
 	Rewound             bool     `json:"rewound,omitempty"`
@@ -38,6 +39,30 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	var queueClaim *queuedChatClaim
+	claimTransferred := false
+	if strings.TrimSpace(req.QueueTaskID) != "" {
+		var err error
+		queueClaim, err = s.claimQueuedChat(r.Context(), &req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if queueClaim == nil {
+			// Another device owns (or already consumed) this durable task.
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", (wireEvent{Type: "queue_claimed"}).marshal())
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			return
+		}
+		defer func() {
+			if !claimTransferred {
+				queueClaim.finish()
+			}
+		}()
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
 	req.RewindReason = strings.TrimSpace(truncateRunes(req.RewindReason, 400))
@@ -114,7 +139,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 	frames := make(chan []byte, 128)
+	claimTransferred = true
 	go func() {
+		defer queueClaim.finish()
 		defer finishRun()
 		defer close(frames)
 		if completion != nil {
@@ -151,8 +178,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			if ev.Type == "session" && strings.TrimSpace(ev.SessionID) != "" {
 				streamSessionID = strings.TrimSpace(ev.SessionID)
 			}
-			if completion != nil && ev.Type == "session_activity" {
-				completion.accepted = true
+			if ev.Type == "session_activity" {
+				queueClaim.accept()
+				if completion != nil {
+					completion.accepted = true
+				}
 			}
 			if len(ev.Images) > 0 {
 				paths := make([]string, 0, len(ev.Images))

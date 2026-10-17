@@ -57,10 +57,10 @@
         <header><h2 id="phone-title" data-i18n="phone.title">Phone access</h2><button id="phone-close" class="icon-btn" type="button" data-i18n-aria="common.close">×</button></header>
         <label class="phone-switch"><input id="phone-enabled" type="checkbox" role="switch"><span data-i18n="phone.title">Phone access</span></label>
         <p id="phone-status" role="status"></p><progress id="phone-progress" hidden></progress>
-        <div id="phone-qr"></div>
+        <div class="phone-actions phone-pairing"><div id="phone-qr"></div><button id="phone-copy" type="button" data-i18n="phone.copyLink" disabled>Copy link</button></div>
         <label for="phone-link" data-i18n="phone.link">One-time pairing link</label>
         <input id="phone-link" readonly autocomplete="off" spellcheck="false">
-        <div class="phone-actions"><button id="phone-copy" type="button" data-i18n="phone.copy">Copy</button><button id="phone-new-code" type="button" data-i18n="phone.newCode">Show new code</button><button id="phone-disconnect" type="button" data-i18n="phone.disconnect">Disconnect</button></div>
+        <div class="phone-actions"><button id="phone-new-code" type="button" data-i18n="phone.newCode">Show new code</button><button id="phone-disconnect" type="button" data-i18n="phone.disconnect">Disconnect</button></div>
         <p id="phone-expires"></p><p data-i18n="phone.security">Your phone has full control. Share this one-time link only with your own phone. API keys stay on the PC. Access closes after 24 hours without a message from the phone or when the app exits.</p>
       </section>
       <dialog id="phone-consent" class="phone-consent" aria-labelledby="phone-download-title">
@@ -177,6 +177,10 @@
           <button id="add-project" type="button" title="Add project folder" data-i18n-title="project.addFolder">＋ <span data-i18n="side.add">add</span></button>
         </div>
         <div class="side-list projects" id="project-list"></div>
+        <section id="running-elsewhere" hidden aria-labelledby="running-elsewhere-heading">
+          <div class="side-label" id="running-elsewhere-heading" data-i18n="project.runningElsewhere">Running in other projects</div>
+          <div class="side-list" id="running-elsewhere-list"></div>
+        </section>
       </div>
 
       <div class="side-pane" id="tab-tasks">
@@ -215,6 +219,7 @@
       <nav class="panel-nav" id="panel-nav">
         <div class="pn-title" data-i18n="panel.title">Control panel</div>
         <button data-sec="settings" data-i18n="panel.settings">Settings</button>
+        <button data-sec="modes" data-i18n="panel.modes">Modes</button>
         <button data-sec="appearance" data-i18n="panel.appearance">Appearance</button>
         <button data-sec="models" data-i18n="panel.models">Models</button>
         <button data-sec="providers" data-i18n="panel.providers">Providers</button>
@@ -250,6 +255,7 @@
   <script src="js/04-transcript.js"></script>
   <script src="js/04b-darwin-card.js"></script>
   <script src="js/05-chat.js"></script>
+  <script src="js/05a-lightbox.js"></script>
   <script src="js/05b-sync.js"></script>
   <script src="js/06-shell.js"></script>
   <script src="js/site-preview.js"></script>

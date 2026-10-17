@@ -76,15 +76,49 @@ function currencyOptionLabel(code, names) {
   if (label && label !== code) return code + " · " + label;
   return code;
 }
-function knobRow(k, currencyCodes) {
+// Modes are run-scoped config knobs; live display/provider preferences stay in Settings.
+var modeKeys = [
+  "queue_merge",
+  "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort", "task_parallel",
+  "task_max_steps", "task_max_tokens", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort", "darwin_reasoning_effort",
+  "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge",
+  "draft_verify", "draft_verify_max_rounds", "verify_commands", "compact_model",
+  "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens",
+  "stable_toolset", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "noop_gate"
+];
+var modesRenderID = 0;
+sections.modes = async function () {
+  var id = ++modesRenderID;
+  panelContent.innerHTML = "";
+  panelContent.appendChild(i18nEl("div", "note", "modes.hint"));
+  try {
+    // No settings/config event exists on the sync hub: always reload on open.
+    var got = await j("/api/config");
+    if (id !== modesRenderID || currentSection !== "modes") return;
+    var wrap = el("div", "group modes-panel");
+    modeKeys.forEach(function (key) {
+      var k = (got.knobs || []).find(function (row) { return row.key === key; });
+      if (k) wrap.appendChild(knobRow(k, got.cost_currencies, "modes"));
+    });
+    panelContent.appendChild(wrap);
+  } catch (e) {
+    if (id === modesRenderID && currentSection === "modes") panelContent.appendChild(el("div", "note", e.message));
+  }
+};
+
+function knobRow(k, currencyCodes, section) {
   var row = el("div", "knob-row" + (k.kind === "currency" ? " knob-row-currency" : ""));
   var copy = settingCopy(k);
+  var effortLabels = { advisor_reasoning_effort: "effort.advisor", review_reasoning_effort: "effort.review", darwin_reasoning_effort: "effort.darwin" };
+  if (effortLabels[k.key]) copy = [t(effortLabels[k.key]), t("effort.hint")];
+  else if (section === "modes") copy = [k.key === "review_model" ? t("modes.review") : copy[0], t("modes.desc." + k.key)];
   var name = el("div", "k-name", copy[0]);
   name.title = "config.toml · " + k.key;
   var d = el("small", "", copy[1]);
   name.appendChild(d);
   row.appendChild(name);
-  if (k.next_session) row.appendChild(el("span", "k-next", "(" + t("set.nextSession") + ")"));
+  if (section === "modes" && k.kind !== "readonly") row.appendChild(el("span", "k-next", "(" + t("modes.nextRun") + ")"));
+  else if (k.next_session) row.appendChild(el("span", "k-next", "(" + t("set.nextSession") + ")"));
 
   async function post(value) {
 	if (k.key === "allow_all" && value === "on" && !await appConfirm(t("sandbox.allowConfirm"), {
@@ -92,7 +126,7 @@ function knobRow(k, currencyCodes) {
     })) return;
     jpost("/api/config", { key: k.key, value: value })
       .then(function () {
-        sections.settings();
+        if (!section || currentSection === section) sections[section || "settings"]();
         if (k.key === "cost_currency") { renderStats(); refreshCostDetails(); }
       })
       .catch(function (e) { toast(e.message); });
@@ -116,6 +150,14 @@ function knobRow(k, currencyCodes) {
     });
     row.appendChild(el("span", "k-val", k.source === "default" ? knobDisplayValue(k) : ""));
     row.appendChild(seg);
+  } else if (k.kind === "queue_merge") {
+    var mergeSelect = el("select", "knob-input");
+    ["off", "auto"].forEach(function (value) {
+      var option = el("option", "", t("set.state." + value)); option.value = value; mergeSelect.appendChild(option);
+    });
+    mergeSelect.value = k.raw || "off";
+    mergeSelect.addEventListener("change", function () { post(mergeSelect.value); if (typeof queueMergeMode !== "undefined") queueMergeMode = mergeSelect.value; });
+    row.appendChild(mergeSelect);
   } else if (k.kind === "currency") {
     var currency = el("select", "field-select k-currency");
     currency.setAttribute("aria-label", copy[0]);
@@ -139,6 +181,7 @@ function knobRow(k, currencyCodes) {
   } else if (k.kind === "int" || k.kind === "text") {
     var input = el("input", "k-edit");
     input.value = k.raw || "";
+    input.setAttribute("aria-label", copy[0]);
     input.placeholder = k.source === "default" ? knobDisplayValue(k) : "";
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); post(input.value.trim()); }

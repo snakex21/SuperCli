@@ -45,6 +45,8 @@ type Server struct {
 	folderJobCancel context.CancelFunc
 	updateFactory   func() (applicationUpdater, error)
 	chatCompletions chatCompletions
+	queueClaimsMu   sync.Mutex
+	queueClaims     map[string]*queuedChatClaim
 
 	// Thumbnail generation decodes at most one source at a time. Finished
 	// derivatives live on disk; no decoded images or per-file keys are retained.

@@ -25,6 +25,17 @@ GUI-bilden är en skärmbild; TUI-bilden är en rendering av programmets faktisk
 <!-- readme-unit:h.start -->
 ## Kom igång
 
+<!-- readme-unit:start.install -->
+Vid en ny installation bör du granska skriptet innan du kör POSIX- eller PowerShell-kommandot nedan. Installationsprogrammen identifierar operativsystem och arkitektur, verifierar kontrollsumman och installerar utan administratörsrättigheter. De avvisar alla befintliga målmappar för att förhindra överskrivning och dataförlust; uppdatera en befintlig installation med `/update` eller `--update`. Ange `SUPERCLI_DIR` för att välja en ny plats; `SUPERCLI_NO_PATH=1` hoppar över konfigurationen av skalet och `PATH`. Standardplatser: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Installationsprogrammen startar inte SuperCli automatiskt.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Packa upp paketet för ditt operativsystem och din arkitektur i en skrivbar mapp. På Windows startar du `supercli.exe` för terminalen eller `supercli-web.exe` för GUI. Behåll den medföljande mappen `supercli-data/` bredvid de körbara filerna.
 
@@ -46,10 +57,10 @@ På Linux eller macOS använder du motsvarande körbara fil från paketet eller 
 ```
 
 <!-- readme-unit:start.termux -->
-På Android installerar du med en rad i Termux. Skriptet hämtar den senaste versionen, kontrollerar kontrollsumman och lägger till kommandona `supercli` och `supercli-web`. Kör det igen för att uppdatera; `supercli-data/` behålls.
+På Android använder du samma `install.sh` från arkivets rotkatalog i Termux. `ARM64` använder Android-versionen; `x86_64` använder Linux-versionen. Om nödvändiga paket saknas kör du `pkg install curl unzip coreutils`. Uppdatera en befintlig installation med `/update` eller `--update`, inte genom att köra installationsprogrammet igen.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

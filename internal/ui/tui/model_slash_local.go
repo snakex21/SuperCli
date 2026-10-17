@@ -8,6 +8,7 @@ var localSlashCommands = map[string]bool{
 	"update":    true,
 	"help":      true,
 	"memory":    true,
+	"skills":    true,
 	"status":    true,
 	"sandbox":   true,
 	"allow-all": true,

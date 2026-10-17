@@ -50,6 +50,10 @@ type AgentTool struct {
 	// coordinator keeps using Provider; only child loops switch. Nil =
 	// workers inherit Provider (default, byte-identical behaviour).
 	WorkerProvider llm.Provider
+	// WorkerReasoningEffort is scoped to delegated requests, even on a shared provider.
+	WorkerReasoningEffort string
+	// AdvisorReasoningEffort is independent of the delegated worker preference.
+	AdvisorReasoningEffort string
 	// WorkerProfile is resolved for WorkerProvider, not the coordinator. Only
 	// its tool protocol/cache fields apply; nil preserves inherited settings.
 	WorkerProfile *execution.Profile

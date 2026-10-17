@@ -1,5 +1,106 @@
 "use strict";
 
+/* ── Read-only skill metadata (no skill bodies or chat requests) ── */
+var skillsQuery = "";
+function openSkills(query) {
+  skillsQuery = String(query || "").trim();
+  if (!$("#panel-nav button[data-sec='skills']")) {
+    var nav = i18nEl("button", "", "skills.title");
+    nav.type = "button";
+    nav.dataset.sec = "skills";
+    $("#panel-nav").appendChild(nav);
+  }
+  openPanel("skills");
+  $("#skills-search").focus();
+}
+sections.skills = function () {
+  panelContent.innerHTML = "";
+  var root = el("div", "group skills-panel");
+  var search = el("input", "field-input");
+  search.id = "skills-search";
+  search.type = "search";
+  search.value = skillsQuery;
+  search.placeholder = t("skills.search");
+  search.setAttribute("aria-label", t("skills.search"));
+  search.setAttribute("data-i18n-ph", "skills.search");
+  search.setAttribute("data-i18n-aria", "skills.search");
+  root.appendChild(search);
+  root.appendChild(i18nEl("p", "note", "skills.hint"));
+  var list = el("div", "skills-list");
+  root.appendChild(list);
+  var status = el("p", "note");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  root.appendChild(status);
+  var count = el("p", "note");
+  root.appendChild(count);
+  var more = i18nEl("button", "btn", "common.more");
+  more.type = "button";
+  more.hidden = true;
+  root.appendChild(more);
+  var retry = i18nEl("button", "btn", "common.refresh");
+  retry.type = "button";
+  retry.hidden = true;
+  root.appendChild(retry);
+  panelContent.appendChild(root);
+
+  var revision = 0, nextOffset = 0;
+  function current(seq) {
+    return seq === revision && !overlay.hidden && currentSection === "skills" && root.parentNode === panelContent;
+  }
+  async function loadPage(append) {
+    var seq = ++revision;
+    var offset = append ? nextOffset : 0;
+    var query = search.value.trim();
+    status.textContent = t("common.loading");
+    retry.hidden = true;
+    more.disabled = true;
+    if (!append) {
+      list.innerHTML = "";
+      count.textContent = "";
+      nextOffset = 0;
+      more.hidden = true;
+    }
+    try {
+      var got = await j("/api/skills?q=" + encodeURIComponent(query) + "&offset=" + offset + "&limit=50");
+      if (!current(seq)) return;
+      var items = got.items || [];
+      items.forEach(function (skill) {
+        var row = el("div", "list-row");
+        var main = el("div", "lr-main");
+        main.appendChild(el("div", "lr-title", skill.name || ""));
+        if (skill.description) main.appendChild(el("div", "lr-desc", skill.description));
+        var metadata = [skill.category, (skill.tags || []).join(", "), skill.risk].filter(Boolean).join(" · ");
+        if (metadata) main.appendChild(el("div", "lr-desc note", metadata));
+        row.appendChild(main);
+        var source = skill.source || "";
+        row.appendChild(/^(project|user|builtin)$/.test(source)
+          ? i18nEl("span", "note", "skills.source." + source) : el("span", "note", source));
+        list.appendChild(row);
+      });
+      nextOffset = got.offset + items.length;
+      count.textContent = nextOffset + " / " + got.total;
+      status.textContent = nextOffset ? "" : t("skills.empty");
+      more.hidden = !items.length || nextOffset >= got.total;
+    } catch (error) {
+      if (!current(seq)) return;
+      status.textContent = t("common.error") + ": " + error.message;
+      retry.hidden = false;
+      more.hidden = true;
+    } finally {
+      if (current(seq)) more.disabled = false;
+    }
+  }
+  search.addEventListener("input", function () {
+    skillsQuery = search.value.trim();
+    loadPage(false);
+  });
+  more.addEventListener("click", function () { loadPage(true); });
+  retry.addEventListener("click", function () { loadPage(nextOffset > 0); });
+  // Keep the section synchronous: only this mounted browser owns its responses.
+  loadPage(false);
+};
+
 sections.files = function () { renderFiles(filesCwd); };
 
 async function renderFiles(dir) {

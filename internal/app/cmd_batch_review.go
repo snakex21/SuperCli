@@ -71,16 +71,17 @@ type batchTraceReview struct {
 }
 
 type batchReviewer struct {
-	provider     llm.Provider
-	verify       []string
-	maxRounds    int
-	takeover     bool
-	handoffAfter time.Duration
-	home         string
-	before       map[string]string
-	timer        *time.Timer
-	fired        atomic.Bool
-	trace        batchTraceReview
+	provider        llm.Provider
+	reasoningEffort string
+	verify          []string
+	maxRounds       int
+	takeover        bool
+	handoffAfter    time.Duration
+	home            string
+	before          map[string]string
+	timer           *time.Timer
+	fired           atomic.Bool
+	trace           batchTraceReview
 }
 
 // newBatchReviewer returns nil when review_model is unset or cannot be built.
@@ -95,11 +96,12 @@ func newBatchReviewer(tomlCfg config.TomlConfig, cfg config.Config, provFactory 
 		return nil
 	}
 	r := &batchReviewer{
-		provider:  p,
-		verify:    tomlCfg.VerifyCommands,
-		maxRounds: tomlCfg.ReviewMaxRounds,
-		takeover:  tomlCfg.ReviewTakeover != nil && *tomlCfg.ReviewTakeover,
-		home:      home,
+		provider:        p,
+		reasoningEffort: tomlCfg.ReviewReasoningEffort,
+		verify:          tomlCfg.VerifyCommands,
+		maxRounds:       tomlCfg.ReviewMaxRounds,
+		takeover:        tomlCfg.ReviewTakeover != nil && *tomlCfg.ReviewTakeover,
+		home:            home,
 	}
 	if r.maxRounds <= 0 {
 		r.maxRounds = 1
@@ -148,7 +150,8 @@ func (r *batchReviewer) finish(ctx, workerCtx context.Context, task string, l *a
 	}
 	for round := 0; reason == ""; round++ {
 		changes := agent.RenderTreeChanges(r.home, r.before)
-		out := agent.ReviewChange(ctx, r.provider, task, changes, r.verify, r.home)
+		reviewCtx := llm.WithIndependentReasoningEffort(ctx, r.reasoningEffort)
+		out := agent.ReviewChange(reviewCtx, r.provider, task, changes, r.verify, r.home)
 		r.trace.Decisions = append(r.trace.Decisions, out.Decision)
 		r.trace.Instructions = append(r.trace.Instructions, out.Instruction)
 		r.trace.ChangesBytes = append(r.trace.ChangesBytes, len(changes))
@@ -201,7 +204,7 @@ func (r *batchReviewer) finish(ctx, workerCtx context.Context, task string, l *a
 	}
 	r.trace.Takeover = true
 	fmt.Fprintf(os.Stderr, "[review] takeover by %s (reason=%s)\n", r.provider.Name(), reason)
-	res := run(ctx, tl, reviewTakeoverPrompt(task, reason, evidence, agent.RenderTreeChanges(r.home, r.before)))
+	res := run(llm.WithIndependentReasoningEffort(ctx, r.reasoningEffort), tl, reviewTakeoverPrompt(task, reason, evidence, agent.RenderTreeChanges(r.home, r.before)))
 	r.trace.TakeoverInput += res.Usage.Input
 	r.trace.TakeoverOutput += res.Usage.Output
 	r.trace.TakeoverCached += res.Usage.Cached

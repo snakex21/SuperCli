@@ -40,7 +40,7 @@ function harness(options = {}) {
     return elements.get(selector);
   };
   const context = {
-    document: {hidden: false, hasFocus: () => true}, localStorage: {getItem: () => null},
+    document: {hidden: false, hasFocus: () => true, createElement: element}, localStorage: {getItem: () => null},
     AbortController, Date, Promise, console, window: {},
     $, $$: () => [], el: element,
     i18nEl: (tag, cls, key) => element(tag, cls, catalog[key]),
@@ -48,13 +48,14 @@ function harness(options = {}) {
     superCliUI: {
       createComposerDraftStore: () => ({scope: () => options.dynamicScope ? (context.activeSessionID ? 'session:' + context.activeSessionID : 'new') : 'session:s1', clear() {}, restore() {}}),
       readSSE: async (body, emit) => {
+        if (body.claimed) { emit({type: 'queue_claimed'}); return; }
         if (!(options.hideSession && body.index === 0)) {
           emit({type: 'session', session_id: 's1'});
           if (options.acceptMessage !== false && !(options.rejectSecondMessage && body.index === 1)) emit(options.userSeq ? {type: 'session_activity', session_id: 's1', user_seq: 3} : {type: 'session_activity', session_id: 's1'});
         }
         const done = deferred();
         finishing.set(body.index, () => emit({type: 'finishing'}));
-        terminals.set(body.index, () => emit(options.failRun ? {type: 'error', err: 'provider overloaded'} : {type: 'done'}));
+        terminals.set(body.index, () => emit(options.failRun ? {type: 'error', err: 'provider overloaded'} : {type: 'done', queue_paused: !!options.remoteStop}));
         streams.set(body.index, () => { if (!options.separateTerminal) terminals.get(body.index)(); done.resolve(); });
         body.signal.addEventListener('abort', () => {
           const err = new Error('aborted'); err.name = 'AbortError'; done.reject(err);
@@ -97,6 +98,7 @@ function harness(options = {}) {
   context.superCliUI.chatResponse = context.fetch;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../internal/webgui/assets/js/05-chat.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../internal/webgui/assets/js/05a-lightbox.js'), 'utf8'), context);
   context.activeSessionID = 's1';
   for (const name of ['updateAppBadge', 'wireQueuedTaskDrag', 'sealAssistantSegment',
     'closeQuestionOverlay', 'settleOpenTools', 'releaseLiveTranscriptBlocks', 'renderStats',
@@ -123,6 +125,82 @@ function harness(options = {}) {
   };
   return {context, $, calls, events, requests, sends, arrivals, streams, terminals, finishing, intervals, entered, deletion};
 }
+test('queue refresh during a server run does not pause; idle startup still requires Resume', async () => {
+  for (const running of [false, true]) {
+    const h = harness(), c = h.context;
+    c.j = async url => {
+      assert.equal(url, '/api/tasks?state=1');
+      return {tasks: [{id: 'q', prompt: 'next'}], running};
+    };
+    await c.loadPromptQueue();
+    assert.equal(c.pauseQueue, !running);
+    assert.equal(c.promptQueue[0].text, 'next');
+    c.pauseQueue = false;
+    await c.loadPromptQueue(); // opening Tasks, now idle, must not add a pause
+    assert.equal(c.pauseQueue, false);
+    c.pauseQueue = true; // explicit Stop/failure survives list refresh
+    await c.loadPromptQueue();
+    assert.equal(c.pauseQueue, true);
+  }
+});
+
+test('queue refresh ignores responses from a previous project', async () => {
+  const h = harness(), c = h.context, response = deferred();
+  c.j = () => response.promise;
+  const pending = c.loadPromptQueue();
+  c.projectEpoch++;
+  response.resolve({tasks: [{id: 'old', prompt: 'old'}], running: false});
+  await pending;
+  assert.equal(c.promptQueue.length, 0);
+  assert.equal(c.pauseQueue, false);
+});
+
+test('two clients racing a queued ID start one run; loser follows sync without error or pause', async () => {
+  const clients = [harness(), harness()];
+  let owner = null, requests = 0, joined = 0;
+  for (const h of clients) {
+    const c = h.context, transport = c.superCliUI.chatResponse;
+    c.syncConnect = () => { joined++; };
+    c.j = async () => ({tasks: [], running: true});
+    c.superCliUI.chatResponse = async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      assert.equal(body.queue_task_id, 'shared');
+      requests++;
+      if (owner) return {ok: true, status: 200, body: {claimed: true}};
+      owner = h;
+      return transport(url, opts);
+    };
+    c.promptQueue = [{id: 'shared', text: 'next', session_id: 's1'}];
+  }
+  await Promise.all(clients.map(h => h.context.dispatchQueuedTask(h.context.promptQueue[0])));
+  await owner.entered[0].promise;
+  const loser = clients.find(h => h !== owner);
+  await loser.sends[0];
+  assert.equal(requests, 2);
+  assert.equal(owner.requests.length, 1);
+  assert.equal(loser.requests.length, 0);
+  assert.equal(joined, 1);
+  assert.equal(loser.context.pauseQueue, false);
+  assert.equal(loser.context.queueDispatching, false);
+  assert.equal(loser.context.promptQueue.length, 0);
+  assert.equal(loser.events.length, 0);
+  owner.deletion.resolve();
+  owner.streams.get(0)();
+  await owner.sends[0];
+});
+
+test('Stop from another device pauses even the sender HTTP queue before EOF', async () => {
+  const h = harness({remoteStop: true}), c = h.context;
+  c.sendPrompt('running', [], null);
+  await h.entered[0].promise;
+  c.promptQueue = [{id: 'q', text: 'must wait', session_id: 's1'}];
+  h.streams.get(0)();
+  await h.sends[0];
+  assert.equal(c.pauseQueue, true);
+  assert.equal(h.requests.length, 1);
+  assert.equal(c.promptQueue.length, 1);
+});
+
 test('a project switch detaches an accepted run without stopping it', async () => {
   const h = harness();
   h.context.sendPrompt('first', [], null);

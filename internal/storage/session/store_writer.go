@@ -19,6 +19,9 @@ type Writer struct {
 	firstUserReceipt atomic.Pointer[MessageReceipt]
 }
 
+// MaintenanceRoot lets the loop coordinate idle housekeeping across processes.
+func (w *Writer) MaintenanceRoot() string { return w.store.Root() }
+
 // NewWriter returns an agent.SessionWriter for the given
 // session. Closing the session is the caller's responsibility.
 func NewWriter(store *Store, sessionID string) *Writer {

@@ -379,7 +379,9 @@ func TestConfiguredCompactionSuccessAndLegacyFallbackRemainAvailable(t *testing.
 					return auto(ctx, provider, messages)
 				}
 			}
-			l := newCompactionFailureLoop(t, p, summarize, 100, writer)
+			// Trigger compaction with the large older prefix, while leaving enough
+			// room for the protected tail and request overhead after compaction.
+			l := newCompactionFailureLoop(t, p, summarize, 4096, writer)
 			compacted, done := 0, 0
 			for _, event := range compactionFailureEvents(t, l, context.Background()) {
 				switch event := event.(type) {

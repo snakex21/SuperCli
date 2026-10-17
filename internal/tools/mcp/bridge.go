@@ -43,6 +43,10 @@ func (b *Bridge) run(ctx context.Context, raw json.RawMessage) (core.Result, err
 	if b == nil || b.manager == nil {
 		return core.Result{Err: fmt.Errorf("mcp: no servers configured")}, nil
 	}
+	defer b.manager.Acquire()()
+	if b.manager.isClosed() {
+		return core.Result{Err: fmt.Errorf("mcp: runtime closed; start a new conversation turn to reload configuration")}, nil
+	}
 	req, err := decodeBridgeRequest(raw)
 	if err != nil {
 		return core.Result{Err: fmt.Errorf("mcp_bridge: invalid arguments: %w", err)}, nil

@@ -15,6 +15,7 @@ type menuPage struct {
 	items                 []menuListItem
 	detailTitle           string
 	detail                []string
+	editLine              string
 	footer, empty         string
 }
 
@@ -24,6 +25,29 @@ func fitMenuLine(s string, width int) string {
 	}
 	s = truncateVisible(strings.ReplaceAll(s, "\n", " "), width)
 	return s + strings.Repeat(" ", maxInt(0, width-lipgloss.Width(s)))
+}
+
+// truncateVisibleTail retains the end of an editable value in terminal cells.
+// A cut through a wide grapheme may retain the whole grapheme, so check the
+// resulting width before the frame's right truncation can hide the caret.
+func truncateVisibleTail(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	cells := ansi.StringWidth(s)
+	if cells <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	for cut := cells - width + 1; cut <= cells; cut++ {
+		tail := ansi.TruncateLeft(s, cut, "…")
+		if ansi.StringWidth(tail) <= width {
+			return tail
+		}
+	}
+	return ""
 }
 
 func (m Model) menuTabs(labels []string, selected int) string {
@@ -79,6 +103,9 @@ func (m Model) renderMenuPage(page menuPage) string {
 		tail = 3
 	}
 	if m.menu.formErr != "" {
+		tail++
+	}
+	if page.editLine != "" {
 		tail++
 	}
 	bodyHeight := maxInt(1, height-len(lines)-tail)
@@ -151,6 +178,12 @@ func (m Model) renderMenuPage(page menuPage) string {
 	if !split && len(page.detail) > 0 && height >= 10 {
 		lines = append(lines, m.palette.Rule.Render(strings.Repeat("─", width)))
 		lines = append(lines, m.palette.Dim.Render(truncateVisible(page.detail[0], width)))
+	}
+	if page.editLine != "" {
+		// Editing needs the whole row, not the list badge's one-third width.
+		// Scroll by terminal cells so the current suffix and caret stay visible.
+		editLine := truncateVisibleTail(strings.ReplaceAll(page.editLine, "\n", " "), width)
+		lines = append(lines, m.palette.MenuSelected.Render(fitMenuLine(editLine, width)))
 	}
 	if m.menu.formErr != "" {
 		lines = append(lines, m.palette.Error.Render(truncateVisible(m.menu.formErr, width)))

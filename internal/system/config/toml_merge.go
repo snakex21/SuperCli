@@ -11,6 +11,7 @@
 package config
 
 func mergeToml(dst *TomlConfig, src TomlConfig) {
+	mergeHousekeeping(&dst.Housekeeping, src.Housekeeping)
 	mergeMediaGeneration(&dst.MediaGeneration, src.MediaGeneration)
 	if src.DefaultModel != "" {
 		dst.DefaultModel = src.DefaultModel
@@ -79,6 +80,21 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.TaskModel != "" {
 		dst.TaskModel = src.TaskModel
 	}
+	if src.QueueMerge != "" {
+		dst.QueueMerge = src.QueueMerge
+	}
+	if src.TaskReasoningEffort != "" {
+		dst.TaskReasoningEffort = src.TaskReasoningEffort
+	}
+	if src.AdvisorReasoningEffort != "" {
+		dst.AdvisorReasoningEffort = src.AdvisorReasoningEffort
+	}
+	if src.ReviewReasoningEffort != "" {
+		dst.ReviewReasoningEffort = src.ReviewReasoningEffort
+	}
+	if src.DarwinReasoningEffort != "" {
+		dst.DarwinReasoningEffort = src.DarwinReasoningEffort
+	}
 	if src.AdvisorModel != "" {
 		dst.AdvisorModel = src.AdvisorModel
 	}
@@ -126,6 +142,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	}
 	if src.DarwinJudgeModel != "" {
 		dst.DarwinJudgeModel = src.DarwinJudgeModel
+	}
+	if src.DarwinPoolSize > 0 {
+		dst.DarwinPoolSize = src.DarwinPoolSize
 	}
 	if src.DarwinAutoMerge != nil {
 		dst.DarwinAutoMerge = src.DarwinAutoMerge

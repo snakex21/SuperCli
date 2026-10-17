@@ -57,6 +57,7 @@ type dashboardRenderKey struct {
 	snapshot      DashboardSnapshot
 	context       contextSnapshot
 	width, height int
+	rows          int
 	language      string
 	colors        renderColors
 }
@@ -72,7 +73,7 @@ type cachedDashboard struct {
 }
 
 func (m Model) cachedDashboard(snapshot DashboardSnapshot) string {
-	key := dashboardRenderKey{snapshot: snapshot, context: m.runtimeContext, width: m.width, height: m.height, language: m.language, colors: m.palette.renderColors()}
+	key := dashboardRenderKey{snapshot: snapshot, context: m.runtimeContext, width: m.width, height: m.height, rows: m.dashboardRows(snapshot), language: m.language, colors: m.palette.renderColors()}
 	styles := dashboardRenderStyles{m.palette.StatusSep, m.palette.StatusKey, m.palette.StatusDim, m.palette.HeaderMode, m.palette.StatusValue, m.palette.Success, m.palette.Error, m.palette.Panel}
 	cache := m.renderCache
 	cache.mu.Lock()

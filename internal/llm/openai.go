@@ -239,7 +239,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	// learned on an earlier turn goes straight onto the wire here, so a
 	// deprecated id stops costing a doomed round-trip every request.
 	reqModel := zenEffectiveModel(p.cfg.BaseURL, p.cfg.Model)
-	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -315,7 +315,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
 			cancel()
-			if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, body); ok && !effortRetried {
+			if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, body, ctx); ok && !effortRetried {
 				if patched, patchedOK := patchOpenAIReasoning(reqBody, effort, reasoningFormat); patchedOK {
 					reqBody = patched
 					effortRetried = true
@@ -331,7 +331,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				if noteImageRejection(p.caps, p.capabilityModel(), resp.StatusCode, body) {
 					p.imageRejected.Store(true)
 				}
-				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling)
+				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
 				if err == nil {
 					visionRetried = true
 					select {

@@ -28,7 +28,11 @@ func (p *prefixCaptureProvider) Complete(_ context.Context, msgs []llm.Message, 
 }
 
 func TestWebMemoryUpdatePreservesConversationPrefix(t *testing.T) {
-	eng, err := NewEngine(echoConfig(), t.TempDir(), t.TempDir())
+	dataDir := t.TempDir()
+	// Preserve the large conversation without exceeding the request window
+	// once the web system prompt, memory and tool schemas are included.
+	writeDataConfig(t, dataDir, "context_window = 32768\n")
+	eng, err := NewEngine(echoConfig(), t.TempDir(), dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

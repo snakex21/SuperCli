@@ -17,6 +17,10 @@ import (
 )
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.queueClaimsMu.Lock()
+		defer s.queueClaimsMu.Unlock()
+	}
 	switch r.Method {
 	case http.MethodGet:
 		out, err := s.eng.queuedTasks(r.Context())
@@ -24,8 +28,16 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		writeJSON(w, out)
+		if r.URL.Query().Get("state") == "1" {
+			writeJSON(w, map[string]any{"tasks": out, "running": s.eng.syncHub.queueRunning(s.eng.Home()), "queue_merge": s.queueMergeMode()})
+		} else {
+			writeJSON(w, out)
+		}
 	case http.MethodPost:
+		if r.URL.Query().Get("merge") == "1" {
+			s.handleQueueMerge(w, r)
+			return
+		}
 		var b struct {
 			SessionID   string   `json:"session_id"`
 			Prompt      string   `json:"prompt"`
@@ -44,24 +56,34 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			writeWorkflowError(w, err)
 			return
 		}
+		s.eng.syncHub.queueChanged(s.eng.Home())
 		writeJSON(w, out)
 	case http.MethodPatch:
 		var b struct {
-			ID       string  `json:"id"`
-			Prompt   *string `json:"prompt"`
-			Position *int    `json:"position"`
+			ID          string    `json:"id"`
+			Prompt      *string   `json:"prompt"`
+			Position    *int      `json:"position"`
+			Attachments *[]string `json:"attachments"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 			http.Error(w, "bad request: "+err.Error(), 400)
 			return
 		}
 		b.ID = strings.TrimSpace(b.ID)
-		if b.ID == "" || (b.Prompt == nil && b.Position == nil) {
+		if b.ID == "" || (b.Prompt == nil && b.Position == nil && b.Attachments == nil) {
 			http.Error(w, "id and prompt or position are required", http.StatusBadRequest)
 			return
 		}
-		if b.Prompt != nil {
-			if err := s.eng.updateTask(r.Context(), b.ID, *b.Prompt); err != nil {
+		if s.queueClaims[b.ID] != nil {
+			http.Error(w, "task is being dispatched", http.StatusConflict)
+			return
+		}
+		if b.Attachments != nil && len(*b.Attachments) > maxChatAttachments {
+			http.Error(w, "invalid attachments: too many files", http.StatusBadRequest)
+			return
+		}
+		if b.Prompt != nil || b.Attachments != nil {
+			if err := s.eng.editTask(r.Context(), b.ID, b.Prompt, b.Attachments); err != nil {
 				writeWorkflowError(w, err)
 				return
 			}
@@ -72,14 +94,25 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		s.eng.syncHub.queueChanged(s.eng.Home())
 		writeJSON(w, map[string]any{"ok": true})
 	case http.MethodDelete:
 		// keep_attachments=1 is sent when an accepted dispatch retires the row.
 		keep := r.URL.Query().Get("keep_attachments") == "1"
-		if err := s.eng.deleteTask(r.Context(), r.URL.Query().Get("id"), !keep); err != nil {
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if s.queueClaims[id] != nil {
+			if keep {
+				writeJSON(w, map[string]any{"ok": true})
+				return
+			}
+			http.Error(w, "task is being dispatched", http.StatusConflict)
+			return
+		}
+		if err := s.eng.deleteTask(r.Context(), id, !keep); err != nil && !(keep && errors.Is(err, sql.ErrNoRows)) {
 			writeWorkflowError(w, err)
 			return
 		}
+		s.eng.syncHub.queueChanged(s.eng.Home())
 		writeJSON(w, map[string]any{"ok": true})
 	default:
 		http.Error(w, "method not allowed", 405)

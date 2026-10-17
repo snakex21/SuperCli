@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 )
 
 func viewportRepeatFixture(b testing.TB, count int) Model {
@@ -121,6 +123,56 @@ func TestViewportRepeatParity(t *testing.T) {
 	m.refreshTranscript()
 	if !strings.Contains(ansi.Strip(m.viewport.View()), "first chat after welcome") {
 		t.Fatal("welcome replacement caused stale chat")
+	}
+}
+
+func firstTranscriptTextStyle(text string) cellbuf.Style {
+	parser := ansi.GetParser()
+	defer ansi.PutParser(parser)
+	var style cellbuf.Style
+	var state byte
+	for len(text) > 0 {
+		sequence, width, n, next := ansi.DecodeSequence(text, state, parser)
+		if width > 0 {
+			return style
+		}
+		if ansi.HasCsiPrefix(sequence) && parser.Command() == 'm' {
+			cellbuf.ReadStyle(parser.Params(), &style)
+		}
+		text, state = text[n:], next
+	}
+	return style
+}
+
+func TestTranscriptColorSurvivesKeyboardResize(t *testing.T) {
+	m := New(Options{Home: t.TempDir(), NoColor: true, Language: "en"})
+	m.palette, _ = wrapTestPalette("color")
+	m.marker = NewMarker(m.palette, "en")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 48, Height: 42})
+	m = next.(Model)
+	m.appendLine(m.marker.Error(errors.New(strings.Repeat("red failure detail ", 34))))
+	m.refreshTranscript()
+	color := firstTranscriptTextStyle(m.palette.Error.Render("probe"))
+	if color.Empty() || firstTranscriptTextStyle(m.viewport.View()).Sequence() != color.Sequence() {
+		t.Fatal("fixture must render a colored error before opening the keyboard")
+	}
+	if m.viewport.YOffset != 0 {
+		t.Fatal("fixture must fit before opening the keyboard")
+	}
+
+	for _, size := range [][2]int{{48, 16}, {48, 42}, {32, 16}, {48, 42}} {
+		next, _ = m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = next.(Model)
+		if size[1] == 16 && m.viewport.YOffset == 0 {
+			t.Fatalf("keyboard resize %v must clip the beginning of the error", size)
+		}
+		first, _, _ := strings.Cut(m.viewport.View(), "\n")
+		if firstTranscriptTextStyle(first).Sequence() != color.Sequence() {
+			t.Fatalf("resize %v lost the error color at offset %d: %q", size, m.viewport.YOffset, first)
+		}
+		if !m.viewport.AtBottom() {
+			t.Fatalf("resize %v lost follow mode", size)
+		}
 	}
 }
 

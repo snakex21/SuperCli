@@ -9,6 +9,7 @@ import (
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/checkpoint"
+	"supercli/internal/housekeeping"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/tools"
@@ -39,6 +40,7 @@ func openSessionStack(dataDir, sessionID, home, model string, registry *tools.Re
 			return nil, nil
 		}
 	}
+	housekeeping.Start(sessStore)
 	// Record a sessions row for this live session so it carries a
 	// cwd (the Writer only touches the messages table). This is what
 	// lets /resume filter sessions to the current project.

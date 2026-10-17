@@ -9,6 +9,15 @@ var syncReady = Promise.resolve(), syncResolveReady = null;
 var syncRefreshPending = false, syncRefreshAgain = false, syncListPending = false;
 var syncFollowingTurn = "", syncRecoveryPending = false;
 var syncClockOffsetMS = 0;
+var syncProjectsPending = false;
+function syncRenderElsewhere() {
+  if (typeof renderRunningElsewhere === "function") renderRunningElsewhere();
+}
+function syncLoadProjects() {
+  if (syncProjectsPending || typeof loadProjects !== "function") return;
+  syncProjectsPending = true;
+  Promise.resolve().then(loadProjects).finally(function () { syncProjectsPending = false; });
+}
 function syncServerNow() { return Date.now() + syncClockOffsetMS; }
 function syncRunElapsed(run, at) {
   return Math.max(0, run.startedAtMS > 0 ? (at > 0 ? at : syncServerNow()) - run.startedAtMS : Date.now() - run.start);
@@ -74,6 +83,8 @@ function syncReleaseView(run) {
   abortCtl = null;
   run.attached = false;
   run.detached = true;
+  queueDispatching = false;
+  queueDispatchItem = pendingImmediate;
   releaseLiveTranscriptBlocks();
   setRunState("idle", t("composer.ready"));
 }
@@ -120,6 +131,7 @@ function syncRender(run, ev) {
 }
 function syncMakeRun(info) {
   var run = {remote: true, sessionID: info.session_id, turnID: info.turn_id, prompt: info.prompt,
+    project_path: info.project_path, project_name: info.project_name, title: info.title, state: info.state,
     accepted: true, detached: true, attached: false, userSeq: 0, events: [], current: null, start: info.started_at_ms > 0 ? info.started_at_ms - syncClockOffsetMS : Date.now(), startedAtMS: info.started_at_ms || 0};
   run.abortCtl = {abort: function () {
     jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: run.turnID}).catch(function (error) { toast(error.message); });
@@ -151,7 +163,11 @@ function syncMakeRun(info) {
 }
 function syncHandleFrame(frame) {
   if (frame.server_now_ms > 0) syncClockOffsetMS = frame.server_now_ms - Date.now();
-  if (frame.type === "sessions_changed") { syncLoadSessions(); return; }
+  if (frame.type === "sessions_changed") { syncLoadSessions(); syncLoadProjects(); return; }
+  if (frame.type === "queue_changed") {
+    if (typeof loadPromptQueue === "function") loadPromptQueue();
+    return;
+  }
   if (frame.type === "snapshot") {
     if (activeRun && activeRun.remote) syncReleaseView(activeRun);
     Object.keys(detachedRuns).forEach(function (id) { if (detachedRuns[id].remote) delete detachedRuns[id]; });
@@ -167,7 +183,10 @@ function syncHandleFrame(frame) {
       syncRuns[info.session_id] = run;
       if (info.session_id === syncSession) (frame.events || []).forEach(function (ev) { syncRemember(run, ev); });
     });
+    syncRenderElsewhere();
+    syncLoadProjects();
     syncBackoff = 500;
+    if (typeof loadPromptQueue === "function") loadPromptQueue();
     if (syncResolveReady) { syncResolveReady(); syncResolveReady = null; }
     syncLoadSessions();
     syncRecoverSession();
@@ -178,28 +197,43 @@ function syncHandleFrame(frame) {
   var id = frame.session_id;
   if (frame.type === "run_started") {
     syncRuns[id] = syncOwnRun(frame) ? frame : syncMakeRun(frame);
+    syncRenderElsewhere();
     syncLoadSessions();
     return;
   }
   var run = syncRuns[id];
+  if (frame.type === "run_updated") {
+    if (run) {
+      run.state = frame.state; run.title = frame.title;
+      run.project_path = frame.project_path; run.project_name = frame.project_name;
+      syncRenderElsewhere();
+    }
+    return;
+  }
   if (frame.type === "run_event") {
     if (!run || !run.remote || syncOwnRun(frame)) return;
     syncRemember(run, frame.event);
     if (run.attached && !run.detached && activeRun === run && id === activeSessionID) syncRender(run, frame.event);
     else if (run.userSeq && id === syncSession && !syncOpeningSession && !syncRefreshPending) syncRefreshView();
   } else if (frame.type === "run_finished") {
+    if (frame.queue_paused && id === activeSessionID && !pendingImmediate) pauseQueue = true;
     delete syncRuns[id];
+    syncRenderElsewhere();
     if (run && run.remote) {
       delete detachedRuns[id];
       syncReleaseView(run);
       if (id === syncSession) {
         // run_finished is sent only after the writer and session gate release.
         syncRefreshView();
-        var next = pendingImmediate;
+        var immediate = pendingImmediate;
         pendingImmediate = null;
-        if (next && (isAfterRunPrompt(next) || !pauseQueue)) {
-          Promise.resolve(sessionRuntimeReady).then(function () { dispatchQueuedTask(next); });
-        }
+        if (frame.queue_paused && !immediate) pauseQueue = true;
+        // Match the local HTTP-EOF handoff, including transport takeover.
+        Promise.all([sessionRuntimeReady, typeof promptQueueReady !== "undefined" ? promptQueueReady : null]).then(function () {
+          var next = immediate && (isAfterRunPrompt(immediate) || !pauseQueue) ? immediate :
+            (!pauseQueue && typeof promptQueue !== "undefined" ? promptQueue[0] : null);
+          if (next && !streaming) dispatchQueuedTask(next);
+        });
       }
     }
     syncLoadSessions();

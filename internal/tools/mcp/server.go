@@ -179,6 +179,14 @@ func (s *Server) Status() Status {
 type Manager struct {
 	mu      sync.RWMutex
 	servers map[string]*Server
+
+	leaseMu        sync.Mutex
+	leases         int
+	idleTimeout    time.Duration
+	idleTimer      *time.Timer
+	idleGeneration uint64
+	closed         bool
+	busy           func() bool
 }
 
 func NewManager(configs map[string]ServerConfig) *Manager {

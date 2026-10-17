@@ -142,7 +142,7 @@ var helpEssentials = []struct {
 	{"models & providers", []string{"model", "models", "reasoning", "context-limit", "providers", "login"}},
 	{"session", []string{"clear", "compact", "resume", "export", "cost", "status", "memory"}},
 	{"agents", []string{"plan", "goal", "darwin", "council"}},
-	{"system", []string{"settings", "doctor", "help", "quit"}},
+	{"system", []string{"settings", "skills", "doctor", "help", "quit"}},
 }
 
 // HelpContent returns the short, grouped help: the most important

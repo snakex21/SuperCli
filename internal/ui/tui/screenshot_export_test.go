@@ -10,7 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"supercli/internal/buildinfo"
+	"supercli/internal/llm"
+	"supercli/internal/storage/goal"
+	"supercli/internal/system/config"
 	"supercli/internal/system/uilang"
+	"supercli/internal/tools"
 	"supercli/internal/webgui/qrcode"
 )
 
@@ -116,4 +121,104 @@ func TestExportTUIScreenshots(t *testing.T) {
 		m.refreshTranscript()
 		write(v.name, m)
 	}
+
+	// Mobile/keyboard exports use only temporary, in-memory fixtures. No app
+	// startup, provider calls, configuration saves or user data are involved.
+	for _, size := range []struct {
+		name          string
+		width, height int
+	}{
+		{"phone", 42, 28}, {"keyboard", 38, 14}, {"tiny", 32, 12},
+		{"landscape", 72, 12}, {"narrow", 60, 20}, {"desktop", 110, 34},
+	} {
+		for _, state := range []string{"welcome", "chat", "busy", "actions", "settings", "ask", "autocomplete"} {
+			m := mobileLayoutFixture(t, size.width, size.height, state, "pl", renderer)
+			write("audit-"+size.name+"-"+state, m)
+		}
+	}
+	for _, v := range []struct {
+		name    string
+		profile termenv.Profile
+		dark    bool
+	}{
+		{"light", termenv.TrueColor, false}, {"256", termenv.ANSI256, true},
+		{"16", termenv.ANSI, true}, {"plain", termenv.Ascii, true},
+	} {
+		r := lipgloss.NewRenderer(io.Discard, termenv.WithProfile(v.profile))
+		r.SetColorProfile(v.profile)
+		r.SetHasDarkBackground(v.dark)
+		write("audit-keyboard-chat-"+v.name, mobileLayoutFixture(t, 38, 14, "chat", "en", r))
+	}
+}
+
+func mobileLayoutFixture(t *testing.T, width, height int, state, language string, renderer *lipgloss.Renderer) Model {
+	t.Helper()
+	m := New(Options{Home: t.TempDir(), DataDir: t.TempDir(), Language: language, Version: buildinfo.Version, NoColor: false})
+	m.palette = NewPalette(renderer)
+	m.marker = NewMarker(m.palette, language)
+	m.llm, _ = llm.NewEcho("qwen3-coder-30b-local")
+	m.dashboardFn = func() DashboardSnapshot {
+		return DashboardSnapshot{
+			Project: "SuperCli / terminal-demo", Directory: "~/projects/supercli-terminal-demo",
+			Limits: "5h: 64% / 7d: 82%", Account: "demo@example.invalid",
+			Goal:          goal.ProgressSnapshot{Title: "Czytelny terminal na telefonie i komputerze", Done: 2, Total: 4},
+			SessionTokens: 12500, DailyTokens: 48700,
+		}
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	m = next.(Model)
+	if state == "welcome" {
+		return m
+	}
+	m.chat.addUser("Sprawdź testy i pokaż, co zostało poprawione.")
+	m.chat.addAssistant("## Plan\n- sprawdzenie układu\n- testy regresji\n\n```go\nfunc greet(name string) string {\n    return \"Cześć, \" + name\n}\n```")
+	m.appendLine(m.marker.ToolCall("ctx_execute", `{"command":["go","test","./internal/ui/tui"]}`))
+	m.chat.addToolResultLang("ctx_execute", "ok  supercli/internal/ui/tui  0.031s", "", "")
+	m.chat.addAssistant("**Gotowe.** Kolory i zawijanie tekstu zostały zachowane.\n\nMożesz otworzyć menu klawiszem Tab.")
+	m.markTranscriptPresent()
+	m.input.SetValue("Dopisz test wąskiego terminala.")
+	m.input.CursorEnd()
+	m.syncInputHeight()
+	m.refreshTranscript()
+	switch state {
+	case "autocomplete":
+		m.input.SetValue("/")
+		m.updateAutocompleteState()
+	case "busy":
+		m.busy = true
+		m.current = "Sprawdzam jeszcze długie nazwy modeli i załączniki…"
+		m.resizeViewport()
+	case "actions":
+		next, _ = m.openActionsMenu()
+		m = next.(Model)
+	case "settings":
+		m.enterMenu(interactiveMenu{kind: menuSettings, settingsCfg: &config.TomlConfig{}, editing: true, editBuf: "provider/long-model-name-distinctive-suffix"})
+		found := false
+		for category := range m.settingsCategories() {
+			m.menu.category = category
+			for i, row := range m.localizedSettingsRows() {
+				if row.key == "task_model" {
+					m.menu.cursor, found = i, true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			t.Fatal("mobile settings fixture cannot locate task_model")
+		}
+	case "ask":
+		req := sampleRequest()
+		req.Question = "Jak chcesz zastosować poprawkę?"
+		for i := range req.Options {
+			req.Options[i].Description = "Najpierw pokaż podgląd zmian i sprawdź testy w projekcie."
+		}
+		req.Options = append(req.Options, tools.AskOption{Label: "Zapisz zmiany dopiero po potwierdzeniu użytkownika", Description: "Nie wykonuj operacji automatycznie. Zachowaj aktualną konfigurację."})
+		next, _ = m.beginAsk(req)
+		m = next.(Model)
+		m.pendingAsk.cursor = len(req.Options) - 1
+	}
+	return m
 }

@@ -29,6 +29,8 @@ type DarwinTool struct {
 	judgeProvider    llm.Provider
 	allowAutoMerge   bool
 	resultSink       func(Result) (string, error)
+	reasoningEffort  string
+	poolSize         int // config darwin_pool_size; 0 = model decides
 }
 
 // NewDarwinTool returns a DarwinTool ready to
@@ -40,6 +42,27 @@ func NewDarwinTool(provider llm.Provider, registry *tools.Registry, home, system
 		home:     home,
 		system:   system,
 	}
+}
+
+// SetReasoningEffort scopes both candidate runs and the judge; empty inherits global.
+func (d *DarwinTool) SetReasoningEffort(effort string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.reasoningEffort = effort
+}
+
+// SetPoolSize fixes the candidate count (config darwin_pool_size). 0 lets
+// the model choose via pool_size (default 3); 1..10 overrides the model's
+// value. Out-of-range values are clamped to [1, 10].
+func (d *DarwinTool) SetPoolSize(n int) {
+	if n < 0 {
+		n = 0
+	} else if n > maxPoolSize {
+		n = maxPoolSize
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.poolSize = n
 }
 
 // SetLoopFactory configures the loop factory.
@@ -130,7 +153,7 @@ const darwinSchema = `{
   "required": ["prompt"],
   "properties": {
     "prompt":      {"type": "string", "description": "The task to give each agent."},
-    "pool_size":   {"type": "integer", "minimum": 1, "maximum": 10, "description": "How many agents to spawn in parallel. Default 3."},
+    "pool_size":   {"type": "integer", "minimum": 1, "maximum": 10, "description": "How many agents to spawn in parallel. Default 3. Ignored when the user fixed darwin_pool_size in config."},
     "no_worktree": {"type": "boolean", "description": "If true, agents work in the caller's cwd instead of isolated git worktrees."},
     "auto_merge":  {"type": "boolean", "description": "If true, merge the winning branch into the caller's current branch. Ignored unless the user enabled darwin_auto_merge; refused for main/master/develop."},
     "judge":       {"type": "string", "enum": ["composite", "llm", "heuristic"], "description": "Judge strategy. Default 'composite' (LLM with heuristic fallback)."}
@@ -154,7 +177,13 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	if strings.TrimSpace(args.Prompt) == "" {
 		return tools.Result{}, fmt.Errorf("darwin: prompt is required")
 	}
-	if args.PoolSize < 0 || args.PoolSize > 10 {
+	d.mu.RLock()
+	fixedPool := d.poolSize
+	d.mu.RUnlock()
+	if fixedPool > 0 {
+		// The user fixed darwin_pool_size: the model's value is ignored.
+		args.PoolSize = fixedPool
+	} else if args.PoolSize < 0 || args.PoolSize > 10 {
 		return tools.Result{}, fmt.Errorf("darwin: pool_size must be in [1, 10]")
 	}
 	provider := d.provider
@@ -167,6 +196,7 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	judgeProvider := d.judgeProvider
 	allowMerge := d.allowAutoMerge
 	sink := d.resultSink
+	effort := d.reasoningEffort
 	d.mu.RUnlock()
 	if judgeProvider == nil {
 		judgeProvider = provider
@@ -205,6 +235,7 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	if err != nil {
 		return tools.Result{}, err
 	}
+	ctx = llm.WithIndependentReasoningEffort(ctx, effort)
 	stream, err := dw.Run(ctx, args.Prompt)
 	if err != nil {
 		return tools.Result{}, err

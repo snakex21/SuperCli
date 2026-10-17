@@ -7,6 +7,7 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -46,8 +47,37 @@ func SetReasoningEffort(level string) error {
 	return nil
 }
 
-// ReasoningEffort returns the configured level ("" = provider default).
-func ReasoningEffort() string {
+type reasoningEffortContextKey struct{}
+
+// WithIndependentReasoningEffort starts a purpose-specific scope. Unlike nested
+// overrides, empty inherits the global preference, not a caller's worker effort.
+// Provider-side support detection and nearest-level clamping remain unchanged.
+func WithIndependentReasoningEffort(ctx context.Context, effort string) context.Context {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "" || ValidateReasoningEffort(effort) != nil {
+		effort = ReasoningEffort()
+	}
+	return context.WithValue(ctx, reasoningEffortContextKey{}, effort)
+}
+
+// WithReasoningEffort scopes a worker preference to its request tree without
+// changing the coordinator's global preference. Empty inherits the parent.
+func WithReasoningEffort(ctx context.Context, effort string) context.Context {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "" || ValidateReasoningEffort(effort) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, reasoningEffortContextKey{}, effort)
+}
+
+// ReasoningEffort returns the request override, or the global preference when
+// no context/override is supplied ("" = provider default).
+func ReasoningEffort(contexts ...context.Context) string {
+	if len(contexts) > 0 && contexts[0] != nil {
+		if effort, ok := contexts[0].Value(reasoningEffortContextKey{}).(string); ok {
+			return effort
+		}
+	}
 	if v, ok := reasoningEffortLevel.Load().(string); ok {
 		return v
 	}
@@ -224,8 +254,8 @@ func nearestSupportedEffort(want string, supported []string) string {
 // by live backend evidence. capability is the model registry's reasoning flag;
 // it lets discovered OpenRouter-compatible models participate without adding
 // every model family to a hardcoded name table.
-func ReasoningEffortForModelWithCapability(model string, capability bool) string {
-	eff := ReasoningEffort()
+func ReasoningEffortForModelWithCapability(model string, capability bool, contexts ...context.Context) string {
+	eff := ReasoningEffort(contexts...)
 	if eff == "" || !SupportsReasoningEffortWithCapability(model, capability) {
 		return ""
 	}
@@ -240,8 +270,8 @@ func ReasoningEffortForModelWithCapability(model string, capability bool) string
 
 // ReasoningEffortForModel is the conservative, name-based variant used by
 // callers that do not have a capability registry.
-func ReasoningEffortForModel(model string) string {
-	return ReasoningEffortForModelWithCapability(model, false)
+func ReasoningEffortForModel(model string, contexts ...context.Context) string {
+	return ReasoningEffortForModelWithCapability(model, false, contexts...)
 }
 
 func ReasoningEffortAdjustmentWithCapability(model string, capability bool) (configured, effective string, adjusted bool) {
@@ -352,8 +382,8 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 // LearnReasoningEffortFromError records effort support discovered from a 400
 // response and returns the effective retry value if the current config should
 // be retried with a different effort.
-func LearnReasoningEffortFromError(model string, status int, body []byte) (string, bool) {
-	if status != 400 || ReasoningEffort() == "" {
+func LearnReasoningEffortFromError(model string, status int, body []byte, contexts ...context.Context) (string, bool) {
+	if status != 400 || ReasoningEffort(contexts...) == "" {
 		return "", false
 	}
 	info, ok := ParseReasoningEffortError(string(body))
@@ -368,8 +398,8 @@ func LearnReasoningEffortFromError(model string, status int, body []byte) (strin
 		return "", true
 	}
 	SetReasoningEffortSupport(model, info.Supported)
-	effective := ReasoningEffortForModel(model)
-	if effective == "" || effective == ReasoningEffort() {
+	effective := ReasoningEffortForModel(model, contexts...)
+	if effective == "" || effective == ReasoningEffort(contexts...) {
 		return "", false
 	}
 	return effective, true

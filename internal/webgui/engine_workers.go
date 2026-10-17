@@ -36,6 +36,8 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	at.Workers = e.workers
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
+	at.WorkerReasoningEffort = tc.TaskReasoningEffort
+	at.AdvisorReasoningEffort = tc.AdvisorReasoningEffort
 	if wp, workerCfg := e.taskWorkerProvider(tc); wp != nil {
 		// wp is metered by the factory (purpose "task"); the
 		// per-session usage sink rides the run context, so no extra
@@ -168,7 +170,7 @@ func (e *Engine) postReviewConfig(tc config.TomlConfig) *agent.PostReviewConfig 
 		log.Printf("review_model: provider %q build failed: %v — review disabled", tc.ReviewModel, err)
 		return nil
 	}
-	return &agent.PostReviewConfig{Provider: rp, VerifyCommands: tc.VerifyCommands, MaxRounds: tc.ReviewMaxRounds}
+	return &agent.PostReviewConfig{Provider: rp, ReasoningEffort: tc.ReviewReasoningEffort, VerifyCommands: tc.VerifyCommands, MaxRounds: tc.ReviewMaxRounds}
 }
 
 // compactProviderResolver snapshots the optional backend for this loop without

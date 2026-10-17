@@ -24,6 +24,12 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 	requestEstimate := messageEstimate + toolRequest.tokens
 	l.recordWallPhase(stats.PhaseContextPrepare, time.Since(msgStart))
 	window := l.windowResolution()
+	// A shorter speculative prefix may not free enough space after a large
+	// tool result. Never send a known oversized request (including retries),
+	// and never summarize the active user turn just to make it fit.
+	if estimate := l.nextRequestTokenEstimate(); requestEstimate > window.Tokens || estimate.Effective > window.Tokens {
+		return "", nil, nil, fmt.Errorf("agent: request exceeds context window after compaction (%d tokens, window %d); active user turn is preserved", max(requestEstimate, estimate.Effective), window.Tokens)
+	}
 	hardThreshold := autoCompactThreshold(window.Tokens)
 	effectiveThreshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)
 	ctx = llm.WithPrefillBudget(ctx, effectiveThreshold, thresholdSource)

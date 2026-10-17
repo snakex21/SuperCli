@@ -140,13 +140,13 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	// OpenCode Zen retires models in place (410 ModelDeprecated); a successor
 	// learned earlier goes straight onto the wire (see do).
 	reqModel := zenEffectiveModel(p.cfg.BaseURL, p.cfg.Model)
-	body, err := buildAnthropicRequestWithCaching(reqModel, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling, cacheConversation)
+	body, err := buildAnthropicRequestWithCaching(reqModel, msgs, tools, visionAttempt, p.cfg.MaxTokens, p.sampling, cacheConversation, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	var imageFallback []byte
 	if visionAttempt && messagesContainImage(msgs) {
-		imageFallback, err = buildAnthropicRequestWithCaching(reqModel, msgs, tools, false, p.cfg.MaxTokens, p.sampling, cacheConversation)
+		imageFallback, err = buildAnthropicRequestWithCaching(reqModel, msgs, tools, false, p.cfg.MaxTokens, p.sampling, cacheConversation, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("build image fallback request: %w", err)
 		}
@@ -261,7 +261,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 			betaRetried = true
 			continue
 		}
-		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody); ok && !thinkingRetried {
+		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody, ctx); ok && !thinkingRetried {
 			if patched, patchedOK := patchAnthropicThinking(body, effort); patchedOK {
 				body = patched
 				thinkingRetried = true

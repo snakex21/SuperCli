@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/account/credits"
@@ -26,6 +27,7 @@ import (
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/checkpoint"
+	"supercli/internal/housekeeping"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
 	"supercli/internal/storage"
@@ -58,9 +60,12 @@ type Engine struct {
 	// explicitEcho is enabled only by the command-line --echo flag. It keeps
 	// deterministic bridge/dev tests available while branded apps reject an
 	// accidental echo fallback caused by unreadable configuration.
-	explicitEcho            bool
-	caps                    *llm.CapabilityRegistry
-	prov                    llm.Provider
+	explicitEcho bool
+	caps         *llm.CapabilityRegistry
+	prov         llm.Provider
+	// newProgressTimer is an optional per-engine clock seam for watchdog tests.
+	// Nil uses the standard wall-clock timer.
+	newProgressTimer        func(time.Duration) modelProgressTimer
 	localReasoningDiscovery sync.Map // endpoint+credential fingerprint -> *sync.Once
 	// factory is the single provider-construction funnel: every
 	// provider (main, model switches, task workers) comes out of it
@@ -295,10 +300,10 @@ func (e *Engine) HasActiveWork() bool {
 	return e.workers != nil && e.workers.Counts().Running > 0
 }
 
-func explicitMCPConfigs(tc config.TomlConfig) map[string]mcp.ServerConfig {
+func explicitMCPConfigs(tc config.TomlConfig, home string) map[string]mcp.ServerConfig {
 	configs := make(map[string]mcp.ServerConfig, len(tc.Mcp.Servers))
 	for name, sc := range tc.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, AllowedTools: sc.AllowedTools}
+		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, AllowedTools: sc.AllowedTools, Dir: home}
 	}
 	return configs
 }
@@ -310,14 +315,16 @@ func (e *Engine) loadMCPRuntime(home string) (*mcp.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	configs, _, err := mcp.LoadWorkspace(e.dataDir, explicitMCPConfigs(tc))
+	configs, _, err := mcp.LoadWorkspace(e.dataDir, explicitMCPConfigs(tc, home))
 	if err != nil {
 		return nil, err
 	}
 	if len(configs) == 0 {
 		return nil, nil
 	}
-	return mcp.NewManager(configs), nil
+	return mcp.NewLeasedManager(configs, time.Minute, func() bool {
+		return e.workers != nil && e.workers.Counts().Running > 0
+	}), nil
 }
 
 // reloadMCP replaces every cached MCP runtime after a configuration edit.
@@ -334,7 +341,7 @@ func (e *Engine) reloadMCP() error {
 	if e.mcpClosed {
 		e.mcpMu.Unlock()
 		if next != nil {
-			next.StopAll()
+			next.Close()
 		}
 		return nil
 	}
@@ -343,7 +350,7 @@ func (e *Engine) reloadMCP() error {
 	e.mcpMu.Unlock()
 	for _, manager := range previous {
 		if manager != nil {
-			manager.StopAll()
+			manager.Close()
 		}
 	}
 	return nil
@@ -375,7 +382,7 @@ func (e *Engine) mcpRuntimeFor(home string) *mcp.Manager {
 		// discarded runtime has started nothing; StopAll keeps it tidy.
 		e.mcpMu.Unlock()
 		if next != nil {
-			next.StopAll()
+			next.Close()
 		}
 		return existing
 	}
@@ -412,6 +419,7 @@ func (e *Engine) sessionStore() (*session.Store, error) {
 			_ = store.Close()
 			return nil, fmt.Errorf("billing migration: %w", err)
 		}
+		housekeeping.Start(store)
 		e.sessions = store
 	}
 	return e.sessions, nil
@@ -582,7 +590,7 @@ func (e *Engine) Close() error {
 	e.mcpMu.Unlock()
 	for _, manager := range mcpManagers {
 		if manager != nil {
-			manager.StopAll()
+			manager.Close()
 		}
 	}
 	e.codeIntelMu.Lock()

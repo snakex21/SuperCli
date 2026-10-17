@@ -25,6 +25,17 @@
 <!-- readme-unit:h.start -->
 ## Първи стъпки
 
+<!-- readme-unit:start.install -->
+За нова инсталация прегледайте скрипта, преди да изпълните командата за POSIX или PowerShell по-долу. Инсталаторите разпознават операционната система и архитектурата, проверяват контролната сума и инсталират без администраторски права. Те отказват да използват съществуваща целева папка, за да предотвратят презаписване и загуба на данни; за обновяване на съществуваща инсталация използвайте `/update` или `--update`. Задайте `SUPERCLI_DIR`, за да изберете ново местоположение; `SUPERCLI_NO_PATH=1` пропуска настройката на обвивката и `PATH`. По подразбиране: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Инсталаторите не стартират SuperCli автоматично.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Разархивирайте пакета за вашата операционна система и архитектура в папка с права за запис. В Windows стартирайте `supercli.exe` за терминала или `supercli-web.exe` за GUI. Запазете включената папка `supercli-data/` до изпълнимите файлове.
 
@@ -46,10 +57,10 @@
 ```
 
 <!-- readme-unit:start.termux -->
-На Android инсталирайте с един ред в Termux. Скриптът изтегля най-новото издание, проверява контролната сума и добавя командите `supercli` и `supercli-web`. Стартирайте го отново, за да обновите; `supercli-data/` се запазва.
+В Android използвайте в Termux същия `install.sh` от корена на хранилището. `ARM64` използва компилацията за Android, а `x86_64` — тази за Linux. Ако липсват необходимите пакети, изпълнете `pkg install curl unzip coreutils`. Обновявайте съществуваща инсталация с `/update` или `--update`, а не с повторно изпълнение на инсталатора.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

@@ -75,6 +75,16 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		}
 		llm.SetThinkingEnabled(c.Thinking == nil || *c.Thinking)
 		return nil
+	case "queue_merge":
+		switch val {
+		case "", "default", "off":
+			c.QueueMerge = "off"
+		case "auto":
+			c.QueueMerge = "auto"
+		default:
+			return fmt.Errorf("bad value %q (want off/auto)", val)
+		}
+		return nil
 	case "navigator":
 		switch val {
 		case "auto", "default", "":
@@ -101,12 +111,29 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 	case "darwin_judge_model":
 		c.DarwinJudgeModel = val
 		return nil
+	case "darwin_pool_size":
+		if strings.EqualFold(val, "auto") || strings.EqualFold(val, "default") {
+			val = ""
+		}
+		n := 0
+		if err := setInt(&n); err != nil {
+			return err
+		}
+		if n > 10 {
+			return fmt.Errorf("bad value %q (want 0-10; 0 = auto)", val)
+		}
+		c.DarwinPoolSize = n
+		return nil
 	case "darwin_auto_merge":
 		return setTri(&c.DarwinAutoMerge)
 	case "darwin":
 		return setTri(&c.Darwin)
 	case "task_parallel":
 		return setTri(&c.TaskParallel)
+	case "context_window":
+		return setInt(&c.ContextWindow)
+	case "prune_protect_tokens":
+		return setInt(&c.PruneProtectTokens)
 	case "memory_briefing_tokens":
 		return setInt(&c.MemoryBriefingTokens)
 	case "task_max_steps":
@@ -120,6 +147,25 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return nil
 	case "task_model":
 		c.TaskModel = val
+		return nil
+	case "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort":
+		val = strings.ToLower(val)
+		if val == "default" {
+			val = ""
+		}
+		if err := llm.ValidateReasoningEffort(val); err != nil {
+			return err
+		}
+		switch key {
+		case "task_reasoning_effort":
+			c.TaskReasoningEffort = val
+		case "advisor_reasoning_effort":
+			c.AdvisorReasoningEffort = val
+		case "review_reasoning_effort":
+			c.ReviewReasoningEffort = val
+		case "darwin_reasoning_effort":
+			c.DarwinReasoningEffort = val
+		}
 		return nil
 	case "advisor_model":
 		c.AdvisorModel = val

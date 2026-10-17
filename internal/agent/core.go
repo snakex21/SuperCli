@@ -211,18 +211,20 @@ func (steeringDeliveryEvent) event() {}
 // not private chain-of-thought. Output/arguments are capped at the producer so
 // a verbose child cannot flood the parent UI stream.
 type WorkerProgressEvent struct {
-	TaskID       string
-	Agent        string
-	Kind         string // started, tool_call, tool_result, steering_delivered, steering_rejected, finished
-	ParentCallID string // parent task/send_message call; stable across worker tool calls
-	Run          int    // 1-based invocation within this worker
-	Prompt       string // UI-only instruction for this invocation
-	Status       string
-	CallID       string
-	Tool         string
-	Args         string
-	Output       string
-	Err          string
+	Model           string
+	ReasoningEffort string
+	TaskID          string
+	Agent           string
+	Kind            string // started, tool_call, tool_result, steering_delivered, steering_rejected, finished
+	ParentCallID    string // parent task/send_message call; stable across worker tool calls
+	Run             int    // 1-based invocation within this worker
+	Prompt          string // UI-only instruction for this invocation
+	Status          string
+	CallID          string
+	Tool            string
+	Args            string
+	Output          string
+	Err             string
 }
 
 func (WorkerProgressEvent) event() {}

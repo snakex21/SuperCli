@@ -26,11 +26,17 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	}
 	estimate := l.nextRequestTokenEstimate()
 	est := estimate.Effective
+	// Below the hard safety boundary, background work must not hold up the
+	// next request. Consume ready summaries in the speculative band as well
+	// as above a learned latency budget, rather than waiting for overflow.
+	backgroundOnly := reason == "" && est <= hardThreshold && l.speculativeCompactEnabled()
 	if reason == "" && est <= threshold {
-		if float64(est) >= speculativeCompactFrac*float64(threshold) {
-			l.maybeStartSpeculativeCompact(ctx)
+		if !backgroundOnly || float64(est) < speculativeCompactFrac*float64(threshold) {
+			return nil
 		}
-		return nil
+	}
+	if backgroundOnly {
+		l.maybeStartSpeculativeCompact(ctx)
 	}
 	history := l.compactionHistory()
 	all := history.messages
@@ -44,7 +50,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// "big hammer" selected by compactSplit.
 		split = history.autoCompactSplit()
 	} else {
-		split = history.compactSplit(w)
+		split = completedCompactSplit(history, w)
 	}
 	keep := leadingSystemCount(all)
 	if split <= keep {
@@ -69,20 +75,31 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		// time as model:compact, so context_prepare (which wraps
 		// this whole function on the pre-call path) keeps measuring
 		// pure CLI overhead.
-		// A background summary of this exact prefix replaces the blocking call.
-		summary, err, ok := l.takeSpeculativeCompact(ctx, prefix)
+		// A summary of a still-valid shorter prefix is useful too: only
+		// replace the messages it actually covered, never the grown suffix.
+		summary, err, covered, ok := l.takeSpeculativeCompact(ctx, prefix, !backgroundOnly)
 		if !ok {
+			if backgroundOnly {
+				return nil
+			}
 			summary, err = l.summarizePrefix(ctx, prefix)
+		} else {
+			split = covered
+			prefix = all[:split]
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		// A configured summarizer must supply usable task memory. Failing it
 		// must not silently replace older requirements with a cleared marker.
-		if err != nil {
-			return fmt.Errorf("summarize context: %w", err)
-		}
-		if strings.TrimSpace(summary) == "" {
+		if err != nil || strings.TrimSpace(summary) == "" {
+			if backgroundOnly {
+				l.rejectAutoCompact(prefix)
+				return nil // optional background work must not abort a fitting request
+			}
+			if err != nil {
+				return fmt.Errorf("summarize context: %w", err)
+			}
 			return fmt.Errorf("summarize context: empty summary")
 		}
 		requestPrefix := history.requestPrefix(split)
@@ -201,7 +218,7 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	}
 	history := l.compactionHistory()
 	all := history.messages
-	split := history.compactSplit(w)
+	split := completedCompactSplit(history, w)
 	keep := 0
 	for keep < len(all) && all[keep].Role == llm.RoleSystem {
 		keep++
@@ -220,7 +237,16 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 	if body := prefix[leadingSystemCount(prefix):]; len(body) == 1 && IsLegacyCompactionSummary(body[0]) {
 		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
 	}
-	summary, err := l.summarizePrefix(ctx, prefix)
+	summary, err, covered, ok := l.takeSpeculativeCompact(ctx, prefix, true)
+	if !ok {
+		summary, err = l.summarizePrefix(ctx, prefix)
+	} else {
+		split = covered
+		prefix = all[:split]
+	}
+	if ctx.Err() != nil {
+		return AutoCompactEvent{}, ctx.Err()
+	}
 	if err != nil {
 		return AutoCompactEvent{}, fmt.Errorf("summarize context: %w", err)
 	}
@@ -242,6 +268,19 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 		Threshold: autoCompactThreshold(w), ThresholdSource: window.Source, WindowSource: window.Source,
 		Reason: "manual",
 	}, nil
+}
+
+// completedCompactSplit retains the active user turn even when compactSplit's
+// emergency fallback selects the whole history. If the active turn alone cannot
+// fit, the pre-send guard reports it rather than replacing the user's task.
+func completedCompactSplit(history compactionHistory, window int) int {
+	split := history.compactSplit(window)
+	for i := len(history.messages) - 1; i >= leadingSystemCount(history.messages); i-- {
+		if isConversationUserTurn(history.messages[i]) {
+			return min(split, i)
+		}
+	}
+	return leadingSystemCount(history.messages)
 }
 
 // Leading system messages survive compaction; counting them as savings could

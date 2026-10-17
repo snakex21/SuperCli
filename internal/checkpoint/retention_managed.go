@@ -35,6 +35,9 @@ func EnforceManagedStoreBudgetLocked(ctx context.Context, dataDir string, base i
 	if err != nil {
 		return result, err
 	}
+	if err := applyManagedSessionPolicy(ctx, dataDir, audit); err != nil {
+		return result, err
+	}
 	result.FullCensusComplete = true
 	startingBytes := audit.measuredBytes
 	// Normally one pass. If expiry shrinks a just-over-base floor below base,
@@ -96,6 +99,9 @@ func EnforceManagedStoreBudgetLocked(ctx context.Context, dataDir string, base i
 			// Re-prove every kept/unknown/active/index/reflog root before sweep.
 			audit, err = AuditStoreRetentionLocked(ctx, dataDir)
 			if err != nil {
+				return result, err
+			}
+			if err := applyManagedSessionPolicy(ctx, dataDir, audit); err != nil {
 				return result, err
 			}
 		}

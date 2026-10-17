@@ -11,6 +11,11 @@ import (
 // captured under one lock, so replay cannot lose or duplicate a live delta.
 type syncFrame struct {
 	Type        string      `json:"type"`
+	QueuePaused bool        `json:"queue_paused,omitempty"`
+	ProjectPath string      `json:"project_path,omitempty"`
+	ProjectName string      `json:"project_name,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	State       string      `json:"state,omitempty"`
 	StartedAtMS int64       `json:"started_at_ms,omitempty"`
 	ServerNowMS int64       `json:"server_now_ms,omitempty"`
 	SessionID   string      `json:"session_id,omitempty"`
@@ -62,7 +67,7 @@ func (h *syncHub) changed() {
 	defer h.mu.Unlock()
 	h.publishLocked(syncFrame{Type: "sessions_changed"})
 }
-func (h *syncHub) start(session, prompt string, identity syncIdentity, cancel context.CancelFunc) *liveSyncRun {
+func (h *syncHub) start(session, prompt string, identity syncIdentity, cancel context.CancelFunc, details ...syncFrame) *liveSyncRun {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.runs == nil {
@@ -73,6 +78,10 @@ func (h *syncHub) start(session, prompt string, identity syncIdentity, cancel co
 		identity.turnID = "server-" + strconv.FormatUint(h.sequence, 10)
 	}
 	run := &liveSyncRun{info: syncFrame{Type: "run_started", StartedAtMS: time.Now().UnixMilli(), SessionID: session, TurnID: identity.turnID, ClientID: identity.clientID, Prompt: prompt}, cancel: cancel}
+	if len(details) > 0 {
+		run.info.ProjectPath, run.info.ProjectName, run.info.Title = details[0].ProjectPath, details[0].ProjectName, details[0].Title
+	}
+	run.info.State = "running"
 	h.runs[session] = run
 	h.publishLocked(run.info)
 	h.publishLocked(syncFrame{Type: "sessions_changed"})
@@ -105,8 +114,23 @@ func (h *syncHub) event(run *liveSyncRun, event wireEvent) {
 	} else {
 		run.events = append(run.events, event)
 	}
+	if event.Type == "question" || event.Type == "question_closed" {
+		run.info.State = "running"
+		for _, pending := range run.events {
+			if pending.Type == "question" {
+				run.info.State = "waiting_answer"
+				break
+			}
+		}
+		update := run.info
+		update.Type, update.Prompt = "run_updated", ""
+		h.publishLocked(update)
+	}
 	if event.Type == "done" || event.Type == "error" {
 		run.terminal = true
+		if event.Type == "error" || event.QueuePaused {
+			run.info.QueuePaused = true
+		}
 	}
 	frame := run.info
 	frame.Type, frame.Prompt, frame.Event = "run_event", "", &event
@@ -178,6 +202,7 @@ func (h *syncHub) stop(session, turn string) bool {
 		h.mu.Unlock()
 		return false
 	}
+	run.info.QueuePaused = true
 	cancel := run.cancel
 	h.mu.Unlock()
 	cancel()

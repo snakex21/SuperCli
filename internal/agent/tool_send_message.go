@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"supercli/internal/checkpoint"
+	"supercli/internal/llm"
 	"supercli/internal/tools"
 	toolcore "supercli/internal/tools/core"
 )
@@ -105,6 +106,13 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 		return "", fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
+	w.stateMu.RLock()
+	effort := w.reasoningEffort
+	w.stateMu.RUnlock()
+	ctx = llm.WithIndependentReasoningEffort(ctx, effort)
+	if w.Agent == advisorAgentKind {
+		ctx = llm.WithPurpose(ctx, llm.PurposeAdvisor)
+	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -280,14 +288,18 @@ func renderWorkerNotificationFromSnapshot(s Snapshot, summary, result string) st
 		status = "done"
 	}
 	toolsUsed := workerToolSummary(s.ToolNames)
+	metadata := ""
+	if s.WorkerModel != "" {
+		metadata = fmt.Sprintf("\n<worker-model>%s</worker-model>\n<reasoning-effort>%s</reasoning-effort>", s.WorkerModel, s.ReasoningEffort)
+	}
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
-<agent>%s</agent>
+<agent>%s</agent>%s
 <status>%s</status>
 <summary>%s</summary>
 <tools>%s</tools>
 <result>%s</result>
-</task-notification>`, s.ID, s.Agent, status, summary, toolsUsed, result)
+</task-notification>`, s.ID, s.Agent, metadata, status, summary, toolsUsed, result)
 }
 
 func workerToolSummary(names []string) string {

@@ -664,10 +664,10 @@ func TestUpdate_WindowSizeResizesViewport(t *testing.T) {
 	if mm.viewport.Width != 120 {
 		t.Fatalf("viewport.Width = %d", mm.viewport.Width)
 	}
-	// 40 rows minus chrome: header, separator, input box
-	// (1 line + 2 border rows), key hints, status line.
-	if mm.viewport.Height != 32 {
-		t.Fatalf("viewport.Height = %d, want 32", mm.viewport.Height)
+	// 40 rows minus the six actual chrome rows: header, separator,
+	// input box (1 line + 2 border rows), and key hints. No status is set.
+	if mm.viewport.Height != 34 {
+		t.Fatalf("viewport.Height = %d, want 34", mm.viewport.Height)
 	}
 }
 

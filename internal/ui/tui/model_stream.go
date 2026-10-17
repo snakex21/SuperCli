@@ -75,6 +75,7 @@ func (m *Model) appendReasoningText(text string) {
 // incorrectly treat the previous bottom as a deliberate scroll into history.
 func (m *Model) resizeViewport() {
 	follow := m.viewport.AtBottom()
+	m.fitInputHeight()
 	m.viewport.Height = m.viewportHeight()
 	if follow {
 		m.viewport.GotoBottom()

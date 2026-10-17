@@ -12,6 +12,8 @@ var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
 var queueDispatching = false, queueDispatchItem = null;
+var promptQueueLoadedEpoch = -1, promptQueueLoadSeq = 0;
+var promptQueueReady = Promise.resolve();
 // The run this view renders. A project switch detaches it: the server keeps
 // running it in its own project while this view moves on.
 var activeRun = null;
@@ -155,7 +157,11 @@ function renderSentAttachments(node, paths, mediaKind, previewPath) {
     open.title = t("attachment.preview") + ": " + attachmentName(path);
     open.setAttribute("aria-label", open.title);
     var kind = override || attachmentMediaType(path);
-    open.addEventListener("click", function () { openAttachmentPreview(path, kind, previewPath); });
+    open.addEventListener("click", function () {
+      if (kind === "image" && typeof openImageLightbox === "function") {
+        openImageLightbox(mediaPaths.filter(function (p) { return (override || attachmentMediaType(p)) === "image"; }), path, open, previewPath);
+      } else openAttachmentPreview(path, kind, previewPath);
+    });
     if (kind === "image") {
       var image = document.createElement("img");
       image.alt = attachmentName(path);
@@ -192,8 +198,9 @@ function addAttachmentPaths(paths) {
   });
   renderAttachments();
 }
-async function uploadAttachmentFiles(files, successKey) {
-  files = Array.prototype.slice.call(files || []).slice(0, 8 - pendingAttachments.length);
+async function uploadAttachmentFiles(files, successKey, edit) {
+  var paths = edit ? edit.attachments : pendingAttachments;
+  files = Array.prototype.slice.call(files || []).slice(0, 8 - paths.length);
   if (!files.length) return;
   var form = new FormData();
   files.forEach(function (file, index) {
@@ -203,7 +210,12 @@ async function uploadAttachmentFiles(files, successKey) {
   var response = await fetch("/api/attachment/upload", { method: "POST", body: form });
   if (!response.ok) throw new Error((await response.text() || response.status).toString().trim());
   var result = await response.json();
-  addAttachmentPaths(result.paths || []);
+  if (edit) {
+    if (queueEdit !== edit || !syncQueueEditor()) return;
+    (result.paths || []).forEach(function (path) {
+      if (edit.attachments.indexOf(path) < 0 && edit.attachments.length < 8) edit.attachments.push(path);
+    });
+  } else addAttachmentPaths(result.paths || []);
   toast(t(successKey) + " · " + (result.paths || []).length);
 }
 function clearAttachmentPreviewContent() {
@@ -226,6 +238,9 @@ function closeAttachmentPreview() {
 function openAttachmentPreview(path, mediaKind, previewPath) {
   var override = ["image", "video", "audio"].indexOf(mediaKind) >= 0 ? mediaKind : "";
   var kind = override || attachmentMediaType(path);
+  if (kind === "image" && typeof openImageLightbox === "function") {
+    openImageLightbox([path], path, document.activeElement, previewPath); return;
+  }
   if (!kind && !previewableAttachment(path)) {
     toast(t("attachment.previewUnavailable"));
     return;
@@ -254,18 +269,22 @@ function openAttachmentPreview(path, mediaKind, previewPath) {
   }
   dialog.showModal();
 }
-function renderAttachments() {
-  var host = $("#attachment-list");
+function renderAttachments(host, paths, onRemove) {
+  host = host || $("#attachment-list");
+  paths = paths || pendingAttachments;
   host.innerHTML = "";
-  host.hidden = !pendingAttachments.length;
-  pendingAttachments.forEach(function (path, index) {
+  host.hidden = !paths.length;
+  paths.forEach(function (path, index) {
     var isImage = imageAttachment(path);
     var chip = el("div", "attachment-chip" + (isImage ? " image-attachment" : ""));
     chip.title = path;
     var open = el("button", "attachment-open" + (previewableAttachment(path) ? " previewable" : ""));
     open.type = "button";
     open.title = previewableAttachment(path) ? t("attachment.preview") : path;
-    open.addEventListener("click", function () { openAttachmentPreview(path); });
+    open.addEventListener("click", function () {
+      if (isImage && typeof openImageLightbox === "function") openImageLightbox(paths.filter(imageAttachment), path, open);
+      else openAttachmentPreview(path);
+    });
     if (isImage) {
       var thumbnail = document.createElement("img");
       thumbnail.className = "attachment-thumbnail";
@@ -290,8 +309,8 @@ function renderAttachments() {
     remove.type = "button";
     remove.setAttribute("aria-label", t("composer.remove"));
     remove.addEventListener("click", function () {
-      pendingAttachments.splice(index, 1);
-      renderAttachments();
+      if (onRemove) onRemove(index);
+      else { pendingAttachments.splice(index, 1); renderAttachments(); }
     });
     chip.appendChild(remove);
     host.appendChild(chip);
@@ -373,23 +392,176 @@ async function chooseQueuedTaskPosition(item) {
   await moveQueuedTask(item, position);
 }
 
-async function editQueuedTask(item) {
-  var prompt = await appPrompt(t("composer.editQueued"), item.text || item.prompt || "", {
-    message: t("composer.editQueuedHint"),
-    multiline: true,
-    rows: 7,
-  });
-  if (prompt == null) return;
-  try {
-    await j("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id, prompt: prompt }),
+var queueEdit = null, queueMerging = false, queueMergeMode = "off";
+function closeQueueEditor(edit, restoreFocus) {
+  if (!edit || queueEdit !== edit) return;
+  queueEdit = null;
+  document.removeEventListener("keydown", edit.onKeyDown, true);
+  if (activeAppDialog === edit.close) activeAppDialog = null;
+  if (edit.dialog.open) edit.dialog.close();
+  edit.dialog.remove();
+  var trigger = restoreFocus !== false && edit.epoch === projectEpoch ? edit.trigger : null;
+  if (trigger && !trigger.isConnected && edit.triggerHost && edit.triggerHost.isConnected) {
+    trigger = Array.from(edit.triggerHost.querySelectorAll("[data-queue-edit-id]")).find(function (button) {
+      return button.dataset.queueEditId === edit.id && button.className === edit.trigger.className && !button.disabled;
     });
-    item.prompt = prompt.trim();
-    item.text = item.prompt;
-    renderPromptQueue();
-  } catch (e) { toast(e.message); }
+  }
+  if (trigger && trigger.isConnected && !trigger.disabled) trigger.focus();
+  else promptEl.focus();
+}
+function syncQueueEditor() {
+  if (queueEdit && (queueEdit.epoch !== projectEpoch || !promptQueue.some(function (item) {
+    return item.id === queueEdit.id && !isQueuedTaskTransition(item);
+  }))) closeQueueEditor(queueEdit, false);
+  return !!queueEdit;
+}
+function editQueuedTask(item, trigger) {
+  if (!promptQueue.some(function (q) { return q.id === item.id && !isQueuedTaskTransition(q); })) return;
+  if (syncQueueEditor() && queueEdit.id === item.id) { queueEdit.input.focus(); return; }
+  if (activeAppDialog) activeAppDialog(null);
+  trigger = trigger || document.activeElement;
+  queueEdit = { id: item.id, text: item.text || item.prompt || "", attachments: (item.attachments || []).slice(), uploading: false, saving: false, epoch: projectEpoch,
+    trigger: trigger, triggerHost: trigger && trigger.parentElement && trigger.parentElement.parentElement };
+  appendQueueEditor(queueEdit);
+}
+async function saveQueuedTaskEdit() {
+  if (!syncQueueEditor() || queueEdit.uploading || queueEdit.saving) return;
+  var edit = queueEdit;
+  if (!edit.text.trim() && !edit.attachments.length) {
+    edit.error.textContent = t("dialog.required"); edit.input.focus(); return;
+  }
+  edit.saving = true;
+  edit.refresh();
+  try {
+    await j("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: edit.id, prompt: edit.text, attachments: edit.attachments }) });
+    if (queueEdit !== edit || !syncQueueEditor()) return;
+    await loadPromptQueue();
+    if (queueEdit === edit && syncQueueEditor()) closeQueueEditor(edit);
+  } catch (e) {
+    if (queueEdit === edit && syncQueueEditor()) {
+      edit.error.textContent = e.message; toast(e.message); await loadPromptQueue();
+    }
+  } finally { edit.saving = false; if (queueEdit === edit && syncQueueEditor()) edit.refresh(); }
+}
+function queuedMessageLabel(index, count) {
+  return t("composer.messageNumber").replace("{index}", String(index)).replace("{count}", String(count));
+}
+async function mergeQueuedMessages(send) {
+  if (queueMerging || queueDispatching || queueDispatchItem || pendingImmediate || !promptQueue.length) return false;
+  if (promptQueue.every(function (q) { return q.merged; })) {
+    if (send && !streaming) { pauseQueue = false; runQueuedTask(promptQueue[0], false); }
+    return true;
+  }
+  var epoch = projectEpoch;
+  queueMerging = true;
+  renderPromptQueue();
+  try {
+    var batches = await jpost("/api/tasks?merge=1", { ids: promptQueue.map(function (q) { return q.id; }), label: t("composer.messageNumber") });
+    if (epoch !== projectEpoch) return false;
+    ++promptQueueLoadSeq;
+    promptQueue = batches || [];
+    promptQueue.forEach(function (q) { q.text = q.prompt; });
+    pauseQueue = false;
+    closeQueueEditor(queueEdit, false);
+    if (send && !streaming && promptQueue[0]) runQueuedTask(promptQueue[0], false);
+    return true;
+  } catch (e) { if (epoch === projectEpoch) { pauseQueue = true; toast(e.message); await loadPromptQueue(); } return false; }
+  finally { queueMerging = false; renderPromptQueue(); }
+}
+function appendQueueEditor(edit) {
+  var editor = el("dialog", "app-dialog queue-editor"); edit.dialog = editor;
+  editor.setAttribute("aria-modal", "true");
+  editor.setAttribute("aria-labelledby", "queue-editor-title");
+  var title = i18nEl("h2", "app-dialog-title", "composer.editQueued"); title.id = "queue-editor-title";
+  var input = el("textarea", "app-dialog-input queue-edit-input"); input.value = edit.text; input.rows = 16; edit.input = input;
+  input.setAttribute("aria-label", t("composer.editQueued"));
+  input.addEventListener("input", function () { if (queueEdit === edit && !edit.saving) edit.text = input.value; });
+  var error = el("div", "app-dialog-error"); error.setAttribute("aria-live", "polite"); edit.error = error;
+  var save = i18nEl("button", "btn primary", "common.save"); save.type = "button";
+  save.addEventListener("click", function () { if (queueEdit === edit) return saveQueuedTaskEdit(); });
+  var cancel = i18nEl("button", "btn", "common.cancel"); cancel.type = "button";
+  edit.close = function () { closeQueueEditor(edit); };
+  cancel.addEventListener("click", edit.close);
+  editor.addEventListener("cancel", function (event) { event.preventDefault(); edit.close(); });
+  editor.addEventListener("close", edit.close);
+  editor.addEventListener("mousedown", function (event) {
+    if (event.target !== editor) return;
+    var rect = editor.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      event.preventDefault(); edit.close();
+    }
+  });
+  edit.onKeyDown = function (event) {
+    // A nested attachment preview owns its own keys and focus until it closes.
+    if (!editor.contains(document.activeElement)) return;
+    if (event.key === "Escape") {
+      event.preventDefault(); event.stopImmediatePropagation(); edit.close();
+    } else if (event.key === "Tab") {
+      var controls = Array.from(editor.querySelectorAll("button:not([disabled]), textarea, input:not([hidden])"));
+      var first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  };
+  // Do not let composer/chat keyboard shortcuts handle events from the editor.
+  editor.addEventListener("keydown", function (event) { event.stopPropagation(); });
+  var files = el("div", "attachment-list queue-edit-attachments");
+  var picker = document.createElement("input"); picker.type = "file"; picker.multiple = true; picker.hidden = true;
+  var attach = i18nEl("button", "btn", "composer.attach"); attach.type = "button";
+  attach.addEventListener("click", function () { picker.click(); });
+  function refresh() {
+    var previousFocus = document.activeElement, hadFocus = editor.contains(previousFocus);
+    renderAttachments(files, edit.attachments, function (index) {
+      if (queueEdit !== edit || !syncQueueEditor() || edit.saving) return;
+      edit.attachments.splice(index, 1); refresh();
+    });
+    input.readOnly = edit.saving;
+    editor.setAttribute("aria-busy", String(edit.uploading || edit.saving));
+    save.disabled = edit.uploading || edit.saving;
+    attach.disabled = edit.uploading || edit.saving || edit.attachments.length >= 8;
+    files.querySelectorAll(".attachment-remove").forEach(function (button) { button.disabled = edit.saving; });
+    if (hadFocus && (!previousFocus.isConnected || previousFocus.disabled)) input.focus();
+  }
+  edit.refresh = refresh;
+  async function upload(selected, key) {
+    if (queueEdit !== edit || !syncQueueEditor() || edit.uploading || edit.saving) return;
+    edit.uploading = true; refresh();
+    try { await uploadAttachmentFiles(selected, key, edit); }
+    catch (e) {
+      if (queueEdit === edit && syncQueueEditor()) {
+        error.textContent = t("composer.attachFailed") + ": " + e.message; toast(error.textContent);
+      }
+    }
+    finally { edit.uploading = false; if (queueEdit === edit && syncQueueEditor()) refresh(); }
+  }
+  picker.addEventListener("change", function () { upload(picker.files, "composer.attach"); picker.value = ""; });
+  editor.addEventListener("paste", function (event) {
+    if (!event.clipboardData) return;
+    var selected = Array.prototype.slice.call(event.clipboardData.files || []);
+    if (!selected.length) selected = Array.prototype.slice.call(event.clipboardData.items || []).filter(function (item) { return item.kind === "file"; }).map(function (item) { return item.getAsFile(); }).filter(Boolean);
+    if (!selected.length) return;
+    if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+    event.stopPropagation(); upload(selected, "composer.pasted");
+  });
+  editor.addEventListener("dragover", function (event) {
+    if (event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types || [], "Files") >= 0) {
+      event.preventDefault(); event.stopPropagation(); editor.classList.add("drop-target");
+    }
+  });
+  editor.addEventListener("dragleave", function () { editor.classList.remove("drop-target"); });
+  editor.addEventListener("drop", function (event) {
+    editor.classList.remove("drop-target");
+    if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+    event.preventDefault(); event.stopPropagation(); upload(event.dataTransfer.files, "composer.dropped");
+  });
+  var actions = el("div", "app-dialog-actions queue-edit-actions");
+  actions.appendChild(attach); actions.appendChild(cancel); actions.appendChild(save);
+  editor.appendChild(title); editor.appendChild(input); editor.appendChild(files); editor.appendChild(picker);
+  editor.appendChild(error); editor.appendChild(actions);
+  document.body.appendChild(editor); refresh();
+  activeAppDialog = edit.close;
+  document.addEventListener("keydown", edit.onKeyDown, true);
+  editor.showModal(); input.focus();
 }
 
 function clearQueueDropState() {
@@ -524,9 +696,16 @@ function queuePositionButton(item, index) {
 }
 
 function renderPromptQueue() {
+  syncQueueEditor();
   var host = $("#prompt-queue");
   host.innerHTML = "";
   host.hidden = !promptQueue.length;
+  if (promptQueue.length) {
+    var merge = i18nEl("button", "queue-merge queue-action", "composer.sendTogether"); merge.type = "button";
+    merge.disabled = queueMerging || !!queueDispatchItem || queueDispatching || !!pendingImmediate;
+    merge.addEventListener("click", function () { mergeQueuedMessages(true); });
+    host.appendChild(merge);
+  }
   if (pauseQueue && promptQueue.length) {
     var resume = el("button", "queue-resume", "▶ " + t("composer.resume"));
     resume.type = "button";
@@ -548,8 +727,10 @@ function renderPromptQueue() {
     text.type = "button";
     text.title = t("composer.editQueued");
     appendQueuedAttachmentBadge(text, item);
-    text.addEventListener("click", function () { editQueuedTask(item); });
+    text.dataset.queueEditId = item.id;
+    text.addEventListener("click", function () { editQueuedTask(item, text); });
     row.appendChild(text);
+    if ((item.attachments || []).some(imageAttachment)) appendQueuedImageThumbnails(row, item);
     var now = i18nEl("button", "queue-action", "composer.sendNow"); now.type = "button";
     now.addEventListener("click", function () { runQueuedTask(item, true); });
     styleQueuedTaskTransition(row, item, now);
@@ -574,6 +755,7 @@ async function enqueuePrompt(text, attachments) {
     var q = await jpost("/api/tasks", body);
     q.text = q.prompt;
     q.attachments = q.attachments || [];
+    promptQueue = promptQueue.filter(function (item) { return item.id !== q.id; });
     promptQueue.push(q);
     pauseQueue = false;
     renderPromptQueue();
@@ -581,10 +763,26 @@ async function enqueuePrompt(text, attachments) {
   setRunState("running", promptQueue.length + " · " + t("composer.queued"));
   return true;
 }
-async function loadPromptQueue() {
-  try { promptQueue = await j("/api/tasks") || []; promptQueue.forEach(function (q) { q.text = q.prompt; q.attachments = q.attachments || []; }); pauseQueue = promptQueue.length > 0; }
-  catch (e) { promptQueue = []; }
-  renderPromptQueue();
+function loadPromptQueue() {
+  syncQueueEditor();
+  var epoch = projectEpoch, seq = ++promptQueueLoadSeq;
+  promptQueueReady = (async function () {
+    try {
+      var state = await j("/api/tasks?state=1");
+      if (epoch !== projectEpoch || seq !== promptQueueLoadSeq) return;
+      queueMergeMode = state.queue_merge || "off";
+      promptQueue = state.tasks || [];
+      promptQueue.forEach(function (q) { q.text = q.prompt; q.attachments = q.attachments || []; });
+      // Only the first idle load asks for Resume. Refreshing Tasks must never
+      // manufacture a pause, nor clear an explicit Stop/send-failure pause.
+      if (promptQueueLoadedEpoch !== epoch) {
+        pauseQueue = pauseQueue || (promptQueue.length > 0 && !streaming && !state.running);
+        promptQueueLoadedEpoch = epoch;
+      }
+      renderPromptQueue();
+    } catch (e) { /* Keep the last known queue on a transient refresh failure. */ }
+  })();
+  return promptQueueReady;
 }
 
 async function loadWorkers() {
@@ -673,12 +871,23 @@ function showQueueTransition(item) {
   renderPromptQueue();
 }
 async function dispatchQueuedTask(item) {
-  if (queueDispatching) return;
+  if (queueDispatching || queueMerging) return;
   queueDispatching = true;
   showQueueTransition(item);
   var launched = false;
   try {
     if (!await prepareQueuedTask(item) || (pauseQueue && !isAfterRunPrompt(item))) return;
+    if (!item.afterRun && !item.merged && queueMergeMode === "auto") {
+      if (promptQueue.length > 0) {
+        queueDispatching = false; queueDispatchItem = null;
+        await loadPromptQueue();
+        if (!await mergeQueuedMessages(false)) return;
+        item = promptQueue[0];
+        if (!item) return;
+        queueDispatching = true; showQueueTransition(item);
+        if (!await prepareQueuedTask(item)) return;
+      }
+    }
     // Remove the durable queue entry only after /api/chat accepts it.
     launched = true;
     sendPrompt(item.text, item.attachments || [], item.draft || null, item);
@@ -712,6 +921,7 @@ async function runQueuedTask(item, interrupt) {
   await dispatchQueuedTask(item);
 }
 function renderTaskCenter() {
+  syncQueueEditor();
   var host = $("#task-list"); if (!host) return; host.innerHTML = "";
   if (!promptQueue.length) { host.appendChild(i18nEl("div", "side-empty", "composer.queueEmpty")); return; }
   promptQueue.forEach(function (item, i) {
@@ -728,10 +938,12 @@ function renderTaskCenter() {
     var meta = el("span", "s", item.session_id ? clip(item.session_id, 18) : t("session.new"));
     appendQueuedAttachmentBadge(meta, item);
     copy.appendChild(meta);
-    copy.addEventListener("click", function () { editQueuedTask(item); });
+    copy.dataset.queueEditId = item.id;
+    copy.addEventListener("click", function () { editQueuedTask(item, copy); });
     row.appendChild(copy);
-    var edit = i18nEl("button", "queue-action", "common.edit");
-    edit.addEventListener("click", function () { editQueuedTask(item); });
+    var edit = i18nEl("button", "queue-action", "common.edit"); edit.type = "button";
+    edit.dataset.queueEditId = item.id;
+    edit.addEventListener("click", function () { editQueuedTask(item, edit); });
     row.appendChild(edit);
     var up = el("button", "queue-action queue-order", "\u2191");
     up.title = t("composer.moveUp");
@@ -1036,7 +1248,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   }
   run.abortCtl.abort = function () { run.stopRequested = true; stopServerRun(); };
   var draftAccepted = false, requestAccepted = false;
-  var queueRemoval = null;
+  var queueRemoval = null, queueClaimLost = false;
   function acceptPrompt() {
     if (draftAccepted) return;
     draftAccepted = true;
@@ -1121,6 +1333,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
         prompt: text,
         turn_id: turnID,
         client_id: typeof syncClientID === "string" ? syncClientID : "",
+        queue_task_id: queuedItem && queuedItem.id || "",
         session_id: activeSessionID,
         attachments: attachments,
       }),
@@ -1133,7 +1346,19 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     requestAccepted = true;
     if (run.stopRequested) stopServerRun();
     await superCliUI.readSSE(resp.body, function (ev) {
+      if (ev.type === "queue_claimed" && queuedItem && queuedItem.id) {
+        // Same neutral result over SSE and phone WebSocket. Replace the
+        // optimistic message with the winner's shared run, without pausing.
+        queueClaimLost = true;
+        draftAccepted = true;
+        handoffBlocked = true;
+        terminalSeen = true;
+        promptQueue = promptQueue.filter(function (q) { return q.id !== queuedItem.id; });
+        if (liveUserNode && liveUserNode.remove) liveUserNode.remove();
+        return;
+      }
       rememberRunEvent(run, ev);
+      if (ev.queue_paused && !pendingImmediate && !run.detached) pauseQueue = true;
       if (run.detached) {
         if (ev.type === "done" || ev.type === "error") terminalSeen = true;
         return;
@@ -1155,7 +1380,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       }
       current = handleEvent(ev, current);
     });
-    if (run.detached) return;
+    if (run.detached || queueClaimLost) return;
     flushAssistantRender(current);
     if (!terminalSeen) {
       if (activeSessionID) {
@@ -1192,7 +1417,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("chat.connError"));
     }
   } finally {
-    if (typeof syncFollowRun === "function" && !terminalSeen && !run.stopRequested && requestAccepted) syncFollowRun(run);
+    if (!queueClaimLost && typeof syncFollowRun === "function" && !terminalSeen && !run.stopRequested && requestAccepted) syncFollowRun(run);
     if (run.following) return;
     if (run.detached) {
       if (detachedRuns[run.sessionID] === run) delete detachedRuns[run.sessionID];
@@ -1273,6 +1498,10 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       $("#status-dot").classList.remove("busy");
       promptEl.focus();
       renderPromptQueue();
+    }
+    if (queueClaimLost) {
+      loadPromptQueue();
+      if (typeof syncConnect === "function") syncConnect();
     }
   }
 }
@@ -1489,9 +1718,48 @@ function showQuestion(q) {
   setTimeout(function () { var first = panel.querySelector("input"); if (first) first.focus(); }, 0);
 }
 
+/* Local commands run before chat/queue/interrupt handling and keep attachments. */
+var localSlashSuggestions = null;
+function runLocalSlashCommand(rawText) {
+  var match = /^\/skills(?:\s+([\s\S]*))?$/i.exec(rawText.trim());
+  if (!match) return false;
+  promptEl.value = "";
+  promptEl.style.height = "auto";
+  composerDraftStore.clear(composerDraftStore.scope(), rawText);
+  updateLocalSlashSuggestions();
+  openSkills(match[1] || "");
+  return true;
+}
+function completeSkillsSuggestion() {
+  promptEl.value = "/skills ";
+  promptEl.dispatchEvent(new Event("input", { bubbles: true }));
+  promptEl.focus();
+}
+function updateLocalSlashSuggestions() {
+  var value = promptEl.value.replace(/^\s+/, "").toLowerCase();
+  var show = value.charAt(0) === "/" && "/skills".indexOf(value) === 0;
+  if (!show) {
+    if (localSlashSuggestions) localSlashSuggestions.hidden = true;
+    return;
+  }
+  if (!localSlashSuggestions) {
+    localSlashSuggestions = el("div", "attachment-list");
+    localSlashSuggestions.id = "slash-suggestions";
+    var button = el("button", "btn");
+    button.type = "button";
+    button.appendChild(el("code", "", "/skills — "));
+    button.appendChild(i18nEl("span", "", "cmd.skills"));
+    button.addEventListener("click", completeSkillsSuggestion);
+    localSlashSuggestions.appendChild(button);
+    promptEl.parentNode.insertBefore(localSlashSuggestions, promptEl);
+  }
+  localSlashSuggestions.hidden = false;
+}
+
 $("#composer").addEventListener("submit", async function (e) {
   e.preventDefault();
   var rawText = promptEl.value;
+  if (runLocalSlashCommand(rawText)) return;
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
   var afterRun = streaming && runFinishing && !pendingImmediate;
@@ -1524,8 +1792,9 @@ $("#stop-run-btn").addEventListener("click", function () {
   if (abortCtl) abortCtl.abort();
 });
 $("#interrupt-btn").addEventListener("click", function () {
-  if (pendingImmediate || queueDispatching || queueDispatchItem) return;
   var rawText = promptEl.value;
+  if (runLocalSlashCommand(rawText)) return;
+  if (pendingImmediate || queueDispatching || queueDispatchItem) return;
   var text = rawText.trim();
   if (!text && !pendingAttachments.length) return;
   var attachments = pendingAttachments.slice();
@@ -1541,12 +1810,18 @@ $("#attachment-preview-dialog").addEventListener("click", function (event) {
   if (event.target === this) closeAttachmentPreview();
 });
 promptEl.addEventListener("keydown", function (e) {
+  if (e.key === "Tab" && localSlashSuggestions && !localSlashSuggestions.hidden) {
+    e.preventDefault();
+    completeSkillsSuggestion();
+    return;
+  }
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     $("#composer").requestSubmit();
   }
 });
 promptEl.addEventListener("input", function () {
+  updateLocalSlashSuggestions();
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 200) + "px";
 });

@@ -58,6 +58,8 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	// only, 5s cap) is a GET /v1/models probe — cheap and universal for
 	// OpenAI-compat hosts; anthropic/codex transports skip it (their
 	// model lists need different auth) and just trust the build.
+	at.WorkerReasoningEffort = w.tomlCfg.TaskReasoningEffort
+	at.AdvisorReasoningEffort = w.tomlCfg.AdvisorReasoningEffort
 	if w.taskWorkerProvider != nil {
 		at.WorkerProvider = w.taskWorkerProvider
 		at.WorkerContextProvider = config.RuntimeProviderName(w.tomlCfg, w.taskWorkerCfg)

@@ -32,15 +32,20 @@ func TestSyncHubReplayIsolationAndCleanup(t *testing.T) {
 	if len(snapshot.Runs) != 1 || len(snapshot.Events) != 3 || len(snapshot.Events[0].Text) != 1000 || snapshot.Events[1].Text != "why?" || snapshot.Events[1].ReasoningTok != 5 {
 		t.Fatalf("snapshot: %+v", snapshot)
 	}
-	select {
-	case frame := <-owner.events:
-		t.Fatalf("owner duplicate: %+v", frame)
-	default:
-	}
-	select {
-	case frame := <-other.events:
-		t.Fatalf("unselected event: %+v", frame)
-	default:
+	// State summaries are global (including the owner), but transcript deltas
+	// remain selected-session-only and are still suppressed for their sender.
+	for _, sub := range []*syncSubscriber{owner, other} {
+		for _, state := range []string{"waiting_answer", "running"} {
+			frame := <-sub.events
+			if frame.Type != "run_updated" || frame.State != state || frame.Event != nil {
+				t.Fatalf("state summary: %+v", frame)
+			}
+		}
+		select {
+		case frame := <-sub.events:
+			t.Fatalf("unexpected transcript event: %+v", frame)
+		default:
+		}
 	}
 	if h.stop("s", "stale") || !h.stop("s", "turn") || ctx.Err() == nil {
 		t.Fatal("turn-specific Stop failed")

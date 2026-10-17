@@ -1,5 +1,7 @@
 package llm
 
+import "context"
+
 // Public Responses endpoints negotiate independently; a gateway rejecting an
 // effort must not disable the same model on another endpoint. Keep the special
 // Zen dialect and the ChatGPT backend's existing model-only key unchanged.
@@ -10,11 +12,11 @@ func (p *CodexProvider) reasoningKey() string {
 	return p.cfg.Model
 }
 
-func (p *CodexProvider) reasoningEffort() string {
+func (p *CodexProvider) reasoningEffort(contexts ...context.Context) string {
 	if p.cfg.StandardResponsesAPI && !isOpenCodeZenBaseURL(p.cfg.BackendURL) {
-		return ReasoningEffortForModelWithCapability(p.reasoningKey(), true)
+		return ReasoningEffortForModelWithCapability(p.reasoningKey(), true, contexts...)
 	}
-	effort := ReasoningEffortForModel(p.cfg.Model)
+	effort := ReasoningEffortForModel(p.cfg.Model, contexts...)
 	if effort == "none" {
 		return ""
 	}

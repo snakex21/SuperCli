@@ -15,8 +15,10 @@ import (
 // render messages, tool calls, results, and terminal events
 // differently. Empty fields are omitted to keep the stream compact.
 type wireEvent struct {
-	Type string `json:"type"`
-	At   int64  `json:"at,omitempty"` // Server event time in Unix milliseconds; retained on replay.
+	Type            string `json:"type"`
+	QueuePaused     bool   `json:"queue_paused,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	At              int64  `json:"at,omitempty"` // Server event time in Unix milliseconds; retained on replay.
 	// Text carries assistant message chunks (type "message") and
 	// reflection/marker text.
 	Text string `json:"text,omitempty"`
@@ -109,7 +111,7 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		// the agent kind, Status the outcome, Output the short summary.
 		return wireEvent{Type: "worker", ID: e.TaskID, Name: e.Agent, Status: e.Status, Output: e.Summary, Text: e.Text}, true
 	case agent.WorkerProgressEvent:
-		return wireEvent{Type: "worker_progress", ID: e.TaskID, Name: e.Agent, Kind: e.Kind,
+		return wireEvent{Type: "worker_progress", ID: e.TaskID, Name: e.Agent, Kind: e.Kind, Model: e.Model, ReasoningEffort: e.ReasoningEffort,
 			CallID: e.CallID, Tool: e.Tool, Args: e.Args, Output: e.Output, Err: e.Err,
 			ParentCallID: e.ParentCallID, Run: e.Run, Prompt: e.Prompt, Status: e.Status}, true
 	case agent.DraftUsedEvent:

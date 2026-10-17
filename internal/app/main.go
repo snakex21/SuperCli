@@ -346,6 +346,8 @@ func Main() {
 	registry.MustRegister(goalTool.Spec())
 
 	darwinTool := darwin.NewDarwinTool(provider, registry, home, buildSystemPrompt(goalSvc))
+	darwinTool.SetReasoningEffort(tomlCfg.DarwinReasoningEffort)
+	darwinTool.SetPoolSize(tomlCfg.DarwinPoolSize)
 	// Each Darwin child gets its own file-tool registry
 	// rooted at its git worktree, so its edits land on
 	// its branch (and can be diffed, judged, and merged)
@@ -446,7 +448,7 @@ func Main() {
 		if rpErr != nil {
 			log.Printf("review_model: provider %q build failed: %v — review disabled", tomlCfg.ReviewModel, rpErr)
 		} else {
-			postReview = &agent.PostReviewConfig{Provider: rp, VerifyCommands: tomlCfg.VerifyCommands, MaxRounds: tomlCfg.ReviewMaxRounds}
+			postReview = &agent.PostReviewConfig{Provider: rp, ReasoningEffort: tomlCfg.ReviewReasoningEffort, VerifyCommands: tomlCfg.VerifyCommands, MaxRounds: tomlCfg.ReviewMaxRounds}
 			log.Printf("review_model: post-work review uses %q @ %s", rp.Name(), reviewCfg.BaseURL)
 		}
 	}

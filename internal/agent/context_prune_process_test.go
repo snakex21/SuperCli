@@ -158,6 +158,9 @@ func TestPrunedRealProcessOutcomeSurvivesWorkerResume(t *testing.T) {
 							t.Fatalf("unreadable evidence: %v %+v", err, retained)
 						}
 					}
+					// The tiny pruning trigger above is not a usable request window:
+					// resume with room for tool schemas and the preserved active turn.
+					loop.windowFor = func(string) int { return 4096 }
 					worker := &Worker{ID: "worker-1", Agent: "code", Loop: loop, Status: "done", Runs: 1}
 					if _, err := runWorkerLoop(ctx, worker, "Report the historical process result."); err != nil {
 						t.Fatal(err)

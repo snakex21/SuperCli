@@ -413,7 +413,7 @@ func buildOpenAIRequestWithReasoning(model string, msgs []Message, tools []ToolD
 	return buildOpenAIRequestWithReasoningKey(model, model, msgs, tools, vision, cachePrompt, format, 0, Sampling{})
 }
 
-func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int, sampling Sampling) ([]byte, error) {
+func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message, tools []ToolDef, vision bool, cachePrompt bool, format openAIReasoningFormat, maxTokens int, sampling Sampling, contexts ...context.Context) ([]byte, error) {
 	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
 	req := openaiRequest{
 		Model:            model,
@@ -430,7 +430,7 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 		StreamOptions:    &openaiStreamOptions{IncludeUsage: true},
 		CachePrompt:      cachePrompt,
 	}
-	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone); e != "" {
+	if e := ReasoningEffortForModelWithCapability(supportKey, format != openAIReasoningNone, contexts...); e != "" {
 		if format == openAIReasoningUnified {
 			// OpenRouter/Kilo-style gateways can return the model's exposed
 			// reasoning stream, but some default to hiding it unless exclude is

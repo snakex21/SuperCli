@@ -226,6 +226,7 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 						sequential = !*swapToml.DarwinParallel
 					}
 					d.darwinTool.SetSequential(sequential)
+					d.darwinTool.SetPoolSize(swapToml.DarwinPoolSize)
 				}
 				// Just switched models — if the new provider is Codex,
 				// refresh its usage snapshot in the background so the HUD

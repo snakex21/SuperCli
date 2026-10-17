@@ -1,6 +1,7 @@
 // Package viewport adapts the Bubbles v1.0.0 viewport with immutable line-width reuse.
 // Upstream: github.com/charmbracelet/bubbles/viewport (MIT; see LICENSE).
-// Rendering, scrolling and key behavior remain identical to the pinned upstream.
+// Scrolling and key behavior follow the pinned upstream; clipped lines also
+// retain SGR styles opened above the visible area.
 package viewport
 
 import (
@@ -70,6 +71,7 @@ type Model struct {
 	longestLineWidth int
 	lineWidths       []uint16
 	widthContent     string
+	lineStyles       []lineStyle
 }
 
 func (m *Model) setInitialValues() {
@@ -132,7 +134,7 @@ func (m *Model) SetContent(s string) {
 	lines := strings.Split(s, "\n")
 	widths := make([]uint16, len(lines))
 	m.longestLineWidth = 0
-	oldOffset := 0
+	oldOffset, unchanged := 0, 0
 	for i, line := range lines {
 		width := 0
 		reused := false
@@ -143,9 +145,14 @@ func (m *Model) SetContent(s string) {
 			}
 			oldLine := m.widthContent[oldOffset : oldOffset+oldEnd]
 			oldOffset += oldEnd + 1
-			if m.lineWidths[i] != 0xffff && oldLine == line {
-				width = int(m.lineWidths[i])
-				reused = true
+			if oldLine == line {
+				if unchanged == i {
+					unchanged++
+				}
+				if m.lineWidths[i] != 0xffff {
+					width = int(m.lineWidths[i])
+					reused = true
+				}
 			}
 		}
 		if !reused {
@@ -160,6 +167,7 @@ func (m *Model) SetContent(s string) {
 			m.longestLineWidth = width
 		}
 	}
+	m.updateLineStyles(lines, unchanged)
 	m.lines, m.lineWidths, m.widthContent = lines, widths, s
 
 	if m.YOffset > len(m.lines)-1 {
@@ -175,25 +183,14 @@ func (m Model) maxYOffset() int {
 
 // visibleLines returns the lines that should currently be visible in the
 // viewport.
-func (m Model) visibleLines() (lines []string) {
+func (m Model) visibleLines() []string {
+	if len(m.lines) == 0 {
+		return nil
+	}
 	h := m.Height - m.Style.GetVerticalFrameSize()
-	w := m.Width - m.Style.GetHorizontalFrameSize()
-
-	if len(m.lines) > 0 {
-		top := max(0, m.YOffset)
-		bottom := clamp(m.YOffset+h, top, len(m.lines))
-		lines = m.lines[top:bottom]
-	}
-
-	if (m.xOffset == 0 && m.longestLineWidth <= w) || w == 0 {
-		return lines
-	}
-
-	cutLines := make([]string, len(lines))
-	for i := range lines {
-		cutLines[i] = ansi.Cut(lines[i], m.xOffset, m.xOffset+w)
-	}
-	return cutLines
+	top := max(0, m.YOffset)
+	bottom := clamp(m.YOffset+h, top, len(m.lines))
+	return m.renderLines(top, bottom, true)
 }
 
 // scrollArea returns the scrollable boundaries for high performance rendering.
@@ -302,7 +299,7 @@ func (m *Model) ScrollDown(n int) (lines []string) {
 	// XXX: high performance rendering is deprecated in Bubble Tea.
 	bottom := clamp(m.YOffset+m.Height, 0, len(m.lines))
 	top := clamp(m.YOffset+m.Height-n, 0, bottom)
-	return m.lines[top:bottom]
+	return m.renderLines(top, bottom, false)
 }
 
 // LineUp moves the view down by the given number of lines. Returns the new
@@ -329,7 +326,7 @@ func (m *Model) ScrollUp(n int) (lines []string) {
 	// XXX: high performance rendering is deprecated in Bubble Tea.
 	top := max(0, m.YOffset)
 	bottom := clamp(m.YOffset+n, 0, m.maxYOffset())
-	return m.lines[top:bottom]
+	return m.renderLines(top, bottom, false)
 }
 
 // SetHorizontalStep sets the default amount of columns to scroll left or right

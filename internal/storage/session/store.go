@@ -35,8 +35,12 @@ type Session struct {
 // Store is the SQLite-backed session store. It is safe for
 // concurrent use. Close releases the underlying *sql.DB.
 type Store struct {
-	db   *sql.DB
-	root string
+	db                 *sql.DB
+	root               string
+	housekeepingCancel context.CancelFunc
+	housekeepingDone   chan struct{}
+	housekeepingClose  sync.Once
+	housekeepingClosed bool
 	// Serialize publication/repair, never the hashing of incoming image bytes.
 	mediaMu sync.Mutex
 	// Cache only the compiled count query, never its results.
@@ -91,6 +95,13 @@ func (s *Store) Close() error {
 	}
 	s.countsMu.Lock()
 	defer s.countsMu.Unlock()
+	s.housekeepingClose.Do(func() {
+		s.housekeepingClosed = true
+		if s.housekeepingCancel != nil {
+			s.housekeepingCancel()
+			<-s.housekeepingDone
+		}
+	})
 	if s.countsStmt != nil {
 		_ = s.countsStmt.Close()
 	}

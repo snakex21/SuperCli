@@ -886,7 +886,7 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
   item.detail.textContent = clip(String(item.activity || "").split("\n")[0], 140);
   item.state.textContent = taskStatusLabel(item.status);
-  item.button.title = clip([id, item.activity].filter(Boolean).join(" · "), 400);
+  item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
   renderWorkerOverview();
 }
 function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
@@ -1249,6 +1249,7 @@ function parseTaskNotification(text) {
     id: field("task-id"), agent: field("agent") || "worker",
     status: field("status") || "done", summary: field("summary"),
     tools: field("tools"), result: field("result"),
+    model: field("worker-model"), reasoning_effort: field("reasoning-effort"),
   };
 }
 
@@ -1288,6 +1289,8 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   row.classList.add(err || note.status === "failed" ? "failed" : (note.status === "running" ? "running" : "done"));
   row._tname.textContent = taskRowTitle(row, note.agent, note.id);
   row._tname.title = note.id || "";
+  row._modelLabel = null;
+  applyWorkerModelInfo(row, note.model ? note : {model: row._workerModel, reasoning_effort: row._workerEffort});
   if (row._t0 != null) updateWorkerOverview(note.id, note.agent, err ? "failed" : note.status, row._taskPrompt, row);
   row._thint.textContent = taskMetrics(note);
   row._stat.textContent = taskStatusLabel(err ? "failed" : note.status) + (elapsed != null ? " · " + fmtDuration(elapsed) : "");
@@ -1678,6 +1681,19 @@ function findTaskRow(taskID, agentName, parentCallID) {
   return null;
 }
 
+function workerModelInfo(model, effort) {
+  if (!model) return "";
+  return t("task.modelThinking").replace("{model}", model).replace("{effort}", effort || "—");
+}
+function applyWorkerModelInfo(row, ev) {
+  if (!ev.model) return;
+  row._workerModel = ev.model; row._workerEffort = ev.reasoning_effort;
+  row._workerModelInfo = workerModelInfo(ev.model, ev.reasoning_effort);
+  row.title = row._workerModelInfo;
+  row._tname.title = row._workerModelInfo;
+  if (!row._modelLabel) { row._modelLabel = el("small", "worker-model-info"); row._tname.appendChild(row._modelLabel); }
+  row._modelLabel.textContent = row._workerModelInfo;
+}
 function addWorkerProgress(ev) {
   var row = findTaskRow(ev.id, ev.name, ev.parent_call_id);
   if (!row) return false;
@@ -1687,11 +1703,15 @@ function addWorkerProgress(ev) {
     row._taskRun = ev.run || 1;
     row._tname.textContent = taskRowTitle(row, row._taskAgent, ev.id);
     row._tname.title = ev.id;
+    // Reattach the label after the task title's textContent reset.
+    row._modelLabel = null;
+    applyWorkerModelInfo(row, ev);
     updateWorkerOverview(ev.id, row._taskAgent, "running", row._taskPrompt || ev.prompt, row);
     row._thint.textContent = clip(row._taskPrompt || ev.prompt || "", 90);
     return true;
   }
   if (ev.kind === "finished") {
+    applyWorkerModelInfo(row, ev);
     clearInterval(row._clock);
     row._clock = null;
     row._stat.textContent = taskStatusLabel(ev.status) + (row._startedAtMS > 0 ? " · " + fmtDuration(toolElapsed(row, ev.at)) : "");
