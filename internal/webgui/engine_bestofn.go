@@ -18,6 +18,8 @@ import (
 // no schema cost.
 func (e *Engine) registerDarwin(reg *tools.Registry, prov llm.Provider, cfg config.Config, tc config.TomlConfig, home, system string) {
 	dt := darwin.NewDarwinTool(prov, reg, home, system)
+	dt.SetReasoningEffort(tc.DarwinReasoningEffort)
+	dt.SetPoolSize(tc.DarwinPoolSize)
 	dt.SetLoopFactory(darwin.AgentLoopAdapter(reg, func(root string) (*tools.Registry, error) {
 		return darwinChildRegistry(root), nil
 	}))

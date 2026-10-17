@@ -34,7 +34,7 @@ function harness(host = 'test-phone.trycloudflare.com') {
     projectEpoch: 0, sessionRuntimeReady: Promise.resolve(), transcriptAbortCtl: null,
     transcriptPageSize: 24, streamAppendTarget: null, composerDraftStore: {restore() {}}, promptEl: element(),
     renderStats() {}, restoreSessionRuntime() {}, transcriptHasMore: false, transcriptBeforeSeq: 0,
-    queueDispatching: false, detachActiveRun: () => false, failedRuns: {},
+    queueDispatching: false, queueDispatchItem: null, promptQueue: [], detachActiveRun: () => false, failedRuns: {},
     j: async url => { calls.push(['transcript', url]); return {messages: [{seq: 1, role: 'user'}, {seq: 3, role: 'user'}, {seq: 4, role: 'assistant'}]}; },
     renderLoadedTranscript() { rendered.length = 0; c.loadedTranscriptMessages.forEach(m => rendered.push(['history', m.seq])); },
     reattachDetachedRun(id) { const run = c.syncRunFor(id); if (!run) return false; run.reattach(); return true; },
@@ -97,6 +97,35 @@ function scrollHarness() {
 }
 // Real transcript rows + real handleEvent, with deterministic clocks and a tiny
 // DOM. No browser/Node dependencies are needed to test replayed timer labels.
+for (const mode of ['normal', 'paused', 'immediate', 'afterRun', 'stopped', 'takeover']) {
+  test('sync run_finished hands off queue: ' + mode, async () => {
+    const h = harness(), c = h.c, sent = [];
+    h.frame({type: 'snapshot', runs: [info], events: [activity]});
+    await new Promise(resolve => setImmediate(resolve));
+    c.promptQueue = [{id: 'q', text: 'queued'}];
+    c.pauseQueue = mode === 'paused' || mode === 'afterRun';
+    if (mode === 'immediate' || mode === 'afterRun') c.pendingImmediate = {text: 'now', afterRun: mode === 'afterRun'};
+    c.isAfterRunPrompt = item => !!item.afterRun;
+    c.dispatchQueuedTask = item => { sent.push(item); };
+    c.syncRefreshView = () => {};
+    if (mode === 'takeover') { c.queueDispatching = true; c.activeRun = c.syncRuns.s1; }
+    h.frame({type: 'run_finished', session_id: 's1', queue_paused: mode === 'stopped'});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(sent.length, mode === 'paused' || mode === 'stopped' ? 0 : 1);
+    if (sent.length) assert.equal(sent[0].text, mode === 'immediate' || mode === 'afterRun' ? 'now' : 'queued');
+    if (mode === 'takeover') assert.equal(c.queueDispatching, false);
+  });
+}
+
+test('queue_changed and reconnect snapshot refresh the durable queue', () => {
+  const h = harness();
+  let refreshes = 0;
+  h.c.loadPromptQueue = () => { refreshes++; };
+  h.frame({type: 'queue_changed', project_path: 'workspace'});
+  h.frame({type: 'snapshot', runs: [], events: []});
+  assert.equal(refreshes, 2);
+});
+
 function timerHarness(skew = 300000) {
   const h = harness(), c = h.c, intervals = new Map();
   let now = 1000000, mono = 500, sequence = 0;

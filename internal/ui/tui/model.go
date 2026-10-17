@@ -516,20 +516,30 @@ func newInputArea() textarea.Model {
 	return ti
 }
 
-// syncInputHeight grows/shrinks the input box with its
-// content, clamped to [1, maxInputLines].
+// syncInputHeight grows/shrinks the input with its content and available space.
 func (m *Model) syncInputHeight() {
-	h := m.input.LineCount()
-	if h < 1 {
-		h = 1
-	}
-	if h > maxInputLines {
-		h = maxInputLines
+	m.resizeViewport()
+}
+
+func (m *Model) fitInputHeight() {
+	h := min(maxInputLines, max(1, m.input.LineCount()))
+	if m.height > 0 {
+		// Preserve the header, separator, input borders, key hints and one
+		// conversation row even with a running task and pending attachments.
+		reserved := 6 + len(m.workerPanelLines())
+		if m.busy {
+			reserved++
+		}
+		if len(m.pendingAttachments) > 0 {
+			reserved++
+		}
+		h = min(h, max(1, m.height-reserved))
 	}
 	if m.input.Height() != h {
 		m.input.SetHeight(h)
+		// Let the widget keep the active caret in view after a height change.
+		m.input, _ = m.input.Update(tea.WindowSizeMsg{Width: m.input.Width(), Height: h})
 	}
-	m.resizeViewport()
 }
 
 // Init satisfies tea.Model. The spinner ticks while the agent
@@ -636,12 +646,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeViewport()
 		m.chat.width = msg.Width
 		m.chat.completedDirty = true
-		m.input.SetWidth(msg.Width)
+		// Match the border's inner content width so Lip Gloss does not wrap
+		// an already-rendered textarea into an extra, unbudgeted row.
+		m.input.SetWidth(max(1, msg.Width-6))
 		// Keep the empty-state welcome responsive. Once a conversation has
 		// started refreshTranscript owns the viewport and resize must never
 		// replace the chat with the welcome screen.
 		if !m.hasTranscript && m.current == "" {
-			m.setViewportContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, msg.Height))
+			m.setViewportContent(welcomeAtSize(Options{LLM: m.llm, Language: m.language}, m.palette, msg.Width, m.viewport.Height))
 		} else {
 			m.refreshTranscript()
 		}

@@ -24,6 +24,7 @@ func (m Model) renderSettingsMenu() string {
 		}
 		if m.menu.editing && i == m.menu.cursor {
 			value = m.menu.editBuf + "▏"
+			page.editLine = value
 		}
 		badge := value
 		if defaultValue && strings.HasSuffix(value, ")") {

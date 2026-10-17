@@ -21,6 +21,19 @@ import (
 // from the chat.noProvider catalog key so the notice follows the UI language.
 var errNoActiveProvider = errors.New("no active AI provider")
 
+// modelProgressTimer keeps the watchdog's clock injectable without changing
+// command deadlines, cancellation, or the production timer's semantics.
+type modelProgressTimer struct {
+	C     <-chan time.Time
+	Stop  func() bool
+	Reset func(time.Duration) bool
+}
+
+func wallProgressTimer(d time.Duration) modelProgressTimer {
+	timer := time.NewTimer(d)
+	return modelProgressTimer{C: timer.C, Stop: timer.Stop, Reset: timer.Reset}
+}
+
 func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon string, emit func(wireEvent)) error {
 	return e.runStreamWithImages(ctx, prompt, sessionID, userAddon, nil, emit)
 }
@@ -59,6 +72,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 	}()
 	home := e.Home()
+	if manager := e.mcpRuntimeFor(home); manager != nil {
+		defer manager.Acquire()()
+	}
 	// A conversation may still be running after the user switched to another
 	// project. Admit one run per conversation; release after all saves below.
 	if id := strings.TrimSpace(sessionID); id != "" {
@@ -80,9 +96,15 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		defer release()
 	}
 	identity, _ := ctx.Value(syncIdentityKey{}).(syncIdentity)
-	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun)
+	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun, e.syncRunDetails(sid, home, prompt))
 	originalEmit := emit
 	emit = func(ev wireEvent) {
+		// Stop may come from a different device while the sender still owns
+		// its HTTP stream. Carry the pause on the terminal event as well as
+		// run_finished, so transport scheduling cannot restart its queue.
+		if ev.Type == "done" || ev.Type == "error" {
+			ev.QueuePaused = ctx.Err() != nil || ev.Type == "error"
+		}
 		ev.At = time.Now().UnixMilli()
 		observerEvent := ev
 		if len(ev.Images) > 0 {
@@ -228,14 +250,19 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// cancellation and any explicit tool deadline remain in force.
 	e.mu.RLock()
 	progressTimeout := e.cfg.Timeout
+	newTimer := e.newProgressTimer
 	e.mu.RUnlock()
-	var progressTimer *time.Timer
+	if newTimer == nil {
+		newTimer = wallProgressTimer
+	}
+	var progressTimer *modelProgressTimer
 	var progressC <-chan time.Time
 	activeTools := map[string]struct{}{}
 	delegatedWaiting := false
 	modelFinished := false
 	if progressTimeout > 0 {
-		progressTimer = time.NewTimer(progressTimeout)
+		timer := newTimer(progressTimeout)
+		progressTimer = &timer
 		progressC = progressTimer.C
 		defer progressTimer.Stop()
 	}

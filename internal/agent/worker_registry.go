@@ -39,6 +39,11 @@ type Worker struct {
 	ToolNames    []string
 	Runs         int
 	lastEvidence string // bounded latest-run observations; guarded by stateMu
+	// reasoningEffort follows this worker across background runs and continuations.
+	// It is applied only inside the worker loop, never to coordinator verdicts.
+	reasoningEffort   string
+	uiModel           string
+	uiReasoningEffort string
 
 	// progress is installed by AgentTool before the first run. It is immutable
 	// afterwards and emits best-effort UI events through the parent loop.
@@ -93,19 +98,21 @@ func (w *Worker) Stop() bool {
 // Snapshot is a copy of the worker's reportable state, safe to render
 // without holding locks.
 type Snapshot struct {
-	ID          string
-	Agent       string
-	Description string
-	Model       string
-	Status      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	LastError   string
-	TokensIn    int
-	TokensOut   int
-	Steps       int
-	ToolNames   []string
-	Runs        int
+	WorkerModel     string
+	ReasoningEffort string
+	ID              string
+	Agent           string
+	Description     string
+	Model           string
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	LastError       string
+	TokensIn        int
+	TokensOut       int
+	Steps           int
+	ToolNames       []string
+	Runs            int
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -115,19 +122,21 @@ func (w *Worker) Snapshot() Snapshot {
 	w.stateMu.RLock()
 	defer w.stateMu.RUnlock()
 	return Snapshot{
-		ID:          w.ID,
-		Agent:       w.Agent,
-		Description: w.Description,
-		Model:       w.Model,
-		Status:      w.Status,
-		CreatedAt:   w.CreatedAt,
-		UpdatedAt:   w.UpdatedAt,
-		LastError:   w.LastError,
-		TokensIn:    w.TokensIn,
-		TokensOut:   w.TokensOut,
-		Steps:       w.Steps,
-		ToolNames:   append([]string(nil), w.ToolNames...),
-		Runs:        w.Runs,
+		ID:              w.ID,
+		Agent:           w.Agent,
+		Description:     w.Description,
+		Model:           w.Model,
+		WorkerModel:     w.uiModel,
+		ReasoningEffort: w.uiReasoningEffort,
+		Status:          w.Status,
+		CreatedAt:       w.CreatedAt,
+		UpdatedAt:       w.UpdatedAt,
+		LastError:       w.LastError,
+		TokensIn:        w.TokensIn,
+		TokensOut:       w.TokensOut,
+		Steps:           w.Steps,
+		ToolNames:       append([]string(nil), w.ToolNames...),
+		Runs:            w.Runs,
 	}
 }
 

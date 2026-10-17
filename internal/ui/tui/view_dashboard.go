@@ -36,6 +36,10 @@ func (m Model) renderDashboard() string {
 }
 
 func (m Model) renderDashboardSnapshot(d DashboardSnapshot) string {
+	rows := m.dashboardRows(d)
+	if rows == 0 {
+		return ""
+	}
 	width := max(1, m.width)
 	sep := m.palette.StatusSep.Render(" · ")
 	workspace := d.Project
@@ -98,7 +102,7 @@ func (m Model) renderDashboardSnapshot(d DashboardSnapshot) string {
 	if c.Requests > 0 {
 		cacheValue += fmt.Sprintf(m.tr("tui.view_dashboard.a879058ffb"), c.Requests)
 	}
-	if width >= 90 && m.height >= 22 {
+	if width >= 90 && m.height >= 22 && rows >= 6 {
 		w := (width - 2) / 3
 		cards := []string{
 			m.dashboardCard(m.tr("tui.view_dashboard.a0dd543626"), usage+m.tr("tui.view_dashboard.e916532aff"), day+m.tr("tui.view_dashboard.c514d734bf"), w),
@@ -112,6 +116,11 @@ func (m Model) renderDashboardSnapshot(d DashboardSnapshot) string {
 	}
 	if d.Limits != "" || d.Account != "" {
 		lines = append(lines, truncateVisible(m.palette.StatusDim.Render(m.tr("tui.view_dashboard.3c3650a827")+strings.TrimSpace(d.Limits+" "+d.Account)), width))
+	}
+	// Compact rows are ordered by priority: workspace, goal, usage, context,
+	// account limits. On a keyboard-sized screen, controls keep their space.
+	if len(lines) > rows {
+		lines = lines[:rows]
 	}
 	return strings.Join(lines, "\n")
 }
@@ -152,16 +161,32 @@ func (m Model) dashboardHeight() int {
 	if m.dashboardFn == nil {
 		return 0
 	}
-	d := m.dashboardFn()
-	rows := 3
-	if m.width >= 90 && m.height >= 22 {
-		rows = 6
+	return m.dashboardRows(m.dashboardFn())
+}
+
+func (m Model) dashboardRowBudget() int {
+	if m.height <= 0 {
+		return 8 // Full dashboard with both a goal and account limits.
 	}
+	budget := max(0, m.height-m.chromeHeight()-3)
+	if m.height < 20 {
+		budget = min(budget, 3)
+	}
+	return budget
+}
+
+func (m Model) dashboardRows(d DashboardSnapshot) int {
+	extra := 0
 	if d.Goal.Title != "" {
-		rows++
+		extra++
 	}
 	if d.Limits != "" || d.Account != "" {
-		rows++
+		extra++
 	}
-	return rows
+	budget := m.dashboardRowBudget()
+	rows := 3
+	if m.width >= 90 && m.height >= 22 && 6+extra <= budget {
+		rows = 6
+	}
+	return min(rows+extra, budget)
 }

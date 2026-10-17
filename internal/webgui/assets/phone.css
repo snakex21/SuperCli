@@ -1,3 +1,24 @@
+/* Run modes use the same knob controls, but must also fit narrow phone panels. */
+.modes-panel, .modes-panel .knob-row { min-width:0; max-width:100%; }
+.modes-panel .k-name { min-width:0; overflow-wrap:anywhere; }
+.modes-panel .k-name small { white-space:normal; overflow-wrap:anywhere; }
+.modes-panel .k-edit, .modes-panel .k-edit-wrap { min-width:0; max-width:100%; box-sizing:border-box; }
+.modes-panel .seg { display:flex; flex-wrap:wrap; min-width:0; max-width:100%; }
+.modes-panel .seg button { white-space:normal; overflow-wrap:anywhere; }
+@media (max-width:640px) {
+  .modes-panel .knob-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .modes-panel .k-name { flex:1 1 100%; }
+  .modes-panel .k-edit, .modes-panel .k-edit-wrap { flex:1 1 100%; width:100%; }
+  .modes-panel .k-val, .modes-panel .k-src, .modes-panel .k-next { overflow-wrap:anywhere; min-width:0; }
+  .modes-panel .seg button { min-height:44px; }
+}
+
+/* Project run summaries stay readable without widening the phone sidebar. */
+#running-elsewhere { min-width:0; }
+.running-elsewhere-item { display:flex; flex-direction:column; align-items:stretch; width:100%; min-width:0; min-height:44px; text-align:left; overflow:hidden; }
+.running-elsewhere-item > span { display:block; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.running-elsewhere-state { font-variant-numeric:tabular-nums; }
+
 .phone-panel { position:absolute; z-index:85; top:54px; right:12px; width:min(420px,calc(100% - 24px)); max-height:calc(var(--app-viewport-height,100dvh) - 70px); overflow:auto; padding:18px; color:var(--text); background:var(--surface); border:1px solid var(--line); box-shadow:0 8px 32px #0008; border-radius:6px; }
 .phone-panel[hidden], #open-phone[hidden] { display:none; }
 .phone-panel header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -12,6 +33,8 @@
 .phone-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .phone-actions button { min-height:44px; padding:8px 12px; color:var(--text); background:var(--raise); border:1px solid var(--line); cursor:pointer; }
 .phone-actions button:disabled { opacity:.5; cursor:default; }
+.phone-pairing { align-items:center; }
+.phone-pairing #phone-qr { flex:1 1 220px; min-width:0; }
 .phone-consent { width:min(440px,calc(100% - 32px)); padding:20px; color:var(--text); background:var(--surface); border:1px solid var(--line); border-radius:6px; }
 .phone-consent::backdrop { background:#0009; }
 .phone-consent a { color:var(--accent); overflow-wrap:anywhere; }

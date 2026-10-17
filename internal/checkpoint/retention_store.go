@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -489,6 +490,7 @@ func deleteRetentionLooseLocked(ctx context.Context, a *StoreRetentionAudit, uni
 		if err := retentionRemoveProven(full, a.proofs[u.Path]); err != nil {
 			return deleted, err
 		}
+		log.Printf("housekeeping: deleted checkpoint object path=%s bytes=%d", full, u.Bytes)
 		var err error
 		deleted, err = retentionAdd(deleted, u.Bytes)
 		if err != nil {

@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -66,12 +67,12 @@ func buildAnthropicRequestWithSampling(model string, msgs []Message, tools []Too
 	return buildAnthropicRequestWithCaching(model, msgs, tools, vision, maxTokens, sampling, false)
 }
 
-func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int, sampling Sampling, cacheConversation bool) ([]byte, error) {
+func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []ToolDef, vision bool, maxTokens int, sampling Sampling, cacheConversation bool, contexts ...context.Context) ([]byte, error) {
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
 	req := anthropicRequest{Model: model, MaxTokens: maxTokens, Stream: true}
-	if thinking := anthropicThinkingForModel(model, maxTokens); thinking != nil {
+	if thinking := anthropicThinkingForModel(model, maxTokens, contexts...); thinking != nil {
 		req.Thinking = thinking
 	}
 	// Extended thinking fixes the sampling: the API rejects top_p/top_k
@@ -139,8 +140,8 @@ func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []Tool
 	return marshalAnthropicPromptCache(req, cacheSystem)
 }
 
-func anthropicThinkingForModel(model string, maxTokens int) *anthropicThinking {
-	effort := ReasoningEffortForModel(model)
+func anthropicThinkingForModel(model string, maxTokens int, contexts ...context.Context) *anthropicThinking {
+	effort := ReasoningEffortForModel(model, contexts...)
 	if effort == "" || effort == "none" {
 		return nil
 	}

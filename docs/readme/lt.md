@@ -25,6 +25,17 @@ GUI vaizdas yra ekrano nuotrauka; TUI vaizdas yra atvaizduotas tikrasis programo
 <!-- readme-unit:h.start -->
 ## Darbo pradžia
 
+<!-- readme-unit:start.install -->
+Naujai diegdami peržiūrėkite scenarijų prieš vykdydami toliau pateiktą POSIX arba PowerShell komandą. Diegimo programos nustato operacinę sistemą ir architektūrą, patikrina kontrolinę sumą ir įdiegia be administratoriaus teisių. Jos atsisako naudoti bet kurį esamą paskirties aplanką, kad nebūtų perrašyti ar prarasti duomenys; esamą diegimą atnaujinkite naudodami `/update` arba `--update`. Nurodykite `SUPERCLI_DIR`, kad pasirinktumėte naują paskirties vietą; `SUPERCLI_NO_PATH=1` praleidžia komandų aplinkos ir `PATH` konfigūravimą. Numatytosios vietos: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Diegimo programos automatiškai nepaleidžia SuperCli.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Išskleiskite savo operacinei sistemai ir architektūrai skirtą paketą į aplanką, kuriame galima rašyti. Windows sistemoje terminalui paleiskite `supercli.exe`, GUI – `supercli-web.exe`. Pridėtą `supercli-data/` aplanką laikykite šalia vykdomųjų failų.
 
@@ -46,10 +57,10 @@ Linux arba macOS sistemoje naudokite atitinkamą paketo vykdomąjį failą arba 
 ```
 
 <!-- readme-unit:start.termux -->
-Android sistemoje įdiekite viena eilute per Termux. Scenarijus atsisiunčia naujausią leidimą, patikrina kontrolinę sumą ir prideda komandas `supercli` ir `supercli-web`. Norėdami atnaujinti, paleiskite jį dar kartą; `supercli-data/` išlieka.
+Android sistemoje per Termux naudokite tą patį `install.sh` iš saugyklos šakninio katalogo. `ARM64` naudoja Android skirtą versiją; `x86_64` – Linux skirtą versiją. Jei trūksta reikalingų paketų, vykdykite `pkg install curl unzip coreutils`. Esamą diegimą atnaujinkite naudodami `/update` arba `--update`, o ne dar kartą paleisdami diegimo programą.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

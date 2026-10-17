@@ -24,6 +24,7 @@ type QueuedTask struct {
 	// staged uploads below <workspace>/.supercli/attachments. File bytes are
 	// never copied into the queue row.
 	Attachments []string `json:"attachments,omitempty"`
+	Merged      bool     `json:"merged,omitempty"`
 }
 
 func (s *Store) EnqueueTask(ctx context.Context, cwd, sessionID, prompt string) (QueuedTask, error) {
@@ -95,7 +96,7 @@ func (s *Store) AttachmentPathInUse(ctx context.Context, path string) (bool, err
 }
 
 func (s *Store) ListQueuedTasks(ctx context.Context, cwd string) ([]QueuedTask, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,cwd,IFNULL(session_id,''),prompt,position,created_at,IFNULL(attachments_json,'[]') FROM prompt_queue WHERE cwd=? ORDER BY position,created_at`, strings.TrimSpace(cwd))
+	rows, err := s.db.QueryContext(ctx, `SELECT id,cwd,IFNULL(session_id,''),prompt,position,created_at,IFNULL(attachments_json,'[]'),merge_dirty FROM prompt_queue WHERE cwd=? ORDER BY position,created_at`, strings.TrimSpace(cwd))
 	if err != nil {
 		return nil, err
 	}
@@ -105,10 +106,12 @@ func (s *Store) ListQueuedTasks(ctx context.Context, cwd string) ([]QueuedTask, 
 		var q QueuedTask
 		var ns int64
 		var rawAttachments string
-		if err := rows.Scan(&q.ID, &q.Cwd, &q.SessionID, &q.Prompt, &q.Position, &ns, &rawAttachments); err != nil {
+		var mergeDirty bool
+		if err := rows.Scan(&q.ID, &q.Cwd, &q.SessionID, &q.Prompt, &q.Position, &ns, &rawAttachments, &mergeDirty); err != nil {
 			return nil, err
 		}
 		q.CreatedAt = time.Unix(0, ns).UTC()
+		q.Merged = strings.HasPrefix(q.ID, "merged-") && !mergeDirty
 		if rawAttachments != "" && rawAttachments != "[]" {
 			if err := json.Unmarshal([]byte(rawAttachments), &q.Attachments); err != nil {
 				return nil, fmt.Errorf("session.Store.ListQueuedTasks attachments %s: %w", q.ID, err)
@@ -140,6 +143,27 @@ func (s *Store) UpdateQueuedTask(ctx context.Context, cwd, id, prompt string) er
 		return fmt.Errorf("session.Store.UpdateQueuedTask: cwd, id and prompt are required")
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE prompt_queue SET prompt=? WHERE id=? AND cwd=?`, prompt, id, cwd)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// EditQueuedTask atomically saves both fields; an empty prompt is valid for attachment-only messages.
+func (s *Store) EditQueuedTask(ctx context.Context, cwd, id, prompt string, attachments []string) error {
+	cwd, id, prompt = strings.TrimSpace(cwd), strings.TrimSpace(id), strings.TrimSpace(prompt)
+	attachments = cleanQueuedAttachments(attachments)
+	if cwd == "" || id == "" || (prompt == "" && len(attachments) == 0) {
+		return fmt.Errorf("session.Store.EditQueuedTask: cwd, id and message are required")
+	}
+	raw, err := json.Marshal(attachments)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE prompt_queue SET prompt=?,attachments_json=?,merge_dirty=1 WHERE id=? AND cwd=?`, prompt, string(raw), id, cwd)
 	if err != nil {
 		return err
 	}

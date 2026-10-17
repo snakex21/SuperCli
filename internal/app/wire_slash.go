@@ -57,6 +57,7 @@ type slashWireDeps struct {
 func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	cmds["update"] = updateCommand(d.dataDir, d.home)
 	cmds["reasoning-history"] = reasoningHistoryCommand(d.dataDir, d.cwd)
+	cmds["skills"] = skillsCommand(tools.NewDiscovererWithBuiltins(d.home, d.dataDir), d.uiLanguage)
 	// Fala 3: /workers — coordinator visibility. Lists workers from the
 	// task registry; "/workers stop <id>" cancels a running one.
 	cmds["workers"] = func(ctx context.Context, args string) (string, error) {

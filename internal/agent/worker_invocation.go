@@ -1,6 +1,9 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"supercli/internal/llm"
+)
 
 // workerInvocation belongs to one parent tool call, not to the worker's
 // lifetime. A resumed worker must report to the current run/UI stream.
@@ -23,6 +26,15 @@ func workerProgressSink(ctx context.Context, w *Worker, run int) func(WorkerProg
 	invocation, current := ctx.Value(workerInvocationKey{}).(workerInvocation)
 	return func(ev WorkerProgressEvent) {
 		ev.TaskID, ev.Agent, ev.Run = w.ID, w.Agent, run
+		if w.Loop != nil {
+			ev.Model = w.Loop.CurrentModel()
+			capable := w.Loop.caps != nil && w.Loop.caps.HasReasoning(ev.Model)
+			ev.ReasoningEffort = llm.ReasoningEffortForModelWithCapability(ev.Model, capable, ctx)
+			if ev.ReasoningEffort == "" {
+				ev.ReasoningEffort = "none"
+			}
+			w.setState(func(w *Worker) { w.uiModel, w.uiReasoningEffort = ev.Model, ev.ReasoningEffort })
+		}
 		if current && invocation.out != nil {
 			ev.ParentCallID = invocation.callID
 			select {

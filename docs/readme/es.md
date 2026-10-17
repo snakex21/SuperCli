@@ -25,6 +25,17 @@ La imagen de la GUI es una captura de pantalla; la imagen de la TUI es una repre
 <!-- readme-unit:h.start -->
 ## Primeros pasos
 
+<!-- readme-unit:start.install -->
+Para una instalación nueva, revise el script antes de ejecutar el comando de POSIX o PowerShell que aparece a continuación. Los instaladores detectan el sistema operativo y la arquitectura, verifican la suma de comprobación e instalan sin privilegios de administrador. Rechazan cualquier carpeta de destino existente para evitar sobrescrituras y pérdida de datos; actualice una instalación existente con `/update` o `--update`. Defina `SUPERCLI_DIR` para elegir un nuevo destino; `SUPERCLI_NO_PATH=1` omite la configuración del intérprete de comandos y de `PATH`. Destinos predeterminados: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Los instaladores no inician SuperCli automáticamente.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Extraiga el paquete de su sistema operativo y arquitectura en una carpeta con permisos de escritura. En Windows, inicie `supercli.exe` para el terminal o `supercli-web.exe` para la GUI. Mantenga la carpeta incluida `supercli-data/` junto a los ejecutables.
 
@@ -46,10 +57,10 @@ En Linux o macOS, utilice el ejecutable correspondiente del paquete o compile de
 ```
 
 <!-- readme-unit:start.termux -->
-En Android, instale con una sola línea en Termux. El script descarga la versión más reciente, verifica la suma de comprobación y añade los comandos `supercli` y `supercli-web`. Ejecútelo de nuevo para actualizar; `supercli-data/` se conserva.
+En Android, use en Termux el mismo `install.sh` de la raíz del repositorio. `ARM64` utiliza la compilación para Android; `x86_64` utiliza la compilación para Linux. Si faltan paquetes necesarios, ejecute `pkg install curl unzip coreutils`. Actualice una instalación existente con `/update` o `--update`, no volviendo a ejecutar el instalador.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

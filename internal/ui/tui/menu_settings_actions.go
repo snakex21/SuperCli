@@ -167,6 +167,8 @@ func (m Model) settingsCommitInt() (tea.Model, tea.Cmd) {
 			c.FallbackCooldownSeconds = n
 		case "draft_verify_max_rounds":
 			c.DraftVerifyMaxRounds = n
+		case "darwin_pool_size":
+			c.DarwinPoolSize = minInt(n, 10) // 0 = model decides; clamp to [1,10]
 		}
 	})
 }
@@ -183,6 +185,14 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return config.EffectiveCostCurrency(*c)
 	case "task_model":
 		return c.TaskModel
+	case "task_reasoning_effort":
+		return c.TaskReasoningEffort
+	case "advisor_reasoning_effort":
+		return c.AdvisorReasoningEffort
+	case "review_reasoning_effort":
+		return c.ReviewReasoningEffort
+	case "darwin_reasoning_effort":
+		return c.DarwinReasoningEffort
 	case "advisor_model":
 		return c.AdvisorModel
 	case "review_model":
@@ -210,6 +220,16 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 	rows := m.localizedSettingsRows()
 	r := rows[minInt(m.menu.cursor, len(rows)-1)]
 	buf := strings.TrimSpace(m.menu.editBuf)
+	if r.key == "task_reasoning_effort" || r.key == "advisor_reasoning_effort" || r.key == "review_reasoning_effort" || r.key == "darwin_reasoning_effort" {
+		buf = strings.ToLower(buf)
+		if buf == "default" {
+			buf = ""
+		}
+		if err := llm.ValidateReasoningEffort(buf); err != nil {
+			m.menu.formErr = err.Error()
+			return m, nil
+		}
+	}
 	if r.key == "cost_currency" && buf != "" {
 		code, err := fx.NormalizeCurrency(buf)
 		if err != nil {
@@ -226,6 +246,14 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			c.CostCurrency = buf
 		case "task_model":
 			c.TaskModel = buf
+		case "task_reasoning_effort":
+			c.TaskReasoningEffort = buf
+		case "advisor_reasoning_effort":
+			c.AdvisorReasoningEffort = buf
+		case "review_reasoning_effort":
+			c.ReviewReasoningEffort = buf
+		case "darwin_reasoning_effort":
+			c.DarwinReasoningEffort = buf
 		case "advisor_model":
 			c.AdvisorModel = buf
 		case "review_model":

@@ -25,6 +25,17 @@ The GUI image is a screenshot; the TUI image is a rendering of the application's
 <!-- readme-unit:h.start -->
 ## Get started
 
+<!-- readme-unit:start.install -->
+For a new installation, review the script before running the POSIX or PowerShell command below. The installers detect the OS and architecture, verify the checksum, and install without administrator privileges. They refuse any existing destination folder to prevent overwrites and data loss; update an existing installation with `/update` or `--update` instead. Set `SUPERCLI_DIR` to choose a new destination; `SUPERCLI_NO_PATH=1` skips shell and `PATH` setup. Defaults: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. The installers do not launch SuperCli automatically.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Extract the bundle for your operating system and architecture into a writable folder. On Windows, launch `supercli.exe` for the terminal or `supercli-web.exe` for the GUI. Keep the included `supercli-data/` folder beside the executables.
 
@@ -46,10 +57,10 @@ On Linux or macOS, use the corresponding executable from the bundle or build fro
 ```
 
 <!-- readme-unit:start.termux -->
-On Android, install with one line in Termux. The script downloads the newest release, verifies the checksum, and adds the `supercli` and `supercli-web` commands. Run it again to update; `supercli-data/` is kept.
+On Android, use the same `install.sh` from the repository root in Termux. `ARM64` uses the Android build; `x86_64` uses the Linux build. If prerequisites are missing, run `pkg install curl unzip coreutils`. Update an existing installation with `/update` or `--update`, not by rerunning the installer.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

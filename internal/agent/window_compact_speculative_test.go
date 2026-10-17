@@ -49,7 +49,7 @@ func TestSpeculativeCompactFreshResultUsed(t *testing.T) {
 	ctx := context.Background()
 	l.maybeStartSpeculativeCompact(ctx)
 	l.maybeStartSpeculativeCompact(ctx) // same prefix: no second call
-	summary, err, ok := l.takeSpeculativeCompact(ctx, speculativePrefix(l))
+	summary, err, _, ok := l.takeSpeculativeCompact(ctx, speculativePrefix(l), true)
 	if !ok || err != nil || !strings.Contains(summary, "Goal: old") || calls.Load() != 1 {
 		t.Fatalf("fresh result: ok=%v err=%v calls=%d summary=%q", ok, err, calls.Load(), summary)
 	}
@@ -72,7 +72,7 @@ func TestSpeculativeCompactStalePrefixDiscarded(t *testing.T) {
 			} else {
 				l.conversationEpoch.Add(1)
 			}
-			if _, _, ok := l.takeSpeculativeCompact(context.Background(), speculativePrefix(l)); ok {
+			if _, _, _, ok := l.takeSpeculativeCompact(context.Background(), speculativePrefix(l), true); ok {
 				t.Fatal("stale speculative summary was used")
 			}
 			if calls.Load() != 1 || l.speculative != nil {
@@ -96,7 +96,7 @@ func TestSpeculativeCompactCancellation(t *testing.T) {
 	<-started
 	waitCtx, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer stop()
-	if _, err, ok := l.takeSpeculativeCompact(waitCtx, speculativePrefix(l)); !ok || err == nil {
+	if _, err, _, ok := l.takeSpeculativeCompact(waitCtx, speculativePrefix(l), true); !ok || err == nil {
 		t.Fatalf("canceled wait: ok=%v err=%v", ok, err)
 	}
 	select {
@@ -136,7 +136,7 @@ func TestSpeculativeCompactSingleFlightAndGates(t *testing.T) {
 	})
 	l.maybeStartSpeculativeCompact(context.Background())
 	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleAssistant, Content: "done"}, llm.Message{Role: llm.RoleUser, Content: "next"})
-	l.maybeStartSpeculativeCompact(context.Background()) // new prefix: old job joined first
+	l.maybeStartSpeculativeCompact(context.Background()) // grown prefix: retain the original job
 	close(release)
 	l.stopSpeculativeCompact()
 	if peak.Load() != 1 {
@@ -165,9 +165,11 @@ func TestSpeculativeCompactSingleFlightAndGates(t *testing.T) {
 // instead of making its own blocking summary call.
 func TestSpeculativeCompactUsedByAutoCompact(t *testing.T) {
 	var calls atomic.Int32
+	release := make(chan struct{})
 	window := 1_000_000
 	l := newSpeculativeLoop(t, func(context.Context, llm.Provider, []llm.Message) (string, error) {
 		calls.Add(1)
+		<-release
 		return WrapCompactSummary("Goal: old. Pending: continue."), nil
 	})
 	l.windowFor = func(string) int { return window }
@@ -183,6 +185,7 @@ func TestSpeculativeCompactUsedByAutoCompact(t *testing.T) {
 	if l.speculative == nil {
 		t.Fatal("no background summary started in the speculative band")
 	}
+	close(release)
 	<-l.speculative.done
 	window = 100 // now over threshold
 	if err := l.maybeAutoCompact(context.Background(), nil, ""); err != nil {

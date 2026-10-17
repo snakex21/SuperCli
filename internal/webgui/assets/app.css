@@ -1,3 +1,37 @@
+/* Shared image viewer and queued attachment editor. */
+.image-lightbox { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; outline: none; background: rgba(9, 10, 12, .97); color: #eee; overflow: hidden; overscroll-behavior: contain; -webkit-user-select: none; user-select: none; }
+.image-lightbox::backdrop { background: rgba(0, 0, 0, .88); }
+.image-lightbox[open] { display: flex; flex-direction: column; }
+.image-lightbox-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 10px 8px; border-bottom: 1px solid #38302a; background: #171719; z-index: 1; }
+.image-lightbox-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+.image-lightbox-counter { white-space: nowrap; font: 12px monospace; color: #bcb5ad; }
+.image-lightbox-button { flex: 0 0 auto; min-width: 40px; min-height: 44px; padding: 4px 8px; border: 1px solid #46382d; border-radius: 4px; background: #232124; color: #f4a65a; font-size: 24px; cursor: pointer; transition: background .12s; }
+.image-lightbox-button:hover { background: #3a2b22; }
+.image-lightbox-button:focus:not(:focus-visible) { outline: none; box-shadow: none; }
+.image-lightbox-button:focus-visible, .queue-image-thumbnail:focus-visible { outline: 2px solid #f4a65a; outline-offset: -2px; }
+.image-lightbox-button:disabled { opacity: .35; cursor: default; }
+.image-lightbox-stage { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; }
+.image-lightbox-stage img { position: absolute; top: 50%; left: 50%; max-width: none; max-height: none; object-fit: contain; transform-origin: center; user-select: none; -webkit-user-drag: none; }
+.image-lightbox-stage.zoomed { cursor: grab; }
+.image-lightbox-stage.zoomed.interacting { cursor: grabbing; }
+.image-lightbox-error { position: absolute; inset: 45% 10px auto; text-align: center; }
+.queue-row > .queue-action { grid-column: 4; grid-row: 1; }
+.queue-row > .queue-remove { grid-column: 5; grid-row: 1; }
+.queue-image-thumbnails { grid-column: 3; grid-row: 2; display: flex; flex-wrap: wrap; gap: 4px; max-width: 180px; }
+.queue-image-thumbnail { width: 36px; height: 36px; padding: 0; overflow: hidden; background: #211e1b; border: 1px solid #514033; border-radius: 3px; cursor: pointer; }
+.queue-image-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.queue-edit-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.queue-editor.drop-target { outline: 2px dashed #f4a65a; outline-offset: -2px; }
+.queue-edit-attachments .attachment-chip { max-width: 220px; }
+@media (max-width: 540px) {
+  .image-lightbox-toolbar { flex-wrap: wrap; gap: 4px; }
+  .image-lightbox-title { flex-basis: calc(100% - 110px); order: -1; }
+  .image-lightbox-counter { order: -1; }
+  .image-lightbox-button { flex: 1; }
+  .queue-image-thumbnails { max-width: 88px; }
+}
+@media (prefers-reduced-motion: reduce) { .image-lightbox-stage img, .image-lightbox-button { transition: none; } }
+
 /* ═══════════════════════════════════════════════════════════════════
    SuperCli Web GUI — stylesheet
    Design intent (full spec: docs/webgui.md): restraint with a sharp
@@ -939,6 +973,31 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 .prompt-queue[hidden] { display: none; }
 .queue-row { display: grid; grid-template-columns: 18px 26px minmax(0,1fr) auto 24px; align-items:center; gap:8px; min-height:30px; padding:3px 7px; border-bottom:1px solid var(--line-soft); }
+.app-dialog.queue-editor {
+  position: fixed; inset: 0; margin: auto; color: var(--text);
+  width: min(900px, calc(var(--app-viewport-width, 100vw) - 32px));
+  height: min(800px, calc(var(--app-viewport-height, 100dvh) - 32px));
+  max-width: calc(100vw - 32px); max-height: calc(var(--app-viewport-height, 100dvh) - 32px);
+  overflow: auto; overscroll-behavior: contain;
+}
+.queue-editor[open] { display: flex; flex-direction: column; }
+.queue-editor::backdrop { background: rgba(6, 6, 9, .76); backdrop-filter: blur(5px); }
+.queue-editor .queue-edit-input {
+  display: block; flex: 1; width: 100%; min-height: min(180px, 30dvh); max-height: none;
+  resize: none; font: inherit; font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg);
+}
+.queue-editor > .app-dialog-title, .queue-editor > .app-dialog-error, .queue-edit-actions { flex: none; }
+.queue-editor .queue-edit-attachments { flex: none; max-height: min(160px, 22dvh); overflow: auto; }
+.queue-edit-actions { flex-wrap: wrap; }
+@media (max-width: 540px) {
+  .app-dialog.queue-editor {
+    width: calc(var(--app-viewport-width, 100vw) - 16px); max-width: calc(100vw - 16px);
+    height: calc(var(--app-viewport-height, 100dvh) - 16px); max-height: calc(var(--app-viewport-height, 100dvh) - 16px);
+    padding: 14px;
+  }
+}
+.queue-merge { margin: 4px 7px; }
+.worker-model-info { display: block; font-size: 10px; opacity: .7; }
 .queue-index { color:var(--accent); font:10px var(--mono); }
 .queue-index-button { text-align:left; transition:color 120ms ease, background 120ms ease; }
 .queue-index-button:hover, .queue-index-button:focus-visible { color:var(--text); background:var(--accent-soft); }
@@ -1216,6 +1275,16 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 .orch-pop .side-empty { padding: 8px; color: var(--faint); font-size: 11px; }
 .stat-row { min-width: 0; }
+.mode-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 46%); gap: 8px; align-items: center; }
+.mode-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.mode-row .orch-pick, .mode-row .orch-btn, .mode-row > .seg { width: 100%; box-sizing: border-box; }
+.mode-row .orch-btn { max-width: none; min-height: 24px; }
+.mode-row > .seg { display: flex; }
+.mode-row > .seg button { flex: 1; }
+.effort-pick .orch-pop { padding: 4px; }
+.effort-pick .prow { flex-shrink: 0; width: 100%; text-align: left; }
+.orch-btn:focus-visible, .effort-pick .prow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.orch-btn:disabled { opacity: .6; cursor: wait; }
 .k-edit-wrap { min-width: 0; display: inline-flex; }
 
 /* ── Control panel overlay ── */

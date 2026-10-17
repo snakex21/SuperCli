@@ -887,39 +887,72 @@ async function renderStats() {
     if (knob) {
       box.appendChild(i18nEl("div", "stats-head", "stats.orch"));
       var row = el("div", "stat-row");
+      row.title = t("stats.orchTooltip");
       row.appendChild(i18nEl("span", "", "stats.orchDesc"));
-      var seg = el("span", "seg");
-      ["default", "on", "off"].forEach(function (st) {
-        var label = st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff"));
-        var b = el("button", st === (knob.state || "default") ? "on" : "", label);
-        b.type = "button";
-        b.addEventListener("click", function () {
-          jpost("/api/config", { key: "orchestrator", value: st })
-            .then(renderStats)
-            .catch(function (e2) { toast(e2.message); });
-        });
-        seg.appendChild(b);
-      });
-      row.appendChild(seg);
+      supercliStatsToggle(row, "orchestrator", knob.state || "default", ["default", "on", "off"].map(function (st) {
+        return { state: st, value: st, label: st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff")) };
+      }));
       box.appendChild(row);
-      // Orchestrator model — which model plays the coordinator. A
-      // compact picker like the model palette: button + dropdown list.
+      // Delegated workers: model and request-scoped thinking preference.
       var knobM = null;
-      (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator_model") knobM = k; });
+      (cfg.knobs || []).forEach(function (k) { if (k.key === "task_model") knobM = k; });
       if (knobM) {
         var rowM = el("div", "stat-row");
-        rowM.appendChild(i18nEl("span", "", "stats.orchModel"));
+        rowM.title = t("stats.taskModelTooltip");
+        rowM.appendChild(i18nEl("span", "", "stats.taskModel"));
         supercliOrchPicker(rowM, knobM, function (v) {
-          jpost("/api/config", { key: "orchestrator_model", value: v })
+          jpost("/api/config", { key: "task_model", value: v })
             .then(renderStats)
             .catch(function (e2) { toast(e2.message); });
         });
         box.appendChild(rowM);
       }
+      appendTaskEffortRow(box, cfg);
     }
     appendModesSection(box, cfg);
   }
   if (statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) box.setAttribute("aria-busy", "false");
+}
+
+// A click must not wait for config I/O and the stats refresh to show its state.
+// Keep one save in flight per switch; a failed save restores the previous pick.
+function supercliStatsToggle(container, key, current, choices) {
+  var seg = el("span", "seg"), pending = false;
+  var buttons = [];
+  function paint() {
+    seg.setAttribute("aria-busy", pending ? "true" : "false");
+    buttons.forEach(function (item) {
+      var selected = item.state === current;
+      item.button.classList.toggle("on", selected);
+      item.button.setAttribute("aria-pressed", selected ? "true" : "false");
+      item.button.disabled = pending;
+    });
+  }
+  choices.forEach(function (choice) {
+    var button = el("button", "", choice.label);
+    button.type = "button";
+    button.addEventListener("click", function () {
+      if (pending || choice.state === current) return;
+      var previous = current;
+      current = choice.state;
+      pending = true;
+      paint();
+      jpost("/api/config", { key: key, value: choice.value })
+        .then(function () {
+          // A refresh failure must not undo an already persisted setting.
+          return renderStats();
+        }, function (error) {
+          current = previous;
+          throw error;
+        })
+        .catch(function (error) { toast(error.message); })
+        .finally(function () { pending = false; paint(); });
+    });
+    buttons.push({ state: choice.state, button: button });
+    seg.appendChild(button);
+  });
+  paint();
+  container.appendChild(seg);
 }
 
 // appendModesSection renders the "Modes" group: the few switches the user,
@@ -934,7 +967,7 @@ function appendModesSection(box, cfg) {
   // Advisor model — where task advise:true second opinions go.
   // Empty = the worker model; "off" hides the second opinion entirely.
   if (knobA) {
-    var rowA = el("div", "stat-row");
+    var rowA = el("div", "stat-row mode-row");
     rowA.appendChild(i18nEl("span", "", "stats.advModel"));
     supercliOrchPicker(rowA, knobA, function (v) {
       jpost("/api/config", { key: "advisor_model", value: v })
@@ -942,12 +975,14 @@ function appendModesSection(box, cfg) {
         .catch(function (e2) { toast(e2.message); });
     }, "stats.advModelDef");
     box.appendChild(rowA);
+    if ((knobA.raw || "").trim().toLowerCase() !== "off")
+      appendEffortRow(box, knobs.advisor_reasoning_effort, "effort.advisor", "effort.hint");
   }
   // Sprawdzanie (review_model) — after the work is done the chosen model
   // checks the changes and sends notes back to the main model. The picker's
   // default entry (empty value) means off: no review, zero cost.
   if (knobR) {
-    var rowR = el("div", "stat-row");
+    var rowR = el("div", "stat-row mode-row");
     rowR.appendChild(i18nEl("span", "", "stats.reviewModel"));
     rowR.title = t("stats.reviewModelTip");
     supercliOrchPicker(rowR, knobR, function (v) {
@@ -956,31 +991,132 @@ function appendModesSection(box, cfg) {
         .catch(function (e2) { toast(e2.message); });
     }, "stats.reviewModelOff");
     box.appendChild(rowR);
+    if ((knobR.raw || "").trim() && (knobR.raw || "").trim().toLowerCase() !== "off")
+      appendEffortRow(box, knobs.review_reasoning_effort, "effort.review", "effort.hint");
   }
   // Darwin — off by default (N candidates = N× cost); on offers the tool.
   if (knobD) {
-    var rowD = el("div", "stat-row");
+    var rowD = el("div", "stat-row mode-row");
     rowD.appendChild(i18nEl("span", "", "stats.darwinTool"));
     rowD.title = t("setting.darwin.desc");
     var cur = knobD.state === "on" ? "on" : "off";
-    var seg = el("span", "seg");
-    ["on", "off"].forEach(function (st) {
-      var b = el("button", st === cur ? "on" : "", t("set.state." + st));
-      b.type = "button";
-      b.addEventListener("click", function () {
-        if (st === cur) return;
-        jpost("/api/config", { key: "darwin", value: st === "on" ? "on" : "default" })
-          .then(renderStats)
-          .catch(function (e2) { toast(e2.message); });
-      });
-      seg.appendChild(b);
-    });
-    rowD.appendChild(seg);
+    supercliStatsToggle(rowD, "darwin", cur, ["on", "off"].map(function (st) {
+      return { state: st, value: st === "on" ? "on" : "default", label: t("set.state." + st) };
+    }));
     box.appendChild(rowD);
+    if (cur === "on") {
+      appendDarwinModelRow(box, knobs.darwin_models);
+      appendDarwinPoolRow(box, knobs.darwin_pool_size);
+      appendEffortRow(box, knobs.darwin_reasoning_effort, "effort.darwin", "effort.hint");
+    }
   }
 }
 
-// supercliOrchPicker renders the orchestrator-model selector: a compact
+// Darwin candidate model (darwin_models). The picker saves one entry; a
+// hand-written multi-model list ("a ; b") is shown as-is and kept until
+// the user picks something else. Empty = the main model.
+function appendDarwinModelRow(box, knob) {
+  if (!knob) return;
+  var row = el("div", "stat-row mode-row");
+  row.appendChild(i18nEl("span", "", "stats.darwinModel"));
+  supercliOrchPicker(row, knob, function (v) {
+    jpost("/api/config", { key: "darwin_models", value: v })
+      .then(renderStats)
+      .catch(function (e2) { toast(e2.message); });
+  }, "stats.darwinModelDef");
+  box.appendChild(row);
+}
+
+// Darwin candidate count (darwin_pool_size): auto (model decides) or 1-10.
+function appendDarwinPoolRow(box, knob) {
+  if (!knob) return;
+  var row = el("div", "stat-row mode-row");
+  row.title = t("stats.darwinPoolTip");
+  row.appendChild(i18nEl("span", "", "stats.darwinPool"));
+  supercliEffortPicker(row, knob, function (value) {
+    return jpost("/api/config", { key: knob.key, value: value }).then(renderStats);
+  }, ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], "stats.darwinPoolAuto");
+  box.appendChild(row);
+}
+
+function appendTaskEffortRow(box, cfg) {
+  var knob = (cfg.knobs || []).find(function (k) { return k.key === "task_reasoning_effort"; });
+  appendEffortRow(box, knob, "stats.taskEffort", "stats.taskEffortTooltip");
+}
+
+function appendEffortRow(box, knob, labelKey, tipKey) {
+  if (!knob) return;
+  var row = el("div", "stat-row mode-row");
+  row.title = t(tipKey);
+  row.appendChild(i18nEl("span", "", labelKey));
+  supercliEffortPicker(row, knob, function (value) {
+    return jpost("/api/config", { key: knob.key, value: value }).then(renderStats);
+  });
+  box.appendChild(row);
+}
+
+// Short, searchable-model-picker styled list. Save failures leave the old value.
+// values/emptyKey optionally replace the effort levels and the label of "".
+function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
+  values = values || ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  emptyKey = emptyKey || "stats.effortInherit";
+  var current = knob.raw || "";
+  var wrap = el("span", "orch-pick effort-pick");
+  var btn = el("button", "orch-btn", current || t(emptyKey));
+  btn.type = "button";
+  btn.setAttribute("aria-label", container.firstChild ? container.firstChild.textContent : t(emptyKey));
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
+  var pop = el("div", "orch-pop");
+  pop.hidden = true;
+  pop.setAttribute("role", "listbox");
+  function close() { pop.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+  values.forEach(function (effort) {
+    var row = el("button", "prow" + (effort === current ? " active" : ""));
+    row.type = "button";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", effort === current ? "true" : "false");
+    row.appendChild(el("span", "state-dot"));
+    row.appendChild(el("span", "pname", effort || t(emptyKey)));
+    row.addEventListener("click", function () {
+      close(); btn.focus();
+      if (effort === current || btn.disabled) return;
+      btn.disabled = true;
+      Promise.resolve().then(function () { return onSave(effort); })
+        .then(function () {
+          current = effort;
+          btn.textContent = effort || t(emptyKey);
+          Array.from(pop.children).forEach(function (item) {
+            var active = item === row;
+            item.classList.toggle("active", active);
+            item.setAttribute("aria-selected", active ? "true" : "false");
+          });
+        })
+        .catch(function (err) { toast(err.message); })
+        .finally(function () { btn.disabled = false; });
+    });
+    pop.appendChild(row);
+  });
+  btn.addEventListener("click", function () {
+    if (!pop.hidden) { close(); return; }
+    closeOrchPickerPopups({ target: btn });
+    pop.hidden = false; btn.setAttribute("aria-expanded", "true");
+    var selected = pop.querySelector(".active") || pop.firstChild;
+    if (selected) selected.focus();
+  });
+  wrap.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { close(); btn.focus(); e.stopPropagation(); }
+    if (!pop.hidden && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      var rows = Array.from(pop.children), index = rows.indexOf(document.activeElement);
+      rows[(index + (e.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length].focus();
+    }
+  });
+  document.addEventListener("click", closeOrchPickerPopups);
+  wrap.appendChild(btn); wrap.appendChild(pop); container.appendChild(wrap);
+}
+
+// supercliOrchPicker renders a model selector: a compact
 // button showing the current value plus a dropdown list of known models,
 // mirroring the model palette rows (.prow). Clicking a row calls onSave
 // with the "provider/model" ref (or "" for the default). defKey names
@@ -1067,7 +1203,11 @@ function closeOrchPickerPopups(e) {
     var wrap = pickers[i];
     if (!wrap.contains(e.target)) {
       var pop = wrap.querySelector(".orch-pop");
-      if (pop) pop.hidden = true;
+      if (pop) {
+        pop.hidden = true;
+        var btn = wrap.querySelector(".orch-btn");
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
     }
   }
 }

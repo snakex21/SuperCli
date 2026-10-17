@@ -203,7 +203,10 @@ func TestModelPaletteExcludesHiddenModels(t *testing.T) {
 func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 	js := readEmbeddedAppJS(t)
 	for _, required := range []string{
-		"async function editQueuedTask(item)",
+		"function editQueuedTask(item, trigger)",
+		"async function saveQueuedTaskEdit()",
+		"function appendQueueEditor(edit)",
+		"editor.showModal(); input.focus();",
 		"async function moveQueuedTask(item, position)",
 		"async function chooseQueuedTaskPosition(item)",
 		"function wireQueuedTaskDrag(row, handle, item)",
@@ -212,9 +215,9 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 		"function finishQueuedTaskDrag(commit)",
 		"host.insertBefore(sourceRow, targetRow.nextSibling)",
 		"event.dataTransfer.setDragImage(row",
-		`JSON.stringify({ id: item.id, prompt: prompt })`,
+		`JSON.stringify({ id: edit.id, prompt: edit.text, attachments: edit.attachments })`,
 		`JSON.stringify({ id: item.id, position: position })`,
-		`text.addEventListener("click", function () { editQueuedTask(item); })`,
+		`text.addEventListener("click", function () { editQueuedTask(item, text); })`,
 	} {
 		if !strings.Contains(js, required) {
 			t.Fatalf("queued-message editing/reordering is missing %q", required)
@@ -225,7 +228,7 @@ func TestQueuedMessagesCanBeEditedAndReordered(t *testing.T) {
 		t.Fatal(err)
 	}
 	css := string(content)
-	for _, required := range []string{".queue-drag", ".queue-drop-before", ".queue-drop-after"} {
+	for _, required := range []string{".queue-drag", ".queue-drop-before", ".queue-drop-after", ".app-dialog.queue-editor"} {
 		if !strings.Contains(css, required) {
 			t.Fatalf("queue drag styling is missing %q", required)
 		}

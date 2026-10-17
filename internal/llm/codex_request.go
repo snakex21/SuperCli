@@ -317,7 +317,7 @@ func prepareStandardResponsesRequest(body []byte, promptCacheKey string, reasoni
 // sessionID is normalized to the ses_+26 wire shape (12 hex + 14 base62,
 // counter ≤ 63); it must match the
 // x-opencode-session header ApplyOpenCodeZenHeaders sets on the same request.
-func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string) ([]byte, error) {
+func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string, contexts ...context.Context) ([]byte, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
@@ -332,7 +332,7 @@ func prepareOpenCodeZenResponsesRequest(body []byte, sessionID string) ([]byte, 
 	// rejected max does not trigger the same failed request every turn.
 	// Without a selection, preserve the existing omitted-field dialect.
 	model, _ := req["model"].(string)
-	if e := ReasoningEffortForModelWithCapability(model, true); e != "" && e != "none" {
+	if e := ReasoningEffortForModelWithCapability(model, true, contexts...); e != "" && e != "none" {
 		req["reasoning"] = map[string]any{"effort": e, "summary": "auto"}
 	}
 

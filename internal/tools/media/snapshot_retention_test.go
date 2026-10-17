@@ -150,8 +150,9 @@ func TestPruneSnapshotsWithoutSessionMediaDeletesNothing(t *testing.T) {
 	}
 }
 
-// saveSnapshot runs retention after a capture and keeps the new file.
-func TestSendScreenshotSavePrunesOldCopiedSnapshots(t *testing.T) {
+// Copying bytes does not prove the original snapshot filename is unreferenced.
+// Capture must defer deletion until the idle session-aware reference census.
+func TestSendScreenshotSaveDefersPruningToSessionAwareMaintenance(t *testing.T) {
 	f := newRetentionFixture(t)
 	var old []string
 	for i := 0; i < 25; i++ {
@@ -167,14 +168,14 @@ func TestSendScreenshotSavePrunesOldCopiedSnapshots(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Text), &meta); err != nil || !exists(meta.Path) {
 		t.Fatalf("new snapshot missing: %q err=%v", meta.Path, err)
 	}
-	// New capture is the newest; it plus the 19 newest old files are kept.
+	// Even copied old snapshots can still be referenced by saved tool results.
 	kept := 0
 	for _, path := range old {
 		if exists(path) {
 			kept++
 		}
 	}
-	if kept != snapshotRetentionKeep-1 {
-		t.Fatalf("kept old=%d, want %d", kept, snapshotRetentionKeep-1)
+	if kept != len(old) {
+		t.Fatalf("kept old=%d, want %d before reference census", kept, len(old))
 	}
 }

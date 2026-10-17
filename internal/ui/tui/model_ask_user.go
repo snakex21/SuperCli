@@ -30,17 +30,17 @@ func renderAskView(a *pendingAsk, width, height int, languages ...string) string
 	boxW := min(width, 92)
 	inner := boxW - 4
 	pad := strings.Repeat(" ", (width-boxW)/2)
-	rows := wrap(a.Question, inner)
-	if len(rows) > 3 {
-		rows = append(rows[:2], "…")
+	question := wrap(a.Question, inner)
+	if len(question) > 3 {
+		question = append(question[:2], "…")
 	}
-	rows = append(rows, "")
-	focus := 0
+	var rows []string
+	focusStart, focusLabelEnd, focusEnd := 0, 0, 0
 	for i, opt := range a.Options {
 		marker := "  "
 		if i == a.cursor {
 			marker = "> "
-			focus = len(rows)
+			focusStart = len(rows)
 		}
 		check := ""
 		if a.MultiSelect {
@@ -50,6 +50,9 @@ func renderAskView(a *pendingAsk, width, height int, languages ...string) string
 			}
 		}
 		rows = append(rows, wrap(fmt.Sprintf("%s%d. %s%s", marker, i+1, check, opt.Label), inner)...)
+		if i == a.cursor {
+			focusLabelEnd = len(rows)
+		}
 		for _, detail := range []string{opt.Description, opt.Preview, opt.Image, opt.ImagePrompt} {
 			if detail == "" {
 				continue
@@ -62,36 +65,90 @@ func renderAskView(a *pendingAsk, width, height int, languages ...string) string
 				rows = append(rows, "  "+line)
 			}
 		}
+		if i == a.cursor {
+			focusEnd = len(rows)
+		}
 	}
 	if a.customMode {
-		focus = len(rows)
-		rows = append(rows, textFor(language, "tui.model_ask_user.adceb15c66"))
+		focusStart = len(rows)
+		rows = append(rows, wrap(textFor(language, "tui.model_ask_user.adceb15c66"), inner)...)
 		rows = append(rows, wrap(a.custom+"_", inner)...)
-		focus = len(rows) - 1
+		focusLabelEnd, focusEnd = len(rows), len(rows)
 	}
-	slots := height - 4
-	start := 0
-	if focus >= slots {
-		start = focus - slots + 1
+	slots := height - 4 // borders, header and keyboard hints always have a row
+	labelRows := focusLabelEnd - focusStart
+	detailRows := min(1, focusEnd-focusLabelEnd)
+	// Keep the question pinned when it fits alongside the selected label and
+	// the first description line, rather than spending that space on old choices.
+	if len(question)+labelRows+detailRows > slots {
+		question = nil
+	} else if len(question)+labelRows+detailRows < slots {
+		question = append(question, "")
 	}
+	slots -= len(question)
+	if labelRows+detailRows > slots {
+		label := compactAskLabel(rows[focusStart:focusLabelEnd], max(1, slots-detailRows), inner)
+		visible := append([]string{}, rows[:focusStart]...)
+		visible = append(visible, label...)
+		rows = append(visible, rows[focusLabelEnd:]...)
+		removed := labelRows - len(label)
+		focusLabelEnd -= removed
+		focusEnd -= removed
+	}
+	// Scroll the selected block into view, not its first line to the bottom.
+	// If details exceed the budget, keep the label and description prefix first.
+	start := max(0, min(focusEnd, focusStart+slots)-slots)
 	end := min(len(rows), start+slots)
 	var lines []string
 	lines = append(lines, pad+"┌"+strings.Repeat("─", inner+2)+"┐")
 	row := func(text string) { lines = append(lines, pad+"│ "+padTo(text, inner)+" │") }
 	row(headerLine(a))
+	for _, text := range question {
+		row(text)
+	}
 	for _, text := range rows[start:end] {
 		row(text)
 	}
 	help := helpLine(a, language)
 	if ansi.StringWidth(help) > inner {
-		help = "↑↓ · 1-4 · Enter · Esc"
-		if a.AllowCustom {
-			help += " · c"
+		switch {
+		case a.customMode:
+			help = "Enter · Esc"
+		case a.MultiSelect:
+			help = "↑↓ 1-4 Space Enter Esc"
+			if a.AllowCustom {
+				help += " c"
+			}
+		default:
+			help = "↑↓ · 1-4 · Enter · Esc"
+			if a.AllowCustom {
+				help += " · c"
+			}
 		}
 	}
 	row(help)
 	lines = append(lines, pad+"└"+strings.Repeat("─", inner+2)+"┘")
 	return strings.Join(lines, "\n")
+}
+
+// compactAskLabel only elides an over-height focused label/input. Preserve its
+// beginning (selection marker) and tail (distinctive suffix or input caret).
+func compactAskLabel(rows []string, budget, width int) []string {
+	if len(rows) <= budget {
+		return rows
+	}
+	if budget <= 2 {
+		tail := "…" + rows[len(rows)-1]
+		if budget == 1 {
+			return []string{"> " + truncateVisibleTail(tail, width-2)}
+		}
+		return []string{rows[0], truncateVisibleTail(tail, width)}
+	}
+	head := (budget - 1) / 2
+	tail := budget - head - 1
+	visible := append([]string{}, rows[:head]...)
+	visible = append(visible, "…")
+	return append(visible, rows[len(rows)-tail:]...)
 }
 
 func headerLine(a *pendingAsk) string {

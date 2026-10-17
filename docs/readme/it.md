@@ -25,6 +25,17 @@ L’immagine della GUI è una schermata; l’immagine della TUI è una rappresen
 <!-- readme-unit:h.start -->
 ## Per iniziare
 
+<!-- readme-unit:start.install -->
+Per una nuova installazione, esamina lo script prima di eseguire il comando POSIX o PowerShell riportato sotto. I programmi di installazione rilevano il sistema operativo e l'architettura, verificano il checksum e installano senza privilegi di amministratore. Rifiutano qualsiasi cartella di destinazione esistente per evitare sovrascritture e perdita di dati; aggiorna un'installazione esistente con `/update` o `--update`. Imposta `SUPERCLI_DIR` per scegliere una nuova destinazione; `SUPERCLI_NO_PATH=1` salta la configurazione della shell e di `PATH`. Percorsi predefiniti: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. I programmi di installazione non avviano SuperCli automaticamente.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Estrai il pacchetto per il tuo sistema operativo e la tua architettura in una cartella scrivibile. Su Windows avvia `supercli.exe` per il terminale o `supercli-web.exe` per la GUI. Mantieni la cartella inclusa `supercli-data/` accanto agli eseguibili.
 
@@ -46,10 +57,10 @@ Su Linux o macOS usa l'eseguibile corrispondente del pacchetto o compila dai sor
 ```
 
 <!-- readme-unit:start.termux -->
-Su Android, installa con una sola riga in Termux. Lo script scarica la versione più recente, verifica il checksum e aggiunge i comandi `supercli` e `supercli-web`. Eseguilo di nuovo per aggiornare; `supercli-data/` viene conservata.
+Su Android, usa in Termux lo stesso `install.sh` dalla radice del repository. `ARM64` usa la build per Android; `x86_64` usa la build per Linux. Se mancano i pacchetti necessari, esegui `pkg install curl unzip coreutils`. Aggiorna un'installazione esistente con `/update` o `--update`, senza eseguire nuovamente il programma di installazione.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

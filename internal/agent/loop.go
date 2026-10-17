@@ -11,6 +11,7 @@ import (
 	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/llm/draft"
+	"supercli/internal/maintenance"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 )
@@ -765,6 +766,21 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("agent is still finishing the previous run")
 	}
+	root := ""
+	if writer, ok := l.writer.(interface{ MaintenanceRoot() string }); ok {
+		root = writer.MaintenanceRoot()
+	}
+	endMaintenanceRun, maintenanceErr := maintenance.BeginPortableRun(ctx, root)
+	if maintenanceErr != nil {
+		l.releaseConversation()
+		return nil, fmt.Errorf("chat activity lease: %w", maintenanceErr)
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			endMaintenanceRun()
+		}
+	}()
 	if l.refreshContextWindow != nil {
 		if err := l.refreshContextWindow(ctx); err != nil {
 			l.releaseConversation()
@@ -881,7 +897,8 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.bindInvocationPrompt()
 	}
 	l.openInterjections(ctx)
-	go l.run(ctx, prompt, out)
+	handedOff = true
+	go func() { defer endMaintenanceRun(); l.run(ctx, prompt, out) }()
 	return out, nil
 }
 

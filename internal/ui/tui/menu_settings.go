@@ -47,6 +47,10 @@ func settingsRowsFor(language string) []settingRow {
 		{"navigator", textFor(language, "tui.setting_navigator.f4b3f6314f"), textFor(language, "tui.setting_navigator.117b57b29d"), setNavigator, true},
 		{"task_parallel", textFor(language, "tui.setting_task_parallel.6bb8136641"), textFor(language, "tui.setting_task_parallel.33c09ad488"), setTriState, true},
 		{"task_model", textFor(language, "tui.setting_task_model.7488f3d1c7"), textFor(language, "tui.setting_task_model.993b9e80db"), setText, true},
+		{"task_reasoning_effort", textFor(language, "tui.setting_task_reasoning_effort.label"), textFor(language, "tui.setting_task_reasoning_effort.desc"), setText, true},
+		{"advisor_reasoning_effort", textFor(language, "effort.advisor"), textFor(language, "effort.hint"), setText, true},
+		{"review_reasoning_effort", textFor(language, "effort.review"), textFor(language, "effort.hint"), setText, true},
+		{"darwin_reasoning_effort", textFor(language, "effort.darwin"), textFor(language, "effort.hint"), setText, true},
 		{"advisor_model", textFor(language, "tui.setting_advisor_model.label"), textFor(language, "tui.setting_advisor_model.desc"), setText, true},
 		{"review_model", textFor(language, "tui.setting_review_model.label"), textFor(language, "tui.setting_review_model.desc"), setText, true},
 		{"orchestrator_model", textFor(language, "tui.setting_orchestrator_model.99a9adf37c"), textFor(language, "tui.setting_orchestrator_model.976aa9f04e"), setText, true},
@@ -57,6 +61,7 @@ func settingsRowsFor(language string) []settingRow {
 		{"darwin_parallel", textFor(language, "tui.setting_darwin_parallel.b039de2a33"), textFor(language, "tui.setting_darwin_parallel.b00873ce9c"), setTriState, true},
 		{"darwin_models", textFor(language, "tui.setting_darwin_models.label"), textFor(language, "tui.setting_darwin_models.desc"), setText, true},
 		{"darwin_judge_model", textFor(language, "tui.setting_darwin_judge_model.label"), textFor(language, "tui.setting_darwin_judge_model.desc"), setText, true},
+		{"darwin_pool_size", textFor(language, "tui.setting_darwin_pool_size.label"), textFor(language, "tui.setting_darwin_pool_size.desc"), setInt, true},
 		{"darwin_auto_merge", textFor(language, "tui.setting_darwin_auto_merge.label"), textFor(language, "tui.setting_darwin_auto_merge.desc"), setTriState, true},
 		{"draft_verify", textFor(language, "tui.setting_draft_verify.3aaf10a735"), textFor(language, "tui.setting_draft_verify.d7a874f8fd"), setTriState, true},
 		{"draft_verify_max_rounds", textFor(language, "tui.setting_draft_verify_max_rounds.a0afb48721"), textFor(language, "tui.setting_draft_verify_max_rounds.8fc2a7faa9"), setInt, true},
@@ -84,7 +89,7 @@ func englishSettingsRows() []settingRow { return settingsRowsFor("en") }
 
 func settingCategory(key string) int {
 	switch key {
-	case "orchestrator", "task_parallel", "task_model", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
+	case "orchestrator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
 		return 1
 	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
 		return 2
@@ -109,7 +114,7 @@ func (m Model) localizedSettingsRows() []settingRow {
 
 func settingSection(key string) string {
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return textFor("pl", "tui.setting_section.86e566d0ea")
 	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return textFor("pl", "tui.setting_section.630226b61c")
@@ -120,7 +125,7 @@ func settingSection(key string) string {
 
 func (m Model) localizedSettingSection(key string) string {
 	switch key {
-	case "orchestrator", "navigator", "task_parallel", "task_model", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
+	case "orchestrator", "navigator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return m.tr("tui.setting_section.86e566d0ea")
 	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
 		return m.tr("tui.setting_section.630226b61c")

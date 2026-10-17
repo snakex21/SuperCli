@@ -28,7 +28,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 	// unknown capability metadata remains optimistic.
 	visionAttempt := p.caps.AllowsVisionAttempt(p.cfg.Model) && !p.imageRejected.Load()
 	msgs = filterNativeReasoning(msgs, ReasoningResponses, p.cfg.Model, p.cfg.BackendURL)
-	effort := p.reasoningEffort()
+	effort := p.reasoningEffort(ctx)
 	// OpenCode Zen retires models in place (410 ModelDeprecated); a successor
 	// learned earlier goes straight onto the wire (see doWithAuth).
 	reqModel := zenEffectiveModel(p.cfg.BackendURL, p.cfg.Model)
@@ -85,12 +85,12 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			// 14 base62, counter ≤ 63); normalizeZenSessionID
 			// inside prepare keeps header (ApplyOpenCodeZenHeaders) and body
 			// prompt_cache_key identical.
-			reqBody, err = prepareOpenCodeZenResponsesRequest(reqBody, zenSession)
+			reqBody, err = prepareOpenCodeZenResponsesRequest(reqBody, zenSession, ctx)
 			if err != nil {
 				return nil, fmt.Errorf("build zen responses request: %w", err)
 			}
 			if len(imageFallback) > 0 {
-				imageFallback, err = prepareOpenCodeZenResponsesRequest(imageFallback, zenSession)
+				imageFallback, err = prepareOpenCodeZenResponsesRequest(imageFallback, zenSession, ctx)
 				if err != nil {
 					return nil, fmt.Errorf("build zen image fallback request: %w", err)
 				}
@@ -217,7 +217,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 			continue
 		}
-		if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, respBody); ok && !effortRetried {
+		if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, respBody, ctx); ok && !effortRetried {
 			patch := patchCodexReasoningEffort
 			if p.cfg.StandardResponsesAPI && !isOpenCodeZenBaseURL(p.cfg.BackendURL) {
 				patch = patchResponsesReasoningEffort

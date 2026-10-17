@@ -53,7 +53,8 @@ type knobDef struct {
 // knobDefs mirrors settingsRows() in the TUI — same keys, same order.
 func knobDefs() []knobDef {
 	return []knobDef{
-		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, false},
+		{"queue_merge", "combine pending messages after each reply", "queue_merge", false},
+		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, true},
 		{"show_generation_speed", "show measured generation tokens per second after each reply", knobTri, false},
 		{"cost_currency", "cost display currency; historical NBP rates; accounting stays in USD", knobCurrency, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
@@ -66,12 +67,20 @@ func knobDefs() []knobDef {
 		{"darwin_parallel", "run darwin best-of-N agents concurrently vs one at a time", knobTriAuto, true},
 		{"darwin_models", "darwin candidate models, round-robin; semicolon-separated \"model\" or \"provider/model\" (mix local + cloud; empty = active model)", knobText, true},
 		{"darwin_judge_model", "model that judges darwin candidates (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
+		{"darwin_pool_size", "how many darwin candidates run (1-10); 0 = the model decides (usually 3)", knobInt, true},
 		{"darwin_auto_merge", "let darwin merge the winner into the current branch by itself; off = you apply it manually", knobTri, true},
 		{"task_parallel", "run multiple task delegations from one turn concurrently", knobTriAuto, true},
+		{"context_policy", "context management policy (automatic)", knobReadonly, false},
+		{"context_window", "context window override in tokens; 0 = detected model limit", knobInt, true},
+		{"prune_protect_tokens", "recent tool-result tokens protected from pruning; 0 = default", knobInt, true},
 		{"memory_briefing_tokens", "hard token budget for the session-start memory briefing", knobInt, true},
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
+		{"task_reasoning_effort", "worker thinking level; empty = inherit main model", knobText, true},
+		{"advisor_reasoning_effort", "advisor thinking level; empty = inherit main model", knobText, true},
+		{"review_reasoning_effort", "review thinking level; empty = inherit main model", knobText, true},
+		{"darwin_reasoning_effort", "Darwin candidate and judge thinking level; empty = inherit main model", knobText, true},
 		{"advisor_model", "model/host for task advise:true second opinions (\"model\" or \"provider/model\"; empty = worker model; off = no advisor)", knobText, true},
 		{"review_model", "post-work review: after a file-changing turn this model checks the changes and sends notes back to the main model (\"model\" or \"provider/model\"; empty or off = no review)", knobText, true},
 		{"orchestrator_model", "coordinator model/host (\"model\" or \"provider/model\"; empty = the main model coordinates; pair with task_model for a two-model setup)", knobText, true},
@@ -92,6 +101,11 @@ func knobDefs() []knobDef {
 // form from the loaded config, mirroring settingValueSource in the TUI.
 func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	switch key {
+	case "queue_merge":
+		if c.QueueMerge == "auto" {
+			return "auto", "manual", "auto"
+		}
+		return "off", "default", "off"
 	case "orchestrator":
 		if c.Orchestrator == nil {
 			return "auto", "default", ""
@@ -151,6 +165,8 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (active model)", "default", ""
 		}
 		return c.DarwinJudgeModel, "manual", c.DarwinJudgeModel
+	case "darwin_pool_size":
+		return intKnob(c.DarwinPoolSize, "auto: model decides, usually 3")
 	case "darwin_auto_merge":
 		v, s := triKnob(c.DarwinAutoMerge, "off")
 		return v, s, ""
@@ -160,6 +176,12 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	case "task_parallel":
 		v, s := triAutoKnob(c.TaskParallel, "parallel", "sequential")
 		return v, s, ""
+	case "context_policy":
+		return "auto", "default", ""
+	case "context_window":
+		return intKnob(c.ContextWindow, "auto")
+	case "prune_protect_tokens":
+		return intKnob(c.PruneProtectTokens, "40000")
 	case "memory_briefing_tokens":
 		return intKnob(c.MemoryBriefingTokens, "700/300 by tier")
 	case "task_max_steps":
@@ -171,14 +193,28 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "default (coordinator's model)", "default", ""
 		}
 		return c.TaskModel, "manual", c.TaskModel
+	case "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort":
+		effort := map[string]string{
+			"task_reasoning_effort":    c.TaskReasoningEffort,
+			"advisor_reasoning_effort": c.AdvisorReasoningEffort,
+			"review_reasoning_effort":  c.ReviewReasoningEffort,
+			"darwin_reasoning_effort":  c.DarwinReasoningEffort,
+		}[key]
+		if strings.TrimSpace(effort) == "" {
+			return "default (main model's effort)", "default", ""
+		}
+		return effort, "manual", effort
 	case "advisor_model":
 		if strings.TrimSpace(c.AdvisorModel) == "" {
 			return "default (worker model)", "default", ""
 		}
 		return c.AdvisorModel, "manual", c.AdvisorModel
 	case "review_model":
-		if config.ReviewDisabled(*c) {
+		if strings.TrimSpace(c.ReviewModel) == "" {
 			return "off", "default", ""
+		}
+		if config.ReviewDisabled(*c) {
+			return "off", "manual", c.ReviewModel
 		}
 		return c.ReviewModel, "manual", c.ReviewModel
 	case "orchestrator_model":

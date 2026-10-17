@@ -263,12 +263,13 @@ func TestLoop_Calls_NilStatsNoPanic(t *testing.T) {
 		},
 	}
 	l, err := NewLoop(LoopConfig{
-		Provider:     p,
-		Registry:     echoToolRegistry(t),
-		MaxSteps:     5,
-		Reflector:    &slowReflector{d: time.Millisecond, text: "ok"},
-		ReflectEvery: 1,
-		WindowFor:    func(string) int { return 1 },
+		Provider:        p,
+		Registry:        echoToolRegistry(t),
+		MaxSteps:        5,
+		Reflector:       &slowReflector{d: time.Millisecond, text: "ok"},
+		ReflectEvery:    1,
+		InitialMessages: speculativeHistory(),
+		WindowFor:       func(string) int { return 3000 },
 		Summarizer: func(ctx context.Context, prov llm.Provider, msgs []llm.Message) (string, error) {
 			return "summary", nil
 		},

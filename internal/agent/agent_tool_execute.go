@@ -29,10 +29,8 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 	if ar.Advise {
 		ar.Agent = advisorAgentKind
-		// A configured advisor_model bills separately so its cost is visible.
-		if a.AdvisorProvider != nil {
-			ctx = llm.WithPurpose(ctx, llm.PurposeAdvisor)
-		}
+		// Advisor purpose applies even when it shares the worker provider.
+		ctx = llm.WithPurpose(ctx, llm.PurposeAdvisor)
 	}
 	// agent is optional: a bare prompt gets the general worker. This
 	// keeps the lean call {"prompt": "..."} valid while still allowing
@@ -236,6 +234,11 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
+	effort := a.WorkerReasoningEffort
+	if ar.Advise {
+		effort = a.AdvisorReasoningEffort
+	}
+	w.setState(func(w *Worker) { w.reasoningEffort = effort })
 	if a.ParentLoop != nil {
 		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
 	}

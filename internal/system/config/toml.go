@@ -22,6 +22,9 @@ import (
 // TomlConfig is the on-disk TOML structure. All fields are
 // optional — missing fields inherit from the next lower layer.
 type TomlConfig struct {
+	// Housekeeping is portable-data maintenance, independent of model settings.
+	Housekeeping HousekeepingConfig `toml:"housekeeping"`
+
 	// DefaultModel is the model id (e.g. "gpt-4o").
 	DefaultModel string `toml:"default_model"`
 
@@ -147,6 +150,11 @@ type TomlConfig struct {
 	// forms as task_model. Empty = the active model judges.
 	DarwinJudgeModel string `toml:"darwin_judge_model"`
 
+	// DarwinPoolSize fixes how many Darwin best-of-N candidates run.
+	// 0 (default) = the model decides via pool_size (default 3); 1..10 =
+	// fixed, the model's pool_size is ignored. Values above 10 clamp.
+	DarwinPoolSize int `toml:"darwin_pool_size"`
+
 	// DarwinAutoMerge lets the darwin tool merge the winner into the current
 	// branch without asking. Nil/false (default) = never: the winner stays on
 	// its own branch for review and a manual merge.
@@ -224,6 +232,18 @@ type TomlConfig struct {
 	// delegation falls back to the coordinator's provider with a single
 	// warning line — never a hard error.
 	TaskModel string `toml:"task_model"`
+
+	// TaskReasoningEffort overrides reasoning effort for delegated workers only.
+	// Empty inherits the main model's global reasoning_effort.
+	TaskReasoningEffort string `toml:"task_reasoning_effort"`
+
+	// Purpose-specific effort overrides; empty inherits global reasoning_effort.
+	AdvisorReasoningEffort string `toml:"advisor_reasoning_effort"`
+	ReviewReasoningEffort  string `toml:"review_reasoning_effort"`
+	DarwinReasoningEffort  string `toml:"darwin_reasoning_effort"`
+
+	// QueueMerge automatically combines pending GUI messages after a reply. Empty means off.
+	QueueMerge string `toml:"queue_merge"`
 
 	// AdvisorModel routes `task` calls with advise:true (a read-only
 	// second opinion) to a separate model, e.g. a cloud model advising a

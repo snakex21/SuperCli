@@ -33,9 +33,10 @@ func (l *Loop) speculativeCompactEnabled() bool {
 	return l.summarizer != nil && l.taskParallel
 }
 
-// maybeStartSpeculativeCompact runs below the threshold. It starts at most one
-// background summary per prefix and only when the synchronous path would
-// summarize the same prefix (same split and freshness gates).
+// maybeStartSpeculativeCompact starts at most one background summary. Keep an
+// existing job even as history grows or is pruned: valid shorter prefixes remain
+// useful, and invalid ones are joined/discarded only when compaction is needed.
+// This avoids paying for a new summary on every small history change.
 func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 	if !l.speculativeCompactEnabled() || ctx.Err() != nil {
 		return
@@ -56,10 +57,9 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 	job := l.speculative
 	l.speculativeMu.Unlock()
 	if job != nil {
-		if l.speculativeMatches(job, prefix, tools) {
-			return // running or finished (even failed): never repeat for this prefix
-		}
-		l.stopSpeculativeCompact() // stale: discard before starting a new one
+		// A scope change is validated when consuming. Joining a canceled
+		// helper here could itself block an otherwise safe main request.
+		return // running or finished (even stale/failed): no restart churn
 	}
 	jobCtx, cancel := context.WithCancel(ctx)
 	job = &speculativeCompact{
@@ -83,21 +83,35 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 	}()
 }
 
-// takeSpeculativeCompact consumes a background summary for prefix. ok=false
-// means none matched (stale or failed); the caller runs the synchronous path.
-// A matching job still in flight is awaited instead of starting a new call.
-func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message) (summary string, err error, ok bool) {
+// takeSpeculativeCompact consumes a summary covering prefix[:covered]. The
+// remaining messages MUST stay verbatim. Nonblocking callers leave an unfinished
+// (or stale) job alone; hard/manual callers join it before any replacement call.
+func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message, wait bool) (summary string, err error, covered int, ok bool) {
 	l.speculativeMu.Lock()
 	job := l.speculative
+	if job == nil {
+		l.speculativeMu.Unlock()
+		return "", nil, 0, false
+	}
+	matches := l.speculativeMatches(job, prefix, l.compactActiveTools())
+	if !wait {
+		select {
+		case <-job.done:
+			if !matches {
+				l.speculativeMu.Unlock()
+				return "", nil, 0, false
+			}
+		default:
+			l.speculativeMu.Unlock()
+			return "", nil, 0, false
+		}
+	}
 	l.speculative = nil
 	l.speculativeMu.Unlock()
-	if job == nil {
-		return "", nil, false
-	}
-	if !l.speculativeMatches(job, prefix, l.compactActiveTools()) {
+	if !matches {
 		job.cancel()
 		<-job.done
-		return "", nil, false
+		return "", nil, 0, false
 	}
 	start := time.Now()
 	select {
@@ -106,14 +120,12 @@ func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message)
 		job.cancel()
 		<-job.done
 		l.recordAuxWall(llm.PurposeCompact, time.Since(start))
-		return "", ctx.Err(), true
+		return "", ctx.Err(), len(job.prefix), true
 	}
 	job.cancel()
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
-	if job.err != nil {
-		return "", nil, false
-	}
-	return job.summary, nil, true
+	// A failed helper must not be paid for twice by an immediate retry.
+	return job.summary, job.err, len(job.prefix), true
 }
 
 // stopSpeculativeCompact cancels and joins any background summary, so no two
@@ -154,7 +166,8 @@ func (l *Loop) compactActiveTools() []string {
 
 func (l *Loop) speculativeMatches(job *speculativeCompact, prefix []llm.Message, tools []string) bool {
 	return job.epoch == l.conversationEpoch.Load() && job.provider == l.provider &&
-		slices.Equal(job.tools, tools) && sameCompactPrefix(job.prefix, prefix)
+		slices.Equal(job.tools, tools) && len(job.prefix) <= len(prefix) &&
+		sameCompactPrefix(job.prefix, prefix[:len(job.prefix)])
 }
 
 // cloneCompactPrefix copies the slices a later in-place edit could share.

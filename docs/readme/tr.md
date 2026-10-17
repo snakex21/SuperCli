@@ -25,6 +25,17 @@ GUI görseli bir ekran görüntüsüdür; TUI görseli uygulamanın gerçek term
 <!-- readme-unit:h.start -->
 ## Başlangıç
 
+<!-- readme-unit:start.install -->
+Yeni kurulum için aşağıdaki POSIX veya PowerShell komutunu çalıştırmadan önce betiği inceleyin. Kurucular işletim sistemini ve mimariyi algılar, sağlama toplamını doğrular ve yönetici yetkisi olmadan kurulum yapar. Üzerine yazmayı ve veri kaybını önlemek için var olan tüm hedef klasörleri reddederler; mevcut kurulumu `/update` veya `--update` ile güncelleyin. Yeni hedefi seçmek için `SUPERCLI_DIR` ayarlayın; `SUPERCLI_NO_PATH=1` kabuk ve `PATH` yapılandırmasını atlar. Varsayılan konumlar: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Kurucular SuperCli'yi otomatik olarak başlatmaz.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 İşletim sisteminize ve mimarinize uygun paketi yazılabilir bir klasöre çıkarın. Windows'ta terminal için `supercli.exe`, GUI için `supercli-web.exe` başlatın. Birlikte gelen `supercli-data/` klasörünü yürütülebilir dosyaların yanında tutun.
 
@@ -46,10 +57,10 @@ Linux veya macOS'ta paketteki uygun yürütülebilir dosyayı kullanın ya da ka
 ```
 
 <!-- readme-unit:start.termux -->
-Android'de Termux içinde tek satırla kurun. Betik en yeni sürümü indirir, sağlama toplamını doğrular ve `supercli` ile `supercli-web` komutlarını ekler. Güncellemek için yeniden çalıştırın; `supercli-data/` korunur.
+Android'de Termux içinde depo kökündeki aynı `install.sh` betiğini kullanın. `ARM64` Android derlemesini; `x86_64` Linux derlemesini kullanır. Gerekli paketler eksikse `pkg install curl unzip coreutils` komutunu çalıştırın. Mevcut kurulumu, kurucuyu yeniden çalıştırmak yerine `/update` veya `--update` ile güncelleyin.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

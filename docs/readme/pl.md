@@ -25,6 +25,17 @@ Obraz GUI to zrzut ekranu; obraz TUI przedstawia wyrenderowany rzeczywisty ukła
 <!-- readme-unit:h.start -->
 ## Pierwsze kroki
 
+<!-- readme-unit:start.install -->
+Przy nowej instalacji przejrzyj skrypt, zanim uruchomisz poniższe polecenie POSIX lub PowerShell. Instalatory wykrywają system operacyjny i architekturę, sprawdzają sumę kontrolną i instalują bez uprawnień administratora. Odrzucają każdy istniejący folder docelowy, aby zapobiec nadpisaniu i utracie danych; istniejącą instalację aktualizuj poleceniem `/update` lub `--update`. Ustaw `SUPERCLI_DIR`, aby wybrać nowy folder docelowy; `SUPERCLI_NO_PATH=1` pomija konfigurację powłoki i `PATH`. Domyślne lokalizacje: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalatory nie uruchamiają SuperCli automatycznie.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Rozpakuj pakiet dla swojego systemu operacyjnego i architektury do folderu z prawem zapisu. W Windows uruchom `supercli.exe` dla terminala albo `supercli-web.exe` dla GUI. Dołączony folder `supercli-data/` pozostaw obok plików wykonywalnych.
 
@@ -46,10 +57,10 @@ W Linux lub macOS użyj odpowiedniego pliku wykonywalnego z pakietu albo skompil
 ```
 
 <!-- readme-unit:start.termux -->
-Na Androidzie zainstaluj jedną linią w Termuxie. Skrypt pobiera najnowsze wydanie, sprawdza sumę kontrolną i dodaje polecenia `supercli` oraz `supercli-web`. Aby zaktualizować, uruchom go ponownie; `supercli-data/` zostaje zachowany.
+Na Androidzie użyj w Termuxie tego samego skryptu `install.sh` z katalogu głównego repozytorium. `ARM64` korzysta z kompilacji dla Androida, a `x86_64` z kompilacji dla Linuksa. Jeśli brakuje wymaganych pakietów, uruchom `pkg install curl unzip coreutils`. Istniejącą instalację aktualizuj poleceniem `/update` lub `--update`, zamiast ponownie uruchamiać instalator.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

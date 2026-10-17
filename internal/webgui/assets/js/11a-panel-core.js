@@ -23,7 +23,7 @@ function showSection(name) {
   $$("#panel-nav button[data-sec]").forEach(function (b) {
     b.classList.toggle("active", b.dataset.sec === name);
   });
-  $("#panel-title").textContent = t("panel." + name);
+  $("#panel-title").textContent = t(name === "skills" ? "skills.title" : "panel." + name);
   panelContent.innerHTML = '<div class="note">' + escHtml(t("common.loading")) + "</div>";
   var rendered = (sections[name] || function () {})();
   // Async sections share one surface. If an older request finishes after the

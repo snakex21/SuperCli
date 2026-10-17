@@ -225,6 +225,10 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	// Editing a safe merged batch invalidates its cached merge status.
+	if err := s.ensureTableColumn("prompt_queue", "merge_dirty", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Queued prompts keep the same attachment paths /api/chat receives.
 	if err := s.ensureTableColumn("prompt_queue", "attachments_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err

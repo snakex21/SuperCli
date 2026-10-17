@@ -3,6 +3,69 @@
 /* ═══ projects ═══ */
 var projectDeleteCheckpointsOnRemove = false;
 var projectCleanupPending = false;
+var runningElsewhereProjectPath = "", runningElsewhereTimer = null, runningElsewhereOpening = false;
+var runningElsewhereClocks = [];
+
+function updateRunningElsewhereTimes() {
+  runningElsewhereClocks.forEach(function (clock) {
+    var seconds = clock.started > 0 ? Math.floor(Math.max(0, syncServerNow() - clock.started) / 1000) : 0;
+    clock.node.textContent = clock.state + " · " + Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+  });
+}
+
+function runningElsewhereRuns() {
+  if (typeof syncRuns === "undefined" || !runningElsewhereProjectPath) return [];
+  return Object.keys(syncRuns).map(function (id) {
+    var run = syncRuns[id];
+    return {id: id, run: run};
+  }).filter(function (item) {
+    return item.run.project_path && item.run.project_path !== runningElsewhereProjectPath;
+  }).sort(function (a, b) {
+    return (a.run.startedAtMS || a.run.started_at_ms || 0) - (b.run.startedAtMS || b.run.started_at_ms || 0) || a.id.localeCompare(b.id);
+  });
+}
+
+async function openRunningElsewhere(id) {
+  if (runningElsewhereOpening || typeof syncRuns === "undefined" || !syncRuns[id]) return;
+  runningElsewhereOpening = true;
+  var run = syncRuns[id];
+  try {
+    // projectAction detaches the current run and resets only this view. Await
+    // the switch before attaching through the ordinary history + sync path.
+    if (run.project_path !== runningElsewhereProjectPath && !await projectAction("use", run.project_path)) return;
+    await resumeSession(id, {id: id, title: run.title});
+  } finally { runningElsewhereOpening = false; }
+}
+
+function renderRunningElsewhere() {
+  var section = $("#running-elsewhere"), list = $("#running-elsewhere-list");
+  if (!section || !list) return;
+  var items = runningElsewhereRuns();
+  section.hidden = !items.length;
+  list.innerHTML = "";
+  runningElsewhereClocks = [];
+  items.forEach(function (item) {
+    var run = item.run;
+    var button = el("button", "side-item running-elsewhere-item");
+    button.type = "button";
+    var title = run.title || t("project.runningTitle"), project = run.project_name || run.project_path;
+    button.title = title + " — " + project;
+    button.setAttribute("aria-label", t("project.openRunning") + ": " + button.title);
+    button.appendChild(el("span", "t", title));
+    button.appendChild(el("span", "s running-elsewhere-project", project));
+    var state = t(run.state === "waiting_answer" ? "project.waitingAnswer" : "project.runWorking");
+    var started = run.startedAtMS || run.started_at_ms || 0;
+    var clock = el("span", "s running-elsewhere-state");
+    runningElsewhereClocks.push({node: clock, started: started, state: state});
+    button.appendChild(clock);
+    button.addEventListener("click", function () { openRunningElsewhere(item.id); });
+    list.appendChild(button);
+  });
+  updateRunningElsewhereTimes();
+  // Only update clock text on ticks: don't replace a focused/clicked row.
+  if (items.length && runningElsewhereTimer === null) runningElsewhereTimer = setInterval(updateRunningElsewhereTimes, 1000);
+  if (!items.length && runningElsewhereTimer !== null) { clearInterval(runningElsewhereTimer); runningElsewhereTimer = null; }
+}
 
 async function loadProjects() {
   var list = $("#project-list");
@@ -11,6 +74,9 @@ async function loadProjects() {
     projectDeleteCheckpointsOnRemove = got.delete_checkpoints_on_remove === true;
     list.innerHTML = "";
     var projects = got.projects || [];
+    var current = projects.find(function (project) { return project.cwd; });
+    runningElsewhereProjectPath = current ? current.path : "";
+    renderRunningElsewhere();
     if (!projects.length) {
       list.appendChild(i18nEl("div", "side-empty", "side.noProjects"));
       return;
@@ -148,13 +214,14 @@ async function projectAction(action, target, name, newPath) {
     if (switching && streaming) detachActiveRun();
     if (action === "use" || action === "add" || action === "relocate") projectEpoch++;
     await checkHealth();
-    loadProjects();
+    await loadProjects();
     // A conversation belongs to the workspace where it was created. Switching
     // projects starts a clean browser conversation and reloads only that
     // project's history; the old session remains stored under its project.
     if (action === "use" || action === "add" || action === "relocate") { newSession(); loadPromptQueue(); }
     if (action === "relocate") toast(t("project.changed"));
     if (action === "clear_checkpoints") toast(t("project.checkpointsCleared"));
+    return true;
   } catch (e) {
     toast(e.message);
   } finally {

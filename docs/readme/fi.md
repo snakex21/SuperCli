@@ -25,6 +25,17 @@ GUI-kuva on kuvakaappaus; TUI-kuva on sovelluksen todellisen päätenäkymän re
 <!-- readme-unit:h.start -->
 ## Aloittaminen
 
+<!-- readme-unit:start.install -->
+Tarkista uudessa asennuksessa komentosarja ennen alla olevan POSIX- tai PowerShell-komennon suorittamista. Asennusohjelmat tunnistavat käyttöjärjestelmän ja arkkitehtuurin, tarkistavat tarkistussumman ja asentavat ilman järjestelmänvalvojan oikeuksia. Ne kieltäytyvät käyttämästä mitään olemassa olevaa kohdekansiota ylikirjoituksen ja tietojen menetyksen estämiseksi; päivitä olemassa oleva asennus komennolla `/update` tai `--update`. Valitse uusi kohde asettamalla `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` ohittaa komentotulkin ja `PATH`-muuttujan määrityksen. Oletuskohteet: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Asennusohjelmat eivät käynnistä SuperCliä automaattisesti.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
+```
+
 <!-- readme-unit:start -->
 Pura käyttöjärjestelmääsi ja arkkitehtuuriisi sopiva paketti kirjoitettavaan kansioon. Käynnistä Windowsissa `supercli.exe` päätettä tai `supercli-web.exe` GUI:ta varten. Pidä mukana toimitettu `supercli-data/`-kansio suoritettavien tiedostojen vieressä.
 
@@ -46,10 +57,10 @@ Käytä Linuxissa tai macOS:ssä paketin vastaavaa suoritettavaa tiedostoa tai k
 ```
 
 <!-- readme-unit:start.termux -->
-Androidissa asenna yhdellä rivillä Termuxissa. Skripti lataa uusimman julkaisun, tarkistaa tarkistussumman ja lisää komennot `supercli` ja `supercli-web`. Päivitä ajamalla se uudelleen; `supercli-data/` säilyy.
+Käytä Androidissa Termuxissa samaa `install.sh`-komentosarjaa tietovaraston juurihakemistosta. `ARM64` käyttää Android-koontiversiota; `x86_64` käyttää Linux-koontiversiota. Jos tarvittavia paketteja puuttuu, suorita `pkg install curl unzip coreutils`. Päivitä olemassa oleva asennus komennolla `/update` tai `--update`, älä suorittamalla asennusohjelmaa uudelleen.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/scripts/install-termux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
 ```
 
 <!-- readme-unit:h.data -->

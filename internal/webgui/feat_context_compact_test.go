@@ -77,7 +77,9 @@ func assertWebCompactHelperCalls(t *testing.T, p *compactResolverProvider, wantM
 // fresh user turn kept verbatim), not the blind hide fallback.
 func TestWebLoop_AutoCompactUsesSummary(t *testing.T) {
 	dir := t.TempDir()
-	writeDataConfig(t, dir, "context_window = 300\n")
+	// Cross the compaction threshold with fatTurns, but leave room for the
+	// summary, protected recent turns, web prompt and tool schemas afterward.
+	writeDataConfig(t, dir, "context_window = 8192\n")
 	eng, err := NewEngine(echoConfig(), dir, dir)
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
@@ -110,10 +112,16 @@ func TestWebLoop_AutoCompactUsesSummary(t *testing.T) {
 	}
 	assertWebCompactHelperCalls(t, p, 1)
 	if compacted == nil {
-		t.Fatal("expected AutoCompactEvent over a 300-token window")
+		t.Fatal("expected AutoCompactEvent over an 8192-token window")
 	}
-	if compacted.Window != 300 {
-		t.Errorf("compacted against window %d, want config context_window 300", compacted.Window)
+	if compacted.Window != 8192 {
+		t.Errorf("compacted against window %d, want config context_window 8192", compacted.Window)
+	}
+	if compacted.Estimated <= compacted.Threshold {
+		t.Fatalf("fixture did not cross the compaction threshold: estimated=%d threshold=%d", compacted.Estimated, compacted.Threshold)
+	}
+	if estimated := loop.EstimateNextRequestTokens(); estimated > loop.ContextWindow() {
+		t.Fatalf("compacted fixture still exceeds its window: estimated=%d window=%d", estimated, loop.ContextWindow())
 	}
 
 	// The summary path must have run: a user-role message carrying the

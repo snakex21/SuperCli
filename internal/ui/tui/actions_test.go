@@ -40,7 +40,9 @@ func TestWelcomeFitsNarrowTerminal(t *testing.T) {
 }
 
 func TestWelcomeUsesCompactLayoutInShortTerminal(t *testing.T) {
-	view := welcomeAtSize(Options{}, NoColorPalette(), 80, 22)
+	// The height is the available chat area, after reserving the composer
+	// and dashboard, rather than the whole terminal's physical height.
+	view := welcomeAtSize(Options{}, NoColorPalette(), 80, 8)
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 	if len(lines) > 5 {
 		t.Fatalf("compact welcome uses %d lines, want at most 5:\n%s", len(lines), view)

@@ -2,6 +2,7 @@ package webgui
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -262,6 +263,35 @@ func (e *Engine) updateTask(ctx context.Context, id, prompt string) error {
 		return err
 	}
 	return store.UpdateQueuedTask(ctx, e.Home(), id, prompt)
+}
+
+func (e *Engine) editTask(ctx context.Context, id string, prompt *string, attachments *[]string) error {
+	store, err := e.sessionStore()
+	if err != nil {
+		return err
+	}
+	tasks, err := store.ListQueuedTasks(ctx, e.Home())
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if task.ID != id {
+			continue
+		}
+		if prompt != nil {
+			task.Prompt = *prompt
+		}
+		if attachments != nil {
+			task.Attachments = *attachments
+			if len(task.Attachments) > 0 {
+				if _, err := buildAttachmentAddon(e.Home(), task.Attachments); err != nil {
+					return fmt.Errorf("invalid attachments: %w", err)
+				}
+			}
+		}
+		return store.EditQueuedTask(ctx, e.Home(), id, task.Prompt, task.Attachments)
+	}
+	return sql.ErrNoRows
 }
 
 func (e *Engine) moveTask(ctx context.Context, id string, position int) error {

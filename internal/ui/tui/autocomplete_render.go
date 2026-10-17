@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func renderAutocomplete(ac *autocomplete, width int, palette Palette, languages ...string) string {
@@ -14,133 +15,178 @@ func renderAutocomplete(ac *autocomplete, width int, palette Palette, languages 
 	if len(languages) > 0 {
 		language = normalizeLanguage(languages[0])
 	}
-	if ac == nil || ac.kind == autocompNone {
+	return renderAutocompleteWithinHeight(ac, width, -1, palette, language)
+}
+
+type autocompleteGeometry struct {
+	filtered                   []autocompleteItem
+	cursor, start, end, height int
+	framed, detail, footerRule bool
+	footer                     bool
+}
+
+// autocompleteLayoutWithin is shared by rendering and height reservation. It
+// only filters/counts rows; resizing the popup never changes navigation state.
+func autocompleteLayoutWithin(ac *autocomplete, maxHeight int) autocompleteGeometry {
+	var g autocompleteGeometry
+	if ac == nil || ac.kind == autocompNone || maxHeight == 0 {
+		return g
+	}
+	g.filtered = filterItems(ac.items, ac.query)
+	if len(g.filtered) == 0 {
+		return g
+	}
+	g.cursor = minInt(maxInt(0, ac.cursor), len(g.filtered)-1)
+	selected := g.filtered[g.cursor]
+	g.framed, g.footerRule, g.footer = true, true, true
+	g.detail = selected.Desc != "" || selected.Hint != ""
+	chrome := 4 // title, footer separator, footer, bottom border
+	if g.detail {
+		chrome += 2
+	}
+	if maxHeight > 0 && maxHeight < 3 {
+		// One or two rows cannot hold a box: spend them on selectable items.
+		g.framed, g.detail, g.footerRule, g.footer = false, false, false, false
+		chrome = 0
+	} else if maxHeight > 0 {
+		if maxHeight < chrome+1 && g.detail {
+			g.detail = false
+			chrome -= 2
+		}
+		if maxHeight < chrome+1 {
+			g.footerRule = false
+			chrome--
+		}
+		if maxHeight < chrome+1 {
+			g.footer = false
+			chrome--
+		}
+	}
+	visible := minInt(len(g.filtered), autocompMaxVisible)
+	if maxHeight >= 0 {
+		visible = minInt(visible, maxHeight-chrome)
+	}
+	g.start = minInt(maxInt(0, ac.scroll), len(g.filtered)-visible)
+	if g.cursor < g.start {
+		g.start = g.cursor
+	}
+	if g.cursor >= g.start+visible {
+		g.start = g.cursor - visible + 1
+	}
+	g.end = minInt(len(g.filtered), g.start+visible)
+	g.height = chrome + g.end - g.start
+	return g
+}
+
+// autocompleteHeightWithin measures the same layout without rendering it.
+// Negative budgets preserve the usual eight-item popup; zero hides it.
+func autocompleteHeightWithin(ac *autocomplete, maxHeight int) int {
+	return autocompleteLayoutWithin(ac, maxHeight).height
+}
+
+// renderAutocompleteWithinHeight caps popup rows before drawing any chrome.
+// A zero budget hides it; a negative budget preserves the usual desktop layout.
+func renderAutocompleteWithinHeight(ac *autocomplete, width, maxHeight int, palette Palette, language string) string {
+	g := autocompleteLayoutWithin(ac, maxHeight)
+	if g.height == 0 {
 		return ""
 	}
-	filtered := filterItems(ac.items, ac.query)
-	if len(filtered) == 0 {
-		return ""
+	language = normalizeLanguage(language)
+	if width <= 0 {
+		width = 78 // retain the legacy default for an unknown terminal width
 	}
-
-	// Clamp cursor and scroll.
-	total := len(filtered)
-	if ac.cursor >= total {
-		ac.cursor = total - 1
+	boxWidth := minInt(width-2, 86)
+	framed := g.framed && width >= 6
+	innerWidth := maxInt(0, boxWidth-2)
+	if !framed {
+		boxWidth, innerWidth = width, width
 	}
-	if ac.cursor < 0 {
-		ac.cursor = 0
+	singleLine := strings.NewReplacer("\n", " ", "\r", " ", "\t", " ")
+	fit := func(s string, cells int) string {
+		if cells <= 0 {
+			return ""
+		}
+		s = ansi.Truncate(singleLine.Replace(s), cells, "…")
+		return s + strings.Repeat(" ", maxInt(0, cells-ansi.StringWidth(s)))
 	}
-	if ac.cursor < ac.scroll {
-		ac.scroll = ac.cursor
+	lines := make([]string, 0, g.height)
+	row := func(s string) {
+		s = fit(s, innerWidth)
+		if framed {
+			s = palette.Rule.Render("│") + s + palette.Rule.Render("│")
+		}
+		lines = append(lines, s)
 	}
-	if ac.cursor >= ac.scroll+autocompMaxVisible {
-		ac.scroll = ac.cursor - autocompMaxVisible + 1
+	rule := func(left, right string) string {
+		if !framed {
+			return palette.Rule.Render(strings.Repeat("─", boxWidth))
+		}
+		return palette.Rule.Render(left + strings.Repeat("─", innerWidth) + right)
 	}
-
-	visible := filtered[ac.scroll:]
-	if len(visible) > autocompMaxVisible {
-		visible = visible[:autocompMaxVisible]
+	if g.framed {
+		title := textFor(language, "tui.autocomplete_render.b269dc4e81")
+		if ac.kind == autocompMention {
+			title = textFor(language, "tui.autocomplete_render.abc7e98928")
+		}
+		if ac.query != "" {
+			title += " · " + ac.triggerChar() + ac.query
+		}
+		if framed {
+			title = ansi.Truncate(singleLine.Replace(title), boxWidth-4, "…")
+			lines = append(lines, palette.Rule.Render("╭─ ")+palette.PanelTitle.Render(title)+palette.Rule.Render(strings.Repeat("─", boxWidth-4-ansi.StringWidth(title))+"╮"))
+		} else {
+			lines = append(lines, palette.PanelTitle.Render(fit(title, boxWidth)))
+		}
 	}
-
-	boxWidth := width - 2
-	if boxWidth <= 0 {
-		boxWidth = 76
-	}
-	if boxWidth > 86 {
-		boxWidth = 86
-	}
-	if boxWidth < 42 {
-		boxWidth = 42
-	}
-	innerWidth := boxWidth - 2
-	labelWidth := 18
-	if ac.kind == autocompMention {
-		labelWidth = 28
-	}
-	if labelWidth > innerWidth/2 {
-		labelWidth = innerWidth / 2
-	}
-	catWidth := 8
-	descWidth := innerWidth - 4 - labelWidth - catWidth
-	if descWidth < 10 {
-		descWidth = 10
-	}
-
-	var b strings.Builder
-	title := textFor(language, "tui.autocomplete_render.b269dc4e81")
-	if ac.kind == autocompMention {
-		title = textFor(language, "tui.autocomplete_render.abc7e98928")
-	}
-	if ac.query != "" {
-		title += " · " + ac.triggerChar() + ac.query
-	}
-	b.WriteString(palette.Rule.Render("╭─ "))
-	b.WriteString(palette.PanelTitle.Render(title))
-	titlePad := boxWidth - lipgloss.Width("╭─ ") - lipgloss.Width(title) - 1
-	if titlePad < 0 {
-		titlePad = 0
-	}
-	b.WriteString(palette.Rule.Render(strings.Repeat("─", titlePad) + "╮"))
-	b.WriteString("\n")
-
-	for i, it := range visible {
-		globalIdx := ac.scroll + i
+	for i := g.start; i < g.end; i++ {
+		it := g.filtered[i]
 		cursor := "  "
-		if globalIdx == ac.cursor {
+		labelStyle, valueStyle := palette.Bold, palette.Dim
+		if i == g.cursor {
 			cursor = "> "
+			labelStyle, valueStyle = palette.HeaderMode, palette.StatusValue
 		}
-
-		label := padRight(truncateText(it.Label, labelWidth), labelWidth)
-		cat := padRight(truncateText(it.Category, catWidth), catWidth)
-		desc := truncateText(it.Desc, descWidth)
-		line := cursor + palette.Bold.Render(label) + "  " + palette.StatusDim.Render(cat) + "  " + palette.Dim.Render(desc)
-
-		if globalIdx == ac.cursor {
-			line = palette.HeaderMode.Render(cursor) + palette.HeaderMode.Render(label) + "  " + palette.StatusValue.Render(cat) + "  " + palette.StatusValue.Render(desc)
+		labelWidth := 18
+		if ac.kind == autocompMention {
+			labelWidth = 28
 		}
-		b.WriteString(palette.Rule.Render("│"))
-		b.WriteString(line)
-		remaining := innerWidth - lipgloss.Width(stripStyleText(cursor+label+"  "+cat+"  "+desc))
-		if remaining > 0 {
-			b.WriteString(strings.Repeat(" ", remaining))
+		if innerWidth < 40 {
+			// On phones the command/path matters more than category columns.
+			row(labelStyle.Render(cursor + fit(it.Label, maxInt(0, innerWidth-2))))
+			continue
 		}
-		b.WriteString(palette.Rule.Render("│"))
-		b.WriteString("\n")
-	}
-	selected := filtered[minInt(ac.cursor, len(filtered)-1)]
-	detail := selected.Desc
-	if selected.Hint != "" {
-		detail += " · " + selected.Hint
-	}
-	if detail != "" {
-		b.WriteString(palette.Rule.Render("├" + strings.Repeat("─", boxWidth-2) + "┤"))
-		b.WriteString("\n")
-		detailLine := "  " + truncateText(detail, innerWidth-2)
-		b.WriteString(palette.Rule.Render("│"))
-		b.WriteString(palette.InputHint.Render(detailLine))
-		if pad := innerWidth - lipgloss.Width(detailLine); pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
+		labelWidth = minInt(labelWidth, innerWidth/2)
+		const catWidth = 8
+		descWidth := maxInt(0, innerWidth-6-labelWidth-catWidth)
+		categoryStyle := palette.StatusDim
+		if i == g.cursor {
+			categoryStyle = palette.StatusValue
 		}
-		b.WriteString(palette.Rule.Render("│"))
-		b.WriteString("\n")
+		row(labelStyle.Render(cursor+fit(it.Label, labelWidth)) + "  " + categoryStyle.Render(fit(it.Category, catWidth)) + "  " + valueStyle.Render(fit(it.Desc, descWidth)))
 	}
-	footer := textFor(language, "tui.autocomplete_render.6b1db814c4")
-	if ac.kind == autocompMention {
-		footer = textFor(language, "tui.autocomplete_render.c25e78bf24")
+	if g.detail {
+		selected := g.filtered[g.cursor]
+		detail := selected.Desc
+		if selected.Hint != "" {
+			detail += " · " + selected.Hint
+		}
+		lines = append(lines, rule("├", "┤"))
+		row(palette.InputHint.Render("  " + fit(detail, maxInt(0, innerWidth-2))))
 	}
-	b.WriteString(palette.Rule.Render("├" + strings.Repeat("─", boxWidth-2) + "┤"))
-	b.WriteString("\n")
-	b.WriteString(palette.Rule.Render("│"))
-	b.WriteString(palette.InputHint.Render(truncateText(footer, innerWidth)))
-	if pad := innerWidth - lipgloss.Width(truncateText(footer, innerWidth)); pad > 0 {
-		b.WriteString(strings.Repeat(" ", pad))
+	if g.footerRule {
+		lines = append(lines, rule("├", "┤"))
 	}
-	b.WriteString(palette.Rule.Render("│"))
-	b.WriteString("\n")
-
-	b.WriteString(palette.Rule.Render("╰" + strings.Repeat("─", boxWidth-2) + "╯"))
-
-	return b.String()
+	if g.footer {
+		footer := textFor(language, "tui.autocomplete_render.6b1db814c4")
+		if ac.kind == autocompMention {
+			footer = textFor(language, "tui.autocomplete_render.c25e78bf24")
+		}
+		row(palette.InputHint.Render(fit(footer, innerWidth)))
+	}
+	if g.framed {
+		lines = append(lines, rule("╰", "╯"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func truncateText(s string, width int) string {

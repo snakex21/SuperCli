@@ -17,8 +17,9 @@ import (
 // revise/takeover send the reviewer's notes back to the main model (no
 // takeover in interactive mode). Nil on LoopConfig = off, zero cost.
 type PostReviewConfig struct {
-	Provider       llm.Provider
-	VerifyCommands []string
+	Provider        llm.Provider
+	ReasoningEffort string
+	VerifyCommands  []string
 	// MaxRounds caps how many times notes are sent back per Run. 0 = 1.
 	MaxRounds int
 }
@@ -91,7 +92,8 @@ func (l *Loop) runPostReview(ctx context.Context, out chan<- Event, totalUsage *
 	}
 	root := l.postReviewRoot()
 	changes := RenderTreeChanges(root, before)
-	res := ReviewChange(ctx, cfg.Provider, task, changes, cfg.VerifyCommands, root)
+	reviewCtx := llm.WithIndependentReasoningEffort(ctx, cfg.ReasoningEffort)
+	res := ReviewChange(reviewCtx, cfg.Provider, task, changes, cfg.VerifyCommands, root)
 	totalUsage.Input += res.Usage.Input
 	totalUsage.Output += res.Usage.Output
 	totalUsage.Total += res.Usage.Input + res.Usage.Output

@@ -104,6 +104,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.DarwinModels = nil
 	case "darwin_judge_model":
 		c.DarwinJudgeModel = ""
+	case "darwin_pool_size":
+		c.DarwinPoolSize = 0
 	case "darwin_auto_merge":
 		c.DarwinAutoMerge = nil
 	case "darwin":
@@ -132,6 +134,14 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.TaskMaxTokens = 0
 	case "task_model":
 		c.TaskModel = ""
+	case "task_reasoning_effort":
+		c.TaskReasoningEffort = ""
+	case "advisor_reasoning_effort":
+		c.AdvisorReasoningEffort = ""
+	case "review_reasoning_effort":
+		c.ReviewReasoningEffort = ""
+	case "darwin_reasoning_effort":
+		c.DarwinReasoningEffort = ""
 	case "advisor_model":
 		c.AdvisorModel = ""
 	case "review_model":
@@ -216,6 +226,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return m.tr("tui.setting_value.f5c2d04208"), "default"
 		}
 		return c.DarwinJudgeModel, "manual"
+	case "darwin_pool_size":
+		return m.intDisplay(c.DarwinPoolSize, m.tr("tui.setting_darwin_pool_size.auto"))
 	case "darwin_auto_merge":
 		return m.triDisplay(c.DarwinAutoMerge, "off")
 	case "darwin":
@@ -244,6 +256,12 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 			return m.tr("tui.setting_value.8119d30029"), "default"
 		}
 		return c.TaskModel, "manual"
+	case "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort":
+		effort := settingTextValue(c, r.key)
+		if strings.TrimSpace(effort) == "" {
+			return m.tr("tui.setting_task_reasoning_effort.inherit"), "default"
+		}
+		return effort, "manual"
 	case "advisor_model":
 		if strings.TrimSpace(c.AdvisorModel) == "" {
 			return m.tr("tui.setting_value.advisor_default"), "default"

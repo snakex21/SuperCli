@@ -131,7 +131,7 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 // Other commands remain visible in the palette with a clear busy message.
 func slashAvailableDuringRun(cmd SlashCommand) bool {
 	switch cmd.Name {
-	case "help", "status", "workers", "cost", "telefon", "phone":
+	case "help", "status", "workers", "cost", "skills", "telefon", "phone":
 		return true
 	case "update":
 		return cmd.Args == "" || cmd.Args == "check" || cmd.Args == "download"

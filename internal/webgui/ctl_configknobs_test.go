@@ -52,12 +52,12 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 	srv := newTestServer(t, false)
 	knobs := knobsGET(t, srv)
 
-	// Same keys, same order as the TUI settingsRows() (minus reset-all).
+	// GUI-only queue_merge precedes the shared TUI settingsRows() (minus reset-all).
 	wantOrder := []string{
-		"orchestrator", "show_generation_speed", "cost_currency", "allow_all", "discard_previous_reasoning", "thinking", "navigator", "stable_toolset",
-		"cache_prompt", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge", "task_parallel",
-		"memory_briefing_tokens", "task_max_steps", "task_max_tokens",
-		"task_model", "advisor_model", "review_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
+		"queue_merge", "orchestrator", "show_generation_speed", "cost_currency", "allow_all", "discard_previous_reasoning", "thinking", "navigator", "stable_toolset",
+		"cache_prompt", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "task_parallel",
+		"context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "task_max_steps", "task_max_tokens",
+		"task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
 		"noop_gate", "preflight_repo", "draft_verify",
 		"draft_verify_max_rounds", "verify_commands",
 		"default_model", "default_provider",
