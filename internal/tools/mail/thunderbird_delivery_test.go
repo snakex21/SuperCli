@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"supercli/internal/testbrowser"
 )
 
 // Delivery tests use only in-memory queues and HTTP recorders. Marking once as
@@ -416,31 +418,75 @@ func TestThunderbirdDeliveryExtensionLostACKE2E(t *testing.T) {
 	if info, err := os.Stat(source); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("extension source is not a readable regular file: %s (%v)", source, err)
 	}
-	node, err := exec.LookPath("node")
+	code, err := os.ReadFile(source)
 	if err != nil {
-		t.Fatalf("explicit extension integration test requires Node: %v", err)
+		t.Fatalf("read explicitly selected extension source: %v", err)
 	}
+	runThunderbirdDeliveryBrowserFixture(t, string(code))
+}
+
+func runThunderbirdDeliveryBrowserFixture(t *testing.T, source string) {
+	t.Helper()
 	b := newThunderbirdDeliveryTestState()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/poll", b.handlePoll)
 	mux.HandleFunc("/result", b.handleResult)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html><head><title>Synthetic delivery fixture</title></head><body></body></html>"))
+	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	bridgeURL := regexp.MustCompile(`(?m)^const BRIDGE_URL = "http://127\.0\.0\.1:47831";$`)
+	if len(bridgeURL.FindAllStringIndex(source, -1)) != 1 {
+		t.Fatal("expected exactly one constant loopback BRIDGE_URL in extension source")
+	}
+	target, _ := json.Marshal(server.URL)
+	source = bridgeURL.ReplaceAllStringFunc(source, func(string) string { return "const BRIDGE_URL = " + string(target) + ";" })
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "-e", thunderbirdDeliveryNodeFixture, source, server.URL)
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start synthetic extension: %v", err)
+	browser, err := testbrowser.Start(ctx, testbrowser.Options{})
+	if err != nil {
+		t.Fatal(err) // an opted-in native browser test must not skip missing Chrome
 	}
-	data, callErr := b.call(ctx, "create_folder", json.RawMessage(`{"op":"create_folder","confirm":true,"name":"Synthetic delivery fixture"}`))
-	commandErr := cmd.Wait()
-	if callErr != nil || commandErr != nil {
-		t.Fatalf("synthetic integration failed: call=%v node=%v\n%s", callErr, commandErr, output.String())
+	defer func() {
+		if err := browser.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	page, err := browser.NewPage(ctx, server.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
+	type operationResult struct {
+		data json.RawMessage
+		err  error
+	}
+	called := make(chan operationResult, 1)
+	go func() {
+		data, err := b.call(ctx, "create_folder", json.RawMessage(`{"op":"create_folder","confirm":true,"name":"Synthetic delivery fixture"}`))
+		called <- operationResult{data, err}
+	}()
+	// Source is read by Go, then executed unchanged apart from its fixed bridge
+	// origin. The new page has no real extension/mail APIs: only these stubs.
+	expression := "(async () => { const fixtureTarget = " + string(target) + ";\n" + thunderbirdDeliveryBrowserFixture +
+		"\nconst fixtureWorker = (() => {\n" + source + "\nreturn () => requestWorkerRunning;\n})();\n" + thunderbirdDeliveryBrowserAssertions + "\n})()"
+	var output json.RawMessage
+	if err := page.Eval(ctx, expression, &output); err != nil {
+		cancel()
+		t.Fatalf("native synthetic extension fixture: %v", err)
+	}
+	var operation operationResult
+	select {
+	case operation = <-called:
+	case <-ctx.Done():
+		t.Fatalf("synthetic host call did not finish: %v", ctx.Err())
+	}
+	if operation.err != nil {
+		t.Fatalf("synthetic host call failed: %v; browser=%s", operation.err, output)
+	}
+	data := operation.data
 	var result struct {
 		Changed bool `json:"changed"`
 		Created struct {
@@ -457,8 +503,8 @@ func TestThunderbirdDeliveryExtensionLostACKE2E(t *testing.T) {
 		Statuses        []int  `json:"statuses"`
 		ID              string `json:"id"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
-		t.Fatalf("invalid Node fixture report: %v\n%s", err, output.String())
+	if err := json.Unmarshal(output, &report); err != nil {
+		t.Fatalf("invalid native browser fixture report: %v\n%s", err, output)
 	}
 	if report.Mutations != 1 || report.Posts != 2 || !report.IdenticalBodies || len(report.Statuses) != 2 || report.Statuses[0] != 204 || report.Statuses[1] != 204 {
 		t.Fatalf("lost-ACK recovery violated single execution: %+v", report)
@@ -470,78 +516,96 @@ func TestThunderbirdDeliveryExtensionLostACKE2E(t *testing.T) {
 	}
 }
 
-const thunderbirdDeliveryNodeFixture = `
-"use strict";
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const vm = require("node:vm");
-const target = process.argv[2];
-let source = fs.readFileSync(process.argv[1], "utf8");
-const bridgeURL = /^const BRIDGE_URL = "http:\/\/127\.0\.0\.1:47831";$/m;
-assert.ok(bridgeURL.test(source), "expected constant bridge URL in extension source");
-source = source.replace(bridgeURL, "const BRIDGE_URL = " + JSON.stringify(target) + ";");
-const folders = [];
-const bodies = [];
-const statuses = [];
-let mutations = 0;
-let polls = 0;
-const account = { id: "synthetic-account", name: "Synthetic account", type: "none" };
-const context = vm.createContext({
-  messenger: {
-    accounts: { list: async () => [account] },
-    folders: {
-      query: async () => folders,
-      create: async (_destination, name) => {
-        mutations++;
-        const folder = { id: "synthetic-folder", accountId: account.id, name, path: "/" + name };
-        folders.push(folder);
-        return folder;
-      },
-    },
-  },
-  console: { log() {}, warn() {} },
-  AbortController, TextEncoder,
-  setTimeout: (fn, ms) => setTimeout(fn, ms === 5000 ? ms : 0),
-  clearTimeout,
-  fetch: async (url, options) => {
-    const parsed = new URL(url);
-    assert.equal(parsed.origin, target, "fixture must never contact a real bridge");
-    if (parsed.pathname === "/poll") {
-      polls++;
-      // Exercise one real host poll, then leave the perpetual background
-      // loop dormant without opening another HTTP request.
-      if (polls > 1) return new Promise(() => {});
-      return fetch(url, options);
-    }
-    assert.equal(parsed.pathname, "/result");
-    bodies.push(options.body);
-    const response = await fetch(url, options);
-    statuses.push(response.status);
-    if (bodies.length === 1) {
-      // The host has actually accepted and delivered this result. Only the
-      // client's knowledge of that HTTP acknowledgement is lost.
-      await response.arrayBuffer();
-      throw new Error("synthetic lost HTTP acknowledgement");
-    }
-    return response;
-  },
-});
-vm.runInContext(source, context);
-(async () => {
-  const deadline = Date.now() + 7000;
-  while (Date.now() < deadline) {
-    if (bodies.length >= 2 && !vm.runInContext("requestWorkerRunning", context)) break;
-    await new Promise(resolve => setTimeout(resolve, 2));
+const thunderbirdDeliveryBrowserFixture = `
+const fixtureCheck = (condition, message) => { if (!condition) throw Error(message); };
+const fixtureFolders = [], fixtureBodies = [], fixtureStatuses = [];
+let fixtureMutations = 0, fixturePolls = 0;
+const fixtureAccount = {id:"synthetic-account", name:"Synthetic account", type:"none"};
+const fixtureNativeFetch = globalThis.fetch.bind(globalThis);
+const fixtureNativeTimeout = globalThis.setTimeout.bind(globalThis);
+globalThis.messenger = {
+ accounts: {list:async()=>[fixtureAccount]},
+ folders: {
+  query:async()=>fixtureFolders,
+  create:async(_destination,name)=>{
+   fixtureMutations++;
+   const folder={id:"synthetic-folder",accountId:fixtureAccount.id,name,path:"/"+name};
+   fixtureFolders.push(folder);return folder;
   }
-  assert.equal(mutations, 1, "lost ACK must not repeat the mailbox operation");
-  assert.equal(bodies.length, 2, "lost ACK must retry delivery once");
-  assert.equal(bodies[0], bodies[1], "retry must use the identical serialized result");
-  assert.deepEqual(statuses, [204, 204]);
-  assert.equal(JSON.parse(bodies[0]).ok, true);
-  assert.equal(vm.runInContext("requestWorkerRunning", context), false);
-  process.stdout.write(JSON.stringify({ mutations, posts: bodies.length, identicalBodies: true, statuses, id: JSON.parse(bodies[0]).id }), () => process.exit(0));
-})().catch(error => { console.error(error); process.exit(1); });
+ }
+};
+globalThis.browser = globalThis.messenger;
+globalThis.console = {log(){},warn(){}};
+globalThis.setTimeout = (fn,ms,...args)=>fixtureNativeTimeout(fn,ms===5000?ms:0,...args);
+globalThis.fetch = async(url,options)=>{
+ const parsed=new URL(url,location.href);
+ fixtureCheck(parsed.origin===fixtureTarget,"fixture must never contact a real bridge");
+ if(parsed.pathname==="/poll"){
+  fixturePolls++;
+  // One real host poll; leave any subsequent background loop dormant.
+  if(fixturePolls>1)return new Promise(()=>{});
+  return fixtureNativeFetch(url,options);
+ }
+ fixtureCheck(parsed.pathname==="/result","unexpected fixture endpoint");
+ fixtureBodies.push(options.body);
+ const response=await fixtureNativeFetch(url,options);fixtureStatuses.push(response.status);
+ if(fixtureBodies.length===1){
+  // Host acceptance is real; lose only the extension's knowledge of its ACK.
+  await response.arrayBuffer();throw Error("synthetic lost HTTP acknowledgement");
+ }
+ return response;
+};
 `
+
+const thunderbirdDeliveryBrowserAssertions = `
+const fixtureDeadline=Date.now()+7000;
+while(Date.now()<fixtureDeadline){
+ if(fixtureBodies.length>=2 && !fixtureWorker())break;
+ await new Promise(resolve=>fixtureNativeTimeout(resolve,2));
+}
+fixtureCheck(fixtureMutations===1,"lost ACK repeated the mailbox operation");
+fixtureCheck(fixtureBodies.length===2,"lost ACK must retry delivery once");
+fixtureCheck(fixtureBodies[0]===fixtureBodies[1],"retry must use identical serialized result");
+fixtureCheck(JSON.stringify(fixtureStatuses)==="[204,204]","host did not acknowledge both posts");
+fixtureCheck(JSON.parse(fixtureBodies[0]).ok===true,"operation failed");
+fixtureCheck(fixtureWorker()===false,"extension worker did not stop");
+return {mutations:fixtureMutations,posts:fixtureBodies.length,identicalBodies:true,statuses:fixtureStatuses,id:JSON.parse(fixtureBodies[0]).id};
+`
+
+// Always exercise the native harness with self-contained synthetic source.
+// This does not opt in to or claim coverage of an external extension checkout.
+func TestThunderbirdDeliveryNativeBrowserFixtureLostACK(t *testing.T) {
+	token, _ := json.Marshal(thunderbirdBridgeToken)
+	source := `const BRIDGE_URL = "http://127.0.0.1:47831";
+let requestWorkerRunning=false;
+const BRIDGE_TOKEN=` + string(token) + `;
+(async()=>{
+ const response=await fetch(BRIDGE_URL+"/poll?token="+encodeURIComponent(BRIDGE_TOKEN));
+ const request=await response.json();
+ if(request.op!=="create_folder" || !request.args.confirm)throw Error("unexpected synthetic operation");
+ requestWorkerRunning=true;
+ const account=(await messenger.accounts.list())[0];
+ const created=await messenger.folders.create(account.id,request.args.name);
+ const body=JSON.stringify({id:request.id,ok:true,data:{changed:true,created}});
+ for(;;){
+  try{
+   const ack=await fetch(BRIDGE_URL+"/result?token="+encodeURIComponent(BRIDGE_TOKEN),{method:"POST",headers:{"Content-Type":"application/json"},body});
+   if(!ack.ok)throw Error("result rejected");
+   break;
+  }catch(error){await new Promise(resolve=>setTimeout(resolve,10));}
+ }
+ requestWorkerRunning=false;
+ await fetch(BRIDGE_URL+"/poll?token="+encodeURIComponent(BRIDGE_TOKEN));
+})();`
+	// Exercise Go's opted-in file-reading path too, but select only source
+	// written by this test, never an installed extension or user's mailbox.
+	path := filepath.Join(t.TempDir(), "background.js")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("THUNDERBIRD_EXTENSION_SOURCE", path)
+	TestThunderbirdDeliveryExtensionLostACKE2E(t)
+}
 
 func TestThunderbirdDeliveryAuthenticationPrecedesRecoveryCache(t *testing.T) {
 	b := newThunderbirdDeliveryTestState()

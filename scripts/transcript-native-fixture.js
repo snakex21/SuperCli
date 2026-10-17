@@ -22,7 +22,8 @@
     var start = performance.now();
     renderLoadedTranscript(false);
     lastResult = {mode: "history", renderMs: performance.now() - start,
-      elements: stream.querySelectorAll("*").length, messages: loadedTranscriptMessages.length};
+      elements: stream.querySelectorAll("*").length, messages: stream.querySelectorAll(".msg-assistant").length,
+      retainedMessageWrappers: loadedTranscriptMessages.length};
     console.log(lastResult);
     return lastResult;
   }

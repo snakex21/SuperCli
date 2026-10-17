@@ -225,9 +225,9 @@ Question delivery itself is bounded by its timeout.
 Regression coverage: `go test ./...` includes worker continuation across two
 web runs, isolated tool discovery, sequential/parallel continuations, concurrent
 questions, Unicode layouts, and scroll preservation. Run
-`node scripts/test-delegation-ui.cjs` with Playwright available to check real
-browser cards, worker overview, continuation links, and narrow layout; set
-`PLAYWRIGHT_BROWSER_PATH` for an existing Chrome/Chromium installation.
+`go run ./scripts/ui-checks -case delegation-ui` to check real browser cards,
+worker overview, continuation links, and narrow layout with an existing
+Chrome/Chromium installation.
 Browser profile and screenshots stay under `.tmp/delegation-ui`.
 
 These changes do not add model instructions, change OpenCode Zen's special

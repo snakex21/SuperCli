@@ -1,6 +1,7 @@
 package webgui
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,16 +21,97 @@ import (
 	"supercli/internal/system/config"
 )
 
-const codingLivePrompt = "W tym projekcie faktura błędnie nalicza koszt pozycji, która ma ilość 0. Napraw implementację. Najpierw odtwórz problem istniejącymi testami (node --test tests/invoice.test.cjs), a po poprawce uruchom te same testy ponownie. Zachowaj dotychczasowe zachowanie dla pozostałych przypadków. Nie zmieniaj testów, katalogu produktów ani innych plików niezwiązanych z błędem. Podaj przyczynę i wynik testów."
+const codingLivePricingFile = "src/pricing.go"
+
+const codingLivePrompt = "W tym projekcie faktura błędnie nalicza koszt pozycji, która ma ilość 0. Napraw implementację. Najpierw odtwórz problem istniejącymi testami (go test -json -count=1 ./...), a po poprawce uruchom te same testy ponownie. Zachowaj dotychczasowe zachowanie dla pozostałych przypadków. Nie zmieniaj testów, katalogu produktów ani innych plików niezwiązanych z błędem. Podaj przyczynę i wynik testów."
 
 func codingLiveFixtures() map[string]string {
 	return map[string]string{
-		"package.json":           "{\"name\":\"invoice-fixture\",\"private\":true,\"scripts\":{\"test\":\"node --test tests/invoice.test.cjs\"}}\n",
-		"README.md":              "# Invoice service\n\n`src/invoice.cjs` sums invoice lines in integer cents using the catalog and pricing modules. Omitted quantity defaults to 1; quantity 0 is valid and costs zero. Negative or noninteger quantities are rejected. Run `node --test tests/invoice.test.cjs` to check the behavior. There are no external dependencies.\n",
-		"src/catalog.cjs":        "'use strict';\nconst catalog = Object.freeze({ notebook: 1250, pen: 300, folder: 450 });\nmodule.exports = { catalog };\n",
-		"src/invoice.cjs":        "'use strict';\nconst { catalog } = require('./catalog.cjs');\nconst { lineTotal } = require('./pricing.cjs');\nfunction invoiceTotal(items) {\n  return items.reduce((sum, item) => sum + lineTotal(item, catalog), 0);\n}\nmodule.exports = { invoiceTotal };\n",
-		"src/pricing.cjs":        "'use strict';\nfunction lineTotal(item, catalog) {\n  const unitCents = catalog[item.sku];\n  if (unitCents === undefined) throw new RangeError('Unknown SKU');\n  const quantity = item.quantity || 1;\n  if (!Number.isInteger(quantity) || quantity < 0) throw new RangeError('Invalid quantity');\n  return unitCents * quantity;\n}\nmodule.exports = { lineTotal };\n",
-		"tests/invoice.test.cjs": "'use strict';\nconst test = require('node:test');\nconst assert = require('node:assert/strict');\nconst { invoiceTotal } = require('../src/invoice.cjs');\ntest('omitted quantity defaults to one', () => assert.equal(invoiceTotal([{sku:'notebook'}]), 1250));\ntest('explicit quantity multiplies unit cents', () => assert.equal(invoiceTotal([{sku:'notebook',quantity:2}]), 2500));\ntest('zero quantity costs zero', () => assert.equal(invoiceTotal([{sku:'pen',quantity:0}]), 0));\ntest('mixed invoice preserves zero and positive quantities', () => assert.equal(invoiceTotal([{sku:'notebook',quantity:2},{sku:'pen',quantity:0},{sku:'folder',quantity:3}]), 3850));\ntest('unknown SKU is rejected', () => assert.throws(() => invoiceTotal([{sku:'missing',quantity:1}]), RangeError));\ntest('negative quantity is rejected', () => assert.throws(() => invoiceTotal([{sku:'pen',quantity:-1}]), RangeError));\ntest('fractional quantity is rejected', () => assert.throws(() => invoiceTotal([{sku:'pen',quantity:1.5}]), RangeError));\n",
+		"go.mod":    "module invoicefixture\n\ngo 1.26.2\n",
+		"README.md": "# Invoice service\n\n`src/invoice.go` sums invoice lines in integer cents using the catalog and pricing modules. Omitted quantity defaults to 1; quantity 0 is valid and costs zero. Negative or noninteger quantities are rejected. Run `go test -json -count=1 ./...` to check the behavior. There are no external dependencies.\n",
+		"src/catalog.go": `package invoice
+
+var catalog = map[string]int{"notebook": 1250, "pen": 300, "folder": 450}
+`,
+		"src/invoice.go": `package invoice
+
+type Item struct {
+	SKU      string
+	Quantity *float64
+}
+
+func InvoiceTotal(items []Item) (int, error) {
+	total := 0
+	for _, item := range items {
+		cents, err := lineTotal(item)
+		if err != nil {
+			return 0, err
+		}
+		total += cents
+	}
+	return total, nil
+}
+`,
+		codingLivePricingFile: `package invoice
+
+import (
+	"fmt"
+	"math"
+)
+
+func lineTotal(item Item) (int, error) {
+	unitCents, ok := catalog[item.SKU]
+	if !ok {
+		return 0, fmt.Errorf("unknown SKU")
+	}
+	quantity := 1.0
+	if item.Quantity != nil && *item.Quantity != 0 {
+		quantity = *item.Quantity
+	}
+	if math.IsNaN(quantity) || math.IsInf(quantity, 0) || math.Trunc(quantity) != quantity || quantity < 0 {
+		return 0, fmt.Errorf("invalid quantity")
+	}
+	return unitCents * int(quantity), nil
+}
+`,
+		"tests/invoice_test.go": `package invoice_test
+
+import (
+	"testing"
+	invoice "invoicefixture/src"
+)
+
+func quantity(value float64) *float64 { return &value }
+
+func TestInvoice(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		items   []invoice.Item
+		want    int
+		wantErr bool
+	}{
+		{"omitted quantity defaults to one", []invoice.Item{{SKU: "notebook"}}, 1250, false},
+		{"explicit quantity multiplies unit cents", []invoice.Item{{SKU: "notebook", Quantity: quantity(2)}}, 2500, false},
+		{"zero quantity costs zero", []invoice.Item{{SKU: "pen", Quantity: quantity(0)}}, 0, false},
+		{"mixed invoice preserves zero and positive quantities", []invoice.Item{{SKU: "notebook", Quantity: quantity(2)}, {SKU: "pen", Quantity: quantity(0)}, {SKU: "folder", Quantity: quantity(3)}}, 3850, false},
+		{"unknown SKU is rejected", []invoice.Item{{SKU: "missing", Quantity: quantity(1)}}, 0, true},
+		{"negative quantity is rejected", []invoice.Item{{SKU: "pen", Quantity: quantity(-1)}}, 0, true},
+		{"fractional quantity is rejected", []invoice.Item{{SKU: "pen", Quantity: quantity(1.5)}}, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log(tc.name)
+			got, err := invoice.InvoiceTotal(tc.items)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid invoice to be rejected")
+				}
+			} else if err != nil || got != tc.want {
+				t.Fatalf("total = %d, %v; want %d", got, err, tc.want)
+			}
+		})
+	}
+}
+`,
 	}
 }
 
@@ -162,7 +244,7 @@ type codingLiveReport struct {
 	Passed           bool                      `json:"passed"`
 }
 
-// A real coding task: reproduce a failing existing Node test, fix one module,
+// A real coding task: reproduce a failing existing Go test, fix one module,
 // then run the unchanged tests. The tiny project has multiple cooperating
 // sources; no scripted provider or evaluation-only system guidance is used.
 func TestAgentCodingLiveGUI(t *testing.T) {
@@ -289,13 +371,13 @@ func TestAgentCodingLiveGUI(t *testing.T) {
 			continue
 		}
 		report.FinalSources[name] = string(b)
-		if name != "src/pricing.cjs" && string(b) != expected {
+		if name != codingLivePricingFile && string(b) != expected {
 			report.FixtureProtected = false
 		}
 	}
 	finalTest, finalErr := codingLiveRunTests(home)
 	report.IndependentTest = string(finalTest)
-	report.Passed = report.Summary.ToolDiag.Terminal == "" && report.FinalText != "" && report.Evidence.FailedBeforeEdit && report.Evidence.PassedAfterEdit && report.FixtureProtected && finalErr == nil && codingLiveTestCount(report.IndependentTest, "tests", 7) && codingLiveTestCount(report.IndependentTest, "fail", 0) && report.FinalSources["src/pricing.cjs"] != report.Fixtures["src/pricing.cjs"]
+	report.Passed = report.Summary.ToolDiag.Terminal == "" && report.FinalText != "" && report.Evidence.FailedBeforeEdit && report.Evidence.PassedAfterEdit && report.FixtureProtected && finalErr == nil && codingLiveTestCount(report.IndependentTest, "tests", 7) && codingLiveTestCount(report.IndependentTest, "fail", 0) && report.FinalSources[codingLivePricingFile] != report.Fixtures[codingLivePricingFile]
 	t.Logf("coding: %.3fs, %d model calls, %d tools, %d tool failures, red=%v green=%v, after-completion=%d", float64(report.WallMS)/1000, report.Summary.ModelCalls, report.Summary.ToolCalls, report.Summary.ToolFailures, report.Evidence.FailedBeforeEdit, report.Evidence.PassedAfterEdit, report.Evidence.ToolsAfterCompletion)
 	if !report.Passed {
 		t.Fatalf("coding task failed evidence or fixture preservation checks; transcript in receipt; independent test error: %v", finalErr)
@@ -305,8 +387,9 @@ func TestAgentCodingLiveGUI(t *testing.T) {
 func codingLiveRunTests(home string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "node", "--test", "tests/invoice.test.cjs")
+	cmd := exec.CommandContext(ctx, "go", "test", "-json", "-count=1", "./...")
 	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local", "GOPROXY=off")
 	return cmd.CombinedOutput()
 }
 
@@ -328,7 +411,7 @@ func codingLiveInitRepo(home string) error {
 	return nil
 }
 
-// Validation requires the installed entry script and a real explicit exit
+// Validation requires the exact fixture test command and a real explicit exit
 // code. Merely reading the test source or echoing a marker never proves a run.
 func codingLiveTestResult(call llm.ToolCall, message llm.Message) (int, bool) {
 	if call.Name != "ctx_execute" {
@@ -337,7 +420,7 @@ func codingLiveTestResult(call llm.ToolCall, message llm.Message) (int, bool) {
 	var args struct {
 		Command []string `json:"command"`
 	}
-	if json.Unmarshal([]byte(call.Arguments), &args) != nil || len(args.Command) != 3 || (strings.ToLower(filepath.Base(args.Command[0])) != "node" && strings.ToLower(filepath.Base(args.Command[0])) != "node.exe") || args.Command[1] != "--test" || strings.TrimPrefix(strings.ReplaceAll(args.Command[2], `\`, "/"), "./") != "tests/invoice.test.cjs" {
+	if json.Unmarshal([]byte(call.Arguments), &args) != nil || len(args.Command) != 5 || (strings.ToLower(filepath.Base(args.Command[0])) != "go" && strings.ToLower(filepath.Base(args.Command[0])) != "go.exe") || args.Command[1] != "test" || args.Command[2] != "-json" || args.Command[3] != "-count=1" || args.Command[4] != "./..." {
 		return 0, false
 	}
 	var result struct {
@@ -359,10 +442,29 @@ func codingLiveTestResult(call llm.ToolCall, message llm.Message) (int, bool) {
 }
 
 func codingLiveTestCount(output, key string, count int) bool {
-	// Node selects TAP or its spec reporter depending on version/environment;
-	// both provide an explicit terminal test-count line.
-	output = regexp.MustCompile(`\x1b\[[0-9;]*[mK]`).ReplaceAllString(output, "")
-	return regexp.MustCompile(`(?m)^(?:#|ℹ)\s+` + regexp.QuoteMeta(key) + `\s+` + strconv.Itoa(count) + `\s*$`).MatchString(output)
+	// Count completed fixture subtests, not the parent test or package result.
+	// Real go test -json events survive both ctx_execute result formats.
+	completed := map[string]string{}
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		var event struct {
+			Action string `json:"Action"`
+			Test   string `json:"Test"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) == nil && strings.HasPrefix(event.Test, "TestInvoice/") && (event.Action == "pass" || event.Action == "fail") {
+			completed[event.Test] = event.Action
+		}
+	}
+	if scanner.Err() != nil || len(completed) != 7 {
+		return false
+	}
+	actual := 0
+	for _, action := range completed {
+		if key == "tests" || action == key {
+			actual++
+		}
+	}
+	return actual == count
 }
 
 func codingLiveAssessEvidence(messages []llm.Message, home string) codingLiveEvidence {
@@ -453,23 +555,76 @@ func codingLivePricingPath(path, home string) bool {
 		}
 		path = relative
 	}
-	return filepath.ToSlash(path) == "src/pricing.cjs"
+	return filepath.ToSlash(path) == codingLivePricingFile
+}
+
+// Exercise the actual opt-in fixture and independent checker without a model.
+func TestCodingLiveGoFixture(t *testing.T) {
+	home := t.TempDir()
+	fixtures := codingLiveFixtures()
+	for name, content := range fixtures {
+		path := filepath.Join(home, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	red, err := codingLiveRunTests(home)
+	if err == nil || !strings.Contains(string(red), "zero quantity costs zero") || !codingLiveTestCount(string(red), "tests", 7) || !codingLiveTestCount(string(red), "fail", 2) {
+		t.Fatalf("baseline must fail exactly the two zero-quantity cases: %v\n%s", err, red)
+	}
+	broken := fixtures[codingLivePricingFile]
+	fixed := strings.Replace(broken, "item.Quantity != nil && *item.Quantity != 0", "item.Quantity != nil", 1)
+	if fixed == broken {
+		t.Fatal("fixture no longer contains the intended zero/default bug")
+	}
+	if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(codingLivePricingFile)), []byte(fixed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	green, err := codingLiveRunTests(home)
+	if err != nil || !codingLiveTestCount(string(green), "tests", 7) || !codingLiveTestCount(string(green), "fail", 0) {
+		t.Fatalf("corrected implementation must pass all seven unchanged cases: %v\n%s", err, green)
+	}
+	for name, expected := range fixtures {
+		if name == codingLivePricingFile {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(home, filepath.FromSlash(name)))
+		if err != nil || string(content) != expected {
+			t.Fatalf("checker or unrelated fixture changed: %s, %v", name, err)
+		}
+	}
+	t.Log("standalone Go fixture: baseline 2 failed / 7; corrected 7 passed / 7")
 }
 
 func TestCodingLiveEvidence(t *testing.T) {
+	output := func(code int) string {
+		var b strings.Builder
+		for i := range 7 {
+			action := "pass"
+			if code != 0 && i < 2 {
+				action = "fail"
+			}
+			_ = json.NewEncoder(&b).Encode(map[string]string{"Action": action, "Test": fmt.Sprintf("TestInvoice/case%d", i), "Output": "zero quantity costs zero\n"})
+		}
+		return b.String()
+	}
 	command := func(id string, code int) (llm.ToolCall, llm.Message) {
-		return llm.ToolCall{ID: id, Name: "ctx_execute", Arguments: `{"command":["node","--test","tests/invoice.test.cjs"]}`}, llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: fmt.Sprintf(`{"stdout":"zero quantity costs zero\n# tests 7","exit_code":%d}`, code)}
+		result, _ := json.Marshal(map[string]any{"stdout": output(code), "exit_code": code})
+		return llm.ToolCall{ID: id, Name: "ctx_execute", Arguments: `{"command":["go","test","-json","-count=1","./..."]}`}, llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: string(result)}
 	}
 	red, redResult := command("red", 1)
 	green, greenResult := command("green", 0)
-	edit := llm.ToolCall{ID: "edit", Name: "patch_file", Arguments: `{"path":"src/pricing.cjs"}`}
-	good := []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{red}}, redResult, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{edit}}, {Role: llm.RoleTool, ToolCallID: "edit", Content: "Patched src/pricing.cjs"}, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{green}}, greenResult}
+	edit := llm.ToolCall{ID: "edit", Name: "patch_file", Arguments: `{"path":"src/pricing.go"}`}
+	good := []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{red}}, redResult, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{edit}}, {Role: llm.RoleTool, ToolCallID: "edit", Content: "Patched src/pricing.go"}, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{green}}, greenResult}
 	evidence := codingLiveAssessEvidence(good, "")
 	if !evidence.FailedBeforeEdit || !evidence.PassedAfterEdit || evidence.ToolsAfterCompletion != 0 || evidence.RepeatedSuccessfulCalls != 0 {
 		t.Fatalf("actual ordered red-edit-green evidence: %+v", evidence)
 	}
 	failedSummary := redResult
-	failedSummary.Content = "error: command_failed exit=1 (0.1s)\nstdout:\nzero quantity costs zero\n# tests 7\n# fail 2"
+	failedSummary.Content = "error: command_failed exit=1 (0.1s)\nstdout:\n" + output(1)
 	if exit, ok := codingLiveTestResult(red, failedSummary); !ok || exit != 1 {
 		t.Fatal("real self-contained ctx_execute failure summary must prove the failed test")
 	}
@@ -479,7 +634,8 @@ func TestCodingLiveEvidence(t *testing.T) {
 	}
 	green = callsForCodingEvidence(good)["green"]
 	missingExit := greenResult
-	missingExit.Content = `{"stdout":"zero quantity costs zero\n# tests 7"}`
+	missing, _ := json.Marshal(map[string]string{"stdout": output(0)})
+	missingExit.Content = string(missing)
 	if _, ok := codingLiveTestResult(green, missingExit); ok {
 		t.Fatal("missing exit code must not prove a test run")
 	}
@@ -516,14 +672,14 @@ func TestAgentCodingLiveRevalidate(t *testing.T) {
 		report.FixtureProtected = true
 		for name, original := range report.Fixtures {
 			b, err := os.ReadFile(filepath.Join(home, filepath.FromSlash(name)))
-			if err != nil || (name != "src/pricing.cjs" && string(b) != original) {
+			if err != nil || (name != codingLivePricingFile && string(b) != original) {
 				report.FixtureProtected = false
 			}
 			report.FinalSources[name] = string(b)
 		}
 		output, runErr := codingLiveRunTests(home)
 		report.IndependentTest = string(output)
-		report.Passed = report.Evidence.FailedBeforeEdit && report.Evidence.PassedAfterEdit && report.FixtureProtected && runErr == nil && codingLiveTestCount(report.IndependentTest, "tests", 7) && codingLiveTestCount(report.IndependentTest, "fail", 0) && report.Summary.ToolDiag.Terminal == "" && report.FinalText != "" && report.FinalSources["src/pricing.cjs"] != report.Fixtures["src/pricing.cjs"]
+		report.Passed = report.Evidence.FailedBeforeEdit && report.Evidence.PassedAfterEdit && report.FixtureProtected && runErr == nil && codingLiveTestCount(report.IndependentTest, "tests", 7) && codingLiveTestCount(report.IndependentTest, "fail", 0) && report.Summary.ToolDiag.Terminal == "" && report.FinalText != "" && report.FinalSources[codingLivePricingFile] != report.Fixtures[codingLivePricingFile]
 		if !report.Passed {
 			t.Fatalf("revalidated receipt failed: %s, evidence=%+v, preserved=%v, independent=%v", path, report.Evidence, report.FixtureProtected, runErr)
 		}

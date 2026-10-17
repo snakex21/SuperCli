@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -31,7 +32,74 @@ type broadOperationLiveTurn struct {
 	Passed                    bool                 `json:"passed"`
 }
 
-// Opt-in actual GUI/model evaluation. The checks are installed local Node CLI
+func broadOperationLiveFixtures() map[string]string {
+	return map[string]string{
+		"go.mod":                        "module operationfixture\n\ngo 1.26.2\n",
+		"capacity.json":                 "{\"slots\":17,\"reserved\":6}\n",
+		"owner.json":                    "{\"owner\":\"Marek Lis\",\"service\":\"Orion\"}\n",
+		"services/runtime/live.json":    "{\"service\":\"Orion\",\"retries\":2,\"timeout_ms\":1400,\"port\":8234}\n",
+		"services/examples/sample.json": "{\"service\":\"Demo\",\"retries\":1,\"timeout_ms\":500,\"port\":8000}\n",
+		"checks/owner/main.go": `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+func main() {
+	var value struct { Owner, Service string }
+	data, err := os.ReadFile("owner.json")
+	if err == nil { err = json.Unmarshal(data, &value) }
+	if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+	fmt.Printf("OWNER_CHECK_OK owner=%s service=%s\n", value.Owner, value.Service)
+}
+`,
+		"checks/capacity/main.go": `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+func main() {
+	var value struct { Slots, Reserved int }
+	data, err := os.ReadFile("capacity.json")
+	if err == nil { err = json.Unmarshal(data, &value) }
+	if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+	if value.Reserved > value.Slots { fmt.Fprintln(os.Stderr, "CAPACITY_CHECK_FAILED"); os.Exit(1) }
+	fmt.Printf("CAPACITY_CHECK_OK available=%d\n", value.Slots-value.Reserved)
+}
+`,
+		"checks/retry/main.go": `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+func main() {
+	var value struct {
+		Service string
+		Retries int
+		TimeoutMS int ` + "`json:\"timeout_ms\"`" + `
+		Port int
+	}
+	data, err := os.ReadFile("services/runtime/live.json")
+	if err == nil { err = json.Unmarshal(data, &value) }
+	if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+	if value.Service != "Orion" || value.Retries != 4 || value.TimeoutMS != 1400 || value.Port != 8234 {
+		fmt.Fprintln(os.Stderr, "RETRY_CHECK_FAILED", string(data)); os.Exit(1)
+	}
+	fmt.Println("RETRY_CHECK_OK service=Orion retries=4 timeout_ms=1400 port=8234")
+}
+`,
+	}
+}
+
+// Opt-in actual GUI/model evaluation. The checks are installed local Go CLI
 // programs with real exit codes, not fake tool results. Candidate labels alter
 // only the receipt, and ordinary package tests never contact a model.
 func TestAgentOperationBroadLiveGUI(t *testing.T) {
@@ -62,17 +130,13 @@ func TestAgentOperationBroadLiveGUI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fixtures := map[string]string{
-		"capacity.json":                 "{\"slots\":17,\"reserved\":6}\n",
-		"owner.json":                    "{\"owner\":\"Marek Lis\",\"service\":\"Orion\"}\n",
-		"checks/owner.cjs":              "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('owner.json','utf8')); console.log('OWNER_CHECK_OK owner='+x.owner+' service='+x.service);\n",
-		"checks/capacity.cjs":           "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('capacity.json','utf8')); if(x.reserved>x.slots)process.exit(1); console.log('CAPACITY_CHECK_OK available='+(x.slots-x.reserved));\n",
-		"services/runtime/live.json":    "{\"service\":\"Orion\",\"retries\":2,\"timeout_ms\":1400,\"port\":8234}\n",
-		"services/examples/sample.json": "{\"service\":\"Demo\",\"retries\":1,\"timeout_ms\":500,\"port\":8000}\n",
-		"checks/retry.cjs":              "const fs=require('fs');const x=JSON.parse(fs.readFileSync('services/runtime/live.json','utf8'));if(x.service!=='Orion'||x.retries!==4||x.timeout_ms!==1400||x.port!==8234){console.error('RETRY_CHECK_FAILED '+JSON.stringify(x));process.exit(1);}console.log('RETRY_CHECK_OK service=Orion retries=4 timeout_ms=1400 port=8234');\n",
-	}
+	fixtures := broadOperationLiveFixtures()
 	for name, content := range fixtures {
-		if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(name)), []byte(content), 0600); err != nil {
+		path := filepath.Join(home, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -126,8 +190,8 @@ func TestAgentOperationBroadLiveGUI(t *testing.T) {
 		t.Logf("broad operation receipt: %s", filepath.Join(run, "receipt.json"))
 	}()
 	prompts := []string{
-		"Uruchom dwie niezależne lokalne kontrole CLI: node checks/owner.cjs oraz node checks/capacity.cjs. Podaj ustalonego właściciela usługi i liczbę dostępnych miejsc. Wystarczy wynik tych kontroli; niczego nie zmieniaj.",
-		"Znajdź w katalogu services aktywną konfigurację usługi Orion. Zmień tylko retries na 4, zachowując pozostałe ustawienia. Po zmianie uruchom node checks/retry.cjs i podaj wynik kontroli. Nie zmieniaj pliku kontrolnego ani konfiguracji przykładowej.",
+		"Uruchom dwie niezależne lokalne kontrole CLI: go run ./checks/owner oraz go run ./checks/capacity. Podaj ustalonego właściciela usługi i liczbę dostępnych miejsc. Wystarczy wynik tych kontroli; niczego nie zmieniaj.",
+		"Znajdź w katalogu services aktywną konfigurację usługi Orion. Zmień tylko retries na 4, zachowując pozostałe ustawienia. Po zmianie uruchom go run ./checks/retry i podaj wynik kontroli. Nie zmieniaj pliku kontrolnego ani konfiguracji przykładowej.",
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -220,7 +284,7 @@ func broadOperationLiveCommandMarker(call llm.ToolCall, msg llm.Message, marker 
 	if call.Name != "ctx_execute" {
 		return false
 	}
-	checker := map[string]string{"OWNER_CHECK_OK": "checks/owner.cjs", "CAPACITY_CHECK_OK": "checks/capacity.cjs", "RETRY_CHECK_OK": "checks/retry.cjs"}[marker]
+	checker := map[string]string{"OWNER_CHECK_OK": "checks/owner", "CAPACITY_CHECK_OK": "checks/capacity", "RETRY_CHECK_OK": "checks/retry"}[marker]
 	var args struct {
 		Command []string `json:"command"`
 	}
@@ -236,12 +300,12 @@ func broadOperationLiveCommandMarker(call llm.ToolCall, msg llm.Message, marker 
 }
 
 func broadOperationLiveRunsChecker(argv []string, checker string) bool {
-	if len(argv) < 2 {
+	if len(argv) != 3 || argv[1] != "run" {
 		return false
 	}
 	binary := strings.ToLower(filepath.Base(argv[0]))
-	if binary == "node" || binary == "node.exe" {
-		return strings.TrimPrefix(strings.ReplaceAll(argv[1], `\`, "/"), "./") == checker
+	if binary == "go" || binary == "go.exe" {
+		return strings.TrimPrefix(strings.ReplaceAll(argv[2], `\`, "/"), "./") == checker
 	}
 	// Complex shell/interpreter variants require offline transcript review.
 	// Never infer execution from a string which could simply be echoed.
@@ -250,7 +314,7 @@ func broadOperationLiveRunsChecker(argv []string, checker string) bool {
 
 // Assess actual successful results, not a model's claim to have run a check.
 // Two CLI checks count as grouped when returned from the same assistant tool
-// round. The automatic verifier accepts explicit Node entry-script argv only;
+// round. The automatic verifier accepts explicit Go entry-program argv only;
 // complex commands require separate offline transcript review.
 func broadOperationLiveEvidence(messages []llm.Message, scenario int) (bool, bool, int, int) {
 	callRounds := map[string]int{}
@@ -349,19 +413,73 @@ func broadOperationLiveEditsConfig(call llm.ToolCall) bool {
 	return strings.TrimPrefix(strings.ReplaceAll(args.Path, `\`, "/"), "./") == "services/runtime/live.json"
 }
 
+// Run all installed checkers on their actual files, without a provider or GUI.
+func TestBroadOperationLiveGoFixtures(t *testing.T) {
+	home := t.TempDir()
+	fixtures := broadOperationLiveFixtures()
+	write := func(name, content string) {
+		t.Helper()
+		path := filepath.Join(home, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, content := range fixtures {
+		write(name, content)
+	}
+	check := func(checker, marker string, pass bool) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "go", "run", "./checks/"+checker)
+		cmd.Dir = home
+		cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local", "GOPROXY=off")
+		output, err := cmd.CombinedOutput()
+		if (err == nil) != pass || !strings.Contains(string(output), marker) {
+			t.Fatalf("%s: pass=%v, err=%v\n%s", checker, pass, err, output)
+		}
+		return string(output)
+	}
+	check("owner", "OWNER_CHECK_OK owner=Marek Lis service=Orion", true)
+	check("capacity", "CAPACITY_CHECK_OK available=11", true)
+	check("retry", "RETRY_CHECK_FAILED", false)
+	write("services/runtime/live.json", strings.Replace(fixtures["services/runtime/live.json"], `"retries":2`, `"retries":4`, 1))
+	check("retry", "RETRY_CHECK_OK service=Orion retries=4 timeout_ms=1400 port=8234", true)
+	// Verify actual reads and error exits, rather than hard-coded markers.
+	write("owner.json", strings.Replace(fixtures["owner.json"], "Marek Lis", "Ala", 1))
+	check("owner", "OWNER_CHECK_OK owner=Ala service=Orion", true)
+	write("owner.json", fixtures["owner.json"])
+	write("capacity.json", `{"slots":17,"reserved":18}`)
+	check("capacity", "CAPACITY_CHECK_FAILED", false)
+	write("capacity.json", fixtures["capacity.json"])
+	for name, expected := range fixtures {
+		if name == "services/runtime/live.json" {
+			continue
+		}
+		actual, err := os.ReadFile(filepath.Join(home, filepath.FromSlash(name)))
+		if err != nil || string(actual) != expected {
+			t.Fatalf("unrelated fixture or checker changed: %s, %v", name, err)
+		}
+	}
+	t.Log("Go checkers: owner/capacity passed, retry baseline failed and corrected configuration passed")
+}
+
 func TestBroadOperationLiveEvidence(t *testing.T) {
 	cli := func(id, checker, marker string) (llm.ToolCall, llm.Message) {
-		return llm.ToolCall{ID: id, Name: "ctx_execute", Arguments: `{"command":["node","` + checker + `"]}`}, llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: `{"stdout":"` + marker + `","exit_code":0}`}
+		return llm.ToolCall{ID: id, Name: "ctx_execute", Arguments: `{"command":["go","run","./` + checker + `"]}`}, llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: `{"stdout":"` + marker + `","exit_code":0}`}
 	}
-	owner, ownerResult := cli("o", "checks/owner.cjs", "OWNER_CHECK_OK")
-	capacity, capacityResult := cli("c", "checks/capacity.cjs", "CAPACITY_CHECK_OK")
+	owner, ownerResult := cli("o", "checks/owner", "OWNER_CHECK_OK")
+	capacity, capacityResult := cli("c", "checks/capacity", "CAPACITY_CHECK_OK")
 	grouped := []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{owner, capacity}}, ownerResult, capacityResult, {Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "extra", Name: "read_lines", Arguments: `{"file":"owner.json"}`}}}}
 	together, _, after, _ := broadOperationLiveEvidence(grouped, 0)
 	if !together || after != 1 {
 		t.Fatalf("same response and post-completion count: together=%v after=%d", together, after)
 	}
 	edit := llm.ToolCall{ID: "edit", Name: "patch_file", Arguments: `{"path":"services/runtime/live.json"}`}
-	check, checkResult := cli("verify", "checks/retry.cjs", "RETRY_CHECK_OK")
+	check, checkResult := cli("verify", "checks/retry", "RETRY_CHECK_OK")
 	ordered := []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{edit, check}}, {Role: llm.RoleTool, ToolCallID: "edit", Content: "Patched services/runtime/live.json"}, checkResult}
 	_, verified, _, _ := broadOperationLiveEvidence(ordered, 1)
 	if !verified {

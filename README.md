@@ -1,6 +1,6 @@
 [English](docs/readme/en.md) · [Български](docs/readme/bg.md) · [Čeština](docs/readme/cs.md) · [Dansk](docs/readme/da.md) · [Deutsch](docs/readme/de.md) · [Ελληνικά](docs/readme/el.md) · [Español](docs/readme/es.md) · [Eesti](docs/readme/et.md) · [Suomi](docs/readme/fi.md) · [Français](docs/readme/fr.md) · [Hrvatski](docs/readme/hr.md) · [Magyar](docs/readme/hu.md) · [Italiano](docs/readme/it.md) · [Lietuvių](docs/readme/lt.md) · [Latviešu](docs/readme/lv.md) · [Norsk bokmål](docs/readme/nb.md) · [Nederlands](docs/readme/nl.md) · [Polski](docs/readme/pl.md) · [Português (Brasil)](docs/readme/pt-BR.md) · [Română](docs/readme/ro.md) · [Русский](docs/readme/ru.md) · [Slovenčina](docs/readme/sk.md) · [Slovenščina](docs/readme/sl.md) · [Srpski (latinica)](docs/readme/sr-Latn.md) · [Svenska](docs/readme/sv.md) · [Türkçe](docs/readme/tr.md) · [Українська](docs/readme/uk.md)
 
-<!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
+<!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
 # SuperCli 1.0.14
 
@@ -190,19 +190,21 @@ Use the Go version specified in `go.mod`. On Windows, `build.bat` builds the TUI
 [docs/releasing.md](docs/releasing.md)
 
 ```bash
-npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
+go run ./scripts/test-ui
+go test ./scripts/readme
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
-node docs/readme/check.cjs
+go run ./scripts/readme -check
 ```
 
 ```powershell
-npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
+go run ./scripts/test-ui
+go test ./scripts/readme
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web
-node docs/readme/check.cjs
+go run ./scripts/readme -check
 ```
 
 <!-- readme-unit:tests -->

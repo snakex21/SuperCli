@@ -82,7 +82,6 @@ Thumbs.db
 *.swo
 
 # Temporary files / local tool state
-/node_modules/
 /\.tmp-home/
 /\.claude/
 /%SystemDrive%/

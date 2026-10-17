@@ -1,0 +1,468 @@
+import {assert, test, readSource, sourcePath, testDir, createSandbox, runScript} from './harness.js';
+
+function descendants(node) { return node.children.flatMap(child => [child, ...descendants(child)]); }
+function element(tag, className = '', text) {
+  const node = {tag, nodeType: 1, className, children: [], style: {}, dataset: {}, attributes: {}, events: new Map(),
+    open: false, scrollHeight: 1000, scrollTop: 0, clientHeight: 500,
+    appendChild(child) {
+      if (child.nodeType === 11) child.children.splice(0).forEach(value => this.appendChild(value));
+      else { this.children.push(child); child.parentNode = this; }
+      return child;
+    },
+    insertBefore(child, before) { child.remove(); const index = before ? this.children.indexOf(before) : this.children.length; this.children.splice(index, 0, child); child.parentNode = this; return child; },
+    replaceChildren(...children) { this.children.forEach(child => child.parentNode = null); this.children = []; children.forEach(child => this.appendChild(child)); },
+    remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); this.parentNode = null; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; if (name === 'src') this.src = ''; },
+    addEventListener(name, fn) { if (!this.events.has(name)) this.events.set(name, new Set()); this.events.get(name).add(fn); },
+    removeEventListener(name, fn) { this.events.get(name)?.delete(fn); },
+    dispatch(name) { Array.from(this.events.get(name) || []).forEach(fn => fn.call(this, {target: this})); },
+    querySelectorAll(selector) {
+      const selectors = selector.split(',').map(value => value.trim());
+      return descendants(this).filter(child => selectors.some(value => value.startsWith('.') ?
+        String(child.className || '').split(' ').includes(value.slice(1)) : child.tag === value));
+    },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    focus() {}, pause() { this.pauses = (this.pauses || 0) + 1; }, load() { this.loads = (this.loads || 0) + 1; },
+    showModal() { this.open = true; },
+    close() { this.open = false; this.dispatch('close'); },
+  };
+  node.classList = {
+    add(...names) { node.className += ' ' + names.join(' '); },
+    remove(...names) { node.className = node.className.split(' ').filter(value => !names.includes(value)).join(' '); },
+    contains(name) { return node.className.split(" ").includes(name); },
+    toggle() {},
+  };
+  Object.defineProperty(node, 'nextSibling', {get() { return this.parentNode ? this.parentNode.children[this.parentNode.children.indexOf(this) + 1] || null : null; }});
+  Object.defineProperty(node, 'textContent', {get() { return this.nodeType === 3 ? this.text : this.children.map(child => child.textContent).join(''); },
+    set(value) { this.children = String(value) ? [{nodeType: 3, text: String(value), textContent: String(value), children: []}] : []; }});
+  Object.defineProperty(node, 'innerHTML', {get() { return ''; }, set() { this.children = []; }});
+  if (text != null) node.textContent = text;
+  return node;
+}
+function harness() {
+  const nodes = new Map(), created = [];
+  const $ = selector => { if (!nodes.has(selector)) nodes.set(selector, element('div')); return nodes.get(selector); };
+  const el = (tag, cls, text) => { const node = element(tag, cls, text); created.push(node); return node; };
+  const c = {$, $$: () => [], el, i18nEl: (tag, cls, key) => el(tag, cls, key), t: key => key,
+    document: {hidden: false, hasFocus: () => true, createElement: el, createDocumentFragment() { const node = element('#fragment'); node.nodeType = 11; return node; }},
+    localStorage: {getItem: () => null}, window: {}, AbortController, Promise,
+    superCliUI: {fileMutationTools: {}, mutationKind: () => '', createComposerDraftStore: () => ({restore() {}, clear() {}, scope() { return ''; }})},
+    requestAnimationFrame: () => 1, clearInterval() {}, performance: {now: () => 100},
+    prettyJSON: value => { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }},
+    toolHint: name => ({name, hint: 'media file'}), toolDisplayName: name => name,
+    clip: value => String(value), fmtDuration: () => '0.1s', toast: value => { throw Error(value); },
+    fetch: () => { throw Error('No network request is allowed in this fixture'); },
+  };
+  createSandbox(c);
+  for (const file of ['04-transcript.js', '05-chat.js', '08-sessions.js']) {
+    runScript(readSource(sourcePath(testDir, '../../internal/webgui/assets/js', file), 'utf8'), c);
+  }
+  return {c, $, created};
+}
+function liveResult(h, name, raw, err = '') {
+  const row = element('details'); row._toolName = name; row._t0 = 0; row._clock = 1;
+  row._body = element('div'); row._stat = element('span'); row._tname = element('span');
+  row.appendChild(row._body);
+  h.c.appendStream(row);
+  h.c.toolRows = {'media-1': row}; h.c.openToolOrder = ['media-1'];
+  h.c.addToolResult('media-1', raw, err);
+  return row;
+}
+function expand(row) { row.open = true; row.dispatch('toggle'); }
+function mediaResult(type, file, extra = {}) {
+  return JSON.stringify({type, source: 'screen', path: file, media_type: {image: 'image/png', video: 'video/mp4', audio: 'audio/mpeg'}[type], bytes: 10, attached: false, ...extra});
+}
+function buttons(node) { return node ? node.querySelectorAll('.sent-attachment-preview') : []; }
+
+test('successful screenshots and images are visible outside folded live details with exact raw output', () => {
+  for (const [name, source] of [['send_screenshot', 'screen'], ['send_screenshot', 'desktop'], ['send_screenshot', 'clipboard'], ['show_media', 'screen']]) {
+    const h = harness(), file = 'C:\\portable project\\.supercli\\snapshots\\zażółć 😀.png';
+    const raw = mediaResult('image', file, {source});
+    const row = liveResult(h, name, raw);
+    assert.equal(row._body.children.length, 0);
+    assert.equal(h.created.filter(node => node.tag === 'img').length, 1);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.parentNode, row.parentNode);
+    assert.equal(row.nextSibling, row._mediaPreview);
+    expand(row);
+    const cards = buttons(row._mediaPreview);
+    assert.equal(cards.length, 1);
+    const img = cards[0].children[0];
+    assert.equal(img.src, '/api/attachment/preview?path=' + encodeURIComponent(file) + '&thumbnail=transcript');
+    assert.equal(img.loading, 'lazy');
+    assert.equal(img.alt, 'zażółć 😀.png');
+    assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
+    row.open = false; row.dispatch('toggle'); expand(row);
+    assert.equal(buttons(row._mediaPreview)[0], cards[0]);
+    cards[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-dialog').open, true);
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+    img.dispatch('error');
+    assert.equal(row._mediaPreview.querySelector('img'), null);
+    assert.equal(buttons(row._mediaPreview).length, 1, 'an unavailable thumbnail keeps the original click control');
+    assert.equal(buttons(row._mediaPreview)[0].textContent, 'zażółć 😀.png');
+    assert.equal(row._body.querySelectorAll('pre')[0].textContent, raw);
+  }
+});
+
+test('persisted tool results restore visible previews across Unix, Windows and UNC paths', () => {
+  const cases = [
+    ['send_screenshot', 'image', '/portable/.supercli/snapshots/screen.png'],
+    ['send_screenshot', 'image', 'C:/portable/.supercli/snapshots/desktop.png', 'desktop'],
+    ['show_media', 'image', 'C:/portable/picture.JPEG'],
+    ['show_media', 'video', '/portable/clip.mp4'],
+    ['show_media', 'video', 'C:\\portable\\clip.webm'],
+    ['show_media', 'audio', '/portable/sound.mp3'],
+    ['show_media', 'audio', 'C:/portable/sound.wav'],
+    ['show_media', 'audio', '\\\\server\\portable\\sound.ogg'],
+  ];
+  for (const [name, type, file, source = 'screen'] of cases) {
+    const h = harness(), raw = mediaResult(type, file, {source});
+    const row = h.c.buildHistoryFragment([{seq: 2, role: 'tool', tool_call_id: 'old-media', name, content: raw}]).children[0];
+    const body = row.children[1];
+    assert.equal(body.children.length, 0);
+    assert.equal(h.created.filter(node => ['img', 'video', 'audio'].includes(node.tag)).length, type === 'image' ? 1 : 0);
+    assert.equal(buttons(row._mediaPreview).length, 1);
+    assert.equal(row.open, false);
+    expand(row);
+    assert.equal(buttons(row._mediaPreview).length, 1);
+    assert.equal(body.querySelector('pre').textContent, raw);
+    if (type === 'image') assert.equal(row._mediaPreview.querySelector('img').loading, 'lazy');
+    else {
+      assert.equal(h.created.filter(node => node.tag === type).length, 0, 'expanding creates a button only');
+      buttons(row._mediaPreview)[0].dispatch('click');
+      const media = h.$('#attachment-preview-content').querySelector(type);
+      assert.ok(media);
+      assert.equal(media.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+      assert.equal(media.preload, 'none');
+      assert.equal(media.controls, true);
+      assert.notEqual(media.autoplay, true);
+      assert.equal(media.attributes.autoplay, undefined);
+    }
+  }
+});
+
+test('live audio and video keep their original path and create no player until clicked', () => {
+  for (const [type, ext] of [['video', '.mp4'], ['audio', '.mp3']]) {
+    const h = harness(), file = '/portable/sample' + ext, raw = mediaResult(type, file);
+    const row = liveResult(h, 'show_media', raw);
+    expand(row);
+    assert.equal(row._body.querySelector(type), null);
+    assert.equal(buttons(row._mediaPreview)[0].textContent, 'sample' + ext);
+    assert.equal(row._body.querySelector('pre').textContent, raw);
+    buttons(row._mediaPreview)[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector(type).preload, 'none');
+  }
+});
+
+test('unrecognized, malformed and error results never preview and keep diagnostics', () => {
+  const good = mediaResult('image', '/portable/good.png');
+  const bad = [
+    ['other_tool', good, ''],
+    ['send_screenshot', good, good],
+    ['show_media', 'not JSON', ''],
+    ['show_media', mediaResult('image', '/portable/image.png', {media_type: 'text/html'}), ''],
+    ['show_media', mediaResult('image', '/portable/image.png', {media_type: 'audio/mpeg'}), ''],
+    ['show_media', mediaResult('audio', '/portable/sound.mp3', {media_type: 'video/mp4'}), ''],
+    ['show_media', 'null', ''],
+    ['show_media', JSON.stringify({type: 'image'}), ''],
+    ['show_media', mediaResult('image', 'relative.png'), ''],
+    ['show_media', mediaResult('image', 'https://example.com/image.png'), ''],
+    ['show_media', mediaResult('image', '/portable/image.svg', {media_type: 'image/svg+xml'}), ''],
+    ['show_media', mediaResult('video', '/portable/image.png', {media_type: 'image/png'}), ''],
+    ['send_screenshot', mediaResult('video', '/portable/clip.mp4'), ''],
+    ['show_media', mediaResult('image', '/portable/image.png', {save_error: 'permission denied'}), ''],
+    ['show_media', mediaResult('image', '/portable/image.png', {error: 'missing file'}), ''],
+    ['show_media', mediaResult('image', '/portable/\u0000image.png'), ''],
+  ];
+  for (const [name, raw, err] of bad) {
+    const h = harness(), row = liveResult(h, name, raw, err);
+    expand(row);
+    assert.equal(buttons(row._mediaPreview).length, 0);
+    assert.equal(row._body.querySelector('pre').textContent, err || raw);
+    const old = h.c.buildHistoryFragment([{seq: 2, role: 'tool', name, content: err || raw}]).children[0];
+    // Persisted error role payloads remain text, even without a separate error flag.
+    if (!err) { expand(old); assert.equal(buttons(old._mediaPreview).length, 0); }
+  }
+});
+
+test('closing, Escape close events and switching previews stop playback and release source', () => {
+  for (const finish of ['button', 'escape', 'switch']) {
+    const h = harness();
+    h.c.openAttachmentPreview('/portable/sound.ogg');
+    const content = h.$('#attachment-preview-content'), media = content.querySelector('audio');
+    if (finish === 'button') h.$('#attachment-preview-close').dispatch('click');
+    else if (finish === 'escape') h.$('#attachment-preview-dialog').close();
+    else h.c.openAttachmentPreview('/portable/next.png');
+    assert.equal(media.pauses, 1);
+    assert.equal(media.loads, 1);
+    assert.equal(media.src, '');
+    assert.equal(media.parentNode, null);
+    assert.equal(content.querySelector('audio'), null);
+    if (finish === 'switch') assert.ok(content.querySelector('img'));
+    else assert.equal(content.children.length, 0);
+  }
+});
+
+test('existing image and PDF previews and composer attachment names keep their behavior', () => {
+  const h = harness();
+  h.c.openAttachmentPreview('/portable/doc.pdf');
+  const frame = h.$('#attachment-preview-content').querySelector('iframe');
+  assert.equal(frame.src, '/api/attachment/preview?path=%2Fportable%2Fdoc.pdf#view=FitH');
+  h.c.openAttachmentPreview('/portable/photo.webp');
+  assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=%2Fportable%2Fphoto.webp');
+  h.c.closeAttachmentPreview();
+  assert.equal(h.$('#attachment-preview-content').children.length, 0);
+  const paperclip = String.fromCodePoint(0x1F4CE);
+  assert.equal(h.c.userMessageDisplayText('text\n\n' + paperclip + ' photo.webp, doc.pdf', ['/portable/photo.webp', '/portable/doc.pdf']), 'text');
+  assert.equal(h.c.userMessageDisplayText(paperclip + ' photo.webp', ['/portable/photo.webp']), '');
+  assert.equal(h.c.userMessageDisplayText('my ' + paperclip + ' notes\nmore', ['/portable/photo.webp']), 'my ' + paperclip + ' notes\nmore');
+  assert.equal(h.c.userMessageDisplayText('keep\n\n' + paperclip + ' x.png', []), 'keep\n\n' + paperclip + ' x.png');
+  const host = element('div');
+  h.c.renderSentAttachments(host, ['/portable/photo.webp', '/portable/doc.pdf', '/portable/data.csv']);
+  const tiles = host.querySelectorAll('.sent-file-attachment');
+  assert.deepEqual(tiles.map(tile => tile.querySelector('.attachment-name').textContent), ['doc.pdf', 'data.csv']);
+  assert.deepEqual(tiles.map(tile => tile.querySelector('.sent-file-badge').textContent), ['PDF', 'CSV']);
+  assert.equal(host.querySelectorAll('img').length, 1);
+  tiles[0].dispatch('click');
+  assert.ok(h.$('#attachment-preview-content').querySelector('iframe'));
+});
+
+test('tool MIME descriptors preview valid content even with no or mismatched file extension', () => {
+  const cases = [
+    ['image', 'image/png', '/portable/output.bin'],
+    ['image', 'image/jpeg', 'C:/portable/output'],
+    ['image', 'image/gif', '/portable/picture.pdf'],
+    ['image', 'image/webp', '/portable/picture.wav'],
+    ['video', 'video/mp4', '/portable/output.bin'],
+    ['video', 'video/webm', '/portable/movie.png'],
+    ['audio', 'audio/mpeg', '/portable/output.bin'],
+    ['audio', 'audio/wave', '/portable/output'],
+    ['audio', 'audio/wav', '/portable/sound.mp4'],
+    ['audio', 'audio/x-wav', '/portable/output'],
+    ['audio', 'audio/ogg', '/portable/output'],
+    ['audio', 'application/ogg', '/portable/output'],
+  ];
+  for (const [type, mime, file] of cases) {
+    for (const history of [false, true]) {
+      const h = harness(), raw = mediaResult(type, file, {media_type: mime});
+      const row = history ? h.c.buildHistoryFragment([{seq: 2, role: 'tool', name: 'show_media', content: raw}]).children[0] :
+        liveResult(h, 'show_media', raw);
+      const body = history ? row.children[1] : row._body;
+      expand(row);
+      assert.equal(buttons(row._mediaPreview).length, 1, type + ' ' + mime + ' ' + file);
+      assert.equal(body.querySelector('pre').textContent, raw);
+      buttons(row._mediaPreview)[0].dispatch('click');
+      const content = h.$('#attachment-preview-content');
+      assert.ok(content.querySelector(type === 'image' ? 'img' : type));
+      assert.equal(content.querySelector('iframe'), null, 'tool MIME takes priority over a PDF-looking name');
+      if (type !== 'image') assert.equal(content.querySelector(type).preload, 'none');
+    }
+  }
+});
+
+test('a tool MIME override does not change ordinary user attachment inference for the same path', () => {
+  const h = harness(), file = '/portable/output.bin', raw = mediaResult('image', file);
+  const row = liveResult(h, 'show_media', raw);
+  expand(row); buttons(row._mediaPreview)[0].dispatch('click');
+  assert.ok(h.$('#attachment-preview-content').querySelector('img'));
+  h.c.closeAttachmentPreview();
+  assert.equal(h.c.previewableAttachment(file), false);
+  assert.throws(() => h.c.openAttachmentPreview(file), /attachment.previewUnavailable/);
+  const host = element('div');
+  h.c.renderSentAttachments(host, [file]);
+  assert.equal(host.querySelectorAll('img').length, 0);
+  assert.equal(host.querySelectorAll('.sent-attachment-preview').length, 0);
+  assert.equal(host.querySelectorAll('.sent-file-attachment').length, 1, 'an ordinary file is a plain tile, not media');
+});
+
+test('portable screenshot identifiers keep the same lazy live and history URL after moving the app', () => {
+  const previewPath = 'snapshot:screen-2398173.png';
+  const stableURL = '/api/attachment/preview?path=' + encodeURIComponent(previewPath);
+  for (const file of ['C:/original/app/.supercli/snapshots/screen-2398173.png', 'D:/moved/app/.supercli/snapshots/screen-2398173.png']) {
+    for (const history of [false, true]) {
+      const h = harness(), raw = mediaResult('image', file, {preview_path: previewPath});
+      const row = history ? h.c.buildHistoryFragment([{seq: 2, role: 'tool', name: 'send_screenshot', content: raw}]).children[0] :
+        liveResult(h, 'send_screenshot', raw);
+      const body = history ? row.children[1] : row._body;
+      assert.equal(body.children.length, 0);
+      assert.equal(h.created.filter(node => node.tag === 'img').length, 1);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.parentNode, row.parentNode);
+    assert.equal(row.nextSibling, row._mediaPreview);
+      expand(row);
+      const card = buttons(row._mediaPreview)[0], image = card.children[0];
+      assert.equal(image.src, stableURL + '&thumbnail=transcript');
+      assert.equal(image.alt, 'screen-2398173.png');
+      assert.equal(card.title, 'attachment.preview: screen-2398173.png');
+      assert.equal(body.querySelector('pre').textContent, raw);
+      card.dispatch('click');
+      assert.equal(h.$('#attachment-preview-content').querySelector('img').src, stableURL);
+      assert.equal(h.$('#attachment-preview-title').textContent, 'screen-2398173.png');
+    }
+  }
+});
+
+test('only strict snapshot basenames from send_screenshot override the original preview path', () => {
+  const file = '/portable/.supercli/snapshots/screen.png';
+  const absoluteURL = '/api/attachment/preview?path=' + encodeURIComponent(file);
+  for (const previewPath of [
+    'snapshot:../screen.png', 'snapshot:folder/screen.png', 'snapshot:folder\\screen.png',
+    'snapshot:screen.png:other', 'snapshot:', 'snapshot:screen name.png',
+    'snapshot:screen.png\n', 'SNAPSHOT:screen.png', 'https://example.com/image.png', 17, null,
+  ]) {
+    const h = harness(), raw = mediaResult('image', file, {preview_path: previewPath});
+    const row = liveResult(h, 'send_screenshot', raw);
+    expand(row);
+    const card = buttons(row._mediaPreview)[0];
+    assert.equal(card.children[0].src, absoluteURL + '&thumbnail=transcript');
+    card.dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, absoluteURL);
+  }
+  const h = harness();
+  const row = liveResult(h, 'show_media', mediaResult('image', file, {preview_path: 'snapshot:screen.png'}));
+  expand(row);
+  assert.equal(buttons(row._mediaPreview)[0].children[0].src, absoluteURL + '&thumbnail=transcript');
+  const invalid = liveResult(h, 'send_screenshot', mediaResult('image', 'relative.png', {preview_path: 'snapshot:screen.png'}));
+  expand(invalid);
+  assert.equal(buttons(invalid._body).length, 0, 'a portable token cannot bypass the absolute path requirement');
+});
+
+test('composer uses a bounded thumbnail and opening or closing uses and releases the original', () => {
+  const h = harness(), file = '/portable/4k.png';
+  h.c.pendingAttachments = [file];
+  h.c.renderAttachments();
+  const chip = h.$('#attachment-list').children[0], thumbnail = chip.querySelector('img');
+  assert.equal(thumbnail.src, '/api/attachment/preview?path=%2Fportable%2F4k.png&thumbnail=composer');
+  assert.equal(thumbnail.loading, 'lazy');
+  assert.equal(thumbnail.decoding, 'async');
+  chip.querySelector('.attachment-open').dispatch('click');
+  const original = h.$('#attachment-preview-content').querySelector('img');
+  assert.equal(original.src, '/api/attachment/preview?path=%2Fportable%2F4k.png');
+  h.c.closeAttachmentPreview();
+  assert.equal(original.src, '');
+  assert.equal(original.parentNode, null);
+});
+
+test('WebP keeps the original preview fallback while failed PNG thumbnails keep only a click control', () => {
+  for (const extension of ['webp', 'png']) {
+    const h = harness(), file = '/portable/picture.' + extension;
+    const host = element('div');
+    h.c.renderSentAttachments(host, [file]);
+    const image = host.querySelector('img'), button = buttons(host)[0];
+    image.dispatch('error');
+    if (extension === 'webp') {
+      assert.equal(image.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+      assert.equal(image.parentNode, button);
+      image.dispatch('error');
+    }
+    assert.equal(host.querySelector('img'), null);
+    assert.equal(button.textContent, 'picture.' + extension);
+    button.dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+  }
+});
+test('native MCP images stay folded and materialize safe thumbnails only after opening', () => {
+  const h = harness();
+  const row = liveResult(h, 'mcp_bridge', 'Captured');
+  const token = 'session:fixture_123/' + 'a'.repeat(64) + '.png';
+  h.c.appendNativeToolImages(row, [token, 'https://untrusted.test/image.png', 'data:image/png;base64,secret', 'session:../escape.png']);
+  assert.equal(row._mediaPreview.parentNode, undefined);
+  assert.equal(row._body.children.length, 0);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 0);
+  expand(row);
+  assert.equal(row._mediaPreview.parentNode, row._body);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 1);
+  assert.equal(row._mediaPreview.querySelector('img').src, '/api/attachment/preview?path=' + encodeURIComponent(token) + '&thumbnail=transcript');
+  h.c.appendNativeToolImages(row, [token]);
+  assert.equal(row._mediaPreview.querySelectorAll('img').length, 1);
+});
+
+test('generation outputs share local image and lazy video preview contract', () => {
+  for (const [name, kind, file] of [['generate_image', 'image', '/project/generated.png'], ['generate_video', 'video', '/project/generated.mp4']]) {
+    for (const history of [false, true]) {
+      const h = harness(), raw = mediaResult(kind, file);
+      const row = history ? h.c.buildHistoryFragment([{seq: 2, role: 'tool', name, content: raw}]).children[0] :
+        liveResult(h, name, raw);
+      assert.ok(row._mediaPreview);
+      assert.equal(row.open, false);
+      assert.equal(row._body.children.length, 0);
+      assert.equal(buttons(row._mediaPreview).length, 1);
+      assert.equal(row._mediaPreview.querySelectorAll('img').length, kind === 'image' ? 1 : 0);
+      assert.equal(h.created.filter(node => node.tag === 'video').length, 0);
+      expand(row);
+      assert.equal(row._body.querySelector('pre').textContent, raw);
+      buttons(row._mediaPreview)[0].dispatch('click');
+      const media = h.$('#attachment-preview-content').querySelector(kind === 'image' ? 'img' : kind);
+      assert.equal(media.src, '/api/attachment/preview?path=' + encodeURIComponent(file));
+      if (kind === 'video') assert.equal(media.preload, 'none');
+    }
+  }
+});
+
+test('restored native image attachments do not depend on browser localStorage', () => {
+  const h = harness();
+  const token = 'session:fixture_123/' + 'b'.repeat(64) + '.png';
+  h.c.addUserMsg = (content, seq, attachments) => { assert.deepEqual(Array.from(attachments), [token]); };
+  h.c.buildHistoryFragment([{role:'user', seq:2, content:'Attached image from tool mcp_bridge:', attachments:[token]}]);
+});
+
+test('headless QMP and browser screenshots have automatic bounded preview in live and restored chat', () => {
+  for (const source of ['qmp', 'browser']) {
+    const h = harness(), file = 'C:/portable/data/.supercli/snapshots/' + source + '-123.png';
+    const raw = mediaResult('image', file, {source, preview_path: 'snapshot:' + source + '-123.png'});
+    const live = liveResult(h, 'headless_control', raw);
+    assert.equal(live.open, false);
+    assert.equal(live._mediaPreview.querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent('snapshot:' + source + '-123.png') + '&thumbnail=transcript');
+    const restored = h.c.buildHistoryFragment([{seq: 10, role:'tool', tool_call_id:'vm-shot',name:'headless_control',content:raw}]).children[0];
+    assert.equal(restored.open, false);
+    assert.ok(restored._mediaPreview.querySelector('img'));
+    buttons(restored._mediaPreview)[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent('snapshot:' + source + '-123.png'));
+  }
+});
+test('headless status, other sources, failures and invalid media never become previews', () => {
+  const h = harness(), file = '/portable/data/.supercli/snapshots/qmp-123.png';
+  for (const raw of [
+    JSON.stringify({protocol:'qmp', status:{running:true}}),
+    mediaResult('image',file,{source:'unknown'}),
+    mediaResult('video',file,{source:'qmp'}),
+    mediaResult('image',file,{source:'qmp',save_error:'disk full'}),
+    mediaResult('image','https://example.com/a.png',{source:'qmp'}),
+  ]) assert.equal(h.c.toolMediaDescriptor(raw,'headless_control',false),null);
+  assert.equal(h.c.toolMediaDescriptor(mediaResult('image',file,{source:'qmp'}),'headless_control',true),null);
+});
+
+test('owned process screenshots preview live and restored; ordinary process output never does', () => {
+  const file = 'C:/portable/data/.supercli/snapshots/window-owned.png';
+  const previewPath = 'snapshot:window-owned.png';
+  const raw = mediaResult('image', file, {source: 'window', preview_path: previewPath, window: {pid: 123, hwnd: '0x456'}});
+  for (const history of [false, true]) {
+    const h = harness();
+    const row = history ? h.c.buildHistoryFragment([{seq: 3, role: 'tool', name: 'process_session', content: raw}]).children[0] :
+      liveResult(h, 'process_session', raw);
+    assert.equal(row.open, false);
+    assert.equal(row._mediaPreview.querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent(previewPath) + '&thumbnail=transcript');
+    buttons(row._mediaPreview)[0].dispatch('click');
+    assert.equal(h.$('#attachment-preview-content').querySelector('img').src,
+      '/api/attachment/preview?path=' + encodeURIComponent(previewPath));
+  }
+  const h = harness();
+  for (const output of [JSON.stringify({id:'proc-1',status:'running',stdout:raw}),
+    mediaResult('image', file, {source:'screen'}), mediaResult('video', file, {source:'window'}),
+    mediaResult('image', file, {source:'window',save_error:'failed'})]) {
+    assert.equal(h.c.toolMediaDescriptor(output,'process_session',false),null);
+  }
+  assert.equal(h.c.toolMediaDescriptor(raw,'process_session',true),null);
+});
+
+test('ordinary process snapshots bypass media JSON parsing even with large captured stdout', () => {
+  const h = harness();
+  h.c.JSON = {parse() { throw Error('ordinary process output reached media decoder'); }};
+  assert.equal(h.c.toolMediaDescriptor(JSON.stringify({id:'proc-1',status:'running',stdout:'x'.repeat(65536)}),'process_session',false),null);
+  assert.equal(h.c.toolMediaDescriptor(null,'process_session',false),null);
+});
