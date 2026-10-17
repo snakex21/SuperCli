@@ -416,12 +416,12 @@
     {
       "type": "code",
       "lang": "bash",
-      "text": "npm ci --ignore-scripts --no-audit --no-fund\ngo test ./...\ngo build -o supercli ./cmd/supercli\ngo build -o supercli-web ./cmd/supercli-web\nnode docs/readme/check.cjs"
+      "text": "go test ./...\ngo run ./scripts/test-ui\ngo test ./scripts/readme\ngo build -o supercli ./cmd/supercli\ngo build -o supercli-web ./cmd/supercli-web\ngo run ./scripts/readme -check"
     },
     {
       "type": "code",
       "lang": "powershell",
-      "text": "npm ci --ignore-scripts --no-audit --no-fund\ngo test ./...\ngo build -o supercli.exe ./cmd/supercli\ngo build -ldflags=\"-H windowsgui\" -o supercli-web.exe ./cmd/supercli-web\nnode docs/readme/check.cjs"
+      "text": "go test ./...\ngo run ./scripts/test-ui\ngo test ./scripts/readme\ngo build -o supercli.exe ./cmd/supercli\ngo build -ldflags=\"-H windowsgui\" -o supercli-web.exe ./cmd/supercli-web\ngo run ./scripts/readme -check"
     },
     "tests",
     "requirements",

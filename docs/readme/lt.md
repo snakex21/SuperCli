@@ -1,6 +1,6 @@
 [English](en.md) · [Български](bg.md) · [Čeština](cs.md) · [Dansk](da.md) · [Deutsch](de.md) · [Ελληνικά](el.md) · [Español](es.md) · [Eesti](et.md) · [Suomi](fi.md) · [Français](fr.md) · [Hrvatski](hr.md) · [Magyar](hu.md) · [Italiano](it.md) · [Lietuvių](lt.md) · [Latviešu](lv.md) · [Norsk bokmål](nb.md) · [Nederlands](nl.md) · [Polski](pl.md) · [Português (Brasil)](pt-BR.md) · [Română](ro.md) · [Русский](ru.md) · [Slovenčina](sk.md) · [Slovenščina](sl.md) · [Srpski (latinica)](sr-Latn.md) · [Svenska](sv.md) · [Türkçe](tr.md) · [Українська](uk.md)
 
-<!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run node docs/readme/generate.cjs. -->
+<!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
 # SuperCli 1.0.14
 
@@ -190,19 +190,21 @@ Naudokite `go.mod` nurodytą Go versiją. Windows sistemoje `build.bat` sukompil
 [docs/releasing.md](../releasing.md)
 
 ```bash
-npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
+go run ./scripts/test-ui
+go test ./scripts/readme
 go build -o supercli ./cmd/supercli
 go build -o supercli-web ./cmd/supercli-web
-node docs/readme/check.cjs
+go run ./scripts/readme -check
 ```
 
 ```powershell
-npm ci --ignore-scripts --no-audit --no-fund
 go test ./...
+go run ./scripts/test-ui
+go test ./scripts/readme
 go build -o supercli.exe ./cmd/supercli
 go build -ldflags="-H windowsgui" -o supercli-web.exe ./cmd/supercli-web
-node docs/readme/check.cjs
+go run ./scripts/readme -check
 ```
 
 <!-- readme-unit:tests -->

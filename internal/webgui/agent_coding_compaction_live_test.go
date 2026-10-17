@@ -45,10 +45,7 @@ func TestAgentCodingCompactionPrepareFixture(t *testing.T) {
 	if err := json.Unmarshal(b, &receipt); err != nil || !receipt.Passed || !receipt.Evidence.FailedBeforeEdit || !receipt.Evidence.PassedAfterEdit {
 		t.Fatalf("requires independently validated actual red-edit-green coding receipt: %v", err)
 	}
-	brief := "Zasady dalszej pracy w tym projekcie: wszystkie dane aplikacji mają pozostawać przenośne w folderze aplikacji. Nie dodawaj pakietów ani zewnętrznych zależności. Nie zmieniaj istniejących testów tests/invoice.test.cjs ani cennika src/catalog.cjs. Napraw tylko implementację naliczania faktur. Po jej naprawie i przejściu testów nadal pozostanie osobny krok: uzupełnić docs/API.md o kontrakt ilości (quantity). Ilość 0 jest poprawna i ma koszt 0; pominięta ilość domyślnie wynosi 1, a ilości ujemne i ułamkowe są odrzucane. Dokumentacja jeszcze nie została napisana. Niczego nie publikuj. Poniższe notatki to kontekst projektu, a nie lista dodatkowych zadań.\n\n"
-	for i := 1; i <= 96; i++ {
-		brief += fmt.Sprintf("Notatka utrzymaniowa %03d: faktura składa się z pozycji katalogowych, kwoty są całkowitymi groszami, moduły oddzielają agregację, ceny i dane. Zachowuj czytelne nazwy oraz mały zakres zmian.\n", i)
-	}
+	brief := codingCompactProjectBrief(receipt)
 	fixture := codingCompactFixture{SourceReceipt: source, Home: filepath.Join(receipt.Run, "workspace"), Continuation: codingCompactContinuationPrompt}
 	fixture.History = append(fixture.History, llm.Message{Role: llm.RoleUser, Content: brief})
 	fixture.History = append(fixture.History, receipt.Messages...)
@@ -64,6 +61,18 @@ func TestAgentCodingCompactionPrepareFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("fixed compaction fixture: %d bytes, %d messages", len(b), len(fixture.History))
+}
+
+func codingCompactProjectBrief(receipt codingLiveReport) string {
+	testPath, catalogPath := "tests/invoice.test.cjs", "src/catalog.cjs"
+	if _, ok := receipt.Fixtures["tests/invoice_test.go"]; ok {
+		testPath, catalogPath = "tests/invoice_test.go", "src/catalog.go"
+	}
+	brief := fmt.Sprintf("Zasady dalszej pracy w tym projekcie: wszystkie dane aplikacji mają pozostawać przenośne w folderze aplikacji. Nie dodawaj pakietów ani zewnętrznych zależności. Nie zmieniaj istniejących testów %s ani cennika %s. Napraw tylko implementację naliczania faktur. Po jej naprawie i przejściu testów nadal pozostanie osobny krok: uzupełnić docs/API.md o kontrakt ilości (quantity). Ilość 0 jest poprawna i ma koszt 0; pominięta ilość domyślnie wynosi 1, a ilości ujemne i ułamkowe są odrzucane. Dokumentacja jeszcze nie została napisana. Niczego nie publikuj. Poniższe notatki to kontekst projektu, a nie lista dodatkowych zadań.\n\n", testPath, catalogPath)
+	for i := 1; i <= 96; i++ {
+		brief += fmt.Sprintf("Notatka utrzymaniowa %03d: faktura składa się z pozycji katalogowych, kwoty są całkowitymi groszami, moduły oddzielają agregację, ceny i dane. Zachowuj czytelne nazwy oraz mały zakres zmian.\n", i)
+	}
+	return brief
 }
 
 type codingCompactLiveReport struct {
@@ -253,7 +262,7 @@ func codingCompactValidateRequest(ctx context.Context, messages []llm.Message, _
 			}
 		}
 		text := transcript.String()
-		if strings.Count(text, "[tool call: ctx_execute ") < 2 || !strings.Contains(text, "[tool call: patch_file ") || !strings.Contains(text, "command_failed exit=1") || !strings.Contains(text, `"exit_code":0`) || !strings.Contains(text, "src/pricing.cjs") {
+		if strings.Count(text, "[tool call: ctx_execute ") < 2 || !strings.Contains(text, "[tool call: patch_file ") || !strings.Contains(text, "command_failed exit=1") || !strings.Contains(text, `"exit_code":0`) || (!strings.Contains(text, codingLivePricingFile) && !strings.Contains(text, "src/pricing.cjs")) {
 			return fmt.Errorf("fixture boundary excludes completed red-edit-green transcript from the actual summary request")
 		}
 		return nil
@@ -276,7 +285,7 @@ func codingCompactQuality(text string) map[string]bool {
 	red := regexp.MustCompile(`(?i)(?:\b2\s+(?:fail|test|błęd|poraż|nie przesz)|\b(?:fail(?:ed|ures)?|testów)\s*[:=]?\s*2\b|\b300\s*!==?\s*0\b|\bbefore\b.*\bfail|\bprzed\b.*(?:nie przech|fail|błęd))`).MatchString(text)
 	noPublish := regexp.MustCompile(`(?i)(?:nie\s+publik|bez\s+publik|zakaz\s+publik|do\s+not\s+publish|don't\s+publish|no\s+publish|without\s+publishing)`).MatchString(text)
 	return map[string]bool{
-		"pricing_path":          strings.Contains(lower, "src/pricing.cjs"),
+		"pricing_path":          strings.Contains(lower, codingLivePricingFile) || strings.Contains(lower, "src/pricing.cjs"),
 		"pending_document_path": strings.Contains(lower, "docs/api.md"),
 		"quantity_zero_default": (strings.Contains(lower, "quantity") || strings.Contains(lower, "iloś")) && strings.Contains(lower, "0") && strings.Contains(lower, "1"),
 		"observed_red_to_green": red && sevenPassed,
@@ -288,10 +297,25 @@ func codingCompactQuality(text string) map[string]bool {
 	}
 }
 
+func TestCodingCompactProjectBrief(t *testing.T) {
+	brief := codingCompactProjectBrief(codingLiveReport{Fixtures: codingLiveFixtures()})
+	if !strings.Contains(brief, "tests/invoice_test.go") || !strings.Contains(brief, "src/catalog.go") || strings.Contains(brief, ".cjs") {
+		t.Fatal("new compaction brief must protect the actual Go fixture paths")
+	}
+	legacy := codingCompactProjectBrief(codingLiveReport{})
+	if !strings.Contains(legacy, "tests/invoice.test.cjs") || !strings.Contains(legacy, "src/catalog.cjs") {
+		t.Fatal("historical project descriptions must retain their original paths")
+	}
+}
+
 func TestCodingCompactQualityEvidence(t *testing.T) {
 	valid := "src/pricing.cjs fixed quantity 0/default 1, 2 failed before and 7 passed after. Tests and catalog unchanged. No new packages. Portable application folder. Pending docs/API.md; do not publish."
 	if !codingCompactQualityPassed(codingCompactQuality(valid)) {
 		t.Fatal("complete applicable constraints and real red-to-green facts must pass")
+	}
+	goValid := strings.Replace(valid, "src/pricing.cjs", codingLivePricingFile, 1)
+	if !codingCompactQualityPassed(codingCompactQuality(goValid)) {
+		t.Fatal("the migrated Go fixture must meet the same compaction evidence contract")
 	}
 	retrospective := strings.Replace(valid, "do not publish", "nothing has been published", 1)
 	if codingCompactQuality(retrospective)["do_not_publish"] {

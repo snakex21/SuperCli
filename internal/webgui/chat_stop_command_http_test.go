@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"supercli/internal/system/childproc"
 	"sync"
@@ -195,9 +194,9 @@ func TestChatHTTPStopKillsCommandAndNextPromptReachesProvider(t *testing.T) {
 }
 
 func TestChatGUIStopCommandAndSendUsingProductionJS(t *testing.T) {
+	root, runner := buildProductionUIChecks(t)
 	for _, mode := range []string{"running-command", "checkpoint-store-held"} {
 		t.Run(mode, func(t *testing.T) {
-			node := productionGUINode(t)
 			curl, err := exec.LookPath("curl")
 			if err != nil {
 				t.Skip("native curl unavailable")
@@ -267,13 +266,11 @@ func TestChatGUIStopCommandAndSendUsingProductionJS(t *testing.T) {
 				api.CloseClientConnections()
 				api.Close()
 			})
-			script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "test-chat-stop-http.cjs"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, node, script, api.URL, mode)
+			cmd := exec.CommandContext(ctx, runner,
+				"-case", "chat-stop-http", "-root", root, "-url", api.URL,
+				"-mode", mode, "-out", t.TempDir(), "-timeout", "20s")
 			childproc.HideWindow(cmd)
 			output, err := cmd.CombinedOutput()
 			if err != nil {

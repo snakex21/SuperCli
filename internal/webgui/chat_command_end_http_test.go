@@ -87,45 +87,38 @@ func commandEndHTTPRoot(t *testing.T) (string, string) {
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
 		t.Fatal(err)
 	}
-	parent := filepath.Join(root, ".tmp", "optimization-oct8-2026", "closure-audit", "command-end-data")
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := os.MkdirTemp(parent, "run-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Errorf("fixture cleanup: %v", err)
-		}
-	})
-	return root, dir
+	return root, t.TempDir()
 }
 
-// productionGUINode returns Node for the DOM fixtures. Without an explicit
-// SUPERCLI_TEST_NODE_EXE it skips when Node or the dev-only linkedom package
-// (installed by npm ci) is missing, so Go-only local runs need no Node setup.
-func productionGUINode(t *testing.T) string {
+// Build once per parent test, outside the timed backend scenarios. This is
+// always a fresh test-owned executable, never a user's app/runner binary.
+// The native runner reports missing Chrome as an actionable failure, not skip.
+func buildProductionUIChecks(t *testing.T) (root, runner string) {
 	t.Helper()
-	if node := os.Getenv("SUPERCLI_TEST_NODE_EXE"); node != "" {
-		return node
-	}
-	node, err := exec.LookPath("node")
+	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
-		t.Skip("Node.js unavailable for production GUI integration")
+		t.Fatal(err)
 	}
-	if err := exec.Command(node, "-e", "require.resolve('linkedom')").Run(); err != nil {
-		t.Skip("linkedom unavailable (npm ci) for production GUI integration")
+	runner = filepath.Join(t.TempDir(), "ui-checks")
+	if runtime.GOOS == "windows" {
+		runner += ".exe"
 	}
-	return node
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", runner, "./scripts/ui-checks")
+	cmd.Dir = root
+	childproc.HideWindow(cmd)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build test-owned native UI checks: %v\n%s", err, output)
+	}
+	return root, runner
 }
 
 func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("native cmd regression requires Windows")
 	}
-	node := productionGUINode(t)
+	_, runner := buildProductionUIChecks(t)
 	if _, err := exec.LookPath("cmd"); err != nil {
 		t.Fatal("native cmd unavailable: ", err)
 	}
@@ -214,8 +207,10 @@ func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
 			api.Config.BaseContext = func(net.Listener) context.Context { return runCtx }
 			api.Start()
 			t.Cleanup(func() { api.CloseClientConnections(); api.Close() })
-			script := filepath.Join(root, "scripts", "test-chat-command-end-http.cjs")
-			cmd := exec.CommandContext(runCtx, node, script, api.URL, mode, provider.callID)
+			cmd := exec.CommandContext(runCtx, runner,
+				"-case", "chat-command-end-http", "-root", root, "-url", api.URL,
+				"-mode", mode, "-call-id", provider.callID,
+				"-out", filepath.Join(dir, "ui-artifacts"), "-timeout", "25s")
 			childproc.HideWindow(cmd)
 			output, err := cmd.CombinedOutput()
 			if err != nil {

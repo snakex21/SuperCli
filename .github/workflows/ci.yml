@@ -8,34 +8,29 @@ on:
 permissions:
   contents: read
 
+env:
+  # The runner's Go bootstraps the exact toolchain required by go.mod.
+  GOTOOLCHAIN: auto
+
 jobs:
   verify:
-    name: Go ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
+    name: Go and native browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
+      # JavaScript actions also execute Node, so checkout uses Git directly.
       - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: UI and documentation checks
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          node scripts/test-ui.cjs
-          node --test docs/readme/check.test.cjs
-          node docs/readme/check.cjs
-      - name: Test
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git -c protocol.version=2 fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Verify Go toolchain
+        run: go version
+      - name: Test Go, native browser UI and documentation
         run: go test -timeout 8m ./...
+      - name: Check generated documentation
+        run: go run ./scripts/readme -check
       - name: Vet
         run: go vet ./...
       - name: Build CLI

@@ -12,14 +12,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"supercli/internal/system/childproc"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"supercli/internal/testbrowser"
 )
 
 func webdriverReply(w http.ResponseWriter, value any) {
@@ -480,67 +480,85 @@ func TestWebdriverInspectScriptHasBoundedTraversalAndNoDynamicInput(t *testing.T
 }
 
 func TestWebdriverInspectRealScriptHidesTextAndAdvertisesOnlyUniqueSelectors(t *testing.T) {
-	node, err := exec.LookPath("node")
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	browser, err := testbrowser.Start(ctx, testbrowser.Options{Width: 800, Height: 600})
 	if err != nil {
-		t.Skip("Node is optional; needed only to execute the fixed DOM inspector fixture")
+		t.Fatal(err) // dev-only Chrome absence is an error, never an implicit skip
 	}
-	fixture := `
-const assert=require("node:assert/strict");
-class Element {
- constructor(tag, attrs={}, style={}){this.nodeType=1;this.localName=tag;this.attrs=attrs;this.id=attrs.id||"";this.hidden=!!attrs.hidden;this.style={display:"block",visibility:"visible",opacity:"1",...style};this.children=[];this.parentElement=null;this.disabled=false;this.rect={left:0,top:0,right:400,bottom:40,width:400,height:40};}
- append(child){child.parentElement=this;this.children.push(child);return child;}
- get previousElementSibling(){if(!this.parentElement)return null;const siblings=this.parentElement.children.filter(v=>v.nodeType===1);return siblings[siblings.indexOf(this)-1]||null;}
- getAttribute(name){return this.attrs[name]??null;}
- get textContent(){return this.children.map(v=>v.nodeType===3?v.nodeValue:v.textContent).join("");}
- getBoundingClientRect(){return this.rect;}
- matches(){return ["button","input","select","textarea"].includes(this.localName)||this.localName==="a"&&!!this.attrs.href;}
- closest(selector){for(let n=this;n;n=n.parentElement)if(selector.split(",").includes(n.localName))return n;return null;}
+	defer func() {
+		if err := browser.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<!doctype html><html><head><title>Fixture</title></head><body></body></html>")
+	}))
+	defer server.Close()
+	page, err := browser.NewPage(ctx, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := `(function () {
+const check=(condition,message)=>{if(!condition)throw Error(message);};
+const eq=(actual,expected,message)=>check(actual===expected,message+": "+JSON.stringify({actual,expected}));
+const body=document.body;body.style.margin="0";
+body.innerHTML='<p>Visible greeting</p>';
+function add(tag, parent=body, text="") {const node=document.createElement(tag);node.textContent=text;parent.append(node);return node;}
+const secrets=[];
+for(const [name,attributes,style] of [
+ ["display-none",{},"display:none"], ["hidden-attribute",{hidden:""},""],
+ ["aria-hidden",{"aria-hidden":"true"},""], ["visibility-hidden",{},"visibility:hidden"],
+ ["visibility-collapse",{},"visibility:collapse"], ["opacity-zero",{},"opacity:0"],
+ ["zero-width",{},"width:0;height:20px;overflow:hidden"], ["zero-height",{},"height:0;overflow:hidden"],
+ ["below",{},"position:fixed;top:1200px"], ["above",{},"position:fixed;top:-100px"],
+ ["left",{},"position:fixed;left:-1200px"], ["right",{},"position:fixed;left:1200px"]
+]) {
+ const parent=add("div");Object.assign(parent.style,{position:"absolute",width:"120px",height:"20px"});parent.style.cssText+=";"+style;
+ for(const [key,value] of Object.entries(attributes))parent.setAttribute(key,value);
+ const secret="Secret-"+name;secrets.push(secret);
+ if(name.startsWith("zero-")){parent.textContent=secret;const control=add("button",body,secret+"-control");control.style.cssText="position:absolute;width:0;height:0;padding:0;border:0;overflow:hidden";}
+ else {add("span",parent,secret);add("button",parent,secret+"-control");}
 }
-const text=(value)=>({nodeType:3,nodeValue:value,parentElement:null});
-const html=new Element("html"),body=html.append(new Element("body"));
-body.append(new Element("p")).append(text("Visible greeting"));
-body.append(new Element("div",{}, {display:"none"})).append(new Element("p")).append(text("Hidden secret"));
-const offscreen=body.append(new Element("p"));offscreen.rect={left:0,top:1200,right:300,bottom:1240,width:300,height:40};offscreen.append(text("Below viewport"));
-for(let i=0;i<2;i++){let parent=body.append(new Element("section"));for(let j=0;j<10;j++)parent=parent.append(new Element("div"));parent.append(new Element("button")).append(text("Nested "+i));}
-for(let i=0;i<2;i++)body.append(new Element("button",{id:"duplicate"})).append(text("Duplicate "+i));
-const password=body.append(new Element("input"));password.type="password";password.value="do-not-return";
-body.append(new Element("p")).append(text("x".repeat(20000)));
-const all=[];const flatten=(node)=>{for(const child of node.children??[]){all.push(child);flatten(child);}};flatten(body);
-const matchPart=(node,part)=>{if(node.nodeType!==1)return false;if(part[0]==="#")return node.id===part.slice(1);const m=part.match(/^([a-z]+)(?::nth-of-type\((\d+)\))?$/);if(!m||node.localName!==m[1])return false;if(!m[2])return true;const siblings=node.parentElement?.children.filter(v=>v.nodeType===1&&v.localName===node.localName)||[node];return siblings.indexOf(node)+1===Number(m[2]);};
-const matches=(node,path)=>{const parts=path.split(" > ");for(let i=parts.length-1;i>=0;i--){if(!node||!matchPart(node,parts[i]))return false;node=node.parentElement;}return true;};
-global.document={body,documentElement:html,title:"Fixture",createTreeWalker(){let i=0;return {nextNode:()=>all[i++]||null};},querySelectorAll:(path)=>all.filter(v=>matches(v,path))};
-global.location={href:"https://example.test/"};
-global.CSS={escape:(s)=>s};
-global.NodeFilter={SHOW_ELEMENT:1,SHOW_TEXT:4};
-global.getComputedStyle=(element)=>element.style;
-global.innerWidth=800;global.innerHeight=600;
+for(const tag of ["script","style","noscript","template"]){
+ const node=document.createElement(tag);if(tag==="script")node.type="application/json";
+ const secret="Secret-"+tag;secrets.push(secret);node.textContent=secret;body.append(node);
+}
+for(let i=0;i<2;i++){let parent=add("section");for(let j=0;j<10;j++)parent=add("div",parent);add("button",parent,"Nested "+i);}
+for(let i=0;i<2;i++){const node=add("button",body,"Duplicate "+i);node.id="duplicate";}
+const escaped=add("button",body,"Escaped ID");escaped.id="special:id.with[syntax]";
+const password=add("input");password.type="password";password.value="do-not-return";
+add("p",body,"x".repeat(20000));
 `
 	fixture += "\nfunction inspect(){\n" + webdriverInspectScript + "\n}\n"
 	fixture += `
 const output=inspect();
-assert.match(output.text,/Visible greeting/);
-assert.doesNotMatch(output.text,/Hidden secret|Below viewport/);
-assert.equal(output.truncated,true);
-assert.ok(output.elements.length>=5,JSON.stringify(output));
-for(const item of output.elements){const matches=document.querySelectorAll(item.selector);assert.equal(matches.length,1,item.selector);assert.ok(matches[0].matches());}
-assert.equal(output.elements.filter(v=>v.label.startsWith("Nested")).length,2);
-assert.equal(output.elements.filter(v=>v.label.startsWith("Duplicate")).length,2);
-assert.equal(output.elements.filter(v=>v.selector==="#duplicate").length,0);
-assert.ok(output.elements.every(v=>v.value!=="do-not-return"));
-assert.ok(JSON.stringify(output).length<=16000);
-console.log("inspector semantic fixture passed");
+check(output.text.includes("Visible greeting"),"visible text missing");
+for(const secret of secrets)check(!JSON.stringify(output).includes(secret),"hidden text/control leaked: "+secret);
+eq(output.truncated,true,"large text truncation");
+check(output.elements.length>=5,JSON.stringify(output));
+for(const item of output.elements){
+ const matches=document.querySelectorAll(item.selector);eq(matches.length,1,"non-unique "+item.selector);
+ check(matches[0].matches("a[href],button,input,select,textarea,[role='button'],[role='link'],[contenteditable='true']"),"non-interactive selector");
+}
+eq(output.elements.filter(v=>v.label.startsWith("Nested")).length,2,"nested controls");
+eq(output.elements.filter(v=>v.label.startsWith("Duplicate")).length,2,"duplicate ID controls");
+eq(output.elements.filter(v=>v.selector==="#duplicate").length,0,"ambiguous ID advertised");
+check(output.elements.some(v=>v.selector==="#"+CSS.escape(escaped.id)),"native escaped ID missing");
+check(output.elements.every(v=>v.value!=="do-not-return"),"password value leaked");
+check(JSON.stringify(output).length<=16000,"inspector output exceeds bound");
+return {elements:output.elements.length,hiddenCases:secrets.length,truncated:output.truncated,bytes:JSON.stringify(output).length};
+})()
 `
-	source := filepath.Join(t.TempDir(), "inspector.cjs")
-	if err := os.WriteFile(source, []byte(fixture), 0600); err != nil {
-		t.Fatal(err)
+	var report struct {
+		Elements, HiddenCases, Bytes int
+		Truncated                    bool
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := childproc.HideWindow(exec.CommandContext(ctx, node, source))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("DOM inspector fixture: %v\n%s", err, output)
+	if err := page.Eval(ctx, fixture, &report); err != nil {
+		t.Fatalf("native DOM inspector fixture: %v", err)
 	}
+	t.Logf("original inspector in native Chrome: %d unique interactive selectors, %d hidden/non-text cases, truncated=%v, %d bytes", report.Elements, report.HiddenCases, report.Truncated, report.Bytes)
 }
 
 func TestWebdriverOpenRejectsProfileRootOutsidePortableData(t *testing.T) {

@@ -1244,7 +1244,9 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   run.disconnect = disconnectTransport;
   function stopServerRun() {
     if (!requestAccepted) return;
-    jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: turnID}).then(disconnectTransport).catch(function (error) { toast(error.message); });
+    // Do not pass the Stop response to abort(reason): fetch would reject with
+    // that JSON object instead of an AbortError.
+    jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: turnID}).then(function () { disconnectTransport(); }).catch(function (error) { toast(error.message); });
   }
   run.abortCtl.abort = function () { run.stopRequested = true; stopServerRun(); };
   var draftAccepted = false, requestAccepted = false;
@@ -1337,7 +1339,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
         session_id: activeSessionID,
         attachments: attachments,
       }),
-      signal: abortCtl.signal,
+      signal: run.abortCtl.signal,
     });
     if (!resp.ok || !resp.body) {
       addEventLine(t("common.error") + ": " + resp.status, "error");
@@ -1404,16 +1406,19 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("common.error"));
     }
   } catch (e) {
+    // Use this run's signal, not the controller of a newer foreground run.
+    var aborted = run.abortCtl.signal.aborted || !!(e && e.name === "AbortError");
     if (run.detached) {
-      if (e.name === "AbortError") run.aborted = true;
+      if (aborted) run.aborted = true;
       return;
     }
-    if (e.name === "AbortError") {
+    if (aborted) {
       stopped = true;
       addEventLine(t("chat.stopped"), "", "stop");
       setRunState(pendingImmediate ? "running" : "idle", t(pendingImmediate ? "composer.sendingQueued" : "composer.stopped"));
     } else {
-      addEventLine(t("chat.connError") + ": " + e.message, "error");
+      var message = e && e.message || (typeof e === "string" ? e : "");
+      addEventLine(t("chat.connError") + (message ? ": " + message : ""), "error");
       setRunState("idle", t("chat.connError"));
     }
   } finally {
