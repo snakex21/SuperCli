@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -263,6 +265,72 @@ func (m *chatMock) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// Isolate the initial SSE response contract from Chrome/app preparation. The
+// first frames must survive the real HTTP/1 proxy while the upstream handler
+// remains blocked; waiting for EOF would turn this into a false success.
+func TestChatMockInitialSSEThroughProxy(t *testing.T) {
+	for _, chunked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("chunked-request=%t", chunked), func(t *testing.T) {
+			mock := &chatMock{kind: "chat-stop-http", mode: "checkpoint-store-held", stopped: make(chan struct{})}
+			upstream := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+			defer upstream.Close()
+			defer upstream.CloseClientConnections()
+			proxy := httptest.NewServer(proxyFor(upstream.URL))
+			defer proxy.Close()
+			defer proxy.CloseClientConnections()
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			const body = `{"prompt":"synthetic HTTP contract","turn_id":"initial-sse"}`
+			request, err := http.NewRequestWithContext(ctx, http.MethodPost, proxy.URL+"/api/chat", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if chunked {
+				request.Body = io.NopCloser(strings.NewReader(body))
+				request.ContentLength = -1
+			}
+			request.Header.Set("Content-Type", "application/json")
+			response, err := proxy.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "text/event-stream" {
+				t.Fatalf("SSE headers: status=%d headers=%v", response.StatusCode, response.Header)
+			}
+			reader := bufio.NewReader(response.Body)
+			for _, want := range []string{"session", "tool_call"} {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					t.Fatalf("SSE truncated before %s: %v", want, err)
+				}
+				var event struct{ Type, ID, Name string }
+				data, ok := strings.CutPrefix(line, "data: ")
+				if !ok || json.Unmarshal([]byte(data), &event) != nil || event.Type != want {
+					t.Fatalf("expected %s frame, got %q", want, line)
+				}
+				if want == "tool_call" && (event.ID != "blocked-curl" || event.Name != "ctx_execute") {
+					t.Fatalf("tool identity changed: %s", line)
+				}
+				if separator, err := reader.ReadString('\n'); err != nil || separator != "\n" {
+					t.Fatalf("SSE frame delimiter: %q, %v", separator, err)
+				}
+			}
+			mock.mu.Lock()
+			active, requests := mock.active, len(mock.requests)
+			mock.mu.Unlock()
+			if !active || requests != 1 {
+				t.Fatalf("initial stream already ended: active=%v requests=%d", active, requests)
+			}
+			select {
+			case <-mock.stopped:
+				t.Fatal("Stop occurred before receiving the first tool_call")
+			default:
+			}
+		})
+	}
 }
 
 func TestChatPortsNativeHTTPMock(t *testing.T) {
