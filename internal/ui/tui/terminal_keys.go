@@ -15,7 +15,7 @@ import (
 // by a TTY or SSH connection. Complete events and ordinary text pass through.
 func NewProgram(model tea.Model, opts ...tea.ProgramOption) *tea.Program {
 	var program *tea.Program
-	filter := terminalKeyFilter{send: func(msg tea.Msg) { program.Send(msg) }}
+	filter := terminalKeyFilter{send: func(msg tea.Msg) { program.Send(msg) }, resize: resizeTerminalWindow}
 	program = tea.NewProgram(model, append(opts, tea.WithFilter(filter.filter))...)
 	return program
 }
@@ -60,9 +60,13 @@ type terminalKeyFilter struct {
 	generation uint64
 	timer      *time.Timer
 	send       func(tea.Msg)
+	resize     func(tea.WindowSizeMsg) tea.WindowSizeMsg
 }
 
 func (f *terminalKeyFilter) filter(_ tea.Model, msg tea.Msg) tea.Msg {
+	if size, ok := msg.(tea.WindowSizeMsg); ok && f.resize != nil {
+		msg = f.resize(size)
+	}
 	if timeout, ok := msg.(terminalEscapeTimeout); ok {
 		if timeout.generation != f.generation || f.pending == "" {
 			return nil
