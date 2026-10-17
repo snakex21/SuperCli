@@ -85,6 +85,73 @@ func TestExternalCasesOnOwnedAssetMock(t *testing.T) {
 	}
 }
 
+// A Playwright locator re-resolved rows after background model refreshes. Native
+// checks must do the same rather than measuring a detached, cached DOM node.
+func TestModelPaletteRowRefresh(t *testing.T) {
+	root, err := repoRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := newFixture(root, "isolated-assets", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fixture.close()
+	refreshed := make(chan struct{}, 1)
+	const refresh = `<script>
+(() => {
+  const list = document.querySelector('#model-list');
+  const observer = new MutationObserver(() => {
+    if (!list.querySelector('.prow')) return;
+    observer.disconnect();
+    setTimeout(() => {
+      const top = list.scrollTop;
+      list.replaceChildren(...Array.from(list.children, row => row.cloneNode(true)));
+      list.scrollTop = top;
+      fetch('/__palette_row_refresh', {method:'POST'});
+    }, 60);
+  });
+  observer.observe(list, {childList:true, subtree:true});
+})();
+</script>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/__palette_row_refresh":
+			select {
+			case refreshed <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/settings":
+			jsonResponse(w, map[string]any{"settings": map[string]string{"ui.lang": "pl", "ui.uiScale": "auto"}})
+		case "/":
+			recorder := httptest.NewRecorder()
+			fixture.serveHTTP(recorder, r)
+			body := strings.Replace(recorder.Body.String(), "</body>", refresh+"</body>", 1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, body)
+		default:
+			fixture.serveHTTP(w, r)
+		}
+	}))
+	defer server.Close()
+	defer server.CloseClientConnections()
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	result, err := runCheck(ctx, options{Case: "model-palette", URL: server.URL, Out: t.TempDir()})
+	if err != nil {
+		t.Fatalf("%v\nmetrics=%v", err, result.Metrics)
+	}
+	if !result.Passed || len(result.Checks) != 6 {
+		t.Fatalf("incomplete palette check: %+v", result)
+	}
+	select {
+	case <-refreshed:
+	default:
+		t.Fatal("fixture did not replace the model rows during the check")
+	}
+}
+
 func TestExplicitExternalOriginsAndModes(t *testing.T) {
 	for _, name := range []string{"model-palette", "ui-scaling", "chat-command-end-http", "chat-stop-http"} {
 		if err := validate(options{Case: name}); err == nil || !strings.Contains(err.Error(), "explicit -url") {
