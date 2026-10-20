@@ -138,6 +138,7 @@ func waitCommandProgress(t *testing.T, done <-chan struct{}, label string) {
 // idle limit. Exercise the actual GUI handler, command runner, checkpoint and
 // durable completion path, with no model service or network polling.
 func TestChatSilentCommandDoesNotConsumeModelProgressTimeout(t *testing.T) {
+	t.Parallel()
 	curl, err := exec.LookPath("curl")
 	if err != nil {
 		t.Skip("native curl is unavailable")

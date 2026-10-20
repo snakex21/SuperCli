@@ -19,6 +19,7 @@ import (
 // synthetic pages generated on demand, no Engine, database, provider or real data.
 // Timing logs are operation -> settled animation frames, NOT presented pixels.
 func TestLongHistoryBaselineNativeBrowser(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 	index, err := assetsFS.ReadFile("assets/index.html")

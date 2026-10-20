@@ -31,6 +31,7 @@ func TestPhoneCaptureAssetContract(t *testing.T) {
 }
 
 func TestPhoneCaptureNativeBrowser(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		width    int

@@ -100,6 +100,7 @@ func (p *delegatedWaitProgressProvider) Complete(ctx context.Context, messages [
 }
 
 func TestDelegatedHostWaitPausesModelWatchdogAndResumesItAfterReports(t *testing.T) {
+	t.Parallel()
 	curl, err := exec.LookPath("curl")
 	if err != nil {
 		t.Skip("native curl is unavailable")
