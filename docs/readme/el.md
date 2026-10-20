@@ -25,8 +25,8 @@
 <!-- readme-unit:h.start -->
 ## Ξεκινήστε
 
-<!-- readme-unit:start.install -->
-Για νέα εγκατάσταση, ελέγξτε το σενάριο πριν εκτελέσετε την παρακάτω εντολή για POSIX ή PowerShell. Τα προγράμματα εγκατάστασης εντοπίζουν το λειτουργικό σύστημα και την αρχιτεκτονική, επαληθεύουν το άθροισμα ελέγχου και εγκαθιστούν χωρίς δικαιώματα διαχειριστή. Απορρίπτουν οποιονδήποτε υπάρχοντα φάκελο προορισμού για να αποτρέψουν την αντικατάσταση και την απώλεια δεδομένων· ενημερώστε μια υπάρχουσα εγκατάσταση με `/update` ή `--update`. Ορίστε το `SUPERCLI_DIR` για νέο προορισμό· το `SUPERCLI_NO_PATH=1` παραλείπει τη ρύθμιση του κελύφους και του `PATH`. Προεπιλογές: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Τα προγράμματα εγκατάστασης δεν εκκινούν αυτόματα το SuperCli.
+<!-- readme-unit:start.quick -->
+Γρήγορη εγκατάσταση: εκτελέστε την πρώτη εντολή σε Linux, macOS ή Android (Termux), ή τη δεύτερη στο Windows PowerShell. Λεπτομέρειες ακολουθούν παρακάτω.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Για νέα εγκατάσταση, ελέγξτε το σενάριο πριν εκτελέσετε την παρακάτω εντολή για POSIX ή PowerShell. Τα προγράμματα εγκατάστασης εντοπίζουν το λειτουργικό σύστημα και την αρχιτεκτονική, επαληθεύουν το άθροισμα ελέγχου και εγκαθιστούν χωρίς δικαιώματα διαχειριστή. Απορρίπτουν οποιονδήποτε υπάρχοντα φάκελο προορισμού για να αποτρέψουν την αντικατάσταση και την απώλεια δεδομένων· ενημερώστε μια υπάρχουσα εγκατάσταση με `/update` ή `--update`. Ορίστε το `SUPERCLI_DIR` για νέο προορισμό· το `SUPERCLI_NO_PATH=1` παραλείπει τη ρύθμιση του κελύφους και του `PATH`. Προεπιλογές: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Τα προγράμματα εγκατάστασης δεν εκκινούν αυτόματα το SuperCli.
 
 <!-- readme-unit:start -->
 Αποσυμπιέστε το πακέτο για το λειτουργικό σύστημα και την αρχιτεκτονική σας σε εγγράψιμο φάκελο. Στα Windows, εκκινήστε το `supercli.exe` για το τερματικό ή το `supercli-web.exe` για το GUI. Κρατήστε τον συνοδευτικό φάκελο `supercli-data/` δίπλα στα εκτελέσιμα.

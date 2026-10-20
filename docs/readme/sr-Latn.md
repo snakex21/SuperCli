@@ -25,8 +25,8 @@ Slika GUI-ja je snimak ekrana; slika TUI-ja je prikaz stvarnog rasporeda termina
 <!-- readme-unit:h.start -->
 ## Početak rada
 
-<!-- readme-unit:start.install -->
-Za novu instalaciju pregledajte skriptu pre pokretanja naredbe za POSIX ili PowerShell u nastavku. Instalacioni programi prepoznaju operativni sistem i arhitekturu, proveravaju kontrolni zbir i instaliraju bez administratorskih prava. Odbijaju svaki postojeći odredišni direktorijum kako bi sprečili prepisivanje i gubitak podataka; postojeću instalaciju ažurirajte komandom `/update` ili `--update`. Podesite `SUPERCLI_DIR` da izaberete novo odredište; `SUPERCLI_NO_PATH=1` preskače podešavanje komandne ljuske i promenljive `PATH`. Podrazumevane lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalacioni programi ne pokreću SuperCli automatski.
+<!-- readme-unit:start.quick -->
+Brza instalacija: pokrenite prvu komandu na Linuxu, macOS-u ili Androidu (Termux), ili drugu u Windows PowerShellu. Detalji slede u nastavku.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Za novu instalaciju pregledajte skriptu pre pokretanja naredbe za POSIX ili PowerShell u nastavku. Instalacioni programi prepoznaju operativni sistem i arhitekturu, proveravaju kontrolni zbir i instaliraju bez administratorskih prava. Odbijaju svaki postojeći odredišni direktorijum kako bi sprečili prepisivanje i gubitak podataka; postojeću instalaciju ažurirajte komandom `/update` ili `--update`. Podesite `SUPERCLI_DIR` da izaberete novo odredište; `SUPERCLI_NO_PATH=1` preskače podešavanje komandne ljuske i promenljive `PATH`. Podrazumevane lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalacioni programi ne pokreću SuperCli automatski.
 
 <!-- readme-unit:start -->
 Raspakujte paket za svoj operativni sistem i arhitekturu u fasciklu u koju može da se piše. U Windowsu pokrenite `supercli.exe` za terminal ili `supercli-web.exe` za GUI. Priloženu fasciklu `supercli-data/` držite pored izvršnih datoteka.

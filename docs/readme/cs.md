@@ -25,8 +25,8 @@ Obrázek GUI je snímek obrazovky; obrázek TUI je vykreslením skutečného roz
 <!-- readme-unit:h.start -->
 ## Začínáme
 
-<!-- readme-unit:start.install -->
-Při nové instalaci si před spuštěním níže uvedeného příkazu pro POSIX nebo PowerShell prohlédněte skript. Instalátory rozpoznají operační systém a architekturu, ověří kontrolní součet a instalují bez oprávnění správce. Odmítnou jakoukoli existující cílovou složku, aby zabránily přepsání a ztrátě dat; existující instalaci aktualizujte pomocí `/update` nebo `--update`. Pomocí `SUPERCLI_DIR` zvolte nové umístění; `SUPERCLI_NO_PATH=1` přeskočí nastavení shellu a `PATH`. Výchozí umístění: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalátory nespouštějí SuperCli automaticky.
+<!-- readme-unit:start.quick -->
+Rychlá instalace: v Linuxu, macOS nebo Androidu (Termux) spusťte první příkaz, ve Windows PowerShellu druhý. Podrobnosti najdete níže.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Při nové instalaci si před spuštěním níže uvedeného příkazu pro POSIX nebo PowerShell prohlédněte skript. Instalátory rozpoznají operační systém a architekturu, ověří kontrolní součet a instalují bez oprávnění správce. Odmítnou jakoukoli existující cílovou složku, aby zabránily přepsání a ztrátě dat; existující instalaci aktualizujte pomocí `/update` nebo `--update`. Pomocí `SUPERCLI_DIR` zvolte nové umístění; `SUPERCLI_NO_PATH=1` přeskočí nastavení shellu a `PATH`. Výchozí umístění: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalátory nespouštějí SuperCli automaticky.
 
 <!-- readme-unit:start -->
 Rozbalte balíček pro svůj operační systém a architekturu do složky s oprávněním k zápisu. Ve Windows spusťte `supercli.exe` pro terminál nebo `supercli-web.exe` pro GUI. Ponechte přiloženou složku `supercli-data/` vedle spustitelných souborů.

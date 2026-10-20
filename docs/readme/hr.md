@@ -25,8 +25,8 @@ Slika GUI-ja je snimka zaslona; slika TUI-ja je prikaz stvarnog rasporeda termin
 <!-- readme-unit:h.start -->
 ## Početak rada
 
-<!-- readme-unit:start.install -->
-Za novu instalaciju pregledajte skriptu prije pokretanja naredbe za POSIX ili PowerShell u nastavku. Instalacijski programi prepoznaju operacijski sustav i arhitekturu, provjeravaju kontrolni zbroj i instaliraju bez administratorskih ovlasti. Odbijaju svaku postojeću odredišnu mapu kako bi spriječili prepisivanje i gubitak podataka; postojeću instalaciju ažurirajte naredbom `/update` ili `--update`. Postavite `SUPERCLI_DIR` za odabir novog odredišta; `SUPERCLI_NO_PATH=1` preskače postavljanje ljuske i varijable `PATH`. Zadane lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalacijski programi ne pokreću SuperCli automatski.
+<!-- readme-unit:start.quick -->
+Brza instalacija: pokrenite prvu naredbu na Linuxu, macOS-u ili Androidu (Termux), ili drugu u Windows PowerShellu. Pojedinosti slijede u nastavku.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Za novu instalaciju pregledajte skriptu prije pokretanja naredbe za POSIX ili PowerShell u nastavku. Instalacijski programi prepoznaju operacijski sustav i arhitekturu, provjeravaju kontrolni zbroj i instaliraju bez administratorskih ovlasti. Odbijaju svaku postojeću odredišnu mapu kako bi spriječili prepisivanje i gubitak podataka; postojeću instalaciju ažurirajte naredbom `/update` ili `--update`. Postavite `SUPERCLI_DIR` za odabir novog odredišta; `SUPERCLI_NO_PATH=1` preskače postavljanje ljuske i varijable `PATH`. Zadane lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalacijski programi ne pokreću SuperCli automatski.
 
 <!-- readme-unit:start -->
 Raspakirajte paket za svoj operacijski sustav i arhitekturu u mapu s pravom pisanja. U Windowsu pokrenite `supercli.exe` za terminal ili `supercli-web.exe` za GUI. Priloženu mapu `supercli-data/` držite uz izvršne datoteke.

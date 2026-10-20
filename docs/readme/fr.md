@@ -25,8 +25,8 @@ L’image de la GUI est une capture d’écran ; l’image de la TUI est un rend
 <!-- readme-unit:h.start -->
 ## Prise en main
 
-<!-- readme-unit:start.install -->
-Pour une nouvelle installation, examinez le script avant d'exécuter la commande POSIX ou PowerShell ci-dessous. Les programmes d'installation détectent le système d'exploitation et l'architecture, vérifient la somme de contrôle et installent sans droits d'administrateur. Ils refusent tout dossier de destination existant pour éviter l'écrasement et la perte de données ; mettez plutôt à jour une installation existante avec `/update` ou `--update`. Définissez `SUPERCLI_DIR` pour choisir une nouvelle destination ; `SUPERCLI_NO_PATH=1` ignore la configuration du shell et de `PATH`. Emplacements par défaut : Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. SuperCli n'est pas lancé automatiquement.
+<!-- readme-unit:start.quick -->
+Installation rapide : exécutez la première commande sous Linux, macOS ou Android (Termux), ou la seconde dans Windows PowerShell. Les détails suivent ci-dessous.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Pour une nouvelle installation, examinez le script avant d'exécuter la commande POSIX ou PowerShell ci-dessous. Les programmes d'installation détectent le système d'exploitation et l'architecture, vérifient la somme de contrôle et installent sans droits d'administrateur. Ils refusent tout dossier de destination existant pour éviter l'écrasement et la perte de données ; mettez plutôt à jour une installation existante avec `/update` ou `--update`. Définissez `SUPERCLI_DIR` pour choisir une nouvelle destination ; `SUPERCLI_NO_PATH=1` ignore la configuration du shell et de `PATH`. Emplacements par défaut : Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. SuperCli n'est pas lancé automatiquement.
 
 <!-- readme-unit:start -->
 Extrayez le paquet correspondant à votre système et architecture dans un dossier accessible en écriture. Sous Windows, lancez `supercli.exe` pour le terminal ou `supercli-web.exe` pour la GUI. Conservez le dossier fourni `supercli-data/` à côté des exécutables.

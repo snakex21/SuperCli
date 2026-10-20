@@ -25,8 +25,8 @@ GUI-billedet er et skærmbillede; TUI-billedet er en gengivelse af programmets f
 <!-- readme-unit:h.start -->
 ## Kom i gang
 
-<!-- readme-unit:start.install -->
-Ved en ny installation skal du gennemgå scriptet, før du kører POSIX- eller PowerShell-kommandoen nedenfor. Installationsprogrammerne registrerer operativsystem og arkitektur, kontrollerer checksummen og installerer uden administratorrettigheder. De afviser enhver eksisterende destinationsmappe for at undgå overskrivning og datatab; opdater en eksisterende installation med `/update` eller `--update`. Vælg en ny destination med `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` springer opsætning af shell og `PATH` over. Standardplaceringer: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Installationsprogrammerne starter ikke SuperCli automatisk.
+<!-- readme-unit:start.quick -->
+Hurtig installation: kør den første kommando på Linux, macOS eller Android (Termux), eller den anden i Windows PowerShell. Detaljer følger nedenfor.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Ved en ny installation skal du gennemgå scriptet, før du kører POSIX- eller PowerShell-kommandoen nedenfor. Installationsprogrammerne registrerer operativsystem og arkitektur, kontrollerer checksummen og installerer uden administratorrettigheder. De afviser enhver eksisterende destinationsmappe for at undgå overskrivning og datatab; opdater en eksisterende installation med `/update` eller `--update`. Vælg en ny destination med `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` springer opsætning af shell og `PATH` over. Standardplaceringer: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Installationsprogrammerne starter ikke SuperCli automatisk.
 
 <!-- readme-unit:start -->
 Udpak pakken til dit operativsystem og din arkitektur i en skrivbar mappe. På Windows starter du `supercli.exe` til terminalen eller `supercli-web.exe` til GUI. Behold den medfølgende mappe `supercli-data/` ved siden af de eksekverbare filer.

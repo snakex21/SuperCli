@@ -25,8 +25,8 @@ The GUI image is a screenshot; the TUI image is a rendering of the application's
 <!-- readme-unit:h.start -->
 ## Get started
 
-<!-- readme-unit:start.install -->
-For a new installation, review the script before running the POSIX or PowerShell command below. The installers detect the OS and architecture, verify the checksum, and install without administrator privileges. They refuse any existing destination folder to prevent overwrites and data loss; update an existing installation with `/update` or `--update` instead. Set `SUPERCLI_DIR` to choose a new destination; `SUPERCLI_NO_PATH=1` skips shell and `PATH` setup. Defaults: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. The installers do not launch SuperCli automatically.
+<!-- readme-unit:start.quick -->
+Quick install: run the first command on Linux, macOS or Android (Termux), or the second one in Windows PowerShell. Details follow below.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+For a new installation, review the script before running the POSIX or PowerShell command below. The installers detect the OS and architecture, verify the checksum, and install without administrator privileges. They refuse any existing destination folder to prevent overwrites and data loss; update an existing installation with `/update` or `--update` instead. Set `SUPERCLI_DIR` to choose a new destination; `SUPERCLI_NO_PATH=1` skips shell and `PATH` setup. Defaults: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. The installers do not launch SuperCli automatically.
 
 <!-- readme-unit:start -->
 Extract the bundle for your operating system and architecture into a writable folder. On Windows, launch `supercli.exe` for the terminal or `supercli-web.exe` for the GUI. Keep the included `supercli-data/` folder beside the executables.

@@ -359,7 +359,7 @@ func TestCLI(t *testing.T) {
 	if err := run([]string{"-check"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "27 languages, 57 translated units each, 9 identical code blocks") {
+	if !strings.Contains(stdout.String(), "27 languages, 58 translated units each, 9 identical code blocks") {
 		t.Fatalf("missing parity summary: %s", stdout.String())
 	}
 }
