@@ -137,8 +137,10 @@ func normalizeMalformedToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 	return calls
 }
 
-// Accept formatting wrappers only when they identify an exact registered tool.
-// This never fuzzy-matches an action, invents arguments or activates a tool.
+// Accept formatting wrappers only for exact registered tools, or the two
+// compatibility placeholders backed by a registered, visible, advertised target.
+// Like the existing bare aliases this is provider-independent: decorators need
+// not expose endpoint configuration. It never activates tools or guesses names.
 func (l *Loop) normalizeToolCallNames(calls []llm.ToolCall) []llm.ToolCall {
 	for i := range calls {
 		original := calls[i].Name
@@ -155,10 +157,38 @@ func (l *Loop) normalizeToolCallNames(calls []llm.ToolCall) []llm.ToolCall {
 		if providerSafeToolName(name) {
 			if _, exists := l.registry.Get(name); exists {
 				calls[i].Name = name
+			} else if l.availablePlaceholderTarget(name) {
+				// Keep the placeholder and raw arguments until the existing adapter
+				// runs at dispatch. History must describe the original call shape.
+				calls[i].Name = name
 			}
 		}
 	}
 	return normalizeMalformedToolCalls(calls)
+}
+
+// Only exact bash/read placeholders may borrow a target. Registry membership
+// enforces worker allowlists; visibility and this turn's definitions enforce
+// activation/route restrictions. Required wire placeholders grant no authority.
+func (l *Loop) availablePlaceholderTarget(name string) bool {
+	var target string
+	switch name {
+	case "bash":
+		target = "ctx_execute"
+	case "read":
+		target = "read_lines"
+	default:
+		return false
+	}
+	if _, ok := l.registry.Get(target); !ok || !l.registry.IsVisible(target) {
+		return false
+	}
+	for _, def := range l.buildToolDefs() {
+		if def.Name == target {
+			return true
+		}
+	}
+	return false
 }
 
 func providerSafeToolName(name string) bool {

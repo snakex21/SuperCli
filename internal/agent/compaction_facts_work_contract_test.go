@@ -193,7 +193,7 @@ func TestCompactionFactsWorkPreservesHelperContract(t *testing.T) {
 	provider := newCompactionCompletionProvider(func(ctx context.Context, msgs []llm.Message, tools []llm.ToolDef) (<-chan llm.Delta, error) {
 		calls++
 		if llm.PurposeFromContext(ctx) != llm.PurposeCompact || len(msgs) != 2 || len(tools) != 0 ||
-			msgs[0].Content != compactionPrompt || msgs[1].Content != transcript {
+			msgs[0].Content != compactionStatePrompt || msgs[1].Content != transcript {
 			t.Fatal("file-fact optimization changed helper instruction/transcript/purpose/tools")
 		}
 		out := make(chan llm.Delta, 1)
@@ -203,7 +203,7 @@ func TestCompactionFactsWorkPreservesHelperContract(t *testing.T) {
 	})
 	got, err := NewAutoSummarizer(nil)(context.Background(), provider, history)
 	after, _ := json.Marshal(history)
-	want := WrapCompactSummary(output + compactRecentUserRequests(history) + "\nfiles_read: src/f3.go, src/f2.go, src/f1.go, src/f0.go")
+	want := WrapCompactSummary(output + compactPreservedUserContext(history) + "\nfiles_read: src/f3.go, src/f2.go, src/f1.go, src/f0.go")
 	if err != nil || calls != 1 || got != want || !bytes.Equal(before, after) {
 		t.Fatalf("helper preservation: calls=%d error=%v exact summary=%v immutable=%v", calls, err, got == want, bytes.Equal(before, after))
 	}

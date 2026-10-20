@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"supercli/internal/llm"
 	"sync"
 	"time"
 )
@@ -166,6 +167,20 @@ func (m *Memory) RecordModel(model string) {
 	m.cur.Model = model
 }
 
+// RecordWorkerContext merges counters only while a stats step is open.
+// It is optional, deliberately not part of the mandatory Recorder interface.
+func (m *Memory) RecordWorkerContext(w WorkerContext) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cur == nil || w.Empty() {
+		return
+	}
+	if m.cur.WorkerContext == nil {
+		m.cur.WorkerContext = &WorkerContext{}
+	}
+	m.cur.WorkerContext.Add(w)
+}
+
 // RecordCall appends one model-call record. When a step is in
 // progress its number is stamped onto the record (best effort —
 // background calls may land between steps, keeping Step 0).
@@ -175,6 +190,8 @@ func (m *Memory) RecordCall(c Call) {
 	if c.Step == 0 && m.cur != nil {
 		c.Step = m.cur.Step
 	}
+	c.WorkerContext = cloneWorkerContext(c.WorkerContext)
+	c.Context = llm.CloneContextUsage(c.Context)
 	m.calls = append(m.calls, c)
 }
 
@@ -184,6 +201,10 @@ func (m *Memory) Calls() []Call {
 	defer m.mu.Unlock()
 	out := make([]Call, len(m.calls))
 	copy(out, m.calls)
+	for i := range out {
+		out[i].WorkerContext = cloneWorkerContext(out[i].WorkerContext)
+		out[i].Context = llm.CloneContextUsage(out[i].Context)
+	}
 	return out
 }
 
@@ -215,6 +236,10 @@ func (m *Memory) Snapshot() []Turn {
 	defer m.mu.Unlock()
 	out := make([]Turn, len(m.turns))
 	copy(out, m.turns)
+	for i := range out {
+		out[i].WorkerContext = cloneWorkerContext(out[i].WorkerContext)
+		out[i].Context = llm.CloneContextUsage(out[i].Context)
+	}
 	return out
 }
 

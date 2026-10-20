@@ -12,11 +12,17 @@ func telemetryCallSink(rec systats.Recorder) llm.CallSink {
 		return nil
 	}
 	return func(s llm.CallStat) {
+		var workerContext *systats.WorkerContext
+		if s.WorkerReportMessages > 0 {
+			workerContext = &systats.WorkerContext{Requests: 1, MessageExposures: s.WorkerReportMessages, ContextBytes: s.WorkerReportBytes}
+		}
 		rec.RecordCall(systats.Call{
-			Purpose: s.Purpose, Model: s.Model, Provider: s.Provider,
+			Context:       llm.CloneContextUsage(&s.Context),
+			WorkerContext: workerContext,
+			Purpose:       s.Purpose, Model: s.Model, Provider: s.Provider,
 			Background: s.Background, Canceled: s.Canceled, Failed: s.Failed,
 			TTFTUs: s.TTFT.Microseconds(), DurationUs: s.Duration.Microseconds(),
-			TokensIn: s.TokensIn, TokensOut: s.TokensOut, StartedAt: s.StartedAt,
+			TokensIn: s.TokensIn, TokensOut: s.TokensOut, TokensCached: s.TokensCached, TokensReasoning: s.TokensReasoning, StartedAt: s.StartedAt,
 		})
 	}
 }

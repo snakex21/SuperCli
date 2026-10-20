@@ -302,7 +302,21 @@ function resolveHistoryToolCall(entry, call) {
   if (nativePreview && !nativePreview.classList.contains("tool-native-preview")) nativePreview = null;
   if (nativePreview && nativePreview._cancelNativeRender) nativePreview._cancelNativeRender();
   var name = call.name || message.name || "tool", args = call.arguments || "";
+  row._historyArgs = args;
   var info = args ? toolHint(name, args) : {name: toolDisplayName(name), hint: clip(message.content || "", 90)};
+  if (entry.task) {
+    if (name === "task" || name === "send_message") {
+      row._taskPrompt = info.prompt || "";
+      var fullTask = row._fullOutputText && parseTaskNotification(row._fullOutputText) || entry.task;
+      renderTaskResult(row, fullTask, null, row._taskPrompt, fullTask.status === "failed", true);
+      return;
+    }
+    // A later-discovered originating call is stronger than the saved result name.
+    if (row._cancelTaskReport) row._cancelTaskReport();
+    row._cancelTaskReport = null;
+    row.classList.remove("task-row");
+    if (workerRows[entry.task.id] === row) delete workerRows[entry.task.id];
+  }
   applyToolKind(row, name);
   row._tname.title = name;
   row._tname.textContent = info.name;
@@ -322,7 +336,7 @@ function resolveHistoryToolCall(entry, call) {
     }
   } else {
     body.innerHTML = "";
-    row._cancelHistoryPayload = appendHistoryToolPayload(row, body, args, message.content, name);
+    row._cancelHistoryPayload = appendHistoryToolPayload(row, body, args, row._fullOutputText || message.content, name);
   }
   row._historyName = name;
   if (nativePreview && toolMediaDescriptor(message.content, name, /^error:/i.test(String(message.content || "")))) {
@@ -371,6 +385,8 @@ function addHistoryToolImages(message, results, pending) {
 
 function buildHistoryFragment(messages, pager, prepend) {
   var historyCalls = Object.create(null);
+  var historyCallSeqs = Object.create(null);
+  var taskReceipts = Object.create(null), runningTasks = Object.create(null);
   var pendingCalls = pager && pager._pendingHistoryCalls;
   var pendingImages = pager && pager._pendingHistoryImages;
   var historyResults = Object.create(null);
@@ -391,7 +407,13 @@ function buildHistoryFragment(messages, pager, prepend) {
         for (var callIndex = calls.length - 1; callIndex >= 0; callIndex--) {
           var call = calls[callIndex];
           if (!pendingCalls[call.id]) continue;
-          pendingCalls[call.id].forEach(function (entry) { resolveHistoryToolCall(entry, call); });
+          pendingCalls[call.id].forEach(function (entry) {
+            resolveHistoryToolCall(entry, call);
+            var saved = entry.message.worker_activity;
+            if (entry.task && saved && saved.id === entry.task.id && saved.parent_call_id === call.id) {
+              taskReceipts[call.id] = {row: entry.row, task: entry.task, callSeq: prior.seq};
+            }
+          });
           delete pendingCalls[call.id];
         }
       }
@@ -404,7 +426,11 @@ function buildHistoryFragment(messages, pager, prepend) {
         }
         addUserMsg(m.content, m.seq, m.attachments && m.attachments.length ? m.attachments : sentAttachmentsFor(transcriptSessionID || activeSessionID, m.seq), m.message_id, transcriptSessionID || activeSessionID);
       } else if (m.role === "assistant") {
-        (m.tool_calls || []).forEach(function (call) { historyCalls[call.id] = call; });
+        (m.tool_calls || []).forEach(function (call) {
+          historyCalls[call.id] = call;
+          historyCallSeqs[call.id] = m.seq;
+          if (taskReceipts[call.id] && taskReceipts[call.id].callSeq !== m.seq) delete taskReceipts[call.id];
+        });
         if (!m.content) {
           if (m.turn) { addFileChanges(m.turn.file_changes); addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq); }
           return;
@@ -419,16 +445,50 @@ function buildHistoryFragment(messages, pager, prepend) {
           addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);
         }
       } else if (m.role === "tool") {
-        var task = (m.name === "task" || String(m.content || "").indexOf("<task-notification>") >= 0) ?
+        var persistedCall = historyCalls[m.tool_call_id] || null;
+        var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
+        var task = (persistedName === "task" || persistedName === "send_message") ?
           parseTaskNotification(m.content) : null;
         if (task) {
           var newerWorker = newerWorkers && newerWorkers[task.id];
-          addHistoryTask(task);
+          var saved = m.worker_activity;
+          var parentCall = saved && saved.version === 1 && saved.id === task.id && typeof saved.parent_call_id === "string" ? saved.parent_call_id : "";
+          var receiptCall = m.tool_call_id || parentCall;
+          if (!persistedCall && parentCall) persistedCall = historyCalls[parentCall] || null;
+          var taskInfo = persistedCall ? toolHint(persistedName, persistedCall.arguments) : null;
+          var receipt = receiptCall && taskReceipts[receiptCall];
+          var acknowledgement = task.status === "running" && !task.result && !!m.tool_call_id;
+          if (!receipt && !parentCall && !m.tool_call_id && workerStatusTerminal(task.status)) receipt = runningTasks[task.id];
+          if (receipt && receipt.task.id === task.id) {
+            if (acknowledgement && workerStatusTerminal(receipt.task.status)) {
+              // A newer page already rendered this exact invocation's final
+              // report. Loading its older acknowledgement must not add a card.
+              return;
+            }
+            if (receipt.task.status === "running" && !m.tool_call_id && workerStatusTerminal(task.status)) {
+              receipt.row._savedWorkerActivity = saved || null;
+              bindWorkerObservations(receipt.row, m);
+              renderTaskResult(receipt.row, task, null, receipt.row._taskPrompt, task.status === "failed", true);
+              bindFullToolOutput(receipt.row, m);
+              receipt.task = task;
+              delete runningTasks[task.id];
+              if (newerWorker) workerRows[task.id] = newerWorker;
+              return;
+            }
+          }
+          var taskRow = addHistoryTask(task, taskInfo && taskInfo.prompt, m.worker_activity);
+          bindWorkerObservations(taskRow, m);
+          bindFullToolOutput(taskRow, m);
+          var taskEntry = {row: taskRow, task: task, callSeq: historyCallSeqs[receiptCall]};
+          if (receiptCall) taskReceipts[receiptCall] = taskEntry;
+          if (acknowledgement) runningTasks[task.id] = taskEntry;
+          if (!persistedCall && receiptCall && pendingCalls) {
+            if (!pendingCalls[receiptCall]) pendingCalls[receiptCall] = [];
+            pendingCalls[receiptCall].push({row: taskRow, message: m, task: task});
+          }
           if (newerWorker) workerRows[task.id] = newerWorker;
           return;
         }
-        var persistedCall = historyCalls[m.tool_call_id] || null;
-        var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
         var persistedArgs = persistedCall ? persistedCall.arguments : "";
         var historyInfo = persistedArgs ? toolHint(persistedName, persistedArgs) :
           { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
@@ -454,7 +514,9 @@ function buildHistoryFragment(messages, pager, prepend) {
         var body = el("div", "tbody");
         row._body = body; row._tname = historyName; row._thint = historyHint;
         row._historyName = persistedName;
+        row._historyArgs = persistedArgs;
         row._cancelHistoryPayload = appendHistoryToolPayload(row, body, persistedArgs, m.content, persistedName);
+        bindFullToolOutput(row, m);
         if (!persistedCall && m.tool_call_id && pendingCalls) {
           if (!pendingCalls[m.tool_call_id]) pendingCalls[m.tool_call_id] = [];
           pendingCalls[m.tool_call_id].push({row: row, message: m});
@@ -485,6 +547,7 @@ function buildHistoryFragment(messages, pager, prepend) {
 }
 
 function renderLoadedTranscript(preserveScroll) {
+  cancelInitialTranscriptTail();
   var oldHeight = stage.scrollHeight;
   var oldTop = stage.scrollTop;
   stream.innerHTML = "";
@@ -501,11 +564,13 @@ function renderLoadedTranscript(preserveScroll) {
   if (preserveScroll) {
     stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
   } else {
-    smartScroll(true);
+    settleInitialTranscriptTail();
   }
+  if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
 }
 
 async function loadOlderTranscript() {
+  cancelInitialTranscriptTail();
   if (!transcriptHasMore || !transcriptBeforeSeq || !transcriptSessionID) return;
   var sessionID = transcriptSessionID;
   var button = stream.querySelector(".history-older");
@@ -572,6 +637,7 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     toast(t("session.switchWait"));
     return false;
   }
+  cancelInitialTranscriptTail();
   var resumeSeq = ++sessionResumeSeq;
   var epoch = projectEpoch;
   var releaseRuntimeReady;

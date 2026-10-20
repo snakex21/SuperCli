@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -30,12 +31,13 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	// next request. Consume ready summaries in the speculative band as well
 	// as above a learned latency budget, rather than waiting for overflow.
 	backgroundOnly := reason == "" && est <= hardThreshold && l.speculativeCompactEnabled()
+	startBackground := backgroundOnly && float64(est) >= speculativeCompactFrac*float64(threshold)
 	if reason == "" && est <= threshold {
-		if !backgroundOnly || float64(est) < speculativeCompactFrac*float64(threshold) {
+		if !startBackground && !l.speculativeCompactReady() {
 			return nil
 		}
 	}
-	if backgroundOnly {
+	if startBackground {
 		l.maybeStartSpeculativeCompact(ctx)
 	}
 	history := l.compactionHistory()
@@ -407,7 +409,11 @@ func extractContextLimit(msg string) int {
 const minLearnedContextLimit = 4096
 
 func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- Event) (bool, error) {
-	if !isContextLimitErr(err) {
+	// Preserve explicit context-limit repair for a rejection with no model
+	// progress, even if delivered as an error-only stream. Once any progress
+	// occurred, keep the partial reply instead of compacting and replaying it.
+	var accepted *acceptedStreamError
+	if (errors.As(err, &accepted) && accepted.hadProgress) || !isContextLimitErr(err) {
 		return false, nil
 	}
 	if lim := extractContextLimit(err.Error()); lim >= minLearnedContextLimit && l.learnLimit != nil {

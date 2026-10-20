@@ -1,10 +1,12 @@
 package webgui
 
 import (
+	"context"
 	"strings"
 
 	"supercli/internal/agent/darwin"
 	"supercli/internal/llm"
+	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
 	"supercli/internal/tools"
@@ -18,6 +20,10 @@ import (
 // no schema cost.
 func (e *Engine) registerDarwin(reg *tools.Registry, prov llm.Provider, cfg config.Config, tc config.TomlConfig, home, system string) {
 	dt := darwin.NewDarwinTool(prov, reg, home, system)
+	instructionsDataDir := e.dataDir
+	dt.SetUserInstructionsForRun(func(ctx context.Context) (string, error) {
+		return llmprompt.UserInstructionsForRun(ctx, instructionsDataDir)
+	})
 	dt.SetReasoningEffort(tc.DarwinReasoningEffort)
 	dt.SetPoolSize(tc.DarwinPoolSize)
 	dt.SetLoopFactory(darwin.AgentLoopAdapter(reg, func(root string) (*tools.Registry, error) {

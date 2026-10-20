@@ -65,6 +65,7 @@ func (l *Loop) workerMutationObserver(ctx context.Context) func(string) {
 			l.failedChecks.mu.Lock()
 			if l.failedChecks.generation == generation {
 				l.identicalFails.workspaceChanged()
+				l.failedChecks.workspaceChangedLocked()
 			}
 			l.failedChecks.mu.Unlock()
 		}

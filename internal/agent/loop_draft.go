@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 )
@@ -50,13 +51,13 @@ func (l *Loop) invokeDraft(ctx context.Context, step int, _ chan<- Event) {
 	l.draftPolicy.MarkDrafted(step)
 }
 
-// lastUserPrompt returns the most recent user-role
-// message content. Used by the draft bridge as the
+// lastUserPrompt returns the most recent conversation instruction,
+// excluding host-authored user-role tool/report carriers. Used as the
 // "what to plan for" input.
 func (l *Loop) lastUserPrompt() string {
 	for i := len(l.Messages) - 1; i >= 0; i-- {
-		if l.Messages[i].Role == llm.RoleUser {
-			return l.Messages[i].Content
+		if isConversationUserTurn(l.Messages[i]) {
+			return l.Messages[i].TextOnly().Content
 		}
 	}
 	return ""
@@ -101,8 +102,13 @@ func (l *Loop) draftPrompt() string {
 		if m.Role == llm.RoleTool {
 			limit = draftToolOutputCap
 			label = "tool result"
+		} else if m.Role == llm.RoleUser && !isConversationUserTurn(m) {
+			label = "internal context"
 		}
 		if len(text) > limit {
+			for limit > 0 && !utf8.RuneStart(text[limit]) {
+				limit--
+			}
 			text = text[:limit] + " ...[truncated]"
 		}
 		recent = append([]string{label + ": " + text}, recent...)

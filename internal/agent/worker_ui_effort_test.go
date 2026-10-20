@@ -32,6 +32,19 @@ func TestWorkerUIEffortMetadata(t *testing.T) {
 			if !strings.Contains(note, "<worker-model>"+model+"</worker-model>") || !strings.Contains(note, "<reasoning-effort>"+tc.want+"</reasoning-effort>") {
 				t.Fatal(note)
 			}
+			handoff := prepareWorkerHandoff(w, "done")
+			if handoff.snapshot.WorkerModel != model || handoff.snapshot.ReasoningEffort != tc.want || handoff.notification != note {
+				t.Fatalf("prepared handoff lost UI metadata: %+v\n%s", handoff.snapshot, handoff.notification)
+			}
+			w.setState(func(w *Worker) {
+				w.Runs = 2
+				w.Status = "running"
+				w.uiModel = "continuation-model"
+				w.uiReasoningEffort = "continuation-effort"
+			})
+			if handoff.snapshot.WorkerModel != model || handoff.snapshot.ReasoningEffort != tc.want || handoff.withReport("done").notification != note {
+				t.Fatal("continuation changed captured UI metadata")
+			}
 			if llm.ReasoningEffort() != "low" {
 				t.Fatal("UI metadata changed global effort")
 			}

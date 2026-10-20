@@ -20,7 +20,7 @@ func fastStreamRetry(t *testing.T) {
 	t.Cleanup(func() { streamRetryDelays = saved })
 }
 
-func TestStreamRetryResendsAfterEarlyConnectionDrop(t *testing.T) {
+func TestStreamRetryDoesNotResendInterruptedReasoning(t *testing.T) {
 	fastStreamRetry(t)
 	p := &stubProvider{name: "test", scripts: [][]llm.Delta{
 		{{Reasoning: "thinking..."}, {Err: errHTTP2Reset}},
@@ -31,19 +31,22 @@ func TestStreamRetryResendsAfterEarlyConnectionDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	notice, done := false, false
+	notice, done, failed := false, false, false
+	var reasoning strings.Builder
 	for _, ev := range drainEvents(t, ch) {
 		switch e := ev.(type) {
 		case NoticeEvent:
 			notice = notice || strings.Contains(e.Text, "retrying")
+		case ReasoningEvent:
+			reasoning.WriteString(e.Text)
 		case DoneEvent:
 			done = true
 		case ErrorEvent:
-			t.Fatalf("run failed: %v", e.Err)
+			failed = errors.Is(e.Err, errHTTP2Reset)
 		}
 	}
-	if p.calls != 2 || !notice || !done {
-		t.Fatalf("calls=%d notice=%v done=%v", p.calls, notice, done)
+	if p.calls != 1 || notice || done || !failed || reasoning.String() != "thinking..." {
+		t.Fatalf("calls=%d notice=%v done=%v failed=%v reasoning=%q", p.calls, notice, done, failed, reasoning.String())
 	}
 }
 

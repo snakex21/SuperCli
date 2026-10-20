@@ -73,6 +73,26 @@ func (s *Server) handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "turn not found", http.StatusNotFound)
 		return
 	}
+	// Opt-in observation never waits for generation and never consumes a receipt.
+	// An absent receipt (404) or accepted=false,done=false is unknown, not rejection.
+	if r.URL.Query().Get("status") == "1" {
+		s.chatCompletions.Lock()
+		done := false
+		select {
+		case <-run.done:
+			done = true
+		default:
+		}
+		status := struct {
+			TurnID    string `json:"turn_id"`
+			SessionID string `json:"session_id"`
+			Accepted  bool   `json:"accepted"`
+			Done      bool   `json:"done"`
+		}{id, run.sessionID, run.accepted, done}
+		s.chatCompletions.Unlock()
+		writeJSON(w, status)
+		return
+	}
 	select {
 	case <-r.Context().Done():
 		return

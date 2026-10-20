@@ -78,15 +78,28 @@ type Loop struct {
 	rejectedCompact      []llm.Message
 	rejectedCompactEpoch uint64
 
-	provider               llm.Provider
-	registry               *tools.Registry
-	toolDefsSnapshot       toolDefinitionSnapshot
-	requestedContextCache  requestedToolContextSnapshot
-	caps                   *llm.CapabilityRegistry
-	system                 string
-	briefing               string
-	liveContext            string
-	liveContextForRun      func(context.Context) (string, error)
+	provider                llm.Provider
+	registry                *tools.Registry
+	toolDefsSnapshot        toolDefinitionSnapshot
+	requestedContextCache   requestedToolContextSnapshot
+	caps                    *llm.CapabilityRegistry
+	system                  string
+	baseSystem              string
+	projectInstructions     string
+	userInstructions        string
+	userInstructionsForRun  func(context.Context) (string, error)
+	briefing                string
+	liveContext             string
+	liveContextForRun       func(context.Context) (string, error)
+	liveContextBlocks       []llm.ContextBlock
+	liveContextBlocksForRun func(context.Context) ([]llm.ContextBlock, error)
+	liveContextDirty        bool
+	liveContextEpoch        uint64
+	pendingContextUsage     llm.ContextUsage
+	pendingContextEpoch     uint64
+	// Set by the actual preceding continuation boundary, never inferred from
+	// report text or the mere presence of tool results in retained history.
+	nextCallReason         llm.CallReason
 	refreshContextWindow   func(context.Context) error
 	userDownloadsDir       func() (string, error)
 	downloadExportContext  string
@@ -121,6 +134,7 @@ type Loop struct {
 	hoistedPreSet         bool
 	baseDir               string
 	writer                SessionWriter
+	hostPower             hostPowerState
 	invocationPersistence invocationPersistence
 	toolOutputs           tools.OutputPersistence
 	// Derived stores follow session changes; explicit worker/embedder stores do not.
@@ -313,6 +327,9 @@ type Loop struct {
 	statsStepOpen   bool
 	pendingAuxCalls int
 	pendingAuxWall  time.Duration
+	// Owner-goroutine counters wait for the next stats step, not a new model call.
+	pendingWorkerContext      stats.WorkerContext
+	pendingWorkerContextEpoch uint64
 
 	// F14 selective context deletion. The hidden
 	// shadow slice has the same length as Messages;
@@ -450,13 +467,13 @@ const chatWindowKeepMsgs = 4
 // only plain user/assistant text — no system messages, no background
 // task notifications, no tool-call turns — may leak into smalltalk.
 func chatWindowEligible(m llm.Message) bool {
-	if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant {
+	if len(m.ToolCalls) > 0 {
 		return false
 	}
-	if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
-		return false
+	if m.Role == llm.RoleUser {
+		return isConversationUserTurn(m)
 	}
-	return true
+	return m.Role == llm.RoleAssistant
 }
 
 // Reflector is the F5.a hook the loop calls every ReflectEvery
@@ -499,6 +516,16 @@ type LoopConfig struct {
 	// System is the system prompt prepended on every run. Empty
 	// is fine.
 	System string
+	// ProjectInstructions is the repository policy already included in System.
+	// Workers receive this scoped layer without the coordinator's private prompt.
+	ProjectInstructions string
+	// UserInstructions is the initial optional preference block, separate from
+	// System so light conversation routes retain it without the coordinator prompt.
+	UserInstructions string
+	// UserInstructionsForRun refreshes that block once per user run under the
+	// conversation lease. Empty means disabled. Workers use the owning run's
+	// snapshot rather than reading application settings independently.
+	UserInstructionsForRun func(context.Context) (string, error)
 	// SkipImplementationHint omits the automatic implementation contract.
 	// Read-only workers opt in; ordinary coordinator/implementation loops keep it.
 	SkipImplementationHint bool
@@ -515,6 +542,10 @@ type LoopConfig struct {
 	// LiveContextForRun refreshes transient context once before each user run,
 	// keeping it out of persisted history and the stable system prefix.
 	LiveContextForRun func(context.Context) (string, error)
+	// LiveContextBlocks supplies source-labelled request-only snapshots. The loop
+	// replaces them at run boundaries and after memory/goal/delegation mutations,
+	// never while a provider owns its frozen request or between tool results.
+	LiveContextBlocks func(context.Context) ([]llm.ContextBlock, error)
 	// RefreshContextWindow reads optional runtime metadata once before a user
 	// run, before compaction or the first model call. Workers leave it nil.
 	// Applications should tolerate unavailable discovery and return an error
@@ -760,12 +791,25 @@ func (l *Loop) Name() string { return "supercli-loop" }
 // Tool calls and their results are interleaved in the stream so
 // the TUI can render each step.
 func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
+	ctx = clearHostPower(ctx)
 	if prompt == "" {
 		return nil, fmt.Errorf("agent.Loop.Run: prompt is empty")
 	}
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("agent is still finishing the previous run")
 	}
+	var hostPowerErr error
+	ctx, hostPowerErr = l.beginHostPower(ctx)
+	if hostPowerErr != nil {
+		l.releaseConversation()
+		return nil, hostPowerErr
+	}
+	hostPowerHandedOff := false
+	defer func() {
+		if !hostPowerHandedOff {
+			l.endHostPower(ctx)
+		}
+	}()
 	root := ""
 	if writer, ok := l.writer.(interface{ MaintenanceRoot() string }); ok {
 		root = writer.MaintenanceRoot()
@@ -781,6 +825,13 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 			endMaintenanceRun()
 		}
 	}()
+	if err := l.refreshUserInstructionsForRun(ctx); err != nil {
+		l.releaseConversation()
+		return nil, fmt.Errorf("refresh user instructions: %w", err)
+	}
+	if l.userInstructionsForRun != nil || l.userInstructions != "" {
+		ctx = context.WithValue(ctx, userInstructionsContextKey{}, l.userInstructions)
+	}
 	if l.refreshContextWindow != nil {
 		if err := l.refreshContextWindow(ctx); err != nil {
 			l.releaseConversation()
@@ -796,15 +847,15 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	l.resultReuse.reset()
 	l.completedOps.reset()
 	l.nativeRunTools, l.nativeRunSet = nil, false
-	if l.liveContextForRun != nil {
-		contextText, err := l.liveContextForRun(ctx)
-		if err != nil {
-			l.releaseConversation()
-			return nil, fmt.Errorf("refresh run context: %w", err)
-		}
-		l.liveContext = strings.TrimSpace(contextText)
+	if err := l.refreshLiveContextBoundary(ctx, true); err != nil {
+		l.releaseConversation()
+		return nil, fmt.Errorf("refresh run context: %w", err)
 	}
 	ctx, l.downloadExportContext = l.prepareUserDownloadExport(ctx, prompt)
+	if hostPowerInvocationFrom(ctx) != nil {
+		// Stable request-only instruction; never persisted or copied via LoopConfig.
+		l.downloadExportContext += "\n\n" + hostPowerInstruction
+	}
 	if l.userDownloadsDir != nil {
 		if err := ctx.Err(); err != nil {
 			l.releaseConversation()
@@ -871,15 +922,24 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		userText = prompt + "\n\n" + l.nextUserAddon
 		l.nextUserAddon = ""
 	}
-	userMsg := llm.Message{Role: llm.RoleUser, Content: userText}
-	persistedUser := llm.Message{Role: llm.RoleUser, Content: prompt}
+	inputSource := llm.SourceHuman
+	if _, delegated := ctx.Value(workerInvocationKey{}).(workerInvocation); delegated {
+		inputSource = llm.SourceInstructions
+	}
+	userMsg := llm.MessageWithContextBlocks(llm.RoleUser, []llm.ContextBlock{{Source: inputSource, Text: prompt}})
+	if userText != prompt {
+		userMsg = llm.MessageWithContextBlocks(llm.RoleUser, []llm.ContextBlock{{Source: inputSource, Text: prompt}, {Source: llm.SourceRuntime, Text: strings.TrimPrefix(userText, prompt+"\n\n")}})
+	}
+	persistedUser := llm.Message{Role: llm.RoleUser, Content: prompt, Origin: &llm.ContextOrigin{Source: inputSource}}
 	if len(l.nextUserImages) > 0 {
 		images := l.prepareSessionImages(ctx, l.nextUserImages)
 		l.nextUserImages = nil
 		userMsg.Content = ""
 		persistedUser.Content = ""
+		// Preserve the single text part's wire layout. Origin retains the
+		// known human/addon boundaries without splitting provider content.
 		userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: userText})
-		persistedUser.Parts = append(persistedUser.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: prompt})
+		persistedUser.Parts = append(persistedUser.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: prompt, Source: inputSource})
 		for i := range images {
 			image := images[i]
 			userMsg.Parts = append(userMsg.Parts, llm.ContentPart{Type: llm.PartTypeImage, Image: &image})
@@ -890,6 +950,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.enableSessionImageTool()
 	}
 	l.Messages = append(l.Messages, userMsg)
+	l.recordContextAddition(userMsg)
 	// Addons are one-shot provider context, not transcript content. Persist the
 	// user's raw words plus durable image refs so reopening a session never
 	// exposes internal preflight/rewind markers and never loses attachments.
@@ -898,14 +959,33 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	}
 	l.openInterjections(ctx)
 	handedOff = true
+	hostPowerHandedOff = true
 	go func() { defer endMaintenanceRun(); l.run(ctx, prompt, out) }()
 	return out, nil
 }
 
 func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	ctx = context.WithValue(ctx, backgroundRunKey{}, &backgroundRun{})
+	// An admission marker describes only the first main call. Helpers and later
+	// steps establish their own causes instead of inheriting a stale resume.
+	l.nextCallReason = llm.ReasonUserInput
+	if _, delegated := ctx.Value(workerInvocationKey{}).(workerInvocation); delegated {
+		l.nextCallReason = llm.ReasonDelegation
+	}
+	if llm.CallReasonFromContext(ctx) == llm.ReasonResume {
+		l.nextCallReason = llm.ReasonResume
+	}
+	ctx = llm.WithCallReason(ctx, llm.ReasonUnknown)
 	defer close(out)
 	defer l.releaseConversation()
+	defer func() {
+		if r := recover(); r != nil {
+			l.blockHostPower(ctx)
+			l.endHostPower(ctx)
+			panic(r)
+		}
+		l.endHostPower(ctx)
+	}()
 	defer l.stopSpeculativeCompact() // the next Run has a different prefix
 	defer l.resultReuse.reset()
 	defer l.completedOps.reset()
@@ -927,6 +1007,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	defer func() {
 		retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
+		l.checkHostPowerPending(ctx)
 		l.closeInterjections(ctx, retryCtx, out)
 		l.retryPendingAppends(retryCtx)
 		l.retryDirtyProjection(retryCtx)
@@ -934,6 +1015,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	}()
 	defer func() {
 		if r := recover(); r != nil {
+			l.blockHostPower(ctx)
 			// Send the panic as an ErrorEvent so the TUI
 			// can show it instead of silently crashing.
 			select {

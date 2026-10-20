@@ -153,6 +153,38 @@ func TestRecentSessionsRetainLegacyMessages(t *testing.T) {
 	assertQueryPlanHasNoTempSort(t, s, recentProjectQuery, "/project", 40)
 }
 
+// Opening the TUI persists injected system context before any user input.
+// That window must not appear as an empty conversation in session lists.
+func TestSystemOnlySessionIsNotListed(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"system-only", "real"} {
+		if err := s.EnsureSession(id, "/project", "model"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UnixNano()
+	for _, m := range []struct{ id, role, content string }{
+		{"system-only", "system", "<system-reminder>patterns</system-reminder>"},
+		{"real", "system", "<system-reminder>patterns</system-reminder>"},
+		{"real", "user", "cześć"},
+	} {
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO messages(session_id,seq,role,content,created_at) VALUES(?,(SELECT IFNULL(MAX(seq),0)+1 FROM messages WHERE session_id=?),?,?,?)",
+			m.id, m.id, m.role, m.content, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, list := range map[string]func() ([]RecentSession, error){
+		"all":     func() ([]RecentSession, error) { return s.ListRecent(ctx, 10) },
+		"project": func() ([]RecentSession, error) { return s.ListRecentByCwd(ctx, "/project", 10) },
+	} {
+		rows, err := list()
+		if err != nil || len(rows) != 1 || rows[0].ID != "real" {
+			t.Fatalf("%s: %+v %v", name, rows, err)
+		}
+	}
+}
+
 func TestGeneratedTitleDoesNotChangeSessionActivity(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

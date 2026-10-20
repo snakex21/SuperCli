@@ -68,6 +68,10 @@ func (m Model) View() string {
 		fmt.Fprintf(&b, "%s\n", m.palette.InputHint.Render(truncateVisible(m.runtimeHUD, m.width)))
 	}
 
+	if banner := m.renderHostPower(); banner != "" {
+		b.WriteString(banner + "\n")
+	}
+
 	// 5. Autocomplete popup (above input line)
 	acView := renderAutocompleteWithinHeight(&m.autocomp, m.width, m.autocompleteBudget(), m.palette, m.language)
 	if acView != "" {
@@ -212,7 +216,7 @@ func truncateVisible(s string, width int) string {
 // left after preserving the composer, hints and a useful slice of conversation.
 func (m Model) chromeBaseHeight() int {
 	// Header + separator + input borders + hints, plus textarea content.
-	reserved := 5 + max(1, m.input.Height()) + len(m.workerPanelLines())
+	reserved := 5 + max(1, m.input.Height()) + len(m.workerPanelLines()) + visualLineCount(m.renderHostPower(), m.width)
 	if len(m.pendingAttachments) > 0 {
 		reserved++
 	}

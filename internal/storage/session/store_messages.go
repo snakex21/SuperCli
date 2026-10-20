@@ -174,9 +174,9 @@ func (s *Store) AppendMessageWithReceipt(ctx context.Context, sessionID string, 
 	}
 	var receipt MessageReceipt
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO messages(session_id, seq, role, content, parts_json, tool_call_id, tool_calls_json, name, created_at)
-  SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE session_id = ? RETURNING seq, id`,
-		sessionID, msg.Role, msg.Content, msg.PartsJSON, msg.ToolCallID, msg.ToolCallsJSON, msg.Name, now.UnixNano(), sessionID,
+		`INSERT INTO messages(session_id, seq, role, content, parts_json, tool_call_id, tool_calls_json, name, origin_json, created_at)
+  SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ? FROM messages WHERE session_id = ? RETURNING seq, id`,
+		sessionID, msg.Role, msg.Content, msg.PartsJSON, msg.ToolCallID, msg.ToolCallsJSON, msg.Name, msg.OriginJSON, now.UnixNano(), sessionID,
 	).Scan(&receipt.Seq, &receipt.ID); err != nil {
 		return MessageReceipt{}, fmt.Errorf("append: insert: %w", err)
 	}
@@ -237,6 +237,10 @@ func (s *Store) ListRecentByCwd(ctx context.Context, cwd string, limit int) ([]R
 	return s.listRecent(ctx, cwd, limit)
 }
 
+// A TUI start persists injected system context (learned patterns) before the
+// user types anything. Such a window is not a conversation: lists require at
+// least one non-system message so it never shows up as an empty session.
+//
 // Project lists start with the session activity index. Only the requested
 // rows need message lookups; unrelated conversations never have their whole
 // histories grouped. EXISTS retains old rows with stale message_count values.
@@ -249,7 +253,7 @@ const recentProjectQuery = `
                 AND content IS NOT NULL AND content<>'' ORDER BY seq LIMIT 1),''),
         s.cwd,s.title,s.model,s.provider,s.reasoning_effort,IFNULL(s.parent_id,'')
  FROM sessions s
- WHERE s.cwd=? AND EXISTS (SELECT 1 FROM messages WHERE session_id=s.id)
+ WHERE s.cwd=? AND EXISTS (SELECT 1 FROM messages WHERE session_id=s.id AND role<>'system')
  ORDER BY s.updated_at DESC,s.created_at DESC,s.id DESC
  LIMIT ?`
 
@@ -276,6 +280,7 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 		LEFT JOIN sessions s ON s.id = m.session_id`
 	query += `
         GROUP BY m.session_id
+        HAVING SUM(m.role<>'system')>0
         ORDER BY updated DESC,started DESC,m.session_id DESC
         LIMIT ?`
 	args := []any{limit}
@@ -308,9 +313,9 @@ func (s *Store) listRecent(ctx context.Context, cwd string, limit int) ([]Recent
 func (s *Store) ReadMessageAt(ctx context.Context, sessionID string, seq int) (Encoded, error) {
 	var m Encoded
 	err := s.db.QueryRowContext(ctx,
-		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? AND seq = ?`,
+		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'') FROM messages WHERE session_id = ? AND seq = ?`,
 		sessionID, seq,
-	).Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name)
+	).Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON)
 	if err != nil {
 		return Encoded{}, err
 	}
@@ -320,7 +325,7 @@ func (s *Store) ReadMessageAt(ctx context.Context, sessionID string, seq int) (E
 // ReadMessages returns all messages for a session, in seq order.
 func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? ORDER BY seq ASC`,
+		`SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'') FROM messages WHERE session_id = ? ORDER BY seq ASC`,
 		sessionID,
 	)
 	if err != nil {
@@ -330,7 +335,7 @@ func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, 
 	var out []Encoded
 	for rows.Next() {
 		var m Encoded
-		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -352,7 +357,7 @@ func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, before
 		limit = 500
 	}
 	query := `SELECT session_id, seq, role, content, IFNULL(parts_json,''),
-		IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'')
+		IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'')
 		FROM messages WHERE session_id = ?`
 	args := []any{sessionID}
 	if beforeSeq > 0 {
@@ -370,7 +375,7 @@ func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, before
 	for rows.Next() {
 		var m Encoded
 		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content,
-			&m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+			&m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON); err != nil {
 			return nil, false, err
 		}
 		out = append(out, m)

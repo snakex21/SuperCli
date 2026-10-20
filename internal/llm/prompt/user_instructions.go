@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -106,7 +107,32 @@ func NormalizeUserInstructions(state UserInstructionsState) UserInstructionsStat
 // also preserves provider-side prompt caching.
 func ActiveUserInstructions(dataDir string) string {
 	state, err := LoadUserInstructions(dataDir)
-	if err != nil || !state.Enabled {
+	if err != nil {
+		return ""
+	}
+	return UserInstructionsPrompt(state)
+}
+
+// UserInstructionsForRun fails before inference if enabled instructions cannot
+// be read. Frontends call it once at a run boundary, never per model/tool step.
+func UserInstructionsForRun(ctx context.Context, dataDir string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	state, err := LoadUserInstructions(dataDir)
+	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return UserInstructionsPrompt(state), nil
+}
+
+// UserInstructionsPrompt renders an already loaded state without filesystem I/O.
+// Both interfaces use the same block, priority rules and enabled/active selection.
+func UserInstructionsPrompt(state UserInstructionsState) string {
+	if !state.Enabled {
 		return ""
 	}
 	for _, preset := range state.Presets {

@@ -52,6 +52,9 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	if cmd.Name == "telefon" || cmd.Name == "phone" {
 		return m.openPhoneMenu()
 	}
+	if cmd.Name == "instructions" || cmd.Name == "prompts" {
+		return m.openInstructionsMenu()
+	}
 	if cmd.Name == "settings" {
 		return m.openSettingsMenu()
 	}

@@ -138,9 +138,11 @@ func TestRunnerBoundsInheritedOutputPipeWait(t *testing.T) {
 	for _, mode := range []string{"inherited", "inherited_failure"} {
 		for _, timeout := range []int{5000, 500} {
 			t.Run(fmt.Sprintf("%s/timeout=%d", mode, timeout), func(t *testing.T) {
+				// A race-instrumented helper otherwise sleeps for 1s on exit.
+				// Keep this test about inherited pipes, not that artificial delay.
 				result, err := New(t.TempDir()).Run(context.Background(), &Request{
 					Command:  []string{os.Args[0], "-test.run=^TestCaptureHelper$"},
-					EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=" + mode}, TimeoutMS: timeout,
+					EnvExtra: []string{"SUPERCLI_CAPTURE_HELPER=" + mode, "GORACE=atexit_sleep_ms=0"}, TimeoutMS: timeout,
 				})
 				if err != nil {
 					t.Fatal(err)

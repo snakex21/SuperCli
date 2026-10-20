@@ -54,22 +54,43 @@ func (l *Loop) invokeToolCalls(ctx context.Context, toolCalls []llm.ToolCall, ou
 // discard all later calls/results. Persistence must use this same ordering.
 type toolBatchMessages struct {
 	auxiliary []llm.Message
+	// Placeholder adapters change execution names, not the already persisted
+	// assistant call. Keep result labels paired with that original protocol.
+	placeholderNames map[string]string
 }
 
 func (b *toolBatchMessages) append(l *Loop, ctx context.Context, followUps []llm.Message) {
 	for _, m := range followUps {
+		var uiActivity json.RawMessage
+		if m.Origin != nil {
+			uiActivity = m.Origin.WorkerActivity
+		}
+		source := llm.SourceToolResult
+		if m.Role == llm.RoleTool && (m.Name == "task" || m.Name == "send_message") {
+			source = llm.SourceTaskResult
+		}
+		m.Origin = &llm.ContextOrigin{Source: source}
 		if m.Role != llm.RoleTool {
 			b.auxiliary = append(b.auxiliary, m)
 			continue
 		}
+		if name, ok := b.placeholderNames[m.ToolCallID]; ok {
+			m.Name = name
+		}
 		l.Messages = append(l.Messages, m)
-		l.persist(ctx, m)
+		l.recordContextAddition(m)
+		transcript := m
+		if source == llm.SourceTaskResult && len(uiActivity) > 0 {
+			transcript.Origin = &llm.ContextOrigin{Source: source, WorkerActivity: uiActivity}
+		}
+		l.persist(ctx, transcript)
 	}
 }
 
 func (b *toolBatchMessages) flush(l *Loop, ctx context.Context) {
 	for _, m := range b.auxiliary {
 		l.Messages = append(l.Messages, m)
+		l.recordContextAddition(m)
 		l.persist(ctx, m)
 	}
 }
@@ -78,7 +99,7 @@ func (l *Loop) invokeToolCallsBatch(ctx context.Context, toolCalls []llm.ToolCal
 	// Rewrite Zen-gate placeholders (bash/read) to SuperCli's real tools
 	// BEFORE any registry lookup, so allReadOnlyCalls / toolConflictWaves
 	// / dispatch all see names that actually exist.
-	toolCalls = rewritePlaceholderToolCalls(toolCalls)
+	toolCalls = l.rewritePlaceholderToolCalls(toolCalls, messages)
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
@@ -144,11 +165,27 @@ func (l *Loop) invokeToolCallsSequentialBatch(ctx context.Context, toolCalls []l
 
 // rewritePlaceholderToolCalls maps every Zen-gate placeholder call in the
 // batch onto SuperCli's real tool (and adapted args). Idempotent.
-func rewritePlaceholderToolCalls(toolCalls []llm.ToolCall) []llm.ToolCall {
+func (l *Loop) rewritePlaceholderToolCalls(toolCalls []llm.ToolCall, messages *toolBatchMessages) []llm.ToolCall {
 	for i := range toolCalls {
-		toolCalls[i] = rewritePlaceholderToolCall(toolCalls[i])
+		original := toolCalls[i]
+		toolCalls[i] = l.rewritePlaceholderToolCall(original)
+		if toolCalls[i].Name != original.Name {
+			if messages.placeholderNames == nil {
+				messages.placeholderNames = make(map[string]string)
+			}
+			messages.placeholderNames[original.ID] = original.Name
+		}
 	}
 	return toolCalls
+}
+
+func (l *Loop) rewritePlaceholderToolCall(tc llm.ToolCall) llm.ToolCall {
+	// A real registered bash/read (including an extension) owns its schema and
+	// arguments. Only injected, unregistered placeholders use the adapters.
+	if _, exists := l.registry.Get(tc.Name); exists {
+		return tc
+	}
+	return rewritePlaceholderToolCall(tc)
 }
 
 // rewritePlaceholderToolCall converts a wire-level placeholder tool call
@@ -380,14 +417,25 @@ func (l *Loop) invokeCallsParallelBatch(ctx context.Context, toolCalls []llm.Too
 
 // invoke runs a single tool call, emits the matching events, and
 // returns the messages to append to history.
-func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) toolResult {
+func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (result toolResult) {
+	l.bindVerificationGoalScope()
 	if l.toolOutputs != nil {
 		ctx = tools.WithOutputPersistence(ctx, l.toolOutputs)
 	}
 	// Defense-in-depth: map Zen-gate placeholders before HardenToolCall
 	// so the name gate sees registry names (idempotent with the batch
 	// rewrite at the top of invokeToolCalls).
-	tc = rewritePlaceholderToolCall(tc)
+	original := tc
+	tc = l.rewritePlaceholderToolCall(tc)
+	if tc.Name != original.Name {
+		defer func() {
+			for i := range result.followUps {
+				if result.followUps[i].Role == llm.RoleTool && result.followUps[i].ToolCallID == original.ID {
+					result.followUps[i].Name = original.Name
+				}
+			}
+		}()
+	}
 	// Wave 1 hardening for small models: validate the tool name
 	// (with a did-you-mean suggestion) and repair truncated or
 	// unbalanced JSON arguments before execution. An unrepairable
@@ -450,7 +498,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 
 	// Refuse repeated failures with no intervening repair. A successful file
 	// mutation below expires command failures so the same check can run again.
-	if l.identicalFails.shouldBlock(tc.Name, tc.Arguments) {
+	if l.identicalFails.shouldBlock(tc.Name, tc.Arguments, l.failedChecks.stateRevision()) {
 		scope := "in this run"
 		if tc.Name == "ctx_execute" {
 			scope = "since the last successful file edit"
@@ -506,6 +554,16 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	// already covered by tool_execution in run().
 	execStart := time.Now()
 	var res tools.Result
+	defer func() {
+		if len(res.WorkerActivity) == 0 {
+			return
+		}
+		for i := range result.followUps {
+			if result.followUps[i].Role == llm.RoleTool && result.followUps[i].ToolCallID == tc.ID {
+				result.followUps[i].Origin = workerActivityOrigin(res.WorkerActivity)
+			}
+		}
+	}()
 	var err error
 	tool, knownTool := l.registry.Get(tc.Name)
 	invalidatesEvidence := !knownTool || (!tool.ReadOnly && !tool.PreservesEvidence)
@@ -575,8 +633,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	} else if reused {
 		// Same accepted arguments and the same immutable registered tool;
 		// reuse never grants access to another contract or a later Run.
-	} else if (isPassingGoalVerification(tc.Name, raw) || isGoalTaskCompletion(tc.Name, raw)) && l.failedChecks.unresolved() {
-		res.Err = fmt.Errorf("goal: a verification command failed and has no successful rerun; fix and rerun it before marking the work complete")
+	} else if (isPassingGoalVerification(tc.Name, raw) || isGoalTaskCompletion(tc.Name, raw) || isGoalMarkDone(tc.Name, raw)) && l.failedChecks.unresolved() {
+		res.Err = fmt.Errorf("%s", l.failedChecks.blocker())
 	} else if isPassingGoalVerification(tc.Name, raw) && (!l.toolEvidence.Load() || l.concreteFailure.Load()) {
 		res.Err = fmt.Errorf("goal: passing verification requires a successful concrete check after the latest tool failure")
 	} else if isGoalTaskCompletion(tc.Name, raw) && l.concreteFailure.Load() {
@@ -613,6 +671,12 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		}
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
+	if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
+		// Successful no-ops preserve verification. An attempted non-inert edit
+		// (even a failed/cancelled partial write) invalidates earlier checks.
+		// Checks started while it was in flight must be rerun after this fence.
+		l.failedChecks.workspaceChanged()
+	}
 
 	// Cancellation after dispatch cannot prove that a mutation did not happen.
 	// Preserve successful results even if cancellation raced with completion;
@@ -656,9 +720,9 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 		haveReuseClaim = false
 	}
 	if err != nil || res.Err != nil {
-		l.identicalFails.recordFailure(tc.Name, tc.Arguments)
+		l.identicalFails.recordFailure(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 	} else {
-		l.identicalFails.recordSuccess(tc.Name, tc.Arguments)
+		l.identicalFails.recordSuccess(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
 			l.identicalFails.workspaceChanged()
@@ -679,10 +743,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) to
 	}
 	if !reused && !operationReplayed {
 		l.recordCheckResult(tc, attributed)
+		if attributed.Err == nil {
+			l.recordGoalTransition(tc)
+		}
 	}
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
-	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments))
+	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments, l.failedChecks.stateRevision()))
 	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, attributed)
 	outputHandle := retainedToolOutputHandle(tc.Name, attributed, modelContent)
 	if reused {

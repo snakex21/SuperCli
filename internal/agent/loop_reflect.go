@@ -288,50 +288,84 @@ type identicalFailureGate struct {
 type failedCallKey struct {
 	fingerprint [sha256.Size]byte
 	execution   bool
+	state       uint64
 }
 
-func (g *identicalFailureGate) key(name, args string) failedCallKey {
-	return failedCallKey{fingerprint: toolCallFingerprint(name, args), execution: name == "ctx_execute"}
+func (g *identicalFailureGate) key(name, args string, state ...uint64) failedCallKey {
+	key := failedCallKey{fingerprint: toolCallFingerprint(name, args), execution: name == "ctx_execute"}
+	if name == "goal" {
+		var p struct {
+			Action, GoalID string
+			TaskSeq        int `json:"task_seq"`
+			Passed         bool
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal([]byte(args), &fields) == nil {
+			_ = json.Unmarshal(fields["action"], &p.Action)
+			_ = json.Unmarshal(fields["goal_id"], &p.GoalID)
+			_ = json.Unmarshal(fields["task_seq"], &p.TaskSeq)
+			_ = json.Unmarshal(fields["passed"], &p.Passed)
+		}
+		if p.Action == "complete_task" || p.Action == "verify" || p.Action == "mark_done" {
+			// Evidence prose does not change a state transition. Only an actual
+			// new executor/goal state permits retrying a previously blocked action.
+			if !strings.HasPrefix(p.GoalID, "g-") {
+				p.GoalID = ""
+			}
+			if p.Action != "verify" {
+				p.Passed = false
+			}
+			if p.Action != "complete_task" {
+				p.TaskSeq = 0
+			}
+			canonical, _ := json.Marshal(p)
+			key.fingerprint = toolCallFingerprint(name, string(canonical))
+			if len(state) != 0 {
+				key.state = state[0]
+			}
+		}
+	}
+	return key
 }
 
-func (g *identicalFailureGate) shouldBlock(name, args string) bool {
+func (g *identicalFailureGate) shouldBlock(name, args string, state ...uint64) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.counts == nil {
 		return false
 	}
-	return g.counts[g.key(name, args)] >= 2
+	return g.counts[g.key(name, args, state...)] >= 2
 }
 
-func (g *identicalFailureGate) recordFailure(name, args string) {
+func (g *identicalFailureGate) recordFailure(name, args string, state ...uint64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.counts == nil {
 		g.counts = make(map[failedCallKey]int)
 	}
-	k := g.key(name, args)
+	k := g.key(name, args, state...)
 	g.counts[k]++
 }
 
 // attempts returns how many consecutive failures this exact call has
 // accumulated in the current Run (0 = none recorded yet). Read after
 // recordFailure it is the attempt number of the failure just seen.
-func (g *identicalFailureGate) attempts(name, args string) int {
+func (g *identicalFailureGate) attempts(name, args string, state ...uint64) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.counts == nil {
 		return 0
 	}
-	return g.counts[g.key(name, args)]
+	return g.counts[g.key(name, args, state...)]
 }
 
-func (g *identicalFailureGate) recordSuccess(name, args string) {
+func (g *identicalFailureGate) recordSuccess(name, args string, state ...uint64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.counts == nil {
 		return
 	}
-	delete(g.counts, g.key(name, args))
+	delete(g.counts, g.key(name, args, state...))
 }
 
 // workspaceChanged expires only command failures. It does not turn an edit

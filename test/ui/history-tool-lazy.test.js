@@ -36,6 +36,7 @@ function domNode(tag, type = 1) {
   node.classList = {add() {}, remove() {}, toggle() {}};
   Object.defineProperty(node, 'isConnected', {get: () => !!node.parentNode});
   Object.defineProperty(node, 'firstChild', {get: () => node.children[0] || null});
+  Object.defineProperty(node, 'lastElementChild', {get: () => node.children.filter(child => child.nodeType === 1).at(-1) || null});
   Object.defineProperty(node, 'nextSibling', {get() { return this.parentNode ? this.parentNode.children[this.parentNode.children.indexOf(this) + 1] || null : null; }});
   Object.defineProperty(node, 'childNodes', {get: () => node.children});
   Object.defineProperty(node, 'textContent', {
@@ -68,9 +69,9 @@ function harness() {
   }
   const c = {
     $, $$: () => [], el, i18nEl: (tag, cls, key) => el(tag, cls, key), t: key => key,
-    document: {createElement: el, createDocumentFragment: () => domNode('#fragment', 11)},
+    document: Object.assign(new EventTarget(), {createElement: el, createDocumentFragment: () => domNode('#fragment', 11)}),
     window: {}, superCliUI: {fileMutationTools: {}, mutationKind: () => ''},
-    requestAnimationFrame: fn => { calls.push('scroll'); return 1; },
+    requestAnimationFrame: fn => { calls.push('scroll'); return 1; }, cancelAnimationFrame() {},
     prettyJSON: text => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } },
     toolHint: name => ({name, hint: 'file contents'}), toolDisplayName: name => name,
     clip: (text, n) => String(text).slice(0, n), parseTaskNotification: () => null,
@@ -130,7 +131,8 @@ test('history rows already open render input and output immediately with the ori
   const args = '{"query":"a & b"}', output = 'line 1\nline 2 <unsafe>';
   c.appendHistoryToolPayload(row, body, args, output, 'search_code');
   assert.equal(body.children.length, 4);
-  assert.equal(body.children[1].textContent, JSON.stringify(JSON.parse(args), null, 2));
+  assert.equal(body.children[1].className, 'tool-input-view');
+  assert.equal(body.children[1].textContent, 'querya & b', 'input rows keep the exact argument text');
   assert.equal(body.children[3].textContent, output);
   const count = countNodes(row);
   row.dispatch('toggle'); row.open = false; row.dispatch('toggle'); row.open = true; row.dispatch('toggle');
@@ -251,9 +253,9 @@ test('task report replacement cancels stale folded callbacks and preserves open 
 test('task history paging retains raw reports and defers newly received rows', async () => {
   const h = harness(), calls = [];
   h.c.renderText = source => { calls.push(source); return source; };
-  const content = result => '<task-notification><task-id>worker-' + result + '</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>';
-  const latest = {seq: 2, role: 'tool', name: 'task', content: content('latest')};
-  const older = {seq: 1, role: 'tool', name: 'task', content: content('older')};
+  const content = (result, id) => '<task-notification><task-id>worker-' + id + '</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>';
+  const latest = {seq: 2, role: 'tool', name: 'task', content: content('latest', 2)};
+  const older = {seq: 1, role: 'tool', name: 'task', content: content('older', 1)};
   h.c.j = async url => url.includes('&before=2') ? {messages: [older], has_more: false, before_seq: 1} : {messages: [latest], has_more: true, before_seq: 2};
   assert.equal(await h.c.resumeSession('task-chat', {}), true);
   assert.deepEqual(calls, []); assert.equal(h.c.loadedTranscriptMessages.length, 0, 'no duplicate raw message-object history');
@@ -302,14 +304,14 @@ test('older paging retains expanded rows and live messages while rendering only 
 test('paging an older task notification preserves the latest worker backlink and its open report', async () => {
   const h = harness(); h.c.renderText = source => source;
   const task = (seq, result) => ({seq, role: 'tool', name: 'task', content:
-    '<task-notification><task-id>worker-shared</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>'});
+    '<task-notification><task-id>worker-9</task-id><agent>worker</agent><status>done</status><summary>completed</summary><result>' + result + '</result></task-notification>'});
   h.c.j = async url => url.includes('&before=2') ? {messages: [task(1, 'old report')], has_more: false, before_seq: 1} :
     {messages: [task(2, 'current report')], has_more: true, before_seq: 2};
   assert.equal(await h.c.resumeSession('worker-chat', {}), true);
-  const current = h.c.workerRows['worker-shared']; current.open = true; current.dispatch('toggle');
+  const current = h.c.workerRows['worker-9']; current.open = true; current.dispatch('toggle');
   const report = current.querySelector('.task-report');
   await h.c.loadOlderTranscript();
-  assert.equal(h.c.workerRows['worker-shared'], current); assert.equal(current.open, true);
+  assert.equal(h.c.workerRows['worker-9'], current); assert.equal(current.open, true);
   assert.equal(current.querySelector('.task-report'), report); assert.equal(report.innerHTML, 'current report');
   assert.equal(h.c.stream.querySelectorAll('.task-row').length, 2); assert.equal(h.c.stream.querySelector('.history-older'), null);
 });
@@ -601,7 +603,10 @@ test('task and continuation release unused JSON while retaining full canonical b
     assert.equal(row.querySelector('.task-brief'), visibleBrief); assert.equal(row.querySelector('.task-report'), report);
     assert.equal(h.c.workerRows['worker-1'], row);
     const lastOverview = h.overview.at(-1);
-    assert.equal(lastOverview.row, row); assert.equal(lastOverview.activity, brief); assert.equal(lastOverview.status, 'done');
+    assert.equal(lastOverview.row, row);
+    assert.equal(lastOverview.activity, row._taskActivity, 'completion retains the last observed tool; the full brief stays in the task body');
+    assert.ok(lastOverview.activity.startsWith('read_lines'), 'overview activity names the last worker tool');
+    assert.equal(lastOverview.status, 'done');
   }
   rows[0].scrollIntoView = options => { rows[0].scrollOptions = options; };
   rows[0].open = false;
@@ -622,7 +627,8 @@ test('saved delegation history retains canonical arguments and folded report reo
   const rows = fragment.querySelectorAll('.task-row'); assert.equal(rows.length, 2);
   assert.equal(h.c.workerRows['worker-1'], rows[1]);
   rows.forEach((row, i) => {
-    assert.equal(row.open, false); assert.equal(row.querySelector('.task-brief'), null, 'preserve saved-history presentation');
+    assert.equal(row.open, false);
+    assert.equal(row.querySelector('.task-brief').textContent, i ? 'canonical continuation' : 'original canonical brief', 'show each saved run\'s own instruction');
     const report = row.querySelector('.task-report'); assert.equal(report.innerHTML, '');
     row.open = true; row.dispatch('toggle');
     assert.equal(report.innerHTML, i ? 'second full report 日本語' : 'first full report ą<&>');

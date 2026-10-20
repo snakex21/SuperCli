@@ -40,6 +40,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 	switch key {
 	case "show_generation_speed":
 		c.ShowGenerationSpeed = cycleTri(c.ShowGenerationSpeed)
+	case "update_notify":
+		c.UpdateNotify = cycleTri(c.UpdateNotify)
 	case "orchestrator":
 		c.Orchestrator = cycleTri(c.Orchestrator)
 	case "allow_all":
@@ -91,6 +93,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.CostCurrency = ""
 	case "show_generation_speed":
 		c.ShowGenerationSpeed = nil
+	case "update_notify":
+		c.UpdateNotify = nil
 	case "orchestrator":
 		c.Orchestrator = nil
 	case "allow_all":
@@ -180,6 +184,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return config.EffectiveCostCurrency(*c), "manual"
 	case "show_generation_speed":
 		return m.triDisplay(c.ShowGenerationSpeed, "on")
+	case "update_notify":
+		return m.triDisplay(c.UpdateNotify, "on")
 	case "language":
 		language := c.Language
 		if language == "" {

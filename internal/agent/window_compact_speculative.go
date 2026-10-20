@@ -55,12 +55,24 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 	tools := l.compactActiveTools()
 	l.speculativeMu.Lock()
 	job := l.speculative
-	l.speculativeMu.Unlock()
 	if job != nil {
-		// A scope change is validated when consuming. Joining a canceled
-		// helper here could itself block an otherwise safe main request.
-		return // running or finished (even stale/failed): no restart churn
+		select {
+		case <-job.done:
+			if l.speculativeMatches(job, prefix, tools) {
+				l.speculativeMu.Unlock()
+				return // consume this result; never pay twice for the same prefix
+			}
+			// A completed obsolete job cannot become valid again by growing
+			// history. Retaining it would block all speculation until overflow.
+			l.speculative = nil
+			job.cancel()
+		default:
+			// Do not cancel/join running work on each small history change.
+			l.speculativeMu.Unlock()
+			return
+		}
 	}
+	l.speculativeMu.Unlock()
 	jobCtx, cancel := context.WithCancel(ctx)
 	job = &speculativeCompact{
 		epoch: l.conversationEpoch.Load(), provider: l.provider,
@@ -98,7 +110,9 @@ func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message,
 		select {
 		case <-job.done:
 			if !matches {
+				l.speculative = nil
 				l.speculativeMu.Unlock()
+				job.cancel()
 				return "", nil, 0, false
 			}
 		default:
@@ -126,6 +140,22 @@ func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message,
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	// A failed helper must not be paid for twice by an immediate retry.
 	return job.summary, job.err, len(job.prefix), true
+}
+
+// Readiness is checked only at the ordinary pre-request boundary. Starting
+// speculation needs pressure; consuming an existing finished result does not.
+func (l *Loop) speculativeCompactReady() bool {
+	l.speculativeMu.Lock()
+	defer l.speculativeMu.Unlock()
+	if l.speculative == nil {
+		return false
+	}
+	select {
+	case <-l.speculative.done:
+		return true
+	default:
+		return false
+	}
 }
 
 // stopSpeculativeCompact cancels and joins any background summary, so no two

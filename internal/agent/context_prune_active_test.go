@@ -44,7 +44,7 @@ func TestLatencyPruningKeepsActiveTaskEvidenceAndPrunesCompletedHistory(t *testi
 	}
 }
 
-func TestPruningKeepsRetrievedOutputUntilNextUserTurn(t *testing.T) {
+func TestPruningKeepsRetrievedOutputBelowHardPressure(t *testing.T) {
 	ctx := context.Background()
 	reg := tools.NewRegistry()
 	reg.EnsureReadOutput()
@@ -67,14 +67,23 @@ func TestPruningKeepsRetrievedOutputUntilNextUserTurn(t *testing.T) {
 		a, b := sourceFixture(fmt.Sprintf("other-%d.go", i), fmt.Sprintf("other-%d", i), 1, 100)
 		l.Messages = append(l.Messages, a, b)
 	}
+	// This test exercises ordinary pruning, not the capacity emergency covered
+	// by TestHardWindowPruningReclaimsRetrievedActiveEvidence. Keep retrieved
+	// pages verbatim until either that emergency or a new real user turn.
+	estimate := l.EstimateNextRequestTokens()
+	window := max(estimate+minContextReserve+256, estimate*10/9+256)
+	l.windowFor = func(string) int { return window }
+	if estimate >= autoCompactThreshold(window) || estimate <= int(pruneTriggerFrac*float64(window)) {
+		t.Fatalf("fixture is not between ordinary pruning and hard pressure: %d/%d", estimate, window)
+	}
 	if gain := l.maybePruneToolResults(ctx, nil); gain <= 0 {
 		t.Fatal("hard-window pressure stopped reclaiming ordinary old results")
 	}
 	if !strings.Contains(l.Messages[2].Content, body) || strings.HasPrefix(l.Messages[2].Content, pruneMarkerPrefix) {
-		t.Fatal("retrieved output was archived again during the same task")
+		t.Fatal("retrieved output was archived without hard capacity pressure")
 	}
 	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleAssistant, Content: "done"}, llm.Message{Role: llm.RoleUser, Content: "new task"})
-	a, b := sourceFixture("new.go", "new", 1, 100)
+	a, b := sourceFixture("new.go", "new", 1, 400)
 	l.Messages = append(l.Messages, a, b)
 	l.invalidateVisibleEstimate()
 	if gain := l.maybePruneToolResults(ctx, nil); gain <= 0 || !strings.HasPrefix(l.Messages[2].Content, pruneMarkerPrefix) {

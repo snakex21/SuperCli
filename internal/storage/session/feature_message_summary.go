@@ -17,7 +17,7 @@ type MessageSummary struct {
 // are skipped exactly as with ReadMessages followed by Encoded.ToMessage.
 func (s *Store) ReadMessageSummary(ctx context.Context, sessionID string) (MessageSummary, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ? ORDER BY seq ASC",
+		"SELECT role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'') FROM messages WHERE session_id = ? ORDER BY seq ASC",
 		sessionID)
 	if err != nil {
 		return MessageSummary{}, err
@@ -26,7 +26,7 @@ func (s *Store) ReadMessageSummary(ctx context.Context, sessionID string) (Messa
 	var out MessageSummary
 	for rows.Next() {
 		var row Encoded
-		if err := rows.Scan(&row.Role, &row.Content, &row.PartsJSON, &row.ToolCallID, &row.ToolCallsJSON, &row.Name); err != nil {
+		if err := rows.Scan(&row.Role, &row.Content, &row.PartsJSON, &row.ToolCallID, &row.ToolCallsJSON, &row.Name, &row.OriginJSON); err != nil {
 			return MessageSummary{}, err
 		}
 		message, err := row.ToMessage()

@@ -3,6 +3,7 @@ package webgui
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -52,17 +53,20 @@ type sessionMeta struct {
 
 // transcriptMsg is one message in a session transcript.
 type transcriptMsg struct {
-	Seq              int                   `json:"seq"`
-	MessageID        string                `json:"message_id,omitempty"`
-	Role             string                `json:"role"`
-	Content          string                `json:"content"`
-	Attachments      []string              `json:"attachments,omitempty"`
-	ToolImages       []transcriptToolImage `json:"tool_images,omitempty"`
-	ToolImageCarrier bool                  `json:"tool_image_carrier,omitempty"`
-	Name             string                `json:"name,omitempty"`
-	ToolCallID       string                `json:"tool_call_id,omitempty"`
-	ToolCalls        []transcriptToolCall  `json:"tool_calls,omitempty"`
-	Turn             *transcriptTurn       `json:"turn,omitempty"`
+	ToolOutputHandle     string                `json:"tool_output_handle,omitempty"`
+	WorkerActivity       json.RawMessage       `json:"worker_activity,omitempty"`
+	WorkerObservationsID string                `json:"worker_observations_id,omitempty"`
+	Seq                  int                   `json:"seq"`
+	MessageID            string                `json:"message_id,omitempty"`
+	Role                 string                `json:"role"`
+	Content              string                `json:"content"`
+	Attachments          []string              `json:"attachments,omitempty"`
+	ToolImages           []transcriptToolImage `json:"tool_images,omitempty"`
+	ToolImageCarrier     bool                  `json:"tool_image_carrier,omitempty"`
+	Name                 string                `json:"name,omitempty"`
+	ToolCallID           string                `json:"tool_call_id,omitempty"`
+	ToolCalls            []transcriptToolCall  `json:"tool_calls,omitempty"`
+	Turn                 *transcriptTurn       `json:"turn,omitempty"`
 }
 
 type transcriptToolImage struct {

@@ -23,6 +23,7 @@ import (
 	systats "supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
+	toolhostpower "supercli/internal/tools/hostpower"
 	"supercli/internal/tools/mcp"
 )
 
@@ -93,10 +94,12 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	if err != nil {
 		return nil, nil, fmt.Errorf("goal service: %w", err)
 	}
-	if _, err := goalSvc.Refresh(context.Background()); err != nil {
-		return nil, nil, fmt.Errorf("refresh goal: %w", err)
-	}
 	reg := tools.NewRegistry()
+	// Only the human-facing stream has an interactive confirmation channel.
+	// Context inspection/compaction and other feature loops get no capability.
+	if askCh != nil {
+		reg.MustRegister(toolhostpower.Spec())
+	}
 	// Completed tool envelopes are omitted from future provider prompts, while
 	// their full persisted rows remain retrievable on demand through this local
 	// FTS tool. It is discoverable rather than always-on, so it adds no schema
@@ -204,9 +207,6 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// every state transition. Stable toolsets pay this prefix once in KV cache.
 	goalSpec := tools.NewGoalTool(goalSvc).Spec()
 	reg.MustRegister(goalSpec)
-	if goalSvc != nil && goalSvc.Active() != nil {
-		reg.MarkAlwaysOn(goalSpec.Name)
-	}
 	if askCh != nil {
 		ask := tools.NewAskUser(askCh)
 		// A web/desktop question is an explicit pause in the foreground run.
@@ -278,33 +278,16 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		}
 		return resolved
 	}
-	systemPrompt := webAgentSystemPrompt(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
-	if instructions := llmprompt.ActiveUserInstructions(e.dataDir); instructions != "" {
-		systemPrompt += "\n\n" + instructions
-	}
+	systemPrompt, projectInstructions := webAgentSystemPromptLayers(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
+	instructionsDataDir := e.dataDir
 	currentSessionID := ""
 	if bound, ok := writer.(interface{ SessionID() string }); ok {
 		currentSessionID = bound.SessionID()
 	}
-	// These snapshots may change after any turn. Keep the latest values
-	// available without rewriting the beginning of the conversation.
-	liveContext := e.webMemoryBriefingExcludingSession(home, tc.MemoryBriefingTokens, currentSessionID)
-	if folders := folderIndexPrompt(e.dataDir); folders != "" {
-		if liveContext != "" {
-			liveContext += "\n\n"
-		}
-		liveContext += folders
-	}
-	if current, injectErr := goalSvc.Inject(context.Background(), liveContext, 5); injectErr == nil {
-		liveContext = current
-	} else {
-		return nil, nil, fmt.Errorf("goal context: %w", injectErr)
-	}
-	// Last, so the real sandbox root wins over any path a memory fact mentions.
-	if liveContext = strings.TrimSpace(liveContext); liveContext != "" {
-		liveContext += "\n\n"
-	}
-	liveContext += webWorkspaceNote(home, officeProfile)
+	// Pin the root and session, but refresh their state at safe model boundaries.
+	// Memory changes and goal completion within this run must not retain the
+	// snapshot from before the tool executed.
+	liveContextBlocks := e.webLiveContextBlocks(home, tc.MemoryBriefingTokens, currentSessionID, goalSvc, officeProfile)
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
 	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
@@ -317,11 +300,26 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)
 	compactResolver := e.compactProviderResolver(tc, cfg, prov)
 	loop, err := agent.NewLoop(agent.LoopConfig{
-		Provider:               prov,
-		Registry:               reg,
-		Caps:                   caps,
-		System:                 systemPrompt,
-		LiveContext:            liveContext,
+		Provider:            prov,
+		Registry:            reg,
+		Caps:                caps,
+		System:              systemPrompt,
+		ProjectInstructions: projectInstructions,
+		UserInstructions:    llmprompt.ActiveUserInstructions(instructionsDataDir),
+		UserInstructionsForRun: func(ctx context.Context) (string, error) {
+			return llmprompt.UserInstructionsForRun(ctx, instructionsDataDir)
+		},
+		LiveContextBlocks: func(ctx context.Context) ([]llm.ContextBlock, error) {
+			blocks, err := liveContextBlocks(ctx)
+			if err == nil && goalSvc.Active() != nil {
+				// Refresh once at the safe request boundary, then activate the
+				// schema before Run freezes native/thin tool definitions. Doing
+				// another Refresh during construction duplicated SQLite reads and
+				// could still be stale by the time the first request was prepared.
+				reg.MarkAlwaysOn(goalSpec.Name)
+			}
+			return blocks, err
+		},
 		MaxSteps:               maxSteps,
 		Orchestrator:           orchestrator,
 		TaskParallel:           taskParallel,
@@ -365,13 +363,20 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 			return nil, nil, err
 		}
 	}
+	if askCh != nil {
+		loop.ConfigureHostPower(e.hostPowerController(), goalSvc, true)
+	}
 	e.diagnosticMu.Lock()
 	e.toolDiagnostics = reg.Diagnostics()
 	e.diagnosticMu.Unlock()
 	if orchestrator {
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
-		loop.SetRegistry(agent.OrchestratorRegistry(reg))
+		rootRegistry := agent.OrchestratorRegistry(reg)
+		if askCh != nil {
+			rootRegistry.MustRegister(toolhostpower.Spec())
+		}
+		loop.SetRegistry(rootRegistry)
 	}
 	return loop, reg, nil
 }

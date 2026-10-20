@@ -1,0 +1,22 @@
+/* Host-global safety controls stay outside scrolling session/sidebars. */
+.host-power[hidden], .host-power [hidden] { display: none !important; }
+.host-power {
+  position: fixed; z-index: 160; top: 12px; left: 50%; transform: translateX(-50%);
+  box-sizing: border-box; width: min(680px, calc(100vw - 32px)); max-height: min(48vh, 360px);
+  overflow: auto; overflow-wrap: anywhere; word-break: break-word;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px;
+  padding: 14px 16px; border: 2px solid #e9a43b; border-radius: 12px;
+  background: #241e15; color: #fff4df; box-shadow: 0 6px 28px #0008;
+}
+.host-power-title, .host-power-message, .host-power-goal, .host-power-warning { grid-column: 1; min-width: 0; white-space: pre-wrap; }
+.host-power-title { font-size: 16px; }
+.host-power-message { font-weight: 600; }
+.host-power-goal { font-size: 12px; opacity: .85; max-height: 5em; overflow: auto; }
+.host-power-warning { color: #ffd0b0; font-weight: 600; }
+.host-power .host-power-cancel { grid-column: 2; grid-row: 1 / span 4; align-self: center; min-height: 48px; padding: 12px 16px; white-space: normal; overflow-wrap: anywhere; background: #ffd494; color: #201400; border: 1px solid #ffe0b4; font-weight: 700; }
+.host-power .host-power-dismiss { grid-column: 2; grid-row: 1; align-self: start; font-size: 20px; min-width: 40px; min-height: 40px; }
+.question-text, .question-option-copy, .question-option-preview, .question-prompt { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 600px) {
+  .host-power { top: max(6px, env(safe-area-inset-top)); width: calc(100vw - 16px); padding: 12px; gap: 8px; max-height: 46vh; }
+  .host-power .host-power-cancel { grid-column: 1 / -1; grid-row: auto; width: 100%; min-height: 48px; }
+}

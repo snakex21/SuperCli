@@ -20,18 +20,23 @@ import (
 // given recorder, mirroring the main.go wiring.
 func meteredStatsProvider(p llm.Provider, rec stats.Recorder) llm.Provider {
 	return llm.Metered(p, "test", llm.PurposeMain, func(s llm.CallStat) {
+		var workerContext *stats.WorkerContext
+		if s.WorkerReportMessages > 0 {
+			workerContext = &stats.WorkerContext{Requests: 1, MessageExposures: s.WorkerReportMessages, ContextBytes: s.WorkerReportBytes}
+		}
 		rec.RecordCall(stats.Call{
-			Purpose:    s.Purpose,
-			Model:      s.Model,
-			Provider:   s.Provider,
-			Background: s.Background,
-			Canceled:   s.Canceled,
-			Failed:     s.Failed,
-			TTFTUs:     s.TTFT.Microseconds(),
-			DurationUs: s.Duration.Microseconds(),
-			TokensIn:   s.TokensIn,
-			TokensOut:  s.TokensOut,
-			StartedAt:  s.StartedAt,
+			WorkerContext: workerContext,
+			Purpose:       s.Purpose,
+			Model:         s.Model,
+			Provider:      s.Provider,
+			Background:    s.Background,
+			Canceled:      s.Canceled,
+			Failed:        s.Failed,
+			TTFTUs:        s.TTFT.Microseconds(),
+			DurationUs:    s.Duration.Microseconds(),
+			TokensIn:      s.TokensIn,
+			TokensOut:     s.TokensOut,
+			StartedAt:     s.StartedAt,
 		})
 	})
 }

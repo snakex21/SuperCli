@@ -483,8 +483,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			if chunk.Usage != nil {
 				lastUsage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens}
-				if d := chunk.Usage.PromptTokensDetails; d != nil {
-					lastUsage.CachedInput = d.CachedTokens
+				if d := chunk.Usage.PromptTokensDetails; d != nil && d.CachedTokens != nil {
+					lastUsage.CachedInput = *d.CachedTokens
+					lastUsage.HasCachedInput = true
 				}
 				if d := chunk.Usage.CompletionTokensDetails; d != nil {
 					lastUsage.Reasoning = d.ReasoningTokens

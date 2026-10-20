@@ -77,10 +77,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			// Zen free-tier dialect: byte-shape the body the way the real
 			// CLI does (no instructions/parallel/reasoning, session-scoped
 			// prompt_cache_key, max_output_tokens=32000).
-			zenSession := openCodeSessionFromContext(ctx)
-			if zenSession == "" {
-				zenSession = openCodeProcessSessionID
-			}
+			zenSession := promptCacheSessionID(ctx, openCodeProcessSessionID)
 			// Zen free-tier edge accepts only ses_+26 wire IDs (12 hex +
 			// 14 base62, counter ≤ 63); normalizeZenSessionID
 			// inside prepare keeps header (ApplyOpenCodeZenHeaders) and body
@@ -97,12 +94,13 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			}
 		} else {
 			reasoningModel := p.supportsReasoningControl()
-			reqBody, err = prepareAssembledStandardResponsesRequest(standardPrimary, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+			cacheKey := promptCacheSessionID(ctx, p.cfg.PromptCacheKey)
+			reqBody, err = prepareAssembledStandardResponsesRequest(standardPrimary, cacheKey, reasoningModel, p.sampling)
 			if err != nil {
 				return nil, fmt.Errorf("build standard responses request: %w", err)
 			}
 			if hasImageFallback {
-				imageFallback, err = prepareAssembledStandardResponsesRequest(standardFallback, p.cfg.PromptCacheKey, reasoningModel, p.sampling)
+				imageFallback, err = prepareAssembledStandardResponsesRequest(standardFallback, cacheKey, reasoningModel, p.sampling)
 				if err != nil {
 					return nil, fmt.Errorf("build standard image fallback request: %w", err)
 				}
@@ -399,8 +397,9 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 					Output: ev.Response.Usage.OutputTokens,
 					Total:  ev.Response.Usage.TotalTokens,
 				}
-				if d := ev.Response.Usage.InputTokensDetails; d != nil {
-					usage.CachedInput = d.CachedTokens
+				if d := ev.Response.Usage.InputTokensDetails; d != nil && d.CachedTokens != nil {
+					usage.CachedInput = *d.CachedTokens
+					usage.HasCachedInput = true
 				}
 				if d := ev.Response.Usage.OutputTokensDetails; d != nil {
 					usage.Reasoning = d.ReasoningTokens

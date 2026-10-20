@@ -129,7 +129,7 @@ func TestStandardResponsesOwnedFakeWire(t *testing.T) {
 		if isOpenCodeZenBaseURL(base) {
 			want, err = prepareOpenCodeZenResponsesRequest(want, "sess-fixture-fixed")
 		} else {
-			want, err = prepareStandardResponsesRequest(want, p.inner.cfg.PromptCacheKey, p.inner.supportsReasoningControl(), p.inner.sampling)
+			want, err = prepareStandardResponsesRequest(want, promptCacheSessionID(ctx, p.inner.cfg.PromptCacheKey), p.inner.supportsReasoningControl(), p.inner.sampling)
 		}
 		if err != nil {
 			t.Fatal(err)

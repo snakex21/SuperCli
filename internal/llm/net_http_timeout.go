@@ -13,6 +13,7 @@ import (
 // the request's cancel function also makes this work with caller-supplied HTTP
 // clients whose transports do not expose ResponseHeaderTimeout.
 func doWithResponseHeaderTimeout(client *http.Client, req *http.Request, timeout time.Duration, cancel func()) (*http.Response, error) {
+	observeWireRequest(req)
 	if timeout <= 0 || cancel == nil {
 		return client.Do(req)
 	}

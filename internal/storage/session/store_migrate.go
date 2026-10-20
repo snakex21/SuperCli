@@ -59,6 +59,7 @@ func (s *Store) migrate() error {
 			tool_call_id    TEXT,
 			tool_calls_json TEXT,
 			name            TEXT,
+			origin_json     TEXT NOT NULL DEFAULT '',
 			created_at      INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
 			UNIQUE (session_id, seq)
@@ -126,6 +127,7 @@ func (s *Store) migrate() error {
 			ctx_assistant_tokens  INTEGER NOT NULL DEFAULT 0,
 			ctx_tool_tokens       INTEGER NOT NULL DEFAULT 0,
 			ctx_other_tokens      INTEGER NOT NULL DEFAULT 0,
+			request_trace_json    TEXT NOT NULL DEFAULT '',
 			source                TEXT NOT NULL DEFAULT 'model',
 			created_at            INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
@@ -169,6 +171,10 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("exec %q: %w", firstLine(q), err)
 		}
 	}
+	// Legacy rows retain unknown provenance; never infer authorship from role.
+	if err := s.ensureTableColumn("messages", "origin_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	for _, column := range []struct {
 		name string
 		def  string
@@ -191,6 +197,7 @@ func (s *Store) migrate() error {
 		{"prefill_tokens_per_second", "REAL NOT NULL DEFAULT 0"},
 		{"prefill_budget_tokens", "INTEGER NOT NULL DEFAULT 0"},
 		{"prefill_budget_source", "TEXT NOT NULL DEFAULT ''"},
+		{"request_trace_json", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureTableColumn("session_usage", column.name, column.def); err != nil {
 			return err
@@ -283,7 +290,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 }
 
 func (s *Store) ensureTableColumn(table, name, definition string) error {
-	if table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" && table != "prompt_queue" {
+	if table != "messages" && table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" && table != "prompt_queue" {
 		return fmt.Errorf("unsupported migration table %q", table)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)

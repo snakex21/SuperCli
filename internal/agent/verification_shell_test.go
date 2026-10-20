@@ -99,12 +99,12 @@ func TestWrappedCheckKeepsOriginalExecutionIdentity(t *testing.T) {
 		call([]string{"powershell", "-NoProfile", "-Command", "go test ./other"}, []string{"MODE=full"}),
 		call([]string{"powershell", "-NoProfile", "-Command", "go test ./..."}, []string{"MODE=quick"}),
 	} {
-		loop.recordCheckResult(other, tools.Result{Text: "passed"})
+		loop.recordCheckResult(other, tools.Result{Text: `{"exit_code":0}`})
 		if !loop.failedChecks.unresolved() {
 			t.Fatal("different command or environment cleared wrapped failure")
 		}
 	}
-	loop.recordCheckResult(original, tools.Result{Text: "passed"})
+	loop.recordCheckResult(original, tools.Result{Text: `{"exit_code":0}`})
 	if loop.failedChecks.unresolved() {
 		t.Fatal("same execution did not resolve failure")
 	}
@@ -130,7 +130,7 @@ func TestWrappedBackgroundVerificationUsesExecutionMetadata(t *testing.T) {
 		}
 	}
 	args, _ := json.Marshal(map[string]any{"command": command, "env_extra": env})
-	loop.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: string(args)}, tools.Result{Text: "passed"})
+	loop.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: string(args)}, tools.Result{Text: `{"exit_code":0}`})
 	if loop.failedChecks.unresolved() {
 		t.Fatal("same foreground check did not resolve background failure")
 	}

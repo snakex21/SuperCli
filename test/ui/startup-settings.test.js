@@ -12,6 +12,62 @@ test('startup reuses settings for drafts and skips reasoning for the no-model se
  }
 });
 
+test('startup overlaps health with drafts but waits for both before restoring model and session state',async()=>{
+ const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
+ for(const healthFirst of [false,true]){
+  for(const healthValue of [{model:'qwen'},null]){
+   const settings=deferred(),health=deferred(),drafts=deferred(),sessions=deferred();
+   const draftsStarted=deferred(),healthObserved=deferred(),draftsObserved=deferred(),finished=deferred(),resumed=deferred();
+   const snapshot={drafts:{fixture:'saved draft'}},calls=[];
+   let healthDone=false,draftsDone=false;
+   const afterDependencies=name=>{
+    assert.ok(healthDone,`${name} must wait for health`);
+    assert.ok(draftsDone,`${name} must wait for saved drafts`);
+    calls.push(name);
+   };
+   const c={
+    document:{addEventListener(){}},setInterval(){},
+    loadUI(){calls.push('settings');return settings.promise;},
+    applyI18n(){calls.push('i18n');},
+    async checkHealth(){
+     calls.push('health');await health.promise;
+     healthDone=true;healthObserved.resolve();return healthValue;
+    },
+    composerDraftStore:{async load(value){
+     assert.equal(value,snapshot,'reuse the settings snapshot');
+     assert.ok(calls.includes('health'),'health starts before draft restoration finishes');
+     calls.push('drafts');draftsStarted.resolve();await drafts.promise;
+     draftsDone=true;draftsObserved.resolve();
+    }},
+    selectedModelID:value=>value,
+    loadReasoning(){afterDependencies('reasoning');},
+    loadModels(){afterDependencies('models');},
+    loadSessions(){afterDependencies('sessions');return sessions.promise;},
+    resumeLastSessionOnStart(value){afterDependencies('resume');assert.equal(value,'saved sessions');resumed.resolve();},
+    loadProjects(){},loadPromptQueue(){},loadWorkers(){},
+    renderStats(){afterDependencies('stats');},
+    promptEl:{focus(){afterDependencies('focus');finished.resolve();}}
+   };
+   createSandbox(c);runScript(source,c);
+   assert.deepEqual(calls,['settings'],'no startup reads or restoration before settings');
+   settings.resolve(snapshot);await draftsStarted.promise;
+   assert.deepEqual(calls,['settings','i18n','health','drafts']);
+   if(healthFirst){health.resolve();await healthObserved.promise;}
+   else{drafts.resolve();await draftsObserved.promise;}
+   assert.deepEqual(calls,['settings','i18n','health','drafts'],'one pending dependency still gates model/session/stats restoration');
+   if(healthFirst)drafts.resolve();else health.resolve();
+   await finished.promise;
+   assert.equal(calls.includes('reasoning'),!!healthValue);
+   assert.equal(calls.includes('models'),!!healthValue);
+   assert.ok(calls.includes('sessions'));
+   assert.ok(calls.includes('stats'));
+   assert.equal(calls.includes('resume'),false,'session restore waits for the session list');
+   sessions.resolve('saved sessions');await resumed.promise;
+   assert.equal(calls.filter(name=>name==='resume').length,1);
+  }
+ }
+});
+
 test('initial health and model discovery keep the empty-model label localized',async()=>{
  const assets=sourcePath(testDir,'../../internal/webgui/assets');
  const i18n=readSource(sourcePath(assets,'js/01-i18n.js'),'utf8');

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"supercli/internal/llm"
 )
 
 // UsageRecord is one completed model request attributed to a persisted
@@ -44,6 +46,8 @@ type UsageRecord struct {
 	Source               string
 	CreatedAt            time.Time
 	PriceSnapshot        *PriceSnapshot
+	// RequestTrace is session-only and is never copied into the billing journal.
+	RequestTrace *llm.RequestTrace
 }
 
 // AppendUsage persists one provider-reported usage record. call_seq is
@@ -104,7 +108,7 @@ func (s *Store) AppendUsage(ctx context.Context, u UsageRecord) error {
 		u.TTFTMS, u.DurationMS, boolInt(u.HasTiming), u.PrefillEvaluated, u.PrefillTokensPerSecond, u.PrefillBudget, u.PrefillBudgetSource,
 		u.ContextWindow,
 		u.ContextSystem, u.ContextUser, u.ContextAssistant, u.ContextTool, u.ContextOther,
-		u.Source, u.CreatedAt.UnixNano(),
+		u.Source, u.CreatedAt.UnixNano(), encodeRequestTrace(u.RequestTrace),
 	)
 	query := `INSERT INTO session_usage (
 		session_id, call_seq, provider, provider_type, endpoint_host, model,
@@ -113,8 +117,8 @@ func (s *Store) AppendUsage(ctx context.Context, u UsageRecord) error {
 		ttft_ms, duration_ms, has_timing, prefill_evaluated_tokens, prefill_tokens_per_second,
 		prefill_budget_tokens, prefill_budget_source,
 		context_window, ctx_system_tokens, ctx_user_tokens, ctx_assistant_tokens, ctx_tool_tokens, ctx_other_tokens,
-		source, created_at
-	) VALUES (?,` + seqExpr + `,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+		source, created_at, request_trace_json
+	) VALUES (?,` + seqExpr + `,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 	priceJSON, err := encodePriceSnapshot(u.PriceSnapshot, u.CreatedAt)
 	if err != nil {
 		return err
@@ -139,7 +143,15 @@ func (s *Store) AppendUsage(ctx context.Context, u UsageRecord) error {
 
 // ReadUsage returns model calls for a session in call order.
 func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT
+	rows, err := s.db.QueryContext(ctx, usageSelect+` WHERE session_id = ? ORDER BY call_seq`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanUsageRows(rows)
+}
+
+const usageSelect = `SELECT
 		session_id, call_seq, provider, provider_type, endpoint_host, model,
 		input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
 		has_cached_input, has_reasoning,
@@ -147,20 +159,19 @@ func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord,
 		prefill_budget_tokens, prefill_budget_source,
 		context_window, ctx_system_tokens,
 		ctx_user_tokens, ctx_assistant_tokens, ctx_tool_tokens, ctx_other_tokens,
-		source, created_at,
+		source, created_at, request_trace_json,
 		(SELECT price_snapshot FROM billing_usage b
 		 WHERE b.session_id = session_usage.session_id AND b.call_seq = session_usage.call_seq)
-		FROM session_usage WHERE session_id = ? ORDER BY call_seq`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+		FROM session_usage`
+
+func scanUsageRows(rows *sql.Rows) ([]UsageRecord, error) {
 	out := []UsageRecord{}
 	for rows.Next() {
 		var u UsageRecord
 		var cachedKnown, reasoningKnown, timingKnown int
 		var created int64
 		var priceJSON sql.NullString
+		var traceJSON string
 		if err := rows.Scan(
 			&u.SessionID, &u.CallSeq, &u.Provider, &u.ProviderType, &u.EndpointHost, &u.Model,
 			&u.Input, &u.Output, &u.CachedInput, &u.Reasoning,
@@ -169,7 +180,7 @@ func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord,
 			&u.PrefillBudget, &u.PrefillBudgetSource,
 			&u.ContextWindow,
 			&u.ContextSystem, &u.ContextUser, &u.ContextAssistant, &u.ContextTool, &u.ContextOther,
-			&u.Source, &created, &priceJSON,
+			&u.Source, &created, &traceJSON, &priceJSON,
 		); err != nil {
 			return nil, err
 		}
@@ -177,9 +188,12 @@ func (s *Store) ReadUsage(ctx context.Context, sessionID string) ([]UsageRecord,
 		u.HasReasoning = reasoningKnown != 0
 		u.HasTiming = timingKnown != 0
 		u.CreatedAt = time.Unix(0, created).UTC()
-		if u.PriceSnapshot, err = decodePriceSnapshot(priceJSON); err != nil {
+		price, err := decodePriceSnapshot(priceJSON)
+		if err != nil {
 			return nil, err
 		}
+		u.PriceSnapshot = price
+		u.RequestTrace = decodeRequestTrace(traceJSON)
 		out = append(out, u)
 	}
 	return out, rows.Err()

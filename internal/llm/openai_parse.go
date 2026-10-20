@@ -22,7 +22,7 @@ type llamaTimings struct {
 // already carries a cached count or there is nothing to derive, so
 // cloud responses without timings are untouched.
 func deriveCachedFromTimings(u *Usage, t *llamaTimings) {
-	if u == nil || t == nil || u.CachedInput > 0 {
+	if u == nil || t == nil || u.HasCachedInput || u.CachedInput > 0 {
 		return
 	}
 	cached := t.CacheN
@@ -34,6 +34,7 @@ func deriveCachedFromTimings(u *Usage, t *llamaTimings) {
 	}
 	if cached > 0 {
 		u.CachedInput = cached
+		u.HasCachedInput = true
 	}
 }
 
@@ -202,7 +203,7 @@ type openaiUsage struct {
 // OpenAI and llama.cpp/LM Studio report inside usage. cached_tokens is
 // the portion of prompt_tokens the backend served from its KV cache.
 type openaiPromptTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens *int `json:"cached_tokens"`
 }
 
 // openaiCompletionTokensDetails carries the reasoning-token breakdown

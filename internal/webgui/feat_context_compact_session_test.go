@@ -45,9 +45,9 @@ func compactSessionHeader(t *testing.T, ctx context.Context) string {
 
 func (p *compactSessionObserver) Complete(ctx context.Context, msgs []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
 	p.calls++
-	wantHeader := compactSessionHeader(p.t, llm.WithOpenCodeSession(context.Background(), p.wantSession))
+	wantHeader := compactSessionHeader(p.t, llm.WithPurpose(llm.WithOpenCodeSession(context.Background(), p.wantSession), llm.PurposeCompact))
 	if got := compactSessionHeader(p.t, ctx); got != wantHeader {
-		p.t.Errorf("manual compact session header=%q, want the normal conversation header %q", got, wantHeader)
+		p.t.Errorf("manual compact session header=%q, want the conversation's helper cache scope %q", got, wantHeader)
 	}
 	if ctx.Value(compactSessionParentValueKey{}) != "parent-request" {
 		p.t.Error("compaction dropped the parent request context value")
@@ -112,8 +112,8 @@ func TestContextCompactEndpointPropagatesKnownSession(t *testing.T) {
 				}
 				writer := session.NewWriter(store, sess.ID)
 				for _, msg := range []llm.Message{
-					{Role: llm.RoleUser, Content: "old question " + strings.Repeat("x", 20000)},
-					{Role: llm.RoleAssistant, Content: "old answer"},
+					{Role: llm.RoleUser, Content: "old question"},
+					{Role: llm.RoleAssistant, Content: "old answer " + strings.Repeat("x", 20000)},
 					{Role: llm.RoleUser, Content: "latest question"},
 					{Role: llm.RoleAssistant, Content: "latest answer"},
 				} {

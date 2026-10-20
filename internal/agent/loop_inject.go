@@ -103,6 +103,12 @@ type pendingInterjection struct {
 // is open. False also covers cancellation and the final persistence/Done window,
 // allowing the UI to keep its draft. Producers never mutate conversation history.
 func (l *Loop) QueueInterjection(s string) bool {
+	// Public entry is human steering (TUI), unlike private worker steering
+	// and InjectUserMessage reports. Submission changes the consent scope even
+	// if the run just closed its inbox; the UI can still retain its draft.
+	if strings.TrimSpace(s) != "" {
+		l.revokeHostPowerForHumanFollowup()
+	}
 	_, err := l.queueInterjection(s, false)
 	return err == nil
 }
@@ -156,14 +162,25 @@ func (l *Loop) drainInterjections(ctx context.Context, out chan<- Event, canCont
 	}
 	l.interjectionMu.Unlock()
 	for _, item := range pending {
-		msg := llm.Message{Role: llm.RoleUser, Content: item.text}
+		msg := llm.Message{Role: llm.RoleUser, Content: item.text, Origin: &llm.ContextOrigin{Source: llm.SourceHuman}}
+		if item.id != "" {
+			msg.Origin = &llm.ContextOrigin{Source: llm.SourceInstructions}
+		}
 		l.Messages = append(l.Messages, msg)
+		l.recordContextAddition(msg)
 		l.persist(ctx, msg)
 		if item.id != "" {
 			out <- steeringDeliveryEvent{ID: item.id, Text: item.text}
 		}
 	}
 	if len(pending) > 0 {
+		l.nextCallReason = llm.ReasonResume
+		for _, item := range pending {
+			if item.id == "" {
+				l.nextCallReason = llm.ReasonUserInput
+				break
+			}
+		}
 		l.resultReuse.reset()
 		l.completedOps.reset()
 		l.invalidateVisibleEstimate()

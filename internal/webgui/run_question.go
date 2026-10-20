@@ -25,12 +25,15 @@ type questionOptionWire struct {
 }
 
 type questionWire struct {
-	ID          string               `json:"id"`
-	Question    string               `json:"question"`
-	Header      string               `json:"header,omitempty"`
-	Options     []questionOptionWire `json:"options"`
-	MultiSelect bool                 `json:"multi_select"`
-	AllowCustom bool                 `json:"allow_custom"`
+	Confirmation bool                 `json:"confirmation,omitempty"`
+	QuestionKey  string               `json:"question_key,omitempty"`
+	QuestionArgs map[string]string    `json:"question_args,omitempty"`
+	ID           string               `json:"id"`
+	Question     string               `json:"question"`
+	Header       string               `json:"header,omitempty"`
+	Options      []questionOptionWire `json:"options"`
+	MultiSelect  bool                 `json:"multi_select"`
+	AllowCustom  bool                 `json:"allow_custom"`
 }
 
 func (e *Engine) registerQuestion(req tools.AskRequest) questionWire {
@@ -41,6 +44,11 @@ func (e *Engine) registerQuestion(req tools.AskRequest) questionWire {
 		ID: req.ID, Question: req.Question, Header: req.Header,
 		MultiSelect: req.MultiSelect, AllowCustom: req.AllowCustom,
 		Options: make([]questionOptionWire, 0, len(req.Options)),
+	}
+	if req.Confirmation {
+		out.Confirmation = true
+		out.QuestionKey = req.QuestionKey
+		out.QuestionArgs = req.QuestionArgs
 	}
 	for i, option := range req.Options {
 		imageURL := ""

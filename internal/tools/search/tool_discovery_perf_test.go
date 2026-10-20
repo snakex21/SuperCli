@@ -187,7 +187,7 @@ func TestLexicalDiscoveryPreservesRanking(t *testing.T) {
 	}
 }
 
-func TestLexicalDiscoveryActivationAndUnavailableIndex(t *testing.T) {
+func TestLexicalDiscoveryCandidatesAndUnavailableIndex(t *testing.T) {
 	for _, broken := range []bool{false, true} {
 		t.Run(fmt.Sprint(broken), func(t *testing.T) {
 			s := discoveryFixture(t, 64)
@@ -220,16 +220,13 @@ func TestLexicalDiscoveryActivationAndUnavailableIndex(t *testing.T) {
 			if len(response.Matches) != len(want) {
 				t.Fatalf("matches=%+v want=%+v", response.Matches, want)
 			}
-			names := map[string]bool{}
 			for i, hit := range response.Matches {
-				tool, _ := s.Registry.Get(hit.Name)
-				if hit.Name != want[i].Name || hit.Server != want[i].Server || hit.Score != want[i].Score || hit.Schema != tool.Schema || hit.Signature != toolSignature(tool.Name, tool.Schema) {
+				if hit.Name != want[i].Name || hit.Server != want[i].Server || hit.Score != want[i].Score || hit.Schema != "" || hit.Signature != "" {
 					t.Fatalf("changed result: %+v want=%+v", hit, want[i])
 				}
-				names[hit.Name] = true
 			}
 			for _, name := range s.Registry.Names() {
-				if s.Registry.IsActive(name) != names[name] {
+				if s.Registry.IsActive(name) {
 					t.Fatalf("wrong activation: %s", name)
 				}
 			}

@@ -56,9 +56,9 @@ function baseHarness() {
     return node;
   }
   const $ = selector => { if (!nodes.has(selector)) nodes.set(selector, element('div')); return nodes.get(selector); };
-  document = {hidden: false, hasFocus: () => true, createElement: element, createDocumentFragment: () => element('#fragment', '', undefined, 11)};
+  document = Object.assign(new EventTarget(), {hidden: false, hasFocus: () => true, createElement: element, createDocumentFragment: () => element('#fragment', '', undefined, 11)});
   const c = {$, $$: () => [], el: element, i18nEl: (tag, cls, key) => element(tag, cls, key), t: key => key,
-    document, localStorage: {getItem: () => null}, window: {}, AbortController, Promise,
+    document, localStorage: {getItem: () => null}, window: new EventTarget(), AbortController, Promise,
     superCliUI: {fileMutationTools: {}, mutationKind: () => '', createComposerDraftStore: () => ({restore() {}})},
     requestAnimationFrame: () => 1, clearInterval() {}, performance: {now: () => 100},
     prettyJSON: value => { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }},
@@ -125,7 +125,6 @@ function preferenceHarness(settings = {}) {
   c.document.activeElement = {tagName:'BODY'};
   c.document.documentElement = element('html');
   c.document.addEventListener = (name, listener) => events.set(name,listener);
-  c.window.addEventListener = () => {};
   c.window.matchMedia = () => ({matches:false,addEventListener(){}});
   c.detectedLanguage = () => 'en'; c.normalizeLanguage = value => value;
   c.loadLanguage = async () => {}; c.escHtml = c.escAttr = String;
@@ -195,7 +194,7 @@ test('expanded preference applies to future live/history rows while retaining ex
   const h=preferenceHarness({'ui.toolsExpanded':true});await h.c.loadUI();
   h.c.addToolCall('custom_tool','{"value":"source"}','live');const live=h.c.toolRows.live;
   assert.equal(live.open,true);assert.equal(live._body.hidden,false);assert.equal(live._toolArgs,null);
-  assert.equal(live._body.querySelector('pre').textContent,'{\n  "value": "source"\n}');
+  assert.equal(live._body.querySelector('.tool-input-view').textContent,'valuesource');
   const token='session:fixture_123/'+'c'.repeat(64)+'.png';h.c.appendNativeToolImages(live,[token]);assert.equal(live._body.querySelectorAll('img').length,1);
   const history=h.c.buildHistoryFragment([{seq:1,role:'tool',name:'custom_tool',content:'raw'}]).children[0];
   assert.equal(history.open,true);assert.equal(history._body.querySelector('pre').textContent,'raw');assert.equal(h.timers.size,0);assert.equal(h.posts.length,0);

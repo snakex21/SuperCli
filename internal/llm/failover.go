@@ -161,7 +161,11 @@ func (f *FailoverProvider) Complete(ctx context.Context, msgs []Message, tools [
 	current := -1
 	for ; consumed < len(seq); consumed++ {
 		current = seq[consumed]
-		stream, err = f.providers[current].Complete(ctx, msgs, tools)
+		attemptCtx := ctx
+		if consumed > 0 {
+			attemptCtx = WithCallReason(ctx, ReasonFailover)
+		}
+		stream, err = f.providers[current].Complete(attemptCtx, msgs, tools)
 		if err == nil {
 			break
 		}
@@ -184,6 +188,12 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 	emitted := false
 	for {
 		for delta := range stream {
+			// Match RouterProvider, including output sharing an error delta.
+			// HasModelOutput excludes Err frames and is not a replay guard.
+			if delta.Content != "" || delta.Reasoning != "" || delta.NativeReasoning != nil || delta.ToolCall != nil || delta.OutputStarted || delta.ReasoningStarted {
+				emitted = true
+				f.markActive(current)
+			}
 			if delta.Err != nil && !emitted {
 				// Cancellation is user intent, not backend failure. In
 				// particular, never turn Stop into an unexpected cloud call.
@@ -193,9 +203,14 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 				f.markFailure(current, delta.Err)
 				failures = append(failures, f.describe(current, delta.Err))
 				for len(remaining) > 0 {
+					// A previous fallback can cancel during synchronous startup.
+					// Recheck before every candidate, not just before the loop.
+					if ctx.Err() != nil {
+						return
+					}
 					current = remaining[0]
 					remaining = remaining[1:]
-					next, err := f.providers[current].Complete(ctx, msgs, tools)
+					next, err := f.providers[current].Complete(WithCallReason(ctx, ReasonFailover), msgs, tools)
 					if err == nil {
 						stream = next
 						goto nextProvider
@@ -209,10 +224,6 @@ func (f *FailoverProvider) relay(ctx context.Context, out chan<- Delta, stream <
 				case <-ctx.Done():
 				}
 				return
-			}
-			if delta.Content != "" || delta.Reasoning != "" || delta.ToolCall != nil {
-				emitted = true
-				f.markActive(current)
 			}
 			select {
 			case out <- delta:

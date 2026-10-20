@@ -58,6 +58,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setTri(&c.DiscardPreviousReasoning)
 	case "show_generation_speed":
 		return setTri(&c.ShowGenerationSpeed)
+	case "update_notify":
+		return setTri(&c.UpdateNotify)
 	case "cost_currency":
 		if val == "" || strings.EqualFold(val, "default") {
 			c.CostCurrency = ""

@@ -18,8 +18,11 @@ import (
 // error from the tool itself (file not found, permission denied,
 // ...), distinct from a Go-level error.
 type Result struct {
-	Text  string
-	Image *ImageContent
+	// WorkerActivity is bounded UI-only metadata. It is persisted with the
+	// transcript, never rendered into model output or generic tool JSON.
+	WorkerActivity json.RawMessage `json:"-"`
+	Text           string
+	Image          *ImageContent
 	// Images carries additional native image blocks (e.g. MCP multi-image results).
 	Images []*ImageContent
 	Err    error
@@ -49,6 +52,9 @@ type Result struct {
 	// CommandKey carries verification/workdir/environment identity across process
 	// start and wait calls. It never adds environment values to model/UI output.
 	CommandKey *[32]byte `json:"-"`
+	// Execution is immutable evidence from the executor, never a model claim or
+	// persisted tool text. Consumers may use it to compare verification coverage.
+	Execution *ExecutionEvidence `json:"-"`
 	// Operation records a verified effect produced by this invocation. It is
 	// trusted runtime metadata, never parsed from model arguments or tool text.
 	// The loop retains it only after successful verification and only within
@@ -101,6 +107,9 @@ type Tool struct {
 	// RefreshArg names a schema-declared boolean that requests a fresh result.
 	// It must also bypass any cache implemented inside the tool itself.
 	RefreshArg string `json:"-"`
+	// VerificationState optionally exposes the current goal's cached host state.
+	// It performs no I/O and never enters provider schemas.
+	VerificationState func() VerificationState `json:"-"`
 	// Schema is a JSON Schema string for the tool's arguments.
 	// F4 will parse and validate against it. For F1 it is passed
 	// through to the provider as a hint.

@@ -139,11 +139,11 @@ func TestCodeWorkerInitialRequestIncludesPatchSchema(t *testing.T) {
 						t.Errorf("patch argument %s absent from wire schema", field)
 					}
 				}
-				if !strings.Contains(names["tool_search"].Description, "Use already available tools directly") {
+				if !strings.Contains(names["tool_search"].Description, "Use active tools directly") {
 					t.Fatal("discovery usage hint absent")
 				}
 				if protocol == "zen-responses" {
-					if got.Path != "/zen/v1/responses" || got.Client != "cli" || got.Session != wireSession {
+					if got.Path != "/zen/v1/responses" || got.Client != "cli" || got.Session == wireSession || got.Session == "" {
 						t.Fatalf("Zen route/headers changed: %s %s %s", got.Path, got.Client, got.Session)
 					}
 					if names["bash"].Name == "" || names["read"].Name == "" {

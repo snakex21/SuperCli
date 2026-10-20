@@ -50,6 +50,9 @@ type TomlConfig struct {
 	CostCurrency string `toml:"cost_currency,omitempty"`
 	// ShowGenerationSpeed displays measured output tokens/second; nil means on.
 	ShowGenerationSpeed *bool `toml:"show_generation_speed"`
+	// UpdateNotify shows a notice when a new release exists (background check
+	// at most once a day, never downloads); nil means on.
+	UpdateNotify *bool `toml:"update_notify"`
 
 	// Provider configuration.
 	Provider  string         `toml:"provider"`

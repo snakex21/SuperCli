@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="preview.css" />
   <link rel="stylesheet" href="phone.css" />
   <link rel="stylesheet" href="session-fade.css" />
+  <link rel="stylesheet" href="host-power.css">
 </head>
 <body>
   <div class="shell sidebar-hidden" id="shell">
@@ -114,6 +115,15 @@
           <div class="worker-overview-list" id="worker-overview-list"></div>
         </details>
         <div class="prompt-queue" id="prompt-queue" hidden></div>
+        <div id="phone-attachment-menu" class="phone-attachment-menu" role="dialog" data-i18n-aria="composer.attach" aria-label="Attach files" hidden>
+          <button type="button" id="phone-attachment-files" data-i18n="composer.attach">Attach files</button>
+          <button type="button" id="phone-attachment-photo" data-i18n="composer.takePhoto">Take photo</button>
+          <button type="button" id="phone-attachment-video" data-i18n="composer.recordVideo">Record video</button>
+          <button type="button" id="phone-attachment-close" data-i18n="common.close">Close</button>
+        </div>
+        <input type="file" id="phone-files-input" multiple hidden data-i18n-aria="composer.attach" aria-label="Attach files">
+        <input type="file" id="phone-photo-input" accept="image/*" capture="environment" hidden data-i18n-aria="composer.takePhoto" aria-label="Take photo">
+        <input type="file" id="phone-video-input" accept="video/*" capture="environment" hidden data-i18n-aria="composer.recordVideo" aria-label="Record video">
         <form class="composer" id="composer">
           <div class="box">
             <div class="attachment-list" id="attachment-list" hidden></div>
@@ -254,9 +264,13 @@
   <script src="js/03b-highlight.js"></script>
   <script src="js/04-transcript.js"></script>
   <script src="js/04b-darwin-card.js"></script>
+  <script src="js/04c-tool-views.js"></script>
   <script src="js/05-chat.js"></script>
   <script src="js/05a-lightbox.js"></script>
+  <script src="js/05c-video-attachments.js"></script>
+  <script src="js/05d-phone-capture.js"></script>
   <script src="js/05b-sync.js"></script>
+  <script src="js/05c-host-power.js"></script>
   <script src="js/06-shell.js"></script>
   <script src="js/site-preview.js"></script>
   <script src="js/06-preview.js"></script>

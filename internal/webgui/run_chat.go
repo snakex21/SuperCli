@@ -80,6 +80,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "prepare attachment images: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.eng.mu.RLock()
+	attachmentProvider := s.eng.prov
+	s.eng.mu.RUnlock()
+	directImages, attachmentAddon = attachmentInputsForProvider(attachmentProvider, directImages, attachmentAddon)
 	if req.Prompt == "" {
 		req.Prompt = "Inspect and describe the attached files."
 	}
@@ -146,8 +150,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		defer close(frames)
 		if completion != nil {
 			defer func() {
+				s.chatCompletions.Lock()
 				completion.sessionID = streamSessionID
 				close(completion.done)
+				s.chatCompletions.Unlock()
 			}()
 		}
 		finishActiveRun := s.eng.beginActiveRun()
@@ -181,7 +187,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			if ev.Type == "session_activity" {
 				queueClaim.accept()
 				if completion != nil {
+					s.chatCompletions.Lock()
+					completion.sessionID = streamSessionID
 					completion.accepted = true
+					s.chatCompletions.Unlock()
 				}
 			}
 			if len(ev.Images) > 0 {

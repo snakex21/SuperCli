@@ -87,14 +87,16 @@ func (r *Remember) Spec() Tool {
 			"type=task-log note: WHAT you did, WHY, and which files you touched. " +
 			"Do NOT use it for transient task state (use the goal tool), for " +
 			"facts already obvious from the codebase, or for secrets/credentials. " +
-			"Keep each memory short and self-contained — one fact per call.",
+			"Keep each memory short and self-contained — one fact per call. " +
+			"When correcting an earlier note, pass its IDs in supersedes (same scope/store); old notes remain archived.",
 		Schema: `{
 			"type": "object",
 			"properties": {
 				"text":  {"type": "string", "description": "The fact to remember. Short, self-contained, one fact per call."},
 				"type":  {"type": "string", "enum": ["fact", "decision", "task-log", "preference"], "description": "Kind of memory. Default: fact. Use preference for user preferences, decision for project decisions with rationale, task-log for end-of-task summaries."},
 				"scope": {"type": "string", "enum": ["project", "global"], "description": "Where to store it. Default: project. Use global for cross-project user preferences."},
-				"topic": {"type": "string", "description": "Optional topic tag, e.g. 'testing', 'deploy', 'style'."}
+				"topic": {"type": "string", "description": "Optional topic tag, e.g. 'testing', 'deploy', 'style'."},
+				"supersedes": {"type":"array","items":{"type":"string"},"maxItems":16,"description":"IDs of earlier notes explicitly replaced by this correction, in the same project/global store. Omit for independent facts."}
 			},
 			"required": ["text"]
 		}`,
@@ -103,10 +105,11 @@ func (r *Remember) Spec() Tool {
 }
 
 type rememberArgs struct {
-	Text  string `json:"text"`
-	Type  string `json:"type,omitempty"`
-	Scope string `json:"scope,omitempty"`
-	Topic string `json:"topic,omitempty"`
+	Text       string   `json:"text"`
+	Type       string   `json:"type,omitempty"`
+	Scope      string   `json:"scope,omitempty"`
+	Topic      string   `json:"topic,omitempty"`
+	Supersedes []string `json:"supersedes,omitempty"`
 }
 
 func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error) {
@@ -125,6 +128,14 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 		return Result{Err: fmt.Errorf("remember: text is %d bytes, exceeds %d byte limit; summarize it into one short self-contained fact", len(a.Text), maxRememberTextBytes)}, nil
 	}
 	topic := strings.TrimSpace(a.Topic)
+	if len(a.Supersedes) > 16 {
+		return Result{Err: fmt.Errorf("remember: at most 16 superseded IDs")}, nil
+	}
+	for _, id := range a.Supersedes {
+		if id == "" || len(id) > 128 || strings.ContainsAny(id, ", \t\r\n:") {
+			return Result{Err: fmt.Errorf("remember: invalid superseded note ID")}, nil
+		}
+	}
 	entryScope := normalizeMemType(a.Type)
 	// Models commonly save identity facts with a user_profile topic
 	// but omit type=preference. Treat those as durable user
@@ -167,6 +178,9 @@ func (r *Remember) run(ctx context.Context, args json.RawMessage) (Result, error
 	}
 	if topic != "" {
 		e.Tags = []string{topic}
+	}
+	for _, id := range a.Supersedes {
+		e.Tags = append(e.Tags, "supersedes:"+id)
 	}
 	if err := target.Put(e); err != nil {
 		return Result{Err: fmt.Errorf("remember: %w", err)}, nil

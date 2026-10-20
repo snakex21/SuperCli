@@ -34,7 +34,24 @@ func assertHandoffResultsEqual(t *testing.T, got, want tools.Result, cause error
 			t.Fatalf("error text/cause changed: got=%v want=%v", got.Err, want.Err)
 		}
 	}
+	if got.ModelText != want.ModelText {
+		if got.Err != nil || want.ModelText != "" || decodeMediumReportExperiment(t, got.ModelText) != got.Text {
+			t.Fatal("complete model text did not preserve the unchanged handoff")
+		}
+		got.ModelText = want.ModelText
+	}
 	got.Err, want.Err = nil, nil
+	// UI-only activity is a new transcript sidecar, independently tested in
+	// worker_ui_activity_test.go; it must not change legacy report/model bytes.
+	got.WorkerActivity, want.WorkerActivity = nil, nil
+	if got.ModelPreview != want.ModelPreview {
+		// The economical preview may differ only when its repetition counts
+		// independently expand to the entire unchanged UI result.
+		if expandCountedWorkerReportPreview(t, got.ModelPreview) != got.Text {
+			t.Fatal("counted preview did not preserve the complete report")
+		}
+		got.ModelPreview = want.ModelPreview
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("handoff bytes/metadata changed: text=%v retained=%v preview=%v",
 			got.Text == want.Text, got.RetainedText == want.RetainedText, got.ModelPreview == want.ModelPreview)
@@ -78,6 +95,7 @@ func TestPreparedWorkerHandoffKeepsItsInvocationSnapshot(t *testing.T) {
 				status, cause = "failed", errors.New("original invocation interrupted")
 			}
 			w := handoffFixture(report, "== read_lines ==\nORIGINAL_HISTORICAL_EVIDENCE", status)
+			w.uiModel, w.uiReasoningEffort = "original-worker-model", "high"
 			if cause != nil {
 				w.LastError = cause.Error()
 			}
@@ -86,12 +104,16 @@ func TestPreparedWorkerHandoffKeepsItsInvocationSnapshot(t *testing.T) {
 			h := prepareWorkerHandoff(w, report)
 			w.setState(func(w *Worker) {
 				w.Status, w.LastError, w.lastEvidence = "running", "NEW_RUN_ERROR", "NEW_RUN_EVIDENCE"
+				w.uiModel, w.uiReasoningEffort = "NEW_RUN_MODEL", "low"
 				w.Runs++
 				w.UpdatedAt = w.UpdatedAt.Add(time.Hour)
 				w.ToolNames[0] = "NEW_RUN_TOOL"
 				w.TokensIn, w.TokensOut, w.Steps = 9, 8, 1
 			})
 			assertHandoffResultsEqual(t, h.result(w, cause), want, cause)
+			if !strings.Contains(h.notification, "<worker-model>original-worker-model</worker-model>\n<reasoning-effort>high</reasoning-effort>") || strings.Contains(h.notification, "NEW_RUN_MODEL") {
+				t.Fatal("handoff dropped metadata or reused a later run's metadata")
+			}
 			events := make(chan Event, 1)
 			parent := &Loop{}
 			parent.SetExternalSink(events)

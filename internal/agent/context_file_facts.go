@@ -40,15 +40,33 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 	}
 	var pending map[string]llm.ToolCall
 	processFacts := map[string]compactFileFact{}
+	recordProcess := func(observation string, index int) {
+		identity, _, _ := strings.Cut(observation, ",")
+		observation = mergeCompactProcessReadiness(processFacts[identity].path, observation)
+		processFacts[identity] = compactFileFact{path: observation, last: index}
+	}
+	workerFacts := map[string]compactFileFact{}
+	recordWorker := func(observation string, index int) {
+		if observation == "" {
+			return
+		}
+		identity, _, _ := strings.Cut(observation, ",")
+		workerFacts[identity] = compactFileFact{path: observation, last: index}
+	}
 	for i, m := range msgs {
 		switch m.Role {
 		case llm.RoleUser:
 			pending = nil
 			if IsLegacyCompactionSummary(m) {
-				for _, observation := range compactPriorProcessObservations(m.Content) {
-					identity, _, _ := strings.Cut(observation.path, ",")
-					processFacts[identity] = compactFileFact{path: observation.path, last: i}
+				for _, observation := range compactPriorWorkerObservations(m.Content) {
+					recordWorker(observation.path, i)
 				}
+				for _, observation := range compactPriorProcessObservations(m.Content) {
+					recordProcess(observation.path, i)
+				}
+			}
+			if m.Name == llm.WorkerNotificationName && m.Origin != nil && m.Origin.Source == llm.SourceWorkerNotification {
+				recordWorker(compactWorkerObservation(m.Content), i)
 			}
 		case llm.RoleAssistant:
 			pending = make(map[string]llm.ToolCall, len(m.ToolCalls))
@@ -73,10 +91,21 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 				continue
 			}
 			body := strings.TrimSpace(pruneStructuredBody(m.Content, core.StoredOutputHandle(m.Content)))
+			if name == "task" || name == "send_message" {
+				recordWorker(compactWorkerObservation(body), i)
+				continue
+			}
 			if name == "process_session" {
+				var action string
+				_ = json.Unmarshal(args["action"], &action)
 				for _, observation := range compactProcessObservations(body) {
-					identity, _, _ := strings.Cut(observation.path, ",")
-					processFacts[identity] = compactFileFact{path: observation.path, kind: 0, last: i}
+					if strings.EqualFold(strings.TrimSpace(action), "start") {
+						// Managers can reuse sequence IDs after app restart. A new
+						// launch must not inherit a different process's old check.
+						identity, _, _ := strings.Cut(observation.path, ",")
+						delete(processFacts, identity)
+					}
+					recordProcess(observation.path, i)
 				}
 				continue
 			}
@@ -156,6 +185,28 @@ func CompactFacts(msgs []llm.Message, loadedTools []string) string {
 	}
 	// Preserve active tools and completed changes before lower-value references.
 	writeList("loaded_tools", loadedTools)
+	if len(workerFacts) > 0 {
+		observations := make([]compactFileFact, 0, len(workerFacts))
+		for _, fact := range workerFacts {
+			observations = append(observations, fact)
+		}
+		sort.Slice(observations, func(i, j int) bool {
+			if observations[i].last != observations[j].last {
+				return observations[i].last > observations[j].last
+			}
+			failedI := strings.HasSuffix(observations[i].path, "worker_status=failed")
+			failedJ := strings.HasSuffix(observations[j].path, "worker_status=failed")
+			if failedI != failedJ {
+				return failedI
+			}
+			return observations[i].path < observations[j].path
+		})
+		entries := make([]string, 0, len(observations))
+		for _, fact := range observations {
+			entries = append(entries, fact.path)
+		}
+		writeList(workerObservationsLabel, entries)
+	}
 	if len(processFacts) > 0 {
 		observations := make([]compactFileFact, 0, len(processFacts))
 		for _, fact := range processFacts {

@@ -13,7 +13,7 @@ type TranscriptMessage struct {
 	MessageID int64
 }
 
-const transcriptSelect = `SELECT id, session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ?`
+const transcriptSelect = `SELECT id, session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'') FROM messages WHERE session_id = ?`
 
 func (s *Store) readTranscriptMessages(ctx context.Context, capacity int, query string, args ...any) ([]TranscriptMessage, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -27,7 +27,7 @@ func (s *Store) readTranscriptMessages(ctx context.Context, capacity int, query 
 	}
 	for rows.Next() {
 		var m TranscriptMessage
-		if err := rows.Scan(&m.MessageID, &m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+		if err := rows.Scan(&m.MessageID, &m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

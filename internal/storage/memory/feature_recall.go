@@ -11,7 +11,11 @@ const recallNoiseFilter = " AND NOT (e.scope GLOB 'pattern:*' AND instr(lower(e.
 // without blocking the agent. Idle recall combines keyword and vector matches.
 // Search and HybridSearch remain unfiltered for inspection and maintenance.
 func (s *Store) RecallSearch(ctx context.Context, query string, k int) ([]Entry, error) {
-	return s.hybridSearch(ctx, query, k, true)
+	entries, err := s.hybridSearch(ctx, query, k, true)
+	if err != nil {
+		return nil, err
+	}
+	return s.currentRecall(entries)
 }
 
 // RecallRecent supplies durable notes for a cross-language fallback. Patterns
@@ -26,6 +30,13 @@ func (s *Store) RecallRecent(n int) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanAll(rows, 0)
+	entries, err := scanAll(rows, 0)
+	closeErr := rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return s.currentRecall(entries)
 }

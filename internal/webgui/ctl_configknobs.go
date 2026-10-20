@@ -56,6 +56,7 @@ func knobDefs() []knobDef {
 		{"queue_merge", "combine pending messages after each reply", "queue_merge", false},
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, true},
 		{"show_generation_speed", "show measured generation tokens per second after each reply", knobTri, false},
+		{"update_notify", "check for a new release in the background once a day and show a notice; never downloads", knobTri, false},
 		{"cost_currency", "cost display currency; historical NBP rates; accounting stays in USD", knobCurrency, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
 		{"discard_previous_reasoning", "omit completed replies' reasoning from the next turn; preserve the transcript and required tool-call blocks; default off", knobTri, false},
@@ -124,6 +125,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return v, source, ""
 	case "show_generation_speed":
 		v, source := triKnob(c.ShowGenerationSpeed, "on")
+		return v, source, ""
+	case "update_notify":
+		v, source := triKnob(c.UpdateNotify, "on")
 		return v, source, ""
 	case "cost_currency":
 		value := config.EffectiveCostCurrency(*c)
@@ -312,6 +316,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.DiscardPreviousReasoning)
 	case "show_generation_speed":
 		return tri(c.ShowGenerationSpeed)
+	case "update_notify":
+		return tri(c.UpdateNotify)
 	case "thinking":
 		return tri(c.Thinking)
 	case "navigator":
@@ -350,7 +356,7 @@ func knobDefault(key string) string {
 		return "USD"
 	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
 		return "auto"
-	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed":
+	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify":
 		return "on"
 	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin":
 		return "off"

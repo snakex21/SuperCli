@@ -57,7 +57,7 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 			{"run go tests builds check", 0, []string{"ctx_execute"}},
 			{"run go test build calendar", 0, []string{"calendar_events", "ctx_execute"}},
 			{"run go test build word", 0, []string{"ctx_execute", "edit_docx"}},
-			{"run go test build check", 8, []string{"ctx_execute", "edit_docx", "list_dir"}},
+			{"run go test build check", 8, []string{"ctx_execute"}},
 			{"run", 0, []string{"ctx_execute", "edit_docx"}},
 			{"edit_docx", 0, []string{"edit_docx"}},
 			{"ctx_execute", 0, []string{"ctx_execute"}},
@@ -81,10 +81,17 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 					t.Fatal(err)
 				}
 				var names []string
+				unambiguous := len(response.Matches) == 1
 				for _, hit := range response.Matches {
 					names = append(names, hit.Name)
-					if !s.Registry.IsActive(hit.Name) {
-						t.Fatal("returned tool lost activation")
+					if s.Registry.IsActive(hit.Name) != unambiguous {
+						t.Fatal("ambiguous candidates must not activate; unambiguous matches must activate")
+					}
+					if !unambiguous {
+						if hit.Schema != "" {
+							t.Fatal("ambiguous candidate contains full schema")
+						}
+						continue
 					}
 					var compact bytes.Buffer
 					if err := json.Compact(&compact, []byte(registeredSchemas[hit.Name])); err != nil {
@@ -104,7 +111,7 @@ func TestCommandDiscoveryRecognizesBuildAndTestForms(t *testing.T) {
 					if tool.Schema != registeredSchemas[name] {
 						t.Fatalf("discovery changed registered schema: %s", name)
 					}
-					if s.Registry.IsActive(name) != slices.Contains(tc.want, name) {
+					if s.Registry.IsActive(name) != (unambiguous && slices.Contains(tc.want, name)) {
 						t.Fatalf("unrequested activation: %s", name)
 					}
 				}

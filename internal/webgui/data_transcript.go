@@ -7,6 +7,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/tools/core"
 )
 
 func (e *Engine) transcript(ctx context.Context, id string) ([]transcriptMsg, error) {
@@ -114,16 +115,28 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 		}
 		textOnly := msg.TextOnly()
 		item := transcriptMsg{
-			Seq:         m.Seq,
-			Role:        m.Role,
-			Content:     textOnly.Content,
-			Attachments: append([]string(nil), attachments[m.Seq]...),
-			Name:        m.Name,
-			ToolCallID:  msg.ToolCallID,
+			WorkerActivity: transcriptWorkerActivity(msg),
+			Seq:            m.Seq,
+			Role:           m.Role,
+			Content:        textOnly.Content,
+			Attachments:    append([]string(nil), attachments[m.Seq]...),
+			Name:           m.Name,
+			ToolCallID:     msg.ToolCallID,
+		}
+		if msg.Role == llm.RoleTool || isTranscriptWorkerNotification(msg) {
+			item.ToolOutputHandle = core.StoredOutputHandle(msg.Content)
+		}
+		if _, ok := legacyWorkerObservations(msg); ok && len(attachments[m.Seq]) == 0 && m.MessageID > 0 {
+			item.WorkerObservationsID = strconv.FormatInt(m.MessageID, 10)
+		}
+		if len(item.Attachments) == 0 && isTranscriptWorkerNotification(msg) {
+			// Delivery to the model used RoleUser; presentation must use the
+			// existing folded worker card, never a human bubble or rewind point.
+			item.Role, item.Name = string(llm.RoleTool), "task"
 		}
 		item.ToolImages = transcriptToolImagePreviews(id, presentation, len(item.Attachments) != 0)
 		item.ToolImageCarrier = isTranscriptToolImageCarrier(presentation, len(item.Attachments) != 0)
-		if msg.Role == llm.RoleUser && m.MessageID > 0 && !item.ToolImageCarrier {
+		if item.Role == string(llm.RoleUser) && m.MessageID > 0 && !item.ToolImageCarrier {
 			item.MessageID = strconv.FormatInt(m.MessageID, 10)
 		}
 		if !item.ToolImageCarrier && len(item.Attachments) == 0 {

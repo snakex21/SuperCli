@@ -56,9 +56,9 @@ function harness(rebuild = false) {
     return node;
   }
   const $ = selector => { if (!nodes.has(selector)) nodes.set(selector, element('div')); return nodes.get(selector); };
-  document = {hidden: false, hasFocus: () => true, createElement: element, createDocumentFragment: () => element('#fragment', '', undefined, 11)};
+  document = Object.assign(new EventTarget(), {hidden: false, hasFocus: () => true, createElement: element, createDocumentFragment: () => element('#fragment', '', undefined, 11)});
   const c = {$, $$: () => [], el: element, i18nEl: (tag, cls, key) => element(tag, cls, key), t: key => key,
-    document, localStorage: {getItem: () => null}, window: {}, AbortController, Promise,
+    document, localStorage: {getItem: () => null}, window: new EventTarget(), AbortController, Promise,
     superCliUI: {fileMutationTools: {}, mutationKind: () => '', createComposerDraftStore: () => ({restore() {}})},
     requestAnimationFrame: () => 1, clearInterval() {}, performance: {now: () => 100},
     prettyJSON: value => { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }},
@@ -163,11 +163,12 @@ test('boundary tool calls recover arguments without replacing images or expanded
     if (!open) assert.equal(row._body.children.length, 0);
     expand(row);
     const blocks = row._body.querySelectorAll('pre');
-    assert.equal(blocks.length, 2); assert.equal(blocks[0].textContent, JSON.stringify(JSON.parse(args), null, 2));
-    assert.equal(blocks[1].textContent, message.content);
-    if (open) assert.equal(blocks[1], output);
+    assert.equal(row._body.querySelector('.tool-input-view').textContent, 'path/portable/image-2.png');
+    assert.equal(blocks.length, 1); assert.equal(blocks[0].textContent, message.content);
+    if (open) assert.equal(blocks[0], output);
     row.open = false; row.dispatch('toggle'); expand(row);
-    assert.equal(row._body.querySelectorAll('pre').length, 2);
+    assert.equal(row._body.querySelectorAll('pre').length, 1);
+    assert.equal(row._body.querySelectorAll('.tool-input-view').length, 1);
     assert.equal(h.stats.imageSources, 1);
   }
 });
@@ -178,16 +179,17 @@ test('missing boundary calls remain resolvable across more than one older page',
   await older(h, messages(3, 2), true);
   assert.equal(h.c.stream.querySelector('.history-older'), pager); assert.equal(pager.disabled, false);
   await older(h, [{seq: 1, role: 'assistant', tool_calls: [{id: 'far-call', name: 'show_media', arguments: '{"path":"far.png"}'}]}]);
-  expand(row); assert.equal(row._body.querySelectorAll('pre').length, 2);
+  expand(row); assert.equal(row._body.querySelectorAll('pre').length, 1);
+  assert.equal(row._body.querySelector('.tool-input-view').textContent, 'pathfar.png');
   assert.equal(row._thint.textContent, '{"path":"far.png"}');
 });
 
 test('older task reports cannot redirect progress away from a newer worker row', async () => {
   const h = harness(); begin(h, messages(10, 1));
-  const current = h.element('details'); h.c.workerRows.worker = current;
+  const current = h.element('details'); h.c.workerRows['worker-1'] = current;
   const content = id => '<task-notification><task-id>' + id + '</task-id><agent>worker</agent><status>done</status><summary>complete</summary><result>old report</result></task-notification>';
-  await older(h, [{seq: 1, role: 'tool', name: 'task', content: content('worker')}, {seq: 2, role: 'tool', name: 'task', content: content('other')}]);
-  assert.equal(h.c.workerRows.worker, current); assert.ok(h.c.workerRows.other);
+  await older(h, [{seq: 1, role: 'tool', name: 'task', content: content('worker-1')}, {seq: 2, role: 'tool', name: 'task', content: content('worker-2')}]);
+  assert.equal(h.c.workerRows['worker-1'], current); assert.ok(h.c.workerRows['worker-2']);
   assert.equal(h.c.stream.querySelectorAll('.task-row').length, 2);
 });
 
@@ -230,12 +232,12 @@ test('repeated worker IDs select the latest row in the incoming page unless a ne
   for (const withNewer of [false, true]) {
     const h = harness(); begin(h, messages(10, 1));
     const current = withNewer ? h.element('details') : null;
-    if (current) h.c.workerRows.repeated = current;
-    const content = version => '<task-notification><task-id>repeated</task-id><agent>worker</agent><status>done</status><summary>' + version + '</summary><result>' + version + '</result></task-notification>';
+    if (current) h.c.workerRows['worker-3'] = current;
+    const content = version => '<task-notification><task-id>worker-3</task-id><agent>worker</agent><status>done</status><summary>' + version + '</summary><result>' + version + '</result></task-notification>';
     await older(h, [{seq: 1, role: 'tool', name: 'task', content: content('first')}, {seq: 2, role: 'tool', name: 'task', content: content('second')}]);
     const rows = h.c.stream.querySelectorAll('.task-row');
     assert.equal(rows.length, 2);
-    assert.equal(h.c.workerRows.repeated, current || rows[1]);
+    assert.equal(h.c.workerRows['worker-3'], current || rows[1]);
   }
 });
 
@@ -246,10 +248,10 @@ test('reused tool-call IDs bind each result to its nearest preceding call across
   const call = (seq, label) => ({seq, role: 'assistant', tool_calls: [{id: 'reused', name: 'show_media', arguments: JSON.stringify({path: label})}]});
   await older(h, [call(1, 'first'), mediaMessage(2, {tool_call_id: 'reused'}), call(3, 'nearest'), mediaMessage(4, {tool_call_id: 'reused'})]);
   const rows = h.c.stream.querySelectorAll('.tool-row');
-  assert.equal(rows[2], latest); assert.equal(latest._body.querySelectorAll('pre')[1], latestOutput);
+  assert.equal(rows[2], latest); assert.equal(latest._body.querySelectorAll('pre')[0], latestOutput);
   assert.deepEqual(rows.map(row => row._thint.textContent), ['{"path":"first"}', '{"path":"nearest"}', '{"path":"nearest"}']);
   rows.forEach(expand);
-  assert.deepEqual(rows.map(row => JSON.parse(row._body.querySelector('pre').textContent).path), ['first', 'nearest', 'nearest']);
+  assert.deepEqual(rows.map(row => row._body.querySelector('.tool-input-view').textContent), ['pathfirst', 'pathnearest', 'pathnearest']);
   assert.equal(h.stats.imageSources, 3);
 });
 
@@ -309,7 +311,8 @@ test('a carrier, result and call on three pages retain exact unopened output and
   assert.equal(result._mediaPreview, preview);
   assert.equal(result._body.childNodes.length, 0);
   expand(result);
-  assert.deepEqual(result._body.querySelectorAll('pre').map(n => n.textContent), ['{\n  "path": "source.png"\n}', 'Exact native output']);
+  assert.equal(result._body.querySelector('.tool-input-view').textContent, 'pathsource.png');
+  assert.deepEqual(result._body.querySelectorAll('pre').map(n => n.textContent), ['Exact native output']);
   assert.equal(h.stats.imageSources, 1);
 });
 

@@ -70,7 +70,7 @@ func BuildAddon(home string, paths []string) (string, error) {
 		return "", nil
 	}
 	var out strings.Builder
-	out.WriteString("[attached_files]\nThe user selected these files for this request. Pixels of supported images (PNG, JPEG, GIF, WebP) are already included directly in this user message: answer from them directly, without searching for, listing or reloading those files (no read_image, load_session_image or shell command). Use read_pdf for PDF, read_docx for DOCX, read_xlsx for XLSX, read_zip for ZIP, and read_lines/read_context for CSV, text, or code. If a named reader is not visible yet, call tool_search for that exact tool name first:\n")
+	out.WriteString("[attached_files]\nThe user selected these files for this request. When supported image pixels (PNG, JPEG, GIF, WebP) are included in this message, answer from them directly, without searching for, listing or reloading those files (no read_image, load_session_image or shell command). If pixels are absent or the model is text-only, do not claim to see them. Video files are originals for reference, not native video inputs: any accompanying JPEG snapshots are sparse visual samples only, with approximate timestamps/duration in their filenames; they do not establish continuous motion, all events, or audio. No audio was extracted or analyzed. If snapshots are absent, no video visuals were supplied. Use read_pdf for PDF, read_docx for DOCX, read_xlsx for XLSX, read_zip for ZIP, and read_lines/read_context for CSV, text, or code. If a named reader is not visible yet, call tool_search for that exact tool name first:\n")
 	for _, path := range selected {
 		out.WriteString("- ")
 		out.WriteString(strconv.Quote(path))

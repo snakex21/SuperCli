@@ -17,13 +17,13 @@ import (
 func shouldQueuePreflight(initial []llm.Message) bool {
 	routes := agent.DefaultRouteMap()
 	for _, msg := range initial {
-		if msg.Role != llm.RoleUser || strings.Contains(msg.Content, "<task-notification>") {
+		if !llm.IsConversationUserTurn(msg) {
 			continue
 		}
 		if strings.Contains(msg.TextOnly().Content, "Repo state (auto-collected):") {
 			return false
 		}
-		mode, confident := routes.ClassifyConfident(msg.Content)
+		mode, confident := routes.ClassifyConfident(msg.TextOnly().Content)
 		if !confident || mode == agent.RouteCoordinator {
 			return false
 		}
@@ -77,8 +77,8 @@ func (e *Engine) sessionState(ctx context.Context, prompt, requestedID, home str
 		// GUI names it locally from its first prompt (no model call).
 		first := prompt
 		for _, msg := range initial {
-			if msg.Role == llm.RoleUser && strings.TrimSpace(msg.Content) != "" {
-				first = msg.Content
+			if llm.IsConversationUserTurn(msg) && strings.TrimSpace(msg.TextOnly().Content) != "" {
+				first = msg.TextOnly().Content
 				break
 			}
 		}

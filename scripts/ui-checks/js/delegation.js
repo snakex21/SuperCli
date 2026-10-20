@@ -9,7 +9,7 @@ export async function initial() {
   addWorkerProgress({id:'worker-2',name:'code',kind:'started',parent_call_id:'spawn-b',run:1});
   addWorkerProgress({id:'worker-1',name:'code',kind:'started',parent_call_id:'spawn-a',run:1});
   addWorkerProgress({id:'worker-2',name:'code',kind:'tool_call',parent_call_id:'spawn-b',call_id:'b-read',tool:'read_lines',args:'{"file":"second.go"}'});
-  const parallelMapped=workerRows['worker-2']===toolRows['spawn-b'] && toolRows['spawn-a']._activity.childNodes.length===0 && toolRows['spawn-b']._activity.childNodes.length===1;
+  const parallelMapped=workerRows['worker-2']===toolRows['spawn-b'] && toolRows['spawn-a']._activity.querySelectorAll('.task-activity-item').length===0 && toolRows['spawn-a']._activity.querySelector('.task-activity-empty').textContent===t('task.activityWaiting') && toolRows['spawn-b']._activity.querySelectorAll('.task-activity-item').length===1 && !toolRows['spawn-b']._activity.querySelector('.task-activity-empty');
   addToolResult('spawn-a',note('worker-1','code','Pierwsze sprawdzenie zakończone.'));
   addToolResult('spawn-b',note('worker-2','code','Druga część sprawdzona.'));
   const old=toolRows['spawn-a'],before=old._body.textContent,second=toolRows['spawn-b'];window.__old=old;window.__second=second;
@@ -36,16 +36,48 @@ export async function initial() {
 }
 export async function narrow(){await frame();const row=toolRows['resume-a'].getBoundingClientRect();const geometry={left:row.left,right:row.right,width:innerWidth,clientWidth:document.documentElement.clientWidth,visualWidth:visualViewport.width,zoom:document.documentElement.style.zoom,shell:document.querySelector('#shell').getBoundingClientRect().toJSON(),stage:stage.getBoundingClientRect().toJSON(),sidebarHidden:ui.sidebarHidden};check(geometry.left>=-1 && geometry.right<=geometry.width+1,'narrow delegation row fits viewport',geometry);window.__uiCheckMetrics.narrow=geometry;}
 export async function active(){
-  addToolCall('task',JSON.stringify({agent:'review',prompt:'Sprawdź zapis plików i przenośność aplikacji.'}),'spawn-c');
-  addWorkerProgress({id:'worker-3',name:'review',kind:'started',parent_call_id:'spawn-c',run:1});
-  addWorkerProgress({id:'worker-3',name:'review',kind:'tool_call',parent_call_id:'spawn-c',call_id:'c-read',tool:'read_lines',args:'{"file":"internal/config.go"}'});
+  const token = 'bez_spacji_żółć_'.repeat(45);
+  window.__workerOverflowBrief = 'Sprawdź zapis plików i przenośność aplikacji.\n' + token + '\nZachowaj cały opis zadania.';
+  addToolCall('task',JSON.stringify({agent:'review',prompt:window.__workerOverflowBrief}),'spawn-c');
+  addWorkerProgress({id:'worker-3',name:'review',kind:'started',parent_call_id:'spawn-c',run:1,model:'custom/'+'gpt-6-luna-'.repeat(12),reasoning_effort:'xhigh'});
+  addWorkerProgress({id:'worker-3',name:'review',kind:'tool_call',parent_call_id:'spawn-c',call_id:'c-read',tool:'read_lines',args:JSON.stringify({file:'C:/project/'+token+'.go'})});
+  addWorkerProgress({id:'worker-3',name:'review',kind:'tool_call',parent_call_id:'spawn-c',call_id:'c-mcp',tool:'mcp_'+token,args:'{}'});
+  addToolResult('resume-a',window.__note('worker-1','code','Raport z delegacji: '+token+'\n\nŚcieżka: `'+token+'`\n\n```text\n'+token+'\n```'));
   equal(workerOverview['worker-3'].status,'running','active worker state');const summary=$('#worker-overview-summary').textContent;
   check(summary.includes('pracuje: 1') && summary.includes('gotowe: 2'),'worker summary counts',summary);
   equal(document.querySelector('.worker-overview-item'),workerOverview['worker-3'].button,'running worker first');
   check($('#worker-overview').open,'overview open while running');toolRows['resume-a'].open=false;stage.scrollTop=0;await frame();
 }
+export async function layout(){
+  const row = toolRows['spawn-c'], completed = toolRows['resume-a'];
+  row.open = true; completed.open = true; await frame();
+  equal(row.classList.contains('running'),true,'overflow fixture keeps the worker running');
+  equal(row.querySelector('.task-brief').textContent,window.__workerOverflowBrief,'full delegated brief preserved');
+  const measurements = [];
+  for (const card of [row, completed]) {
+    for (const node of [card, ...card.querySelectorAll('summary, .tbody, .task-brief, .task-activity, .task-activity-item, .task-report')]) {
+      if (!node.clientWidth) continue;
+      const m = {part:node.className || node.tagName,width:node.clientWidth,scrollWidth:node.scrollWidth};
+      measurements.push(m);
+      check(m.scrollWidth <= m.width + 1,'delegation content fits its field at '+innerWidth+'px',m);
+    }
+    const bounds = card.getBoundingClientRect();
+    check(bounds.left >= -1 && bounds.right <= innerWidth + 1,'delegation card fits viewport at '+innerWidth+'px',bounds.toJSON());
+  }
+  const label = row.querySelector('.worker-model-info');
+  check(label && row.title.includes('gpt-6-luna-'.repeat(12)),'full worker model stays available in tooltip');
+  check(row.querySelector('.task-activity-item.running'),'live activity retained during layout checks');
+  window.__uiCheckMetrics['delegationLayout'+innerWidth] = measurements;
+  row.scrollIntoView({block:'start'}); await frame(); noErrors();
+}
 export async function cleanup(){
-  settleOpenTools();equal(workerOverview['worker-3'].status,'stopped','cancelled worker settled');check(!$('#worker-overview').open,'idle overview collapsed');
+  settleOpenTools();
+  equal(workerOverview['worker-3'].status,'running','parent completion does not infer detached worker cancellation');
+  const worker = workerRows['worker-3'];
+  addWorkerProgress({id:'worker-3',name:worker._taskAgent,kind:'finished',status:'stopped',run:worker._taskRun || 0});
+  equal(workerOverview['worker-3'].status,'stopped','verified worker cancellation settled');
+  check(worker._clock === null,'verified stopped worker clock released');
+  check(!$('#worker-overview').open,'idle overview collapsed');
   pruneWorkerOverview();check($('#worker-overview').hidden && !Object.keys(workerOverview).length,'new run prunes settled workers');
   newSession();check($('#worker-overview').hidden && !Object.keys(workerOverview).length,'new session clears workers');noErrors();
 }

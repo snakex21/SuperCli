@@ -25,7 +25,7 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) bool {
 	// step, some from worker goroutines), so statsEndStep keeps it
 	// out of the next_turn_prepare remainder math.
 	t := time.Now()
-	written := l.persistAppend(ctx, msg.DormantImages())
+	written := l.persistAppend(ctx, canonicalWorkerReportMessage(msg).DormantImages())
 	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
 	return written
 }
@@ -44,6 +44,21 @@ func (l *Loop) persistCompletedProjection(ctx context.Context) {
 	projected := l.resolvedToolProviderView(visible)
 	if len(projected) < len(visible) {
 		l.persistProjectionView(ctx, projected)
+		return
+	}
+	// Encoded inline reports have the same message count as raw history, but
+	// still need a projection to preserve the exact compact resume prefix.
+	for _, msg := range projected {
+		// Persist host provenance in the existing JSON projection. One write
+		// at completion, never a write for each provider exposure.
+		if msg.Origin != nil {
+			l.persistProjectionView(ctx, projected)
+			return
+		}
+		if canonicalWorkerReportMessage(msg).Content != msg.Content {
+			l.persistProjectionView(ctx, projected)
+			return
+		}
 	}
 }
 

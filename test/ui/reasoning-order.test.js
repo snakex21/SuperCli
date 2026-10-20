@@ -49,11 +49,11 @@ function harness() {
     return node;
   }
   const $ = selector => { if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector); };
-  const c = {$, $$: () => [], el: element, ui: {thinkingExpanded: null}, window: {}, localStorage: {getItem: () => null},
-    document: {hidden: false, hasFocus: () => true, createElement: element,
+  const c = {$, $$: () => [], el: element, ui: {thinkingExpanded: null}, window: new EventTarget(), localStorage: {getItem: () => null},
+    document: Object.assign(new EventTarget(), {hidden: false, hasFocus: () => true, createElement: element,
       createDocumentFragment: () => element('#fragment', '', undefined, 11),
       createComment: () => element('#comment', '', undefined, 8),
-      createTextNode(text) {const node = element('#text', '', undefined, 3); node.data = text; return node;}},
+      createTextNode(text) {const node = element('#text', '', undefined, 3); node.data = text; return node;}}),
     superCliUI: {createComposerDraftStore: () => ({restore() {}})},
     t: key => key === 'reasoning.noSummary' ? 'Model used {n} reasoning tokens without a text summary.' : key,
     fmtInteger: String, fmtDuration: String,

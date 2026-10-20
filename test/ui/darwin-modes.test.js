@@ -4,18 +4,29 @@ const assets = sourcePath(testDir, '../../internal/webgui/assets');
 const source = readSource(sourcePath(assets, 'js/07-stats.js'), 'utf8');
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function fixture() {
-  const {document, window} = parseHTML('<html><body><div id="box"></div></body></html>');
+  const {document, window} = parseHTML('<html><body><div id="stats-block"></div></body></html>');
   const errors = [], posts = [];
+  let config;
   const w = createSandbox({document, Promise, t: k => k, toast: e => errors.push(e),
+    ui: {lang: 'en'}, activeSessionID: 'session', activeModelID: 'small',
+    $: s => document.querySelector(s),
     el(tag, cls, text) { const n = document.createElement(tag); n.className = cls || ''; n.textContent = text || ''; return n; },
-    jpost: async (url, body) => { posts.push({url, body}); }, renderStats: () => {},
+    jpost: async (url, body) => { posts.push({url, body}); return saved(body.key, body.value); },
     modelCache: [{id: 'small'}, {id: 'big', provider: 'cloud'}], activeProviderID: 'local'});
   runScript(source, w);
-  w.renderStats = () => {}; // the script's own renderStats needs the full page
+  w.renderStats = () => { throw Error('a config save must not refresh stats'); };
   w.i18nEl = (tag, cls, key) => { const n = w.el(tag, cls, key); n.dataset.key = key; return n; };
-  const box = document.getElementById('box');
+  const box = w.statsConfigGroup(document.getElementById('stats-block'), w.statsConfigScope(), () => true);
   const click = n => n.dispatchEvent(new window.Event('click', {bubbles: true}));
-  return {w, box, click, errors, posts};
+  function show(cfg) { config = cfg; w.renderStatsConfig(box, cfg); }
+  function saved(key, value) {
+    config = JSON.parse(JSON.stringify(config));
+    const knob = config.knobs.find(k => k.key === key);
+    knob.raw = value;
+    if (key === 'darwin') knob.state = value;
+    return {...config, cost_currencies: []};
+  }
+  return {w, box, click, errors, posts, show, saved};
 }
 function knobs(state, models, pool) {
   return [{key: 'darwin', state}, {key: 'darwin_models', raw: models || ''},
@@ -25,10 +36,10 @@ const labels = box => [...box.querySelectorAll('.mode-row > span:first-child')].
 
 test('Darwin model and instance rows appear only when Darwin is on, in order', () => {
   const h = fixture();
-  h.w.appendModesSection(h.box, {knobs: knobs('off')});
+  h.show({knobs: knobs('off')});
   assert.deepEqual(labels(h.box), ['stats.darwinTool']);
   h.box.replaceChildren();
-  h.w.appendModesSection(h.box, {knobs: knobs('on')});
+  h.show({knobs: knobs('on')});
   assert.deepEqual(labels(h.box), ['stats.darwinTool', 'stats.darwinModel', 'stats.darwinPool', 'effort.darwin']);
   const rows = [...h.box.querySelectorAll('.mode-row')];
   assert.equal(rows[1].querySelector('.orch-btn').textContent, 'stats.darwinModelDef');
@@ -38,7 +49,7 @@ test('Darwin model and instance rows appear only when Darwin is on, in order', (
 
 test('Darwin model picker saves one entry and shows a multi-model list as-is', async () => {
   const h = fixture();
-  h.w.appendModesSection(h.box, {knobs: knobs('on', 'small ; cloud/big')});
+  h.show({knobs: knobs('on', 'small ; cloud/big')});
   const row = h.box.querySelectorAll('.mode-row')[1];
   const btn = row.querySelector('.orch-btn');
   assert.equal(btn.textContent, 'small ; cloud/big');
@@ -52,31 +63,28 @@ test('Darwin model picker saves one entry and shows a multi-model list as-is', a
 
 test('Darwin instance picker offers auto + 1..10 and saves the number', async () => {
   const h = fixture();
-  h.w.appendModesSection(h.box, {knobs: knobs('on', '', '4')});
+  h.show({knobs: knobs('on', '', '4')});
   const row = h.box.querySelectorAll('.mode-row')[2];
   const btn = row.querySelector('.orch-btn');
   assert.equal(btn.textContent, '4');
   const items = [...row.querySelectorAll('.prow')];
   assert.deepEqual(items.map(n => n.textContent), ['stats.darwinPoolAuto', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
   h.click(btn); h.click(items[2]); await tick();
-  h.click(btn); h.click(items[0]); await tick();
+  const next = h.box.querySelectorAll('.mode-row')[2];
+  h.click(next.querySelector('.orch-btn')); h.click(next.querySelectorAll('.prow')[0]); await tick();
   assert.deepEqual(JSON.parse(JSON.stringify(h.posts.map(p => p.body))), [{key: 'darwin_pool_size', value: '2'}, {key: 'darwin_pool_size', value: ''}]);
-  assert.equal(btn.textContent, 'stats.darwinPoolAuto');
+  assert.equal(h.box.querySelectorAll('.mode-row')[2].querySelector('.orch-btn').textContent, 'stats.darwinPoolAuto');
   assert.deepEqual(h.errors, []);
 });
 
-test('Darwin toggle highlights immediately, prevents duplicate saves and waits for refresh', async () => {
+test('Darwin toggle highlights immediately but dependent fields wait for the full POST snapshot', async () => {
   const h = fixture();
-  let finishSave, finishRefresh, refreshes = 0;
+  let finishSave;
   h.w.jpost = (url, body) => {
     h.posts.push({url, body});
     return new Promise(resolve => { finishSave = resolve; });
   };
-  h.w.renderStats = () => {
-    refreshes++;
-    return new Promise(resolve => { finishRefresh = resolve; });
-  };
-  h.w.appendModesSection(h.box, {knobs: knobs('off')});
+  h.show({knobs: knobs('off')});
   const seg = h.box.querySelector('.seg'), [on, off] = seg.querySelectorAll('button');
   h.click(off);
   assert.equal(h.posts.length, 0);
@@ -90,26 +98,25 @@ test('Darwin toggle highlights immediately, prevents duplicate saves and waits f
   h.click(on); h.click(off);
   assert.equal(h.posts.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0])), {url: '/api/config', body: {key: 'darwin', value: 'on'}});
-  assert.equal(refreshes, 0);
-  finishSave(); await tick();
-  assert.equal(refreshes, 1);
-  assert.ok(on.classList.contains('on'));
-  assert.ok(on.disabled && off.disabled);
-  finishRefresh(); await tick();
-  assert.equal(seg.getAttribute('aria-busy'), 'false');
-  assert.ok(!on.disabled && !off.disabled);
-  h.click(on);
+  assert.deepEqual(labels(h.box), ['stats.darwinTool'], 'no optimistic dependent options');
+  finishSave(h.saved('darwin', 'on')); await tick();
+  assert.deepEqual(labels(h.box), ['stats.darwinTool', 'stats.darwinModel', 'stats.darwinPool', 'effort.darwin']);
+  const [nextOn, nextOff] = h.box.querySelectorAll('.seg button');
+  assert.ok(nextOn.classList.contains('on'));
+  assert.ok(!nextOn.disabled && !nextOff.disabled);
+  h.click(nextOn);
   assert.equal(h.posts.length, 1);
-  h.click(off);
-  assert.ok(off.classList.contains('on'));
+  h.click(nextOff);
+  assert.ok(nextOff.classList.contains('on'));
   assert.equal(h.posts[1].body.value, 'default');
-  finishSave(); await tick(); finishRefresh(); await tick();
+  finishSave(h.saved('darwin', 'default')); await tick();
+  assert.deepEqual(labels(h.box), ['stats.darwinTool']);
   assert.deepEqual(h.errors, []);
 });
 
 test('failed Darwin toggle restores the old state and permits retry', async () => {
   const h = fixture();
-  h.w.appendModesSection(h.box, {knobs: knobs('default')});
+  h.show({knobs: knobs('default')});
   const [on, off] = h.box.querySelectorAll('.seg button');
   const save = h.w.jpost;
   h.w.jpost = () => Promise.reject(Error('offline'));
@@ -127,16 +134,17 @@ test('failed Darwin toggle restores the old state and permits retry', async () =
   assert.equal(h.posts.length, 1);
 });
 
-test('a failed stats refresh does not undo a saved Darwin toggle', async () => {
+test('saving Darwin never depends on a stats refresh', async () => {
   const h = fixture();
   h.w.renderStats = () => Promise.reject(Error('stats unavailable'));
-  h.w.appendModesSection(h.box, {knobs: knobs('on')});
+  h.show({knobs: knobs('on')});
   const [on, off] = h.box.querySelectorAll('.seg button');
   h.click(off); await tick();
   assert.ok(off.classList.contains('on'));
   assert.ok(!on.disabled && !off.disabled);
   assert.equal(h.posts[0].body.value, 'default');
-  assert.deepEqual(h.errors, ['stats unavailable']);
+  assert.deepEqual(labels(h.box), ['stats.darwinTool']);
+  assert.deepEqual(h.errors, []);
 });
 
 test('Darwin model/instance copy exists in all 27 GUI and TUI catalogs', () => {

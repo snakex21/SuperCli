@@ -174,7 +174,11 @@ func TestProcessCheckRecoveryAcceptsEncodedArguments(t *testing.T) {
 			if pass {
 				status, failure = "done", nil
 			}
-			body, _ := json.Marshal(map[string]any{"id": "proc-fixture", "command": args.Command, "workdir": root, "status": status})
+			exit := 1
+			if pass {
+				exit = 0
+			}
+			body, _ := json.Marshal(map[string]any{"id": "proc-fixture", "command": args.Command, "workdir": root, "status": status, "exit_code": exit})
 			// Custom/legacy start result: no CommandKey, so the start args supply env.
 			return tools.Result{Text: string(body), Err: failure}, nil
 		},

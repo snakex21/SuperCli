@@ -255,6 +255,10 @@ func (m Model) menuSpace() (tea.Model, tea.Cmd) {
 
 func (m Model) renderMenuContent() string {
 	switch m.menu.kind {
+	case menuInstructions:
+		return m.renderInstructionsMenu()
+	case menuInstructionEditor:
+		return m.renderInstructionEditor()
 	case menuPreview:
 		return m.renderPreviewMenu()
 	case menuUpdate:

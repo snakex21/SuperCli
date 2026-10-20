@@ -30,6 +30,10 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := loop.RefreshLiveContext(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	report := loop.ContextReport()
 	writeJSON(w, map[string]any{"text": agent.FormatContextReport(report), "report": report})
 }

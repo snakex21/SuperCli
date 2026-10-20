@@ -19,6 +19,11 @@ import (
 )
 
 func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service, appProfile string) string {
+	system, _ := webAgentSystemPromptLayers(home, dataDir, model, promptSmall, orchestrator, delegation, goalSvc, appProfile)
+	return system
+}
+
+func webAgentSystemPromptLayers(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service, appProfile string) (string, string) {
 	officeProfile := strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe")
 	system := llmprompt.Build(promptSmall)
 	if officeProfile {
@@ -29,9 +34,11 @@ func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator
 	if profile := llmprompt.LoadProfileAt(home, dataDir, model); profile != "" {
 		system += "\n\n" + profile
 	}
+	projectInstructions := ""
 	if !officeProfile {
-		if project := llmprompt.LoadProjectInstructions(home); project != "" {
-			system += "\n\n" + project
+		projectInstructions = llmprompt.LoadProjectInstructions(home)
+		if projectInstructions != "" {
+			system += "\n\n" + projectInstructions
 		}
 	}
 	if orchestrator {
@@ -70,7 +77,7 @@ NestCafe office mode:
 			system = injected
 		}
 	}
-	return system
+	return system, projectInstructions
 }
 
 // webWorkspaceNote states the real sandbox root and access mode. It is sent in

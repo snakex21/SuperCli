@@ -38,6 +38,25 @@ A successful worker's returned investigation is not Pending. Preserve failed wor
 
 Hard limit: 500 tokens total. Prefer bare paths and short phrases. TEXT ONLY — no tool calls.`
 
+// The auto-summarizer appends an exact human/legacy instruction carry and
+// bounded tool facts. Its model output can focus on continuation state instead
+// of reproducing those catalogs. Standalone callers still need the full prompt.
+const compactionStateTemplate = `Goal: current user goal.
+Done: verified outcomes needed to continue.
+State: active values, decisions, errors and superseded requests.
+Pending: unfinished work and next step.`
+
+const compactionStatePrompt = `Summarize the conversation to REPLACE older history and let work continue without it.
+
+Use this plain-text template, no code fences:
+` + compactionStateTemplate + `
+
+The caller separately retains the original user requests/restrictions and legacy state verbatim, plus a file/tool fact catalog. Do not repeat those quotations or catalogs. Preserve the current task state that cannot be recovered from them: completed versus planned work, active values/errors, changed decisions, cancellations and remaining work. User restrictions remain binding.
+Tool/task results are authoritative; intentions/promises are not Done. Launch/exit is not server readiness. Keep last observed status, readiness evidence and time distinct; old checks are not current health.
+A successful worker's returned investigation is not Pending. Preserve failed worker IDs; continue them with send_message when useful instead of restarting.
+
+Aim for 200 tokens using terse phrases. Exceed that target if necessary to preserve continuation-critical state. TEXT ONLY — no tool calls.`
+
 var errCompactionInstructionEcho = errors.New("compact: model repeated summarization instructions instead of conversation facts; history preserved")
 var errCompactionSummaryTooLong = errors.New("compact: model summary exceeds byte limit; history preserved")
 
@@ -237,6 +256,10 @@ func compactTranscriptContent(m llm.Message) string {
 // Pending summary of msgs. Returns an error when the provider fails
 // or produces an empty, incomplete, oversized, or non-text answer.
 func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message) (string, error) {
+	return summarizeForCompaction(ctx, provider, msgs, compactionPrompt)
+}
+
+func summarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message, instruction string) (string, error) {
 	transcript := compactSummaryInput(msgs)
 	if strings.TrimSpace(transcript) == "" {
 		return "", fmt.Errorf("nothing to summarize")
@@ -250,7 +273,7 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ch, err := provider.Complete(ctx, []llm.Message{
-		{Role: llm.RoleSystem, Content: compactionPrompt},
+		{Role: llm.RoleSystem, Content: instruction},
 		{Role: llm.RoleUser, Content: transcript},
 	}, nil) // no tools: TEXT ONLY
 	if err != nil {
@@ -302,7 +325,8 @@ readStream:
 	// anything. Accepting its literal empty template would erase the task state.
 	// Keep this check narrow: meaningful summaries can quote an instruction or
 	// use different sections, and must not be rejected for formatting alone.
-	if sameCompactionInstructionLines(out, compactionTemplate) || sameCompactionInstructionLines(out, compactionPrompt) {
+	if sameCompactionInstructionLines(out, compactionTemplate) || sameCompactionInstructionLines(out, compactionPrompt) ||
+		sameCompactionInstructionLines(out, compactionStateTemplate) || sameCompactionInstructionLines(out, compactionStatePrompt) {
 		return "", errCompactionInstructionEcho
 	}
 	// A completed stream can still exceed the requested limit. Its tail may
@@ -403,13 +427,13 @@ func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Pr
 		if provider != nil {
 			p = provider
 		}
-		summary, err := SummarizeForCompaction(ctx, p, msgs)
+		summary, err := summarizeForCompaction(ctx, p, msgs, compactionStatePrompt)
 		if err != nil && ctx.Err() == nil && provider != nil && mainProvider != nil && mainProvider != provider {
 			// A separately configured cheap summarizer is an optimization, not a
 			// new single point of failure. Retry on the active provider only when
 			// the side model fails; the default path still makes exactly one call.
 			sideErr := err
-			summary, err = SummarizeForCompaction(ctx, mainProvider, msgs)
+			summary, err = summarizeForCompaction(ctx, mainProvider, msgs, compactionStatePrompt)
 			if err != nil {
 				return "", fmt.Errorf("compact_model failed (%w); active-model fallback failed: %w", sideErr, err)
 			}
@@ -425,66 +449,10 @@ func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Pr
 		if toolNames != nil {
 			loaded = toolNames()
 		}
-		summary += compactRecentUserRequests(msgs)
+		summary += compactPreservedUserContext(msgs)
 		summary += CompactFacts(msgs, loaded)
 		return WrapCompactSummary(summary), nil
 	}
-}
-
-// Bounds for the verbatim user requests appended to every summary.
-const (
-	compactRecentUserCount = 3
-	compactRecentUserBytes = 360
-)
-
-// compactRecentUserRequests quotes the newest real user messages of the
-// summarized prefix. The model summary is capped at a few hundred tokens and
-// small models drop or mislabel the latest requests (a reported bug became
-// "waiting for the user"). Quoting them by code keeps the user's own words
-// across compaction without another model call. Addon blocks that follow the
-// user's text (recall, attachments, rewind feedback) are not quoted.
-func compactRecentUserRequests(msgs []llm.Message) string {
-	var quotes []string
-	for i := len(msgs) - 1; i >= 0 && len(quotes) < compactRecentUserCount; i-- {
-		m := msgs[i]
-		if !isConversationUserTurn(m) || IsLegacyCompactionSummary(m) {
-			continue
-		}
-		text := m.Content
-		if text == "" {
-			for _, p := range m.Parts {
-				if p.Type == llm.PartTypeText && strings.TrimSpace(p.Text) != "" {
-					text = p.Text
-					break
-				}
-			}
-		}
-		if cut := strings.Index(text, "\n\n["); cut >= 0 {
-			text = text[:cut]
-		}
-		text = strings.Join(strings.Fields(text), " ")
-		if text == "" {
-			continue
-		}
-		if len(text) > compactRecentUserBytes {
-			cut := compactRecentUserBytes
-			for cut > 0 && !utf8.RuneStart(text[cut]) {
-				cut--
-			}
-			text = strings.TrimSpace(text[:cut]) + "…"
-		}
-		quotes = append(quotes, text)
-	}
-	if len(quotes) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("\nrecent_user_messages (oldest first, verbatim):")
-	for i := len(quotes) - 1; i >= 0; i-- {
-		b.WriteString("\n- ")
-		b.WriteString(quotes[i])
-	}
-	return b.String()
 }
 
 // Keep both the command/header and its terminal status; large patches and file

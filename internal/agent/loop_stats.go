@@ -3,6 +3,7 @@ package agent
 import (
 	"time"
 
+	"supercli/internal/llm"
 	"supercli/internal/system/stats"
 )
 
@@ -17,6 +18,8 @@ func (l *Loop) statsStartStep(step int) {
 	l.stepAuxWall = 0
 	l.statsStepOpen = true
 	l.stats.StartStep(step)
+	l.flushContextAdditions()
+	l.flushWorkerContextAdditions()
 	// Helper inference that ran before this turn opened (the
 	// navigator route call) is charged to the turn it delayed —
 	// counted only, never added to the disjoint phase pipeline,
@@ -25,6 +28,61 @@ func (l *Loop) statsStartStep(step int) {
 		l.stats.RecordAux(l.pendingAuxCalls, l.pendingAuxWall)
 		l.pendingAuxCalls = 0
 		l.pendingAuxWall = 0
+	}
+}
+
+func (l *Loop) recordContextAddition(msg llm.Message) {
+	if l.stats == nil {
+		return
+	}
+	epoch := l.conversationEpoch.Load()
+	if l.pendingContextEpoch != epoch {
+		l.pendingContextUsage = llm.ContextUsage{}
+	}
+	l.pendingContextEpoch = epoch
+	l.pendingContextUsage.Add(llm.ContextAddition(msg))
+	if l.statsStepOpen {
+		l.flushContextAdditions()
+	}
+}
+
+func (l *Loop) flushContextAdditions() {
+	pending := l.pendingContextUsage
+	l.pendingContextUsage = llm.ContextUsage{}
+	if l.pendingContextEpoch != l.conversationEpoch.Load() || len(pending.Sources) == 0 {
+		return
+	}
+	if rec, ok := l.stats.(interface{ RecordContextUsage(llm.ContextUsage) }); ok {
+		rec.RecordContextUsage(pending)
+	}
+}
+
+// Worker additions are counted once on the conversation owner. Retransmission
+// is counted separately by the metered provider, after context projection.
+func (l *Loop) recordWorkerContextAddition(msg llm.Message) {
+	if l.stats == nil || msg.Role != llm.RoleUser || msg.Name != llm.WorkerNotificationName {
+		return
+	}
+	epoch := l.conversationEpoch.Load()
+	if l.pendingWorkerContextEpoch != epoch {
+		l.pendingWorkerContext = stats.WorkerContext{}
+	}
+	l.pendingWorkerContextEpoch = epoch
+	l.pendingWorkerContext.AddedMessages++
+	l.pendingWorkerContext.AddedBytes += int64(len(msg.Content))
+	if l.statsStepOpen {
+		l.flushWorkerContextAdditions()
+	}
+}
+
+func (l *Loop) flushWorkerContextAdditions() {
+	pending := l.pendingWorkerContext
+	l.pendingWorkerContext = stats.WorkerContext{}
+	if l.pendingWorkerContextEpoch != l.conversationEpoch.Load() || pending.Empty() {
+		return
+	}
+	if recorder, ok := l.stats.(interface{ RecordWorkerContext(stats.WorkerContext) }); ok {
+		recorder.RecordWorkerContext(pending)
 	}
 }
 

@@ -183,6 +183,8 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		return killCommandTree(cmd, s)
 	}
 	start := r.Now()
+	evidenceStart := time.Now()
+	evidenceSequence := core.NextExecutionSequence()
 	scopeMu.Lock()
 	started, runErr := childproc.Start(cmd)
 	scope = started
@@ -256,6 +258,15 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 			"ctx_execute has no stdin, so the command was stopped. Rerun with a non-interactive flag "+
 			"(e.g. -y, --yes, --non-interactive) or answer it via process_session start + write.",
 			PromptStallPrefix, idle, stalled)
+	}
+	var exited *exec.ExitError
+	result.Execution = &core.ExecutionEvidence{
+		Command: append([]string(nil), req.Command...), Workdir: wd,
+		Environment: core.CommandKey(nil, wd, cmd.Env), StartedAt: evidenceStart,
+		StartedSequence: evidenceSequence,
+		Completed:       cancelErr == nil && stalled == "" && (runErr == nil || errors.As(runErr, &exited)),
+		ExitCode:        result.ExitCode, OutputComplete: !result.OutputIncomplete && !result.TruncatedStdout && !result.TruncatedStderr,
+		Stdout: result.Stdout, Stderr: result.Stderr,
 	}
 	if len(result.Stdout) > maxOut*1024 || len(result.Stderr) > maxErr*1024 {
 		retained := *result

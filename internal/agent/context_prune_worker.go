@@ -58,8 +58,27 @@ func workerStatusForPrune(content, storedHandle string) string {
 		if !ok {
 			return ""
 		}
-		agent, rest, ok := strings.Cut(rest, "</agent>\n<status>")
+		agent, rest, ok := strings.Cut(rest, "</agent>\n")
 		if !ok || strings.ContainsAny(agent, "<>\r\n") {
+			return ""
+		}
+		// Accept only the renderer's optional, paired UI metadata. Never search
+		// report prose for a status or repair malformed/truncated framing.
+		if strings.HasPrefix(rest, "<worker-model>") {
+			for _, tag := range []string{"worker-model", "reasoning-effort"} {
+				rest, ok = strings.CutPrefix(rest, "<"+tag+">")
+				if !ok {
+					return ""
+				}
+				value, after, complete := strings.Cut(rest, "</"+tag+">\n")
+				if !complete || strings.ContainsAny(value, "<>\r\n") || (tag == "worker-model" && value == "") {
+					return ""
+				}
+				rest = after
+			}
+		}
+		rest, ok = strings.CutPrefix(rest, "<status>")
+		if !ok {
 			return ""
 		}
 		status, _, ok = strings.Cut(rest, "</status>\n")

@@ -58,13 +58,13 @@ function imageAttachment(path) {
 function attachmentMediaType(path) {
   if (imageAttachment(path)) return "image";
   var ext = attachmentExtension(path);
-  if ([".mp4", ".webm"].indexOf(ext) >= 0) return "video";
+  if ([".mp4", ".webm", ".mov"].indexOf(ext) >= 0) return "video";
   if ([".mp3", ".wav", ".ogg"].indexOf(ext) >= 0) return "audio";
   return "";
 }
 function attachmentMimeKind(mime) {
   if (["image/png", "image/jpeg", "image/gif", "image/webp"].indexOf(mime) >= 0) return "image";
-  if (["video/mp4", "video/webm"].indexOf(mime) >= 0) return "video";
+  if (["video/mp4", "video/webm", "video/quicktime"].indexOf(mime) >= 0) return "video";
   if (["audio/mpeg", "audio/wave", "audio/wav", "audio/x-wav", "audio/ogg", "application/ogg"].indexOf(mime) >= 0) return "audio";
   return "";
 }
@@ -198,25 +198,71 @@ function addAttachmentPaths(paths) {
   });
   renderAttachments();
 }
+var attachmentUpload = null;
+function attachmentUploadBusy(edit) {
+  return !!(attachmentUpload && attachmentUpload.edit === (edit || null) && attachmentUpload.valid());
+}
+function cancelAttachmentUpload() { if (attachmentUpload) attachmentUpload.controller.abort(); }
+window.addEventListener("pagehide", cancelAttachmentUpload);
 async function uploadAttachmentFiles(files, successKey, edit) {
-  var paths = edit ? edit.attachments : pendingAttachments;
-  files = Array.prototype.slice.call(files || []).slice(0, 8 - paths.length);
+  files = Array.prototype.slice.call(files || []);
   if (!files.length) return;
-  var form = new FormData();
-  files.forEach(function (file, index) {
-    var name = file.name || ("clipboard-" + (index + 1) + ".png");
-    form.append("files", file, name);
-  });
-  var response = await fetch("/api/attachment/upload", { method: "POST", body: form });
-  if (!response.ok) throw new Error((await response.text() || response.status).toString().trim());
-  var result = await response.json();
-  if (edit) {
-    if (queueEdit !== edit || !syncQueueEditor()) return;
-    (result.paths || []).forEach(function (path) {
-      if (edit.attachments.indexOf(path) < 0 && edit.attachments.length < 8) edit.attachments.push(path);
+  if (attachmentUpload && attachmentUpload.valid()) throw new Error("An attachment upload is already in progress; wait before adding more files");
+  cancelAttachmentUpload();
+  var paths = edit ? edit.attachments : pendingAttachments;
+  var epoch = projectEpoch, session = activeSessionID, workspace = typeof activeWorkspacePath === "undefined" ? "" : activeWorkspacePath;
+  var draftScope = composerDraftStore.scope(), originalPaths = paths.slice(), controller = new AbortController();
+  var operation = {edit: edit || null, controller: controller, valid: function () {
+    return !controller.signal.aborted && epoch === projectEpoch && session === activeSessionID &&
+      workspace === (typeof activeWorkspacePath === "undefined" ? "" : activeWorkspacePath) && draftScope === composerDraftStore.scope() &&
+      (edit ? queueEdit === edit && !edit.conflict && !edit.saving && edit.attachments === paths : !queueEdit && pendingAttachments === paths) &&
+      paths.length === originalPaths.length && paths.every(function (path, i) { return path === originalPaths[i]; });
+  }};
+  attachmentUpload = operation;
+  if (edit) { edit.uploading = true; if (edit.refresh) edit.refresh(); }
+  var watch = setInterval(function () { if (!operation.valid()) controller.abort(); }, 50);
+  function fence() {
+    if (!operation.valid()) { controller.abort(); throw new DOMException("Attachment scope changed; upload cancelled", "AbortError"); }
+  }
+  try {
+    fence();
+    // The module is loaded by index before any chooser can dispatch. The small
+    // fallback keeps standalone/legacy image-only UI fixtures functional.
+    var prepared = window.SuperCliVideoAttachments ? await SuperCliVideoAttachments.prepare(files, {slots: 8 - paths.length, signal: controller.signal}) : {files: files, warnings: []};
+    fence();
+    var total = 0;
+    if (prepared.files.length + paths.length > 8) throw new Error("Too many attachments (maximum 8); no files were uploaded");
+    var form = new FormData();
+    prepared.files.forEach(function (file, index) {
+      if (file.size > 32 * 1024 * 1024) throw new Error("Attachment exceeds 32 MiB per-file limit");
+      total += file.size;
+      form.append("files", file, file.name || ("clipboard-" + (index + 1) + ".png"));
     });
-  } else addAttachmentPaths(result.paths || []);
-  toast(t(successKey) + " · " + (result.paths || []).length);
+    if (total > 64 * 1024 * 1024) throw new Error("Attachments exceed 64 MiB request limit");
+    prepared.warnings.forEach(function (warning) { toast(warning); });
+    fence(); // Never retry this POST automatically, including an ambiguous abort.
+    var response = await fetch("/api/attachment/upload", { method: "POST", body: form, signal: controller.signal });
+    if (!response.ok) throw new Error((await response.text() || response.status).toString().trim());
+    var result = await response.json();
+    fence();
+    // Another client can switch the server workspace before this tab receives
+    // its project event. Do not stage that workspace's result into this draft.
+    function workspaceKey(path) {
+      path = String(path).replace(/\\/g, "/").replace(/\/$/, "");
+      return /^[a-z]:/i.test(path) ? path.toLowerCase() : path;
+    }
+    if (result.workspace && workspace && workspaceKey(result.workspace) !== workspaceKey(workspace)) {
+      controller.abort(); throw new DOMException("Attachment workspace changed; upload cancelled", "AbortError");
+    }
+    if (!Array.isArray(result.paths) || result.paths.length !== prepared.files.length || result.paths.length + paths.length > 8) throw new Error("Incomplete attachment upload response; no attachments added");
+    result.paths.forEach(function (path) { paths.push(path); });
+    if (edit) { if (edit.refresh) edit.refresh(); } else renderAttachments();
+    toast(t(successKey) + " · " + result.paths.length);
+  } finally {
+    clearInterval(watch);
+    if (attachmentUpload === operation) attachmentUpload = null;
+    if (edit) { edit.uploading = false; if (queueEdit === edit && edit.refresh) edit.refresh(); }
+  }
 }
 function clearAttachmentPreviewContent() {
   var content = $("#attachment-preview-content");
@@ -393,6 +439,56 @@ async function chooseQueuedTaskPosition(item) {
 }
 
 var queueEdit = null, queueMerging = false, queueMergeMode = "off";
+// One deferred automatic handoff, owned by the completing run's scope. Opening
+// an idle/paused editor never creates it. Durable claims remain server-owned.
+var queueAutoDrain = null, queueEditWrite = null;
+function queueDrainScope(root) {
+  return {root: root, epoch: projectEpoch, session: typeof activeSessionID === "string" ? activeSessionID : "", stop: typeof runStopRevision === "number" ? runStopRevision : 0};
+}
+function queueDrainScopeValid(scope) {
+  return scope && scope.epoch === projectEpoch && scope.session === (typeof activeSessionID === "string" ? activeSessionID : "") && scope.stop === (typeof runStopRevision === "number" ? runStopRevision : 0);
+}
+function queueEditorBlocks(item) {
+  return !!(item && item.id && ((queueEdit && queueEdit.id === item.id) || (queueEditWrite && queueEditWrite.id === item.id)));
+}
+function queueDispatchGuard(item, automatic) {
+  if (automatic && (!queueDrainScopeValid(automatic) || pauseQueue || (queueAutoDrain && queueAutoDrain.loading))) return false;
+  if (!queueEditorBlocks(item)) return true;
+  if (automatic && promptQueue[0] && promptQueue[0].id === item.id && !queueAutoDrain) {
+    queueAutoDrain = {scope: automatic, id: item.id, loading: false};
+  }
+  return false;
+}
+async function reloadQueueForEdit() {
+  loadPromptQueue();
+  // A sync reload may supersede ours. Wait for the latest durable view, not a
+  // stale response or the cached row that the editor originally opened.
+  for (;;) {
+    var ready = promptQueueReady;
+    var loaded = await ready;
+    if (ready === promptQueueReady) return loaded !== false;
+  }
+}
+async function resumeQueueAutoDrain() {
+  var pending = queueAutoDrain;
+  if (!pending) return;
+  if (!queueDrainScopeValid(pending.scope) || pauseQueue) { queueAutoDrain = null; return; }
+  if (pending.loading || streaming || queueDispatching || queueMerging || queueEditWrite || (queueEdit && queueEdit.id === pending.id)) return;
+  pending.loading = true;
+  try {
+    if (!await reloadQueueForEdit()) {
+      if (queueAutoDrain === pending && queueDrainScopeValid(pending.scope)) {
+        queueAutoDrain = null; pauseQueue = true; toast(t("chat.connError")); renderPromptQueue();
+      }
+      return;
+    }
+    if (queueAutoDrain !== pending || !queueDrainScopeValid(pending.scope) || pauseQueue || streaming || queueDispatching || queueMerging) return;
+    var head = promptQueue[0];
+    if (!head || queueEditorBlocks(head)) return;
+    queueAutoDrain = null; // Consume before any async preparation or sync/EOF.
+    dispatchQueuedTask(head, pending.scope);
+  } finally { pending.loading = false; }
+}
 function closeQueueEditor(edit, restoreFocus) {
   if (!edit || queueEdit !== edit) return;
   queueEdit = null;
@@ -408,14 +504,21 @@ function closeQueueEditor(edit, restoreFocus) {
   }
   if (trigger && trigger.isConnected && !trigger.disabled) trigger.focus();
   else promptEl.focus();
+  if (restoreFocus !== false) resumeQueueAutoDrain();
 }
 function syncQueueEditor() {
-  if (queueEdit && (queueEdit.epoch !== projectEpoch || !promptQueue.some(function (item) {
-    return item.id === queueEdit.id && !isQueuedTaskTransition(item);
-  }))) closeQueueEditor(queueEdit, false);
+  if (queueEdit && queueEdit.epoch !== projectEpoch) { queueAutoDrain = null; closeQueueEditor(queueEdit, false); }
+  if (queueEdit && !promptQueue.some(function (item) { return item.id === queueEdit.id && !isQueuedTaskTransition(item); })) {
+    // Another client may claim/remove the row. Keep the human's unsaved draft
+    // visible instead of silently closing it during refresh or a 409 reload.
+    queueAutoDrain = null;
+    queueEdit.conflict = true;
+    if (!queueEdit.error.textContent) queueEdit.error.textContent = t("common.error") + ": " + queueEdit.id + " · " + t("composer.stopped");
+  } else if (queueEdit) { queueEdit.conflict = false; }
   return !!queueEdit;
 }
 function editQueuedTask(item, trigger) {
+  if (queueMerging) return; // A submitted merge owns the rows until its reply.
   if (!promptQueue.some(function (q) { return q.id === item.id && !isQueuedTaskTransition(q); })) return;
   if (syncQueueEditor() && queueEdit.id === item.id) { queueEdit.input.focus(); return; }
   if (activeAppDialog) activeAppDialog(null);
@@ -425,34 +528,47 @@ function editQueuedTask(item, trigger) {
   appendQueueEditor(queueEdit);
 }
 async function saveQueuedTaskEdit() {
-  if (!syncQueueEditor() || queueEdit.uploading || queueEdit.saving) return;
+  if (!syncQueueEditor() || queueEdit.uploading || queueEdit.saving || queueEditWrite) return;
   var edit = queueEdit;
   if (!edit.text.trim() && !edit.attachments.length) {
     edit.error.textContent = t("dialog.required"); edit.input.focus(); return;
   }
   edit.saving = true;
+  queueEditWrite = edit;
+  var failed = false;
   edit.refresh();
   try {
     await j("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: edit.id, prompt: edit.text, attachments: edit.attachments }) });
     if (queueEdit !== edit || !syncQueueEditor()) return;
-    await loadPromptQueue();
-    if (queueEdit === edit && syncQueueEditor()) closeQueueEditor(edit);
+    if (!await reloadQueueForEdit()) throw new Error(t("chat.connError"));
+    if (queueEdit === edit && syncQueueEditor() && !edit.conflict) closeQueueEditor(edit);
   } catch (e) {
+    failed = true;
     if (queueEdit === edit && syncQueueEditor()) {
       edit.error.textContent = e.message; toast(e.message); await loadPromptQueue();
-    }
-  } finally { edit.saving = false; if (queueEdit === edit && syncQueueEditor()) edit.refresh(); }
+    } else { queueAutoDrain = null; }
+  } finally {
+    edit.saving = false;
+    if (queueEditWrite === edit) queueEditWrite = null;
+    if (queueEdit && syncQueueEditor()) queueEdit.refresh();
+    if (queueEdit !== edit && !failed) resumeQueueAutoDrain();
+  }
 }
 function queuedMessageLabel(index, count) {
   return t("composer.messageNumber").replace("{index}", String(index)).replace("{count}", String(count));
 }
-async function mergeQueuedMessages(send) {
+async function mergeQueuedMessages(send, automatic) {
   if (queueMerging || queueDispatching || queueDispatchItem || pendingImmediate || !promptQueue.length) return false;
+  // Auto merge mutates every row, not only the dispatch head. Never include
+  // an editor or detached in-flight PATCH, even when the head itself is free.
+  if (automatic && (!queueDrainScopeValid(automatic) || pauseQueue || queueEdit || queueEditWrite)) return false;
+  var operationScope = automatic || queueDrainScope(), initiallyPaused = pauseQueue;
   if (promptQueue.every(function (q) { return q.merged; })) {
     if (send && !streaming) { pauseQueue = false; runQueuedTask(promptQueue[0], false); }
     return true;
   }
-  var epoch = projectEpoch;
+  var epoch = projectEpoch, sendMerged = false;
+  queueAutoDrain = null;
   queueMerging = true;
   renderPromptQueue();
   try {
@@ -461,12 +577,15 @@ async function mergeQueuedMessages(send) {
     ++promptQueueLoadSeq;
     promptQueue = batches || [];
     promptQueue.forEach(function (q) { q.text = q.prompt; });
+    // The mutation may have finished after Stop. Its durable rows are useful,
+    // but its old dispatch authority must never clear the newer pause.
+    if (!queueDrainScopeValid(operationScope) || (!initiallyPaused && pauseQueue)) return false;
     pauseQueue = false;
     closeQueueEditor(queueEdit, false);
-    if (send && !streaming && promptQueue[0]) runQueuedTask(promptQueue[0], false);
+    sendMerged = send && !streaming && !!promptQueue[0];
     return true;
   } catch (e) { if (epoch === projectEpoch) { pauseQueue = true; toast(e.message); await loadPromptQueue(); } return false; }
-  finally { queueMerging = false; renderPromptQueue(); }
+  finally { queueMerging = false; renderPromptQueue(); if (sendMerged && queueDrainScopeValid(operationScope) && !pauseQueue && !streaming) runQueuedTask(promptQueue[0], false); }
 }
 function appendQueueEditor(edit) {
   var editor = el("dialog", "app-dialog queue-editor"); edit.dialog = editor;
@@ -517,7 +636,7 @@ function appendQueueEditor(edit) {
     });
     input.readOnly = edit.saving;
     editor.setAttribute("aria-busy", String(edit.uploading || edit.saving));
-    save.disabled = edit.uploading || edit.saving;
+    save.disabled = edit.uploading || edit.saving || !!queueEditWrite;
     attach.disabled = edit.uploading || edit.saving || edit.attachments.length >= 8;
     files.querySelectorAll(".attachment-remove").forEach(function (button) { button.disabled = edit.saving; });
     if (hadFocus && (!previousFocus.isConnected || previousFocus.disabled)) input.focus();
@@ -780,7 +899,8 @@ function loadPromptQueue() {
         promptQueueLoadedEpoch = epoch;
       }
       renderPromptQueue();
-    } catch (e) { /* Keep the last known queue on a transient refresh failure. */ }
+      return true;
+    } catch (e) { return false; /* Keep the last known queue; never authorize a save from it. */ }
   })();
   return promptQueueReady;
 }
@@ -788,9 +908,14 @@ function loadPromptQueue() {
 async function loadWorkers() {
   var host = $("#worker-list"); if (!host) return;
   $("#worker-heading").textContent = t("task.workers");
+  var bindings = typeof workerStatusBindings === "function" ? workerStatusBindings() : null;
+  var epoch = bindings ? workerStatusEpoch : 0, scope = bindings ? workerStatusScope() : "";
   try {
     var got = await j("/api/workers");
     renderWorkers(got && got.workers ? got.workers : []);
+    if (bindings && got && Array.isArray(got.workers) && epoch === workerStatusEpoch && scope === workerStatusScope()) {
+      applyWorkerStatusSnapshot(got.workers, bindings);
+    }
   } catch (e) {
     host.innerHTML = "";
     host.appendChild(el("div", "side-empty", e.message));
@@ -841,9 +966,15 @@ function appendQueuedAttachmentBadge(host, item) {
 }
 // keepAttachments: an accepted dispatch retires the row, but the started run
 // now owns its staged files. A user removal lets the server delete them.
-async function removeQueuedTask(id, keepAttachments) {
-  try { await j("/api/tasks?id=" + encodeURIComponent(id) + (keepAttachments ? "&keep_attachments=1" : ""), { method: "DELETE" }); promptQueue = promptQueue.filter(function (q) { return q.id !== id; }); renderPromptQueue(); return true; }
-  catch (e) { toast(e.message); return false; }
+async function removeQueuedTask(id, keepAttachments, ownsView) {
+  try {
+    await j("/api/tasks?id=" + encodeURIComponent(id) + (keepAttachments ? "&keep_attachments=1" : ""), { method: "DELETE" });
+    if (!ownsView || ownsView()) {
+      promptQueue = promptQueue.filter(function (q) { return q.id !== id; });
+      renderPromptQueue();
+    }
+    return true;
+  } catch (e) { if (!ownsView || ownsView()) toast(e.message); return false; }
 }
 function isQueuedTaskTransition(item) {
   var selected = pendingImmediate || queueDispatchItem;
@@ -870,27 +1001,39 @@ function showQueueTransition(item) {
   setRunState("running", t("composer.sendingQueued"));
   renderPromptQueue();
 }
-async function dispatchQueuedTask(item) {
-  if (queueDispatching || queueMerging) return;
+async function dispatchQueuedTask(item, automatic) {
+  if (queueDispatching || queueMerging || streaming || !queueDispatchGuard(item, automatic)) return;
+  queueAutoDrain = null;
   queueDispatching = true;
   showQueueTransition(item);
-  var launched = false;
+  var launched = false, deferredForEdit = false;
+  // Capture authority once, before any async prepare/preflight/merge. A queued
+  // session switch is intentional, but never mint a fresh Stop revision later.
+  var scope = Object.assign({}, automatic || queueDrainScope(), {session: item.session_id || (typeof activeSessionID === "string" ? activeSessionID : "")});
   try {
-    if (!await prepareQueuedTask(item) || (pauseQueue && !isAfterRunPrompt(item))) return;
-    if (!item.afterRun && !item.merged && queueMergeMode === "auto") {
+    if (!await prepareQueuedTask(item) || !queueDrainScopeValid(scope) || (pauseQueue && !isAfterRunPrompt(item))) return;
+    if (!item.afterRun && !item.merged && queueMergeMode === "auto" && !queueEdit && !queueEditWrite) {
       if (promptQueue.length > 0) {
         queueDispatching = false; queueDispatchItem = null;
-        await loadPromptQueue();
-        if (!await mergeQueuedMessages(false)) return;
-        item = promptQueue[0];
+        if (!await reloadQueueForEdit() || !queueDrainScopeValid(scope) || pauseQueue) return;
+        item = promptQueue.find(function (q) { return q.id === item.id; });
         if (!item) return;
+        // Last check before the mutation: an editor/PATCH may have appeared
+        // during either await. Send the free row separately instead of merging.
+        if (!queueEdit && !queueEditWrite) {
+          if (!await mergeQueuedMessages(false, scope) || !queueDrainScopeValid(scope) || pauseQueue) return;
+          item = promptQueue[0];
+          if (!item) return;
+        }
+        if (!queueDispatchGuard(item, automatic && scope)) { deferredForEdit = true; return; }
         queueDispatching = true; showQueueTransition(item);
-        if (!await prepareQueuedTask(item)) return;
+        if (!await prepareQueuedTask(item) || !queueDrainScopeValid(scope)) return;
       }
     }
+    if (!queueDrainScopeValid(scope) || (pauseQueue && !isAfterRunPrompt(item))) return;
     // Remove the durable queue entry only after /api/chat accepts it.
     launched = true;
-    sendPrompt(item.text, item.attachments || [], item.draft || null, item);
+    sendPrompt(item.text, item.attachments || [], item.draft || null, item, scope);
   } catch (e) {
     toast(e.message);
   } finally {
@@ -899,7 +1042,7 @@ async function dispatchQueuedTask(item) {
       if (item.draft && !promptEl.value && composerDraftStore.scope() === item.draft.scope) {
         composerDraftStore.restore(item.draft.scope);
       }
-      pauseQueue = true;
+      if (!deferredForEdit && scope.epoch === projectEpoch) pauseQueue = true;
       queueDispatching = false;
       queueDispatchItem = null;
       sendBtn.textContent = t("composer.send");
@@ -1107,6 +1250,7 @@ function detachActiveRun() {
   finishRunPresentation();
   streaming = false;
   runFinishing = false;
+  if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
   abortCtl = null;
   releaseLiveTranscriptBlocks();
   setRunState("idle", t("composer.ready"));
@@ -1175,8 +1319,8 @@ function setRunState(state, text) {
   $("#status-dot").classList.toggle("busy", state === "running");
 }
 
-async function sendPrompt(text, attachments, draft, queuedItem) {
-  if (streaming || (queueDispatching && !queuedItem)) return;
+async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
+  if (streaming || (queueDispatching && !queuedItem) || (!queuedItem && attachmentUploadBusy())) return;
   attachments = (attachments || []).slice();
   text = String(text || "").trim();
   if (!text && attachments.length) text = t("composer.inspectAttachments");
@@ -1190,7 +1334,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     if (readyRuntime === sessionRuntimeReady) break;
   }
   if (streaming) return;
-  if (queuedItem && ((queuedItem.afterRun && !isAfterRunPrompt(queuedItem)) || (pauseQueue && !isAfterRunPrompt(queuedItem)))) {
+  if (queuedItem && ((dispatchScope && !queueDrainScopeValid(dispatchScope)) || (queuedItem.afterRun && !isAfterRunPrompt(queuedItem)) || (pauseQueue && !isAfterRunPrompt(queuedItem)))) {
     restoreUnsentAfterRun(queuedItem);
     if (draft && !promptEl.value && composerDraftStore.scope() === draft.scope) {
       composerDraftStore.restore(draft.scope);
@@ -1205,6 +1349,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     renderPromptQueue();
     return;
   }
+  queueAutoDrain = null; // A new root turn supersedes any deferred old handoff.
   // Once a live turn starts, the DOM becomes append-only again. Retire the
   // history pager so a late older-page response cannot rebuild the transcript
   // over messages currently arriving from SSE.
@@ -1242,22 +1387,71 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
   run.turnID = turnID;
   var disconnectTransport = abortCtl.abort.bind(abortCtl);
   run.disconnect = disconnectTransport;
+  var stopInFlight = false, stopDelivered = false;
   function stopServerRun() {
-    if (!requestAccepted) return;
+    if ((!requestAccepted && !acceptanceUncertain) || stopInFlight || stopDelivered) return;
+    stopInFlight = true;
     // Do not pass the Stop response to abort(reason): fetch would reject with
     // that JSON object instead of an AbortError.
-    jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: turnID}).then(function () { disconnectTransport(); }).catch(function (error) { toast(error.message); });
+    jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: turnID}).then(function () {
+      stopDelivered = true;
+      disconnectTransport();
+    }).catch(function (error) { toast(error.message); }).finally(function () { stopInFlight = false; });
   }
   run.abortCtl.abort = function () { run.stopRequested = true; stopServerRun(); };
-  var draftAccepted = false, requestAccepted = false;
+  var draftAccepted = false, requestAccepted = false, acceptanceUncertain = false;
+  var acceptanceScope = {epoch: projectEpoch, session: activeSessionID};
+  function ownsAcceptanceView() {
+    return activeRun === run && !run.detached && projectEpoch === acceptanceScope.epoch &&
+      (activeSessionID === acceptanceScope.session || activeSessionID === run.sessionID);
+  }
+  // No second POST: observe this exact turn's durable receipt. Each read and the
+  // whole observation window are bounded, including when the phone is offline.
+  async function reconcileAcceptance() {
+    // Cancellation can target a registered turn even before durable acceptance.
+    // Do not make Stop wait for a receipt which might never become accepted.
+    for (var attempt = 0; attempt < 4 && ownsAcceptanceView(); attempt++) {
+      if (run.stopRequested) stopServerRun();
+      var ctl = new AbortController();
+      var timeout = setTimeout(function () { ctl.abort(); }, 2000);
+      try {
+        var receipt = await j("/api/chat/completion?id=" + encodeURIComponent(turnID) + "&status=1", {signal: ctl.signal});
+        if (!ownsAcceptanceView()) return false;
+        if (receipt && receipt.turn_id && receipt.turn_id !== turnID) return false;
+        if (receipt && receipt.accepted && receipt.session_id) {
+          run.sessionID = receipt.session_id;
+          activeSessionID = receipt.session_id;
+          transcriptSessionID = receipt.session_id;
+          requestAccepted = true;
+          acceptPrompt();
+          if (receipt.done) { terminalSeen = true; run.terminal = true; }
+          if (run.stopRequested) { stopped = true; if (!receipt.done) stopServerRun(); }
+          if (queueRemoval) await queueRemoval;
+          return true;
+        }
+        if (receipt && receipt.done) return false;
+      } catch (statusError) {
+        // 404 may race request admission; network failure is not rejection.
+      } finally { clearTimeout(timeout); }
+      if (attempt < 3) await new Promise(function (resolve) { setTimeout(resolve, 300); });
+    }
+    return false;
+  }
   var queueRemoval = null, queueClaimLost = false;
+  // DELETE may finish after detach/navigation, or after ordinary foreground
+  // cleanup cleared activeRun. Only the latter still owns this queue view.
+  function ownsAcceptedQueueView() {
+    return !run.detached && projectEpoch === acceptanceScope.epoch && activeSessionID === run.sessionID &&
+      (!activeRun || activeRun === run);
+  }
   function acceptPrompt() {
     if (draftAccepted) return;
     draftAccepted = true;
     run.accepted = true;
     if (draft) composerDraftStore.clear(draft.scope, draft.text);
     if (queuedItem && queuedItem.id) {
-      queueRemoval = removeQueuedTask(queuedItem.id, true).then(function (removed) {
+      queueRemoval = removeQueuedTask(queuedItem.id, true, ownsAcceptedQueueView).then(function (removed) {
+        if (!ownsAcceptedQueueView()) return;
         if (!removed) pauseQueue = true;
         queueDispatchItem = null;
         renderPromptQueue();
@@ -1346,6 +1540,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       return;
     }
     requestAccepted = true;
+    acceptanceUncertain = true;
     if (run.stopRequested) stopServerRun();
     await superCliUI.readSSE(resp.body, function (ev) {
       if (ev.type === "queue_claimed" && queuedItem && queuedItem.id) {
@@ -1406,6 +1601,7 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("common.error"));
     }
   } catch (e) {
+    acceptanceUncertain = true;
     // Use this run's signal, not the controller of a newer foreground run.
     var aborted = run.abortCtl.signal.aborted || !!(e && e.name === "AbortError");
     if (run.detached) {
@@ -1422,7 +1618,23 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
       setRunState("idle", t("chat.connError"));
     }
   } finally {
-    if (!queueClaimLost && typeof syncFollowRun === "function" && !terminalSeen && !run.stopRequested && requestAccepted) syncFollowRun(run);
+    if (!draftAccepted && !terminalSeen && acceptanceUncertain && !(requestAccepted && run.stopRequested)) {
+      // HTTP success alone is not durable acceptance. A lost response can hide
+      // either a running turn or rejection; neither permits an automatic drain.
+      handoffBlocked = true;
+      await reconcileAcceptance();
+      if (!ownsAcceptanceView() && !draftAccepted) return;
+      // Acceptance can make the run detachable while DELETE is still pending.
+      // Fence foreground state, but still relinquish that old run to sync below.
+      if (ownsAcceptanceView()) {
+        if (!draftAccepted || terminalSeen) {
+          pauseQueue = true;
+          restoreUnsentAfterRun(pendingImmediate);
+          if (pendingImmediate && pendingImmediate.draft && !promptEl.value) composerDraftStore.restore(pendingImmediate.draft.scope);
+        } else handoffBlocked = false;
+      }
+    }
+    if (!queueClaimLost && typeof syncFollowRun === "function" && !terminalSeen && !run.stopRequested && draftAccepted) syncFollowRun(run);
     if (run.following) return;
     if (run.detached) {
       if (detachedRuns[run.sessionID] === run) delete detachedRuns[run.sessionID];
@@ -1488,9 +1700,12 @@ async function sendPrompt(text, attachments, draft, queuedItem) {
     pendingImmediate = null;
     streaming = false;
     runFinishing = false;
+    if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
+    var automatic = !immediate ? queueDrainScope(run.turnID) : null;
     var next = handoffBlocked ? null : (immediate && (isAfterRunPrompt(immediate) || !pauseQueue) ? immediate : (!pauseQueue ? promptQueue[0] : null));
+    if (next && !queueDispatchGuard(next, automatic)) next = null;
     if (next) {
-      dispatchQueuedTask(next);
+      dispatchQueuedTask(next, automatic);
     } else {
       queueDispatchItem = null;
       queueDispatching = false;
@@ -1528,6 +1743,7 @@ function chatErrorText(ev) {
 }
 
 function handleEvent(ev, current) {
+  if (typeof refreshHostPower === "function" && /^(tool_result|done|error)$/.test(ev.type)) refreshHostPower();
   var remoteRun = typeof activeRun !== "undefined" && activeRun && activeRun.remote ? activeRun : null;
   var eventAt = remoteRun ? ev.at : 0;
   switch (ev.type) {
@@ -1586,15 +1802,26 @@ function handleEvent(ev, current) {
         id: ev.id || "", agent: ev.name || "worker", status: ev.status || "done",
         summary: ev.output || "", result: "",
       };
-      var workerRow = findTaskRow(task.id, task.agent);
+      var savedActivity = validWorkerActivity(ev.worker_activity, task.id);
+      if (savedActivity && savedActivity.run !== ev.run) savedActivity = null;
+      var boundCall = savedActivity && savedActivity.version === 1 && savedActivity.id === task.id &&
+        savedActivity.run === ev.run && typeof savedActivity.parent_call_id === "string" ? savedActivity.parent_call_id : null;
+      var workerRow = findTaskRow(task.id, task.agent, boundCall, ev.run || 0);
+      if (workerRow && boundCall && ((workerRow._taskID && workerRow._taskID !== task.id) ||
+          (workerRow._taskRun > 0 && workerRow._taskRun !== ev.run))) workerRow = null;
       if (workerRow) {
         clearInterval(workerRow._clock);
         workerRow._clock = null;
-        if (task.id) workerRows[task.id] = workerRow;
+        if (task.id && !workerRows[task.id]) workerRows[task.id] = workerRow;
+        // Recover a missed progress stream locally. A complete live trail
+        // keeps its existing expandable DOM and the user's open details.
+        if (savedActivity && workerActivityNeedsRecovery(workerRow, savedActivity)) workerRow._savedWorkerActivity = savedActivity;
+        if (boundCall && !workerRow._taskRun) workerRow._taskRun = ev.run;
         renderTaskResult(workerRow, task, toolElapsed(workerRow, eventAt), workerRow._taskPrompt, task.status === "failed");
         return current;
       }
-      addEventLine((ev.name || "worker") + " · " + (ev.status || "") + (ev.output ? " — " + clip(ev.output, 160) : ""), "", "worker");
+      // Unbound/legacy reports still belong in history, not on a newer row.
+      addHistoryTask(task, "", savedActivity);
       return current;
     case "reflection":
       addEventLine(clip(ev.text || "", 120), "", "reflection");
@@ -1612,6 +1839,7 @@ function handleEvent(ev, current) {
       if (typeof rememberStatsLiveSpeed === "function") rememberStatsLiveSpeed(lastTurn, activeSessionID);
       addFileChanges(ev.file_changes);
       addTurnMeta(ev, elapsed);
+      if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
       if (pendingImmediate || (!pauseQueue && promptQueue.length)) {
         setRunState("running", t("composer.sendingQueued"));
       } else {
@@ -1649,7 +1877,14 @@ function showQuestion(q) {
   panel.setAttribute("aria-label", q.header || t("question.title"));
   var head = el("div", "question-head");
   head.appendChild(el("span", "question-kicker", q.header || t("question.title")));
-  head.appendChild(el("h2", "question-text", q.question || ""));
+  var questionText = el("h2", "question-text");
+  function refreshQuestionText() {
+    questionText.textContent = q.confirmation && q.question_key === "hostPower.confirm" && t(q.question_key) !== q.question_key
+      ? localizedHostPowerText(q.question_key, q.question_args || {}) : (q.question || "");
+  }
+  registerLanguageRefresh(questionText, refreshQuestionText);
+  refreshQuestionText();
+  head.appendChild(questionText);
   panel.appendChild(head);
 
   var options = el("div", "question-options" + ((q.options || []).some(function (o) { return o.image; }) ? " visual" : ""));
@@ -1763,6 +1998,7 @@ function updateLocalSlashSuggestions() {
 
 $("#composer").addEventListener("submit", async function (e) {
   e.preventDefault();
+  if (attachmentUploadBusy()) { toast("Attachments are still being prepared/uploaded; wait before sending"); return; }
   var rawText = promptEl.value;
   if (runLocalSlashCommand(rawText)) return;
   var text = rawText.trim();
@@ -1790,6 +2026,7 @@ $("#composer").addEventListener("submit", async function (e) {
 $("#stop-run-btn").addEventListener("click", function () {
   pauseQueue = true;
   runStopRevision++;
+  queueAutoDrain = null;
   restoreUnsentAfterRun(pendingImmediate || queueDispatchItem);
   pendingImmediate = null;
   finishRunPresentation();
@@ -1797,6 +2034,7 @@ $("#stop-run-btn").addEventListener("click", function () {
   if (abortCtl) abortCtl.abort();
 });
 $("#interrupt-btn").addEventListener("click", function () {
+  if (attachmentUploadBusy()) { toast("Attachments are still being prepared/uploaded; wait before sending"); return; }
   var rawText = promptEl.value;
   if (runLocalSlashCommand(rawText)) return;
   if (pendingImmediate || queueDispatching || queueDispatchItem) return;
@@ -1860,6 +2098,7 @@ $$(".welcome .hints button").forEach(function (b) {
 });
 
 function newSession() {
+  queueAutoDrain = null;
   // A running conversation keeps going in the background.
   if (streaming && !detachActiveRun()) { toast(t("session.switchWait")); return; }
   if (queueDispatching) return;

@@ -175,7 +175,14 @@ func (s *PrefillProfiles) Observe(provider, model string, sample PrefillSample) 
 	entry.Model = model
 	oldBudget := entry.BudgetTokens
 	entry.Samples++
-	if sample.TTFT > prefillTargetTTFT {
+	// A mostly cached call proves the backend reuses the prompt prefix: its TTFT
+	// reflects the uncached tail, thinking and network, not prompt length. On
+	// such a backend compaction only adds summary calls and a full uncached
+	// reprocess, so drop any learned budget instead of shrinking it.
+	cacheEffective := sample.CachedTokens*2 >= sample.InputTokens
+	if cacheEffective {
+		entry.BudgetTokens, entry.SlowSamples, entry.FastSamples = 0, 0, 0
+	} else if sample.TTFT > prefillTargetTTFT {
 		entry.SlowSamples++
 		entry.FastSamples = 0
 	} else if sample.TTFT < prefillTargetTTFT/2 {
@@ -198,6 +205,7 @@ func (s *PrefillProfiles) Observe(provider, model string, sample PrefillSample) 
 	proposed := int(math.Round(entry.CandidateTokens))
 	extreme := sample.TTFT >= prefillExtremeTTFT
 	switch {
+	case cacheEffective:
 	case entry.BudgetTokens == 0 && (extreme || (entry.Samples >= 3 && entry.SlowSamples >= 2)):
 		entry.BudgetTokens = proposed
 	case entry.BudgetTokens > 0 && sample.TTFT > prefillTargetTTFT:

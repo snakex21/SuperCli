@@ -34,6 +34,7 @@ var commonActionsEN = []actionRow{
 	{id: "redo", group: "tui.autocomplete_render.abc7e98928", title: "tui.menu_checkpoint.8e0f3455fe", desc: "tui.action_redo.6a8c82847b"},
 	{id: "plan", group: "tui.action_plan.11b39c9377", title: "tui.action_plan.3ca7d842d1", desc: "tui.action_plan.4c667e6263"},
 	{id: "cost", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_navigation.8d59829c1e", desc: "tui.action_cost.39a1a28b29"},
+	{id: "instructions", group: "tui.action_cost.6725e7bbcd", title: "tui.instructions.title", desc: "tui.command_desc.instructions", shortcut: "/instructions"},
 	{id: "settings", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_navigation.74a883a037", desc: "tui.action_settings.89c407b7a4"},
 	{id: "data", group: "tui.action_cost.6725e7bbcd", title: "tui.menu_workflow.87e699b6c8", desc: "tui.action_data.cf37dc4a60"},
 	{id: "mcp", group: "tui.action_cost.6725e7bbcd", title: "tui.action_mcp.22a7559f09", desc: "tui.action_mcp.c745084f81"},

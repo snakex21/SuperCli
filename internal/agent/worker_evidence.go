@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -73,43 +74,61 @@ func workerResult(w *Worker, report string, err error) (result tools.Result) {
 // and historical evidence together, then share the immutable wrapper between
 // the UI and tool result. Nothing is cached for a later run or continuation.
 type workerHandoff struct {
+	uiActivity   json.RawMessage
 	snapshot     Snapshot
 	evidence     string
 	report       string
 	summary      string
 	notification string
+	canContinue  bool // invocation-local recovery eligibility; never read a later run
 }
 
 func prepareWorkerHandoff(w *Worker, report string) workerHandoff {
 	w.stateMu.RLock()
 	s := Snapshot{
+		WorkerModel: w.uiModel, ReasoningEffort: w.uiReasoningEffort,
 		ID: w.ID, Agent: w.Agent, Description: w.Description, Model: w.Model,
 		Status: w.Status, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
 		LastError: w.LastError, TokensIn: w.TokensIn, TokensOut: w.TokensOut,
 		Steps: w.Steps, ToolNames: append([]string(nil), w.ToolNames...), Runs: w.Runs,
 	}
 	evidence := w.lastEvidence
+	uiActivity := w.uiActivity
 	w.stateMu.RUnlock()
 	summary := workerSummaryFromSnapshot(s)
 	return workerHandoff{
-		snapshot: s, evidence: evidence, report: report, summary: summary,
+		uiActivity: uiActivity,
+		snapshot:   s, evidence: evidence, report: report, summary: summary,
 		notification: renderWorkerNotificationFromSnapshot(s, summary, report),
+		canContinue:  workerCanContinue(w, s),
 	}
 }
 
-func (h workerHandoff) result(w *Worker, err error) (result tools.Result) {
+// withReport changes only the presentation of this captured invocation (for
+// draft-verification annotations or the background error fallback).
+func (h workerHandoff) withReport(report string) workerHandoff {
+	if report != h.report {
+		h.report = report
+		h.notification = renderWorkerNotificationFromSnapshot(h.snapshot, h.summary, report)
+	}
+	return h
+}
+
+func (h workerHandoff) result(_ *Worker, err error) (result tools.Result) {
 	report := h.report
 	notification := h.notification
-	result = tools.Result{Text: notification, Err: err}
+	result = tools.Result{Text: notification, Err: err, WorkerActivity: h.uiActivity}
 	var inlineObservation string
 	if err != nil {
 		defer func() {
-			result.Err = workerFailureHandoffFromSnapshot(w, h.snapshot, report, err, inlineObservation)
+			result.Err = workerFailureHandoffCaptured(h.snapshot, h.canContinue, report, err, inlineObservation)
 		}()
 	} else {
 		defer func() {
 			if len(result.Text) > core.ModelOutputInlineBytes {
 				result.ModelPreview = workerReportPreviewFromSnapshot(h.snapshot, h.summary, report, result.Text[len(notification):])
+			} else if result.RetainedText == "" {
+				result.ModelText = workerReportCompleteModelTextFromSnapshot(h.snapshot, h.summary, report, result.Text[len(notification):])
 			}
 		}()
 	}

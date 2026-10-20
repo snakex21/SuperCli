@@ -261,8 +261,20 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 			betaRetried = true
 			continue
 		}
+		// The backend named the other thinking type (adaptive vs budget). That is
+		// not evidence that reasoning is unsupported: switch the form and keep
+		// the user's effort instead of silently dropping thinking.
+		if resp.StatusCode == 400 && !thinkingRetried && rememberAnthropicThinkingMode(p.cfg.Model, respBody) {
+			if effort := ReasoningEffortForModel(p.cfg.Model, ctx); effort != "" {
+				if patched, patchedOK := patchAnthropicThinkingForModel(body, p.cfg.Model, effort); patchedOK {
+					body = patched
+					thinkingRetried = true
+					continue
+				}
+			}
+		}
 		if effort, ok := LearnReasoningEffortFromError(p.cfg.Model, resp.StatusCode, respBody, ctx); ok && !thinkingRetried {
-			if patched, patchedOK := patchAnthropicThinking(body, effort); patchedOK {
+			if patched, patchedOK := patchAnthropicThinkingForModel(body, p.cfg.Model, effort); patchedOK {
 				body = patched
 				thinkingRetried = true
 				continue

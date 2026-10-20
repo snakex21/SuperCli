@@ -48,7 +48,7 @@ func (s *Store) Fork(ctx context.Context, sourceID string, throughSeq int, provi
 	} else if throughSeq < 0 {
 		limitClause = " AND 1=0"
 	}
-	q := `INSERT INTO messages(session_id,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,created_at) SELECT ?,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,created_at FROM messages WHERE session_id=?` + limitClause + ` ORDER BY seq`
+	q := `INSERT INTO messages(session_id,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,origin_json,created_at) SELECT ?,seq,role,content,parts_json,tool_call_id,tool_calls_json,name,origin_json,created_at FROM messages WHERE session_id=?` + limitClause + ` ORDER BY seq`
 	res, err := tx.ExecContext(ctx, q, args...)
 	if err != nil {
 		return Session{}, fmt.Errorf("fork messages: %w", err)

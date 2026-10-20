@@ -228,7 +228,7 @@ func ApplyOpenCodeZenHeaders(req *http.Request, baseURL string) {
 	if req.Header.Get("Connection") == "" {
 		req.Header.Set("Connection", "keep-alive")
 	}
-	sessionID := normalizeZenSessionID(openCodeSessionFromContext(req.Context()))
+	sessionID := normalizeZenSessionID(promptCacheSessionID(req.Context(), openCodeProcessSessionID))
 	req.Header.Set("X-OpenCode-Session", sessionID)
 	// Real client also sends the same value as X-OpenCode-Session-Id
 	// (capture 2026-10-13); set both so SuperCli matches wire-for-wire.

@@ -204,7 +204,8 @@ func TestWorkerContinuationPreservesWireEvidence(t *testing.T) {
 					field := "messages"
 					if protocol == "zen-responses" {
 						field = "input"
-						if resumed.path != "/zen/v1/responses" || resumed.client != "cli" || resumed.session != sessionID {
+						if resumed.path != "/zen/v1/responses" || resumed.client != "cli" || resumed.session == sessionID ||
+							resumed.session == "" || resumed.session != first.session || resumed.session != afterTool.session {
 							t.Fatalf("Zen route/headers changed: %s %s %s", resumed.path, resumed.client, resumed.session)
 						}
 					}

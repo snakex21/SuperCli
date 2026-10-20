@@ -228,7 +228,7 @@ func TestMainLoopRefreshesProjectGoalOutsideStablePrefix(t *testing.T) {
 	}
 	svc := goal.NewProjectService(store, "usos")
 	cfg := buildMainLoopConfig(loopAssembly{goalSvc: svc})
-	if cfg.LiveContextForRun == nil || strings.Contains(cfg.System, "[current_goal]") {
+	if cfg.LiveContextBlocks == nil || strings.Contains(cfg.System, "[current_goal]") {
 		t.Fatal("goal is frozen into stable system prefix")
 	}
 	if _, err := svc.Set(ctx, "Current Windows goal", "", "", ""); err != nil {
@@ -237,15 +237,25 @@ func TestMainLoopRefreshesProjectGoalOutsideStablePrefix(t *testing.T) {
 	if _, err := goal.NewProjectService(store, "game").Set(ctx, "Unrelated game goal", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	first, err := cfg.LiveContextForRun(ctx)
+	firstBlocks, err := cfg.LiveContextBlocks(ctx)
+	first := liveBlocksText(firstBlocks)
 	if err != nil || !strings.Contains(first, "Current Windows goal") || strings.Contains(first, "Unrelated game goal") {
 		t.Fatalf("wrong goal: %s %v", first, err)
 	}
 	if _, err := svc.Set(ctx, "Updated Windows goal", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	next, err := cfg.LiveContextForRun(ctx)
+	nextBlocks, err := cfg.LiveContextBlocks(ctx)
+	next := liveBlocksText(nextBlocks)
 	if err != nil || !strings.Contains(next, "Updated Windows goal") || strings.Contains(next, "Current Windows goal") {
 		t.Fatalf("stale goal: %s %v", next, err)
 	}
+}
+
+func liveBlocksText(blocks []llm.ContextBlock) string {
+	var b strings.Builder
+	for _, block := range blocks {
+		b.WriteString(block.Text)
+	}
+	return b.String()
 }

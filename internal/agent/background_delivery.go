@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -11,11 +12,12 @@ import (
 // Only the conversation owner appends/persists history. Background producers
 // merely enqueue reports, so they cannot split a tool batch or race compaction.
 type backgroundMessage struct {
-	content string
-	scoped  bool
-	epoch   uint64
-	writer  SessionWriter
-	run     *backgroundRun
+	uiActivity json.RawMessage
+	content    string
+	scoped     bool
+	epoch      uint64
+	writer     SessionWriter
+	run        *backgroundRun
 }
 
 // Capture while the parent owns the conversation, before launching the worker.
@@ -23,10 +25,11 @@ type backgroundMessage struct {
 func (l *Loop) backgroundDelivery(ctx context.Context) func(context.Context, string) {
 	epoch, writer := l.conversationEpoch.Load(), l.writer
 	run := backgroundRunFrom(ctx)
-	return func(_ context.Context, content string) {
+	return func(noticeCtx context.Context, content string) {
 		if strings.TrimSpace(content) != "" {
 			run.publishReport()
-			l.enqueueBackgroundMessage(backgroundMessage{content: content, scoped: true, epoch: epoch, writer: writer, run: run})
+			uiActivity, _ := noticeCtx.Value(workerUIActivityKey{}).(json.RawMessage)
+			l.enqueueBackgroundMessage(backgroundMessage{content: content, scoped: true, epoch: epoch, writer: writer, run: run, uiActivity: uiActivity})
 		}
 	}
 }
@@ -63,19 +66,30 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 	changed := false
 	for _, message := range pending {
 		msg := llm.Message{Role: llm.RoleUser, Content: message.content}
+		if message.scoped {
+			msg.Name = llm.WorkerNotificationName
+			msg.Origin = &llm.ContextOrigin{Source: llm.SourceWorkerNotification}
+		}
+		transcript := msg
+		if message.scoped && len(message.uiActivity) > 0 {
+			transcript.Origin = &llm.ContextOrigin{Source: llm.SourceWorkerNotification, WorkerActivity: message.uiActivity}
+		}
 		if message.scoped && message.epoch != l.conversationEpoch.Load() {
 			// The old transcript remains inspectable without contaminating the newly
 			// selected conversation. Session writers are safe for concurrent use.
 			if message.writer != nil {
-				if err := message.writer.AppendMessage(ctx, msg); err != nil {
+				if err := message.writer.AppendMessage(ctx, canonicalWorkerReportMessage(transcript)); err != nil {
 					l.persistNotify("background worker report could not be saved to its original session: " + err.Error())
 				}
 			}
 			continue
 		}
 		l.Messages = append(l.Messages, msg)
+		l.recordContextAddition(msg)
+		l.liveContextDirty = true
+		l.recordWorkerContextAddition(msg)
 		message.run.acceptReport()
-		l.persist(ctx, msg)
+		l.persist(ctx, transcript)
 		changed = true
 	}
 	if changed {

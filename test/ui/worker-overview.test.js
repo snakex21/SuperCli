@@ -44,7 +44,7 @@ function harness() {
     return node;
   }
   const $ = selector => { if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector); };
-  const context = {window: {}, superCliUI: {fileMutationTools: {}}, $, el: element, clip: (value, length) => String(value || '').slice(0, length), clearInterval() {}};
+  const context = {window: {}, superCliUI: {fileMutationTools: {}}, transcriptSessionID: '', activeSessionID: '', $, el: element, clip: (value, length) => String(value || '').slice(0, length), clearInterval() {}};
   context.t = key => { assert.ok(catalogs[language][key], 'missing catalog key ' + key); return catalogs[language][key]; };
   context.i18nEl = (tag, className, key) => element(tag, className, context.t(key));
   createSandbox(context);
@@ -97,9 +97,11 @@ test('worker overview refreshes status and language, opens the current row and r
   assert.equal(list[1], buttons[0]);
   assert.equal(h.moves.length, 1, 'only the finished worker is relocated');
   buttons[0].click(); assert.equal(first.open, true); assert.equal(first._body.hidden, false); assert.equal(first.scrolls.length, 1);
-  h.context.updateWorkerOverview('worker-1', 'code', 'running', 'Nowa tura', second);
-  buttons[0].click(); assert.equal(second.open, true); assert.equal(second._body.hidden, false); assert.equal(second.scrolls.length, 1);
-  second.remove(); buttons[0].click(); assert.equal(second.scrolls.length, 1, 'detached rows must not be opened or scrolled');
+  // A new invocation must be bound by its started event, not by assigning a
+  // different worker's row directly to the overview.
+  const continuation = h.start('worker-1');
+  buttons[0].click(); assert.equal(continuation.open, true); assert.equal(continuation._body.hidden, false); assert.equal(continuation.scrolls.length, 1);
+  continuation.remove(); buttons[0].click(); assert.equal(continuation.scrolls.length, 1, 'detached rows must not be opened or scrolled');
   h.context.resetWorkerOverview();
   assert.equal(h.$('#worker-overview-list').children.length, 0); assert.equal(h.$('#worker-overview').hidden, true);
   assert.equal(Object.keys(h.context.workerOverview).length, 0);

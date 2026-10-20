@@ -382,6 +382,23 @@ function renderPerformanceTelemetry(telemetry) {
     head.appendChild(el("div", "usage-section-value", sampleLabel));
   }
   section.appendChild(head);
+  // Numeric counters only: never render worker notification contents.
+  var worker = telemetry.workerContext;
+  if (worker) {
+    var workerSection = el("div", "telemetry-worker-context");
+    workerSection.appendChild(i18nEl("h4", "usage-section-title", "telemetry.workerContext.title"));
+    var workerFacts = el("dl", "usage-facts telemetry-facts");
+    workerFacts.appendChild(usageFact(t("telemetry.workerContext.addedMessages"), fmtInteger(worker.added_messages)));
+    workerFacts.appendChild(usageFact(t("telemetry.workerContext.addedBytes"), fmtInteger(worker.added_bytes)));
+    workerFacts.appendChild(usageFact(t("telemetry.workerContext.requests"), fmtInteger(worker.requests)));
+    workerFacts.appendChild(usageFact(t("telemetry.workerContext.exposures"), fmtInteger(worker.message_exposures)));
+    workerFacts.appendChild(usageFact(t("telemetry.workerContext.contextBytes"), fmtInteger(worker.context_bytes)));
+    workerSection.appendChild(workerFacts);
+    workerSection.appendChild(i18nEl("p", "usage-caption", "telemetry.workerContext.note"));
+    section.appendChild(workerSection);
+  }
+  var contextSources = renderContextUsageSources(telemetry.contextUsage);
+  if (contextSources) section.appendChild(contextSources);
   if (!telemetry.samples) {
     section.appendChild(i18nEl("div", "usage-empty", "telemetry.empty"));
     // Model work done outside any reply exists even before the first
@@ -438,6 +455,28 @@ function renderPerformanceTelemetry(telemetry) {
     section.appendChild(notes);
   }
   return section;
+}
+
+function renderContextUsageSources(context) {
+  if (!context) return null;
+  var details = el("details", "context-usage-sources");
+  details.appendChild(el("summary", "", t("telemetry.contextOrigin")));
+  details.appendChild(el("p", "", t("telemetry.contextScope")));
+  var facts = el("dl", "usage-facts telemetry-facts");
+  facts.appendChild(usageFact(t("telemetry.contextCalls"), fmtInteger(context.logical_calls) + " / " + fmtInteger(context.measured_calls),
+    fmtInteger(context.traced_calls) + " / " + fmtInteger(context.measured_calls) + " " + t("telemetry.contextGrouped")));
+  var coverage = context.text_bytes ? Math.round(100 * context.known_bytes / context.text_bytes) : 0;
+  facts.appendChild(usageFact(t("telemetry.contextCoverage"), coverage + "%", fmtInteger(context.known_bytes) + " / " + fmtInteger(context.text_bytes) + " B"));
+  facts.appendChild(usageFact(t("telemetry.contextSchemas"), fmtInteger(context.tool_definition_exposures) + " / " + fmtInteger(context.schema_bytes) + " B"));
+  context.sources.forEach(function (row) {
+    facts.appendChild(usageFact(row.source.replace(/_/g, " "), fmtInteger(row.exposures) + " / " + fmtInteger(row.text_bytes) + " B",
+      t("telemetry.contextAdded") + ": " + fmtInteger(row.added_items) + " / " + fmtInteger(row.added_bytes) + " B"));
+  });
+  context.reasons.forEach(function (row) {
+    facts.appendChild(usageFact(t("telemetry.contextReason") + ": " + row.reason.replace(/_/g, " "), fmtInteger(row.calls)));
+  });
+  details.appendChild(facts);
+  return details;
 }
 
 var usageRenderSeq = 0;

@@ -223,17 +223,17 @@ func TestWorkerVerificationIdentityAllowsMatchingForegroundRecovery(t *testing.T
 		`{"command":["go","test","./other"],"workdir":"pkg","env_extra":["MODE=full"]}`,
 		`{"command":["go","test","./..."],"workdir":"pkg","env_extra":["MODE=quick"]}`,
 	} {
-		parent.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: args}, tools.Result{Text: "passed"})
+		parent.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: args}, tools.Result{Text: `{"exit_code":0}`})
 		if !parent.failedChecks.unresolved() {
 			t.Fatalf("different check cleared worker failure: %s", args)
 		}
 	}
-	parent.recordCheckResult(command, tools.Result{Text: "passed"})
+	parent.recordCheckResult(command, tools.Result{Text: `{"exit_code":0}`})
 	if parent.failedChecks.unresolved() {
 		t.Fatal("matching foreground recovery did not resolve worker check")
 	}
 	parent.recordCheckResult(command, tools.Result{Err: errors.New("failed in parent")})
-	worker.recordCheckResult(command, tools.Result{Text: "passed"})
+	worker.recordCheckResult(command, tools.Result{Text: `{"exit_code":0}`})
 	if parent.failedChecks.unresolved() {
 		t.Fatal("worker recovery did not resolve foreground check")
 	}
@@ -275,7 +275,23 @@ func TestWorkerVerificationForwardingDoesNotChangeModelRequests(t *testing.T) {
 		return provider
 	}
 	baseline, current := run(false), run(true)
-	if baseline.calls != 2 || current.calls != 2 || !reflect.DeepEqual(baseline.reqs, current.reqs) || !reflect.DeepEqual(baseline.toolReqs, current.toolReqs) {
+	wireMessages := func(requests [][]llm.Message) [][]llm.Message {
+		result := make([][]llm.Message, len(requests))
+		for i, messages := range requests {
+			result[i] = append([]llm.Message(nil), messages...)
+			for j := range result[i] {
+				// Provider builders intentionally omit host provenance. Compare
+				// every actual wire field, not invocation-local host attribution.
+				result[i][j].Origin = nil
+				result[i][j].Parts = append([]llm.ContentPart(nil), result[i][j].Parts...)
+				for k := range result[i][j].Parts {
+					result[i][j].Parts[k].Source = ""
+				}
+			}
+		}
+		return result
+	}
+	if baseline.calls != 2 || current.calls != 2 || !reflect.DeepEqual(wireMessages(baseline.reqs), wireMessages(current.reqs)) || !reflect.DeepEqual(baseline.toolReqs, current.toolReqs) {
 		t.Fatal("internal check forwarding changed the model payload or added a request")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	"supercli/internal/system/stats"
 )
 
 type statsView struct {
@@ -139,6 +140,9 @@ type statsContextBreakdown struct {
 type statsCostView = usagecost.Summary
 
 type statsTelemetryView struct {
+	Context       *llm.ContextUsage    `json:"context_usage,omitempty"`
+	WorkerContext *stats.WorkerContext `json:"worker_context,omitempty"`
+
 	Scope       string `json:"scope,omitempty"`
 	Samples     int    `json:"samples"`
 	Steps       int    `json:"steps"`

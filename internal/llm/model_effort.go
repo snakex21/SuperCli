@@ -353,6 +353,14 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 	if !strings.Contains(low, "reasoning") && !strings.Contains(low, "effort") && !strings.Contains(low, "thinking") {
 		return ReasoningEffortError{}, false
 	}
+	// Rejections of replayed thinking blocks (bad signature, modified or
+	// misplaced block) describe conversation content, not the reasoning
+	// control. Treating them as "effort unsupported" would silently disable
+	// reasoning for the model for the rest of the process.
+	if strings.Contains(low, "signature") || strings.Contains(low, "thinking block") ||
+		strings.Contains(low, "redacted_thinking") || strings.Contains(low, "cannot be modified") {
+		return ReasoningEffortError{}, false
+	}
 	info := ReasoningEffortError{Message: msg}
 	if idx := strings.Index(strings.ToLower(msg), "unsupported value:"); idx >= 0 {
 		if m := quotedEffortRe.FindStringSubmatch(msg[idx:]); len(m) == 2 {

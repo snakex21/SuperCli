@@ -9,6 +9,9 @@ import (
 )
 
 func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.menu.kind == menuInstructions || m.menu.kind == menuInstructionEditor {
+		return m.handleInstructionsKey(msg)
+	}
 	if m.menu.kind == menuPhone {
 		return m.handlePhoneKey(msg)
 	}

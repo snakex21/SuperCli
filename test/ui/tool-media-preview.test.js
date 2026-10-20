@@ -45,8 +45,8 @@ function harness() {
   const $ = selector => { if (!nodes.has(selector)) nodes.set(selector, element('div')); return nodes.get(selector); };
   const el = (tag, cls, text) => { const node = element(tag, cls, text); created.push(node); return node; };
   const c = {$, $$: () => [], el, i18nEl: (tag, cls, key) => el(tag, cls, key), t: key => key,
-    document: {hidden: false, hasFocus: () => true, createElement: el, createDocumentFragment() { const node = element('#fragment'); node.nodeType = 11; return node; }},
-    localStorage: {getItem: () => null}, window: {}, AbortController, Promise,
+    document: Object.assign(new EventTarget(), {hidden: false, hasFocus: () => true, createElement: el, createDocumentFragment() { const node = element('#fragment'); node.nodeType = 11; return node; }}),
+    localStorage: {getItem: () => null}, window: new EventTarget(), AbortController, Promise,
     superCliUI: {fileMutationTools: {}, mutationKind: () => '', createComposerDraftStore: () => ({restore() {}, clear() {}, scope() { return ''; }})},
     requestAnimationFrame: () => 1, clearInterval() {}, performance: {now: () => 100},
     prettyJSON: value => { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }},

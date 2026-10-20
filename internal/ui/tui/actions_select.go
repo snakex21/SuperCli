@@ -56,6 +56,8 @@ func (m Model) selectAction() (tea.Model, tea.Cmd) {
 	switch rows[minInt(m.menu.cursor, len(rows)-1)].id {
 	case "preview":
 		return m.openPreviewMenu()
+	case "instructions":
+		return m.openInstructionsMenu()
 	case "phone":
 		return m.openPhoneMenu()
 	case "update":

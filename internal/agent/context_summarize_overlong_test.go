@@ -131,7 +131,7 @@ func TestAutoSummarizerOverlongSideFallback(t *testing.T) {
 			messages := []llm.Message{{Role: llm.RoleUser, Content: "Preserve all earlier restrictions and finish the work."}}
 			got, err := NewAutoSummarizerWithProvider(side, nil)(context.Background(), main, messages)
 			if tc.want == nil {
-				if err != nil || got != WrapCompactSummary(valid+compactRecentUserRequests(messages)) {
+				if err != nil || got != WrapCompactSummary(valid+compactPreservedUserContext(messages)) {
 					t.Fatalf("valid active fallback changed: error=%v bytes=%d", err, len(got))
 				}
 			} else if got != "" || !errors.Is(err, tc.want) || !errors.Is(err, errCompactionSummaryTooLong) {
@@ -175,14 +175,14 @@ func TestOverlongCompactionPreservesRunAndManualProjection(t *testing.T) {
 						t.Fatalf("manual overlong summary changed projection: error=%v removed=%d", err, event.Removed)
 					}
 				} else {
-					expected = compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
+					expected = compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), compactionFailureRunTask()))
 					assertCompactionFailureEvents(t, compactionFailureEvents(t, l, context.Background()), errCompactionSummaryTooLong, "")
 				}
 				assertCompactionFailureHistory(t, l, expected, writer)
 				if atomic.LoadInt32(&main.calls) != wantMainCalls || len(main.reqs) != int(wantMainCalls) || (side != nil && atomic.LoadInt32(&side.calls) != 1) {
 					t.Fatalf("rejected summary caused extra inference: main=%d side=%v", main.calls, useSide)
 				}
-				if main.toolReqs[wantMainCalls-1] != 0 || len(main.reqs[wantMainCalls-1]) != 2 || main.reqs[wantMainCalls-1][0].Content != compactionPrompt {
+				if main.toolReqs[wantMainCalls-1] != 0 || len(main.reqs[wantMainCalls-1]) != 2 || main.reqs[wantMainCalls-1][0].Content != compactionStatePrompt {
 					t.Fatal("rejected summary changed its text-only request contract")
 				}
 				if side != nil && !reflect.DeepEqual(side.reqs[0], main.reqs[wantMainCalls-1]) {

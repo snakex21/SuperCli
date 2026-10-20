@@ -177,7 +177,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.WorkerNotificationEvent:
-		m.updateWorkerView(agent.WorkerProgressEvent{TaskID: e.TaskID, Agent: e.Agent, Kind: "finished", Status: e.Status})
+		m.updateWorkerView(agent.WorkerProgressEvent{TaskID: e.TaskID, Agent: e.Agent, Kind: "finished", Status: e.Status, Run: e.Run})
 		line := fmt.Sprintf(m.tr("tui.model_events.0169a72b57"), e.TaskID, e.Status, e.Summary)
 		m.appendLine(line)
 		m.markTranscriptPresent()

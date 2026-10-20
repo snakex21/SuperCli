@@ -29,7 +29,10 @@ function fixture() {
     if (url.startsWith('/api/stats')) return {};
     throw Error('unexpected URL: ' + url);
   };
-  w.jpost = async (url, body) => {posts.push({url, body}); knobs.find(k => k.key === body.key).raw = body.value;};
+  w.jpost = async (url, body) => {
+    posts.push({url, body}); knobs.find(k => k.key === body.key).raw = body.value;
+    return {knobs: JSON.parse(JSON.stringify(knobs)), cost_currencies: ['USD']};
+  };
   w.modelCache = [{id: 'worker-model', provider: 'local'}];
   w.activeProviderID = 'main';
   return {w, document, posts, errors, knobs, event(node, type) {node.dispatchEvent(new window.Event(type));}};
@@ -66,8 +69,12 @@ test('stats orchestrator exposes delegation, worker model and all worker effort 
 
 test('orchestrator Auto/Always/Never responds before saving and rolls back failed saves', async () => {
   const h = fixture(); await h.w.renderStats();
-  const row = [...h.document.querySelectorAll('.stat-row')].find(n => n.firstChild.textContent === catalog['stats.orchDesc']);
-  const seg = row.querySelector('.seg'), buttons = [...seg.querySelectorAll('button')];
+  function controls() {
+    const row = [...h.document.querySelectorAll('.stat-row')].find(n => n.firstChild.textContent === catalog['stats.orchDesc']);
+    const seg = row.querySelector('.seg');
+    return {seg, buttons: [...seg.querySelectorAll('button')]};
+  }
+  let {seg, buttons} = controls();
   let finishSave;
   h.w.jpost = (url, body) => {
     h.posts.push({url, body});
@@ -87,7 +94,10 @@ test('orchestrator Auto/Always/Never responds before saving and rolls back faile
     h.event(buttons[(index + 1) % buttons.length], 'click');
     assert.equal(h.posts.length, count + 1);
     assert.deepEqual(JSON.parse(JSON.stringify(h.posts.at(-1))), {url: '/api/config', body: {key: 'orchestrator', value}});
-    finishSave(); await tick();
+    h.knobs.find(k => k.key === 'orchestrator').state = value;
+    finishSave({knobs: JSON.parse(JSON.stringify(h.knobs)), cost_currencies: ['USD']}); await tick();
+    ({seg, buttons} = controls());
+    assert.ok(buttons[index].classList.contains('on'));
     assert.ok(buttons.every(b => !b.disabled));
     assert.equal(seg.getAttribute('aria-busy'), 'false');
   }

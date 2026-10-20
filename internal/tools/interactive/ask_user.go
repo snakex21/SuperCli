@@ -60,6 +60,9 @@ type AskRequest struct {
 	ID string `json:"id"`
 	// Question is the full question the model wants answered.
 	Question string `json:"question"`
+	// QuestionKey and QuestionArgs are supplied only by trusted confirmation code.
+	QuestionKey  string            `json:"question_key,omitempty"`
+	QuestionArgs map[string]string `json:"question_args,omitempty"`
 	// Header is a short tab/header label (max 64 Unicode characters).
 	Header string `json:"header"`
 	// Options is the list of choices (2..4).

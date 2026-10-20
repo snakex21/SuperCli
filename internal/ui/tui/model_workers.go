@@ -12,6 +12,8 @@ import (
 
 type workerView struct {
 	id, agent, status, activity string
+	run                         int
+	firstCallID, parentCallID   string
 }
 
 func workerDisplayName(id string, languages ...string) string {
@@ -50,6 +52,28 @@ func (m *Model) updateWorkerView(e agent.WorkerProgressEvent) {
 		}
 		m.workerViews = append(m.workerViews, workerView{id: e.TaskID})
 		w = &m.workerViews[len(m.workerViews)-1]
+	}
+	// A fresh root can reuse worker IDs and start at run 1. The first
+	// invocation's call identity distinguishes that from a delayed old start.
+	if e.Kind == "started" && e.Run == 1 && e.ParentCallID != "" &&
+		e.ParentCallID != w.firstCallID && e.ParentCallID != w.parentCallID {
+		w.run = 0
+		w.firstCallID = e.ParentCallID
+	}
+	if e.Run > 0 && e.Run < w.run {
+		return
+	}
+	if e.Run == 0 && w.run > 0 {
+		if (e.ParentCallID != "" && e.ParentCallID != w.parentCallID) ||
+			(e.Kind == "finished" && e.ParentCallID == "") {
+			return
+		}
+	}
+	if e.Run > 0 {
+		w.run = e.Run
+	}
+	if e.Kind == "started" {
+		w.parentCallID = e.ParentCallID
 	}
 	if e.Agent != "" {
 		w.agent = e.Agent

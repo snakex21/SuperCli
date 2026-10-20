@@ -19,6 +19,14 @@ function statNullableNumber(value) {
   var n = Number(value);
   return value !== null && value !== "" && Number.isFinite(n) ? n : null;
 }
+function normalizeWorkerContext(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  var out = {};
+  ["added_messages", "added_bytes", "requests", "message_exposures", "context_bytes"].forEach(function (key) {
+    out[key] = Math.max(0, Math.floor(statNumber(raw[key])));
+  });
+  return Object.keys(out).some(function (key) { return out[key] > 0; }) ? out : null;
+}
 function normalizeStats(raw) {
   raw = raw || {};
   var session = raw.session || {};
@@ -91,7 +99,9 @@ function normalizeStats(raw) {
       streamMS: statNumber(generation.stream_ms), outputTokens: statNumber(generation.output_tokens),
     },
     telemetry: {
+	  contextUsage: normalizeContextUsage(telemetry.context_usage),
       scope: telemetry.scope || "",
+      workerContext: normalizeWorkerContext(telemetry.worker_context),
       samples: statNumber(telemetry.samples), steps: statNumber(telemetry.steps),
       durationMS: statNumber(telemetry.duration_ms), averageMS: statNumber(telemetry.average_ms),
       modelMS: statNumber(telemetry.model_ms), toolsMS: statNumber(telemetry.tools_ms),
@@ -107,6 +117,27 @@ function normalizeStats(raw) {
       tools: Array.isArray(telemetry.tools) ? telemetry.tools : [],
     },
   };
+}
+
+function normalizeContextUsage(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  var out = {sources: [], reasons: []};
+  ["measured_calls", "logical_calls", "traced_calls", "text_bytes", "known_bytes", "tool_definition_exposures", "schema_bytes"].forEach(function (key) {
+    out[key] = Math.max(0, Math.floor(statNumber(raw[key])));
+  });
+  out.known_bytes = Math.min(out.text_bytes, out.known_bytes);
+  ["human", "worker_notification", "task_result", "tool_result", "memory", "runtime", "goal_state", "instructions", "model", "unknown"].forEach(function (source) {
+    var value = raw.sources && raw.sources[source];
+    if (!value || typeof value !== "object") return;
+    var row = {source: source};
+    ["added_items", "added_bytes", "exposures", "text_bytes", "calls"].forEach(function (key) { row[key] = Math.max(0, Math.floor(statNumber(value[key]))); });
+    out.sources.push(row);
+  });
+  ["user_input", "tool_results", "resume", "transport_retry", "context_retry", "failover", "worker_delivery", "delegation", "unknown"].forEach(function (reason) {
+    var count = Math.max(0, Math.floor(statNumber(raw.reasons && raw.reasons[reason])));
+    if (count) out.reasons.push({reason: reason, calls: count});
+  });
+  return out.sources.length || out.measured_calls ? out : null;
 }
 function statsURL() {
   return "/api/stats" + (activeSessionID ? "?session=" + encodeURIComponent(activeSessionID) : "");
@@ -803,8 +834,111 @@ function appendLastTurnStats(parent, turn) {
   if (turn.tools) parent.appendChild(statRow(t("run.tools"), String(turn.tools)));
 }
 function statsSelectionCurrent(seq, session, model, provider) {
-  return seq === statsRenderSeq && session === activeSessionID && model === activeModelID &&
+  return !ui.sidebarHidden && seq === statsRenderSeq && session === activeSessionID && model === activeModelID &&
     provider === (typeof activeProviderID === "string" ? activeProviderID : "");
+}
+function statsConfigScope() {
+  return JSON.stringify([activeSessionID, activeModelID, typeof activeProviderID === "string" ? activeProviderID : "",
+    typeof projectEpoch === "number" ? projectEpoch : 0, ui.lang]);
+}
+function statsProjectTransition() {
+  return typeof projectTransitionSeq === "number" ? projectTransitionSeq : 0;
+}
+function statsConfigGroup(target, scope, current) {
+  var group = target.querySelector(".stats-config");
+  if (!group || group.statsConfigState.scope !== scope) {
+    if (group) group.remove();
+    group = el("div", "stats-config");
+    group.statsConfigState = {scope: scope, revision: 0, pending: {}, count: 0, tail: null, snapshot: null, reconcile: false};
+    target.appendChild(group);
+  }
+  // Same-selection stats refreshes retain the confirmed controls and any saves.
+  // The state belongs to this DOM group, not a global configuration cache.
+  group.statsConfigState.current = function () {
+    return current() && target.isConnected && $("#stats-block") === target && group.parentNode === target;
+  };
+  return group;
+}
+function statsConfigCanSave(control, key) {
+  var group = control.closest(".stats-config"), state = group && group.statsConfigState;
+  return !!(state && control.isConnected && state.current() && !state.pending[key]);
+}
+function refreshStatsConfig(group) {
+  var state = group.statsConfigState;
+  if (!state.reconcile || state.count || !state.current()) return;
+  var revision = state.revision;
+  // Keep the requirement until a current read or later authoritative save wins.
+  // A failed newer save must not lose a reconciliation it invalidated.
+  // This exceptional read is separate from saving: failure must not roll back
+  // a confirmed mutation, and a newer save invalidates the read's result.
+  j("/api/config").then(function (cfg) {
+    if (state.current() && !state.count && revision === state.revision) {
+      state.reconcile = false;
+      renderStatsConfig(group, cfg);
+    }
+  }).catch(function (error) {
+    if (state.current() && revision === state.revision) {
+      state.reconcile = false;
+      toast(error.message);
+    }
+  });
+}
+function reconcileStatsConfig(project) {
+  if (project !== (typeof projectEpoch === "number" ? projectEpoch : 0)) return;
+  var target = $("#stats-block"), group = target && target.querySelector(".stats-config");
+  var state = group && group.statsConfigState;
+  if (!state || !state.current()) return;
+  // A successful save outlived its controls. Do not reuse its full snapshot:
+  // current controls may have newer saves, so read only after those settle.
+  state.revision++;
+  state.reconcile = true;
+  refreshStatsConfig(group);
+}
+function saveStatsConfig(control, key, value) {
+  if (!statsConfigCanSave(control, key)) return Promise.resolve(false);
+  var group = control.closest(".stats-config"), state = group.statsConfigState;
+  var requestProject = typeof projectEpoch === "number" ? projectEpoch : 0;
+  var requestTransition = statsProjectTransition();
+  state.revision++;
+  state.pending[key] = true;
+  state.count++;
+  async function post() {
+    // Cancel unsent old-UI actions at project initiation, not its delayed ack.
+    if (!state.current() || requestTransition !== statsProjectTransition()) return false;
+    var cfg, revision = state.revision;
+    try {
+      cfg = await jpost("/api/config", {key: key, value: value});
+    } catch (error) {
+      if (state.current()) throw error;
+      return false;
+    }
+    if (!state.current()) {
+      reconcileStatsConfig(requestProject);
+      return false;
+    }
+    state.snapshot = cfg;
+    // This response includes mutations confirmed before this request began,
+    // but not a reconciliation requested while the save was in flight.
+    if (revision === state.revision) state.reconcile = false;
+    return true;
+  }
+  // Full POST snapshots have no server revision. Serialize this group's saves
+  // rather than guessing which overlapping snapshot contains the other knob.
+  var task = (state.tail ? state.tail.then(post) : post()).finally(function () {
+    delete state.pending[key];
+    state.count--;
+    if (!state.count) {
+      var cfg = state.snapshot;
+      state.snapshot = null;
+      state.tail = null;
+      if (state.current()) {
+        if (cfg && !state.reconcile) renderStatsConfig(group, cfg);
+        refreshStatsConfig(group);
+      }
+    }
+  });
+  state.tail = task.catch(function () {});
+  return task;
 }
 async function renderStats() {
   var targetBox = $("#stats-block");
@@ -813,6 +947,10 @@ async function renderStats() {
   var requestSession = activeSessionID;
   var requestModel = activeModelID;
   var requestProvider = typeof activeProviderID === "string" ? activeProviderID : "";
+  var requestScope = statsConfigScope();
+  function current() {
+    return statsSelectionCurrent(seq, requestSession, requestModel, requestProvider) && requestScope === statsConfigScope();
+  }
   var speedState = statsGenerationForSession(requestSession);
   rememberStatsLiveSpeed(lastTurn, requestSession);
   // Retain the same session's meter while the requested snapshot is loading.
@@ -837,10 +975,16 @@ async function renderStats() {
   var box = el("div");
   var costSnapshot = null;
 
-  var cfgPromise = j("/api/config").catch(function () { return null; });
+  var configBox = statsConfigGroup(targetBox, requestScope, current);
+  var configState = configBox.statsConfigState;
+  var configRevision = configState.revision, configPending = configState.count > 0;
+  var cfgPromise = j("/api/config").then(function (cfg) {
+    if (current() && configState.current() && !configPending && !configState.count && configRevision === configState.revision)
+      renderStatsConfig(configBox, cfg);
+  }).catch(function () {});
   try {
     var stats = normalizeStats(await j(statsURL()));
-    if (!statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) return;
+    if (!current()) return;
     var turn = stats.lastTurn || statsLiveTurnForSession(requestSession);
     appendLastTurnStats(box, turn);
     box.appendChild(i18nEl("div", "stats-head", "stats.sessionSection"));
@@ -855,20 +999,13 @@ async function renderStats() {
     appendSidebarCost(box, stats.cost);
     costSnapshot = stats.cost;
   } catch (e) {
-    if (!statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) return;
+    if (!current()) return;
     var liveTurn = statsLiveTurnForSession(requestSession);
     appendLastTurnStats(box, liveTurn);
     appendSessionGenerationSpeed(box, speedState.persisted, speedState.live, liveTurn);
     box.appendChild(el("div", "side-empty", t("common.error") + ": " + e.message));
     appendCompactContext(box, null);
   }
-
-  targetBox.replaceChildren.apply(targetBox, Array.from(box.childNodes));
-  box = targetBox;
-  if (costSnapshot) observeCostRatesPending(costSnapshot.ratesPendingKnown ? costSnapshot.ratesPending : null,
-    costSnapshot.ratesGeneration, "hud", function () {
-    return statsSelectionCurrent(seq, requestSession, requestModel, requestProvider) && targetBox.isConnected;
-  });
 
   // Delegations stay visible when present, but an empty section would make the
   // narrow inspector feel like a dashboard rather than a compact HUD.
@@ -879,9 +1016,22 @@ async function renderStats() {
     });
   }
 
+  // Leave the independently usable config group connected (including focus).
+  // Session/worker rows always precede it, whichever request finished first.
+  Array.from(targetBox.childNodes).forEach(function (node) { if (node !== configBox) node.remove(); });
+  Array.from(box.childNodes).forEach(function (node) { targetBox.insertBefore(node, configBox); });
+  if (costSnapshot) observeCostRatesPending(costSnapshot.ratesPendingKnown ? costSnapshot.ratesPending : null,
+    costSnapshot.ratesGeneration, "hud", function () {
+    return current() && targetBox.isConnected;
+  });
+  await cfgPromise;
+  if (current()) targetBox.setAttribute("aria-busy", "false");
+}
+
+function renderStatsConfig(box, cfg) {
+  box.replaceChildren();
   // Orchestrator switch — visible without digging (config.toml knob).
-  var cfg = await cfgPromise;
-  if (statsSelectionCurrent(seq, requestSession, requestModel, requestProvider) && cfg) {
+  if (cfg) {
     var knob = null;
     (cfg.knobs || []).forEach(function (k) { if (k.key === "orchestrator") knob = k; });
     if (knob) {
@@ -901,8 +1051,7 @@ async function renderStats() {
         rowM.title = t("stats.taskModelTooltip");
         rowM.appendChild(i18nEl("span", "", "stats.taskModel"));
         supercliOrchPicker(rowM, knobM, function (v) {
-          jpost("/api/config", { key: "task_model", value: v })
-            .then(renderStats)
+          saveStatsConfig(rowM, "task_model", v)
             .catch(function (e2) { toast(e2.message); });
         });
         box.appendChild(rowM);
@@ -911,10 +1060,13 @@ async function renderStats() {
     }
     appendModesSection(box, cfg);
   }
-  if (statsSelectionCurrent(seq, requestSession, requestModel, requestProvider)) box.setAttribute("aria-busy", "false");
+  // Wrapping the group must not trigger .stats-head:first-child's zero margin
+  // where this header previously followed the session/worker rows.
+  if (box.firstChild) box.firstChild.style.marginTop = "16px";
 }
 
-// A click must not wait for config I/O and the stats refresh to show its state.
+// A click must not wait for config I/O to show its selected state.
+// Dependent fields still wait for the confirmed full POST snapshot.
 // Keep one save in flight per switch; a failed save restores the previous pick.
 function supercliStatsToggle(container, key, current, choices) {
   var seg = el("span", "seg"), pending = false;
@@ -932,15 +1084,14 @@ function supercliStatsToggle(container, key, current, choices) {
     var button = el("button", "", choice.label);
     button.type = "button";
     button.addEventListener("click", function () {
-      if (pending || choice.state === current) return;
+      if (pending || choice.state === current || !seg.contains(button) || !statsConfigCanSave(seg, key)) return;
       var previous = current;
       current = choice.state;
       pending = true;
       paint();
-      jpost("/api/config", { key: key, value: choice.value })
-        .then(function () {
-          // A refresh failure must not undo an already persisted setting.
-          return renderStats();
+      saveStatsConfig(seg, key, choice.value)
+        .then(function (saved) {
+          if (saved === false) current = previous;
         }, function (error) {
           current = previous;
           throw error;
@@ -970,8 +1121,7 @@ function appendModesSection(box, cfg) {
     var rowA = el("div", "stat-row mode-row");
     rowA.appendChild(i18nEl("span", "", "stats.advModel"));
     supercliOrchPicker(rowA, knobA, function (v) {
-      jpost("/api/config", { key: "advisor_model", value: v })
-        .then(renderStats)
+      saveStatsConfig(rowA, "advisor_model", v)
         .catch(function (e2) { toast(e2.message); });
     }, "stats.advModelDef");
     box.appendChild(rowA);
@@ -986,8 +1136,7 @@ function appendModesSection(box, cfg) {
     rowR.appendChild(i18nEl("span", "", "stats.reviewModel"));
     rowR.title = t("stats.reviewModelTip");
     supercliOrchPicker(rowR, knobR, function (v) {
-      jpost("/api/config", { key: "review_model", value: v })
-        .then(renderStats)
+      saveStatsConfig(rowR, "review_model", v)
         .catch(function (e2) { toast(e2.message); });
     }, "stats.reviewModelOff");
     box.appendChild(rowR);
@@ -1020,8 +1169,7 @@ function appendDarwinModelRow(box, knob) {
   var row = el("div", "stat-row mode-row");
   row.appendChild(i18nEl("span", "", "stats.darwinModel"));
   supercliOrchPicker(row, knob, function (v) {
-    jpost("/api/config", { key: "darwin_models", value: v })
-      .then(renderStats)
+    saveStatsConfig(row, "darwin_models", v)
       .catch(function (e2) { toast(e2.message); });
   }, "stats.darwinModelDef");
   box.appendChild(row);
@@ -1034,7 +1182,7 @@ function appendDarwinPoolRow(box, knob) {
   row.title = t("stats.darwinPoolTip");
   row.appendChild(i18nEl("span", "", "stats.darwinPool"));
   supercliEffortPicker(row, knob, function (value) {
-    return jpost("/api/config", { key: knob.key, value: value }).then(renderStats);
+    return saveStatsConfig(row, knob.key, value);
   }, ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], "stats.darwinPoolAuto");
   box.appendChild(row);
 }
@@ -1050,7 +1198,7 @@ function appendEffortRow(box, knob, labelKey, tipKey) {
   row.title = t(tipKey);
   row.appendChild(i18nEl("span", "", labelKey));
   supercliEffortPicker(row, knob, function (value) {
-    return jpost("/api/config", { key: knob.key, value: value }).then(renderStats);
+    return saveStatsConfig(row, knob.key, value);
   });
   box.appendChild(row);
 }
@@ -1079,11 +1227,13 @@ function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
     row.appendChild(el("span", "state-dot"));
     row.appendChild(el("span", "pname", effort || t(emptyKey)));
     row.addEventListener("click", function () {
+      if (!row.isConnected || !container.contains(row)) return;
       close(); btn.focus();
       if (effort === current || btn.disabled) return;
       btn.disabled = true;
       Promise.resolve().then(function () { return onSave(effort); })
-        .then(function () {
+        .then(function (saved) {
+          if (saved === false) return;
           current = effort;
           btn.textContent = effort || t(emptyKey);
           Array.from(pop.children).forEach(function (item) {
@@ -1144,6 +1294,7 @@ function supercliOrchPicker(container, knobM, onSave, defKey) {
       base.appendChild(el("span", knobM.key === "review_model" ? "state-dot" : "state-dot on"));
       base.appendChild(i18nEl("span", "pid", defKey));
       base.addEventListener("click", function () {
+        if (!base.isConnected || !container.contains(base)) return;
         pop.hidden = true;
         if (cur !== "") onSave("");
       });
@@ -1154,6 +1305,7 @@ function supercliOrchPicker(container, knobM, onSave, defKey) {
         offRow.appendChild(el("span", "state-dot"));
         offRow.appendChild(i18nEl("span", "pid", "set.state.off"));
         offRow.addEventListener("click", function () {
+          if (!offRow.isConnected || !container.contains(offRow)) return;
           pop.hidden = true;
           if (cur.toLowerCase() !== "off") onSave("off");
         });
@@ -1170,6 +1322,7 @@ function supercliOrchPicker(container, knobM, onSave, defKey) {
         rowEl.appendChild(el("span", "pid", m.id));
         if (m.provider && m.provider !== activeProviderID) rowEl.appendChild(el("span", "pprov", m.provider));
         rowEl.addEventListener("click", function () {
+          if (!rowEl.isConnected || !container.contains(rowEl)) return;
           pop.hidden = true;
           if (ref !== cur) onSave(ref);
         });
