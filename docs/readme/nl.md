@@ -25,8 +25,8 @@ De GUI-afbeelding is een schermafbeelding; de TUI-afbeelding is een weergave van
 <!-- readme-unit:h.start -->
 ## Aan de slag
 
-<!-- readme-unit:start.install -->
-Bekijk bij een nieuwe installatie het script voordat u de onderstaande POSIX- of PowerShell-opdracht uitvoert. De installatieprogramma's detecteren het besturingssysteem en de architectuur, controleren de checksum en installeren zonder beheerdersrechten. Ze weigeren elke bestaande doelmap om overschrijven en gegevensverlies te voorkomen; werk een bestaande installatie bij met `/update` of `--update`. Stel `SUPERCLI_DIR` in om een nieuwe bestemming te kiezen; `SUPERCLI_NO_PATH=1` slaat de configuratie van de shell en `PATH` over. Standaardlocaties: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. De installatieprogramma's starten SuperCli niet automatisch.
+<!-- readme-unit:start.quick -->
+Snelle installatie: voer de eerste opdracht uit op Linux, macOS of Android (Termux), of de tweede in Windows PowerShell. Details volgen hieronder.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Bekijk bij een nieuwe installatie het script voordat u de onderstaande POSIX- of PowerShell-opdracht uitvoert. De installatieprogramma's detecteren het besturingssysteem en de architectuur, controleren de checksum en installeren zonder beheerdersrechten. Ze weigeren elke bestaande doelmap om overschrijven en gegevensverlies te voorkomen; werk een bestaande installatie bij met `/update` of `--update`. Stel `SUPERCLI_DIR` in om een nieuwe bestemming te kiezen; `SUPERCLI_NO_PATH=1` slaat de configuratie van de shell en `PATH` over. Standaardlocaties: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. De installatieprogramma's starten SuperCli niet automatisch.
 
 <!-- readme-unit:start -->
 Pak het pakket voor uw besturingssysteem en architectuur uit in een schrijfbare map. Start op Windows `supercli.exe` voor de terminal of `supercli-web.exe` voor de GUI. Houd de meegeleverde map `supercli-data/` naast de uitvoerbare bestanden.

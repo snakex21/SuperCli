@@ -25,8 +25,8 @@ Obraz GUI to zrzut ekranu; obraz TUI przedstawia wyrenderowany rzeczywisty ukła
 <!-- readme-unit:h.start -->
 ## Pierwsze kroki
 
-<!-- readme-unit:start.install -->
-Przy nowej instalacji przejrzyj skrypt, zanim uruchomisz poniższe polecenie POSIX lub PowerShell. Instalatory wykrywają system operacyjny i architekturę, sprawdzają sumę kontrolną i instalują bez uprawnień administratora. Odrzucają każdy istniejący folder docelowy, aby zapobiec nadpisaniu i utracie danych; istniejącą instalację aktualizuj poleceniem `/update` lub `--update`. Ustaw `SUPERCLI_DIR`, aby wybrać nowy folder docelowy; `SUPERCLI_NO_PATH=1` pomija konfigurację powłoki i `PATH`. Domyślne lokalizacje: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalatory nie uruchamiają SuperCli automatycznie.
+<!-- readme-unit:start.quick -->
+Szybka instalacja: uruchom pierwsze polecenie w Linuksie, macOS lub Androidzie (Termux), a drugie w Windows PowerShell. Szczegóły znajdziesz poniżej.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Przy nowej instalacji przejrzyj skrypt, zanim uruchomisz poniższe polecenie POSIX lub PowerShell. Instalatory wykrywają system operacyjny i architekturę, sprawdzają sumę kontrolną i instalują bez uprawnień administratora. Odrzucają każdy istniejący folder docelowy, aby zapobiec nadpisaniu i utracie danych; istniejącą instalację aktualizuj poleceniem `/update` lub `--update`. Ustaw `SUPERCLI_DIR`, aby wybrać nowy folder docelowy; `SUPERCLI_NO_PATH=1` pomija konfigurację powłoki i `PATH`. Domyślne lokalizacje: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalatory nie uruchamiają SuperCli automatycznie.
 
 <!-- readme-unit:start -->
 Rozpakuj pakiet dla swojego systemu operacyjnego i architektury do folderu z prawem zapisu. W Windows uruchom `supercli.exe` dla terminala albo `supercli-web.exe` dla GUI. Dołączony folder `supercli-data/` pozostaw obok plików wykonywalnych.

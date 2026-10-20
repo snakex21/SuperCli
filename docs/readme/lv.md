@@ -25,8 +25,8 @@ GUI attēls ir ekrānuzņēmums; TUI attēls ir lietotnes faktiskā termināļa 
 <!-- readme-unit:h.start -->
 ## Darba sākšana
 
-<!-- readme-unit:start.install -->
-Jaunai instalācijai pārskatiet skriptu, pirms izpildāt tālāk norādīto POSIX vai PowerShell komandu. Instalētāji nosaka operētājsistēmu un arhitektūru, pārbauda kontrolsummu un instalē bez administratora tiesībām. Tie atsakās izmantot jebkuru esošu mērķa mapi, lai novērstu pārrakstīšanu un datu zudumu; esošu instalāciju atjauniniet ar `/update` vai `--update`. Iestatiet `SUPERCLI_DIR`, lai izvēlētos jaunu mērķi; `SUPERCLI_NO_PATH=1` izlaiž čaulas un `PATH` iestatīšanu. Noklusējuma vietas: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalētāji nepalaiž SuperCli automātiski.
+<!-- readme-unit:start.quick -->
+Ātrā instalēšana: Linux, macOS vai Android (Termux) palaidiet pirmo komandu, bet Windows PowerShell – otro. Sīkāka informācija ir zemāk.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Jaunai instalācijai pārskatiet skriptu, pirms izpildāt tālāk norādīto POSIX vai PowerShell komandu. Instalētāji nosaka operētājsistēmu un arhitektūru, pārbauda kontrolsummu un instalē bez administratora tiesībām. Tie atsakās izmantot jebkuru esošu mērķa mapi, lai novērstu pārrakstīšanu un datu zudumu; esošu instalāciju atjauniniet ar `/update` vai `--update`. Iestatiet `SUPERCLI_DIR`, lai izvēlētos jaunu mērķi; `SUPERCLI_NO_PATH=1` izlaiž čaulas un `PATH` iestatīšanu. Noklusējuma vietas: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Instalētāji nepalaiž SuperCli automātiski.
 
 <!-- readme-unit:start -->
 Izpakojiet savai operētājsistēmai un arhitektūrai atbilstošo komplektu rakstāmā mapē. Windows sistēmā palaidiet `supercli.exe` terminālim vai `supercli-web.exe` GUI. Iekļauto `supercli-data/` mapi turiet līdzās izpildāmajiem failiem.

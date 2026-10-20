@@ -25,8 +25,8 @@ GUI-bilden är en skärmbild; TUI-bilden är en rendering av programmets faktisk
 <!-- readme-unit:h.start -->
 ## Kom igång
 
-<!-- readme-unit:start.install -->
-Vid en ny installation bör du granska skriptet innan du kör POSIX- eller PowerShell-kommandot nedan. Installationsprogrammen identifierar operativsystem och arkitektur, verifierar kontrollsumman och installerar utan administratörsrättigheter. De avvisar alla befintliga målmappar för att förhindra överskrivning och dataförlust; uppdatera en befintlig installation med `/update` eller `--update`. Ange `SUPERCLI_DIR` för att välja en ny plats; `SUPERCLI_NO_PATH=1` hoppar över konfigurationen av skalet och `PATH`. Standardplatser: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Installationsprogrammen startar inte SuperCli automatiskt.
+<!-- readme-unit:start.quick -->
+Snabbinstallation: kör det första kommandot på Linux, macOS eller Android (Termux), eller det andra i Windows PowerShell. Detaljer följer nedan.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Vid en ny installation bör du granska skriptet innan du kör POSIX- eller PowerShell-kommandot nedan. Installationsprogrammen identifierar operativsystem och arkitektur, verifierar kontrollsumman och installerar utan administratörsrättigheter. De avvisar alla befintliga målmappar för att förhindra överskrivning och dataförlust; uppdatera en befintlig installation med `/update` eller `--update`. Ange `SUPERCLI_DIR` för att välja en ny plats; `SUPERCLI_NO_PATH=1` hoppar över konfigurationen av skalet och `PATH`. Standardplatser: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Installationsprogrammen startar inte SuperCli automatiskt.
 
 <!-- readme-unit:start -->
 Packa upp paketet för ditt operativsystem och din arkitektur i en skrivbar mapp. På Windows startar du `supercli.exe` för terminalen eller `supercli-web.exe` för GUI. Behåll den medföljande mappen `supercli-data/` bredvid de körbara filerna.

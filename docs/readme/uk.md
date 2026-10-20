@@ -25,8 +25,8 @@
 <!-- readme-unit:h.start -->
 ## Початок роботи
 
-<!-- readme-unit:start.install -->
-Для нового встановлення перегляньте скрипт перед виконанням наведеної нижче команди POSIX або PowerShell. Інсталятори визначають ОС і архітектуру, перевіряють контрольну суму та встановлюють без прав адміністратора. Вони відмовляються використовувати будь-яку наявну цільову папку, щоб запобігти перезаписуванню та втраті даних; оновлюйте наявне встановлення за допомогою `/update` або `--update`. Задайте `SUPERCLI_DIR`, щоб вибрати нове місце призначення; `SUPERCLI_NO_PATH=1` пропускає налаштування оболонки та `PATH`. Типові шляхи: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Інсталятори не запускають SuperCli автоматично.
+<!-- readme-unit:start.quick -->
+Швидке встановлення: виконайте першу команду в Linux, macOS або Android (Termux) чи другу у Windows PowerShell. Подробиці нижче.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Для нового встановлення перегляньте скрипт перед виконанням наведеної нижче команди POSIX або PowerShell. Інсталятори визначають ОС і архітектуру, перевіряють контрольну суму та встановлюють без прав адміністратора. Вони відмовляються використовувати будь-яку наявну цільову папку, щоб запобігти перезаписуванню та втраті даних; оновлюйте наявне встановлення за допомогою `/update` або `--update`. Задайте `SUPERCLI_DIR`, щоб вибрати нове місце призначення; `SUPERCLI_NO_PATH=1` пропускає налаштування оболонки та `PATH`. Типові шляхи: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Інсталятори не запускають SuperCli автоматично.
 
 <!-- readme-unit:start -->
 Розпакуйте пакет для своєї операційної системи й архітектури в папку з правом запису. У Windows запустіть `supercli.exe` для термінала або `supercli-web.exe` для GUI. Залиште включену папку `supercli-data/` поруч із виконуваними файлами.

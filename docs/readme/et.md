@@ -25,8 +25,8 @@ GUI pilt on kuvatõmmis; TUI pilt on rakenduse tegeliku terminalipaigutuse rende
 <!-- readme-unit:h.start -->
 ## Alustamine
 
-<!-- readme-unit:start.install -->
-Uue paigalduse puhul vaata skript üle, enne kui käivitad alloleva POSIXi või PowerShelli käsu. Paigaldajad tuvastavad operatsioonisüsteemi ja arhitektuuri, kontrollivad kontrollsummat ning paigaldavad ilma administraatoriõigusteta. Need keelduvad kasutamast mis tahes olemasolevat sihtkausta, et vältida ülekirjutamist ja andmekadu; olemasoleva paigalduse uuendamiseks kasuta `/update` või `--update`. Uue sihtkoha valimiseks määra `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` jätab käsukesta ja `PATH` seadistamise vahele. Vaikimisi sihtkohad: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Paigaldajad ei käivita SuperCli automaatselt.
+<!-- readme-unit:start.quick -->
+Kiirpaigaldus: käivita esimene käsk Linuxis, macOS-is või Androidis (Termux) või teine Windows PowerShellis. Üksikasjad on allpool.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Uue paigalduse puhul vaata skript üle, enne kui käivitad alloleva POSIXi või PowerShelli käsu. Paigaldajad tuvastavad operatsioonisüsteemi ja arhitektuuri, kontrollivad kontrollsummat ning paigaldavad ilma administraatoriõigusteta. Need keelduvad kasutamast mis tahes olemasolevat sihtkausta, et vältida ülekirjutamist ja andmekadu; olemasoleva paigalduse uuendamiseks kasuta `/update` või `--update`. Uue sihtkoha valimiseks määra `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` jätab käsukesta ja `PATH` seadistamise vahele. Vaikimisi sihtkohad: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Paigaldajad ei käivita SuperCli automaatselt.
 
 <!-- readme-unit:start -->
 Paki oma operatsioonisüsteemi ja arhitektuuri pakett lahti kirjutatavasse kausta. Windowsis käivita terminali jaoks `supercli.exe` või GUI jaoks `supercli-web.exe`. Hoia kaasas olevat `supercli-data/` kausta käivitatavate failide kõrval.

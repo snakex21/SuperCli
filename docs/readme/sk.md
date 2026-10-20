@@ -25,8 +25,8 @@ Obrázok GUI je snímka obrazovky; obrázok TUI je vykreslením skutočného roz
 <!-- readme-unit:h.start -->
 ## Začíname
 
-<!-- readme-unit:start.install -->
-Pri novej inštalácii si pred spustením nižšie uvedeného príkazu pre POSIX alebo PowerShell prezrite skript. Inštalátory rozpoznajú operačný systém a architektúru, overia kontrolný súčet a inštalujú bez oprávnení správcu. Odmietnu akýkoľvek existujúci cieľový priečinok, aby zabránili prepísaniu a strate údajov; existujúcu inštaláciu aktualizujte pomocou `/update` alebo `--update`. Pomocou `SUPERCLI_DIR` zvoľte nové umiestnenie; `SUPERCLI_NO_PATH=1` preskočí nastavenie shellu a `PATH`. Predvolené umiestnenia: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Inštalátory nespúšťajú SuperCli automaticky.
+<!-- readme-unit:start.quick -->
+Rýchla inštalácia: v Linuxe, macOS alebo Androide (Termux) spustite prvý príkaz, vo Windows PowerShell druhý. Podrobnosti nájdete nižšie.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Pri novej inštalácii si pred spustením nižšie uvedeného príkazu pre POSIX alebo PowerShell prezrite skript. Inštalátory rozpoznajú operačný systém a architektúru, overia kontrolný súčet a inštalujú bez oprávnení správcu. Odmietnu akýkoľvek existujúci cieľový priečinok, aby zabránili prepísaniu a strate údajov; existujúcu inštaláciu aktualizujte pomocou `/update` alebo `--update`. Pomocou `SUPERCLI_DIR` zvoľte nové umiestnenie; `SUPERCLI_NO_PATH=1` preskočí nastavenie shellu a `PATH`. Predvolené umiestnenia: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Inštalátory nespúšťajú SuperCli automaticky.
 
 <!-- readme-unit:start -->
 Rozbaľte balík pre svoj operačný systém a architektúru do priečinka s právom zápisu. Vo Windows spustite `supercli.exe` pre terminál alebo `supercli-web.exe` pre GUI. Priložený priečinok `supercli-data/` ponechajte vedľa spustiteľných súborov.

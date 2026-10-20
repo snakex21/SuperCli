@@ -25,8 +25,8 @@ Das GUI-Bild ist ein Screenshot; das TUI-Bild ist eine Darstellung des tatsächl
 <!-- readme-unit:h.start -->
 ## Erste Schritte
 
-<!-- readme-unit:start.install -->
-Prüfen Sie bei einer Neuinstallation das Skript, bevor Sie den folgenden POSIX- oder PowerShell-Befehl ausführen. Die Installationsprogramme erkennen Betriebssystem und Architektur, prüfen die Prüfsumme und installieren ohne Administratorrechte. Sie lehnen jeden bereits vorhandenen Zielordner ab, um Überschreiben und Datenverlust zu vermeiden; aktualisieren Sie eine bestehende Installation mit `/update` oder `--update`. Wählen Sie mit `SUPERCLI_DIR` ein neues Ziel; `SUPERCLI_NO_PATH=1` überspringt die Einrichtung von Shell und `PATH`. Standardpfade: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. SuperCli wird nicht automatisch gestartet.
+<!-- readme-unit:start.quick -->
+Schnellinstallation: Führen Sie unter Linux, macOS oder Android (Termux) den ersten Befehl aus, in Windows PowerShell den zweiten. Details folgen unten.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Prüfen Sie bei einer Neuinstallation das Skript, bevor Sie den folgenden POSIX- oder PowerShell-Befehl ausführen. Die Installationsprogramme erkennen Betriebssystem und Architektur, prüfen die Prüfsumme und installieren ohne Administratorrechte. Sie lehnen jeden bereits vorhandenen Zielordner ab, um Überschreiben und Datenverlust zu vermeiden; aktualisieren Sie eine bestehende Installation mit `/update` oder `--update`. Wählen Sie mit `SUPERCLI_DIR` ein neues Ziel; `SUPERCLI_NO_PATH=1` überspringt die Einrichtung von Shell und `PATH`. Standardpfade: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. SuperCli wird nicht automatisch gestartet.
 
 <!-- readme-unit:start -->
 Entpacken Sie das Paket für Ihr Betriebssystem und Ihre Architektur in einen beschreibbaren Ordner. Starten Sie unter Windows `supercli.exe` für das Terminal oder `supercli-web.exe` für die GUI. Lassen Sie den mitgelieferten Ordner `supercli-data/` neben den ausführbaren Dateien.

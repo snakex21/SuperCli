@@ -25,8 +25,8 @@
 <!-- readme-unit:h.start -->
 ## Начало работы
 
-<!-- readme-unit:start.install -->
-Для новой установки проверьте скрипт перед выполнением приведённой ниже команды POSIX или PowerShell. Установщики определяют ОС и архитектуру, проверяют контрольную сумму и устанавливают без прав администратора. Они отказываются использовать любую существующую папку назначения, чтобы исключить перезапись и потерю данных; обновляйте существующую установку с помощью `/update` или `--update`. Задайте `SUPERCLI_DIR`, чтобы выбрать новую папку назначения; `SUPERCLI_NO_PATH=1` пропускает настройку оболочки и `PATH`. Пути по умолчанию: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Установщики не запускают SuperCli автоматически.
+<!-- readme-unit:start.quick -->
+Быстрая установка: выполните первую команду в Linux, macOS или Android (Termux) либо вторую в Windows PowerShell. Подробности ниже.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Для новой установки проверьте скрипт перед выполнением приведённой ниже команды POSIX или PowerShell. Установщики определяют ОС и архитектуру, проверяют контрольную сумму и устанавливают без прав администратора. Они отказываются использовать любую существующую папку назначения, чтобы исключить перезапись и потерю данных; обновляйте существующую установку с помощью `/update` или `--update`. Задайте `SUPERCLI_DIR`, чтобы выбрать новую папку назначения; `SUPERCLI_NO_PATH=1` пропускает настройку оболочки и `PATH`. Пути по умолчанию: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Установщики не запускают SuperCli автоматически.
 
 <!-- readme-unit:start -->
 Распакуйте пакет для своей ОС и архитектуры в папку с правом записи. В Windows запустите `supercli.exe` для терминала или `supercli-web.exe` для GUI. Оставьте включённую папку `supercli-data/` рядом с исполняемыми файлами.

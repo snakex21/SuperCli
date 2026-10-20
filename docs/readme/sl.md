@@ -25,8 +25,8 @@ Slika GUI je posnetek zaslona; slika TUI je izris dejanske postavitve terminalsk
 <!-- readme-unit:h.start -->
 ## Začetek
 
-<!-- readme-unit:start.install -->
-Pri novi namestitvi preglejte skript, preden zaženete spodnji ukaz za POSIX ali PowerShell. Namestitveni programi prepoznajo operacijski sistem in arhitekturo, preverijo kontrolno vsoto in namestijo brez skrbniških pravic. Zavrnejo vsako obstoječo ciljno mapo, da preprečijo prepisovanje in izgubo podatkov; obstoječo namestitev posodobite z `/update` ali `--update`. Nastavite `SUPERCLI_DIR` za izbiro novega cilja; `SUPERCLI_NO_PATH=1` preskoči nastavitev lupine in `PATH`. Privzete lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Namestitveni programi ne zaženejo SuperCli samodejno.
+<!-- readme-unit:start.quick -->
+Hitra namestitev: v Linuxu, macOS ali Androidu (Termux) zaženite prvi ukaz, v Windows PowerShellu pa drugega. Podrobnosti so spodaj.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Pri novi namestitvi preglejte skript, preden zaženete spodnji ukaz za POSIX ali PowerShell. Namestitveni programi prepoznajo operacijski sistem in arhitekturo, preverijo kontrolno vsoto in namestijo brez skrbniških pravic. Zavrnejo vsako obstoječo ciljno mapo, da preprečijo prepisovanje in izgubo podatkov; obstoječo namestitev posodobite z `/update` ali `--update`. Nastavite `SUPERCLI_DIR` za izbiro novega cilja; `SUPERCLI_NO_PATH=1` preskoči nastavitev lupine in `PATH`. Privzete lokacije: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Namestitveni programi ne zaženejo SuperCli samodejno.
 
 <!-- readme-unit:start -->
 Razširite paket za svoj operacijski sistem in arhitekturo v mapo z dovoljenjem za pisanje. V Windows za terminal zaženite `supercli.exe`, za GUI pa `supercli-web.exe`. Priloženo mapo `supercli-data/` obdržite ob izvršljivih datotekah.

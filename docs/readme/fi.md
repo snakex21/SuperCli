@@ -25,8 +25,8 @@ GUI-kuva on kuvakaappaus; TUI-kuva on sovelluksen todellisen päätenäkymän re
 <!-- readme-unit:h.start -->
 ## Aloittaminen
 
-<!-- readme-unit:start.install -->
-Tarkista uudessa asennuksessa komentosarja ennen alla olevan POSIX- tai PowerShell-komennon suorittamista. Asennusohjelmat tunnistavat käyttöjärjestelmän ja arkkitehtuurin, tarkistavat tarkistussumman ja asentavat ilman järjestelmänvalvojan oikeuksia. Ne kieltäytyvät käyttämästä mitään olemassa olevaa kohdekansiota ylikirjoituksen ja tietojen menetyksen estämiseksi; päivitä olemassa oleva asennus komennolla `/update` tai `--update`. Valitse uusi kohde asettamalla `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` ohittaa komentotulkin ja `PATH`-muuttujan määrityksen. Oletuskohteet: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Asennusohjelmat eivät käynnistä SuperCliä automaattisesti.
+<!-- readme-unit:start.quick -->
+Pika-asennus: suorita ensimmäinen komento Linuxissa, macOS:ssä tai Androidissa (Termux) tai toinen Windows PowerShellissä. Lisätiedot alla.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Tarkista uudessa asennuksessa komentosarja ennen alla olevan POSIX- tai PowerShell-komennon suorittamista. Asennusohjelmat tunnistavat käyttöjärjestelmän ja arkkitehtuurin, tarkistavat tarkistussumman ja asentavat ilman järjestelmänvalvojan oikeuksia. Ne kieltäytyvät käyttämästä mitään olemassa olevaa kohdekansiota ylikirjoituksen ja tietojen menetyksen estämiseksi; päivitä olemassa oleva asennus komennolla `/update` tai `--update`. Valitse uusi kohde asettamalla `SUPERCLI_DIR`; `SUPERCLI_NO_PATH=1` ohittaa komentotulkin ja `PATH`-muuttujan määrityksen. Oletuskohteet: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. Asennusohjelmat eivät käynnistä SuperCliä automaattisesti.
 
 <!-- readme-unit:start -->
 Pura käyttöjärjestelmääsi ja arkkitehtuuriisi sopiva paketti kirjoitettavaan kansioon. Käynnistä Windowsissa `supercli.exe` päätettä tai `supercli-web.exe` GUI:ta varten. Pidä mukana toimitettu `supercli-data/`-kansio suoritettavien tiedostojen vieressä.

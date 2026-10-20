@@ -25,8 +25,8 @@ A GUI képe képernyőkép; a TUI képe az alkalmazás tényleges terminálelren
 <!-- readme-unit:h.start -->
 ## Első lépések
 
-<!-- readme-unit:start.install -->
-Új telepítésnél tekintse át a szkriptet az alábbi POSIX- vagy PowerShell-parancs futtatása előtt. A telepítők felismerik az operációs rendszert és az architektúrát, ellenőrzik az ellenőrzőösszeget, és rendszergazdai jogosultság nélkül telepítenek. Minden már létező célmappát elutasítanak a felülírás és az adatvesztés megelőzése érdekében; meglévő telepítést inkább a `/update` vagy `--update` paranccsal frissítsen. A `SUPERCLI_DIR` megadásával új célhelyet választhat; a `SUPERCLI_NO_PATH=1` kihagyja a parancsértelmező és a `PATH` beállítását. Alapértelmezett helyek: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. A telepítők nem indítják el automatikusan a SuperClit.
+<!-- readme-unit:start.quick -->
+Gyors telepítés: Linuxon, macOS-en vagy Androidon (Termux) futtassa az első parancsot, Windows PowerShellben a másodikat. A részletek lent találhatók.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh | sh
@@ -35,6 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/snakex21/SuperCli/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/snakex21/SuperCli/main/install.ps1 | iex
 ```
+
+<!-- readme-unit:start.install -->
+Új telepítésnél tekintse át a szkriptet az alábbi POSIX- vagy PowerShell-parancs futtatása előtt. A telepítők felismerik az operációs rendszert és az architektúrát, ellenőrzik az ellenőrzőösszeget, és rendszergazdai jogosultság nélkül telepítenek. Minden már létező célmappát elutasítanak a felülírás és az adatvesztés megelőzése érdekében; meglévő telepítést inkább a `/update` vagy `--update` paranccsal frissítsen. A `SUPERCLI_DIR` megadásával új célhelyet választhat; a `SUPERCLI_NO_PATH=1` kihagyja a parancsértelmező és a `PATH` beállítását. Alapértelmezett helyek: Windows `$HOME\SuperCli`, Unix `~/.local/share/supercli`, Termux `~/supercli`. A telepítők nem indítják el automatikusan a SuperClit.
 
 <!-- readme-unit:start -->
 Csomagolja ki az operációs rendszerének és architektúrájának megfelelő csomagot egy írható mappába. Windows alatt a terminálhoz indítsa a `supercli.exe`, a GUI-hoz a `supercli-web.exe` fájlt. A mellékelt `supercli-data/` mappát tartsa a futtatható fájlok mellett.
