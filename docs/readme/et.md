@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.14
+# SuperCli 1.0.15
 
 <!-- readme-unit:intro -->
 Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.
 
 <!-- readme-unit:status -->
-See README kirjeldab versiooni `1.0.14`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
+See README kirjeldab versiooni `1.0.15`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvatõmmised

@@ -19,6 +19,7 @@ import (
 // The actual complete chat script, native dialog and HTTP SSE run only against
 // an isolated in-memory queue. No Engine, user data, model or OS action exists.
 func TestQueueEditNativeBrowserAutoSend(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name           string
 		width, height  int

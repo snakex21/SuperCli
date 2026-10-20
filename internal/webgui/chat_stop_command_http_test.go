@@ -194,6 +194,7 @@ func TestChatHTTPStopKillsCommandAndNextPromptReachesProvider(t *testing.T) {
 }
 
 func TestChatGUIStopCommandAndSendUsingProductionJS(t *testing.T) {
+	t.Parallel()
 	root, runner := buildProductionUIChecks(t)
 	for _, mode := range []string{"running-command", "checkpoint-store-held"} {
 		t.Run(mode, func(t *testing.T) {

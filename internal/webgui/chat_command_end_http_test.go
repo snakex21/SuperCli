@@ -115,6 +115,7 @@ func buildProductionUIChecks(t *testing.T) (root, runner string) {
 }
 
 func TestChatCommandEndHTTPProductionGUI(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "windows" {
 		t.Skip("native cmd regression requires Windows")
 	}

@@ -94,3 +94,6 @@ temp/
 /dist/
 /supercli-updates/
 /.tmp/
+
+# Local reference copy of an older release (not part of the source tree)
+/stare/
