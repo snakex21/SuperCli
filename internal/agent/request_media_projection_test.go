@@ -51,6 +51,23 @@ func mediaPreparationReference(l *Loop, tail string) []llm.Message {
 	return append(out, llm.Message{Role: llm.RoleSystem, Content: tail})
 }
 
+// Context provenance belongs to the host envelope, never the provider wire.
+// Keep every provider field (including media and signed reasoning) in this
+// byte/order regression, without mutating either the request or archive.
+func mediaWireFields(messages []llm.Message) []llm.Message {
+	out := append([]llm.Message(nil), messages...)
+	for i := range out {
+		out[i].Origin = nil
+		if out[i].Parts != nil {
+			out[i].Parts = append([]llm.ContentPart{}, out[i].Parts...)
+			for j := range out[i].Parts {
+				out[i].Parts[j].Source = ""
+			}
+		}
+	}
+	return out
+}
+
 func TestPreparedMediaPreservesWireAndOwnership(t *testing.T) {
 	for _, thin := range []bool{false, true} {
 		for _, stable := range []bool{false, true} {
@@ -92,7 +109,7 @@ func TestPreparedMediaPreservesWireAndOwnership(t *testing.T) {
 								l.chatWindowStart = start
 								want := mediaPreparationReference(l, wire[len(wire)-1].Content)
 								l.chatWindowStart = nextStart
-								if !reflect.DeepEqual(wire, want) {
+								if !reflect.DeepEqual(mediaWireFields(wire), mediaWireFields(want)) {
 									t.Fatalf("%s wire changed", label)
 								}
 								if tokens != llm.EstimateTokens(wire) {

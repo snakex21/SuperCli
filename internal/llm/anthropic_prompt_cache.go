@@ -34,16 +34,33 @@ func anthropicConversationCaching(ctx context.Context, base string) bool {
 // The result requests a stable-system breakpoint only when no preceding
 // conversation block can carry it. Internal system text stays a string so
 // signed-prefix checks retain the same content representation.
+// The server looks back at most 20 blocks from a breakpoint for an earlier
+// cache write. One agent step (thinking, parallel tool_use/tool_result pairs,
+// image carriers) can add more than that, and any rewrite inside history
+// (image deactivation, pruning) moves every later prefix hash. Extra markers
+// spaced inside that window keep earlier writes reachable, so such a step
+// reprocesses only the changed tail instead of the whole conversation.
+const (
+	anthropicCacheBreakpointSpacing = 16
+	// Four is the API maximum; one stays free for the system fallback.
+	anthropicMaxMessageBreakpoints = 3
+)
+
 func applyAnthropicPromptCache(req *anthropicRequest, hasReminders bool) bool {
 	cache := &anthropicCacheControl{Type: "ephemeral"}
 	if !hasReminders {
 		req.CacheControl = cache
 		return false
 	}
+	placed, sinceLast := 0, 0
 	// Role demotion can merge the refreshed tail into the preceding plain
 	// user message. Conservatively exclude the complete final wire message.
 	for i := len(req.Messages) - 2; i >= 0; i-- {
 		for j := len(req.Messages[i].Content) - 1; j >= 0; j-- {
+			sinceLast++
+			if placed > 0 && sinceLast < anthropicCacheBreakpointSpacing {
+				continue
+			}
 			block := &req.Messages[i].Content[j]
 			// Opaque signed blocks are replayed byte-for-byte; never attach
 			// transport metadata to their raw envelope or thinking text.
@@ -60,8 +77,15 @@ func applyAnthropicPromptCache(req *anthropicRequest, hasReminders bool) bool {
 				continue
 			}
 			block.CacheControl = cache
-			return false
+			placed++
+			sinceLast = 0
+			if placed == anthropicMaxMessageBreakpoints {
+				return false
+			}
 		}
+	}
+	if placed > 0 {
+		return false
 	}
 	// On the first turn the reminder may share the only user message. Cache
 	// the stable system prefix rather than dropping caching entirely or

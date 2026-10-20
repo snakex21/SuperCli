@@ -29,6 +29,14 @@ type sourceRow struct {
 // Interpret only registered source-reader framing, never user/assistant text.
 // Evidence is the actual returned line, not the regex or requested range.
 func sourceRows(call llm.ToolCall, content, baseDir string) []sourceRow {
+	return sourceRowsFiltered(call, content, baseDir, nil)
+}
+
+// sourceRowsFiltered retains the same framing and 2000-row inspection budget as
+// sourceRows. A worker may reject a path before hashing or materializing its rows.
+// Rejected rows still consume the inspection budget; filtering must not expose
+// evidence beyond the generic parser's original prefix.
+func sourceRowsFiltered(call llm.ToolCall, content, baseDir string, include func(string) bool) []sourceRow {
 	call = sourceCall(call)
 	var file string
 	switch call.Name {
@@ -48,7 +56,16 @@ func sourceRows(call llm.ToolCall, content, baseDir string) []sourceRow {
 		return nil
 	}
 	var rows []sourceRow
-	for offset := 0; offset < len(content) && len(rows) < 2000; {
+	type pathSelection struct {
+		path    string
+		include bool
+	}
+	var paths map[string]pathSelection
+	if include != nil {
+		paths = make(map[string]pathSelection)
+	}
+	inspected := 0
+	for offset := 0; offset < len(content) && inspected < 2000; {
 		end := strings.IndexByte(content[offset:], '\n')
 		if end < 0 {
 			end = len(content)
@@ -81,10 +98,25 @@ func sourceRows(call llm.ToolCall, content, baseDir string) []sourceRow {
 			// An excerpt is not a complete source line. Keep it and its diagnostics.
 			if number > 0 && path != "" && !strings.Contains(text, "truncated") &&
 				!strings.Contains(text, "...") && !strings.Contains(text, "…") {
-				rows = append(rows, sourceRow{
-					location: sourceLocation{sourcePath(path, baseDir), number},
-					hash:     sha256.Sum256([]byte(text)), start: offset, end: end,
-				})
+				inspected++
+				selected := pathSelection{include: true}
+				if include == nil {
+					selected.path = sourcePath(path, baseDir)
+				} else {
+					var known bool
+					selected, known = paths[path]
+					if !known {
+						selected.path = sourcePath(path, baseDir)
+						selected.include = include(selected.path)
+						paths[path] = selected
+					}
+				}
+				if selected.include {
+					rows = append(rows, sourceRow{
+						location: sourceLocation{selected.path, number},
+						hash:     sha256.Sum256([]byte(text)), start: offset, end: end,
+					})
+				}
 			}
 		}
 		offset = end
@@ -193,12 +225,50 @@ type visibleSource struct {
 	call string
 }
 
+const sourceFileListingEntries = 64
+
+type sourceFileListingKey struct {
+	root string
+	hash [sha256.Size]byte
+}
+
+type visibleFileListing struct {
+	content string
+	call    string
+}
+
+// Only complete, plain path listings qualify. Diagnostics, previews and source
+// excerpts remain verbatim. This does not cache execution: every search still
+// runs, and equality is checked against its actual returned bytes.
+func sourceFileListing(call llm.ToolCall, message llm.Message, baseDir string) (sourceFileListingKey, bool) {
+	if call.Name != "search_code" || len(message.Parts) != 0 || len(message.ToolCalls) != 0 || len(message.Content) < 512 || len(message.Content) > 64*1024 {
+		return sourceFileListingKey{}, false
+	}
+	var args struct {
+		Query      string `json:"query"`
+		Path       string `json:"path"`
+		OutputMode string `json:"output_mode"`
+	}
+	if json.Unmarshal([]byte(call.Arguments), &args) != nil || args.Query == "" || args.OutputMode != "files" {
+		return sourceFileListingKey{}, false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(message.Content, "\n"), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" || line != strings.TrimSpace(line) || !strings.ContainsAny(line, `/\`) ||
+			strings.ContainsAny(line, "[]<>|\t\x00") || strings.Contains(line, ": ") || strings.HasPrefix(line, "...") {
+			return sourceFileListingKey{}, false
+		}
+	}
+	return sourceFileListingKey{root: sourcePath(args.Path, baseDir), hash: sha256.Sum256([]byte(message.Content))}, true
+}
+
 // Rebuild from the exact visible request, so compacted, hidden or pruned reads
 // never justify a reference to missing code. The canonical transcript is intact.
 // Deterministic forward processing keeps earlier request bytes stable on append.
 func sourceEvidenceProjection(messages []llm.Message, baseDir string) []llm.Message {
 	var projected []llm.Message
 	seen := make(map[sourceLocation]visibleSource)
+	var fileLists map[sourceFileListingKey]visibleFileListing
 	var calls map[string]llm.ToolCall
 	for index, message := range messages {
 		if message.Role == llm.RoleAssistant {
@@ -218,6 +288,24 @@ func sourceEvidenceProjection(messages []llm.Message, baseDir string) []llm.Mess
 			continue
 		}
 		call = sourceCall(call)
+		if key, ok := sourceFileListing(call, message, baseDir); ok {
+			prior, repeated := fileLists[key]
+			marker := fmt.Sprintf("[Identical complete file list; full output already shown in tool result %s]\n", prior.call)
+			if repeated && prior.content == message.Content && len(message.Content)-len(marker) >= 128 {
+				if projected == nil {
+					projected = append([]llm.Message(nil), messages...)
+				}
+				projected[index].Content = marker
+			} else {
+				if fileLists == nil {
+					fileLists = make(map[sourceFileListingKey]visibleFileListing)
+				} else if len(fileLists) >= sourceFileListingEntries {
+					clear(fileLists)
+				}
+				fileLists[key] = visibleFileListing{content: message.Content, call: message.ToolCallID}
+			}
+			continue
+		}
 		rows := sourceRows(call, message.Content, baseDir)
 		// A targeted read is an explicit request for source, not discovery. A
 		// read_output recovery must likewise return the saved bytes. Keep both

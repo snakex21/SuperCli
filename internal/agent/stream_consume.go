@@ -21,6 +21,10 @@ func (*truncatedToolResponseError) Error() string {
 }
 
 func (l *Loop) consume(ctx context.Context, stream <-chan llm.Delta, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
+	return l.consumeWithProgress(ctx, stream, out, nil)
+}
+
+func (l *Loop) consumeWithProgress(ctx context.Context, stream <-chan llm.Delta, out chan<- Event, hadProgress *bool) (string, []llm.ToolCall, *llm.Usage, error) {
 	var toolCalls []llm.ToolCall
 	var textCallIndexes []int
 	var usage *llm.Usage
@@ -86,6 +90,12 @@ streamLoop:
 				break streamLoop
 			}
 			d = next
+		}
+		// Record real progress separately from timing and returned text/calls.
+		// Include undispatched start signals and output on an error frame;
+		// HasModelOutput intentionally excludes error frames for stats.
+		if hadProgress != nil && (d.OutputStarted || d.ReasoningStarted || d.Content != "" || d.Reasoning != "" || d.NativeReasoning != nil || d.ToolCall != nil) {
+			*hadProgress = true
 		}
 		// Role, usage, retry notices and terminal frames are not generated
 		// output and must not make a long backend wait look instant.

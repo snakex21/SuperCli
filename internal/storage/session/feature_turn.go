@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"supercli/internal/llm"
 	"time"
+
+	"supercli/internal/system/stats"
 )
 
 // TurnSummary is the compact, durable telemetry shown below one assistant
@@ -57,6 +60,9 @@ type TurnSummary struct {
 // matches — the stall signature of a discovery loop. Terminal is the
 // run's terminal error text, empty on success.
 type TurnToolDiag struct {
+	Context       *llm.ContextUsage    `json:"context_usage,omitempty"`
+	WorkerContext *stats.WorkerContext `json:"worker_context,omitempty"`
+
 	Failures     map[string]int    `json:"failures,omitempty"`
 	Messages     map[string]string `json:"messages,omitempty"`
 	NoOpSearches int               `json:"noop_searches,omitempty"`
@@ -65,7 +71,7 @@ type TurnToolDiag struct {
 
 // Empty reports whether the diag carries nothing worth persisting.
 func (d TurnToolDiag) Empty() bool {
-	return len(d.Failures) == 0 && len(d.Messages) == 0 && d.NoOpSearches == 0 && d.Terminal == ""
+	return len(d.Failures) == 0 && len(d.Messages) == 0 && d.NoOpSearches == 0 && d.Terminal == "" && (d.Context == nil || d.Context.Empty()) && (d.WorkerContext == nil || d.WorkerContext.Empty())
 }
 
 type FileChange struct {
@@ -133,6 +139,19 @@ func (s *Store) AppendTurnSummaryWithID(ctx context.Context, turn TurnSummary) (
 	turn.HelperCalls = max(turn.HelperCalls, 0)
 	turn.AuxCalls = max(turn.AuxCalls, 0)
 	turn.AuxUs = max(turn.AuxUs, 0)
+	turn.ToolDiag.Context = llm.CloneContextUsage(turn.ToolDiag.Context)
+	if turn.ToolDiag.WorkerContext != nil {
+		w := *turn.ToolDiag.WorkerContext // sanitize without mutating the caller
+		w.AddedMessages = max(w.AddedMessages, 0)
+		w.AddedBytes = max(w.AddedBytes, 0)
+		w.Requests = max(w.Requests, 0)
+		w.MessageExposures = max(w.MessageExposures, 0)
+		w.ContextBytes = max(w.ContextBytes, 0)
+		turn.ToolDiag.WorkerContext = nil
+		if !w.Empty() {
+			turn.ToolDiag.WorkerContext = &w
+		}
+	}
 	phases, err := json.Marshal(turn.Phases)
 	if err != nil {
 		return 0, fmt.Errorf("session.Store.AppendTurnSummary phases: %w", err)

@@ -2,6 +2,7 @@ package webgui
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,13 +56,27 @@ func (s *Server) handleCheckpointRewind(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	current, err := store.IsCurrentUserReceipt(r.Context(), sessionID, session.MessageReceipt{Seq: fromSeq, ID: messageID})
+	selected, err := store.ReadTranscriptMessageAt(r.Context(), sessionID, fromSeq)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err != nil || selected.MessageID != messageID || selected.Role != string(llm.RoleUser) {
+		http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+		return
+	}
+	message, err := selected.ToMessage()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if !current {
-		http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+	workerNotice, err := isStoredWorkerNotification(r.Context(), store, sessionID, fromSeq, message)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if workerNotice {
+		http.Error(w, "selected_seq must identify a user message", http.StatusBadRequest)
 		return
 	}
 	manager, err := s.eng.checkpointManager(s.eng.Home())

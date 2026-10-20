@@ -69,15 +69,22 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 			// An oversized recent note must not hide a smaller useful note.
 		}
 	}
-	writeNotes := func(header string, entries []Entry) {
-		lines := make([]string, 0, len(entries))
+	type noteIdentity struct {
+		store *Store
+		id    string
+	}
+	renderedNotes := make(map[noteIdentity]bool)
+	writeNotes := func(header string, entries []Entry, store *Store) {
 		for _, e := range entries {
-			if emptyMemoryNote(e.Content) {
+			key := noteIdentity{store, e.ID}
+			if emptyMemoryNote(e.Content) || renderedNotes[key] {
 				continue
 			}
-			lines = append(lines, "- "+oneLine(e.Content)+"\n")
+			if write(header + "- " + oneLine(e.Content) + "\n") {
+				header = ""
+				renderedNotes[key] = true
+			}
 		}
-		writeLines(header, lines)
 	}
 
 	if !write("[memory_briefing]\n" +
@@ -92,6 +99,14 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// Clean the model-facing view of old automatic notes without deleting the
 	// original records or rewriting user-authored agreements at startup.
 	var seenFacts []string
+	// Load correction metadata once per store, not once per section/note.
+	var globalCorrections, projectCorrections []memoryCorrection
+	if global != nil {
+		globalCorrections, _ = global.memoryCorrections()
+	}
+	if project != nil {
+		projectCorrections, _ = project.memoryCorrections()
+	}
 	cleanFacts := func(entries []Entry) []Entry {
 		kept := make([]Entry, 0, len(entries))
 		for _, e := range entries {
@@ -107,7 +122,7 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// 1. Global user preferences.
 	if global != nil {
 		if prefs, err := global.Recent(ScopePreference, 10); err == nil && len(prefs) > 0 {
-			writeNotes("User preferences:\n", cleanFacts(prefs))
+			writeNotes("User preferences:\n", cleanFacts(resolveCurrentEntries(prefs, globalCorrections)), global)
 		}
 	}
 
@@ -116,15 +131,16 @@ func BuildBriefingExcludingTaskLog(global, project *Store, projectPath string, t
 	// so both global and project facts must be injected.
 	if global != nil {
 		if facts, err := global.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			writeNotes("Remembered user facts:\n", cleanFacts(facts))
+			writeNotes("Remembered user facts:\n", cleanFacts(resolveCurrentEntries(facts, globalCorrections)), global)
 		}
 	}
 	if project != nil {
 		if facts, err := project.Recent(ScopeFact, 6); err == nil && len(facts) > 0 {
-			writeNotes("Remembered project facts:\n", cleanFacts(facts))
+			writeNotes("Remembered project facts:\n", cleanFacts(resolveCurrentEntries(facts, projectCorrections)), project)
 		}
 		if decisions, err := project.Recent(ScopeDecision, 4); err == nil && len(decisions) > 0 {
-			writeNotes("Project decisions:\n", decisions)
+			// Decisions retain their original non-fuzzy selection policy.
+			writeNotes("Project decisions:\n", resolveCurrentEntries(decisions, projectCorrections), project)
 		}
 	}
 

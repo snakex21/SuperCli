@@ -174,6 +174,7 @@ func captureThinkingFromMessage(msg llm.Message) (string, llm.Message) {
 func (l *Loop) cleanModelHistory(msgs []llm.Message) []llm.Message {
 	out := make([]llm.Message, 0, len(msgs))
 	for _, msg := range msgs {
+		msg = withoutWorkerUI(msg)
 		if isLegacyUltraworkInstruction(msg) {
 			continue
 		}

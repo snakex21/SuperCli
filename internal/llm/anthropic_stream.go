@@ -231,18 +231,35 @@ type anthropicUsage struct {
 }
 
 func patchAnthropicThinking(body []byte, effort string) ([]byte, bool) {
+	return patchAnthropicThinkingForModel(body, "", effort)
+}
+
+// patchAnthropicThinkingForModel rewrites thinking and output_config for a
+// retry. An empty model keeps the legacy budget form.
+func patchAnthropicThinkingForModel(body []byte, model, effort string) ([]byte, bool) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, false
 	}
-	if effort == "" || effort == "none" {
-		delete(req, "thinking")
-	} else {
+	delete(req, "thinking")
+	delete(req, "output_config")
+	if effort != "" && effort != "none" {
 		maxTokens := 4096
 		if v, ok := req["max_tokens"].(float64); ok && v > 0 {
 			maxTokens = int(v)
 		}
-		req["thinking"] = map[string]any{"type": "enabled", "budget_tokens": reasoningBudgetTokens(effort, maxTokens)}
+		if model == "" {
+			req["thinking"] = map[string]any{"type": "enabled", "budget_tokens": reasoningBudgetTokens(effort, maxTokens)}
+		} else {
+			thinking, output := anthropicThinkingForEffort(model, effort, maxTokens)
+			if thinking != nil {
+				req["thinking"] = thinking
+				req["max_tokens"] = anthropicAdaptiveMaxTokens(thinking, maxTokens)
+			}
+			if output != nil {
+				req["output_config"] = output
+			}
+		}
 	}
 	out, err := json.Marshal(req)
 	return out, err == nil

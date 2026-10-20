@@ -9,6 +9,7 @@ import (
 	"supercli/internal/agent/ultrawork"
 	"supercli/internal/llm"
 	"supercli/internal/llm/draft"
+	"supercli/internal/llm/prompt"
 	"supercli/internal/storage/goal"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
@@ -22,6 +23,7 @@ type loopAssembly struct {
 	registry               *tools.Registry
 	goalSvc                *goal.Service
 	memoryBriefing         string
+	memoryBriefingForRun   func() string
 	tomlCfg                config.TomlConfig
 	errorLog               agent.ErrorLogger
 	reflector              agent.Reflector
@@ -46,6 +48,7 @@ type loopAssembly struct {
 	taskParallel           bool
 	taskParallelWarnLocal  bool
 	home                   string
+	dataDir                string
 	// review is the interactive post-work review (review_model); nil = off.
 	review *agent.PostReviewConfig
 }
@@ -57,27 +60,40 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := a.tomlCfg.MaxStepsOr(agent.DefaultMaxSteps)
+	// Freeze all other prompt layers once. Reload only user-owned presets at
+	// the next run boundary, keeping unchanged prefixes byte-stable and cacheable.
+	baseSystem := buildSystemPromptLayers(nil, "", false)
+	instructionsForRun := userInstructionsForRun(a.dataDir)
 	return agent.LoopConfig{
-		Provider:             a.provider,
-		Registry:             a.registry,
-		System:               buildSystemPrompt(nil),
-		RefreshContextWindow: a.refreshContextWindow,
-		LiveContextForRun: func(ctx context.Context) (string, error) {
+		Provider:               a.provider,
+		Registry:               a.registry,
+		System:                 baseSystem,
+		ProjectInstructions:    supercliProjectInstructions,
+		UserInstructions:       prompt.ActiveUserInstructions(a.dataDir),
+		UserInstructionsForRun: instructionsForRun,
+		RefreshContextWindow:   a.refreshContextWindow,
+		LiveContextBlocks: func(ctx context.Context) ([]llm.ContextBlock, error) {
 			// Read per run, so /allow-all is reflected on the next turn.
-			note := workingDirNote
-			if a.goalSvc == nil {
-				return note, nil
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
-			if _, err := a.goalSvc.Refresh(ctx); err != nil {
-				return "", err
+			briefing := a.memoryBriefing
+			if a.memoryBriefingForRun != nil {
+				briefing = a.memoryBriefingForRun()
 			}
-			current, err := a.goalSvc.Inject(ctx, "", 5)
-			if err != nil {
-				return "", err
+			blocks := []llm.ContextBlock{{Source: llm.SourceMemory, Text: briefing}}
+			if a.goalSvc != nil {
+				if _, err := a.goalSvc.Refresh(ctx); err != nil {
+					return nil, err
+				}
+				current, err := a.goalSvc.Inject(ctx, "", 5)
+				if err != nil {
+					return nil, err
+				}
+				blocks = append(blocks, llm.ContextBlock{Source: llm.SourceGoalState, Text: strings.TrimSpace(current)})
 			}
-			return strings.TrimSpace(strings.TrimSpace(current) + "\n\n" + note), nil
+			return append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: workingDirNote}), ctx.Err()
 		},
-		Briefing:           a.memoryBriefing,
 		MaxSteps:           maxSteps,
 		ErrorLog:           a.errorLog,
 		Reflector:          a.reflector,

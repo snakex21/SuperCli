@@ -74,6 +74,14 @@ var workingDirNote string
 // F8: goal injection lives here so the main agent and
 // any Darwin children see the same active goal.
 func buildSystemPrompt(svc *goal.Service) string {
+	return buildSystemPromptWithInstructions(svc, supercliUserInstructions)
+}
+
+func buildSystemPromptWithInstructions(svc *goal.Service, instructions string) string {
+	return buildSystemPromptLayers(svc, instructions, true)
+}
+
+func buildSystemPromptLayers(svc *goal.Service, instructions string, includeMemory bool) string {
 	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
 	if supercliModelProfile != "" {
 		base += "\n\n" + supercliModelProfile
@@ -81,8 +89,8 @@ func buildSystemPrompt(svc *goal.Service) string {
 	if supercliProjectInstructions != "" {
 		base += "\n\n" + supercliProjectInstructions
 	}
-	if supercliUserInstructions != "" {
-		base += "\n\n" + supercliUserInstructions
+	if instructions != "" {
+		base += "\n\n" + instructions
 	}
 	// Orchestrator mode is a stricter coordinator: its lean preamble
 	// replaces the coordinator section (it subsumes the delegate-first
@@ -92,7 +100,7 @@ func buildSystemPrompt(svc *goal.Service) string {
 	} else if supercliCoordinatorMode {
 		base += agent.CoordinatorPrompt()
 	}
-	if memoryBriefing != "" {
+	if includeMemory && memoryBriefing != "" {
 		base += "\n\n" + memoryBriefing
 	}
 	base += "\n\n" + prompt.MemoryGuidance(true)

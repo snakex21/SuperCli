@@ -15,8 +15,8 @@ import (
 // ToolSearcher is a meta-tool exposed to the model. When the
 // model wants to find a tool, it calls `tool_search` with a
 // natural-language query. The Searcher ranks all registered
-// tools and the ToolSearcher activates the top-N in the
-// registry, so the model can call them in the same turn.
+// tools. Only unambiguous matches are activated; ambiguous
+// searches return compact candidates for an exact follow-up.
 type ToolSearcher struct {
 	Registry *Registry
 	Index    *Index
@@ -30,8 +30,7 @@ type ToolSearcher struct {
 // NewToolSearcher builds a ToolSearcher and rebuilds the FTS
 // index from the registry's current tools. The index is
 // incremental: call Rebuild() after Register() to add new
-// tools. The searcher ignores activation — that is the loop's
-// job.
+// tools. Candidate discovery itself never executes a tool.
 func NewToolSearcher(reg *Registry, idx *Index) *ToolSearcher {
 	return &ToolSearcher{
 		Registry:     reg,
@@ -48,7 +47,7 @@ func (s *ToolSearcher) Spec() Tool {
 		Name:              "tool_search",
 		PreservesEvidence: true,
 		Description: "Find a tool, plugin, or MCP capability absent from the current tool set, by name or intent. " +
-			"Returns its full schema and activates it. Use already available tools directly.",
+			"Exact names and unambiguous matches activate; otherwise returns short candidates. Search a candidate's exact name for its schema. Use active tools directly.",
 		Schema: `{"type":"object","properties":{
 "query":{"type":"string","description":"Natural-language search, e.g. 'find files by name'"},
 "limit":{"type":"integer","default":3,"maximum":8}
@@ -63,10 +62,8 @@ type searchArgs struct {
 	Limit int    `json:"limit"`
 }
 
-// execute performs the search, activates the top matches, and
-// returns their full schemas to the model. The activation is
-// additive — the model can keep calling tool_search, and the
-// visible set grows.
+// execute discovers registered capabilities without executing them. A result
+// limit bounds the response, never the evidence used to decide ambiguity.
 func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	var a searchArgs
 	if err := json.Unmarshal(args, &a); err != nil {
@@ -86,27 +83,34 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	// Models often call tool_search("read_docx") after seeing a catalog
 	// name; FTS/lexical ranking is unnecessary and can dilute the hit.
 	var hits []SearchResult
+	explicit := false
 	if exact := exactToolNameHit(s.Registry, a.Query); exact != nil {
 		hits = []SearchResult{*exact}
 	} else {
 		hits = exactToolNameListHits(s.Registry, a.Query, limit)
 	}
+	explicit = len(hits) > 0
 	if len(hits) == 0 {
 		if download := downloadIntentHit(s.Registry, a.Query); download != nil {
 			hits = []SearchResult{*download}
+			explicit = true
 		}
 	}
+	query := discoveryQuery(a.Query)
+	candidateLimit := max(limit, s.MaxLimit, 2) + 1
+	ambiguous := false
 	// Small per-request registries (WebGUI/batch) can skip SQLite entirely
 	// and use the deterministic lexical ranker. The long-lived TUI supplies
 	// an in-memory FTS index for its much larger catalog.
 	if len(hits) == 0 && s.Index != nil {
 		var err error
-		hits, err = s.Index.Search(a.Query, limit)
+		hits, err = s.Index.Search(query, candidateLimit)
 		if err != nil {
 			// Discovery is a convenience layer. A broken/unavailable index must
 			// not strand the model when the registry itself is healthy.
 			hits = nil
 		}
+		hits = s.relevantDiscoveryHits(query, hits)
 	}
 	// FTS5 uses an implicit AND across query tokens, so a
 	// reasonable phrase like "list files in directory" can
@@ -115,23 +119,18 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 	// fall back to a lexical token-overlap match so a sane query
 	// still surfaces the relevant tool(s).
 	if len(hits) == 0 {
-		candidates := limit
+		hits = s.relevantDiscoveryHits(query, s.lexicalFallback(query, candidateLimit))
+		ambiguous = len(hits) > 1
 		if a.Limit <= 0 {
-			candidates = max(limit, s.MaxLimit)
-		}
-		hits = s.lexicalFallback(a.Query, candidates)
-		if a.Limit <= 0 {
-			hits = s.focusLexicalHits(a.Query, hits)
-			if limit > 0 && len(hits) > limit {
-				hits = hits[:limit]
-			}
+			hits = s.focusLexicalHits(query, hits)
 		}
 	}
-	// Build the response: array of {name, server, score,
-	// signature, schema}. Activate each match in the registry so
-	// the model can call it in the same turn. The signature is a
-	// compact one-line call form (cheap for small models); the
-	// schema is the exact JSON contract.
+	activate := explicit || (len(hits) == 1 && !ambiguous)
+	if limit > 0 && len(hits) > limit {
+		hits = hits[:limit]
+	}
+	// Preserve the complete contract for activation. Candidate-only responses
+	// contain bounded descriptions and leave schema/signature empty.
 	resp := discoveryResponse{
 		Query: a.Query,
 	}
@@ -143,21 +142,24 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 		if !ok {
 			continue
 		}
-		s.Registry.ActivateDiscovered(h.Name)
-		resp.Matches = append(resp.Matches, discoveryMatch{
-			Name:      h.Name,
-			Server:    h.Server,
-			Score:     h.Score,
-			Signature: toolSignature(tool.Name, tool.Schema),
-			Schema:    compactDiscoverySchema(tool.Schema),
-		})
+		match := discoveryMatch{Name: h.Name, Server: h.Server, Score: h.Score}
+		if activate {
+			s.Registry.ActivateDiscovered(h.Name)
+			match.Signature = toolSignature(tool.Name, tool.Schema)
+			match.Schema = compactDiscoverySchema(tool.Schema)
+		} else {
+			match.Description = shortDiscoveryDescription(tool.Description)
+		}
+		resp.Matches = append(resp.Matches, match)
 	}
 	// Truthful hint: only promise a callable schema when we
 	// actually returned one. On no match, say so plainly and
 	// point the model at the catalog instead of implying it can
 	// now call something.
-	if len(resp.Matches) > 0 {
+	if len(resp.Matches) > 0 && activate {
 		resp.Hint = "These tools are now callable. Each match includes its exact signature and JSON schema; call by name when exposed, or through invoke_tool in the schema-stable toolset."
+	} else if len(resp.Matches) > 0 {
+		resp.Hint = "Several tools may match. No tools were activated. Search the exact name of the intended candidate to get its schema."
 	} else {
 		resp.Hint = "No tool matched this query. Try different keywords, or use the tools already listed in the catalog."
 	}
@@ -172,11 +174,12 @@ func (s *ToolSearcher) execute(ctx context.Context, args json.RawMessage) (Resul
 // Keep the public response contract stable; only small complete model views use
 // an object schema instead of serializing JSON inside another JSON string.
 type discoveryMatch struct {
-	Name      string  `json:"name"`
-	Server    string  `json:"server"`
-	Score     float64 `json:"score"`
-	Signature string  `json:"signature"`
-	Schema    string  `json:"schema"`
+	Name        string  `json:"name"`
+	Server      string  `json:"server"`
+	Score       float64 `json:"score"`
+	Description string  `json:"description,omitempty"`
+	Signature   string  `json:"signature"`
+	Schema      string  `json:"schema"`
 }
 
 type discoveryResponse struct {
@@ -237,28 +240,117 @@ func compactDiscoverySchema(schema string) string {
 // exactToolNameHit returns a single perfect hit when the query is exactly
 // a registered tool name (case-insensitive). Skips meta-tools.
 func exactToolNameHit(reg *Registry, query string) *SearchResult {
-	if reg == nil {
+	return uniqueListedToolNameHit(reg, strings.TrimSpace(query))
+}
+
+// Discovery uses names and capability descriptions as relevance evidence, never
+// JSON boilerplate or a coincidental argument description in a large schema.
+// Half of the meaningful query terms must match; a multi-word intent needs at
+// least two. Short broad queries can still list candidates without activation.
+func (s *ToolSearcher) relevantDiscoveryHits(query string, hits []SearchResult) []SearchResult {
+	terms := discoveryTerms(query)
+	if len(terms) == 0 || s.Registry == nil {
 		return nil
 	}
-	q := strings.TrimSpace(query)
-	if q == "" {
-		return nil
-	}
-	// Prefer exact case match first (registration is case-sensitive).
-	if t, ok := reg.Get(q); ok && t.Name != "tool_search" && t.Name != "invoke_tool" {
-		return &SearchResult{Name: t.Name, Server: classifyServer(t.Name), Score: 1.0}
-	}
-	// Case-insensitive fallback for local models that lower/upper the name.
-	low := strings.ToLower(q)
-	for _, name := range reg.Names() {
-		if name == "tool_search" || name == "invoke_tool" {
+	coverage := make([]map[string]bool, len(hits))
+	strong := make([]bool, len(hits))
+	anchored := make(map[string]bool)
+	for i, hit := range hits {
+		tool, ok := s.Registry.Get(hit.Name)
+		if !ok || hit.Name == "tool_search" || hit.Name == "invoke_tool" {
 			continue
 		}
-		if strings.ToLower(name) == low {
-			return &SearchResult{Name: name, Server: classifyServer(name), Score: 1.0}
+		matched := make(map[string]bool, len(terms))
+		for _, text := range []string{tool.Name, tool.Description} {
+			for word := range discoveryTerms(text) {
+				if terms[word] {
+					matched[word] = true
+				}
+			}
+		}
+		coverage[i] = matched
+		if len(matched)*2 >= len(terms) && (len(terms) < 2 || len(matched) >= 2) {
+			strong[i] = true
+			for word := range matched {
+				anchored[word] = true
+			}
 		}
 	}
-	return nil
+	if len(anchored) == 0 {
+		return nil
+	}
+	filtered := hits[:0]
+	for i, hit := range hits {
+		keep := strong[i]
+		// A genuine multi-capability query may also request a second intent
+		// ("run tests and calendar"). Preserve complementary candidates once
+		// a relevant anchor exists; incidental boilerplate alone is no anchor.
+		for word := range coverage[i] {
+			keep = keep || !anchored[word]
+		}
+		if keep {
+			filtered = append(filtered, hit)
+		}
+	}
+	return filtered
+}
+
+func discoveryTerms(text string) map[string]bool {
+	terms := make(map[string]bool)
+	for _, word := range strings.Fields(discoveryQuery(text)) {
+		if len([]rune(word)) < 3 {
+			continue
+		}
+		switch word {
+		case "the", "and", "for", "with", "into", "from", "use", "all", "find", "tool", "tools", "please", "can", "want", "need", "this", "that", "using", "current", "show", "get", "report", "dla", "oraz", "proszę", "prosze", "narzędzie", "narzedzie", "narzędzia", "narzedzia":
+			continue
+		}
+		terms[word] = true
+	}
+	return terms
+}
+
+// A small capability vocabulary makes ordinary PL/EN queries comparable to the
+// primarily English catalog. Unknown words remain literal, including Unicode;
+// this is not an intent classifier and does not assign capabilities to tools.
+func discoveryQuery(text string) string {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	for i, word := range words {
+		switch word {
+		case "tests":
+			words[i] = "test"
+		case "builds":
+			words[i] = "build"
+		case "znajdź", "znajdz", "wyszukaj", "szukaj", "wyszukiwanie":
+			words[i] = "search"
+		case "odczytaj", "przeczytaj", "czytaj":
+			words[i] = "read"
+		case "wylistuj", "lista":
+			words[i] = "list"
+		case "plik", "pliki", "plików", "plikow", "pliku":
+			words[i] = "files"
+		case "folder", "folderu", "katalog", "katalogu":
+			words[i] = "directory"
+		case "dokument", "dokumenty", "dokumentów", "dokumentow":
+			words[i] = "documents"
+		case "wiadomości", "wiadomosci":
+			words[i] = "messages"
+		case "kalendarz", "kalendarza":
+			words[i] = "calendar"
+		case "uruchom", "wykonaj":
+			words[i] = "run"
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+func shortDiscoveryDescription(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) > 160 {
+		return string(runes[:157]) + "..."
+	}
+	return text
 }
 
 // web_fetch mentions downloading only to direct binary/file work to

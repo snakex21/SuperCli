@@ -51,6 +51,7 @@ func providerSafeToolArguments(raw string) string {
 }
 
 type Message struct {
+	Origin  *ContextOrigin `json:"context_origin,omitempty"`
 	Role    Role
 	Content string
 	Parts   []ContentPart
@@ -76,6 +77,7 @@ const (
 // ContentPart is one chunk of a multimodal message. Exactly one of
 // Text or Image is meaningful, based on Type.
 type ContentPart struct {
+	Source    ContextSource `json:"context_source,omitempty"`
 	Type      PartType
 	Text      string
 	Image     *ImageRef

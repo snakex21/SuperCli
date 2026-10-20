@@ -19,6 +19,7 @@ import (
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	systemhostpower "supercli/internal/system/hostpower"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/fileops"
@@ -34,6 +35,7 @@ type tuiLaunchDeps struct {
 	slotCache                                     *llm.SlotCache
 	drafts                                        *tui.DraftRecovery
 	workers                                       *agent.WorkerRegistry
+	hostPower                                     *systemhostpower.Controller
 	modelTier                                     tier.Tier
 	loop                                          *agent.Loop
 	provider                                      llm.Provider
@@ -65,6 +67,7 @@ type tuiLaunchDeps struct {
 func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 	configureInvocationPersistence(d.loop, d.sessStore, d.checkpointCtrl)
 	return tui.Options{
+		HostPower: d.hostPower,
 		Home:      d.home,
 		DataDir:   d.dataDir,
 		SessionID: d.sessionID,

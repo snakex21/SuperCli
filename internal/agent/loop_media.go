@@ -240,7 +240,8 @@ func (l *Loop) loadSessionImage(ctx context.Context, raw json.RawMessage) (tools
 			if label == "" {
 				label = filepath.Base(img.Path)
 			}
-			return tools.Result{Text: fmt.Sprintf("Session image %s (%s) will be attached to the next model request", id, label)}, nil
+			// The path line lets the GUI show the real image as a thumbnail.
+			return tools.Result{Text: fmt.Sprintf("Session image %s (%s) will be attached to the next model request\npath: %s", id, label, img.Path)}, nil
 		}
 	}
 	err := fmt.Errorf("%s: unknown image id %q", sessionImageToolName, id)

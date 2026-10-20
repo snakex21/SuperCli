@@ -91,6 +91,8 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) clampMenuCursor() {
 	max := 0
 	switch m.menu.kind {
+	case menuInstructions:
+		max = len(m.menu.instructions.Presets) - 1
 	case menuUpdate, menuPreview:
 		max = 2
 	case menuLanguage:

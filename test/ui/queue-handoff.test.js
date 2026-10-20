@@ -1,4 +1,4 @@
-import {assert, test, readSource, sourcePath, testDir, createSandbox, runScript} from './harness.js';
+import {assert, test, readSource, sourcePath, testDir, createSandbox, runScript, parseHTML} from './harness.js';
 
 function deferred() {
   let resolve, reject;
@@ -25,6 +25,11 @@ function element(_tag, className = '', text = '') {
 }
 function harness(options = {}) {
   const elements = new Map();
+  const nativeDOM = options.editorDOM ? parseHTML('<!doctype html><html><body></body></html>').document : null;
+  if (nativeDOM) Object.defineProperty(nativeDOM, 'hidden', {configurable: true, value: false});
+  const makeElement = nativeDOM ? (tag, cls = '', text = '') => {
+    const n = nativeDOM.createElement(tag); n.className = cls; n.textContent = text; return n;
+  } : element;
   const calls = [], events = [], requests = [], sends = [];
   const arrivals = Array.from({length: 4}, deferred);
   const streams = new Map(), terminals = new Map(), finishing = new Map(), intervals = new Map(), failures = new Map();
@@ -33,14 +38,19 @@ function harness(options = {}) {
   const deletion = deferred();
   const catalog = JSON.parse(readSource(sourcePath(testDir, '../../internal/webgui/assets/locales/en.json'), 'utf8'));
   const $ = selector => {
-    if (!elements.has(selector)) elements.set(selector, element('div'));
+    if (!elements.has(selector)) {
+      const n = makeElement(selector === '#prompt' ? 'textarea' : selector === '#chat-form' ? 'form' : 'div');
+      if (nativeDOM) { n.id = selector.slice(1); nativeDOM.body.appendChild(n); }
+      elements.set(selector, n);
+    }
     return elements.get(selector);
   };
   const context = {
-    document: {hidden: false, hasFocus: () => true, createElement: element}, localStorage: {getItem: () => null},
-    AbortController, Date, Promise, console, window: {},
-    $, $$: () => [], el: element,
-    i18nEl: (tag, cls, key) => element(tag, cls, catalog[key]),
+    document: nativeDOM || {hidden: false, hasFocus: () => true, createElement: element}, localStorage: {getItem: () => null},
+    activeAppDialog: null,
+    AbortController, Date, Promise, console, window: new EventTarget(),
+    $, $$: () => [], el: makeElement,
+    i18nEl: (tag, cls, key) => makeElement(tag, cls, catalog[key]),
     t: key => { assert.ok(catalog[key], 'missing translation: ' + key); return catalog[key]; },
     superCliUI: {
       createComposerDraftStore: () => ({scope: () => options.dynamicScope ? (context.activeSessionID ? 'session:' + context.activeSessionID : 'new') : 'session:s1', clear() {}, restore() {}}),
@@ -77,11 +87,14 @@ function harness(options = {}) {
       requests.push(request);
       arrivals[index].resolve(request);
       if (options.responseGate && index === 0) await options.responseGate.promise;
+      if (options.loseResponse) throw new TypeError('response lost before headers');
       return {ok: options.accepted !== false && !(options.rejectSecondHTTP && index === 1), status: 503, body: {index, signal: request.signal}};
     },
     j: async (url, opts) => {
       calls.push([url, opts]);
+      if (options.api && url.startsWith('/api/tasks')) return options.api(url, opts);
       if (url.startsWith('/api/chat/completion?id=')) {
+        if (options.status && url.includes('&status=1')) return options.status(url, opts);
         if (options.completionRequested) options.completionRequested.resolve();
         if (options.completionFails) throw new Error("completion unavailable");
         if (options.completion) return await options.completion.promise;
@@ -143,6 +156,413 @@ function harness(options = {}) {
   return {context, $, calls, events, requests, sends, arrivals, streams, terminals, finishing, intervals, entered, deletion, failures};
 }
 const nextBrowserTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
+for (const session of ['', 's1']) test('lost POST headers reconcile exact durable turn before following: ' + (session || 'fresh'), async () => {
+  const h = harness({loseResponse:true, status:async url => {
+    assert.equal(new URL('http://fixture'+url).searchParams.get('id'), JSON.parse(h.requests[0].body).turn_id);
+    return {accepted:true, session_id:'s1', done:false};
+  }}), c = h.context;
+  c.activeSessionID = session;
+  const cleared = []; c.composerDraftStore.clear = (...args) => cleared.push(args);
+  const item = {id:'lost-task', prompt:'mutate once', session_id:session};
+  c.promptQueue = [item];
+  let followed = null;
+  c.syncFollowRun = run => { followed = run; run.following = true; };
+  h.deletion.resolve();
+  await c.sendPrompt('mutate once', [], {scope:'session:s1',text:'mutate once'}, item);
+  assert.equal(h.requests.length, 1, 'never resend chat POST');
+  assert.ok(followed && followed.accepted, 'follow only confirmed durable acceptance');
+  assert.equal(followed.sessionID, 's1');
+  assert.equal(cleared.length, 1);
+  assert.equal(c.promptQueue.length, 0);
+});
+for (const outcome of ['rejected', 'unknown', 'pending']) test('lost headers ' + outcome + ' retains draft and queue without ghost busy', async () => {
+  let reads = 0;
+  const h = harness({loseResponse:true, status:async () => {
+    reads++;
+    if (outcome === 'unknown') throw new Error('404 not yet registered');
+    return {accepted:false, done:outcome === 'rejected'};
+  }}), c = h.context, restored = [], cleared = [];
+  c.composerDraftStore.restore = scope => restored.push(scope);
+  c.composerDraftStore.clear = scope => cleared.push(scope);
+  const item = {id:'retained',text:'keep me',session_id:'s1'}; c.promptQueue=[item];
+  await c.sendPrompt('keep me', [], {scope:'session:s1',text:'keep me'}, item);
+  assert.equal(h.requests.length,1); assert.equal(c.promptQueue[0],item);
+  assert.deepEqual(cleared,[]); assert.deepEqual(restored,['session:s1']);
+  assert.equal(c.pauseQueue,true); assert.equal(c.streaming,false); assert.equal(c.activeRun,null);
+  assert.equal(c.queueDispatchItem,null); assert.equal(h.intervals.size,0);
+  assert.equal(reads,outcome === 'rejected' ? 1 : 4);
+});
+
+test('delayed receipt is unknown until durable acceptance and never drains the queue meanwhile', async () => {
+  let reads=0;const cleared=[];
+  const h=harness({loseResponse:true,status:async()=>{
+    reads++;assert.equal(h.requests.length,1);assert.equal(cleared.length,0);
+    assert.equal(h.context.promptQueue.length,1);
+    return reads<3 ? {accepted:false,done:false} : {accepted:true,session_id:'s1',done:false};
+  }}),c=h.context;
+  c.composerDraftStore.clear=(...args)=>cleared.push(args);c.promptQueue=[{id:'later',text:'do not drain',session_id:'s1'}];
+  c.syncFollowRun=run=>{run.following=true;};
+  await c.sendPrompt('delayed',[],{scope:'session:s1',text:'delayed'});
+  assert.equal(reads,3);assert.equal(cleared.length,1);assert.equal(h.requests.length,1);
+  c.finishRunPresentation();
+});
+
+test('offline status reads abort within the observation budget and release busy state', async () => {
+  let reads=0;
+  const h=harness({loseResponse:true,status:(_url,opts)=>new Promise((_resolve,reject)=>{
+    reads++;opts.signal.addEventListener('abort',()=>reject(opts.signal.reason),{once:true});
+  })}),c=h.context;
+  c.setTimeout=fn=>setTimeout(fn,1);c.clearTimeout=clearTimeout;
+  await c.sendPrompt('offline');
+  assert.equal(reads,4);assert.equal(h.requests.length,1);assert.equal(c.pauseQueue,true);
+  assert.equal(c.activeRun,null);assert.equal(c.streaming,false);assert.equal(h.intervals.size,0);
+});
+
+test('already completed lost response confirms acceptance but pauses unobserved queue outcome', async () => {
+  const h=harness({loseResponse:true,status:async()=>({accepted:true,session_id:'s1',done:true})}),c=h.context;
+  const cleared=[];c.composerDraftStore.clear=(...args)=>cleared.push(args);
+  c.promptQueue=[{id:'next',text:'not automatic',session_id:'s1'}];
+  await c.sendPrompt('done',[],{scope:'session:s1',text:'done'});
+  assert.equal(cleared.length,1);assert.equal(c.pauseQueue,true);assert.equal(h.requests.length,1);
+  assert.equal(c.streaming,false);assert.equal(c.activeRun,null);assert.equal(h.intervals.size,0);
+});
+
+for (const change of ['project','session','new-conversation','foreground']) test('late acceptance cannot clobber ' + change, async () => {
+  const status = deferred(), requested = deferred();
+  const h = harness({loseResponse:true,status:async()=>{requested.resolve();return status.promise;}}),c=h.context;
+  const cleared=[];c.composerDraftStore.clear=(...args)=>cleared.push(args);
+  const item={id:'stale',text:'old',session_id:'s1'};c.promptQueue=[item];
+  const first=c.sendPrompt('old',[],{scope:'session:s1',text:'old'},item);await requested.promise;
+  const newer={turnID:'newer'};
+  if(change==='project')c.projectEpoch++;
+  if(change==='session')c.activeSessionID='s2';
+  if(change==='new-conversation'){c.activeSessionID='';c.activeRun=null;}
+  if(change==='foreground')c.activeRun=newer;
+  status.resolve({accepted:true,session_id:'stale-session',done:false});await first;
+  assert.equal(h.requests.length,1);assert.deepEqual(cleared,[]);assert.equal(c.promptQueue[0],item);
+  assert.notEqual(c.activeSessionID,'stale-session');
+  if(change==='foreground')assert.equal(c.activeRun,newer);
+  // The navigation path owns presentation cleanup, not the stale request.
+  c.finishRunPresentation();
+});
+
+test('Stop during lost-header reconciliation targets the turn before acceptance and never resends', async () => {
+  const status=deferred(),requested=deferred();
+  const h=harness({loseResponse:true,status:async()=>{requested.resolve();return status.promise;}}),c=h.context;
+  const first=c.sendPrompt('stop me');await requested.promise;h.$('#stop-run-btn').events.click();
+  assert.equal(h.calls.filter(x=>x[0]==='/api/sync/stop').length,1);
+  assert.equal(h.calls.find(x=>x[0]==='/api/sync/stop')[1].turn_id,JSON.parse(h.requests[0].body).turn_id);
+  status.resolve({accepted:true,session_id:'s1',done:false});await first;
+  assert.equal(h.requests.length,1);assert.equal(h.calls.filter(x=>x[0]==='/api/sync/stop').length,1);
+  assert.equal(c.pauseQueue,true);assert.equal(c.streaming,false);assert.equal(c.activeRun,null);
+});
+
+test('Stop registration race retries unsuccessful Stop on pending receipt observations without another POST', async () => {
+  const pending=deferred(),observing=deferred();let stops=0,reads=0;
+  const h=harness({loseResponse:true,status:async()=>{
+    reads++;if(reads===1){observing.resolve();return pending.promise;}
+    return {accepted:false,done:stops>=2};
+  }}),c=h.context;
+  c.jpost=async(url,body)=>{assert.equal(url,'/api/sync/stop');assert.equal(body.turn_id,JSON.parse(h.requests[0].body).turn_id);stops++;if(stops===1)throw new Error('410 not registered yet');return {ok:true};};
+  const first=c.sendPrompt('stop before registration');await observing.promise;
+  h.$('#stop-run-btn').events.click();await nextBrowserTask();
+  assert.equal(stops,1);pending.resolve({accepted:false,done:false});await first;
+  assert.equal(stops,2,'retry failed Stop after the turn registers, even before acceptance');
+  assert.equal(h.requests.length,1);assert.equal(c.streaming,false);assert.equal(c.pauseQueue,true);
+});
+
+for(const failDelete of [false,true]) test('recovered queued DELETE after real detach and navigation hands off old run without foreground mutations: '+(failDelete?'failure':'success'),async()=>{
+  const deleting=deferred(),deleteStarted=deferred();
+  const h=harness({editorDOM:true,loseResponse:true,status:async()=>({accepted:true,session_id:'s1',done:false}),api:async(url,opts)=>{
+    assert.equal(opts.method,'DELETE');deleteStarted.resolve();await deleting.promise;
+    if(failDelete)throw new Error('old DELETE failed');return {};
+  }}),c=attachQueueSync(h);
+  c.syncLoadProjects=()=>{};c.loadPromptQueue=()=>{};c.syncSettleTranscriptScroll=()=>{};
+  let connects=0;c.syncConnect=()=>{connects++;};
+  const item={id:'shared-id',text:'old queued',session_id:'s1'};c.promptQueue=[item];c.queueDispatchItem=item;
+  const first=c.sendPrompt(item.text,[],null,item);await deleteStarted.promise;
+  const old=c.activeRun;assert.equal(old.accepted,true);assert.equal(c.detachActiveRun(),true);
+  assert.equal(c.detachedRuns.s1,old);
+  c.projectEpoch++;c.activeSessionID='s2';c.transcriptSessionID='s2';c.syncSession='s2';
+  const newer={turnID:'new-foreground',sessionID:'s2'},next={id:'shared-id',text:'new project queue',session_id:'s2'};
+  c.activeRun=newer;c.streaming=true;c.queueDispatching=true;c.queueDispatchItem=next;c.promptQueue=[next];c.pauseQueue=false;
+  const toasts=h.events.length;deleting.resolve();await first;
+  assert.equal(c.detachedRuns.s1,undefined,'old transport must no longer own detached run');
+  assert.equal(old.following,true);assert.equal(connects,1);
+  const info={turn_id:old.turnID,session_id:'s1',client_id:'original',prompt:'old queued'};
+  assert.ok(!c.syncOwnRun(info),'sync may observe original run');
+  c.syncHandleFrame({type:'snapshot',runs:[info],events:[]});
+  assert.equal(c.syncRuns.s1.remote,true,'old run is now an observable sync run');
+  assert.equal(c.activeRun,newer);assert.equal(c.activeSessionID,'s2');assert.equal(c.transcriptSessionID,'s2');
+  assert.equal(c.queueDispatchItem,next);assert.equal(c.queueDispatching,true);assert.equal(c.promptQueue[0],next);
+  assert.equal(c.pauseQueue,false);assert.equal(c.streaming,true);assert.equal(h.events.length,toasts);
+  c.finishRunPresentation();
+});
+
+test('delayed receipt hands lost fresh POST to production sync snapshot and replay once', async () => {
+  const h=harness({editorDOM:true,loseResponse:true,status:async()=>({accepted:true,session_id:'recovered',done:false})}),c=attachQueueSync(h);
+  c.activeSessionID=''; c.syncSession=''; c.syncLoadProjects=()=>{};c.loadPromptQueue=()=>{};
+  c.syncSettleTranscriptScroll=()=>{};
+  let connects=0, visible=0;c.addUserMsg=()=>{visible++;return element('div');};
+  c.syncConnect=()=>{connects++;c.syncHandleFrame({type:'snapshot',runs:[{turn_id:JSON.parse(h.requests[0].body).turn_id,session_id:'recovered',client_id:'original',prompt:'once'}],events:[{type:'session_activity',session_id:'recovered',user_seq:1},{type:'message',text:'existing run'}]});};
+  const cleared=[];c.composerDraftStore.clear=(...args)=>cleared.push(args);
+  await c.sendPrompt('once',[],{scope:'session:s1',text:'once'});
+  assert.equal(h.requests.length,1);assert.equal(connects,1);assert.equal(cleared.length,1);
+  assert.equal(c.activeSessionID,'recovered');assert.equal(c.syncRuns.recovered.remote,true);
+  assert.equal(c.syncRuns.recovered.userSeq,1);assert.equal(c.syncRuns.recovered.events.length,2);
+  assert.equal(visible,1,'optimistic message not appended twice before durable transcript refresh');
+  assert.equal(c.activeRun,null);assert.equal(c.streaming,false);assert.equal(h.intervals.size,0);
+});
+
+function queueEditRunFixture(mode = 'off') {
+  const state = {tasks: [
+    {id:'edit-a', prompt:'original A', session_id:'s1', attachments:['/stage/original.txt']},
+    {id:'edit-b', prompt:'original B', session_id:'s1', attachments:[]}
+  ], mode, patch: null, reload: null, failPatch: false, failLoad: false, merges: [], mergeGate: null, mergeStarted: deferred()};
+  const h = harness({nativeSSE:true, editorDOM:true, api:async(url,opts={})=>{
+    if (opts.method === 'PATCH') {
+      if (state.patch) await state.patch.promise;
+      if (state.failPatch) throw new Error('409 task was claimed remotely');
+      const body=JSON.parse(opts.body), item=state.tasks.find(q=>q.id===body.id);
+      if (!item) throw new Error('409 task was claimed remotely');
+      Object.assign(item,{prompt:body.prompt,attachments:body.attachments});return {...item};
+    }
+    if (opts.method === 'DELETE') {state.tasks=state.tasks.filter(q=>q.id!==new URL('http://fixture'+url).searchParams.get('id'));return {};}
+    if (state.reload) await state.reload.promise;
+    if (state.failLoad) throw new Error('queue reload unavailable');
+    return JSON.parse(JSON.stringify({tasks:state.tasks,queue_merge:state.mode,running:true}));
+  }});
+  const c=h.context;
+  c.queueMergeMode=mode;
+  const post=c.jpost;
+  c.jpost=async(url,body)=>{
+    if(url!=='/api/tasks?merge=1')return post(url,body);
+    state.merges.push(body);state.mergeStarted.resolve();if(state.mergeGate)await state.mergeGate.promise;
+    state.tasks=[{id:'auto-merged',prompt:state.tasks.map(q=>q.prompt).join('\n'),session_id:'s1',attachments:state.tasks.flatMap(q=>q.attachments),merged:true}];
+    return JSON.parse(JSON.stringify(state.tasks));
+  };
+  c.promptQueueLoadedEpoch=c.projectEpoch;
+  c.promptQueue=state.tasks.map(q=>({...q,text:q.prompt,attachments:[...q.attachments]}));
+  c.renderPromptQueue();
+  h.openEdit=(id='edit-a')=>{
+    h.$('#prompt-queue').querySelector('[data-queue-edit-id="'+id+'"]').click();
+    assert.ok(c.queueEdit);return c.queueEdit;
+  };
+  h.typeEdit=text=>{c.queueEdit.input.value=text;c.queueEdit.input.dispatchEvent(new Event('input',{bubbles:true}));};
+  h.editButton=key=>Array.from(c.queueEdit.dialog.querySelectorAll('button')).find(n=>n.textContent===c.t(key));
+  h.cleanup=async()=>{c.pauseQueue=true;h.deletion.resolve();for(const end of h.streams.values()) {try{end();}catch(_){}} await Promise.all(h.sends);};
+  const save=c.saveQueuedTaskEdit;
+  h.save=()=>{let result;c.saveQueuedTaskEdit=(...args)=>{result=save(...args);return result;};h.editButton('common.save').click();c.saveQueuedTaskEdit=save;return result;};
+  h.cancel=()=>h.editButton('common.cancel').click();
+  h.state=state;return h;
+}
+
+test('native SSE EOF while head editor is open retains draft and never dispatches original head',async()=>{
+  const h=queueEditRunFixture(),c=h.context;
+  try {
+    const first=c.sendPrompt('primary working');await h.entered[0].promise;
+    const edit=h.openEdit();h.typeEdit('revised A');
+    h.streams.get(0)();await first;await nextBrowserTask();
+    assert.equal(h.requests.length,1,'EOF must not auto-send old A while its editor is open');
+    assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'revised A');assert.equal(edit.dialog.open,true);
+  } finally {await h.cleanup();}
+});
+
+test('head Save waits for PATCH and durable reload then sends exactly the saved text and attachments once',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try {
+  const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit();h.typeEdit('SAVED A');edit.attachments=['/stage/revised.txt'];
+  h.streams.get(0)();await first;await nextBrowserTask();
+  h.state.patch=deferred();const saving=h.save();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueEdit,edit);
+  h.state.reload=deferred();h.state.patch.resolve();await nextBrowserTask();assert.equal(h.requests.length,1,'POST success is not durable reload completion');assert.equal(c.queueEdit,edit);
+  h.state.reload.resolve();await saving;await h.entered[1].promise;await nextBrowserTask();
+  const sent=JSON.parse(h.requests[1].body);assert.equal(sent.prompt,'SAVED A');assert.deepEqual(sent.attachments,['/stage/revised.txt']);assert.equal(sent.queue_task_id,'edit-a');assert.equal(c.queueEdit,null);assert.equal(h.requests.length,2);
+ } finally {await h.cleanup();}
+});
+
+test('Cancel resumes original head exactly once only when an automatic cycle waited for its editor',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try {const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.typeEdit('discarded A');h.streams.get(0)();await first;
+  h.cancel();await h.entered[1].promise;await nextBrowserTask();assert.equal(h.requests.length,2);const sent=JSON.parse(h.requests[1].body);assert.equal(sent.prompt,'original A');assert.deepEqual(sent.attachments,['/stage/original.txt']);
+ } finally {await h.cleanup();}
+});
+
+for(const stop of ['paused','Stop','project','session']) test('blocked edit handoff never auto-resumes after '+stop,async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try {const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  if(stop==='paused')c.pauseQueue=true;
+  if(stop==='Stop')h.$('#stop-run-btn').click();
+  if(stop==='project')c.projectEpoch++;
+  if(stop==='session')c.activeSessionID='different-session';
+  h.cancel();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueAutoDrain,null);
+ } finally {await h.cleanup();}
+});
+
+for(const paused of [false,true]) test('opening and closing an idle '+(paused?'paused':'unpaused')+' queue editor never starts a job',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try {c.pauseQueue=paused;h.openEdit();h.typeEdit('idle revision');await h.save();await nextBrowserTask();assert.equal(h.requests.length,0);h.openEdit();h.cancel();await nextBrowserTask();assert.equal(h.requests.length,0);}
+ finally{await h.cleanup();}
+});
+
+test('editing later B permits earlier A and waits only once B becomes head',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try {const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit('edit-b');h.typeEdit('revised B');h.streams.get(0)();await first;await h.entered[1].promise;
+  assert.equal(JSON.parse(h.requests[1].body).prompt,'original A');assert.equal(c.queueEdit,edit);
+  h.streams.get(1)();await h.sends[1];await nextBrowserTask();assert.equal(h.requests.length,2);assert.equal(c.queueEdit,edit);
+  await h.save();await h.entered[2].promise;assert.equal(JSON.parse(h.requests[2].body).prompt,'revised B');assert.equal(h.requests.length,3);
+ }finally{await h.cleanup();}
+});
+
+for(const failure of ['PATCH','reload']) test('failed '+failure+' keeps edit intent and no stale dispatch until successful retry',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit();h.typeEdit('retry revision');h.streams.get(0)();await first;
+  h.state.failPatch=failure==='PATCH';h.state.failLoad=failure==='reload';await h.save();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'retry revision');assert.ok(edit.error.textContent);
+  h.state.failPatch=false;h.state.failLoad=false;await h.save();await h.entered[1].promise;assert.equal(JSON.parse(h.requests[1].body).prompt,'retry revision');
+ }finally{await h.cleanup();}
+});
+
+test('remote removal plus 409 preserves unsaved draft, surfaces conflict, and cannot drain the next item',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit();h.typeEdit('do not lose me');h.streams.get(0)();await first;
+  h.state.tasks=h.state.tasks.slice(1);h.state.failPatch=true;await h.save();await nextBrowserTask();assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'do not lose me');assert.match(edit.error.textContent,/409/);assert.equal(h.requests.length,1);assert.equal(c.queueAutoDrain,null);
+  h.cancel();await nextBrowserTask();assert.equal(h.requests.length,1);
+ }finally{await h.cleanup();}
+});
+
+for(const failure of [false,true]) test('pending upload '+(failure?'failure':'success')+' retains editor across EOF and requires Save or Cancel',async()=>{
+ const h=queueEditRunFixture(),c=h.context;const upload=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit();h.typeEdit('with upload');c.fetch=()=>upload.promise;
+  const paste=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(paste,'clipboardData',{value:{files:[new File(['fixture'],'new.txt')],getData:()=>''}});edit.dialog.dispatchEvent(paste);await nextBrowserTask();assert.equal(edit.uploading,true);
+  h.streams.get(0)();await first;assert.equal(h.requests.length,1);assert.equal(c.queueEdit,edit);
+  if(failure)upload.reject(new Error('upload offline'));else upload.resolve({ok:true,json:async()=>({paths:['/stage/new.txt']})});await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'with upload');
+  if(failure){assert.ok(edit.error.textContent);h.cancel();}else await h.save();await h.entered[1].promise;
+  const sent=JSON.parse(h.requests[1].body);assert.equal(sent.prompt,failure?'original A':'with upload');assert.deepEqual(sent.attachments,failure?['/stage/original.txt']:['/stage/original.txt','/stage/new.txt']);
+ }finally{await h.cleanup();}
+});
+
+function attachQueueSync(h) {
+ const c=h.context;c.location={hostname:'localhost',protocol:'http:',host:'fixture'};
+ runScript(readSource(sourcePath(testDir,'../../internal/webgui/assets/js/05b-sync.js'),'utf8'),c);
+ c.syncRefreshView=()=>{};c.syncLoadSessions=()=>{};c.syncRenderElsewhere=()=>{};c.syncSession='s1';
+ return c;
+}
+
+test('sync observer completion uses the same editor gate and resumes saved head exactly once',async()=>{
+ const h=queueEditRunFixture(),c=attachQueueSync(h);
+ try{const run={remote:true,sessionID:'s1',turn_id:'remote-root'};c.syncRuns.s1=run;c.activeRun=run;c.streaming=true;
+  const edit=h.openEdit();h.typeEdit('observer saved A');
+  c.syncHandleFrame({type:'run_finished',session_id:'s1'});await nextBrowserTask();assert.equal(h.requests.length,0);assert.equal(c.queueEdit,edit);assert.ok(c.queueAutoDrain);
+  await h.save();await h.entered[0].promise;assert.equal(JSON.parse(h.requests[0].body).prompt,'observer saved A');assert.equal(h.requests.length,1);
+ }finally{await h.cleanup();}
+});
+
+test('Cancel reload plus sync completion and duplicate EOF paths cannot send the head twice',async()=>{
+ const h=queueEditRunFixture(),c=attachQueueSync(h);
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  h.state.reload=deferred();h.cancel();await nextBrowserTask();assert.equal(h.requests.length,1);
+  c.syncRuns.s1={remote:true,sessionID:'s1',turn_id:'overlapping-root'};c.syncHandleFrame({type:'run_finished',session_id:'s1'});await nextBrowserTask();assert.equal(h.requests.length,1,'sync must not bypass pending durable reload');
+  h.state.reload.resolve();await h.entered[1].promise;await nextBrowserTask();assert.equal(h.requests.length,2);assert.equal(JSON.parse(h.requests[1].body).prompt,'original A');
+ }finally{await h.cleanup();}
+});
+
+test('Stop while resumed cancel is waiting for durable reload invalidates its fixed scope',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  h.state.reload=deferred();h.cancel();await nextBrowserTask();h.$('#stop-run-btn').click();h.state.reload.resolve();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueAutoDrain,null);
+ }finally{await h.cleanup();}
+});
+
+test('project change while resumed editor handoff waits for model readiness cannot dispatch stale work',async()=>{
+ const h=queueEditRunFixture(),c=h.context;const ready=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  c.sessionRuntimeReady=ready.promise;h.cancel();await nextBrowserTask();assert.equal(h.requests.length,1);c.projectEpoch++;ready.resolve();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueDispatching,false);
+ }finally{ready.resolve();await h.cleanup();}
+});
+
+test('merging a blocked editor never auto-dispatches inside the mutation and sends merged head once afterward',async()=>{
+ const h=queueEditRunFixture(),c=h.context,merge=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  c.jpost=async(url)=>{assert.equal(url,'/api/tasks?merge=1');await merge.promise;h.state.tasks=[{id:'merged',prompt:'merged saved tasks',session_id:'s1',attachments:[],merged:true}];return JSON.parse(JSON.stringify(h.state.tasks));};
+  const merging=c.mergeQueuedMessages(true);await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueMerging,true);assert.ok(c.queueEdit);
+  merge.resolve();await merging;await h.entered[1].promise;assert.equal(c.queueMerging,false);assert.equal(c.queueEdit,null);assert.equal(h.requests.length,2);assert.equal(JSON.parse(h.requests[1].body).prompt,'merged saved tasks');
+ }finally{merge.resolve();await h.cleanup();}
+});
+
+test('failed fresh queue reload after Cancel pauses honestly instead of dispatching cached work',async()=>{
+ const h=queueEditRunFixture(),c=h.context;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.streams.get(0)();await first;
+  h.state.failLoad=true;h.cancel();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.pauseQueue,true);assert.equal(c.queueAutoDrain,null);assert.ok(h.events.includes(c.t('chat.connError')));assert.equal(c.promptQueue[0].text,'original A');
+ }finally{await h.cleanup();}
+});
+
+test('closing a pending Save cannot overlap a second PATCH or release its head dispatch barrier',async()=>{
+ const h=queueEditRunFixture(),c=h.context;const patch=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.openEdit();h.typeEdit('first saved A');h.state.patch=patch;const saving=h.save();
+  h.streams.get(0)();await first;h.cancel();h.openEdit();h.typeEdit('second draft A');assert.equal(h.editButton('common.save').disabled,true);assert.equal(h.save(),undefined);assert.equal(h.calls.filter(x=>x[1]&&x[1].method==='PATCH').length,1);assert.equal(h.requests.length,1);
+  patch.resolve();await saving;await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.queueEdit.input.value,'second draft A');assert.equal(h.editButton('common.save').disabled,false);
+  h.state.patch=null;await h.save();await h.entered[1].promise;assert.equal(JSON.parse(h.requests[1].body).prompt,'second draft A');assert.equal(h.requests.length,2);
+ }finally{patch.resolve();await h.cleanup();}
+});
+
+for(const finish of ['Save','Cancel']) test('auto merge skips later B editor and '+finish+' resolves B only when it becomes head',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit('edit-b');h.typeEdit('edited B auto');h.streams.get(0)();await first;await h.entered[1].promise;
+  assert.equal(JSON.parse(h.requests[1].body).prompt,'original A');assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'edited B auto');assert.equal(h.state.merges.length,0);
+  h.streams.get(1)();await h.sends[1];await nextBrowserTask();assert.equal(h.requests.length,2);assert.equal(c.queueEdit,edit);
+  if(finish==='Save')await h.save();else h.cancel();await h.entered[2].promise;
+  assert.equal(JSON.parse(h.requests[2].body).prompt,finish==='Save'?'edited B auto':'original B');assert.equal(h.requests.length,3);
+ }finally{await h.cleanup();}
+});
+
+test('auto merge skips a detached pending PATCH for B while sending A separately',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,patch=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;const edit=h.openEdit('edit-b');h.typeEdit('pending saved B');h.state.patch=patch;const saving=h.save();h.cancel();
+  h.streams.get(0)();await first;await h.entered[1].promise;assert.equal(JSON.parse(h.requests[1].body).prompt,'original A');assert.equal(c.queueEditWrite,edit);assert.equal(h.state.merges.length,0);
+  patch.resolve();await saving;h.streams.get(1)();await h.sends[1];await h.entered[2].promise;assert.equal(JSON.parse(h.requests[2].body).prompt,'pending saved B');
+ }finally{patch.resolve();await h.cleanup();}
+});
+
+for(const phase of ['prepare','preflight'])test('auto merge rechecks editors opened during async '+phase,async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,gate=deferred(),entered=deferred();const prepare=c.prepareQueuedTask;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;
+  if(phase==='prepare')c.prepareQueuedTask=async(item)=>{entered.resolve();await gate.promise;return prepare(item);};
+  else{h.state.reload=gate;const api=c.j;c.j=(url,opts)=>{if(url.startsWith('/api/tasks?state'))entered.resolve();return api(url,opts);};}
+  h.streams.get(0)();await first;await entered.promise;const edit=h.openEdit('edit-b');h.typeEdit('opened during '+phase);gate.resolve();await h.entered[1].promise;
+  assert.equal(JSON.parse(h.requests[1].body).prompt,'original A');assert.equal(h.state.merges.length,0);assert.equal(c.queueEdit,edit);assert.equal(edit.input.value,'opened during '+phase);
+ }finally{gate.resolve();await h.cleanup();}
+});
+
+test('Stop during slow auto merge never clears the new pause or sends the old handoff',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,merge=deferred();
+ try{h.state.mergeGate=merge;const first=c.sendPrompt('primary');await h.entered[0].promise;h.streams.get(0)();await first;await h.state.mergeStarted.promise;
+  const old=c.runStopRevision;h.$('#stop-run-btn').click();assert.equal(c.runStopRevision,old+1);merge.resolve();await nextBrowserTask();await nextBrowserTask();
+  assert.equal(h.requests.length,1,'old automatic scope must not be renewed after merge');assert.equal(c.pauseQueue,true);assert.equal(c.queueDispatching,false);
+ }finally{merge.resolve();await h.cleanup();}
+});
+
+test('Stop during auto merge preflight prevents even the merge mutation',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,gate=deferred(),entered=deferred();
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;h.state.reload=gate;const api=c.j;c.j=(url,opts)=>{if(url.startsWith('/api/tasks?state'))entered.resolve();return api(url,opts);};
+  h.streams.get(0)();await first;await entered.promise;h.$('#stop-run-btn').click();gate.resolve();await nextBrowserTask();assert.equal(h.state.merges.length,0);assert.equal(h.requests.length,1);assert.equal(c.pauseQueue,true);
+ }finally{gate.resolve();await h.cleanup();}
+});
+
+test('submitted auto merge blocks new editor opens until the HTTP mutation settles',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,merge=deferred();
+ try{h.state.mergeGate=merge;const first=c.sendPrompt('primary');await h.entered[0].promise;h.streams.get(0)();await first;await h.state.mergeStarted.promise;
+  c.editQueuedTask(c.promptQueue[1]);assert.equal(c.queueEdit,null);assert.equal(c.queueMerging,true);
+  h.$('#stop-run-btn').click();merge.resolve();await nextBrowserTask();assert.equal(h.requests.length,1);
+ }finally{merge.resolve();await h.cleanup();}
+});
+
+test('Stop during post-merge prepare cannot renew the original dispatch scope',async()=>{
+ const h=queueEditRunFixture('auto'),c=h.context,gate=deferred(),entered=deferred();const prepare=c.prepareQueuedTask;let count=0;
+ try{const first=c.sendPrompt('primary');await h.entered[0].promise;c.prepareQueuedTask=async(item)=>{if(++count===2){entered.resolve();await gate.promise;}return prepare(item);};
+  h.streams.get(0)();await first;await entered.promise;h.$('#stop-run-btn').click();gate.resolve();await nextBrowserTask();assert.equal(h.requests.length,1);assert.equal(c.pauseQueue,true);assert.equal(c.queueDispatching,false);
+ }finally{gate.resolve();await h.cleanup();}
+});
+
 function completionCalls(h) { return h.calls.filter(call => call[0].startsWith('/api/chat/completion?id=')); }
 function assertNoConnectionError(h) {
   assert.equal(h.events.some(event => String(event).includes(h.context.t('chat.connError'))), false);

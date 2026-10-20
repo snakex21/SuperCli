@@ -68,6 +68,17 @@ func (r *runState) fixtureCheck() error {
 		if err := r.screenshot("delegation-active"); err != nil {
 			return err
 		}
+		for _, width := range []int{1250, 700, 360} {
+			if err := r.viewport(width, 1000); err != nil {
+				return err
+			}
+			if err := r.phase("delegation", "layout", nil); err != nil {
+				return err
+			}
+			if err := r.screenshot(fmt.Sprintf("delegation-wrap-%d", width)); err != nil {
+				return err
+			}
+		}
 		if err := r.phase("delegation", "cleanup", nil); err != nil {
 			return err
 		}

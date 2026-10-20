@@ -24,6 +24,7 @@ import (
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/system/doctor"
+	"supercli/internal/system/hostpower"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/fileops"
@@ -44,6 +45,9 @@ const (
 // Model is the root Bubble Tea model. F25 adds Palette, Marker,
 // structured chat, CancelState, and ScrollConfig.
 type Model struct {
+	hostPower            *hostpower.Controller
+	hostPowerState       hostpower.Snapshot
+	hostPowerDismissed   string
 	home                 string
 	dataDir              string
 	usageRates           *usagecost.HistoryRates
@@ -258,6 +262,8 @@ type pendingAsk struct {
 type Options struct {
 	Home    string
 	DataDir string
+	// HostPower is the shared, explicitly configured one-shot host controller.
+	HostPower *hostpower.Controller
 	// Language is the shared UI locale, detected and persisted by
 	// the executable before constructing the TUI.
 	Language string
@@ -421,6 +427,7 @@ func New(opts Options) Model {
 	vp.SetContent(welcome(opts, p))
 
 	m := Model{
+		hostPower:         opts.HostPower,
 		home:              opts.Home,
 		dataDir:           opts.DataDir,
 		sessionID:         opts.SessionID,
@@ -485,6 +492,7 @@ func New(opts Options) Model {
 		m = next.(Model)
 		m.initialResumeCmd = cmd
 	}
+	m.refreshHostPower()
 	return m
 }
 
@@ -636,8 +644,16 @@ type StatusRefreshMsg = statusRefreshMsg
 // StatusRefreshMsgValue constructs the redraw message for program.Send.
 func StatusRefreshMsgValue() tea.Msg { return statusRefreshMsg{} }
 
+// systemNoticeMsg adds one informational line to the transcript (e.g. the
+// background new-release notice). UI only: it is never sent to the model.
+type systemNoticeMsg struct{ text string }
+
+// SystemNoticeMsgFrom constructs a transcript notice for program.Send.
+func SystemNoticeMsgFrom(text string) tea.Msg { return systemNoticeMsg{text: text} }
+
 // Update handles messages.
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.refreshHostPower()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -928,6 +944,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatus("", false)
+		return m, nil
+
+	case systemNoticeMsg:
+		m.chat.addSystem(msg.text)
+		m.refreshTranscript()
 		return m, nil
 
 	case statusRefreshMsg:

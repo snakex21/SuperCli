@@ -140,6 +140,7 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	result := core.Result{Text: string(data), Err: err}
 	if snap, ok := out.(snapshot); ok {
 		result.CommandKey = snap.CommandKey
+		result.Execution = snap.Execution
 		if result.Err == nil && p.Action != "stop" {
 			result.Err = snap.commandFailure()
 		}
@@ -172,6 +173,9 @@ type process struct {
 	id          string
 	command     []string
 	commandKey  *[32]byte
+	environment [32]byte
+	startOrder  uint64
+	execution   *core.ExecutionEvidence
 	workdir     string
 	stdin       io.WriteCloser
 	stdout      *streamBuffer
@@ -207,26 +211,27 @@ type process struct {
 }
 
 type snapshot struct {
-	CommandKey       *[32]byte `json:"-"`
-	ID               string    `json:"id"`
-	Status           string    `json:"status"`
-	Command          []string  `json:"command,omitempty"`
-	Workdir          string    `json:"workdir,omitempty"`
-	ExitCode         *int      `json:"exit_code,omitempty"`
-	DurationMS       int64     `json:"duration_ms"`
-	Stdout           string    `json:"stdout,omitempty"`
-	Stderr           string    `json:"stderr,omitempty"`
-	OmittedOut       int64     `json:"omitted_stdout_bytes,omitempty"`
-	OmittedErr       int64     `json:"omitted_stderr_bytes,omitempty"`
-	Error            string    `json:"error,omitempty"`
-	PTY              bool      `json:"pty,omitempty"`
-	OutputIncomplete bool      `json:"output_incomplete,omitempty"`
-	OutputPending    bool      `json:"output_pending,omitempty"`
-	OutputWarning    string    `json:"output_warning,omitempty"`
-	StatusSummary    string    `json:"status_summary,omitempty"`
-	Ready            bool      `json:"ready"`
-	ReadyPattern     string    `json:"ready_pattern,omitempty"`
-	ReadyPort        int       `json:"ready_port,omitempty"`
+	Execution        *core.ExecutionEvidence `json:"-"`
+	CommandKey       *[32]byte               `json:"-"`
+	ID               string                  `json:"id"`
+	Status           string                  `json:"status"`
+	Command          []string                `json:"command,omitempty"`
+	Workdir          string                  `json:"workdir,omitempty"`
+	ExitCode         *int                    `json:"exit_code,omitempty"`
+	DurationMS       int64                   `json:"duration_ms"`
+	Stdout           string                  `json:"stdout,omitempty"`
+	Stderr           string                  `json:"stderr,omitempty"`
+	OmittedOut       int64                   `json:"omitted_stdout_bytes,omitempty"`
+	OmittedErr       int64                   `json:"omitted_stderr_bytes,omitempty"`
+	Error            string                  `json:"error,omitempty"`
+	PTY              bool                    `json:"pty,omitempty"`
+	OutputIncomplete bool                    `json:"output_incomplete,omitempty"`
+	OutputPending    bool                    `json:"output_pending,omitempty"`
+	OutputWarning    string                  `json:"output_warning,omitempty"`
+	StatusSummary    string                  `json:"status_summary,omitempty"`
+	Ready            bool                    `json:"ready"`
+	ReadyPattern     string                  `json:"ready_pattern,omitempty"`
+	ReadyPort        int                     `json:"ready_port,omitempty"`
 	// ReadyAt is the last historical observation, never a current-health claim.
 	ReadyAt string `json:"ready_at,omitempty"`
 }

@@ -217,11 +217,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
 		systemPrompt += "\n\n" + modelProfile
 	}
-	if project := prompt.LoadProjectInstructions(home); project != "" {
-		systemPrompt += "\n\n" + project
-	}
-	if instructions := prompt.ActiveUserInstructions(dataDir); instructions != "" {
-		systemPrompt += "\n\n" + instructions
+	projectInstructions := prompt.LoadProjectInstructions(home)
+	if projectInstructions != "" {
+		systemPrompt += "\n\n" + projectInstructions
 	}
 	// Orchestrator mode: the lean preamble replaces the coordinator
 	// section — the hard "you have no edit/run tools" boundary plus the
@@ -241,15 +239,20 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	usageRates := usagecost.NewHistoryRates(dataDir)
 	defer usageRates.Close()
 	loopCfg := agent.LoopConfig{
-		Provider:              mainProvider,
-		Registry:              reg,
-		Caps:                  caps,
-		ErrorLog:              batchErrorLog,
-		System:                systemPrompt,
+		Provider:               mainProvider,
+		Registry:               reg,
+		Caps:                   caps,
+		ErrorLog:               batchErrorLog,
+		System:                 systemPrompt,
+		ProjectInstructions:    projectInstructions,
+		UserInstructions:       prompt.ActiveUserInstructions(dataDir),
+		UserInstructionsForRun: userInstructionsForRun(dataDir),
 		// Same as the TUI: state the real workspace in the request tail so the
 		// model does not guess a path (weak local models invented /home/dev on
 		// Windows) and the system prefix stays cacheable across projects.
-		LiveContext:           workingDirNote,
+		LiveContextBlocks: func(ctx context.Context) ([]llm.ContextBlock, error) {
+			return []llm.ContextBlock{{Source: llm.SourceRuntime, Text: workingDirNote}}, ctx.Err()
+		},
 		MaxSteps:              tomlCfg.MaxStepsOr(agent.DefaultMaxSteps),
 		BaseDir:               home,
 		UserDownloadsDir:      agent.SystemDownloadsDir,

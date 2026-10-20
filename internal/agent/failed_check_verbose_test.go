@@ -168,6 +168,34 @@ func TestGoVerboseRetryAcrossManagedProcess(t *testing.T) {
 			if second.failed {
 				t.Fatalf("corrected test failed: %+v", second)
 			}
+			if loop.failedChecks.unresolved() {
+				// ctx_execute scrubs inherited variables; process_session retains
+				// them. Crossing executors is not environment equivalence merely
+				// because explicit overrides match. If they differ, verify again
+				// with the original executor instead of weakening the guard.
+				differentEnvironment := false
+				var environment [32]byte
+				firstEnvironment := true
+				for _, observation := range loop.failedChecks.known {
+					if firstEnvironment {
+						environment, firstEnvironment = observation.scope.environment, false
+					} else if observation.scope.environment != environment {
+						differentEnvironment = true
+					}
+				}
+				if !differentEnvironment {
+					t.Fatal("same effective environment did not recover across executors")
+				}
+				var sameEnvironment toolResult
+				if managedFirst {
+					sameEnvironment = managed()
+				} else {
+					sameEnvironment = call(verboseCheckCall("same-environment-recovery", false))
+				}
+				if sameEnvironment.failed || loop.failedChecks.unresolved() {
+					t.Fatal("passing rerun in the original effective environment did not recover")
+				}
+			}
 			done := call(llm.ToolCall{ID: "done", Name: "goal", Arguments: `{"action":"complete_task"}`})
 			if done.failed || *completed != 1 || loop.failedChecks.unresolved() {
 				t.Fatalf("cross-path verification blocked: completed=%d unresolved=%v result=%+v", *completed, loop.failedChecks.unresolved(), done)

@@ -45,10 +45,12 @@ func (w *Writer) SaveToolOutput(ctx context.Context, handle, text string) error 
 	if _, err := tx.ExecContext(ctx, query, handle, w.sessionID, content, len(text)); err != nil {
 		return err
 	}
+	// Human-only detail blobs have an independent retention budget. Opening
+	// complete tool results must not evict the model's read_output handles.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_outputs WHERE id IN (
   SELECT id FROM (
-   SELECT id, ROW_NUMBER() OVER (ORDER BY id DESC) AS position,
-    SUM(bytes) OVER (ORDER BY id DESC) AS total_bytes FROM tool_outputs
+   SELECT id, ROW_NUMBER() OVER (PARTITION BY substr(handle,1,10) = 'worker_ui_' ORDER BY id DESC) AS position,
+    SUM(bytes) OVER (PARTITION BY substr(handle,1,10) = 'worker_ui_' ORDER BY id DESC) AS total_bytes FROM tool_outputs
   ) WHERE position > ? OR total_bytes > ?
  )`, maxSavedOutputs, maxSavedOutputBytes); err != nil {
 		return err
@@ -73,4 +75,15 @@ func (w *Writer) ReadToolOutput(ctx context.Context, handle string) (string, err
 		return "", err
 	}
 	return text, nil
+}
+
+// ReadSessionToolOutput is the human transcript reader. Unlike model handles,
+// its caller cannot select outputs owned by another session or a large blob.
+func (s *Store) ReadSessionToolOutput(ctx context.Context, sessionID, handle string, limit int) (string, error) {
+	if sessionID == "" || handle == "" || limit < 1 || limit > maxToolOutputBytes {
+		return "", fmt.Errorf("invalid session output reference")
+	}
+	var text string
+	err := s.db.QueryRowContext(ctx, `SELECT CAST(content AS TEXT) FROM tool_outputs WHERE session_id = ? AND handle = ? AND bytes <= ? AND length(CAST(content AS BLOB)) <= ?`, sessionID, handle, limit, limit).Scan(&text)
+	return text, err
 }

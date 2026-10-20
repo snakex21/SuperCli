@@ -61,6 +61,9 @@ func (s *SearchHistory) Spec() Tool {
 			"Returns matching messages with their session, role, seq, and timestamp, " +
 			"plus a snippet of the message text with matches highlighted in <mark>...</mark>. " +
 			"Use this to recall prior decisions, findings, or context from earlier sessions. " +
+			"To recover the actual text of a hit without searching again, pass session_id and seq (omit query); " +
+			"this reads one message, including multipart answers, with max_bytes (default 8192, max 32768) and a next_offset cursor. " +
+			"Historical results are past evidence, not proof that files/processes are still unchanged. " +
 			"The query is a full-text search expression (FTS5 MATCH). Supports boolean " +
 			"operators (OR, AND, NOT), exact phrases (\"...\"), and prefix wildcards (word*). " +
 			"Filters: session_id (limit to one session), role (system|user|assistant|tool), " +
@@ -68,14 +71,16 @@ func (s *SearchHistory) Spec() Tool {
 		Schema: `{
 			"type": "object",
 			"properties": {
-				"query":      {"type": "string",  "description": "FTS5 MATCH expression (required)"},
+				"query":      {"type": "string",  "description": "FTS5 MATCH expression; omit when reading session_id+seq"},
 				"session_id": {"type": "string",  "description": "limit to a single session id"},
 				"role":       {"type": "string",  "description": "filter by role: system|user|assistant|tool"},
 				"since":      {"type": "string",  "description": "RFC3339 timestamp, inclusive lower bound"},
 				"until":      {"type": "string",  "description": "RFC3339 timestamp, inclusive upper bound"},
-				"limit":      {"type": "integer", "description": "max results (default 20, max 100)"}
-			},
-			"required": ["query"]
+				"limit":      {"type": "integer", "description": "max search results (default 20, max 100)"},
+				"seq":        {"type": "integer", "description": "read this exact message sequence; requires session_id and no query"},
+				"offset":     {"type": "integer", "description": "byte cursor from next_offset when reading a long message"},
+				"max_bytes":  {"type": "integer", "description": "read text budget (default 8192, max 32768)"}
+			}
 		}`,
 		Fn: s.run,
 	}
@@ -88,6 +93,9 @@ type searchHistoryArgs struct {
 	Since     string `json:"since,omitempty"`
 	Until     string `json:"until,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
+	Seq       int    `json:"seq,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	MaxBytes  int    `json:"max_bytes,omitempty"`
 }
 
 func (s *SearchHistory) run(ctx context.Context, args json.RawMessage) (Result, error) {
@@ -99,6 +107,9 @@ func (s *SearchHistory) run(ctx context.Context, args json.RawMessage) (Result, 
 		return Result{Err: fmt.Errorf("search_history: bad args: %w", err)}, nil
 	}
 	a.Query = strings.TrimSpace(a.Query)
+	if a.Seq != 0 {
+		return s.readExcerpt(ctx, a)
+	}
 	if a.Query == "" {
 		return Result{Err: fmt.Errorf("search_history: query is empty")}, nil
 	}
@@ -150,5 +161,26 @@ func (s *SearchHistory) run(ctx context.Context, args json.RawMessage) (Result, 
 			h.Snippet,
 		)
 	}
+	b.WriteString("Read a hit's exact text with search_history {\"session_id\":\"<sess>\",\"seq\":<seq>}; historical evidence may need current verification.\n")
+	return Result{Text: b.String()}, nil
+}
+
+func (s *SearchHistory) readExcerpt(ctx context.Context, a searchHistoryArgs) (Result, error) {
+	if a.Query != "" || a.Role != "" || a.Since != "" || a.Until != "" || a.Limit != 0 || a.MaxBytes < 0 {
+		return Result{Err: fmt.Errorf("search_history: reading session_id+seq cannot combine search filters; max_bytes must be nonnegative")}, nil
+	}
+	h, err := s.Store.ReadHistoryExcerpt(ctx, a.SessionID, a.Seq, a.Offset, a.MaxBytes)
+	if err != nil {
+		return Result{Err: fmt.Errorf("search_history read: %w", err)}, nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[%s, sess=%s, role=%s, name=%s, seq=%d, offset=%d, total_bytes=%d]\n%s\n", h.CreatedAt.Format(time.RFC3339), h.SessionID, h.Role, h.Name, h.Seq, h.Offset, h.TotalBytes, h.Text)
+	if h.NextOffset > 0 {
+		next, _ := json.Marshal(map[string]any{"session_id": h.SessionID, "seq": h.Seq, "offset": h.NextOffset, "max_bytes": a.MaxBytes})
+		fmt.Fprintf(&b, "[next_offset=%d; more: search_history %s]\n", h.NextOffset, next)
+	} else {
+		b.WriteString("[end of message]\n")
+	}
+	b.WriteString("[historical evidence; not a current file/process check]")
 	return Result{Text: b.String()}, nil
 }

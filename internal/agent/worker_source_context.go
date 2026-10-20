@@ -71,6 +71,27 @@ func (a *AgentTool) workerSourceContext(ctx context.Context, task string, spec S
 	}
 	var files []*fileEvidence
 	byPath := make(map[string]*fileEvidence)
+	// Cache both accepted and rejected canonical paths for this handoff only.
+	// Reserve accepted files in encounter order, before parsing their rows, so
+	// the existing four-file limit and newest-evidence selection stay identical.
+	eligibility := make(map[string]bool)
+	include := func(path string) bool {
+		if eligible, known := eligibility[path]; known {
+			return eligible
+		}
+		rel, err := filepath.Rel(rawBase, path)
+		if err != nil || !workerSourceWithin(rel) {
+			rel, err = filepath.Rel(base, path)
+		}
+		eligible := err == nil && workerSourceWithin(rel) && workerSourceMentioned(task, rel) && len(files) < 4
+		eligibility[path] = eligible
+		if eligible {
+			file := &fileEvidence{path: path, rows: make(map[int][sha256.Size]byte)}
+			byPath[path] = file
+			files = append(files, file)
+		}
+		return eligible
+	}
 	// Most recent evidence wins. The parent may have read the file before and
 	// after an edit; an older observation must not overwrite the newer hash.
 	for i := len(messages) - 1; i >= 0 && ctx.Err() == nil; i-- {
@@ -78,21 +99,8 @@ func (a *AgentTool) workerSourceContext(ctx context.Context, task string, spec S
 		if message.Role != llm.RoleTool {
 			continue
 		}
-		for _, row := range sourceRows(calls[message.ToolCallID], message.Content, a.ParentLoop.baseDir) {
-			path := row.location.path
-			file := byPath[path]
-			if file == nil {
-				rel, err := filepath.Rel(rawBase, path)
-				if err != nil || !workerSourceWithin(rel) {
-					rel, err = filepath.Rel(base, path)
-				}
-				if err != nil || !workerSourceWithin(rel) || !workerSourceMentioned(task, rel) || len(files) >= 4 {
-					continue
-				}
-				file = &fileEvidence{path: path, rows: make(map[int][sha256.Size]byte)}
-				byPath[path] = file
-				files = append(files, file)
-			}
+		for _, row := range sourceRowsFiltered(calls[message.ToolCallID], message.Content, a.ParentLoop.baseDir, include) {
+			file := byPath[row.location.path]
 			if _, exists := file.rows[row.location.line]; !exists && len(file.rows) < 2000 {
 				file.rows[row.location.line] = row.hash
 			}

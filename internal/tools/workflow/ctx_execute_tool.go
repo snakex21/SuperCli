@@ -122,7 +122,7 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// verbatim if it wants to inspect details).
 	jb, _ := json.Marshal(res)
 	freshJSON := ctxExecuteFreshJSON(string(jb))
-	result := Result{Text: string(freshJSON), RetainedText: res.RetainedJSON()}
+	result := Result{Text: string(freshJSON), RetainedText: res.RetainedJSON(), Execution: res.Execution}
 	if runErr != nil {
 		result.Err = runErr
 		return result, runErr

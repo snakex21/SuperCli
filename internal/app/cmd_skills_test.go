@@ -52,7 +52,7 @@ func TestSkillsCommandListsAndFiltersMetadata(t *testing.T) {
 		t.Fatalf("empty result failed: %q, %v", out, err)
 	}
 	out, err = skillsCommand(discoverer, "pl")(context.Background(), "review")
-	if err != nil || !strings.Contains(out, "Umiejętności") || !strings.Contains(out, "Projekt") {
+	if err != nil || !strings.Contains(out, "Pakiety instrukcji") || !strings.Contains(out, "Projekt") {
 		t.Fatalf("localized list failed: %q, %v", out, err)
 	}
 }

@@ -51,11 +51,21 @@ test('Modes hides effort when a purpose is off and posts purpose-specific values
  const h = fixture();
  const knobs = [{key:'advisor_model',raw:'off'}, {key:'review_model',raw:''}, {key:'darwin',state:'off'},
   ...['advisor','review','darwin'].map(p => ({key:p+'_reasoning_effort',raw:''}))];
+ Object.assign(h.w, {ui: {lang: 'en'}, activeSessionID: 'session', activeModelID: 'model', $: s => h.document.querySelector(s)});
+ h.box.id = 'stats-block';
+ h.box = h.w.statsConfigGroup(h.box, h.w.statsConfigScope(), () => true);
+ h.w.jpost = async (url, body) => {
+  h.posts.push({url, body}); knobs.find(k => k.key === body.key).raw = body.value;
+  return {knobs: JSON.parse(JSON.stringify(knobs)), cost_currencies: ['USD']};
+ };
  h.w.appendModesSection(h.box, {knobs}); assert.equal(h.box.querySelectorAll('.effort-pick').length, 0);
  knobs[0].raw = ''; knobs[1].raw = 'review-model'; knobs[2].state = 'on';
  h.box.replaceChildren(); h.w.appendModesSection(h.box, {knobs});
- const pickers = [...h.box.querySelectorAll('.effort-pick')]; assert.equal(pickers.length, 3);
- for (let i=0; i<3; i++) { h.click(pickers[i].querySelector('.orch-btn')); h.click(pickers[i].querySelectorAll('.prow')[5]); await tick(); }
+ assert.equal(h.box.querySelectorAll('.effort-pick').length, 3);
+ for (let i=0; i<3; i++) {
+  const picker = h.box.querySelectorAll('.effort-pick')[i];
+  h.click(picker.querySelector('.orch-btn')); h.click(picker.querySelectorAll('.prow')[5]); await tick();
+ }
  assert.deepEqual(h.posts.map(p => p.body.key), ['advisor_reasoning_effort','review_reasoning_effort','darwin_reasoning_effort']);
  assert.ok(h.posts.every(p => p.body.value === 'high'));
 });

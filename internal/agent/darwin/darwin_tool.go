@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/tools"
 )
@@ -31,6 +32,8 @@ type DarwinTool struct {
 	resultSink       func(Result) (string, error)
 	reasoningEffort  string
 	poolSize         int // config darwin_pool_size; 0 = model decides
+
+	userInstructionsForRun func(context.Context) (string, error)
 }
 
 // NewDarwinTool returns a DarwinTool ready to
@@ -42,6 +45,15 @@ func NewDarwinTool(provider llm.Provider, registry *tools.Registry, home, system
 		home:     home,
 		system:   system,
 	}
+}
+
+// SetUserInstructionsForRun enables per-invocation user instructions. Configure
+// once before use, and pass only the base system (without a user preset) to
+// NewDarwinTool. A parent run's context snapshot takes precedence, including an
+// empty snapshot; otherwise f resolves the current instructions once per run.
+// With nil, the constructor's system is used unchanged for legacy callers.
+func (d *DarwinTool) SetUserInstructionsForRun(f func(context.Context) (string, error)) {
+	d.userInstructionsForRun = f
 }
 
 // SetReasoningEffort scopes both candidate runs and the judge; empty inherits global.
@@ -216,11 +228,25 @@ func (d *DarwinTool) run(ctx context.Context, raw json.RawMessage) (tools.Result
 	default:
 		return tools.Result{}, fmt.Errorf("darwin: unknown judge %q (want composite|llm|heuristic)", args.Judge)
 	}
+	system := d.system
+	if d.userInstructionsForRun != nil {
+		instructions, ok := agent.UserInstructionsFromContext(ctx)
+		if !ok {
+			var err error
+			instructions, err = d.userInstructionsForRun(ctx)
+			if err != nil {
+				return tools.Result{}, fmt.Errorf("darwin: load user instructions: %w", err)
+			}
+		}
+		if instructions != "" {
+			system += "\n\n" + instructions
+		}
+	}
 	dw, err := NewDarwin(Config{
 		PoolConfig: PoolConfig{
 			Provider:   provider,
 			Providers:  models,
-			System:     d.system,
+			System:     system,
 			Home:       d.home,
 			Factory:    d.loopFact,
 			PoolSize:   args.PoolSize,

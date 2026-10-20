@@ -1,3 +1,10 @@
+/* Compact attachment actions float above the composer, never widen its row. */
+.composer-wrap { position:relative; }
+.phone-attachment-menu { position:absolute; z-index:90; bottom:calc(100% - 4px); left:12px; width:min(260px,calc(100% - 24px)); box-sizing:border-box; display:grid; gap:4px; padding:8px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface); box-shadow:0 8px 24px #0006; }
+.phone-attachment-menu[hidden] { display:none; }
+.phone-attachment-menu button { min-height:44px; padding:8px 12px; text-align:left; white-space:normal; overflow-wrap:anywhere; color:var(--text); background:var(--raise); border:1px solid var(--line); cursor:pointer; }
+.phone-attachment-menu button:hover, .phone-attachment-menu button:focus-visible { border-color:var(--accent); }
+
 /* Run modes use the same knob controls, but must also fit narrow phone panels. */
 .modes-panel, .modes-panel .knob-row { min-width:0; max-width:100%; }
 .modes-panel .k-name { min-width:0; overflow-wrap:anywhere; }

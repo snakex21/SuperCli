@@ -176,9 +176,11 @@ async function openEditor(path) {
 
 /* ── About + keybinds ── */
 
-// Update checks happen only after a click. The last result lives in memory.
+// Manual checks happen after a click; a background notice (update_notify,
+// default on) may prefill the last result. It lives in memory.
 var updateState = null;
 var updateActionPending = "";
+var updateAutoDownload = false;
 function createUpdatePanel(currentVersion) {
   var group = el("div", "group update-panel");
   group.appendChild(i18nEl("div", "g-label", "update.title"));
@@ -256,8 +258,39 @@ function createUpdatePanel(currentVersion) {
   install.addEventListener("click", function () { run("install"); });
   registerLanguageRefresh(group, render);
   render();
+  if (updateAutoDownload) {
+    updateAutoDownload = false;
+    run("download");
+  }
   return group;
 }
+
+// Background new-release notice: the server checks at most once a day and
+// never downloads on its own. Asks once per start: Download or Later, and
+// keeps a dot on the About tab either way.
+function checkUpdateNotice() {
+  if (typeof fetch !== "function") return;
+  fetch("/api/update/notice", {cache:"no-store"}).then(function (response) {
+    return response.ok ? response.json() : null;
+  }).then(function (state) {
+    if (!state || !state.available || !state.latest_version) return;
+    if (!updateState) updateState = state;
+    var about = document.querySelector('[data-sec="about"]');
+    if (about) about.classList.add("has-update");
+    return showAppDialog({
+      title: t("update.notifyTitle"),
+      message: t("update.notifyMessage").replace("{version}", state.latest_version)
+        .replace("{current}", state.current_version || "—"),
+      cancelLabel: t("update.later"),
+      choices: [{label: t("update.download"), value: "download", primary: true}],
+    }).then(function (choice) {
+      if (choice !== "download") return;
+      updateAutoDownload = true;
+      openPanel("about");
+    });
+  }).catch(function () {});
+}
+if (typeof setTimeout === "function") setTimeout(checkUpdateNotice, 5000);
 
 
 

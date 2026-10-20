@@ -56,7 +56,7 @@ type codexUsage struct {
 }
 
 type codexInputTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens *int `json:"cached_tokens"`
 }
 
 type codexOutputTokensDetails struct {
@@ -145,10 +145,7 @@ func buildCodexRequest(model string, msgs []Message, tools []ToolDef, vision boo
 // ChatGPT backend: the SuperCli session id when one is attached to ctx,
 // otherwise the per-process id (batch/eval runs).
 func codexPromptCacheKey(ctx context.Context) string {
-	if key := openCodeSessionFromContext(ctx); key != "" {
-		return key
-	}
-	return openCodeProcessSessionID
+	return promptCacheSessionID(ctx, openCodeProcessSessionID)
 }
 
 // withCodexPromptCacheKey appends prompt_cache_key as the last field of a

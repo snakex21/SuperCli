@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +19,9 @@ import (
 )
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	// A new prompt can revoke consent before waiting for queue persistence or
+	// an in-flight claim. Merge/edit/delete still keep their existing fence.
+	if r.Method != http.MethodGet && (r.Method != http.MethodPost || r.URL.Query().Get("merge") == "1") {
 		s.queueClaimsMu.Lock()
 		defer s.queueClaimsMu.Unlock()
 	}
@@ -43,7 +47,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			Prompt      string   `json:"prompt"`
 			Attachments []string `json:"attachments"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		if err := decodeHumanQueuedInstruction(r, &b); err != nil {
 			http.Error(w, "bad request: "+err.Error(), 400)
 			return
 		}
@@ -51,6 +55,25 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid attachments: too many files", http.StatusBadRequest)
 			return
 		}
+		if strings.TrimSpace(b.Prompt) == "" && len(b.Attachments) == 0 {
+			http.Error(w, "message is required", http.StatusBadRequest)
+			return
+		}
+		// Use the same attachment validator as enqueueTaskWithAttachments
+		// before revoking consent. Invalid paths must have no consent side
+		// effect. Enqueue retains its own recheck after the claim fence.
+		if len(b.Attachments) > 0 {
+			if _, err := buildAttachmentAddon(s.eng.Home(), b.Attachments); err != nil {
+				http.Error(w, "invalid attachments: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		// This guarded endpoint is human submission, not a model-authored
+		// RoleUser report. Rescope before queue/DB writes: even a later storage
+		// failure must not leave the original one-shot power consent alive.
+		s.revokeQueuedHostPowerConsent()
+		s.queueClaimsMu.Lock()
+		defer s.queueClaimsMu.Unlock()
 		out, err := s.eng.enqueueTaskWithAttachments(r.Context(), strings.TrimSpace(b.SessionID), b.Prompt, b.Attachments)
 		if err != nil {
 			writeWorkflowError(w, err)
@@ -65,7 +88,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			Position    *int      `json:"position"`
 			Attachments *[]string `json:"attachments"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		if err := decodeHumanQueuedInstruction(r, &b); err != nil {
 			http.Error(w, "bad request: "+err.Error(), 400)
 			return
 		}
@@ -83,6 +106,10 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if b.Prompt != nil || b.Attachments != nil {
+			if err := s.rescopeQueuedHostPowerConsent(r.Context(), b.ID, b.Prompt, b.Attachments); err != nil {
+				writeWorkflowError(w, err)
+				return
+			}
 			if err := s.eng.editTask(r.Context(), b.ID, b.Prompt, b.Attachments); err != nil {
 				writeWorkflowError(w, err)
 				return
@@ -117,6 +144,68 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+// Require one complete JSON value before any consent side effect. A valid
+// prefix followed by another value, garbage, or a partial body is not input.
+func decodeHumanQueuedInstruction(r *http.Request, body any) error {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(body); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("expected one JSON object")
+	}
+	return nil
+}
+
+// Any new human wording changes the approved scope. No phrase matching, model
+// call, goal completion, run cancellation, or additional confirmation is needed.
+// Use only the existing primary controller; never create feature/child authority.
+func (s *Server) revokeQueuedHostPowerConsent() {
+	s.eng.hostPowerMu.Lock()
+	defer s.eng.hostPowerMu.Unlock()
+	if controller := s.eng.hostPower; controller != nil {
+		state := controller.Snapshot()
+		if state.Status == "armed" || state.Status == "countdown" {
+			controller.Cancel()
+		}
+	}
+}
+
+func (s *Server) rescopeQueuedHostPowerConsent(ctx context.Context, id string, prompt *string, attachments *[]string) error {
+	tasks, err := s.eng.queuedTasks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if task.ID != id {
+			continue
+		}
+		nextPrompt, nextAttachments := task.Prompt, task.Attachments
+		if prompt != nil {
+			nextPrompt = strings.TrimSpace(*prompt)
+		}
+		if attachments != nil {
+			nextAttachments = *attachments
+		}
+		if nextPrompt == "" && len(nextAttachments) == 0 {
+			return errors.New("message is required")
+		}
+		if attachments != nil && len(nextAttachments) > 0 {
+			if _, err := buildAttachmentAddon(s.eng.Home(), nextAttachments); err != nil {
+				return errors.New("invalid attachments: " + err.Error())
+			}
+		}
+		if nextPrompt != task.Prompt || !slices.Equal(nextAttachments, task.Attachments) {
+			s.revokeQueuedHostPowerConsent()
+		}
+		return nil
+	}
+	return sql.ErrNoRows
 }
 
 type sessionRewindView struct {
@@ -179,7 +268,14 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	selectedUser := false
 	if err == nil && message.Role == string(llm.RoleUser) {
 		msg, decodeErr := message.ToMessage()
-		selectedUser = decodeErr == nil && !agent.IsLegacyCompactionSummary(msg)
+		if decodeErr == nil {
+			workerNotice, readErr := isStoredWorkerNotification(r.Context(), store, b.SessionID, b.SelectedSeq, msg)
+			if readErr != nil {
+				writeWorkflowError(w, readErr)
+				return
+			}
+			selectedUser = !agent.IsLegacyCompactionSummary(msg) && !workerNotice
+		}
 	}
 	if !selectedUser {
 		http.Error(w, "selected_seq must identify a user message", http.StatusBadRequest)

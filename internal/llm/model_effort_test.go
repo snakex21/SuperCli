@@ -408,6 +408,24 @@ func TestPatchCodexReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestThinkingBlockRejectionDoesNotDisableReasoning(t *testing.T) {
+	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
+	if err := SetReasoningEffort("high"); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"type":"error","error":{"type":"invalid_request_error","message":"messages.3.content.0: Invalid ` + "`signature`" + ` in ` + "`thinking`" + ` block"}}`,
+		`{"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content.0: thinking blocks in the latest assistant message cannot be modified"}}`,
+	} {
+		if _, ok := LearnReasoningEffortFromError("claude-opus-5-5", 400, []byte(body)); ok {
+			t.Fatalf("thinking-block rejection treated as effort rejection: %s", body)
+		}
+	}
+	if got := ReasoningEffortForModel("claude-opus-5-5"); got != "high" {
+		t.Fatalf("reasoning disabled after block rejection: %q", got)
+	}
+}
+
 func TestMaxReasoningFallsBackToHighestAcceptedLevel(t *testing.T) {
 	t.Cleanup(func() { _ = SetReasoningEffort(""); clearReasoningEffortSupport() })
 	if err := SetReasoningEffort(" MAX "); err != nil {

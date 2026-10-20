@@ -22,7 +22,7 @@ function harness(host = 'test-phone.trycloudflare.com') {
     setTimeout: () => 1, clearTimeout() {}, $, $$: () => [], sendBtn: element(),
     t: x => x, finishRunPresentation() {}, closeQuestionOverlay(id) { calls.push(['closeQuestion', id]); },
     releaseLiveTranscriptBlocks() {}, setRunState() {}, toolRows: {}, openToolOrder: [],
-    captureTranscriptScroll() {}, resumeTranscriptScroll() {}, settleTranscriptScroll() {},
+    captureTranscriptScroll() {}, resumeTranscriptScroll() {}, settleTranscriptScroll() {}, cancelInitialTranscriptTail() {},
     addUserMsg(prompt) { rendered.push(['user', prompt]); return {}; }, bindLiveMessageReceipt() {},
     handleEvent(ev, current) { rendered.push([ev.type, ev.text]); if (ev.type === 'question_closed') c.closeQuestionOverlay(ev.id); return current; },
     jpost: async (url, body) => { calls.push([url, body]); return {ok: true}; }, toast: x => { throw Error(x); },

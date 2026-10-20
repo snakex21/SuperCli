@@ -29,10 +29,22 @@ func (e *Engine) beginChatRun(base context.Context) (context.Context, context.Ca
 	stop := context.AfterFunc(l.ctx, cancel)
 	l.wg.Add(1)
 	l.mu.Unlock()
-	return ctx, cancel, func() { stop(); cancel(); l.wg.Done() }
+	ctx, admission := e.admitHostPower(ctx)
+	var finishOnce sync.Once
+	return ctx, cancel, func() {
+		finishOnce.Do(func() {
+			admission.release()
+			stop()
+			cancel()
+			l.wg.Done()
+		})
+	}
 }
 
 func (e *Engine) stopChatRuns() {
+	// Server shutdown must revoke a countdown immediately, before draining
+	// HTTP streams or waiting for their durable cleanup.
+	e.closeHostPower()
 	l := &e.chatLifetime
 	l.mu.Lock()
 	l.closed = true

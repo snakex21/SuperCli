@@ -53,6 +53,7 @@ func (l *Loop) estimateChatRequestTokensRaw() int {
 	if l.briefing != "" {
 		system += "\n\n" + l.briefing
 	}
+	system = systemWithUserInstructions(system, l.userInstructions)
 	history, _, _ := chatHistoryProjection(visible, l.chatWindowStart, false)
 	est := llm.EstimateTokens(history)
 	est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: system})

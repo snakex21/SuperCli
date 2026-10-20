@@ -38,6 +38,21 @@ func (m Model) updateKeyMessage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeMenu {
 		return m.handleMenuKey(msg)
 	}
+	// Only NORMAL, empty-input Escape may consume the host authorization.
+	// Menus, confirmations, autocomplete and draft editing retain their Escape.
+	if msg.String() == "esc" && m.mode == modeNormal && m.autocomp.kind == autocompNone && m.input.Value() == "" && m.hostPower != nil {
+		state := m.hostPower.Snapshot()
+		if state.Status == "armed" || state.Status == "countdown" {
+			m.hostPowerState = m.hostPower.Cancel()
+			m.resizeViewport()
+			return m, nil // Never fall through to agent cancellation.
+		}
+		if !m.busy && state.Status != "idle" && state.Status != "executing" {
+			m.hostPowerDismissed = hostPowerIdentity(state)
+			m.resizeViewport()
+			return m, nil
+		}
+	}
 	if m.busy {
 		// Popup navigation owns Escape/arrows/letters before cancellation,
 		// transcript scrolling and the thinking/tool visibility shortcuts.

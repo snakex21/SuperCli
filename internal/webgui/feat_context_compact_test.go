@@ -210,8 +210,8 @@ func TestContextCompactEndpointPreservesTranscriptAndRewritesProjection(t *testi
 	}
 	writer := session.NewWriter(store, sess.ID)
 	msgs := []llm.Message{
-		{Role: llm.RoleUser, Content: "old question " + strings.Repeat("x", 20000)},
-		{Role: llm.RoleAssistant, Content: "old answer"},
+		{Role: llm.RoleUser, Content: "old question"},
+		{Role: llm.RoleAssistant, Content: "old answer " + strings.Repeat("x", 20000)},
 		{Role: llm.RoleUser, Content: "latest question"},
 		{Role: llm.RoleAssistant, Content: "latest answer"},
 	}

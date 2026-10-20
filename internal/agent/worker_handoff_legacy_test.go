@@ -9,8 +9,9 @@ import (
 	"supercli/internal/tools/core"
 )
 
-// Independent pre-change byte oracle, copied from the frozen source before the
-// per-invocation handoff refactor. Formatting/evidence/recovery rules stay exact.
+// Independent byte oracle for pre-refactor formatting/evidence/recovery rules,
+// plus the canonical worker-model/reasoning-effort notification metadata.
+// Call only on an idle fixture, or capture expectations before starting a new run.
 func legacyHandoffrenderWorkerNotification(w *Worker, result string) string {
 	s := w.Snapshot()
 	status := s.Status
@@ -19,14 +20,18 @@ func legacyHandoffrenderWorkerNotification(w *Worker, result string) string {
 	}
 	summary := legacyHandoffworkerSummary(w)
 	toolsUsed := workerToolSummary(s.ToolNames)
+	metadata := ""
+	if s.WorkerModel != "" {
+		metadata = fmt.Sprintf("\n<worker-model>%s</worker-model>\n<reasoning-effort>%s</reasoning-effort>", s.WorkerModel, s.ReasoningEffort)
+	}
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
-<agent>%s</agent>
+<agent>%s</agent>%s
 <status>%s</status>
 <summary>%s</summary>
 <tools>%s</tools>
 <result>%s</result>
-</task-notification>`, s.ID, s.Agent, status, summary, toolsUsed, result)
+</task-notification>`, s.ID, s.Agent, metadata, status, summary, toolsUsed, result)
 }
 
 func legacyHandoffworkerSummary(w *Worker) string {

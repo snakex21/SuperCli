@@ -26,6 +26,11 @@ func workerProgressSink(ctx context.Context, w *Worker, run int) func(WorkerProg
 	invocation, current := ctx.Value(workerInvocationKey{}).(workerInvocation)
 	return func(ev WorkerProgressEvent) {
 		ev.TaskID, ev.Agent, ev.Run = w.ID, w.Agent, run
+		// Detached workers use the lifetime sink, but still belong to the
+		// original task card. Never retain its soon-to-close Run channel.
+		if current {
+			ev.ParentCallID = invocation.callID
+		}
 		if w.Loop != nil {
 			ev.Model = w.Loop.CurrentModel()
 			capable := w.Loop.caps != nil && w.Loop.caps.HasReasoning(ev.Model)
@@ -36,7 +41,6 @@ func workerProgressSink(ctx context.Context, w *Worker, run int) func(WorkerProg
 			w.setState(func(w *Worker) { w.uiModel, w.uiReasoningEffort = ev.Model, ev.ReasoningEffort })
 		}
 		if current && invocation.out != nil {
-			ev.ParentCallID = invocation.callID
 			select {
 			case invocation.out <- ev:
 			case <-ctx.Done():

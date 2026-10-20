@@ -14,7 +14,7 @@ function harness() {
   }
   const $ = selector => {if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector);};
   const c = {$, el: element, i18nEl: (tag, cls, key) => element(tag, cls, key), t: key => key,
-    window: {}, superCliUI: {fileMutationTools: {}}, document: {createElement: element, createDocumentFragment: () => element('#fragment'), body: element('body')},
+    window: {}, superCliUI: {fileMutationTools: {}}, document: Object.assign(new EventTarget(), {createElement: element, createDocumentFragment: () => element('#fragment'), body: element('body')}),
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     renderSentAttachments() {}, userMessageDisplayText: text => text,
     sentAttachmentsFor: () => [], fmtInteger: String, activeSessionID: 'original', transcriptSessionID: 'original', streaming: false,

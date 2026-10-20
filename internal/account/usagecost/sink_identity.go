@@ -50,7 +50,8 @@ func CallUsage(tc config.TomlConfig, stat llm.CallStat, fallback session.UsageRe
 	u := CallIdentity(tc, stat, fallback)
 	u.Input, u.Output = int64(stat.TokensIn), int64(stat.TokensOut)
 	u.CachedInput, u.Reasoning = int64(stat.TokensCached), int64(stat.TokensReasoning)
-	u.HasCachedInput, u.HasReasoning = stat.TokensCached > 0, stat.TokensReasoning > 0
+	u.HasCachedInput, u.HasReasoning = stat.HasCachedInput || stat.TokensCached > 0, stat.TokensReasoning > 0
+	u.RequestTrace = llm.SafeRequestTrace(stat.RequestTrace)
 	u.TTFTMS = stat.TTFT.Milliseconds()
 	u.DurationMS, u.HasTiming = CallTiming(stat)
 	u.PrefillEvaluated, u.PrefillTokensPerSecond = int64(stat.PrefillEvaluated), stat.PrefillTokensPerSecond

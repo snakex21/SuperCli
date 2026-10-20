@@ -93,7 +93,8 @@ function harness() {
   }));
   const h = {doc, hosts, element, fire, key, patches: [], uploads: [], toasts: [], loads: 0, shortcuts: 0, sends: 0, serverTasks: [],
     patch: async () => ({}), state: async () => ({tasks: h.serverTasks, queue_merge: 'off'})};
-  const w = {console, Promise, document: doc, activeAppDialog: null, promptEl: hosts['#prompt'], projectEpoch: 0,
+  const w = {console, Promise, window: new EventTarget(), document: doc, activeAppDialog: null, promptEl: hosts['#prompt'], projectEpoch: 0,
+    activeSessionID: 's1', activeWorkspacePath: 'fixture', composerDraftStore: {scope: () => 'session:s1'},
     promptQueue: [], promptQueueLoadSeq: 0, promptQueueLoadedEpoch: 0, pendingAttachments: [], pauseQueue: true, streaming: true,
     queueDispatching: false, queueDispatchItem: null, pendingImmediate: null,
     $: selector => hosts[selector], $$: () => [], el: element, t: key => { assert.ok(en[key], key); return en[key]; },
@@ -310,9 +311,10 @@ test('upload pending through refresh blocks Save; upload failure preserves the s
 });
 
 for (const race of ['cancel', 'project switch', 'remove', 'dispatch']) {
-  test('late upload after ' + race + ' cannot revive the popup or change a different draft', async () => {
+  test('late upload after ' + race + ' rejects stale results and preserves the orphan or different draft', async () => {
     const h = harness(), done = deferred(); h.setQueue([{id: 'a', text: 'before', attachments: ['keep.pdf']}]); h.open();
-    h.w.fetch = () => done.promise;
+    const uploadEdit = h.w.queueEdit;
+    h.w.fetch = (url, options) => { h.uploadSignal = options.signal; return done.promise; };
     h.fire(h.dialog(), 'drop', {dataTransfer: {files: [{name: 'late.txt'}]}});
     if (race === 'cancel') h.button('common.cancel').click();
     else if (race === 'project switch') h.w.projectEpoch++;
@@ -320,8 +322,15 @@ for (const race of ['cancel', 'project switch', 'remove', 'dispatch']) {
     else { h.w.queueDispatchItem = h.w.promptQueue[0]; h.w.renderPromptQueue(); }
     if (race === 'cancel') { h.setQueue([{id: 'b', text: 'other', attachments: ['other.pdf']}]); h.open(); h.type('new draft'); }
     done.resolve({ok: true, json: async () => ({paths: ['late.txt']})}); await tick();
-    assert.equal(h.toasts.length, 0); assert.equal(h.patches.length, 0);
+    assert.equal(h.toasts.length, race === 'remove' || race === 'dispatch' ? 1 : 0); assert.equal(h.patches.length, 0);
+    assert.equal(h.uploadSignal.aborted, true); assert.equal(uploadEdit.uploading, false); assert.equal(h.w.attachmentUpload, null);
     if (race === 'cancel') { assert.equal(h.w.queueEdit.text, 'new draft'); assert.deepEqual(Array.from(h.w.queueEdit.attachments), ['other.pdf']); h.key('Escape'); }
+    if (race === 'remove' || race === 'dispatch') {
+      assert.equal(h.w.queueEdit.text, 'before'); assert.equal(h.w.queueEdit.conflict, true);
+      assert.deepEqual(Array.from(h.w.queueEdit.attachments), ['keep.pdf']);
+      assert.match(h.w.queueEdit.error.textContent, /Attachment scope changed; upload cancelled/);
+      assert.match(h.toasts[0], /Attachment scope changed; upload cancelled/); h.key('Escape');
+    }
     h.closed();
   });
 }
@@ -334,14 +343,18 @@ test('project change closes the modal even when the new queue load fails and IDs
 });
 
 for (const race of ['project switch', 'remove', 'dispatch']) {
-  test('pending Save then ' + race + ' closes cleanly without reloading or overwriting another queue', async () => {
+  test('pending Save then ' + race + ' preserves conflict drafts without overwriting another queue', async () => {
     const h = harness(), done = deferred(); h.setQueue([{id: 'a', text: 'old'}]); h.open(); h.type('old draft'); h.patch = () => done.promise;
     const saving = h.button('common.save').click().done;
     if (race === 'project switch') { h.w.projectEpoch++; h.w.promptQueue = [{id: 'a', text: 'new project'}]; }
-    else if (race === 'remove') h.w.promptQueue = [{id: 'b', text: 'other item'}];
+    else if (race === 'remove') { h.w.promptQueue = [{id: 'b', text: 'other item'}]; h.serverTasks = [{id:'b',prompt:'other item'}]; }
     else h.w.pendingImmediate = h.w.promptQueue[0];
-    h.w.renderTaskCenter(); h.closed();
-    done.resolve({}); await saving; h.closed(); assert.equal(h.loads, 0); assert.equal(h.patches.length, 1);
+    h.w.renderTaskCenter();
+    if (race === 'project switch') h.closed();
+    else { assert.equal(h.w.queueEdit.text, 'old draft'); assert.equal(h.w.queueEdit.conflict, true); }
+    done.resolve({}); await saving;
+    if (race !== 'project switch') { assert.equal(h.w.queueEdit.text, 'old draft'); assert.equal(h.w.queueEdit.conflict, true); h.key('Escape'); }
+    h.closed(); assert.equal(h.loads, race === 'project switch' ? 0 : 1); assert.equal(h.patches.length, 1);
     if (race === 'project switch') assert.equal(h.w.promptQueue[0].text, 'new project');
     if (race === 'remove') assert.equal(h.w.promptQueue[0].text, 'other item');
   });
@@ -360,12 +373,14 @@ for (const failure of [false, true]) {
   });
 }
 
-test('a claimed-item save error refreshes durable state and closes instead of leaving an orphan editor', async () => {
+test('a claimed-item save error refreshes durable state but retains the unsaved draft and conflict', async () => {
   const h = harness(); h.setQueue([{id: 'a', text: 'claimed'}]); h.open();
   h.patch = async () => { h.serverTasks = []; throw Error('task is being dispatched'); };
-  await h.button('common.save').click().done; h.closed();
+  await h.button('common.save').click().done;
   assert.deepEqual(Array.from(h.w.promptQueue), []); assert.equal(h.patches.length, 1); assert.equal(h.loads, 1);
-  assert.equal(h.doc.activeElement, h.hosts['#prompt']);
+  assert.equal(h.w.queueEdit.text, 'claimed'); assert.equal(h.w.queueEdit.conflict, true);
+  assert.equal(h.w.queueEdit.error.textContent, 'task is being dispatched');
+  h.key('Escape'); h.closed(); assert.equal(h.doc.activeElement, h.hosts['#prompt']);
 });
 
 test('project switch during the post-save queue reload ignores the old response and closes the modal', async () => {

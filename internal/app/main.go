@@ -50,9 +50,11 @@ import (
 	"supercli/internal/system/childproc"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
+	systemhostpower "supercli/internal/system/hostpower"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
 	"supercli/internal/tools/ctxexec"
+	toolhostpower "supercli/internal/tools/hostpower"
 	"supercli/internal/ui/tui"
 )
 
@@ -344,8 +346,12 @@ func Main() {
 	goalTool := tools.NewGoalTool(goalSvc)
 	goalTool.SetDecompose(goalProviderAdapter{Provider: provider}, provider.Name())
 	registry.MustRegister(goalTool.Spec())
+	hostPower := systemhostpower.New(systemhostpower.Options{Execute: systemhostpower.Shutdown})
+	defer hostPower.Close()
+	registry.MustRegister(toolhostpower.Spec())
 
-	darwinTool := darwin.NewDarwinTool(provider, registry, home, buildSystemPrompt(goalSvc))
+	darwinTool := darwin.NewDarwinTool(provider, registry, home, buildSystemPromptWithInstructions(goalSvc, ""))
+	darwinTool.SetUserInstructionsForRun(userInstructionsForRun(dataDir))
 	darwinTool.SetReasoningEffort(tomlCfg.DarwinReasoningEffort)
 	darwinTool.SetPoolSize(tomlCfg.DarwinPoolSize)
 	// Each Darwin child gets its own file-tool registry
@@ -557,24 +563,25 @@ func Main() {
 
 	// Build the real loop. Pass the home as the image base dir.
 	loop, err := agent.NewLoop(buildMainLoopConfig(loopAssembly{
-		provider:           mainProvider,
-		registry:           registry,
-		goalSvc:            goalSvc,
-		memoryBriefing:     memoryBriefing,
-		tomlCfg:            tomlCfg,
-		errorLog:           errorLog,
-		reflector:          reflector,
-		reflectEvery:       reflectEvery,
-		adaptiveReflection: adaptiveReflection,
-		injector:           injector,
-		tracker:            tracker,
-		sessWriter:         sessWriter,
-		draftPolicy:        draftPolicy,
-		draftProvider:      draftProvider,
-		navigatorProvider:  navigatorProvider,
-		draftSink:          draftSink,
-		draftStats:         draftStats,
-		contextWindowFor:   contextWindowFor,
+		provider:             mainProvider,
+		registry:             registry,
+		goalSvc:              goalSvc,
+		memoryBriefing:       memoryBriefing,
+		memoryBriefingForRun: memBundle.BriefingForRun,
+		tomlCfg:              tomlCfg,
+		errorLog:             errorLog,
+		reflector:            reflector,
+		reflectEvery:         reflectEvery,
+		adaptiveReflection:   adaptiveReflection,
+		injector:             injector,
+		tracker:              tracker,
+		sessWriter:           sessWriter,
+		draftPolicy:          draftPolicy,
+		draftProvider:        draftProvider,
+		navigatorProvider:    navigatorProvider,
+		draftSink:            draftSink,
+		draftStats:           draftStats,
+		contextWindowFor:     contextWindowFor,
 		refreshContextWindow: func(ctx context.Context) error {
 			configs := []config.Config{coordinatorCfg}
 			if taskWorkerProvider != nil {
@@ -591,12 +598,14 @@ func Main() {
 		taskParallel:           taskParallel,
 		taskParallelWarnLocal:  taskParallelWarnLocal,
 		home:                   home,
+		dataDir:                dataDir,
 		review:                 postReview,
 	}))
 	if err != nil {
 		fatal("init agent", err)
 	}
 
+	loop.ConfigureHostPower(hostPower, goalSvc, false)
 	configureInvocationPersistence(loop, sessStore, checkpointCtrl)
 
 	at, err := wireAgentTool(agentToolWiring{
@@ -815,7 +824,9 @@ func Main() {
 	// lookups. Done as a one-shot swap before the first Run so the tool
 	// list is fixed for the whole session (KV-cache prefix stability).
 	if supercliOrchestratorMode {
-		loop.SetRegistry(agent.OrchestratorRegistry(registry))
+		rootRegistry := agent.OrchestratorRegistry(registry)
+		rootRegistry.MustRegister(toolhostpower.Spec())
+		loop.SetRegistry(rootRegistry)
 	}
 
 	// redrawStatus forces a TUI re-render so the pull-based footer
@@ -837,6 +848,7 @@ func Main() {
 		slotCache:              slotCache,
 		drafts:                 drafts,
 		workers:                at.Workers,
+		hostPower:              hostPower,
 		home:                   home,
 		dataDir:                dataDir,
 		sessionID:              sessionID,
@@ -884,6 +896,8 @@ func Main() {
 			program.Send(tui.AskRequestMsgFrom(req))
 		}
 	}()
+
+	startUpdateNotice(func(msg any) { program.Send(msg) }, dataDir, home)
 
 	if _, err := program.Run(); err != nil {
 		logCrash(dataDir, fmt.Errorf("tui error: %w", err))

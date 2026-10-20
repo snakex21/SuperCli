@@ -804,7 +804,7 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   white-space: pre; color: var(--muted);
 }
 .file-code-section {
-  position: sticky; left: 0; min-width: calc(100% - 20px);
+  position: sticky; left: 0; top: 0; z-index: 1; min-width: calc(100% - 20px);
   padding: 5px 10px; border-top: 1px solid var(--line-soft);
   border-bottom: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--raise) 72%, var(--surface));
@@ -822,11 +822,70 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   border-top: 1px solid var(--line-soft); color: var(--muted);
 }
 
+/* Readable tool views (04c-tool-views.js): directory tree, web result cards,
+   goal task list. Same surface and colour tokens as the file viewer. */
+.tv-tree, .tv-web, .tv-goal {
+  max-height: 480px; overflow: auto;
+  border: 1px solid var(--line-soft); border-radius: 3px;
+  background: color-mix(in srgb, var(--bg) 42%, var(--surface));
+  font: 12px/1.5 var(--mono);
+}
+.tv-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 5px 10px; border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--raise) 72%, var(--surface));
+  color: var(--text); font-weight: 600;
+}
+.tv-head-title { overflow-wrap: anywhere; }
+.tv-count {
+  padding: 0 6px; border-radius: 8px; background: var(--line-soft);
+  color: var(--muted); font: 600 11px var(--mono);
+}
+.tv-head-note, .tv-note { color: var(--faint); font-size: 11px; font-weight: 400; }
+.tv-tree-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 10px; white-space: nowrap; }
+.tv-tree-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.tv-icon { flex: none; width: 16px; text-align: center; font-size: 11px; }
+.tv-tree-row.dir .tv-name { color: var(--hl-fn); font-weight: 600; }
+.tv-tree-row.file .tv-name { color: var(--text); }
+.tv-size { margin-left: auto; padding-left: 16px; color: var(--faint); font-size: 11px; }
+.tv-foot { padding: 4px 10px; border-top: 1px solid var(--line-soft); color: var(--faint); white-space: pre-wrap; }
+.tv-web { font-family: var(--sans); }
+.tv-card { padding: 7px 10px; border-bottom: 1px solid var(--line-soft); }
+.tv-card:last-child { border-bottom: 0; }
+.tv-card-title {
+  display: block; color: var(--accent); font-weight: 600;
+  text-decoration: none; overflow-wrap: anywhere;
+}
+a.tv-card-title:hover { text-decoration: underline; }
+.tv-card-url { color: var(--ok); font: 11px var(--mono); overflow-wrap: anywhere; }
+.tv-card-snippet { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.tv-web > .tool-output { padding: 8px 10px; }
+.tv-goal-note { padding: 2px 10px; color: var(--muted); white-space: pre-wrap; }
+.tv-goal-note.heading { padding-top: 6px; color: var(--text); font-weight: 600; }
+.tv-task { display: flex; align-items: baseline; gap: 8px; padding: 3px 10px; }
+.tv-task-mark { flex: none; width: 14px; text-align: center; font-weight: 700; }
+.tv-task-seq { flex: none; color: var(--faint); }
+.tv-task.done .tv-task-mark { color: var(--ok); }
+.tv-task.done .tv-task-title { color: var(--muted); }
+.tv-task.active .tv-task-mark, .tv-task.active .tv-task-title { color: var(--accent); }
+.tv-task.active .tv-task-title { font-weight: 600; }
+.tv-task.skipped .tv-task-mark, .tv-task.skipped .tv-task-title { color: var(--faint); }
+.tv-task.skipped .tv-task-title { text-decoration: line-through; }
+.tv-task.pending .tv-task-mark { color: var(--muted); }
+
+/* Background new-release notice: a dot on the About tab until restart. */
+button[data-sec="about"].has-update::after {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-left: 5px; border-radius: 50%; background: var(--accent); vertical-align: middle;
+}
+
 /* Delegated workers — protocol XML becomes a compact, readable work trace. */
-.task-row { border-left: 2px solid var(--accent); }
+.task-row { min-width: 0; overflow-wrap: anywhere; border-left: 2px solid var(--accent); }
 .task-row.done { border-left-color: var(--ok); }
 .task-row.failed { border-left-color: var(--danger); }
-.task-row summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto; }
+.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto; }
+.task-row .worker-model-info { overflow: hidden; text-overflow: ellipsis; }
 .task-row .tname { font-family: var(--sans); font-weight: 600; }
 .task-row.done .tstat { color: var(--ok); }
 .task-row.failed .tstat { color: var(--danger); }
@@ -853,7 +912,25 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .task-activity-item.running .activity-dot { background: var(--accent); }
 .task-activity-item.done .activity-dot { background: var(--ok); }
 .task-activity-item.failed .activity-dot { background: var(--danger); }
-.task-activity-item .activity-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.task-activity-empty, .task-activity-note { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.task-activity-item .activity-result { grid-column: 1 / -1; min-width: 0; }
+.task-activity-item .activity-result > .activity-summary {
+  display: grid; grid-template-columns: 8px minmax(110px, 160px) 1fr auto;
+  align-items: center; gap: 8px; padding: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.task-activity-item .activity-result > .activity-summary::before { content: none; }
+.task-activity-item .activity-result > .activity-summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.task-activity-item .activity-payload { padding: 4px 0 2px 16px; }
+.task-activity-note[hidden] { display: none; }
+.worker-observations { border-top: 1px solid var(--line-soft); margin-top: 6px; }
+.worker-observations > summary { display: block; padding: 5px 0; font: 11.5px var(--mono); color: var(--muted); }
+.task-row .worker-observations > summary::before { content: "›"; margin-right: 8px; }
+.task-row .worker-observations[open] > summary::before { content: "⌄"; }
+.worker-observations > summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.worker-observations > pre { padding-bottom: 6px; }
+.task-activity-item .activity-result pre { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-activity-item .activity-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-activity-item.tk-read .activity-name { color: var(--hl-fn); }
 .task-activity-item.tk-write .activity-name { color: var(--hl-add); }
 .task-activity-item.tk-run .activity-name { color: var(--hl-type); }
@@ -863,6 +940,17 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .task-activity-item.running .activity-status { color: var(--accent); }
 .task-activity-item.done .activity-status { color: var(--ok); }
 .task-activity-item.failed .activity-status { color: var(--danger); }
+
+/* Preserve the original desktop metrics without creating containment roots
+   inside the virtualized transcript (native scroll anchoring needs them). */
+@media (max-width: 900px) {
+  .task-row > summary { grid-template-columns: 10px minmax(0, 190px) minmax(0, 1fr) auto; }
+  .task-row > summary > .tstat { min-width: 0; white-space: normal; }
+  .task-activity-item, .task-activity-item .activity-result > .activity-summary {
+    grid-template-columns: 8px minmax(0, 160px) minmax(0, 1fr) auto;
+  }
+  .task-activity-item .activity-status { min-width: 0; white-space: normal; text-align: right; }
+}
 
 /* Event lines — [compact], [prune], preflight, workers, errors */
 .event-line {

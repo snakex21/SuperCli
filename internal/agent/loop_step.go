@@ -35,6 +35,10 @@ func (l *Loop) runStep(
 	}
 	background := backgroundRunFrom(ctx)
 	l.drainBackgroundMessages(ctx)
+	if err := l.refreshLiveContextBoundary(ctx, false); err != nil {
+		out <- ErrorEvent{Err: fmt.Errorf("refresh live context: %w", err), Usage: *totalUsage, Steps: step}
+		return stepAbort
+	}
 	backgroundRevision := background.revision()
 	l.retryDirtyProjection(ctx)
 	// 1-based, matching the step numbers the phase telemetry prints.
@@ -98,7 +102,15 @@ func (l *Loop) runStep(
 	}
 	l.recordWallPhase(stats.PhaseContextPrepare, prep)
 
-	text, toolCalls, usage, err := l.completeWithStreamRetry(ctx, toolRequest, out)
+	callReason := l.nextCallReason
+	if callReason == "" {
+		callReason = llm.ReasonUnknown
+	}
+	// Every continuation must establish its own cause. Nudges, reviews and
+	// other host-only transitions safely remain unknown unless marked below.
+	l.nextCallReason = llm.ReasonUnknown
+	callCtx := llm.WithLogicalCall(ctx, callReason)
+	text, toolCalls, usage, err := l.completeWithStreamRetry(callCtx, toolRequest, out)
 	_, truncatedToolCalls := err.(*truncatedToolResponseError)
 	if err != nil && !truncatedToolCalls {
 		retry, compactErr := l.handleContextOverflow(ctx, err, out)
@@ -114,7 +126,7 @@ func (l *Loop) runStep(
 			// before rejection. Only the uncommon retry reprices that same
 			// slice; a later registry revision cannot change this request.
 			toolRequest.tokens = estimateRequestTokens(nil, toolRequest.defs)
-			text, toolCalls, usage, err = l.completeOnce(ctx, toolRequest, out)
+			text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonContextRetry), toolRequest, out)
 			_, truncatedToolCalls = err.(*truncatedToolResponseError)
 		}
 	}
@@ -187,7 +199,7 @@ func (l *Loop) runStep(
 	// text with <thinking> so the UI can replay it. Stripping here
 	// (at append time), not in-flight, keeps the cacheable prefix
 	// deterministic: the history bytes never change afterwards.
-	assistant := llm.Message{Role: llm.RoleAssistant}
+	assistant := llm.Message{Role: llm.RoleAssistant, Origin: &llm.ContextOrigin{Source: llm.SourceModel}}
 	for i, block := range l.nativeReasoning {
 		copy := *block
 		if usage != nil && usage.Reasoning > 0 {
@@ -216,6 +228,7 @@ func (l *Loop) runStep(
 		l.lastThinking = thinking
 	}
 	l.Messages = append(l.Messages, plain)
+	l.recordContextAddition(plain)
 
 	// F14: budget-based eviction. After every step we
 	// look at the visible token estimate; if it
@@ -271,6 +284,7 @@ func (l *Loop) runStep(
 		}
 		if resume {
 			l.drainBackgroundMessages(ctx)
+			l.nextCallReason = llm.ReasonWorkerDelivery
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
@@ -352,10 +366,15 @@ func (l *Loop) runStep(
 			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 			return stepAbort
 		}
+		l.hostPowerSuccessCandidate(ctx)
 		out <- DoneEvent{Model: l.modelID, Usage: *totalUsage, Steps: step + 1, GenerationTokens: l.generationTokens, GenerationDuration: l.generationDuration}
 		return stepDone
 	}
 
+	// From this point the continuation follows an actual result batch,
+	// including explicit rejection results for truncated tool calls. Human or
+	// worker steering delivered later can provide a more immediate cause.
+	l.nextCallReason = llm.ReasonToolResults
 	if truncatedToolCalls {
 		// Every call in the incomplete response is rejected, even if one has
 		// valid JSON. Persist one result per ID without running repair/Execute,
@@ -387,6 +406,7 @@ func (l *Loop) runStep(
 
 	toolStart := time.Now()
 	toolsOK, toolOutcomes := l.invokeToolCalls(ctx, toolCalls, out)
+	l.markLiveContextAfterTools(toolCalls, toolOutcomes)
 	l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
 	if !toolsOK {
 		l.statsEndStep(stepStart)

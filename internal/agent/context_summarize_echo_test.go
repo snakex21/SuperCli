@@ -16,6 +16,8 @@ func TestSummarizeRejectsEmptyInstructionTemplate(t *testing.T) {
 		compactionTemplate,
 		"\n \t" + strings.ReplaceAll(compactionTemplate, "\n", "\r\n\n \t") + "\n",
 		compactionPrompt,
+		compactionStateTemplate,
+		compactionStatePrompt,
 		"<thinking>private reasoning</thinking>\n" + compactionTemplate,
 	} {
 		p := &stubProvider{name: "summary", scripts: [][]llm.Delta{{
@@ -85,6 +87,7 @@ func TestInstructionEchoPreservesManualAutomaticAndEmergencyHistory(t *testing.T
 
 func TestInstructionEchoStopsRunBeforeFurtherInference(t *testing.T) {
 	history := echoSummaryHistory()
+	history[len(history)-1] = compactionFailureRunTask()
 	p := &stubProvider{name: "summary", scripts: [][]llm.Delta{
 		{{Content: compactionTemplate}, {FinishReason: "stop"}},
 		{{Content: "main must not run without prior facts"}, {FinishReason: "stop"}},
@@ -119,6 +122,7 @@ func TestInstructionEchoStopsRunBeforeFurtherInference(t *testing.T) {
 
 func TestInstructionEchoStopsContextOverflowRetry(t *testing.T) {
 	history := echoSummaryHistory()
+	history[len(history)-1] = compactionFailureRunTask()
 	p := &stubProvider{name: "summary", scripts: [][]llm.Delta{
 		{{Err: errors.New("context length is 4096 tokens: too many tokens")}},
 		{{Content: compactionTemplate}, {FinishReason: "stop"}},

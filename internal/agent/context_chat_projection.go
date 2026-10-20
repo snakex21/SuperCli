@@ -1,10 +1,6 @@
 package agent
 
-import (
-	"strings"
-
-	"supercli/internal/llm"
-)
+import "supercli/internal/llm"
 
 // chatHistoryProjection is shared by request assembly, estimation and pruning.
 // It is pure: only request assembly commits nextStart. Index tracking is used
@@ -17,7 +13,7 @@ func chatHistoryProjection(messages []llm.Message, start int, trackIndices bool)
 func chatHistoryProjectionWithMediaCost(messages []llm.Message, start int, trackIndices, mediaCost bool) (view []llm.Message, indices []int, nextStart int) {
 	lastUser := -1
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == llm.RoleUser && !strings.Contains(messages[i].Content, "<task-notification>") {
+		if isConversationUserTurn(messages[i]) {
 			lastUser = i
 			break
 		}

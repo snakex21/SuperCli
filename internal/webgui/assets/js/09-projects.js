@@ -3,6 +3,8 @@
 /* ═══ projects ═══ */
 var projectDeleteCheckpointsOnRemove = false;
 var projectCleanupPending = false;
+// Unlike projectEpoch, this advances before a workspace change is acknowledged.
+var projectTransitionSeq = 0;
 var runningElsewhereProjectPath = "", runningElsewhereTimer = null, runningElsewhereOpening = false;
 var runningElsewhereClocks = [];
 
@@ -207,6 +209,7 @@ async function projectAction(action, target, name, newPath) {
         return;
       }
     }
+    if (switching || action === "relocate") projectTransitionSeq++;
     var result = await jpost("/api/projects", body);
     if (result && typeof result.delete_checkpoints_on_remove === "boolean") {
       projectDeleteCheckpointsOnRemove = result.delete_checkpoints_on_remove;

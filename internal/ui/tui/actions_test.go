@@ -23,7 +23,7 @@ func TestActionsMenuOpensWithoutSlash(t *testing.T) {
 		t.Fatalf("mode=%v kind=%v, want actions menu", mm.mode, mm.menu.kind)
 	}
 	view := mm.View()
-	for _, want := range []string{"Centrum działań", "Wybierz model", "Ostatnie sesje", "Ustawienia"} {
+	for _, want := range []string{"Centrum działań", "Wybierz model", "Ostatnie rozmowy", "Ustawienia"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("actions view missing %q: %q", want, view)
 		}

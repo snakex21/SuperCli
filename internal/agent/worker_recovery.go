@@ -18,17 +18,25 @@ func workerFailureHandoff(w *Worker, report string, cause error, observation str
 }
 
 func workerFailureHandoffFromSnapshot(w *Worker, s Snapshot, report string, cause error, observation string) error {
-	var b strings.Builder
-	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
-		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))
-	canContinue := s.Status == "failed" && w.Loop != nil && !errors.Is(cause, context.Canceled)
+	return workerFailureHandoffCaptured(s, workerCanContinue(w, s), report, cause, observation)
+}
+
+func workerCanContinue(w *Worker, s Snapshot) bool {
+	canContinue := s.Status == "failed" && w.Loop != nil
 	if canContinue {
 		if budget, ok := w.Loop.creditTracker.(*tokenBudget); ok {
 			used, _ := budget.Used()
 			canContinue = budget.SessionCap() <= 0 || used <= budget.SessionCap()
 		}
 	}
-	if canContinue {
+	return canContinue
+}
+
+func workerFailureHandoffCaptured(s Snapshot, canContinue bool, report string, cause error, observation string) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
+		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))
+	if canContinue && !errors.Is(cause, context.Canceled) {
 		fmt.Fprintf(&b, "\nContext retained; send_message to %s continues this worker.", s.ID)
 	}
 	if report = strings.TrimSpace(report); report != "" {

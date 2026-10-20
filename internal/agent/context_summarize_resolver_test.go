@@ -43,7 +43,7 @@ func TestAutoSummarizerResolverPreservesRequestFactsAndToolScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRequest := []llm.Message{{Role: llm.RoleSystem, Content: compactionPrompt}, {Role: llm.RoleUser, Content: RenderCompactTranscript(msgs)}}
+	wantRequest := []llm.Message{{Role: llm.RoleSystem, Content: compactionStatePrompt}, {Role: llm.RoleUser, Content: RenderCompactTranscript(msgs)}}
 	if resolves != 1 || len(side.reqs) != 1 || !reflect.DeepEqual(side.reqs[0], wantRequest) || len(side.toolDefsReqs[0]) != 0 || len(main.reqs) != 0 {
 		t.Fatalf("resolver changed selected provider, helper input or no-tools contract: resolves=%d side=%+v mainCalls=%d", resolves, side.reqs, len(main.reqs))
 	}

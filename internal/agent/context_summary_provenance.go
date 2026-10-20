@@ -14,6 +14,9 @@ import (
 // one saved message. The model still needs every body fact.
 // New summaries are saved exclusively in the model context projection.
 func IsLegacyCompactionSummary(msg llm.Message) bool {
+	if msg.Origin != nil && msg.Origin.Source == llm.SourceHuman {
+		return false
+	}
 	if msg.Role != llm.RoleUser || msg.Name != "" || len(msg.Parts) != 0 || msg.ToolCallID != "" || len(msg.ToolCalls) != 0 {
 		return false
 	}

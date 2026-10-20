@@ -162,6 +162,7 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	if est <= trigger {
 		return 0
 	}
+	capacityPressure := est > hardThreshold
 	// A learned latency target is not a context-capacity limit. Discarding
 	// evidence from the ongoing task to meet it causes read/prune/read cycles.
 	// Under actual window pressure ordinary bounded pruning still applies.
@@ -170,9 +171,11 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	// little is reclaimable, and that verdict cannot change while the
 	// context stays the same size. Skip the whole O(history) walk
 	// until the estimate has grown by pruneRecheckGrowFrac. A SHRINK
-	// (compaction, unhide) re-scans, since the composition changed.
+	// (compaction, unhide) re-scans, since the composition changed. Crossing
+	// the hard boundary also re-scans: older read_output pages become eligible.
 	if l.pruneRefusedEst > 0 && est >= l.pruneRefusedEst &&
-		float64(est) < float64(l.pruneRefusedEst)*(1+pruneRecheckGrowFrac) {
+		float64(est) < float64(l.pruneRefusedEst)*(1+pruneRecheckGrowFrac) &&
+		!(capacityPressure && l.pruneRefusedEst <= hardThreshold) {
 		return 0
 	}
 	history := l.pruningHistory()
@@ -210,10 +213,12 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		i := history.requestOriginalIndex(viewIndex)
 		t := llm.EstimateMessageTokens(m)
 		active := lastUser >= 0 && viewIndex > lastUser
-		if active && (latencyOnly || m.Name == "read_output") {
-			// Retrieved evidence must be usable throughout this task, rather
-			// than immediately archived again. Old completed turns are eligible
-			// on the next user turn; no permanent pin or duplicate store is made.
+		if active && (latencyOnly || (m.Name == "read_output" && !capacityPressure)) {
+			// Do not cycle retrieved evidence through read/prune/read merely to
+			// meet a latency target. At actual capacity pressure, however, an
+			// indefinitely pinned read_output history can fill an entire worker
+			// turn. Archive its older pages with recovery handles, subject to the
+			// same fresh-step and recent-evidence protection below.
 			acc += t
 			continue
 		}

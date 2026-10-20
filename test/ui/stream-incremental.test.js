@@ -37,8 +37,8 @@ function harness() {
     return '<'+n.tag+(n.cls?' class="'+esc(n.cls)+'"':'')+('lang' in n.dataset?' data-lang="'+esc(n.dataset.lang)+'"':'')+'>'+body+'</'+n.tag+'>';
   }
   const c={window:{},superCliUI:{},$(){return {addEventListener(){}}},el,escHtml:esc,escAttr:esc,t:k=>k,
-    document:{createElement:el,createDocumentFragment:()=>el(null),createComment:()=>node({nodeType:8}),
-      createTextNode(data){return node({data,appendData(next){this.data+=next}})}},
+    document:Object.assign(new EventTarget(),{createElement:el,createDocumentFragment:()=>el(null),createComment:()=>node({nodeType:8}),
+      createTextNode(data){return node({data,appendData(next){this.data+=next}})}}),
   };
   createSandbox(c);
   for(const file of ['03-markdown.js','04-transcript.js']) runScript(readSource(sourcePath(testDir,'../../internal/webgui/assets/js',file),'utf8'),c);

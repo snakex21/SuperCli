@@ -15,7 +15,9 @@ func TestDefaultStartReportsImmediateExitAndDiagnostics(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			tool := New(t.TempDir())
 			t.Cleanup(tool.Close)
-			raw, _ := json.Marshal(map[string]any{"action": "start", "command": helperCommand(mode), "env": []string{"SUPERCLI_PROCESS_HELPER=1"}})
+			// Preserve the production observation deadline under -race: the
+			// helper must not add the race runtime's artificial 1s exit sleep.
+			raw, _ := json.Marshal(map[string]any{"action": "start", "command": helperCommand(mode), "env": []string{"SUPERCLI_PROCESS_HELPER=1", "GORACE=atexit_sleep_ms=0"}})
 			result, err := tool.Execute(context.Background(), raw)
 			if err != nil {
 				t.Fatal(err)

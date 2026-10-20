@@ -351,6 +351,12 @@ func (p *Page) Eval(ctx context.Context, expression string, out any) error {
 }
 
 func (p *Page) Screenshot(ctx context.Context) ([]byte, error) {
+	// Targets are created in the background. Activate this tab inside our own
+	// headless browser so popup/animation frames can reach the compositor;
+	// otherwise captureScreenshot can wait indefinitely for a hidden surface.
+	if err := p.browser.cdp.call(ctx, p.session, "Page.bringToFront", nil, nil); err != nil {
+		return nil, err
+	}
 	var result struct{ Data string }
 	if err := p.browser.cdp.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "png", "fromSurface": true}, &result); err != nil {
 		return nil, err

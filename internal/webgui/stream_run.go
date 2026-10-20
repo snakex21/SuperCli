@@ -39,8 +39,24 @@ func (e *Engine) runStream(ctx context.Context, prompt, sessionID, userAddon str
 }
 
 func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, userAddon string, images []llm.ImageRef, emit func(wireEvent)) (runErr error) {
+	// HTTP/phone admission already owns this fence. Direct trusted stream
+	// entrypoints need the same protection before any refresh/session startup.
+	admission, _ := ctx.Value(hostPowerAdmissionKey{}).(*hostPowerAdmission)
+	if admission == nil {
+		ctx, admission = e.admitHostPower(ctx)
+	}
+	defer admission.release()
 	ctx, cancelSyncRun := context.WithCancel(ctx)
 	defer cancelSyncRun()
+	var hostPowerLoop *agent.Loop
+	var hostPowerErr error
+	// Outermost acknowledgement: all session, question, checkpoint and loop
+	// cleanup defers below must finish before a countdown can be authorized.
+	defer func() {
+		if hostPowerLoop != nil {
+			hostPowerLoop.FinalizeHostPower(errors.Join(runErr, hostPowerErr, ctx.Err()))
+		}
+	}()
 	var syncedRun *liveSyncRun
 	// Registered before all persistence/gate defers: finished means durable.
 	defer func() {
@@ -174,6 +190,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return fmt.Errorf("build loop: %w", err)
 	}
+	hostPowerLoop = loop
 	// Pull only a few relevant capsules from OTHER conversations. This is a
 	// local FTS5 lookup (no model/embedding call), capped to a few hundred
 	// tokens so remembering old work does not add perceptible drag.
@@ -229,9 +246,21 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		lateChanges.setUserReceipt(seq, id)
 	})
 	ch, err := loop.Run(ctx, prompt)
+	// Run synchronously registers the agent root before starting its goroutine.
+	// Keep the admission until now: there must never be an empty-root gap.
+	// Confirmation is consumed below, only after this handoff is complete.
+	admission.release()
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	loopClosed := false
+	defer func() {
+		if !loopClosed {
+			cancelSyncRun()
+			for range ch {
+			}
+		}
+	}()
 	// Run persists the user message synchronously. Refresh the sidebar now,
 	// while the model is working, rather than before the write or after its reply.
 	activity := wireEvent{Type: "session_activity", SessionID: sid}
@@ -384,8 +413,15 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			}
 			lateChanges.complete(record, err)
 		})
-		checkpointBinding = lateChanges.bindCompletion(turn.CompletionKey())
+		completionKey := turn.CompletionKey()
+		checkpointBinding = lateChanges.bindCompletion(completionKey)
+		if completionKey != "" {
+			// A deferred capture still owns accepted work after this stream.
+			// It cannot serve as a durable host-power completion receipt.
+			hostPowerErr = errors.Join(hostPowerErr, errors.New("checkpoint completion is still pending"))
+		}
 		if finishErr != nil {
+			hostPowerErr = errors.Join(hostPowerErr, fmt.Errorf("checkpoint complete: %w", finishErr))
 			log.Printf("checkpoint complete: %v", finishErr)
 		}
 		if record == nil {
@@ -407,6 +443,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		defer cancel()
 		assistantSeq, seqErr := usageStore.LatestMessageSeq(saveCtx, sid, string(llm.RoleAssistant))
 		if seqErr != nil {
+			hostPowerErr = errors.Join(hostPowerErr, seqErr)
 			log.Printf("web turn summary assistant sequence: session=%q: %v", sid, seqErr)
 			return
 		}
@@ -419,6 +456,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		// helper-inference counters read from the same snapshot, so the aux
 		// numbers can never come from a second clock.
 		total := systats.Sum(turns)
+		workerContext := systats.SumWorkerContext(turns, calls)
+		turnDiag.Context = systats.SumContextUsage(turns, calls)
+		if !workerContext.Empty() {
+			turnDiag.WorkerContext = &workerContext
+		}
 		usage := terminalUsage
 		if usage.Input == 0 && usage.Output == 0 {
 			usage.Input = total.TokensIn
@@ -451,6 +493,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		})
 		if saveErr != nil {
 			// Telemetry must never fail or delay the user's answer/error.
+			hostPowerErr = errors.Join(hostPowerErr, saveErr)
 			log.Printf("web turn summary: session=%q: %v", sid, saveErr)
 			return
 		}
@@ -477,6 +520,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			if len(changes) > 0 {
 				send(wireEvent{Type: "file_changes", CheckpointID: checkpointID, FileChanges: changes})
 			}
+			loopClosed = true
 			return ctx.Err()
 		case <-progressC:
 			flushMessages()
@@ -490,6 +534,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			coalescer.Flush()
 		case ev, ok := <-ch:
 			if !ok {
+				loopClosed = true
 				flushMessages()
 				checkpointID, changes := finishCheckpoint()
 				if len(changes) > 0 {
@@ -566,6 +611,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			if failed, ok := ev.(agent.ErrorEvent); ok {
 				terminalUsage = failed.Usage
 				if failed.Err != nil {
+					hostPowerErr = errors.Join(hostPowerErr, failed.Err)
 					turnDiag.Terminal = truncateDiag(failed.Err.Error(), 300)
 				}
 				saveTurnSummary()

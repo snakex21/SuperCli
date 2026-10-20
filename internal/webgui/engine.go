@@ -35,6 +35,7 @@ import (
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
+	systemhostpower "supercli/internal/system/hostpower"
 	"supercli/internal/tools"
 	"supercli/internal/tools/mcp"
 )
@@ -50,13 +51,16 @@ func openDataDB(dataDir string) (*sql.DB, error) {
 // the model. It is built once at server start from the resolved
 // config and data directory, mirroring the CLI's runBatch wiring.
 type Engine struct {
-	syncHub      syncHub
-	chatLifetime chatLifetime
-	mu           sync.RWMutex
-	cfg          config.Config
-	dataDir      string
-	home         string
-	appProfile   string
+	hostPowerMu     sync.Mutex
+	hostPower       *systemhostpower.Controller
+	hostPowerClosed bool
+	syncHub         syncHub
+	chatLifetime    chatLifetime
+	mu              sync.RWMutex
+	cfg             config.Config
+	dataDir         string
+	home            string
+	appProfile      string
 	// explicitEcho is enabled only by the command-line --echo flag. It keeps
 	// deterministic bridge/dev tests available while branded apps reject an
 	// accidental echo fallback caused by unreadable configuration.
@@ -217,6 +221,7 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 		return nil, fmt.Errorf("webgui.NewEngine: provider: %w", err)
 	}
 	eng := &Engine{
+		hostPower:       systemhostpower.New(systemhostpower.Options{Execute: systemhostpower.Shutdown}),
 		cfg:             cfg,
 		dataDir:         dataDir,
 		home:            home,

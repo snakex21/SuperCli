@@ -222,6 +222,12 @@ func (s *Server) handleAttachmentPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	mediaType := http.DetectContentType(header[:n])
+	// ISO BMFF QuickTime brand from the bytes, never the user-controlled suffix.
+	// Browsers may still lack the recording's codec; that is not video support
+	// at the model transport layer.
+	if n >= 16 && string(header[4:12]) == "ftypqt  " && header[0] == 0 && header[1] == 0 && header[2] == 0 && header[3] >= 16 && int(header[3]) <= n {
+		mediaType = "video/quicktime"
+	}
 	profileScope := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "profile")
 	if !previewableAttachmentMIME(mediaType) {
 		if profileScope {
@@ -263,7 +269,7 @@ func profileDocumentSourceMIME(name string) string {
 func previewableAttachmentMIME(mediaType string) bool {
 	switch strings.ToLower(strings.TrimSpace(strings.Split(mediaType, ";")[0])) {
 	case "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
-		"video/mp4", "video/webm", "audio/mpeg", "audio/wave", "audio/wav", "audio/x-wav", "audio/ogg", "application/ogg":
+		"video/mp4", "video/webm", "video/quicktime", "audio/mpeg", "audio/wave", "audio/wav", "audio/x-wav", "audio/ogg", "application/ogg":
 		return true
 	default:
 		return false

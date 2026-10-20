@@ -74,7 +74,7 @@ func TestSettings_RenderListsKnobs(t *testing.T) {
 		if !strings.Contains(out, row.label) || (row.key != "" && !strings.Contains(out, row.key)) {
 			t.Fatalf("setting %q is not reachable in its category:\n%s", row.key, out)
 		}
-		if row.nextSession && !strings.Contains(out, "(następna sesja)") {
+		if row.nextSession && !strings.Contains(out, "(następna rozmowa)") {
 			t.Fatalf("restart requirement missing for %s", row.key)
 		}
 	}

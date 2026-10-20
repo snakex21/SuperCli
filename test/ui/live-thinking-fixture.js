@@ -72,7 +72,7 @@ export default function thinkingFixture(expanded = false) {
     return node;
   }
   const $ = selector => {if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector);};
-  const c = {$, el: element, ui: {thinkingExpanded: expanded, keybinds: {thinking: 'Shift+R'}}, window: {},
+  const c = {$, el: element, ui: {thinkingExpanded: expanded, keybinds: {thinking: 'Shift+R'}}, window: new EventTarget(),
     localStorage: {getItem: () => null},
     document: {hidden: false, hasFocus: () => true, activeElement: {tagName: 'BODY'}, createElement: element,
       addEventListener(name, fn) {documentEvents.set(name, fn);},

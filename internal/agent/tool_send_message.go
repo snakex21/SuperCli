@@ -93,8 +93,8 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		}
 		return tools.Result{Text: fmt.Sprintf("Steering queued for worker %s in its current run (receipt %s). Delivery or rejection will be reported in worker progress; no new run was started.", w.ID, id)}, nil
 	}
-	text, err := runWorkerLoopInRegistry(ctx, w, args.Message, s.Workers)
-	return workerResult(w, text, err), nil
+	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, args.Message, s.Workers)
+	return handoff.result(w, err), nil
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
@@ -102,16 +102,53 @@ func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error
 }
 
 func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry) (string, error) {
+	handoff, err := runWorkerInvocation(ctx, w, prompt, workers)
+	return handoff.report, err
+}
+
+// runWorkerInvocation captures the completed invocation before allowing a new
+// run. Callers must deliver this handoff, not snapshot the mutable worker again.
+func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry) (workerHandoff, error) {
 	if !w.runMu.TryLock() {
-		return "", fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
+		return prepareWorkerHandoff(w, ""), fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
+	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
+	// All locked-run defers (including evidence finalization and event drain)
+	// have completed. Formatting and delivery can safely happen after unlock.
+	return prepareWorkerHandoff(w, text), err
+}
+
+// observedWorkerActivity retains only bounded tool-call metadata. Results reuse
+// their matching call's arguments, never the result output or error body.
+func observedWorkerActivity(kind, callID string, call ToolCallEvent) WorkerActivity {
+	at := time.Now().UnixMilli()
+	const maxArgs = 1024
+	args := call.Args
+	if len(args) > maxArgs {
+		args = args[:maxArgs]
+	}
+	// Drop an incomplete trailing rune (or any invalid input bytes) without
+	// expanding the byte budget. Clone to avoid retaining a large call string.
+	args = strings.Clone(strings.ToValidUTF8(args, ""))
+	return WorkerActivity{Kind: kind, Tool: call.Name, Args: args, CallID: callID, At: at}
+}
+
+// Caller owns runMu through cancellation cleanup and handoff capture.
+func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry) (string, error) {
+	scope := "worker:" + w.ID
+	if w.Loop != nil && w.Loop.runID != "" {
+		scope += ":" + w.Loop.runID
+	}
+	ctx = llm.WithPromptCacheScope(ctx, scope)
 	w.stateMu.RLock()
 	effort := w.reasoningEffort
 	w.stateMu.RUnlock()
 	ctx = llm.WithIndependentReasoningEffort(ctx, effort)
 	if w.Agent == advisorAgentKind {
 		ctx = llm.WithPurpose(ctx, llm.PurposeAdvisor)
+	} else {
+		ctx = llm.WithPurpose(ctx, llm.PurposeTask)
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -126,6 +163,12 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 	}
 	defer borrow.Close()
 	ctx = borrow.Bind(ctx)
+	// Install before registry admission publishes running and before started
+	// callbacks can request Stop. Cleanup remains inside runMu on every exit.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w.setCancel(cancel)
+	defer w.clearCancel()
 	if workers != nil {
 		if err := workers.startContinuation(w); err != nil {
 			return "", err
@@ -137,15 +180,25 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 		w.LastError = ""
 		w.LastResult = ""
 		w.lastEvidence = ""
+		w.uiActivity = nil
 		w.ToolNames = nil
 		w.Runs++
+		w.activity = WorkerActivity{}
 	})
 	emit := workerProgressSink(ctx, w, w.Runs)
-	emit(WorkerProgressEvent{Kind: "started", Prompt: prompt, Status: "running"})
 	defer func() {
 		s := w.Snapshot()
 		emit(WorkerProgressEvent{Kind: "finished", Status: s.Status, Err: s.LastError})
 	}()
+	defer func() {
+		if p := recover(); p != nil {
+			w.setState(func(w *Worker) {
+				w.Status, w.LastError, w.UpdatedAt = "failed", fmt.Sprintf("worker panicked: %v", p), time.Now()
+			})
+			panic(p)
+		}
+	}()
+	emit(WorkerProgressEvent{Kind: "started", Prompt: prompt, Status: "running"})
 
 	if w.Loop == nil {
 		w.setState(func(w *Worker) {
@@ -154,20 +207,20 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 		})
 		return "", fmt.Errorf("worker %s: loop is nil", w.ID)
 	}
-	// Make this run stoppable: task_stop / "/workers stop <id>" cancel
-	// the context mid-run. clearCancel tells us whether a failure was an
-	// explicit stop (status "stopped") or a real error.
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	w.setCancel(cancel)
-
 	invocation, _ := ctx.Value(workerInvocationKey{}).(workerInvocation)
 	w.Loop.verificationObserver = invocation.checks
 	events, err := w.Loop.Run(runCtx, prompt)
 	if err != nil {
-		w.clearCancel()
+		stopped := w.clearCancel()
+		if stopped {
+			err = fmt.Errorf("worker %s stopped by request: %w", w.ID, err)
+		}
 		w.setState(func(w *Worker) {
 			w.Status = "failed"
+			if stopped {
+				w.Status = "stopped"
+			}
+			w.UpdatedAt = time.Now()
 			w.LastError = err.Error()
 		})
 		return "", err
@@ -178,30 +231,40 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 	var rejectedSteering []string
 	toolCalls := make(map[string]ToolCallEvent)
 	var evidence workerEvidenceLog
+	ui := workerUIActivity{Version: 1, ID: w.ID, Run: w.Snapshot().Runs, ParentCallID: invocation.callID, Calls: []workerUIToolCall{}}
+	defer func() { data := ui.encode(); w.setState(func(w *Worker) { w.uiActivity = data }) }()
 	defer func() { w.setState(func(w *Worker) { w.lastEvidence = evidence.text() }) }()
 	for ev := range events {
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
 		case ToolCallEvent:
+			handle, partial := retainWorkerToolDetail(runCtx, w.Loop.toolOutputs, e, ToolResultEvent{})
+			ui.call(e, handle)
 			// Commentary before a tool call is not the worker's final report.
 			// Keep only the final assistant turn; reasoning stays in its own loop.
 			text.Reset()
 			toolCalls[e.ID] = e
+			activity := observedWorkerActivity("tool_call", e.ID, e)
 			w.setState(func(w *Worker) {
+				w.activity = activity
 				if len(w.ToolNames) < 32 {
 					w.ToolNames = append(w.ToolNames, e.Name)
 				}
 			})
 			emit(WorkerProgressEvent{
 				Kind: "tool_call", CallID: e.ID, Tool: e.Name,
-				Args: toolcore.HeadTail(e.Args, 180, 60),
+				Args: toolcore.HeadTail(e.Args, 700, 240), DetailHandle: handle, Partial: partial,
 			})
 		case ToolResultEvent:
+			handle, partial := retainWorkerToolDetail(runCtx, w.Loop.toolOutputs, toolCalls[e.ID], e)
+			ui.result(e, handle)
+			activity := observedWorkerActivity("tool_result", e.ID, toolCalls[e.ID])
+			w.setState(func(w *Worker) { w.activity = activity })
 			evidence.add(toolCalls[e.ID], e)
 			progress := WorkerProgressEvent{
 				Kind: "tool_result", CallID: e.ID, Tool: toolCalls[e.ID].Name,
-				Output: toolcore.HeadTail(e.Output, 220, 80),
+				Output: toolcore.HeadTail(e.Output, 220, 80), DetailHandle: handle, Partial: partial,
 			}
 			if e.Err != nil {
 				progress.Err = toolcore.HeadTail(e.Err.Error(), 180, 60)

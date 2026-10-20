@@ -80,11 +80,14 @@ func (s *Store) ReadModelContext(ctx context.Context, sessionID string) ([]llm.M
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	for i := range out {
+		out[i] = out[i].WithoutWorkerActivity()
+	}
 	return s.externalizeModelImages(sessionID, out), nil
 }
 
 func readContextMessages(ctx context.Context, tx *sql.Tx, sessionID string, through int, projected bool) ([]Encoded, error) {
-	query := `SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'') FROM messages WHERE session_id = ?`
+	query := `SELECT session_id, seq, role, content, IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'') FROM messages WHERE session_id = ?`
 	args := []any{sessionID}
 	if projected {
 		query += " AND seq > ?"
@@ -99,7 +102,7 @@ func readContextMessages(ctx context.Context, tx *sql.Tx, sessionID string, thro
 	var out []Encoded
 	for rows.Next() {
 		var m Encoded
-		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+		if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content, &m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

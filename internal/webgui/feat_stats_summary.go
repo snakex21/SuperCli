@@ -11,6 +11,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/stats"
 )
 
 func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) statsTelemetryView {
@@ -19,6 +20,18 @@ func summarizeTelemetry(turns []session.TurnSummary, tokens statsTokensView) sta
 	toolFails := map[string]int{}
 	var modelUS, toolsUS, cliUS, persistUS, auxUS int64
 	for _, turn := range turns {
+		if turn.ToolDiag.Context != nil {
+			if out.Context == nil {
+				out.Context = &llm.ContextUsage{}
+			}
+			out.Context.Add(*turn.ToolDiag.Context)
+		}
+		if w := turn.ToolDiag.WorkerContext; w != nil && !w.Empty() {
+			if out.WorkerContext == nil {
+				out.WorkerContext = &stats.WorkerContext{}
+			}
+			out.WorkerContext.Add(*w)
+		}
 		if len(turn.Phases) == 0 {
 			continue // legacy rows are not false zero-duration samples
 		}

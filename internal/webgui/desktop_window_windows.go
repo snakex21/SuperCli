@@ -102,7 +102,8 @@ func runNativeAppWindow(opts nativeWindowOptions) error {
 	url, appName, dataDir, iconPath := opts.URL, opts.AppName, opts.DataDir, opts.IconPath
 	enablePerMonitorDPI()
 	setNativeAppIdentity(appName)
-	// DevTools (Ctrl+Shift+I / F12) only when explicitly enabled.
+	// Manual DevTools access only when explicitly enabled. Accidental browser
+	// shortcuts are blocked independently, including in diagnostic mode.
 	// NestCafe turns this on via SUPERCLI_DEVTOOLS=1 when "Szczegóły
 	// diagnostyczne" is saved in webgui-settings.json.
 	devtoolsEnv := strings.TrimSpace(strings.ToLower(os.Getenv("SUPERCLI_DEVTOOLS")))
@@ -117,9 +118,12 @@ func runNativeAppWindow(opts nativeWindowOptions) error {
 		return fmt.Errorf("native WebView2 unavailable: %w", err)
 	}
 	if devtools {
-		log.Printf("WebView2 DevTools enabled (Ctrl+Shift+I / F12)")
+		log.Printf("WebView2 DevTools enabled (manual access; browser keyboard shortcuts protected)")
 	}
 	defer w.Destroy()
+	if err := installDesktopShortcutProtection(w, url); err != nil {
+		log.Printf("native shortcut filter unavailable (document-start fallback retained): %v", err)
+	}
 
 	w.SetTitle(appName)
 	badge, badgeErr := newNativeTaskbarBadge(uintptr(w.Window()))

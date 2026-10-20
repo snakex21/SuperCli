@@ -86,7 +86,7 @@ func polishCommandDescription(name, fallback string) string {
 
 func commandCategory(name string) string {
 	switch name {
-	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "context-limit", "mcp", "skills", "settings", "update", "telefon", "phone":
+	case "help", "status", "cost", "doctor", "sandbox", "allow-all", "context", "context-limit", "mcp", "skills", "settings", "instructions", "prompts", "update", "telefon", "phone":
 		return "system"
 	case "model", "models", "providers", "reasoning", "usage":
 		return "model"
@@ -134,6 +134,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "undo", Desc: textFor("en", "tui.command_desc.undo"), Args: ""},
 		{Name: "redo", Desc: textFor("en", "tui.command_desc.redo"), Args: ""},
 		{Name: "test", Desc: textFor("en", "tui.command_desc.test"), Args: "hard"},
+		{Name: "instructions", Desc: textFor("en", "tui.command_desc.instructions")},
 		{Name: "settings", Desc: textFor("en", "tui.command_desc.settings")},
 		{Name: "telefon", Desc: textFor("en", "tui.command_desc.telefon")},
 		{Name: "phone", Desc: textFor("en", "tui.command_desc.phone")},

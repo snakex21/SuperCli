@@ -28,7 +28,7 @@ func (s *Store) ReadDialogueExcerpt(ctx context.Context, sessionID string, tailC
 	defer tx.Rollback()
 	read := func(filterOrder string, limit int) ([]Encoded, error) {
 		rows, err := tx.QueryContext(ctx, `SELECT session_id, seq, role, content,
-   IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,'')
+   IFNULL(parts_json,''), IFNULL(tool_call_id,''), IFNULL(tool_calls_json,''), IFNULL(name,''), IFNULL(origin_json,'')
    FROM messages WHERE session_id = ? AND `+filterOrder, sessionID)
 		if err != nil {
 			return nil, err
@@ -38,7 +38,7 @@ func (s *Store) ReadDialogueExcerpt(ctx context.Context, sessionID string, tailC
 		for rows.Next() {
 			var m Encoded
 			if err := rows.Scan(&m.SessionID, &m.Seq, &m.Role, &m.Content,
-				&m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name); err != nil {
+				&m.PartsJSON, &m.ToolCallID, &m.ToolCallsJSON, &m.Name, &m.OriginJSON); err != nil {
 				return nil, err
 			}
 			if usable != nil && !usable(m) {

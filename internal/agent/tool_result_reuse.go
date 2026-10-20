@@ -151,7 +151,7 @@ func (c *toolResultReuse) finish(claim resultReuseClaim, result *tools.Result, t
 	// Opaque effect receipts belong to checked replay, not observation TTL. Do
 	// not retain their private evidence through a shallow Result value copy.
 	if !current || claim.generation != c.generation || result == nil || result.Err != nil || result.Inert ||
-		result.Image != nil || len(result.Images) != 0 || result.RetainedText != "" || result.CommandKey != nil || result.Operation != nil {
+		result.Image != nil || len(result.Images) != 0 || result.RetainedText != "" || result.CommandKey != nil || result.Execution != nil || result.Operation != nil {
 		return
 	}
 	size := len(result.Text) + len(result.ModelText) + len(result.ModelPreview)

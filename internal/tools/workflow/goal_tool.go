@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"supercli/internal/storage/goal"
+	"supercli/internal/tools/core"
 )
 
 // GoalTool exposes long-term goal state to the model.
@@ -70,6 +71,15 @@ func (g *GoalTool) SetDecompose(p goal.Provider, model string) {
 func (g *GoalTool) Spec() Tool {
 	return Tool{
 		Name: "goal",
+		VerificationState: func() core.VerificationState {
+			if g.Service != nil {
+				if active := g.Service.Active(); active != nil {
+					progress := g.Service.Progress()
+					return core.VerificationState{Scope: active.ID, Done: progress.Done, Total: progress.Total, Status: string(active.VerificationStatus)}
+				}
+			}
+			return core.VerificationState{}
+		},
 		Description: "Track a long-term objective and its task list. The active goal and its open tasks are injected into every turn, so keeping them accurate gives the user real visibility into your progress.\n\n" +
 			"## When to use this tool\n" +
 			"- Multi-step work (3+ distinct steps) or work spanning multiple turns/sessions\n" +

@@ -77,7 +77,7 @@ func TestCacheUsageContractAcrossTransports(t *testing.T) {
 	}
 }
 
-func TestResponsesCacheKeyStableAcrossPurposesAndInstances(t *testing.T) {
+func TestResponsesCacheKeySeparatesHelpersAndInstances(t *testing.T) {
 	var keys []string
 	calls := 0
 	client := &http.Client{Transport: anthropicOwnedBodyTransport(func(req *http.Request) (*http.Response, error) {
@@ -126,7 +126,7 @@ func TestResponsesCacheKeyStableAcrossPurposesAndInstances(t *testing.T) {
 			t.Fatal(d.Err)
 		}
 	}
-	if calls != 4 || len(keys) != 4 || keys[0] == "" || keys[0] != keys[1] || keys[0] != keys[2] || keys[0] == keys[3] {
-		t.Fatal("Responses cache key must persist per provider, including helper/task purposes; separate instances get independent keys")
+	if calls != 4 || len(keys) != 4 || keys[0] == "" || keys[0] == keys[1] || keys[0] != keys[2] || keys[0] == keys[3] {
+		t.Fatal("foreground key must remain stable; helpers and separate provider instances need independent cache scopes")
 	}
 }

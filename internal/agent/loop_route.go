@@ -114,16 +114,11 @@ func (l *Loop) attachCoordinatorAddon(ctx context.Context) {
 func (l *Loop) appendCurrentUserContext(text string) {
 	for i := len(l.Messages) - 1; i >= 0; i-- {
 		msg := &l.Messages[i]
-		if msg.Role != llm.RoleUser {
+		if !isConversationUserTurn(*msg) {
 			continue
 		}
-		if len(msg.Parts) == 0 {
-			msg.Content += "\n\n" + text
-		} else {
-			parts := make([]llm.ContentPart, len(msg.Parts), len(msg.Parts)+1)
-			copy(parts, msg.Parts)
-			msg.Parts = append(parts, llm.ContentPart{Type: llm.PartTypeText, Text: "\n\n" + text})
-		}
+		*msg = llm.AppendContextText(*msg, llm.SourceRuntime, text)
+		l.recordContextAddition(llm.Message{Role: llm.RoleSystem, Content: "\n\n" + text, Origin: &llm.ContextOrigin{Source: llm.SourceRuntime}})
 		l.invalidateVisibleEstimate()
 		return
 	}
@@ -140,7 +135,7 @@ func (l *Loop) wordDocumentContext(prompt string) bool {
 		start = 0
 	}
 	for _, message := range l.Messages[start:] {
-		if message.Role == llm.RoleUser && containsWordDocumentReference(message.Content) {
+		if isConversationUserTurn(message) && containsWordDocumentReference(message.TextOnly().Content) {
 			return true
 		}
 		if message.Role == llm.RoleAssistant {

@@ -54,6 +54,12 @@ func compactionFailureJSON(t *testing.T, messages []llm.Message) string {
 	return string(raw)
 }
 
+// Run marks newly accepted human input at the producer. Compare the whole
+// message, including that metadata; older fixture/archive rows stay unknown.
+func compactionFailureRunTask() llm.Message {
+	return llm.Message{Role: llm.RoleUser, Content: "current task", Origin: &llm.ContextOrigin{Source: llm.SourceHuman}}
+}
+
 func logFailedCompactionState(t *testing.T, l *Loop) {
 	t.Helper()
 	if !t.Failed() {
@@ -155,7 +161,7 @@ func TestConfiguredCompactionFailureStopsRunAndOverflowRetry(t *testing.T) {
 				p := &stubProvider{name: "fixture", scripts: scripts}
 				writer := &flakyWriter{}
 				l := newCompactionFailureLoop(t, p, NewAutoSummarizer(nil), window, writer)
-				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
+				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), compactionFailureRunTask()))
 				events := compactionFailureEvents(t, l, context.Background())
 				assertCompactionFailureEvents(t, events, tc.want, tc.text)
 				assertCompactionFailureHistory(t, l, expected, writer)
@@ -197,7 +203,7 @@ func TestConfiguredCompactionRejectsEmptyAndIneffectiveCallbacks(t *testing.T) {
 						t.Logf("summary callbacks=%d provider requests=%d", helpers, atomic.LoadInt32(&p.calls))
 					}
 				})
-				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
+				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), compactionFailureRunTask()))
 				events := compactionFailureEvents(t, l, context.Background())
 				text := "empty summary"
 				if strings.TrimSpace(reply) != "" {
@@ -264,7 +270,7 @@ func TestConfiguredCompactionCancellationPreservesHistory(t *testing.T) {
 					}
 					return "", context.Canceled
 				}, window, writer)
-				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
+				expected := compactionFailureJSON(t, append(append([]llm.Message(nil), l.Messages...), compactionFailureRunTask()))
 				assertCompactionFailureEvents(t, compactionFailureEvents(t, l, ctx), context.Canceled, "")
 				assertCompactionFailureHistory(t, l, expected, writer)
 				if helpers != 1 || atomic.LoadInt32(&p.calls) != wantRequests {
@@ -295,7 +301,7 @@ func TestConfiguredCompactionCancellationPreservesHistory(t *testing.T) {
 		p := &stubProvider{name: "fixture", scripts: [][]llm.Delta{{{Content: "unexpected", FinishReason: "stop"}}}}
 		runWriter := &flakyWriter{}
 		runLoop := newCompactionFailureLoop(t, p, summarize, 100, runWriter)
-		expected := compactionFailureJSON(t, append(append([]llm.Message(nil), runLoop.Messages...), llm.Message{Role: llm.RoleUser, Content: "current task"}))
+		expected := compactionFailureJSON(t, append(append([]llm.Message(nil), runLoop.Messages...), compactionFailureRunTask()))
 		assertCompactionFailureEvents(t, compactionFailureEvents(t, runLoop, ctx), context.Canceled, "")
 		assertCompactionFailureHistory(t, runLoop, expected, runWriter)
 		if helpers != 0 || p.calls != 0 {
@@ -343,7 +349,7 @@ func TestConfiguredCompactionFailurePreservesDurableResume(t *testing.T) {
 	if w.projections != 0 || l.HiddenCount() != 0 {
 		t.Fatalf("failure wrote projection=%d or hid messages=%d", w.projections, l.HiddenCount())
 	}
-	want := append(compactionFailureHistory(), llm.Message{Role: llm.RoleUser, Content: "current task"})
+	want := append(compactionFailureHistory(), compactionFailureRunTask())
 	resumed, err := store.ReadModelContext(ctx, sess.ID)
 	if err != nil || !reflect.DeepEqual(resumed, want) {
 		t.Fatalf("resume after failure lost/duplicated task history: err=%v messages=%d", err, len(resumed))
@@ -382,6 +388,11 @@ func TestConfiguredCompactionSuccessAndLegacyFallbackRemainAvailable(t *testing.
 			// Trigger compaction with the large older prefix, while leaving enough
 			// room for the protected tail and request overhead after compaction.
 			l := newCompactionFailureLoop(t, p, summarize, 4096, writer)
+			// This success fixture must have reducible evidence, not a single
+			// enormous human instruction which the compactor must now preserve.
+			olderEvidence := l.Messages[1].Content
+			l.Messages[1].Content = "Preserve every earlier requirement."
+			l.Messages[3].Content += "\n" + olderEvidence
 			compacted, done := 0, 0
 			for _, event := range compactionFailureEvents(t, l, context.Background()) {
 				switch event := event.(type) {
@@ -403,7 +414,7 @@ func TestConfiguredCompactionSuccessAndLegacyFallbackRemainAvailable(t *testing.
 			if (l.HiddenCount() > 0) == configured {
 				t.Fatalf("legacy hiding/configured summary changed: hidden=%d configured=%v", l.HiddenCount(), configured)
 			}
-			if configured && (p.toolReqs[0] != 0 || len(p.reqs[0]) != 2 || p.reqs[0][0].Content != compactionPrompt) {
+			if configured && (p.toolReqs[0] != 0 || len(p.reqs[0]) != 2 || p.reqs[0][0].Content != compactionStatePrompt) {
 				t.Fatal("successful helper changed its existing request contract")
 			}
 			visible := RenderCompactTranscript(l.VisibleMessages())

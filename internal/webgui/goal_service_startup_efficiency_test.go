@@ -200,7 +200,7 @@ func (f *goalStartupFixture) seed(tb testing.TB, key, id, title string, tasks in
 	return g
 }
 
-func (f *goalStartupFixture) build(t *testing.T, home string, want goalStartupQueryCounts) (*agent.Loop, *tools.Registry, *prefixCaptureProvider) {
+func (f *goalStartupFixture) build(t *testing.T, home string) (*agent.Loop, *tools.Registry, *prefixCaptureProvider) {
 	t.Helper()
 	p := &prefixCaptureProvider{}
 	f.engine.prov = p
@@ -209,10 +209,21 @@ func (f *goalStartupFixture) build(t *testing.T, home string, want goalStartupQu
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := f.queries.take(); got != want {
-		t.Fatalf("real SQLite goal queries=%+v, want %+v", got, want)
+	if got := f.queries.take(); got != (goalStartupQueryCounts{}) {
+		t.Fatalf("construction eagerly read goal state before the request boundary: %+v", got)
 	}
 	return loop, reg, p
+}
+
+func (f *goalStartupFixture) request(t *testing.T, loop *agent.Loop, p *prefixCaptureProvider, want goalStartupQueryCounts) string {
+	t.Helper()
+	request := goalStartupRequest(t, loop, p)
+	// build() separately proved zero reads; these are therefore also the
+	// combined construction + first-request counts, not a hidden second phase.
+	if got := f.queries.take(); got != want {
+		t.Fatalf("real SQLite request-boundary and total goal queries=%+v, want %+v", got, want)
+	}
+	return request
 }
 
 func goalStartupRequest(t *testing.T, loop *agent.Loop, p *prefixCaptureProvider) string {
@@ -280,11 +291,11 @@ func TestWebGoalStartupReadsOnceColdAndWarm(t *testing.T) {
 			}
 			var first *goal.Service
 			for _, phase := range []string{"cold", "warm"} {
-				loop, reg, p := f.build(t, f.home, want)
+				loop, reg, p := f.build(t, f.home)
+				request := f.request(t, loop, p, want)
 				if reg.IsVisible("goal") != active {
 					t.Fatalf("%s: active goal visibility=%v, want %v", phase, reg.IsVisible("goal"), active)
 				}
-				request := goalStartupRequest(t, loop, p)
 				if active {
 					goalStartupAssertBlock(t, request, block)
 				} else if strings.Contains(request, "[current_goal]") {
@@ -324,8 +335,8 @@ func TestWebGoalStartupFreshOtherConnectionAndScopes(t *testing.T) {
 		{homeB, gB, "  - [pending] 1. step 0001\n"},
 		{homeC, gGlobal, "  - [pending] 1. step 0001\n"},
 	} {
-		loop, _, p := f.build(t, scope.home, want)
-		request := goalStartupRequest(t, loop, p)
+		loop, _, p := f.build(t, scope.home)
+		request := f.request(t, loop, p, want)
 		goalStartupAssertBlock(t, request, goalStartupWantBlock(scope.g, scope.line), "Unassigned legacy must remain private")
 		for _, other := range []*goal.Goal{gA, gB, gGlobal} {
 			if other.ID != scope.g.ID && strings.Contains(request, "title: "+other.Title+"\n") {
@@ -350,11 +361,11 @@ func TestWebGoalStartupFreshOtherConnectionAndScopes(t *testing.T) {
 	if err := outsideA.SetTaskStatus(context.Background(), gNew.ID, 2, goal.TaskInProgress); err != nil {
 		t.Fatal(err)
 	}
-	loop, reg, p := f.build(t, f.home, want)
+	loop, reg, p := f.build(t, f.home)
+	request := f.request(t, loop, p, want)
 	if !reg.IsVisible("goal") {
 		t.Fatal("fresh goal lost its always-on tool")
 	}
-	request := goalStartupRequest(t, loop, p)
 	goalStartupAssertBlock(t, request, goalStartupWantBlock(gNew, "  - [in_progress] 2. resume modified source\n  - [pending] 3. run existing regression test\n"), gA.Title, gB.Title, gGlobal.Title, "already completed elsewhere")
 	svc, err := f.engine.goalService(context.Background())
 	if err != nil {
@@ -367,8 +378,57 @@ func TestWebGoalStartupFreshOtherConnectionAndScopes(t *testing.T) {
 	if err != nil || global == nil || global.ID != gGlobal.ID {
 		t.Fatalf("global consumer selected a project goal: view=%+v err=%v", global, err)
 	}
-	loop, _, p = f.build(t, homeB, want)
-	goalStartupAssertBlock(t, goalStartupRequest(t, loop, p), goalStartupWantBlock(gB, "  - [pending] 1. step 0001\n"), gNew.Title)
+	loop, _, p = f.build(t, homeB)
+	goalStartupAssertBlock(t, f.request(t, loop, p, want), goalStartupWantBlock(gB, "  - [pending] 1. step 0001\n"), gNew.Title)
+}
+
+func TestWebGoalStartupActivatesBeforeStableRequestTools(t *testing.T) {
+	for _, fullTools := range []bool{true, false} {
+		t.Run(fmt.Sprintf("full_tools_%t", fullTools), func(t *testing.T) {
+			f := newGoalStartupFixture(t, true)
+			config := fmt.Sprintf("orchestrator = false\npreflight_repo = false\ncontext_window = 100000\nsmall_full_tools = %t\nstable_toolset = true\n", fullTools)
+			if err := os.WriteFile(filepath.Join(f.engine.dataDir, "config.toml"), []byte(config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			f.seed(t, memory.ProjectStorageKey(f.engine.dataDir, f.home), "tool-boundary", "Visible before frozen tools", 1)
+			loop, reg, p := f.build(t, f.home)
+			request := f.request(t, loop, p, goalStartupQueryCounts{Active: 1, Progress: 1, OpenTasks: 1})
+			if !reg.IsVisible("goal") || len(p.tools) != 1 {
+				t.Fatal("goal was not available by the first prepared request")
+			}
+			goalSchema := false
+			for _, def := range p.tools[0] {
+				goalSchema = goalSchema || def.Name == "goal"
+			}
+			if fullTools {
+				if !goalSchema {
+					t.Fatal("native stable request froze before exposing the active goal schema")
+				}
+			} else {
+				spec, _ := reg.Get("goal")
+				if goalSchema || !strings.Contains(request, tools.RenderCatalog([]tools.Tool{spec}, 80)) {
+					t.Fatal("thin stable request lost the active goal's existing catalog contract")
+				}
+			}
+		})
+	}
+}
+
+func TestWebGoalStartupSeesExternalAbandonBetweenBuildAndRequest(t *testing.T) {
+	f := newGoalStartupFixture(t, true)
+	key := memory.ProjectStorageKey(f.engine.dataDir, f.home)
+	g := f.seed(t, key, "external-close", "Must not return after external abandon", 1)
+	prior, _, p := f.build(t, f.home)
+	f.request(t, prior, p, goalStartupQueryCounts{Active: 1, Progress: 1, OpenTasks: 1})
+	loop, reg, p := f.build(t, f.home)
+	outside := goal.NewProjectService(goal.NewStorage(f.external), key)
+	if err := outside.SetStatus(context.Background(), g.ID, goal.StatusAbandoned); err != nil {
+		t.Fatal(err)
+	}
+	request := f.request(t, loop, p, goalStartupQueryCounts{Active: 1})
+	if strings.Contains(request, "[current_goal]") || reg.IsVisible("goal") {
+		t.Fatal("request reused a stale cached active goal after an external close")
+	}
 }
 
 func TestWebGoalStartupCancellationAndSQLRetry(t *testing.T) {
@@ -424,14 +484,18 @@ func TestWebGoalStartupCancellationAndSQLRetry(t *testing.T) {
 		if _, err := f.external.ExecContext(context.Background(), "ALTER TABLE goals RENAME TO unavailable_goals"); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := f.engine.buildLoopWithSession(nil, nil, f.home, nil, nil); err == nil {
-			t.Fatal("the remaining consumer Refresh concealed a real SQLite failure")
+		loop, _, err := f.engine.buildLoopWithSession(nil, nil, f.home, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := loop.RefreshLiveContext(context.Background()); err == nil {
+			t.Fatal("request-boundary Refresh concealed a real SQLite failure")
 		}
 		if _, err := f.external.ExecContext(context.Background(), "ALTER TABLE unavailable_goals RENAME TO goals"); err != nil {
 			t.Fatal(err)
 		}
-		loop, _, p := f.build(t, f.home, goalStartupQueryCounts{Active: 1, Progress: 1, OpenTasks: 1})
-		goalStartupAssertBlock(t, goalStartupRequest(t, loop, p), goalStartupWantBlock(g, "  - [pending] 1. step 0001\n"))
+		loop, _, p := f.build(t, f.home)
+		goalStartupAssertBlock(t, f.request(t, loop, p, goalStartupQueryCounts{Active: 1, Progress: 1, OpenTasks: 1}), goalStartupWantBlock(g, "  - [pending] 1. step 0001\n"))
 	})
 }
 
@@ -480,6 +544,9 @@ func BenchmarkWebGoalStartup(b *testing.B) {
 						} else {
 							loop, reg, err := f.engine.buildLoopWithSession(nil, nil, f.home, nil, nil)
 							if err != nil {
+								b.Fatal(err)
+							}
+							if err := loop.RefreshLiveContext(context.Background()); err != nil {
 								b.Fatal(err)
 							}
 							if len(loop.Messages) == 0 || reg.IsVisible("goal") != (tasks >= 0) {

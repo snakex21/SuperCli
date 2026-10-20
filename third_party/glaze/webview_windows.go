@@ -311,15 +311,17 @@ type webview struct {
 	ownsWindow bool
 
 	// WebView2 / COM state.
-	controller uintptr // ICoreWebView2Controller*
-	webview2   uintptr // ICoreWebView2*
-	envH       *comHandler
-	ctrlH      *comHandler
-	msgH       *comHandler
-	scriptH    *comHandler
-	ready      bool
-	scriptDone bool
-	lastScript string
+	controller     uintptr // ICoreWebView2Controller*
+	webview2       uintptr // ICoreWebView2*
+	envH           *comHandler
+	ctrlH          *comHandler
+	msgH           *comHandler
+	scriptH        *comHandler
+	shortcutFilter *shortcutHandler
+	shortcutToken  uint64
+	ready          bool
+	scriptDone     bool
+	lastScript     string
 
 	// Window size constraints from SetSize(HintMin/HintMax); enforced in
 	// wndProc's WM_GETMINMAXINFO handler.
@@ -465,6 +467,7 @@ func (w *webview) SetSize(width, height int, hint Hint) {
 }
 
 func (w *webview) Destroy() {
+	w.detachShortcutFilter()
 	if w.controller != 0 {
 		// Close the controller, then release the references we took in
 		// handlerInvoke (ICoreWebView2 was AddRef'd, the controller too),

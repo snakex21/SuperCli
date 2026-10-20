@@ -39,7 +39,7 @@ class Node {
 function load() {
   const stream = new Node('div');
   const c = {window: {}, $() {return new Node('div');}, t: key => key,
-    document: {createElement: tag => new Node(tag), createDocumentFragment: () => new Node('#fragment')},
+    document: Object.assign(new EventTarget(), {createElement: tag => new Node(tag), createDocumentFragment: () => new Node('#fragment')}),
     el: (tag, cls, text) => new Node(tag, cls, text)};
   createSandbox(c);
   const root = sourcePath(testDir, '../..');

@@ -52,7 +52,8 @@ func (s *Server) handleContextCompact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	if !sameSessionWorkspace(meta.Cwd, s.eng.Home()) {
+	home := s.eng.Home()
+	if !sameSessionWorkspace(meta.Cwd, home) {
 		http.Error(w, "session not found in active project", http.StatusNotFound)
 		return
 	}
@@ -65,9 +66,17 @@ func (s *Server) handleContextCompact(w http.ResponseWriter, r *http.Request) {
 	if sink := s.eng.usageCallSink(store, req.SessionID); sink != nil {
 		ctx = llm.WithCallSink(ctx, sink)
 	}
-	loop, err := s.eng.newLoopWithSession(initial, session.NewWriter(store, req.SessionID))
+	loop, err := s.eng.newLoopWithSessionAt(initial, session.NewWriter(store, req.SessionID), home)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := loop.RefreshLiveContext(ctx); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, context.Canceled) {
+			status = 499
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	event, err := loop.CompactNow(ctx)

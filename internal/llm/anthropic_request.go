@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 type anthropicRequest struct {
@@ -15,6 +16,7 @@ type anthropicRequest struct {
 	Messages     []anthropicMessage     `json:"messages"`
 	Tools        []anthropicTool        `json:"tools,omitempty"`
 	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 	// Sampling. Pointers + omitempty: unset stays absent from the body.
 	Temperature *float64 `json:"temperature,omitempty"`
@@ -24,7 +26,14 @@ type anthropicRequest struct {
 
 type anthropicThinking struct {
 	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	// Adaptive models hide thinking text unless asked for a summary.
+	Display string `json:"display,omitempty"`
+}
+
+// anthropicOutputConfig steers adaptive thinking depth instead of a budget.
+type anthropicOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -72,9 +81,8 @@ func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []Tool
 		maxTokens = 4096
 	}
 	req := anthropicRequest{Model: model, MaxTokens: maxTokens, Stream: true}
-	if thinking := anthropicThinkingForModel(model, maxTokens, contexts...); thinking != nil {
-		req.Thinking = thinking
-	}
+	req.Thinking, req.OutputConfig = anthropicThinkingForModel(model, maxTokens, contexts...)
+	req.MaxTokens = anthropicAdaptiveMaxTokens(req.Thinking, req.MaxTokens)
 	// Extended thinking fixes the sampling: the API rejects top_p/top_k
 	// and any temperature other than 1 while thinking is on. Silently
 	// skipping the parameters is better than turning every request into
@@ -140,16 +148,93 @@ func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []Tool
 	return marshalAnthropicPromptCache(req, cacheSystem)
 }
 
-func anthropicThinkingForModel(model string, maxTokens int, contexts ...context.Context) *anthropicThinking {
+func anthropicThinkingForModel(model string, maxTokens int, contexts ...context.Context) (*anthropicThinking, *anthropicOutputConfig) {
 	effort := ReasoningEffortForModel(model, contexts...)
 	if effort == "" || effort == "none" {
-		return nil
+		return nil, nil
+	}
+	return anthropicThinkingForEffort(model, effort, maxTokens)
+}
+
+func anthropicThinkingForEffort(model, effort string, maxTokens int) (*anthropicThinking, *anthropicOutputConfig) {
+	if anthropicUsesAdaptiveThinking(model) {
+		return &anthropicThinking{Type: "adaptive", Display: "summarized"}, &anthropicOutputConfig{Effort: anthropicAdaptiveEffort(effort)}
 	}
 	budget := reasoningBudgetTokens(effort, maxTokens)
 	if budget <= 0 {
-		return nil
+		return nil, nil
 	}
-	return &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+	return &anthropicThinking{Type: "enabled", BudgetTokens: budget}, nil
+}
+
+// anthropicThinkingMode holds live evidence ("adaptive"/"enabled") from a
+// backend that rejected the other thinking type for a model.
+var anthropicThinkingMode sync.Map
+
+// Claude 4.6 and newer reject or deprecate budget-based thinking: depth is
+// set with output_config.effort. Only the older generations listed below
+// still require "enabled" + budget_tokens. Unknown (future) names default to
+// adaptive; a backend rejection is learned and overrides this guess.
+func anthropicUsesAdaptiveThinking(model string) bool {
+	if mode, ok := anthropicThinkingMode.Load(normalizeReasoningModel(model)); ok {
+		return mode == "adaptive"
+	}
+	m := reasoningModelFamily(model)
+	if strings.HasPrefix(m, "claude-3") || strings.HasPrefix(m, "claude-2") || strings.HasPrefix(m, "claude-instant") {
+		return false
+	}
+	for _, old := range []string{"-4-5", "-4-1", "-4-0", "-4-2"} {
+		if strings.Contains(m, old) {
+			return false
+		}
+	}
+	for _, family := range []string{"claude-opus-4", "claude-sonnet-4", "claude-haiku-4"} {
+		if m == family || strings.HasPrefix(m, family+"-2025") {
+			return false
+		}
+	}
+	return true
+}
+
+// rememberAnthropicThinkingMode records which thinking type a 400 response
+// asked for. It returns false when the message names no thinking type.
+func rememberAnthropicThinkingMode(model string, body []byte) bool {
+	low := strings.ToLower(string(body))
+	var mode string
+	switch {
+	case strings.Contains(low, `"thinking.type.enabled" is not supported`), strings.Contains(low, "use \\\"thinking.type.adaptive\\\""), strings.Contains(low, `use "thinking.type.adaptive"`):
+		mode = "adaptive"
+	case strings.Contains(low, `"thinking.type.adaptive" is not supported`), strings.Contains(low, "adaptive") && strings.Contains(low, "budget_tokens") && strings.Contains(low, "not supported"):
+		mode = "enabled"
+	default:
+		return false
+	}
+	if anthropicUsesAdaptiveThinking(model) == (mode == "adaptive") {
+		return false // already sending what the backend asked for
+	}
+	anthropicThinkingMode.Store(normalizeReasoningModel(model), mode)
+	return true
+}
+
+// anthropicAdaptiveMinOutput is the output ceiling used with adaptive
+// thinking. Thinking and the visible answer share max_tokens; with the old
+// 4096 default the model spent the whole limit thinking and returned no text.
+// It is a ceiling, not a reservation: unused tokens cost nothing.
+const anthropicAdaptiveMinOutput = 32000
+
+func anthropicAdaptiveMaxTokens(thinking *anthropicThinking, maxTokens int) int {
+	if thinking != nil && thinking.Type == "adaptive" && maxTokens < anthropicAdaptiveMinOutput {
+		return anthropicAdaptiveMinOutput
+	}
+	return maxTokens
+}
+
+// Adaptive effort accepts low..max; there is no "minimal".
+func anthropicAdaptiveEffort(effort string) string {
+	if effort == "minimal" {
+		return "low"
+	}
+	return effort
 }
 
 func reasoningBudgetTokens(effort string, maxTokens int) int {

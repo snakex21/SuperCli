@@ -168,6 +168,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.PreflightRepo != nil {
 		dst.PreflightRepo = src.PreflightRepo
 	}
+	if src.UpdateNotify != nil {
+		dst.UpdateNotify = src.UpdateNotify
+	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
 	}

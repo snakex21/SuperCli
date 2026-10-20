@@ -173,7 +173,7 @@ func firstCompactionPreparationLoop(tb testing.TB, fixture firstCompactionProfil
 	calls := 0
 	provider := newCompactionCompletionProvider(func(_ context.Context, messages []llm.Message, defs []llm.ToolDef) (<-chan llm.Delta, error) {
 		calls++
-		if len(messages) != 2 || messages[0].Content != compactionPrompt || messages[1].Content != fixture.OriginalInput || len(defs) != 0 {
+		if len(messages) != 2 || messages[0].Content != compactionStatePrompt || messages[1].Content != fixture.OriginalInput || len(defs) != 0 {
 			tb.Fatal("first compaction changed recorded input or offered tools")
 		}
 		return nil, errFirstCompactionPreparationProbe

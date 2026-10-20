@@ -17,6 +17,7 @@ import (
 // flow through the same funnel so no model time can hide inside a
 // CLI phase.
 type CallStat struct {
+	Context ContextUsage
 	// Purpose labels why the call was made ("main", "navigator",
 	// "compact", ...). Default comes from the Metered wrapper;
 	// call sites override it via WithPurpose on the context.
@@ -56,6 +57,9 @@ type CallStat struct {
 	// TokensOut, both provider-reported (0 when not reported).
 	TokensCached    int
 	TokensReasoning int
+	// HasCachedInput distinguishes an explicit zero cache report from unknown.
+	HasCachedInput bool
+	RequestTrace   *RequestTrace
 	// PrefillEvaluated is the uncached prompt work (TokensIn -
 	// TokensCached). PrefillTokensPerSecond derives throughput from that work
 	// and TTFT. PrefillBudget/Source describe the context-defense threshold
@@ -69,6 +73,9 @@ type CallStat struct {
 	// can attribute context weight without seeing the prompt.
 	Request   RequestBreakdown
 	StartedAt time.Time
+	// Exact host-worker message count/text bytes in this provider invocation.
+	WorkerReportMessages int64
+	WorkerReportBytes    int64
 }
 
 // CallSink receives one CallStat per Complete call. It must be
@@ -406,16 +413,20 @@ func Unwrap(p Provider) Provider {
 func (m *metered) Name() string { return m.inner.Name() }
 
 func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
+	workerMessages, workerBytes := workerNotificationContext(msgs)
 	stat := CallStat{
-		Purpose:       m.purpose,
-		Provider:      m.provider,
-		ProviderType:  m.providerType,
-		EndpointHost:  m.endpointHost,
-		ConnectionKey: m.connectionKey,
-		Model:         m.inner.Name(),
-		Background:    IsBackground(ctx),
-		Request:       EstimateRequestBreakdown(msgs, tools),
-		StartedAt:     time.Now().UTC(),
+		Context:              measuredContext(ctx, msgs, tools),
+		WorkerReportMessages: workerMessages,
+		WorkerReportBytes:    workerBytes,
+		Purpose:              m.purpose,
+		Provider:             m.provider,
+		ProviderType:         m.providerType,
+		EndpointHost:         m.endpointHost,
+		ConnectionKey:        m.connectionKey,
+		Model:                m.inner.Name(),
+		Background:           IsBackground(ctx),
+		Request:              EstimateRequestBreakdown(msgs, tools),
+		StartedAt:            time.Now().UTC(),
 	}
 	if p := PurposeFromContext(ctx); p != "" {
 		stat.Purpose = p
@@ -432,7 +443,9 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 	// The wrapper's own sink plus any per-request sinks attached via
 	// WithCallSink (e.g. the web GUI's per-session usage recorder).
 	ctxSinks := callSinksFromContext(ctx)
+	ctx, requestTrace := beginRequestTrace(ctx, m, stat.Purpose)
 	emit := func() {
+		stat.RequestTrace = requestTrace.snapshot()
 		input := stat.TokensIn
 		if input <= 0 {
 			input = stat.Request.System + stat.Request.User + stat.Request.Assistant + stat.Request.Tool + stat.Request.Other
@@ -491,6 +504,11 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 		// entering the backend while the user response is generating.
 		finishForeground = beginForeground()
 	}
+	// A shared provider's default purpose must reach transport cache routing,
+	// not only its accounting record. Explicit caller purposes still win.
+	if PurposeFromContext(ctx) == "" {
+		ctx = WithPurpose(ctx, stat.Purpose)
+	}
 	in, err := m.inner.Complete(ctx, msgs, tools)
 	if err != nil {
 		// Background cleanup cancels its derived context too. Preserve the
@@ -520,6 +538,7 @@ func (m *metered) Complete(ctx context.Context, msgs []Message, tools []ToolDef)
 				stat.TokensIn = d.Usage.Input
 				stat.TokensOut = d.Usage.Output
 				stat.TokensCached = d.Usage.CachedInput
+				stat.HasCachedInput = d.Usage.HasCachedInput || d.Usage.CachedInput > 0
 				stat.TokensReasoning = d.Usage.Reasoning
 			}
 			if d.Err != nil {

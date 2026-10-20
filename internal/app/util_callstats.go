@@ -14,7 +14,13 @@ func statsCallSink(rec stats.Recorder) llm.CallSink {
 		return nil
 	}
 	return func(s llm.CallStat) {
+		var workerContext *stats.WorkerContext
+		if s.WorkerReportMessages > 0 {
+			workerContext = &stats.WorkerContext{Requests: 1, MessageExposures: s.WorkerReportMessages, ContextBytes: s.WorkerReportBytes}
+		}
 		rec.RecordCall(stats.Call{
+			Context:                llm.CloneContextUsage(&s.Context),
+			WorkerContext:          workerContext,
 			Purpose:                s.Purpose,
 			Model:                  s.Model,
 			Provider:               s.Provider,

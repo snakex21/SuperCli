@@ -218,6 +218,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.URL.Query().Get("view") == "recent" {
+		s.handleRecentUsage(w, r)
+		return
+	}
 	out, err := s.eng.usage(r.Context(), r.URL.Query().Get("session"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

@@ -141,11 +141,11 @@ func TestWorkerOverviewKeepsIdentityAndBounds(t *testing.T) {
 		m.updateWorkerView(event)
 	}
 	view := strings.Join(m.workerPanelLines(), "\n")
-	if len(m.workerViews) != 2 || !strings.Contains(view, "Workerzy · pracuje: 2 / 2") ||
-		!strings.Contains(view, "Worker 1 · code · pracuje · read_lines") {
+	if len(m.workerViews) != 2 || !strings.Contains(view, "Agenci pomocniczy · pracuje: 2 / 2") ||
+		!strings.Contains(view, "Agent pomocniczy 1 · code · pracuje · read_lines") {
 		t.Fatalf("bad worker overview: %s", view)
 	}
-	if strings.Index(view, "Worker 1") > strings.Index(view, "Worker 2") {
+	if strings.Index(view, "Agent pomocniczy 1") > strings.Index(view, "Agent pomocniczy 2") {
 		t.Fatal("worker order changed with event arrival order")
 	}
 	for i := 3; i < 14; i++ {

@@ -64,7 +64,7 @@ func (l *Loop) navigatorMessages(prompt string) []llm.Message {
 		if m.Role != llm.RoleAssistant && !isConversationUserTurn(m) {
 			continue
 		}
-		if strings.Contains(m.Content, "<task-notification>") || len(m.ToolCalls) > 0 {
+		if len(m.ToolCalls) > 0 {
 			continue
 		}
 		text := navigatorHistoryText(m)

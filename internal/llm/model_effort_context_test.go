@@ -49,7 +49,7 @@ func TestRequestReasoningEffortProviderDialects(t *testing.T) {
 	if err := json.Unmarshal(body, &a); err != nil {
 		t.Fatal(err)
 	}
-	expected := anthropicThinkingForModel("claude-sonnet-4", 32000, worker)
+	expected, _ := anthropicThinkingForModel("claude-sonnet-4", 32000, worker)
 	if a.Thinking == nil || expected == nil || *a.Thinking != *expected {
 		t.Fatalf("anthropic worker thinking = %+v, want %+v", a.Thinking, expected)
 	}

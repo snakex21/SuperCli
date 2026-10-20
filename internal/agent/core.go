@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -187,11 +188,14 @@ func (ConsultEvent) event() {}
 // The same XML payload is also injected into the parent loop's message history
 // so the coordinator can see it on a later turn.
 type WorkerNotificationEvent struct {
-	TaskID  string
-	Agent   string
-	Status  string
-	Summary string
-	Text    string
+	// Display-only handoff, independent of the report delivered to the model.
+	WorkerActivity json.RawMessage `json:"-"`
+	Run            int             // 1-based invocation captured with the immutable handoff; zero is legacy.
+	TaskID         string
+	Agent          string
+	Status         string
+	Summary        string
+	Text           string
 }
 
 func (WorkerNotificationEvent) event() {}
@@ -211,6 +215,8 @@ func (steeringDeliveryEvent) event() {}
 // not private chain-of-thought. Output/arguments are capped at the producer so
 // a verbose child cannot flood the parent UI stream.
 type WorkerProgressEvent struct {
+	DetailHandle    string // UI-only reference to complete tool arguments/output.
+	Partial         bool
 	Model           string
 	ReasoningEffort string
 	TaskID          string

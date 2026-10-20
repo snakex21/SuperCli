@@ -5,8 +5,59 @@
 package stats
 
 import (
+	"supercli/internal/llm"
 	"time"
 )
+
+// WorkerContext counts host-tagged worker notifications, never their bodies.
+// AddedBytes is UTF-8 model text at insertion (possibly already compact).
+// ContextBytes is cumulative UTF-8 message text after provider projection, not
+// network JSON or measured tokens. Requests contain at least one notification;
+// MessageExposures includes retransmissions and retries across actual calls.
+type WorkerContext struct {
+	AddedMessages    int64 `json:"added_messages"`
+	AddedBytes       int64 `json:"added_bytes"`
+	Requests         int64 `json:"requests"`
+	MessageExposures int64 `json:"message_exposures"`
+	ContextBytes     int64 `json:"context_bytes"`
+}
+
+func (w WorkerContext) Empty() bool {
+	return w == (WorkerContext{})
+}
+
+// Add merges numeric counters; additions and provider exposures are recorded
+// separately so summing turns and calls does not count either twice.
+func (w *WorkerContext) Add(other WorkerContext) {
+	w.AddedMessages += other.AddedMessages
+	w.AddedBytes += other.AddedBytes
+	w.Requests += other.Requests
+	w.MessageExposures += other.MessageExposures
+	w.ContextBytes += other.ContextBytes
+}
+
+func SumWorkerContext(turns []Turn, calls []Call) WorkerContext {
+	var out WorkerContext
+	for _, turn := range turns {
+		if turn.WorkerContext != nil {
+			out.Add(*turn.WorkerContext)
+		}
+	}
+	for _, call := range calls {
+		if call.WorkerContext != nil {
+			out.Add(*call.WorkerContext)
+		}
+	}
+	return out
+}
+
+func cloneWorkerContext(w *WorkerContext) *WorkerContext {
+	if w == nil {
+		return nil
+	}
+	copy := *w
+	return &copy
+}
 
 // Turn is a single model call's worth of metrics. Step is
 // 1-based; TokensIn/Out come from the provider; Tools is the
@@ -39,6 +90,9 @@ import (
 // turn it delayed. Read them as an overlay on the phase line:
 // "how much of this turn was inference nobody asked for".
 type Turn struct {
+	Context       *llm.ContextUsage `json:"context_usage,omitempty"`
+	WorkerContext *WorkerContext    `json:"worker_context,omitempty"`
+
 	Step        int              `json:"step"`
 	TokensIn    int              `json:"tokens_in"`
 	TokensOut   int              `json:"tokens_out"`
@@ -101,6 +155,9 @@ var phaseOrder = []string{
 // progress when the call landed, 0 = outside any step (navigator
 // pre-step classification, background memory saves).
 type Call struct {
+	Context       *llm.ContextUsage `json:"context_usage,omitempty"`
+	WorkerContext *WorkerContext    `json:"worker_context,omitempty"`
+
 	Purpose                string    `json:"purpose"`
 	Model                  string    `json:"model,omitempty"`
 	Provider               string    `json:"provider,omitempty"`

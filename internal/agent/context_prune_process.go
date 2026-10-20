@@ -38,16 +38,16 @@ func processStatusForPrune(content, storedHandle string) string {
 		if pending {
 			summary += ", output_pending=true"
 		}
-		return summary
+		return summary + ", readiness_history=unknown"
 	}
 	var snap struct {
-		ID               string `json:"id"`
-		Status           string `json:"status"`
-		ExitCode         *int   `json:"exit_code"`
-		OutputIncomplete bool   `json:"output_incomplete"`
-		OutputPending    bool   `json:"output_pending"`
-		Ready            *bool  `json:"ready"`
-		ReadyAt          string `json:"ready_at"`
+		ID               string          `json:"id"`
+		Status           string          `json:"status"`
+		ExitCode         *int            `json:"exit_code"`
+		OutputIncomplete bool            `json:"output_incomplete"`
+		OutputPending    bool            `json:"output_pending"`
+		Ready            *bool           `json:"ready"`
+		ReadyAt          json.RawMessage `json:"ready_at"`
 	}
 	if json.Unmarshal([]byte(pruneStructuredBody(content, storedHandle)), &snap) != nil || !validPrunedSequenceID(snap.ID, "proc-") {
 		return ""
@@ -67,18 +67,35 @@ func processStatusForPrune(content, storedHandle string) string {
 	if snap.OutputPending {
 		status += ", output_pending=true"
 	}
-	if snap.Ready != nil {
-		verified, err := time.Parse(time.RFC3339Nano, snap.ReadyAt)
-		if *snap.Ready && snap.Status == "running" && err == nil && !verified.IsZero() {
-			status += ", ready_observed_at=" + verified.UTC().Format(time.RFC3339Nano)
-		} else {
-			status += ", ready=false"
-			if err == nil && !verified.IsZero() {
-				status += ", past_ready_observed_at=" + verified.UTC().Format(time.RFC3339Nano)
-			}
+	return status + processReadinessForPrune(snap.Ready, snap.ReadyAt, snap.Status)
+}
+
+// Keep an unrecorded check distinct from missing/invalid metadata. ready=false
+// alone does not tell a resumed model whether a process was verified earlier.
+// A timestamp is historical evidence even in older records without ready.
+func processReadinessForPrune(ready *bool, rawTime json.RawMessage, status string) string {
+	var timestamp string
+	validString := len(rawTime) > 0 && string(rawTime) != "null" && json.Unmarshal(rawTime, &timestamp) == nil
+	verified, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err == nil && !verified.IsZero() {
+		timestamp = verified.UTC().Format(time.RFC3339Nano)
+		if ready != nil && *ready && status == "running" {
+			return ", ready_observed_at=" + timestamp + ", readiness_history=observed"
 		}
+		prefix := ""
+		if ready != nil {
+			prefix = ", ready=false"
+		}
+		return prefix + ", past_ready_observed_at=" + timestamp + ", readiness_history=observed"
 	}
-	return status
+	prefix := ""
+	if ready != nil {
+		prefix = ", ready=false"
+	}
+	if ready != nil && !*ready && (len(rawTime) == 0 || validString && timestamp == "") {
+		return prefix + ", readiness_history=not_recorded"
+	}
+	return prefix + ", readiness_history=unknown"
 }
 
 func validPrunedSequenceID(id, prefix string) bool {

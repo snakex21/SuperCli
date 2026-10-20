@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"supercli/internal/agent/ultrawork"
@@ -41,13 +40,22 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 	stream, err := l.provider.Complete(ctx, msgs, toolRequest.defs)
 	l.recordWallPhase(stats.PhaseRequestEncode, time.Since(encStart))
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("agent: provider.Complete: %w", err)
+		return "", nil, nil, &providerCompleteError{cause: err, streamReturned: stream != nil}
 	}
 	// Provider accepted a request snapshot containing any active images. Mark
 	// the live-history refs dormant immediately so later steps/turns carry only
 	// MediaID handles unless the model explicitly reloads one.
 	l.deactivateActiveImages()
-	text, calls, usage, err := l.consume(ctx, stream, out)
+	hadProgress := false
+	text, calls, usage, err := l.consumeWithProgress(ctx, stream, out, &hadProgress)
+	if err != nil {
+		if _, truncated := err.(*truncatedToolResponseError); !truncated {
+			// Preserve the partial transcript/calls for the caller's interrupted
+			// reply retention, but never present an accepted stream as retryable
+			// startup failure. Native stream resume is not supported.
+			err = &acceptedStreamError{cause: err, hadProgress: hadProgress}
+		}
+	}
 	if err == nil {
 		// A hidden reasoning count without a reasoning-start signal has no
 		// output-only clock. A single batched output also has no measured
@@ -140,7 +148,7 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 			// entire leading system run and the frozen preamble into one stable
 			// message; the bytes remain append-only and cacheable, which is the
 			// purpose of the hoist in the first place.
-			leading := make([]string, 0, lead+1)
+			leadingBlocks := make([]llm.ContextBlock, 0, lead+1)
 			for _, msg := range visible[:lead] {
 				// Media markers must exist before merging leading text. Even an
 				// active image invalidates the canonical-history estimate.
@@ -152,14 +160,18 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 					tokens -= llm.EstimateMessageTokens(msg)
 				}
 				if text := messageDraftText(msg); text != "" {
-					leading = append(leading, text)
+					source := llm.ContextUnknown
+					if msg.Origin != nil && len(msg.Origin.Spans) == 0 {
+						source = msg.Origin.Source
+					}
+					leadingBlocks = append(leadingBlocks, llm.ContextBlock{Source: source, Text: text})
 				}
 			}
 			if l.hoistedPre != "" {
-				leading = append(leading, l.hoistedPre)
+				leadingBlocks = append(leadingBlocks, llm.ContextBlock{Source: llm.SourceInstructions, Text: l.hoistedPre})
 			}
-			if len(leading) > 0 {
-				out = append(out, llm.Message{Role: llm.RoleSystem, Content: strings.Join(leading, "\n\n")})
+			if len(leadingBlocks) > 0 {
+				out = append(out, llm.MessageWithContextBlocks(llm.RoleSystem, leadingBlocks))
 				if cachedHistory {
 					tokens += llm.EstimateMessageTokens(out[len(out)-1])
 				}
@@ -168,13 +180,13 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 		} else {
 			out = append(out, visible...)
 			if pre := l.thinToolsPreamble(); pre != "" {
-				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre})
+				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre, Origin: &llm.ContextOrigin{Source: llm.SourceInstructions}})
 				if cachedHistory {
 					tokens += llm.EstimateMessageTokens(out[len(out)-1])
 				}
 			}
 		}
-		out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
+		out = append(out, l.trailingContextMessage())
 		if cachedHistory {
 			tokens += llm.EstimateMessageTokens(out[len(out)-1])
 		}
@@ -197,10 +209,8 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 	// Memory briefing must survive the route switch: the chat-only
 	// prompt replaces the full system prompt, but durable user
 	// facts (name, language, preferences) still apply to smalltalk.
-	if l.briefing != "" {
-		system += "\n\n" + l.briefing
-	}
-	out := []llm.Message{{Role: llm.RoleSystem, Content: system}}
+	blocks := []llm.ContextBlock{{Source: llm.SourceInstructions, Text: system}, {Source: llm.SourceMemory, Text: l.briefing}, {Source: llm.SourceInstructions, Text: l.userInstructions}}
+	out := []llm.Message{llm.MessageWithContextBlocks(llm.RoleSystem, blocks)}
 
 	window, _, nextStart := chatHistoryProjectionWithMediaCost(visible, l.chatWindowStart, false, true)
 	l.chatWindowStart = nextStart
@@ -211,7 +221,7 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 	// and killing the provider-side KV cache. The provider demote pass
 	// renders this trailing system message in place as a
 	// <system-reminder> user turn.
-	out = append(out, llm.Message{Role: llm.RoleSystem, Content: l.trailingContext()})
+	out = append(out, l.trailingContextMessage())
 	projectOwnedMediaProviderMessages(out)
 	if estimate {
 		return out, llm.EstimateTokens(out)
@@ -240,27 +250,39 @@ func (l *Loop) trailingContext() string {
 // the existing trailing message so this adds no message or instruction wrapper.
 // The shared tail is also priced by the context-window estimator.
 func (l *Loop) contextTail() string {
-	s := l.stampSection()
-	if completed := l.completedOps.context(); completed != "" {
-		s += "\n\n" + completed
-	}
+	return llm.MessageWithContextBlocks(llm.RoleSystem, l.contextTailBlocks()).Content
+}
+
+func (l *Loop) contextTailBlocks() []llm.ContextBlock {
+	blocks := append([]llm.ContextBlock(nil), l.liveContextBlocks...)
 	if l.liveContext != "" {
-		s = l.liveContext + "\n\n" + s
+		blocks = append(blocks, llm.ContextBlock{Source: llm.ContextUnknown, Text: l.liveContext})
 	}
-	if l.downloadExportContext != "" {
-		s += "\n\n" + l.downloadExportContext
+	if archive := l.historyRecallContext(); archive != "" {
+		blocks = append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: archive})
 	}
+	blocks = append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: l.stampSection()})
+	blocks = append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: l.completedOps.context()})
+	blocks = append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: l.downloadExportContext})
 	if l.ultraworkMode {
-		s += ultrawork.SystemPromptSection()
-		if l.ultraworkReminder != "" {
-			s += "\n\n" + l.ultraworkReminder
+		// Preserve the pre-existing byte layout (this section supplies its own separator).
+		last := len(blocks) - 1
+		for last > 0 && blocks[last].Text == "" {
+			last--
 		}
+		blocks[last].Text += ultrawork.SystemPromptSection()
+		blocks = append(blocks, llm.ContextBlock{Source: llm.SourceRuntime, Text: l.ultraworkReminder})
 	}
-	if requested := l.requestedToolContext(); requested != "" {
-		s += "\n\n" + requested
+	blocks = append(blocks, llm.ContextBlock{Source: llm.SourceInstructions, Text: l.requestedToolContext()}, llm.ContextBlock{Source: llm.SourceInstructions, Text: l.implementationHintForRun})
+	return blocks
+}
+
+func (l *Loop) trailingContextMessage() llm.Message {
+	blocks := l.contextTailBlocks()
+	if l.finalReplyOnly {
+		blocks = append(blocks, llm.ContextBlock{Source: llm.SourceInstructions, Text: "[final reply only] The requested Word operation succeeded. Do not call or describe another tool. Briefly tell the user that the document is ready, include its path, and stop."})
+	} else if l.keepThinking && l.lastThinking != "" {
+		blocks = append(blocks, llm.ContextBlock{Source: llm.SourceModel, Text: "[Retained reasoning from your previous turn — treat it as your own chain of thought and continue from it; do not reveal it to the user:]\n" + l.lastThinking})
 	}
-	if l.implementationHintForRun != "" {
-		s += "\n\n" + l.implementationHintForRun
-	}
-	return s
+	return llm.MessageWithContextBlocks(llm.RoleSystem, blocks)
 }

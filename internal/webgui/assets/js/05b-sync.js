@@ -47,7 +47,7 @@ function syncRecoverSession() {
 }
 
 function syncFollowRun(run) {
-  if (!run || run.remote || run.following || run.stopRequested) return;
+  if (!run || run.remote || run.following || run.stopRequested || run.accepted === false) return;
   run.following = true;
   syncFollowingTurn = run.sessionID ? "" : run.turnID;
   if (run.disconnect) run.disconnect();
@@ -80,6 +80,7 @@ function syncReleaseView(run) {
   activeRun = null;
   streaming = false;
   runFinishing = false;
+  if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
   abortCtl = null;
   run.attached = false;
   run.detached = true;
@@ -216,7 +217,10 @@ function syncHandleFrame(frame) {
     if (run.attached && !run.detached && activeRun === run && id === activeSessionID) syncRender(run, frame.event);
     else if (run.userSeq && id === syncSession && !syncOpeningSession && !syncRefreshPending) syncRefreshView();
   } else if (frame.type === "run_finished") {
-    if (frame.queue_paused && id === activeSessionID && !pendingImmediate) pauseQueue = true;
+    if (frame.queue_paused && id === activeSessionID && !pendingImmediate) {
+      pauseQueue = true;
+      if (typeof queueAutoDrain !== "undefined") queueAutoDrain = null;
+    }
     delete syncRuns[id];
     syncRenderElsewhere();
     if (run && run.remote) {
@@ -229,10 +233,11 @@ function syncHandleFrame(frame) {
         pendingImmediate = null;
         if (frame.queue_paused && !immediate) pauseQueue = true;
         // Match the local HTTP-EOF handoff, including transport takeover.
+        var automatic = !immediate && typeof queueDrainScope === "function" ? queueDrainScope(run.turn_id || id) : null;
         Promise.all([sessionRuntimeReady, typeof promptQueueReady !== "undefined" ? promptQueueReady : null]).then(function () {
           var next = immediate && (isAfterRunPrompt(immediate) || !pauseQueue) ? immediate :
             (!pauseQueue && typeof promptQueue !== "undefined" ? promptQueue[0] : null);
-          if (next && !streaming) dispatchQueuedTask(next);
+          if (next && !streaming) dispatchQueuedTask(next, automatic);
         });
       }
     }
@@ -249,13 +254,19 @@ function syncDisconnect() {
 function syncConnect() {
   syncDisconnect();
   if (document.hidden) return;
+  if (typeof refreshHostPower === "function") refreshHostPower();
   var generation = syncGeneration;
   syncReady = new Promise(function (resolve) { syncResolveReady = resolve; });
   var query = "?session=" + encodeURIComponent(syncSession) + "&client=" + encodeURIComponent(syncClientID);
   function receive(data) {
     if (generation !== syncGeneration) return;
     var frame = superCliUI.decodeSSEFrame(data);
-    if (frame) syncHandleFrame(frame);
+    if (frame) {
+      // Existing push traffic discovers newly armed host state without idle
+      // polling; refresh is independent of sidebar/session loading.
+      if (typeof refreshHostPower === "function" && (frame.type === "snapshot" || frame.type === "run_started" || frame.type === "run_finished" || (frame.type === "run_event" && frame.event && /^(tool_result|ask_user|done|error)$/.test(frame.event.type)))) refreshHostPower();
+      syncHandleFrame(frame);
+    }
   }
   function retry() {
     if (generation !== syncGeneration) return;
@@ -278,11 +289,13 @@ function syncConnect() {
   }
 }
 function syncSelectSession(id) {
+  if (syncSession !== id && typeof queueAutoDrain !== "undefined") queueAutoDrain = null;
   syncFollowingTurn = "";
   syncOpeningSession = "";
   if (syncSession !== id || !syncConnection) { syncSession = id; syncConnect(); }
 }
 function syncWatchSession(id) {
+  if (syncSession !== id && typeof queueAutoDrain !== "undefined") queueAutoDrain = null;
   syncFollowingTurn = "";
   syncOpeningSession = id;
   if (syncSession !== id || !syncConnection) { syncSession = id; syncConnect(); }
@@ -291,6 +304,7 @@ function syncWatchSession(id) {
 function syncSuspend() {
   captureTranscriptScroll();
   syncDisconnect();
+  if (typeof pauseWorkerStatusSync === "function") pauseWorkerStatusSync();
 }
 document.addEventListener("visibilitychange", function () {
   if (document.hidden) syncSuspend();
@@ -301,7 +315,11 @@ function syncResume() {
   if (activeRun && !activeRun.remote) syncFollowRun(activeRun);
   Object.keys(detachedRuns).forEach(function (id) { if (!detachedRuns[id].remote) syncFollowRun(detachedRuns[id]); });
   syncSession = activeSessionID; syncConnect();
+  if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
 }
+window.addEventListener("focus", function () {
+  if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
+});
 window.addEventListener("pageshow", syncResume);
 window.addEventListener("online", syncResume);
 window.addEventListener("pagehide", syncSuspend);

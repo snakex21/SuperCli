@@ -213,7 +213,7 @@ func advisorSeed(msgs []llm.Message) []llm.Message {
 	}
 	out := make([]llm.Message, 0, advisorSeedMessages+1)
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == llm.RoleUser {
+		if isConversationUserTurn(msgs[i]) {
 			if i < start {
 				out = append(out, msgs[i])
 			}
@@ -272,8 +272,8 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		defer cancel()
 		defer borrow.Close()
 		ctx = borrow.Bind(ctx)
-		if invocation.checks != nil {
-			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{checks: invocation.checks})
+		if invocation.callID != "" || invocation.checks != nil {
+			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{callID: invocation.callID, checks: invocation.checks})
 		}
 		if mutationObserver != nil {
 			ctx = withWorkerMutationObserver(ctx, mutationObserver)
@@ -281,20 +281,19 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		if effectBarrier != nil {
 			ctx = withWorkerEffectBarrier(ctx, effectBarrier)
 		}
-		text, err := runWorkerLoop(ctx, w, prompt)
+		handoff, err := runWorkerInvocation(ctx, w, prompt, nil)
 		borrow.Close() // Fn/event drain ended; persistence is outside the turn.
-		if err != nil && text == "" {
-			text = err.Error()
+		if err != nil && handoff.report == "" {
+			handoff = handoff.withReport(err.Error())
 		}
 		if deliver != nil || a.ParentLoop != nil {
-			handoff := prepareWorkerHandoff(w, text)
 			if deliver != nil {
 				noticeCtx := context.Background()
 				if outputPersistence != nil {
 					noticeCtx = tools.WithOutputPersistence(noticeCtx, outputPersistence)
 				}
 				notification := outputSource.ModelResultContentContext(noticeCtx, "task", handoff.result(w, err))
-				deliver(noticeCtx, notification)
+				deliver(workerUIContext(noticeCtx, handoff.uiActivity), notification)
 			}
 			a.emitPreparedWorkerNotification(handoff)
 		}
@@ -314,11 +313,13 @@ func (a *AgentTool) emitPreparedWorkerNotification(h workerHandoff) {
 		return
 	}
 	a.ParentLoop.Emit(WorkerNotificationEvent{
-		TaskID:  h.snapshot.ID,
-		Agent:   h.snapshot.Agent,
-		Status:  h.snapshot.Status,
-		Summary: h.summary,
-		Text:    h.notification,
+		WorkerActivity: h.uiActivity,
+		Run:            h.snapshot.Runs,
+		TaskID:         h.snapshot.ID,
+		Agent:          h.snapshot.Agent,
+		Status:         h.snapshot.Status,
+		Summary:        h.summary,
+		Text:           h.notification,
 	})
 }
 

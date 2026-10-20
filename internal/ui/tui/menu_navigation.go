@@ -47,6 +47,8 @@ func (m *Model) returnToProvidersMenu() {
 
 func (m Model) menuLabel(kind menuKind) string {
 	switch kind {
+	case menuInstructions, menuInstructionEditor:
+		return m.tr("tui.instructions.title")
 	case menuPreview:
 		return m.tr("preview.title")
 	case menuPhone:

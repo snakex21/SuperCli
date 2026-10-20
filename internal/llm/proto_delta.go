@@ -96,6 +96,8 @@ type Usage struct {
 	// llama.cpp/LM Studio equivalents). Zero when the backend does not
 	// report it. Used to surface a cache-hit ratio in the status line.
 	CachedInput int
+	// HasCachedInput preserves a provider's explicit zero cache report.
+	HasCachedInput bool
 
 	// CacheWrite is the portion of Input the backend wrote INTO its
 	// prompt cache this turn (Anthropic cache_creation_input_tokens).

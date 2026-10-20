@@ -11,14 +11,15 @@ import (
 // message. It is lossless: every llm.Message field can be
 // reconstructed via ToMessage.
 type Encoded struct {
-	SessionID      string
-	Seq            int
-	Role           string
-	Content        string
-	PartsJSON      string // JSON []ContentPart, "" if no parts
-	ToolCallID     string
-	ToolCallsJSON  string // JSON []llm.ToolCall, "" if no tool calls
-	Name           string
+	SessionID     string
+	Seq           int
+	Role          string
+	Content       string
+	PartsJSON     string // JSON []ContentPart, "" if no parts
+	ToolCallID    string
+	ToolCallsJSON string // JSON []llm.ToolCall, "" if no tool calls
+	Name          string
+	OriginJSON    string // JSON *llm.ContextOrigin; empty for legacy rows
 }
 
 // ToMessage decodes the Encoded into an llm.Message.
@@ -28,6 +29,11 @@ func (e Encoded) ToMessage() (llm.Message, error) {
 		Content:    e.Content,
 		Name:       e.Name,
 		ToolCallID: e.ToolCallID,
+	}
+	if e.OriginJSON != "" {
+		if err := json.Unmarshal([]byte(e.OriginJSON), &m.Origin); err != nil {
+			return llm.Message{}, fmt.Errorf("session.Encoded.ToMessage: origin: %w", err)
+		}
 	}
 	if e.PartsJSON != "" {
 		if err := json.Unmarshal([]byte(e.PartsJSON), &m.Parts); err != nil {
@@ -59,6 +65,13 @@ func FromMessage(m llm.Message) (Encoded, error) {
 	}
 	if m.ToolCallID != "" {
 		out.ToolCallID = m.ToolCallID
+	}
+	if m.Origin != nil {
+		buf, err := json.Marshal(m.Origin)
+		if err != nil {
+			return Encoded{}, fmt.Errorf("session.FromMessage: origin: %w", err)
+		}
+		out.OriginJSON = string(buf)
 	}
 	if len(m.Parts) > 0 {
 		buf, err := json.Marshal(m.Parts)

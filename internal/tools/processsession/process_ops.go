@@ -94,10 +94,13 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 		procCtx, cancel = context.WithTimeout(context.Background(), lifetime)
 	}
 	commandKey := core.VerificationCommandKey(p.Command, workdir, env)
+	effectiveEnv := append(os.Environ(), env...)
 	item := &process{commandKey: &commandKey, id: id, command: append([]string(nil), p.Command...), workdir: workdir, stdout: newStreamBuffer(maxBufferBytes), stderr: newStreamBuffer(maxBufferBytes), done: make(chan struct{}), cancel: cancel, started: time.Now(), exitCode: -1, status: "running", pty: p.PTY}
+	item.environment = core.CommandKey(nil, workdir, effectiveEnv)
+	item.startOrder = core.NextExecutionSequence()
 	if p.PTY {
 		columns, rows := terminalSize(p.Columns, p.Rows)
-		terminal, startErr := startPTY(p.Command, workdir, append(os.Environ(), env...), columns, rows)
+		terminal, startErr := startPTY(p.Command, workdir, effectiveEnv, columns, rows)
 		if startErr != nil {
 			cancel()
 			m.mu.Unlock()
@@ -113,7 +116,7 @@ func (m *Manager) start(ctx context.Context, p params) (snapshot, error) {
 	} else {
 		cmd := exec.CommandContext(procCtx, p.Command[0], p.Command[1:]...)
 		cmd.Dir = workdir
-		cmd.Env = append(os.Environ(), env...)
+		cmd.Env = effectiveEnv
 		// Allocate caller-owned output pipes first. A StdinPipe child end is
 		// owned by Cmd and is cleaned up by Start; do not create it before
 		// fallible output allocations that could return without Start.
@@ -362,6 +365,21 @@ func (p *process) snapshot(maxBytes int) snapshot {
 	pattern, port, readyAt := p.readyPattern, p.readyPort, p.readyAt
 	readyValid := p.readyValid
 	exited := p.exited.Load()
+	if p.execution == nil && (status == "done" || status == "failed") && code >= 0 {
+		// Read the retained capture independently of polling cursors. Earlier
+		// polls must not hide SKIP/no-tests diagnostics from verification.
+		allOut, _, lostOut := p.stdout.readTextFrom(0, maxBufferBytes)
+		allErr, _, lostErr := p.stderr.readTextFrom(0, maxBufferBytes)
+		if p.pty {
+			allOut = stripTerminalControl(allOut)
+		}
+		p.execution = &core.ExecutionEvidence{Command: append([]string(nil), p.command...), Workdir: p.workdir,
+			Environment: p.environment, StartedAt: started, Completed: true, ExitCode: code,
+			StartedSequence: p.startOrder,
+			OutputComplete:  !incomplete && lostOut == 0 && lostErr == 0,
+			Stdout:          string(allOut), Stderr: string(allErr)}
+	}
+	execution := p.execution
 	p.mu.Unlock()
 	duration := time.Since(started)
 	if !ended.IsZero() {
@@ -371,6 +389,7 @@ func (p *process) snapshot(maxBytes int) snapshot {
 		out = stripTerminalControl(out)
 	}
 	s := snapshot{CommandKey: p.commandKey, ID: p.id, Status: status, Command: append([]string(nil), p.command...), Workdir: p.workdir, DurationMS: duration.Milliseconds(), Stdout: strings.ToValidUTF8(string(out), "?"), Stderr: strings.ToValidUTF8(string(errOut), "?"), OmittedOut: omittedOut, OmittedErr: omittedErr, Error: errText, PTY: p.pty}
+	s.Execution = execution
 	if incomplete {
 		s.OutputIncomplete = true
 		s.OutputWarning = processOutputWarning

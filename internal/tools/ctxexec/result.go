@@ -102,6 +102,8 @@ type Request struct {
 // even on errors, so the model can see *why* the
 // command failed (missing interpreter, timeout, etc.).
 type Result struct {
+	Execution *core.ExecutionEvidence `json:"-"`
+
 	Stdout          string `json:"stdout"`
 	Stderr          string `json:"stderr"`
 	ExitCode        int    `json:"exit_code"`

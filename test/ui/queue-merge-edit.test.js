@@ -18,7 +18,8 @@ function node(tag, cls, text) {
 }
 function harness() {
  const host=node('div'); const requests=[], sent=[], errors=[];
- const w={console, Promise, setTimeout, promptQueue:[], projectEpoch:0, promptQueueLoadSeq:0, streaming:false, pauseQueue:true,
+ const w={console, Promise, window: new EventTarget(), setTimeout, promptQueue:[], projectEpoch:0, promptQueueLoadSeq:0, runStopRevision:0, streaming:false, pauseQueue:true,
+  activeSessionID:'s1',activeWorkspacePath:'fixture',composerDraftStore:{scope:()=> 'session:s1'},
   queueDispatching:false, queueDispatchItem:null, pendingImmediate:null,
   document:{createElement:node,body:node('body'),addEventListener(){},removeEventListener(){}}, activeAppDialog:null, promptEl:node('textarea'), FormData:class { constructor(){this.files=[];} append(key,file,name){this.files.push({key,file,name});} },
   fetch:async(url,options)=>{w.uploads.push(options.body.files);return {ok:true,json:async()=>({paths:options.body.files.map(f=>f.name)})};}, uploads:[], pendingAttachments:[],
@@ -28,7 +29,7 @@ function harness() {
   removeQueuedTask(){}, toast:e=>errors.push(e), runQueuedTask:q=>sent.push(q),
   j:async (url,options)=>{requests.push({url,body:JSON.parse(options.body)});},
   jpost:async(url,body)=>{requests.push({url,body}); return w.batches;},
-  loadPromptQueue:async()=>{},
+  loadPromptQueue:()=>w.promptQueueReady=Promise.resolve(true),
  };
  createSandbox(w);
  runScript(chat.slice(chat.indexOf('function attachmentName'),chat.indexOf('function attachmentTranscriptText')),w);
@@ -122,7 +123,12 @@ test('queue editor picker, clipboard and drop share upload validation and the ei
  const h=harness();const q={id:'q',text:'message',attachments:Array.from({length:7},(_,i)=>i+'.png')};h.w.promptQueue=[q];h.w.editQueuedTask(q);
  let prevented=0,stopped=0;let editor=currentEditor(h);
  editor.events.drop({dataTransfer:{files:[{name:'eighth.png'},{name:'ninth.png'}]},preventDefault(){prevented++;},stopPropagation(){stopped++;}});await tick();
- assert.equal(prevented,1);assert.equal(stopped,1);assert.equal(h.w.uploads[0].length,1);assert.equal(h.w.queueEdit.attachments.length,8);
+ assert.equal(prevented,1);assert.equal(stopped,1);assert.equal(h.w.uploads.length,0);assert.equal(h.w.queueEdit.attachments.length,7);
+ assert.ok(h.errors.some(e=>e.includes('Too many attachments')),'reject the whole selection instead of silently dropping the ninth file');
+ assert.deepEqual(q.attachments,Array.from({length:7},(_,i)=>i+'.png'));assert.equal(h.w.queueEdit.uploading,false);assert.equal(h.w.attachmentUpload,null);
+ editor=currentEditor(h);assert.equal(editorButton(editor,'composer.attach').disabled,false);
+ editor.events.drop({dataTransfer:{files:[{name:'eighth.png'}]},preventDefault(){prevented++;},stopPropagation(){stopped++;}});await tick();
+ assert.equal(prevented,2);assert.equal(stopped,2);assert.equal(h.w.uploads.length,1);assert.equal(h.w.uploads[0].length,1);assert.equal(h.w.uploads[0][0].name,'eighth.png');assert.equal(h.w.queueEdit.attachments.length,8);
  editor=currentEditor(h);assert.equal(editorButton(editor,'composer.attach').disabled,true);
  editor.events.paste({clipboardData:{files:[{name:'extra.png'}],getData:()=>''},preventDefault(){},stopPropagation(){}});await tick();
  assert.equal(h.w.uploads.length,1);assert.equal(h.w.pendingAttachments.length,0);
@@ -131,10 +137,11 @@ test('queue editor picker, clipboard and drop share upload validation and the ei
  editor.events.paste({clipboardData:{items:[{kind:'file',getAsFile:()=>({name:'bad.bin'})}],getData:()=>''},preventDefault(){},stopPropagation(){}});await tick();
  assert.equal(h.w.queueEdit.attachments.length,7);assert.ok(h.errors.some(e=>e.includes('invalid type or size')));
 });
-test('claimed or removed queued items close the editor; upload and save never revive them or cross projects',async()=>{
+test('claimed or removed queued items retain the draft as a conflict; project changes still close it',async()=>{
  const h=harness();const q={id:'q',text:'old',attachments:['a.png']};h.w.promptQueue=[q];h.w.editQueuedTask(q);
  h.w.j=async()=>{throw Error('task is being dispatched');};h.w.loadPromptQueue=async()=>{h.w.promptQueue=[];h.w.renderPromptQueue();};
- await h.w.saveQueuedTaskEdit();assert.equal(h.w.queueEdit,null);assert.ok(h.errors.includes('task is being dispatched'));
+ await h.w.saveQueuedTaskEdit();assert.equal(h.w.queueEdit.text,'old');assert.equal(h.w.queueEdit.conflict,true);assert.ok(h.errors.includes('task is being dispatched'));
+ h.w.closeQueueEditor(h.w.queueEdit);
  h.w.promptQueue=[q];h.w.editQueuedTask(q);let finish;h.w.j=async()=>new Promise(r=>finish=r);
  const saving=h.w.saveQueuedTaskEdit();h.w.projectEpoch++;h.w.renderPromptQueue();finish({});await saving;assert.equal(h.w.queueEdit,null);
 });
@@ -149,7 +156,7 @@ test('worker and advisor tooltip/label show model plus actual effort, including 
   w.applyWorkerModelInfo(row,{model:'gpt-5',reasoning_effort:'low'});assert.equal(row._tname.children.length,1);
   assert.equal(row._modelLabel.textContent,'gpt-5 · thinking: low');
  }
- const note=w.parseTaskNotification('<task-notification><task-id>w</task-id><worker-model>gpt-5-mini</worker-model><reasoning-effort>medium</reasoning-effort></task-notification>');
+ const note=w.parseTaskNotification('<task-notification><task-id>worker-1</task-id><agent>code</agent><worker-model>gpt-5-mini</worker-model><reasoning-effort>medium</reasoning-effort><status>done</status></task-notification>');
  assert.equal(note.model,'gpt-5-mini');assert.equal(note.reasoning_effort,'medium');
 });
 test('automatic merge dispatches safe batches sequentially via the normal queue path', async()=>{

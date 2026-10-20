@@ -52,6 +52,9 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.Registry == nil {
 		return nil, fmt.Errorf("agent.NewLoop: registry is nil")
 	}
+	if cfg.UserInstructionsForRun != nil && strings.TrimSpace(cfg.System) == "" {
+		return nil, fmt.Errorf("agent.NewLoop: UserInstructionsForRun requires a non-empty System")
+	}
 	cfg.Registry.EnsureReadOutput()
 	toolOutputsFollowWriter := cfg.ToolOutputs == nil
 	if toolOutputsFollowWriter {
@@ -60,19 +63,25 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	if cfg.MaxSteps == 0 {
 		cfg.MaxSteps = DefaultMaxSteps
 	}
+	system := systemWithUserInstructions(cfg.System, cfg.UserInstructions)
 	msgs := make([]llm.Message, 0, len(cfg.InitialMessages)+4)
-	if cfg.System != "" {
-		msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: cfg.System})
+	if system != "" {
+		msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: system, Origin: &llm.ContextOrigin{Source: llm.SourceInstructions}})
 	}
 
 	loop := &Loop{
 		provider:                 cfg.Provider,
 		registry:                 cfg.Registry,
 		caps:                     cfg.Caps,
-		system:                   cfg.System,
+		system:                   system,
+		baseSystem:               cfg.System,
+		projectInstructions:      cfg.ProjectInstructions,
+		userInstructions:         strings.TrimSpace(cfg.UserInstructions),
+		userInstructionsForRun:   cfg.UserInstructionsForRun,
 		briefing:                 cfg.Briefing,
 		liveContext:              strings.TrimSpace(cfg.LiveContext),
 		liveContextForRun:        cfg.LiveContextForRun,
+		liveContextBlocksForRun:  cfg.LiveContextBlocks,
 		refreshContextWindow:     cfg.RefreshContextWindow,
 		userDownloadsDir:         cfg.UserDownloadsDir,
 		maxSteps:                 cfg.MaxSteps,
@@ -157,7 +166,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 	// synchronously so the very first provider call sees
 	// the patterns. A build error is logged but not fatal.
 	if cfg.PatternInjector != nil {
-		injection, err := cfg.PatternInjector.Build(context.Background(), cfg.System)
+		injection, err := cfg.PatternInjector.Build(context.Background(), system)
 		if err == nil && injection != "" {
 			patMsg := llm.Message{Role: llm.RoleSystem, Content: injection}
 			loop.Messages = append(loop.Messages, patMsg)

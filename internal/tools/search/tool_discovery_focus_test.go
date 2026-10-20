@@ -49,7 +49,7 @@ func TestDefaultDiscoveryKeepsDistinctIntentAndExplicitBreadth(t *testing.T) {
 			{"patch file calendar", 0, []string{"patch_source", "second_patch", "calendar_events"}},
 			{"patch file", 0, []string{"patch_source", "second_patch"}},
 			{"file", 0, nil},
-			{"patch file editing", 8, []string{"context_lines", "patch_source", "second_patch", "word_document"}},
+			{"patch file editing", 8, []string{"context_lines", "patch_source", "second_patch"}},
 			{"word_document", 0, []string{"word_document"}},
 		} {
 			raw, _ := json.Marshal(map[string]any{"query": tc.query, "limit": tc.limit})

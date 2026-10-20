@@ -85,27 +85,15 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// (minus the system prompt). Never resurrect cleared/compacted archive rows.
 	seed := []llm.Message(nil)
 	if ar.ShareContext && a.ParentLoop != nil {
-		for _, m := range a.ParentLoop.VisibleMessages() {
-			if m.Role == llm.RoleSystem {
-				continue
-			}
-			seed = append(seed, m)
-		}
-		if ar.Advise {
-			seed = advisorSeed(seed)
-		}
+		seed = sharedWorkerSeed(a.ParentLoop.VisibleMessages(), ar.Advise)
 	}
 	if !ar.ShareContext && !isSelfContainedWebRequest(sourceTask) {
 		workerPrompt += a.workerSourceContext(ctx, sourceTask, spec)
 	}
 
-	// Compose the system prompt: parent system + spec
-	// override. Spec wins when set, allowing the sub-agent
-	// to "narrow" the parent's voice.
-	system := spec.System
-	if system == "" && a.ParentLoop != nil {
-		system = a.ParentLoop.system
-	}
+	// A role narrows the worker's voice, while selected user instructions
+	// remain binding. Pin them now, including for detached background runs.
+	system, instructions, instructionsForRun := a.workerInstructions(ctx, spec.System)
 
 	// Step budget: custom specs may set their own ceiling. Built-in workers
 	// leave it unset so an explicit task_max_steps applies uniformly; with no
@@ -200,6 +188,8 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		Registry:               childReg,
 		ToolOutputs:            toolOutputs,
 		System:                 system,
+		UserInstructions:       instructions,
+		UserInstructionsForRun: instructionsForRun,
 		SkipImplementationHint: spec.SkipImplementationHint,
 		MaxSteps:               maxSteps,
 		InitialMessages:        seed,
@@ -270,9 +260,8 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 </task-notification>`, w.ID, w.Agent, w.Agent)}, nil
 	}
 
-	text, err := runWorkerLoop(childCtx, w, workerPrompt)
+	handoff, err := runWorkerInvocation(childCtx, w, workerPrompt, nil)
 	if err != nil {
-		handoff := prepareWorkerHandoff(w, text)
 		a.emitPreparedWorkerNotification(handoff)
 		return handoff.result(w, err), nil
 	}
@@ -283,9 +272,8 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// A read-only advisor call (Task B) never enters the ladder: it makes no
 	// changes to sieve or diff, so there is nothing to verify.
 	if a.draftVerifyEnabled() && !ar.Advise {
-		text = a.runDraftVerify(childCtx, w, ar, workerPrompt, text, maxSteps)
+		handoff = a.runDraftVerify(childCtx, w, ar, workerPrompt, handoff, maxSteps)
 	}
-	handoff := prepareWorkerHandoff(w, text)
 	a.emitPreparedWorkerNotification(handoff)
 	return handoff.result(w, nil), nil
 }
@@ -301,7 +289,7 @@ func (a *AgentTool) draftVerifyEnabled() bool {
 // the coordinator should relay: the accepted draft, an annotated draft, or a
 // TAKEOVER hand-back with the diff + evidence so the coordinator can redo it
 // itself. It NEVER errors — a broken verdict falls back safely to TAKEOVER.
-func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs, workerPrompt, draft string, maxSteps int) string {
+func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs, workerPrompt string, draft workerHandoff, maxSteps int) workerHandoff {
 	cfg := a.DraftVerify
 	dir := a.sandboxRoot()
 	maxRounds := cfg.MaxRounds
@@ -311,7 +299,7 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 
 	tel := draftVerifyTelemetry{Outcome: "ACCEPT"}
 	// Snapshot the draft's cost (the first worker run already happened).
-	snap := w.Snapshot()
+	snap := draft.snapshot
 	tel.DraftSteps = snap.Steps
 	tel.DraftTokIn = snap.TokensIn
 	tel.DraftTokOut = snap.TokensOut
@@ -336,14 +324,18 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 			return best
 		case ok && v.Kind == verdictRevise && round < maxRounds:
 			instr := reviseInstruction(v.Instruction, sieve)
-			revised, err := runWorkerLoop(ctx, w, instr)
+			revised, err := runWorkerInvocation(ctx, w, instr, nil)
 			// Refresh the draft cost snapshot to include the revision run.
-			snap = w.Snapshot()
+			snap = revised.snapshot
 			tel.DraftSteps = snap.Steps
 			tel.DraftTokIn = snap.TokensIn
 			tel.DraftTokOut = snap.TokensOut
-			if err == nil && strings.TrimSpace(revised) != "" {
+			if err == nil && strings.TrimSpace(revised.report) != "" {
 				best = revised
+			} else {
+				// Retain the last report, but do not hide the attempted revision's
+				// failure state or evidence behind an older successful snapshot.
+				best = revised.withReport(best.report)
 			}
 			continue
 		default:
@@ -358,7 +350,7 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 			}
 			tel.Outcome = outcome
 			a.emitDraftVerify(tel)
-			return draftVerifyHandback(best, diff, sieve, outcome)
+			return best.withReport(draftVerifyHandback(best.report, diff, sieve, outcome))
 		}
 	}
 }

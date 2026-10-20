@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,16 @@ import (
 
 	"supercli/internal/tools/core"
 )
+
+// WorkerActivity is the last observed tool activity, not an exclusive current tool.
+// It deliberately contains no tool output, error body, or model reasoning.
+type WorkerActivity struct {
+	Kind   string `json:"kind"`
+	Tool   string `json:"tool"`
+	Args   string `json:"args"`
+	CallID string `json:"call_id"`
+	At     int64  `json:"at"`
+}
 
 // Worker is a persistent child loop created by the task tool. It keeps its
 // own message history so the coordinator can continue it with send_message
@@ -38,7 +49,9 @@ type Worker struct {
 	Steps        int // model turns consumed across all runs
 	ToolNames    []string
 	Runs         int
-	lastEvidence string // bounded latest-run observations; guarded by stateMu
+	activity     WorkerActivity  // last observed tool event; guarded by stateMu
+	lastEvidence string          // bounded latest-run observations; guarded by stateMu
+	uiActivity   json.RawMessage // immutable latest-run UI trail; guarded by stateMu
 	// reasoningEffort follows this worker across background runs and continuations.
 	// It is applied only inside the worker loop, never to coordinator verdicts.
 	reasoningEffort   string
@@ -113,6 +126,7 @@ type Snapshot struct {
 	Steps           int
 	ToolNames       []string
 	Runs            int
+	Activity        WorkerActivity
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -137,6 +151,7 @@ func (w *Worker) Snapshot() Snapshot {
 		Steps:           w.Steps,
 		ToolNames:       append([]string(nil), w.ToolNames...),
 		Runs:            w.Runs,
+		Activity:        w.activity,
 	}
 }
 

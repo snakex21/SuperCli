@@ -11,11 +11,12 @@ import (
 // memoryBundle is the dual-store memory stack opened at startup.
 // Callers must defer Close on Global and Project when non-nil.
 type memoryBundle struct {
-	Global    *memory.Store
-	Project   *memory.Store
-	AutoSaver *memory.AutoSaver
-	Progress  *memProgress
-	Briefing  string
+	Global         *memory.Store
+	Project        *memory.Store
+	AutoSaver      *memory.AutoSaver
+	Progress       *memProgress
+	Briefing       string
+	BriefingForRun func() string
 }
 
 // openMemoryStack opens global + project SQLite stores, starts
@@ -64,6 +65,9 @@ func openMemoryStack(dataDir, home, apiKey string, smallTier bool, tomlCfg confi
 		briefCap = tomlCfg.MemoryBriefingTokens
 	}
 	b.Briefing = memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
+	b.BriefingForRun = func() string {
+		return memory.BuildBriefing(globalMemStore, memStore, home, briefCap)
+	}
 	b.AutoSaver = &memory.AutoSaver{Project: memStore, Global: globalMemStore, ProjectPath: home}
 	b.Progress = &memProgress{}
 	return b

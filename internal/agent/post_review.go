@@ -94,6 +94,7 @@ func (l *Loop) runPostReview(ctx context.Context, out chan<- Event, totalUsage *
 	changes := RenderTreeChanges(root, before)
 	reviewCtx := llm.WithIndependentReasoningEffort(ctx, cfg.ReasoningEffort)
 	res := ReviewChange(reviewCtx, cfg.Provider, task, changes, cfg.VerifyCommands, root)
+	l.noteHostPowerReview(ctx, res)
 	totalUsage.Input += res.Usage.Input
 	totalUsage.Output += res.Usage.Output
 	totalUsage.Total += res.Usage.Input + res.Usage.Output

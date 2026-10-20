@@ -15,12 +15,62 @@ var smartScrollFrame = null;
 var smartScrollForced = false;
 var smartScrollPending = false;
 var transcriptResumeScroll = null, transcriptResumeScrollVersion = 0;
+var initialTranscriptTail = null, initialTranscriptTailVersion = 0;
+
+function cancelInitialTranscriptTail() {
+  ++initialTranscriptTailVersion;
+  if (initialTranscriptTail && initialTranscriptTail.frame !== null) cancelAnimationFrame(initialTranscriptTail.frame);
+  initialTranscriptTail = null;
+}
+
+// Only a newly opened latest page needs this short reveal/layout handshake.
+// Reading the scroller's geometry keeps off-screen blocks virtualized; never
+// measure every row or keep following after the initial geometry has settled.
+function settleInitialTranscriptTail() {
+  cancelInitialTranscriptTail();
+  if (savedTranscriptScroll()) { smartScroll(true); return; }
+  if (document.hidden || !stream.lastElementChild) return;
+  var state = initialTranscriptTail = {
+    version: initialTranscriptTailVersion, sessionID: activeSessionID,
+    epoch: typeof projectEpoch === "number" ? projectEpoch : 0,
+    resumeSeq: typeof sessionResumeSeq === "number" ? sessionResumeSeq : 0,
+    tail: stream.lastElementChild, frame: null, frames: 0, height: -1, stable: 0
+  };
+  transcriptFollowTail = true;
+  function reveal() {
+    if (initialTranscriptTail !== state || state.version !== initialTranscriptTailVersion) return;
+    state.frame = null;
+    if (state.sessionID !== activeSessionID ||
+        state.epoch !== (typeof projectEpoch === "number" ? projectEpoch : 0) ||
+        state.resumeSeq !== (typeof sessionResumeSeq === "number" ? sessionResumeSeq : 0) ||
+        state.tail !== stream.lastElementChild || !state.tail.isConnected ||
+        document.hidden || savedTranscriptScroll() || streamAppendTarget) {
+      cancelInitialTranscriptTail();
+      return;
+    }
+    var height = stage.scrollHeight;
+    var gap = height - stage.clientHeight - stage.scrollTop;
+    state.stable = height === state.height && Math.abs(gap) <= 1 ? state.stable + 1 : 0;
+    state.height = height;
+    stage.scrollTop = height;
+    // Three stable frames allow content-visibility to replace its estimates.
+    // The hard cap bounds even unusual asynchronous layout; no token observer.
+    if (++state.frames >= 16 || state.stable >= 3) {
+      cancelInitialTranscriptTail();
+      transcriptFollowTail = nearBottom();
+      return;
+    }
+    state.frame = requestAnimationFrame(reveal);
+  }
+  state.frame = requestAnimationFrame(reveal);
+}
 
 function savedTranscriptScroll() {
   if (transcriptResumeScroll && transcriptResumeScroll.sessionID !== activeSessionID) transcriptResumeScroll = null;
   return transcriptResumeScroll;
 }
 function captureTranscriptScroll() {
+  cancelInitialTranscriptTail();
   // visibilitychange and pagehide can both fire; never replace the original intent
   // with geometry from a hidden viewport or a partially rebuilt transcript.
   if (!savedTranscriptScroll()) transcriptResumeScroll = {
@@ -30,6 +80,7 @@ function captureTranscriptScroll() {
   ++transcriptResumeScrollVersion;
 }
 function resumeTranscriptScroll() {
+  cancelInitialTranscriptTail();
   var saved = savedTranscriptScroll();
   if (!saved || document.hidden) return;
   saved.resuming = true;
@@ -39,6 +90,7 @@ function resumeTranscriptScroll() {
 function settleTranscriptScroll(ready) {
   var saved = savedTranscriptScroll();
   if (!saved || !saved.resuming || document.hidden) return;
+  cancelInitialTranscriptTail();
   var version = ++transcriptResumeScrollVersion;
   function restore(final) {
     if (version !== transcriptResumeScrollVersion || savedTranscriptScroll() !== saved || document.hidden || !ready() || streamAppendTarget) return;
@@ -52,6 +104,7 @@ function settleTranscriptScroll(ready) {
   requestAnimationFrame(function () { restore(false); });
 }
 function cancelTranscriptResumeScroll() {
+  cancelInitialTranscriptTail();
   if (!document.hidden && savedTranscriptScroll()) {
     transcriptResumeScroll = null;
     ++transcriptResumeScrollVersion;
@@ -100,11 +153,19 @@ function releaseLiveTranscriptBlocks() {
 
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
 stage.addEventListener("scroll", function () {
-  if (!savedTranscriptScroll()) transcriptFollowTail = nearBottom();
+  if (!initialTranscriptTail && !savedTranscriptScroll()) transcriptFollowTail = nearBottom();
 }, { passive: true });
 ["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (name) {
   stage.addEventListener(name, cancelTranscriptResumeScroll, { passive: true });
 });
+// Keyboard scrolling may target the document rather than the scroller. Typing
+// in the composer is not scroll intent. Pointerdown above also covers dragging
+// the stage's native scrollbar, before its first scroll event.
+document.addEventListener("keydown", function (event) {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].indexOf(event.key) < 0) return;
+  if (event.target && event.target.closest && event.target.closest("input,textarea,select,[contenteditable]")) return;
+  cancelInitialTranscriptTail();
+}, { passive: true });
 function flushSmartScroll() {
   if (smartScrollFrame !== null) {
     cancelAnimationFrame(smartScrollFrame);
@@ -838,11 +899,14 @@ var workerRows = {}; // worker task id -> latest delegated-task row
 
 // This overview is fed by the existing event stream; it never polls the backend.
 var workerOverview = {};
-var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = false;
-var workerOverviewRank = { running: 0, failed: 1, stopped: 1, done: 2 };
+var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = null;
+var workerOverviewView = null;
+var workerOverviewRank = { running: 0, unknown: 1, failed: 1, stopped: 1, done: 2 };
 function workerLabel(id) { return String(id || "Worker").replace(/^worker-(\d+)$/, "Worker $1"); }
 function resetWorkerOverview() {
+  pauseWorkerStatusSync();
   workerOverview = {};
+  workerOverviewView = null;
   workerOverviewUserToggled = false;
   var panel = $("#worker-overview");
   if (panel) panel.hidden = true;
@@ -858,9 +922,35 @@ function pruneWorkerOverview() {
   });
   renderWorkerOverview();
 }
+function workerStatusTerminal(status) { return status === "done" || status === "failed" || status === "stopped"; }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
   var item = workerOverview[id];
+  // Only the bound latest invocation owns the live overview. Old rows remain
+  // renderable in the transcript, including their complete reports.
+  if (row && workerRows[id] && workerRows[id] !== row) return;
+  if (item && item.run && (!row || !row._taskRun)) return;
+  var nextRow = row || item && item.row;
+  var nextRun = row && row._taskRun || item && item.run || 0;
+  var nextAgent = agentName || item && item.agent || "";
+  var nextStatus = status || item && item.status || "running";
+  var nextActivity = activity != null ? activity : item && item.activity;
+  // A delayed start/tool callback cannot resurrect the same finished invocation.
+  if (item && item.row === nextRow && item.run === nextRun && workerStatusTerminal(item.status) && nextStatus === "running") return;
+  var label = workerLabel(id) + (nextAgent ? " · " + nextAgent : "");
+  var detail = clip(String(nextActivity || "").split("\n")[0], 140);
+  var state = taskStatusLabel(nextStatus);
+  var title = clip([id, nextRow && nextRow._workerModelInfo, nextActivity].filter(Boolean).join(" · "), 400);
+  // Keep raw activity/row ownership exact, even when clipped text looks equal.
+  // Check the live DOM too: language changes, replaced roots and altered views
+  // must still repair synchronously, without replacing a focused worker button.
+  if (item && item.row === nextRow && item.run === nextRun && item.agent === nextAgent &&
+      item.status === nextStatus && item.activity === nextActivity &&
+      (!nextRow || nextRow.isConnected) && item.button.dataset.state === nextStatus &&
+      item.button.children.length === 4 && item.button.children[1] === item.label &&
+      item.button.children[2] === item.detail && item.button.children[3] === item.state &&
+      item.label.textContent === label && item.detail.textContent === detail &&
+      item.state.textContent === state && item.button.title === title && workerOverviewViewMatches()) return;
   if (!item) {
     item = workerOverview[id] = { id: id };
     item.button = el("button", "worker-overview-item");
@@ -878,23 +968,160 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
     item.button.append(item.label, item.detail, item.state);
     $("#worker-overview-list").appendChild(item.button);
   }
-  item.agent = agentName || item.agent || "";
-  item.status = status || item.status || "running";
-  if (activity != null) item.activity = activity;
-  if (row) item.row = row;
-  item.button.dataset.state = item.status;
-  item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
-  item.detail.textContent = clip(String(item.activity || "").split("\n")[0], 140);
-  item.state.textContent = taskStatusLabel(item.status);
-  item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
+  if (item.button.children.length !== 4 || item.button.children[1] !== item.label ||
+      item.button.children[2] !== item.detail || item.button.children[3] !== item.state) {
+    item.button.replaceChildren(item.button.querySelector(".worker-overview-dot") || el("span", "worker-overview-dot"), item.label, item.detail, item.state);
+  }
+  item.run = nextRun;
+  item.agent = nextAgent;
+  item.status = nextStatus;
+  item.activity = nextActivity;
+  item.row = nextRow;
+  item.button.dataset.state = nextStatus;
+  item.label.textContent = label;
+  item.detail.textContent = detail;
+  item.state.textContent = state;
+  item.button.title = title;
   renderWorkerOverview();
 }
+// After stream/history boundaries, reconcile only displayed worker IDs.
+// Healthy progress stays event-driven; no model calls or global-worker imports.
+var workerStatusEpoch = 0, workerStatusTimer = null, workerStatusRequest = null;
+var workerStatusArmed = false, workerStatusFailures = 0;
+function workerStatusScope() {
+  return (typeof activeSessionID === "string" ? activeSessionID : "") + "/" + (typeof projectEpoch === "number" ? projectEpoch : 0);
+}
+function pauseWorkerStatusSync() {
+  workerStatusEpoch++;
+  workerStatusArmed = false;
+  workerStatusRequest = null;
+  clearTimeout(workerStatusTimer);
+  workerStatusTimer = null;
+}
+function workerStatusBindings() {
+  return Object.keys(workerRows).map(function (id) {
+    var row = workerRows[id], item = workerOverview[id];
+    if (!row || !row.isConnected || row._workerSnapshotMismatch || workerStatusTerminal(row._taskStatus)) return null;
+    if (row._taskStatus !== "running" && (!item || (item.status !== "running" && item.status !== "unknown"))) return null;
+    return {id: id, row: row, run: row._taskRun || 0, activity: row._taskActivitySerial || 0};
+  }).filter(Boolean);
+}
+function workerActivityText(activity) {
+  if (!activity || !activity.tool) return "";
+  var info = toolHint(activity.tool, activity.args || "{}");
+  return (info.name || activity.tool) + (info.hint ? " · " + info.hint : "");
+}
+function markWorkerStatusUnconfirmed(binding, mismatch) {
+  var row = binding.row;
+  if (workerRows[binding.id] !== row || (row._taskRun || 0) !== binding.run || workerStatusTerminal(row._taskStatus)) return;
+  if (mismatch) row._workerSnapshotMismatch = true;
+  row._workerStatusUnconfirmed = true;
+  clearInterval(row._clock);
+  row._clock = null;
+  row.classList.remove("running");
+  row._stat.textContent = t("task.statusUnconfirmed");
+  updateWorkerOverview(binding.id, row._taskAgent, "unknown", row._taskActivity || row._taskPrompt, row);
+}
+function applyWorkerStatusSnapshot(workers, bindings) {
+  var snapshots = Object.create(null);
+  (workers || []).forEach(function (worker) { if (worker && worker.id) snapshots[worker.id] = worker; });
+  bindings.forEach(function (binding) {
+    var row = binding.row, worker = snapshots[binding.id];
+    if (workerRows[binding.id] !== row || !row.isConnected || (row._taskRun || 0) !== binding.run) return;
+    if (!worker) { markWorkerStatusUnconfirmed(binding, true); return; }
+    var run = Number(worker.run) || 0;
+    if (!binding.run || run !== binding.run) {
+      // A retained global ID alone cannot establish an unversioned history run.
+      markWorkerStatusUnconfirmed(binding, true);
+      return;
+    }
+    var status = worker.status === "created" ? "running" : worker.status;
+    if (status !== "running" && !workerStatusTerminal(status)) { markWorkerStatusUnconfirmed(binding, false); return; }
+    if (workerStatusTerminal(row._taskStatus)) return;
+    row._workerSnapshotMismatch = false;
+    row._workerStatusUnconfirmed = false;
+    row._taskStatus = status;
+    if (worker.activity && (row._taskActivitySerial || 0) === binding.activity) {
+      var activity = workerActivityText(worker.activity);
+      if (activity) row._taskActivity = activity;
+    }
+    row._stat.textContent = taskStatusLabel(status);
+    row.classList.toggle("running", status === "running");
+    if (workerStatusTerminal(status)) {
+      clearInterval(row._clock);
+      row._clock = null;
+      row.classList.remove("running");
+      row.classList.toggle("failed", status === "failed");
+      row.classList.add("done");
+      row._stat.textContent = taskStatusLabel(status);
+    }
+    updateWorkerOverview(binding.id, worker.agent || row._taskAgent, status, row._taskActivity || row._taskPrompt, row);
+  });
+}
+function scheduleWorkerStatusSync() {
+  clearTimeout(workerStatusTimer);
+  workerStatusTimer = null;
+  if (!workerStatusArmed || document.hidden || workerStatusFailures >= 3 || !workerStatusBindings().length) return;
+  if (typeof streaming === "boolean" && streaming && !runFinishing) return;
+  workerStatusTimer = setTimeout(refreshWorkerStatusSnapshot, workerStatusFailures ? 5000 * workerStatusFailures : 3000);
+}
+function refreshWorkerStatusSnapshot() {
+  clearTimeout(workerStatusTimer);
+  workerStatusTimer = null;
+  if (!workerStatusArmed || document.hidden || typeof j !== "function") return Promise.resolve();
+  if (workerStatusRequest) return workerStatusRequest;
+  if (typeof streaming === "boolean" && streaming && !runFinishing) return Promise.resolve();
+  var bindings = workerStatusBindings();
+  if (!bindings.length) return Promise.resolve();
+  var epoch = workerStatusEpoch, scope = workerStatusScope();
+  var request = Promise.resolve().then(function () {
+    if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return null;
+    return j("/api/workers");
+  }).then(function (got) {
+    if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return;
+    if (!got || !Array.isArray(got.workers)) throw new Error("Invalid worker snapshot");
+    workerStatusFailures = 0;
+    applyWorkerStatusSnapshot(got.workers, bindings);
+  }).catch(function () {
+    if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return;
+    workerStatusFailures++;
+    bindings.forEach(function (binding) { markWorkerStatusUnconfirmed(binding, false); });
+  }).finally(function () {
+    if (workerStatusRequest !== request) return;
+    workerStatusRequest = null;
+    if (epoch === workerStatusEpoch && scope === workerStatusScope()) scheduleWorkerStatusSync();
+  });
+  workerStatusRequest = request;
+  return request;
+}
+function resumeWorkerStatusSync() {
+  Object.keys(workerRows).forEach(function (id) { workerRows[id]._workerSnapshotMismatch = false; });
+  workerStatusArmed = true;
+  workerStatusFailures = 0;
+  return refreshWorkerStatusSnapshot();
+}
 function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
+function workerOverviewSummary(counts) {
+  var parts = [t("task.workers")];
+  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
+    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
+  });
+  if (counts.unknown) parts.push(t("task.statusUnconfirmed") + ": " + counts.unknown);
+  return parts.join(" · ");
+}
+function workerOverviewViewMatches() {
+  var view = workerOverviewView, panel = $("#worker-overview"), list = $("#worker-overview-list");
+  return !!(view && view.panel === panel && view.list === list && panel.isConnected && !panel.hidden &&
+    list.isConnected && list.children.length === view.items.length &&
+    view.items.every(function (w, index) { return list.children[index] === w.button; }) &&
+    $("#worker-overview-summary").textContent === workerOverviewSummary(view.counts) &&
+    (workerOverviewUserToggled || panel.open === workerOverviewAutoOpen));
+}
 function renderWorkerOverview() {
   var panel = $("#worker-overview");
   if (!panel) return;
-  if (!workerOverviewBound) {
-    workerOverviewBound = true;
+  if (workerOverviewBound !== panel) {
+    workerOverviewBound = panel;
     panel.addEventListener("toggle", function () {
       if (panel.open !== workerOverviewAutoOpen) workerOverviewUserToggled = true;
     });
@@ -909,18 +1136,16 @@ function renderWorkerOverview() {
     var next = list.children[index] || null;
     if (next !== w.button) list.insertBefore(w.button, next);
   });
+  while (list.children.length > items.length) list.lastElementChild.remove();
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
-  var parts = [t("task.workers")];
-  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
-  });
-  $("#worker-overview-summary").textContent = parts.join(" · ");
+  $("#worker-overview-summary").textContent = workerOverviewSummary(counts);
+  workerOverviewView = { panel: panel, list: list, items: items, counts: counts };
   panel.hidden = !items.length;
   // Collapse once nothing is working so the panel does not cover the chat,
   // unless the user already chose otherwise during this run.
   if (items.length && !workerOverviewUserToggled) {
-    workerOverviewAutoOpen = !!counts.running;
+    workerOverviewAutoOpen = !!(counts.running || counts.unknown);
     panel.open = workerOverviewAutoOpen;
   }
 }
@@ -932,10 +1157,147 @@ function taskRowTitle(row, agentName, id) {
 
 var openToolOrder = []; // ids without results yet
 
+// Tools without their own label reuse the closest existing translation.
+var TOOL_NAME_ALIASES = { load_session_image: "read_image" };
 function toolDisplayName(name) {
-  var key = "tool." + name;
+  var key = "tool." + (TOOL_NAME_ALIASES[name] || name);
   var translated = t(key);
   return translated === key ? name : translated;
+}
+
+function workerToolNameNode(name) {
+  var node = el("span", "activity-name");
+  var match = String(name || "tool").match(/^(.*?)(\s*×\s*\d+)$/);
+  var tool = match ? match[1].trim() : name, count = match ? match[2].replace(/\s+/g, "") : "";
+  var refresh = function () { node.textContent = toolDisplayName(tool || "tool") + count; };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(node, refresh);
+  node.title = String(name || "tool");
+  return node;
+}
+
+function validWorkerActivity(log, id) {
+  return log && log.version === 1 && log.id === id && Number.isInteger(log.run) && log.run > 0 &&
+    Array.isArray(log.calls) && log.calls.length <= 256 ? log : null;
+}
+function recordedWorkerActivity(row, note) {
+  return validWorkerActivity(row._savedWorkerActivity, note.id);
+}
+
+function workerActivityNeedsRecovery(row, log) {
+  if (!row._activity || row._activitySummary) return true;
+  var seen = Object.create(null);
+  row._activity.querySelectorAll('.task-activity-item').forEach(function (item) {
+    if (item.dataset.workerCallId) seen[item.dataset.workerCallId] = item;
+  });
+  return log.calls.some(function (call) {
+    var item = seen[call.id];
+    return !item || (call.completed === true && !item.classList.contains(call.error ? "failed" : "done")) ||
+      ((call.output || call.error) && !item.querySelector('.activity-result'));
+  });
+}
+
+function workerActivityStatus(key) {
+  if (key !== "task.statusUnconfirmed") return i18nEl("span", "activity-status", key);
+  var status = el("span", "activity-status", "—");
+  status.title = t(key);
+  status.dataset.i18nTitle = status.dataset.i18nAria = key;
+  status.setAttribute("aria-label", t(key));
+  return status;
+}
+
+// Keep the released one-line activity layout. Its whole row opens the owned
+// preview; a separate "Output" row must not inflate every collapsed call.
+function setWorkerActivityDetail(item, args, output, error, handle, partial) {
+  if (!args && !output && !error && !handle) return;
+  var detail = item.querySelector(".activity-result");
+  if (!detail) {
+    detail = el("details", "activity-result");
+    var summary = el("summary", "activity-summary");
+    while (item.firstChild) summary.appendChild(item.firstChild);
+    detail.appendChild(summary);
+    detail.appendChild(el("div", "activity-payload"));
+    item.appendChild(detail);
+    detail.addEventListener("toggle", function () {
+      if (detail.open && detail._loadWorkerDetail) detail._loadWorkerDetail();
+    });
+  }
+  var payload = detail.querySelector(".activity-payload");
+  var session = transcriptSessionID || activeSessionID;
+  var state = {handle: handle, loaded: false, loading: false};
+  detail._workerDetailState = state;
+  function render(args, output, error, incomplete) {
+    payload.innerHTML = "";
+    function append(value, failed) {
+      if (!value) return;
+      if (!failed && detail.open) {
+        // Same viewer as main-transcript tool rows (line numbers, highlighting).
+        var before = payload.childNodes.length;
+        appendToolPayload(payload, t("tool.output"), String(value), item.dataset.workerTool || "", false, args);
+        for (var i = before; i < payload.childNodes.length; i++) {
+          if (!payload.childNodes[i].classList.contains("lbl")) payload.childNodes[i].classList.add("activity-output");
+        }
+        return;
+      }
+      payload.appendChild(i18nEl("div", "lbl", failed ? "tool.error" : "tool.output"));
+      var result = detail.open ? toolOutputPre(String(value), failed) : el("pre", failed ? "tool-output error" : "tool-output", String(value));
+      result.classList.add("activity-output");
+      payload.appendChild(result);
+    }
+    append(output, false);
+    append(error, true);
+    if (output || error) item.title = clip(String(error || output), 300);
+    if (args) {
+      payload.appendChild(i18nEl("div", "lbl", "tool.input"));
+      var input = detail.open ? toolInputPre(String(args)) : el("pre", "", String(args));
+      input.classList.add("activity-args");
+      payload.appendChild(input);
+    }
+    if (incomplete) payload.appendChild(i18nEl("div", "task-activity-note", "task.activityPartial"));
+  }
+  render(args, output, error, partial);
+  if (!detail.open) renderToolPayloadWhenOpen(detail, function () {
+    if (detail._workerDetailState === state && !state.loaded) render(args, output, error, partial);
+  });
+  detail._loadWorkerDetail = function () {
+    if (state.loaded || state.loading || !session || !/^worker_ui_[0-9a-f]{32}$/.test(handle || "")) return;
+    state.loading = true;
+    detail._workerDetailRequest = j("/api/tool-output?session=" + encodeURIComponent(session) + "&handle=" + encodeURIComponent(handle)).then(function (data) {
+      if (detail._workerDetailState !== state || !detail.isConnected) return;
+      if (!data || ["args", "output", "error"].some(function (key) { return data[key] != null && typeof data[key] !== "string"; })) throw Error("invalid tool detail");
+      state.loaded = true;
+      // A collapsed result keeps its full text off the DOM until reopened.
+      renderToolPayloadWhenOpen(detail, function () {
+        if (detail._workerDetailState === state) render(data.args, data.output, data.error, false);
+      });
+    }).catch(function () {
+      if (detail._workerDetailState !== state || !detail.isConnected) return;
+      if (!payload.querySelector('.task-activity-note')) payload.appendChild(i18nEl("div", "task-activity-note", "task.activityUnavailable"));
+    }).finally(function () { state.loading = false; });
+  };
+  if (detail.open) detail._loadWorkerDetail();
+}
+
+function fillRecordedWorkerActivity(activity, log, expanded) {
+  activity.innerHTML = "";
+  log.calls.forEach(function (call) {
+    if (!call || typeof call.tool !== "string") return;
+    var item = el("div", "task-activity-item");
+    item.dataset.workerCallId = call.id || "";
+    applyActivityToolKind(item, call.tool);
+    var state = call.completed === true ? (call.error ? "failed" : "done") : "unknown";
+    item.classList.add(state);
+    item.appendChild(el("span", "activity-dot"));
+    item.appendChild(workerToolNameNode(call.tool));
+    item.appendChild(el("span", "activity-hint", toolHint(call.tool, call.args || "{}").hint || ""));
+    item.appendChild(workerActivityStatus(state === "unknown" ? "task.statusUnconfirmed" : "task." + state));
+    setWorkerActivityDetail(item, call.args, call.output, call.error, call.detail_handle, call.partial);
+    var detail = item.querySelector(".activity-result");
+    if (detail) detail.open = !!(expanded && expanded[call.id]);
+    activity.appendChild(item);
+  });
+  if (!log.calls.length) activity.appendChild(i18nEl("div", "task-activity-empty", "task.activityUnavailable"));
+  if (log.omitted > 0) activity.appendChild(i18nEl("div", "task-activity-note", "task.activityPartial"));
 }
 
 // Colour group of a tool row title: reading, writing, running or web.
@@ -948,6 +1310,7 @@ function toolKind(name) {
   return "";
 }
 function applyActivityToolKind(item, name) {
+  item.dataset.workerTool = name || "";
   var kind = toolKind(name);
   if (kind) item.classList.add("tk-" + kind);
 }
@@ -1134,6 +1497,33 @@ function appendHistoryToolPayload(row, body, args, text, name) {
   });
 }
 
+function bindFullToolOutput(row, message) {
+  var handle = message.tool_output_handle, session = transcriptSessionID || activeSessionID;
+  if (!session || !/^out_[0-9a-f]{6,32}$/.test(handle || "") || row._fullOutputHandle === handle) return;
+  row._fullOutputHandle = handle;
+  renderToolPayloadWhenOpen(row, function () {
+    row._fullOutputRequest = j("/api/tool-output?session=" + encodeURIComponent(session) + "&handle=" + encodeURIComponent(handle)).then(function (data) {
+      if (!row.isConnected || row._fullOutputHandle !== handle) return;
+      if (!data || typeof data.text !== "string") throw Error("missing tool output");
+      row._fullOutputText = data.text;
+      renderToolPayloadWhenOpen(row, function () {
+        if (!row.isConnected || row._fullOutputHandle !== handle) return;
+        var name = row._historyName || message.name || "tool";
+        var task = (name === "task" || name === "send_message") ? parseTaskNotification(data.text) : null;
+        if (task) {
+          renderTaskResult(row, task, null, row._taskPrompt, task.status === "failed", true);
+        } else if (!row.classList.contains("task-row")) {
+          if (row._cancelHistoryPayload) row._cancelHistoryPayload();
+          row._body.innerHTML = "";
+          appendHistoryToolPayload(row, row._body, row._historyArgs || "", data.text, name);
+        }
+      });
+    }).catch(function () {
+      if (row.isConnected) row._body.appendChild(i18nEl("div", "task-activity-note", "task.activityUnavailable"));
+    });
+  });
+}
+
 // Media is user-visible output, not hidden diagnostic JSON. Its thumbnail stays
 // outside folded tool details in both live and restored conversations.
 function toolMediaDescriptor(text, name, isError) {
@@ -1142,6 +1532,15 @@ function toolMediaDescriptor(text, name, isError) {
   // merely because the process tool can also return an image.
   if (name === "process_session" && (typeof text !== "string" ||
       !text.startsWith('{"type":"image",'))) return null;
+  // load_session_image re-sends an image already in this conversation; its
+  // result ends with "path: <absolute image file>".
+  if (name === "load_session_image" && !isError) {
+    var loaded = /\npath: (.+?)\s*$/.exec(String(text == null ? "" : text));
+    var loadedPath = loaded && loaded[1];
+    if (loadedPath && !/[\x00-\x1f]/.test(loadedPath) && /^(?:[a-z]:[\\/]|\/|\\\\)/i.test(loadedPath) &&
+        /\.(?:png|jpe?g|gif|webp)$/i.test(loadedPath)) return {path: loadedPath, kind: "image", previewPath: ""};
+    return null;
+  }
   if ((name === "send_screenshot" || name === "process_session" || name === "show_media" || name === "generate_image" || name === "generate_video" || name === "headless_control") && !isError) {
     try {
       var media = JSON.parse(String(text == null ? "" : text));
@@ -1172,6 +1571,17 @@ function appendToolMediaPreview(row, text, name, isError) {
   if (!row || !row.parentNode || row._mediaPreview) return;
   var media = toolMediaDescriptor(text, name, isError);
   if (!media) return;
+  // load_session_image re-sends an image already shown earlier in the chat.
+  // Keep its thumbnail inside the folded row instead of duplicating it.
+  if (name === "load_session_image" && row._body) {
+    row._mediaPreview = true;
+    renderToolPayloadWhenOpen(row, function () {
+      var inner = el("div", "tool-media-preview inline");
+      renderSentAttachments(inner, [media.path], media.kind, media.previewPath);
+      row._body.appendChild(inner);
+    });
+    return;
+  }
   var preview = el("div", "tool-media-preview");
   if (row.classList.contains("transcript-live")) preview.classList.add("transcript-live");
   renderSentAttachments(preview, [media.path], media.kind, media.previewPath);
@@ -1193,6 +1603,8 @@ function appendToolPayload(body, label, text, name, isError, args) {
     appendFileReadPayload(body, raw, args);
     return;
   }
+  // 04c-tool-views.js: readable views (tree, cards, task list); raw fallback.
+  if (!isError && typeof renderRichToolPayload === "function" && renderRichToolPayload(body, label, raw, name, args)) return;
   body.appendChild(el("div", "lbl", label));
   if (name === "ctx_execute" && !isError) {
     try {
@@ -1236,28 +1648,46 @@ function setToolResultStatus(row, elapsed, err, changes) {
 // task results use a compact XML envelope for the model. Keep that protocol
 // out of the UI: extract its stable fields and render the report as content.
 function parseTaskNotification(text) {
-  var src = String(text || "");
-  if (src.indexOf("<task-notification>") < 0) return null;
-  function field(name) {
-    var open = "<" + name + ">", close = "</" + name + ">";
-    var from = src.indexOf(open);
-    var to = name === "result" ? src.lastIndexOf(close) : src.indexOf(close, from + open.length);
-    if (from < 0 || to < from) return "";
-    return src.slice(from + open.length, to).trim();
+  var src = String(text || "").trim();
+  var open = "<task-notification>", close = "</task-notification>";
+  if (src.indexOf(open) !== 0) return null;
+  var end = src.lastIndexOf(close);
+  if (end < open.length) return null;
+  var suffix = src.slice(end + close.length).trim();
+  var header = src.slice(open.length, end).trim(), result = "";
+  var resultAt = header.indexOf("<result>");
+  if (resultAt >= 0) {
+    var resultEnd = header.lastIndexOf("</result>");
+    if (resultEnd < resultAt || header.slice(resultEnd + "</result>".length).trim()) return null;
+    // Reports may contain quoted XML, including another complete notification.
+    result = header.slice(resultAt + "<result>".length, resultEnd).trim();
+    header = header.slice(0, resultAt).trim();
   }
+  var fields = {};
+  while (header) {
+    var field = header.match(/^<(task-id|agent|worker-model|reasoning-effort|status|summary|tools|continuation)>([\s\S]*?)<\/\1>/);
+    if (!field || fields[field[1]] != null) return null;
+    fields[field[1]] = field[2].trim();
+    header = header.slice(field[0].length).trim();
+  }
+  if (!/^worker-\d+$/.test(fields["task-id"] || "") || !fields.agent || /[<>\r\n]/.test(fields.agent)) return null;
+  if (!/^(created|running|done|completed|failed|stopped|unknown)$/.test(fields.status || "")) return null;
+  if (suffix && suffix.indexOf("[Attached: worker tool observations (historical snapshots).]") !== 0 &&
+      !new RegExp("^\\[Worker " + fields["task-id"] + " run [1-9][0-9]* tool observations at [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z; historical snapshots, not current workspace state; outputs may be truncated\\](?:\\r?\\n|$)").test(suffix)) return null;
   return {
-    id: field("task-id"), agent: field("agent") || "worker",
-    status: field("status") || "done", summary: field("summary"),
-    tools: field("tools"), result: field("result"),
-    model: field("worker-model"), reasoning_effort: field("reasoning-effort"),
+    id: fields["task-id"], agent: fields.agent,
+    status: fields.status, summary: fields.summary || "",
+    tools: fields.tools || "", result: result,
+    model: fields["worker-model"] || "", reasoning_effort: fields["reasoning-effort"] || "",
   };
 }
 
 function taskStatusLabel(status) {
-  if (status === "running") return t("tool.running");
+  if (status === "created" || status === "running") return t("tool.running");
   if (status === "failed") return t("task.failed");
   if (status === "stopped") return t("task.stopped");
-  return t("task.done");
+  if (status === "done" || status === "completed") return t("task.done");
+  return t("task.statusUnconfirmed");
 }
 
 function taskMetrics(note) {
@@ -1274,15 +1704,76 @@ function taskMetrics(note) {
     parts.push(fmtCompactNumber(Number(tokens[2])) + " " + t("task.output"));
   }
   if (model) parts.push(model[1].trim());
+  if (!parts.length && (note.status === "running" || note.status === "created")) return t("tool.running");
   var agent = String(note.agent || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   var status = String(note.status || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return parts.join(" · ") || summary.replace(new RegExp("^" + agent + "\\s+" + status + "\\s*[·-]?\\s*", "i"), "");
 }
 
+function bindWorkerObservations(row, message) {
+  if (!message || !/^[1-9][0-9]*$/.test(message.worker_observations_id || "") || !Number.isInteger(message.seq) || message.seq < 1) return;
+  var session = transcriptSessionID || activeSessionID, previous = row._workerObservationsRef;
+  if (!previous || previous.session !== session || previous.seq !== message.seq || previous.id !== message.worker_observations_id) {
+    row._workerObservationsRef = {session:session, seq:message.seq, id:message.worker_observations_id};
+    if (row._workerObservationsDetail) row._workerObservationsDetail.remove();
+  }
+  if (row._activitySummary && row._activity) {
+    row._activity.title = t("task.activityPartial");
+    row._activity.dataset.i18nTitle = "task.activityPartial";
+    var empty = row._activity.querySelector('.task-activity-empty');
+    if (empty) {
+      empty.textContent = t("task.activityPartial");
+      empty.dataset.i18nText = "task.activityPartial";
+      empty.i18nTextNode = empty.firstChild;
+    }
+  }
+  appendWorkerObservations(row);
+}
+
+function appendWorkerObservations(row) {
+  var ref = row._workerObservationsRef;
+  if (!ref || !ref.session || row._savedWorkerActivity || row._workerObservationsDetail && row._workerObservationsDetail.parentNode === row._body) return;
+  var detail = el("details", "worker-observations");
+  var summary = i18nEl("summary", "", "tool.read_output"), output = el("pre");
+  detail.append(summary, output);
+  row._workerObservationsDetail = detail;
+  row._body.appendChild(detail);
+  var loading = false, controller = null, generation = 0;
+  detail.addEventListener("toggle", function () {
+    if (!detail.open) {
+      if (controller) { generation++; controller.abort(); controller = null; loading = false; }
+      return;
+    }
+    if (row._workerObservationsCache && row._workerObservationsCache.id === ref.id) {
+      output.textContent = row._workerObservationsCache.text;
+      return;
+    }
+    if (loading) return;
+    loading = true;
+    controller = new AbortController();
+    var version = ++generation;
+    output.textContent = t("common.loading");
+    row._workerObservationRequest = j("/api/workers/observations?session=" + encodeURIComponent(ref.session) + "&seq=" + ref.seq + "&message_id=" + encodeURIComponent(ref.id), {signal:controller.signal}).then(function (data) {
+      if (version !== generation || !detail.isConnected || row._workerObservationsRef !== ref || row._workerObservationsDetail !== detail) return;
+      if (!data || typeof data.text !== "string") throw Error("missing observations");
+      row._workerObservationsCache = {id:ref.id,text:data.text};
+      output.textContent = data.text;
+    }).catch(function () {
+      if (version === generation && detail.isConnected && row._workerObservationsDetail === detail) output.textContent = t("task.activityUnavailable");
+    }).finally(function () { if (version === generation) { loading = false; controller = null; } });
+  });
+}
+
 function renderTaskResult(row, note, elapsed, prompt, err, history) {
+  if (workerStatusTerminal(row._taskStatus) && note.status === "running") return;
+  row._taskStatus = err ? "failed" : note.status;
+  row._taskID = note.id || row._taskID;
+  row._taskAgent = note.agent || row._taskAgent;
   // A replacement result must release its previous unopened report callback.
   if (row._cancelTaskReport) row._cancelTaskReport();
   row._cancelTaskReport = null;
+  if (row._cancelTaskActivity) row._cancelTaskActivity();
+  row._cancelTaskActivity = null;
   var activity = row._activity;
   row.classList.add("task-row");
   row.classList.remove("running", "done", "failed");
@@ -1291,33 +1782,65 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   row._tname.title = note.id || "";
   row._modelLabel = null;
   applyWorkerModelInfo(row, note.model ? note : {model: row._workerModel, reasoning_effort: row._workerEffort});
-  if (row._t0 != null) updateWorkerOverview(note.id, note.agent, err ? "failed" : note.status, row._taskPrompt, row);
+  if (row._t0 != null) updateWorkerOverview(note.id, note.agent, err ? "failed" : note.status, row._taskActivity || row._taskPrompt, row);
   row._thint.textContent = taskMetrics(note);
   row._stat.textContent = taskStatusLabel(err ? "failed" : note.status) + (elapsed != null ? " · " + fmtDuration(elapsed) : "");
   row._stat.classList.toggle("err", !!err || note.status === "failed");
+  row._taskSummary = note.summary || "";
+  row._taskElapsed = elapsed;
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(row, function () {
+    row._tname.textContent = taskRowTitle(row, row._taskAgent, row._taskID);
+    row._modelLabel = null;
+    applyWorkerModelInfo(row, {model: row._workerModel, reasoning_effort: row._workerEffort});
+    row._thint.textContent = taskMetrics({summary: row._taskSummary, agent: row._taskAgent, status: row._taskStatus});
+    row._stat.textContent = taskStatusLabel(row._taskStatus) + (row._taskElapsed != null ? " · " + fmtDuration(row._taskElapsed) : "");
+  });
   row._body.innerHTML = "";
   appendTaskBacklink(row);
   if (prompt) {
     row._body.appendChild(i18nEl("div", "lbl", "task.brief"));
     row._body.appendChild(el("div", "task-brief", prompt));
   }
-  if (activity && activity.childNodes.length) {
-    row._body.appendChild(i18nEl("div", "lbl", "task.activity"));
-    row._body.appendChild(activity);
-  } else if (note.tools) {
-    row._body.appendChild(i18nEl("div", "lbl", "task.activity"));
-    activity = el("div", "task-activity");
-    String(note.tools).split(/,\s*/).filter(Boolean).forEach(function (name) {
-      var item = el("div", "task-activity-item done");
-      item.appendChild(el("span", "activity-dot"));
-      item.appendChild(el("span", "activity-name", name));
-      item.appendChild(el("span", "activity-hint", ""));
-      item.appendChild(i18nEl("span", "activity-status", "task.done"));
-      activity.appendChild(item);
+  row._body.appendChild(i18nEl("div", "lbl", "task.activity"));
+  var recorded = recordedWorkerActivity(row, note);
+  if (recorded) {
+    var expanded = Object.create(null);
+    if (activity) activity.querySelectorAll('.task-activity-item').forEach(function (item) {
+      var detail = item.querySelector('.activity-result');
+      if (detail && detail.open && item.dataset.workerCallId) expanded[item.dataset.workerCallId] = true;
     });
-    row._activity = activity;
-    row._body.appendChild(activity);
+    activity = el("div", "task-activity");
+    row._activitySummary = false;
+    var cancelActivity = renderToolPayloadWhenOpen(row, function () {
+      row._cancelTaskActivity = null;
+      fillRecordedWorkerActivity(activity, recorded, expanded);
+    });
+    if (!row.open) row._cancelTaskActivity = cancelActivity;
+  } else if (!activity || row._activitySummary || !activity.querySelector(".task-activity-item")) {
+    activity = el("div", "task-activity");
+    row._activitySummary = true;
+    if (String(note.tools || "").trim()) {
+      String(note.tools).split(/,\s*/).map(function (name) { return name.trim(); }).filter(Boolean).forEach(function (name) {
+        // Names-only history keeps the same tool-type colours as live calls.
+        var item = el("div", "task-activity-item");
+        applyActivityToolKind(item, name.replace(/\s*×\s*\d+$/, ""));
+        item.appendChild(el("span", "activity-dot"));
+        item.appendChild(workerToolNameNode(name));
+        item.appendChild(el("span", "activity-hint", ""));
+        item.appendChild(workerActivityStatus("task.statusUnconfirmed"));
+        activity.appendChild(item);
+      });
+      var activityNote = i18nEl("div", "task-activity-note", "task.activitySummaryOnly");
+      activityNote.hidden = true;
+      activity.appendChild(activityNote);
+      activity.title = t("task.activitySummaryOnly");
+      activity.dataset.i18nTitle = "task.activitySummaryOnly";
+    } else {
+      activity.appendChild(i18nEl("div", "task-activity-empty", !history && (note.status === "running" || note.status === "created") ? "task.activityWaiting" : "task.activityUnavailable"));
+    }
   }
+  row._activity = activity;
+  row._body.appendChild(activity);
   if (note.result) {
     row._body.appendChild(i18nEl("div", "lbl", "task.report"));
     var report = el("div", "task-report msg-assistant");
@@ -1331,9 +1854,10 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
     });
     if (!row.open) row._cancelTaskReport = cancel;
   }
+  appendWorkerObservations(row);
 }
 
-function addHistoryTask(note) {
+function addHistoryTask(note, prompt, savedActivity) {
   var row = document.createElement("details");
   row.className = "tool-row task-row done";
   row.open = toolDisclosureOpen();
@@ -1345,8 +1869,15 @@ function addHistoryTask(note) {
   row.appendChild(sum);
   row._body = el("div", "tbody");
   row.appendChild(row._body);
-  if (note.id) { row._taskID = note.id; workerRows[note.id] = row; }
-  renderTaskResult(row, note, null, "", note.status === "failed", true);
+  if (note.id) {
+    row._taskID = note.id;
+    // Saved-history pages still select their latest row. A live invocation
+    // (including a legacy run-zero one) keeps ownership over historical notes.
+    if (!workerRows[note.id] || workerRows[note.id]._t0 == null) workerRows[note.id] = row;
+  }
+  row._taskPrompt = prompt || "";
+  row._savedWorkerActivity = savedActivity || null;
+  renderTaskResult(row, note, null, row._taskPrompt, note.status === "failed", true);
   appendStream(row);
   return row;
 }
@@ -1399,7 +1930,8 @@ function addToolCall(name, args, id, at) {
     if (info.workerID) {
       row._taskID = info.workerID;
       row._previousTaskRow = workerRows[info.workerID] || null;
-      workerRows[info.workerID] = row;
+      // Dispatch may only steer or be rejected. Transfer ownership only when
+      // the worker's accepted started event binds this invocation below.
     }
     body.innerHTML = "";
     appendTaskBacklink(row);
@@ -1407,6 +1939,7 @@ function addToolCall(name, args, id, at) {
     body.appendChild(el("div", "task-brief", info.prompt || ""));
     body.appendChild(i18nEl("div", "lbl", "task.activity"));
     row._activity = el("div", "task-activity");
+    row._activity.appendChild(i18nEl("div", "task-activity-empty", "task.activityWaiting"));
     row._workerCalls = {};
     body.appendChild(row._activity);
     // The full brief above is canonical; these unused JSON owners also share
@@ -1439,7 +1972,7 @@ function addToolResult(id, output, err, at) {
   var ms = toolElapsed(row, at);
   var task = (row._toolName === "task" || row._toolName === "send_message") ? parseTaskNotification(output || err) : null;
   if (task) {
-    if (task.id) workerRows[task.id] = row;
+    if (task.id && !workerRows[task.id]) workerRows[task.id] = row;
     renderTaskResult(row, task, ms, row._taskPrompt, err);
     smartScroll();
     return;
@@ -1556,6 +2089,9 @@ function commonFileChangeDirectory(changes) {
 function settleOpenTools() {
   openToolOrder.forEach(function (k) {
     var row = toolRows[k];
+    // A parent stream ending says nothing about a detached worker's outcome.
+    // Keep its verified lifecycle state until the terminal event/snapshot arrives.
+    if (row && row._taskID && row._taskStatus) return;
     if (row) {
       clearInterval(row._clock);
       row._clock = null;
@@ -1584,13 +2120,13 @@ var TOOL_CODE_FIELDS = {
   replacement: true, patch: true, diff: true, input: true,
 };
 
-// Tool input: one row per argument instead of raw JSON, so multi-line strings
-// show real lines rather than "\n" escapes. Non-object input stays JSON.
+// Tool input: one row per argument ("path  C:\x") instead of raw JSON, so
+// braces/quotes disappear and multi-line strings show real lines. Display
+// only; the model still receives JSON. Non-object or empty input stays JSON.
 function toolInputPre(args) {
   var pretty = prettyJSON(args), parsed = null;
   try { parsed = JSON.parse(pretty || ""); } catch (e) {}
-  // Short one-line arguments read fine as JSON; rows only help with code.
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !toolInputHasCode(parsed)) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.keys(parsed).length) {
     return highlightedPre("", pretty, "json");
   }
   var lang = toolPathLang(typeof parsed.file === "string" ? parsed.file : parsed.path);
@@ -1615,6 +2151,11 @@ function appendToolInputFields(view, obj, prefix, lang) {
       value.forEach(function (item, i) { appendToolInputFields(view, item, label + "[" + (i + 1) + "].", lang); });
       return;
     }
+    // Nested options (e.g. {"options":{"x":1}}) become "options.x" rows.
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
+      appendToolInputFields(view, value, label + ".", lang);
+      return;
+    }
     if (typeof value === "string" && (value.indexOf("\n") >= 0 || TOOL_CODE_FIELDS[key])) {
       // Replaced text red, replacement green, so old/new read like a diff.
       var side = /^old(_string|_text)?$/.test(key) ? " is-old" : /^new(_string|_text)?$/.test(key) ? " is-new" : "";
@@ -1625,8 +2166,10 @@ function appendToolInputFields(view, obj, prefix, lang) {
     }
     var row = el("div", "tool-input-field");
     row.appendChild(el("span", "tool-input-key", label));
-    var shown = typeof value === "string" ? value : JSON.stringify(value);
-    var cls = typeof value === "string" ? "hl-str" : typeof value === "number" ? "hl-num" :
+    // Lists of plain values read as "a, b, c" rather than a JSON array.
+    var plainList = Array.isArray(value) && value.length && value.every(function (v) { return v === null || typeof v !== "object"; });
+    var shown = typeof value === "string" ? value : plainList ? value.map(String).join(", ") : JSON.stringify(value);
+    var cls = typeof value === "string" || plainList ? "hl-str" : typeof value === "number" ? "hl-num" :
       typeof value === "boolean" || value === null ? "hl-lit" : "";
     if (cls) row.appendChild(el("span", "tool-input-val " + cls, shown));
     else row.appendChild(highlightedPre("tool-input-val", shown, "json"));
@@ -1670,9 +2213,20 @@ function appendTaskBacklink(row) {
   row._body.appendChild(link);
 }
 
-function findTaskRow(taskID, agentName, parentCallID) {
+function findTaskRow(taskID, agentName, parentCallID, run) {
   if (parentCallID) return toolRows[parentCallID] || null;
-  if (taskID && workerRows[taskID]) return workerRows[taskID];
+  if (taskID && workerRows[taskID]) {
+    var latest = workerRows[taskID];
+    if (run == null || (latest._taskRun || 0) === run) return latest;
+    // Versioned notifications can still finish the correct historical row.
+    if (run > 0) {
+      var rows = Object.values(toolRows);
+      for (var j = rows.length - 1; j >= 0; j--) {
+        if (rows[j]._taskID === taskID && rows[j]._taskRun === run) return rows[j];
+      }
+    }
+    return null;
+  }
   for (var i = openToolOrder.length - 1; i >= 0; i--) {
     var candidate = toolRows[openToolOrder[i]];
     if (candidate && !candidate._taskID && candidate._toolName === "task" &&
@@ -1695,12 +2249,30 @@ function applyWorkerModelInfo(row, ev) {
   row._modelLabel.textContent = row._workerModelInfo;
 }
 function addWorkerProgress(ev) {
-  var row = findTaskRow(ev.id, ev.name, ev.parent_call_id);
+  var row = findTaskRow(ev.id, ev.name, ev.parent_call_id, ev.run || undefined);
   if (!row) return false;
-  if (ev.id) { workerRows[ev.id] = row; row._taskID = ev.id; }
+  if (ev.run && row._taskRun && ev.run < row._taskRun) return false;
+  // Run-zero callbacks remain compatible when bound to their originating call;
+  // an unknown terminal event cannot finish a known live invocation.
+  if (!ev.run && ev.kind === "finished" && row._taskRun && !ev.parent_call_id) return false;
+  if (workerStatusTerminal(row._taskStatus) && (!ev.run || !row._taskRun || ev.run === row._taskRun) &&
+      (ev.kind === "started" || ev.kind === "tool_call")) return false;
+  if (ev.id) {
+    if (!workerRows[ev.id] || (ev.kind === "started" && !row._taskRun && (ev.run || !workerRows[ev.id]._taskRun))) workerRows[ev.id] = row;
+    row._taskID = ev.id;
+  }
   if (ev.kind === "started") {
+    row._taskStatus = "running";
+    row.classList.remove("done", "failed");
+    row.classList.add("running");
+    // Preserve the server-derived elapsed clock on ordinary/replayed starts.
+    if (row._workerStatusUnconfirmed) row._stat.textContent = taskStatusLabel("running");
+    row._workerStatusUnconfirmed = false;
+    row._taskActivity = "";
+    row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;
+    row._workerSnapshotMismatch = false;
     row._taskAgent = ev.name || row._taskAgent;
-    row._taskRun = ev.run || 1;
+    row._taskRun = ev.run || row._taskRun || 0;
     row._tname.textContent = taskRowTitle(row, row._taskAgent, ev.id);
     row._tname.title = ev.id;
     // Reattach the label after the task title's textContent reset.
@@ -1711,14 +2283,26 @@ function addWorkerProgress(ev) {
     return true;
   }
   if (ev.kind === "finished") {
+    row._taskStatus = ev.status || "done";
+    row._workerStatusUnconfirmed = false;
+    row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;
+    row.classList.remove("running");
+    row.classList.add(row._taskStatus === "failed" ? "failed" : "done");
     applyWorkerModelInfo(row, ev);
     clearInterval(row._clock);
     row._clock = null;
     row._stat.textContent = taskStatusLabel(ev.status) + (row._startedAtMS > 0 ? " · " + fmtDuration(toolElapsed(row, ev.at)) : "");
-    updateWorkerOverview(ev.id, ev.name, ev.status, row._taskPrompt, row);
+    updateWorkerOverview(ev.id, ev.name, ev.status, row._taskActivity || row._taskPrompt, row);
     return true;
   }
   if (!row._activity) row._activity = el("div", "task-activity");
+  if (row._activitySummary) {
+    row._activity.innerHTML = "";
+    row._activitySummary = false;
+    row._workerCalls = {};
+  }
+  var emptyActivity = row._activity.querySelector(".task-activity-empty");
+  if (emptyActivity) emptyActivity.remove();
   if (!row._workerCalls) row._workerCalls = {};
   var item = ev.call_id ? row._workerCalls[ev.call_id] : null;
   if (ev.kind === "steering_delivered" || ev.kind === "steering_rejected") {
@@ -1740,30 +2324,47 @@ function addWorkerProgress(ev) {
     item.querySelector(".activity-status").textContent = t(rejected ? "task.failed" : "task.done");
     item.title = ev.err || ev.prompt || "";
   } else if (ev.kind === "tool_call") {
+    if (row._workerStatusUnconfirmed) {
+      row.classList.add("running");
+      row._stat.textContent = taskStatusLabel("running");
+      row._workerStatusUnconfirmed = false;
+    }
     var info = toolHint(ev.tool || "tool", ev.args || "{}");
-    updateWorkerOverview(ev.id, ev.name, "running", (info.name || ev.tool) + (info.hint ? " · " + info.hint : ""), row);
+    row._taskActivity = workerActivityText({tool: ev.tool, args: ev.args});
+    row._workerSnapshotMismatch = false;
+    row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;
+    updateWorkerOverview(ev.id, ev.name, "running", row._taskActivity, row);
     item = el("div", "task-activity-item running");
+    item.dataset.workerCallId = ev.call_id || "";
     applyActivityToolKind(item, ev.tool);
     item.appendChild(el("span", "activity-dot"));
-    item.appendChild(el("span", "activity-name", toolDisplayName(ev.tool || "tool")));
+    item.appendChild(workerToolNameNode(ev.tool));
     item.appendChild(el("span", "activity-hint", info.hint || ""));
     item.appendChild(i18nEl("span", "activity-status", "tool.running"));
+    item._workerArgs = ev.args || "";
+    setWorkerActivityDetail(item, item._workerArgs, "", "", ev.detail_handle, ev.partial);
     row._activity.appendChild(item);
     if (ev.call_id) row._workerCalls[ev.call_id] = item;
   } else if (ev.kind === "tool_result") {
+    row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;
     if (!item) {
       item = el("div", "task-activity-item");
+      item.dataset.workerCallId = ev.call_id || "";
       applyActivityToolKind(item, ev.tool);
       item.appendChild(el("span", "activity-dot"));
-      item.appendChild(el("span", "activity-name", toolDisplayName(ev.tool || "tool")));
+      item.appendChild(workerToolNameNode(ev.tool));
       item.appendChild(el("span", "activity-hint", ""));
       item.appendChild(el("span", "activity-status"));
       row._activity.appendChild(item);
     }
     item.classList.remove("running");
     item.classList.add(ev.err ? "failed" : "done");
-    item.querySelector(".activity-status").textContent = ev.err ? t("task.failed") : t("task.done");
-    if (ev.err || ev.output) item.title = ev.err || ev.output;
+    var status = item.querySelector(".activity-status");
+    var statusKey = ev.err ? "task.failed" : "task.done";
+    status.textContent = t(statusKey);
+    status.dataset.i18nText = statusKey;
+    status.i18nTextNode = status.firstChild;
+    setWorkerActivityDetail(item, item._workerArgs, ev.output || "", ev.err || "", ev.detail_handle, ev.partial);
     updateWorkerOverview(ev.id, ev.name, "running", null, row);
   }
   row._body.hidden = !row.open;

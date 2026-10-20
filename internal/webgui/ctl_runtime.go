@@ -11,23 +11,32 @@ import (
 )
 
 type webWorker struct {
-	ID          string   `json:"id"`
-	Agent       string   `json:"agent"`
-	Description string   `json:"description"`
-	Model       string   `json:"model,omitempty"`
-	Status      string   `json:"status"`
-	LastError   string   `json:"last_error,omitempty"`
-	TokensIn    int      `json:"tokens_in"`
-	TokensOut   int      `json:"tokens_out"`
-	Steps       int      `json:"steps"`
-	ToolNames   []string `json:"tool_names,omitempty"`
+	ID          string                `json:"id"`
+	Agent       string                `json:"agent"`
+	Description string                `json:"description"`
+	Model       string                `json:"model,omitempty"`
+	Status      string                `json:"status"`
+	LastError   string                `json:"last_error,omitempty"`
+	TokensIn    int                   `json:"tokens_in"`
+	TokensOut   int                   `json:"tokens_out"`
+	Steps       int                   `json:"steps"`
+	ToolNames   []string              `json:"tool_names,omitempty"`
+	Run         int                   `json:"run"`
+	UpdatedAt   int64                 `json:"updated_at"`
+	Activity    *agent.WorkerActivity `json:"activity,omitempty"`
 }
 
 func workerDTO(s agent.Snapshot) webWorker {
+	var activity *agent.WorkerActivity
+	if s.Activity.Kind != "" {
+		copy := s.Activity
+		activity = &copy
+	}
 	return webWorker{
 		ID: s.ID, Agent: s.Agent, Description: s.Description, Model: s.Model,
 		Status: s.Status, LastError: s.LastError, TokensIn: s.TokensIn,
 		TokensOut: s.TokensOut, Steps: s.Steps, ToolNames: s.ToolNames,
+		Run: s.Runs, UpdatedAt: s.UpdatedAt.UnixMilli(), Activity: activity,
 	}
 }
 
