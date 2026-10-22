@@ -157,7 +157,9 @@ reset();var ack=events.find(function(ev){return ev.type==='tool_result'&&ev.id==
 events.filter(function(ev){return ev.type==='tool_call';}).forEach(function(ev){handleEvent(ev,null);});handleEvent(ack,null);
 var running=toolRows['fixture-delegate'];check(running._taskID==='worker-1'&&running._taskStatus==='running','acknowledgement did not bind the original running card');
 check(running.querySelector('.task-activity-empty').textContent===t('task.activityWaiting'),'running acknowledgement claims activity is unavailable');
+check(running._clock!==null&&running._stat.textContent.indexOf(t('tool.running')+' · ')===0,'background acknowledgement froze the worker clock');
 events.filter(function(ev){return ev.type==='worker_progress'||ev.type==='worker';}).forEach(function(ev){handleEvent(ev,null);});check(verify('ack before progress')===running,'completion replaced original card');
+check(running._clock===null,'finished worker kept ticking');
 reset();events.filter(function(ev){return ev.type==='tool_call'||ev.type==='tool_result';}).forEach(function(ev){handleEvent(ev,null);});
 addToolCall('task',JSON.stringify({agent:'explore',prompt:'Unrelated parallel task'}),'unrelated');
 events.filter(function(ev){return ev.type==='worker_progress'||ev.type==='worker';}).forEach(function(ev){handleEvent(ev,null);});

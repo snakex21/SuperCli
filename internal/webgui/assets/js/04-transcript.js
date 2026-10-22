@@ -1883,6 +1883,12 @@ function addHistoryTask(note, prompt, savedActivity) {
 }
 // Remote events keep server epoch times; local/legacy events retain the
 // monotonic performance clock, including the originating client's behaviour.
+function keepTaskClock(row) {
+  clearInterval(row._clock);
+  function update() { row._stat.textContent = taskStatusLabel("running") + " · " + fmtDuration(toolElapsed(row)); }
+  update();
+  row._clock = setInterval(update, 250);
+}
 function toolElapsed(row, at) {
   if (row._startedAtMS > 0) {
     var now = at > 0 ? at : (typeof syncServerNow === "function" ? syncServerNow() : Date.now());
@@ -1974,6 +1980,9 @@ function addToolResult(id, output, err, at) {
   if (task) {
     if (task.id && !workerRows[task.id]) workerRows[task.id] = row;
     renderTaskResult(row, task, ms, row._taskPrompt, err);
+    // A background start is only an acknowledgement: keep timing the worker
+    // until its finished event, report or terminal snapshot clears the clock.
+    if (!err && task.status === "running" && row._taskStatus === "running") keepTaskClock(row);
     smartScroll();
     return;
   }
