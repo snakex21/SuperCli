@@ -145,6 +145,20 @@ async function loadSessions() {
       rename.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doRename(e); });
       actions.appendChild(rename);
 
+      var exportAction = el("span", "session-action export", "\u2913");
+      exportAction.setAttribute("role", "button");
+      exportAction.tabIndex = 0;
+      exportAction.title = t("session.export");
+      exportAction.setAttribute("aria-label", t("session.export"));
+      function doExport(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        exportSession(s.id);
+      }
+      exportAction.addEventListener("click", doExport);
+      exportAction.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") doExport(e); });
+      actions.appendChild(exportAction);
+
       var remove = el("span", "session-action delete", "\u00D7");
       remove.setAttribute("role", "button");
       remove.tabIndex = 0;
@@ -239,6 +253,37 @@ async function renameSession(session) {
     toast(t("session.renamed"));
     await loadSessions();
     renderStats();
+  } catch (e) { toast(e.message); }
+}
+
+// Export asks where to save (native "Save as" dialog) when the browser supports
+// it; otherwise it falls back to a plain download into the Downloads folder.
+async function exportSession(id) {
+  var url = "/api/session/export?id=" + encodeURIComponent(id);
+  function download() {
+    var link = document.createElement("a");
+    link.href = url; link.download = "";
+    document.body.appendChild(link); link.click(); link.remove();
+  }
+  if (typeof window.showSaveFilePicker !== "function") { download(); return; }
+  var handle;
+  try {
+    // The picker must open first, while the click still counts as a user gesture.
+    handle = await window.showSaveFilePicker({
+      suggestedName: "session-" + String(id).slice(0, 16).replace(/[^A-Za-z0-9_-]/g, "") + ".supercli-session.json",
+      types: [{ description: "SuperCli session", accept: { "application/json": [".json"] } }],
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    download(); return;
+  }
+  try {
+    var response = await fetch(url);
+    if (!response.ok) throw new Error((await response.text()).trim() || String(response.status));
+    var writable = await handle.createWritable();
+    await writable.write(await response.blob());
+    await writable.close();
+    toast(t("common.save") + " ✓");
   } catch (e) { toast(e.message); }
 }
 
@@ -440,6 +485,10 @@ function buildHistoryFragment(messages, pager, prepend) {
         node._history = true;
         renderAssistant(node);
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = thinkingDisclosureOpen(true); });
+        if (typeof addAssistantActions === "function") {
+          addAssistantActions(node, {sessionID: transcriptSessionID || activeSessionID, seq: m.seq, messageID: m.message_id,
+            edited: m.edited === true, modelVisible: m.edit_model_visible === true});
+        }
         if (m.turn) {
           addFileChanges(m.turn.file_changes);
           addTurnMeta(m.turn, m.turn.elapsed_ms || 0, m.turn.tool_calls || 0, m.seq);

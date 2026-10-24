@@ -304,6 +304,142 @@ function addAssistantMsg() {
   appendStream(m);
   return m;
 }
+
+// Copy/edit act on the visible answer; a leading reasoning block is kept as
+// an untouched prefix so an edit never drops or exposes it.
+var ASSISTANT_THINK_PREFIX = /^\s*<(thinking|think|reasoning|reflection)>[\s\S]*?<\/\1>\s*/i;
+function assistantAnswerSource(raw) {
+  var source = String(raw || ""), match = ASSISTANT_THINK_PREFIX.exec(source);
+  return match ? {prefix: match[0], text: source.slice(match[0].length)} : {prefix: "", text: source};
+}
+
+async function copyAssistantText(button, text) {
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  try {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard || !navigator.clipboard.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(text);
+    } catch (error) { copyTextFallback(text); }
+    toast(t("code.copied"));
+  } catch (error) { toast(t("code.copyFailed")); }
+  finally { button.disabled = false; }
+}
+
+function assistantActionButton(cls, label, onClick) {
+  var button = el("button", "msg-action " + cls, label);
+  button.type = "button";
+  if (button.setAttribute) button.setAttribute("aria-label", label);
+  button.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick(button);
+  });
+  return button;
+}
+
+// The action row is a sibling: the assistant node's children belong to the
+// incremental Markdown renderer. Copy is always present; Edit/Restore need a
+// persisted identity (history rows) and are hidden while assistant_edit is off.
+function addAssistantActions(node, ref) {
+  if (typeof el !== "function" || !node || node._actions || !assistantAnswerSource(node._raw).text.trim()) return null;
+  var bar = el("div", "msg-actions");
+  node._actions = bar;
+  bar.appendChild(assistantActionButton("msg-copy", t("assistant.copy"), function (button) {
+    copyAssistantText(button, assistantAnswerSource(node._raw).text);
+  }));
+  var parent = node.parentNode;
+  if (parent && typeof parent.insertBefore === "function") parent.insertBefore(bar, node.nextSibling || null);
+  else appendStream(bar);
+  if (ref) bindAssistantEdit(node, ref);
+  return bar;
+}
+
+// Live replies have no persisted identity yet: when the run finishes, every
+// answer segment of it gets Copy (Edit appears after the history reload).
+// Adding rows only after the run keeps live tool rows adjacent to their text.
+function addLiveAssistantActions() {
+  stream.querySelectorAll(".msg-assistant.transcript-live:not(.task-report)").forEach(function (node) {
+    addAssistantActions(node);
+  });
+}
+
+function bindAssistantEdit(node, ref) {
+  var bar = node && node._actions;
+  if (!bar || node._editRef || !ref || !ref.seq || !ref.sessionID || !/^[1-9][0-9]*$/.test(String(ref.messageID || ""))) return;
+  node._editRef = {sessionID: ref.sessionID, seq: ref.seq, messageID: String(ref.messageID), edited: !!ref.edited, modelVisible: !!ref.modelVisible};
+  var edit = assistantActionButton("msg-edit-action msg-edit", t("assistant.edit"), function (button) { showAssistantEditDialog(node, button); });
+  var restore = assistantActionButton("msg-edit-action msg-restore", t("assistant.restore"), function (button) { saveAssistantEdit(node, "", true, button); });
+  var mark = el("span", "msg-edited-mark", t("assistant.edited"));
+  bar.appendChild(edit);
+  bar.appendChild(restore);
+  bar.appendChild(mark);
+  node._editControls = {restore: restore, mark: mark};
+  syncAssistantEditState(node);
+}
+
+function syncAssistantEditState(node) {
+  var controls = node._editControls, ref = node._editRef;
+  if (!controls || !ref) return;
+  controls.restore.hidden = !ref.edited;
+  controls.mark.hidden = !ref.edited;
+  controls.mark.title = ref.edited && !ref.modelVisible ? t("assistant.editedDisplayOnly") : "";
+}
+
+function showAssistantEditDialog(node, trigger) {
+  var source = assistantAnswerSource(node._raw);
+  var overlay = el("div", "question-overlay assistant-edit-dialog");
+  var panel = el("div", "question-panel compact");
+  panel.appendChild(i18nEl("div", "question-kicker", "assistant.editTitle"));
+  panel.appendChild(i18nEl("div", "question-option-desc", ui.assistantEditModelSees === true ? "assistant.editHintModel" : "assistant.editHintDisplay"));
+  var input = el("textarea", "question-custom assistant-edit-input");
+  input.rows = 12;
+  input.value = source.text;
+  panel.appendChild(input);
+  var actions = el("div", "question-actions");
+  var cancel = i18nEl("button", "btn", "common.cancel");
+  var save = i18nEl("button", "btn primary", "common.save");
+  cancel.type = save.type = "button";
+  function close() { overlay.remove(); }
+  cancel.addEventListener("click", close);
+  save.addEventListener("click", async function () {
+    if (!input.value.trim()) { input.focus(); return; }
+    save.disabled = cancel.disabled = true;
+    var ok = await saveAssistantEdit(node, source.prefix + input.value, false, trigger);
+    if (ok) close();
+    else save.disabled = cancel.disabled = false;
+  });
+  actions.appendChild(cancel);
+  actions.appendChild(save);
+  panel.appendChild(actions);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  input.focus();
+}
+
+async function saveAssistantEdit(node, content, restore, trigger) {
+  var ref = node && node._editRef;
+  if (!ref) return false;
+  if (trigger) trigger.disabled = true;
+  try {
+    var result = await jpost("/api/session/message/edit", {session_id: ref.sessionID, seq: ref.seq, message_id: ref.messageID, content: content, restore: !!restore});
+    ref.edited = !!result.edited;
+    ref.modelVisible = !!result.model_visible;
+    node._raw = String(result.content || "");
+    node._assistantParts = null;
+    node._partsCache = null;
+    node._renderedSource = null;
+    renderAssistant(node);
+    syncAssistantEditState(node);
+    toast(t(restore ? "assistant.restored" : (result.summarized ? "assistant.editSummarized" : "assistant.saved")));
+    return true;
+  } catch (e) {
+    toast(e.message);
+    return false;
+  } finally {
+    if (trigger) trigger.disabled = false;
+  }
+}
 // A blank line outside a fence, or a complete fence boundary, cannot be
 // changed by later Markdown. Keep those DOM nodes and only repaint the tail.
 function stableMarkdownEnd(text) {

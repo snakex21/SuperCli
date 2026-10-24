@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model ni na voljo",
   "tui.slash.807564bac8": "V tem pogovoru ni bila zabeležena nobena sprememba datoteke.",
   "tui.slash.797e916342": "izvozil sporočila %d v %s",
+  "tui.command_desc.import": "uvozi datoteko seje, shranjeno z /export session, kot nov pogovor",
+  "tui.slash.portable_exported": "seja (sporočila: %d) je bila izvožena v %s",
+  "tui.slash.portable_export_failed": "izvoz seje ni uspel: %w",
+  "tui.slash.import_usage": "uporaba: /import <path> (datoteka .supercli-session.json, ustvarjena z /export session)",
+  "tui.slash.import_failed": "uvoz seje ni uspel: %w",
+  "tui.slash.import_too_large": "datoteka seje je prevelika (omejitev: %d MiB)",
+  "tui.slash.import_invalid": "%s ni veljavna datoteka seje SuperCli",
+  "tui.slash.imported": "uvoženih sporočil: %d kot nova seja »%s« (%s). Odprite jo z /resume %s",
   "tui.slash.127b72ef9e": "izvozni zapis: %w",
   "tui.slash.49aed96c7c": "kopiral sporočila %d v odložišče",
   "tui.slash.8e0d97abc6": "izvoz odložišča: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Povezava je prekinjena. Računalnik se lahko še vedno izklopi; za preklic se znova povežite.",
   "hostPower.cancelFailed": "Preklic ni bil potrjen. Poskusite znova.",
   "hostPower.confirm": "Želite izklopiti ta računalnik, ko bo dokončanje opravila »{goal}« preverjeno? Sledilo bo 60-sekundno odštevanje brez ponovne potrditve.",
-  "hostPower.escape": "Esc: prekliči izklop."
+  "hostPower.escape": "Esc: prekliči izklop.",
+  "tui.command_desc.copy": "kopiraj zadnji odgovor UI v odložišče",
+  "tui.copy.native": "Zadnji odgovor kopiran v sistemsko odložišče",
+  "tui.copy.osc52": "Zadnji odgovor kopiran prek terminala (OSC 52)",
+  "tui.setting_assistant_edit.label": "Urejanje odgovorov UI",
+  "tui.setting_assistant_edit.desc": "Pod odgovori UI prikaže gumba Uredi in Obnovi izvirnik. Kopiranje je vedno na voljo.",
+  "tui.setting_assistant_edit_model_sees.label": "Model vidi urejene odgovore",
+  "tui.setting_assistant_edit_model_sees.desc": "Izklopljeno: urejanje spremeni le prikaz. Vklopljeno: urejeno besedilo nadomesti izvirnik v tem, kar bo model videl ob naslednjem zagonu. Urejanje starejšega sporočila od te točke razveljavi ponudnikov predpomnilnik pozivov, zato bo naslednji odgovor enkrat počasnejši in dražji."
 }

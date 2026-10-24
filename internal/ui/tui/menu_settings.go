@@ -42,6 +42,8 @@ func settingsRowsFor(language string) []settingRow {
 	return []settingRow{
 		{"show_generation_speed", textFor(language, "tui.setting_show_generation_speed.label"), textFor(language, "tui.setting_show_generation_speed.desc"), setTriState, false},
 		{"update_notify", textFor(language, "tui.setting_update_notify.label"), textFor(language, "tui.setting_update_notify.desc"), setTriState, false},
+		{"assistant_edit", textFor(language, "tui.setting_assistant_edit.label"), textFor(language, "tui.setting_assistant_edit.desc"), setTriState, false},
+		{"assistant_edit_model_sees", textFor(language, "tui.setting_assistant_edit_model_sees.label"), textFor(language, "tui.setting_assistant_edit_model_sees.desc"), setTriState, false},
 		{"cost_currency", "cost_currency", fmt.Sprintf("ISO 4217 · %d", len(fx.SupportedCurrencies())), setText, false},
 		{"language", textFor(language, "tui.setting_language.8027f432a7"), textFor(language, "tui.setting_language.99a2af69fc"), setLanguage, false},
 		{"orchestrator", textFor(language, "tui.setting_orchestrator.0a4b20425b"), textFor(language, "tui.setting_orchestrator.4b3142f61d"), setTriState, true},
@@ -94,7 +96,7 @@ func settingCategory(key string) int {
 		return 1
 	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
 		return 2
-	case "show_generation_speed", "update_notify", "cost_currency", "language", "default_model", "default_provider", "allow_all", "":
+	case "show_generation_speed", "update_notify", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "language", "default_model", "default_provider", "allow_all", "":
 		return 0
 	default:
 		return 3

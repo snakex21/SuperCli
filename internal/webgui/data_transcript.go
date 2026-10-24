@@ -76,6 +76,10 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 	if err != nil {
 		return nil, err
 	}
+	edits, err := store.ReadMessageEdits(ctx, id, fromSeq, toSeq)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]transcriptMsg, 0, len(rows))
 	var imageContext []llm.Message
 	loadedImageContext := false
@@ -138,6 +142,12 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 		item.ToolImageCarrier = isTranscriptToolImageCarrier(presentation, len(item.Attachments) != 0)
 		if item.Role == string(llm.RoleUser) && m.MessageID > 0 && !item.ToolImageCarrier {
 			item.MessageID = strconv.FormatInt(m.MessageID, 10)
+		}
+		if item.Role == string(llm.RoleAssistant) && m.MessageID > 0 {
+			item.MessageID = strconv.FormatInt(m.MessageID, 10)
+			if edit, ok := edits[m.MessageID]; ok {
+				item.Content, item.Edited, item.EditModelVisible = edit.EditedText(), true, edit.ModelVisible
+			}
 		}
 		if !item.ToolImageCarrier && len(item.Attachments) == 0 {
 			for _, part := range msg.Parts {

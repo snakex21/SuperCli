@@ -53,6 +53,11 @@ type TomlConfig struct {
 	// UpdateNotify shows a notice when a new release exists (background check
 	// at most once a day, never downloads); nil means on.
 	UpdateNotify *bool `toml:"update_notify"`
+	// AssistantEdit shows Edit/Restore on AI replies in the GUI; nil means off.
+	AssistantEdit *bool `toml:"assistant_edit"`
+	// AssistantEditModelSees makes an edited reply replace the original in the
+	// model context (next run); nil means off = display-only edits.
+	AssistantEditModelSees *bool `toml:"assistant_edit_model_sees"`
 
 	// Provider configuration.
 	Provider  string         `toml:"provider"`

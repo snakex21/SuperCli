@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine.
 
 <!-- readme-unit:status -->
-This README describes version `1.0.17`. Portable release bundles are distributed through [GitHub Releases](https://github.com/snakex21/SuperCli/releases); a local build does not imply that its release has already been published.
+This README describes version `1.0.18`. Portable release bundles are distributed through [GitHub Releases](https://github.com/snakex21/SuperCli/releases); a local build does not imply that its release has already been published.
 
 <!-- readme-unit:h.screenshots -->
 ## Screenshots
@@ -138,7 +138,7 @@ Type `/` for the command palette. Open the TUI action centre with `Tab` on empty
 | --- | --- |
 | `/help`, `/doctor` | Show help and diagnostics. |
 | `/model`, `/models`, `/providers` | Choose models and manage providers. |
-| `/resume`, `/export` | Resume or export a conversation. |
+| `/resume`, `/export`, `/import` | Resume or export a conversation. |
 | `/status`, `/cost`, `/compact` | Inspect usage or compact context. |
 | `/goal`, `/plan` | Manage goals and read-only plan mode. |
 | `/diff`, `/undo`, `/redo` | Inspect changes or undo/redo an agent turn. |

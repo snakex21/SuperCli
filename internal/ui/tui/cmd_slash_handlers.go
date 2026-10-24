@@ -35,6 +35,10 @@ func (m Model) slashBuiltin(name string) (func(Model, SlashCommand) (tea.Model, 
 		return Model.handleSlashShuffle, true
 	case "export":
 		return Model.handleSlashExport, true
+	case "import":
+		return Model.handleSlashImport, true
+	case "copy":
+		return Model.handleSlashCopy, true
 	case "diff":
 		return Model.handleSlashDiff, true
 	case "model":
@@ -209,6 +213,9 @@ func (m Model) handleSlashExport(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 		if sessionID == "" {
 			return slashResultMsg{Body: dm.Diff(m.tr("tui.cmd_slash_handlers.3e78b47f2f"))}
+		}
+		if pathArg, ok := portableExportArgs(args); ok {
+			return m.exportPortableSession(store, sessionID, home, pathArg)
 		}
 		sess, err := store.Get(sessionID)
 		if err != nil {

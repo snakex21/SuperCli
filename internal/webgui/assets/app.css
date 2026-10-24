@@ -2243,6 +2243,32 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 /* One presentation toggle; no transcript rebuild or stream timer. */
 .generation-speed-hidden .generation-speed { display: none !important; }
 
+/* AI reply actions: same quiet look as .msg-rewind. */
+.msg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: -2px 0 10px; }
+.msg-action {
+  min-height: 24px; padding: 2px 7px;
+  border: 1px solid transparent; border-radius: 3px;
+  color: var(--faint); background: transparent;
+  font: 10.5px var(--mono); white-space: nowrap; cursor: pointer;
+  opacity: .72; transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+/* Like .msg-rewind on a hovered user message: framed while the reply is hovered. */
+.msg-assistant:hover + .msg-actions .msg-action, .msg-actions:hover .msg-action, .msg-action:focus-visible {
+  opacity: 1; color: var(--text); border-color: var(--line); background: var(--bg);
+}
+.msg-actions .msg-action:hover { color: var(--accent); border-color: var(--accent); }
+.msg-action:disabled { opacity: .45; cursor: wait; }
+.msg-copy::before { content: "⧉ "; }
+.msg-edit::before { content: "✎ "; }
+.msg-restore::before { content: "↶ "; }
+.msg-edited-mark {
+  padding: 1px 6px; border: 1px solid var(--line-soft); border-radius: 3px;
+  color: var(--faint); background: var(--surface); font: 9.5px var(--mono); letter-spacing: .04em;
+}
+.msg-actions [hidden] { display: none !important; }
+.assistant-edit-off .msg-edit-action { display: none !important; }
+.assistant-edit-input { min-height: 220px; resize: vertical; }
+
 /* Account-scoped Codex limits; percentages never aggregate across accounts. */
 .codex-usage-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 8px; font: 12px var(--mono); color: var(--muted); }
 .codex-usage-account { border-top: 1px solid var(--line); padding: 16px 0; }

@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "A /model nem elérhető",
   "tui.slash.807564bac8": "Ebben a beszélgetésben nem rögzítettek fájlmódosításokat.",
   "tui.slash.797e916342": "exportálta a %d üzeneteket a %s-be",
+  "tui.command_desc.import": "a /export session paranccsal mentett munkamenetfájl importálása új beszélgetésként",
+  "tui.slash.portable_exported": "a munkamenet (%d üzenet) exportálva ide: %s",
+  "tui.slash.portable_export_failed": "a munkamenet exportálása sikertelen: %w",
+  "tui.slash.import_usage": "használat: /import <path> (a /export session paranccsal létrehozott .supercli-session.json fájl)",
+  "tui.slash.import_failed": "a munkamenet importálása sikertelen: %w",
+  "tui.slash.import_too_large": "a munkamenetfájl túl nagy (korlát: %d MiB)",
+  "tui.slash.import_invalid": "%s nem érvényes SuperCli munkamenetfájl",
+  "tui.slash.imported": "%d üzenet importálva új munkamenetként: „%s” (%s). Megnyitás: /resume %s",
   "tui.slash.127b72ef9e": "export írjon: %w",
   "tui.slash.49aed96c7c": "a %d üzeneteket a vágólapra másolta",
   "tui.slash.8e0d97abc6": "vágólap exportálása: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "A kapcsolat megszakadt. A számítógép ettől még kikapcsolhat; a kikapcsolás megszakításához csatlakozzon újra.",
   "hostPower.cancelFailed": "A megszakítás nem lett megerősítve. Próbálja újra.",
   "hostPower.confirm": "Kikapcsolja ezt a számítógépet, miután a(z) „{goal}” feladat befejezése igazolást nyert? Ezután 60 másodperces visszaszámlálás indul, második megerősítés nélkül.",
-  "hostPower.escape": "Esc: kikapcsolás megszakítása."
+  "hostPower.escape": "Esc: kikapcsolás megszakítása.",
+  "tui.command_desc.copy": "az utolsó MI-válasz másolása a vágólapra",
+  "tui.copy.native": "Az utolsó válasz a rendszer vágólapjára másolva",
+  "tui.copy.osc52": "Az utolsó válasz a terminálon keresztül másolva (OSC 52)",
+  "tui.setting_assistant_edit.label": "MI-válaszok szerkesztése",
+  "tui.setting_assistant_edit.desc": "Az MI-válaszok alatt megjeleníti a Szerkesztés és az Eredeti visszaállítása gombot. A másolás mindig elérhető.",
+  "tui.setting_assistant_edit_model_sees.label": "A modell látja a szerkesztett válaszokat",
+  "tui.setting_assistant_edit_model_sees.desc": "Ki: a szerkesztés csak a megjelenítést változtatja. Be: a szerkesztett szöveg a következő futtatáskor felváltja az eredetit abban, amit a modell lát. Egy régebbi üzenet szerkesztése attól a ponttól érvényteleníti a szolgáltató prompt-gyorsítótárát, így a következő válasz egyszer lassabb és drágább lesz."
 }

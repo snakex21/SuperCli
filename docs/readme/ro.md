@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Un agent AI portabil pentru programare, scris în Go, cu interfață de terminal (TUI), interfață desktop/web (GUI) și mod batch care folosesc același motor.
 
 <!-- readme-unit:status -->
-Acest README descrie versiunea `1.0.17`. Pachetele portabile sunt distribuite prin [GitHub Releases](https://github.com/snakex21/SuperCli/releases); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.
+Acest README descrie versiunea `1.0.18`. Pachetele portabile sunt distribuite prin [GitHub Releases](https://github.com/snakex21/SuperCli/releases); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.
 
 <!-- readme-unit:h.screenshots -->
 ## Capturi de ecran
@@ -138,7 +138,7 @@ Tastați `/` pentru paleta de comenzi. Deschideți centrul de acțiuni TUI cu `T
 | --- | --- |
 | `/help`, `/doctor` | Afișați ajutorul și diagnosticele. |
 | `/model`, `/models`, `/providers` | Alegeți modele și gestionați furnizorii. |
-| `/resume`, `/export` | Reluați sau exportați o conversație. |
+| `/resume`, `/export`, `/import` | Reluați sau exportați o conversație. |
 | `/status`, `/cost`, `/compact` | Inspectați utilizarea sau compactați contextul. |
 | `/goal`, `/plan` | Gestionați obiectivele și modul de planificare doar pentru citire. |
 | `/diff`, `/undo`, `/redo` | Inspectați modificările sau anulați/refaceți o tură a agentului. |

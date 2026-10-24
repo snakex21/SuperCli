@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.
 
 <!-- readme-unit:status -->
-Šis README aprašo versiją `1.0.17`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
+Šis README aprašo versiją `1.0.18`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrano nuotraukos
@@ -138,7 +138,7 @@ Komandų paletei įveskite `/`. TUI veiksmų centrą atidarykite su `Tab` tušč
 | --- | --- |
 | `/help`, `/doctor` | Rodyti pagalbą ir diagnostiką. |
 | `/model`, `/models`, `/providers` | Pasirinkti modelius ir valdyti teikėjus. |
-| `/resume`, `/export` | Tęsti arba eksportuoti pokalbį. |
+| `/resume`, `/export`, `/import` | Tęsti arba eksportuoti pokalbį. |
 | `/status`, `/cost`, `/compact` | Peržiūrėti naudojimą arba glaudinti kontekstą. |
 | `/goal`, `/plan` | Valdyti tikslus ir tik skaitymo planavimo režimą. |
 | `/diff`, `/undo`, `/redo` | Peržiūrėti pakeitimus arba atšaukti/pakartoti agento žingsnį. |

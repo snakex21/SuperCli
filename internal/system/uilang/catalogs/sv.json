@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model inte tillgänglig",
   "tui.slash.807564bac8": "Inga filändringar registrerades under denna session.",
   "tui.slash.797e916342": "exporterade %d-meddelanden till %s",
+  "tui.command_desc.import": "importera en sessionsfil sparad med /export session som en ny konversation",
+  "tui.slash.portable_exported": "sessionen (%d meddelanden) exporterades till %s",
+  "tui.slash.portable_export_failed": "export av sessionen misslyckades: %w",
+  "tui.slash.import_usage": "användning: /import <path> (en .supercli-session.json-fil skapad med /export session)",
+  "tui.slash.import_failed": "import av sessionen misslyckades: %w",
+  "tui.slash.import_too_large": "sessionsfilen är för stor (gräns: %d MiB)",
+  "tui.slash.import_invalid": "%s är inte en giltig SuperCli-sessionsfil",
+  "tui.slash.imported": "importerade %d meddelanden som ny session \"%s\" (%s). Öppna den med /resume %s",
   "tui.slash.127b72ef9e": "export skriv: %w",
   "tui.slash.49aed96c7c": "kopierade %d-meddelanden till urklipp",
   "tui.slash.8e0d97abc6": "export urklipp: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Anslutningen bröts. Datorn kan fortfarande stängas av; anslut igen för att avbryta.",
   "hostPower.cancelFailed": "Avbrottet har inte bekräftats. Försök igen.",
   "hostPower.confirm": "Stänga av den här datorn när det har bekräftats att ”{goal}” är slutfört? Därefter börjar en nedräkning på 60 sekunder, utan en andra bekräftelse.",
-  "hostPower.escape": "Esc: avbryt avstängning."
+  "hostPower.escape": "Esc: avbryt avstängning.",
+  "tui.command_desc.copy": "kopiera det senaste AI-svaret till urklipp",
+  "tui.copy.native": "Senaste svaret kopierat till systemets urklipp",
+  "tui.copy.osc52": "Senaste svaret kopierat via terminalen (OSC 52)",
+  "tui.setting_assistant_edit.label": "Redigera AI-svar",
+  "tui.setting_assistant_edit.desc": "Visar Redigera och Återställ original under AI-svar. Kopiera finns alltid.",
+  "tui.setting_assistant_edit_model_sees.label": "Modellen ser redigerade svar",
+  "tui.setting_assistant_edit_model_sees.desc": "Av: redigeringar ändrar bara visningen. På: den redigerade texten ersätter originalet i det modellen ser vid nästa körning. Att redigera ett äldre meddelande ogiltigförklarar leverantörens promptcache från den punkten, så nästa svar blir en gång långsammare och dyrare."
 }

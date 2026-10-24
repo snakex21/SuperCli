@@ -42,6 +42,10 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.ShowGenerationSpeed = cycleTri(c.ShowGenerationSpeed)
 	case "update_notify":
 		c.UpdateNotify = cycleTri(c.UpdateNotify)
+	case "assistant_edit":
+		c.AssistantEdit = cycleTri(c.AssistantEdit)
+	case "assistant_edit_model_sees":
+		c.AssistantEditModelSees = cycleTri(c.AssistantEditModelSees)
 	case "orchestrator":
 		c.Orchestrator = cycleTri(c.Orchestrator)
 	case "allow_all":
@@ -95,6 +99,10 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.ShowGenerationSpeed = nil
 	case "update_notify":
 		c.UpdateNotify = nil
+	case "assistant_edit":
+		c.AssistantEdit = nil
+	case "assistant_edit_model_sees":
+		c.AssistantEditModelSees = nil
 	case "orchestrator":
 		c.Orchestrator = nil
 	case "allow_all":
@@ -186,6 +194,10 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return m.triDisplay(c.ShowGenerationSpeed, "on")
 	case "update_notify":
 		return m.triDisplay(c.UpdateNotify, "on")
+	case "assistant_edit":
+		return m.triDisplay(c.AssistantEdit, "off")
+	case "assistant_edit_model_sees":
+		return m.triDisplay(c.AssistantEditModelSees, "off")
 	case "language":
 		language := c.Language
 		if language == "" {

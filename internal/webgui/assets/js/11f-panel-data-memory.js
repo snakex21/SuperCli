@@ -50,6 +50,25 @@ sections.data = async function () {
     finally { importInput.value = ""; }
   });
   var importRow = dataAction(t("data.import"), t("data.importHint"), importBtn); importRow.appendChild(importInput); backup.appendChild(importRow);
+  var sessionImportBtn = i18nEl("button", "btn", "data.importSession"); sessionImportBtn.type = "button";
+  var sessionImportInput = document.createElement("input"); sessionImportInput.type = "file"; sessionImportInput.accept = ".json,application/json"; sessionImportInput.hidden = true;
+  sessionImportBtn.addEventListener("click", function () { sessionImportInput.click(); });
+  sessionImportInput.addEventListener("change", async function () {
+    if (!sessionImportInput.files || !sessionImportInput.files[0]) return;
+    var sessionFile = sessionImportInput.files[0];
+    sessionImportBtn.disabled = true;
+    var form = new FormData(); form.append("session", sessionFile);
+    try {
+      var response = await fetch("/api/session/import", { method:"POST", body:form });
+      if (!response.ok) throw new Error((await response.text()).trim() || String(response.status));
+      var result = await response.json();
+      toast(t("data.importSessionDone") + (result.title ? ": " + result.title : ""));
+      if (typeof loadSessions === "function") await loadSessions();
+      if (result.id && typeof resumeSession === "function") await resumeSession(result.id);
+    } catch (e) { toast(e.message); }
+    finally { sessionImportBtn.disabled = false; sessionImportInput.value = ""; }
+  });
+  var sessionImportRow = dataAction(t("data.importSession"), t("data.importSessionHint"), sessionImportBtn); sessionImportRow.appendChild(sessionImportInput); backup.appendChild(sessionImportRow);
   panelContent.appendChild(backup);
 
   var danger = el("div", "group data-group danger-zone"); danger.appendChild(i18nEl("div", "g-label", "data.danger"));

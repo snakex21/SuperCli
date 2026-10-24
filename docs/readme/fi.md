@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.
 
 <!-- readme-unit:status -->
-Tämä README kuvaa versiota `1.0.17`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
+Tämä README kuvaa versiota `1.0.18`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvakaappaukset
@@ -138,7 +138,7 @@ Avaa komentopaletti kirjoittamalla `/`. Avaa TUI:n toimintokeskus tyhjässä sy�
 | --- | --- |
 | `/help`, `/doctor` | Näytä ohje ja diagnostiikka. |
 | `/model`, `/models`, `/providers` | Valitse mallit ja hallitse palveluntarjoajia. |
-| `/resume`, `/export` | Jatka keskustelua tai vie se tiedostoon. |
+| `/resume`, `/export`, `/import` | Jatka keskustelua tai vie se tiedostoon. |
 | `/status`, `/cost`, `/compact` | Tarkastele käyttöä tai tiivistä kontekstia. |
 | `/goal`, `/plan` | Hallitse tavoitteita ja vain luku -suunnittelutilaa. |
 | `/diff`, `/undo`, `/redo` | Tarkastele muutoksia tai kumoa/toista agentin vuoro. |

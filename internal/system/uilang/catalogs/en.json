@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model not available",
   "tui.slash.807564bac8": "No file changes recorded in this session.",
   "tui.slash.797e916342": "exported %d messages to %s",
+  "tui.command_desc.import": "import a session file saved with /export session as a new conversation",
+  "tui.slash.portable_exported": "exported the session (%d messages) to %s",
+  "tui.slash.portable_export_failed": "session export failed: %w",
+  "tui.slash.import_usage": "usage: /import <path> (a .supercli-session.json file created by /export session)",
+  "tui.slash.import_failed": "session import failed: %w",
+  "tui.slash.import_too_large": "the session file is too large (limit: %d MiB)",
+  "tui.slash.import_invalid": "%s is not a valid SuperCli session file",
+  "tui.slash.imported": "imported %d messages as a new session \"%s\" (%s). Open it with /resume %s",
   "tui.slash.127b72ef9e": "export write: %w",
   "tui.slash.49aed96c7c": "copied %d messages to clipboard",
   "tui.slash.8e0d97abc6": "export clipboard: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Connection lost. The host may still shut down; reconnect to cancel.",
   "hostPower.cancelFailed": "Cancellation was not confirmed. Try again.",
   "hostPower.confirm": "Shut down this computer after “{goal}” is verified as complete? A 60-second countdown will follow, with no second confirmation.",
-  "hostPower.escape": "Esc: cancel shutdown."
+  "hostPower.escape": "Esc: cancel shutdown.",
+  "tui.command_desc.copy": "copy the last AI reply to the clipboard",
+  "tui.copy.native": "Copied last reply to the system clipboard",
+  "tui.copy.osc52": "Copied last reply via the terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Edit AI replies",
+  "tui.setting_assistant_edit.desc": "Shows Edit and Restore original under AI replies. Copy is always available.",
+  "tui.setting_assistant_edit_model_sees.label": "Model sees edited replies",
+  "tui.setting_assistant_edit_model_sees.desc": "Off: edits only change the display. On: the edited text replaces the original in what the model sees on the next run. Editing an older message invalidates the provider prompt cache from that point, so the next reply is slower and more expensive once."
 }

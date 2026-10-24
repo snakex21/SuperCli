@@ -60,6 +60,10 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setTri(&c.ShowGenerationSpeed)
 	case "update_notify":
 		return setTri(&c.UpdateNotify)
+	case "assistant_edit":
+		return setTri(&c.AssistantEdit)
+	case "assistant_edit_model_sees":
+		return setTri(&c.AssistantEditModelSees)
 	case "cost_currency":
 		if val == "" || strings.EqualFold(val, "default") {
 			c.CostCurrency = ""

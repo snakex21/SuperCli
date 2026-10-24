@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.
 
 <!-- readme-unit:status -->
-Tento README popisuje verzi `1.0.17`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
+Tento README popisuje verzi `1.0.18`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky
@@ -138,7 +138,7 @@ Napište `/` pro paletu příkazů. Centrum akcí TUI otevřete pomocí `Tab` v 
 | --- | --- |
 | `/help`, `/doctor` | Zobrazit nápovědu a diagnostiku. |
 | `/model`, `/models`, `/providers` | Vybrat modely a spravovat poskytovatele. |
-| `/resume`, `/export` | Obnovit nebo exportovat konverzaci. |
+| `/resume`, `/export`, `/import` | Obnovit nebo exportovat konverzaci. |
 | `/status`, `/cost`, `/compact` | Zkontrolovat využití nebo zkompaktovat kontext. |
 | `/goal`, `/plan` | Spravovat cíle a režim plánování pouze pro čtení. |
 | `/diff`, `/undo`, `/redo` | Zkontrolovat změny nebo vrátit/obnovit tah agenta. |

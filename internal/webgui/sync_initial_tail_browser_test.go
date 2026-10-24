@@ -110,7 +110,7 @@ const syncInitialTailIntegration = `(async()=>{
  fixtureCheck(Math.abs(gap)<=1,'syncRefreshView with no saved scroll lost latest tail: gap='+gap);
  fixtureCheck(observedOwner&&observedOwner.frames>0,'production refresh did not run initial settlement');
  fixtureCheck(!initialTranscriptTail&&transcriptResumeScroll===null,'initial owner/restoration state did not settle');
- fixtureCheck(transcriptBeforeSeq===11461&&stream.children.length===61,'long latest page was not bounded');
+ fixtureCheck(transcriptBeforeSeq===11461&&stream.querySelectorAll(':scope > :not(.msg-actions)').length===61,'long latest page was not bounded');
  fixtureCheck(getComputedStyle(stream.querySelector(':scope > .msg-assistant')).contentVisibility==='auto','virtualization disabled');
  fixtureCheck(document.activeElement===promptEl,'refresh lost composer focus');
  var initialFrames=observedOwner.frames;

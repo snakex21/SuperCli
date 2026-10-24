@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model nie je k dispozícii",
   "tui.slash.807564bac8": "V tejto konverzácii neboli zaznamenané žiadne zmeny súborov.",
   "tui.slash.797e916342": "exportoval správy %d do %s",
+  "tui.command_desc.import": "importovať súbor relácie uložený pomocou /export session ako novú konverzáciu",
+  "tui.slash.portable_exported": "relácia (správy: %d) bola exportovaná do %s",
+  "tui.slash.portable_export_failed": "export relácie zlyhal: %w",
+  "tui.slash.import_usage": "použitie: /import <path> (súbor .supercli-session.json vytvorený pomocou /export session)",
+  "tui.slash.import_failed": "import relácie zlyhal: %w",
+  "tui.slash.import_too_large": "súbor relácie je príliš veľký (limit: %d MiB)",
+  "tui.slash.import_invalid": "%s nie je platný súbor relácie SuperCli",
+  "tui.slash.imported": "importované správy: %d ako nová relácia „%s“ (%s). Otvorte ju pomocou /resume %s",
   "tui.slash.127b72ef9e": "exportovať zápis: %w",
   "tui.slash.49aed96c7c": "skopírované správy %d do schránky",
   "tui.slash.8e0d97abc6": "exportná schránka: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Spojenie sa prerušilo. Počítač sa stále môže vypnúť; na zrušenie sa znova pripojte.",
   "hostPower.cancelFailed": "Zrušenie nebolo potvrdené. Skúste to znova.",
   "hostPower.confirm": "Vypnúť tento počítač po overení dokončenia úlohy „{goal}“? Nasledovať bude 60-sekundové odpočítavanie bez ďalšieho potvrdenia.",
-  "hostPower.escape": "Esc: zrušiť vypnutie."
+  "hostPower.escape": "Esc: zrušiť vypnutie.",
+  "tui.command_desc.copy": "skopírovať poslednú odpoveď AI do schránky",
+  "tui.copy.native": "Posledná odpoveď skopírovaná do systémovej schránky",
+  "tui.copy.osc52": "Posledná odpoveď skopírovaná cez terminál (OSC 52)",
+  "tui.setting_assistant_edit.label": "Úpravy odpovedí AI",
+  "tui.setting_assistant_edit.desc": "Zobrazí pod odpoveďami AI tlačidlá Upraviť a Obnoviť pôvodné. Kopírovanie je dostupné vždy.",
+  "tui.setting_assistant_edit_model_sees.label": "Model vidí upravené odpovede",
+  "tui.setting_assistant_edit_model_sees.desc": "Vypnuté: úpravy menia len zobrazenie. Zapnuté: upravený text nahradí pôvodný v tom, čo model uvidí pri ďalšom spustení. Úprava staršej správy od toho miesta zneplatní vyrovnávaciu pamäť promptu u poskytovateľa, takže ďalšia odpoveď bude raz pomalšia a drahšia."
 }

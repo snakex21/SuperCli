@@ -171,6 +171,12 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.UpdateNotify != nil {
 		dst.UpdateNotify = src.UpdateNotify
 	}
+	if src.AssistantEdit != nil {
+		dst.AssistantEdit = src.AssistantEdit
+	}
+	if src.AssistantEditModelSees != nil {
+		dst.AssistantEditModelSees = src.AssistantEditModelSees
+	}
 	if src.ContextWindow > 0 {
 		dst.ContextWindow = src.ContextWindow
 	}

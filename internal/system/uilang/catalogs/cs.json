@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model není k dispozici",
   "tui.slash.807564bac8": "V této konverzaci nebyly zaznamenány žádné změny souborů.",
   "tui.slash.797e916342": "exportoval zprávy %d do %s",
+  "tui.command_desc.import": "importovat soubor relace uložený pomocí /export session jako novou konverzaci",
+  "tui.slash.portable_exported": "relace (zprávy: %d) byla exportována do %s",
+  "tui.slash.portable_export_failed": "export relace se nezdařil: %w",
+  "tui.slash.import_usage": "použití: /import <path> (soubor .supercli-session.json vytvořený pomocí /export session)",
+  "tui.slash.import_failed": "import relace se nezdařil: %w",
+  "tui.slash.import_too_large": "soubor relace je příliš velký (limit: %d MiB)",
+  "tui.slash.import_invalid": "%s není platný soubor relace SuperCli",
+  "tui.slash.imported": "importováno zpráv: %d jako nová relace „%s“ (%s). Otevřete ji pomocí /resume %s",
   "tui.slash.127b72ef9e": "exportní zápis: %w",
   "tui.slash.49aed96c7c": "zkopírované zprávy %d do schránky",
   "tui.slash.8e0d97abc6": "exportní schránka: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Spojení ztraceno. Počítač se stále může vypnout; pro zrušení se znovu připojte.",
   "hostPower.cancelFailed": "Zrušení nebylo potvrzeno. Zkuste to znovu.",
   "hostPower.confirm": "Vypnout tento počítač po ověření dokončení úlohy „{goal}“? Následovat bude 60sekundový odpočet bez dalšího potvrzení.",
-  "hostPower.escape": "Esc: zrušit vypnutí."
+  "hostPower.escape": "Esc: zrušit vypnutí.",
+  "tui.command_desc.copy": "zkopírovat poslední odpověď AI do schránky",
+  "tui.copy.native": "Poslední odpověď zkopírována do systémové schránky",
+  "tui.copy.osc52": "Poslední odpověď zkopírována přes terminál (OSC 52)",
+  "tui.setting_assistant_edit.label": "Úpravy odpovědí AI",
+  "tui.setting_assistant_edit.desc": "Zobrazí pod odpověďmi AI tlačítka Upravit a Obnovit původní. Kopírování je dostupné vždy.",
+  "tui.setting_assistant_edit_model_sees.label": "Model vidí upravené odpovědi",
+  "tui.setting_assistant_edit_model_sees.desc": "Vypnuto: úpravy mění jen zobrazení. Zapnuto: upravený text nahradí původní v tom, co model uvidí při dalším spuštění. Úprava starší zprávy od toho místa zneplatní mezipaměť promptu u poskytovatele, takže další odpověď bude jednou pomalejší a dražší."
 }

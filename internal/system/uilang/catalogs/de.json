@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model nicht verfügbar",
   "tui.slash.807564bac8": "In dieser Sitzung wurden keine Dateiänderungen aufgezeichnet.",
   "tui.slash.797e916342": "exportierte %d-Nachrichten nach %s",
+  "tui.command_desc.import": "eine mit /export session gespeicherte Sitzungsdatei als neues Gespräch importieren",
+  "tui.slash.portable_exported": "Sitzung (%d Nachrichten) nach %s exportiert",
+  "tui.slash.portable_export_failed": "Export der Sitzung fehlgeschlagen: %w",
+  "tui.slash.import_usage": "Verwendung: /import <path> (eine mit /export session erstellte .supercli-session.json-Datei)",
+  "tui.slash.import_failed": "Import der Sitzung fehlgeschlagen: %w",
+  "tui.slash.import_too_large": "die Sitzungsdatei ist zu groß (Grenze: %d MiB)",
+  "tui.slash.import_invalid": "%s ist keine gültige SuperCli-Sitzungsdatei",
+  "tui.slash.imported": "%d Nachrichten als neue Sitzung „%s“ (%s) importiert. Öffnen mit /resume %s",
   "tui.slash.127b72ef9e": "Exportieren: %w",
   "tui.slash.49aed96c7c": "%d-Nachrichten in die Zwischenablage kopiert",
   "tui.slash.8e0d97abc6": "Zwischenablage exportieren: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Verbindung verloren. Der Computer wird möglicherweise trotzdem heruntergefahren; zum Abbrechen erneut verbinden.",
   "hostPower.cancelFailed": "Der Abbruch wurde nicht bestätigt. Bitte erneut versuchen.",
   "hostPower.confirm": "Diesen Computer herunterfahren, nachdem die Fertigstellung von „{goal}“ bestätigt wurde? Danach beginnt ein Countdown von 60 Sekunden, ohne weitere Bestätigung.",
-  "hostPower.escape": "Esc: Herunterfahren abbrechen."
+  "hostPower.escape": "Esc: Herunterfahren abbrechen.",
+  "tui.command_desc.copy": "letzte KI-Antwort in die Zwischenablage kopieren",
+  "tui.copy.native": "Letzte Antwort in die Systemzwischenablage kopiert",
+  "tui.copy.osc52": "Letzte Antwort über das Terminal kopiert (OSC 52)",
+  "tui.setting_assistant_edit.label": "KI-Antworten bearbeiten",
+  "tui.setting_assistant_edit.desc": "Zeigt „Bearbeiten“ und „Original wiederherstellen“ unter KI-Antworten. Kopieren ist immer verfügbar.",
+  "tui.setting_assistant_edit_model_sees.label": "Modell sieht bearbeitete Antworten",
+  "tui.setting_assistant_edit_model_sees.desc": "Aus: Änderungen betreffen nur die Anzeige. An: Der bearbeitete Text ersetzt beim nächsten Lauf das Original in dem, was das Modell sieht. Das Bearbeiten einer älteren Nachricht macht den Prompt-Cache des Anbieters ab dieser Stelle ungültig; die nächste Antwort ist einmalig langsamer und teurer."
 }

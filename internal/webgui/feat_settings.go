@@ -141,6 +141,8 @@ func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
 		global, _ := config.FindTomlPaths(s.eng.DataDir(), s.eng.Home())
 		presentation, _ := config.LoadToml(global)
 		blob["ui.showGenerationSpeed"] = presentation.ShowGenerationSpeed == nil || *presentation.ShowGenerationSpeed
+		blob["ui.assistantEdit"] = config.AssistantEditEnabled(presentation)
+		blob["ui.assistantEditModelSees"] = config.AssistantEditModelSeesEnabled(presentation)
 		writeJSON(w, map[string]any{"settings": blob})
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))

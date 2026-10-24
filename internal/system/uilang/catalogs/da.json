@@ -751,6 +751,14 @@
   "tui.slash.76296fd689": "/model ikke tilgængelig",
   "tui.slash.807564bac8": "Der er ikke registreret filændringer i denne samtale.",
   "tui.slash.797e916342": "eksporterede %d-meddelelser til %s",
+  "tui.command_desc.import": "importér en sessionsfil gemt med /export session som en ny samtale",
+  "tui.slash.portable_exported": "sessionen (%d beskeder) blev eksporteret til %s",
+  "tui.slash.portable_export_failed": "eksport af sessionen mislykkedes: %w",
+  "tui.slash.import_usage": "brug: /import <path> (en .supercli-session.json-fil oprettet med /export session)",
+  "tui.slash.import_failed": "import af sessionen mislykkedes: %w",
+  "tui.slash.import_too_large": "sessionsfilen er for stor (grænse: %d MiB)",
+  "tui.slash.import_invalid": "%s er ikke en gyldig SuperCli-sessionsfil",
+  "tui.slash.imported": "importerede %d beskeder som ny session \"%s\" (%s). Åbn den med /resume %s",
   "tui.slash.127b72ef9e": "eksport skriv: %w",
   "tui.slash.49aed96c7c": "kopierede %d-meddelelser til udklipsholderen",
   "tui.slash.8e0d97abc6": "eksport udklipsholder: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Forbindelsen er afbrudt. Værtscomputeren kan stadig slukke; opret forbindelse igen for at annullere.",
   "hostPower.cancelFailed": "Annulleringen blev ikke bekræftet. Prøv igen.",
   "hostPower.confirm": "Sluk denne computer, når det er bekræftet, at “{goal}” er fuldført? Derefter starter en nedtælling på 60 sekunder uden yderligere bekræftelse.",
-  "hostPower.escape": "Esc: annuller slukning."
+  "hostPower.escape": "Esc: annuller slukning.",
+  "tui.command_desc.copy": "kopiér det seneste AI-svar til udklipsholderen",
+  "tui.copy.native": "Seneste svar kopieret til systemets udklipsholder",
+  "tui.copy.osc52": "Seneste svar kopieret via terminalen (OSC 52)",
+  "tui.setting_assistant_edit.label": "Redigér AI-svar",
+  "tui.setting_assistant_edit.desc": "Viser Redigér og Gendan original under AI-svar. Kopiér er altid tilgængelig.",
+  "tui.setting_assistant_edit_model_sees.label": "Modellen ser redigerede svar",
+  "tui.setting_assistant_edit_model_sees.desc": "Fra: redigeringer ændrer kun visningen. Til: den redigerede tekst erstatter originalen i det, modellen ser ved næste kørsel. Redigering af en ældre besked ugyldiggør udbyderens prompt-cache fra det punkt, så næste svar bliver én gang langsommere og dyrere."
 }
