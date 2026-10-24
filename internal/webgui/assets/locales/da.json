@@ -225,6 +225,7 @@
   "tool.stderr": "Standardfejl",
   "tool.ctx_execute": "Kommando",
   "tool.process_session": "Behandle",
+  "tool.send_screenshot": "Skærmbillede",
   "tool.list_dir": "Mappeindhold",
   "tool.read_lines": "Læs fil",
   "tool.read_many": "Læs filer",

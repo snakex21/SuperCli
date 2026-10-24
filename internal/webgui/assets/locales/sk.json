@@ -225,6 +225,7 @@
   "tool.stderr": "Chybový výstup",
   "tool.ctx_execute": "Príkaz",
   "tool.process_session": "Proces",
+  "tool.send_screenshot": "Snímka obrazovky",
   "tool.list_dir": "Obsah priečinka",
   "tool.read_lines": "Čítať súbor",
   "tool.read_many": "Čítať súbory",

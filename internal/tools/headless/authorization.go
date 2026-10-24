@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 
 	"supercli/internal/tools/interactive"
@@ -14,7 +15,7 @@ func validAction(protocol, action string) (mutation bool, valid bool) {
 		switch action {
 		case "status", "screenshot", "wait_event":
 			return false, true
-		case "keys", "click":
+		case "keys", "type", "click":
 			return true, true
 		}
 	} else if protocol == "webdriver" {
@@ -60,13 +61,8 @@ func (t *Tool) authorize(ctx context.Context, p params) error {
 		if endpoint.String() != p.Endpoint {
 			continue
 		}
-		for _, action := range target.AllowedActions {
-			if action == p.Action {
-				targetName = name
-				break
-			}
-		}
-		if targetName != "" {
+		if allowsAction(target.AllowedActions, p) {
+			targetName = name
 			break
 		}
 	}
@@ -86,4 +82,12 @@ func (t *Tool) authorize(ctx context.Context, p params) error {
 	}
 	question := fmt.Sprintf("Control trusted target %q?\n%s\nPortable data directory: %s\nWorkspace directory (base for a relative binary): %s\nComplete effective arguments:\n%s", targetName, effect, t.DataDir, t.BaseDir, details)
 	return interactive.ConfirmAction(ctx, t.confirmation, question)
+}
+
+// QMP type sends the same keystrokes as keys, so a keys grant covers it.
+// screenshot_after additionally needs the screenshot grant.
+func allowsAction(allowed []string, p params) bool {
+	has := func(action string) bool { return slices.Contains(allowed, action) }
+	ok := has(p.Action) || p.Protocol == "qmp" && p.Action == "type" && has("keys")
+	return ok && (!p.ScreenshotAfter || has("screenshot"))
 }

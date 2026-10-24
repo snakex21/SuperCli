@@ -225,6 +225,7 @@
   "tool.stderr": "Izlaz greške",
   "tool.ctx_execute": "Komanda",
   "tool.process_session": "Proces",
+  "tool.send_screenshot": "Snimak ekrana",
   "tool.list_dir": "Sadržaj fascikle",
   "tool.read_lines": "Pročitajte datoteku",
   "tool.read_many": "Pročitajte datoteke",

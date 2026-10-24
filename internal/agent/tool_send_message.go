@@ -269,6 +269,11 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			if e.Err != nil {
 				progress.Err = toolcore.HeadTail(e.Err.Error(), 180, 60)
 			}
+			for _, img := range e.Images {
+				if img.Path != "" {
+					progress.Images = append(progress.Images, img.Path)
+				}
+			}
 			emit(progress)
 			delete(toolCalls, e.ID)
 		case DoneEvent:

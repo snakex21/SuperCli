@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 
 	"supercli/internal/llm"
@@ -32,6 +33,8 @@ type workerUIToolCall struct {
 	Completed    bool   `json:"completed"`
 	DetailHandle string `json:"detail_handle,omitempty"`
 	Partial      bool   `json:"partial,omitempty"`
+	// Images holds content-addressed session-media file names only.
+	Images []string `json:"images,omitempty"`
 }
 
 const workerUICallLimit = 256
@@ -65,6 +68,11 @@ func (a *workerUIActivity) result(e ToolResultEvent, detail ...string) {
 			c.Error = core.HeadTail(e.Err.Error(), 180, 60)
 		}
 		c.Partial = c.Partial || c.Output != e.Output || e.Err != nil && c.Error != e.Err.Error()
+		for _, img := range e.Images {
+			if name := filepath.Base(filepath.ToSlash(img.Path)); img.Path != "" && len(c.Images) < 8 {
+				c.Images = append(c.Images, name)
+			}
+		}
 		if len(detail) > 0 {
 			c.DetailHandle = detail[0]
 		}

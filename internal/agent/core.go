@@ -231,6 +231,8 @@ type WorkerProgressEvent struct {
 	Args            string
 	Output          string
 	Err             string
+	// Images are durable session-media paths from a tool_result, never pixels.
+	Images []string
 }
 
 func (WorkerProgressEvent) event() {}

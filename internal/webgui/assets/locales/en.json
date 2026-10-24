@@ -225,6 +225,7 @@
   "tool.stderr": "Error output",
   "tool.ctx_execute": "Command",
   "tool.process_session": "Process",
+  "tool.send_screenshot": "Screenshot",
   "tool.list_dir": "Folder contents",
   "tool.read_lines": "Read file",
   "tool.read_many": "Read files",

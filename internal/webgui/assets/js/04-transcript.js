@@ -1208,8 +1208,19 @@ function workerActivityStatus(key) {
 
 // Keep the released one-line activity layout. Its whole row opens the owned
 // preview; a separate "Output" row must not inflate every collapsed call.
-function setWorkerActivityDetail(item, args, output, error, handle, partial) {
-  if (!args && !output && !error && !handle) return;
+var WORKER_IMAGE_TOKEN = /^session:[A-Za-z0-9_-]+\/[a-f0-9]{64}\.(png|jpg|jpeg|gif|webp)$/;
+function workerImageTokens(images) {
+  var session = transcriptSessionID || activeSessionID;
+  return (Array.isArray(images) ? images : []).map(function (value) {
+    value = String(value || "");
+    // Saved history keeps bare content-addressed names; live events are tokens.
+    if (session && /^[a-f0-9]{64}\.(png|jpg|jpeg|gif|webp)$/.test(value)) value = "session:" + session + "/" + value;
+    return value;
+  }).filter(function (value) { return WORKER_IMAGE_TOKEN.test(value); }).slice(0, 8);
+}
+function setWorkerActivityDetail(item, args, output, error, handle, partial, images) {
+  images = workerImageTokens(images);
+  if (!args && !output && !error && !handle && !images.length) return;
   var detail = item.querySelector(".activity-result");
   if (!detail) {
     detail = el("details", "activity-result");
@@ -1243,6 +1254,12 @@ function setWorkerActivityDetail(item, args, output, error, handle, partial) {
       var result = detail.open ? toolOutputPre(String(value), failed) : el("pre", failed ? "tool-output error" : "tool-output", String(value));
       result.classList.add("activity-output");
       payload.appendChild(result);
+    }
+    // Thumbnails load only once the call is opened, like main tool rows.
+    if (images.length && detail.open) {
+      var preview = el("div", "tool-media-preview tool-native-preview activity-images");
+      renderSentAttachments(preview, images, "image");
+      payload.appendChild(preview);
     }
     append(output, false);
     append(error, true);
@@ -1291,7 +1308,7 @@ function fillRecordedWorkerActivity(activity, log, expanded) {
     item.appendChild(workerToolNameNode(call.tool));
     item.appendChild(el("span", "activity-hint", toolHint(call.tool, call.args || "{}").hint || ""));
     item.appendChild(workerActivityStatus(state === "unknown" ? "task.statusUnconfirmed" : "task." + state));
-    setWorkerActivityDetail(item, call.args, call.output, call.error, call.detail_handle, call.partial);
+    setWorkerActivityDetail(item, call.args, call.output, call.error, call.detail_handle, call.partial, call.images);
     var detail = item.querySelector(".activity-result");
     if (detail) detail.open = !!(expanded && expanded[call.id]);
     activity.appendChild(item);
@@ -2373,7 +2390,7 @@ function addWorkerProgress(ev) {
     status.textContent = t(statusKey);
     status.dataset.i18nText = statusKey;
     status.i18nTextNode = status.firstChild;
-    setWorkerActivityDetail(item, item._workerArgs, ev.output || "", ev.err || "", ev.detail_handle, ev.partial);
+    setWorkerActivityDetail(item, item._workerArgs, ev.output || "", ev.err || "", ev.detail_handle, ev.partial, ev.images);
     updateWorkerOverview(ev.id, ev.name, "running", null, row);
   }
   row._body.hidden = !row.open;

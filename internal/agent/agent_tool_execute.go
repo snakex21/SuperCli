@@ -164,6 +164,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	var scopedContextWindowFor func(string, string) ContextWindowResolution
 	var summarizer Summarizer
 	var toolOutputs tools.OutputPersistence
+	var imageStore imageExternalizer
 	var learnLimit func(string, int)
 	pruneProtectTokens := 0
 	if a.ParentLoop != nil {
@@ -178,6 +179,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		scopedContextWindowFor = a.ParentLoop.scopedWindowFor
 		summarizer = a.ParentLoop.summarizer
 		toolOutputs = a.ParentLoop.toolOutputs
+		// Images go to the parent session's media folder only, so the GUI can
+		// preview them; the worker still never writes parent transcript rows.
+		imageStore, _ = a.ParentLoop.writer.(imageExternalizer)
 		learnLimit = a.ParentLoop.learnLimit
 		pruneProtectTokens = a.ParentLoop.pruneProtect
 	}
@@ -187,6 +191,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		Caps:                   a.Caps,
 		Registry:               childReg,
 		ToolOutputs:            toolOutputs,
+		ImageStore:             imageStore,
 		System:                 system,
 		UserInstructions:       instructions,
 		UserInstructionsForRun: instructionsForRun,

@@ -94,6 +94,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		thinHintMax:              cfg.ThinHintMax,
 		baseDir:                  cfg.BaseDir,
 		writer:                   cfg.Writer,
+		imageStore:               cfg.ImageStore,
 		toolOutputs:              cfg.ToolOutputs,
 		toolOutputsFollowWriter:  toolOutputsFollowWriter,
 		errorLog:                 cfg.ErrorLog,

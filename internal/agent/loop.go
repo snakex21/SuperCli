@@ -134,6 +134,9 @@ type Loop struct {
 	hoistedPreSet         bool
 	baseDir               string
 	writer                SessionWriter
+	// imageStore saves tool images when there is no conversation writer
+	// (workers): media files only, never transcript messages.
+	imageStore            imageExternalizer
 	hostPower             hostPowerState
 	invocationPersistence invocationPersistence
 	toolOutputs           tools.OutputPersistence
@@ -646,6 +649,11 @@ type LoopConfig struct {
 	// a worker ownership of the parent conversation writer. Nil follows Writer,
 	// including session switches; an explicit store keeps its configured owner.
 	ToolOutputs tools.OutputPersistence
+	// ImageStore optionally saves tool images to the parent session's media
+	// folder without giving a worker the conversation writer. Nil uses Writer.
+	ImageStore interface {
+		ExternalizeImage(ctx context.Context, mediaType string, data []byte) (llm.ImageRef, error)
+	}
 	// ErrorLog, when non-nil, receives one F4.d-classified
 	// record per failed tool call. The loop does not block
 	// on this write; failures are silent.

@@ -225,6 +225,7 @@
   "tool.stderr": "Virhetuloste",
   "tool.ctx_execute": "Komento",
   "tool.process_session": "Hallitse prosessia",
+  "tool.send_screenshot": "Kuvakaappaus",
   "tool.list_dir": "Kansion sisältö",
   "tool.read_lines": "Lue tiedosto",
   "tool.read_many": "Lue tiedostoja",

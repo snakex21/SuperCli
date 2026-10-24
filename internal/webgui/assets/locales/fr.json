@@ -225,6 +225,7 @@
   "tool.stderr": "Sortie d'erreur",
   "tool.ctx_execute": "Commande",
   "tool.process_session": "Processus",
+  "tool.send_screenshot": "Capture d'écran",
   "tool.list_dir": "Contenu du dossier",
   "tool.read_lines": "Lire le fichier",
   "tool.read_many": "Lire des fichiers",
