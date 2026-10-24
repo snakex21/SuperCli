@@ -836,7 +836,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 // an incomplete returned reference retains the original inline representation.
 func (l *Loop) toolImageRef(ctx context.Context, toolName string, image *tools.ImageContent) *llm.ImageRef {
 	name := "tool " + toolName
-	if ext, ok := l.writer.(imageExternalizer); ok {
+	ext, ok := l.writer.(imageExternalizer)
+	if !ok && l.imageStore != nil {
+		ext, ok = l.imageStore, true
+	}
+	if ok {
 		if ref, err := ext.ExternalizeImage(ctx, image.MediaType, image.Data); err == nil &&
 			(ref.URL != "" || (ref.MediaType != "" && (ref.Path != "" || ref.Data != ""))) {
 			ref.Name = name

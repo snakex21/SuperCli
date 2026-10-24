@@ -225,6 +225,7 @@
   "tool.stderr": "Foutuitvoer",
   "tool.ctx_execute": "Commando",
   "tool.process_session": "Proces",
+  "tool.send_screenshot": "Schermafbeelding",
   "tool.list_dir": "Inhoud map",
   "tool.read_lines": "Bestand lezen",
   "tool.read_many": "Bestanden lezen",

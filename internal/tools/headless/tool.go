@@ -35,8 +35,8 @@ func New(baseDir, dataDir string, confirmation ...chan<- interactive.AskRequest)
 	return t
 }
 func (t *Tool) Spec() core.Tool {
-	return core.Tool{Name: "headless_control", Description: "Control an operator-allowlisted local headless QEMU (qmp) or browser (webdriver). Requires global [headless.targets] configuration; mutations require interactive per-action approval. Start QEMU/driver once with process_session; reuse endpoint/session. QMP: status, keys, click, screenshot, wait_event. WebDriver: open headless browser, status, inspect semantic DOM, navigate, click/type CSS selector, screenshot, close. Prefer inspect/status over image inference. Chat preview is automatic; attach=true only for pixel analysis. Does not change host mouse/keyboard or foreground window.",
-		Schema: `{"type":"object","properties":{"protocol":{"type":"string","enum":["qmp","webdriver"]},"endpoint":{"type":"string","description":"Explicit loopback endpoint: tcp://127.0.0.1:4444 QMP or http://127.0.0.1:9515 WebDriver"},"action":{"type":"string","enum":["open","status","inspect","navigate","keys","click","type","screenshot","wait_event","close"]},"session_id":{"type":"string"},"browser":{"type":"string","enum":["chrome","firefox"],"default":"chrome"},"binary":{"type":"string","description":"Optional browser executable"},"url":{"type":"string"},"selector":{"type":"string","description":"WebDriver CSS selector"},"text":{"type":"string","maxLength":4096},"keys":{"type":"array","items":{"type":"string"},"maxItems":16,"description":"QMP qcode chord, e.g. [ctrl,alt,delete]"},"x":{"type":"integer","minimum":0,"maximum":32767},"y":{"type":"integer","minimum":0,"maximum":32767},"button":{"type":"string","enum":["left","right","middle"],"default":"left"},"event":{"type":"string","description":"QMP event to await without polling, e.g. SHUTDOWN"},"attach":{"type":"boolean","default":false},"image_detail":{"type":"string","enum":["auto","original"],"default":"auto"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":300000,"default":30000}},"required":["protocol","endpoint","action"]}`, Fn: t.Execute}
+	return core.Tool{Name: "headless_control", Description: "Control an operator-allowlisted local headless QEMU (qmp) or browser (webdriver). Requires global [headless.targets] configuration; mutations require interactive per-action approval. Start QEMU/driver once with process_session; reuse endpoint/session. QMP: status, keys (one chord), type (text as keystrokes, \n = Enter; one call instead of per-key calls; layout must match the guest keyboard: us = ASCII, pl = Polish programmer adds ąćęłńóśźż via AltGr), click, screenshot, wait_event; screenshot_after=true on keys/click/type returns the resulting screen in the same call. For text output from the guest, start QEMU with -serial file:<path> or -serial stdio and read that instead of inferring text from screenshots. WebDriver: open headless browser, status, inspect semantic DOM, navigate, click/type CSS selector, screenshot, close. Prefer inspect/status over image inference. Chat preview is automatic; attach=true only for pixel analysis. Does not change host mouse/keyboard or foreground window.",
+		Schema: `{"type":"object","properties":{"protocol":{"type":"string","enum":["qmp","webdriver"]},"endpoint":{"type":"string","description":"Explicit loopback endpoint: tcp://127.0.0.1:4444 QMP or http://127.0.0.1:9515 WebDriver"},"action":{"type":"string","enum":["open","status","inspect","navigate","keys","click","type","screenshot","wait_event","close"]},"session_id":{"type":"string"},"browser":{"type":"string","enum":["chrome","firefox"],"default":"chrome"},"binary":{"type":"string","description":"Optional browser executable"},"url":{"type":"string"},"selector":{"type":"string","description":"WebDriver CSS selector"},"text":{"type":"string","maxLength":4096,"description":"WebDriver type text, or QMP type text"},"layout":{"type":"string","enum":["us","pl"],"default":"us","description":"QMP type: guest keyboard layout"},"delay_ms":{"type":"integer","minimum":0,"maximum":1000,"description":"QMP type: pause between characters, default 40"},"screenshot_after":{"type":"boolean","default":false,"description":"QMP keys/click/type: capture the screen after the action in the same call"},"settle_ms":{"type":"integer","minimum":0,"maximum":10000,"description":"Wait before screenshot_after, default 300"},"keys":{"type":"array","items":{"type":"string"},"maxItems":16,"description":"QMP qcode chord, e.g. [ctrl,alt,delete]"},"x":{"type":"integer","minimum":0,"maximum":32767},"y":{"type":"integer","minimum":0,"maximum":32767},"button":{"type":"string","enum":["left","right","middle"],"default":"left"},"event":{"type":"string","description":"QMP event to await without polling, e.g. SHUTDOWN"},"attach":{"type":"boolean","default":false},"image_detail":{"type":"string","enum":["auto","original"],"default":"auto"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":300000,"default":30000}},"required":["protocol","endpoint","action"]}`, Fn: t.Execute}
 }
 
 type params struct {
@@ -57,6 +57,11 @@ type params struct {
 	ImageDetail string   `json:"image_detail"`
 	TimeoutMS   int      `json:"timeout_ms"`
 	Event       string   `json:"event"`
+	// QMP type pacing and the optional same-call capture after input.
+	DelayMS         int    `json:"delay_ms"`
+	ScreenshotAfter bool   `json:"screenshot_after"`
+	SettleMS        int    `json:"settle_ms"`
+	Layout          string `json:"layout"`
 }
 
 func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
@@ -76,6 +81,9 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	}
 	if p.Protocol != "qmp" && p.Protocol != "webdriver" {
 		return core.Result{Err: fmt.Errorf("headless_control: protocol must be qmp or webdriver")}, nil
+	}
+	if p.Protocol == "webdriver" && (p.ScreenshotAfter || p.DelayMS != 0 || p.SettleMS != 0 || p.Layout != "") {
+		return core.Result{Err: fmt.Errorf("headless_control: delay_ms, screenshot_after, settle_ms and layout are QMP-only")}, nil
 	}
 	if p.ImageDetail != "" && p.ImageDetail != "auto" && p.ImageDetail != "original" {
 		return core.Result{Err: fmt.Errorf("headless_control: image_detail must be auto or original")}, nil

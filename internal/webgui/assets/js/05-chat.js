@@ -8,6 +8,15 @@ var activeQuestionOverlay = null;
 var questionOverlays = Object.create(null);
 var runStart = 0, runTimer = null, runToolCount = 0;
 var lastTurn = null;    // last done-event payload + elapsed (stats pane)
+// Each model step is recorded on the server as it ends. Refresh the visible
+// stats pane during a turn too, at most once per second, never when hidden.
+var liveStatsTimer = null;
+function scheduleLiveStats() {
+  if (liveStatsTimer !== null || ui.sidebarHidden || typeof renderStats !== "function") return;
+  var tab = $("#side-tab-stats");
+  if (!tab || !tab.classList.contains("active")) return;
+  liveStatsTimer = setTimeout(function () { liveStatsTimer = null; renderStats(); }, 1000);
+}
 var workersSeen = [];   // worker notifications this browser session
 var promptEl = $("#prompt"), sendBtn = $("#send-btn"), runStatus = $("#run-status");
 var promptQueue = [], pendingImmediate = null, pauseQueue = false, unreadDone = 0;
@@ -1772,6 +1781,7 @@ function handleEvent(ev, current) {
     case "tool_call":
       sealAssistantSegment(current);
       addToolCall(ev.name, ev.args, ev.id, eventAt);
+      if (typeof scheduleLiveStats === "function") scheduleLiveStats();
       return null;
     case "tool_result":
       addToolResult(ev.id, ev.output, ev.err, eventAt);

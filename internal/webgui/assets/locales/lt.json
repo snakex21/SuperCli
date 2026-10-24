@@ -225,6 +225,7 @@
   "tool.stderr": "Klaidos išvestis",
   "tool.ctx_execute": "Komanda",
   "tool.process_session": "Procesas",
+  "tool.send_screenshot": "Ekrano kopija",
   "tool.list_dir": "Aplanko turinys",
   "tool.read_lines": "Skaityti failą",
   "tool.read_many": "Skaityti failus",

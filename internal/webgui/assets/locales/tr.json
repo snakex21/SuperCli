@@ -225,6 +225,7 @@
   "tool.stderr": "Hata çıkışı",
   "tool.ctx_execute": "Komut çalıştırma",
   "tool.process_session": "İşlem",
+  "tool.send_screenshot": "Ekran görüntüsü",
   "tool.list_dir": "Klasör içeriği",
   "tool.read_lines": "Dosyayı oku",
   "tool.read_many": "Dosyaları oku",

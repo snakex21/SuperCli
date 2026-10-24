@@ -225,6 +225,7 @@
   "tool.stderr": "Fehlerausgabe",
   "tool.ctx_execute": "Befehl",
   "tool.process_session": "Prozess",
+  "tool.send_screenshot": "Bildschirmfoto",
   "tool.list_dir": "Ordnerinhalt",
   "tool.read_lines": "Datei lesen",
   "tool.read_many": "Dateien lesen",

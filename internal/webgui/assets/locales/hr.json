@@ -225,6 +225,7 @@
   "tool.stderr": "Izlaz pogreške",
   "tool.ctx_execute": "Naredba",
   "tool.process_session": "Proces",
+  "tool.send_screenshot": "Snimka zaslona",
   "tool.list_dir": "Sadržaj mape",
   "tool.read_lines": "Pročitaj datoteku",
   "tool.read_many": "Čitaj datoteke",

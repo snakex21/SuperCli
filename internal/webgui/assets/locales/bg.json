@@ -225,6 +225,7 @@
   "tool.stderr": "Изход за грешка",
   "tool.ctx_execute": "командване",
   "tool.process_session": "Процес",
+  "tool.send_screenshot": "Екранна снимка",
   "tool.list_dir": "Съдържание на папката",
   "tool.read_lines": "Прочетете файла",
   "tool.read_many": "Четене на файлове",

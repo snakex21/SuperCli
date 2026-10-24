@@ -225,6 +225,7 @@
   "tool.stderr": "Kļūdas izvade",
   "tool.ctx_execute": "Pavēli",
   "tool.process_session": "Process",
+  "tool.send_screenshot": "Ekrānuzņēmums",
   "tool.list_dir": "Mapes saturs",
   "tool.read_lines": "Lasīt failu",
   "tool.read_many": "Lasīt failus",

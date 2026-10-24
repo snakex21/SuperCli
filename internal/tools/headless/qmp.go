@@ -122,7 +122,15 @@ func dialQMP(ctx context.Context, endpoint, wantedEvent string) (*qmpClient, fun
 	return q, closeFn, nil
 }
 func validateQMPParams(p params) error {
+	if p.ScreenshotAfter && p.Action != "keys" && p.Action != "click" && p.Action != "type" {
+		return fmt.Errorf("QMP screenshot_after applies only to keys, click or type")
+	}
+	if p.SettleMS < 0 || p.SettleMS > maxQMPSettleMS {
+		return fmt.Errorf("QMP settle_ms must be 0..%d", maxQMPSettleMS)
+	}
 	switch p.Action {
+	case "type":
+		return validateQMPType(p)
 	case "status", "screenshot":
 	case "wait_event":
 		if len(p.Event) == 0 || len(p.Event) > 64 {
@@ -155,7 +163,7 @@ func validateQMPParams(p params) error {
 			return fmt.Errorf("invalid QMP button")
 		}
 	default:
-		return fmt.Errorf("QMP action must be status, keys, click, screenshot or wait_event")
+		return fmt.Errorf("QMP action must be status, keys, type, click, screenshot or wait_event")
 	}
 	return nil
 }
@@ -216,8 +224,19 @@ func (t *Tool) runQMP(ctx context.Context, p params) (core.Result, error) {
 		if _, err := q.command(ctx, "input-send-event", map[string]any{"events": events}); err != nil {
 			return core.Result{}, err
 		}
+	case "type":
+		strokes, err := qmpTypeStrokes(p.Text, p.Layout)
+		if err != nil {
+			return core.Result{}, err
+		}
+		if err := q.typeText(ctx, strokes, qmpTypeGap(p)); err != nil {
+			return core.Result{}, err
+		}
 	case "screenshot":
 		return t.qmpScreenshot(ctx, q, p)
+	}
+	if p.ScreenshotAfter {
+		return t.screenshotAfter(ctx, q, p)
 	}
 	return jsonResult(map[string]any{"protocol": "qmp", "action": p.Action, "ok": true})
 }

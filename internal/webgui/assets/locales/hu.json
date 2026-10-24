@@ -225,6 +225,7 @@
   "tool.stderr": "Hibakimenet",
   "tool.ctx_execute": "Parancs",
   "tool.process_session": "Folyamat",
+  "tool.send_screenshot": "Képernyőkép",
   "tool.list_dir": "Mappa tartalma",
   "tool.read_lines": "Fájl olvasása",
   "tool.read_many": "Fájlok olvasása",

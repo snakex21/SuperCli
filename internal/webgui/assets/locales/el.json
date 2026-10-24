@@ -225,6 +225,7 @@
   "tool.stderr": "Έξοδος σφάλματος",
   "tool.ctx_execute": "Εκτέλεση εντολής",
   "tool.process_session": "Διαδικασία",
+  "tool.send_screenshot": "Στιγμιότυπο οθόνης",
   "tool.list_dir": "Περιεχόμενα φακέλου",
   "tool.read_lines": "Ανάγνωση γραμμών αρχείου",
   "tool.read_many": "Ανάγνωση πολλών αρχείων",

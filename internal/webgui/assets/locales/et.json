@@ -225,6 +225,7 @@
   "tool.stderr": "Vea väljund",
   "tool.ctx_execute": "Käsk",
   "tool.process_session": "Protsess",
+  "tool.send_screenshot": "Ekraanipilt",
   "tool.list_dir": "Kausta sisu",
   "tool.read_lines": "Loe faili",
   "tool.read_many": "Lugege faile",

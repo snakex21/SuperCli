@@ -225,6 +225,7 @@
   "tool.stderr": "Felutdata",
   "tool.ctx_execute": "Kommando",
   "tool.process_session": "Hantera process",
+  "tool.send_screenshot": "Skärmbild",
   "tool.list_dir": "Mappinnehåll",
   "tool.read_lines": "Läs filen",
   "tool.read_many": "Läs filer",

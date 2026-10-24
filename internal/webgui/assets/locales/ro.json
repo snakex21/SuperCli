@@ -225,6 +225,7 @@
   "tool.stderr": "Ieșire eroare",
   "tool.ctx_execute": "Comanda",
   "tool.process_session": "Proces",
+  "tool.send_screenshot": "Captură de ecran",
   "tool.list_dir": "Conținutul folderului",
   "tool.read_lines": "Citiți fișierul",
   "tool.read_many": "Citiți fișiere",

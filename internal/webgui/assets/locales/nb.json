@@ -225,6 +225,7 @@
   "tool.stderr": "Standardfeil",
   "tool.ctx_execute": "Kommando",
   "tool.process_session": "Behandle",
+  "tool.send_screenshot": "Skjermbilde",
   "tool.list_dir": "Mappeinnhold",
   "tool.read_lines": "Les filen",
   "tool.read_many": "Les filer",
