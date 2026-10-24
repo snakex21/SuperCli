@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model nije dostupno",
   "tui.slash.807564bac8": "U ovom razgovoru nije zabeležena nijedna promena datoteke.",
   "tui.slash.797e916342": "izvezeno %d poruke za %s",
+  "tui.command_desc.import": "uvezi datoteku sesije sačuvanu komandom /export session kao novi razgovor",
+  "tui.slash.portable_exported": "sesija (poruka: %d) izvezena je u %s",
+  "tui.slash.portable_export_failed": "izvoz sesije nije uspeo: %w",
+  "tui.slash.import_usage": "upotreba: /import <path> (datoteka .supercli-session.json napravljena komandom /export session)",
+  "tui.slash.import_failed": "uvoz sesije nije uspeo: %w",
+  "tui.slash.import_too_large": "datoteka sesije je prevelika (ograničenje: %d MiB)",
+  "tui.slash.import_invalid": "%s nije ispravna SuperCli datoteka sesije",
+  "tui.slash.imported": "uvezeno poruka: %d kao nova sesija „%s“ (%s). Otvorite je komandom /resume %s",
   "tui.slash.127b72ef9e": "izvoz napisati: %w",
   "tui.slash.49aed96c7c": "kopirano %d poruke u međuspremnik",
   "tui.slash.8e0d97abc6": "izvoz međumemorije: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Veza je prekinuta. Računar se i dalje može isključiti; ponovo se povežite da biste otkazali isključivanje.",
   "hostPower.cancelFailed": "Otkazivanje nije potvrđeno. Pokušajte ponovo.",
   "hostPower.confirm": "Isključiti ovaj računar nakon provere završetka zadatka „{goal}“? Sledi odbrojavanje od 60 sekundi bez ponovne potvrde.",
-  "hostPower.escape": "Esc: otkaži isključivanje."
+  "hostPower.escape": "Esc: otkaži isključivanje.",
+  "tui.command_desc.copy": "kopiraj poslednji odgovor VI u klipbord",
+  "tui.copy.native": "Poslednji odgovor kopiran u sistemski klipbord",
+  "tui.copy.osc52": "Poslednji odgovor kopiran preko terminala (OSC 52)",
+  "tui.setting_assistant_edit.label": "Izmena odgovora VI",
+  "tui.setting_assistant_edit.desc": "Ispod odgovora VI prikazuje dugmad Izmeni i Vrati original. Kopiranje je uvek dostupno.",
+  "tui.setting_assistant_edit_model_sees.label": "Model vidi izmenjene odgovore",
+  "tui.setting_assistant_edit_model_sees.desc": "Isključeno: izmene menjaju samo prikaz. Uključeno: izmenjeni tekst zamenjuje original u onome što model vidi pri sledećem pokretanju. Izmena starije poruke od te tačke poništava keš upita kod provajdera, pa će sledeći odgovor jednom biti sporiji i skuplji."
 }

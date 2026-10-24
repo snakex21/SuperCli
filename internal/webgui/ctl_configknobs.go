@@ -57,6 +57,8 @@ func knobDefs() []knobDef {
 		{"orchestrator", "default: delegate adaptively; on: always orchestrate substantial work; off: never spawn workers", knobTri, true},
 		{"show_generation_speed", "show measured generation tokens per second after each reply", knobTri, false},
 		{"update_notify", "check for a new release in the background once a day and show a notice; never downloads", knobTri, false},
+		{"assistant_edit", "show Edit and Restore original on AI replies; Copy is always available", knobTri, false},
+		{"assistant_edit_model_sees", "edited AI replies replace the original in what the model sees on the next run; editing an older message invalidates the provider prompt cache from that point, so the next reply is slower and more expensive once", knobTri, false},
 		{"cost_currency", "cost display currency; historical NBP rates; accounting stays in USD", knobCurrency, false},
 		{"allow_all", "allow absolute file/search paths outside the active workspace; sensitive system folders stay blocked", knobTri, false},
 		{"discard_previous_reasoning", "omit completed replies' reasoning from the next turn; preserve the transcript and required tool-call blocks; default off", knobTri, false},
@@ -128,6 +130,12 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return v, source, ""
 	case "update_notify":
 		v, source := triKnob(c.UpdateNotify, "on")
+		return v, source, ""
+	case "assistant_edit":
+		v, source := triKnob(c.AssistantEdit, "off")
+		return v, source, ""
+	case "assistant_edit_model_sees":
+		v, source := triKnob(c.AssistantEditModelSees, "off")
 		return v, source, ""
 	case "cost_currency":
 		value := config.EffectiveCostCurrency(*c)
@@ -318,6 +326,10 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.ShowGenerationSpeed)
 	case "update_notify":
 		return tri(c.UpdateNotify)
+	case "assistant_edit":
+		return tri(c.AssistantEdit)
+	case "assistant_edit_model_sees":
+		return tri(c.AssistantEditModelSees)
 	case "thinking":
 		return tri(c.Thinking)
 	case "navigator":
@@ -358,7 +370,7 @@ func knobDefault(key string) string {
 		return "auto"
 	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify":
 		return "on"
-	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin":
+	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin", "assistant_edit", "assistant_edit_model_sees":
 		return "off"
 	default:
 		return ""

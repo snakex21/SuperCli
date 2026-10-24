@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model niedostępny",
   "tui.slash.807564bac8": "W tej rozmowie nie zarejestrowano żadnych zmian w plikach.",
   "tui.slash.797e916342": "wyeksportowano wiadomości %d do %s",
+  "tui.command_desc.import": "importuje plik sesji zapisany przez /export session jako nową rozmowę",
+  "tui.slash.portable_exported": "zapisano sesję (wiadomości: %d) do %s",
+  "tui.slash.portable_export_failed": "nie udało się wyeksportować sesji: %w",
+  "tui.slash.import_usage": "użycie: /import <path> (plik .supercli-session.json utworzony przez /export session)",
+  "tui.slash.import_failed": "nie udało się zaimportować sesji: %w",
+  "tui.slash.import_too_large": "plik sesji jest za duży (limit: %d MiB)",
+  "tui.slash.import_invalid": "%s nie jest prawidłowym plikiem sesji SuperCli",
+  "tui.slash.imported": "zaimportowano wiadomości: %d jako nową sesję „%s” (%s). Otwórz ją poleceniem /resume %s",
   "tui.slash.127b72ef9e": "eksportuj zapis: %w",
   "tui.slash.49aed96c7c": "skopiował wiadomości %d do schowka",
   "tui.slash.8e0d97abc6": "eksport schowka: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Utracono połączenie. Komputer nadal może się wyłączyć; połącz się ponownie, aby anulować.",
   "hostPower.cancelFailed": "Nie potwierdzono anulowania. Spróbuj ponownie.",
   "hostPower.confirm": "Wyłączyć ten komputer po zweryfikowaniu ukończenia zadania „{goal}”? Rozpocznie się 60-sekundowe odliczanie, bez ponownego potwierdzenia.",
-  "hostPower.escape": "Esc: anuluj wyłączenie."
+  "hostPower.escape": "Esc: anuluj wyłączenie.",
+  "tui.command_desc.copy": "kopiuj ostatnią odpowiedź AI do schowka",
+  "tui.copy.native": "Skopiowano ostatnią odpowiedź do schowka systemowego",
+  "tui.copy.osc52": "Skopiowano ostatnią odpowiedź przez terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Edycja odpowiedzi AI",
+  "tui.setting_assistant_edit.desc": "Pokazuje przyciski Edytuj i Przywróć oryginał pod odpowiedziami AI. Kopiowanie jest dostępne zawsze.",
+  "tui.setting_assistant_edit_model_sees.label": "Model widzi edytowane odpowiedzi",
+  "tui.setting_assistant_edit_model_sees.desc": "Wyłączone: edycja zmienia tylko wyświetlanie. Włączone: zmieniony tekst zastępuje oryginał w tym, co model zobaczy przy następnym uruchomieniu. Edycja starszej wiadomości unieważnia pamięć podręczną promptu u dostawcy od tego miejsca, więc następna odpowiedź będzie jednorazowo wolniejsza i droższa."
 }

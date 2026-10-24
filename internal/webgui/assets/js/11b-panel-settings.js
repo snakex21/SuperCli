@@ -30,13 +30,15 @@ sections.settings = async function () {
   panelContent.innerHTML = "";
   (got.knobs || []).forEach(function (k) {
     if (k.key === "show_generation_speed") ui.showGenerationSpeed = k.value !== "off";
+    if (k.key === "assistant_edit") ui.assistantEdit = k.value === "on";
+    if (k.key === "assistant_edit_model_sees") ui.assistantEditModelSees = k.value === "on";
   });
   applyGenerationSpeedVisibility();
+  if (typeof applyAssistantEditVisibility === "function") applyAssistantEditVisibility();
   panelContent.appendChild(i18nEl("div", "note", "set.hint"));
-  var wrap = el("div", "group");
-  wrap.style.marginTop = "10px";
-  (got.knobs || []).forEach(function (k) { wrap.appendChild(knobRow(k, got.cost_currencies)); });
-  panelContent.appendChild(wrap);
+  // Run-scoped knobs live only in the Modes tab, so each knob has one home.
+  var knobs = (got.knobs || []).filter(function (k) { return modeKeys.indexOf(k.key) < 0; });
+  appendKnobGroups(panelContent, knobs, got.cost_currencies);
   panelContent.appendChild(resumeLastSessionGroup());
   var reset = i18nEl("button", "btn danger", "set.resetAll");
   reset.addEventListener("click", async function () {
@@ -50,6 +52,33 @@ sections.settings = async function () {
   panelContent.appendChild(i18nEl("div", "note", "set.resetAllHint"));
 };
 
+
+// Knobs grouped by topic in both Settings and Modes (display only; keys and storage unchanged).
+function appendKnobGroups(parent, knobs, currencies, section) {
+  var placed = Object.create(null);
+  function addGroup(label, rows) {
+    if (!rows.length) return;
+    var group = el("div", "group settings-group");
+    group.appendChild(i18nEl("div", "g-label", label));
+    rows.forEach(function (k) { placed[k.key] = true; group.appendChild(knobRow(k, currencies, section)); });
+    parent.appendChild(group);
+  }
+  settingGroups.forEach(function (g) {
+    addGroup(g[0], g[1].map(function (key) { return knobs.find(function (k) { return k.key === key; }); }).filter(Boolean));
+  });
+  // Knobs not listed above (added later) stay visible instead of disappearing.
+  addGroup("set.group.other", knobs.filter(function (k) { return !placed[k.key]; }));
+}
+var settingGroups = [
+  ["set.group.display", ["show_generation_speed", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "update_notify"]],
+  ["set.group.agent", ["queue_merge", "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort",
+    "task_parallel", "task_max_steps", "task_max_tokens", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
+  ["set.group.context", ["thinking", "discard_previous_reasoning", "context_policy", "context_window", "prune_protect_tokens",
+    "memory_briefing_tokens", "compact_model", "stable_toolset", "cache_prompt", "preflight_repo"]],
+  ["set.group.darwin", ["darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_reasoning_effort", "darwin_auto_merge"]],
+  ["set.group.safety", ["allow_all", "draft_verify", "draft_verify_max_rounds", "verify_commands", "fallback_models", "fallback_cooldown_seconds", "noop_gate"]],
+  ["set.group.startup", ["default_model", "default_provider"]]
+];
 
 function knobDisplayValue(k) {
   var key = ({on:"set.state.on", off:"set.state.off", auto:"set.state.auto", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
@@ -95,11 +124,9 @@ sections.modes = async function () {
     // No settings/config event exists on the sync hub: always reload on open.
     var got = await j("/api/config");
     if (id !== modesRenderID || currentSection !== "modes") return;
-    var wrap = el("div", "group modes-panel");
-    modeKeys.forEach(function (key) {
-      var k = (got.knobs || []).find(function (row) { return row.key === key; });
-      if (k) wrap.appendChild(knobRow(k, got.cost_currencies, "modes"));
-    });
+    var wrap = el("div", "modes-panel");
+    var knobs = modeKeys.map(function (key) { return (got.knobs || []).find(function (row) { return row.key === key; }); }).filter(Boolean);
+    appendKnobGroups(wrap, knobs, got.cost_currencies, "modes");
     panelContent.appendChild(wrap);
   } catch (e) {
     if (id === modesRenderID && currentSection === "modes") panelContent.appendChild(el("div", "note", e.message));
@@ -151,13 +178,16 @@ function knobRow(k, currencyCodes, section) {
     row.appendChild(el("span", "k-val", k.source === "default" ? knobDisplayValue(k) : ""));
     row.appendChild(seg);
   } else if (k.kind === "queue_merge") {
-    var mergeSelect = el("select", "knob-input");
+    // Two choices: the same segmented buttons as the other settings, no dropdown.
+    var mergeSeg = el("span", "seg");
     ["off", "auto"].forEach(function (value) {
-      var option = el("option", "", t("set.state." + value)); option.value = value; mergeSelect.appendChild(option);
+      var b = el("button", value === (k.raw || "off") ? "on" : "", t("set.state." + value));
+      b.type = "button";
+      b.addEventListener("click", function () { post(value); if (typeof queueMergeMode !== "undefined") queueMergeMode = value; });
+      mergeSeg.appendChild(b);
     });
-    mergeSelect.value = k.raw || "off";
-    mergeSelect.addEventListener("change", function () { post(mergeSelect.value); if (typeof queueMergeMode !== "undefined") queueMergeMode = mergeSelect.value; });
-    row.appendChild(mergeSelect);
+    row.appendChild(el("span", "k-val", ""));
+    row.appendChild(mergeSeg);
   } else if (k.kind === "currency") {
     var currency = el("select", "field-select k-currency");
     currency.setAttribute("aria-label", copy[0]);

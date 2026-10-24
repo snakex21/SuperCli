@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.
 
 <!-- readme-unit:status -->
-Ez a README az `1.0.17` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
+Ez a README az `1.0.18` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
 
 <!-- readme-unit:h.screenshots -->
 ## Képernyőképek
@@ -138,7 +138,7 @@ A parancspalettához írjon `/` jelet. A TUI műveletközpontját üres beviteln
 | --- | --- |
 | `/help`, `/doctor` | Súgó és diagnosztika megjelenítése. |
 | `/model`, `/models`, `/providers` | Modellek kiválasztása és szolgáltatók kezelése. |
-| `/resume`, `/export` | Beszélgetés folytatása vagy exportálása. |
+| `/resume`, `/export`, `/import` | Beszélgetés folytatása vagy exportálása. |
 | `/status`, `/cost`, `/compact` | Használat megtekintése vagy kontextus tömörítése. |
 | `/goal`, `/plan` | Célok és csak olvasható tervezési mód kezelése. |
 | `/diff`, `/undo`, `/redo` | Változások megtekintése vagy ügynöklépés visszavonása/ismétlése. |

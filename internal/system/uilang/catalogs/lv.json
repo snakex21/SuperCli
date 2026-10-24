@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model nav pieejams",
   "tui.slash.807564bac8": "Šajā sarunā nav reģistrētas failu izmaiņas.",
   "tui.slash.797e916342": "eksportēti %d ziņojumi uz %s",
+  "tui.command_desc.import": "importēt ar /export session saglabātu sesijas failu kā jaunu sarunu",
+  "tui.slash.portable_exported": "sesija (%d ziņojumi) eksportēta uz %s",
+  "tui.slash.portable_export_failed": "sesijas eksportēšana neizdevās: %w",
+  "tui.slash.import_usage": "lietojums: /import <path> (ar /export session izveidots .supercli-session.json fails)",
+  "tui.slash.import_failed": "sesijas importēšana neizdevās: %w",
+  "tui.slash.import_too_large": "sesijas fails ir pārāk liels (ierobežojums: %d MiB)",
+  "tui.slash.import_invalid": "%s nav derīgs SuperCli sesijas fails",
+  "tui.slash.imported": "importēti %d ziņojumi kā jauna sesija “%s” (%s). Atveriet to ar /resume %s",
   "tui.slash.127b72ef9e": "eksportēt rakstīt: %w",
   "tui.slash.49aed96c7c": "nokopēja %d ziņojumus starpliktuvē",
   "tui.slash.8e0d97abc6": "eksporta starpliktuves: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Savienojums pārtraukts. Dators joprojām var izslēgties; lai atceltu izslēgšanu, izveidojiet savienojumu atkārtoti.",
   "hostPower.cancelFailed": "Atcelšana nav apstiprināta. Mēģiniet vēlreiz.",
   "hostPower.confirm": "Vai izslēgt šo datoru, kad ir apstiprināts, ka “{goal}” ir pabeigts? Pēc tam sāksies 60 sekunžu atskaite bez atkārtota apstiprinājuma.",
-  "hostPower.escape": "Esc: atcelt izslēgšanu."
+  "hostPower.escape": "Esc: atcelt izslēgšanu.",
+  "tui.command_desc.copy": "kopēt pēdējo MI atbildi starpliktuvē",
+  "tui.copy.native": "Pēdējā atbilde nokopēta sistēmas starpliktuvē",
+  "tui.copy.osc52": "Pēdējā atbilde nokopēta caur termināli (OSC 52)",
+  "tui.setting_assistant_edit.label": "MI atbilžu rediģēšana",
+  "tui.setting_assistant_edit.desc": "Zem MI atbildēm rāda pogas Rediģēt un Atjaunot oriģinālu. Kopēšana ir pieejama vienmēr.",
+  "tui.setting_assistant_edit_model_sees.label": "Modelis redz rediģētās atbildes",
+  "tui.setting_assistant_edit_model_sees.desc": "Izslēgts: rediģēšana maina tikai attēlojumu. Ieslēgts: rediģētais teksts aizstāj oriģinālu tajā, ko modelis redzēs nākamajā palaišanā. Vecāka ziņojuma rediģēšana no šīs vietas padara nederīgu pakalpojumu sniedzēja uzvednes kešatmiņu, tāpēc nākamā atbilde vienreiz būs lēnāka un dārgāka."
 }

@@ -54,6 +54,11 @@ func (s *Store) truncateFrom(ctx context.Context, sessionID string, fromSeq int,
 			return 0, sql.ErrNoRows
 		}
 	}
+	// The foreign key cascades too; the explicit delete keeps databases opened
+	// without foreign_keys from retaining edits of removed messages.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_edits WHERE message_id IN (SELECT id FROM messages WHERE session_id = ? AND seq >= ?)`, sessionID, fromSeq); err != nil {
+		return 0, fmt.Errorf("truncate message edits: %w", err)
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id = ? AND seq >= ?`, sessionID, fromSeq)
 	if err != nil {
 		return 0, fmt.Errorf("truncate messages: %w", err)

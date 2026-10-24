@@ -92,7 +92,7 @@ func commandCategory(name string) string {
 		return "model"
 	case "goal", "plan", "darwin", "council", "reflect", "compact", "workers":
 		return "agent"
-	case "diff", "undo", "redo", "export", "resume", "clear", "memory":
+	case "diff", "undo", "redo", "export", "import", "copy", "resume", "clear", "memory":
 		return "session"
 	case "login", "logout", "account", "accounts":
 		return "account"
@@ -128,7 +128,9 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "models", Desc: textFor("en", "tui.command_desc.models")},
 		{Name: "reasoning", Desc: textFor("en", "tui.command_desc.reasoning"), Args: "[none|minimal|low|medium|high|xhigh|max|off]"},
 		{Name: "resume", Desc: textFor("en", "tui.command_desc.resume"), Args: "[session_id]"},
-		{Name: "export", Desc: textFor("en", "tui.command_desc.export"), Args: "[filename.md|clip]"},
+		{Name: "export", Desc: textFor("en", "tui.command_desc.export"), Args: "[filename.md|clip|session [path]]"},
+		{Name: "import", Desc: textFor("en", "tui.command_desc.import"), Args: "<path>"},
+		{Name: "copy", Desc: textFor("en", "tui.command_desc.copy")},
 		{Name: "cost", Desc: textFor("en", "tui.command_desc.cost")},
 		{Name: "usage", Desc: textFor("en", "tui.command_desc.usage")},
 		{Name: "undo", Desc: textFor("en", "tui.command_desc.undo"), Args: ""},

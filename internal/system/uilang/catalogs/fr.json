@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model non disponible",
   "tui.slash.807564bac8": "Aucune modification de fichier enregistrée dans cette session.",
   "tui.slash.797e916342": "messages %d exportés vers %s",
+  "tui.command_desc.import": "importer un fichier de session enregistré avec /export session comme nouvelle conversation",
+  "tui.slash.portable_exported": "session exportée (%d messages) vers %s",
+  "tui.slash.portable_export_failed": "échec de l'export de la session : %w",
+  "tui.slash.import_usage": "utilisation : /import <path> (fichier .supercli-session.json créé par /export session)",
+  "tui.slash.import_failed": "échec de l'import de la session : %w",
+  "tui.slash.import_too_large": "le fichier de session est trop volumineux (limite : %d Mio)",
+  "tui.slash.import_invalid": "%s n'est pas un fichier de session SuperCli valide",
+  "tui.slash.imported": "%d messages importés dans une nouvelle session « %s » (%s). Ouvrez-la avec /resume %s",
   "tui.slash.127b72ef9e": "écriture d'exportation : %w",
   "tui.slash.49aed96c7c": "messages %d copiés dans le presse-papiers",
   "tui.slash.8e0d97abc6": "Exporter le presse-papier : %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Connexion perdue. L’ordinateur peut encore s’éteindre ; reconnectez-vous pour annuler l’arrêt.",
   "hostPower.cancelFailed": "L’annulation n’a pas été confirmée. Réessayez.",
   "hostPower.confirm": "Éteindre cet ordinateur une fois l’achèvement de « {goal} » vérifié ? Un compte à rebours de 60 secondes suivra, sans seconde confirmation.",
-  "hostPower.escape": "Esc : annuler l’arrêt."
+  "hostPower.escape": "Esc : annuler l’arrêt.",
+  "tui.command_desc.copy": "copier la dernière réponse de l'IA dans le presse-papiers",
+  "tui.copy.native": "Dernière réponse copiée dans le presse-papiers système",
+  "tui.copy.osc52": "Dernière réponse copiée via le terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Modifier les réponses de l'IA",
+  "tui.setting_assistant_edit.desc": "Affiche Modifier et Restaurer l'original sous les réponses de l'IA. La copie est toujours disponible.",
+  "tui.setting_assistant_edit_model_sees.label": "Le modèle voit les réponses modifiées",
+  "tui.setting_assistant_edit_model_sees.desc": "Désactivé : les modifications ne changent que l'affichage. Activé : le texte modifié remplace l'original dans ce que le modèle verra à la prochaine exécution. Modifier un message ancien invalide le cache de prompt du fournisseur à partir de ce point ; la réponse suivante sera une fois plus lente et plus coûteuse."
 }

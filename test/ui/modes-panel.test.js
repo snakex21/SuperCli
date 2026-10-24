@@ -26,7 +26,7 @@ function harness() {
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function descendants(n) {return [n, ...n.children.flatMap(descendants)];}
-function rowFor(h, key) {return h.panel.children.find(n => n.className.includes('modes-panel')).children.find(n => n.children[0].title === 'config.toml · ' + key);}
+function rowFor(h, key) {return descendants(h.panel.children.find(n => n.className.includes('modes-panel'))).find(n => n.className.includes('knob-row') && n.children[0].title === 'config.toml · ' + key);}
 
 test('Modes has the TUI run modes, localized descriptions and cost hints; reloads on every open', async () => {
   const h = harness(); await h.w.sections.modes();

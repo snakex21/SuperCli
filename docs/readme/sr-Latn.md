@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfejsom (TUI), desktop/veb interfejsom (GUI) i paketnim režimom koji dele jedan mehanizam.
 
 <!-- readme-unit:status -->
-Ovaj README opisuje verziju `1.0.17`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.
+Ovaj README opisuje verziju `1.0.18`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.
 
 <!-- readme-unit:h.screenshots -->
 ## Snimci ekrana
@@ -138,7 +138,7 @@ Unesite `/` za paletu komandi. TUI centar radnji otvorite sa `Tab` na praznom un
 | --- | --- |
 | `/help`, `/doctor` | Prikaži pomoć i dijagnostiku. |
 | `/model`, `/models`, `/providers` | Izaberi modele i upravljaj pružaocima. |
-| `/resume`, `/export` | Nastavi ili izvezi razgovor. |
+| `/resume`, `/export`, `/import` | Nastavi ili izvezi razgovor. |
 | `/status`, `/cost`, `/compact` | Pregledaj korišćenje ili sažmi kontekst. |
 | `/goal`, `/plan` | Upravljaj ciljevima i režimom planiranja samo za čitanje. |
 | `/diff`, `/undo`, `/redo` | Pregledaj izmene ili poništi/ponovi potez agenta. |

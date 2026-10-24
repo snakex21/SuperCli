@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model ikke tilgjengelig",
   "tui.slash.807564bac8": "Ingen filendringer er registrert i denne samtalen.",
   "tui.slash.797e916342": "eksporterte %d-meldinger til %s",
+  "tui.command_desc.import": "importer en øktfil lagret med /export session som en ny samtale",
+  "tui.slash.portable_exported": "økten (%d meldinger) ble eksportert til %s",
+  "tui.slash.portable_export_failed": "eksport av økten mislyktes: %w",
+  "tui.slash.import_usage": "bruk: /import <path> (en .supercli-session.json-fil opprettet med /export session)",
+  "tui.slash.import_failed": "import av økten mislyktes: %w",
+  "tui.slash.import_too_large": "øktfilen er for stor (grense: %d MiB)",
+  "tui.slash.import_invalid": "%s er ikke en gyldig SuperCli-øktfil",
+  "tui.slash.imported": "importerte %d meldinger som ny økt «%s» (%s). Åpne den med /resume %s",
   "tui.slash.127b72ef9e": "eksport skriv: %w",
   "tui.slash.49aed96c7c": "kopierte %d-meldinger til utklippstavlen",
   "tui.slash.8e0d97abc6": "eksport utklippstavle: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Forbindelsen er brutt. Vertsmaskinen kan fortsatt slå seg av; koble til igjen for å avbryte.",
   "hostPower.cancelFailed": "Avbrytingen ble ikke bekreftet. Prøv igjen.",
   "hostPower.confirm": "Slå av denne datamaskinen når det er bekreftet at «{goal}» er fullført? Deretter starter en nedtelling på 60 sekunder uten ny bekreftelse.",
-  "hostPower.escape": "Esc: avbryt avslåing."
+  "hostPower.escape": "Esc: avbryt avslåing.",
+  "tui.command_desc.copy": "kopier det siste AI-svaret til utklippstavlen",
+  "tui.copy.native": "Siste svar kopiert til systemets utklippstavle",
+  "tui.copy.osc52": "Siste svar kopiert via terminalen (OSC 52)",
+  "tui.setting_assistant_edit.label": "Rediger AI-svar",
+  "tui.setting_assistant_edit.desc": "Viser Rediger og Gjenopprett original under AI-svar. Kopier er alltid tilgjengelig.",
+  "tui.setting_assistant_edit_model_sees.label": "Modellen ser redigerte svar",
+  "tui.setting_assistant_edit_model_sees.desc": "Av: redigeringer endrer bare visningen. På: den redigerte teksten erstatter originalen i det modellen ser ved neste kjøring. Redigering av en eldre melding ugyldiggjør leverandørens prompt-hurtigbuffer fra det punktet, så neste svar blir én gang tregere og dyrere."
 }

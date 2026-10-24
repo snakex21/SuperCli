@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model niet beschikbaar",
   "tui.slash.807564bac8": "Er zijn geen bestandswijzigingen vastgelegd tijdens deze sessie.",
   "tui.slash.797e916342": "%d-berichten geëxporteerd naar %s",
+  "tui.command_desc.import": "een met /export session opgeslagen sessiebestand importeren als nieuw gesprek",
+  "tui.slash.portable_exported": "sessie (%d berichten) geëxporteerd naar %s",
+  "tui.slash.portable_export_failed": "sessie exporteren mislukt: %w",
+  "tui.slash.import_usage": "gebruik: /import <path> (een .supercli-session.json-bestand gemaakt met /export session)",
+  "tui.slash.import_failed": "sessie importeren mislukt: %w",
+  "tui.slash.import_too_large": "het sessiebestand is te groot (limiet: %d MiB)",
+  "tui.slash.import_invalid": "%s is geen geldig SuperCli-sessiebestand",
+  "tui.slash.imported": "%d berichten geïmporteerd als nieuwe sessie \"%s\" (%s). Open deze met /resume %s",
   "tui.slash.127b72ef9e": "exporteren schrijven: %w",
   "tui.slash.49aed96c7c": "gekopieerde %d-berichten naar het klembord",
   "tui.slash.8e0d97abc6": "klembord exporteren: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Verbinding verbroken. De computer kan nog steeds worden afgesloten; maak opnieuw verbinding om dit te annuleren.",
   "hostPower.cancelFailed": "De annulering is niet bevestigd. Probeer het opnieuw.",
   "hostPower.confirm": "Deze computer afsluiten nadat is bevestigd dat ‘{goal}’ is voltooid? Daarna begint een aftelling van 60 seconden, zonder tweede bevestiging.",
-  "hostPower.escape": "Esc: afsluiten annuleren."
+  "hostPower.escape": "Esc: afsluiten annuleren.",
+  "tui.command_desc.copy": "laatste AI-antwoord naar het klembord kopiëren",
+  "tui.copy.native": "Laatste antwoord gekopieerd naar het systeemklembord",
+  "tui.copy.osc52": "Laatste antwoord gekopieerd via de terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "AI-antwoorden bewerken",
+  "tui.setting_assistant_edit.desc": "Toont Bewerken en Origineel herstellen onder AI-antwoorden. Kopiëren is altijd beschikbaar.",
+  "tui.setting_assistant_edit_model_sees.label": "Model ziet bewerkte antwoorden",
+  "tui.setting_assistant_edit_model_sees.desc": "Uit: bewerkingen wijzigen alleen de weergave. Aan: de bewerkte tekst vervangt het origineel in wat het model bij de volgende run ziet. Het bewerken van een ouder bericht maakt de promptcache van de provider vanaf dat punt ongeldig, waardoor het volgende antwoord eenmalig trager en duurder is."
 }

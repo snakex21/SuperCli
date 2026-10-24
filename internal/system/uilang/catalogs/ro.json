@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model nu este disponibil",
   "tui.slash.807564bac8": "Nu au fost înregistrate modificări de fișier în această sesiune.",
   "tui.slash.797e916342": "a exportat mesajele %d către %s",
+  "tui.command_desc.import": "importă ca o conversație nouă un fișier de sesiune salvat cu /export session",
+  "tui.slash.portable_exported": "sesiunea (%d mesaje) a fost exportată în %s",
+  "tui.slash.portable_export_failed": "exportul sesiunii a eșuat: %w",
+  "tui.slash.import_usage": "utilizare: /import <path> (fișier .supercli-session.json creat cu /export session)",
+  "tui.slash.import_failed": "importul sesiunii a eșuat: %w",
+  "tui.slash.import_too_large": "fișierul de sesiune este prea mare (limită: %d MiB)",
+  "tui.slash.import_invalid": "%s nu este un fișier de sesiune SuperCli valid",
+  "tui.slash.imported": "au fost importate %d mesaje ca sesiune nouă „%s” (%s). Deschide-o cu /resume %s",
   "tui.slash.127b72ef9e": "export scrie: %w",
   "tui.slash.49aed96c7c": "a copiat mesajele %d în clipboard",
   "tui.slash.8e0d97abc6": "export în clipboard: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Conexiune pierdută. Calculatorul se poate opri în continuare; reconectați-vă pentru a anula oprirea.",
   "hostPower.cancelFailed": "Anularea nu a fost confirmată. Încercați din nou.",
   "hostPower.confirm": "Opriți acest calculator după verificarea finalizării sarcinii „{goal}”? Va urma o numărătoare inversă de 60 de secunde, fără o a doua confirmare.",
-  "hostPower.escape": "Esc: anulează oprirea."
+  "hostPower.escape": "Esc: anulează oprirea.",
+  "tui.command_desc.copy": "copiază ultimul răspuns AI în clipboard",
+  "tui.copy.native": "Ultimul răspuns a fost copiat în clipboardul sistemului",
+  "tui.copy.osc52": "Ultimul răspuns a fost copiat prin terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Editarea răspunsurilor AI",
+  "tui.setting_assistant_edit.desc": "Afișează Editează și Restaurează originalul sub răspunsurile AI. Copierea este mereu disponibilă.",
+  "tui.setting_assistant_edit_model_sees.label": "Modelul vede răspunsurile editate",
+  "tui.setting_assistant_edit_model_sees.desc": "Oprit: editările schimbă doar afișarea. Pornit: textul editat înlocuiește originalul în ceea ce modelul va vedea la următoarea rulare. Editarea unui mesaj mai vechi invalidează cache-ul de prompt al furnizorului din acel punct, deci următorul răspuns va fi o dată mai lent și mai scump."
 }

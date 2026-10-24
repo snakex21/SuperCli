@@ -67,6 +67,9 @@ type transcriptMsg struct {
 	ToolCallID           string                `json:"tool_call_id,omitempty"`
 	ToolCalls            []transcriptToolCall  `json:"tool_calls,omitempty"`
 	Turn                 *transcriptTurn       `json:"turn,omitempty"`
+	// Edited assistant replies carry the displayed (edited) text in Content.
+	Edited           bool `json:"edited,omitempty"`
+	EditModelVisible bool `json:"edit_model_visible,omitempty"`
 }
 
 type transcriptToolImage struct {

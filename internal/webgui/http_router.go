@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/workers/observations", s.handleWorkerObservations)
 	mux.HandleFunc("/api/doctor", s.handleDoctor)
 	mux.HandleFunc("/api/session/rewind", s.handleSessionRewind)
+	mux.HandleFunc("/api/session/message/edit", s.handleSessionMessageEdit)
 	mux.HandleFunc("/api/memory", s.handleMemory)
 	mux.HandleFunc("/api/folder-indexing", s.handleFolderIndexing)
 	mux.HandleFunc("/api/vision/transcribe", s.handleVisionTranscribe)
@@ -111,6 +112,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/data/export", s.handleDataExport)
 	mux.Handle("/api/data/export/full", s.withSecretLocalOnly(http.HandlerFunc(s.handleDataExportFull)))
 	mux.Handle("/api/data/import", s.withSecretLocalOnly(http.HandlerFunc(s.handleDataImport)))
+	mux.HandleFunc("/api/session/export", s.handleSessionExport)
+	mux.Handle("/api/session/import", s.withSecretLocalOnly(http.HandlerFunc(s.handleSessionImport)))
 
 	// MCP server management
 	mux.HandleFunc("/api/mcp/servers", s.handleMcpServers)

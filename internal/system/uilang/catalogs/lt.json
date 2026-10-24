@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model nėra",
   "tui.slash.807564bac8": "Šioje sesijoje neįrašyta jokių failo pakeitimų.",
   "tui.slash.797e916342": "eksportavo %d pranešimus į %s",
+  "tui.command_desc.import": "importuoti su /export session išsaugotą seanso failą kaip naują pokalbį",
+  "tui.slash.portable_exported": "seansas (%d pranešimai) eksportuotas į %s",
+  "tui.slash.portable_export_failed": "nepavyko eksportuoti seanso: %w",
+  "tui.slash.import_usage": "naudojimas: /import <path> (su /export session sukurtas .supercli-session.json failas)",
+  "tui.slash.import_failed": "nepavyko importuoti seanso: %w",
+  "tui.slash.import_too_large": "seanso failas per didelis (riba: %d MiB)",
+  "tui.slash.import_invalid": "%s nėra tinkamas SuperCli seanso failas",
+  "tui.slash.imported": "importuota pranešimų: %d kaip naujas seansas „%s“ (%s). Atidarykite jį su /resume %s",
   "tui.slash.127b72ef9e": "eksportuoti rašyti: %w",
   "tui.slash.49aed96c7c": "nukopijavo %d pranešimus į mainų sritį",
   "tui.slash.8e0d97abc6": "eksportuoti iškarpinę: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Ryšys nutrūko. Kompiuteris vis tiek gali išsijungti; norėdami atšaukti, prisijunkite iš naujo.",
   "hostPower.cancelFailed": "Atšaukimas nepatvirtintas. Bandykite dar kartą.",
   "hostPower.confirm": "Išjungti šį kompiuterį patikrinus, kad užduotis „{goal}“ baigta? Prasidės 60 sekundžių atgalinis skaičiavimas be pakartotinio patvirtinimo.",
-  "hostPower.escape": "Esc: atšaukti išjungimą."
+  "hostPower.escape": "Esc: atšaukti išjungimą.",
+  "tui.command_desc.copy": "kopijuoti paskutinį DI atsakymą į iškarpinę",
+  "tui.copy.native": "Paskutinis atsakymas nukopijuotas į sistemos iškarpinę",
+  "tui.copy.osc52": "Paskutinis atsakymas nukopijuotas per terminalą (OSC 52)",
+  "tui.setting_assistant_edit.label": "DI atsakymų redagavimas",
+  "tui.setting_assistant_edit.desc": "Po DI atsakymais rodo mygtukus Redaguoti ir Atkurti originalą. Kopijuoti galima visada.",
+  "tui.setting_assistant_edit_model_sees.label": "Modelis mato redaguotus atsakymus",
+  "tui.setting_assistant_edit_model_sees.desc": "Išjungta: redagavimas keičia tik rodinį. Įjungta: redaguotas tekstas pakeičia originalą tame, ką modelis matys kito paleidimo metu. Senesnės žinutės redagavimas nuo tos vietos panaikina teikėjo užklausų talpyklą, todėl kitas atsakymas vieną kartą bus lėtesnis ir brangesnis."
 }

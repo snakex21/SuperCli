@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model não disponível",
   "tui.slash.807564bac8": "Nenhuma alteração de arquivo registrada nesta conversa.",
   "tui.slash.797e916342": "exportou mensagens %d para %s",
+  "tui.command_desc.import": "importar um arquivo de sessão salvo com /export session como uma nova conversa",
+  "tui.slash.portable_exported": "sessão exportada (%d mensagens) para %s",
+  "tui.slash.portable_export_failed": "falha ao exportar a sessão: %w",
+  "tui.slash.import_usage": "uso: /import <path> (arquivo .supercli-session.json criado por /export session)",
+  "tui.slash.import_failed": "falha ao importar a sessão: %w",
+  "tui.slash.import_too_large": "o arquivo de sessão é grande demais (limite: %d MiB)",
+  "tui.slash.import_invalid": "%s não é um arquivo de sessão do SuperCli válido",
+  "tui.slash.imported": "%d mensagens importadas como nova sessão \"%s\" (%s). Abra com /resume %s",
   "tui.slash.127b72ef9e": "gravação de exportação: %w",
   "tui.slash.49aed96c7c": "copiou mensagens %d para a área de transferência",
   "tui.slash.8e0d97abc6": "área de transferência de exportação: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Conexão perdida. O computador ainda pode ser desligado; reconecte-se para cancelar o desligamento.",
   "hostPower.cancelFailed": "O cancelamento não foi confirmado. Tente novamente.",
   "hostPower.confirm": "Desligar este computador após verificar a conclusão de “{goal}”? Em seguida, haverá uma contagem regressiva de 60 segundos, sem uma segunda confirmação.",
-  "hostPower.escape": "Esc: cancelar desligamento."
+  "hostPower.escape": "Esc: cancelar desligamento.",
+  "tui.command_desc.copy": "copiar a última resposta da IA para a área de transferência",
+  "tui.copy.native": "Última resposta copiada para a área de transferência do sistema",
+  "tui.copy.osc52": "Última resposta copiada pelo terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Editar respostas da IA",
+  "tui.setting_assistant_edit.desc": "Mostra Editar e Restaurar original abaixo das respostas da IA. Copiar está sempre disponível.",
+  "tui.setting_assistant_edit_model_sees.label": "O modelo vê as respostas editadas",
+  "tui.setting_assistant_edit_model_sees.desc": "Desligado: as edições mudam só a exibição. Ligado: o texto editado substitui o original no que o modelo verá na próxima execução. Editar uma mensagem antiga invalida o cache de prompt do provedor a partir desse ponto, então a próxima resposta fica uma vez mais lenta e mais cara."
 }

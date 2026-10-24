@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model no disponible",
   "tui.slash.807564bac8": "No se registraron cambios de archivos en esta sesión.",
   "tui.slash.797e916342": "mensajes %d exportados a %s",
+  "tui.command_desc.import": "importar un archivo de sesión guardado con /export session como una nueva conversación",
+  "tui.slash.portable_exported": "sesión exportada (%d mensajes) a %s",
+  "tui.slash.portable_export_failed": "error al exportar la sesión: %w",
+  "tui.slash.import_usage": "uso: /import <path> (archivo .supercli-session.json creado con /export session)",
+  "tui.slash.import_failed": "error al importar la sesión: %w",
+  "tui.slash.import_too_large": "el archivo de sesión es demasiado grande (límite: %d MiB)",
+  "tui.slash.import_invalid": "%s no es un archivo de sesión de SuperCli válido",
+  "tui.slash.imported": "se importaron %d mensajes como nueva sesión «%s» (%s). Ábrela con /resume %s",
   "tui.slash.127b72ef9e": "escritura de exportación: %w",
   "tui.slash.49aed96c7c": "mensajes %d copiados al portapapeles",
   "tui.slash.8e0d97abc6": "exportar portapapeles: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Se ha perdido la conexión. El ordenador aún puede apagarse; vuelve a conectarte para cancelar el apagado.",
   "hostPower.cancelFailed": "La cancelación no se ha confirmado. Inténtalo de nuevo.",
   "hostPower.confirm": "¿Apagar este ordenador después de verificar que «{goal}» ha finalizado? A continuación comenzará una cuenta atrás de 60 segundos, sin una segunda confirmación.",
-  "hostPower.escape": "Esc: cancelar el apagado."
+  "hostPower.escape": "Esc: cancelar el apagado.",
+  "tui.command_desc.copy": "copiar la última respuesta de la IA al portapapeles",
+  "tui.copy.native": "Última respuesta copiada al portapapeles del sistema",
+  "tui.copy.osc52": "Última respuesta copiada mediante el terminal (OSC 52)",
+  "tui.setting_assistant_edit.label": "Editar respuestas de la IA",
+  "tui.setting_assistant_edit.desc": "Muestra Editar y Restaurar original bajo las respuestas de la IA. Copiar está siempre disponible.",
+  "tui.setting_assistant_edit_model_sees.label": "El modelo ve las respuestas editadas",
+  "tui.setting_assistant_edit_model_sees.desc": "Desactivado: las ediciones solo cambian la visualización. Activado: el texto editado sustituye al original en lo que el modelo verá en la próxima ejecución. Editar un mensaje antiguo invalida la caché de prompt del proveedor desde ese punto, por lo que la siguiente respuesta será una vez más lenta y cara."
 }

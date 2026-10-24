@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model ei saatavilla",
   "tui.slash.807564bac8": "Tässä istunnossa ei tallennettu tiedostomuutoksia.",
   "tui.slash.797e916342": "vietiin %d-viestit kohteeseen %s",
+  "tui.command_desc.import": "tuo komennolla /export session tallennettu istuntotiedosto uudeksi keskusteluksi",
+  "tui.slash.portable_exported": "istunto (%d viestiä) vietiin kohteeseen %s",
+  "tui.slash.portable_export_failed": "istunnon vienti epäonnistui: %w",
+  "tui.slash.import_usage": "käyttö: /import <path> (komennolla /export session luotu .supercli-session.json-tiedosto)",
+  "tui.slash.import_failed": "istunnon tuonti epäonnistui: %w",
+  "tui.slash.import_too_large": "istuntotiedosto on liian suuri (raja: %d MiB)",
+  "tui.slash.import_invalid": "%s ei ole kelvollinen SuperCli-istuntotiedosto",
+  "tui.slash.imported": "tuotiin %d viestiä uudeksi istunnoksi \"%s\" (%s). Avaa se komennolla /resume %s",
   "tui.slash.127b72ef9e": "vienti kirjoittaa: %w",
   "tui.slash.49aed96c7c": "kopioitu %d-viestit leikepöydälle",
   "tui.slash.8e0d97abc6": "vientileikepöytä: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Yhteys katkesi. Tietokone saattaa silti sammua; muodosta yhteys uudelleen peruuttaaksesi sammutuksen.",
   "hostPower.cancelFailed": "Peruutusta ei vahvistettu. Yritä uudelleen.",
   "hostPower.confirm": "Sammutetaanko tämä tietokone, kun tehtävän ”{goal}” valmistuminen on vahvistettu? Sen jälkeen alkaa 60 sekunnin lähtölaskenta ilman toista vahvistusta.",
-  "hostPower.escape": "Esc: peruuta sammutus."
+  "hostPower.escape": "Esc: peruuta sammutus.",
+  "tui.command_desc.copy": "kopioi viimeisin tekoälyn vastaus leikepöydälle",
+  "tui.copy.native": "Viimeisin vastaus kopioitu järjestelmän leikepöydälle",
+  "tui.copy.osc52": "Viimeisin vastaus kopioitu päätteen kautta (OSC 52)",
+  "tui.setting_assistant_edit.label": "Tekoälyn vastausten muokkaus",
+  "tui.setting_assistant_edit.desc": "Näyttää Muokkaa- ja Palauta alkuperäinen -painikkeet tekoälyn vastausten alla. Kopiointi on aina käytettävissä.",
+  "tui.setting_assistant_edit_model_sees.label": "Malli näkee muokatut vastaukset",
+  "tui.setting_assistant_edit_model_sees.desc": "Pois: muokkaukset muuttavat vain näkymää. Päällä: muokattu teksti korvaa alkuperäisen siinä, mitä malli näkee seuraavalla ajokerralla. Vanhemman viestin muokkaaminen mitätöi palveluntarjoajan kehotevälimuistin siitä kohdasta alkaen, joten seuraava vastaus on kerran hitaampi ja kalliimpi."
 }

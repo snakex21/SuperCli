@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 En bærbar AI-kodningsagent skrevet i Go, med en terminalgrænseflade (TUI), en skrivebords-/webgrænseflade (GUI) og batchtilstand, der deler én motor.
 
 <!-- readme-unit:status -->
-Denne README beskriver version `1.0.17`. Bærbare udgivelsespakker distribueres via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.
+Denne README beskriver version `1.0.18`. Bærbare udgivelsespakker distribueres via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.
 
 <!-- readme-unit:h.screenshots -->
 ## Skærmbilleder
@@ -138,7 +138,7 @@ Skriv `/` for kommandopaletten. Åbn TUI-handlingscentret med `Tab` i et tomt in
 | --- | --- |
 | `/help`, `/doctor` | Vis hjælp og diagnostik. |
 | `/model`, `/models`, `/providers` | Vælg modeller og administrer udbydere. |
-| `/resume`, `/export` | Genoptag eller eksporter en samtale. |
+| `/resume`, `/export`, `/import` | Genoptag eller eksporter en samtale. |
 | `/status`, `/cost`, `/compact` | Undersøg forbrug eller komprimer kontekst. |
 | `/goal`, `/plan` | Administrer mål og skrivebeskyttet plantilstand. |
 | `/diff`, `/undo`, `/redo` | Undersøg ændringer eller fortryd/gentag en agenttur. |

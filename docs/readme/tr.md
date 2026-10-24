@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.
 
 <!-- readme-unit:status -->
-Bu README `1.0.17` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
+Bu README `1.0.18` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekran görüntüleri
@@ -138,7 +138,7 @@ Komut paleti için `/` yazın. TUI eylem merkezini boş girişte `Tab` veya `Ctr
 | --- | --- |
 | `/help`, `/doctor` | Yardım ve tanılamayı göster. |
 | `/model`, `/models`, `/providers` | Model seç ve sağlayıcıları yönet. |
-| `/resume`, `/export` | Sohbeti sürdür veya dışa aktar. |
+| `/resume`, `/export`, `/import` | Sohbeti sürdür veya dışa aktar. |
 | `/status`, `/cost`, `/compact` | Kullanımı incele veya bağlamı sıkıştır. |
 | `/goal`, `/plan` | Hedefleri ve salt okunur plan modunu yönet. |
 | `/diff`, `/undo`, `/redo` | Değişiklikleri incele veya ajan turunu geri al/yinele. |

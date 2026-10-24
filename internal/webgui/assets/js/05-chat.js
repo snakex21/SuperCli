@@ -1665,6 +1665,7 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
     abortCtl = null;
     finishRunPresentation();
     settleOpenTools();
+    if (typeof addLiveAssistantActions === "function") addLiveAssistantActions();
     releaseLiveTranscriptBlocks();
     // One completion wait replaces transcript polling after Stop. The server
     // closes this receipt only after the canceled loop finishes its writes.

@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model non disponibile",
   "tui.slash.807564bac8": "Nessuna modifica ai file registrata in questa conversazione.",
   "tui.slash.797e916342": "messaggi %d esportati in %s",
+  "tui.command_desc.import": "importa un file di sessione salvato con /export session come nuova conversazione",
+  "tui.slash.portable_exported": "sessione esportata (%d messaggi) in %s",
+  "tui.slash.portable_export_failed": "esportazione della sessione non riuscita: %w",
+  "tui.slash.import_usage": "uso: /import <path> (file .supercli-session.json creato con /export session)",
+  "tui.slash.import_failed": "importazione della sessione non riuscita: %w",
+  "tui.slash.import_too_large": "il file di sessione è troppo grande (limite: %d MiB)",
+  "tui.slash.import_invalid": "%s non è un file di sessione SuperCli valido",
+  "tui.slash.imported": "%d messaggi importati come nuova sessione \"%s\" (%s). Aprila con /resume %s",
   "tui.slash.127b72ef9e": "esportazione scrivere: %w",
   "tui.slash.49aed96c7c": "messaggi %d copiati negli appunti",
   "tui.slash.8e0d97abc6": "esporta appunti: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Connessione persa. Il computer potrebbe comunque spegnersi; riconnettiti per annullare lo spegnimento.",
   "hostPower.cancelFailed": "L’annullamento non è stato confermato. Riprova.",
   "hostPower.confirm": "Spegnere questo computer dopo aver verificato il completamento di «{goal}»? Seguirà un conto alla rovescia di 60 secondi, senza una seconda conferma.",
-  "hostPower.escape": "Esc: annulla lo spegnimento."
+  "hostPower.escape": "Esc: annulla lo spegnimento.",
+  "tui.command_desc.copy": "copia l'ultima risposta dell'IA negli appunti",
+  "tui.copy.native": "Ultima risposta copiata negli appunti di sistema",
+  "tui.copy.osc52": "Ultima risposta copiata tramite il terminale (OSC 52)",
+  "tui.setting_assistant_edit.label": "Modifica risposte dell'IA",
+  "tui.setting_assistant_edit.desc": "Mostra Modifica e Ripristina originale sotto le risposte dell'IA. La copia è sempre disponibile.",
+  "tui.setting_assistant_edit_model_sees.label": "Il modello vede le risposte modificate",
+  "tui.setting_assistant_edit_model_sees.desc": "Disattivato: le modifiche cambiano solo la visualizzazione. Attivato: il testo modificato sostituisce l'originale in ciò che il modello vedrà alla prossima esecuzione. Modificare un messaggio meno recente invalida la cache del prompt del provider da quel punto, quindi la risposta successiva sarà una volta più lenta e costosa."
 }

@@ -65,6 +65,20 @@ func (s *Store) migrate() error {
 			UNIQUE (session_id, seq)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq)`,
+		// User edits of assistant replies. The exact original row payload is
+		// kept for a lossless restore; messages always holds the model's view.
+		`CREATE TABLE IF NOT EXISTS message_edits (
+			message_id          INTEGER PRIMARY KEY,
+			session_id          TEXT NOT NULL,
+			original_content    TEXT NOT NULL DEFAULT '',
+			original_parts_json TEXT NOT NULL DEFAULT '',
+			edited_content      TEXT NOT NULL DEFAULT '',
+			edited_parts_json   TEXT NOT NULL DEFAULT '',
+			model_visible       INTEGER NOT NULL DEFAULT 0,
+			updated_at          INTEGER NOT NULL,
+			FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_edits_session ON message_edits(session_id)`,
 		`CREATE TABLE IF NOT EXISTS message_attachments (
 			session_id TEXT NOT NULL,
 			user_seq   INTEGER NOT NULL,

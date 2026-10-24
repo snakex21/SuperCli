@@ -749,6 +749,14 @@
   "tui.slash.76296fd689": "/model pole saadaval",
   "tui.slash.807564bac8": "Selles vestluses pole failimuudatusi salvestatud.",
   "tui.slash.797e916342": "eksportis %d sõnumid %s-sse",
+  "tui.command_desc.import": "impordi käsuga /export session salvestatud seansifail uue vestlusena",
+  "tui.slash.portable_exported": "seanss (%d sõnumit) eksporditi asukohta %s",
+  "tui.slash.portable_export_failed": "seansi eksportimine ebaõnnestus: %w",
+  "tui.slash.import_usage": "kasutus: /import <path> (käsuga /export session loodud .supercli-session.json-fail)",
+  "tui.slash.import_failed": "seansi importimine ebaõnnestus: %w",
+  "tui.slash.import_too_large": "seansifail on liiga suur (piirang: %d MiB)",
+  "tui.slash.import_invalid": "%s ei ole kehtiv SuperCli seansifail",
+  "tui.slash.imported": "imporditi %d sõnumit uue seansina „%s” (%s). Ava see käsuga /resume %s",
   "tui.slash.127b72ef9e": "eksport kirjutada: %w",
   "tui.slash.49aed96c7c": "kopeeris %d sõnumid lõikelauale",
   "tui.slash.8e0d97abc6": "ekspordi lõikelaud: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Ühendus katkes. Arvuti võib siiski välja lülituda; tühistamiseks looge ühendus uuesti.",
   "hostPower.cancelFailed": "Tühistamist ei kinnitatud. Proovige uuesti.",
   "hostPower.confirm": "Kas lülitada see arvuti välja pärast seda, kui „{goal}“ lõpetamine on kinnitatud? Seejärel algab 60 sekundi pikkune loendus ilma teise kinnituseta.",
-  "hostPower.escape": "Esc: tühista väljalülitamine."
+  "hostPower.escape": "Esc: tühista väljalülitamine.",
+  "tui.command_desc.copy": "kopeeri viimane tehisintellekti vastus lõikelauale",
+  "tui.copy.native": "Viimane vastus kopeeriti süsteemi lõikelauale",
+  "tui.copy.osc52": "Viimane vastus kopeeriti terminali kaudu (OSC 52)",
+  "tui.setting_assistant_edit.label": "Tehisintellekti vastuste muutmine",
+  "tui.setting_assistant_edit.desc": "Näitab tehisintellekti vastuste all nuppe Muuda ja Taasta originaal. Kopeerimine on alati saadaval.",
+  "tui.setting_assistant_edit_model_sees.label": "Mudel näeb muudetud vastuseid",
+  "tui.setting_assistant_edit_model_sees.desc": "Väljas: muudatused muudavad ainult kuvamist. Sees: muudetud tekst asendab originaali selles, mida mudel järgmisel käivitusel näeb. Vanema sõnumi muutmine tühistab teenusepakkuja viipade vahemälu sellest kohast alates, nii et järgmine vastus on ühe korra aeglasem ja kallim."
 }

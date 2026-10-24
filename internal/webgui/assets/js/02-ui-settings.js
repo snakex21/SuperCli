@@ -6,6 +6,7 @@ var ui = {
   theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
   toolsExpanded: false, thinkingExpanded: null, showGenerationSpeed: true, resumeLastSession: false,
+  assistantEdit: false, assistantEditModelSees: false,
   keybinds: { panel: "Ctrl+,", sidebar: "Ctrl+B", focus: "/", thinking: "Shift+T", tools: "Shift+E" },
 };
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
@@ -40,7 +41,7 @@ var pushTimer = null;
 // model cache) can never be wiped by a stale browser state.
 function saveUI() {
   var patch = {};
-  Object.keys(ui).forEach(function (k) { if (k !== "showGenerationSpeed") patch["ui." + k] = ui[k]; });
+  Object.keys(ui).forEach(function (k) { if (k !== "showGenerationSpeed" && k !== "assistantEdit" && k !== "assistantEditModelSees") patch["ui." + k] = ui[k]; });
   clearTimeout(pushTimer);
   pushTimer = setTimeout(function () {
     jpost("/api/settings", patch).catch(function () {});
@@ -114,8 +115,13 @@ function applyViewportScale() {
 function applyGenerationSpeedVisibility() {
   document.documentElement.classList.toggle("generation-speed-hidden", ui.showGenerationSpeed === false);
 }
+// Shared config.toml switches (assistant_edit*); Copy stays visible.
+function applyAssistantEditVisibility() {
+  document.documentElement.classList.toggle("assistant-edit-off", ui.assistantEdit !== true);
+}
 function applyUI() {
   applyGenerationSpeedVisibility();
+  applyAssistantEditVisibility();
   document.documentElement.dataset.theme = ui.theme || "dark";
   document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
   document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
@@ -160,6 +166,8 @@ async function loadUI() {
     }
   } catch (e) {}
   ui.showGenerationSpeed = ui.showGenerationSpeed !== false;
+  ui.assistantEdit = ui.assistantEdit === true;
+  ui.assistantEditModelSees = ui.assistantEditModelSees === true;
   ui.toolsExpanded = ui.toolsExpanded === true;
   ui.thinkingExpanded = typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : null;
   ui.lang = normalizeLanguage(ui.lang) || detectedLanguage();

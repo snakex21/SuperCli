@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Um agente de programação com IA portátil escrito em Go, com interface de terminal (TUI), interface desktop/web (GUI) e modo em lote que compartilham um único mecanismo.
 
 <!-- readme-unit:status -->
-Este README descreve a versão `1.0.17`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
+Este README descreve a versão `1.0.18`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
 
 <!-- readme-unit:h.screenshots -->
 ## Capturas de tela
@@ -138,7 +138,7 @@ Digite `/` para a paleta de comandos. Abra o centro de ações da TUI com `Tab` 
 | --- | --- |
 | `/help`, `/doctor` | Mostrar ajuda e diagnóstico. |
 | `/model`, `/models`, `/providers` | Escolher modelos e gerenciar provedores. |
-| `/resume`, `/export` | Retomar ou exportar uma conversa. |
+| `/resume`, `/export`, `/import` | Retomar ou exportar uma conversa. |
 | `/status`, `/cost`, `/compact` | Examinar o uso ou compactar o contexto. |
 | `/goal`, `/plan` | Gerenciar metas e modo de planejamento somente leitura. |
 | `/diff`, `/undo`, `/redo` | Examinar alterações ou desfazer/refazer um turno do agente. |

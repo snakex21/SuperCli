@@ -752,6 +752,14 @@
   "tui.slash.76296fd689": "/model mevcut değil",
   "tui.slash.807564bac8": "Bu konuşmada hiçbir dosya değişikliği kaydedilmedi.",
   "tui.slash.797e916342": "%d mesajları %s'ye aktarıldı",
+  "tui.command_desc.import": "/export session ile kaydedilmiş bir oturum dosyasını yeni konuşma olarak içe aktar",
+  "tui.slash.portable_exported": "oturum (%d mesaj) %s konumuna aktarıldı",
+  "tui.slash.portable_export_failed": "oturum dışa aktarılamadı: %w",
+  "tui.slash.import_usage": "kullanım: /import <path> (/export session ile oluşturulmuş .supercli-session.json dosyası)",
+  "tui.slash.import_failed": "oturum içe aktarılamadı: %w",
+  "tui.slash.import_too_large": "oturum dosyası çok büyük (sınır: %d MiB)",
+  "tui.slash.import_invalid": "%s geçerli bir SuperCli oturum dosyası değil",
+  "tui.slash.imported": "%d mesaj yeni oturum olarak içe aktarıldı: \"%s\" (%s). Açmak için /resume %s",
   "tui.slash.127b72ef9e": "dışa aktarma yazma: %w",
   "tui.slash.49aed96c7c": "%d mesajlarını panoya kopyaladı",
   "tui.slash.8e0d97abc6": "dışa aktarma panosu: %w",
@@ -968,5 +976,12 @@
   "hostPower.offline": "Bağlantı kesildi. Bilgisayar yine de kapanabilir; kapatmayı iptal etmek için yeniden bağlanın.",
   "hostPower.cancelFailed": "İptal işlemi doğrulanmadı. Yeniden deneyin.",
   "hostPower.confirm": "“{goal}” görevinin tamamlandığı doğrulandıktan sonra bu bilgisayar kapatılsın mı? Ardından ikinci bir onay istenmeden 60 saniyelik geri sayım başlayacak.",
-  "hostPower.escape": "Esc: kapatmayı iptal et."
+  "hostPower.escape": "Esc: kapatmayı iptal et.",
+  "tui.command_desc.copy": "son yapay zekâ yanıtını panoya kopyala",
+  "tui.copy.native": "Son yanıt sistem panosuna kopyalandı",
+  "tui.copy.osc52": "Son yanıt terminal üzerinden kopyalandı (OSC 52)",
+  "tui.setting_assistant_edit.label": "Yapay zekâ yanıtlarını düzenle",
+  "tui.setting_assistant_edit.desc": "Yapay zekâ yanıtlarının altında Düzenle ve Orijinali geri yükle düğmelerini gösterir. Kopyalama her zaman kullanılabilir.",
+  "tui.setting_assistant_edit_model_sees.label": "Model düzenlenen yanıtları görür",
+  "tui.setting_assistant_edit_model_sees.desc": "Kapalı: düzenlemeler yalnızca görünümü değiştirir. Açık: düzenlenen metin, bir sonraki çalıştırmada modelin gördüğü içerikte orijinalin yerini alır. Eski bir mesajı düzenlemek, sağlayıcının istem önbelleğini o noktadan itibaren geçersiz kılar; bir sonraki yanıt bir kez daha yavaş ve pahalı olur."
 }

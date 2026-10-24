@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.17
+# SuperCli 1.0.18
 
 <!-- readme-unit:intro -->
 Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.
 
 <!-- readme-unit:status -->
-See README kirjeldab versiooni `1.0.17`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
+See README kirjeldab versiooni `1.0.18`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvatõmmised
@@ -138,7 +138,7 @@ Käsupaleti avamiseks sisesta `/`. Ava TUI tegevuskeskus tühja sisendi korral k
 | --- | --- |
 | `/help`, `/doctor` | Kuva abi ja diagnostika. |
 | `/model`, `/models`, `/providers` | Vali mudeleid ja halda teenusepakkujaid. |
-| `/resume`, `/export` | Jätka või ekspordi vestlus. |
+| `/resume`, `/export`, `/import` | Jätka või ekspordi vestlus. |
 | `/status`, `/cost`, `/compact` | Vaata kasutust või tihenda konteksti. |
 | `/goal`, `/plan` | Halda eesmärke ja kirjutuskaitstud plaanirežiimi. |
 | `/diff`, `/undo`, `/redo` | Vaata muudatusi või võta agendisamm tagasi/tee uuesti. |
