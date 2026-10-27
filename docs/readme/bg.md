@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.18
+# SuperCli 1.0.19
 
 <!-- readme-unit:intro -->
 Преносим AI агент за програмиране, написан на Go, с терминален интерфейс (TUI), настолен/уеб интерфейс (GUI) и пакетен режим, които използват общ двигател.
 
 <!-- readme-unit:status -->
-Този README описва версия `1.0.18`. Преносимите пакети се разпространяват чрез [GitHub Releases](https://github.com/snakex21/SuperCli/releases); локална компилация не означава, че съответната версия вече е публикувана.
+Този README описва версия `1.0.19`. Преносимите пакети се разпространяват чрез [GitHub Releases](https://github.com/snakex21/SuperCli/releases); локална компилация не означава, че съответната версия вече е публикувана.
 
 <!-- readme-unit:h.screenshots -->
 ## Екранни снимки
