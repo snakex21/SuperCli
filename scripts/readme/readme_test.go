@@ -161,7 +161,7 @@ func TestRejectsInvalidSources(t *testing.T) {
 			c.translations["pl"][0] += "\rExtra paragraph."
 		}, "one mapped unit"},
 		{"changed technical literal", func(c *catalog) {
-			c.translations["pl"][1] = strings.Replace(c.translations["pl"][1], "`1.0.18`", "`1.0.19`", 1)
+			c.translations["pl"][1] = strings.Replace(c.translations["pl"][1], "`1.0.19`", "`1.0.20`", 1)
 		}, "technical literals differ"},
 		{"changed placeholder", func(c *catalog) {
 			c.translations["pl"][1] = strings.Replace(c.translations["pl"][1], "{releases}", "{quickstart}", 1)

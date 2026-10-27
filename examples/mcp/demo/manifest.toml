@@ -1,0 +1,38 @@
+schema = 1
+name = "demo"
+version = "1.0.0"
+description = "Demo MCP server for testing SuperCli MCP 2 features (image, progress, cancel, large output, session)"
+# Relative to this package folder. On Windows "demo-mcp" also resolves to demo-mcp.exe.
+command = "demo-mcp"
+tags = ["demo", "test"]
+session = "conversation"
+
+[[tools]]
+name = "demo_image"
+description = "Return a generated 320x200 PNG test image plus a short text."
+input_schema = '{"type":"object","properties":{}}'
+read_only = true
+
+[[tools]]
+name = "demo_slow"
+description = "Work for N seconds (default 5, max 30), reporting progress every second; honours cancellation."
+input_schema = '{"type":"object","properties":{"seconds":{"type":"integer","minimum":1,"maximum":30,"description":"Duration in seconds (default 5)"}}}'
+read_only = true
+
+[[tools]]
+name = "demo_big"
+description = "Return about 200 KB of numbered text lines (tests large results / read_output)."
+input_schema = '{"type":"object","properties":{}}'
+read_only = true
+
+[[tools]]
+name = "demo_session"
+description = "Return the supercli/session_id received in _meta and a per-session call counter."
+input_schema = '{"type":"object","properties":{}}'
+read_only = true
+
+[[tools]]
+name = "demo_write"
+description = "Pretend write: echoes text back. Marked destructive (no real side effects)."
+input_schema = '{"type":"object","properties":{"text":{"type":"string","description":"Text to echo"}},"required":["text"]}'
+read_only = false
