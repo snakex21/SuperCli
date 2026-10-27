@@ -44,6 +44,7 @@ type (
 	Tool                     = core.Tool
 	Result                   = core.Result
 	ImageContent             = core.ImageContent
+	ToolProgress             = core.ToolProgress
 	OutputPersistence        = core.OutputPersistence
 	Registry                 = core.Registry
 	PreparedInvocation       = core.PreparedInvocation
@@ -82,6 +83,9 @@ var (
 	ErrUnknownTool        = core.ErrUnknownTool
 	NewRegistry           = core.NewRegistry
 	WithOutputPersistence = core.WithOutputPersistence
+	WithToolProgress      = core.WithToolProgress
+	ReportToolProgress    = core.ReportToolProgress
+	FormatToolProgress    = core.FormatToolProgress
 	CoerceArgs            = core.CoerceArgs
 	ApplyVerification     = core.ApplyVerification
 	NewErrorLog           = core.NewErrorLog

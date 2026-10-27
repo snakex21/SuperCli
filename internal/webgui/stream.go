@@ -99,6 +99,9 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 			w.Err = e.Err.Error()
 		}
 		return w, true
+	case agent.ToolProgressEvent:
+		// Live, UI-only progress for a running tool card.
+		return wireEvent{Type: "tool_progress", ID: e.ID, Text: e.Text}, true
 	case agent.ReflectionEvent:
 		return wireEvent{Type: "reflection", Step: e.Step, Text: e.Text}, true
 	case agent.SisyphusEvent:

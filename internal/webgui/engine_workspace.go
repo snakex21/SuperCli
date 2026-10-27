@@ -8,6 +8,7 @@
 package webgui
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -102,6 +103,7 @@ func (e *Engine) RefreshPricingAsync() {
 	if e == nil || e.caps == nil {
 		return
 	}
+	go e.enrichConfiguredProviderCatalogs(context.Background())
 	if cached := pricing.LoadCache(e.dataDir); len(cached) > 0 && pricing.HasContextMetadata(cached) {
 		return
 	}

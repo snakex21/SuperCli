@@ -228,6 +228,30 @@ async function renderMcpList() {
   });
   panelContent.appendChild(portable);
 
+  // Global MCP image visibility: the same segmented buttons as other settings.
+  var imageGroup = el("div", "group mcp-image-mode");
+  imageGroup.appendChild(i18nEl("div", "g-label", "mcp.imageMode"));
+  var imageRow = el("div", "knob-row");
+  var imageName = el("span", "k-name");
+  imageName.appendChild(i18nEl("span", "", "mcp.imageMode"));
+  imageName.appendChild(i18nEl("small", "", "mcp.imageModeHint"));
+  imageRow.appendChild(imageName);
+  var imageSeg = el("span", "seg");
+  ["model", "preview", "file"].forEach(function (mode) {
+    var b = i18nEl("button", mode === (got.image_mode || "model") ? "on" : "", "mcp.imageMode." + mode);
+    b.type = "button";
+    b.dataset.mode = mode;
+    b.addEventListener("click", async function () {
+      try { await jpost("/api/mcp/image_mode", { mode: mode }); }
+      catch (e) { toast(e.message); return; }
+      renderMcpList();
+    });
+    imageSeg.appendChild(b);
+  });
+  imageRow.appendChild(imageSeg);
+  imageGroup.appendChild(imageRow);
+  panelContent.appendChild(imageGroup);
+
   var g = el("div", "group");
   var lbl = i18nEl("div", "g-label", "mcp.servers");
   var jb = i18nEl("button", "g-act", "mcp.editJson");

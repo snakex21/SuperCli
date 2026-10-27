@@ -2108,8 +2108,9 @@ function addToolCall(name, args, id, at) {
   }
   row.classList.add("running");
   function updateElapsed() {
-    stat.textContent = t("tool.running") + " · " + fmtDuration(toolElapsed(row));
+    stat.textContent = t("tool.running") + " · " + fmtDuration(toolElapsed(row)) + (row._progressText ? " · " + row._progressText : "");
   }
+  row._updateElapsed = updateElapsed;
   updateElapsed();
   row._clock = setInterval(updateElapsed, 250);
   appendStream(row);
@@ -2119,6 +2120,14 @@ function addToolCall(name, args, id, at) {
   runToolCount++;
   smartScroll();
 }
+// Live tool progress (e.g. MCP notifications/progress); UI-only text.
+function setToolProgress(id, text) {
+  var row = id ? toolRows[id] : null;
+  if (!row || !row.classList.contains("running")) return;
+  row._progressText = String(text || "").slice(0, 120);
+  if (row._updateElapsed) row._updateElapsed();
+}
+
 function addToolResult(id, output, err, at) {
   var key = id && toolRows[id] ? id : openToolOrder[0];
   var row = toolRows[key];

@@ -121,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mcp/add", s.handleMcpAdd)
 	mux.HandleFunc("/api/mcp/remove", s.handleMcpRemove)
 	mux.HandleFunc("/api/mcp/folder", s.handleMcpFolder)
+	mux.HandleFunc("/api/mcp/image_mode", s.handleMcpImageMode)
 
 	// File browser & editor
 	mux.HandleFunc("/api/files", s.handleFiles)

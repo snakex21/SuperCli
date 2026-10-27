@@ -51,9 +51,12 @@ type ContextOrigin struct {
 	// WorkerActivity belongs only to the canonical transcript/UI. Provider
 	// serializers ignore this envelope; model histories strip this payload.
 	WorkerActivity json.RawMessage `json:"worker_activity,omitempty"`
-	Source         ContextSource   `json:"source,omitempty"`
-	Spans          []ContextSpan   `json:"spans,omitempty"`
-	Digest         [32]byte        `json:"digest,omitzero"`
+	// ToolPreviews are durable session-media paths of user-only tool preview
+	// images (MCP image_mode=preview). Transcript/UI only, never model input.
+	ToolPreviews []string      `json:"tool_previews,omitempty"`
+	Source       ContextSource `json:"source,omitempty"`
+	Spans        []ContextSpan `json:"spans,omitempty"`
+	Digest       [32]byte      `json:"digest,omitzero"`
 }
 
 // WithoutWorkerActivity drops only transcript display data. Provenance and

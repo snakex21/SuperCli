@@ -573,6 +573,8 @@ function buildHistoryFragment(messages, pager, prepend) {
         row.appendChild(body);
         appendStream(row);
         appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
+        // User-only preview thumbnails saved with the tool result record.
+        if (Array.isArray(m.tool_previews) && m.tool_previews.length) appendNativeToolImages(row, m.tool_previews);
         if (m.tool_call_id) {
           if (!historyResults[m.tool_call_id]) historyResults[m.tool_call_id] = [];
           historyResults[m.tool_call_id].push({seq: m.seq, row: row});

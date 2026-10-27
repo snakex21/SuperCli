@@ -63,10 +63,13 @@ type transcriptMsg struct {
 	Attachments          []string              `json:"attachments,omitempty"`
 	ToolImages           []transcriptToolImage `json:"tool_images,omitempty"`
 	ToolImageCarrier     bool                  `json:"tool_image_carrier,omitempty"`
-	Name                 string                `json:"name,omitempty"`
-	ToolCallID           string                `json:"tool_call_id,omitempty"`
-	ToolCalls            []transcriptToolCall  `json:"tool_calls,omitempty"`
-	Turn                 *transcriptTurn       `json:"turn,omitempty"`
+	// ToolPreviews restores user-only tool preview thumbnails (MCP
+	// image_mode=preview) saved with the tool result record.
+	ToolPreviews []string             `json:"tool_previews,omitempty"`
+	Name         string               `json:"name,omitempty"`
+	ToolCallID   string               `json:"tool_call_id,omitempty"`
+	ToolCalls    []transcriptToolCall `json:"tool_calls,omitempty"`
+	Turn         *transcriptTurn      `json:"turn,omitempty"`
 	// Edited assistant replies carry the displayed (edited) text in Content.
 	Edited           bool `json:"edited,omitempty"`
 	EditModelVisible bool `json:"edit_model_visible,omitempty"`

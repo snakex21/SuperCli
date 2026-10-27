@@ -396,7 +396,10 @@ type TomlConfig struct {
 
 // McpConf is the [mcp] section of config.toml.
 type McpConf struct {
-	Servers map[string]McpServerConf `toml:"servers"`
+	// ImageMode is the global visibility of MCP images: "model" (default:
+	// sent to the model + preview), "preview" (user preview only) or "file".
+	ImageMode string                   `toml:"image_mode,omitempty"`
+	Servers   map[string]McpServerConf `toml:"servers"`
 }
 
 // McpServerConf is one [mcp.servers.<name>] entry.
@@ -413,6 +416,8 @@ type McpServerConf struct {
 	Command      string            `toml:"command"`
 	Args         []string          `toml:"args"`
 	Env          map[string]string `toml:"env"`
+	// ImageMode overrides [mcp] image_mode for this server.
+	ImageMode string `toml:"image_mode,omitempty"`
 }
 
 // CouncilConf is the [council] section of config.toml.

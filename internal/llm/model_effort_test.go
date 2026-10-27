@@ -317,6 +317,7 @@ func TestUnifiedReasoningGatewayDoesNotRequireModelMetadata(t *testing.T) {
 		"https://openrouter.ai/api/v1",
 		"https://api.kilo.ai/api/openrouter",
 		"https://opencode.ai/zen/v1",
+		"https://api.cline.bot/api/v1",
 	} {
 		p, err := NewOpenAI(OpenAIConfig{BaseURL: baseURL, Model: "model-without-capability-metadata"})
 		if err != nil {
