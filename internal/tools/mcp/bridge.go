@@ -26,15 +26,26 @@ type bridgeRequest struct {
 	Query     string          `json:"query"`
 	Tool      string          `json:"tool"`
 	Arguments json.RawMessage `json:"arguments"`
+	Calls     []bridgeCall    `json:"calls"`
 }
+
+// bridgeCall is one item of a batched action=call request.
+type bridgeCall struct {
+	Server    string          `json:"server"`
+	Tool      string          `json:"tool"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+// maxBridgeBatch bounds one batched call; items run sequentially in order.
+const maxBridgeBatch = 8
 
 func NewBridge(manager *Manager) *Bridge { return &Bridge{manager: manager} }
 
 func (b *Bridge) Spec() core.Tool {
 	return core.Tool{
 		Name:        "mcp_bridge",
-		Description: "Access configured MCP capabilities, including web/browser tools. list is local; search starts a matching server lazily; call invokes one tool.",
-		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["list","search","call"]},"server":{"type":"string","description":"MCP server name"},"query":{"type":"string","description":"Tool/server capability to find"},"tool":{"type":"string","description":"Exact remote MCP tool name"},"arguments":{"type":"object","additionalProperties":true}},"required":["action"]}`,
+		Description: "Access configured MCP capabilities, including web/browser tools. list is local; search starts a matching server lazily; call invokes one tool, or up to 8 tools in order via calls=[{server,tool,arguments}] (an item error does not stop the rest).",
+		Schema:      `{"type":"object","properties":{"action":{"type":"string","enum":["list","search","call"]},"server":{"type":"string","description":"MCP server name"},"query":{"type":"string","description":"Tool/server capability to find"},"tool":{"type":"string","description":"Exact remote MCP tool name"},"arguments":{"type":"object","additionalProperties":true},"calls":{"type":"array","maxItems":8,"description":"Batch for action=call, executed sequentially","items":{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object","additionalProperties":true}},"required":["server","tool"]}}},"required":["action"]}`,
 		Fn:          b.run,
 	}
 }
@@ -57,6 +68,9 @@ func (b *Bridge) run(ctx context.Context, raw json.RawMessage) (core.Result, err
 	case "search":
 		return core.Result{Text: core.HeadTail(b.search(ctx, req.Server, req.Query), bridgeResultHead, bridgeResultTail)}, nil
 	case "call":
+		if len(req.Calls) > 0 {
+			return b.callBatch(ctx, req.Calls), nil
+		}
 		return b.call(ctx, req.Server, req.Tool, req.Arguments), nil
 	default:
 		return core.Result{Err: fmt.Errorf("mcp_bridge: action must be list, search, or call")}, nil
@@ -130,16 +144,23 @@ func (b *Bridge) search(ctx context.Context, serverName, query string) string {
 		Name        string          `json:"name"`
 		Description string          `json:"description,omitempty"`
 		InputSchema json.RawMessage `json:"input_schema,omitempty"`
+		ReadOnly    bool            `json:"read_only,omitempty"`
+		Declared    bool            `json:"declared,omitempty"`
 	}
 	var found []foundTool
 	var failures []string
 	for _, name := range candidates {
 		s, _ := b.manager.Get(name)
-		if err := s.Start(ctx); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
-			continue
+		// Manifest-declared tools allow discovery without a process; the
+		// process starts only on call. Plain servers start lazily as before.
+		declared := !s.running() && len(s.Config.DeclaredTools) > 0
+		if !declared {
+			if err := s.Start(ctx); err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
 		}
-		for _, tool := range s.Tools() {
+		for _, tool := range s.ListedTools() {
 			if !s.ToolAllowed(tool.Name) {
 				continue
 			}
@@ -147,7 +168,8 @@ func (b *Bridge) search(ctx context.Context, serverName, query string) string {
 			if query != "" && serverName != "" && !strings.Contains(haystack, query) {
 				continue
 			}
-			found = append(found, foundTool{Server: name, Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema})
+			found = append(found, foundTool{Server: name, Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema,
+				ReadOnly: s.ToolReadOnly(tool.Name), Declared: declared})
 		}
 	}
 	sort.Slice(found, func(i, j int) bool {
@@ -195,11 +217,57 @@ func (b *Bridge) call(ctx context.Context, serverName, toolName string, argument
 	if err != nil {
 		return core.Result{Err: err}
 	}
-	text := core.HeadTail(result.Text, bridgeResultHead, bridgeResultTail)
 	if result.IsError {
+		text := core.HeadTail(result.Text, bridgeResultHead, bridgeResultTail)
 		return core.Result{Err: fmt.Errorf("mcp %s/%s: %s", serverName, toolName, text)}
 	}
-	return core.Result{Text: text, Images: result.Images}
+	return shapeResult(result, s.imageModeFor(toolName, b.manager.ImageMode()), bridgeResultHead, bridgeResultTail)
+}
+
+// callBatch runs up to maxBridgeBatch calls sequentially (simple and safe for
+// stateful servers such as browsers). Each item gets its own text section;
+// an item failure is reported in its section and never aborts the others.
+// The whole batch fails only when every item failed.
+func (b *Bridge) callBatch(ctx context.Context, calls []bridgeCall) core.Result {
+	if len(calls) > maxBridgeBatch {
+		return core.Result{Err: fmt.Errorf("mcp_bridge: at most %d calls per batch (got %d)", maxBridgeBatch, len(calls))}
+	}
+	var out core.Result
+	var text, retained strings.Builder
+	failures, truncated := 0, false
+	for i, item := range calls {
+		if err := ctx.Err(); err != nil {
+			return core.Result{Err: err}
+		}
+		header := fmt.Sprintf("## [%d/%d] %s/%s\n", i+1, len(calls), strings.TrimSpace(item.Server), strings.TrimSpace(item.Tool))
+		res := b.call(ctx, item.Server, item.Tool, item.Arguments)
+		body := res.Text
+		full := res.Text
+		if res.RetainedText != "" {
+			full = res.RetainedText
+		}
+		if res.Err != nil {
+			failures++
+			body = "error: " + res.Err.Error()
+			full = body
+		}
+		text.WriteString(header + body + "\n\n")
+		retained.WriteString(header + full + "\n\n")
+		truncated = truncated || res.RetainedText != ""
+		out.Images = append(out.Images, res.Images...)
+		out.PreviewImages = append(out.PreviewImages, res.PreviewImages...)
+		out.Files = append(out.Files, res.Files...)
+		out.MediaNote = out.MediaNote || res.MediaNote
+	}
+	out.Text = strings.TrimRight(text.String(), "\n")
+	if truncated {
+		// Full sections stay readable through read_output; Text keeps previews.
+		out.RetainedText = strings.TrimRight(retained.String(), "\n")
+	}
+	if failures == len(calls) {
+		return core.Result{Err: fmt.Errorf("mcp_bridge: all %d batched calls failed:\n%s", len(calls), out.Text)}
+	}
+	return out
 }
 
 // normalizeBridgeArguments accepts the object required by MCP and repairs the

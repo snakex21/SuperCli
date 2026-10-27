@@ -54,6 +54,18 @@ type ToolResultEvent struct {
 
 func (ToolResultEvent) event() {}
 
+// ToolProgressEvent is live, UI-only progress of a running tool call (e.g. MCP
+// notifications/progress). It never enters history or model context.
+type ToolProgressEvent struct {
+	ID       string
+	Progress float64
+	Total    float64
+	Message  string
+	Text     string // compact pre-formatted label
+}
+
+func (ToolProgressEvent) event() {}
+
 // DoneEvent is the terminal event of a successful run. Usage is the
 // total token usage reported by the model. Steps is the number of model
 // turns consumed by this Run.

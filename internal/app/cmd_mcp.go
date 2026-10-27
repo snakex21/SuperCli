@@ -23,7 +23,7 @@ const mcpStartTimeout = 60 * time.Second
 func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry, reindex func()) *mcp.Manager {
 	configs := make(map[string]mcp.ServerConfig, len(tomlCfg.Mcp.Servers))
 	for name, s := range tomlCfg.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env, AllowedTools: s.AllowedTools}
+		configs[name] = mcp.ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env, AllowedTools: s.AllowedTools, ImageMode: s.ImageMode}
 	}
 	merged, packages, err := mcp.LoadWorkspace(dataDir, configs)
 	if err != nil {
@@ -40,6 +40,7 @@ func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry
 		return nil
 	}
 	manager := mcp.NewManager(configs)
+	manager.SetImageMode(tomlCfg.Mcp.ImageMode)
 	registry.MustRegister(mcp.NewBridge(manager).Spec())
 	registry.MarkAlwaysOn("mcp_bridge")
 	if reindex != nil {

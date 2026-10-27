@@ -25,7 +25,16 @@ type Result struct {
 	Image          *ImageContent
 	// Images carries additional native image blocks (e.g. MCP multi-image results).
 	Images []*ImageContent
-	Err    error
+	// PreviewImages are saved to session media and previewed for the user only;
+	// their pixels are never sent to the model (it receives a path line).
+	PreviewImages []*ImageContent `json:"-"`
+	// Files are binary results (images or other blobs) saved to session media
+	// without a preview; the model receives only their saved path.
+	Files []*ImageContent `json:"-"`
+	// MediaNote asks the loop to append saved media paths to the model text
+	// for Images too (PreviewImages and Files always get a path line).
+	MediaNote bool `json:"-"`
+	Err       error
 	// RetainedText optionally holds a larger, bounded result behind Text's
 	// preview. Only OutputStore consumes it; it never enters history or UI JSON.
 	RetainedText string `json:"-"`
@@ -75,6 +84,8 @@ type VerifiedOperation struct {
 type ImageContent struct {
 	MediaType string
 	Data      []byte // raw bytes (will be base64 encoded)
+	// Name is an optional label (e.g. an MCP resource URI) for path notes.
+	Name string
 }
 
 // Tool is the description of a tool plus its execution function.

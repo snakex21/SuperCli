@@ -1788,6 +1788,9 @@ function handleEvent(ev, current) {
       addToolResult(ev.id, ev.output, ev.err, eventAt);
       if (!ev.err && Array.isArray(ev.images)) appendNativeToolImages(toolRows[ev.id], ev.images);
       return current;
+    case "tool_progress":
+      setToolProgress(ev.id, ev.text);
+      return current;
     case "file_changes":
       addFileChanges(ev.file_changes);
       return current;

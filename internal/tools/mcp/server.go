@@ -9,8 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"supercli/internal/llm"
 	"supercli/internal/system/childproc"
 )
+
+// SessionConversation is the manifest `session` value that makes SuperCli
+// pass the conversation id as `_meta["supercli/session_id"]` on tools/call.
+const SessionConversation = "conversation"
+
+// MetaSessionIDKey carries the SuperCli conversation id in tools/call _meta.
+const MetaSessionIDKey = "supercli/session_id"
 
 // ServerConfig mirrors a [mcp.servers.<name>] section in config.toml.
 type ServerConfig struct {
@@ -18,12 +26,23 @@ type ServerConfig struct {
 	Command      string            `toml:"command"`
 	Args         []string          `toml:"args"`
 	Env          map[string]string `toml:"env"`
-	Dir          string            `toml:"-"`
-	Description  string            `toml:"-"`
-	Portable     bool              `toml:"-"`
-	PackageDir   string            `toml:"-"`
-	PackageID    string            `toml:"-"`
-	Tags         []string          `toml:"-"`
+	// ImageMode overrides the image visibility mode for this server
+	// (model|preview|file); empty defers to tool hints and the global mode.
+	ImageMode   string   `toml:"image_mode"`
+	Dir         string   `toml:"-"`
+	Description string   `toml:"-"`
+	Portable    bool     `toml:"-"`
+	PackageDir  string   `toml:"-"`
+	PackageID   string   `toml:"-"`
+	Tags        []string `toml:"-"`
+	// DeclaredTools come from a portable manifest's [[tools]]. They allow
+	// discovery without starting the process; the real tools/list wins once
+	// the server has started.
+	DeclaredTools []ToolDef `toml:"-"`
+	// ReadOnlyTools holds explicit manifest read_only declarations by tool.
+	ReadOnlyTools map[string]bool `toml:"-"`
+	// Session = "conversation" passes _meta["supercli/session_id"].
+	Session string `toml:"-"`
 }
 
 // Server is one configured MCP server: a subprocess speaking JSON-RPC
@@ -39,6 +58,14 @@ type Server struct {
 	tools   []ToolDef
 	lastErr string
 	started time.Time
+
+	globalImageMode string // copy of Manager's [mcp] image_mode; guarded by mu
+}
+
+func (s *Server) globalMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.globalImageMode
 }
 
 // Status is a display snapshot for /mcp.
@@ -139,6 +166,68 @@ func (s *Server) Tools() []ToolDef {
 	return s.tools
 }
 
+// ListedTools is the discovery view: the real tools/list once the server has
+// started, otherwise the manifest-declared tools (no process is started).
+func (s *Server) ListedTools() []ToolDef {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listedToolsLocked()
+}
+
+func (s *Server) listedToolsLocked() []ToolDef {
+	if s.cmd != nil || s.client != nil || len(s.tools) > 0 {
+		return s.tools
+	}
+	return s.Config.DeclaredTools
+}
+
+// running reports whether the process (or test client) is live.
+func (s *Server) running() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cmd != nil || s.client != nil
+}
+
+// toolDef finds a tool in the listed view, falling back to declarations so
+// manifest hints still apply when a real list omits them.
+func (s *Server) toolDef(name string) (real ToolDef, declared ToolDef, found bool) {
+	for _, td := range s.ListedTools() {
+		if td.Name == name {
+			real, found = td, true
+			break
+		}
+	}
+	for _, td := range s.Config.DeclaredTools {
+		if td.Name == name {
+			declared = td
+			break
+		}
+	}
+	return real, declared, found
+}
+
+// ToolReadOnly is conservative: an explicit manifest read_only wins;
+// otherwise MCP annotations must say readOnlyHint=true and not
+// destructiveHint=true. Unknown means not read-only (current behaviour).
+func (s *Server) ToolReadOnly(name string) bool {
+	if v, ok := s.Config.ReadOnlyTools[name]; ok {
+		return v
+	}
+	real, _, found := s.toolDef(name)
+	return found && real.ReadOnly()
+}
+
+// callMeta builds SuperCli `_meta` extras for one tools/call.
+func (s *Server) callMeta(ctx context.Context) map[string]any {
+	if s.Config.Session != SessionConversation {
+		return nil
+	}
+	if id := llm.ConversationIDFromContext(ctx); id != "" {
+		return map[string]any{MetaSessionIDKey: id}
+	}
+	return nil
+}
+
 // CallTool proxies tools/call to the running subprocess.
 func (s *Server) CallTool(ctx context.Context, name string, args []byte) (Result, error) {
 	s.mu.Lock()
@@ -150,7 +239,7 @@ func (s *Server) CallTool(ctx context.Context, name string, args []byte) (Result
 	if !s.ToolAllowed(name) {
 		return Result{}, fmt.Errorf("mcp: tool %q is outside the configured scope for %s", name, s.Name)
 	}
-	return client.CallTool(ctx, name, args)
+	return client.CallToolMeta(ctx, name, args, s.callMeta(ctx))
 }
 
 // Status returns a display snapshot.
@@ -166,7 +255,7 @@ func (s *Server) Status() Status {
 		PackageDir:  s.Config.PackageDir,
 		Tags:        append([]string(nil), s.Config.Tags...),
 		Running:     s.cmd != nil,
-		Tools:       len(s.tools),
+		Tools:       len(s.listedToolsLocked()),
 		Err:         s.lastErr,
 	}
 	if st.Running {
@@ -187,6 +276,30 @@ type Manager struct {
 	idleGeneration uint64
 	closed         bool
 	busy           func() bool
+
+	imageMode string // global [mcp] image_mode; guarded by mu
+}
+
+// SetImageMode sets the global image visibility mode ([mcp] image_mode).
+func (m *Manager) SetImageMode(mode string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.imageMode = NormalizeImageMode(mode)
+	for _, s := range m.servers {
+		s.mu.Lock()
+		s.globalImageMode = m.imageMode
+		s.mu.Unlock()
+	}
+}
+
+// ImageMode returns the configured global mode ("" means default).
+func (m *Manager) ImageMode() string {
+	if m == nil {
+		return ""
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.imageMode
 }
 
 func NewManager(configs map[string]ServerConfig) *Manager {

@@ -93,6 +93,7 @@ func (s *Server) handleMcpServers(w http.ResponseWriter, r *http.Request) {
 		"servers": out, "packages": packageViews,
 		"portable_path": filepath.Join(mcp.PortableDirName),
 		"lazy":          true,
+		"image_mode":    mcpImageModeOrDefault(tc.Mcp.ImageMode),
 	}
 	if discoverErr != nil {
 		response["error"] = discoverErr.Error()
@@ -153,7 +154,7 @@ func (s *Server) handleMcpConfig(w http.ResponseWriter, r *http.Request) {
 			if server.Env == nil {
 				server.Env = map[string]string{}
 			}
-			next[name] = config.McpServerConf{Command: command, Args: server.Args, Env: server.Env}
+			next[name] = config.McpServerConf{Command: command, Args: server.Args, Env: server.Env, ImageMode: tc.Mcp.Servers[name].ImageMode}
 		}
 		tc.Mcp.Servers = next
 		if err := config.SaveToml(path, tc); err != nil {
@@ -168,6 +169,53 @@ func (s *Server) handleMcpConfig(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func mcpImageModeOrDefault(mode string) string {
+	if normalized := mcp.NormalizeImageMode(mode); normalized != "" {
+		return normalized
+	}
+	return mcp.ImageModeModel
+}
+
+// handleMcpImageMode sets the global [mcp] image_mode (model|preview|file).
+func (s *Server) handleMcpImageMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	mode := mcp.NormalizeImageMode(req.Mode)
+	if mode == "" {
+		http.Error(w, "mode must be model, preview or file", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(s.eng.dataDir, "config.toml")
+	tc, err := config.LoadToml(path)
+	if err != nil {
+		http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// The default is stored as absence so config.toml stays minimal.
+	tc.Mcp.ImageMode = mode
+	if mode == mcp.ImageModeModel {
+		tc.Mcp.ImageMode = ""
+	}
+	if err := config.SaveToml(path, tc); err != nil {
+		http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.eng.reloadMCP(); err != nil {
+		http.Error(w, "reload MCP: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "image_mode": mode})
 }
 
 // handleMcpAdd adds or updates an MCP server in config.toml.
@@ -198,9 +246,10 @@ func (s *Server) handleMcpAdd(w http.ResponseWriter, r *http.Request) {
 		tc.Mcp.Servers = make(map[string]config.McpServerConf)
 	}
 	tc.Mcp.Servers[name] = config.McpServerConf{
-		Command: strings.TrimSpace(req.Command),
-		Args:    req.Args,
-		Env:     req.Env,
+		Command:   strings.TrimSpace(req.Command),
+		Args:      req.Args,
+		Env:       req.Env,
+		ImageMode: tc.Mcp.Servers[name].ImageMode, // keep a hand-written override
 	}
 	if err := config.SaveToml(path, tc); err != nil {
 		http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)

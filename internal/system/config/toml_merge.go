@@ -225,6 +225,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.WebSearch.BaseURL != "" {
 		dst.WebSearch.BaseURL = src.WebSearch.BaseURL
 	}
+	if src.Mcp.ImageMode != "" {
+		dst.Mcp.ImageMode = src.Mcp.ImageMode
+	}
 	// MCP servers: merged per name; a project entry overrides
 	// the global entry with the same name.
 	if len(src.Mcp.Servers) > 0 {

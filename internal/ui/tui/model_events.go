@@ -51,6 +51,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.refreshTranscript()
 		return m, m.waitForNextEvent()
 	case agent.ToolResultEvent:
+		m.toolProgress = ""
 		for _, image := range e.Images {
 			if image.Path != "" {
 				e.Output += "\nImage: " + image.Path
@@ -150,6 +151,18 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 		m.appendLine(m.marker.Council(e.CandidateCount, e.WinnerProvider, e.Reason))
 		m.appendLine(m.marker.CouncilQuestion(e.Question))
+		return m, m.waitForNextEvent()
+	case agent.ToolProgressEvent:
+		// Live tool progress (e.g. MCP notifications/progress): status line
+		// only, never appended to the transcript.
+		m.toolProgress = ""
+		if e.Text != "" {
+			name := m.toolNames[e.ID]
+			if name == "" {
+				name = m.lastToolName
+			}
+			m.toolProgress = name + " · " + e.Text
+		}
 		return m, m.waitForNextEvent()
 	case agent.WorkerProgressEvent:
 		m.updateWorkerView(e)

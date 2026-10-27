@@ -41,6 +41,12 @@ func WithOpenCodeSession(ctx context.Context, sessionID string) context.Context 
 	return context.WithValue(ctx, openCodeSessionCtxKey{}, sessionID)
 }
 
+// ConversationIDFromContext returns the stable SuperCli conversation/session
+// ID attached by WithOpenCodeSession, or "" when none is available.
+func ConversationIDFromContext(ctx context.Context) string {
+	return openCodeSessionFromContext(ctx)
+}
+
 func openCodeSessionFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -562,6 +568,7 @@ func IsUnifiedReasoningGateway(baseURL string) bool {
 	base := strings.ToLower(strings.TrimSpace(baseURL))
 	return strings.Contains(base, "openrouter") ||
 		strings.Contains(base, "api.kilo.ai") ||
+		strings.Contains(base, "api.cline.bot") ||
 		strings.Contains(base, "opencode.ai/zen")
 }
 

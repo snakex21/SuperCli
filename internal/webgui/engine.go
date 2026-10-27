@@ -209,6 +209,11 @@ func NewEngine(cfg config.Config, home, dataDir string) (*Engine, error) {
 	if cachedPrices := pricing.LoadCache(dataDir); len(cachedPrices) > 0 {
 		pricing.ApplyRates(cachedPrices)
 		applyWebPricingEntries(caps, cachedPrices)
+	} else if stalePrices := pricing.LoadCacheStale(dataDir); len(stalePrices) > 0 {
+		// A day-old context window beats the generic remote fallback until the
+		// background refresh lands (same policy as batch startup). Rates are not
+		// applied from a stale cache; only metadata.
+		applyWebPricingEntries(caps, stalePrices)
 	}
 	f := factory.New(nil, dataDir, caps)
 	tc, _ := config.ResolveConfig(dataDir, home, "")
@@ -308,7 +313,7 @@ func (e *Engine) HasActiveWork() bool {
 func explicitMCPConfigs(tc config.TomlConfig, home string) map[string]mcp.ServerConfig {
 	configs := make(map[string]mcp.ServerConfig, len(tc.Mcp.Servers))
 	for name, sc := range tc.Mcp.Servers {
-		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, AllowedTools: sc.AllowedTools, Dir: home}
+		configs[name] = mcp.ServerConfig{Command: sc.Command, Args: sc.Args, Env: sc.Env, AllowedTools: sc.AllowedTools, ImageMode: sc.ImageMode, Dir: home}
 	}
 	return configs
 }
@@ -327,9 +332,11 @@ func (e *Engine) loadMCPRuntime(home string) (*mcp.Manager, error) {
 	if len(configs) == 0 {
 		return nil, nil
 	}
-	return mcp.NewLeasedManager(configs, time.Minute, func() bool {
+	manager := mcp.NewLeasedManager(configs, time.Minute, func() bool {
 		return e.workers != nil && e.workers.Counts().Running > 0
-	}), nil
+	})
+	manager.SetImageMode(tc.Mcp.ImageMode)
+	return manager, nil
 }
 
 // reloadMCP replaces every cached MCP runtime after a configuration edit.

@@ -82,7 +82,7 @@ func (c *completedOperations) drop(key [sha256.Size]byte) {
 func (c *completedOperations) record(generation uint64, key [sha256.Size]byte, result tools.Result) {
 	if result.Err != nil || result.Inert || result.Operation == nil || result.Operation.Summary == "" ||
 		len(result.Operation.Summary) > completedOperationSummaryBytes || result.RetainedText != "" ||
-		result.Image != nil || len(result.Images) != 0 || result.CommandKey != nil {
+		result.Image != nil || len(result.Images) != 0 || len(result.PreviewImages) != 0 || len(result.Files) != 0 || result.CommandKey != nil {
 		return
 	}
 	size := len(result.Text) + len(result.ModelText) + len(result.ModelPreview) + len(result.Operation.Summary)

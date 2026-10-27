@@ -161,6 +161,9 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 	// Vision/tool flags remain independent of this metadata merge.
 	if err == nil && p.Type != config.ProviderAnthropic {
 		discovered = mergeDiscoveredContextLengths(discovered, llm.ListLocalNativeModelInfos(ctx, p.BaseURL, apiKey))
+		// Gateways such as Cline omit context_length but reuse public catalog
+		// ids; fill the gap from one cached catalog fetch (no-op elsewhere).
+		discovered = llm.EnrichModelInfos(ctx, p.BaseURL, discovered)
 	}
 	cancel()
 	if err != nil {
@@ -177,6 +180,20 @@ func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanR
 			mi = llm.HeuristicCapabilities(id)
 		}
 		mi.Provider = p.Name
+		// Register replaces the whole row. Keep metadata another source (pricing
+		// cache, catalog) already established when this response has none, or a
+		// rescan silently drops a known window back to the generic fallback.
+		if existing, ok := caps.Get(id); ok {
+			if mi.ContextLength <= 0 && existing.ContextLength > 0 {
+				mi.ContextLength = existing.ContextLength
+			}
+			if mi.InputCost <= 0 && existing.InputCost > 0 {
+				mi.InputCost = existing.InputCost
+			}
+			if mi.OutputCost <= 0 && existing.OutputCost > 0 {
+				mi.OutputCost = existing.OutputCost
+			}
+		}
 		caps.Register(mi)
 	}
 	res.Models = ids

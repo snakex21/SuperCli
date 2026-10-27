@@ -116,6 +116,9 @@ type Model struct {
 	// F26.3: planMode toggles read-only analysis mode.
 	planMode bool
 
+	// toolProgress is the latest live tool progress label (status bar only).
+	toolProgress string
+
 	// F26.4: tracker records file changes for /diff.
 	tracker *fileops.Tracker
 
@@ -729,6 +732,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetCurrent()
 		m.responseLen = 0
 		m.toolActivity.reset()
+		m.toolProgress = ""
 		m.toolNames = make(map[string]string)
 		m.eventCh = msg.ch
 		return m, tea.Batch(waitForEvent(msg.ch), streamFlushCmd())

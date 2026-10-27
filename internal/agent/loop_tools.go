@@ -62,8 +62,10 @@ type toolBatchMessages struct {
 func (b *toolBatchMessages) append(l *Loop, ctx context.Context, followUps []llm.Message) {
 	for _, m := range followUps {
 		var uiActivity json.RawMessage
+		var toolPreviews []string
 		if m.Origin != nil {
 			uiActivity = m.Origin.WorkerActivity
+			toolPreviews = m.Origin.ToolPreviews
 		}
 		source := llm.SourceToolResult
 		if m.Role == llm.RoleTool && (m.Name == "task" || m.Name == "send_message") {
@@ -82,6 +84,9 @@ func (b *toolBatchMessages) append(l *Loop, ctx context.Context, followUps []llm
 		transcript := m
 		if source == llm.SourceTaskResult && len(uiActivity) > 0 {
 			transcript.Origin = &llm.ContextOrigin{Source: source, WorkerActivity: uiActivity}
+		}
+		if source == llm.SourceToolResult && len(toolPreviews) > 0 {
+			transcript.Origin = &llm.ContextOrigin{Source: source, ToolPreviews: toolPreviews}
 		}
 		l.persist(ctx, transcript)
 	}
@@ -661,6 +666,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 			l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 			return l.cancelledToolResult(tc, tools.Result{}, cause, false, out)
 		}
+		dispatchCtx, stopProgress := withToolProgress(dispatchCtx, tc.ID, out)
+		defer stopProgress()
 		if havePreparedInvocation {
 			// This invocation already accepted the arguments for its cache key.
 			// Reuse that preparation only; the current callback still performs
@@ -801,6 +808,8 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		Name:       tc.Name,
 		Content:    modelContent,
 	}}
+	mediaNotes := l.toolPreviewAndFileMedia(ctx, tc.Name, res, &previews)
+	userOnlyPreviews := append([]llm.ImageRef(nil), previews...)
 	images := res.Images
 	if res.Image != nil {
 		images = append([]*tools.ImageContent{res.Image}, images...)
@@ -819,10 +828,19 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 			// inline binary payload over SSE or leaks a remote image URL.
 			if img.Path != "" && img.ID != "" {
 				previews = append(previews, llm.ImageRef{Path: img.Path, ID: img.ID, MediaType: img.MediaType, Name: img.Name})
+				if res.MediaNote {
+					mediaNotes = append(mediaNotes, toolMediaNote("image", img.Path, image, "; attached for the model"))
+				}
 			}
 		}
 		l.enableSessionImageTool()
 		follow = append(follow, llm.Message{Role: llm.RoleUser, Parts: parts})
+	}
+	follow[0].Content = appendMediaNotes(follow[0].Content, mediaNotes)
+	if paths := previewPaths(userOnlyPreviews); len(paths) > 0 {
+		// Transcript-only record so a reopened session restores the
+		// user-only thumbnails (they have no model-visible carrier).
+		follow[0].Origin = &llm.ContextOrigin{ToolPreviews: paths}
 	}
 	out <- ToolResultEvent{ID: tc.ID, Output: res.Text, OutputHandle: outputHandle, Images: previews}
 	observation := observeToolResult(tc, res)

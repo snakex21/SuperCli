@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -34,6 +35,78 @@ type Manifest struct {
 	Platforms    []string          `toml:"platforms"`
 	Requires     []Requirement     `toml:"requires"`
 	Enabled      *bool             `toml:"enabled"`
+	// ImageMode is the package's image visibility mode (model|preview|file).
+	ImageMode string `toml:"image_mode"`
+	// Tools optionally declares the tool list so search/list need no process.
+	Tools []ManifestTool `toml:"tools"`
+	// Session = "conversation" passes _meta["supercli/session_id"].
+	Session string `toml:"session"`
+}
+
+// ManifestTool is one [[tools]] entry. InputSchema may be an inline JSON
+// string or a TOML table.
+type ManifestTool struct {
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	InputSchema any    `toml:"input_schema"`
+	ReadOnly    *bool  `toml:"read_only"`
+	ImageMode   string `toml:"image_mode"`
+}
+
+// declaredTools converts manifest [[tools]] to ToolDefs plus explicit
+// read_only declarations. Invalid entries are reported as an error.
+func declaredTools(entries []ManifestTool) ([]ToolDef, map[string]bool, error) {
+	if len(entries) == 0 {
+		return nil, nil, nil
+	}
+	defs := make([]ToolDef, 0, len(entries))
+	readOnly := map[string]bool{}
+	seen := map[string]bool{}
+	for i, entry := range entries {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" {
+			return nil, nil, fmt.Errorf("tools[%d]: name is empty", i)
+		}
+		if seen[name] {
+			return nil, nil, fmt.Errorf("tools[%d]: duplicate tool %q", i, name)
+		}
+		seen[name] = true
+		schema := json.RawMessage(`{"type":"object"}`)
+		switch v := entry.InputSchema.(type) {
+		case nil:
+		case string:
+			if strings.TrimSpace(v) != "" {
+				if !json.Valid([]byte(v)) {
+					return nil, nil, fmt.Errorf("tools[%d] %s: input_schema is not valid JSON", i, name)
+				}
+				schema = json.RawMessage(strings.TrimSpace(v))
+			}
+		default:
+			encoded, err := json.Marshal(v)
+			if err != nil {
+				return nil, nil, fmt.Errorf("tools[%d] %s: input_schema: %w", i, name, err)
+			}
+			schema = encoded
+		}
+		var object map[string]json.RawMessage
+		if json.Unmarshal(schema, &object) != nil || object == nil {
+			return nil, nil, fmt.Errorf("tools[%d] %s: input_schema must be a JSON object", i, name)
+		}
+		td := ToolDef{Name: name, Description: entry.Description, InputSchema: schema}
+		if mode := NormalizeImageMode(entry.ImageMode); mode != "" {
+			td.Meta, _ = json.Marshal(map[string]string{MetaImageModeKey: mode})
+		}
+		if entry.ReadOnly != nil {
+			readOnly[name] = *entry.ReadOnly
+			ro := *entry.ReadOnly
+			td.Annotations = &ToolAnnotations{ReadOnlyHint: &ro}
+		}
+		defs = append(defs, td)
+	}
+	if len(readOnly) == 0 {
+		readOnly = nil
+	}
+	return defs, readOnly, nil
 }
 
 // Requirement describes an external host application or runtime. Candidates
@@ -188,11 +261,25 @@ func resolvePortableConfig(dataDir string, pkg PortablePackage) (ServerConfig, e
 	for key, value := range manifest.Env {
 		env[key] = expandPortable(value, dataDir, pkg.Dir)
 	}
+	declared, readOnly, err := declaredTools(manifest.Tools)
+	if err != nil {
+		return ServerConfig{}, fmt.Errorf("manifest: %w", err)
+	}
+	session := strings.ToLower(strings.TrimSpace(manifest.Session))
+	switch session {
+	case "", "none":
+		session = ""
+	case SessionConversation:
+	default:
+		return ServerConfig{}, fmt.Errorf("manifest: unsupported session %q (want \"conversation\")", manifest.Session)
+	}
 	return ServerConfig{
+		DeclaredTools: declared, ReadOnlyTools: readOnly, Session: session,
 		Command: command, Args: args, Env: env, Dir: dir,
 		AllowedTools: append([]string(nil), manifest.AllowedTools...),
-		Description: manifest.Description, Portable: true, PackageDir: pkg.Dir,
+		Description:  manifest.Description, Portable: true, PackageDir: pkg.Dir,
 		PackageID: pkg.ID, Tags: append([]string(nil), manifest.Tags...),
+		ImageMode: NormalizeImageMode(manifest.ImageMode),
 	}, nil
 }
 

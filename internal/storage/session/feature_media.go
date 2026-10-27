@@ -225,6 +225,21 @@ func imageExtension(mediaType string) string {
 		return ".webp"
 	case "image/gif":
 		return ".gif"
+	// Binary tool results (e.g. MCP embedded resources) share this store.
+	case "application/pdf":
+		return ".pdf"
+	case "application/json":
+		return ".json"
+	case "application/zip":
+		return ".zip"
+	case "text/plain", "text/plain; charset=utf-8":
+		return ".txt"
+	case "audio/wav", "audio/x-wav":
+		return ".wav"
+	case "audio/mpeg":
+		return ".mp3"
+	case "application/octet-stream":
+		return ".bin"
 	default:
 		return ".img"
 	}

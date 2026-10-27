@@ -56,6 +56,9 @@ func wrapTool(s *Server, td ToolDef) tools.Tool {
 		Name:        fmt.Sprintf("mcp_%s_%s", s.Name, remote),
 		Description: fmt.Sprintf("[MCP:%s] %s", s.Name, desc),
 		Schema:      schema,
+		// Only explicit MCP readOnlyHint (not destructive) or manifest
+		// read_only opts in; unknown keeps the conservative default.
+		ReadOnly: s.ToolReadOnly(remote),
 		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 			res, err := s.CallTool(ctx, remote, args)
 			if err != nil {
@@ -65,7 +68,7 @@ func wrapTool(s *Server, td ToolDef) tools.Tool {
 				return tools.Result{Err: fmt.Errorf("mcp %s/%s: %s", s.Name, remote,
 					core.HeadTail(res.Text, core.ModelContentTailBytes, core.ModelContentTailBytes))}, nil
 			}
-			return tools.Result{Text: core.HeadTail(res.Text, mcpResultHeadBytes, mcpResultTailBytes), Images: res.Images}, nil
+			return shapeResult(res, s.imageModeFor(remote, s.globalMode()), mcpResultHeadBytes, mcpResultTailBytes), nil
 		},
 	}
 }

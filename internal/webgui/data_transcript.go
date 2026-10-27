@@ -138,6 +138,7 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 			// existing folded worker card, never a human bubble or rewind point.
 			item.Role, item.Name = string(llm.RoleTool), "task"
 		}
+		item.ToolPreviews = transcriptToolPreviews(id, msg)
 		item.ToolImages = transcriptToolImagePreviews(id, presentation, len(item.Attachments) != 0)
 		item.ToolImageCarrier = isTranscriptToolImageCarrier(presentation, len(item.Attachments) != 0)
 		if item.Role == string(llm.RoleUser) && m.MessageID > 0 && !item.ToolImageCarrier {
@@ -174,6 +175,25 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+// transcriptToolPreviews returns portable preview handles for user-only tool
+// preview images recorded on a host-authored tool result. Only content-
+// addressed session-media files are exposed.
+func transcriptToolPreviews(sessionID string, msg llm.Message) []string {
+	if msg.Role != llm.RoleTool || msg.Origin == nil || msg.Origin.Source != llm.SourceToolResult {
+		return nil
+	}
+	var out []string
+	for _, path := range msg.Origin.ToolPreviews {
+		if token := sessionImagePreviewPath(sessionID, path); token != "" {
+			out = append(out, token)
+		}
+		if len(out) >= 16 {
+			break
+		}
+	}
+	return out
 }
 
 // Only host-authored image carriers are reparented. The transcript projection
