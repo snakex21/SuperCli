@@ -17,7 +17,7 @@ if errorlevel 1 (
 )
 
 echo [build.bat] Kompiluje supercli.exe...
-go build -buildvcs=false -o supercli.exe ./cmd/supercli
+go build -trimpath -buildvcs=false -ldflags="-s -w" -o supercli.exe ./cmd/supercli
 if errorlevel 1 (
     echo [build.bat] BLAD: build nie powiodl sie.
     pause
