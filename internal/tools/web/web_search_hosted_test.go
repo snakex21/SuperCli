@@ -154,3 +154,15 @@ func TestExaEngine(t *testing.T) {
 		t.Fatalf("missing key not explained: %v", err)
 	}
 }
+
+func TestWebLookupAcceptsExtraQueries(t *testing.T) {
+	tool := NewWebSearch("searxng", "", "https://search.example.org")
+	tool.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		q := req.URL.Query().Get("q")
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"results":[{"title":"Hit for ` + q + `","url":"https://example.org/` + strings.ReplaceAll(q, " ", "-") + `"}]}`)), Request: req}, nil
+	})}
+	result := searchJSON(t, tool.LookupSpec().Fn, map[string]any{"query": "go release", "queries": []string{"rust release"}})
+	if result.Err != nil || !strings.Contains(result.Text, "Hit for go release") || !strings.Contains(result.Text, `Query 2 "rust release"`) {
+		t.Fatalf("lookup ignored queries: %+v", result)
+	}
+}

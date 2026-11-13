@@ -89,8 +89,9 @@ type webSearchArgs struct {
 }
 
 type webLookupArgs struct {
-	Query   string `json:"query"`
-	Refresh bool   `json:"refresh"`
+	Query   string   `json:"query"`
+	Queries []string `json:"queries"`
+	Refresh bool     `json:"refresh"`
 }
 
 // LookupSpec is the tiny always-on path for current facts. It deliberately
@@ -104,8 +105,8 @@ func (t *WebSearch) LookupSpec() Tool {
 		ReuseTTL:    2 * time.Minute,
 		RefreshArg:  "refresh",
 		NextTools:   []string{"web_fetch", "web_download"},
-		Description: "Search the live public web for current facts, new candidate URLs or external references. If the user gave a URL, do not search in the same turn: call web_fetch(url) alone first and search only if that page lacks the answer. Returns search hits and snippets. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
-		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},"refresh":{"type":"boolean","description":"Bypass recent result reuse and the search cache to make a fresh network search (default false)."}},"required":["query"]}`,
+		Description: "Search the live public web for current facts, new candidate URLs or external references. If the user gave a URL, do not search in the same turn: call web_fetch(url) alone first and search only if that page lacks the answer. Returns search hits and snippets; put several related searches in queries to run them in one call. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
+		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},"queries":{"type":"array","items":{"type":"string"},"maxItems":3,"description":"Optional extra related queries (up to 3), searched in parallel in this one call."},"refresh":{"type":"boolean","description":"Bypass recent result reuse and the search cache to make a fresh network search (default false)."}},"required":["query"]}`,
 		Fn:          t.lookup,
 	}
 }
@@ -119,7 +120,7 @@ func (t *WebSearch) lookup(ctx context.Context, raw json.RawMessage) (Result, er
 	if a.Query == "" {
 		return Result{Err: fmt.Errorf("web_lookup: query is empty")}, nil
 	}
-	forward, _ := json.Marshal(webSearchArgs{Query: a.Query, MaxResults: webSearchDefaultResults, Refresh: a.Refresh})
+	forward, _ := json.Marshal(webSearchArgs{Query: a.Query, Queries: a.Queries, MaxResults: webSearchDefaultResults, Refresh: a.Refresh})
 	return t.execute(ctx, forward)
 }
 
