@@ -332,6 +332,11 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 	}
 	l.failedChecks.record(observation)
 	l.verifyTrail.observe(args.Command, failed)
+	if result.Execution != nil {
+		l.checkCycles.observe(tc.ID, args.Command, failed, verificationOutput(result.Execution.Stdout, result.Execution.Stderr, fmt.Sprint(result.Execution.ExitCode), nil), l.curStep.Load())
+	} else {
+		l.checkCycles.observe(tc.ID, args.Command, failed, verificationOutput("", "", result.Text, result.Err), l.curStep.Load())
+	}
 	if l.verificationObserver != nil {
 		l.verificationObserver(observation)
 	}
