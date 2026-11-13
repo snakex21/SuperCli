@@ -593,7 +593,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					if tc.ID != "" {
 						acc.ID = tc.ID
 					}
+					prevArgs := acc.arguments.Len()
 					acc.arguments.WriteString(tc.Function.Arguments)
+					if err := checkRunawayToolArguments(acc.Name, &acc.arguments, prevArgs); err != nil {
+						return err
+					}
 				}
 				if choice.FinishReason != "" && !emittedFinish {
 					// Flush accumulated tool calls BEFORE the

@@ -126,7 +126,11 @@ func (s *responsesToolStream) add(ev codexEvent) error {
 		call.name = name
 	}
 	if ev.Type == "response.function_call_arguments.delta" {
+		prev := call.arguments.Len()
 		call.arguments.WriteString(ev.Delta)
+		if err := checkRunawayToolArguments(call.name, &call.arguments, prev); err != nil {
+			return err
+		}
 	}
 	if ev.Item != nil && ev.Item.Arguments != "" {
 		if ev.Type == "response.output_item.added" {
