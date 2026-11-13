@@ -152,7 +152,7 @@ func (t *ThunderbirdMail) Spec() Tool {
 		Description: "Use the locally running Thunderbird through the SuperCLI Thunderbird Bridge extension. " +
 			"Thunderbird owns the real Gmail IMAP/OAuth connection, so prefer this over Outlook COM for Gmail mailbox state. " +
 			"Read operations: 'status', 'accounts', 'folders', 'count', 'search', 'read', 'attachments', 'get_attachment', 'senders', 'largest', 'address_books', 'contacts', and 'contact_candidates'. search/count can filter by sender (from), recipient (to, covers To and Cc), sender-or-recipient email address (address), subject substring, text and date. from/to/address also accept a domain: '@example.com' matches mailboxes at example.com or its subdomains only, a bare 'example.com' additionally matches display names; domain filters scan every header of the folder, so keep the Inbox scope or add dates. For a company or brand the user names (allegro, discord, github), filter with from:'<brand>': a bare word matches sender display names and addresses ('allegro' finds 'Poczta Allegro' and allegromail.pl, while 'allegro.pl' misses allegromail.pl). Gmail filters often file such mail outside Inbox, so when Inbox returns 0 repeat with scope:'account' (or the matching folder) before saying there is none. 'text' is full-text over bodies and slow, especially with scope:'account'; use it only when from/subject/to cannot express the request. There is NO unread/read filter: for 'how many unread' use op 'folders' and report unreadMessageCount (Inbox/Odebrane for the inbox; Gmail All Mail/Wszystkie for the whole account without Trash/Spam). Unknown arguments are rejected without executing anything. count/search/senders/largest count each RFC Message-ID once (Gmail labels, All Mail and duplicate index records are merged; see deduplicatedByMessageId, duplicatesSkipped, duplicateRecords, crossFolderDuplicates), so totals can be lower than Thunderbird's raw counts; pass include_duplicates:true only when raw per-record results are needed. search results are newest-first. 'contact_candidates' aggregates sender and recipient addresses from message headers without loading bodies, excluding the mailbox owner's own address. 'largest' scans message headers locally and returns only the largest 1-100 messages with byte sizes and stable Message-ID headers, avoiding large AI context. Use 'read' with a message_id returned by search to retrieve the decoded body without changing read/unread state. read returns at most max_chars (default 12000); when hasMore:true, repeat with nextStartChar as start_char instead of loading a huge email into a small local model at once. search does NOT return attachment metadata by default (attachmentsIncluded:false, no hasAttachments/attachmentCount/attachments fields) because it costs one MIME parse per result; pass include_attachments:true when attachments matter, or call 'attachments' (full filename including extension, extension, MIME type, size, partName) or 'read' for one message_id. 'get_attachment' fetches the actual attachment bytes. For PNG/JPEG/GIF/WebP it returns a real image to the agent loop so a vision-capable model receives the pixels on the next model turn; for PDF/Office/other files it returns a temporary localPath so the appropriate document tool can read it. count/search/senders/largest default to Inbox to avoid Gmail label duplicates; use scope:'account' only when an explicit whole-account search is needed. 'senders' is the preferred fast first step for newsletter/junk cleanup because it aggregates frequent Inbox senders without repeated full-text scans. Account selection: without 'account', a folder id such as 'account2://INBOX' selects its own account, and a folder name that exists on several mail accounts is an error, not a silent choice of the first IMAP account; then pass folder as the exact folder.id (or full path) returned by 'folders', or name the account. Local Folders (type none) is not part of that check: a name present in both the IMAP account and Local Folders silently resolves to the IMAP account, so for Local Folders work always pass account:'Local Folders' or the account2://... folder id. 'folders' returns totalMessageCount/unreadMessageCount; include_unique_counts:true (optionally with folder) adds messageRecords, uniqueMessageCount and duplicateRecords but scans every header. " +
-			"Write operations: 'create_folder' (name = new folder name, parent = optional parent, account = target account), 'rename_folder' and 'delete_folder' manage Thunderbird folders after confirm:true; 'copy' (folder = source, destination + destination_account = target) leaves the originals untouched: to delete the copies afterwards, trash/purge in the copy DESTINATION folder, never in the copy source; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. On Gmail, trash/move from a label other than Inbox/Trash/Spam/All Mail is refused without changes when a selected message also carries Inbox or another label; for move, allow_other_labels:true accepts removing only the source label. Every move is verified: status 'verified_moved' or 'moved_but_unverified' (movedButUnverified, missingInDestination; no continuation is returned then) - never report an unverified batch as done. IMAP moves also return recheckAfterMs and a ready 'recheck' request: send it as op 'verify_move' after that delay (read-only; reports locations, onlyInAllMail when Gmail dropped the label). 'repair_folder' (confirm:true, folder) runs Thunderbird's Repair Folder to rebuild an index with duplicate records without deleting messages; it refuses busy/offline/open folders (try again later, no automatic retry), Gmail All Mail needs allow_all_mail:true, and status.nativeRepairFolderAvailable tells whether it is installed. 'delete_folder' may report deleted:false, movedToTrash:true with newPath when Thunderbird (Local Folders) moved the folder into Trash instead. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
+			"Write operations: 'create_folder' (name = new folder name, account = REQUIRED target account such as 'Local Folders', parent = optional parent), 'rename_folder' and 'delete_folder' (folder = exact folder.id such as account2://Name, or a name plus account) manage Thunderbird folders after confirm:true; 'copy' (folder = source, destination + destination_account = target) leaves the originals untouched: to delete the copies afterwards, trash/purge in the copy DESTINATION folder, never in the copy source; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. On Gmail, trash/move from a label other than Inbox/Trash/Spam/All Mail is refused without changes when a selected message also carries Inbox or another label; for move, allow_other_labels:true accepts removing only the source label. Every move is verified: status 'verified_moved' or 'moved_but_unverified' (movedButUnverified, missingInDestination; no continuation is returned then) - never report an unverified batch as done. IMAP moves also return recheckAfterMs and a ready 'recheck' request: send it as op 'verify_move' after that delay (read-only; reports locations, onlyInAllMail when Gmail dropped the label). 'repair_folder' (confirm:true, folder) runs Thunderbird's Repair Folder to rebuild an index with duplicate records without deleting messages; it refuses busy/offline/open folders (try again later, no automatic retry), Gmail All Mail needs allow_all_mail:true, and status.nativeRepairFolderAvailable tells whether it is installed. 'delete_folder' may report deleted:false, movedToTrash:true with newPath when Thunderbird (Local Folders) moved the folder into Trash instead. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
 			"Address-book writes: 'create_address_book' creates a separate local book, 'add_contacts' adds an explicit list of name/email pairs, and 'update_contact' corrects one existing card after confirm:true. add_contacts deduplicates email addresses inside the selected destination book and is safe to retry while still allowing a complete dedicated book. Filter automated/noreply/store addresses out of contact_candidates before importing. " +
 			"Bulk filtered writes are intentionally paged: one call processes up to batch_size messages (default 250, max 500). If the result has more:true, immediately repeat the SAME approved operation and filters with the returned continuation token; this avoids timeouts and loop protection. No new user confirmation is needed for continuation of the exact same approved cleanup. " +
 			"For whole-Trash cleanup, prefer empty_trash instead of simulating 'all' with date filters. empty_trash is one server-side operation and only counts as success when it returns serverVerified:true. For purge/delete_permanently, intermediate IMAP batches are not server-confirmed and MUST NOT be reported as final success; the final IMAP batch must return serverVerified:true, while Local Folders use localVerified:true because no mail server exists. " +
@@ -343,7 +343,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		return Result{Err: fmt.Errorf("thunderbird_mail: unsupported op %q", args.Op)}, nil
 	}
 
-	raw, err := thunderbirdRouteDestinationAccount(args, raw)
+	raw, err := thunderbirdRouteAccounts(args, raw)
 	if err != nil {
 		return Result{Err: err}, nil
 	}
@@ -439,13 +439,17 @@ func thunderbirdFolderAccount(folder string) string {
 	return ""
 }
 
-// thunderbirdRouteDestinationAccount makes a destination folder id authoritative.
+// thunderbirdRouteAccounts makes a destination folder id authoritative.
 // The bridge resolves copy's destination inside destination_account, defaulting
 // to the SOURCE account, so copy from Gmail to "account2://X" failed with
 // "folder not found" although the folder existed (seen live with a local model,
 // which then gave up). Other operations resolve the destination inside the
 // source account only, so a cross-account destination is refused up front.
-func thunderbirdRouteDestinationAccount(args thunderbirdToolArgs, raw json.RawMessage) (json.RawMessage, error) {
+func thunderbirdRouteAccounts(args thunderbirdToolArgs, raw json.RawMessage) (json.RawMessage, error) {
+	switch args.Op {
+	case "create_folder", "rename_folder", "delete_folder":
+		return thunderbirdRouteFolderAdmin(args, raw)
+	}
 	destAccount := thunderbirdFolderAccount(args.Destination)
 	if destAccount == "" {
 		return raw, nil
@@ -455,16 +459,7 @@ func thunderbirdRouteDestinationAccount(args thunderbirdToolArgs, raw json.RawMe
 		if strings.TrimSpace(args.DestinationAccount) != "" {
 			return raw, nil
 		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil {
-			return raw, nil
-		}
-		fields["destination_account"], _ = json.Marshal(destAccount)
-		routed, err := json.Marshal(fields)
-		if err != nil {
-			return raw, nil
-		}
-		return routed, nil
+		return thunderbirdWithField(raw, "destination_account", destAccount), nil
 	case "move", "restore", "import_msg":
 		srcAccount := thunderbirdFolderAccount(args.Folder)
 		if srcAccount == "" && strings.HasPrefix(strings.TrimSpace(args.Account), "account") && !strings.ContainsAny(args.Account, " @") {
@@ -475,6 +470,44 @@ func thunderbirdRouteDestinationAccount(args thunderbirdToolArgs, raw json.RawMe
 		}
 	}
 	return raw, nil
+}
+
+// thunderbirdRouteFolderAdmin never lets folder administration fall back to a
+// guessed account. Live, a local model sent create_folder with
+// folder:"Local Folders" and no account; the bridge ignores folder there and
+// created the folder (a Gmail label) on the first IMAP account instead.
+func thunderbirdRouteFolderAdmin(args thunderbirdToolArgs, raw json.RawMessage) (json.RawMessage, error) {
+	account := strings.TrimSpace(args.Account)
+	if args.Op == "create_folder" {
+		if strings.TrimSpace(args.Folder) != "" {
+			return nil, fmt.Errorf("thunderbird_mail: create_folder does not take folder (got %q); nothing was executed. Pass account (for example account:'Local Folders' or the account id from 'accounts'), name, and optionally parent", args.Folder)
+		}
+		if account != "" {
+			return raw, nil
+		}
+		parentAccount := thunderbirdFolderAccount(args.Parent)
+		if parentAccount == "" {
+			return nil, fmt.Errorf("thunderbird_mail: create_folder requires account (for example 'Local Folders' or the IMAP account id from 'accounts') or a parent folder id such as account2://Name, so the folder is never created on a guessed account; nothing was executed")
+		}
+		return thunderbirdWithField(raw, "account", parentAccount), nil
+	}
+	if account == "" && thunderbirdFolderAccount(args.Folder) == "" {
+		return nil, fmt.Errorf("thunderbird_mail: %s requires the exact folder.id from 'folders' (for example account2://Name) or an explicit account; a bare name resolves to the first IMAP account even when the folder meant is in Local Folders. Nothing was executed", args.Op)
+	}
+	return raw, nil
+}
+
+func thunderbirdWithField(raw json.RawMessage, name, value string) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw
+	}
+	fields[name], _ = json.Marshal(value)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 var (

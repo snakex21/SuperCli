@@ -126,7 +126,7 @@ func TestThunderbirdCopyRoutesDestinationAccountFromFolderID(t *testing.T) {
 	raw := json.RawMessage(`{"op":"copy","confirm":true,"folder":"account1://Powiadomienia","destination":"account2://_T","message_ids":[1,2]}`)
 	var args thunderbirdToolArgs
 	_ = json.Unmarshal(raw, &args)
-	routed, err := thunderbirdRouteDestinationAccount(args, raw)
+	routed, err := thunderbirdRouteAccounts(args, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestThunderbirdCopyRoutesDestinationAccountFromFolderID(t *testing.T) {
 	// An explicit destination_account wins.
 	raw = json.RawMessage(`{"op":"copy","destination":"account2://_T","destination_account":"Local Folders"}`)
 	_ = json.Unmarshal(raw, &args)
-	if routed, _ := thunderbirdRouteDestinationAccount(args, raw); string(routed) != string(raw) {
+	if routed, _ := thunderbirdRouteAccounts(args, raw); string(routed) != string(raw) {
 		t.Fatalf("explicit destination_account rewritten: %s", routed)
 	}
 }
@@ -154,8 +154,41 @@ func TestThunderbirdMoveRefusesCrossAccountDestination(t *testing.T) {
 	} {
 		var args thunderbirdToolArgs
 		_ = json.Unmarshal([]byte(raw), &args)
-		if _, err := thunderbirdRouteDestinationAccount(args, json.RawMessage(raw)); err != nil {
+		if _, err := thunderbirdRouteAccounts(args, json.RawMessage(raw)); err != nil {
 			t.Errorf("%s refused: %v", raw, err)
 		}
+	}
+}
+
+func TestThunderbirdFolderAdminNeverGuessesAccount(t *testing.T) {
+	tool := NewThunderbirdMail()
+	for raw, want := range map[string]string{
+		`{"op":"create_folder","confirm":true,"folder":"Local Folders","name":"_T"}`: "does not take folder",
+		`{"op":"create_folder","confirm":true,"name":"_T"}`:                          "requires account",
+		`{"op":"delete_folder","confirm":true,"folder":"_T"}`:                        "requires the exact folder.id",
+		`{"op":"rename_folder","confirm":true,"folder":"_T","new_name":"_U"}`:        "requires the exact folder.id",
+	} {
+		res, _ := tool.execute(context.Background(), json.RawMessage(raw))
+		if res.Err == nil || !strings.Contains(res.Err.Error(), want) {
+			t.Errorf("execute(%s) = %v, want %q", raw, res.Err, want)
+		}
+	}
+	for _, raw := range []string{
+		`{"op":"create_folder","confirm":true,"account":"Local Folders","name":"_T"}`,
+		`{"op":"delete_folder","confirm":true,"folder":"account2://_T"}`,
+		`{"op":"delete_folder","confirm":true,"account":"Local Folders","folder":"_T"}`,
+	} {
+		var args thunderbirdToolArgs
+		_ = json.Unmarshal([]byte(raw), &args)
+		if _, err := thunderbirdRouteAccounts(args, json.RawMessage(raw)); err != nil {
+			t.Errorf("%s refused: %v", raw, err)
+		}
+	}
+	raw := json.RawMessage(`{"op":"create_folder","confirm":true,"parent":"account2://Archiwum","name":"_T"}`)
+	var args thunderbirdToolArgs
+	_ = json.Unmarshal(raw, &args)
+	routed, err := thunderbirdRouteAccounts(args, raw)
+	if err != nil || !strings.Contains(string(routed), `"account":"account2"`) {
+		t.Fatalf("parent id must select its account: %s %v", routed, err)
 	}
 }
