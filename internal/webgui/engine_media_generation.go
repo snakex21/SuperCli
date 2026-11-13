@@ -20,4 +20,7 @@ func (e *Engine) registerMediaGeneration(reg *tools.Registry, home string) {
 	keys := func(name string) (string, string, bool) { return config.MediaGenerationProviderKey(e.DataDir(), name) }
 	reg.MustRegister(mediagen.NewImage(home, cfg.Image, confirm).WithProviderKeys(keys).Spec())
 	reg.MustRegister(mediagen.NewVideo(home, cfg.Video, confirm).WithProviderKeys(keys).Spec())
+	for _, name := range mediagen.AdvertisedTools(cfg) {
+		reg.MarkAlwaysOn(name)
+	}
 }

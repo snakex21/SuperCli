@@ -53,6 +53,22 @@ func (t *Tool) WithProviderKeys(lookup func(string) (string, string, bool)) *Too
 	return t
 }
 
+// AdvertisedTools names the generation tools that are explicitly enabled in
+// cfg. Callers mark them always-on so the model learns they exist: hidden,
+// search-only tools were practically never called, because tool_search only
+// matched near-literal wording such as "generate image". Disabled tools stay
+// hidden and add nothing to the default prompt.
+func AdvertisedTools(cfg config.MediaGenerationConf) []string {
+	var names []string
+	if cfg.Image != nil && cfg.Image.Enabled {
+		names = append(names, "generate_image")
+	}
+	if cfg.Video != nil && cfg.Video.Enabled {
+		names = append(names, "generate_video")
+	}
+	return names
+}
+
 func NewImage(baseDir string, cfg *config.MediaGenerationProviderConf, confirm func(context.Context, string) error) *Tool {
 	return newTool(baseDir, "image", cfg, confirm)
 }
@@ -99,7 +115,7 @@ func (t *Tool) Spec() core.Tool {
 		"type": "object", "additionalProperties": false, "required": []string{"prompt"},
 		"properties": fields,
 	})
-	return core.Tool{Name: "generate_" + t.kind, Description: "Generate one " + t.kind + " using an explicitly configured provider after interactive confirmation. Saves a local file and returns preview metadata without attaching bytes to the model. No automatic paid fallback.", Schema: string(schema), Fn: t.Execute}
+	return core.Tool{Name: "generate_" + t.kind, Description: "Generate (create, draw, render) one new " + t.kind + " from a text prompt (" + t.kind + " generation, text-to-" + t.kind + ") using an explicitly configured provider after interactive confirmation. Saves a local file and returns preview metadata without attaching bytes to the model. No automatic paid fallback.", Schema: string(schema), Fn: t.Execute}
 }
 
 type arguments struct {
