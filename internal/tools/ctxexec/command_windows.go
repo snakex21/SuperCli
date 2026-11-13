@@ -46,3 +46,28 @@ func configureCommandLine(cmd *exec.Cmd, args []string) {
 		return
 	}
 }
+
+// cmdMultilineMessage explains why a multi-line cmd script was refused.
+const cmdMultilineMessage = "cmd.exe runs only the first line of a /c script and silently drops the rest, so the command was not run. " +
+	"Write the script to a file with create_file and run it (e.g. [\"python\",\"script.py\"]), or call the interpreter " +
+	"directly without cmd (e.g. [\"python\",\"-c\",\"...\"] or [\"powershell\",\"-Command\",\"...\"]), which keep newlines."
+
+// cmdScriptDropsLines reports an explicit cmd /c or /k script spanning several
+// lines. cmd.exe stops parsing its command line at the first line break, so
+// everything after it would vanish while the command still exits 0; the model
+// then sees empty output and retries the same script over and over. A single
+// trailing line break is harmless and allowed.
+func cmdScriptDropsLines(binary string, args []string) bool {
+	name := strings.ToLower(filepath.Base(binary))
+	if name != "cmd.exe" && name != "cmd" {
+		return false
+	}
+	for i, arg := range args {
+		if !strings.EqualFold(arg, "/c") && !strings.EqualFold(arg, "/k") {
+			continue
+		}
+		script := strings.TrimRight(strings.Join(args[i+1:], " "), "\r\n")
+		return strings.ContainsAny(script, "\r\n")
+	}
+	return false
+}

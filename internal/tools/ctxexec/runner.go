@@ -130,6 +130,15 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 		}, nil
 	}
 
+	if !mapped && cmdScriptDropsLines(binary, command[1:]) {
+		return &Result{
+			ExitCode: ExitValidationError,
+			Command:  req.String(),
+			Workdir:  wd,
+			Error:    cmdMultilineMessage,
+		}, nil
+	}
+
 	maxOut := req.MaxStdoutKB
 	if maxOut <= 0 {
 		maxOut = DefaultMaxStdoutKB
