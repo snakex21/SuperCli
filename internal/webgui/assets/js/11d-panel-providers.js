@@ -63,7 +63,7 @@ async function renderProvidersList() {
     var title = el("div", "lr-title");
     title.innerHTML = "<strong>" + escHtml(p.Name) + "</strong> <span class='note'>" + escHtml(p.Type || "") + "</span>";
     main.appendChild(title);
-    var sub = (p.BaseURL || "") + " · " + (p.HasKey ? t("prov.key") : t("prov.noKey")) +
+    var sub = (p.BaseURL || "") + " · " + (p.Type === "claude" ? t("claude.account") : (p.HasKey ? t("prov.key") : t("prov.noKey"))) +
       ((p.Models || []).length ? " · " + p.Models.length + " " + t("prov.models") : "");
     if (p.Disabled) sub = (t("prov.disabledPrefix")) + sub;
     main.appendChild(el("div", "lr-sub", sub));
@@ -89,7 +89,10 @@ async function renderProvidersList() {
     });
     act.appendChild(bs);
     var be = i18nEl("button", "", "common.edit");
-    be.addEventListener("click", function () { renderProviderForm(got.templates || [], p); });
+    be.addEventListener("click", function () {
+      if (p.Type === "claude") renderClaudeLogin(got.templates || []);
+      else renderProviderForm(got.templates || [], p);
+    });
     act.appendChild(be);
     var bx = i18nEl("button", "danger", "common.remove");
     bx.addEventListener("click", async function () {
@@ -175,6 +178,10 @@ function renderProviderChooser(templates) {
 }
 
 function renderProviderForm(templates, existing, selectedTemplate) {
+  if ((selectedTemplate && selectedTemplate.Type === "claude") || (existing && existing.Type === "claude")) {
+    renderClaudeLogin(templates);
+    return;
+  }
   if (!existing && !selectedTemplate) {
     renderProviderChooser(templates);
     return;

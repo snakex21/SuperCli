@@ -23,6 +23,11 @@ func Resolve(tc config.TomlConfig, usage []session.UsageRecord, preview session.
 }
 
 func QuoteUsage(tc config.TomlConfig, u session.UsageRecord) Quote {
+	// Claude OAuth calls consume the subscription. Correct the old API-price
+	// classification as well, without repricing ordinary Anthropic API calls.
+	if u.ProviderType == config.ProviderClaude {
+		return Quote{State: "subscription", Source: "subscription"}
+	}
 	if u.PriceSnapshot != nil {
 		return quoteFrozen(*u.PriceSnapshot)
 	}

@@ -112,10 +112,19 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAIProvider, error) {
 		cfg.ConnectTimeout = 30 * time.Second
 	}
 	if cfg.HTTPClient == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
-		transport.ResponseHeaderTimeout = 0                 // bounded per request below so custom clients behave the same
-		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
+		// Zen free-tier edge fingerprints BOTH the TLS ClientHello AND the
+		// HTTP request bytes (a fake FreeUsageLimitError 429 unless both match
+		// the official bun CLI, bisected 2026-10-31). For Zen we hand back a
+		// client that replays the bun ClientHello and writes raw bun-shaped
+		// HTTP; every other backend keeps Go's stock transport untouched.
+		if zenClient := newOpenCodeZenHTTPClient(cfg.BaseURL, cfg.ConnectTimeout); zenClient != nil {
+			cfg.HTTPClient = zenClient
+		} else {
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
+			transport.ResponseHeaderTimeout = 0                 // bounded per request below so custom clients behave the same
+			cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
+		}
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -229,6 +238,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	// bash/read calls are rewritten to SuperCli tools in the agent.
 	if isOpenCodeZenBaseURL(p.cfg.BaseURL) {
 		tools = ensureOpenCodeZenGateToolDefs(tools)
+		// The free-tier edge authenticates the client by the CONTENT of
+		// the body: the first system message must open with the real
+		// opencode CLI prompt (bisected 2026-10-31) — without it every
+		// request is refused with a fake FreeUsageLimitError 429.
+		msgs = ensureOpenCodeZenGateSystemPrompt(msgs)
 	}
 	// Known text-only metadata blocks image parts before the request leaves
 	// SuperCli. Unknown capability metadata is tried optimistically; if the

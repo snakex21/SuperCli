@@ -29,6 +29,7 @@ func PredefinedProviders() []PredefinedProvider {
 	return []PredefinedProvider{
 		{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1", Desc: "ChatGPT account or API key"},
 		{Name: "anthropic", Type: config.ProviderAnthropic, BaseURL: "https://api.anthropic.com/v1", Desc: "Claude Opus 4.8, Sonnet 4.6, Haiku 4.5"},
+		{Name: "claude", DisplayName: "Claude", Type: config.ProviderClaude, BaseURL: "https://api.anthropic.com/v1", Desc: "Sign in with your Claude account (OAuth)"},
 		{Name: "google", Type: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Desc: "Gemini 2.5, Gemini 2.0"},
 		{Name: "groq", Type: "openai", BaseURL: "https://api.groq.com/openai/v1", Desc: "Fast inference (Llama, Mixtral)"},
 		{Name: "together", Type: "openai", BaseURL: "https://api.together.xyz/v1", Desc: "Open-source models cloud"},
@@ -41,7 +42,7 @@ func PredefinedProviders() []PredefinedProvider {
 		{Name: "cline", DisplayName: "Cline", Type: "openai", BaseURL: "https://api.cline.bot/api/v1", Desc: "Cline (API key required)"},
 		{Name: "nous", DisplayName: "Nous Portal", Type: "openai", BaseURL: "https://inference-api.nousresearch.com/v1", Desc: "Nous Portal (API key or inference token required)"},
 		{Name: "kilo", Type: "openai", BaseURL: "https://api.kilo.ai/api/openrouter", Desc: "Kilo AI (free models, no key)"},
-		{Name: "zen", Type: "openai", BaseURL: "https://opencode.ai/zen/v1", Desc: "OpenCode Zen (free models, no key)"},
+		{Name: "zen", Type: "openai", BaseURL: "https://opencode.ai/inference/openai/v1", Desc: "OpenCode Zen (free models, no key)"},
 		{Name: "opencode-go", Type: "openai", BaseURL: "https://opencode.ai/zen/go/v1", Desc: "OpenCode Go (subscription $5-10/mo)"},
 		{Name: "perplexity", Type: "openai", BaseURL: "https://api.perplexity.ai", Desc: "Sonar (online search-augmented)"},
 		{Name: "fireworks", Type: "openai", BaseURL: "https://api.fireworks.ai/inference/v1", Desc: "Fast open-weights inference"},

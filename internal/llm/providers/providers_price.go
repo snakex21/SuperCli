@@ -117,6 +117,9 @@ func (m *Manager) SetModelPrices(caps *llm.CapabilityRegistry) {
 // its /v1/models (or /models if BaseURL already ends with /v1)
 // endpoint with a short timeout.
 func probeProvider(p config.ProviderConf) (bool, error) {
+	if p.Type == config.ProviderClaude {
+		return false, fmt.Errorf("Claude account status requires the portable account manager")
+	}
 	if p.BaseURL == "" {
 		return false, fmt.Errorf("no base URL configured")
 	}

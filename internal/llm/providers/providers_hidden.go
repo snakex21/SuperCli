@@ -293,7 +293,7 @@ func freeOnlyProvider(p config.ProviderConf) bool {
 	if strings.Contains(p.BaseURL, "api.kilo.ai") {
 		return key == "anonymous"
 	}
-	if strings.Contains(p.BaseURL, "opencode.ai/zen") {
+	if strings.Contains(p.BaseURL, "opencode.ai/zen") || strings.Contains(p.BaseURL, "opencode.ai/inference") {
 		return key == "public"
 	}
 	name := strings.ToLower(strings.ReplaceAll(p.Name, " ", ""))

@@ -45,6 +45,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	provider, _, _ := s.eng.RuntimeSelection()
 
 	_, _ = m.EnsureCodexProvider()
+	_, _ = m.EnsureClaudeProvider()
 	m.LoadCodexModels(s.eng.caps)
 	m.RefreshCodexModels(r.Context(), s.eng.caps)
 

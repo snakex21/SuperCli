@@ -15,6 +15,7 @@ import (
 
 type costsRow struct {
 	Provider       string        `json:"provider"`
+	ProviderType   string        `json:"provider_type,omitempty"`
 	Model          string        `json:"model"`
 	Calls          int           `json:"calls"`
 	Input          int64         `json:"input"`
@@ -43,13 +44,14 @@ func (e *Engine) historyRates() *usagecost.HistoryRates {
 }
 
 type costsView struct {
-	Currency        string        `json:"currency"`
-	SessionID       string        `json:"session_id"`
-	Rows            []costsRow    `json:"rows"`
-	Total           statsCostView `json:"total"`
-	RatesSource     string        `json:"rates_source"`
-	Pending         bool          `json:"pending"`
-	RatesGeneration uint64        `json:"rates_generation,omitempty"`
+	SubscriptionUsage []subscriptionUsageView `json:"subscription_usage"`
+	Currency          string                  `json:"currency"`
+	SessionID         string                  `json:"session_id"`
+	Rows              []costsRow              `json:"rows"`
+	Total             statsCostView           `json:"total"`
+	RatesSource       string                  `json:"rates_source"`
+	Pending           bool                    `json:"pending"`
+	RatesGeneration   uint64                  `json:"rates_generation,omitempty"`
 	// Pre-ledger sums retain their frozen cost, without attributing them to
 	// the session's last selected model or inventing one provider API call.
 	LegacyUnattributed *costsRow `json:"legacy_unattributed,omitempty"`
@@ -112,7 +114,7 @@ func (e *Engine) costs(ctx context.Context, sessionID string) (costsView, error)
 		key := [2]string{u.Provider, u.Model}
 		g := groups[key]
 		if g == nil {
-			g = &group{row: costsRow{Provider: u.Provider, Model: u.Model}, cost: newConvertedCost(tc, cache)}
+			g = &group{row: costsRow{Provider: u.Provider, ProviderType: u.ProviderType, Model: u.Model}, cost: newConvertedCost(tc, cache)}
 			groups[key] = g
 		}
 		g.row.Calls++
@@ -125,7 +127,7 @@ func (e *Engine) costs(ctx context.Context, sessionID string) (costsView, error)
 	if err != nil {
 		return costsView{}, err
 	}
-	out := costsView{Currency: config.EffectiveCostCurrency(tc), SessionID: sessionID, Rows: []costsRow{}, Total: total.Summary(), RatesSource: "NBP"}
+	out := costsView{Currency: config.EffectiveCostCurrency(tc), SessionID: sessionID, Rows: []costsRow{}, Total: total.Summary(), RatesSource: "NBP", SubscriptionUsage: e.subscriptionUsage()}
 	if total.MissingFXCalls() > 0 {
 		pending, generation := e.historyRates().State()
 		out.Pending, out.RatesGeneration = pending, generation

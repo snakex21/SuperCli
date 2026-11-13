@@ -25,9 +25,13 @@ func (m *Manager) ScanModels(caps *llm.CapabilityRegistry) int {
 		if p.Disabled {
 			continue
 		}
-		res := scanProviderConf(p, caps)
-		if p.Type == config.ProviderCodex {
+		var res ScanResult
+		if p.Type == config.ProviderClaude {
+			res = m.scanClaudeProvider(p, caps)
+		} else if p.Type == config.ProviderCodex {
 			res = m.scanCodexProvider(context.Background(), p, caps, false)
+		} else {
+			res = scanProviderConf(p, caps)
 		}
 		if res.Err == nil {
 			total += len(res.Models)
@@ -59,9 +63,13 @@ func (m *Manager) ScanProvider(name string, caps *llm.CapabilityRegistry) ScanRe
 	if found.Disabled {
 		return ScanResult{Provider: name, Err: fmt.Errorf("provider %q is disabled", name)}
 	}
-	res := scanProviderConf(found, caps)
-	if found.Type == config.ProviderCodex {
+	var res ScanResult
+	if found.Type == config.ProviderClaude {
+		res = m.scanClaudeProvider(found, caps)
+	} else if found.Type == config.ProviderCodex {
 		res = m.scanCodexProvider(context.Background(), found, caps, true)
+	} else {
+		res = scanProviderConf(found, caps)
 	}
 	if res.Err == nil {
 		m.cacheProviderModels(found.Name, res.Models)
@@ -125,6 +133,10 @@ func stringSlicesEqual(a, b []string) bool {
 
 func scanProviderConf(p config.ProviderConf, caps *llm.CapabilityRegistry) ScanResult {
 	res := ScanResult{Provider: p.Name}
+	if p.Type == config.ProviderClaude {
+		res.Err = fmt.Errorf("Claude model discovery requires the account manager")
+		return res
+	}
 	if p.Type == config.ProviderCodex {
 		res.Err = fmt.Errorf("codex model discovery requires the account manager")
 		return res

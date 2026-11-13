@@ -19,7 +19,7 @@ function fixture() {
     setTimeout() { throw Error('cost UI must not schedule a timer'); },
     setInterval() { throw Error('cost UI must not poll'); },
   });
-  for (const name of ['00-helpers.js', '07-stats.js', '11b-panel-settings.js', '11g-panel-goal-usage.js'])
+  for (const name of ['00-helpers.js', '07-stats.js', '07a-subscription-usage.js', '11b-panel-settings.js', '11g-panel-goal-usage.js'])
     runScript(readSource(sourcePath(assets, 'js', name), 'utf8'), w);
   w.i18nEl = (tag, cls, key) => w.el(tag, cls, w.t(key));
   w.settingCopy = k => [w.t('setting.' + k.key + '.label'), w.t('setting.' + k.key + '.desc')];
@@ -60,6 +60,24 @@ async function completeHandlers() {
   // Finish the promise callbacks of synthetic click/change events.
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
 }
+
+test('mixed API then subscription conversation still shows the subscription account usage', () => {
+  const h = fixture(), box = h.document.querySelector('#stats-block');
+  const claude = {provider: 'Claude', provider_type: 'claude', windows: [{id: 'five_hour', window_seconds: 18000, used_percent: 30, remaining_percent: 70, resets_at: new Date(Date.now() + 3600e3).toISOString()}]};
+  const chatgpt = {provider: 'ChatGPT', provider_type: 'codex', windows: []};
+  const cost = h.w.normalizeStats({cost: quote(0.25, {partial: true}), subscription_usage: [claude, chatgpt]}).cost;
+  h.w.appendSidebarCost(box, cost, ['openai', 'claude']);
+  const summary = box.querySelector('.subscription-summary');
+  assert.ok(summary, 'subscription usage visible next to the API amount');
+  assert.match(summary.textContent, /Claude/);
+  assert.doesNotMatch(summary.textContent, /ChatGPT/, 'unused subscription accounts stay hidden');
+  assert.match(box.querySelector('.side-cost-value').textContent, /0\.25|0,25/);
+  const plain = h.document.createElement('div');
+  h.w.appendSidebarCost(plain, cost, ['openai']);
+  assert.equal(plain.querySelector('.subscription-summary'), null, 'pure API chat shows no subscription block');
+  const details = h.w.renderCostDetails(report({subscription_usage: [claude, chatgpt], rows: [...report().rows, {provider: 'claude', provider_type: 'claude', model: 'claude-x', calls: 1, input: 1, cached_input: 0, output: 1, reasoning: 0, total: 2, cost: {state: 'subscription'}, legacy_calls: 0, missing_fx_calls: 0}]}));
+  assert.match(details.querySelector('.subscription-summary').textContent, /Claude/);
+});
 
 test('clickable total opens a labeled model table, historical notes and accessible token breakdown', async () => {
   const h = fixture(), box = h.document.querySelector('#stats-block');

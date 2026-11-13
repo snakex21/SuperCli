@@ -199,6 +199,10 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if m.menu.kind == menuProviders {
 			if p, ok := m.selectedConfiguredProvider(); ok {
+				if p.Type == "claude" {
+					next, _ := m.closeMenu()
+					return next.(Model).dispatchSlashCommand(SlashCommand{Name: "login", Args: "claude"})
+				}
 				apiKey := ""
 				if m.providerMgr != nil {
 					for _, configured := range m.providerMgr.Configured() {

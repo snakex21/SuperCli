@@ -20,11 +20,12 @@ type statsView struct {
 	SessionToken int64  `json:"session_tokens"`
 	DailyToken   int64  `json:"daily_tokens"`
 
-	Session       statsSessionView       `json:"session"`
-	Tokens        statsTokensView        `json:"tokens"`
-	Context       statsContextView       `json:"context"`
-	ActiveContext statsActiveContextView `json:"active_context"`
-	Cost          statsCostView          `json:"cost"`
+	Session           statsSessionView        `json:"session"`
+	Tokens            statsTokensView         `json:"tokens"`
+	Context           statsContextView        `json:"context"`
+	ActiveContext     statsActiveContextView  `json:"active_context"`
+	Cost              statsCostView           `json:"cost"`
+	SubscriptionUsage []subscriptionUsageView `json:"subscription_usage"`
 	// Pricing is the current editable USD quote for this session's model.
 	// Cost keeps the immutable historical amounts and rates.
 	Pricing         statsCostView            `json:"pricing"`
@@ -37,6 +38,7 @@ type statsView struct {
 // Context field keeps the last main request's estimate and its own denominator.
 type statsActiveContextView struct {
 	Provider         string `json:"provider"`
+	ProviderType     string `json:"provider_type,omitempty"`
 	Model            string `json:"model"`
 	Window           int    `json:"window"`
 	WindowSource     string `json:"window_source"`
@@ -68,7 +70,7 @@ func (e *Engine) statsActiveContext(cfg config.Config) statsActiveContextView {
 	}
 	window := e.statsContextWindow(cfg, provider)
 	return statsActiveContextView{
-		Provider: provider, Model: cfg.Model, Window: window.Tokens,
+		Provider: provider, ProviderType: cfg.Provider, Model: cfg.Model, Window: window.Tokens,
 		WindowSource: window.Source, CompactThreshold: agent.AutoCompactThreshold(window.Tokens),
 	}
 }
@@ -206,10 +208,11 @@ func (e *Engine) statsWithTelemetry(ctx context.Context, sessionID string, withT
 	e.mu.RUnlock()
 	preview := e.usageIdentity(cfg, "model")
 	sv := statsView{
-		Model:           cfg.Model,
-		Context:         contextFromUsage(session.UsageRecord{ContextWindow: preview.ContextWindow}),
-		ActiveContext:   e.statsActiveContext(cfg),
-		GenerationSpeed: statsGenerationSpeedView{Scope: "session"},
+		SubscriptionUsage: e.subscriptionUsage(),
+		Model:             cfg.Model,
+		Context:           contextFromUsage(session.UsageRecord{ContextWindow: preview.ContextWindow}),
+		ActiveContext:     e.statsActiveContext(cfg),
+		GenerationSpeed:   statsGenerationSpeedView{Scope: "session"},
 		Session: statsSessionView{
 			Provider: preview.Provider, ProviderType: preview.ProviderType, Model: cfg.Model,
 		},

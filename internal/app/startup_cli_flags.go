@@ -36,7 +36,7 @@ func parseCLIFlags() cliFlags {
 	flag.BoolVar(&f.ListModels, "list-models", false, "print known model capabilities (with --refresh, re-fetch from the provider)")
 	flag.BoolVar(&f.Refresh, "refresh", false, "re-fetch the provider's /v1/models and re-probe unknowns; used with --list-models")
 	flag.StringVar(&f.ModelInfo, "model-info", "", "print details for a single model id and exit")
-	flag.StringVar(&f.Provider, "provider", "", "LLM provider: openai, responses, anthropic, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
+	flag.StringVar(&f.Provider, "provider", "", "LLM provider: openai, responses, anthropic, claude, codex, opencode, or echo (default: openai if SUPERCLI_LLM_API_KEY set, else echo)")
 	flag.StringVar(&f.Model, "model", "", "model id (default: env SUPERCLI_LLM_MODEL, then gpt-4o-mini)")
 	flag.StringVar(&f.Key, "key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
 	flag.StringVar(&f.BaseURL, "base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")

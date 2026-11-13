@@ -1,5 +1,40 @@
 # Configuration — knobs, defaults, and when to touch them
 
+## Claude account login
+
+In the GUI, open **Providers → Add → Claude → Sign in with Claude**. In the
+terminal, select **Claude** from `/providers` or run `/login claude`. Finish
+the login in the browser, then choose an available model in **Models** or
+`/model`. The success screen also offers a model selector and **Chat with
+Claude**, which selects that model and opens the chat. The browser confirmation
+has a **Return to SuperCli** button and appears after credentials are saved.
+
+OAuth credentials are stored only in `supercli-data/claude-auth.json`, beside
+the application. Access tokens refresh automatically. Use the Claude provider's
+**Edit → Sign out of Claude** action in the GUI, or `/logout claude` in the
+terminal, to remove the saved credentials. Moving the application folder moves
+the login with it. Login waits for the browser callback without status polling.
+
+The separate **Anthropic** preset continues to accept API keys. The Claude
+account preset sends OAuth credentials only to `https://api.anthropic.com/v1`;
+it cannot be redirected to a custom proxy. Model discovery uses the account's
+native catalog and reports upstream errors instead of inventing model choices.
+
+For Claude and ChatGPT account connections, the cost area shows remaining
+subscription usage instead of estimating a separate API token charge. Each
+account keeps its own observed periods and reset times; remaining percentages
+are never combined across accounts or periods. Detailed subscription usage is
+available in **Usage** and **Accounts**, with **Refresh usage** for a manual
+refresh. Claude also reads usage headers from real responses without making an
+extra request. The terminal's usage tabs provide the same saved Claude windows.
+
+Claude usage snapshots stay in `supercli-data/claude-usage.json` and are bound
+to the saved login. Missing or expired observations are shown as unavailable or
+stale, rather than assuming the subscription has refilled. Signing out removes
+both the credentials and that account's saved usage snapshot.
+
+## Defaults and configuration layers
+
 **The rule: an empty config is the best config.** Every default below is
 a measured decision, pinned by `internal/app/defaults_test.go` — a change
 of default must edit that test, so it can never happen by accident. Knobs

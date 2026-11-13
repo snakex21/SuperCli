@@ -14,7 +14,7 @@ Usage:
 Flags:
   --home PATH                     select the workspace/sandbox (also: $SUPERCLI_HOME)
   --data-dir PATH                 override instance data (also: $SUPERCLI_DATA_DIR)
-  --provider P                    LLM provider: openai, responses, anthropic, codex, opencode, or echo
+  --provider P                    LLM provider: openai, responses, anthropic, claude, codex, opencode, or echo
   --model M                       model id (default: $SUPERCLI_LLM_MODEL or gpt-4o-mini)
   --key K                         API key (overrides SUPERCLI_LLM_API_KEY)
   --base-url U                    base URL (overrides SUPERCLI_LLM_BASE_URL)

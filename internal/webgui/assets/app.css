@@ -2336,3 +2336,43 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .uc-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .uc-empty, .uc-note { font-size: 12px; color: var(--faint); padding: 6px 0; }
 .uc-note { padding-bottom: 0; }
+
+/* Account connection and remaining subscription usage. */
+.claude-auth { max-width: 660px; margin: 0 auto; padding: 0; }
+.claude-auth-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--line); }
+.claude-auth-brand { color: var(--faint); font-size: 11px; letter-spacing: .03em; }
+.claude-auth-content { padding: 30px 28px; }
+.claude-auth-icon { display: grid; place-items: center; width: 50px; height: 50px; margin-bottom: 24px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--line); border-radius: 12px; }
+.claude-auth-icon.connected { color: var(--ok); background: color-mix(in srgb,var(--ok) 12%,transparent); }
+.claude-auth-icon svg { width: 28px; height: 28px; }
+.claude-auth-eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+.claude-auth-title { font-size: 25px; letter-spacing: -.035em; font-weight: 600; margin: 0 0 12px; color: var(--text); }
+.claude-auth-copy { max-width: 48ch; font-size: 13px; line-height: 1.65; color: var(--muted); margin: 0; }
+.claude-auth-status { min-height: 18px; margin: 16px 0; color: var(--muted); font-size: 12px; }
+.claude-auth-status.error { color: var(--danger); }
+.claude-auth-model { display: grid; gap: 7px; font-size: 11px; color: var(--muted); margin-bottom: 18px; }
+.claude-auth-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.claude-auth-primary { padding: 12px 18px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent); color: var(--bg); font-weight: 650; font-size: 13px; cursor: pointer; }
+.claude-auth-primary:hover { filter: brightness(1.12); }
+.claude-auth-primary:disabled { opacity: .5; cursor: wait; }
+.claude-auth-secondary { padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.claude-auth .claude-usage { margin-top: 28px; padding-top: 23px; border-top: 1px solid var(--line); }
+.subscription-summary { display: grid; gap: 20px; width: 100%; }
+.subscription-summary-account { display: block; min-width: 0; }
+.subscription-account-name { display: block; font-size: 12px; color: var(--text); margin-bottom: 12px; }
+.subscription-window { display: block; margin-top: 14px; }
+.subscription-window-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.subscription-window-line strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.subscription-window-meta { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; margin-top: 5px; }
+.subscription-meter { display: block; height: 5px; width: 100%; margin-top: 9px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.subscription-meter > span { display: block; height: 100%; background: var(--ok); border-radius: inherit; }
+.subscription-meter.low > span { background: var(--danger); }
+.codex-usage-meter.remaining > span { background: var(--ok); }
+.subscription-window.stale { opacity: .65; }
+.subscription-summary.compact { gap: 13px; margin-top: 12px; text-align: left; }
+.subscription-summary.compact .subscription-window { margin-top: 9px; }
+.subscription-summary.compact .subscription-account-name { margin-bottom: 7px; font-size: 11px; }
+.subscription-summary.compact .subscription-window-line { font-size: 10px; gap: 3px 8px; }
+.subscription-summary.compact .subscription-window-meta { font-size: 9px; }
+.side-cost.cost-state-subscription .side-cost-value { font-size: 13px; line-height: 1.5; white-space: normal; }
+@media(max-width:540px) { .claude-auth-content { padding: 24px 18px; } .claude-auth-title { font-size: 22px; } .claude-auth-actions { align-items: stretch; flex-direction: column; } }

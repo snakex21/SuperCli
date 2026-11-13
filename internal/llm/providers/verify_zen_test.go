@@ -20,6 +20,10 @@ import (
 )
 
 func TestVerifyZenUsesExistingCatalogTransportAndGate(t *testing.T) {
+	// The Zen raw transport dials opencode.ai directly (it must, to replay
+	// bun's ClientHello), so it bypasses http.DefaultTransport. Register the
+	// fixture dial as the Zen dialer so no cloud request is made.
+	defer llm.SetZenDialOverride(nil)
 	for _, tc := range []struct{ transport, endpoint string }{
 		{llm.ModelTransportOpenAICompatible, "/zen/v1/chat/completions"},
 		{llm.ModelTransportResponses, "/zen/v1/responses"},
@@ -77,9 +81,10 @@ func TestVerifyZenUsesExistingCatalogTransportAndGate(t *testing.T) {
 
 			// Keep the real Zen URL for its existing routing/payload checks, but
 			// send every request to this TLS fixture. No cloud request is made.
-			transport := server.Client().Transport.(*http.Transport).Clone()
-			transport.Proxy = nil
-			transport.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			// The Zen raw transport dials directly (bun ClientHello replay), so
+			// register this fixture dial as the Zen dialer; http.DefaultTransport
+			// stays swapped too for any non-Zen probe on the same path.
+			fixtureDial := func(ctx context.Context, network, address string) (net.Conn, error) {
 				conn, err := (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 				if err != nil {
 					return nil, err
@@ -93,9 +98,14 @@ func TestVerifyZenUsesExistingCatalogTransportAndGate(t *testing.T) {
 				}
 				return client, nil
 			}
+			transport := server.Client().Transport.(*http.Transport).Clone()
+			transport.Proxy = nil
+			transport.DialTLSContext = fixtureDial
+			llm.SetZenDialOverride(fixtureDial)
 			previous := http.DefaultTransport
 			http.DefaultTransport = transport
 			defer func() {
+				llm.SetZenDialOverride(nil)
 				http.DefaultTransport = previous
 				transport.CloseIdleConnections()
 			}()

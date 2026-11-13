@@ -178,7 +178,7 @@ func endpointServer(p config.ProviderConf) string {
 		return "lm-studio"
 	case strings.Contains(joined, "llama"):
 		return "llama.cpp"
-	case p.Type == config.ProviderAnthropic:
+	case p.Type == config.ProviderAnthropic || p.Type == config.ProviderClaude:
 		return "anthropic"
 	case p.Type == config.ProviderCodex:
 		return "codex"

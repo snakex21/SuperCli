@@ -53,6 +53,8 @@ func (m Model) providerTemplateLabel(name string) string {
 		return "OpenAI"
 	case "anthropic":
 		return "Anthropic"
+	case "claude":
+		return "Claude"
 	case "lmstudio":
 		return "LM Studio"
 	case "ollama":

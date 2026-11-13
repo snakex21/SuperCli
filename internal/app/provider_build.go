@@ -111,6 +111,12 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 		// byte-for-byte the old behaviour.
 		return buildCodexPool(cfg, dataDir, caps)
 	}
+	if cfg.Provider == config.ProviderClaude {
+		return llm.NewClaude(llm.AnthropicConfig{
+			BaseURL: cfg.BaseURL, Model: cfg.Model, MaxTokens: cfg.MaxTokens,
+			Timeout: cfg.Timeout, ConnectTimeout: cfg.ConnectTimeout, Capabilities: caps,
+		}, dataDir)
+	}
 	if cfg.Provider == config.ProviderAnthropic {
 		return llm.NewAnthropic(llm.AnthropicConfig{
 			BaseURL:        cfg.BaseURL,

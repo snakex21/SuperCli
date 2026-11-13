@@ -181,6 +181,10 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		p := pres[minInt(m.menu.cursor, len(pres)-1)]
+		if p.Type == config.ProviderClaude {
+			next, _ := m.closeMenu()
+			return next.(Model).dispatchSlashCommand(SlashCommand{Name: "login", Args: "claude"})
+		}
 		if p.Name == "custom" {
 			m.enterMenu(interactiveMenu{kind: menuProviderForm, form: []string{"", "auto", "", "", ""}})
 			return m, nil
