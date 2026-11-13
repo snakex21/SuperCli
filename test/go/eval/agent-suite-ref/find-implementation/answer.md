@@ -1,0 +1,1 @@
+Per-key rate limiting is enforced by the method (*Buckets).Allow in internal/limits/bucket.go (a token bucket per API key), called from withLimit in internal/http/middleware.go. The rate is controlled by Config.RateLimitPerMinute (env GATEWAY_RPM) with Burst. legacy_window.go is deprecated and unused.

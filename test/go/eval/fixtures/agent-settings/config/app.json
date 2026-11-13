@@ -1,0 +1,171 @@
+{
+    "service": {
+        "name": "billing-api",
+        "version": "4.2.0",
+        "region": "eu-central"
+    },
+    "http": {
+        "http_option_00": true,
+        "http_option_01": false,
+        "http_option_02": true,
+        "http_option_03": true,
+        "http_option_04": true,
+        "http_option_05": false,
+        "http_option_06": true,
+        "http_option_07": "value-303",
+        "http_option_08": 113,
+        "http_option_09": true,
+        "owners": [
+            "team-3",
+            "team-16"
+        ]
+    },
+    "db": {
+        "db_option_00": false,
+        "db_option_01": 111,
+        "db_option_02": "value-194",
+        "db_option_03": 50,
+        "db_option_04": true,
+        "db_option_05": true,
+        "db_option_06": true,
+        "db_option_07": 283,
+        "db_option_08": true,
+        "db_option_09": false,
+        "owners": [
+            "team-5",
+            "team-11"
+        ]
+    },
+    "cache": {
+        "cache_option_00": true,
+        "cache_option_01": "value-384",
+        "cache_option_02": 326,
+        "cache_option_03": 84,
+        "cache_option_04": 108,
+        "cache_option_05": true,
+        "cache_option_06": false,
+        "cache_option_07": false,
+        "cache_option_08": "value-573",
+        "cache_option_09": false,
+        "owners": [
+            "team-6",
+            "team-10"
+        ]
+    },
+    "metrics": {
+        "metrics_option_00": true,
+        "metrics_option_01": "value-423",
+        "metrics_option_02": false,
+        "metrics_option_03": 468,
+        "metrics_option_04": "value-771",
+        "metrics_option_05": "value-758",
+        "metrics_option_06": false,
+        "metrics_option_07": 127,
+        "metrics_option_08": "value-698",
+        "metrics_option_09": "value-697",
+        "retention_days": 30,
+        "owners": [
+            "team-6",
+            "team-13"
+        ]
+    },
+    "logs": {
+        "logs_option_00": "value-621",
+        "logs_option_01": true,
+        "logs_option_02": false,
+        "logs_option_03": "value-263",
+        "logs_option_04": "value-165",
+        "logs_option_05": "value-710",
+        "logs_option_06": true,
+        "logs_option_07": true,
+        "logs_option_08": 350,
+        "logs_option_09": 394,
+        "retention_days": 30,
+        "owners": [
+            "team-2",
+            "team-14"
+        ]
+    },
+    "audit": {
+        "audit_option_00": "value-261",
+        "audit_option_01": 2,
+        "audit_option_02": false,
+        "audit_option_03": 260,
+        "audit_option_04": false,
+        "audit_option_05": false,
+        "audit_option_06": true,
+        "audit_option_07": "value-431",
+        "audit_option_08": 10,
+        "audit_option_09": 450,
+        "retention_days": 30,
+        "owners": [
+            "team-4",
+            "team-10"
+        ]
+    },
+    "queue": {
+        "queue_option_00": true,
+        "queue_option_01": "value-849",
+        "queue_option_02": false,
+        "queue_option_03": "value-775",
+        "queue_option_04": false,
+        "queue_option_05": "value-640",
+        "queue_option_06": false,
+        "queue_option_07": "value-419",
+        "queue_option_08": 344,
+        "queue_option_09": "value-629",
+        "owners": [
+            "team-2",
+            "team-13"
+        ]
+    },
+    "mail": {
+        "mail_option_00": 116,
+        "mail_option_01": false,
+        "mail_option_02": true,
+        "mail_option_03": true,
+        "mail_option_04": true,
+        "mail_option_05": true,
+        "mail_option_06": 264,
+        "mail_option_07": false,
+        "mail_option_08": "value-235",
+        "mail_option_09": "value-903",
+        "owners": [
+            "team-7",
+            "team-13"
+        ]
+    },
+    "search": {
+        "search_option_00": "value-199",
+        "search_option_01": "value-533",
+        "search_option_02": true,
+        "search_option_03": true,
+        "search_option_04": 32,
+        "search_option_05": true,
+        "search_option_06": false,
+        "search_option_07": false,
+        "search_option_08": 217,
+        "search_option_09": true,
+        "owners": [
+            "team-8",
+            "team-18"
+        ]
+    },
+    "exports": {
+        "exports_option_00": true,
+        "exports_option_01": false,
+        "exports_option_02": "value-516",
+        "exports_option_03": "value-318",
+        "exports_option_04": false,
+        "exports_option_05": "value-102",
+        "exports_option_06": "value-902",
+        "exports_option_07": "value-533",
+        "exports_option_08": 80,
+        "exports_option_09": true,
+        "retention_days": 30,
+        "owners": [
+            "team-6",
+            "team-10"
+        ]
+    }
+}
