@@ -28,6 +28,8 @@ type Options struct {
 	// the orphan journal elsewhere), so the browser tree dies with SuperCli
 	// even after a crash. Product tools set it; dev tests need not.
 	Scoped bool
+	// Args are extra command-line switches (for example a proxy).
+	Args []string
 }
 
 type Browser struct {
@@ -130,8 +132,9 @@ func Start(ctx context.Context, opts Options) (*Browser, error) {
 		"--disable-sync", "--disable-extensions", "--disable-background-timer-throttling",
 		"--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
 		"--js-flags=--expose-gc", "--enable-precise-memory-info",
-		fmt.Sprintf("--window-size=%d,%d", opts.Width, opts.Height), "about:blank",
+		fmt.Sprintf("--window-size=%d,%d", opts.Width, opts.Height),
 	}
+	args = append(append(args, opts.Args...), "about:blank")
 	b := &Browser{cmd: exec.Command(executable, args...), profileDir: profile, width: opts.Width, height: opts.Height,
 		waitDone: make(chan struct{}), scanDone: make(chan struct{}), closeDone: make(chan struct{}), output: reader}
 	b.cmd.Stdout, b.cmd.Stderr = writer, writer
@@ -421,6 +424,12 @@ func (b *Browser) Close() error {
 		if b.cdp != nil {
 			b.cdp.shutdown(nil)
 		}
+		if b.scope != nil {
+			// Closing the job also ends renderer/GPU helpers that outlive
+			// the main process (and would keep profile files locked), and
+			// clears the orphan-journal entry. Do it before removing the profile.
+			_ = b.scope.Kill(b.cmd)
+		}
 		if exited {
 			// A child inheriting the output handle must not make Close hang
 			// after the browser process itself has already exited.
@@ -438,11 +447,6 @@ func (b *Browser) Close() error {
 			if err := os.RemoveAll(b.profileDir); err != nil {
 				errs = append(errs, fmt.Errorf("remove owned test browser profile: %w", err))
 			}
-		}
-		if b.scope != nil {
-			// Closing the job also ends renderer/GPU helpers that outlive
-			// the main process, and clears the orphan-journal entry.
-			_ = b.scope.Kill(b.cmd)
 		}
 		b.closeErr = errors.Join(errs...)
 	})
