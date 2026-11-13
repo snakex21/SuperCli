@@ -88,7 +88,16 @@ Optional explicitly allowed parameters:
 ```
 
 Image parameter names supported by the implementation are `size`, `quality`,
-`background`, `output_format` (strings), and `output_compression` (integer 0–100).
+`background`, `output_format` (strings), `output_compression` (integer 0–100),
+and `frame_count`, `frame_duration_ms` (integers, animated GIF with
+`output_format = "gif"` on gpt-image-2.6 models; keep frames small, e.g.
+512x512). An image call may pass `"model"` to override the configured default
+model (plain identifier only; the endpoint and key stay fixed).
+
+Instead of `api_key_env`, `api_key_provider = "<name>"` reuses the key of a
+global chat provider whose `base_url` equals the media `base_url`. A local
+OpenAI-compatible image server (`localhost`, loopback or private IP, http or
+https) may be configured as `base_url`; it needs no key.
 Video names are `duration`, `aspect_ratio`, `resolution`, `negative_prompt`
 (strings), `seed`, `num_frames`, `num_inference_steps` (nonnegative 32-bit
 integers), and `generate_audio` (boolean). Only names listed in
@@ -142,8 +151,9 @@ only exact configured CDN hosts and no authentication or cookies. The HTTP
 transport disables environment proxies, checks every resolved address, rejects
 private/loopback/link-local/special-use addresses, then dials the checked IP
 without a second DNS lookup. No credentials follow a provider-returned media URL.
-Provider HTTP/error response bodies and signed download URLs are withheld from
-errors to avoid exposing keys, private payloads or download tokens.
+Signed download URLs and raw provider bodies are withheld from errors. For HTTP
+errors only the JSON `error.message` is shown (single line, max 500 bytes, the
+key redacted) so the model can correct invalid values such as a size.
 
 ## Offline verification
 

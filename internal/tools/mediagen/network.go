@@ -124,8 +124,18 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		Proxy: nil, DialContext: safeDial, ForceAttemptHTTP2: true,
 		MaxIdleConns: 2, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 2,
+		// Image APIs answer only after generating (high quality can take minutes);
+		// the per-call context deadline (timeout_seconds) bounds the wait.
 		IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+	}}
+}
+
+// newLocalHTTPClient serves an operator-configured local image server. Local
+// generation can be slow, so only the overall request timeout applies.
+func newLocalHTTPClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy: nil, DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		MaxIdleConns: 2, IdleConnTimeout: 30 * time.Second,
 	}}
 }
 
@@ -174,7 +184,9 @@ func requestJSON(ctx context.Context, client *http.Client, method, endpoint, aut
 	if err != nil {
 		return errors.New("invalid provider request")
 	}
-	req.Header.Set("Authorization", auth)
+	if strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(auth, "Bearer "), "Key ")) != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -184,11 +196,18 @@ func requestJSON(ctx context.Context, client *http.Client, method, endpoint, aut
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return errors.New("provider request timed out (no automatic retry)")
+		}
 		return errors.New("provider request failed (no automatic retry)")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("provider returned HTTP %d (response body withheld; no automatic retry)", resp.StatusCode)
+		if msg := providerErrorMessage(resp.Body, auth); msg != "" {
+			return fmt.Errorf("provider returned HTTP %d: %s (no automatic retry)", resp.StatusCode, msg)
+		}
+		return fmt.Errorf("provider returned HTTP %d (no automatic retry)", resp.StatusCode)
 	}
 	data, err := readBounded(ctx, resp.Body, resp.ContentLength, limit)
 	if err != nil {
@@ -202,6 +221,29 @@ func requestJSON(ctx context.Context, client *http.Client, method, endpoint, aut
 	}
 	return nil
 }
+
+// providerErrorMessage returns only the JSON error.message (bounded, single
+// line, credential redacted) so the model can correct e.g. a size.
+func providerErrorMessage(r io.Reader, auth string) string {
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.NewDecoder(io.LimitReader(r, 64<<10)).Decode(&body) != nil {
+		return ""
+	}
+	msg := body.Error.Message
+	if secret := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(auth, "Bearer "), "Key ")); len(secret) >= 4 {
+		msg = strings.ReplaceAll(msg, secret, "[redacted]")
+	}
+	msg = strings.Join(strings.FieldsFunc(msg, func(r rune) bool { return r < 0x20 || r == 0x7f }), " ")
+	if len(msg) > 500 {
+		msg = msg[:500] + "…"
+	}
+	return strings.TrimSpace(msg)
+}
+
 func readBounded(ctx context.Context, r io.Reader, length, limit int64) ([]byte, error) {
 	if length > limit {
 		return nil, errors.New("provider response exceeds byte limit")

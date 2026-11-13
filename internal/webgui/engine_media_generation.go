@@ -17,6 +17,7 @@ func (e *Engine) registerMediaGeneration(reg *tools.Registry, home string) {
 		return
 	}
 	confirm := func(ctx context.Context, question string) error { return interactive.ConfirmAction(ctx, nil, question) }
-	reg.MustRegister(mediagen.NewImage(home, cfg.Image, confirm).Spec())
-	reg.MustRegister(mediagen.NewVideo(home, cfg.Video, confirm).Spec())
+	keys := func(name string) (string, string, bool) { return config.MediaGenerationProviderKey(e.DataDir(), name) }
+	reg.MustRegister(mediagen.NewImage(home, cfg.Image, confirm).WithProviderKeys(keys).Spec())
+	reg.MustRegister(mediagen.NewVideo(home, cfg.Video, confirm).WithProviderKeys(keys).Spec())
 }

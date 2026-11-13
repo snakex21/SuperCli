@@ -12,11 +12,14 @@ type MediaGenerationConf struct {
 // Model is an explicit image model or fal model endpoint path. APIKeyEnv names
 // an environment variable; credentials themselves are never stored here.
 type MediaGenerationProviderConf struct {
-	Enabled                  bool           `toml:"enabled" json:"enabled"`
-	Provider                 string         `toml:"provider" json:"provider"`
-	BaseURL                  string         `toml:"base_url" json:"base_url"`
-	Model                    string         `toml:"model" json:"model"`
-	APIKeyEnv                string         `toml:"api_key_env" json:"api_key_env"`
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	Provider  string `toml:"provider" json:"provider"`
+	BaseURL   string `toml:"base_url" json:"base_url"`
+	Model     string `toml:"model" json:"model"`
+	APIKeyEnv string `toml:"api_key_env" json:"api_key_env"`
+	// APIKeyProvider names a configured global chat provider whose key is
+	// reused. Its base_url must equal BaseURL, so the key never changes host.
+	APIKeyProvider           string         `toml:"api_key_provider" json:"api_key_provider,omitempty"`
 	AllowedParameters        []string       `toml:"allowed_parameters" json:"allowed_parameters,omitempty"`
 	DefaultParameters        map[string]any `toml:"default_parameters" json:"default_parameters,omitempty"`
 	AllowedDownloadHosts     []string       `toml:"allowed_download_hosts" json:"allowed_download_hosts,omitempty"`

@@ -117,6 +117,8 @@ func outputExtension(kind, mime string) string {
 			return ".jpg"
 		case "image/webp":
 			return ".webp"
+		case "image/gif": // animated GIF output (gpt-image-2.6)
+			return ".gif"
 		}
 	}
 	if kind == "video" {
