@@ -232,7 +232,8 @@ function smartScroll(force) {
     transcriptFollowTail = true;
     smartScrollForced = true;
   }
-  if (!transcriptFollowTail && !smartScrollForced) { queueJumpLatestUpdate(); return; }
+  if (!transcriptFollowTail && !smartScrollForced) queueJumpLatestUpdate();
+  if (!transcriptFollowTail && !smartScrollForced) return;
   smartScrollPending = true;
   if (smartScrollFrame !== null) return;
   // Batch tool/SSE bursts, and let a pending paced paint own the scroll read.
