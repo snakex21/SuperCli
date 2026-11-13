@@ -160,8 +160,23 @@ Optional keyed engine:
 
 ```toml
 [web_search]
-engine = "brave" # or "tavily"
-api_key = "..."  # BRAVE_API_KEY / TAVILY_API_KEY also work
+engine = "brave" # or "tavily" or "exa"
+api_key = "..."  # BRAVE_API_KEY / TAVILY_API_KEY / EXA_API_KEY also work
+```
+
+Optional provider-hosted search (off by default). When enabled, searches are
+answered by the provider's own web search tool (OpenAI Responses `web_search`,
+or xAI's compatible API); any error or empty answer falls back to the engines
+above, and the model sees the same tools and result format. It is opt-in
+because every hosted search is billed by the provider and sends the query
+there, while the local engines work with any model, including local ones.
+
+```toml
+[web_search]
+hosted = "openai"          # "off" (default), "openai", "xai" or "auto"
+# hosted_model = "gpt-5.4-nano"   # default per provider
+# hosted_api_key = "..."   # default: OPENAI_API_KEY / XAI_API_KEY, then a
+                           # configured provider on api.openai.com / api.x.ai
 ```
 
 Optional public SearXNG instance (JSON output must be enabled):
@@ -173,10 +188,27 @@ base_url = "https://search.example.com"
 ```
 
 The existing tool accepts optional `freshness`, `include_domains`, and
-`exclude_domains` fields. This adds no system-prompt block or extra model call;
-the work happens only when the model invokes `web_search`. `web_fetch` prefers
-Markdown/plain responses when a site provides them, reducing HTML cleanup and
-tokens, with normal HTML as a fallback.
+`exclude_domains` fields. `web_search` and `web_lookup` also accept `queries`
+(up to 3 extra related queries run in parallel in one call, labelled per query
+with duplicate URLs removed). This adds no system-prompt block or extra model
+call; the work happens only when the model invokes a search.
+
+`web_fetch` extracts the main content of HTML pages (menus, footers, cookie
+banners and link lists removed), decodes legacy charsets, reads PDF text, keeps
+schema.org facts such as prices and dates, lists next-page links, and pages long
+documents with `offset`. Its default window is about 7% of the active model's
+context window (3,000 to 14,000 characters), so small local models are not
+flooded. Page text is wrapped in markers that label it as untrusted data.
+
+### Browser
+
+The discoverable `browser` tool drives a headless Chrome or Edge (found on PATH
+or in the standard install locations; `SUPERCLI_TEST_BROWSER` selects another
+executable) for pages that need JavaScript or clicking:
+`open`, `click`, `type`, `read`, `back`, `close`. All browser traffic goes
+through a local proxy that refuses private and loopback addresses. The browser
+uses a temporary profile, closes after 5 idle minutes and when SuperCli exits,
+and on Windows runs in a job object so it cannot outlive a crashed process.
 
 `allow_all` permits absolute file and search paths outside the active
 workspace while keeping sensitive operating-system folders blocked. It
