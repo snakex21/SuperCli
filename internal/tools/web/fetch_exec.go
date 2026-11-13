@@ -59,7 +59,7 @@ func (t *WebFetch) Spec() Tool {
 		Description: "Read a public http(s) URL (HTML, text, JSON or PDF) as clean text: main content without menus and footers, plus title, prices/dates from structured data, and next-page links. " +
 			"When the user gives a URL, call web_fetch directly (no search needed). Long pages are paged: continue with the offset shown at the end. " +
 			"mode=links lists the page's links (to follow one, fetch its URL); mode=media lists media/download links; refresh=true skips a recent cached read. " +
-			"JavaScript is not run. To save files use web_download. Not for local files, private addresses or authenticated APIs.",
+			"JavaScript is not run: for script-rendered pages or clicking use the browser tool. To save files use web_download. Not for local files, private addresses or authenticated APIs.",
 		Schema: `{
   "type": "object",
   "properties": {
@@ -239,7 +239,7 @@ func (t *WebFetch) fetchDocument(ctx context.Context, u *url.URL) (*fetchedDoc, 
 		doc.links = withoutListed(doc.links, doc.media)
 		if readable.JSRendered {
 			doc.scriptData = readable.ScriptData
-			doc.notes = append(doc.notes, "the page is rendered by JavaScript and its static HTML has almost no text; inline script data is shown below when present. For the rendered page use a browser tool, or find another source")
+			doc.notes = append(doc.notes, "the page is rendered by JavaScript and its static HTML has almost no text; inline script data is shown below when present. For the rendered page use the browser tool (action=open), or find another source")
 		}
 		if note := pageTypeNote(page, readable); note != "" {
 			doc.notes = append(doc.notes, note)
