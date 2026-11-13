@@ -357,7 +357,7 @@ func (e *Engine) deleteSession(id string) error {
 	if err != nil {
 		return err
 	}
-	transaction, err := gate.Acquire(ctx)
+	transaction, err := acquireStoreGateWait(ctx, gate)
 	if err != nil {
 		return err
 	}
@@ -379,6 +379,39 @@ func (e *Engine) deleteSession(id string) error {
 	err = errors.Join(closeErr, cleanup())
 	e.syncHub.changed()
 	return err
+}
+
+// storeGateRetryDelay paces retries while another process (a CLI/TUI
+// instance, a worker, or a Windows scanner briefly opening the lock file)
+// owns the native checkpoint store lock. Acquire makes exactly one native
+// attempt and never waits for that holder, so a user action must retry.
+var storeGateRetryDelay = 100 * time.Millisecond
+
+// acquireStoreGate is a test seam for an external native lock holder.
+var acquireStoreGate = func(ctx context.Context, gate *checkpoint.StoreGate) (*checkpoint.StoreIO, error) {
+	return gate.Acquire(ctx)
+}
+
+// acquireStoreGateWait retries checkpoint.ErrStoreBusy until ctx ends. The
+// final error still wraps ErrStoreBusy so the browser gets a 409.
+func acquireStoreGateWait(ctx context.Context, gate *checkpoint.StoreGate) (*checkpoint.StoreIO, error) {
+	delay := storeGateRetryDelay
+	for {
+		transaction, err := acquireStoreGate(ctx, gate)
+		if !errors.Is(err, checkpoint.ErrStoreBusy) {
+			return transaction, err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, errors.Join(err, ctx.Err())
+		}
+		if delay < time.Second {
+			delay *= 2
+		}
+	}
 }
 
 // transcript returns all messages for one session in order.

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"supercli/internal/checkpoint"
 )
 
 // Server is the web GUI HTTP server. It wraps an Engine (the agent
@@ -196,7 +198,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSessionMutationError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errSessionBusy) {
+	if errors.Is(err, errSessionBusy) || errors.Is(err, checkpoint.ErrStoreBusy) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
