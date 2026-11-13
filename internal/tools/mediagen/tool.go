@@ -115,7 +115,25 @@ func (t *Tool) Spec() core.Tool {
 		"type": "object", "additionalProperties": false, "required": []string{"prompt"},
 		"properties": fields,
 	})
-	return core.Tool{Name: "generate_" + t.kind, Description: "Generate (create, draw, render) one new " + t.kind + " from a text prompt (" + t.kind + " generation, text-to-" + t.kind + ") using an explicitly configured provider after interactive confirmation. Saves a local file and returns preview metadata without attaching bytes to the model. No automatic paid fallback.", Schema: string(schema), Fn: t.Execute}
+	description := "Generate (create, draw, render) one new " + t.kind + " from a text prompt (" + t.kind + " generation, text-to-" + t.kind + ") using an explicitly configured provider after interactive confirmation. Saves a local file and returns preview metadata without attaching bytes to the model. No automatic paid fallback."
+	if t.cfg != nil && t.cfg.Enabled {
+		description += availabilityNote(t.kind)
+	}
+	return core.Tool{Name: "generate_" + t.kind, Description: description, Schema: string(schema), Fn: t.Execute}
+}
+
+// availabilityNote makes the tool definition the authority on availability.
+// Recalled memories or earlier transcripts saying generation failed or is
+// unsupported otherwise stopped models from even trying after a fix.
+func availabilityNote(kind string) string {
+	return " This tool is configured and available now: when the user asks for " + aOrAn(kind) + " " + kind + ", call it instead of declining. Earlier failures, remembered notes or past replies saying " + kind + " generation is unavailable are outdated; only this call's own result decides."
+}
+
+func aOrAn(word string) string {
+	if strings.ContainsRune("aeiou", rune(word[0])) {
+		return "an"
+	}
+	return "a"
 }
 
 type arguments struct {
@@ -176,7 +194,7 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		}
 		rc.model = m
 	}
-	params, err := t.parameters(args.Parameters)
+	params, ignored, err := t.parameters(args.Parameters)
 	if err != nil {
 		return core.Result{}, err
 	}
@@ -213,12 +231,30 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 		return errors.New("media generation redirects are not allowed")
 	}
 	params["prompt"] = args.Prompt
+	var result core.Result
 	if t.kind == "image" {
 		params["model"] = rc.model
 		params["n"] = 1
-		return t.generateImage(ctx, &copyClient, rc, params)
+		result, err = t.generateImage(ctx, &copyClient, rc, params)
+	} else {
+		result, err = t.generateVideo(ctx, &copyClient, rc, params)
 	}
-	return t.generateVideo(ctx, &copyClient, rc, params)
+	if note := ignoredDefaultsNote(ignored); note != "" {
+		if err != nil {
+			return result, fmt.Errorf("%w (%s)", err, note)
+		}
+		result.Text = strings.TrimRight(result.Text, "\n") + "\n" + note
+	}
+	return result, err
+}
+
+// ignoredDefaultsNote tells the model (and through it the user) that the
+// operator config lists default_parameters missing from allowed_parameters.
+func ignoredDefaultsNote(ignored []string) string {
+	if len(ignored) == 0 {
+		return ""
+	}
+	return "Note: default_parameters " + strings.Join(ignored, ", ") + " were ignored because they are not listed in allowed_parameters; add them there in config.toml to apply them."
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -379,18 +415,31 @@ func parameterType(kind, name string) string {
 	}
 	return ""
 }
-func (t *Tool) parameters(input map[string]any) (map[string]any, error) {
+
+// parameters merges operator defaults with the model's values. A default
+// that allowed_parameters does not list is a config slip, not a model error:
+// it used to fail every call with "parameter is not configured", so it is now
+// skipped and reported in ignored. Values the model sends stay strict.
+func (t *Tool) parameters(input map[string]any) (map[string]any, []string, error) {
 	allowed := map[string]bool{}
 	for _, k := range t.cfg.AllowedParameters {
 		if parameterType(t.kind, k) == "" {
-			return nil, fmt.Errorf("unsupported configured parameter %q", k)
+			return nil, nil, fmt.Errorf("unsupported configured parameter %q", k)
 		}
 		allowed[k] = true
 	}
 	merged := map[string]any{}
+	var ignored []string
 	for k, v := range t.cfg.DefaultParameters {
+		if !allowed[k] {
+			if _, sent := input[k]; !sent {
+				ignored = append(ignored, k)
+			}
+			continue
+		}
 		merged[k] = v
 	}
+	sort.Strings(ignored)
 	for k, v := range input {
 		merged[k] = v
 	}
@@ -402,28 +451,28 @@ func (t *Tool) parameters(input map[string]any) (map[string]any, error) {
 	for _, k := range keys {
 		v := merged[k]
 		if !allowed[k] {
-			return nil, fmt.Errorf("parameter %q is not configured in allowed_parameters", k)
+			return nil, nil, fmt.Errorf("parameter %q is not configured in allowed_parameters", k)
 		}
 		switch parameterType(t.kind, k) {
 		case "string":
 			s, ok := v.(string)
 			if !ok || len(s) > 2000 || strings.TrimSpace(s) == "" {
-				return nil, fmt.Errorf("parameter %s requires a nonempty string up to 2000 bytes", k)
+				return nil, nil, fmt.Errorf("parameter %s requires a nonempty string up to 2000 bytes", k)
 			}
 		case "boolean":
 			if _, ok := v.(bool); !ok {
-				return nil, fmt.Errorf("parameter %s requires a boolean", k)
+				return nil, nil, fmt.Errorf("parameter %s requires a boolean", k)
 			}
 		case "integer":
 			data, _ := json.Marshal(v)
 			n, err := json.Number(data).Int64()
 			if err != nil || n < 0 || n > 2147483647 {
-				return nil, fmt.Errorf("parameter %s requires a nonnegative 32-bit integer", k)
+				return nil, nil, fmt.Errorf("parameter %s requires a nonnegative 32-bit integer", k)
 			}
 			if k == "output_compression" && n > 100 {
-				return nil, errors.New("output_compression must be 0–100")
+				return nil, nil, errors.New("output_compression must be 0–100")
 			}
 		}
 	}
-	return merged, nil
+	return merged, ignored, nil
 }
