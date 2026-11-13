@@ -268,6 +268,7 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 	if result.Execution != nil {
 		args.Command, args.Workdir = result.Execution.Command, result.Execution.Workdir
 	}
+	l.verifyTrail.observeResult(args.Command, result)
 	if !isVerificationCommand(args.Command) {
 		return
 	}
@@ -331,7 +332,6 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 		}
 	}
 	l.failedChecks.record(observation)
-	l.verifyTrail.observe(args.Command, failed)
 	if result.Execution != nil {
 		l.checkCycles.observe(tc.ID, args.Command, failed, verificationOutput(result.Execution.Stdout, result.Execution.Stderr, fmt.Sprint(result.Execution.ExitCode), nil), l.curStep.Load())
 	} else {
