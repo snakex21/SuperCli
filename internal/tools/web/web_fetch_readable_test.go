@@ -69,9 +69,39 @@ func TestWebFetchExtractsMainContentBeforeBoilerplate(t *testing.T) {
 			t.Errorf("missing %q:\n%s", want, text)
 		}
 	}
-	start := strings.Index(text, ">>>\n")
-	if start < 0 || !strings.HasPrefix(text[start+4:], "# River") {
+	start := strings.Index(text, ">>>\nDescription: About the river\n\n")
+	if start < 0 || !strings.HasPrefix(text[start+len(">>>\nDescription: About the river\n\n"):], "# River") {
 		t.Errorf("content does not start with the article:\n%s", text)
+	}
+}
+
+func TestWebFetchKeepsPageControlledFieldsInsideFence(t *testing.T) {
+	page := `<html><head><title>T</title><meta name="description" content="DESC-INJECT"><script type="application/ld+json">{"@type":"Product","name":"LD-INJECT","offers":{"@type":"Offer","price":"1"}}</script></head><body><main><p>` +
+		strings.Repeat("Body text. ", 30) + `<a href="/x">LINK-INJECT</a></p><a rel="next" href="/2">PAGER-INJECT</a></main></body></html>`
+	tool, _ := fetchFixture(t, "text/html", []byte(page), 200)
+	result := runFetch(t, tool, context.Background(), map[string]any{"url": "https://example.org/p"})
+	end := strings.Index(result.Text, "<<<end page-content ")
+	open := strings.Index(result.Text, "<<<page-content ")
+	for _, marker := range []string{"DESC-INJECT", "LD-INJECT", "LINK-INJECT", "PAGER-INJECT"} {
+		at := strings.Index(result.Text, marker)
+		if at < 0 || at < open || at > end {
+			t.Errorf("%s outside the untrusted fence:\n%s", marker, result.Text)
+		}
+	}
+}
+
+func TestWebFetchDoesNotCachePartialBody(t *testing.T) {
+	calls := 0
+	tool := NewWebFetch()
+	tool.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		body := io.MultiReader(strings.NewReader("partial text"), errReader{context.DeadlineExceeded})
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/plain"}}, Body: io.NopCloser(body), Request: req}, nil
+	})}
+	runFetch(t, tool, context.Background(), map[string]any{"url": "https://slow.example.org/"})
+	runFetch(t, tool, context.Background(), map[string]any{"url": "https://slow.example.org/"})
+	if calls != 2 {
+		t.Fatalf("truncated body was cached: calls=%d", calls)
 	}
 }
 
