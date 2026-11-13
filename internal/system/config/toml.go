@@ -58,6 +58,11 @@ type TomlConfig struct {
 	// AssistantEditModelSees makes an edited reply replace the original in the
 	// model context (next run); nil means off = display-only edits.
 	AssistantEditModelSees *bool `toml:"assistant_edit_model_sees"`
+	// OpenAIReasoningResponses routes official OpenAI reasoning models
+	// (gpt-5*, o1/o3/o4*, codex*) of an "openai" provider on api.openai.com
+	// to the Responses API, the only OpenAI API that honours the selected
+	// reasoning level together with function tools; nil means on.
+	OpenAIReasoningResponses *bool `toml:"openai_reasoning_responses"`
 
 	// Provider configuration.
 	Provider  string         `toml:"provider"`
