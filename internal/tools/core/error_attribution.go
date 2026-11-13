@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -121,6 +122,11 @@ func (Classifier) Classify(tool string, args json.RawMessage, result Result) Ver
 	if errStr == "" {
 		// No error -> no failure to attribute.
 		return Verdict{Category: CategoryUnknown, Confidence: 0, Reason: "no error"}
+	}
+	// 0. A missing or refused user approval is a decision, not a fault: never
+	// a retry candidate for the model.
+	if errors.Is(result.Err, ErrApprovalRequired) {
+		return Verdict{Category: CategoryEnvironment, Confidence: 1, Reason: "user approval required", Suggestion: "ask the user; do not retry"}
 	}
 	// 1. Explicit environment markers.
 	if v, ok := classifyEnvMarkers(errStr); ok {

@@ -95,7 +95,7 @@ func thunderbirdHasMutationSelector(args thunderbirdToolArgs) bool {
 
 func validateThunderbirdMoveArgs(args thunderbirdToolArgs) error {
 	if !args.Confirm {
-		return fmt.Errorf("thunderbird_mail: move requires confirm:true after explicit user approval")
+		return fmt.Errorf("thunderbird_mail: move requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")
 	}
 	if strings.TrimSpace(args.Destination) == "" {
 		return fmt.Errorf("thunderbird_mail: move requires destination")
@@ -152,11 +152,11 @@ func (t *ThunderbirdMail) Spec() Tool {
 		Description: "Use the locally running Thunderbird through the SuperCLI Thunderbird Bridge extension. " +
 			"Thunderbird owns the real Gmail IMAP/OAuth connection, so prefer this over Outlook COM for Gmail mailbox state. " +
 			"Read operations: 'status', 'accounts', 'folders', 'count', 'search', 'read', 'attachments', 'get_attachment', 'senders', 'largest', 'address_books', 'contacts', and 'contact_candidates'. search/count can filter by sender (from), recipient (to, covers To and Cc), sender-or-recipient email address (address), subject substring, text and date. from/to/address also accept a domain: '@example.com' matches mailboxes at example.com or its subdomains only, a bare 'example.com' additionally matches display names; domain filters scan every header of the folder, so keep the Inbox scope or add dates. For a company or brand the user names (allegro, discord, github), filter with from:'<brand>': a bare word matches sender display names and addresses ('allegro' finds 'Poczta Allegro' and allegromail.pl, while 'allegro.pl' misses allegromail.pl). Gmail filters often file such mail outside Inbox, so when Inbox returns 0 repeat with scope:'account' (or the matching folder) before saying there is none. 'text' is full-text over bodies and slow, especially with scope:'account'; use it only when from/subject/to cannot express the request. There is NO unread/read filter: for 'how many unread' use op 'folders' and report unreadMessageCount (Inbox/Odebrane for the inbox; Gmail All Mail/Wszystkie for the whole account without Trash/Spam). Unknown arguments are rejected without executing anything. count/search/senders/largest count each RFC Message-ID once (Gmail labels, All Mail and duplicate index records are merged; see deduplicatedByMessageId, duplicatesSkipped, duplicateRecords, crossFolderDuplicates), so totals can be lower than Thunderbird's raw counts; pass include_duplicates:true only when raw per-record results are needed. search results are newest-first. 'contact_candidates' aggregates sender and recipient addresses from message headers without loading bodies, excluding the mailbox owner's own address. 'largest' scans message headers locally and returns only the largest 1-100 messages with byte sizes and stable Message-ID headers, avoiding large AI context. Use 'read' with a message_id returned by search to retrieve the decoded body without changing read/unread state. read returns at most max_chars (default 12000); when hasMore:true, repeat with nextStartChar as start_char instead of loading a huge email into a small local model at once. search does NOT return attachment metadata by default (attachmentsIncluded:false, no hasAttachments/attachmentCount/attachments fields) because it costs one MIME parse per result; pass include_attachments:true when attachments matter, or call 'attachments' (full filename including extension, extension, MIME type, size, partName) or 'read' for one message_id. 'get_attachment' fetches the actual attachment bytes. For PNG/JPEG/GIF/WebP it returns a real image to the agent loop so a vision-capable model receives the pixels on the next model turn; for PDF/Office/other files it returns a temporary localPath so the appropriate document tool can read it. count/search/senders/largest default to Inbox to avoid Gmail label duplicates; use scope:'account' only when an explicit whole-account search is needed. 'senders' is the preferred fast first step for newsletter/junk cleanup because it aggregates frequent Inbox senders without repeated full-text scans. Account selection: without 'account', a folder id such as 'account2://INBOX' selects its own account, and a folder name that exists on several mail accounts is an error, not a silent choice of the first IMAP account; then pass folder as the exact folder.id (or full path) returned by 'folders', or name the account. Local Folders (type none) is not part of that check: a name present in both the IMAP account and Local Folders silently resolves to the IMAP account, so for Local Folders work always pass account:'Local Folders' or the account2://... folder id. 'folders' returns totalMessageCount/unreadMessageCount; include_unique_counts:true (optionally with folder) adds messageRecords, uniqueMessageCount and duplicateRecords but scans every header. " +
-			"Write operations: 'create_folder' (name = new folder name, account = REQUIRED target account such as 'Local Folders', parent = optional parent), 'rename_folder' and 'delete_folder' (folder = exact folder.id such as account2://Name, or a name plus account) manage Thunderbird folders after confirm:true; 'copy' (folder = source, destination + destination_account = target) leaves the originals untouched: to delete the copies afterwards, trash/purge in the copy DESTINATION folder, never in the copy source; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. On Gmail, trash/move from a label other than Inbox/Trash/Spam/All Mail is refused without changes when a selected message also carries Inbox or another label; for move, allow_other_labels:true accepts removing only the source label. Every move is verified: status 'verified_moved' or 'moved_but_unverified' (movedButUnverified, missingInDestination; no continuation is returned then) - never report an unverified batch as done. IMAP moves also return recheckAfterMs and a ready 'recheck' request: send it as op 'verify_move' after that delay (read-only; reports locations, onlyInAllMail when Gmail dropped the label). 'repair_folder' (confirm:true, folder) runs Thunderbird's Repair Folder to rebuild an index with duplicate records without deleting messages; it refuses busy/offline/open folders (try again later, no automatic retry), Gmail All Mail needs allow_all_mail:true, and status.nativeRepairFolderAvailable tells whether it is installed. 'delete_folder' may report deleted:false, movedToTrash:true with newPath when Thunderbird (Local Folders) moved the folder into Trash instead. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
-			"Address-book writes: 'create_address_book' creates a separate local book, 'add_contacts' adds an explicit list of name/email pairs, and 'update_contact' corrects one existing card after confirm:true. add_contacts deduplicates email addresses inside the selected destination book and is safe to retry while still allowing a complete dedicated book. Filter automated/noreply/store addresses out of contact_candidates before importing. " +
-			"Bulk filtered writes are intentionally paged: one call processes up to batch_size messages (default 250, max 500). If the result has more:true, immediately repeat the SAME approved operation and filters with the returned continuation token; this avoids timeouts and loop protection. No new user confirmation is needed for continuation of the exact same approved cleanup. " +
+			"Write operations: 'create_folder' (name = new folder name, account = REQUIRED target account such as 'Local Folders', parent = optional parent), 'rename_folder' and 'delete_folder' (folder = exact folder.id such as account2://Name, or a name plus account) manage Thunderbird folders; 'copy' (folder = source, destination + destination_account = target) leaves the originals untouched: to delete the copies afterwards, trash/purge in the copy DESTINATION folder, never in the copy source; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. On Gmail, trash/move from a label other than Inbox/Trash/Spam/All Mail is refused without changes when a selected message also carries Inbox or another label; for move, allow_other_labels:true accepts removing only the source label. Every move is verified: status 'verified_moved' or 'moved_but_unverified' (movedButUnverified, missingInDestination; no continuation is returned then) - never report an unverified batch as done. IMAP moves also return recheckAfterMs and a ready 'recheck' request: send it as op 'verify_move' after that delay (read-only; reports locations, onlyInAllMail when Gmail dropped the label). 'repair_folder' (folder) runs Thunderbird's Repair Folder to rebuild an index with duplicate records without deleting messages; it refuses busy/offline/open folders (try again later, no automatic retry), Gmail All Mail needs allow_all_mail:true, and status.nativeRepairFolderAvailable tells whether it is installed. 'delete_folder' may report deleted:false, movedToTrash:true with newPath when Thunderbird (Local Folders) moved the folder into Trash instead. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
+			"Address-book writes: 'create_address_book' creates a separate local book, 'add_contacts' adds an explicit list of name/email pairs, and 'update_contact' corrects one existing card. add_contacts deduplicates email addresses inside the selected destination book and is safe to retry while still allowing a complete dedicated book. Filter automated/noreply/store addresses out of contact_candidates before importing. " +
+			"Bulk filtered writes are intentionally paged: one call processes up to batch_size messages (default 250, max 500). If the result has more:true, immediately repeat the SAME approved operation and filters with the returned continuation token; this avoids timeouts and loop protection. The continuation of an approved batch is not asked again. " +
 			"For whole-Trash cleanup, prefer empty_trash instead of simulating 'all' with date filters. empty_trash is one server-side operation and only counts as success when it returns serverVerified:true. For purge/delete_permanently, intermediate IMAP batches are not server-confirmed and MUST NOT be reported as final success; the final IMAP batch must return serverVerified:true, while Local Folders use localVerified:true because no mail server exists. " +
-			"move/trash/restore/import_msg and filtered purge require confirm:true after explicit user approval. move requires destination and either at least one filter or all:true; all:true is only for an explicitly approved whole-folder move. import_msg requires path to a local .msg file plus destination; because importing to an IMAP folder can upload the historical message to the mail server, never guess the target folder. empty_trash requires confirm:true and is irreversible. restore is recoverable and only reads from the default Trash. Use count before destructive cleanup when the local Trash count is trustworthy, but empty_trash can still repair a diverged Gmail Trash when Thunderbird's local cache incorrectly shows 0. An error with notExecuted:true / 'NOT executed' means Thunderbird refused before running anything: it is safe to call again later (a new request id is used). An 'outcome unknown' error means it may have executed: check mailbox state before repeating a mutation. The bridge extension must be installed and Thunderbird must be running for mailbox operations.",
+			"APPROVAL: every write operation is shown to the user by SuperCli itself, which asks for approval before anything runs; you never set confirm (it is ignored and set by the host only after the user approves). Do not ask for permission in chat first: call the operation and the user gets an approval card. If the result says the user denied it or approval is unavailable, nothing was changed: do not retry, tell the user. move requires destination and either at least one filter or all:true; all:true is only for an explicitly approved whole-folder move. import_msg requires path to a local .msg file plus destination; because importing to an IMAP folder can upload the historical message to the mail server, never guess the target folder. empty_trash is irreversible. restore is recoverable and only reads from the default Trash. Use count before destructive cleanup when the local Trash count is trustworthy, but empty_trash can still repair a diverged Gmail Trash when Thunderbird's local cache incorrectly shows 0. An error with notExecuted:true / 'NOT executed' means Thunderbird refused before running anything: it is safe to call again later (a new request id is used). An 'outcome unknown' error means it may have executed: check mailbox state before repeating a mutation. The bridge extension must be installed and Thunderbird must be running for mailbox operations.",
 		Schema: `{
   "type": "object",
   "properties": {
@@ -199,14 +199,16 @@ func (t *ThunderbirdMail) Spec() Tool {
     "until":    {"type": "string", "description": "Only messages on/before YYYY-MM-DD."},
     "limit":    {"type": "integer", "description": "search: maximum previews; senders/contact_candidates: maximum groups. contact_candidates supports up to 500; search/senders up to 100."},
     "scope":    {"type": "string", "enum": ["inbox", "account"], "description": "count/search/senders/contact_candidates only. Default 'inbox'. Use 'account' only when a whole-account scan is explicitly needed; Gmail labels can duplicate a message across folders."},
-    "confirm":  {"type": "boolean", "description": "create_address_book/add_contacts/create_folder/rename_folder/delete_folder/compact_folder/repair_folder/move/import_msg/trash/restore/purge/empty_trash: must be true after explicit user approval. delete_folder may remove the folder and its contents; system/special folders are protected."},
-    "all":      {"type": "boolean", "description": "move only: move the entire selected source folder when explicitly requested. Requires confirm:true and destination. Prefer filters for narrower moves."},
+    "confirm":  {"type": "boolean", "description": "Ignored: set by SuperCli only after the user approves the write in its approval prompt. Do not send it."},
+    "all":      {"type": "boolean", "description": "move only: move the entire selected source folder when explicitly requested. Requires destination. Prefer filters for narrower moves."},
     "batch_size": {"type": "integer", "minimum": 1, "maximum": 500, "description": "move/trash/restore/purge only: messages processed in one call. Default 250. Keep the default unless a smaller batch is needed."},
     "continuation": {"type": "string", "description": "move/trash/restore/purge continuation token returned by a previous batch. When more:true, repeat the exact same operation and filters with this token."}
   },
   "required": ["op"]
 }`,
-		Fn: t.execute,
+		Fn:          t.execute,
+		Approval:    t.approval,
+		ApprovalArg: "confirm",
 	}
 }
 
@@ -230,7 +232,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "repair_folder":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: repair_folder requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: repair_folder requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Folder) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: repair_folder requires folder")}, nil
@@ -247,21 +249,21 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "create_folder":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: create_folder requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: create_folder requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Name) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: create_folder requires name (the new folder's name; 'folder' is not used here - pass the parent folder as parent and the target account as account, e.g. account:'Local Folders')")}, nil
 		}
 	case "create_address_book":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: create_address_book requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: create_address_book requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Name) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: create_address_book requires name")}, nil
 		}
 	case "add_contacts":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: add_contacts requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: add_contacts requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.AddressBook) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: add_contacts requires address_book")}, nil
@@ -271,7 +273,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "update_contact":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: update_contact requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: update_contact requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.ContactID) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: update_contact requires contact_id")}, nil
@@ -281,21 +283,21 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "rename_folder":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: rename_folder requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: rename_folder requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Folder) == "" || strings.TrimSpace(args.NewName) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: rename_folder requires folder and new_name")}, nil
 		}
 	case "delete_folder":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: delete_folder requires confirm:true after explicit user approval; deleting a folder can delete its messages")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: delete_folder requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt; deleting a folder can delete its messages")}, nil
 		}
 		if strings.TrimSpace(args.Folder) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: delete_folder requires folder")}, nil
 		}
 	case "compact_folder":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: compact_folder requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: compact_folder requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Folder) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: compact_folder requires folder")}, nil
@@ -306,11 +308,11 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "empty_trash":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: empty_trash requires confirm:true after explicit user approval; this permanently empties the entire Trash")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: empty_trash requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt; this permanently empties the entire Trash")}, nil
 		}
 	case "import_msg":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: import_msg requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: import_msg requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Path) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: import_msg requires path to a local .msg file")}, nil
@@ -324,7 +326,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "copy":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: copy requires confirm:true after explicit user approval")}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: copy requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt")}, nil
 		}
 		if strings.TrimSpace(args.Destination) == "" {
 			return Result{Err: fmt.Errorf("thunderbird_mail: copy requires destination")}, nil
@@ -334,7 +336,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		}
 	case "trash", "restore", "purge", "delete_permanently":
 		if !args.Confirm {
-			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires confirm:true after explicit user approval", args.Op)}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires confirm:true, which only SuperCli sets after the user approves it in the approval prompt", args.Op)}, nil
 		}
 		if !thunderbirdHasMutationSelector(args) {
 			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires at least one filter (from/to/address/subject/text/since/until or exact message ids)", args.Op)}, nil
@@ -359,6 +361,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 	if err != nil {
 		return Result{Err: fmt.Errorf("thunderbird_mail: %w", err)}, nil
 	}
+	thunderbirdRememberContinuation(ctx, data)
 	if args.Op == "get_attachment" {
 		return t.attachmentResult(data)
 	}

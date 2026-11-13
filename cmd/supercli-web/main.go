@@ -300,6 +300,7 @@ func run(crashDataDir *string) {
 	if err != nil {
 		fatal("build engine", err)
 	}
+	webgui.InstallApprovalGate(dataDir)
 	eng.SetAppProfile(appProfile)
 	eng.SetExplicitEcho(*echoFlag)
 	eng.RefreshPricingAsync()
