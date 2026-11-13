@@ -75,6 +75,12 @@ const (
 	// are enough to pick a disambiguating anchor; a boilerplate string that
 	// occurs 400 times must not paste 400 numbers into the error.
 	diagMaxOccLines = 10
+
+	// diagMaxOccContexts and diagOccContextLines bound the per-match context
+	// shown for an ambiguous `old`: enough lines above each match to see which
+	// section it is in, for the first few matches.
+	diagMaxOccContexts  = 6
+	diagOccContextLines = 2
 )
 
 // patchFailureHint returns the diagnostic tail appended to a PatchFile
@@ -103,9 +109,13 @@ func patchFailureHint(path, content string, changes []PatchChange, idx, want, go
 	case got == 0:
 		parts = append(parts, diagnoseMissingOld(path, content, changes, idx)...)
 	case got > want:
+		// Never offer expected_count here: a model told it could raise the
+		// count changed all four identical keys when one section was asked
+		// for. Show where each match is so it can pick the anchor that
+		// tells them apart.
 		parts = append(parts, fmt.Sprintf(
-			"old occurs %d times%s: add surrounding context to make it unique, or set expected_count=%d",
-			got, occurrenceLines(content, changes[idx].Old), got))
+			"old occurs %d times%s: add nearby unique lines (such as the enclosing section or function name) to old so it matches only the place you mean%s",
+			got, occurrenceLines(content, changes[idx].Old), occurrenceContexts(content, changes[idx].Old)))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -201,6 +211,53 @@ func occurrenceLines(content, old string) string {
 		return ""
 	}
 	return " at lines " + strings.Join(nums, ",")
+}
+
+// occurrenceContexts shows each match of old with the two lines above its
+// first line, the lines most likely to name the enclosing section. Bounded to
+// diagMaxOccContexts matches and diagSnippet bytes per line.
+func occurrenceContexts(content, old string) string {
+	if old == "" || len(content) > diagMaxContent {
+		return ""
+	}
+	var b strings.Builder
+	shown, off := 0, 0
+	for off < len(content) && shown < diagMaxOccContexts {
+		i := strings.Index(content[off:], old)
+		if i < 0 {
+			break
+		}
+		start := off + i
+		line := lineOf(content, start)
+		fmt.Fprintf(&b, "\n  match %d, line %d:", shown+1, line)
+		lineStart := strings.LastIndexByte(content[:start], '\n') + 1
+		from := lineStart
+		for k := 0; k < diagOccContextLines && from > 0; k++ {
+			from = strings.LastIndexByte(content[:from-1], '\n') + 1
+		}
+		n := lineOf(content, from)
+		for pos := from; pos <= lineStart; n++ {
+			end := strings.IndexByte(content[pos:], '\n')
+			if end < 0 {
+				end = len(content)
+			} else {
+				end += pos
+			}
+			text := strings.TrimSuffix(content[pos:end], "\r")
+			if len(text) > diagSnippet {
+				cut := diagSnippet
+				for cut > 0 && !utf8.RuneStart(text[cut]) {
+					cut--
+				}
+				text = text[:cut] + "..."
+			}
+			fmt.Fprintf(&b, "\n    %4d | %s", n, text)
+			pos = end + 1
+		}
+		shown++
+		off = start + len(old)
+	}
+	return b.String()
 }
 
 // whitespaceVerdict reports whether `old` would match if whitespace were
